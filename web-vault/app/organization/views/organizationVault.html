@@ -1,0 +1,95 @@
+<section class="content-header">
+    <h1>
+        Org<span class="hidden-xs">anization</span> Vault
+        <small>
+            <span ng-pluralize
+                  count="collections.length > 0 ? collections.length - 1 : 0"
+                  when="{'1': '{} collection', 'other': '{} collections'}"></span>,
+            <span ng-pluralize count="ciphers.length" when="{'1': '{} item', 'other': '{} items'}"></span>
+        </small>
+    </h1>
+</section>
+<section class="content">
+    <p ng-show="loading && !collections.length">Loading...</p>
+    <div class="box" ng-class="{'collapsed-box': collection.collapsed}" ng-repeat="collection in collections |
+         orderBy: collectionSort track by collection.id"
+         ng-show="collections.length && (!main.searchVaultText || collectionCiphers.length)">
+        <div class="box-header with-border">
+            <h3 class="box-title">
+                <i class="fa" ng-class="{'fa-cube': collection.id, 'fa-sitemap': !collection.id}"></i>
+                {{collection.name}}
+                <small ng-pluralize count="collectionCiphers.length" when="{'1': '{} item', 'other': '{} items'}"></small>
+            </h3>
+            <div class="box-tools">
+                <button type="button" class="btn btn-box-tool" data-widget="collapse" title="Collapse/Expand"
+                        ng-click="collapseExpand(collection)">
+                    <i class="fa" ng-class="{'fa-minus': !collection.collapsed, 'fa-plus': collection.collapsed}"></i>
+                </button>
+            </div>
+        </div>
+        <div class="box-body" ng-class="{'no-padding': collectionCiphers.length}">
+            <div ng-show="!collectionCiphers.length && collection.id">No items in this collection.</div>
+            <div ng-show="!collectionCiphers.length && !collection.id">No unassigned items.</div>
+            <div class="table-responsive" ng-show="collectionCiphers.length">
+                <table class="table table-striped table-hover table-vmiddle">
+                    <tbody>
+                        <tr ng-repeat="cipher in collectionCiphers = (ciphers | filter: filterByCollection(collection) |
+                            filter: (main.searchVaultText || '') | orderBy: ['name', 'subTitle']) track by cipher.id">
+                            <td style="width: 70px;">
+                                <div class="btn-group" data-append-to="body">
+                                    <button type="button" class="btn btn-default dropdown-toggle" data-toggle="dropdown">
+                                        <i class="fa fa-cog"></i> <span class="caret"></span>
+                                    </button>
+                                    <ul class="dropdown-menu">
+                                        <li>
+                                            <a href="#" stop-click ng-click="editCipher(cipher)">
+                                                <i class="fa fa-fw fa-pencil"></i> Edit
+                                            </a>
+                                        </li>
+                                        <li>
+                                            <a href="#" stop-click ng-click="attachments(cipher)">
+                                                <i class="fa fa-fw fa-paperclip"></i> Attachments
+                                            </a>
+                                        </li>
+                                        <li>
+                                            <a href="#" stop-click ng-click="editCollections(cipher)">
+                                                <i class="fa fa-fw fa-cubes"></i> Collections
+                                            </a>
+                                        </li>
+                                        <li>
+                                            <a href="#" stop-click ng-click="viewEvents(cipher)" ng-if="useEvents">
+                                                <i class="fa fa-fw fa-file-text-o"></i> Event Logs
+                                            </a>
+                                        </li>
+                                        <li>
+                                            <a href="#" stop-click ng-click="removeCipher(cipher, collection)" class="text-red"
+                                               ng-if="collection.id">
+                                                <i class="fa fa-fw fa-remove"></i> Remove
+                                            </a>
+                                        </li>
+                                        <li>
+                                            <a href="#" stop-click ng-click="deleteCipher(cipher)" class="text-red">
+                                                <i class="fa fa-fw fa-trash"></i> Delete
+                                            </a>
+                                        </li>
+                                    </ul>
+                                </div>
+                            </td>
+                            <td class="vault-icon">
+                                <i class="fa fa-fw fa-lg {{::cipher.icon}}" ng-if="!cipher.meta.image"></i>
+                                <img alt="" ng-if="cipher.meta.image" ng-src="{{cipher.meta.image}}"
+                                     fallback-src="images/fa-globe.png" />
+                            </td>
+                            <td>
+                                <a href="#" stop-click ng-click="editCipher(cipher)">{{cipher.name}}</a>
+                                <i class="fa fa-paperclip text-muted" title="Attachments" ng-if="cipher.hasAttachments"
+                                   stop-prop></i>
+                                <div class="text-sm text-muted">{{cipher.subTitle}}</div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</section>

@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html ng-app="bit" ng-csp>
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="
+          default-src
+            'self';
+          style-src
+            'self'
+            'unsafe-inline'
+            https://fonts.googleapis.com;
+          img-src
+            'self'
+            data:
+            https://haveibeenpwned.com
+            https://chart.googleapis.com;
+          font-src
+            'self'
+            https://fonts.gstatic.com;
+          child-src
+            'self'
+            https://*.duosecurity.com;
+          frame-src
+            'self'
+            https://*.duosecurity.com;
+          connect-src
+            *;">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="theme-color" content="#3c8dbc">
+    <base href="/" />
+
+    <title page-title>bitwarden Web Vault</title>
+
+    <meta name="x-stylesheet-test" content="" class="fa invisible" />
+    <script src="js/fallback-styles.min.js?v=vmy29c"></script>
+
+    <link rel="stylesheet" href="css/vault.min.css?v=vmy29c" />
+    <link rel="apple-touch-icon" sizes="180x180" href="images/icons/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="images/icons/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="images/icons/favicon-16x16.png">
+    <link rel="mask-icon" href="images/icons/safari-pinned-tab.svg" color="#3c8dbc">
+    <link rel="manifest" href="manifest.json">
+</head>
+<body ng-controller="mainController as main" class="layout-boxed {{main.skinClass}} sidebar-mini {{main.bodyClass}}"
+      ng-class="{'using-control-sidebar': main.usingControlSidebar,
+      'control-sidebar-open': main.usingControlSidebar && main.openControlSidebar}">
+    <div ui-view></div>
+
+    <script src="js/fallback-scripts.min.js?v=vmy29c"></script>
+    <script src="js/settings.js?v=vmy29c"></script>
+
+    <script src="js/lib.min.js?v=vmy29c"></script>
+    <script src="js/bw.min.js?v=vmy29c"></script>
+    <script src="js/app.min.js?v=vmy29c"></script>
+</body>
+</html>

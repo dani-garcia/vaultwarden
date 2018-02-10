@@ -1,0 +1,39 @@
+<div class="login-box">
+    <div class="login-logo">
+        <i class="fa fa-shield"></i> <b>bit</b>warden
+    </div>
+    <div class="login-box-body">
+        <p class="login-box-msg">Enter your email address below to recover &amp; delete your bitwarden account.</p>
+        <div ng-show="success" class="text-center">
+            <div class="callout callout-success">
+                If your account exists ({{model.email}}) we've sent you an email with further instructions.
+            </div>
+            <a ui-sref="frontend.login.info">Return to log in</a>
+        </div>
+        <form name="form" ng-submit="form.$valid && submit(model)" ng-show="!success"
+              api-form="submitPromise">
+            <div class="callout callout-danger validation-errors" ng-show="form.$errors">
+                <h4>Errors have occurred</h4>
+                <ul>
+                    <li ng-repeat="e in form.$errors">{{e}}</li>
+                </ul>
+            </div>
+            <div class="form-group has-feedback" show-errors>
+                <label for="email" class="sr-only">Your account email address</label>
+                <input type="email" id="email" name="Email" class="form-control" placeholder="Your account email address"
+                       ng-model="model.email" required api-field />
+                <span class="fa fa-envelope form-control-feedback"></span>
+            </div>
+            <div class="row">
+                <div class="col-xs-7">
+                    <a ui-sref="frontend.login.info">Return to log in</a>
+                </div>
+                <div class="col-xs-5">
+                    <button type="submit" class="btn btn-primary btn-block btn-flat" ng-disabled="form.$loading">
+                        <i class="fa fa-refresh fa-spin loading-icon" ng-show="form.$loading"></i>Submit
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>

@@ -1,0 +1,36 @@
+<div class="modal-header">
+    <button type="button" class="close" ng-click="close()" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+    <h4 class="modal-title"><i class="fa fa-star"></i> Premium <span class="hidden-xs">Membership</span> Required</h4>
+</div>
+<div class="modal-body">
+    <p>This features requires a premium membership. Sign up for premium and get:</p>
+    <ul class="fa-ul">
+        <li>
+            <i class="fa-li fa fa-check text-green"></i>
+            1 GB of encrypted file storage.
+        </li>
+        <li>
+            <i class="fa-li fa fa-check text-green"></i>
+            Additional two-step login options such as YubiKey, FIDO U2F, and Duo.
+        </li>
+        <li>
+            <i class="fa-li fa fa-check text-green"></i>
+            TOTP verification code (2FA) generator for logins in your vault.
+        </li>
+        <li>
+            <i class="fa-li fa fa-check text-green"></i>
+            Priority customer support.
+        </li>
+        <li>
+            <i class="fa-li fa fa-check text-green"></i>
+            All future premium features. More coming soon!
+        </li>
+    </ul>
+    All for just <b>{{10 | currency:"$":0}}</b> /year.
+</div>
+<div class="modal-footer">
+    <button type="submit" class="btn btn-primary btn-flat" ng-click="go()">
+        Get Premium
+    </button>
+    <button type="button" class="btn btn-default btn-flat" ng-click="close()">Close</button>
+</div>

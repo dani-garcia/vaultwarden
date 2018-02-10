@@ -1,0 +1,62 @@
+[package]
+name = "bitwarden_rs"
+version = "0.1.0"
+authors = ["Daniel García <dani-garcia@users.noreply.github.com>"]
+
+[dependencies]
+
+# Test framework, similar to rspec
+stainless = "0.1.12"
+
+# Web framework for nightly with a focus on ease-of-use, expressibility, and speed.
+rocket = { version = "0.3.6", features = ["tls"] }
+rocket_codegen = "0.3.6"
+rocket_contrib = "0.3.6"
+
+# HTTP client
+reqwest = "0.8.4"
+
+# multipart/form-data support
+multipart = "0.13.6"
+
+# A generic serialization/deserialization framework
+serde = "1.0.27"
+serde_derive = "1.0.27"
+serde_json = "1.0.9"
+
+# A safe, extensible ORM and Query builder
+# If tables need more than 16 columns, add feature "large-tables"
+diesel = { version = "1.1.1", features = ["sqlite", "chrono"] }
+diesel_migrations = {version = "1.1.0", features = ["sqlite"] }
+
+# A generic connection pool
+r2d2 = "0.8.2"
+r2d2-diesel = "1.0.0"
+
+# Crypto library
+ring = { version = "0.11.0", features = ["rsa_signing"]}
+
+# UUID generation
+uuid = { version = "0.5.1", features = ["v4"] }
+
+# Date and time library for Rust
+chrono = "0.4.0"
+time = "0.1.39"
+
+# TOTP library
+oath = "0.10.2"
+
+# Data encoding library
+data-encoding = "2.1.1"
+
+# JWT library
+jsonwebtoken = "4.0.0"
+
+# A `dotenv` implementation for Rust
+dotenv = { version = "0.10.1", default-features = false }
+
+# Lazy static macro
+lazy_static = "1.0.0"
+
+[patch.crates-io]
+jsonwebtoken = { path = "libs/jsonwebtoken" } # Make jwt use ring 0.11, to match rocket

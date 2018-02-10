@@ -1,0 +1,13 @@
+<div class="modal-header">
+    <button type="button" class="close" ng-click="close()" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+    <h4 class="modal-title"><i class="fa fa-star"></i> Paid Plan Required</h4>
+</div>
+<div class="modal-body">
+    This feature is not available for free organizations. Switch to a paid plan to unlock more features.
+</div>
+<div class="modal-footer">
+    <button type="submit" class="btn btn-primary btn-flat" ng-click="go()" ng-if="admin">
+        Upgrade Organization
+    </button>
+    <button type="button" class="btn btn-default btn-flat" ng-click="close()">Close</button>
+</div>

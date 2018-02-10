@@ -1,0 +1,167 @@
+<div ng-if="twoFactorProvider === twoFactorProviderConstants.authenticator ||
+     twoFactorProvider === twoFactorProviderConstants.email">
+    <p class="login-box-msg" ng-if="twoFactorProvider === twoFactorProviderConstants.authenticator">
+        Enter the 6 digit verification code from your authenticator app.
+    </p>
+    <div ng-if="twoFactorProvider === twoFactorProviderConstants.email" class="text-center">
+        <p class="login-box-msg">
+            Enter the 6 digit verification code that was emailed to <b>{{twoFactorEmail}}</b>.
+        </p>
+        <p>
+            Didn't get the email?
+            <a href="#" stop-click ng-click="sendEmail(true)" ng-if="twoFactorProvider === twoFactorProviderConstants.email">
+                Send it again
+            </a>
+        </p>
+    </div>
+    <form name="twoFactorForm" ng-submit="twoFactorForm.$valid && twoFactor(token)" api-form="twoFactorPromise">
+        <div class="callout callout-danger validation-errors" ng-show="twoFactorForm.$errors">
+            <h4>Errors have occurred</h4>
+            <ul>
+                <li ng-repeat="e in twoFactorForm.$errors">{{e}}</li>
+            </ul>
+        </div>
+        <div class="form-group has-feedback" show-errors>
+            <label for="code" class="sr-only">Code</label>
+            <input type="text" id="code" name="Code" class="form-control" placeholder="Verification code"
+                   ng-model="token" required api-field autocomplete="off" autocorrect="off" autocapitalize="off"
+                   spellcheck="false" />
+            <span class="fa fa-lock form-control-feedback"></span>
+        </div>
+        <div class="row">
+            <div class="col-xs-7">
+                <div class="checkbox">
+                    <label>
+                        <input type="checkbox" id="rememberMe" ng-model="rememberTwoFactor.checked" /> Remember Me
+                    </label>
+                </div>
+            </div>
+            <div class="col-xs-5">
+                <button type="submit" class="btn btn-primary btn-block btn-flat" ng-disabled="twoFactorForm.$loading">
+                    <i class="fa fa-refresh fa-spin loading-icon" ng-show="twoFactorForm.$loading"></i>Log In
+                </button>
+            </div>
+        </div>
+    </form>
+</div>
+
+<div ng-if="twoFactorProvider === twoFactorProviderConstants.yubikey">
+    <p class="login-box-msg">
+        Complete logging in with YubiKey.
+    </p>
+    <form name="twoFactorForm" ng-submit="twoFactorForm.$valid && twoFactor(token)" api-form="twoFactorPromise"
+          autocomplete="off">
+        <div class="callout callout-danger validation-errors" ng-show="twoFactorForm.$errors">
+            <h4>Errors have occurred</h4>
+            <ul>
+                <li ng-repeat="e in twoFactorForm.$errors">{{e}}</li>
+            </ul>
+        </div>
+        <p>Insert your YubiKey into your computer's USB port, then touch its button.</p>
+        <p>
+            <img src="images/two-factor/yubikey.jpg" alt="" class="img-rounded img-responsive" />
+        </p>
+        <div class="form-group" show-errors>
+            <label for="code" class="sr-only">Token</label>
+            <input type="password" id="code" name="Token" class="form-control" ng-model="token"
+                   autocomplete="new-password" required api-field />
+        </div>
+        <div class="row">
+            <div class="col-xs-7">
+                <div class="checkbox">
+                    <label>
+                        <input type="checkbox" id="rememberMe" ng-model="rememberTwoFactor.checked" /> Remember Me
+                    </label>
+                </div>
+            </div>
+            <div class="col-xs-5">
+                <button type="submit" class="btn btn-primary btn-block btn-flat" ng-disabled="twoFactorForm.$loading">
+                    <i class="fa fa-refresh fa-spin loading-icon" ng-show="twoFactorForm.$loading"></i>Log In
+                </button>
+            </div>
+        </div>
+    </form>
+</div>
+
+<div ng-if="twoFactorProvider === twoFactorProviderConstants.duo">
+    <p class="login-box-msg">
+        Complete logging in with Duo.
+    </p>
+    <form name="twoFactorForm" ng-submit="twoFactorForm.$valid && twoFactor(token)" api-form="twoFactorPromise"
+          autocomplete="off">
+        <div class="callout callout-danger validation-errors" ng-show="twoFactorForm.$errors">
+            <h4>Errors have occurred</h4>
+            <ul>
+                <li ng-repeat="e in twoFactorForm.$errors">{{e}}</li>
+            </ul>
+        </div>
+        <div id="duoFrameWrapper">
+            <iframe id="duo_iframe"></iframe>
+        </div>
+        <div class="row">
+            <div class="col-xs-7">
+                <div class="checkbox">
+                    <label>
+                        <input type="checkbox" id="rememberMe" ng-model="rememberTwoFactor.checked" /> Remember Me
+                    </label>
+                </div>
+            </div>
+            <div class="col-xs-5">
+                <span ng-show="twoFactorForm.$loading">
+                    <i class="fa fa-refresh fa-spin loading-icon"></i> Logging in...
+                </span>
+            </div>
+        </div>
+    </form>
+</div>
+
+<div ng-if="twoFactorProvider === twoFactorProviderConstants.u2f">
+    <p class="login-box-msg">
+        Complete logging in with FIDO U2F.
+    </p>
+    <form name="twoFactorForm" api-form="twoFactorPromise" autocomplete="off">
+        <div class="callout callout-danger validation-errors" ng-show="twoFactorForm.$errors">
+            <h4>Errors have occurred</h4>
+            <ul>
+                <li ng-repeat="e in twoFactorForm.$errors">{{e}}</li>
+            </ul>
+        </div>
+        <p>Insert your Security Key into your computer's USB port. If it has a button, touch it.</p>
+        <p>
+            <img src="images/two-factor/u2fkey.jpg" alt="" class="img-rounded img-responsive" />
+        </p>
+        <div class="row">
+            <div class="col-xs-7">
+                <div class="checkbox">
+                    <label>
+                        <input type="checkbox" id="rememberMe" ng-model="rememberTwoFactor.checked" /> Remember Me
+                    </label>
+                </div>
+            </div>
+            <div class="col-xs-5">
+                <span ng-show="twoFactorForm.$loading">
+                    <i class="fa fa-refresh fa-spin loading-icon"></i> Logging in...
+                </span>
+            </div>
+        </div>
+    </form>
+</div>
+
+<div ng-if="twoFactorProvider === null">
+    <p>
+        This account has two-step login enabled, however, none of the configured two-step providers are supported by this
+        web browser.
+    </p>
+    Please use a supported web browser (such as Chrome) and/or add additional providers that are better supported
+    across web browsers (such as an authenticator app).
+</div>
+
+<hr />
+<ul>
+    <li>
+        <a stop-click href="#" ng-click="anotherMethod()">Use another two-step login method</a>
+    </li>
+    <li>
+        <a ui-sref="frontend.login.info({returnState: returnState})">Back to log in</a>
+    </li>
+</ul>

@@ -1,0 +1,22 @@
+# Local build artifacts
+target
+
+# Data folder
+data
+
+# IDE files
+.vscode
+.idea
+*.iml
+
+# Git and Docker files
+.git
+.gitignore
+.gitmodules
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Documentation
+*.md
+

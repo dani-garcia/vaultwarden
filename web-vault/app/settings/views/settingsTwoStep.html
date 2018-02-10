@@ -1,0 +1,52 @@
+<section class="content-header">
+    <h1>Two-step Login <small>secure your account</small></h1>
+</section>
+<section class="content">
+    <div class="box box-danger">
+        <div class="box-header with-border">
+            <h3 class="box-title"><i class="fa fa-warning"></i> Recovery Code <i class="fa fa-warning"></i></h3>
+        </div>
+        <div class="box-body">
+            The recovery code allows you to access your account in the event that you can no longer use your normal
+            two-step login provider (ex. you lose your device). bitwarden support will not be able to assist you if you lose
+            access to your account. We recommend you write down or print the recovery code and keep it in a safe place.
+        </div>
+        <div class="box-footer">
+            <button type="button" class="btn btn-default btn-flat" ng-click="viewRecover()">View Recovery Code</button>
+        </div>
+    </div>
+    <div class="box box-default">
+        <div class="box-header with-border">
+            <h3 class="box-title">Providers</h3>
+        </div>
+        <div class="box-body no-padding">
+            <div class="table-responsive">
+                <table class="table table-striped table-hover table-vmiddle">
+                    <tbody>
+                        <tr ng-repeat="provider in providers | orderBy: 'displayOrder'">
+                            <td style="width: 120px; height: 75px;" align="center">
+                                <a href="#" stop-click ng-click="edit(provider)">
+                                    <img alt="{{::provider.name}}" ng-src="{{'images/two-factor/' + provider.image}}" />
+                                </a>
+                            </td>
+                            <td>
+                                <a href="#" stop-click ng-click="edit(provider)">
+                                    {{::provider.name}}
+                                    <span class="label label-info" ng-if="!premium && !provider.free"
+                                          style="margin-left: 5px;">PREMIUM</span>
+                                </a>
+                                <div class="text-muted text-sm">{{::provider.description}}</div>
+                            </td>
+                            <td style="width: 100px;" class="text-right">
+                                <span class="label label-full"
+                                      ng-class="{ 'label-success': provider.enabled, 'label-default': !provider.enabled }">
+                                    {{provider.enabled ? 'Enabled' : 'Disabled'}}
+                                </span>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</section>
