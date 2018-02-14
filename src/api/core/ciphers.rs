@@ -1,7 +1,6 @@
-use std::io::{Cursor, Read};
 use std::path::Path;
 
-use rocket::{Route, Data};
+use rocket::Data;
 use rocket::http::ContentType;
 use rocket::response::status::BadRequest;
 
@@ -221,7 +220,7 @@ fn post_attachment(uuid: String, data: Data, content_type: &ContentType, headers
             .memory_threshold(0)
             .size_limit(None)
             .with_path(path) {
-            SaveResult::Full(SavedData::File(path, size)) => size as i32,
+            SaveResult::Full(SavedData::File(_, size)) => size as i32,
             _ => return
         };
 
@@ -233,8 +232,8 @@ fn post_attachment(uuid: String, data: Data, content_type: &ContentType, headers
     Ok(Json(cipher.to_json(&conn)))
 }
 
-#[post("/ciphers/<uuid>/attachment/<attachment_id>/delete", data = "<data>")]
-fn delete_attachment_post(uuid: String, attachment_id: String, data: Json<Value>, headers: Headers, conn: DbConn) -> Result<(), BadRequest<Json>> {
+#[post("/ciphers/<uuid>/attachment/<attachment_id>/delete", data = "<_data>")]
+fn delete_attachment_post(uuid: String, attachment_id: String, _data: Json<Value>, headers: Headers, conn: DbConn) -> Result<(), BadRequest<Json>> {
     // Data contains a json object with the id, but we don't need it
     delete_attachment(uuid, attachment_id, headers, conn)
 }

@@ -1,11 +1,9 @@
-use rocket::Route;
 use rocket::response::status::BadRequest;
 
 use rocket_contrib::{Json, Value};
 
 use db::DbConn;
 use db::models::*;
-use util;
 
 use auth::Headers;
 
@@ -23,7 +21,7 @@ fn get_folders(headers: Headers, conn: DbConn) -> Result<Json, BadRequest<Json>>
 
 #[get("/folders/<uuid>")]
 fn get_folder(uuid: String, headers: Headers, conn: DbConn) -> Result<Json, BadRequest<Json>> {
-    let mut folder = match Folder::find_by_uuid(&uuid, &conn) {
+    let folder = match Folder::find_by_uuid(&uuid, &conn) {
         Some(folder) => folder,
         _ => err!("Invalid folder")
     };
@@ -79,8 +77,8 @@ fn put_folder(uuid: String, data: Json<Value>, headers: Headers, conn: DbConn) -
     Ok(Json(folder.to_json()))
 }
 
-#[post("/folders/<uuid>/delete", data = "<data>")]
-fn delete_folder_post(uuid: String, data: Json<Value>, headers: Headers, conn: DbConn) -> Result<(), BadRequest<Json>> {
+#[post("/folders/<uuid>/delete", data = "<_data>")]
+fn delete_folder_post(uuid: String, _data: Json<Value>, headers: Headers, conn: DbConn) -> Result<(), BadRequest<Json>> {
     // Data contains a json object with the id, but we don't need it
     delete_folder(uuid, headers, conn)
 }

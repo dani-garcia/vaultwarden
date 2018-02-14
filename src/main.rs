@@ -1,10 +1,9 @@
-#![allow(dead_code, unused_variables, unused, unused_mut)]
+#![allow(unused)]
 
 #![feature(plugin, custom_derive)]
 #![cfg_attr(test, plugin(stainless))]
 #![plugin(rocket_codegen)]
 extern crate rocket;
-#[macro_use]
 extern crate rocket_contrib;
 extern crate reqwest;
 extern crate multipart;

@@ -1,4 +1,3 @@
-use rocket::Route;
 use rocket::response::status::BadRequest;
 
 use rocket_contrib::{Json, Value};
@@ -6,7 +5,6 @@ use rocket_contrib::{Json, Value};
 use data_encoding::BASE32;
 
 use db::DbConn;
-use db::models::*;
 
 use util;
 use crypto;

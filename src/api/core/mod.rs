@@ -64,11 +64,9 @@ pub fn routes() -> Vec<Route> {
 use rocket::Route;
 use rocket::response::status::BadRequest;
 
-use rocket_contrib::{Json, Value};
+use rocket_contrib::Json;
 
 use db::DbConn;
-use db::models::*;
-use util;
 
 use auth::Headers;
 
@@ -107,7 +105,7 @@ fn post_eq_domains(data: Json<EquivDomainData>, headers: Headers, conn: DbConn) 
     let excluded_globals = &data.ExcludedGlobalEquivalentDomains;
     let equivalent_domains = &data.EquivalentDomains;
 
-    let mut user = headers.user;
+    let user = headers.user;
 
 
     //BODY. "{\"ExcludedGlobalEquivalentDomains\":[2],\"EquivalentDomains\":[[\"uoc.edu\",\"uoc.es\"]]}"

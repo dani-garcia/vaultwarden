@@ -71,12 +71,12 @@ fn login(connect_data: Form<ConnectData>, conn: DbConn) -> Result<Json, BadReque
 
             if !user.check_totp_code(totp_code) {
                 // Return error 400
-                return err_json!(json!({
+                err_json!(json!({
                         "error" : "invalid_grant",
                         "error_description" : "Two factor required.",
                         "TwoFactorProviders" : [ 0 ],
                         "TwoFactorProviders2" : { "0" : null }
-                    }));
+                    }))
             }
 
             // Let's only use the header and ignore the 'devicetype' parameter
@@ -159,19 +159,19 @@ const VALUES_DEVICE: [&str; 3] = ["deviceidentifier",
 impl<'f> FromForm<'f> for ConnectData {
     type Error = String;
 
-    fn from_form(items: &mut FormItems<'f>, strict: bool) -> Result<Self, Self::Error> {
+    fn from_form(items: &mut FormItems<'f>, _strict: bool) -> Result<Self, Self::Error> {
         let mut data = HashMap::new();
 
         // Insert data into map
         for (key, value) in items {
             let decoded_key: String = match key.url_decode() {
                 Ok(decoded) => decoded,
-                Err(e) => return Err(format!("Error decoding key: {}", value)),
+                Err(_) => return Err(format!("Error decoding key: {}", value)),
             };
 
             let decoded_value: String = match value.url_decode() {
                 Ok(decoded) => decoded,
-                Err(e) => return Err(format!("Error decoding value: {}", value)),
+                Err(_) => return Err(format!("Error decoding value: {}", value)),
             };
 
             data.insert(decoded_key.to_lowercase(), decoded_value);

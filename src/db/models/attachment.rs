@@ -31,14 +31,11 @@ impl Attachment {
 
     pub fn to_json(&self) -> JsonValue {
         use util::get_display_size;
-        use CONFIG;
 
         // TODO: Change all references to localhost (maybe put it in .env?)
         let host = "http://localhost:8000";
 
         let web_path = format!("{}/attachments/{}/{}", host, self.cipher_uuid, self.id);
-
-        let file_path = self.get_file_path();
         let display_size = get_display_size(self.file_size);
 
         json!({

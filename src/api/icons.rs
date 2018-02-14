@@ -1,7 +1,6 @@
 use std::io;
 use std::io::prelude::*;
 use std::fs::{create_dir_all, File};
-use std::path::Path;
 
 use rocket::Route;
 use rocket::response::Content;
@@ -27,7 +26,7 @@ fn icon(domain: String) -> Content<Vec<u8>> {
     // Get the icon, or fallback in case of error
     let icon = match get_icon_cached(&domain, &url) {
         Ok(icon) => icon,
-        Err(e) => return Content(ContentType::PNG, get_fallback_icon())
+        Err(_) => return Content(ContentType::PNG, get_fallback_icon())
     };
 
     Content(ContentType::PNG, icon)
@@ -51,7 +50,7 @@ fn get_icon_cached(key: &str, url: &str) -> io::Result<Vec<u8>> {
     create_dir_all(&CONFIG.icon_cache_folder)?;
     let path = &format!("{}/{}.png", CONFIG.icon_cache_folder, key);
 
-    /// Try to read the cached icon, and return it if it exists
+    // Try to read the cached icon, and return it if it exists
     match File::open(path) {
         Ok(mut f) => {
             let mut buffer = Vec::new();
@@ -70,7 +69,7 @@ fn get_icon_cached(key: &str, url: &str) -> io::Result<Vec<u8>> {
         Err(_) => return Err(io::Error::new(io::ErrorKind::NotFound, ""))
     };
 
-    /// Save the currently downloaded icon
+    // Save the currently downloaded icon
     match File::create(path) {
         Ok(mut f) => { f.write_all(&icon); }
         Err(_) => { /* Continue */ }

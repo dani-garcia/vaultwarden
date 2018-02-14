@@ -1,11 +1,9 @@
-use rocket::Route;
 use rocket::response::status::BadRequest;
 
 use rocket_contrib::{Json, Value};
 
 use db::DbConn;
 use db::models::*;
-use util;
 
 use auth::Headers;
 
@@ -64,7 +62,7 @@ fn register(data: Json<RegisterData>, conn: DbConn) -> Result<(), BadRequest<Jso
 }
 
 #[get("/accounts/profile")]
-fn profile(headers: Headers, conn: DbConn) -> Result<Json, BadRequest<Json>> {
+fn profile(headers: Headers) -> Result<Json, BadRequest<Json>> {
     Ok(Json(headers.user.to_json()))
 }
 
@@ -140,7 +138,7 @@ fn post_email(data: Json<Value>, headers: Headers, conn: DbConn) -> Result<(), B
 fn delete_account(data: Json<Value>, headers: Headers, conn: DbConn) -> Result<(), BadRequest<Json>> {
     let password_hash = data["masterPasswordHash"].as_str().unwrap();
 
-    let mut user = headers.user;
+    let user = headers.user;
 
     if !user.check_valid_password(password_hash) {
         err!("Invalid password")
@@ -154,7 +152,7 @@ fn delete_account(data: Json<Value>, headers: Headers, conn: DbConn) -> Result<(
 }
 
 #[get("/accounts/revision-date")]
-fn revision_date(headers: Headers, conn: DbConn) -> Result<String, BadRequest<Json>> {
+fn revision_date(headers: Headers) -> Result<String, BadRequest<Json>> {
     let revision_date = headers.user.updated_at.timestamp();
     Ok(revision_date.to_string())
 }

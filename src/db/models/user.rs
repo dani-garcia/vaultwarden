@@ -1,5 +1,4 @@
-use chrono::{NaiveDate, NaiveDateTime, Utc};
-use time::Duration;
+use chrono::{NaiveDateTime, Utc};
 use serde_json::Value as JsonValue;
 
 use uuid::Uuid;
@@ -100,7 +99,7 @@ impl User {
 
                 let decoded_secret = match BASE32.decode(totp_secret.as_bytes()) {
                     Ok(s) => s,
-                    Err(e) => return false
+                    Err(_) => return false
                 };
 
                 let generated = totp_raw_now(&decoded_secret, 6, 0, 30, &HashType::SHA1);

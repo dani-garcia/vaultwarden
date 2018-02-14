@@ -3,9 +3,7 @@ use std::path::{Path, PathBuf};
 
 use rocket::Route;
 use rocket::response::NamedFile;
-use rocket_contrib::{Json, Value};
-
-use auth::Headers;
+use rocket_contrib::Json;
 
 use CONFIG;
 
@@ -42,7 +40,7 @@ fn attachments(uuid: String, file: PathBuf) -> io::Result<NamedFile> {
 #[get("/alive")]
 fn alive() -> Json<String> {
     use util::format_date;
-    use chrono::{NaiveDateTime, Utc};
+    use chrono::Utc;
 
     Json(format_date(&Utc::now().naive_utc()))
 }

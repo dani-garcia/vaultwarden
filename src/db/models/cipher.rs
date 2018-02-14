@@ -1,5 +1,4 @@
-use chrono::{NaiveDate, NaiveDateTime, Utc};
-use time::Duration;
+use chrono::{NaiveDateTime, Utc};
 use serde_json::Value as JsonValue;
 
 use uuid::Uuid;

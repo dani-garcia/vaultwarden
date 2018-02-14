@@ -3,12 +3,10 @@
 ///
 
 use util::read_file;
-use std::path::Path;
 use time::Duration;
 
 use jwt;
 use serde::ser::Serialize;
-use serde::de::Deserialize;
 
 use CONFIG;
 
@@ -89,7 +87,6 @@ pub struct JWTClaims {
 ///
 
 use rocket::Outcome;
-use rocket::http::Status;
 use rocket::request::{self, Request, FromRequest};
 
 use db::DbConn;
@@ -107,14 +104,14 @@ impl<'a, 'r> FromRequest<'a, 'r> for Headers {
     fn from_request(request: &'a Request<'r>) -> request::Outcome<Self, Self::Error> {
         let headers = request.headers();
 
-        /// Get device type
+        // Get device type
         let device_type = match headers.get_one("Device-Type")
             .map(|s| s.parse::<i32>()) {
             Some(Ok(dt)) => Some(dt),// dt,
             _ => None // return err_handler!("Device-Type is invalid or missing")
         };
 
-        /// Get access_token
+        // Get access_token
         let access_token: &str = match request.headers().get_one("Authorization") {
             Some(a) => {
                 let split: Option<&str> = a.rsplit("Bearer ").next();
@@ -128,7 +125,7 @@ impl<'a, 'r> FromRequest<'a, 'r> for Headers {
             None => err_handler!("No access token provided")
         };
 
-        /// Check JWT token is valid and get device and user from it
+        // Check JWT token is valid and get device and user from it
         let claims: JWTClaims = match decode_jwt(access_token) {
             Ok(claims) => claims,
             Err(msg) => {
