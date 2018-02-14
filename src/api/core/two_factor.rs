@@ -20,10 +20,10 @@ fn get_twofactor(headers: Headers) -> Result<Json, BadRequest<Json>> {
         Value::Null
     } else {
         json!([{
-                "Enabled": true,
-                "Type": 0,
-                "Object": "twoFactorProvider"
-            }])
+            "Enabled": true,
+            "Type": 0,
+            "Object": "twoFactorProvider"
+        }])
     };
 
     Ok(Json(json!({

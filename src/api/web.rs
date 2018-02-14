@@ -16,21 +16,26 @@ pub fn routes() -> Vec<Route> {
 // TODO: Might want to use in memory cache: https://github.com/hgzimmerman/rocket-file-cache
 #[get("/")]
 fn index() -> io::Result<NamedFile> {
-    NamedFile::open(Path::new(&CONFIG.web_vault_folder).join("index.html"))
+    NamedFile::open(
+        Path::new(&CONFIG.web_vault_folder)
+            .join("index.html"))
 }
 
-#[get("/<p..>")] // Only match this if the other routes don't match
+#[get("/<p..>", rank = 1)] // Only match this if the other routes don't match
 fn files(p: PathBuf) -> io::Result<NamedFile> {
-    NamedFile::open(Path::new(&CONFIG.web_vault_folder).join(p))
+    NamedFile::open(
+        Path::new(&CONFIG.web_vault_folder)
+            .join(p))
 }
+
 
 #[get("/attachments/<uuid>/<file..>")]
-fn attachments(uuid: String, file: PathBuf, headers: Headers) -> io::Result<NamedFile> {
-    if uuid != headers.user.uuid {
-        return Err(io::Error::new(io::ErrorKind::PermissionDenied, "Permission denied"));
-    }
-
-    NamedFile::open(Path::new(&CONFIG.attachments_folder).join(file))
+fn attachments(uuid: String, file: PathBuf) -> io::Result<NamedFile> {
+    NamedFile::open(
+        Path::new(&CONFIG.attachments_folder)
+            .join(uuid)
+            .join(file)
+    )
 }
 
 

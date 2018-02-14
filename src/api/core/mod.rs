@@ -26,6 +26,7 @@ pub fn routes() -> Vec<Route> {
         post_ciphers,
         post_ciphers_import,
         post_attachment,
+        delete_attachment_post,
         delete_attachment,
         post_cipher,
         put_cipher,
@@ -89,12 +90,27 @@ fn clear_device_token(uuid: String) -> Result<Json, BadRequest<Json>> { err!("No
 fn put_device_token(uuid: String) -> Result<Json, BadRequest<Json>> { err!("Not implemented") }
 
 
+#[derive(Deserialize, Debug)]
+#[allow(non_snake_case)]
+struct EquivDomainData {
+    ExcludedGlobalEquivalentDomains: Vec<i32>,
+    EquivalentDomains: Vec<Vec<String>>,
+}
+
 #[get("/settings/domains")]
 fn get_eq_domains() -> Result<Json, BadRequest<Json>> {
     err!("Not implemented")
 }
 
-#[post("/settings/domains")]
-fn post_eq_domains() -> Result<Json, BadRequest<Json>> {
+#[post("/settings/domains", data = "<data>")]
+fn post_eq_domains(data: Json<EquivDomainData>, headers: Headers, conn: DbConn) -> Result<Json, BadRequest<Json>> {
+    let excluded_globals = &data.ExcludedGlobalEquivalentDomains;
+    let equivalent_domains = &data.EquivalentDomains;
+
+    let mut user = headers.user;
+
+
+    //BODY. "{\"ExcludedGlobalEquivalentDomains\":[2],\"EquivalentDomains\":[[\"uoc.edu\",\"uoc.es\"]]}"
+
     err!("Not implemented")
 }

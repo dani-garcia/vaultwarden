@@ -30,7 +30,7 @@ macro_rules! err_handler {
 
 use std::path::Path;
 use std::io::Read;
-use std::fs::File;
+use std::fs::{self, File};
 
 pub fn file_exists(path: &str) -> bool {
     Path::new(path).exists()
@@ -46,6 +46,31 @@ pub fn read_file(path: &str) -> Result<Vec<u8>, String> {
         .map_err(|e| format!("Error reading file: {}", e))?;
 
     Ok(contents)
+}
+
+pub fn delete_file(path: &str) -> bool {
+    fs::remove_file(path).is_ok()
+}
+
+
+const UNITS: [&'static str; 6] = ["bytes", "KB", "MB", "GB", "TB", "PB"];
+
+pub fn get_display_size(size: i32) -> String {
+    let mut size = size as f64;
+    let mut unit_counter = 0;
+
+    loop {
+        if size > 1024. {
+            size /= 1024.;
+            unit_counter += 1;
+        } else {
+            break;
+        }
+    };
+
+    // Round to two decimals
+    size = (size * 100.).round() / 100.;
+    format!("{} {}", size, UNITS[unit_counter])
 }
 
 

@@ -21,7 +21,6 @@ use reqwest::header::{self, Headers};
 ** These routes are here to avoid showing errors in the console,
 ** redirect the body data to the fairing and show the web vault.
 **/
-
 #[get("/")]
 fn index() -> io::Result<NamedFile> {
     NamedFile::open(Path::new("web-vault").join("index.html"))

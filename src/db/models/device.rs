@@ -4,8 +4,11 @@ use serde_json::Value as JsonValue;
 
 use uuid::Uuid;
 
-#[derive(Queryable, Insertable, Identifiable)]
+use super::User;
+
+#[derive(Debug, Identifiable, Queryable, Insertable, Associations)]
 #[table_name = "devices"]
+#[belongs_to(User, foreign_key = "user_uuid")]
 #[primary_key(uuid)]
 pub struct Device {
     pub uuid: String,
@@ -24,10 +27,10 @@ pub struct Device {
 
 /// Local methods
 impl Device {
-    pub fn new(uuid: String, user_uuid: String, name: String, type_: i32) -> Device {
+    pub fn new(uuid: String, user_uuid: String, name: String, type_: i32) -> Self {
         let now = Utc::now().naive_utc();
 
-        Device {
+        Self {
             uuid,
             created_at: now,
             updated_at: now,
@@ -103,15 +106,15 @@ impl Device {
         }
     }
 
-    pub fn find_by_uuid(uuid: &str, conn: &DbConn) -> Option<Device> {
+    pub fn find_by_uuid(uuid: &str, conn: &DbConn) -> Option<Self> {
         devices::table
             .filter(devices::uuid.eq(uuid))
-            .first::<Device>(&**conn).ok()
+            .first::<Self>(&**conn).ok()
     }
 
-    pub fn find_by_refresh_token(refresh_token: &str, conn: &DbConn) -> Option<Device> {
+    pub fn find_by_refresh_token(refresh_token: &str, conn: &DbConn) -> Option<Self> {
         devices::table
             .filter(devices::refresh_token.eq(refresh_token))
-            .first::<Device>(&**conn).ok()
+            .first::<Self>(&**conn).ok()
     }
 }

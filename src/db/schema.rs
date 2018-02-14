@@ -1,4 +1,13 @@
 table! {
+    attachments (id) {
+        id -> Text,
+        cipher_uuid -> Text,
+        file_name -> Text,
+        file_size -> Integer,
+    }
+}
+
+table! {
     ciphers (uuid) {
         uuid -> Text,
         created_at -> Timestamp,
@@ -10,7 +19,6 @@ table! {
         type_ -> Integer,
         data -> Text,
         favorite -> Bool,
-        attachments -> Nullable<Binary>,
     }
 }
 
@@ -55,15 +63,19 @@ table! {
         totp_secret -> Nullable<Text>,
         totp_recover -> Nullable<Text>,
         security_stamp -> Text,
+        equivalent_domains -> Text,
+        excluded_globals -> Text,
     }
 }
 
+joinable!(attachments -> ciphers (cipher_uuid));
 joinable!(ciphers -> folders (folder_uuid));
 joinable!(ciphers -> users (user_uuid));
 joinable!(devices -> users (user_uuid));
 joinable!(folders -> users (user_uuid));
 
 allow_tables_to_appear_in_same_query!(
+    attachments,
     ciphers,
     devices,
     folders,

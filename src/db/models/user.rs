@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use CONFIG;
 
-#[derive(Queryable, Insertable, Identifiable)]
+#[derive(Debug, Identifiable, Queryable, Insertable)]
 #[table_name = "users"]
 #[primary_key(uuid)]
 pub struct User {
@@ -28,11 +28,14 @@ pub struct User {
     pub totp_secret: Option<String>,
     pub totp_recover: Option<String>,
     pub security_stamp: String,
+
+    pub equivalent_domains: String,
+    pub excluded_globals: String,
 }
 
 /// Local methods
 impl User {
-    pub fn new(mail: String, key: String, password: String) -> User {
+    pub fn new(mail: String, key: String, password: String) -> Self {
         let now = Utc::now().naive_utc();
         let email = mail.to_lowercase();
 
@@ -42,7 +45,7 @@ impl User {
         let salt = crypto::get_random_64();
         let password_hash = crypto::hash_password(password.as_bytes(), &salt, iterations as u32);
 
-        User {
+        Self {
             uuid: Uuid::new_v4().to_string(),
             created_at: now,
             updated_at: now,
@@ -61,6 +64,9 @@ impl User {
             public_key: None,
             totp_secret: None,
             totp_recover: None,
+
+            equivalent_domains: "[]".to_string(),
+            excluded_globals: "[]".to_string(),
         }
     }
 
@@ -144,16 +150,16 @@ impl User {
         }
     }
 
-    pub fn find_by_mail(mail: &str, conn: &DbConn) -> Option<User> {
+    pub fn find_by_mail(mail: &str, conn: &DbConn) -> Option<Self> {
         let lower_mail = mail.to_lowercase();
         users::table
             .filter(users::email.eq(lower_mail))
-            .first::<User>(&**conn).ok()
+            .first::<Self>(&**conn).ok()
     }
 
-    pub fn find_by_uuid(uuid: &str, conn: &DbConn) -> Option<User> {
+    pub fn find_by_uuid(uuid: &str, conn: &DbConn) -> Option<Self> {
         users::table
             .filter(users::uuid.eq(uuid))
-            .first::<User>(&**conn).ok()
+            .first::<Self>(&**conn).ok()
     }
 }

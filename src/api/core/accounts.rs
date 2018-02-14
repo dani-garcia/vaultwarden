@@ -31,7 +31,7 @@ struct KeysData {
 
 #[post("/accounts/register", data = "<data>")]
 fn register(data: Json<RegisterData>, conn: DbConn) -> Result<(), BadRequest<Json>> {
-    if CONFIG.signups_allowed {
+    if !CONFIG.signups_allowed {
         err!(format!("Signups not allowed"))
     }
     println!("DEBUG - {:#?}", data);
@@ -81,7 +81,7 @@ fn post_keys(data: Json<KeysData>, headers: Headers, conn: DbConn) -> Result<Jso
 }
 
 #[post("/accounts/password", data = "<data>")]
-fn post_password(data: Json<Value>, headers: Headers, conn: DbConn) -> Result<Json, BadRequest<Json>> {
+fn post_password(data: Json<Value>, headers: Headers, conn: DbConn) -> Result<(), BadRequest<Json>> {
     let key = data["key"].as_str().unwrap();
     let password_hash = data["masterPasswordHash"].as_str().unwrap();
     let new_password_hash = data["newMasterPasswordHash"].as_str().unwrap();
@@ -94,14 +94,13 @@ fn post_password(data: Json<Value>, headers: Headers, conn: DbConn) -> Result<Js
 
     user.set_password(new_password_hash);
     user.key = key.to_string();
-
     user.save(&conn);
 
-    Ok(Json(json!({})))
+    Ok(())
 }
 
 #[post("/accounts/security-stamp", data = "<data>")]
-fn post_sstamp(data: Json<Value>, headers: Headers, conn: DbConn) -> Result<Json, BadRequest<Json>> {
+fn post_sstamp(data: Json<Value>, headers: Headers, conn: DbConn) -> Result<(), BadRequest<Json>> {
     let password_hash = data["masterPasswordHash"].as_str().unwrap();
 
     let mut user = headers.user;
@@ -111,14 +110,15 @@ fn post_sstamp(data: Json<Value>, headers: Headers, conn: DbConn) -> Result<Json
     }
 
     user.reset_security_stamp();
+    user.save(&conn);
 
-    Ok(Json(json!({})))
+    Ok(())
 }
 
 #[post("/accounts/email-token", data = "<data>")]
-fn post_email(data: Json<Value>, headers: Headers, conn: DbConn) -> Result<Json, BadRequest<Json>> {
-    println!("{:#?}", data);
+fn post_email(data: Json<Value>, headers: Headers, conn: DbConn) -> Result<(), BadRequest<Json>> {
     let password_hash = data["masterPasswordHash"].as_str().unwrap();
+    let new_email = data["newEmail"].as_str().unwrap();
 
     let mut user = headers.user;
 
@@ -126,11 +126,18 @@ fn post_email(data: Json<Value>, headers: Headers, conn: DbConn) -> Result<Json,
         err!("Invalid password")
     }
 
-    err!("Not implemented")
+    if User::find_by_mail(new_email, &conn).is_some() {
+        err!("Email already in use");
+    }
+
+    user.email = new_email.to_string();
+    user.save(&conn);
+
+    Ok(())
 }
 
 #[post("/accounts/delete", data = "<data>")]
-fn delete_account(data: Json<Value>, headers: Headers, conn: DbConn) -> Result<Json, BadRequest<Json>> {
+fn delete_account(data: Json<Value>, headers: Headers, conn: DbConn) -> Result<(), BadRequest<Json>> {
     let password_hash = data["masterPasswordHash"].as_str().unwrap();
 
     let mut user = headers.user;
@@ -138,6 +145,10 @@ fn delete_account(data: Json<Value>, headers: Headers, conn: DbConn) -> Result<J
     if !user.check_valid_password(password_hash) {
         err!("Invalid password")
     }
+
+    // Delete all ciphers by user_uuid
+    // Delete all devices by user_uuid
+    // Delete user
 
     err!("Not implemented")
 }

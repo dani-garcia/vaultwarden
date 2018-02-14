@@ -4,8 +4,11 @@ use serde_json::Value as JsonValue;
 
 use uuid::Uuid;
 
-#[derive(Queryable, Insertable, Identifiable)]
+use super::User;
+
+#[derive(Debug, Identifiable, Queryable, Insertable, Associations)]
 #[table_name = "folders"]
+#[belongs_to(User, foreign_key = "user_uuid")]
 #[primary_key(uuid)]
 pub struct Folder {
     pub uuid: String,
@@ -17,10 +20,10 @@ pub struct Folder {
 
 /// Local methods
 impl Folder {
-    pub fn new(user_uuid: String, name: String) -> Folder {
+    pub fn new(user_uuid: String, name: String) -> Self {
         let now = Utc::now().naive_utc();
 
-        Folder {
+        Self {
             uuid: Uuid::new_v4().to_string(),
             created_at: now,
             updated_at: now,
@@ -69,15 +72,15 @@ impl Folder {
         }
     }
 
-    pub fn find_by_uuid(uuid: &str, conn: &DbConn) -> Option<Folder> {
+    pub fn find_by_uuid(uuid: &str, conn: &DbConn) -> Option<Self> {
         folders::table
             .filter(folders::uuid.eq(uuid))
-            .first::<Folder>(&**conn).ok()
+            .first::<Self>(&**conn).ok()
     }
 
-    pub fn find_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Folder> {
+    pub fn find_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
         folders::table
             .filter(folders::user_uuid.eq(user_uuid))
-            .load::<Folder>(&**conn).expect("Error loading folders")
+            .load::<Self>(&**conn).expect("Error loading folders")
     }
 }

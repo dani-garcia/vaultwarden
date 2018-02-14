@@ -96,7 +96,7 @@ use db::DbConn;
 use db::models::{User, Device};
 
 pub struct Headers {
-    pub device_type: i32,
+    pub device_type: Option<i32>,
     pub device: Device,
     pub user: User,
 }
@@ -110,8 +110,8 @@ impl<'a, 'r> FromRequest<'a, 'r> for Headers {
         /// Get device type
         let device_type = match headers.get_one("Device-Type")
             .map(|s| s.parse::<i32>()) {
-            Some(Ok(dt)) => dt,
-            _ => return err_handler!("Device-Type is invalid or missing")
+            Some(Ok(dt)) => Some(dt),// dt,
+            _ => None // return err_handler!("Device-Type is invalid or missing")
         };
 
         /// Get access_token

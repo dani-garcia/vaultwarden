@@ -1,4 +1,5 @@
 use std::io::{Cursor, Read};
+use std::path::Path;
 
 use rocket::{Route, Data};
 use rocket::http::ContentType;
@@ -6,13 +7,20 @@ use rocket::response::status::BadRequest;
 
 use rocket_contrib::{Json, Value};
 
-use multipart::server::Multipart;
+use multipart::server::{Multipart, SaveResult};
+use multipart::server::save::SavedData;
+
+use data_encoding::HEXLOWER;
 
 use db::DbConn;
 use db::models::*;
+
 use util;
+use crypto;
 
 use auth::Headers;
+
+use CONFIG;
 
 #[get("/sync")]
 fn sync(headers: Headers, conn: DbConn) -> Result<Json, BadRequest<Json>> {
@@ -22,7 +30,7 @@ fn sync(headers: Headers, conn: DbConn) -> Result<Json, BadRequest<Json>> {
     let folders_json: Vec<Value> = folders.iter().map(|c| c.to_json()).collect();
 
     let ciphers = Cipher::find_by_user(&user.uuid, &conn);
-    let ciphers_json: Vec<Value> = ciphers.iter().map(|c| c.to_json()).collect();
+    let ciphers_json: Vec<Value> = ciphers.iter().map(|c| c.to_json(&conn)).collect();
 
     Ok(Json(json!({
         "Profile": user.to_json(),
@@ -42,7 +50,7 @@ fn sync(headers: Headers, conn: DbConn) -> Result<Json, BadRequest<Json>> {
 fn get_ciphers(headers: Headers, conn: DbConn) -> Result<Json, BadRequest<Json>> {
     let ciphers = Cipher::find_by_user(&headers.user.uuid, &conn);
 
-    let ciphers_json: Vec<Value> = ciphers.iter().map(|c| c.to_json()).collect();
+    let ciphers_json: Vec<Value> = ciphers.iter().map(|c| c.to_json(&conn)).collect();
 
     Ok(Json(json!({
       "Data": ciphers_json,
@@ -58,10 +66,10 @@ fn get_cipher(uuid: String, headers: Headers, conn: DbConn) -> Result<Json, BadR
     };
 
     if cipher.user_uuid != headers.user.uuid {
-        err!("Cipher is now owned by user")
+        err!("Cipher is not owned by user")
     }
 
-    Ok(Json(cipher.to_json()))
+    Ok(Json(cipher.to_json(&conn)))
 }
 
 #[derive(Deserialize, Debug)]
@@ -86,7 +94,15 @@ fn post_ciphers(data: Json<CipherData>, headers: Headers, conn: DbConn) -> Resul
                                  data.favorite.unwrap_or(false));
 
     if let Some(ref folder_id) = data.folderId {
-        // TODO: Validate folder is owned by user
+        match Folder::find_by_uuid(folder_id, &conn) {
+            Some(folder) => {
+                if folder.user_uuid != headers.user.uuid {
+                    err!("Folder is not owned by user")
+                }
+            }
+            None => err!("Folder doesn't exist")
+        }
+
         cipher.folder_uuid = Some(folder_id.clone());
     }
 
@@ -107,7 +123,7 @@ fn post_ciphers(data: Json<CipherData>, headers: Headers, conn: DbConn) -> Resul
 
     cipher.save(&conn);
 
-    Ok(Json(cipher.to_json()))
+    Ok(Json(cipher.to_json(&conn)))
 }
 
 fn value_from_data(data: &CipherData) -> Result<Value, &'static str> {
@@ -180,48 +196,77 @@ fn post_ciphers_import(data: Json<Value>, headers: Headers, conn: DbConn) -> Res
 
 #[post("/ciphers/<uuid>/attachment", format = "multipart/form-data", data = "<data>")]
 fn post_attachment(uuid: String, data: Data, content_type: &ContentType, headers: Headers, conn: DbConn) -> Result<Json, BadRequest<Json>> {
-    // TODO: Check if cipher exists
+    let cipher = match Cipher::find_by_uuid(&uuid, &conn) {
+        Some(cipher) => cipher,
+        None => err!("Cipher doesn't exist")
+    };
 
-    let mut params = content_type.params();
-    let boundary_pair = params.next().expect("No boundary provided"); // ("boundary", "----WebKitFormBoundary...")
-    let boundary = boundary_pair.1;
-
-    use data_encoding::BASE64URL;
-    use crypto;
-    use CONFIG;
-
-    // TODO: Maybe use the same format as the official server?
-    let attachment_id = BASE64URL.encode(&crypto::get_random_64());
-    let path = format!("{}/{}/{}", CONFIG.attachments_folder,
-                       headers.user.uuid, attachment_id);
-    println!("Path {:#?}", path);
-
-    let mut mp = Multipart::with_body(data.open(), boundary);
-    match mp.save().with_dir(path).into_entries() {
-        Some(entries) => {
-            println!("Entries {:#?}", entries);
-
-            let saved_file = &entries.files["data"][0]; // Only one file at a time
-            let file_name = &saved_file.filename; // This is provided by the client, don't trust it
-            let file_size = &saved_file.size;
-        }
-        None => err!("No data entries")
+    if cipher.user_uuid != headers.user.uuid {
+        err!("Cipher is not owned by user")
     }
 
-    err!("Not implemented")
+    let mut params = content_type.params();
+    let boundary_pair = params.next().expect("No boundary provided");
+    let boundary = boundary_pair.1;
+
+    let base_path = Path::new(&CONFIG.attachments_folder).join(&cipher.uuid);
+
+    Multipart::with_body(data.open(), boundary).foreach_entry(|mut field| {
+        let name = field.headers.filename.unwrap(); // This is provided by the client, don't trust it
+
+        let file_name = HEXLOWER.encode(&crypto::get_random(vec![0; 10]));
+        let path = base_path.join(&file_name);
+
+        let size = match field.data.save()
+            .memory_threshold(0)
+            .size_limit(None)
+            .with_path(path) {
+            SaveResult::Full(SavedData::File(path, size)) => size as i32,
+            _ => return
+        };
+
+        let attachment = Attachment::new(file_name, cipher.uuid.clone(), name, size);
+        println!("Attachment: {:#?}", attachment);
+        attachment.save(&conn);
+    });
+
+    Ok(Json(cipher.to_json(&conn)))
+}
+
+#[post("/ciphers/<uuid>/attachment/<attachment_id>/delete", data = "<data>")]
+fn delete_attachment_post(uuid: String, attachment_id: String, data: Json<Value>, headers: Headers, conn: DbConn) -> Result<(), BadRequest<Json>> {
+    // Data contains a json object with the id, but we don't need it
+    delete_attachment(uuid, attachment_id, headers, conn)
 }
 
 #[delete("/ciphers/<uuid>/attachment/<attachment_id>")]
-fn delete_attachment(uuid: String, attachment_id: String, headers: Headers, conn: DbConn) -> Result<Json, BadRequest<Json>> {
-    if uuid != headers.user.uuid {
-        err!("Permission denied")
+fn delete_attachment(uuid: String, attachment_id: String, headers: Headers, conn: DbConn) -> Result<(), BadRequest<Json>> {
+    let attachment = match Attachment::find_by_id(&attachment_id, &conn) {
+        Some(attachment) => attachment,
+        None => err!("Attachment doesn't exist")
+    };
+
+    if attachment.cipher_uuid != uuid {
+        err!("Attachment from other cipher")
+    }
+
+    let cipher = match Cipher::find_by_uuid(&uuid, &conn) {
+        Some(cipher) => cipher,
+        None => err!("Cipher doesn't exist")
+    };
+
+    if cipher.user_uuid != headers.user.uuid {
+        err!("Cipher is not owned by user")
     }
 
     // Delete file
+    let file = attachment.get_file_path();
+    util::delete_file(&file);
 
     // Delete entry in cipher
+    attachment.delete(&conn);
 
-    err!("Not implemented")
+    Ok(())
 }
 
 #[post("/ciphers/<uuid>")]

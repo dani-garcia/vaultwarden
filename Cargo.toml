@@ -17,7 +17,7 @@ rocket_contrib = "0.3.6"
 reqwest = "0.8.4"
 
 # multipart/form-data support
-multipart = "0.13.6"
+multipart = "0.14.1"
 
 # A generic serialization/deserialization framework
 serde = "1.0.27"
@@ -26,15 +26,15 @@ serde_json = "1.0.9"
 
 # A safe, extensible ORM and Query builder
 # If tables need more than 16 columns, add feature "large-tables"
-diesel = { version = "1.1.1", features = ["sqlite", "chrono"] }
-diesel_migrations = {version = "1.1.0", features = ["sqlite"] }
+diesel = { version = "1.1.1", features = ["sqlite", "chrono", "large-tables"] }
+diesel_migrations = { version = "1.1.0", features = ["sqlite"] }
 
 # A generic connection pool
 r2d2 = "0.8.2"
 r2d2-diesel = "1.0.0"
 
 # Crypto library
-ring = { version = "0.11.0", features = ["rsa_signing"]}
+ring = { version = "0.11.0", features = ["rsa_signing"] }
 
 # UUID generation
 uuid = { version = "0.5.1", features = ["v4"] }
