@@ -18,10 +18,6 @@ pub struct Cipher {
     pub folder_uuid: Option<String>,
     pub organization_uuid: Option<String>,
 
-    // Login = 1,
-    // SecureNote = 2,
-    // Card = 3,
-    // Identity = 4
     pub type_: i32,
 
     pub data: String,
@@ -111,6 +107,12 @@ impl Cipher {
     pub fn find_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
         ciphers::table
             .filter(ciphers::user_uuid.eq(user_uuid))
+            .load::<Self>(&**conn).expect("Error loading ciphers")
+    }
+
+    pub fn find_by_folder(folder_uuid: &str, conn: &DbConn) -> Vec<Self> {
+        ciphers::table
+            .filter(ciphers::folder_uuid.eq(folder_uuid))
             .load::<Self>(&**conn).expect("Error loading ciphers")
     }
 }

@@ -94,6 +94,10 @@ fn delete_folder(uuid: String, headers: Headers, conn: DbConn) -> Result<(), Bad
         err!("Folder belongs to another user")
     }
 
+    if !Cipher::find_by_folder(&folder.uuid, &conn).is_empty() {
+        err!("Folder is not empty")
+    }
+
     folder.delete(&conn);
 
     Ok(())
