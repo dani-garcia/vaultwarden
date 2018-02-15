@@ -144,11 +144,23 @@ fn delete_account(data: Json<Value>, headers: Headers, conn: DbConn) -> Result<(
         err!("Invalid password")
     }
 
-    // Delete all ciphers by user_uuid
-    // Delete all devices by user_uuid
-    // Delete user
+    // Delete ciphers and their attachments
+    for cipher in Cipher::find_by_user(&user.uuid, &conn) {
+        for a in Attachment::find_by_cipher(&cipher.uuid, &conn) { a.delete(&conn); }
 
-    err!("Not implemented")
+        cipher.delete(&conn);
+    }
+
+    // Delete folders
+    for f in Folder::find_by_user(&user.uuid, &conn) { f.delete(&conn); }
+
+    // Delete devices
+    for d in Device::find_by_user(&user.uuid, &conn) { d.delete(&conn); }
+
+    // Delete user
+    user.delete(&conn);
+
+    Ok(())
 }
 
 #[get("/accounts/revision-date")]

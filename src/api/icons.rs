@@ -71,7 +71,7 @@ fn get_icon_cached(key: &str, url: &str) -> io::Result<Vec<u8>> {
 
     // Save the currently downloaded icon
     match File::create(path) {
-        Ok(mut f) => { f.write_all(&icon); }
+        Ok(mut f) => { f.write_all(&icon).expect("Error writing icon file"); }
         Err(_) => { /* Continue */ }
     };
 

@@ -258,11 +258,7 @@ fn delete_attachment(uuid: String, attachment_id: String, headers: Headers, conn
         err!("Cipher is not owned by user")
     }
 
-    // Delete file
-    let file = attachment.get_file_path();
-    util::delete_file(&file);
-
-    // Delete entry in cipher
+    // Delete attachment
     attachment.delete(&conn);
 
     Ok(())
@@ -274,13 +270,32 @@ fn post_cipher(uuid: String, headers: Headers, conn: DbConn) -> Result<Json, Bad
 }
 
 #[put("/ciphers/<uuid>")]
-fn put_cipher(uuid: String, headers: Headers, conn: DbConn) -> Result<Json, BadRequest<Json>> { err!("Not implemented") }
+fn put_cipher(uuid: String, headers: Headers, conn: DbConn) -> Result<Json, BadRequest<Json>> {
+    err!("Not implemented")
+}
 
 #[delete("/ciphers/<uuid>")]
-fn delete_cipher(uuid: String, headers: Headers, conn: DbConn) -> Result<Json, BadRequest<Json>> { err!("Not implemented") }
+fn delete_cipher(uuid: String, headers: Headers, conn: DbConn) -> Result<(), BadRequest<Json>> {
+    let cipher = match Cipher::find_by_uuid(&uuid, &conn) {
+        Some(cipher) => cipher,
+        None => err!("Cipher doesn't exist")
+    };
+
+    if cipher.user_uuid != headers.user.uuid {
+        err!("Cipher is not owned by user")
+    }
+
+    // Delete attachments
+    for a in Attachment::find_by_cipher(&cipher.uuid, &conn) { a.delete(&conn); }
+
+    // Delete cipher
+    cipher.delete(&conn);
+
+    Ok(())
+}
 
 #[post("/ciphers/delete", data = "<data>")]
-fn delete_all(data: Json<Value>, headers: Headers, conn: DbConn) -> Result<Json, BadRequest<Json>> {
+fn delete_all(data: Json<Value>, headers: Headers, conn: DbConn) -> Result<(), BadRequest<Json>> {
     let password_hash = data["masterPasswordHash"].as_str().unwrap();
 
     let user = headers.user;
@@ -289,7 +304,15 @@ fn delete_all(data: Json<Value>, headers: Headers, conn: DbConn) -> Result<Json,
         err!("Invalid password")
     }
 
-    // Cipher::delete_from_user(&conn);
+    // Delete ciphers and their attachments
+    for cipher in Cipher::find_by_user(&user.uuid, &conn) {
+        for a in Attachment::find_by_cipher(&cipher.uuid, &conn) { a.delete(&conn); }
 
-    err!("Not implemented")
+        cipher.delete(&conn);
+    }
+
+    // Delete folders
+    for f in Folder::find_by_user(&user.uuid, &conn) { f.delete(&conn); }
+
+    Ok(())
 }

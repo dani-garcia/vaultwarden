@@ -53,7 +53,6 @@ fn init_rocket() -> Rocket {
         .mount("/identity", api::identity_routes())
         .mount("/icons", api::icons_routes())
         .manage(db::init_pool())
-        .attach(DebugFairing)
 }
 
 // Embed the migrations from the migrations folder into the application
@@ -66,7 +65,7 @@ fn main() {
 
     // Make sure the database is up to date (create if it doesn't exist, or run the migrations)
     let connection = db::get_connection().expect("Can't conect to DB");
-    embedded_migrations::run_with_output(&connection, &mut io::stdout());
+    embedded_migrations::run_with_output(&connection, &mut io::stdout()).expect("Can't run migrations");
 
     // Validate location of rsa keys
     if !util::file_exists(&CONFIG.private_rsa_key) {
@@ -112,39 +111,5 @@ impl Config {
             signups_allowed: util::parse_option_string(env::var("SIGNUPS_ALLOWED").ok()).unwrap_or(false),
             password_iterations: util::parse_option_string(env::var("PASSWORD_ITERATIONS").ok()).unwrap_or(100_000),
         }
-    }
-}
-
-struct DebugFairing;
-
-impl Fairing for DebugFairing {
-    fn info(&self) -> Info {
-        Info {
-            name: "Request Debugger",
-            kind: Kind::Request,
-        }
-    }
-
-    fn on_request(&self, req: &mut Request, data: &Data) {
-        let uri_string = req.uri().to_string();
-
-        // Ignore web requests
-        if !uri_string.starts_with("/api") &&
-            !uri_string.starts_with("/identity") {
-            return;
-        }
-
-        /*
-        for header in req.headers().iter() {
-            println!("DEBUG- {:#?} {:#?}", header.name(), header.value());
-        }
-        */
-
-        /*let body_data = data.peek();
-
-        if body_data.len() > 0 {
-            println!("DEBUG- Body Complete: {}", data.peek_complete());
-            println!("DEBUG- {}", String::from_utf8_lossy(body_data));
-        }*/
     }
 }

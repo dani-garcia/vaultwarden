@@ -113,4 +113,10 @@ impl Device {
             .filter(devices::refresh_token.eq(refresh_token))
             .first::<Self>(&**conn).ok()
     }
+
+    pub fn find_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
+        devices::table
+            .filter(devices::user_uuid.eq(user_uuid))
+            .load::<Self>(&**conn).expect("Error loading devices")
+    }
 }

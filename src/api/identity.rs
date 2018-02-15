@@ -41,61 +41,44 @@ fn login(connect_data: Form<ConnectData>, conn: DbConn) -> Result<Json, BadReque
             let username = data.get("username").unwrap();
             let user = match User::find_by_mail(username, &conn) {
                 Some(user) => user,
-                None => err!("Invalid username or password")
+                None => err!("Username or password is incorrect. Try again.")
             };
 
             // Check password
             let password = data.get("password").unwrap();
             if !user.check_valid_password(password) {
-                err!("Invalid username or password")
+                err!("Username or password is incorrect. Try again.")
             }
-
-            /*
-            //TODO: When invalid username or password, return this with a 400 BadRequest:
-            {
-              "error": "invalid_grant",
-              "error_description": "invalid_username_or_password",
-              "ErrorModel": {
-                "Message": "Username or password is incorrect. Try again.",
-                "ValidationErrors": null,
-                "ExceptionMessage": null,
-                "ExceptionStackTrace": null,
-                "InnerExceptionMessage": null,
-                "Object": "error"
-              }
-            }
-            */
 
             // Check if totp code is required and the value is correct
-            let totp_code = util::parse_option_string(data.get("twoFactorToken").map(String::as_ref));
+            let totp_code = util::parse_option_string(data.get("twoFactorToken"));
 
             if !user.check_totp_code(totp_code) {
                 // Return error 400
                 err_json!(json!({
-                        "error" : "invalid_grant",
-                        "error_description" : "Two factor required.",
-                        "TwoFactorProviders" : [ 0 ],
-                        "TwoFactorProviders2" : { "0" : null }
-                    }))
+                    "error" : "invalid_grant",
+                    "error_description" : "Two factor required.",
+                    "TwoFactorProviders" : [ 0 ],
+                    "TwoFactorProviders2" : { "0" : null }
+                }))
             }
 
             // Let's only use the header and ignore the 'devicetype' parameter
             // TODO Get header Device-Type
             let device_type_num = 0;// headers.device_type;
 
-            let (device_id, device_name) = match data.get("client_id").unwrap().as_ref() {
-                "web" => { (format!("web-{}", user.uuid), String::from("web")) }
-                "browser" | "mobile" => {
+            let (device_id, device_name) = match data.is_device {
+                false => { (format!("web-{}", user.uuid), String::from("web")) }
+                true => {
                     (
                         data.get("deviceidentifier").unwrap().clone(),
                         data.get("devicename").unwrap().clone(),
                     )
                 }
-                _ => err!("Invalid client id")
             };
 
             // Find device or create new
-            let device = match Device::find_by_uuid(&device_id, &conn) {
+            match Device::find_by_uuid(&device_id, &conn) {
                 Some(device) => {
                     // Check if valid device
                     if device.user_uuid != user.uuid {
@@ -109,10 +92,7 @@ fn login(connect_data: Form<ConnectData>, conn: DbConn) -> Result<Json, BadReque
                     // Create new device
                     Device::new(device_id, user.uuid, device_name, device_type_num)
                 }
-            };
-
-
-            device
+            }
         }
     };
 
@@ -120,7 +100,6 @@ fn login(connect_data: Form<ConnectData>, conn: DbConn) -> Result<Json, BadReque
     let (access_token, expires_in) = device.refresh_tokens(&user);
     device.save(&conn);
 
-    // TODO: when to include :privateKey and :TwoFactorToken?
     Ok(Json(json!({
         "access_token": access_token,
         "expires_in": expires_in,
@@ -134,8 +113,12 @@ fn login(connect_data: Form<ConnectData>, conn: DbConn) -> Result<Json, BadReque
 #[derive(Debug)]
 struct ConnectData {
     grant_type: GrantType,
+    is_device: bool,
     data: HashMap<String, String>,
 }
+
+#[derive(Debug, Copy, Clone)]
+enum GrantType { RefreshToken, Password }
 
 impl ConnectData {
     fn get(&self, key: &str) -> Option<&String> {
@@ -143,18 +126,9 @@ impl ConnectData {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
-enum GrantType { RefreshToken, Password }
-
-
 const VALUES_REFRESH: [&str; 1] = ["refresh_token"];
-
-const VALUES_PASSWORD: [&str; 5] = ["client_id",
-    "grant_type", "password", "scope", "username"];
-
-const VALUES_DEVICE: [&str; 3] = ["deviceidentifier",
-    "devicename", "devicetype"];
-
+const VALUES_PASSWORD: [&str; 5] = ["client_id", "grant_type", "password", "scope", "username"];
+const VALUES_DEVICE: [&str; 3] = ["deviceidentifier", "devicename", "devicetype"];
 
 impl<'f> FromForm<'f> for ConnectData {
     type Error = String;
@@ -164,62 +138,40 @@ impl<'f> FromForm<'f> for ConnectData {
 
         // Insert data into map
         for (key, value) in items {
-            let decoded_key: String = match key.url_decode() {
-                Ok(decoded) => decoded,
-                Err(_) => return Err(format!("Error decoding key: {}", value)),
+            match (key.url_decode(), value.url_decode()) {
+                (Ok(key), Ok(value)) => data.insert(key.to_lowercase(), value),
+                _ => return Err(format!("Error decoding key or value")),
             };
-
-            let decoded_value: String = match value.url_decode() {
-                Ok(decoded) => decoded,
-                Err(_) => return Err(format!("Error decoding value: {}", value)),
-            };
-
-            data.insert(decoded_key.to_lowercase(), decoded_value);
         }
 
         // Validate needed values
-        let grant_type =
-            match data.get("grant_type").map(|s| &s[..]) {
+        let (grant_type, is_device) =
+            match data.get("grant_type").map(String::as_ref) {
                 Some("refresh_token") => {
-                    // Check if refresh token is proviced
-                    if let Err(msg) = check_values(&data, &VALUES_REFRESH) {
-                        return Err(msg);
-                    }
-
-                    GrantType::RefreshToken
+                    check_values(&data, &VALUES_REFRESH)?;
+                    (GrantType::RefreshToken, false) // Device doesn't matter here
                 }
                 Some("password") => {
-                    // Check if basic values are provided
-                    if let Err(msg) = check_values(&data, &VALUES_PASSWORD) {
-                        return Err(msg);
-                    }
+                    check_values(&data, &VALUES_PASSWORD)?;
 
-                    // Check that device values are present on device
-                    match data.get("client_id").unwrap().as_ref() {
-                        "browser" | "mobile" => {
-                            if let Err(msg) = check_values(&data, &VALUES_DEVICE) {
-                                return Err(msg);
-                            }
-                        }
-                        _ => {}
-                    }
-
-                    GrantType::Password
+                    let is_device = match data.get("client_id").unwrap().as_ref() {
+                        "browser" | "mobile" => check_values(&data, &VALUES_DEVICE)?,
+                        _ => false
+                    };
+                    (GrantType::Password, is_device)
                 }
-
                 _ => return Err(format!("Grant type not supported"))
             };
 
-        Ok(ConnectData { grant_type, data })
+        Ok(ConnectData { grant_type, is_device, data })
     }
 }
 
-fn check_values(map: &HashMap<String, String>, values: &[&str]) -> Result<(), String> {
+fn check_values(map: &HashMap<String, String>, values: &[&str]) -> Result<bool, String> {
     for value in values {
         if !map.contains_key(*value) {
             return Err(format!("{} cannot be blank", value));
         }
     }
-
-    Ok(())
+    Ok(true)
 }

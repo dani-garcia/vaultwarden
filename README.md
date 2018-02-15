@@ -20,7 +20,7 @@ on other systems use their respective package managers.
 
 Then run:
 ```
-cargo run
+cargo run --bin bitwarden_rs
 # or
 cargo build
 ```

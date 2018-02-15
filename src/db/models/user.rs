@@ -3,6 +3,7 @@ use serde_json::Value as JsonValue;
 
 use uuid::Uuid;
 
+use crypto;
 use CONFIG;
 
 #[derive(Debug, Identifiable, Queryable, Insertable)]
@@ -38,8 +39,6 @@ impl User {
         let now = Utc::now().naive_utc();
         let email = mail.to_lowercase();
 
-        use crypto;
-
         let iterations = CONFIG.password_iterations;
         let salt = crypto::get_random_64();
         let password_hash = crypto::hash_password(password.as_bytes(), &salt, iterations as u32);
@@ -70,16 +69,21 @@ impl User {
     }
 
     pub fn check_valid_password(&self, password: &str) -> bool {
-        use crypto;
-
         crypto::verify_password_hash(password.as_bytes(),
                                      &self.salt,
                                      &self.password_hash,
                                      self.password_iterations as u32)
     }
 
+    pub fn check_valid_recovery_code(&self, recovery_code: &str) -> bool {
+        if let Some(ref totp_recover) = self.totp_recover {
+            recovery_code == totp_recover.to_lowercase()
+        } else {
+            false
+        }
+    }
+
     pub fn set_password(&mut self, password: &str) {
-        use crypto;
         self.password_hash = crypto::hash_password(password.as_bytes(),
                                                    &self.salt,
                                                    self.password_iterations as u32);
@@ -145,6 +149,15 @@ impl User {
             .values(&*self)
             .execute(&**conn) {
             Ok(1) => true, // One row inserted
+            _ => false,
+        }
+    }
+
+    pub fn delete(self, conn: &DbConn) -> bool {
+        match diesel::delete(users::table.filter(
+            users::uuid.eq(self.uuid)))
+            .execute(&**conn) {
+            Ok(1) => true, // One row deleted
             _ => false,
         }
     }

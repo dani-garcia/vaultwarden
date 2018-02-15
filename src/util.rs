@@ -3,9 +3,18 @@
 ///
 #[macro_export]
 macro_rules! err {
-    ($expr:expr) => {{
-        err_json!(json!($expr));
-    }}
+    ($err:expr, $err_desc:expr, $msg:expr) => {
+        err_json!(json!({
+          "error": $err,
+          "error_description": $err_desc,
+          "ErrorModel": {
+            "Message": $msg,
+            "ValidationErrors": null,
+            "Object": "error"
+          }
+        }))
+    };
+    ($msg:expr) => { err!("default_error", "default_error_description", $msg) }
 }
 
 #[macro_export]
@@ -49,7 +58,13 @@ pub fn read_file(path: &str) -> Result<Vec<u8>, String> {
 }
 
 pub fn delete_file(path: &str) -> bool {
-    fs::remove_file(path).is_ok()
+    let res = fs::remove_file(path).is_ok();
+
+    if let Some(parent) = Path::new(path).parent() {
+        fs::remove_dir(parent); // Only removes if the directory is empty
+    }
+
+    res
 }
 
 
@@ -88,8 +103,8 @@ pub fn upcase_first(s: &str) -> String {
     }
 }
 
-pub fn parse_option_string<S, T>(string: Option<S>) -> Option<T> where S: Into<String>, T: FromStr {
-    if let Some(Ok(value)) = string.map(|s| s.into().parse::<T>()) {
+pub fn parse_option_string<S, T>(string: Option<S>) -> Option<T> where S: AsRef<str>, T: FromStr {
+    if let Some(Ok(value)) = string.map(|s| s.as_ref().parse::<T>()) {
         Some(value)
     } else {
         None

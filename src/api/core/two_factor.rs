@@ -44,6 +44,39 @@ fn get_recover(data: Json<Value>, headers: Headers) -> Result<Json, BadRequest<J
     })))
 }
 
+#[post("/two-factor/recover", data = "<data>")]
+fn recover(data: Json<Value>, conn: DbConn) -> Result<Json, BadRequest<Json>> {
+    println!("{:#?}", data);
+
+    use db::models::User;
+
+    // Get the user
+    let username = data["email"].as_str().unwrap();
+    let mut user = match User::find_by_mail(username, &conn) {
+        Some(user) => user,
+        None => err!("Username or password is incorrect. Try again.")
+    };
+
+    // Check password
+    let password = data["masterPasswordHash"].as_str().unwrap();
+    if !user.check_valid_password(password) {
+        err!("Username or password is incorrect. Try again.")
+    }
+
+    // Check if recovery code is correct
+    let recovery_code = data["recoveryCode"].as_str().unwrap();
+
+    if !user.check_valid_recovery_code(recovery_code) {
+        err!("Recovery code is incorrect. Try again.")
+    }
+
+    user.totp_secret = None;
+    user.totp_recover = None;
+    user.save(&conn);
+
+    Ok(Json(json!({})))
+}
+
 #[post("/two-factor/get-authenticator", data = "<data>")]
 fn generate_authenticator(data: Json<Value>, headers: Headers) -> Result<Json, BadRequest<Json>> {
     let password_hash = data["masterPasswordHash"].as_str().unwrap();
@@ -71,8 +104,8 @@ fn activate_authenticator(data: Json<Value>, headers: Headers, conn: DbConn) -> 
     if !headers.user.check_valid_password(password_hash) {
         err!("Invalid password");
     }
-    let token = data["token"].as_str(); // 123456
-    let key = data["key"].as_str().unwrap(); // YI4SKBIXG32LOA6VFKH2NI25VU3E4QML
+    let token = data["token"].as_str();
+    let key = data["key"].as_str().unwrap();
 
     // Validate key as base32 and 20 bytes length
     let decoded_key: Vec<u8> = match BASE32.decode(key.as_bytes()) {

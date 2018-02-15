@@ -93,7 +93,6 @@ use db::DbConn;
 use db::models::{User, Device};
 
 pub struct Headers {
-    pub device_type: Option<i32>,
     pub host: String,
     pub device: Device,
     pub user: User,
@@ -105,29 +104,19 @@ impl<'a, 'r> FromRequest<'a, 'r> for Headers {
     fn from_request(request: &'a Request<'r>) -> request::Outcome<Self, Self::Error> {
         let headers = request.headers();
 
-        // Get device type
-        let device_type = match headers.get_one("Device-Type")
-            .map(|s| s.parse::<i32>()) {
-            Some(Ok(dt)) => Some(dt),// dt,
-            _ => None // return err_handler!("Device-Type is invalid or missing")
-        };
-
         // Get host
         let host = match headers.get_one("Host") {
             Some(host) => format!("http://{}", host), // TODO: Check if HTTPS
-            _ => String::new() // return err_handler!("Host is invalid or missing")
+            _ => String::new()
         };
 
         // Get access_token
         let access_token: &str = match request.headers().get_one("Authorization") {
             Some(a) => {
-                let split: Option<&str> = a.rsplit("Bearer ").next();
-
-                if split.is_none() {
-                    err_handler!("No access token provided")
+                match a.rsplit("Bearer ").next() {
+                    Some(split) => split,
+                    None => err_handler!("No access token provided")
                 }
-
-                split.unwrap()
             }
             None => err_handler!("No access token provided")
         };
@@ -135,10 +124,7 @@ impl<'a, 'r> FromRequest<'a, 'r> for Headers {
         // Check JWT token is valid and get device and user from it
         let claims: JWTClaims = match decode_jwt(access_token) {
             Ok(claims) => claims,
-            Err(msg) => {
-                println!("Invalid claim: {}", msg);
-                err_handler!("Invalid claim")
-            }
+            Err(msg) => err_handler!("Invalid claim")
         };
 
         let device_uuid = claims.device;
@@ -163,6 +149,6 @@ impl<'a, 'r> FromRequest<'a, 'r> for Headers {
             err_handler!("Invalid security stamp")
         }
 
-        Outcome::Success(Headers { device_type, host, device, user })
+        Outcome::Success(Headers { host, device, user })
     }
 }

@@ -63,6 +63,10 @@ impl Attachment {
     }
 
     pub fn delete(self, conn: &DbConn) -> bool {
+        use util;
+
+        util::delete_file(&self.get_file_path());
+
         match diesel::delete(attachments::table.filter(
             attachments::id.eq(self.id)))
             .execute(&**conn) {

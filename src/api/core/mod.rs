@@ -43,6 +43,7 @@ pub fn routes() -> Vec<Route> {
 
         get_twofactor,
         get_recover,
+        recover,
         generate_authenticator,
         activate_authenticator,
         disable_authenticator,
@@ -107,8 +108,7 @@ fn post_eq_domains(data: Json<EquivDomainData>, headers: Headers, conn: DbConn) 
 
     let user = headers.user;
 
-
-    //BODY. "{\"ExcludedGlobalEquivalentDomains\":[2],\"EquivalentDomains\":[[\"uoc.edu\",\"uoc.es\"]]}"
+    //BODY. "{\"ExcludedGlobalEquivalentDomains\":[2],\"EquivalentDomains\":[[\"example.org\",\"example.net\"]]}"
 
     err!("Not implemented")
 }
