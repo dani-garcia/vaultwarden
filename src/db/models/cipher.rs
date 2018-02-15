@@ -57,7 +57,7 @@ use db::schema::ciphers;
 
 /// Database methods
 impl Cipher {
-    pub fn to_json(&self, conn: &DbConn) -> JsonValue {
+    pub fn to_json(&self, host: &str, conn: &DbConn) -> JsonValue {
         use serde_json;
         use util::format_date;
         use super::Attachment;
@@ -65,7 +65,7 @@ impl Cipher {
         let data_json: JsonValue = serde_json::from_str(&self.data).unwrap();
 
         let attachments = Attachment::find_by_cipher(&self.uuid, conn);
-        let attachments_json: Vec<JsonValue> = attachments.iter().map(|c| c.to_json()).collect();
+        let attachments_json: Vec<JsonValue> = attachments.iter().map(|c| c.to_json(host)).collect();
 
         json!({
             "Id": self.uuid,

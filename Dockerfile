@@ -47,11 +47,8 @@ RUN mkdir /data
 VOLUME /data
 EXPOSE 80
 
-# Copies the files from the context (migrations, web-vault, ...)
+# Copies the files from the context (env file and web-vault)
 # and the binary from the "build" stage to the current stage
-
-# TODO Only needs web-vault and .env
-# COPY . .
 COPY .env .
 COPY web-vault ./web-vault
 COPY --from=build app/target/release/bitwarden_rs .

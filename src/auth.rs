@@ -94,6 +94,7 @@ use db::models::{User, Device};
 
 pub struct Headers {
     pub device_type: Option<i32>,
+    pub host: String,
     pub device: Device,
     pub user: User,
 }
@@ -109,6 +110,12 @@ impl<'a, 'r> FromRequest<'a, 'r> for Headers {
             .map(|s| s.parse::<i32>()) {
             Some(Ok(dt)) => Some(dt),// dt,
             _ => None // return err_handler!("Device-Type is invalid or missing")
+        };
+
+        // Get host
+        let host = match headers.get_one("Host") {
+            Some(host) => format!("http://{}", host), // TODO: Check if HTTPS
+            _ => String::new() // return err_handler!("Host is invalid or missing")
         };
 
         // Get access_token
@@ -156,6 +163,6 @@ impl<'a, 'r> FromRequest<'a, 'r> for Headers {
             err_handler!("Invalid security stamp")
         }
 
-        Outcome::Success(Headers { device_type, device, user })
+        Outcome::Success(Headers { device_type, host, device, user })
     }
 }

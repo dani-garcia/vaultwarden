@@ -23,13 +23,13 @@ use CONFIG;
 
 #[get("/sync")]
 fn sync(headers: Headers, conn: DbConn) -> Result<Json, BadRequest<Json>> {
-    let user = headers.user;
+    let user = &headers.user;
 
     let folders = Folder::find_by_user(&user.uuid, &conn);
     let folders_json: Vec<Value> = folders.iter().map(|c| c.to_json()).collect();
 
     let ciphers = Cipher::find_by_user(&user.uuid, &conn);
-    let ciphers_json: Vec<Value> = ciphers.iter().map(|c| c.to_json(&conn)).collect();
+    let ciphers_json: Vec<Value> = ciphers.iter().map(|c| c.to_json(&headers.host, &conn)).collect();
 
     Ok(Json(json!({
         "Profile": user.to_json(),
@@ -49,7 +49,7 @@ fn sync(headers: Headers, conn: DbConn) -> Result<Json, BadRequest<Json>> {
 fn get_ciphers(headers: Headers, conn: DbConn) -> Result<Json, BadRequest<Json>> {
     let ciphers = Cipher::find_by_user(&headers.user.uuid, &conn);
 
-    let ciphers_json: Vec<Value> = ciphers.iter().map(|c| c.to_json(&conn)).collect();
+    let ciphers_json: Vec<Value> = ciphers.iter().map(|c| c.to_json(&headers.host, &conn)).collect();
 
     Ok(Json(json!({
       "Data": ciphers_json,
@@ -68,7 +68,7 @@ fn get_cipher(uuid: String, headers: Headers, conn: DbConn) -> Result<Json, BadR
         err!("Cipher is not owned by user")
     }
 
-    Ok(Json(cipher.to_json(&conn)))
+    Ok(Json(cipher.to_json(&headers.host, &conn)))
 }
 
 #[derive(Deserialize, Debug)]
@@ -122,7 +122,7 @@ fn post_ciphers(data: Json<CipherData>, headers: Headers, conn: DbConn) -> Resul
 
     cipher.save(&conn);
 
-    Ok(Json(cipher.to_json(&conn)))
+    Ok(Json(cipher.to_json(&headers.host, &conn)))
 }
 
 fn value_from_data(data: &CipherData) -> Result<Value, &'static str> {
@@ -229,7 +229,7 @@ fn post_attachment(uuid: String, data: Data, content_type: &ContentType, headers
         attachment.save(&conn);
     });
 
-    Ok(Json(cipher.to_json(&conn)))
+    Ok(Json(cipher.to_json(&headers.host, &conn)))
 }
 
 #[post("/ciphers/<uuid>/attachment/<attachment_id>/delete", data = "<_data>")]
