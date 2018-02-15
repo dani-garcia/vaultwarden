@@ -138,11 +138,11 @@ use db::schema::users;
 
 /// Database methods
 impl User {
-    pub fn save(&self, conn: &DbConn) -> bool {
-        // TODO: Update modified date
+    pub fn save(&mut self, conn: &DbConn) -> bool {
+        self.updated_at = Utc::now().naive_utc();
 
         match diesel::replace_into(users::table) // Insert or update
-            .values(self)
+            .values(&*self)
             .execute(&**conn) {
             Ok(1) => true, // One row inserted
             _ => false,

@@ -82,11 +82,11 @@ impl Cipher {
         })
     }
 
-    pub fn save(&self, conn: &DbConn) -> bool {
-        // TODO: Update modified date
+    pub fn save(&mut self, conn: &DbConn) -> bool {
+        self.updated_at = Utc::now().naive_utc();
 
         match diesel::replace_into(ciphers::table)
-            .values(self)
+            .values(&*self)
             .execute(&**conn) {
             Ok(1) => true, // One row inserted
             _ => false,

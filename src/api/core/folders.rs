@@ -41,7 +41,7 @@ fn post_folders(data: Json<Value>, headers: Headers, conn: DbConn) -> Result<Jso
         err!("Invalid name")
     }
 
-    let folder = Folder::new(headers.user.uuid.clone(), name.unwrap().into());
+    let mut folder = Folder::new(headers.user.uuid.clone(), name.unwrap().into());
 
     folder.save(&conn);
 

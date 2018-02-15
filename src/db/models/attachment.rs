@@ -32,10 +32,7 @@ impl Attachment {
     pub fn to_json(&self) -> JsonValue {
         use util::get_display_size;
 
-        // TODO: Change all references to localhost (maybe put it in .env?)
-        let host = "http://localhost:8000";
-
-        let web_path = format!("{}/attachments/{}/{}", host, self.cipher_uuid, self.id);
+        let web_path = format!("/attachments/{}/{}", self.cipher_uuid, self.id);
         let display_size = get_display_size(self.file_size);
 
         json!({
@@ -57,8 +54,6 @@ use db::schema::attachments;
 /// Database methods
 impl Attachment {
     pub fn save(&self, conn: &DbConn) -> bool {
-        // TODO: Update modified date
-
         match diesel::replace_into(attachments::table)
             .values(self)
             .execute(&**conn) {
