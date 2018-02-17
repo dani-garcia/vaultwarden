@@ -71,7 +71,7 @@ use rocket_contrib::{Json, Value};
 
 use db::DbConn;
 
-use api::JsonResult;
+use api::{JsonResult, EmptyResult};
 use auth::Headers;
 
 #[put("/devices/identifier/<uuid>/clear-token")]
@@ -88,23 +88,54 @@ fn put_device_token(uuid: String, conn: DbConn) -> JsonResult {
 #[derive(Deserialize, Debug)]
 #[allow(non_snake_case)]
 struct EquivDomainData {
-    ExcludedGlobalEquivalentDomains: Vec<i32>,
-    EquivalentDomains: Vec<Vec<String>>,
+    ExcludedGlobalEquivalentDomains: Option<Vec<i32>>,
+    EquivalentDomains: Option<Vec<Vec<String>>>,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+#[allow(non_snake_case)]
+struct GlobalDomain {
+    Type: i32,
+    Domains: Vec<String>,
+    Excluded: bool,
+}
+
+const GLOBAL_DOMAINS: &'static str = include_str!("global_domains.json");
+
 #[get("/settings/domains")]
-fn get_eq_domains() -> JsonResult {
-    err!("Not implemented")
+fn get_eq_domains(headers: Headers, conn: DbConn) -> JsonResult {
+    let user = headers.user;
+    use serde_json::from_str;
+
+    let equivalent_domains: Vec<Vec<String>> = from_str(&user.equivalent_domains).unwrap();
+    let excluded_globals: Vec<i32> = from_str(&user.excluded_globals).unwrap();
+
+    let mut globals: Vec<GlobalDomain> = from_str(GLOBAL_DOMAINS).unwrap();
+
+    for global in &mut globals {
+        global.Excluded = excluded_globals.contains(&global.Type);
+    }
+
+    Ok(Json(json!({
+        "EquivalentDomains": equivalent_domains,
+        "GlobalEquivalentDomains": globals
+    })))
 }
 
 #[post("/settings/domains", data = "<data>")]
-fn post_eq_domains(data: Json<EquivDomainData>, headers: Headers, conn: DbConn) -> JsonResult {
-    let excluded_globals = &data.ExcludedGlobalEquivalentDomains;
-    let equivalent_domains = &data.EquivalentDomains;
+fn post_eq_domains(data: Json<EquivDomainData>, headers: Headers, conn: DbConn) -> EmptyResult {
+    let data: EquivDomainData = data.into_inner();
 
-    let user = headers.user;
+    let excluded_globals = data.ExcludedGlobalEquivalentDomains.unwrap_or(Vec::new());
+    let equivalent_domains = data.EquivalentDomains.unwrap_or(Vec::new());
 
-    //BODY. "{\"ExcludedGlobalEquivalentDomains\":[2],\"EquivalentDomains\":[[\"example.org\",\"example.net\"]]}"
+    let mut user = headers.user;
+    use serde_json::to_string;
 
-    err!("Not implemented")
+    user.excluded_globals = to_string(&excluded_globals).unwrap_or("[]".to_string());
+    user.equivalent_domains = to_string(&equivalent_domains).unwrap_or("[]".to_string());
+
+    user.save(&conn);
+
+    Ok(())
 }
