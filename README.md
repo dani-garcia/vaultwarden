@@ -47,7 +47,7 @@ Clone the web-vault outside the project:
 git clone https://github.com/bitwarden/web.git web-vault
 ```
 
-Modify `web-vault/settings.json` to look like this:
+Modify `web-vault/settings.Production.json` to look like this:
 ```json
 {
   "appSettings": {

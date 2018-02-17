@@ -16,9 +16,11 @@ pub fn routes() -> Vec<Route> {
 
 #[get("/<domain>/icon.png")]
 fn icon(domain: String) -> Content<Vec<u8>> {
+    let icon_type = ContentType::new("image", "x-icon");
+
     // Validate the domain to avoid directory traversal attacks
     if domain.contains("/") || domain.contains("..") {
-        return Content(ContentType::PNG, get_fallback_icon());
+        return Content(icon_type, get_fallback_icon());
     }
 
     let url = format!("https://icons.bitwarden.com/{}/icon.png", domain);
@@ -26,10 +28,10 @@ fn icon(domain: String) -> Content<Vec<u8>> {
     // Get the icon, or fallback in case of error
     let icon = match get_icon_cached(&domain, &url) {
         Ok(icon) => icon,
-        Err(_) => return Content(ContentType::PNG, get_fallback_icon())
+        Err(_) => return Content(icon_type, get_fallback_icon())
     };
 
-    Content(ContentType::PNG, icon)
+    Content(icon_type, icon)
 }
 
 fn get_icon(url: &str) -> Result<Vec<u8>, reqwest::Error> {
