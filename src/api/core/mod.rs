@@ -1,11 +1,13 @@
 mod accounts;
 mod ciphers;
 mod folders;
+mod organizations;
 mod two_factor;
 
 use self::accounts::*;
 use self::ciphers::*;
 use self::folders::*;
+use self::organizations::*;
 use self::two_factor::*;
 
 pub fn routes() -> Vec<Route> {
@@ -49,7 +51,7 @@ pub fn routes() -> Vec<Route> {
         activate_authenticator,
         disable_authenticator,
 
-        get_collections,
+        get_user_collections,
 
         clear_device_token,
         put_device_token,
@@ -71,17 +73,6 @@ use db::DbConn;
 
 use api::JsonResult;
 use auth::Headers;
-
-
-// GET /api/collections?writeOnly=false
-#[get("/collections")]
-fn get_collections() -> JsonResult {
-    Ok(Json(json!({
-        "Data": [],
-        "Object": "list"
-    })))
-}
-
 
 #[put("/devices/identifier/<uuid>/clear-token")]
 fn clear_device_token(uuid: String, conn: DbConn) -> JsonResult {
