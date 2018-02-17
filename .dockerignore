@@ -9,13 +9,9 @@ data
 .idea
 *.iml
 
-# Git and Docker files
+# Git files
 .git
 .gitignore
-.gitmodules
-Dockerfile
-docker-compose.yml
-.dockerignore
 
 # Documentation
 *.md

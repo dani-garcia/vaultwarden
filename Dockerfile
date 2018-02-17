@@ -10,19 +10,17 @@ FROM rustlang/rust:nightly as build
 RUN apt-get update && \
 	apt-get install -y sqlite3
 
-# Install the diesel_cli tool, to manage migrations
-# RUN cargo install diesel_cli --no-default-features --features sqlite
-	
 # Creates a dummy project used to grab dependencies
 RUN USER=root cargo new --bin app
 WORKDIR /app
 
 # Copies over *only* your manifests and vendored dependencies
 COPY ./Cargo.* ./
-COPY ./_libs ./_libs
+COPY ./libs ./libs
 
 # Builds your dependencies and removes the
 # dummy project, except the target folder
+# This folder contains the compiled dependencies
 RUN cargo build --release
 RUN find . -not -path "./target*" -delete
 

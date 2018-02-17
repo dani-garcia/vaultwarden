@@ -6,11 +6,25 @@ docker build -t dani/bitwarden_rs .
 
 # Run the docker image with a docker volume:
 docker volume create bw_data
-docker run --name bitwarden_rs -it --init --rm --mount source=bw_data,target=/data -p 8000:80 dani/bitwarden_rs
-
-# OR, Run the docker image with a host bind, where <absolute_path> is the absolute path to a folder in the host:
-docker run --name bitwarden_rs -it --init --rm --mount type=bind,source=<absolute_path>,target=/data -p 8000:80 dani/bitwarden_rs
+docker run --name bitwarden_rs -t --init --rm --mount source=bw_data,target=/data -p 8000:80 dani/bitwarden_rs
 ```
+
+#### Other possible Docker options
+
+To run the container in the background, add the `-d` parameter.
+
+To check the logs when in background, run `docker logs bitwarden_rs`
+
+To stop the container in background, run `docker stop bitwarden_rs`
+
+To make sure the container is restarted automatically, add the `--restart unless-stopped` parameter
+
+To run the image with a host bind, change the `--mount` parameter to:
+```
+--mount type=bind,source=<absolute_path>,target=/data
+```
+Where <absolute_path> is an absolute path in the hosts file system (e.g. C:\bitwarden\data)
+
 
 ## How to compile bitwarden_rs
 Install `rust nightly`, in Windows the recommended way is through `rustup`.
@@ -27,6 +41,7 @@ cargo build
 
 ## How to update the web-vault used
 Install `node.js` and either `yarn` or `npm` (usually included with node)
+
 Clone the web-vault outside the project:
 ```
 git clone https://github.com/bitwarden/web.git web-vault
@@ -58,22 +73,6 @@ npx gulp dist:selfHosted
 
 Finally copy the contents of the `web-vault/dist` folder into the `bitwarden_rs/web-vault` folder.
 
-## How to create the RSA signing key for JWT
-Generate the RSA key:
-```
-openssl genrsa -out data/private_rsa_key.pem
-```
-
-Convert the generated key to .DER:
-```
-openssl rsa -in data/private_rsa_key.pem -outform DER -out data/private_rsa_key.der
-```
-
-And generate the public key:
-```
-openssl rsa -in data/private_rsa_key.der -inform DER -RSAPublicKey_out -outform DER -out data/public_rsa_key.der
-```
-
 ## How to recreate database schemas
 Install diesel-cli with cargo:
 ```
@@ -87,8 +86,7 @@ If you want to modify the schemas, create a new migration with:
 diesel migration generate <name>
 ```
 
-Modify the *.sql files, making sure that any changes are reverted
-in the down.sql file.
+Modify the *.sql files, making sure that any changes are reverted in the down.sql file.
 
 Apply the migrations and save the generated schemas as follows:
 ```

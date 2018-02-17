@@ -67,15 +67,55 @@ fn main() {
     let connection = db::get_connection().expect("Can't conect to DB");
     embedded_migrations::run_with_output(&connection, &mut io::stdout()).expect("Can't run migrations");
 
-    // Validate location of rsa keys
-    if !util::file_exists(&CONFIG.private_rsa_key) {
-        panic!("private_rsa_key doesn't exist");
-    }
-    if !util::file_exists(&CONFIG.public_rsa_key) {
-        panic!("public_rsa_key doesn't exist");
-    }
+    check_rsa_keys();
 
     init_rocket().launch();
+}
+
+fn check_rsa_keys() {
+    // If the RSA keys don't exist, try to create them
+    if !util::file_exists(&CONFIG.private_rsa_key)
+        || !util::file_exists(&CONFIG.public_rsa_key) {
+        println!("JWT keys don't exist, checking if OpenSSL is available...");
+        use std::process::{exit, Command};
+
+        Command::new("openssl")
+            .arg("version")
+            .output().unwrap_or_else(|_| {
+            println!("Can't create keys because OpenSSL is not available, make sure it's installed and available on the PATH");
+            exit(1);
+        });
+
+        println!("OpenSSL detected, creating keys...");
+
+        let mut success = Command::new("openssl").arg("genrsa")
+            .arg("-out").arg(&CONFIG.private_rsa_key_pem)
+            .output().expect("Failed to create private pem file")
+            .status.success();
+
+        success &= Command::new("openssl").arg("rsa")
+            .arg("-in").arg(&CONFIG.private_rsa_key_pem)
+            .arg("-outform").arg("DER")
+            .arg("-out").arg(&CONFIG.private_rsa_key)
+            .output().expect("Failed to create private der file")
+            .status.success();
+
+        success &= Command::new("openssl").arg("rsa")
+            .arg("-in").arg(&CONFIG.private_rsa_key)
+            .arg("-inform").arg("DER")
+            .arg("-RSAPublicKey_out")
+            .arg("-outform").arg("DER")
+            .arg("-out").arg(&CONFIG.public_rsa_key)
+            .output().expect("Failed to create public der file")
+            .status.success();
+
+        if success {
+            println!("Keys created correcty.");
+        } else {
+            println!("Error creating keys, exiting...");
+            exit(1);
+        }
+    }
 }
 
 lazy_static! {
@@ -86,10 +126,13 @@ lazy_static! {
 #[derive(Debug)]
 pub struct Config {
     database_url: String,
-    private_rsa_key: String,
-    public_rsa_key: String,
     icon_cache_folder: String,
     attachments_folder: String,
+
+    private_rsa_key: String,
+    private_rsa_key_pem: String,
+    public_rsa_key: String,
+
     web_vault_folder: String,
 
     signups_allowed: bool,
@@ -100,12 +143,18 @@ impl Config {
     fn load() -> Self {
         dotenv::dotenv().ok();
 
+        let df = env::var("DATA_FOLDER").unwrap_or("data".into());
+        let key = env::var("RSA_KEY_NAME").unwrap_or("rsa_key".into());
+
         Config {
-            database_url: env::var("DATABASE_URL").unwrap_or("data/db.sqlite3".into()),
-            private_rsa_key: env::var("PRIVATE_RSA_KEY").unwrap_or("data/private_rsa_key.der".into()),
-            public_rsa_key: env::var("PUBLIC_RSA_KEY").unwrap_or("data/public_rsa_key.der".into()),
-            icon_cache_folder: env::var("ICON_CACHE_FOLDER").unwrap_or("data/icon_cache".into()),
-            attachments_folder: env::var("ATTACHMENTS_FOLDER").unwrap_or("data/attachments".into()),
+            database_url: env::var("DATABASE_URL").unwrap_or(format!("{}/{}", &df, "db.sqlite3")),
+            icon_cache_folder: env::var("ICON_CACHE_FOLDER").unwrap_or(format!("{}/{}", &df, "icon_cache")),
+            attachments_folder: env::var("ATTACHMENTS_FOLDER").unwrap_or(format!("{}/{}", &df, "attachments")),
+
+            private_rsa_key: format!("{}/{}.der", &df, &key),
+            private_rsa_key_pem: format!("{}/{}.pem", &df, &key),
+            public_rsa_key: format!("{}/{}.pub.der", &df, &key),
+
             web_vault_folder: env::var("WEB_VAULT_FOLDER").unwrap_or("web-vault/".into()),
 
             signups_allowed: util::parse_option_string(env::var("SIGNUPS_ALLOWED").ok()).unwrap_or(false),
