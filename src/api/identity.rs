@@ -1,21 +1,23 @@
 use std::collections::HashMap;
 
-use rocket::Route;
-use rocket::request::{Form, FormItems, FromForm};
-use rocket::response::status::BadRequest;
+use rocket::{Route, Outcome};
+use rocket::request::{self, Request, FromRequest, Form, FormItems, FromForm};
 
 use rocket_contrib::Json;
 
 use db::DbConn;
 use db::models::*;
+
 use util;
+
+use api::{JsonResult, EmptyResult};
 
 pub fn routes() -> Vec<Route> {
     routes![ login]
 }
 
 #[post("/connect/token", data = "<connect_data>")]
-fn login(connect_data: Form<ConnectData>, conn: DbConn) -> Result<Json, BadRequest<Json>> {
+fn login(connect_data: Form<ConnectData>, device_type: DeviceType, conn: DbConn) -> JsonResult {
     let data = connect_data.get();
     println!("{:#?}", data);
 
@@ -64,8 +66,7 @@ fn login(connect_data: Form<ConnectData>, conn: DbConn) -> Result<Json, BadReque
             }
 
             // Let's only use the header and ignore the 'devicetype' parameter
-            // TODO Get header Device-Type
-            let device_type_num = 0;// headers.device_type;
+            let device_type_num = device_type.0;
 
             let (device_id, device_name) = match data.is_device {
                 false => { (format!("web-{}", user.uuid), String::from("web")) }
@@ -109,6 +110,22 @@ fn login(connect_data: Form<ConnectData>, conn: DbConn) -> Result<Json, BadReque
         "PrivateKey": user.private_key
     })))
 }
+
+
+struct DeviceType(i32);
+
+impl<'a, 'r> FromRequest<'a, 'r> for DeviceType {
+    type Error = &'static str;
+
+    fn from_request(request: &'a Request<'r>) -> request::Outcome<Self, Self::Error> {
+        let headers = request.headers();
+        let type_opt = headers.get_one("Device-Type");
+        let type_num = util::parse_option_string(type_opt).unwrap_or(0);
+
+        Outcome::Success(DeviceType(type_num))
+    }
+}
+
 
 #[derive(Debug)]
 struct ConnectData {

@@ -1,5 +1,3 @@
-use rocket::response::status::BadRequest;
-
 use rocket_contrib::{Json, Value};
 
 use data_encoding::BASE32;
@@ -9,11 +7,12 @@ use db::DbConn;
 use util;
 use crypto;
 
+use api::{JsonResult, EmptyResult};
 use auth::Headers;
 
 
 #[get("/two-factor")]
-fn get_twofactor(headers: Headers) -> Result<Json, BadRequest<Json>> {
+fn get_twofactor(headers: Headers) -> JsonResult {
     let data = if headers.user.totp_secret.is_none() {
         Value::Null
     } else {
@@ -31,7 +30,7 @@ fn get_twofactor(headers: Headers) -> Result<Json, BadRequest<Json>> {
 }
 
 #[post("/two-factor/get-recover", data = "<data>")]
-fn get_recover(data: Json<Value>, headers: Headers) -> Result<Json, BadRequest<Json>> {
+fn get_recover(data: Json<Value>, headers: Headers) -> JsonResult {
     let password_hash = data["masterPasswordHash"].as_str().unwrap();
 
     if !headers.user.check_valid_password(password_hash) {
@@ -45,7 +44,7 @@ fn get_recover(data: Json<Value>, headers: Headers) -> Result<Json, BadRequest<J
 }
 
 #[post("/two-factor/recover", data = "<data>")]
-fn recover(data: Json<Value>, conn: DbConn) -> Result<Json, BadRequest<Json>> {
+fn recover(data: Json<Value>, conn: DbConn) -> JsonResult {
     println!("{:#?}", data);
 
     use db::models::User;
@@ -78,7 +77,7 @@ fn recover(data: Json<Value>, conn: DbConn) -> Result<Json, BadRequest<Json>> {
 }
 
 #[post("/two-factor/get-authenticator", data = "<data>")]
-fn generate_authenticator(data: Json<Value>, headers: Headers) -> Result<Json, BadRequest<Json>> {
+fn generate_authenticator(data: Json<Value>, headers: Headers) -> JsonResult {
     let password_hash = data["masterPasswordHash"].as_str().unwrap();
 
     if !headers.user.check_valid_password(password_hash) {
@@ -98,7 +97,7 @@ fn generate_authenticator(data: Json<Value>, headers: Headers) -> Result<Json, B
 }
 
 #[post("/two-factor/authenticator", data = "<data>")]
-fn activate_authenticator(data: Json<Value>, headers: Headers, conn: DbConn) -> Result<Json, BadRequest<Json>> {
+fn activate_authenticator(data: Json<Value>, headers: Headers, conn: DbConn) -> JsonResult {
     let password_hash = data["masterPasswordHash"].as_str().unwrap();
 
     if !headers.user.check_valid_password(password_hash) {
@@ -140,7 +139,7 @@ fn activate_authenticator(data: Json<Value>, headers: Headers, conn: DbConn) -> 
 }
 
 #[post("/two-factor/disable", data = "<data>")]
-fn disable_authenticator(data: Json<Value>, headers: Headers, conn: DbConn) -> Result<Json, BadRequest<Json>> {
+fn disable_authenticator(data: Json<Value>, headers: Headers, conn: DbConn) -> JsonResult {
     let _type = &data["type"];
     let password_hash = data["masterPasswordHash"].as_str().unwrap();
 

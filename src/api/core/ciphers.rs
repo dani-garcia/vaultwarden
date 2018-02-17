@@ -2,7 +2,6 @@ use std::path::Path;
 
 use rocket::Data;
 use rocket::http::ContentType;
-use rocket::response::status::BadRequest;
 
 use rocket_contrib::{Json, Value};
 
@@ -17,12 +16,13 @@ use db::models::*;
 use util;
 use crypto;
 
+use api::{JsonResult, EmptyResult};
 use auth::Headers;
 
 use CONFIG;
 
 #[get("/sync")]
-fn sync(headers: Headers, conn: DbConn) -> Result<Json, BadRequest<Json>> {
+fn sync(headers: Headers, conn: DbConn) -> JsonResult {
     let user = &headers.user;
 
     let folders = Folder::find_by_user(&user.uuid, &conn);
@@ -46,7 +46,7 @@ fn sync(headers: Headers, conn: DbConn) -> Result<Json, BadRequest<Json>> {
 
 
 #[get("/ciphers")]
-fn get_ciphers(headers: Headers, conn: DbConn) -> Result<Json, BadRequest<Json>> {
+fn get_ciphers(headers: Headers, conn: DbConn) -> JsonResult {
     let ciphers = Cipher::find_by_user(&headers.user.uuid, &conn);
 
     let ciphers_json: Vec<Value> = ciphers.iter().map(|c| c.to_json(&headers.host, &conn)).collect();
@@ -58,7 +58,7 @@ fn get_ciphers(headers: Headers, conn: DbConn) -> Result<Json, BadRequest<Json>>
 }
 
 #[get("/ciphers/<uuid>")]
-fn get_cipher(uuid: String, headers: Headers, conn: DbConn) -> Result<Json, BadRequest<Json>> {
+fn get_cipher(uuid: String, headers: Headers, conn: DbConn) -> JsonResult {
     let cipher = match Cipher::find_by_uuid(&uuid, &conn) {
         Some(cipher) => cipher,
         None => err!("Cipher doesn't exist")
@@ -91,7 +91,7 @@ struct CipherData {
 }
 
 #[post("/ciphers", data = "<data>")]
-fn post_ciphers(data: Json<CipherData>, headers: Headers, conn: DbConn) -> Result<Json, BadRequest<Json>> {
+fn post_ciphers(data: Json<CipherData>, headers: Headers, conn: DbConn) -> JsonResult {
     let user_uuid = headers.user.uuid.clone();
     let favorite = data.favorite.unwrap_or(false);
     let mut cipher = Cipher::new(user_uuid, data.type_, favorite);
@@ -102,7 +102,7 @@ fn post_ciphers(data: Json<CipherData>, headers: Headers, conn: DbConn) -> Resul
     Ok(Json(cipher.to_json(&headers.host, &conn)))
 }
 
-fn update_cipher_from_data(cipher: &mut Cipher, data: &CipherData, headers: &Headers, conn: &DbConn) -> Result<(), BadRequest<Json>> {
+fn update_cipher_from_data(cipher: &mut Cipher, data: &CipherData, headers: &Headers, conn: &DbConn) -> EmptyResult {
     if let Some(ref folder_id) = data.folderId {
         match Folder::find_by_uuid(folder_id, conn) {
             Some(folder) => {
@@ -183,7 +183,7 @@ fn copy_values(from: &Value, to: &mut Value) -> bool {
 }
 
 #[post("/ciphers/import", data = "<data>")]
-fn post_ciphers_import(data: Json<Value>, headers: Headers, conn: DbConn) -> Result<(), BadRequest<Json>> {
+fn post_ciphers_import(data: Json<Value>, headers: Headers, conn: DbConn) -> EmptyResult {
     let folders_value = data["folders"].as_array().unwrap();
     let ciphers_value = data["ciphers"].as_array().unwrap();
     let relations_value = data["folderRelationships"].as_array().unwrap();
@@ -218,12 +218,12 @@ fn post_ciphers_import(data: Json<Value>, headers: Headers, conn: DbConn) -> Res
 }
 
 #[post("/ciphers/<uuid>", data = "<data>")]
-fn post_cipher(uuid: String, data: Json<CipherData>, headers: Headers, conn: DbConn) -> Result<Json, BadRequest<Json>> {
+fn post_cipher(uuid: String, data: Json<CipherData>, headers: Headers, conn: DbConn) -> JsonResult {
     put_cipher(uuid, data, headers, conn)
 }
 
 #[put("/ciphers/<uuid>", data = "<data>")]
-fn put_cipher(uuid: String, data: Json<CipherData>, headers: Headers, conn: DbConn) -> Result<Json, BadRequest<Json>> {
+fn put_cipher(uuid: String, data: Json<CipherData>, headers: Headers, conn: DbConn) -> JsonResult {
     let mut cipher = match Cipher::find_by_uuid(&uuid, &conn) {
         Some(cipher) => cipher,
         None => err!("Cipher doesn't exist")
@@ -243,7 +243,7 @@ fn put_cipher(uuid: String, data: Json<CipherData>, headers: Headers, conn: DbCo
 
 
 #[post("/ciphers/<uuid>/attachment", format = "multipart/form-data", data = "<data>")]
-fn post_attachment(uuid: String, data: Data, content_type: &ContentType, headers: Headers, conn: DbConn) -> Result<Json, BadRequest<Json>> {
+fn post_attachment(uuid: String, data: Data, content_type: &ContentType, headers: Headers, conn: DbConn) -> JsonResult {
     let cipher = match Cipher::find_by_uuid(&uuid, &conn) {
         Some(cipher) => cipher,
         None => err!("Cipher doesn't exist")
@@ -282,13 +282,13 @@ fn post_attachment(uuid: String, data: Data, content_type: &ContentType, headers
 }
 
 #[post("/ciphers/<uuid>/attachment/<attachment_id>/delete", data = "<_data>")]
-fn delete_attachment_post(uuid: String, attachment_id: String, _data: Json<Value>, headers: Headers, conn: DbConn) -> Result<(), BadRequest<Json>> {
+fn delete_attachment_post(uuid: String, attachment_id: String, _data: Json<Value>, headers: Headers, conn: DbConn) -> EmptyResult {
     // Data contains a json object with the id, but we don't need it
     delete_attachment(uuid, attachment_id, headers, conn)
 }
 
 #[delete("/ciphers/<uuid>/attachment/<attachment_id>")]
-fn delete_attachment(uuid: String, attachment_id: String, headers: Headers, conn: DbConn) -> Result<(), BadRequest<Json>> {
+fn delete_attachment(uuid: String, attachment_id: String, headers: Headers, conn: DbConn) -> EmptyResult {
     let attachment = match Attachment::find_by_id(&attachment_id, &conn) {
         Some(attachment) => attachment,
         None => err!("Attachment doesn't exist")
@@ -314,12 +314,12 @@ fn delete_attachment(uuid: String, attachment_id: String, headers: Headers, conn
 }
 
 #[post("/ciphers/<uuid>/delete")]
-fn delete_cipher_post(uuid: String, headers: Headers, conn: DbConn) -> Result<(), BadRequest<Json>> {
+fn delete_cipher_post(uuid: String, headers: Headers, conn: DbConn) -> EmptyResult {
     delete_cipher(uuid, headers, conn)
 }
 
 #[delete("/ciphers/<uuid>")]
-fn delete_cipher(uuid: String, headers: Headers, conn: DbConn) -> Result<(), BadRequest<Json>> {
+fn delete_cipher(uuid: String, headers: Headers, conn: DbConn) -> EmptyResult {
     let cipher = match Cipher::find_by_uuid(&uuid, &conn) {
         Some(cipher) => cipher,
         None => err!("Cipher doesn't exist")
@@ -339,7 +339,7 @@ fn delete_cipher(uuid: String, headers: Headers, conn: DbConn) -> Result<(), Bad
 }
 
 #[post("/ciphers/delete", data = "<data>")]
-fn delete_all(data: Json<Value>, headers: Headers, conn: DbConn) -> Result<(), BadRequest<Json>> {
+fn delete_all(data: Json<Value>, headers: Headers, conn: DbConn) -> EmptyResult {
     let password_hash = data["masterPasswordHash"].as_str().unwrap();
 
     let user = headers.user;

@@ -64,18 +64,18 @@ pub fn routes() -> Vec<Route> {
 ///
 
 use rocket::Route;
-use rocket::response::status::BadRequest;
 
-use rocket_contrib::Json;
+use rocket_contrib::{Json, Value};
 
 use db::DbConn;
 
+use api::JsonResult;
 use auth::Headers;
 
 
 // GET /api/collections?writeOnly=false
 #[get("/collections")]
-fn get_collections() -> Result<Json, BadRequest<Json>> {
+fn get_collections() -> JsonResult {
     Ok(Json(json!({
         "Data": [],
         "Object": "list"
@@ -84,10 +84,14 @@ fn get_collections() -> Result<Json, BadRequest<Json>> {
 
 
 #[put("/devices/identifier/<uuid>/clear-token")]
-fn clear_device_token(uuid: String) -> Result<Json, BadRequest<Json>> { err!("Not implemented") }
+fn clear_device_token(uuid: String, conn: DbConn) -> JsonResult {
+    err!("Not implemented")
+}
 
 #[put("/devices/identifier/<uuid>/token")]
-fn put_device_token(uuid: String) -> Result<Json, BadRequest<Json>> { err!("Not implemented") }
+fn put_device_token(uuid: String, conn: DbConn) -> JsonResult {
+    err!("Not implemented")
+}
 
 
 #[derive(Deserialize, Debug)]
@@ -98,12 +102,12 @@ struct EquivDomainData {
 }
 
 #[get("/settings/domains")]
-fn get_eq_domains() -> Result<Json, BadRequest<Json>> {
+fn get_eq_domains() -> JsonResult {
     err!("Not implemented")
 }
 
 #[post("/settings/domains", data = "<data>")]
-fn post_eq_domains(data: Json<EquivDomainData>, headers: Headers, conn: DbConn) -> Result<Json, BadRequest<Json>> {
+fn post_eq_domains(data: Json<EquivDomainData>, headers: Headers, conn: DbConn) -> JsonResult {
     let excluded_globals = &data.ExcludedGlobalEquivalentDomains;
     let equivalent_domains = &data.EquivalentDomains;
 

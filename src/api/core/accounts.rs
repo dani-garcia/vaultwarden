@@ -1,10 +1,9 @@
-use rocket::response::status::BadRequest;
-
 use rocket_contrib::{Json, Value};
 
 use db::DbConn;
 use db::models::*;
 
+use api::{JsonResult, EmptyResult};
 use auth::Headers;
 
 use CONFIG;
@@ -28,7 +27,7 @@ struct KeysData {
 }
 
 #[post("/accounts/register", data = "<data>")]
-fn register(data: Json<RegisterData>, conn: DbConn) -> Result<(), BadRequest<Json>> {
+fn register(data: Json<RegisterData>, conn: DbConn) -> EmptyResult {
     if !CONFIG.signups_allowed {
         err!(format!("Signups not allowed"))
     }
@@ -62,12 +61,12 @@ fn register(data: Json<RegisterData>, conn: DbConn) -> Result<(), BadRequest<Jso
 }
 
 #[get("/accounts/profile")]
-fn profile(headers: Headers) -> Result<Json, BadRequest<Json>> {
+fn profile(headers: Headers) -> JsonResult {
     Ok(Json(headers.user.to_json()))
 }
 
 #[post("/accounts/keys", data = "<data>")]
-fn post_keys(data: Json<KeysData>, headers: Headers, conn: DbConn) -> Result<Json, BadRequest<Json>> {
+fn post_keys(data: Json<KeysData>, headers: Headers, conn: DbConn) -> JsonResult {
     let mut user = headers.user;
 
     user.private_key = Some(data.encryptedPrivateKey.clone());
@@ -79,7 +78,7 @@ fn post_keys(data: Json<KeysData>, headers: Headers, conn: DbConn) -> Result<Jso
 }
 
 #[post("/accounts/password", data = "<data>")]
-fn post_password(data: Json<Value>, headers: Headers, conn: DbConn) -> Result<(), BadRequest<Json>> {
+fn post_password(data: Json<Value>, headers: Headers, conn: DbConn) -> EmptyResult {
     let key = data["key"].as_str().unwrap();
     let password_hash = data["masterPasswordHash"].as_str().unwrap();
     let new_password_hash = data["newMasterPasswordHash"].as_str().unwrap();
@@ -98,7 +97,7 @@ fn post_password(data: Json<Value>, headers: Headers, conn: DbConn) -> Result<()
 }
 
 #[post("/accounts/security-stamp", data = "<data>")]
-fn post_sstamp(data: Json<Value>, headers: Headers, conn: DbConn) -> Result<(), BadRequest<Json>> {
+fn post_sstamp(data: Json<Value>, headers: Headers, conn: DbConn) -> EmptyResult {
     let password_hash = data["masterPasswordHash"].as_str().unwrap();
 
     let mut user = headers.user;
@@ -114,7 +113,7 @@ fn post_sstamp(data: Json<Value>, headers: Headers, conn: DbConn) -> Result<(), 
 }
 
 #[post("/accounts/email-token", data = "<data>")]
-fn post_email(data: Json<Value>, headers: Headers, conn: DbConn) -> Result<(), BadRequest<Json>> {
+fn post_email(data: Json<Value>, headers: Headers, conn: DbConn) -> EmptyResult {
     let password_hash = data["masterPasswordHash"].as_str().unwrap();
     let new_email = data["newEmail"].as_str().unwrap();
 
@@ -135,7 +134,7 @@ fn post_email(data: Json<Value>, headers: Headers, conn: DbConn) -> Result<(), B
 }
 
 #[post("/accounts/delete", data = "<data>")]
-fn delete_account(data: Json<Value>, headers: Headers, conn: DbConn) -> Result<(), BadRequest<Json>> {
+fn delete_account(data: Json<Value>, headers: Headers, conn: DbConn) -> EmptyResult {
     let password_hash = data["masterPasswordHash"].as_str().unwrap();
 
     let user = headers.user;
@@ -164,7 +163,7 @@ fn delete_account(data: Json<Value>, headers: Headers, conn: DbConn) -> Result<(
 }
 
 #[get("/accounts/revision-date")]
-fn revision_date(headers: Headers) -> Result<String, BadRequest<Json>> {
+fn revision_date(headers: Headers) -> String {
     let revision_date = headers.user.updated_at.timestamp();
-    Ok(revision_date.to_string())
+    revision_date.to_string()
 }

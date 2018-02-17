@@ -7,3 +7,9 @@ pub use self::core::routes as core_routes;
 pub use self::icons::routes as icons_routes;
 pub use self::identity::routes as identity_routes;
 pub use self::web::routes as web_routes;
+
+use rocket::response::status::BadRequest;
+use rocket_contrib::Json;
+
+type JsonResult = Result<Json, BadRequest<Json>>;
+type EmptyResult = Result<(), BadRequest<Json>>;
