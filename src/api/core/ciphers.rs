@@ -92,19 +92,21 @@ struct CipherData {
 
 #[post("/ciphers", data = "<data>")]
 fn post_ciphers(data: Json<CipherData>, headers: Headers, conn: DbConn) -> JsonResult {
+    let data: CipherData = data.into_inner();
+
     let user_uuid = headers.user.uuid.clone();
     let favorite = data.favorite.unwrap_or(false);
     let mut cipher = Cipher::new(user_uuid, data.type_, favorite);
 
-    update_cipher_from_data(&mut cipher, &data, &headers, &conn)?;
+    update_cipher_from_data(&mut cipher, data, &headers, &conn)?;
     cipher.save(&conn);
 
     Ok(Json(cipher.to_json(&headers.host, &conn)))
 }
 
-fn update_cipher_from_data(cipher: &mut Cipher, data: &CipherData, headers: &Headers, conn: &DbConn) -> EmptyResult {
-    if let Some(ref folder_id) = data.folderId {
-        match Folder::find_by_uuid(folder_id, conn) {
+fn update_cipher_from_data(cipher: &mut Cipher, data: CipherData, headers: &Headers, conn: &DbConn) -> EmptyResult {
+    if let Some(folder_id) = data.folderId {
+        match Folder::find_by_uuid(&folder_id, conn) {
             Some(folder) => {
                 if folder.user_uuid != headers.user.uuid {
                     err!("Folder is not owned by user")
@@ -113,12 +115,12 @@ fn update_cipher_from_data(cipher: &mut Cipher, data: &CipherData, headers: &Hea
             None => err!("Folder doesn't exist")
         }
 
-        cipher.folder_uuid = Some(folder_id.clone());
+        cipher.folder_uuid = Some(folder_id);
     }
 
-    if let Some(ref org_id) = data.organizationId {
+    if let Some(org_id) = data.organizationId {
         // TODO: Check if user in org
-        cipher.organization_uuid = Some(org_id.clone());
+        cipher.organization_uuid = Some(org_id);
     }
 
     let mut values = json!({
@@ -127,10 +129,10 @@ fn update_cipher_from_data(cipher: &mut Cipher, data: &CipherData, headers: &Hea
     });
 
     let type_data_opt = match data.type_ {
-        1 => data.login.clone(),
-        2 => data.secureNote.clone(),
-        3 => data.card.clone(),
-        4 => data.identity.clone(),
+        1 => data.login,
+        2 => data.secureNote,
+        3 => data.card,
+        4 => data.identity,
         _ => err!("Invalid type")
     };
 
@@ -184,6 +186,7 @@ fn copy_values(from: &Value, to: &mut Value) -> bool {
 
 #[post("/ciphers/import", data = "<data>")]
 fn post_ciphers_import(data: Json<Value>, headers: Headers, conn: DbConn) -> EmptyResult {
+    let data: Value = data.into_inner();
     let folders_value = data["folders"].as_array().unwrap();
     let ciphers_value = data["ciphers"].as_array().unwrap();
     let relations_value = data["folderRelationships"].as_array().unwrap();
@@ -209,7 +212,7 @@ fn post_ciphers_import(data: Json<Value>, headers: Headers, conn: DbConn) -> Emp
         let favorite = data.favorite.unwrap_or(false);
         let mut cipher = Cipher::new(user_uuid, data.type_, favorite);
 
-        if update_cipher_from_data(&mut cipher, &data, &headers, &conn).is_err() { return; }
+        if update_cipher_from_data(&mut cipher, data, &headers, &conn).is_err() { return; }
 
         cipher.save(&conn);
     });
@@ -224,6 +227,8 @@ fn post_cipher(uuid: String, data: Json<CipherData>, headers: Headers, conn: DbC
 
 #[put("/ciphers/<uuid>", data = "<data>")]
 fn put_cipher(uuid: String, data: Json<CipherData>, headers: Headers, conn: DbConn) -> JsonResult {
+    let data: CipherData = data.into_inner();
+
     let mut cipher = match Cipher::find_by_uuid(&uuid, &conn) {
         Some(cipher) => cipher,
         None => err!("Cipher doesn't exist")
@@ -235,7 +240,7 @@ fn put_cipher(uuid: String, data: Json<CipherData>, headers: Headers, conn: DbCo
 
     cipher.favorite = data.favorite.unwrap_or(false);
 
-    update_cipher_from_data(&mut cipher, &data, &headers, &conn)?;
+    update_cipher_from_data(&mut cipher, data, &headers, &conn)?;
     cipher.save(&conn);
 
     Ok(Json(cipher.to_json(&headers.host, &conn)))
@@ -281,9 +286,8 @@ fn post_attachment(uuid: String, data: Data, content_type: &ContentType, headers
     Ok(Json(cipher.to_json(&headers.host, &conn)))
 }
 
-#[post("/ciphers/<uuid>/attachment/<attachment_id>/delete", data = "<_data>")]
-fn delete_attachment_post(uuid: String, attachment_id: String, _data: Json<Value>, headers: Headers, conn: DbConn) -> EmptyResult {
-    // Data contains a json object with the id, but we don't need it
+#[post("/ciphers/<uuid>/attachment/<attachment_id>/delete")]
+fn delete_attachment_post(uuid: String, attachment_id: String, headers: Headers, conn: DbConn) -> EmptyResult {
     delete_attachment(uuid, attachment_id, headers, conn)
 }
 

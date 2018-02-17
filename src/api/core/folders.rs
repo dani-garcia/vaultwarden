@@ -76,9 +76,8 @@ fn put_folder(uuid: String, data: Json<Value>, headers: Headers, conn: DbConn) -
     Ok(Json(folder.to_json()))
 }
 
-#[post("/folders/<uuid>/delete", data = "<_data>")]
-fn delete_folder_post(uuid: String, _data: Json<Value>, headers: Headers, conn: DbConn) -> EmptyResult {
-    // Data contains a json object with the id, but we don't need it
+#[post("/folders/<uuid>/delete")]
+fn delete_folder_post(uuid: String, headers: Headers, conn: DbConn) -> EmptyResult {
     delete_folder(uuid, headers, conn)
 }
 

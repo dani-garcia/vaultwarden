@@ -28,6 +28,8 @@ struct KeysData {
 
 #[post("/accounts/register", data = "<data>")]
 fn register(data: Json<RegisterData>, conn: DbConn) -> EmptyResult {
+    let data: RegisterData = data.into_inner();
+
     if !CONFIG.signups_allowed {
         err!(format!("Signups not allowed"))
     }
@@ -37,22 +39,22 @@ fn register(data: Json<RegisterData>, conn: DbConn) -> EmptyResult {
         err!("Email already exists")
     }
 
-    let mut user = User::new(data.email.clone(),
-                             data.key.clone(),
-                             data.masterPasswordHash.clone());
+    let mut user = User::new(data.email,
+                             data.key,
+                             data.masterPasswordHash);
 
     // Add extra fields if present
-    if let Some(name) = data.name.clone() {
+    if let Some(name) = data.name {
         user.name = name;
     }
 
-    if let Some(hint) = data.masterPasswordHint.clone() {
+    if let Some(hint) = data.masterPasswordHint {
         user.password_hint = Some(hint);
     }
 
-    if let Some(ref keys) = data.keys {
-        user.private_key = Some(keys.encryptedPrivateKey.clone());
-        user.public_key = Some(keys.publicKey.clone());
+    if let Some(keys) = data.keys {
+        user.private_key = Some(keys.encryptedPrivateKey);
+        user.public_key = Some(keys.publicKey);
     }
 
     user.save(&conn);
@@ -67,10 +69,12 @@ fn profile(headers: Headers) -> JsonResult {
 
 #[post("/accounts/keys", data = "<data>")]
 fn post_keys(data: Json<KeysData>, headers: Headers, conn: DbConn) -> JsonResult {
+    let data: KeysData = data.into_inner();
+
     let mut user = headers.user;
 
-    user.private_key = Some(data.encryptedPrivateKey.clone());
-    user.public_key = Some(data.publicKey.clone());
+    user.private_key = Some(data.encryptedPrivateKey);
+    user.public_key = Some(data.publicKey);
 
     user.save(&conn);
 
