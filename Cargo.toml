@@ -14,7 +14,7 @@ rocket_codegen = "0.3.6"
 rocket_contrib = "0.3.6"
 
 # HTTP client
-reqwest = "0.8.4"
+reqwest = "0.8.5"
 
 # multipart/form-data support
 multipart = "0.14.1"
@@ -37,7 +37,7 @@ r2d2-diesel = "1.0.0"
 ring = { version = "0.11.0", features = ["rsa_signing"] }
 
 # UUID generation
-uuid = { version = "0.5.1", features = ["v4"] }
+uuid = { version = "0.6.0", features = ["v4"] }
 
 # Date and time library for Rust
 chrono = "0.4.0"

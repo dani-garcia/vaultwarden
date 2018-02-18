@@ -7,8 +7,10 @@
 FROM rustlang/rust:nightly as build
 
 # Install the database libraries, in this case just sqlite3
-RUN apt-get update && \
-	apt-get install -y sqlite3
+RUN apt-get update && apt-get install -y\
+    sqlite3\
+    --no-install-recommends\
+ && rm -rf /var/lib/apt/lists/*
 
 # Creates a dummy project used to grab dependencies
 RUN USER=root cargo new --bin app
@@ -38,8 +40,11 @@ RUN cargo build --release
 FROM debian:stretch-slim
 
 # Install needed libraries
-RUN apt-get update && \
- 	apt-get install -y sqlite3 openssl libssl-dev
+RUN apt-get update && apt-get install -y\
+    sqlite3\
+    openssl\
+    --no-install-recommends\
+ && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir /data
 VOLUME /data
