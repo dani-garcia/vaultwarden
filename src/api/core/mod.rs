@@ -103,7 +103,7 @@ struct GlobalDomain {
 const GLOBAL_DOMAINS: &'static str = include_str!("global_domains.json");
 
 #[get("/settings/domains")]
-fn get_eq_domains(headers: Headers, conn: DbConn) -> JsonResult {
+fn get_eq_domains(headers: Headers) -> JsonResult {
     let user = headers.user;
     use serde_json::from_str;
 
@@ -118,7 +118,8 @@ fn get_eq_domains(headers: Headers, conn: DbConn) -> JsonResult {
 
     Ok(Json(json!({
         "EquivalentDomains": equivalent_domains,
-        "GlobalEquivalentDomains": globals
+        "GlobalEquivalentDomains": globals,
+        "Object": "domains",
     })))
 }
 

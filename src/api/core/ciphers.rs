@@ -16,30 +16,28 @@ use db::models::*;
 use util;
 use crypto;
 
-use api::{JsonResult, EmptyResult};
+use api::{self, JsonResult, EmptyResult};
 use auth::Headers;
 
 use CONFIG;
 
 #[get("/sync")]
 fn sync(headers: Headers, conn: DbConn) -> JsonResult {
-    let user = &headers.user;
+    let user_json = headers.user.to_json();
 
-    let folders = Folder::find_by_user(&user.uuid, &conn);
+    let folders = Folder::find_by_user(&headers.user.uuid, &conn);
     let folders_json: Vec<Value> = folders.iter().map(|c| c.to_json()).collect();
 
-    let ciphers = Cipher::find_by_user(&user.uuid, &conn);
+    let ciphers = Cipher::find_by_user(&headers.user.uuid, &conn);
     let ciphers_json: Vec<Value> = ciphers.iter().map(|c| c.to_json(&headers.host, &conn)).collect();
 
+    let domains_json = api::core::get_eq_domains(headers).unwrap().into_inner();
+
     Ok(Json(json!({
-        "Profile": user.to_json(),
+        "Profile": user_json,
         "Folders": folders_json,
         "Ciphers": ciphers_json,
-        "Domains": {
-            "EquivalentDomains": [],
-            "GlobalEquivalentDomains": [],
-            "Object": "domains",
-        },
+        "Domains": domains_json,
         "Object": "sync"
     })))
 }
