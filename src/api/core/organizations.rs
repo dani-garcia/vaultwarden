@@ -1,3 +1,5 @@
+#![allow(unused_imports)]
+
 use rocket_contrib::{Json, Value};
 
 use db::DbConn;

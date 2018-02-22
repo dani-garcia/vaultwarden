@@ -67,7 +67,7 @@ pub fn routes() -> Vec<Route> {
 
 use rocket::Route;
 
-use rocket_contrib::{Json, Value};
+use rocket_contrib::Json;
 
 use db::DbConn;
 
@@ -82,14 +82,6 @@ fn clear_device_token(uuid: String, conn: DbConn) -> JsonResult {
 #[put("/devices/identifier/<uuid>/token")]
 fn put_device_token(uuid: String, conn: DbConn) -> JsonResult {
     err!("Not implemented")
-}
-
-
-#[derive(Deserialize, Debug)]
-#[allow(non_snake_case)]
-struct EquivDomainData {
-    ExcludedGlobalEquivalentDomains: Option<Vec<i32>>,
-    EquivalentDomains: Option<Vec<Vec<String>>>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -121,6 +113,14 @@ fn get_eq_domains(headers: Headers) -> JsonResult {
         "GlobalEquivalentDomains": globals,
         "Object": "domains",
     })))
+}
+
+
+#[derive(Deserialize, Debug)]
+#[allow(non_snake_case)]
+struct EquivDomainData {
+    ExcludedGlobalEquivalentDomains: Option<Vec<i32>>,
+    EquivalentDomains: Option<Vec<Vec<String>>>,
 }
 
 #[post("/settings/domains", data = "<data>")]

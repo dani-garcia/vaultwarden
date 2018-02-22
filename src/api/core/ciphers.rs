@@ -16,7 +16,7 @@ use db::models::*;
 use util;
 use crypto;
 
-use api::{self, JsonResult, EmptyResult};
+use api::{self, PasswordData, JsonResult, EmptyResult};
 use auth::Headers;
 
 use CONFIG;
@@ -74,7 +74,9 @@ fn get_cipher(uuid: String, headers: Headers, conn: DbConn) -> JsonResult {
 struct CipherData {
     #[serde(rename = "type")]
     type_: i32,
+    // Folder id is not included in import
     folderId: Option<String>,
+    // TODO: Some of these might appear all the time, no need for Option
     organizationId: Option<String>,
     name: Option<String>,
     notes: Option<String>,
@@ -182,38 +184,62 @@ fn copy_values(from: &Value, to: &mut Value) -> bool {
     true
 }
 
+use super::folders::FolderData;
+
+#[derive(Deserialize)]
+#[allow(non_snake_case)]
+struct ImportData {
+    ciphers: Vec<CipherData>,
+    folders: Vec<FolderData>,
+    folderRelationships: Vec<RelationsData>,
+}
+
+#[derive(Deserialize)]
+#[allow(non_snake_case)]
+struct RelationsData {
+    // Cipher id
+    key: u32,
+    // Folder id
+    value: u32,
+}
+
+
 #[post("/ciphers/import", data = "<data>")]
-fn post_ciphers_import(data: Json<Value>, headers: Headers, conn: DbConn) -> EmptyResult {
-    let data: Value = data.into_inner();
-    let folders_value = data["folders"].as_array().unwrap();
-    let ciphers_value = data["ciphers"].as_array().unwrap();
-    let relations_value = data["folderRelationships"].as_array().unwrap();
+fn post_ciphers_import(data: Json<ImportData>, headers: Headers, conn: DbConn) -> EmptyResult {
+    let data: ImportData = data.into_inner();
 
     // Read and create the folders
-    let folders: Vec<_> = folders_value.iter().map(|f| {
-        let name = f["name"].as_str().unwrap().to_string();
-        let mut folder = Folder::new(headers.user.uuid.clone(), name);
+    let folders: Vec<_> = data.folders.iter().map(|folder| {
+        let mut folder = Folder::new(headers.user.uuid.clone(), folder.name.clone());
         folder.save(&conn);
         folder
     }).collect();
 
     // Read the relations between folders and ciphers
-    let relations = relations_value.iter().map(|r| r["value"].as_u64().unwrap() as usize);
+    use std::collections::HashMap;
+    let mut relations_map = HashMap::new();
+
+    for relation in data.folderRelationships {
+        relations_map.insert(relation.key, relation.value);
+    }
 
     // Read and create the ciphers
-    use serde::Deserialize;
-    ciphers_value.iter().zip( relations).map(|(c, fp)| {
-        let folder_uuid = folders[fp].uuid.clone();
-        let data = CipherData::deserialize(c.clone()).unwrap();
+    let mut index = 0;
+    for cipher_data in data.ciphers {
+        let folder_uuid = relations_map.get(&index)
+            .map(|i| folders[*i as usize].uuid.clone());
 
         let user_uuid = headers.user.uuid.clone();
-        let favorite = data.favorite.unwrap_or(false);
-        let mut cipher = Cipher::new(user_uuid, data.type_, favorite);
+        let favorite = cipher_data.favorite.unwrap_or(false);
+        let mut cipher = Cipher::new(user_uuid, cipher_data.type_, favorite);
 
-        if update_cipher_from_data(&mut cipher, data, &headers, &conn).is_err() { return; }
+        if update_cipher_from_data(&mut cipher, cipher_data, &headers, &conn).is_err() { err!("Error creating cipher") }
+
+        cipher.folder_uuid = folder_uuid;
 
         cipher.save(&conn);
-    });
+        index += 1;
+    }
 
     Ok(())
 }
@@ -279,7 +305,7 @@ fn post_attachment(uuid: String, data: Data, content_type: &ContentType, headers
         let attachment = Attachment::new(file_name, cipher.uuid.clone(), name, size);
         println!("Attachment: {:#?}", attachment);
         attachment.save(&conn);
-    });
+    }).expect("Error processing multipart data");
 
     Ok(Json(cipher.to_json(&headers.host, &conn)))
 }
@@ -340,13 +366,14 @@ fn delete_cipher(uuid: String, headers: Headers, conn: DbConn) -> EmptyResult {
     Ok(())
 }
 
-#[post("/ciphers/delete", data = "<data>")]
-fn delete_all(data: Json<Value>, headers: Headers, conn: DbConn) -> EmptyResult {
-    let password_hash = data["masterPasswordHash"].as_str().unwrap();
+#[post("/ciphers/purge", data = "<data>")]
+fn delete_all(data: Json<PasswordData>, headers: Headers, conn: DbConn) -> EmptyResult {
+    let data: PasswordData = data.into_inner();
+    let password_hash = data.masterPasswordHash;
 
     let user = headers.user;
 
-    if !user.check_valid_password(password_hash) {
+    if !user.check_valid_password(&password_hash) {
         err!("Invalid password")
     }
 

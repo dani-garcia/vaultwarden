@@ -4,12 +4,10 @@ use data_encoding::BASE32;
 
 use db::DbConn;
 
-use util;
 use crypto;
 
-use api::{JsonResult, EmptyResult};
+use api::{PasswordData, JsonResult};
 use auth::Headers;
-
 
 #[get("/two-factor")]
 fn get_twofactor(headers: Headers) -> JsonResult {
@@ -30,10 +28,10 @@ fn get_twofactor(headers: Headers) -> JsonResult {
 }
 
 #[post("/two-factor/get-recover", data = "<data>")]
-fn get_recover(data: Json<Value>, headers: Headers) -> JsonResult {
-    let password_hash = data["masterPasswordHash"].as_str().unwrap();
+fn get_recover(data: Json<PasswordData>, headers: Headers) -> JsonResult {
+    let data: PasswordData = data.into_inner();
 
-    if !headers.user.check_valid_password(password_hash) {
+    if !headers.user.check_valid_password(&data.masterPasswordHash) {
         err!("Invalid password");
     }
 
@@ -43,29 +41,33 @@ fn get_recover(data: Json<Value>, headers: Headers) -> JsonResult {
     })))
 }
 
+#[derive(Deserialize)]
+#[allow(non_snake_case)]
+struct RecoverTwoFactor {
+    masterPasswordHash: String,
+    email: String,
+    recoveryCode: String,
+}
+
 #[post("/two-factor/recover", data = "<data>")]
-fn recover(data: Json<Value>, conn: DbConn) -> JsonResult {
-    println!("{:#?}", data);
+fn recover(data: Json<RecoverTwoFactor>, conn: DbConn) -> JsonResult {
+    let data: RecoverTwoFactor = data.into_inner();
 
     use db::models::User;
 
     // Get the user
-    let username = data["email"].as_str().unwrap();
-    let mut user = match User::find_by_mail(username, &conn) {
+    let mut user = match User::find_by_mail(&data.email, &conn) {
         Some(user) => user,
         None => err!("Username or password is incorrect. Try again.")
     };
 
     // Check password
-    let password = data["masterPasswordHash"].as_str().unwrap();
-    if !user.check_valid_password(password) {
+    if !user.check_valid_password(&data.masterPasswordHash) {
         err!("Username or password is incorrect. Try again.")
     }
 
     // Check if recovery code is correct
-    let recovery_code = data["recoveryCode"].as_str().unwrap();
-
-    if !user.check_valid_recovery_code(recovery_code) {
+    if !user.check_valid_recovery_code(&data.recoveryCode) {
         err!("Recovery code is incorrect. Try again.")
     }
 
@@ -77,10 +79,10 @@ fn recover(data: Json<Value>, conn: DbConn) -> JsonResult {
 }
 
 #[post("/two-factor/get-authenticator", data = "<data>")]
-fn generate_authenticator(data: Json<Value>, headers: Headers) -> JsonResult {
-    let password_hash = data["masterPasswordHash"].as_str().unwrap();
+fn generate_authenticator(data: Json<PasswordData>, headers: Headers) -> JsonResult {
+    let data: PasswordData = data.into_inner();
 
-    if !headers.user.check_valid_password(password_hash) {
+    if !headers.user.check_valid_password(&data.masterPasswordHash) {
         err!("Invalid password");
     }
 
@@ -96,15 +98,24 @@ fn generate_authenticator(data: Json<Value>, headers: Headers) -> JsonResult {
     })))
 }
 
-#[post("/two-factor/authenticator", data = "<data>")]
-fn activate_authenticator(data: Json<Value>, headers: Headers, conn: DbConn) -> JsonResult {
-    let password_hash = data["masterPasswordHash"].as_str().unwrap();
+#[derive(Deserialize)]
+#[allow(non_snake_case)]
+struct EnableTwoFactorData {
+    masterPasswordHash: String,
+    key: String,
+    token: u64,
+}
 
-    if !headers.user.check_valid_password(password_hash) {
+#[post("/two-factor/authenticator", data = "<data>")]
+fn activate_authenticator(data: Json<EnableTwoFactorData>, headers: Headers, conn: DbConn) -> JsonResult {
+    let data: EnableTwoFactorData = data.into_inner();
+    let password_hash = data.masterPasswordHash;
+    let key = data.key;
+    let token = data.token;
+
+    if !headers.user.check_valid_password(&password_hash) {
         err!("Invalid password");
     }
-    let token = data["token"].as_str();
-    let key = data["key"].as_str().unwrap();
 
     // Validate key as base32 and 20 bytes length
     let decoded_key: Vec<u8> = match BASE32.decode(key.as_bytes()) {
@@ -121,7 +132,7 @@ fn activate_authenticator(data: Json<Value>, headers: Headers, conn: DbConn) -> 
     user.totp_secret = Some(key.to_uppercase());
 
     // Validate the token provided with the key
-    if !user.check_totp_code(util::parse_option_string(token)) {
+    if !user.check_totp_code(Some(token)) {
         err!("Invalid totp code")
     }
 
@@ -138,12 +149,20 @@ fn activate_authenticator(data: Json<Value>, headers: Headers, conn: DbConn) -> 
     })))
 }
 
-#[post("/two-factor/disable", data = "<data>")]
-fn disable_authenticator(data: Json<Value>, headers: Headers, conn: DbConn) -> JsonResult {
-    let _type = &data["type"];
-    let password_hash = data["masterPasswordHash"].as_str().unwrap();
+#[derive(Deserialize)]
+#[allow(non_snake_case)]
+struct DisableTwoFactorData {
+    masterPasswordHash: String,
+    #[serde(rename = "type")]
+    type_: u32,
+}
 
-    if !headers.user.check_valid_password(password_hash) {
+#[post("/two-factor/disable", data = "<data>")]
+fn disable_authenticator(data: Json<DisableTwoFactorData>, headers: Headers, conn: DbConn) -> JsonResult {
+    let data: DisableTwoFactorData = data.into_inner();
+    let password_hash = data.masterPasswordHash;
+
+    if !headers.user.check_valid_password(&password_hash) {
         err!("Invalid password");
     }
 

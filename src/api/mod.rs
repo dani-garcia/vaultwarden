@@ -11,5 +11,13 @@ pub use self::web::routes as web_routes;
 use rocket::response::status::BadRequest;
 use rocket_contrib::Json;
 
+// Type aliases for API methods results
 type JsonResult = Result<Json, BadRequest<Json>>;
 type EmptyResult = Result<(), BadRequest<Json>>;
+
+// Common structs representing JSON data received
+#[derive(Deserialize)]
+#[allow(non_snake_case)]
+struct PasswordData {
+    masterPasswordHash: String
+}

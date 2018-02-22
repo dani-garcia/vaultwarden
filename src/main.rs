@@ -1,4 +1,4 @@
-#![allow(unused)]
+#![allow(unused_variables, dead_code)]
 
 #![feature(plugin, custom_derive)]
 #![cfg_attr(test, plugin(stainless))]
@@ -31,9 +31,7 @@ extern crate lazy_static;
 
 
 use std::{io, env};
-
-use rocket::{Data, Request, Rocket};
-use rocket::fairing::{Fairing, Info, Kind};
+use rocket::Rocket;
 
 #[macro_use]
 mod util;

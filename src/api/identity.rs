@@ -10,7 +10,7 @@ use db::models::*;
 
 use util;
 
-use api::{JsonResult, EmptyResult};
+use api::JsonResult;
 
 pub fn routes() -> Vec<Route> {
     routes![ login]

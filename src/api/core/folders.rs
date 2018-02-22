@@ -32,15 +32,16 @@ fn get_folder(uuid: String, headers: Headers, conn: DbConn) -> JsonResult {
     Ok(Json(folder.to_json()))
 }
 
+#[derive(Deserialize)]
+pub struct FolderData {
+    pub name: String
+}
+
 #[post("/folders", data = "<data>")]
-fn post_folders(data: Json<Value>, headers: Headers, conn: DbConn) -> JsonResult {
-    let name = &data["name"].as_str();
+fn post_folders(data: Json<FolderData>, headers: Headers, conn: DbConn) -> JsonResult {
+    let data: FolderData = data.into_inner();
 
-    if name.is_none() {
-        err!("Invalid name")
-    }
-
-    let mut folder = Folder::new(headers.user.uuid.clone(), name.unwrap().into());
+    let mut folder = Folder::new(headers.user.uuid.clone(), data.name);
 
     folder.save(&conn);
 
@@ -48,12 +49,14 @@ fn post_folders(data: Json<Value>, headers: Headers, conn: DbConn) -> JsonResult
 }
 
 #[post("/folders/<uuid>", data = "<data>")]
-fn post_folder(uuid: String, data: Json<Value>, headers: Headers, conn: DbConn) -> JsonResult {
+fn post_folder(uuid: String, data: Json<FolderData>, headers: Headers, conn: DbConn) -> JsonResult {
     put_folder(uuid, data, headers, conn)
 }
 
 #[put("/folders/<uuid>", data = "<data>")]
-fn put_folder(uuid: String, data: Json<Value>, headers: Headers, conn: DbConn) -> JsonResult {
+fn put_folder(uuid: String, data: Json<FolderData>, headers: Headers, conn: DbConn) -> JsonResult {
+    let data: FolderData = data.into_inner();
+
     let mut folder = match Folder::find_by_uuid(&uuid, &conn) {
         Some(folder) => folder,
         _ => err!("Invalid folder")
@@ -63,13 +66,7 @@ fn put_folder(uuid: String, data: Json<Value>, headers: Headers, conn: DbConn) -
         err!("Folder belongs to another user")
     }
 
-    let name = &data["name"].as_str();
-
-    if name.is_none() {
-        err!("Invalid name")
-    }
-
-    folder.name = name.unwrap().into();
+    folder.name = data.name;
 
     folder.save(&conn);
 

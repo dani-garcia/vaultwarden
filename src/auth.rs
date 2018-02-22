@@ -124,7 +124,7 @@ impl<'a, 'r> FromRequest<'a, 'r> for Headers {
         // Check JWT token is valid and get device and user from it
         let claims: JWTClaims = match decode_jwt(access_token) {
             Ok(claims) => claims,
-            Err(msg) => err_handler!("Invalid claim")
+            Err(_) => err_handler!("Invalid claim")
         };
 
         let device_uuid = claims.device;

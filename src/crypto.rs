@@ -30,7 +30,7 @@ pub fn get_random_64() -> Vec<u8> {
 pub fn get_random(mut array: Vec<u8>) -> Vec<u8> {
     use ring::rand::{SecureRandom, SystemRandom};
 
-    SystemRandom::new().fill(&mut array);
+    SystemRandom::new().fill(&mut array).expect("Error generating random values");
 
     array
 }

@@ -1,9 +1,9 @@
-use rocket_contrib::{Json, Value};
+use rocket_contrib::Json;
 
 use db::DbConn;
 use db::models::*;
 
-use api::{JsonResult, EmptyResult};
+use api::{PasswordData, JsonResult, EmptyResult};
 use auth::Headers;
 
 use CONFIG;
@@ -33,15 +33,12 @@ fn register(data: Json<RegisterData>, conn: DbConn) -> EmptyResult {
     if !CONFIG.signups_allowed {
         err!(format!("Signups not allowed"))
     }
-    println!("DEBUG - {:#?}", data);
 
     if let Some(_) = User::find_by_mail(&data.email, &conn) {
         err!("Email already exists")
     }
 
-    let mut user = User::new(data.email,
-                             data.key,
-                             data.masterPasswordHash);
+    let mut user = User::new(data.email, data.key, data.masterPasswordHash);
 
     // Add extra fields if present
     if let Some(name) = data.name {
@@ -81,32 +78,36 @@ fn post_keys(data: Json<KeysData>, headers: Headers, conn: DbConn) -> JsonResult
     Ok(Json(user.to_json()))
 }
 
-#[post("/accounts/password", data = "<data>")]
-fn post_password(data: Json<Value>, headers: Headers, conn: DbConn) -> EmptyResult {
-    let key = data["key"].as_str().unwrap();
-    let password_hash = data["masterPasswordHash"].as_str().unwrap();
-    let new_password_hash = data["newMasterPasswordHash"].as_str().unwrap();
+#[derive(Deserialize)]
+#[allow(non_snake_case)]
+struct ChangePassData {
+    masterPasswordHash: String,
+    newMasterPasswordHash: String,
+    key: String,
+}
 
+#[post("/accounts/password", data = "<data>")]
+fn post_password(data: Json<ChangePassData>, headers: Headers, conn: DbConn) -> EmptyResult {
+    let data: ChangePassData = data.into_inner();
     let mut user = headers.user;
 
-    if !user.check_valid_password(password_hash) {
+    if !user.check_valid_password(&data.masterPasswordHash) {
         err!("Invalid password")
     }
 
-    user.set_password(new_password_hash);
-    user.key = key.to_string();
+    user.set_password(&data.newMasterPasswordHash);
+    user.key = data.key;
     user.save(&conn);
 
     Ok(())
 }
 
 #[post("/accounts/security-stamp", data = "<data>")]
-fn post_sstamp(data: Json<Value>, headers: Headers, conn: DbConn) -> EmptyResult {
-    let password_hash = data["masterPasswordHash"].as_str().unwrap();
-
+fn post_sstamp(data: Json<PasswordData>, headers: Headers, conn: DbConn) -> EmptyResult {
+    let data: PasswordData = data.into_inner();
     let mut user = headers.user;
 
-    if !user.check_valid_password(password_hash) {
+    if !user.check_valid_password(&data.masterPasswordHash) {
         err!("Invalid password")
     }
 
@@ -116,34 +117,39 @@ fn post_sstamp(data: Json<Value>, headers: Headers, conn: DbConn) -> EmptyResult
     Ok(())
 }
 
-#[post("/accounts/email-token", data = "<data>")]
-fn post_email(data: Json<Value>, headers: Headers, conn: DbConn) -> EmptyResult {
-    let password_hash = data["masterPasswordHash"].as_str().unwrap();
-    let new_email = data["newEmail"].as_str().unwrap();
+#[derive(Deserialize)]
+#[allow(non_snake_case)]
+struct ChangeEmailData {
+    masterPasswordHash: String,
+    newEmail: String,
+}
 
+
+#[post("/accounts/email-token", data = "<data>")]
+fn post_email(data: Json<ChangeEmailData>, headers: Headers, conn: DbConn) -> EmptyResult {
+    let data: ChangeEmailData = data.into_inner();
     let mut user = headers.user;
 
-    if !user.check_valid_password(password_hash) {
+    if !user.check_valid_password(&data.masterPasswordHash) {
         err!("Invalid password")
     }
 
-    if User::find_by_mail(new_email, &conn).is_some() {
+    if User::find_by_mail(&data.newEmail, &conn).is_some() {
         err!("Email already in use");
     }
 
-    user.email = new_email.to_string();
+    user.email = data.newEmail;
     user.save(&conn);
 
     Ok(())
 }
 
 #[post("/accounts/delete", data = "<data>")]
-fn delete_account(data: Json<Value>, headers: Headers, conn: DbConn) -> EmptyResult {
-    let password_hash = data["masterPasswordHash"].as_str().unwrap();
-
+fn delete_account(data: Json<PasswordData>, headers: Headers, conn: DbConn) -> EmptyResult {
+    let data: PasswordData = data.into_inner();
     let user = headers.user;
 
-    if !user.check_valid_password(password_hash) {
+    if !user.check_valid_password(&data.masterPasswordHash) {
         err!("Invalid password")
     }
 

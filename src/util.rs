@@ -61,7 +61,9 @@ pub fn delete_file(path: &str) -> bool {
     let res = fs::remove_file(path).is_ok();
 
     if let Some(parent) = Path::new(path).parent() {
-        fs::remove_dir(parent); // Only removes if the directory is empty
+        // If the directory isn't empty, this returns an error, which we ignore
+        // We only want to delete the folder if it's empty
+        fs::remove_dir(parent).ok();
     }
 
     res
