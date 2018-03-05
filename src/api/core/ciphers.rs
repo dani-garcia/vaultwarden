@@ -72,22 +72,30 @@ fn get_cipher(uuid: String, headers: Headers, conn: DbConn) -> JsonResult {
 #[derive(Deserialize, Debug)]
 #[allow(non_snake_case)]
 struct CipherData {
-    #[serde(rename = "type")]
-    type_: i32,
     // Folder id is not included in import
     folderId: Option<String>,
     // TODO: Some of these might appear all the time, no need for Option
     organizationId: Option<String>,
-    name: Option<String>,
-    notes: Option<String>,
-    favorite: Option<bool>,
 
+    /*
+    Login = 1,
+    SecureNote = 2,
+    Card = 3,
+    Identity = 4
+    */
+    #[serde(rename = "type")]
+    type_: i32,
+    name: String,
+    notes: Option<String>,
+    fields: Option<Value>,
+
+    // Only one of these should exist, depending on type
     login: Option<Value>,
     secureNote: Option<Value>,
     card: Option<Value>,
     identity: Option<Value>,
 
-    fields: Option<Vec<Value>>,
+    favorite: bool,
 }
 
 #[post("/ciphers", data = "<data>")]
@@ -95,8 +103,8 @@ fn post_ciphers(data: Json<CipherData>, headers: Headers, conn: DbConn) -> JsonR
     let data: CipherData = data.into_inner();
 
     let user_uuid = headers.user.uuid.clone();
-    let favorite = data.favorite.unwrap_or(false);
-    let mut cipher = Cipher::new(user_uuid, data.type_, favorite);
+    let favorite = data.favorite;
+    let mut cipher = Cipher::new(user_uuid, data.type_, data.name.clone(), favorite);
 
     update_cipher_from_data(&mut cipher, data, &headers, &conn)?;
     cipher.save(&conn);
@@ -118,15 +126,41 @@ fn update_cipher_from_data(cipher: &mut Cipher, data: CipherData, headers: &Head
         cipher.folder_uuid = Some(folder_id);
     }
 
-    if let Some(org_id) = data.organizationId {
+    if let org_id @ Some(_) = data.organizationId {
         // TODO: Check if user in org
-        cipher.organization_uuid = Some(org_id);
+        cipher.organization_uuid = org_id;
     }
 
+    // TODO: ******* Backwards compat start **********
+    // To remove backwards compatibility, just create an empty values object,
+    // and remove the compat code from cipher::to_json
     let mut values = json!({
         "Name": data.name,
         "Notes": data.notes
     });
+
+    if let Some(ref fields) = data.fields {
+        values["Fields"] = Value::Array(fields.as_array().unwrap().iter().map(|f| {
+            let mut value = json!({});
+
+            // Copy every field object and change the names to the correct case
+            copy_values(&f, &mut value);
+
+            value
+        }).collect());
+    } else {
+        values["Fields"] = Value::Null;
+    }
+    // TODO: ******* Backwards compat end **********
+
+    if let notes @ Some(_) = data.notes {
+        cipher.notes = notes;
+    }
+
+    if let Some(fields) = data.fields {
+        use serde_json::to_string;
+        cipher.fields = to_string(&fields).ok();
+    }
 
     let type_data_opt = match data.type_ {
         1 => data.login,
@@ -146,29 +180,9 @@ fn update_cipher_from_data(cipher: &mut Cipher, data: CipherData, headers: &Head
         err!("Data invalid")
     }
 
-    if let Some(ref fields) = data.fields {
-        values["Fields"] = Value::Array(fields.iter().map(|f| {
-            let mut value = empty_map_value();
-
-            // Copy every field object and change the names to the correct case
-            copy_values(&f, &mut value);
-
-            value
-        }).collect());
-    } else {
-        values["Fields"] = Value::Null;
-    }
-
     cipher.data = values.to_string();
 
     Ok(())
-}
-
-fn empty_map_value() -> Value {
-    use std::collections::BTreeMap;
-    use serde_json;
-
-    serde_json::to_value(BTreeMap::<String, Value>::new()).unwrap()
 }
 
 fn copy_values(from: &Value, to: &mut Value) -> bool {
@@ -230,8 +244,8 @@ fn post_ciphers_import(data: Json<ImportData>, headers: Headers, conn: DbConn) -
             .map(|i| folders[*i as usize].uuid.clone());
 
         let user_uuid = headers.user.uuid.clone();
-        let favorite = cipher_data.favorite.unwrap_or(false);
-        let mut cipher = Cipher::new(user_uuid, cipher_data.type_, favorite);
+        let favorite = cipher_data.favorite;
+        let mut cipher = Cipher::new(user_uuid, cipher_data.type_, cipher_data.name.clone(), favorite);
 
         if update_cipher_from_data(&mut cipher, cipher_data, &headers, &conn).is_err() { err!("Error creating cipher") }
 
@@ -262,7 +276,7 @@ fn put_cipher(uuid: String, data: Json<CipherData>, headers: Headers, conn: DbCo
         err!("Cipher is not owned by user")
     }
 
-    cipher.favorite = data.favorite.unwrap_or(false);
+    cipher.favorite = data.favorite;
 
     update_cipher_from_data(&mut cipher, data, &headers, &conn)?;
     cipher.save(&conn);
@@ -364,6 +378,14 @@ fn delete_cipher(uuid: String, headers: Headers, conn: DbConn) -> EmptyResult {
     cipher.delete(&conn);
 
     Ok(())
+}
+
+#[post("/ciphers/delete", data = "<data>")]
+fn delete_cipher_selected(data: Json<Value>, headers: Headers, conn: DbConn) -> EmptyResult {
+    let data: Value = data.into_inner();
+
+    println!("{:#?}", data);
+    unimplemented!()
 }
 
 #[post("/ciphers/purge", data = "<data>")]

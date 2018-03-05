@@ -17,6 +17,9 @@ table! {
         organization_uuid -> Nullable<Text>,
         #[sql_name = "type"]
         type_ -> Integer,
+        name -> Text,
+        notes -> Nullable<Text>,
+        fields -> Nullable<Text>,
         data -> Text,
         favorite -> Bool,
     }

@@ -37,6 +37,9 @@ CREATE TABLE ciphers (
   folder_uuid       TEXT REFERENCES folders (uuid),
   organization_uuid TEXT,
   type              INTEGER  NOT NULL,
+  name              TEXT     NOT NULL,
+  notes             TEXT,
+  fields            TEXT,
   data              TEXT     NOT NULL,
   favorite          BOOLEAN  NOT NULL
 );
