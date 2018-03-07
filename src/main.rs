@@ -16,12 +16,9 @@ extern crate serde_json;
 extern crate diesel;
 #[macro_use]
 extern crate diesel_migrations;
-extern crate r2d2_diesel;
-extern crate r2d2;
 extern crate ring;
 extern crate uuid;
 extern crate chrono;
-extern crate time;
 extern crate oath;
 extern crate data_encoding;
 extern crate jsonwebtoken as jwt;

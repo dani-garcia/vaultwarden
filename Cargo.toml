@@ -21,13 +21,10 @@ serde_derive = "1.0.27"
 serde_json = "1.0.10"
 
 # A safe, extensible ORM and Query builder
-# If tables need more than 16 columns, add feature "large-tables"
-diesel = { version = "1.1.1", features = ["sqlite", "chrono", "large-tables"] }
+# "large-tables" is needed for tables with more than 16 columns, the next version of diesel will
+# default to 32 column tables by default and deprecate large-tables, so remove this when updating
+diesel = { version = "1.1.1", features = ["sqlite", "chrono", "r2d2", "large-tables"] }
 diesel_migrations = { version = "1.1.0", features = ["sqlite"] }
-
-# A generic connection pool
-r2d2 = "0.8.2"
-r2d2-diesel = "1.0.0"
 
 # Crypto library
 ring = { version = "0.11.0", features = ["rsa_signing"] }
@@ -37,7 +34,6 @@ uuid = { version = "0.6.1", features = ["v4"] }
 
 # Date and time library for Rust
 chrono = "0.4.0"
-time = "0.1.39"
 
 # TOTP library
 oath = "0.10.2"

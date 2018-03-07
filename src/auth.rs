@@ -3,7 +3,7 @@
 ///
 
 use util::read_file;
-use time::Duration;
+use chrono::Duration;
 
 use jwt;
 use serde::ser::Serialize;
