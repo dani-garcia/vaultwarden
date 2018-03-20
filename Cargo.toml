@@ -16,9 +16,9 @@ reqwest = "0.8.5"
 multipart = "0.14.2"
 
 # A generic serialization/deserialization framework
-serde = "1.0.27"
-serde_derive = "1.0.27"
-serde_json = "1.0.10"
+serde = "1.0.33"
+serde_derive = "1.0.33"
+serde_json = "1.0.12"
 
 # A safe, extensible ORM and Query builder
 # "large-tables" is needed for tables with more than 16 columns, the next version of diesel will
@@ -27,10 +27,10 @@ diesel = { version = "1.1.1", features = ["sqlite", "chrono", "r2d2", "large-tab
 diesel_migrations = { version = "1.1.0", features = ["sqlite"] }
 
 # Crypto library
-ring = { version = "0.11.0", features = ["rsa_signing"] }
+ring = { version = "= 0.11.0", features = ["rsa_signing"] }
 
 # UUID generation
-uuid = { version = "0.6.1", features = ["v4"] }
+uuid = { version = "0.6.2", features = ["v4"] }
 
 # Date and time library for Rust
 chrono = "0.4.0"
@@ -42,7 +42,7 @@ oath = "0.10.2"
 data-encoding = "2.1.1"
 
 # JWT library
-jsonwebtoken = "4.0.0"
+jsonwebtoken = "= 4.0.0"
 
 # A `dotenv` implementation for Rust
 dotenv = { version = "0.11.0", default-features = false }

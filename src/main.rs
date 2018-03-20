@@ -26,15 +26,11 @@ extern crate dotenv;
 #[macro_use]
 extern crate lazy_static;
 
-
 use std::{io, env};
 use rocket::Rocket;
 
 #[macro_use]
 mod util;
-
-#[cfg(test)]
-mod tests;
 
 mod api;
 mod db;
@@ -105,7 +101,7 @@ fn check_rsa_keys() {
             .status.success();
 
         if success {
-            println!("Keys created correcty.");
+            println!("Keys created correctly.");
         } else {
             println!("Error creating keys, exiting...");
             exit(1);
