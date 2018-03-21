@@ -33,24 +33,6 @@
         </div>
 
         <div ng-if="cipher.type === constants.cipherType.login">
-            <div class="form-group" show-errors>
-                <label for="uri">URI</label>
-                <div class="input-group">
-                    <input type="text" id="uri" name="Login.Uri" ng-model="cipher.login.uri" class="form-control"
-                           placeholder="http://..." ng-readonly="readOnly" api-field />
-                    <span class="input-group-btn">
-                        <button class="btn btn-default btn-flat" type="button" uib-tooltip="Copy URI"
-                                tooltip-placement="left" ngclipboard ngclipboard-error="clipboardError(e)"
-                                data-clipboard-target="#uri">
-                            <i class="fa fa-clipboard"></i>
-                        </button>
-                        <a href="{{cipher.login.uri}}" target="_blank" class="btn btn-default btn-flat"
-                           uib-tooltip="Go To Website" tooltip-placement="left">
-                            <i class="fa fa-share"></i>
-                        </a>
-                    </span>
-                </div>
-            </div>
             <div class="row">
                 <div class="col-sm-6">
                     <div class="form-group" show-errors>
@@ -111,6 +93,60 @@
                         </span>
                     </div>
                 </div>
+            </div>
+            <div ng-repeat="u in cipher.login.uris" ng-if="cipher.login.uris && cipher.login.uris.length">
+                <div class="row">
+                    <div class="col-sm-7">
+                        <div class="form-group" show-errors>
+                            <label for="uri{{$index}}">URI {{$index + 1}}</label>
+                            <div class="input-group">
+                                <input type="text" id="uri{{$index}}" name="Login.Uris[{{$index}}].Uri"
+                                       ng-model="u.uri" class="form-control"
+                                       placeholder="http://..." ng-readonly="readOnly" api-field />
+                                <span class="input-group-btn">
+                                    <button class="btn btn-default btn-flat" type="button" uib-tooltip="Copy URI"
+                                            tooltip-placement="left" ngclipboard ngclipboard-error="clipboardError(e)"
+                                            data-clipboard-target="#uri{{$index}}">
+                                        <i class="fa fa-clipboard"></i>
+                                    </button>
+                                    <a href="{{u.uri}}" target="_blank" class="btn btn-default btn-flat"
+                                       uib-tooltip="Go To Website" tooltip-placement="left">
+                                        <i class="fa fa-share"></i>
+                                    </a>
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-sm-4">
+                        <div class="form-group">
+                            <label for="uri_match_{{$index}}">Match Detection</label>
+                            <select id="uri_match_{{$index}}" name="Login.Uris[{{$index}}].Match" ng-disabled="readOnly"
+                                    class="form-control" ng-model="u.matchValue" ng-change="uriMatchChanged(u)">
+                                <option value="">Default</option>
+                                <option value="0">Base domain</option>
+                                <option value="1">Host</option>
+                                <option value="2">Starts with</option>
+                                <option value="4">Regular Expression</option>
+                                <option value="3">Exact</option>
+                                <option value="5">Never</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-sm-1" ng-if="!readOnly">
+                        <br class="hidden-xs" />
+                        <a href="#" ng-click="removeUri(u)" stop-click>
+                            <i class="fa fa-window-close-o fa-lg"></i>
+                            <span class="visible-xs-inline">Remove URI</span>
+                        </a>
+                    </div>
+                </div>
+                <hr class="visible-xs-block" />
+            </div>
+            <div ng-if="!readOnly">
+                <a href="#" ng-click="addUri()" stop-click>
+                    <i class="fa fa-plus-circle"></i> New URI
+                </a>
+                <br /><br />
             </div>
         </div>
         <div ng-if="cipher.type === constants.cipherType.card">
@@ -552,9 +588,9 @@
                         </div>
                     </div>
                 </div>
-                <div class="col-sm-1">
+                <div class="col-sm-1" ng-if="!readOnly">
                     <br class="hidden-xs" />
-                    <a href="#" ng-click="removeField(field)" stop-click ng-if="!readOnly">
+                    <a href="#" ng-click="removeField(field)" stop-click>
                         <i class="fa fa-window-close-o fa-lg"></i>
                         <span class="visible-xs-inline">Remove Custom Field</span>
                     </a>

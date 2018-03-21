@@ -10,31 +10,22 @@
     </h1>
 </section>
 <section class="content">
-    <p ng-show="loading && !collections.length">Loading...</p>
-    <div class="box" ng-class="{'collapsed-box': collection.collapsed}" ng-repeat="collection in collections |
-         orderBy: collectionSort track by collection.id"
-         ng-show="collections.length && (!main.searchVaultText || collectionCiphers.length)">
+    <p ng-show="loading">Loading...</p>
+    <div class="box" ng-show="!loading">
         <div class="box-header with-border">
             <h3 class="box-title">
-                <i class="fa" ng-class="{'fa-cube': collection.id, 'fa-sitemap': !collection.id}"></i>
-                {{collection.name}}
-                <small ng-pluralize count="collectionCiphers.length" when="{'1': '{} item', 'other': '{} items'}"></small>
+                <i class="fa {{selectedIcon}}"></i>
+                {{selectedCollection ? selectedCollection.name : selectedTitle}}
+                <small ng-pluralize count="filteredCiphers.length" when="{'1': '{} item', 'other': '{} items'}"></small>
             </h3>
-            <div class="box-tools">
-                <button type="button" class="btn btn-box-tool" data-widget="collapse" title="Collapse/Expand"
-                        ng-click="collapseExpand(collection)">
-                    <i class="fa" ng-class="{'fa-minus': !collection.collapsed, 'fa-plus': collection.collapsed}"></i>
-                </button>
-            </div>
         </div>
-        <div class="box-body" ng-class="{'no-padding': collectionCiphers.length}">
-            <div ng-show="!collectionCiphers.length && collection.id">No items in this collection.</div>
-            <div ng-show="!collectionCiphers.length && !collection.id">No unassigned items.</div>
-            <div class="table-responsive" ng-show="collectionCiphers.length">
+        <div class="box-body" ng-class="{'no-padding': filteredCiphers.length}">
+            <div ng-show="!filteredCiphers.length">No items to list.</div>
+            <div class="table-responsive" ng-show="filteredCiphers.length">
                 <table class="table table-striped table-hover table-vmiddle">
                     <tbody>
-                        <tr ng-repeat="cipher in collectionCiphers = (ciphers | filter: filterByCollection(collection) |
-                            filter: (main.searchVaultText || '') | orderBy: ['name', 'subTitle']) track by cipher.id">
+                        <tr ng-repeat="cipher in filteredCiphers = (ciphers | filter: cipherFilter() |
+                            filter: (searchVaultText || '') | orderBy: ['name', 'subTitle']) track by cipher.id">
                             <td style="width: 70px;">
                                 <div class="btn-group" data-append-to="body">
                                     <button type="button" class="btn btn-default dropdown-toggle" data-toggle="dropdown">
@@ -59,12 +50,6 @@
                                         <li>
                                             <a href="#" stop-click ng-click="viewEvents(cipher)" ng-if="useEvents">
                                                 <i class="fa fa-fw fa-file-text-o"></i> Event Logs
-                                            </a>
-                                        </li>
-                                        <li>
-                                            <a href="#" stop-click ng-click="removeCipher(cipher, collection)" class="text-red"
-                                               ng-if="collection.id">
-                                                <i class="fa fa-fw fa-remove"></i> Remove
                                             </a>
                                         </li>
                                         <li>
@@ -93,3 +78,65 @@
         </div>
     </div>
 </section>
+<aside class="control-sidebar control-sidebar-light">
+    <div class="tab-content">
+        <form class="search-form">
+            <label for="search" class="sr-only">Search</label>
+            <div class="form-group has-feedback">
+                <input type="search" id="search" class="form-control" placeholder="Search org vault..."
+                       ng-model="searchVaultText" />
+                <span class="fa fa-search form-control-feedback" aria-hidden="true"></span>
+            </div>
+        </form>
+        <ul class="control-sidebar-menu">
+            <li ng-class="{active: selectedAll}">
+                <a href="#" stop-click ng-click="filterAll()">
+                    <i class="fa fa-th fa-fw"></i> All Items
+                </a>
+            </li>
+        </ul>
+        <h3 class="control-sidebar-heading">Types</h3>
+        <div class="control-sidebar-section">
+            <ul class="control-sidebar-menu">
+                <li ng-class="{active: constants.cipherType.login === selectedType}">
+                    <a href="#" stop-click ng-click="filterType(constants.cipherType.login)">
+                        <i class="fa fa-globe fa-fw"></i> Login
+                    </a>
+                </li>
+                <li ng-class="{active: constants.cipherType.card === selectedType}">
+                    <a href="#" stop-click ng-click="filterType(constants.cipherType.card)">
+                        <i class="fa fa-credit-card fa-fw"></i> Card
+                    </a>
+                </li>
+                <li ng-class="{active: constants.cipherType.identity === selectedType}">
+                    <a href="#" stop-click ng-click="filterType(constants.cipherType.identity)">
+                        <i class="fa fa-id-card-o fa-fw"></i> Identity
+                    </a>
+                </li>
+                <li ng-class="{active: constants.cipherType.secureNote === selectedType}">
+                    <a href="#" stop-click ng-click="filterType(constants.cipherType.secureNote)">
+                        <i class="fa fa-sticky-note-o fa-fw"></i> Secure Note
+                    </a>
+                </li>
+            </ul>
+        </div>
+        <h3 class="control-sidebar-heading">Collections</h3>
+        <div ng-show="loading && !collections.length">
+            <p>Loading...</p>
+        </div>
+        <div ng-show="!loading && !collections.length">
+            <p>No collections.</p>
+        </div>
+        <div class="control-sidebar-section" ng-show="!loading && collections.length">
+            <ul class="control-sidebar-menu">
+                <li ng-repeat="collection in collections | orderBy: [collectionSort] track by collection.id"
+                    ng-class="{active: selectedCollection && collection.id === selectedCollection.id}">
+                    <a href="#" stop-click ng-click="filterCollection(collection)">
+                        <i class="fa fa-caret-right fa-fw"></i>
+                        {{collection.name}}
+                    </a>
+                </li>
+            </ul>
+        </div>
+    </div>
+</aside>

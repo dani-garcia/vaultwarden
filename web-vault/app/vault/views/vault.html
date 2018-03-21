@@ -17,18 +17,13 @@
             </li>
             <li role="separator" class="divider"></li>
             <li>
+                <a href="#" stop-click ng-click="selectAll()">
+                    <i class="fa fa-fw fa-check-square-o"></i> Select All
+                </a>
+            </li>
+            <li>
                 <a href="#" stop-click ng-click="unselectAll()">
-                    <i class="fa fa-fw fa-minus-circle"></i> Unselect All
-                </a>
-            </li>
-            <li>
-                <a href="#" stop-click ng-click="collapseAll()">
-                    <i class="fa fa-fw fa-minus-square-o"></i> Collapse All
-                </a>
-            </li>
-            <li>
-                <a href="#" stop-click ng-click="expandAll()">
-                    <i class="fa fa-fw fa-plus-square-o"></i> Expand All
+                    <i class="fa fa-fw fa-minus-square-o"></i> Unselect All
                 </a>
             </li>
         </ul>
@@ -36,184 +31,57 @@
     <h1>
         My Vault
         <small class="visible-md-inline visible-lg-inline">
-            <span ng-pluralize count="folderCount" when="{'1': '{} folder', 'other': '{} folders'}"></span>,
-            <span ng-pluralize count="collectionCount" when="{'1': '{} collection', 'other': '{} collections'}"></span>, &amp;
+            <span ng-pluralize count="vaultFolders.length > 0 ? vaultFolders.length - 1 : 0"
+                  when="{'1': '{} folder', 'other': '{} folders'}"></span>,
+            <span ng-pluralize count="vaultCollections.length"
+                  when="{'1': '{} collection', 'other': '{} collections'}"></span>, &amp;
             <span ng-pluralize count="ciphers.length" when="{'1': '{} item', 'other': '{} items'}"></span>
         </small>
     </h1>
 </section>
 <section class="content">
-    <div ng-show="loading && !vaultGroupings.length">
+    <div ng-show="loadingCiphers">
         <p>Loading...</p>
     </div>
-    <div class="box box-primary" ng-class="{'collapsed-box': favoriteCollapsed}" style="margin-bottom: 40px;"
-         ng-show="vaultGroupings.length && groupingIdFilter === undefined && (!main.searchVaultText || favoriteCiphers.length)">
+    <div class="box" ng-show="!loadingCiphers">
         <div class="box-header with-border">
             <h3 class="box-title">
-                <i class="fa fa-star"></i>
-                Favorites
-                <small ng-pluralize count="favoriteCiphers.length" when="{'1': '{} item', 'other': '{} items'}"></small>
+                <i class="fa {{selectedIcon}}"></i>
+                {{selectedFolder ? selectedFolder.name : selectedCollection ? selectedCollection.name : selectedTitle}}
+                <small ng-pluralize count="filteredCiphers.length" when="{'1': '{} item', 'other': '{} items'}"></small>
             </h3>
-            <div class="box-tools">
+            <div class="box-tools" ng-if="selectedFolder && selectedFolder.id">
                 <div class="btn-group">
                     <button type="button" class="btn btn-box-tool dropdown-toggle" data-toggle="dropdown">
                         <i class="fa fa-cog"></i> <span class="caret"></span>
                     </button>
                     <ul class="dropdown-menu dropdown-menu-right">
                         <li>
-                            <a href="#" stop-click ng-click="addCipher(null, true)">
-                                <i class="fa fa-fw fa-plus-circle"></i> New Item
-                            </a>
-                        </li>
-                    </ul>
-                </div>
-                <button type="button" class="btn btn-box-tool" data-widget="collapse" title="Collapse/Expand"
-                        ng-click="collapseExpand(null, true)">
-                    <i class="fa" ng-class="{'fa-minus': !favoriteCollapsed, 'fa-plus': favoriteCollapsed}"></i>
-                </button>
-            </div>
-        </div>
-        <div class="box-body" ng-class="{'no-padding': favoriteCiphers.length}">
-            <div ng-show="!favoriteCiphers.length">
-                <p>No favorite items.</p>
-                <button type="button" ng-click="addCipher(null, true)" class="btn btn-default btn-flat">Add an Item</button>
-            </div>
-            <div class="table-responsive" ng-show="favoriteCiphers.length">
-                <table class="table table-striped table-hover table-vmiddle">
-                    <tbody>
-                        <tr ng-repeat="cipher in favoriteCiphers = (ciphers | filter: { favorite: true } |
-                            filter: cipherFilter(null) | filter: (main.searchVaultText || '')) track by cipher.id">
-                            <td style="width: 70px;">
-                                <div class="btn-group" data-append-to="body">
-                                    <button type="button" class="btn btn-default dropdown-toggle" data-toggle="dropdown">
-                                        <i class="fa fa-cog"></i> <span class="caret"></span>
-                                    </button>
-                                    <ul class="dropdown-menu">
-                                        <li>
-                                            <a href="#" stop-click ng-click="editCipher(cipher)">
-                                                <i class="fa fa-fw fa-pencil"></i> Edit
-                                            </a>
-                                        </li>
-                                        <li>
-                                            <a href="#" stop-click ng-click="attachments(cipher)">
-                                                <i class="fa fa-fw fa-paperclip"></i> Attachments
-                                            </a>
-                                        </li>
-                                        <li ng-show="!cipher.organizationId">
-                                            <a href="#" stop-click ng-click="share(cipher)">
-                                                <i class="fa fa-fw fa-share-alt"></i> Share
-                                            </a>
-                                        </li>
-                                        <li ng-show="cipher.organizationId && cipher.edit">
-                                            <a href="#" stop-click ng-click="editCollections(cipher)">
-                                                <i class="fa fa-fw fa-cubes"></i> Collections
-                                            </a>
-                                        </li>
-                                        <li ng-show="cipher.meta.password">
-                                            <a href="#" stop-click ngclipboard ngclipboard-error="clipboardError(e)"
-                                               data-clipboard-text="{{cipher.meta.password}}">
-                                                <i class="fa fa-fw fa-clipboard"></i> Copy Password
-                                            </a>
-                                        </li>
-                                        <li ng-show="cipher.edit">
-                                            <a href="#" stop-click ng-click="deleteCipher(cipher)" class="text-red">
-                                                <i class="fa fa-fw fa-trash"></i> Delete
-                                            </a>
-                                        </li>
-                                    </ul>
-                                </div>
-                            </td>
-                            <td class="action-select" ng-click="select($event)">
-                                <input type="checkbox" value="{{::cipher.id}}" name="cipherSelection" stop-prop />
-                            </td>
-                            <td class="vault-icon" ng-click="select($event)">
-                                <i class="fa fa-fw fa-lg {{::cipher.icon}}" ng-if="!cipher.meta.image"></i>
-                                <img alt="" ng-if="cipher.meta.image" ng-src="{{cipher.meta.image}}"
-                                     fallback-src="images/fa-globe.png" />
-                            </td>
-                            <td ng-click="select($event)">
-                                <a href="#" stop-click ng-click="editCipher(cipher)" stop-prop>{{cipher.name}}</a>
-                                <i class="fa fa-share-alt text-muted" title="Shared" ng-if="cipher.organizationId"
-                                   stop-prop></i>
-                                <i class="fa fa-paperclip text-muted" title="Attachments" ng-if="cipher.hasAttachments"
-                                   stop-prop></i><br />
-                                <span class="text-sm text-muted" stop-prop>{{cipher.subTitle}}</span>
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-    <div class="box" ng-class="{'collapsed-box': grouping.collapsed}"
-         ng-repeat="grouping in filteredVaultGroupings = (vaultGroupings | filter: groupingFilter) track by grouping.id"
-         ng-show="vaultGroupings.length && (!main.searchVaultText || groupingCiphers.length)"
-         ng-style="firstCollectionId && grouping.id === firstCollectionId &&
-            groupingIdFilter !== grouping.id && {'margin-top': '40px'}">
-        <div class="box-header with-border">
-            <h3 class="box-title">
-                <i class="fa" ng-if="grouping.folder"
-                   ng-class="{'fa-folder-open': grouping.id !== null, 'fa-folder-open-o': grouping.id === null}"></i>
-                <i class="fa fa-cube" ng-if="grouping.collection"></i>
-                {{grouping.name}}
-                <small ng-pluralize count="groupingCiphers.length" when="{'1': '{} item', 'other': '{} items'}"></small>
-            </h3>
-            <div class="box-tools">
-                <div class="btn-group">
-                    <button type="button" class="btn btn-box-tool dropdown-toggle" data-toggle="dropdown">
-                        <i class="fa fa-cog"></i> <span class="caret"></span>
-                    </button>
-                    <ul class="dropdown-menu dropdown-menu-right" ng-if="grouping.folder">
-                        <li>
-                            <a href="#" stop-click ng-click="addCipher(grouping)">
-                                <i class="fa fa-fw fa-plus-circle"></i> New Item
-                            </a>
-                        </li>
-                        <li ng-show="grouping.id">
-                            <a href="#" stop-click ng-click="editFolder(grouping)">
+                            <a href="#" stop-click ng-click="editFolder(selectedFolder)">
                                 <i class="fa fa-fw fa-pencil"></i> Edit Folder
                             </a>
                         </li>
-                        <li ng-show="canDeleteFolder(grouping)">
-                            <a href="#" stop-click ng-click="deleteFolder(grouping)" class="text-red">
+                        <li>
+                            <a href="#" stop-click ng-click="deleteFolder(selectedFolder)" class="text-red">
                                 <i class="fa fa-fw fa-trash"></i> Delete Folder
                             </a>
                         </li>
-                        <li>
-                            <a href="#" stop-click ng-click="selectFolder(grouping, $event)">
-                                <i class="fa fa-fw fa-check-square-o"></i> Select All
-                            </a>
-                        </li>
-                    </ul>
-                    <ul class="dropdown-menu dropdown-menu-right" ng-if="grouping.collection">
-                        <li>
-                            <a href="#" stop-click ng-click="selectFolder(grouping, $event)">
-                                <i class="fa fa-fw fa-check-square-o"></i> Select All
-                            </a>
-                        </li>
                     </ul>
                 </div>
-                <button type="button" class="btn btn-box-tool" data-widget="collapse" title="Collapse/Expand"
-                        ng-click="collapseExpand(grouping)">
-                    <i class="fa" ng-class="{'fa-minus': !grouping.collapsed, 'fa-plus': grouping.collapsed}"></i>
-                </button>
             </div>
         </div>
-        <div class="box-body" ng-class="{'no-padding': groupingCiphers.length}">
-            <div ng-show="!groupingCiphers.length">
-                <div ng-if="grouping.folder">
-                    <p>No items in this folder.</p>
-                    <button type="button" ng-click="addCipher(grouping)" class="btn btn-default btn-flat">Add an Item</button>
-                </div>
-                <div ng-if="!grouping.folder">
-                    <p>No items in this collection.</p>
-                </div>
+        <div class="box-body" ng-class="{'no-padding': filteredCiphers.length}">
+            <div ng-show="!filteredCiphers.length">
+                <p>No items to list.</p>
+                <button type="button" ng-click="addCipher()" class="btn btn-default btn-flat">
+                    Add an Item
+                </button>
             </div>
-            <div class="table-responsive" ng-show="groupingCiphers.length">
+            <div class="table-responsive" ng-show="filteredCiphers.length">
                 <table class="table table-striped table-hover table-vmiddle">
                     <tbody>
-                        <tr ng-repeat="cipher in groupingCiphers = (ciphers | filter: cipherFilter(grouping) |
-                            filter: (main.searchVaultText || '')) track by cipher.id">
+                        <tr ng-repeat="cipher in filteredCiphers = (ciphers | filter: cipherFilter() |
+                            filter: (searchVaultText || '')) track by cipher.id">
                             <td style="width: 70px;">
                                 <div class="btn-group" data-append-to="body">
                                     <button type="button" class="btn btn-default dropdown-toggle" data-toggle="dropdown">
@@ -281,80 +149,82 @@
 </section>
 <aside class="control-sidebar control-sidebar-light">
     <div class="tab-content">
+        <form class="search-form">
+            <label for="search" class="sr-only">Search</label>
+            <div class="form-group has-feedback">
+                <input type="search" id="search" class="form-control" placeholder="Search my vault..."
+                       ng-model="searchVaultText" />
+                <span class="fa fa-search form-control-feedback" aria-hidden="true"></span>
+            </div>
+        </form>
         <ul class="control-sidebar-menu">
-            <li>
-                <a href="#" stop-click ng-click="clearFilters()">
-                    Clear All Filters
+            <li ng-class="{active: selectedAll}">
+                <a href="#" stop-click ng-click="filterAll()">
+                    <i class="fa fa-th fa-fw"></i> All Items
+                </a>
+            </li>
+            <li ng-class="{active: selectedFavorites}">
+                <a href="#" stop-click ng-click="filterFavorites()">
+                    <i class="fa fa-star fa-fw"></i> Favorites
                 </a>
             </li>
         </ul>
-        <h3 class="control-sidebar-heading">
-            <i class="fa fa-tag fa-fw"></i> Types
-        </h3>
+        <h3 class="control-sidebar-heading">Types</h3>
         <div class="control-sidebar-section">
             <ul class="control-sidebar-menu">
-                <li>
+                <li ng-class="{active: constants.cipherType.login === selectedType}">
                     <a href="#" stop-click ng-click="filterType(constants.cipherType.login)">
-                        <i class="fa fa-check fa-fw" ng-if="constants.cipherType.login === typeFilter"></i>
-                        <i class="fa fa-globe fa-fw" ng-if="constants.cipherType.login !== typeFilter"></i> Login
+                        <i class="fa fa-globe fa-fw"></i> Login
                     </a>
                 </li>
-                <li>
+                <li ng-class="{active: constants.cipherType.card === selectedType}">
                     <a href="#" stop-click ng-click="filterType(constants.cipherType.card)">
-                        <i class="fa fa-check fa-fw" ng-if="constants.cipherType.card === typeFilter"></i>
-                        <i class="fa fa-credit-card fa-fw" ng-if="constants.cipherType.card !== typeFilter"></i> Card
+                        <i class="fa fa-credit-card fa-fw"></i> Card
                     </a>
                 </li>
-                <li>
+                <li ng-class="{active: constants.cipherType.identity === selectedType}">
                     <a href="#" stop-click ng-click="filterType(constants.cipherType.identity)">
-                        <i class="fa fa-check fa-fw" ng-if="constants.cipherType.identity === typeFilter"></i>
-                        <i class="fa fa-id-card-o fa-fw" ng-if="constants.cipherType.identity !== typeFilter"></i> Identity
+                        <i class="fa fa-id-card-o fa-fw"></i> Identity
                     </a>
                 </li>
-                <li>
+                <li ng-class="{active: constants.cipherType.secureNote === selectedType}">
                     <a href="#" stop-click ng-click="filterType(constants.cipherType.secureNote)">
-                        <i class="fa fa-check fa-fw" ng-if="constants.cipherType.secureNote === typeFilter"></i>
-                        <i class="fa fa-sticky-note-o fa-fw" ng-if="constants.cipherType.secureNote !== typeFilter"></i> Secure Note
+                        <i class="fa fa-sticky-note-o fa-fw"></i> Secure Note
                     </a>
                 </li>
             </ul>
         </div>
-        <h3 class="control-sidebar-heading">
-            <i class="fa fa-folder fa-fw"></i> Folders
-        </h3>
-        <div ng-show="loading && !vaultGroupings.length">
+        <h3 class="control-sidebar-heading">Folders</h3>
+        <div ng-show="loadingGroupings">
             <p>Loading...</p>
         </div>
-        <div class="control-sidebar-section">
-            <ul class="control-sidebar-menu" ng-show="!loading && folders.length">
-                <li ng-repeat="folder in folders = (vaultGroupings | filter: {folder: true}) track by folder.id">
-                    <a href="#" stop-click ng-click="filterGrouping(folder)">
-                        <i class="fa fa-check fa-fw" ng-if="folder.id === groupingIdFilter"></i>
-                        <i class="fa fa-caret-right fa-fw" ng-if="folder.id !== groupingIdFilter"></i>
+        <div class="control-sidebar-section" ng-show="!loadingGroupings">
+            <ul class="control-sidebar-menu">
+                <li ng-repeat="folder in vaultFolders | orderBy: [groupingSort] track by folder.id"
+                    ng-class="{active: selectedFolder && folder.id === selectedFolder.id}">
+                    <a href="#" stop-click ng-click="filterFolder(folder)">
+                        <i class="fa fa-caret-right fa-fw"></i>
                         {{folder.name}}
                     </a>
                 </li>
             </ul>
         </div>
-        <h3 class="control-sidebar-heading">
-            <i class="fa fa-cubes fa-fw"></i> Collections
-        </h3>
-        <div ng-show="loading && !vaultGroupings.length">
+        <h3 class="control-sidebar-heading">Collections</h3>
+        <div ng-show="loadingGroupings">
             <p>Loading...</p>
         </div>
-        <div ng-show="!loading && !collections.length">
+        <div ng-show="!loadingGroupings && !vaultCollections.length">
             <p>No collections are being shared with you. <i class="fa fa-frown-o"></i></p>
             <a ui-sref="backend.user.settingsCreateOrg" class="btn btn-default btn-lint">
                 Create an Organization
             </a>
         </div>
-        <div class="control-sidebar-section">
-            <ul class="control-sidebar-menu" ng-show="!loading && collections.length">
-                <li ng-repeat="collection in collections =
-                    (vaultGroupings | filter: {collection: true}) track by collection.id">
-                    <a href="#" stop-click ng-click="filterGrouping(collection)">
-                        <i class="fa fa-check fa-fw" ng-if="collection.id === groupingIdFilter"></i>
-                        <i class="fa fa-caret-right fa-fw" ng-if="collection.id !== groupingIdFilter"></i>
+        <div class="control-sidebar-section" ng-show="!loadingGroupings && vaultCollections.length">
+            <ul class="control-sidebar-menu">
+                <li ng-repeat="collection in vaultCollections | orderBy: [groupingSort] track by collection.id"
+                    ng-class="{active: selectedCollection && collection.id === selectedCollection.id}">
+                    <a href="#" stop-click ng-click="filterCollection(collection)">
+                        <i class="fa fa-caret-right fa-fw"></i>
                         {{collection.name}}
                     </a>
                 </li>

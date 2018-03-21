@@ -32,14 +32,6 @@
                 <a ui-sref="frontend.logout">Log Out</a>
             </div>
         </div>
-        <form class="sidebar-form">
-            <label for="search" class="sr-only">Search</label>
-            <div class="form-group has-feedback">
-                <input type="text" id="search" class="form-control" placeholder="Search my vault..."
-                       ng-focus="searchVault()" ng-model="main.searchVaultText" />
-                <span class="fa fa-search form-control-feedback" aria-hidden="true"></span>
-            </div>
-        </form>
         <ul class="sidebar-menu">
             <li class="header">WEB VAULT</li>
             <li class="treeview" ng-class="{active: $state.includes('backend.user.vault')}">
@@ -104,7 +96,7 @@
                 </ul>
             </li>
             <li ng-class="{active: $state.is('backend.user.apps')}">
-                <a ui-sref="backend.user.apps">
+                <a href="https://bitwarden.com/#download" target="_blank">
                     <small class="label pull-right bg-green">FREE</small>
                     <i class="fa fa-download fa-fw"></i> <span>Get the Apps</span>
                 </a>
