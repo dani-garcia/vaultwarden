@@ -176,26 +176,30 @@ fn update_cipher_from_data(cipher: &mut Cipher, data: CipherData, headers: &Head
     };
 
     // Copy the type data and change the names to the correct case
-    if !copy_values(&type_data, &mut values) {
-        err!("Data invalid")
-    }
+    copy_values(&type_data, &mut values);
 
     cipher.data = values.to_string();
 
     Ok(())
 }
 
-fn copy_values(from: &Value, to: &mut Value) -> bool {
-    let map = match from.as_object() {
-        Some(map) => map,
-        None => return false
-    };
+fn copy_values(from: &Value, to: &mut Value) {
+    if let Some(map) = from.as_object() {
+        for (key, val) in map {
+            copy_values(val, &mut to[util::upcase_first(key)]);
+        }
 
-    for (key, val) in map {
-        to[util::upcase_first(key)] = val.clone();
+    } else if let Some(array) = from.as_array() {
+        // Initialize array with null values
+        *to = json!(vec![Value::Null; array.len()]);
+
+        for (index, val) in array.iter().enumerate() {
+            copy_values(val, &mut to[index]);
+        }
+     
+    } else {
+        *to = from.clone();
     }
-
-    true
 }
 
 use super::folders::FolderData;
