@@ -1,6 +1,33 @@
 # Using multistage build: 
 # 	https://docs.docker.com/develop/develop-images/multistage-build/
 # 	https://whitfin.io/speeding-up-rust-docker-builds/
+####################### VAULT BUILD IMAGE  #######################
+FROM node:9-alpine as vault
+
+ENV VAULT_VERSION "1.26.0"
+ENV URL "https://github.com/bitwarden/web/archive/v${VAULT_VERSION}.tar.gz"
+
+RUN apk add --update-cache --upgrade \
+    curl \
+    git \
+    tar \
+    && npm install -g \
+        gulp-cli \
+        gulp
+
+RUN mkdir /web-build \
+    && cd /web-build \
+    && curl -L "${URL}" | tar -xvz --strip-components=1
+
+WORKDIR /web-build
+
+COPY /web-vault/settings.Production.json /web-build/
+
+RUN git config --global url."https://github.com/".insteadOf ssh://git@github.com/ \
+    && npm install \
+    && gulp dist:selfHosted \
+    && mv dist /web-vault
+
 ########################## BUILD IMAGE  ##########################
 # We need to use the Rust build image, because
 # we need the Rust compiler and Cargo tooling
@@ -53,7 +80,7 @@ EXPOSE 80
 # Copies the files from the context (env file and web-vault)
 # and the binary from the "build" stage to the current stage
 COPY .env .
-COPY web-vault ./web-vault
+COPY --from=vault /web-vault ./web-vault
 COPY --from=build app/target/release/bitwarden_rs .
 
 # Configures the startup!
