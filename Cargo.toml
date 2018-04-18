@@ -16,24 +16,22 @@ reqwest = "0.8.5"
 multipart = "0.14.2"
 
 # A generic serialization/deserialization framework
-serde = "1.0.33"
-serde_derive = "1.0.33"
-serde_json = "1.0.12"
+serde = "1.0.39"
+serde_derive = "1.0.39"
+serde_json = "1.0.15"
 
 # A safe, extensible ORM and Query builder
-# "large-tables" is needed for tables with more than 16 columns, the next version of diesel will
-# default to 32 column tables by default and deprecate large-tables, so remove this when updating
-diesel = { version = "1.1.1", features = ["sqlite", "chrono", "r2d2", "large-tables"] }
-diesel_migrations = { version = "1.1.0", features = ["sqlite"] }
+diesel = { version = "1.2.2", features = ["sqlite", "chrono", "r2d2"] }
+diesel_migrations = { version = "1.2.0", features = ["sqlite"] }
 
 # Crypto library
 ring = { version = "= 0.11.0", features = ["rsa_signing"] }
 
 # UUID generation
-uuid = { version = "0.6.2", features = ["v4"] }
+uuid = { version = "0.6.3", features = ["v4"] }
 
 # Date and time library for Rust
-chrono = "0.4.0"
+chrono = "0.4.2"
 
 # TOTP library
 oath = "0.10.2"
