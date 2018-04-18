@@ -40,6 +40,8 @@ cargo build
 ```
 
 ## How to update the web-vault used
+If you're using docker image, you can just update `VAULT_VERSION` variable in Dockerfile and rebuild the image.
+
 Install `node.js` and either `yarn` or `npm` (usually included with node)
 
 Clone the web-vault outside the project:
