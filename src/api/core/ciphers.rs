@@ -112,9 +112,9 @@ fn post_ciphers(data: Json<CipherData>, headers: Headers, conn: DbConn) -> JsonR
     Ok(Json(cipher.to_json(&headers.host, &conn)))
 }
 
-fn update_cipher_from_data(cipher: &mut Cipher, data: CipherData, headers: &Headers, conn: &DbConn) -> EmptyResult {
-    if let Some(folder_id) = data.folderId {
-        match Folder::find_by_uuid(&folder_id, conn) {
+fn update_cipher_from_data(cipher: &mut Cipher, data: CipherData, headers: &Headers, conn: &DbConn) -> EmptyResult {  
+    if let Some(ref folder_id) = data.folderId {
+        match Folder::find_by_uuid(folder_id, conn) {
             Some(folder) => {
                 if folder.user_uuid != headers.user.uuid {
                     err!("Folder is not owned by user")
@@ -122,9 +122,9 @@ fn update_cipher_from_data(cipher: &mut Cipher, data: CipherData, headers: &Head
             }
             None => err!("Folder doesn't exist")
         }
-
-        cipher.folder_uuid = Some(folder_id);
     }
+
+    cipher.folder_uuid = data.folderId;
 
     if let org_id @ Some(_) = data.organizationId {
         // TODO: Check if user in org
