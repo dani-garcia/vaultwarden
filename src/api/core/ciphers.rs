@@ -361,27 +361,12 @@ fn delete_attachment(uuid: String, attachment_id: String, headers: Headers, conn
 
 #[post("/ciphers/<uuid>/delete")]
 fn delete_cipher_post(uuid: String, headers: Headers, conn: DbConn) -> EmptyResult {
-    delete_cipher(uuid, headers, conn)
+    _delete_cipher_by_uuid(&uuid, &headers, &conn)
 }
 
 #[delete("/ciphers/<uuid>")]
 fn delete_cipher(uuid: String, headers: Headers, conn: DbConn) -> EmptyResult {
-    let cipher = match Cipher::find_by_uuid(&uuid, &conn) {
-        Some(cipher) => cipher,
-        None => err!("Cipher doesn't exist")
-    };
-
-    if cipher.user_uuid != headers.user.uuid {
-        err!("Cipher is not owned by user")
-    }
-
-    // Delete attachments
-    for a in Attachment::find_by_cipher(&cipher.uuid, &conn) { a.delete(&conn); }
-
-    // Delete cipher
-    cipher.delete(&conn);
-
-    Ok(())
+    _delete_cipher_by_uuid(&uuid, &headers, &conn)
 }
 
 #[post("/ciphers/delete", data = "<data>")]
@@ -397,20 +382,9 @@ fn delete_cipher_selected(data: Json<Value>, headers: Headers, conn: DbConn) -> 
     };
 
     for uuid in uuids {
-        let cipher = match Cipher::find_by_uuid(uuid, &conn) {
-            Some(cipher) => cipher,
-            None => err!("Cipher doesn't exist")
+        if let error @ Err(_) = _delete_cipher_by_uuid(uuid, &headers, &conn) {
+            return error;
         };
-
-        if cipher.user_uuid != headers.user.uuid {
-            err!("Cipher is not owned by user")
-        }
-
-        // Delete attachments
-        for a in Attachment::find_by_cipher(&cipher.uuid, &conn) { a.delete(&conn); }
-
-        // Delete cipher
-        cipher.delete(&conn);
     }
 
     Ok(())
@@ -477,13 +451,34 @@ fn delete_all(data: Json<PasswordData>, headers: Headers, conn: DbConn) -> Empty
 
     // Delete ciphers and their attachments
     for cipher in Cipher::find_by_user(&user.uuid, &conn) {
-        for a in Attachment::find_by_cipher(&cipher.uuid, &conn) { a.delete(&conn); }
-
-        cipher.delete(&conn);
+        _delete_cipher(cipher, &conn);
     }
 
     // Delete folders
     for f in Folder::find_by_user(&user.uuid, &conn) { f.delete(&conn); }
 
     Ok(())
+}
+
+fn _delete_cipher_by_uuid(uuid: &str, headers: &Headers, conn: &DbConn) -> EmptyResult {
+    let cipher = match Cipher::find_by_uuid(uuid, conn) {
+        Some(cipher) => cipher,
+        None => err!("Cipher doesn't exist"),
+    };
+
+    if cipher.user_uuid != headers.user.uuid {
+        err!("Cipher is not owned by user")
+    }
+
+    _delete_cipher(cipher, conn);
+
+    Ok(())
+}
+
+fn _delete_cipher(cipher: Cipher, conn: &DbConn) {
+    // Delete the attachments
+    for a in Attachment::find_by_cipher(&cipher.uuid, &conn) { a.delete(&conn); }
+
+    // Delete the cipher
+    cipher.delete(conn);
 }
