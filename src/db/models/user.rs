@@ -6,6 +6,7 @@ use uuid::Uuid;
 use crypto;
 use CONFIG;
 
+
 #[derive(Debug, Identifiable, Queryable, Insertable)]
 #[table_name = "users"]
 #[primary_key(uuid)]
