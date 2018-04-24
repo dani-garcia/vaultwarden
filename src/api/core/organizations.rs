@@ -81,7 +81,10 @@ fn get_org_details(data: OrgIdData, headers: Headers, conn: DbConn) -> JsonResul
 
 #[get("/organizations/<org_id>/users")]
 fn get_org_users(org_id: String, headers: Headers, conn: DbConn) -> JsonResult {
-    // TODO Check if user in org
+    let user_org = match UserOrganization::find_by_user_and_org(&headers.user.uuid, &org_id, &conn) {
+        Some(user_org) => user_org,
+        None => err!("User isn't member of organization")
+    }
 
     let users = UserOrganization::find_by_org(&org_id, &conn);
     let users_json: Vec<Value> = users.iter().map(|c| c.to_json_details(&conn)).collect();
@@ -141,32 +144,46 @@ struct InviteData {
 fn send_invite(org_id: String, data: Json<InviteData>, headers: Headers, conn: DbConn) -> EmptyResult {
     let data: InviteData = data.into_inner();
 
-    // TODO Check that user is in org and admin or more
+    let user_org = match UserOrganization::find_by_user_and_org(&headers.user.uuid, &org_id, &conn) {
+        Some(user_org) => user_org,
+        None => err!("User isn't member of organization")
+    };
+
+    if user_org.type_ == UserOrgType::User {
+        err!("Users can't invite other people. Ask an Admin or Owner")
+    }
+
+    if type_ != UserOrgType::User && user_org.type_ != UserOrgType::Owner {
+        err!("Only Owners can invite Admins or Owners")
+    }
 
     for user_opt in data.emails.iter().map(|email| User::find_by_mail(email, &conn)) {
         match user_opt {
             None => err!("User email does not exist"),
             Some(user) => {
-                // TODO Check that user is not already in org
+                match UserOrganization::find_by_user_and_org(&user.uuid, &org_id, &conn) {
+                    Some(_) => err!("User already in organization"),
+                    None => ()
+                }
 
-                let mut user_org = UserOrganization::new(
+                let mut new_user_org = UserOrganization::new(
                     user.uuid, org_id.clone());
 
                 if data.accessAll {
-                    user_org.access_all = data.accessAll;
+                    new_user_org.access_all = data.accessAll;
                 } else {
                     err!("Select collections unimplemented")
                     // TODO create Users_collections
                 }
 
-                user_org.type_ = match data.type_.as_ref() {
+                new_user_org.type_ = match data.type_.as_ref() {
                     "Owner" => UserOrgType::Owner,
                     "Admin" => UserOrgType::Admin,
                     "User" => UserOrgType::User,
                     _ => err!("Invalid type")
                 } as i32;
 
-                user_org.save(&conn);
+                new_user_org.save(&conn);
             }
         }
     }
@@ -176,7 +193,18 @@ fn send_invite(org_id: String, data: Json<InviteData>, headers: Headers, conn: D
 
 #[post("/organizations/<org_id>/users/<user_id>/confirm", data = "<data>")]
 fn confirm_invite(org_id: String, user_id: String, data: Json<Value>, headers: Headers, conn: DbConn) -> EmptyResult {
-    // TODO Check that user is in org and admin or more
+    let user_org = match UserOrganization::find_by_user_and_org(&headers.user.uuid, &org_id, &conn) {
+        Some(user_org) => user_org,
+        None => err!("User isn't member of organization")
+    };
+
+    if user_org.type_ == UserOrgType::User {
+        err!("Users can't confirm other people. Ask an Admin or Owner")
+    }
+
+    if type_ != UserOrgType::User && user_org.type_ != UserOrgType::Owner {
+        err!("Only Owners can confirm Admins or Owners")
+    }
 
     let mut user_org = match UserOrganization::find_by_user_and_org(
         &user_id, &org_id, &conn) {
@@ -201,12 +229,24 @@ fn confirm_invite(org_id: String, user_id: String, data: Json<Value>, headers: H
 
 #[post("/organizations/<org_id>/users/<user_id>/delete")]
 fn delete_user(org_id: String, user_id: String, headers: Headers, conn: DbConn) -> EmptyResult {
-    // TODO Check that user is in org and admin or more
-    // TODO To delete a user you need either:
-    //      - To be yourself
-    //      - To be of a superior type (ex. Owner can delete Admin and User, Admin can delete User)
+    let user_org = match UserOrganization::find_by_user_and_org(&headers.user.uuid, &org_id, &conn) {
+        Some(user_org) => user_org,
+        None => err!("User isn't member of organization")
+    };
 
-    // Delete users_organizations and users_collections from this org
+    if user_org.type_ == UserOrgType::User {
+        err!("Users can't delete other people. Ask an Admin or Owner")
+    }
 
-    unimplemented!();
+    if type_ != UserOrgType::User && user_org.type_ != UserOrgType::Owner {
+        err!("Only Owners can delete Admins or Owners")
+    }
+
+    // TODO Don't delete the last owner
+
+    user_org.delete(&conn);
+
+    // TODO Delete  users_collections from this org
+
+    Ok(())
 }
