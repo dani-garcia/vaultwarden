@@ -95,9 +95,11 @@ table! {
 }
 
 table! {
-    users_organizations (user_uuid, org_uuid) {
+    users_organizations (uuid) {
+        uuid -> Text,
         user_uuid -> Text,
         org_uuid -> Text,
+        access_all -> Bool,
         key -> Text,
         status -> Integer,
         #[sql_name = "type"]

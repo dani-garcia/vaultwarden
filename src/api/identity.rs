@@ -19,7 +19,6 @@ pub fn routes() -> Vec<Route> {
 #[post("/connect/token", data = "<connect_data>")]
 fn login(connect_data: Form<ConnectData>, device_type: DeviceType, conn: DbConn) -> JsonResult {
     let data = connect_data.get();
-    println!("{:#?}", data);
 
     let mut device = match data.grant_type {
         GrantType::RefreshToken => {
@@ -98,7 +97,9 @@ fn login(connect_data: Form<ConnectData>, device_type: DeviceType, conn: DbConn)
     };
 
     let user = User::find_by_uuid(&device.user_uuid, &conn).unwrap();
-    let (access_token, expires_in) = device.refresh_tokens(&user);
+    let orgs = UserOrganization::find_by_user(&user.uuid, &conn);
+
+    let (access_token, expires_in) = device.refresh_tokens(&user, orgs);
     device.save(&conn);
 
     Ok(Json(json!({

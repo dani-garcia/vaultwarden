@@ -40,7 +40,7 @@ impl Device {
         }
     }
 
-    pub fn refresh_tokens(&mut self, user: &super::User) -> (String, i64) {
+    pub fn refresh_tokens(&mut self, user: &super::User, orgs: Vec<super::UserOrganization>) -> (String, i64) {
         // If there is no refresh token, we create one
         if self.refresh_token.is_empty() {
             use data_encoding::BASE64URL;
@@ -51,8 +51,13 @@ impl Device {
 
         // Update the expiration of the device and the last update date
         let time_now = Utc::now().naive_utc();
-
         self.updated_at = time_now;
+
+
+        let orgowner: Vec<_> = orgs.iter().filter(|o| o.type_ == 0).map(|o| o.org_uuid.clone()).collect();
+        let orgadmin: Vec<_> = orgs.iter().filter(|o| o.type_ == 1).map(|o| o.org_uuid.clone()).collect();
+        let orguser: Vec<_> = orgs.iter().filter(|o| o.type_ == 2).map(|o| o.org_uuid.clone()).collect();
+
 
         // Create the JWT claims struct, to send to the client
         use auth::{encode_jwt, JWTClaims, DEFAULT_VALIDITY, JWT_ISSUER};
@@ -61,15 +66,22 @@ impl Device {
             exp: (time_now + *DEFAULT_VALIDITY).timestamp(),
             iss: JWT_ISSUER.to_string(),
             sub: user.uuid.to_string(),
+
             premium: true,
             name: user.name.to_string(),
             email: user.email.to_string(),
             email_verified: true,
+
+            orgowner,
+            orgadmin,
+            orguser,
+
             sstamp: user.security_stamp.to_string(),
             device: self.uuid.to_string(),
             scope: vec!["api".into(), "offline_access".into()],
             amr: vec!["Application".into()],
         };
+
 
         (encode_jwt(&claims), DEFAULT_VALIDITY.num_seconds())
     }

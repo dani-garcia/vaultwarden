@@ -115,8 +115,21 @@ impl User {
             true
         }
     }
+}
 
-    pub fn to_json(&self) -> JsonValue {
+use diesel;
+use diesel::prelude::*;
+use db::DbConn;
+use db::schema::users;
+
+/// Database methods
+impl User {
+    pub fn to_json(&self, conn: &DbConn) -> JsonValue {
+        use super::UserOrganization;
+
+        let orgs = UserOrganization::find_by_user(&self.uuid, conn);
+        let orgs_json: Vec<JsonValue> = orgs.iter().map(|c| c.to_json(&conn)).collect();
+
         json!({
             "Id": self.uuid,
             "Name": self.name,
@@ -129,19 +142,12 @@ impl User {
             "Key": self.key,
             "PrivateKey": self.private_key,
             "SecurityStamp": self.security_stamp,
-            "Organizations": [],
+            "Organizations": orgs_json,
             "Object": "profile"
         })
     }
-}
 
-use diesel;
-use diesel::prelude::*;
-use db::DbConn;
-use db::schema::users;
 
-/// Database methods
-impl User {
     pub fn save(&mut self, conn: &DbConn) -> bool {
         self.updated_at = Utc::now().naive_utc();
 

@@ -14,6 +14,7 @@ pub fn routes() -> Vec<Route> {
     routes![
         register,
         profile,
+        get_public_keys,
         post_keys,
         post_password,
         post_sstamp,
@@ -53,7 +54,15 @@ pub fn routes() -> Vec<Route> {
         activate_authenticator,
         disable_authenticator,
 
+        create_organization,
         get_user_collections,
+        get_org_collections,
+        get_org_details,
+        get_org_users,
+        get_collection_users,
+        send_invite,
+        confirm_invite,
+        delete_user,
 
         clear_device_token,
         put_device_token,

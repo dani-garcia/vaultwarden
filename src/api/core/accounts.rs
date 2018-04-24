@@ -60,8 +60,18 @@ fn register(data: Json<RegisterData>, conn: DbConn) -> EmptyResult {
 }
 
 #[get("/accounts/profile")]
-fn profile(headers: Headers) -> JsonResult {
-    Ok(Json(headers.user.to_json()))
+fn profile(headers: Headers, conn: DbConn) -> JsonResult {
+    Ok(Json(headers.user.to_json(&conn)))
+}
+
+#[get("/users/<uuid>/public-key")]
+fn get_public_keys(uuid: String, headers: Headers, conn: DbConn) -> JsonResult {
+    let user = match User::find_by_uuid(&uuid, &conn) {
+        Some(user) => user,
+        None => err!("User doesn't exist")
+    };
+
+    Ok(Json(json!(user.public_key)))
 }
 
 #[post("/accounts/keys", data = "<data>")]
@@ -75,7 +85,7 @@ fn post_keys(data: Json<KeysData>, headers: Headers, conn: DbConn) -> JsonResult
 
     user.save(&conn);
 
-    Ok(Json(user.to_json()))
+    Ok(Json(user.to_json(&conn)))
 }
 
 #[derive(Deserialize)]

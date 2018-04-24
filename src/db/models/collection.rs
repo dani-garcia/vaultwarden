@@ -1,4 +1,3 @@
-use chrono::{NaiveDateTime, Utc};
 use serde_json::Value as JsonValue;
 
 use uuid::Uuid;
@@ -18,8 +17,6 @@ pub struct Collection {
 /// Local methods
 impl Collection {
     pub fn new(org_uuid: String, name: String) -> Self {
-        let now = Utc::now().naive_utc();
-
         Self {
             uuid: Uuid::new_v4().to_string(),
 
@@ -46,8 +43,6 @@ use db::schema::collections;
 /// Database methods
 impl Collection {
     pub fn save(&mut self, conn: &DbConn) -> bool {
-        self.updated_at = Utc::now().naive_utc();
-
         match diesel::replace_into(collections::table)
             .values(&*self)
             .execute(&**conn) {

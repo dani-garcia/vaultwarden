@@ -18,12 +18,14 @@ CREATE TABLE users_collections (
 );
 
 CREATE TABLE users_organizations (
-  user_uuid TEXT    NOT NULL REFERENCES users (uuid),
-  org_uuid  TEXT    NOT NULL REFERENCES organizations (uuid),
+  uuid       TEXT    NOT NULL PRIMARY KEY,
+  user_uuid  TEXT    NOT NULL REFERENCES users (uuid),
+  org_uuid   TEXT    NOT NULL REFERENCES organizations (uuid),
 
-  key       TEXT    NOT NULL,
-  status    INTEGER NOT NULL,
-  type      INTEGER NOT NULL,
+  access_all BOOLEAN NOT NULL,
+  key        TEXT    NOT NULL,
+  status     INTEGER NOT NULL,
+  type       INTEGER NOT NULL,
 
-  PRIMARY KEY (user_uuid, org_uuid)
+  UNIQUE (user_uuid, org_uuid)
 );

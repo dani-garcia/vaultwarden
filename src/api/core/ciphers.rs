@@ -23,7 +23,7 @@ use CONFIG;
 
 #[get("/sync")]
 fn sync(headers: Headers, conn: DbConn) -> JsonResult {
-    let user_json = headers.user.to_json();
+    let user_json = headers.user.to_json(&conn);
 
     let folders = Folder::find_by_user(&headers.user.uuid, &conn);
     let folders_json: Vec<Value> = folders.iter().map(|c| c.to_json()).collect();
@@ -112,7 +112,7 @@ fn post_ciphers(data: Json<CipherData>, headers: Headers, conn: DbConn) -> JsonR
     Ok(Json(cipher.to_json(&headers.host, &conn)))
 }
 
-fn update_cipher_from_data(cipher: &mut Cipher, data: CipherData, headers: &Headers, conn: &DbConn) -> EmptyResult {  
+fn update_cipher_from_data(cipher: &mut Cipher, data: CipherData, headers: &Headers, conn: &DbConn) -> EmptyResult {
     if let Some(ref folder_id) = data.folderId {
         match Folder::find_by_uuid(folder_id, conn) {
             Some(folder) => {
@@ -188,7 +188,6 @@ fn copy_values(from: &Value, to: &mut Value) {
         for (key, val) in map {
             copy_values(val, &mut to[util::upcase_first(key)]);
         }
-
     } else if let Some(array) = from.as_array() {
         // Initialize array with null values
         *to = json!(vec![Value::Null; array.len()]);
@@ -196,7 +195,6 @@ fn copy_values(from: &Value, to: &mut Value) {
         for (index, val) in array.iter().enumerate() {
             copy_values(val, &mut to[index]);
         }
-     
     } else {
         *to = from.clone();
     }
@@ -375,7 +373,7 @@ fn delete_cipher_selected(data: Json<Value>, headers: Headers, conn: DbConn) -> 
 
     let uuids = match data.get("ids") {
         Some(ids) => match ids.as_array() {
-            Some(ids) => ids.iter().filter_map(|uuid| {uuid.as_str()}),
+            Some(ids) => ids.iter().filter_map(|uuid| { uuid.as_str() }),
             None => err!("Posted ids field is not an array")
         },
         None => err!("Request missing ids field")
@@ -405,16 +403,16 @@ fn move_cipher_selected(data: Json<Value>, headers: Headers, conn: DbConn) -> Em
                         }
                         None => err!("Folder doesn't exist")
                     }
-                },
+                }
                 None => err!("Folder id provided in wrong format")
             }
-        },
+        }
         None => None
     };
 
     let uuids = match data.get("ids") {
         Some(ids) => match ids.as_array() {
-            Some(ids) => ids.iter().filter_map(|uuid| {uuid.as_str()}),
+            Some(ids) => ids.iter().filter_map(|uuid| { uuid.as_str() }),
             None => err!("Posted ids field is not an array")
         },
         None => err!("Request missing ids field")

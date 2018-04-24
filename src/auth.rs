@@ -72,6 +72,10 @@ pub struct JWTClaims {
     pub email: String,
     pub email_verified: bool,
 
+    pub orgowner: Vec<String>,
+    pub orgadmin: Vec<String>,
+    pub orguser: Vec<String>,
+
     // user security_stamp
     pub sstamp: String,
     // device uuid
