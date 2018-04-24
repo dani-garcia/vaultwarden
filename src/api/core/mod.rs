@@ -55,13 +55,16 @@ pub fn routes() -> Vec<Route> {
         disable_authenticator,
 
         create_organization,
+        delete_organization,
         get_user_collections,
         get_org_collections,
+        get_collection_users,
         get_org_details,
         get_org_users,
-        get_collection_users,
         send_invite,
         confirm_invite,
+        get_user,
+        edit_user,
         delete_user,
 
         clear_device_token,

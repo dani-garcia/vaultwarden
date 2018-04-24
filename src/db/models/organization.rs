@@ -37,6 +37,17 @@ pub enum UserOrgType {
     User = 2,
 }
 
+impl UserOrgType {
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "0" | "Owner" => Some(UserOrgType::Owner),
+            "1" | "Admin" => Some(UserOrgType::Admin),
+            "2" | "User" => Some(UserOrgType::User),
+            _ => None,
+        }
+    }
+}
+
 /// Local methods
 impl Organization {
     pub fn new(name: String, billing_email: String) -> Self {
@@ -155,13 +166,13 @@ impl UserOrganization {
         })
     }
 
-    pub fn to_json_details(&self, conn: &DbConn) -> JsonValue {
+    pub fn to_json_user_details(&self, conn: &DbConn) -> JsonValue {
         use super::User;
         let user = User::find_by_uuid(&self.user_uuid, conn).unwrap();
 
         json!({
             "Id": self.uuid,
-            "UserId": user.uuid,
+            "UserId": self.user_uuid,
             "Name": user.name,
             "Email": user.email,
 
@@ -170,6 +181,20 @@ impl UserOrganization {
             "AccessAll": true,
 
             "Object": "organizationUserUserDetails",
+        })
+    }
+
+    pub fn to_json_details(&self) -> JsonValue {
+        json!({
+            "Id": self.uuid,
+            "UserId": self.user_uuid,
+
+            "Status": self.status,
+            "Type": self.type_,
+            "AccessAll": true,
+            "Collections": [],
+
+            "Object": "organizationUserDetails",
         })
     }
 
@@ -191,6 +216,12 @@ impl UserOrganization {
         }
     }
 
+    pub fn find_by_uuid(uuid: &str, conn: &DbConn) -> Option<Self> {
+        users_organizations::table
+            .filter(users_organizations::uuid.eq(uuid))
+            .first::<Self>(&**conn).ok()
+    }
+
     pub fn find_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
         users_organizations::table
             .filter(users_organizations::user_uuid.eq(user_uuid))
@@ -200,6 +231,13 @@ impl UserOrganization {
     pub fn find_by_org(org_uuid: &str, conn: &DbConn) -> Vec<Self> {
         users_organizations::table
             .filter(users_organizations::org_uuid.eq(org_uuid))
+            .load::<Self>(&**conn).expect("Error loading user organizations")
+    }
+
+    pub fn find_by_org_and_type(org_uuid: &str, type_: i32, conn: &DbConn) -> Vec<Self> {
+        users_organizations::table
+            .filter(users_organizations::org_uuid.eq(org_uuid))
+            .filter(users_organizations::type_.eq(type_))
             .load::<Self>(&**conn).expect("Error loading user organizations")
     }
 
