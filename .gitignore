@@ -11,3 +11,7 @@ data
 
 # Environment file
 # .env
+
+# Web vault
+web-vault
+!web-vault/settings.Production.json

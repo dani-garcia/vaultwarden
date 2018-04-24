@@ -1,9 +1,9 @@
-{
-    "appSettings": {
-        "apiUri": "/api",
-        "identityUri": "/identity",
-        "iconsUri": "/icons",
-        "stripeKey": "",
-        "braintreeKey": ""
-    }
+﻿{
+  "appSettings": {
+    "apiUri": "/api",
+    "identityUri": "/identity",
+    "iconsUri": "/icons",
+    "stripeKey": "",
+    "braintreeKey": ""
+  }
 }

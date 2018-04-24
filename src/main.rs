@@ -51,13 +51,12 @@ fn init_rocket() -> Rocket {
 embed_migrations!();
 
 fn main() {
-    println!("{:#?}", *CONFIG);
-
     // Make sure the database is up to date (create if it doesn't exist, or run the migrations)
     let connection = db::get_connection().expect("Can't conect to DB");
     embedded_migrations::run_with_output(&connection, &mut io::stdout()).expect("Can't run migrations");
 
     check_rsa_keys();
+    check_web_vault();
 
     init_rocket().launch();
 }
@@ -105,6 +104,18 @@ fn check_rsa_keys() {
             println!("Error creating keys, exiting...");
             exit(1);
         }
+    }
+}
+
+fn check_web_vault() {
+    use std::path::Path;
+    use std::process::exit;
+
+    let index_path = Path::new(&CONFIG.web_vault_folder).join("index.html");
+
+    if !index_path.exists() {
+        println!("Web vault is not found. Please follow the steps in the README to install it");
+        exit(1);
     }
 }
 

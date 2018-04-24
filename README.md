@@ -39,7 +39,7 @@ cargo run
 cargo build
 ```
 
-## How to update the web-vault used
+## How to install the web-vault locally
 If you're using docker image, you can just update `VAULT_VERSION` variable in Dockerfile and rebuild the image.
 
 Install `node.js` and either `yarn` or `npm` (usually included with node)
