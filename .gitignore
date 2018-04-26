@@ -14,4 +14,3 @@ data
 
 # Web vault
 web-vault
-!web-vault/settings.Production.json

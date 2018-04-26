@@ -21,7 +21,7 @@ RUN mkdir /web-build \
 
 WORKDIR /web-build
 
-COPY /web-vault/settings.Production.json /web-build/
+COPY /docker/settings.Production.json /web-build/
 
 RUN git config --global url."https://github.com/".insteadOf ssh://git@github.com/ \
     && npm install \
