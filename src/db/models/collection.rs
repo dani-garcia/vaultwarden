@@ -66,26 +66,19 @@ impl Collection {
             .first::<Self>(&**conn).ok()
     }
 
-    pub fn find_by_user_uuid(uuid: &str, conn: &DbConn) -> Vec<Self> {
-        match users_collections::table
-            .filter(users_collections::user_uuid.eq(uuid))
-            .select(users_collections::columns::collection_uuid)
-            .load(&**conn) {
-                Ok(uuids) => uuids.iter().map(|uuid: &String| {
-                    Collection::find_by_uuid(uuid, &conn).unwrap()
-                }).collect(),
-                Err(list) => vec![]
-        }
+    pub fn find_by_user_uuid(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
+        users_collections::table.inner_join(collections::table)
+            .filter(users_collections::user_uuid.eq(user_uuid))
+            .select(collections::all_columns)
+            .load::<Self>(&**conn).expect("Error loading user collections")
     }
 
     pub fn find_by_uuid_and_user(uuid: &str, user_uuid: &str, conn: &DbConn) -> Option<Self> {
-        match users_collections::table
+        users_collections::table.inner_join(collections::table)
             .filter(users_collections::collection_uuid.eq(uuid))
             .filter(users_collections::user_uuid.eq(user_uuid))
-            .first::<CollectionUsers>(&**conn).ok() {
-                None => None,
-                Some(collection_user) => Collection::find_by_uuid(&collection_user.collection_uuid, &conn)
-        }
+            .select(collections::all_columns)
+            .first::<Self>(&**conn).ok()
     }
 }
 
