@@ -19,13 +19,32 @@ struct OrgData {
     planType: String,
 }
 
+#[derive(Deserialize, Debug)]
+#[allow(non_snake_case)]
+struct OrganizationUpdateData {
+    billingEmail: String,
+    name: String,
+}
+
+#[derive(Deserialize, Debug)]
+#[allow(non_snake_case)]
+struct NewCollectionData {
+    name: String,
+}
+
 #[post("/organizations", data = "<data>")]
 fn create_organization(headers: Headers, data: Json<OrgData>, conn: DbConn) -> JsonResult {
     let data: OrgData = data.into_inner();
 
     let mut org = Organization::new(data.name, data.billingEmail);
     let mut user_org = UserOrganization::new(
-        headers.user.uuid, org.uuid.clone());
+        headers.user.uuid.clone(), org.uuid.clone());
+    let mut collection = Collection::new(
+        org.uuid.clone(), data.collectionName);
+    let mut collection_user = CollectionUsers::new(
+        headers.user.uuid.clone(),
+        collection.uuid.clone(),
+    );
 
     user_org.key = data.key;
     user_org.access_all = true;
@@ -34,6 +53,8 @@ fn create_organization(headers: Headers, data: Json<OrgData>, conn: DbConn) -> J
 
     org.save(&conn);
     user_org.save(&conn);
+    collection.save(&conn);
+    collection_user.save(&conn);
 
     Ok(Json(org.to_json()))
 }
@@ -46,28 +67,131 @@ fn delete_organization(org_id: String, data: Json<PasswordData>, headers: Header
     unimplemented!()
 }
 
+#[get("/organizations/<org_id>")]
+fn get_organization(org_id: String, headers: Headers, conn: DbConn) -> JsonResult {
+    if UserOrganization::find_by_user_and_org( &headers.user.uuid, &org_id, &conn).is_none() {
+        err!("User not in Organization or Organization doesn't exist")
+    }
+
+    match Organization::find_by_uuid(&org_id, &conn) {
+        Some(organization) => Ok(Json(organization.to_json())),
+        None => err!("Can't find organization details")
+    }
+}
+
+#[post("/organizations/<org_id>", data = "<data>")]
+fn post_organization(org_id: String, headers: Headers, data: Json<OrganizationUpdateData>, conn: DbConn) -> JsonResult {
+    let data: OrganizationUpdateData = data.into_inner();
+
+    match UserOrganization::find_by_user_and_org( &headers.user.uuid, &org_id, &conn) {
+        None => err!("User not in Organization or Organization doesn't exist"),
+        Some(org_user) => if org_user.type_ != 0 { // not owner
+            err!("Only owner can change Organization details")
+        }
+    };
+
+    let mut org = match Organization::find_by_uuid(&org_id, &conn) {
+        Some(organization) => organization,
+        None => err!("Can't find organization details")
+    };
+
+    org.name = data.name;
+    org.billing_email = data.billingEmail;
+    org.save(&conn);
+
+    Ok(Json(org.to_json()))
+}
 
 // GET /api/collections?writeOnly=false
 #[get("/collections")]
 fn get_user_collections(headers: Headers, conn: DbConn) -> JsonResult {
 
-    // let collections_json = get_user_collections().map(|c|c.to_json());
-
     Ok(Json(json!({
-        "Data": [],
+        "Data":
+            Collection::find_by_user_uuid(&headers.user.uuid, &conn)
+            .iter()
+            .map(|collection| {
+                collection.to_json()
+            }).collect::<Value>(),
         "Object": "list"
     })))
 }
 
 #[get("/organizations/<org_id>/collections")]
 fn get_org_collections(org_id: String, headers: Headers, conn: DbConn) -> JsonResult {
-    // let org = get_org_by_id(org_id)
-    // let collections_json = org.collections().map(|c|c.to_json());
-
     Ok(Json(json!({
-        "Data": [],
+        "Data":
+            Collection::find_by_user_uuid(&headers.user.uuid, &conn)
+            .iter()
+            .filter(|collection| { collection.org_uuid == org_id })
+            .map(|collection| {
+                collection.to_json()
+            }).collect::<Value>(),
         "Object": "list"
     })))
+}
+
+#[post("/organizations/<org_id>/collections", data = "<data>")]
+fn post_organization_collections(org_id: String, headers: Headers, data: Json<NewCollectionData>, conn: DbConn) -> JsonResult {
+    let data: NewCollectionData = data.into_inner();
+
+    match UserOrganization::find_by_user_and_org( &headers.user.uuid, &org_id, &conn) {
+        None => err!("User not in Organization or Organization doesn't exist"),
+        Some(org_user) => if org_user.type_ > 1 { // not owner or admin
+            err!("Only Organization owner and admin can add Collection")
+        }
+    };
+
+    let org = match Organization::find_by_uuid(&org_id, &conn) {
+        Some(organization) => organization,
+        None => err!("Can't find organization details")
+    };
+
+    let mut collection = Collection::new(org.uuid.clone(), data.name);
+    let mut collection_user = CollectionUsers::new(
+        headers.user.uuid.clone(),
+        collection.uuid.clone(),
+    );
+
+    collection.save(&conn);
+    collection_user.save(&conn);
+
+    Ok(Json(collection.to_json()))
+}
+
+#[post("/organizations/<org_id>/collections/<col_id>", data = "<data>")]
+fn post_organization_collection_update(org_id: String, col_id: String, headers: Headers, data: Json<NewCollectionData>, conn: DbConn) -> JsonResult {
+    let data: NewCollectionData = data.into_inner();
+
+    match UserOrganization::find_by_user_and_org( &headers.user.uuid, &org_id, &conn) {
+        None => err!("User not in Organization or Organization doesn't exist"),
+        Some(org_user) => if org_user.type_ > 1 { // not owner or admin
+            err!("Only Organization owner and admin can update Collection")
+        }
+    };
+
+    let org = match Organization::find_by_uuid(&org_id, &conn) {
+        Some(organization) => organization,
+        None => err!("Can't find organization details")
+    };
+
+    let mut collection = match Collection::find_by_uuid(&col_id, &conn) {
+        Some(collection) => collection,
+        None => err!("Collection not found")
+    };
+
+    collection.name = data.name.clone();
+    collection.save(&conn);
+
+    Ok(Json(collection.to_json()))
+}
+
+#[get("/organizations/<org_id>/collections/<coll_id>/details")]
+fn get_org_collection_detail(org_id: String, coll_id: String, headers: Headers, conn: DbConn) -> JsonResult {
+    match Collection::find_by_uuid_and_user(&coll_id, &headers.user.uuid, &conn) {
+        None => err!("Collection not found"),
+        Some(collection) => Ok(Json(collection.to_json()))
+    }
 }
 
 #[get("/organizations/<org_id>/collections/<coll_id>/users")]

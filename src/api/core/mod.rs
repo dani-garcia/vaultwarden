@@ -54,11 +54,16 @@ pub fn routes() -> Vec<Route> {
         activate_authenticator,
         disable_authenticator,
 
+        get_organization,
         create_organization,
         delete_organization,
         get_user_collections,
         get_org_collections,
+        get_org_collection_detail,
         get_collection_users,
+        post_organization,
+        post_organization_collections,
+        post_organization_collection_update,
         get_org_details,
         get_org_users,
         send_invite,
@@ -71,7 +76,8 @@ pub fn routes() -> Vec<Route> {
         put_device_token,
 
         get_eq_domains,
-        post_eq_domains
+        post_eq_domains,
+
     ]
 }
 
