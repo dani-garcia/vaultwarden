@@ -27,6 +27,7 @@ pub fn routes() -> Vec<Route> {
         get_ciphers,
         get_cipher,
         post_ciphers,
+        post_ciphers_admin,
         post_ciphers_import,
         post_attachment,
         delete_attachment_post,

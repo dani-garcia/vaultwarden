@@ -229,12 +229,12 @@ struct OrgIdData {
 
 #[get("/ciphers/organization-details?<data>")]
 fn get_org_details(data: OrgIdData, headers: Headers, conn: DbConn) -> JsonResult {
-
-    // Get list of ciphers in org?
+    let ciphers = Cipher::find_by_org(&data.organizationId, &conn);
+    let ciphers_json: Vec<Value> = ciphers.iter().map(|c| c.to_json(&headers.host, &conn)).collect();
 
     Ok(Json(json!({
-        "Data": [],
-        "Object": "list"
+      "Data": ciphers_json,
+      "Object": "list",
     })))
 }
 

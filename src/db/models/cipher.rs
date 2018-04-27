@@ -96,7 +96,7 @@ impl Cipher {
             "RevisionDate": format_date(&self.updated_at),
             "FolderId": self.folder_uuid,
             "Favorite": self.favorite,
-            "OrganizationId": "",
+            "OrganizationId": self.organization_uuid,
             "Attachments": attachments_json,
             "OrganizationUseTotp": false,
 
@@ -151,6 +151,12 @@ impl Cipher {
     pub fn find_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
         ciphers::table
             .filter(ciphers::user_uuid.eq(user_uuid))
+            .load::<Self>(&**conn).expect("Error loading ciphers")
+    }
+
+    pub fn find_by_org(org_uuid: &str, conn: &DbConn) -> Vec<Self> {
+        ciphers::table
+            .filter(ciphers::organization_uuid.eq(org_uuid))
             .load::<Self>(&**conn).expect("Error loading ciphers")
     }
 
