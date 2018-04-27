@@ -188,6 +188,7 @@ fn update_cipher_from_data(cipher: &mut Cipher, data: CipherData, headers: &Head
 
     // Copy the type data and change the names to the correct case
     copy_values(&type_data, &mut values);
+    cipher.name = data.name;
 
     cipher.data = values.to_string();
 
