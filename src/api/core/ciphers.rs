@@ -129,8 +129,6 @@ fn update_cipher_from_data(cipher: &mut Cipher, data: CipherData, headers: &Head
         }
     }
 
-    cipher.folder_uuid = data.folderId;
-
     if let Some(org_id) = data.organizationId {
         match UserOrganization::find_by_user_and_org(&headers.user.uuid, &org_id, &conn) {
             None => err!("You don't have permission to add item to organization"),
@@ -142,6 +140,13 @@ fn update_cipher_from_data(cipher: &mut Cipher, data: CipherData, headers: &Head
         }
     }
 
+    let uppercase_fields = data.fields.map(|f| {
+        let mut value = json!({});
+        // Copy every field object and change the names to the correct case
+        copy_values(&f, &mut value);
+        value
+    });
+
     // TODO: ******* Backwards compat start **********
     // To remove backwards compatibility, just create an empty values object,
     // and remove the compat code from cipher::to_json
@@ -150,28 +155,8 @@ fn update_cipher_from_data(cipher: &mut Cipher, data: CipherData, headers: &Head
         "Notes": data.notes
     });
 
-    if let Some(ref fields) = data.fields {
-        values["Fields"] = Value::Array(fields.as_array().unwrap().iter().map(|f| {
-            let mut value = json!({});
-
-            // Copy every field object and change the names to the correct case
-            copy_values(&f, &mut value);
-
-            value
-        }).collect());
-    } else {
-        values["Fields"] = Value::Null;
-    }
+    values["Fields"] = uppercase_fields.clone().unwrap_or(Value::Null);
     // TODO: ******* Backwards compat end **********
-
-    if let notes @ Some(_) = data.notes {
-        cipher.notes = notes;
-    }
-
-    if let Some(fields) = data.fields {
-        use serde_json::to_string;
-        cipher.fields = to_string(&fields).ok();
-    }
 
     let type_data_opt = match data.type_ {
         1 => data.login,
@@ -188,8 +173,11 @@ fn update_cipher_from_data(cipher: &mut Cipher, data: CipherData, headers: &Head
 
     // Copy the type data and change the names to the correct case
     copy_values(&type_data, &mut values);
-    cipher.name = data.name;
 
+    cipher.folder_uuid = data.folderId;
+    cipher.name = data.name;
+    cipher.notes = data.notes;
+    cipher.fields = uppercase_fields.map(|f| f.to_string());
     cipher.data = values.to_string();
 
     Ok(())
