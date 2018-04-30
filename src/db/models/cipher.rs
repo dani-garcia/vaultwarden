@@ -3,19 +3,19 @@ use serde_json::Value as JsonValue;
 
 use uuid::Uuid;
 
-use super::User;
+use super::{User, Organization, UserOrganization, FolderCipher};
 
 #[derive(Debug, Identifiable, Queryable, Insertable, Associations)]
 #[table_name = "ciphers"]
 #[belongs_to(User, foreign_key = "user_uuid")]
+#[belongs_to(Organization, foreign_key = "organization_uuid")]
 #[primary_key(uuid)]
 pub struct Cipher {
     pub uuid: String,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
 
-    pub user_uuid: String,
-    pub folder_uuid: Option<String>,
+    pub user_uuid: Option<String>,
     pub organization_uuid: Option<String>,
 
     /*
@@ -36,7 +36,7 @@ pub struct Cipher {
 
 /// Local methods
 impl Cipher {
-    pub fn new(user_uuid: String, type_: i32, name: String, favorite: bool) -> Self {
+    pub fn new(user_uuid: Option<String>, organization_uuid: Option<String>, type_: i32, name: String, favorite: bool) -> Self {
         let now = Utc::now().naive_utc();
 
         Self {
@@ -45,8 +45,7 @@ impl Cipher {
             updated_at: now,
 
             user_uuid,
-            folder_uuid: None,
-            organization_uuid: None,
+            organization_uuid,
 
             type_,
             favorite,
@@ -63,11 +62,11 @@ impl Cipher {
 use diesel;
 use diesel::prelude::*;
 use db::DbConn;
-use db::schema::ciphers;
+use db::schema::*;
 
 /// Database methods
 impl Cipher {
-    pub fn to_json(&self, host: &str, conn: &DbConn) -> JsonValue {
+    pub fn to_json(&self, host: &str, user_uuid: &str, conn: &DbConn) -> JsonValue {
         use serde_json;
         use util::format_date;
         use super::Attachment;
@@ -94,7 +93,7 @@ impl Cipher {
             "Id": self.uuid,
             "Type": self.type_,
             "RevisionDate": format_date(&self.updated_at),
-            "FolderId": self.folder_uuid,
+            "FolderId": self.get_folder_uuid(&user_uuid, &conn),
             "Favorite": self.favorite,
             "OrganizationId": self.organization_uuid,
             "Attachments": attachments_json,
@@ -142,6 +141,84 @@ impl Cipher {
         }
     }
 
+    pub fn move_to_folder(&self, folder_uuid: Option<String>, user_uuid: &str, conn: &DbConn) -> Result<(), &str> {
+        match self.get_folder_uuid(&user_uuid, &conn)  {
+            None => {
+                match folder_uuid {
+                    Some(new_folder) => {
+                        let folder_cipher = FolderCipher::new(&new_folder, &self.uuid);
+                        folder_cipher.save(&conn).or(Err("Couldn't save folder setting"))
+                    },
+                    None => Ok(()) //nothing to do
+                }
+            },
+            Some(current_folder) => {
+                match folder_uuid {
+                    Some(new_folder) => {
+                        if current_folder == new_folder {
+                            Ok(()) //nothing to do
+                        } else {
+                            match FolderCipher::find_by_folder_and_cipher(&current_folder, &self.uuid, &conn) {
+                                Some(current_folder) => {
+                                    current_folder.delete(&conn).or(Err("Failed removing old folder mapping"))
+                                },
+                                None => Ok(()) // Weird, but nothing to do
+                            };
+
+                            FolderCipher::new(&new_folder, &self.uuid)
+                            .save(&conn).or(Err("Couldn't save folder setting"))
+                        }
+                    },
+                    None => {
+                        match FolderCipher::find_by_folder_and_cipher(&current_folder, &self.uuid, &conn) {
+                            Some(current_folder) => {
+                                current_folder.delete(&conn).or(Err("Failed removing old folder mapping"))
+                            },
+                            None => Err("Couldn't move from previous folder")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn is_write_accessible_to_user(&self, user_uuid: &str, conn: &DbConn) -> bool {
+        match ciphers::table
+        .filter(ciphers::user_uuid.eq(user_uuid))
+        .filter(ciphers::uuid.eq(&self.uuid))
+        .first::<Self>(&**conn).ok() {
+            Some(_) => true, // cipher directly owned by user
+            None =>{
+                match self.organization_uuid {
+                    Some(ref org_uuid) => {
+                        match users_organizations::table
+                        .filter(users_organizations::org_uuid.eq(org_uuid))
+                        .filter(users_organizations::user_uuid.eq(user_uuid))
+                        .filter(users_organizations::access_all.eq(true))
+                        .first::<UserOrganization>(&**conn).ok() {
+                            Some(_) => true,
+                            None => false //TODO R/W access on collection
+                        }
+                    },
+                    None => false // cipher not in organization and not owned by user
+                }
+            }
+        }
+    }
+
+    pub fn is_accessible_to_user(&self, user_uuid: &str, conn: &DbConn) -> bool {
+        // TODO also check for read-only access
+        self.is_write_accessible_to_user(user_uuid, conn)
+    }
+
+    pub fn get_folder_uuid(&self, user_uuid: &str, conn: &DbConn) -> Option<String> {
+        folders_ciphers::table.inner_join(folders::table)
+            .filter(folders::user_uuid.eq(&user_uuid))
+            .filter(folders_ciphers::cipher_uuid.eq(&self.uuid))
+            .select(folders_ciphers::folder_uuid)
+            .first::<String>(&**conn).ok()
+    }
+
     pub fn find_by_uuid(uuid: &str, conn: &DbConn) -> Option<Self> {
         ciphers::table
             .filter(ciphers::uuid.eq(uuid))
@@ -161,8 +238,9 @@ impl Cipher {
     }
 
     pub fn find_by_folder(folder_uuid: &str, conn: &DbConn) -> Vec<Self> {
-        ciphers::table
-            .filter(ciphers::folder_uuid.eq(folder_uuid))
+        folders_ciphers::table.inner_join(ciphers::table)
+            .filter(folders_ciphers::folder_uuid.eq(folder_uuid))
+            .select(ciphers::all_columns)
             .load::<Self>(&**conn).expect("Error loading ciphers")
     }
 }

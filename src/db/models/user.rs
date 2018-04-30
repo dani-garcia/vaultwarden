@@ -128,7 +128,7 @@ impl User {
     pub fn to_json(&self, conn: &DbConn) -> JsonValue {
         use super::UserOrganization;
 
-        let orgs = UserOrganization::find_by_user(&self.uuid, conn);
+        let orgs = UserOrganization::find_by_user(&self.uuid, conn).unwrap_or(vec![]);
         let orgs_json: Vec<JsonValue> = orgs.iter().map(|c| c.to_json(&conn)).collect();
 
         json!({

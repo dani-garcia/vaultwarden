@@ -10,7 +10,7 @@ mod organization;
 pub use self::attachment::Attachment;
 pub use self::cipher::Cipher;
 pub use self::device::Device;
-pub use self::folder::Folder;
+pub use self::folder::{Folder, FolderCipher};
 pub use self::user::User;
 pub use self::organization::Organization;
 pub use self::organization::{UserOrganization, UserOrgStatus, UserOrgType};

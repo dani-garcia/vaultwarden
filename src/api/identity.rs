@@ -97,7 +97,7 @@ fn login(connect_data: Form<ConnectData>, device_type: DeviceType, conn: DbConn)
     };
 
     let user = User::find_by_uuid(&device.user_uuid, &conn).unwrap();
-    let orgs = UserOrganization::find_by_user(&user.uuid, &conn);
+    let orgs = UserOrganization::find_by_user(&user.uuid, &conn).unwrap_or(vec![]);
 
     let (access_token, expires_in) = device.refresh_tokens(&user, orgs);
     device.save(&conn);

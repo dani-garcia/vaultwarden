@@ -3,7 +3,7 @@ use serde_json::Value as JsonValue;
 
 use uuid::Uuid;
 
-use super::User;
+use super::{User, Cipher};
 
 #[derive(Debug, Identifiable, Queryable, Insertable, Associations)]
 #[table_name = "folders"]
@@ -15,6 +15,16 @@ pub struct Folder {
     pub updated_at: NaiveDateTime,
     pub user_uuid: String,
     pub name: String,
+}
+
+#[derive(Debug, Identifiable, Queryable, Insertable, Associations)]
+#[table_name = "folders_ciphers"]
+#[belongs_to(Cipher, foreign_key = "cipher_uuid")]
+#[belongs_to(Folder, foreign_key = "folder_uuid")]
+#[primary_key(cipher_uuid, folder_uuid)]
+pub struct FolderCipher {
+    pub cipher_uuid: String,
+    pub folder_uuid: String,
 }
 
 /// Local methods
@@ -44,10 +54,19 @@ impl Folder {
     }
 }
 
+impl FolderCipher {
+    pub fn new(cipher_uuid: &str, folder_uuid: &str) -> Self {
+        Self {
+            cipher_uuid: cipher_uuid.to_string(),
+            folder_uuid: folder_uuid.to_string(),
+        }
+    }
+}
+
 use diesel;
 use diesel::prelude::*;
 use db::DbConn;
-use db::schema::folders;
+use db::schema::{folders, folders_ciphers};
 
 /// Database methods
 impl Folder {
@@ -81,5 +100,27 @@ impl Folder {
         folders::table
             .filter(folders::user_uuid.eq(user_uuid))
             .load::<Self>(&**conn).expect("Error loading folders")
+    }
+}
+
+impl FolderCipher {
+    pub fn save(&self, conn: &DbConn) -> QueryResult<()> {
+        diesel::replace_into(folders_ciphers::table)
+        .values(&*self)
+        .execute(&**conn).and(Ok(()))
+    }
+
+    pub fn delete(self, conn: &DbConn) -> QueryResult<()> {
+        diesel::delete(folders_ciphers::table
+            .filter(folders_ciphers::cipher_uuid.eq(self.cipher_uuid))
+            .filter(folders_ciphers::folder_uuid.eq(self.folder_uuid))
+        ).execute(&**conn).and(Ok(()))
+    }
+
+    pub fn find_by_folder_and_cipher(folder_uuid: &str, cipher_uuid: &str, conn: &DbConn) -> Option<Self> {
+        folders_ciphers::table
+            .filter(folders_ciphers::folder_uuid.eq(folder_uuid))
+            .filter(folders_ciphers::cipher_uuid.eq(cipher_uuid))
+            .first::<Self>(&**conn).ok()
     }
 }

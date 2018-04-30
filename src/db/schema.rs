@@ -12,8 +12,7 @@ table! {
         uuid -> Text,
         created_at -> Timestamp,
         updated_at -> Timestamp,
-        user_uuid -> Text,
-        folder_uuid -> Nullable<Text>,
+        user_uuid -> Nullable<Text>,
         organization_uuid -> Nullable<Text>,
         #[sql_name = "type"]
         type_ -> Integer,
@@ -107,8 +106,14 @@ table! {
     }
 }
 
+table! {
+    folders_ciphers (cipher_uuid, folder_uuid) {
+        cipher_uuid -> Text,
+        folder_uuid -> Text,
+    }
+}
+
 joinable!(attachments -> ciphers (cipher_uuid));
-joinable!(ciphers -> folders (folder_uuid));
 joinable!(ciphers -> users (user_uuid));
 joinable!(collections -> organizations (org_uuid));
 joinable!(devices -> users (user_uuid));
@@ -117,6 +122,8 @@ joinable!(users_collections -> collections (collection_uuid));
 joinable!(users_collections -> users (user_uuid));
 joinable!(users_organizations -> organizations (org_uuid));
 joinable!(users_organizations -> users (user_uuid));
+joinable!(folders_ciphers -> ciphers (cipher_uuid));
+joinable!(folders_ciphers -> folders (folder_uuid));
 
 allow_tables_to_appear_in_same_query!(
     attachments,
@@ -128,4 +135,5 @@ allow_tables_to_appear_in_same_query!(
     users,
     users_collections,
     users_organizations,
+    folders_ciphers,
 );

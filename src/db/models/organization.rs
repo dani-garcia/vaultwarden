@@ -222,10 +222,10 @@ impl UserOrganization {
             .first::<Self>(&**conn).ok()
     }
 
-    pub fn find_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
+    pub fn find_by_user(user_uuid: &str, conn: &DbConn) -> Option<Vec<Self>> {
         users_organizations::table
             .filter(users_organizations::user_uuid.eq(user_uuid))
-            .load::<Self>(&**conn).expect("Error loading user organizations")
+            .load::<Self>(&**conn).ok()
     }
 
     pub fn find_by_org(org_uuid: &str, conn: &DbConn) -> Vec<Self> {

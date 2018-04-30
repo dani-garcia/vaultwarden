@@ -29,7 +29,7 @@ fn sync(headers: Headers, conn: DbConn) -> JsonResult {
     let folders_json: Vec<Value> = folders.iter().map(|c| c.to_json()).collect();
 
     let ciphers = Cipher::find_by_user(&headers.user.uuid, &conn);
-    let ciphers_json: Vec<Value> = ciphers.iter().map(|c| c.to_json(&headers.host, &conn)).collect();
+    let ciphers_json: Vec<Value> = ciphers.iter().map(|c| c.to_json(&headers.host, &headers.user.uuid, &conn)).collect();
 
     let domains_json = api::core::get_eq_domains(headers).unwrap().into_inner();
 
@@ -47,7 +47,7 @@ fn sync(headers: Headers, conn: DbConn) -> JsonResult {
 fn get_ciphers(headers: Headers, conn: DbConn) -> JsonResult {
     let ciphers = Cipher::find_by_user(&headers.user.uuid, &conn);
 
-    let ciphers_json: Vec<Value> = ciphers.iter().map(|c| c.to_json(&headers.host, &conn)).collect();
+    let ciphers_json: Vec<Value> = ciphers.iter().map(|c| c.to_json(&headers.host, &headers.user.uuid, &conn)).collect();
 
     Ok(Json(json!({
       "Data": ciphers_json,
@@ -62,11 +62,11 @@ fn get_cipher(uuid: String, headers: Headers, conn: DbConn) -> JsonResult {
         None => err!("Cipher doesn't exist")
     };
 
-    if cipher.user_uuid != headers.user.uuid {
+    if !cipher.is_accessible_to_user(&headers.user.uuid, &conn) {
         err!("Cipher is not owned by user")
     }
 
-    Ok(Json(cipher.to_json(&headers.host, &conn)))
+    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, &conn)))
 }
 
 #[derive(Deserialize, Debug)]
@@ -109,12 +109,12 @@ fn post_ciphers(data: Json<CipherData>, headers: Headers, conn: DbConn) -> JsonR
 
     let user_uuid = headers.user.uuid.clone();
     let favorite = data.favorite.unwrap_or(false);
-    let mut cipher = Cipher::new(user_uuid, data.type_, data.name.clone(), favorite);
+    let mut cipher = Cipher::new(Some(user_uuid), None, data.type_, data.name.clone(), favorite);
 
     update_cipher_from_data(&mut cipher, data, &headers, &conn)?;
     cipher.save(&conn);
 
-    Ok(Json(cipher.to_json(&headers.host, &conn)))
+    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, &conn)))
 }
 
 fn update_cipher_from_data(cipher: &mut Cipher, data: CipherData, headers: &Headers, conn: &DbConn) -> EmptyResult {
@@ -174,7 +174,7 @@ fn update_cipher_from_data(cipher: &mut Cipher, data: CipherData, headers: &Head
     // Copy the type data and change the names to the correct case
     copy_values(&type_data, &mut values);
 
-    cipher.folder_uuid = data.folderId;
+    cipher.move_to_folder(data.folderId, &headers.user.uuid, &conn);
     cipher.name = data.name;
     cipher.notes = data.notes;
     cipher.fields = uppercase_fields.map(|f| f.to_string());
@@ -247,11 +247,11 @@ fn post_ciphers_import(data: Json<ImportData>, headers: Headers, conn: DbConn) -
 
         let user_uuid = headers.user.uuid.clone();
         let favorite = cipher_data.favorite.unwrap_or(false);
-        let mut cipher = Cipher::new(user_uuid, cipher_data.type_, cipher_data.name.clone(), favorite);
+        let mut cipher = Cipher::new(Some(user_uuid), None, cipher_data.type_, cipher_data.name.clone(), favorite);
 
         if update_cipher_from_data(&mut cipher, cipher_data, &headers, &conn).is_err() { err!("Error creating cipher") }
 
-        cipher.folder_uuid = folder_uuid;
+        //cipher.folder_uuid = folder_uuid; // TODO: This needs to create new folder-cipher mapping
 
         cipher.save(&conn);
         index += 1;
@@ -274,8 +274,8 @@ fn put_cipher(uuid: String, data: Json<CipherData>, headers: Headers, conn: DbCo
         None => err!("Cipher doesn't exist")
     };
 
-    if cipher.user_uuid != headers.user.uuid {
-        err!("Cipher is not owned by user")
+    if !cipher.is_write_accessible_to_user(&headers.user.uuid, &conn) {
+        err!("Cipher is not write accessible")
     }
 
     cipher.favorite = data.favorite.unwrap_or(false);
@@ -283,7 +283,7 @@ fn put_cipher(uuid: String, data: Json<CipherData>, headers: Headers, conn: DbCo
     update_cipher_from_data(&mut cipher, data, &headers, &conn)?;
     cipher.save(&conn);
 
-    Ok(Json(cipher.to_json(&headers.host, &conn)))
+    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, &conn)))
 }
 
 
@@ -294,8 +294,8 @@ fn post_attachment(uuid: String, data: Data, content_type: &ContentType, headers
         None => err!("Cipher doesn't exist")
     };
 
-    if cipher.user_uuid != headers.user.uuid {
-        err!("Cipher is not owned by user")
+    if !cipher.is_write_accessible_to_user(&headers.user.uuid, &conn) {
+        err!("Cipher is not write accessible")
     }
 
     let mut params = content_type.params();
@@ -323,7 +323,7 @@ fn post_attachment(uuid: String, data: Data, content_type: &ContentType, headers
         attachment.save(&conn);
     }).expect("Error processing multipart data");
 
-    Ok(Json(cipher.to_json(&headers.host, &conn)))
+    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, &conn)))
 }
 
 #[post("/ciphers/<uuid>/attachment/<attachment_id>/delete")]
@@ -347,8 +347,8 @@ fn delete_attachment(uuid: String, attachment_id: String, headers: Headers, conn
         None => err!("Cipher doesn't exist")
     };
 
-    if cipher.user_uuid != headers.user.uuid {
-        err!("Cipher is not owned by user")
+    if !cipher.is_write_accessible_to_user(&headers.user.uuid, &conn) {
+        err!("Cipher cannot be deleted by user")
     }
 
     // Delete attachment
@@ -399,7 +399,7 @@ fn move_cipher_selected(data: Json<Value>, headers: Headers, conn: DbConn) -> Em
                             if folder.user_uuid != headers.user.uuid {
                                 err!("Folder is not owned by user")
                             }
-                            Some(folder_id.to_string())
+                            Some(folder.uuid)
                         }
                         None => err!("Folder doesn't exist")
                     }
@@ -424,12 +424,12 @@ fn move_cipher_selected(data: Json<Value>, headers: Headers, conn: DbConn) -> Em
             None => err!("Cipher doesn't exist")
         };
 
-        if cipher.user_uuid != headers.user.uuid {
-            err!("Cipher is not owned by user")
+        if !cipher.is_accessible_to_user(&headers.user.uuid, &conn) {
+            err!("Cipher is not accessible by user")
         }
 
         // Move cipher
-        cipher.folder_uuid = folder_id.clone();
+        cipher.move_to_folder(folder_id.clone(), &headers.user.uuid, &conn);
         cipher.save(&conn);
     }
 
@@ -464,8 +464,8 @@ fn _delete_cipher_by_uuid(uuid: &str, headers: &Headers, conn: &DbConn) -> Empty
         None => err!("Cipher doesn't exist"),
     };
 
-    if cipher.user_uuid != headers.user.uuid {
-        err!("Cipher is not owned by user")
+    if !cipher.is_write_accessible_to_user(&headers.user.uuid, &conn) {
+        err!("Cipher can't be deleted by user")
     }
 
     _delete_cipher(cipher, conn);
