@@ -163,10 +163,10 @@ impl Cipher {
                                     current_folder.delete(&conn).or(Err("Failed removing old folder mapping"))
                                 },
                                 None => Ok(()) // Weird, but nothing to do
-                            };
-
-                            FolderCipher::new(&new_folder, &self.uuid)
-                            .save(&conn).or(Err("Couldn't save folder setting"))
+                            }.and_then(
+                                |()| FolderCipher::new(&new_folder, &self.uuid)
+                                .save(&conn).or(Err("Couldn't save folder setting"))
+                            )
                         }
                     },
                     None => {

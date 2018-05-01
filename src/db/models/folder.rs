@@ -55,10 +55,10 @@ impl Folder {
 }
 
 impl FolderCipher {
-    pub fn new(cipher_uuid: &str, folder_uuid: &str) -> Self {
+    pub fn new(folder_uuid: &str, cipher_uuid: &str) -> Self {
         Self {
-            cipher_uuid: cipher_uuid.to_string(),
             folder_uuid: folder_uuid.to_string(),
+            cipher_uuid: cipher_uuid.to_string(),
         }
     }
 }

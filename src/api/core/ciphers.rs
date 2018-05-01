@@ -174,7 +174,9 @@ fn update_cipher_from_data(cipher: &mut Cipher, data: CipherData, headers: &Head
     // Copy the type data and change the names to the correct case
     copy_values(&type_data, &mut values);
 
-    cipher.move_to_folder(data.folderId, &headers.user.uuid, &conn);
+    if cipher.move_to_folder(data.folderId, &headers.user.uuid, &conn).is_err() {
+        err!("Error saving the folder information")
+    }
     cipher.name = data.name;
     cipher.notes = data.notes;
     cipher.fields = uppercase_fields.map(|f| f.to_string());
@@ -429,7 +431,9 @@ fn move_cipher_selected(data: Json<Value>, headers: Headers, conn: DbConn) -> Em
         }
 
         // Move cipher
-        cipher.move_to_folder(folder_id.clone(), &headers.user.uuid, &conn);
+        if cipher.move_to_folder(folder_id.clone(), &headers.user.uuid, &conn).is_err() {
+            err!("Error saving the folder information")
+        }
         cipher.save(&conn);
     }
 
