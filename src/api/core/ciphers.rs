@@ -253,8 +253,7 @@ fn post_ciphers_import(data: Json<ImportData>, headers: Headers, conn: DbConn) -
 
         if update_cipher_from_data(&mut cipher, cipher_data, &headers, &conn).is_err() { err!("Error creating cipher") }
 
-        //cipher.folder_uuid = folder_uuid; // TODO: This needs to create new folder-cipher mapping
-
+        cipher.move_to_folder(folder_uuid, &headers.user.uuid.clone(), &conn).ok();
         cipher.save(&conn);
         index += 1;
     }

@@ -22,8 +22,8 @@ CREATE TABLE folders_ciphers (
   PRIMARY KEY (cipher_uuid, folder_uuid)
 );
 
-INSERT INTO ciphers (uuid, created_at, updated_at, organization_uuid, type, name, notes, fields, data, favorite) 
-SELECT uuid, created_at, updated_at, organization_uuid, type, name, notes, fields, data, favorite FROM oldCiphers;
+INSERT INTO ciphers (uuid, created_at, updated_at, user_uuid, organization_uuid, type, name, notes, fields, data, favorite) 
+SELECT uuid, created_at, updated_at, user_uuid, organization_uuid, type, name, notes, fields, data, favorite FROM oldCiphers;
 
 INSERT INTO folders_ciphers (cipher_uuid, folder_uuid)
 SELECT uuid, folder_uuid FROM oldCiphers WHERE folder_uuid IS NOT NULL;
