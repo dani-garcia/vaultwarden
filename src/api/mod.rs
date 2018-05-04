@@ -21,3 +21,19 @@ type EmptyResult = Result<(), BadRequest<Json>>;
 struct PasswordData {
     masterPasswordHash: String
 }
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum NumberOrString {
+    Number(i32),
+    String(String),
+}
+
+impl NumberOrString {
+    fn to_string(self) -> String {
+        match self {
+            NumberOrString::Number(n) => n.to_string(),
+            NumberOrString::String(s) => s
+        }
+    }
+}

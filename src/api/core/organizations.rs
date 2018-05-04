@@ -5,7 +5,7 @@ use rocket_contrib::{Json, Value};
 use db::DbConn;
 use db::models::*;
 
-use api::{PasswordData, JsonResult, EmptyResult};
+use api::{PasswordData, JsonResult, EmptyResult, NumberOrString};
 use auth::Headers;
 
 
@@ -41,10 +41,6 @@ fn create_organization(headers: Headers, data: Json<OrgData>, conn: DbConn) -> J
         headers.user.uuid.clone(), org.uuid.clone());
     let mut collection = Collection::new(
         org.uuid.clone(), data.collectionName);
-    let mut collection_user = CollectionUsers::new(
-        headers.user.uuid.clone(),
-        collection.uuid.clone(),
-    );
 
     user_org.key = data.key;
     user_org.access_all = true;
@@ -54,7 +50,6 @@ fn create_organization(headers: Headers, data: Json<OrgData>, conn: DbConn) -> J
     org.save(&conn);
     user_org.save(&conn);
     collection.save(&conn);
-    collection_user.save(&conn);
 
     Ok(Json(org.to_json()))
 }
@@ -63,6 +58,8 @@ fn create_organization(headers: Headers, data: Json<OrgData>, conn: DbConn) -> J
 fn delete_organization(org_id: String, data: Json<PasswordData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: PasswordData = data.into_inner();
     let password_hash = data.masterPasswordHash;
+
+    // TODO: Delete ciphers from organization, collection_users, collections, organization_users and the org itself
 
     unimplemented!()
 }
@@ -109,7 +106,6 @@ fn get_user_collections(headers: Headers, conn: DbConn) -> JsonResult {
     Ok(Json(json!({
         "Data":
             Collection::find_by_user_uuid(&headers.user.uuid, &conn)
-            .expect("Error loading collections")
             .iter()
             .map(|collection| {
                 collection.to_json()
@@ -123,7 +119,6 @@ fn get_org_collections(org_id: String, headers: Headers, conn: DbConn) -> JsonRe
     Ok(Json(json!({
         "Data":
             Collection::find_by_organization_and_user_uuid(&org_id, &headers.user.uuid, &conn)
-            .unwrap_or(vec![])
             .iter()
             .map(|collection| {
                 collection.to_json()
@@ -136,10 +131,12 @@ fn get_org_collections(org_id: String, headers: Headers, conn: DbConn) -> JsonRe
 fn post_organization_collections(org_id: String, headers: Headers, data: Json<NewCollectionData>, conn: DbConn) -> JsonResult {
     let data: NewCollectionData = data.into_inner();
 
-    match UserOrganization::find_by_user_and_org( &headers.user.uuid, &org_id, &conn) {
+    let org_user = match UserOrganization::find_by_user_and_org( &headers.user.uuid, &org_id, &conn) {
         None => err!("User not in Organization or Organization doesn't exist"),
-        Some(org_user) => if org_user.type_ > 1 { // not owner or admin
+        Some(org_user) => if org_user.type_ == UserOrgType::User as i32 {
             err!("Only Organization owner and admin can add Collection")
+        } else {
+            org_user
         }
     };
 
@@ -149,13 +146,12 @@ fn post_organization_collections(org_id: String, headers: Headers, data: Json<Ne
     };
 
     let mut collection = Collection::new(org.uuid.clone(), data.name);
-    let mut collection_user = CollectionUsers::new(
-        headers.user.uuid.clone(),
-        collection.uuid.clone(),
-    );
 
     collection.save(&conn);
-    collection_user.save(&conn);
+
+    if !org_user.access_all {
+        CollectionUsers::save(&headers.user.uuid, &collection.uuid, &conn);
+    }
 
     Ok(Json(collection.to_json()))
 }
@@ -267,7 +263,7 @@ struct CollectionData {
 struct InviteData {
     emails: Vec<String>,
     #[serde(rename = "type")]
-    type_: String,
+    type_: NumberOrString,
     collections: Vec<CollectionData>,
     accessAll: bool,
 }
@@ -285,7 +281,7 @@ fn send_invite(org_id: String, data: Json<InviteData>, headers: Headers, conn: D
         err!("Users can't invite other people. Ask an Admin or Owner")
     }
 
-    let new_type = match UserOrgType::from_str(data.type_.as_ref()) {
+    let new_type = match UserOrgType::from_str(&data.type_.to_string()) {
         Some(new_type) => new_type as i32,
         None => err!("Invalid type")
     };
@@ -304,17 +300,20 @@ fn send_invite(org_id: String, data: Json<InviteData>, headers: Headers, conn: D
                     None => ()
                 }
 
-                let mut new_user = UserOrganization::new(
-                    user.uuid, org_id.clone());
-
-                if data.accessAll {
-                    new_user.access_all = data.accessAll;
-                } else {
-                    err!("Select collections unimplemented")
-                    // TODO create Users_collections
-                }
-
+                let mut new_user = UserOrganization::new(user.uuid, org_id.clone());
+                
+                new_user.access_all = data.accessAll;
                 new_user.type_ = new_type;
+
+                // If no accessAll, add the collections received
+                if !data.accessAll {
+                    for collection in data.collections.iter() {
+                        // TODO: Check that collection is in org
+                        // TODO: Save the readOnly bit
+                        
+                        CollectionUsers::save(&headers.user.uuid, &collection.id, &conn);
+                    }
+                }
 
                 new_user.save(&conn);
             }
@@ -381,7 +380,7 @@ fn get_user(org_id: String, user_id: String, headers: Headers, conn: DbConn) -> 
 #[allow(non_snake_case)]
 struct EditUserData {
     #[serde(rename = "type")]
-    type_: String,
+    type_: NumberOrString,
     collections: Vec<CollectionData>,
     accessAll: bool,
 }
@@ -396,7 +395,7 @@ fn edit_user(org_id: String, user_id: String, data: Json<EditUserData>, headers:
         None => err!("The current user isn't member of the organization")
     };
 
-    let new_type = match UserOrgType::from_str(data.type_.as_ref()) {
+    let new_type = match UserOrgType::from_str(&data.type_.to_string()) {
         Some(new_type) => new_type as i32,
         None => err!("Invalid type")
     };
@@ -436,10 +435,19 @@ fn edit_user(org_id: String, user_id: String, data: Json<EditUserData>, headers:
     user_to_edit.access_all = data.accessAll;
     user_to_edit.type_ = new_type;
 
-    if data.accessAll {
-        // Remove users_collections if there is any
-    } else {
-        // TODO create users_collections
+    // Delete all the odd collections
+    for c in Collection::find_by_organization_and_user_uuid(&org_id, &current_user.uuid, &conn) { 
+        CollectionUsers::delete(&current_user.uuid, &c.uuid, &conn);
+    }
+
+    // If no accessAll, add the collections received
+    if !data.accessAll {
+        for collection in data.collections.iter() {
+            // TODO: Check that collection is in org
+            // TODO: Save the readOnly bit
+            
+            CollectionUsers::save(&current_user.uuid, &collection.id, &conn);
+        }
     }
 
     user_to_edit.save(&conn);
@@ -482,7 +490,9 @@ fn delete_user(org_id: String, user_id: String, headers: Headers, conn: DbConn) 
 
     user_to_delete.delete(&conn);
 
-    // TODO Delete  users_collections from this org
+    for c in Collection::find_by_organization_and_user_uuid(&org_id, &current_user.uuid, &conn) { 
+        CollectionUsers::delete(&current_user.uuid, &c.uuid, &conn);
+    }
 
     Ok(())
 }

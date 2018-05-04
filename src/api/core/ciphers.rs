@@ -69,6 +69,12 @@ fn get_cipher(uuid: String, headers: Headers, conn: DbConn) -> JsonResult {
     Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, &conn)))
 }
 
+#[get("/ciphers/<uuid>/admin")]
+fn get_cipher_admin(uuid: String, headers: Headers, conn: DbConn) -> JsonResult {
+    // TODO: Implement this correctly
+    get_cipher(uuid, headers, conn)
+}
+
 #[derive(Deserialize, Debug)]
 #[allow(non_snake_case)]
 struct CipherData {
@@ -100,6 +106,7 @@ struct CipherData {
 
 #[post("/ciphers/admin", data = "<data>")]
 fn post_ciphers_admin(data: Json<CipherData>, headers: Headers, conn: DbConn) -> JsonResult {
+    // TODO: Implement this correctly
     post_ciphers(data, headers, conn)
 }
 
@@ -230,8 +237,8 @@ fn post_ciphers_import(data: Json<ImportData>, headers: Headers, conn: DbConn) -
     let data: ImportData = data.into_inner();
 
     // Read and create the folders
-    let folders: Vec<_> = data.folders.iter().map(|folder| {
-        let mut folder = Folder::new(headers.user.uuid.clone(), folder.name.clone());
+    let folders: Vec<_> = data.folders.into_iter().map(|folder| {
+        let mut folder = Folder::new(headers.user.uuid.clone(), folder.name);
         folder.save(&conn);
         folder
     }).collect();
@@ -259,6 +266,12 @@ fn post_ciphers_import(data: Json<ImportData>, headers: Headers, conn: DbConn) -
     }
 
     Ok(())
+}
+
+#[post("/ciphers/<uuid>/admin", data = "<data>")]
+fn post_cipher_admin(uuid: String, data: Json<CipherData>, headers: Headers, conn: DbConn) -> JsonResult {
+    // TODO: Implement this correctly
+    post_cipher(uuid, data, headers, conn)
 }
 
 #[post("/ciphers/<uuid>", data = "<data>")]

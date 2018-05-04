@@ -38,7 +38,7 @@ impl Collection {
 use diesel;
 use diesel::prelude::*;
 use db::DbConn;
-use db::schema::collections;
+use db::schema::*;
 
 /// Database methods
 impl Collection {
@@ -66,19 +66,25 @@ impl Collection {
             .first::<Self>(&**conn).ok()
     }
 
-    pub fn find_by_user_uuid(user_uuid: &str, conn: &DbConn) -> Option<Vec<Self>> {
-        users_collections::table.inner_join(collections::table)
+    pub fn find_by_user_uuid(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
+        let mut all_access_collections = users_organizations::table
+            .filter(users_organizations::user_uuid.eq(user_uuid))
+            .filter(users_organizations::access_all.eq(true))
+            .inner_join(collections::table.on(collections::org_uuid.eq(users_organizations::org_uuid)))
+            .select(collections::all_columns)
+            .load::<Self>(&**conn).expect("Error loading collections");
+
+        let mut assigned_collections = users_collections::table.inner_join(collections::table)
             .filter(users_collections::user_uuid.eq(user_uuid))
             .select(collections::all_columns)
-            .load::<Self>(&**conn).ok()
+            .load::<Self>(&**conn).expect("Error loading collections");
+
+        all_access_collections.append(&mut assigned_collections);
+        all_access_collections
     }
 
-    pub fn find_by_organization_and_user_uuid(org_uuid: &str, user_uuid: &str, conn: &DbConn) -> Option<Vec<Self>> {
-        users_collections::table.inner_join(collections::table)
-            .filter(users_collections::user_uuid.eq(user_uuid))
-            .filter(collections::org_uuid.eq(org_uuid))
-            .select(collections::all_columns)
-            .load::<Self>(&**conn).ok()
+    pub fn find_by_organization_and_user_uuid(org_uuid: &str, user_uuid: &str, conn: &DbConn) -> Vec<Self> {
+        Self::find_by_user_uuid(user_uuid, conn).into_iter().filter(|c| c.org_uuid == org_uuid).collect()
     }
 
     pub fn find_by_uuid_and_user(uuid: &str, user_uuid: &str, conn: &DbConn) -> Option<Self> {
@@ -102,28 +108,25 @@ pub struct CollectionUsers {
     pub collection_uuid: String,
 }
 
-/// Local methods
-impl CollectionUsers {
-    pub fn new(
-        user_uuid: String,
-        collection_uuid: String,
-    ) -> Self {
-        Self {
-            user_uuid,
-            collection_uuid,
-        }
-    }
-}
-
-use db::schema::users_collections;
-
 /// Database methods
 impl CollectionUsers {
-    pub fn save(&mut self, conn: &DbConn) -> bool {
+    pub fn save(user_uuid: &str, collection_uuid: &str, conn: &DbConn) -> bool {
         match diesel::replace_into(users_collections::table)
-            .values(&*self)
-            .execute(&**conn) {
+            .values((
+                users_collections::user_uuid.eq(user_uuid),
+                users_collections::collection_uuid.eq(collection_uuid)
+            )).execute(&**conn) {
             Ok(1) => true, // One row inserted
+            _ => false,
+        }
+    }
+
+    pub fn delete(user_uuid: &str, collection_uuid: &str, conn: &DbConn) -> bool {
+        match diesel::delete(users_collections::table
+            .filter(users_collections::user_uuid.eq(user_uuid))
+            .filter(users_collections::collection_uuid.eq(collection_uuid)))
+            .execute(&**conn) {
+            Ok(1) => true, // One row deleted
             _ => false,
         }
     }
