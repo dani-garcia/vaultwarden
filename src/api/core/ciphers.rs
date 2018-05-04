@@ -107,17 +107,28 @@ fn post_ciphers_admin(data: Json<CipherData>, headers: Headers, conn: DbConn) ->
 fn post_ciphers(data: Json<CipherData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: CipherData = data.into_inner();
 
-    let user_uuid = headers.user.uuid.clone();
-    let favorite = data.favorite.unwrap_or(false);
-    let mut cipher = Cipher::new(Some(user_uuid), None, data.type_, data.name.clone(), favorite);
-
-    update_cipher_from_data(&mut cipher, data, &headers, &conn)?;
-    cipher.save(&conn);
+    let mut cipher = Cipher::new(data.type_, data.name.clone());
+    update_cipher_from_data(&mut cipher, data, &headers, true, &conn)?;
 
     Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, &conn)))
 }
 
-fn update_cipher_from_data(cipher: &mut Cipher, data: CipherData, headers: &Headers, conn: &DbConn) -> EmptyResult {
+fn update_cipher_from_data(cipher: &mut Cipher, data: CipherData, headers: &Headers, is_new: bool, conn: &DbConn) -> EmptyResult {
+    if is_new {
+        if let Some(org_id) = data.organizationId {
+            match UserOrganization::find_by_user_and_org(&headers.user.uuid, &org_id, &conn) {
+                None => err!("You don't have permission to add item to organization"),
+                Some(org_user) => if org_user.access_all || org_user.type_ < UserOrgType::User as i32 {
+                    cipher.organization_uuid = Some(org_id);
+                } else {
+                    err!("You don't have permission to add cipher directly to organization")
+                }
+            }
+        } else {
+            cipher.user_uuid = Some(headers.user.uuid.clone());
+        }
+    }
+
     if let Some(ref folder_id) = data.folderId {
         match Folder::find_by_uuid(folder_id, conn) {
             Some(folder) => {
@@ -126,17 +137,6 @@ fn update_cipher_from_data(cipher: &mut Cipher, data: CipherData, headers: &Head
                 }
             }
             None => err!("Folder doesn't exist")
-        }
-    }
-
-    if let Some(org_id) = data.organizationId {
-        match UserOrganization::find_by_user_and_org(&headers.user.uuid, &org_id, &conn) {
-            None => err!("You don't have permission to add item to organization"),
-            Some(org_user) => if org_user.access_all || org_user.type_ < UserOrgType::User as i32 {
-                cipher.organization_uuid = Some(org_id);
-            } else {
-                err!("You don't have permission to add cipher directly to organization")
-            }
         }
     }
 
@@ -177,11 +177,14 @@ fn update_cipher_from_data(cipher: &mut Cipher, data: CipherData, headers: &Head
     if cipher.move_to_folder(data.folderId, &headers.user.uuid, &conn).is_err() {
         err!("Error saving the folder information")
     }
+
+    cipher.favorite = data.favorite.unwrap_or(false);
     cipher.name = data.name;
     cipher.notes = data.notes;
     cipher.fields = uppercase_fields.map(|f| f.to_string());
     cipher.data = values.to_string();
 
+    cipher.save(&conn);
     Ok(())
 }
 
@@ -247,14 +250,11 @@ fn post_ciphers_import(data: Json<ImportData>, headers: Headers, conn: DbConn) -
         let folder_uuid = relations_map.get(&index)
             .map(|i| folders[*i as usize].uuid.clone());
 
-        let user_uuid = headers.user.uuid.clone();
-        let favorite = cipher_data.favorite.unwrap_or(false);
-        let mut cipher = Cipher::new(Some(user_uuid), None, cipher_data.type_, cipher_data.name.clone(), favorite);
-
-        if update_cipher_from_data(&mut cipher, cipher_data, &headers, &conn).is_err() { err!("Error creating cipher") }
+        let mut cipher = Cipher::new(cipher_data.type_, cipher_data.name.clone());
+        update_cipher_from_data(&mut cipher, cipher_data, &headers, true, &conn)?;
 
         cipher.move_to_folder(folder_uuid, &headers.user.uuid.clone(), &conn).ok();
-        cipher.save(&conn);
+
         index += 1;
     }
 
@@ -279,10 +279,7 @@ fn put_cipher(uuid: String, data: Json<CipherData>, headers: Headers, conn: DbCo
         err!("Cipher is not write accessible")
     }
 
-    cipher.favorite = data.favorite.unwrap_or(false);
-
-    update_cipher_from_data(&mut cipher, data, &headers, &conn)?;
-    cipher.save(&conn);
+    update_cipher_from_data(&mut cipher, data, &headers, false, &conn)?;
 
     Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, &conn)))
 }

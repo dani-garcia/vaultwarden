@@ -36,7 +36,7 @@ pub struct Cipher {
 
 /// Local methods
 impl Cipher {
-    pub fn new(user_uuid: Option<String>, organization_uuid: Option<String>, type_: i32, name: String, favorite: bool) -> Self {
+    pub fn new(type_: i32, name: String) -> Self {
         let now = Utc::now().naive_utc();
 
         Self {
@@ -44,11 +44,11 @@ impl Cipher {
             created_at: now,
             updated_at: now,
 
-            user_uuid,
-            organization_uuid,
+            user_uuid: None,
+            organization_uuid: None,
 
             type_,
-            favorite,
+            favorite: false,
             name,
 
             notes: None,
@@ -98,6 +98,7 @@ impl Cipher {
             "OrganizationId": self.organization_uuid,
             "Attachments": attachments_json,
             "OrganizationUseTotp": false,
+            "CollectionIds": [],
 
             "Name": self.name,
             "Notes": self.notes,

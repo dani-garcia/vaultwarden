@@ -123,4 +123,10 @@ impl FolderCipher {
             .filter(folders_ciphers::cipher_uuid.eq(cipher_uuid))
             .first::<Self>(&**conn).ok()
     }
+
+    pub fn find_by_folder(folder_uuid: &str, conn: &DbConn) -> Vec<Self> {
+        folders_ciphers::table
+            .filter(folders_ciphers::folder_uuid.eq(folder_uuid))
+            .load::<Self>(&**conn).expect("Error loading folders")
+    }
 }
