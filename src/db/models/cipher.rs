@@ -183,11 +183,8 @@ impl Cipher {
     }
 
     pub fn is_write_accessible_to_user(&self, user_uuid: &str, conn: &DbConn) -> bool {
-        match ciphers::table
-        .filter(ciphers::user_uuid.eq(user_uuid))
-        .filter(ciphers::uuid.eq(&self.uuid))
-        .first::<Self>(&**conn).ok() {
-            Some(_) => true, // cipher directly owned by user
+        match self.user_uuid {
+            Some(ref self_user_uuid) => self_user_uuid == user_uuid, // cipher directly owned by user
             None =>{
                 match self.organization_uuid {
                     Some(ref org_uuid) => {
