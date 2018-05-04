@@ -71,7 +71,11 @@ fn get_public_keys(uuid: String, headers: Headers, conn: DbConn) -> JsonResult {
         None => err!("User doesn't exist")
     };
 
-    Ok(Json(json!(user.public_key)))
+    Ok(Json(json!({
+        "UserId": user.uuid,
+        "PublicKey": user.public_key,
+        "Object":"userKey"
+    })))
 }
 
 #[post("/accounts/keys", data = "<data>")]
