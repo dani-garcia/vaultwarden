@@ -109,6 +109,7 @@ fn get_user_collections(headers: Headers, conn: DbConn) -> JsonResult {
     Ok(Json(json!({
         "Data":
             Collection::find_by_user_uuid(&headers.user.uuid, &conn)
+            .expect("Error loading collections")
             .iter()
             .map(|collection| {
                 collection.to_json()
@@ -121,9 +122,9 @@ fn get_user_collections(headers: Headers, conn: DbConn) -> JsonResult {
 fn get_org_collections(org_id: String, headers: Headers, conn: DbConn) -> JsonResult {
     Ok(Json(json!({
         "Data":
-            Collection::find_by_user_uuid(&headers.user.uuid, &conn)
+            Collection::find_by_organization_and_user_uuid(&org_id, &headers.user.uuid, &conn)
+            .unwrap_or(vec![])
             .iter()
-            .filter(|collection| { collection.org_uuid == org_id })
             .map(|collection| {
                 collection.to_json()
             }).collect::<Value>(),
@@ -230,7 +231,7 @@ struct OrgIdData {
 #[get("/ciphers/organization-details?<data>")]
 fn get_org_details(data: OrgIdData, headers: Headers, conn: DbConn) -> JsonResult {
     let ciphers = Cipher::find_by_org(&data.organizationId, &conn);
-    let ciphers_json: Vec<Value> = ciphers.iter().map(|c| c.to_json(&headers.host, &conn)).collect();
+    let ciphers_json: Vec<Value> = ciphers.iter().map(|c| c.to_json(&headers.host, &headers.user.uuid, &conn)).collect();
 
     Ok(Json(json!({
       "Data": ciphers_json,

@@ -66,11 +66,19 @@ impl Collection {
             .first::<Self>(&**conn).ok()
     }
 
-    pub fn find_by_user_uuid(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
+    pub fn find_by_user_uuid(user_uuid: &str, conn: &DbConn) -> Option<Vec<Self>> {
         users_collections::table.inner_join(collections::table)
             .filter(users_collections::user_uuid.eq(user_uuid))
             .select(collections::all_columns)
-            .load::<Self>(&**conn).expect("Error loading user collections")
+            .load::<Self>(&**conn).ok()
+    }
+
+    pub fn find_by_organization_and_user_uuid(org_uuid: &str, user_uuid: &str, conn: &DbConn) -> Option<Vec<Self>> {
+        users_collections::table.inner_join(collections::table)
+            .filter(users_collections::user_uuid.eq(user_uuid))
+            .filter(collections::org_uuid.eq(org_uuid))
+            .select(collections::all_columns)
+            .load::<Self>(&**conn).ok()
     }
 
     pub fn find_by_uuid_and_user(uuid: &str, user_uuid: &str, conn: &DbConn) -> Option<Self> {
