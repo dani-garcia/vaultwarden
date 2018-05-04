@@ -106,15 +106,17 @@ use super::User;
 pub struct CollectionUsers {
     pub user_uuid: String,
     pub collection_uuid: String,
+    pub read_only: bool,
 }
 
 /// Database methods
 impl CollectionUsers {
-    pub fn save(user_uuid: &str, collection_uuid: &str, conn: &DbConn) -> bool {
+    pub fn save(user_uuid: &str, collection_uuid: &str, read_only:bool, conn: &DbConn) -> bool {
         match diesel::replace_into(users_collections::table)
             .values((
                 users_collections::user_uuid.eq(user_uuid),
-                users_collections::collection_uuid.eq(collection_uuid)
+                users_collections::collection_uuid.eq(collection_uuid),
+                users_collections::read_only.eq(read_only),
             )).execute(&**conn) {
             Ok(1) => true, // One row inserted
             _ => false,

@@ -30,3 +30,5 @@ SELECT uuid, folder_uuid FROM oldCiphers WHERE folder_uuid IS NOT NULL;
 
 
 DROP TABLE oldCiphers;
+
+ALTER TABLE users_collections ADD COLUMN read_only BOOLEAN NOT NULL DEFAULT 0; -- False

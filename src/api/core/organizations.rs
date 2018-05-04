@@ -150,7 +150,7 @@ fn post_organization_collections(org_id: String, headers: Headers, data: Json<Ne
     collection.save(&conn);
 
     if !org_user.access_all {
-        CollectionUsers::save(&headers.user.uuid, &collection.uuid, &conn);
+        CollectionUsers::save(&headers.user.uuid, &collection.uuid, false, &conn);
     }
 
     Ok(Json(collection.to_json()))
@@ -308,10 +308,8 @@ fn send_invite(org_id: String, data: Json<InviteData>, headers: Headers, conn: D
                 // If no accessAll, add the collections received
                 if !data.accessAll {
                     for collection in data.collections.iter() {
-                        // TODO: Check that collection is in org
-                        // TODO: Save the readOnly bit
-                        
-                        CollectionUsers::save(&headers.user.uuid, &collection.id, &conn);
+                        // TODO: Check that collection is in org                      
+                        CollectionUsers::save(&headers.user.uuid, &collection.id, collection.readOnly, &conn);
                     }
                 }
 
@@ -443,10 +441,8 @@ fn edit_user(org_id: String, user_id: String, data: Json<EditUserData>, headers:
     // If no accessAll, add the collections received
     if !data.accessAll {
         for collection in data.collections.iter() {
-            // TODO: Check that collection is in org
-            // TODO: Save the readOnly bit
-            
-            CollectionUsers::save(&current_user.uuid, &collection.id, &conn);
+            // TODO: Check that collection is in org            
+            CollectionUsers::save(&current_user.uuid, &collection.id, collection.readOnly, &conn);
         }
     }
 
