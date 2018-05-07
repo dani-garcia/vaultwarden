@@ -1,6 +1,6 @@
 ## Easy setup (Docker)
 Install Docker to your system and then, from the project root, run:
-```
+```sh
 # Build the docker image:
 docker build -t dani/bitwarden_rs .
 
@@ -29,11 +29,11 @@ Where <absolute_path> is an absolute path in the hosts file system (e.g. C:\bitw
 ## How to compile bitwarden_rs
 Install `rust nightly`, in Windows the recommended way is through `rustup`.
 
-Install the `sqlite3`, and `openssl` libraries, in Windows the best option is Microsoft's `vcpkg`,
+Install the `openssl` library, in Windows the best option is Microsoft's `vcpkg`,
 on other systems use their respective package managers.
 
 Then run:
-```
+```sh
 cargo run
 # or
 cargo build
@@ -63,7 +63,7 @@ Modify `web-vault/settings.Production.json` to look like this:
 ```
 
 Then, run the following from the `web-vault` dir:
-```
+```sh
 # With yarn (recommended)
 yarn
 yarn gulp dist:selfHosted
@@ -77,8 +77,8 @@ Finally copy the contents of the `web-vault/dist` folder into the `bitwarden_rs/
 
 ## How to recreate database schemas
 Install diesel-cli with cargo:
-```
-cargo install diesel_cli --no-default-features --features sqlite
+```sh
+cargo install diesel_cli --no-default-features --features sqlite-bundled # Or use only sqlite to use the system version
 ```
 
 Make sure that the correct path to the database is in the `.env` file.

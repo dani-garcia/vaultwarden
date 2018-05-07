@@ -33,11 +33,11 @@ RUN git config --global url."https://github.com/".insteadOf ssh://git@github.com
 # we need the Rust compiler and Cargo tooling
 FROM rustlang/rust:nightly as build
 
-# Install the database libraries, in this case just sqlite3
-RUN apt-get update && apt-get install -y\
-    sqlite3\
-    --no-install-recommends\
- && rm -rf /var/lib/apt/lists/*
+# Using bundled SQLite, no need to install it
+# RUN apt-get update && apt-get install -y\
+#    sqlite3\
+#    --no-install-recommends\
+# && rm -rf /var/lib/apt/lists/*
 
 # Creates a dummy project used to grab dependencies
 RUN USER=root cargo new --bin app
@@ -68,7 +68,6 @@ FROM debian:stretch-slim
 
 # Install needed libraries
 RUN apt-get update && apt-get install -y\
-    sqlite3\
     openssl\
     --no-install-recommends\
  && rm -rf /var/lib/apt/lists/*

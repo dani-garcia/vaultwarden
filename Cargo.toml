@@ -5,9 +5,9 @@ authors = ["Daniel García <dani-garcia@users.noreply.github.com>"]
 
 [dependencies]
 # Web framework for nightly with a focus on ease-of-use, expressibility, and speed.
-rocket = { version = "0.3.8", features = ["tls"] }
-rocket_codegen = "0.3.8"
-rocket_contrib = "0.3.8"
+rocket = { version = "0.3.10", features = ["tls"] }
+rocket_codegen = "0.3.10"
+rocket_contrib = "0.3.10"
 
 # HTTP client
 reqwest = "0.8.5"
@@ -16,13 +16,16 @@ reqwest = "0.8.5"
 multipart = "0.14.2"
 
 # A generic serialization/deserialization framework
-serde = "1.0.43"
-serde_derive = "1.0.43"
-serde_json = "1.0.16"
+serde = "1.0.48"
+serde_derive = "1.0.48"
+serde_json = "1.0.17"
 
 # A safe, extensible ORM and Query builder
 diesel = { version = "1.2.2", features = ["sqlite", "chrono", "r2d2"] }
 diesel_migrations = { version = "1.2.0", features = ["sqlite"] }
+
+# Bundled SQLite
+libsqlite3-sys = { version = "0.9.1", features = ["bundled"] }
 
 # Crypto library
 ring = { version = "= 0.11.0", features = ["rsa_signing"] }
