@@ -98,7 +98,7 @@ impl Cipher {
             "OrganizationId": self.organization_uuid,
             "Attachments": attachments_json,
             "OrganizationUseTotp": false,
-            "CollectionIds": [],
+            "CollectionIds": self.get_collections(&conn),
 
             "Name": self.name,
             "Notes": self.notes,
@@ -240,5 +240,12 @@ impl Cipher {
             .filter(folders_ciphers::folder_uuid.eq(folder_uuid))
             .select(ciphers::all_columns)
             .load::<Self>(&**conn).expect("Error loading ciphers")
+    }
+
+    pub fn get_collections(&self, conn: &DbConn) -> Vec<String> {
+        ciphers_collections::table
+        .filter(ciphers_collections::cipher_uuid.eq(&self.uuid))
+        .select(ciphers_collections::collection_uuid)
+        .load::<String>(&**conn).unwrap_or(vec![])
     }
 }

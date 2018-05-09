@@ -2,7 +2,7 @@ use serde_json::Value as JsonValue;
 
 use uuid::Uuid;
 
-use super::Organization;
+use super::{Organization, UserOrganization};
 
 #[derive(Debug, Identifiable, Queryable, Insertable, Associations)]
 #[table_name = "collections"]
@@ -100,6 +100,27 @@ impl Collection {
             .select(collections::all_columns)
             .first::<Self>(&**conn).ok()
     }
+
+    pub fn is_writable_by_user(&self, user_uuid: &str, conn: &DbConn) -> bool {
+        match UserOrganization::find_by_user_and_org(&user_uuid, &self.org_uuid, &conn) {
+            None => false, // Not in Org
+            Some(user_org) => {
+               if user_org.access_all {
+                   true
+               } else {
+                   match users_collections::table.inner_join(collections::table)
+                   .filter(users_collections::collection_uuid.eq(&self.uuid))
+                   .filter(users_collections::user_uuid.eq(&user_uuid))
+                   .filter(users_collections::read_only.eq(false))
+                   .select(collections::all_columns)
+                   .first::<Self>(&**conn).ok() {
+                       None => false, // Read only or no access to collection
+                       Some(_) => true,
+                   }
+               }
+            }
+        }
+    }
 }
 
 use super::User; 
@@ -142,6 +163,42 @@ impl CollectionUsers {
         match diesel::delete(users_collections::table
             .filter(users_collections::user_uuid.eq(user_uuid))
             .filter(users_collections::collection_uuid.eq(collection_uuid)))
+            .execute(&**conn) {
+            Ok(1) => true, // One row deleted
+            _ => false,
+        }
+    }
+}
+
+use super::Cipher; 
+
+#[derive(Debug, Identifiable, Queryable, Insertable, Associations)]
+#[table_name = "ciphers_collections"]
+#[belongs_to(Cipher, foreign_key = "cipher_uuid")]
+#[belongs_to(Collection, foreign_key = "collection_uuid")]
+#[primary_key(cipher_uuid, collection_uuid)]
+pub struct CollectionCipher {
+    pub cipher_uuid: String,
+    pub collection_uuid: String,
+}
+
+/// Database methods
+impl CollectionCipher {
+    pub fn save(cipher_uuid: &str, collection_uuid: &str, conn: &DbConn) -> bool {
+        match diesel::replace_into(ciphers_collections::table)
+            .values((
+                ciphers_collections::cipher_uuid.eq(cipher_uuid),
+                ciphers_collections::collection_uuid.eq(collection_uuid),
+            )).execute(&**conn) {
+            Ok(1) => true, // One row inserted
+            _ => false,
+        }
+    }
+
+    pub fn delete(cipher_uuid: &str, collection_uuid: &str, conn: &DbConn) -> bool {
+        match diesel::delete(ciphers_collections::table
+            .filter(ciphers_collections::cipher_uuid.eq(cipher_uuid))
+            .filter(ciphers_collections::collection_uuid.eq(collection_uuid)))
             .execute(&**conn) {
             Ok(1) => true, // One row deleted
             _ => false,
