@@ -87,6 +87,12 @@ impl Collection {
         Self::find_by_user_uuid(user_uuid, conn).into_iter().filter(|c| c.org_uuid == org_uuid).collect()
     }
 
+    pub fn find_by_organization(org_uuid: &str, conn: &DbConn) -> Vec<Self> {
+        collections::table
+            .filter(collections::org_uuid.eq(org_uuid))
+            .load::<Self>(&**conn).expect("Error loading collections")
+    }
+
     pub fn find_by_uuid_and_user(uuid: &str, user_uuid: &str, conn: &DbConn) -> Option<Self> {
         users_collections::table.inner_join(collections::table)
             .filter(users_collections::collection_uuid.eq(uuid))
@@ -111,6 +117,15 @@ pub struct CollectionUsers {
 
 /// Database methods
 impl CollectionUsers {
+    pub fn find_by_organization_and_user_uuid(org_uuid: &str, user_uuid: &str, conn: &DbConn) -> Vec<Self> {
+        users_collections::table
+            .filter(users_collections::user_uuid.eq(user_uuid))
+            .inner_join(collections::table.on(collections::uuid.eq(users_collections::collection_uuid)))
+            .filter(collections::org_uuid.eq(org_uuid))
+            .select(users_collections::all_columns)
+            .load::<Self>(&**conn).expect("Error loading users_collections")
+    }
+
     pub fn save(user_uuid: &str, collection_uuid: &str, read_only:bool, conn: &DbConn) -> bool {
         match diesel::replace_into(users_collections::table)
             .values((

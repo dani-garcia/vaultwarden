@@ -118,7 +118,7 @@ fn get_user_collections(headers: Headers, conn: DbConn) -> JsonResult {
 fn get_org_collections(org_id: String, headers: Headers, conn: DbConn) -> JsonResult {
     Ok(Json(json!({
         "Data":
-            Collection::find_by_organization_and_user_uuid(&org_id, &headers.user.uuid, &conn)
+            Collection::find_by_organization(&org_id, &conn)
             .iter()
             .map(|collection| {
                 collection.to_json()
@@ -371,7 +371,7 @@ fn get_user(org_id: String, user_id: String, headers: Headers, conn: DbConn) -> 
         None => err!("The specified user isn't member of the organization")
     };
 
-    Ok(Json(user.to_json_details()))
+    Ok(Json(user.to_json_details(&conn)))
 }
 
 #[derive(Deserialize)]
@@ -434,15 +434,15 @@ fn edit_user(org_id: String, user_id: String, data: Json<EditUserData>, headers:
     user_to_edit.type_ = new_type;
 
     // Delete all the odd collections
-    for c in Collection::find_by_organization_and_user_uuid(&org_id, &current_user.uuid, &conn) { 
-        CollectionUsers::delete(&current_user.uuid, &c.uuid, &conn);
+    for c in Collection::find_by_organization_and_user_uuid(&org_id, &user_to_edit.user_uuid, &conn) {
+        CollectionUsers::delete(&user_to_edit.user_uuid, &c.uuid, &conn);
     }
 
     // If no accessAll, add the collections received
     if !data.accessAll {
         for collection in data.collections.iter() {
             // TODO: Check that collection is in org            
-            CollectionUsers::save(&current_user.uuid, &collection.id, collection.readOnly, &conn);
+            CollectionUsers::save(&user_to_edit.user_uuid, &collection.id, collection.readOnly, &conn);
         }
     }
 
