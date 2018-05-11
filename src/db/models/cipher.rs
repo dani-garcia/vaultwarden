@@ -223,10 +223,34 @@ impl Cipher {
             .first::<Self>(&**conn).ok()
     }
 
+    // Find all ciphers accesible to user
     pub fn find_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
         ciphers::table
-            .filter(ciphers::user_uuid.eq(user_uuid))
-            .load::<Self>(&**conn).expect("Error loading ciphers")
+        .left_join(users_organizations::table.on(
+            ciphers::organization_uuid.eq(users_organizations::org_uuid.nullable()).and(
+                users_organizations::user_uuid.eq(user_uuid)
+            )
+        ))
+        .left_join(ciphers_collections::table)
+        .left_join(users_collections::table.on(
+            ciphers_collections::collection_uuid.eq(users_collections::collection_uuid)
+        ))
+        .filter(ciphers::user_uuid.eq(user_uuid).or( // Cipher owner
+            users_organizations::access_all.eq(true).or( // access_all in Organization
+                users_organizations::type_.le(UserOrgType::Admin as i32).or( // Org admin or owner
+                    users_collections::user_uuid.eq(user_uuid) // Access to Collection
+                )
+            )
+        ))
+        .select(ciphers::all_columns)
+        .load::<Self>(&**conn).expect("Error loading ciphers")
+    }
+
+    // Find all ciphers directly owned by user
+    pub fn find_owned_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
+        ciphers::table
+        .filter(ciphers::user_uuid.eq(user_uuid))
+        .load::<Self>(&**conn).expect("Error loading ciphers")
     }
 
     pub fn find_by_org(org_uuid: &str, conn: &DbConn) -> Vec<Self> {

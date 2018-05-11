@@ -503,7 +503,7 @@ fn delete_all(data: Json<PasswordData>, headers: Headers, conn: DbConn) -> Empty
     }
 
     // Delete ciphers and their attachments
-    for cipher in Cipher::find_by_user(&user.uuid, &conn) {
+    for cipher in Cipher::find_owned_by_user(&user.uuid, &conn) {
         _delete_cipher(cipher, &conn);
     }
 
