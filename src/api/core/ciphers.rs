@@ -322,7 +322,7 @@ fn post_collections_admin(uuid: String, data: Json<CollectionsAdminData>, header
 
     for collection in posted_collections.symmetric_difference(&current_collections) {
         match Collection::find_by_uuid(&collection, &conn) {
-            None => (), // Does not exist, what now?
+            None => err!("Invalid collection ID provided"),
             Some(collection) => {
                 if collection.is_writable_by_user(&headers.user.uuid, &conn) {
                     if posted_collections.contains(&collection.uuid) { // Add to collection
@@ -330,6 +330,8 @@ fn post_collections_admin(uuid: String, data: Json<CollectionsAdminData>, header
                     } else { // Remove from collection
                         CollectionCipher::delete(&cipher.uuid, &collection.uuid, &conn);
                     }
+                } else {
+                    err!("No rights to modify the collection")
                 }
             }
         }
