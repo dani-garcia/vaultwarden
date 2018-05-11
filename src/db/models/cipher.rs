@@ -3,7 +3,7 @@ use serde_json::Value as JsonValue;
 
 use uuid::Uuid;
 
-use super::{User, Organization, UserOrganization, FolderCipher};
+use super::{User, Organization, UserOrganization, FolderCipher, UserOrgType};
 
 #[derive(Debug, Identifiable, Queryable, Insertable, Associations)]
 #[table_name = "ciphers"]
@@ -98,7 +98,7 @@ impl Cipher {
             "OrganizationId": self.organization_uuid,
             "Attachments": attachments_json,
             "OrganizationUseTotp": false,
-            "CollectionIds": self.get_collections(&conn),
+            "CollectionIds": self.get_collections(user_uuid, &conn),
 
             "Name": self.name,
             "Notes": self.notes,
@@ -242,9 +242,25 @@ impl Cipher {
             .load::<Self>(&**conn).expect("Error loading ciphers")
     }
 
-    pub fn get_collections(&self, conn: &DbConn) -> Vec<String> {
+    pub fn get_collections(&self, user_id: &str, conn: &DbConn) -> Vec<String> {
         ciphers_collections::table
+        .inner_join(collections::table.on(
+            collections::uuid.eq(ciphers_collections::collection_uuid)
+        ))
+        .inner_join(users_organizations::table.on(
+            users_organizations::org_uuid.eq(collections::org_uuid).and(
+                users_organizations::user_uuid.eq(user_id)
+            )
+        ))
+        .left_join(users_collections::table.on(
+            users_collections::collection_uuid.eq(ciphers_collections::collection_uuid)
+        ))
         .filter(ciphers_collections::cipher_uuid.eq(&self.uuid))
+        .filter(users_collections::user_uuid.eq(user_id).or( // User has access to collection
+            users_organizations::access_all.eq(true).or( // User has access all
+                users_organizations::type_.le(UserOrgType::Admin as i32) // User is admin or owner
+            )
+        ))
         .select(ciphers_collections::collection_uuid)
         .load::<String>(&**conn).unwrap_or(vec![])
     }

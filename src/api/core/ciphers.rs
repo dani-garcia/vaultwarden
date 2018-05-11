@@ -318,7 +318,7 @@ fn post_collections_admin(uuid: String, data: Json<CollectionsAdminData>, header
     }
 
     let posted_collections: HashSet<String> = data.collectionIds.iter().cloned().collect();
-    let current_collections: HashSet<String> = cipher.get_collections(&conn).iter().cloned().collect();
+    let current_collections: HashSet<String> = cipher.get_collections(&headers.user.uuid ,&conn).iter().cloned().collect();
 
     for collection in posted_collections.symmetric_difference(&current_collections) {
         match Collection::find_by_uuid(&collection, &conn) {
