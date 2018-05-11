@@ -14,4 +14,4 @@ pub use self::folder::{Folder, FolderCipher};
 pub use self::user::User;
 pub use self::organization::Organization;
 pub use self::organization::{UserOrganization, UserOrgStatus, UserOrgType};
-pub use self::collection::{Collection, CollectionUsers};
+pub use self::collection::{Collection, CollectionUsers, CollectionCipher};

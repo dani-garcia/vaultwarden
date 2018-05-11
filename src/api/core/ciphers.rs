@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::collections::HashSet;
 
 use rocket::Data;
 use rocket::http::ContentType;
@@ -297,6 +298,47 @@ fn put_cipher(uuid: String, data: Json<CipherData>, headers: Headers, conn: DbCo
     Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, &conn)))
 }
 
+#[derive(Deserialize)]
+#[allow(non_snake_case)]
+struct CollectionsAdminData {
+    collectionIds: Vec<String>,
+}
+
+#[post("/ciphers/<uuid>/collections-admin", data = "<data>")]
+fn post_collections_admin(uuid: String, data: Json<CollectionsAdminData>, headers: Headers, conn: DbConn) -> EmptyResult {
+    let data: CollectionsAdminData = data.into_inner();
+
+    let cipher = match Cipher::find_by_uuid(&uuid, &conn) {
+        Some(cipher) => cipher,
+        None => err!("Cipher doesn't exist")
+    };
+
+    if !cipher.is_write_accessible_to_user(&headers.user.uuid, &conn) {
+        err!("Cipher is not write accessible")
+    }
+
+    let posted_collections: HashSet<String> = data.collectionIds.iter().cloned().collect();
+    let current_collections: HashSet<String> = cipher.get_collections(&headers.user.uuid ,&conn).iter().cloned().collect();
+
+    for collection in posted_collections.symmetric_difference(&current_collections) {
+        match Collection::find_by_uuid(&collection, &conn) {
+            None => err!("Invalid collection ID provided"),
+            Some(collection) => {
+                if collection.is_writable_by_user(&headers.user.uuid, &conn) {
+                    if posted_collections.contains(&collection.uuid) { // Add to collection
+                        CollectionCipher::save(&cipher.uuid, &collection.uuid, &conn);
+                    } else { // Remove from collection
+                        CollectionCipher::delete(&cipher.uuid, &collection.uuid, &conn);
+                    }
+                } else {
+                    err!("No rights to modify the collection")
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
 
 #[post("/ciphers/<uuid>/attachment", format = "multipart/form-data", data = "<data>")]
 fn post_attachment(uuid: String, data: Data, content_type: &ContentType, headers: Headers, conn: DbConn) -> JsonResult {
