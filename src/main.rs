@@ -25,7 +25,7 @@ extern crate dotenv;
 #[macro_use]
 extern crate lazy_static;
 
-use std::{io, env};
+use std::{io, env, path::Path, process::{exit, Command}};
 use rocket::Rocket;
 
 #[macro_use]
@@ -51,14 +51,27 @@ fn init_rocket() -> Rocket {
 embed_migrations!();
 
 fn main() {
+    check_db();
+    check_rsa_keys();
+    check_web_vault();   
+
     // Make sure the database is up to date (create if it doesn't exist, or run the migrations)
     let connection = db::get_connection().expect("Can't conect to DB");
     embedded_migrations::run_with_output(&connection, &mut io::stdout()).expect("Can't run migrations");
 
-    check_rsa_keys();
-    check_web_vault();
-
     init_rocket().launch();
+}
+
+fn check_db() {
+    let path = Path::new(&CONFIG.database_url);
+
+    if let Some(parent) = path.parent() {
+        use std::fs;
+        if fs::create_dir_all(parent).is_err() {
+            println!("Error creating database directory");
+            exit(1);
+        }
+    }
 }
 
 fn check_rsa_keys() {
@@ -66,7 +79,6 @@ fn check_rsa_keys() {
     if !util::file_exists(&CONFIG.private_rsa_key)
         || !util::file_exists(&CONFIG.public_rsa_key) {
         println!("JWT keys don't exist, checking if OpenSSL is available...");
-        use std::process::{exit, Command};
 
         Command::new("openssl")
             .arg("version")
@@ -108,9 +120,6 @@ fn check_rsa_keys() {
 }
 
 fn check_web_vault() {
-    use std::path::Path;
-    use std::process::exit;
-
     let index_path = Path::new(&CONFIG.web_vault_folder).join("index.html");
 
     if !index_path.exists() {
