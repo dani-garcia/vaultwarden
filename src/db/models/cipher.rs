@@ -243,6 +243,7 @@ impl Cipher {
             )
         ))
         .select(ciphers::all_columns)
+        .distinct()
         .load::<Self>(&**conn).expect("Error loading ciphers")
     }
 
