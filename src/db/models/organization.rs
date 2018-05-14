@@ -154,7 +154,7 @@ impl UserOrganization {
             "UseGroups": false,
             "UseTotp": false,
 
-            "MaxStorageGb": null,
+            "MaxStorageGb": 999999999,
 
             // These are per user
             "Key": self.key,
