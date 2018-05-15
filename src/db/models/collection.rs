@@ -204,4 +204,10 @@ impl CollectionCipher {
             _ => false,
         }
     }
+
+    pub fn delete_all_by_cipher(cipher_uuid: &str, conn: &DbConn) -> QueryResult<()> {
+        diesel::delete(ciphers_collections::table
+            .filter(ciphers_collections::cipher_uuid.eq(cipher_uuid))
+        ).execute(&**conn).and(Ok(()))
+    }
 }

@@ -117,6 +117,12 @@ impl FolderCipher {
         ).execute(&**conn).and(Ok(()))
     }
 
+    pub fn delete_all_by_cipher(cipher_uuid: &str, conn: &DbConn) -> QueryResult<()> {
+        diesel::delete(folders_ciphers::table
+            .filter(folders_ciphers::cipher_uuid.eq(cipher_uuid))
+        ).execute(&**conn).and(Ok(()))
+    }
+
     pub fn find_by_folder_and_cipher(folder_uuid: &str, cipher_uuid: &str, conn: &DbConn) -> Option<Self> {
         folders_ciphers::table
             .filter(folders_ciphers::folder_uuid.eq(folder_uuid))

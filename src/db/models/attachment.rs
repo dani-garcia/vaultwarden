@@ -62,17 +62,23 @@ impl Attachment {
         }
     }
 
-    pub fn delete(self, conn: &DbConn) -> bool {
+    pub fn delete(self, conn: &DbConn) -> QueryResult<()> {
         use util;
 
         util::delete_file(&self.get_file_path());
 
-        match diesel::delete(attachments::table.filter(
-            attachments::id.eq(self.id)))
-            .execute(&**conn) {
-            Ok(1) => true, // One row deleted
-            _ => false,
+        diesel::delete(
+            attachments::table.filter(
+                attachments::id.eq(self.id)
+            )
+        ).execute(&**conn).and(Ok(()))
+    }
+
+    pub fn delete_all_by_cipher(cipher_uuid: &str, conn: &DbConn) -> QueryResult<()> {
+        for attachement in Attachment::find_by_cipher(&cipher_uuid, &conn) {
+            attachement.delete(&conn)?;
         }
+        Ok(())
     }
 
     pub fn find_by_id(id: &str, conn: &DbConn) -> Option<Self> {
