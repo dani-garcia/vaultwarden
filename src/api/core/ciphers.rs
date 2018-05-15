@@ -450,9 +450,10 @@ fn delete_attachment(uuid: String, attachment_id: String, headers: Headers, conn
     }
 
     // Delete attachment
-    attachment.delete(&conn);
-
-    Ok(())
+    match attachment.delete(&conn) {
+        Ok(()) => Ok(()),
+        Err(_) => err!("Deleting attachement failed")
+    }
 }
 
 #[post("/ciphers/<uuid>/delete")]
@@ -549,7 +550,10 @@ fn delete_all(data: Json<PasswordData>, headers: Headers, conn: DbConn) -> Empty
 
     // Delete ciphers and their attachments
     for cipher in Cipher::find_owned_by_user(&user.uuid, &conn) {
-        _delete_cipher(cipher, &conn);
+        match cipher.delete(&conn) {
+            Ok(()) => (),
+            Err(_) => err!("Failed deleting cipher")
+        }
     }
 
     // Delete folders
@@ -568,15 +572,8 @@ fn _delete_cipher_by_uuid(uuid: &str, headers: &Headers, conn: &DbConn) -> Empty
         err!("Cipher can't be deleted by user")
     }
 
-    _delete_cipher(cipher, conn);
-
-    Ok(())
-}
-
-fn _delete_cipher(cipher: Cipher, conn: &DbConn) {
-    // Delete the attachments
-    for a in Attachment::find_by_cipher(&cipher.uuid, &conn) { a.delete(&conn); }
-
-    // Delete the cipher
-    cipher.delete(conn);
+    match cipher.delete(conn) {
+        Ok(()) => Ok(()),
+        Err(_) => err!("Failed deleting cipher")
+    }
 }

@@ -3,7 +3,7 @@ use serde_json::Value as JsonValue;
 
 use uuid::Uuid;
 
-use super::{User, Organization, UserOrganization, FolderCipher, UserOrgType};
+use super::{User, Organization, UserOrganization, Attachment, FolderCipher, CollectionCipher, UserOrgType};
 
 #[derive(Debug, Identifiable, Queryable, Insertable, Associations)]
 #[table_name = "ciphers"]
@@ -133,13 +133,16 @@ impl Cipher {
         }
     }
 
-    pub fn delete(self, conn: &DbConn) -> bool {
-        match diesel::delete(ciphers::table.filter(
-            ciphers::uuid.eq(self.uuid)))
-            .execute(&**conn) {
-            Ok(1) => true, // One row deleted
-            _ => false,
-        }
+    pub fn delete(self, conn: &DbConn) -> QueryResult<()> {
+        FolderCipher::delete_all_by_cipher(&self.uuid, &conn)?;
+        CollectionCipher::delete_all_by_cipher(&self.uuid, &conn)?;
+        Attachment::delete_all_by_cipher(&self.uuid, &conn)?;
+
+        diesel::delete(
+            ciphers::table.filter(
+                ciphers::uuid.eq(self.uuid)
+            )
+        ).execute(&**conn).and(Ok(()))
     }
 
     pub fn move_to_folder(&self, folder_uuid: Option<String>, user_uuid: &str, conn: &DbConn) -> Result<(), &str> {

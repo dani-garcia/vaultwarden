@@ -169,9 +169,10 @@ fn delete_account(data: Json<PasswordData>, headers: Headers, conn: DbConn) -> E
 
     // Delete ciphers and their attachments
     for cipher in Cipher::find_owned_by_user(&user.uuid, &conn) {
-        for a in Attachment::find_by_cipher(&cipher.uuid, &conn) { a.delete(&conn); }
-
-        cipher.delete(&conn);
+        match cipher.delete(&conn) {
+            Ok(()) => (),
+            Err(_) => err!("Failed deleting cipher")
+        }
     }
 
     // Delete folders
