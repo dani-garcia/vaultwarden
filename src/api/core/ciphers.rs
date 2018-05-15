@@ -352,15 +352,12 @@ fn post_cipher_share(uuid: String, data: Json<ShareCipherData>, headers: Headers
     let data: ShareCipherData = data.into_inner();
 
     let mut cipher = match Cipher::find_by_uuid(&uuid, &conn) {
-        Some(cipher) => match cipher.uuid == uuid {
-            true => {
-                if cipher.is_write_accessible_to_user(&headers.user.uuid, &conn) {
-                    cipher
-                } else {
-                    err!("Cipher is not write accessible")
-                }
-            },
-            false => err!("Wrong Cipher id provided")
+        Some(cipher) => {
+            if cipher.is_write_accessible_to_user(&headers.user.uuid, &conn) {
+                cipher
+            } else {
+                err!("Cipher is not write accessible")
+            }
         },
         None => err!("Cipher doesn't exist")
     };
