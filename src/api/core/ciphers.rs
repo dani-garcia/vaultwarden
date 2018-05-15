@@ -128,6 +128,7 @@ fn update_cipher_from_data(cipher: &mut Cipher, data: CipherData, headers: &Head
                 None => err!("You don't have permission to add item to organization"),
                 Some(org_user) => if org_user.has_full_access() {
                     cipher.organization_uuid = Some(org_id);
+                    cipher.user_uuid = None;
                 } else {
                     err!("You don't have permission to add cipher directly to organization")
                 }
