@@ -365,9 +365,9 @@ fn post_cipher_share(uuid: String, data: Json<ShareCipherData>, headers: Headers
         None => err!("Cipher doesn't exist")
     };
 
-    match data.cipher.organizationId.clone() {
+    match data.cipher.organizationId {
         None => err!("Organization id not provided"),
-        Some(org_id) => {
+        Some(_) => {
             update_cipher_from_data(&mut cipher, data.cipher, &headers, true, &conn)?;
             for collection in data.collectionIds.iter() {
                 match Collection::find_by_uuid(&collection, &conn) {
