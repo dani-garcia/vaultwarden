@@ -121,12 +121,12 @@ fn post_ciphers(data: Json<CipherData>, headers: Headers, conn: DbConn) -> JsonR
     Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, &conn)))
 }
 
-fn update_cipher_from_data(cipher: &mut Cipher, data: CipherData, headers: &Headers, is_new: bool, conn: &DbConn) -> EmptyResult {
-    if is_new {
+fn update_cipher_from_data(cipher: &mut Cipher, data: CipherData, headers: &Headers, is_new_or_shared: bool, conn: &DbConn) -> EmptyResult {
+    if is_new_or_shared {
         if let Some(org_id) = data.organizationId {
             match UserOrganization::find_by_user_and_org(&headers.user.uuid, &org_id, &conn) {
                 None => err!("You don't have permission to add item to organization"),
-                Some(org_user) => if org_user.access_all || org_user.type_ < UserOrgType::User as i32 {
+                Some(org_user) => if org_user.has_full_access() {
                     cipher.organization_uuid = Some(org_id);
                 } else {
                     err!("You don't have permission to add cipher directly to organization")
@@ -338,6 +338,50 @@ fn post_collections_admin(uuid: String, data: Json<CollectionsAdminData>, header
     }
 
     Ok(())
+}
+
+#[derive(Deserialize)]
+#[allow(non_snake_case)]
+struct ShareCipherData {
+    cipher: CipherData,
+    collectionIds: Vec<String>,
+}
+
+#[post("/ciphers/<uuid>/share", data = "<data>")]
+fn post_cipher_share(uuid: String, data: Json<ShareCipherData>, headers: Headers, conn: DbConn) -> JsonResult {
+    let data: ShareCipherData = data.into_inner();
+
+    let mut cipher = match Cipher::find_by_uuid(&uuid, &conn) {
+        Some(cipher) => {
+            if cipher.is_write_accessible_to_user(&headers.user.uuid, &conn) {
+                cipher
+            } else {
+                err!("Cipher is not write accessible")
+            }
+        },
+        None => err!("Cipher doesn't exist")
+    };
+
+    match data.cipher.organizationId {
+        None => err!("Organization id not provided"),
+        Some(_) => {
+            update_cipher_from_data(&mut cipher, data.cipher, &headers, true, &conn)?;
+            for collection in data.collectionIds.iter() {
+                match Collection::find_by_uuid(&collection, &conn) {
+                    None => err!("Invalid collection ID provided"),
+                    Some(collection) => {
+                        if collection.is_writable_by_user(&headers.user.uuid, &conn) {
+                            CollectionCipher::save(&cipher.uuid.clone(), &collection.uuid, &conn);
+                        } else {
+                            err!("No rights to modify the collection")
+                        }
+                    }
+                }
+            }
+
+            Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, &conn)))
+        }
+    }
 }
 
 #[post("/ciphers/<uuid>/attachment", format = "multipart/form-data", data = "<data>")]

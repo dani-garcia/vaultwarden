@@ -224,6 +224,10 @@ impl UserOrganization {
         }
     }
 
+    pub fn has_full_access(self) -> bool {
+        self.access_all || self.type_ < UserOrgType::User as i32
+    }
+
     pub fn find_by_uuid(uuid: &str, conn: &DbConn) -> Option<Self> {
         users_organizations::table
             .filter(users_organizations::uuid.eq(uuid))
