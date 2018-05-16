@@ -81,13 +81,14 @@ impl Folder {
         }
     }
 
-    pub fn delete(self, conn: &DbConn) -> bool {
-        match diesel::delete(folders::table.filter(
-            folders::uuid.eq(self.uuid)))
-            .execute(&**conn) {
-            Ok(1) => true, // One row deleted
-            _ => false,
-        }
+    pub fn delete(self, conn: &DbConn) -> QueryResult<()> {
+        FolderCipher::delete_all_by_folder(&self.uuid, &conn)?;
+
+        diesel::delete(
+            folders::table.filter(
+                folders::uuid.eq(self.uuid)
+            )
+        ).execute(&**conn).and(Ok(()))
     }
 
     pub fn find_by_uuid(uuid: &str, conn: &DbConn) -> Option<Self> {
@@ -120,6 +121,12 @@ impl FolderCipher {
     pub fn delete_all_by_cipher(cipher_uuid: &str, conn: &DbConn) -> QueryResult<()> {
         diesel::delete(folders_ciphers::table
             .filter(folders_ciphers::cipher_uuid.eq(cipher_uuid))
+        ).execute(&**conn).and(Ok(()))
+    }
+
+    pub fn delete_all_by_folder(folder_uuid: &str, conn: &DbConn) -> QueryResult<()> {
+        diesel::delete(folders_ciphers::table
+            .filter(folders_ciphers::folder_uuid.eq(folder_uuid))
         ).execute(&**conn).and(Ok(()))
     }
 

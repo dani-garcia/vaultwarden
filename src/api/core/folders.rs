@@ -89,11 +89,9 @@ fn delete_folder(uuid: String, headers: Headers, conn: DbConn) -> EmptyResult {
         err!("Folder belongs to another user")
     }
 
-    // Delete FolderCipher mappings
-    for fc in FolderCipher::find_by_folder(&uuid, &conn) { fc.delete(&conn).expect("Error deleting mapping"); }
-
     // Delete the actual folder entry
-    folder.delete(&conn);
-
-    Ok(())
+    match folder.delete(&conn) {
+        Ok(()) => Ok(()),
+        Err(_) => err!("Failed deleting folder")
+    }
 }

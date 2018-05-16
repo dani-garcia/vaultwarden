@@ -176,7 +176,12 @@ fn delete_account(data: Json<PasswordData>, headers: Headers, conn: DbConn) -> E
     }
 
     // Delete folders
-    for f in Folder::find_by_user(&user.uuid, &conn) { f.delete(&conn); }
+    for f in Folder::find_by_user(&user.uuid, &conn) {
+        match f.delete(&conn) {
+            Ok(()) => (),
+            Err(_) => err!("Failed deleting folder")
+        } 
+    }
 
     // Delete devices
     for d in Device::find_by_user(&user.uuid, &conn) { d.delete(&conn); }
