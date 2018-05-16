@@ -557,7 +557,12 @@ fn delete_all(data: Json<PasswordData>, headers: Headers, conn: DbConn) -> Empty
     }
 
     // Delete folders
-    for f in Folder::find_by_user(&user.uuid, &conn) { f.delete(&conn); }
+    for f in Folder::find_by_user(&user.uuid, &conn) {
+        match f.delete(&conn) {
+            Ok(()) => (),
+            Err(_) => err!("Failed deleting folder")
+        } 
+    }
 
     Ok(())
 }
