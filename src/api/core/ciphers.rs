@@ -76,6 +76,11 @@ fn get_cipher_admin(uuid: String, headers: Headers, conn: DbConn) -> JsonResult 
     get_cipher(uuid, headers, conn)
 }
 
+#[get("/ciphers/<uuid>/details")]
+fn get_cipher_details(uuid: String, headers: Headers, conn: DbConn) -> JsonResult {
+    get_cipher(uuid, headers, conn)
+}
+
 #[derive(Deserialize, Debug)]
 #[allow(non_snake_case)]
 struct CipherData {
@@ -303,6 +308,11 @@ fn put_cipher(uuid: String, data: Json<CipherData>, headers: Headers, conn: DbCo
 #[allow(non_snake_case)]
 struct CollectionsAdminData {
     collectionIds: Vec<String>,
+}
+
+#[post("/ciphers/<uuid>/collections", data = "<data>")]
+fn post_collections_update(uuid: String, data: Json<CollectionsAdminData>, headers: Headers, conn: DbConn) -> EmptyResult {
+    post_collections_admin(uuid, data, headers, conn)
 }
 
 #[post("/ciphers/<uuid>/collections-admin", data = "<data>")]
