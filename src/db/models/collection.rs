@@ -62,6 +62,13 @@ impl Collection {
         ).execute(&**conn).and(Ok(()))
     }
 
+    pub fn delete_all_by_organization(org_uuid: &str, conn: &DbConn) -> QueryResult<()> {
+        for collection in Self::find_by_organization(org_uuid, &conn) {
+            collection.delete(&conn)?;
+        }
+        Ok(())
+    }
+
     pub fn find_by_uuid(uuid: &str, conn: &DbConn) -> Option<Self> {
         collections::table
             .filter(collections::uuid.eq(uuid))
@@ -174,6 +181,12 @@ impl CollectionUser {
     pub fn delete_all_by_collection(collection_uuid: &str, conn: &DbConn) -> QueryResult<()> {
         diesel::delete(users_collections::table
             .filter(users_collections::collection_uuid.eq(collection_uuid))
+        ).execute(&**conn).and(Ok(()))
+    }
+
+    pub fn delete_all_by_user(user_uuid: &str, conn: &DbConn) -> QueryResult<()> {
+        diesel::delete(users_collections::table
+            .filter(users_collections::user_uuid.eq(user_uuid))
         ).execute(&**conn).and(Ok(()))
     }
 }

@@ -55,13 +55,30 @@ fn create_organization(headers: Headers, data: Json<OrgData>, conn: DbConn) -> J
 }
 
 #[post("/organizations/<org_id>/delete", data = "<data>")]
-fn delete_organization(org_id: String, data: Json<PasswordData>, headers: Headers, conn: DbConn) -> JsonResult {
+fn delete_organization(org_id: String, data: Json<PasswordData>, headers: Headers, conn: DbConn) -> EmptyResult {
     let data: PasswordData = data.into_inner();
     let password_hash = data.masterPasswordHash;
 
-    // TODO: Delete ciphers from organization, collection_users, collections, organization_users and the org itself
+    if !headers.user.check_valid_password(&password_hash) {
+        err!("Invalid password")
+    }
 
-    unimplemented!()
+    let org_user = match UserOrganization::find_by_user_and_org(&headers.user.uuid, &org_id, &conn) {
+        Some(user) => user,
+        None => err!("The current user isn't member of the organization")
+    };
+
+    if org_user.type_ != UserOrgType::Owner as i32 {
+        err!("Only owner is able to delete organization")
+    }
+
+    match Organization::find_by_uuid(&org_id, &conn) {
+        None => err!("Organization not found"),
+        Some(org) => match org.delete(&conn) {
+            Ok(()) => Ok(()),
+            Err(_) => err!("Failed deleting the organization")
+        }
+    }
 }
 
 #[get("/organizations/<org_id>")]
@@ -513,11 +530,8 @@ fn delete_user(org_id: String, user_id: String, headers: Headers, conn: DbConn) 
         }
     }
 
-    user_to_delete.delete(&conn);
-
-    for c in Collection::find_by_organization_and_user_uuid(&org_id, &current_user.uuid, &conn) { 
-        CollectionUser::delete(&current_user.uuid, &c.uuid, &conn);
+    match user_to_delete.delete(&conn) {
+        Ok(()) => Ok(()),
+        Err(_) => err!("Failed deleting user from organization")
     }
-
-    Ok(())
 }
