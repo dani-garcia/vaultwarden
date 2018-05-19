@@ -150,7 +150,7 @@ fn post_organization_collections(org_id: String, headers: Headers, data: Json<Ne
     collection.save(&conn);
 
     if !org_user.access_all {
-        CollectionUsers::save(&headers.user.uuid, &collection.uuid, false, &conn);
+        CollectionUser::save(&headers.user.uuid, &collection.uuid, false, &conn);
     }
 
     Ok(Json(collection.to_json()))
@@ -181,6 +181,35 @@ fn post_organization_collection_update(org_id: String, col_id: String, headers: 
     collection.save(&conn);
 
     Ok(Json(collection.to_json()))
+}
+
+#[derive(Deserialize, Debug)]
+#[allow(non_snake_case)]
+struct DeleteCollectionData {
+    id: String,
+    orgId: String,
+}
+
+#[post("/organizations/<org_id>/collections/<col_id>/delete", data = "<data>")]
+fn post_organization_collection_delete(org_id: String, col_id: String, headers: Headers, data: Json<DeleteCollectionData>, conn: DbConn) -> EmptyResult {
+    match UserOrganization::find_by_user_and_org(&headers.user.uuid, &org_id, &conn) {
+        None => err!("Not a member of Organization"),
+        Some(user_org) => if user_org.has_full_access() {
+            match Collection::find_by_uuid(&col_id, &conn) {
+                None => err!("Collection not found"),
+                Some(collection) => if collection.org_uuid == org_id {
+                    match collection.delete(&conn) {
+                        Ok(()) => Ok(()),
+                        Err(_) => err!("Failed deleting collection")
+                    }
+                } else {
+                    err!("Collection and Organization id do not match")
+                }
+            }
+        } else {
+            err!("Not enought rights to delete Collection")
+        }
+    }
 }
 
 #[get("/organizations/<org_id>/collections/<coll_id>/details")]
@@ -309,7 +338,7 @@ fn send_invite(org_id: String, data: Json<InviteData>, headers: Headers, conn: D
                 if !data.accessAll {
                     for collection in data.collections.iter() {
                         // TODO: Check that collection is in org                      
-                        CollectionUsers::save(&headers.user.uuid, &collection.id, collection.readOnly, &conn);
+                        CollectionUser::save(&headers.user.uuid, &collection.id, collection.readOnly, &conn);
                     }
                 }
 
@@ -435,14 +464,14 @@ fn edit_user(org_id: String, user_id: String, data: Json<EditUserData>, headers:
 
     // Delete all the odd collections
     for c in Collection::find_by_organization_and_user_uuid(&org_id, &user_to_edit.user_uuid, &conn) {
-        CollectionUsers::delete(&user_to_edit.user_uuid, &c.uuid, &conn);
+        CollectionUser::delete(&user_to_edit.user_uuid, &c.uuid, &conn);
     }
 
     // If no accessAll, add the collections received
     if !data.accessAll {
         for collection in data.collections.iter() {
             // TODO: Check that collection is in org            
-            CollectionUsers::save(&user_to_edit.user_uuid, &collection.id, collection.readOnly, &conn);
+            CollectionUser::save(&user_to_edit.user_uuid, &collection.id, collection.readOnly, &conn);
         }
     }
 
@@ -487,7 +516,7 @@ fn delete_user(org_id: String, user_id: String, headers: Headers, conn: DbConn) 
     user_to_delete.delete(&conn);
 
     for c in Collection::find_by_organization_and_user_uuid(&org_id, &current_user.uuid, &conn) { 
-        CollectionUsers::delete(&current_user.uuid, &c.uuid, &conn);
+        CollectionUser::delete(&current_user.uuid, &c.uuid, &conn);
     }
 
     Ok(())

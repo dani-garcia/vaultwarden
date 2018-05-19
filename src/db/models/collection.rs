@@ -51,13 +51,15 @@ impl Collection {
         }
     }
 
-    pub fn delete(self, conn: &DbConn) -> bool {
-        match diesel::delete(collections::table.filter(
-            collections::uuid.eq(self.uuid)))
-            .execute(&**conn) {
-            Ok(1) => true, // One row deleted
-            _ => false,
-        }
+    pub fn delete(self, conn: &DbConn) -> QueryResult<()> {
+        CollectionCipher::delete_all_by_collection(&self.uuid, &conn)?;
+        CollectionUser::delete_all_by_collection(&self.uuid, &conn)?;
+
+        diesel::delete(
+            collections::table.filter(
+                collections::uuid.eq(self.uuid)
+            )
+        ).execute(&**conn).and(Ok(()))
     }
 
     pub fn find_by_uuid(uuid: &str, conn: &DbConn) -> Option<Self> {
@@ -130,14 +132,14 @@ use super::User;
 #[belongs_to(User, foreign_key = "user_uuid")]
 #[belongs_to(Collection, foreign_key = "collection_uuid")]
 #[primary_key(user_uuid, collection_uuid)]
-pub struct CollectionUsers {
+pub struct CollectionUser {
     pub user_uuid: String,
     pub collection_uuid: String,
     pub read_only: bool,
 }
 
 /// Database methods
-impl CollectionUsers {
+impl CollectionUser {
     pub fn find_by_organization_and_user_uuid(org_uuid: &str, user_uuid: &str, conn: &DbConn) -> Vec<Self> {
         users_collections::table
             .filter(users_collections::user_uuid.eq(user_uuid))
@@ -167,6 +169,12 @@ impl CollectionUsers {
             Ok(1) => true, // One row deleted
             _ => false,
         }
+    }
+
+    pub fn delete_all_by_collection(collection_uuid: &str, conn: &DbConn) -> QueryResult<()> {
+        diesel::delete(users_collections::table
+            .filter(users_collections::collection_uuid.eq(collection_uuid))
+        ).execute(&**conn).and(Ok(()))
     }
 }
 
@@ -208,6 +216,12 @@ impl CollectionCipher {
     pub fn delete_all_by_cipher(cipher_uuid: &str, conn: &DbConn) -> QueryResult<()> {
         diesel::delete(ciphers_collections::table
             .filter(ciphers_collections::cipher_uuid.eq(cipher_uuid))
+        ).execute(&**conn).and(Ok(()))
+    }
+
+    pub fn delete_all_by_collection(collection_uuid: &str, conn: &DbConn) -> QueryResult<()> {
+        diesel::delete(ciphers_collections::table
+            .filter(ciphers_collections::collection_uuid.eq(collection_uuid))
         ).execute(&**conn).and(Ok(()))
     }
 }

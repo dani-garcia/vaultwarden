@@ -188,8 +188,8 @@ impl UserOrganization {
         let coll_uuids = if self.access_all { 
             vec![] // If we have complete access, no need to fill the array
         } else {
-            use super::CollectionUsers;
-            let collections = CollectionUsers::find_by_organization_and_user_uuid(&self.org_uuid, &self.user_uuid, conn);
+            use super::CollectionUser;
+            let collections = CollectionUser::find_by_organization_and_user_uuid(&self.org_uuid, &self.user_uuid, conn);
             collections.iter().map(|c| json!({"Id": c.collection_uuid, "ReadOnly": c.read_only})).collect()
         };
 
