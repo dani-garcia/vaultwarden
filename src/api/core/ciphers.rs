@@ -183,10 +183,6 @@ fn update_cipher_from_data(cipher: &mut Cipher, data: CipherData, headers: &Head
     // Copy the type data and change the names to the correct case
     copy_values(&type_data, &mut values);
 
-    if cipher.move_to_folder(data.folderId, &headers.user.uuid, &conn).is_err() {
-        err!("Error saving the folder information")
-    }
-
     cipher.favorite = data.favorite.unwrap_or(false);
     cipher.name = data.name;
     cipher.notes = data.notes;
@@ -194,6 +190,11 @@ fn update_cipher_from_data(cipher: &mut Cipher, data: CipherData, headers: &Head
     cipher.data = values.to_string();
 
     cipher.save(&conn);
+
+    if cipher.move_to_folder(data.folderId, &headers.user.uuid, &conn).is_err() {
+        err!("Error saving the folder information")
+    }
+
     Ok(())
 }
 
