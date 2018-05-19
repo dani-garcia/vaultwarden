@@ -145,6 +145,13 @@ impl Cipher {
         ).execute(&**conn).and(Ok(()))
     }
 
+    pub fn delete_all_by_organization(org_uuid: &str, conn: &DbConn) -> QueryResult<()> {
+        for cipher in Self::find_by_org(org_uuid, &conn) {
+            cipher.delete(&conn)?;
+        }
+        Ok(())
+    }
+
     pub fn move_to_folder(&self, folder_uuid: Option<String>, user_uuid: &str, conn: &DbConn) -> Result<(), &str> {
         match self.get_folder_uuid(&user_uuid, &conn)  {
             None => {

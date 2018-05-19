@@ -122,13 +122,18 @@ impl Organization {
         }
     }
 
-    pub fn delete(self, conn: &DbConn) -> bool {
-        match diesel::delete(organizations::table.filter(
-            organizations::uuid.eq(self.uuid)))
-            .execute(&**conn) {
-            Ok(1) => true, // One row deleted
-            _ => false,
-        }
+    pub fn delete(self, conn: &DbConn) -> QueryResult<()> {
+        use super::{Cipher, Collection};
+
+        Cipher::delete_all_by_organization(&self.uuid, &conn)?;
+        Collection::delete_all_by_organization(&self.uuid, &conn)?;
+        UserOrganization::delete_all_by_organization(&self.uuid, &conn)?;
+
+        diesel::delete(
+            organizations::table.filter(
+                organizations::uuid.eq(self.uuid)
+            )
+        ).execute(&**conn).and(Ok(()))
     }
 
     pub fn find_by_uuid(uuid: &str, conn: &DbConn) -> Option<Self> {
@@ -215,13 +220,23 @@ impl UserOrganization {
         }
     }
 
-    pub fn delete(self, conn: &DbConn) -> bool {
-        match diesel::delete(users_organizations::table.filter(
-            users_organizations::uuid.eq(self.uuid)))
-            .execute(&**conn) {
-            Ok(1) => true, // One row deleted
-            _ => false,
+    pub fn delete(self, conn: &DbConn) -> QueryResult<()> {
+        use super::CollectionUser;
+
+        CollectionUser::delete_all_by_user(&self.user_uuid, &conn)?;
+
+        diesel::delete(
+            users_organizations::table.filter(
+                users_organizations::uuid.eq(self.uuid)
+            )
+        ).execute(&**conn).and(Ok(()))
+    }
+
+    pub fn delete_all_by_organization(org_uuid: &str, conn: &DbConn) -> QueryResult<()> {
+        for user_org in Self::find_by_org(&org_uuid, &conn) {
+            user_org.delete(&conn)?;
         }
+        Ok(())
     }
 
     pub fn has_full_access(self) -> bool {
