@@ -2,7 +2,7 @@ use serde_json::Value as JsonValue;
 
 use uuid::Uuid;
 
-use super::{Organization, UserOrganization};
+use super::{Organization, UserOrganization, UserOrgType};
 
 #[derive(Debug, Identifiable, Queryable, Insertable, Associations)]
 #[table_name = "collections"]
@@ -103,11 +103,26 @@ impl Collection {
     }
 
     pub fn find_by_uuid_and_user(uuid: &str, user_uuid: &str, conn: &DbConn) -> Option<Self> {
-        users_collections::table.inner_join(collections::table)
-            .filter(users_collections::collection_uuid.eq(uuid))
-            .filter(users_collections::user_uuid.eq(user_uuid))
-            .select(collections::all_columns)
-            .first::<Self>(&**conn).ok()
+        collections::table
+        .left_join(users_collections::table.on(
+            users_collections::collection_uuid.eq(collections::uuid).and(
+                users_collections::user_uuid.eq(user_uuid)
+            )
+        ))
+        .left_join(users_organizations::table.on(
+            collections::org_uuid.eq(users_organizations::org_uuid).and(
+                users_organizations::user_uuid.eq(user_uuid)
+            )
+        ))
+        .filter(collections::uuid.eq(uuid))
+        .filter(
+            users_collections::collection_uuid.eq(uuid).or( // Directly accessed collection
+                users_organizations::access_all.eq(true).or( // access_all in Organization
+                    users_organizations::type_.le(UserOrgType::Admin as i32) // Org admin or owner
+                )
+            )
+        ).select(collections::all_columns)
+        .first::<Self>(&**conn).ok()
     }
 
     pub fn is_writable_by_user(&self, user_uuid: &str, conn: &DbConn) -> bool {
