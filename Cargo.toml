@@ -5,9 +5,9 @@ authors = ["Daniel García <dani-garcia@users.noreply.github.com>"]
 
 [dependencies]
 # Web framework for nightly with a focus on ease-of-use, expressibility, and speed.
-rocket = { version = "0.3.10", features = ["tls"] }
-rocket_codegen = "0.3.10"
-rocket_contrib = "0.3.10"
+rocket = { version = "0.3.11", features = ["tls"] }
+rocket_codegen = "0.3.11"
+rocket_contrib = "0.3.11"
 
 # HTTP client
 reqwest = "0.8.5"
