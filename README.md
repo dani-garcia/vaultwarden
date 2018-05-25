@@ -1,83 +1,164 @@
+This is Bitwarden server API implementation written in rust compatible with [upstream Bitwarden clients](https://bitwarden.com/#download)*, ideal for self-hosted deployment where running official resource-heavy service might not be ideal.
 
-# Bitwarden_RS
-This project is an unofficial implementation of the [Bitwarden Core Server](https://github.com/bitwarden/core) written in [Rust](https://www.rust-lang.org/).
+Image is based on [Rust implementation of Bitwarden API](https://github.com/dani-garcia/bitwarden_rs).
 
-*(Note: This project is not associated with the [Bitwarden](https://bitwarden.com/) project nor 8bit Solutions LLC.)*
+_*Note, that this project is not associated with the [Bitwarden](https://bitwarden.com/) project nor 8bit Solutions LLC._
 
-# Build/Run
-This project can be built and deployed in two ways:
+## Features
 
-## Docker Setup (Easy)
-Install [Docker](https://www.docker.com/) to your system and then, from the project root, run:
+Basically full implementation of Bitwarden API is provided including:
+
+ * Basic single user functionality
+ * Organizations support
+ * Attachments
+ * Vault API support 
+ * Serving the static files for Vault interface
+ * Website icons API
+
+## Docker image usage
+
+### Starting a container
+
+The persistent data is stored under /data inside the container, so the only requirement for persistent deployment using Docker is to mount persistent volume at the path:
+
+```
+docker run -d --name bitwarden -v /bw-data/:/data/ -p 80:80 mprasil/bitwarden:latest
+```
+
+This will preserve any persistent data under `/bw-data/`, you can adapt the path to whatever suits you.
+
+The service will be exposed on port 80.
+
+### Updating the bitwarden image
+
+Updating is straightforward, you just make sure to preserve the mounted volume. If you used the bind-mounted path as in the example above, you just need to `pull` the latest image, `stop` and `rm` the current container and then start a new one the same way as before:
+
 ```sh
-# Build the docker image:
-docker build -t bitwarden_rs .
+# Pull the latest version
+docker pull mprasil/bitwarden:latest
 
-# Run the docker image with a docker volume:
-docker run --name bitwarden_rs -t --rm -v bw_data:/data -p 80:80 bitwarden_rs
+# Stop and remove the old container
+docker stop bitwarden
+docker rm bitwarden
+
+# Start new container with the data mounted
+docker run -d --name bitwarden -v /bw-data/:/data/ -p 80:80 mprasil/bitwarden:latest
 ```
 Then visit [http://localhost:80](http://localhost:80)
 
-## Manual Setup (Advanced)
-### Dependencies
-- `Rust nightly` (strongly recommended to use [rustup](https://rustup.rs/))
-- `OpenSSL` (should be available in path, install through your system's package manager or use the [prebuilt binaries](https://wiki.openssl.org/index.php/Binaries))
-- `NodeJS` (required to build the web-vault, (install through your system's package manager or use the [prebuilt binaries](https://nodejs.org/en/download/))
+In case you didn't bind mount the volume for persistent data, you need an intermediate step where you preserve the data with an intermediate container:
 
-### Install the web-vault
-Download the latest official release from the [releases page](https://github.com/bitwarden/web/releases) and extract it.
-
-Modify `web-vault/settings.Production.json` to look like this:
-```json
-{
-  "appSettings": {
-    "apiUri": "/api",
-    "identityUri": "/identity",
-    "iconsUri": "/icons",
-    "stripeKey": "",
-    "braintreeKey": ""
-  }
-}
-```
-
-Then, run the following from the `web-vault` directory:
 ```sh
-npm install
-npx gulp dist:selfHosted
+# Pull the latest version
+docker pull mprasil/bitwarden:latest
+
+# Create intermediate container to preserve data
+docker run --volumes-from bitwarden --name bitwarden_data busybox true
+
+# Stop and remove the old container
+docker stop bitwarden
+docker rm bitwarden
+
+# Start new container with the data mounted
+docker run -d --volumes-from bitwarden_data --name bitwarden -p 80:80 mprasil/bitwarden:latest
+
+# Optionally remove the intermediate container
+docker rm bitwarden_data
+
+# Alternatively you can keep data container around for future updates in which case you can skip last step.
 ```
 
-Finally copy the contents of the `web-vault/dist` folder into the `bitwarden_rs/web-vault` folder.
+## Configuring bitwarden service
 
-### Running
+### Disable registration of new users
+
+By default new users can register, if you want to disable that, set the `SIGNUPS_ALLOWED` env variable to `false`:
+
 ```sh
-cargo run
-```
-Then visit [http://localhost:80](http://localhost:80)
-
-# Configuration
-The available configuration options are documented in the default `.env` file, and they can be modified by uncommenting the desired options in that file or by setting their respective environment variables.
-
-Note: the environment variables override the values set in the `.env` file.
-
-## Disabling user registrations
-To disable user registrations, you can uncomment the `SIGNUPS_ALLOWED` line in the `.env` file and change the value to `false`.
-
-You could also set the `SIGNUPS_ALLOWED` environment variable. To do that when using Docker, add the following line to the end of the `docker run` command:
-```
--e SIGNUPS_ALLOWED=false
+docker run -d --name bitwarden \
+  -e SIGNUPS_ALLOWED=false \
+  -v /bw-data/:/data/ \
+  -p 80:80 \
+  mprasil/bitwarden:latest
 ```
 
-## Changing the API request size limit
+### Changing persistent data location
+
+#### /data prefix:
+
+By default all persistent data is saved under `/data`, you can override this path by setting the `DATA_FOLDER` env variable:
+
+```sh
+docker run -d --name bitwarden \
+  -e DATA_FOLDER=/persistent \
+  -v /bw-data/:/persistent/ \
+  -p 80:80 \
+  mprasil/bitwarden:latest
+```
+
+Notice, that you need to adapt your volume mount accordingly.
+
+#### database name and location
+
+Default is `$DATA_FOLDER/db.sqlite3`, you can change the path specifically for database using `DATABASE_URL` variable:
+
+```sh
+docker run -d --name bitwarden \
+  -e DATABASE_URL=/database/bitwarden.sqlite3 \
+  -v /bw-data/:/data/ \
+  -v /bw-database/:/database/ \
+  -p 80:80 \
+  mprasil/bitwarden:latest
+```
+
+Note, that you need to remember to mount the volume for both database and other persistent data if they are different.
+
+#### attachments location
+
+Default is `$DATA_FOLDER/attachments`, you can change the path using `ATTACHMENTS_FOLDER` variable:
+
+```sh
+docker run -d --name bitwarden \
+  -e ATTACHMENTS_FOLDER=/attachments \
+  -v /bw-data/:/data/ \
+  -v /bw-attachments/:/attachments/ \
+  -p 80:80 \
+  mprasil/bitwarden:latest
+```
+
+Note, that you need to remember to mount the volume for both attachments and other persistent data if they are different.
+
+#### icons cache
+
+Default is `$DATA_FOLDER/icon_cache`, you can change the path using `ICON_CACHE_FOLDER` variable:
+
+```sh
+docker run -d --name bitwarden \
+  -e ICON_CACHE_FOLDER=/icon_cache \
+  -v /bw-data/:/data/ \
+  -v /icon_cache/ \
+  -p 80:80 \
+  mprasil/bitwarden:latest
+```
+
+Note, that in the above example we don't mount the volume locally, which means it won't be persisted during the upgrade unless you use intermediate data container using `--volumes-from`. This will impact performance as bitwarden will have to re-dowload the icons on restart, but might save you from having stale icons in cache as they are not automatically cleaned.
+
+### Changing the API request size limit
 
 By default the API calls are limited to 10MB. This should be sufficient for most cases, however if you want to support large imports, this might be limiting you. On the other hand you might want to limit the request size to something smaller than that to prevent API abuse and possible DOS attack, especially if running with limited resources.
 
 To set the limit, you can use the `ROCKET_LIMITS` variable. Example here shows 10MB limit for posted json in the body (this is the default):
-```
--e ROCKET_LIMITS={json=10485760}
+
+```sh
+docker run -d --name bitwarden \
+  -e ROCKET_LIMITS={json=10485760} \
+  -v /bw-data/:/data/ \
+  -p 80:80 \
+  mprasil/bitwarden:latest
 ```
 
-## Enabling HTTPS
-To enable HTTPS, you need to configure the `ROCKET_TLS` option, the same way as `SIGNUPS_ALLOWED`.
+### Enabling HTTPS
+To enable HTTPS, you need to configure the `ROCKET_TLS`.
 
 The values to the option must follow the format:
 ```
@@ -87,25 +168,30 @@ Where:
 - certs: a path to a certificate chain in PEM format
 - key: a path to a private key file in PEM format for the certificate in certs
 
-## How to recreate database schemas (for developers)
-Install diesel-cli with cargo:
 ```sh
-cargo install diesel_cli --no-default-features --features sqlite-bundled
+docker run -d --name bitwarden \
+  -e ROCKET_TLS={certs='"/ssl/certs.pem",key="/ssl/key.pem"}' \
+  -v /ssl/keys/:/ssl/ \
+  -v /bw-data/:/data/ \
+  -v /icon_cache/ \
+  -p 443:443 \
+  mprasil/bitwarden:latest
 ```
+Note that you need to mount ssl files and you need to forward appropriate port.
 
-Make sure that the correct path to the database is in the `.env` file.
+### Other configuration
 
-If you want to modify the schemas, create a new migration with:
-```
-diesel migration generate <name>
-```
+Though this is unlikely to be required in small deployment, you can fine-tune some other settings like number of workers using environment variables that are processed by [Rocket](https://rocket.rs), please see details in [documentation](https://rocket.rs/guide/configuration/#environment-variables).
 
-Modify the *.sql files, making sure that any changes are reverted in the down.sql file.
+## Building your own image
 
-Apply the migrations and save the generated schemas as follows:
+Clone the repository, then from the root of the repository run:
+
 ```sh
-diesel migration redo
-
-# This step should be done automatically when using diesel-cli > 1.3.0
-# diesel print-schema > src/db/schema.rs
+# Build the docker image:
+docker build -t bitwarden_rs .
 ```
+
+## Building binary
+
+For building binary outside the Docker environment and running it locally without docker, please see [build instructions](BUILD.md).
