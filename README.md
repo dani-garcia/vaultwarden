@@ -1,97 +1,131 @@
-## Easy setup (Docker)
-Install Docker to your system and then, from the project root, run:
+## Docker image usage
+
+### Starting a container
+
+The persistent data is stored under /data inside the container, so the only requirement for persistent deployment using Docker is to mount persistent volume at the path:
+
+```
+docker run -d --name bitwarden -v /bw-data/:/data/ -p 80:80 mprasil/bitwarden:latest
+```
+
+This will preserve any persistent data under `/bw-data/`, you can adapt the path to whatever suits you.
+
+The service will be exposed on port 80.
+
+### Updating the bitwarden image
+
+Updating is straightforward, you just make sure to preserve the mounted volume. If you used the bind-mounted path as in the example above, you just need to `pull` the latest image, `stop` and `rm` the current container and then start a new one the same way as before:
+
+```sh
+# Pull the latest version
+docker pull mprasil/bitwarden:latest
+
+# Stop and remove the old container
+docker stop bitwarden
+docker rm bitwarden
+
+# Start new container with the data mounted
+docker run -d --name bitwarden -v /bw-data/:/data/ -p 80:80 mprasil/bitwarden:latest
+```
+
+In case you didn't bind mount the volume for persistent data, you need an intermediate step where you preserve the data with an intermediate container:
+
+```sh
+# Pull the latest version
+docker pull mprasil/bitwarden:latest
+
+# Create intermediate container to preserve data
+docker run --volumes-from bitwarden --name bitwarden_data busybox true
+
+# Stop and remove the old container
+docker stop bitwarden
+docker rm bitwarden
+
+# Start new container with the data mounted
+docker run -d --volumes-from bitwarden_data --name bitwarden -p 80:80 mprasil/bitwarden:latest
+
+# Optionally remove the intermediate container
+docker rm bitwarden_data
+
+# Alternatively you can keep data container around for future updates in which case you can skip last step.
+```
+
+## Configuring bitwarden service
+
+### Changing persistent data location
+
+#### /data prefix:
+
+By default all persistent data is saved under `/data`, you can override this path by setting the `DATA_FOLDER` env variable:
+
+```sh
+docker run -d --name bitwarden \
+  -e DATA_FOLDER=/persistent \
+  -v /bw-data/:/persistent/ \
+  -p 80:80 \
+  mprasil/bitwarden:latest
+```
+
+Notice, that you need to adapt your volume mount accordingly.
+
+#### database name and location
+
+Default is `$DATA_FOLDER/db.sqlite3`, you can change the path specifically for database using `DATABASE_URL` variable:
+
+```sh
+docker run -d --name bitwarden \
+  -e DATABASE_URL=/database/bitwarden.sqlite3 \
+  -v /bw-data/:/data/ \
+  -v /bw-database/:/database/ \
+  -p 80:80 \
+  mprasil/bitwarden:latest
+```
+
+Note, that you need to remember to mount the volume for both database and other persistent data if they are different.
+
+#### attachments location
+
+Default is `$DATA_FOLDER/attachments`, you can change the path using `ATTACHMENTS_FOLDER` variable:
+
+```sh
+docker run -d --name bitwarden \
+  -e ATTACHMENTS_FOLDER=/attachments \
+  -v /bw-data/:/data/ \
+  -v /bw-attachments/:/attachments/ \
+  -p 80:80 \
+  mprasil/bitwarden:latest
+```
+
+Note, that you need to remember to mount the volume for both attachments and other persistent data if they are different.
+
+#### icons cache
+
+Default is `$DATA_FOLDER/icon_cache`, you can change the path using `ICON_CACHE_FOLDER` variable:
+
+```sh
+docker run -d --name bitwarden \
+  -e ICON_CACHE_FOLDER=/icon_cache \
+  -v /bw-data/:/data/ \
+  -v /icon_cache/ \
+  -p 80:80 \
+  mprasil/bitwarden:latest
+```
+
+Note, that in the above example we don't mount the volume locally, which means it won't be persisted during the upgrade unless you use intermediate data container using `--volumes-from`. This will impact performance as bitwarden will have to re-dowload the icons on restart, but might save you from having stale icons in cache as they are not automatically cleaned.
+
+### Other configuration
+
+Though this is unlikely to be required in small deployment, you can fine-tune some other settings like number of workers using environment variables that are processed by [Rocket](https://rocket.rs), please see details in [documentation](https://rocket.rs/guide/configuration/#environment-variables).
+
+## Building your own image
+
+Clone the repository, then from the root of the repository run:
+
 ```sh
 # Build the docker image:
-docker build -t dani/bitwarden_rs .
-
-# Run the docker image with a docker volume:
-docker volume create bw_data
-docker run --name bitwarden_rs -t --init --rm --mount source=bw_data,target=/data -p 8000:80 dani/bitwarden_rs
+docker build -t bitwarden_rs .
 ```
 
-#### Other possible Docker options
+## Building binary
 
-To run the container in the background, add the `-d` parameter.
-
-To check the logs when in background, run `docker logs bitwarden_rs`
-
-To stop the container in background, run `docker stop bitwarden_rs`
-
-To make sure the container is restarted automatically, add the `--restart unless-stopped` parameter
-
-To run the image with a host bind, change the `--mount` parameter to:
-```
---mount type=bind,source=<absolute_path>,target=/data
-```
-Where <absolute_path> is an absolute path in the hosts file system (e.g. C:\bitwarden\data)
-
-
-## How to compile bitwarden_rs
-Install `rust nightly`, in Windows the recommended way is through `rustup`.
-
-Install the `openssl` library, in Windows the best option is Microsoft's `vcpkg`,
-on other systems use their respective package managers.
-
-Then run:
-```sh
-cargo run
-# or
-cargo build
-```
-
-## How to install the web-vault locally
-If you're using docker image, you can just update `VAULT_VERSION` variable in Dockerfile and rebuild the image.
-
-Install `node.js` and either `yarn` or `npm` (usually included with node)
-
-Clone the web-vault outside the project:
-```
-git clone https://github.com/bitwarden/web.git web-vault
-```
-
-Modify `web-vault/settings.Production.json` to look like this:
-```json
-{
-  "appSettings": {
-    "apiUri": "/api",
-    "identityUri": "/identity",
-    "iconsUri": "/icons",
-    "stripeKey": "",
-    "braintreeKey": ""
-  }
-}
-```
-
-Then, run the following from the `web-vault` dir:
-```sh
-# With yarn (recommended)
-yarn
-yarn gulp dist:selfHosted
-
-# With npm
-npm install
-npx gulp dist:selfHosted
-```
-
-Finally copy the contents of the `web-vault/dist` folder into the `bitwarden_rs/web-vault` folder.
-
-## How to recreate database schemas
-Install diesel-cli with cargo:
-```sh
-cargo install diesel_cli --no-default-features --features sqlite-bundled # Or use only sqlite to use the system version
-```
-
-Make sure that the correct path to the database is in the `.env` file.
-
-If you want to modify the schemas, create a new migration with:
-```
-diesel migration generate <name>
-```
-
-Modify the *.sql files, making sure that any changes are reverted in the down.sql file.
-
-Apply the migrations and save the generated schemas as follows:
-```
-diesel migration redo
-diesel print-schema > src/db/schema.rs
-```
+For building binary outside the Docker environment and running it locally without docker, please see [build instructions](BUILD.md).
