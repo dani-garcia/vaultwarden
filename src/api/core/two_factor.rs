@@ -6,7 +6,7 @@ use db::DbConn;
 
 use crypto;
 
-use api::{PasswordData, JsonResult};
+use api::{PasswordData, JsonResult, NumberOrString};
 use auth::Headers;
 
 #[get("/two-factor")]
@@ -98,12 +98,12 @@ fn generate_authenticator(data: Json<PasswordData>, headers: Headers) -> JsonRes
     })))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 #[allow(non_snake_case)]
 struct EnableTwoFactorData {
     masterPasswordHash: String,
     key: String,
-    token: u64,
+    token: NumberOrString,
 }
 
 #[post("/two-factor/authenticator", data = "<data>")]
@@ -111,7 +111,10 @@ fn activate_authenticator(data: Json<EnableTwoFactorData>, headers: Headers, con
     let data: EnableTwoFactorData = data.into_inner();
     let password_hash = data.masterPasswordHash;
     let key = data.key;
-    let token = data.token;
+    let token = match data.token.to_i32() {
+        Some(n) => n as u64,
+        None => err!("Malformed token")
+    };
 
     if !headers.user.check_valid_password(&password_hash) {
         err!("Invalid password");
@@ -154,7 +157,7 @@ fn activate_authenticator(data: Json<EnableTwoFactorData>, headers: Headers, con
 struct DisableTwoFactorData {
     masterPasswordHash: String,
     #[serde(rename = "type")]
-    type_: u32,
+    type_: NumberOrString,
 }
 
 #[post("/two-factor/disable", data = "<data>")]

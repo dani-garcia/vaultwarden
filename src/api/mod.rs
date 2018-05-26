@@ -22,7 +22,7 @@ struct PasswordData {
     masterPasswordHash: String
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 #[serde(untagged)]
 enum NumberOrString {
     Number(i32),
@@ -35,5 +35,12 @@ impl NumberOrString {
             NumberOrString::Number(n) => n.to_string(),
             NumberOrString::String(s) => s
         }
+    }
+
+    fn to_i32(self) -> Option<i32> {
+        match self {
+            NumberOrString::Number(n) => Some(n),
+            NumberOrString::String(s) => s.parse().ok()
+        }  
     }
 }
