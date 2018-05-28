@@ -102,6 +102,14 @@ impl Collection {
             .load::<Self>(&**conn).expect("Error loading collections")
     }
 
+    pub fn find_by_uuid_and_org(uuid: &str, org_uuid: &str, conn: &DbConn) -> Option<Self> {
+        collections::table
+        .filter(collections::uuid.eq(uuid))
+        .filter(collections::org_uuid.eq(org_uuid))
+        .select(collections::all_columns)
+        .first::<Self>(&**conn).ok()
+    }
+
     pub fn find_by_uuid_and_user(uuid: &str, user_uuid: &str, conn: &DbConn) -> Option<Self> {
         collections::table
         .left_join(users_collections::table.on(
@@ -171,16 +179,13 @@ impl CollectionUser {
             .load::<Self>(&**conn).expect("Error loading users_collections")
     }
 
-    pub fn save(user_uuid: &str, collection_uuid: &str, read_only:bool, conn: &DbConn) -> bool {
-        match diesel::replace_into(users_collections::table)
-            .values((
-                users_collections::user_uuid.eq(user_uuid),
-                users_collections::collection_uuid.eq(collection_uuid),
-                users_collections::read_only.eq(read_only),
-            )).execute(&**conn) {
-            Ok(1) => true, // One row inserted
-            _ => false,
-        }
+    pub fn save(user_uuid: &str, collection_uuid: &str, read_only:bool, conn: &DbConn) -> QueryResult<()> {
+        diesel::replace_into(users_collections::table)
+        .values((
+            users_collections::user_uuid.eq(user_uuid),
+            users_collections::collection_uuid.eq(collection_uuid),
+            users_collections::read_only.eq(read_only),
+        )).execute(&**conn).and(Ok(()))
     }
 
     pub fn delete(user_uuid: &str, collection_uuid: &str, conn: &DbConn) -> bool {
