@@ -166,10 +166,6 @@ fn post_organization_collections(org_id: String, headers: Headers, data: Json<Ne
 
     collection.save(&conn);
 
-    if !org_user.access_all {
-        CollectionUser::save(&headers.user.uuid, &collection.uuid, false, &conn);
-    }
-
     Ok(Json(collection.to_json()))
 }
 
@@ -311,7 +307,7 @@ struct InviteData {
     #[serde(rename = "type")]
     type_: NumberOrString,
     collections: Vec<CollectionData>,
-    accessAll: bool,
+    accessAll: Option<bool>,
 }
 
 #[post("/organizations/<org_id>/users/invite", data = "<data>")]
@@ -346,16 +342,23 @@ fn send_invite(org_id: String, data: Json<InviteData>, headers: Headers, conn: D
                     None => ()
                 }
 
-                let mut new_user = UserOrganization::new(user.uuid, org_id.clone());
-                
-                new_user.access_all = data.accessAll;
+                let mut new_user = UserOrganization::new(user.uuid.clone(), org_id.clone());
+                let access_all = data.accessAll.unwrap_or(false);
+                new_user.access_all = access_all;
                 new_user.type_ = new_type;
 
                 // If no accessAll, add the collections received
-                if !data.accessAll {
-                    for collection in data.collections.iter() {
-                        // TODO: Check that collection is in org                      
-                        CollectionUser::save(&headers.user.uuid, &collection.id, collection.readOnly, &conn);
+                if !access_all {
+                    for col in data.collections.iter() {
+                        match Collection::find_by_uuid_and_org(&col.id, &org_id, &conn) {
+                            None => err!("Collection not found in Organization"),
+                            Some(collection) => {
+                                match CollectionUser::save(&user.uuid, &collection.uuid, col.readOnly, &conn) {
+                                    Ok(()) => (),
+                                    Err(_) => err!("Failed saving collection access for user")
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -486,9 +489,16 @@ fn edit_user(org_id: String, user_id: String, data: Json<EditUserData>, headers:
 
     // If no accessAll, add the collections received
     if !data.accessAll {
-        for collection in data.collections.iter() {
-            // TODO: Check that collection is in org            
-            CollectionUser::save(&user_to_edit.user_uuid, &collection.id, collection.readOnly, &conn);
+        for col in data.collections.iter() {
+            match Collection::find_by_uuid_and_org(&col.id, &org_id, &conn) {
+                None => err!("Collection not found in Organization"),
+                Some(collection) => {
+                    match CollectionUser::save(&user_to_edit.user_uuid, &collection.uuid, col.readOnly, &conn) {
+                        Ok(()) => (),
+                        Err(_) => err!("Failed saving collection access for user")
+                    }
+                }
+            }
         }
     }
 
