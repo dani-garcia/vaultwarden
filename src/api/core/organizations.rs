@@ -192,6 +192,38 @@ fn post_organization_collection_update(org_id: String, col_id: String, headers: 
     Ok(Json(collection.to_json()))
 }
 
+#[post("/organizations/<org_id>/collections/<col_id>/delete-user/<org_user_id>")]
+fn post_organization_collection_delete_user(org_id: String, col_id: String, org_user_id: String, headers: Headers, conn: DbConn) -> EmptyResult {
+    match UserOrganization::find_by_user_and_org(&headers.user.uuid, &org_id, &conn) {
+        None => err!("Not a member of Organization"),
+        Some(user_org) => if user_org.has_full_access() {
+            match Collection::find_by_uuid(&col_id, &conn) {
+                None => err!("Collection not found"),
+                Some(collection) => if collection.org_uuid == org_id {
+                    match UserOrganization::find_by_uuid(&org_user_id, &conn) {
+                        None => err!("User not found in organization"),
+                        Some(user_org) => {
+                            match CollectionUser::find_by_collection_and_user(&collection.uuid, &user_org.user_uuid, &conn) {
+                                None => err!("User not assigned to collection"),
+                                Some(col_user) => {
+                                    match col_user.delete(&conn) {
+                                        Ok(()) => Ok(()),
+                                        Err(_) => err!("Failed removing user from collection")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    err!("Collection and Organization id do not match")
+                }
+            }
+        } else {
+            err!("Not enough rights to delete Collection")
+        }
+    }
+}
+
 #[derive(Deserialize, Debug)]
 #[allow(non_snake_case)]
 struct DeleteCollectionData {
@@ -232,26 +264,21 @@ fn get_org_collection_detail(org_id: String, coll_id: String, headers: AdminHead
 #[get("/organizations/<org_id>/collections/<coll_id>/users")]
 fn get_collection_users(org_id: String, coll_id: String, headers: AdminHeaders, conn: DbConn) -> JsonResult {
     // Get org and collection, check that collection is from org
+    let collection = match Collection::find_by_uuid_and_org(&coll_id, &org_id, &conn) {
+        None => err!("Collection not found in Organization"),
+        Some(collection) => collection
+    };
 
     // Get the users from collection
-
-    /*
-    The elements from the data array to return have the following structure
-
-    {
-        OrganizationUserId:	<id>
-        AccessAll:	true
-        Name:	    <user_name>
-        Email:	    <user_email>
-        Type:	    0
-        Status:	    2
-        ReadOnly:	false
-        Object:	    collectionUser
-    }
-    */
+    let user_list: Vec<Value> = CollectionUser::find_by_collection(&collection.uuid, &conn)
+    .iter().map(|col_user|  {
+        UserOrganization::find_by_user_and_org(&col_user.user_uuid, &org_id, &conn)
+        .unwrap()
+        .to_json_collection_user_details(&col_user.read_only, &conn)
+    }).collect();
 
     Ok(Json(json!({
-        "Data": [],
+        "Data": user_list,
         "Object": "list"
     })))
 }
@@ -473,8 +500,11 @@ fn edit_user(org_id: String, user_id: String, data: Json<EditUserData>, headers:
     user_to_edit.type_ = new_type;
 
     // Delete all the odd collections
-    for c in Collection::find_by_organization_and_user_uuid(&org_id, &user_to_edit.user_uuid, &conn) {
-        CollectionUser::delete(&user_to_edit.user_uuid, &c.uuid, &conn);
+    for c in CollectionUser::find_by_organization_and_user_uuid(&org_id, &user_to_edit.user_uuid, &conn) {
+        match c.delete(&conn) {
+            Ok(()) => (),
+            Err(_) => err!("Failed deleting old collection assignment")
+        }
     }
 
     // If no accessAll, add the collections received

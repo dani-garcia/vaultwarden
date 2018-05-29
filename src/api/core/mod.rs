@@ -68,6 +68,7 @@ pub fn routes() -> Vec<Route> {
         get_collection_users,
         post_organization,
         post_organization_collections,
+        post_organization_collection_delete_user,
         post_organization_collection_update,
         post_organization_collection_delete,
         post_collections_update,
