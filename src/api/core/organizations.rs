@@ -193,33 +193,28 @@ fn post_organization_collection_update(org_id: String, col_id: String, headers: 
 }
 
 #[post("/organizations/<org_id>/collections/<col_id>/delete-user/<org_user_id>")]
-fn post_organization_collection_delete_user(org_id: String, col_id: String, org_user_id: String, headers: Headers, conn: DbConn) -> EmptyResult {
-    match UserOrganization::find_by_user_and_org(&headers.user.uuid, &org_id, &conn) {
-        None => err!("Not a member of Organization"),
-        Some(user_org) => if user_org.has_full_access() {
-            match Collection::find_by_uuid(&col_id, &conn) {
-                None => err!("Collection not found"),
-                Some(collection) => if collection.org_uuid == org_id {
-                    match UserOrganization::find_by_uuid(&org_user_id, &conn) {
-                        None => err!("User not found in organization"),
-                        Some(user_org) => {
-                            match CollectionUser::find_by_collection_and_user(&collection.uuid, &user_org.user_uuid, &conn) {
-                                None => err!("User not assigned to collection"),
-                                Some(col_user) => {
-                                    match col_user.delete(&conn) {
-                                        Ok(()) => Ok(()),
-                                        Err(_) => err!("Failed removing user from collection")
-                                    }
-                                }
-                            }
-                        }
+fn post_organization_collection_delete_user(org_id: String, col_id: String, org_user_id: String, headers: AdminHeaders, conn: DbConn) -> EmptyResult {
+    let collection = match Collection::find_by_uuid(&col_id, &conn) {
+        None => err!("Collection not found"),
+        Some(collection) => if collection.org_uuid == org_id {
+            collection
+        } else {
+            err!("Collection and Organization id do not match")
+        }
+    };
+
+    match UserOrganization::find_by_uuid(&org_user_id, &conn) {
+        None => err!("User not found in organization"),
+        Some(user_org) => {
+            match CollectionUser::find_by_collection_and_user(&collection.uuid, &user_org.user_uuid, &conn) {
+                None => err!("User not assigned to collection"),
+                Some(col_user) => {
+                    match col_user.delete(&conn) {
+                        Ok(()) => Ok(()),
+                        Err(_) => err!("Failed removing user from collection")
                     }
-                } else {
-                    err!("Collection and Organization id do not match")
                 }
             }
-        } else {
-            err!("Not enough rights to delete Collection")
         }
     }
 }
