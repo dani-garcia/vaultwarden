@@ -157,7 +157,7 @@ fn activate_authenticator(data: Json<EnableTwoFactorData>, headers: Headers, con
 struct DisableTwoFactorData {
     masterPasswordHash: String,
     #[serde(rename = "type")]
-    type_: NumberOrString,
+    _type: NumberOrString,
 }
 
 #[post("/two-factor/disable", data = "<data>")]

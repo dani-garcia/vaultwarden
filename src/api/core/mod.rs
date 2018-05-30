@@ -104,12 +104,14 @@ use api::{JsonResult, EmptyResult};
 use auth::Headers;
 
 #[put("/devices/identifier/<uuid>/clear-token")]
-fn clear_device_token(uuid: String, conn: DbConn) -> JsonResult {
+fn clear_device_token(uuid: String, _conn: DbConn) -> JsonResult {
+    println!("{}", uuid);
     err!("Not implemented")
 }
 
 #[put("/devices/identifier/<uuid>/token")]
-fn put_device_token(uuid: String, conn: DbConn) -> JsonResult {
+fn put_device_token(uuid: String, _conn: DbConn) -> JsonResult {
+    println!("{}", uuid);
     err!("Not implemented")
 }
 

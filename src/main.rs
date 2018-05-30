@@ -1,5 +1,3 @@
-#![allow(unused_variables, dead_code)]
-
 #![feature(plugin, custom_derive)]
 #![plugin(rocket_codegen)]
 extern crate rocket;

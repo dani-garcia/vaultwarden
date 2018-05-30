@@ -16,7 +16,8 @@ struct OrgData {
     collectionName: String,
     key: String,
     name: String,
-    planType: String,
+    #[serde(rename = "planType")]
+    _planType: String, // Ignored, always use the same plan
 }
 
 #[derive(Deserialize, Debug)]
@@ -73,7 +74,7 @@ fn delete_organization(org_id: String, data: Json<PasswordData>, headers: OwnerH
 }
 
 #[get("/organizations/<org_id>")]
-fn get_organization(org_id: String, headers: OwnerHeaders, conn: DbConn) -> JsonResult {
+fn get_organization(org_id: String, _headers: OwnerHeaders, conn: DbConn) -> JsonResult {
     match Organization::find_by_uuid(&org_id, &conn) {
         Some(organization) => Ok(Json(organization.to_json())),
         None => err!("Can't find organization details")
@@ -81,7 +82,7 @@ fn get_organization(org_id: String, headers: OwnerHeaders, conn: DbConn) -> Json
 }
 
 #[post("/organizations/<org_id>", data = "<data>")]
-fn post_organization(org_id: String, headers: OwnerHeaders, data: Json<OrganizationUpdateData>, conn: DbConn) -> JsonResult {
+fn post_organization(org_id: String, _headers: OwnerHeaders, data: Json<OrganizationUpdateData>, conn: DbConn) -> JsonResult {
     let data: OrganizationUpdateData = data.into_inner();
 
     let mut org = match Organization::find_by_uuid(&org_id, &conn) {
@@ -112,7 +113,7 @@ fn get_user_collections(headers: Headers, conn: DbConn) -> JsonResult {
 }
 
 #[get("/organizations/<org_id>/collections")]
-fn get_org_collections(org_id: String, headers: AdminHeaders, conn: DbConn) -> JsonResult {
+fn get_org_collections(org_id: String, _headers: AdminHeaders, conn: DbConn) -> JsonResult {
     Ok(Json(json!({
         "Data":
             Collection::find_by_organization(&org_id, &conn)
@@ -125,7 +126,7 @@ fn get_org_collections(org_id: String, headers: AdminHeaders, conn: DbConn) -> J
 }
 
 #[post("/organizations/<org_id>/collections", data = "<data>")]
-fn post_organization_collections(org_id: String, headers: AdminHeaders, data: Json<NewCollectionData>, conn: DbConn) -> JsonResult {
+fn post_organization_collections(org_id: String, _headers: AdminHeaders, data: Json<NewCollectionData>, conn: DbConn) -> JsonResult {
     let data: NewCollectionData = data.into_inner();
 
     let org = match Organization::find_by_uuid(&org_id, &conn) {
@@ -141,7 +142,7 @@ fn post_organization_collections(org_id: String, headers: AdminHeaders, data: Js
 }
 
 #[post("/organizations/<org_id>/collections/<col_id>", data = "<data>")]
-fn post_organization_collection_update(org_id: String, col_id: String, headers: AdminHeaders, data: Json<NewCollectionData>, conn: DbConn) -> JsonResult {
+fn post_organization_collection_update(org_id: String, col_id: String, _headers: AdminHeaders, data: Json<NewCollectionData>, conn: DbConn) -> JsonResult {
     let data: NewCollectionData = data.into_inner();
 
     let org = match Organization::find_by_uuid(&org_id, &conn) {
@@ -154,6 +155,10 @@ fn post_organization_collection_update(org_id: String, col_id: String, headers: 
         None => err!("Collection not found")
     };
 
+    if collection.org_uuid != org.uuid {
+        err!("Collection is not owned by organization");
+    }
+
     collection.name = data.name.clone();
     collection.save(&conn);
 
@@ -161,7 +166,7 @@ fn post_organization_collection_update(org_id: String, col_id: String, headers: 
 }
 
 #[post("/organizations/<org_id>/collections/<col_id>/delete-user/<org_user_id>")]
-fn post_organization_collection_delete_user(org_id: String, col_id: String, org_user_id: String, headers: AdminHeaders, conn: DbConn) -> EmptyResult {
+fn post_organization_collection_delete_user(org_id: String, col_id: String, org_user_id: String, _headers: AdminHeaders, conn: DbConn) -> EmptyResult {
     let collection = match Collection::find_by_uuid(&col_id, &conn) {
         None => err!("Collection not found"),
         Some(collection) => if collection.org_uuid == org_id {
@@ -195,7 +200,9 @@ struct DeleteCollectionData {
 }
 
 #[post("/organizations/<org_id>/collections/<col_id>/delete", data = "<data>")]
-fn post_organization_collection_delete(org_id: String, col_id: String, headers: AdminHeaders, data: Json<DeleteCollectionData>, conn: DbConn) -> EmptyResult {
+fn post_organization_collection_delete(org_id: String, col_id: String, _headers: AdminHeaders, data: Json<DeleteCollectionData>, conn: DbConn) -> EmptyResult {
+    let _data: DeleteCollectionData = data.into_inner();
+
     match Collection::find_by_uuid(&col_id, &conn) {
         None => err!("Collection not found"),
         Some(collection) => if collection.org_uuid == org_id {
@@ -213,12 +220,18 @@ fn post_organization_collection_delete(org_id: String, col_id: String, headers: 
 fn get_org_collection_detail(org_id: String, coll_id: String, headers: AdminHeaders, conn: DbConn) -> JsonResult {
     match Collection::find_by_uuid_and_user(&coll_id, &headers.user.uuid, &conn) {
         None => err!("Collection not found"),
-        Some(collection) => Ok(Json(collection.to_json()))
+        Some(collection) => {
+            if collection.org_uuid != org_id {
+                err!("Collection is not owned by organization")
+            }
+
+            Ok(Json(collection.to_json()))
+        }
     }
 }
 
 #[get("/organizations/<org_id>/collections/<coll_id>/users")]
-fn get_collection_users(org_id: String, coll_id: String, headers: AdminHeaders, conn: DbConn) -> JsonResult {
+fn get_collection_users(org_id: String, coll_id: String, _headers: AdminHeaders, conn: DbConn) -> JsonResult {
     // Get org and collection, check that collection is from org
     let collection = match Collection::find_by_uuid_and_org(&coll_id, &org_id, &conn) {
         None => err!("Collection not found in Organization"),
@@ -344,8 +357,12 @@ fn send_invite(org_id: String, data: Json<InviteData>, headers: AdminHeaders, co
 fn confirm_invite(org_id: String, user_id: String, data: Json<Value>, headers: AdminHeaders, conn: DbConn) -> EmptyResult {
     let mut user_to_confirm = match UserOrganization::find_by_uuid(&user_id, &conn) {
         Some(user) => user,
-        None => err!("User to confirm isn't member of the organization")
+        None => err!("User to confirm doesn't exist")
     };
+
+    if user_to_confirm.org_uuid != org_id {
+        err!("The specified user isn't a member of the organization")
+    }
 
     if user_to_confirm.type_ != UserOrgType::User as i32 &&
         headers.org_user_type != UserOrgType::Owner as i32 {
@@ -368,11 +385,15 @@ fn confirm_invite(org_id: String, user_id: String, data: Json<Value>, headers: A
 }
 
 #[get("/organizations/<org_id>/users/<user_id>")]
-fn get_user(org_id: String, user_id: String, headers: AdminHeaders, conn: DbConn) -> JsonResult {
+fn get_user(org_id: String, user_id: String, _headers: AdminHeaders, conn: DbConn) -> JsonResult {
     let user = match UserOrganization::find_by_uuid(&user_id, &conn) {
         Some(user) => user,
-        None => err!("The specified user isn't member of the organization")
+        None => err!("The specified user doesn't exist")
     };
+
+    if user.org_uuid != org_id {
+        err!("The specified user isn't a member of the organization")
+    }
 
     Ok(Json(user.to_json_details(&conn)))
 }

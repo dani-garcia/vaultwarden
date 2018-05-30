@@ -65,7 +65,7 @@ fn profile(headers: Headers, conn: DbConn) -> JsonResult {
 }
 
 #[get("/users/<uuid>/public-key")]
-fn get_public_keys(uuid: String, headers: Headers, conn: DbConn) -> JsonResult {
+fn get_public_keys(uuid: String, _headers: Headers, conn: DbConn) -> JsonResult {
     let user = match User::find_by_uuid(&uuid, &conn) {
         Some(user) => user,
         None => err!("User doesn't exist")

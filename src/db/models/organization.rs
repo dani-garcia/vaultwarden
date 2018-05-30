@@ -26,7 +26,7 @@ pub struct UserOrganization {
 }
 
 pub enum UserOrgStatus {
-    Invited = 0,
+    _Invited = 0, // Unused, users are accepted automatically
     Accepted = 1,
     Confirmed = 2,
 }
