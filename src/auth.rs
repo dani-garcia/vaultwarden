@@ -94,7 +94,7 @@ use rocket::Outcome;
 use rocket::request::{self, Request, FromRequest};
 
 use db::DbConn;
-use db::models::{User, Device};
+use db::models::{User, UserOrganization, UserOrgType, Device};
 
 pub struct Headers {
     pub host: String,
@@ -154,5 +154,105 @@ impl<'a, 'r> FromRequest<'a, 'r> for Headers {
         }
 
         Outcome::Success(Headers { host, device, user })
+    }
+}
+
+pub struct OrgHeaders {
+    pub host: String,
+    pub device: Device,
+    pub user: User,
+    pub org_user_type: i32,
+}
+
+impl<'a, 'r> FromRequest<'a, 'r> for OrgHeaders {
+    type Error = &'static str;
+
+    fn from_request(request: &'a Request<'r>) -> request::Outcome<Self, Self::Error> {
+        match request.guard::<Headers>() {
+            Outcome::Forward(f) => Outcome::Forward(f),
+            Outcome::Failure(f) => Outcome::Failure(f),
+            Outcome::Success(headers) => {
+                // org_id is expected to be the first dynamic param
+                match request.get_param::<String>(0) {
+                    Err(_) => err_handler!("Error getting the organization id"),
+                    Ok(org_id) => {
+                        let conn = match request.guard::<DbConn>() {
+                            Outcome::Success(conn) => conn,
+                            _ => err_handler!("Error getting DB")
+                        };
+
+                        let org_user = match UserOrganization::find_by_user_and_org(&headers.user.uuid, &org_id, &conn) {
+                            Some(user) => user,
+                            None => err_handler!("The current user isn't member of the organization")
+                        };
+
+                        Outcome::Success(Self{
+                            host: headers.host,
+                            device: headers.device,
+                            user: headers.user,
+                            org_user_type: org_user.type_,
+                        })
+                    }
+                }
+            }
+        }
+    }
+}
+
+pub struct AdminHeaders {
+    pub host: String,
+    pub device: Device,
+    pub user: User,
+    pub org_user_type: i32,
+}
+
+impl<'a, 'r> FromRequest<'a, 'r> for AdminHeaders {
+    type Error = &'static str;
+
+    fn from_request(request: &'a Request<'r>) -> request::Outcome<Self, Self::Error> {
+        match request.guard::<OrgHeaders>() {
+            Outcome::Forward(f) => Outcome::Forward(f),
+            Outcome::Failure(f) => Outcome::Failure(f),
+            Outcome::Success(headers) => {
+                if headers.org_user_type > UserOrgType::Admin as i32 {
+                    err_handler!("You need to be Admin or Owner to call this endpoint")
+                } else {
+                    Outcome::Success(Self{
+                        host: headers.host,
+                        device: headers.device,
+                        user: headers.user,
+                        org_user_type: headers.org_user_type,
+                    })
+                }
+            }
+        }
+    }
+}
+
+pub struct OwnerHeaders {
+    pub host: String,
+    pub device: Device,
+    pub user: User,
+}
+
+impl<'a, 'r> FromRequest<'a, 'r> for OwnerHeaders {
+    type Error = &'static str;
+
+    fn from_request(request: &'a Request<'r>) -> request::Outcome<Self, Self::Error> {
+        match request.guard::<OrgHeaders>() {
+            Outcome::Forward(f) => Outcome::Forward(f),
+            Outcome::Failure(f) => Outcome::Failure(f),
+            Outcome::Success(headers) => {
+                if headers.org_user_type > UserOrgType::Owner as i32 {
+                    err_handler!("You need to be Owner to call this endpoint")
+                } else {
+                    Outcome::Success(Self{
+                        host: headers.host,
+                        device: headers.device,
+                        user: headers.user,
+                    })
+                }
+            }
+        }
     }
 }

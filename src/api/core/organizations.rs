@@ -6,7 +6,7 @@ use db::DbConn;
 use db::models::*;
 
 use api::{PasswordData, JsonResult, EmptyResult, NumberOrString};
-use auth::Headers;
+use auth::{Headers, AdminHeaders, OwnerHeaders};
 
 
 #[derive(Deserialize)]
@@ -82,11 +82,7 @@ fn delete_organization(org_id: String, data: Json<PasswordData>, headers: Header
 }
 
 #[get("/organizations/<org_id>")]
-fn get_organization(org_id: String, headers: Headers, conn: DbConn) -> JsonResult {
-    if UserOrganization::find_by_user_and_org( &headers.user.uuid, &org_id, &conn).is_none() {
-        err!("User not in Organization or Organization doesn't exist")
-    }
-
+fn get_organization(org_id: String, headers: OwnerHeaders, conn: DbConn) -> JsonResult {
     match Organization::find_by_uuid(&org_id, &conn) {
         Some(organization) => Ok(Json(organization.to_json())),
         None => err!("Can't find organization details")
@@ -132,7 +128,7 @@ fn get_user_collections(headers: Headers, conn: DbConn) -> JsonResult {
 }
 
 #[get("/organizations/<org_id>/collections")]
-fn get_org_collections(org_id: String, headers: Headers, conn: DbConn) -> JsonResult {
+fn get_org_collections(org_id: String, headers: AdminHeaders, conn: DbConn) -> JsonResult {
     Ok(Json(json!({
         "Data":
             Collection::find_by_organization(&org_id, &conn)
@@ -226,7 +222,7 @@ fn post_organization_collection_delete(org_id: String, col_id: String, headers: 
 }
 
 #[get("/organizations/<org_id>/collections/<coll_id>/details")]
-fn get_org_collection_detail(org_id: String, coll_id: String, headers: Headers, conn: DbConn) -> JsonResult {
+fn get_org_collection_detail(org_id: String, coll_id: String, headers: AdminHeaders, conn: DbConn) -> JsonResult {
     match Collection::find_by_uuid_and_user(&coll_id, &headers.user.uuid, &conn) {
         None => err!("Collection not found"),
         Some(collection) => Ok(Json(collection.to_json()))
@@ -234,7 +230,7 @@ fn get_org_collection_detail(org_id: String, coll_id: String, headers: Headers, 
 }
 
 #[get("/organizations/<org_id>/collections/<coll_id>/users")]
-fn get_collection_users(org_id: String, coll_id: String, headers: Headers, conn: DbConn) -> JsonResult {
+fn get_collection_users(org_id: String, coll_id: String, headers: AdminHeaders, conn: DbConn) -> JsonResult {
     // Get org and collection, check that collection is from org
 
     // Get the users from collection
@@ -278,7 +274,7 @@ fn get_org_details(data: OrgIdData, headers: Headers, conn: DbConn) -> JsonResul
 }
 
 #[get("/organizations/<org_id>/users")]
-fn get_org_users(org_id: String, headers: Headers, conn: DbConn) -> JsonResult {
+fn get_org_users(org_id: String, headers: AdminHeaders, conn: DbConn) -> JsonResult {
     match UserOrganization::find_by_user_and_org(&headers.user.uuid, &org_id, &conn) {
         Some(_) => (),
         None => err!("User isn't member of organization")
@@ -408,13 +404,7 @@ fn confirm_invite(org_id: String, user_id: String, data: Json<Value>, headers: H
 }
 
 #[get("/organizations/<org_id>/users/<user_id>")]
-fn get_user(org_id: String, user_id: String, headers: Headers, conn: DbConn) -> JsonResult {
-    let current_user = match UserOrganization::find_by_user_and_org(
-        &headers.user.uuid, &org_id, &conn) {
-        Some(user) => user,
-        None => err!("The current user isn't member of the organization")
-    };
-
+fn get_user(org_id: String, user_id: String, headers: AdminHeaders, conn: DbConn) -> JsonResult {
     let user = match UserOrganization::find_by_uuid(&user_id, &conn) {
         Some(user) => user,
         None => err!("The specified user isn't member of the organization")
