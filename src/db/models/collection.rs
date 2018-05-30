@@ -188,14 +188,26 @@ impl CollectionUser {
         )).execute(&**conn).and(Ok(()))
     }
 
-    pub fn delete(user_uuid: &str, collection_uuid: &str, conn: &DbConn) -> bool {
-        match diesel::delete(users_collections::table
-            .filter(users_collections::user_uuid.eq(user_uuid))
-            .filter(users_collections::collection_uuid.eq(collection_uuid)))
-            .execute(&**conn) {
-            Ok(1) => true, // One row deleted
-            _ => false,
-        }
+    pub fn delete(self, conn: &DbConn) -> QueryResult<()> {
+        diesel::delete(users_collections::table
+        .filter(users_collections::user_uuid.eq(&self.user_uuid))
+        .filter(users_collections::collection_uuid.eq(&self.collection_uuid)))
+        .execute(&**conn).and(Ok(()))
+    }
+
+    pub fn find_by_collection(collection_uuid: &str, conn: &DbConn) -> Vec<Self> {
+        users_collections::table
+        .filter(users_collections::collection_uuid.eq(collection_uuid))
+        .select(users_collections::all_columns)
+        .load::<Self>(&**conn).expect("Error loading users_collections")
+    }
+
+    pub fn find_by_collection_and_user(collection_uuid: &str, user_uuid: &str, conn: &DbConn) -> Option<Self> {
+        users_collections::table
+        .filter(users_collections::collection_uuid.eq(collection_uuid))
+        .filter(users_collections::user_uuid.eq(user_uuid))
+        .select(users_collections::all_columns)
+        .first::<Self>(&**conn).ok()
     }
 
     pub fn delete_all_by_collection(collection_uuid: &str, conn: &DbConn) -> QueryResult<()> {

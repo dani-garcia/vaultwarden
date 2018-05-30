@@ -189,6 +189,22 @@ impl UserOrganization {
         })
     }
 
+    pub fn to_json_collection_user_details(&self, read_only: &bool, conn: &DbConn) -> JsonValue {
+        use super::User;
+        let user = User::find_by_uuid(&self.user_uuid, conn).unwrap();
+
+        json!({
+            "OrganizationUserId": self.uuid,
+            "AccessAll": self.access_all,
+            "Name": user.name,
+            "Email": user.email,
+            "Type": self.type_,
+            "Status": self.status,
+            "ReadOnly": read_only,
+            "Object": "collectionUser",
+        })
+    }
+
     pub fn to_json_details(&self, conn: &DbConn) -> JsonValue {        
         let coll_uuids = if self.access_all { 
             vec![] // If we have complete access, no need to fill the array
