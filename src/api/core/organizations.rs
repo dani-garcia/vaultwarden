@@ -55,21 +55,12 @@ fn create_organization(headers: Headers, data: Json<OrgData>, conn: DbConn) -> J
 }
 
 #[post("/organizations/<org_id>/delete", data = "<data>")]
-fn delete_organization(org_id: String, data: Json<PasswordData>, headers: Headers, conn: DbConn) -> EmptyResult {
+fn delete_organization(org_id: String, data: Json<PasswordData>, headers: OwnerHeaders, conn: DbConn) -> EmptyResult {
     let data: PasswordData = data.into_inner();
     let password_hash = data.masterPasswordHash;
 
     if !headers.user.check_valid_password(&password_hash) {
         err!("Invalid password")
-    }
-
-    let org_user = match UserOrganization::find_by_user_and_org(&headers.user.uuid, &org_id, &conn) {
-        Some(user) => user,
-        None => err!("The current user isn't member of the organization")
-    };
-
-    if org_user.type_ != UserOrgType::Owner as i32 {
-        err!("Only owner is able to delete organization")
     }
 
     match Organization::find_by_uuid(&org_id, &conn) {
@@ -90,15 +81,8 @@ fn get_organization(org_id: String, headers: OwnerHeaders, conn: DbConn) -> Json
 }
 
 #[post("/organizations/<org_id>", data = "<data>")]
-fn post_organization(org_id: String, headers: Headers, data: Json<OrganizationUpdateData>, conn: DbConn) -> JsonResult {
+fn post_organization(org_id: String, headers: OwnerHeaders, data: Json<OrganizationUpdateData>, conn: DbConn) -> JsonResult {
     let data: OrganizationUpdateData = data.into_inner();
-
-    match UserOrganization::find_by_user_and_org( &headers.user.uuid, &org_id, &conn) {
-        None => err!("User not in Organization or Organization doesn't exist"),
-        Some(org_user) => if org_user.type_ != 0 { // not owner
-            err!("Only owner can change Organization details")
-        }
-    };
 
     let mut org = match Organization::find_by_uuid(&org_id, &conn) {
         Some(organization) => organization,
@@ -141,17 +125,8 @@ fn get_org_collections(org_id: String, headers: AdminHeaders, conn: DbConn) -> J
 }
 
 #[post("/organizations/<org_id>/collections", data = "<data>")]
-fn post_organization_collections(org_id: String, headers: Headers, data: Json<NewCollectionData>, conn: DbConn) -> JsonResult {
+fn post_organization_collections(org_id: String, headers: AdminHeaders, data: Json<NewCollectionData>, conn: DbConn) -> JsonResult {
     let data: NewCollectionData = data.into_inner();
-
-    let org_user = match UserOrganization::find_by_user_and_org( &headers.user.uuid, &org_id, &conn) {
-        None => err!("User not in Organization or Organization doesn't exist"),
-        Some(org_user) => if org_user.type_ == UserOrgType::User as i32 {
-            err!("Only Organization owner and admin can add Collection")
-        } else {
-            org_user
-        }
-    };
 
     let org = match Organization::find_by_uuid(&org_id, &conn) {
         Some(organization) => organization,
@@ -166,15 +141,8 @@ fn post_organization_collections(org_id: String, headers: Headers, data: Json<Ne
 }
 
 #[post("/organizations/<org_id>/collections/<col_id>", data = "<data>")]
-fn post_organization_collection_update(org_id: String, col_id: String, headers: Headers, data: Json<NewCollectionData>, conn: DbConn) -> JsonResult {
+fn post_organization_collection_update(org_id: String, col_id: String, headers: AdminHeaders, data: Json<NewCollectionData>, conn: DbConn) -> JsonResult {
     let data: NewCollectionData = data.into_inner();
-
-    match UserOrganization::find_by_user_and_org( &headers.user.uuid, &org_id, &conn) {
-        None => err!("User not in Organization or Organization doesn't exist"),
-        Some(org_user) => if org_user.type_ > 1 { // not owner or admin
-            err!("Only Organization owner and admin can update Collection")
-        }
-    };
 
     let org = match Organization::find_by_uuid(&org_id, &conn) {
         Some(organization) => organization,
@@ -227,23 +195,16 @@ struct DeleteCollectionData {
 }
 
 #[post("/organizations/<org_id>/collections/<col_id>/delete", data = "<data>")]
-fn post_organization_collection_delete(org_id: String, col_id: String, headers: Headers, data: Json<DeleteCollectionData>, conn: DbConn) -> EmptyResult {
-    match UserOrganization::find_by_user_and_org(&headers.user.uuid, &org_id, &conn) {
-        None => err!("Not a member of Organization"),
-        Some(user_org) => if user_org.has_full_access() {
-            match Collection::find_by_uuid(&col_id, &conn) {
-                None => err!("Collection not found"),
-                Some(collection) => if collection.org_uuid == org_id {
-                    match collection.delete(&conn) {
-                        Ok(()) => Ok(()),
-                        Err(_) => err!("Failed deleting collection")
-                    }
-                } else {
-                    err!("Collection and Organization id do not match")
-                }
+fn post_organization_collection_delete(org_id: String, col_id: String, headers: AdminHeaders, data: Json<DeleteCollectionData>, conn: DbConn) -> EmptyResult {
+    match Collection::find_by_uuid(&col_id, &conn) {
+        None => err!("Collection not found"),
+        Some(collection) => if collection.org_uuid == org_id {
+            match collection.delete(&conn) {
+                Ok(()) => Ok(()),
+                Err(_) => err!("Failed deleting collection")
             }
         } else {
-            err!("Not enought rights to delete Collection")
+            err!("Collection and Organization id do not match")
         }
     }
 }
@@ -329,17 +290,8 @@ struct InviteData {
 }
 
 #[post("/organizations/<org_id>/users/invite", data = "<data>")]
-fn send_invite(org_id: String, data: Json<InviteData>, headers: Headers, conn: DbConn) -> EmptyResult {
+fn send_invite(org_id: String, data: Json<InviteData>, headers: AdminHeaders, conn: DbConn) -> EmptyResult {
     let data: InviteData = data.into_inner();
-
-    let current_user = match UserOrganization::find_by_user_and_org(&headers.user.uuid, &org_id, &conn) {
-        Some(user) => user,
-        None => err!("The current user isn't member of the organization")
-    };
-
-    if current_user.type_ == UserOrgType::User as i32 {
-        err!("Users can't invite other people. Ask an Admin or Owner")
-    }
 
     let new_type = match UserOrgType::from_str(&data.type_.to_string()) {
         Some(new_type) => new_type as i32,
@@ -347,7 +299,7 @@ fn send_invite(org_id: String, data: Json<InviteData>, headers: Headers, conn: D
     };
 
     if new_type != UserOrgType::User as i32 &&
-        current_user.type_ != UserOrgType::Owner as i32 {
+        headers.org_user_type != UserOrgType::Owner as i32 {
         err!("Only Owners can invite Admins or Owners")
     }
 
@@ -389,24 +341,14 @@ fn send_invite(org_id: String, data: Json<InviteData>, headers: Headers, conn: D
 }
 
 #[post("/organizations/<org_id>/users/<user_id>/confirm", data = "<data>")]
-fn confirm_invite(org_id: String, user_id: String, data: Json<Value>, headers: Headers, conn: DbConn) -> EmptyResult {
-    let current_user = match UserOrganization::find_by_user_and_org(
-        &headers.user.uuid, &org_id, &conn) {
-        Some(user) => user,
-        None => err!("The current user isn't member of the organization")
-    };
-
-    if current_user.type_ == UserOrgType::User as i32 {
-        err!("Users can't confirm other people. Ask an Admin or Owner")
-    }
-
+fn confirm_invite(org_id: String, user_id: String, data: Json<Value>, headers: AdminHeaders, conn: DbConn) -> EmptyResult {
     let mut user_to_confirm = match UserOrganization::find_by_uuid(&user_id, &conn) {
         Some(user) => user,
         None => err!("User to confirm isn't member of the organization")
     };
 
     if user_to_confirm.type_ != UserOrgType::User as i32 &&
-        current_user.type_ != UserOrgType::Owner as i32 {
+        headers.org_user_type != UserOrgType::Owner as i32 {
         err!("Only Owners can confirm Admins or Owners")
     }
 
@@ -445,14 +387,8 @@ struct EditUserData {
 }
 
 #[post("/organizations/<org_id>/users/<user_id>", data = "<data>", rank = 1)]
-fn edit_user(org_id: String, user_id: String, data: Json<EditUserData>, headers: Headers, conn: DbConn) -> EmptyResult {
+fn edit_user(org_id: String, user_id: String, data: Json<EditUserData>, headers: AdminHeaders, conn: DbConn) -> EmptyResult {
     let data: EditUserData = data.into_inner();
-
-    let current_user = match UserOrganization::find_by_user_and_org(
-        &headers.user.uuid, &org_id, &conn) {
-        Some(user) => user,
-        None => err!("The current user isn't member of the organization")
-    };
 
     let new_type = match UserOrgType::from_str(&data.type_.to_string()) {
         Some(new_type) => new_type as i32,
@@ -464,17 +400,13 @@ fn edit_user(org_id: String, user_id: String, data: Json<EditUserData>, headers:
         None => err!("The specified user isn't member of the organization")
     };
 
-    if current_user.type_ == UserOrgType::User as i32 {
-        err!("Users can't edit users. Ask an Admin or Owner")
-    }
-
     if new_type != UserOrgType::User as i32 &&
-        current_user.type_ != UserOrgType::Owner as i32 {
+        headers.org_user_type != UserOrgType::Owner as i32 {
         err!("Only Owners can grant Admin or Owner type")
     }
 
     if user_to_edit.type_ != UserOrgType::User as i32 &&
-        current_user.type_ != UserOrgType::Owner as i32 {
+        headers.org_user_type != UserOrgType::Owner as i32 {
         err!("Only Owners can edit Admin or Owner")
     }
 
@@ -523,24 +455,14 @@ fn edit_user(org_id: String, user_id: String, data: Json<EditUserData>, headers:
 }
 
 #[post("/organizations/<org_id>/users/<user_id>/delete")]
-fn delete_user(org_id: String, user_id: String, headers: Headers, conn: DbConn) -> EmptyResult {
-    let current_user = match UserOrganization::find_by_user_and_org(
-        &headers.user.uuid, &org_id, &conn) {
-        Some(user) => user,
-        None => err!("The current user isn't member of the organization")
-    };
-
-    if current_user.type_ == UserOrgType::User as i32 {
-        err!("Users can't delete other people. Ask an Admin or Owner")
-    }
-
+fn delete_user(org_id: String, user_id: String, headers: AdminHeaders, conn: DbConn) -> EmptyResult {
     let user_to_delete = match UserOrganization::find_by_uuid(&user_id, &conn) {
         Some(user) => user,
         None => err!("User to delete isn't member of the organization")
     };
 
     if user_to_delete.type_ != UserOrgType::User as i32 &&
-        current_user.type_ != UserOrgType::Owner as i32 {
+        headers.org_user_type != UserOrgType::Owner as i32 {
         err!("Only Owners can delete Admins or Owners")
     }
 
