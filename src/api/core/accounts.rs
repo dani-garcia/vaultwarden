@@ -6,6 +6,8 @@ use db::models::*;
 use api::{PasswordData, JsonResult, EmptyResult, JsonUpcase};
 use auth::Headers;
 
+use util;
+
 use CONFIG;
 
 #[derive(Deserialize, Debug)]
@@ -13,6 +15,7 @@ use CONFIG;
 struct RegisterData {
     Email: String,
     Key: String,
+    #[serde(deserialize_with = "util::upcase_deserialize")]
     Keys: Option<KeysData>,
     MasterPasswordHash: String,
     MasterPasswordHint: Option<String>,
@@ -22,8 +25,8 @@ struct RegisterData {
 #[derive(Deserialize, Debug)]
 #[allow(non_snake_case)]
 struct KeysData {
-    encryptedPrivateKey: String,
-    publicKey: String,
+    EncryptedPrivateKey: String,
+    PublicKey: String,
 }
 
 #[post("/accounts/register", data = "<data>")]
@@ -50,8 +53,8 @@ fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> EmptyResult {
     }
 
     if let Some(keys) = data.Keys {
-        user.private_key = Some(keys.encryptedPrivateKey);
-        user.public_key = Some(keys.publicKey);
+        user.private_key = Some(keys.EncryptedPrivateKey);
+        user.public_key = Some(keys.PublicKey);
     }
 
     user.save(&conn);
@@ -84,8 +87,8 @@ fn post_keys(data: JsonUpcase<KeysData>, headers: Headers, conn: DbConn) -> Json
 
     let mut user = headers.user;
 
-    user.private_key = Some(data.encryptedPrivateKey);
-    user.public_key = Some(data.publicKey);
+    user.private_key = Some(data.EncryptedPrivateKey);
+    user.public_key = Some(data.PublicKey);
 
     user.save(&conn);
 
