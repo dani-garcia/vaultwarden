@@ -29,6 +29,9 @@ fn sync(headers: Headers, conn: DbConn) -> JsonResult {
     let folders = Folder::find_by_user(&headers.user.uuid, &conn);
     let folders_json: Vec<Value> = folders.iter().map(|c| c.to_json()).collect();
 
+    let collections = Collection::find_by_user_uuid(&headers.user.uuid, &conn);
+    let collections_json: Vec<Value> = collections.iter().map(|c| c.to_json()).collect();
+
     let ciphers = Cipher::find_by_user(&headers.user.uuid, &conn);
     let ciphers_json: Vec<Value> = ciphers.iter().map(|c| c.to_json(&headers.host, &headers.user.uuid, &conn)).collect();
 
@@ -37,6 +40,7 @@ fn sync(headers: Headers, conn: DbConn) -> JsonResult {
     Ok(Json(json!({
         "Profile": user_json,
         "Folders": folders_json,
+        "Collections": collections_json,
         "Ciphers": ciphers_json,
         "Domains": domains_json,
         "Object": "sync"
