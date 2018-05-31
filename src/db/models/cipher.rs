@@ -194,29 +194,57 @@ impl Cipher {
     }
 
     pub fn is_write_accessible_to_user(&self, user_uuid: &str, conn: &DbConn) -> bool {
-        match self.user_uuid {
-            Some(ref self_user_uuid) => self_user_uuid == user_uuid, // cipher directly owned by user
-            None =>{
-                match self.organization_uuid {
-                    Some(ref org_uuid) => {
-                        match users_organizations::table
-                        .filter(users_organizations::org_uuid.eq(org_uuid))
-                        .filter(users_organizations::user_uuid.eq(user_uuid))
-                        .filter(users_organizations::access_all.eq(true))
-                        .first::<UserOrganization>(&**conn).ok() {
-                            Some(_) => true,
-                            None => false //TODO R/W access on collection
-                        }
-                    },
-                    None => false // cipher not in organization and not owned by user
-                }
-            }
+        match ciphers::table
+        .filter(ciphers::uuid.eq(&self.uuid))
+        .left_join(users_organizations::table.on(
+            ciphers::organization_uuid.eq(users_organizations::org_uuid.nullable()).and(
+                users_organizations::user_uuid.eq(user_uuid)
+            )
+        ))
+        .left_join(ciphers_collections::table)
+        .left_join(users_collections::table.on(
+            ciphers_collections::collection_uuid.eq(users_collections::collection_uuid)
+        ))
+        .filter(ciphers::user_uuid.eq(user_uuid).or( // Cipher owner
+            users_organizations::access_all.eq(true).or( // access_all in Organization
+                users_organizations::type_.le(UserOrgType::Admin as i32).or( // Org admin or owner
+                    users_collections::user_uuid.eq(user_uuid).and(
+                        users_collections::read_only.eq(false) //R/W access to collection
+                    )
+                )
+            )
+        ))
+        .select(ciphers::all_columns)
+        .first::<Self>(&**conn).ok() {
+            Some(_) => true,
+            None => false
         }
     }
 
     pub fn is_accessible_to_user(&self, user_uuid: &str, conn: &DbConn) -> bool {
-        // TODO also check for read-only access
-        self.is_write_accessible_to_user(user_uuid, conn)
+        match ciphers::table
+        .filter(ciphers::uuid.eq(&self.uuid))
+        .left_join(users_organizations::table.on(
+            ciphers::organization_uuid.eq(users_organizations::org_uuid.nullable()).and(
+                users_organizations::user_uuid.eq(user_uuid)
+            )
+        ))
+        .left_join(ciphers_collections::table)
+        .left_join(users_collections::table.on(
+            ciphers_collections::collection_uuid.eq(users_collections::collection_uuid)
+        ))
+        .filter(ciphers::user_uuid.eq(user_uuid).or( // Cipher owner
+            users_organizations::access_all.eq(true).or( // access_all in Organization
+                users_organizations::type_.le(UserOrgType::Admin as i32).or( // Org admin or owner
+                    users_collections::user_uuid.eq(user_uuid) // Access to Collection
+                )
+            )
+        ))
+        .select(ciphers::all_columns)
+        .first::<Self>(&**conn).ok() {
+            Some(_) => true,
+            None => false
+        }
     }
 
     pub fn get_folder_uuid(&self, user_uuid: &str, conn: &DbConn) -> Option<String> {
