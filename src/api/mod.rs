@@ -15,11 +15,14 @@ use rocket_contrib::Json;
 type JsonResult = Result<Json, BadRequest<Json>>;
 type EmptyResult = Result<(), BadRequest<Json>>;
 
+use util;
+type JsonUpcase<T> = Json<util::UpCase<T>>;
+
 // Common structs representing JSON data received
 #[derive(Deserialize)]
 #[allow(non_snake_case)]
 struct PasswordData {
-    masterPasswordHash: String
+    MasterPasswordHash: String
 }
 
 #[derive(Deserialize, Debug)]

@@ -5,45 +5,45 @@ use rocket_contrib::{Json, Value};
 use db::DbConn;
 use db::models::*;
 
-use api::{PasswordData, JsonResult, EmptyResult, NumberOrString};
+use api::{PasswordData, JsonResult, EmptyResult, NumberOrString, JsonUpcase};
 use auth::{Headers, AdminHeaders, OwnerHeaders};
 
 
 #[derive(Deserialize)]
 #[allow(non_snake_case)]
 struct OrgData {
-    billingEmail: String,
-    collectionName: String,
-    key: String,
-    name: String,
-    #[serde(rename = "planType")]
-    _planType: String, // Ignored, always use the same plan
+    BillingEmail: String,
+    CollectionName: String,
+    Key: String,
+    Name: String,
+    #[serde(rename = "PlanType")]
+    _PlanType: String, // Ignored, always use the same plan
 }
 
 #[derive(Deserialize, Debug)]
 #[allow(non_snake_case)]
 struct OrganizationUpdateData {
-    billingEmail: String,
-    name: String,
+    BillingEmail: String,
+    Name: String,
 }
 
 #[derive(Deserialize, Debug)]
 #[allow(non_snake_case)]
 struct NewCollectionData {
-    name: String,
+    Name: String,
 }
 
 #[post("/organizations", data = "<data>")]
-fn create_organization(headers: Headers, data: Json<OrgData>, conn: DbConn) -> JsonResult {
-    let data: OrgData = data.into_inner();
+fn create_organization(headers: Headers, data: JsonUpcase<OrgData>, conn: DbConn) -> JsonResult {
+    let data: OrgData = data.into_inner().data;
 
-    let mut org = Organization::new(data.name, data.billingEmail);
+    let mut org = Organization::new(data.Name, data.BillingEmail);
     let mut user_org = UserOrganization::new(
         headers.user.uuid.clone(), org.uuid.clone());
     let mut collection = Collection::new(
-        org.uuid.clone(), data.collectionName);
+        org.uuid.clone(), data.CollectionName);
 
-    user_org.key = data.key;
+    user_org.key = data.Key;
     user_org.access_all = true;
     user_org.type_ = UserOrgType::Owner as i32;
     user_org.status = UserOrgStatus::Confirmed as i32;
@@ -56,9 +56,9 @@ fn create_organization(headers: Headers, data: Json<OrgData>, conn: DbConn) -> J
 }
 
 #[post("/organizations/<org_id>/delete", data = "<data>")]
-fn delete_organization(org_id: String, data: Json<PasswordData>, headers: OwnerHeaders, conn: DbConn) -> EmptyResult {
-    let data: PasswordData = data.into_inner();
-    let password_hash = data.masterPasswordHash;
+fn delete_organization(org_id: String, data: JsonUpcase<PasswordData>, headers: OwnerHeaders, conn: DbConn) -> EmptyResult {
+    let data: PasswordData = data.into_inner().data;
+    let password_hash = data.MasterPasswordHash;
 
     if !headers.user.check_valid_password(&password_hash) {
         err!("Invalid password")
@@ -82,16 +82,16 @@ fn get_organization(org_id: String, _headers: OwnerHeaders, conn: DbConn) -> Jso
 }
 
 #[post("/organizations/<org_id>", data = "<data>")]
-fn post_organization(org_id: String, _headers: OwnerHeaders, data: Json<OrganizationUpdateData>, conn: DbConn) -> JsonResult {
-    let data: OrganizationUpdateData = data.into_inner();
+fn post_organization(org_id: String, _headers: OwnerHeaders, data: JsonUpcase<OrganizationUpdateData>, conn: DbConn) -> JsonResult {
+    let data: OrganizationUpdateData = data.into_inner().data;
 
     let mut org = match Organization::find_by_uuid(&org_id, &conn) {
         Some(organization) => organization,
         None => err!("Can't find organization details")
     };
 
-    org.name = data.name;
-    org.billing_email = data.billingEmail;
+    org.name = data.Name;
+    org.billing_email = data.BillingEmail;
     org.save(&conn);
 
     Ok(Json(org.to_json()))
@@ -126,15 +126,15 @@ fn get_org_collections(org_id: String, _headers: AdminHeaders, conn: DbConn) -> 
 }
 
 #[post("/organizations/<org_id>/collections", data = "<data>")]
-fn post_organization_collections(org_id: String, _headers: AdminHeaders, data: Json<NewCollectionData>, conn: DbConn) -> JsonResult {
-    let data: NewCollectionData = data.into_inner();
+fn post_organization_collections(org_id: String, _headers: AdminHeaders, data: JsonUpcase<NewCollectionData>, conn: DbConn) -> JsonResult {
+    let data: NewCollectionData = data.into_inner().data;
 
     let org = match Organization::find_by_uuid(&org_id, &conn) {
         Some(organization) => organization,
         None => err!("Can't find organization details")
     };
 
-    let mut collection = Collection::new(org.uuid.clone(), data.name);
+    let mut collection = Collection::new(org.uuid.clone(), data.Name);
 
     collection.save(&conn);
 
@@ -142,8 +142,8 @@ fn post_organization_collections(org_id: String, _headers: AdminHeaders, data: J
 }
 
 #[post("/organizations/<org_id>/collections/<col_id>", data = "<data>")]
-fn post_organization_collection_update(org_id: String, col_id: String, _headers: AdminHeaders, data: Json<NewCollectionData>, conn: DbConn) -> JsonResult {
-    let data: NewCollectionData = data.into_inner();
+fn post_organization_collection_update(org_id: String, col_id: String, _headers: AdminHeaders, data: JsonUpcase<NewCollectionData>, conn: DbConn) -> JsonResult {
+    let data: NewCollectionData = data.into_inner().data;
 
     let org = match Organization::find_by_uuid(&org_id, &conn) {
         Some(organization) => organization,
@@ -159,7 +159,7 @@ fn post_organization_collection_update(org_id: String, col_id: String, _headers:
         err!("Collection is not owned by organization");
     }
 
-    collection.name = data.name.clone();
+    collection.name = data.Name.clone();
     collection.save(&conn);
 
     Ok(Json(collection.to_json()))
@@ -195,13 +195,13 @@ fn post_organization_collection_delete_user(org_id: String, col_id: String, org_
 #[derive(Deserialize, Debug)]
 #[allow(non_snake_case)]
 struct DeleteCollectionData {
-    id: String,
-    orgId: String,
+    Id: String,
+    OrgId: String,
 }
 
 #[post("/organizations/<org_id>/collections/<col_id>/delete", data = "<data>")]
-fn post_organization_collection_delete(org_id: String, col_id: String, _headers: AdminHeaders, data: Json<DeleteCollectionData>, conn: DbConn) -> EmptyResult {
-    let _data: DeleteCollectionData = data.into_inner();
+fn post_organization_collection_delete(org_id: String, col_id: String, _headers: AdminHeaders, data: JsonUpcase<DeleteCollectionData>, conn: DbConn) -> EmptyResult {
+    let _data: DeleteCollectionData = data.into_inner().data;
 
     match Collection::find_by_uuid(&col_id, &conn) {
         None => err!("Collection not found"),
@@ -295,18 +295,17 @@ struct CollectionData {
 #[derive(Deserialize)]
 #[allow(non_snake_case)]
 struct InviteData {
-    emails: Vec<String>,
-    #[serde(rename = "type")]
-    type_: NumberOrString,
-    collections: Vec<CollectionData>,
-    accessAll: Option<bool>,
+    Emails: Vec<String>,
+    Type: NumberOrString,
+    Collections: Vec<CollectionData>,
+    AccessAll: Option<bool>,
 }
 
 #[post("/organizations/<org_id>/users/invite", data = "<data>")]
-fn send_invite(org_id: String, data: Json<InviteData>, headers: AdminHeaders, conn: DbConn) -> EmptyResult {
-    let data: InviteData = data.into_inner();
+fn send_invite(org_id: String, data: JsonUpcase<InviteData>, headers: AdminHeaders, conn: DbConn) -> EmptyResult {
+    let data: InviteData = data.into_inner().data;
 
-    let new_type = match UserOrgType::from_str(&data.type_.to_string()) {
+    let new_type = match UserOrgType::from_str(&data.Type.to_string()) {
         Some(new_type) => new_type as i32,
         None => err!("Invalid type")
     };
@@ -316,7 +315,7 @@ fn send_invite(org_id: String, data: Json<InviteData>, headers: AdminHeaders, co
         err!("Only Owners can invite Admins or Owners")
     }
 
-    for user_opt in data.emails.iter().map(|email| User::find_by_mail(email, &conn)) {
+    for user_opt in data.Emails.iter().map(|email| User::find_by_mail(email, &conn)) {
         match user_opt {
             None => err!("User email does not exist"),
             Some(user) => {
@@ -326,13 +325,13 @@ fn send_invite(org_id: String, data: Json<InviteData>, headers: AdminHeaders, co
                 }
 
                 let mut new_user = UserOrganization::new(user.uuid.clone(), org_id.clone());
-                let access_all = data.accessAll.unwrap_or(false);
+                let access_all = data.AccessAll.unwrap_or(false);
                 new_user.access_all = access_all;
                 new_user.type_ = new_type;
 
                 // If no accessAll, add the collections received
                 if !access_all {
-                    for col in data.collections.iter() {
+                    for col in data.Collections.iter() {
                         match Collection::find_by_uuid_and_org(&col.id, &org_id, &conn) {
                             None => err!("Collection not found in Organization"),
                             Some(collection) => {
@@ -354,7 +353,9 @@ fn send_invite(org_id: String, data: Json<InviteData>, headers: AdminHeaders, co
 }
 
 #[post("/organizations/<org_id>/users/<user_id>/confirm", data = "<data>")]
-fn confirm_invite(org_id: String, user_id: String, data: Json<Value>, headers: AdminHeaders, conn: DbConn) -> EmptyResult {
+fn confirm_invite(org_id: String, user_id: String, data: JsonUpcase<Value>, headers: AdminHeaders, conn: DbConn) -> EmptyResult {
+    let data = data.into_inner().data;
+
     let mut user_to_confirm = match UserOrganization::find_by_uuid(&user_id, &conn) {
         Some(user) => user,
         None => err!("Failed to find user membership")
@@ -401,17 +402,16 @@ fn get_user(org_id: String, user_id: String, _headers: AdminHeaders, conn: DbCon
 #[derive(Deserialize)]
 #[allow(non_snake_case)]
 struct EditUserData {
-    #[serde(rename = "type")]
-    type_: NumberOrString,
-    collections: Vec<CollectionData>,
-    accessAll: bool,
+    Type: NumberOrString,
+    Collections: Vec<CollectionData>,
+    AccessAll: bool,
 }
 
 #[post("/organizations/<org_id>/users/<user_id>", data = "<data>", rank = 1)]
-fn edit_user(org_id: String, user_id: String, data: Json<EditUserData>, headers: AdminHeaders, conn: DbConn) -> EmptyResult {
-    let data: EditUserData = data.into_inner();
+fn edit_user(org_id: String, user_id: String, data: JsonUpcase<EditUserData>, headers: AdminHeaders, conn: DbConn) -> EmptyResult {
+    let data: EditUserData = data.into_inner().data;
 
-    let new_type = match UserOrgType::from_str(&data.type_.to_string()) {
+    let new_type = match UserOrgType::from_str(&data.Type.to_string()) {
         Some(new_type) => new_type as i32,
         None => err!("Invalid type")
     };
@@ -444,7 +444,7 @@ fn edit_user(org_id: String, user_id: String, data: Json<EditUserData>, headers:
         }
     }
 
-    user_to_edit.access_all = data.accessAll;
+    user_to_edit.access_all = data.AccessAll;
     user_to_edit.type_ = new_type;
 
     // Delete all the odd collections
@@ -456,8 +456,8 @@ fn edit_user(org_id: String, user_id: String, data: Json<EditUserData>, headers:
     }
 
     // If no accessAll, add the collections received
-    if !data.accessAll {
-        for col in data.collections.iter() {
+    if !data.AccessAll {
+        for col in data.Collections.iter() {
             match Collection::find_by_uuid_and_org(&col.id, &org_id, &conn) {
                 None => err!("Collection not found in Organization"),
                 Some(collection) => {

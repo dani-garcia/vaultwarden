@@ -17,7 +17,7 @@ use db::models::*;
 use util;
 use crypto;
 
-use api::{self, PasswordData, JsonResult, EmptyResult};
+use api::{self, PasswordData, JsonResult, EmptyResult, JsonUpcase};
 use auth::Headers;
 
 use CONFIG;
@@ -85,9 +85,9 @@ fn get_cipher_details(uuid: String, headers: Headers, conn: DbConn) -> JsonResul
 #[allow(non_snake_case)]
 struct CipherData {
     // Folder id is not included in import
-    folderId: Option<String>,
+    FolderId: Option<String>,
     // TODO: Some of these might appear all the time, no need for Option
-    organizationId: Option<String>,
+    OrganizationId: Option<String>,
 
     /*
     Login = 1,
@@ -95,32 +95,31 @@ struct CipherData {
     Card = 3,
     Identity = 4
     */
-    #[serde(rename = "type")]
-    type_: i32,
-    name: String,
-    notes: Option<String>,
-    fields: Option<Value>,
+    Type: i32, // TODO: Change this to NumberOrString
+    Name: String,
+    Notes: Option<String>,
+    Fields: Option<Value>,
 
     // Only one of these should exist, depending on type
-    login: Option<Value>,
-    secureNote: Option<Value>,
-    card: Option<Value>,
-    identity: Option<Value>,
+    Login: Option<Value>,
+    SecureNote: Option<Value>,
+    Card: Option<Value>,
+    Identity: Option<Value>,
 
-    favorite: Option<bool>,
+    Favorite: Option<bool>,
 }
 
 #[post("/ciphers/admin", data = "<data>")]
-fn post_ciphers_admin(data: Json<CipherData>, headers: Headers, conn: DbConn) -> JsonResult {
+fn post_ciphers_admin(data: JsonUpcase<CipherData>, headers: Headers, conn: DbConn) -> JsonResult {
     // TODO: Implement this correctly
     post_ciphers(data, headers, conn)
 }
 
 #[post("/ciphers", data = "<data>")]
-fn post_ciphers(data: Json<CipherData>, headers: Headers, conn: DbConn) -> JsonResult {
-    let data: CipherData = data.into_inner();
+fn post_ciphers(data: JsonUpcase<CipherData>, headers: Headers, conn: DbConn) -> JsonResult {
+    let data: CipherData = data.into_inner().data;
 
-    let mut cipher = Cipher::new(data.type_, data.name.clone());
+    let mut cipher = Cipher::new(data.Type, data.Name.clone());
     update_cipher_from_data(&mut cipher, data, &headers, true, &conn)?;
 
     Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, &conn)))
@@ -128,7 +127,7 @@ fn post_ciphers(data: Json<CipherData>, headers: Headers, conn: DbConn) -> JsonR
 
 fn update_cipher_from_data(cipher: &mut Cipher, data: CipherData, headers: &Headers, is_new_or_shared: bool, conn: &DbConn) -> EmptyResult {
     if is_new_or_shared {
-        if let Some(org_id) = data.organizationId {
+        if let Some(org_id) = data.OrganizationId {
             match UserOrganization::find_by_user_and_org(&headers.user.uuid, &org_id, &conn) {
                 None => err!("You don't have permission to add item to organization"),
                 Some(org_user) => if org_user.has_full_access() {
@@ -143,7 +142,7 @@ fn update_cipher_from_data(cipher: &mut Cipher, data: CipherData, headers: &Head
         }
     }
 
-    if let Some(ref folder_id) = data.folderId {
+    if let Some(ref folder_id) = data.FolderId {
         match Folder::find_by_uuid(folder_id, conn) {
             Some(folder) => {
                 if folder.user_uuid != headers.user.uuid {
@@ -154,7 +153,7 @@ fn update_cipher_from_data(cipher: &mut Cipher, data: CipherData, headers: &Head
         }
     }
 
-    let uppercase_fields = data.fields.map(|f| {
+    let uppercase_fields = data.Fields.map(|f| {
         let mut value = json!({});
         // Copy every field object and change the names to the correct case
         copy_values(&f, &mut value);
@@ -165,18 +164,18 @@ fn update_cipher_from_data(cipher: &mut Cipher, data: CipherData, headers: &Head
     // To remove backwards compatibility, just create an empty values object,
     // and remove the compat code from cipher::to_json
     let mut values = json!({
-        "Name": data.name,
-        "Notes": data.notes
+        "Name": data.Name,
+        "Notes": data.Notes
     });
 
     values["Fields"] = uppercase_fields.clone().unwrap_or(Value::Null);
     // TODO: ******* Backwards compat end **********
 
-    let type_data_opt = match data.type_ {
-        1 => data.login,
-        2 => data.secureNote,
-        3 => data.card,
-        4 => data.identity,
+    let type_data_opt = match data.Type {
+        1 => data.Login,
+        2 => data.SecureNote,
+        3 => data.Card,
+        4 => data.Identity,
         _ => err!("Invalid type")
     };
 
@@ -188,15 +187,15 @@ fn update_cipher_from_data(cipher: &mut Cipher, data: CipherData, headers: &Head
     // Copy the type data and change the names to the correct case
     copy_values(&type_data, &mut values);
 
-    cipher.favorite = data.favorite.unwrap_or(false);
-    cipher.name = data.name;
-    cipher.notes = data.notes;
+    cipher.favorite = data.Favorite.unwrap_or(false);
+    cipher.name = data.Name;
+    cipher.notes = data.Notes;
     cipher.fields = uppercase_fields.map(|f| f.to_string());
     cipher.data = values.to_string();
 
     cipher.save(&conn);
 
-    if cipher.move_to_folder(data.folderId, &headers.user.uuid, &conn).is_err() {
+    if cipher.move_to_folder(data.FolderId, &headers.user.uuid, &conn).is_err() {
         err!("Error saving the folder information")
     }
 
@@ -225,9 +224,9 @@ use super::folders::FolderData;
 #[derive(Deserialize)]
 #[allow(non_snake_case)]
 struct ImportData {
-    ciphers: Vec<CipherData>,
-    folders: Vec<FolderData>,
-    folderRelationships: Vec<RelationsData>,
+    Ciphers: Vec<CipherData>,
+    Folders: Vec<FolderData>,
+    FolderRelationships: Vec<RelationsData>,
 }
 
 #[derive(Deserialize)]
@@ -241,12 +240,12 @@ struct RelationsData {
 
 
 #[post("/ciphers/import", data = "<data>")]
-fn post_ciphers_import(data: Json<ImportData>, headers: Headers, conn: DbConn) -> EmptyResult {
-    let data: ImportData = data.into_inner();
+fn post_ciphers_import(data: JsonUpcase<ImportData>, headers: Headers, conn: DbConn) -> EmptyResult {
+    let data: ImportData = data.into_inner().data;
 
     // Read and create the folders
-    let folders: Vec<_> = data.folders.into_iter().map(|folder| {
-        let mut folder = Folder::new(headers.user.uuid.clone(), folder.name);
+    let folders: Vec<_> = data.Folders.into_iter().map(|folder| {
+        let mut folder = Folder::new(headers.user.uuid.clone(), folder.Name);
         folder.save(&conn);
         folder
     }).collect();
@@ -255,17 +254,17 @@ fn post_ciphers_import(data: Json<ImportData>, headers: Headers, conn: DbConn) -
     use std::collections::HashMap;
     let mut relations_map = HashMap::new();
 
-    for relation in data.folderRelationships {
+    for relation in data.FolderRelationships {
         relations_map.insert(relation.key, relation.value);
     }
 
     // Read and create the ciphers
     let mut index = 0;
-    for cipher_data in data.ciphers {
+    for cipher_data in data.Ciphers {
         let folder_uuid = relations_map.get(&index)
             .map(|i| folders[*i as usize].uuid.clone());
 
-        let mut cipher = Cipher::new(cipher_data.type_, cipher_data.name.clone());
+        let mut cipher = Cipher::new(cipher_data.Type, cipher_data.Name.clone());
         update_cipher_from_data(&mut cipher, cipher_data, &headers, true, &conn)?;
 
         cipher.move_to_folder(folder_uuid, &headers.user.uuid.clone(), &conn).ok();
@@ -277,19 +276,19 @@ fn post_ciphers_import(data: Json<ImportData>, headers: Headers, conn: DbConn) -
 }
 
 #[post("/ciphers/<uuid>/admin", data = "<data>")]
-fn post_cipher_admin(uuid: String, data: Json<CipherData>, headers: Headers, conn: DbConn) -> JsonResult {
+fn post_cipher_admin(uuid: String, data: JsonUpcase<CipherData>, headers: Headers, conn: DbConn) -> JsonResult {
     // TODO: Implement this correctly
     post_cipher(uuid, data, headers, conn)
 }
 
 #[post("/ciphers/<uuid>", data = "<data>")]
-fn post_cipher(uuid: String, data: Json<CipherData>, headers: Headers, conn: DbConn) -> JsonResult {
+fn post_cipher(uuid: String, data: JsonUpcase<CipherData>, headers: Headers, conn: DbConn) -> JsonResult {
     put_cipher(uuid, data, headers, conn)
 }
 
 #[put("/ciphers/<uuid>", data = "<data>")]
-fn put_cipher(uuid: String, data: Json<CipherData>, headers: Headers, conn: DbConn) -> JsonResult {
-    let data: CipherData = data.into_inner();
+fn put_cipher(uuid: String, data: JsonUpcase<CipherData>, headers: Headers, conn: DbConn) -> JsonResult {
+    let data: CipherData = data.into_inner().data;
 
     let mut cipher = match Cipher::find_by_uuid(&uuid, &conn) {
         Some(cipher) => cipher,
@@ -308,17 +307,17 @@ fn put_cipher(uuid: String, data: Json<CipherData>, headers: Headers, conn: DbCo
 #[derive(Deserialize)]
 #[allow(non_snake_case)]
 struct CollectionsAdminData {
-    collectionIds: Vec<String>,
+    CollectionIds: Vec<String>,
 }
 
 #[post("/ciphers/<uuid>/collections", data = "<data>")]
-fn post_collections_update(uuid: String, data: Json<CollectionsAdminData>, headers: Headers, conn: DbConn) -> EmptyResult {
+fn post_collections_update(uuid: String, data: JsonUpcase<CollectionsAdminData>, headers: Headers, conn: DbConn) -> EmptyResult {
     post_collections_admin(uuid, data, headers, conn)
 }
 
 #[post("/ciphers/<uuid>/collections-admin", data = "<data>")]
-fn post_collections_admin(uuid: String, data: Json<CollectionsAdminData>, headers: Headers, conn: DbConn) -> EmptyResult {
-    let data: CollectionsAdminData = data.into_inner();
+fn post_collections_admin(uuid: String, data: JsonUpcase<CollectionsAdminData>, headers: Headers, conn: DbConn) -> EmptyResult {
+    let data: CollectionsAdminData = data.into_inner().data;
 
     let cipher = match Cipher::find_by_uuid(&uuid, &conn) {
         Some(cipher) => cipher,
@@ -329,7 +328,7 @@ fn post_collections_admin(uuid: String, data: Json<CollectionsAdminData>, header
         err!("Cipher is not write accessible")
     }
 
-    let posted_collections: HashSet<String> = data.collectionIds.iter().cloned().collect();
+    let posted_collections: HashSet<String> = data.CollectionIds.iter().cloned().collect();
     let current_collections: HashSet<String> = cipher.get_collections(&headers.user.uuid ,&conn).iter().cloned().collect();
 
     for collection in posted_collections.symmetric_difference(&current_collections) {
@@ -355,13 +354,14 @@ fn post_collections_admin(uuid: String, data: Json<CollectionsAdminData>, header
 #[derive(Deserialize)]
 #[allow(non_snake_case)]
 struct ShareCipherData {
-    cipher: CipherData,
-    collectionIds: Vec<String>,
+    #[serde(deserialize_with = "util::upcase_deserialize")]
+    Cipher: CipherData,
+    CollectionIds: Vec<String>,
 }
 
 #[post("/ciphers/<uuid>/share", data = "<data>")]
-fn post_cipher_share(uuid: String, data: Json<ShareCipherData>, headers: Headers, conn: DbConn) -> JsonResult {
-    let data: ShareCipherData = data.into_inner();
+fn post_cipher_share(uuid: String, data: JsonUpcase<ShareCipherData>, headers: Headers, conn: DbConn) -> JsonResult {
+    let data: ShareCipherData = data.into_inner().data;
 
     let mut cipher = match Cipher::find_by_uuid(&uuid, &conn) {
         Some(cipher) => {
@@ -374,11 +374,11 @@ fn post_cipher_share(uuid: String, data: Json<ShareCipherData>, headers: Headers
         None => err!("Cipher doesn't exist")
     };
 
-    match data.cipher.organizationId {
+    match data.Cipher.OrganizationId {
         None => err!("Organization id not provided"),
         Some(_) => {
-            update_cipher_from_data(&mut cipher, data.cipher, &headers, true, &conn)?;
-            for collection in data.collectionIds.iter() {
+            update_cipher_from_data(&mut cipher, data.Cipher, &headers, true, &conn)?;
+            for collection in data.CollectionIds.iter() {
                 match Collection::find_by_uuid(&collection, &conn) {
                     None => err!("Invalid collection ID provided"),
                     Some(collection) => {
@@ -478,10 +478,10 @@ fn delete_cipher(uuid: String, headers: Headers, conn: DbConn) -> EmptyResult {
 }
 
 #[post("/ciphers/delete", data = "<data>")]
-fn delete_cipher_selected(data: Json<Value>, headers: Headers, conn: DbConn) -> EmptyResult {
-    let data: Value = data.into_inner();
+fn delete_cipher_selected(data: JsonUpcase<Value>, headers: Headers, conn: DbConn) -> EmptyResult {
+    let data: Value = data.into_inner().data;
 
-    let uuids = match data.get("ids") {
+    let uuids = match data.get("Ids") {
         Some(ids) => match ids.as_array() {
             Some(ids) => ids.iter().filter_map(|uuid| { uuid.as_str() }),
             None => err!("Posted ids field is not an array")
@@ -499,8 +499,10 @@ fn delete_cipher_selected(data: Json<Value>, headers: Headers, conn: DbConn) -> 
 }
 
 #[post("/ciphers/move", data = "<data>")]
-fn move_cipher_selected(data: Json<Value>, headers: Headers, conn: DbConn) -> EmptyResult {
-    let folder_id = match data.get("folderId") {
+fn move_cipher_selected(data: JsonUpcase<Value>, headers: Headers, conn: DbConn) -> EmptyResult {
+    let data = data.into_inner().data;
+
+    let folder_id = match data.get("FolderId") {
         Some(folder_id) => {
             match folder_id.as_str() {
                 Some(folder_id) => {
@@ -520,7 +522,7 @@ fn move_cipher_selected(data: Json<Value>, headers: Headers, conn: DbConn) -> Em
         None => None
     };
 
-    let uuids = match data.get("ids") {
+    let uuids = match data.get("Ids") {
         Some(ids) => match ids.as_array() {
             Some(ids) => ids.iter().filter_map(|uuid| { uuid.as_str() }),
             None => err!("Posted ids field is not an array")
@@ -549,9 +551,9 @@ fn move_cipher_selected(data: Json<Value>, headers: Headers, conn: DbConn) -> Em
 }
 
 #[post("/ciphers/purge", data = "<data>")]
-fn delete_all(data: Json<PasswordData>, headers: Headers, conn: DbConn) -> EmptyResult {
-    let data: PasswordData = data.into_inner();
-    let password_hash = data.masterPasswordHash;
+fn delete_all(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn) -> EmptyResult {
+    let data: PasswordData = data.into_inner().data;
+    let password_hash = data.MasterPasswordHash;
 
     let user = headers.user;
 

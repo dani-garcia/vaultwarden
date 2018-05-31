@@ -124,3 +124,29 @@ const DATETIME_FORMAT: &'static str = "%Y-%m-%dT%H:%M:%S%.6fZ";
 pub fn format_date(date: &NaiveDateTime) -> String {
     date.format(DATETIME_FORMAT).to_string()
 }
+
+///
+/// Deserialization methods
+///
+
+use std::collections::BTreeMap as Map;
+
+use serde::de::{self, Deserialize, DeserializeOwned, Deserializer};
+use serde_json::Value;
+
+/// https://github.com/serde-rs/serde/issues/586
+pub fn upcase_deserialize<'de, T, D>(deserializer: D) -> Result<T, D::Error>
+    where T: DeserializeOwned,
+          D: Deserializer<'de>
+{
+    let map = Map::<String, Value>::deserialize(deserializer)?;
+    let lower = map.into_iter().map(|(k, v)| (upcase_first(&k), v)).collect();
+    T::deserialize(Value::Object(lower)).map_err(de::Error::custom)
+}
+
+#[derive(PartialEq, Serialize, Deserialize)]
+pub struct UpCase<T: DeserializeOwned> {
+    #[serde(deserialize_with = "upcase_deserialize")]
+    #[serde(flatten)]
+    pub data: T,
+}

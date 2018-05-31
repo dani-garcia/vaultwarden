@@ -3,7 +3,7 @@ use rocket_contrib::{Json, Value};
 use db::DbConn;
 use db::models::*;
 
-use api::{JsonResult, EmptyResult};
+use api::{JsonResult, EmptyResult, JsonUpcase};
 use auth::Headers;
 
 #[get("/folders")]
@@ -33,15 +33,17 @@ fn get_folder(uuid: String, headers: Headers, conn: DbConn) -> JsonResult {
 }
 
 #[derive(Deserialize)]
+#[allow(non_snake_case)]
+
 pub struct FolderData {
-    pub name: String
+    pub Name: String
 }
 
 #[post("/folders", data = "<data>")]
-fn post_folders(data: Json<FolderData>, headers: Headers, conn: DbConn) -> JsonResult {
-    let data: FolderData = data.into_inner();
+fn post_folders(data: JsonUpcase<FolderData>, headers: Headers, conn: DbConn) -> JsonResult {
+    let data: FolderData = data.into_inner().data;
 
-    let mut folder = Folder::new(headers.user.uuid.clone(), data.name);
+    let mut folder = Folder::new(headers.user.uuid.clone(), data.Name);
 
     folder.save(&conn);
 
@@ -49,13 +51,13 @@ fn post_folders(data: Json<FolderData>, headers: Headers, conn: DbConn) -> JsonR
 }
 
 #[post("/folders/<uuid>", data = "<data>")]
-fn post_folder(uuid: String, data: Json<FolderData>, headers: Headers, conn: DbConn) -> JsonResult {
+fn post_folder(uuid: String, data: JsonUpcase<FolderData>, headers: Headers, conn: DbConn) -> JsonResult {
     put_folder(uuid, data, headers, conn)
 }
 
 #[put("/folders/<uuid>", data = "<data>")]
-fn put_folder(uuid: String, data: Json<FolderData>, headers: Headers, conn: DbConn) -> JsonResult {
-    let data: FolderData = data.into_inner();
+fn put_folder(uuid: String, data: JsonUpcase<FolderData>, headers: Headers, conn: DbConn) -> JsonResult {
+    let data: FolderData = data.into_inner().data;
 
     let mut folder = match Folder::find_by_uuid(&uuid, &conn) {
         Some(folder) => folder,
@@ -66,7 +68,7 @@ fn put_folder(uuid: String, data: Json<FolderData>, headers: Headers, conn: DbCo
         err!("Folder belongs to another user")
     }
 
-    folder.name = data.name;
+    folder.name = data.Name;
 
     folder.save(&conn);
 

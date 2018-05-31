@@ -6,7 +6,7 @@ use db::DbConn;
 
 use crypto;
 
-use api::{PasswordData, JsonResult, NumberOrString};
+use api::{PasswordData, JsonResult, NumberOrString, JsonUpcase};
 use auth::Headers;
 
 #[get("/two-factor")]
@@ -28,10 +28,10 @@ fn get_twofactor(headers: Headers) -> JsonResult {
 }
 
 #[post("/two-factor/get-recover", data = "<data>")]
-fn get_recover(data: Json<PasswordData>, headers: Headers) -> JsonResult {
-    let data: PasswordData = data.into_inner();
+fn get_recover(data: JsonUpcase<PasswordData>, headers: Headers) -> JsonResult {
+    let data: PasswordData = data.into_inner().data;
 
-    if !headers.user.check_valid_password(&data.masterPasswordHash) {
+    if !headers.user.check_valid_password(&data.MasterPasswordHash) {
         err!("Invalid password");
     }
 
@@ -44,30 +44,30 @@ fn get_recover(data: Json<PasswordData>, headers: Headers) -> JsonResult {
 #[derive(Deserialize)]
 #[allow(non_snake_case)]
 struct RecoverTwoFactor {
-    masterPasswordHash: String,
-    email: String,
-    recoveryCode: String,
+    MasterPasswordHash: String,
+    Email: String,
+    RecoveryCode: String,
 }
 
 #[post("/two-factor/recover", data = "<data>")]
-fn recover(data: Json<RecoverTwoFactor>, conn: DbConn) -> JsonResult {
-    let data: RecoverTwoFactor = data.into_inner();
+fn recover(data: JsonUpcase<RecoverTwoFactor>, conn: DbConn) -> JsonResult {
+    let data: RecoverTwoFactor = data.into_inner().data;
 
     use db::models::User;
 
     // Get the user
-    let mut user = match User::find_by_mail(&data.email, &conn) {
+    let mut user = match User::find_by_mail(&data.Email, &conn) {
         Some(user) => user,
         None => err!("Username or password is incorrect. Try again.")
     };
 
     // Check password
-    if !user.check_valid_password(&data.masterPasswordHash) {
+    if !user.check_valid_password(&data.MasterPasswordHash) {
         err!("Username or password is incorrect. Try again.")
     }
 
     // Check if recovery code is correct
-    if !user.check_valid_recovery_code(&data.recoveryCode) {
+    if !user.check_valid_recovery_code(&data.RecoveryCode) {
         err!("Recovery code is incorrect. Try again.")
     }
 
@@ -79,10 +79,10 @@ fn recover(data: Json<RecoverTwoFactor>, conn: DbConn) -> JsonResult {
 }
 
 #[post("/two-factor/get-authenticator", data = "<data>")]
-fn generate_authenticator(data: Json<PasswordData>, headers: Headers) -> JsonResult {
-    let data: PasswordData = data.into_inner();
+fn generate_authenticator(data: JsonUpcase<PasswordData>, headers: Headers) -> JsonResult {
+    let data: PasswordData = data.into_inner().data;
 
-    if !headers.user.check_valid_password(&data.masterPasswordHash) {
+    if !headers.user.check_valid_password(&data.MasterPasswordHash) {
         err!("Invalid password");
     }
 
@@ -101,17 +101,17 @@ fn generate_authenticator(data: Json<PasswordData>, headers: Headers) -> JsonRes
 #[derive(Deserialize, Debug)]
 #[allow(non_snake_case)]
 struct EnableTwoFactorData {
-    masterPasswordHash: String,
-    key: String,
-    token: NumberOrString,
+    MasterPasswordHash: String,
+    Key: String,
+    Token: NumberOrString,
 }
 
 #[post("/two-factor/authenticator", data = "<data>")]
-fn activate_authenticator(data: Json<EnableTwoFactorData>, headers: Headers, conn: DbConn) -> JsonResult {
-    let data: EnableTwoFactorData = data.into_inner();
-    let password_hash = data.masterPasswordHash;
-    let key = data.key;
-    let token = match data.token.to_i32() {
+fn activate_authenticator(data: JsonUpcase<EnableTwoFactorData>, headers: Headers, conn: DbConn) -> JsonResult {
+    let data: EnableTwoFactorData = data.into_inner().data;
+    let password_hash = data.MasterPasswordHash;
+    let key = data.Key;
+    let token = match data.Token.to_i32() {
         Some(n) => n as u64,
         None => err!("Malformed token")
     };
@@ -155,15 +155,15 @@ fn activate_authenticator(data: Json<EnableTwoFactorData>, headers: Headers, con
 #[derive(Deserialize)]
 #[allow(non_snake_case)]
 struct DisableTwoFactorData {
-    masterPasswordHash: String,
-    #[serde(rename = "type")]
-    _type: NumberOrString,
+    MasterPasswordHash: String,
+    Type: NumberOrString,
 }
 
 #[post("/two-factor/disable", data = "<data>")]
-fn disable_authenticator(data: Json<DisableTwoFactorData>, headers: Headers, conn: DbConn) -> JsonResult {
-    let data: DisableTwoFactorData = data.into_inner();
-    let password_hash = data.masterPasswordHash;
+fn disable_authenticator(data: JsonUpcase<DisableTwoFactorData>, headers: Headers, conn: DbConn) -> JsonResult {
+    let data: DisableTwoFactorData = data.into_inner().data;
+    let password_hash = data.MasterPasswordHash;
+    let _type = data.Type;
 
     if !headers.user.check_valid_password(&password_hash) {
         err!("Invalid password");

@@ -100,7 +100,7 @@ use rocket_contrib::Json;
 
 use db::DbConn;
 
-use api::{JsonResult, EmptyResult};
+use api::{JsonResult, EmptyResult, JsonUpcase};
 use auth::Headers;
 
 #[put("/devices/identifier/<uuid>/clear-token")]
@@ -155,8 +155,8 @@ struct EquivDomainData {
 }
 
 #[post("/settings/domains", data = "<data>")]
-fn post_eq_domains(data: Json<EquivDomainData>, headers: Headers, conn: DbConn) -> EmptyResult {
-    let data: EquivDomainData = data.into_inner();
+fn post_eq_domains(data: JsonUpcase<EquivDomainData>, headers: Headers, conn: DbConn) -> EmptyResult {
+    let data: EquivDomainData = data.into_inner().data;
 
     let excluded_globals = data.ExcludedGlobalEquivalentDomains.unwrap_or(Vec::new());
     let equivalent_domains = data.EquivalentDomains.unwrap_or(Vec::new());

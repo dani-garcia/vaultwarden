@@ -3,7 +3,7 @@ use rocket_contrib::Json;
 use db::DbConn;
 use db::models::*;
 
-use api::{PasswordData, JsonResult, EmptyResult};
+use api::{PasswordData, JsonResult, EmptyResult, JsonUpcase};
 use auth::Headers;
 
 use CONFIG;
@@ -11,12 +11,12 @@ use CONFIG;
 #[derive(Deserialize, Debug)]
 #[allow(non_snake_case)]
 struct RegisterData {
-    email: String,
-    key: String,
-    keys: Option<KeysData>,
-    masterPasswordHash: String,
-    masterPasswordHint: Option<String>,
-    name: Option<String>,
+    Email: String,
+    Key: String,
+    Keys: Option<KeysData>,
+    MasterPasswordHash: String,
+    MasterPasswordHint: Option<String>,
+    Name: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -27,29 +27,29 @@ struct KeysData {
 }
 
 #[post("/accounts/register", data = "<data>")]
-fn register(data: Json<RegisterData>, conn: DbConn) -> EmptyResult {
-    let data: RegisterData = data.into_inner();
+fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> EmptyResult {
+    let data: RegisterData = data.into_inner().data;
 
     if !CONFIG.signups_allowed {
         err!(format!("Signups not allowed"))
     }
 
-    if let Some(_) = User::find_by_mail(&data.email, &conn) {
+    if let Some(_) = User::find_by_mail(&data.Email, &conn) {
         err!("Email already exists")
     }
 
-    let mut user = User::new(data.email, data.key, data.masterPasswordHash);
+    let mut user = User::new(data.Email, data.Key, data.MasterPasswordHash);
 
     // Add extra fields if present
-    if let Some(name) = data.name {
+    if let Some(name) = data.Name {
         user.name = name;
     }
 
-    if let Some(hint) = data.masterPasswordHint {
+    if let Some(hint) = data.MasterPasswordHint {
         user.password_hint = Some(hint);
     }
 
-    if let Some(keys) = data.keys {
+    if let Some(keys) = data.Keys {
         user.private_key = Some(keys.encryptedPrivateKey);
         user.public_key = Some(keys.publicKey);
     }
@@ -79,8 +79,8 @@ fn get_public_keys(uuid: String, _headers: Headers, conn: DbConn) -> JsonResult 
 }
 
 #[post("/accounts/keys", data = "<data>")]
-fn post_keys(data: Json<KeysData>, headers: Headers, conn: DbConn) -> JsonResult {
-    let data: KeysData = data.into_inner();
+fn post_keys(data: JsonUpcase<KeysData>, headers: Headers, conn: DbConn) -> JsonResult {
+    let data: KeysData = data.into_inner().data;
 
     let mut user = headers.user;
 
@@ -95,33 +95,33 @@ fn post_keys(data: Json<KeysData>, headers: Headers, conn: DbConn) -> JsonResult
 #[derive(Deserialize)]
 #[allow(non_snake_case)]
 struct ChangePassData {
-    masterPasswordHash: String,
-    newMasterPasswordHash: String,
-    key: String,
+    MasterPasswordHash: String,
+    NewMasterPasswordHash: String,
+    Key: String,
 }
 
 #[post("/accounts/password", data = "<data>")]
-fn post_password(data: Json<ChangePassData>, headers: Headers, conn: DbConn) -> EmptyResult {
-    let data: ChangePassData = data.into_inner();
+fn post_password(data: JsonUpcase<ChangePassData>, headers: Headers, conn: DbConn) -> EmptyResult {
+    let data: ChangePassData = data.into_inner().data;
     let mut user = headers.user;
 
-    if !user.check_valid_password(&data.masterPasswordHash) {
+    if !user.check_valid_password(&data.MasterPasswordHash) {
         err!("Invalid password")
     }
 
-    user.set_password(&data.newMasterPasswordHash);
-    user.key = data.key;
+    user.set_password(&data.NewMasterPasswordHash);
+    user.key = data.Key;
     user.save(&conn);
 
     Ok(())
 }
 
 #[post("/accounts/security-stamp", data = "<data>")]
-fn post_sstamp(data: Json<PasswordData>, headers: Headers, conn: DbConn) -> EmptyResult {
-    let data: PasswordData = data.into_inner();
+fn post_sstamp(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn) -> EmptyResult {
+    let data: PasswordData = data.into_inner().data;
     let mut user = headers.user;
 
-    if !user.check_valid_password(&data.masterPasswordHash) {
+    if !user.check_valid_password(&data.MasterPasswordHash) {
         err!("Invalid password")
     }
 
@@ -134,36 +134,36 @@ fn post_sstamp(data: Json<PasswordData>, headers: Headers, conn: DbConn) -> Empt
 #[derive(Deserialize)]
 #[allow(non_snake_case)]
 struct ChangeEmailData {
-    masterPasswordHash: String,
-    newEmail: String,
+    MasterPasswordHash: String,
+    NewEmail: String,
 }
 
 
 #[post("/accounts/email-token", data = "<data>")]
-fn post_email(data: Json<ChangeEmailData>, headers: Headers, conn: DbConn) -> EmptyResult {
-    let data: ChangeEmailData = data.into_inner();
+fn post_email(data: JsonUpcase<ChangeEmailData>, headers: Headers, conn: DbConn) -> EmptyResult {
+    let data: ChangeEmailData = data.into_inner().data;
     let mut user = headers.user;
 
-    if !user.check_valid_password(&data.masterPasswordHash) {
+    if !user.check_valid_password(&data.MasterPasswordHash) {
         err!("Invalid password")
     }
 
-    if User::find_by_mail(&data.newEmail, &conn).is_some() {
+    if User::find_by_mail(&data.NewEmail, &conn).is_some() {
         err!("Email already in use");
     }
 
-    user.email = data.newEmail;
+    user.email = data.NewEmail;
     user.save(&conn);
 
     Ok(())
 }
 
 #[post("/accounts/delete", data = "<data>")]
-fn delete_account(data: Json<PasswordData>, headers: Headers, conn: DbConn) -> EmptyResult {
-    let data: PasswordData = data.into_inner();
+fn delete_account(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn) -> EmptyResult {
+    let data: PasswordData = data.into_inner().data;
     let user = headers.user;
 
-    if !user.check_valid_password(&data.masterPasswordHash) {
+    if !user.check_valid_password(&data.MasterPasswordHash) {
         err!("Invalid password")
     }
 
