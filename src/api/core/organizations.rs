@@ -357,7 +357,7 @@ fn send_invite(org_id: String, data: Json<InviteData>, headers: AdminHeaders, co
 fn confirm_invite(org_id: String, user_id: String, data: Json<Value>, headers: AdminHeaders, conn: DbConn) -> EmptyResult {
     let mut user_to_confirm = match UserOrganization::find_by_uuid(&user_id, &conn) {
         Some(user) => user,
-        None => err!("User to confirm doesn't exist")
+        None => err!("Failed to find user membership")
     };
 
     if user_to_confirm.org_uuid != org_id {
@@ -388,7 +388,7 @@ fn confirm_invite(org_id: String, user_id: String, data: Json<Value>, headers: A
 fn get_user(org_id: String, user_id: String, _headers: AdminHeaders, conn: DbConn) -> JsonResult {
     let user = match UserOrganization::find_by_uuid(&user_id, &conn) {
         Some(user) => user,
-        None => err!("The specified user doesn't exist")
+        None => err!("Failed to find user membership")
     };
 
     if user.org_uuid != org_id {
