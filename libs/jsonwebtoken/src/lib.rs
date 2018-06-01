@@ -3,6 +3,8 @@
 //! Documentation:  [stable](https://docs.rs/jsonwebtoken/)
 #![recursion_limit = "300"]
 #![deny(missing_docs)]
+#![allow(unused_doc_comments)]
+#![allow(renamed_and_removed_lints)]
 
 #[macro_use]
 extern crate error_chain;
