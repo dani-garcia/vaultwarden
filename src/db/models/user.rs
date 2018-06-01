@@ -26,8 +26,10 @@ pub struct User {
     pub key: String,
     pub private_key: Option<String>,
     pub public_key: Option<String>,
+    
     pub totp_secret: Option<String>,
     pub totp_recover: Option<String>,
+
     pub security_stamp: String,
 
     pub equivalent_domains: String,
@@ -61,6 +63,7 @@ impl User {
             password_hint: None,
             private_key: None,
             public_key: None,
+            
             totp_secret: None,
             totp_recover: None,
 
@@ -95,23 +98,23 @@ impl User {
         self.security_stamp = Uuid::new_v4().to_string();
     }
 
-    pub fn check_totp_code(&self, totp_code: Option<u64>) -> bool {
+    pub fn requires_twofactor(&self) -> bool {
+        self.totp_secret.is_some()
+    }
+
+    pub fn check_totp_code(&self, totp_code: u64) -> bool {
         if let Some(ref totp_secret) = self.totp_secret {
-            if let Some(code) = totp_code {
-                // Validate totp
-                use data_encoding::BASE32;
-                use oath::{totp_raw_now, HashType};
+            // Validate totp
+            use data_encoding::BASE32;
+            use oath::{totp_raw_now, HashType};
 
-                let decoded_secret = match BASE32.decode(totp_secret.as_bytes()) {
-                    Ok(s) => s,
-                    Err(_) => return false
-                };
+            let decoded_secret = match BASE32.decode(totp_secret.as_bytes()) {
+                Ok(s) => s,
+                Err(_) => return false
+            };
 
-                let generated = totp_raw_now(&decoded_secret, 6, 0, 30, &HashType::SHA1);
-                generated == code
-            } else {
-                false
-            }
+            let generated = totp_raw_now(&decoded_secret, 6, 0, 30, &HashType::SHA1);
+            generated == totp_code
         } else {
             true
         }

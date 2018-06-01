@@ -96,22 +96,49 @@ pub fn routes() -> Vec<Route> {
 
 use rocket::Route;
 
-use rocket_contrib::Json;
+use rocket_contrib::{Json, Value};
 
 use db::DbConn;
+use db::models::*;
 
 use api::{JsonResult, EmptyResult, JsonUpcase};
 use auth::Headers;
 
-#[put("/devices/identifier/<uuid>/clear-token")]
-fn clear_device_token(uuid: String, _conn: DbConn) -> JsonResult {
-    println!("{}", uuid);
-    err!("Not implemented")
+#[put("/devices/identifier/<uuid>/clear-token", data = "<data>")]
+fn clear_device_token(uuid: String, data: Json<Value>, headers: Headers, conn: DbConn) -> EmptyResult {
+    println!("UUID: {:#?}", uuid);
+    println!("DATA: {:#?}", data);
+    
+    let device = match Device::find_by_uuid(&uuid, &conn) {
+        Some(device) => device,
+        None => err!("Device not found")
+    };
+
+    if device.user_uuid != headers.user.uuid {
+        err!("Device not owned by user")
+    }
+
+    device.delete(&conn);
+
+    Ok(())
 }
 
-#[put("/devices/identifier/<uuid>/token")]
-fn put_device_token(uuid: String, _conn: DbConn) -> JsonResult {
-    println!("{}", uuid);
+#[put("/devices/identifier/<uuid>/token", data = "<data>")]
+fn put_device_token(uuid: String, data: Json<Value>, headers: Headers, conn: DbConn) -> JsonResult {
+    println!("UUID: {:#?}", uuid);
+    println!("DATA: {:#?}", data);
+
+    let device = match Device::find_by_uuid(&uuid, &conn) {
+        Some(device) => device,
+        None => err!("Device not found")
+    };
+
+    if device.user_uuid != headers.user.uuid {
+        err!("Device not owned by user")
+    }
+
+    // TODO: What does this do?
+
     err!("Not implemented")
 }
 

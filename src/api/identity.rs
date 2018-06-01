@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use rocket::{Route, Outcome};
 use rocket::request::{self, Request, FromRequest, Form, FormItems, FromForm};
 
-use rocket_contrib::Json;
+use rocket_contrib::{Json, Value};
 
 use db::DbConn;
 use db::models::*;
@@ -19,83 +19,25 @@ pub fn routes() -> Vec<Route> {
 #[post("/connect/token", data = "<connect_data>")]
 fn login(connect_data: Form<ConnectData>, device_type: DeviceType, conn: DbConn) -> JsonResult {
     let data = connect_data.get();
+    println!("{:#?}", data);
 
-    let mut device = match data.grant_type {
-        GrantType::RefreshToken => {
-            // Extract token
-            let token = data.get("refresh_token").unwrap();
+    match data.grant_type {
+        GrantType::RefreshToken =>_refresh_login(data, device_type, conn),
+        GrantType::Password => _password_login(data, device_type, conn)
+    }
+}
 
-            // Get device by refresh token
-            match Device::find_by_refresh_token(token, &conn) {
-                Some(device) => device,
-                None => err!("Invalid refresh token")
-            }
-        }
-        GrantType::Password => {
-            // Validate scope
-            let scope = data.get("scope").unwrap();
-            if scope != "api offline_access" {
-                err!("Scope not supported")
-            }
+fn _refresh_login(data: &ConnectData, _device_type: DeviceType, conn: DbConn) -> JsonResult {
+    // Extract token
+    let token = data.get("refresh_token").unwrap();
 
-            // Get the user
-            let username = data.get("username").unwrap();
-            let user = match User::find_by_mail(username, &conn) {
-                Some(user) => user,
-                None => err!("Username or password is incorrect. Try again.")
-            };
-
-            // Check password
-            let password = data.get("password").unwrap();
-            if !user.check_valid_password(password) {
-                err!("Username or password is incorrect. Try again.")
-            }
-
-            // Check if totp code is required and the value is correct
-            let totp_code = util::parse_option_string(data.get("twoFactorToken"));
-
-            if !user.check_totp_code(totp_code) {
-                // Return error 400
-                err_json!(json!({
-                    "error" : "invalid_grant",
-                    "error_description" : "Two factor required.",
-                    "TwoFactorProviders" : [ 0 ],
-                    "TwoFactorProviders2" : { "0" : null }
-                }))
-            }
-
-            // Let's only use the header and ignore the 'devicetype' parameter
-            let device_type_num = device_type.0;
-
-            let (device_id, device_name) = match data.is_device {
-                false => { (format!("web-{}", user.uuid), String::from("web")) }
-                true => {
-                    (
-                        data.get("deviceidentifier").unwrap().clone(),
-                        data.get("devicename").unwrap().clone(),
-                    )
-                }
-            };
-
-            // Find device or create new
-            match Device::find_by_uuid(&device_id, &conn) {
-                Some(device) => {
-                    // Check if valid device
-                    if device.user_uuid != user.uuid {
-                        device.delete(&conn);
-                        err!("Device is not owned by user")
-                    }
-
-                    device
-                }
-                None => {
-                    // Create new device
-                    Device::new(device_id, user.uuid, device_name, device_type_num)
-                }
-            }
-        }
+    // Get device by refresh token
+    let mut device = match Device::find_by_refresh_token(token, &conn) {
+        Some(device) => device,
+        None => err!("Invalid refresh token")
     };
 
+    // COMMON
     let user = User::find_by_uuid(&device.user_uuid, &conn).unwrap();
     let orgs = UserOrganization::find_by_user(&user.uuid, &conn);
 
@@ -108,9 +50,161 @@ fn login(connect_data: Form<ConnectData>, device_type: DeviceType, conn: DbConn)
         "token_type": "Bearer",
         "refresh_token": device.refresh_token,
         "Key": user.key,
-        "PrivateKey": user.private_key
+        "PrivateKey": user.private_key,
     })))
 }
+
+fn _password_login(data: &ConnectData, device_type: DeviceType, conn: DbConn) -> JsonResult {
+    // Validate scope
+    let scope = data.get("scope").unwrap();
+    if scope != "api offline_access" {
+        err!("Scope not supported")
+    }
+
+    // Get the user
+    let username = data.get("username").unwrap();
+    let user = match User::find_by_mail(username, &conn) {
+        Some(user) => user,
+        None => err!("Username or password is incorrect. Try again.")
+    };
+
+    // Check password
+    let password = data.get("password").unwrap();
+    if !user.check_valid_password(password) {
+        err!("Username or password is incorrect. Try again.")
+    }
+    
+    // Let's only use the header and ignore the 'devicetype' parameter
+    let device_type_num = device_type.0;
+
+    let (device_id, device_name) = match data.is_device {
+        false => { (format!("web-{}", user.uuid), String::from("web")) }
+        true => {
+            (
+                data.get("deviceidentifier").unwrap().clone(),
+                data.get("devicename").unwrap().clone(),
+            )
+        }
+    };
+
+    // Find device or create new
+    let mut device = match Device::find_by_uuid(&device_id, &conn) {
+        Some(device) => {
+            // Check if valid device
+            if device.user_uuid != user.uuid {
+                device.delete(&conn);
+                err!("Device is not owned by user")
+            }
+
+            device
+        }
+        None => {
+            // Create new device
+            Device::new(device_id, user.uuid.clone(), device_name, device_type_num)
+        }
+    };
+
+    let twofactor_token = if user.requires_twofactor() {
+        let twofactor_provider = util::parse_option_string(data.get("twoFactorProvider")).unwrap_or(0);
+        let twofactor_code = match data.get("twoFactorToken") {
+            Some(code) => code,
+            None => err_json!(_json_err_twofactor())
+        };
+
+       match twofactor_provider {
+            0 /* TOTP */ => { 
+                let totp_code: u64 = match twofactor_code.parse() {
+                    Ok(code) => code,
+                    Err(_) => err!("Invalid Totp code")
+                };
+
+                if !user.check_totp_code(totp_code) {
+                    err_json!(_json_err_twofactor())
+                }
+
+                if util::parse_option_string(data.get("twoFactorRemember")).unwrap_or(0) == 1 {
+                    device.refresh_twofactor_remember();
+                    device.twofactor_remember.clone()
+                } else {
+                    device.delete_twofactor_remember();
+                    None
+                }
+            },
+            5 /* Remember */ => {
+                match device.twofactor_remember {
+                    Some(ref remember) if remember == twofactor_code => (),
+                    _ => err_json!(_json_err_twofactor())
+                };
+                None // No twofactor token needed here
+            },
+            _ => err!("Invalid two factor provider"),
+        }
+    } else { None };  // No twofactor token if twofactor is disabled
+
+    // Common
+    let user = User::find_by_uuid(&device.user_uuid, &conn).unwrap();
+    let orgs = UserOrganization::find_by_user(&user.uuid, &conn);
+
+    let (access_token, expires_in) = device.refresh_tokens(&user, orgs);
+    device.save(&conn);
+
+    let mut result = json!({
+        "access_token": access_token,
+        "expires_in": expires_in,
+        "token_type": "Bearer",
+        "refresh_token": device.refresh_token,
+        "Key": user.key,
+        "PrivateKey": user.private_key,
+        //"TwoFactorToken": "11122233333444555666777888999"
+    });
+
+    if let Some(token) = twofactor_token {
+        result["TwoFactorToken"] = Value::String(token);
+    }
+
+    Ok(Json(result))
+}
+
+fn _json_err_twofactor() -> Value {
+    json!({
+        "error" : "invalid_grant",
+        "error_description" : "Two factor required.",
+        "TwoFactorProviders" : [ 0 ],
+        "TwoFactorProviders2" : { "0" : null }
+    })
+}
+
+/*
+ConnectData {
+    grant_type: Password,
+    is_device: false,
+    data: {
+        "scope": "api offline_access",
+        "client_id": "web",
+        "grant_type": "password",
+        "username": "dani@mail",
+        "password": "8IuV1sJ94tPjyYIK+E+PTjblzjm4W6C4N5wqM0KKsSg="
+    }
+}
+
+RETURNS "TwoFactorToken": "11122233333444555666777888999"
+
+Next login
+ConnectData {
+    grant_type: Password,
+    is_device: false,
+    data: {
+        "scope": "api offline_access",
+        "username": "dani@mail",
+        "client_id": "web",
+        "twofactorprovider": "5",
+        "twofactortoken": "11122233333444555666777888999",
+        "grant_type": "password",
+        "twofactorremember": "0",
+        "password": "8IuV1sJ94tPjyYIK+E+PTjblzjm4W6C4N5wqM0KKsSg="
+    }
+}
+*/
 
 
 struct DeviceType(i32);

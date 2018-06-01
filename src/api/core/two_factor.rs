@@ -135,7 +135,7 @@ fn activate_authenticator(data: JsonUpcase<EnableTwoFactorData>, headers: Header
     user.totp_secret = Some(key.to_uppercase());
 
     // Validate the token provided with the key
-    if !user.check_totp_code(Some(token)) {
+    if !user.check_totp_code(token) {
         err!("Invalid totp code")
     }
 

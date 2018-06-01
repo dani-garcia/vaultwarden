@@ -19,6 +19,8 @@ pub struct Device {
     pub push_token: Option<String>,
 
     pub refresh_token: String,
+
+    pub twofactor_remember: Option<String>,
 }
 
 /// Local methods
@@ -37,8 +39,21 @@ impl Device {
 
             push_token: None,
             refresh_token: String::new(),
+            twofactor_remember: None,
         }
     }
+
+    pub fn refresh_twofactor_remember(&mut self) {
+        use data_encoding::BASE64;
+        use crypto;
+
+        self.twofactor_remember = Some(BASE64.encode(&crypto::get_random(vec![0u8; 180])));
+    }
+
+    pub fn delete_twofactor_remember(&mut self) {
+        self.twofactor_remember = None;
+    }
+
 
     pub fn refresh_tokens(&mut self, user: &super::User, orgs: Vec<super::UserOrganization>) -> (String, i64) {
         // If there is no refresh token, we create one

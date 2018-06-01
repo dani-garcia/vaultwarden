@@ -25,6 +25,13 @@ table! {
 }
 
 table! {
+    ciphers_collections (cipher_uuid, collection_uuid) {
+        cipher_uuid -> Text,
+        collection_uuid -> Text,
+    }
+}
+
+table! {
     collections (uuid) {
         uuid -> Text,
         org_uuid -> Text,
@@ -43,6 +50,7 @@ table! {
         type_ -> Integer,
         push_token -> Nullable<Text>,
         refresh_token -> Text,
+        twofactor_remember -> Nullable<Text>,
     }
 }
 
@@ -102,13 +110,6 @@ table! {
 }
 
 table! {
-    ciphers_collections (cipher_uuid, collection_uuid) {
-        cipher_uuid -> Text,
-        collection_uuid -> Text,
-    }
-}
-
-table! {
     users_organizations (uuid) {
         uuid -> Text,
         user_uuid -> Text,
@@ -124,6 +125,8 @@ table! {
 joinable!(attachments -> ciphers (cipher_uuid));
 joinable!(ciphers -> organizations (organization_uuid));
 joinable!(ciphers -> users (user_uuid));
+joinable!(ciphers_collections -> ciphers (cipher_uuid));
+joinable!(ciphers_collections -> collections (collection_uuid));
 joinable!(collections -> organizations (org_uuid));
 joinable!(devices -> users (user_uuid));
 joinable!(folders -> users (user_uuid));
@@ -131,14 +134,13 @@ joinable!(folders_ciphers -> ciphers (cipher_uuid));
 joinable!(folders_ciphers -> folders (folder_uuid));
 joinable!(users_collections -> collections (collection_uuid));
 joinable!(users_collections -> users (user_uuid));
-joinable!(ciphers_collections -> collections (collection_uuid));
-joinable!(ciphers_collections -> ciphers (cipher_uuid));
 joinable!(users_organizations -> organizations (org_uuid));
 joinable!(users_organizations -> users (user_uuid));
 
 allow_tables_to_appear_in_same_query!(
     attachments,
     ciphers,
+    ciphers_collections,
     collections,
     devices,
     folders,
@@ -146,6 +148,5 @@ allow_tables_to_appear_in_same_query!(
     organizations,
     users,
     users_collections,
-    ciphers_collections,
     users_organizations,
 );
