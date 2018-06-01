@@ -3,7 +3,7 @@ use serde_json::Value as JsonValue;
 
 use uuid::Uuid;
 
-use super::{User, Organization, UserOrganization, Attachment, FolderCipher, CollectionCipher, UserOrgType};
+use super::{User, Organization, Attachment, FolderCipher, CollectionCipher, UserOrgType};
 
 #[derive(Debug, Identifiable, Queryable, Insertable, Associations)]
 #[table_name = "ciphers"]
