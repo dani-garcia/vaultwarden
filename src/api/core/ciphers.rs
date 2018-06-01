@@ -209,7 +209,8 @@ fn update_cipher_from_data(cipher: &mut Cipher, data: CipherData, headers: &Head
 fn copy_values(from: &Value, to: &mut Value) {
     if let Some(map) = from.as_object() {
         for (key, val) in map {
-            copy_values(val, &mut to[util::upcase_first(key)]);
+            let processed_key = _process_key(key);
+            copy_values(val, &mut to[processed_key]);
         }
     } else if let Some(array) = from.as_array() {
         // Initialize array with null values
@@ -220,6 +221,13 @@ fn copy_values(from: &Value, to: &mut Value) {
         }
     } else {
         *to = from.clone();
+    }
+}
+
+fn _process_key(key: &str) -> String {
+    match key.to_lowercase().as_ref() {
+        "ssn" => "SSN".into(),
+        key => util::upcase_first(key)
     }
 }
 
