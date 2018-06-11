@@ -111,7 +111,7 @@ fn activate_authenticator(data: JsonUpcase<EnableTwoFactorData>, headers: Header
     let data: EnableTwoFactorData = data.into_inner().data;
     let password_hash = data.MasterPasswordHash;
     let key = data.Key;
-    let token = match data.Token.to_i32() {
+    let token = match data.Token.into_i32() {
         Some(n) => n as u64,
         None => err!("Malformed token")
     };

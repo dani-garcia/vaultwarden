@@ -305,7 +305,7 @@ struct InviteData {
 fn send_invite(org_id: String, data: JsonUpcase<InviteData>, headers: AdminHeaders, conn: DbConn) -> EmptyResult {
     let data: InviteData = data.into_inner().data;
 
-    let new_type = match UserOrgType::from_str(&data.Type.to_string()) {
+    let new_type = match UserOrgType::from_str(&data.Type.into_string()) {
         Some(new_type) => new_type as i32,
         None => err!("Invalid type")
     };
@@ -319,9 +319,8 @@ fn send_invite(org_id: String, data: JsonUpcase<InviteData>, headers: AdminHeade
         match user_opt {
             None => err!("User email does not exist"),
             Some(user) => {
-                match UserOrganization::find_by_user_and_org(&user.uuid, &org_id, &conn) {
-                    Some(_) => err!("User already in organization"),
-                    None => ()
+                if UserOrganization::find_by_user_and_org(&user.uuid, &org_id, &conn).is_some() {
+                    err!("User already in organization")
                 }
 
                 let mut new_user = UserOrganization::new(user.uuid.clone(), org_id.clone());
@@ -331,13 +330,12 @@ fn send_invite(org_id: String, data: JsonUpcase<InviteData>, headers: AdminHeade
 
                 // If no accessAll, add the collections received
                 if !access_all {
-                    for col in data.Collections.iter() {
+                    for col in &data.Collections {
                         match Collection::find_by_uuid_and_org(&col.id, &org_id, &conn) {
                             None => err!("Collection not found in Organization"),
                             Some(collection) => {
-                                match CollectionUser::save(&user.uuid, &collection.uuid, col.readOnly, &conn) {
-                                    Ok(()) => (),
-                                    Err(_) => err!("Failed saving collection access for user")
+                                if CollectionUser::save(&user.uuid, &collection.uuid, col.readOnly, &conn).is_err() {
+                                    err!("Failed saving collection access for user")
                                 }
                             }
                         }
@@ -411,7 +409,7 @@ struct EditUserData {
 fn edit_user(org_id: String, user_id: String, data: JsonUpcase<EditUserData>, headers: AdminHeaders, conn: DbConn) -> EmptyResult {
     let data: EditUserData = data.into_inner().data;
 
-    let new_type = match UserOrgType::from_str(&data.Type.to_string()) {
+    let new_type = match UserOrgType::from_str(&data.Type.into_string()) {
         Some(new_type) => new_type as i32,
         None => err!("Invalid type")
     };
@@ -449,21 +447,19 @@ fn edit_user(org_id: String, user_id: String, data: JsonUpcase<EditUserData>, he
 
     // Delete all the odd collections
     for c in CollectionUser::find_by_organization_and_user_uuid(&org_id, &user_to_edit.user_uuid, &conn) {
-        match c.delete(&conn) {
-            Ok(()) => (),
-            Err(_) => err!("Failed deleting old collection assignment")
+        if c.delete(&conn).is_err() {
+            err!("Failed deleting old collection assignment")
         }
     }
 
     // If no accessAll, add the collections received
     if !data.AccessAll {
-        for col in data.Collections.iter() {
+        for col in &data.Collections {
             match Collection::find_by_uuid_and_org(&col.id, &org_id, &conn) {
                 None => err!("Collection not found in Organization"),
                 Some(collection) => {
-                    match CollectionUser::save(&user_to_edit.user_uuid, &collection.uuid, col.readOnly, &conn) {
-                        Ok(()) => (),
-                        Err(_) => err!("Failed saving collection access for user")
+                    if CollectionUser::save(&user_to_edit.user_uuid, &collection.uuid, col.readOnly, &conn).is_err() {
+                        err!("Failed saving collection access for user")
                     }
                 }
             }

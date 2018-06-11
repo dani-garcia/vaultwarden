@@ -34,10 +34,10 @@ fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> EmptyResult {
     let data: RegisterData = data.into_inner().data;
 
     if !CONFIG.signups_allowed {
-        err!(format!("Signups not allowed"))
+        err!("Signups not allowed")
     }
 
-    if let Some(_) = User::find_by_mail(&data.Email, &conn) {
+    if User::find_by_mail(&data.Email, &conn).is_some() {
         err!("Email already exists")
     }
 
@@ -172,17 +172,15 @@ fn delete_account(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn
 
     // Delete ciphers and their attachments
     for cipher in Cipher::find_owned_by_user(&user.uuid, &conn) {
-        match cipher.delete(&conn) {
-            Ok(()) => (),
-            Err(_) => err!("Failed deleting cipher")
+        if cipher.delete(&conn).is_err() {
+            err!("Failed deleting cipher")
         }
     }
 
     // Delete folders
     for f in Folder::find_by_user(&user.uuid, &conn) {
-        match f.delete(&conn) {
-            Ok(()) => (),
-            Err(_) => err!("Failed deleting folder")
+        if f.delete(&conn).is_err() {
+            err!("Failed deleting folder")
         } 
     }
 

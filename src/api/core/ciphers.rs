@@ -245,9 +245,9 @@ struct ImportData {
 #[allow(non_snake_case)]
 struct RelationsData {
     // Cipher id
-    key: u32,
+    key: usize,
     // Folder id
-    value: u32,
+    value: usize,
 }
 
 
@@ -271,17 +271,14 @@ fn post_ciphers_import(data: JsonUpcase<ImportData>, headers: Headers, conn: DbC
     }
 
     // Read and create the ciphers
-    let mut index = 0;
-    for cipher_data in data.Ciphers {
+    for (index, cipher_data) in data.Ciphers.into_iter().enumerate() {
         let folder_uuid = relations_map.get(&index)
-            .map(|i| folders[*i as usize].uuid.clone());
+            .map(|i| folders[*i].uuid.clone());
 
         let mut cipher = Cipher::new(cipher_data.Type, cipher_data.Name.clone());
         update_cipher_from_data(&mut cipher, cipher_data, &headers, true, &conn)?;
 
         cipher.move_to_folder(folder_uuid, &headers.user.uuid.clone(), &conn).ok();
-
-        index += 1;
     }
 
     Ok(())
@@ -390,8 +387,8 @@ fn post_cipher_share(uuid: String, data: JsonUpcase<ShareCipherData>, headers: H
         None => err!("Organization id not provided"),
         Some(_) => {
             update_cipher_from_data(&mut cipher, data.Cipher, &headers, true, &conn)?;
-            for collection in data.CollectionIds.iter() {
-                match Collection::find_by_uuid(&collection, &conn) {
+            for uuid in &data.CollectionIds {
+                match Collection::find_by_uuid(uuid, &conn) {
                     None => err!("Invalid collection ID provided"),
                     Some(collection) => {
                         if collection.is_writable_by_user(&headers.user.uuid, &conn) {
@@ -575,17 +572,15 @@ fn delete_all(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn) ->
 
     // Delete ciphers and their attachments
     for cipher in Cipher::find_owned_by_user(&user.uuid, &conn) {
-        match cipher.delete(&conn) {
-            Ok(()) => (),
-            Err(_) => err!("Failed deleting cipher")
+        if cipher.delete(&conn).is_err() {
+            err!("Failed deleting cipher")
         }
     }
 
     // Delete folders
     for f in Folder::find_by_user(&user.uuid, &conn) {
-        match f.delete(&conn) {
-            Ok(()) => (),
-            Err(_) => err!("Failed deleting folder")
+        if f.delete(&conn).is_err() {
+            err!("Failed deleting folder")
         } 
     }
 

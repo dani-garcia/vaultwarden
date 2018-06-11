@@ -53,16 +53,13 @@ fn get_icon_cached(key: &str, url: &str) -> io::Result<Vec<u8>> {
     let path = &format!("{}/{}.png", CONFIG.icon_cache_folder, key);
 
     // Try to read the cached icon, and return it if it exists
-    match File::open(path) {
-        Ok(mut f) => {
-            let mut buffer = Vec::new();
+    if let Ok(mut f) = File::open(path) {
+        let mut buffer = Vec::new();
 
-            if f.read_to_end(&mut buffer).is_ok() {
-                return Ok(buffer);
-            }
-            /* If error reading file continue */
+        if f.read_to_end(&mut buffer).is_ok() {
+            return Ok(buffer);
         }
-        Err(_) => { /* Continue */ }
+        /* If error reading file continue */
     }
 
     println!("Downloading icon for {}...", key);
@@ -72,9 +69,8 @@ fn get_icon_cached(key: &str, url: &str) -> io::Result<Vec<u8>> {
     };
 
     // Save the currently downloaded icon
-    match File::create(path) {
-        Ok(mut f) => { f.write_all(&icon).expect("Error writing icon file"); }
-        Err(_) => { /* Continue */ }
+    if let Ok(mut f) = File::create(path) {
+        f.write_all(&icon).expect("Error writing icon file");
     };
 
     Ok(icon)

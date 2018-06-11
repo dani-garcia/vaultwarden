@@ -150,7 +150,7 @@ struct GlobalDomain {
     Excluded: bool,
 }
 
-const GLOBAL_DOMAINS: &'static str = include_str!("global_domains.json");
+const GLOBAL_DOMAINS: &str = include_str!("global_domains.json");
 
 #[get("/settings/domains")]
 fn get_eq_domains(headers: Headers) -> JsonResult {
@@ -185,8 +185,8 @@ struct EquivDomainData {
 fn post_eq_domains(data: JsonUpcase<EquivDomainData>, headers: Headers, conn: DbConn) -> EmptyResult {
     let data: EquivDomainData = data.into_inner().data;
 
-    let excluded_globals = data.ExcludedGlobalEquivalentDomains.unwrap_or(Vec::new());
-    let equivalent_domains = data.EquivalentDomains.unwrap_or(Vec::new());
+    let excluded_globals = data.ExcludedGlobalEquivalentDomains.unwrap_or_default();
+    let equivalent_domains = data.EquivalentDomains.unwrap_or_default();
 
     let mut user = headers.user;
     use serde_json::to_string;

@@ -29,7 +29,7 @@ fn login(connect_data: Form<ConnectData>, device_type: DeviceType, conn: DbConn)
 
 fn _refresh_login(data: &ConnectData, _device_type: DeviceType, conn: DbConn) -> JsonResult {
     // Extract token
-    let token = data.get("refresh_token").unwrap();
+    let token = data.get("refresh_token");
 
     // Get device by refresh token
     let mut device = match Device::find_by_refresh_token(token, &conn) {
@@ -56,20 +56,20 @@ fn _refresh_login(data: &ConnectData, _device_type: DeviceType, conn: DbConn) ->
 
 fn _password_login(data: &ConnectData, device_type: DeviceType, conn: DbConn) -> JsonResult {
     // Validate scope
-    let scope = data.get("scope").unwrap();
+    let scope = data.get("scope");
     if scope != "api offline_access" {
         err!("Scope not supported")
     }
 
     // Get the user
-    let username = data.get("username").unwrap();
+    let username = data.get("username");
     let user = match User::find_by_mail(username, &conn) {
         Some(user) => user,
         None => err!("Username or password is incorrect. Try again.")
     };
 
     // Check password
-    let password = data.get("password").unwrap();
+    let password = data.get("password");
     if !user.check_valid_password(password) {
         err!("Username or password is incorrect. Try again.")
     }
@@ -77,14 +77,13 @@ fn _password_login(data: &ConnectData, device_type: DeviceType, conn: DbConn) ->
     // Let's only use the header and ignore the 'devicetype' parameter
     let device_type_num = device_type.0;
 
-    let (device_id, device_name) = match data.is_device {
-        false => { (format!("web-{}", user.uuid), String::from("web")) }
-        true => {
-            (
-                data.get("deviceidentifier").unwrap().clone(),
-                data.get("devicename").unwrap().clone(),
-            )
-        }
+    let (device_id, device_name) = if data.is_device {
+        (
+            data.get("deviceidentifier").clone(),
+            data.get("devicename").clone(),
+        )
+    } else {
+        (format!("web-{}", user.uuid), String::from("web"))
     };
 
     // Find device or create new
@@ -105,8 +104,8 @@ fn _password_login(data: &ConnectData, device_type: DeviceType, conn: DbConn) ->
     };
 
     let twofactor_token = if user.requires_twofactor() {
-        let twofactor_provider = util::parse_option_string(data.get("twoFactorProvider")).unwrap_or(0);
-        let twofactor_code = match data.get("twoFactorToken") {
+        let twofactor_provider = util::parse_option_string(data.get_opt("twoFactorProvider")).unwrap_or(0);
+        let twofactor_code = match data.get_opt("twoFactorToken") {
             Some(code) => code,
             None => err_json!(_json_err_twofactor())
         };
@@ -122,7 +121,7 @@ fn _password_login(data: &ConnectData, device_type: DeviceType, conn: DbConn) ->
                     err_json!(_json_err_twofactor())
                 }
 
-                if util::parse_option_string(data.get("twoFactorRemember")).unwrap_or(0) == 1 {
+                if util::parse_option_string(data.get_opt("twoFactorRemember")).unwrap_or(0) == 1 {
                     device.refresh_twofactor_remember();
                     device.twofactor_remember.clone()
                 } else {
@@ -174,39 +173,7 @@ fn _json_err_twofactor() -> Value {
     })
 }
 
-/*
-ConnectData {
-    grant_type: Password,
-    is_device: false,
-    data: {
-        "scope": "api offline_access",
-        "client_id": "web",
-        "grant_type": "password",
-        "username": "dani@mail",
-        "password": "8IuV1sJ94tPjyYIK+E+PTjblzjm4W6C4N5wqM0KKsSg="
-    }
-}
-
-RETURNS "TwoFactorToken": "11122233333444555666777888999"
-
-Next login
-ConnectData {
-    grant_type: Password,
-    is_device: false,
-    data: {
-        "scope": "api offline_access",
-        "username": "dani@mail",
-        "client_id": "web",
-        "twofactorprovider": "5",
-        "twofactortoken": "11122233333444555666777888999",
-        "grant_type": "password",
-        "twofactorremember": "0",
-        "password": "8IuV1sJ94tPjyYIK+E+PTjblzjm4W6C4N5wqM0KKsSg="
-    }
-}
-*/
-
-
+#[derive(Clone, Copy)]
 struct DeviceType(i32);
 
 impl<'a, 'r> FromRequest<'a, 'r> for DeviceType {
@@ -233,7 +200,11 @@ struct ConnectData {
 enum GrantType { RefreshToken, Password }
 
 impl ConnectData {
-    fn get(&self, key: &str) -> Option<&String> {
+    fn get(&self, key: &str) -> &String {
+        &self.data[&key.to_lowercase()]
+    }
+
+    fn get_opt(&self, key: &str) -> Option<&String> {
         self.data.get(&key.to_lowercase())
     }
 }
@@ -252,7 +223,7 @@ impl<'f> FromForm<'f> for ConnectData {
         for (key, value) in items {
             match (key.url_decode(), value.url_decode()) {
                 (Ok(key), Ok(value)) => data.insert(key.to_lowercase(), value),
-                _ => return Err(format!("Error decoding key or value")),
+                _ => return Err("Error decoding key or value".to_string()),
             };
         }
 
@@ -266,13 +237,13 @@ impl<'f> FromForm<'f> for ConnectData {
                 Some("password") => {
                     check_values(&data, &VALUES_PASSWORD)?;
 
-                    let is_device = match data.get("client_id").unwrap().as_ref() {
+                    let is_device = match data["client_id"].as_ref() {
                         "browser" | "mobile" => check_values(&data, &VALUES_DEVICE)?,
                         _ => false
                     };
                     (GrantType::Password, is_device)
                 }
-                _ => return Err(format!("Grant type not supported"))
+                _ => return Err("Grant type not supported".to_string())
             };
 
         Ok(ConnectData { grant_type, is_device, data })

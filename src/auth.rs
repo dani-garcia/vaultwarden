@@ -11,7 +11,8 @@ use serde::ser::Serialize;
 use CONFIG;
 
 const JWT_ALGORITHM: jwt::Algorithm = jwt::Algorithm::RS256;
-pub const JWT_ISSUER: &'static str = "localhost:8000/identity";
+ // TODO: This isn't used, but we  should make sure it represents the correct address
+pub const JWT_ISSUER: &str = "localhost:8000/identity";
 
 lazy_static! {
     pub static ref DEFAULT_VALIDITY: Duration = Duration::hours(2);
@@ -30,9 +31,9 @@ lazy_static! {
 
 pub fn encode_jwt<T: Serialize>(claims: &T) -> String {
     match jwt::encode(&JWT_HEADER, claims, &PRIVATE_RSA_KEY) {
-        Ok(token) => return token,
+        Ok(token) => token,
         Err(e) => panic!("Error encoding jwt {}", e)
-    };
+    }
 }
 
 pub fn decode_jwt(token: &str) -> Result<JWTClaims, String> {

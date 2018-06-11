@@ -70,7 +70,7 @@ pub fn delete_file(path: &str) -> bool {
 }
 
 
-const UNITS: [&'static str; 6] = ["bytes", "KB", "MB", "GB", "TB", "PB"];
+const UNITS: [&str; 6] = ["bytes", "KB", "MB", "GB", "TB", "PB"];
 
 pub fn get_display_size(size: i32) -> String {
     let mut size = size as f64;
@@ -119,7 +119,7 @@ pub fn parse_option_string<S, T>(string: Option<S>) -> Option<T> where S: AsRef<
 
 use chrono::NaiveDateTime;
 
-const DATETIME_FORMAT: &'static str = "%Y-%m-%dT%H:%M:%S%.6fZ";
+const DATETIME_FORMAT: &str = "%Y-%m-%dT%H:%M:%S%.6fZ";
 
 pub fn format_date(date: &NaiveDateTime) -> String {
     date.format(DATETIME_FORMAT).to_string()

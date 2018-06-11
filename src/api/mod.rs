@@ -33,14 +33,14 @@ enum NumberOrString {
 }
 
 impl NumberOrString {
-    fn to_string(self) -> String {
+    fn into_string(self) -> String {
         match self {
             NumberOrString::Number(n) => n.to_string(),
             NumberOrString::String(s) => s
         }
     }
 
-    fn to_i32(self) -> Option<i32> {
+    fn into_i32(self) -> Option<i32> {
         match self {
             NumberOrString::Number(n) => Some(n),
             NumberOrString::String(s) => s.parse().ok()
