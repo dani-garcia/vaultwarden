@@ -31,7 +31,7 @@ RUN git config --global url."https://github.com/".insteadOf ssh://git@github.com
 ########################## BUILD IMAGE  ##########################
 # We need to use the Rust build image, because
 # we need the Rust compiler and Cargo tooling
-FROM rustlang/rust:nightly as build
+FROM rust as build
 
 # Using bundled SQLite, no need to install it
 # RUN apt-get update && apt-get install -y\
@@ -46,6 +46,7 @@ WORKDIR /app
 # Copies over *only* your manifests and vendored dependencies
 COPY ./Cargo.* ./
 COPY ./libs ./libs
+COPY ./rust-toolchain ./rust-toolchain
 
 # Builds your dependencies and removes the
 # dummy project, except the target folder
