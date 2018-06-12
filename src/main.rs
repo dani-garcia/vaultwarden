@@ -23,7 +23,7 @@ extern crate dotenv;
 #[macro_use]
 extern crate lazy_static;
 
-use std::{io, env, path::Path, process::{exit, Command}};
+use std::{env, path::Path, process::{exit, Command}};
 use rocket::Rocket;
 
 #[macro_use]
@@ -46,16 +46,25 @@ fn init_rocket() -> Rocket {
 // Embed the migrations from the migrations folder into the application
 // This way, the program automatically migrates the database to the latest version
 // https://docs.rs/diesel_migrations/*/diesel_migrations/macro.embed_migrations.html
-embed_migrations!();
+#[allow(unused_imports)]
+mod migrations {
+    embed_migrations!();
+
+    pub fn run_migrations() {
+        // Make sure the database is up to date (create if it doesn't exist, or run the migrations)
+        let connection = ::db::get_connection().expect("Can't conect to DB");
+
+        use std::io::stdout;
+        embedded_migrations::run_with_output(&connection, &mut stdout()).expect("Can't run migrations");
+    }
+}
 
 fn main() {
     check_db();
     check_rsa_keys();
-    check_web_vault();   
+    check_web_vault();  
+    migrations::run_migrations(); 
 
-    // Make sure the database is up to date (create if it doesn't exist, or run the migrations)
-    let connection = db::get_connection().expect("Can't conect to DB");
-    embedded_migrations::run_with_output(&connection, &mut io::stdout()).expect("Can't run migrations");
 
     init_rocket().launch();
 }

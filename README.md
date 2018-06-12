@@ -78,7 +78,7 @@ Finally copy the contents of the `web-vault/dist` folder into the `bitwarden_rs/
 ## How to recreate database schemas
 Install diesel-cli with cargo:
 ```sh
-cargo install diesel_cli --no-default-features --features sqlite-bundled # Or use only sqlite to use the system version
+cargo install diesel_cli --no-default-features --features sqlite-bundled
 ```
 
 Make sure that the correct path to the database is in the `.env` file.
@@ -91,7 +91,9 @@ diesel migration generate <name>
 Modify the *.sql files, making sure that any changes are reverted in the down.sql file.
 
 Apply the migrations and save the generated schemas as follows:
-```
+```sh
 diesel migration redo
-diesel print-schema > src/db/schema.rs
+
+# This step should be done automatically when using diesel-cli > 1.3.0
+# diesel print-schema > src/db/schema.rs
 ```
