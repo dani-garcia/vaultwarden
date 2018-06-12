@@ -363,7 +363,6 @@ fn post_collections_admin(uuid: String, data: JsonUpcase<CollectionsAdminData>, 
 #[derive(Deserialize)]
 #[allow(non_snake_case)]
 struct ShareCipherData {
-    #[serde(deserialize_with = "util::upcase_deserialize")]
     Cipher: CipherData,
     CollectionIds: Vec<String>,
 }

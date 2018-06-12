@@ -129,24 +129,88 @@ pub fn format_date(date: &NaiveDateTime) -> String {
 /// Deserialization methods
 ///
 
-use std::collections::BTreeMap as Map;
+use std::fmt;
 
-use serde::de::{self, Deserialize, DeserializeOwned, Deserializer};
+use serde::de::{self, DeserializeOwned, Deserializer, MapAccess, SeqAccess, Visitor};
 use serde_json::Value;
-
-/// https://github.com/serde-rs/serde/issues/586
-pub fn upcase_deserialize<'de, T, D>(deserializer: D) -> Result<T, D::Error>
-    where T: DeserializeOwned,
-          D: Deserializer<'de>
-{
-    let map = Map::<String, Value>::deserialize(deserializer)?;
-    let lower = map.into_iter().map(|(k, v)| (upcase_first(&k), v)).collect();
-    T::deserialize(Value::Object(lower)).map_err(de::Error::custom)
-}
 
 #[derive(PartialEq, Serialize, Deserialize)]
 pub struct UpCase<T: DeserializeOwned> {
     #[serde(deserialize_with = "upcase_deserialize")]
     #[serde(flatten)]
     pub data: T,
+}
+
+/// https://github.com/serde-rs/serde/issues/586
+pub fn upcase_deserialize<'de, T, D>(deserializer: D) -> Result<T, D::Error>
+    where T: DeserializeOwned,
+          D: Deserializer<'de>
+{
+    let d = deserializer.deserialize_any(UpCaseVisitor)?;
+    T::deserialize(d).map_err(de::Error::custom)
+}
+
+struct UpCaseVisitor;
+
+impl<'de> Visitor<'de> for UpCaseVisitor {
+    type Value = Value;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("an object or an array")
+    }
+
+    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+        where A: MapAccess<'de>
+    {
+        use serde_json::Map;
+        let mut result_map = Map::<String, Value>::new();
+
+        while let Some((key, value)) = map.next_entry()? {
+            result_map.insert(upcase_first(key), upcase_value(&value));
+        }
+
+        Ok(Value::Object(result_map))
+    }
+
+    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+        where A: SeqAccess<'de> {
+        let mut result_seq = Vec::<Value>::new();
+
+        while let Some(value) = seq.next_element()? {
+            result_seq.push(upcase_value(&value));
+        }
+
+        Ok(Value::Array(result_seq))
+    }
+}
+
+fn upcase_value(value: &Value) -> Value {
+    if let Some(map) = value.as_object() {
+        let mut new_value = json!({});
+        
+        for (key, val) in map {
+            let processed_key = _process_key(key);
+            new_value[processed_key] = upcase_value(val);
+        }
+        new_value
+    
+    } else if let Some(array) = value.as_array() {
+        // Initialize array with null values
+        let mut new_value = json!(vec![Value::Null; array.len()]);
+
+        for (index, val) in array.iter().enumerate() {
+            new_value[index] = upcase_value(val);
+        }
+        new_value
+    
+    } else {
+        value.clone()
+    }
+}
+
+fn _process_key(key: &str) -> String {
+    match key.to_lowercase().as_ref() {
+        "ssn" => "SSN".into(),
+        _ => self::upcase_first(key)
+    }
 }

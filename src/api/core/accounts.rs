@@ -6,8 +6,6 @@ use db::models::*;
 use api::{PasswordData, JsonResult, EmptyResult, JsonUpcase};
 use auth::Headers;
 
-use util;
-
 use CONFIG;
 
 #[derive(Deserialize, Debug)]
@@ -15,7 +13,6 @@ use CONFIG;
 struct RegisterData {
     Email: String,
     Key: String,
-    #[serde(deserialize_with = "util::upcase_deserialize")]
     Keys: Option<KeysData>,
     MasterPasswordHash: String,
     MasterPasswordHint: Option<String>,
