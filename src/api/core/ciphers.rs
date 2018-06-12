@@ -14,7 +14,6 @@ use data_encoding::HEXLOWER;
 use db::DbConn;
 use db::models::*;
 
-use util;
 use crypto;
 
 use api::{self, PasswordData, JsonResult, EmptyResult, JsonUpcase};
@@ -157,24 +156,6 @@ fn update_cipher_from_data(cipher: &mut Cipher, data: CipherData, headers: &Head
         }
     }
 
-    let uppercase_fields = data.Fields.map(|f| {
-        let mut value = json!({});
-        // Copy every field object and change the names to the correct case
-        copy_values(&f, &mut value);
-        value
-    });
-
-    // TODO: ******* Backwards compat start **********
-    // To remove backwards compatibility, just create an empty values object,
-    // and remove the compat code from cipher::to_json
-    let mut values = json!({
-        "Name": data.Name,
-        "Notes": data.Notes
-    });
-
-    values["Fields"] = uppercase_fields.clone().unwrap_or(Value::Null);
-    // TODO: ******* Backwards compat end **********
-
     let type_data_opt = match data.Type {
         1 => data.Login,
         2 => data.SecureNote,
@@ -183,19 +164,24 @@ fn update_cipher_from_data(cipher: &mut Cipher, data: CipherData, headers: &Head
         _ => err!("Invalid type")
     };
 
-    let type_data = match type_data_opt {
+    let mut type_data = match type_data_opt {
         Some(data) => data,
         None => err!("Data missing")
     };
 
-    // Copy the type data and change the names to the correct case
-    copy_values(&type_data, &mut values);
+    // TODO: ******* Backwards compat start **********
+    // To remove backwards compatibility, just delete this code,
+    // and remove the compat code from cipher::to_json
+    type_data["Name"] = Value::String(data.Name.clone());
+    type_data["Notes"] = data.Notes.clone().map(Value::String).unwrap_or(Value::Null);
+    type_data["Fields"] = data.Fields.clone().unwrap_or(Value::Null);
+    // TODO: ******* Backwards compat end **********
 
     cipher.favorite = data.Favorite.unwrap_or(false);
     cipher.name = data.Name;
     cipher.notes = data.Notes;
-    cipher.fields = uppercase_fields.map(|f| f.to_string());
-    cipher.data = values.to_string();
+    cipher.fields = data.Fields.map(|f| f.to_string());
+    cipher.data = type_data.to_string();
 
     cipher.save(&conn);
 
@@ -204,31 +190,6 @@ fn update_cipher_from_data(cipher: &mut Cipher, data: CipherData, headers: &Head
     }
 
     Ok(())
-}
-
-fn copy_values(from: &Value, to: &mut Value) {
-    if let Some(map) = from.as_object() {
-        for (key, val) in map {
-            let processed_key = _process_key(key);
-            copy_values(val, &mut to[processed_key]);
-        }
-    } else if let Some(array) = from.as_array() {
-        // Initialize array with null values
-        *to = json!(vec![Value::Null; array.len()]);
-
-        for (index, val) in array.iter().enumerate() {
-            copy_values(val, &mut to[index]);
-        }
-    } else {
-        *to = from.clone();
-    }
-}
-
-fn _process_key(key: &str) -> String {
-    match key.to_lowercase().as_ref() {
-        "ssn" => "SSN".into(),
-        _ => util::upcase_first(key)
-    }
 }
 
 use super::folders::FolderData;
