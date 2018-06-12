@@ -8,19 +8,23 @@ use rocket_contrib::Json;
 use CONFIG;
 
 pub fn routes() -> Vec<Route> {
-    routes![index, files, attachments, alive]
+    if CONFIG.web_vault_enabled {
+        routes![web_index, web_files, attachments, alive]
+    } else {
+        routes![attachments, alive]
+    }
 }
 
 // TODO: Might want to use in memory cache: https://github.com/hgzimmerman/rocket-file-cache
 #[get("/")]
-fn index() -> io::Result<NamedFile> {
+fn web_index() -> io::Result<NamedFile> {
     NamedFile::open(
         Path::new(&CONFIG.web_vault_folder)
             .join("index.html"))
 }
 
 #[get("/<p..>", rank = 1)] // Only match this if the other routes don't match
-fn files(p: PathBuf) -> io::Result<NamedFile> {
+fn web_files(p: PathBuf) -> io::Result<NamedFile> {
     NamedFile::open(
         Path::new(&CONFIG.web_vault_folder)
             .join(p))

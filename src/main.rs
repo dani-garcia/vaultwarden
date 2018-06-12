@@ -127,6 +127,10 @@ fn check_rsa_keys() {
 }
 
 fn check_web_vault() {
+    if !CONFIG.web_vault_enabled {
+        return;
+    }
+
     let index_path = Path::new(&CONFIG.web_vault_folder).join("index.html");
 
     if !index_path.exists() {
@@ -151,7 +155,9 @@ pub struct Config {
     public_rsa_key: String,
 
     web_vault_folder: String,
+    web_vault_enabled: bool,
 
+    local_icon_extractor: bool,
     signups_allowed: bool,
     password_iterations: i32,
 }
@@ -161,20 +167,22 @@ impl Config {
         dotenv::dotenv().ok();
 
         let df = env::var("DATA_FOLDER").unwrap_or("data".into());
-        let key = env::var("RSA_KEY_NAME").unwrap_or("rsa_key".into());
+        let key = env::var("RSA_KEY_FILENAME").unwrap_or(format!("{}/{}", &df, "rsa_key"));
 
         Config {
             database_url: env::var("DATABASE_URL").unwrap_or(format!("{}/{}", &df, "db.sqlite3")),
             icon_cache_folder: env::var("ICON_CACHE_FOLDER").unwrap_or(format!("{}/{}", &df, "icon_cache")),
             attachments_folder: env::var("ATTACHMENTS_FOLDER").unwrap_or(format!("{}/{}", &df, "attachments")),
 
-            private_rsa_key: format!("{}/{}.der", &df, &key),
-            private_rsa_key_pem: format!("{}/{}.pem", &df, &key),
-            public_rsa_key: format!("{}/{}.pub.der", &df, &key),
+            private_rsa_key: format!("{}.der", &key),
+            private_rsa_key_pem: format!("{}.pem", &key),
+            public_rsa_key: format!("{}.pub.der", &key),
 
             web_vault_folder: env::var("WEB_VAULT_FOLDER").unwrap_or("web-vault/".into()),
+            web_vault_enabled: util::parse_option_string(env::var("WEB_VAULT_ENABLED").ok()).unwrap_or(true),
 
-            signups_allowed: util::parse_option_string(env::var("SIGNUPS_ALLOWED").ok()).unwrap_or(false),
+            local_icon_extractor: util::parse_option_string(env::var("LOCAL_ICON_EXTRACTOR").ok()).unwrap_or(false),
+            signups_allowed: util::parse_option_string(env::var("SIGNUPS_ALLOWED").ok()).unwrap_or(true),
             password_iterations: util::parse_option_string(env::var("PASSWORD_ITERATIONS").ok()).unwrap_or(100_000),
         }
     }
