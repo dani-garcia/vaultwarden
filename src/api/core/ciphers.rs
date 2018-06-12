@@ -227,7 +227,7 @@ fn copy_values(from: &Value, to: &mut Value) {
 fn _process_key(key: &str) -> String {
     match key.to_lowercase().as_ref() {
         "ssn" => "SSN".into(),
-        key => util::upcase_first(key)
+        _ => util::upcase_first(key)
     }
 }
 
