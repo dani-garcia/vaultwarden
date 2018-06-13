@@ -84,7 +84,7 @@ impl Cipher {
         // To remove backwards compatibility, just remove this entire section
         // and remove the compat code from ciphers::update_cipher_from_data
         if self.type_ == 1 && data_json["Uris"].is_array() {
-            let uri = data_json["Uris"][0]["uri"].clone();
+            let uri = data_json["Uris"][0]["Uri"].clone();
             data_json["Uri"] = uri;
         }
         // TODO: ******* Backwards compat end **********

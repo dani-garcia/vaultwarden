@@ -288,8 +288,8 @@ fn get_org_users(org_id: String, headers: AdminHeaders, conn: DbConn) -> JsonRes
 #[derive(Deserialize)]
 #[allow(non_snake_case)]
 struct CollectionData {
-    id: String,
-    readOnly: bool,
+    Id: String,
+    ReadOnly: bool,
 }
 
 #[derive(Deserialize)]
@@ -331,10 +331,10 @@ fn send_invite(org_id: String, data: JsonUpcase<InviteData>, headers: AdminHeade
                 // If no accessAll, add the collections received
                 if !access_all {
                     for col in &data.Collections {
-                        match Collection::find_by_uuid_and_org(&col.id, &org_id, &conn) {
+                        match Collection::find_by_uuid_and_org(&col.Id, &org_id, &conn) {
                             None => err!("Collection not found in Organization"),
                             Some(collection) => {
-                                if CollectionUser::save(&user.uuid, &collection.uuid, col.readOnly, &conn).is_err() {
+                                if CollectionUser::save(&user.uuid, &collection.uuid, col.ReadOnly, &conn).is_err() {
                                     err!("Failed saving collection access for user")
                                 }
                             }
@@ -373,7 +373,7 @@ fn confirm_invite(org_id: String, user_id: String, data: JsonUpcase<Value>, head
     }
 
     user_to_confirm.status = UserOrgStatus::Confirmed as i32;
-    user_to_confirm.key = match data["key"].as_str() {
+    user_to_confirm.key = match data["Key"].as_str() {
         Some(key) => key.to_string(),
         None => err!("Invalid key provided")
     };
@@ -455,10 +455,10 @@ fn edit_user(org_id: String, user_id: String, data: JsonUpcase<EditUserData>, he
     // If no accessAll, add the collections received
     if !data.AccessAll {
         for col in &data.Collections {
-            match Collection::find_by_uuid_and_org(&col.id, &org_id, &conn) {
+            match Collection::find_by_uuid_and_org(&col.Id, &org_id, &conn) {
                 None => err!("Collection not found in Organization"),
                 Some(collection) => {
-                    if CollectionUser::save(&user_to_edit.user_uuid, &collection.uuid, col.readOnly, &conn).is_err() {
+                    if CollectionUser::save(&user_to_edit.user_uuid, &collection.uuid, col.ReadOnly, &conn).is_err() {
                         err!("Failed saving collection access for user")
                     }
                 }

@@ -206,9 +206,9 @@ struct ImportData {
 #[allow(non_snake_case)]
 struct RelationsData {
     // Cipher id
-    key: usize,
+    Key: usize,
     // Folder id
-    value: usize,
+    Value: usize,
 }
 
 
@@ -228,7 +228,7 @@ fn post_ciphers_import(data: JsonUpcase<ImportData>, headers: Headers, conn: DbC
     let mut relations_map = HashMap::new();
 
     for relation in data.FolderRelationships {
-        relations_map.insert(relation.key, relation.value);
+        relations_map.insert(relation.Key, relation.Value);
     }
 
     // Read and create the ciphers
