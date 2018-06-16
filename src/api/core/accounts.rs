@@ -3,7 +3,7 @@ use rocket_contrib::Json;
 use db::DbConn;
 use db::models::*;
 
-use api::{PasswordData, JsonResult, EmptyResult, JsonUpcase};
+use api::{PasswordData, JsonResult, EmptyResult, JsonUpcase, NumberOrString};
 use auth::Headers;
 
 use CONFIG;
@@ -62,6 +62,28 @@ fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> EmptyResult {
 #[get("/accounts/profile")]
 fn profile(headers: Headers, conn: DbConn) -> JsonResult {
     Ok(Json(headers.user.to_json(&conn)))
+}
+
+#[derive(Deserialize, Debug)]
+#[allow(non_snake_case)]
+struct ProfileData {
+    #[serde(rename = "Culture")]
+    _Culture: String,  // Ignored, always use en-US
+    MasterPasswordHint: Option<String>,
+    Name: String,
+}
+
+#[post("/accounts/profile", data = "<data>")]
+fn post_profile(data: JsonUpcase<ProfileData>, headers: Headers, conn: DbConn) -> JsonResult {
+    let data: ProfileData = data.into_inner().data;
+
+    let mut user = headers.user;
+
+    user.name = data.Name;
+    user.password_hint = data.MasterPasswordHint;
+    user.save(&conn);
+
+    Ok(Json(user.to_json(&conn)))
 }
 
 #[get("/users/<uuid>/public-key")]
@@ -133,13 +155,39 @@ fn post_sstamp(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn) -
 
 #[derive(Deserialize)]
 #[allow(non_snake_case)]
-struct ChangeEmailData {
+struct EmailTokenData {
     MasterPasswordHash: String,
     NewEmail: String,
 }
 
-
 #[post("/accounts/email-token", data = "<data>")]
+fn post_email_token(data: JsonUpcase<EmailTokenData>, headers: Headers, conn: DbConn) -> EmptyResult {
+    let data: EmailTokenData = data.into_inner().data;
+
+    if !headers.user.check_valid_password(&data.MasterPasswordHash) {
+        err!("Invalid password")
+    }
+
+    if User::find_by_mail(&data.NewEmail, &conn).is_some() {
+        err!("Email already in use");
+    }
+
+    Ok(())
+}
+
+#[derive(Deserialize)]
+#[allow(non_snake_case)]
+struct ChangeEmailData {
+    MasterPasswordHash: String,
+    NewEmail: String,
+    
+    Key: String,
+    NewMasterPasswordHash: String,
+    #[serde(rename = "Token")]
+    _Token: NumberOrString,
+}
+
+#[post("/accounts/email", data = "<data>")]
 fn post_email(data: JsonUpcase<ChangeEmailData>, headers: Headers, conn: DbConn) -> EmptyResult {
     let data: ChangeEmailData = data.into_inner().data;
     let mut user = headers.user;
@@ -153,6 +201,10 @@ fn post_email(data: JsonUpcase<ChangeEmailData>, headers: Headers, conn: DbConn)
     }
 
     user.email = data.NewEmail;
+    
+    user.set_password(&data.NewMasterPasswordHash);
+    user.key = data.Key;
+
     user.save(&conn);
 
     Ok(())

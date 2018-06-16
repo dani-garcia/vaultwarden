@@ -14,10 +14,12 @@ pub fn routes() -> Vec<Route> {
     routes![
         register,
         profile,
+        post_profile,
         get_public_keys,
         post_keys,
         post_password,
         post_sstamp,
+        post_email_token,
         post_email,
         delete_account,
         revision_date,
