@@ -1,53 +1,31 @@
-## Easy setup (Docker)
-Install Docker to your system and then, from the project root, run:
+
+# Bitwarden_RS
+This project is an unofficial implementation of the [Bitwarden Core Server](https://github.com/bitwarden/core) written in [Rust](https://www.rust-lang.org/).
+
+*(Note: This project is not associated with the [Bitwarden](https://bitwarden.com/) project nor 8bit Solutions LLC.)*
+
+# Build/Run
+This project can be built and deployed in two ways:
+
+## Docker Setup (Easy)
+Install [Docker](https://www.docker.com/) to your system and then, from the project root, run:
 ```sh
 # Build the docker image:
-docker build -t dani/bitwarden_rs .
+docker build -t bitwarden_rs .
 
 # Run the docker image with a docker volume:
-docker volume create bw_data
-docker run --name bitwarden_rs -t --init --rm --mount source=bw_data,target=/data -p 8000:80 dani/bitwarden_rs
+docker run --name bitwarden_rs -t --rm -v bw_data:/data -p 80:80 bitwarden_rs
 ```
+Then visit [http://localhost:80](http://localhost:80)
 
-#### Other possible Docker options
+## Manual Setup (Advanced)
+### Dependencies
+- `Rust nightly` (strongly recommended to use [rustup](https://rustup.rs/))
+- `OpenSSL` (should be available in path, install through your system's package manager or use the [prebuilt binaries](https://wiki.openssl.org/index.php/Binaries))
+- `NodeJS` (required to build the web-vault, (install through your system's package manager or use the [prebuilt binaries](https://nodejs.org/en/download/))
 
-To run the container in the background, add the `-d` parameter.
-
-To check the logs when in background, run `docker logs bitwarden_rs`
-
-To stop the container in background, run `docker stop bitwarden_rs`
-
-To make sure the container is restarted automatically, add the `--restart unless-stopped` parameter
-
-To run the image with a host bind, change the `--mount` parameter to:
-```
---mount type=bind,source=<absolute_path>,target=/data
-```
-Where <absolute_path> is an absolute path in the hosts file system (e.g. C:\bitwarden\data)
-
-
-## How to compile bitwarden_rs
-Install `rust nightly`, in Windows the recommended way is through `rustup`.
-
-Install the `openssl` library, in Windows the best option is Microsoft's `vcpkg`,
-on other systems use their respective package managers.
-
-Then run:
-```sh
-cargo run
-# or
-cargo build
-```
-
-## How to install the web-vault locally
-If you're using docker image, you can just update `VAULT_VERSION` variable in Dockerfile and rebuild the image.
-
-Install `node.js` and either `yarn` or `npm` (usually included with node)
-
-Clone the web-vault outside the project:
-```
-git clone https://github.com/bitwarden/web.git web-vault
-```
+### Install the web-vault
+Download the latest official release from the [releases page](https://github.com/bitwarden/web/releases) and extract it.
 
 Modify `web-vault/settings.Production.json` to look like this:
 ```json
@@ -62,20 +40,21 @@ Modify `web-vault/settings.Production.json` to look like this:
 }
 ```
 
-Then, run the following from the `web-vault` dir:
+Then, run the following from the `web-vault` directory:
 ```sh
-# With yarn (recommended)
-yarn
-yarn gulp dist:selfHosted
-
-# With npm
 npm install
 npx gulp dist:selfHosted
 ```
 
 Finally copy the contents of the `web-vault/dist` folder into the `bitwarden_rs/web-vault` folder.
 
-## How to recreate database schemas
+### Running
+```sh
+cargo run
+```
+Then visit [http://localhost:80](http://localhost:80)
+
+## How to recreate database schemas (for developers)
 Install diesel-cli with cargo:
 ```sh
 cargo install diesel_cli --no-default-features --features sqlite-bundled
