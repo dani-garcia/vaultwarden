@@ -54,6 +54,30 @@ cargo run
 ```
 Then visit [http://localhost:80](http://localhost:80)
 
+# Configuration
+The available configuration options are documented in the default `.env` file, and they can be modified by uncommenting the desired options in that file or by setting their respective environment variables.
+
+Note: the environment variables override the values set in the `.env` file.
+
+## Disabling user registrations
+To disable user registrations, you can uncomment the `SIGNUPS_ALLOWED` line in the `.env` file and change the value to `false`.
+
+You could also set the `SIGNUPS_ALLOWED` environment variable. To do that when using Docker, add the following line to the end of the `docker run` command:
+```
+-e SIGNUPS_ALLOWED=false
+```
+
+## Enabling HTTPS
+To enable HTTPS, you need to configure the `ROCKET_TLS` option, the same way as `SIGNUPS_ALLOWED`.
+
+The values to the option must follow the format:
+```
+ROCKET_TLS={certs="/path/to/certs.pem",key="/path/to/key.pem"}
+```
+Where:
+- certs: a path to a certificate chain in PEM format
+- key: a path to a private key file in PEM format for the certificate in certs
+
 ## How to recreate database schemas (for developers)
 Install diesel-cli with cargo:
 ```sh

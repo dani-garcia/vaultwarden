@@ -1,0 +1,2 @@
+[global.limits]
+json = 10485760 # 10 MiB
