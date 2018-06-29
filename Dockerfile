@@ -80,6 +80,7 @@ EXPOSE 80
 # Copies the files from the context (env file and web-vault)
 # and the binary from the "build" stage to the current stage
 COPY .env .
+COPY Rocket.toml .
 COPY --from=vault /web-vault ./web-vault
 COPY --from=build app/target/release/bitwarden_rs .
 
