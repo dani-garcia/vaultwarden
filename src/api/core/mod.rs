@@ -41,6 +41,7 @@ pub fn routes() -> Vec<Route> {
         post_cipher,
         put_cipher,
         delete_cipher_post,
+        delete_cipher_post_admin,
         delete_cipher,
         delete_cipher_selected,
         delete_all,
