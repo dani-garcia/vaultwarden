@@ -441,6 +441,11 @@ fn delete_cipher_post(uuid: String, headers: Headers, conn: DbConn) -> EmptyResu
     _delete_cipher_by_uuid(&uuid, &headers, &conn)
 }
 
+#[post("/ciphers/<uuid>/delete-admin")]
+fn delete_cipher_post_admin(uuid: String, headers: Headers, conn: DbConn) -> EmptyResult {
+    _delete_cipher_by_uuid(&uuid, &headers, &conn)
+}
+
 #[delete("/ciphers/<uuid>")]
 fn delete_cipher(uuid: String, headers: Headers, conn: DbConn) -> EmptyResult {
     _delete_cipher_by_uuid(&uuid, &headers, &conn)
