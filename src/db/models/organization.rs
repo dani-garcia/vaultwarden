@@ -66,11 +66,11 @@ impl Organization {
             "Seats": 10,
             "MaxCollections": 10,
 
-            "Use2fa": false,
+            "Use2fa": true,
             "UseDirectory": false,
             "UseEvents": false,
             "UseGroups": false,
-            "UseTotp": false,
+            "UseTotp": true,
 
             "BusinessName": null,
             "BusinessAddress1":	null,
@@ -80,8 +80,8 @@ impl Organization {
             "BusinessTaxNumber": null,
 
             "BillingEmail": self.billing_email,
-            "Plan": "Free",
-            "PlanType": 0, // Free plan
+            "Plan": "TeamsAnnually",
+            "PlanType": 5, // TeamsAnnually plan
 
             "Object": "organization",
         })
@@ -153,11 +153,11 @@ impl UserOrganization {
             "Seats": 10,
             "MaxCollections": 10,
 
-            "Use2fa": false,
+            "Use2fa": true,
             "UseDirectory": false,
             "UseEvents": false,
             "UseGroups": false,
-            "UseTotp": false,
+            "UseTotp": true,
 
             "MaxStorageGb": 10, // The value doesn't matter, we don't check server-side
 

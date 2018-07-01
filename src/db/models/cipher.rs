@@ -97,7 +97,7 @@ impl Cipher {
             "Favorite": self.favorite,
             "OrganizationId": self.organization_uuid,
             "Attachments": attachments_json,
-            "OrganizationUseTotp": false,
+            "OrganizationUseTotp": true,
             "CollectionIds": self.get_collections(user_uuid, &conn),
 
             "Name": self.name,
