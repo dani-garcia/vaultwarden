@@ -42,7 +42,10 @@ fn get_icon (domain: &str) -> Vec<u8> {
             save_icon(&path, &icon);
             icon
         },
-        Err(_) => get_fallback_icon()
+        Err(e) => {
+            println!("Error downloading icon: {:?}", e);
+            get_fallback_icon()
+        }
     }
 }
 
@@ -101,6 +104,9 @@ fn get_fallback_icon() -> Vec<u8> {
             save_icon(&path, &icon);
             icon
         },
-        Err(_) => vec![]
+        Err(e) => {
+            println!("Error downloading fallback icon: {:?}", e);
+            vec![]
+        }
     }
 }
