@@ -397,7 +397,6 @@ fn post_attachment(uuid: String, data: Data, content_type: &ContentType, headers
         };
 
         let attachment = Attachment::new(file_name, cipher.uuid.clone(), name, size);
-        println!("Attachment: {:#?}", attachment);
         attachment.save(&conn);
     }).expect("Error processing multipart data");
 
