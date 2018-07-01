@@ -19,7 +19,6 @@ pub fn routes() -> Vec<Route> {
 #[post("/connect/token", data = "<connect_data>")]
 fn login(connect_data: Form<ConnectData>, device_type: DeviceType, conn: DbConn) -> JsonResult {
     let data = connect_data.get();
-    println!("{:#?}", data);
 
     match data.grant_type {
         GrantType::RefreshToken =>_refresh_login(data, device_type, conn),

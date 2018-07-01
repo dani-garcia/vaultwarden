@@ -109,9 +109,6 @@ use auth::Headers;
 
 #[put("/devices/identifier/<uuid>/clear-token", data = "<data>")]
 fn clear_device_token(uuid: String, data: Json<Value>, headers: Headers, conn: DbConn) -> EmptyResult {
-    println!("UUID: {:#?}", uuid);
-    println!("DATA: {:#?}", data);
-    
     let device = match Device::find_by_uuid(&uuid, &conn) {
         Some(device) => device,
         None => err!("Device not found")
@@ -128,9 +125,6 @@ fn clear_device_token(uuid: String, data: Json<Value>, headers: Headers, conn: D
 
 #[put("/devices/identifier/<uuid>/token", data = "<data>")]
 fn put_device_token(uuid: String, data: Json<Value>, headers: Headers, conn: DbConn) -> JsonResult {
-    println!("UUID: {:#?}", uuid);
-    println!("DATA: {:#?}", data);
-
     let device = match Device::find_by_uuid(&uuid, &conn) {
         Some(device) => device,
         None => err!("Device not found")
