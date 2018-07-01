@@ -70,6 +70,7 @@ FROM debian:stretch-slim
 # Install needed libraries
 RUN apt-get update && apt-get install -y\
     openssl\
+    ca-certificates\
     --no-install-recommends\
  && rm -rf /var/lib/apt/lists/*
 
