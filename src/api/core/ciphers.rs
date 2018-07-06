@@ -383,7 +383,8 @@ fn post_attachment(uuid: String, data: Data, content_type: &ContentType, headers
     let base_path = Path::new(&CONFIG.attachments_folder).join(&cipher.uuid);
 
     Multipart::with_body(data.open(), boundary).foreach_entry(|mut field| {
-        let name = field.headers.filename.unwrap(); // This is provided by the client, don't trust it
+         // This is provided by the client, don't trust it
+         let name = field.headers.filename.expect("No filename provided");
 
         let file_name = HEXLOWER.encode(&crypto::get_random(vec![0; 10]));
         let path = base_path.join(&file_name);
@@ -393,7 +394,18 @@ fn post_attachment(uuid: String, data: Data, content_type: &ContentType, headers
             .size_limit(None)
             .with_path(path) {
             SaveResult::Full(SavedData::File(_, size)) => size as i32,
-            _ => return
+            SaveResult::Full(other) => {
+                println!("Attachment is not a file: {:?}", other);
+                return;
+            },
+            SaveResult::Partial(_, reason) => {
+                println!("Partial result: {:?}", reason);
+                return;
+            },
+            SaveResult::Error(e) => {
+                println!("Error: {:?}", e);
+                return;
+            }
         };
 
         let attachment = Attachment::new(file_name, cipher.uuid.clone(), name, size);
