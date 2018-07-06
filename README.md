@@ -109,3 +109,13 @@ diesel migration redo
 # This step should be done automatically when using diesel-cli > 1.3.0
 # diesel print-schema > src/db/schema.rs
 ```
+
+## Backing up your Vault
+The official bitwarden backup documentation can be found here:
+https://help.bitwarden.com/article/backup-on-premise/
+
+There are 3 folders that need to be backed up in the official install. In the bitwarden_rs install, the default docker setting will have all 3 of these folders in same location: /data/.
+Backing up this one folder will backup your sqlite database, key files and attachments. 
+
+Note that the official bitwarden install uses a MySQL database which is automatically backed up nightly. This is not the case with the bitwarden_rs. Instead you should use a backup program to create incremental backups.
+
