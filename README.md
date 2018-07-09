@@ -207,7 +207,7 @@ The sqlite3 database should be backed up using the proper sqlite3 backup command
 sqlite3 /$DATA_FOLDER/db.sqlite3 ".backup '/$DATA_FOLDER/db-backup/backup.sq3'"
 ```
 
-This command can be run via a CRON job everyday, however note that it will overwrite the same backup.sq3 file each time. This backup file should therefore be saved via incremental back either using a CRON job command that appends a timestamp or from another backup app such as Duplicati.
+This command can be run via a CRON job everyday, however note that it will overwrite the same backup.sq3 file each time. This backup file should therefore be saved via incremental backup either using a CRON job command that appends a timestamp or from another backup app such as Duplicati.
  
 ### 2. the attachements folder
 
