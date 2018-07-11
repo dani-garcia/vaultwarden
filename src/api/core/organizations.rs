@@ -73,6 +73,29 @@ fn delete_organization(org_id: String, data: JsonUpcase<PasswordData>, headers: 
     }
 }
 
+#[post("/organizations/<org_id>/leave")]
+fn leave_organization(org_id: String, headers: Headers, conn: DbConn) -> EmptyResult {
+    match UserOrganization::find_by_user_and_org(&headers.user.uuid, &org_id, &conn) {
+        None => err!("User not part of organization"),
+        Some(user_org) => {
+            if user_org.type_ == UserOrgType::Owner as i32 {
+                let num_owners = UserOrganization::find_by_org_and_type(
+                    &org_id, UserOrgType::Owner as i32, &conn)
+                    .len();
+
+                if num_owners <= 1 {
+                    err!("The last owner can't leave")
+                }
+            }
+            
+            match user_org.delete(&conn) {
+                Ok(()) => Ok(()),
+                Err(_) => err!("Failed leaving the organization")
+            }
+        }
+    }
+}
+
 #[get("/organizations/<org_id>")]
 fn get_organization(org_id: String, _headers: OwnerHeaders, conn: DbConn) -> JsonResult {
     match Organization::find_by_uuid(&org_id, &conn) {
