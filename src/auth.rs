@@ -111,7 +111,11 @@ impl<'a, 'r> FromRequest<'a, 'r> for Headers {
 
         // Get host
         let host = match headers.get_one("Host") {
-            Some(host) => format!("http://{}", host), // TODO: Check if HTTPS
+            Some(host) => {
+                use std::env;
+                let protocol = if env::var("ROCKET_TLS").is_ok() {"https"} else {"http"};
+                format!("{}://{}", protocol, host)
+            },
             _ => String::new()
         };
 
