@@ -6,6 +6,7 @@ FROM node:9-alpine as vault
 
 ENV VAULT_VERSION "1.27.0"
 ENV URL "https://github.com/bitwarden/web/archive/v${VAULT_VERSION}.tar.gz"
+ENV ROCKET_ENV "staging"
 
 RUN apk add --update-cache --upgrade \
     curl \
@@ -86,6 +87,4 @@ COPY --from=vault /web-vault ./web-vault
 COPY --from=build app/target/release/bitwarden_rs .
 
 # Configures the startup!
-# Use production to disable Rocket logging
-#CMD ROCKET_ENV=production ./bitwarden_rs
-CMD ROCKET_ENV=staging ./bitwarden_rs
+CMD ./bitwarden_rs
