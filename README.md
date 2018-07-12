@@ -2,9 +2,6 @@ This is Bitwarden server API implementation written in rust compatible with [ups
 
 Image is based on [Rust implementation of Bitwarden API](https://github.com/dani-garcia/bitwarden_rs).
 
-It is also packaged for Archlinux: There is an AUR package [with](https://aur.archlinux.org/packages/bitwarden_rs-vault-git/) and 
-[without](https://aur.archlinux.org/packages/bitwarden_rs-git/) the vault web interface.
-
 _*Note, that this project is not associated with the [Bitwarden](https://bitwarden.com/) project nor 8bit Solutions LLC._
 
 ## Features
@@ -198,7 +195,6 @@ docker build -t bitwarden_rs .
 ## Building binary
 
 For building binary outside the Docker environment and running it locally without docker, please see [build instructions](BUILD.md).
-
 
 ## Backing up your vault
 
