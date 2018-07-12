@@ -196,7 +196,6 @@ docker build -t bitwarden_rs .
 
 For building binary outside the Docker environment and running it locally without docker, please see [build instructions](BUILD.md).
 
-
 ## Backing up your vault
 
 ### 1. the sqlite3 database
