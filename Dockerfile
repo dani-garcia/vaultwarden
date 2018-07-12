@@ -6,7 +6,6 @@ FROM node:9-alpine as vault
 
 ENV VAULT_VERSION "1.27.0"
 ENV URL "https://github.com/bitwarden/web/archive/v${VAULT_VERSION}.tar.gz"
-ENV ROCKET_ENV "staging"
 
 RUN apk add --update-cache --upgrade \
     curl \
@@ -67,6 +66,8 @@ RUN cargo build --release
 # Create a new stage with a minimal image
 # because we already have a binary built
 FROM debian:stretch-slim
+
+ENV ROCKET_ENV "staging"
 
 # Install needed libraries
 RUN apt-get update && apt-get install -y\
