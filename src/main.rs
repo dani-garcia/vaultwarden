@@ -165,6 +165,7 @@ pub struct Config {
     signups_allowed: bool,
     password_iterations: i32,
     domain: String,
+    domain_set: bool,
 }
 
 impl Config {
@@ -173,6 +174,8 @@ impl Config {
 
         let df = env::var("DATA_FOLDER").unwrap_or("data".into());
         let key = env::var("RSA_KEY_FILENAME").unwrap_or(format!("{}/{}", &df, "rsa_key"));
+
+        let domain = env::var("DOMAIN");
 
         Config {
             database_url: env::var("DATABASE_URL").unwrap_or(format!("{}/{}", &df, "db.sqlite3")),
@@ -189,7 +192,8 @@ impl Config {
             local_icon_extractor: util::parse_option_string(env::var("LOCAL_ICON_EXTRACTOR").ok()).unwrap_or(false),
             signups_allowed: util::parse_option_string(env::var("SIGNUPS_ALLOWED").ok()).unwrap_or(true),
             password_iterations: util::parse_option_string(env::var("PASSWORD_ITERATIONS").ok()).unwrap_or(100_000),
-            domain: env::var("DOMAIN").unwrap_or("https://localhost".into()),
+            domain_set: domain.is_ok(),
+            domain: domain.unwrap_or("http://localhost".into()),
         }
     }
 }

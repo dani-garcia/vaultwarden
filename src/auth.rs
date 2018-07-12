@@ -109,14 +109,32 @@ impl<'a, 'r> FromRequest<'a, 'r> for Headers {
     fn from_request(request: &'a Request<'r>) -> request::Outcome<Self, Self::Error> {
         let headers = request.headers();
 
+        println!("{:#?}", headers);
+
         // Get host
-        let host = match headers.get_one("Host") {
-            Some(host) => {
-                use std::env;
-                let protocol = if env::var("ROCKET_TLS").is_ok() {"https"} else {"http"};
-                format!("{}://{}", protocol, host)
-            },
-            _ => String::new()
+        let host = if CONFIG.domain_set {
+            CONFIG.domain.clone()
+        } else if let Some(referer) = headers.get_one("Referer") {
+            referer.to_string()
+        } else {   
+            // Try to guess from the headers
+            use std::env;
+
+            let protocol = if let Some(proto) = headers.get_one("X-Forwarded-Proto") {
+                proto
+            } else if env::var("ROCKET_TLS").is_ok() {
+                "https"
+            } else {
+                "http"
+            };
+
+            let host = if let Some(host) = headers.get_one("Host") {
+                host
+            } else {
+                ""
+            };
+
+            format!("{}://{}", protocol, host)
         };
 
         // Get access_token
