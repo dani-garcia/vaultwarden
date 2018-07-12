@@ -4,13 +4,13 @@ use std::path::{Path, PathBuf};
 use rocket::request::Request;
 use rocket::response::{self, NamedFile, Responder};
 use rocket::Route;
-use rocket_contrib::Json;
+use rocket_contrib::{Json, Value};
 
 use CONFIG;
 
 pub fn routes() -> Vec<Route> {
     if CONFIG.web_vault_enabled {
-        routes![web_index, web_files, attachments, alive]
+        routes![web_index, app_id, web_files, attachments, alive]
     } else {
         routes![attachments, alive]
     }
@@ -20,6 +20,20 @@ pub fn routes() -> Vec<Route> {
 #[get("/")]
 fn web_index() -> WebHeaders<io::Result<NamedFile>> {
     web_files("index.html".into())
+}
+
+#[get("/app-id.json")]
+fn app_id() -> WebHeaders<Json<Value>> {
+    WebHeaders(Json(json!({
+    "trustedFacets": [
+        {
+        "version": { "major": 1, "minor": 0 },
+        "ids": [
+            &CONFIG.domain,
+            "ios:bundle-id:com.8bit.bitwarden",
+            "android:apk-key-hash:dUGFzUzf3lmHSLBDBIv+WaFyZMI" ]
+        }]
+    })))
 }
 
 #[get("/<p..>", rank = 1)] // Only match this if the other routes don't match

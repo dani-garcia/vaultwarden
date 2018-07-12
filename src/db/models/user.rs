@@ -27,7 +27,8 @@ pub struct User {
     pub private_key: Option<String>,
     pub public_key: Option<String>,
     
-    pub totp_secret: Option<String>,
+    #[column_name = "totp_secret"]
+    _totp_secret: Option<String>,
     pub totp_recover: Option<String>,
 
     pub security_stamp: String,
@@ -64,7 +65,7 @@ impl User {
             private_key: None,
             public_key: None,
             
-            totp_secret: None,
+            _totp_secret: None,
             totp_recover: None,
 
             equivalent_domains: "[]".to_string(),
@@ -97,28 +98,6 @@ impl User {
     pub fn reset_security_stamp(&mut self) {
         self.security_stamp = Uuid::new_v4().to_string();
     }
-
-    pub fn requires_twofactor(&self) -> bool {
-        self.totp_secret.is_some()
-    }
-
-    pub fn check_totp_code(&self, totp_code: u64) -> bool {
-        if let Some(ref totp_secret) = self.totp_secret {
-            // Validate totp
-            use data_encoding::BASE32;
-            use oath::{totp_raw_now, HashType};
-
-            let decoded_secret = match BASE32.decode(totp_secret.as_bytes()) {
-                Ok(s) => s,
-                Err(_) => return false
-            };
-
-            let generated = totp_raw_now(&decoded_secret, 6, 0, 30, &HashType::SHA1);
-            generated == totp_code
-        } else {
-            true
-        }
-    }
 }
 
 use diesel;
@@ -130,9 +109,12 @@ use db::schema::users;
 impl User {
     pub fn to_json(&self, conn: &DbConn) -> JsonValue {
         use super::UserOrganization;
+        use super::TwoFactor;
 
         let orgs = UserOrganization::find_by_user(&self.uuid, conn);
         let orgs_json: Vec<JsonValue> = orgs.iter().map(|c| c.to_json(&conn)).collect();
+
+        let twofactor_enabled = TwoFactor::find_by_user(&self.uuid, conn).len() > 0;
 
         json!({
             "Id": self.uuid,
@@ -142,7 +124,7 @@ impl User {
             "Premium": true,
             "MasterPasswordHint": self.password_hint,
             "Culture": "en-US",
-            "TwoFactorEnabled": self.totp_secret.is_some(),
+            "TwoFactorEnabled": twofactor_enabled,
             "Key": self.key,
             "PrivateKey": self.private_key,
             "SecurityStamp": self.security_stamp,

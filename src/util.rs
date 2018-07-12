@@ -132,7 +132,9 @@ pub fn format_date(date: &NaiveDateTime) -> String {
 use std::fmt;
 
 use serde::de::{self, DeserializeOwned, Deserializer, MapAccess, SeqAccess, Visitor};
-use serde_json::Value;
+use serde_json::{self, Value};
+
+pub type JsonMap = serde_json::Map<String, Value>;
 
 #[derive(PartialEq, Serialize, Deserialize)]
 pub struct UpCase<T: DeserializeOwned> {
@@ -162,8 +164,7 @@ impl<'de> Visitor<'de> for UpCaseVisitor {
     fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
         where A: MapAccess<'de>
     {
-        use serde_json::Map;
-        let mut result_map = Map::<String, Value>::new();
+        let mut result_map = JsonMap::new();
 
         while let Some((key, value)) = map.next_entry()? {
             result_map.insert(upcase_first(key), upcase_value(&value));

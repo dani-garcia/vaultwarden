@@ -43,11 +43,14 @@ impl Device {
         }
     }
 
-    pub fn refresh_twofactor_remember(&mut self) {
+    pub fn refresh_twofactor_remember(&mut self) -> String {
         use data_encoding::BASE64;
         use crypto;
 
-        self.twofactor_remember = Some(BASE64.encode(&crypto::get_random(vec![0u8; 180])));
+        let twofactor_remember = BASE64.encode(&crypto::get_random(vec![0u8; 180]));
+        self.twofactor_remember = Some(twofactor_remember.clone());
+
+        twofactor_remember
     }
 
     pub fn delete_twofactor_remember(&mut self) {

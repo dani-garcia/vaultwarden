@@ -2,7 +2,7 @@ mod accounts;
 mod ciphers;
 mod folders;
 mod organizations;
-mod two_factor;
+pub(crate) mod two_factor;
 
 use self::accounts::*;
 use self::ciphers::*;
@@ -58,9 +58,11 @@ pub fn routes() -> Vec<Route> {
         get_twofactor,
         get_recover,
         recover,
+        disable_twofactor,
         generate_authenticator,
         activate_authenticator,
-        disable_authenticator,
+        generate_u2f,
+        activate_u2f,
 
         get_organization,
         create_organization,

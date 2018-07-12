@@ -1,19 +1,21 @@
 use std::collections::HashMap;
 
-use rocket::{Route, Outcome};
-use rocket::request::{self, Request, FromRequest, Form, FormItems, FromForm};
+use rocket::request::{self, Form, FormItems, FromForm, FromRequest, Request};
+use rocket::{Outcome, Route};
 
 use rocket_contrib::{Json, Value};
 
-use db::DbConn;
+use num_traits::FromPrimitive;
+
 use db::models::*;
+use db::DbConn;
 
-use util;
+use util::{self, JsonMap};
 
-use api::JsonResult;
+use api::{ApiResult, JsonResult};
 
 pub fn routes() -> Vec<Route> {
-    routes![ login]
+    routes![login]
 }
 
 #[post("/connect/token", data = "<connect_data>")]
@@ -21,8 +23,8 @@ fn login(connect_data: Form<ConnectData>, device_type: DeviceType, conn: DbConn)
     let data = connect_data.get();
 
     match data.grant_type {
-        GrantType::RefreshToken =>_refresh_login(data, device_type, conn),
-        GrantType::Password => _password_login(data, device_type, conn)
+        GrantType::RefreshToken => _refresh_login(data, device_type, conn),
+        GrantType::Password => _password_login(data, device_type, conn),
     }
 }
 
@@ -33,7 +35,7 @@ fn _refresh_login(data: &ConnectData, _device_type: DeviceType, conn: DbConn) ->
     // Get device by refresh token
     let mut device = match Device::find_by_refresh_token(token, &conn) {
         Some(device) => device,
-        None => err!("Invalid refresh token")
+        None => err!("Invalid refresh token"),
     };
 
     // COMMON
@@ -64,7 +66,7 @@ fn _password_login(data: &ConnectData, device_type: DeviceType, conn: DbConn) ->
     let username = data.get("username");
     let user = match User::find_by_mail(username, &conn) {
         Some(user) => user,
-        None => err!("Username or password is incorrect. Try again.")
+        None => err!("Username or password is incorrect. Try again."),
     };
 
     // Check password
@@ -72,7 +74,7 @@ fn _password_login(data: &ConnectData, device_type: DeviceType, conn: DbConn) ->
     if !user.check_valid_password(password) {
         err!("Username or password is incorrect. Try again.")
     }
-    
+
     // Let's only use the header and ignore the 'devicetype' parameter
     let device_type_num = device_type.0;
 
@@ -102,42 +104,7 @@ fn _password_login(data: &ConnectData, device_type: DeviceType, conn: DbConn) ->
         }
     };
 
-    let twofactor_token = if user.requires_twofactor() {
-        let twofactor_provider = util::parse_option_string(data.get_opt("twoFactorProvider")).unwrap_or(0);
-        let twofactor_code = match data.get_opt("twoFactorToken") {
-            Some(code) => code,
-            None => err_json!(_json_err_twofactor())
-        };
-
-       match twofactor_provider {
-            0 /* TOTP */ => { 
-                let totp_code: u64 = match twofactor_code.parse() {
-                    Ok(code) => code,
-                    Err(_) => err!("Invalid Totp code")
-                };
-
-                if !user.check_totp_code(totp_code) {
-                    err_json!(_json_err_twofactor())
-                }
-
-                if util::parse_option_string(data.get_opt("twoFactorRemember")).unwrap_or(0) == 1 {
-                    device.refresh_twofactor_remember();
-                    device.twofactor_remember.clone()
-                } else {
-                    device.delete_twofactor_remember();
-                    None
-                }
-            },
-            5 /* Remember */ => {
-                match device.twofactor_remember {
-                    Some(ref remember) if remember == twofactor_code => (),
-                    _ => err_json!(_json_err_twofactor())
-                };
-                None // No twofactor token needed here
-            },
-            _ => err!("Invalid two factor provider"),
-        }
-    } else { None };  // No twofactor token if twofactor is disabled
+    let twofactor_token = twofactor_auth(&user.uuid, &data, &mut device, &conn)?;
 
     // Common
     let user = User::find_by_uuid(&device.user_uuid, &conn).unwrap();
@@ -163,13 +130,124 @@ fn _password_login(data: &ConnectData, device_type: DeviceType, conn: DbConn) ->
     Ok(Json(result))
 }
 
-fn _json_err_twofactor() -> Value {
-    json!({
+fn twofactor_auth(
+    user_uuid: &str,
+    data: &ConnectData,
+    device: &mut Device,
+    conn: &DbConn,
+) -> ApiResult<Option<String>> {
+    let twofactors_raw = TwoFactor::find_by_user(user_uuid, conn);
+    // Remove u2f challenge twofactors (impl detail)
+    let twofactors: Vec<_> = twofactors_raw.iter().filter(|tf| tf.type_ < 1000).collect();
+
+    let providers: Vec<_> = twofactors.iter().map(|tf| tf.type_).collect();
+
+    // No twofactor token if twofactor is disabled
+    if twofactors.len() == 0 {
+        return Ok(None);
+    }
+
+    let provider = match util::parse_option_string(data.get_opt("twoFactorProvider")) {
+        Some(provider) => provider,
+        None => providers[0], // If we aren't given a two factor provider, asume the first one
+    };
+
+    let twofactor_code = match data.get_opt("twoFactorToken") {
+        Some(code) => code,
+        None => err_json!(_json_err_twofactor(&providers, user_uuid, conn)?),
+    };
+
+    let twofactor = twofactors.iter().filter(|tf| tf.type_ == provider).nth(0);
+
+    match TwoFactorType::from_i32(provider) {
+        Some(TwoFactorType::Remember) => {
+            match &device.twofactor_remember {
+                Some(remember) if remember == twofactor_code => return Ok(None), // No twofactor token needed here
+                _ => err_json!(_json_err_twofactor(&providers, user_uuid, conn)?),
+            }
+        }
+
+        Some(TwoFactorType::Authenticator) => {
+            let twofactor = match twofactor {
+                Some(tf) => tf,
+                None => err!("TOTP not enabled"),
+            };
+
+            let totp_code: u64 = match twofactor_code.parse() {
+                Ok(code) => code,
+                _ => err!("Invalid TOTP code"),
+            };
+
+            if !twofactor.check_totp_code(totp_code) {
+                err_json!(_json_err_twofactor(&providers, user_uuid, conn)?)
+            }
+        }
+
+        Some(TwoFactorType::U2f) => {
+            use api::core::two_factor;
+
+            two_factor::validate_u2f_login(user_uuid, twofactor_code, conn)?;
+        }
+
+        _ => err!("Invalid two factor provider"),
+    }
+
+    if util::parse_option_string(data.get_opt("twoFactorRemember")).unwrap_or(0) == 1 {
+        Ok(Some(device.refresh_twofactor_remember()))
+    } else {
+        device.delete_twofactor_remember();
+        Ok(None)
+    }
+}
+
+fn _json_err_twofactor(providers: &[i32], user_uuid: &str, conn: &DbConn) -> ApiResult<Value> {
+    use api::core::two_factor;
+
+    let mut result = json!({
         "error" : "invalid_grant",
         "error_description" : "Two factor required.",
-        "TwoFactorProviders" : [ 0 ],
-        "TwoFactorProviders2" : { "0" : null }
-    })
+        "TwoFactorProviders" : providers,
+        "TwoFactorProviders2" : {} // { "0" : null }
+    });
+
+    for provider in providers {
+        result["TwoFactorProviders2"][provider.to_string()] = Value::Null;
+
+        match TwoFactorType::from_i32(*provider) {
+            Some(TwoFactorType::Authenticator) => { /* Nothing to do for TOTP */ }
+
+            Some(TwoFactorType::U2f) => {
+                let request = two_factor::generate_u2f_login(user_uuid, conn)?;
+                let mut challenge_list = Vec::new();
+
+                for key in request.registered_keys {
+                    let mut challenge_map = JsonMap::new();
+
+                    challenge_map.insert("appId".into(), Value::String(request.app_id.clone()));
+                    challenge_map
+                        .insert("challenge".into(), Value::String(request.challenge.clone()));
+                    challenge_map.insert("version".into(), Value::String(key.version));
+                    challenge_map.insert(
+                        "keyHandle".into(),
+                        Value::String(key.key_handle.unwrap_or_default()),
+                    );
+
+                    challenge_list.push(Value::Object(challenge_map));
+                }
+
+                let mut map = JsonMap::new();
+                use serde_json;
+                let challenge_list_str = serde_json::to_string(&challenge_list).unwrap();
+
+                map.insert("Challenges".into(), Value::String(challenge_list_str));
+                result["TwoFactorProviders2"][provider.to_string()] = Value::Object(map);
+            }
+
+            _ => {}
+        }
+    }
+
+    Ok(result)
 }
 
 #[derive(Clone, Copy)]
@@ -187,7 +265,6 @@ impl<'a, 'r> FromRequest<'a, 'r> for DeviceType {
     }
 }
 
-
 #[derive(Debug)]
 struct ConnectData {
     grant_type: GrantType,
@@ -196,7 +273,10 @@ struct ConnectData {
 }
 
 #[derive(Debug, Copy, Clone)]
-enum GrantType { RefreshToken, Password }
+enum GrantType {
+    RefreshToken,
+    Password,
+}
 
 impl ConnectData {
     fn get(&self, key: &str) -> &String {
@@ -227,25 +307,28 @@ impl<'f> FromForm<'f> for ConnectData {
         }
 
         // Validate needed values
-        let (grant_type, is_device) =
-            match data.get("grant_type").map(String::as_ref) {
-                Some("refresh_token") => {
-                    check_values(&data, &VALUES_REFRESH)?;
-                    (GrantType::RefreshToken, false) // Device doesn't matter here
-                }
-                Some("password") => {
-                    check_values(&data, &VALUES_PASSWORD)?;
+        let (grant_type, is_device) = match data.get("grant_type").map(String::as_ref) {
+            Some("refresh_token") => {
+                check_values(&data, &VALUES_REFRESH)?;
+                (GrantType::RefreshToken, false) // Device doesn't matter here
+            }
+            Some("password") => {
+                check_values(&data, &VALUES_PASSWORD)?;
 
-                    let is_device = match data["client_id"].as_ref() {
-                        "browser" | "mobile" => check_values(&data, &VALUES_DEVICE)?,
-                        _ => false
-                    };
-                    (GrantType::Password, is_device)
-                }
-                _ => return Err("Grant type not supported".to_string())
-            };
+                let is_device = match data["client_id"].as_ref() {
+                    "browser" | "mobile" => check_values(&data, &VALUES_DEVICE)?,
+                    _ => false,
+                };
+                (GrantType::Password, is_device)
+            }
+            _ => return Err("Grant type not supported".to_string()),
+        };
 
-        Ok(ConnectData { grant_type, is_device, data })
+        Ok(ConnectData {
+            grant_type,
+            is_device,
+            data,
+        })
     }
 }
 

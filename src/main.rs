@@ -19,9 +19,13 @@ extern crate chrono;
 extern crate oath;
 extern crate data_encoding;
 extern crate jsonwebtoken as jwt;
+extern crate u2f;
 extern crate dotenv;
 #[macro_use]
 extern crate lazy_static;
+#[macro_use]
+extern crate num_derive;
+extern crate num_traits;
 
 use std::{env, path::Path, process::{exit, Command}};
 use rocket::Rocket;
@@ -160,6 +164,7 @@ pub struct Config {
     local_icon_extractor: bool,
     signups_allowed: bool,
     password_iterations: i32,
+    domain: String,
 }
 
 impl Config {
@@ -184,6 +189,7 @@ impl Config {
             local_icon_extractor: util::parse_option_string(env::var("LOCAL_ICON_EXTRACTOR").ok()).unwrap_or(false),
             signups_allowed: util::parse_option_string(env::var("SIGNUPS_ALLOWED").ok()).unwrap_or(true),
             password_iterations: util::parse_option_string(env::var("PASSWORD_ITERATIONS").ok()).unwrap_or(100_000),
+            domain: env::var("DOMAIN").unwrap_or("https://localhost".into()),
         }
     }
 }

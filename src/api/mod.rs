@@ -1,4 +1,4 @@
-mod core;
+pub(crate) mod core;
 mod icons;
 mod identity;
 mod web;
@@ -12,8 +12,9 @@ use rocket::response::status::BadRequest;
 use rocket_contrib::Json;
 
 // Type aliases for API methods results
-type JsonResult = Result<Json, BadRequest<Json>>;
-type EmptyResult = Result<(), BadRequest<Json>>;
+type ApiResult<T> = Result<T, BadRequest<Json>>;
+type JsonResult = ApiResult<Json>;
+type EmptyResult = ApiResult<()>;
 
 use util;
 type JsonUpcase<T> = Json<util::UpCase<T>>;

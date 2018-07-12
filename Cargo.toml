@@ -16,8 +16,8 @@ reqwest = "0.8.6"
 multipart = "0.14.2"
 
 # A generic serialization/deserialization framework
-serde = "1.0.68"
-serde_derive = "1.0.68"
+serde = "1.0.70"
+serde_derive = "1.0.70"
 serde_json = "1.0.22"
 
 # A safe, extensible ORM and Query builder
@@ -45,11 +45,22 @@ data-encoding = "2.1.1"
 # JWT library
 jsonwebtoken = "= 4.0.1"
 
+# U2F library
+u2f = "0.1.2"
+
 # A `dotenv` implementation for Rust
 dotenv = { version = "0.13.0", default-features = false }
 
 # Lazy static macro
 lazy_static = "1.0.1"
 
+# Numerical libraries
+num-traits = "0.2.5"
+num-derive = "0.2.2"
+
 [patch.crates-io]
-jsonwebtoken = { path = "libs/jsonwebtoken" } # Make jwt use ring 0.11, to match rocket
+ # Make jwt use ring 0.11, to match rocket
+jsonwebtoken = { path = "libs/jsonwebtoken" }
+
+# Version 0.1.2 from crates.io lacks a commit that fixes a certificate error
+u2f = { git = 'https://github.com/wisespace-io/u2f-rs', rev = '193de35093a44' }

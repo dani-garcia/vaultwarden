@@ -11,11 +11,11 @@ use serde::ser::Serialize;
 use CONFIG;
 
 const JWT_ALGORITHM: jwt::Algorithm = jwt::Algorithm::RS256;
- // TODO: This isn't used, but we  should make sure it represents the correct address
-pub const JWT_ISSUER: &str = "localhost:8000/identity";
 
 lazy_static! {
     pub static ref DEFAULT_VALIDITY: Duration = Duration::hours(2);
+    pub static ref JWT_ISSUER: String = CONFIG.domain.clone();
+
     static ref JWT_HEADER: jwt::Header = jwt::Header::new(JWT_ALGORITHM);
 
     static ref PRIVATE_RSA_KEY: Vec<u8> = match read_file(&CONFIG.private_rsa_key) {
@@ -43,7 +43,7 @@ pub fn decode_jwt(token: &str) -> Result<JWTClaims, String> {
         validate_iat: true,
         validate_nbf: true,
         aud: None,
-        iss: Some(JWT_ISSUER.into()),
+        iss: Some(JWT_ISSUER.clone()),
         sub: None,
         algorithms: vec![JWT_ALGORITHM],
     };

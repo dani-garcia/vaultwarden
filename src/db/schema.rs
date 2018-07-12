@@ -80,6 +80,17 @@ table! {
 }
 
 table! {
+    twofactor (uuid) {
+        uuid -> Text,
+        user_uuid -> Text,
+        #[sql_name = "type"]
+        type_ -> Integer,
+        enabled -> Bool,
+        data -> Text,
+    }
+}
+
+table! {
     users (uuid) {
         uuid -> Text,
         created_at -> Timestamp,
@@ -132,6 +143,7 @@ joinable!(devices -> users (user_uuid));
 joinable!(folders -> users (user_uuid));
 joinable!(folders_ciphers -> ciphers (cipher_uuid));
 joinable!(folders_ciphers -> folders (folder_uuid));
+joinable!(twofactor -> users (user_uuid));
 joinable!(users_collections -> collections (collection_uuid));
 joinable!(users_collections -> users (user_uuid));
 joinable!(users_organizations -> organizations (org_uuid));
@@ -146,6 +158,7 @@ allow_tables_to_appear_in_same_query!(
     folders,
     folders_ciphers,
     organizations,
+    twofactor,
     users,
     users_collections,
     users_organizations,
