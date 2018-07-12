@@ -109,8 +109,6 @@ impl<'a, 'r> FromRequest<'a, 'r> for Headers {
     fn from_request(request: &'a Request<'r>) -> request::Outcome<Self, Self::Error> {
         let headers = request.headers();
 
-        println!("{:#?}", headers);
-
         // Get host
         let host = if CONFIG.domain_set {
             CONFIG.domain.clone()
