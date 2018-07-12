@@ -128,7 +128,9 @@ impl<'a, 'r> FromRequest<'a, 'r> for Headers {
                 "http"
             };
 
-            let host = if let Some(host) = headers.get_one("Host") {
+            let host = if let Some(host) = headers.get_one("X-Forwarded-Host") {
+                host
+            } else if let Some(host) = headers.get_one("Host") {
                 host
             } else {
                 ""
