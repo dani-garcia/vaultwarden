@@ -3,7 +3,7 @@ use serde_json::Value as JsonValue;
 
 use uuid::Uuid;
 
-use super::{User, Organization, Attachment, FolderCipher, CollectionCipher, UserOrgType};
+use super::{User, Organization, Attachment, FolderCipher, CollectionCipher, UserOrgType, UserOrgStatus};
 
 #[derive(Debug, Identifiable, Queryable, Insertable, Associations)]
 #[table_name = "ciphers"]
@@ -266,7 +266,9 @@ impl Cipher {
         ciphers::table
         .left_join(users_organizations::table.on(
             ciphers::organization_uuid.eq(users_organizations::org_uuid.nullable()).and(
-                users_organizations::user_uuid.eq(user_uuid)
+                users_organizations::user_uuid.eq(user_uuid).and(
+                    users_organizations::status.eq(UserOrgStatus::Confirmed as i32)
+                )
             )
         ))
         .left_join(ciphers_collections::table)
