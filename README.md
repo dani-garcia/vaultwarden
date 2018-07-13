@@ -11,13 +11,14 @@ _*Note, that this project is not associated with the [Bitwarden](https://bitward
   - [Updating the bitwarden image](#updating-the-bitwarden-image)
 - [Configuring bitwarden service](#configuring-bitwarden-service)
   - [Disable registration of new users](#disable-registration-of-new-users)
+  - [Enabling HTTPS](#enabling-https)
+  - [Enabling U2F authentication](#enabling-u2f-authentication)
   - [Changing persistent data location](#changing-persistent-data-location)
     - [/data prefix:](#data-prefix)
     - [database name and location](#database-name-and-location)
     - [attachments location](#attachments-location)
     - [icons cache](#icons-cache)
   - [Changing the API request size limit](#changing-the-api-request-size-limit)
-  - [Enabling HTTPS](#enabling-https)
   - [Other configuration](#other-configuration)
 - [Building your own image](#building-your-own-image)
 - [Building binary](#building-binary)
@@ -41,6 +42,14 @@ Basically full implementation of Bitwarden API is provided including:
  * Vault API support 
  * Serving the static files for Vault interface
  * Website icons API
+ * Authenticator and U2F support
+ 
+## Missing features
+* Email confirmation
+* Other two-factor systems:
+  * YubiKey OTP (if your key supports U2F, you can use that)
+  * Duo
+  * Email codes
 
 ## Docker image usage
 
@@ -108,6 +117,44 @@ docker run -d --name bitwarden \
   -p 80:80 \
   mprasil/bitwarden:latest
 ```
+
+### Enabling HTTPS
+To enable HTTPS, you need to configure the `ROCKET_TLS`.
+
+The values to the option must follow the format:
+```
+ROCKET_TLS={certs="/path/to/certs.pem",key="/path/to/key.pem"}
+```
+Where:
+- certs: a path to a certificate chain in PEM format
+- key: a path to a private key file in PEM format for the certificate in certs
+
+```sh
+docker run -d --name bitwarden \
+  -e ROCKET_TLS={certs='"/ssl/certs.pem",key="/ssl/key.pem"}' \
+  -v /ssl/keys/:/ssl/ \
+  -v /bw-data/:/data/ \
+  -v /icon_cache/ \
+  -p 443:443 \
+  mprasil/bitwarden:latest
+```
+Note that you need to mount ssl files and you need to forward appropriate port.
+
+### Enabling U2F authentication
+To enable U2F authentication, you must be serving bitwarden_rs from an HTTPS domain with a valid certificate (Either using the included
+HTTPS options or with a reverse proxy). We recommend using a free certificate from Let's Encrypt.
+
+After that, you need to set the `DOMAIN` environment variable to the same address from where bitwarden_rs is being served:
+
+```sh
+docker run -d --name bitwarden \
+  -e DOMAIN=https://bw.domain.tld \
+  -v /bw-data/:/data/ \
+  -p 80:80 \
+  mprasil/bitwarden:latest
+```
+
+Note that the value has to include the `https://` and it may include a port at the end (in the format of `https://bw.domain.tld:port`) when not using `443`.
 
 ### Changing persistent data location
 
@@ -183,28 +230,6 @@ docker run -d --name bitwarden \
   -p 80:80 \
   mprasil/bitwarden:latest
 ```
-
-### Enabling HTTPS
-To enable HTTPS, you need to configure the `ROCKET_TLS`.
-
-The values to the option must follow the format:
-```
-ROCKET_TLS={certs="/path/to/certs.pem",key="/path/to/key.pem"}
-```
-Where:
-- certs: a path to a certificate chain in PEM format
-- key: a path to a private key file in PEM format for the certificate in certs
-
-```sh
-docker run -d --name bitwarden \
-  -e ROCKET_TLS={certs='"/ssl/certs.pem",key="/ssl/key.pem"}' \
-  -v /ssl/keys/:/ssl/ \
-  -v /bw-data/:/data/ \
-  -v /icon_cache/ \
-  -p 443:443 \
-  mprasil/bitwarden:latest
-```
-Note that you need to mount ssl files and you need to forward appropriate port.
 
 ### Other configuration
 

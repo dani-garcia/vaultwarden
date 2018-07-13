@@ -3,7 +3,8 @@
 ///
 #[macro_export]
 macro_rules! err {
-    ($err:expr, $err_desc:expr, $msg:expr) => {
+    ($err:expr, $err_desc:expr, $msg:expr) => {{
+        println!("ERROR: {}", $msg);
         err_json!(json!({
           "error": $err,
           "error_description": $err_desc,
@@ -13,14 +14,13 @@ macro_rules! err {
             "Object": "error"
           }
         }))
-    };
+    }};
     ($msg:expr) => { err!("default_error", "default_error_description", $msg) }
 }
 
 #[macro_export]
 macro_rules! err_json {
     ($expr:expr) => {{
-        println!("ERROR: {}", $expr);
         return Err($crate::rocket::response::status::BadRequest(Some($crate::rocket_contrib::Json($expr))));
     }}
 }

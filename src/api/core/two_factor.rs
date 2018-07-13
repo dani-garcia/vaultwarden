@@ -217,6 +217,10 @@ lazy_static! {
 
 #[post("/two-factor/get-u2f", data = "<data>")]
 fn generate_u2f(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn) -> JsonResult {
+    if !CONFIG.domain_set {
+        err!("`DOMAIN` environment variable is not set. U2F disabled")
+    }
+
     let data: PasswordData = data.into_inner().data;
 
     if !headers.user.check_valid_password(&data.MasterPasswordHash) {
@@ -298,8 +302,6 @@ fn activate_u2f(data: JsonUpcase<EnableU2FData>, headers: Headers, conn: DbConn)
         tf_challenge
             .delete(&conn)
             .expect("Error deleting U2F register challenge");
-
-        println!("RegisterResponse {:#?}", &data.DeviceResponse);
 
         let response_copy: RegisterResponseCopy =
             serde_json::from_str(&data.DeviceResponse).expect("Can't parse RegisterResponse data");
@@ -388,7 +390,6 @@ impl Into<Registration> for RegistrationCopy {
 }
 
 fn _parse_registrations(registations: &str) -> Vec<Registration> {
-    println!("Registrations {:#?}", registations);
     let registrations_copy: Vec<RegistrationCopy> =
         serde_json::from_str(registations).expect("Can't parse RegistrationCopy data");
 
@@ -418,8 +419,6 @@ pub fn validate_u2f_login(user_uuid: &str, response: &str, conn: &DbConn) -> Api
 
     let challenge = match tf_challenge {
         Some(tf_challenge) => {
-            println!("challenge {:#?}", &tf_challenge.data);
-
             let challenge: Challenge = serde_json::from_str(&tf_challenge.data)
                 .expect("Can't parse U2fLoginChallenge data");
             tf_challenge
@@ -436,8 +435,6 @@ pub fn validate_u2f_login(user_uuid: &str, response: &str, conn: &DbConn) -> Api
     };
 
     let registrations = _parse_registrations(&twofactor.data);
-
-    println!("response {:#?}", response);
 
     let response: SignResponse =
         serde_json::from_str(response).expect("Can't parse SignResponse data");
