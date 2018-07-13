@@ -26,7 +26,7 @@ struct PasswordData {
     MasterPasswordHash: String
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 #[serde(untagged)]
 enum NumberOrString {
     Number(i32),
