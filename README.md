@@ -4,6 +4,33 @@ Image is based on [Rust implementation of Bitwarden API](https://github.com/dani
 
 _*Note, that this project is not associated with the [Bitwarden](https://bitwarden.com/) project nor 8bit Solutions LLC._
 
+## Table of contents <!-- omit in toc -->
+- [Features](#features)
+- [Docker image usage](#docker-image-usage)
+  - [Starting a container](#starting-a-container)
+  - [Updating the bitwarden image](#updating-the-bitwarden-image)
+- [Configuring bitwarden service](#configuring-bitwarden-service)
+  - [Disable registration of new users](#disable-registration-of-new-users)
+  - [Changing persistent data location](#changing-persistent-data-location)
+    - [/data prefix:](#data-prefix)
+    - [database name and location](#database-name-and-location)
+    - [attachments location](#attachments-location)
+    - [icons cache](#icons-cache)
+  - [Changing the API request size limit](#changing-the-api-request-size-limit)
+  - [Enabling HTTPS](#enabling-https)
+  - [Other configuration](#other-configuration)
+- [Building your own image](#building-your-own-image)
+- [Building binary](#building-binary)
+- [Available packages](#available-packages)
+  - [Arch Linux](#arch-linux)
+- [Backing up your vault](#backing-up-your-vault)
+  - [1. the sqlite3 database](#1-the-sqlite3-database)
+  - [2. the attachments folder](#2-the-attachments-folder)
+  - [3. the key files](#3-the-key-files)
+  - [4. Icon Cache](#4-icon-cache)
+- [Running the server with non-root user](#running-the-server-with-non-root-user)
+- [Get in touch](#get-in-touch)
+
 ## Features
 
 Basically full implementation of Bitwarden API is provided including:
@@ -141,7 +168,7 @@ docker run -d --name bitwarden \
   mprasil/bitwarden:latest
 ```
 
-Note, that in the above example we don't mount the volume locally, which means it won't be persisted during the upgrade unless you use intermediate data container using `--volumes-from`. This will impact performance as bitwarden will have to re-dowload the icons on restart, but might save you from having stale icons in cache as they are not automatically cleaned.
+Note, that in the above example we don't mount the volume locally, which means it won't be persisted during the upgrade unless you use intermediate data container using `--volumes-from`. This will impact performance as bitwarden will have to re-download the icons on restart, but might save you from having stale icons in cache as they are not automatically cleaned.
 
 ### Changing the API request size limit
 
@@ -196,6 +223,13 @@ docker build -t bitwarden_rs .
 
 For building binary outside the Docker environment and running it locally without docker, please see [build instructions](BUILD.md).
 
+## Available packages
+
+### Arch Linux
+
+Bitwarden_rs is already packaged for Archlinux thanks to @mqus. There is an AUR package [with](https://aur.archlinux.org/packages/bitwarden_rs-vault-git/) and 
+[without](https://aur.archlinux.org/packages/bitwarden_rs-git/) the vault web interface available.
+
 ## Backing up your vault
 
 ### 1. the sqlite3 database
@@ -208,7 +242,7 @@ sqlite3 /$DATA_FOLDER/db.sqlite3 ".backup '/$DATA_FOLDER/db-backup/backup.sq3'"
 
 This command can be run via a CRON job everyday, however note that it will overwrite the same backup.sq3 file each time. This backup file should therefore be saved via incremental backup either using a CRON job command that appends a timestamp or from another backup app such as Duplicati.
  
-### 2. the attachements folder
+### 2. the attachments folder
 
 By default, this is located in `$DATA_FOLDER/attachments`
 
@@ -218,9 +252,9 @@ This is optional, these are only used to store tokens of users currently logged 
 
 ### 4. Icon Cache
 
-This is optional, the icon cache can redownload itself however if you have a large cache, it may take a long time. By default it is located in `$DATA_FOLDER/icon_cache`
+This is optional, the icon cache can re-download itself however if you have a large cache, it may take a long time. By default it is located in `$DATA_FOLDER/icon_cache`
 
-## Runing the server with non-root user
+## Running the server with non-root user
 
 The root user inside the container is already pretty limited in what it can do, so the default setup should be secure enough. However if you wish to go the extra mile to avoid using root even in container, here's how you can do that:
 
@@ -238,3 +272,8 @@ docker run -d --name bitwarden \
   -p 80:8080 \
   mprasil/bitwarden:latest
 ```
+## Get in touch
+
+To ask an question, [raising an issue](https://github.com/dani-garcia/bitwarden_rs/issues/new) is fine, also please report any bugs spotted here.
+
+If you prefer to chat, we're usually hanging around at [#bitwarden_rs:matrix.org](https://matrix.to/#/!cASGtOHlSftdScFNMs:matrix.org) room on Matrix. Feel free to join us!

@@ -1,7 +1,6 @@
-## Manual Setup (Advanced)
-_( bitwarden_rs is already packaged for Archlinux: There is an AUR package [with](https://aur.archlinux.org/packages/bitwarden_rs-vault-git/) and 
-[without](https://aur.archlinux.org/packages/bitwarden_rs-git/) the vault web interface available.)_
-### Dependencies
+# Build instructions
+
+## Dependencies
 - `Rust nightly` (strongly recommended to use [rustup](https://rustup.rs/))
 - `OpenSSL` (should be available in path, install through your system's package manager or use the [prebuilt binaries](https://wiki.openssl.org/index.php/Binaries))
 - `NodeJS` (required to build the web-vault, (install through your system's package manager or use the [prebuilt binaries](https://nodejs.org/en/download/))
