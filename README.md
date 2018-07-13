@@ -4,8 +4,10 @@ Image is based on [Rust implementation of Bitwarden API](https://github.com/dani
 
 _*Note, that this project is not associated with the [Bitwarden](https://bitwarden.com/) project nor 8bit Solutions LLC._
 
-## Table of contents <!-- omit in toc -->
+**Table of contents**
+
 - [Features](#features)
+- [Missing features](#missing-features)
 - [Docker image usage](#docker-image-usage)
   - [Starting a container](#starting-a-container)
   - [Updating the bitwarden image](#updating-the-bitwarden-image)

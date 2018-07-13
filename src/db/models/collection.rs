@@ -2,7 +2,7 @@ use serde_json::Value as JsonValue;
 
 use uuid::Uuid;
 
-use super::{Organization, UserOrganization, UserOrgType};
+use super::{Organization, UserOrganization, UserOrgType, UserOrgStatus};
 
 #[derive(Debug, Identifiable, Queryable, Insertable, Associations)]
 #[table_name = "collections"]
@@ -78,13 +78,18 @@ impl Collection {
     pub fn find_by_user_uuid(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
         let mut all_access_collections = users_organizations::table
             .filter(users_organizations::user_uuid.eq(user_uuid))
+            .filter(users_organizations::status.eq(UserOrgStatus::Confirmed as i32))
             .filter(users_organizations::access_all.eq(true))
             .inner_join(collections::table.on(collections::org_uuid.eq(users_organizations::org_uuid)))
             .select(collections::all_columns)
             .load::<Self>(&**conn).expect("Error loading collections");
 
         let mut assigned_collections = users_collections::table.inner_join(collections::table)
+            .left_join(users_organizations::table.on(
+                users_collections::user_uuid.eq(users_organizations::user_uuid)
+            ))
             .filter(users_collections::user_uuid.eq(user_uuid))
+            .filter(users_organizations::status.eq(UserOrgStatus::Confirmed as i32))
             .select(collections::all_columns)
             .load::<Self>(&**conn).expect("Error loading collections");
 
