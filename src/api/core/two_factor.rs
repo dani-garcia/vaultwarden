@@ -269,12 +269,17 @@ fn activate_u2f(data: JsonUpcase<EnableU2FData>, headers: Headers, conn: DbConn)
     );
 
     if let Some(tf_challenge) = tf_challenge {
-        let challenge: Challenge = serde_json::from_str(&tf_challenge.data).unwrap();
+        let challenge: Challenge = serde_json::from_str(&tf_challenge.data)
+            .expect("Can't parse U2fRegisterChallenge data");
+
         tf_challenge
             .delete(&conn)
             .expect("Error deleting U2F register challenge");
 
-        let response: RegisterResponse = serde_json::from_str(&data.DeviceResponse).unwrap();
+        println!("RegisterResponse {:#?}", &data.DeviceResponse);
+
+        let response: RegisterResponse =
+            serde_json::from_str(&data.DeviceResponse).expect("Can't parse DeviceResponse data");
 
         match U2F.register_response(challenge.clone(), response) {
             Ok(registration) => {
@@ -349,7 +354,9 @@ impl Into<Registration> for RegistrationCopy {
 }
 
 fn _parse_registrations(registations: &str) -> Vec<Registration> {
-    let registrations_copy: Vec<RegistrationCopy> = serde_json::from_str(registations).unwrap();
+    println!("Registrations {:#?}", registations);
+    let registrations_copy: Vec<RegistrationCopy> =
+        serde_json::from_str(registations).expect("Can't parse RegistrationCopy data");
 
     registrations_copy.into_iter().map(Into::into).collect()
 }
@@ -377,7 +384,10 @@ pub fn validate_u2f_login(user_uuid: &str, response: &str, conn: &DbConn) -> Api
 
     let challenge = match tf_challenge {
         Some(tf_challenge) => {
-            let challenge: Challenge = serde_json::from_str(&tf_challenge.data).unwrap();
+            println!("challenge {:#?}", &tf_challenge.data);
+
+            let challenge: Challenge = serde_json::from_str(&tf_challenge.data)
+                .expect("Can't parse U2fLoginChallenge data");
             tf_challenge
                 .delete(&conn)
                 .expect("Error deleting U2F login challenge");
@@ -395,11 +405,8 @@ pub fn validate_u2f_login(user_uuid: &str, response: &str, conn: &DbConn) -> Api
 
     println!("response {:#?}", response);
 
-    let response: SignResponse = serde_json::from_str(response).unwrap();
-
-    println!("client_data {:#?}", response.client_data);
-    println!("key_handle {:#?}", response.key_handle);
-    println!("signature_data {:#?}", response.signature_data);
+    let response: SignResponse =
+        serde_json::from_str(response).expect("Can't parse SignResponse data");
 
     let mut _counter: u32 = 0;
     for registration in registrations {
