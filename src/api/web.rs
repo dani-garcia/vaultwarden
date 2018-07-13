@@ -3,6 +3,8 @@ use std::path::{Path, PathBuf};
 
 use rocket::request::Request;
 use rocket::response::{self, NamedFile, Responder};
+use rocket::response::content::Content;
+use rocket::http::ContentType;
 use rocket::Route;
 use rocket_contrib::{Json, Value};
 
@@ -23,8 +25,10 @@ fn web_index() -> WebHeaders<io::Result<NamedFile>> {
 }
 
 #[get("/app-id.json")]
-fn app_id() -> WebHeaders<Json<Value>> {
-    WebHeaders(Json(json!({
+fn app_id() -> WebHeaders<Content<Json<Value>>> {
+    let content_type = ContentType::new("application", "fido.trusted-apps+json");
+
+    WebHeaders(Content(content_type, Json(json!({
     "trustedFacets": [
         {
         "version": { "major": 1, "minor": 0 },
@@ -33,7 +37,7 @@ fn app_id() -> WebHeaders<Json<Value>> {
             "ios:bundle-id:com.8bit.bitwarden",
             "android:apk-key-hash:dUGFzUzf3lmHSLBDBIv+WaFyZMI" ]
         }]
-    })))
+    }))))
 }
 
 #[get("/<p..>", rank = 1)] // Only match this if the other routes don't match
