@@ -254,8 +254,7 @@ For building binary outside the Docker environment and running it locally withou
 
 ### Arch Linux
 
-Bitwarden_rs is already packaged for Archlinux thanks to @mqus. There is an AUR package [with](https://aur.archlinux.org/packages/bitwarden_rs-vault-git/) and 
-[without](https://aur.archlinux.org/packages/bitwarden_rs-git/) the vault web interface available.
+Bitwarden_rs is already packaged for Archlinux thanks to @mqus. There is an [AUR package](https://aur.archlinux.org/packages/bitwarden_rs) (optionally with the [vault web interface](https://aur.archlinux.org/packages/bitwarden_rs-vault/) ) available.
 
 ## Backing up your vault
 
