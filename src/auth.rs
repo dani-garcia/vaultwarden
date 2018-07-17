@@ -95,7 +95,7 @@ use rocket::Outcome;
 use rocket::request::{self, Request, FromRequest};
 
 use db::DbConn;
-use db::models::{User, UserOrganization, UserOrgType, Device};
+use db::models::{User, UserOrganization, UserOrgType, UserOrgStatus, Device};
 
 pub struct Headers {
     pub host: String,
@@ -205,7 +205,13 @@ impl<'a, 'r> FromRequest<'a, 'r> for OrgHeaders {
                         };
 
                         let org_user = match UserOrganization::find_by_user_and_org(&headers.user.uuid, &org_id, &conn) {
-                            Some(user) => user,
+                            Some(user) => {
+                                if user.status == UserOrgStatus::Confirmed as i32 {
+                                    user
+                                } else {
+                                    err_handler!("The current user isn't confirmed member of the organization")
+                                }
+                            }
                             None => err_handler!("The current user isn't member of the organization")
                         };
 
