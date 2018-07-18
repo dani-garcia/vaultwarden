@@ -21,6 +21,7 @@ _*Note, that this project is not associated with the [Bitwarden](https://bitward
     - [attachments location](#attachments-location)
     - [icons cache](#icons-cache)
   - [Changing the API request size limit](#changing-the-api-request-size-limit)
+  - [Changing the number of workers](#changing-the-number-of-workers)
   - [Other configuration](#other-configuration)
 - [Building your own image](#building-your-own-image)
 - [Building binary](#building-binary)
@@ -228,6 +229,20 @@ To set the limit, you can use the `ROCKET_LIMITS` variable. Example here shows 1
 ```sh
 docker run -d --name bitwarden \
   -e ROCKET_LIMITS={json=10485760} \
+  -v /bw-data/:/data/ \
+  -p 80:80 \
+  mprasil/bitwarden:latest
+```
+
+### Changing the number of workers
+
+When you run bitwarden_rs, it spawns `2 * <number of cpu cores>` workers to handle requests. On some systems this might lead to low number of workers and hence slow performance, so the default in the docker image is changed to spawn 10 threads. You can override this setting to increase or decrease the number of workers by setting the `ROCKET_WORKERS` variable.
+
+In the example bellow, we're starting with 20 workers:
+
+```sh
+docker run -d --name bitwarden \
+  -e ROCKET_WORKERS=20 \
   -v /bw-data/:/data/ \
   -p 80:80 \
   mprasil/bitwarden:latest
