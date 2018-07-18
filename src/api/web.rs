@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use rocket::request::Request;
 use rocket::response::{self, NamedFile, Responder};
 use rocket::response::content::Content;
-use rocket::http::ContentType;
+use rocket::http::{ContentType, Status};
 use rocket::Route;
 use rocket_contrib::{Json, Value};
 
@@ -49,14 +49,19 @@ struct WebHeaders<R>(R);
 
 impl<'r, R: Responder<'r>> Responder<'r> for WebHeaders<R> {
     fn respond_to(self, req: &Request) -> response::Result<'r> {
-        let mut res = self.0.respond_to(req)?;
+        match self.0.respond_to(req) {
+            Ok(mut res) => {
+                res.set_raw_header("Referrer-Policy", "same-origin");
+                res.set_raw_header("X-Frame-Options", "SAMEORIGIN");
+                res.set_raw_header("X-Content-Type-Options", "nosniff");
+                res.set_raw_header("X-XSS-Protection", "1; mode=block");
 
-        res.set_raw_header("Referrer-Policy", "same-origin");
-        res.set_raw_header("X-Frame-Options", "SAMEORIGIN");
-        res.set_raw_header("X-Content-Type-Options", "nosniff");
-        res.set_raw_header("X-XSS-Protection", "1; mode=block");
-
-        Ok(res)
+                Ok(res)
+            },
+            Err(_) => {
+                Err(Status::NotFound)
+            }
+        } 
     }
 }
 
