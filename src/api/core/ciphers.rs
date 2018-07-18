@@ -422,17 +422,7 @@ fn post_attachment_admin(uuid: String, data: Data, content_type: &ContentType, h
 
 #[post("/ciphers/<uuid>/attachment/<attachment_id>/share", format = "multipart/form-data", data = "<data>")]
 fn post_attachment_share(uuid: String, attachment_id: String, data: Data, content_type: &ContentType, headers: Headers, conn: DbConn) -> JsonResult {
-
-	let cipher = match Cipher::find_by_uuid(&uuid, &conn) {
-        Some(cipher) => cipher,
-        None => err!("Cipher doesn't exist")
-    };
-
-    if !cipher.is_write_accessible_to_user(&headers.user.uuid, &conn) {
-        err!("Cipher is not write accessible")
-    };
-
-    try!(_delete_cipher_attachment_by_uuid(&uuid, &attachment_id, &conn));
+    _delete_cipher_attachment_by_id(&uuid, &attachment_id, &headers, &conn)?;
     post_attachment(uuid, data, content_type, headers, conn)
 }
 
@@ -448,29 +438,7 @@ fn delete_attachment_post(uuid: String, attachment_id: String, headers: Headers,
 
 #[delete("/ciphers/<uuid>/attachment/<attachment_id>")]
 fn delete_attachment(uuid: String, attachment_id: String, headers: Headers, conn: DbConn) -> EmptyResult {
-    let attachment = match Attachment::find_by_id(&attachment_id, &conn) {
-        Some(attachment) => attachment,
-        None => err!("Attachment doesn't exist")
-    };
-
-    if attachment.cipher_uuid != uuid {
-        err!("Attachment from other cipher")
-    }
-
-    let cipher = match Cipher::find_by_uuid(&uuid, &conn) {
-        Some(cipher) => cipher,
-        None => err!("Cipher doesn't exist")
-    };
-
-    if !cipher.is_write_accessible_to_user(&headers.user.uuid, &conn) {
-        err!("Cipher cannot be deleted by user")
-    }
-
-    // Delete attachment
-    match attachment.delete(&conn) {
-        Ok(()) => Ok(()),
-        Err(_) => err!("Deleting attachement failed")
-    }
+    _delete_cipher_attachment_by_id(&uuid, &attachment_id, &headers, &conn)
 }
 
 #[post("/ciphers/<uuid>/delete")]
@@ -605,7 +573,7 @@ fn _delete_cipher_by_uuid(uuid: &str, headers: &Headers, conn: &DbConn) -> Empty
     }
 }
 
-fn _delete_cipher_attachment_by_uuid(uuid: &str, attachment_id: &str, conn: &DbConn) -> EmptyResult {
+fn _delete_cipher_attachment_by_id(uuid: &str, attachment_id: &str, headers: &Headers, conn: &DbConn) -> EmptyResult {
     let attachment = match Attachment::find_by_id(&attachment_id, &conn) {
         Some(attachment) => attachment,
         None => err!("Attachment doesn't exist")
@@ -613,6 +581,15 @@ fn _delete_cipher_attachment_by_uuid(uuid: &str, attachment_id: &str, conn: &DbC
 
     if attachment.cipher_uuid != uuid {
         err!("Attachment from other cipher")
+    }
+
+    let cipher = match Cipher::find_by_uuid(&uuid, &conn) {
+        Some(cipher) => cipher,
+        None => err!("Cipher doesn't exist")
+    };
+
+    if !cipher.is_write_accessible_to_user(&headers.user.uuid, &conn) {
+        err!("Cipher cannot be deleted by user")
     }
 
     // Delete attachment
