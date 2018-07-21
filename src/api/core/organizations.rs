@@ -17,7 +17,7 @@ struct OrgData {
     Key: String,
     Name: String,
     #[serde(rename = "PlanType")]
-    _PlanType: String, // Ignored, always use the same plan
+    _PlanType: NumberOrString, // Ignored, always use the same plan
 }
 
 #[derive(Deserialize, Debug)]
