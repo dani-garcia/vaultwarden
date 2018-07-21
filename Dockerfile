@@ -16,7 +16,7 @@ RUN apk add --update-cache --upgrade \
 RUN git clone -b $VAULT_VERSION --depth 1 $URL web-build
 WORKDIR /web-build
 
-COPY docker/set-vault-baseurl.patch /web-build/    
+COPY /docker/set-vault-baseurl.patch /web-build/    
 RUN git apply set-vault-baseurl.patch
 
 RUN npm run sub:init && npm install
