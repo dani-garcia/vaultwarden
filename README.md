@@ -138,7 +138,7 @@ docker run -d --name bitwarden \
   -v /ssl/keys/:/ssl/ \
   -v /bw-data/:/data/ \
   -v /icon_cache/ \
-  -p 443:443 \
+  -p 443:80 \
   mprasil/bitwarden:latest
 ```
 Note that you need to mount ssl files and you need to forward appropriate port.
