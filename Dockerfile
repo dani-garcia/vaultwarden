@@ -4,8 +4,8 @@
 ####################### VAULT BUILD IMAGE  #######################
 FROM node:8-alpine as vault
 
-#ENV VAULT_VERSION "v1.27.0"
-ENV VAULT_VERSION "master"
+ENV VAULT_VERSION "v2.0.0"
+
 ENV URL "https://github.com/bitwarden/web.git"
 
 RUN apk add --update-cache --upgrade \
