@@ -483,8 +483,9 @@ fn delete_cipher_selected(data: JsonUpcase<Value>, headers: Headers, conn: DbCon
     Ok(())
 }
 
-#[post("/ciphers/move", data = "<data>")]
+#[put("/ciphers/move", data = "<data>")]
 fn move_cipher_selected(data: JsonUpcase<Value>, headers: Headers, conn: DbConn) -> EmptyResult {
+    println!("{}", "inside put");
     let data = data.into_inner().data;
 
     let folder_id = match data.get("FolderId") {
