@@ -64,14 +64,33 @@ impl Attachment {
 
     pub fn delete(self, conn: &DbConn) -> QueryResult<()> {
         use util;
+        use std::{thread, time};
+
+        let mut retries = 10;
+        
+        loop {
+            match diesel::delete(
+                attachments::table.filter(
+                    attachments::id.eq(&self.id)
+                )
+            ).execute(&**conn) {
+                Ok(_) => break,
+                Err(err) => {
+                    if retries < 1 {
+                        println!("ERROR: Failed with 10 retries");
+                        return Err(err)
+                    } else {
+                        retries = retries - 1;
+                        println!("Had to retry! Retries left: {}", retries);
+                        thread::sleep(time::Duration::from_millis(500));
+                        continue
+                    }
+                }
+            }
+        }
 
         util::delete_file(&self.get_file_path());
-
-        diesel::delete(
-            attachments::table.filter(
-                attachments::id.eq(self.id)
-            )
-        ).execute(&**conn).and(Ok(()))
+        Ok(())
     }
 
     pub fn delete_all_by_cipher(cipher_uuid: &str, conn: &DbConn) -> QueryResult<()> {
