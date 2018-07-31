@@ -21,6 +21,7 @@ _*Note, that this project is not associated with the [Bitwarden](https://bitward
     - [attachments location](#attachments-location)
     - [icons cache](#icons-cache)
   - [Changing the API request size limit](#changing-the-api-request-size-limit)
+  - [Changing the number of workers](#changing-the-number-of-workers)
   - [Other configuration](#other-configuration)
 - [Building your own image](#building-your-own-image)
 - [Building binary](#building-binary)
@@ -137,7 +138,7 @@ docker run -d --name bitwarden \
   -v /ssl/keys/:/ssl/ \
   -v /bw-data/:/data/ \
   -v /icon_cache/ \
-  -p 443:443 \
+  -p 443:80 \
   mprasil/bitwarden:latest
 ```
 Note that you need to mount ssl files and you need to forward appropriate port.
@@ -233,6 +234,20 @@ docker run -d --name bitwarden \
   mprasil/bitwarden:latest
 ```
 
+### Changing the number of workers
+
+When you run bitwarden_rs, it spawns `2 * <number of cpu cores>` workers to handle requests. On some systems this might lead to low number of workers and hence slow performance, so the default in the docker image is changed to spawn 10 threads. You can override this setting to increase or decrease the number of workers by setting the `ROCKET_WORKERS` variable.
+
+In the example bellow, we're starting with 20 workers:
+
+```sh
+docker run -d --name bitwarden \
+  -e ROCKET_WORKERS=20 \
+  -v /bw-data/:/data/ \
+  -p 80:80 \
+  mprasil/bitwarden:latest
+```
+
 ### Other configuration
 
 Though this is unlikely to be required in small deployment, you can fine-tune some other settings like number of workers using environment variables that are processed by [Rocket](https://rocket.rs), please see details in [documentation](https://rocket.rs/guide/configuration/#environment-variables).
@@ -254,8 +269,7 @@ For building binary outside the Docker environment and running it locally withou
 
 ### Arch Linux
 
-Bitwarden_rs is already packaged for Archlinux thanks to @mqus. There is an AUR package [with](https://aur.archlinux.org/packages/bitwarden_rs-vault-git/) and 
-[without](https://aur.archlinux.org/packages/bitwarden_rs-git/) the vault web interface available.
+Bitwarden_rs is already packaged for Archlinux thanks to @mqus. There is an [AUR package](https://aur.archlinux.org/packages/bitwarden_rs) (optionally with the [vault web interface](https://aur.archlinux.org/packages/bitwarden_rs-vault/) ) available.
 
 ## Backing up your vault
 
@@ -303,4 +317,4 @@ docker run -d --name bitwarden \
 
 To ask an question, [raising an issue](https://github.com/dani-garcia/bitwarden_rs/issues/new) is fine, also please report any bugs spotted here.
 
-If you prefer to chat, we're usually hanging around at [#bitwarden_rs:matrix.org](https://matrix.to/#/!cASGtOHlSftdScFNMs:matrix.org) room on Matrix. Feel free to join us!
+If you prefer to chat, we're usually hanging around at [#bitwarden_rs:matrix.org](https://matrix.to/#/#bitwarden_rs:matrix.org) room on Matrix. Feel free to join us!

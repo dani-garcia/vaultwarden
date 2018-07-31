@@ -68,6 +68,7 @@ RUN cargo build --release
 FROM debian:stretch-slim
 
 ENV ROCKET_ENV "staging"
+ENV ROCKET_WORKERS=10
 
 # Install needed libraries
 RUN apt-get update && apt-get install -y\
