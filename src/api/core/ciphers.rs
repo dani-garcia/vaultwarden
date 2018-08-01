@@ -535,6 +535,11 @@ fn move_cipher_selected(data: JsonUpcase<Value>, headers: Headers, conn: DbConn)
     Ok(())
 }
 
+#[put("/ciphers/move", data = "<data>")]
+fn move_cipher_selected_put(data: JsonUpcase<Value>, headers: Headers, conn: DbConn) -> EmptyResult {
+    move_cipher_selected(data, headers, conn)
+}
+
 #[post("/ciphers/purge", data = "<data>")]
 fn delete_all(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn) -> EmptyResult {
     let data: PasswordData = data.into_inner().data;
