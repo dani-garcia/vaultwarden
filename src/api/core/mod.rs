@@ -46,6 +46,7 @@ pub fn routes() -> Vec<Route> {
         delete_cipher_selected,
         delete_all,
         move_cipher_selected,
+        move_cipher_selected_put,
 
         get_folders,
         get_folder,
