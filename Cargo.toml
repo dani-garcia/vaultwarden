@@ -1,6 +1,6 @@
 [package]
 name = "bitwarden_rs"
-version = "0.11.0"
+version = "0.12.0"
 authors = ["Daniel García <dani-garcia@users.noreply.github.com>"]
 
 [dependencies]
