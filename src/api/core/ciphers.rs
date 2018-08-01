@@ -537,54 +537,7 @@ fn move_cipher_selected(data: JsonUpcase<Value>, headers: Headers, conn: DbConn)
 
 #[put("/ciphers/move", data = "<data>")]
 fn move_cipher_selected_put(data: JsonUpcase<Value>, headers: Headers, conn: DbConn) -> EmptyResult {
-    let data = data.into_inner().data;
-
-    let folder_id = match data.get("FolderId") {
-        Some(folder_id) => {
-            match folder_id.as_str() {
-                Some(folder_id) => {
-                    match Folder::find_by_uuid(folder_id, &conn) {
-                        Some(folder) => {
-                            if folder.user_uuid != headers.user.uuid {
-                                err!("Folder is not owned by user")
-                            }
-                            Some(folder.uuid)
-                        }
-                        None => err!("Folder doesn't exist")
-                    }
-                }
-                None => err!("Folder id provided in wrong format")
-            }
-        }
-        None => None
-    };
-
-    let uuids = match data.get("Ids") {
-        Some(ids) => match ids.as_array() {
-            Some(ids) => ids.iter().filter_map(|uuid| { uuid.as_str() }),
-            None => err!("Posted ids field is not an array")
-        },
-        None => err!("Request missing ids field")
-    };
-
-    for uuid in uuids {
-        let mut cipher = match Cipher::find_by_uuid(uuid, &conn) {
-            Some(cipher) => cipher,
-            None => err!("Cipher doesn't exist")
-        };
-
-        if !cipher.is_accessible_to_user(&headers.user.uuid, &conn) {
-            err!("Cipher is not accessible by user")
-        }
-
-        // Move cipher
-        if cipher.move_to_folder(folder_id.clone(), &headers.user.uuid, &conn).is_err() {
-            err!("Error saving the folder information")
-        }
-        cipher.save(&conn);
-    }
-
-    Ok(())
+    move_cipher_selected(data, headers, conn)
 }
 
 #[post("/ciphers/purge", data = "<data>")]
