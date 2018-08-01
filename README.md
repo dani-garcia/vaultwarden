@@ -138,7 +138,7 @@ docker run -d --name bitwarden \
   -v /ssl/keys/:/ssl/ \
   -v /bw-data/:/data/ \
   -v /icon_cache/ \
-  -p 443:443 \
+  -p 443:80 \
   mprasil/bitwarden:latest
 ```
 Note that you need to mount ssl files and you need to forward appropriate port.
@@ -317,4 +317,4 @@ docker run -d --name bitwarden \
 
 To ask an question, [raising an issue](https://github.com/dani-garcia/bitwarden_rs/issues/new) is fine, also please report any bugs spotted here.
 
-If you prefer to chat, we're usually hanging around at [#bitwarden_rs:matrix.org](https://matrix.to/#/!cASGtOHlSftdScFNMs:matrix.org) room on Matrix. Feel free to join us!
+If you prefer to chat, we're usually hanging around at [#bitwarden_rs:matrix.org](https://matrix.to/#/#bitwarden_rs:matrix.org) room on Matrix. Feel free to join us!
