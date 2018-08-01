@@ -365,6 +365,11 @@ fn post_cipher_share(uuid: String, data: JsonUpcase<ShareCipherData>, headers: H
     }
 }
 
+#[put("/ciphers/<uuid>/share", data = "<data>")]
+fn put_cipher_share(uuid: String, data: JsonUpcase<ShareCipherData>, headers: Headers, conn: DbConn) -> JsonResult {
+    post_cipher_share(uuid, data, headers, conn)
+}
+
 #[post("/ciphers/<uuid>/attachment", format = "multipart/form-data", data = "<data>")]
 fn post_attachment(uuid: String, data: Data, content_type: &ContentType, headers: Headers, conn: DbConn) -> JsonResult {
     let cipher = match Cipher::find_by_uuid(&uuid, &conn) {
