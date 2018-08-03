@@ -461,7 +461,7 @@ fn delete_cipher(uuid: String, headers: Headers, conn: DbConn) -> EmptyResult {
     _delete_cipher_by_uuid(&uuid, &headers, &conn)
 }
 
-#[post("/ciphers/delete", data = "<data>")]
+#[delete("/ciphers", data = "<data>")]
 fn delete_cipher_selected(data: JsonUpcase<Value>, headers: Headers, conn: DbConn) -> EmptyResult {
     let data: Value = data.into_inner().data;
 
@@ -480,6 +480,11 @@ fn delete_cipher_selected(data: JsonUpcase<Value>, headers: Headers, conn: DbCon
     }
 
     Ok(())
+}
+
+#[post("/ciphers/delete", data = "<data>")]
+fn delete_cipher_selected_post(data: JsonUpcase<Value>, headers: Headers, conn: DbConn) -> EmptyResult {
+    delete_cipher_selected(data, headers, conn)
 }
 
 #[post("/ciphers/move", data = "<data>")]
