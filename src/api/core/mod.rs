@@ -23,6 +23,7 @@ pub fn routes() -> Vec<Route> {
         post_email,
         delete_account,
         revision_date,
+        password_hint,
 
         sync,
 
