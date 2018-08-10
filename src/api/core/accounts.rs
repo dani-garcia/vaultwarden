@@ -244,6 +244,6 @@ fn delete_account(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn
 
 #[get("/accounts/revision-date")]
 fn revision_date(headers: Headers) -> String {
-    let revision_date = headers.user.updated_at.timestamp();
+    let revision_date = headers.user.updated_at.timestamp_millis();
     revision_date.to_string()
 }
