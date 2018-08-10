@@ -263,7 +263,10 @@ fn password_hint(data: JsonUpcase<PasswordHintData>, conn: DbConn) -> EmptyResul
     }
 
     match User::find_by_mail(&data.Email, &conn) {
-        Some(user) => err!(user.password_hint.to_owned().unwrap_or("".to_string())),
+        Some(user) => {
+            let hint = user.password_hint.to_owned().unwrap_or_default();
+            err!(format!("Your password hint is: {}", hint))
+        },
         None => Ok(()),
     }
 }
