@@ -66,8 +66,10 @@ pub fn routes() -> Vec<Route> {
         get_recover,
         recover,
         disable_twofactor,
+        disable_twofactor_put,
         generate_authenticator,
         activate_authenticator,
+        activate_authenticator_put,
         generate_u2f,
         activate_u2f,
 
