@@ -169,6 +169,7 @@ pub struct Config {
     local_icon_extractor: bool,
     signups_allowed: bool,
     password_iterations: i32,
+    show_password_hint: bool,
     domain: String,
     domain_set: bool,
 }
@@ -197,6 +198,8 @@ impl Config {
             local_icon_extractor: util::parse_option_string(env::var("LOCAL_ICON_EXTRACTOR").ok()).unwrap_or(false),
             signups_allowed: util::parse_option_string(env::var("SIGNUPS_ALLOWED").ok()).unwrap_or(true),
             password_iterations: util::parse_option_string(env::var("PASSWORD_ITERATIONS").ok()).unwrap_or(100_000),
+            show_password_hint: util::parse_option_string(env::var("SHOW_PASSWORD_HINT").ok()).unwrap_or(true),
+
             domain_set: domain.is_ok(),
             domain: domain.unwrap_or("http://localhost".into()),
         }
