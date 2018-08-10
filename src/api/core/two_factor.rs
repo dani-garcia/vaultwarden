@@ -112,6 +112,15 @@ fn disable_twofactor(
     })))
 }
 
+#[put("/two-factor/disable", data = "<data>")]
+fn disable_twofactor_put(
+    data: JsonUpcase<DisableTwoFactorData>,
+    headers: Headers,
+    conn: DbConn,
+) -> JsonResult {
+    disable_twofactor(data, headers, conn)
+}
+
 #[post("/two-factor/get-authenticator", data = "<data>")]
 fn generate_authenticator(
     data: JsonUpcase<PasswordData>,
@@ -192,6 +201,15 @@ fn activate_authenticator(
         "Key": key,
         "Object": "twoFactorAuthenticator"
     })))
+}
+
+#[put("/two-factor/authenticator", data = "<data>")]
+fn activate_authenticator_put(
+    data: JsonUpcase<EnableAuthenticatorData>,
+    headers: Headers,
+    conn: DbConn,
+) -> JsonResult {
+    activate_authenticator(data, headers, conn)
 }
 
 fn _generate_recover_code(user: &mut User, conn: &DbConn) {

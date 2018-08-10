@@ -87,8 +87,6 @@ fn get_cipher_details(uuid: String, headers: Headers, conn: DbConn) -> JsonResul
 #[derive(Deserialize, Debug)]
 #[allow(non_snake_case)]
 struct CipherData {
-    // Id is optional as it is included only in bulk share
-    Id: Option<String>,
     // Folder id is not included in import
     FolderId: Option<String>,
     // TODO: Some of these might appear all the time, no need for Option
@@ -334,65 +332,6 @@ struct ShareCipherData {
 fn post_cipher_share(uuid: String, data: JsonUpcase<ShareCipherData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: ShareCipherData = data.into_inner().data;
 
-    share_cipher_by_uuid(&uuid, data, &headers, &conn)
-}
-
-#[put("/ciphers/<uuid>/share", data = "<data>")]
-fn put_cipher_share(uuid: String, data: JsonUpcase<ShareCipherData>, headers: Headers, conn: DbConn) -> JsonResult {
-    let data: ShareCipherData = data.into_inner().data;
-
-    share_cipher_by_uuid(&uuid, data, &headers, &conn)
-}
-
-#[derive(Deserialize)]
-#[allow(non_snake_case)]
-struct ShareSelectedCipherData {
-    Ciphers: Vec<CipherData>,
-    CollectionIds: Vec<String>
-}
-
-#[put("/ciphers/share", data = "<data>")]
-fn put_cipher_share_seleted(data: JsonUpcase<ShareSelectedCipherData>, headers: Headers, conn: DbConn) -> EmptyResult {
-    let mut data: ShareSelectedCipherData = data.into_inner().data;
-    let mut cipher_ids: Vec<String> = Vec::new();
-
-    if data.Ciphers.len() == 0 {
-        err!("You must select at least one cipher.")
-    }
-    
-    if data.CollectionIds.len() == 0 {
-        err!("You must select at least one collection.")
-    }
-    
-    for cipher in data.Ciphers.iter() {
-        match cipher.Id {
-            Some(ref id) => cipher_ids.push(id.to_string()),
-            None => err!("Request missing ids field")
-        };
-    }
-
-    let attachments = Attachment::find_by_ciphers(cipher_ids, &conn);
-    
-    if attachments.len() > 0 {
-        err!("Ciphers should not have any attachments.")
-    }
-
-    while let Some(cipher) = data.Ciphers.pop() {
-        let mut shared_cipher_data = ShareCipherData {
-            Cipher: cipher,
-            CollectionIds: data.CollectionIds.clone()
-        };
-
-        match shared_cipher_data.Cipher.Id.take() {
-            Some(id) => share_cipher_by_uuid(&id, shared_cipher_data , &headers, &conn)?,
-            None => err!("Request missing ids field")
-        };
-    }
-
-    Ok(())
-}
-
-fn share_cipher_by_uuid(uuid: &str, data: ShareCipherData, headers: &Headers, conn: &DbConn) -> JsonResult {
     let mut cipher = match Cipher::find_by_uuid(&uuid, &conn) {
         Some(cipher) => {
             if cipher.is_write_accessible_to_user(&headers.user.uuid, &conn) {
@@ -424,6 +363,11 @@ fn share_cipher_by_uuid(uuid: &str, data: ShareCipherData, headers: &Headers, co
             Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, &conn)))
         }
     }
+}
+
+#[put("/ciphers/<uuid>/share", data = "<data>")]
+fn put_cipher_share(uuid: String, data: JsonUpcase<ShareCipherData>, headers: Headers, conn: DbConn) -> JsonResult {
+    post_cipher_share(uuid, data, headers, conn)
 }
 
 #[post("/ciphers/<uuid>/attachment", format = "multipart/form-data", data = "<data>")]
