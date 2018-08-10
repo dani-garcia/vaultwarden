@@ -111,10 +111,4 @@ impl Attachment {
             .filter(attachments::cipher_uuid.eq(cipher_uuid))
             .load::<Self>(&**conn).expect("Error loading attachments")
     }
-
-    pub fn find_by_ciphers(cipher_uuids: Vec<String>, conn: &DbConn) -> Vec<Self> {
-        attachments::table
-            .filter(attachments::cipher_uuid.eq_any(cipher_uuids))
-            .load::<Self>(&**conn).expect("Error loading attachments")
-    }
 }
