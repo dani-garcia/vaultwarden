@@ -247,3 +247,26 @@ fn revision_date(headers: Headers) -> String {
     let revision_date = headers.user.updated_at.timestamp();
     revision_date.to_string()
 }
+
+#[derive(Deserialize)]
+#[allow(non_snake_case)]
+struct PasswordHintData {
+    Email: String,
+}
+
+#[post("/accounts/password-hint", data = "<data>")]
+fn password_hint(data: JsonUpcase<PasswordHintData>, conn: DbConn) -> EmptyResult {
+    let data: PasswordHintData = data.into_inner().data;
+
+    if !CONFIG.show_password_hint {
+        return Ok(())
+    }
+
+    match User::find_by_mail(&data.Email, &conn) {
+        Some(user) => {
+            let hint = user.password_hint.to_owned().unwrap_or_default();
+            err!(format!("Your password hint is: {}", hint))
+        },
+        None => Ok(()),
+    }
+}
