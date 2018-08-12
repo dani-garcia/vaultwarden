@@ -163,8 +163,9 @@ struct EmailTokenData {
 #[post("/accounts/email-token", data = "<data>")]
 fn post_email_token(data: JsonUpcase<EmailTokenData>, headers: Headers, conn: DbConn) -> EmptyResult {
     let data: EmailTokenData = data.into_inner().data;
+    let mut user = headers.user;
 
-    if !headers.user.check_valid_password(&data.MasterPasswordHash) {
+    if !user.check_valid_password(&data.MasterPasswordHash) {
         err!("Invalid password")
     }
 
@@ -172,6 +173,10 @@ fn post_email_token(data: JsonUpcase<EmailTokenData>, headers: Headers, conn: Db
         err!("Email already in use");
     }
 
+    user.email = data.NewEmail;
+
+    user.save(&conn);
+    
     Ok(())
 }
 
