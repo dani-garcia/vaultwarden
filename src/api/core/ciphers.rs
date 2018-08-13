@@ -291,6 +291,11 @@ fn post_collections_update(uuid: String, data: JsonUpcase<CollectionsAdminData>,
     post_collections_admin(uuid, data, headers, conn)
 }
 
+#[put("/ciphers/<uuid>/collections-admin", data = "<data>")]
+fn put_collections_admin(uuid: String, data: JsonUpcase<CollectionsAdminData>, headers: Headers, conn: DbConn) -> EmptyResult {
+    post_collections_admin(uuid, data, headers, conn)
+}
+
 #[post("/ciphers/<uuid>/collections-admin", data = "<data>")]
 fn post_collections_admin(uuid: String, data: JsonUpcase<CollectionsAdminData>, headers: Headers, conn: DbConn) -> EmptyResult {
     let data: CollectionsAdminData = data.into_inner().data;
