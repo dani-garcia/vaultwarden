@@ -55,7 +55,7 @@ fn create_organization(headers: Headers, data: JsonUpcase<OrgData>, conn: DbConn
     Ok(Json(org.to_json()))
 }
 
-#[post("/organizations/<org_id>/delete", data = "<data>")]
+#[delete("/organizations/<org_id>", data = "<data>")]
 fn delete_organization(org_id: String, data: JsonUpcase<PasswordData>, headers: OwnerHeaders, conn: DbConn) -> EmptyResult {
     let data: PasswordData = data.into_inner().data;
     let password_hash = data.MasterPasswordHash;
@@ -71,6 +71,11 @@ fn delete_organization(org_id: String, data: JsonUpcase<PasswordData>, headers: 
             Err(_) => err!("Failed deleting the organization")
         }
     }
+}
+
+#[post("/organizations/<org_id>/delete", data = "<data>")]
+fn post_delete_organization(org_id: String, data: JsonUpcase<PasswordData>, headers: OwnerHeaders, conn: DbConn) -> EmptyResult {
+    delete_organization(org_id, data, headers, conn)
 }
 
 #[post("/organizations/<org_id>/leave")]
@@ -164,6 +169,11 @@ fn post_organization_collections(org_id: String, _headers: AdminHeaders, data: J
     Ok(Json(collection.to_json()))
 }
 
+#[put("/organizations/<org_id>/collections/<col_id>", data = "<data>")]
+fn put_organization_collection_update(org_id: String, col_id: String, headers: AdminHeaders, data: JsonUpcase<NewCollectionData>, conn: DbConn) -> JsonResult {
+    post_organization_collection_update(org_id, col_id, headers, data, conn)
+}
+
 #[post("/organizations/<org_id>/collections/<col_id>", data = "<data>")]
 fn post_organization_collection_update(org_id: String, col_id: String, _headers: AdminHeaders, data: JsonUpcase<NewCollectionData>, conn: DbConn) -> JsonResult {
     let data: NewCollectionData = data.into_inner().data;
@@ -188,8 +198,9 @@ fn post_organization_collection_update(org_id: String, col_id: String, _headers:
     Ok(Json(collection.to_json()))
 }
 
-#[post("/organizations/<org_id>/collections/<col_id>/delete-user/<org_user_id>")]
-fn post_organization_collection_delete_user(org_id: String, col_id: String, org_user_id: String, _headers: AdminHeaders, conn: DbConn) -> EmptyResult {
+
+#[delete("/organizations/<org_id>/collections/<col_id>/user/<org_user_id>")]
+fn delete_organization_collection_user(org_id: String, col_id: String, org_user_id: String, _headers: AdminHeaders, conn: DbConn) -> EmptyResult {
     let collection = match Collection::find_by_uuid(&col_id, &conn) {
         None => err!("Collection not found"),
         Some(collection) => if collection.org_uuid == org_id {
@@ -215,17 +226,13 @@ fn post_organization_collection_delete_user(org_id: String, col_id: String, org_
     }
 }
 
-#[derive(Deserialize, Debug)]
-#[allow(non_snake_case)]
-struct DeleteCollectionData {
-    Id: String,
-    OrgId: String,
+#[post("/organizations/<org_id>/collections/<col_id>/delete-user/<org_user_id>")]
+fn post_organization_collection_delete_user(org_id: String, col_id: String, org_user_id: String, headers: AdminHeaders, conn: DbConn) -> EmptyResult {
+    delete_organization_collection_user(org_id, col_id, org_user_id, headers, conn)
 }
 
-#[post("/organizations/<org_id>/collections/<col_id>/delete", data = "<data>")]
-fn post_organization_collection_delete(org_id: String, col_id: String, _headers: AdminHeaders, data: JsonUpcase<DeleteCollectionData>, conn: DbConn) -> EmptyResult {
-    let _data: DeleteCollectionData = data.into_inner().data;
-
+#[delete("/organizations/<org_id>/collections/<col_id>")]
+fn delete_organization_collection(org_id: String, col_id: String, _headers: AdminHeaders, conn: DbConn) -> EmptyResult {
     match Collection::find_by_uuid(&col_id, &conn) {
         None => err!("Collection not found"),
         Some(collection) => if collection.org_uuid == org_id {
@@ -237,6 +244,18 @@ fn post_organization_collection_delete(org_id: String, col_id: String, _headers:
             err!("Collection and Organization id do not match")
         }
     }
+}
+
+#[derive(Deserialize, Debug)]
+#[allow(non_snake_case)]
+struct DeleteCollectionData {
+    Id: String,
+    OrgId: String,
+}
+
+#[post("/organizations/<org_id>/collections/<col_id>/delete", data = "<_data>")]
+fn post_organization_collection_delete(org_id: String, col_id: String, headers: AdminHeaders, _data: JsonUpcase<DeleteCollectionData>, conn: DbConn) -> EmptyResult {
+    delete_organization_collection(org_id, col_id, headers, conn)
 }
 
 #[get("/organizations/<org_id>/collections/<coll_id>/details")]
@@ -428,6 +447,12 @@ struct EditUserData {
     AccessAll: bool,
 }
 
+
+#[put("/organizations/<org_id>/users/<user_id>", data = "<data>", rank = 1)]
+fn put_organization_user(org_id: String, user_id: String, data: JsonUpcase<EditUserData>, headers: AdminHeaders, conn: DbConn) -> EmptyResult {
+    edit_user(org_id, user_id, data, headers, conn)
+}
+
 #[post("/organizations/<org_id>/users/<user_id>", data = "<data>", rank = 1)]
 fn edit_user(org_id: String, user_id: String, data: JsonUpcase<EditUserData>, headers: AdminHeaders, conn: DbConn) -> EmptyResult {
     let data: EditUserData = data.into_inner().data;
@@ -494,7 +519,7 @@ fn edit_user(org_id: String, user_id: String, data: JsonUpcase<EditUserData>, he
     Ok(())
 }
 
-#[post("/organizations/<org_id>/users/<user_id>/delete")]
+#[delete("/organizations/<org_id>/users/<user_id>")]
 fn delete_user(org_id: String, user_id: String, headers: AdminHeaders, conn: DbConn) -> EmptyResult {
     let user_to_delete = match UserOrganization::find_by_uuid(&user_id, &conn) {
         Some(user) => user,
@@ -521,4 +546,9 @@ fn delete_user(org_id: String, user_id: String, headers: AdminHeaders, conn: DbC
         Ok(()) => Ok(()),
         Err(_) => err!("Failed deleting user from organization")
     }
+}
+
+#[post("/organizations/<org_id>/users/<user_id>/delete")]
+fn post_delete_user(org_id: String, user_id: String, headers: AdminHeaders, conn: DbConn) -> EmptyResult {
+    delete_user(org_id, user_id, headers, conn)
 }
