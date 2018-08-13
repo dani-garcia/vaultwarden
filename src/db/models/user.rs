@@ -154,6 +154,16 @@ impl User {
         }
     }
 
+    pub fn update_revision(&mut self, conn: &DbConn) -> QueryResult<()> {
+        diesel::update(
+            users::table.filter(
+                users::uuid.eq(&self.uuid)
+            )
+        )
+        .set(users::updated_at.eq(Utc::now().naive_utc()))
+        .execute(&**conn).and(Ok(()))
+    }
+
     pub fn find_by_mail(mail: &str, conn: &DbConn) -> Option<Self> {
         let lower_mail = mail.to_lowercase();
         users::table

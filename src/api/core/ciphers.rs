@@ -242,7 +242,11 @@ fn post_ciphers_import(data: JsonUpcase<ImportData>, headers: Headers, conn: DbC
         cipher.move_to_folder(folder_uuid, &headers.user.uuid.clone(), &conn).ok();
     }
 
-    Ok(())
+    let mut user = headers.user;
+    match user.update_revision(&conn) {
+        Ok(()) => Ok(()),
+        Err(_) => err!("Failed to update the revision, please log out and log back in to finish import.")
+    }
 }
 
 #[post("/ciphers/<uuid>/admin", data = "<data>")]
