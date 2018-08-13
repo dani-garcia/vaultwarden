@@ -374,6 +374,11 @@ fn activate_u2f(data: JsonUpcase<EnableU2FData>, headers: Headers, conn: DbConn)
     }
 }
 
+#[put("/two-factor/u2f", data = "<data>")]
+fn activate_u2f_put(data: JsonUpcase<EnableU2FData>, headers: Headers, conn: DbConn) -> JsonResult {
+    activate_u2f(data,headers, conn)
+}
+
 fn _create_u2f_challenge(user_uuid: &str, type_: TwoFactorType, conn: &DbConn) -> Challenge {
     let challenge = U2F.generate_challenge().unwrap();
 
