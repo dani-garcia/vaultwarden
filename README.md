@@ -22,6 +22,7 @@ _*Note, that this project is not associated with the [Bitwarden](https://bitward
     - [icons cache](#icons-cache)
   - [Changing the API request size limit](#changing-the-api-request-size-limit)
   - [Changing the number of workers](#changing-the-number-of-workers)
+  - [Disabling or overriding the Vault interface hosting](#disabling-or-overriding-the-vault-interface-hosting)
   - [Other configuration](#other-configuration)
 - [Building your own image](#building-your-own-image)
 - [Building binary](#building-binary)
@@ -33,6 +34,10 @@ _*Note, that this project is not associated with the [Bitwarden](https://bitward
   - [3. the key files](#3-the-key-files)
   - [4. Icon Cache](#4-icon-cache)
 - [Running the server with non-root user](#running-the-server-with-non-root-user)
+- [Differences from upstream API implementation](#differences-from-upstream-api-implementation)
+  - [Changing user email](#changing-user-email)
+  - [Creating organization](#creating-organization)
+  - [Inviting users into organization](#inviting-users-into-organization)
 - [Get in touch](#get-in-touch)
 
 ## Features
@@ -248,6 +253,30 @@ docker run -d --name bitwarden \
   mprasil/bitwarden:latest
 ```
 
+### Disabling or overriding the Vault interface hosting
+
+As a convenience bitwarden_rs image will also host static files for Vault web interface. You can disable this static file hosting completely by setting the WEB_VAULT_ENABLED variable.
+
+```sh
+docker run -d --name bitwarden \
+  -e WEB_VAULT_ENABLED=false \
+  -v /bw-data/:/data/ \
+  -p 80:80 \
+  mprasil/bitwarden:latest
+```
+
+Alternatively you can override the Vault files and provide your own static files to host. You can do that by mounting a path with your files over the `/web-vault` directory in the container. Just make sure the directory contains at least `index.html` file.
+
+```sh
+docker run -d --name bitwarden \
+  -v /path/to/static/files_directory:/web-vault \
+  -v /bw-data/:/data/ \
+  -p 80:80 \
+  mprasil/bitwarden:latest
+```
+
+Note that you can also change the path where bitwarden_rs looks for static files by providing the `WEB_VAULT_FOLDER` environment variable with the path.
+
 ### Other configuration
 
 Though this is unlikely to be required in small deployment, you can fine-tune some other settings like number of workers using environment variables that are processed by [Rocket](https://rocket.rs), please see details in [documentation](https://rocket.rs/guide/configuration/#environment-variables).
@@ -313,6 +342,21 @@ docker run -d --name bitwarden \
   -p 80:8080 \
   mprasil/bitwarden:latest
 ```
+
+## Differences from upstream API implementation
+
+### Changing user email
+
+Because we don't have any SMTP functionality at the moment, there's no way to deliver the verification token when you try to change the email. User just needs to enter any random token to continue and the change will be applied.
+
+### Creating organization
+
+We use upstream Vault interface directly without any (significant) changes, this is why user is presented with paid options when creating organization. To create an organization, just use the free option, none of the limits apply when using bitwarden_rs as back-end API and after the organization is created it should behave like Enterprise organization.
+
+### Inviting users into organization
+
+The users must already be registered on your server to invite them, because we can't send the invitation via email. The invited users won't get the invitation email, instead they will appear in the interface as if they already accepted the invitation. Organization admin then just needs to confirm them to be proper Organization members and to give them access to the shared secrets.
+
 ## Get in touch
 
 To ask an question, [raising an issue](https://github.com/dani-garcia/bitwarden_rs/issues/new) is fine, also please report any bugs spotted here.
