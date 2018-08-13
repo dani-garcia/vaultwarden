@@ -154,6 +154,56 @@ lazy_static! {
 }
 
 #[derive(Debug)]
+pub struct MailConfig {
+    reply_to_email: Option<String>,
+    smtp_host: String,
+    smtp_port: u16,
+    smtp_ssl: bool,
+    smtp_username: String,
+    smtp_password: String,
+}
+
+impl MailConfig {
+    fn load() -> Option<Self> {
+        let smtp_host = util::parse_option_string(env::var("SMTP_HOST").ok());
+        
+        // When SMTP_HOST is absent, we assume the user does not want to enable it.
+        if smtp_host.is_none() {
+            return None
+        }
+
+        let smtp_ssl = util::parse_option_string(env::var("SMTP_SSL").ok()).unwrap_or(false);
+        let smtp_port = util::parse_option_string(env::var("SMTP_PORT").ok())
+            .unwrap_or_else(|| {
+                if smtp_ssl {
+                    465u16
+                } else {
+                    25u16
+                }
+            });
+
+        Some(MailConfig {
+            reply_to_email: util::parse_option_string(env::var("REPLY_TO_EMAIL").ok()),
+            smtp_host: smtp_host.unwrap(),
+            smtp_port: smtp_port,
+            smtp_ssl: smtp_ssl,
+            // If username or password is not specified, and SMTP support seems to be wanted,
+            // don't let the app start: the configuration is clearly incomplete.
+            smtp_username: util::parse_option_string(env::var("SMTP_USERNAME").ok())
+                .unwrap_or_else(|| {
+                    println!("Please specify SMTP_USERNAME to enable SMTP support.");
+                    exit(1);
+                }),
+            smtp_password: util::parse_option_string(env::var("SMTP_PASSWORD").ok())
+                .unwrap_or_else(|| {
+                    println!("Please specify SMTP_PASSWORD to enable SMTP support.");
+                    exit(1);
+                }),
+        })
+    }
+}
+
+#[derive(Debug)]
 pub struct Config {
     database_url: String,
     icon_cache_folder: String,
@@ -170,8 +220,11 @@ pub struct Config {
     signups_allowed: bool,
     password_iterations: i32,
     show_password_hint: bool,
+
     domain: String,
     domain_set: bool,
+
+    mail: Option<MailConfig>,
 }
 
 impl Config {
@@ -202,6 +255,8 @@ impl Config {
 
             domain_set: domain.is_ok(),
             domain: domain.unwrap_or("http://localhost".into()),
+
+            mail: MailConfig::load(),
         }
     }
 }
