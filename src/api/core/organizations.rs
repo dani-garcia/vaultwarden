@@ -8,6 +8,8 @@ use db::models::*;
 use api::{PasswordData, JsonResult, EmptyResult, NumberOrString, JsonUpcase};
 use auth::{Headers, AdminHeaders, OwnerHeaders};
 
+use serde::{Deserialize, Deserializer};
+
 
 #[derive(Deserialize)]
 #[allow(non_snake_case)]
@@ -327,6 +329,14 @@ fn get_org_users(org_id: String, headers: AdminHeaders, conn: DbConn) -> JsonRes
     })))
 }
 
+fn deserialize_collections<'de, D>(deserializer: D) -> Result<Vec<CollectionData>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    // Deserialize null to empty Vec
+    Deserialize::deserialize(deserializer).or(Ok(vec![])) 
+}
+
 #[derive(Deserialize)]
 #[allow(non_snake_case)]
 struct CollectionData {
@@ -339,6 +349,7 @@ struct CollectionData {
 struct InviteData {
     Emails: Vec<String>,
     Type: NumberOrString,
+    #[serde(deserialize_with = "deserialize_collections")]
     Collections: Vec<CollectionData>,
     AccessAll: Option<bool>,
 }
@@ -443,10 +454,10 @@ fn get_user(org_id: String, user_id: String, _headers: AdminHeaders, conn: DbCon
 #[allow(non_snake_case)]
 struct EditUserData {
     Type: NumberOrString,
+    #[serde(deserialize_with = "deserialize_collections")]
     Collections: Vec<CollectionData>,
     AccessAll: bool,
 }
-
 
 #[put("/organizations/<org_id>/users/<user_id>", data = "<data>", rank = 1)]
 fn put_organization_user(org_id: String, user_id: String, data: JsonUpcase<EditUserData>, headers: AdminHeaders, conn: DbConn) -> EmptyResult {
