@@ -32,11 +32,17 @@ fn mailer(config: &MailConfig) -> SmtpTransport {
 }
 
 pub fn send_password_hint(address: &str, hint: &str, config: &MailConfig) -> Result<(), String> {
+    let body = format!(
+        "You (or someone) recently requested your master password hint.\n\n\
+         Your hint is:  \"{}\"\n\n\
+         If you did not request your master password hint you can safely ignore this email.\n",
+        hint); 
+
     let email = EmailBuilder::new()
         .to(address)
         .from((config.smtp_from.to_owned(), "Bitwarden-rs"))
         .subject("Your Master Password Hint")
-        .body(hint)
+        .body(body)
         .build().unwrap();
 
     match mailer(config).send(&email) {
