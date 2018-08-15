@@ -139,10 +139,9 @@ Where:
 
 ```sh
 docker run -d --name bitwarden \
-  -e ROCKET_TLS={certs='"/ssl/certs.pem",key="/ssl/key.pem"}' \
+  -e ROCKET_TLS='{certs="/ssl/certs.pem",key="/ssl/key.pem"}' \
   -v /ssl/keys/:/ssl/ \
   -v /bw-data/:/data/ \
-  -v /icon_cache/ \
   -p 443:80 \
   mprasil/bitwarden:latest
 ```
