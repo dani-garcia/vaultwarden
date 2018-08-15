@@ -163,13 +163,13 @@ pub struct MailConfig {
     smtp_port: u16,
     smtp_ssl: bool,
     smtp_from: String,
-    smtp_username: String,
-    smtp_password: String,
+    smtp_username: Option<String>,
+    smtp_password: Option<String>,
 }
 
 impl MailConfig {
     fn load() -> Option<Self> {
-        let smtp_host = util::parse_option_string(env::var("SMTP_HOST").ok());
+        let smtp_host = env::var("SMTP_HOST").ok();
         
         // When SMTP_HOST is absent, we assume the user does not want to enable it.
         if smtp_host.is_none() {
@@ -186,24 +186,24 @@ impl MailConfig {
                 }
             });
 
+        let smtp_username = env::var("SMTP_USERNAME").ok();
+        let smtp_password = env::var("SMTP_PASSWORD").ok().or_else(|| {
+            if smtp_username.as_ref().is_some() {
+                println!("Please specify SMTP_PASSWORD to enable SMTP support.");
+                exit(1);
+            } else {
+                None
+            }
+        });
+
         Some(MailConfig {
             smtp_host: smtp_host.unwrap(),
             smtp_port: smtp_port,
             smtp_ssl: smtp_ssl,
             smtp_from: util::parse_option_string(env::var("SMTP_FROM").ok())
-                .unwrap_or("bitwarden@localhost".to_string()),
-            // If username or password is not specified and SMTP support seems to be wanted,
-            // don't let the app start: the configuration is clearly incomplete.
-            smtp_username: util::parse_option_string(env::var("SMTP_USERNAME").ok())
-                .unwrap_or_else(|| {
-                    println!("Please specify SMTP_USERNAME to enable SMTP support.");
-                    exit(1);
-                }),
-            smtp_password: util::parse_option_string(env::var("SMTP_PASSWORD").ok())
-                .unwrap_or_else(|| {
-                    println!("Please specify SMTP_PASSWORD to enable SMTP support.");
-                    exit(1);
-                }),
+                .unwrap_or("bitwarden-rs@localhost".to_string()),
+            smtp_username: smtp_username,
+            smtp_password: smtp_password,
         })
     }
 }

@@ -3,7 +3,7 @@ use native_tls::TlsConnector;
 use native_tls::{Protocol};
 use lettre::{EmailTransport, SmtpTransport, ClientTlsParameters, ClientSecurity};
 use lettre::smtp::{ConnectionReuseParameters, SmtpTransportBuilder};
-use lettre::smtp::authentication::{Credentials, Mechanism};
+use lettre::smtp::authentication::Credentials;
 use lettre_email::EmailBuilder;
 
 use MailConfig;
@@ -11,10 +11,7 @@ use MailConfig;
 fn mailer(config: &MailConfig) -> SmtpTransport {
     let client_security = if config.smtp_ssl {
         let mut tls_builder = TlsConnector::builder().unwrap();
-        tls_builder.supported_protocols(&[
-            Protocol::Tlsv10, Protocol::Tlsv11, Protocol::Tlsv12
-        ]).unwrap();
-
+        tls_builder.supported_protocols(&[Protocol::Tlsv11, Protocol::Tlsv12]).unwrap();
         ClientSecurity::Required(
             ClientTlsParameters::new(config.smtp_host.to_owned(), tls_builder.build().unwrap())
         )
@@ -22,12 +19,21 @@ fn mailer(config: &MailConfig) -> SmtpTransport {
         ClientSecurity::None
     };
 
-    SmtpTransportBuilder::new((config.smtp_host.to_owned().as_str(), config.smtp_port), client_security)
-        .unwrap()
-        .credentials(Credentials::new(config.smtp_username.to_owned(), config.smtp_password.to_owned()))
-        .authentication_mechanism(Mechanism::Login)
+    let smtp_transport = SmtpTransportBuilder::new(
+        (config.smtp_host.to_owned().as_str(), config.smtp_port),
+        client_security
+    ).unwrap();
+
+    let smtp_transport = match (&config.smtp_username, &config.smtp_password) {
+        (Some(username), Some(password)) => {
+            smtp_transport.credentials(Credentials::new(username.to_owned(), password.to_owned()))
+        },
+        (_, _) => smtp_transport,
+    };
+
+    smtp_transport
         .smtp_utf8(true)
-        .connection_reuse(ConnectionReuseParameters::ReuseUnlimited)
+        .connection_reuse(ConnectionReuseParameters::NoReuse)
         .build()
 }
 
