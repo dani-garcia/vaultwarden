@@ -251,9 +251,14 @@ fn post_ciphers_import(data: JsonUpcase<ImportData>, headers: Headers, conn: DbC
     }
 }
 
+
+#[put("/ciphers/<uuid>/admin", data = "<data>")]
+fn put_cipher_admin(uuid: String, data: JsonUpcase<CipherData>, headers: Headers, conn: DbConn) -> JsonResult {
+    put_cipher(uuid, data, headers, conn)
+}
+
 #[post("/ciphers/<uuid>/admin", data = "<data>")]
 fn post_cipher_admin(uuid: String, data: JsonUpcase<CipherData>, headers: Headers, conn: DbConn) -> JsonResult {
-    // TODO: Implement this correctly
     post_cipher(uuid, data, headers, conn)
 }
 
