@@ -61,6 +61,7 @@ num-derive = "0.2.2"
 lettre = "0.8.2"
 lettre_email = "0.8.2"
 native-tls = "0.1.5"
+fast_chemail = "0.9.5"
 
 [patch.crates-io]
  # Make jwt use ring 0.11, to match rocket

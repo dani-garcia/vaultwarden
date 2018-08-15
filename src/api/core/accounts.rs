@@ -5,6 +5,7 @@ use db::models::*;
 
 use api::{PasswordData, JsonResult, EmptyResult, JsonUpcase, NumberOrString};
 use auth::Headers;
+use fast_chemail::is_valid_email;
 use mail;
 
 use CONFIG;
@@ -258,6 +259,10 @@ struct PasswordHintData {
 #[post("/accounts/password-hint", data = "<data>")]
 fn password_hint(data: JsonUpcase<PasswordHintData>, conn: DbConn) -> EmptyResult {
     let data: PasswordHintData = data.into_inner().data;
+
+    if !is_valid_email(&data.Email) {
+        return Ok(());
+    }
 
     let user = User::find_by_mail(&data.Email, &conn);
     if user.is_none() {

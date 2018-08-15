@@ -1,6 +1,5 @@
 use std::error::Error;
-use native_tls::TlsConnector;
-use native_tls::{Protocol};
+use native_tls::{Protocol, TlsConnector};
 use lettre::{EmailTransport, SmtpTransport, ClientTlsParameters, ClientSecurity};
 use lettre::smtp::{ConnectionReuseParameters, SmtpTransportBuilder};
 use lettre::smtp::authentication::Credentials;
