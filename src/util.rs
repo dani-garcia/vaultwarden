@@ -3,19 +3,20 @@
 ///
 #[macro_export]
 macro_rules! err {
-    ($err:expr, $err_desc:expr, $msg:expr) => {{
+    ($err:expr, $msg:expr) => {{
         println!("ERROR: {}", $msg);
         err_json!(json!({
-          "error": $err,
-          "error_description": $err_desc,
-          "ErrorModel": {
-            "Message": $msg,
-            "ValidationErrors": null,
-            "Object": "error"
-          }
+          "Message": $err,
+          "ValidationErrors": {
+            "": [$msg,],
+          },
+          "ExceptionMessage": null,
+          "ExceptionStackTrace": null,
+          "InnerExceptionMessage": null,
+          "Object": "error",
         }))
     }};
-    ($msg:expr) => { err!("default_error", "default_error_description", $msg) }
+    ($msg:expr) => { err!("The model state is invalid", $msg) }
 }
 
 #[macro_export]
