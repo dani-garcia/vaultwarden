@@ -26,6 +26,9 @@ extern crate lazy_static;
 #[macro_use]
 extern crate num_derive;
 extern crate num_traits;
+extern crate lettre;
+extern crate lettre_email;
+extern crate native_tls;
 
 use std::{env, path::Path, process::{exit, Command}};
 use rocket::Rocket;
@@ -37,6 +40,7 @@ mod api;
 mod db;
 mod crypto;
 mod auth;
+mod mail;
 
 fn init_rocket() -> Rocket {
     rocket::ignite()
@@ -155,10 +159,10 @@ lazy_static! {
 
 #[derive(Debug)]
 pub struct MailConfig {
-    reply_to_email: Option<String>,
     smtp_host: String,
     smtp_port: u16,
     smtp_ssl: bool,
+    smtp_from: String,
     smtp_username: String,
     smtp_password: String,
 }
@@ -172,22 +176,23 @@ impl MailConfig {
             return None
         }
 
-        let smtp_ssl = util::parse_option_string(env::var("SMTP_SSL").ok()).unwrap_or(false);
+        let smtp_ssl = util::parse_option_string(env::var("SMTP_SSL").ok()).unwrap_or(true);
         let smtp_port = util::parse_option_string(env::var("SMTP_PORT").ok())
             .unwrap_or_else(|| {
                 if smtp_ssl {
-                    465u16
+                    587u16
                 } else {
                     25u16
                 }
             });
 
         Some(MailConfig {
-            reply_to_email: util::parse_option_string(env::var("REPLY_TO_EMAIL").ok()),
             smtp_host: smtp_host.unwrap(),
             smtp_port: smtp_port,
             smtp_ssl: smtp_ssl,
-            // If username or password is not specified, and SMTP support seems to be wanted,
+            smtp_from: util::parse_option_string(env::var("SMTP_FROM").ok())
+                .unwrap_or("bitwarden@localhost".to_string()),
+            // If username or password is not specified and SMTP support seems to be wanted,
             // don't let the app start: the configuration is clearly incomplete.
             smtp_username: util::parse_option_string(env::var("SMTP_USERNAME").ok())
                 .unwrap_or_else(|| {

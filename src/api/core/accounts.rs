@@ -5,6 +5,7 @@ use db::models::*;
 
 use api::{PasswordData, JsonResult, EmptyResult, JsonUpcase, NumberOrString};
 use auth::Headers;
+use mail;
 
 use CONFIG;
 
@@ -258,15 +259,23 @@ struct PasswordHintData {
 fn password_hint(data: JsonUpcase<PasswordHintData>, conn: DbConn) -> EmptyResult {
     let data: PasswordHintData = data.into_inner().data;
 
-    if !CONFIG.show_password_hint {
-        return Ok(())
+    let user = User::find_by_mail(&data.Email, &conn);
+    if user.is_none() {
+        return Ok(());
     }
 
-    match User::find_by_mail(&data.Email, &conn) {
-        Some(user) => {
-            let hint = user.password_hint.to_owned().unwrap_or_default();
-            err!(format!("Your password hint is: {}", hint))
-        },
-        None => Ok(()),
+    let user = user.unwrap();
+    let hint = user.password_hint.to_owned().unwrap_or("You don't have any...".to_string());
+
+    if let Some(ref mail_config) = CONFIG.mail {
+        if let Err(e) = mail::send_password_hint(&user.email, &hint, mail_config) {
+            err!(format!("There have been a problem sending the email: {}", e));
+        }
     }
+
+    if !CONFIG.show_password_hint {
+        err!(format!("Your password hint is: {}", &hint));
+    }
+
+    Ok(())
 }
