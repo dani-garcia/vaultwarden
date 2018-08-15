@@ -265,15 +265,16 @@ fn password_hint(data: JsonUpcase<PasswordHintData>, conn: DbConn) -> EmptyResul
     }
 
     let user = user.unwrap();
-    let hint = user.password_hint.to_owned().unwrap_or("You don't have any...".to_string());
+    let hint = match user.password_hint {
+        Some(hint) => hint,
+        None => return Ok(()),
+    };
 
     if let Some(ref mail_config) = CONFIG.mail {
         if let Err(e) = mail::send_password_hint(&user.email, &hint, mail_config) {
             err!(format!("There have been a problem sending the email: {}", e));
         }
-    }
-
-    if !CONFIG.show_password_hint {
+    } else if CONFIG.show_password_hint {
         err!(format!("Your password hint is: {}", &hint));
     }
 
