@@ -14,6 +14,7 @@ pub fn routes() -> Vec<Route> {
     routes![
         register,
         profile,
+        put_profile,
         post_profile,
         get_public_keys,
         post_keys,
