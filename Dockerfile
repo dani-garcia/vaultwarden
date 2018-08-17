@@ -25,19 +25,11 @@ RUN npm run dist \
     && mv build /web-vault
 
 ########################## BUILD IMAGE  ##########################
-# We need to use the Rust build image, because
-# we need the Rust compiler and Cargo tooling
-FROM rust as build
-
-# Using bundled SQLite, no need to install it
-# RUN apt-get update && apt-get install -y\
-#    sqlite3\
-#    --no-install-recommends\
-# && rm -rf /var/lib/apt/lists/*
+# Musl build image for statically compiled binary
+FROM clux/muslrust:nightly-2018-06-26 as build
 
 # Creates a dummy project used to grab dependencies
-RUN USER=root cargo new --bin app
-WORKDIR /app
+RUN USER=root cargo init --bin
 
 # Copies over *only* your manifests and vendored dependencies
 COPY ./Cargo.* ./
@@ -61,17 +53,15 @@ RUN cargo build --release
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image
 # because we already have a binary built
-FROM debian:stretch-slim
+FROM alpine:3.8
 
 ENV ROCKET_ENV "staging"
 ENV ROCKET_WORKERS=10
 
 # Install needed libraries
-RUN apt-get update && apt-get install -y\
+RUN apk add \
     openssl\
-    ca-certificates\
-    --no-install-recommends\
- && rm -rf /var/lib/apt/lists/*
+    ca-certificates
 
 RUN mkdir /data
 VOLUME /data
@@ -82,7 +72,7 @@ EXPOSE 80
 COPY .env .
 COPY Rocket.toml .
 COPY --from=vault /web-vault ./web-vault
-COPY --from=build app/target/release/bitwarden_rs .
+COPY --from=build /volume/target/x86_64-unknown-linux-musl/release/bitwarden_rs .
 
 # Configures the startup!
 CMD ./bitwarden_rs
