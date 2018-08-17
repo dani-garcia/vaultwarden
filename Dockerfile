@@ -57,11 +57,13 @@ FROM alpine:3.8
 
 ENV ROCKET_ENV "staging"
 ENV ROCKET_WORKERS=10
+ENV SSL_CERT_DIR=/etc/ssl/certs
 
 # Install needed libraries
 RUN apk add \
-    openssl\
-    ca-certificates
+        openssl\
+        ca-certificates \
+    && rm /var/cache/apk/*
 
 RUN mkdir /data
 VOLUME /data
