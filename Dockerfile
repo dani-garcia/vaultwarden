@@ -26,7 +26,7 @@ RUN npm run dist \
 
 ########################## BUILD IMAGE  ##########################
 # Musl build image for statically compiled binary
-FROM clux/muslrust:nightly-2018-06-26 as build
+FROM clux/muslrust:nightly-2018-07-18 as build
 
 # Creates a dummy project used to grab dependencies
 RUN USER=root cargo init --bin
