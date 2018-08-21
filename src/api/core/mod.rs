@@ -86,6 +86,7 @@ pub fn routes() -> Vec<Route> {
         get_org_collections,
         get_org_collection_detail,
         get_collection_users,
+        put_organization,
         post_organization,
         post_organization_collections,
         delete_organization_collection_user,
