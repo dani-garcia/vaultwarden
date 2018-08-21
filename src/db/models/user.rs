@@ -155,12 +155,13 @@ impl User {
     }
 
     pub fn update_revision(&mut self, conn: &DbConn) -> QueryResult<()> {
+        self.updated_at = Utc::now().naive_utc();
         diesel::update(
             users::table.filter(
                 users::uuid.eq(&self.uuid)
             )
         )
-        .set(users::updated_at.eq(Utc::now().naive_utc()))
+        .set(users::updated_at.eq(&self.updated_at))
         .execute(&**conn).and(Ok(()))
     }
 
