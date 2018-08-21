@@ -1,5 +1,6 @@
 #![feature(plugin, custom_derive)]
 #![plugin(rocket_codegen)]
+#![allow(proc_macro_derive_resolution_fallback)] // TODO: Remove this when diesel update fixes warnings
 extern crate rocket;
 extern crate rocket_contrib;
 extern crate reqwest;

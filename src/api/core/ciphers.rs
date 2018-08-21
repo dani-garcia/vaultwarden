@@ -87,6 +87,8 @@ fn get_cipher_details(uuid: String, headers: Headers, conn: DbConn) -> JsonResul
 #[derive(Deserialize, Debug)]
 #[allow(non_snake_case)]
 struct CipherData {
+    // Id is optional as it is included only in bulk share
+    Id: Option<String>,
     // Folder id is not included in import
     FolderId: Option<String>,
     // TODO: Some of these might appear all the time, no need for Option
@@ -242,12 +244,21 @@ fn post_ciphers_import(data: JsonUpcase<ImportData>, headers: Headers, conn: DbC
         cipher.move_to_folder(folder_uuid, &headers.user.uuid.clone(), &conn).ok();
     }
 
-    Ok(())
+    let mut user = headers.user;
+    match user.update_revision(&conn) {
+        Ok(()) => Ok(()),
+        Err(_) => err!("Failed to update the revision, please log out and log back in to finish import.")
+    }
+}
+
+
+#[put("/ciphers/<uuid>/admin", data = "<data>")]
+fn put_cipher_admin(uuid: String, data: JsonUpcase<CipherData>, headers: Headers, conn: DbConn) -> JsonResult {
+    put_cipher(uuid, data, headers, conn)
 }
 
 #[post("/ciphers/<uuid>/admin", data = "<data>")]
 fn post_cipher_admin(uuid: String, data: JsonUpcase<CipherData>, headers: Headers, conn: DbConn) -> JsonResult {
-    // TODO: Implement this correctly
     post_cipher(uuid, data, headers, conn)
 }
 
@@ -282,6 +293,11 @@ struct CollectionsAdminData {
 
 #[post("/ciphers/<uuid>/collections", data = "<data>")]
 fn post_collections_update(uuid: String, data: JsonUpcase<CollectionsAdminData>, headers: Headers, conn: DbConn) -> EmptyResult {
+    post_collections_admin(uuid, data, headers, conn)
+}
+
+#[put("/ciphers/<uuid>/collections-admin", data = "<data>")]
+fn put_collections_admin(uuid: String, data: JsonUpcase<CollectionsAdminData>, headers: Headers, conn: DbConn) -> EmptyResult {
     post_collections_admin(uuid, data, headers, conn)
 }
 
@@ -332,6 +348,65 @@ struct ShareCipherData {
 fn post_cipher_share(uuid: String, data: JsonUpcase<ShareCipherData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: ShareCipherData = data.into_inner().data;
 
+    share_cipher_by_uuid(&uuid, data, &headers, &conn)
+}
+
+#[put("/ciphers/<uuid>/share", data = "<data>")]
+fn put_cipher_share(uuid: String, data: JsonUpcase<ShareCipherData>, headers: Headers, conn: DbConn) -> JsonResult {
+    let data: ShareCipherData = data.into_inner().data;
+
+    share_cipher_by_uuid(&uuid, data, &headers, &conn)
+}
+
+#[derive(Deserialize)]
+#[allow(non_snake_case)]
+struct ShareSelectedCipherData {
+    Ciphers: Vec<CipherData>,
+    CollectionIds: Vec<String>
+}
+
+#[put("/ciphers/share", data = "<data>")]
+fn put_cipher_share_seleted(data: JsonUpcase<ShareSelectedCipherData>, headers: Headers, conn: DbConn) -> EmptyResult {
+    let mut data: ShareSelectedCipherData = data.into_inner().data;
+    let mut cipher_ids: Vec<String> = Vec::new();
+
+    if data.Ciphers.len() == 0 {
+        err!("You must select at least one cipher.")
+    }
+    
+    if data.CollectionIds.len() == 0 {
+        err!("You must select at least one collection.")
+    }
+    
+    for cipher in data.Ciphers.iter() {
+        match cipher.Id {
+            Some(ref id) => cipher_ids.push(id.to_string()),
+            None => err!("Request missing ids field")
+        };
+    }
+
+    let attachments = Attachment::find_by_ciphers(cipher_ids, &conn);
+    
+    if attachments.len() > 0 {
+        err!("Ciphers should not have any attachments.")
+    }
+
+    while let Some(cipher) = data.Ciphers.pop() {
+        let mut shared_cipher_data = ShareCipherData {
+            Cipher: cipher,
+            CollectionIds: data.CollectionIds.clone()
+        };
+
+        match shared_cipher_data.Cipher.Id.take() {
+            Some(id) => share_cipher_by_uuid(&id, shared_cipher_data , &headers, &conn)?,
+            None => err!("Request missing ids field")
+        };
+    }
+
+    Ok(())
+}
+
+fn share_cipher_by_uuid(uuid: &str, data: ShareCipherData, headers: &Headers, conn: &DbConn) -> JsonResult {
     let mut cipher = match Cipher::find_by_uuid(&uuid, &conn) {
         Some(cipher) => {
             if cipher.is_write_accessible_to_user(&headers.user.uuid, &conn) {
@@ -456,7 +531,7 @@ fn delete_cipher(uuid: String, headers: Headers, conn: DbConn) -> EmptyResult {
     _delete_cipher_by_uuid(&uuid, &headers, &conn)
 }
 
-#[post("/ciphers/delete", data = "<data>")]
+#[delete("/ciphers", data = "<data>")]
 fn delete_cipher_selected(data: JsonUpcase<Value>, headers: Headers, conn: DbConn) -> EmptyResult {
     let data: Value = data.into_inner().data;
 
@@ -475,6 +550,11 @@ fn delete_cipher_selected(data: JsonUpcase<Value>, headers: Headers, conn: DbCon
     }
 
     Ok(())
+}
+
+#[post("/ciphers/delete", data = "<data>")]
+fn delete_cipher_selected_post(data: JsonUpcase<Value>, headers: Headers, conn: DbConn) -> EmptyResult {
+    delete_cipher_selected(data, headers, conn)
 }
 
 #[post("/ciphers/move", data = "<data>")]
@@ -527,6 +607,11 @@ fn move_cipher_selected(data: JsonUpcase<Value>, headers: Headers, conn: DbConn)
     }
 
     Ok(())
+}
+
+#[put("/ciphers/move", data = "<data>")]
+fn move_cipher_selected_put(data: JsonUpcase<Value>, headers: Headers, conn: DbConn) -> EmptyResult {
+    move_cipher_selected(data, headers, conn)
 }
 
 #[post("/ciphers/purge", data = "<data>")]

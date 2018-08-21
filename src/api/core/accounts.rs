@@ -73,6 +73,11 @@ struct ProfileData {
     Name: String,
 }
 
+#[put("/accounts/profile", data = "<data>")]
+fn put_profile(data: JsonUpcase<ProfileData>, headers: Headers, conn: DbConn) -> JsonResult {
+    post_profile(data, headers, conn)
+}
+
 #[post("/accounts/profile", data = "<data>")]
 fn post_profile(data: JsonUpcase<ProfileData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: ProfileData = data.into_inner().data;
