@@ -109,8 +109,7 @@ impl UserOrganization {
 use diesel;
 use diesel::prelude::*;
 use db::DbConn;
-use db::schema::organizations;
-use db::schema::users_organizations;
+use db::schema::{organizations, users_organizations, users_collections, ciphers_collections};
 
 /// Database methods
 impl Organization {
@@ -296,6 +295,26 @@ impl UserOrganization {
             .filter(users_organizations::user_uuid.eq(user_uuid))
             .filter(users_organizations::org_uuid.eq(org_uuid))
             .first::<Self>(&**conn).ok()
+    }
+
+    pub fn find_by_cipher_and_org(cipher_uuid: &str, org_uuid: &str, conn: &DbConn) -> Vec<Self> {
+        users_organizations::table
+        .filter(users_organizations::org_uuid.eq(org_uuid))
+        .left_join(users_collections::table.on(
+            users_collections::user_uuid.eq(users_organizations::user_uuid)
+        ))
+        .left_join(ciphers_collections::table.on(
+            ciphers_collections::collection_uuid.eq(users_collections::collection_uuid).and(
+                ciphers_collections::cipher_uuid.eq(&cipher_uuid)
+            )
+        ))
+        .filter(
+            users_organizations::access_all.eq(true).or( // AccessAll..
+                ciphers_collections::cipher_uuid.eq(&cipher_uuid) // ..or access to collection with cipher
+            )
+        )
+        .select(users_organizations::all_columns)
+        .load::<Self>(&**conn).expect("Error loading user organizations")
     }
 }
 

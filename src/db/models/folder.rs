@@ -71,6 +71,7 @@ use db::schema::{folders, folders_ciphers};
 /// Database methods
 impl Folder {
     pub fn save(&mut self, conn: &DbConn) -> bool {
+        User::update_uuid_revision(&self.user_uuid, conn);
         self.updated_at = Utc::now().naive_utc();
 
         match diesel::replace_into(folders::table)
@@ -82,6 +83,7 @@ impl Folder {
     }
 
     pub fn delete(self, conn: &DbConn) -> QueryResult<()> {
+        User::update_uuid_revision(&self.user_uuid, conn);
         FolderCipher::delete_all_by_folder(&self.uuid, &conn)?;
 
         diesel::delete(
