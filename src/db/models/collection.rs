@@ -185,6 +185,8 @@ impl CollectionUser {
     }
 
     pub fn save(user_uuid: &str, collection_uuid: &str, read_only:bool, conn: &DbConn) -> QueryResult<()> {
+        User::update_uuid_revision(&user_uuid, conn);
+
         diesel::replace_into(users_collections::table)
         .values((
             users_collections::user_uuid.eq(user_uuid),
@@ -194,6 +196,8 @@ impl CollectionUser {
     }
 
     pub fn delete(self, conn: &DbConn) -> QueryResult<()> {
+        User::update_uuid_revision(&self.user_uuid, conn);
+
         diesel::delete(users_collections::table
         .filter(users_collections::user_uuid.eq(&self.user_uuid))
         .filter(users_collections::collection_uuid.eq(&self.collection_uuid)))
@@ -216,12 +220,20 @@ impl CollectionUser {
     }
 
     pub fn delete_all_by_collection(collection_uuid: &str, conn: &DbConn) -> QueryResult<()> {
+        CollectionUser::find_by_collection(&collection_uuid, conn)
+        .iter()
+        .for_each(|collection| {
+            User::update_uuid_revision(&collection.user_uuid, conn)
+        });
+
         diesel::delete(users_collections::table
             .filter(users_collections::collection_uuid.eq(collection_uuid))
         ).execute(&**conn).and(Ok(()))
     }
 
     pub fn delete_all_by_user(user_uuid: &str, conn: &DbConn) -> QueryResult<()> {
+        User::update_uuid_revision(&user_uuid, conn);
+
         diesel::delete(users_collections::table
             .filter(users_collections::user_uuid.eq(user_uuid))
         ).execute(&**conn).and(Ok(()))
