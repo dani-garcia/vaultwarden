@@ -111,6 +111,11 @@ fn get_organization(org_id: String, _headers: OwnerHeaders, conn: DbConn) -> Jso
     }
 }
 
+#[put("/organizations/<org_id>", data = "<data>")]
+fn put_organization(org_id: String, headers: OwnerHeaders, data: JsonUpcase<OrganizationUpdateData>, conn: DbConn) -> JsonResult {
+    post_organization(org_id, headers, data, conn)
+}
+
 #[post("/organizations/<org_id>", data = "<data>")]
 fn post_organization(org_id: String, _headers: OwnerHeaders, data: JsonUpcase<OrganizationUpdateData>, conn: DbConn) -> JsonResult {
     let data: OrganizationUpdateData = data.into_inner().data;

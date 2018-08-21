@@ -1,6 +1,7 @@
 use serde_json::Value as JsonValue;
 
 use uuid::Uuid;
+use super::{User, CollectionUser};
 
 #[derive(Debug, Identifiable, Queryable, Insertable)]
 #[table_name = "organizations"]
@@ -114,6 +115,12 @@ use db::schema::users_organizations;
 /// Database methods
 impl Organization {
     pub fn save(&mut self, conn: &DbConn) -> bool {
+        UserOrganization::find_by_org(&self.uuid, conn)
+        .iter()
+        .for_each(|user_org| {
+            User::update_uuid_revision(&user_org.user_uuid, conn);
+        });
+
         match diesel::replace_into(organizations::table)
             .values(&*self)
             .execute(&**conn) {
@@ -172,7 +179,6 @@ impl UserOrganization {
     }
 
     pub fn to_json_user_details(&self, conn: &DbConn) -> JsonValue {
-        use super::User;
         let user = User::find_by_uuid(&self.user_uuid, conn).unwrap();
 
         json!({
@@ -190,7 +196,6 @@ impl UserOrganization {
     }
 
     pub fn to_json_collection_user_details(&self, read_only: &bool, conn: &DbConn) -> JsonValue {
-        use super::User;
         let user = User::find_by_uuid(&self.user_uuid, conn).unwrap();
 
         json!({
@@ -209,7 +214,6 @@ impl UserOrganization {
         let coll_uuids = if self.access_all { 
             vec![] // If we have complete access, no need to fill the array
         } else {
-            use super::CollectionUser;
             let collections = CollectionUser::find_by_organization_and_user_uuid(&self.org_uuid, &self.user_uuid, conn);
             collections.iter().map(|c| json!({"Id": c.collection_uuid, "ReadOnly": c.read_only})).collect()
         };
@@ -228,6 +232,8 @@ impl UserOrganization {
     }
 
     pub fn save(&mut self, conn: &DbConn) -> bool {
+        User::update_uuid_revision(&self.user_uuid, conn);
+
         match diesel::replace_into(users_organizations::table)
             .values(&*self)
             .execute(&**conn) {
@@ -237,7 +243,7 @@ impl UserOrganization {
     }
 
     pub fn delete(self, conn: &DbConn) -> QueryResult<()> {
-        use super::CollectionUser;
+        User::update_uuid_revision(&self.user_uuid, conn);
 
         CollectionUser::delete_all_by_user(&self.user_uuid, &conn)?;
 
