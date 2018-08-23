@@ -17,7 +17,14 @@ cargo build --release
 When run, the server is accessible in [http://localhost:80](http://localhost:80).
 
 ### Install the web-vault
-Download the latest official release from the [releases page](https://github.com/bitwarden/web/releases) and extract it.
+Clone the git repository at [bitwarden/web](https://github.com/bitwarden/web) and checkout the latest release tag (e.g. v2.1.1):
+```sh
+# clone the repository
+git clone https://github.com/bitwarden/web.git web-vault
+cd web-vault
+# switch to the latest tag
+git checkout "$(git tag | tail -n1)"
+```
 
 Apply the patch file from `docker/set-vault-baseurl.patch`:
 ```sh
