@@ -25,6 +25,7 @@ pub fn routes() -> Vec<Route> {
         delete_account,
         revision_date,
         password_hint,
+        prelogin,
 
         sync,
 

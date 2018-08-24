@@ -45,6 +45,7 @@ fn init_rocket() -> Rocket {
         .mount("/api", api::core_routes())
         .mount("/identity", api::identity_routes())
         .mount("/icons", api::icons_routes())
+        .mount("/notifications", api::notifications_routes())
         .manage(db::init_pool())
 }
 
