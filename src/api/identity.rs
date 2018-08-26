@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 use rocket::request::{self, Form, FormItems, FromForm, FromRequest, Request};
 use rocket::{Outcome, Route};
@@ -21,12 +22,12 @@ pub fn routes() -> Vec<Route> {
 }
 
 #[post("/connect/token", data = "<connect_data>")]
-fn login(connect_data: Form<ConnectData>, device_type: DeviceType, conn: DbConn) -> JsonResult {
+fn login(connect_data: Form<ConnectData>, device_type: DeviceType, conn: DbConn, socket: Option<SocketAddr>) -> JsonResult {
     let data = connect_data.get();
 
     match data.grant_type {
         GrantType::RefreshToken => _refresh_login(data, device_type, conn),
-        GrantType::Password => _password_login(data, device_type, conn),
+        GrantType::Password => _password_login(data, device_type, conn, socket),
     }
 }
 
@@ -57,7 +58,13 @@ fn _refresh_login(data: &ConnectData, _device_type: DeviceType, conn: DbConn) ->
     })))
 }
 
-fn _password_login(data: &ConnectData, device_type: DeviceType, conn: DbConn) -> JsonResult {
+fn _password_login(data: &ConnectData, device_type: DeviceType, conn: DbConn, remote: Option<SocketAddr>) -> JsonResult {
+    // Get the ip for error reporting
+    let ip = match remote {
+        Some(ip) => ip.ip(),
+        None => IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+    };
+
     // Validate scope
     let scope = data.get("scope");
     if scope != "api offline_access" {
@@ -68,13 +75,19 @@ fn _password_login(data: &ConnectData, device_type: DeviceType, conn: DbConn) ->
     let username = data.get("username");
     let user = match User::find_by_mail(username, &conn) {
         Some(user) => user,
-        None => err!("Username or password is incorrect. Try again."),
+        None => err!(format!(
+            "Username or password is incorrect. Try again. IP: {}. Username: {}.",
+            ip, username
+        )),
     };
 
     // Check password
     let password = data.get("password");
     if !user.check_valid_password(password) {
-        err!("Username or password is incorrect. Try again.")
+        err!(format!(
+            "Username or password is incorrect. Try again. IP: {}. Username: {}.",
+            ip, username
+        ))
     }
 
     // Let's only use the header and ignore the 'devicetype' parameter
