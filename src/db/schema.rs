@@ -21,6 +21,7 @@ table! {
         fields -> Nullable<Text>,
         data -> Text,
         favorite -> Bool,
+        password_history -> Nullable<Text>,
     }
 }
 

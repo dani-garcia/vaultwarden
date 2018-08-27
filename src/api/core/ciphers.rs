@@ -112,6 +112,8 @@ struct CipherData {
     Identity: Option<Value>,
 
     Favorite: Option<bool>,
+
+    PasswordHistory: Option<Value>,
 }
 
 #[post("/ciphers/admin", data = "<data>")]
@@ -177,6 +179,7 @@ fn update_cipher_from_data(cipher: &mut Cipher, data: CipherData, headers: &Head
     type_data["Name"] = Value::String(data.Name.clone());
     type_data["Notes"] = data.Notes.clone().map(Value::String).unwrap_or(Value::Null);
     type_data["Fields"] = data.Fields.clone().unwrap_or(Value::Null);
+    type_data["PasswordHistory"] = data.PasswordHistory.clone().unwrap_or(Value::Null);
     // TODO: ******* Backwards compat end **********
 
     cipher.favorite = data.Favorite.unwrap_or(false);
@@ -184,6 +187,7 @@ fn update_cipher_from_data(cipher: &mut Cipher, data: CipherData, headers: &Head
     cipher.notes = data.Notes;
     cipher.fields = data.Fields.map(|f| f.to_string());
     cipher.data = type_data.to_string();
+    cipher.password_history = data.PasswordHistory.map(|f| f.to_string());
 
     cipher.save(&conn);
 
