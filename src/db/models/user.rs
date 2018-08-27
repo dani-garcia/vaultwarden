@@ -154,6 +154,25 @@ impl User {
         }
     }
 
+    pub fn update_uuid_revision(uuid: &str, conn: &DbConn) {
+        if let Some(mut user) = User::find_by_uuid(&uuid, conn) {
+            if user.update_revision(conn).is_err(){
+                println!("Warning: Failed to update revision for {}", user.email);
+            };
+        };
+    }
+
+    pub fn update_revision(&mut self, conn: &DbConn) -> QueryResult<()> {
+        self.updated_at = Utc::now().naive_utc();
+        diesel::update(
+            users::table.filter(
+                users::uuid.eq(&self.uuid)
+            )
+        )
+        .set(users::updated_at.eq(&self.updated_at))
+        .execute(&**conn).and(Ok(()))
+    }
+
     pub fn find_by_mail(mail: &str, conn: &DbConn) -> Option<Self> {
         let lower_mail = mail.to_lowercase();
         users::table

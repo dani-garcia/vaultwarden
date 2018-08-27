@@ -1,5 +1,6 @@
 #![feature(plugin, custom_derive)]
 #![plugin(rocket_codegen)]
+#![allow(proc_macro_derive_resolution_fallback)] // TODO: Remove this when diesel update fixes warnings
 extern crate rocket;
 extern crate rocket_contrib;
 extern crate reqwest;
@@ -44,6 +45,7 @@ fn init_rocket() -> Rocket {
         .mount("/api", api::core_routes())
         .mount("/identity", api::identity_routes())
         .mount("/icons", api::icons_routes())
+        .mount("/notifications", api::notifications_routes())
         .manage(db::init_pool())
 }
 

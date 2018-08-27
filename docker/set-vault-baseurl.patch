@@ -1,0 +1,23 @@
+--- a/src/app/services/services.module.ts
++++ b/src/app/services/services.module.ts
+@@ -116,17 +116,15 @@ const exportService = new ExportService(folderService, cipherService, apiService
+ const importService = new ImportService(cipherService, folderService, apiService, i18nService, collectionService);
+ const auditService = new AuditService(cryptoFunctionService, apiService);
+ 
+-const analytics = new Analytics(window, () => platformUtilsService.isDev() || platformUtilsService.isSelfHost(),
++const analytics = new Analytics(window, () => platformUtilsService.isDev() || platformUtilsService.isSelfHost() || true,
+     platformUtilsService, storageService, appIdService);
+ containerService.attachToWindow(window);
+ 
+ export function initFactory(): Function {
+     return async () => {
+         await (storageService as HtmlStorageService).init();
+-        const isDev = platformUtilsService.isDev();
+-        if (!isDev && platformUtilsService.isSelfHost()) {
+-            environmentService.baseUrl = window.location.origin;
+-        }
++        const isDev = false;
++        environmentService.baseUrl = window.location.origin;
+         await apiService.setUrls({
+             base: isDev ? null : window.location.origin,
+             api: isDev ? 'http://localhost:4000' : null,

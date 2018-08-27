@@ -17,28 +17,29 @@ cargo build --release
 When run, the server is accessible in [http://localhost:80](http://localhost:80).
 
 ### Install the web-vault
-Download the latest official release from the [releases page](https://github.com/bitwarden/web/releases) and extract it.
-
-Modify `web-vault/settings.Production.json` to look like this:
-```json
-{
-  "appSettings": {
-    "apiUri": "/api",
-    "identityUri": "/identity",
-    "iconsUri": "/icons",
-    "stripeKey": "",
-    "braintreeKey": ""
-  }
-}
-```
-
-Then, run the following from the `web-vault` directory:
+Clone the git repository at [bitwarden/web](https://github.com/bitwarden/web) and checkout the latest release tag (e.g. v2.1.1):
 ```sh
-npm install
-npx gulp dist:selfHosted
+# clone the repository
+git clone https://github.com/bitwarden/web.git web-vault
+cd web-vault
+# switch to the latest tag
+git checkout "$(git tag | tail -n1)"
 ```
 
-Finally copy the contents of the `web-vault/dist` folder into the `bitwarden_rs/web-vault` folder.
+Apply the patch file from `docker/set-vault-baseurl.patch`:
+```sh
+# In the Vault repository directory
+git apply /path/to/bitwarden_rs/docker/set-vault-baseurl.patch
+```
+
+Then, build the Vault:
+```sh
+npm run sub:init
+npm install
+npm run dist
+```
+
+Finally copy the contents of the `build` folder into the `bitwarden_rs/web-vault` folder.
 
 # Configuration
 The available configuration options are documented in the default `.env` file, and they can be modified by uncommenting the desired options in that file or by setting their respective environment variables. Look at the README file for the main configuration options available.

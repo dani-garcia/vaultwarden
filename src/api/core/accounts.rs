@@ -73,6 +73,11 @@ struct ProfileData {
     Name: String,
 }
 
+#[put("/accounts/profile", data = "<data>")]
+fn put_profile(data: JsonUpcase<ProfileData>, headers: Headers, conn: DbConn) -> JsonResult {
+    post_profile(data, headers, conn)
+}
+
 #[post("/accounts/profile", data = "<data>")]
 fn post_profile(data: JsonUpcase<ProfileData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: ProfileData = data.into_inner().data;
@@ -275,3 +280,31 @@ fn password_hint(data: JsonUpcase<PasswordHintData>, conn: DbConn) -> EmptyResul
         None => Ok(()),
     }
 }
+
+#[derive(Deserialize)]
+#[allow(non_snake_case)]
+struct PreloginData {
+    Email: String,
+}
+
+#[post("/accounts/prelogin", data = "<data>")]
+fn prelogin(data: JsonUpcase<PreloginData>, conn: DbConn) -> JsonResult {
+    let data: PreloginData = data.into_inner().data;
+
+    match User::find_by_mail(&data.Email, &conn) {
+        Some(user) => {
+            let kdf_type = 0; // PBKDF2: 0
+
+            let _server_iter = user.password_iterations;
+            let client_iter = 5000; // TODO: Make iterations user configurable
+
+            
+            Ok(Json(json!({
+                "Kdf": kdf_type,
+                "KdfIterations": client_iter
+            })))
+        },
+        None => err!("Invalid user"),
+    }
+}
+
