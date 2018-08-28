@@ -32,6 +32,7 @@ pub struct Cipher {
     pub data: String,
 
     pub favorite: bool,
+    pub password_history: Option<String>,
 }
 
 /// Local methods
@@ -55,6 +56,7 @@ impl Cipher {
             fields: None,
 
             data: String::new(),
+            password_history: None,
         }
     }
 }
@@ -76,6 +78,10 @@ impl Cipher {
 
         let fields_json: JsonValue = if let Some(ref fields) = self.fields {
             serde_json::from_str(fields).unwrap()
+        } else { JsonValue::Null };
+        
+        let password_history_json: JsonValue = if let Some(ref password_history) = self.password_history {
+            serde_json::from_str(password_history).unwrap()
         } else { JsonValue::Null };
 
         let mut data_json: JsonValue = serde_json::from_str(&self.data).unwrap();
@@ -108,6 +114,8 @@ impl Cipher {
 
             "Object": "cipher",
             "Edit": true,
+
+            "PasswordHistory": password_history_json,
         });
 
         let key = match self.type_ {
