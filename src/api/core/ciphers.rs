@@ -520,6 +520,11 @@ fn delete_attachment(uuid: String, attachment_id: String, headers: Headers, conn
     _delete_cipher_attachment_by_id(&uuid, &attachment_id, &headers, &conn)
 }
 
+#[delete("/ciphers/<uuid>/attachment/<attachment_id>/admin")]
+fn delete_attachment_admin(uuid: String, attachment_id: String, headers: Headers, conn: DbConn) -> EmptyResult {
+    _delete_cipher_attachment_by_id(&uuid, &attachment_id, &headers, &conn)
+}
+
 #[post("/ciphers/<uuid>/delete")]
 fn delete_cipher_post(uuid: String, headers: Headers, conn: DbConn) -> EmptyResult {
     _delete_cipher_by_uuid(&uuid, &headers, &conn)
@@ -532,6 +537,11 @@ fn delete_cipher_post_admin(uuid: String, headers: Headers, conn: DbConn) -> Emp
 
 #[delete("/ciphers/<uuid>")]
 fn delete_cipher(uuid: String, headers: Headers, conn: DbConn) -> EmptyResult {
+    _delete_cipher_by_uuid(&uuid, &headers, &conn)
+}
+
+#[delete("/ciphers/<uuid>/admin")]
+fn delete_cipher_admin(uuid: String, headers: Headers, conn: DbConn) -> EmptyResult {
     _delete_cipher_by_uuid(&uuid, &headers, &conn)
 }
 
