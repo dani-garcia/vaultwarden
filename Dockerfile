@@ -47,7 +47,7 @@ COPY ./rust-toolchain ./rust-toolchain
 # Builds your dependencies and removes the
 # dummy project, except the target folder
 # This folder contains the compiled dependencies
-RUN cargo build --release --features vendored_openssl
+RUN cargo build --release
 RUN find . -not -path "./target*" -delete
 
 # Copies the complete project
@@ -56,7 +56,7 @@ COPY . .
 
 # Builds again, this time it'll just be
 # your actual source files being built
-RUN cargo build --release --features vendored_openssl
+RUN cargo build --release
 
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image
