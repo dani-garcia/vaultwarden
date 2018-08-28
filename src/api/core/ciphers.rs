@@ -132,8 +132,8 @@ fn post_ciphers(data: JsonUpcase<CipherData>, headers: Headers, conn: DbConn) ->
     Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, &conn)))
 }
 
-fn update_cipher_from_data(cipher: &mut Cipher, data: CipherData, headers: &Headers, is_new_or_shared: bool, conn: &DbConn) -> EmptyResult {
-    if is_new_or_shared {
+fn update_cipher_from_data(cipher: &mut Cipher, data: CipherData, headers: &Headers, new_or_shared_directly: bool, conn: &DbConn) -> EmptyResult {
+    if new_or_shared_directly { // Cipher is new or shared to Organization directly (not to Collection)
         if let Some(org_id) = data.OrganizationId {
             match UserOrganization::find_by_user_and_org(&headers.user.uuid, &org_id, &conn) {
                 None => err!("You don't have permission to add item to organization"),
@@ -147,6 +147,9 @@ fn update_cipher_from_data(cipher: &mut Cipher, data: CipherData, headers: &Head
         } else {
             cipher.user_uuid = Some(headers.user.uuid.clone());
         }
+    } else if let Some(org_uuid) = data.OrganizationId { // Shared to collection, but still belongs to Organization
+        cipher.organization_uuid = Some(org_uuid);
+        cipher.user_uuid = None;
     }
 
     if let Some(ref folder_id) = data.FolderId {
@@ -422,22 +425,28 @@ fn share_cipher_by_uuid(uuid: &str, data: ShareCipherData, headers: &Headers, co
         None => err!("Cipher doesn't exist")
     };
 
-    match data.Cipher.OrganizationId {
+    match data.Cipher.OrganizationId.clone() {
         None => err!("Organization id not provided"),
-        Some(_) => {
-            update_cipher_from_data(&mut cipher, data.Cipher, &headers, true, &conn)?;
+        Some(organization_uuid) => {
+            let mut shared_directly = true;
             for uuid in &data.CollectionIds {
                 match Collection::find_by_uuid(uuid, &conn) {
                     None => err!("Invalid collection ID provided"),
                     Some(collection) => {
                         if collection.is_writable_by_user(&headers.user.uuid, &conn) {
-                            CollectionCipher::save(&cipher.uuid.clone(), &collection.uuid, &conn);
+                            if collection.org_uuid == organization_uuid {
+                                CollectionCipher::save(&cipher.uuid.clone(), &collection.uuid, &conn);
+                                shared_directly = false;
+                            } else {
+                                err!("Collection does not belong to organization")
+                            }
                         } else {
                             err!("No rights to modify the collection")
                         }
                     }
                 }
             }
+            update_cipher_from_data(&mut cipher, data.Cipher, &headers, shared_directly, &conn)?;
 
             Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, &conn)))
         }
