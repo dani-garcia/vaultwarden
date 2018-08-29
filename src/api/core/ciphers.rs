@@ -377,11 +377,11 @@ fn put_cipher_share_seleted(data: JsonUpcase<ShareSelectedCipherData>, headers: 
     if data.Ciphers.len() == 0 {
         err!("You must select at least one cipher.")
     }
-    
+
     if data.CollectionIds.len() == 0 {
         err!("You must select at least one collection.")
     }
-    
+
     for cipher in data.Ciphers.iter() {
         match cipher.Id {
             Some(ref id) => cipher_ids.push(id.to_string()),
@@ -390,7 +390,7 @@ fn put_cipher_share_seleted(data: JsonUpcase<ShareSelectedCipherData>, headers: 
     }
 
     let attachments = Attachment::find_by_ciphers(cipher_ids, &conn);
-    
+
     if attachments.len() > 0 {
         err!("Ciphers should not have any attachments.")
     }
@@ -488,7 +488,10 @@ fn post_attachment(uuid: String, data: Data, content_type: &ContentType, headers
         };
 
         let attachment = Attachment::new(file_name, cipher.uuid.clone(), name, size);
-        attachment.save(&conn);
+        match attachment.save(&conn) {
+            Ok(()) => (),
+            Err(_) => println!("Error: failed to save attachment")
+        };
     }).expect("Error processing multipart data");
 
     Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, &conn)))
@@ -650,7 +653,7 @@ fn delete_all(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn) ->
     for f in Folder::find_by_user(&user.uuid, &conn) {
         if f.delete(&conn).is_err() {
             err!("Failed deleting folder")
-        } 
+        }
     }
 
     Ok(())
