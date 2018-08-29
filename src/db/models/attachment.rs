@@ -53,13 +53,11 @@ use db::schema::attachments;
 
 /// Database methods
 impl Attachment {
-    pub fn save(&self, conn: &DbConn) -> bool {
-        match diesel::replace_into(attachments::table)
+    pub fn save(&self, conn: &DbConn) -> QueryResult<()> {
+        diesel::replace_into(attachments::table)
             .values(self)
-            .execute(&**conn) {
-            Ok(1) => true, // One row inserted
-            _ => false,
-        }
+            .execute(&**conn)
+            .and(Ok(()))
     }
 
     pub fn delete(self, conn: &DbConn) -> QueryResult<()> {
@@ -67,7 +65,7 @@ impl Attachment {
         use std::{thread, time};
 
         let mut retries = 10;
-        
+
         loop {
             match diesel::delete(
                 attachments::table.filter(

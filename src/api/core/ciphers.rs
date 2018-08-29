@@ -127,26 +127,24 @@ fn post_ciphers(data: JsonUpcase<CipherData>, headers: Headers, conn: DbConn) ->
     let data: CipherData = data.into_inner().data;
 
     let mut cipher = Cipher::new(data.Type, data.Name.clone());
-    update_cipher_from_data(&mut cipher, data, &headers, true, &conn)?;
+    update_cipher_from_data(&mut cipher, data, &headers, false, &conn)?;
 
     Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, &conn)))
 }
 
-fn update_cipher_from_data(cipher: &mut Cipher, data: CipherData, headers: &Headers, is_new_or_shared: bool, conn: &DbConn) -> EmptyResult {
-    if is_new_or_shared {
-        if let Some(org_id) = data.OrganizationId {
-            match UserOrganization::find_by_user_and_org(&headers.user.uuid, &org_id, &conn) {
-                None => err!("You don't have permission to add item to organization"),
-                Some(org_user) => if org_user.has_full_access() {
-                    cipher.organization_uuid = Some(org_id);
-                    cipher.user_uuid = None;
-                } else {
-                    err!("You don't have permission to add cipher directly to organization")
-                }
+fn update_cipher_from_data(cipher: &mut Cipher, data: CipherData, headers: &Headers, shared_to_collection: bool, conn: &DbConn) -> EmptyResult {
+    if let Some(org_id) = data.OrganizationId {
+        match UserOrganization::find_by_user_and_org(&headers.user.uuid, &org_id, &conn) {
+            None => err!("You don't have permission to add item to organization"),
+            Some(org_user) => if shared_to_collection || org_user.has_full_access() {
+                cipher.organization_uuid = Some(org_id);
+                cipher.user_uuid = None;
+            } else {
+                err!("You don't have permission to add cipher directly to organization")
             }
-        } else {
-            cipher.user_uuid = Some(headers.user.uuid.clone());
         }
+    } else {
+        cipher.user_uuid = Some(headers.user.uuid.clone());
     }
 
     if let Some(ref folder_id) = data.FolderId {
@@ -243,7 +241,7 @@ fn post_ciphers_import(data: JsonUpcase<ImportData>, headers: Headers, conn: DbC
             .map(|i| folders[*i].uuid.clone());
 
         let mut cipher = Cipher::new(cipher_data.Type, cipher_data.Name.clone());
-        update_cipher_from_data(&mut cipher, cipher_data, &headers, true, &conn)?;
+        update_cipher_from_data(&mut cipher, cipher_data, &headers, false, &conn)?;
 
         cipher.move_to_folder(folder_uuid, &headers.user.uuid.clone(), &conn).ok();
     }
@@ -377,11 +375,11 @@ fn put_cipher_share_seleted(data: JsonUpcase<ShareSelectedCipherData>, headers: 
     if data.Ciphers.len() == 0 {
         err!("You must select at least one cipher.")
     }
-    
+
     if data.CollectionIds.len() == 0 {
         err!("You must select at least one collection.")
     }
-    
+
     for cipher in data.Ciphers.iter() {
         match cipher.Id {
             Some(ref id) => cipher_ids.push(id.to_string()),
@@ -390,7 +388,7 @@ fn put_cipher_share_seleted(data: JsonUpcase<ShareSelectedCipherData>, headers: 
     }
 
     let attachments = Attachment::find_by_ciphers(cipher_ids, &conn);
-    
+
     if attachments.len() > 0 {
         err!("Ciphers should not have any attachments.")
     }
@@ -422,22 +420,28 @@ fn share_cipher_by_uuid(uuid: &str, data: ShareCipherData, headers: &Headers, co
         None => err!("Cipher doesn't exist")
     };
 
-    match data.Cipher.OrganizationId {
+    match data.Cipher.OrganizationId.clone() {
         None => err!("Organization id not provided"),
-        Some(_) => {
-            update_cipher_from_data(&mut cipher, data.Cipher, &headers, true, &conn)?;
+        Some(organization_uuid) => {
+            let mut shared_to_collection = false;
             for uuid in &data.CollectionIds {
                 match Collection::find_by_uuid(uuid, &conn) {
                     None => err!("Invalid collection ID provided"),
                     Some(collection) => {
                         if collection.is_writable_by_user(&headers.user.uuid, &conn) {
-                            CollectionCipher::save(&cipher.uuid.clone(), &collection.uuid, &conn);
+                            if collection.org_uuid == organization_uuid {
+                                CollectionCipher::save(&cipher.uuid.clone(), &collection.uuid, &conn);
+                                shared_to_collection = true;
+                            } else {
+                                err!("Collection does not belong to organization")
+                            }
                         } else {
                             err!("No rights to modify the collection")
                         }
                     }
                 }
             }
+            update_cipher_from_data(&mut cipher, data.Cipher, &headers, shared_to_collection, &conn)?;
 
             Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, &conn)))
         }
@@ -488,7 +492,10 @@ fn post_attachment(uuid: String, data: Data, content_type: &ContentType, headers
         };
 
         let attachment = Attachment::new(file_name, cipher.uuid.clone(), name, size);
-        attachment.save(&conn);
+        match attachment.save(&conn) {
+            Ok(()) => (),
+            Err(_) => println!("Error: failed to save attachment")
+        };
     }).expect("Error processing multipart data");
 
     Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, &conn)))
@@ -650,7 +657,7 @@ fn delete_all(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn) ->
     for f in Folder::find_by_user(&user.uuid, &conn) {
         if f.delete(&conn).is_err() {
             err!("Failed deleting folder")
-        } 
+        }
     }
 
     Ok(())
