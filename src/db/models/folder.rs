@@ -82,13 +82,13 @@ impl Folder {
         }
     }
 
-    pub fn delete(self, conn: &DbConn) -> QueryResult<()> {
+    pub fn delete(&self, conn: &DbConn) -> QueryResult<()> {
         User::update_uuid_revision(&self.user_uuid, conn);
         FolderCipher::delete_all_by_folder(&self.uuid, &conn)?;
 
         diesel::delete(
             folders::table.filter(
-                folders::uuid.eq(self.uuid)
+                folders::uuid.eq(&self.uuid)
             )
         ).execute(&**conn).and(Ok(()))
     }

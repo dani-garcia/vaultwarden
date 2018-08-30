@@ -9,6 +9,7 @@ pub use self::icons::routes as icons_routes;
 pub use self::identity::routes as identity_routes;
 pub use self::web::routes as web_routes;
 pub use self::notifications::routes as notifications_routes;
+pub use self::notifications::{start_notification_server, WebSocketUsers, UpdateType};
 
 use rocket::response::status::BadRequest;
 use rocket_contrib::Json;
