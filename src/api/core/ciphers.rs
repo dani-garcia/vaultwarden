@@ -136,7 +136,9 @@ fn update_cipher_from_data(cipher: &mut Cipher, data: CipherData, headers: &Head
     if let Some(org_id) = data.OrganizationId {
         match UserOrganization::find_by_user_and_org(&headers.user.uuid, &org_id, &conn) {
             None => err!("You don't have permission to add item to organization"),
-            Some(org_user) => if shared_to_collection || org_user.has_full_access() {
+            Some(org_user) => if shared_to_collection 
+                              || org_user.has_full_access() 
+                              || cipher.is_write_accessible_to_user(&headers.user.uuid, &conn) {
                 cipher.organization_uuid = Some(org_id);
                 cipher.user_uuid = None;
             } else {
