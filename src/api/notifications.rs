@@ -268,7 +268,7 @@ impl WebSocketUsers {
         self.send_update(&folder.user_uuid, data).ok();
     }
 
-    pub fn send_cipher_update(&self, ut: UpdateType, cipher: &Cipher, user_uuids: &[&String]) {
+    pub fn send_cipher_update(&self, ut: UpdateType, cipher: &Cipher, user_uuids: &Vec<String>) {
         let user_uuid = convert_option(cipher.user_uuid.clone());
         let org_uuid = convert_option(cipher.organization_uuid.clone());
 
@@ -283,8 +283,8 @@ impl WebSocketUsers {
             ut,
         );
 
-        for user_uuid in user_uuids {
-            self.send_update(user_uuid, data.clone()).ok();
+        for uuid in user_uuids {
+            self.send_update(&uuid, data.clone()).ok();
         }
     }
 }

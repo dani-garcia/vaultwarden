@@ -358,4 +358,21 @@ impl Cipher {
         .select(ciphers_collections::collection_uuid)
         .load::<String>(&**conn).unwrap_or(vec![])
     }
+
+    pub fn get_users(&self, conn: &DbConn) -> Vec<String> {
+        let mut user_uuids = Vec::new();
+        match self.user_uuid {
+            Some(ref user_uuid) => user_uuids.push(user_uuid.clone()),
+            None => { // Belongs to Organization, need to update affected users
+                if let Some(ref org_uuid) = self.organization_uuid {
+                    UserOrganization::find_by_cipher_and_org(&self.uuid, &org_uuid, conn)
+                    .iter()
+                    .for_each(|user_org| {
+                        user_uuids.push(user_org.user_uuid.clone())
+                    });
+                }
+            }
+        };
+        user_uuids
+    }
 }

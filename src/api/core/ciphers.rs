@@ -1,6 +1,7 @@
 use std::path::Path;
 use std::collections::HashSet;
 
+use rocket::State;
 use rocket::Data;
 use rocket::http::ContentType;
 
@@ -16,7 +17,7 @@ use db::models::*;
 
 use crypto;
 
-use api::{self, PasswordData, JsonResult, EmptyResult, JsonUpcase};
+use api::{self, PasswordData, JsonResult, EmptyResult, JsonUpcase, WebSocketUsers, UpdateType};
 use auth::Headers;
 
 use CONFIG;
@@ -117,22 +118,22 @@ struct CipherData {
 }
 
 #[post("/ciphers/admin", data = "<data>")]
-fn post_ciphers_admin(data: JsonUpcase<CipherData>, headers: Headers, conn: DbConn) -> JsonResult {
+fn post_ciphers_admin(data: JsonUpcase<CipherData>, headers: Headers, conn: DbConn, ws: State<WebSocketUsers>) -> JsonResult {
     // TODO: Implement this correctly
-    post_ciphers(data, headers, conn)
+    post_ciphers(data, headers, conn, ws)
 }
 
 #[post("/ciphers", data = "<data>")]
-fn post_ciphers(data: JsonUpcase<CipherData>, headers: Headers, conn: DbConn) -> JsonResult {
+fn post_ciphers(data: JsonUpcase<CipherData>, headers: Headers, conn: DbConn, ws: State<WebSocketUsers>) -> JsonResult {
     let data: CipherData = data.into_inner().data;
 
     let mut cipher = Cipher::new(data.Type, data.Name.clone());
-    update_cipher_from_data(&mut cipher, data, &headers, false, &conn)?;
+    update_cipher_from_data(&mut cipher, data, &headers, false, &conn, &ws)?;
 
     Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, &conn)))
 }
 
-fn update_cipher_from_data(cipher: &mut Cipher, data: CipherData, headers: &Headers, shared_to_collection: bool, conn: &DbConn) -> EmptyResult {
+fn update_cipher_from_data(cipher: &mut Cipher, data: CipherData, headers: &Headers, shared_to_collection: bool, conn: &DbConn, ws: &State<WebSocketUsers>) -> EmptyResult {
     if let Some(org_id) = data.OrganizationId {
         match UserOrganization::find_by_user_and_org(&headers.user.uuid, &org_id, &conn) {
             None => err!("You don't have permission to add item to organization"),
@@ -190,6 +191,7 @@ fn update_cipher_from_data(cipher: &mut Cipher, data: CipherData, headers: &Head
     cipher.password_history = data.PasswordHistory.map(|f| f.to_string());
 
     cipher.save(&conn);
+    ws.send_cipher_update(UpdateType::SyncCipherUpdate, &cipher, &cipher.get_users(&conn));
 
     if cipher.move_to_folder(data.FolderId, &headers.user.uuid, &conn).is_err() {
         err!("Error saving the folder information")
@@ -219,7 +221,7 @@ struct RelationsData {
 
 
 #[post("/ciphers/import", data = "<data>")]
-fn post_ciphers_import(data: JsonUpcase<ImportData>, headers: Headers, conn: DbConn) -> EmptyResult {
+fn post_ciphers_import(data: JsonUpcase<ImportData>, headers: Headers, conn: DbConn, ws: State<WebSocketUsers>) -> EmptyResult {
     let data: ImportData = data.into_inner().data;
 
     // Read and create the folders
@@ -243,7 +245,7 @@ fn post_ciphers_import(data: JsonUpcase<ImportData>, headers: Headers, conn: DbC
             .map(|i| folders[*i].uuid.clone());
 
         let mut cipher = Cipher::new(cipher_data.Type, cipher_data.Name.clone());
-        update_cipher_from_data(&mut cipher, cipher_data, &headers, false, &conn)?;
+        update_cipher_from_data(&mut cipher, cipher_data, &headers, false, &conn, &ws)?;
 
         cipher.move_to_folder(folder_uuid, &headers.user.uuid.clone(), &conn).ok();
     }
@@ -257,22 +259,22 @@ fn post_ciphers_import(data: JsonUpcase<ImportData>, headers: Headers, conn: DbC
 
 
 #[put("/ciphers/<uuid>/admin", data = "<data>")]
-fn put_cipher_admin(uuid: String, data: JsonUpcase<CipherData>, headers: Headers, conn: DbConn) -> JsonResult {
-    put_cipher(uuid, data, headers, conn)
+fn put_cipher_admin(uuid: String, data: JsonUpcase<CipherData>, headers: Headers, conn: DbConn, ws: State<WebSocketUsers>) -> JsonResult {
+    put_cipher(uuid, data, headers, conn, ws)
 }
 
 #[post("/ciphers/<uuid>/admin", data = "<data>")]
-fn post_cipher_admin(uuid: String, data: JsonUpcase<CipherData>, headers: Headers, conn: DbConn) -> JsonResult {
-    post_cipher(uuid, data, headers, conn)
+fn post_cipher_admin(uuid: String, data: JsonUpcase<CipherData>, headers: Headers, conn: DbConn, ws: State<WebSocketUsers>) -> JsonResult {
+    post_cipher(uuid, data, headers, conn, ws)
 }
 
 #[post("/ciphers/<uuid>", data = "<data>")]
-fn post_cipher(uuid: String, data: JsonUpcase<CipherData>, headers: Headers, conn: DbConn) -> JsonResult {
-    put_cipher(uuid, data, headers, conn)
+fn post_cipher(uuid: String, data: JsonUpcase<CipherData>, headers: Headers, conn: DbConn, ws: State<WebSocketUsers>) -> JsonResult {
+    put_cipher(uuid, data, headers, conn, ws)
 }
 
 #[put("/ciphers/<uuid>", data = "<data>")]
-fn put_cipher(uuid: String, data: JsonUpcase<CipherData>, headers: Headers, conn: DbConn) -> JsonResult {
+fn put_cipher(uuid: String, data: JsonUpcase<CipherData>, headers: Headers, conn: DbConn, ws: State<WebSocketUsers>) -> JsonResult {
     let data: CipherData = data.into_inner().data;
 
     let mut cipher = match Cipher::find_by_uuid(&uuid, &conn) {
@@ -284,7 +286,7 @@ fn put_cipher(uuid: String, data: JsonUpcase<CipherData>, headers: Headers, conn
         err!("Cipher is not write accessible")
     }
 
-    update_cipher_from_data(&mut cipher, data, &headers, false, &conn)?;
+    update_cipher_from_data(&mut cipher, data, &headers, false, &conn, &ws)?;
 
     Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, &conn)))
 }
@@ -349,17 +351,17 @@ struct ShareCipherData {
 }
 
 #[post("/ciphers/<uuid>/share", data = "<data>")]
-fn post_cipher_share(uuid: String, data: JsonUpcase<ShareCipherData>, headers: Headers, conn: DbConn) -> JsonResult {
+fn post_cipher_share(uuid: String, data: JsonUpcase<ShareCipherData>, headers: Headers, conn: DbConn, ws: State<WebSocketUsers>) -> JsonResult {
     let data: ShareCipherData = data.into_inner().data;
 
-    share_cipher_by_uuid(&uuid, data, &headers, &conn)
+    share_cipher_by_uuid(&uuid, data, &headers, &conn, &ws)
 }
 
 #[put("/ciphers/<uuid>/share", data = "<data>")]
-fn put_cipher_share(uuid: String, data: JsonUpcase<ShareCipherData>, headers: Headers, conn: DbConn) -> JsonResult {
+fn put_cipher_share(uuid: String, data: JsonUpcase<ShareCipherData>, headers: Headers, conn: DbConn, ws: State<WebSocketUsers>) -> JsonResult {
     let data: ShareCipherData = data.into_inner().data;
 
-    share_cipher_by_uuid(&uuid, data, &headers, &conn)
+    share_cipher_by_uuid(&uuid, data, &headers, &conn, &ws)
 }
 
 #[derive(Deserialize)]
@@ -370,7 +372,7 @@ struct ShareSelectedCipherData {
 }
 
 #[put("/ciphers/share", data = "<data>")]
-fn put_cipher_share_seleted(data: JsonUpcase<ShareSelectedCipherData>, headers: Headers, conn: DbConn) -> EmptyResult {
+fn put_cipher_share_seleted(data: JsonUpcase<ShareSelectedCipherData>, headers: Headers, conn: DbConn, ws: State<WebSocketUsers>) -> EmptyResult {
     let mut data: ShareSelectedCipherData = data.into_inner().data;
     let mut cipher_ids: Vec<String> = Vec::new();
 
@@ -402,15 +404,16 @@ fn put_cipher_share_seleted(data: JsonUpcase<ShareSelectedCipherData>, headers: 
         };
 
         match shared_cipher_data.Cipher.Id.take() {
-            Some(id) => share_cipher_by_uuid(&id, shared_cipher_data , &headers, &conn)?,
+            Some(id) => share_cipher_by_uuid(&id, shared_cipher_data , &headers, &conn, &ws)?,
             None => err!("Request missing ids field")
+
         };
     }
 
     Ok(())
 }
 
-fn share_cipher_by_uuid(uuid: &str, data: ShareCipherData, headers: &Headers, conn: &DbConn) -> JsonResult {
+fn share_cipher_by_uuid(uuid: &str, data: ShareCipherData, headers: &Headers, conn: &DbConn, ws: &State<WebSocketUsers>) -> JsonResult {
     let mut cipher = match Cipher::find_by_uuid(&uuid, &conn) {
         Some(cipher) => {
             if cipher.is_write_accessible_to_user(&headers.user.uuid, &conn) {
@@ -443,7 +446,7 @@ fn share_cipher_by_uuid(uuid: &str, data: ShareCipherData, headers: &Headers, co
                     }
                 }
             }
-            update_cipher_from_data(&mut cipher, data.Cipher, &headers, shared_to_collection, &conn)?;
+            update_cipher_from_data(&mut cipher, data.Cipher, &headers, shared_to_collection, &conn, &ws)?;
 
             Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, &conn)))
         }
@@ -581,7 +584,7 @@ fn delete_cipher_selected_post(data: JsonUpcase<Value>, headers: Headers, conn: 
 }
 
 #[post("/ciphers/move", data = "<data>")]
-fn move_cipher_selected(data: JsonUpcase<Value>, headers: Headers, conn: DbConn) -> EmptyResult {
+fn move_cipher_selected(data: JsonUpcase<Value>, headers: Headers, conn: DbConn, ws: State<WebSocketUsers>) -> EmptyResult {
     let data = data.into_inner().data;
 
     let folder_id = match data.get("FolderId") {
@@ -627,14 +630,15 @@ fn move_cipher_selected(data: JsonUpcase<Value>, headers: Headers, conn: DbConn)
             err!("Error saving the folder information")
         }
         cipher.save(&conn);
+        ws.send_cipher_update(UpdateType::SyncCipherUpdate, &cipher, &cipher.get_users(&conn));
     }
 
     Ok(())
 }
 
 #[put("/ciphers/move", data = "<data>")]
-fn move_cipher_selected_put(data: JsonUpcase<Value>, headers: Headers, conn: DbConn) -> EmptyResult {
-    move_cipher_selected(data, headers, conn)
+fn move_cipher_selected_put(data: JsonUpcase<Value>, headers: Headers, conn: DbConn, ws: State<WebSocketUsers>) -> EmptyResult {
+    move_cipher_selected(data, headers, conn, ws)
 }
 
 #[post("/ciphers/purge", data = "<data>")]
