@@ -130,19 +130,25 @@ impl Cipher {
         json_object
     }
 
-    pub fn update_users_revision(&self, conn: &DbConn) {
+    pub fn update_users_revision(&self, conn: &DbConn) -> Vec<String> {
+        let mut user_uuids = Vec::new();
         match self.user_uuid {
-            Some(ref user_uuid) => User::update_uuid_revision(&user_uuid, conn),
+            Some(ref user_uuid) => {
+                User::update_uuid_revision(&user_uuid, conn);
+                user_uuids.push(user_uuid.clone())
+            },
             None => { // Belongs to Organization, need to update affected users
                 if let Some(ref org_uuid) = self.organization_uuid {
                     UserOrganization::find_by_cipher_and_org(&self.uuid, &org_uuid, conn)
                     .iter()
                     .for_each(|user_org| {
-                        User::update_uuid_revision(&user_org.user_uuid, conn)
+                        User::update_uuid_revision(&user_org.user_uuid, conn);
+                        user_uuids.push(user_org.user_uuid.clone())
                     });
                 }
             }
         };
+        user_uuids
     }
 
     pub fn save(&mut self, conn: &DbConn) -> bool {
@@ -157,7 +163,7 @@ impl Cipher {
         }
     }
 
-    pub fn delete(self, conn: &DbConn) -> QueryResult<()> {
+    pub fn delete(&self, conn: &DbConn) -> QueryResult<()> {
         self.update_users_revision(conn);
 
         FolderCipher::delete_all_by_cipher(&self.uuid, &conn)?;
@@ -166,7 +172,7 @@ impl Cipher {
 
         diesel::delete(
             ciphers::table.filter(
-                ciphers::uuid.eq(self.uuid)
+                ciphers::uuid.eq(&self.uuid)
             )
         ).execute(&**conn).and(Ok(()))
     }
