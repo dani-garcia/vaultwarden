@@ -48,6 +48,7 @@ _*Note, that this project is not associated with the [Bitwarden](https://bitward
   - [Changing user email](#changing-user-email)
   - [Creating organization](#creating-organization)
   - [Inviting users into organization](#inviting-users-into-organization)
+  - [Running on unencrypted connection](#running-on-unencrypted-connection)
 - [Get in touch](#get-in-touch)
 
 ## Features
@@ -365,6 +366,12 @@ We use upstream Vault interface directly without any (significant) changes, this
 ### Inviting users into organization
 
 The users must already be registered on your server to invite them, because we can't send the invitation via email. The invited users won't get the invitation email, instead they will appear in the interface as if they already accepted the invitation. Organization admin then just needs to confirm them to be proper Organization members and to give them access to the shared secrets.
+
+### Running on unencrypted connection
+
+It is strongly recommended to run bitwarden_rs service over HTTPS. However the server itself while [supporting it](#enabling-https) does not strictly require such setup. This makes it a bit easier to spin up the service in cases where you can generally trust the connection (internal and secure network, access over VPN,..) or when you want to put the service behind HTTP proxy, that will do the encryption on the proxy end.
+
+Running over HTTP is still reasonably secure provided you use really strong master password and that you avoid using web Vault over connection that is vulnerable to MITM attacks where attacker could inject javascript into your interface. However some forms of 2FA might not work in this setup and [Vault doesn't work in this configuration in Chrome](https://github.com/bitwarden/web/issues/254).
 
 ## Get in touch
 
