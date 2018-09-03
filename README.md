@@ -369,7 +369,7 @@ The users must already be registered on your server to invite them, because we c
 
 ### Running on unencrypted connection
 
-It is strongly recommended to run bitwarden_rs service over HTTPS. However the server itself while supporting it does not strictly require such setup. This makes it a bit easier to spin up the service in cases where you can generally trust the connection (internal and secure network, access over VPN,..) or when you want to put the service behind HTTP proxy, that will do the encryption on the proxy end.
+It is strongly recommended to run bitwarden_rs service over HTTPS. However the server itself while [supporting it](#enabling-https) does not strictly require such setup. This makes it a bit easier to spin up the service in cases where you can generally trust the connection (internal and secure network, access over VPN,..) or when you want to put the service behind HTTP proxy, that will do the encryption on the proxy end.
 
 Running over HTTP is still reasonably secure provided you use really strong master password and that you avoid using web Vault over connection that is vulnerable to MITM attacks where attacker could inject javascript into your interface. However some forms of 2FA might not work in this setup and [Vault doesn't work in this configuration in Chrome](https://github.com/bitwarden/web/issues/254).
 
