@@ -476,8 +476,8 @@ fn edit_user(org_id: String, org_user_id: String, data: JsonUpcase<EditUserData>
     };
 
     if new_type != user_to_edit.type_ as i32 && (
-            user_to_edit.type_ >= UserOrgType::Admin as i32 ||
-            new_type >= UserOrgType::Admin as i32
+            user_to_edit.type_ <= UserOrgType::Admin as i32 ||
+            new_type <= UserOrgType::Admin as i32
         ) &&
         headers.org_user_type != UserOrgType::Owner as i32 {
         err!("Only Owners can grant and remove Admin or Owner privileges")
