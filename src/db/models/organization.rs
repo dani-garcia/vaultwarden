@@ -270,6 +270,13 @@ impl UserOrganization {
             .first::<Self>(&**conn).ok()
     }
 
+    pub fn find_by_uuid_and_org(uuid: &str, org_uuid: &str, conn: &DbConn) -> Option<Self> {
+        users_organizations::table
+            .filter(users_organizations::uuid.eq(uuid))
+            .filter(users_organizations::org_uuid.eq(org_uuid))
+            .first::<Self>(&**conn).ok()
+    }
+
     pub fn find_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
         users_organizations::table
             .filter(users_organizations::user_uuid.eq(user_uuid))
