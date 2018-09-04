@@ -217,7 +217,7 @@ fn delete_organization_collection_user(org_id: String, col_id: String, org_user_
         }
     };
 
-    match UserOrganization::find_by_uuid(&org_user_id, &conn) {
+    match UserOrganization::find_by_uuid_and_org(&org_user_id, &org_id, &conn) {
         None => err!("User not found in organization"),
         Some(user_org) => {
             match CollectionUser::find_by_collection_and_user(&collection.uuid, &user_org.user_uuid, &conn) {
@@ -412,14 +412,10 @@ fn send_invite(org_id: String, data: JsonUpcase<InviteData>, headers: AdminHeade
 fn confirm_invite(org_id: String, org_user_id: String, data: JsonUpcase<Value>, headers: AdminHeaders, conn: DbConn) -> EmptyResult {
     let data = data.into_inner().data;
 
-    let mut user_to_confirm = match UserOrganization::find_by_uuid(&org_user_id, &conn) {
+    let mut user_to_confirm = match UserOrganization::find_by_uuid_and_org(&org_user_id, &org_id, &conn) {
         Some(user) => user,
-        None => err!("Failed to find user membership")
+        None => err!("The specified user isn't a member of the organization")
     };
-
-    if user_to_confirm.org_uuid != org_id {
-        err!("The specified user isn't a member of the organization")
-    }
 
     if user_to_confirm.type_ != UserOrgType::User as i32 &&
         headers.org_user_type != UserOrgType::Owner as i32 {
@@ -443,14 +439,10 @@ fn confirm_invite(org_id: String, org_user_id: String, data: JsonUpcase<Value>, 
 
 #[get("/organizations/<org_id>/users/<org_user_id>")]
 fn get_user(org_id: String, org_user_id: String, _headers: AdminHeaders, conn: DbConn) -> JsonResult {
-    let user = match UserOrganization::find_by_uuid(&org_user_id, &conn) {
+    let user = match UserOrganization::find_by_uuid_and_org(&org_user_id, &org_id, &conn) {
         Some(user) => user,
-        None => err!("Failed to find user membership")
+        None => err!("The specified user isn't a member of the organization")
     };
-
-    if user.org_uuid != org_id {
-        err!("The specified user isn't a member of the organization")
-    }
 
     Ok(Json(user.to_json_details(&conn)))
 }
@@ -540,7 +532,7 @@ fn edit_user(org_id: String, org_user_id: String, data: JsonUpcase<EditUserData>
 
 #[delete("/organizations/<org_id>/users/<org_user_id>")]
 fn delete_user(org_id: String, org_user_id: String, headers: AdminHeaders, conn: DbConn) -> EmptyResult {
-    let user_to_delete = match UserOrganization::find_by_uuid(&org_user_id, &conn) {
+    let user_to_delete = match UserOrganization::find_by_uuid_and_org(&org_user_id, &org_id, &conn) {
         Some(user) => user,
         None => err!("User to delete isn't member of the organization")
     };
