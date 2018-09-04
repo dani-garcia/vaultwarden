@@ -217,7 +217,7 @@ fn delete_organization_collection_user(org_id: String, col_id: String, org_user_
         }
     };
 
-    match UserOrganization::find_by_uuid(&org_user_id, &conn) {
+    match UserOrganization::find_by_uuid_and_org(&org_user_id, &org_id, &conn) {
         None => err!("User not found in organization"),
         Some(user_org) => {
             match CollectionUser::find_by_collection_and_user(&collection.uuid, &user_org.user_uuid, &conn) {
@@ -408,18 +408,14 @@ fn send_invite(org_id: String, data: JsonUpcase<InviteData>, headers: AdminHeade
     Ok(())
 }
 
-#[post("/organizations/<org_id>/users/<user_id>/confirm", data = "<data>")]
-fn confirm_invite(org_id: String, user_id: String, data: JsonUpcase<Value>, headers: AdminHeaders, conn: DbConn) -> EmptyResult {
+#[post("/organizations/<org_id>/users/<org_user_id>/confirm", data = "<data>")]
+fn confirm_invite(org_id: String, org_user_id: String, data: JsonUpcase<Value>, headers: AdminHeaders, conn: DbConn) -> EmptyResult {
     let data = data.into_inner().data;
 
-    let mut user_to_confirm = match UserOrganization::find_by_uuid(&user_id, &conn) {
+    let mut user_to_confirm = match UserOrganization::find_by_uuid_and_org(&org_user_id, &org_id, &conn) {
         Some(user) => user,
-        None => err!("Failed to find user membership")
+        None => err!("The specified user isn't a member of the organization")
     };
-
-    if user_to_confirm.org_uuid != org_id {
-        err!("The specified user isn't a member of the organization")
-    }
 
     if user_to_confirm.type_ != UserOrgType::User as i32 &&
         headers.org_user_type != UserOrgType::Owner as i32 {
@@ -441,16 +437,12 @@ fn confirm_invite(org_id: String, user_id: String, data: JsonUpcase<Value>, head
     Ok(())
 }
 
-#[get("/organizations/<org_id>/users/<user_id>")]
-fn get_user(org_id: String, user_id: String, _headers: AdminHeaders, conn: DbConn) -> JsonResult {
-    let user = match UserOrganization::find_by_uuid(&user_id, &conn) {
+#[get("/organizations/<org_id>/users/<org_user_id>")]
+fn get_user(org_id: String, org_user_id: String, _headers: AdminHeaders, conn: DbConn) -> JsonResult {
+    let user = match UserOrganization::find_by_uuid_and_org(&org_user_id, &org_id, &conn) {
         Some(user) => user,
-        None => err!("Failed to find user membership")
+        None => err!("The specified user isn't a member of the organization")
     };
-
-    if user.org_uuid != org_id {
-        err!("The specified user isn't a member of the organization")
-    }
 
     Ok(Json(user.to_json_details(&conn)))
 }
@@ -464,13 +456,13 @@ struct EditUserData {
     AccessAll: bool,
 }
 
-#[put("/organizations/<org_id>/users/<user_id>", data = "<data>", rank = 1)]
-fn put_organization_user(org_id: String, user_id: String, data: JsonUpcase<EditUserData>, headers: AdminHeaders, conn: DbConn) -> EmptyResult {
-    edit_user(org_id, user_id, data, headers, conn)
+#[put("/organizations/<org_id>/users/<org_user_id>", data = "<data>", rank = 1)]
+fn put_organization_user(org_id: String, org_user_id: String, data: JsonUpcase<EditUserData>, headers: AdminHeaders, conn: DbConn) -> EmptyResult {
+    edit_user(org_id, org_user_id, data, headers, conn)
 }
 
-#[post("/organizations/<org_id>/users/<user_id>", data = "<data>", rank = 1)]
-fn edit_user(org_id: String, user_id: String, data: JsonUpcase<EditUserData>, headers: AdminHeaders, conn: DbConn) -> EmptyResult {
+#[post("/organizations/<org_id>/users/<org_user_id>", data = "<data>", rank = 1)]
+fn edit_user(org_id: String, org_user_id: String, data: JsonUpcase<EditUserData>, headers: AdminHeaders, conn: DbConn) -> EmptyResult {
     let data: EditUserData = data.into_inner().data;
 
     let new_type = match UserOrgType::from_str(&data.Type.into_string()) {
@@ -478,19 +470,22 @@ fn edit_user(org_id: String, user_id: String, data: JsonUpcase<EditUserData>, he
         None => err!("Invalid type")
     };
 
-    let mut user_to_edit = match UserOrganization::find_by_uuid(&user_id, &conn) {
+    let mut user_to_edit = match UserOrganization::find_by_uuid_and_org(&org_user_id, &org_id, &conn) {
         Some(user) => user,
         None => err!("The specified user isn't member of the organization")
     };
 
-    if new_type != UserOrgType::User as i32 &&
+    if new_type != user_to_edit.type_ as i32 && (
+            user_to_edit.type_ <= UserOrgType::Admin as i32 ||
+            new_type <= UserOrgType::Admin as i32
+        ) &&
         headers.org_user_type != UserOrgType::Owner as i32 {
-        err!("Only Owners can grant Admin or Owner type")
+        err!("Only Owners can grant and remove Admin or Owner privileges")
     }
 
-    if user_to_edit.type_ != UserOrgType::User as i32 &&
+    if user_to_edit.type_ == UserOrgType::Owner as i32 &&
         headers.org_user_type != UserOrgType::Owner as i32 {
-        err!("Only Owners can edit Admin or Owner")
+        err!("Only Owners can edit Owner users")
     }
 
     if user_to_edit.type_ == UserOrgType::Owner as i32 &&
@@ -535,9 +530,9 @@ fn edit_user(org_id: String, user_id: String, data: JsonUpcase<EditUserData>, he
     Ok(())
 }
 
-#[delete("/organizations/<org_id>/users/<user_id>")]
-fn delete_user(org_id: String, user_id: String, headers: AdminHeaders, conn: DbConn) -> EmptyResult {
-    let user_to_delete = match UserOrganization::find_by_uuid(&user_id, &conn) {
+#[delete("/organizations/<org_id>/users/<org_user_id>")]
+fn delete_user(org_id: String, org_user_id: String, headers: AdminHeaders, conn: DbConn) -> EmptyResult {
+    let user_to_delete = match UserOrganization::find_by_uuid_and_org(&org_user_id, &org_id, &conn) {
         Some(user) => user,
         None => err!("User to delete isn't member of the organization")
     };
@@ -564,7 +559,7 @@ fn delete_user(org_id: String, user_id: String, headers: AdminHeaders, conn: DbC
     }
 }
 
-#[post("/organizations/<org_id>/users/<user_id>/delete")]
-fn post_delete_user(org_id: String, user_id: String, headers: AdminHeaders, conn: DbConn) -> EmptyResult {
-    delete_user(org_id, user_id, headers, conn)
+#[post("/organizations/<org_id>/users/<org_user_id>/delete")]
+fn post_delete_user(org_id: String, org_user_id: String, headers: AdminHeaders, conn: DbConn) -> EmptyResult {
+    delete_user(org_id, org_user_id, headers, conn)
 }
