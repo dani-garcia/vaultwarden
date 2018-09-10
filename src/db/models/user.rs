@@ -73,6 +73,10 @@ impl User {
         }
     }
 
+    pub fn new_invited(mail: String) -> Self {
+        Self::new(mail,"".to_string(),"".to_string())
+    }
+
     pub fn check_valid_password(&self, password: &str) -> bool {
         crypto::verify_password_hash(password.as_bytes(),
                                      &self.salt,
@@ -103,7 +107,7 @@ impl User {
 use diesel;
 use diesel::prelude::*;
 use db::DbConn;
-use db::schema::users;
+use db::schema::{users, invitations};
 
 /// Database methods
 impl User {
@@ -184,5 +188,49 @@ impl User {
         users::table
             .filter(users::uuid.eq(uuid))
             .first::<Self>(&**conn).ok()
+    }
+}
+
+#[derive(Debug, Identifiable, Queryable, Insertable)]
+#[table_name = "invitations"]
+#[primary_key(email)]
+pub struct Invitation {
+    pub email: String,
+}
+
+impl Invitation {
+    pub fn new(email: String) -> Self {
+        Self {
+            email
+        }
+    }
+
+    pub fn save(&mut self, conn: &DbConn) -> QueryResult<()> {
+        diesel::replace_into(invitations::table)
+        .values(&*self)
+        .execute(&**conn)
+        .and(Ok(()))
+    }
+
+    pub fn delete(self, conn: &DbConn) -> QueryResult<()> {
+        diesel::delete(invitations::table.filter(
+        invitations::email.eq(self.email)))
+        .execute(&**conn)
+        .and(Ok(()))
+    }
+
+    pub fn find_by_mail(mail: &str, conn: &DbConn) -> Option<Self> {
+        let lower_mail = mail.to_lowercase();
+        invitations::table
+            .filter(invitations::email.eq(lower_mail))
+            .first::<Self>(&**conn).ok()
+    }
+
+    pub fn take(mail: &str, conn: &DbConn) -> bool {
+        CONFIG.invitations_allowed &&
+        match Self::find_by_mail(mail, &conn) {
+            Some(invitation) => invitation.delete(&conn).is_ok(),
+            None => false
+        }
     }
 }

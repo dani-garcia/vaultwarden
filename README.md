@@ -23,6 +23,7 @@ _*Note, that this project is not associated with the [Bitwarden](https://bitward
   - [Updating the bitwarden image](#updating-the-bitwarden-image)
 - [Configuring bitwarden service](#configuring-bitwarden-service)
   - [Disable registration of new users](#disable-registration-of-new-users)
+  - [Disable invitations](#disable-invitations)
   - [Enabling HTTPS](#enabling-https)
   - [Enabling U2F authentication](#enabling-u2f-authentication)
   - [Changing persistent data location](#changing-persistent-data-location)
@@ -132,6 +133,20 @@ By default new users can register, if you want to disable that, set the `SIGNUPS
 ```sh
 docker run -d --name bitwarden \
   -e SIGNUPS_ALLOWED=false \
+  -v /bw-data/:/data/ \
+  -p 80:80 \
+  mprasil/bitwarden:latest
+```
+Note: While users can't register on their own, they can still be invited by already registered users. Read bellow if you also want to disable that.
+
+### Disable invitations
+
+Even when registration is disabled, organization administrators or owners can invite users to join organization. This won't send email invitation to the users, but after they are invited, they can register with the invited email even if `SIGNUPS_ALLOWED` is actually set to `false`. You can disable this functionality completely by setting `INVITATIONS_ALLOWED` env variable to `false`:
+
+```sh
+docker run -d --name bitwarden \
+  -e SIGNUPS_ALLOWED=false \
+  -e INVITATIONS_ALLOWED=false \
   -v /bw-data/:/data/ \
   -p 80:80 \
   mprasil/bitwarden:latest
@@ -365,7 +380,7 @@ We use upstream Vault interface directly without any (significant) changes, this
 
 ### Inviting users into organization
 
-The users must already be registered on your server to invite them, because we can't send the invitation via email. The invited users won't get the invitation email, instead they will appear in the interface as if they already accepted the invitation. Organization admin then just needs to confirm them to be proper Organization members and to give them access to the shared secrets.
+If you have [invitations disabled](#disable-invitations), the users must already be registered on your server to invite them. The invited users won't get the invitation email, instead they will appear in the interface as if they already accepted the invitation. (if the user has already registered) Organization admin then just needs to confirm them to be proper Organization members and to give them access to the shared secrets.
 
 ### Running on unencrypted connection
 

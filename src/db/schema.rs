@@ -114,6 +114,12 @@ table! {
 }
 
 table! {
+    invitations (email) {
+        email -> Text,
+    }
+}
+
+table! {
     users_collections (user_uuid, collection_uuid) {
         user_uuid -> Text,
         collection_uuid -> Text,

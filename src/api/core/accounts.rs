@@ -30,15 +30,33 @@ struct KeysData {
 fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> EmptyResult {
     let data: RegisterData = data.into_inner().data;
 
-    if !CONFIG.signups_allowed {
-        err!("Signups not allowed")
-    }
 
-    if User::find_by_mail(&data.Email, &conn).is_some() {
-        err!("Email already exists")
-    }
-
-    let mut user = User::new(data.Email, data.Key, data.MasterPasswordHash);
+    let mut user = match User::find_by_mail(&data.Email, &conn) {
+        Some(mut user) => {
+            if Invitation::take(&data.Email, &conn) {
+                for mut user_org in UserOrganization::find_invited_by_user(&user.uuid, &conn).iter_mut() {
+                    user_org.status = UserOrgStatus::Accepted as i32;
+                    user_org.save(&conn);
+                };
+                user.set_password(&data.MasterPasswordHash);
+                user.key = data.Key;
+                user
+            } else {
+                if CONFIG.signups_allowed {
+                    err!("Account with this email already exists")
+                } else {
+                    err!("Registration not allowed")
+                }
+            }
+        },
+        None => {
+            if CONFIG.signups_allowed || Invitation::take(&data.Email, &conn) {
+                User::new(data.Email, data.Key, data.MasterPasswordHash)
+            } else {
+                err!("Registration not allowed")
+            }
+        }
+    };
 
     // Add extra fields if present
     if let Some(name) = data.Name {
