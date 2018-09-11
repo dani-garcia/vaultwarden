@@ -36,17 +36,23 @@ fn mailer(config: &MailConfig) -> SmtpTransport {
         .build()
 }
 
-pub fn send_password_hint(address: &str, hint: &str, config: &MailConfig) -> Result<(), String> {
-    let body = format!(
-        "You (or someone) recently requested your master password hint.\n\n\
-         Your hint is:  \"{}\"\n\n\
-         If you did not request your master password hint you can safely ignore this email.\n",
-        hint); 
+pub fn send_password_hint(address: &str, hint: Option<String>, config: &MailConfig) -> Result<(), String> {
+    let (subject, body) = if let Some(hint) = hint {
+        ("Your master password hint",
+         format!(
+            "You (or someone) recently requested your master password hint.\n\n\
+             Your hint is:  \"{}\"\n\n\
+             If you did not request your master password hint you can safely ignore this email.\n",
+            hint))
+    } else {
+        ("Sorry, you have no password hint...",
+         "Sorry, you have not specified any password hint...\n".to_string())
+    };
 
     let email = EmailBuilder::new()
         .to(address)
         .from((config.smtp_from.to_owned(), "Bitwarden-rs"))
-        .subject("Your Master Password Hint")
+        .subject(subject)
         .body(body)
         .build().unwrap();
 
@@ -55,4 +61,3 @@ pub fn send_password_hint(address: &str, hint: &str, config: &MailConfig) -> Res
         Err(e) => Err(e.description().to_string()),
     }
 }
-        
