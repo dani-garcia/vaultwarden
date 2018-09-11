@@ -24,6 +24,7 @@ _*Note, that this project is not associated with the [Bitwarden](https://bitward
 - [Configuring bitwarden service](#configuring-bitwarden-service)
   - [Disable registration of new users](#disable-registration-of-new-users)
   - [Enabling HTTPS](#enabling-https)
+  - [Enabling WebSocket notifications](#enabling-websocket-notifications)
   - [Enabling U2F authentication](#enabling-u2f-authentication)
   - [Changing persistent data location](#changing-persistent-data-location)
     - [/data prefix:](#data-prefix)
@@ -157,6 +158,37 @@ docker run -d --name bitwarden \
   mprasil/bitwarden:latest
 ```
 Note that you need to mount ssl files and you need to forward appropriate port.
+
+### Enabling WebSocket notifications
+*Important: This does not apply to the mobile clients, which use push notifications.*
+
+To enable WebSockets notifications, an external reverse proxy is necessary, and it must be configured to do the following:
+- Route the `/notifications/hub` endpoint to the WebSocket server, by default at port `3012`, making sure to pass the `Connection` and `Upgrade` headers.
+- Route everything else, including `/notifications/hub/negotiate`, to the standard Rocket server, by default at port `80`.
+- If using Docker, you may need to map both ports with the `-p` flag
+
+An example configuration is included next for a [Caddy](https://caddyserver.com/) proxy server, and assumes the proxy is running in the same computer as `bitwarden_rs`:
+
+```r
+localhost:2015 {
+    # The negotiation endpoint is also proxied to Rocket
+    proxy /notifications/hub/negotiate 0.0.0.0:80 {
+        transparent
+    }
+    
+    # Notifications redirected to the websockets server
+    proxy /notifications/hub 0.0.0.0:3012 {
+        websocket
+    }
+    
+    # Proxy the Root directory to Rocket
+    proxy / 0.0.0.0:80 {
+        transparent
+    }
+}
+```
+
+Note: The reason for this workaround is the lack of support for WebSockets from Rocket (though [it's a planned feature](https://github.com/SergioBenitez/Rocket/issues/90)), which forces us to launch a secondary server on a separate port.
 
 ### Enabling U2F authentication
 To enable U2F authentication, you must be serving bitwarden_rs from an HTTPS domain with a valid certificate (Either using the included
