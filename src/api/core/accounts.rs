@@ -82,7 +82,10 @@ fn post_profile(data: JsonUpcase<ProfileData>, headers: Headers, conn: DbConn) -
     let mut user = headers.user;
 
     user.name = data.Name;
-    user.password_hint = data.MasterPasswordHint;
+    user.password_hint = match data.MasterPasswordHint {
+        Some(ref h) if h.is_empty() => None,
+        _ => data.MasterPasswordHint,
+    };
     user.save(&conn);
 
     Ok(Json(user.to_json(&conn)))
