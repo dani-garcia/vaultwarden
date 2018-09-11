@@ -39,13 +39,12 @@ pub struct User {
 
 /// Local methods
 impl User {
-    pub fn new(mail: String, key: String, password: String) -> Self {
+    pub fn new(mail: String) -> Self {
         let now = Utc::now().naive_utc();
         let email = mail.to_lowercase();
 
         let iterations = CONFIG.password_iterations;
         let salt = crypto::get_random_64();
-        let password_hash = crypto::hash_password(password.as_bytes(), &salt, iterations as u32);
 
         Self {
             uuid: Uuid::new_v4().to_string(),
@@ -53,9 +52,9 @@ impl User {
             updated_at: now,
             name: email.clone(),
             email,
-            key,
+            key: String::new(),
 
-            password_hash,
+            password_hash: Vec::new(),
             salt,
             password_iterations: iterations,
 
@@ -71,10 +70,6 @@ impl User {
             equivalent_domains: "[]".to_string(),
             excluded_globals: "[]".to_string(),
         }
-    }
-
-    pub fn new_invited(mail: String) -> Self {
-        Self::new(mail,"".to_string(),"".to_string())
     }
 
     pub fn check_valid_password(&self, password: &str) -> bool {

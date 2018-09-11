@@ -38,8 +38,6 @@ fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> EmptyResult {
                     user_org.status = UserOrgStatus::Accepted as i32;
                     user_org.save(&conn);
                 };
-                user.set_password(&data.MasterPasswordHash);
-                user.key = data.Key;
                 user
             } else {
                 if CONFIG.signups_allowed {
@@ -51,12 +49,15 @@ fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> EmptyResult {
         },
         None => {
             if CONFIG.signups_allowed || Invitation::take(&data.Email, &conn) {
-                User::new(data.Email, data.Key, data.MasterPasswordHash)
+                User::new(data.Email)
             } else {
                 err!("Registration not allowed")
             }
         }
     };
+
+    user.set_password(&data.MasterPasswordHash);
+    user.key = data.Key;
 
     // Add extra fields if present
     if let Some(name) = data.Name {

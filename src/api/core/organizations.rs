@@ -380,7 +380,7 @@ fn send_invite(org_id: String, data: JsonUpcase<InviteData>, headers: AdminHeade
                 let mut invitation = Invitation::new(email.clone());
                 match invitation.save(&conn) {
                     Ok(()) => {
-                        let mut user = User::new_invited(email.clone());
+                        let mut user = User::new(email.clone());
                         if user.save(&conn) {
                             user_org_status = UserOrgStatus::Invited as i32;
                             user
