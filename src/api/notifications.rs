@@ -6,7 +6,12 @@ use auth::Headers;
 use db::DbConn;
 
 pub fn routes() -> Vec<Route> {
-    routes![negotiate]
+    routes![negotiate, websockets_err]
+}
+
+#[get("/hub")]
+fn websockets_err() -> JsonResult {
+    err!("'/notifications/hub' should be proxied towards the websocket server, otherwise notifications will not work. Go to the README for more info.")
 }
 
 #[post("/hub/negotiate")]
