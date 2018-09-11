@@ -27,6 +27,10 @@ extern crate lazy_static;
 #[macro_use]
 extern crate num_derive;
 extern crate num_traits;
+extern crate lettre;
+extern crate lettre_email;
+extern crate native_tls;
+extern crate fast_chemail;
 
 use std::{env, path::Path, process::{exit, Command}};
 use rocket::Rocket;
@@ -38,6 +42,7 @@ mod api;
 mod db;
 mod crypto;
 mod auth;
+mod mail;
 
 fn init_rocket() -> Rocket {
     rocket::ignite()
@@ -156,6 +161,57 @@ lazy_static! {
 }
 
 #[derive(Debug)]
+pub struct MailConfig {
+    smtp_host: String,
+    smtp_port: u16,
+    smtp_ssl: bool,
+    smtp_from: String,
+    smtp_username: Option<String>,
+    smtp_password: Option<String>,
+}
+
+impl MailConfig {
+    fn load() -> Option<Self> {
+        let smtp_host = env::var("SMTP_HOST").ok();
+        
+        // When SMTP_HOST is absent, we assume the user does not want to enable it.
+        if smtp_host.is_none() {
+            return None
+        }
+
+        let smtp_ssl = util::parse_option_string(env::var("SMTP_SSL").ok()).unwrap_or(true);
+        let smtp_port = util::parse_option_string(env::var("SMTP_PORT").ok())
+            .unwrap_or_else(|| {
+                if smtp_ssl {
+                    587u16
+                } else {
+                    25u16
+                }
+            });
+
+        let smtp_username = env::var("SMTP_USERNAME").ok();
+        let smtp_password = env::var("SMTP_PASSWORD").ok().or_else(|| {
+            if smtp_username.as_ref().is_some() {
+                println!("Please specify SMTP_PASSWORD to enable SMTP support.");
+                exit(1);
+            } else {
+                None
+            }
+        });
+
+        Some(MailConfig {
+            smtp_host: smtp_host.unwrap(),
+            smtp_port: smtp_port,
+            smtp_ssl: smtp_ssl,
+            smtp_from: util::parse_option_string(env::var("SMTP_FROM").ok())
+                .unwrap_or("bitwarden-rs@localhost".to_string()),
+            smtp_username: smtp_username,
+            smtp_password: smtp_password,
+        })
+    }
+}
+
+#[derive(Debug)]
 pub struct Config {
     database_url: String,
     icon_cache_folder: String,
@@ -172,8 +228,11 @@ pub struct Config {
     signups_allowed: bool,
     password_iterations: i32,
     show_password_hint: bool,
+
     domain: String,
     domain_set: bool,
+
+    mail: Option<MailConfig>,
 }
 
 impl Config {
@@ -204,6 +263,8 @@ impl Config {
 
             domain_set: domain.is_ok(),
             domain: domain.unwrap_or("http://localhost".into()),
+
+            mail: MailConfig::load(),
         }
     }
 }
