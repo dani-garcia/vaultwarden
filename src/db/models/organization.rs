@@ -27,7 +27,7 @@ pub struct UserOrganization {
 }
 
 pub enum UserOrgStatus {
-    _Invited = 0, // Unused, users are accepted automatically
+    Invited = 0,
     Accepted = 1,
     Confirmed = 2,
 }
@@ -281,6 +281,13 @@ impl UserOrganization {
         users_organizations::table
             .filter(users_organizations::user_uuid.eq(user_uuid))
             .filter(users_organizations::status.eq(UserOrgStatus::Confirmed as i32))
+            .load::<Self>(&**conn).unwrap_or(vec![])
+    }
+
+    pub fn find_invited_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
+        users_organizations::table
+            .filter(users_organizations::user_uuid.eq(user_uuid))
+            .filter(users_organizations::status.eq(UserOrgStatus::Invited as i32))
             .load::<Self>(&**conn).unwrap_or(vec![])
     }
 

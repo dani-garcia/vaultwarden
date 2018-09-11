@@ -1,7 +1,7 @@
 #![allow(unused_imports)]
 
 use rocket_contrib::{Json, Value};
-
+use CONFIG;
 use db::DbConn;
 use db::models::*;
 
@@ -373,36 +373,56 @@ fn send_invite(org_id: String, data: JsonUpcase<InviteData>, headers: AdminHeade
         err!("Only Owners can invite Admins or Owners")
     }
 
-    for user_opt in data.Emails.iter().map(|email| User::find_by_mail(email, &conn)) {
-        match user_opt {
-            None => err!("User email does not exist"),
-            Some(user) => {
-                if UserOrganization::find_by_user_and_org(&user.uuid, &org_id, &conn).is_some() {
-                    err!("User already in organization")
+    for email in data.Emails.iter() {
+        let mut user_org_status = UserOrgStatus::Accepted as i32;
+        let user = match User::find_by_mail(&email, &conn) {
+            None => if CONFIG.invitations_allowed { // Invite user if that's enabled
+                let mut invitation = Invitation::new(email.clone());
+                match invitation.save(&conn) {
+                    Ok(()) => {
+                        let mut user = User::new(email.clone());
+                        if user.save(&conn) {
+                            user_org_status = UserOrgStatus::Invited as i32;
+                            user
+                        } else {
+                            err!("Failed to create placeholder for invited user")
+                        }
+                    }
+                    Err(_) => err!(format!("Failed to invite: {}", email))
                 }
+                
+            } else {
+                err!(format!("User email does not exist: {}", email))
+            },
+            Some(user) => if UserOrganization::find_by_user_and_org(&user.uuid, &org_id, &conn).is_some() {
+                err!(format!("User already in organization: {}", email))
+            } else {
+                user
+            }
 
-                let mut new_user = UserOrganization::new(user.uuid.clone(), org_id.clone());
-                let access_all = data.AccessAll.unwrap_or(false);
-                new_user.access_all = access_all;
-                new_user.type_ = new_type;
+        };
 
-                // If no accessAll, add the collections received
-                if !access_all {
-                    for col in &data.Collections {
-                        match Collection::find_by_uuid_and_org(&col.Id, &org_id, &conn) {
-                            None => err!("Collection not found in Organization"),
-                            Some(collection) => {
-                                if CollectionUser::save(&user.uuid, &collection.uuid, col.ReadOnly, &conn).is_err() {
-                                    err!("Failed saving collection access for user")
-                                }
-                            }
+        let mut new_user = UserOrganization::new(user.uuid.clone(), org_id.clone());
+        let access_all = data.AccessAll.unwrap_or(false);
+        new_user.access_all = access_all;
+        new_user.type_ = new_type;
+        new_user.status = user_org_status;
+
+        // If no accessAll, add the collections received
+        if !access_all {
+            for col in &data.Collections {
+                match Collection::find_by_uuid_and_org(&col.Id, &org_id, &conn) {
+                    None => err!("Collection not found in Organization"),
+                    Some(collection) => {
+                        if CollectionUser::save(&user.uuid, &collection.uuid, col.ReadOnly, &conn).is_err() {
+                            err!("Failed saving collection access for user")
                         }
                     }
                 }
-
-                new_user.save(&conn);
             }
         }
+
+        new_user.save(&conn);
     }
 
     Ok(())
