@@ -288,7 +288,7 @@ fn password_hint(data: JsonUpcase<PasswordHintData>, conn: DbConn) -> EmptyResul
     let data: PasswordHintData = data.into_inner().data;
 
     if !is_valid_email(&data.Email) {
-        return err!("This email address is not valid...");
+        err!("This email address is not valid...");
     }
 
     let user = User::find_by_mail(&data.Email, &conn);
