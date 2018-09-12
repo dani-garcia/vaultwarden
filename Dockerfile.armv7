@@ -107,7 +107,7 @@ EXPOSE 80
 COPY .env .
 COPY Rocket.toml .
 COPY --from=vault /web-vault ./web-vault
-COPY --from=build app/target/release/bitwarden_rs .
+COPY --from=build /app/target/armv7-unknown-linux-gnueabihf/release/bitwarden_rs .
 
 # Configures the startup!
 CMD ./bitwarden_rs
