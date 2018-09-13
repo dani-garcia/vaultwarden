@@ -33,6 +33,8 @@ _*Note, that this project is not associated with the [Bitwarden](https://bitward
     - [icons cache](#icons-cache)
   - [Changing the API request size limit](#changing-the-api-request-size-limit)
   - [Changing the number of workers](#changing-the-number-of-workers)
+  - [SMTP configuration](#smtp-configuration)
+  - [Password hint display](#password-hint-display)
   - [Disabling or overriding the Vault interface hosting](#disabling-or-overriding-the-vault-interface-hosting)
   - [Other configuration](#other-configuration)
 - [Building your own image](#building-your-own-image)
@@ -278,6 +280,36 @@ docker run -d --name bitwarden \
   mprasil/bitwarden:latest
 ```
 
+### SMTP configuration
+
+You can configure bitwarden_rs to send emails via a SMTP agent:
+
+```sh
+docker run -d --name bitwarden \
+  -e SMTP_HOST=<smtp.domain.tld> \
+  -e SMTP_PORT=587 \
+  -e SMTP_SSL=true \
+  -e SMTP_USERNAME=<username> \
+  -e SMTP_PASSWORD=<password> \
+  -v /bw-data/:/data/ \
+  -p 80:80 \
+  mprasil/bitwarden:latest
+```
+  
+When `SMTP_SSL` is set to `true`(this is the default), only TLSv1.1 and TLSv1.2 protocols will be accepted and `SMTP_PORT` will default to `587`. If set to `false`, `SMTP_PORT` will default to `25` and the connection won't be encrypted. This can be very insecure, use this setting only if you know what you're doing.
+
+### Password hint display
+
+Usually, password hints are sent by email. But as bitwarden_rs is made with small or personal deployment in mind, hints are also available from the password hint page, so you don't have to configure an email service. If you want to disable this feature, you can use the `SHOW_PASSWORD_HINT` variable:
+
+```sh
+docker run -d --name bitwarden \
+  -e SHOW_PASSWORD_HINT=false \
+  -v /bw-data/:/data/ \
+  -p 80:80 \
+  mprasil/bitwarden:latest
+```
+
 ### Disabling or overriding the Vault interface hosting
 
 As a convenience bitwarden_rs image will also host static files for Vault web interface. You can disable this static file hosting completely by setting the WEB_VAULT_ENABLED variable.
@@ -289,7 +321,6 @@ docker run -d --name bitwarden \
   -p 80:80 \
   mprasil/bitwarden:latest
 ```
-
 Alternatively you can override the Vault files and provide your own static files to host. You can do that by mounting a path with your files over the `/web-vault` directory in the container. Just make sure the directory contains at least `index.html` file.
 
 ```sh
@@ -298,7 +329,7 @@ docker run -d --name bitwarden \
   -v /bw-data/:/data/ \
   -p 80:80 \
   mprasil/bitwarden:latest
-```
+``` 
 
 Note that you can also change the path where bitwarden_rs looks for static files by providing the `WEB_VAULT_FOLDER` environment variable with the path.
 
