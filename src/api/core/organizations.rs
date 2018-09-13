@@ -1,5 +1,3 @@
-#![allow(unused_imports)]
-
 use rocket_contrib::{Json, Value};
 use CONFIG;
 use db::DbConn;
@@ -140,9 +138,8 @@ fn get_user_collections(headers: Headers, conn: DbConn) -> JsonResult {
         "Data":
             Collection::find_by_user_uuid(&headers.user.uuid, &conn)
             .iter()
-            .map(|collection| {
-                collection.to_json()
-            }).collect::<Value>(),
+            .map(Collection::to_json)
+            .collect::<Value>(),
         "Object": "list"
     })))
 }
@@ -153,9 +150,8 @@ fn get_org_collections(org_id: String, _headers: AdminHeaders, conn: DbConn) -> 
         "Data":
             Collection::find_by_organization(&org_id, &conn)
             .iter()
-            .map(|collection| {
-                collection.to_json()
-            }).collect::<Value>(),
+            .map(Collection::to_json)
+            .collect::<Value>(),
         "Object": "list"
     })))
 }
@@ -582,4 +578,73 @@ fn delete_user(org_id: String, org_user_id: String, headers: AdminHeaders, conn:
 #[post("/organizations/<org_id>/users/<org_user_id>/delete")]
 fn post_delete_user(org_id: String, org_user_id: String, headers: AdminHeaders, conn: DbConn) -> EmptyResult {
     delete_user(org_id, org_user_id, headers, conn)
+}
+
+use super::ciphers::CipherData;
+use super::ciphers::update_cipher_from_data;
+
+#[derive(Deserialize)]
+#[allow(non_snake_case)]
+struct ImportData {
+    Ciphers: Vec<CipherData>,
+    Collections: Vec<NewCollectionData>,
+    CollectionRelationships: Vec<RelationsData>,
+}
+
+#[derive(Deserialize)]
+#[allow(non_snake_case)]
+struct RelationsData {
+    // Cipher index
+    Key: usize,
+    // Collection index
+    Value: usize,
+}
+
+#[post("/ciphers/import-organization?<query>", data = "<data>")]
+fn post_org_import(query: OrgIdData, data: JsonUpcase<ImportData>, headers: Headers, conn: DbConn) -> EmptyResult {
+    let data: ImportData = data.into_inner().data;
+    let org_id = query.organizationId;
+
+    let org_user = match UserOrganization::find_by_user_and_org(&headers.user.uuid, &org_id, &conn) {
+        Some(user) => user,
+        None => err!("User is not part of the organization")
+    };
+
+    if org_user.type_ > UserOrgType::Admin as i32 {
+        err!("Only admins or owners can import into an organization")
+    }
+
+    // Read and create the collections
+    let collections: Vec<_> = data.Collections.into_iter().map(|coll| {
+        let mut collection = Collection::new(org_id.clone(), coll.Name);
+        collection.save(&conn);
+        collection
+    }).collect();
+
+    // Read the relations between collections and ciphers
+    let mut relations = Vec::new();
+    for relation in data.CollectionRelationships {
+        relations.push((relation.Key, relation.Value));
+    }
+
+    // Read and create the ciphers
+    let ciphers: Vec<_> = data.Ciphers.into_iter().map(|cipher_data| {
+        let mut cipher = Cipher::new(cipher_data.Type, cipher_data.Name.clone());
+        update_cipher_from_data(&mut cipher, cipher_data, &headers, false, &conn).ok();
+        cipher
+    }).collect();
+
+    // Assign the collections
+    for (cipher_index, coll_index) in relations {
+        let cipher_id = &ciphers[cipher_index].uuid;
+        let coll_id = &collections[coll_index].uuid;
+
+        CollectionCipher::save(cipher_id, coll_id, &conn);
+    }
+
+    let mut user = headers.user;
+    match user.update_revision(&conn) {
+        Ok(()) => Ok(()),
+        Err(_) => err!("Failed to update the revision, please log out and log back in to finish import.")
+    }
 }

@@ -86,7 +86,7 @@ fn get_cipher_details(uuid: String, headers: Headers, conn: DbConn) -> JsonResul
 
 #[derive(Deserialize, Debug)]
 #[allow(non_snake_case)]
-struct CipherData {
+pub struct CipherData {
     // Id is optional as it is included only in bulk share
     Id: Option<String>,
     // Folder id is not included in import
@@ -100,8 +100,8 @@ struct CipherData {
     Card = 3,
     Identity = 4
     */
-    Type: i32, // TODO: Change this to NumberOrString
-    Name: String,
+    pub Type: i32, // TODO: Change this to NumberOrString
+    pub Name: String,
     Notes: Option<String>,
     Fields: Option<Value>,
 
@@ -132,7 +132,7 @@ fn post_ciphers(data: JsonUpcase<CipherData>, headers: Headers, conn: DbConn) ->
     Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, &conn)))
 }
 
-fn update_cipher_from_data(cipher: &mut Cipher, data: CipherData, headers: &Headers, shared_to_collection: bool, conn: &DbConn) -> EmptyResult {
+pub fn update_cipher_from_data(cipher: &mut Cipher, data: CipherData, headers: &Headers, shared_to_collection: bool, conn: &DbConn) -> EmptyResult {
     if let Some(org_id) = data.OrganizationId {
         match UserOrganization::find_by_user_and_org(&headers.user.uuid, &org_id, &conn) {
             None => err!("You don't have permission to add item to organization"),
@@ -560,7 +560,7 @@ fn delete_cipher_selected(data: JsonUpcase<Value>, headers: Headers, conn: DbCon
 
     let uuids = match data.get("Ids") {
         Some(ids) => match ids.as_array() {
-            Some(ids) => ids.iter().filter_map(|uuid| { uuid.as_str() }),
+            Some(ids) => ids.iter().filter_map(Value::as_str),
             None => err!("Posted ids field is not an array")
         },
         None => err!("Request missing ids field")
@@ -606,7 +606,7 @@ fn move_cipher_selected(data: JsonUpcase<Value>, headers: Headers, conn: DbConn)
 
     let uuids = match data.get("Ids") {
         Some(ids) => match ids.as_array() {
-            Some(ids) => ids.iter().filter_map(|uuid| { uuid.as_str() }),
+            Some(ids) => ids.iter().filter_map(Value::as_str),
             None => err!("Posted ids field is not an array")
         },
         None => err!("Request missing ids field")
