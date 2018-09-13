@@ -184,26 +184,7 @@ To enable WebSockets notifications, an external reverse proxy is necessary, and 
 - Route everything else, including `/notifications/hub/negotiate`, to the standard Rocket server, by default at port `80`.
 - If using Docker, you may need to map both ports with the `-p` flag
 
-An example configuration is included next for a [Caddy](https://caddyserver.com/) proxy server, and assumes the proxy is running in the same computer as `bitwarden_rs`:
-
-```r
-localhost:2015 {
-    # The negotiation endpoint is also proxied to Rocket
-    proxy /notifications/hub/negotiate 0.0.0.0:80 {
-        transparent
-    }
-    
-    # Notifications redirected to the websockets server
-    proxy /notifications/hub 0.0.0.0:3012 {
-        websocket
-    }
-    
-    # Proxy the Root directory to Rocket
-    proxy / 0.0.0.0:80 {
-        transparent
-    }
-}
-```
+Example configurations are included in the [PROXY.md](https://github.com/dani-garcia/bitwarden_rs/blob/master/PROXY.md) file.
 
 Note: The reason for this workaround is the lack of support for WebSockets from Rocket (though [it's a planned feature](https://github.com/SergioBenitez/Rocket/issues/90)), which forces us to launch a secondary server on a separate port.
 
@@ -380,7 +361,7 @@ docker build -t bitwarden_rs .
 
 ## Building binary
 
-For building binary outside the Docker environment and running it locally without docker, please see [build instructions](BUILD.md).
+For building binary outside the Docker environment and running it locally without docker, please see [build instructions](https://github.com/dani-garcia/bitwarden_rs/blob/master/BUILD.md).
 
 ## Available packages
 
