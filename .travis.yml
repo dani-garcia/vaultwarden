@@ -1,0 +1,7 @@
+# Copied from Rocket's .travis.yml
+language: rust
+sudo: required # so we get a VM with higher specs
+dist: trusty # so we get a VM with higher specs
+cache: cargo
+rust:
+- nightly

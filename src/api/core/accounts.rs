@@ -32,15 +32,34 @@ struct KeysData {
 fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> EmptyResult {
     let data: RegisterData = data.into_inner().data;
 
-    if !CONFIG.signups_allowed {
-        err!("Signups not allowed")
-    }
 
-    if User::find_by_mail(&data.Email, &conn).is_some() {
-        err!("Email already exists")
-    }
+    let mut user = match User::find_by_mail(&data.Email, &conn) {
+        Some(mut user) => {
+            if Invitation::take(&data.Email, &conn) {
+                for mut user_org in UserOrganization::find_invited_by_user(&user.uuid, &conn).iter_mut() {
+                    user_org.status = UserOrgStatus::Accepted as i32;
+                    user_org.save(&conn);
+                };
+                user
+            } else {
+                if CONFIG.signups_allowed {
+                    err!("Account with this email already exists")
+                } else {
+                    err!("Registration not allowed")
+                }
+            }
+        },
+        None => {
+            if CONFIG.signups_allowed || Invitation::take(&data.Email, &conn) {
+                User::new(data.Email)
+            } else {
+                err!("Registration not allowed")
+            }
+        }
+    };
 
-    let mut user = User::new(data.Email, data.Key, data.MasterPasswordHash);
+    user.set_password(&data.MasterPasswordHash);
+    user.key = data.Key;
 
     // Add extra fields if present
     if let Some(name) = data.Name {
@@ -73,6 +92,11 @@ struct ProfileData {
     _Culture: String,  // Ignored, always use en-US
     MasterPasswordHint: Option<String>,
     Name: String,
+}
+
+#[put("/accounts/profile", data = "<data>")]
+fn put_profile(data: JsonUpcase<ProfileData>, headers: Headers, conn: DbConn) -> JsonResult {
+    post_profile(data, headers, conn)
 }
 
 #[post("/accounts/profile", data = "<data>")]
@@ -249,7 +273,7 @@ fn delete_account(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn
 
 #[get("/accounts/revision-date")]
 fn revision_date(headers: Headers) -> String {
-    let revision_date = headers.user.updated_at.timestamp();
+    let revision_date = headers.user.updated_at.timestamp_millis();
     revision_date.to_string()
 }
 
@@ -264,7 +288,7 @@ fn password_hint(data: JsonUpcase<PasswordHintData>, conn: DbConn) -> EmptyResul
     let data: PasswordHintData = data.into_inner().data;
 
     if !is_valid_email(&data.Email) {
-        return err!("This email address is not valid...");
+        err!("This email address is not valid...");
     }
 
     let user = User::find_by_mail(&data.Email, &conn);
@@ -287,3 +311,31 @@ fn password_hint(data: JsonUpcase<PasswordHintData>, conn: DbConn) -> EmptyResul
 
     Ok(())
 }
+
+#[derive(Deserialize)]
+#[allow(non_snake_case)]
+struct PreloginData {
+    Email: String,
+}
+
+#[post("/accounts/prelogin", data = "<data>")]
+fn prelogin(data: JsonUpcase<PreloginData>, conn: DbConn) -> JsonResult {
+    let data: PreloginData = data.into_inner().data;
+
+    match User::find_by_mail(&data.Email, &conn) {
+        Some(user) => {
+            let kdf_type = 0; // PBKDF2: 0
+
+            let _server_iter = user.password_iterations;
+            let client_iter = 5000; // TODO: Make iterations user configurable
+
+            
+            Ok(Json(json!({
+                "Kdf": kdf_type,
+                "KdfIterations": client_iter
+            })))
+        },
+        None => err!("Invalid user"),
+    }
+}
+

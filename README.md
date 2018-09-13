@@ -1,8 +1,18 @@
-This is Bitwarden server API implementation written in rust compatible with [upstream Bitwarden clients](https://bitwarden.com/#download)*, ideal for self-hosted deployment where running official resource-heavy service might not be ideal.
+### This is a Bitwarden server API implementation written in Rust compatible with [upstream Bitwarden clients](https://bitwarden.com/#download)*, perfect for self-hosted deployment where running the official resource-heavy service might not be ideal.
+
+---
+
+[![Travis Build Status](https://travis-ci.org/dani-garcia/bitwarden_rs.svg?branch=master)](https://travis-ci.org/dani-garcia/bitwarden_rs)
+[![Dependency Status](https://deps.rs/repo/github/dani-garcia/bitwarden_rs/status.svg)](https://deps.rs/repo/github/dani-garcia/bitwarden_rs)
+[![GitHub Release](https://img.shields.io/github/release/dani-garcia/bitwarden_rs.svg)](https://github.com/dani-garcia/bitwarden_rs/releases/latest)
+[![GPL-3.0 Licensed](https://img.shields.io/github/license/dani-garcia/bitwarden_rs.svg)](https://github.com/dani-garcia/bitwarden_rs/blob/master/LICENSE.txt)
+[![Matrix Chat](https://matrix.to/img/matrix-badge.svg)](https://matrix.to/#/#bitwarden_rs:matrix.org)
 
 Image is based on [Rust implementation of Bitwarden API](https://github.com/dani-garcia/bitwarden_rs).
 
 _*Note, that this project is not associated with the [Bitwarden](https://bitwarden.com/) project nor 8bit Solutions LLC._
+
+---
 
 **Table of contents**
 
@@ -13,6 +23,7 @@ _*Note, that this project is not associated with the [Bitwarden](https://bitward
   - [Updating the bitwarden image](#updating-the-bitwarden-image)
 - [Configuring bitwarden service](#configuring-bitwarden-service)
   - [Disable registration of new users](#disable-registration-of-new-users)
+  - [Disable invitations](#disable-invitations)
   - [Enabling HTTPS](#enabling-https)
   - [Enabling U2F authentication](#enabling-u2f-authentication)
   - [Changing persistent data location](#changing-persistent-data-location)
@@ -24,6 +35,7 @@ _*Note, that this project is not associated with the [Bitwarden](https://bitward
   - [Changing the number of workers](#changing-the-number-of-workers)
   - [SMTP configuration](#smtp-configuration)
   - [Password hint display](#password-hint-display)
+  - [Disabling or overriding the Vault interface hosting](#disabling-or-overriding-the-vault-interface-hosting)
   - [Other configuration](#other-configuration)
 - [Building your own image](#building-your-own-image)
 - [Building binary](#building-binary)
@@ -35,6 +47,11 @@ _*Note, that this project is not associated with the [Bitwarden](https://bitward
   - [3. the key files](#3-the-key-files)
   - [4. Icon Cache](#4-icon-cache)
 - [Running the server with non-root user](#running-the-server-with-non-root-user)
+- [Differences from upstream API implementation](#differences-from-upstream-api-implementation)
+  - [Changing user email](#changing-user-email)
+  - [Creating organization](#creating-organization)
+  - [Inviting users into organization](#inviting-users-into-organization)
+  - [Running on unencrypted connection](#running-on-unencrypted-connection)
 - [Get in touch](#get-in-touch)
 
 ## Features
@@ -122,6 +139,20 @@ docker run -d --name bitwarden \
   -p 80:80 \
   mprasil/bitwarden:latest
 ```
+Note: While users can't register on their own, they can still be invited by already registered users. Read bellow if you also want to disable that.
+
+### Disable invitations
+
+Even when registration is disabled, organization administrators or owners can invite users to join organization. This won't send email invitation to the users, but after they are invited, they can register with the invited email even if `SIGNUPS_ALLOWED` is actually set to `false`. You can disable this functionality completely by setting `INVITATIONS_ALLOWED` env variable to `false`:
+
+```sh
+docker run -d --name bitwarden \
+  -e SIGNUPS_ALLOWED=false \
+  -e INVITATIONS_ALLOWED=false \
+  -v /bw-data/:/data/ \
+  -p 80:80 \
+  mprasil/bitwarden:latest
+```
 
 ### Enabling HTTPS
 To enable HTTPS, you need to configure the `ROCKET_TLS`.
@@ -136,10 +167,9 @@ Where:
 
 ```sh
 docker run -d --name bitwarden \
-  -e ROCKET_TLS={certs='"/ssl/certs.pem",key="/ssl/key.pem"}' \
+  -e ROCKET_TLS='{certs="/ssl/certs.pem",key="/ssl/key.pem"}' \
   -v /ssl/keys/:/ssl/ \
   -v /bw-data/:/data/ \
-  -v /icon_cache/ \
   -p 443:80 \
   mprasil/bitwarden:latest
 ```
@@ -265,7 +295,7 @@ docker run -d --name bitwarden \
   -p 80:80 \
   mprasil/bitwarden:latest
 ```
-
+  
 When `SMTP_SSL` is set to `true`(this is the default), only TLSv1.1 and TLSv1.2 protocols will be accepted and `SMTP_PORT` will default to `587`. If set to `false`, `SMTP_PORT` will default to `25` and the connection won't be encrypted. This can be very insecure, use this setting only if you know what you're doing.
 
 ### Password hint display
@@ -279,6 +309,29 @@ docker run -d --name bitwarden \
   -p 80:80 \
   mprasil/bitwarden:latest
 ```
+
+### Disabling or overriding the Vault interface hosting
+
+As a convenience bitwarden_rs image will also host static files for Vault web interface. You can disable this static file hosting completely by setting the WEB_VAULT_ENABLED variable.
+
+```sh
+docker run -d --name bitwarden \
+  -e WEB_VAULT_ENABLED=false \
+  -v /bw-data/:/data/ \
+  -p 80:80 \
+  mprasil/bitwarden:latest
+```
+Alternatively you can override the Vault files and provide your own static files to host. You can do that by mounting a path with your files over the `/web-vault` directory in the container. Just make sure the directory contains at least `index.html` file.
+
+```sh
+docker run -d --name bitwarden \
+  -v /path/to/static/files_directory:/web-vault \
+  -v /bw-data/:/data/ \
+  -p 80:80 \
+  mprasil/bitwarden:latest
+``` 
+
+Note that you can also change the path where bitwarden_rs looks for static files by providing the `WEB_VAULT_FOLDER` environment variable with the path.
 
 ### Other configuration
 
@@ -345,6 +398,27 @@ docker run -d --name bitwarden \
   -p 80:8080 \
   mprasil/bitwarden:latest
 ```
+
+## Differences from upstream API implementation
+
+### Changing user email
+
+Because we don't have any SMTP functionality at the moment, there's no way to deliver the verification token when you try to change the email. User just needs to enter any random token to continue and the change will be applied.
+
+### Creating organization
+
+We use upstream Vault interface directly without any (significant) changes, this is why user is presented with paid options when creating organization. To create an organization, just use the free option, none of the limits apply when using bitwarden_rs as back-end API and after the organization is created it should behave like Enterprise organization.
+
+### Inviting users into organization
+
+If you have [invitations disabled](#disable-invitations), the users must already be registered on your server to invite them. The invited users won't get the invitation email, instead they will appear in the interface as if they already accepted the invitation. (if the user has already registered) Organization admin then just needs to confirm them to be proper Organization members and to give them access to the shared secrets.
+
+### Running on unencrypted connection
+
+It is strongly recommended to run bitwarden_rs service over HTTPS. However the server itself while [supporting it](#enabling-https) does not strictly require such setup. This makes it a bit easier to spin up the service in cases where you can generally trust the connection (internal and secure network, access over VPN,..) or when you want to put the service behind HTTP proxy, that will do the encryption on the proxy end.
+
+Running over HTTP is still reasonably secure provided you use really strong master password and that you avoid using web Vault over connection that is vulnerable to MITM attacks where attacker could inject javascript into your interface. However some forms of 2FA might not work in this setup and [Vault doesn't work in this configuration in Chrome](https://github.com/bitwarden/web/issues/254).
+
 ## Get in touch
 
 To ask an question, [raising an issue](https://github.com/dani-garcia/bitwarden_rs/issues/new) is fine, also please report any bugs spotted here.

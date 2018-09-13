@@ -1,31 +1,31 @@
 [package]
 name = "bitwarden_rs"
-version = "0.12.0"
+version = "1.0.0"
 authors = ["Daniel García <dani-garcia@users.noreply.github.com>"]
 
 [dependencies]
 # Web framework for nightly with a focus on ease-of-use, expressibility, and speed.
-rocket = { version = "0.3.14", features = ["tls"] }
-rocket_codegen = "0.3.14"
-rocket_contrib = "0.3.14"
+rocket = { version = "0.3.16", features = ["tls"] }
+rocket_codegen = "0.3.16"
+rocket_contrib = "0.3.16"
 
 # HTTP client
-reqwest = "0.8.6"
+reqwest = "0.8.8"
 
 # multipart/form-data support
-multipart = "0.14.2"
+multipart = "0.15.2"
 
 # A generic serialization/deserialization framework
-serde = "1.0.70"
-serde_derive = "1.0.70"
-serde_json = "1.0.22"
+serde = "1.0.74"
+serde_derive = "1.0.74"
+serde_json = "1.0.26"
 
 # A safe, extensible ORM and Query builder
 diesel = { version = "1.3.2", features = ["sqlite", "chrono", "r2d2"] }
 diesel_migrations = { version = "1.3.0", features = ["sqlite"] }
 
 # Bundled SQLite
-libsqlite3-sys = { version = "0.9.1", features = ["bundled"] }
+libsqlite3-sys = { version = "0.9.3", features = ["bundled"] }
 
 # Crypto library
 ring = { version = "= 0.11.0", features = ["rsa_signing"] }
@@ -34,7 +34,7 @@ ring = { version = "= 0.11.0", features = ["rsa_signing"] }
 uuid = { version = "0.6.5", features = ["v4"] }
 
 # Date and time library for Rust
-chrono = "0.4.4"
+chrono = "0.4.5"
 
 # TOTP library
 oath = "0.10.2"
@@ -52,7 +52,7 @@ u2f = "0.1.2"
 dotenv = { version = "0.13.0", default-features = false }
 
 # Lazy static macro
-lazy_static = "1.0.1"
+lazy_static = "1.1.0"
 
 # Numerical libraries
 num-traits = "0.2.5"

@@ -1,5 +1,6 @@
 #![feature(plugin, custom_derive)]
 #![plugin(rocket_codegen)]
+#![allow(proc_macro_derive_resolution_fallback)] // TODO: Remove this when diesel update fixes warnings
 extern crate rocket;
 extern crate rocket_contrib;
 extern crate reqwest;
@@ -49,6 +50,7 @@ fn init_rocket() -> Rocket {
         .mount("/api", api::core_routes())
         .mount("/identity", api::identity_routes())
         .mount("/icons", api::icons_routes())
+        .mount("/notifications", api::notifications_routes())
         .manage(db::init_pool())
 }
 
@@ -224,6 +226,7 @@ pub struct Config {
 
     local_icon_extractor: bool,
     signups_allowed: bool,
+    invitations_allowed: bool,
     password_iterations: i32,
     show_password_hint: bool,
 
@@ -256,6 +259,7 @@ impl Config {
 
             local_icon_extractor: util::parse_option_string(env::var("LOCAL_ICON_EXTRACTOR").ok()).unwrap_or(false),
             signups_allowed: util::parse_option_string(env::var("SIGNUPS_ALLOWED").ok()).unwrap_or(true),
+            invitations_allowed: util::parse_option_string(env::var("INVITATIONS_ALLOWED").ok()).unwrap_or(true),
             password_iterations: util::parse_option_string(env::var("PASSWORD_ITERATIONS").ok()).unwrap_or(100_000),
             show_password_hint: util::parse_option_string(env::var("SHOW_PASSWORD_HINT").ok()).unwrap_or(true),
 

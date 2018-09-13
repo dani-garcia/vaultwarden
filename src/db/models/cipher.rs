@@ -3,7 +3,7 @@ use serde_json::Value as JsonValue;
 
 use uuid::Uuid;
 
-use super::{User, Organization, Attachment, FolderCipher, CollectionCipher, UserOrgType, UserOrgStatus};
+use super::{User, Organization, Attachment, FolderCipher, CollectionCipher, UserOrganization, UserOrgType, UserOrgStatus};
 
 #[derive(Debug, Identifiable, Queryable, Insertable, Associations)]
 #[table_name = "ciphers"]
@@ -32,6 +32,7 @@ pub struct Cipher {
     pub data: String,
 
     pub favorite: bool,
+    pub password_history: Option<String>,
 }
 
 /// Local methods
@@ -55,6 +56,7 @@ impl Cipher {
             fields: None,
 
             data: String::new(),
+            password_history: None,
         }
     }
 }
@@ -76,6 +78,10 @@ impl Cipher {
 
         let fields_json: JsonValue = if let Some(ref fields) = self.fields {
             serde_json::from_str(fields).unwrap()
+        } else { JsonValue::Null };
+        
+        let password_history_json: JsonValue = if let Some(ref password_history) = self.password_history {
+            serde_json::from_str(password_history).unwrap()
         } else { JsonValue::Null };
 
         let mut data_json: JsonValue = serde_json::from_str(&self.data).unwrap();
@@ -108,6 +114,8 @@ impl Cipher {
 
             "Object": "cipher",
             "Edit": true,
+
+            "PasswordHistory": password_history_json,
         });
 
         let key = match self.type_ {
@@ -122,7 +130,23 @@ impl Cipher {
         json_object
     }
 
+    pub fn update_users_revision(&self, conn: &DbConn) {
+        match self.user_uuid {
+            Some(ref user_uuid) => User::update_uuid_revision(&user_uuid, conn),
+            None => { // Belongs to Organization, need to update affected users
+                if let Some(ref org_uuid) = self.organization_uuid {
+                    UserOrganization::find_by_cipher_and_org(&self.uuid, &org_uuid, conn)
+                    .iter()
+                    .for_each(|user_org| {
+                        User::update_uuid_revision(&user_org.user_uuid, conn)
+                    });
+                }
+            }
+        };
+    }
+
     pub fn save(&mut self, conn: &DbConn) -> bool {
+        self.update_users_revision(conn);
         self.updated_at = Utc::now().naive_utc();
 
         match diesel::replace_into(ciphers::table)
@@ -134,6 +158,8 @@ impl Cipher {
     }
 
     pub fn delete(self, conn: &DbConn) -> QueryResult<()> {
+        self.update_users_revision(conn);
+
         FolderCipher::delete_all_by_cipher(&self.uuid, &conn)?;
         CollectionCipher::delete_all_by_cipher(&self.uuid, &conn)?;
         Attachment::delete_all_by_cipher(&self.uuid, &conn)?;
@@ -157,6 +183,7 @@ impl Cipher {
             None => {
                 match folder_uuid {
                     Some(new_folder) => {
+                        self.update_users_revision(conn);
                         let folder_cipher = FolderCipher::new(&new_folder, &self.uuid);
                         folder_cipher.save(&conn).or(Err("Couldn't save folder setting"))
                     },
@@ -169,6 +196,7 @@ impl Cipher {
                         if current_folder == new_folder {
                             Ok(()) //nothing to do
                         } else {
+                            self.update_users_revision(conn);
                             match FolderCipher::find_by_folder_and_cipher(&current_folder, &self.uuid, &conn) {
                                 Some(current_folder) => {
                                     current_folder.delete(&conn).or(Err("Failed removing old folder mapping"))
@@ -181,6 +209,7 @@ impl Cipher {
                         }
                     },
                     None => {
+                        self.update_users_revision(conn);
                         match FolderCipher::find_by_folder_and_cipher(&current_folder, &self.uuid, &conn) {
                             Some(current_folder) => {
                                 current_folder.delete(&conn).or(Err("Failed removing old folder mapping"))

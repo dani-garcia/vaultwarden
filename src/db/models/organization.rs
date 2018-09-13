@@ -1,6 +1,7 @@
 use serde_json::Value as JsonValue;
 
 use uuid::Uuid;
+use super::{User, CollectionUser};
 
 #[derive(Debug, Identifiable, Queryable, Insertable)]
 #[table_name = "organizations"]
@@ -26,7 +27,7 @@ pub struct UserOrganization {
 }
 
 pub enum UserOrgStatus {
-    _Invited = 0, // Unused, users are accepted automatically
+    Invited = 0,
     Accepted = 1,
     Confirmed = 2,
 }
@@ -108,12 +109,17 @@ impl UserOrganization {
 use diesel;
 use diesel::prelude::*;
 use db::DbConn;
-use db::schema::organizations;
-use db::schema::users_organizations;
+use db::schema::{organizations, users_organizations, users_collections, ciphers_collections};
 
 /// Database methods
 impl Organization {
     pub fn save(&mut self, conn: &DbConn) -> bool {
+        UserOrganization::find_by_org(&self.uuid, conn)
+        .iter()
+        .for_each(|user_org| {
+            User::update_uuid_revision(&user_org.user_uuid, conn);
+        });
+
         match diesel::replace_into(organizations::table)
             .values(&*self)
             .execute(&**conn) {
@@ -172,7 +178,6 @@ impl UserOrganization {
     }
 
     pub fn to_json_user_details(&self, conn: &DbConn) -> JsonValue {
-        use super::User;
         let user = User::find_by_uuid(&self.user_uuid, conn).unwrap();
 
         json!({
@@ -190,7 +195,6 @@ impl UserOrganization {
     }
 
     pub fn to_json_collection_user_details(&self, read_only: &bool, conn: &DbConn) -> JsonValue {
-        use super::User;
         let user = User::find_by_uuid(&self.user_uuid, conn).unwrap();
 
         json!({
@@ -209,7 +213,6 @@ impl UserOrganization {
         let coll_uuids = if self.access_all { 
             vec![] // If we have complete access, no need to fill the array
         } else {
-            use super::CollectionUser;
             let collections = CollectionUser::find_by_organization_and_user_uuid(&self.org_uuid, &self.user_uuid, conn);
             collections.iter().map(|c| json!({"Id": c.collection_uuid, "ReadOnly": c.read_only})).collect()
         };
@@ -228,6 +231,8 @@ impl UserOrganization {
     }
 
     pub fn save(&mut self, conn: &DbConn) -> bool {
+        User::update_uuid_revision(&self.user_uuid, conn);
+
         match diesel::replace_into(users_organizations::table)
             .values(&*self)
             .execute(&**conn) {
@@ -237,7 +242,7 @@ impl UserOrganization {
     }
 
     pub fn delete(self, conn: &DbConn) -> QueryResult<()> {
-        use super::CollectionUser;
+        User::update_uuid_revision(&self.user_uuid, conn);
 
         CollectionUser::delete_all_by_user(&self.user_uuid, &conn)?;
 
@@ -265,10 +270,24 @@ impl UserOrganization {
             .first::<Self>(&**conn).ok()
     }
 
+    pub fn find_by_uuid_and_org(uuid: &str, org_uuid: &str, conn: &DbConn) -> Option<Self> {
+        users_organizations::table
+            .filter(users_organizations::uuid.eq(uuid))
+            .filter(users_organizations::org_uuid.eq(org_uuid))
+            .first::<Self>(&**conn).ok()
+    }
+
     pub fn find_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
         users_organizations::table
             .filter(users_organizations::user_uuid.eq(user_uuid))
             .filter(users_organizations::status.eq(UserOrgStatus::Confirmed as i32))
+            .load::<Self>(&**conn).unwrap_or(vec![])
+    }
+
+    pub fn find_invited_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
+        users_organizations::table
+            .filter(users_organizations::user_uuid.eq(user_uuid))
+            .filter(users_organizations::status.eq(UserOrgStatus::Invited as i32))
             .load::<Self>(&**conn).unwrap_or(vec![])
     }
 
@@ -290,6 +309,26 @@ impl UserOrganization {
             .filter(users_organizations::user_uuid.eq(user_uuid))
             .filter(users_organizations::org_uuid.eq(org_uuid))
             .first::<Self>(&**conn).ok()
+    }
+
+    pub fn find_by_cipher_and_org(cipher_uuid: &str, org_uuid: &str, conn: &DbConn) -> Vec<Self> {
+        users_organizations::table
+        .filter(users_organizations::org_uuid.eq(org_uuid))
+        .left_join(users_collections::table.on(
+            users_collections::user_uuid.eq(users_organizations::user_uuid)
+        ))
+        .left_join(ciphers_collections::table.on(
+            ciphers_collections::collection_uuid.eq(users_collections::collection_uuid).and(
+                ciphers_collections::cipher_uuid.eq(&cipher_uuid)
+            )
+        ))
+        .filter(
+            users_organizations::access_all.eq(true).or( // AccessAll..
+                ciphers_collections::cipher_uuid.eq(&cipher_uuid) // ..or access to collection with cipher
+            )
+        )
+        .select(users_organizations::all_columns)
+        .load::<Self>(&**conn).expect("Error loading user organizations")
     }
 }
 

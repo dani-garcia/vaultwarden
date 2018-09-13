@@ -53,13 +53,11 @@ use db::schema::attachments;
 
 /// Database methods
 impl Attachment {
-    pub fn save(&self, conn: &DbConn) -> bool {
-        match diesel::replace_into(attachments::table)
+    pub fn save(&self, conn: &DbConn) -> QueryResult<()> {
+        diesel::replace_into(attachments::table)
             .values(self)
-            .execute(&**conn) {
-            Ok(1) => true, // One row inserted
-            _ => false,
-        }
+            .execute(&**conn)
+            .and(Ok(()))
     }
 
     pub fn delete(self, conn: &DbConn) -> QueryResult<()> {
@@ -67,7 +65,7 @@ impl Attachment {
         use std::{thread, time};
 
         let mut retries = 10;
-        
+
         loop {
             match diesel::delete(
                 attachments::table.filter(
@@ -109,6 +107,12 @@ impl Attachment {
     pub fn find_by_cipher(cipher_uuid: &str, conn: &DbConn) -> Vec<Self> {
         attachments::table
             .filter(attachments::cipher_uuid.eq(cipher_uuid))
+            .load::<Self>(&**conn).expect("Error loading attachments")
+    }
+
+    pub fn find_by_ciphers(cipher_uuids: Vec<String>, conn: &DbConn) -> Vec<Self> {
+        attachments::table
+            .filter(attachments::cipher_uuid.eq_any(cipher_uuids))
             .load::<Self>(&**conn).expect("Error loading attachments")
     }
 }

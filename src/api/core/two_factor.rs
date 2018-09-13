@@ -112,6 +112,15 @@ fn disable_twofactor(
     })))
 }
 
+#[put("/two-factor/disable", data = "<data>")]
+fn disable_twofactor_put(
+    data: JsonUpcase<DisableTwoFactorData>,
+    headers: Headers,
+    conn: DbConn,
+) -> JsonResult {
+    disable_twofactor(data, headers, conn)
+}
+
 #[post("/two-factor/get-authenticator", data = "<data>")]
 fn generate_authenticator(
     data: JsonUpcase<PasswordData>,
@@ -192,6 +201,15 @@ fn activate_authenticator(
         "Key": key,
         "Object": "twoFactorAuthenticator"
     })))
+}
+
+#[put("/two-factor/authenticator", data = "<data>")]
+fn activate_authenticator_put(
+    data: JsonUpcase<EnableAuthenticatorData>,
+    headers: Headers,
+    conn: DbConn,
+) -> JsonResult {
+    activate_authenticator(data, headers, conn)
 }
 
 fn _generate_recover_code(user: &mut User, conn: &DbConn) {
@@ -354,6 +372,11 @@ fn activate_u2f(data: JsonUpcase<EnableU2FData>, headers: Headers, conn: DbConn)
     } else {
         err!("Can't recover challenge")
     }
+}
+
+#[put("/two-factor/u2f", data = "<data>")]
+fn activate_u2f_put(data: JsonUpcase<EnableU2FData>, headers: Headers, conn: DbConn) -> JsonResult {
+    activate_u2f(data,headers, conn)
 }
 
 fn _create_u2f_challenge(user_uuid: &str, type_: TwoFactorType, conn: &DbConn) -> Challenge {

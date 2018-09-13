@@ -21,6 +21,7 @@ table! {
         fields -> Nullable<Text>,
         data -> Text,
         favorite -> Bool,
+        password_history -> Nullable<Text>,
     }
 }
 
@@ -109,6 +110,12 @@ table! {
         security_stamp -> Text,
         equivalent_domains -> Text,
         excluded_globals -> Text,
+    }
+}
+
+table! {
+    invitations (email) {
+        email -> Text,
     }
 }
 
