@@ -76,6 +76,7 @@ RUN apt-get update && apt-get install -y\
 RUN mkdir /data
 VOLUME /data
 EXPOSE 80
+EXPOSE 3012
 
 # Copies the files from the context (env file and web-vault)
 # and the binary from the "build" stage to the current stage

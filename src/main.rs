@@ -1,10 +1,13 @@
-#![feature(plugin, custom_derive)]
+#![feature(plugin, custom_derive, vec_remove_item)]
 #![plugin(rocket_codegen)]
 #![allow(proc_macro_derive_resolution_fallback)] // TODO: Remove this when diesel update fixes warnings
 extern crate rocket;
 extern crate rocket_contrib;
 extern crate reqwest;
 extern crate multipart;
+extern crate ws;
+extern crate rmpv;
+extern crate chashmap;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
@@ -31,6 +34,7 @@ extern crate lettre;
 extern crate lettre_email;
 extern crate native_tls;
 extern crate fast_chemail;
+extern crate byteorder;
 
 use std::{env, path::Path, process::{exit, Command}};
 use rocket::Rocket;
@@ -52,6 +56,7 @@ fn init_rocket() -> Rocket {
         .mount("/icons", api::icons_routes())
         .mount("/notifications", api::notifications_routes())
         .manage(db::init_pool())
+        .manage(api::start_notification_server())
 }
 
 // Embed the migrations from the migrations folder into the application
@@ -74,8 +79,7 @@ fn main() {
     check_db();
     check_rsa_keys();
     check_web_vault();  
-    migrations::run_migrations(); 
-
+    migrations::run_migrations();
 
     init_rocket().launch();
 }
