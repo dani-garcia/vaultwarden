@@ -1,9 +1,10 @@
+use rocket::State;
 use rocket_contrib::{Json, Value};
 use CONFIG;
 use db::DbConn;
 use db::models::*;
 
-use api::{PasswordData, JsonResult, EmptyResult, NumberOrString, JsonUpcase};
+use api::{PasswordData, JsonResult, EmptyResult, NumberOrString, JsonUpcase, WebSocketUsers, UpdateType};
 use auth::{Headers, AdminHeaders, OwnerHeaders};
 
 use serde::{Deserialize, Deserializer};
@@ -601,7 +602,7 @@ struct RelationsData {
 }
 
 #[post("/ciphers/import-organization?<query>", data = "<data>")]
-fn post_org_import(query: OrgIdData, data: JsonUpcase<ImportData>, headers: Headers, conn: DbConn) -> EmptyResult {
+fn post_org_import(query: OrgIdData, data: JsonUpcase<ImportData>, headers: Headers, conn: DbConn, ws: State<WebSocketUsers>) -> EmptyResult {
     let data: ImportData = data.into_inner().data;
     let org_id = query.organizationId;
 
@@ -630,7 +631,7 @@ fn post_org_import(query: OrgIdData, data: JsonUpcase<ImportData>, headers: Head
     // Read and create the ciphers
     let ciphers: Vec<_> = data.Ciphers.into_iter().map(|cipher_data| {
         let mut cipher = Cipher::new(cipher_data.Type, cipher_data.Name.clone());
-        update_cipher_from_data(&mut cipher, cipher_data, &headers, false, &conn).ok();
+        update_cipher_from_data(&mut cipher, cipher_data, &headers, false, &conn, &ws, UpdateType::SyncCipherCreate).ok();
         cipher
     }).collect();
 
