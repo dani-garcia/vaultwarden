@@ -320,20 +320,22 @@ struct PreloginData {
 fn prelogin(data: JsonUpcase<PreloginData>, conn: DbConn) -> JsonResult {
     let data: PreloginData = data.into_inner().data;
 
-    match User::find_by_mail(&data.Email, &conn) {
+    const KDF_TYPE_DEFAULT: i32 = 0; // PBKDF2: 0
+    const KDF_ITER_DEFAULT: i32 = 5_000;
+
+    let (kdf_type, kdf_iter) = match User::find_by_mail(&data.Email, &conn) {
         Some(user) => {
-            let kdf_type = 0; // PBKDF2: 0
-
             let _server_iter = user.password_iterations;
-            let client_iter = 5000; // TODO: Make iterations user configurable
-
+            let client_iter = KDF_ITER_DEFAULT; // TODO: Make iterations user configurable
             
-            Ok(Json(json!({
-                "Kdf": kdf_type,
-                "KdfIterations": client_iter
-            })))
+            (KDF_TYPE_DEFAULT, client_iter)
         },
-        None => err!("Invalid user"),
-    }
+        None => (KDF_TYPE_DEFAULT, KDF_ITER_DEFAULT), // Return default values when no user
+    };
+
+    Ok(Json(json!({
+        "Kdf": kdf_type,
+        "KdfIterations": kdf_iter
+    })))
 }
 
