@@ -162,7 +162,7 @@ fn twofactor_auth(
         return Ok(None);
     }
 
-    let provider = match util::parse_option_string(data.get_opt("twoFactorProvider")) {
+    let provider = match util::try_parse_string(data.get_opt("twoFactorProvider")) {
         Some(provider) => provider,
         None => providers[0], // If we aren't given a two factor provider, asume the first one
     };
@@ -207,7 +207,7 @@ fn twofactor_auth(
         _ => err!("Invalid two factor provider"),
     }
 
-    if util::parse_option_string(data.get_opt("twoFactorRemember")).unwrap_or(0) == 1 {
+    if util::try_parse_string_or(data.get_opt("twoFactorRemember"), 0) == 1 {
         Ok(Some(device.refresh_twofactor_remember()))
     } else {
         device.delete_twofactor_remember();
@@ -274,7 +274,7 @@ impl<'a, 'r> FromRequest<'a, 'r> for DeviceType {
     fn from_request(request: &'a Request<'r>) -> request::Outcome<Self, Self::Error> {
         let headers = request.headers();
         let type_opt = headers.get_one("Device-Type");
-        let type_num = util::parse_option_string(type_opt).unwrap_or(0);
+        let type_num = util::try_parse_string_or(type_opt, 0);
 
         Outcome::Success(DeviceType(type_num))
     }

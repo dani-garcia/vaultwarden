@@ -5,6 +5,8 @@ use api::JsonResult;
 use auth::Headers;
 use db::DbConn;
 
+use CONFIG;
+
 pub fn routes() -> Vec<Route> {
     routes![negotiate, websockets_err]
 }
@@ -356,7 +358,7 @@ pub fn start_notification_server() -> WebSocketUsers {
     thread::spawn(move || {
         WebSocket::new(factory)
             .unwrap()
-            .listen("0.0.0.0:3012")
+            .listen(format!("0.0.0.0:{}", CONFIG.websocket_port))
             .unwrap();
     });
 

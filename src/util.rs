@@ -97,6 +97,7 @@ pub fn get_display_size(size: i32) -> String {
 ///
 
 use std::str::FromStr;
+use std::ops::Try;
 
 pub fn upcase_first(s: &str) -> String {
     let mut c = s.chars();
@@ -106,12 +107,35 @@ pub fn upcase_first(s: &str) -> String {
     }
 }
 
-pub fn parse_option_string<S, T>(string: Option<S>) -> Option<T> where S: AsRef<str>, T: FromStr {
-    if let Some(Ok(value)) = string.map(|s| s.as_ref().parse::<T>()) {
+pub fn try_parse_string<S, T, U>(string: impl Try<Ok = S, Error=U>) -> Option<T> where S: AsRef<str>, T: FromStr {
+    if let Ok(Ok(value)) = string.into_result().map(|s| s.as_ref().parse::<T>()) {
         Some(value)
     } else {
         None
     }
+}
+
+pub fn try_parse_string_or<S, T, U>(string: impl Try<Ok = S, Error=U>, default: T) -> T where S: AsRef<str>, T: FromStr {
+    if let Ok(Ok(value)) = string.into_result().map(|s| s.as_ref().parse::<T>()) {
+        value
+    } else {
+        default
+    }
+}
+
+
+///
+/// Env methods
+/// 
+
+use std::env;
+
+pub fn get_env<V>(key: &str) -> Option<V> where V: FromStr {
+    try_parse_string(env::var(key))
+}
+
+pub fn get_env_or<V>(key: &str, default: V) -> V where V: FromStr {
+    try_parse_string_or(env::var(key), default)
 }
 
 ///

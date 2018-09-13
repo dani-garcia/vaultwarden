@@ -300,6 +300,7 @@ You can configure bitwarden_rs to send emails via a SMTP agent:
 ```sh
 docker run -d --name bitwarden \
   -e SMTP_HOST=<smtp.domain.tld> \
+  -e SMTP_FROM=<bitwarden@domain.tld> \
   -e SMTP_PORT=587 \
   -e SMTP_SSL=true \
   -e SMTP_USERNAME=<username> \

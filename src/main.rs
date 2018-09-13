@@ -1,4 +1,4 @@
-#![feature(plugin, custom_derive, vec_remove_item)]
+#![feature(plugin, custom_derive, vec_remove_item, try_trait)]
 #![plugin(rocket_codegen)]
 #![allow(proc_macro_derive_resolution_fallback)] // TODO: Remove this when diesel update fixes warnings
 extern crate rocket;
@@ -36,7 +36,7 @@ extern crate native_tls;
 extern crate fast_chemail;
 extern crate byteorder;
 
-use std::{env, path::Path, process::{exit, Command}};
+use std::{path::Path, process::{exit, Command}};
 use rocket::Rocket;
 
 #[macro_use]
@@ -78,7 +78,7 @@ mod migrations {
 fn main() {
     check_db();
     check_rsa_keys();
-    check_web_vault();  
+    check_web_vault();
     migrations::run_migrations();
 
     init_rocket().launch();
@@ -176,27 +176,32 @@ pub struct MailConfig {
 
 impl MailConfig {
     fn load() -> Option<Self> {
-        let smtp_host = env::var("SMTP_HOST").ok();
-        
+        use util::{get_env, get_env_or};
+
         // When SMTP_HOST is absent, we assume the user does not want to enable it.
-        if smtp_host.is_none() {
-            return None
-        }
+        let smtp_host = match get_env("SMTP_HOST") {
+            Some(host) => host,
+            None => return None,
+        };
 
-        let smtp_ssl = util::parse_option_string(env::var("SMTP_SSL").ok()).unwrap_or(true);
-        let smtp_port = util::parse_option_string(env::var("SMTP_PORT").ok())
-            .unwrap_or_else(|| {
-                if smtp_ssl {
-                    587u16
-                } else {
-                    25u16
-                }
-            });
+        let smtp_from = get_env("SMTP_FROM").unwrap_or_else(|| {
+            println!("Please specify SMTP_FROM to enable SMTP support.");
+            exit(1);
+        });
 
-        let smtp_username = env::var("SMTP_USERNAME").ok();
-        let smtp_password = env::var("SMTP_PASSWORD").ok().or_else(|| {
+        let smtp_ssl = get_env_or("SMTP_SSL", true);
+        let smtp_port = get_env("SMTP_PORT").unwrap_or_else(|| 
+            if smtp_ssl { 
+                587u16 
+            } else { 
+                25u16 
+            }
+        );
+
+        let smtp_username = get_env("SMTP_USERNAME");
+        let smtp_password = get_env("SMTP_PASSWORD").or_else(|| {
             if smtp_username.as_ref().is_some() {
-                println!("Please specify SMTP_PASSWORD to enable SMTP support.");
+                println!("SMTP_PASSWORD is mandatory when specifying SMTP_USERNAME.");
                 exit(1);
             } else {
                 None
@@ -204,13 +209,12 @@ impl MailConfig {
         });
 
         Some(MailConfig {
-            smtp_host: smtp_host.unwrap(),
-            smtp_port: smtp_port,
-            smtp_ssl: smtp_ssl,
-            smtp_from: util::parse_option_string(env::var("SMTP_FROM").ok())
-                .unwrap_or("bitwarden-rs@localhost".to_string()),
-            smtp_username: smtp_username,
-            smtp_password: smtp_password,
+            smtp_host,
+            smtp_port,
+            smtp_ssl,
+            smtp_from,
+            smtp_username,
+            smtp_password,
         })
     }
 }
@@ -228,6 +232,8 @@ pub struct Config {
     web_vault_folder: String,
     web_vault_enabled: bool,
 
+    websocket_port: i32,
+
     local_icon_extractor: bool,
     signups_allowed: bool,
     invitations_allowed: bool,
@@ -242,32 +248,35 @@ pub struct Config {
 
 impl Config {
     fn load() -> Self {
+        use util::{get_env, get_env_or};
         dotenv::dotenv().ok();
 
-        let df = env::var("DATA_FOLDER").unwrap_or("data".into());
-        let key = env::var("RSA_KEY_FILENAME").unwrap_or(format!("{}/{}", &df, "rsa_key"));
+        let df = get_env_or("DATA_FOLDER", "data".to_string());
+        let key = get_env_or("RSA_KEY_FILENAME", format!("{}/{}", &df, "rsa_key"));
 
-        let domain = env::var("DOMAIN");
+        let domain = get_env("DOMAIN");
 
         Config {
-            database_url: env::var("DATABASE_URL").unwrap_or(format!("{}/{}", &df, "db.sqlite3")),
-            icon_cache_folder: env::var("ICON_CACHE_FOLDER").unwrap_or(format!("{}/{}", &df, "icon_cache")),
-            attachments_folder: env::var("ATTACHMENTS_FOLDER").unwrap_or(format!("{}/{}", &df, "attachments")),
+            database_url: get_env_or("DATABASE_URL", format!("{}/{}", &df, "db.sqlite3")),
+            icon_cache_folder: get_env_or("ICON_CACHE_FOLDER", format!("{}/{}", &df, "icon_cache")),
+            attachments_folder: get_env_or("ATTACHMENTS_FOLDER", format!("{}/{}", &df, "attachments")),
 
             private_rsa_key: format!("{}.der", &key),
             private_rsa_key_pem: format!("{}.pem", &key),
             public_rsa_key: format!("{}.pub.der", &key),
 
-            web_vault_folder: env::var("WEB_VAULT_FOLDER").unwrap_or("web-vault/".into()),
-            web_vault_enabled: util::parse_option_string(env::var("WEB_VAULT_ENABLED").ok()).unwrap_or(true),
+            web_vault_folder: get_env_or("WEB_VAULT_FOLDER", "web-vault/".into()),
+            web_vault_enabled: get_env_or("WEB_VAULT_ENABLED", true),
 
-            local_icon_extractor: util::parse_option_string(env::var("LOCAL_ICON_EXTRACTOR").ok()).unwrap_or(false),
-            signups_allowed: util::parse_option_string(env::var("SIGNUPS_ALLOWED").ok()).unwrap_or(true),
-            invitations_allowed: util::parse_option_string(env::var("INVITATIONS_ALLOWED").ok()).unwrap_or(true),
-            password_iterations: util::parse_option_string(env::var("PASSWORD_ITERATIONS").ok()).unwrap_or(100_000),
-            show_password_hint: util::parse_option_string(env::var("SHOW_PASSWORD_HINT").ok()).unwrap_or(true),
+            websocket_port: get_env_or("WEBSOCKET_PORT", 3012),
 
-            domain_set: domain.is_ok(),
+            local_icon_extractor: get_env_or("LOCAL_ICON_EXTRACTOR", false),
+            signups_allowed: get_env_or("SIGNUPS_ALLOWED", true),
+            invitations_allowed: get_env_or("INVITATIONS_ALLOWED", true),
+            password_iterations: get_env_or("PASSWORD_ITERATIONS", 100_000),
+            show_password_hint: get_env_or("SHOW_PASSWORD_HINT", true),
+
+            domain_set: domain.is_some(),
             domain: domain.unwrap_or("http://localhost".into()),
 
             mail: MailConfig::load(),
