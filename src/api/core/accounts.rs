@@ -41,12 +41,10 @@ fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> EmptyResult {
                     user_org.save(&conn);
                 };
                 user
+            } else if CONFIG.signups_allowed {
+                 err!("Account with this email already exists")
             } else {
-                if CONFIG.signups_allowed {
-                    err!("Account with this email already exists")
-                } else {
-                    err!("Registration not allowed")
-                }
+                 err!("Registration not allowed")
             }
         },
         None => {
@@ -305,7 +303,7 @@ fn password_hint(data: JsonUpcase<PasswordHintData>, conn: DbConn) -> EmptyResul
         if let Some(hint) = user.password_hint {
             err!(format!("Your password hint is: {}", &hint));
         } else {
-            err!(format!("Sorry, you have no password hint..."));
+            err!("Sorry, you have no password hint...");
         }
     }
 

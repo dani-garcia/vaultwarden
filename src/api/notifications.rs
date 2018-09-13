@@ -60,20 +60,20 @@ fn serialize(val: Value) -> Vec<u8> {
 
     // Add size bytes at the start
     // Extracted from BinaryMessageFormat.js
-    let mut size = buf.len();
+    let mut size: usize = buf.len();
     let mut len_buf: Vec<u8> = Vec::new();
 
     loop {
         let mut size_part = size & 0x7f;
-        size = size >> 7;
+        size >>= 7;
 
         if size > 0 {
-            size_part = size_part | 0x80;
+            size_part |= 0x80;
         }
 
         len_buf.push(size_part as u8);
 
-        if size <= 0 {
+        if size == 0 {
             break;
         }
     }
@@ -129,7 +129,7 @@ impl Handler for WSHandler {
     fn on_open(&mut self, hs: Handshake) -> ws::Result<()> {
         // TODO: Improve this split
         let path = hs.request.resource();
-        let mut query_split: Vec<_> = path.split("?").nth(1).unwrap().split("&").collect();
+        let mut query_split: Vec<_> = path.split('?').nth(1).unwrap().split('&').collect();
         query_split.sort();
         let access_token = &query_split[0][13..];
         let _id = &query_split[1][3..];
@@ -255,7 +255,7 @@ impl WebSocketUsers {
             vec![
                 ("UserId".into(), user.uuid.clone().into()),
                 ("Date".into(), serialize_date(user.updated_at)),
-            ].into(),
+            ],
             ut,
         );
 
@@ -268,7 +268,7 @@ impl WebSocketUsers {
                 ("Id".into(), folder.uuid.clone().into()),
                 ("UserId".into(), folder.user_uuid.clone().into()),
                 ("RevisionDate".into(), serialize_date(folder.updated_at)),
-            ].into(),
+            ],
             ut,
         );
 
@@ -286,7 +286,7 @@ impl WebSocketUsers {
                 ("OrganizationId".into(), org_uuid),
                 ("CollectionIds".into(), Value::Nil),
                 ("RevisionDate".into(), serialize_date(cipher.updated_at)),
-            ].into(),
+            ],
             ut,
         );
 

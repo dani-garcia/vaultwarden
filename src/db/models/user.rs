@@ -113,7 +113,7 @@ impl User {
         let orgs = UserOrganization::find_by_user(&self.uuid, conn);
         let orgs_json: Vec<JsonValue> = orgs.iter().map(|c| c.to_json(&conn)).collect();
 
-        let twofactor_enabled = TwoFactor::find_by_user(&self.uuid, conn).len() > 0;
+        let twofactor_enabled = !TwoFactor::find_by_user(&self.uuid, conn).is_empty();
 
         json!({
             "Id": self.uuid,

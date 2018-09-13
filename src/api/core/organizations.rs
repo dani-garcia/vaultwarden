@@ -289,7 +289,7 @@ fn get_collection_users(org_id: String, coll_id: String, _headers: AdminHeaders,
     .iter().map(|col_user|  {
         UserOrganization::find_by_user_and_org(&col_user.user_uuid, &org_id, &conn)
         .unwrap()
-        .to_json_collection_user_details(&col_user.read_only, &conn)
+        .to_json_collection_user_details(col_user.read_only, &conn)
     }).collect();
 
     Ok(Json(json!({

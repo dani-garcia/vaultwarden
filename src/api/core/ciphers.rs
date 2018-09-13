@@ -376,11 +376,11 @@ fn put_cipher_share_seleted(data: JsonUpcase<ShareSelectedCipherData>, headers: 
     let mut data: ShareSelectedCipherData = data.into_inner().data;
     let mut cipher_ids: Vec<String> = Vec::new();
 
-    if data.Ciphers.len() == 0 {
+    if data.Ciphers.is_empty() {
         err!("You must select at least one cipher.")
     }
 
-    if data.CollectionIds.len() == 0 {
+    if data.CollectionIds.is_empty() {
         err!("You must select at least one collection.")
     }
 
@@ -393,7 +393,7 @@ fn put_cipher_share_seleted(data: JsonUpcase<ShareSelectedCipherData>, headers: 
 
     let attachments = Attachment::find_by_ciphers(cipher_ids, &conn);
 
-    if attachments.len() > 0 {
+    if !attachments.is_empty() {
         err!("Ciphers should not have any attachments.")
     }
 

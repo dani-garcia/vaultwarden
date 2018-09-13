@@ -78,7 +78,7 @@ impl Attachment {
                         println!("ERROR: Failed with 10 retries");
                         return Err(err)
                     } else {
-                        retries = retries - 1;
+                        retries -= 1;
                         println!("Had to retry! Retries left: {}", retries);
                         thread::sleep(time::Duration::from_millis(500));
                         continue

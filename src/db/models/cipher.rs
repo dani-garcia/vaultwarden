@@ -362,6 +362,6 @@ impl Cipher {
             )
         ))
         .select(ciphers_collections::collection_uuid)
-        .load::<String>(&**conn).unwrap_or(vec![])
+        .load::<String>(&**conn).unwrap_or_default()
     }
 }

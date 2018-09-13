@@ -194,7 +194,7 @@ impl UserOrganization {
         })
     }
 
-    pub fn to_json_collection_user_details(&self, read_only: &bool, conn: &DbConn) -> JsonValue {
+    pub fn to_json_collection_user_details(&self, read_only: bool, conn: &DbConn) -> JsonValue {
         let user = User::find_by_uuid(&self.user_uuid, conn).unwrap();
 
         json!({
@@ -281,14 +281,14 @@ impl UserOrganization {
         users_organizations::table
             .filter(users_organizations::user_uuid.eq(user_uuid))
             .filter(users_organizations::status.eq(UserOrgStatus::Confirmed as i32))
-            .load::<Self>(&**conn).unwrap_or(vec![])
+            .load::<Self>(&**conn).unwrap_or_default()
     }
 
     pub fn find_invited_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
         users_organizations::table
             .filter(users_organizations::user_uuid.eq(user_uuid))
             .filter(users_organizations::status.eq(UserOrgStatus::Invited as i32))
-            .load::<Self>(&**conn).unwrap_or(vec![])
+            .load::<Self>(&**conn).unwrap_or_default()
     }
 
     pub fn find_by_org(org_uuid: &str, conn: &DbConn) -> Vec<Self> {

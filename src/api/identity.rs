@@ -158,7 +158,7 @@ fn twofactor_auth(
     let providers: Vec<_> = twofactors.iter().map(|tf| tf.type_).collect();
 
     // No twofactor token if twofactor is disabled
-    if twofactors.len() == 0 {
+    if twofactors.is_empty() {
         return Ok(None);
     }
 

@@ -293,7 +293,7 @@ impl RegisterResponseCopy {
         RegisterResponse {
             registration_data: self.registration_data,
             version: self.version,
-            challenge: challenge,
+            challenge,
             client_data: self.client_data,
         }
     }

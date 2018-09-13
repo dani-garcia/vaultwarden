@@ -18,7 +18,7 @@ fn icon(domain: String) -> Content<Vec<u8>> {
     let icon_type = ContentType::new("image", "x-icon");
 
     // Validate the domain to avoid directory traversal attacks
-    if domain.contains("/") || domain.contains("..") {
+    if domain.contains('/') || domain.contains("..") {
         return Content(icon_type, get_fallback_icon());
     }
 
