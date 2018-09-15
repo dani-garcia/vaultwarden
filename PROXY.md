@@ -78,3 +78,18 @@ server {
     ProxyRequests Off
 </VirtualHost>
 ```
+
+## Traefik (docker-compose example)
+```traefik
+    labels:
+      - 'traefik.frontend.rule=Host:vault.example.local'
+      - 'traefik.docker.network=traefik'
+      - 'traefik.port=80'
+      - 'traefik.enable=true'
+      - 'traefik.web.frontend.rule=Host:vault.example.local'
+      - 'traefik.web.port=80'
+      - 'traefik.hub.frontend.rule=Path:/notifications/hub'
+      - 'traefik.hub.port=3012'
+      - 'traefik.negotiate.frontend.rule=Path:/notifications/hub/negotiate'
+      - 'traefik.negotiate.port=80'
+```
