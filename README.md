@@ -183,7 +183,8 @@ These files are symlinked to ../../archive/mydomain/mykey.pem
 
 So to use from bitwarden container:
 
-```sudo docker run -d --name bitwarden \
+```sh
+docker run -d --name bitwarden \
   -e ROCKET_TLS='{certs="/ssl/live/mydomain/cert.pem",key="/ssl/live/mydomain/privkey.pem"}' \
   -v /etc/letsencrypt/:/ssl/ \
   -v /bw-data/:/data/ \
