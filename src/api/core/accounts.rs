@@ -238,6 +238,11 @@ fn post_email(data: JsonUpcase<ChangeEmailData>, headers: Headers, conn: DbConn)
 }
 
 #[post("/accounts/delete", data = "<data>")]
+fn post_delete_account(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn) -> EmptyResult {
+    delete_account(data, headers, conn)
+}
+
+#[delete("/accounts", data = "<data>")]
 fn delete_account(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn) -> EmptyResult {
     let data: PasswordData = data.into_inner().data;
     let user = headers.user;
