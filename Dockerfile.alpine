@@ -4,7 +4,7 @@
 ####################### VAULT BUILD IMAGE  #######################
 FROM node:8-alpine as vault
 
-ENV VAULT_VERSION "v2.2.0"
+ENV VAULT_VERSION "v2.3.0"
 
 ENV URL "https://github.com/bitwarden/web.git"
 
