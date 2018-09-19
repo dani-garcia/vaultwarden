@@ -47,7 +47,7 @@ server {
   }
 
   location /notifications/hub {
-    proxy_pass http://<SERVER>:3012/api/websocket;
+    proxy_pass http://<SERVER>:3012;
     proxy_set_header Upgrade $http_upgrade;
     proxy_set_header Connection "upgrade";
   }
