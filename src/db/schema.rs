@@ -73,6 +73,12 @@ table! {
 }
 
 table! {
+    invitations (email) {
+        email -> Text,
+    }
+}
+
+table! {
     organizations (uuid) {
         uuid -> Text,
         name -> Text,
@@ -110,12 +116,8 @@ table! {
         security_stamp -> Text,
         equivalent_domains -> Text,
         excluded_globals -> Text,
-    }
-}
-
-table! {
-    invitations (email) {
-        email -> Text,
+        client_kdf_type -> Integer,
+        client_kdf_iter -> Integer,
     }
 }
 
@@ -164,6 +166,7 @@ allow_tables_to_appear_in_same_query!(
     devices,
     folders,
     folders_ciphers,
+    invitations,
     organizations,
     twofactor,
     users,

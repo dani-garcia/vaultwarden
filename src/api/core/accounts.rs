@@ -14,6 +14,8 @@ use CONFIG;
 #[allow(non_snake_case)]
 struct RegisterData {
     Email: String,
+    Kdf: Option<i32>,
+    KdfIterations: Option<i32>,
     Key: String,
     Keys: Option<KeysData>,
     MasterPasswordHash: String,
@@ -55,6 +57,14 @@ fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> EmptyResult {
             }
         }
     };
+
+    if let Some(client_kdf_iter) = data.KdfIterations {
+        user.client_kdf_iter = client_kdf_iter;
+    }
+
+    if let Some(client_kdf_type) = data.Kdf {
+        user.client_kdf_type = client_kdf_type;
+    }
 
     user.set_password(&data.MasterPasswordHash);
     user.key = data.Key;
@@ -158,6 +168,35 @@ fn post_password(data: JsonUpcase<ChangePassData>, headers: Headers, conn: DbCon
         err!("Invalid password")
     }
 
+    user.set_password(&data.NewMasterPasswordHash);
+    user.key = data.Key;
+    user.save(&conn);
+
+    Ok(())
+}
+
+#[derive(Deserialize)]
+#[allow(non_snake_case)]
+struct ChangeKdfData {
+    Kdf: i32,
+    KdfIterations: i32,
+
+    MasterPasswordHash: String,
+    NewMasterPasswordHash: String,
+    Key: String,
+}
+
+#[post("/accounts/kdf", data = "<data>")]
+fn post_kdf(data: JsonUpcase<ChangeKdfData>, headers: Headers, conn: DbConn) -> EmptyResult {
+    let data: ChangeKdfData = data.into_inner().data;
+    let mut user = headers.user;
+
+    if !user.check_valid_password(&data.MasterPasswordHash) {
+        err!("Invalid password")
+    }
+
+    user.client_kdf_iter = data.KdfIterations;
+    user.client_kdf_type = data.Kdf;
     user.set_password(&data.NewMasterPasswordHash);
     user.key = data.Key;
     user.save(&conn);
@@ -325,17 +364,9 @@ struct PreloginData {
 fn prelogin(data: JsonUpcase<PreloginData>, conn: DbConn) -> JsonResult {
     let data: PreloginData = data.into_inner().data;
 
-    const KDF_TYPE_DEFAULT: i32 = 0; // PBKDF2: 0
-    const KDF_ITER_DEFAULT: i32 = 5_000;
-
     let (kdf_type, kdf_iter) = match User::find_by_mail(&data.Email, &conn) {
-        Some(user) => {
-            let _server_iter = user.password_iterations;
-            let client_iter = KDF_ITER_DEFAULT; // TODO: Make iterations user configurable
-            
-            (KDF_TYPE_DEFAULT, client_iter)
-        },
-        None => (KDF_TYPE_DEFAULT, KDF_ITER_DEFAULT), // Return default values when no user
+        Some(user) => (user.client_kdf_type, user.client_kdf_iter),
+        None => (User::CLIENT_KDF_TYPE_DEFAULT, User::CLIENT_KDF_ITER_DEFAULT),
     };
 
     Ok(Json(json!({
@@ -343,4 +374,3 @@ fn prelogin(data: JsonUpcase<PreloginData>, conn: DbConn) -> JsonResult {
         "KdfIterations": kdf_iter
     })))
 }
-

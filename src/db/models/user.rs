@@ -35,16 +35,19 @@ pub struct User {
 
     pub equivalent_domains: String,
     pub excluded_globals: String,
+    
+    pub client_kdf_type: i32,
+    pub client_kdf_iter: i32,
 }
 
 /// Local methods
 impl User {
+    pub const CLIENT_KDF_TYPE_DEFAULT: i32 = 0; // PBKDF2: 0
+    pub const CLIENT_KDF_ITER_DEFAULT: i32 = 5_000;
+
     pub fn new(mail: String) -> Self {
         let now = Utc::now().naive_utc();
         let email = mail.to_lowercase();
-
-        let iterations = CONFIG.password_iterations;
-        let salt = crypto::get_random_64();
 
         Self {
             uuid: Uuid::new_v4().to_string(),
@@ -55,8 +58,8 @@ impl User {
             key: String::new(),
 
             password_hash: Vec::new(),
-            salt,
-            password_iterations: iterations,
+            salt: crypto::get_random_64(),
+            password_iterations: CONFIG.password_iterations,
 
             security_stamp: Uuid::new_v4().to_string(),
 
@@ -69,6 +72,9 @@ impl User {
 
             equivalent_domains: "[]".to_string(),
             excluded_globals: "[]".to_string(),
+            
+            client_kdf_type: Self::CLIENT_KDF_TYPE_DEFAULT,
+            client_kdf_iter: Self::CLIENT_KDF_ITER_DEFAULT,
         }
     }
 

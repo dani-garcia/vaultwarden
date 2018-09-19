@@ -19,6 +19,7 @@ pub fn routes() -> Vec<Route> {
         get_public_keys,
         post_keys,
         post_password,
+        post_kdf,
         post_sstamp,
         post_email_token,
         post_email,
