@@ -80,8 +80,8 @@ byteorder = "1.2.6"
  # Make jwt use ring 0.11, to match rocket
 jsonwebtoken = { path = "libs/jsonwebtoken" }
 rmp = { git = 'https://github.com/dani-garcia/msgpack-rust' }
-lettre = { git = 'https://github.com/tyranron/lettre', branch = 'upgrade-to-native-tls-0-2' }
-lettre_email = { git = 'https://github.com/tyranron/lettre', branch = 'upgrade-to-native-tls-0-2' }
+lettre = { git = 'https://github.com/lettre/lettre', rev = 'fc91bb6ee8f9a' }
+lettre_email = { git = 'https://github.com/lettre/lettre', rev = 'fc91bb6ee8f9a' }
 
 # Version 0.1.2 from crates.io lacks a commit that fixes a certificate error
 u2f = { git = 'https://github.com/wisespace-io/u2f-rs', rev = '193de35093a44' }
