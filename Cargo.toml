@@ -68,8 +68,8 @@ num-traits = "0.2.6"
 num-derive = "0.2.2"
 
 # Email libraries
-lettre = "0.8.2"
-lettre_email = "0.8.2"
+lettre = "0.9.0"
+lettre_email = "0.9.0"
 native-tls = "0.2.1"
 fast_chemail = "0.9.5"
 
@@ -80,6 +80,8 @@ byteorder = "1.2.6"
  # Make jwt use ring 0.11, to match rocket
 jsonwebtoken = { path = "libs/jsonwebtoken" }
 rmp = { git = 'https://github.com/dani-garcia/msgpack-rust' }
+lettre = { git = 'https://github.com/lettre/lettre', rev = 'fc91bb6ee8f9a' }
+lettre_email = { git = 'https://github.com/lettre/lettre', rev = 'fc91bb6ee8f9a' }
 
 # Version 0.1.2 from crates.io lacks a commit that fixes a certificate error
 u2f = { git = 'https://github.com/wisespace-io/u2f-rs', rev = '193de35093a44' }
