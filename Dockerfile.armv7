@@ -65,7 +65,6 @@ ENV OPENSSL_LIB_DIR="/usr/lib/arm-linux-gnueabihf"
 # Builds your dependencies and removes the
 # dummy project, except the target folder
 # This folder contains the compiled dependencies
-COPY . .
 RUN rustup target add armv7-unknown-linux-gnueabihf
 RUN cargo build --release --target=armv7-unknown-linux-gnueabihf -v
 RUN find . -not -path "./target*" -delete
