@@ -232,7 +232,7 @@ pub struct Config {
     web_vault_folder: String,
     web_vault_enabled: bool,
 
-    websocket_port: i32,
+    websocket_url: String,
 
     local_icon_extractor: bool,
     signups_allowed: bool,
@@ -268,7 +268,7 @@ impl Config {
             web_vault_folder: get_env_or("WEB_VAULT_FOLDER", "web-vault/".into()),
             web_vault_enabled: get_env_or("WEB_VAULT_ENABLED", true),
 
-            websocket_port: get_env_or("WEBSOCKET_PORT", 3012),
+            websocket_url: format!("{}:{}", get_env_or("WEBSOCKET_ADDRESS", "0.0.0.0".to_string()), get_env_or("WEBSOCKET_PORT", 3012)),
 
             local_icon_extractor: get_env_or("LOCAL_ICON_EXTRACTOR", false),
             signups_allowed: get_env_or("SIGNUPS_ALLOWED", true),

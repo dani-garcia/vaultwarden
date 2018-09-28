@@ -250,6 +250,7 @@ impl WebSocketUsers {
     }
 
     // NOTE: The last modified date needs to be updated before calling these methods
+    #[allow(dead_code)]
     pub fn send_user_update(&self, ut: UpdateType, user: &User) {
         let data = create_update(
             vec![
@@ -358,7 +359,7 @@ pub fn start_notification_server() -> WebSocketUsers {
     thread::spawn(move || {
         WebSocket::new(factory)
             .unwrap()
-            .listen(format!("0.0.0.0:{}", CONFIG.websocket_port))
+            .listen(&CONFIG.websocket_url)
             .unwrap();
     });
 
