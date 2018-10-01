@@ -430,16 +430,12 @@ fn share_cipher_by_uuid(uuid: &str, data: ShareCipherData, headers: &Headers, co
         Some(organization_uuid) => {
             let mut shared_to_collection = false;
             for uuid in &data.CollectionIds {
-                match Collection::find_by_uuid(uuid, &conn) {
+                match Collection::find_by_uuid_and_org(uuid, &organization_uuid, &conn) {
                     None => err!("Invalid collection ID provided"),
                     Some(collection) => {
                         if collection.is_writable_by_user(&headers.user.uuid, &conn) {
-                            if collection.org_uuid == organization_uuid {
-                                CollectionCipher::save(&cipher.uuid.clone(), &collection.uuid, &conn);
-                                shared_to_collection = true;
-                            } else {
-                                err!("Collection does not belong to organization")
-                            }
+                            CollectionCipher::save(&cipher.uuid.clone(), &collection.uuid, &conn);
+                            shared_to_collection = true;
                         } else {
                             err!("No rights to modify the collection")
                         }
