@@ -331,6 +331,22 @@ impl UserOrganization {
         .select(users_organizations::all_columns)
         .load::<Self>(&**conn).expect("Error loading user organizations")
     }
+
+    pub fn find_by_collection_and_org(collection_uuid: &str, org_uuid: &str, conn: &DbConn) -> Vec<Self> {
+        users_organizations::table
+        .filter(users_organizations::org_uuid.eq(org_uuid))
+        .left_join(users_collections::table.on(
+            users_collections::user_uuid.eq(users_organizations::user_uuid)
+        ))
+        .filter(
+            users_organizations::access_all.eq(true).or( // AccessAll..
+                users_collections::collection_uuid.eq(&collection_uuid) // ..or access to collection with cipher
+            )
+        )
+        .select(users_organizations::all_columns)
+        .load::<Self>(&**conn).expect("Error loading user organizations")
+    }
+
 }
 
 

@@ -42,13 +42,18 @@ use db::schema::*;
 
 /// Database methods
 impl Collection {
-    pub fn save(&mut self, conn: &DbConn) -> bool {
-        match diesel::replace_into(collections::table)
-            .values(&*self)
-            .execute(&**conn) {
-            Ok(1) => true, // One row inserted
-            _ => false,
-        }
+    pub fn save(&mut self, conn: &DbConn) -> QueryResult<()> {
+        // Update affected users revision
+        UserOrganization::find_by_collection_and_org(&self.uuid, &self.org_uuid, conn)
+        .iter()
+        .for_each(|user_org| {
+            User::update_uuid_revision(&user_org.user_uuid, conn);
+        });
+
+        diesel::replace_into(collections::table)
+        .values(&*self)
+        .execute(&**conn)
+        .and(Ok(()))
     }
 
     pub fn delete(self, conn: &DbConn) -> QueryResult<()> {
