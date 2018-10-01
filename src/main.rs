@@ -1,5 +1,6 @@
 #![feature(plugin, custom_derive, vec_remove_item, try_trait)]
 #![plugin(rocket_codegen)]
+#![recursion_limit="128"]
 #![allow(proc_macro_derive_resolution_fallback)] // TODO: Remove this when diesel update fixes warnings
 extern crate rocket;
 extern crate rocket_contrib;
