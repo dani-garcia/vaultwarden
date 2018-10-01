@@ -141,7 +141,8 @@ fn get_user_collections(headers: Headers, conn: DbConn) -> JsonResult {
             .iter()
             .map(Collection::to_json)
             .collect::<Value>(),
-        "Object": "list"
+        "Object": "list",
+        "ContinuationToken": null,
     })))
 }
 
@@ -153,7 +154,8 @@ fn get_org_collections(org_id: String, _headers: AdminHeaders, conn: DbConn) -> 
             .iter()
             .map(Collection::to_json)
             .collect::<Value>(),
-        "Object": "list"
+        "Object": "list",
+        "ContinuationToken": null,
     })))
 }
 
@@ -294,7 +296,8 @@ fn get_collection_users(org_id: String, coll_id: String, _headers: AdminHeaders,
 
     Ok(Json(json!({
         "Data": user_list,
-        "Object": "list"
+        "Object": "list",
+        "ContinuationToken": null,
     })))
 }
 
@@ -312,6 +315,7 @@ fn get_org_details(data: OrgIdData, headers: Headers, conn: DbConn) -> JsonResul
     Ok(Json(json!({
       "Data": ciphers_json,
       "Object": "list",
+      "ContinuationToken": null,
     })))
 }
 
@@ -327,7 +331,8 @@ fn get_org_users(org_id: String, headers: AdminHeaders, conn: DbConn) -> JsonRes
 
     Ok(Json(json!({
         "Data": users_json,
-        "Object": "list"
+        "Object": "list",
+        "ContinuationToken": null,
     })))
 }
 

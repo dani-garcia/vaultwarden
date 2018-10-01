@@ -57,6 +57,7 @@ fn get_ciphers(headers: Headers, conn: DbConn) -> JsonResult {
     Ok(Json(json!({
       "Data": ciphers_json,
       "Object": "list",
+      "ContinuationToken": null
     })))
 }
 

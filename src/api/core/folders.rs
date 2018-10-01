@@ -16,6 +16,7 @@ fn get_folders(headers: Headers, conn: DbConn) -> JsonResult {
     Ok(Json(json!({
       "Data": folders_json,
       "Object": "list",
+      "ContinuationToken": null,
     })))
 }
 
