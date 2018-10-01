@@ -19,7 +19,8 @@ fn get_twofactor(headers: Headers, conn: DbConn) -> JsonResult {
 
     Ok(Json(json!({
         "Data": twofactors_json,
-        "Object": "list"
+        "Object": "list",
+        "ContinuationToken": null,
     })))
 }
 
