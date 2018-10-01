@@ -66,7 +66,7 @@ impl Organization {
             "Name": self.name,
             "Seats": 10,
             "MaxCollections": 10,
-
+            "MaxStorageGb": 10, // The value doesn't matter, we don't check server-side
             "Use2fa": true,
             "UseDirectory": false,
             "UseEvents": false,
@@ -83,7 +83,7 @@ impl Organization {
             "BillingEmail": self.billing_email,
             "Plan": "TeamsAnnually",
             "PlanType": 5, // TeamsAnnually plan
-
+            "UsersGetPremium": true,
             "Object": "organization",
         })
     }
@@ -158,6 +158,7 @@ impl UserOrganization {
             "Name": org.name,
             "Seats": 10,
             "MaxCollections": 10,
+            "UsersGetPremium": true,
 
             "Use2fa": true,
             "UseDirectory": false,
