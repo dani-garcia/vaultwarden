@@ -51,7 +51,9 @@ fn create_organization(headers: Headers, data: JsonUpcase<OrgData>, conn: DbConn
 
     org.save(&conn);
     user_org.save(&conn);
-    collection.save(&conn);
+    if collection.save(&conn).is_err() {
+        err!("Failed creating Collection");
+    }
 
     Ok(Json(org.to_json()))
 }
@@ -170,7 +172,9 @@ fn post_organization_collections(org_id: String, _headers: AdminHeaders, data: J
 
     let mut collection = Collection::new(org.uuid.clone(), data.Name);
 
-    collection.save(&conn);
+    if collection.save(&conn).is_err() {
+        err!("Failed saving Collection");
+    }
 
     Ok(Json(collection.to_json()))
 }
@@ -199,7 +203,9 @@ fn post_organization_collection_update(org_id: String, col_id: String, _headers:
     }
 
     collection.name = data.Name.clone();
-    collection.save(&conn);
+    if collection.save(&conn).is_err() {
+        err!("Failed updating Collection");
+    }
 
     Ok(Json(collection.to_json()))
 }
@@ -623,8 +629,11 @@ fn post_org_import(query: OrgIdData, data: JsonUpcase<ImportData>, headers: Head
     // Read and create the collections
     let collections: Vec<_> = data.Collections.into_iter().map(|coll| {
         let mut collection = Collection::new(org_id.clone(), coll.Name);
-        collection.save(&conn);
-        collection
+        if collection.save(&conn).is_err() {
+            err!("Failed to create Collection");
+        }
+        
+        Ok(collection)
     }).collect();
 
     // Read the relations between collections and ciphers
@@ -643,8 +652,12 @@ fn post_org_import(query: OrgIdData, data: JsonUpcase<ImportData>, headers: Head
     // Assign the collections
     for (cipher_index, coll_index) in relations {
         let cipher_id = &ciphers[cipher_index].uuid;
-        let coll_id = &collections[coll_index].uuid;
-
+        let coll = &collections[coll_index];
+        let coll_id = match coll {
+            Ok(coll) => coll.uuid.as_str(),
+            Err(_) => err!("Failed to assign to collection")
+        };
+        
         CollectionCipher::save(cipher_id, coll_id, &conn);
     }
 
