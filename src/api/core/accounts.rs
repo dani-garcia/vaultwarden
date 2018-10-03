@@ -5,7 +5,6 @@ use db::models::*;
 
 use api::{PasswordData, JsonResult, EmptyResult, JsonUpcase, NumberOrString};
 use auth::Headers;
-use fast_chemail::is_valid_email;
 use mail;
 
 use CONFIG;
@@ -329,22 +328,17 @@ struct PasswordHintData {
 fn password_hint(data: JsonUpcase<PasswordHintData>, conn: DbConn) -> EmptyResult {
     let data: PasswordHintData = data.into_inner().data;
 
-    if !is_valid_email(&data.Email) {
-        err!("This email address is not valid...");
-    }
+    let hint = match User::find_by_mail(&data.Email, &conn) {
+        Some(user) => user.password_hint,
+        None => return Ok(()),
+    };
 
-    let user = User::find_by_mail(&data.Email, &conn);
-    if user.is_none() {
-        return Ok(());
-    }
-
-    let user = user.unwrap();
     if let Some(ref mail_config) = CONFIG.mail {
-        if let Err(e) = mail::send_password_hint(&user.email, user.password_hint, mail_config) {
+        if let Err(e) = mail::send_password_hint(&data.Email, hint, mail_config) {
             err!(format!("There have been a problem sending the email: {}", e));
         }
     } else if CONFIG.show_password_hint {
-        if let Some(hint) = user.password_hint {
+        if let Some(hint) = hint {
             err!(format!("Your password hint is: {}", &hint));
         } else {
             err!("Sorry, you have no password hint...");

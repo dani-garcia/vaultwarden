@@ -260,7 +260,8 @@
     "Type": 26,
     "Domains": [
       "steampowered.com",
-      "steamcommunity.com"
+      "steamcommunity.com",
+      "steamgames.com"
     ],
     "Excluded": false
   },

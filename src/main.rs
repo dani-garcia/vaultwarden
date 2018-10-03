@@ -34,7 +34,6 @@ extern crate num_traits;
 extern crate lettre;
 extern crate lettre_email;
 extern crate native_tls;
-extern crate fast_chemail;
 extern crate byteorder;
 
 use std::{path::Path, process::{exit, Command}};

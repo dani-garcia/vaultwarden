@@ -1,4 +1,3 @@
-use std::error::Error;
 use native_tls::{Protocol, TlsConnector};
 use lettre::{Transport, SmtpTransport, SmtpClient, ClientTlsParameters, ClientSecurity};
 use lettre::smtp::ConnectionReuseParameters;
@@ -9,25 +8,24 @@ use MailConfig;
 
 fn mailer(config: &MailConfig) -> SmtpTransport {
     let client_security = if config.smtp_ssl {
-        let mut tls_builder = TlsConnector::builder();
-        tls_builder.min_protocol_version(Some(Protocol::Tlsv11));
-        ClientSecurity::Required(
-            ClientTlsParameters::new(config.smtp_host.to_owned(), tls_builder.build().unwrap())
-        )
+        let tls = TlsConnector::builder()
+            .min_protocol_version(Some(Protocol::Tlsv11))
+            .build()
+            .unwrap();
+
+        ClientSecurity::Required(ClientTlsParameters::new(config.smtp_host.clone(), tls))
     } else {
         ClientSecurity::None
     };
 
     let smtp_client = SmtpClient::new(
-        (config.smtp_host.to_owned().as_str(), config.smtp_port),
-        client_security
+        (config.smtp_host.as_str(), config.smtp_port),
+        client_security,
     ).unwrap();
 
     let smtp_client = match (&config.smtp_username, &config.smtp_password) {
-        (Some(username), Some(password)) => {
-            smtp_client.credentials(Credentials::new(username.to_owned(), password.to_owned()))
-        },
-        (_, _) => smtp_client,
+        (Some(user), Some(pass)) => smtp_client.credentials(Credentials::new(user.clone(), pass.clone())),
+        _ => smtp_client,
     };
 
     smtp_client
@@ -46,18 +44,19 @@ pub fn send_password_hint(address: &str, hint: Option<String>, config: &MailConf
             hint))
     } else {
         ("Sorry, you have no password hint...",
-         "Sorry, you have not specified any password hint...\n".to_string())
+         "Sorry, you have not specified any password hint...\n".into())
     };
 
     let email = EmailBuilder::new()
         .to(address)
-        .from((config.smtp_from.to_owned(), "Bitwarden-rs"))
+        .from((config.smtp_from.clone(), "Bitwarden-rs"))
         .subject(subject)
         .body(body)
-        .build().unwrap();
+        .build()
+        .map_err(|e| e.to_string())?;
 
-    match mailer(config).send(email.into()) {
-        Ok(_) => Ok(()),
-        Err(e) => Err(e.description().to_string()),
-    }
+    mailer(config)
+        .send(email.into())
+        .map_err(|e| e.to_string())
+        .and(Ok(()))
 }
