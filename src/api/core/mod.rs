@@ -112,6 +112,7 @@ pub fn routes() -> Vec<Route> {
         put_organization_user,
         delete_user,
         post_delete_user,
+        post_reinvite_user,
         post_org_import,
 
         clear_device_token,

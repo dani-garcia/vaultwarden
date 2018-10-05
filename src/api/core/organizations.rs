@@ -592,6 +592,11 @@ fn post_delete_user(org_id: String, org_user_id: String, headers: AdminHeaders, 
     delete_user(org_id, org_user_id, headers, conn)
 }
 
+#[post("/organizations/<_org_id>/users/<_org_user_id>/reinvite")]
+fn post_reinvite_user(_org_id: String, _org_user_id: String, _headers: AdminHeaders, _conn: DbConn) -> EmptyResult {
+    err!("This functionality is not implemented. The user needs to manually register before they can be accepted into the organization.")
+}
+
 use super::ciphers::CipherData;
 use super::ciphers::update_cipher_from_data;
 
