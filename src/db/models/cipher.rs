@@ -151,16 +151,14 @@ impl Cipher {
         user_uuids
     }
 
-    pub fn save(&mut self, conn: &DbConn) -> bool {
+    pub fn save(&mut self, conn: &DbConn) -> QueryResult<()> {
         self.update_users_revision(conn);
         self.updated_at = Utc::now().naive_utc();
 
-        match diesel::replace_into(ciphers::table)
+        diesel::replace_into(ciphers::table)
             .values(&*self)
-            .execute(&**conn) {
-            Ok(1) => true, // One row inserted
-            _ => false,
-        }
+            .execute(&**conn)
+            .and(Ok(()))
     }
 
     pub fn delete(&self, conn: &DbConn) -> QueryResult<()> {
