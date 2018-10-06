@@ -191,7 +191,10 @@ pub fn update_cipher_from_data(cipher: &mut Cipher, data: CipherData, headers: &
     cipher.data = type_data.to_string();
     cipher.password_history = data.PasswordHistory.map(|f| f.to_string());
 
-    cipher.save(&conn);
+    match cipher.save(&conn) {
+        Ok(()) => (),
+        Err(_) => println!("Error: Failed to save cipher")
+    };
     ws.send_cipher_update(ut, &cipher, &cipher.update_users_revision(&conn));
 
     if cipher.move_to_folder(data.FolderId, &headers.user.uuid, &conn).is_err() {
@@ -626,7 +629,10 @@ fn move_cipher_selected(data: JsonUpcase<Value>, headers: Headers, conn: DbConn,
         if cipher.move_to_folder(folder_id.clone(), &headers.user.uuid, &conn).is_err() {
             err!("Error saving the folder information")
         }
-        cipher.save(&conn);
+        match cipher.save(&conn) {
+            Ok(()) => (),
+            Err(_) => println!("Error: Failed to save cipher")
+        };
         ws.send_cipher_update(UpdateType::SyncCipherUpdate, &cipher, &cipher.update_users_revision(&conn));
     }
 
