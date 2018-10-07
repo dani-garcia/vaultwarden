@@ -663,7 +663,10 @@ fn post_org_import(query: OrgIdData, data: JsonUpcase<ImportData>, headers: Head
             Err(_) => err!("Failed to assign to collection")
         };
         
-        CollectionCipher::save(cipher_id, coll_id, &conn);
+        match CollectionCipher::save(cipher_id, coll_id, &conn) {
+            Ok(()) => (),
+            Err(_) => err!("Failed to add cipher to collection")
+        };
     }
 
     let mut user = headers.user;

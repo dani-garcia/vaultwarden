@@ -333,9 +333,15 @@ fn post_collections_admin(uuid: String, data: JsonUpcase<CollectionsAdminData>, 
             Some(collection) => {
                 if collection.is_writable_by_user(&headers.user.uuid, &conn) {
                     if posted_collections.contains(&collection.uuid) { // Add to collection
-                        CollectionCipher::save(&cipher.uuid, &collection.uuid, &conn);
+                        match CollectionCipher::save(&cipher.uuid, &collection.uuid, &conn) {
+                            Ok(()) => (),
+                            Err(_) => err!("Failed to add cipher to collection")
+                        };
                     } else { // Remove from collection
-                        CollectionCipher::delete(&cipher.uuid, &collection.uuid, &conn);
+                        match CollectionCipher::delete(&cipher.uuid, &collection.uuid, &conn) {
+                            Ok(()) => (),
+                            Err(_) => err!("Failed to remove cipher from collection")
+                        };
                     }
                 } else {
                     err!("No rights to modify the collection")
@@ -438,7 +444,10 @@ fn share_cipher_by_uuid(uuid: &str, data: ShareCipherData, headers: &Headers, co
                     None => err!("Invalid collection ID provided"),
                     Some(collection) => {
                         if collection.is_writable_by_user(&headers.user.uuid, &conn) {
-                            CollectionCipher::save(&cipher.uuid.clone(), &collection.uuid, &conn);
+                            match CollectionCipher::save(&cipher.uuid.clone(), &collection.uuid, &conn) {
+                                Ok(()) => (),
+                                Err(_) => err!("Failed to add cipher to collection")
+                            };
                             shared_to_collection = true;
                         } else {
                             err!("No rights to modify the collection")

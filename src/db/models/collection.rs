@@ -259,25 +259,19 @@ pub struct CollectionCipher {
 
 /// Database methods
 impl CollectionCipher {
-    pub fn save(cipher_uuid: &str, collection_uuid: &str, conn: &DbConn) -> bool {
-        match diesel::replace_into(ciphers_collections::table)
+    pub fn save(cipher_uuid: &str, collection_uuid: &str, conn: &DbConn) -> QueryResult<()> {
+        diesel::replace_into(ciphers_collections::table)
             .values((
                 ciphers_collections::cipher_uuid.eq(cipher_uuid),
                 ciphers_collections::collection_uuid.eq(collection_uuid),
-            )).execute(&**conn) {
-            Ok(1) => true, // One row inserted
-            _ => false,
-        }
+            )).execute(&**conn).and(Ok(()))
     }
 
-    pub fn delete(cipher_uuid: &str, collection_uuid: &str, conn: &DbConn) -> bool {
-        match diesel::delete(ciphers_collections::table
+    pub fn delete(cipher_uuid: &str, collection_uuid: &str, conn: &DbConn) -> QueryResult<()> {
+        diesel::delete(ciphers_collections::table
             .filter(ciphers_collections::cipher_uuid.eq(cipher_uuid))
             .filter(ciphers_collections::collection_uuid.eq(collection_uuid)))
-            .execute(&**conn) {
-            Ok(1) => true, // One row deleted
-            _ => false,
-        }
+            .execute(&**conn).and(Ok(()))
     }
 
     pub fn delete_all_by_cipher(cipher_uuid: &str, conn: &DbConn) -> QueryResult<()> {
