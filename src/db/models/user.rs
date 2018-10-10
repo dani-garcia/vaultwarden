@@ -1,5 +1,5 @@
 use chrono::{NaiveDateTime, Utc};
-use serde_json::Value as JsonValue;
+use serde_json::Value;
 
 use uuid::Uuid;
 
@@ -120,14 +120,14 @@ use super::{Cipher, Folder, Device, UserOrganization, UserOrgType};
 
 /// Database methods
 impl User {
-    pub fn to_json(&self, conn: &DbConn) -> JsonValue {
+    pub fn to_json(&self, conn: &DbConn) -> Value {
         use super::{UserOrganization, UserOrgType, UserOrgStatus, TwoFactor};
 
         let mut orgs = UserOrganization::find_by_user(&self.uuid, conn);
         if self.is_server_admin() {
             orgs.push(UserOrganization::new_virtual(self.uuid.clone(), UserOrgType::Owner, UserOrgStatus::Confirmed));
         }
-        let orgs_json: Vec<JsonValue> = orgs.iter().map(|c| c.to_json(&conn)).collect();
+        let orgs_json: Vec<Value> = orgs.iter().map(|c| c.to_json(&conn)).collect();
         let twofactor_enabled = !TwoFactor::find_by_user(&self.uuid, conn).is_empty();
 
         json!({

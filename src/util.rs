@@ -23,7 +23,7 @@ macro_rules! err {
 #[macro_export]
 macro_rules! err_json {
     ($expr:expr) => {{
-        return Err($crate::rocket::response::status::BadRequest(Some($crate::rocket_contrib::Json($expr))));
+        return Err($crate::rocket::response::status::BadRequest(Some($crate::rocket_contrib::json::Json($expr))));
     }}
 }
 

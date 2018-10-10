@@ -1,5 +1,8 @@
 use rocket::State;
-use rocket_contrib::{Json, Value};
+use rocket::request::Form;
+use rocket_contrib::json::Json;
+use serde_json::Value;
+
 use CONFIG;
 use db::DbConn;
 use db::models::*;
@@ -8,6 +11,42 @@ use api::{PasswordData, JsonResult, EmptyResult, NumberOrString, JsonUpcase, Web
 use auth::{Headers, AdminHeaders, OwnerHeaders};
 
 use serde::{Deserialize, Deserializer};
+
+use rocket::Route;
+
+pub fn routes() -> Vec<Route> {
+    routes![
+        get_organization,
+        create_organization,
+        delete_organization,
+        post_delete_organization,
+        leave_organization,
+        get_user_collections,
+        get_org_collections,
+        get_org_collection_detail,
+        get_collection_users,
+        put_organization,
+        post_organization,
+        post_organization_collections,
+        delete_organization_collection_user,
+        post_organization_collection_delete_user,
+        post_organization_collection_update,
+        put_organization_collection_update,
+        delete_organization_collection,
+        post_organization_collection_delete,
+        get_org_details,
+        get_org_users,
+        send_invite,
+        confirm_invite,
+        get_user,
+        edit_user,
+        put_organization_user,
+        delete_user,
+        post_delete_user,
+        post_reinvite_user,
+        post_org_import,
+    ]
+}
 
 
 #[derive(Deserialize)]
@@ -315,14 +354,14 @@ fn get_collection_users(org_id: String, coll_id: String, _headers: AdminHeaders,
 }
 
 #[derive(FromForm)]
-#[allow(non_snake_case)]
 struct OrgIdData {
-    organizationId: String
+    #[form(field = "organizationId")]
+    organization_id: String
 }
 
-#[get("/ciphers/organization-details?<data>")]
-fn get_org_details(data: OrgIdData, headers: Headers, conn: DbConn) -> JsonResult {
-    let ciphers = Cipher::find_by_org(&data.organizationId, &conn);
+#[get("/ciphers/organization-details?<data..>")]
+fn get_org_details(data: Form<OrgIdData>, headers: Headers, conn: DbConn) -> JsonResult {
+    let ciphers = Cipher::find_by_org(&data.organization_id, &conn);
     let ciphers_json: Vec<Value> = ciphers.iter().map(|c| c.to_json(&headers.host, &headers.user.uuid, &conn)).collect();
 
     Ok(Json(json!({
@@ -643,10 +682,10 @@ struct RelationsData {
     Value: usize,
 }
 
-#[post("/ciphers/import-organization?<query>", data = "<data>")]
-fn post_org_import(query: OrgIdData, data: JsonUpcase<ImportData>, headers: Headers, conn: DbConn, ws: State<WebSocketUsers>) -> EmptyResult {
+#[post("/ciphers/import-organization?<query..>", data = "<data>")]
+fn post_org_import(query: Form<OrgIdData>, data: JsonUpcase<ImportData>, headers: Headers, conn: DbConn, ws: State<WebSocketUsers>) -> EmptyResult {
     let data: ImportData = data.into_inner().data;
-    let org_id = query.organizationId;
+    let org_id = query.into_inner().organization_id;
 
     let org_user = match UserOrganization::find_by_user_and_org(&headers.user.uuid, &org_id, &conn) {
         Some(user) => user,

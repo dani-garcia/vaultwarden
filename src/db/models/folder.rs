@@ -1,5 +1,5 @@
 use chrono::{NaiveDateTime, Utc};
-use serde_json::Value as JsonValue;
+use serde_json::Value;
 
 use uuid::Uuid;
 
@@ -42,7 +42,7 @@ impl Folder {
         }
     }
 
-    pub fn to_json(&self) -> JsonValue {
+    pub fn to_json(&self) -> Value {
         use util::format_date;
 
         json!({

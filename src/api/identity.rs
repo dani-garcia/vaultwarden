@@ -4,7 +4,8 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use rocket::request::{self, Form, FormItems, FromForm, FromRequest, Request};
 use rocket::{Outcome, Route};
 
-use rocket_contrib::{Json, Value};
+use rocket_contrib::json::Json;
+use serde_json::Value;
 
 use num_traits::FromPrimitive;
 
@@ -21,9 +22,9 @@ pub fn routes() -> Vec<Route> {
     routes![login]
 }
 
-#[post("/connect/token", data = "<connect_data>")]
-fn login(connect_data: Form<ConnectData>, device_type: DeviceType, conn: DbConn, socket: Option<SocketAddr>) -> JsonResult {
-    let data = connect_data.get();
+#[post("/connect/token", data = "<data>")]
+fn login(data: Form<ConnectData>, device_type: DeviceType, conn: DbConn, socket: Option<SocketAddr>) -> JsonResult {
+    let data: ConnectData = data.into_inner();
 
     match data.grant_type {
         GrantType::RefreshToken => _refresh_login(data, device_type, conn),
@@ -31,7 +32,7 @@ fn login(connect_data: Form<ConnectData>, device_type: DeviceType, conn: DbConn,
     }
 }
 
-fn _refresh_login(data: &ConnectData, _device_type: DeviceType, conn: DbConn) -> JsonResult {
+fn _refresh_login(data: ConnectData, _device_type: DeviceType, conn: DbConn) -> JsonResult {
     // Extract token
     let token = data.get("refresh_token");
 
@@ -59,7 +60,7 @@ fn _refresh_login(data: &ConnectData, _device_type: DeviceType, conn: DbConn) ->
     }
 }
 
-fn _password_login(data: &ConnectData, device_type: DeviceType, conn: DbConn, remote: Option<SocketAddr>) -> JsonResult {
+fn _password_login(data: ConnectData, device_type: DeviceType, conn: DbConn, remote: Option<SocketAddr>) -> JsonResult {
     // Get the ip for error reporting
     let ip = match remote {
         Some(ip) => ip.ip(),
@@ -319,11 +320,9 @@ impl<'f> FromForm<'f> for ConnectData {
         let mut data = HashMap::new();
 
         // Insert data into map
-        for (key, value) in items {
-            match (key.url_decode(), value.url_decode()) {
-                (Ok(key), Ok(value)) => data.insert(key.to_lowercase(), value),
-                _ => return Err("Error decoding key or value".to_string()),
-            };
+        for item in items {
+            let (key, value) = item.key_value_decoded();
+            data.insert(key.to_lowercase(), value);
         }
 
         // Validate needed values

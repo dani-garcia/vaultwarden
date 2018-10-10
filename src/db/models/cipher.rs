@@ -1,5 +1,5 @@
 use chrono::{NaiveDateTime, Utc};
-use serde_json::Value as JsonValue;
+use serde_json::Value;
 
 use uuid::Uuid;
 
@@ -68,23 +68,23 @@ use db::schema::*;
 
 /// Database methods
 impl Cipher {
-    pub fn to_json(&self, host: &str, user_uuid: &str, conn: &DbConn) -> JsonValue {
+    pub fn to_json(&self, host: &str, user_uuid: &str, conn: &DbConn) -> Value {
         use serde_json;
         use util::format_date;
         use super::Attachment;
 
         let attachments = Attachment::find_by_cipher(&self.uuid, conn);
-        let attachments_json: Vec<JsonValue> = attachments.iter().map(|c| c.to_json(host)).collect();
+        let attachments_json: Vec<Value> = attachments.iter().map(|c| c.to_json(host)).collect();
 
-        let fields_json: JsonValue = if let Some(ref fields) = self.fields {
+        let fields_json: Value = if let Some(ref fields) = self.fields {
             serde_json::from_str(fields).unwrap()
-        } else { JsonValue::Null };
+        } else { Value::Null };
         
-        let password_history_json: JsonValue = if let Some(ref password_history) = self.password_history {
+        let password_history_json: Value = if let Some(ref password_history) = self.password_history {
             serde_json::from_str(password_history).unwrap()
-        } else { JsonValue::Null };
+        } else { Value::Null };
 
-        let mut data_json: JsonValue = serde_json::from_str(&self.data).unwrap();
+        let mut data_json: Value = serde_json::from_str(&self.data).unwrap();
 
         // TODO: ******* Backwards compat start **********
         // To remove backwards compatibility, just remove this entire section

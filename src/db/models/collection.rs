@@ -1,4 +1,4 @@
-use serde_json::Value as JsonValue;
+use serde_json::Value;
 
 use uuid::Uuid;
 
@@ -25,7 +25,7 @@ impl Collection {
         }
     }
 
-    pub fn to_json(&self) -> JsonValue {
+    pub fn to_json(&self) -> Value {
         json!({
             "Id": self.uuid,
             "OrganizationId": self.org_uuid,

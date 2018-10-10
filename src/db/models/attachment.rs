@@ -1,4 +1,4 @@
-use serde_json::Value as JsonValue;
+use serde_json::Value;
 
 use super::Cipher;
 use CONFIG;
@@ -29,7 +29,7 @@ impl Attachment {
         format!("{}/{}/{}", CONFIG.attachments_folder, self.cipher_uuid, self.id)
     }
 
-    pub fn to_json(&self, host: &str) -> JsonValue {
+    pub fn to_json(&self, host: &str) -> Value {
         use util::get_display_size;
 
         let web_path = format!("{}/attachments/{}/{}", host, self.cipher_uuid, self.id);

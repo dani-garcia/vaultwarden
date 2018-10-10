@@ -6,7 +6,8 @@ use rocket::response::{self, NamedFile, Responder};
 use rocket::response::content::Content;
 use rocket::http::{ContentType, Status};
 use rocket::Route;
-use rocket_contrib::{Json, Value};
+use rocket_contrib::json::Json;
+use serde_json::Value;
 
 use CONFIG;
 

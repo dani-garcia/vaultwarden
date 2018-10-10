@@ -1,4 +1,4 @@
-use serde_json::Value as JsonValue;
+use serde_json::Value;
 
 use uuid::Uuid;
 use super::{User, CollectionUser, Invitation};
@@ -70,7 +70,7 @@ impl Organization {
         }
     }
 
-    pub fn to_json(&self) -> JsonValue {
+    pub fn to_json(&self) -> Value {
         json!({
             "Id": self.uuid,
             "Name": self.name,
@@ -181,7 +181,7 @@ impl Organization {
 }
 
 impl UserOrganization {
-    pub fn to_json(&self, conn: &DbConn) -> JsonValue {
+    pub fn to_json(&self, conn: &DbConn) -> Value {
         let org = Organization::find_by_uuid(&self.org_uuid, conn).unwrap();
 
         json!({
@@ -209,7 +209,7 @@ impl UserOrganization {
         })
     }
 
-    pub fn to_json_user_details(&self, conn: &DbConn) -> JsonValue {
+    pub fn to_json_user_details(&self, conn: &DbConn) -> Value {
         let user = User::find_by_uuid(&self.user_uuid, conn).unwrap();
 
         json!({
@@ -226,7 +226,7 @@ impl UserOrganization {
         })
     }
 
-    pub fn to_json_collection_user_details(&self, read_only: bool, conn: &DbConn) -> JsonValue {
+    pub fn to_json_collection_user_details(&self, read_only: bool, conn: &DbConn) -> Value {
         let user = User::find_by_uuid(&self.user_uuid, conn).unwrap();
 
         json!({
@@ -241,7 +241,7 @@ impl UserOrganization {
         })
     }
 
-    pub fn to_json_details(&self, conn: &DbConn) -> JsonValue {        
+    pub fn to_json_details(&self, conn: &DbConn) -> Value {        
         let coll_uuids = if self.access_all { 
             vec![] // If we have complete access, no need to fill the array
         } else {

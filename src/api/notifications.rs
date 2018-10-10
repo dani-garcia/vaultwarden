@@ -1,5 +1,5 @@
 use rocket::Route;
-use rocket_contrib::Json;
+use rocket_contrib::json::Json;
 use serde_json::Value as JsonValue;
 
 use api::JsonResult;

@@ -1,6 +1,8 @@
 use data_encoding::BASE32;
-use rocket_contrib::{Json, Value};
+use rocket_contrib::json::Json;
 use serde_json;
+use serde_json::Value;
+
 
 use db::{
     models::{TwoFactor, TwoFactorType, User},
@@ -11,6 +13,24 @@ use crypto;
 
 use api::{ApiResult, JsonResult, JsonUpcase, NumberOrString, PasswordData};
 use auth::Headers;
+
+use rocket::Route;
+
+pub fn routes() -> Vec<Route> {
+    routes![
+        get_twofactor,
+        get_recover,
+        recover,
+        disable_twofactor,
+        disable_twofactor_put,
+        generate_authenticator,
+        activate_authenticator,
+        activate_authenticator_put,
+        generate_u2f,
+        activate_u2f,
+        activate_u2f_put,
+    ]
+}
 
 #[get("/two-factor")]
 fn get_twofactor(headers: Headers, conn: DbConn) -> JsonResult {

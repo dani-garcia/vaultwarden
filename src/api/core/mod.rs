@@ -4,126 +4,25 @@ mod folders;
 mod organizations;
 pub(crate) mod two_factor;
 
-use self::accounts::*;
-use self::ciphers::*;
-use self::folders::*;
-use self::organizations::*;
-use self::two_factor::*;
-
 pub fn routes() -> Vec<Route> {
-    routes![
-        register,
-        profile,
-        put_profile,
-        post_profile,
-        get_public_keys,
-        post_keys,
-        post_password,
-        post_kdf,
-        post_sstamp,
-        post_email_token,
-        post_email,
-        delete_account,
-        post_delete_account,
-        revision_date,
-        password_hint,
-        prelogin,
-
-        sync,
-        sync_no_query,
-
-        get_ciphers,
-        get_cipher,
-        get_cipher_admin,
-        get_cipher_details,
-        post_ciphers,
-        put_cipher_admin,
-        post_ciphers_admin,
-        post_ciphers_import,
-        post_attachment,
-        post_attachment_admin,
-        post_attachment_share,
-        delete_attachment_post,
-        delete_attachment_post_admin,
-        delete_attachment,
-        delete_attachment_admin,
-        post_cipher_admin,
-        post_cipher_share,
-        put_cipher_share,
-        put_cipher_share_seleted,
-        post_cipher,
-        put_cipher,
-        delete_cipher_post,
-        delete_cipher_post_admin,
-        delete_cipher,
-        delete_cipher_admin,
-        delete_cipher_selected,
-        delete_cipher_selected_post,
-        delete_all,
-        move_cipher_selected,
-        move_cipher_selected_put,
-
-        get_folders,
-        get_folder,
-        post_folders,
-        post_folder,
-        put_folder,
-        delete_folder_post,
-        delete_folder,
-
-        get_twofactor,
-        get_recover,
-        recover,
-        disable_twofactor,
-        disable_twofactor_put,
-        generate_authenticator,
-        activate_authenticator,
-        activate_authenticator_put,
-        generate_u2f,
-        activate_u2f,
-        activate_u2f_put,
-
-        get_organization,
-        create_organization,
-        delete_organization,
-        post_delete_organization,
-        leave_organization,
-        get_user_collections,
-        get_org_collections,
-        get_org_collection_detail,
-        get_collection_users,
-        put_organization,
-        post_organization,
-        post_organization_collections,
-        delete_organization_collection_user,
-        post_organization_collection_delete_user,
-        post_organization_collection_update,
-        put_organization_collection_update,
-        delete_organization_collection,
-        post_organization_collection_delete,
-        post_collections_update,
-        post_collections_admin,
-        put_collections_admin,
-        get_org_details,
-        get_org_users,
-        send_invite,
-        confirm_invite,
-        get_user,
-        edit_user,
-        put_organization_user,
-        delete_user,
-        post_delete_user,
-        post_reinvite_user,
-        post_org_import,
-
+    let mut mod_routes = routes![
         clear_device_token,
         put_device_token,
 
         get_eq_domains,
         post_eq_domains,
         put_eq_domains,
+    ];
 
-    ]
+    let mut routes = Vec::new();
+    routes.append(&mut accounts::routes());
+    routes.append(&mut ciphers::routes());
+    routes.append(&mut folders::routes());
+    routes.append(&mut organizations::routes());
+    routes.append(&mut two_factor::routes());
+    routes.append(&mut mod_routes);
+
+    routes
 }
 
 ///
@@ -132,7 +31,8 @@ pub fn routes() -> Vec<Route> {
 
 use rocket::Route;
 
-use rocket_contrib::{Json, Value};
+use rocket_contrib::json::Json;
+use serde_json::Value;
 
 use db::DbConn;
 use db::models::*;
@@ -141,8 +41,8 @@ use api::{JsonResult, EmptyResult, JsonUpcase};
 use auth::Headers;
 
 #[put("/devices/identifier/<uuid>/clear-token", data = "<data>")]
-fn clear_device_token(uuid: String, data: Json<Value>, headers: Headers, conn: DbConn) -> EmptyResult {
-    let _data: Value = data.into_inner();
+fn clear_device_token(uuid: String, data: JsonUpcase<Value>, headers: Headers, conn: DbConn) -> EmptyResult {
+    let _data: Value = data.into_inner().data;
     
     let device = match Device::find_by_uuid(&uuid, &conn) {
         Some(device) => device,
@@ -160,8 +60,8 @@ fn clear_device_token(uuid: String, data: Json<Value>, headers: Headers, conn: D
 }
 
 #[put("/devices/identifier/<uuid>/token", data = "<data>")]
-fn put_device_token(uuid: String, data: Json<Value>, headers: Headers, conn: DbConn) -> JsonResult {
-    let _data: Value = data.into_inner();
+fn put_device_token(uuid: String, data: JsonUpcase<Value>, headers: Headers, conn: DbConn) -> JsonResult {
+    let _data: Value = data.into_inner().data;
     
     let device = match Device::find_by_uuid(&uuid, &conn) {
         Some(device) => device,

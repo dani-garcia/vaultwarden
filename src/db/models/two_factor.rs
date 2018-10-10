@@ -1,4 +1,4 @@
-use serde_json::Value as JsonValue;
+use serde_json::Value;
 
 use uuid::Uuid;
 
@@ -59,7 +59,7 @@ impl TwoFactor {
         generated == totp_code
     }
 
-    pub fn to_json(&self) -> JsonValue {
+    pub fn to_json(&self) -> Value {
         json!({
             "Enabled": self.enabled,
             "Key": "", // This key and value vary
@@ -67,7 +67,7 @@ impl TwoFactor {
         })
     }
 
-    pub fn to_json_list(&self) -> JsonValue {
+    pub fn to_json_list(&self) -> Value {
         json!({
             "Enabled": self.enabled,
             "Type": self.type_,

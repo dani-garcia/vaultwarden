@@ -40,7 +40,7 @@ pub fn decode_jwt(token: &str) -> Result<JWTClaims, String> {
     let validation = jwt::Validation {
         leeway: 30, // 30 seconds
         validate_exp: true,
-        validate_iat: true,
+        validate_iat: false, // IssuedAt is the same as NotBefore
         validate_nbf: true,
         aud: None,
         iss: Some(JWT_ISSUER.clone()),
@@ -197,8 +197,7 @@ impl<'a, 'r> FromRequest<'a, 'r> for OrgHeaders {
             Outcome::Success(headers) => {
                 // org_id is expected to be the first dynamic param
                 match request.get_param::<String>(0) {
-                    Err(_) => err_handler!("Error getting the organization id"),
-                    Ok(org_id) => {
+                    Some(Ok(org_id)) => {
                         let conn = match request.guard::<DbConn>() {
                             Outcome::Success(conn) => conn,
                             _ => err_handler!("Error getting DB")
@@ -227,7 +226,8 @@ impl<'a, 'r> FromRequest<'a, 'r> for OrgHeaders {
                             user: headers.user,
                             org_user_type: org_user.type_,
                         })
-                    }
+                    },
+                    _ => err_handler!("Error getting the organization id"),
                 }
             }
         }

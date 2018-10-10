@@ -1,35 +1,75 @@
-use std::path::Path;
 use std::collections::HashSet;
+use std::path::Path;
 
-use rocket::State;
-use rocket::Data;
 use rocket::http::ContentType;
+use rocket::{request::Form, Data, Route, State};
 
-use rocket_contrib::{Json, Value};
+use rocket_contrib::json::Json;
+use serde_json::Value;
 
-use multipart::server::{Multipart, SaveResult};
 use multipart::server::save::SavedData;
+use multipart::server::{Multipart, SaveResult};
 
 use data_encoding::HEXLOWER;
 
-use db::DbConn;
 use db::models::*;
+use db::DbConn;
 
 use crypto;
 
-use api::{self, PasswordData, JsonResult, EmptyResult, JsonUpcase, WebSocketUsers, UpdateType};
+use api::{self, EmptyResult, JsonResult, JsonUpcase, PasswordData, UpdateType, WebSocketUsers};
 use auth::Headers;
 
 use CONFIG;
 
-#[derive(FromForm)]
-#[allow(non_snake_case)]
-struct SyncData {
-    excludeDomains: bool,
+pub fn routes() -> Vec<Route> {
+    routes![
+        sync,
+        get_ciphers,
+        get_cipher,
+        get_cipher_admin,
+        get_cipher_details,
+        post_ciphers,
+        put_cipher_admin,
+        post_ciphers_admin,
+        post_ciphers_import,
+        post_attachment,
+        post_attachment_admin,
+        post_attachment_share,
+        delete_attachment_post,
+        delete_attachment_post_admin,
+        delete_attachment,
+        delete_attachment_admin,
+        post_cipher_admin,
+        post_cipher_share,
+        put_cipher_share,
+        put_cipher_share_seleted,
+        post_cipher,
+        put_cipher,
+        delete_cipher_post,
+        delete_cipher_post_admin,
+        delete_cipher,
+        delete_cipher_admin,
+        delete_cipher_selected,
+        delete_cipher_selected_post,
+        delete_all,
+        move_cipher_selected,
+        move_cipher_selected_put,
+
+        post_collections_update,
+        post_collections_admin,
+        put_collections_admin,
+    ]
 }
 
-#[get("/sync?<data>")]
-fn sync(data: SyncData, headers: Headers, conn: DbConn) -> JsonResult {
+#[derive(FromForm, Default)]
+struct SyncData {
+    #[form(field = "excludeDomains")]
+    exclude_domains: bool, // Default: 'false'
+}
+
+#[get("/sync?<data..>")]
+fn sync(data: Form<SyncData>, headers: Headers, conn: DbConn) -> JsonResult {
     let user_json = headers.user.to_json(&conn);
 
     let folders = Folder::find_by_user(&headers.user.uuid, &conn);
@@ -41,7 +81,7 @@ fn sync(data: SyncData, headers: Headers, conn: DbConn) -> JsonResult {
     let ciphers = Cipher::find_by_user(&headers.user.uuid, &conn);
     let ciphers_json: Vec<Value> = ciphers.iter().map(|c| c.to_json(&headers.host, &headers.user.uuid, &conn)).collect();
 
-    let domains_json = if data.excludeDomains { Value::Null } else { api::core::get_eq_domains(headers).unwrap().into_inner() };
+    let domains_json = if data.exclude_domains { Value::Null } else { api::core::get_eq_domains(headers).unwrap().into_inner() };
 
     Ok(Json(json!({
         "Profile": user_json,
@@ -51,14 +91,6 @@ fn sync(data: SyncData, headers: Headers, conn: DbConn) -> JsonResult {
         "Domains": domains_json,
         "Object": "sync"
     })))
-}
-
-#[get("/sync")]
-fn sync_no_query(headers: Headers, conn: DbConn) -> JsonResult {
-    let sync_data = SyncData {
-        excludeDomains: false,
-    };
-    sync(sync_data, headers, conn)
 }
 
 #[get("/ciphers")]
@@ -695,8 +727,7 @@ fn delete_all(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn, ws
     for f in Folder::find_by_user(&user.uuid, &conn) {
         if f.delete(&conn).is_err() {
             err!("Failed deleting folder")
-        }
-        else {
+        } else {
             ws.send_folder_update(UpdateType::SyncFolderCreate, &f);
         }
     }

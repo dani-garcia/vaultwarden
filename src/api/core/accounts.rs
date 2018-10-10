@@ -1,4 +1,4 @@
-use rocket_contrib::Json;
+use rocket_contrib::json::Json;
 
 use db::DbConn;
 use db::models::*;
@@ -8,6 +8,29 @@ use auth::Headers;
 use mail;
 
 use CONFIG;
+
+use rocket::Route;
+
+pub fn routes() -> Vec<Route> {
+    routes![
+        register,
+        profile,
+        put_profile,
+        post_profile,
+        get_public_keys,
+        post_keys,
+        post_password,
+        post_kdf,
+        post_sstamp,
+        post_email_token,
+        post_email,
+        delete_account,
+        post_delete_account,
+        revision_date,
+        password_hint,
+        prelogin,
+    ]
+}
 
 #[derive(Deserialize, Debug)]
 #[allow(non_snake_case)]
