@@ -107,11 +107,13 @@ fn _password_login(data: &ConnectData, device_type: DeviceType, conn: DbConn, re
         Some(device) => {
             // Check if valid device
             if device.user_uuid != user.uuid {
-                device.delete(&conn);
-                err!("Device is not owned by user")
+                match device.delete(&conn) {
+                    Ok(()) => Device::new(device_id, user.uuid.clone(), device_name, device_type_num),
+                    Err(_) => err!("Tried to delete device not owned by user, but failed")
+                }
+            } else {
+                device
             }
-
-            device
         }
         None => {
             // Create new device

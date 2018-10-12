@@ -93,6 +93,13 @@ impl Folder {
         ).execute(&**conn).and(Ok(()))
     }
 
+    pub fn delete_all_by_user(user_uuid: &str, conn: &DbConn) -> QueryResult<()> {
+        for folder in Self::find_by_user(user_uuid, &conn) {
+            folder.delete(&conn)?;
+        }
+        Ok(())
+    }
+
     pub fn find_by_uuid(uuid: &str, conn: &DbConn) -> Option<Self> {
         folders::table
             .filter(folders::uuid.eq(uuid))

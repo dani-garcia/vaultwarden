@@ -123,13 +123,17 @@ impl Device {
         }
     }
 
-    pub fn delete(self, conn: &DbConn) -> bool {
-        match diesel::delete(devices::table.filter(
-            devices::uuid.eq(self.uuid)))
-            .execute(&**conn) {
-            Ok(1) => true, // One row deleted
-            _ => false,
+    pub fn delete(self, conn: &DbConn) -> QueryResult<()> {
+        diesel::delete(devices::table.filter(
+            devices::uuid.eq(self.uuid)
+        )).execute(&**conn).and(Ok(()))
+    }
+
+    pub fn delete_all_by_user(user_uuid: &str, conn: &DbConn) -> QueryResult<()> {
+        for device in Self::find_by_user(user_uuid, &conn) {
+            device.delete(&conn)?;
         }
+        Ok(())
     }
 
     pub fn find_by_uuid(uuid: &str, conn: &DbConn) -> Option<Self> {
