@@ -1,7 +1,7 @@
 use serde_json::Value as JsonValue;
 
 use uuid::Uuid;
-use super::{User, CollectionUser};
+use super::{User, CollectionUser, Invitation};
 
 #[derive(Debug, Identifiable, Queryable, Insertable)]
 #[table_name = "organizations"]
@@ -51,12 +51,22 @@ impl UserOrgType {
 
 /// Local methods
 impl Organization {
+    pub const VIRTUAL_ID: &'static str = "00000000-0000-0000-0000-000000000000";
+
     pub fn new(name: String, billing_email: String) -> Self {
         Self {
             uuid: Uuid::new_v4().to_string(),
 
             name,
             billing_email,
+        }
+    }
+
+    pub fn new_virtual() -> Self {
+        Self {
+            uuid: String::from(Organization::VIRTUAL_ID),
+            name: String::from("bitwarden_rs"),
+            billing_email: String::from("none@none.none")
         }
     }
 
@@ -103,6 +113,20 @@ impl UserOrganization {
             type_: UserOrgType::User as i32,
         }
     }
+
+    pub fn new_virtual(user_uuid: String, type_: UserOrgType, status: UserOrgStatus) -> Self {
+        Self {
+            uuid: user_uuid.clone(),
+
+            user_uuid,
+            org_uuid: String::from(Organization::VIRTUAL_ID),
+
+            access_all: true,
+            key: String::new(),
+            status: status as i32,
+            type_: type_ as i32,
+        }
+    }
 }
 
 
@@ -114,6 +138,10 @@ use db::schema::{organizations, users_organizations, users_collections, ciphers_
 /// Database methods
 impl Organization {
     pub fn save(&mut self, conn: &DbConn) -> bool {
+        if self.uuid == Organization::VIRTUAL_ID {
+            return false
+        }
+
         UserOrganization::find_by_org(&self.uuid, conn)
         .iter()
         .for_each(|user_org| {
@@ -131,6 +159,10 @@ impl Organization {
     pub fn delete(self, conn: &DbConn) -> QueryResult<()> {
         use super::{Cipher, Collection};
 
+        if self.uuid == Organization::VIRTUAL_ID {
+            return Err(diesel::result::Error::NotFound)
+        }
+
         Cipher::delete_all_by_organization(&self.uuid, &conn)?;
         Collection::delete_all_by_organization(&self.uuid, &conn)?;
         UserOrganization::delete_all_by_organization(&self.uuid, &conn)?;
@@ -143,6 +175,9 @@ impl Organization {
     }
 
     pub fn find_by_uuid(uuid: &str, conn: &DbConn) -> Option<Self> {
+        if uuid == Organization::VIRTUAL_ID { 
+            return Some(Self::new_virtual()) 
+        };
         organizations::table
             .filter(organizations::uuid.eq(uuid))
             .first::<Self>(&**conn).ok()
@@ -232,6 +267,9 @@ impl UserOrganization {
     }
 
     pub fn save(&mut self, conn: &DbConn) -> bool {
+        if self.org_uuid == Organization::VIRTUAL_ID {
+            return false
+        }
         User::update_uuid_revision(&self.user_uuid, conn);
 
         match diesel::replace_into(users_organizations::table)
@@ -243,6 +281,9 @@ impl UserOrganization {
     }
 
     pub fn delete(self, conn: &DbConn) -> QueryResult<()> {
+        if self.org_uuid == Organization::VIRTUAL_ID {
+            return Err(diesel::result::Error::NotFound)
+        }
         User::update_uuid_revision(&self.user_uuid, conn);
 
         CollectionUser::delete_all_by_user(&self.user_uuid, &conn)?;
@@ -256,6 +297,13 @@ impl UserOrganization {
 
     pub fn delete_all_by_organization(org_uuid: &str, conn: &DbConn) -> QueryResult<()> {
         for user_org in Self::find_by_org(&org_uuid, &conn) {
+            user_org.delete(&conn)?;
+        }
+        Ok(())
+    }
+
+    pub fn delete_all_by_user(user_uuid: &str, conn: &DbConn) -> QueryResult<()> {
+        for user_org in Self::find_any_state_by_user(&user_uuid, &conn) {
             user_org.delete(&conn)?;
         }
         Ok(())
@@ -292,10 +340,29 @@ impl UserOrganization {
             .load::<Self>(&**conn).unwrap_or_default()
     }
 
-    pub fn find_by_org(org_uuid: &str, conn: &DbConn) -> Vec<Self> {
+    pub fn find_any_state_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
         users_organizations::table
-            .filter(users_organizations::org_uuid.eq(org_uuid))
-            .load::<Self>(&**conn).expect("Error loading user organizations")
+            .filter(users_organizations::user_uuid.eq(user_uuid))
+            .load::<Self>(&**conn).unwrap_or_default()
+    }
+
+    pub fn find_by_org(org_uuid: &str, conn: &DbConn) -> Vec<Self> {
+        if org_uuid == Organization::VIRTUAL_ID {
+            User::get_all(&*conn).iter().map(|user| {
+                Self::new_virtual(
+                    user.uuid.clone(),
+                    UserOrgType::User,
+                    if Invitation::find_by_mail(&user.email, &conn).is_some() {
+                        UserOrgStatus::Invited
+                    } else {
+                        UserOrgStatus::Confirmed
+                    })
+            }).collect()
+        } else {
+            users_organizations::table
+                .filter(users_organizations::org_uuid.eq(org_uuid))
+                .load::<Self>(&**conn).expect("Error loading user organizations")
+        }
     }
 
     pub fn find_by_org_and_type(org_uuid: &str, type_: i32, conn: &DbConn) -> Vec<Self> {

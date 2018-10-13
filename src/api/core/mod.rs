@@ -151,9 +151,10 @@ fn clear_device_token(uuid: String, data: Json<Value>, headers: Headers, conn: D
         err!("Device not owned by user")
     }
 
-    device.delete(&conn);
-
-    Ok(())
+    match device.delete(&conn) {
+        Ok(()) => Ok(()),
+        Err(_) => err!("Failed deleting device")
+    }
 }
 
 #[put("/devices/identifier/<uuid>/token", data = "<data>")]

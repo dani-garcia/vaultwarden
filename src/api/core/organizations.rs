@@ -326,12 +326,7 @@ fn get_org_details(data: OrgIdData, headers: Headers, conn: DbConn) -> JsonResul
 }
 
 #[get("/organizations/<org_id>/users")]
-fn get_org_users(org_id: String, headers: AdminHeaders, conn: DbConn) -> JsonResult {
-    match UserOrganization::find_by_user_and_org(&headers.user.uuid, &org_id, &conn) {
-        Some(_) => (),
-        None => err!("User isn't member of organization")
-    }
-
+fn get_org_users(org_id: String, _headers: AdminHeaders, conn: DbConn) -> JsonResult {
     let users = UserOrganization::find_by_org(&org_id, &conn);
     let users_json: Vec<Value> = users.iter().map(|c| c.to_json_user_details(&conn)).collect();
 
@@ -410,27 +405,30 @@ fn send_invite(org_id: String, data: JsonUpcase<InviteData>, headers: AdminHeade
 
         };
 
-        let mut new_user = UserOrganization::new(user.uuid.clone(), org_id.clone());
-        let access_all = data.AccessAll.unwrap_or(false);
-        new_user.access_all = access_all;
-        new_user.type_ = new_type;
-        new_user.status = user_org_status;
+        // Don't create UserOrganization in virtual organization
+        if org_id != Organization::VIRTUAL_ID {
+            let mut new_user = UserOrganization::new(user.uuid.clone(), org_id.clone());
+            let access_all = data.AccessAll.unwrap_or(false);
+            new_user.access_all = access_all;
+            new_user.type_ = new_type;
+            new_user.status = user_org_status;
 
-        // If no accessAll, add the collections received
-        if !access_all {
-            for col in &data.Collections {
-                match Collection::find_by_uuid_and_org(&col.Id, &org_id, &conn) {
-                    None => err!("Collection not found in Organization"),
-                    Some(collection) => {
-                        if CollectionUser::save(&user.uuid, &collection.uuid, col.ReadOnly, &conn).is_err() {
-                            err!("Failed saving collection access for user")
+            // If no accessAll, add the collections received
+            if !access_all {
+                for col in &data.Collections {
+                    match Collection::find_by_uuid_and_org(&col.Id, &org_id, &conn) {
+                        None => err!("Collection not found in Organization"),
+                        Some(collection) => {
+                            if CollectionUser::save(&user.uuid, &collection.uuid, col.ReadOnly, &conn).is_err() {
+                                err!("Failed saving collection access for user")
+                            }
                         }
                     }
                 }
             }
-        }
 
-        new_user.save(&conn);
+            new_user.save(&conn);
+        }
     }
 
     Ok(())
@@ -560,6 +558,23 @@ fn edit_user(org_id: String, org_user_id: String, data: JsonUpcase<EditUserData>
 
 #[delete("/organizations/<org_id>/users/<org_user_id>")]
 fn delete_user(org_id: String, org_user_id: String, headers: AdminHeaders, conn: DbConn) -> EmptyResult {
+    // We're deleting user in virtual Organization. Delete User, not UserOrganization
+    if org_id == Organization::VIRTUAL_ID {
+        match User::find_by_uuid(&org_user_id, &conn) {
+            Some(user_to_delete) => {
+                if user_to_delete.uuid == headers.user.uuid {
+                    err!("Delete your account in the account settings")
+                } else {
+                    match user_to_delete.delete(&conn) {
+                        Ok(()) => return Ok(()),
+                        Err(_) => err!("Failed to delete user - likely because it's the only owner of organization")
+                    }
+                }
+            },
+            None => err!("User not found")
+        }
+    }
+
     let user_to_delete = match UserOrganization::find_by_uuid_and_org(&org_user_id, &org_id, &conn) {
         Some(user) => user,
         None => err!("User to delete isn't member of the organization")

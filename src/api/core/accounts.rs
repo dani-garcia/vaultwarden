@@ -288,28 +288,11 @@ fn delete_account(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn
     if !user.check_valid_password(&data.MasterPasswordHash) {
         err!("Invalid password")
     }
-
-    // Delete ciphers and their attachments
-    for cipher in Cipher::find_owned_by_user(&user.uuid, &conn) {
-        if cipher.delete(&conn).is_err() {
-            err!("Failed deleting cipher")
-        }
+    
+    match user.delete(&conn) {
+        Ok(()) => Ok(()),
+        Err(_) => err!("Failed deleting user account, are you the only owner of some organization?")
     }
-
-    // Delete folders
-    for f in Folder::find_by_user(&user.uuid, &conn) {
-        if f.delete(&conn).is_err() {
-            err!("Failed deleting folder")
-        } 
-    }
-
-    // Delete devices
-    for d in Device::find_by_user(&user.uuid, &conn) { d.delete(&conn); }
-
-    // Delete user
-    user.delete(&conn);
-
-    Ok(())
 }
 
 #[get("/accounts/revision-date")]

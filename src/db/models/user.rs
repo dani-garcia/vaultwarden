@@ -103,22 +103,31 @@ impl User {
     pub fn reset_security_stamp(&mut self) {
         self.security_stamp = Uuid::new_v4().to_string();
     }
+
+    pub fn is_server_admin(&self) -> bool {
+        match CONFIG.server_admin_email {
+            Some(ref server_admin_email) => &self.email == server_admin_email,
+            None => false
+        }
+    }
 }
 
 use diesel;
 use diesel::prelude::*;
 use db::DbConn;
 use db::schema::{users, invitations};
+use super::{Cipher, Folder, Device, UserOrganization, UserOrgType};
 
 /// Database methods
 impl User {
     pub fn to_json(&self, conn: &DbConn) -> JsonValue {
-        use super::UserOrganization;
-        use super::TwoFactor;
+        use super::{UserOrganization, UserOrgType, UserOrgStatus, TwoFactor};
 
-        let orgs = UserOrganization::find_by_user(&self.uuid, conn);
+        let mut orgs = UserOrganization::find_by_user(&self.uuid, conn);
+        if self.is_server_admin() {
+            orgs.push(UserOrganization::new_virtual(self.uuid.clone(), UserOrgType::Owner, UserOrgStatus::Confirmed));
+        }
         let orgs_json: Vec<JsonValue> = orgs.iter().map(|c| c.to_json(&conn)).collect();
-
         let twofactor_enabled = !TwoFactor::find_by_user(&self.uuid, conn).is_empty();
 
         json!({
@@ -150,13 +159,27 @@ impl User {
         }
     }
 
-    pub fn delete(self, conn: &DbConn) -> bool {
-        match diesel::delete(users::table.filter(
-            users::uuid.eq(self.uuid)))
-            .execute(&**conn) {
-            Ok(1) => true, // One row deleted
-            _ => false,
+    pub fn delete(self, conn: &DbConn) -> QueryResult<()> {
+        for user_org in UserOrganization::find_by_user(&self.uuid, &*conn) {
+            if user_org.type_ == UserOrgType::Owner as i32 {
+                if UserOrganization::find_by_org_and_type(
+                    &user_org.org_uuid, 
+                    UserOrgType::Owner as i32, &conn
+                ).len() <= 1 {
+                    return Err(diesel::result::Error::NotFound);
+                }
+            }
         }
+
+        UserOrganization::delete_all_by_user(&self.uuid, &*conn)?;
+        Cipher::delete_all_by_user(&self.uuid, &*conn)?;
+        Folder::delete_all_by_user(&self.uuid, &*conn)?;
+        Device::delete_all_by_user(&self.uuid, &*conn)?;
+        Invitation::take(&self.email, &*conn); // Delete invitation if any
+
+        diesel::delete(users::table.filter(
+        users::uuid.eq(self.uuid)))
+        .execute(&**conn).and(Ok(()))
     }
 
     pub fn update_uuid_revision(uuid: &str, conn: &DbConn) {
@@ -189,6 +212,11 @@ impl User {
         users::table
             .filter(users::uuid.eq(uuid))
             .first::<Self>(&**conn).ok()
+    }
+
+    pub fn get_all(conn: &DbConn) -> Vec<Self> {
+        users::table
+        .load::<Self>(&**conn).expect("Error loading users")
     }
 }
 

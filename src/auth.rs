@@ -95,7 +95,7 @@ use rocket::Outcome;
 use rocket::request::{self, Request, FromRequest};
 
 use db::DbConn;
-use db::models::{User, UserOrganization, UserOrgType, UserOrgStatus, Device};
+use db::models::{User, Organization, UserOrganization, UserOrgType, UserOrgStatus, Device};
 
 pub struct Headers {
     pub host: String,
@@ -212,7 +212,13 @@ impl<'a, 'r> FromRequest<'a, 'r> for OrgHeaders {
                                     err_handler!("The current user isn't confirmed member of the organization")
                                 }
                             }
-                            None => err_handler!("The current user isn't member of the organization")
+                            None => {
+                                if headers.user.is_server_admin() && org_id == Organization::VIRTUAL_ID {
+                                    UserOrganization::new_virtual(headers.user.uuid.clone(), UserOrgType::Owner, UserOrgStatus::Confirmed)
+                                } else {
+                                    err_handler!("The current user isn't member of the organization")
+                                }
+                            }
                         };
 
                         Outcome::Success(Self{
