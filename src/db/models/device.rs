@@ -112,15 +112,11 @@ use db::schema::devices;
 
 /// Database methods
 impl Device {
-    pub fn save(&mut self, conn: &DbConn) -> bool {
+    pub fn save(&mut self, conn: &DbConn) -> QueryResult<()> {
         self.updated_at = Utc::now().naive_utc();
 
-        match diesel::replace_into(devices::table)
-            .values(&*self)
-            .execute(&**conn) {
-            Ok(1) => true, // One row inserted
-            _ => false,
-        }
+        diesel::replace_into(devices::table)
+            .values(&*self).execute(&**conn).and(Ok(()))
     }
 
     pub fn delete(self, conn: &DbConn) -> QueryResult<()> {
