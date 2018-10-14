@@ -227,7 +227,9 @@ fn post_eq_domains(data: JsonUpcase<EquivDomainData>, headers: Headers, conn: Db
     user.excluded_globals = to_string(&excluded_globals).unwrap_or("[]".to_string());
     user.equivalent_domains = to_string(&equivalent_domains).unwrap_or("[]".to_string());
 
-    user.save(&conn);
+    match user.save(&conn) {
+        Ok(()) => Ok(()),
+        Err(_) => err!("Failed to save user")
+    }
 
-    Ok(())
 }
