@@ -39,7 +39,9 @@ fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> EmptyResult {
             if Invitation::take(&data.Email, &conn) {
                 for mut user_org in UserOrganization::find_invited_by_user(&user.uuid, &conn).iter_mut() {
                     user_org.status = UserOrgStatus::Accepted as i32;
-                    user_org.save(&conn);
+                    if user_org.save(&conn).is_err() {
+                        err!("Failed to accept user to organization")
+                    }
                 };
                 user
             } else if CONFIG.signups_allowed {
