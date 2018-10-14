@@ -1,5 +1,6 @@
 use rocket::Route;
 use rocket_contrib::Json;
+use serde_json::Value as JsonValue;
 
 use api::JsonResult;
 use auth::Headers;
@@ -22,17 +23,20 @@ fn negotiate(_headers: Headers, _conn: DbConn) -> JsonResult {
     use data_encoding::BASE64URL;
 
     let conn_id = BASE64URL.encode(&crypto::get_random(vec![0u8; 16]));
+    let mut available_transports: Vec<JsonValue> = Vec::new();
+
+    if CONFIG.websocket_enabled {
+        available_transports.push(json!({"transport":"WebSockets", "transferFormats":["Text","Binary"]}));
+    }
 
     // TODO: Implement transports
     // Rocket WS support: https://github.com/SergioBenitez/Rocket/issues/90
     // Rocket SSE support: https://github.com/SergioBenitez/Rocket/issues/33
+    // {"transport":"ServerSentEvents", "transferFormats":["Text"]},
+    // {"transport":"LongPolling", "transferFormats":["Text","Binary"]}
     Ok(Json(json!({
         "connectionId": conn_id,
-        "availableTransports":[
-                {"transport":"WebSockets", "transferFormats":["Text","Binary"]},
-                // {"transport":"ServerSentEvents", "transferFormats":["Text"]},
-                // {"transport":"LongPolling", "transferFormats":["Text","Binary"]}
-        ]
+        "availableTransports": available_transports
     })))
 }
 
