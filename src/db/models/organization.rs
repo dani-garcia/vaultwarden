@@ -137,9 +137,9 @@ use db::schema::{organizations, users_organizations, users_collections, ciphers_
 
 /// Database methods
 impl Organization {
-    pub fn save(&mut self, conn: &DbConn) -> bool {
+    pub fn save(&mut self, conn: &DbConn) -> QueryResult<()> {
         if self.uuid == Organization::VIRTUAL_ID {
-            return false
+            return Err(diesel::result::Error::NotFound)
         }
 
         UserOrganization::find_by_org(&self.uuid, conn)
@@ -148,12 +148,8 @@ impl Organization {
             User::update_uuid_revision(&user_org.user_uuid, conn);
         });
 
-        match diesel::replace_into(organizations::table)
-            .values(&*self)
-            .execute(&**conn) {
-            Ok(1) => true, // One row inserted
-            _ => false,
-        }
+        diesel::replace_into(organizations::table)
+            .values(&*self).execute(&**conn).and(Ok(()))
     }
 
     pub fn delete(self, conn: &DbConn) -> QueryResult<()> {
@@ -266,18 +262,14 @@ impl UserOrganization {
         })
     }
 
-    pub fn save(&mut self, conn: &DbConn) -> bool {
+    pub fn save(&mut self, conn: &DbConn) -> QueryResult<()> {
         if self.org_uuid == Organization::VIRTUAL_ID {
-            return false
+            return Err(diesel::result::Error::NotFound)
         }
         User::update_uuid_revision(&self.user_uuid, conn);
 
-        match diesel::replace_into(users_organizations::table)
-            .values(&*self)
-            .execute(&**conn) {
-            Ok(1) => true, // One row inserted
-            _ => false,
-        }
+        diesel::replace_into(users_organizations::table)
+            .values(&*self).execute(&**conn).and(Ok(()))
     }
 
     pub fn delete(self, conn: &DbConn) -> QueryResult<()> {

@@ -49,8 +49,13 @@ fn create_organization(headers: Headers, data: JsonUpcase<OrgData>, conn: DbConn
     user_org.type_ = UserOrgType::Owner as i32;
     user_org.status = UserOrgStatus::Confirmed as i32;
 
-    org.save(&conn);
-    user_org.save(&conn);
+    if org.save(&conn).is_err() {
+        err!("Failed creating organization")
+    }
+    if user_org.save(&conn).is_err() {
+        err!("Failed to add user to organization")
+    }
+
     if collection.save(&conn).is_err() {
         err!("Failed creating Collection");
     }
@@ -128,9 +133,11 @@ fn post_organization(org_id: String, _headers: OwnerHeaders, data: JsonUpcase<Or
 
     org.name = data.Name;
     org.billing_email = data.BillingEmail;
-    org.save(&conn);
 
-    Ok(Json(org.to_json()))
+    match org.save(&conn) {
+        Ok(()) => Ok(Json(org.to_json())),
+        Err(_) => err!("Failed to modify organization")
+    }
 }
 
 // GET /api/collections?writeOnly=false
@@ -427,7 +434,9 @@ fn send_invite(org_id: String, data: JsonUpcase<InviteData>, headers: AdminHeade
                 }
             }
 
-            new_user.save(&conn);
+            if new_user.save(&conn).is_err() {
+                err!("Failed to add user to organization")
+            }
         }
     }
 
@@ -458,9 +467,10 @@ fn confirm_invite(org_id: String, org_user_id: String, data: JsonUpcase<Value>, 
         None => err!("Invalid key provided")
     };
 
-    user_to_confirm.save(&conn);
-
-    Ok(())
+    match user_to_confirm.save(&conn) {
+        Ok(()) => Ok(()),
+        Err(_) => err!("Failed to add user to organization")
+    }
 }
 
 #[get("/organizations/<org_id>/users/<org_user_id>")]
@@ -551,9 +561,10 @@ fn edit_user(org_id: String, org_user_id: String, data: JsonUpcase<EditUserData>
         }
     }
 
-    user_to_edit.save(&conn);
-
-    Ok(())
+    match user_to_edit.save(&conn) {
+        Ok(()) => Ok(()),
+        Err(_) => err!("Failed to save user data")
+    }
 }
 
 #[delete("/organizations/<org_id>/users/<org_user_id>")]
