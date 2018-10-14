@@ -391,11 +391,11 @@ fn send_invite(org_id: String, data: JsonUpcase<InviteData>, headers: AdminHeade
                 match invitation.save(&conn) {
                     Ok(()) => {
                         let mut user = User::new(email.clone());
-                        if user.save(&conn) {
+                        if user.save(&conn).is_err() {
+                            err!("Failed to create placeholder for invited user")
+                        } else {
                             user_org_status = UserOrgStatus::Invited as i32;
                             user
-                        } else {
-                            err!("Failed to create placeholder for invited user")
                         }
                     }
                     Err(_) => err!(format!("Failed to invite: {}", email))

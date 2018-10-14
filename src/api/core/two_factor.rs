@@ -75,9 +75,10 @@ fn recover(data: JsonUpcase<RecoverTwoFactor>, conn: DbConn) -> JsonResult {
 
     // Remove the recovery code, not needed without twofactors
     user.totp_recover = None;
-    user.save(&conn);
-
-    Ok(Json(json!({})))
+    match user.save(&conn) {
+        Ok(()) => Ok(Json(json!({}))),
+        Err(_) => err!("Failed to remove the user's two factor recovery code")
+    }
 }
 
 #[derive(Deserialize)]
@@ -217,7 +218,9 @@ fn _generate_recover_code(user: &mut User, conn: &DbConn) {
     if user.totp_recover.is_none() {
         let totp_recover = BASE32.encode(&crypto::get_random(vec![0u8; 20]));
         user.totp_recover = Some(totp_recover);
-        user.save(conn);
+        if user.save(conn).is_err() {
+            println!("Error: Failed to save the user's two factor recovery code")
+        }
     }
 }
 

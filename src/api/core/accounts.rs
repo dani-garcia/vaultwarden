@@ -84,9 +84,10 @@ fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> EmptyResult {
         user.public_key = Some(keys.PublicKey);
     }
 
-    user.save(&conn);
-
-    Ok(())
+    match user.save(&conn) {
+        Ok(()) => Ok(()),
+        Err(_) => err!("Failed to save user")
+    }
 }
 
 #[get("/accounts/profile")]
@@ -119,9 +120,10 @@ fn post_profile(data: JsonUpcase<ProfileData>, headers: Headers, conn: DbConn) -
         Some(ref h) if h.is_empty() => None,
         _ => data.MasterPasswordHint,
     };
-    user.save(&conn);
-
-    Ok(Json(user.to_json(&conn)))
+    match user.save(&conn) {
+        Ok(()) => Ok(Json(user.to_json(&conn))),
+        Err(_) => err!("Failed to save user profile")
+    }
 }
 
 #[get("/users/<uuid>/public-key")]
@@ -147,10 +149,13 @@ fn post_keys(data: JsonUpcase<KeysData>, headers: Headers, conn: DbConn) -> Json
     user.private_key = Some(data.EncryptedPrivateKey);
     user.public_key = Some(data.PublicKey);
 
-    user.save(&conn);
-
-    Ok(Json(user.to_json(&conn)))
+    match user.save(&conn) {
+        Ok(()) => Ok(Json(user.to_json(&conn))),
+        Err(_) => err!("Failed to save the user's keys")
+    }
 }
+
+    
 
 #[derive(Deserialize)]
 #[allow(non_snake_case)]
@@ -171,9 +176,10 @@ fn post_password(data: JsonUpcase<ChangePassData>, headers: Headers, conn: DbCon
 
     user.set_password(&data.NewMasterPasswordHash);
     user.key = data.Key;
-    user.save(&conn);
-
-    Ok(())
+    match user.save(&conn) {
+        Ok(()) => Ok(()),
+        Err(_) => err!("Failed to save password")
+    }
 }
 
 #[derive(Deserialize)]
@@ -200,9 +206,10 @@ fn post_kdf(data: JsonUpcase<ChangeKdfData>, headers: Headers, conn: DbConn) -> 
     user.client_kdf_type = data.Kdf;
     user.set_password(&data.NewMasterPasswordHash);
     user.key = data.Key;
-    user.save(&conn);
-
-    Ok(())
+    match user.save(&conn) {
+        Ok(()) => Ok(()),
+        Err(_) => err!("Failed to save password settings")
+    }
 }
 
 #[post("/accounts/security-stamp", data = "<data>")]
@@ -215,9 +222,10 @@ fn post_sstamp(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn) -
     }
 
     user.reset_security_stamp();
-    user.save(&conn);
-
-    Ok(())
+    match user.save(&conn) {
+        Ok(()) => Ok(()),
+        Err(_) => err!("Failed to reset security stamp")
+    }
 }
 
 #[derive(Deserialize)]
@@ -272,9 +280,10 @@ fn post_email(data: JsonUpcase<ChangeEmailData>, headers: Headers, conn: DbConn)
     user.set_password(&data.NewMasterPasswordHash);
     user.key = data.Key;
 
-    user.save(&conn);
-
-    Ok(())
+    match user.save(&conn) {
+        Ok(()) => Ok(()),
+        Err(_) => err!("Failed to save email address")
+    }
 }
 
 #[post("/accounts/delete", data = "<data>")]
