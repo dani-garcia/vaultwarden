@@ -46,16 +46,17 @@ fn _refresh_login(data: &ConnectData, _device_type: DeviceType, conn: DbConn) ->
     let orgs = UserOrganization::find_by_user(&user.uuid, &conn);
 
     let (access_token, expires_in) = device.refresh_tokens(&user, orgs);
-    device.save(&conn);
-
-    Ok(Json(json!({
-        "access_token": access_token,
-        "expires_in": expires_in,
-        "token_type": "Bearer",
-        "refresh_token": device.refresh_token,
-        "Key": user.key,
-        "PrivateKey": user.private_key,
-    })))
+    match device.save(&conn) {
+            Ok(()) => Ok(Json(json!({
+                          "access_token": access_token,
+                          "expires_in": expires_in,
+                          "token_type": "Bearer",
+                          "refresh_token": device.refresh_token,
+                          "Key": user.key,
+                          "PrivateKey": user.private_key,
+                      }))),
+            Err(_) => err!("Failed to add device to user")
+    }
 }
 
 fn _password_login(data: &ConnectData, device_type: DeviceType, conn: DbConn, remote: Option<SocketAddr>) -> JsonResult {
@@ -128,7 +129,9 @@ fn _password_login(data: &ConnectData, device_type: DeviceType, conn: DbConn, re
     let orgs = UserOrganization::find_by_user(&user.uuid, &conn);
 
     let (access_token, expires_in) = device.refresh_tokens(&user, orgs);
-    device.save(&conn);
+    if device.save(&conn).is_err() {
+        err!("Failed to add device to user")
+    }
 
     let mut result = json!({
         "access_token": access_token,
