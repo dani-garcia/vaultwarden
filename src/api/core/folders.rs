@@ -47,7 +47,9 @@ fn post_folders(data: JsonUpcase<FolderData>, headers: Headers, conn: DbConn, ws
 
     let mut folder = Folder::new(headers.user.uuid.clone(), data.Name);
 
-    folder.save(&conn);
+    if folder.save(&conn).is_err() {
+        err!("Failed to save folder")
+    }
     ws.send_folder_update(UpdateType::SyncFolderCreate, &folder);
 
     Ok(Json(folder.to_json()))
@@ -73,7 +75,9 @@ fn put_folder(uuid: String, data: JsonUpcase<FolderData>, headers: Headers, conn
 
     folder.name = data.Name;
 
-    folder.save(&conn);
+    if folder.save(&conn).is_err() {
+        err!("Failed to save folder")
+    }
     ws.send_folder_update(UpdateType::SyncFolderUpdate, &folder);
 
     Ok(Json(folder.to_json()))

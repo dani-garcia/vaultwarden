@@ -229,11 +229,15 @@ fn post_ciphers_import(data: JsonUpcase<ImportData>, headers: Headers, conn: DbC
     let data: ImportData = data.into_inner().data;
 
     // Read and create the folders
-    let folders: Vec<_> = data.Folders.into_iter().map(|folder| {
-        let mut folder = Folder::new(headers.user.uuid.clone(), folder.Name);
-        folder.save(&conn);
-        folder
-    }).collect();
+    let mut folders: Vec<_> = Vec::new();
+    for folder in data.Folders.into_iter() {
+        let mut new_folder = Folder::new(headers.user.uuid.clone(), folder.Name);
+        if new_folder.save(&conn).is_err() {
+            err!("Failed importing folders")
+        } else {
+            folders.push(new_folder);
+        }
+    }
 
     // Read the relations between folders and ciphers
     use std::collections::HashMap;

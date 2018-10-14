@@ -70,16 +70,12 @@ use db::schema::{folders, folders_ciphers};
 
 /// Database methods
 impl Folder {
-    pub fn save(&mut self, conn: &DbConn) -> bool {
+    pub fn save(&mut self, conn: &DbConn) -> QueryResult<()> {
         User::update_uuid_revision(&self.user_uuid, conn);
         self.updated_at = Utc::now().naive_utc();
 
-        match diesel::replace_into(folders::table)
-            .values(&*self)
-            .execute(&**conn) {
-            Ok(1) => true, // One row inserted
-            _ => false,
-        }
+        diesel::replace_into(folders::table)
+            .values(&*self).execute(&**conn).and(Ok(()))
     }
 
     pub fn delete(&self, conn: &DbConn) -> QueryResult<()> {
