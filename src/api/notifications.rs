@@ -360,12 +360,14 @@ pub fn start_notification_server() -> WebSocketUsers {
     let factory = WSFactory::init();
     let users = factory.users.clone();
 
-    thread::spawn(move || {
-        WebSocket::new(factory)
-            .unwrap()
-            .listen(&CONFIG.websocket_url)
-            .unwrap();
-    });
+    if CONFIG.websocket_enabled {
+        thread::spawn(move || {
+            WebSocket::new(factory)
+                .unwrap()
+                .listen(&CONFIG.websocket_url)
+                .unwrap();
+        });
+    }
 
     users
 }
