@@ -420,10 +420,10 @@ Bitwarden_rs is already packaged for Archlinux thanks to @mqus. There is an [AUR
 The sqlite3 database should be backed up using the proper sqlite3 backup command. This will ensure the database does not become corrupted if the backup happens during a database write.
 
 ```
-sqlite3 /$DATA_FOLDER/db.sqlite3 ".backup '/$DATA_FOLDER/db-backup/backup.sq3'"
+sqlite3 /$DATA_FOLDER/db.sqlite3 ".backup '/$DATA_FOLDER/db-backup/backup.sqlite3'"
 ```
 
-This command can be run via a CRON job everyday, however note that it will overwrite the same backup.sq3 file each time. This backup file should therefore be saved via incremental backup either using a CRON job command that appends a timestamp or from another backup app such as Duplicati.
+This command can be run via a CRON job everyday, however note that it will overwrite the same `backup.sqlite3` file each time. This backup file should therefore be saved via incremental backup either using a CRON job command that appends a timestamp or from another backup app such as Duplicati. To restore simply overwrite `db.sqlite3` with `backup.sqlite3` (while bitwarden_rs is stopped).
  
 ### 2. the attachments folder
 
