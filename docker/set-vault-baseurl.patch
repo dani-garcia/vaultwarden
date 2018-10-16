@@ -1,6 +1,6 @@
 --- a/src/app/services/services.module.ts
 +++ b/src/app/services/services.module.ts
-@@ -120,20 +120,17 @@ const notificationsService = new NotificationsService(userService, syncService,
+@@ -120,20 +120,16 @@ const notificationsService = new NotificationsService(userService, syncService,
  const environmentService = new EnvironmentService(apiService, storageService, notificationsService);
  const auditService = new AuditService(cryptoFunctionService, apiService);
  
@@ -22,7 +22,6 @@
 +        const isDev = false;
 +        environmentService.baseUrl = window.location.origin;
 +        environmentService.notificationsUrl = window.location.origin + '/notifications';
-+
-         await apiService.setUrls({
+         apiService.setUrls({
              base: isDev ? null : window.location.origin,
              api: isDev ? 'http://localhost:4000' : null,
