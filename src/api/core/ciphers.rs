@@ -22,8 +22,14 @@ use auth::Headers;
 
 use CONFIG;
 
-#[get("/sync")]
-fn sync(headers: Headers, conn: DbConn) -> JsonResult {
+#[derive(FromForm)]
+#[allow(non_snake_case)]
+struct SyncData {
+    excludeDomains: bool,
+}
+
+#[get("/sync?<data>")]
+fn sync(data: SyncData, headers: Headers, conn: DbConn) -> JsonResult {
     let user_json = headers.user.to_json(&conn);
 
     let folders = Folder::find_by_user(&headers.user.uuid, &conn);
@@ -35,7 +41,7 @@ fn sync(headers: Headers, conn: DbConn) -> JsonResult {
     let ciphers = Cipher::find_by_user(&headers.user.uuid, &conn);
     let ciphers_json: Vec<Value> = ciphers.iter().map(|c| c.to_json(&headers.host, &headers.user.uuid, &conn)).collect();
 
-    let domains_json = api::core::get_eq_domains(headers).unwrap().into_inner();
+    let domains_json = if data.excludeDomains { Value::Null } else { api::core::get_eq_domains(headers).unwrap().into_inner() };
 
     Ok(Json(json!({
         "Profile": user_json,
