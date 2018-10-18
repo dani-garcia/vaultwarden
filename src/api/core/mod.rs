@@ -30,6 +30,7 @@ pub fn routes() -> Vec<Route> {
         prelogin,
 
         sync,
+        sync_no_query,
 
         get_ciphers,
         get_cipher,

@@ -53,6 +53,13 @@ fn sync(data: SyncData, headers: Headers, conn: DbConn) -> JsonResult {
     })))
 }
 
+#[get("/sync")]
+fn sync_no_query(headers: Headers, conn: DbConn) -> JsonResult {
+    let sync_data = SyncData {
+        excludeDomains: false,
+    };
+    sync(sync_data, headers, conn)
+}
 
 #[get("/ciphers")]
 fn get_ciphers(headers: Headers, conn: DbConn) -> JsonResult {
