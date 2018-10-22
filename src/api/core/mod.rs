@@ -121,6 +121,7 @@ pub fn routes() -> Vec<Route> {
 
         get_eq_domains,
         post_eq_domains,
+        put_eq_domains,
 
     ]
 }
@@ -216,7 +217,7 @@ struct EquivDomainData {
 }
 
 #[post("/settings/domains", data = "<data>")]
-fn post_eq_domains(data: JsonUpcase<EquivDomainData>, headers: Headers, conn: DbConn) -> EmptyResult {
+fn post_eq_domains(data: JsonUpcase<EquivDomainData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: EquivDomainData = data.into_inner().data;
 
     let excluded_globals = data.ExcludedGlobalEquivalentDomains.unwrap_or_default();
@@ -229,8 +230,13 @@ fn post_eq_domains(data: JsonUpcase<EquivDomainData>, headers: Headers, conn: Db
     user.equivalent_domains = to_string(&equivalent_domains).unwrap_or("[]".to_string());
 
     match user.save(&conn) {
-        Ok(()) => Ok(()),
+        Ok(()) => Ok(Json(json!({}))),
         Err(_) => err!("Failed to save user")
     }
 
+}
+
+#[put("/settings/domains", data = "<data>")]
+fn put_eq_domains(data: JsonUpcase<EquivDomainData>, headers: Headers, conn: DbConn) -> JsonResult {
+    post_eq_domains(data, headers, conn)
 }
