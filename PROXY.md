@@ -31,25 +31,24 @@ localhost:443 {
 ## Nginx (by shauder)
 ```nginx
 server {
-  include conf.d/ssl/ssl.conf;
-
   listen 443 ssl http2;
   server_name vault.*;
-
-  location /notifications/hub/negotiate {
-    include conf.d/proxy-confs/proxy.conf;
-    proxy_pass http://<SERVER>:80;
-  }
-
+  
+  # Specify SSL config if using a shared one.
+  #include conf.d/ssl/ssl.conf;
+  
   location / {
-    include conf.d/proxy-confs/proxy.conf;
     proxy_pass http://<SERVER>:80;
   }
-
+  
   location /notifications/hub {
     proxy_pass http://<SERVER>:3012;
     proxy_set_header Upgrade $http_upgrade;
     proxy_set_header Connection "upgrade";
+  }
+  
+  location /notifications/hub/negotiate {
+    proxy_pass http://<SERVER>:80;
   }
 }
 ```
