@@ -43,6 +43,7 @@ _*Note, that this project is not associated with the [Bitwarden](https://bitward
 - [Building binary](#building-binary)
 - [Available packages](#available-packages)
   - [Arch Linux](#arch-linux)
+- [Kubernetes deployment](https://github.com/icicimov/kubernetes-bitwarden_rs)
 - [Backing up your vault](#backing-up-your-vault)
   - [1. the sqlite3 database](#1-the-sqlite3-database)
   - [2. the attachments folder](#2-the-attachments-folder)
