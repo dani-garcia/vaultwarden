@@ -142,7 +142,7 @@ docker run -d --name bitwarden \
   -p 80:80 \
   mprasil/bitwarden:latest
 ```
-Note: While users can't register on their own, they can still be invited by already registered users. Read bellow if you also want to disable that.
+Note: While users can't register on their own, they can still be invited by already registered users. Read below if you also want to disable that.
 
 ### Disable invitations
 
@@ -327,7 +327,7 @@ docker run -d --name bitwarden \
 
 When you run bitwarden_rs, it spawns `2 * <number of cpu cores>` workers to handle requests. On some systems this might lead to low number of workers and hence slow performance, so the default in the docker image is changed to spawn 10 threads. You can override this setting to increase or decrease the number of workers by setting the `ROCKET_WORKERS` variable.
 
-In the example bellow, we're starting with 20 workers:
+In the example below, we're starting with 20 workers:
 
 ```sh
 docker run -d --name bitwarden \
@@ -448,8 +448,8 @@ This is optional, the icon cache can re-download itself however if you have a la
 The root user inside the container is already pretty limited in what it can do, so the default setup should be secure enough. However if you wish to go the extra mile to avoid using root even in container, here's how you can do that:
 
   1. Create a data folder that's owned by non-root user, so you can use that user to write persistent data. Get the user `id`. In linux you can run `stat <folder_name>` to get/verify the owner ID.
-  2. When you run the container, you need to provide the user ID as one of the parameters. Note that this needs to be in the numeric form and not the user name, because docker would try to find such user defined inside the image, which would likely not be there or it would have different ID than your local user and hence wouldn't be able to write the persistent data. This can be done with the `--user` parameter.
-  3. bitwarden_rs listens on port `80` inside the container by default, this [won't work with non-root user](https://www.w3.org/Daemon/User/Installation/PrivilegedPorts.html), because regular users aren't allowed to open port bellow `1024`. To overcome this, you need to configure server to listen on a different port, you can use `ROCKET_PORT` to do that.
+  2. When you run the container, you need to provide the user ID as one of the parameters. Note that this needs to be in the numeric form and not the username, because docker would try to find such user-defined inside the image, which would likely not be there or it would have different ID than your local user and hence wouldn't be able to write the persistent data. This can be done with the `--user` parameter.
+  3. bitwarden_rs listens on port `80` inside the container by default, this [won't work with non-root user](https://www.w3.org/Daemon/User/Installation/PrivilegedPorts.html), because regular users aren't allowed to open port below `1024`. To overcome this, you need to configure server to listen on a different port, you can use `ROCKET_PORT` to do that.
 
 Here's sample docker run, that uses user with id `1000` and with the port redirection configured, so that inside container the service is listening on port `8080` and docker translates that to external (host) port `80`:
 
