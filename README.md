@@ -43,6 +43,7 @@ _*Note, that this project is not associated with the [Bitwarden](https://bitward
 - [Building binary](#building-binary)
 - [Available packages](#available-packages)
   - [Arch Linux](#arch-linux)
+- [Kubernetes deployment](#kubernetes-deployment)
 - [Backing up your vault](#backing-up-your-vault)
   - [1. the sqlite3 database](#1-the-sqlite3-database)
   - [2. the attachments folder](#2-the-attachments-folder)
@@ -412,6 +413,11 @@ For building binary outside the Docker environment and running it locally withou
 ### Arch Linux
 
 Bitwarden_rs is already packaged for Archlinux thanks to @mqus. There is an [AUR package](https://aur.archlinux.org/packages/bitwarden_rs) (optionally with the [vault web interface](https://aur.archlinux.org/packages/bitwarden_rs-vault/) ) available.
+
+## Kubernetes deployment
+
+Please check the [kubernetes-bitwarden_rs](https://github.com/icicimov/kubernetes-bitwarden_rs) repository for example deployment in Kubernetes.
+It will setup a fully functional and secure `bitwarden_rs` application in Kubernetes behind [nginx-ingress-controller](https://github.com/kubernetes/ingress-nginx) and AWS [ELBv1](https://aws.amazon.com/elasticloadbalancing/features/#Details_for_Elastic_Load_Balancing_Products). It provides little bit more than just simple deployment but you can use all or just part of the manifests depending on your needs and setup.
 
 ## Backing up your vault
 
