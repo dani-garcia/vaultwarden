@@ -83,6 +83,7 @@ RUN cargo build --release --target=armv7-unknown-linux-gnueabihf -v
 FROM resin/armv7hf-debian:stretch
 
 ENV ROCKET_ENV "staging"
+ENV ROCKET_PORT=80
 ENV ROCKET_WORKERS=10
 
 RUN [ "cross-build-start" ]

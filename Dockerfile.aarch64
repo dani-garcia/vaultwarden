@@ -83,6 +83,7 @@ RUN cargo build --release --target=aarch64-unknown-linux-gnu -v
 FROM resin/aarch64-debian:stretch
 
 ENV ROCKET_ENV "staging"
+ENV ROCKET_PORT=80
 ENV ROCKET_WORKERS=10
 
 RUN [ "cross-build-start" ]

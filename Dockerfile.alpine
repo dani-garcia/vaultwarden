@@ -56,6 +56,7 @@ RUN cargo build --release
 FROM alpine:3.8
 
 ENV ROCKET_ENV "staging"
+ENV ROCKET_PORT=80
 ENV ROCKET_WORKERS=10
 ENV SSL_CERT_DIR=/etc/ssl/certs
 
