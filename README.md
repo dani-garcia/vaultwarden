@@ -158,6 +158,8 @@ docker run -d --name bitwarden \
 ```
 ### Configure server administrator
 
+**Warning:** *Never* use your regular account for the admin functionality. This is a bit of a hack using the Vault interface for something it's not intended to do and it breaks any other functionality for the account. Please set up and use separate account just for this functionality.
+
 You can configure one email account to be server administrator via the `SERVER_ADMIN_EMAIL` environment variable:
 
 ```sh
@@ -170,7 +172,7 @@ docker run -d --name bitwarden \
 
 This will give the user extra functionality and privileges to manage users on the server. In the Vault, the user will see a special (virtual) organization called `bitwarden_rs`. This organization doesn't actually exist and can't be used for most things. (can't have collections or ciphers) Instead it just contains all the users registered on the server. Deleting users from this organization will actually completely delete the user from the server. Inviting users into this organization will just invite the user so they are able to register, but will not grant any organization membership. (unlike inviting user to regular organization)
 
-You can think of the `bitwarden_rs` organization as sort of Admin interface to manage users on the server. Due to the virtual nature of this organization, it is missing some internal data structures and most of the functionality. It is thus strongly recommended to use dedicated account for `SERVER_ADMIN_EMAIL` and this account shouldn't be used for actually storing passwords. Also keep in mind that deleting user this way removes the user permanently without any way to restore the deleted data just as if user deleted their own account.
+You can think of the `bitwarden_rs` organization as sort of Admin interface to manage users on the server. Keep in mind that deleting user this way removes the user permanently without any way to restore the deleted data just as if user deleted their own account.
 
 ### Enabling HTTPS
 To enable HTTPS, you need to configure the `ROCKET_TLS`.
