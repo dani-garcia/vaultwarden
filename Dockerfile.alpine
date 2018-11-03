@@ -33,7 +33,6 @@ RUN USER=root cargo init --bin
 
 # Copies over *only* your manifests and vendored dependencies
 COPY ./Cargo.* ./
-COPY ./libs ./libs
 COPY ./rust-toolchain ./rust-toolchain
 
 # Builds your dependencies and removes the

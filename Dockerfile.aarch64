@@ -45,7 +45,6 @@ WORKDIR /app
 
 # Copies over *only* your manifests and vendored dependencies
 COPY ./Cargo.* ./
-COPY ./libs ./libs
 COPY ./rust-toolchain ./rust-toolchain
 
 # Prepare openssl arm64 libs
