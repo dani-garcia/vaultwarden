@@ -80,7 +80,7 @@ RUN cargo build --release --target=armv7-unknown-linux-gnueabihf -v
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image
 # because we already have a binary built
-FROM resin/armv7hf-debian:stretch
+FROM balenalib/armv7hf-debian:stretch
 
 ENV ROCKET_ENV "staging"
 ENV ROCKET_WORKERS=10
