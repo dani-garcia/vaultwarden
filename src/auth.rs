@@ -195,8 +195,8 @@ impl<'a, 'r> FromRequest<'a, 'r> for OrgHeaders {
             Outcome::Forward(f) => Outcome::Forward(f),
             Outcome::Failure(f) => Outcome::Failure(f),
             Outcome::Success(headers) => {
-                // org_id is expected to be the first dynamic param
-                match request.get_param::<String>(0) {
+                // org_id is expected to be the second param ("/organizations/<org_id>")
+                match request.get_param::<String>(1) {
                     Some(Ok(org_id)) => {
                         let conn = match request.guard::<DbConn>() {
                             Outcome::Success(conn) => conn,
