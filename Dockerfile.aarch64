@@ -79,7 +79,7 @@ RUN cargo build --release --target=aarch64-unknown-linux-gnu -v
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image
 # because we already have a binary built
-FROM resin/aarch64-debian:stretch
+FROM balenalib/aarch64-debian:stretch
 
 ENV ROCKET_ENV "staging"
 ENV ROCKET_PORT=80
