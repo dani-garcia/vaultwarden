@@ -80,6 +80,7 @@ pub fn routes() -> Vec<Route> {
         activate_authenticator,
         activate_authenticator_put,
         generate_u2f,
+        generate_u2f_challenge,
         activate_u2f,
         activate_u2f_put,
 

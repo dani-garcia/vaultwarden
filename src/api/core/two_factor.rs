@@ -273,6 +273,34 @@ fn generate_u2f(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn) 
     })))
 }
 
+#[post("/two-factor/get-u2f-challenge", data = "<data>")]
+fn generate_u2f_challenge(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn) -> JsonResult {
+    let data: PasswordData = data.into_inner().data;
+
+    if !headers.user.check_valid_password(&data.MasterPasswordHash) {
+        err!("Invalid password");
+    }
+
+    let user_uuid = &headers.user.uuid;
+
+    let u2f_type = TwoFactorType::U2f as i32;
+    let register_type = TwoFactorType::U2fRegisterChallenge;
+    let (enabled, challenge) = match TwoFactor::find_by_user_and_type(user_uuid, u2f_type, &conn) {
+        Some(_) => (true, String::new()),
+        None => {
+            let c = _create_u2f_challenge(user_uuid, register_type, &conn);
+            (false, c.challenge)
+        }
+    };
+
+    Ok(Json(json!({
+        "UserId": headers.user.uuid,
+        "AppId": APP_ID.to_string(),
+        "Challenge": challenge,
+        "Version": U2F_VERSION,
+    })))
+}
+
 #[derive(Deserialize, Debug)]
 #[allow(non_snake_case)]
 struct EnableU2FData {
