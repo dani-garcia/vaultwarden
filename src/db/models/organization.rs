@@ -83,6 +83,21 @@ impl PartialOrd<i32> for UserOrgType {
         }
         return None
     }
+
+    fn gt(&self, other: &i32) -> bool {
+        match self.partial_cmp(other) {
+            Some(Ordering::Less) => false,
+            _ => true,
+        }
+    }
+
+    fn ge(&self, other: &i32) -> bool {
+        match self.partial_cmp(other) {
+            Some(Ordering::Less) => false,
+            _ => true,
+        }
+    }
+
 }
 
 impl PartialEq<UserOrgType> for i32 {
@@ -98,6 +113,21 @@ impl PartialOrd<UserOrgType> for i32 {
         }
         return None
     }
+
+    fn lt(&self, other: &UserOrgType) -> bool {
+        match self.partial_cmp(other) {
+            Some(Ordering::Less) | None => true,
+            _ => false,
+        }
+    }
+
+    fn le(&self, other: &UserOrgType) -> bool {
+        match self.partial_cmp(other) {
+            Some(Ordering::Less) | Some(Ordering::Equal) | None => true,
+            _ => false,
+        }
+    }
+
 }
 
 impl UserOrgType {
