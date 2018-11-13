@@ -86,7 +86,7 @@ impl PartialOrd<i32> for UserOrgType {
 
     fn gt(&self, other: &i32) -> bool {
         match self.partial_cmp(other) {
-            Some(Ordering::Less) => false,
+            Some(Ordering::Less) | Some(Ordering::Equal) => false,
             _ => true,
         }
     }
