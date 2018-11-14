@@ -184,7 +184,7 @@ pub struct OrgHeaders {
     pub host: String,
     pub device: Device,
     pub user: User,
-    pub org_user_type: i32,
+    pub org_user_type: UserOrgType,
 }
 
 impl<'a, 'r> FromRequest<'a, 'r> for OrgHeaders {
@@ -224,7 +224,13 @@ impl<'a, 'r> FromRequest<'a, 'r> for OrgHeaders {
                             host: headers.host,
                             device: headers.device,
                             user: headers.user,
-                            org_user_type: org_user.type_,
+                            org_user_type: { 
+                                if let Some(org_usr_type) = UserOrgType::from_i32(&org_user.type_) {
+                                    org_usr_type
+                                } else { // This should only happen if the DB is corrupted
+                                    err_handler!("Unknown user type in the database")
+                                }
+                            },
                         })
                     },
                     _ => err_handler!("Error getting the organization id"),
@@ -238,7 +244,7 @@ pub struct AdminHeaders {
     pub host: String,
     pub device: Device,
     pub user: User,
-    pub org_user_type: i32,
+    pub org_user_type: UserOrgType,
 }
 
 impl<'a, 'r> FromRequest<'a, 'r> for AdminHeaders {
@@ -249,15 +255,15 @@ impl<'a, 'r> FromRequest<'a, 'r> for AdminHeaders {
             Outcome::Forward(f) => Outcome::Forward(f),
             Outcome::Failure(f) => Outcome::Failure(f),
             Outcome::Success(headers) => {
-                if headers.org_user_type > UserOrgType::Admin as i32 {
-                    err_handler!("You need to be Admin or Owner to call this endpoint")
-                } else {
+                if headers.org_user_type >= UserOrgType::Admin {
                     Outcome::Success(Self{
                         host: headers.host,
                         device: headers.device,
                         user: headers.user,
                         org_user_type: headers.org_user_type,
                     })
+                } else {
+                    err_handler!("You need to be Admin or Owner to call this endpoint")
                 }
             }
         }
@@ -278,14 +284,14 @@ impl<'a, 'r> FromRequest<'a, 'r> for OwnerHeaders {
             Outcome::Forward(f) => Outcome::Forward(f),
             Outcome::Failure(f) => Outcome::Failure(f),
             Outcome::Success(headers) => {
-                if headers.org_user_type > UserOrgType::Owner as i32 {
-                    err_handler!("You need to be Owner to call this endpoint")
-                } else {
+                if headers.org_user_type == UserOrgType::Owner {
                     Outcome::Success(Self{
                         host: headers.host,
                         device: headers.device,
                         user: headers.user,
                     })
+                } else {
+                    err_handler!("You need to be Owner to call this endpoint")
                 }
             }
         }

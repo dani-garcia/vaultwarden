@@ -164,9 +164,18 @@ pub struct CipherData {
 }
 
 #[post("/ciphers/admin", data = "<data>")]
-fn post_ciphers_admin(data: JsonUpcase<CipherData>, headers: Headers, conn: DbConn, ws: State<WebSocketUsers>) -> JsonResult {
-    // TODO: Implement this correctly
-    post_ciphers(data, headers, conn, ws)
+fn post_ciphers_admin(data: JsonUpcase<ShareCipherData>, headers: Headers, conn: DbConn, ws: State<WebSocketUsers>) -> JsonResult {
+    let data: ShareCipherData = data.into_inner().data;
+
+    let mut cipher = Cipher::new(data.Cipher.Type.clone(), data.Cipher.Name.clone());
+    cipher.user_uuid = Some(headers.user.uuid.clone());
+    match cipher.save(&conn) {
+        Ok(()) => (),
+        Err(_) => err!("Failed saving cipher")
+    };
+
+    share_cipher_by_uuid(&cipher.uuid, data, &headers, &conn, &ws)
+
 }
 
 #[post("/ciphers", data = "<data>")]
