@@ -157,7 +157,7 @@ impl User {
 
     pub fn delete(self, conn: &DbConn) -> QueryResult<()> {
         for user_org in UserOrganization::find_by_user(&self.uuid, &*conn) {
-            if user_org.type_ == UserOrgType::Owner as i32 {
+            if user_org.type_ == UserOrgType::Owner {
                 if UserOrganization::find_by_org_and_type(
                     &user_org.org_uuid, 
                     UserOrgType::Owner as i32, &conn

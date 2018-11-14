@@ -91,7 +91,7 @@ fn leave_organization(org_id: String, headers: Headers, conn: DbConn) -> EmptyRe
     match UserOrganization::find_by_user_and_org(&headers.user.uuid, &org_id, &conn) {
         None => err!("User not part of organization"),
         Some(user_org) => {
-            if user_org.type_ == UserOrgType::Owner as i32 {
+            if user_org.type_ == UserOrgType::Owner {
                 let num_owners = UserOrganization::find_by_org_and_type(
                     &org_id, UserOrgType::Owner as i32, &conn)
                     .len();
@@ -378,9 +378,9 @@ fn send_invite(org_id: String, data: JsonUpcase<InviteData>, headers: AdminHeade
         None => err!("Invalid type")
     };
 
-    if new_type != UserOrgType::User as i32 &&
-        headers.org_user_type != UserOrgType::Owner as i32 {
-        err!("Only Owners can invite Admins or Owners")
+    if new_type != UserOrgType::User &&
+        headers.org_user_type != UserOrgType::Owner {
+        err!("Only Owners can invite Managers, Admins or Owners")
     }
 
     for email in data.Emails.iter() {
@@ -452,9 +452,9 @@ fn confirm_invite(org_id: String, org_user_id: String, data: JsonUpcase<Value>, 
         None => err!("The specified user isn't a member of the organization")
     };
 
-    if user_to_confirm.type_ != UserOrgType::User as i32 &&
-        headers.org_user_type != UserOrgType::Owner as i32 {
-        err!("Only Owners can confirm Admins or Owners")
+    if user_to_confirm.type_ != UserOrgType::User &&
+        headers.org_user_type != UserOrgType::Owner {
+        err!("Only Owners can confirm Managers, Admins or Owners")
     }
 
     if user_to_confirm.status != UserOrgStatus::Accepted as i32 {
@@ -502,7 +502,7 @@ fn edit_user(org_id: String, org_user_id: String, data: JsonUpcase<EditUserData>
     let data: EditUserData = data.into_inner().data;
 
     let new_type = match UserOrgType::from_str(&data.Type.into_string()) {
-        Some(new_type) => new_type as i32,
+        Some(new_type) => new_type,
         None => err!("Invalid type")
     };
 
@@ -511,21 +511,21 @@ fn edit_user(org_id: String, org_user_id: String, data: JsonUpcase<EditUserData>
         None => err!("The specified user isn't member of the organization")
     };
 
-    if new_type != user_to_edit.type_ as i32 && (
-            user_to_edit.type_ <= UserOrgType::Admin as i32 ||
-            new_type <= UserOrgType::Admin as i32
+    if new_type != user_to_edit.type_ && (
+            user_to_edit.type_ >= UserOrgType::Admin ||
+            new_type >= UserOrgType::Admin
         ) &&
-        headers.org_user_type != UserOrgType::Owner as i32 {
+        headers.org_user_type != UserOrgType::Owner {
         err!("Only Owners can grant and remove Admin or Owner privileges")
     }
 
-    if user_to_edit.type_ == UserOrgType::Owner as i32 &&
-        headers.org_user_type != UserOrgType::Owner as i32 {
+    if user_to_edit.type_ == UserOrgType::Owner &&
+        headers.org_user_type != UserOrgType::Owner {
         err!("Only Owners can edit Owner users")
     }
 
-    if user_to_edit.type_ == UserOrgType::Owner as i32 &&
-        new_type != UserOrgType::Owner as i32 {
+    if user_to_edit.type_ == UserOrgType::Owner &&
+        new_type != UserOrgType::Owner {
 
         // Removing owner permmission, check that there are at least another owner
         let num_owners = UserOrganization::find_by_org_and_type(
@@ -538,7 +538,7 @@ fn edit_user(org_id: String, org_user_id: String, data: JsonUpcase<EditUserData>
     }
 
     user_to_edit.access_all = data.AccessAll;
-    user_to_edit.type_ = new_type;
+    user_to_edit.type_ = new_type as i32;
 
     // Delete all the odd collections
     for c in CollectionUser::find_by_organization_and_user_uuid(&org_id, &user_to_edit.user_uuid, &conn) {
@@ -591,12 +591,12 @@ fn delete_user(org_id: String, org_user_id: String, headers: AdminHeaders, conn:
         None => err!("User to delete isn't member of the organization")
     };
 
-    if user_to_delete.type_ != UserOrgType::User as i32 &&
-        headers.org_user_type != UserOrgType::Owner as i32 {
+    if user_to_delete.type_ != UserOrgType::User &&
+        headers.org_user_type != UserOrgType::Owner {
         err!("Only Owners can delete Admins or Owners")
     }
 
-    if user_to_delete.type_ == UserOrgType::Owner as i32 {
+    if user_to_delete.type_ == UserOrgType::Owner {
         // Removing owner, check that there are at least another owner
         let num_owners = UserOrganization::find_by_org_and_type(
             &org_id, UserOrgType::Owner as i32, &conn)
@@ -653,7 +653,7 @@ fn post_org_import(query: OrgIdData, data: JsonUpcase<ImportData>, headers: Head
         None => err!("User is not part of the organization")
     };
 
-    if org_user.type_ > UserOrgType::Admin as i32 {
+    if org_user.type_ < UserOrgType::Admin {
         err!("Only admins or owners can import into an organization")
     }
 

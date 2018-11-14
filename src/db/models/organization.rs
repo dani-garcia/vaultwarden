@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use serde_json::Value as JsonValue;
 
 use uuid::Uuid;
@@ -32,10 +33,101 @@ pub enum UserOrgStatus {
     Confirmed = 2,
 }
 
+#[derive(Copy, Clone)]
+#[derive(PartialEq)]
+#[derive(Eq)]
 pub enum UserOrgType {
     Owner = 0,
     Admin = 1,
     User = 2,
+    Manager = 3,
+}
+
+impl Ord for UserOrgType {
+    fn cmp(&self, other: &UserOrgType) -> Ordering {
+        if self == other {
+            Ordering::Equal
+        } else {
+            match self {
+                UserOrgType::Owner => Ordering::Greater,
+                UserOrgType::Admin => match other {
+                    UserOrgType::Owner => Ordering::Less,
+                    _ => Ordering::Greater
+                },
+                UserOrgType::Manager => match other {
+                    UserOrgType::Owner | UserOrgType::Admin => Ordering::Less,
+                    _ => Ordering::Greater
+                },
+                UserOrgType::User => Ordering::Less
+            }
+        }
+    }
+}
+
+impl PartialOrd for UserOrgType {
+    fn partial_cmp(&self, other: &UserOrgType) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl PartialEq<i32> for UserOrgType {
+    fn eq(&self, other: &i32) -> bool {
+        *other == *self as i32
+    }
+}
+
+impl PartialOrd<i32> for UserOrgType {
+    fn partial_cmp(&self, other: &i32) -> Option<Ordering> {
+        if let Some(other) = Self::from_i32(other) {
+            return Some(self.cmp(&other))
+        }
+        return None
+    }
+
+    fn gt(&self, other: &i32) -> bool {
+        match self.partial_cmp(other) {
+            Some(Ordering::Less) | Some(Ordering::Equal) => false,
+            _ => true,
+        }
+    }
+
+    fn ge(&self, other: &i32) -> bool {
+        match self.partial_cmp(other) {
+            Some(Ordering::Less) => false,
+            _ => true,
+        }
+    }
+
+}
+
+impl PartialEq<UserOrgType> for i32 {
+    fn eq(&self, other: &UserOrgType) -> bool {
+        *self == *other as i32
+    }
+}
+
+impl PartialOrd<UserOrgType> for i32 {
+    fn partial_cmp(&self, other: &UserOrgType) -> Option<Ordering> {
+        if let Some(self_type) = UserOrgType::from_i32(self) {
+            return Some(self_type.cmp(other))
+        }
+        return None
+    }
+
+    fn lt(&self, other: &UserOrgType) -> bool {
+        match self.partial_cmp(other) {
+            Some(Ordering::Less) | None => true,
+            _ => false,
+        }
+    }
+
+    fn le(&self, other: &UserOrgType) -> bool {
+        match self.partial_cmp(other) {
+            Some(Ordering::Less) | Some(Ordering::Equal) | None => true,
+            _ => false,
+        }
+    }
+
 }
 
 impl UserOrgType {
@@ -44,9 +136,21 @@ impl UserOrgType {
             "0" | "Owner" => Some(UserOrgType::Owner),
             "1" | "Admin" => Some(UserOrgType::Admin),
             "2" | "User" => Some(UserOrgType::User),
+            "3" | "Manager" => Some(UserOrgType::Manager),
             _ => None,
         }
     }
+
+    pub fn from_i32(i: &i32) -> Option<Self> {
+        match i {
+            0 => Some(UserOrgType::Owner),
+            1 => Some(UserOrgType::Admin),
+            2 => Some(UserOrgType::User),
+            3 => Some(UserOrgType::Manager),
+            _ => None,
+        }
+    }
+
 }
 
 /// Local methods
@@ -302,7 +406,7 @@ impl UserOrganization {
     }
 
     pub fn has_full_access(self) -> bool {
-        self.access_all || self.type_ < UserOrgType::User as i32
+        self.access_all || self.type_ >= UserOrgType::Admin
     }
 
     pub fn find_by_uuid(uuid: &str, conn: &DbConn) -> Option<Self> {
