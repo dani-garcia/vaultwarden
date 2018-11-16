@@ -25,6 +25,7 @@ extern crate oath;
 extern crate data_encoding;
 extern crate jsonwebtoken as jwt;
 extern crate u2f;
+extern crate yubico;
 extern crate dotenv;
 #[macro_use]
 extern crate lazy_static;
@@ -245,6 +246,10 @@ pub struct Config {
     domain: String,
     domain_set: bool,
 
+    yubico_cred_set: bool,
+    yubico_client_id: String,
+    yubico_secret_key: String,
+
     mail: Option<MailConfig>,
 }
 
@@ -257,6 +262,9 @@ impl Config {
         let key = get_env_or("RSA_KEY_FILENAME", format!("{}/{}", &df, "rsa_key"));
 
         let domain = get_env("DOMAIN");
+
+        let yubico_client_id = get_env("YUBICO_CLIENT_ID");
+        let yubico_secret_key = get_env("YUBICO_SECRET_KEY");
 
         Config {
             database_url: get_env_or("DATABASE_URL", format!("{}/{}", &df, "db.sqlite3")),
@@ -282,6 +290,10 @@ impl Config {
 
             domain_set: domain.is_some(),
             domain: domain.unwrap_or("http://localhost".into()),
+
+            yubico_cred_set: yubico_client_id.is_some() && yubico_secret_key.is_some(),
+            yubico_client_id: yubico_client_id.unwrap_or("00000".into()),
+            yubico_secret_key: yubico_secret_key.unwrap_or("AAAAAAA".into()),
 
             mail: MailConfig::load(),
         }
