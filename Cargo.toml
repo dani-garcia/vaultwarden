@@ -57,6 +57,9 @@ jsonwebtoken = "= 4.0.1"
 # U2F library
 u2f = "0.1.2"
 
+# Yubico Library
+yubico="0.4.0"
+
 # A `dotenv` implementation for Rust
 dotenv = { version = "0.13.0", default-features = false }
 
