@@ -578,6 +578,11 @@ fn verify_yubikey_otp(otp: String) -> JsonResult {
 
 #[post("/two-factor/get-yubikey", data = "<data>")]
 fn generate_yubikey(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn) -> JsonResult {
+    if !CONFIG.yubico_cred_set {
+        err!("`YUBICO_CLIENT_ID` or `YUBICO_SECRET_KEY` environment variable is not set. \
+               Yubikey OTP Disabled")
+    }
+
     let data: PasswordData = data.into_inner().data;
 
     if !headers.user.check_valid_password(&data.MasterPasswordHash) {
