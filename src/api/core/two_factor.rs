@@ -630,6 +630,13 @@ fn activate_yubikey(data: JsonUpcase<EnableYubikeyData>, headers: Headers, conn:
 
     let yubikeys = parse_yubikeys(&data);
 
+    if yubikeys.len() == 0 {
+        return Ok(Json(json!({
+            "Enabled": false,
+            "Object": "twoFactorU2f",
+        })));
+    }
+
     // Ensure they are valid OTPs
     for yubikey in &yubikeys {
         if yubikey.len() == 12 {
