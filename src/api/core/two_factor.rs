@@ -561,14 +561,10 @@ fn verify_yubikey_otp(otp: String) -> JsonResult {
     let yubico = Yubico::new();
     let config = Config::default().set_client_id(CONFIG.yubico_client_id.to_owned()).set_key(CONFIG.yubico_secret_key.to_owned());
 
-    let result;
-
-    if CONFIG.yubico_server.is_some() {
-        result = yubico.verify(otp, config.set_api_hosts(vec![CONFIG.yubico_server.to_owned().unwrap()]));
-    }
-    else {
-        result = yubico.verify(otp, config);
-    }
+    let result = match CONFIG.yubico_server {
+        Some(ref server) => yubico.verify(otp, config.set_api_hosts(vec![server.to_owned()])),
+        None => yubico.verify(otp, config)
+    };
 
     match result {
         Ok(_answer) => Ok(Json(json!({}))),
