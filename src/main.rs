@@ -249,6 +249,7 @@ pub struct Config {
     yubico_cred_set: bool,
     yubico_client_id: String,
     yubico_secret_key: String,
+    yubico_server: Option<String>,
 
     mail: Option<MailConfig>,
 }
@@ -294,6 +295,7 @@ impl Config {
             yubico_cred_set: yubico_client_id.is_some() && yubico_secret_key.is_some(),
             yubico_client_id: yubico_client_id.unwrap_or("00000".into()),
             yubico_secret_key: yubico_secret_key.unwrap_or("AAAAAAA".into()),
+            yubico_server: get_env("YUBICO_SERVER"),
 
             mail: MailConfig::load(),
         }
