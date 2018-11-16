@@ -209,6 +209,12 @@ fn twofactor_auth(
             two_factor::validate_u2f_login(user_uuid, twofactor_code, conn)?;
         }
 
+        Some(TwoFactorType::YubiKey) => {
+            use api::core::two_factor;
+
+            two_factor::validate_yubikey_login(user_uuid, twofactor_code, conn)?;
+        }
+
         _ => err!("Invalid two factor provider"),
     }
 
