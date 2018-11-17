@@ -507,9 +507,9 @@ struct EnableYubikeyData {
 
 #[derive(Deserialize, Serialize, Debug)]
 #[allow(non_snake_case)]
-struct YubikeyMetadata {
+pub struct YubikeyMetadata {
     Keys: Vec<String>,
-    Nfc: bool,
+    pub Nfc: bool,
 }
 
 use yubico::Yubico;
