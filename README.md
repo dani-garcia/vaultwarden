@@ -455,7 +455,7 @@ This command can be run via a CRON job everyday, however note that it will overw
 
 Running the above command requires sqlite3 to be installed on the docker host system. You can achieve the same result with a sqlite3 docker container using the following command.
 ```
-docker run --rm --volumes-from=bitwarden registry.gitlab.com/1o/bitwarden_rs-backup/bw_backup /backup.sh"
+docker run --rm --volumes-from=bitwarden bruceforce/bw_backup /backup.sh
 ```
 
 You can also run a container with integrated cron daemon to automatically backup your database. See https://gitlab.com/1O/bitwarden_rs-backup for examples.
