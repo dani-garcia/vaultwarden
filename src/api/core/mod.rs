@@ -83,6 +83,9 @@ pub fn routes() -> Vec<Route> {
         generate_u2f_challenge,
         activate_u2f,
         activate_u2f_put,
+        generate_yubikey,
+        activate_yubikey,
+        activate_yubikey_put,
 
         get_organization,
         create_organization,

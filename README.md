@@ -28,6 +28,7 @@ _*Note, that this project is not associated with the [Bitwarden](https://bitward
   - [Enabling HTTPS](#enabling-https)
   - [Enabling WebSocket notifications](#enabling-websocket-notifications)
   - [Enabling U2F authentication](#enabling-u2f-authentication)
+  - [Enabling YubiKey OTP authentication](#enabling-yubikey-otp-authentication)
   - [Changing persistent data location](#changing-persistent-data-location)
     - [/data prefix:](#data-prefix)
     - [database name and location](#database-name-and-location)
@@ -68,11 +69,11 @@ Basically full implementation of Bitwarden API is provided including:
  * Serving the static files for Vault interface
  * Website icons API
  * Authenticator and U2F support
+ * YubiKey OTP
  
 ## Missing features
 * Email confirmation
 * Other two-factor systems:
-  * YubiKey OTP (if your key supports U2F, you can use that)
   * Duo
   * Email codes
 
@@ -251,6 +252,22 @@ docker run -d --name bitwarden \
 ```
 
 Note that the value has to include the `https://` and it may include a port at the end (in the format of `https://bw.domain.tld:port`) when not using `443`.
+
+### Enabling YubiKey OTP authentication
+To enable YubiKey authentication, you must set the `YUBICO_CLIENT_ID` and `YUBICO_SECRET_KEY` env variables.
+
+If `YUBICO_SERVER` is not specified, it will use the default YubiCloud servers. You can generate `YUBICO_CLIENT_ID` and `YUBICO_SECRET_KEY` for the default YubiCloud [here](https://upgrade.yubico.com/getapikey/).
+
+Note: In order to generate API keys or use a YubiKey with an OTP server, it must be registered. After configuring your key in the [YubiKey Personalization Tool](https://www.yubico.com/products/services-software/personalization-tools/use/), you can register it with the default servers [here](https://upload.yubico.com/).
+
+```sh
+docker run -d --name bitwarden \
+  -e YUBICO_CLIENT_ID=12345 \
+  -e YUBICO_SECRET_KEY=ABCDEABCDEABCDEABCDE= \
+  -v /bw-data/:/data/ \
+  -p 80:80 \
+  mprasil/bitwarden:latest
+```
 
 ### Changing persistent data location
 

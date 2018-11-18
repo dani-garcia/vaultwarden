@@ -57,6 +57,9 @@ jsonwebtoken = "= 4.0.1"
 # U2F library
 u2f = "0.1.2"
 
+# Yubico Library
+yubico= { version = "0.4.0", default-features = false }
+
 # A `dotenv` implementation for Rust
 dotenv = { version = "0.13.0", default-features = false }
 
@@ -84,3 +87,6 @@ lettre_email = { git = 'https://github.com/lettre/lettre', rev = 'c988b1760ad81'
 
 # Version 0.1.2 from crates.io lacks a commit that fixes a certificate error
 u2f = { git = 'https://github.com/wisespace-io/u2f-rs', rev = '193de35093a44' }
+
+# Allows optional libusb support
+yubico = { git = 'https://github.com/dani-garcia/yubico-rs' }

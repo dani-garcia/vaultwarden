@@ -318,7 +318,9 @@ impl Cipher {
         .filter(ciphers::user_uuid.eq(user_uuid).or( // Cipher owner
             users_organizations::access_all.eq(true).or( // access_all in Organization
                 users_organizations::type_.le(UserOrgType::Admin as i32).or( // Org admin or owner
-                    users_collections::user_uuid.eq(user_uuid) // Access to Collection
+                    users_collections::user_uuid.eq(user_uuid).and( // Access to Collection
+                        users_organizations::status.eq(UserOrgStatus::Confirmed as i32)
+                    )
                 )
             )
         ))

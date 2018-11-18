@@ -491,3 +491,218 @@ pub fn validate_u2f_login(user_uuid: &str, response: &str, conn: &DbConn) -> Api
     }
     err!("error verifying response")
 }
+
+
+#[derive(Deserialize, Debug)]
+#[allow(non_snake_case)]
+struct EnableYubikeyData {
+    MasterPasswordHash: String,
+    Key1: Option<String>,
+    Key2: Option<String>,
+    Key3: Option<String>,
+    Key4: Option<String>,
+    Key5: Option<String>,
+    Nfc: bool,
+}
+
+#[derive(Deserialize, Serialize, Debug)]
+#[allow(non_snake_case)]
+pub struct YubikeyMetadata {
+    Keys: Vec<String>,
+    pub Nfc: bool,
+}
+
+use yubico::Yubico;
+use yubico::config::Config;
+
+fn parse_yubikeys(data: &EnableYubikeyData) -> Vec<String> {
+    let mut yubikeys: Vec<String> = Vec::new();
+
+    if data.Key1.is_some() {
+        yubikeys.push(data.Key1.as_ref().unwrap().to_owned());
+    }
+
+    if data.Key2.is_some() {
+        yubikeys.push(data.Key2.as_ref().unwrap().to_owned());
+    }
+
+    if data.Key3.is_some() {
+        yubikeys.push(data.Key3.as_ref().unwrap().to_owned());
+    }
+
+    if data.Key4.is_some() {
+        yubikeys.push(data.Key4.as_ref().unwrap().to_owned());
+    }
+
+    if data.Key5.is_some() {
+        yubikeys.push(data.Key5.as_ref().unwrap().to_owned());
+    }
+
+    yubikeys
+}
+
+fn jsonify_yubikeys(yubikeys: Vec<String>) -> serde_json::Value {
+    let mut result = json!({});
+
+    for i in 0..yubikeys.len() {
+        let ref key = &yubikeys[i];
+        result[format!("Key{}", i+1)] = Value::String(key.to_string());
+    }
+
+    result
+}
+
+fn verify_yubikey_otp(otp: String) -> JsonResult {
+    if !CONFIG.yubico_cred_set {
+        err!("`YUBICO_CLIENT_ID` or `YUBICO_SECRET_KEY` environment variable is not set. \
+               Yubikey OTP Disabled")
+    }
+
+    let yubico = Yubico::new();
+    let config = Config::default().set_client_id(CONFIG.yubico_client_id.to_owned()).set_key(CONFIG.yubico_secret_key.to_owned());
+
+    let result = match CONFIG.yubico_server {
+        Some(ref server) => yubico.verify(otp, config.set_api_hosts(vec![server.to_owned()])),
+        None => yubico.verify(otp, config)
+    };
+
+    match result {
+        Ok(_answer) => Ok(Json(json!({}))),
+        Err(_e) => err!("Failed to verify OTP"),
+    }
+}
+
+#[post("/two-factor/get-yubikey", data = "<data>")]
+fn generate_yubikey(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn) -> JsonResult {
+    if !CONFIG.yubico_cred_set {
+        err!("`YUBICO_CLIENT_ID` or `YUBICO_SECRET_KEY` environment variable is not set. \
+               Yubikey OTP Disabled")
+    }
+
+    let data: PasswordData = data.into_inner().data;
+
+    if !headers.user.check_valid_password(&data.MasterPasswordHash) {
+        err!("Invalid password");
+    }
+
+    let user_uuid = &headers.user.uuid;
+    let yubikey_type = TwoFactorType::YubiKey as i32;
+
+    let r = TwoFactor::find_by_user_and_type(user_uuid, yubikey_type, &conn);
+
+    if let Some(r) = r {
+        let yubikey_metadata: YubikeyMetadata =
+            serde_json::from_str(&r.data).expect("Can't parse YubikeyMetadata data");
+
+        let mut result = jsonify_yubikeys(yubikey_metadata.Keys);
+
+        result["Enabled"] = Value::Bool(true);
+        result["Nfc"] = Value::Bool(yubikey_metadata.Nfc);
+        result["Object"] = Value::String("twoFactorU2f".to_owned());
+
+        Ok(Json(result))
+    } else {
+        Ok(Json(json!({
+            "Enabled": false,
+            "Object": "twoFactorU2f",
+        })))
+    }
+}
+
+#[post("/two-factor/yubikey", data = "<data>")]
+fn activate_yubikey(data: JsonUpcase<EnableYubikeyData>, headers: Headers, conn: DbConn) -> JsonResult {
+    let data: EnableYubikeyData = data.into_inner().data;
+
+    if !headers.user.check_valid_password(&data.MasterPasswordHash) {
+        err!("Invalid password");
+    }
+
+    // Check if we already have some data
+    let yubikey_data = TwoFactor::find_by_user_and_type(
+        &headers.user.uuid,
+        TwoFactorType::YubiKey as i32,
+        &conn,
+    );
+
+    if let Some(yubikey_data) = yubikey_data {
+        yubikey_data.delete(&conn).expect("Error deleting current Yubikeys");
+    }
+
+    let yubikeys = parse_yubikeys(&data);
+
+    if yubikeys.len() == 0 {
+        return Ok(Json(json!({
+            "Enabled": false,
+            "Object": "twoFactorU2f",
+        })));
+    }
+
+    // Ensure they are valid OTPs
+    for yubikey in &yubikeys {
+        if yubikey.len() == 12 {
+            // YubiKey ID
+            continue
+        }
+
+        let result = verify_yubikey_otp(yubikey.to_owned());
+
+        if let Err(_e) = result {
+            err!("Invalid Yubikey OTP provided");
+        }
+    }
+
+    let yubikey_ids: Vec<String> = yubikeys.into_iter().map(|x| (&x[..12]).to_owned()).collect();
+
+    let yubikey_metadata = YubikeyMetadata {
+        Keys: yubikey_ids,
+        Nfc: data.Nfc,
+    };
+
+    let yubikey_registration = TwoFactor::new(
+        headers.user.uuid.clone(),
+        TwoFactorType::YubiKey,
+        serde_json::to_string(&yubikey_metadata).unwrap(),
+    );
+    yubikey_registration
+        .save(&conn).expect("Failed to save Yubikey info");
+
+    let mut result = jsonify_yubikeys(yubikey_metadata.Keys);
+
+    result["Enabled"] = Value::Bool(true);
+    result["Nfc"] = Value::Bool(yubikey_metadata.Nfc);
+    result["Object"] = Value::String("twoFactorU2f".to_owned());
+
+    Ok(Json(result))
+}
+
+#[put("/two-factor/yubikey", data = "<data>")]
+fn activate_yubikey_put(data: JsonUpcase<EnableYubikeyData>, headers: Headers, conn: DbConn) -> JsonResult {
+    activate_yubikey(data, headers, conn)
+}
+
+pub fn validate_yubikey_login(user_uuid: &str, response: &str, conn: &DbConn) -> ApiResult<()> {
+    if response.len() != 44 {
+        err!("Invalid Yubikey OTP length");
+    }
+
+    let yubikey_type = TwoFactorType::YubiKey as i32;
+
+    let twofactor = match TwoFactor::find_by_user_and_type(user_uuid, yubikey_type, &conn) {
+        Some(tf) => tf,
+        None => err!("No YubiKey devices registered"),
+    };
+
+    let yubikey_metadata: YubikeyMetadata = serde_json::from_str(&twofactor.data).expect("Can't parse Yubikey Metadata");
+    let response_id = &response[..12];
+
+    if !yubikey_metadata.Keys.contains(&response_id.to_owned()) {
+        err!("Given Yubikey is not registered");
+    }
+
+    let result = verify_yubikey_otp(response.to_owned());
+
+    match result {
+        Ok(_answer) => Ok(()),
+        Err(_e) => err!("Failed to verify Yubikey against OTP server"),
+    }
+}
