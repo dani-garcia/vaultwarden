@@ -2483,7 +2483,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 [[package]]
 name = "yubico"
 version = "0.4.0"
-source = "git+https://github.com/dani-garcia/yubico-rs#f93a88834e4ebaaed0169850ff1a5e32a7d01719"
+source = "git+https://github.com/dani-garcia/yubico-rs#a3a8143611f651d1ff6ec9a2d12599d0aaaea0c6"
 dependencies = [
  "base64 0.10.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "bitflags 1.0.4 (registry+https://github.com/rust-lang/crates.io-index)",
