@@ -143,7 +143,11 @@ fn post_ciphers_admin(data: JsonUpcase<ShareCipherData>, headers: Headers, conn:
     };
 
     share_cipher_by_uuid(&cipher.uuid, data, &headers, &conn, &ws)
+}
 
+#[post("/ciphers/create", data = "<data>")]
+fn post_ciphers_create(data: JsonUpcase<ShareCipherData>, headers: Headers, conn: DbConn, ws: State<WebSocketUsers>) -> JsonResult {
+    post_ciphers_admin(data, headers, conn, ws)
 }
 
 #[post("/ciphers", data = "<data>")]
