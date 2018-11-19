@@ -28,6 +28,7 @@ _*Note, that this project is not associated with the [Bitwarden](https://bitward
   - [Enabling HTTPS](#enabling-https)
   - [Enabling WebSocket notifications](#enabling-websocket-notifications)
   - [Enabling U2F authentication](#enabling-u2f-authentication)
+  - [Enabling YubiKey OTP authentication](#enabling-yubikey-otp-authentication)
   - [Changing persistent data location](#changing-persistent-data-location)
     - [/data prefix:](#data-prefix)
     - [database name and location](#database-name-and-location)
@@ -68,11 +69,11 @@ Basically full implementation of Bitwarden API is provided including:
  * Serving the static files for Vault interface
  * Website icons API
  * Authenticator and U2F support
+ * YubiKey OTP
  
 ## Missing features
 * Email confirmation
 * Other two-factor systems:
-  * YubiKey OTP (if your key supports U2F, you can use that)
   * Duo
   * Email codes
 
@@ -252,6 +253,22 @@ docker run -d --name bitwarden \
 
 Note that the value has to include the `https://` and it may include a port at the end (in the format of `https://bw.domain.tld:port`) when not using `443`.
 
+### Enabling YubiKey OTP authentication
+To enable YubiKey authentication, you must set the `YUBICO_CLIENT_ID` and `YUBICO_SECRET_KEY` env variables.
+
+If `YUBICO_SERVER` is not specified, it will use the default YubiCloud servers. You can generate `YUBICO_CLIENT_ID` and `YUBICO_SECRET_KEY` for the default YubiCloud [here](https://upgrade.yubico.com/getapikey/).
+
+Note: In order to generate API keys or use a YubiKey with an OTP server, it must be registered. After configuring your key in the [YubiKey Personalization Tool](https://www.yubico.com/products/services-software/personalization-tools/use/), you can register it with the default servers [here](https://upload.yubico.com/).
+
+```sh
+docker run -d --name bitwarden \
+  -e YUBICO_CLIENT_ID=12345 \
+  -e YUBICO_SECRET_KEY=ABCDEABCDEABCDEABCDE= \
+  -v /bw-data/:/data/ \
+  -p 80:80 \
+  mprasil/bitwarden:latest
+```
+
 ### Changing persistent data location
 
 #### /data prefix:
@@ -430,10 +447,18 @@ It will setup a fully functional and secure `bitwarden_rs` application in Kubern
 The sqlite3 database should be backed up using the proper sqlite3 backup command. This will ensure the database does not become corrupted if the backup happens during a database write.
 
 ```
+mkdir $DATA_FOLDER/db-backup
 sqlite3 /$DATA_FOLDER/db.sqlite3 ".backup '/$DATA_FOLDER/db-backup/backup.sqlite3'"
 ```
 
-This command can be run via a CRON job everyday, however note that it will overwrite the same `backup.sqlite3` file each time. This backup file should therefore be saved via incremental backup either using a CRON job command that appends a timestamp or from another backup app such as Duplicati. To restore simply overwrite `db.sqlite3` with `backup.sqlite3` (while bitwarden_rs is stopped).
+This command can be run via a CRON job everyday, however note that it will overwrite the same `backup.sqlite3` file each time. This backup file should therefore be saved via incremental backup either using a CRON job command that appends a timestamp or from another backup app such as Duplicati. To restore simply overwrite `db.sqlite3` with `backup.sqlite3` (while bitwarden_rs is stopped). 
+
+Running the above command requires sqlite3 to be installed on the docker host system. You can achieve the same result with a sqlite3 docker container using the following command.
+```
+docker run --rm --volumes-from=bitwarden bruceforce/bw_backup /backup.sh
+```
+
+You can also run a container with integrated cron daemon to automatically backup your database. See https://gitlab.com/1O/bitwarden_rs-backup for examples.
  
 ### 2. the attachments folder
 

@@ -199,6 +199,12 @@ fn twofactor_auth(
             two_factor::validate_u2f_login(user_uuid, &twofactor_code, conn)?;
         }
 
+        Some(TwoFactorType::YubiKey) => {
+            use api::core::two_factor;
+
+            two_factor::validate_yubikey_login(user_uuid, twofactor_code, conn)?;
+        }
+
         _ => err!("Invalid two factor provider"),
     }
 
@@ -250,6 +256,19 @@ fn _json_err_twofactor(providers: &[i32], user_uuid: &str, conn: &DbConn) -> Api
                 let challenge_list_str = serde_json::to_string(&challenge_list).unwrap();
 
                 map.insert("Challenges".into(), Value::String(challenge_list_str));
+                result["TwoFactorProviders2"][provider.to_string()] = Value::Object(map);
+            }
+
+            Some(TwoFactorType::YubiKey) => {
+                let twofactor = match TwoFactor::find_by_user_and_type(user_uuid, TwoFactorType::YubiKey as i32, &conn) {
+                    Some(tf) => tf,
+                    None => err!("No YubiKey devices registered"),
+                };
+
+                let yubikey_metadata: two_factor::YubikeyMetadata = serde_json::from_str(&twofactor.data).expect("Can't parse Yubikey Metadata");
+
+                let mut map = JsonMap::new();
+                map.insert("Nfc".into(), Value::Bool(yubikey_metadata.Nfc));
                 result["TwoFactorProviders2"][provider.to_string()] = Value::Object(map);
             }
 
