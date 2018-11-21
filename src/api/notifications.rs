@@ -219,7 +219,6 @@ impl Factory for WSFactory {
     type Handler = WSHandler;
 
     fn connection_made(&mut self, out: Sender) -> Self::Handler {
-        println!("WS: Connection made");
         WSHandler {
             out,
             user_uuid: None,
@@ -228,12 +227,11 @@ impl Factory for WSFactory {
     }
 
     fn connection_lost(&mut self, handler: Self::Handler) {
-        println!("WS: Connection lost");
-
         // Remove handler
-        let user_uuid = &handler.user_uuid.unwrap();
-        if let Some(mut user_conn) = self.users.map.get_mut(user_uuid) {
-            user_conn.remove_item(&handler.out);
+        if let Some(user_uuid) = &handler.user_uuid {
+            if let Some(mut user_conn) = self.users.map.get_mut(user_uuid) {
+                user_conn.remove_item(&handler.out);
+            }
         }
     }
 }
