@@ -64,7 +64,7 @@ EXPOSE 3012
 COPY .env .
 COPY Rocket.toml .
 COPY --from=vault /web-vault ./web-vault
-COPY --from=build /volume/target/x86_64-unknown-linux-musl/release/bitwarden_rs .
+COPY --from=build /app/target/x86_64-unknown-linux-musl/release/bitwarden_rs .
 
 # Configures the startup!
 CMD ./bitwarden_rs
