@@ -136,7 +136,7 @@ fn get_cipher_details(uuid: String, headers: Headers, conn: DbConn) -> JsonResul
 #[allow(non_snake_case)]
 pub struct CipherData {
     // Id is optional as it is included only in bulk share
-    Id: Option<String>,
+    pub Id: Option<String>,
     // Folder id is not included in import
     FolderId: Option<String>,
     // TODO: Some of these might appear all the time, no need for Option

@@ -1,4 +1,4 @@
-#![feature(proc_macro_hygiene, decl_macro, custom_derive, vec_remove_item, try_trait)]
+#![feature(proc_macro_hygiene, decl_macro, custom_derive, vec_remove_item, try_trait, nll)]
 #![recursion_limit="128"]
 #![allow(proc_macro_derive_resolution_fallback)] // TODO: Remove this when diesel update fixes warnings
 
