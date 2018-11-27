@@ -12,6 +12,7 @@ pub struct Attachment {
     pub cipher_uuid: String,
     pub file_name: String,
     pub file_size: i32,
+    pub key: Option<String>
 }
 
 /// Local methods
@@ -22,6 +23,7 @@ impl Attachment {
             cipher_uuid,
             file_name,
             file_size,
+            key: None
         }
     }
 
@@ -41,6 +43,7 @@ impl Attachment {
             "FileName": self.file_name,
             "Size": self.file_size.to_string(),
             "SizeName": display_size,
+            "Key": self.key,
             "Object": "attachment"
         })
     }
@@ -92,8 +95,8 @@ impl Attachment {
     }
 
     pub fn delete_all_by_cipher(cipher_uuid: &str, conn: &DbConn) -> QueryResult<()> {
-        for attachement in Attachment::find_by_cipher(&cipher_uuid, &conn) {
-            attachement.delete(&conn)?;
+        for attachment in Attachment::find_by_cipher(&cipher_uuid, &conn) {
+            attachment.delete(&conn)?;
         }
         Ok(())
     }

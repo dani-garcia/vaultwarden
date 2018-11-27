@@ -71,7 +71,6 @@ impl Device {
         let time_now = Utc::now().naive_utc();
         self.updated_at = time_now;
 
-
         let orgowner: Vec<_> = orgs.iter().filter(|o| o.type_ == 0).map(|o| o.org_uuid.clone()).collect();
         let orgadmin: Vec<_> = orgs.iter().filter(|o| o.type_ == 1).map(|o| o.org_uuid.clone()).collect();
         let orguser: Vec<_> = orgs.iter().filter(|o| o.type_ == 2).map(|o| o.org_uuid.clone()).collect();

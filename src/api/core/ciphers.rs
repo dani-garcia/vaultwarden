@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashSet, HashMap};
 use std::path::Path;
 
 use rocket::http::ContentType;
@@ -162,6 +162,18 @@ pub struct CipherData {
     Favorite: Option<bool>,
 
     PasswordHistory: Option<Value>,
+
+    // These are used during key rotation
+    #[serde(rename = "Attachments")]
+    _Attachments: Option<Value>, // Unused, contains map of {id: filename}
+    Attachments2: Option<HashMap<String, Attachments2Data>>
+}
+
+#[derive(Deserialize, Debug)]
+#[allow(non_snake_case)]
+pub struct Attachments2Data {
+    FileName: String,
+    Key: String,
 }
 
 #[post("/ciphers/admin", data = "<data>")]
@@ -221,6 +233,28 @@ pub fn update_cipher_from_data(cipher: &mut Cipher, data: CipherData, headers: &
         }
     }
 
+    // Modify attachments name and keys when rotating
+    if let Some(attachments) = data.Attachments2 {
+        for (id, attachment) in attachments {
+            let mut saved_att = match Attachment::find_by_id(&id, &conn) {
+                Some(att) => att,
+                None => err!("Attachment doesn't exist")
+            };
+
+            if saved_att.cipher_uuid != cipher.uuid {
+                err!("Attachment is not owned by the cipher")
+            }
+
+            saved_att.key = Some(attachment.Key);
+            saved_att.file_name = attachment.FileName;
+
+            match saved_att.save(&conn) {
+                Ok(()) => (),
+                Err(_) => err!("Failed to save attachment")
+            };
+        }
+    }
+
     let type_data_opt = match data.Type {
         1 => data.Login,
         2 => data.SecureNote,
@@ -252,7 +286,7 @@ pub fn update_cipher_from_data(cipher: &mut Cipher, data: CipherData, headers: &
 
     match cipher.save(&conn) {
         Ok(()) => (),
-        Err(_) => println!("Error: Failed to save cipher")
+        Err(_) => err!("Failed to save cipher")
     };
     ws.send_cipher_update(ut, &cipher, &cipher.update_users_revision(&conn));
 
@@ -299,7 +333,6 @@ fn post_ciphers_import(data: JsonUpcase<ImportData>, headers: Headers, conn: DbC
     }
 
     // Read the relations between folders and ciphers
-    use std::collections::HashMap;
     let mut relations_map = HashMap::new();
 
     for relation in data.FolderRelationships {
@@ -542,37 +575,52 @@ fn post_attachment(uuid: String, data: Data, content_type: &ContentType, headers
 
     let base_path = Path::new(&CONFIG.attachments_folder).join(&cipher.uuid);
 
+    let mut attachment_key = None;
+
     Multipart::with_body(data.open(), boundary).foreach_entry(|mut field| {
-         // This is provided by the client, don't trust it
-         let name = field.headers.filename.expect("No filename provided");
-
-        let file_name = HEXLOWER.encode(&crypto::get_random(vec![0; 10]));
-        let path = base_path.join(&file_name);
-
-        let size = match field.data.save()
-            .memory_threshold(0)
-            .size_limit(None)
-            .with_path(path) {
-            SaveResult::Full(SavedData::File(_, size)) => size as i32,
-            SaveResult::Full(other) => {
-                println!("Attachment is not a file: {:?}", other);
-                return;
+        match field.headers.name.as_str() {
+            "key" => {
+                use std::io::Read;
+                let mut key_buffer = String::new();
+                if field.data.read_to_string(&mut key_buffer).is_ok() {
+                    attachment_key = Some(key_buffer);
+                }
             },
-            SaveResult::Partial(_, reason) => {
-                println!("Partial result: {:?}", reason);
-                return;
-            },
-            SaveResult::Error(e) => {
-                println!("Error: {:?}", e);
-                return;
-            }
-        };
+            "data" => {                
+                // This is provided by the client, don't trust it
+                let name = field.headers.filename.expect("No filename provided");
 
-        let attachment = Attachment::new(file_name, cipher.uuid.clone(), name, size);
-        match attachment.save(&conn) {
-            Ok(()) => (),
-            Err(_) => println!("Error: failed to save attachment")
-        };
+                let file_name = HEXLOWER.encode(&crypto::get_random(vec![0; 10]));
+                let path = base_path.join(&file_name);
+
+                let size = match field.data.save()
+                    .memory_threshold(0)
+                    .size_limit(None)
+                    .with_path(path) {
+                    SaveResult::Full(SavedData::File(_, size)) => size as i32,
+                    SaveResult::Full(other) => {
+                        println!("Attachment is not a file: {:?}", other);
+                        return;
+                    },
+                    SaveResult::Partial(_, reason) => {
+                        println!("Partial result: {:?}", reason);
+                        return;
+                    },
+                    SaveResult::Error(e) => {
+                        println!("Error: {:?}", e);
+                        return;
+                    }
+                };
+
+                let mut attachment = Attachment::new(file_name, cipher.uuid.clone(), name, size);
+                attachment.key = attachment_key.clone();
+                match attachment.save(&conn) {
+                    Ok(()) => (),
+                    Err(_) => println!("Error: failed to save attachment")
+                };
+            },
+            _ => println!("Error: invalid multipart name")
+        }
     }).expect("Error processing multipart data");
 
     Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, &conn)))
@@ -793,6 +841,6 @@ fn _delete_cipher_attachment_by_id(uuid: &str, attachment_id: &str, headers: &He
             ws.send_cipher_update(UpdateType::SyncCipherDelete, &cipher, &cipher.update_users_revision(&conn));
             Ok(())
         }
-        Err(_) => err!("Deleting attachement failed")
+        Err(_) => err!("Deleting attachment failed")
     }
 }
