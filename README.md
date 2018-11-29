@@ -41,6 +41,10 @@ _*Note, that this project is not associated with the [Bitwarden](https://bitward
   - [Disabling or overriding the Vault interface hosting](#disabling-or-overriding-the-vault-interface-hosting)
   - [Other configuration](#other-configuration)
   - [Fail2Ban Setup](#fail2ban-setup)
+    - [Logging Failed Login Attempts to Syslog](#logging-failed-login-attempts-to-syslog)
+    - [Fail2Ban Filter](#fail2ban-filter)
+    - [Fail2Ban Jail](#fail2ban-jail)
+    - [Testing Fail2Ban](#testing-fail2ban)
 - [Building your own image](#building-your-own-image)
 - [Building binary](#building-binary)
 - [Available packages](#available-packages)
@@ -421,7 +425,7 @@ Though this is unlikely to be required in small deployment, you can fine-tune so
 
 Bitwarden_rs logs failed login attempts to stdout. We need to set this so the host OS can see these. Then we can setup Fail2Ban.
 
-#### Logging failed login attempts to syslog
+#### Logging Failed Login Attempts to Syslog
 
 We need to set the logging driver to syslog so the host OS and Fail2Ban can see them. Add the following to your docker-compose file:
 ```
@@ -454,7 +458,7 @@ ignoreregex =
 ```
 Dont forget to change the '$TAG' to what you set it as from above.
 
-#### Fail2ban Jail
+#### Fail2Ban Jail
 
 Now we need the jail, create the jail file
 ```
