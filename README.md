@@ -40,6 +40,7 @@ _*Note, that this project is not associated with the [Bitwarden](https://bitward
   - [Password hint display](#password-hint-display)
   - [Disabling or overriding the Vault interface hosting](#disabling-or-overriding-the-vault-interface-hosting)
   - [Other configuration](#other-configuration)
+  - [Fail2Ban Setup](#fail2ban-setup)
 - [Building your own image](#building-your-own-image)
 - [Building binary](#building-binary)
 - [Available packages](#available-packages)
