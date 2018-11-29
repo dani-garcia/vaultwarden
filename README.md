@@ -432,7 +432,9 @@ We need to set the logging driver to syslog so the host OS and Fail2Ban can see 
         tag: "$TAG"
 ```
 With the above settings in the docker-compose file. Any failed login attempts will look like this in your syslog file:
-`$DATE $TIME $SERVER $TAG[979]: ERROR: Username or password is incorrect. Try again. IP: XX.XX.XX.XX. Username: email@domain.com.`
+```
+$DATE $TIME $SERVER $TAG[979]: ERROR: Username or password is incorrect. Try again. IP: XX.XX.XX.XX. Username: email@domain.com.
+```
 You can change the '$TAG' to anything you like. Just remember it because it will be in the Fail2Ban filter.
 
 #### Fail2Ban Filter
