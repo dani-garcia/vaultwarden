@@ -5,14 +5,14 @@ authors = ["Daniel García <dani-garcia@users.noreply.github.com>"]
 
 [dependencies]
 # Web framework for nightly with a focus on ease-of-use, expressibility, and speed.
-rocket = { version = "0.4.0-rc.1", features = ["tls"], default-features = false }
-rocket_contrib = "0.4.0-rc.1"
+rocket = { version = "0.4.0-rc.2", features = ["tls"], default-features = false }
+rocket_contrib = "0.4.0-rc.2"
 
 # HTTP client
 reqwest = "0.9.5"
 
 # multipart/form-data support
-multipart = "0.15.3"
+multipart = "0.15.4"
 
 # WebSockets library
 ws = "0.7.9"
