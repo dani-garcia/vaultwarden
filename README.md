@@ -40,6 +40,11 @@ _*Note, that this project is not associated with the [Bitwarden](https://bitward
   - [Password hint display](#password-hint-display)
   - [Disabling or overriding the Vault interface hosting](#disabling-or-overriding-the-vault-interface-hosting)
   - [Other configuration](#other-configuration)
+  - [Fail2Ban Setup](#fail2ban-setup)
+    - [Logging Failed Login Attempts to Syslog](#logging-failed-login-attempts-to-syslog)
+    - [Fail2Ban Filter](#fail2ban-filter)
+    - [Fail2Ban Jail](#fail2ban-jail)
+    - [Testing Fail2Ban](#testing-fail2ban)
 - [Building your own image](#building-your-own-image)
 - [Building binary](#building-binary)
 - [Available packages](#available-packages)
@@ -415,6 +420,71 @@ Note that you can also change the path where bitwarden_rs looks for static files
 ### Other configuration
 
 Though this is unlikely to be required in small deployment, you can fine-tune some other settings like number of workers using environment variables that are processed by [Rocket](https://rocket.rs), please see details in [documentation](https://rocket.rs/guide/configuration/#environment-variables).
+
+### Fail2Ban Setup
+
+Bitwarden_rs logs failed login attempts to stdout. We need to set this so the host OS can see these. Then we can setup Fail2Ban.
+
+#### Logging Failed Login Attempts to Syslog
+
+We need to set the logging driver to syslog so the host OS and Fail2Ban can see them. Add the following to your docker-compose file:
+```
+  bitwarden:
+    logging:
+      driver: "syslog"
+      options:
+        tag: "$TAG"
+```
+With the above settings in the docker-compose file. Any failed login attempts will look like this in your syslog file:
+```
+$DATE $TIME $SERVER $TAG[979]: ERROR: Username or password is incorrect. Try again. IP: XX.XX.XX.XX. Username: email@domain.com.
+```
+You can change the '$TAG' to anything you like. Just remember it because it will be in the Fail2Ban filter.
+
+#### Fail2Ban Filter
+
+Create the filter file
+```
+sudo nano /etc/fail2ban/filter.d/bitwarden.conf
+```
+And add the following
+```
+[INCLUDES]
+before = common.conf
+
+[Definition]
+failregex = ^%(__prefix_line)s.*$TAG.* ERROR: Username or password is incorrect. Try again. IP: <HOST>\. Username:.*$
+ignoreregex =
+```
+Dont forget to change the '$TAG' to what you set it as from above.
+
+#### Fail2Ban Jail
+
+Now we need the jail, create the jail file
+```
+sudo nano /etc/fail2ban/jail.d/bitwarden.local
+```
+and add:
+```
+[bitwarden]
+enabled = true
+port = 80,443,8081
+filter = bitwarden
+action = iptables-allports[name=bitwarden]
+logpath = /var/log/syslog
+maxretry = 3
+bantime = 14400
+findtime = 14400
+```
+Feel free to change the options as you see fit.
+
+#### Testing Fail2Ban
+
+Now just try to login to bitwarden using any email (it doesnt have to be a valid email, just an email format)
+If it works correctly and your IP is banned, you can unban the ip by running:
+```
+sudo fail2ban-client unban XX.XX.XX.XX bitwarden
+```
 
 ## Building your own image
 

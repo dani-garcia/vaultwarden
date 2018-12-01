@@ -39,13 +39,7 @@ RUN apt-get update \
 ENV CARGO_HOME "/root/.cargo"
 ENV USER "root"
 
-# Creates a dummy project used to grab dependencies
-RUN USER=root cargo new --bin app
 WORKDIR /app
-
-# Copies over *only* your manifests and vendored dependencies
-COPY ./Cargo.* ./
-COPY ./rust-toolchain ./rust-toolchain
 
 # Prepare openssl armhf libs
 RUN sed 's/^deb/deb-src/' /etc/apt/sources.list > \
@@ -61,19 +55,12 @@ ENV CROSS_COMPILE="1"
 ENV OPENSSL_INCLUDE_DIR="/usr/include/arm-linux-gnueabihf"
 ENV OPENSSL_LIB_DIR="/usr/lib/arm-linux-gnueabihf"
 
-# Builds your dependencies and removes the
-# dummy project, except the target folder
-# This folder contains the compiled dependencies
-RUN rustup target add armv7-unknown-linux-gnueabihf
-RUN cargo build --release --target=armv7-unknown-linux-gnueabihf -v
-RUN find . -not -path "./target*" -delete
-
 # Copies the complete project
 # To avoid copying unneeded files, use .dockerignore
 COPY . .
 
-# Builds again, this time it'll just be
-# your actual source files being built
+# Build
+RUN rustup target add armv7-unknown-linux-gnueabihf
 RUN cargo build --release --target=armv7-unknown-linux-gnueabihf -v
 
 ######################## RUNTIME IMAGE  ########################

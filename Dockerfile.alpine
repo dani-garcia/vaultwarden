@@ -26,27 +26,17 @@ RUN npm run dist \
 
 ########################## BUILD IMAGE  ##########################
 # Musl build image for statically compiled binary
-FROM clux/muslrust:nightly-2018-08-24 as build
+FROM clux/muslrust:nightly-2018-11-30 as build
 
-# Creates a dummy project used to grab dependencies
-RUN USER=root cargo init --bin
+ENV USER "root"
 
-# Copies over *only* your manifests and vendored dependencies
-COPY ./Cargo.* ./
-COPY ./rust-toolchain ./rust-toolchain
-
-# Builds your dependencies and removes the
-# dummy project, except the target folder
-# This folder contains the compiled dependencies
-RUN cargo build --release
-RUN find . -not -path "./target*" -delete
+WORKDIR /app
 
 # Copies the complete project
 # To avoid copying unneeded files, use .dockerignore
 COPY . .
 
-# Builds again, this time it'll just be
-# your actual source files being built
+# Build
 RUN cargo build --release
 
 ######################## RUNTIME IMAGE  ########################
@@ -75,7 +65,7 @@ EXPOSE 3012
 COPY .env .
 COPY Rocket.toml .
 COPY --from=vault /web-vault ./web-vault
-COPY --from=build /volume/target/x86_64-unknown-linux-musl/release/bitwarden_rs .
+COPY --from=build /app/target/x86_64-unknown-linux-musl/release/bitwarden_rs .
 
 # Configures the startup!
 CMD ./bitwarden_rs
