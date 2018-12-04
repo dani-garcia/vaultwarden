@@ -53,6 +53,9 @@ RUN find . -not -path "./target*" -delete
 # To avoid copying unneeded files, use .dockerignore
 COPY . .
 
+# Make sure that we actually build the project
+RUN touch src/main.rs
+
 # Builds again, this time it'll just be
 # your actual source files being built
 RUN cargo build --release
