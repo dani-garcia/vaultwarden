@@ -16,6 +16,11 @@ extern crate serde_derive;
 #[macro_use]
 extern crate serde_json;
 #[macro_use]
+extern crate log;
+extern crate fern;
+#[cfg(feature = "enable_syslog")]
+extern crate syslog;
+#[macro_use]
 extern crate diesel;
 #[macro_use]
 extern crate diesel_migrations;
@@ -78,6 +83,10 @@ mod migrations {
 }
 
 fn main() {
+    if CONFIG.extended_logging {
+        init_logging().ok();
+    }
+
     check_db();
     check_rsa_keys();
     check_web_vault();
@@ -86,13 +95,60 @@ fn main() {
     init_rocket().launch();
 }
 
+fn init_logging() -> Result<(), fern::InitError> {
+    let mut logger = fern::Dispatch::new()
+    .format(|out, message, record| {
+        out.finish(format_args!(
+            "{}[{}][{}] {}",
+            chrono::Local::now().format("[%Y-%m-%d][%H:%M:%S]"),
+            record.target(),
+            record.level(),
+            message
+        ))
+    })
+    .level(log::LevelFilter::Debug)
+    .level_for("hyper", log::LevelFilter::Warn)
+    .level_for("ws", log::LevelFilter::Info)
+    .chain(std::io::stdout());
+
+    if let Some(log_file) = CONFIG.log_file.as_ref() {
+        logger = logger.chain(fern::log_file(log_file)?);
+    }
+
+    logger = chain_syslog(logger);
+    logger.apply()?;
+
+    Ok(())
+}
+
+#[cfg(not(feature = "enable_syslog"))]
+fn chain_syslog(logger: fern::Dispatch) -> fern::Dispatch { logger }
+
+#[cfg(feature = "enable_syslog")]
+fn chain_syslog(logger: fern::Dispatch) -> fern::Dispatch {
+    let syslog_fmt = syslog::Formatter3164 {
+        facility: syslog::Facility::LOG_USER,
+        hostname: None,
+        process: "bitwarden_rs".into(),
+        pid: 0,
+    };
+
+    match syslog::unix(syslog_fmt) {
+        Ok(sl) => logger.chain(sl),
+        Err(e) => {
+            error!("Unable to connect to syslog: {:?}", e);
+            logger
+        }
+    }
+}
+
 fn check_db() {
     let path = Path::new(&CONFIG.database_url);
 
     if let Some(parent) = path.parent() {
         use std::fs;
         if fs::create_dir_all(parent).is_err() {
-            println!("Error creating database directory");
+            error!("Error creating database directory");
             exit(1);
         }
     }
@@ -107,16 +163,16 @@ fn check_rsa_keys() {
     // If the RSA keys don't exist, try to create them
     if !util::file_exists(&CONFIG.private_rsa_key)
         || !util::file_exists(&CONFIG.public_rsa_key) {
-        println!("JWT keys don't exist, checking if OpenSSL is available...");
+        info!("JWT keys don't exist, checking if OpenSSL is available...");
 
         Command::new("openssl")
             .arg("version")
             .output().unwrap_or_else(|_| {
-            println!("Can't create keys because OpenSSL is not available, make sure it's installed and available on the PATH");
+            info!("Can't create keys because OpenSSL is not available, make sure it's installed and available on the PATH");
             exit(1);
         });
 
-        println!("OpenSSL detected, creating keys...");
+        info!("OpenSSL detected, creating keys...");
 
         let mut success = Command::new("openssl").arg("genrsa")
             .arg("-out").arg(&CONFIG.private_rsa_key_pem)
@@ -140,9 +196,9 @@ fn check_rsa_keys() {
             .status.success();
 
         if success {
-            println!("Keys created correctly.");
+            info!("Keys created correctly.");
         } else {
-            println!("Error creating keys, exiting...");
+            error!("Error creating keys, exiting...");
             exit(1);
         }
     }
@@ -156,7 +212,7 @@ fn check_web_vault() {
     let index_path = Path::new(&CONFIG.web_vault_folder).join("index.html");
 
     if !index_path.exists() {
-        println!("Web vault is not found. Please follow the steps in the README to install it");
+        error!("Web vault is not found. Please follow the steps in the README to install it");
         exit(1);
     }
 }
@@ -187,7 +243,7 @@ impl MailConfig {
         };
 
         let smtp_from = get_env("SMTP_FROM").unwrap_or_else(|| {
-            println!("Please specify SMTP_FROM to enable SMTP support.");
+            error!("Please specify SMTP_FROM to enable SMTP support.");
             exit(1);
         });
 
@@ -203,7 +259,7 @@ impl MailConfig {
         let smtp_username = get_env("SMTP_USERNAME");
         let smtp_password = get_env("SMTP_PASSWORD").or_else(|| {
             if smtp_username.as_ref().is_some() {
-                println!("SMTP_PASSWORD is mandatory when specifying SMTP_USERNAME.");
+                error!("SMTP_PASSWORD is mandatory when specifying SMTP_USERNAME.");
                 exit(1);
             } else {
                 None
@@ -236,6 +292,9 @@ pub struct Config {
 
     websocket_enabled: bool,
     websocket_url: String,
+
+    extended_logging: bool,
+    log_file: Option<String>,
 
     local_icon_extractor: bool,
     signups_allowed: bool,
@@ -282,6 +341,9 @@ impl Config {
 
             websocket_enabled: get_env_or("WEBSOCKET_ENABLED", false),
             websocket_url: format!("{}:{}", get_env_or("WEBSOCKET_ADDRESS", "0.0.0.0".to_string()), get_env_or("WEBSOCKET_PORT", 3012)),
+            
+            extended_logging: get_env_or("EXTENDED_LOGGING", true),
+            log_file: get_env("LOG_FILE"),
 
             local_icon_extractor: get_env_or("LOCAL_ICON_EXTRACTOR", false),
             signups_allowed: get_env_or("SIGNUPS_ALLOWED", true),

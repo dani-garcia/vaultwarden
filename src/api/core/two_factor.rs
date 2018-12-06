@@ -243,7 +243,7 @@ fn _generate_recover_code(user: &mut User, conn: &DbConn) {
         let totp_recover = BASE32.encode(&crypto::get_random(vec![0u8; 20]));
         user.totp_recover = Some(totp_recover);
         if user.save(conn).is_err() {
-            println!("Error: Failed to save the user's two factor recovery code")
+            error!("Failed to save the user's two factor recovery code")
         }
     }
 }
@@ -400,7 +400,7 @@ fn activate_u2f(data: JsonUpcase<EnableU2FData>, headers: Headers, conn: DbConn)
                 })))
             }
             Err(e) => {
-                println!("Error: {:#?}", e);
+                error!("{:#?}", e);
                 err!("Error activating u2f")
             }
         }
@@ -504,11 +504,11 @@ pub fn validate_u2f_login(user_uuid: &str, response: &str, conn: &DbConn) -> Api
         match response {
             Ok(new_counter) => {
                 _counter = new_counter;
-                println!("O {:#}", new_counter);
+                info!("O {:#}", new_counter);
                 return Ok(());
             }
             Err(e) => {
-                println!("E {:#}", e);
+                info!("E {:#}", e);
                 break;
             }
         }

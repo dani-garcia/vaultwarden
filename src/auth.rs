@@ -51,7 +51,7 @@ pub fn decode_jwt(token: &str) -> Result<JWTClaims, String> {
     match jwt::decode(token, &PUBLIC_RSA_KEY, &validation) {
         Ok(decoded) => Ok(decoded.claims),
         Err(msg) => {
-            println!("Error validating jwt - {:#?}", msg);
+            error!("Error validating jwt - {:#?}", msg);
             Err(msg.to_string())
         }
     }

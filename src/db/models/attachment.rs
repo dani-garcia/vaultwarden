@@ -78,11 +78,11 @@ impl Attachment {
                 Ok(_) => break,
                 Err(err) => {
                     if retries < 1 {
-                        println!("ERROR: Failed with 10 retries");
+                        error!("Failed with 10 retries");
                         return Err(err)
                     } else {
                         retries -= 1;
-                        println!("Had to retry! Retries left: {}", retries);
+                        info!("Had to retry! Retries left: {}", retries);
                         thread::sleep(time::Duration::from_millis(500));
                         continue
                     }

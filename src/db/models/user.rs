@@ -180,7 +180,7 @@ impl User {
     pub fn update_uuid_revision(uuid: &str, conn: &DbConn) {
         if let Some(mut user) = User::find_by_uuid(&uuid, conn) {
             if user.update_revision(conn).is_err(){
-                println!("Warning: Failed to update revision for {}", user.email);
+                warn!("Failed to update revision for {}", user.email);
             };
         };
     }

@@ -599,15 +599,15 @@ fn post_attachment(uuid: String, data: Data, content_type: &ContentType, headers
                     .with_path(path) {
                     SaveResult::Full(SavedData::File(_, size)) => size as i32,
                     SaveResult::Full(other) => {
-                        println!("Attachment is not a file: {:?}", other);
+                        error!("Attachment is not a file: {:?}", other);
                         return;
                     },
                     SaveResult::Partial(_, reason) => {
-                        println!("Partial result: {:?}", reason);
+                        error!("Partial result: {:?}", reason);
                         return;
                     },
                     SaveResult::Error(e) => {
-                        println!("Error: {:?}", e);
+                        error!("Error: {:?}", e);
                         return;
                     }
                 };
@@ -616,10 +616,10 @@ fn post_attachment(uuid: String, data: Data, content_type: &ContentType, headers
                 attachment.key = attachment_key.clone();
                 match attachment.save(&conn) {
                     Ok(()) => (),
-                    Err(_) => println!("Error: failed to save attachment")
+                    Err(_) => error!("Failed to save attachment")
                 };
             },
-            _ => println!("Error: invalid multipart name")
+            _ => error!("Invalid multipart name")
         }
     }).expect("Error processing multipart data");
 
@@ -751,7 +751,7 @@ fn move_cipher_selected(data: JsonUpcase<Value>, headers: Headers, conn: DbConn,
         }
         match cipher.save(&conn) {
             Ok(()) => (),
-            Err(_) => println!("Error: Failed to save cipher")
+            Err(_) => err!("Failed to save cipher")
         };
         ws.send_cipher_update(UpdateType::SyncCipherUpdate, &cipher, &cipher.update_users_revision(&conn));
     }

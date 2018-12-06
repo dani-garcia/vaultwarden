@@ -4,7 +4,7 @@
 #[macro_export]
 macro_rules! err {
     ($err:expr, $msg:expr) => {{
-        println!("ERROR: {}", $msg);
+        error!("{}", $msg);
         err_json!(json!({
         "error": $err,
         "error_description": $err,
@@ -30,7 +30,7 @@ macro_rules! err_json {
 #[macro_export]
 macro_rules! err_handler {
     ($expr:expr) => {{
-        println!("ERROR: {}", $expr);
+        error!("{}", $expr);
         return $crate::rocket::Outcome::Failure(($crate::rocket::http::Status::Unauthorized, $expr));
     }}
 }
