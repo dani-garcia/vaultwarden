@@ -40,10 +40,8 @@ use db::models::*;
 use api::{JsonResult, EmptyResult, JsonUpcase};
 use auth::Headers;
 
-#[put("/devices/identifier/<uuid>/clear-token", data = "<data>")]
-fn clear_device_token(uuid: String, data: JsonUpcase<Value>, headers: Headers, conn: DbConn) -> EmptyResult {
-    let _data: Value = data.into_inner().data;
-    
+#[put("/devices/identifier/<uuid>/clear-token")]
+fn clear_device_token(uuid: String, headers: Headers, conn: DbConn) -> EmptyResult {
     let device = match Device::find_by_uuid(&uuid, &conn) {
         Some(device) => device,
         None => err!("Device not found")
@@ -53,16 +51,16 @@ fn clear_device_token(uuid: String, data: JsonUpcase<Value>, headers: Headers, c
         err!("Device not owned by user")
     }
 
-    match device.delete(&conn) {
-        Ok(()) => Ok(()),
-        Err(_) => err!("Failed deleting device")
-    }
+    // This only clears push token
+    // https://github.com/bitwarden/core/blob/master/src/Api/Controllers/DevicesController.cs#L109
+    // https://github.com/bitwarden/core/blob/master/src/Core/Services/Implementations/DeviceService.cs#L37
+    Ok(())
 }
 
 #[put("/devices/identifier/<uuid>/token", data = "<data>")]
 fn put_device_token(uuid: String, data: JsonUpcase<Value>, headers: Headers, conn: DbConn) -> JsonResult {
     let _data: Value = data.into_inner().data;
-    
+
     let device = match Device::find_by_uuid(&uuid, &conn) {
         Some(device) => device,
         None => err!("Device not found")
@@ -72,9 +70,17 @@ fn put_device_token(uuid: String, data: JsonUpcase<Value>, headers: Headers, con
         err!("Device not owned by user")
     }
 
-    // TODO: What does this do?
+    // This should save the push token, but we don't have push functionality
 
-    err!("Not implemented")
+    use util::format_date;
+
+    Ok(Json(json!({
+        "Id": device.uuid,
+        "Name": device.name,
+        "Type": device.type_,
+        "Identifier": device.uuid,
+        "CreationDate": format_date(&device.created_at),
+    })))
 }
 
 #[derive(Serialize, Deserialize, Debug)]
