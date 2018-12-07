@@ -28,28 +28,22 @@ pub fn routes() -> Vec<Route> {
 ///
 /// Move this somewhere else
 ///
-
 use rocket::Route;
 
 use rocket_contrib::json::Json;
 use serde_json::Value;
 
 use crate::db::DbConn;
-use crate::db::models::*;
 
-use crate::api::{JsonResult, EmptyResult, JsonUpcase};
+use crate::api::{EmptyResult, JsonResult, JsonUpcase};
 use crate::auth::Headers;
 
 #[put("/devices/identifier/<uuid>/clear-token")]
-fn clear_device_token(uuid: String, headers: Headers, conn: DbConn) -> EmptyResult {
-    let device = match Device::find_by_uuid(&uuid, &conn) {
-        Some(device) => device,
-        None => err!("Device not found")
-    };
+fn clear_device_token(uuid: String) -> EmptyResult {
+    // This endpoint doesn't have auth header
 
-    if device.user_uuid != headers.user.uuid {
-        err!("Device not owned by user")
-    }
+    let _ = uuid;
+    // uuid is not related to deviceId
 
     // This only clears push token
     // https://github.com/bitwarden/core/blob/master/src/Api/Controllers/DevicesController.cs#L109
@@ -58,28 +52,20 @@ fn clear_device_token(uuid: String, headers: Headers, conn: DbConn) -> EmptyResu
 }
 
 #[put("/devices/identifier/<uuid>/token", data = "<data>")]
-fn put_device_token(uuid: String, data: JsonUpcase<Value>, headers: Headers, conn: DbConn) -> JsonResult {
+fn put_device_token(uuid: String, data: JsonUpcase<Value>, headers: Headers) -> JsonResult {
     let _data: Value = data.into_inner().data;
+    // Data has a single string value "PushToken"
+    let _ = uuid;
+    // uuid is not related to deviceId
 
-    let device = match Device::find_by_uuid(&uuid, &conn) {
-        Some(device) => device,
-        None => err!("Device not found")
-    };
-
-    if device.user_uuid != headers.user.uuid {
-        err!("Device not owned by user")
-    }
-
-    // This should save the push token, but we don't have push functionality
-
-    use crate::util::format_date;
+    // TODO: This should save the push token, but we don't have push functionality
 
     Ok(Json(json!({
-        "Id": device.uuid,
-        "Name": device.name,
-        "Type": device.type_,
-        "Identifier": device.uuid,
-        "CreationDate": format_date(&device.created_at),
+        "Id": headers.device.uuid,
+        "Name": headers.device.name,
+        "Type": headers.device.type_,
+        "Identifier": headers.device.uuid,
+        "CreationDate": crate::util::format_date(&headers.device.created_at),
     })))
 }
 
@@ -114,7 +100,6 @@ fn get_eq_domains(headers: Headers) -> JsonResult {
     })))
 }
 
-
 #[derive(Deserialize, Debug)]
 #[allow(non_snake_case)]
 struct EquivDomainData {
@@ -137,9 +122,8 @@ fn post_eq_domains(data: JsonUpcase<EquivDomainData>, headers: Headers, conn: Db
 
     match user.save(&conn) {
         Ok(()) => Ok(Json(json!({}))),
-        Err(_) => err!("Failed to save user")
+        Err(_) => err!("Failed to save user"),
     }
-
 }
 
 #[put("/settings/domains", data = "<data>")]

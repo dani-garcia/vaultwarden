@@ -24,6 +24,9 @@ mod auth;
 mod mail;
 
 fn init_rocket() -> Rocket {
+
+    // TODO: TO HIDE MOUNTING LOG, call ignite, set logging to disabled, call all the mounts, and then enable it again
+    
     rocket::ignite()
         .mount("/", api::web_routes())
         .mount("/api", api::core_routes())
@@ -77,6 +80,7 @@ fn init_logging() -> Result<(), fern::InitError> {
     .level(log::LevelFilter::Debug)
     .level_for("hyper", log::LevelFilter::Warn)
     .level_for("ws", log::LevelFilter::Info)
+    .level_for("multipart", log::LevelFilter::Info)
     .chain(std::io::stdout());
 
     if let Some(log_file) = CONFIG.log_file.as_ref() {
