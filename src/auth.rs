@@ -192,7 +192,7 @@ impl<'a, 'r> FromRequest<'a, 'r> for OrgHeaders {
 
     fn from_request(request: &'a Request<'r>) -> request::Outcome<Self, Self::Error> {
         match request.guard::<Headers>() {
-            Outcome::Forward(f) => Outcome::Forward(f),
+            Outcome::Forward(_) => Outcome::Forward(()),
             Outcome::Failure(f) => Outcome::Failure(f),
             Outcome::Success(headers) => {
                 // org_id is expected to be the second param ("/organizations/<org_id>")
@@ -225,7 +225,7 @@ impl<'a, 'r> FromRequest<'a, 'r> for OrgHeaders {
                             device: headers.device,
                             user: headers.user,
                             org_user_type: { 
-                                if let Some(org_usr_type) = UserOrgType::from_i32(&org_user.type_) {
+                                if let Some(org_usr_type) = UserOrgType::from_i32(org_user.type_) {
                                     org_usr_type
                                 } else { // This should only happen if the DB is corrupted
                                     err_handler!("Unknown user type in the database")
@@ -252,7 +252,7 @@ impl<'a, 'r> FromRequest<'a, 'r> for AdminHeaders {
 
     fn from_request(request: &'a Request<'r>) -> request::Outcome<Self, Self::Error> {
         match request.guard::<OrgHeaders>() {
-            Outcome::Forward(f) => Outcome::Forward(f),
+            Outcome::Forward(_) => Outcome::Forward(()),
             Outcome::Failure(f) => Outcome::Failure(f),
             Outcome::Success(headers) => {
                 if headers.org_user_type >= UserOrgType::Admin {
@@ -281,7 +281,7 @@ impl<'a, 'r> FromRequest<'a, 'r> for OwnerHeaders {
 
     fn from_request(request: &'a Request<'r>) -> request::Outcome<Self, Self::Error> {
         match request.guard::<OrgHeaders>() {
-            Outcome::Forward(f) => Outcome::Forward(f),
+            Outcome::Forward(_) => Outcome::Forward(()),
             Outcome::Failure(f) => Outcome::Failure(f),
             Outcome::Success(headers) => {
                 if headers.org_user_type == UserOrgType::Owner {

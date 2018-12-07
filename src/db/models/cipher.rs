@@ -232,7 +232,7 @@ impl Cipher {
     }
 
     pub fn is_write_accessible_to_user(&self, user_uuid: &str, conn: &DbConn) -> bool {
-        match ciphers::table
+        ciphers::table
         .filter(ciphers::uuid.eq(&self.uuid))
         .left_join(users_organizations::table.on(
             ciphers::organization_uuid.eq(users_organizations::org_uuid.nullable()).and(
@@ -253,14 +253,11 @@ impl Cipher {
             )
         ))
         .select(ciphers::all_columns)
-        .first::<Self>(&**conn).ok() {
-            Some(_) => true,
-            None => false
-        }
+        .first::<Self>(&**conn).ok().is_some()
     }
 
     pub fn is_accessible_to_user(&self, user_uuid: &str, conn: &DbConn) -> bool {
-        match ciphers::table
+        ciphers::table
         .filter(ciphers::uuid.eq(&self.uuid))
         .left_join(users_organizations::table.on(
             ciphers::organization_uuid.eq(users_organizations::org_uuid.nullable()).and(
@@ -279,10 +276,7 @@ impl Cipher {
             )
         ))
         .select(ciphers::all_columns)
-        .first::<Self>(&**conn).ok() {
-            Some(_) => true,
-            None => false
-        }
+        .first::<Self>(&**conn).ok().is_some()
     }
 
     pub fn get_folder_uuid(&self, user_uuid: &str, conn: &DbConn) -> Option<String> {

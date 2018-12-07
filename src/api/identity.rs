@@ -93,7 +93,7 @@ fn _password_login(data: ConnectData, conn: DbConn, remote: Option<SocketAddr>) 
     }
 
     let device_type = util::try_parse_string(data.device_type.as_ref()).unwrap_or(0);
-    let device_id = data.device_identifier.clone().unwrap_or_else(|| crate::util::get_uuid());
+    let device_id = data.device_identifier.clone().unwrap_or_else(crate::util::get_uuid);
     let device_name = data.device_name.clone().unwrap_or("unknown_device".into());
 
     // Find device or create new

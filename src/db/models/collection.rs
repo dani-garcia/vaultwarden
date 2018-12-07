@@ -148,15 +148,12 @@ impl Collection {
                if user_org.access_all {
                    true
                } else {
-                   match users_collections::table.inner_join(collections::table)
+                   users_collections::table.inner_join(collections::table)
                    .filter(users_collections::collection_uuid.eq(&self.uuid))
                    .filter(users_collections::user_uuid.eq(&user_uuid))
                    .filter(users_collections::read_only.eq(false))
                    .select(collections::all_columns)
-                   .first::<Self>(&**conn).ok() {
-                       None => false, // Read only or no access to collection
-                       Some(_) => true,
-                   }
+                   .first::<Self>(&**conn).ok().is_some() // Read only or no access to collection
                }
             }
         }

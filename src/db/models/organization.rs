@@ -77,10 +77,10 @@ impl PartialEq<i32> for UserOrgType {
 
 impl PartialOrd<i32> for UserOrgType {
     fn partial_cmp(&self, other: &i32) -> Option<Ordering> {
-        if let Some(other) = Self::from_i32(other) {
+        if let Some(other) = Self::from_i32(*other) {
             return Some(self.cmp(&other))
         }
-        return None
+        None
     }
 
     fn gt(&self, other: &i32) -> bool {
@@ -107,10 +107,10 @@ impl PartialEq<UserOrgType> for i32 {
 
 impl PartialOrd<UserOrgType> for i32 {
     fn partial_cmp(&self, other: &UserOrgType) -> Option<Ordering> {
-        if let Some(self_type) = UserOrgType::from_i32(self) {
+        if let Some(self_type) = UserOrgType::from_i32(*self) {
             return Some(self_type.cmp(other))
         }
-        return None
+        None
     }
 
     fn lt(&self, other: &UserOrgType) -> bool {
@@ -140,7 +140,7 @@ impl UserOrgType {
         }
     }
 
-    pub fn from_i32(i: &i32) -> Option<Self> {
+    pub fn from_i32(i: i32) -> Option<Self> {
         match i {
             0 => Some(UserOrgType::Owner),
             1 => Some(UserOrgType::Admin),

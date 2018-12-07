@@ -180,7 +180,7 @@ pub struct Attachments2Data {
 fn post_ciphers_admin(data: JsonUpcase<ShareCipherData>, headers: Headers, conn: DbConn, ws: State<WebSocketUsers>) -> JsonResult {
     let data: ShareCipherData = data.into_inner().data;
 
-    let mut cipher = Cipher::new(data.Cipher.Type.clone(), data.Cipher.Name.clone());
+    let mut cipher = Cipher::new(data.Cipher.Type, data.Cipher.Name.clone());
     cipher.user_uuid = Some(headers.user.uuid.clone());
     match cipher.save(&conn) {
         Ok(()) => (),

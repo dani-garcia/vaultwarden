@@ -568,9 +568,8 @@ fn parse_yubikeys(data: &EnableYubikeyData) -> Vec<String> {
 fn jsonify_yubikeys(yubikeys: Vec<String>) -> serde_json::Value {
     let mut result = json!({});
 
-    for i in 0..yubikeys.len() {
-        let ref key = &yubikeys[i];
-        result[format!("Key{}", i+1)] = Value::String(key.to_string());
+    for (i, key) in yubikeys.into_iter().enumerate() {
+        result[format!("Key{}", i+1)] = Value::String(key);
     }
 
     result
@@ -654,7 +653,7 @@ fn activate_yubikey(data: JsonUpcase<EnableYubikeyData>, headers: Headers, conn:
 
     let yubikeys = parse_yubikeys(&data);
 
-    if yubikeys.len() == 0 {
+    if yubikeys.is_empty() {
         return Ok(Json(json!({
             "Enabled": false,
             "Object": "twoFactorU2f",
