@@ -1,8 +1,6 @@
 use chrono::{NaiveDateTime, Utc};
 use serde_json::Value;
 
-use uuid::Uuid;
-
 use crate::crypto;
 use crate::CONFIG;
 
@@ -50,7 +48,7 @@ impl User {
         let email = mail.to_lowercase();
 
         Self {
-            uuid: Uuid::new_v4().to_string(),
+            uuid: crate::util::get_uuid(),
             created_at: now,
             updated_at: now,
             name: email.clone(),
@@ -61,7 +59,7 @@ impl User {
             salt: crypto::get_random_64(),
             password_iterations: CONFIG.password_iterations,
 
-            security_stamp: Uuid::new_v4().to_string(),
+            security_stamp: crate::util::get_uuid(),
 
             password_hint: None,
             private_key: None,
@@ -100,7 +98,7 @@ impl User {
     }
 
     pub fn reset_security_stamp(&mut self) {
-        self.security_stamp = Uuid::new_v4().to_string();
+        self.security_stamp = crate::util::get_uuid();
     }
 
     pub fn is_server_admin(&self) -> bool {

@@ -92,9 +92,9 @@ fn _password_login(data: ConnectData, conn: DbConn, remote: Option<SocketAddr>) 
         ))
     }
 
-    let device_type: i32 = util::try_parse_string(data.device_type.as_ref()).expect("Invalid type");
-    let device_id = data.device_identifier.clone().expect("Missing device id");
-    let device_name = data.device_name.clone().expect("Missing device name");
+    let device_type = util::try_parse_string(data.device_type.as_ref()).unwrap_or(0);
+    let device_id = data.device_identifier.clone().unwrap_or_else(|| crate::util::get_uuid());
+    let device_name = data.device_name.clone().unwrap_or("unknown_device".into());
 
     // Find device or create new
     let mut device = match Device::find_by_uuid(&device_id, &conn) {
@@ -325,10 +325,7 @@ fn validate_data(data: &ConnectData) -> EmptyResult {
             _check_is_some(&data.client_id, "client_id cannot be blank")?;
             _check_is_some(&data.password, "password cannot be blank")?;
             _check_is_some(&data.scope, "scope cannot be blank")?;
-            _check_is_some(&data.username, "username cannot be blank")?;
-            _check_is_some(&data.device_identifier, "device_identifier cannot be blank")?;
-            _check_is_some(&data.device_name, "device_name cannot be blank")?;
-            _check_is_some(&data.device_type, "device_type cannot be blank")
+            _check_is_some(&data.username, "username cannot be blank")
         }
     }
 }

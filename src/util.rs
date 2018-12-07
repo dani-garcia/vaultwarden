@@ -92,6 +92,10 @@ pub fn get_display_size(size: i32) -> String {
     format!("{} {}", size, UNITS[unit_counter])
 }
 
+pub fn get_uuid() -> String {
+    uuid::Uuid::new_v4().to_string()
+}
+
 
 ///
 /// String util methods

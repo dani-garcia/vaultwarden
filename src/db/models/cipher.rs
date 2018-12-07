@@ -1,8 +1,6 @@
 use chrono::{NaiveDateTime, Utc};
 use serde_json::Value;
 
-use uuid::Uuid;
-
 use super::{User, Organization, Attachment, FolderCipher, CollectionCipher, UserOrganization, UserOrgType, UserOrgStatus};
 
 #[derive(Debug, Identifiable, Queryable, Insertable, Associations)]
@@ -41,7 +39,7 @@ impl Cipher {
         let now = Utc::now().naive_utc();
 
         Self {
-            uuid: Uuid::new_v4().to_string(),
+            uuid: crate::util::get_uuid(),
             created_at: now,
             updated_at: now,
 

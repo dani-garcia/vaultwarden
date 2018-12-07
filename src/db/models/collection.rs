@@ -1,7 +1,5 @@
 use serde_json::Value;
 
-use uuid::Uuid;
-
 use super::{Organization, UserOrganization, UserOrgType, UserOrgStatus};
 
 #[derive(Debug, Identifiable, Queryable, Insertable, Associations)]
@@ -18,7 +16,7 @@ pub struct Collection {
 impl Collection {
     pub fn new(org_uuid: String, name: String) -> Self {
         Self {
-            uuid: Uuid::new_v4().to_string(),
+            uuid: crate::util::get_uuid(),
 
             org_uuid,
             name,

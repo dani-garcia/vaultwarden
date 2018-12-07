@@ -1,7 +1,6 @@
 use std::cmp::Ordering;
 use serde_json::Value;
 
-use uuid::Uuid;
 use super::{User, CollectionUser, Invitation};
 
 #[derive(Debug, Identifiable, Queryable, Insertable)]
@@ -159,7 +158,7 @@ impl Organization {
 
     pub fn new(name: String, billing_email: String) -> Self {
         Self {
-            uuid: Uuid::new_v4().to_string(),
+            uuid: crate::util::get_uuid(),
 
             name,
             billing_email,
@@ -206,7 +205,7 @@ impl Organization {
 impl UserOrganization {
     pub fn new(user_uuid: String, org_uuid: String) -> Self {
         Self {
-            uuid: Uuid::new_v4().to_string(),
+            uuid: crate::util::get_uuid(),
 
             user_uuid,
             org_uuid,

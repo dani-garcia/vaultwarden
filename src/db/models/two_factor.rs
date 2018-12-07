@@ -1,7 +1,5 @@
 use serde_json::Value;
 
-use uuid::Uuid;
-
 use super::User;
 
 #[derive(Debug, Identifiable, Queryable, Insertable, Associations)]
@@ -36,7 +34,7 @@ pub enum TwoFactorType {
 impl TwoFactor {
     pub fn new(user_uuid: String, type_: TwoFactorType, data: String) -> Self {
         Self {
-            uuid: Uuid::new_v4().to_string(),
+            uuid: crate::util::get_uuid(),
             user_uuid,
             type_: type_ as i32,
             enabled: true,
