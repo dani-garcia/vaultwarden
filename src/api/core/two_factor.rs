@@ -4,15 +4,15 @@ use serde_json;
 use serde_json::Value;
 
 
-use db::{
+use crate::db::{
     models::{TwoFactor, TwoFactorType, User},
     DbConn,
 };
 
-use crypto;
+use crate::crypto;
 
-use api::{ApiResult, JsonResult, JsonUpcase, NumberOrString, PasswordData};
-use auth::Headers;
+use crate::api::{ApiResult, JsonResult, JsonUpcase, NumberOrString, PasswordData};
+use crate::auth::Headers;
 
 use rocket::Route;
 
@@ -74,7 +74,7 @@ struct RecoverTwoFactor {
 fn recover(data: JsonUpcase<RecoverTwoFactor>, conn: DbConn) -> JsonResult {
     let data: RecoverTwoFactor = data.into_inner().data;
 
-    use db::models::User;
+    use crate::db::models::User;
 
     // Get the user
     let mut user = match User::find_by_mail(&data.Email, &conn) {
@@ -252,7 +252,7 @@ use u2f::messages::{RegisterResponse, SignResponse, U2fSignRequest};
 use u2f::protocol::{Challenge, U2f};
 use u2f::register::Registration;
 
-use CONFIG;
+use crate::CONFIG;
 
 const U2F_VERSION: &str = "U2F_V2";
 

@@ -2,11 +2,11 @@ use rocket::State;
 use rocket_contrib::json::Json;
 use serde_json::Value;
 
-use db::DbConn;
-use db::models::*;
+use crate::db::DbConn;
+use crate::db::models::*;
 
-use api::{JsonResult, EmptyResult, JsonUpcase, WebSocketUsers, UpdateType};
-use auth::Headers;
+use crate::api::{JsonResult, EmptyResult, JsonUpcase, WebSocketUsers, UpdateType};
+use crate::auth::Headers;
 
 use rocket::Route;
 

@@ -3,12 +3,12 @@ use rocket::request::Form;
 use rocket_contrib::json::Json;
 use serde_json::Value;
 
-use CONFIG;
-use db::DbConn;
-use db::models::*;
+use crate::CONFIG;
+use crate::db::DbConn;
+use crate::db::models::*;
 
-use api::{PasswordData, JsonResult, EmptyResult, NumberOrString, JsonUpcase, WebSocketUsers, UpdateType};
-use auth::{Headers, AdminHeaders, OwnerHeaders};
+use crate::api::{PasswordData, JsonResult, EmptyResult, NumberOrString, JsonUpcase, WebSocketUsers, UpdateType};
+use crate::auth::{Headers, AdminHeaders, OwnerHeaders};
 
 use serde::{Deserialize, Deserializer};
 

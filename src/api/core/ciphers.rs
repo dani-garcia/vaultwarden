@@ -12,15 +12,15 @@ use multipart::server::{Multipart, SaveResult};
 
 use data_encoding::HEXLOWER;
 
-use db::models::*;
-use db::DbConn;
+use crate::db::models::*;
+use crate::db::DbConn;
 
-use crypto;
+use crate::crypto;
 
-use api::{self, EmptyResult, JsonResult, JsonUpcase, PasswordData, UpdateType, WebSocketUsers};
-use auth::Headers;
+use crate::api::{self, EmptyResult, JsonResult, JsonUpcase, PasswordData, UpdateType, WebSocketUsers};
+use crate::auth::Headers;
 
-use CONFIG;
+use crate::CONFIG;
 
 pub fn routes() -> Vec<Route> {
     routes![

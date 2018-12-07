@@ -43,7 +43,7 @@ impl Folder {
     }
 
     pub fn to_json(&self) -> Value {
-        use util::format_date;
+        use crate::util::format_date;
 
         json!({
             "Id": self.uuid,
@@ -65,8 +65,8 @@ impl FolderCipher {
 
 use diesel;
 use diesel::prelude::*;
-use db::DbConn;
-use db::schema::{folders, folders_ciphers};
+use crate::db::DbConn;
+use crate::db::schema::{folders, folders_ciphers};
 
 /// Database methods
 impl Folder {

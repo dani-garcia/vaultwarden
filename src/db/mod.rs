@@ -9,7 +9,7 @@ use rocket::http::Status;
 use rocket::request::{self, FromRequest};
 use rocket::{Outcome, Request, State};
 
-use CONFIG;
+use crate::CONFIG;
 
 /// An alias to the database connection used
 type Connection = SqliteConnection;

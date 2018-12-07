@@ -78,8 +78,8 @@ impl TwoFactor {
 
 use diesel;
 use diesel::prelude::*;
-use db::DbConn;
-use db::schema::twofactor;
+use crate::db::DbConn;
+use crate::db::schema::twofactor;
 
 /// Database methods
 impl TwoFactor {

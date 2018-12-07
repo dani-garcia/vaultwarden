@@ -45,7 +45,7 @@ impl Device {
 
     pub fn refresh_twofactor_remember(&mut self) -> String {
         use data_encoding::BASE64;
-        use crypto;
+        use crate::crypto;
 
         let twofactor_remember = BASE64.encode(&crypto::get_random(vec![0u8; 180]));
         self.twofactor_remember = Some(twofactor_remember.clone());
@@ -62,7 +62,7 @@ impl Device {
         // If there is no refresh token, we create one
         if self.refresh_token.is_empty() {
             use data_encoding::BASE64URL;
-            use crypto;
+            use crate::crypto;
 
             self.refresh_token = BASE64URL.encode(&crypto::get_random_64());
         }
@@ -77,7 +77,7 @@ impl Device {
 
 
         // Create the JWT claims struct, to send to the client
-        use auth::{encode_jwt, JWTClaims, DEFAULT_VALIDITY, JWT_ISSUER};
+        use crate::auth::{encode_jwt, JWTClaims, DEFAULT_VALIDITY, JWT_ISSUER};
         let claims = JWTClaims {
             nbf: time_now.timestamp(),
             exp: (time_now + *DEFAULT_VALIDITY).timestamp(),
@@ -106,8 +106,8 @@ impl Device {
 
 use diesel;
 use diesel::prelude::*;
-use db::DbConn;
-use db::schema::devices;
+use crate::db::DbConn;
+use crate::db::schema::devices;
 
 /// Database methods
 impl Device {

@@ -37,8 +37,8 @@ impl Collection {
 
 use diesel;
 use diesel::prelude::*;
-use db::DbConn;
-use db::schema::*;
+use crate::db::DbConn;
+use crate::db::schema::*;
 
 /// Database methods
 impl Collection {

@@ -34,11 +34,11 @@ use rocket::Route;
 use rocket_contrib::json::Json;
 use serde_json::Value;
 
-use db::DbConn;
-use db::models::*;
+use crate::db::DbConn;
+use crate::db::models::*;
 
-use api::{JsonResult, EmptyResult, JsonUpcase};
-use auth::Headers;
+use crate::api::{JsonResult, EmptyResult, JsonUpcase};
+use crate::auth::Headers;
 
 #[put("/devices/identifier/<uuid>/clear-token")]
 fn clear_device_token(uuid: String, headers: Headers, conn: DbConn) -> EmptyResult {
@@ -72,7 +72,7 @@ fn put_device_token(uuid: String, data: JsonUpcase<Value>, headers: Headers, con
 
     // This should save the push token, but we don't have push functionality
 
-    use util::format_date;
+    use crate::util::format_date;
 
     Ok(Json(json!({
         "Id": device.uuid,

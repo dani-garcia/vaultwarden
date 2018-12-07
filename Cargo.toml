@@ -2,6 +2,7 @@
 name = "bitwarden_rs"
 version = "1.0.0"
 authors = ["Daniel García <dani-garcia@users.noreply.github.com>"]
+edition = "2018"
 
 [features]
 enable_syslog = ["syslog", "fern/syslog-4"]

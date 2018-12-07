@@ -2,11 +2,11 @@ use rocket::Route;
 use rocket_contrib::json::Json;
 use serde_json::Value as JsonValue;
 
-use api::JsonResult;
-use auth::Headers;
-use db::DbConn;
+use crate::api::JsonResult;
+use crate::auth::Headers;
+use crate::db::DbConn;
 
-use CONFIG;
+use crate::CONFIG;
 
 pub fn routes() -> Vec<Route> {
     routes![negotiate, websockets_err]
@@ -19,7 +19,7 @@ fn websockets_err() -> JsonResult {
 
 #[post("/hub/negotiate")]
 fn negotiate(_headers: Headers, _conn: DbConn) -> JsonResult {
-    use crypto;
+    use crate::crypto;
     use data_encoding::BASE64URL;
 
     let conn_id = BASE64URL.encode(&crypto::get_random(vec![0u8; 16]));
@@ -52,7 +52,7 @@ use chashmap::CHashMap;
 use chrono::NaiveDateTime;
 use serde_json::from_str;
 
-use db::models::{Cipher, Folder, User};
+use crate::db::models::{Cipher, Folder, User};
 
 use rmpv::Value;
 
@@ -139,7 +139,7 @@ impl Handler for WSHandler {
         let _id = &query_split[1][3..];
 
         // Validate the user
-        use auth;
+        use crate::auth;
         let claims = match auth::decode_jwt(access_token) {
             Ok(claims) => claims,
             Err(_) => {

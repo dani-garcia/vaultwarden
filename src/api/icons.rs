@@ -7,7 +7,7 @@ use rocket::http::ContentType;
 
 use reqwest;
 
-use CONFIG;
+use crate::CONFIG;
 
 pub fn routes() -> Vec<Route> {
     routes![icon]

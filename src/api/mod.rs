@@ -20,7 +20,7 @@ type ApiResult<T> = Result<T, BadRequest<Json<Value>>>;
 type JsonResult = ApiResult<Json<Value>>;
 type EmptyResult = ApiResult<()>;
 
-use util;
+use crate::util;
 type JsonUpcase<T> = Json<util::UpCase<T>>;
 
 // Common structs representing JSON data received

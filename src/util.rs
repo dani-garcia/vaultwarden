@@ -23,7 +23,7 @@ macro_rules! err {
 #[macro_export]
 macro_rules! err_json {
     ($expr:expr) => {{
-        return Err($crate::rocket::response::status::BadRequest(Some($crate::rocket_contrib::json::Json($expr))));
+        return Err(rocket::response::status::BadRequest(Some(rocket_contrib::json::Json($expr))));
     }}
 }
 
@@ -31,7 +31,7 @@ macro_rules! err_json {
 macro_rules! err_handler {
     ($expr:expr) => {{
         error!("{}", $expr);
-        return $crate::rocket::Outcome::Failure(($crate::rocket::http::Status::Unauthorized, $expr));
+        return rocket::Outcome::Failure((rocket::http::Status::Unauthorized, $expr));
     }}
 }
 

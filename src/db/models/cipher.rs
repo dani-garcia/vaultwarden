@@ -63,14 +63,14 @@ impl Cipher {
 
 use diesel;
 use diesel::prelude::*;
-use db::DbConn;
-use db::schema::*;
+use crate::db::DbConn;
+use crate::db::schema::*;
 
 /// Database methods
 impl Cipher {
     pub fn to_json(&self, host: &str, user_uuid: &str, conn: &DbConn) -> Value {
         use serde_json;
-        use util::format_date;
+        use crate::util::format_date;
         use super::Attachment;
 
         let attachments = Attachment::find_by_cipher(&self.uuid, conn);

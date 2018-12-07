@@ -1,13 +1,13 @@
 use rocket_contrib::json::Json;
 
-use db::models::*;
-use db::DbConn;
+use crate::db::models::*;
+use crate::db::DbConn;
 
-use api::{EmptyResult, JsonResult, JsonUpcase, NumberOrString, PasswordData, UpdateType, WebSocketUsers};
-use auth::Headers;
-use mail;
+use crate::api::{EmptyResult, JsonResult, JsonUpcase, NumberOrString, PasswordData, UpdateType, WebSocketUsers};
+use crate::auth::Headers;
+use crate::mail;
 
-use CONFIG;
+use crate::CONFIG;
 
 use rocket::{Route, State};
 

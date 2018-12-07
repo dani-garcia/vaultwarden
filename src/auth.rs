@@ -2,21 +2,21 @@
 /// JWT Handling
 ///
 
-use util::read_file;
+use crate::util::read_file;
 use chrono::Duration;
 
-use jwt;
+use jsonwebtoken::{self, Algorithm, Header};
 use serde::ser::Serialize;
 
-use CONFIG;
+use crate::CONFIG;
 
-const JWT_ALGORITHM: jwt::Algorithm = jwt::Algorithm::RS256;
+const JWT_ALGORITHM: Algorithm = Algorithm::RS256;
 
 lazy_static! {
     pub static ref DEFAULT_VALIDITY: Duration = Duration::hours(2);
     pub static ref JWT_ISSUER: String = CONFIG.domain.clone();
 
-    static ref JWT_HEADER: jwt::Header = jwt::Header::new(JWT_ALGORITHM);
+    static ref JWT_HEADER: Header = Header::new(JWT_ALGORITHM);
 
     static ref PRIVATE_RSA_KEY: Vec<u8> = match read_file(&CONFIG.private_rsa_key) {
         Ok(key) => key,
@@ -30,14 +30,14 @@ lazy_static! {
 }
 
 pub fn encode_jwt<T: Serialize>(claims: &T) -> String {
-    match jwt::encode(&JWT_HEADER, claims, &PRIVATE_RSA_KEY) {
+    match jsonwebtoken::encode(&JWT_HEADER, claims, &PRIVATE_RSA_KEY) {
         Ok(token) => token,
         Err(e) => panic!("Error encoding jwt {}", e)
     }
 }
 
 pub fn decode_jwt(token: &str) -> Result<JWTClaims, String> {
-    let validation = jwt::Validation {
+    let validation = jsonwebtoken::Validation {
         leeway: 30, // 30 seconds
         validate_exp: true,
         validate_iat: false, // IssuedAt is the same as NotBefore
@@ -48,7 +48,7 @@ pub fn decode_jwt(token: &str) -> Result<JWTClaims, String> {
         algorithms: vec![JWT_ALGORITHM],
     };
 
-    match jwt::decode(token, &PUBLIC_RSA_KEY, &validation) {
+    match jsonwebtoken::decode(token, &PUBLIC_RSA_KEY, &validation) {
         Ok(decoded) => Ok(decoded.claims),
         Err(msg) => {
             error!("Error validating jwt - {:#?}", msg);
@@ -94,8 +94,8 @@ pub struct JWTClaims {
 use rocket::Outcome;
 use rocket::request::{self, Request, FromRequest};
 
-use db::DbConn;
-use db::models::{User, Organization, UserOrganization, UserOrgType, UserOrgStatus, Device};
+use crate::db::DbConn;
+use crate::db::models::{User, Organization, UserOrganization, UserOrgType, UserOrgStatus, Device};
 
 pub struct Headers {
     pub host: String,

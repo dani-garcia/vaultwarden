@@ -1,47 +1,15 @@
-#![feature(proc_macro_hygiene, decl_macro, custom_derive, vec_remove_item, try_trait, nll)]
-#![recursion_limit="128"]
+#![feature(proc_macro_hygiene, decl_macro, vec_remove_item, try_trait)]
+#![recursion_limit = "128"]
 #![allow(proc_macro_derive_resolution_fallback)] // TODO: Remove this when diesel update fixes warnings
 
-#[macro_use]
-extern crate rocket;
-extern crate rocket_contrib;
-extern crate reqwest;
-extern crate multipart;
-extern crate ws;
-extern crate rmpv;
-extern crate chashmap;
-extern crate serde;
-#[macro_use]
-extern crate serde_derive;
-#[macro_use]
-extern crate serde_json;
-#[macro_use]
-extern crate log;
-extern crate fern;
-#[cfg(feature = "enable_syslog")]
-extern crate syslog;
-#[macro_use]
-extern crate diesel;
-#[macro_use]
-extern crate diesel_migrations;
-extern crate ring;
-extern crate uuid;
-extern crate chrono;
-extern crate oath;
-extern crate data_encoding;
-extern crate jsonwebtoken as jwt;
-extern crate u2f;
-extern crate yubico;
-extern crate dotenv;
-#[macro_use]
-extern crate lazy_static;
-#[macro_use]
-extern crate num_derive;
-extern crate num_traits;
-extern crate lettre;
-extern crate lettre_email;
-extern crate native_tls;
-extern crate byteorder;
+#[macro_use] extern crate rocket;
+#[macro_use] extern crate serde_derive;
+#[macro_use] extern crate serde_json;
+#[macro_use] extern crate log;
+#[macro_use] extern crate diesel;
+#[macro_use] extern crate diesel_migrations;
+#[macro_use] extern crate lazy_static;
+#[macro_use] extern crate num_derive;
 
 use std::{path::Path, process::{exit, Command}};
 use rocket::Rocket;
@@ -75,7 +43,7 @@ mod migrations {
 
     pub fn run_migrations() {
         // Make sure the database is up to date (create if it doesn't exist, or run the migrations)
-        let connection = ::db::get_connection().expect("Can't conect to DB");
+        let connection = crate::db::get_connection().expect("Can't conect to DB");
 
         use std::io::stdout;
         embedded_migrations::run_with_output(&connection, &mut stdout()).expect("Can't run migrations");
@@ -234,7 +202,7 @@ pub struct MailConfig {
 
 impl MailConfig {
     fn load() -> Option<Self> {
-        use util::{get_env, get_env_or};
+        use crate::util::{get_env, get_env_or};
 
         // When SMTP_HOST is absent, we assume the user does not want to enable it.
         let smtp_host = match get_env("SMTP_HOST") {
@@ -316,7 +284,7 @@ pub struct Config {
 
 impl Config {
     fn load() -> Self {
-        use util::{get_env, get_env_or};
+        use crate::util::{get_env, get_env_or};
         dotenv::dotenv().ok();
 
         let df = get_env_or("DATA_FOLDER", "data".to_string());

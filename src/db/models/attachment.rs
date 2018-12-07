@@ -1,7 +1,7 @@
 use serde_json::Value;
 
 use super::Cipher;
-use CONFIG;
+use crate::CONFIG;
 
 #[derive(Debug, Identifiable, Queryable, Insertable, Associations)]
 #[table_name = "attachments"]
@@ -32,7 +32,7 @@ impl Attachment {
     }
 
     pub fn to_json(&self, host: &str) -> Value {
-        use util::get_display_size;
+        use crate::util::get_display_size;
 
         let web_path = format!("{}/attachments/{}/{}", host, self.cipher_uuid, self.id);
         let display_size = get_display_size(self.file_size);
@@ -51,8 +51,8 @@ impl Attachment {
 
 use diesel;
 use diesel::prelude::*;
-use db::DbConn;
-use db::schema::attachments;
+use crate::db::DbConn;
+use crate::db::schema::attachments;
 
 /// Database methods
 impl Attachment {
@@ -64,7 +64,7 @@ impl Attachment {
     }
 
     pub fn delete(self, conn: &DbConn) -> QueryResult<()> {
-        use util;
+        use crate::util;
         use std::{thread, time};
 
         let mut retries = 10;

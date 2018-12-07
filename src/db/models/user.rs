@@ -3,8 +3,8 @@ use serde_json::Value;
 
 use uuid::Uuid;
 
-use crypto;
-use CONFIG;
+use crate::crypto;
+use crate::CONFIG;
 
 
 #[derive(Debug, Identifiable, Queryable, Insertable)]
@@ -113,8 +113,8 @@ impl User {
 
 use diesel;
 use diesel::prelude::*;
-use db::DbConn;
-use db::schema::{users, invitations};
+use crate::db::DbConn;
+use crate::db::schema::{users, invitations};
 use super::{Cipher, Folder, Device, UserOrganization, UserOrgType};
 
 /// Database methods

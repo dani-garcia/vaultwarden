@@ -8,14 +8,14 @@ use serde_json::Value;
 
 use num_traits::FromPrimitive;
 
-use db::models::*;
-use db::DbConn;
+use crate::db::models::*;
+use crate::db::DbConn;
 
-use util::{self, JsonMap};
+use crate::util::{self, JsonMap};
 
-use api::{ApiResult, EmptyResult, JsonResult};
+use crate::api::{ApiResult, EmptyResult, JsonResult};
 
-use CONFIG;
+use crate::CONFIG;
 
 pub fn routes() -> Vec<Route> {
     routes![login]
@@ -194,13 +194,13 @@ fn twofactor_auth(
         }
 
         Some(TwoFactorType::U2f) => {
-            use api::core::two_factor;
+            use crate::api::core::two_factor;
 
             two_factor::validate_u2f_login(user_uuid, &twofactor_code, conn)?;
         }
 
         Some(TwoFactorType::YubiKey) => {
-            use api::core::two_factor;
+            use crate::api::core::two_factor;
 
             two_factor::validate_yubikey_login(user_uuid, twofactor_code, conn)?;
         }
@@ -217,7 +217,7 @@ fn twofactor_auth(
 }
 
 fn _json_err_twofactor(providers: &[i32], user_uuid: &str, conn: &DbConn) -> ApiResult<Value> {
-    use api::core::two_factor;
+    use crate::api::core::two_factor;
 
     let mut result = json!({
         "error" : "invalid_grant",

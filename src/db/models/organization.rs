@@ -236,8 +236,8 @@ impl UserOrganization {
 
 use diesel;
 use diesel::prelude::*;
-use db::DbConn;
-use db::schema::{organizations, users_organizations, users_collections, ciphers_collections};
+use crate::db::DbConn;
+use crate::db::schema::{organizations, users_organizations, users_collections, ciphers_collections};
 
 /// Database methods
 impl Organization {
