@@ -74,6 +74,7 @@ impl Device {
         let orgowner: Vec<_> = orgs.iter().filter(|o| o.type_ == 0).map(|o| o.org_uuid.clone()).collect();
         let orgadmin: Vec<_> = orgs.iter().filter(|o| o.type_ == 1).map(|o| o.org_uuid.clone()).collect();
         let orguser: Vec<_> = orgs.iter().filter(|o| o.type_ == 2).map(|o| o.org_uuid.clone()).collect();
+        let orgmanager: Vec<_> = orgs.iter().filter(|o| o.type_ == 3).map(|o| o.org_uuid.clone()).collect();
 
 
         // Create the JWT claims struct, to send to the client
@@ -92,6 +93,7 @@ impl Device {
             orgowner,
             orgadmin,
             orguser,
+            orgmanager,
 
             sstamp: user.security_stamp.to_string(),
             device: self.uuid.to_string(),

@@ -1,5 +1,3 @@
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-
 use rocket::request::LenientForm;
 use rocket::Route;
 
@@ -15,6 +13,8 @@ use crate::util::{self, JsonMap};
 
 use crate::api::{ApiResult, EmptyResult, JsonResult};
 
+use crate::auth::ClientIp;
+
 use crate::CONFIG;
 
 pub fn routes() -> Vec<Route> {
@@ -22,13 +22,13 @@ pub fn routes() -> Vec<Route> {
 }
 
 #[post("/connect/token", data = "<data>")]
-fn login(data: LenientForm<ConnectData>, conn: DbConn, socket: Option<SocketAddr>) -> JsonResult {
+fn login(data: LenientForm<ConnectData>, conn: DbConn, ip: ClientIp) -> JsonResult {
     let data: ConnectData = data.into_inner();
     validate_data(&data)?;
 
     match data.grant_type {
         GrantType::refresh_token => _refresh_login(data, conn),
-        GrantType::password => _password_login(data, conn, socket),
+        GrantType::password => _password_login(data, conn, ip),
     }
 }
 
@@ -56,17 +56,11 @@ fn _refresh_login(data: ConnectData, conn: DbConn) -> JsonResult {
             "Key": user.key,
             "PrivateKey": user.private_key,
         }))),
-        Err(_) => err!("Failed to add device to user"),
+        Err(e) => err!("Failed to add device to user", e),
     }
 }
 
-fn _password_login(data: ConnectData, conn: DbConn, remote: Option<SocketAddr>) -> JsonResult {
-    // Get the ip for error reporting
-    let ip = match remote {
-        Some(ip) => ip.ip(),
-        None => IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
-    };
-
+fn _password_login(data: ConnectData, conn: DbConn, ip: ClientIp) -> JsonResult {
     // Validate scope
     let scope = data.scope.as_ref().unwrap();
     if scope != "api offline_access" {
@@ -79,7 +73,7 @@ fn _password_login(data: ConnectData, conn: DbConn, remote: Option<SocketAddr>) 
         Some(user) => user,
         None => err!(format!(
             "Username or password is incorrect. Try again. IP: {}. Username: {}.",
-            ip, username
+            ip.ip, username
         )),
     };
 
@@ -88,7 +82,7 @@ fn _password_login(data: ConnectData, conn: DbConn, remote: Option<SocketAddr>) 
     if !user.check_valid_password(password) {
         err!(format!(
             "Username or password is incorrect. Try again. IP: {}. Username: {}.",
-            ip, username
+            ip.ip, username
         ))
     }
 
@@ -99,20 +93,15 @@ fn _password_login(data: ConnectData, conn: DbConn, remote: Option<SocketAddr>) 
     // Find device or create new
     let mut device = match Device::find_by_uuid(&device_id, &conn) {
         Some(device) => {
-            // Check if valid device
+            // Check if owned device, and recreate if not
             if device.user_uuid != user.uuid {
-                match device.delete(&conn) {
-                    Ok(()) => Device::new(device_id, user.uuid.clone(), device_name, device_type),
-                    Err(_) => err!("Tried to delete device not owned by user, but failed"),
-                }
+                info!("Device exists but is owned by another user. The old device will be discarded");
+                Device::new(device_id, user.uuid.clone(), device_name, device_type)
             } else {
                 device
             }
         }
-        None => {
-            // Create new device
-            Device::new(device_id, user.uuid.clone(), device_name, device_type)
-        }
+        None => Device::new(device_id, user.uuid.clone(), device_name, device_type)
     };
 
     let twofactor_token = twofactor_auth(&user.uuid, &data.clone(), &mut device, &conn)?;
@@ -122,8 +111,8 @@ fn _password_login(data: ConnectData, conn: DbConn, remote: Option<SocketAddr>) 
     let orgs = UserOrganization::find_by_user(&user.uuid, &conn);
 
     let (access_token, expires_in) = device.refresh_tokens(&user, orgs);
-    if device.save(&conn).is_err() {
-        err!("Failed to add device to user")
+    if let Err(e) = device.save(&conn) {
+        err!("Failed to add device to user", e)
     }
 
     let mut result = json!({

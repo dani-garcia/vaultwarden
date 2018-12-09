@@ -1,7 +1,6 @@
 ///
 /// JWT Handling
 ///
-
 use crate::util::read_file;
 use chrono::Duration;
 
@@ -76,6 +75,7 @@ pub struct JWTClaims {
     pub orgowner: Vec<String>,
     pub orgadmin: Vec<String>,
     pub orguser: Vec<String>,
+    pub orgmanager: Vec<String>,
 
     // user security_stamp
     pub sstamp: String,
@@ -90,7 +90,6 @@ pub struct JWTClaims {
 ///
 /// Bearer token authentication
 ///
-
 use rocket::Outcome;
 use rocket::request::{self, Request, FromRequest};
 
@@ -139,13 +138,11 @@ impl<'a, 'r> FromRequest<'a, 'r> for Headers {
 
         // Get access_token
         let access_token: &str = match request.headers().get_one("Authorization") {
-            Some(a) => {
-                match a.rsplit("Bearer ").next() {
-                    Some(split) => split,
-                    None => err_handler!("No access token provided")
-                }
-            }
-            None => err_handler!("No access token provided")
+            Some(a) => match a.rsplit("Bearer ").next() {
+                Some(split) => split,
+                None => err_handler!("No access token provided"),
+            },
+            None => err_handler!("No access token provided"),
         };
 
         // Check JWT token is valid and get device and user from it
@@ -256,7 +253,7 @@ impl<'a, 'r> FromRequest<'a, 'r> for AdminHeaders {
             Outcome::Failure(f) => Outcome::Failure(f),
             Outcome::Success(headers) => {
                 if headers.org_user_type >= UserOrgType::Admin {
-                    Outcome::Success(Self{
+                    Outcome::Success(Self {
                         host: headers.host,
                         device: headers.device,
                         user: headers.user,
@@ -285,7 +282,7 @@ impl<'a, 'r> FromRequest<'a, 'r> for OwnerHeaders {
             Outcome::Failure(f) => Outcome::Failure(f),
             Outcome::Success(headers) => {
                 if headers.org_user_type == UserOrgType::Owner {
-                    Outcome::Success(Self{
+                    Outcome::Success(Self {
                         host: headers.host,
                         device: headers.device,
                         user: headers.user,
@@ -295,5 +292,27 @@ impl<'a, 'r> FromRequest<'a, 'r> for OwnerHeaders {
                 }
             }
         }
+    }
+}
+
+///
+/// Client IP address detection
+///
+use std::net::IpAddr;
+
+pub struct ClientIp {
+    pub ip: IpAddr,
+}
+
+impl<'a, 'r> FromRequest<'a, 'r> for ClientIp {
+    type Error = ();
+
+    fn from_request(request: &'a Request<'r>) -> request::Outcome<Self, Self::Error> {
+        let ip = match request.client_ip() {
+            Some(addr) => addr,
+            None => "0.0.0.0".parse().unwrap(),
+        };
+
+        Outcome::Success(ClientIp { ip })
     }
 }

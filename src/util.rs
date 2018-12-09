@@ -2,22 +2,32 @@
 /// Macros
 ///
 #[macro_export]
-macro_rules! err {
-    ($err:expr, $msg:expr) => {{
-        error!("{}", $msg);
+macro_rules! _err_object {
+    ($msg:expr) => {{
         err_json!(json!({
-        "error": $err,
-        "error_description": $err,
-        "ErrorModel": {
-          "Message": $msg,
-          "ValidationErrors": null,
-          "ExceptionMessage": null,
-          "ExceptionStackTrace": null,
-          "InnerExceptionMessage": null,
-          "Object": "error"
-        }}))
+            "Message": "",
+            "error": "",
+            "error_description": "",
+            "ValidationErrors": {"": [ $msg ]},
+            "ErrorModel": {
+                "Message": $msg,
+                "Object": "error"
+            },
+            "Object": "error"
+        }))
     }};
-    ($msg:expr) => { err!("unknown_error", $msg) }
+}
+
+#[macro_export]
+macro_rules! err {
+    ($msg:expr) => {{
+        error!("{}", $msg);
+        _err_object!($msg)
+    }};
+    ($usr_msg:expr, $log_value:expr) => {{
+        error!("{}: {:#?}", $usr_msg, $log_value);
+        _err_object!($usr_msg)
+    }}
 }
 
 #[macro_export]
