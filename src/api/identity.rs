@@ -129,6 +129,7 @@ fn _password_login(data: ConnectData, conn: DbConn, ip: ClientIp) -> JsonResult 
         result["TwoFactorToken"] = Value::String(token);
     }
 
+    info!("User {} logged in successfully. IP: {}", username, ip.ip);
     Ok(Json(result))
 }
 
