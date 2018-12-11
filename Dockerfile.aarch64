@@ -2,7 +2,7 @@
 # 	https://docs.docker.com/develop/develop-images/multistage-build/
 # 	https://whitfin.io/speeding-up-rust-docker-builds/
 ####################### VAULT BUILD IMAGE  #######################
-FROM node:8-alpine as vault
+FROM node:10-alpine as vault
 
 ENV VAULT_VERSION "v2.6.1"
 
