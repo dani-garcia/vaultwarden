@@ -427,7 +427,8 @@ Bitwarden_rs logs failed login attempts to stdout. We need to set this so the ho
 
 #### Logging Failed Login Attempts to Syslog
 
-We need to set the logging driver to syslog so the host OS and Fail2Ban can see them. 
+We need to set the logging driver to syslog so the host OS and Fail2Ban can see them.
+
 If you are using docker commands, you will need to add: `--log-driver syslog --log-opt tag=$TAG` to your command.
 
 If you are using docker-compose, add this to you yaml file:
