@@ -252,6 +252,33 @@ fn upcase_value(value: &Value) -> Value {
 fn _process_key(key: &str) -> String {
     match key.to_lowercase().as_ref() {
         "ssn" => "SSN".into(),
-        _ => self::upcase_first(key)
+        _ => self::upcase_first(key),
+    }
+}
+
+//
+// Retry methods
+//
+
+pub fn retry<F, T, E>(func: F, max_tries: i32) -> Result<T, E>
+where
+    F: Fn() -> Result<T, E>,
+{
+    use std::{thread::sleep, time::Duration};
+    let mut tries = 0;
+
+    loop {
+        match func() {
+            ok @ Ok(_) => return ok,
+            err @ Err(_) => {
+                tries += 1;
+
+                if tries >= max_tries {
+                    return err;
+                }
+
+                sleep(Duration::from_millis(500));
+            }
+        }
     }
 }

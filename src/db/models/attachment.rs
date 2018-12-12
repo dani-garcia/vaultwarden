@@ -64,33 +64,15 @@ impl Attachment {
     }
 
     pub fn delete(self, conn: &DbConn) -> QueryResult<()> {
-        use crate::util;
-        use std::{thread, time};
+        crate::util::retry(
+            || {
+                diesel::delete(attachments::table.filter(attachments::id.eq(&self.id)))
+                    .execute(&**conn)
+            },
+            10,
+        )?;
 
-        let mut retries = 10;
-
-        loop {
-            match diesel::delete(
-                attachments::table.filter(
-                    attachments::id.eq(&self.id)
-                )
-            ).execute(&**conn) {
-                Ok(_) => break,
-                Err(err) => {
-                    if retries < 1 {
-                        error!("Failed with 10 retries");
-                        return Err(err)
-                    } else {
-                        retries -= 1;
-                        info!("Had to retry! Retries left: {}", retries);
-                        thread::sleep(time::Duration::from_millis(500));
-                        continue
-                    }
-                }
-            }
-        }
-
-        util::delete_file(&self.get_file_path());
+        crate::util::delete_file(&self.get_file_path());
         Ok(())
     }
 

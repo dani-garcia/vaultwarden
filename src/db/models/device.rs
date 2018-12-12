@@ -101,7 +101,6 @@ impl Device {
             amr: vec!["Application".into()],
         };
 
-
         (encode_jwt(&claims), DEFAULT_VALIDITY.num_seconds())
     }
 }
@@ -116,8 +115,15 @@ impl Device {
     pub fn save(&mut self, conn: &DbConn) -> QueryResult<()> {
         self.updated_at = Utc::now().naive_utc();
 
-        diesel::replace_into(devices::table)
-            .values(&*self).execute(&**conn).and(Ok(()))
+        crate::util::retry(
+            || {
+                diesel::replace_into(devices::table)
+                    .values(&*self)
+                    .execute(&**conn)
+            },
+            10,
+        )
+        .and(Ok(()))
     }
 
     pub fn delete(self, conn: &DbConn) -> QueryResult<()> {
