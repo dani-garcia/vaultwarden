@@ -3,13 +3,13 @@
 ## Dependencies
 - `Rust nightly` (strongly recommended to use [rustup](https://rustup.rs/))
 - `OpenSSL` (should be available in path, install through your system's package manager or use the [prebuilt binaries](https://wiki.openssl.org/index.php/Binaries))
-- `NodeJS` (required to build the web-vault, (install through your system's package manager or use the [prebuilt binaries](https://nodejs.org/en/download/))
+- `NodeJS` (only when compiling the web-vault, install through your system's package manager or use the [prebuilt binaries](https://nodejs.org/en/download/))
 
 
 ## Run/Compile
 ```sh
 # Compile and run
-cargo run
+cargo run --release
 # or just compile (binary located in target/release/bitwarden_rs)
 cargo build --release
 ```
@@ -17,7 +17,11 @@ cargo build --release
 When run, the server is accessible in [http://localhost:80](http://localhost:80).
 
 ### Install the web-vault
-Clone the git repository at [bitwarden/web](https://github.com/bitwarden/web) and checkout the latest release tag (e.g. v2.1.1):
+A compiled version of the web vault can be downloaded from [dani-garcia/bw_web_builds](https://github.com/dani-garcia/bw_web_builds/releases).
+
+If you prefer to compile it manually, follow these steps:
+
+- Clone the git repository at [bitwarden/web](https://github.com/bitwarden/web) and checkout the latest release tag (e.g. v2.1.1):
 ```sh
 # clone the repository
 git clone https://github.com/bitwarden/web.git web-vault
@@ -26,13 +30,13 @@ cd web-vault
 git checkout "$(git tag | tail -n1)"
 ```
 
-Apply the patch file from `docker/set-vault-baseurl.patch`:
+- Apply the patch file from `docker/set-vault-baseurl.patch`:
 ```sh
 # In the Vault repository directory
 git apply /path/to/bitwarden_rs/docker/set-vault-baseurl.patch
 ```
 
-Then, build the Vault:
+- Then, build the Vault:
 ```sh
 npm run sub:init
 npm install
