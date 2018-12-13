@@ -20,7 +20,7 @@ RUN ls
 
 ########################## BUILD IMAGE  ##########################
 # Musl build image for statically compiled binary
-FROM clux/muslrust:nightly-2018-11-30 as build
+FROM clux/muslrust:nightly-2018-12-01 as build
 
 ENV USER "root"
 
@@ -29,6 +29,8 @@ WORKDIR /app
 # Copies the complete project
 # To avoid copying unneeded files, use .dockerignore
 COPY . .
+
+RUN rustup target add x86_64-unknown-linux-musl
 
 # Build
 RUN cargo build --release
