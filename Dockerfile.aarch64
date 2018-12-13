@@ -12,8 +12,8 @@ RUN apk add --update-cache --upgrade \
     curl \
     tar
 
-RUN mkdir /web-build
-WORKDIR /web-build
+RUN mkdir /web-vault
+WORKDIR /web-vault
 
 RUN curl -L $URL | tar xz
 RUN ls
