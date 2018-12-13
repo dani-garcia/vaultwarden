@@ -1,11 +1,26 @@
 use rocket::State;
-use rocket_contrib::{Json, Value};
+use rocket_contrib::json::Json;
+use serde_json::Value;
 
-use db::DbConn;
-use db::models::*;
+use crate::db::DbConn;
+use crate::db::models::*;
 
-use api::{JsonResult, EmptyResult, JsonUpcase, WebSocketUsers, UpdateType};
-use auth::Headers;
+use crate::api::{JsonResult, EmptyResult, JsonUpcase, WebSocketUsers, UpdateType};
+use crate::auth::Headers;
+
+use rocket::Route;
+
+pub fn routes() -> Vec<Route> {
+    routes![
+        get_folders,
+        get_folder,
+        post_folders,
+        post_folder,
+        put_folder,
+        delete_folder_post,
+        delete_folder,
+    ]
+}
 
 #[get("/folders")]
 fn get_folders(headers: Headers, conn: DbConn) -> JsonResult {

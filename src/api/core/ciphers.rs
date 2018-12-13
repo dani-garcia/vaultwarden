@@ -1,35 +1,76 @@
+use std::collections::{HashSet, HashMap};
 use std::path::Path;
-use std::collections::HashSet;
 
-use rocket::State;
-use rocket::Data;
 use rocket::http::ContentType;
+use rocket::{request::Form, Data, Route, State};
 
-use rocket_contrib::{Json, Value};
+use rocket_contrib::json::Json;
+use serde_json::Value;
 
-use multipart::server::{Multipart, SaveResult};
 use multipart::server::save::SavedData;
+use multipart::server::{Multipart, SaveResult};
 
 use data_encoding::HEXLOWER;
 
-use db::DbConn;
-use db::models::*;
+use crate::db::models::*;
+use crate::db::DbConn;
 
-use crypto;
+use crate::crypto;
 
-use api::{self, PasswordData, JsonResult, EmptyResult, JsonUpcase, WebSocketUsers, UpdateType};
-use auth::Headers;
+use crate::api::{self, EmptyResult, JsonResult, JsonUpcase, PasswordData, UpdateType, WebSocketUsers};
+use crate::auth::Headers;
 
-use CONFIG;
+use crate::CONFIG;
 
-#[derive(FromForm)]
-#[allow(non_snake_case)]
-struct SyncData {
-    excludeDomains: bool,
+pub fn routes() -> Vec<Route> {
+    routes![
+        sync,
+        get_ciphers,
+        get_cipher,
+        get_cipher_admin,
+        get_cipher_details,
+        post_ciphers,
+        put_cipher_admin,
+        post_ciphers_admin,
+        post_ciphers_create,
+        post_ciphers_import,
+        post_attachment,
+        post_attachment_admin,
+        post_attachment_share,
+        delete_attachment_post,
+        delete_attachment_post_admin,
+        delete_attachment,
+        delete_attachment_admin,
+        post_cipher_admin,
+        post_cipher_share,
+        put_cipher_share,
+        put_cipher_share_seleted,
+        post_cipher,
+        put_cipher,
+        delete_cipher_post,
+        delete_cipher_post_admin,
+        delete_cipher,
+        delete_cipher_admin,
+        delete_cipher_selected,
+        delete_cipher_selected_post,
+        delete_all,
+        move_cipher_selected,
+        move_cipher_selected_put,
+
+        post_collections_update,
+        post_collections_admin,
+        put_collections_admin,
+    ]
 }
 
-#[get("/sync?<data>")]
-fn sync(data: SyncData, headers: Headers, conn: DbConn) -> JsonResult {
+#[derive(FromForm, Default)]
+struct SyncData {
+    #[form(field = "excludeDomains")]
+    exclude_domains: bool, // Default: 'false'
+}
+
+#[get("/sync?<data..>")]
+fn sync(data: Form<SyncData>, headers: Headers, conn: DbConn) -> JsonResult {
     let user_json = headers.user.to_json(&conn);
 
     let folders = Folder::find_by_user(&headers.user.uuid, &conn);
@@ -41,7 +82,7 @@ fn sync(data: SyncData, headers: Headers, conn: DbConn) -> JsonResult {
     let ciphers = Cipher::find_by_user(&headers.user.uuid, &conn);
     let ciphers_json: Vec<Value> = ciphers.iter().map(|c| c.to_json(&headers.host, &headers.user.uuid, &conn)).collect();
 
-    let domains_json = if data.excludeDomains { Value::Null } else { api::core::get_eq_domains(headers).unwrap().into_inner() };
+    let domains_json = if data.exclude_domains { Value::Null } else { api::core::get_eq_domains(headers).unwrap().into_inner() };
 
     Ok(Json(json!({
         "Profile": user_json,
@@ -51,14 +92,6 @@ fn sync(data: SyncData, headers: Headers, conn: DbConn) -> JsonResult {
         "Domains": domains_json,
         "Object": "sync"
     })))
-}
-
-#[get("/sync")]
-fn sync_no_query(headers: Headers, conn: DbConn) -> JsonResult {
-    let sync_data = SyncData {
-        excludeDomains: false,
-    };
-    sync(sync_data, headers, conn)
 }
 
 #[get("/ciphers")]
@@ -103,7 +136,7 @@ fn get_cipher_details(uuid: String, headers: Headers, conn: DbConn) -> JsonResul
 #[allow(non_snake_case)]
 pub struct CipherData {
     // Id is optional as it is included only in bulk share
-    Id: Option<String>,
+    pub Id: Option<String>,
     // Folder id is not included in import
     FolderId: Option<String>,
     // TODO: Some of these might appear all the time, no need for Option
@@ -129,13 +162,25 @@ pub struct CipherData {
     Favorite: Option<bool>,
 
     PasswordHistory: Option<Value>,
+
+    // These are used during key rotation
+    #[serde(rename = "Attachments")]
+    _Attachments: Option<Value>, // Unused, contains map of {id: filename}
+    Attachments2: Option<HashMap<String, Attachments2Data>>
+}
+
+#[derive(Deserialize, Debug)]
+#[allow(non_snake_case)]
+pub struct Attachments2Data {
+    FileName: String,
+    Key: String,
 }
 
 #[post("/ciphers/admin", data = "<data>")]
 fn post_ciphers_admin(data: JsonUpcase<ShareCipherData>, headers: Headers, conn: DbConn, ws: State<WebSocketUsers>) -> JsonResult {
     let data: ShareCipherData = data.into_inner().data;
 
-    let mut cipher = Cipher::new(data.Cipher.Type.clone(), data.Cipher.Name.clone());
+    let mut cipher = Cipher::new(data.Cipher.Type, data.Cipher.Name.clone());
     cipher.user_uuid = Some(headers.user.uuid.clone());
     match cipher.save(&conn) {
         Ok(()) => (),
@@ -188,6 +233,28 @@ pub fn update_cipher_from_data(cipher: &mut Cipher, data: CipherData, headers: &
         }
     }
 
+    // Modify attachments name and keys when rotating
+    if let Some(attachments) = data.Attachments2 {
+        for (id, attachment) in attachments {
+            let mut saved_att = match Attachment::find_by_id(&id, &conn) {
+                Some(att) => att,
+                None => err!("Attachment doesn't exist")
+            };
+
+            if saved_att.cipher_uuid != cipher.uuid {
+                err!("Attachment is not owned by the cipher")
+            }
+
+            saved_att.key = Some(attachment.Key);
+            saved_att.file_name = attachment.FileName;
+
+            match saved_att.save(&conn) {
+                Ok(()) => (),
+                Err(_) => err!("Failed to save attachment")
+            };
+        }
+    }
+
     let type_data_opt = match data.Type {
         1 => data.Login,
         2 => data.SecureNote,
@@ -219,7 +286,7 @@ pub fn update_cipher_from_data(cipher: &mut Cipher, data: CipherData, headers: &
 
     match cipher.save(&conn) {
         Ok(()) => (),
-        Err(_) => println!("Error: Failed to save cipher")
+        Err(_) => err!("Failed to save cipher")
     };
     ws.send_cipher_update(ut, &cipher, &cipher.update_users_revision(&conn));
 
@@ -266,7 +333,6 @@ fn post_ciphers_import(data: JsonUpcase<ImportData>, headers: Headers, conn: DbC
     }
 
     // Read the relations between folders and ciphers
-    use std::collections::HashMap;
     let mut relations_map = HashMap::new();
 
     for relation in data.FolderRelationships {
@@ -509,37 +575,52 @@ fn post_attachment(uuid: String, data: Data, content_type: &ContentType, headers
 
     let base_path = Path::new(&CONFIG.attachments_folder).join(&cipher.uuid);
 
+    let mut attachment_key = None;
+
     Multipart::with_body(data.open(), boundary).foreach_entry(|mut field| {
-         // This is provided by the client, don't trust it
-         let name = field.headers.filename.expect("No filename provided");
-
-        let file_name = HEXLOWER.encode(&crypto::get_random(vec![0; 10]));
-        let path = base_path.join(&file_name);
-
-        let size = match field.data.save()
-            .memory_threshold(0)
-            .size_limit(None)
-            .with_path(path) {
-            SaveResult::Full(SavedData::File(_, size)) => size as i32,
-            SaveResult::Full(other) => {
-                println!("Attachment is not a file: {:?}", other);
-                return;
+        match field.headers.name.as_str() {
+            "key" => {
+                use std::io::Read;
+                let mut key_buffer = String::new();
+                if field.data.read_to_string(&mut key_buffer).is_ok() {
+                    attachment_key = Some(key_buffer);
+                }
             },
-            SaveResult::Partial(_, reason) => {
-                println!("Partial result: {:?}", reason);
-                return;
-            },
-            SaveResult::Error(e) => {
-                println!("Error: {:?}", e);
-                return;
-            }
-        };
+            "data" => {                
+                // This is provided by the client, don't trust it
+                let name = field.headers.filename.expect("No filename provided");
 
-        let attachment = Attachment::new(file_name, cipher.uuid.clone(), name, size);
-        match attachment.save(&conn) {
-            Ok(()) => (),
-            Err(_) => println!("Error: failed to save attachment")
-        };
+                let file_name = HEXLOWER.encode(&crypto::get_random(vec![0; 10]));
+                let path = base_path.join(&file_name);
+
+                let size = match field.data.save()
+                    .memory_threshold(0)
+                    .size_limit(None)
+                    .with_path(path) {
+                    SaveResult::Full(SavedData::File(_, size)) => size as i32,
+                    SaveResult::Full(other) => {
+                        error!("Attachment is not a file: {:?}", other);
+                        return;
+                    },
+                    SaveResult::Partial(_, reason) => {
+                        error!("Partial result: {:?}", reason);
+                        return;
+                    },
+                    SaveResult::Error(e) => {
+                        error!("Error: {:?}", e);
+                        return;
+                    }
+                };
+
+                let mut attachment = Attachment::new(file_name, cipher.uuid.clone(), name, size);
+                attachment.key = attachment_key.clone();
+                match attachment.save(&conn) {
+                    Ok(()) => (),
+                    Err(_) => error!("Failed to save attachment")
+                };
+            },
+            _ => error!("Invalid multipart name")
+        }
     }).expect("Error processing multipart data");
 
     Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, &conn)))
@@ -670,7 +751,7 @@ fn move_cipher_selected(data: JsonUpcase<Value>, headers: Headers, conn: DbConn,
         }
         match cipher.save(&conn) {
             Ok(()) => (),
-            Err(_) => println!("Error: Failed to save cipher")
+            Err(_) => err!("Failed to save cipher")
         };
         ws.send_cipher_update(UpdateType::SyncCipherUpdate, &cipher, &cipher.update_users_revision(&conn));
     }
@@ -708,8 +789,7 @@ fn delete_all(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn, ws
     for f in Folder::find_by_user(&user.uuid, &conn) {
         if f.delete(&conn).is_err() {
             err!("Failed deleting folder")
-        }
-        else {
+        } else {
             ws.send_folder_update(UpdateType::SyncFolderCreate, &f);
         }
     }
@@ -761,6 +841,6 @@ fn _delete_cipher_attachment_by_id(uuid: &str, attachment_id: &str, headers: &He
             ws.send_cipher_update(UpdateType::SyncCipherDelete, &cipher, &cipher.update_users_revision(&conn));
             Ok(())
         }
-        Err(_) => err!("Deleting attachement failed")
+        Err(_) => err!("Deleting attachment failed")
     }
 }

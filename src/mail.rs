@@ -4,7 +4,7 @@ use lettre::smtp::ConnectionReuseParameters;
 use lettre::smtp::authentication::Credentials;
 use lettre_email::EmailBuilder;
 
-use MailConfig;
+use crate::MailConfig;
 
 fn mailer(config: &MailConfig) -> SmtpTransport {
     let client_security = if config.smtp_ssl {

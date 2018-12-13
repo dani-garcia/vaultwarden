@@ -1,7 +1,7 @@
-use serde_json::Value as JsonValue;
+use serde_json::Value;
 
 use super::Cipher;
-use CONFIG;
+use crate::CONFIG;
 
 #[derive(Debug, Identifiable, Queryable, Insertable, Associations)]
 #[table_name = "attachments"]
@@ -12,6 +12,7 @@ pub struct Attachment {
     pub cipher_uuid: String,
     pub file_name: String,
     pub file_size: i32,
+    pub key: Option<String>
 }
 
 /// Local methods
@@ -22,6 +23,7 @@ impl Attachment {
             cipher_uuid,
             file_name,
             file_size,
+            key: None
         }
     }
 
@@ -29,8 +31,8 @@ impl Attachment {
         format!("{}/{}/{}", CONFIG.attachments_folder, self.cipher_uuid, self.id)
     }
 
-    pub fn to_json(&self, host: &str) -> JsonValue {
-        use util::get_display_size;
+    pub fn to_json(&self, host: &str) -> Value {
+        use crate::util::get_display_size;
 
         let web_path = format!("{}/attachments/{}/{}", host, self.cipher_uuid, self.id);
         let display_size = get_display_size(self.file_size);
@@ -41,6 +43,7 @@ impl Attachment {
             "FileName": self.file_name,
             "Size": self.file_size.to_string(),
             "SizeName": display_size,
+            "Key": self.key,
             "Object": "attachment"
         })
     }
@@ -48,8 +51,8 @@ impl Attachment {
 
 use diesel;
 use diesel::prelude::*;
-use db::DbConn;
-use db::schema::attachments;
+use crate::db::DbConn;
+use crate::db::schema::attachments;
 
 /// Database methods
 impl Attachment {
@@ -61,39 +64,21 @@ impl Attachment {
     }
 
     pub fn delete(self, conn: &DbConn) -> QueryResult<()> {
-        use util;
-        use std::{thread, time};
+        crate::util::retry(
+            || {
+                diesel::delete(attachments::table.filter(attachments::id.eq(&self.id)))
+                    .execute(&**conn)
+            },
+            10,
+        )?;
 
-        let mut retries = 10;
-
-        loop {
-            match diesel::delete(
-                attachments::table.filter(
-                    attachments::id.eq(&self.id)
-                )
-            ).execute(&**conn) {
-                Ok(_) => break,
-                Err(err) => {
-                    if retries < 1 {
-                        println!("ERROR: Failed with 10 retries");
-                        return Err(err)
-                    } else {
-                        retries -= 1;
-                        println!("Had to retry! Retries left: {}", retries);
-                        thread::sleep(time::Duration::from_millis(500));
-                        continue
-                    }
-                }
-            }
-        }
-
-        util::delete_file(&self.get_file_path());
+        crate::util::delete_file(&self.get_file_path());
         Ok(())
     }
 
     pub fn delete_all_by_cipher(cipher_uuid: &str, conn: &DbConn) -> QueryResult<()> {
-        for attachement in Attachment::find_by_cipher(&cipher_uuid, &conn) {
-            attachement.delete(&conn)?;
+        for attachment in Attachment::find_by_cipher(&cipher_uuid, &conn) {
+            attachment.delete(&conn)?;
         }
         Ok(())
     }

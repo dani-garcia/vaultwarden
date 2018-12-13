@@ -2,9 +2,9 @@
 # 	https://docs.docker.com/develop/develop-images/multistage-build/
 # 	https://whitfin.io/speeding-up-rust-docker-builds/
 ####################### VAULT BUILD IMAGE  #######################
-FROM node:8-alpine as vault
+FROM node:10-alpine as vault
 
-ENV VAULT_VERSION "v2.5.0"
+ENV VAULT_VERSION "v2.6.1"
 
 ENV URL "https://github.com/bitwarden/web.git"
 
@@ -69,6 +69,7 @@ RUN cargo build --release --target=armv7-unknown-linux-gnueabihf -v
 FROM balenalib/armv7hf-debian:stretch
 
 ENV ROCKET_ENV "staging"
+ENV ROCKET_PORT=80
 ENV ROCKET_WORKERS=10
 
 RUN [ "cross-build-start" ]

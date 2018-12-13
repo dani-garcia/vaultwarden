@@ -1,6 +1,4 @@
-use serde_json::Value as JsonValue;
-
-use uuid::Uuid;
+use serde_json::Value;
 
 use super::User;
 
@@ -36,7 +34,7 @@ pub enum TwoFactorType {
 impl TwoFactor {
     pub fn new(user_uuid: String, type_: TwoFactorType, data: String) -> Self {
         Self {
-            uuid: Uuid::new_v4().to_string(),
+            uuid: crate::util::get_uuid(),
             user_uuid,
             type_: type_ as i32,
             enabled: true,
@@ -59,7 +57,7 @@ impl TwoFactor {
         generated == totp_code
     }
 
-    pub fn to_json(&self) -> JsonValue {
+    pub fn to_json(&self) -> Value {
         json!({
             "Enabled": self.enabled,
             "Key": "", // This key and value vary
@@ -67,7 +65,7 @@ impl TwoFactor {
         })
     }
 
-    pub fn to_json_list(&self) -> JsonValue {
+    pub fn to_json_list(&self) -> Value {
         json!({
             "Enabled": self.enabled,
             "Type": self.type_,
@@ -78,8 +76,8 @@ impl TwoFactor {
 
 use diesel;
 use diesel::prelude::*;
-use db::DbConn;
-use db::schema::twofactor;
+use crate::db::DbConn;
+use crate::db::schema::twofactor;
 
 /// Database methods
 impl TwoFactor {

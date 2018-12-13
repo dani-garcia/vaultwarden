@@ -45,7 +45,7 @@ impl Device {
 
     pub fn refresh_twofactor_remember(&mut self) -> String {
         use data_encoding::BASE64;
-        use crypto;
+        use crate::crypto;
 
         let twofactor_remember = BASE64.encode(&crypto::get_random(vec![0u8; 180]));
         self.twofactor_remember = Some(twofactor_remember.clone());
@@ -62,7 +62,7 @@ impl Device {
         // If there is no refresh token, we create one
         if self.refresh_token.is_empty() {
             use data_encoding::BASE64URL;
-            use crypto;
+            use crate::crypto;
 
             self.refresh_token = BASE64URL.encode(&crypto::get_random_64());
         }
@@ -71,14 +71,14 @@ impl Device {
         let time_now = Utc::now().naive_utc();
         self.updated_at = time_now;
 
-
         let orgowner: Vec<_> = orgs.iter().filter(|o| o.type_ == 0).map(|o| o.org_uuid.clone()).collect();
         let orgadmin: Vec<_> = orgs.iter().filter(|o| o.type_ == 1).map(|o| o.org_uuid.clone()).collect();
         let orguser: Vec<_> = orgs.iter().filter(|o| o.type_ == 2).map(|o| o.org_uuid.clone()).collect();
+        let orgmanager: Vec<_> = orgs.iter().filter(|o| o.type_ == 3).map(|o| o.org_uuid.clone()).collect();
 
 
         // Create the JWT claims struct, to send to the client
-        use auth::{encode_jwt, JWTClaims, DEFAULT_VALIDITY, JWT_ISSUER};
+        use crate::auth::{encode_jwt, JWTClaims, DEFAULT_VALIDITY, JWT_ISSUER};
         let claims = JWTClaims {
             nbf: time_now.timestamp(),
             exp: (time_now + *DEFAULT_VALIDITY).timestamp(),
@@ -93,6 +93,7 @@ impl Device {
             orgowner,
             orgadmin,
             orguser,
+            orgmanager,
 
             sstamp: user.security_stamp.to_string(),
             device: self.uuid.to_string(),
@@ -100,23 +101,29 @@ impl Device {
             amr: vec!["Application".into()],
         };
 
-
         (encode_jwt(&claims), DEFAULT_VALIDITY.num_seconds())
     }
 }
 
 use diesel;
 use diesel::prelude::*;
-use db::DbConn;
-use db::schema::devices;
+use crate::db::DbConn;
+use crate::db::schema::devices;
 
 /// Database methods
 impl Device {
     pub fn save(&mut self, conn: &DbConn) -> QueryResult<()> {
         self.updated_at = Utc::now().naive_utc();
 
-        diesel::replace_into(devices::table)
-            .values(&*self).execute(&**conn).and(Ok(()))
+        crate::util::retry(
+            || {
+                diesel::replace_into(devices::table)
+                    .values(&*self)
+                    .execute(&**conn)
+            },
+            10,
+        )
+        .and(Ok(()))
     }
 
     pub fn delete(self, conn: &DbConn) -> QueryResult<()> {

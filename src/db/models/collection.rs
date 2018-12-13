@@ -1,6 +1,4 @@
-use serde_json::Value as JsonValue;
-
-use uuid::Uuid;
+use serde_json::Value;
 
 use super::{Organization, UserOrganization, UserOrgType, UserOrgStatus};
 
@@ -18,14 +16,14 @@ pub struct Collection {
 impl Collection {
     pub fn new(org_uuid: String, name: String) -> Self {
         Self {
-            uuid: Uuid::new_v4().to_string(),
+            uuid: crate::util::get_uuid(),
 
             org_uuid,
             name,
         }
     }
 
-    pub fn to_json(&self) -> JsonValue {
+    pub fn to_json(&self) -> Value {
         json!({
             "Id": self.uuid,
             "OrganizationId": self.org_uuid,
@@ -37,8 +35,8 @@ impl Collection {
 
 use diesel;
 use diesel::prelude::*;
-use db::DbConn;
-use db::schema::*;
+use crate::db::DbConn;
+use crate::db::schema::*;
 
 /// Database methods
 impl Collection {
@@ -150,15 +148,12 @@ impl Collection {
                if user_org.access_all {
                    true
                } else {
-                   match users_collections::table.inner_join(collections::table)
+                   users_collections::table.inner_join(collections::table)
                    .filter(users_collections::collection_uuid.eq(&self.uuid))
                    .filter(users_collections::user_uuid.eq(&user_uuid))
                    .filter(users_collections::read_only.eq(false))
                    .select(collections::all_columns)
-                   .first::<Self>(&**conn).ok() {
-                       None => false, // Read only or no access to collection
-                       Some(_) => true,
-                   }
+                   .first::<Self>(&**conn).ok().is_some() // Read only or no access to collection
                }
             }
         }

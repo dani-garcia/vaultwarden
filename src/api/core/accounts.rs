@@ -1,13 +1,37 @@
-use rocket_contrib::Json;
+use rocket_contrib::json::Json;
 
-use db::DbConn;
-use db::models::*;
+use crate::db::models::*;
+use crate::db::DbConn;
 
-use api::{PasswordData, JsonResult, EmptyResult, JsonUpcase, NumberOrString};
-use auth::Headers;
-use mail;
+use crate::api::{EmptyResult, JsonResult, JsonUpcase, NumberOrString, PasswordData, UpdateType, WebSocketUsers};
+use crate::auth::Headers;
+use crate::mail;
 
-use CONFIG;
+use crate::CONFIG;
+
+use rocket::{Route, State};
+
+pub fn routes() -> Vec<Route> {
+    routes![
+        register,
+        profile,
+        put_profile,
+        post_profile,
+        get_public_keys,
+        post_keys,
+        post_password,
+        post_kdf,
+        post_rotatekey,
+        post_sstamp,
+        post_email_token,
+        post_email,
+        delete_account,
+        post_delete_account,
+        revision_date,
+        password_hint,
+        prelogin,
+    ]
+}
 
 #[derive(Deserialize, Debug)]
 #[allow(non_snake_case)]
@@ -33,23 +57,22 @@ struct KeysData {
 fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> EmptyResult {
     let data: RegisterData = data.into_inner().data;
 
-
     let mut user = match User::find_by_mail(&data.Email, &conn) {
-        Some(mut user) => {
+        Some(user) => {
             if Invitation::take(&data.Email, &conn) {
                 for mut user_org in UserOrganization::find_invited_by_user(&user.uuid, &conn).iter_mut() {
                     user_org.status = UserOrgStatus::Accepted as i32;
                     if user_org.save(&conn).is_err() {
                         err!("Failed to accept user to organization")
                     }
-                };
+                }
                 user
             } else if CONFIG.signups_allowed {
-                 err!("Account with this email already exists")
+                err!("Account with this email already exists")
             } else {
-                 err!("Registration not allowed")
+                err!("Registration not allowed")
             }
-        },
+        }
         None => {
             if CONFIG.signups_allowed || Invitation::take(&data.Email, &conn) {
                 User::new(data.Email)
@@ -86,7 +109,7 @@ fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> EmptyResult {
 
     match user.save(&conn) {
         Ok(()) => Ok(()),
-        Err(_) => err!("Failed to save user")
+        Err(_) => err!("Failed to save user"),
     }
 }
 
@@ -99,7 +122,7 @@ fn profile(headers: Headers, conn: DbConn) -> JsonResult {
 #[allow(non_snake_case)]
 struct ProfileData {
     #[serde(rename = "Culture")]
-    _Culture: String,  // Ignored, always use en-US
+    _Culture: String, // Ignored, always use en-US
     MasterPasswordHint: Option<String>,
     Name: String,
 }
@@ -122,7 +145,7 @@ fn post_profile(data: JsonUpcase<ProfileData>, headers: Headers, conn: DbConn) -
     };
     match user.save(&conn) {
         Ok(()) => Ok(Json(user.to_json(&conn))),
-        Err(_) => err!("Failed to save user profile")
+        Err(_) => err!("Failed to save user profile"),
     }
 }
 
@@ -130,7 +153,7 @@ fn post_profile(data: JsonUpcase<ProfileData>, headers: Headers, conn: DbConn) -
 fn get_public_keys(uuid: String, _headers: Headers, conn: DbConn) -> JsonResult {
     let user = match User::find_by_uuid(&uuid, &conn) {
         Some(user) => user,
-        None => err!("User doesn't exist")
+        None => err!("User doesn't exist"),
     };
 
     Ok(Json(json!({
@@ -151,11 +174,9 @@ fn post_keys(data: JsonUpcase<KeysData>, headers: Headers, conn: DbConn) -> Json
 
     match user.save(&conn) {
         Ok(()) => Ok(Json(user.to_json(&conn))),
-        Err(_) => err!("Failed to save the user's keys")
+        Err(_) => err!("Failed to save the user's keys"),
     }
 }
-
-    
 
 #[derive(Deserialize)]
 #[allow(non_snake_case)]
@@ -178,7 +199,7 @@ fn post_password(data: JsonUpcase<ChangePassData>, headers: Headers, conn: DbCon
     user.key = data.Key;
     match user.save(&conn) {
         Ok(()) => Ok(()),
-        Err(_) => err!("Failed to save password")
+        Err(_) => err!("Failed to save password"),
     }
 }
 
@@ -208,8 +229,84 @@ fn post_kdf(data: JsonUpcase<ChangeKdfData>, headers: Headers, conn: DbConn) -> 
     user.key = data.Key;
     match user.save(&conn) {
         Ok(()) => Ok(()),
-        Err(_) => err!("Failed to save password settings")
+        Err(_) => err!("Failed to save password settings"),
     }
+}
+
+#[derive(Deserialize)]
+#[allow(non_snake_case)]
+struct UpdateFolderData {
+    Id: String,
+    Name: String,
+}
+
+use super::ciphers::CipherData;
+
+#[derive(Deserialize)]
+#[allow(non_snake_case)]
+struct KeyData {
+    Ciphers: Vec<CipherData>,
+    Folders: Vec<UpdateFolderData>,
+    Key: String,
+    PrivateKey: String,
+    MasterPasswordHash: String,
+}
+
+#[post("/accounts/key", data = "<data>")]
+fn post_rotatekey(data: JsonUpcase<KeyData>, headers: Headers, conn: DbConn, ws: State<WebSocketUsers>) -> EmptyResult {
+    let data: KeyData = data.into_inner().data;
+
+    if !headers.user.check_valid_password(&data.MasterPasswordHash) {
+        err!("Invalid password")
+    }
+
+    let user_uuid = &headers.user.uuid;
+
+    // Update folder data
+    for folder_data in data.Folders {
+        let mut saved_folder = match Folder::find_by_uuid(&folder_data.Id, &conn) {
+            Some(folder) => folder,
+            None => err!("Folder doesn't exist"),
+        };
+
+        if &saved_folder.user_uuid != user_uuid {
+            err!("The folder is not owned by the user")
+        }
+
+        saved_folder.name = folder_data.Name;
+        if saved_folder.save(&conn).is_err() {
+            err!("Failed to save folder")
+        }
+    }
+
+    // Update cipher data
+    use super::ciphers::update_cipher_from_data;
+
+    for cipher_data in data.Ciphers {
+        let mut saved_cipher = match Cipher::find_by_uuid(cipher_data.Id.as_ref().unwrap(), &conn) {
+            Some(cipher) => cipher,
+            None => err!("Cipher doesn't exist"),
+        };
+
+        if saved_cipher.user_uuid.as_ref().unwrap() != user_uuid {
+            err!("The cipher is not owned by the user")
+        }
+
+        update_cipher_from_data(&mut saved_cipher, cipher_data, &headers, false, &conn, &ws, UpdateType::SyncCipherUpdate)?
+    }
+
+    // Update user data
+    let mut user = headers.user;
+
+    user.key = data.Key;
+    user.private_key = Some(data.PrivateKey);
+    user.reset_security_stamp();
+
+    if user.save(&conn).is_err() {
+        err!("Failed modify user key");
+    }
+
+    Ok(())
 }
 
 #[post("/accounts/security-stamp", data = "<data>")]
@@ -224,7 +321,7 @@ fn post_sstamp(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn) -
     user.reset_security_stamp();
     match user.save(&conn) {
         Ok(()) => Ok(()),
-        Err(_) => err!("Failed to reset security stamp")
+        Err(_) => err!("Failed to reset security stamp"),
     }
 }
 
@@ -255,7 +352,7 @@ fn post_email_token(data: JsonUpcase<EmailTokenData>, headers: Headers, conn: Db
 struct ChangeEmailData {
     MasterPasswordHash: String,
     NewEmail: String,
-    
+
     Key: String,
     NewMasterPasswordHash: String,
     #[serde(rename = "Token")]
@@ -276,13 +373,13 @@ fn post_email(data: JsonUpcase<ChangeEmailData>, headers: Headers, conn: DbConn)
     }
 
     user.email = data.NewEmail;
-    
+
     user.set_password(&data.NewMasterPasswordHash);
     user.key = data.Key;
 
     match user.save(&conn) {
         Ok(()) => Ok(()),
-        Err(_) => err!("Failed to save email address")
+        Err(_) => err!("Failed to save email address"),
     }
 }
 
@@ -299,10 +396,10 @@ fn delete_account(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn
     if !user.check_valid_password(&data.MasterPasswordHash) {
         err!("Invalid password")
     }
-    
+
     match user.delete(&conn) {
         Ok(()) => Ok(()),
-        Err(_) => err!("Failed deleting user account, are you the only owner of some organization?")
+        Err(_) => err!("Failed deleting user account, are you the only owner of some organization?"),
     }
 }
 

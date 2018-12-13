@@ -6,9 +6,10 @@ use rocket::response::{self, NamedFile, Responder};
 use rocket::response::content::Content;
 use rocket::http::{ContentType, Status};
 use rocket::Route;
-use rocket_contrib::{Json, Value};
+use rocket_contrib::json::Json;
+use serde_json::Value;
 
-use CONFIG;
+use crate::CONFIG;
 
 pub fn routes() -> Vec<Route> {
     if CONFIG.web_vault_enabled {
@@ -73,7 +74,7 @@ fn attachments(uuid: String, file: PathBuf) -> io::Result<NamedFile> {
 
 #[get("/alive")]
 fn alive() -> Json<String> {
-    use util::format_date;
+    use crate::util::format_date;
     use chrono::Utc;
 
     Json(format_date(&Utc::now().naive_utc()))

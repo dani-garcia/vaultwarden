@@ -7,7 +7,7 @@ use rocket::http::ContentType;
 
 use reqwest;
 
-use CONFIG;
+use crate::CONFIG;
 
 pub fn routes() -> Vec<Route> {
     routes![icon]
@@ -43,7 +43,7 @@ fn get_icon (domain: &str) -> Vec<u8> {
             icon
         },
         Err(e) => {
-            println!("Error downloading icon: {:?}", e);
+            error!("Error downloading icon: {:?}", e);
             get_fallback_icon()
         }
     }
@@ -71,7 +71,7 @@ fn get_icon_url(domain: &str) -> String {
 }
 
 fn download_icon(url: &str) -> Result<Vec<u8>, reqwest::Error> {
-    println!("Downloading icon for {}...", url);
+    info!("Downloading icon for {}...", url);
     let mut res = reqwest::get(url)?;
 
     res = res.error_for_status()?;
@@ -105,7 +105,7 @@ fn get_fallback_icon() -> Vec<u8> {
             icon
         },
         Err(e) => {
-            println!("Error downloading fallback icon: {:?}", e);
+            error!("Error downloading fallback icon: {:?}", e);
             vec![]
         }
     }

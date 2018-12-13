@@ -2,36 +2,46 @@
 /// Macros
 ///
 #[macro_export]
-macro_rules! err {
-    ($err:expr, $msg:expr) => {{
-        println!("ERROR: {}", $msg);
+macro_rules! _err_object {
+    ($msg:expr) => {{
         err_json!(json!({
-        "error": $err,
-        "error_description": $err,
-        "ErrorModel": {
-          "Message": $msg,
-          "ValidationErrors": null,
-          "ExceptionMessage": null,
-          "ExceptionStackTrace": null,
-          "InnerExceptionMessage": null,
-          "Object": "error"
-        }}))
+            "Message": "",
+            "error": "",
+            "error_description": "",
+            "ValidationErrors": {"": [ $msg ]},
+            "ErrorModel": {
+                "Message": $msg,
+                "Object": "error"
+            },
+            "Object": "error"
+        }))
     }};
-    ($msg:expr) => { err!("unknown_error", $msg) }
+}
+
+#[macro_export]
+macro_rules! err {
+    ($msg:expr) => {{
+        error!("{}", $msg);
+        _err_object!($msg)
+    }};
+    ($usr_msg:expr, $log_value:expr) => {{
+        error!("{}: {:#?}", $usr_msg, $log_value);
+        _err_object!($usr_msg)
+    }}
 }
 
 #[macro_export]
 macro_rules! err_json {
     ($expr:expr) => {{
-        return Err($crate::rocket::response::status::BadRequest(Some($crate::rocket_contrib::Json($expr))));
+        return Err(rocket::response::status::BadRequest(Some(rocket_contrib::json::Json($expr))));
     }}
 }
 
 #[macro_export]
 macro_rules! err_handler {
     ($expr:expr) => {{
-        println!("ERROR: {}", $expr);
-        return $crate::rocket::Outcome::Failure(($crate::rocket::http::Status::Unauthorized, $expr));
+        error!("{}", $expr);
+        return rocket::Outcome::Failure((rocket::http::Status::Unauthorized, $expr));
     }}
 }
 
@@ -90,6 +100,10 @@ pub fn get_display_size(size: i32) -> String {
     // Round to two decimals
     size = (size * 100.).round() / 100.;
     format!("{} {}", size, UNITS[unit_counter])
+}
+
+pub fn get_uuid() -> String {
+    uuid::Uuid::new_v4().to_string()
 }
 
 
@@ -238,6 +252,33 @@ fn upcase_value(value: &Value) -> Value {
 fn _process_key(key: &str) -> String {
     match key.to_lowercase().as_ref() {
         "ssn" => "SSN".into(),
-        _ => self::upcase_first(key)
+        _ => self::upcase_first(key),
+    }
+}
+
+//
+// Retry methods
+//
+
+pub fn retry<F, T, E>(func: F, max_tries: i32) -> Result<T, E>
+where
+    F: Fn() -> Result<T, E>,
+{
+    use std::{thread::sleep, time::Duration};
+    let mut tries = 0;
+
+    loop {
+        match func() {
+            ok @ Ok(_) => return ok,
+            err @ Err(_) => {
+                tries += 1;
+
+                if tries >= max_tries {
+                    return err;
+                }
+
+                sleep(Duration::from_millis(500));
+            }
+        }
     }
 }

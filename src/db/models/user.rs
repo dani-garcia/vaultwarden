@@ -1,10 +1,8 @@
 use chrono::{NaiveDateTime, Utc};
-use serde_json::Value as JsonValue;
+use serde_json::Value;
 
-use uuid::Uuid;
-
-use crypto;
-use CONFIG;
+use crate::crypto;
+use crate::CONFIG;
 
 
 #[derive(Debug, Identifiable, Queryable, Insertable)]
@@ -50,7 +48,7 @@ impl User {
         let email = mail.to_lowercase();
 
         Self {
-            uuid: Uuid::new_v4().to_string(),
+            uuid: crate::util::get_uuid(),
             created_at: now,
             updated_at: now,
             name: email.clone(),
@@ -61,7 +59,7 @@ impl User {
             salt: crypto::get_random_64(),
             password_iterations: CONFIG.password_iterations,
 
-            security_stamp: Uuid::new_v4().to_string(),
+            security_stamp: crate::util::get_uuid(),
 
             password_hint: None,
             private_key: None,
@@ -97,11 +95,10 @@ impl User {
         self.password_hash = crypto::hash_password(password.as_bytes(),
                                                    &self.salt,
                                                    self.password_iterations as u32);
-        self.reset_security_stamp();
     }
 
     pub fn reset_security_stamp(&mut self) {
-        self.security_stamp = Uuid::new_v4().to_string();
+        self.security_stamp = crate::util::get_uuid();
     }
 
     pub fn is_server_admin(&self) -> bool {
@@ -114,20 +111,20 @@ impl User {
 
 use diesel;
 use diesel::prelude::*;
-use db::DbConn;
-use db::schema::{users, invitations};
+use crate::db::DbConn;
+use crate::db::schema::{users, invitations};
 use super::{Cipher, Folder, Device, UserOrganization, UserOrgType};
 
 /// Database methods
 impl User {
-    pub fn to_json(&self, conn: &DbConn) -> JsonValue {
+    pub fn to_json(&self, conn: &DbConn) -> Value {
         use super::{UserOrganization, UserOrgType, UserOrgStatus, TwoFactor};
 
         let mut orgs = UserOrganization::find_by_user(&self.uuid, conn);
         if self.is_server_admin() {
             orgs.push(UserOrganization::new_virtual(self.uuid.clone(), UserOrgType::Owner, UserOrgStatus::Confirmed));
         }
-        let orgs_json: Vec<JsonValue> = orgs.iter().map(|c| c.to_json(&conn)).collect();
+        let orgs_json: Vec<Value> = orgs.iter().map(|c| c.to_json(&conn)).collect();
         let twofactor_enabled = !TwoFactor::find_by_user(&self.uuid, conn).is_empty();
 
         json!({
@@ -181,7 +178,7 @@ impl User {
     pub fn update_uuid_revision(uuid: &str, conn: &DbConn) {
         if let Some(mut user) = User::find_by_uuid(&uuid, conn) {
             if user.update_revision(conn).is_err(){
-                println!("Warning: Failed to update revision for {}", user.email);
+                warn!("Failed to update revision for {}", user.email);
             };
         };
     }

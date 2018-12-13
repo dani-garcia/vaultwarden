@@ -1,22 +1,21 @@
 ///
 /// JWT Handling
 ///
-
-use util::read_file;
+use crate::util::read_file;
 use chrono::Duration;
 
-use jwt;
+use jsonwebtoken::{self, Algorithm, Header};
 use serde::ser::Serialize;
 
-use CONFIG;
+use crate::CONFIG;
 
-const JWT_ALGORITHM: jwt::Algorithm = jwt::Algorithm::RS256;
+const JWT_ALGORITHM: Algorithm = Algorithm::RS256;
 
 lazy_static! {
     pub static ref DEFAULT_VALIDITY: Duration = Duration::hours(2);
     pub static ref JWT_ISSUER: String = CONFIG.domain.clone();
 
-    static ref JWT_HEADER: jwt::Header = jwt::Header::new(JWT_ALGORITHM);
+    static ref JWT_HEADER: Header = Header::new(JWT_ALGORITHM);
 
     static ref PRIVATE_RSA_KEY: Vec<u8> = match read_file(&CONFIG.private_rsa_key) {
         Ok(key) => key,
@@ -30,17 +29,17 @@ lazy_static! {
 }
 
 pub fn encode_jwt<T: Serialize>(claims: &T) -> String {
-    match jwt::encode(&JWT_HEADER, claims, &PRIVATE_RSA_KEY) {
+    match jsonwebtoken::encode(&JWT_HEADER, claims, &PRIVATE_RSA_KEY) {
         Ok(token) => token,
         Err(e) => panic!("Error encoding jwt {}", e)
     }
 }
 
 pub fn decode_jwt(token: &str) -> Result<JWTClaims, String> {
-    let validation = jwt::Validation {
+    let validation = jsonwebtoken::Validation {
         leeway: 30, // 30 seconds
         validate_exp: true,
-        validate_iat: true,
+        validate_iat: false, // IssuedAt is the same as NotBefore
         validate_nbf: true,
         aud: None,
         iss: Some(JWT_ISSUER.clone()),
@@ -48,10 +47,10 @@ pub fn decode_jwt(token: &str) -> Result<JWTClaims, String> {
         algorithms: vec![JWT_ALGORITHM],
     };
 
-    match jwt::decode(token, &PUBLIC_RSA_KEY, &validation) {
+    match jsonwebtoken::decode(token, &PUBLIC_RSA_KEY, &validation) {
         Ok(decoded) => Ok(decoded.claims),
         Err(msg) => {
-            println!("Error validating jwt - {:#?}", msg);
+            error!("Error validating jwt - {:#?}", msg);
             Err(msg.to_string())
         }
     }
@@ -76,6 +75,7 @@ pub struct JWTClaims {
     pub orgowner: Vec<String>,
     pub orgadmin: Vec<String>,
     pub orguser: Vec<String>,
+    pub orgmanager: Vec<String>,
 
     // user security_stamp
     pub sstamp: String,
@@ -90,12 +90,11 @@ pub struct JWTClaims {
 ///
 /// Bearer token authentication
 ///
-
 use rocket::Outcome;
 use rocket::request::{self, Request, FromRequest};
 
-use db::DbConn;
-use db::models::{User, Organization, UserOrganization, UserOrgType, UserOrgStatus, Device};
+use crate::db::DbConn;
+use crate::db::models::{User, Organization, UserOrganization, UserOrgType, UserOrgStatus, Device};
 
 pub struct Headers {
     pub host: String,
@@ -139,13 +138,11 @@ impl<'a, 'r> FromRequest<'a, 'r> for Headers {
 
         // Get access_token
         let access_token: &str = match request.headers().get_one("Authorization") {
-            Some(a) => {
-                match a.rsplit("Bearer ").next() {
-                    Some(split) => split,
-                    None => err_handler!("No access token provided")
-                }
-            }
-            None => err_handler!("No access token provided")
+            Some(a) => match a.rsplit("Bearer ").next() {
+                Some(split) => split,
+                None => err_handler!("No access token provided"),
+            },
+            None => err_handler!("No access token provided"),
         };
 
         // Check JWT token is valid and get device and user from it
@@ -192,13 +189,12 @@ impl<'a, 'r> FromRequest<'a, 'r> for OrgHeaders {
 
     fn from_request(request: &'a Request<'r>) -> request::Outcome<Self, Self::Error> {
         match request.guard::<Headers>() {
-            Outcome::Forward(f) => Outcome::Forward(f),
+            Outcome::Forward(_) => Outcome::Forward(()),
             Outcome::Failure(f) => Outcome::Failure(f),
             Outcome::Success(headers) => {
-                // org_id is expected to be the first dynamic param
-                match request.get_param::<String>(0) {
-                    Err(_) => err_handler!("Error getting the organization id"),
-                    Ok(org_id) => {
+                // org_id is expected to be the second param ("/organizations/<org_id>")
+                match request.get_param::<String>(1) {
+                    Some(Ok(org_id)) => {
                         let conn = match request.guard::<DbConn>() {
                             Outcome::Success(conn) => conn,
                             _ => err_handler!("Error getting DB")
@@ -226,14 +222,15 @@ impl<'a, 'r> FromRequest<'a, 'r> for OrgHeaders {
                             device: headers.device,
                             user: headers.user,
                             org_user_type: { 
-                                if let Some(org_usr_type) = UserOrgType::from_i32(&org_user.type_) {
+                                if let Some(org_usr_type) = UserOrgType::from_i32(org_user.type_) {
                                     org_usr_type
                                 } else { // This should only happen if the DB is corrupted
                                     err_handler!("Unknown user type in the database")
                                 }
                             },
                         })
-                    }
+                    },
+                    _ => err_handler!("Error getting the organization id"),
                 }
             }
         }
@@ -252,11 +249,11 @@ impl<'a, 'r> FromRequest<'a, 'r> for AdminHeaders {
 
     fn from_request(request: &'a Request<'r>) -> request::Outcome<Self, Self::Error> {
         match request.guard::<OrgHeaders>() {
-            Outcome::Forward(f) => Outcome::Forward(f),
+            Outcome::Forward(_) => Outcome::Forward(()),
             Outcome::Failure(f) => Outcome::Failure(f),
             Outcome::Success(headers) => {
                 if headers.org_user_type >= UserOrgType::Admin {
-                    Outcome::Success(Self{
+                    Outcome::Success(Self {
                         host: headers.host,
                         device: headers.device,
                         user: headers.user,
@@ -281,11 +278,11 @@ impl<'a, 'r> FromRequest<'a, 'r> for OwnerHeaders {
 
     fn from_request(request: &'a Request<'r>) -> request::Outcome<Self, Self::Error> {
         match request.guard::<OrgHeaders>() {
-            Outcome::Forward(f) => Outcome::Forward(f),
+            Outcome::Forward(_) => Outcome::Forward(()),
             Outcome::Failure(f) => Outcome::Failure(f),
             Outcome::Success(headers) => {
                 if headers.org_user_type == UserOrgType::Owner {
-                    Outcome::Success(Self{
+                    Outcome::Success(Self {
                         host: headers.host,
                         device: headers.device,
                         user: headers.user,
@@ -295,5 +292,27 @@ impl<'a, 'r> FromRequest<'a, 'r> for OwnerHeaders {
                 }
             }
         }
+    }
+}
+
+///
+/// Client IP address detection
+///
+use std::net::IpAddr;
+
+pub struct ClientIp {
+    pub ip: IpAddr,
+}
+
+impl<'a, 'r> FromRequest<'a, 'r> for ClientIp {
+    type Error = ();
+
+    fn from_request(request: &'a Request<'r>) -> request::Outcome<Self, Self::Error> {
+        let ip = match request.client_ip() {
+            Some(addr) => addr,
+            None => "0.0.0.0".parse().unwrap(),
+        };
+
+        Outcome::Success(ClientIp { ip })
     }
 }

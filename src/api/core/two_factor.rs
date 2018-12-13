@@ -1,16 +1,40 @@
 use data_encoding::BASE32;
-use rocket_contrib::{Json, Value};
+use rocket_contrib::json::Json;
 use serde_json;
+use serde_json::Value;
 
-use db::{
+
+use crate::db::{
     models::{TwoFactor, TwoFactorType, User},
     DbConn,
 };
 
-use crypto;
+use crate::crypto;
 
-use api::{ApiResult, JsonResult, JsonUpcase, NumberOrString, PasswordData};
-use auth::Headers;
+use crate::api::{ApiResult, JsonResult, JsonUpcase, NumberOrString, PasswordData};
+use crate::auth::Headers;
+
+use rocket::Route;
+
+pub fn routes() -> Vec<Route> {
+    routes![
+        get_twofactor,
+        get_recover,
+        recover,
+        disable_twofactor,
+        disable_twofactor_put,
+        generate_authenticator,
+        activate_authenticator,
+        activate_authenticator_put,
+        generate_u2f,
+        generate_u2f_challenge,
+        activate_u2f,
+        activate_u2f_put,
+        generate_yubikey,
+        activate_yubikey,
+        activate_yubikey_put,
+    ]
+}
 
 #[get("/two-factor")]
 fn get_twofactor(headers: Headers, conn: DbConn) -> JsonResult {
@@ -50,7 +74,7 @@ struct RecoverTwoFactor {
 fn recover(data: JsonUpcase<RecoverTwoFactor>, conn: DbConn) -> JsonResult {
     let data: RecoverTwoFactor = data.into_inner().data;
 
-    use db::models::User;
+    use crate::db::models::User;
 
     // Get the user
     let mut user = match User::find_by_mail(&data.Email, &conn) {
@@ -219,7 +243,7 @@ fn _generate_recover_code(user: &mut User, conn: &DbConn) {
         let totp_recover = BASE32.encode(&crypto::get_random(vec![0u8; 20]));
         user.totp_recover = Some(totp_recover);
         if user.save(conn).is_err() {
-            println!("Error: Failed to save the user's two factor recovery code")
+            error!("Failed to save the user's two factor recovery code")
         }
     }
 }
@@ -228,7 +252,7 @@ use u2f::messages::{RegisterResponse, SignResponse, U2fSignRequest};
 use u2f::protocol::{Challenge, U2f};
 use u2f::register::Registration;
 
-use CONFIG;
+use crate::CONFIG;
 
 const U2F_VERSION: &str = "U2F_V2";
 
@@ -376,7 +400,7 @@ fn activate_u2f(data: JsonUpcase<EnableU2FData>, headers: Headers, conn: DbConn)
                 })))
             }
             Err(e) => {
-                println!("Error: {:#?}", e);
+                error!("{:#?}", e);
                 err!("Error activating u2f")
             }
         }
@@ -480,11 +504,11 @@ pub fn validate_u2f_login(user_uuid: &str, response: &str, conn: &DbConn) -> Api
         match response {
             Ok(new_counter) => {
                 _counter = new_counter;
-                println!("O {:#}", new_counter);
+                info!("O {:#}", new_counter);
                 return Ok(());
             }
             Err(e) => {
-                println!("E {:#}", e);
+                info!("E {:#}", e);
                 break;
             }
         }
@@ -544,9 +568,8 @@ fn parse_yubikeys(data: &EnableYubikeyData) -> Vec<String> {
 fn jsonify_yubikeys(yubikeys: Vec<String>) -> serde_json::Value {
     let mut result = json!({});
 
-    for i in 0..yubikeys.len() {
-        let ref key = &yubikeys[i];
-        result[format!("Key{}", i+1)] = Value::String(key.to_string());
+    for (i, key) in yubikeys.into_iter().enumerate() {
+        result[format!("Key{}", i+1)] = Value::String(key);
     }
 
     result
@@ -630,7 +653,7 @@ fn activate_yubikey(data: JsonUpcase<EnableYubikeyData>, headers: Headers, conn:
 
     let yubikeys = parse_yubikeys(&data);
 
-    if yubikeys.len() == 0 {
+    if yubikeys.is_empty() {
         return Ok(Json(json!({
             "Enabled": false,
             "Object": "twoFactorU2f",

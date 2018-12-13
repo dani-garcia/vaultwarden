@@ -4,6 +4,7 @@ table! {
         cipher_uuid -> Text,
         file_name -> Text,
         file_size -> Integer,
+        key -> Nullable<Text>,
     }
 }
 

@@ -1,12 +1,12 @@
 use rocket::Route;
-use rocket_contrib::Json;
+use rocket_contrib::json::Json;
 use serde_json::Value as JsonValue;
 
-use api::JsonResult;
-use auth::Headers;
-use db::DbConn;
+use crate::api::JsonResult;
+use crate::auth::Headers;
+use crate::db::DbConn;
 
-use CONFIG;
+use crate::CONFIG;
 
 pub fn routes() -> Vec<Route> {
     routes![negotiate, websockets_err]
@@ -19,7 +19,7 @@ fn websockets_err() -> JsonResult {
 
 #[post("/hub/negotiate")]
 fn negotiate(_headers: Headers, _conn: DbConn) -> JsonResult {
-    use crypto;
+    use crate::crypto;
     use data_encoding::BASE64URL;
 
     let conn_id = BASE64URL.encode(&crypto::get_random(vec![0u8; 16]));
@@ -52,7 +52,7 @@ use chashmap::CHashMap;
 use chrono::NaiveDateTime;
 use serde_json::from_str;
 
-use db::models::{Cipher, Folder, User};
+use crate::db::models::{Cipher, Folder, User};
 
 use rmpv::Value;
 
@@ -139,7 +139,7 @@ impl Handler for WSHandler {
         let _id = &query_split[1][3..];
 
         // Validate the user
-        use auth;
+        use crate::auth;
         let claims = match auth::decode_jwt(access_token) {
             Ok(claims) => claims,
             Err(_) => {
@@ -169,7 +169,7 @@ impl Handler for WSHandler {
     }
 
     fn on_message(&mut self, msg: Message) -> ws::Result<()> {
-        println!("Server got message '{}'. ", msg);
+        info!("Server got message '{}'. ", msg);
 
         if let Message::Text(text) = msg.clone() {
             let json = &text[..text.len() - 1]; // Remove last char
@@ -242,10 +242,10 @@ pub struct WebSocketUsers {
 }
 
 impl WebSocketUsers {
-    fn send_update(&self, user_uuid: &String, data: Vec<u8>) -> ws::Result<()> {
+    fn send_update(&self, user_uuid: &String, data: &[u8]) -> ws::Result<()> {
         if let Some(user) = self.map.get(user_uuid) {
             for sender in user.iter() {
-                sender.send(data.clone())?;
+                sender.send(data)?;
             }
         }
         Ok(())
@@ -262,7 +262,7 @@ impl WebSocketUsers {
             ut,
         );
 
-        self.send_update(&user.uuid.clone(), data).ok();
+        self.send_update(&user.uuid.clone(), &data).ok();
     }
 
     pub fn send_folder_update(&self, ut: UpdateType, folder: &Folder) {
@@ -275,10 +275,10 @@ impl WebSocketUsers {
             ut,
         );
 
-        self.send_update(&folder.user_uuid, data).ok();
+        self.send_update(&folder.user_uuid, &data).ok();
     }
 
-    pub fn send_cipher_update(&self, ut: UpdateType, cipher: &Cipher, user_uuids: &Vec<String>) {
+    pub fn send_cipher_update(&self, ut: UpdateType, cipher: &Cipher, user_uuids: &[String]) {
         let user_uuid = convert_option(cipher.user_uuid.clone());
         let org_uuid = convert_option(cipher.organization_uuid.clone());
 
@@ -294,7 +294,7 @@ impl WebSocketUsers {
         );
 
         for uuid in user_uuids {
-            self.send_update(&uuid, data.clone()).ok();
+            self.send_update(&uuid, &data).ok();
         }
     }
 }

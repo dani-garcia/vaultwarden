@@ -1,7 +1,6 @@
 use std::cmp::Ordering;
-use serde_json::Value as JsonValue;
+use serde_json::Value;
 
-use uuid::Uuid;
 use super::{User, CollectionUser, Invitation};
 
 #[derive(Debug, Identifiable, Queryable, Insertable)]
@@ -78,10 +77,10 @@ impl PartialEq<i32> for UserOrgType {
 
 impl PartialOrd<i32> for UserOrgType {
     fn partial_cmp(&self, other: &i32) -> Option<Ordering> {
-        if let Some(other) = Self::from_i32(other) {
+        if let Some(other) = Self::from_i32(*other) {
             return Some(self.cmp(&other))
         }
-        return None
+        None
     }
 
     fn gt(&self, other: &i32) -> bool {
@@ -108,10 +107,10 @@ impl PartialEq<UserOrgType> for i32 {
 
 impl PartialOrd<UserOrgType> for i32 {
     fn partial_cmp(&self, other: &UserOrgType) -> Option<Ordering> {
-        if let Some(self_type) = UserOrgType::from_i32(self) {
+        if let Some(self_type) = UserOrgType::from_i32(*self) {
             return Some(self_type.cmp(other))
         }
-        return None
+        None
     }
 
     fn lt(&self, other: &UserOrgType) -> bool {
@@ -141,7 +140,7 @@ impl UserOrgType {
         }
     }
 
-    pub fn from_i32(i: &i32) -> Option<Self> {
+    pub fn from_i32(i: i32) -> Option<Self> {
         match i {
             0 => Some(UserOrgType::Owner),
             1 => Some(UserOrgType::Admin),
@@ -159,7 +158,7 @@ impl Organization {
 
     pub fn new(name: String, billing_email: String) -> Self {
         Self {
-            uuid: Uuid::new_v4().to_string(),
+            uuid: crate::util::get_uuid(),
 
             name,
             billing_email,
@@ -174,7 +173,7 @@ impl Organization {
         }
     }
 
-    pub fn to_json(&self) -> JsonValue {
+    pub fn to_json(&self) -> Value {
         json!({
             "Id": self.uuid,
             "Name": self.name,
@@ -206,7 +205,7 @@ impl Organization {
 impl UserOrganization {
     pub fn new(user_uuid: String, org_uuid: String) -> Self {
         Self {
-            uuid: Uuid::new_v4().to_string(),
+            uuid: crate::util::get_uuid(),
 
             user_uuid,
             org_uuid,
@@ -236,8 +235,8 @@ impl UserOrganization {
 
 use diesel;
 use diesel::prelude::*;
-use db::DbConn;
-use db::schema::{organizations, users_organizations, users_collections, ciphers_collections};
+use crate::db::DbConn;
+use crate::db::schema::{organizations, users_organizations, users_collections, ciphers_collections};
 
 /// Database methods
 impl Organization {
@@ -285,7 +284,7 @@ impl Organization {
 }
 
 impl UserOrganization {
-    pub fn to_json(&self, conn: &DbConn) -> JsonValue {
+    pub fn to_json(&self, conn: &DbConn) -> Value {
         let org = Organization::find_by_uuid(&self.org_uuid, conn).unwrap();
 
         json!({
@@ -313,7 +312,7 @@ impl UserOrganization {
         })
     }
 
-    pub fn to_json_user_details(&self, conn: &DbConn) -> JsonValue {
+    pub fn to_json_user_details(&self, conn: &DbConn) -> Value {
         let user = User::find_by_uuid(&self.user_uuid, conn).unwrap();
 
         json!({
@@ -330,7 +329,7 @@ impl UserOrganization {
         })
     }
 
-    pub fn to_json_collection_user_details(&self, read_only: bool, conn: &DbConn) -> JsonValue {
+    pub fn to_json_collection_user_details(&self, read_only: bool, conn: &DbConn) -> Value {
         let user = User::find_by_uuid(&self.user_uuid, conn).unwrap();
 
         json!({
@@ -345,7 +344,7 @@ impl UserOrganization {
         })
     }
 
-    pub fn to_json_details(&self, conn: &DbConn) -> JsonValue {        
+    pub fn to_json_details(&self, conn: &DbConn) -> Value {        
         let coll_uuids = if self.access_all { 
             vec![] // If we have complete access, no need to fill the array
         } else {

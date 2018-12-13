@@ -2,9 +2,9 @@
 # 	https://docs.docker.com/develop/develop-images/multistage-build/
 # 	https://whitfin.io/speeding-up-rust-docker-builds/
 ####################### VAULT BUILD IMAGE  #######################
-FROM node:8-alpine as vault
+FROM node:10-alpine as vault
 
-ENV VAULT_VERSION "v2.5.0"
+ENV VAULT_VERSION "v2.6.1"
 
 ENV URL "https://github.com/bitwarden/web.git"
 
@@ -41,7 +41,6 @@ WORKDIR /app
 
 # Copies over *only* your manifests and vendored dependencies
 COPY ./Cargo.* ./
-COPY ./libs ./libs
 COPY ./rust-toolchain ./rust-toolchain
 
 # Builds your dependencies and removes the
@@ -54,6 +53,9 @@ RUN find . -not -path "./target*" -delete
 # To avoid copying unneeded files, use .dockerignore
 COPY . .
 
+# Make sure that we actually build the project
+RUN touch src/main.rs
+
 # Builds again, this time it'll just be
 # your actual source files being built
 RUN cargo build --release
@@ -64,6 +66,7 @@ RUN cargo build --release
 FROM debian:stretch-slim
 
 ENV ROCKET_ENV "staging"
+ENV ROCKET_PORT=80
 ENV ROCKET_WORKERS=10
 
 # Install needed libraries

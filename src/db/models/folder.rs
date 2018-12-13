@@ -1,7 +1,5 @@
 use chrono::{NaiveDateTime, Utc};
-use serde_json::Value as JsonValue;
-
-use uuid::Uuid;
+use serde_json::Value;
 
 use super::{User, Cipher};
 
@@ -33,7 +31,7 @@ impl Folder {
         let now = Utc::now().naive_utc();
 
         Self {
-            uuid: Uuid::new_v4().to_string(),
+            uuid: crate::util::get_uuid(),
             created_at: now,
             updated_at: now,
 
@@ -42,8 +40,8 @@ impl Folder {
         }
     }
 
-    pub fn to_json(&self) -> JsonValue {
-        use util::format_date;
+    pub fn to_json(&self) -> Value {
+        use crate::util::format_date;
 
         json!({
             "Id": self.uuid,
@@ -65,8 +63,8 @@ impl FolderCipher {
 
 use diesel;
 use diesel::prelude::*;
-use db::DbConn;
-use db::schema::{folders, folders_ciphers};
+use crate::db::DbConn;
+use crate::db::schema::{folders, folders_ciphers};
 
 /// Database methods
 impl Folder {
