@@ -2,27 +2,21 @@
 # 	https://docs.docker.com/develop/develop-images/multistage-build/
 # 	https://whitfin.io/speeding-up-rust-docker-builds/
 ####################### VAULT BUILD IMAGE  #######################
-FROM node:10-alpine as vault
+FROM alpine as vault
 
 ENV VAULT_VERSION "v2.6.1"
 
-ENV URL "https://github.com/bitwarden/web.git"
+ENV URL "https://github.com/dani-garcia/bw_web_builds/releases/download/$VAULT_VERSION/bw_web_$VAULT_VERSION.tar.gz"
 
 RUN apk add --update-cache --upgrade \
     curl \
-    git \
     tar
 
-RUN git clone -b $VAULT_VERSION --depth 1 $URL web-build
+RUN mkdir /web-build
 WORKDIR /web-build
 
-COPY /docker/set-vault-baseurl.patch /web-build/    
-RUN git apply set-vault-baseurl.patch
-
-RUN npm run sub:init && npm install
-
-RUN npm run dist \
-    && mv build /web-vault
+RUN curl -L $URL | tar xz
+RUN ls
 
 ########################## BUILD IMAGE  ##########################
 # We need to use the Rust build image, because
