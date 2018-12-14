@@ -37,6 +37,9 @@ git apply /path/to/bitwarden_rs/docker/set-vault-baseurl.patch
 ```
 
 - Then, build the Vault:
+
+*Note: building the Vault needs ~1.5GB of RAM. On systems like a RaspberryPI with 1GB or less, please [enable swapping](https://www.tecmint.com/create-a-linux-swap-file/) or build it on a more powerful machine and copy the directory from there. This much memory is only needed for building it, running bitwarden_rs with vault needs about 10mb of RAM*
+
 ```sh
 npm run sub:init
 npm install
