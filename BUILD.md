@@ -21,6 +21,8 @@ A compiled version of the web vault can be downloaded from [dani-garcia/bw_web_b
 
 If you prefer to compile it manually, follow these steps:
 
+*Note: building the Vault needs ~1.5GB of RAM. On systems like a RaspberryPI with 1GB or less, please [enable swapping](https://www.tecmint.com/create-a-linux-swap-file/) or build it on a more powerful machine and copy the directory from there. This much memory is only needed for building it, running bitwarden_rs with vault needs only about 10MB of RAM.*
+
 - Clone the git repository at [bitwarden/web](https://github.com/bitwarden/web) and checkout the latest release tag (e.g. v2.1.1):
 ```sh
 # clone the repository
@@ -37,6 +39,7 @@ git apply /path/to/bitwarden_rs/docker/set-vault-baseurl.patch
 ```
 
 - Then, build the Vault:
+
 ```sh
 npm run sub:init
 npm install
