@@ -56,6 +56,27 @@ pub fn decode_jwt(token: &str) -> Result<JWTClaims, String> {
     }
 }
 
+pub fn decode_invite_jwt(token: &str) -> Result<InviteJWTClaims, String> {
+    let validation = jsonwebtoken::Validation {
+        leeway: 30, // 30 seconds
+        validate_exp: true,
+        validate_iat: false, // IssuedAt is the same as NotBefore
+        validate_nbf: true,
+        aud: None,
+        iss: Some(JWT_ISSUER.clone()),
+        sub: None,
+        algorithms: vec![JWT_ALGORITHM],
+    };
+
+    match jsonwebtoken::decode(token, &PUBLIC_RSA_KEY, &validation) {
+        Ok(decoded) => Ok(decoded.claims),
+        Err(msg) => {
+            error!("Error validating jwt - {:#?}", msg);
+            Err(msg.to_string())
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct JWTClaims {
     // Not before
@@ -85,6 +106,20 @@ pub struct JWTClaims {
     pub scope: Vec<String>,
     // [ "Application" ]
     pub amr: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct InviteJWTClaims {
+    // Not before
+    pub nbf: i64,
+    // Expiration time
+    pub exp: i64,
+    // Issuer
+    pub iss: String,
+    // Subject
+    pub sub: String,
+
+    pub email: String,
 }
 
 ///
