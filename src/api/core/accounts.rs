@@ -59,22 +59,27 @@ fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> EmptyResult {
 
     let mut user = match User::find_by_mail(&data.Email, &conn) {
         Some(user) => {
-            if Invitation::take(&data.Email, &conn) {
-                for mut user_org in UserOrganization::find_invited_by_user(&user.uuid, &conn).iter_mut() {
-                    user_org.status = UserOrgStatus::Accepted as i32;
-                    if user_org.save(&conn).is_err() {
-                        err!("Failed to accept user to organization")
+            if !CONFIG.email_invitations {
+                if Invitation::take(&data.Email, &conn) {
+                    for mut user_org in UserOrganization::find_invited_by_user(&user.uuid, &conn).iter_mut() {
+                        user_org.status = UserOrgStatus::Accepted as i32;
+                        if user_org.save(&conn).is_err() {
+                            err!("Failed to accept user to organization")
+                        }
                     }
+                    user
+                } else if CONFIG.signups_allowed {
+                    err!("Account with this email already exists")
+                } else {
+                    err!("Registration not allowed")
                 }
-                user
-            } else if CONFIG.signups_allowed {
-                err!("Account with this email already exists")
             } else {
-                err!("Registration not allowed")
+                // User clicked email invite link, so they are already "accepted" in UserOrgs
+                user
             }
         }
         None => {
-            if CONFIG.signups_allowed || Invitation::take(&data.Email, &conn) {
+            if CONFIG.signups_allowed || (!CONFIG.email_invitations && Invitation::take(&data.Email, &conn)) {
                 User::new(data.Email)
             } else {
                 err!("Registration not allowed")

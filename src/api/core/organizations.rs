@@ -8,7 +8,7 @@ use crate::db::DbConn;
 use crate::db::models::*;
 
 use crate::api::{PasswordData, JsonResult, EmptyResult, NumberOrString, JsonUpcase, WebSocketUsers, UpdateType};
-use crate::auth::{Headers, AdminHeaders, OwnerHeaders};
+use crate::auth::{Headers, AdminHeaders, OwnerHeaders, encode_jwt, decode_invite_jwt, InviteJWTClaims, JWT_ISSUER};
 
 use serde::{Deserialize, Deserializer};
 
@@ -38,6 +38,7 @@ pub fn routes() -> Vec<Route> {
         get_org_users,
         send_invite,
         confirm_invite,
+        accept_invite,
         get_user,
         edit_user,
         put_organization_user,
@@ -477,6 +478,61 @@ fn send_invite(org_id: String, data: JsonUpcase<InviteData>, headers: AdminHeade
                 err!("Failed to add user to organization")
             }
         }
+
+        if CONFIG.email_invitations {
+            use crate::mail;
+            use chrono::{Duration, Utc};
+            let time_now = Utc::now().naive_utc();
+            let claims = InviteJWTClaims {
+                nbf: time_now.timestamp(),
+                exp: (time_now + Duration::days(5)).timestamp(),
+                iss: JWT_ISSUER.to_string(),
+                sub: user.uuid.to_string(),
+                email: email.clone(),
+            };
+            let org_name = match Organization::find_by_uuid(&org_id, &conn) {
+                Some(org) => org.name,
+                None => err!("Error looking up organization")
+            };
+            let invite_token = encode_jwt(&claims);
+            let org_user_id = Organization::VIRTUAL_ID;
+
+            if let Some(ref mail_config) = CONFIG.mail {
+                if let Err(e) = mail::send_invite(&email, &org_id, &org_user_id, &invite_token, &org_name, mail_config) {
+                    err!(format!("There has been a problem sending the email: {}", e))
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+// TODO: Figure out how to make this redirect to the registration page
+#[get("/organizations/<org_id>/users/<org_user_id>/accept?<token>")]
+fn accept_invite(org_id: String, org_user_id: String, token: String, conn: DbConn) -> EmptyResult {
+    let invite_claims: InviteJWTClaims = match decode_invite_jwt(&token) {
+            Ok(claims) => claims,
+            Err(msg) => err!("Invalid claim: {:#?}", msg),
+    };
+
+    match User::find_by_mail(&invite_claims.email, &conn) {
+        Some(user) => {
+            if Invitation::take(&invite_claims.email, &conn) {
+                for mut user_org in UserOrganization::find_invited_by_user(&user.uuid, &conn).iter_mut() {
+                    user_org.status = UserOrgStatus::Accepted as i32;
+                    if user_org.save(&conn).is_err() {
+                        err!("Failed to accept user to organization")
+                    }
+                }
+                //rocket::response::Redirect::to(format!("/#/register?email={}", invite_claims.email))
+            } else {
+                err!("Invitation for user not found")
+            }
+        },
+        None => {
+            err!("Invited user not found")
+        },
     }
 
     Ok(())
