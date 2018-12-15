@@ -45,6 +45,11 @@ _*Note, that this project is not associated with the [Bitwarden](https://bitward
     - [Fail2Ban Filter](#fail2ban-filter)
     - [Fail2Ban Jail](#fail2ban-jail)
     - [Testing Fail2Ban](#testing-fail2ban)
+  - [Running with systemd](#running-with-systemd)
+    - [Setting environment variables](#setting-environment-variables)
+      - [Using a service subdirectory](#using-a-service-subdirectory)
+      - [Using EnvironmentFile](#using-environmentfile)
+  - [Running](#running)
 - [Building your own image](#building-your-own-image)
 - [Building binary](#building-binary)
 - [Available packages](#available-packages)
@@ -70,12 +75,12 @@ Basically full implementation of Bitwarden API is provided including:
  * Basic single user functionality
  * Organizations support
  * Attachments
- * Vault API support 
+ * Vault API support
  * Serving the static files for Vault interface
  * Website icons API
  * Authenticator and U2F support
  * YubiKey OTP
- 
+
 ## Missing features
 * Email confirmation
 * Other two-factor systems:
@@ -379,7 +384,7 @@ docker run -d --name bitwarden \
   -p 80:80 \
   mprasil/bitwarden:latest
 ```
-  
+
 When `SMTP_SSL` is set to `true`(this is the default), only TLSv1.1 and TLSv1.2 protocols will be accepted and `SMTP_PORT` will default to `587`. If set to `false`, `SMTP_PORT` will default to `25` and the connection won't be encrypted. This can be very insecure, use this setting only if you know what you're doing.
 
 ### Password hint display
@@ -413,7 +418,7 @@ docker run -d --name bitwarden \
   -v /bw-data/:/data/ \
   -p 80:80 \
   mprasil/bitwarden:latest
-``` 
+```
 
 Note that you can also change the path where bitwarden_rs looks for static files by providing the `WEB_VAULT_FOLDER` environment variable with the path.
 
@@ -490,6 +495,115 @@ If it works correctly and your IP is banned, you can unban the ip by running:
 sudo fail2ban-client unban XX.XX.XX.XX bitwarden
 ```
 
+### Running with systemd
+
+These instructions allow you to have systemd manage the lifecycle of the docker container, if you prefer.
+
+First, install the `systemd-docker` package using your system package manager.
+This is a wrapper which improves docker integration with systemd.
+
+For full instructions and configuration options, see the [GitHub repository](https://github.com/ibuildthecloud/systemd-docker).
+
+As root, create `/etc/systemd/system/bitwarden.service` using your preferred editor with the following contents:
+
+```ini
+[Unit]
+Description=Bitwarden
+After=docker.service
+Requires=docker.service
+
+[Service]
+TimeoutStartSec=0
+ExecStartPre=/usr/bin/docker pull mprasil/bitwarden:latest
+ExecStart=/usr/bin/systemd-docker --cgroups name=systemd --env run \
+  -p 8080:80 \
+  -p 8081:3012 \
+  -v /opt/bw-data:/data/ \
+  --rm --name %n mprasil/bitwarden:latest
+Restart=always
+RestartSec=10s
+Type=notify
+NotifyAccess=all
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Adjust the above example as necessary. In particular, pay attention to the `-p` and `-v` options,
+as these control the port and volume bindings between the container and the host.
+
+Explanation of options which may not be self-explanatory:
+
+- A `TimeoutStartSec` value of 0 stops systemd from considering the service failed
+  after waiting for the default startup time. This is required as it may take a while for the `docker pull` in `ExecStartPre` to finish.
+- `ExecStartPre`: Pull the docker tag before running.
+- A `Type` value of `notify` tells systemd to expect a notification from the service that it is ready.
+- A `NotifyAccess` value of `all` is required by `systemd-docker`.
+
+#### Setting environment variables
+
+It's possible to directly specify environment variables in the unit file using the `-e` option of `docker`.
+In this case, you can omit the `--env` option shown in the example above.
+
+If you want to maintain environment settings separately see the subsections below.
+
+To verify that your environment variables are set correctly, check the output of `systemctl show bitwarden.service`
+for an `Environment` line.
+
+##### Using a service subdirectory
+
+This is a distribution-independent directory natively recognised by systemd.
+
+As root, create the directory `/etc/systemd/system/bitwarden.service.d`.
+
+In this directory, create a `local.conf` file, which will contain any environment variables the service requires.
+The contents of the file should be of the form:
+
+```ini
+[Service]
+Environment="Key=Value"
+```
+
+Eseentially, systemd will merge the contents of this file with the unit file. `systemd-docker` then passes these
+to docker as `-e` options due to the `--env` option specified in the example above. An `EnvironmentFile` directive is not required in this configuration.
+
+##### Using EnvironmentFile
+
+Systemd can source a file of the form:
+
+```shell
+Key="Value"
+```
+
+However, the systemd project does not mandate where this file should be stored. Consult your distribution's documentation for the
+best location for this file. For example, RedHat based distributions typically place these files in `/etc/sysconfig/`
+
+If you're unsure, just create a file as root in `/etc/` e.g. `/etc/bitwarden.service.conf`.
+
+In your unit file, add an `EnvironmentFile` directive in the `[Service]` block, the value being the full path to the
+file created above. Example:
+
+```ini
+[Unit]
+Description=Bitwarden
+After=docker.service
+Requires=docker.service
+
+[Service]
+EnvironmentFile=/etc/bitwarden.service.conf
+TimeoutStartSec=0
+-snip-
+```
+
+### Running
+
+After the above installation and configuration is complete, reload systemd using `sudo systemctl daemon-reload`.
+Then, start the Bitwarden service using `sudo systemctl start bitwarden`.
+
+To have the service start with the system, use `sudo systemctl enable bitwarden`.
+
+Verify that the container has started using `systemctl status bitwarden`.
+
 ## Building your own image
 
 Clone the repository, then from the root of the repository run:
@@ -525,7 +639,7 @@ mkdir $DATA_FOLDER/db-backup
 sqlite3 /$DATA_FOLDER/db.sqlite3 ".backup '/$DATA_FOLDER/db-backup/backup.sqlite3'"
 ```
 
-This command can be run via a CRON job everyday, however note that it will overwrite the same `backup.sqlite3` file each time. This backup file should therefore be saved via incremental backup either using a CRON job command that appends a timestamp or from another backup app such as Duplicati. To restore simply overwrite `db.sqlite3` with `backup.sqlite3` (while bitwarden_rs is stopped). 
+This command can be run via a CRON job everyday, however note that it will overwrite the same `backup.sqlite3` file each time. This backup file should therefore be saved via incremental backup either using a CRON job command that appends a timestamp or from another backup app such as Duplicati. To restore simply overwrite `db.sqlite3` with `backup.sqlite3` (while bitwarden_rs is stopped).
 
 Running the above command requires sqlite3 to be installed on the docker host system. You can achieve the same result with a sqlite3 docker container using the following command.
 ```
@@ -533,7 +647,7 @@ docker run --rm --volumes-from=bitwarden bruceforce/bw_backup /backup.sh
 ```
 
 You can also run a container with integrated cron daemon to automatically backup your database. See https://gitlab.com/1O/bitwarden_rs-backup for examples.
- 
+
 ### 2. the attachments folder
 
 By default, this is located in `$DATA_FOLDER/attachments`
