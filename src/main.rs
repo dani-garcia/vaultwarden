@@ -271,6 +271,7 @@ pub struct Config {
     local_icon_extractor: bool,
     signups_allowed: bool,
     invitations_allowed: bool,
+    email_invitations: bool,
     server_admin_email: Option<String>,
     password_iterations: i32,
     show_password_hint: bool,
@@ -321,6 +322,7 @@ impl Config {
             signups_allowed: get_env_or("SIGNUPS_ALLOWED", true),
             server_admin_email: get_env("SERVER_ADMIN_EMAIL"),
             invitations_allowed: get_env_or("INVITATIONS_ALLOWED", true),
+            email_invitations: get_env_or("EMAIL_INVITATIONS", false),
             password_iterations: get_env_or("PASSWORD_ITERATIONS", 100_000),
             show_password_hint: get_env_or("SHOW_PASSWORD_HINT", true),
 
