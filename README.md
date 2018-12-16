@@ -441,7 +441,7 @@ If you are using docker-compose, add this to you yaml file:
 ```
 With the above settings in the docker-compose file. Any failed login attempts will look like this in your syslog file:
 ```
-$DATE $TIME $SERVER $TAG[979]: ERROR: Username or password is incorrect. Try again. IP: XX.XX.XX.XX. Username: email@domain.com.
+MMM DD hh:mm:ss server-hostname $TAG[773]: [YYYY-MM-DD][hh:mm:ss][bitwarden_rs::api::identity][ERROR] Username or password is incorrect. Try again. IP: XXX.XXX.XXX.XXX. Username: email@domain.com.
 ```
 You can change the '$TAG' to anything you like. Just remember it because it will be in the Fail2Ban filter.
 
@@ -457,7 +457,8 @@ And add the following
 before = common.conf
 
 [Definition]
-failregex = ^%(__prefix_line)s.*$TAG.* ERROR: Username or password is incorrect. Try again. IP: <HOST>\. Username:.*$
+_daemon = $TAG
+failregex = ^%(__prefix_line)s.*Username or password is incorrect\. Try again\. IP: <HOST>\. Username:.*$
 ignoreregex =
 ```
 Dont forget to change the '$TAG' to what you set it as from above.
