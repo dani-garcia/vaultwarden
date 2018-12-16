@@ -45,11 +45,9 @@ _*Note, that this project is not associated with the [Bitwarden](https://bitward
     - [Fail2Ban Filter](#fail2ban-filter)
     - [Fail2Ban Jail](#fail2ban-jail)
     - [Testing Fail2Ban](#testing-fail2ban)
-  - [Running with systemd](#running-with-systemd)
+  - [Running with systemd-docker](#running-with-systemd-docker)
     - [Setting environment variables](#setting-environment-variables)
-      - [Using a service subdirectory](#using-a-service-subdirectory)
-      - [Using EnvironmentFile](#using-environmentfile)
-  - [Running](#running)
+    - [Running the service](#running-the-service)
 - [Building your own image](#building-your-own-image)
 - [Building binary](#building-binary)
 - [Available packages](#available-packages)
@@ -495,7 +493,7 @@ If it works correctly and your IP is banned, you can unban the ip by running:
 sudo fail2ban-client unban XX.XX.XX.XX bitwarden
 ```
 
-### Running with systemd
+### Running with systemd-docker
 
 These instructions allow you to have systemd manage the lifecycle of the docker container, if you prefer.
 
@@ -542,32 +540,15 @@ Explanation of options which may not be self-explanatory:
 
 #### Setting environment variables
 
-It's possible to directly specify environment variables in the unit file using the `-e` option of `docker`.
-In this case, you can omit the `--env` option shown in the example above.
+It's possible to directly specify environment variables in the unit file in two ways:
 
-If you want to maintain environment settings separately see the subsections below.
+- Using an `Environment` directive in the `[Service]` block.
+- Using the `-e` option of `docker`. In this case, you can omit the `--env` option shown in the example above.
 
 To verify that your environment variables are set correctly, check the output of `systemctl show bitwarden.service`
 for an `Environment` line.
 
-##### Using a service subdirectory
-
-This is a distribution-independent directory natively recognised by systemd.
-
-As root, create the directory `/etc/systemd/system/bitwarden.service.d`.
-
-In this directory, create a `local.conf` file, which will contain any environment variables the service requires.
-The contents of the file should be of the form:
-
-```ini
-[Service]
-Environment="Key=Value"
-```
-
-Eseentially, systemd will merge the contents of this file with the unit file. `systemd-docker` then passes these
-to docker as `-e` options due to the `--env` option specified in the example above. An `EnvironmentFile` directive is not required in this configuration.
-
-##### Using EnvironmentFile
+It's also possible to store environment variables in a separate file using the `EnvironmentFile` directive in the unit file.
 
 Systemd can source a file of the form:
 
@@ -595,7 +576,7 @@ TimeoutStartSec=0
 -snip-
 ```
 
-### Running
+#### Running the service
 
 After the above installation and configuration is complete, reload systemd using `sudo systemctl daemon-reload`.
 Then, start the Bitwarden service using `sudo systemctl start bitwarden`.
