@@ -59,7 +59,7 @@ fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> EmptyResult {
 
     let mut user = match User::find_by_mail(&data.Email, &conn) {
         Some(user) => {
-            if !CONFIG.email_invitations {
+            if CONFIG.mail.is_none() {
                 if Invitation::take(&data.Email, &conn) {
                     for mut user_org in UserOrganization::find_invited_by_user(&user.uuid, &conn).iter_mut() {
                         user_org.status = UserOrgStatus::Accepted as i32;
@@ -79,7 +79,7 @@ fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> EmptyResult {
             }
         }
         None => {
-            if CONFIG.signups_allowed || (!CONFIG.email_invitations && Invitation::take(&data.Email, &conn)) {
+            if CONFIG.signups_allowed || (CONFIG.mail.is_none() && Invitation::take(&data.Email, &conn)) {
                 User::new(data.Email)
             } else {
                 err!("Registration not allowed")
