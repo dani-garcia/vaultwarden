@@ -32,10 +32,14 @@ cd web-vault
 git checkout "$(git tag | tail -n1)"
 ```
 
-- Apply the patch file from `docker/set-vault-baseurl.patch`:
+- Download the patch file from [dani-garcia/bw_web_builds](https://github.com/dani-garcia/bw_web_builds/tree/master/patches) and copy it to the `web-vault` folder.
+To choose the version to use, assuming the web vault is version `vX.Y.Z`:
+  - If there is a patch with version `vX.Y.Z`, use that one
+  - Otherwise, pick the one with the largest version that is still smaller than `vX.Y.Z`
+- Apply the patch
 ```sh
-# In the Vault repository directory
-git apply /path/to/bitwarden_rs/docker/set-vault-baseurl.patch
+# In the 'web-vault' directory
+git apply vX.Y.Z.patch
 ```
 
 - Then, build the Vault:
