@@ -479,7 +479,7 @@ fn send_invite(org_id: String, data: JsonUpcase<InviteData>, headers: AdminHeade
             }
         }
 
-        if CONFIG.email_invitations {
+        if CONFIG.mail.is_some() {
             use crate::mail;
             use chrono::{Duration, Utc};
             let time_now = Utc::now().naive_utc();
