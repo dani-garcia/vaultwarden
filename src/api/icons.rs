@@ -1,11 +1,11 @@
-use std::io::prelude::*;
-use std::fs::{symlink_metadata, create_dir_all, remove_file, File};
-use std::time::SystemTime;
 use std::error::Error;
+use std::fs::{create_dir_all, remove_file, symlink_metadata, File};
+use std::io::prelude::*;
+use std::time::SystemTime;
 
-use rocket::Route;
-use rocket::response::Content;
 use rocket::http::ContentType;
+use rocket::response::Content;
+use rocket::Route;
 
 use reqwest;
 
@@ -15,13 +15,15 @@ pub fn routes() -> Vec<Route> {
     routes![icon]
 }
 
+const FALLBACK_ICON: &[u8; 344] = include_bytes!("../static/fallback-icon.png");
+
 #[get("/<domain>/icon.png")]
 fn icon(domain: String) -> Content<Vec<u8>> {
     let icon_type = ContentType::new("image", "x-icon");
 
     // Validate the domain to avoid directory traversal attacks
     if domain.contains('/') || domain.contains("..") {
-        return Content(icon_type, get_fallback_icon());
+        return Content(icon_type, FALLBACK_ICON.to_vec());
     }
 
     let icon = get_icon(&domain);
@@ -29,7 +31,7 @@ fn icon(domain: String) -> Content<Vec<u8>> {
     Content(icon_type, icon)
 }
 
-fn get_icon (domain: &str) -> Vec<u8> {
+fn get_icon(domain: &str) -> Vec<u8> {
     let path = format!("{}/{}.png", CONFIG.icon_cache_folder, domain);
 
     if let Some(icon) = get_cached_icon(&path) {
@@ -43,11 +45,11 @@ fn get_icon (domain: &str) -> Vec<u8> {
         Ok(icon) => {
             save_icon(&path, &icon);
             icon
-        },
+        }
         Err(e) => {
             error!("Error downloading icon: {:?}", e);
             mark_negcache(&path);
-            get_fallback_icon()
+            FALLBACK_ICON.to_vec()
         }
     }
 }
@@ -55,12 +57,12 @@ fn get_icon (domain: &str) -> Vec<u8> {
 fn get_cached_icon(path: &str) -> Option<Vec<u8>> {
     // Check for expiration of negatively cached copy
     if icon_is_negcached(path) {
-        return Some(get_fallback_icon());
+        return Some(FALLBACK_ICON.to_vec());
     }
 
     // Check for expiration of successfully cached copy
     if icon_is_expired(path) {
-        return None
+        return None;
     }
 
     // Try to read the cached icon, and return it if it exists
@@ -86,23 +88,19 @@ fn file_is_expired(path: &str, ttl: u64) -> Result<bool, Box<Error>> {
 fn icon_is_negcached(path: &str) -> bool {
     let miss_indicator = path.to_owned() + ".miss";
     let expired = file_is_expired(&miss_indicator, CONFIG.icon_cache_negttl);
+
     match expired {
         // No longer negatively cached, drop the marker
         Ok(true) => {
-            match remove_file(&miss_indicator) {
-                Ok(_) => {},
-                Err(e) => {
-                    error!("Could not remove negative cache indicator for icon {:?}: {:?}", path, e);
-                }
+            if let Err(e) = remove_file(&miss_indicator) {
+                error!("Could not remove negative cache indicator for icon {:?}: {:?}", path, e);
             }
             false
-        },
-
+        }
         // The marker hasn't expired yet.
-        Ok(false) => { true }
-
+        Ok(false) => true,
         // The marker is missing or inaccessible in some way.
-        Err(_) => { false }
+        Err(_) => false,
     }
 }
 
@@ -142,25 +140,4 @@ fn save_icon(path: &str, icon: &[u8]) {
     if let Ok(mut f) = File::create(path) {
         f.write_all(icon).expect("Error writing icon file");
     };
-}
-
-const FALLBACK_ICON_URL: &str = "https://raw.githubusercontent.com/bitwarden/web/master/src/images/fa-globe.png";
-
-fn get_fallback_icon() -> Vec<u8> {
-    let path = format!("{}/default.png", CONFIG.icon_cache_folder);
-    
-    if let Some(icon) = get_cached_icon(&path) {
-        return icon;
-    }
-
-    match download_icon(FALLBACK_ICON_URL) {
-        Ok(icon) => {
-            save_icon(&path, &icon);
-            icon
-        },
-        Err(e) => {
-            error!("Error downloading fallback icon: {:?}", e);
-            vec![]
-        }
-    }
 }
