@@ -113,7 +113,7 @@ use diesel;
 use diesel::prelude::*;
 use crate::db::DbConn;
 use crate::db::schema::{users, invitations};
-use super::{Cipher, Folder, Device, UserOrganization, UserOrgType};
+use super::{Cipher, Folder, Device, UserOrganization, UserOrgType, TwoFactor};
 
 /// Database methods
 impl User {
@@ -168,6 +168,7 @@ impl User {
         Cipher::delete_all_by_user(&self.uuid, &*conn)?;
         Folder::delete_all_by_user(&self.uuid, &*conn)?;
         Device::delete_all_by_user(&self.uuid, &*conn)?;
+        TwoFactor::delete_all_by_user(&self.uuid, &*conn)?;
         Invitation::take(&self.email, &*conn); // Delete invitation if any
 
         diesel::delete(users::table.filter(

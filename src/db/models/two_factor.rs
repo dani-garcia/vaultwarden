@@ -107,4 +107,12 @@ impl TwoFactor {
             .filter(twofactor::type_.eq(type_))
             .first::<Self>(&**conn).ok()
     }
+    
+    pub fn delete_all_by_user(user_uuid: &str, conn: &DbConn) -> QueryResult<usize> {
+        diesel::delete(
+            twofactor::table.filter(
+                twofactor::user_uuid.eq(user_uuid)
+            )
+        ).execute(&**conn)
+    }
 }

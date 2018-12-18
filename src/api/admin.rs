@@ -1,20 +1,17 @@
 use rocket_contrib::json::Json;
 use serde_json::Value;
 
+use crate::api::{JsonResult, JsonUpcase};
+use crate::CONFIG;
+
 use crate::db::models::*;
 use crate::db::DbConn;
 
-use crate::api::{EmptyResult, JsonResult, JsonUpcase};
-
-use rocket::{Route, Outcome};
-use rocket::request::{self, Request, FromRequest};
+use rocket::request::{self, FromRequest, Request};
+use rocket::{Outcome, Route};
 
 pub fn routes() -> Vec<Route> {
-    routes![
-        get_users,
-        invite_user,
-        delete_user,
-    ]
+    routes![get_users, invite_user, delete_user]
 }
 
 #[derive(Deserialize, Debug)]
@@ -25,14 +22,14 @@ struct InviteData {
 
 #[get("/users")]
 fn get_users(_token: AdminToken, conn: DbConn) -> JsonResult {
-    let users =  User::get_all(&conn);
+    let users = User::get_all(&conn);
     let users_json: Vec<Value> = users.iter().map(|u| u.to_json(&conn)).collect();
-    
+
     Ok(Json(Value::Array(users_json)))
 }
 
-#[post("/users", data="<data>")]
-fn invite_user(data: JsonUpcase<InviteData>, _token: AdminToken, conn: DbConn) -> EmptyResult {
+#[post("/invite", data = "<data>")]
+fn invite_user(data: JsonUpcase<InviteData>, _token: AdminToken, conn: DbConn) -> JsonResult {
     let data: InviteData = data.into_inner().data;
 
     if User::find_by_mail(&data.Email, &conn).is_some() {
@@ -42,23 +39,18 @@ fn invite_user(data: JsonUpcase<InviteData>, _token: AdminToken, conn: DbConn) -
     err!("Unimplemented")
 }
 
-#[delete("/users/<uuid>")]
-fn delete_user(uuid: String, _token: AdminToken, conn: DbConn) -> EmptyResult {
-    let _user = match User::find_by_uuid(&uuid, &conn) {
+#[post("/users/<uuid>/delete")]
+fn delete_user(uuid: String, _token: AdminToken, conn: DbConn) -> JsonResult {
+    let user = match User::find_by_uuid(&uuid, &conn) {
         Some(user) => user,
-        None => err!("User doesn't exist")
+        None => err!("User doesn't exist"),
     };
 
-    // TODO: Enable this once we have a more secure auth method
-    err!("Unimplemented")
-    /*
     match user.delete(&conn) {
-        Ok(_) => Ok(()),
-        Err(e) => err!("Error deleting user", e)
+        Ok(_) => Ok(Json(json!({}))),
+        Err(e) => err!("Error deleting user", e),
     }
-    */
 }
-
 
 pub struct AdminToken {}
 
@@ -66,6 +58,11 @@ impl<'a, 'r> FromRequest<'a, 'r> for AdminToken {
     type Error = &'static str;
 
     fn from_request(request: &'a Request<'r>) -> request::Outcome<Self, Self::Error> {
+        let config_token = match CONFIG.admin_token.as_ref() {
+            Some(token) => token,
+            None => err_handler!("Admin panel is disabled"),
+        };
+
         // Get access_token
         let access_token: &str = match request.headers().get_one("Authorization") {
             Some(a) => match a.rsplit("Bearer ").next() {
@@ -81,7 +78,7 @@ impl<'a, 'r> FromRequest<'a, 'r> for AdminToken {
         // Option 2a: Send it to admin email, like upstream
         // Option 2b: Print in console or save to data dir, so admin can check
 
-        if access_token != "token123" {
+        if access_token != config_token {
             err_handler!("Invalid admin token")
         }
 

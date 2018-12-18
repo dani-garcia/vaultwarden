@@ -20,13 +20,12 @@
     <style>
         body { padding-top: 70px; }
         img { width: 48px; height: 48px; }
-        #logo  { width: 48px; height: 48px; }
     </style>
 
     <script>
         let key = null;
 
-        function getIdenticon(email) {
+        function identicon(email) {
             const data = new Identicon(md5(email), {
                 size: 48,
                 format: 'svg'
@@ -35,41 +34,97 @@
             return "data:image/svg+xml;base64," + data;
         }
 
+        function setVis(elem, vis) {
+            if (vis) { $(elem).removeClass('d-none'); }
+            else { $(elem).addClass('d-none'); }
+        }
+
+        function updateVis() {
+            setVis("#no-key-form", !key);
+            setVis("#users-block", key);
+            setVis("#invite-form", key);
+        }
+
+        function setKey() {
+            key = $('#key').val() || window.location.hash.slice(1);
+            updateVis();
+            if (key) { loadUsers(); }
+            return false;
+        }
+
+        function resetKey() {
+            key = null;
+            updateVis();
+        }
+
+        function fillRow(data) {
+            for (i in data) {
+                const user = data[i];
+                const row = $("#tmp-row").clone();
+
+                row.attr("id", "user-row:" + user.Id);
+                row.find(".tmp-name").text(user.Name);
+                row.find(".tmp-mail").text(user.Email);
+                row.find(".tmp-icon").attr("src", identicon(user.Email))
+
+                row.find(".tmp-del").on("click", function (e) {
+                    if (confirm("Delete User '" + user.Name + "'?")) {
+                        deleteUser(user.Id);
+                    }
+                    return false;
+                });
+
+                row.appendTo("#users-list");
+                setVis(row, true);
+            }
+        }
+
+        function _headers() { return { "Authorization": "Bearer " + key }; }
+
         function loadUsers() {
             $("#users-list").empty();
+            $.get({ url: "/admin/users", headers: _headers() })
+                .done(fillRow)
+                .fail(resetKey);
 
-            $.ajax({
-                type: "GET",
-                url: "/admin/users",
-                headers: { "Authorization": "Bearer " + key }
-            }).done(function (data) {
-                for (i in data) {
-                    let user = data[i];
-                    let row = $("#tmp-user-row").clone();
+            return false;
+        }
 
-                    row.attr("id", "user-row:" + user.Id);
-                    row.find(".tmp-user-name").text(user.Name);
-                    row.find(".tmp-user-mail").text(user.Email);
-                    row.find(".tmp-user-icon").attr("src", getIdenticon(user.Email))
+        function _post(url, successMsg, errMsg, resetOnErr, data) {
+            $.post({ url: url, headers: _headers(), data: data })
+                .done(() => {
+                    alert(successMsg);
+                    loadUsers();
+                })
+                .fail((e) => {
+                    const msg = e.responseJSON ?
+                        e.responseJSON.ErrorModel.Message
+                        : "Unknown error";
+                    alert(errMsg + ": " + msg);
+                    if (resetOnErr) { resetKey(); }
+                });
+        }
 
-                    row.find(".tmp-user-del").on("click", function (e) {
-                        alert("Not Implemented: Deleting UUID " + user.Id);
-                    });
+        function deleteUser(id) {
+            _post("/admin/users/" + id + "/delete",
+                "User deleted correctly",
+                "Error deleting user", true);
+        }
 
-                    row.appendTo("#users-list");
-                    row.removeClass('d-none');
-                }
-            })
+        function inviteUser() {
+            data = JSON.stringify({ "Email": $("#email-invite").val() });
+
+            _post("/admin/invite/",
+                "User invited correctly",
+                "Error inviting user", false, data);
         }
 
         $(window).on('load', function () {
-            key = new URLSearchParams(window.location.search).get('key');
-            if (key) {
-                $("#no-key-form").addClass('d-none');
-                loadUsers();
-            } else {
-                $("#users-block").addClass('d-none');
-            }
+            setKey();
+
+            $("#key-form").submit(setKey);
+            $("#reload-btn").on("click", loadUsers);
+            $("#invite-form").submit(inviteUser);
         });
     </script>
 </head>
@@ -89,36 +144,48 @@
         </div>
     </nav>
     <main class="container">
-        <div id="no-key-form" class="align-items-center p-3 mb-3 text-white-50 bg-danger rounded shadow">
+        <div id="no-key-form" class="d-none align-items-center p-3 mb-3 text-white-50 bg-danger rounded shadow">
             <div>
                 <h6 class="mb-0 text-white">Authentication key needed to continue</h6>
                 <small>Please provide it below:</small>
 
-                <form class="form-inline" method="get">
-                    <input type="text" class="form-control mr-2" id="key" name="key" placeholder="Enter admin key">
-                    <button type="submit" class="btn btn-primary">Submit</button>
+                <form class="form-inline" id="key-form">
+                    <input type="password" class="form-control w-50 mr-2" id="key" placeholder="Enter admin key">
+                    <button type="submit" class="btn btn-primary">Save</button>
                 </form>
             </div>
         </div>
 
-        <div id="users-block" class="my-3 p-3 bg-white rounded shadow">
+        <div id="users-block" class="d-none my-3 p-3 bg-white rounded shadow">
             <h6 class="border-bottom pb-2 mb-0">Registered Users</h6>
 
             <div id="users-list"></div>
 
             <small class="d-block text-right mt-3">
-                <a href="#" onclick="loadUsers();">Reload users</a>
+                <a id="reload-btn" href="#">Reload users</a>
             </small>
         </div>
 
-        <div id="tmp-user-row" class="d-none media pt-3">
-            <img src="#" alt="identicon" class="mr-2 rounded  tmp-user-icon">
+        <div id="invite-form" class="d-none align-items-center p-3 mb-3 text-white-50 bg-secondary rounded shadow">
+            <div>
+                <h6 class="mb-0 text-white">Invite User</h6>
+                <small>Email:</small>
+
+                <form class="form-inline" id="invite-form">
+                    <input type="email" class="form-control w-50 mr-2" id="email-invite" placeholder="Enter email">
+                    <button type="submit" class="btn btn-primary">Invite</button>
+                </form>
+            </div>
+        </div>
+
+        <div id="tmp-row" class="d-none media pt-3">
+            <img class="mr-2 rounded tmp-icon">
             <div class="media-body pb-3 mb-0 small border-bottom">
                 <div class="d-flex justify-content-between">
-                    <strong class="tmp-user-name">Full Name</strong>
-                    <a class="tmp-user-del mr-3" href="#">Delete User</a>
+                    <strong class="tmp-name">Full Name</strong>
+                    <a class="tmp-del mr-3" href="#">Delete User</a>
                 </div>
-                <span class="d-block tmp-user-mail">Email</span>
+                <span class="d-block tmp-mail">Email</span>
             </div>
         </div>
     </main>

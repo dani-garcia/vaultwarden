@@ -272,6 +272,7 @@ pub struct Config {
     local_icon_extractor: bool,
     signups_allowed: bool,
     invitations_allowed: bool,
+    admin_token: Option<String>,
     server_admin_email: Option<String>,
     password_iterations: i32,
     show_password_hint: bool,
@@ -325,7 +326,8 @@ impl Config {
 
             local_icon_extractor: get_env_or("LOCAL_ICON_EXTRACTOR", false),
             signups_allowed: get_env_or("SIGNUPS_ALLOWED", true),
-            server_admin_email: get_env("SERVER_ADMIN_EMAIL"),
+            admin_token: get_env("ADMIN_TOKEN"),
+            server_admin_email:None, // TODO: Delete this
             invitations_allowed: get_env_or("INVITATIONS_ALLOWED", true),
             password_iterations: get_env_or("PASSWORD_ITERATIONS", 100_000),
             show_password_hint: get_env_or("SHOW_PASSWORD_HINT", true),
