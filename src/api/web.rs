@@ -56,6 +56,8 @@ impl<'r, R: Responder<'r>> Responder<'r> for WebHeaders<R> {
                 res.set_raw_header("X-Frame-Options", "SAMEORIGIN");
                 res.set_raw_header("X-Content-Type-Options", "nosniff");
                 res.set_raw_header("X-XSS-Protection", "1; mode=block");
+                let csp = "frame-ancestors 'self' chrome-extension://nngceckbapebfimnlniiiahkandclblb moz-extension://*;";
+                res.set_raw_header("Content-Security-Policy", csp);
 
                 Ok(res)
             },
