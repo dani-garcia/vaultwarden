@@ -77,7 +77,7 @@ struct GlobalDomain {
     Excluded: bool,
 }
 
-const GLOBAL_DOMAINS: &str = include_str!("global_domains.json");
+const GLOBAL_DOMAINS: &str = include_str!("../../static/global_domains.json");
 
 #[get("/settings/domains")]
 fn get_eq_domains(headers: Headers) -> JsonResult {

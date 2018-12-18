@@ -13,7 +13,7 @@ use crate::CONFIG;
 
 pub fn routes() -> Vec<Route> {
     if CONFIG.web_vault_enabled {
-        routes![web_index, app_id, web_files, attachments, alive]
+        routes![web_index, app_id, web_files, admin_page, attachments, alive]
     } else {
         routes![attachments, alive]
     }
@@ -39,6 +39,11 @@ fn app_id() -> WebHeaders<Content<Json<Value>>> {
             "android:apk-key-hash:dUGFzUzf3lmHSLBDBIv+WaFyZMI" ]
         }]
     }))))
+}
+
+#[get("/admin")]
+fn admin_page() -> WebHeaders<io::Result<NamedFile>> {
+    WebHeaders(NamedFile::open("src/static/admin.html")) // TODO: Change this to embed the page in the binary
 }
 
 #[get("/<p..>", rank = 1)] // Only match this if the other routes don't match

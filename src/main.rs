@@ -24,12 +24,10 @@ mod auth;
 mod mail;
 
 fn init_rocket() -> Rocket {
-
-    // TODO: TO HIDE MOUNTING LOG, call ignite, set logging to disabled, call all the mounts, and then enable it again
-    
     rocket::ignite()
         .mount("/", api::web_routes())
         .mount("/api", api::core_routes())
+        .mount("/admin", api::admin_routes())        
         .mount("/identity", api::identity_routes())
         .mount("/icons", api::icons_routes())
         .mount("/notifications", api::notifications_routes())

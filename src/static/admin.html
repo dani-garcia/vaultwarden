@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta http-equiv="content-type" content="text/html; charset=UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <meta name="description" content="">
+    <meta name="author" content="">
+    <title>Bitwarden_rs Admin Panel</title>
+
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/4.1.3/css/bootstrap.min.css"
+        integrity="sha256-eSi1q2PG6J7g7ib17yAaWMcrr5GrtohYChqibrV7PBE=" crossorigin="anonymous" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.3.1/jquery.min.js" integrity="sha256-FgpCb/KJQlLNfOu91ta32o/NMZxltwRo8QtmkMRdAu8="
+        crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/blueimp-md5/2.10.0/js/md5.js" integrity="sha256-tCQ/BldMlN2vWe5gAiNoNb5svoOgVUhlUgv7UjONKKQ="
+        crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/identicon.js/2.3.3/identicon.min.js" integrity="sha256-nYoL3nK/HA1e1pJvLwNPnpKuKG9q89VFX862r5aohmA="
+        crossorigin="anonymous"></script>
+
+    <style>
+        body { padding-top: 70px; }
+        img { width: 48px; height: 48px; }
+        #logo  { width: 48px; height: 48px; }
+    </style>
+
+    <script>
+        let key = null;
+
+        function getIdenticon(email) {
+            const data = new Identicon(md5(email), {
+                size: 48,
+                format: 'svg'
+            }).toString();
+
+            return "data:image/svg+xml;base64," + data;
+        }
+
+        function loadUsers() {
+            $("#users-list").empty();
+
+            $.ajax({
+                type: "GET",
+                url: "/admin/users",
+                headers: { "Authorization": "Bearer " + key }
+            }).done(function (data) {
+                for (i in data) {
+                    let user = data[i];
+                    let row = $("#tmp-user-row").clone();
+
+                    row.attr("id", "user-row:" + user.Id);
+                    row.find(".tmp-user-name").text(user.Name);
+                    row.find(".tmp-user-mail").text(user.Email);
+                    row.find(".tmp-user-icon").attr("src", getIdenticon(user.Email))
+
+                    row.find(".tmp-user-del").on("click", function (e) {
+                        alert("Not Implemented: Deleting UUID " + user.Id);
+                    });
+
+                    row.appendTo("#users-list");
+                    row.removeClass('d-none');
+                }
+            })
+        }
+
+        $(window).on('load', function () {
+            key = new URLSearchParams(window.location.search).get('key');
+            if (key) {
+                $("#no-key-form").addClass('d-none');
+                loadUsers();
+            } else {
+                $("#users-block").addClass('d-none');
+            }
+        });
+    </script>
+</head>
+
+<body class="bg-light">
+    <nav class="navbar navbar-expand-md navbar-dark bg-dark fixed-top shadow">
+        <a class="navbar-brand" href="#">Bitwarden_rs Admin</a>
+        <div class="navbar-collapse">
+            <ul class="navbar-nav">
+                <li class="nav-item active">
+                    <a class="nav-link" href="#">Dashboard</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="#">Other</a>
+                </li>
+            </ul>
+        </div>
+    </nav>
+    <main class="container">
+        <div id="no-key-form" class="align-items-center p-3 mb-3 text-white-50 bg-danger rounded shadow">
+            <div>
+                <h6 class="mb-0 text-white">Authentication key needed to continue</h6>
+                <small>Please provide it below:</small>
+
+                <form class="form-inline" method="get">
+                    <input type="text" class="form-control mr-2" id="key" name="key" placeholder="Enter admin key">
+                    <button type="submit" class="btn btn-primary">Submit</button>
+                </form>
+            </div>
+        </div>
+
+        <div id="users-block" class="my-3 p-3 bg-white rounded shadow">
+            <h6 class="border-bottom pb-2 mb-0">Registered Users</h6>
+
+            <div id="users-list"></div>
+
+            <small class="d-block text-right mt-3">
+                <a href="#" onclick="loadUsers();">Reload users</a>
+            </small>
+        </div>
+
+        <div id="tmp-user-row" class="d-none media pt-3">
+            <img src="#" alt="identicon" class="mr-2 rounded  tmp-user-icon">
+            <div class="media-body pb-3 mb-0 small border-bottom">
+                <div class="d-flex justify-content-between">
+                    <strong class="tmp-user-name">Full Name</strong>
+                    <a class="tmp-user-del mr-3" href="#">Delete User</a>
+                </div>
+                <span class="d-block tmp-user-mail">Email</span>
+            </div>
+        </div>
+    </main>
+</body>
+
+</html>

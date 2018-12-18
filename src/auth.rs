@@ -174,7 +174,7 @@ impl<'a, 'r> FromRequest<'a, 'r> for Headers {
         };
 
         // Get access_token
-        let access_token: &str = match request.headers().get_one("Authorization") {
+        let access_token: &str = match headers.get_one("Authorization") {
             Some(a) => match a.rsplit("Bearer ").next() {
                 Some(split) => split,
                 None => err_handler!("No access token provided"),

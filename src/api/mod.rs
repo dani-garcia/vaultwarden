@@ -1,10 +1,12 @@
 pub(crate) mod core;
+mod admin;
 mod icons;
 mod identity;
 mod web;
 mod notifications;
 
 pub use self::core::routes as core_routes;
+pub use self::admin::routes as admin_routes;
 pub use self::icons::routes as icons_routes;
 pub use self::identity::routes as identity_routes;
 pub use self::web::routes as web_routes;
