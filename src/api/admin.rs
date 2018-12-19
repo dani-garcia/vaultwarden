@@ -36,7 +36,17 @@ fn invite_user(data: JsonUpcase<InviteData>, _token: AdminToken, conn: DbConn) -
         err!("User already exists")
     }
 
-    err!("Unimplemented")
+    if !CONFIG.invitations_allowed {
+        err!("Invitations are not allowed")
+    }
+
+    let mut invitation = Invitation::new(data.Email.clone());
+    let mut user = User::new(data.Email);
+
+    invitation.save(&conn)?;
+    user.save(&conn)?;
+
+    Ok(Json(json!({})))
 }
 
 #[post("/users/<uuid>/delete")]
@@ -46,10 +56,8 @@ fn delete_user(uuid: String, _token: AdminToken, conn: DbConn) -> JsonResult {
         None => err!("User doesn't exist"),
     };
 
-    match user.delete(&conn) {
-        Ok(_) => Ok(Json(json!({}))),
-        Err(e) => err!("Error deleting user", e),
-    }
+    user.delete(&conn)?;
+    Ok(Json(json!({})))
 }
 
 pub struct AdminToken {}

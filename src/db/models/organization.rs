@@ -238,11 +238,14 @@ use diesel::prelude::*;
 use crate::db::DbConn;
 use crate::db::schema::{organizations, users_organizations, users_collections, ciphers_collections};
 
+use crate::api::EmptyResult;
+use crate::error::MapResult;
+
 /// Database methods
 impl Organization {
-    pub fn save(&mut self, conn: &DbConn) -> QueryResult<()> {
+    pub fn save(&mut self, conn: &DbConn) -> EmptyResult {
         if self.uuid == Organization::VIRTUAL_ID {
-            return Err(diesel::result::Error::NotFound)
+            err!("diesel::result::Error::NotFound")
         }
 
         UserOrganization::find_by_org(&self.uuid, conn)
@@ -252,14 +255,15 @@ impl Organization {
         });
 
         diesel::replace_into(organizations::table)
-            .values(&*self).execute(&**conn).and(Ok(()))
+            .values(&*self).execute(&**conn)
+            .map_res("Error saving organization")
     }
 
-    pub fn delete(self, conn: &DbConn) -> QueryResult<()> {
+    pub fn delete(self, conn: &DbConn) -> EmptyResult {
         use super::{Cipher, Collection};
 
         if self.uuid == Organization::VIRTUAL_ID {
-            return Err(diesel::result::Error::NotFound)
+            err!("diesel::result::Error::NotFound")
         }
 
         Cipher::delete_all_by_organization(&self.uuid, &conn)?;
@@ -270,7 +274,8 @@ impl Organization {
             organizations::table.filter(
                 organizations::uuid.eq(self.uuid)
             )
-        ).execute(&**conn).and(Ok(()))
+        ).execute(&**conn)
+        .map_res("Error saving organization")
     }
 
     pub fn find_by_uuid(uuid: &str, conn: &DbConn) -> Option<Self> {
@@ -365,19 +370,20 @@ impl UserOrganization {
         })
     }
 
-    pub fn save(&mut self, conn: &DbConn) -> QueryResult<()> {
+    pub fn save(&mut self, conn: &DbConn) -> EmptyResult {
         if self.org_uuid == Organization::VIRTUAL_ID {
-            return Err(diesel::result::Error::NotFound)
+            err!("diesel::result::Error::NotFound")
         }
         User::update_uuid_revision(&self.user_uuid, conn);
 
         diesel::replace_into(users_organizations::table)
-            .values(&*self).execute(&**conn).and(Ok(()))
+            .values(&*self).execute(&**conn)  
+        .map_res("Error adding user to organization")
     }
 
-    pub fn delete(self, conn: &DbConn) -> QueryResult<()> {
+    pub fn delete(self, conn: &DbConn) -> EmptyResult {
         if self.org_uuid == Organization::VIRTUAL_ID {
-            return Err(diesel::result::Error::NotFound)
+            err!("diesel::result::Error::NotFound")
         }
         User::update_uuid_revision(&self.user_uuid, conn);
 
@@ -387,17 +393,18 @@ impl UserOrganization {
             users_organizations::table.filter(
                 users_organizations::uuid.eq(self.uuid)
             )
-        ).execute(&**conn).and(Ok(()))
+        ).execute(&**conn)
+        .map_res("Error removing user from organization")
     }
 
-    pub fn delete_all_by_organization(org_uuid: &str, conn: &DbConn) -> QueryResult<()> {
+    pub fn delete_all_by_organization(org_uuid: &str, conn: &DbConn) -> EmptyResult {
         for user_org in Self::find_by_org(&org_uuid, &conn) {
             user_org.delete(&conn)?;
         }
         Ok(())
     }
 
-    pub fn delete_all_by_user(user_uuid: &str, conn: &DbConn) -> QueryResult<()> {
+    pub fn delete_all_by_user(user_uuid: &str, conn: &DbConn) -> EmptyResult {
         for user_org in Self::find_any_state_by_user(&user_uuid, &conn) {
             user_org.delete(&conn)?;
         }

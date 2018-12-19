@@ -79,20 +79,25 @@ use diesel::prelude::*;
 use crate::db::DbConn;
 use crate::db::schema::twofactor;
 
+use crate::api::EmptyResult;
+use crate::error::MapResult;
+
 /// Database methods
 impl TwoFactor {
-    pub fn save(&self, conn: &DbConn) -> QueryResult<usize> {
+    pub fn save(&self, conn: &DbConn) -> EmptyResult {
         diesel::replace_into(twofactor::table)
             .values(self)
             .execute(&**conn)
+            .map_res("Error saving twofactor")
     }
 
-    pub fn delete(self, conn: &DbConn) -> QueryResult<usize> {
+    pub fn delete(self, conn: &DbConn) -> EmptyResult {
         diesel::delete(
             twofactor::table.filter(
                 twofactor::uuid.eq(self.uuid)
             )
         ).execute(&**conn)
+        .map_res("Error deleting twofactor")
     }
 
     pub fn find_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
@@ -108,11 +113,12 @@ impl TwoFactor {
             .first::<Self>(&**conn).ok()
     }
     
-    pub fn delete_all_by_user(user_uuid: &str, conn: &DbConn) -> QueryResult<usize> {
+    pub fn delete_all_by_user(user_uuid: &str, conn: &DbConn) -> EmptyResult {
         diesel::delete(
             twofactor::table.filter(
                 twofactor::user_uuid.eq(user_uuid)
             )
         ).execute(&**conn)
+        .map_res("Error deleting twofactors")
     }
 }

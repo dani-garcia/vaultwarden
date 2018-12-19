@@ -66,17 +66,21 @@ use diesel::prelude::*;
 use crate::db::DbConn;
 use crate::db::schema::{folders, folders_ciphers};
 
+use crate::api::EmptyResult;
+use crate::error::MapResult;
+
 /// Database methods
 impl Folder {
-    pub fn save(&mut self, conn: &DbConn) -> QueryResult<()> {
+    pub fn save(&mut self, conn: &DbConn) -> EmptyResult {
         User::update_uuid_revision(&self.user_uuid, conn);
         self.updated_at = Utc::now().naive_utc();
 
         diesel::replace_into(folders::table)
-            .values(&*self).execute(&**conn).and(Ok(()))
+            .values(&*self).execute(&**conn)    
+        .map_res("Error saving folder")
     }
 
-    pub fn delete(&self, conn: &DbConn) -> QueryResult<()> {
+    pub fn delete(&self, conn: &DbConn) -> EmptyResult {
         User::update_uuid_revision(&self.user_uuid, conn);
         FolderCipher::delete_all_by_folder(&self.uuid, &conn)?;
 
@@ -84,10 +88,11 @@ impl Folder {
             folders::table.filter(
                 folders::uuid.eq(&self.uuid)
             )
-        ).execute(&**conn).and(Ok(()))
+        ).execute(&**conn)
+        .map_res("Error deleting folder")
     }
 
-    pub fn delete_all_by_user(user_uuid: &str, conn: &DbConn) -> QueryResult<()> {
+    pub fn delete_all_by_user(user_uuid: &str, conn: &DbConn) -> EmptyResult {
         for folder in Self::find_by_user(user_uuid, &conn) {
             folder.delete(&conn)?;
         }
@@ -108,29 +113,33 @@ impl Folder {
 }
 
 impl FolderCipher {
-    pub fn save(&self, conn: &DbConn) -> QueryResult<()> {
+    pub fn save(&self, conn: &DbConn) -> EmptyResult {
         diesel::replace_into(folders_ciphers::table)
         .values(&*self)
-        .execute(&**conn).and(Ok(()))
+        .execute(&**conn)
+        .map_res("Error adding cipher to folder")
     }
 
-    pub fn delete(self, conn: &DbConn) -> QueryResult<()> {
+    pub fn delete(self, conn: &DbConn) -> EmptyResult {
         diesel::delete(folders_ciphers::table
             .filter(folders_ciphers::cipher_uuid.eq(self.cipher_uuid))
             .filter(folders_ciphers::folder_uuid.eq(self.folder_uuid))
-        ).execute(&**conn).and(Ok(()))
+        ).execute(&**conn)
+        .map_res("Error removing cipher from folder")
     }
 
-    pub fn delete_all_by_cipher(cipher_uuid: &str, conn: &DbConn) -> QueryResult<()> {
+    pub fn delete_all_by_cipher(cipher_uuid: &str, conn: &DbConn) -> EmptyResult {
         diesel::delete(folders_ciphers::table
             .filter(folders_ciphers::cipher_uuid.eq(cipher_uuid))
-        ).execute(&**conn).and(Ok(()))
+        ).execute(&**conn)
+        .map_res("Error removing cipher from folders")
     }
 
-    pub fn delete_all_by_folder(folder_uuid: &str, conn: &DbConn) -> QueryResult<()> {
+    pub fn delete_all_by_folder(folder_uuid: &str, conn: &DbConn) -> EmptyResult {
         diesel::delete(folders_ciphers::table
             .filter(folders_ciphers::folder_uuid.eq(folder_uuid))
-        ).execute(&**conn).and(Ok(()))
+        ).execute(&**conn)
+        .map_res("Error removing ciphers from folder")
     }
 
     pub fn find_by_folder_and_cipher(folder_uuid: &str, cipher_uuid: &str, conn: &DbConn) -> Option<Self> {

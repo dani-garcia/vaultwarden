@@ -115,6 +115,9 @@ use crate::db::DbConn;
 use crate::db::schema::{users, invitations};
 use super::{Cipher, Folder, Device, UserOrganization, UserOrgType, TwoFactor};
 
+use crate::api::EmptyResult;
+use crate::error::MapResult;
+
 /// Database methods
 impl User {
     pub fn to_json(&self, conn: &DbConn) -> Value {
@@ -145,21 +148,22 @@ impl User {
     }
 
 
-    pub fn save(&mut self, conn: &DbConn) -> QueryResult<()> {
+    pub fn save(&mut self, conn: &DbConn) -> EmptyResult {
         self.updated_at = Utc::now().naive_utc();
 
         diesel::replace_into(users::table) // Insert or update
-            .values(&*self).execute(&**conn).and(Ok(()))
+            .values(&*self).execute(&**conn)
+        .map_res("Error saving user")
     }
 
-    pub fn delete(self, conn: &DbConn) -> QueryResult<()> {
+    pub fn delete(self, conn: &DbConn) -> EmptyResult {
         for user_org in UserOrganization::find_by_user(&self.uuid, &*conn) {
             if user_org.type_ == UserOrgType::Owner {
                 if UserOrganization::find_by_org_and_type(
                     &user_org.org_uuid, 
                     UserOrgType::Owner as i32, &conn
                 ).len() <= 1 {
-                    return Err(diesel::result::Error::NotFound);
+                    err!("Can't delete last owner")
                 }
             }
         }
@@ -168,12 +172,13 @@ impl User {
         Cipher::delete_all_by_user(&self.uuid, &*conn)?;
         Folder::delete_all_by_user(&self.uuid, &*conn)?;
         Device::delete_all_by_user(&self.uuid, &*conn)?;
-        TwoFactor::delete_all_by_user(&self.uuid, &*conn)?;
+        //TwoFactor::delete_all_by_user(&self.uuid, &*conn)?;
         Invitation::take(&self.email, &*conn); // Delete invitation if any
 
         diesel::delete(users::table.filter(
         users::uuid.eq(self.uuid)))
-        .execute(&**conn).and(Ok(()))
+        .execute(&**conn)
+        .map_res("Error deleting user")
     }
 
     pub fn update_uuid_revision(uuid: &str, conn: &DbConn) {
@@ -184,7 +189,7 @@ impl User {
         };
     }
 
-    pub fn update_revision(&mut self, conn: &DbConn) -> QueryResult<()> {
+    pub fn update_revision(&mut self, conn: &DbConn) -> EmptyResult {
         self.updated_at = Utc::now().naive_utc();
         diesel::update(
             users::table.filter(
@@ -192,7 +197,8 @@ impl User {
             )
         )
         .set(users::updated_at.eq(&self.updated_at))
-        .execute(&**conn).and(Ok(()))
+        .execute(&**conn)
+        .map_res("Error updating user revision")
     }
 
     pub fn find_by_mail(mail: &str, conn: &DbConn) -> Option<Self> {
@@ -228,18 +234,18 @@ impl Invitation {
         }
     }
 
-    pub fn save(&mut self, conn: &DbConn) -> QueryResult<()> {
+    pub fn save(&mut self, conn: &DbConn) -> EmptyResult {
         diesel::replace_into(invitations::table)
         .values(&*self)
         .execute(&**conn)
-        .and(Ok(()))
+        .map_res("Error saving invitation")
     }
 
-    pub fn delete(self, conn: &DbConn) -> QueryResult<()> {
+    pub fn delete(self, conn: &DbConn) -> EmptyResult {
         diesel::delete(invitations::table.filter(
         invitations::email.eq(self.email)))
         .execute(&**conn)
-        .and(Ok(()))
+        .map_res("Error deleting invitation")
     }
 
     pub fn find_by_mail(mail: &str, conn: &DbConn) -> Option<Self> {

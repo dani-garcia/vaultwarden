@@ -61,17 +61,16 @@ fn _refresh_login(data: ConnectData, conn: DbConn) -> JsonResult {
     let orgs = UserOrganization::find_by_user(&user.uuid, &conn);
 
     let (access_token, expires_in) = device.refresh_tokens(&user, orgs);
-    match device.save(&conn) {
-        Ok(()) => Ok(Json(json!({
-            "access_token": access_token,
-            "expires_in": expires_in,
-            "token_type": "Bearer",
-            "refresh_token": device.refresh_token,
-            "Key": user.key,
-            "PrivateKey": user.private_key,
-        }))),
-        Err(e) => err!("Failed to add device to user", e),
-    }
+
+    device.save(&conn)?;
+    Ok(Json(json!({
+        "access_token": access_token,
+        "expires_in": expires_in,
+        "token_type": "Bearer",
+        "refresh_token": device.refresh_token,
+        "Key": user.key,
+        "PrivateKey": user.private_key,
+    })))
 }
 
 fn _password_login(data: ConnectData, conn: DbConn, ip: ClientIp) -> JsonResult {
@@ -85,19 +84,19 @@ fn _password_login(data: ConnectData, conn: DbConn, ip: ClientIp) -> JsonResult 
     let username = data.username.as_ref().unwrap();
     let user = match User::find_by_mail(username, &conn) {
         Some(user) => user,
-        None => err!(format!(
-            "Username or password is incorrect. Try again. IP: {}. Username: {}.",
-            ip.ip, username
-        )),
+        None => err!(
+            "Username or password is incorrect. Try again",
+            format!("IP: {}. Username: {}.", ip.ip, username)
+        ),
     };
 
     // Check password
     let password = data.password.as_ref().unwrap();
     if !user.check_valid_password(password) {
-        err!(format!(
-            "Username or password is incorrect. Try again. IP: {}. Username: {}.",
-            ip.ip, username
-        ))
+        err!(
+            "Username or password is incorrect. Try again",
+            format!("IP: {}. Username: {}.", ip.ip, username)
+        )
     }
 
     // On iOS, device_type sends "iOS", on others it sends a number
@@ -126,9 +125,7 @@ fn _password_login(data: ConnectData, conn: DbConn, ip: ClientIp) -> JsonResult 
     let orgs = UserOrganization::find_by_user(&user.uuid, &conn);
 
     let (access_token, expires_in) = device.refresh_tokens(&user, orgs);
-    if let Err(e) = device.save(&conn) {
-        err!("Failed to add device to user", e)
-    }
+    device.save(&conn)?;
 
     let mut result = json!({
         "access_token": access_token,

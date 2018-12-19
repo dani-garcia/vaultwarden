@@ -182,10 +182,7 @@ fn post_ciphers_admin(data: JsonUpcase<ShareCipherData>, headers: Headers, conn:
 
     let mut cipher = Cipher::new(data.Cipher.Type, data.Cipher.Name.clone());
     cipher.user_uuid = Some(headers.user.uuid.clone());
-    match cipher.save(&conn) {
-        Ok(()) => (),
-        Err(_) => err!("Failed saving cipher")
-    };
+    cipher.save(&conn)?;
 
     share_cipher_by_uuid(&cipher.uuid, data, &headers, &conn, &ws)
 }
@@ -248,10 +245,7 @@ pub fn update_cipher_from_data(cipher: &mut Cipher, data: CipherData, headers: &
             saved_att.key = Some(attachment.Key);
             saved_att.file_name = attachment.FileName;
 
-            match saved_att.save(&conn) {
-                Ok(()) => (),
-                Err(_) => err!("Failed to save attachment")
-            };
+            saved_att.save(&conn)?;
         }
     }
 
@@ -284,17 +278,11 @@ pub fn update_cipher_from_data(cipher: &mut Cipher, data: CipherData, headers: &
     cipher.data = type_data.to_string();
     cipher.password_history = data.PasswordHistory.map(|f| f.to_string());
 
-    match cipher.save(&conn) {
-        Ok(()) => (),
-        Err(_) => err!("Failed to save cipher")
-    };
+    cipher.save(&conn)?;
+
     ws.send_cipher_update(ut, &cipher, &cipher.update_users_revision(&conn));
 
-    if cipher.move_to_folder(data.FolderId, &headers.user.uuid, &conn).is_err() {
-        err!("Error saving the folder information")
-    }
-
-    Ok(())
+    cipher.move_to_folder(data.FolderId, &headers.user.uuid, &conn)
 }
 
 use super::folders::FolderData;
@@ -325,11 +313,9 @@ fn post_ciphers_import(data: JsonUpcase<ImportData>, headers: Headers, conn: DbC
     let mut folders: Vec<_> = Vec::new();
     for folder in data.Folders.into_iter() {
         let mut new_folder = Folder::new(headers.user.uuid.clone(), folder.Name);
-        if new_folder.save(&conn).is_err() {
-            err!("Failed importing folders")
-        } else {
-            folders.push(new_folder);
-        }
+        new_folder.save(&conn)?;
+
+        folders.push(new_folder);
     }
 
     // Read the relations between folders and ciphers
@@ -351,10 +337,7 @@ fn post_ciphers_import(data: JsonUpcase<ImportData>, headers: Headers, conn: DbC
     }
 
     let mut user = headers.user;
-    match user.update_revision(&conn) {
-        Ok(()) => Ok(()),
-        Err(_) => err!("Failed to update the revision, please log out and log back in to finish import.")
-    }
+    user.update_revision(&conn)
 }
 
 
@@ -429,15 +412,9 @@ fn post_collections_admin(uuid: String, data: JsonUpcase<CollectionsAdminData>, 
             Some(collection) => {
                 if collection.is_writable_by_user(&headers.user.uuid, &conn) {
                     if posted_collections.contains(&collection.uuid) { // Add to collection
-                        match CollectionCipher::save(&cipher.uuid, &collection.uuid, &conn) {
-                            Ok(()) => (),
-                            Err(_) => err!("Failed to add cipher to collection")
-                        };
+                        CollectionCipher::save(&cipher.uuid, &collection.uuid, &conn)?;
                     } else { // Remove from collection
-                        match CollectionCipher::delete(&cipher.uuid, &collection.uuid, &conn) {
-                            Ok(()) => (),
-                            Err(_) => err!("Failed to remove cipher from collection")
-                        };
+                        CollectionCipher::delete(&cipher.uuid, &collection.uuid, &conn)?;
                     }
                 } else {
                     err!("No rights to modify the collection")
@@ -540,10 +517,7 @@ fn share_cipher_by_uuid(uuid: &str, data: ShareCipherData, headers: &Headers, co
                     None => err!("Invalid collection ID provided"),
                     Some(collection) => {
                         if collection.is_writable_by_user(&headers.user.uuid, &conn) {
-                            match CollectionCipher::save(&cipher.uuid.clone(), &collection.uuid, &conn) {
-                                Ok(()) => (),
-                                Err(_) => err!("Failed to add cipher to collection")
-                            };
+                            CollectionCipher::save(&cipher.uuid.clone(), &collection.uuid, &conn)?;
                             shared_to_collection = true;
                         } else {
                             err!("No rights to modify the collection")
@@ -614,10 +588,7 @@ fn post_attachment(uuid: String, data: Data, content_type: &ContentType, headers
 
                 let mut attachment = Attachment::new(file_name, cipher.uuid.clone(), name, size);
                 attachment.key = attachment_key.clone();
-                match attachment.save(&conn) {
-                    Ok(()) => (),
-                    Err(_) => error!("Failed to save attachment")
-                };
+                attachment.save(&conn).expect("Error saving attachment");
             },
             _ => error!("Invalid multipart name")
         }
@@ -746,13 +717,9 @@ fn move_cipher_selected(data: JsonUpcase<Value>, headers: Headers, conn: DbConn,
         }
 
         // Move cipher
-        if cipher.move_to_folder(folder_id.clone(), &headers.user.uuid, &conn).is_err() {
-            err!("Error saving the folder information")
-        }
-        match cipher.save(&conn) {
-            Ok(()) => (),
-            Err(_) => err!("Failed to save cipher")
-        };
+        cipher.move_to_folder(folder_id.clone(), &headers.user.uuid, &conn)?;
+        cipher.save(&conn)?;
+
         ws.send_cipher_update(UpdateType::SyncCipherUpdate, &cipher, &cipher.update_users_revision(&conn));
     }
 
@@ -777,21 +744,14 @@ fn delete_all(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn, ws
 
     // Delete ciphers and their attachments
     for cipher in Cipher::find_owned_by_user(&user.uuid, &conn) {
-        if cipher.delete(&conn).is_err() {
-            err!("Failed deleting cipher")
-        }
-        else {
-            ws.send_cipher_update(UpdateType::SyncCipherDelete, &cipher, &cipher.update_users_revision(&conn));
-        }
+        cipher.delete(&conn)?;
+        ws.send_cipher_update(UpdateType::SyncCipherDelete, &cipher, &cipher.update_users_revision(&conn));
     }
 
     // Delete folders
     for f in Folder::find_by_user(&user.uuid, &conn) {
-        if f.delete(&conn).is_err() {
-            err!("Failed deleting folder")
-        } else {
-            ws.send_folder_update(UpdateType::SyncFolderCreate, &f);
-        }
+        f.delete(&conn)?;
+        ws.send_folder_update(UpdateType::SyncFolderCreate, &f);
     }
 
     Ok(())
@@ -807,13 +767,9 @@ fn _delete_cipher_by_uuid(uuid: &str, headers: &Headers, conn: &DbConn, ws: &Sta
         err!("Cipher can't be deleted by user")
     }
 
-    match cipher.delete(&conn) {
-        Ok(()) => {
-            ws.send_cipher_update(UpdateType::SyncCipherDelete, &cipher, &cipher.update_users_revision(&conn));
-            Ok(())
-        }
-        Err(_) => err!("Failed deleting cipher")
-    }
+    cipher.delete(&conn)?;
+    ws.send_cipher_update(UpdateType::SyncCipherDelete, &cipher, &cipher.update_users_revision(&conn));
+    Ok(())
 }
 
 fn _delete_cipher_attachment_by_id(uuid: &str, attachment_id: &str, headers: &Headers, conn: &DbConn, ws: &State<WebSocketUsers>) -> EmptyResult {
@@ -836,11 +792,7 @@ fn _delete_cipher_attachment_by_id(uuid: &str, attachment_id: &str, headers: &He
     }
 
     // Delete attachment
-    match attachment.delete(&conn) {
-        Ok(()) => {
-            ws.send_cipher_update(UpdateType::SyncCipherDelete, &cipher, &cipher.update_users_revision(&conn));
-            Ok(())
-        }
-        Err(_) => err!("Deleting attachment failed")
-    }
+    attachment.delete(&conn)?;
+    ws.send_cipher_update(UpdateType::SyncCipherDelete, &cipher, &cipher.update_users_revision(&conn));
+    Ok(())
 }

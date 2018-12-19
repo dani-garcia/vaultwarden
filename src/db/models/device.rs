@@ -110,9 +110,12 @@ use diesel::prelude::*;
 use crate::db::DbConn;
 use crate::db::schema::devices;
 
+use crate::api::EmptyResult;
+use crate::error::MapResult;
+
 /// Database methods
 impl Device {
-    pub fn save(&mut self, conn: &DbConn) -> QueryResult<()> {
+    pub fn save(&mut self, conn: &DbConn) -> EmptyResult {
         self.updated_at = Utc::now().naive_utc();
 
         crate::util::retry(
@@ -123,16 +126,17 @@ impl Device {
             },
             10,
         )
-        .and(Ok(()))
+        .map_res("Error saving device")
     }
 
-    pub fn delete(self, conn: &DbConn) -> QueryResult<()> {
+    pub fn delete(self, conn: &DbConn) -> EmptyResult {
         diesel::delete(devices::table.filter(
             devices::uuid.eq(self.uuid)
-        )).execute(&**conn).and(Ok(()))
+        )).execute(&**conn)
+        .map_res("Error removing device")
     }
 
-    pub fn delete_all_by_user(user_uuid: &str, conn: &DbConn) -> QueryResult<()> {
+    pub fn delete_all_by_user(user_uuid: &str, conn: &DbConn) -> EmptyResult {
         for device in Self::find_by_user(user_uuid, &conn) {
             device.delete(&conn)?;
         }

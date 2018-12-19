@@ -93,16 +93,9 @@ fn create_organization(headers: Headers, data: JsonUpcase<OrgData>, conn: DbConn
     user_org.type_ = UserOrgType::Owner as i32;
     user_org.status = UserOrgStatus::Confirmed as i32;
 
-    if org.save(&conn).is_err() {
-        err!("Failed creating organization")
-    }
-    if user_org.save(&conn).is_err() {
-        err!("Failed to add user to organization")
-    }
-
-    if collection.save(&conn).is_err() {
-        err!("Failed creating Collection");
-    }
+    org.save(&conn)?;
+    user_org.save(&conn)?;
+    collection.save(&conn)?;
 
     Ok(Json(org.to_json()))
 }
@@ -118,10 +111,7 @@ fn delete_organization(org_id: String, data: JsonUpcase<PasswordData>, headers: 
 
     match Organization::find_by_uuid(&org_id, &conn) {
         None => err!("Organization not found"),
-        Some(org) => match org.delete(&conn) {
-            Ok(()) => Ok(()),
-            Err(_) => err!("Failed deleting the organization")
-        }
+        Some(org) => org.delete(&conn)
     }
 }
 
@@ -145,10 +135,7 @@ fn leave_organization(org_id: String, headers: Headers, conn: DbConn) -> EmptyRe
                 }
             }
             
-            match user_org.delete(&conn) {
-                Ok(()) => Ok(()),
-                Err(_) => err!("Failed leaving the organization")
-            }
+            user_org.delete(&conn)
         }
     }
 }
@@ -178,10 +165,8 @@ fn post_organization(org_id: String, _headers: OwnerHeaders, data: JsonUpcase<Or
     org.name = data.Name;
     org.billing_email = data.BillingEmail;
 
-    match org.save(&conn) {
-        Ok(()) => Ok(Json(org.to_json())),
-        Err(_) => err!("Failed to modify organization")
-    }
+    org.save(&conn)?;
+    Ok(Json(org.to_json()))
 }
 
 // GET /api/collections?writeOnly=false
@@ -222,10 +207,7 @@ fn post_organization_collections(org_id: String, _headers: AdminHeaders, data: J
     };
 
     let mut collection = Collection::new(org.uuid.clone(), data.Name);
-
-    if collection.save(&conn).is_err() {
-        err!("Failed saving Collection");
-    }
+    collection.save(&conn)?;
 
     Ok(Json(collection.to_json()))
 }
@@ -254,9 +236,7 @@ fn post_organization_collection_update(org_id: String, col_id: String, _headers:
     }
 
     collection.name = data.Name.clone();
-    if collection.save(&conn).is_err() {
-        err!("Failed updating Collection");
-    }
+    collection.save(&conn)?;
 
     Ok(Json(collection.to_json()))
 }
@@ -279,10 +259,7 @@ fn delete_organization_collection_user(org_id: String, col_id: String, org_user_
             match CollectionUser::find_by_collection_and_user(&collection.uuid, &user_org.user_uuid, &conn) {
                 None => err!("User not assigned to collection"),
                 Some(col_user) => {
-                    match col_user.delete(&conn) {
-                        Ok(()) => Ok(()),
-                        Err(_) => err!("Failed removing user from collection")
-                    }
+                    col_user.delete(&conn)
                 }
             }
         }
@@ -299,10 +276,7 @@ fn delete_organization_collection(org_id: String, col_id: String, _headers: Admi
     match Collection::find_by_uuid(&col_id, &conn) {
         None => err!("Collection not found"),
         Some(collection) => if collection.org_uuid == org_id {
-            match collection.delete(&conn) {
-                Ok(()) => Ok(()),
-                Err(_) => err!("Failed deleting collection")
-            }
+            collection.delete(&conn)
         } else {
             err!("Collection and Organization id do not match")
         }
@@ -435,18 +409,11 @@ fn send_invite(org_id: String, data: JsonUpcase<InviteData>, headers: AdminHeade
         let user = match User::find_by_mail(&email, &conn) {
             None => if CONFIG.invitations_allowed { // Invite user if that's enabled
                 let mut invitation = Invitation::new(email.clone());
-                match invitation.save(&conn) {
-                    Ok(()) => {
-                        let mut user = User::new(email.clone());
-                        if user.save(&conn).is_err() {
-                            err!("Failed to create placeholder for invited user")
-                        } else {
-                            user_org_status = UserOrgStatus::Invited as i32;
-                            user
-                        }
-                    }
-                    Err(_) => err!(format!("Failed to invite: {}", email))
-                }
+                invitation.save(&conn)?;
+                let mut user = User::new(email.clone());
+                user.save(&conn)?;
+                user_org_status = UserOrgStatus::Invited as i32;
+                user
                 
             } else {
                 err!(format!("User email does not exist: {}", email))
@@ -474,17 +441,13 @@ fn send_invite(org_id: String, data: JsonUpcase<InviteData>, headers: AdminHeade
                     match Collection::find_by_uuid_and_org(&col.Id, &org_id, &conn) {
                         None => err!("Collection not found in Organization"),
                         Some(collection) => {
-                            if CollectionUser::save(&user.uuid, &collection.uuid, col.ReadOnly, &conn).is_err() {
-                                err!("Failed saving collection access for user")
-                            }
+                            CollectionUser::save(&user.uuid, &collection.uuid, col.ReadOnly, &conn)?;
                         }
                     }
                 }
             }
 
-            if new_user.save(&conn).is_err() {
-                err!("Failed to add user to organization")
-            }
+            new_user.save(&conn)?;
             org_user_id = Some(new_user.uuid.clone());
         }
 
@@ -627,10 +590,7 @@ fn confirm_invite(org_id: String, org_user_id: String, data: JsonUpcase<Value>, 
         None => err!("Invalid key provided")
     };
 
-    match user_to_confirm.save(&conn) {
-        Ok(()) => Ok(()),
-        Err(_) => err!("Failed to add user to organization")
-    }
+    user_to_confirm.save(&conn)
 }
 
 #[get("/organizations/<org_id>/users/<org_user_id>")]
@@ -702,9 +662,7 @@ fn edit_user(org_id: String, org_user_id: String, data: JsonUpcase<EditUserData>
 
     // Delete all the odd collections
     for c in CollectionUser::find_by_organization_and_user_uuid(&org_id, &user_to_edit.user_uuid, &conn) {
-        if c.delete(&conn).is_err() {
-            err!("Failed deleting old collection assignment")
-        }
+        c.delete(&conn)?;
     }
 
     // If no accessAll, add the collections received
@@ -713,18 +671,13 @@ fn edit_user(org_id: String, org_user_id: String, data: JsonUpcase<EditUserData>
             match Collection::find_by_uuid_and_org(&col.Id, &org_id, &conn) {
                 None => err!("Collection not found in Organization"),
                 Some(collection) => {
-                    if CollectionUser::save(&user_to_edit.user_uuid, &collection.uuid, col.ReadOnly, &conn).is_err() {
-                        err!("Failed saving collection access for user")
-                    }
+                    CollectionUser::save(&user_to_edit.user_uuid, &collection.uuid, col.ReadOnly, &conn)?;
                 }
             }
         }
     }
 
-    match user_to_edit.save(&conn) {
-        Ok(()) => Ok(()),
-        Err(_) => err!("Failed to save user data")
-    }
+    user_to_edit.save(&conn)
 }
 
 #[delete("/organizations/<org_id>/users/<org_user_id>")]
@@ -736,10 +689,7 @@ fn delete_user(org_id: String, org_user_id: String, headers: AdminHeaders, conn:
                 if user_to_delete.uuid == headers.user.uuid {
                     err!("Delete your account in the account settings")
                 } else {
-                    match user_to_delete.delete(&conn) {
-                        Ok(()) => return Ok(()),
-                        Err(_) => err!("Failed to delete user - likely because it's the only owner of organization")
-                    }
+                    user_to_delete.delete(&conn)?;
                 }
             },
             None => err!("User not found")
@@ -767,10 +717,7 @@ fn delete_user(org_id: String, org_user_id: String, headers: AdminHeaders, conn:
         }
     }
 
-    match user_to_delete.delete(&conn) {
-        Ok(()) => Ok(()),
-        Err(_) => err!("Failed deleting user from organization")
-    }
+    user_to_delete.delete(&conn)
 }
 
 #[post("/organizations/<org_id>/users/<org_user_id>/delete")]
@@ -844,15 +791,9 @@ fn post_org_import(query: Form<OrgIdData>, data: JsonUpcase<ImportData>, headers
             Err(_) => err!("Failed to assign to collection")
         };
         
-        match CollectionCipher::save(cipher_id, coll_id, &conn) {
-            Ok(()) => (),
-            Err(_) => err!("Failed to add cipher to collection")
-        };
+        CollectionCipher::save(cipher_id, coll_id, &conn)?;
     }
 
     let mut user = headers.user;
-    match user.update_revision(&conn) {
-        Ok(()) => Ok(()),
-        Err(_) => err!("Failed to update the revision, please log out and log back in to finish import.")
-    }
+    user.update_revision(&conn)
 }

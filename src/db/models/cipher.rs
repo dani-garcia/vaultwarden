@@ -1,7 +1,7 @@
 use chrono::{NaiveDateTime, Utc};
 use serde_json::Value;
 
-use super::{User, Organization, Attachment, FolderCipher, CollectionCipher, UserOrganization, UserOrgType, UserOrgStatus};
+use super::{Attachment, CollectionCipher, FolderCipher, Organization, User, UserOrgStatus, UserOrgType, UserOrganization};
 
 #[derive(Debug, Identifiable, Queryable, Insertable, Associations)]
 #[table_name = "ciphers"]
@@ -59,17 +59,20 @@ impl Cipher {
     }
 }
 
+use crate::db::schema::*;
+use crate::db::DbConn;
 use diesel;
 use diesel::prelude::*;
-use crate::db::DbConn;
-use crate::db::schema::*;
+
+use crate::api::EmptyResult;
+use crate::error::MapResult;
 
 /// Database methods
 impl Cipher {
     pub fn to_json(&self, host: &str, user_uuid: &str, conn: &DbConn) -> Value {
-        use serde_json;
-        use crate::util::format_date;
         use super::Attachment;
+        use crate::util::format_date;
+        use serde_json;
 
         let attachments = Attachment::find_by_cipher(&self.uuid, conn);
         let attachments_json: Vec<Value> = attachments.iter().map(|c| c.to_json(host)).collect();
@@ -149,56 +152,54 @@ impl Cipher {
         user_uuids
     }
 
-    pub fn save(&mut self, conn: &DbConn) -> QueryResult<()> {
+    pub fn save(&mut self, conn: &DbConn) -> EmptyResult {
         self.update_users_revision(conn);
         self.updated_at = Utc::now().naive_utc();
 
         diesel::replace_into(ciphers::table)
             .values(&*self)
             .execute(&**conn)
-            .and(Ok(()))
+            .map_res("Error saving cipher")
     }
 
-    pub fn delete(&self, conn: &DbConn) -> QueryResult<()> {
+    pub fn delete(&self, conn: &DbConn) -> EmptyResult {
         self.update_users_revision(conn);
 
         FolderCipher::delete_all_by_cipher(&self.uuid, &conn)?;
         CollectionCipher::delete_all_by_cipher(&self.uuid, &conn)?;
         Attachment::delete_all_by_cipher(&self.uuid, &conn)?;
 
-        diesel::delete(
-            ciphers::table.filter(
-                ciphers::uuid.eq(&self.uuid)
-            )
-        ).execute(&**conn).and(Ok(()))
+        diesel::delete(ciphers::table.filter(ciphers::uuid.eq(&self.uuid)))
+            .execute(&**conn)
+            .map_res("Error deleting cipher")
     }
 
-    pub fn delete_all_by_organization(org_uuid: &str, conn: &DbConn) -> QueryResult<()> {
+    pub fn delete_all_by_organization(org_uuid: &str, conn: &DbConn) -> EmptyResult {
         for cipher in Self::find_by_org(org_uuid, &conn) {
             cipher.delete(&conn)?;
         }
         Ok(())
     }
 
-    pub fn delete_all_by_user(user_uuid: &str, conn: &DbConn) -> QueryResult<()> {
+    pub fn delete_all_by_user(user_uuid: &str, conn: &DbConn) -> EmptyResult {
         for cipher in Self::find_owned_by_user(user_uuid, &conn) {
             cipher.delete(&conn)?;
         }
         Ok(())
     }
 
-    pub fn move_to_folder(&self, folder_uuid: Option<String>, user_uuid: &str, conn: &DbConn) -> Result<(), &str> {
-        match self.get_folder_uuid(&user_uuid, &conn)  {
+    pub fn move_to_folder(&self, folder_uuid: Option<String>, user_uuid: &str, conn: &DbConn) -> EmptyResult {
+        match self.get_folder_uuid(&user_uuid, &conn) {
             None => {
                 match folder_uuid {
                     Some(new_folder) => {
                         self.update_users_revision(conn);
                         let folder_cipher = FolderCipher::new(&new_folder, &self.uuid);
-                        folder_cipher.save(&conn).or(Err("Couldn't save folder setting"))
-                    },
-                    None => Ok(()) //nothing to do
+                        folder_cipher.save(&conn)
+                    }
+                    None => Ok(()), //nothing to do
                 }
-            },
+            }
             Some(current_folder) => {
                 match folder_uuid {
                     Some(new_folder) => {
@@ -206,24 +207,17 @@ impl Cipher {
                             Ok(()) //nothing to do
                         } else {
                             self.update_users_revision(conn);
-                            match FolderCipher::find_by_folder_and_cipher(&current_folder, &self.uuid, &conn) {
-                                Some(current_folder) => {
-                                    current_folder.delete(&conn).or(Err("Failed removing old folder mapping"))
-                                },
-                                None => Ok(()) // Weird, but nothing to do
-                            }.and_then(
-                                |()| FolderCipher::new(&new_folder, &self.uuid)
-                                .save(&conn).or(Err("Couldn't save folder setting"))
-                            )
+                            if let Some(current_folder) = FolderCipher::find_by_folder_and_cipher(&current_folder, &self.uuid, &conn) {
+                                current_folder.delete(&conn)?;
+                            }
+                            FolderCipher::new(&new_folder, &self.uuid).save(&conn)
                         }
-                    },
+                    }
                     None => {
                         self.update_users_revision(conn);
                         match FolderCipher::find_by_folder_and_cipher(&current_folder, &self.uuid, &conn) {
-                            Some(current_folder) => {
-                                current_folder.delete(&conn).or(Err("Failed removing old folder mapping"))
-                            },
-                            None => Err("Couldn't move from previous folder")
+                            Some(current_folder) => current_folder.delete(&conn),
+                            None => err!("Couldn't move from previous folder"),
                         }
                     }
                 }

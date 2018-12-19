@@ -62,9 +62,7 @@ fn post_folders(data: JsonUpcase<FolderData>, headers: Headers, conn: DbConn, ws
 
     let mut folder = Folder::new(headers.user.uuid.clone(), data.Name);
 
-    if folder.save(&conn).is_err() {
-        err!("Failed to save folder")
-    }
+    folder.save(&conn)?;
     ws.send_folder_update(UpdateType::SyncFolderCreate, &folder);
 
     Ok(Json(folder.to_json()))
@@ -90,9 +88,7 @@ fn put_folder(uuid: String, data: JsonUpcase<FolderData>, headers: Headers, conn
 
     folder.name = data.Name;
 
-    if folder.save(&conn).is_err() {
-        err!("Failed to save folder")
-    }
+    folder.save(&conn)?;
     ws.send_folder_update(UpdateType::SyncFolderUpdate, &folder);
 
     Ok(Json(folder.to_json()))
@@ -115,11 +111,8 @@ fn delete_folder(uuid: String, headers: Headers, conn: DbConn, ws: State<WebSock
     }
 
     // Delete the actual folder entry
-    match folder.delete(&conn) {
-        Ok(()) => {
-            ws.send_folder_update(UpdateType::SyncFolderDelete, &folder);
-            Ok(())
-        }
-        Err(_) => err!("Failed deleting folder")
-    }
+    folder.delete(&conn)?;
+
+    ws.send_folder_update(UpdateType::SyncFolderDelete, &folder);
+    Ok(())
 }

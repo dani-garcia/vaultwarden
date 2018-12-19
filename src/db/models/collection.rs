@@ -38,9 +38,12 @@ use diesel::prelude::*;
 use crate::db::DbConn;
 use crate::db::schema::*;
 
+use crate::api::EmptyResult;
+use crate::error::MapResult;
+
 /// Database methods
 impl Collection {
-    pub fn save(&mut self, conn: &DbConn) -> QueryResult<()> {
+    pub fn save(&mut self, conn: &DbConn) -> EmptyResult {
         // Update affected users revision
         UserOrganization::find_by_collection_and_org(&self.uuid, &self.org_uuid, conn)
         .iter()
@@ -51,10 +54,10 @@ impl Collection {
         diesel::replace_into(collections::table)
         .values(&*self)
         .execute(&**conn)
-        .and(Ok(()))
+        .map_res("Error saving collection")
     }
 
-    pub fn delete(self, conn: &DbConn) -> QueryResult<()> {
+    pub fn delete(self, conn: &DbConn) -> EmptyResult {
         CollectionCipher::delete_all_by_collection(&self.uuid, &conn)?;
         CollectionUser::delete_all_by_collection(&self.uuid, &conn)?;
 
@@ -62,10 +65,11 @@ impl Collection {
             collections::table.filter(
                 collections::uuid.eq(self.uuid)
             )
-        ).execute(&**conn).and(Ok(()))
+        ).execute(&**conn)
+        .map_res("Error deleting collection")
     }
 
-    pub fn delete_all_by_organization(org_uuid: &str, conn: &DbConn) -> QueryResult<()> {
+    pub fn delete_all_by_organization(org_uuid: &str, conn: &DbConn) -> EmptyResult {
         for collection in Self::find_by_organization(org_uuid, &conn) {
             collection.delete(&conn)?;
         }
@@ -185,7 +189,7 @@ impl CollectionUser {
             .load::<Self>(&**conn).expect("Error loading users_collections")
     }
 
-    pub fn save(user_uuid: &str, collection_uuid: &str, read_only:bool, conn: &DbConn) -> QueryResult<()> {
+    pub fn save(user_uuid: &str, collection_uuid: &str, read_only:bool, conn: &DbConn) -> EmptyResult {
         User::update_uuid_revision(&user_uuid, conn);
 
         diesel::replace_into(users_collections::table)
@@ -193,16 +197,18 @@ impl CollectionUser {
             users_collections::user_uuid.eq(user_uuid),
             users_collections::collection_uuid.eq(collection_uuid),
             users_collections::read_only.eq(read_only),
-        )).execute(&**conn).and(Ok(()))
+        )).execute(&**conn)
+        .map_res("Error adding user to collection")
     }
 
-    pub fn delete(self, conn: &DbConn) -> QueryResult<()> {
+    pub fn delete(self, conn: &DbConn) -> EmptyResult {
         User::update_uuid_revision(&self.user_uuid, conn);
 
         diesel::delete(users_collections::table
         .filter(users_collections::user_uuid.eq(&self.user_uuid))
         .filter(users_collections::collection_uuid.eq(&self.collection_uuid)))
-        .execute(&**conn).and(Ok(()))
+        .execute(&**conn)
+        .map_res("Error removing user from collection")
     }
 
     pub fn find_by_collection(collection_uuid: &str, conn: &DbConn) -> Vec<Self> {
@@ -220,7 +226,7 @@ impl CollectionUser {
         .first::<Self>(&**conn).ok()
     }
 
-    pub fn delete_all_by_collection(collection_uuid: &str, conn: &DbConn) -> QueryResult<()> {
+    pub fn delete_all_by_collection(collection_uuid: &str, conn: &DbConn) -> EmptyResult {
         CollectionUser::find_by_collection(&collection_uuid, conn)
         .iter()
         .for_each(|collection| {
@@ -229,15 +235,17 @@ impl CollectionUser {
 
         diesel::delete(users_collections::table
             .filter(users_collections::collection_uuid.eq(collection_uuid))
-        ).execute(&**conn).and(Ok(()))
+        ).execute(&**conn)
+        .map_res("Error deleting users from collection")
     }
 
-    pub fn delete_all_by_user(user_uuid: &str, conn: &DbConn) -> QueryResult<()> {
+    pub fn delete_all_by_user(user_uuid: &str, conn: &DbConn) -> EmptyResult {
         User::update_uuid_revision(&user_uuid, conn);
 
         diesel::delete(users_collections::table
             .filter(users_collections::user_uuid.eq(user_uuid))
-        ).execute(&**conn).and(Ok(()))
+        ).execute(&**conn)
+        .map_res("Error removing user from collections")
     }
 }
 
@@ -255,30 +263,34 @@ pub struct CollectionCipher {
 
 /// Database methods
 impl CollectionCipher {
-    pub fn save(cipher_uuid: &str, collection_uuid: &str, conn: &DbConn) -> QueryResult<()> {
+    pub fn save(cipher_uuid: &str, collection_uuid: &str, conn: &DbConn) -> EmptyResult {
         diesel::replace_into(ciphers_collections::table)
             .values((
                 ciphers_collections::cipher_uuid.eq(cipher_uuid),
                 ciphers_collections::collection_uuid.eq(collection_uuid),
-            )).execute(&**conn).and(Ok(()))
+            )).execute(&**conn)
+            .map_res("Error adding cipher to collection")
     }
 
-    pub fn delete(cipher_uuid: &str, collection_uuid: &str, conn: &DbConn) -> QueryResult<()> {
+    pub fn delete(cipher_uuid: &str, collection_uuid: &str, conn: &DbConn) -> EmptyResult {
         diesel::delete(ciphers_collections::table
             .filter(ciphers_collections::cipher_uuid.eq(cipher_uuid))
             .filter(ciphers_collections::collection_uuid.eq(collection_uuid)))
-            .execute(&**conn).and(Ok(()))
+            .execute(&**conn)
+            .map_res("Error deleting cipher from collection")
     }
 
-    pub fn delete_all_by_cipher(cipher_uuid: &str, conn: &DbConn) -> QueryResult<()> {
+    pub fn delete_all_by_cipher(cipher_uuid: &str, conn: &DbConn) -> EmptyResult {
         diesel::delete(ciphers_collections::table
             .filter(ciphers_collections::cipher_uuid.eq(cipher_uuid))
-        ).execute(&**conn).and(Ok(()))
+        ).execute(&**conn)
+        .map_res("Error removing cipher from collections")
     }
 
-    pub fn delete_all_by_collection(collection_uuid: &str, conn: &DbConn) -> QueryResult<()> {
+    pub fn delete_all_by_collection(collection_uuid: &str, conn: &DbConn) -> EmptyResult {
         diesel::delete(ciphers_collections::table
             .filter(ciphers_collections::collection_uuid.eq(collection_uuid))
-        ).execute(&**conn).and(Ok(()))
+        ).execute(&**conn)
+        .map_res("Error removing ciphers from collection")
     }
 }

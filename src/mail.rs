@@ -7,6 +7,9 @@ use lettre_email::EmailBuilder;
 use crate::MailConfig;
 use crate::CONFIG;
 
+use crate::api::EmptyResult;
+use crate::error::Error;
+
 fn mailer(config: &MailConfig) -> SmtpTransport {
     let client_security = if config.smtp_ssl {
         let tls = TlsConnector::builder()
@@ -35,7 +38,7 @@ fn mailer(config: &MailConfig) -> SmtpTransport {
         .transport()
 }
 
-pub fn send_password_hint(address: &str, hint: Option<String>, config: &MailConfig) -> Result<(), String> {
+pub fn send_password_hint(address: &str, hint: Option<String>, config: &MailConfig) -> EmptyResult {
     let (subject, body) = if let Some(hint) = hint {
         ("Your master password hint",
          format!(
@@ -54,11 +57,11 @@ pub fn send_password_hint(address: &str, hint: Option<String>, config: &MailConf
         .subject(subject)
         .body(body)
         .build()
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| Error::new("Error building hint email", e.to_string()))?;
 
     mailer(config)
         .send(email.into())
-        .map_err(|e| e.to_string())
+        .map_err(|e| Error::new("Error sending hint email", e.to_string()))
         .and(Ok(()))
 }
 

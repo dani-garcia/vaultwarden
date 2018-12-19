@@ -14,9 +14,8 @@
 use std::{path::Path, process::{exit, Command}};
 use rocket::Rocket;
 
-#[macro_use]
+#[macro_use] mod error;
 mod util;
-
 mod api;
 mod db;
 mod crypto;

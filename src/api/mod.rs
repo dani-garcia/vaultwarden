@@ -13,14 +13,13 @@ pub use self::web::routes as web_routes;
 pub use self::notifications::routes as notifications_routes;
 pub use self::notifications::{start_notification_server, WebSocketUsers, UpdateType};
 
-use rocket::response::status::BadRequest;
 use rocket_contrib::json::Json;
 use serde_json::Value;
 
 // Type aliases for API methods results
-type ApiResult<T> = Result<T, BadRequest<Json<Value>>>;
-type JsonResult = ApiResult<Json<Value>>;
-type EmptyResult = ApiResult<()>;
+type ApiResult<T> = Result<T, crate::error::Error>;
+pub type JsonResult = ApiResult<Json<Value>>;
+pub type EmptyResult = ApiResult<()>;
 
 use crate::util;
 type JsonUpcase<T> = Json<util::UpCase<T>>;
