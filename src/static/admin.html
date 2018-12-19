@@ -27,10 +27,8 @@
 
         function identicon(email) {
             const data = new Identicon(md5(email), {
-                size: 48,
-                format: 'svg'
+                size: 48, format: 'svg'
             }).toString();
-
             return "data:image/svg+xml;base64," + data;
         }
 
@@ -84,22 +82,19 @@
         function loadUsers() {
             $("#users-list").empty();
             $.get({ url: "/admin/users", headers: _headers() })
-                .done(fillRow)
-                .fail(resetKey);
+                .done(fillRow).fail(resetKey);
 
             return false;
         }
 
         function _post(url, successMsg, errMsg, resetOnErr, data) {
             $.post({ url: url, headers: _headers(), data: data })
-                .done(() => {
+                .done(function () {
                     alert(successMsg);
                     loadUsers();
-                })
-                .fail((e) => {
-                    const msg = e.responseJSON ?
-                        e.responseJSON.ErrorModel.Message
-                        : "Unknown error";
+                }).fail(function (e) {
+                    const r = e.responseJSON;
+                    const msg = r ? r.ErrorModel.Message : "Unknown error";
                     alert(errMsg + ": " + msg);
                     if (resetOnErr) { resetKey(); }
                 });
@@ -112,18 +107,19 @@
         }
 
         function inviteUser() {
-            data = JSON.stringify({ "Email": $("#email-invite").val() });
-
-            _post("/admin/invite/",
-                "User invited correctly",
+            inv = $("#email-invite");
+            data = JSON.stringify({ "Email": inv.val() });
+            inv.val("");
+            _post("/admin/invite/", "User invited correctly",
                 "Error inviting user", false, data);
+            return false;
         }
 
         $(window).on('load', function () {
             setKey();
 
             $("#key-form").submit(setKey);
-            $("#reload-btn").on("click", loadUsers);
+            $("#reload-btn").click(loadUsers);
             $("#invite-form").submit(inviteUser);
         });
     </script>

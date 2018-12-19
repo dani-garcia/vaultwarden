@@ -426,45 +426,42 @@ fn send_invite(org_id: String, data: JsonUpcase<InviteData>, headers: AdminHeade
 
         };
 
-        // Don't create UserOrganization in virtual organization
-        let mut org_user_id = None;
-        if org_id != Organization::VIRTUAL_ID {
-            let mut new_user = UserOrganization::new(user.uuid.clone(), org_id.clone());
-            let access_all = data.AccessAll.unwrap_or(false);
-            new_user.access_all = access_all;
-            new_user.type_ = new_type;
-            new_user.status = user_org_status;
+        let mut new_user = UserOrganization::new(user.uuid.clone(), org_id.clone());
+        let access_all = data.AccessAll.unwrap_or(false);
+        new_user.access_all = access_all;
+        new_user.type_ = new_type;
+        new_user.status = user_org_status;
 
-            // If no accessAll, add the collections received
-            if !access_all {
-                for col in &data.Collections {
-                    match Collection::find_by_uuid_and_org(&col.Id, &org_id, &conn) {
-                        None => err!("Collection not found in Organization"),
-                        Some(collection) => {
-                            CollectionUser::save(&user.uuid, &collection.uuid, col.ReadOnly, &conn)?;
-                        }
+        // If no accessAll, add the collections received
+        if !access_all {
+            for col in &data.Collections {
+                match Collection::find_by_uuid_and_org(&col.Id, &org_id, &conn) {
+                    None => err!("Collection not found in Organization"),
+                    Some(collection) => {
+                        CollectionUser::save(&user.uuid, &collection.uuid, col.ReadOnly, &conn)?;
                     }
                 }
             }
-
-            new_user.save(&conn)?;
-            org_user_id = Some(new_user.uuid.clone());
         }
+
+        new_user.save(&conn)?;
 
         if CONFIG.mail.is_some() {
             let org_name = match Organization::find_by_uuid(&org_id, &conn) {
                 Some(org) => org.name,
                 None => err!("Error looking up organization")
             };
-            let claims = generate_invite_claims(user.uuid.to_string(), user.email.clone(), org_id.clone(), org_user_id.clone());
+            let claims = generate_invite_claims(user.uuid.to_string(), user.email.clone(), org_id.clone(), Some(new_user.uuid.clone()));
             let invite_token = encode_jwt(&claims);
             if let Some(ref mail_config) = CONFIG.mail {
-                if let Err(e) = mail::send_invite(&email, &org_id, &org_user_id.unwrap_or(Organization::VIRTUAL_ID.to_string()), 
+                if let Err(e) = mail::send_invite(&email, &org_id, &new_user.uuid, 
                                                   &invite_token, &org_name, mail_config) {
                     err!(format!("There has been a problem sending the email: {}", e))
                 }
             }
         }
+
+        new_user.save(&conn)?;
     }
 
     Ok(())
@@ -478,10 +475,6 @@ fn reinvite_user(org_id: String, user_org: String, _headers: AdminHeaders, conn:
 
     if CONFIG.mail.is_none() {
         err!("SMTP is not configured.")
-    }
-
-    if org_id == Organization::VIRTUAL_ID {
-        err!("This functionality is incompatible with the bitwarden_rs virtual organization. Please delete the user and send a new invitation.")
     }
 
     let user_org = match UserOrganization::find_by_uuid(&user_org, &conn) {
@@ -682,20 +675,6 @@ fn edit_user(org_id: String, org_user_id: String, data: JsonUpcase<EditUserData>
 
 #[delete("/organizations/<org_id>/users/<org_user_id>")]
 fn delete_user(org_id: String, org_user_id: String, headers: AdminHeaders, conn: DbConn) -> EmptyResult {
-    // We're deleting user in virtual Organization. Delete User, not UserOrganization
-    if org_id == Organization::VIRTUAL_ID {
-        match User::find_by_uuid(&org_user_id, &conn) {
-            Some(user_to_delete) => {
-                if user_to_delete.uuid == headers.user.uuid {
-                    err!("Delete your account in the account settings")
-                } else {
-                    user_to_delete.delete(&conn)?;
-                }
-            },
-            None => err!("User not found")
-        }
-    }
-
     let user_to_delete = match UserOrganization::find_by_uuid_and_org(&org_user_id, &org_id, &conn) {
         Some(user) => user,
         None => err!("User to delete isn't member of the organization")

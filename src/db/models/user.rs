@@ -100,13 +100,6 @@ impl User {
     pub fn reset_security_stamp(&mut self) {
         self.security_stamp = crate::util::get_uuid();
     }
-
-    pub fn is_server_admin(&self) -> bool {
-        match CONFIG.server_admin_email {
-            Some(ref server_admin_email) => &self.email == server_admin_email,
-            None => false
-        }
-    }
 }
 
 use diesel;
@@ -121,12 +114,9 @@ use crate::error::MapResult;
 /// Database methods
 impl User {
     pub fn to_json(&self, conn: &DbConn) -> Value {
-        use super::{UserOrganization, UserOrgType, UserOrgStatus, TwoFactor};
+        use super::{UserOrganization, TwoFactor};
 
-        let mut orgs = UserOrganization::find_by_user(&self.uuid, conn);
-        if self.is_server_admin() {
-            orgs.push(UserOrganization::new_virtual(self.uuid.clone(), UserOrgType::Owner, UserOrgStatus::Confirmed));
-        }
+        let orgs = UserOrganization::find_by_user(&self.uuid, conn);
         let orgs_json: Vec<Value> = orgs.iter().map(|c| c.to_json(&conn)).collect();
         let twofactor_enabled = !TwoFactor::find_by_user(&self.uuid, conn).is_empty();
 
@@ -172,7 +162,7 @@ impl User {
         Cipher::delete_all_by_user(&self.uuid, &*conn)?;
         Folder::delete_all_by_user(&self.uuid, &*conn)?;
         Device::delete_all_by_user(&self.uuid, &*conn)?;
-        //TwoFactor::delete_all_by_user(&self.uuid, &*conn)?;
+        TwoFactor::delete_all_by_user(&self.uuid, &*conn)?;
         Invitation::take(&self.email, &*conn); // Delete invitation if any
 
         diesel::delete(users::table.filter(

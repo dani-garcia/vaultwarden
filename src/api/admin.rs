@@ -40,11 +40,10 @@ fn invite_user(data: JsonUpcase<InviteData>, _token: AdminToken, conn: DbConn) -
         err!("Invitations are not allowed")
     }
 
-    let mut invitation = Invitation::new(data.Email.clone());
-    let mut user = User::new(data.Email);
-
+    let mut invitation = Invitation::new(data.Email);
     invitation.save(&conn)?;
-    user.save(&conn)?;
+
+    // TODO: Might want to send an email?
 
     Ok(Json(json!({})))
 }
