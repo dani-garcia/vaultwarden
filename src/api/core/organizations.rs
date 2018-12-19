@@ -424,7 +424,10 @@ fn send_invite(org_id: String, data: JsonUpcase<InviteData>, headers: AdminHeade
     }
 
     for email in data.Emails.iter() {
-        let mut user_org_status = UserOrgStatus::Accepted as i32;
+        let mut user_org_status = match CONFIG.mail {
+            Some(_) => UserOrgStatus::Invited as i32,
+            None => UserOrgStatus::Accepted as i32, // Automatically mark user as accepted if no email invites
+        };
         let user = match User::find_by_mail(&email, &conn) {
             None => if CONFIG.invitations_allowed { // Invite user if that's enabled
                 let mut invitation = Invitation::new(email.clone());
@@ -453,6 +456,7 @@ fn send_invite(org_id: String, data: JsonUpcase<InviteData>, headers: AdminHeade
         };
 
         // Don't create UserOrganization in virtual organization
+        let mut org_user_id = None;
         if org_id != Organization::VIRTUAL_ID {
             let mut new_user = UserOrganization::new(user.uuid.clone(), org_id.clone());
             let access_all = data.AccessAll.unwrap_or(false);
@@ -477,6 +481,7 @@ fn send_invite(org_id: String, data: JsonUpcase<InviteData>, headers: AdminHeade
             if new_user.save(&conn).is_err() {
                 err!("Failed to add user to organization")
             }
+            org_user_id = Some(new_user.uuid.clone());
         }
 
         if CONFIG.mail.is_some() {
@@ -489,16 +494,17 @@ fn send_invite(org_id: String, data: JsonUpcase<InviteData>, headers: AdminHeade
                 iss: JWT_ISSUER.to_string(),
                 sub: user.uuid.to_string(),
                 email: email.clone(),
+                org_id: org_id.clone(),
+                user_org_id: org_user_id.clone(),
             };
             let org_name = match Organization::find_by_uuid(&org_id, &conn) {
                 Some(org) => org.name,
                 None => err!("Error looking up organization")
             };
             let invite_token = encode_jwt(&claims);
-            let org_user_id = Organization::VIRTUAL_ID;
-
             if let Some(ref mail_config) = CONFIG.mail {
-                if let Err(e) = mail::send_invite(&email, &org_id, &org_user_id, &invite_token, &org_name, mail_config) {
+                if let Err(e) = mail::send_invite(&email, &org_id, &org_user_id.unwrap_or(Organization::VIRTUAL_ID.to_string()), 
+                                                  &invite_token, &org_name, mail_config) {
                     err!(format!("There has been a problem sending the email: {}", e))
                 }
             }
@@ -508,24 +514,35 @@ fn send_invite(org_id: String, data: JsonUpcase<InviteData>, headers: AdminHeade
     Ok(())
 }
 
-// TODO: Figure out how to make this redirect to the registration page
-#[get("/organizations/<org_id>/users/<org_user_id>/accept?<token>")]
-fn accept_invite(org_id: String, org_user_id: String, token: String, conn: DbConn) -> EmptyResult {
-    let invite_claims: InviteJWTClaims = match decode_invite_jwt(&token) {
+#[derive(Deserialize)]
+#[allow(non_snake_case)]
+struct AcceptData {
+    Token: String,
+}
+
+#[post("/organizations/<org_id>/users/<org_user_id>/accept", data = "<data>")]
+fn accept_invite(org_id: String, org_user_id: String, data: JsonUpcase<AcceptData>, conn: DbConn) -> EmptyResult {
+    let data: AcceptData = data.into_inner().data;
+    let token = &data.Token;
+    let claims: InviteJWTClaims = match decode_invite_jwt(&token) {
             Ok(claims) => claims,
             Err(msg) => err!("Invalid claim: {:#?}", msg),
     };
 
-    match User::find_by_mail(&invite_claims.email, &conn) {
-        Some(user) => {
-            if Invitation::take(&invite_claims.email, &conn) {
-                for mut user_org in UserOrganization::find_invited_by_user(&user.uuid, &conn).iter_mut() {
+    match User::find_by_mail(&claims.email, &conn) {
+        Some(_) => {
+            if Invitation::take(&claims.email, &conn) {
+                if claims.user_org_id.is_some() {
+                    // If this isn't the virtual_org, mark userorg as accepted
+                    let mut user_org = match UserOrganization::find_by_uuid_and_org(&claims.user_org_id.unwrap(), &claims.org_id, &conn) {
+                        Some(user_org) => user_org,
+                        None => err!("Error accepting the invitation") 
+                    };
                     user_org.status = UserOrgStatus::Accepted as i32;
                     if user_org.save(&conn).is_err() {
                         err!("Failed to accept user to organization")
                     }
                 }
-                //rocket::response::Redirect::to(format!("/#/register?email={}", invite_claims.email))
             } else {
                 err!("Invitation for user not found")
             }

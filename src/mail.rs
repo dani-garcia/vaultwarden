@@ -68,10 +68,10 @@ pub fn send_invite(address: &str, org_id: &str, org_user_id: &str, token: &str, 
         format!(
             "<html>
              <p>You have been invited to join the <b>{}</b> organization.<br><br>
-             <a href=\"https://{}/api/organizations/{}/users/{}/accept?token={}\">Click here to join</a></p>
+             <a href=\"{}/#/accept-organization/?organizationId={}&organizationUserId={}&email={}&organizationName={}&token={}\">Click here to join</a></p>
              <p>If you do not wish to join this organization, you can safely ignore this email.</p>
              </html>",
-            org_name, CONFIG.domain, org_id, org_user_id, token
+            org_name, CONFIG.domain, org_id, org_user_id, address, org_name, token
         ))
     };
 

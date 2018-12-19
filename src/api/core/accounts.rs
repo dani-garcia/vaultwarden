@@ -74,7 +74,6 @@ fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> EmptyResult {
                     err!("Registration not allowed")
                 }
             } else {
-                // User clicked email invite link, so they are already "accepted" in UserOrgs
                 user
             }
         }
