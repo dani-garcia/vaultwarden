@@ -520,8 +520,9 @@ struct AcceptData {
     Token: String,
 }
 
-#[post("/organizations/<org_id>/users/<org_user_id>/accept", data = "<data>")]
-fn accept_invite(org_id: String, org_user_id: String, data: JsonUpcase<AcceptData>, conn: DbConn) -> EmptyResult {
+#[post("/organizations/<_org_id>/users/<_org_user_id>/accept", data = "<data>")]
+fn accept_invite(_org_id: String, _org_user_id: String, data: JsonUpcase<AcceptData>, conn: DbConn) -> EmptyResult {
+// The web-vault passes org_id and org_user_id in the URL, but we are just reading them from the JWT instead
     let data: AcceptData = data.into_inner().data;
     let token = &data.Token;
     let claims: InviteJWTClaims = match decode_invite_jwt(&token) {
