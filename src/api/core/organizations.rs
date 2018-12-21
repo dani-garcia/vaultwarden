@@ -8,7 +8,7 @@ use crate::db::DbConn;
 use crate::db::models::*;
 
 use crate::api::{PasswordData, JsonResult, EmptyResult, NumberOrString, JsonUpcase, WebSocketUsers, UpdateType};
-use crate::auth::{Headers, AdminHeaders, OwnerHeaders};
+use crate::auth::{Headers, AdminHeaders, OwnerHeaders, encode_jwt, decode_invite_jwt, InviteJWTClaims, JWT_ISSUER};
 
 use serde::{Deserialize, Deserializer};
 
@@ -38,6 +38,7 @@ pub fn routes() -> Vec<Route> {
         get_org_users,
         send_invite,
         confirm_invite,
+        accept_invite,
         get_user,
         edit_user,
         put_organization_user,
@@ -423,7 +424,10 @@ fn send_invite(org_id: String, data: JsonUpcase<InviteData>, headers: AdminHeade
     }
 
     for email in data.Emails.iter() {
-        let mut user_org_status = UserOrgStatus::Accepted as i32;
+        let mut user_org_status = match CONFIG.mail {
+            Some(_) => UserOrgStatus::Invited as i32,
+            None => UserOrgStatus::Accepted as i32, // Automatically mark user as accepted if no email invites
+        };
         let user = match User::find_by_mail(&email, &conn) {
             None => if CONFIG.invitations_allowed { // Invite user if that's enabled
                 let mut invitation = Invitation::new(email.clone());
@@ -452,6 +456,7 @@ fn send_invite(org_id: String, data: JsonUpcase<InviteData>, headers: AdminHeade
         };
 
         // Don't create UserOrganization in virtual organization
+        let mut org_user_id = None;
         if org_id != Organization::VIRTUAL_ID {
             let mut new_user = UserOrganization::new(user.uuid.clone(), org_id.clone());
             let access_all = data.AccessAll.unwrap_or(false);
@@ -476,7 +481,76 @@ fn send_invite(org_id: String, data: JsonUpcase<InviteData>, headers: AdminHeade
             if new_user.save(&conn).is_err() {
                 err!("Failed to add user to organization")
             }
+            org_user_id = Some(new_user.uuid.clone());
         }
+
+        if CONFIG.mail.is_some() {
+            use crate::mail;
+            use chrono::{Duration, Utc};
+            let time_now = Utc::now().naive_utc();
+            let claims = InviteJWTClaims {
+                nbf: time_now.timestamp(),
+                exp: (time_now + Duration::days(5)).timestamp(),
+                iss: JWT_ISSUER.to_string(),
+                sub: user.uuid.to_string(),
+                email: email.clone(),
+                org_id: org_id.clone(),
+                user_org_id: org_user_id.clone(),
+            };
+            let org_name = match Organization::find_by_uuid(&org_id, &conn) {
+                Some(org) => org.name,
+                None => err!("Error looking up organization")
+            };
+            let invite_token = encode_jwt(&claims);
+            if let Some(ref mail_config) = CONFIG.mail {
+                if let Err(e) = mail::send_invite(&email, &org_id, &org_user_id.unwrap_or(Organization::VIRTUAL_ID.to_string()), 
+                                                  &invite_token, &org_name, mail_config) {
+                    err!(format!("There has been a problem sending the email: {}", e))
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+#[derive(Deserialize)]
+#[allow(non_snake_case)]
+struct AcceptData {
+    Token: String,
+}
+
+#[post("/organizations/<_org_id>/users/<_org_user_id>/accept", data = "<data>")]
+fn accept_invite(_org_id: String, _org_user_id: String, data: JsonUpcase<AcceptData>, conn: DbConn) -> EmptyResult {
+// The web-vault passes org_id and org_user_id in the URL, but we are just reading them from the JWT instead
+    let data: AcceptData = data.into_inner().data;
+    let token = &data.Token;
+    let claims: InviteJWTClaims = match decode_invite_jwt(&token) {
+            Ok(claims) => claims,
+            Err(msg) => err!("Invalid claim: {:#?}", msg),
+    };
+
+    match User::find_by_mail(&claims.email, &conn) {
+        Some(_) => {
+            if Invitation::take(&claims.email, &conn) {
+                if claims.user_org_id.is_some() {
+                    // If this isn't the virtual_org, mark userorg as accepted
+                    let mut user_org = match UserOrganization::find_by_uuid_and_org(&claims.user_org_id.unwrap(), &claims.org_id, &conn) {
+                        Some(user_org) => user_org,
+                        None => err!("Error accepting the invitation") 
+                    };
+                    user_org.status = UserOrgStatus::Accepted as i32;
+                    if user_org.save(&conn).is_err() {
+                        err!("Failed to accept user to organization")
+                    }
+                }
+            } else {
+                err!("Invitation for user not found")
+            }
+        },
+        None => {
+            err!("Invited user not found")
+        },
     }
 
     Ok(())
