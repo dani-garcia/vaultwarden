@@ -44,14 +44,15 @@ macro_rules! make_error {
     };
 }
 
-use diesel::result::{Error as DieselError, QueryResult};
-use serde_json::{Value, Error as SerError};
+use diesel::result::Error as DieselError;
+use jsonwebtoken::errors::Error as JwtError;
+use serde_json::{Error as SerError, Value};
 use u2f::u2ferror::U2fError as U2fErr;
 
 // Error struct
 // Each variant has two elements, the first is an error of different types, used for logging purposes
 // The second is a String, and it's contents are displayed to the user when the error occurs. Inside the macro, this is represented as _
-// 
+//
 // After the variant itself, there are two expressions. The first one is a bool to indicate whether the error cause will be printed to the log.
 // The second one contains the function used to obtain the response sent to the client
 make_error! {
@@ -63,6 +64,7 @@ make_error! {
     DbError(DieselError, _): true,  _api_error,
     U2fError(U2fErr,     _): true,  _api_error,
     SerdeError(SerError, _): true,  _api_error,
+    JWTError(JwtError,   _): true,  _api_error,
     //WsError(ws::Error, _): true,  _api_error,
 }
 
@@ -73,19 +75,25 @@ impl Error {
 }
 
 pub trait MapResult<S, E> {
-    fn map_res(self, msg: &str) -> Result<(), E>;
+    fn map_res(self, msg: &str) -> Result<S, E>;
 }
 
-impl MapResult<(), Error> for QueryResult<usize> {
+impl<S, E: Into<Error>> MapResult<S, Error> for Result<S, E> {
+    fn map_res(self, msg: &str) -> Result<S, Error> {
+        self.map_err(Into::into).map_err(|e| e.with_msg(msg))
+    }
+}
+
+impl<E: Into<Error>> MapResult<(), Error> for Result<usize, E> {
     fn map_res(self, msg: &str) -> Result<(), Error> {
-        self.and(Ok(())).map_err(Error::from).map_err(|e| e.with_msg(msg))
+        self.and(Ok(())).map_res(msg)
     }
 }
 
 use serde::Serialize;
 use std::any::Any;
 
-fn _serialize(e: &impl Serialize, _: &impl Any) -> String {
+fn _serialize(e: &impl Serialize, _msg: &str) -> String {
     serde_json::to_string(e).unwrap()
 }
 
@@ -102,7 +110,7 @@ fn _api_error(_: &impl Any, msg: &str) -> String {
         "Object": "error"
     });
 
-    _serialize(&json, &false)
+    _serialize(&json, "")
 }
 
 //

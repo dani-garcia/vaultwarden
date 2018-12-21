@@ -522,10 +522,7 @@ fn accept_invite(_org_id: String, _org_user_id: String, data: JsonUpcase<AcceptD
 // The web-vault passes org_id and org_user_id in the URL, but we are just reading them from the JWT instead
     let data: AcceptData = data.into_inner().data;
     let token = &data.Token;
-    let claims: InviteJWTClaims = match decode_invite_jwt(&token) {
-            Ok(claims) => claims,
-            Err(msg) => err!("Invalid claim: {:#?}", msg),
-    };
+    let claims: InviteJWTClaims = decode_invite_jwt(&token)?;
 
     match User::find_by_mail(&claims.email, &conn) {
         Some(_) => {

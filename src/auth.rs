@@ -7,6 +7,7 @@ use chrono::Duration;
 use jsonwebtoken::{self, Algorithm, Header};
 use serde::ser::Serialize;
 
+use crate::error::{Error, MapResult};
 use crate::CONFIG;
 
 const JWT_ALGORITHM: Algorithm = Algorithm::RS256;
@@ -31,11 +32,11 @@ lazy_static! {
 pub fn encode_jwt<T: Serialize>(claims: &T) -> String {
     match jsonwebtoken::encode(&JWT_HEADER, claims, &PRIVATE_RSA_KEY) {
         Ok(token) => token,
-        Err(e) => panic!("Error encoding jwt {}", e)
+        Err(e) => panic!("Error encoding jwt {}", e),
     }
 }
 
-pub fn decode_jwt(token: &str) -> Result<JWTClaims, String> {
+pub fn decode_jwt(token: &str) -> Result<JWTClaims, Error> {
     let validation = jsonwebtoken::Validation {
         leeway: 30, // 30 seconds
         validate_exp: true,
@@ -47,16 +48,12 @@ pub fn decode_jwt(token: &str) -> Result<JWTClaims, String> {
         algorithms: vec![JWT_ALGORITHM],
     };
 
-    match jsonwebtoken::decode(token, &PUBLIC_RSA_KEY, &validation) {
-        Ok(decoded) => Ok(decoded.claims),
-        Err(msg) => {
-            error!("Error validating jwt - {:#?}", msg);
-            Err(msg.to_string())
-        }
-    }
+    jsonwebtoken::decode(token, &PUBLIC_RSA_KEY, &validation)
+        .map(|d| d.claims)
+        .map_res("Error decoding login JWT")
 }
 
-pub fn decode_invite_jwt(token: &str) -> Result<InviteJWTClaims, String> {
+pub fn decode_invite_jwt(token: &str) -> Result<InviteJWTClaims, Error> {
     let validation = jsonwebtoken::Validation {
         leeway: 30, // 30 seconds
         validate_exp: true,
@@ -68,13 +65,9 @@ pub fn decode_invite_jwt(token: &str) -> Result<InviteJWTClaims, String> {
         algorithms: vec![JWT_ALGORITHM],
     };
 
-    match jsonwebtoken::decode(token, &PUBLIC_RSA_KEY, &validation) {
-        Ok(decoded) => Ok(decoded.claims),
-        Err(msg) => {
-            error!("Error validating jwt - {:#?}", msg);
-            Err(msg.to_string())
-        }
-    }
+    jsonwebtoken::decode(token, &PUBLIC_RSA_KEY, &validation) 
+        .map(|d| d.claims)
+        .map_res("Error decoding invite JWT")
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -150,7 +143,7 @@ impl<'a, 'r> FromRequest<'a, 'r> for Headers {
             CONFIG.domain.clone()
         } else if let Some(referer) = headers.get_one("Referer") {
             referer.to_string()
-        } else {   
+        } else {
             // Try to guess from the headers
             use std::env;
 
@@ -185,7 +178,7 @@ impl<'a, 'r> FromRequest<'a, 'r> for Headers {
         // Check JWT token is valid and get device and user from it
         let claims: JWTClaims = match decode_jwt(access_token) {
             Ok(claims) => claims,
-            Err(_) => err_handler!("Invalid claim")
+            Err(_) => err_handler!("Invalid claim"),
         };
 
         let device_uuid = claims.device;
@@ -193,17 +186,17 @@ impl<'a, 'r> FromRequest<'a, 'r> for Headers {
 
         let conn = match request.guard::<DbConn>() {
             Outcome::Success(conn) => conn,
-            _ => err_handler!("Error getting DB")
+            _ => err_handler!("Error getting DB"),
         };
 
         let device = match Device::find_by_uuid(&device_uuid, &conn) {
             Some(device) => device,
-            None => err_handler!("Invalid device id")
+            None => err_handler!("Invalid device id"),
         };
 
         let user = match User::find_by_uuid(&user_uuid, &conn) {
             Some(user) => user,
-            None => err_handler!("Device has no user associated")
+            None => err_handler!("Device has no user associated"),
         };
 
         if user.security_stamp != claims.sstamp {
@@ -248,11 +241,11 @@ impl<'a, 'r> FromRequest<'a, 'r> for OrgHeaders {
                             None => err_handler!("The current user isn't member of the organization")
                         };
 
-                        Outcome::Success(Self{
+                        Outcome::Success(Self {
                             host: headers.host,
                             device: headers.device,
                             user: headers.user,
-                            org_user_type: { 
+                            org_user_type: {
                                 if let Some(org_usr_type) = UserOrgType::from_i32(org_user.type_) {
                                     org_usr_type
                                 } else { // This should only happen if the DB is corrupted
@@ -260,7 +253,7 @@ impl<'a, 'r> FromRequest<'a, 'r> for OrgHeaders {
                                 }
                             },
                         })
-                    },
+                    }
                     _ => err_handler!("Error getting the organization id"),
                 }
             }

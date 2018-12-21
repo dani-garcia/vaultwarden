@@ -76,10 +76,8 @@ fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> EmptyResult {
                         Some(token) => token,
                         None => err!("No valid invite token")
                     };
-                    let claims: InviteJWTClaims = match decode_invite_jwt(&token) {
-                        Ok(claims) => claims,
-                        Err(msg) => err!("Invalid claim: {:#?}", msg),
-                    };
+                    
+                    let claims: InviteJWTClaims = decode_invite_jwt(&token)?;
                     if &claims.email == &data.Email {
                         user
                     } else {
