@@ -4,7 +4,7 @@ use crate::db::models::*;
 use crate::db::DbConn;
 
 use crate::api::{EmptyResult, JsonResult, JsonUpcase, NumberOrString, PasswordData, UpdateType, WebSocketUsers};
-use crate::auth::Headers;
+use crate::auth::{Headers, decode_invite_jwt, InviteJWTClaims};
 use crate::mail;
 
 use crate::CONFIG;
@@ -44,6 +44,8 @@ struct RegisterData {
     MasterPasswordHash: String,
     MasterPasswordHint: Option<String>,
     Name: Option<String>,
+    Token: Option<String>,
+    OrganizationUserId: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -59,22 +61,37 @@ fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> EmptyResult {
 
     let mut user = match User::find_by_mail(&data.Email, &conn) {
         Some(user) => {
-            if CONFIG.mail.is_none() {
-                if Invitation::take(&data.Email, &conn) {
+            if Invitation::find_by_mail(&data.Email, &conn).is_some() {
+                if CONFIG.mail.is_none() {
                     for mut user_org in UserOrganization::find_invited_by_user(&user.uuid, &conn).iter_mut() {
                         user_org.status = UserOrgStatus::Accepted as i32;
                         if user_org.save(&conn).is_err() {
                             err!("Failed to accept user to organization")
                         }
                     }
+                    if !Invitation::take(&data.Email, &conn) {
+                        err!("Error accepting invitation")
+                    }
                     user
-                } else if CONFIG.signups_allowed {
-                    err!("Account with this email already exists")
                 } else {
-                    err!("Registration not allowed")
+                    let token = match &data.Token {
+                        Some(token) => token,
+                        None => err!("No valid invite token")
+                    };
+                    let claims: InviteJWTClaims = match decode_invite_jwt(&token) {
+                        Ok(claims) => claims,
+                        Err(msg) => err!("Invalid claim: {:#?}", msg),
+                    };
+                    if &claims.email == &data.Email {
+                        user
+                    } else {
+                        err!("Registration email does not match invite email")
+                    }
                 }
+            } else if CONFIG.signups_allowed {
+                    err!("Account with this email already exists")
             } else {
-                user
+                err!("Registration not allowed")
             }
         }
         None => {
