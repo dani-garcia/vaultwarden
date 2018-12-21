@@ -24,7 +24,7 @@ macro_rules! make_error {
                    $struct::$name(e, _) => $struct::$name(e, msg.into()),
                 )+}
             }
-            // First value is log message, second is user message
+            // Prints the log message and returns the user message
             pub fn display_error(self) -> String {
                 match &self {$(
                    $struct::$name(e, s) => {
@@ -32,7 +32,7 @@ macro_rules! make_error {
 
                         error!("{}", log_msg);
                         if $show_cause {
-                            error!("[CAUSE] {:?}", e);
+                            error!("[CAUSE] {:#?}", e);
                         }
 
                         $usr_msg_fun(e, s)
@@ -40,7 +40,6 @@ macro_rules! make_error {
                 )+}
             }
         }
-
     };
 }
 
@@ -124,7 +123,7 @@ use rocket::response::{self, Responder, Response};
 
 impl<'r> Responder<'r> for Error {
     fn respond_to(self, _: &Request) -> response::Result<'r> {
-        // TODO: We could put the security headers here
+        // TODO: We could put the security headers here, but it would only apply to the errors
 
         let usr_msg = self.display_error();
 
