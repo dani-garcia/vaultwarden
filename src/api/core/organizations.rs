@@ -446,22 +446,15 @@ fn send_invite(org_id: String, data: JsonUpcase<InviteData>, headers: AdminHeade
 
         new_user.save(&conn)?;
 
-        if CONFIG.mail.is_some() {
+        if let Some(ref mail_config) = CONFIG.mail {
             let org_name = match Organization::find_by_uuid(&org_id, &conn) {
                 Some(org) => org.name,
                 None => err!("Error looking up organization")
             };
             let claims = generate_invite_claims(user.uuid.to_string(), user.email.clone(), org_id.clone(), Some(new_user.uuid.clone()));
             let invite_token = encode_jwt(&claims);
-            if let Some(ref mail_config) = CONFIG.mail {
-                if let Err(e) = mail::send_invite(&email, &org_id, &new_user.uuid, 
-                                                  &invite_token, &org_name, mail_config) {
-                    err!(format!("There has been a problem sending the email: {}", e))
-                }
-            }
+            mail::send_invite(&email, &org_id, &new_user.uuid, &invite_token, &org_name, mail_config)?;
         }
-
-        new_user.save(&conn)?;
     }
 
     Ok(())
@@ -499,9 +492,7 @@ fn reinvite_user(org_id: String, user_org: String, _headers: AdminHeaders, conn:
     let claims = generate_invite_claims(user.uuid.to_string(), user.email.clone(), org_id.clone(), Some(user_org.uuid.clone()));
     let invite_token = encode_jwt(&claims);
     if let Some(ref mail_config) = CONFIG.mail {
-        if let Err(e) = mail::send_invite(&user.email, &org_id, &user_org.uuid, &invite_token, &org_name, mail_config) {
-            err!(format!("There has been a problem sending the email: {}", e))
-        }
+        mail::send_invite(&user.email, &org_id, &user_org.uuid, &invite_token, &org_name, mail_config)?;
     }
     
     Ok(())

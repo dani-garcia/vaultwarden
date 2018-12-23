@@ -65,7 +65,7 @@ pub fn send_password_hint(address: &str, hint: Option<String>, config: &MailConf
         .and(Ok(()))
 }
 
-pub fn send_invite(address: &str, org_id: &str, org_user_id: &str, token: &str, org_name: &str, config: &MailConfig) -> Result<(), String> {
+pub fn send_invite(address: &str, org_id: &str, org_user_id: &str, token: &str, org_name: &str, config: &MailConfig) -> EmptyResult {
     let (subject, body) =  {
         (format!("Join {}", &org_name),
         format!(
@@ -85,10 +85,10 @@ pub fn send_invite(address: &str, org_id: &str, org_user_id: &str, token: &str, 
         .header(("Content-Type", "text/html"))
         .body(body)
         .build()
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| Error::new("Error building invite email", e.to_string()))?;
 
     mailer(config)
         .send(email.into())
-        .map_err(|e| e.to_string())
+        .map_err(|e| Error::new("Error sending invite email", e.to_string()))
         .and(Ok(()))
 }

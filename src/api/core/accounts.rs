@@ -87,7 +87,7 @@ fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> EmptyResult {
                     }
                 }
             } else if CONFIG.signups_allowed {
-                    err!("Account with this email already exists")
+                err!("Account with this email already exists")
             } else {
                 err!("Registration not allowed")
             }
