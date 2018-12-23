@@ -1,29 +1,57 @@
 ///
+/// Web Headers
+///
+use rocket::fairing::{Fairing, Info, Kind};
+use rocket::{Request, Response};
+
+pub struct AppHeaders ();
+
+impl Fairing for AppHeaders {
+    fn info(&self) -> Info {
+        Info {
+            name: "Application Headers",
+            kind: Kind::Response,
+        }
+    }
+
+    fn on_response(&self, _req: &Request, res: &mut Response) {
+        res.set_raw_header("Referrer-Policy", "same-origin");
+        res.set_raw_header("X-Frame-Options", "SAMEORIGIN");
+        res.set_raw_header("X-Content-Type-Options", "nosniff");
+        res.set_raw_header("X-XSS-Protection", "1; mode=block");
+        let csp = "frame-ancestors 'self' chrome-extension://nngceckbapebfimnlniiiahkandclblb moz-extension://*;";
+        res.set_raw_header("Content-Security-Policy", csp);
+
+        // Disable cache unless otherwise specified
+        if !res.headers().contains("cache-control") {
+            res.set_raw_header("Cache-Control", "no-cache, no-store, max-age=0");
+        }
+    }
+}
+
+
+///
 /// File handling
 ///
-
-use std::path::Path;
-use std::io::Read;
 use std::fs::{self, File};
+use std::io::{Read, Result as IOResult};
+use std::path::Path;
 
 pub fn file_exists(path: &str) -> bool {
     Path::new(path).exists()
 }
 
-pub fn read_file(path: &str) -> Result<Vec<u8>, String> {
-    let mut file = File::open(Path::new(path))
-        .map_err(|e| format!("Error opening file: {}", e))?;
-
+pub fn read_file(path: &str) -> IOResult<Vec<u8>> {
     let mut contents: Vec<u8> = Vec::new();
-
-    file.read_to_end(&mut contents)
-        .map_err(|e| format!("Error reading file: {}", e))?;
+    
+    let mut file = File::open(Path::new(path))?;
+    file.read_to_end(&mut contents)?;
 
     Ok(contents)
 }
 
-pub fn delete_file(path: &str) -> bool {
-    let res = fs::remove_file(path).is_ok();
+pub fn delete_file(path: &str) -> IOResult<()> {
+    let res = fs::remove_file(path);
 
     if let Some(parent) = Path::new(path).parent() {
         // If the directory isn't empty, this returns an error, which we ignore
@@ -33,7 +61,6 @@ pub fn delete_file(path: &str) -> bool {
 
     res
 }
-
 
 const UNITS: [&str; 6] = ["bytes", "KB", "MB", "GB", "TB", "PB"];
 

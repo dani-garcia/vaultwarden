@@ -47,6 +47,7 @@ use diesel::result::Error as DieselError;
 use jsonwebtoken::errors::Error as JwtError;
 use serde_json::{Error as SerError, Value};
 use u2f::u2ferror::U2fError as U2fErr;
+use std::io::Error as IOError;
 
 // Error struct
 // Each variant has two elements, the first is an error of different types, used for logging purposes
@@ -64,6 +65,7 @@ make_error! {
     U2fError(U2fErr,     _): true,  _api_error,
     SerdeError(SerError, _): true,  _api_error,
     JWTError(JwtError,   _): true,  _api_error,
+    IoErrror(IOError,    _): true,  _api_error,
     //WsError(ws::Error, _): true,  _api_error,
 }
 

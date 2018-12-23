@@ -74,7 +74,7 @@ impl Attachment {
         )
         .map_res("Error deleting attachment")?;
         
-        crate::util::delete_file(&self.get_file_path());
+        crate::util::delete_file(&self.get_file_path())?;
         Ok(())
     }
 

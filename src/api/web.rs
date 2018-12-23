@@ -1,10 +1,10 @@
 use std::io;
 use std::path::{Path, PathBuf};
 
+use rocket::http::ContentType;
 use rocket::request::Request;
+use rocket::response::content::{Content, Html};
 use rocket::response::{self, NamedFile, Responder};
-use rocket::response::content::Content;
-use rocket::http::{ContentType, Status};
 use rocket::Route;
 use rocket_contrib::json::Json;
 use serde_json::Value;
@@ -19,57 +19,72 @@ pub fn routes() -> Vec<Route> {
     }
 }
 
-// TODO: Might want to use in memory cache: https://github.com/hgzimmerman/rocket-file-cache
 #[get("/")]
-fn web_index() -> WebHeaders<io::Result<NamedFile>> {
-    web_files("index.html".into())
+fn web_index() -> Cached<io::Result<NamedFile>> {
+    Cached::short(NamedFile::open(Path::new(&CONFIG.web_vault_folder).join("index.html")))
 }
 
 #[get("/app-id.json")]
-fn app_id() -> WebHeaders<Content<Json<Value>>> {
+fn app_id() -> Cached<Content<Json<Value>>> {
     let content_type = ContentType::new("application", "fido.trusted-apps+json");
 
-    WebHeaders(Content(content_type, Json(json!({
-    "trustedFacets": [
-        {
-        "version": { "major": 1, "minor": 0 },
-        "ids": [
-            &CONFIG.domain,
-            "ios:bundle-id:com.8bit.bitwarden",
-            "android:apk-key-hash:dUGFzUzf3lmHSLBDBIv+WaFyZMI" ]
-        }]
-    }))))
+    Cached::long(Content(
+        content_type,
+        Json(json!({
+        "trustedFacets": [
+            {
+            "version": { "major": 1, "minor": 0 },
+            "ids": [
+                &CONFIG.domain,
+                "ios:bundle-id:com.8bit.bitwarden",
+                "android:apk-key-hash:dUGFzUzf3lmHSLBDBIv+WaFyZMI" ]
+            }]
+        })),
+    ))
 }
+
+const ADMIN_PAGE: &'static str = include_str!("../static/admin.html");
 
 #[get("/admin")]
-fn admin_page() -> WebHeaders<io::Result<NamedFile>> {
-    WebHeaders(NamedFile::open("src/static/admin.html")) // TODO: Change this to embed the page in the binary
+fn admin_page() -> Cached<Html<&'static str>> {
+    Cached::short(Html(ADMIN_PAGE))
 }
+
+/* // Use this during Admin page development
+#[get("/admin")]
+fn admin_page() -> Cached<io::Result<NamedFile>> {
+    Cached::short(NamedFile::open("src/static/admin.html"))
+}
+*/
 
 #[get("/<p..>", rank = 1)] // Only match this if the other routes don't match
-fn web_files(p: PathBuf) -> WebHeaders<io::Result<NamedFile>> {
-    WebHeaders(NamedFile::open(Path::new(&CONFIG.web_vault_folder).join(p)))
+fn web_files(p: PathBuf) -> Cached<io::Result<NamedFile>> {
+    Cached::long(NamedFile::open(Path::new(&CONFIG.web_vault_folder).join(p)))
 }
 
-struct WebHeaders<R>(R);
+struct Cached<R>(R, &'static str);
 
-impl<'r, R: Responder<'r>> Responder<'r> for WebHeaders<R> {
+impl<R> Cached<R> {
+    fn long(r: R) -> Cached<R> {
+        // 7 days
+        Cached(r, "public, max-age=604800".into())
+    }
+
+    fn short(r: R) -> Cached<R> {
+        // 10 minutes
+        Cached(r, "public, max-age=600".into())
+    }
+}
+
+impl<'r, R: Responder<'r>> Responder<'r> for Cached<R> {
     fn respond_to(self, req: &Request) -> response::Result<'r> {
         match self.0.respond_to(req) {
             Ok(mut res) => {
-                res.set_raw_header("Referrer-Policy", "same-origin");
-                res.set_raw_header("X-Frame-Options", "SAMEORIGIN");
-                res.set_raw_header("X-Content-Type-Options", "nosniff");
-                res.set_raw_header("X-XSS-Protection", "1; mode=block");
-                let csp = "frame-ancestors 'self' chrome-extension://nngceckbapebfimnlniiiahkandclblb moz-extension://*;";
-                res.set_raw_header("Content-Security-Policy", csp);
-
+                res.set_raw_header("Cache-Control", self.1);
                 Ok(res)
-            },
-            Err(_) => {
-                Err(Status::NotFound)
             }
-        } 
+            e @ Err(_) => e,
+        }
     }
 }
 
@@ -77,7 +92,6 @@ impl<'r, R: Responder<'r>> Responder<'r> for WebHeaders<R> {
 fn attachments(uuid: String, file: PathBuf) -> io::Result<NamedFile> {
     NamedFile::open(Path::new(&CONFIG.attachments_folder).join(uuid).join(file))
 }
-
 
 #[get("/alive")]
 fn alive() -> Json<String> {
