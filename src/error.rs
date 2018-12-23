@@ -125,8 +125,6 @@ use rocket::response::{self, Responder, Response};
 
 impl<'r> Responder<'r> for Error {
     fn respond_to(self, _: &Request) -> response::Result<'r> {
-        // TODO: We could put the security headers here, but it would only apply to the errors
-
         let usr_msg = self.display_error();
 
         Response::build()
