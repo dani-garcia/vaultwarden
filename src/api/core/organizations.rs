@@ -532,20 +532,17 @@ fn accept_invite(_org_id: String, _org_user_id: String, data: JsonUpcase<AcceptD
 
     match User::find_by_mail(&claims.email, &conn) {
         Some(_) => {
-            if Invitation::take(&claims.email, &conn) {
-                if claims.user_org_id.is_some() {
-                    // If this isn't the virtual_org, mark userorg as accepted
-                    let mut user_org = match UserOrganization::find_by_uuid_and_org(&claims.user_org_id.unwrap(), &claims.org_id, &conn) {
-                        Some(user_org) => user_org,
-                        None => err!("Error accepting the invitation") 
-                    };
-                    user_org.status = UserOrgStatus::Accepted as i32;
-                    if user_org.save(&conn).is_err() {
-                        err!("Failed to accept user to organization")
-                    }
+            Invitation::take(&claims.email, &conn);
+            if claims.user_org_id.is_some() {
+                // If this isn't the virtual_org, mark userorg as accepted
+                let mut user_org = match UserOrganization::find_by_uuid_and_org(&claims.user_org_id.unwrap(), &claims.org_id, &conn) {
+                    Some(user_org) => user_org,
+                    None => err!("Error accepting the invitation") 
+                };
+                user_org.status = UserOrgStatus::Accepted as i32;
+                if user_org.save(&conn).is_err() {
+                    err!("Failed to accept user to organization")
                 }
-            } else {
-                err!("Invitation for user not found")
             }
         },
         None => {

@@ -385,6 +385,17 @@ docker run -d --name bitwarden \
 
 When `SMTP_SSL` is set to `true`(this is the default), only TLSv1.1 and TLSv1.2 protocols will be accepted and `SMTP_PORT` will default to `587`. If set to `false`, `SMTP_PORT` will default to `25` and the connection won't be encrypted. This can be very insecure, use this setting only if you know what you're doing.
 
+Note that if SMTP and invitations are enabled, invitations will be sent to new users via email. You must set the `DOMAIN` configuration option with the base URL of your bitwarden_rs instance for the invite link to be generated correctly:
+
+```sh
+docker run -d --name bitwarden \
+...
+-e DOMAIN=https://vault.example.com
+...
+```
+
+User invitation links are valid for 5 days, after which a new invitation will need to be sent.
+
 ### Password hint display
 
 Usually, password hints are sent by email. But as bitwarden_rs is made with small or personal deployment in mind, hints are also available from the password hint page, so you don't have to configure an email service. If you want to disable this feature, you can use the `SHOW_PASSWORD_HINT` variable:
