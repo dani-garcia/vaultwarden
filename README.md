@@ -394,6 +394,8 @@ docker run -d --name bitwarden \
 ...
 ```
 
+User invitation links are valid for 5 days, after which a new invitation will need to be sent.
+
 ### Password hint display
 
 Usually, password hints are sent by email. But as bitwarden_rs is made with small or personal deployment in mind, hints are also available from the password hint page, so you don't have to configure an email service. If you want to disable this feature, you can use the `SHOW_PASSWORD_HINT` variable:
