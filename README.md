@@ -676,7 +676,7 @@ docker run -d --name bitwarden \
 
 ### Changing user email
 
-Because we don't have any SMTP functionality at the moment, there's no way to deliver the verification token when you try to change the email. User just needs to enter any random token to continue and the change will be applied.
+Email verification has not yet been implemented, so users just need to enter any random token to continue and the change will be applied.
 
 ### Creating organization
 
