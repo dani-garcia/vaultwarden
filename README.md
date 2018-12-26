@@ -39,6 +39,7 @@ _*Note, that this project is not associated with the [Bitwarden](https://bitward
   - [SMTP configuration](#smtp-configuration)
   - [Password hint display](#password-hint-display)
   - [Disabling or overriding the Vault interface hosting](#disabling-or-overriding-the-vault-interface-hosting)
+  - [Logging](#logging)
   - [Other configuration](#other-configuration)
   - [Fail2Ban Setup](#fail2ban-setup)
     - [Logging Failed Login Attempts to Syslog](#logging-failed-login-attempts-to-syslog)
@@ -390,7 +391,7 @@ Note that if SMTP and invitations are enabled, invitations will be sent to new u
 ```sh
 docker run -d --name bitwarden \
 ...
--e DOMAIN=https://vault.example.com
+-e DOMAIN=https://vault.example.com \
 ...
 ```
 
@@ -430,6 +431,19 @@ docker run -d --name bitwarden \
 ```
 
 Note that you can also change the path where bitwarden_rs looks for static files by providing the `WEB_VAULT_FOLDER` environment variable with the path.
+
+### Logging
+
+Logging to a file is supported as of 1.5.0. You can specify the path to the log file with the `LOG_FILE` environment variable:
+
+```sh
+docker run -d --name bitwarden \
+...
+  -e LOG_FILE=/data/bitwarden.log \
+...
+```
+
+Note that if you're using the docker image, you'll most likely want to use a file path that is mounted from the host OS (such as the data folder).
 
 ### Other configuration
 
@@ -676,7 +690,7 @@ docker run -d --name bitwarden \
 
 ### Changing user email
 
-Because we don't have any SMTP functionality at the moment, there's no way to deliver the verification token when you try to change the email. User just needs to enter any random token to continue and the change will be applied.
+Email verification has not yet been implemented, so users just need to enter any random token to continue and the change will be applied.
 
 ### Creating organization
 
@@ -684,9 +698,15 @@ We use upstream Vault interface directly without any (significant) changes, this
 
 ### Inviting users into organization
 
-The invited users won't get the invitation email, instead all already registered users will appear in the interface as if they already accepted the invitation. Organization admin then just needs to confirm them to be proper Organization members and to give them access to the shared secrets.
+#### With SMTP enabled
 
-Invited users, that aren't registered yet will show up in the Organization admin interface as "Invited". At the same time an invitation record is created that allows the users to register even if [user registration is disabled](#disable-registration-of-new-users). (unless you [disable this functionality](#disable-invitations)) They will automatically become "Accepted" once they register. From there Organization admin can confirm them to give them access to Organization.
+Invited users will receive an email containing a link that is valid for 5 days. Upon clicking the link, users can choose to create an account or log in. New users will need to create a new account; existing users who are being invited to a new organization will simply need to log in. After either step, they will show up as "Accepted" in the admin interface, and will be added to the organization when an orgnization admin confirms them.
+
+#### Without SMTP enabled
+
+The invited users won't get an invitation email; instead all already registered users will appear in the interface as if they already accepted the invitation. Organization admin then just needs to confirm them to be proper Organization members and to give them access to the shared secrets.
+
+Invited users that aren't registered yet will show up in the Organization admin interface as "Invited". At the same time an invitation record is created that allows the users to register even if [user registration is disabled](#disable-registration-of-new-users). (unless you [disable this functionality](#disable-invitations)) They will automatically become "Accepted" once they register. From there Organization admin can confirm them to give them access to Organization.
 
 ### Running on unencrypted connection
 
