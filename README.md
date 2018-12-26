@@ -453,7 +453,7 @@ Though this is unlikely to be required in small deployment, you can fine-tune so
 
 As of release 1.5.0, bitwarden_rs supports logging to file. See [Logging](#logging) above for information on how to set this up.
 
-#### Logging Failed Login Attempts to Syslog
+#### Logging Failed Login Attempts
 
 After specifying the log file location, failed login attempts will appear in the logs in the following format:
 
