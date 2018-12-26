@@ -39,6 +39,7 @@ _*Note, that this project is not associated with the [Bitwarden](https://bitward
   - [SMTP configuration](#smtp-configuration)
   - [Password hint display](#password-hint-display)
   - [Disabling or overriding the Vault interface hosting](#disabling-or-overriding-the-vault-interface-hosting)
+  - [Logging](#logging)
   - [Other configuration](#other-configuration)
   - [Fail2Ban Setup](#fail2ban-setup)
     - [Logging Failed Login Attempts to Syslog](#logging-failed-login-attempts-to-syslog)
