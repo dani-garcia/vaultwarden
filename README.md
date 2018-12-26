@@ -391,7 +391,7 @@ Note that if SMTP and invitations are enabled, invitations will be sent to new u
 ```sh
 docker run -d --name bitwarden \
 ...
--e DOMAIN=https://vault.example.com
+-e DOMAIN=https://vault.example.com \
 ...
 ```
 
