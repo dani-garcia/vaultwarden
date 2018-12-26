@@ -431,6 +431,19 @@ docker run -d --name bitwarden \
 
 Note that you can also change the path where bitwarden_rs looks for static files by providing the `WEB_VAULT_FOLDER` environment variable with the path.
 
+### Logging
+
+Logging to a file is supported as of 1.5.0. You can specify the path to the log file with the `LOG_FILE` environment variable:
+
+```sh
+docker run -d --name bitwarden \
+...
+  -e LOG_FILE=/data/bitwarden.log \
+...
+```
+
+Note that if you're using the docker image, you'll most likely want to use a file path that is mounted from the host OS (such as the data folder).
+
 ### Other configuration
 
 Though this is unlikely to be required in small deployment, you can fine-tune some other settings like number of workers using environment variables that are processed by [Rocket](https://rocket.rs), please see details in [documentation](https://rocket.rs/guide/configuration/#environment-variables).
