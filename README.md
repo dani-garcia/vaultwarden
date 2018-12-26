@@ -451,27 +451,15 @@ Though this is unlikely to be required in small deployment, you can fine-tune so
 
 ### Fail2Ban Setup
 
-Bitwarden_rs logs failed login attempts to stdout. We need to set this so the host OS can see these. Then we can setup Fail2Ban.
+As of release 1.5.0, bitwarden_rs supports logging to file. See [Logging](#logging) above for information on how to set this up.
 
 #### Logging Failed Login Attempts to Syslog
 
-We need to set the logging driver to syslog so the host OS and Fail2Ban can see them.
+After specifying the log file location, failed login attempts will appear in the logs in the following format:
 
-If you are using docker commands, you will need to add: `--log-driver syslog --log-opt tag=$TAG` to your command.
-
-If you are using docker-compose, add this to you yaml file:
 ```
-  bitwarden:
-    logging:
-      driver: "syslog"
-      options:
-        tag: "$TAG"
+[YYYY-MM-DD hh:mm:ss][bitwarden_rs::api::identity][ERROR] Username or password is incorrect. Try again. IP: XXX.XXX.XXX.XXX. Username: email@domain.com.
 ```
-With the above settings in the docker-compose file. Any failed login attempts will look like this in your syslog file:
-```
-MMM DD hh:mm:ss server-hostname $TAG[773]: [YYYY-MM-DD][hh:mm:ss][bitwarden_rs::api::identity][ERROR] Username or password is incorrect. Try again. IP: XXX.XXX.XXX.XXX. Username: email@domain.com.
-```
-You can change the '$TAG' to anything you like. Just remember it because it will be in the Fail2Ban filter.
 
 #### Fail2Ban Filter
 
@@ -485,11 +473,9 @@ And add the following
 before = common.conf
 
 [Definition]
-_daemon = $TAG
-failregex = ^%(__prefix_line)s.*Username or password is incorrect\. Try again\. IP: <HOST>\. Username:.*$
+failregex = ^.*Username or password is incorrect\. Try again\. IP: <HOST>\. Username:.*$
 ignoreregex =
 ```
-Dont forget to change the '$TAG' to what you set it as from above.
 
 #### Fail2Ban Jail
 
@@ -504,7 +490,8 @@ enabled = true
 port = 80,443,8081
 filter = bitwarden
 action = iptables-allports[name=bitwarden]
-logpath = /var/log/syslog
+logpath = /path/to/bitwarden/log
+backend = polling
 maxretry = 3
 bantime = 14400
 findtime = 14400
