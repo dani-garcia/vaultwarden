@@ -79,25 +79,26 @@ impl Collection {
     }
 
     pub fn find_by_user_uuid(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
-        let mut all_access_collections = users_organizations::table
-            .filter(users_organizations::user_uuid.eq(user_uuid))
-            .filter(users_organizations::status.eq(UserOrgStatus::Confirmed as i32))
-            .filter(users_organizations::access_all.eq(true))
-            .inner_join(collections::table.on(collections::org_uuid.eq(users_organizations::org_uuid)))
-            .select(collections::all_columns)
-            .load::<Self>(&**conn).expect("Error loading collections");
-
-        let mut assigned_collections = users_collections::table.inner_join(collections::table)
-            .left_join(users_organizations::table.on(
-                users_collections::user_uuid.eq(users_organizations::user_uuid)
-            ))
-            .filter(users_collections::user_uuid.eq(user_uuid))
-            .filter(users_organizations::status.eq(UserOrgStatus::Confirmed as i32))
-            .select(collections::all_columns)
-            .load::<Self>(&**conn).expect("Error loading collections");
-
-        all_access_collections.append(&mut assigned_collections);
-        all_access_collections
+        collections::table
+        .left_join(users_collections::table.on(
+            users_collections::collection_uuid.eq(collections::uuid).and(
+                users_collections::user_uuid.eq(user_uuid)
+            )
+        ))
+        .left_join(users_organizations::table.on(
+            collections::org_uuid.eq(users_organizations::org_uuid).and(
+                users_organizations::user_uuid.eq(user_uuid)
+            )
+        ))
+        .filter(
+            users_organizations::status.eq(UserOrgStatus::Confirmed as i32)
+        )
+        .filter(
+            users_collections::user_uuid.eq(user_uuid).or( // Directly accessed collection
+                users_organizations::access_all.eq(true) // access_all in Organization
+            )
+        ).select(collections::all_columns)
+        .load::<Self>(&**conn).expect("Error loading collections")
     }
 
     pub fn find_by_organization_and_user_uuid(org_uuid: &str, user_uuid: &str, conn: &DbConn) -> Vec<Self> {
