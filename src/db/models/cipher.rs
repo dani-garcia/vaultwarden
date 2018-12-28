@@ -293,7 +293,7 @@ impl Cipher {
             .first::<Self>(&**conn).ok()
     }
 
-    // Find all ciphers accesible to user
+    // Find all ciphers accessible to user
     pub fn find_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
         ciphers::table
         .left_join(users_organizations::table.on(
@@ -303,7 +303,9 @@ impl Cipher {
                 )
             )
         ))
-        .left_join(ciphers_collections::table)
+        .left_join(ciphers_collections::table.on(
+            ciphers::uuid.eq(ciphers_collections::cipher_uuid)
+        ))
         .left_join(users_collections::table.on(
             ciphers_collections::collection_uuid.eq(users_collections::collection_uuid)
         ))
@@ -352,7 +354,9 @@ impl Cipher {
             )
         ))
         .left_join(users_collections::table.on(
-            users_collections::collection_uuid.eq(ciphers_collections::collection_uuid)
+            users_collections::collection_uuid.eq(ciphers_collections::collection_uuid).and(
+                users_collections::user_uuid.eq(user_id)
+            )
         ))
         .filter(ciphers_collections::cipher_uuid.eq(&self.uuid))
         .filter(users_collections::user_uuid.eq(user_id).or( // User has access to collection
