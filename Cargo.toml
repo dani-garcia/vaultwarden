@@ -4,6 +4,12 @@ version = "1.0.0"
 authors = ["Daniel García <dani-garcia@users.noreply.github.com>"]
 edition = "2018"
 
+repository = "https://github.com/dani-garcia/bitwarden_rs"
+readme = "README.md"
+license = "GPL-3.0-only"
+publish = false
+build = "build.rs"
+
 [features]
 enable_syslog = ["syslog", "fern/syslog-4"]
 
