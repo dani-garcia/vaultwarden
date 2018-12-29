@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use rocket::http::ContentType;
 use rocket::request::Request;
-use rocket::response::content::{Content, Html};
+use rocket::response::content::Content;
 use rocket::response::{self, NamedFile, Responder};
 use rocket::Route;
 use rocket_contrib::json::Json;
@@ -44,6 +44,7 @@ fn app_id() -> Cached<Content<Json<Value>>> {
 }
 
 const ADMIN_PAGE: &'static str = include_str!("../static/admin.html");
+use rocket::response::content::Html;
 
 #[get("/admin")]
 fn admin_page() -> Cached<Html<&'static str>> {

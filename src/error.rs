@@ -1,42 +1,31 @@
 //
 // Error generator macro
 //
+use std::error::Error as StdError;
+
 macro_rules! make_error {
-    ( $struct:ident; $( $name:ident ( $ty:ty, _): $show_cause:expr, $usr_msg_fun:expr ),+ $(,)* ) => {
-        #[derive(Debug)]
-        #[allow(unused_variables, dead_code)]
-        pub enum $struct {
-            $($name( $ty, String )),+
+    ( $( $name:ident ( $ty:ty ): $src_fn:expr, $usr_msg_fun:expr ),+ $(,)* ) => {
+        #[derive(Display)]
+        enum ErrorKind { $($name( $ty )),+ }
+        pub struct Error { message: String, error: ErrorKind }
+        
+        $(impl From<$ty> for Error {
+            fn from(err: $ty) -> Self { Error::from((stringify!($name), err)) }
+        })+
+        $(impl<S: Into<String>> From<(S, $ty)> for Error {
+            fn from(val: (S, $ty)) -> Self {
+                Error { message: val.0.into(), error: ErrorKind::$name(val.1) }
+            }
+        })+
+        impl StdError for Error {
+            fn source(&self) -> Option<&(dyn StdError + 'static)> {
+                match &self.error {$( ErrorKind::$name(e) => $src_fn(e), )+}
+            }
         }
-        $(impl From<$ty> for $struct {
-            fn from(err: $ty) -> Self {
-                $struct::$name(err, String::from(stringify!($name)))
-            }
-        })+
-        $(impl From<($ty, String)> for $struct {
-            fn from(err: ($ty, String)) -> Self {
-                $struct::$name(err.0, err.1)
-            }
-        })+
-        impl $struct {
-            pub fn with_msg<M: Into<String>>(self, msg: M) -> Self {
-                match self {$(
-                   $struct::$name(e, _) => $struct::$name(e, msg.into()),
-                )+}
-            }
-            // Prints the log message and returns the user message
-            pub fn display_error(self) -> String {
-                match &self {$(
-                   $struct::$name(e, s) => {
-                       let log_msg = format!("{}. {}", &s, &e);
-
-                        error!("{}", log_msg);
-                        if $show_cause {
-                            error!("[CAUSE] {:#?}", e);
-                        }
-
-                        $usr_msg_fun(e, s)
-                   },
+        impl std::fmt::Display for Error {
+            fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                match &self.error {$(
+                   ErrorKind::$name(e) => f.write_str(&$usr_msg_fun(e, &self.message)),
                 )+}
             }
         }
@@ -46,32 +35,44 @@ macro_rules! make_error {
 use diesel::result::Error as DieselError;
 use jsonwebtoken::errors::Error as JwtError;
 use serde_json::{Error as SerError, Value};
-use u2f::u2ferror::U2fError as U2fErr;
 use std::io::Error as IOError;
+use u2f::u2ferror::U2fError as U2fErr;
 
 // Error struct
-// Each variant has two elements, the first is an error of different types, used for logging purposes
-// The second is a String, and it's contents are displayed to the user when the error occurs. Inside the macro, this is represented as _
+// Contains a String error message, meant for the user and an enum variant, with an error of different types.
 //
-// After the variant itself, there are two expressions. The first one is a bool to indicate whether the error cause will be printed to the log.
+// After the variant itself, there are two expressions. The first one indicates whether the error contains a source error (that we pretty print).
 // The second one contains the function used to obtain the response sent to the client
 make_error! {
-    Error;
     // Used to represent err! calls
-    SimpleError(String,  _): false, _api_error,
+    SimpleError(String):  _no_source,  _api_error,
     // Used for special return values, like 2FA errors
-    JsonError(Value,     _): false, _serialize,
-    DbError(DieselError, _): true,  _api_error,
-    U2fError(U2fErr,     _): true,  _api_error,
-    SerdeError(SerError, _): true,  _api_error,
-    JWTError(JwtError,   _): true,  _api_error,
-    IoErrror(IOError,    _): true,  _api_error,
-    //WsError(ws::Error, _): true,  _api_error,
+    JsonError(Value):     _no_source,  _serialize,
+    DbError(DieselError): _has_source, _api_error,
+    U2fError(U2fErr):     _has_source, _api_error,
+    SerdeError(SerError): _has_source, _api_error,
+    JWTError(JwtError):   _has_source, _api_error,
+    IoErrror(IOError):    _has_source, _api_error,
+    //WsError(ws::Error): _has_source, _api_error,
+}
+
+impl std::fmt::Debug for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self.source() {
+            Some(e) => write!(f, "{}.\n[CAUSE] {:#?}", self.message, e),
+            None => write!(f, "{}. {}", self.message, self.error),
+        }
+    }
 }
 
 impl Error {
     pub fn new<M: Into<String>, N: Into<String>>(usr_msg: M, log_msg: N) -> Self {
-        Error::SimpleError(log_msg.into(), usr_msg.into())
+        (usr_msg, log_msg.into()).into()
+    }
+
+    pub fn with_msg<M: Into<String>>(mut self, msg: M) -> Self {
+        self.message = msg.into();
+        self
     }
 }
 
@@ -81,7 +82,7 @@ pub trait MapResult<S, E> {
 
 impl<S, E: Into<Error>> MapResult<S, Error> for Result<S, E> {
     fn map_res(self, msg: &str) -> Result<S, Error> {
-        self.map_err(Into::into).map_err(|e| e.with_msg(msg))
+        self.map_err(|e| e.into().with_msg(msg))
     }
 }
 
@@ -91,14 +92,18 @@ impl<E: Into<Error>> MapResult<(), Error> for Result<usize, E> {
     }
 }
 
-use serde::Serialize;
-use std::any::Any;
+fn _has_source<T>(e: T) -> Option<T> {
+    Some(e)
+}
+fn _no_source<T, S>(_: T) -> Option<S> {
+    None
+}
 
-fn _serialize(e: &impl Serialize, _msg: &str) -> String {
+fn _serialize(e: &impl serde::Serialize, _msg: &str) -> String {
     serde_json::to_string(e).unwrap()
 }
 
-fn _api_error(_: &impl Any, msg: &str) -> String {
+fn _api_error(_: &impl std::any::Any, msg: &str) -> String {
     let json = json!({
         "Message": "",
         "error": "",
@@ -110,7 +115,6 @@ fn _api_error(_: &impl Any, msg: &str) -> String {
         },
         "Object": "error"
     });
-
     _serialize(&json, "")
 }
 
@@ -125,7 +129,8 @@ use rocket::response::{self, Responder, Response};
 
 impl<'r> Responder<'r> for Error {
     fn respond_to(self, _: &Request) -> response::Result<'r> {
-        let usr_msg = self.display_error();
+        let usr_msg = format!("{}", self);
+        error!("{:#?}", self);
 
         Response::build()
             .status(Status::BadRequest)
