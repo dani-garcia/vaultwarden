@@ -24,7 +24,7 @@ _*Note, that this project is not associated with the [Bitwarden](https://bitward
 - [Configuring bitwarden service](#configuring-bitwarden-service)
   - [Disable registration of new users](#disable-registration-of-new-users)
   - [Disable invitations](#disable-invitations)
-  - [Configure server administrator](#configure-server-administrator)
+  - [Enabling admin page](#enabling-admin-page)
   - [Enabling HTTPS](#enabling-https)
   - [Enabling WebSocket notifications](#enabling-websocket-notifications)
   - [Enabling U2F authentication](#enabling-u2f-authentication)
@@ -166,23 +166,25 @@ docker run -d --name bitwarden \
   -p 80:80 \
   mprasil/bitwarden:latest
 ```
-### Configure server administrator
+### Enabling admin page
 
-**Warning:** *Never* use your regular account for the admin functionality. This is a bit of a hack using the Vault interface for something it's not intended to do and it breaks any other functionality for the account. Please set up and use separate account just for this functionality.
+**IMPORTANT**: It's heavily recommended to activate HTTPS before enabling this feature, to avoid posible MITM attacks.
 
-You can configure one email account to be server administrator via the `SERVER_ADMIN_EMAIL` environment variable:
+This page allows a server administrator to view all the registered users and to delete them. It also allows inviting new users, even when registration is disabled.
+
+To enable the admin page, you need to set an authentication token. This token can be anything, but it's recommended to use a long, randomly generated string of characters, for example running `openssl rand -base64 48`.
+
+To set the token, use the `ADMIN_TOKEN` variable:
 
 ```sh
 docker run -d --name bitwarden \
-  -e SERVER_ADMIN_EMAIL=admin@example.com \
+  -e ADMIN_TOKEN=Vy2VyYTTsKPv8W5aEOWUbB/Bt3DEKePbHmI4m9VcemUMS2rEviDowNAFqYi1xjmp \
   -v /bw-data/:/data/ \
   -p 80:80 \
   mprasil/bitwarden:latest
 ```
 
-This will give the user extra functionality and privileges to manage users on the server. In the Vault, the user will see a special (virtual) organization called `bitwarden_rs`. This organization doesn't actually exist and can't be used for most things. (can't have collections or ciphers) Instead it just contains all the users registered on the server. Deleting users from this organization will actually completely delete the user from the server. Inviting users into this organization will just invite the user so they are able to register, but will not grant any organization membership. (unlike inviting user to regular organization)
-
-You can think of the `bitwarden_rs` organization as sort of Admin interface to manage users on the server. Keep in mind that deleting user this way removes the user permanently without any way to restore the deleted data just as if user deleted their own account.
+After this, the page will be available in the `/admin` subdomain.
 
 ### Enabling HTTPS
 To enable HTTPS, you need to configure the `ROCKET_TLS`.
