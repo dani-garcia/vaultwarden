@@ -37,6 +37,7 @@ pub fn routes() -> Vec<Route> {
         get_org_details,
         get_org_users,
         send_invite,
+        reinvite_user,
         confirm_invite,
         accept_invite,
         get_user,
@@ -511,6 +512,61 @@ fn send_invite(org_id: String, data: JsonUpcase<InviteData>, headers: AdminHeade
         }
     }
 
+    Ok(())
+}
+
+#[post("/organizations/<org_id>/users/<user_uuid>/reinvite", data = "<_data>")]
+fn reinvite_user(org_id: String, user_uuid: String, _data: JsonUpcase<InviteData>, _headers: AdminHeaders, conn: DbConn) -> EmptyResult {
+    if !CONFIG.invitations_allowed {
+        err!("Invitations are not allowed.")
+    }
+
+    if CONFIG.mail.is_none() {
+        err!("SMTP is not configured.")
+    }
+
+    let user = match User::find_by_uuid(&user_uuid, &conn) {
+        Some(user) => user,
+        None => err!("User not found."),
+    };
+
+    if Invitation::find_by_mail(&user.email, &conn).is_none() {
+        err!("No invitation found for user.")       
+    }
+
+    let mut org_user_id = None;
+    if org_id != Organization::VIRTUAL_ID {
+        org_user_id = match UserOrganization::find_by_user_and_org(&user.uuid, &org_id, &conn) {
+            Some(org_user) => Some(org_user.uuid),
+            None => None,
+        };
+    }
+    use crate::mail;
+    use chrono::{Duration, Utc};
+    let time_now = Utc::now().naive_utc();
+    let claims = InviteJWTClaims {
+        nbf: time_now.timestamp(),
+        exp: (time_now + Duration::days(5)).timestamp(),
+        iss: JWT_ISSUER.to_string(),
+        sub: user.uuid.to_string(),
+        email: user.email.clone(),
+        org_id: org_id.clone(),
+        user_org_id: org_user_id.clone(),
+    };
+
+    let org_name = match Organization::find_by_uuid(&org_id, &conn) {
+        Some(org) => org.name,
+        None => err!("Error looking up organization")
+    };
+
+    let invite_token = encode_jwt(&claims);
+    if let Some(ref mail_config) = CONFIG.mail {
+        if let Err(e) = mail::send_invite(&user.email, &org_id, &org_user_id.unwrap_or(Organization::VIRTUAL_ID.to_string()), 
+                                            &invite_token, &org_name, mail_config) {
+            err!(format!("There has been a problem sending the email: {}", e))
+        }
+    }
+    
     Ok(())
 }
 
