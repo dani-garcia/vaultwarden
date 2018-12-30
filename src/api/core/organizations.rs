@@ -10,7 +10,11 @@ use crate::db::models::*;
 use crate::api::{PasswordData, JsonResult, EmptyResult, NumberOrString, JsonUpcase, WebSocketUsers, UpdateType};
 use crate::auth::{Headers, AdminHeaders, OwnerHeaders, encode_jwt, decode_invite_jwt, InviteJWTClaims, JWT_ISSUER};
 
+use crate::mail;
+
 use serde::{Deserialize, Deserializer};
+
+use chrono::{Duration, Utc};
 
 use rocket::Route;
 
@@ -37,6 +41,7 @@ pub fn routes() -> Vec<Route> {
         get_org_details,
         get_org_users,
         send_invite,
+        reinvite_user,
         confirm_invite,
         accept_invite,
         get_user,
@@ -44,7 +49,6 @@ pub fn routes() -> Vec<Route> {
         put_organization_user,
         delete_user,
         post_delete_user,
-        post_reinvite_user,
         post_org_import,
     ]
 }
@@ -485,22 +489,11 @@ fn send_invite(org_id: String, data: JsonUpcase<InviteData>, headers: AdminHeade
         }
 
         if CONFIG.mail.is_some() {
-            use crate::mail;
-            use chrono::{Duration, Utc};
-            let time_now = Utc::now().naive_utc();
-            let claims = InviteJWTClaims {
-                nbf: time_now.timestamp(),
-                exp: (time_now + Duration::days(5)).timestamp(),
-                iss: JWT_ISSUER.to_string(),
-                sub: user.uuid.to_string(),
-                email: email.clone(),
-                org_id: org_id.clone(),
-                user_org_id: org_user_id.clone(),
-            };
             let org_name = match Organization::find_by_uuid(&org_id, &conn) {
                 Some(org) => org.name,
                 None => err!("Error looking up organization")
             };
+            let claims = generate_invite_claims(user.uuid.to_string(), user.email.clone(), org_id.clone(), org_user_id.clone());
             let invite_token = encode_jwt(&claims);
             if let Some(ref mail_config) = CONFIG.mail {
                 if let Err(e) = mail::send_invite(&email, &org_id, &org_user_id.unwrap_or(Organization::VIRTUAL_ID.to_string()), 
@@ -514,10 +507,67 @@ fn send_invite(org_id: String, data: JsonUpcase<InviteData>, headers: AdminHeade
     Ok(())
 }
 
+#[post("/organizations/<org_id>/users/<user_org>/reinvite")]
+fn reinvite_user(org_id: String, user_org: String, _headers: AdminHeaders, conn: DbConn) -> EmptyResult {
+    if !CONFIG.invitations_allowed {
+        err!("Invitations are not allowed.")
+    }
+
+    if CONFIG.mail.is_none() {
+        err!("SMTP is not configured.")
+    }
+
+    if org_id == Organization::VIRTUAL_ID {
+        err!("This functionality is incompatible with the bitwarden_rs virtual organization. Please delete the user and send a new invitation.")
+    }
+
+    let user_org = match UserOrganization::find_by_uuid(&user_org, &conn) {
+        Some(user_org) => user_org,
+        None => err!("UserOrg not found."),
+    };
+
+    let user = match User::find_by_uuid(&user_org.user_uuid, &conn) {
+        Some(user) => user,
+        None => err!("User not found."),
+    };
+
+    if Invitation::find_by_mail(&user.email, &conn).is_none() {
+        err!("No invitation found for user to resend. Try inviting them first.")       
+    }
+
+    let org_name = match Organization::find_by_uuid(&org_id, &conn) {
+        Some(org) => org.name,
+        None => err!("Error looking up organization.")
+    };
+
+    let claims = generate_invite_claims(user.uuid.to_string(), user.email.clone(), org_id.clone(), Some(user_org.uuid.clone()));
+    let invite_token = encode_jwt(&claims);
+    if let Some(ref mail_config) = CONFIG.mail {
+        if let Err(e) = mail::send_invite(&user.email, &org_id, &user_org.uuid, &invite_token, &org_name, mail_config) {
+            err!(format!("There has been a problem sending the email: {}", e))
+        }
+    }
+    
+    Ok(())
+}
+
 #[derive(Deserialize)]
 #[allow(non_snake_case)]
 struct AcceptData {
     Token: String,
+}
+
+fn generate_invite_claims(uuid: String, email: String, org_id: String, org_user_id: Option<String>) -> InviteJWTClaims {
+    let time_now = Utc::now().naive_utc();
+    InviteJWTClaims {
+        nbf: time_now.timestamp(),
+        exp: (time_now + Duration::days(5)).timestamp(),
+        iss: JWT_ISSUER.to_string(),
+        sub: uuid.clone(),
+        email: email.clone(),
+        org_id: org_id.clone(),
+        user_org_id: org_user_id.clone(),
+    }
 }
 
 #[post("/organizations/<_org_id>/users/<_org_user_id>/accept", data = "<data>")]
@@ -726,11 +776,6 @@ fn delete_user(org_id: String, org_user_id: String, headers: AdminHeaders, conn:
 #[post("/organizations/<org_id>/users/<org_user_id>/delete")]
 fn post_delete_user(org_id: String, org_user_id: String, headers: AdminHeaders, conn: DbConn) -> EmptyResult {
     delete_user(org_id, org_user_id, headers, conn)
-}
-
-#[post("/organizations/<_org_id>/users/<_org_user_id>/reinvite")]
-fn post_reinvite_user(_org_id: String, _org_user_id: String, _headers: AdminHeaders, _conn: DbConn) -> EmptyResult {
-    err!("This functionality is not implemented. The user needs to manually register before they can be accepted into the organization.")
 }
 
 use super::ciphers::CipherData;
