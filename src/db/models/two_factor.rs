@@ -50,7 +50,7 @@ impl TwoFactor {
 
         let decoded_secret = match BASE32.decode(totp_secret) {
             Ok(s) => s,
-            Err(_) => return false
+            Err(_) => return false,
         };
 
         let generated = totp_raw_now(&decoded_secret, 6, 0, 30, &HashType::SHA1);
@@ -74,10 +74,10 @@ impl TwoFactor {
     }
 }
 
+use crate::db::schema::twofactor;
+use crate::db::DbConn;
 use diesel;
 use diesel::prelude::*;
-use crate::db::DbConn;
-use crate::db::schema::twofactor;
 
 use crate::api::EmptyResult;
 use crate::error::MapResult;
@@ -92,33 +92,29 @@ impl TwoFactor {
     }
 
     pub fn delete(self, conn: &DbConn) -> EmptyResult {
-        diesel::delete(
-            twofactor::table.filter(
-                twofactor::uuid.eq(self.uuid)
-            )
-        ).execute(&**conn)
-        .map_res("Error deleting twofactor")
+        diesel::delete(twofactor::table.filter(twofactor::uuid.eq(self.uuid)))
+            .execute(&**conn)
+            .map_res("Error deleting twofactor")
     }
 
     pub fn find_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
         twofactor::table
             .filter(twofactor::user_uuid.eq(user_uuid))
-            .load::<Self>(&**conn).expect("Error loading twofactor")
+            .load::<Self>(&**conn)
+            .expect("Error loading twofactor")
     }
 
     pub fn find_by_user_and_type(user_uuid: &str, type_: i32, conn: &DbConn) -> Option<Self> {
         twofactor::table
             .filter(twofactor::user_uuid.eq(user_uuid))
             .filter(twofactor::type_.eq(type_))
-            .first::<Self>(&**conn).ok()
+            .first::<Self>(&**conn)
+            .ok()
     }
-    
+
     pub fn delete_all_by_user(user_uuid: &str, conn: &DbConn) -> EmptyResult {
-        diesel::delete(
-            twofactor::table.filter(
-                twofactor::user_uuid.eq(user_uuid)
-            )
-        ).execute(&**conn)
-        .map_res("Error deleting twofactors")
+        diesel::delete(twofactor::table.filter(twofactor::user_uuid.eq(user_uuid)))
+            .execute(&**conn)
+            .map_res("Error deleting twofactors")
     }
 }

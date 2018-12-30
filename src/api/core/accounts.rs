@@ -3,13 +3,13 @@ use rocket_contrib::json::Json;
 use crate::db::models::*;
 use crate::db::DbConn;
 
-use crate::api::{EmptyResult, JsonResult, JsonUpcase, NumberOrString, PasswordData, UpdateType, WebSocketUsers};
-use crate::auth::{Headers, decode_invite_jwt, InviteJWTClaims};
+use crate::api::{EmptyResult, JsonResult, JsonUpcase, Notify, NumberOrString, PasswordData, UpdateType};
+use crate::auth::{decode_invite_jwt, Headers, InviteJWTClaims};
 use crate::mail;
 
 use crate::CONFIG;
 
-use rocket::{Route, State};
+use rocket::Route;
 
 pub fn routes() -> Vec<Route> {
     routes![
@@ -74,9 +74,9 @@ fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> EmptyResult {
                 } else {
                     let token = match &data.Token {
                         Some(token) => token,
-                        None => err!("No valid invite token")
+                        None => err!("No valid invite token"),
                     };
-                    
+
                     let claims: InviteJWTClaims = decode_invite_jwt(&token)?;
                     if &claims.email == &data.Email {
                         user
@@ -257,7 +257,7 @@ struct KeyData {
 }
 
 #[post("/accounts/key", data = "<data>")]
-fn post_rotatekey(data: JsonUpcase<KeyData>, headers: Headers, conn: DbConn, ws: State<WebSocketUsers>) -> EmptyResult {
+fn post_rotatekey(data: JsonUpcase<KeyData>, headers: Headers, conn: DbConn, nt: Notify) -> EmptyResult {
     let data: KeyData = data.into_inner().data;
 
     if !headers.user.check_valid_password(&data.MasterPasswordHash) {
@@ -294,7 +294,15 @@ fn post_rotatekey(data: JsonUpcase<KeyData>, headers: Headers, conn: DbConn, ws:
             err!("The cipher is not owned by the user")
         }
 
-        update_cipher_from_data(&mut saved_cipher, cipher_data, &headers, false, &conn, &ws, UpdateType::SyncCipherUpdate)?
+        update_cipher_from_data(
+            &mut saved_cipher,
+            cipher_data,
+            &headers,
+            false,
+            &conn,
+            &nt,
+            UpdateType::CipherUpdate,
+        )?
     }
 
     // Update user data

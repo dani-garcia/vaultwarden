@@ -1,6 +1,6 @@
-///
-/// PBKDF2 derivation
-///
+//
+// PBKDF2 derivation
+//
 
 use ring::{digest, pbkdf2};
 
@@ -19,9 +19,9 @@ pub fn verify_password_hash(secret: &[u8], salt: &[u8], previous: &[u8], iterati
     pbkdf2::verify(DIGEST_ALG, iterations, salt, secret, previous).is_ok()
 }
 
-///
-/// Random values
-///
+//
+// Random values
+//
 
 pub fn get_random_64() -> Vec<u8> {
     get_random(vec![0u8; 64])
@@ -30,7 +30,9 @@ pub fn get_random_64() -> Vec<u8> {
 pub fn get_random(mut array: Vec<u8>) -> Vec<u8> {
     use ring::rand::{SecureRandom, SystemRandom};
 
-    SystemRandom::new().fill(&mut array).expect("Error generating random values");
+    SystemRandom::new()
+        .fill(&mut array)
+        .expect("Error generating random values");
 
     array
 }

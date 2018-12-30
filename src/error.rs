@@ -8,7 +8,7 @@ macro_rules! make_error {
         #[derive(Display)]
         enum ErrorKind { $($name( $ty )),+ }
         pub struct Error { message: String, error: ErrorKind }
-        
+
         $(impl From<$ty> for Error {
             fn from(err: $ty) -> Self { Error::from((stringify!($name), err)) }
         })+
@@ -140,9 +140,9 @@ impl<'r> Responder<'r> for Error {
     }
 }
 
-///
-/// Error return macros
-///
+//
+// Error return macros
+//
 #[macro_export]
 macro_rules! err {
     ($msg:expr) => {{

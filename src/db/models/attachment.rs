@@ -49,10 +49,10 @@ impl Attachment {
     }
 }
 
+use crate::db::schema::attachments;
+use crate::db::DbConn;
 use diesel;
 use diesel::prelude::*;
-use crate::db::DbConn;
-use crate::db::schema::attachments;
 
 use crate::api::EmptyResult;
 use crate::error::MapResult;
@@ -68,12 +68,11 @@ impl Attachment {
 
     pub fn delete(self, conn: &DbConn) -> EmptyResult {
         crate::util::retry(
-            || diesel::delete(attachments::table.filter(attachments::id.eq(&self.id)))
-                .execute(&**conn),
+            || diesel::delete(attachments::table.filter(attachments::id.eq(&self.id))).execute(&**conn),
             10,
         )
         .map_res("Error deleting attachment")?;
-        
+
         crate::util::delete_file(&self.get_file_path())?;
         Ok(())
     }
@@ -86,7 +85,10 @@ impl Attachment {
     }
 
     pub fn find_by_id(id: &str, conn: &DbConn) -> Option<Self> {
-        attachments::table.filter(attachments::id.eq(id)).first::<Self>(&**conn).ok()
+        attachments::table
+            .filter(attachments::id.eq(id))
+            .first::<Self>(&**conn)
+            .ok()
     }
 
     pub fn find_by_cipher(cipher_uuid: &str, conn: &DbConn) -> Vec<Self> {

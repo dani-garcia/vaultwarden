@@ -1,7 +1,7 @@
 use chrono::{NaiveDateTime, Utc};
 use serde_json::Value;
 
-use super::{User, Cipher};
+use super::{Cipher, User};
 
 #[derive(Debug, Identifiable, Queryable, Insertable, Associations)]
 #[table_name = "folders"]
@@ -61,10 +61,10 @@ impl FolderCipher {
     }
 }
 
+use crate::db::schema::{folders, folders_ciphers};
+use crate::db::DbConn;
 use diesel;
 use diesel::prelude::*;
-use crate::db::DbConn;
-use crate::db::schema::{folders, folders_ciphers};
 
 use crate::api::EmptyResult;
 use crate::error::MapResult;
@@ -76,20 +76,18 @@ impl Folder {
         self.updated_at = Utc::now().naive_utc();
 
         diesel::replace_into(folders::table)
-            .values(&*self).execute(&**conn)    
-        .map_res("Error saving folder")
+            .values(&*self)
+            .execute(&**conn)
+            .map_res("Error saving folder")
     }
 
     pub fn delete(&self, conn: &DbConn) -> EmptyResult {
         User::update_uuid_revision(&self.user_uuid, conn);
         FolderCipher::delete_all_by_folder(&self.uuid, &conn)?;
 
-        diesel::delete(
-            folders::table.filter(
-                folders::uuid.eq(&self.uuid)
-            )
-        ).execute(&**conn)
-        .map_res("Error deleting folder")
+        diesel::delete(folders::table.filter(folders::uuid.eq(&self.uuid)))
+            .execute(&**conn)
+            .map_res("Error deleting folder")
     }
 
     pub fn delete_all_by_user(user_uuid: &str, conn: &DbConn) -> EmptyResult {
@@ -102,56 +100,60 @@ impl Folder {
     pub fn find_by_uuid(uuid: &str, conn: &DbConn) -> Option<Self> {
         folders::table
             .filter(folders::uuid.eq(uuid))
-            .first::<Self>(&**conn).ok()
+            .first::<Self>(&**conn)
+            .ok()
     }
 
     pub fn find_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
         folders::table
             .filter(folders::user_uuid.eq(user_uuid))
-            .load::<Self>(&**conn).expect("Error loading folders")
+            .load::<Self>(&**conn)
+            .expect("Error loading folders")
     }
 }
 
 impl FolderCipher {
     pub fn save(&self, conn: &DbConn) -> EmptyResult {
         diesel::replace_into(folders_ciphers::table)
-        .values(&*self)
-        .execute(&**conn)
-        .map_res("Error adding cipher to folder")
+            .values(&*self)
+            .execute(&**conn)
+            .map_res("Error adding cipher to folder")
     }
 
     pub fn delete(self, conn: &DbConn) -> EmptyResult {
-        diesel::delete(folders_ciphers::table
-            .filter(folders_ciphers::cipher_uuid.eq(self.cipher_uuid))
-            .filter(folders_ciphers::folder_uuid.eq(self.folder_uuid))
-        ).execute(&**conn)
+        diesel::delete(
+            folders_ciphers::table
+                .filter(folders_ciphers::cipher_uuid.eq(self.cipher_uuid))
+                .filter(folders_ciphers::folder_uuid.eq(self.folder_uuid)),
+        )
+        .execute(&**conn)
         .map_res("Error removing cipher from folder")
     }
 
     pub fn delete_all_by_cipher(cipher_uuid: &str, conn: &DbConn) -> EmptyResult {
-        diesel::delete(folders_ciphers::table
-            .filter(folders_ciphers::cipher_uuid.eq(cipher_uuid))
-        ).execute(&**conn)
-        .map_res("Error removing cipher from folders")
+        diesel::delete(folders_ciphers::table.filter(folders_ciphers::cipher_uuid.eq(cipher_uuid)))
+            .execute(&**conn)
+            .map_res("Error removing cipher from folders")
     }
 
     pub fn delete_all_by_folder(folder_uuid: &str, conn: &DbConn) -> EmptyResult {
-        diesel::delete(folders_ciphers::table
-            .filter(folders_ciphers::folder_uuid.eq(folder_uuid))
-        ).execute(&**conn)
-        .map_res("Error removing ciphers from folder")
+        diesel::delete(folders_ciphers::table.filter(folders_ciphers::folder_uuid.eq(folder_uuid)))
+            .execute(&**conn)
+            .map_res("Error removing ciphers from folder")
     }
 
     pub fn find_by_folder_and_cipher(folder_uuid: &str, cipher_uuid: &str, conn: &DbConn) -> Option<Self> {
         folders_ciphers::table
             .filter(folders_ciphers::folder_uuid.eq(folder_uuid))
             .filter(folders_ciphers::cipher_uuid.eq(cipher_uuid))
-            .first::<Self>(&**conn).ok()
+            .first::<Self>(&**conn)
+            .ok()
     }
 
     pub fn find_by_folder(folder_uuid: &str, conn: &DbConn) -> Vec<Self> {
         folders_ciphers::table
             .filter(folders_ciphers::folder_uuid.eq(folder_uuid))
-            .load::<Self>(&**conn).expect("Error loading folders")
+            .load::<Self>(&**conn)
+            .expect("Error loading folders")
     }
 }

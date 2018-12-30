@@ -1,8 +1,8 @@
-use native_tls::{Protocol, TlsConnector};
-use lettre::{Transport, SmtpTransport, SmtpClient, ClientTlsParameters, ClientSecurity};
-use lettre::smtp::ConnectionReuseParameters;
 use lettre::smtp::authentication::Credentials;
+use lettre::smtp::ConnectionReuseParameters;
+use lettre::{ClientSecurity, ClientTlsParameters, SmtpClient, SmtpTransport, Transport};
 use lettre_email::EmailBuilder;
+use native_tls::{Protocol, TlsConnector};
 
 use crate::MailConfig;
 use crate::CONFIG;
@@ -22,10 +22,7 @@ fn mailer(config: &MailConfig) -> SmtpTransport {
         ClientSecurity::None
     };
 
-    let smtp_client = SmtpClient::new(
-        (config.smtp_host.as_str(), config.smtp_port),
-        client_security,
-    ).unwrap();
+    let smtp_client = SmtpClient::new((config.smtp_host.as_str(), config.smtp_port), client_security).unwrap();
 
     let smtp_client = match (&config.smtp_username, &config.smtp_password) {
         (Some(user), Some(pass)) => smtp_client.credentials(Credentials::new(user.clone(), pass.clone())),
@@ -40,15 +37,20 @@ fn mailer(config: &MailConfig) -> SmtpTransport {
 
 pub fn send_password_hint(address: &str, hint: Option<String>, config: &MailConfig) -> EmptyResult {
     let (subject, body) = if let Some(hint) = hint {
-        ("Your master password hint",
-         format!(
-            "You (or someone) recently requested your master password hint.\n\n\
-             Your hint is:  \"{}\"\n\n\
-             If you did not request your master password hint you can safely ignore this email.\n",
-            hint))
+        (
+            "Your master password hint",
+            format!(
+                "You (or someone) recently requested your master password hint.\n\n\
+                 Your hint is:  \"{}\"\n\n\
+                 If you did not request your master password hint you can safely ignore this email.\n",
+                hint
+            ),
+        )
     } else {
-        ("Sorry, you have no password hint...",
-         "Sorry, you have not specified any password hint...\n".into())
+        (
+            "Sorry, you have no password hint...",
+            "Sorry, you have not specified any password hint...\n".into(),
+        )
     };
 
     let email = EmailBuilder::new()
@@ -65,8 +67,15 @@ pub fn send_password_hint(address: &str, hint: Option<String>, config: &MailConf
         .and(Ok(()))
 }
 
-pub fn send_invite(address: &str, org_id: &str, org_user_id: &str, token: &str, org_name: &str, config: &MailConfig) -> EmptyResult {
-    let (subject, body) =  {
+pub fn send_invite(
+    address: &str,
+    org_id: &str,
+    org_user_id: &str,
+    token: &str,
+    org_name: &str,
+    config: &MailConfig,
+) -> EmptyResult {
+    let (subject, body) = {
         (format!("Join {}", &org_name),
         format!(
             "<html>

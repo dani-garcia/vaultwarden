@@ -1,7 +1,9 @@
 use chrono::{NaiveDateTime, Utc};
 use serde_json::Value;
 
-use super::{Attachment, CollectionCipher, FolderCipher, Organization, User, UserOrgStatus, UserOrgType, UserOrganization};
+use super::{
+    Attachment, CollectionCipher, FolderCipher, Organization, User, UserOrgStatus, UserOrgType, UserOrganization,
+};
 
 #[derive(Debug, Identifiable, Queryable, Insertable, Associations)]
 #[table_name = "ciphers"]
@@ -79,11 +81,15 @@ impl Cipher {
 
         let fields_json: Value = if let Some(ref fields) = self.fields {
             serde_json::from_str(fields).unwrap()
-        } else { Value::Null };
-        
+        } else {
+            Value::Null
+        };
+
         let password_history_json: Value = if let Some(ref password_history) = self.password_history {
             serde_json::from_str(password_history).unwrap()
-        } else { Value::Null };
+        } else {
+            Value::Null
+        };
 
         let mut data_json: Value = serde_json::from_str(&self.data).unwrap();
 
@@ -137,15 +143,16 @@ impl Cipher {
             Some(ref user_uuid) => {
                 User::update_uuid_revision(&user_uuid, conn);
                 user_uuids.push(user_uuid.clone())
-            },
-            None => { // Belongs to Organization, need to update affected users
+            }
+            None => {
+                // Belongs to Organization, need to update affected users
                 if let Some(ref org_uuid) = self.organization_uuid {
                     UserOrganization::find_by_cipher_and_org(&self.uuid, &org_uuid, conn)
-                    .iter()
-                    .for_each(|user_org| {
-                        User::update_uuid_revision(&user_org.user_uuid, conn);
-                        user_uuids.push(user_org.user_uuid.clone())
-                    });
+                        .iter()
+                        .for_each(|user_org| {
+                            User::update_uuid_revision(&user_org.user_uuid, conn);
+                            user_uuids.push(user_org.user_uuid.clone())
+                        });
                 }
             }
         };
@@ -207,7 +214,9 @@ impl Cipher {
                             Ok(()) //nothing to do
                         } else {
                             self.update_users_revision(conn);
-                            if let Some(current_folder) = FolderCipher::find_by_folder_and_cipher(&current_folder, &self.uuid, &conn) {
+                            if let Some(current_folder) =
+                                FolderCipher::find_by_folder_and_cipher(&current_folder, &self.uuid, &conn)
+                            {
                                 current_folder.delete(&conn)?;
                             }
                             FolderCipher::new(&new_folder, &self.uuid).save(&conn)
@@ -227,64 +236,79 @@ impl Cipher {
 
     pub fn is_write_accessible_to_user(&self, user_uuid: &str, conn: &DbConn) -> bool {
         ciphers::table
-        .filter(ciphers::uuid.eq(&self.uuid))
-        .left_join(users_organizations::table.on(
-            ciphers::organization_uuid.eq(users_organizations::org_uuid.nullable()).and(
-                users_organizations::user_uuid.eq(user_uuid)
+            .filter(ciphers::uuid.eq(&self.uuid))
+            .left_join(
+                users_organizations::table.on(ciphers::organization_uuid
+                    .eq(users_organizations::org_uuid.nullable())
+                    .and(users_organizations::user_uuid.eq(user_uuid))),
             )
-        ))
-        .left_join(ciphers_collections::table)
-        .left_join(users_collections::table.on(
-            ciphers_collections::collection_uuid.eq(users_collections::collection_uuid)
-        ))
-        .filter(ciphers::user_uuid.eq(user_uuid).or( // Cipher owner
-            users_organizations::access_all.eq(true).or( // access_all in Organization
-                users_organizations::type_.le(UserOrgType::Admin as i32).or( // Org admin or owner
-                    users_collections::user_uuid.eq(user_uuid).and(
-                        users_collections::read_only.eq(false) //R/W access to collection
-                    )
-                )
+            .left_join(ciphers_collections::table)
+            .left_join(
+                users_collections::table
+                    .on(ciphers_collections::collection_uuid.eq(users_collections::collection_uuid)),
             )
-        ))
-        .select(ciphers::all_columns)
-        .first::<Self>(&**conn).ok().is_some()
+            .filter(ciphers::user_uuid.eq(user_uuid).or(
+                // Cipher owner
+                users_organizations::access_all.eq(true).or(
+                    // access_all in Organization
+                    users_organizations::type_.le(UserOrgType::Admin as i32).or(
+                        // Org admin or owner
+                        users_collections::user_uuid.eq(user_uuid).and(
+                            users_collections::read_only.eq(false), //R/W access to collection
+                        ),
+                    ),
+                ),
+            ))
+            .select(ciphers::all_columns)
+            .first::<Self>(&**conn)
+            .ok()
+            .is_some()
     }
 
     pub fn is_accessible_to_user(&self, user_uuid: &str, conn: &DbConn) -> bool {
         ciphers::table
-        .filter(ciphers::uuid.eq(&self.uuid))
-        .left_join(users_organizations::table.on(
-            ciphers::organization_uuid.eq(users_organizations::org_uuid.nullable()).and(
-                users_organizations::user_uuid.eq(user_uuid)
+            .filter(ciphers::uuid.eq(&self.uuid))
+            .left_join(
+                users_organizations::table.on(ciphers::organization_uuid
+                    .eq(users_organizations::org_uuid.nullable())
+                    .and(users_organizations::user_uuid.eq(user_uuid))),
             )
-        ))
-        .left_join(ciphers_collections::table)
-        .left_join(users_collections::table.on(
-            ciphers_collections::collection_uuid.eq(users_collections::collection_uuid)
-        ))
-        .filter(ciphers::user_uuid.eq(user_uuid).or( // Cipher owner
-            users_organizations::access_all.eq(true).or( // access_all in Organization
-                users_organizations::type_.le(UserOrgType::Admin as i32).or( // Org admin or owner
-                    users_collections::user_uuid.eq(user_uuid) // Access to Collection
-                )
+            .left_join(ciphers_collections::table)
+            .left_join(
+                users_collections::table
+                    .on(ciphers_collections::collection_uuid.eq(users_collections::collection_uuid)),
             )
-        ))
-        .select(ciphers::all_columns)
-        .first::<Self>(&**conn).ok().is_some()
+            .filter(ciphers::user_uuid.eq(user_uuid).or(
+                // Cipher owner
+                users_organizations::access_all.eq(true).or(
+                    // access_all in Organization
+                    users_organizations::type_.le(UserOrgType::Admin as i32).or(
+                        // Org admin or owner
+                        users_collections::user_uuid.eq(user_uuid), // Access to Collection
+                    ),
+                ),
+            ))
+            .select(ciphers::all_columns)
+            .first::<Self>(&**conn)
+            .ok()
+            .is_some()
     }
 
     pub fn get_folder_uuid(&self, user_uuid: &str, conn: &DbConn) -> Option<String> {
-        folders_ciphers::table.inner_join(folders::table)
+        folders_ciphers::table
+            .inner_join(folders::table)
             .filter(folders::user_uuid.eq(&user_uuid))
             .filter(folders_ciphers::cipher_uuid.eq(&self.uuid))
             .select(folders_ciphers::folder_uuid)
-            .first::<String>(&**conn).ok()
+            .first::<String>(&**conn)
+            .ok()
     }
 
     pub fn find_by_uuid(uuid: &str, conn: &DbConn) -> Option<Self> {
         ciphers::table
             .filter(ciphers::uuid.eq(uuid))
-            .first::<Self>(&**conn).ok()
+            .first::<Self>(&**conn)
+            .ok()
     }
 
     // Find all ciphers accessible to user

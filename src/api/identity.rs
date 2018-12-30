@@ -145,7 +145,12 @@ fn _password_login(data: ConnectData, conn: DbConn, ip: ClientIp) -> JsonResult 
     Ok(Json(result))
 }
 
-fn twofactor_auth(user_uuid: &str, data: &ConnectData, device: &mut Device, conn: &DbConn) -> ApiResult<Option<String>> {
+fn twofactor_auth(
+    user_uuid: &str,
+    data: &ConnectData,
+    device: &mut Device,
+    conn: &DbConn,
+) -> ApiResult<Option<String>> {
     let twofactors_raw = TwoFactor::find_by_user(user_uuid, conn);
     // Remove u2f challenge twofactors (impl detail)
     let twofactors: Vec<_> = twofactors_raw.iter().filter(|tf| tf.type_ < 1000).collect();
@@ -252,13 +257,14 @@ fn _json_err_twofactor(providers: &[i32], user_uuid: &str, conn: &DbConn) -> Api
                 result["TwoFactorProviders2"][provider.to_string()] = Value::Object(map);
             }
 
-            Some(TwoFactorType::YubiKey) => {
-                let twofactor = match TwoFactor::find_by_user_and_type(user_uuid, TwoFactorType::YubiKey as i32, &conn) {
+            Some(tf_type @ TwoFactorType::YubiKey) => {
+                let twofactor = match TwoFactor::find_by_user_and_type(user_uuid, tf_type as i32, &conn) {
                     Some(tf) => tf,
                     None => err!("No YubiKey devices registered"),
                 };
 
-                let yubikey_metadata: two_factor::YubikeyMetadata = serde_json::from_str(&twofactor.data).expect("Can't parse Yubikey Metadata");
+                let yubikey_metadata: two_factor::YubikeyMetadata =
+                    serde_json::from_str(&twofactor.data).expect("Can't parse Yubikey Metadata");
 
                 let mut map = JsonMap::new();
                 map.insert("Nfc".into(), Value::Bool(yubikey_metadata.Nfc));

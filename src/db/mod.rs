@@ -1,9 +1,9 @@
 use std::ops::Deref;
 
-use diesel::{Connection as DieselConnection, ConnectionError};
-use diesel::sqlite::SqliteConnection;
 use diesel::r2d2;
 use diesel::r2d2::ConnectionManager;
+use diesel::sqlite::SqliteConnection;
+use diesel::{Connection as DieselConnection, ConnectionError};
 
 use rocket::http::Status;
 use rocket::request::{self, FromRequest};
@@ -20,16 +20,14 @@ type Pool = r2d2::Pool<ConnectionManager<Connection>>;
 /// Connection request guard type: a wrapper around an r2d2 pooled connection.
 pub struct DbConn(pub r2d2::PooledConnection<ConnectionManager<Connection>>);
 
-pub mod schema;
 pub mod models;
+pub mod schema;
 
 /// Initializes a database pool.
 pub fn init_pool() -> Pool {
     let manager = ConnectionManager::new(&*CONFIG.database_url);
 
-    r2d2::Pool::builder()
-        .build(manager)
-        .expect("Failed to create pool")
+    r2d2::Pool::builder().build(manager).expect("Failed to create pool")
 }
 
 pub fn get_connection() -> Result<Connection, ConnectionError> {
@@ -46,7 +44,7 @@ impl<'a, 'r> FromRequest<'a, 'r> for DbConn {
         let pool = request.guard::<State<Pool>>()?;
         match pool.get() {
             Ok(conn) => Outcome::Success(DbConn(conn)),
-            Err(_) => Outcome::Failure((Status::ServiceUnavailable, ()))
+            Err(_) => Outcome::Failure((Status::ServiceUnavailable, ())),
         }
     }
 }

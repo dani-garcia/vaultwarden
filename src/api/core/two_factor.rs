@@ -3,7 +3,6 @@ use rocket_contrib::json::Json;
 use serde_json;
 use serde_json::Value;
 
-
 use crate::db::{
     models::{TwoFactor, TwoFactorType, User},
     DbConn,
@@ -111,11 +110,7 @@ struct DisableTwoFactorData {
 }
 
 #[post("/two-factor/disable", data = "<data>")]
-fn disable_twofactor(
-    data: JsonUpcase<DisableTwoFactorData>,
-    headers: Headers,
-    conn: DbConn,
-) -> JsonResult {
+fn disable_twofactor(data: JsonUpcase<DisableTwoFactorData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: DisableTwoFactorData = data.into_inner().data;
     let password_hash = data.MasterPasswordHash;
 
@@ -137,20 +132,12 @@ fn disable_twofactor(
 }
 
 #[put("/two-factor/disable", data = "<data>")]
-fn disable_twofactor_put(
-    data: JsonUpcase<DisableTwoFactorData>,
-    headers: Headers,
-    conn: DbConn,
-) -> JsonResult {
+fn disable_twofactor_put(data: JsonUpcase<DisableTwoFactorData>, headers: Headers, conn: DbConn) -> JsonResult {
     disable_twofactor(data, headers, conn)
 }
 
 #[post("/two-factor/get-authenticator", data = "<data>")]
-fn generate_authenticator(
-    data: JsonUpcase<PasswordData>,
-    headers: Headers,
-    conn: DbConn,
-) -> JsonResult {
+fn generate_authenticator(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: PasswordData = data.into_inner().data;
 
     if !headers.user.check_valid_password(&data.MasterPasswordHash) {
@@ -181,11 +168,7 @@ struct EnableAuthenticatorData {
 }
 
 #[post("/two-factor/authenticator", data = "<data>")]
-fn activate_authenticator(
-    data: JsonUpcase<EnableAuthenticatorData>,
-    headers: Headers,
-    conn: DbConn,
-) -> JsonResult {
+fn activate_authenticator(data: JsonUpcase<EnableAuthenticatorData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: EnableAuthenticatorData = data.into_inner().data;
     let password_hash = data.MasterPasswordHash;
     let key = data.Key;
@@ -228,11 +211,7 @@ fn activate_authenticator(
 }
 
 #[put("/two-factor/authenticator", data = "<data>")]
-fn activate_authenticator_put(
-    data: JsonUpcase<EnableAuthenticatorData>,
-    headers: Headers,
-    conn: DbConn,
-) -> JsonResult {
+fn activate_authenticator_put(data: JsonUpcase<EnableAuthenticatorData>, headers: Headers, conn: DbConn) -> JsonResult {
     activate_authenticator(data, headers, conn)
 }
 
@@ -338,11 +317,8 @@ fn activate_u2f(data: JsonUpcase<EnableU2FData>, headers: Headers, conn: DbConn)
         err!("Invalid password");
     }
 
-    let tf_challenge = TwoFactor::find_by_user_and_type(
-        &headers.user.uuid,
-        TwoFactorType::U2fRegisterChallenge as i32,
-        &conn,
-    );
+    let tf_challenge =
+        TwoFactor::find_by_user_and_type(&headers.user.uuid, TwoFactorType::U2fRegisterChallenge as i32, &conn);
 
     if let Some(tf_challenge) = tf_challenge {
         let challenge: Challenge = serde_json::from_str(&tf_challenge.data)?;
@@ -394,17 +370,14 @@ fn activate_u2f(data: JsonUpcase<EnableU2FData>, headers: Headers, conn: DbConn)
 
 #[put("/two-factor/u2f", data = "<data>")]
 fn activate_u2f_put(data: JsonUpcase<EnableU2FData>, headers: Headers, conn: DbConn) -> JsonResult {
-    activate_u2f(data,headers, conn)
+    activate_u2f(data, headers, conn)
 }
 
 fn _create_u2f_challenge(user_uuid: &str, type_: TwoFactorType, conn: &DbConn) -> Challenge {
     let challenge = U2F.generate_challenge().unwrap();
 
-    TwoFactor::new(
-        user_uuid.into(),
-        type_,
-        serde_json::to_string(&challenge).unwrap(),
-    ).save(conn)
+    TwoFactor::new(user_uuid.into(), type_, serde_json::to_string(&challenge).unwrap())
+        .save(conn)
         .expect("Error saving challenge");
 
     challenge
@@ -478,8 +451,7 @@ pub fn validate_u2f_login(user_uuid: &str, response: &str, conn: &DbConn) -> Emp
 
     let mut _counter: u32 = 0;
     for registration in registrations {
-        let response =
-            U2F.sign_response(challenge.clone(), registration, response.clone(), _counter);
+        let response = U2F.sign_response(challenge.clone(), registration, response.clone(), _counter);
         match response {
             Ok(new_counter) => {
                 _counter = new_counter;
@@ -494,7 +466,6 @@ pub fn validate_u2f_login(user_uuid: &str, response: &str, conn: &DbConn) -> Emp
     }
     err!("error verifying response")
 }
-
 
 #[derive(Deserialize, Debug)]
 #[allow(non_snake_case)]
@@ -515,8 +486,8 @@ pub struct YubikeyMetadata {
     pub Nfc: bool,
 }
 
-use yubico::Yubico;
 use yubico::config::Config;
+use yubico::Yubico;
 
 fn parse_yubikeys(data: &EnableYubikeyData) -> Vec<String> {
     let mut yubikeys: Vec<String> = Vec::new();
@@ -548,7 +519,7 @@ fn jsonify_yubikeys(yubikeys: Vec<String>) -> serde_json::Value {
     let mut result = json!({});
 
     for (i, key) in yubikeys.into_iter().enumerate() {
-        result[format!("Key{}", i+1)] = Value::String(key);
+        result[format!("Key{}", i + 1)] = Value::String(key);
     }
 
     result
@@ -556,16 +527,17 @@ fn jsonify_yubikeys(yubikeys: Vec<String>) -> serde_json::Value {
 
 fn verify_yubikey_otp(otp: String) -> JsonResult {
     if !CONFIG.yubico_cred_set {
-        err!("`YUBICO_CLIENT_ID` or `YUBICO_SECRET_KEY` environment variable is not set. \
-               Yubikey OTP Disabled")
+        err!("`YUBICO_CLIENT_ID` or `YUBICO_SECRET_KEY` environment variable is not set. Yubikey OTP Disabled")
     }
 
     let yubico = Yubico::new();
-    let config = Config::default().set_client_id(CONFIG.yubico_client_id.to_owned()).set_key(CONFIG.yubico_secret_key.to_owned());
+    let config = Config::default()
+        .set_client_id(CONFIG.yubico_client_id.to_owned())
+        .set_key(CONFIG.yubico_secret_key.to_owned());
 
     let result = match CONFIG.yubico_server {
         Some(ref server) => yubico.verify(otp, config.set_api_hosts(vec![server.to_owned()])),
-        None => yubico.verify(otp, config)
+        None => yubico.verify(otp, config),
     };
 
     match result {
@@ -577,8 +549,7 @@ fn verify_yubikey_otp(otp: String) -> JsonResult {
 #[post("/two-factor/get-yubikey", data = "<data>")]
 fn generate_yubikey(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn) -> JsonResult {
     if !CONFIG.yubico_cred_set {
-        err!("`YUBICO_CLIENT_ID` or `YUBICO_SECRET_KEY` environment variable is not set. \
-               Yubikey OTP Disabled")
+        err!("`YUBICO_CLIENT_ID` or `YUBICO_SECRET_KEY` environment variable is not set. Yubikey OTP Disabled")
     }
 
     let data: PasswordData = data.into_inner().data;
@@ -619,11 +590,7 @@ fn activate_yubikey(data: JsonUpcase<EnableYubikeyData>, headers: Headers, conn:
     }
 
     // Check if we already have some data
-    let yubikey_data = TwoFactor::find_by_user_and_type(
-        &headers.user.uuid,
-        TwoFactorType::YubiKey as i32,
-        &conn,
-    );
+    let yubikey_data = TwoFactor::find_by_user_and_type(&headers.user.uuid, TwoFactorType::YubiKey as i32, &conn);
 
     if let Some(yubikey_data) = yubikey_data {
         yubikey_data.delete(&conn)?;
@@ -642,7 +609,7 @@ fn activate_yubikey(data: JsonUpcase<EnableYubikeyData>, headers: Headers, conn:
     for yubikey in &yubikeys {
         if yubikey.len() == 12 {
             // YubiKey ID
-            continue
+            continue;
         }
 
         let result = verify_yubikey_otp(yubikey.to_owned());
@@ -692,7 +659,8 @@ pub fn validate_yubikey_login(user_uuid: &str, response: &str, conn: &DbConn) ->
         None => err!("No YubiKey devices registered"),
     };
 
-    let yubikey_metadata: YubikeyMetadata = serde_json::from_str(&twofactor.data).expect("Can't parse Yubikey Metadata");
+    let yubikey_metadata: YubikeyMetadata =
+        serde_json::from_str(&twofactor.data).expect("Can't parse Yubikey Metadata");
     let response_id = &response[..12];
 
     if !yubikey_metadata.Keys.contains(&response_id.to_owned()) {

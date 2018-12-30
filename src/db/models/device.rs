@@ -44,8 +44,8 @@ impl Device {
     }
 
     pub fn refresh_twofactor_remember(&mut self) -> String {
-        use data_encoding::BASE64;
         use crate::crypto;
+        use data_encoding::BASE64;
 
         let twofactor_remember = BASE64.encode(&crypto::get_random(vec![0u8; 180]));
         self.twofactor_remember = Some(twofactor_remember.clone());
@@ -57,12 +57,11 @@ impl Device {
         self.twofactor_remember = None;
     }
 
-
     pub fn refresh_tokens(&mut self, user: &super::User, orgs: Vec<super::UserOrganization>) -> (String, i64) {
         // If there is no refresh token, we create one
         if self.refresh_token.is_empty() {
-            use data_encoding::BASE64URL;
             use crate::crypto;
+            use data_encoding::BASE64URL;
 
             self.refresh_token = BASE64URL.encode(&crypto::get_random_64());
         }
@@ -105,10 +104,10 @@ impl Device {
     }
 }
 
+use crate::db::schema::devices;
+use crate::db::DbConn;
 use diesel;
 use diesel::prelude::*;
-use crate::db::DbConn;
-use crate::db::schema::devices;
 
 use crate::api::EmptyResult;
 use crate::error::MapResult;
@@ -119,21 +118,16 @@ impl Device {
         self.updated_at = Utc::now().naive_utc();
 
         crate::util::retry(
-            || {
-                diesel::replace_into(devices::table)
-                    .values(&*self)
-                    .execute(&**conn)
-            },
+            || diesel::replace_into(devices::table).values(&*self).execute(&**conn),
             10,
         )
         .map_res("Error saving device")
     }
 
     pub fn delete(self, conn: &DbConn) -> EmptyResult {
-        diesel::delete(devices::table.filter(
-            devices::uuid.eq(self.uuid)
-        )).execute(&**conn)
-        .map_res("Error removing device")
+        diesel::delete(devices::table.filter(devices::uuid.eq(self.uuid)))
+            .execute(&**conn)
+            .map_res("Error removing device")
     }
 
     pub fn delete_all_by_user(user_uuid: &str, conn: &DbConn) -> EmptyResult {
@@ -146,18 +140,21 @@ impl Device {
     pub fn find_by_uuid(uuid: &str, conn: &DbConn) -> Option<Self> {
         devices::table
             .filter(devices::uuid.eq(uuid))
-            .first::<Self>(&**conn).ok()
+            .first::<Self>(&**conn)
+            .ok()
     }
 
     pub fn find_by_refresh_token(refresh_token: &str, conn: &DbConn) -> Option<Self> {
         devices::table
             .filter(devices::refresh_token.eq(refresh_token))
-            .first::<Self>(&**conn).ok()
+            .first::<Self>(&**conn)
+            .ok()
     }
 
     pub fn find_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
         devices::table
             .filter(devices::user_uuid.eq(user_uuid))
-            .load::<Self>(&**conn).expect("Error loading devices")
+            .load::<Self>(&**conn)
+            .expect("Error loading devices")
     }
 }

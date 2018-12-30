@@ -2,26 +2,39 @@
 #![recursion_limit = "128"]
 #![allow(proc_macro_derive_resolution_fallback)] // TODO: Remove this when diesel update fixes warnings
 
-#[macro_use] extern crate rocket;
-#[macro_use] extern crate serde_derive;
-#[macro_use] extern crate serde_json;
-#[macro_use] extern crate log;
-#[macro_use] extern crate diesel;
-#[macro_use] extern crate diesel_migrations;
-#[macro_use] extern crate lazy_static;
-#[macro_use] extern crate derive_more;
-#[macro_use] extern crate num_derive;
+#[macro_use]
+extern crate rocket;
+#[macro_use]
+extern crate serde_derive;
+#[macro_use]
+extern crate serde_json;
+#[macro_use]
+extern crate log;
+#[macro_use]
+extern crate diesel;
+#[macro_use]
+extern crate diesel_migrations;
+#[macro_use]
+extern crate lazy_static;
+#[macro_use]
+extern crate derive_more;
+#[macro_use]
+extern crate num_derive;
 
-use std::{path::Path, process::{exit, Command}};
 use rocket::Rocket;
+use std::{
+    path::Path,
+    process::{exit, Command},
+};
 
-#[macro_use] mod error;
-mod util;
+#[macro_use]
+mod error;
 mod api;
-mod db;
-mod crypto;
 mod auth;
+mod crypto;
+mod db;
 mod mail;
+mod util;
 
 fn init_rocket() -> Rocket {
     rocket::ignite()
@@ -67,20 +80,20 @@ fn main() {
 
 fn init_logging() -> Result<(), fern::InitError> {
     let mut logger = fern::Dispatch::new()
-    .format(|out, message, record| {
-        out.finish(format_args!(
-            "{}[{}][{}] {}",
-            chrono::Local::now().format("[%Y-%m-%d %H:%M:%S]"),
-            record.target(),
-            record.level(),
-            message
-        ))
-    })
-    .level(log::LevelFilter::Debug)
-    .level_for("hyper", log::LevelFilter::Warn)
-    .level_for("ws", log::LevelFilter::Info)
-    .level_for("multipart", log::LevelFilter::Info)
-    .chain(std::io::stdout());
+        .format(|out, message, record| {
+            out.finish(format_args!(
+                "{}[{}][{}] {}",
+                chrono::Local::now().format("[%Y-%m-%d %H:%M:%S]"),
+                record.target(),
+                record.level(),
+                message
+            ))
+        })
+        .level(log::LevelFilter::Debug)
+        .level_for("hyper", log::LevelFilter::Warn)
+        .level_for("ws", log::LevelFilter::Info)
+        .level_for("multipart", log::LevelFilter::Info)
+        .chain(std::io::stdout());
 
     if let Some(log_file) = CONFIG.log_file.as_ref() {
         logger = logger.chain(fern::log_file(log_file)?);
@@ -93,7 +106,9 @@ fn init_logging() -> Result<(), fern::InitError> {
 }
 
 #[cfg(not(feature = "enable_syslog"))]
-fn chain_syslog(logger: fern::Dispatch) -> fern::Dispatch { logger }
+fn chain_syslog(logger: fern::Dispatch) -> fern::Dispatch {
+    logger
+}
 
 #[cfg(feature = "enable_syslog")]
 fn chain_syslog(logger: fern::Dispatch) -> fern::Dispatch {
@@ -127,44 +142,60 @@ fn check_db() {
     // Turn on WAL in SQLite
     use diesel::RunQueryDsl;
     let connection = db::get_connection().expect("Can't conect to DB");
-    diesel::sql_query("PRAGMA journal_mode=wal").execute(&connection).expect("Failed to turn on WAL");
+    diesel::sql_query("PRAGMA journal_mode=wal")
+        .execute(&connection)
+        .expect("Failed to turn on WAL");
 }
 
 fn check_rsa_keys() {
     // If the RSA keys don't exist, try to create them
-    if !util::file_exists(&CONFIG.private_rsa_key)
-        || !util::file_exists(&CONFIG.public_rsa_key) {
+    if !util::file_exists(&CONFIG.private_rsa_key) || !util::file_exists(&CONFIG.public_rsa_key) {
         info!("JWT keys don't exist, checking if OpenSSL is available...");
 
-        Command::new("openssl")
-            .arg("version")
-            .output().unwrap_or_else(|_| {
+        Command::new("openssl").arg("version").output().unwrap_or_else(|_| {
             info!("Can't create keys because OpenSSL is not available, make sure it's installed and available on the PATH");
             exit(1);
         });
 
         info!("OpenSSL detected, creating keys...");
 
-        let mut success = Command::new("openssl").arg("genrsa")
-            .arg("-out").arg(&CONFIG.private_rsa_key_pem)
-            .output().expect("Failed to create private pem file")
-            .status.success();
+        let mut success = Command::new("openssl")
+            .arg("genrsa")
+            .arg("-out")
+            .arg(&CONFIG.private_rsa_key_pem)
+            .output()
+            .expect("Failed to create private pem file")
+            .status
+            .success();
 
-        success &= Command::new("openssl").arg("rsa")
-            .arg("-in").arg(&CONFIG.private_rsa_key_pem)
-            .arg("-outform").arg("DER")
-            .arg("-out").arg(&CONFIG.private_rsa_key)
-            .output().expect("Failed to create private der file")
-            .status.success();
+        success &= Command::new("openssl")
+            .arg("rsa")
+            .arg("-in")
+            .arg(&CONFIG.private_rsa_key_pem)
+            .arg("-outform")
+            .arg("DER")
+            .arg("-out")
+            .arg(&CONFIG.private_rsa_key)
+            .output()
+            .expect("Failed to create private der file")
+            .status
+            .success();
 
-        success &= Command::new("openssl").arg("rsa")
-            .arg("-in").arg(&CONFIG.private_rsa_key)
-            .arg("-inform").arg("DER")
+        success &= Command::new("openssl")
+            .arg("rsa")
+            .arg("-in")
+            .arg(&CONFIG.private_rsa_key)
+            .arg("-inform")
+            .arg("DER")
             .arg("-RSAPublicKey_out")
-            .arg("-outform").arg("DER")
-            .arg("-out").arg(&CONFIG.public_rsa_key)
-            .output().expect("Failed to create public der file")
-            .status.success();
+            .arg("-outform")
+            .arg("DER")
+            .arg("-out")
+            .arg(&CONFIG.public_rsa_key)
+            .output()
+            .expect("Failed to create public der file")
+            .status
+            .success();
 
         if success {
             info!("Keys created correctly.");
@@ -219,13 +250,7 @@ impl MailConfig {
         });
 
         let smtp_ssl = get_env_or("SMTP_SSL", true);
-        let smtp_port = get_env("SMTP_PORT").unwrap_or_else(|| 
-            if smtp_ssl { 
-                587u16 
-            } else { 
-                25u16 
-            }
-        );
+        let smtp_port = get_env("SMTP_PORT").unwrap_or_else(|| if smtp_ssl { 587u16 } else { 25u16 });
 
         let smtp_username = get_env("SMTP_USERNAME");
         let smtp_password = get_env("SMTP_PASSWORD").or_else(|| {
@@ -319,8 +344,12 @@ impl Config {
             web_vault_enabled: get_env_or("WEB_VAULT_ENABLED", true),
 
             websocket_enabled: get_env_or("WEBSOCKET_ENABLED", false),
-            websocket_url: format!("{}:{}", get_env_or("WEBSOCKET_ADDRESS", "0.0.0.0".to_string()), get_env_or("WEBSOCKET_PORT", 3012)),
-            
+            websocket_url: format!(
+                "{}:{}",
+                get_env_or("WEBSOCKET_ADDRESS", "0.0.0.0".to_string()),
+                get_env_or("WEBSOCKET_PORT", 3012)
+            ),
+
             extended_logging: get_env_or("EXTENDED_LOGGING", true),
             log_file: get_env("LOG_FILE"),
 

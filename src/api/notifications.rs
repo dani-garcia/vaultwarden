@@ -14,7 +14,7 @@ pub fn routes() -> Vec<Route> {
 
 #[get("/hub")]
 fn websockets_err() -> JsonResult {
-    err!("'/notifications/hub' should be proxied towards the websocket server, otherwise notifications will not work. Go to the README for more info.")
+    err!("'/notifications/hub' should be proxied to the websocket server or notifications won't work. Go to the README for more info.")
 }
 
 #[post("/hub/negotiate")]
@@ -40,9 +40,9 @@ fn negotiate(_headers: Headers, _conn: DbConn) -> JsonResult {
     })))
 }
 
-///
-/// Websockets server
-///
+//
+// Websockets server
+//
 use std::sync::Arc;
 use std::thread;
 
@@ -94,9 +94,7 @@ fn serialize_date(date: NaiveDateTime) -> Value {
     use byteorder::{BigEndian, WriteBytesExt};
 
     let mut bs = [0u8; 8];
-    bs.as_mut()
-        .write_i64::<BigEndian>(timestamp)
-        .expect("Unable to write");
+    bs.as_mut().write_i64::<BigEndian>(timestamp).expect("Unable to write");
 
     // -1 is Timestamp
     // https://github.com/msgpack/msgpack/blob/master/spec.md#timestamp-extension-type
@@ -142,12 +140,7 @@ impl Handler for WSHandler {
         use crate::auth;
         let claims = match auth::decode_jwt(access_token) {
             Ok(claims) => claims,
-            Err(_) => {
-                return Err(ws::Error::new(
-                    ws::ErrorKind::Internal,
-                    "Invalid access token provided",
-                ))
-            }
+            Err(_) => return Err(ws::Error::new(ws::ErrorKind::Internal, "Invalid access token provided")),
         };
 
         // Assign the user to the handler
@@ -158,11 +151,9 @@ impl Handler for WSHandler {
         let handler_insert = self.out.clone();
         let handler_update = self.out.clone();
 
-        self.users.map.upsert(
-            user_uuid,
-            || vec![handler_insert],
-            |ref mut v| v.push(handler_update),
-        );
+        self.users
+            .map
+            .upsert(user_uuid, || vec![handler_insert], |ref mut v| v.push(handler_update));
 
         // Schedule a ping to keep the connection alive
         self.out.timeout(PING_MS, PING)
@@ -238,7 +229,7 @@ impl Factory for WSFactory {
 
 #[derive(Clone)]
 pub struct WebSocketUsers {
-    pub map: Arc<CHashMap<String, Vec<Sender>>>,
+    map: Arc<CHashMap<String, Vec<Sender>>>,
 }
 
 impl WebSocketUsers {
@@ -338,21 +329,24 @@ fn create_ping() -> Vec<u8> {
 
 #[allow(dead_code)]
 pub enum UpdateType {
-    SyncCipherUpdate = 0,
-    SyncCipherCreate = 1,
-    SyncLoginDelete = 2,
-    SyncFolderDelete = 3,
-    SyncCiphers = 4,
+    CipherUpdate = 0,
+    CipherCreate = 1,
+    LoginDelete = 2,
+    FolderDelete = 3,
+    Ciphers = 4,
 
-    SyncVault = 5,
-    SyncOrgKeys = 6,
-    SyncFolderCreate = 7,
-    SyncFolderUpdate = 8,
-    SyncCipherDelete = 9,
+    Vault = 5,
+    OrgKeys = 6,
+    FolderCreate = 7,
+    FolderUpdate = 8,
+    CipherDelete = 9,
     SyncSettings = 10,
 
     LogOut = 11,
 }
+
+use rocket::State;
+pub type Notify<'a> = State<'a, WebSocketUsers>;
 
 pub fn start_notification_server() -> WebSocketUsers {
     let factory = WSFactory::init();
@@ -360,10 +354,7 @@ pub fn start_notification_server() -> WebSocketUsers {
 
     if CONFIG.websocket_enabled {
         thread::spawn(move || {
-            WebSocket::new(factory)
-                .unwrap()
-                .listen(&CONFIG.websocket_url)
-                .unwrap();
+            WebSocket::new(factory).unwrap().listen(&CONFIG.websocket_url).unwrap();
         });
     }
 

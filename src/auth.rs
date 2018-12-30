@@ -1,6 +1,6 @@
-///
-/// JWT Handling
-///
+//
+// JWT Handling
+//
 use crate::util::read_file;
 use chrono::Duration;
 
@@ -15,17 +15,20 @@ const JWT_ALGORITHM: Algorithm = Algorithm::RS256;
 lazy_static! {
     pub static ref DEFAULT_VALIDITY: Duration = Duration::hours(2);
     pub static ref JWT_ISSUER: String = CONFIG.domain.clone();
-
     static ref JWT_HEADER: Header = Header::new(JWT_ALGORITHM);
-
     static ref PRIVATE_RSA_KEY: Vec<u8> = match read_file(&CONFIG.private_rsa_key) {
         Ok(key) => key,
-        Err(e) => panic!("Error loading private RSA Key from {}\n Error: {}", CONFIG.private_rsa_key, e)
+        Err(e) => panic!(
+            "Error loading private RSA Key from {}\n Error: {}",
+            CONFIG.private_rsa_key, e
+        ),
     };
-
     static ref PUBLIC_RSA_KEY: Vec<u8> = match read_file(&CONFIG.public_rsa_key) {
         Ok(key) => key,
-        Err(e) => panic!("Error loading public RSA Key from {}\n Error: {}", CONFIG.public_rsa_key, e)
+        Err(e) => panic!(
+            "Error loading public RSA Key from {}\n Error: {}",
+            CONFIG.public_rsa_key, e
+        ),
     };
 }
 
@@ -65,7 +68,7 @@ pub fn decode_invite_jwt(token: &str) -> Result<InviteJWTClaims, Error> {
         algorithms: vec![JWT_ALGORITHM],
     };
 
-    jsonwebtoken::decode(token, &PUBLIC_RSA_KEY, &validation) 
+    jsonwebtoken::decode(token, &PUBLIC_RSA_KEY, &validation)
         .map(|d| d.claims)
         .map_res("Error decoding invite JWT")
 }
@@ -117,14 +120,14 @@ pub struct InviteJWTClaims {
     pub user_org_id: Option<String>,
 }
 
-///
-/// Bearer token authentication
-///
+//
+// Bearer token authentication
+//
+use rocket::request::{self, FromRequest, Request};
 use rocket::Outcome;
-use rocket::request::{self, Request, FromRequest};
 
+use crate::db::models::{Device, User, UserOrgStatus, UserOrgType, UserOrganization};
 use crate::db::DbConn;
-use crate::db::models::{User, UserOrganization, UserOrgType, UserOrgStatus, Device};
 
 pub struct Headers {
     pub host: String,
@@ -227,10 +230,11 @@ impl<'a, 'r> FromRequest<'a, 'r> for OrgHeaders {
                     Some(Ok(org_id)) => {
                         let conn = match request.guard::<DbConn>() {
                             Outcome::Success(conn) => conn,
-                            _ => err_handler!("Error getting DB")
+                            _ => err_handler!("Error getting DB"),
                         };
 
-                        let org_user = match UserOrganization::find_by_user_and_org(&headers.user.uuid, &org_id, &conn) {
+                        let user = headers.user;
+                        let org_user = match UserOrganization::find_by_user_and_org(&user.uuid, &org_id, &conn) {
                             Some(user) => {
                                 if user.status == UserOrgStatus::Confirmed as i32 {
                                     user
@@ -238,17 +242,18 @@ impl<'a, 'r> FromRequest<'a, 'r> for OrgHeaders {
                                     err_handler!("The current user isn't confirmed member of the organization")
                                 }
                             }
-                            None => err_handler!("The current user isn't member of the organization")
+                            None => err_handler!("The current user isn't member of the organization"),
                         };
 
                         Outcome::Success(Self {
                             host: headers.host,
                             device: headers.device,
-                            user: headers.user,
+                            user,
                             org_user_type: {
                                 if let Some(org_usr_type) = UserOrgType::from_i32(org_user.type_) {
                                     org_usr_type
-                                } else { // This should only happen if the DB is corrupted
+                                } else {
+                                    // This should only happen if the DB is corrupted
                                     err_handler!("Unknown user type in the database")
                                 }
                             },
@@ -319,9 +324,9 @@ impl<'a, 'r> FromRequest<'a, 'r> for OwnerHeaders {
     }
 }
 
-///
-/// Client IP address detection
-///
+//
+// Client IP address detection
+//
 use std::net::IpAddr;
 
 pub struct ClientIp {

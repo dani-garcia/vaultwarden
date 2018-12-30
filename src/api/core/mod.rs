@@ -8,7 +8,6 @@ pub fn routes() -> Vec<Route> {
     let mut mod_routes = routes![
         clear_device_token,
         put_device_token,
-
         get_eq_domains,
         post_eq_domains,
         put_eq_domains,
@@ -25,9 +24,9 @@ pub fn routes() -> Vec<Route> {
     routes
 }
 
-///
-/// Move this somewhere else
-///
+//
+// Move this somewhere else
+//
 use rocket::Route;
 
 use rocket_contrib::json::Json;

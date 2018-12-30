@@ -1,11 +1,10 @@
-use rocket::State;
 use rocket_contrib::json::Json;
 use serde_json::Value;
 
-use crate::db::DbConn;
 use crate::db::models::*;
+use crate::db::DbConn;
 
-use crate::api::{JsonResult, EmptyResult, JsonUpcase, WebSocketUsers, UpdateType};
+use crate::api::{EmptyResult, JsonResult, JsonUpcase, Notify, UpdateType};
 use crate::auth::Headers;
 
 use rocket::Route;
@@ -39,7 +38,7 @@ fn get_folders(headers: Headers, conn: DbConn) -> JsonResult {
 fn get_folder(uuid: String, headers: Headers, conn: DbConn) -> JsonResult {
     let folder = match Folder::find_by_uuid(&uuid, &conn) {
         Some(folder) => folder,
-        _ => err!("Invalid folder")
+        _ => err!("Invalid folder"),
     };
 
     if folder.user_uuid != headers.user.uuid {
@@ -53,33 +52,33 @@ fn get_folder(uuid: String, headers: Headers, conn: DbConn) -> JsonResult {
 #[allow(non_snake_case)]
 
 pub struct FolderData {
-    pub Name: String
+    pub Name: String,
 }
 
 #[post("/folders", data = "<data>")]
-fn post_folders(data: JsonUpcase<FolderData>, headers: Headers, conn: DbConn, ws: State<WebSocketUsers>) -> JsonResult {
+fn post_folders(data: JsonUpcase<FolderData>, headers: Headers, conn: DbConn, nt: Notify) -> JsonResult {
     let data: FolderData = data.into_inner().data;
 
     let mut folder = Folder::new(headers.user.uuid.clone(), data.Name);
 
     folder.save(&conn)?;
-    ws.send_folder_update(UpdateType::SyncFolderCreate, &folder);
+    nt.send_folder_update(UpdateType::FolderCreate, &folder);
 
     Ok(Json(folder.to_json()))
 }
 
 #[post("/folders/<uuid>", data = "<data>")]
-fn post_folder(uuid: String, data: JsonUpcase<FolderData>, headers: Headers, conn: DbConn, ws: State<WebSocketUsers>) -> JsonResult {
-    put_folder(uuid, data, headers, conn, ws)
+fn post_folder(uuid: String, data: JsonUpcase<FolderData>, headers: Headers, conn: DbConn, nt: Notify) -> JsonResult {
+    put_folder(uuid, data, headers, conn, nt)
 }
 
 #[put("/folders/<uuid>", data = "<data>")]
-fn put_folder(uuid: String, data: JsonUpcase<FolderData>, headers: Headers, conn: DbConn, ws: State<WebSocketUsers>) -> JsonResult {
+fn put_folder(uuid: String, data: JsonUpcase<FolderData>, headers: Headers, conn: DbConn, nt: Notify) -> JsonResult {
     let data: FolderData = data.into_inner().data;
 
     let mut folder = match Folder::find_by_uuid(&uuid, &conn) {
         Some(folder) => folder,
-        _ => err!("Invalid folder")
+        _ => err!("Invalid folder"),
     };
 
     if folder.user_uuid != headers.user.uuid {
@@ -89,21 +88,21 @@ fn put_folder(uuid: String, data: JsonUpcase<FolderData>, headers: Headers, conn
     folder.name = data.Name;
 
     folder.save(&conn)?;
-    ws.send_folder_update(UpdateType::SyncFolderUpdate, &folder);
+    nt.send_folder_update(UpdateType::FolderUpdate, &folder);
 
     Ok(Json(folder.to_json()))
 }
 
 #[post("/folders/<uuid>/delete")]
-fn delete_folder_post(uuid: String, headers: Headers, conn: DbConn, ws: State<WebSocketUsers>) -> EmptyResult {
-    delete_folder(uuid, headers, conn, ws)
+fn delete_folder_post(uuid: String, headers: Headers, conn: DbConn, nt: Notify) -> EmptyResult {
+    delete_folder(uuid, headers, conn, nt)
 }
 
 #[delete("/folders/<uuid>")]
-fn delete_folder(uuid: String, headers: Headers, conn: DbConn, ws: State<WebSocketUsers>) -> EmptyResult {
+fn delete_folder(uuid: String, headers: Headers, conn: DbConn, nt: Notify) -> EmptyResult {
     let folder = match Folder::find_by_uuid(&uuid, &conn) {
         Some(folder) => folder,
-        _ => err!("Invalid folder")
+        _ => err!("Invalid folder"),
     };
 
     if folder.user_uuid != headers.user.uuid {
@@ -113,6 +112,6 @@ fn delete_folder(uuid: String, headers: Headers, conn: DbConn, ws: State<WebSock
     // Delete the actual folder entry
     folder.delete(&conn)?;
 
-    ws.send_folder_update(UpdateType::SyncFolderDelete, &folder);
+    nt.send_folder_update(UpdateType::FolderDelete, &folder);
     Ok(())
 }

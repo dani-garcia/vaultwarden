@@ -1,10 +1,10 @@
-///
-/// Web Headers
-///
+//
+// Web Headers
+//
 use rocket::fairing::{Fairing, Info, Kind};
 use rocket::{Request, Response};
 
-pub struct AppHeaders ();
+pub struct AppHeaders();
 
 impl Fairing for AppHeaders {
     fn info(&self) -> Info {
@@ -29,10 +29,9 @@ impl Fairing for AppHeaders {
     }
 }
 
-
-///
-/// File handling
-///
+//
+// File handling
+//
 use std::fs::{self, File};
 use std::io::{Read, Result as IOResult};
 use std::path::Path;
@@ -43,7 +42,7 @@ pub fn file_exists(path: &str) -> bool {
 
 pub fn read_file(path: &str) -> IOResult<Vec<u8>> {
     let mut contents: Vec<u8> = Vec::new();
-    
+
     let mut file = File::open(Path::new(path))?;
     file.read_to_end(&mut contents)?;
 
@@ -75,7 +74,7 @@ pub fn get_display_size(size: i32) -> String {
         } else {
             break;
         }
-    };
+    }
 
     // Round to two decimals
     size = (size * 100.).round() / 100.;
@@ -86,13 +85,12 @@ pub fn get_uuid() -> String {
     uuid::Uuid::new_v4().to_string()
 }
 
+//
+// String util methods
+//
 
-///
-/// String util methods
-///
-
-use std::str::FromStr;
 use std::ops::Try;
+use std::str::FromStr;
 
 pub fn upcase_first(s: &str) -> String {
     let mut c = s.chars();
@@ -102,7 +100,11 @@ pub fn upcase_first(s: &str) -> String {
     }
 }
 
-pub fn try_parse_string<S, T, U>(string: impl Try<Ok = S, Error=U>) -> Option<T> where S: AsRef<str>, T: FromStr {
+pub fn try_parse_string<S, T, U>(string: impl Try<Ok = S, Error = U>) -> Option<T>
+where
+    S: AsRef<str>,
+    T: FromStr,
+{
     if let Ok(Ok(value)) = string.into_result().map(|s| s.as_ref().parse::<T>()) {
         Some(value)
     } else {
@@ -110,7 +112,11 @@ pub fn try_parse_string<S, T, U>(string: impl Try<Ok = S, Error=U>) -> Option<T>
     }
 }
 
-pub fn try_parse_string_or<S, T, U>(string: impl Try<Ok = S, Error=U>, default: T) -> T where S: AsRef<str>, T: FromStr {
+pub fn try_parse_string_or<S, T, U>(string: impl Try<Ok = S, Error = U>, default: T) -> T
+where
+    S: AsRef<str>,
+    T: FromStr,
+{
     if let Ok(Ok(value)) = string.into_result().map(|s| s.as_ref().parse::<T>()) {
         value
     } else {
@@ -118,24 +124,29 @@ pub fn try_parse_string_or<S, T, U>(string: impl Try<Ok = S, Error=U>, default: 
     }
 }
 
-
-///
-/// Env methods
-/// 
+//
+// Env methods
+//
 
 use std::env;
 
-pub fn get_env<V>(key: &str) -> Option<V> where V: FromStr {
+pub fn get_env<V>(key: &str) -> Option<V>
+where
+    V: FromStr,
+{
     try_parse_string(env::var(key))
 }
 
-pub fn get_env_or<V>(key: &str, default: V) -> V where V: FromStr {
+pub fn get_env_or<V>(key: &str, default: V) -> V
+where
+    V: FromStr,
+{
     try_parse_string_or(env::var(key), default)
 }
 
-///
-/// Date util methods
-///
+//
+// Date util methods
+//
 
 use chrono::NaiveDateTime;
 
@@ -145,9 +156,9 @@ pub fn format_date(date: &NaiveDateTime) -> String {
     date.format(DATETIME_FORMAT).to_string()
 }
 
-///
-/// Deserialization methods
-///
+//
+// Deserialization methods
+//
 
 use std::fmt;
 
@@ -163,10 +174,11 @@ pub struct UpCase<T: DeserializeOwned> {
     pub data: T,
 }
 
-/// https://github.com/serde-rs/serde/issues/586
+// https://github.com/serde-rs/serde/issues/586
 pub fn upcase_deserialize<'de, T, D>(deserializer: D) -> Result<T, D::Error>
-    where T: DeserializeOwned,
-          D: Deserializer<'de>
+where
+    T: DeserializeOwned,
+    D: Deserializer<'de>,
 {
     let d = deserializer.deserialize_any(UpCaseVisitor)?;
     T::deserialize(d).map_err(de::Error::custom)
@@ -182,7 +194,8 @@ impl<'de> Visitor<'de> for UpCaseVisitor {
     }
 
     fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
-        where A: MapAccess<'de>
+    where
+        A: MapAccess<'de>,
     {
         let mut result_map = JsonMap::new();
 
@@ -194,7 +207,9 @@ impl<'de> Visitor<'de> for UpCaseVisitor {
     }
 
     fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
-        where A: SeqAccess<'de> {
+    where
+        A: SeqAccess<'de>,
+    {
         let mut result_seq = Vec::<Value>::new();
 
         while let Some(value) = seq.next_element()? {
@@ -208,13 +223,12 @@ impl<'de> Visitor<'de> for UpCaseVisitor {
 fn upcase_value(value: &Value) -> Value {
     if let Some(map) = value.as_object() {
         let mut new_value = json!({});
-        
+
         for (key, val) in map {
             let processed_key = _process_key(key);
             new_value[processed_key] = upcase_value(val);
         }
         new_value
-    
     } else if let Some(array) = value.as_array() {
         // Initialize array with null values
         let mut new_value = json!(vec![Value::Null; array.len()]);
@@ -223,7 +237,6 @@ fn upcase_value(value: &Value) -> Value {
             new_value[index] = upcase_value(val);
         }
         new_value
-    
     } else {
         value.clone()
     }
