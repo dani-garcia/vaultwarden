@@ -531,7 +531,7 @@ fn reinvite_user(org_id: String, user_uuid: String, _data: JsonUpcase<InviteData
     };
 
     if Invitation::find_by_mail(&user.email, &conn).is_none() {
-        err!("No invitation found for user.")       
+        err!("No invitation found for user to resend. Try inviting them first.")       
     }
 
     let mut org_user_id = None;
