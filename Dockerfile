@@ -33,9 +33,10 @@ FROM rust as build
 RUN USER=root cargo new --bin app
 WORKDIR /app
 
-# Copies over *only* your manifests and vendored dependencies
+# Copies over *only* your manifests and build files
 COPY ./Cargo.* ./
 COPY ./rust-toolchain ./rust-toolchain
+COPY ./build.rs ./build.rs
 
 # Builds your dependencies and removes the
 # dummy project, except the target folder
