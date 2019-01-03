@@ -68,12 +68,12 @@ struct Cached<R>(R, &'static str);
 impl<R> Cached<R> {
     fn long(r: R) -> Cached<R> {
         // 7 days
-        Cached(r, "public, max-age=604800".into())
+        Cached(r, "public, max-age=604800")
     }
 
     fn short(r: R) -> Cached<R> {
         // 10 minutes
-        Cached(r, "public, max-age=600".into())
+        Cached(r, "public, max-age=600")
     }
 }
 

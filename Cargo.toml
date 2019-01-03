@@ -34,9 +34,9 @@ rmpv = "0.4.0"
 chashmap = "2.2.0"
 
 # A generic serialization/deserialization framework
-serde = "1.0.83"
-serde_derive = "1.0.83"
-serde_json = "1.0.33"
+serde = "1.0.84"
+serde_derive = "1.0.84"
+serde_json = "1.0.34"
 
 # Logging
 log = "0.4.6"
@@ -63,13 +63,13 @@ chrono = "0.4.6"
 oath = "0.10.2"
 
 # Data encoding library
-data-encoding = "2.1.1"
+data-encoding = "2.1.2"
 
 # JWT library
 jsonwebtoken = "5.0.1"
 
 # U2F library
-u2f = "0.1.2"
+u2f = "0.1.4"
 
 # Yubico Library
 yubico = { version = "=0.4.0", features = ["online"], default-features = false }
@@ -102,9 +102,6 @@ rmp = { git = 'https://github.com/dani-garcia/msgpack-rust' }
 # Use new native_tls version 0.2
 lettre = { git = 'https://github.com/lettre/lettre', rev = 'c988b1760ad81' }
 lettre_email = { git = 'https://github.com/lettre/lettre', rev = 'c988b1760ad81' }
-
-# Version 0.1.2 from crates.io lacks a commit that fixes a certificate error
-u2f = { git = 'https://github.com/wisespace-io/u2f-rs', rev = '75b9fa5afb4c5' }
 
 # Allows optional libusb support
 yubico = { git = 'https://github.com/dani-garcia/yubico-rs' }

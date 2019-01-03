@@ -332,9 +332,9 @@ impl Config {
             attachments_folder: get_env_or("ATTACHMENTS_FOLDER", format!("{}/{}", &df, "attachments")),
 
             // icon_cache_ttl defaults to 30 days (30 * 24 * 60 * 60 seconds)
-            icon_cache_ttl: get_env_or("ICON_CACHE_TTL", 2592000u64),
+            icon_cache_ttl: get_env_or("ICON_CACHE_TTL", 2_592_000),
             // icon_cache_negttl defaults to 3 days (3 * 24 * 60 * 60 seconds)
-            icon_cache_negttl: get_env_or("ICON_CACHE_NEGTTL", 259200u64),
+            icon_cache_negttl: get_env_or("ICON_CACHE_NEGTTL", 259_200),
 
             private_rsa_key: format!("{}.der", &key),
             private_rsa_key_pem: format!("{}.pem", &key),

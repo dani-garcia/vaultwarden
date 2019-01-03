@@ -287,23 +287,22 @@ struct EnableU2FData {
 }
 
 // This struct is copied from the U2F lib
-// because challenge is not always sent
+// to add an optional error code
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RegisterResponseCopy {
     pub registration_data: String,
     pub version: String,
-    pub challenge: Option<String>,
-    pub error_code: Option<NumberOrString>,
     pub client_data: String,
+    
+    pub error_code: Option<NumberOrString>,
 }
 
 impl RegisterResponseCopy {
-    fn into_response(self, challenge: String) -> RegisterResponse {
+    fn into_response(self) -> RegisterResponse {
         RegisterResponse {
             registration_data: self.registration_data,
             version: self.version,
-            challenge,
             client_data: self.client_data,
         }
     }
@@ -336,7 +335,7 @@ fn activate_u2f(data: JsonUpcase<EnableU2FData>, headers: Headers, conn: DbConn)
             err!("Error registering U2F token")
         }
 
-        let response = response_copy.into_response(challenge.challenge.clone());
+        let response = response_copy.into_response();
 
         let registration = U2F.register_response(challenge.clone(), response)?;
         // TODO: Allow more than one U2F device

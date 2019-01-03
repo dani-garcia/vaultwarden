@@ -78,7 +78,7 @@ fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> EmptyResult {
                     };
 
                     let claims: InviteJWTClaims = decode_invite_jwt(&token)?;
-                    if &claims.email == &data.Email {
+                    if claims.email == data.Email {
                         user
                     } else {
                         err!("Registration email does not match invite email")

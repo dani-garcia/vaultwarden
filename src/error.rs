@@ -76,17 +76,17 @@ impl Error {
     }
 }
 
-pub trait MapResult<S, E> {
-    fn map_res(self, msg: &str) -> Result<S, E>;
+pub trait MapResult<S> {
+    fn map_res(self, msg: &str) -> Result<S, Error>;
 }
 
-impl<S, E: Into<Error>> MapResult<S, Error> for Result<S, E> {
+impl<S, E: Into<Error>> MapResult<S> for Result<S, E> {
     fn map_res(self, msg: &str) -> Result<S, Error> {
         self.map_err(|e| e.into().with_msg(msg))
     }
 }
 
-impl<E: Into<Error>> MapResult<(), Error> for Result<usize, E> {
+impl<E: Into<Error>> MapResult<()> for Result<usize, E> {
     fn map_res(self, msg: &str) -> Result<(), Error> {
         self.and(Ok(())).map_res(msg)
     }
