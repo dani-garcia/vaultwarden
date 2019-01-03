@@ -118,6 +118,7 @@ pub struct InviteJWTClaims {
     pub email: String,
     pub org_id: String,
     pub user_org_id: Option<String>,
+    pub inviter_email: String,
 }
 
 //
