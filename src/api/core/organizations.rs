@@ -7,13 +7,11 @@ use crate::db::DbConn;
 use crate::CONFIG;
 
 use crate::api::{EmptyResult, JsonResult, JsonUpcase, Notify, NumberOrString, PasswordData, UpdateType};
-use crate::auth::{decode_invite_jwt, encode_jwt, AdminHeaders, Headers, InviteJWTClaims, OwnerHeaders, JWT_ISSUER};
+use crate::auth::{decode_invite_jwt, generate_invite_claims, encode_jwt, AdminHeaders, Headers, InviteJWTClaims, OwnerHeaders};
 
 use crate::mail;
 
 use serde::{Deserialize, Deserializer};
-
-use chrono::{Duration, Utc};
 
 use rocket::Route;
 
@@ -513,19 +511,10 @@ fn send_invite(org_id: String, data: JsonUpcase<InviteData>, headers: AdminHeade
                 user.email.clone(),
                 org_id.clone(),
                 Some(new_user.uuid.clone()),
-                headers.user.email.clone(),
+                Some(headers.user.email.clone()),
             );
             let invite_token = encode_jwt(&claims);
-            let subject = format!("Join {}", &org_name);
-            let body = format!(
-                "<html>
-                <p>You have been invited to join the <b>{}</b> organization.<br><br>
-                <a href=\"{}/#/accept-organization/?organizationId={}&organizationUserId={}&email={}&organizationName={}&token={}\">Click here to join</a></p>
-                <p>If you do not wish to join this organization, you can safely ignore this email.</p>
-                </html>",
-                org_name, CONFIG.domain, org_id, &new_user.uuid, &user.email, org_name, invite_token
-            );
-            mail::send_email(&user.email, &subject, &body, mail_config)?;
+            mail::send_invite(&email, &org_id, &new_user.uuid, &invite_token, &org_name, mail_config)?;
         }
     }
 
@@ -566,20 +555,18 @@ fn reinvite_user(org_id: String, user_org: String, headers: AdminHeaders, conn: 
         user.email.clone(),
         org_id.clone(),
         Some(user_org.uuid.clone()),
-        headers.user.email.clone(),
+        Some(headers.user.email.clone()),
     );
     let invite_token = encode_jwt(&claims);
     if let Some(ref mail_config) = CONFIG.mail {
-        let subject = format!("Join {}", &org_name);
-        let body = format!(
-            "<html>
-             <p>You have been invited to join the <b>{}</b> organization.<br><br>
-             <a href=\"{}/#/accept-organization/?organizationId={}&organizationUserId={}&email={}&organizationName={}&token={}\">Click here to join</a></p>
-             <p>If you do not wish to join this organization, you can safely ignore this email.</p>
-             </html>",
-            org_name, CONFIG.domain, org_id, user_org.uuid, &user.email, org_name, invite_token
-        );
-        mail::send_email(&user.email, &subject, &body, mail_config)?;
+        mail::send_invite(
+        &user.email,
+        &org_id,
+        &user_org.uuid,
+        &invite_token,
+        &org_name,
+        mail_config,
+        )?;
     }
 
     Ok(())
@@ -589,25 +576,6 @@ fn reinvite_user(org_id: String, user_org: String, headers: AdminHeaders, conn: 
 #[allow(non_snake_case)]
 struct AcceptData {
     Token: String,
-}
-
-fn generate_invite_claims(uuid: String, 
-                          email: String, 
-                          org_id: String, 
-                          org_user_id: Option<String>, 
-                          inviter_email: String,
-) -> InviteJWTClaims {
-    let time_now = Utc::now().naive_utc();
-    InviteJWTClaims {
-        nbf: time_now.timestamp(),
-        exp: (time_now + Duration::days(5)).timestamp(),
-        iss: JWT_ISSUER.to_string(),
-        sub: uuid.clone(),
-        email: email.clone(),
-        org_id: org_id.clone(),
-        user_org_id: org_user_id.clone(),
-        inviter_email: inviter_email.clone(),
-    }
 }
 
 #[post("/organizations/<_org_id>/users/<_org_user_id>/accept", data = "<data>")]
@@ -638,15 +606,16 @@ fn accept_invite(_org_id: String, _org_user_id: String, data: JsonUpcase<AcceptD
 
     if let Some(ref mail_config) = CONFIG.mail {
         let org_name = match Organization::find_by_uuid(&claims.org_id, &conn) {
-            Some(org) => org.name,
-            None => err!("Error looking up organization."),
+                Some(org) => org.name,
+                None => String::from("bitwarden_rs"),
         };
-        let subject = "Invitation accepted";
-        let body = format!(
-            "<html>
-             <p>Your invitation to <b>{}</b> to join <b>{}</b> was accepted. Please log in to the bitwarden_rs server and confirm them from the organization management page.</p>
-             </html>", claims.email, org_name);
-        mail::send_email(&claims.inviter_email, &subject, &body, mail_config)?;
+        if claims.invited_by_email.is_some() {
+            // User was invited to an organization, so they must be confirmed manually after acceptance
+            mail::send_invite_accepted(&claims.email, &claims.invited_by_email.unwrap(), &org_name, mail_config)?;
+        } else {
+            // User was invited from /admin, so they are automatically confirmed
+            mail::send_invite_confirmed(&claims.email, &org_name, mail_config)?;
+        }
     }
 
     Ok(())
@@ -690,12 +659,7 @@ fn confirm_invite(
             Some(user) => user.email,
             None => err!("Error looking up user."),
         };
-        let subject = format!("Invitation to {} confirmed", org_name);
-        let body = format!(
-            "<html>
-             <p>Your invitation to join <b>{}</b> was accepted. It will now appear under the Organizations the next time you log into the web vault.</p>
-             </html>", org_name);
-        mail::send_email(&address, &subject, &body, mail_config)?;
+        mail::send_invite_confirmed(&address, &org_name, mail_config)?;
     }
 
     user_to_confirm.save(&conn)
