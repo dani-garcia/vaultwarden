@@ -89,8 +89,8 @@ pub fn send_invite_accepted(
         ("Invitation accepted",
         format!(
             "<html>
-             <p>Your invitation to <b>{}</b> to join <b>{}</b> was accepted. Please log in to the bitwarden_rs server and confirm them from the organization management page.</p>
-             </html>", new_user_email, org_name))
+             <p>Your invitation for <b>{}</b> to join <b>{}</b> was accepted. Please <a href=\"{}\">log in</a> to the bitwarden_rs server and confirm them from the organization management page.</p>
+             </html>", new_user_email, org_name, CONFIG.domain))
     };
 
     send_email(&address, &subject, &body, &config)
@@ -105,8 +105,8 @@ pub fn send_invite_confirmed(
         (format!("Invitation to {} confirmed", org_name),
         format!(
             "<html>
-             <p>Your invitation to join <b>{}</b> was accepted. It will now appear under the Organizations the next time you log into the web vault.</p>
-             </html>", org_name))
+             <p>Your invitation to join <b>{}</b> was confirmed. It will now appear under the Organizations the next time you <a href=\"{}\">log in</a> to the web vault.</p>
+             </html>", org_name, CONFIG.domain))
     };
 
     send_email(&address, &subject, &body, &config)
@@ -122,8 +122,8 @@ fn send_email(address: &str, subject: &str, body: &str, config: &MailConfig) -> 
     .build()
     .map_err(|e| Error::new("Error building email", e.to_string()))?;
 
-mailer(config)
-    .send(email.into())
-    .map_err(|e| Error::new("Error sending email", e.to_string()))
-    .and(Ok(()))
+    mailer(config)
+        .send(email.into())
+        .map_err(|e| Error::new("Error sending email", e.to_string()))
+        .and(Ok(()))
 }
