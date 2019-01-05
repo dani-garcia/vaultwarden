@@ -4,7 +4,7 @@
 ####################### VAULT BUILD IMAGE  #######################
 FROM alpine as vault
 
-ENV VAULT_VERSION "v2.7.1"
+ENV VAULT_VERSION "v2.8.0"
 
 ENV URL "https://github.com/dani-garcia/bw_web_builds/releases/download/$VAULT_VERSION/bw_web_$VAULT_VERSION.tar.gz"
 
