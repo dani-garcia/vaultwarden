@@ -609,9 +609,9 @@ fn accept_invite(_org_id: String, _org_user_id: String, data: JsonUpcase<AcceptD
                 Some(org) => org.name,
                 None => String::from("bitwarden_rs"),
         };
-        if claims.invited_by_email.is_some() {
+        if let Some(invited_by_email) = &claims.invited_by_email {
             // User was invited to an organization, so they must be confirmed manually after acceptance
-            mail::send_invite_accepted(&claims.email, &claims.invited_by_email.unwrap(), &org_name, mail_config)?;
+            mail::send_invite_accepted(&claims.email, invited_by_email, &org_name, mail_config)?;
         } else {
             // User was invited from /admin, so they are automatically confirmed
             mail::send_invite_confirmed(&claims.email, &org_name, mail_config)?;
