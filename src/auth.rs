@@ -116,14 +116,14 @@ pub struct InviteJWTClaims {
     pub sub: String,
 
     pub email: String,
-    pub org_id: String,
+    pub org_id: Option<String>,
     pub user_org_id: Option<String>,
     pub invited_by_email: Option<String>,
 }
 
 pub fn generate_invite_claims(uuid: String, 
                           email: String, 
-                          org_id: String, 
+                          org_id: Option<String>, 
                           org_user_id: Option<String>, 
                           invited_by_email: Option<String>,
 ) -> InviteJWTClaims {
