@@ -10,7 +10,7 @@ data
 *.iml
 
 # Environment file
-# .env
+.env
 
 # Web vault
 web-vault
