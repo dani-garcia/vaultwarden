@@ -6,7 +6,7 @@ use native_tls::{Protocol, TlsConnector};
 
 use crate::MailConfig;
 use crate::CONFIG;
-
+use crate::auth::{generate_invite_claims, encode_jwt};
 use crate::api::EmptyResult;
 use crate::error::Error;
 
@@ -53,28 +53,26 @@ pub fn send_password_hint(address: &str, hint: Option<String>, config: &MailConf
         )
     };
 
-    let email = EmailBuilder::new()
-        .to(address)
-        .from((config.smtp_from.clone(), "Bitwarden-rs"))
-        .subject(subject)
-        .body(body)
-        .build()
-        .map_err(|e| Error::new("Error building hint email", e.to_string()))?;
-
-    mailer(config)
-        .send(email.into())
-        .map_err(|e| Error::new("Error sending hint email", e.to_string()))
-        .and(Ok(()))
+    send_email(&address, &subject, &body, &config)
 }
 
 pub fn send_invite(
     address: &str,
-    org_id: &str,
-    org_user_id: &str,
-    token: &str,
+    uuid: &str,
+    org_id: Option<String>,
+    org_user_id: Option<String>,
     org_name: &str,
+    invited_by_email: Option<String>,
     config: &MailConfig,
 ) -> EmptyResult {
+    let claims = generate_invite_claims(
+                uuid.to_string(),
+                String::from(address),
+                org_id.clone(),
+                org_user_id.clone(),
+                invited_by_email.clone(),
+            );
+    let invite_token = encode_jwt(&claims);
     let (subject, body) = {
         (format!("Join {}", &org_name),
         format!(
@@ -83,21 +81,58 @@ pub fn send_invite(
              <a href=\"{}/#/accept-organization/?organizationId={}&organizationUserId={}&email={}&organizationName={}&token={}\">Click here to join</a></p>
              <p>If you do not wish to join this organization, you can safely ignore this email.</p>
              </html>",
-            org_name, CONFIG.domain, org_id, org_user_id, address, org_name, token
+            org_name, CONFIG.domain, org_id.unwrap_or("_".to_string()), org_user_id.unwrap_or("_".to_string()), address, org_name, invite_token
         ))
     };
 
+    send_email(&address, &subject, &body, &config)
+}
+
+pub fn send_invite_accepted(
+    new_user_email: &str,
+    address: &str,
+    org_name: &str,
+    config: &MailConfig,
+) -> EmptyResult {
+    let (subject, body) = {
+        ("Invitation accepted",
+        format!(
+            "<html>
+             <p>Your invitation for <b>{}</b> to join <b>{}</b> was accepted. Please <a href=\"{}\">log in</a> to the bitwarden_rs server and confirm them from the organization management page.</p>
+             </html>", new_user_email, org_name, CONFIG.domain))
+    };
+
+    send_email(&address, &subject, &body, &config)
+}
+
+pub fn send_invite_confirmed(
+    address: &str,
+    org_name: &str,
+    config: &MailConfig,
+) -> EmptyResult {
+    let (subject, body) = {
+        (format!("Invitation to {} confirmed", org_name),
+        format!(
+            "<html>
+             <p>Your invitation to join <b>{}</b> was confirmed. It will now appear under the Organizations the next time you <a href=\"{}\">log in</a> to the web vault.</p>
+             </html>", org_name, CONFIG.domain))
+    };
+
+    send_email(&address, &subject, &body, &config)
+}
+
+fn send_email(address: &str, subject: &str, body: &str, config: &MailConfig) -> EmptyResult {
     let email = EmailBuilder::new()
-        .to(address)
-        .from((config.smtp_from.clone(), "Bitwarden-rs"))
-        .subject(subject)
-        .header(("Content-Type", "text/html"))
-        .body(body)
-        .build()
-        .map_err(|e| Error::new("Error building invite email", e.to_string()))?;
+    .to(address)
+    .from((config.smtp_from.clone(), "Bitwarden-rs"))
+    .subject(subject)
+    .header(("Content-Type", "text/html"))
+    .body(body)
+    .build()
+    .map_err(|e| Error::new("Error building email", e.to_string()))?;
 
     mailer(config)
         .send(email.into())
-        .map_err(|e| Error::new("Error sending invite email", e.to_string()))
+        .map_err(|e| Error::new("Error sending email", e.to_string()))
         .and(Ok(()))
 }

@@ -2,7 +2,7 @@
 // JWT Handling
 //
 use crate::util::read_file;
-use chrono::Duration;
+use chrono::{Duration, Utc};
 
 use jsonwebtoken::{self, Algorithm, Header};
 use serde::ser::Serialize;
@@ -116,8 +116,28 @@ pub struct InviteJWTClaims {
     pub sub: String,
 
     pub email: String,
-    pub org_id: String,
+    pub org_id: Option<String>,
     pub user_org_id: Option<String>,
+    pub invited_by_email: Option<String>,
+}
+
+pub fn generate_invite_claims(uuid: String, 
+                          email: String, 
+                          org_id: Option<String>, 
+                          org_user_id: Option<String>, 
+                          invited_by_email: Option<String>,
+) -> InviteJWTClaims {
+    let time_now = Utc::now().naive_utc();
+    InviteJWTClaims {
+        nbf: time_now.timestamp(),
+        exp: (time_now + Duration::days(5)).timestamp(),
+        iss: JWT_ISSUER.to_string(),
+        sub: uuid.clone(),
+        email: email.clone(),
+        org_id: org_id.clone(),
+        user_org_id: org_user_id.clone(),
+        invited_by_email: invited_by_email.clone(),
+    }
 }
 
 //

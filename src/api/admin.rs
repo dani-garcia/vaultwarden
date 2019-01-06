@@ -4,6 +4,7 @@ use serde_json::Value;
 use crate::api::{JsonResult, JsonUpcase};
 use crate::CONFIG;
 
+use crate::mail;
 use crate::db::models::*;
 use crate::db::DbConn;
 
@@ -31,7 +32,7 @@ fn get_users(_token: AdminToken, conn: DbConn) -> JsonResult {
 #[post("/invite", data = "<data>")]
 fn invite_user(data: JsonUpcase<InviteData>, _token: AdminToken, conn: DbConn) -> JsonResult {
     let data: InviteData = data.into_inner().data;
-
+    let email = data.Email.clone();
     if User::find_by_mail(&data.Email, &conn).is_some() {
         err!("User already exists")
     }
@@ -43,7 +44,12 @@ fn invite_user(data: JsonUpcase<InviteData>, _token: AdminToken, conn: DbConn) -
     let mut invitation = Invitation::new(data.Email);
     invitation.save(&conn)?;
 
-    // TODO: Might want to send an email?
+    if let Some(ref mail_config) = CONFIG.mail {
+        let mut user = User::new(email);
+        user.save(&conn)?;
+        let org_name = "bitwarden_rs";
+        mail::send_invite(&user.email, &user.uuid, None, None, &org_name, None, mail_config)?;
+    }
 
     Ok(Json(json!({})))
 }

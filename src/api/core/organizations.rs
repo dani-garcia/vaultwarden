@@ -7,13 +7,11 @@ use crate::db::DbConn;
 use crate::CONFIG;
 
 use crate::api::{EmptyResult, JsonResult, JsonUpcase, Notify, NumberOrString, PasswordData, UpdateType};
-use crate::auth::{decode_invite_jwt, encode_jwt, AdminHeaders, Headers, InviteJWTClaims, OwnerHeaders, JWT_ISSUER};
+use crate::auth::{decode_invite_jwt, AdminHeaders, Headers, InviteJWTClaims, OwnerHeaders};
 
 use crate::mail;
 
 use serde::{Deserialize, Deserializer};
-
-use chrono::{Duration, Utc};
 
 use rocket::Route;
 
@@ -508,14 +506,16 @@ fn send_invite(org_id: String, data: JsonUpcase<InviteData>, headers: AdminHeade
                 Some(org) => org.name,
                 None => err!("Error looking up organization"),
             };
-            let claims = generate_invite_claims(
-                user.uuid.to_string(),
-                user.email.clone(),
-                org_id.clone(),
-                Some(new_user.uuid.clone()),
-            );
-            let invite_token = encode_jwt(&claims);
-            mail::send_invite(&email, &org_id, &new_user.uuid, &invite_token, &org_name, mail_config)?;
+            
+            mail::send_invite(
+                &email, 
+                &user.uuid, 
+                Some(org_id.clone()), 
+                Some(new_user.uuid), 
+                &org_name, 
+                Some(headers.user.email.clone()), 
+                mail_config
+                )?;
         }
     }
 
@@ -523,7 +523,7 @@ fn send_invite(org_id: String, data: JsonUpcase<InviteData>, headers: AdminHeade
 }
 
 #[post("/organizations/<org_id>/users/<user_org>/reinvite")]
-fn reinvite_user(org_id: String, user_org: String, _headers: AdminHeaders, conn: DbConn) -> EmptyResult {
+fn reinvite_user(org_id: String, user_org: String, headers: AdminHeaders, conn: DbConn) -> EmptyResult {
     if !CONFIG.invitations_allowed {
         err!("Invitations are not allowed.")
     }
@@ -551,21 +551,15 @@ fn reinvite_user(org_id: String, user_org: String, _headers: AdminHeaders, conn:
         None => err!("Error looking up organization."),
     };
 
-    let claims = generate_invite_claims(
-        user.uuid.to_string(),
-        user.email.clone(),
-        org_id.clone(),
-        Some(user_org.uuid.clone()),
-    );
-    let invite_token = encode_jwt(&claims);
     if let Some(ref mail_config) = CONFIG.mail {
         mail::send_invite(
-            &user.email,
-            &org_id,
-            &user_org.uuid,
-            &invite_token,
-            &org_name,
-            mail_config,
+        &user.email,
+        &user.uuid,
+        Some(org_id),
+        Some(user_org.uuid),
+        &org_name,
+        Some(headers.user.email),
+        mail_config,
         )?;
     }
 
@@ -578,19 +572,6 @@ struct AcceptData {
     Token: String,
 }
 
-fn generate_invite_claims(uuid: String, email: String, org_id: String, org_user_id: Option<String>) -> InviteJWTClaims {
-    let time_now = Utc::now().naive_utc();
-    InviteJWTClaims {
-        nbf: time_now.timestamp(),
-        exp: (time_now + Duration::days(5)).timestamp(),
-        iss: JWT_ISSUER.to_string(),
-        sub: uuid.clone(),
-        email: email.clone(),
-        org_id: org_id.clone(),
-        user_org_id: org_user_id.clone(),
-    }
-}
-
 #[post("/organizations/<_org_id>/users/<_org_user_id>/accept", data = "<data>")]
 fn accept_invite(_org_id: String, _org_user_id: String, data: JsonUpcase<AcceptData>, conn: DbConn) -> EmptyResult {
     // The web-vault passes org_id and org_user_id in the URL, but we are just reading them from the JWT instead
@@ -601,10 +582,10 @@ fn accept_invite(_org_id: String, _org_user_id: String, data: JsonUpcase<AcceptD
     match User::find_by_mail(&claims.email, &conn) {
         Some(_) => {
             Invitation::take(&claims.email, &conn);
-            if claims.user_org_id.is_some() {
+            if claims.user_org_id.is_some() && claims.org_id.is_some() {
                 // If this isn't the virtual_org, mark userorg as accepted
                 let mut user_org =
-                    match UserOrganization::find_by_uuid_and_org(&claims.user_org_id.unwrap(), &claims.org_id, &conn) {
+                    match UserOrganization::find_by_uuid_and_org(&claims.user_org_id.unwrap(), &claims.org_id.clone().unwrap(), &conn) {
                         Some(user_org) => user_org,
                         None => err!("Error accepting the invitation"),
                     };
@@ -615,6 +596,23 @@ fn accept_invite(_org_id: String, _org_user_id: String, data: JsonUpcase<AcceptD
             }
         }
         None => err!("Invited user not found"),
+    }
+
+    if let Some(ref mail_config) = CONFIG.mail {
+        let mut org_name = String::from("bitwarden_rs");
+        if let Some(org_id) = &claims.org_id {
+            org_name = match Organization::find_by_uuid(&org_id, &conn) {
+                Some(org) => org.name,
+                None => err!("Organization not found.")
+            };
+        };
+        if let Some(invited_by_email) = &claims.invited_by_email {
+            // User was invited to an organization, so they must be confirmed manually after acceptance
+            mail::send_invite_accepted(&claims.email, invited_by_email, &org_name, mail_config)?;
+        } else {
+            // User was invited from /admin, so they are automatically confirmed
+            mail::send_invite_confirmed(&claims.email, &org_name, mail_config)?;
+        }
     }
 
     Ok(())
@@ -648,6 +646,18 @@ fn confirm_invite(
         Some(key) => key.to_string(),
         None => err!("Invalid key provided"),
     };
+
+    if let Some(ref mail_config) = CONFIG.mail {
+        let org_name = match Organization::find_by_uuid(&org_id, &conn) {
+            Some(org) => org.name,
+            None => err!("Error looking up organization."),
+        };
+        let address = match User::find_by_uuid(&user_to_confirm.user_uuid, &conn) {
+            Some(user) => user.email,
+            None => err!("Error looking up user."),
+        };
+        mail::send_invite_confirmed(&address, &org_name, mail_config)?;
+    }
 
     user_to_confirm.save(&conn)
 }
