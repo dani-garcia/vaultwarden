@@ -534,17 +534,19 @@ fn reinvite_user(org_id: String, user_org: String, headers: AdminHeaders, conn: 
 
     let user_org = match UserOrganization::find_by_uuid(&user_org, &conn) {
         Some(user_org) => user_org,
-        None => err!("UserOrg not found."),
+        None => err!("The user hasn't been invited to the organization."),
     };
+
+    if user_org.status != UserOrgStatus::Invited as i32 {
+        err!("The user is already accepted or confirmed to the organization")
+    }
 
     let user = match User::find_by_uuid(&user_org.user_uuid, &conn) {
         Some(user) => user,
         None => err!("User not found."),
     };
-
-    if Invitation::find_by_mail(&user.email, &conn).is_none() {
-        err!("No invitation found for user to resend. Try inviting them first.")
-    }
+    
+    Invitation::take(&user.email, &conn);
 
     let org_name = match Organization::find_by_uuid(&org_id, &conn) {
         Some(org) => org.name,
@@ -583,7 +585,6 @@ fn accept_invite(_org_id: String, _org_user_id: String, data: JsonUpcase<AcceptD
         Some(_) => {
             Invitation::take(&claims.email, &conn);
             if claims.user_org_id.is_some() && claims.org_id.is_some() {
-                // If this isn't the virtual_org, mark userorg as accepted
                 let mut user_org =
                     match UserOrganization::find_by_uuid_and_org(&claims.user_org_id.unwrap(), &claims.org_id.clone().unwrap(), &conn) {
                         Some(user_org) => user_org,
