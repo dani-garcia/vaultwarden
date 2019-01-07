@@ -66,8 +66,13 @@
                 row.find(".tmp-icon").attr("src", identicon(user.Email))
 
                 row.find(".tmp-del").on("click", function (e) {
-                    if (confirm("Delete User '" + user.Name + "'?")) {
-                        deleteUser(user.Id);
+                    var name = prompt("To delete user '" + user.Name + "', please type the name below")
+                    if (name) {
+                        if (name == user.Name) {
+                            deleteUser(user.Id);
+                        } else {
+                            alert("Wrong name, please try again")
+                        }
                     }
                     return false;
                 });
