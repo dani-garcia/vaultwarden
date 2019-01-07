@@ -78,7 +78,8 @@ pub fn send_invite(
         format!(
             "<html>
              <p>You have been invited to join the <b>{}</b> organization.<br><br>
-             <a href=\"{}/#/accept-organization/?organizationId={}&organizationUserId={}&email={}&organizationName={}&token={}\">Click here to join</a></p>
+             <a href=\"{}/#/accept-organization/?organizationId={}&organizationUserId={}&email={}&organizationName={}&token={}\">
+             Click here to join</a></p>
              <p>If you do not wish to join this organization, you can safely ignore this email.</p>
              </html>",
             org_name, CONFIG.domain, org_id.unwrap_or("_".to_string()), org_user_id.unwrap_or("_".to_string()), address, org_name, invite_token

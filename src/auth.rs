@@ -51,7 +51,9 @@ pub fn decode_jwt(token: &str) -> Result<JWTClaims, Error> {
         algorithms: vec![JWT_ALGORITHM],
     };
 
-    jsonwebtoken::decode(token, &PUBLIC_RSA_KEY, &validation)
+    let token = token.replace(char::is_whitespace, "");
+
+    jsonwebtoken::decode(&token, &PUBLIC_RSA_KEY, &validation)
         .map(|d| d.claims)
         .map_res("Error decoding login JWT")
 }
@@ -68,7 +70,9 @@ pub fn decode_invite_jwt(token: &str) -> Result<InviteJWTClaims, Error> {
         algorithms: vec![JWT_ALGORITHM],
     };
 
-    jsonwebtoken::decode(token, &PUBLIC_RSA_KEY, &validation)
+    let token = token.replace(char::is_whitespace, "");
+
+    jsonwebtoken::decode(&token, &PUBLIC_RSA_KEY, &validation)
         .map(|d| d.claims)
         .map_res("Error decoding invite JWT")
 }
