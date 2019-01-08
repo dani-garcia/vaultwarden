@@ -545,8 +545,9 @@ fn reinvite_user(org_id: String, user_org: String, headers: AdminHeaders, conn: 
         Some(user) => user,
         None => err!("User not found."),
     };
-    
-    Invitation::take(&user.email, &conn);
+
+    let mut invitation = Invitation::new(user.email.clone());
+    invitation.save(&conn)?;
 
     let org_name = match Organization::find_by_uuid(&org_id, &conn) {
         Some(org) => org.name,
