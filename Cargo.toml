@@ -19,7 +19,7 @@ rocket = { version = "0.4.0", features = ["tls"], default-features = false }
 rocket_contrib = "0.4.0"
 
 # HTTP client
-reqwest = "0.9.5"
+reqwest = "0.9.6"
 
 # multipart/form-data support
 multipart = "0.15.4"
