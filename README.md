@@ -3,10 +3,11 @@
 ---
 
 [![Travis Build Status](https://travis-ci.org/dani-garcia/bitwarden_rs.svg?branch=master)](https://travis-ci.org/dani-garcia/bitwarden_rs)
+[![Docker Pulls](https://img.shields.io/docker/pulls/mprasil/bitwarden.svg)](https://hub.docker.com/r/mprasil/bitwarden)
 [![Dependency Status](https://deps.rs/repo/github/dani-garcia/bitwarden_rs/status.svg)](https://deps.rs/repo/github/dani-garcia/bitwarden_rs)
 [![GitHub Release](https://img.shields.io/github/release/dani-garcia/bitwarden_rs.svg)](https://github.com/dani-garcia/bitwarden_rs/releases/latest)
 [![GPL-3.0 Licensed](https://img.shields.io/github/license/dani-garcia/bitwarden_rs.svg)](https://github.com/dani-garcia/bitwarden_rs/blob/master/LICENSE.txt)
-[![Matrix Chat](https://matrix.to/img/matrix-badge.svg)](https://matrix.to/#/#bitwarden_rs:matrix.org)
+[![Matrix Chat](https://img.shields.io/matrix/bitwarden_rs:matrix.org.svg?logo=matrix)](https://matrix.to/#/#bitwarden_rs:matrix.org)
 
 Image is based on [Rust implementation of Bitwarden API](https://github.com/dani-garcia/bitwarden_rs).
 
