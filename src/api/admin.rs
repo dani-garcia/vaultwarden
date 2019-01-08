@@ -91,8 +91,15 @@ impl<'a, 'r> FromRequest<'a, 'r> for AdminToken {
         // Option 2a: Send it to admin email, like upstream
         // Option 2b: Print in console or save to data dir, so admin can check
 
+        use crate::auth::ClientIp;
+
+        let ip = match request.guard::<ClientIp>() {
+            Outcome::Success(ip) => ip,
+            _ => err_handler!("Error getting Client IP"),
+        };
+
         if access_token != config_token {
-            err_handler!("Invalid admin token")
+            err_handler!("Invalid admin token", format!("IP: {}.", ip.ip))
         }
 
         Outcome::Success(AdminToken {})
