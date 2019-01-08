@@ -4,9 +4,9 @@ use serde_json::Value;
 use crate::api::{JsonResult, JsonUpcase};
 use crate::CONFIG;
 
-use crate::mail;
 use crate::db::models::*;
 use crate::db::DbConn;
+use crate::mail;
 
 use rocket::request::{self, FromRequest, Request};
 use rocket::{Outcome, Route};
@@ -41,14 +41,14 @@ fn invite_user(data: JsonUpcase<InviteData>, _token: AdminToken, conn: DbConn) -
         err!("Invitations are not allowed")
     }
 
-    let mut invitation = Invitation::new(data.Email);
-    invitation.save(&conn)?;
-
     if let Some(ref mail_config) = CONFIG.mail {
         let mut user = User::new(email);
         user.save(&conn)?;
         let org_name = "bitwarden_rs";
         mail::send_invite(&user.email, &user.uuid, None, None, &org_name, None, mail_config)?;
+    } else {
+        let mut invitation = Invitation::new(data.Email);
+        invitation.save(&conn)?;
     }
 
     Ok(Json(json!({})))

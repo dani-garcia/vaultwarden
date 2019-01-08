@@ -460,17 +460,19 @@ fn send_invite(org_id: String, data: JsonUpcase<InviteData>, headers: AdminHeade
         };
         let user = match User::find_by_mail(&email, &conn) {
             None => {
-                if CONFIG.invitations_allowed {
-                    // Invite user if that's enabled
-                    let mut invitation = Invitation::new(email.clone());
-                    invitation.save(&conn)?;
-                    let mut user = User::new(email.clone());
-                    user.save(&conn)?;
-                    user_org_status = UserOrgStatus::Invited as i32;
-                    user
-                } else {
+                if !CONFIG.invitations_allowed {
                     err!(format!("User email does not exist: {}", email))
                 }
+
+                if CONFIG.mail.is_none() {
+                    let mut invitation = Invitation::new(email.clone());
+                    invitation.save(&conn)?;
+                }
+
+                let mut user = User::new(email.clone());
+                user.save(&conn)?;
+                user_org_status = UserOrgStatus::Invited as i32;
+                user
             }
             Some(user) => {
                 if UserOrganization::find_by_user_and_org(&user.uuid, &org_id, &conn).is_some() {
@@ -506,16 +508,16 @@ fn send_invite(org_id: String, data: JsonUpcase<InviteData>, headers: AdminHeade
                 Some(org) => org.name,
                 None => err!("Error looking up organization"),
             };
-            
+
             mail::send_invite(
-                &email, 
-                &user.uuid, 
-                Some(org_id.clone()), 
-                Some(new_user.uuid), 
-                &org_name, 
-                Some(headers.user.email.clone()), 
-                mail_config
-                )?;
+                &email,
+                &user.uuid,
+                Some(org_id.clone()),
+                Some(new_user.uuid),
+                &org_name,
+                Some(headers.user.email.clone()),
+                mail_config,
+            )?;
         }
     }
 
@@ -546,9 +548,6 @@ fn reinvite_user(org_id: String, user_org: String, headers: AdminHeaders, conn: 
         None => err!("User not found."),
     };
 
-    let mut invitation = Invitation::new(user.email.clone());
-    invitation.save(&conn)?;
-
     let org_name = match Organization::find_by_uuid(&org_id, &conn) {
         Some(org) => org.name,
         None => err!("Error looking up organization."),
@@ -556,14 +555,17 @@ fn reinvite_user(org_id: String, user_org: String, headers: AdminHeaders, conn: 
 
     if let Some(ref mail_config) = CONFIG.mail {
         mail::send_invite(
-        &user.email,
-        &user.uuid,
-        Some(org_id),
-        Some(user_org.uuid),
-        &org_name,
-        Some(headers.user.email),
-        mail_config,
+            &user.email,
+            &user.uuid,
+            Some(org_id),
+            Some(user_org.uuid),
+            &org_name,
+            Some(headers.user.email),
+            mail_config,
         )?;
+    } else {
+        let mut invitation = Invitation::new(user.email.clone());
+        invitation.save(&conn)?;
     }
 
     Ok(())
@@ -585,16 +587,19 @@ fn accept_invite(_org_id: String, _org_user_id: String, data: JsonUpcase<AcceptD
     match User::find_by_mail(&claims.email, &conn) {
         Some(_) => {
             Invitation::take(&claims.email, &conn);
-            if claims.user_org_id.is_some() && claims.org_id.is_some() {
-                let mut user_org =
-                    match UserOrganization::find_by_uuid_and_org(&claims.user_org_id.unwrap(), &claims.org_id.clone().unwrap(), &conn) {
-                        Some(user_org) => user_org,
-                        None => err!("Error accepting the invitation"),
-                    };
-                user_org.status = UserOrgStatus::Accepted as i32;
-                if user_org.save(&conn).is_err() {
-                    err!("Failed to accept user to organization")
+
+            if let (Some(user_org), Some(org)) = (&claims.user_org_id, &claims.org_id) {
+                let mut user_org = match UserOrganization::find_by_uuid_and_org(user_org, org, &conn) {
+                    Some(user_org) => user_org,
+                    None => err!("Error accepting the invitation"),
+                };
+
+                if user_org.status != UserOrgStatus::Invited as i32 {
+                    err!("User already accepted the invitation")
                 }
+
+                user_org.status = UserOrgStatus::Accepted as i32;
+                user_org.save(&conn)?;
             }
         }
         None => err!("Invited user not found"),
@@ -605,7 +610,7 @@ fn accept_invite(_org_id: String, _org_user_id: String, data: JsonUpcase<AcceptD
         if let Some(org_id) = &claims.org_id {
             org_name = match Organization::find_by_uuid(&org_id, &conn) {
                 Some(org) => org.name,
-                None => err!("Organization not found.")
+                None => err!("Organization not found."),
             };
         };
         if let Some(invited_by_email) = &claims.invited_by_email {

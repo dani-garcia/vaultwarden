@@ -61,29 +61,24 @@ fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> EmptyResult {
 
     let mut user = match User::find_by_mail(&data.Email, &conn) {
         Some(user) => {
-            if Invitation::find_by_mail(&data.Email, &conn).is_some() {
-                if CONFIG.mail.is_none() {
-                    for mut user_org in UserOrganization::find_invited_by_user(&user.uuid, &conn).iter_mut() {
-                        user_org.status = UserOrgStatus::Accepted as i32;
-                        user_org.save(&conn)?;
-                    }
-                    if !Invitation::take(&data.Email, &conn) {
-                        err!("Error accepting invitation")
-                    }
+            if !user.password_hash.is_empty() {
+                err!("User already exists")
+            }
+
+            if let Some(token) = data.Token {
+                let claims: InviteJWTClaims = decode_invite_jwt(&token)?;
+                if claims.email == data.Email {
                     user
                 } else {
-                    let token = match &data.Token {
-                        Some(token) => token,
-                        None => err!("No valid invite token"),
-                    };
-
-                    let claims: InviteJWTClaims = decode_invite_jwt(&token)?;
-                    if claims.email == data.Email {
-                        user
-                    } else {
-                        err!("Registration email does not match invite email")
-                    }
+                    err!("Registration email does not match invite email")
                 }
+            } else if Invitation::take(&data.Email, &conn) {
+                for mut user_org in UserOrganization::find_invited_by_user(&user.uuid, &conn).iter_mut() {
+                    user_org.status = UserOrgStatus::Accepted as i32;
+                    user_org.save(&conn)?;
+                }
+
+                user
             } else if CONFIG.signups_allowed {
                 err!("Account with this email already exists")
             } else {
@@ -91,13 +86,16 @@ fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> EmptyResult {
             }
         }
         None => {
-            if CONFIG.signups_allowed || (CONFIG.mail.is_none() && Invitation::take(&data.Email, &conn)) {
-                User::new(data.Email)
+            if CONFIG.signups_allowed || Invitation::take(&data.Email, &conn) {
+                User::new(data.Email.clone())
             } else {
                 err!("Registration not allowed")
             }
         }
     };
+
+    // Make sure we don't leave a lingering invitation.
+    Invitation::take(&data.Email, &conn);
 
     if let Some(client_kdf_iter) = data.KdfIterations {
         user.client_kdf_iter = client_kdf_iter;
