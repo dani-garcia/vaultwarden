@@ -56,6 +56,7 @@ pub fn routes() -> Vec<Route> {
         delete_all,
         move_cipher_selected,
         move_cipher_selected_put,
+        put_collections_update,
         post_collections_update,
         post_collections_admin,
         put_collections_admin,
@@ -415,6 +416,16 @@ fn put_cipher(uuid: String, data: JsonUpcase<CipherData>, headers: Headers, conn
 #[allow(non_snake_case)]
 struct CollectionsAdminData {
     CollectionIds: Vec<String>,
+}
+
+#[put("/ciphers/<uuid>/collections", data = "<data>")]
+fn put_collections_update(
+    uuid: String,
+    data: JsonUpcase<CollectionsAdminData>,
+    headers: Headers,
+    conn: DbConn,
+) -> EmptyResult {
+    post_collections_admin(uuid, data, headers, conn)
 }
 
 #[post("/ciphers/<uuid>/collections", data = "<data>")]
