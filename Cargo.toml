@@ -11,7 +11,9 @@ publish = false
 build = "build.rs"
 
 [features]
+default = ["enable_yubikey"]
 enable_syslog = ["syslog", "fern/syslog-4"]
+enable_yubikey = ["yubico"]
 
 [dependencies]
 # Web framework for nightly with a focus on ease-of-use, expressibility, and speed.
@@ -72,7 +74,7 @@ jsonwebtoken = "5.0.1"
 u2f = "0.1.4"
 
 # Yubico Library
-yubico = { version = "=0.4.0", features = ["online"], default-features = false }
+yubico = { version = "=0.4.0", features = ["online"], default-features = false, optional = true }
 
 # A `dotenv` implementation for Rust
 dotenv = { version = "0.13.0", default-features = false }

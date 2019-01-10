@@ -55,7 +55,8 @@ COPY . .
 
 # Build
 RUN rustup target add aarch64-unknown-linux-gnu
-RUN cargo build --release --target=aarch64-unknown-linux-gnu -v
+# TODO: Enable yubico when #262 is fixed
+RUN cargo build --release --target=aarch64-unknown-linux-gnu -v --no-default-features
 
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image
