@@ -632,7 +632,7 @@ fn share_cipher_by_uuid(
 }
 
 #[post("/ciphers/<uuid>/attachment", format = "multipart/form-data", data = "<data>")]
-fn post_attachment(uuid: String, data: Data, content_type: &ContentType, headers: Headers, conn: DbConn) -> JsonResult {
+fn post_attachment(uuid: String, data: Data, content_type: &ContentType, headers: Headers, conn: DbConn, nt: Notify) -> JsonResult {
     let cipher = match Cipher::find_by_uuid(&uuid, &conn) {
         Some(cipher) => cipher,
         None => err!("Cipher doesn't exist"),
@@ -692,6 +692,8 @@ fn post_attachment(uuid: String, data: Data, content_type: &ContentType, headers
         })
         .expect("Error processing multipart data");
 
+    nt.send_cipher_update(UpdateType::CipherUpdate, &cipher, &cipher.update_users_revision(&conn));
+
     Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, &conn)))
 }
 
@@ -702,8 +704,9 @@ fn post_attachment_admin(
     content_type: &ContentType,
     headers: Headers,
     conn: DbConn,
+    nt: Notify,
 ) -> JsonResult {
-    post_attachment(uuid, data, content_type, headers, conn)
+    post_attachment(uuid, data, content_type, headers, conn, nt)
 }
 
 #[post(
@@ -721,7 +724,7 @@ fn post_attachment_share(
     nt: Notify,
 ) -> JsonResult {
     _delete_cipher_attachment_by_id(&uuid, &attachment_id, &headers, &conn, &nt)?;
-    post_attachment(uuid, data, content_type, headers, conn)
+    post_attachment(uuid, data, content_type, headers, conn, nt)
 }
 
 #[post("/ciphers/<uuid>/attachment/<attachment_id>/delete-admin")]
@@ -929,6 +932,6 @@ fn _delete_cipher_attachment_by_id(
 
     // Delete attachment
     attachment.delete(&conn)?;
-    nt.send_cipher_update(UpdateType::CipherDelete, &cipher, &cipher.update_users_revision(&conn));
+    nt.send_cipher_update(UpdateType::CipherUpdate, &cipher, &cipher.update_users_revision(&conn));
     Ok(())
 }
