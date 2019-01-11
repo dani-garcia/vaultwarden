@@ -85,6 +85,8 @@ impl Attachment {
     }
 
     pub fn find_by_id(id: &str, conn: &DbConn) -> Option<Self> {
+        let id = id.to_lowercase();
+        
         attachments::table
             .filter(attachments::id.eq(id))
             .first::<Self>(&**conn)
