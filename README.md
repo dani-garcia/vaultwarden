@@ -11,7 +11,9 @@
 
 Image is based on [Rust implementation of Bitwarden API](https://github.com/dani-garcia/bitwarden_rs).
 
-_*Note, that this project is not associated with the [Bitwarden](https://bitwarden.com/) project nor 8bit Solutions LLC._
+**This project is not associated with the [Bitwarden](https://bitwarden.com/) project nor 8bit Solutions LLC.**
+
+#### ⚠️**IMPORTANT**⚠️: When using this server, please report any Bitwarden related bug-reports or suggestions [here](https://github.com/dani-garcia/bitwarden_rs/issues/new), regardless of whatever clients you are using (mobile, desktop, browser...). DO NOT use the official support channels.
 
 ---
 
