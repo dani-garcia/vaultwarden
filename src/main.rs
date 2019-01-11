@@ -21,7 +21,7 @@ extern crate derive_more;
 #[macro_use]
 extern crate num_derive;
 
-use rocket::Rocket;
+use rocket::{fairing::AdHoc, Rocket};
 use std::{
     path::Path,
     process::{exit, Command},
@@ -47,6 +47,7 @@ fn init_rocket() -> Rocket {
         .manage(db::init_pool())
         .manage(api::start_notification_server())
         .attach(util::AppHeaders())
+        .attach(unofficial_warning())
 }
 
 // Embed the migrations from the migrations folder into the application
@@ -217,6 +218,16 @@ fn check_web_vault() {
         error!("Web vault is not found. Please follow the steps in the README to install it");
         exit(1);
     }
+}
+
+fn unofficial_warning() -> AdHoc {
+    AdHoc::on_launch("Unofficial Warning", |_| {
+        warn!("/--------------------------------------------------------------------\\");
+        warn!("| This is an *unofficial* Bitwarden implementation, DO NOT use the   |");
+        warn!("| official channels to report bugs/features, regardless of client.   |");
+        warn!("| Report URL: https://github.com/dani-garcia/bitwarden_rs/issues/new |");
+        warn!("\\--------------------------------------------------------------------/");
+    })
 }
 
 lazy_static! {
