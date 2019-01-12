@@ -21,7 +21,7 @@ rocket = { version = "0.4.0", features = ["tls"], default-features = false }
 rocket_contrib = "0.4.0"
 
 # HTTP client
-reqwest = "0.9.6"
+reqwest = "0.9.8"
 
 # multipart/form-data support
 multipart = "0.15.4"
@@ -74,7 +74,7 @@ jsonwebtoken = "5.0.1"
 u2f = "0.1.4"
 
 # Yubico Library
-yubico = { version = "=0.4.0", features = ["online"], default-features = false, optional = true }
+yubico = { version = "0.5.0", features = ["online"], default-features = false, optional = true }
 
 # A `dotenv` implementation for Rust
 dotenv = { version = "0.13.0", default-features = false }
@@ -104,6 +104,3 @@ rmp = { git = 'https://github.com/dani-garcia/msgpack-rust' }
 # Use new native_tls version 0.2
 lettre = { git = 'https://github.com/lettre/lettre', rev = 'c988b1760ad81' }
 lettre_email = { git = 'https://github.com/lettre/lettre', rev = 'c988b1760ad81' }
-
-# Allows optional libusb support
-yubico = { git = 'https://github.com/dani-garcia/yubico-rs' }
