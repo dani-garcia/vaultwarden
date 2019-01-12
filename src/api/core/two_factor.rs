@@ -15,18 +15,8 @@ use crate::auth::Headers;
 
 use rocket::Route;
 
-#[cfg(feature = "enable_yubikey")]
-fn yubi_routes() -> Vec<Route> {
-    routes![generate_yubikey, activate_yubikey, activate_yubikey_put]
-}
-
-#[cfg(not(feature = "enable_yubikey"))]
-fn yubi_routes() -> Vec<Route> {
-    Vec::new()
-}
-
 pub fn routes() -> Vec<Route> {
-    let mut routes = routes![
+    routes![
         get_twofactor,
         get_recover,
         recover,
@@ -39,11 +29,10 @@ pub fn routes() -> Vec<Route> {
         generate_u2f_challenge,
         activate_u2f,
         activate_u2f_put,
-    ];
-
-    routes.append(&mut yubi_routes());
-
-    routes
+        generate_yubikey,
+        activate_yubikey,
+        activate_yubikey_put,
+    ]
 }
 
 #[get("/two-factor")]
@@ -496,8 +485,8 @@ pub struct YubikeyMetadata {
     pub Nfc: bool,
 }
 
-#[cfg(feature = "enable_yubikey")]
-use yubico::{config::Config, Yubico};
+use yubico::config::Config;
+use yubico::Yubico;
 
 fn parse_yubikeys(data: &EnableYubikeyData) -> Vec<String> {
     let mut yubikeys: Vec<String> = Vec::new();
@@ -535,7 +524,6 @@ fn jsonify_yubikeys(yubikeys: Vec<String>) -> serde_json::Value {
     result
 }
 
-#[cfg(feature = "enable_yubikey")]
 fn verify_yubikey_otp(otp: String) -> JsonResult {
     if !CONFIG.yubico_cred_set {
         err!("`YUBICO_CLIENT_ID` or `YUBICO_SECRET_KEY` environment variable is not set. Yubikey OTP Disabled")
@@ -557,7 +545,6 @@ fn verify_yubikey_otp(otp: String) -> JsonResult {
     }
 }
 
-#[cfg(feature = "enable_yubikey")]
 #[post("/two-factor/get-yubikey", data = "<data>")]
 fn generate_yubikey(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn) -> JsonResult {
     if !CONFIG.yubico_cred_set {
@@ -593,7 +580,6 @@ fn generate_yubikey(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbCo
     }
 }
 
-#[cfg(feature = "enable_yubikey")]
 #[post("/two-factor/yubikey", data = "<data>")]
 fn activate_yubikey(data: JsonUpcase<EnableYubikeyData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: EnableYubikeyData = data.into_inner().data;
@@ -655,18 +641,11 @@ fn activate_yubikey(data: JsonUpcase<EnableYubikeyData>, headers: Headers, conn:
     Ok(Json(result))
 }
 
-#[cfg(feature = "enable_yubikey")]
 #[put("/two-factor/yubikey", data = "<data>")]
 fn activate_yubikey_put(data: JsonUpcase<EnableYubikeyData>, headers: Headers, conn: DbConn) -> JsonResult {
     activate_yubikey(data, headers, conn)
 }
 
-#[cfg(not(feature = "enable_yubikey"))]
-pub fn validate_yubikey_login(_: &str, _: &str, _: &DbConn) -> EmptyResult {
-    err!("Yubikey functionality is disabled. If you are using AArch64, check #262")
-}
-
-#[cfg(feature = "enable_yubikey")]
 pub fn validate_yubikey_login(user_uuid: &str, response: &str, conn: &DbConn) -> EmptyResult {
     if response.len() != 44 {
         err!("Invalid Yubikey OTP length");
