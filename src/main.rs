@@ -21,7 +21,9 @@ extern crate derive_more;
 #[macro_use]
 extern crate num_derive;
 
+use handlebars::Handlebars;
 use rocket::{fairing::AdHoc, Rocket};
+
 use std::{
     path::Path,
     process::{exit, Command},
@@ -323,6 +325,26 @@ pub struct Config {
     yubico_server: Option<String>,
 
     mail: Option<MailConfig>,
+    templates: Handlebars,
+}
+
+fn load_templates(path: Option<String>) -> Handlebars {
+    let mut hb = Handlebars::new();
+
+    // First register default templates here (use include_str?)
+    hb.register_template_string("tpl_1", "Good afternoon, {{name}}").unwrap();
+
+    // TODO: Development-only. Remove this before release
+    hb.register_templates_directory(".hbs", "src/static/templates").unwrap();
+    
+    // And then load user templates to overwrite the defaults
+    if let Some(path) = path {
+        // Use .hbs extension for the files
+        // Templates get registered with their relative name
+        hb.register_templates_directory(".hbs", path).unwrap();
+    }
+
+    hb
 }
 
 impl Config {
@@ -381,6 +403,7 @@ impl Config {
             yubico_server: get_env("YUBICO_SERVER"),
 
             mail: MailConfig::load(),
+            templates: load_templates(get_env("TEMPLATES_FOLDER")),
         }
     }
 }

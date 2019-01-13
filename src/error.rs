@@ -37,6 +37,7 @@ use jsonwebtoken::errors::Error as JwtError;
 use serde_json::{Error as SerError, Value};
 use std::io::Error as IOError;
 use u2f::u2ferror::U2fError as U2fErr;
+use handlebars::RenderError as HbError;
 
 // Error struct
 // Contains a String error message, meant for the user and an enum variant, with an error of different types.
@@ -53,6 +54,7 @@ make_error! {
     SerdeError(SerError): _has_source, _api_error,
     JWTError(JwtError):   _has_source, _api_error,
     IoErrror(IOError):    _has_source, _api_error,
+    TemplErrror(HbError): _has_source, _api_error,
     //WsError(ws::Error): _has_source, _api_error,
 }
 

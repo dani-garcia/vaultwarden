@@ -4,11 +4,11 @@ use lettre::{ClientSecurity, ClientTlsParameters, SmtpClient, SmtpTransport, Tra
 use lettre_email::EmailBuilder;
 use native_tls::{Protocol, TlsConnector};
 
+use crate::api::EmptyResult;
+use crate::auth::{encode_jwt, generate_invite_claims};
+use crate::error::Error;
 use crate::MailConfig;
 use crate::CONFIG;
-use crate::auth::{generate_invite_claims, encode_jwt};
-use crate::api::EmptyResult;
-use crate::error::Error;
 
 fn mailer(config: &MailConfig) -> SmtpTransport {
     let client_security = if config.smtp_ssl {
@@ -35,23 +35,31 @@ fn mailer(config: &MailConfig) -> SmtpTransport {
         .transport()
 }
 
-pub fn send_password_hint(address: &str, hint: Option<String>, config: &MailConfig) -> EmptyResult {
-    let (subject, body) = if let Some(hint) = hint {
-        (
-            "Your master password hint",
-            format!(
-                "You (or someone) recently requested your master password hint.\n\n\
-                 Your hint is:  \"{}\"\n\n\
-                 If you did not request your master password hint you can safely ignore this email.\n",
-                hint
-            ),
-        )
-    } else {
-        (
-            "Sorry, you have no password hint...",
-            "Sorry, you have not specified any password hint...\n".into(),
-        )
+fn get_text(template_name: &'static str, data: serde_json::Value) -> Result<(String, String), Error> {
+    let text = CONFIG.templates.render(template_name, &data)?;
+    let mut text_split = text.split("<!---------------->");
+
+    let subject = match text_split.next() {
+        Some(s) => s.trim().to_string(),
+        None => err!("Template doesn't contain subject"),
     };
+
+    let body = match text_split.next() {
+        Some(s) => s.trim().to_string(),
+        None => err!("Template doesn't contain body"),
+    };
+
+    Ok((subject, body))
+}
+
+pub fn send_password_hint(address: &str, hint: Option<String>, config: &MailConfig) -> EmptyResult {
+    let template_name = if hint.is_some() {
+        "email_pw_hint_some"
+    } else {
+        "email_pw_hint_none"
+    };
+
+    let (subject, body) = get_text(template_name, json!({ "hint": hint }))?;
 
     send_email(&address, &subject, &body, &config)
 }
@@ -66,71 +74,63 @@ pub fn send_invite(
     config: &MailConfig,
 ) -> EmptyResult {
     let claims = generate_invite_claims(
-                uuid.to_string(),
-                String::from(address),
-                org_id.clone(),
-                org_user_id.clone(),
-                invited_by_email.clone(),
-            );
+        uuid.to_string(),
+        String::from(address),
+        org_id.clone(),
+        org_user_id.clone(),
+        invited_by_email.clone(),
+    );
     let invite_token = encode_jwt(&claims);
-    let (subject, body) = {
-        (format!("Join {}", &org_name),
-        format!(
-            "<html>
-             <p>You have been invited to join the <b>{}</b> organization.<br><br>
-             <a href=\"{}/#/accept-organization/?organizationId={}&organizationUserId={}&email={}&organizationName={}&token={}\">
-             Click here to join</a></p>
-             <p>If you do not wish to join this organization, you can safely ignore this email.</p>
-             </html>",
-            org_name, CONFIG.domain, org_id.unwrap_or("_".to_string()), org_user_id.unwrap_or("_".to_string()), address, org_name, invite_token
-        ))
-    };
+
+    let (subject, body) = get_text(
+        "email_send_org_invite",
+        json!({
+            "url": CONFIG.domain,
+            "org_id": org_id.unwrap_or("_".to_string()),
+            "org_user_id": org_user_id.unwrap_or("_".to_string()),
+            "email": address,
+            "org_name": org_name,
+            "token": invite_token,
+        }),
+    )?;
 
     send_email(&address, &subject, &body, &config)
 }
 
-pub fn send_invite_accepted(
-    new_user_email: &str,
-    address: &str,
-    org_name: &str,
-    config: &MailConfig,
-) -> EmptyResult {
-    let (subject, body) = {
-        ("Invitation accepted",
-        format!(
-            "<html>
-             <p>Your invitation for <b>{}</b> to join <b>{}</b> was accepted. Please <a href=\"{}\">log in</a> to the bitwarden_rs server and confirm them from the organization management page.</p>
-             </html>", new_user_email, org_name, CONFIG.domain))
-    };
+pub fn send_invite_accepted(new_user_email: &str, address: &str, org_name: &str, config: &MailConfig) -> EmptyResult {
+    let (subject, body) = get_text(
+        "email_invite_accepted",
+        json!({
+            "url": CONFIG.domain,
+            "email": new_user_email,
+            "org_name": org_name,
+        }),
+    )?;
 
     send_email(&address, &subject, &body, &config)
 }
 
-pub fn send_invite_confirmed(
-    address: &str,
-    org_name: &str,
-    config: &MailConfig,
-) -> EmptyResult {
-    let (subject, body) = {
-        (format!("Invitation to {} confirmed", org_name),
-        format!(
-            "<html>
-             <p>Your invitation to join <b>{}</b> was confirmed. It will now appear under the Organizations the next time you <a href=\"{}\">log in</a> to the web vault.</p>
-             </html>", org_name, CONFIG.domain))
-    };
+pub fn send_invite_confirmed(address: &str, org_name: &str, config: &MailConfig) -> EmptyResult {
+    let (subject, body) = get_text(
+        "email_invite_confirmed",
+        json!({
+            "url": CONFIG.domain,
+            "org_name": org_name,
+        }),
+    )?;
 
     send_email(&address, &subject, &body, &config)
 }
 
 fn send_email(address: &str, subject: &str, body: &str, config: &MailConfig) -> EmptyResult {
     let email = EmailBuilder::new()
-    .to(address)
-    .from((config.smtp_from.clone(), "Bitwarden-rs"))
-    .subject(subject)
-    .header(("Content-Type", "text/html"))
-    .body(body)
-    .build()
-    .map_err(|e| Error::new("Error building email", e.to_string()))?;
+        .to(address)
+        .from((config.smtp_from.clone(), "Bitwarden-rs"))
+        .subject(subject)
+        .header(("Content-Type", "text/html"))
+        .body(body)
+        .build()
+        .map_err(|e| Error::new("Error building email", e.to_string()))?;
 
     mailer(config)
         .send(email.into())
