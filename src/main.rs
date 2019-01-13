@@ -244,6 +244,7 @@ pub struct MailConfig {
     smtp_port: u16,
     smtp_ssl: bool,
     smtp_from: String,
+    smtp_from_name: String,
     smtp_username: Option<String>,
     smtp_password: Option<String>,
 }
@@ -263,6 +264,8 @@ impl MailConfig {
             exit(1);
         });
 
+        let smtp_from_name = get_env_or("SMTP_FROM_NAME", "Bitwarden_RS".into());
+
         let smtp_ssl = get_env_or("SMTP_SSL", true);
         let smtp_port = get_env("SMTP_PORT").unwrap_or_else(|| if smtp_ssl { 587u16 } else { 25u16 });
 
@@ -281,6 +284,7 @@ impl MailConfig {
             smtp_port,
             smtp_ssl,
             smtp_from,
+            smtp_from_name,
             smtp_username,
             smtp_password,
         })
