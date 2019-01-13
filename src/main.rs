@@ -328,21 +328,19 @@ pub struct Config {
     templates: Handlebars,
 }
 
-fn load_templates(path: Option<String>) -> Handlebars {
+fn load_templates(path: String) -> Handlebars {
     let mut hb = Handlebars::new();
 
     // First register default templates here (use include_str?)
-    hb.register_template_string("tpl_1", "Good afternoon, {{name}}").unwrap();
+    hb.register_template_string("tpl_1", "Good afternoon, {{name}}")
+        .unwrap();
 
-    // TODO: Development-only. Remove this before release
-    hb.register_templates_directory(".hbs", "src/static/templates").unwrap();
-    
     // And then load user templates to overwrite the defaults
-    if let Some(path) = path {
-        // Use .hbs extension for the files
-        // Templates get registered with their relative name
-        hb.register_templates_directory(".hbs", path).unwrap();
-    }
+    // Use .hbs extension for the files
+    // Templates get registered with their relative name
+    hb.register_templates_directory(".hbs", path).unwrap();
+
+    // println!("{}", hb.render("tpl_1", &json!({"name": "Dani"})).unwrap());
 
     hb
 }
@@ -364,6 +362,7 @@ impl Config {
             database_url: get_env_or("DATABASE_URL", format!("{}/{}", &df, "db.sqlite3")),
             icon_cache_folder: get_env_or("ICON_CACHE_FOLDER", format!("{}/{}", &df, "icon_cache")),
             attachments_folder: get_env_or("ATTACHMENTS_FOLDER", format!("{}/{}", &df, "attachments")),
+            templates: load_templates(get_env_or("TEMPLATES_FOLDER", format!("{}/{}", &df, "templates"))),
 
             // icon_cache_ttl defaults to 30 days (30 * 24 * 60 * 60 seconds)
             icon_cache_ttl: get_env_or("ICON_CACHE_TTL", 2_592_000),
@@ -403,7 +402,6 @@ impl Config {
             yubico_server: get_env("YUBICO_SERVER"),
 
             mail: MailConfig::load(),
-            templates: load_templates(get_env("TEMPLATES_FOLDER")),
         }
     }
 }
