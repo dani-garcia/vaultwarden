@@ -221,6 +221,10 @@ pub fn update_cipher_from_data(
     nt: &Notify,
     ut: UpdateType,
 ) -> EmptyResult {
+    if cipher.organization_uuid.is_some() && data.OrganizationId.is_none() {
+        err!("Organization mismatch. Please resync the client before updating the cipher")
+    }
+
     if let Some(org_id) = data.OrganizationId {
         match UserOrganization::find_by_user_and_org(&headers.user.uuid, &org_id, &conn) {
             None => err!("You don't have permission to add item to organization"),
