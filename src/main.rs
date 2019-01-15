@@ -334,6 +334,8 @@ pub struct Config {
 
 fn load_templates(path: String) -> Handlebars {
     let mut hb = Handlebars::new();
+    // Error on missing params
+    hb.set_strict_mode(true);
 
     macro_rules! reg {
         ($name:expr) => {

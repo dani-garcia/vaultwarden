@@ -299,11 +299,12 @@ pub fn update_cipher_from_data(
     cipher.data = type_data.to_string();
     cipher.password_history = data.PasswordHistory.map(|f| f.to_string());
 
+    cipher.move_to_folder(data.FolderId, &headers.user.uuid, &conn)?;
     cipher.save(&conn)?;
 
     nt.send_cipher_update(ut, &cipher, &cipher.update_users_revision(&conn));
 
-    cipher.move_to_folder(data.FolderId, &headers.user.uuid, &conn)
+    Ok(())
 }
 
 use super::folders::FolderData;
@@ -884,7 +885,7 @@ fn delete_all(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn, nt
     // Delete folders
     for f in Folder::find_by_user(&user.uuid, &conn) {
         f.delete(&conn)?;
-        nt.send_folder_update(UpdateType::FolderCreate, &f);
+        nt.send_folder_update(UpdateType::FolderDelete, &f);
     }
 
     Ok(())
