@@ -50,13 +50,14 @@ fn get_twofactor(headers: Headers, conn: DbConn) -> JsonResult {
 #[post("/two-factor/get-recover", data = "<data>")]
 fn get_recover(data: JsonUpcase<PasswordData>, headers: Headers) -> JsonResult {
     let data: PasswordData = data.into_inner().data;
+    let user = headers.user;
 
-    if !headers.user.check_valid_password(&data.MasterPasswordHash) {
+    if !user.check_valid_password(&data.MasterPasswordHash) {
         err!("Invalid password");
     }
 
     Ok(Json(json!({
-        "Code": headers.user.totp_recover,
+        "Code": user.totp_recover,
         "Object": "twoFactorRecover"
     })))
 }
@@ -113,14 +114,15 @@ struct DisableTwoFactorData {
 fn disable_twofactor(data: JsonUpcase<DisableTwoFactorData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: DisableTwoFactorData = data.into_inner().data;
     let password_hash = data.MasterPasswordHash;
+    let user = headers.user;
 
-    if !headers.user.check_valid_password(&password_hash) {
+    if !user.check_valid_password(&password_hash) {
         err!("Invalid password");
     }
 
     let type_ = data.Type.into_i32().expect("Invalid type");
 
-    if let Some(twofactor) = TwoFactor::find_by_user_and_type(&headers.user.uuid, type_, &conn) {
+    if let Some(twofactor) = TwoFactor::find_by_user_and_type(&user.uuid, type_, &conn) {
         twofactor.delete(&conn).expect("Error deleting twofactor");
     }
 
@@ -139,13 +141,14 @@ fn disable_twofactor_put(data: JsonUpcase<DisableTwoFactorData>, headers: Header
 #[post("/two-factor/get-authenticator", data = "<data>")]
 fn generate_authenticator(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: PasswordData = data.into_inner().data;
+    let user = headers.user;
 
-    if !headers.user.check_valid_password(&data.MasterPasswordHash) {
+    if !user.check_valid_password(&data.MasterPasswordHash) {
         err!("Invalid password");
     }
 
     let type_ = TwoFactorType::Authenticator as i32;
-    let twofactor = TwoFactor::find_by_user_and_type(&headers.user.uuid, type_, &conn);
+    let twofactor = TwoFactor::find_by_user_and_type(&user.uuid, type_, &conn);
 
     let (enabled, key) = match twofactor {
         Some(tf) => (true, tf.data),
@@ -176,8 +179,10 @@ fn activate_authenticator(data: JsonUpcase<EnableAuthenticatorData>, headers: He
         Some(n) => n as u64,
         None => err!("Malformed token"),
     };
+    
+    let mut user = headers.user;
 
-    if !headers.user.check_valid_password(&password_hash) {
+    if !user.check_valid_password(&password_hash) {
         err!("Invalid password");
     }
 
@@ -192,14 +197,13 @@ fn activate_authenticator(data: JsonUpcase<EnableAuthenticatorData>, headers: He
     }
 
     let type_ = TwoFactorType::Authenticator;
-    let twofactor = TwoFactor::new(headers.user.uuid.clone(), type_, key.to_uppercase());
+    let twofactor = TwoFactor::new(user.uuid.clone(), type_, key.to_uppercase());
 
     // Validate the token provided with the key
     if !twofactor.check_totp_code(token) {
         err!("Invalid totp code")
     }
 
-    let mut user = headers.user;
     _generate_recover_code(&mut user, &conn);
     twofactor.save(&conn).expect("Error saving twofactor");
 
@@ -243,15 +247,14 @@ fn generate_u2f(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn) 
     }
 
     let data: PasswordData = data.into_inner().data;
+    let user = headers.user;
 
-    if !headers.user.check_valid_password(&data.MasterPasswordHash) {
+    if !user.check_valid_password(&data.MasterPasswordHash) {
         err!("Invalid password");
     }
 
-    let user_uuid = &headers.user.uuid;
-
     let u2f_type = TwoFactorType::U2f as i32;
-    let enabled = TwoFactor::find_by_user_and_type(user_uuid, u2f_type, &conn).is_some();
+    let enabled = TwoFactor::find_by_user_and_type(&user.uuid, u2f_type, &conn).is_some();
 
     Ok(Json(json!({
         "Enabled": enabled,
@@ -262,17 +265,18 @@ fn generate_u2f(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn) 
 #[post("/two-factor/get-u2f-challenge", data = "<data>")]
 fn generate_u2f_challenge(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: PasswordData = data.into_inner().data;
+    let user = headers.user;
 
-    if !headers.user.check_valid_password(&data.MasterPasswordHash) {
+    if !user.check_valid_password(&data.MasterPasswordHash) {
         err!("Invalid password");
     }
 
-    let user_uuid = &headers.user.uuid;
+    let user_uuid = &user.uuid;
 
     let challenge = _create_u2f_challenge(user_uuid, TwoFactorType::U2fRegisterChallenge, &conn).challenge;
 
     Ok(Json(json!({
-        "UserId": headers.user.uuid,
+        "UserId": user.uuid,
         "AppId": APP_ID.to_string(),
         "Challenge": challenge,
         "Version": U2F_VERSION,
@@ -311,13 +315,14 @@ impl RegisterResponseCopy {
 #[post("/two-factor/u2f", data = "<data>")]
 fn activate_u2f(data: JsonUpcase<EnableU2FData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: EnableU2FData = data.into_inner().data;
+    let mut user = headers.user;
 
-    if !headers.user.check_valid_password(&data.MasterPasswordHash) {
+    if !user.check_valid_password(&data.MasterPasswordHash) {
         err!("Invalid password");
     }
 
     let tf_challenge =
-        TwoFactor::find_by_user_and_type(&headers.user.uuid, TwoFactorType::U2fRegisterChallenge as i32, &conn);
+        TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::U2fRegisterChallenge as i32, &conn);
 
     if let Some(tf_challenge) = tf_challenge {
         let challenge: Challenge = serde_json::from_str(&tf_challenge.data)?;
@@ -343,13 +348,12 @@ fn activate_u2f(data: JsonUpcase<EnableU2FData>, headers: Headers, conn: DbConn)
         registrations.push(registration);
 
         let tf_registration = TwoFactor::new(
-            headers.user.uuid.clone(),
+            user.uuid.clone(),
             TwoFactorType::U2f,
             serde_json::to_string(&registrations).unwrap(),
         );
         tf_registration.save(&conn)?;
 
-        let mut user = headers.user;
         _generate_recover_code(&mut user, &conn);
 
         Ok(Json(json!({
@@ -552,12 +556,13 @@ fn generate_yubikey(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbCo
     }
 
     let data: PasswordData = data.into_inner().data;
+    let user = headers.user;
 
-    if !headers.user.check_valid_password(&data.MasterPasswordHash) {
+    if !user.check_valid_password(&data.MasterPasswordHash) {
         err!("Invalid password");
     }
 
-    let user_uuid = &headers.user.uuid;
+    let user_uuid = &user.uuid;
     let yubikey_type = TwoFactorType::YubiKey as i32;
 
     let r = TwoFactor::find_by_user_and_type(user_uuid, yubikey_type, &conn);
@@ -583,13 +588,14 @@ fn generate_yubikey(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbCo
 #[post("/two-factor/yubikey", data = "<data>")]
 fn activate_yubikey(data: JsonUpcase<EnableYubikeyData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: EnableYubikeyData = data.into_inner().data;
+    let mut user = headers.user;
 
-    if !headers.user.check_valid_password(&data.MasterPasswordHash) {
+    if !user.check_valid_password(&data.MasterPasswordHash) {
         err!("Invalid password");
     }
 
     // Check if we already have some data
-    let yubikey_data = TwoFactor::find_by_user_and_type(&headers.user.uuid, TwoFactorType::YubiKey as i32, &conn);
+    let yubikey_data = TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::YubiKey as i32, &conn);
 
     if let Some(yubikey_data) = yubikey_data {
         yubikey_data.delete(&conn)?;
@@ -626,11 +632,13 @@ fn activate_yubikey(data: JsonUpcase<EnableYubikeyData>, headers: Headers, conn:
     };
 
     let yubikey_registration = TwoFactor::new(
-        headers.user.uuid.clone(),
+        user.uuid.clone(),
         TwoFactorType::YubiKey,
         serde_json::to_string(&yubikey_metadata).unwrap(),
     );
     yubikey_registration.save(&conn)?;
+    
+    _generate_recover_code(&mut user, &conn);
 
     let mut result = jsonify_yubikeys(yubikey_metadata.Keys);
 
