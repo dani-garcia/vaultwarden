@@ -94,7 +94,7 @@ fn recover(data: JsonUpcase<RecoverTwoFactor>, conn: DbConn) -> JsonResult {
 
     // Remove all twofactors from the user
     for twofactor in TwoFactor::find_by_user(&user.uuid, &conn) {
-        twofactor.delete(&conn).expect("Error deleting twofactor");
+        twofactor.delete(&conn)?;
     }
 
     // Remove the recovery code, not needed without twofactors
@@ -123,7 +123,7 @@ fn disable_twofactor(data: JsonUpcase<DisableTwoFactorData>, headers: Headers, c
     let type_ = data.Type.into_i32().expect("Invalid type");
 
     if let Some(twofactor) = TwoFactor::find_by_user_and_type(&user.uuid, type_, &conn) {
-        twofactor.delete(&conn).expect("Error deleting twofactor");
+        twofactor.delete(&conn)?;
     }
 
     Ok(Json(json!({
@@ -205,7 +205,7 @@ fn activate_authenticator(data: JsonUpcase<EnableAuthenticatorData>, headers: He
     }
 
     _generate_recover_code(&mut user, &conn);
-    twofactor.save(&conn).expect("Error saving twofactor");
+    twofactor.save(&conn)?;
 
     Ok(Json(json!({
         "Enabled": true,
