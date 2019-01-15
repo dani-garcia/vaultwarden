@@ -690,7 +690,7 @@ fn post_attachment(uuid: String, data: Data, content_type: &ContentType, headers
 
                     let mut attachment = Attachment::new(file_name, cipher.uuid.clone(), name, size);
                     attachment.key = attachment_key.clone();
-                    attachment.save(&conn)?;
+                    attachment.save(&conn).expect("Error saving attachment");
                 }
                 _ => error!("Invalid multipart name"),
             }
