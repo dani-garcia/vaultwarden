@@ -302,9 +302,9 @@ pub fn update_cipher_from_data(
     cipher.fields = data.Fields.map(|f| f.to_string());
     cipher.data = type_data.to_string();
     cipher.password_history = data.PasswordHistory.map(|f| f.to_string());
-
-    cipher.move_to_folder(data.FolderId, &headers.user.uuid, &conn)?;
+    
     cipher.save(&conn)?;
+    cipher.move_to_folder(data.FolderId, &headers.user.uuid, &conn)?;
 
     nt.send_cipher_update(ut, &cipher, &cipher.update_users_revision(&conn));
 
