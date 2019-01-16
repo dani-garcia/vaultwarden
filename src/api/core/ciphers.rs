@@ -221,7 +221,7 @@ pub fn update_cipher_from_data(
     nt: &Notify,
     ut: UpdateType,
 ) -> EmptyResult {
-    if cipher.organization_uuid != data.OrganizationId {
+    if cipher.organization_uuid.is_some() && cipher.organization_uuid != data.OrganizationId {
         err!("Organization mismatch. Please resync the client before updating the cipher")
     }
 
