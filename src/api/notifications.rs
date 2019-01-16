@@ -90,11 +90,8 @@ fn serialize_date(date: NaiveDateTime) -> Value {
     let seconds: i64 = date.timestamp();
     let nanos: i64 = date.timestamp_subsec_nanos() as i64;
     let timestamp = nanos << 34 | seconds;
-
-    use byteorder::{BigEndian, WriteBytesExt};
-
-    let mut bs = [0u8; 8];
-    bs.as_mut().write_i64::<BigEndian>(timestamp).expect("Unable to write");
+    
+    let bs = timestamp.to_be_bytes();
 
     // -1 is Timestamp
     // https://github.com/msgpack/msgpack/blob/master/spec.md#timestamp-extension-type

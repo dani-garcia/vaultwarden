@@ -95,9 +95,6 @@ native-tls = "0.2.2"
 # Template library
 handlebars = "1.1.0"
 
-# Number encoding library
-byteorder = "1.2.7"
-
 [patch.crates-io]
 # Add support for Timestamp type
 rmp = { git = 'https://github.com/dani-garcia/msgpack-rust' }
