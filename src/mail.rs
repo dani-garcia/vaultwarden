@@ -54,9 +54,9 @@ fn get_text(template_name: &'static str, data: serde_json::Value) -> Result<(Str
 
 pub fn send_password_hint(address: &str, hint: Option<String>, config: &MailConfig) -> EmptyResult {
     let template_name = if hint.is_some() {
-        "email_pw_hint_some"
+        "email/pw_hint_some"
     } else {
-        "email_pw_hint_none"
+        "email/pw_hint_none"
     };
 
     let (subject, body) = get_text(template_name, json!({ "hint": hint }))?;
@@ -83,7 +83,7 @@ pub fn send_invite(
     let invite_token = encode_jwt(&claims);
 
     let (subject, body) = get_text(
-        "email_send_org_invite",
+        "email/send_org_invite",
         json!({
             "url": CONFIG.domain,
             "org_id": org_id.unwrap_or("_".to_string()),
@@ -99,7 +99,7 @@ pub fn send_invite(
 
 pub fn send_invite_accepted(new_user_email: &str, address: &str, org_name: &str, config: &MailConfig) -> EmptyResult {
     let (subject, body) = get_text(
-        "email_invite_accepted",
+        "email/invite_accepted",
         json!({
             "url": CONFIG.domain,
             "email": new_user_email,
@@ -112,7 +112,7 @@ pub fn send_invite_accepted(new_user_email: &str, address: &str, org_name: &str,
 
 pub fn send_invite_confirmed(address: &str, org_name: &str, config: &MailConfig) -> EmptyResult {
     let (subject, body) = get_text(
-        "email_invite_confirmed",
+        "email/invite_confirmed",
         json!({
             "url": CONFIG.domain,
             "org_name": org_name,

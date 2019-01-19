@@ -345,11 +345,11 @@ fn load_templates(path: String) -> Handlebars {
     }
 
     // First register default templates here (use include_str?)
-    reg!("email_invite_accepted");
-    reg!("email_invite_confirmed");
-    reg!("email_pw_hint_none");
-    reg!("email_pw_hint_some");
-    reg!("email_send_org_invite");
+    reg!("email/invite_accepted");
+    reg!("email/invite_confirmed");
+    reg!("email/pw_hint_none");
+    reg!("email/pw_hint_some");
+    reg!("email/send_org_invite");
 
     // And then load user templates to overwrite the defaults
     // Use .hbs extension for the files
