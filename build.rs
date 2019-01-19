@@ -1,7 +1,7 @@
 use std::process::Command;
 
 fn main() {
-    read_git_info().expect("Unable to read Git info");
+    read_git_info().ok();
 }
 
 fn run(args: &[&str]) -> Result<String, std::io::Error> {
