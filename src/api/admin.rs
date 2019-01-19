@@ -21,25 +21,51 @@ pub fn routes() -> Vec<Route> {
     routes![admin_login, post_admin_login, admin_page, invite_user, delete_user]
 }
 
-#[derive(FromForm)]
-struct LoginForm {
-    token: String,
-}
-
 const COOKIE_NAME: &'static str = "BWRS_ADMIN";
 const ADMIN_PATH: &'static str = "/admin";
+
+#[derive(Serialize)]
+struct AdminTemplateData {
+    users: Vec<Value>,
+    page_content: String,
+    error: Option<String>,
+}
+
+impl AdminTemplateData {
+    fn login(error: Option<String>) -> Self {
+        Self {
+            users: Vec::new(),
+            page_content: String::from("admin/admin_login"),
+            error,
+        }
+    }
+
+    fn admin(users: Vec<Value>) -> Self {
+        Self {
+            users,
+            page_content: String::from("admin/admin_page"),
+            error: None,
+        }
+    }
+
+    fn render(self) -> Result<String, Error> {
+        CONFIG.templates.render("admin/admin_base", &self).map_err(Into::into)
+    }
+}
 
 #[get("/", rank = 2)]
 fn admin_login(flash: Option<FlashMessage>) -> Result<Html<String>, Error> {
     // If there is an error, show it
-    let msg = flash
-        .map(|msg| format!("{}: {}", msg.name(), msg.msg()))
-        .unwrap_or_default();
-    let error = json!({ "error": msg });
+    let msg = flash.map(|msg| format!("{}: {}", msg.name(), msg.msg()));
 
     // Return the page
-    let text = CONFIG.templates.render("admin/admin_login", &error)?;
+    let text = AdminTemplateData::login(msg).render()?;
     Ok(Html(text))
+}
+
+#[derive(FromForm)]
+struct LoginForm {
+    token: String,
 }
 
 #[post("/", data = "<data>")]
@@ -74,19 +100,12 @@ fn _validate_token(token: &str) -> bool {
     }
 }
 
-#[derive(Serialize)]
-struct AdminTemplateData {
-    users: Vec<Value>,
-}
-
 #[get("/", rank = 1)]
 fn admin_page(_token: AdminToken, conn: DbConn) -> Result<Html<String>, Error> {
     let users = User::get_all(&conn);
     let users_json: Vec<Value> = users.iter().map(|u| u.to_json(&conn)).collect();
 
-    let data = AdminTemplateData { users: users_json };
-
-    let text = CONFIG.templates.render("admin/admin_page", &data)?;
+    let text = AdminTemplateData::admin(users_json).render()?;
     Ok(Html(text))
 }
 

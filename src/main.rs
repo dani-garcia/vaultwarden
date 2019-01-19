@@ -352,6 +352,7 @@ fn load_templates(path: String) -> Handlebars {
     reg!("email/pw_hint_some");
     reg!("email/send_org_invite");
 
+    reg!("admin/admin_base");
     reg!("admin/admin_login");
     reg!("admin/admin_page");
 
