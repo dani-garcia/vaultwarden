@@ -35,7 +35,7 @@ impl AdminTemplateData {
     fn login(error: Option<String>) -> Self {
         Self {
             users: Vec::new(),
-            page_content: String::from("admin/admin_login"),
+            page_content: String::from("admin/login"),
             error,
         }
     }
@@ -43,13 +43,13 @@ impl AdminTemplateData {
     fn admin(users: Vec<Value>) -> Self {
         Self {
             users,
-            page_content: String::from("admin/admin_page"),
+            page_content: String::from("admin/page"),
             error: None,
         }
     }
 
     fn render(self) -> Result<String, Error> {
-        CONFIG.templates.render("admin/admin_base", &self).map_err(Into::into)
+        CONFIG.templates.render("admin/base", &self).map_err(Into::into)
     }
 }
 
