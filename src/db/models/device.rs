@@ -77,11 +77,11 @@ impl Device {
 
 
         // Create the JWT claims struct, to send to the client
-        use crate::auth::{encode_jwt, JWTClaims, DEFAULT_VALIDITY, JWT_ISSUER};
-        let claims = JWTClaims {
+        use crate::auth::{encode_jwt, LoginJWTClaims, DEFAULT_VALIDITY, JWT_LOGIN_ISSUER};
+        let claims = LoginJWTClaims {
             nbf: time_now.timestamp(),
             exp: (time_now + *DEFAULT_VALIDITY).timestamp(),
-            iss: JWT_ISSUER.to_string(),
+            iss: JWT_LOGIN_ISSUER.to_string(),
             sub: user.uuid.to_string(),
 
             premium: true,

@@ -95,6 +95,7 @@ fn init_logging() -> Result<(), fern::InitError> {
         .level(log::LevelFilter::Debug)
         .level_for("hyper", log::LevelFilter::Warn)
         .level_for("rustls", log::LevelFilter::Warn)
+        .level_for("handlebars", log::LevelFilter::Warn)
         .level_for("ws", log::LevelFilter::Info)
         .level_for("multipart", log::LevelFilter::Info)
         .chain(std::io::stdout());
@@ -338,18 +339,21 @@ fn load_templates(path: String) -> Handlebars {
     hb.set_strict_mode(true);
 
     macro_rules! reg {
-        ($name:expr) => {
+        ($name:expr) => {{
             let template = include_str!(concat!("static/templates/", $name, ".hbs"));
             hb.register_template_string($name, template).unwrap();
-        };
+        }};
     }
 
-    // First register default templates here (use include_str?)
+    // First register default templates here
     reg!("email/invite_accepted");
     reg!("email/invite_confirmed");
     reg!("email/pw_hint_none");
     reg!("email/pw_hint_some");
     reg!("email/send_org_invite");
+
+    reg!("admin/admin_login");
+    reg!("admin/admin_page");
 
     // And then load user templates to overwrite the defaults
     // Use .hbs extension for the files

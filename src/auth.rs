@@ -5,6 +5,7 @@ use crate::util::read_file;
 use chrono::{Duration, Utc};
 
 use jsonwebtoken::{self, Algorithm, Header};
+use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
 
 use crate::error::{Error, MapResult};
@@ -14,8 +15,10 @@ const JWT_ALGORITHM: Algorithm = Algorithm::RS256;
 
 lazy_static! {
     pub static ref DEFAULT_VALIDITY: Duration = Duration::hours(2);
-    pub static ref JWT_ISSUER: String = CONFIG.domain.clone();
     static ref JWT_HEADER: Header = Header::new(JWT_ALGORITHM);
+    pub static ref JWT_LOGIN_ISSUER: String = format!("{}|login", CONFIG.domain);
+    pub static ref JWT_INVITE_ISSUER: String = format!("{}|invite", CONFIG.domain);
+    pub static ref JWT_ADMIN_ISSUER: String = format!("{}|admin", CONFIG.domain);
     static ref PRIVATE_RSA_KEY: Vec<u8> = match read_file(&CONFIG.private_rsa_key) {
         Ok(key) => key,
         Err(e) => panic!(
@@ -39,14 +42,14 @@ pub fn encode_jwt<T: Serialize>(claims: &T) -> String {
     }
 }
 
-pub fn decode_jwt(token: &str) -> Result<JWTClaims, Error> {
+fn decode_jwt<T: DeserializeOwned>(token: &str, issuer: String) -> Result<T, Error> {
     let validation = jsonwebtoken::Validation {
         leeway: 30, // 30 seconds
         validate_exp: true,
         validate_iat: false, // IssuedAt is the same as NotBefore
         validate_nbf: true,
         aud: None,
-        iss: Some(JWT_ISSUER.clone()),
+        iss: Some(issuer),
         sub: None,
         algorithms: vec![JWT_ALGORITHM],
     };
@@ -55,30 +58,23 @@ pub fn decode_jwt(token: &str) -> Result<JWTClaims, Error> {
 
     jsonwebtoken::decode(&token, &PUBLIC_RSA_KEY, &validation)
         .map(|d| d.claims)
-        .map_res("Error decoding login JWT")
+        .map_res("Error decoding JWT")
 }
 
-pub fn decode_invite_jwt(token: &str) -> Result<InviteJWTClaims, Error> {
-    let validation = jsonwebtoken::Validation {
-        leeway: 30, // 30 seconds
-        validate_exp: true,
-        validate_iat: false, // IssuedAt is the same as NotBefore
-        validate_nbf: true,
-        aud: None,
-        iss: Some(JWT_ISSUER.clone()),
-        sub: None,
-        algorithms: vec![JWT_ALGORITHM],
-    };
+pub fn decode_login(token: &str) -> Result<LoginJWTClaims, Error> {
+    decode_jwt(token, JWT_LOGIN_ISSUER.to_string())
+}
 
-    let token = token.replace(char::is_whitespace, "");
+pub fn decode_invite(token: &str) -> Result<InviteJWTClaims, Error> {
+    decode_jwt(token, JWT_INVITE_ISSUER.to_string())
+}
 
-    jsonwebtoken::decode(&token, &PUBLIC_RSA_KEY, &validation)
-        .map(|d| d.claims)
-        .map_res("Error decoding invite JWT")
+pub fn decode_admin(token: &str) -> Result<AdminJWTClaims, Error> {
+    decode_jwt(token, JWT_ADMIN_ISSUER.to_string())
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct JWTClaims {
+pub struct LoginJWTClaims {
     // Not before
     pub nbf: i64,
     // Expiration time
@@ -125,22 +121,45 @@ pub struct InviteJWTClaims {
     pub invited_by_email: Option<String>,
 }
 
-pub fn generate_invite_claims(uuid: String, 
-                          email: String, 
-                          org_id: Option<String>, 
-                          org_user_id: Option<String>, 
-                          invited_by_email: Option<String>,
+pub fn generate_invite_claims(
+    uuid: String,
+    email: String,
+    org_id: Option<String>,
+    org_user_id: Option<String>,
+    invited_by_email: Option<String>,
 ) -> InviteJWTClaims {
     let time_now = Utc::now().naive_utc();
     InviteJWTClaims {
         nbf: time_now.timestamp(),
         exp: (time_now + Duration::days(5)).timestamp(),
-        iss: JWT_ISSUER.to_string(),
+        iss: JWT_INVITE_ISSUER.to_string(),
         sub: uuid.clone(),
         email: email.clone(),
         org_id: org_id.clone(),
         user_org_id: org_user_id.clone(),
         invited_by_email: invited_by_email.clone(),
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AdminJWTClaims {
+    // Not before
+    pub nbf: i64,
+    // Expiration time
+    pub exp: i64,
+    // Issuer
+    pub iss: String,
+    // Subject
+    pub sub: String,
+}
+
+pub fn generate_admin_claims() -> AdminJWTClaims {
+    let time_now = Utc::now().naive_utc();
+    AdminJWTClaims {
+        nbf: time_now.timestamp(),
+        exp: (time_now + Duration::minutes(20)).timestamp(),
+        iss: JWT_ADMIN_ISSUER.to_string(),
+        sub: "admin_panel".to_string(),
     }
 }
 
@@ -203,7 +222,7 @@ impl<'a, 'r> FromRequest<'a, 'r> for Headers {
         };
 
         // Check JWT token is valid and get device and user from it
-        let claims: JWTClaims = match decode_jwt(access_token) {
+        let claims = match decode_login(access_token) {
             Ok(claims) => claims,
             Err(_) => err_handler!("Invalid claim"),
         };

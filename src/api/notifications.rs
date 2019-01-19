@@ -135,7 +135,7 @@ impl Handler for WSHandler {
 
         // Validate the user
         use crate::auth;
-        let claims = match auth::decode_jwt(access_token) {
+        let claims = match auth::decode_login(access_token) {
             Ok(claims) => claims,
             Err(_) => return Err(ws::Error::new(ws::ErrorKind::Internal, "Invalid access token provided")),
         };

@@ -1,8 +1,9 @@
 //
-// Web Headers
+// Web Headers and caching
 //
 use rocket::fairing::{Fairing, Info, Kind};
 use rocket::{Request, Response};
+use rocket::response::{self, Responder};
 
 pub struct AppHeaders();
 
@@ -26,6 +27,32 @@ impl Fairing for AppHeaders {
         // Disable cache unless otherwise specified
         if !res.headers().contains("cache-control") {
             res.set_raw_header("Cache-Control", "no-cache, no-store, max-age=0");
+        }
+    }
+}
+
+pub struct Cached<R>(R, &'static str);
+
+impl<R> Cached<R> {
+    pub fn long(r: R) -> Cached<R> {
+        // 7 days
+        Cached(r, "public, max-age=604800")
+    }
+
+    pub fn short(r: R) -> Cached<R> {
+        // 10 minutes
+        Cached(r, "public, max-age=600")
+    }
+}
+
+impl<'r, R: Responder<'r>> Responder<'r> for Cached<R> {
+    fn respond_to(self, req: &Request) -> response::Result<'r> {
+        match self.0.respond_to(req) {
+            Ok(mut res) => {
+                res.set_raw_header("Cache-Control", self.1);
+                Ok(res)
+            }
+            e @ Err(_) => e,
         }
     }
 }

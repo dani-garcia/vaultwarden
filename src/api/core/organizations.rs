@@ -7,7 +7,7 @@ use crate::db::DbConn;
 use crate::CONFIG;
 
 use crate::api::{EmptyResult, JsonResult, JsonUpcase, Notify, NumberOrString, PasswordData, UpdateType};
-use crate::auth::{decode_invite_jwt, AdminHeaders, Headers, InviteJWTClaims, OwnerHeaders};
+use crate::auth::{decode_invite, AdminHeaders, Headers, OwnerHeaders};
 
 use crate::mail;
 
@@ -582,7 +582,7 @@ fn accept_invite(_org_id: String, _org_user_id: String, data: JsonUpcase<AcceptD
     // The web-vault passes org_id and org_user_id in the URL, but we are just reading them from the JWT instead
     let data: AcceptData = data.into_inner().data;
     let token = &data.Token;
-    let claims: InviteJWTClaims = decode_invite_jwt(&token)?;
+    let claims = decode_invite(&token)?;
 
     match User::find_by_mail(&claims.email, &conn) {
         Some(_) => {

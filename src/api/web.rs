@@ -2,18 +2,18 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use rocket::http::ContentType;
-use rocket::request::Request;
 use rocket::response::content::Content;
-use rocket::response::{self, NamedFile, Responder};
+use rocket::response::NamedFile;
 use rocket::Route;
 use rocket_contrib::json::Json;
 use serde_json::Value;
 
 use crate::CONFIG;
+use crate::util::Cached;
 
 pub fn routes() -> Vec<Route> {
     if CONFIG.web_vault_enabled {
-        routes![web_index, app_id, web_files, admin_page, attachments, alive]
+        routes![web_index, app_id, web_files, attachments, alive]
     } else {
         routes![attachments, alive]
     }
@@ -43,50 +43,9 @@ fn app_id() -> Cached<Content<Json<Value>>> {
     ))
 }
 
-const ADMIN_PAGE: &'static str = include_str!("../static/admin.html");
-use rocket::response::content::Html;
-
-#[get("/admin")]
-fn admin_page() -> Cached<Html<&'static str>> {
-    Cached::short(Html(ADMIN_PAGE))
-}
-
-/* // Use this during Admin page development
-#[get("/admin")]
-fn admin_page() -> Cached<io::Result<NamedFile>> {
-    Cached::short(NamedFile::open("src/static/admin.html"))
-}
-*/
-
-#[get("/<p..>", rank = 1)] // Only match this if the other routes don't match
+#[get("/<p..>", rank = 10)] // Only match this if the other routes don't match
 fn web_files(p: PathBuf) -> Cached<io::Result<NamedFile>> {
     Cached::long(NamedFile::open(Path::new(&CONFIG.web_vault_folder).join(p)))
-}
-
-struct Cached<R>(R, &'static str);
-
-impl<R> Cached<R> {
-    fn long(r: R) -> Cached<R> {
-        // 7 days
-        Cached(r, "public, max-age=604800")
-    }
-
-    fn short(r: R) -> Cached<R> {
-        // 10 minutes
-        Cached(r, "public, max-age=600")
-    }
-}
-
-impl<'r, R: Responder<'r>> Responder<'r> for Cached<R> {
-    fn respond_to(self, req: &Request) -> response::Result<'r> {
-        match self.0.respond_to(req) {
-            Ok(mut res) => {
-                res.set_raw_header("Cache-Control", self.1);
-                Ok(res)
-            }
-            e @ Err(_) => e,
-        }
-    }
 }
 
 #[get("/attachments/<uuid>/<file..>")]

@@ -1,32 +1,99 @@
 use rocket_contrib::json::Json;
 use serde_json::Value;
 
-use crate::api::{JsonResult, JsonUpcase};
-use crate::CONFIG;
-
-use crate::db::models::*;
-use crate::db::DbConn;
-use crate::mail;
-
-use rocket::request::{self, FromRequest, Request};
+use rocket::http::{Cookie, Cookies};
+use rocket::request::{self, FlashMessage, Form, FromRequest, Request};
+use rocket::response::{content::Html, Flash, Redirect};
 use rocket::{Outcome, Route};
 
+use crate::api::{JsonResult, JsonUpcase};
+use crate::auth::{decode_admin, encode_jwt, generate_admin_claims, ClientIp};
+use crate::db::{models::*, DbConn};
+use crate::error::Error;
+use crate::mail;
+use crate::CONFIG;
+
 pub fn routes() -> Vec<Route> {
-    routes![get_users, invite_user, delete_user]
+    if CONFIG.admin_token.is_none() {
+        return Vec::new();
+    }
+
+    routes![admin_login, post_admin_login, admin_page, invite_user, delete_user]
+}
+
+#[derive(FromForm)]
+struct LoginForm {
+    token: String,
+}
+
+const COOKIE_NAME: &'static str = "BWRS_ADMIN";
+const ADMIN_PATH: &'static str = "/admin";
+
+#[get("/", rank = 2)]
+fn admin_login(flash: Option<FlashMessage>) -> Result<Html<String>, Error> {
+    // If there is an error, show it
+    let msg = flash
+        .map(|msg| format!("{}: {}", msg.name(), msg.msg()))
+        .unwrap_or_default();
+    let error = json!({ "error": msg });
+
+    // Return the page
+    let text = CONFIG.templates.render("admin/admin_login", &error)?;
+    Ok(Html(text))
+}
+
+#[post("/", data = "<data>")]
+fn post_admin_login(data: Form<LoginForm>, mut cookies: Cookies, ip: ClientIp) -> Result<Redirect, Flash<Redirect>> {
+    let data = data.into_inner();
+
+    if !_validate_token(&data.token) {
+        error!("Invalid admin token. IP: {}", ip.ip);
+        Err(Flash::error(
+            Redirect::to(ADMIN_PATH),
+            "Invalid admin token, please try again.",
+        ))
+    } else {
+        // If the token received is valid, generate JWT and save it as a cookie
+        let claims = generate_admin_claims();
+        let jwt = encode_jwt(&claims);
+
+        let cookie = Cookie::build(COOKIE_NAME, jwt)
+            .path(ADMIN_PATH)
+            .http_only(true)
+            .finish();
+
+        cookies.add(cookie);
+        Ok(Redirect::to(ADMIN_PATH))
+    }
+}
+
+fn _validate_token(token: &str) -> bool {
+    match CONFIG.admin_token.as_ref() {
+        None => false,
+        Some(t) => t == token,
+    }
+}
+
+#[derive(Serialize)]
+struct AdminTemplateData {
+    users: Vec<Value>,
+}
+
+#[get("/", rank = 1)]
+fn admin_page(_token: AdminToken, conn: DbConn) -> Result<Html<String>, Error> {
+    let users = User::get_all(&conn);
+    let users_json: Vec<Value> = users.iter().map(|u| u.to_json(&conn)).collect();
+
+    let data = AdminTemplateData { users: users_json };
+
+    let text = CONFIG.templates.render("admin/admin_page", &data)?;
+    Ok(Html(text))
 }
 
 #[derive(Deserialize, Debug)]
 #[allow(non_snake_case)]
 struct InviteData {
     Email: String,
-}
-
-#[get("/users")]
-fn get_users(_token: AdminToken, conn: DbConn) -> JsonResult {
-    let users = User::get_all(&conn);
-    let users_json: Vec<Value> = users.iter().map(|u| u.to_json(&conn)).collect();
-
-    Ok(Json(Value::Array(users_json)))
 }
 
 #[post("/invite", data = "<data>")]
@@ -71,35 +138,23 @@ impl<'a, 'r> FromRequest<'a, 'r> for AdminToken {
     type Error = &'static str;
 
     fn from_request(request: &'a Request<'r>) -> request::Outcome<Self, Self::Error> {
-        let config_token = match CONFIG.admin_token.as_ref() {
-            Some(token) => token,
-            None => err_handler!("Admin panel is disabled"),
+        let mut cookies = request.cookies();
+
+        let access_token = match cookies.get(COOKIE_NAME) {
+            Some(cookie) => cookie.value(),
+            None => return Outcome::Forward(()), // If there is no cookie, redirect to login
         };
-
-        // Get access_token
-        let access_token: &str = match request.headers().get_one("Authorization") {
-            Some(a) => match a.rsplit("Bearer ").next() {
-                Some(split) => split,
-                None => err_handler!("No access token provided"),
-            },
-            None => err_handler!("No access token provided"),
-        };
-
-        // TODO: What authentication to use?
-        // Option 1: Make it a config option
-        // Option 2: Generate random token, and
-        // Option 2a: Send it to admin email, like upstream
-        // Option 2b: Print in console or save to data dir, so admin can check
-
-        use crate::auth::ClientIp;
 
         let ip = match request.guard::<ClientIp>() {
-            Outcome::Success(ip) => ip,
+            Outcome::Success(ip) => ip.ip,
             _ => err_handler!("Error getting Client IP"),
         };
 
-        if access_token != config_token {
-            err_handler!("Invalid admin token", format!("IP: {}.", ip.ip))
+        if decode_admin(access_token).is_err() {
+            // Remove admin cookie
+            cookies.remove(Cookie::named(COOKIE_NAME));
+            error!("Invalid or expired admin JWT. IP: {}.", ip);
+            return Outcome::Forward(());
         }
 
         Outcome::Success(AdminToken {})

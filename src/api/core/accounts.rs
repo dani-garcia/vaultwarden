@@ -4,7 +4,7 @@ use crate::db::models::*;
 use crate::db::DbConn;
 
 use crate::api::{EmptyResult, JsonResult, JsonUpcase, Notify, NumberOrString, PasswordData, UpdateType};
-use crate::auth::{decode_invite_jwt, Headers, InviteJWTClaims};
+use crate::auth::{decode_invite, Headers};
 use crate::mail;
 
 use crate::CONFIG;
@@ -66,7 +66,7 @@ fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> EmptyResult {
             }
 
             if let Some(token) = data.Token {
-                let claims: InviteJWTClaims = decode_invite_jwt(&token)?;
+                let claims = decode_invite(&token)?;
                 if claims.email == data.Email {
                     user
                 } else {
