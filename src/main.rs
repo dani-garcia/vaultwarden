@@ -331,9 +331,11 @@ pub struct Config {
 
     mail: Option<MailConfig>,
     templates: Handlebars,
+    templates_folder: String,
+    reload_templates: bool,
 }
 
-fn load_templates(path: String) -> Handlebars {
+fn load_templates(path: &str) -> Handlebars {
     let mut hb = Handlebars::new();
     // Error on missing params
     hb.set_strict_mode(true);
@@ -365,6 +367,21 @@ fn load_templates(path: String) -> Handlebars {
 }
 
 impl Config {
+    pub fn render_template<T: serde::ser::Serialize>(&self, name: &str, data: &T) -> Result<String, error::Error> {
+        // We add this to signal the compiler not to drop the result of 'load_templates'
+        let hb_owned;
+
+        let hb = if CONFIG.reload_templates {
+            warn!("RELOADING TEMPLATES");
+            hb_owned = load_templates(&self.templates_folder);
+            &hb_owned
+        } else {
+            &self.templates
+        };
+
+        hb.render(name, data).map_err(Into::into)
+    }
+
     fn load() -> Self {
         use crate::util::{get_env, get_env_or};
         dotenv::dotenv().ok();
@@ -377,11 +394,15 @@ impl Config {
         let yubico_client_id = get_env("YUBICO_CLIENT_ID");
         let yubico_secret_key = get_env("YUBICO_SECRET_KEY");
 
+        let templates_folder = get_env_or("TEMPLATES_FOLDER", format!("{}/{}", &df, "templates"));
+
         Config {
             database_url: get_env_or("DATABASE_URL", format!("{}/{}", &df, "db.sqlite3")),
             icon_cache_folder: get_env_or("ICON_CACHE_FOLDER", format!("{}/{}", &df, "icon_cache")),
             attachments_folder: get_env_or("ATTACHMENTS_FOLDER", format!("{}/{}", &df, "attachments")),
-            templates: load_templates(get_env_or("TEMPLATES_FOLDER", format!("{}/{}", &df, "templates"))),
+            templates: load_templates(&templates_folder),
+            templates_folder,
+            reload_templates: get_env_or("RELOAD_TEMPLATES", false),
 
             // icon_cache_ttl defaults to 30 days (30 * 24 * 60 * 60 seconds)
             icon_cache_ttl: get_env_or("ICON_CACHE_TTL", 2_592_000),

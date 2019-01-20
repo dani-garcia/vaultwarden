@@ -36,7 +36,7 @@ fn mailer(config: &MailConfig) -> SmtpTransport {
 }
 
 fn get_text(template_name: &'static str, data: serde_json::Value) -> Result<(String, String), Error> {
-    let text = CONFIG.templates.render(template_name, &data)?;
+    let text = CONFIG.render_template(template_name, &data)?;
     let mut text_split = text.split("<!---------------->");
 
     let subject = match text_split.next() {

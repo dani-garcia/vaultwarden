@@ -7,11 +7,23 @@
             <div class="media pt-3">
                 <img class="mr-2 rounded identicon" data-src="{{Email}}">
                 <div class="media-body pb-3 mb-0 small border-bottom">
-                    <div class="d-flex justify-content-between">
-                        <strong>{{Name}}</strong>
-                        <a class="tmp-del mr-3" href="" onclick='deleteUser("{{Id}}", "{{Email}}");'>Delete User</a>
+                    <div class="row justify-content-between">
+                        <div class="col">
+                            <strong>{{Name}}</strong>
+                            <span class="d-block">{{Email}}</span>
+                        </div>
+                        <div class="col">
+                            <strong> Organizations:</strong>
+                            <span class="d-block">
+                                {{#each Organizations}}
+                                <span class="badge badge-primary" data-orgtype="{{Type}}">{{Name}}</span>
+                                {{/each}}
+                            </span>
+                        </div>
+                        <div style="flex: 0 0 100px;">
+                            <a class="mr-3" href="" onclick='deleteUser("{{Id}}", "{{Email}}");'>Delete User</a>
+                        </div>
                     </div>
-                    <span class="d-block">{{Email}}</span>
                 </div>
             </div>
             {{/each}}
@@ -73,11 +85,22 @@
             "Error inviting user", data);
     }
 
+    let OrgTypes = {
+        "0": { "name": "Owner", "color": "orange" },
+        "1": { "name": "Admin", "color": "blueviolet" },
+        "2": { "name": "User", "color": "blue" },
+        "3": { "name": "Manager", "color": "green" },
+    };
+
     $(window).on('load', function () {
-        //$("#reload-btn").click(reload);
         $("#invite-form").submit(inviteUser);
         $("img.identicon").each(function (i, e) {
             e.src = identicon(e.dataset.src);
+        });
+        $('[data-orgtype]').each(function (i, e) {
+            let orgtype = OrgTypes[e.dataset.orgtype];
+            e.style.backgroundColor = orgtype.color;
+            e.title = orgtype.name;
         });
     });
 </script>

@@ -49,7 +49,7 @@ impl AdminTemplateData {
     }
 
     fn render(self) -> Result<String, Error> {
-        CONFIG.templates.render("admin/base", &self).map_err(Into::into)
+        CONFIG.render_template("admin/base", &self)
     }
 }
 
@@ -72,6 +72,7 @@ struct LoginForm {
 fn post_admin_login(data: Form<LoginForm>, mut cookies: Cookies, ip: ClientIp) -> Result<Redirect, Flash<Redirect>> {
     let data = data.into_inner();
 
+    // If the token is invalid, redirect to login page
     if !_validate_token(&data.token) {
         error!("Invalid admin token. IP: {}", ip.ip);
         Err(Flash::error(
