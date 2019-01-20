@@ -32,12 +32,14 @@ macro_rules! make_error {
     };
 }
 
-use diesel::result::Error as DieselError;
-use jsonwebtoken::errors::Error as JwtError;
-use serde_json::{Error as SerError, Value};
-use std::io::Error as IOError;
+use diesel::result::Error as DieselErr;
+use handlebars::RenderError as HbErr;
+use jsonwebtoken::errors::Error as JWTErr;
+use reqwest::Error as ReqErr;
+use serde_json::{Error as SerdeErr, Value};
+use std::io::Error as IOErr;
+use std::time::SystemTimeError as TimeErr;
 use u2f::u2ferror::U2fError as U2fErr;
-use handlebars::RenderError as HbError;
 
 // Error struct
 // Contains a String error message, meant for the user and an enum variant, with an error of different types.
@@ -49,13 +51,15 @@ make_error! {
     SimpleError(String):  _no_source,  _api_error,
     // Used for special return values, like 2FA errors
     JsonError(Value):     _no_source,  _serialize,
-    DbError(DieselError): _has_source, _api_error,
+    DbError(DieselErr):   _has_source, _api_error,
     U2fError(U2fErr):     _has_source, _api_error,
-    SerdeError(SerError): _has_source, _api_error,
-    JWTError(JwtError):   _has_source, _api_error,
-    IoErrror(IOError):    _has_source, _api_error,
-    TemplErrror(HbError): _has_source, _api_error,
+    SerdeError(SerdeErr): _has_source, _api_error,
+    JWTError(JWTErr):     _has_source, _api_error,
+    TemplError(HbErr):    _has_source, _api_error,
     //WsError(ws::Error): _has_source, _api_error,
+    IOError(IOErr):       _has_source, _api_error,
+    TimeError(TimeErr):   _has_source, _api_error,
+    ReqError(ReqErr):     _has_source, _api_error,
 }
 
 impl std::fmt::Debug for Error {

@@ -11,6 +11,7 @@ pub fn routes() -> Vec<Route> {
         get_eq_domains,
         post_eq_domains,
         put_eq_domains,
+        hibp_breach,
     ];
 
     let mut routes = Vec::new();
@@ -127,4 +128,21 @@ fn post_eq_domains(data: JsonUpcase<EquivDomainData>, headers: Headers, conn: Db
 #[put("/settings/domains", data = "<data>")]
 fn put_eq_domains(data: JsonUpcase<EquivDomainData>, headers: Headers, conn: DbConn) -> JsonResult {
     post_eq_domains(data, headers, conn)
+}
+
+#[get("/hibp/breach?<username>")]
+fn hibp_breach(username: String) -> JsonResult {
+    let url = format!("https://haveibeenpwned.com/api/v2/breachedaccount/{}", username);
+    let user_agent = "Bitwarden_RS";
+
+    use reqwest::{header::USER_AGENT, Client};
+
+    let value: Value = Client::new()
+        .get(&url)
+        .header(USER_AGENT, user_agent)
+        .send()?
+        .error_for_status()?
+        .json()?;
+
+    Ok(Json(value))
 }

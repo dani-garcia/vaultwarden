@@ -1,7 +1,7 @@
 use rocket_contrib::json::Json;
 use serde_json::Value;
 
-use rocket::http::{Cookie, Cookies};
+use rocket::http::{Cookie, Cookies, SameSite};
 use rocket::request::{self, FlashMessage, Form, FromRequest, Request};
 use rocket::response::{content::Html, Flash, Redirect};
 use rocket::{Outcome, Route};
@@ -85,6 +85,8 @@ fn post_admin_login(data: Form<LoginForm>, mut cookies: Cookies, ip: ClientIp) -
 
         let cookie = Cookie::build(COOKIE_NAME, jwt)
             .path(ADMIN_PATH)
+            .max_age(chrono::Duration::minutes(20))
+            .same_site(SameSite::Strict)
             .http_only(true)
             .finish();
 

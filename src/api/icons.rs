@@ -1,4 +1,3 @@
-use std::error::Error;
 use std::fs::{create_dir_all, remove_file, symlink_metadata, File};
 use std::io::prelude::*;
 use std::time::SystemTime;
@@ -9,6 +8,7 @@ use rocket::Route;
 
 use reqwest;
 
+use crate::error::Error;
 use crate::CONFIG;
 
 pub fn routes() -> Vec<Route> {
@@ -77,7 +77,7 @@ fn get_cached_icon(path: &str) -> Option<Vec<u8>> {
     None
 }
 
-fn file_is_expired(path: &str, ttl: u64) -> Result<bool, Box<Error>> {
+fn file_is_expired(path: &str, ttl: u64) -> Result<bool, Error> {
     let meta = symlink_metadata(path)?;
     let modified = meta.modified()?;
     let age = SystemTime::now().duration_since(modified)?;
@@ -122,7 +122,7 @@ fn get_icon_url(domain: &str) -> String {
     }
 }
 
-fn download_icon(url: &str) -> Result<Vec<u8>, reqwest::Error> {
+fn download_icon(url: &str) -> Result<Vec<u8>, Error> {
     info!("Downloading icon for {}...", url);
     let mut res = reqwest::get(url)?;
 
