@@ -21,7 +21,7 @@
                             </span>
                         </div>
                         <div style="flex: 0 0 100px;">
-                            <a class="mr-3" href="" onclick='deleteUser("{{Id}}", "{{Email}}");'>Delete User</a>
+                            <a class="mr-3" href="#" onclick='deleteUser("{{Id}}", "{{Email}}")'>Delete User</a>
                         </div>
                     </div>
                 </div>
@@ -55,15 +55,13 @@
         return "data:image/svg+xml;base64," + data.toString();
     }
     function _post(url, successMsg, errMsg, data) {
-        $.post({ url: url, data: data })
-            .done(function () {
-                alert(successMsg);
-                reload();
-            }).fail(function (e) {
-                const r = e.responseJSON;
-                const msg = r ? r.ErrorModel.Message : "Unknown error";
-                alert(errMsg + ": " + msg);
-            });
+        $.post(url, data, function () {
+            alert(successMsg);
+        }).fail(function (e) {
+            const r = e.responseJSON;
+            const msg = r ? r.ErrorModel.Message : "Unknown error";
+            alert(errMsg + ": " + msg);
+        }).always(reload);
     }
     function deleteUser(id, mail) {
         var input_mail = prompt("To delete user '" + mail + "', please type the name below")
@@ -76,6 +74,7 @@
                 alert("Wrong email, please try again")
             }
         }
+        return false;
     }
     function inviteUser() {
         inv = $("#email-invite");
@@ -83,6 +82,7 @@
         inv.val("");
         _post("/admin/invite/", "User invited correctly",
             "Error inviting user", data);
+        return false;
     }
 
     let OrgTypes = {
