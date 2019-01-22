@@ -65,7 +65,7 @@
     }
     function deleteUser(id, mail) {
         var input_mail = prompt("To delete user '" + mail + "', please type the name below")
-        if (input_mail) {
+        if (input_mail != null) {
             if (input_mail == mail) {
                 _post("/admin/users/" + id + "/delete",
                     "User deleted correctly",

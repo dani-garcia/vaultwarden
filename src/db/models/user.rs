@@ -137,6 +137,10 @@ impl User {
     }
 
     pub fn save(&mut self, conn: &DbConn) -> EmptyResult {
+        if self.email.trim().is_empty() {
+            err!("User email can't be empty")
+        }
+
         self.updated_at = Utc::now().naive_utc();
 
         diesel::replace_into(users::table) // Insert or update
@@ -213,6 +217,10 @@ impl Invitation {
     }
 
     pub fn save(&mut self, conn: &DbConn) -> EmptyResult {
+        if self.email.trim().is_empty() {
+            err!("Invitation email can't be empty")
+        }
+
         diesel::replace_into(invitations::table)
             .values(&*self)
             .execute(&**conn)
