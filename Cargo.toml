@@ -19,7 +19,7 @@ rocket = { version = "0.4.0", features = ["tls"], default-features = false }
 rocket_contrib = "0.4.0"
 
 # HTTP client
-reqwest = "0.9.8"
+reqwest = "0.9.9"
 
 # multipart/form-data support
 multipart = "0.15.4"
@@ -36,7 +36,7 @@ chashmap = "2.2.0"
 # A generic serialization/deserialization framework
 serde = "1.0.85"
 serde_derive = "1.0.85"
-serde_json = "1.0.36"
+serde_json = "1.0.37"
 
 # Logging
 log = "0.4.6"
