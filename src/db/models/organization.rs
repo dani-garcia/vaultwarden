@@ -296,14 +296,8 @@ impl UserOrganization {
         let user = User::find_by_uuid(&self.user_uuid, conn).unwrap();
 
         json!({
-            "OrganizationUserId": self.uuid,
-            "AccessAll": self.access_all,
-            "Name": user.name,
-            "Email": user.email,
-            "Type": self.type_,
-            "Status": self.status,
-            "ReadOnly": read_only,
-            "Object": "collectionUser",
+            "Id": self.uuid,
+            "ReadOnly": read_only
         })
     }
 
