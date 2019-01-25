@@ -375,11 +375,7 @@ fn get_collection_users(org_id: String, coll_id: String, _headers: AdminHeaders,
         })
         .collect();
 
-    Ok(Json(json!({
-        "Data": user_list,
-        "Object": "list",
-        "ContinuationToken": null,
-    })))
+    Ok(Json(json!(user_list)))
 }
 
 #[derive(FromForm)]
