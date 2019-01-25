@@ -79,14 +79,14 @@ fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> EmptyResult {
                 }
 
                 user
-            } else if CONFIG.signups_allowed {
+            } else if CONFIG.signups_allowed() {
                 err!("Account with this email already exists")
             } else {
                 err!("Registration not allowed")
             }
         }
         None => {
-            if CONFIG.signups_allowed || Invitation::take(&data.Email, &conn) {
+            if CONFIG.signups_allowed() || Invitation::take(&data.Email, &conn) {
                 User::new(data.Email.clone())
             } else {
                 err!("Registration not allowed")
@@ -419,9 +419,9 @@ fn password_hint(data: JsonUpcase<PasswordHintData>, conn: DbConn) -> EmptyResul
         None => return Ok(()),
     };
 
-    if let Some(ref mail_config) = CONFIG.mail {
+    if let Some(ref mail_config) = CONFIG.mail() {
         mail::send_password_hint(&data.Email, hint, mail_config)?;
-    } else if CONFIG.show_password_hint {
+    } else if CONFIG.show_password_hint() {
         if let Some(hint) = hint {
             err!(format!("Your password hint is: {}", &hint));
         } else {

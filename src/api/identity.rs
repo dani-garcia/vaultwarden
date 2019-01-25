@@ -234,7 +234,7 @@ fn _json_err_twofactor(providers: &[i32], user_uuid: &str, conn: &DbConn) -> Api
         match TwoFactorType::from_i32(*provider) {
             Some(TwoFactorType::Authenticator) => { /* Nothing to do for TOTP */ }
 
-            Some(TwoFactorType::U2f) if CONFIG.domain_set => {
+            Some(TwoFactorType::U2f) if CONFIG.domain_set() => {
                 let request = two_factor::generate_u2f_login(user_uuid, conn)?;
                 let mut challenge_list = Vec::new();
 

@@ -56,7 +56,7 @@ impl User {
 
             password_hash: Vec::new(),
             salt: crypto::get_random_64(),
-            password_iterations: CONFIG.password_iterations,
+            password_iterations: CONFIG.password_iterations(),
 
             security_stamp: crate::util::get_uuid(),
 
@@ -242,7 +242,7 @@ impl Invitation {
     }
 
     pub fn take(mail: &str, conn: &DbConn) -> bool {
-        CONFIG.invitations_allowed
+        CONFIG.invitations_allowed()
             && match Self::find_by_mail(mail, &conn) {
                 Some(invitation) => invitation.delete(&conn).is_ok(),
                 None => false,

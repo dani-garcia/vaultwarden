@@ -16,21 +16,21 @@ const JWT_ALGORITHM: Algorithm = Algorithm::RS256;
 lazy_static! {
     pub static ref DEFAULT_VALIDITY: Duration = Duration::hours(2);
     static ref JWT_HEADER: Header = Header::new(JWT_ALGORITHM);
-    pub static ref JWT_LOGIN_ISSUER: String = format!("{}|login", CONFIG.domain);
-    pub static ref JWT_INVITE_ISSUER: String = format!("{}|invite", CONFIG.domain);
-    pub static ref JWT_ADMIN_ISSUER: String = format!("{}|admin", CONFIG.domain);
-    static ref PRIVATE_RSA_KEY: Vec<u8> = match read_file(&CONFIG.private_rsa_key) {
+    pub static ref JWT_LOGIN_ISSUER: String = format!("{}|login", CONFIG.domain());
+    pub static ref JWT_INVITE_ISSUER: String = format!("{}|invite", CONFIG.domain());
+    pub static ref JWT_ADMIN_ISSUER: String = format!("{}|admin", CONFIG.domain());
+    static ref PRIVATE_RSA_KEY: Vec<u8> = match read_file(&CONFIG.private_rsa_key()) {
         Ok(key) => key,
         Err(e) => panic!(
             "Error loading private RSA Key from {}\n Error: {}",
-            CONFIG.private_rsa_key, e
+            CONFIG.private_rsa_key(), e
         ),
     };
-    static ref PUBLIC_RSA_KEY: Vec<u8> = match read_file(&CONFIG.public_rsa_key) {
+    static ref PUBLIC_RSA_KEY: Vec<u8> = match read_file(&CONFIG.public_rsa_key()) {
         Ok(key) => key,
         Err(e) => panic!(
             "Error loading public RSA Key from {}\n Error: {}",
-            CONFIG.public_rsa_key, e
+            CONFIG.public_rsa_key(), e
         ),
     };
 }
@@ -185,8 +185,8 @@ impl<'a, 'r> FromRequest<'a, 'r> for Headers {
         let headers = request.headers();
 
         // Get host
-        let host = if CONFIG.domain_set {
-            CONFIG.domain.clone()
+        let host = if CONFIG.domain_set() {
+            CONFIG.domain()
         } else if let Some(referer) = headers.get_one("Referer") {
             referer.to_string()
         } else {

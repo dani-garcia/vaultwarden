@@ -1,4 +1,3 @@
-use rocket_contrib::json::Json;
 use serde_json::Value;
 
 use rocket::http::{Cookie, Cookies, SameSite};
@@ -6,7 +5,7 @@ use rocket::request::{self, FlashMessage, Form, FromRequest, Request};
 use rocket::response::{content::Html, Flash, Redirect};
 use rocket::{Outcome, Route};
 
-use crate::api::{JsonResult, JsonUpcase};
+use crate::api::{ApiResult, EmptyResult, JsonUpcase};
 use crate::auth::{decode_admin, encode_jwt, generate_admin_claims, ClientIp};
 use crate::db::{models::*, DbConn};
 use crate::error::Error;
@@ -14,7 +13,7 @@ use crate::mail;
 use crate::CONFIG;
 
 pub fn routes() -> Vec<Route> {
-    if CONFIG.admin_token.is_none() {
+    if CONFIG.admin_token().is_none() {
         return Vec::new();
     }
 
@@ -54,7 +53,7 @@ impl AdminTemplateData {
 }
 
 #[get("/", rank = 2)]
-fn admin_login(flash: Option<FlashMessage>) -> Result<Html<String>, Error> {
+fn admin_login(flash: Option<FlashMessage>) -> ApiResult<Html<String>> {
     // If there is an error, show it
     let msg = flash.map(|msg| format!("{}: {}", msg.name(), msg.msg()));
 
@@ -97,14 +96,14 @@ fn post_admin_login(data: Form<LoginForm>, mut cookies: Cookies, ip: ClientIp) -
 }
 
 fn _validate_token(token: &str) -> bool {
-    match CONFIG.admin_token.as_ref() {
+    match CONFIG.admin_token().as_ref() {
         None => false,
         Some(t) => t == token,
     }
 }
 
 #[get("/", rank = 1)]
-fn admin_page(_token: AdminToken, conn: DbConn) -> Result<Html<String>, Error> {
+fn admin_page(_token: AdminToken, conn: DbConn) -> ApiResult<Html<String>> {
     let users = User::get_all(&conn);
     let users_json: Vec<Value> = users.iter().map(|u| u.to_json(&conn)).collect();
 
@@ -119,39 +118,36 @@ struct InviteData {
 }
 
 #[post("/invite", data = "<data>")]
-fn invite_user(data: JsonUpcase<InviteData>, _token: AdminToken, conn: DbConn) -> JsonResult {
+fn invite_user(data: JsonUpcase<InviteData>, _token: AdminToken, conn: DbConn) -> EmptyResult {
     let data: InviteData = data.into_inner().data;
     let email = data.Email.clone();
     if User::find_by_mail(&data.Email, &conn).is_some() {
         err!("User already exists")
     }
 
-    if !CONFIG.invitations_allowed {
+    if !CONFIG.invitations_allowed() {
         err!("Invitations are not allowed")
     }
 
-    if let Some(ref mail_config) = CONFIG.mail {
+    if let Some(ref mail_config) = CONFIG.mail() {
         let mut user = User::new(email);
         user.save(&conn)?;
         let org_name = "bitwarden_rs";
-        mail::send_invite(&user.email, &user.uuid, None, None, &org_name, None, mail_config)?;
+        mail::send_invite(&user.email, &user.uuid, None, None, &org_name, None, mail_config)
     } else {
         let mut invitation = Invitation::new(data.Email);
-        invitation.save(&conn)?;
+        invitation.save(&conn)
     }
-
-    Ok(Json(json!({})))
 }
 
 #[post("/users/<uuid>/delete")]
-fn delete_user(uuid: String, _token: AdminToken, conn: DbConn) -> JsonResult {
+fn delete_user(uuid: String, _token: AdminToken, conn: DbConn) -> EmptyResult {
     let user = match User::find_by_uuid(&uuid, &conn) {
         Some(user) => user,
         None => err!("User doesn't exist"),
     };
 
-    user.delete(&conn)?;
-    Ok(Json(json!({})))
+    user.delete(&conn)
 }
 
 pub struct AdminToken {}

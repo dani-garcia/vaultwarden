@@ -28,7 +28,7 @@ impl Attachment {
     }
 
     pub fn get_file_path(&self) -> String {
-        format!("{}/{}/{}", CONFIG.attachments_folder, self.cipher_uuid, self.id)
+        format!("{}/{}/{}", CONFIG.attachments_folder(), self.cipher_uuid, self.id)
     }
 
     pub fn to_json(&self, host: &str) -> Value {
@@ -86,7 +86,7 @@ impl Attachment {
 
     pub fn find_by_id(id: &str, conn: &DbConn) -> Option<Self> {
         let id = id.to_lowercase();
-        
+
         attachments::table
             .filter(attachments::id.eq(id))
             .first::<Self>(&**conn)

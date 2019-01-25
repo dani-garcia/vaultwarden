@@ -179,7 +179,7 @@ fn activate_authenticator(data: JsonUpcase<EnableAuthenticatorData>, headers: He
         Some(n) => n as u64,
         None => err!("Malformed token"),
     };
-    
+
     let mut user = headers.user;
 
     if !user.check_valid_password(&password_hash) {
@@ -236,13 +236,13 @@ use crate::CONFIG;
 const U2F_VERSION: &str = "U2F_V2";
 
 lazy_static! {
-    static ref APP_ID: String = format!("{}/app-id.json", &CONFIG.domain);
+    static ref APP_ID: String = format!("{}/app-id.json", &CONFIG.domain());
     static ref U2F: U2f = U2f::new(APP_ID.clone());
 }
 
 #[post("/two-factor/get-u2f", data = "<data>")]
 fn generate_u2f(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn) -> JsonResult {
-    if !CONFIG.domain_set {
+    if !CONFIG.domain_set() {
         err!("`DOMAIN` environment variable is not set. U2F disabled")
     }
 
@@ -286,6 +286,8 @@ fn generate_u2f_challenge(data: JsonUpcase<PasswordData>, headers: Headers, conn
 #[derive(Deserialize, Debug)]
 #[allow(non_snake_case)]
 struct EnableU2FData {
+    Id: NumberOrString, // 1..5
+    Name: String,
     MasterPasswordHash: String,
     DeviceResponse: String,
 }
@@ -321,54 +323,52 @@ fn activate_u2f(data: JsonUpcase<EnableU2FData>, headers: Headers, conn: DbConn)
         err!("Invalid password");
     }
 
-    let tf_challenge =
-        TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::U2fRegisterChallenge as i32, &conn);
+    let tf_type = TwoFactorType::U2fRegisterChallenge as i32;
+    let tf_challenge = match TwoFactor::find_by_user_and_type(&user.uuid, tf_type, &conn) {
+        Some(c) => c,
+        None => err!("Can't recover challenge"),
+    };
 
-    if let Some(tf_challenge) = tf_challenge {
-        let challenge: Challenge = serde_json::from_str(&tf_challenge.data)?;
+    let challenge: Challenge = serde_json::from_str(&tf_challenge.data)?;
+    tf_challenge.delete(&conn)?;
 
-        tf_challenge.delete(&conn)?;
+    let response_copy: RegisterResponseCopy = serde_json::from_str(&data.DeviceResponse)?;
 
-        let response_copy: RegisterResponseCopy = serde_json::from_str(&data.DeviceResponse)?;
+    let error_code = response_copy
+        .error_code
+        .clone()
+        .map_or("0".into(), NumberOrString::into_string);
 
-        let error_code = response_copy
-            .error_code
-            .clone()
-            .map_or("0".into(), NumberOrString::into_string);
-
-        if error_code != "0" {
-            err!("Error registering U2F token")
-        }
-
-        let response = response_copy.into_response();
-
-        let registration = U2F.register_response(challenge.clone(), response)?;
-        // TODO: Allow more than one U2F device
-        let mut registrations = Vec::new();
-        registrations.push(registration);
-
-        let tf_registration = TwoFactor::new(
-            user.uuid.clone(),
-            TwoFactorType::U2f,
-            serde_json::to_string(&registrations).unwrap(),
-        );
-        tf_registration.save(&conn)?;
-
-        _generate_recover_code(&mut user, &conn);
-
-        Ok(Json(json!({
-            "Enabled": true,
-            "Challenge": {
-                "UserId": user.uuid,
-                "AppId": APP_ID.to_string(),
-                "Challenge": challenge,
-                "Version": U2F_VERSION,
-            },
-            "Object": "twoFactorU2f"
-        })))
-    } else {
-        err!("Can't recover challenge")
+    if error_code != "0" {
+        err!("Error registering U2F token")
     }
+
+    let response = response_copy.into_response();
+
+    let registration = U2F.register_response(challenge.clone(), response)?;
+    // TODO: Allow more than one U2F device
+    let mut registrations = Vec::new();
+    registrations.push(registration);
+
+    let tf_registration = TwoFactor::new(
+        user.uuid.clone(),
+        TwoFactorType::U2f,
+        serde_json::to_string(&registrations).unwrap(),
+    );
+    tf_registration.save(&conn)?;
+
+    _generate_recover_code(&mut user, &conn);
+
+    Ok(Json(json!({
+        "Enabled": true,
+        "Challenge": {
+            "UserId": user.uuid,
+            "AppId": APP_ID.to_string(),
+            "Challenge": challenge,
+            "Version": U2F_VERSION,
+        },
+        "Object": "twoFactorU2f"
+    })))
 }
 
 #[put("/two-factor/u2f", data = "<data>")]
@@ -493,29 +493,9 @@ use yubico::config::Config;
 use yubico::Yubico;
 
 fn parse_yubikeys(data: &EnableYubikeyData) -> Vec<String> {
-    let mut yubikeys: Vec<String> = Vec::new();
+    let data_keys = [&data.Key1, &data.Key2, &data.Key3, &data.Key4, &data.Key5];
 
-    if data.Key1.is_some() {
-        yubikeys.push(data.Key1.as_ref().unwrap().to_owned());
-    }
-
-    if data.Key2.is_some() {
-        yubikeys.push(data.Key2.as_ref().unwrap().to_owned());
-    }
-
-    if data.Key3.is_some() {
-        yubikeys.push(data.Key3.as_ref().unwrap().to_owned());
-    }
-
-    if data.Key4.is_some() {
-        yubikeys.push(data.Key4.as_ref().unwrap().to_owned());
-    }
-
-    if data.Key5.is_some() {
-        yubikeys.push(data.Key5.as_ref().unwrap().to_owned());
-    }
-
-    yubikeys
+    data_keys.into_iter().filter_map(|e| e.as_ref().cloned()).collect()
 }
 
 fn jsonify_yubikeys(yubikeys: Vec<String>) -> serde_json::Value {
@@ -529,17 +509,17 @@ fn jsonify_yubikeys(yubikeys: Vec<String>) -> serde_json::Value {
 }
 
 fn verify_yubikey_otp(otp: String) -> JsonResult {
-    if !CONFIG.yubico_cred_set {
+    if !CONFIG.yubico_cred_set() {
         err!("`YUBICO_CLIENT_ID` or `YUBICO_SECRET_KEY` environment variable is not set. Yubikey OTP Disabled")
     }
 
     let yubico = Yubico::new();
     let config = Config::default()
-        .set_client_id(CONFIG.yubico_client_id.to_owned())
-        .set_key(CONFIG.yubico_secret_key.to_owned());
+        .set_client_id(CONFIG.yubico_client_id())
+        .set_key(CONFIG.yubico_secret_key());
 
-    let result = match CONFIG.yubico_server {
-        Some(ref server) => yubico.verify(otp, config.set_api_hosts(vec![server.to_owned()])),
+    let result = match CONFIG.yubico_server() {
+        Some(server) => yubico.verify(otp, config.set_api_hosts(vec![server])),
         None => yubico.verify(otp, config),
     };
 
@@ -551,7 +531,7 @@ fn verify_yubikey_otp(otp: String) -> JsonResult {
 
 #[post("/two-factor/get-yubikey", data = "<data>")]
 fn generate_yubikey(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn) -> JsonResult {
-    if !CONFIG.yubico_cred_set {
+    if !CONFIG.yubico_cred_set() {
         err!("`YUBICO_CLIENT_ID` or `YUBICO_SECRET_KEY` environment variable is not set. Yubikey OTP Disabled")
     }
 
@@ -637,7 +617,7 @@ fn activate_yubikey(data: JsonUpcase<EnableYubikeyData>, headers: Headers, conn:
         serde_json::to_string(&yubikey_metadata).unwrap(),
     );
     yubikey_registration.save(&conn)?;
-    
+
     _generate_recover_code(&mut user, &conn);
 
     let mut result = jsonify_yubikeys(yubikey_metadata.Keys);

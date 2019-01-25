@@ -32,7 +32,7 @@ fn icon(domain: String) -> Content<Vec<u8>> {
 }
 
 fn get_icon(domain: &str) -> Vec<u8> {
-    let path = format!("{}/{}.png", CONFIG.icon_cache_folder, domain);
+    let path = format!("{}/{}.png", CONFIG.icon_cache_folder(), domain);
 
     if let Some(icon) = get_cached_icon(&path) {
         return icon;
@@ -87,7 +87,7 @@ fn file_is_expired(path: &str, ttl: u64) -> Result<bool, Error> {
 
 fn icon_is_negcached(path: &str) -> bool {
     let miss_indicator = path.to_owned() + ".miss";
-    let expired = file_is_expired(&miss_indicator, CONFIG.icon_cache_negttl);
+    let expired = file_is_expired(&miss_indicator, CONFIG.icon_cache_negttl());
 
     match expired {
         // No longer negatively cached, drop the marker
@@ -110,12 +110,12 @@ fn mark_negcache(path: &str) {
 }
 
 fn icon_is_expired(path: &str) -> bool {
-    let expired = file_is_expired(path, CONFIG.icon_cache_ttl);
+    let expired = file_is_expired(path, CONFIG.icon_cache_ttl());
     expired.unwrap_or(true)
 }
 
 fn get_icon_url(domain: &str) -> String {
-    if CONFIG.local_icon_extractor {
+    if CONFIG.local_icon_extractor() {
         format!("http://{}/favicon.ico", domain)
     } else {
         format!("https://icons.bitwarden.com/{}/icon.png", domain)
@@ -135,7 +135,7 @@ fn download_icon(url: &str) -> Result<Vec<u8>, Error> {
 }
 
 fn save_icon(path: &str, icon: &[u8]) {
-    create_dir_all(&CONFIG.icon_cache_folder).expect("Error creating icon cache");
+    create_dir_all(&CONFIG.icon_cache_folder()).expect("Error creating icon cache");
 
     if let Ok(mut f) = File::create(path) {
         f.write_all(icon).expect("Error writing icon file");

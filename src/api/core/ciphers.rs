@@ -302,7 +302,7 @@ pub fn update_cipher_from_data(
     cipher.fields = data.Fields.map(|f| f.to_string());
     cipher.data = type_data.to_string();
     cipher.password_history = data.PasswordHistory.map(|f| f.to_string());
-    
+
     cipher.save(&conn)?;
     cipher.move_to_folder(data.FolderId, &headers.user.uuid, &conn)?;
 
@@ -651,7 +651,7 @@ fn post_attachment(uuid: String, data: Data, content_type: &ContentType, headers
     let boundary_pair = params.next().expect("No boundary provided");
     let boundary = boundary_pair.1;
 
-    let base_path = Path::new(&CONFIG.attachments_folder).join(&cipher.uuid);
+    let base_path = Path::new(&CONFIG.attachments_folder()).join(&cipher.uuid);
 
     let mut attachment_key = None;
 

@@ -8,11 +8,11 @@ use rocket::Route;
 use rocket_contrib::json::Json;
 use serde_json::Value;
 
-use crate::CONFIG;
 use crate::util::Cached;
+use crate::CONFIG;
 
 pub fn routes() -> Vec<Route> {
-    if CONFIG.web_vault_enabled {
+    if CONFIG.web_vault_enabled() {
         routes![web_index, app_id, web_files, attachments, alive]
     } else {
         routes![attachments, alive]
@@ -21,7 +21,9 @@ pub fn routes() -> Vec<Route> {
 
 #[get("/")]
 fn web_index() -> Cached<io::Result<NamedFile>> {
-    Cached::short(NamedFile::open(Path::new(&CONFIG.web_vault_folder).join("index.html")))
+    Cached::short(NamedFile::open(
+        Path::new(&CONFIG.web_vault_folder()).join("index.html"),
+    ))
 }
 
 #[get("/app-id.json")]
@@ -35,7 +37,7 @@ fn app_id() -> Cached<Content<Json<Value>>> {
             {
             "version": { "major": 1, "minor": 0 },
             "ids": [
-                &CONFIG.domain,
+                &CONFIG.domain(),
                 "ios:bundle-id:com.8bit.bitwarden",
                 "android:apk-key-hash:dUGFzUzf3lmHSLBDBIv+WaFyZMI" ]
             }]
@@ -45,12 +47,12 @@ fn app_id() -> Cached<Content<Json<Value>>> {
 
 #[get("/<p..>", rank = 10)] // Only match this if the other routes don't match
 fn web_files(p: PathBuf) -> Cached<io::Result<NamedFile>> {
-    Cached::long(NamedFile::open(Path::new(&CONFIG.web_vault_folder).join(p)))
+    Cached::long(NamedFile::open(Path::new(&CONFIG.web_vault_folder()).join(p)))
 }
 
 #[get("/attachments/<uuid>/<file..>")]
 fn attachments(uuid: String, file: PathBuf) -> io::Result<NamedFile> {
-    NamedFile::open(Path::new(&CONFIG.attachments_folder).join(uuid).join(file))
+    NamedFile::open(Path::new(&CONFIG.attachments_folder()).join(uuid).join(file))
 }
 
 #[get("/alive")]

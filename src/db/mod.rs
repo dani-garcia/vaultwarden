@@ -25,13 +25,13 @@ pub mod schema;
 
 /// Initializes a database pool.
 pub fn init_pool() -> Pool {
-    let manager = ConnectionManager::new(&*CONFIG.database_url);
+    let manager = ConnectionManager::new(CONFIG.database_url());
 
     r2d2::Pool::builder().build(manager).expect("Failed to create pool")
 }
 
 pub fn get_connection() -> Result<Connection, ConnectionError> {
-    Connection::establish(&CONFIG.database_url)
+    Connection::establish(&CONFIG.database_url())
 }
 
 /// Attempts to retrieve a single connection from the managed database pool. If

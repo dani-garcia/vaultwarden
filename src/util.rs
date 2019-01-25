@@ -2,8 +2,8 @@
 // Web Headers and caching
 //
 use rocket::fairing::{Fairing, Info, Kind};
-use rocket::{Request, Response};
 use rocket::response::{self, Responder};
+use rocket::{Request, Response};
 
 pub struct AppHeaders();
 

@@ -6,8 +6,8 @@ use native_tls::{Protocol, TlsConnector};
 
 use crate::api::EmptyResult;
 use crate::auth::{encode_jwt, generate_invite_claims};
+use crate::config::MailConfig;
 use crate::error::Error;
-use crate::MailConfig;
 use crate::CONFIG;
 
 fn mailer(config: &MailConfig) -> SmtpTransport {
@@ -85,7 +85,7 @@ pub fn send_invite(
     let (subject, body) = get_text(
         "email/send_org_invite",
         json!({
-            "url": CONFIG.domain,
+            "url": CONFIG.domain(),
             "org_id": org_id.unwrap_or("_".to_string()),
             "org_user_id": org_user_id.unwrap_or("_".to_string()),
             "email": address,
@@ -101,7 +101,7 @@ pub fn send_invite_accepted(new_user_email: &str, address: &str, org_name: &str,
     let (subject, body) = get_text(
         "email/invite_accepted",
         json!({
-            "url": CONFIG.domain,
+            "url": CONFIG.domain(),
             "email": new_user_email,
             "org_name": org_name,
         }),
@@ -114,7 +114,7 @@ pub fn send_invite_confirmed(address: &str, org_name: &str, config: &MailConfig)
     let (subject, body) = get_text(
         "email/invite_confirmed",
         json!({
-            "url": CONFIG.domain,
+            "url": CONFIG.domain(),
             "org_name": org_name,
         }),
     )?;

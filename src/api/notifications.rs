@@ -25,7 +25,7 @@ fn negotiate(_headers: Headers, _conn: DbConn) -> JsonResult {
     let conn_id = BASE64URL.encode(&crypto::get_random(vec![0u8; 16]));
     let mut available_transports: Vec<JsonValue> = Vec::new();
 
-    if CONFIG.websocket_enabled {
+    if CONFIG.websocket_enabled() {
         available_transports.push(json!({"transport":"WebSockets", "transferFormats":["Text","Binary"]}));
     }
 
@@ -90,7 +90,7 @@ fn serialize_date(date: NaiveDateTime) -> Value {
     let seconds: i64 = date.timestamp();
     let nanos: i64 = date.timestamp_subsec_nanos() as i64;
     let timestamp = nanos << 34 | seconds;
-    
+
     let bs = timestamp.to_be_bytes();
 
     // -1 is Timestamp
@@ -349,9 +349,12 @@ pub fn start_notification_server() -> WebSocketUsers {
     let factory = WSFactory::init();
     let users = factory.users.clone();
 
-    if CONFIG.websocket_enabled {
+    if CONFIG.websocket_enabled() {
         thread::spawn(move || {
-            WebSocket::new(factory).unwrap().listen(&CONFIG.websocket_url).unwrap();
+            WebSocket::new(factory)
+                .unwrap()
+                .listen(&CONFIG.websocket_url())
+                .unwrap();
         });
     }
 
