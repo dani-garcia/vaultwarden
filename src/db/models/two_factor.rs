@@ -100,6 +100,7 @@ impl TwoFactor {
     pub fn find_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
         twofactor::table
             .filter(twofactor::user_uuid.eq(user_uuid))
+            .filter(twofactor::type_.lt(1000)) // Filter implementation types
             .load::<Self>(&**conn)
             .expect("Error loading twofactor")
     }

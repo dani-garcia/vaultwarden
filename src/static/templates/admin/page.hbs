@@ -10,6 +10,9 @@
                     <div class="row justify-content-between">
                         <div class="col">
                             <strong>{{Name}}</strong>
+                            {{#if TwoFactorEnabled}}
+                            <span class="badge badge-success ml-2">2FA</span>
+                            {{/if}}
                             <span class="d-block">{{Email}}</span>
                         </div>
                         <div class="col">

@@ -125,7 +125,7 @@ pub fn send_invite_confirmed(address: &str, org_name: &str, config: &MailConfig)
 fn send_email(address: &str, subject: &str, body: &str, config: &MailConfig) -> EmptyResult {
     let email = EmailBuilder::new()
         .to(address)
-        .from((config.smtp_from.clone(), config.smtp_from_name.clone()))
+        .from((config.smtp_from.as_str(), config.smtp_from_name.as_str()))
         .subject(subject)
         .header(("Content-Type", "text/html"))
         .body(body)

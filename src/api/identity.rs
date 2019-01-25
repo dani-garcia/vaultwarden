@@ -151,10 +151,7 @@ fn twofactor_auth(
     device: &mut Device,
     conn: &DbConn,
 ) -> ApiResult<Option<String>> {
-    let twofactors_raw = TwoFactor::find_by_user(user_uuid, conn);
-    // Remove u2f challenge twofactors (impl detail)
-    let twofactors: Vec<_> = twofactors_raw.iter().filter(|tf| tf.type_ < 1000).collect();
-
+    let twofactors = TwoFactor::find_by_user(user_uuid, conn);
     let providers: Vec<_> = twofactors.iter().map(|tf| tf.type_).collect();
 
     // No twofactor token if twofactor is disabled
