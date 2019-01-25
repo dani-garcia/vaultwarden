@@ -293,8 +293,6 @@ impl UserOrganization {
     }
 
     pub fn to_json_collection_user_details(&self, read_only: bool, conn: &DbConn) -> Value {
-        let user = User::find_by_uuid(&self.user_uuid, conn).unwrap();
-
         json!({
             "Id": self.uuid,
             "ReadOnly": read_only
