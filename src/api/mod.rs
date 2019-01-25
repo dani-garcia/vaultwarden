@@ -23,6 +23,7 @@ pub type EmptyResult = ApiResult<()>;
 
 use crate::util;
 type JsonUpcase<T> = Json<util::UpCase<T>>;
+type JsonUpcaseVec<T> = Json<Vec<util::UpCase<T>>>;
 
 // Common structs representing JSON data received
 #[derive(Deserialize)]

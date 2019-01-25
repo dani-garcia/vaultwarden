@@ -6,7 +6,9 @@ use crate::db::models::*;
 use crate::db::DbConn;
 use crate::CONFIG;
 
-use crate::api::{EmptyResult, JsonResult, JsonUpcase, Notify, NumberOrString, PasswordData, UpdateType};
+use crate::api::{
+    EmptyResult, JsonResult, JsonUpcase, JsonUpcaseVec, Notify, NumberOrString, PasswordData, UpdateType,
+};
 use crate::auth::{decode_invite, AdminHeaders, Headers, OwnerHeaders};
 
 use crate::mail;
@@ -26,6 +28,7 @@ pub fn routes() -> Vec<Route> {
         get_org_collections,
         get_org_collection_detail,
         get_collection_users,
+        put_collection_users,
         put_organization,
         post_organization,
         post_organization_collections,
@@ -371,11 +374,44 @@ fn get_collection_users(org_id: String, coll_id: String, _headers: AdminHeaders,
         .map(|col_user| {
             UserOrganization::find_by_user_and_org(&col_user.user_uuid, &org_id, &conn)
                 .unwrap()
-                .to_json_collection_user_details(col_user.read_only, &conn)
+                .to_json_collection_user_details(col_user.read_only)
         })
         .collect();
 
     Ok(Json(json!(user_list)))
+}
+
+#[put("/organizations/<org_id>/collections/<coll_id>/users", data = "<data>")]
+fn put_collection_users(
+    org_id: String,
+    coll_id: String,
+    data: JsonUpcaseVec<CollectionData>,
+    _headers: AdminHeaders,
+    conn: DbConn,
+) -> EmptyResult {
+    // Get org and collection, check that collection is from org
+    if Collection::find_by_uuid_and_org(&coll_id, &org_id, &conn).is_none() {
+        err!("Collection not found in Organization")
+    }
+
+    // Delete all the user-collections
+    CollectionUser::delete_all_by_collection(&coll_id, &conn)?;
+
+    // And then add all the received ones (except if the user has access_all)
+    for d in data.iter().map(|d| &d.data) {
+        let user = match UserOrganization::find_by_uuid(&d.Id, &conn) {
+            Some(u) => u,
+            None => err!("User is not part of organization"),
+        };
+
+        if user.access_all {
+            continue;
+        }
+
+        CollectionUser::save(&user.user_uuid, &coll_id, d.ReadOnly, &conn)?;
+    }
+
+    Ok(())
 }
 
 #[derive(FromForm)]
