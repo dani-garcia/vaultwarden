@@ -13,6 +13,9 @@
                             {{#if TwoFactorEnabled}}
                             <span class="badge badge-success ml-2">2FA</span>
                             {{/if}}
+                            {{#unless _Enabled}}
+                            <span class="badge badge-warning ml-2">Disabled</span>
+                            {{/unless}}
                             <span class="d-block">{{Email}}</span>
                         </div>
                         <div class="col">
@@ -23,7 +26,8 @@
                                 {{/each}}
                             </span>
                         </div>
-                        <div style="flex: 0 0 100px;">
+                        <div style="flex: 0 0 240px;">
+                            <a class="mr-3" href="#" onclick='deauthUser("{{Id}}")'>Deauthorize sessions</a>
                             <a class="mr-3" href="#" onclick='deleteUser("{{Id}}", "{{Email}}")'>Delete User</a>
                         </div>
                     </div>
@@ -79,6 +83,12 @@
         }
         return false;
     }
+    function deauthUser(id) {
+        _post("/admin/users/" + id + "/deauth",
+            "Sessions deauthorized correctly",
+            "Error deauthorizing sessions");
+        return false;
+    }
     function inviteUser() {
         inv = $("#email-invite");
         data = JSON.stringify({ "Email": inv.val() });
@@ -87,14 +97,12 @@
             "Error inviting user", data);
         return false;
     }
-
     let OrgTypes = {
         "0": { "name": "Owner", "color": "orange" },
         "1": { "name": "Admin", "color": "blueviolet" },
         "2": { "name": "User", "color": "blue" },
         "3": { "name": "Manager", "color": "green" },
     };
-
     $(window).on('load', function () {
         $("#invite-form").submit(inviteUser);
         $("img.identicon").each(function (i, e) {

@@ -17,7 +17,14 @@ pub fn routes() -> Vec<Route> {
         return Vec::new();
     }
 
-    routes![admin_login, post_admin_login, admin_page, invite_user, delete_user]
+    routes![
+        admin_login,
+        post_admin_login,
+        admin_page,
+        invite_user,
+        delete_user,
+        deauth_user,
+    ]
 }
 
 const COOKIE_NAME: &'static str = "BWRS_ADMIN";
@@ -148,6 +155,18 @@ fn delete_user(uuid: String, _token: AdminToken, conn: DbConn) -> EmptyResult {
     };
 
     user.delete(&conn)
+}
+
+#[post("/users/<uuid>/deauth")]
+fn deauth_user(uuid: String, _token: AdminToken, conn: DbConn) -> EmptyResult {
+    let mut user = match User::find_by_uuid(&uuid, &conn) {
+        Some(user) => user,
+        None => err!("User doesn't exist"),
+    };
+
+    user.reset_security_stamp();
+
+    user.save(&conn)
 }
 
 pub struct AdminToken {}

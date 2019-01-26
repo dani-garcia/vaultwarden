@@ -120,6 +120,7 @@ impl User {
         let twofactor_enabled = !TwoFactor::find_by_user(&self.uuid, conn).is_empty();
 
         json!({
+            "_Enabled": !self.password_hash.is_empty(),
             "Id": self.uuid,
             "Name": self.name,
             "Email": self.email,
