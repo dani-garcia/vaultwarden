@@ -55,10 +55,8 @@ fn get_icon(domain: &str) -> Vec<u8> {
         return icon;
     }
 
-    let url = get_icon_url(&domain).unwrap();
-
     // Get the icon, or fallback in case of error
-    match download_icon(&url) {
+    match download_icon(&domain) {
         Ok(icon) => {
             save_icon(&path, &icon);
             icon
@@ -284,9 +282,11 @@ fn fix_href(href: &str, url: &str) -> String {
     }
 }
 
-fn download_icon(url: &str) -> Result<Vec<u8>, Error> {
-    info!("Downloading icon for {}...", url);
-    let mut res = reqwest::get(url)?;
+fn download_icon(domain: &str) -> Result<Vec<u8>, Error> {
+    let url = get_icon_url(&domain).unwrap();
+
+    info!("Downloading icon for {} via {}...",domain, url);
+    let mut res = reqwest::get(&url)?;
 
     res = res.error_for_status()?;
 
