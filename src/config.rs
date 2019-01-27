@@ -56,7 +56,6 @@ make_config! {
     extended_logging: bool,
     log_file: Option<String>,
 
-    local_icon_extractor: bool,
     signups_allowed: bool,
     invitations_allowed: bool,
     admin_token: Option<String>,
@@ -167,7 +166,6 @@ impl Config {
             extended_logging: get_env_or("EXTENDED_LOGGING", true),
             log_file: get_env("LOG_FILE"),
 
-            local_icon_extractor: get_env_or("LOCAL_ICON_EXTRACTOR", false),
             signups_allowed: get_env_or("SIGNUPS_ALLOWED", true),
             admin_token: get_env("ADMIN_TOKEN"),
             invitations_allowed: get_env_or("INVITATIONS_ALLOWED", true),
