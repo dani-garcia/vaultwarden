@@ -40,6 +40,7 @@ use serde_json::{Error as SerdeErr, Value};
 use std::io::Error as IOErr;
 use std::time::SystemTimeError as TimeErr;
 use u2f::u2ferror::U2fError as U2fErr;
+use regex::Error as RegexErr;
 
 // Error struct
 // Contains a String error message, meant for the user and an enum variant, with an error of different types.
@@ -60,6 +61,7 @@ make_error! {
     IOError(IOErr):       _has_source, _api_error,
     TimeError(TimeErr):   _has_source, _api_error,
     ReqError(ReqErr):     _has_source, _api_error,
+    RegexError(RegexErr): _has_source, _api_error,
 }
 
 impl std::fmt::Debug for Error {

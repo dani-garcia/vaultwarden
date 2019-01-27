@@ -99,6 +99,7 @@ fn init_logging() -> Result<(), fern::InitError> {
         .level_for("handlebars", log::LevelFilter::Warn)
         .level_for("ws", log::LevelFilter::Info)
         .level_for("multipart", log::LevelFilter::Info)
+        .level_for("html5ever", log::LevelFilter::Info)
         .chain(std::io::stdout());
 
     if let Some(log_file) = CONFIG.log_file() {
