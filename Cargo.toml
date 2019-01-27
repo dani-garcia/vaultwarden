@@ -98,6 +98,10 @@ handlebars = "1.1.0"
 # Macro ident-combining library
 paste = "0.1.4"
 
+# For favicon extraction from main website
+soup = "0.3.0"
+regex = "1.1.0"
+
 [patch.crates-io]
 # Add support for Timestamp type
 rmp = { git = 'https://github.com/dani-garcia/msgpack-rust' }
@@ -105,3 +109,4 @@ rmp = { git = 'https://github.com/dani-garcia/msgpack-rust' }
 # Use new native_tls version 0.2
 lettre = { git = 'https://github.com/lettre/lettre', rev = 'c988b1760ad81' }
 lettre_email = { git = 'https://github.com/lettre/lettre', rev = 'c988b1760ad81' }
+
