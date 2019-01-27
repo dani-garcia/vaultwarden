@@ -283,7 +283,7 @@ fn fix_href(href: &str, url: &str) -> String {
 }
 
 fn download_icon(domain: &str) -> Result<Vec<u8>, Error> {
-    let url = get_icon_url(&domain).unwrap();
+    let url = get_icon_url(&domain)?;
 
     info!("Downloading icon for {} via {}...",domain, url);
     let mut res = reqwest::get(&url)?;
