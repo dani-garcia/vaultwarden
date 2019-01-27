@@ -196,40 +196,28 @@ impl Cipher {
     }
 
     pub fn move_to_folder(&self, folder_uuid: Option<String>, user_uuid: &str, conn: &DbConn) -> EmptyResult {
-        match self.get_folder_uuid(&user_uuid, &conn) {
-            None => {
-                match folder_uuid {
-                    Some(new_folder) => {
-                        self.update_users_revision(conn);
-                        let folder_cipher = FolderCipher::new(&new_folder, &self.uuid);
-                        folder_cipher.save(&conn)
-                    }
-                    None => Ok(()), //nothing to do
+        User::update_uuid_revision(user_uuid, &conn);
+
+        match (self.get_folder_uuid(&user_uuid, &conn), folder_uuid) {
+            // No changes
+            (None, None) => Ok(()),
+            (Some(ref old), Some(ref new)) if old == new => Ok(()),
+
+            // Add to folder
+            (None, Some(new)) => FolderCipher::new(&new, &self.uuid).save(&conn),
+
+            // Remove from folder
+            (Some(old), None) => match FolderCipher::find_by_folder_and_cipher(&old, &self.uuid, &conn) {
+                Some(old) => old.delete(&conn),
+                None => err!("Couldn't move from previous folder"),
+            },
+
+            // Move to another folder
+            (Some(old), Some(new)) => {
+                if let Some(old) = FolderCipher::find_by_folder_and_cipher(&old, &self.uuid, &conn) {
+                    old.delete(&conn)?;
                 }
-            }
-            Some(current_folder) => {
-                match folder_uuid {
-                    Some(new_folder) => {
-                        if current_folder == new_folder {
-                            Ok(()) //nothing to do
-                        } else {
-                            self.update_users_revision(conn);
-                            if let Some(current_folder) =
-                                FolderCipher::find_by_folder_and_cipher(&current_folder, &self.uuid, &conn)
-                            {
-                                current_folder.delete(&conn)?;
-                            }
-                            FolderCipher::new(&new_folder, &self.uuid).save(&conn)
-                        }
-                    }
-                    None => {
-                        self.update_users_revision(conn);
-                        match FolderCipher::find_by_folder_and_cipher(&current_folder, &self.uuid, &conn) {
-                            Some(current_folder) => current_folder.delete(&conn),
-                            None => err!("Couldn't move from previous folder"),
-                        }
-                    }
-                }
+                FolderCipher::new(&new, &self.uuid).save(&conn)
             }
         }
     }

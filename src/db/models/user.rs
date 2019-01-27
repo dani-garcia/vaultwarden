@@ -172,12 +172,14 @@ impl User {
             .map_res("Error deleting user")
     }
 
-    pub fn update_uuid_revision(uuid: &str, conn: &DbConn) {
+    pub fn update_uuid_revision(uuid: &str, conn: &DbConn) -> Vec<String> {
         if let Some(mut user) = User::find_by_uuid(&uuid, conn) {
             if user.update_revision(conn).is_err() {
                 warn!("Failed to update revision for {}", user.email);
             };
         };
+
+        vec![uuid.to_string()]
     }
 
     pub fn update_revision(&mut self, conn: &DbConn) -> EmptyResult {

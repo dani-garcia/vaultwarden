@@ -241,7 +241,9 @@ impl CollectionUser {
     pub fn delete_all_by_collection(collection_uuid: &str, conn: &DbConn) -> EmptyResult {
         CollectionUser::find_by_collection(&collection_uuid, conn)
             .iter()
-            .for_each(|collection| User::update_uuid_revision(&collection.user_uuid, conn));
+            .for_each(|collection| {
+                User::update_uuid_revision(&collection.user_uuid, conn);
+            });
 
         diesel::delete(users_collections::table.filter(users_collections::collection_uuid.eq(collection_uuid)))
             .execute(&**conn)

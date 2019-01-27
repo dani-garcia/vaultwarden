@@ -306,7 +306,9 @@ pub fn update_cipher_from_data(
     cipher.save(&conn)?;
     cipher.move_to_folder(data.FolderId, &headers.user.uuid, &conn)?;
 
-    nt.send_cipher_update(ut, &cipher, &cipher.update_users_revision(&conn));
+    if ut != UpdateType::None {
+        nt.send_cipher_update(ut, &cipher, &cipher.update_users_revision(&conn));
+    }
 
     Ok(())
 }
@@ -351,25 +353,18 @@ fn post_ciphers_import(data: JsonUpcase<ImportData>, headers: Headers, conn: DbC
     }
 
     // Read and create the ciphers
-    for (index, cipher_data) in data.Ciphers.into_iter().enumerate() {
+    for (index, mut cipher_data) in data.Ciphers.into_iter().enumerate() {
         let folder_uuid = relations_map.get(&index).map(|i| folders[*i].uuid.clone());
+        cipher_data.FolderId = folder_uuid;
 
         let mut cipher = Cipher::new(cipher_data.Type, cipher_data.Name.clone());
-        update_cipher_from_data(
-            &mut cipher,
-            cipher_data,
-            &headers,
-            false,
-            &conn,
-            &nt,
-            UpdateType::CipherCreate,
-        )?;
-
-        cipher.move_to_folder(folder_uuid, &headers.user.uuid.clone(), &conn)?;
+        update_cipher_from_data(&mut cipher, cipher_data, &headers, false, &conn, &nt, UpdateType::None)?;
     }
 
     let mut user = headers.user;
-    user.update_revision(&conn)
+    user.update_revision(&conn)?;
+    nt.send_user_update(UpdateType::Vault, &user);
+    Ok(())
 }
 
 #[put("/ciphers/<uuid>/admin", data = "<data>")]
@@ -637,7 +632,14 @@ fn share_cipher_by_uuid(
 }
 
 #[post("/ciphers/<uuid>/attachment", format = "multipart/form-data", data = "<data>")]
-fn post_attachment(uuid: String, data: Data, content_type: &ContentType, headers: Headers, conn: DbConn, nt: Notify) -> JsonResult {
+fn post_attachment(
+    uuid: String,
+    data: Data,
+    content_type: &ContentType,
+    headers: Headers,
+    conn: DbConn,
+    nt: Notify,
+) -> JsonResult {
     let cipher = match Cipher::find_by_uuid(&uuid, &conn) {
         Some(cipher) => cipher,
         None => err!("Cipher doesn't exist"),
@@ -816,56 +818,60 @@ fn delete_cipher_selected_post(data: JsonUpcase<Value>, headers: Headers, conn: 
     delete_cipher_selected(data, headers, conn, nt)
 }
 
+#[derive(Deserialize)]
+#[allow(non_snake_case)]
+struct MoveCipherData {
+    FolderId: Option<String>,
+    Ids: Vec<String>,
+}
+
 #[post("/ciphers/move", data = "<data>")]
-fn move_cipher_selected(data: JsonUpcase<Value>, headers: Headers, conn: DbConn, nt: Notify) -> EmptyResult {
+fn move_cipher_selected(data: JsonUpcase<MoveCipherData>, headers: Headers, conn: DbConn, nt: Notify) -> EmptyResult {
     let data = data.into_inner().data;
+    let user_uuid = headers.user.uuid;
 
-    let folder_id = match data.get("FolderId") {
-        Some(folder_id) => match folder_id.as_str() {
-            Some(folder_id) => match Folder::find_by_uuid(folder_id, &conn) {
-                Some(folder) => {
-                    if folder.user_uuid != headers.user.uuid {
-                        err!("Folder is not owned by user")
-                    }
-                    Some(folder.uuid)
+    if let Some(ref folder_id) = data.FolderId {
+        match Folder::find_by_uuid(folder_id, &conn) {
+            Some(folder) => {
+                if folder.user_uuid != user_uuid {
+                    err!("Folder is not owned by user")
                 }
-                None => err!("Folder doesn't exist"),
-            },
-            None => err!("Folder id provided in wrong format"),
-        },
-        None => None,
-    };
+            }
+            None => err!("Folder doesn't exist"),
+        }
+    }
 
-    let uuids = match data.get("Ids") {
-        Some(ids) => match ids.as_array() {
-            Some(ids) => ids.iter().filter_map(Value::as_str),
-            None => err!("Posted ids field is not an array"),
-        },
-        None => err!("Request missing ids field"),
-    };
-
-    for uuid in uuids {
-        let mut cipher = match Cipher::find_by_uuid(uuid, &conn) {
+    for uuid in data.Ids {
+        let mut cipher = match Cipher::find_by_uuid(&uuid, &conn) {
             Some(cipher) => cipher,
             None => err!("Cipher doesn't exist"),
         };
 
-        if !cipher.is_accessible_to_user(&headers.user.uuid, &conn) {
+        if !cipher.is_accessible_to_user(&user_uuid, &conn) {
             err!("Cipher is not accessible by user")
         }
 
         // Move cipher
-        cipher.move_to_folder(folder_id.clone(), &headers.user.uuid, &conn)?;
+        cipher.move_to_folder(data.FolderId.clone(), &user_uuid, &conn)?;
         cipher.save(&conn)?;
 
-        nt.send_cipher_update(UpdateType::CipherUpdate, &cipher, &cipher.update_users_revision(&conn));
+        nt.send_cipher_update(
+            UpdateType::CipherUpdate,
+            &cipher,
+            &User::update_uuid_revision(&user_uuid, &conn),
+        );
     }
 
     Ok(())
 }
 
 #[put("/ciphers/move", data = "<data>")]
-fn move_cipher_selected_put(data: JsonUpcase<Value>, headers: Headers, conn: DbConn, nt: Notify) -> EmptyResult {
+fn move_cipher_selected_put(
+    data: JsonUpcase<MoveCipherData>,
+    headers: Headers,
+    conn: DbConn,
+    nt: Notify,
+) -> EmptyResult {
     move_cipher_selected(data, headers, conn, nt)
 }
 
@@ -874,7 +880,7 @@ fn delete_all(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn, nt
     let data: PasswordData = data.into_inner().data;
     let password_hash = data.MasterPasswordHash;
 
-    let user = headers.user;
+    let mut user = headers.user;
 
     if !user.check_valid_password(&password_hash) {
         err!("Invalid password")
@@ -883,15 +889,15 @@ fn delete_all(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn, nt
     // Delete ciphers and their attachments
     for cipher in Cipher::find_owned_by_user(&user.uuid, &conn) {
         cipher.delete(&conn)?;
-        nt.send_cipher_update(UpdateType::CipherDelete, &cipher, &cipher.update_users_revision(&conn));
     }
 
     // Delete folders
     for f in Folder::find_by_user(&user.uuid, &conn) {
         f.delete(&conn)?;
-        nt.send_folder_update(UpdateType::FolderDelete, &f);
     }
 
+    user.update_revision(&conn)?;
+    nt.send_user_update(UpdateType::Vault, &user);
     Ok(())
 }
 

@@ -240,7 +240,6 @@ impl WebSocketUsers {
     }
 
     // NOTE: The last modified date needs to be updated before calling these methods
-    #[allow(dead_code)]
     pub fn send_user_update(&self, ut: UpdateType, user: &User) {
         let data = create_update(
             vec![
@@ -325,6 +324,7 @@ fn create_ping() -> Vec<u8> {
 }
 
 #[allow(dead_code)]
+#[derive(PartialEq)]
 pub enum UpdateType {
     CipherUpdate = 0,
     CipherCreate = 1,
@@ -340,6 +340,8 @@ pub enum UpdateType {
     SyncSettings = 10,
 
     LogOut = 11,
+
+    None = 100,
 }
 
 use rocket::State;
