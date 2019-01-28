@@ -27,8 +27,8 @@ pub fn routes() -> Vec<Route> {
     ]
 }
 
-const COOKIE_NAME: &'static str = "BWRS_ADMIN";
-const ADMIN_PATH: &'static str = "/admin";
+const COOKIE_NAME: &str = "BWRS_ADMIN";
+const ADMIN_PATH: &str = "/admin";
 
 #[derive(Serialize)]
 struct AdminTemplateData {

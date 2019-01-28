@@ -1,32 +1,19 @@
 use std::fs::{create_dir_all, remove_file, symlink_metadata, File};
 use std::io::prelude::*;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use rocket::http::ContentType;
 use rocket::response::Content;
 use rocket::Route;
 
-use reqwest;
+use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, ACCEPT_LANGUAGE, CACHE_CONTROL, PRAGMA, USER_AGENT};
 use reqwest::Client;
-use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT, ACCEPT_LANGUAGE, CACHE_CONTROL, PRAGMA, ACCEPT};
-use std::time::Duration;
 
-use crate::error::Error;
-//use std::error::Error as StdError;
-use crate::CONFIG;
-
-//extern crate regex;
 use regex::Regex;
-
-//extern crate soup;
 use soup::prelude::*;
 
-use std::vec::Vec;
-#[derive(Debug)]
-struct IconList {
-    priority: u8,
-    href: String,
-}
+use crate::error::Error;
+use crate::CONFIG;
 
 pub fn routes() -> Vec<Route> {
     routes![icon]
@@ -53,6 +40,10 @@ fn get_icon(domain: &str) -> Vec<u8> {
 
     if let Some(icon) = get_cached_icon(&path) {
         return icon;
+    }
+
+    if CONFIG.disable_icon_download() {
+        return FALLBACK_ICON.to_vec();
     }
 
     // Get the icon, or fallback in case of error
@@ -129,6 +120,12 @@ fn icon_is_expired(path: &str) -> bool {
     expired.unwrap_or(true)
 }
 
+#[derive(Debug)]
+struct IconList {
+    priority: u8,
+    href: String,
+}
+
 /// Returns a Result with a String which holds the preferend favicon location.
 /// There will always be a result with a string which will contain https://example.com/favicon.ico
 /// This does not mean that that location does exists, but it is the default location.
@@ -165,40 +162,39 @@ fn get_icon_url(domain: &str) -> Result<String, Error> {
     let mut iconlist: Vec<IconList> = Vec::new();
 
     let resp = client.get(&ssldomain).send().or_else(|_| client.get(&httpdomain).send());
-    if let Ok(mut content) = resp {
-        let body = content.text().unwrap();
-        // Extract the URL from te respose incase redirects occured (like @ gitlab.com)
-        let url = format!("{}://{}", content.url().scheme(), content.url().host().unwrap());
+    if let Ok(content) = resp {
+        // Extract the URL from the respose in case redirects occured (like @ gitlab.com)
+        let url = content.url().origin().ascii_serialization();
 
         // Add the default favicon.ico to the list with the domain the content responded from.
-        iconlist.push(IconList { priority: 35, href: format!("{}{}", url, "/favicon.ico") });
+        iconlist.push(IconList { priority: 35, href: format!("{}/favicon.ico", url) });
 
-        let soup = Soup::new(&body);
+        let soup = Soup::from_reader(content)?;
         // Search for and filter
         let favicons = soup
             .tag("link")
             .attr("rel", Regex::new(r"icon$|apple.*icon")?) // Only use icon rels
-            .attr("href", Regex::new(r"(?i)\w+(\.jp(e){0,1}g$|\.png$|\.ico$)")?) // Only allow specific extensions
+            .attr("href", Regex::new(r"(?i)\w+\.(jpg|jpeg|png|ico)(\?.*)?$")?) // Only allow specific extensions
             .find_all();
 
         // Loop through all the found icons and determine it's priority
         for favicon in favicons {
-            let favicon_sizes = favicon.get("sizes").unwrap_or("".to_string()).to_string();
-            let favicon_href = fix_href(&favicon.get("href").unwrap_or("".to_string()).to_string(), &url);
-            let favicon_priority = get_icon_priority(&favicon_href, &favicon_sizes);
+            let favicon_sizes = favicon.get("sizes").unwrap_or_default();
+            let href = fix_href(&favicon.get("href").unwrap_or_default(), &url);
+            let priority = get_icon_priority(&href, &favicon_sizes);
 
-            iconlist.push(IconList { priority: favicon_priority, href: favicon_href})
+            iconlist.push(IconList { priority, href })
         }
     } else {
         // Add the default favicon.ico to the list with just the given domain
-        iconlist.push(IconList { priority: 35, href: format!("{}{}", ssldomain, "/favicon.ico") });
+        iconlist.push(IconList { priority: 35, href: format!("{}/favicon.ico", ssldomain) });
     }
 
     // Sort the iconlist by priority
     iconlist.sort_by_key(|x| x.priority);
 
     // There always is an icon in the list, so no need to check if it exists, and just return the first one
-    Ok(format!("{}", &iconlist[0].href))
+    Ok(iconlist.remove(0).href)
 }
 
 /// Returns a Integer with the priority of the type of the icon which to prefer.
@@ -215,10 +211,10 @@ fn get_icon_url(domain: &str) -> Result<String, Error> {
 /// ```
 fn get_icon_priority(href: &str, sizes: &str) -> u8 {
     // Check if there is a dimension set
-    if ! sizes.is_empty() {
-        let dimensions : Vec<&str> = sizes.split("x").collect();
-        let width = dimensions[0].parse::<u16>().unwrap();
-        let height = dimensions[1].parse::<u16>().unwrap();
+    if !sizes.is_empty() {
+        let dimensions: Vec<&str> = sizes.split('x').collect();
+        let width: u16 = dimensions[0].parse().unwrap();
+        let height: u16 = dimensions[1].parse().unwrap();
 
         // Only allow square dimensions
         if width == height {
@@ -270,22 +266,22 @@ fn fix_href(href: &str, url: &str) -> String {
             format!("http:{}", href)
         }
     // If the href_output just starts with a single / it does not have the host here at all.
-    } else if ! href.starts_with("http") {
-        if href.starts_with("/") {
+    } else if !href.starts_with("http") {
+        if href.starts_with('/') {
             format!("{}{}", url, href)
         } else {
             format!("{}/{}", url, href)
         }
     // All seems oke, just return the given href
     } else {
-        format!("{}", href)
+        href.to_string()
     }
 }
 
 fn download_icon(domain: &str) -> Result<Vec<u8>, Error> {
     let url = get_icon_url(&domain)?;
 
-    info!("Downloading icon for {} via {}...",domain, url);
+    info!("Downloading icon for {} via {}...", domain, url);
     let mut res = reqwest::get(&url)?;
 
     res = res.error_for_status()?;
