@@ -164,10 +164,10 @@ fn get_icon_url(domain: &str) -> Result<String, Error> {
     let resp = client.get(&ssldomain).send().or_else(|_| client.get(&httpdomain).send());
     if let Ok(content) = resp {
         // Extract the URL from the respose in case redirects occured (like @ gitlab.com)
-        let url = content.url().origin().ascii_serialization();
+        let url = content.url().clone();
 
         // Add the default favicon.ico to the list with the domain the content responded from.
-        iconlist.push(IconList { priority: 35, href: format!("{}/favicon.ico", url) });
+        iconlist.push(IconList { priority: 35, href: url.join("/favicon.ico").unwrap().into_string() });
 
         let soup = Soup::from_reader(content)?;
         // Search for and filter
@@ -179,9 +179,9 @@ fn get_icon_url(domain: &str) -> Result<String, Error> {
 
         // Loop through all the found icons and determine it's priority
         for favicon in favicons {
-            let favicon_sizes = favicon.get("sizes").unwrap_or_default();
-            let href = fix_href(&favicon.get("href").unwrap_or_default(), &url);
-            let priority = get_icon_priority(&href, &favicon_sizes);
+            let sizes = favicon.get("sizes").unwrap_or_default();
+            let href = url.join(&favicon.get("href").unwrap_or_default()).unwrap().into_string();
+            let priority = get_icon_priority(&href, &sizes);
 
             iconlist.push(IconList { priority, href })
         }
@@ -242,39 +242,6 @@ fn get_icon_priority(href: &str, sizes: &str) -> u8 {
         } else {
             30
         }
-    }
-}
-
-/// Returns a String which will have the given href fixed by adding the correct URL if it does not have this already.
-///
-/// # Arguments
-/// * `href` - A string which holds the href value or relative path.
-/// * `url`  - A string which holds the URL including http(s) which will preseed the href when needed.
-///
-/// # Example
-/// ```
-/// fixed_href1 = fix_href("/path/to/a/favicon.png", "https://eample.com");
-/// fixed_href2 = fix_href("//example.com/path/to/a/second/favicon.jpg", "https://eample.com");
-/// ```
-fn fix_href(href: &str, url: &str) -> String {
-    // When the href is starting with //, so without a scheme is valid and would use the browsers scheme.
-    // We need to detect this and add the scheme here.
-    if href.starts_with("//") {
-        if url.starts_with("https") {
-            format!("https:{}", href)
-        } else {
-            format!("http:{}", href)
-        }
-    // If the href_output just starts with a single / it does not have the host here at all.
-    } else if !href.starts_with("http") {
-        if href.starts_with('/') {
-            format!("{}{}", url, href)
-        } else {
-            format!("{}/{}", url, href)
-        }
-    // All seems oke, just return the given href
-    } else {
-        href.to_string()
     }
 }
 
