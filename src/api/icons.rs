@@ -6,8 +6,7 @@ use rocket::http::ContentType;
 use rocket::response::Content;
 use rocket::Route;
 
-use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, ACCEPT_LANGUAGE, CACHE_CONTROL, PRAGMA, USER_AGENT};
-use reqwest::Client;
+use reqwest::{header::HeaderMap, Client, Response};
 
 use regex::Regex;
 use soup::prelude::*;
@@ -20,6 +19,16 @@ pub fn routes() -> Vec<Route> {
 }
 
 const FALLBACK_ICON: &[u8; 344] = include_bytes!("../static/fallback-icon.png");
+
+lazy_static! {
+    // Reuse the client between requests
+    static ref CLIENT: Client = Client::builder()
+        .gzip(true)
+        .timeout(Duration::from_secs(5))
+        .default_headers(_header_map())
+        .build()
+        .unwrap();
+}
 
 #[get("/<domain>/icon.png")]
 fn icon(domain: String) -> Content<Vec<u8>> {
@@ -139,21 +148,6 @@ struct IconList {
 /// favicon_location2 = get_icon_url("gitlab.com");
 /// ```
 fn get_icon_url(domain: &str) -> Result<String, Error> {
-    // Set some default headers for the request.
-    // Use a browser like user-agent to make sure most websites will return there correct website.
-    let mut headers = HeaderMap::new();
-    headers.insert(USER_AGENT, HeaderValue::from_static("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36 Edge/16.16299"));
-    headers.insert(ACCEPT_LANGUAGE, HeaderValue::from_static("en-US,en;q=0.8"));
-    headers.insert(CACHE_CONTROL, HeaderValue::from_static("no-cache"));
-    headers.insert(PRAGMA, HeaderValue::from_static("no-cache"));
-    headers.insert(ACCEPT, HeaderValue::from_static("text/html,application/xhtml+xml,application/xml; q=0.9,image/webp,image/apng,*/*;q=0.8"));
-
-    let client = Client::builder()
-        .gzip(true)
-        .timeout(Duration::from_secs(5))
-        .default_headers(headers)
-        .build()?;
-
     // Default URL with secure and insecure schemes
     let ssldomain = format!("https://{}", domain);
     let httpdomain = format!("http://{}", domain);
@@ -161,7 +155,7 @@ fn get_icon_url(domain: &str) -> Result<String, Error> {
     // Create the iconlist
     let mut iconlist: Vec<IconList> = Vec::new();
 
-    let resp = client.get(&ssldomain).send().or_else(|_| client.get(&httpdomain).send());
+    let resp = get_page(&ssldomain).or_else(|_| get_page(&httpdomain));
     if let Ok(content) = resp {
         // Extract the URL from the respose in case redirects occured (like @ gitlab.com)
         let url = content.url().clone();
@@ -195,6 +189,10 @@ fn get_icon_url(domain: &str) -> Result<String, Error> {
 
     // There always is an icon in the list, so no need to check if it exists, and just return the first one
     Ok(iconlist.remove(0).href)
+}
+
+fn get_page(url: &str) -> Result<Response, Error> {
+    CLIENT.get(url).send()?.error_for_status().map_err(Into::into)
 }
 
 /// Returns a Integer with the priority of the type of the icon which to prefer.
@@ -249,12 +247,14 @@ fn download_icon(domain: &str) -> Result<Vec<u8>, Error> {
     let url = get_icon_url(&domain)?;
 
     info!("Downloading icon for {} via {}...", domain, url);
-    let mut res = reqwest::get(&url)?;
+    let mut res = get_page(&url)?;
 
-    res = res.error_for_status()?;
-
-    let mut buffer: Vec<u8> = vec![];
+    let mut buffer = Vec::new();
     res.copy_to(&mut buffer)?;
+
+    if buffer.is_empty() {
+        err!("Empty response")
+    }
 
     Ok(buffer)
 }
@@ -265,4 +265,26 @@ fn save_icon(path: &str, icon: &[u8]) {
     if let Ok(mut f) = File::create(path) {
         f.write_all(icon).expect("Error writing icon file");
     };
+}
+
+fn _header_map() -> HeaderMap {
+    // Set some default headers for the request.
+    // Use a browser like user-agent to make sure most websites will return there correct website.
+    use reqwest::header::*;
+
+    macro_rules! headers {
+        ($( $name:ident : $value:literal),+ $(,)* ) => {
+            let mut headers = HeaderMap::new();
+            $( headers.insert($name, HeaderValue::from_static($value)); )+
+            headers
+        };
+    }
+
+    headers! {
+        USER_AGENT: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36 Edge/16.16299",
+        ACCEPT_LANGUAGE: "en-US,en;q=0.8",
+        CACHE_CONTROL: "no-cache",
+        PRAGMA: "no-cache",
+        ACCEPT: "text/html,application/xhtml+xml,application/xml; q=0.9,image/webp,image/apng,*/*;q=0.8",
+    }
 }
