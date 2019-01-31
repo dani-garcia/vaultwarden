@@ -167,10 +167,10 @@ fn get_icon_url(domain: &str) -> Result<(String, String), Error> {
         // Extract the URL from the respose in case redirects occured (like @ gitlab.com)
         let url = content.url().clone();
         let raw_cookies = content.headers().get_all("set-cookie");
-        raw_cookies.iter().for_each(|raw_cookie| {
+        cookie_str = raw_cookies.iter().map(|raw_cookie| {
             let cookie = Cookie::parse(raw_cookie.to_str().unwrap_or_default()).unwrap();
-            cookie_str.push_str(&format!("{}={}; ", cookie.name(), cookie.value()));
-        });
+            format!("{}={}; ", cookie.name(), cookie.value())
+        }).collect::<String>();
 
         // Add the default favicon.ico to the list with the domain the content responded from.
         iconlist.push(IconList { priority: 35, href: url.join("/favicon.ico").unwrap().into_string() });
