@@ -8,6 +8,8 @@ use rocket::Route;
 
 use reqwest::{header::HeaderMap, Client, Response};
 
+use rocket::http::{Cookie};
+
 use regex::Regex;
 use soup::prelude::*;
 
@@ -147,7 +149,7 @@ struct IconList {
 /// favicon_location1 = get_icon_url("github.com");
 /// favicon_location2 = get_icon_url("gitlab.com");
 /// ```
-fn get_icon_url(domain: &str) -> Result<String, Error> {
+fn get_icon_url(domain: &str) -> Result<(String, String), Error> {
     // Default URL with secure and insecure schemes
     let ssldomain = format!("https://{}", domain);
     let httpdomain = format!("http://{}", domain);
@@ -155,10 +157,20 @@ fn get_icon_url(domain: &str) -> Result<String, Error> {
     // Create the iconlist
     let mut iconlist: Vec<IconList> = Vec::new();
 
+    // Create the cookie_str to fill it all the cookies from the response
+    // These cookies can be used to request/download the favicon image.
+    // Some sites have extra security in place with for example XSRF Tokens.
+    let mut cookie_str = String::new();
+
     let resp = get_page(&ssldomain).or_else(|_| get_page(&httpdomain));
     if let Ok(content) = resp {
         // Extract the URL from the respose in case redirects occured (like @ gitlab.com)
         let url = content.url().clone();
+        let raw_cookies = content.headers().get_all("set-cookie");
+        cookie_str = raw_cookies.iter().map(|raw_cookie| {
+            let cookie = Cookie::parse(raw_cookie.to_str().unwrap_or_default()).unwrap();
+            format!("{}={}; ", cookie.name(), cookie.value())
+        }).collect::<String>();
 
         // Add the default favicon.ico to the list with the domain the content responded from.
         iconlist.push(IconList { priority: 35, href: url.join("/favicon.ico").unwrap().into_string() });
@@ -188,11 +200,16 @@ fn get_icon_url(domain: &str) -> Result<String, Error> {
     iconlist.sort_by_key(|x| x.priority);
 
     // There always is an icon in the list, so no need to check if it exists, and just return the first one
-    Ok(iconlist.remove(0).href)
+    Ok((iconlist.remove(0).href, cookie_str))
 }
 
 fn get_page(url: &str) -> Result<Response, Error> {
-    CLIENT.get(url).send()?.error_for_status().map_err(Into::into)
+    //CLIENT.get(url).send()?.error_for_status().map_err(Into::into)
+    get_page_with_cookies(url, "")
+}
+
+fn get_page_with_cookies(url: &str, cookie_str: &str) -> Result<Response, Error> {
+    CLIENT.get(url).header("cookie", cookie_str).send()?.error_for_status().map_err(Into::into)
 }
 
 /// Returns a Integer with the priority of the type of the icon which to prefer.
@@ -244,10 +261,10 @@ fn get_icon_priority(href: &str, sizes: &str) -> u8 {
 }
 
 fn download_icon(domain: &str) -> Result<Vec<u8>, Error> {
-    let url = get_icon_url(&domain)?;
+    let (url, cookie_str) = get_icon_url(&domain)?;
 
     info!("Downloading icon for {} via {}...", domain, url);
-    let mut res = get_page(&url)?;
+    let mut res = get_page_with_cookies(&url, &cookie_str)?;
 
     let mut buffer = Vec::new();
     res.copy_to(&mut buffer)?;
