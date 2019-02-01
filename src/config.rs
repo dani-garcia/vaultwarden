@@ -125,7 +125,9 @@ impl Config {
 
     fn load() -> Self {
         use crate::util::{get_env, get_env_or};
-        dotenv::dotenv().ok();
+        #[cfg(debug_assertions)] {
+            dotenv::dotenv().ok();
+        }
 
         let df = get_env_or("DATA_FOLDER", "data".to_string());
         let key = get_env_or("RSA_KEY_FILENAME", format!("{}/{}", &df, "rsa_key"));
