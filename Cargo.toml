@@ -22,7 +22,7 @@ rocket_contrib = "0.4.0"
 reqwest = "0.9.9"
 
 # multipart/form-data support
-multipart = "0.15.4"
+multipart = "0.16.1"
 
 # WebSockets library
 ws = "0.7.9"
@@ -44,7 +44,7 @@ fern = "0.5.7"
 syslog = { version = "4.0.1", optional = true }
 
 # A safe, extensible ORM and Query builder
-diesel = { version = "1.4.0", features = ["sqlite", "chrono", "r2d2"] }
+diesel = { version = "1.4.1", features = ["sqlite", "chrono", "r2d2"] }
 diesel_migrations = { version = "1.4.0", features = ["sqlite"] }
 
 # Bundled SQLite
@@ -54,7 +54,7 @@ libsqlite3-sys = { version = "0.12.0", features = ["bundled"] }
 ring = { version = "0.13.5", features = ["rsa_signing"] }
 
 # UUID generation
-uuid = { version = "0.7.1", features = ["v4"] }
+uuid = { version = "0.7.2", features = ["v4"] }
 
 # Date and time library for Rust
 chrono = "0.4.6"
@@ -85,7 +85,7 @@ derive_more = "0.13.0"
 
 # Numerical libraries
 num-traits = "0.2.6"
-num-derive = "0.2.3"
+num-derive = "0.2.4"
 
 # Email libraries
 lettre = "0.9.0"

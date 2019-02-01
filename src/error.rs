@@ -35,12 +35,13 @@ macro_rules! make_error {
 use diesel::result::Error as DieselErr;
 use handlebars::RenderError as HbErr;
 use jsonwebtoken::errors::Error as JWTErr;
+use regex::Error as RegexErr;
 use reqwest::Error as ReqErr;
 use serde_json::{Error as SerdeErr, Value};
 use std::io::Error as IOErr;
 use std::time::SystemTimeError as TimeErr;
 use u2f::u2ferror::U2fError as U2fErr;
-use regex::Error as RegexErr;
+use yubico::yubicoerror::YubicoError as YubiErr;
 
 // Error struct
 // Contains a String error message, meant for the user and an enum variant, with an error of different types.
@@ -62,6 +63,7 @@ make_error! {
     TimeError(TimeErr):   _has_source, _api_error,
     ReqError(ReqErr):     _has_source, _api_error,
     RegexError(RegexErr): _has_source, _api_error,
+    YubiError(YubiErr):   _has_source, _api_error,
 }
 
 impl std::fmt::Debug for Error {

@@ -659,7 +659,7 @@ fn post_attachment(
 
     Multipart::with_body(data.open(), boundary)
         .foreach_entry(|mut field| {
-            match field.headers.name.as_str() {
+            match &*field.headers.name {
                 "key" => {
                     use std::io::Read;
                     let mut key_buffer = String::new();
