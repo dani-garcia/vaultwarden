@@ -56,15 +56,44 @@
 
     <div id="config-block" class="align-items-center p-3 mb-3 text-white-50 bg-secondary rounded shadow">
         <div>
-            <h6 class="mb-0 text-white">Configuration</h6>
-
+            <h6 class="text-white">Configuration</h6>
             <form class="form" id="config-form">
-                <textarea id="config-text" class="form-control" style="height: 300px;">{{config}}</textarea>
+                {{#each config}}
+                {{#if editable}}
+                <div class="form-group row">
+                    {{#case type "text" "number"}}
+                    <label for="input_{{name}}" class="col-sm-2 col-form-label">{{name}}</label>
+                    <div class="col-sm-9">
+                        <input class="form-control" id="input_{{name}}" type="{{type}}" name="{{name}}" value="{{value}}"
+                            {{#if default}} placeholder="Default: {{default}}" {{/if}}>
+                    </div>
+                    {{/case}}
+                    {{#case type "checkbox"}}
+                    <div class="col-sm-2">{{name}}</div>
+                    <div class="col-sm-9">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="input_{{name}}" name="{{name}}"
+                                {{#if value}} checked {{/if}}>
+
+                            <label class="form-check-label" for="input_{{name}}"> Default: {{default}} </label>
+                        </div>
+                    </div>
+                    {{/case}}
+                </div>
+                {{/if}}
+                {{/each}}
                 <button type="submit" class="btn btn-primary">Save</button>
             </form>
         </div>
     </div>
 </main>
+
+<style>
+    #config-block ::placeholder {
+        /* Most modern browsers support this now. */
+        color: orangered;
+    }
+</style>
 
 <script>
     function reload() { window.location.reload(); }
@@ -73,7 +102,12 @@
         return "data:image/svg+xml;base64," + data.toString();
     }
     function _post(url, successMsg, errMsg, data) {
-        $.post(url, data, function () {
+        $.post({
+            url: url,
+            data: data,
+            //async: false,
+            contentType: "application/json",
+        }).done(function () {
             alert(successMsg);
         }).fail(function (e) {
             const r = e.responseJSON;
@@ -108,8 +142,26 @@
             "Error inviting user", data);
         return false;
     }
+    function getFormData(form) {
+        var form_array = form.serializeArray();
+        var indexed_array = {};
+
+        $.each(form_array, function (i, v) {
+            indexed_array[v.name] = process_value(v.value);
+        });
+
+        return indexed_array;
+    }
+    function process_value(val) {
+        val = val.trim();
+        if (val === "") { return null; }
+        if (!isNaN(val)) { return +val; }
+        if (val === "true" || val === "on") { return true; }
+        if (val === "false" || val === "off") { return false; }
+        return val;
+    }
     function saveConfig() {
-        data = $("#config-text").val();
+        data = JSON.stringify(getFormData($("#config-form")));
         _post("/admin/config/", "Config saved correctly",
             "Error saving config", data);
         return false;

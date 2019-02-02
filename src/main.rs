@@ -1,5 +1,5 @@
 #![feature(proc_macro_hygiene, decl_macro, vec_remove_item, try_trait)]
-#![recursion_limit = "128"]
+#![recursion_limit = "256"]
 
 #[macro_use]
 extern crate rocket;

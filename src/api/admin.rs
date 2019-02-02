@@ -90,7 +90,7 @@ fn _validate_token(token: &str) -> bool {
 struct AdminTemplateData {
     users: Vec<Value>,
     page_content: String,
-    config: String,
+    config: Value,
 }
 
 impl AdminTemplateData {
@@ -98,7 +98,7 @@ impl AdminTemplateData {
         Self {
             users,
             page_content: String::from("admin/page"),
-            config: CONFIG.get_config(),
+            config: CONFIG.prepare_json(),
         }
     }
 
@@ -170,9 +170,6 @@ fn deauth_user(uuid: String, _token: AdminToken, conn: DbConn) -> EmptyResult {
 #[post("/config", data = "<data>")]
 fn post_config(data: Json<ConfigBuilder>, _token: AdminToken) -> EmptyResult {
     let data: ConfigBuilder = data.into_inner();
-
-    info!("CONFIG: {:#?}", data);
-
     CONFIG.update_config(data)
 }
 
