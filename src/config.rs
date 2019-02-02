@@ -10,6 +10,7 @@ lazy_static! {
         println!("Error loading config:\n\t{:?}\n", e);
         exit(12)
     });
+    pub static ref CONFIG_PATH: String = "data/config.json".into();
 }
 
 macro_rules! make_config {
@@ -86,7 +87,7 @@ macro_rules! make_config {
                 // TODO: Get config.json from CONFIG_PATH env var or -c <CONFIG> console option
 
                 // Loading from file
-                let mut builder = match ConfigBuilder::from_file("data/config.json") {
+                let mut builder = match ConfigBuilder::from_file(&CONFIG_PATH) {
                     Ok(builder) => builder,
                     Err(_) => ConfigBuilder::default()
                 };
@@ -200,17 +201,23 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
 }
 
 impl Config {
-    pub fn get_config(&self) -> ConfigItems {
-        self.inner.read().unwrap().config.clone()
+    pub fn get_config(&self) -> String {
+        let cfg = &self.inner.read().unwrap().config;
+        serde_json::to_string_pretty(cfg).unwrap()
     }
-    
+
     pub fn update_config(&self, other: ConfigBuilder) -> Result<(), Error> {
         let config = other.build();
         validate_config(&config)?;
 
-        self.inner.write().unwrap().config = config;
+        let config_str = serde_json::to_string_pretty(&config)?;
 
-        // TODO: Save to file
+        self.inner.write().unwrap().config = config.clone();
+
+        //Save to file
+        use std::{fs::File, io::Write};
+        let mut file = File::create(&*CONFIG_PATH)?;
+        file.write_all(config_str.as_bytes())?;
 
         Ok(())
     }

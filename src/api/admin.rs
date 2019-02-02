@@ -98,7 +98,7 @@ impl AdminTemplateData {
         Self {
             users,
             page_content: String::from("admin/page"),
-            config: serde_json::to_string_pretty(&CONFIG.get_config()).unwrap(),
+            config: CONFIG.get_config(),
         }
     }
 
