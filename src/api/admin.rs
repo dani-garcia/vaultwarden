@@ -4,9 +4,11 @@ use rocket::http::{Cookie, Cookies, SameSite};
 use rocket::request::{self, FlashMessage, Form, FromRequest, Request};
 use rocket::response::{content::Html, Flash, Redirect};
 use rocket::{Outcome, Route};
+use rocket_contrib::json::Json;
 
-use crate::api::{ApiResult, EmptyResult, JsonUpcase};
+use crate::api::{ApiResult, EmptyResult};
 use crate::auth::{decode_admin, encode_jwt, generate_admin_claims, ClientIp};
+use crate::config::ConfigBuilder;
 use crate::db::{models::*, DbConn};
 use crate::error::Error;
 use crate::mail;
@@ -24,7 +26,6 @@ pub fn routes() -> Vec<Route> {
         invite_user,
         delete_user,
         deauth_user,
-        get_config,
         post_config,
     ]
 }
@@ -32,42 +33,16 @@ pub fn routes() -> Vec<Route> {
 const COOKIE_NAME: &str = "BWRS_ADMIN";
 const ADMIN_PATH: &str = "/admin";
 
-#[derive(Serialize)]
-struct AdminTemplateData {
-    users: Vec<Value>,
-    page_content: String,
-    error: Option<String>,
-}
-
-impl AdminTemplateData {
-    fn login(error: Option<String>) -> Self {
-        Self {
-            users: Vec::new(),
-            page_content: String::from("admin/login"),
-            error,
-        }
-    }
-
-    fn admin(users: Vec<Value>) -> Self {
-        Self {
-            users,
-            page_content: String::from("admin/page"),
-            error: None,
-        }
-    }
-
-    fn render(self) -> Result<String, Error> {
-        CONFIG.render_template("admin/base", &self)
-    }
-}
+const BASE_TEMPLATE: &str = "admin/base";
 
 #[get("/", rank = 2)]
 fn admin_login(flash: Option<FlashMessage>) -> ApiResult<Html<String>> {
     // If there is an error, show it
     let msg = flash.map(|msg| format!("{}: {}", msg.name(), msg.msg()));
+    let json = json!({"page_content": "admin/login", "error": msg});
 
     // Return the page
-    let text = AdminTemplateData::login(msg).render()?;
+    let text = CONFIG.render_template(BASE_TEMPLATE, &json)?;
     Ok(Html(text))
 }
 
@@ -111,26 +86,47 @@ fn _validate_token(token: &str) -> bool {
     }
 }
 
+#[derive(Serialize)]
+struct AdminTemplateData {
+    users: Vec<Value>,
+    page_content: String,
+    config: String,
+}
+
+impl AdminTemplateData {
+    fn new(users: Vec<Value>) -> Self {
+        Self {
+            users,
+            page_content: String::from("admin/page"),
+            config: serde_json::to_string_pretty(&CONFIG.get_config()).unwrap(),
+        }
+    }
+
+    fn render(self) -> Result<String, Error> {
+        CONFIG.render_template(BASE_TEMPLATE, &self)
+    }
+}
+
 #[get("/", rank = 1)]
 fn admin_page(_token: AdminToken, conn: DbConn) -> ApiResult<Html<String>> {
     let users = User::get_all(&conn);
     let users_json: Vec<Value> = users.iter().map(|u| u.to_json(&conn)).collect();
 
-    let text = AdminTemplateData::admin(users_json).render()?;
+    let text = AdminTemplateData::new(users_json).render()?;
     Ok(Html(text))
 }
 
 #[derive(Deserialize, Debug)]
 #[allow(non_snake_case)]
 struct InviteData {
-    Email: String,
+    email: String,
 }
 
 #[post("/invite", data = "<data>")]
-fn invite_user(data: JsonUpcase<InviteData>, _token: AdminToken, conn: DbConn) -> EmptyResult {
-    let data: InviteData = data.into_inner().data;
-    let email = data.Email.clone();
-    if User::find_by_mail(&data.Email, &conn).is_some() {
+fn invite_user(data: Json<InviteData>, _token: AdminToken, conn: DbConn) -> EmptyResult {
+    let data: InviteData = data.into_inner();
+    let email = data.email.clone();
+    if User::find_by_mail(&data.email, &conn).is_some() {
         err!("User already exists")
     }
 
@@ -144,7 +140,7 @@ fn invite_user(data: JsonUpcase<InviteData>, _token: AdminToken, conn: DbConn) -
         let org_name = "bitwarden_rs";
         mail::send_invite(&user.email, &user.uuid, None, None, &org_name, None)
     } else {
-        let mut invitation = Invitation::new(data.Email);
+        let mut invitation = Invitation::new(data.email);
         invitation.save(&conn)
     }
 }
@@ -171,18 +167,13 @@ fn deauth_user(uuid: String, _token: AdminToken, conn: DbConn) -> EmptyResult {
     user.save(&conn)
 }
 
-#[get("/config")]
-fn get_config(_token: AdminToken) -> EmptyResult {
-    unimplemented!("Get config")
-}
-
 #[post("/config", data = "<data>")]
-fn post_config(data: JsonUpcase<Value>, _token: AdminToken) -> EmptyResult {
-    let data: Value = data.into_inner().data;
+fn post_config(data: Json<ConfigBuilder>, _token: AdminToken) -> EmptyResult {
+    let data: ConfigBuilder = data.into_inner();
 
     info!("CONFIG: {:#?}", data);
 
-    unimplemented!("Update config")
+    CONFIG.update_config(data)
 }
 
 pub struct AdminToken {}

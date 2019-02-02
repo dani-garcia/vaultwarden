@@ -4,7 +4,7 @@
 use std::error::Error as StdError;
 
 macro_rules! make_error {
-    ( $( $name:ident ( $ty:ty ): $src_fn:expr, $usr_msg_fun:expr ),+ $(,)* ) => {
+    ( $( $name:ident ( $ty:ty ): $src_fn:expr, $usr_msg_fun:expr ),+ $(,)? ) => {
         #[derive(Display)]
         enum ErrorKind { $($name( $ty )),+ }
         pub struct Error { message: String, error: ErrorKind }

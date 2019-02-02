@@ -77,6 +77,15 @@ pub fn read_file(path: &str) -> IOResult<Vec<u8>> {
     Ok(contents)
 }
 
+pub fn read_file_string(path: &str) -> IOResult<String> {
+    let mut contents = String::new();
+
+    let mut file = File::open(Path::new(path))?;
+    file.read_to_string(&mut contents)?;
+
+    Ok(contents)
+}
+
 pub fn delete_file(path: &str) -> IOResult<()> {
     let res = fs::remove_file(path);
 
@@ -282,27 +291,5 @@ where
                 sleep(Duration::from_millis(500));
             }
         }
-    }
-}
-
-
-//
-// Into Result
-//
-use crate::error::Error;
-
-pub trait IntoResult<T> {
-    fn into_result(self) -> Result<T, Error>;
-}
-
-impl<T> IntoResult<T> for Result<T, Error> {
-    fn into_result(self) -> Result<T, Error> {
-        self
-    }
-}
-
-impl<T> IntoResult<T> for T {
-    fn into_result(self) -> Result<T, Error> {
-        Ok(self)
     }
 }

@@ -53,6 +53,17 @@
             </form>
         </div>
     </div>
+
+    <div id="config-block" class="align-items-center p-3 mb-3 text-white-50 bg-secondary rounded shadow">
+        <div>
+            <h6 class="mb-0 text-white">Configuration</h6>
+
+            <form class="form" id="config-form">
+                <textarea id="config-text" class="form-control" style="height: 300px;">{{config}}</textarea>
+                <button type="submit" class="btn btn-primary">Save</button>
+            </form>
+        </div>
+    </div>
 </main>
 
 <script>
@@ -91,10 +102,16 @@
     }
     function inviteUser() {
         inv = $("#email-invite");
-        data = JSON.stringify({ "Email": inv.val() });
+        data = JSON.stringify({ "email": inv.val() });
         inv.val("");
         _post("/admin/invite/", "User invited correctly",
             "Error inviting user", data);
+        return false;
+    }
+    function saveConfig() {
+        data = $("#config-text").val();
+        _post("/admin/config/", "Config saved correctly",
+            "Error saving config", data);
         return false;
     }
     let OrgTypes = {
@@ -105,6 +122,7 @@
     };
     $(window).on('load', function () {
         $("#invite-form").submit(inviteUser);
+        $("#config-form").submit(saveConfig);
         $("img.identicon").each(function (i, e) {
             e.src = identicon(e.dataset.src);
         });

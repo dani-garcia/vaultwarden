@@ -331,7 +331,7 @@ fn _header_map() -> HeaderMap {
     use reqwest::header::*;
 
     macro_rules! headers {
-        ($( $name:ident : $value:literal),+ $(,)* ) => {
+        ($( $name:ident : $value:literal),+ $(,)? ) => {
             let mut headers = HeaderMap::new();
             $( headers.insert($name, HeaderValue::from_static($value)); )+
             headers

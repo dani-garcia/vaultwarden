@@ -4,7 +4,6 @@ use std::sync::RwLock;
 use handlebars::Handlebars;
 
 use crate::error::Error;
-use crate::util::IntoResult;
 
 lazy_static! {
     pub static ref CONFIG: Config = Config::load().unwrap_or_else(|e| {
@@ -14,17 +13,62 @@ lazy_static! {
 }
 
 macro_rules! make_config {
-    ( $( $name:ident : $ty:ty $(, $default_fn:expr)? );+ $(;)* ) => {
+    ( $( $name:ident : $ty:ty $(, $default_fn:expr)? );+ $(;)? ) => {
 
         pub struct Config { inner: RwLock<Inner> }
 
         struct Inner {
             templates: Handlebars,
-            config: _Config,
+            config: ConfigItems,
         }
 
-        #[derive(Debug, Default, Serialize, Deserialize)]
-        struct _Config { $(pub $name: $ty),+ }
+        #[derive(Debug, Default, Deserialize)]
+        pub struct ConfigBuilder {
+            $($name: Option<$ty>),+
+        }
+
+        impl ConfigBuilder {
+            fn from_env() -> Self {
+                dotenv::dotenv().ok();
+                use crate::util::get_env;
+
+                let mut builder = ConfigBuilder::default();
+                $(
+                    let $name = stringify!($name).to_uppercase();
+                    builder.$name = make_config!{ @env &$name, $($default_fn)? };
+                )+
+
+                builder
+            }
+
+            fn from_file(path: &str) -> Result<Self, Error> {
+                use crate::util::read_file_string;
+                let config_str = read_file_string(path)?;
+                serde_json::from_str(&config_str).map_err(Into::into)
+            }
+
+            fn merge(&mut self, other: Self) {
+                $(
+                    if let v @Some(_) = other.$name {
+                        self.$name = v;
+                    }
+                )+
+            }
+
+            fn build(self) -> ConfigItems {
+                let mut config = ConfigItems::default();
+                let _domain_set = self.domain.is_some();
+                $(
+                    config.$name = make_config!{ @build self.$name, &config, $($default_fn)? };
+                )+
+                config.domain_set = _domain_set;
+
+                config
+            }
+        }
+
+        #[derive(Debug, Clone, Default, Serialize)]
+        pub struct ConfigItems { $(pub $name: $ty),+ }
 
         paste::item! {
         #[allow(unused)]
@@ -39,14 +83,19 @@ macro_rules! make_config {
             )+
 
             pub fn load() -> Result<Self, Error> {
-                use crate::util::get_env;
-                dotenv::dotenv().ok();
+                // TODO: Get config.json from CONFIG_PATH env var or -c <CONFIG> console option
 
-                let mut config = _Config::default();
+                // Loading from file
+                let mut builder = match ConfigBuilder::from_file("data/config.json") {
+                    Ok(builder) => builder,
+                    Err(_) => ConfigBuilder::default()
+                };
 
-                $(
-                    config.$name = make_config!{ @expr &stringify!($name).to_uppercase(), $ty, &config, $($default_fn)? };
-                )+
+                // Env variables overwrite config file
+                builder.merge(ConfigBuilder::from_env());
+
+                let config = builder.build();
+                validate_config(&config)?;
 
                 Ok(Config {
                     inner: RwLock::new(Inner {
@@ -60,19 +109,26 @@ macro_rules! make_config {
 
     };
 
-    ( @expr $name:expr, $ty:ty, $config:expr, $default_fn:expr ) => {{
+    ( @env $name:expr, $default_fn:expr ) => { get_env($name) };
+
+    ( @env $name:expr, ) => {
         match get_env($name) {
+            v @ Some(_) => Some(v),
+            None => None
+        }
+    };
+
+    ( @build $value:expr,$config:expr, $default_fn:expr ) => {
+        match $value {
             Some(v) => v,
             None => {
-                let f: &Fn(&_Config) -> _ = &$default_fn;
-                f($config).into_result()?
+                let f: &Fn(&ConfigItems) -> _ = &$default_fn;
+                f($config)
             }
         }
-    }};
-
-    ( @expr $name:expr, $ty:ty, $config:expr, ) => {
-        get_env($name)
     };
+
+    ( @build $value:expr, $config:expr, ) => { $value.unwrap_or(None) };
 }
 
 make_config! {
@@ -121,13 +177,44 @@ make_config! {
     smtp_host:              Option<String>;
     smtp_ssl:               bool,   |_| true;
     smtp_port:              u16,    |c| if c.smtp_ssl {587} else {25};
-    smtp_from:              String, |c| if c.smtp_host.is_some() { err!("Please specify SMTP_FROM to enable SMTP support") } else { Ok(String::new() )};
+    smtp_from:              String, |_| String::new();
     smtp_from_name:         String, |_| "Bitwarden_RS".to_string();
     smtp_username:          Option<String>;
     smtp_password:          Option<String>;
 }
 
+fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
+    if cfg.yubico_client_id.is_some() != cfg.yubico_secret_key.is_some() {
+        err!("Both `YUBICO_CLIENT_ID` and `YUBICO_SECRET_KEY` need to be set for Yubikey OTP support")
+    }
+
+    if cfg.smtp_host.is_some() == cfg.smtp_from.is_empty() {
+        err!("Both `SMTP_HOST` and `SMTP_FROM` need to be set for email support")
+    }
+
+    if cfg.smtp_username.is_some() != cfg.smtp_password.is_some() {
+        err!("Both `SMTP_USERNAME` and `SMTP_PASSWORD` need to be set to enable email authentication")
+    }
+
+    Ok(())
+}
+
 impl Config {
+    pub fn get_config(&self) -> ConfigItems {
+        self.inner.read().unwrap().config.clone()
+    }
+    
+    pub fn update_config(&self, other: ConfigBuilder) -> Result<(), Error> {
+        let config = other.build();
+        validate_config(&config)?;
+
+        self.inner.write().unwrap().config = config;
+
+        // TODO: Save to file
+
+        Ok(())
+    }
+
     pub fn mail_enabled(&self) -> bool {
         self.inner.read().unwrap().config.smtp_host.is_some()
     }
