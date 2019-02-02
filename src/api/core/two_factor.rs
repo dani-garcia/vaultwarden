@@ -3,15 +3,14 @@ use rocket_contrib::json::Json;
 use serde_json;
 use serde_json::Value;
 
+use crate::api::{ApiResult, EmptyResult, JsonResult, JsonUpcase, NumberOrString, PasswordData};
+use crate::auth::Headers;
+use crate::crypto;
 use crate::db::{
     models::{TwoFactor, TwoFactorType, User},
     DbConn,
 };
-
-use crate::crypto;
-
-use crate::api::{ApiResult, EmptyResult, JsonResult, JsonUpcase, NumberOrString, PasswordData};
-use crate::auth::Headers;
+use crate::error::{Error, MapResult};
 
 use rocket::Route;
 
@@ -508,32 +507,31 @@ fn jsonify_yubikeys(yubikeys: Vec<String>) -> serde_json::Value {
     result
 }
 
-fn verify_yubikey_otp(otp: String) -> JsonResult {
-    if !CONFIG.yubico_cred_set() {
-        err!("`YUBICO_CLIENT_ID` or `YUBICO_SECRET_KEY` environment variable is not set. Yubikey OTP Disabled")
+fn get_yubico_credentials() -> Result<(String, String), Error> {
+    match (CONFIG.yubico_client_id(), CONFIG.yubico_secret_key()) {
+        (Some(id), Some(secret)) => Ok((id, secret)),
+        _ => err!("`YUBICO_CLIENT_ID` or `YUBICO_SECRET_KEY` environment variable is not set. Yubikey OTP Disabled"),
     }
+}
+
+fn verify_yubikey_otp(otp: String) -> EmptyResult {
+    let (yubico_id, yubico_secret) = get_yubico_credentials()?;
 
     let yubico = Yubico::new();
-    let config = Config::default()
-        .set_client_id(CONFIG.yubico_client_id())
-        .set_key(CONFIG.yubico_secret_key());
+    let config = Config::default().set_client_id(yubico_id).set_key(yubico_secret);
 
-    let result = match CONFIG.yubico_server() {
+    match CONFIG.yubico_server() {
         Some(server) => yubico.verify(otp, config.set_api_hosts(vec![server])),
         None => yubico.verify(otp, config),
-    };
-
-    match result {
-        Ok(_answer) => Ok(Json(json!({}))),
-        Err(_e) => err!("Failed to verify OTP"),
     }
+    .map_res("Failed to verify OTP")
+    .and(Ok(()))
 }
 
 #[post("/two-factor/get-yubikey", data = "<data>")]
 fn generate_yubikey(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn) -> JsonResult {
-    if !CONFIG.yubico_cred_set() {
-        err!("`YUBICO_CLIENT_ID` or `YUBICO_SECRET_KEY` environment variable is not set. Yubikey OTP Disabled")
-    }
+    // Make sure the credentials are set
+    get_yubico_credentials()?;
 
     let data: PasswordData = data.into_inner().data;
     let user = headers.user;
@@ -597,11 +595,7 @@ fn activate_yubikey(data: JsonUpcase<EnableYubikeyData>, headers: Headers, conn:
             continue;
         }
 
-        let result = verify_yubikey_otp(yubikey.to_owned());
-
-        if let Err(_e) = result {
-            err!("Invalid Yubikey OTP provided");
-        }
+        verify_yubikey_otp(yubikey.to_owned()).map_res("Invalid Yubikey OTP provided")?;
     }
 
     let yubikey_ids: Vec<String> = yubikeys.into_iter().map(|x| (&x[..12]).to_owned()).collect();

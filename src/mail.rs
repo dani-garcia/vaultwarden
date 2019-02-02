@@ -6,25 +6,26 @@ use native_tls::{Protocol, TlsConnector};
 
 use crate::api::EmptyResult;
 use crate::auth::{encode_jwt, generate_invite_claims};
-use crate::config::MailConfig;
 use crate::error::Error;
 use crate::CONFIG;
 
-fn mailer(config: &MailConfig) -> SmtpTransport {
-    let client_security = if config.smtp_ssl {
+fn mailer() -> SmtpTransport {
+    let host = CONFIG.smtp_host().unwrap();
+
+    let client_security = if CONFIG.smtp_ssl() {
         let tls = TlsConnector::builder()
             .min_protocol_version(Some(Protocol::Tlsv11))
             .build()
             .unwrap();
 
-        ClientSecurity::Required(ClientTlsParameters::new(config.smtp_host.clone(), tls))
+        ClientSecurity::Required(ClientTlsParameters::new(host.clone(), tls))
     } else {
         ClientSecurity::None
     };
 
-    let smtp_client = SmtpClient::new((config.smtp_host.as_str(), config.smtp_port), client_security).unwrap();
+    let smtp_client = SmtpClient::new((host.as_str(), CONFIG.smtp_port()), client_security).unwrap();
 
-    let smtp_client = match (&config.smtp_username, &config.smtp_password) {
+    let smtp_client = match (&CONFIG.smtp_username(), &CONFIG.smtp_password()) {
         (Some(user), Some(pass)) => smtp_client.credentials(Credentials::new(user.clone(), pass.clone())),
         _ => smtp_client,
     };
@@ -52,7 +53,7 @@ fn get_text(template_name: &'static str, data: serde_json::Value) -> Result<(Str
     Ok((subject, body))
 }
 
-pub fn send_password_hint(address: &str, hint: Option<String>, config: &MailConfig) -> EmptyResult {
+pub fn send_password_hint(address: &str, hint: Option<String>) -> EmptyResult {
     let template_name = if hint.is_some() {
         "email/pw_hint_some"
     } else {
@@ -61,7 +62,7 @@ pub fn send_password_hint(address: &str, hint: Option<String>, config: &MailConf
 
     let (subject, body) = get_text(template_name, json!({ "hint": hint }))?;
 
-    send_email(&address, &subject, &body, &config)
+    send_email(&address, &subject, &body)
 }
 
 pub fn send_invite(
@@ -71,7 +72,6 @@ pub fn send_invite(
     org_user_id: Option<String>,
     org_name: &str,
     invited_by_email: Option<String>,
-    config: &MailConfig,
 ) -> EmptyResult {
     let claims = generate_invite_claims(
         uuid.to_string(),
@@ -94,10 +94,10 @@ pub fn send_invite(
         }),
     )?;
 
-    send_email(&address, &subject, &body, &config)
+    send_email(&address, &subject, &body)
 }
 
-pub fn send_invite_accepted(new_user_email: &str, address: &str, org_name: &str, config: &MailConfig) -> EmptyResult {
+pub fn send_invite_accepted(new_user_email: &str, address: &str, org_name: &str) -> EmptyResult {
     let (subject, body) = get_text(
         "email/invite_accepted",
         json!({
@@ -107,10 +107,10 @@ pub fn send_invite_accepted(new_user_email: &str, address: &str, org_name: &str,
         }),
     )?;
 
-    send_email(&address, &subject, &body, &config)
+    send_email(&address, &subject, &body)
 }
 
-pub fn send_invite_confirmed(address: &str, org_name: &str, config: &MailConfig) -> EmptyResult {
+pub fn send_invite_confirmed(address: &str, org_name: &str) -> EmptyResult {
     let (subject, body) = get_text(
         "email/invite_confirmed",
         json!({
@@ -119,20 +119,20 @@ pub fn send_invite_confirmed(address: &str, org_name: &str, config: &MailConfig)
         }),
     )?;
 
-    send_email(&address, &subject, &body, &config)
+    send_email(&address, &subject, &body)
 }
 
-fn send_email(address: &str, subject: &str, body: &str, config: &MailConfig) -> EmptyResult {
+fn send_email(address: &str, subject: &str, body: &str) -> EmptyResult {
     let email = EmailBuilder::new()
         .to(address)
-        .from((config.smtp_from.as_str(), config.smtp_from_name.as_str()))
+        .from((CONFIG.smtp_from().as_str(), CONFIG.smtp_from_name().as_str()))
         .subject(subject)
         .header(("Content-Type", "text/html"))
         .body(body)
         .build()
         .map_err(|e| Error::new("Error building email", e.to_string()))?;
 
-    mailer(config)
+    mailer()
         .send(email.into())
         .map_err(|e| Error::new("Error sending email", e.to_string()))
         .and(Ok(()))

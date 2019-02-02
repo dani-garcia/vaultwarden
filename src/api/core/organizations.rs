@@ -486,9 +486,9 @@ fn send_invite(org_id: String, data: JsonUpcase<InviteData>, headers: AdminHeade
     }
 
     for email in data.Emails.iter() {
-        let mut user_org_status = match CONFIG.mail() {
-            Some(_) => UserOrgStatus::Invited as i32,
-            None => UserOrgStatus::Accepted as i32, // Automatically mark user as accepted if no email invites
+        let mut user_org_status = match CONFIG.mail_enabled() {
+            true => UserOrgStatus::Invited as i32,
+            false => UserOrgStatus::Accepted as i32, // Automatically mark user as accepted if no email invites
         };
         let user = match User::find_by_mail(&email, &conn) {
             None => {
@@ -496,7 +496,7 @@ fn send_invite(org_id: String, data: JsonUpcase<InviteData>, headers: AdminHeade
                     err!(format!("User email does not exist: {}", email))
                 }
 
-                if CONFIG.mail().is_none() {
+                if !CONFIG.mail_enabled() {
                     let mut invitation = Invitation::new(email.clone());
                     invitation.save(&conn)?;
                 }
@@ -535,7 +535,7 @@ fn send_invite(org_id: String, data: JsonUpcase<InviteData>, headers: AdminHeade
 
         new_user.save(&conn)?;
 
-        if let Some(ref mail_config) = CONFIG.mail() {
+        if CONFIG.mail_enabled() {
             let org_name = match Organization::find_by_uuid(&org_id, &conn) {
                 Some(org) => org.name,
                 None => err!("Error looking up organization"),
@@ -548,7 +548,6 @@ fn send_invite(org_id: String, data: JsonUpcase<InviteData>, headers: AdminHeade
                 Some(new_user.uuid),
                 &org_name,
                 Some(headers.user.email.clone()),
-                mail_config,
             )?;
         }
     }
@@ -562,7 +561,7 @@ fn reinvite_user(org_id: String, user_org: String, headers: AdminHeaders, conn: 
         err!("Invitations are not allowed.")
     }
 
-    if CONFIG.mail().is_none() {
+    if !CONFIG.mail_enabled() {
         err!("SMTP is not configured.")
     }
 
@@ -585,7 +584,7 @@ fn reinvite_user(org_id: String, user_org: String, headers: AdminHeaders, conn: 
         None => err!("Error looking up organization."),
     };
 
-    if let Some(ref mail_config) = CONFIG.mail() {
+    if CONFIG.mail_enabled() {
         mail::send_invite(
             &user.email,
             &user.uuid,
@@ -593,7 +592,6 @@ fn reinvite_user(org_id: String, user_org: String, headers: AdminHeaders, conn: 
             Some(user_org.uuid),
             &org_name,
             Some(headers.user.email),
-            mail_config,
         )?;
     } else {
         let mut invitation = Invitation::new(user.email.clone());
@@ -637,7 +635,7 @@ fn accept_invite(_org_id: String, _org_user_id: String, data: JsonUpcase<AcceptD
         None => err!("Invited user not found"),
     }
 
-    if let Some(ref mail_config) = CONFIG.mail() {
+    if CONFIG.mail_enabled() {
         let mut org_name = String::from("bitwarden_rs");
         if let Some(org_id) = &claims.org_id {
             org_name = match Organization::find_by_uuid(&org_id, &conn) {
@@ -647,10 +645,10 @@ fn accept_invite(_org_id: String, _org_user_id: String, data: JsonUpcase<AcceptD
         };
         if let Some(invited_by_email) = &claims.invited_by_email {
             // User was invited to an organization, so they must be confirmed manually after acceptance
-            mail::send_invite_accepted(&claims.email, invited_by_email, &org_name, mail_config)?;
+            mail::send_invite_accepted(&claims.email, invited_by_email, &org_name)?;
         } else {
             // User was invited from /admin, so they are automatically confirmed
-            mail::send_invite_confirmed(&claims.email, &org_name, mail_config)?;
+            mail::send_invite_confirmed(&claims.email, &org_name)?;
         }
     }
 
@@ -686,7 +684,7 @@ fn confirm_invite(
         None => err!("Invalid key provided"),
     };
 
-    if let Some(ref mail_config) = CONFIG.mail() {
+    if CONFIG.mail_enabled() {
         let org_name = match Organization::find_by_uuid(&org_id, &conn) {
             Some(org) => org.name,
             None => err!("Error looking up organization."),
@@ -695,7 +693,7 @@ fn confirm_invite(
             Some(user) => user.email,
             None => err!("Error looking up user."),
         };
-        mail::send_invite_confirmed(&address, &org_name, mail_config)?;
+        mail::send_invite_confirmed(&address, &org_name)?;
     }
 
     user_to_confirm.save(&conn)

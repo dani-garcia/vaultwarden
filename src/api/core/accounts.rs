@@ -419,8 +419,8 @@ fn password_hint(data: JsonUpcase<PasswordHintData>, conn: DbConn) -> EmptyResul
         None => return Ok(()),
     };
 
-    if let Some(ref mail_config) = CONFIG.mail() {
-        mail::send_password_hint(&data.Email, hint, mail_config)?;
+    if CONFIG.mail_enabled() {
+        mail::send_password_hint(&data.Email, hint)?;
     } else if CONFIG.show_password_hint() {
         if let Some(hint) = hint {
             err!(format!("Your password hint is: {}", &hint));

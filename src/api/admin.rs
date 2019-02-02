@@ -24,6 +24,8 @@ pub fn routes() -> Vec<Route> {
         invite_user,
         delete_user,
         deauth_user,
+        get_config,
+        post_config,
     ]
 }
 
@@ -136,11 +138,11 @@ fn invite_user(data: JsonUpcase<InviteData>, _token: AdminToken, conn: DbConn) -
         err!("Invitations are not allowed")
     }
 
-    if let Some(ref mail_config) = CONFIG.mail() {
+    if CONFIG.mail_enabled() {
         let mut user = User::new(email);
         user.save(&conn)?;
         let org_name = "bitwarden_rs";
-        mail::send_invite(&user.email, &user.uuid, None, None, &org_name, None, mail_config)
+        mail::send_invite(&user.email, &user.uuid, None, None, &org_name, None)
     } else {
         let mut invitation = Invitation::new(data.Email);
         invitation.save(&conn)
@@ -167,6 +169,20 @@ fn deauth_user(uuid: String, _token: AdminToken, conn: DbConn) -> EmptyResult {
     user.reset_security_stamp();
 
     user.save(&conn)
+}
+
+#[get("/config")]
+fn get_config(_token: AdminToken) -> EmptyResult {
+    unimplemented!("Get config")
+}
+
+#[post("/config", data = "<data>")]
+fn post_config(data: JsonUpcase<Value>, _token: AdminToken) -> EmptyResult {
+    let data: Value = data.into_inner().data;
+
+    info!("CONFIG: {:#?}", data);
+
+    unimplemented!("Update config")
 }
 
 pub struct AdminToken {}

@@ -355,7 +355,7 @@ pub fn start_notification_server() -> WebSocketUsers {
         thread::spawn(move || {
             WebSocket::new(factory)
                 .unwrap()
-                .listen(&CONFIG.websocket_url())
+                .listen((CONFIG.websocket_address().as_str(), CONFIG.websocket_port()))
                 .unwrap();
         });
     }
