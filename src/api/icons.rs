@@ -226,11 +226,10 @@ fn get_page_with_cookies(url: &str, cookie_str: &str) -> Result<Response, Error>
 /// ```
 fn get_icon_priority(href: &str, sizes: &str) -> u8 {
     // Check if there is a dimension set
-    if !sizes.is_empty() {
-        let dimensions: Vec<&str> = sizes.split('x').collect();
-        let width: u16 = dimensions[0].parse().unwrap();
-        let height: u16 = dimensions[1].parse().unwrap();
+    let (width, height) = parse_sizes(sizes);
 
+    // Check if there is a size given
+    if width != 0 && height != 0 {
         // Only allow square dimensions
         if width == height {
             // Change priority by given size
@@ -243,8 +242,9 @@ fn get_icon_priority(href: &str, sizes: &str) -> u8 {
             } else if width == 16 {
                 4
             } else {
-                100
+                5
             }
+        // There are dimensions available, but the image is not a square
         } else {
             200
         }
@@ -258,6 +258,37 @@ fn get_icon_priority(href: &str, sizes: &str) -> u8 {
             30
         }
     }
+}
+
+/// Returns a Tuple with the width and hight as a seperate value extracted from the sizes attribute
+/// It will return 0 for both values if no match has been found.
+///
+/// # Arguments
+/// * `sizes` - The size of the icon if available as a <width>x<height> value like 32x32.
+/// 
+/// # Example
+/// ```
+/// let (width, height) = parse_sizes("64x64"); // (64, 64)
+/// let (width, height) = parse_sizes("x128x128"); // (128, 128)
+/// let (width, height) = parse_sizes("32"); // (0, 0)
+/// ```
+fn parse_sizes(sizes: &str) -> (u16, u16) {
+    let mut width: u16 = 0;
+    let mut height: u16 = 0;
+
+    if !sizes.is_empty() {
+        match Regex::new(r"(?x)(\d+)\D*(\d+)").unwrap().captures(sizes.trim()) {
+            None => {},
+            Some(dimensions) => {
+                if dimensions.len() >= 3 {
+                    width = dimensions[1].parse::<u16>().unwrap_or_default();
+                    height = dimensions[2].parse::<u16>().unwrap_or_default();
+                }
+            },
+        }
+    }
+
+    (width, height)
 }
 
 fn download_icon(domain: &str) -> Result<Vec<u8>, Error> {
