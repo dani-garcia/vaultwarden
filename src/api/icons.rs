@@ -265,7 +265,7 @@ fn get_icon_priority(href: &str, sizes: &str) -> u8 {
 ///
 /// # Arguments
 /// * `sizes` - The size of the icon if available as a <width>x<height> value like 32x32.
-/// 
+///
 /// # Example
 /// ```
 /// let (width, height) = parse_sizes("64x64"); // (64, 64)
@@ -296,9 +296,9 @@ fn download_icon(domain: &str) -> Result<Vec<u8>, Error> {
 
     let mut buffer = Vec::new();
 
-    let mut attempts = 0;
-    while attempts < 5 {
-        let url = &iconlist.remove(0).href;
+    iconlist.truncate(5);
+    for icon in iconlist {
+        let url = icon.href;
         info!("Downloading icon for {} via {}...", domain, url);
         match get_page_with_cookies(&url, &cookie_str) {
             Ok(mut res) => {
@@ -308,7 +308,6 @@ fn download_icon(domain: &str) -> Result<Vec<u8>, Error> {
             },
             Err(_) => info!("Download failed for {}", url),
         };
-        attempts += 1;
     }
 
     if buffer.is_empty() {
