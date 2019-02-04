@@ -60,17 +60,17 @@
             <form class="form" id="config-form">
                 {{#each config}}
                 {{#if editable}}
-                <div class="form-group row">
+                <div class="form-group row" title="{{doc.description}}">
                     {{#case type "text" "number"}}
-                    <label for="input_{{name}}" class="col-sm-2 col-form-label">{{name}}</label>
-                    <div class="col-sm-9">
+                    <label for="input_{{name}}" class="col-sm-3 col-form-label">{{doc.name}}</label>
+                    <div class="col-sm-8">
                         <input class="form-control" id="input_{{name}}" type="{{type}}" name="{{name}}" value="{{value}}"
                             {{#if default}} placeholder="Default: {{default}}" {{/if}}>
                     </div>
                     {{/case}}
                     {{#case type "checkbox"}}
-                    <div class="col-sm-2">{{name}}</div>
-                    <div class="col-sm-9">
+                    <div class="col-sm-3">{{doc.name}}</div>
+                    <div class="col-sm-8">
                         <div class="form-check">
                             <input class="form-check-input" type="checkbox" id="input_{{name}}" name="{{name}}"
                                 {{#if value}} checked {{/if}}>
