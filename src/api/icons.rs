@@ -137,19 +137,19 @@ struct IconList {
     href: String,
 }
 
-/// Returns a Result with a String which holds the preferend favicon location.
-/// There will always be a result with a string which will contain https://example.com/favicon.ico
-/// This does not mean that that location does exists, but it is the default location.
+/// Returns a Result/Tuple which holds a Vector IconList and a string which holds the cookies from the last response.
+/// There will always be a result with a string which will contain https://example.com/favicon.ico and an empty string for the cookies.
+/// This does not mean that that location does exists, but it is the default location browser use.
 ///
 /// # Argument
 /// * `domain` - A string which holds the domain with extension.
 ///
 /// # Example
 /// ```
-/// favicon_location1 = get_icon_url("github.com");
-/// favicon_location2 = get_icon_url("gitlab.com");
+/// let (mut iconlist, cookie_str) = get_icon_url("github.com")?;
+/// let (mut iconlist, cookie_str) = get_icon_url("gitlab.com")?;
 /// ```
-fn get_icon_url(domain: &str) -> Result<(String, String), Error> {
+fn get_icon_url(domain: &str) -> Result<(Vec<IconList>, String), Error> {
     // Default URL with secure and insecure schemes
     let ssldomain = format!("https://{}", domain);
     let httpdomain = format!("http://{}", domain);
@@ -200,7 +200,7 @@ fn get_icon_url(domain: &str) -> Result<(String, String), Error> {
     iconlist.sort_by_key(|x| x.priority);
 
     // There always is an icon in the list, so no need to check if it exists, and just return the first one
-    Ok((iconlist.remove(0).href, cookie_str))
+    Ok((iconlist, cookie_str))
 }
 
 fn get_page(url: &str) -> Result<Response, Error> {
@@ -292,13 +292,24 @@ fn parse_sizes(sizes: &str) -> (u16, u16) {
 }
 
 fn download_icon(domain: &str) -> Result<Vec<u8>, Error> {
-    let (url, cookie_str) = get_icon_url(&domain)?;
-
-    info!("Downloading icon for {} via {}...", domain, url);
-    let mut res = get_page_with_cookies(&url, &cookie_str)?;
+    let (mut iconlist, cookie_str) = get_icon_url(&domain)?;
 
     let mut buffer = Vec::new();
-    res.copy_to(&mut buffer)?;
+
+    let mut attempts = 0;
+    while attempts < 5 {
+        let url = &iconlist.remove(0).href;
+        info!("Downloading icon for {} via {}...", domain, url);
+        match get_page_with_cookies(&url, &cookie_str) {
+            Ok(mut res) => {
+                info!("Download finished for {}", url);
+                res.copy_to(&mut buffer)?;
+                break;
+            },
+            Err(_) => info!("Download failed for {}", url),
+        };
+        attempts += 1;
+    }
 
     if buffer.is_empty() {
         err!("Empty response")
