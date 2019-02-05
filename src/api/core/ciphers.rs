@@ -842,7 +842,7 @@ fn move_cipher_selected(data: JsonUpcase<MoveCipherData>, headers: Headers, conn
     }
 
     for uuid in data.Ids {
-        let mut cipher = match Cipher::find_by_uuid(&uuid, &conn) {
+        let cipher = match Cipher::find_by_uuid(&uuid, &conn) {
             Some(cipher) => cipher,
             None => err!("Cipher doesn't exist"),
         };
