@@ -13,8 +13,17 @@ lazy_static! {
 }
 
 macro_rules! make_config {
-    ( $( $(#[doc = $doc:literal])+ $name:ident : $ty:ty, $editable:literal, $none_action:ident $(, $default:expr)? );+ $(;)? ) => {
-
+    (   
+        $(
+            $(#[doc = $groupdoc:literal])?
+            $group:ident {
+            $(  
+                $(#[doc = $doc:literal])+
+                $name:ident : $ty:ty, $editable:literal, $none_action:ident $(, $default:expr)?;
+            )+
+        },)+
+        
+    ) => {
         pub struct Config { inner: RwLock<Inner> }
 
         struct Inner {
@@ -27,10 +36,10 @@ macro_rules! make_config {
 
         #[derive(Debug, Clone, Default, Deserialize, Serialize)]
         pub struct ConfigBuilder {
-            $(
+            $($(
                 #[serde(skip_serializing_if = "Option::is_none")]
-                $name: Option<$ty>
-            ),+
+                $name: Option<$ty>,
+            )+)+
         }
 
         impl ConfigBuilder {
@@ -38,9 +47,9 @@ macro_rules! make_config {
                 dotenv::dotenv().ok();
 
                 let mut builder = ConfigBuilder::default();
-                $(
+                $($(
                     builder.$name = get_env(&stringify!($name).to_uppercase());
-                )+
+                )+)+
 
                 builder
             }
@@ -55,11 +64,11 @@ macro_rules! make_config {
             /// If both have the same element, `other` wins.
             fn merge(&self, other: &Self) -> Self {
                 let mut builder = self.clone();
-                $(
+                $($(
                     if let v @Some(_) = &other.$name {
                         builder.$name = v.clone();
                     }
-                )+
+                )+)+
                 builder
             }
 
@@ -67,21 +76,21 @@ macro_rules! make_config {
             /// except those that are equal in both sides
             fn remove(&self, other: &Self) -> Self {
                 let mut builder = ConfigBuilder::default();
-                $(
+                $($(
                     if &self.$name != &other.$name {
                         builder.$name = self.$name.clone();
                     }
 
-                )+
+                )+)+
                 builder
             }
 
             fn build(&self) -> ConfigItems {
                 let mut config = ConfigItems::default();
                 let _domain_set = self.domain.is_some();
-                $(
+                $($(
                     config.$name = make_config!{ @build self.$name.clone(), &config, $none_action, $($default)? };
-                )+
+                )+)+
                 config.domain_set = _domain_set;
 
                 config
@@ -89,15 +98,15 @@ macro_rules! make_config {
         }
 
         #[derive(Debug, Clone, Default)]
-        pub struct ConfigItems { $(pub $name: make_config!{@type $ty, $none_action} ),+ }
+        pub struct ConfigItems { $($(pub $name: make_config!{@type $ty, $none_action}, )+)+ }
 
         #[allow(unused)]
         impl Config {
-            $(
+            $($(
                 pub fn $name(&self) -> make_config!{@type $ty, $none_action} {
                     self.inner.read().unwrap().config.$name.clone()
                 }
-            )+
+            )+)+
 
             pub fn load() -> Result<Self, Error> {
                 // Loading from env and file
@@ -122,9 +131,9 @@ macro_rules! make_config {
             }
 
             pub fn prepare_json(&self) -> serde_json::Value {
-                let cfg = {
+                let (def, cfg) = {
                     let inner = &self.inner.read().unwrap();
-                    inner._env.merge(&inner._usr)
+                    (inner._env.build(), inner.config.clone())
                 };
 
 
@@ -139,23 +148,31 @@ macro_rules! make_config {
                 fn _get_doc(doc: &str) -> serde_json::Value {
                     let mut split = doc.split("|>").map(str::trim);
                     json!({
-                        "group": split.next(),
                         "name": split.next(),
                         "description": split.next()
                     })
                 }
 
-                json!([ $( {
-                    "editable": $editable,
-                    "name": stringify!($name),
-                    "value": cfg.$name,
-                    "default": make_config!{ @default &cfg, $none_action, $($default)? },
-                    "type":  _get_form_type(stringify!($ty)),
-                    "doc": _get_doc(concat!($($doc),+)),
-                }, )+ ])
+                json!([ $({
+                    "group": stringify!($group),
+                    "groupdoc": make_config!{ @show $($groupdoc)? },
+                    "elements": [
+                    $( {
+                        "editable": $editable,
+                        "name": stringify!($name),
+                        "value": cfg.$name,
+                        "default": def.$name,
+                        "type":  _get_form_type(stringify!($ty)),
+                        "doc": _get_doc(concat!($($doc),+)),
+                    }, )+
+                    ]}, )+ ])
             }
         }
     };
+
+    // Group or empty string
+    ( @show ) => { "" };
+    ( @show $groupdoc:literal ) => { $groupdoc };
 
     // Wrap the optionals in an Option type
     ( @type $ty:ty, option) => { Option<$ty> };
@@ -173,108 +190,115 @@ macro_rules! make_config {
             }
         }
     }};
-
-    // Get a default value
-    ( @default $config:expr, option, ) => { serde_json::Value::Null };
-    ( @default $config:expr, def, $default:expr ) => { $default };
-    ( @default $config:expr, auto, $default_fn:expr ) => {{
-        let f: &Fn(ConfigItems) -> _ = &$default_fn;
-        f($config.build())
-    }};
-
 }
 
 //STRUCTURE:
-// /// Group |> Friendly Name |> Description (Optional)
-// name: type, is_editable, none_action, <default_value (Optional)>
+// /// Short description (without this they won't appear on the list)
+// group {
+//   /// Friendly Name |> Description (Optional)
+//   name: type, is_editable, none_action, <default_value (Optional)>
+// }
 //
 // Where none_action applied when the value wasn't provided and can be:
 //  def:    Use a default value
 //  auto:   Value is auto generated based on other values
 //  option: Value is optional
 make_config! {
-    /// folders |> Data folder |> Main data folder
-    data_folder:            String, false,  def,    "data".to_string();
+    folders {
+        ///  Data folder |> Main data folder
+        data_folder:            String, false,  def,    "data".to_string();
 
-    /// folders |> Database URL
-    database_url:           String, false,  auto,   |c| format!("{}/{}", c.data_folder, "db.sqlite3");
-    /// folders |> Icon chache folder
-    icon_cache_folder:      String, false,  auto,   |c| format!("{}/{}", c.data_folder, "icon_cache");
-    /// folders |> Attachments folder
-    attachments_folder:     String, false,  auto,   |c| format!("{}/{}", c.data_folder, "attachments");
-    /// folders |> Templates folder
-    templates_folder:       String, false,  auto,   |c| format!("{}/{}", c.data_folder, "templates");
-    /// folders |> Session JWT key
-    rsa_key_filename:       String, false,  auto,   |c| format!("{}/{}", c.data_folder, "rsa_key");
+        /// Database URL
+        database_url:           String, false,  auto,   |c| format!("{}/{}", c.data_folder, "db.sqlite3");
+        /// Icon chache folder
+        icon_cache_folder:      String, false,  auto,   |c| format!("{}/{}", c.data_folder, "icon_cache");
+        /// Attachments folder
+        attachments_folder:     String, false,  auto,   |c| format!("{}/{}", c.data_folder, "attachments");
+        /// Templates folder
+        templates_folder:       String, false,  auto,   |c| format!("{}/{}", c.data_folder, "templates");
+        /// Session JWT key
+        rsa_key_filename:       String, false,  auto,   |c| format!("{}/{}", c.data_folder, "rsa_key");
+        /// Web vault folder
+        web_vault_folder:       String, false,  def,    "web-vault/".to_string();
+    }, 
+    ws {
+        /// Enable websocket notifications
+        websocket_enabled:      bool,   false,  def,    false;
+        /// Websocket address
+        websocket_address:      String, false,  def,    "0.0.0.0".to_string();
+        /// Websocket port
+        websocket_port:         u16,    false,  def,    3012;
+    },
+    
+    /// General settings
+    settings {
+        /// Domain URL |> This needs to be set to the URL used to access the server, including 'http[s]://' and port, if it's different than the default. Some server functions don't work correctly without this value
+        domain:                 String, true,   def,    "http://localhost".to_string();
+        /// PRIVATE |> Domain set
+        domain_set:             bool,   false,  def,    false;
+        /// Enable web vault
+        web_vault_enabled:      bool,   false,  def,    true;
 
-    /// ws |> Enable websocket notifications
-    websocket_enabled:      bool,   false,  def,    false;
-    /// ws |> Websocket address
-    websocket_address:      String, false,  def,    "0.0.0.0".to_string();
-    /// ws |> Websocket port
-    websocket_port:         u16,    false,  def,    3012;
+        /// Disable icon downloads |> Set to true to disable icon downloading, this would still serve icons from $ICON_CACHE_FOLDER,
+        /// but it won't produce any external network request. Needs to set $ICON_CACHE_TTL to 0,
+        /// otherwise it will delete them and they won't be downloaded again.
+        disable_icon_download:  bool,   true,   def,    false;
+        /// Allow new signups |> Controls if new users can register. Note that while this is disabled, users could still be invited
+        signups_allowed:        bool,   true,   def,    true;
+        /// Allow invitations |> Controls whether users can be invited by organization admins, even when signups are disabled
+        invitations_allowed:    bool,   true,   def,    true;
+        /// Password iterations |> Number of server-side passwords hashing iterations. The changes only apply when a user changes their password. Not recommended to lower the value
+        password_iterations:    i32,    true,   def,    100_000;
+        /// Show password hints |> Controls if the password hint should be shown directly in the web page. Otherwise, if email is disabled, there is no way to see the password hint
+        show_password_hint:     bool,   true,   def,    true;
 
-    /// folders |> Web vault folder
-    web_vault_folder:       String, false,  def,    "web-vault/".to_string();
-    /// settings |> Enable web vault
-    web_vault_enabled:      bool,   false,  def,    true;
+        /// Admin page token |> The token used to authenticate in this very same page. Changing it here won't deauthorize the current session
+        admin_token:            String, true,   option;
+    },
 
-    /// icons |> Positive icon cache expiry |> Number of seconds to consider that an already cached icon is fresh. After this period, the icon will be redownloaded
-    icon_cache_ttl:         u64,    true,   def,    2_592_000;
-    /// icons |> Negative icon cache expiry |> Number of seconds before trying to download an icon that failed again.
-    icon_cache_negttl:      u64,    true,   def,    259_200;
+    /// Advanced settings
+    advanced {  
+        /// Positive icon cache expiry |> Number of seconds to consider that an already cached icon is fresh. After this period, the icon will be redownloaded
+        icon_cache_ttl:         u64,    true,   def,    2_592_000;
+        /// Negative icon cache expiry |> Number of seconds before trying to download an icon that failed again.
+        icon_cache_negttl:      u64,    true,   def,    259_200;
 
-    /// settings |> Disable icon downloads |> Set to true to disable icon downloading, this would still serve icons from $ICON_CACHE_FOLDER,
-    /// but it won't produce any external network request. Needs to set $ICON_CACHE_TTL to 0,
-    /// otherwise it will delete them and they won't be downloaded again.
-    disable_icon_download:  bool,   true,   def,    false;
-    /// settings |> Allow new signups |> Controls if new users can register. Note that while this is disabled, users could still be invited
-    signups_allowed:        bool,   true,   def,    true;
-    /// settings |> Allow invitations |> Controls whether users can be invited by organization admins, even when signups are disabled
-    invitations_allowed:    bool,   true,   def,    true;
-    /// settings |> Password iterations |> Number of server-side passwords hashing iterations. The changes only apply when a user changes their password. Not recommended to lower the value
-    password_iterations:    i32,    true,   def,    100_000;
-    /// settings |> Show password hints |> Controls if the password hint should be shown directly in the web page. Otherwise, if email is disabled, there is no way to see the password hint
-    show_password_hint:     bool,   true,   def,    true;
+        /// Reload templates (Dev) |> When this is set to true, the templates get reloaded with every request. ONLY use this during development, as it can slow down the server
+        reload_templates:       bool,   true,   def,    false;
 
-    /// settings |> Domain URL |> This needs to be set to the URL used to access the server, including 'http[s]://' and port, if it's different than the default. Some server functions don't work correctly without this value
-    domain:                 String, true,   def,    "http://localhost".to_string();
-    /// private |> Domain set
-    domain_set:             bool,   false,  def,    false;
+        /// Enable extended logging
+        extended_logging:       bool,   false,  def,    true;
+        /// Log file path
+        log_file:               String, false,  option;
+    },
 
-    /// settings |> Reload templates (Dev) |> When this is set to true, the templates get reloaded with every request. ONLY use this during development, as it can slow down the server
-    reload_templates:       bool,   true,   def,    false;
+    /// Yubikey settings
+    yubico {
+        /// Client ID
+        yubico_client_id:       String, true,   option;
+        /// Secret Key
+        yubico_secret_key:      String, true,   option;
+        /// Server
+        yubico_server:          String, true,   option;
+    },
 
-    /// log |> Enable extended logging
-    extended_logging:       bool,   false,  def,    true;
-    /// log |> Log file path
-    log_file:               String, false,  option;
-
-    /// settings |> Admin page token |> The token used to authenticate in this very same page. Changing it here won't deauthorize the current session
-    admin_token:            String, true,   option;
-
-    /// yubico |> Yubico Client ID
-    yubico_client_id:       String, true,   option;
-    /// yubico |> Yubico secret Key
-    yubico_secret_key:      String, true,   option;
-    /// yubico |> Yubico Server
-    yubico_server:          String, true,   option;
-
-    // TODO: Remove SMTP from name once groups work
-    /// mail |> SMTP Host
-    smtp_host:              String, true,   option;
-    /// mail |> Enable SMTP SSL
-    smtp_ssl:               bool,   true,   def,     true;
-    /// mail |> SMTP Port
-    smtp_port:              u16,    true,   auto,    |c| if c.smtp_ssl {587} else {25};
-    /// mail |> SMTP From Address
-    smtp_from:              String, true,   def,     String::new();
-    /// mail |> SMTP From Name
-    smtp_from_name:         String, true,   def,     "Bitwarden_RS".to_string();
-    /// mail |> SMTP Username
-    smtp_username:          String, true,   option;
-    /// mail |> SMTP Password
-    smtp_password:          String, true,   option;
+    /// SMTP Email Settings
+    smtp {
+        /// Host
+        smtp_host:              String, true,   option;
+        /// Enable SSL
+        smtp_ssl:               bool,   true,   def,     true;
+        /// Port
+        smtp_port:              u16,    true,   auto,    |c| if c.smtp_ssl {587} else {25};
+        /// From Address
+        smtp_from:              String, true,   def,     String::new();
+        /// From Name
+        smtp_from_name:         String, true,   def,     "Bitwarden_RS".to_string();
+        /// Username
+        smtp_username:          String, true,   option;
+        /// Password
+        smtp_password:          String, true,   option;
+    },
 }
 
 fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {

@@ -54,31 +54,41 @@
         </div>
     </div>
 
-    <div id="config-block" class="align-items-center p-3 mb-3 text-white-50 bg-secondary rounded shadow">
+    <div id="config-block" class="align-items-center p-3 mb-3 bg-secondary rounded shadow">
         <div>
-            <h6 class="text-white">Configuration</h6>
-            <form class="form" id="config-form">
+            <h6 class="text-white mb-3">Configuration</h6>
+            <form class="form accordion" id="config-form">
                 {{#each config}}
-                {{#if editable}}
-                <div class="form-group row" title="{{doc.description}}">
-                    {{#case type "text" "number"}}
-                    <label for="input_{{name}}" class="col-sm-3 col-form-label">{{doc.name}}</label>
-                    <div class="col-sm-8">
-                        <input class="form-control" id="input_{{name}}" type="{{type}}" name="{{name}}" value="{{value}}"
-                            {{#if default}} placeholder="Default: {{default}}" {{/if}}>
-                    </div>
-                    {{/case}}
-                    {{#case type "checkbox"}}
-                    <div class="col-sm-3">{{doc.name}}</div>
-                    <div class="col-sm-8">
-                        <div class="form-check">
-                            <input class="form-check-input" type="checkbox" id="input_{{name}}" name="{{name}}"
-                                {{#if value}} checked {{/if}}>
+                {{#if groupdoc}}
+                <div class="card bg-light mb-3">
+                    <div class="card-header"><button class="btn btn-link collapsed" type="button" data-toggle="collapse"
+                            data-target="#g_{{group}}">{{groupdoc}}</button></div>
+                    <div id="g_{{group}}" class="card-body collapse" data-parent="#config-form">
+                        {{#each elements}}
+                        {{#if editable}}
+                        <div class="form-group row" title="{{doc.description}}">
+                            {{#case type "text" "number"}}
+                            <label for="input_{{name}}" class="col-sm-3 col-form-label">{{doc.name}}</label>
+                            <div class="col-sm-8">
+                                <input class="form-control" id="input_{{name}}" type="{{type}}" name="{{name}}" value="{{value}}"
+                                    {{#if default}} placeholder="Default: {{default}}" {{/if}}>
+                            </div>
+                            {{/case}}
+                            {{#case type "checkbox"}}
+                            <div class="col-sm-3">{{doc.name}}</div>
+                            <div class="col-sm-8">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="input_{{name}}" name="{{name}}"
+                                        {{#if value}} checked {{/if}}>
 
-                            <label class="form-check-label" for="input_{{name}}"> Default: {{default}} </label>
+                                    <label class="form-check-label" for="input_{{name}}"> Default: {{default}} </label>
+                                </div>
+                            </div>
+                            {{/case}}
                         </div>
+                        {{/if}}
+                        {{/each}}
                     </div>
-                    {{/case}}
                 </div>
                 {{/if}}
                 {{/each}}
