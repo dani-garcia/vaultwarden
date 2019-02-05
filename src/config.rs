@@ -16,7 +16,7 @@ macro_rules! make_config {
     (   
         $(
             $(#[doc = $groupdoc:literal])?
-            $group:ident {
+            $group:ident $(: $group_enabled:ident)? {
             $(  
                 $(#[doc = $doc:literal])+
                 $name:ident : $ty:ty, $editable:literal, $none_action:ident $(, $default:expr)?;
@@ -108,28 +108,6 @@ macro_rules! make_config {
                 }
             )+)+
 
-            pub fn load() -> Result<Self, Error> {
-                // Loading from env and file
-                let _env = ConfigBuilder::from_env();
-                let _usr = ConfigBuilder::from_file(&CONFIG_FILE).unwrap_or_default();
-
-                // Create merged config, config file overwrites env
-                let builder = _env.merge(&_usr);
-
-                // Fill any missing with defaults
-                let config = builder.build();
-                validate_config(&config)?;
-
-                Ok(Config {
-                    inner: RwLock::new(Inner {
-                        templates: load_templates(&config.templates_folder),
-                        config,
-                        _env,
-                        _usr,
-                    }),
-                })
-            }
-
             pub fn prepare_json(&self) -> serde_json::Value {
                 let (def, cfg) = {
                     let inner = &self.inner.read().unwrap();
@@ -155,6 +133,7 @@ macro_rules! make_config {
 
                 json!([ $({
                     "group": stringify!($group),
+                    "grouptoggle": stringify!($($group_enabled)?),
                     "groupdoc": make_config!{ @show $($groupdoc)? },
                     "elements": [
                     $( {
@@ -172,7 +151,7 @@ macro_rules! make_config {
 
     // Group or empty string
     ( @show ) => { "" };
-    ( @show $groupdoc:literal ) => { $groupdoc };
+    ( @show $lit:literal ) => { $lit };
 
     // Wrap the optionals in an Option type
     ( @type $ty:ty, option) => { Option<$ty> };
@@ -273,7 +252,9 @@ make_config! {
     },
 
     /// Yubikey settings
-    yubico {
+    yubico: _enable_yubico {
+        /// Enabled
+        _enable_yubico:         bool,   true,   def,     true;
         /// Client ID
         yubico_client_id:       String, true,   option;
         /// Secret Key
@@ -283,7 +264,9 @@ make_config! {
     },
 
     /// SMTP Email Settings
-    smtp {
+    smtp: _enable_smtp {
+        /// Enabled
+        _enable_smtp:           bool,   true,   def,     true;
         /// Host
         smtp_host:              String, true,   option;
         /// Enable SSL
@@ -318,9 +301,34 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
 }
 
 impl Config {
+    pub fn load() -> Result<Self, Error> {
+        // Loading from env and file
+        let _env = ConfigBuilder::from_env();
+        let _usr = ConfigBuilder::from_file(&CONFIG_FILE).unwrap_or_default();
+
+        // Create merged config, config file overwrites env
+        let builder = _env.merge(&_usr);
+
+        // Fill any missing with defaults
+        let config = builder.build();
+        validate_config(&config)?;
+
+        Ok(Config {
+            inner: RwLock::new(Inner {
+                templates: load_templates(&config.templates_folder),
+                config,
+                _env,
+                _usr,
+            }),
+        })
+    }
+
     pub fn update_config(&self, other: ConfigBuilder) -> Result<(), Error> {
         // Remove default values
-        let builder = other.remove(&self.inner.read().unwrap()._env);
+        //let builder = other.remove(&self.inner.read().unwrap()._env);
+
+        // TODO: Remove values that are defaults, above only checks those set by env and not the defaults
+        let builder = other;
 
         // Serialize now before we consume the builder
         let config_str = serde_json::to_string_pretty(&builder)?;
@@ -357,7 +365,15 @@ impl Config {
         format!("{}.pub.der", CONFIG.rsa_key_filename())
     }
     pub fn mail_enabled(&self) -> bool {
-        self.inner.read().unwrap().config.smtp_host.is_some()
+        let inner = &self.inner.read().unwrap().config;
+        inner._enable_smtp 
+        && inner.smtp_host.is_some()
+    }
+    pub fn yubico_enabled(&self) -> bool {
+        let inner = &self.inner.read().unwrap().config;
+        inner._enable_yubico 
+        && inner.yubico_client_id.is_some() 
+        && inner.yubico_secret_key.is_some()
     }
 
     pub fn render_template<T: serde::ser::Serialize>(

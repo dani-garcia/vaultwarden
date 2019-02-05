@@ -70,18 +70,20 @@
                             {{#case type "text" "number"}}
                             <label for="input_{{name}}" class="col-sm-3 col-form-label">{{doc.name}}</label>
                             <div class="col-sm-8">
-                                <input class="form-control" id="input_{{name}}" type="{{type}}" name="{{name}}" value="{{value}}"
-                                    {{#if default}} placeholder="Default: {{default}}" {{/if}}>
+                                <input class="form-control conf-{{type}}" id="input_{{name}}" type="{{type}}" name="{{name}}"
+                                    value="{{value}}" {{#if default}} placeholder="Default: {{default}}" {{/if}}>
                             </div>
                             {{/case}}
                             {{#case type "checkbox"}}
                             <div class="col-sm-3">{{doc.name}}</div>
                             <div class="col-sm-8">
                                 <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" id="input_{{name}}" name="{{name}}"
-                                        {{#if value}} checked {{/if}}>
+                                    <input class="form-check-input conf-{{type}}" type="checkbox" id="input_{{name}}"
+                                        name="{{name}}" {{#if value}} checked {{/if}}>
 
+                                    {{#if default}}
                                     <label class="form-check-label" for="input_{{name}}"> Default: {{default}} </label>
+                                    {{/if}}
                                 </div>
                             </div>
                             {{/case}}
@@ -152,29 +154,42 @@
             "Error inviting user", data);
         return false;
     }
-    function getFormData(form) {
-        var form_array = form.serializeArray();
-        var indexed_array = {};
+    function getFormData() {
+        let data = {};
 
-        $.each(form_array, function (i, v) {
-            indexed_array[v.name] = process_value(v.value);
+        $(".conf-checkbox").each(function (i, e) {
+            data[e.name] = $(e).is(":checked");
         });
 
-        return indexed_array;
-    }
-    function process_value(val) {
-        val = val.trim();
-        if (val === "") { return null; }
-        if (!isNaN(val)) { return +val; }
-        if (val === "true" || val === "on") { return true; }
-        if (val === "false" || val === "off") { return false; }
-        return val;
+        $(".conf-number").each(function (i, e) {
+            data[e.name] = +e.value;
+        });
+
+        $(".conf-text").each(function (i, e) {
+            data[e.name] = e.value || null;
+        });
+        return data;
     }
     function saveConfig() {
-        data = JSON.stringify(getFormData($("#config-form")));
+        data = JSON.stringify(getFormData());
         _post("/admin/config/", "Config saved correctly",
             "Error saving config", data);
         return false;
+    }
+    function masterCheck(check_id, inputs_query) {
+        function toggleEnabled(check_id, inputs_query, enabled) {
+            $(inputs_query).prop("disabled", !enabled)
+            if (!enabled)
+                $(inputs_query).val("");
+            $(check_id).prop("disabled", false);
+        };
+        function onChanged(check_id, inputs_query) {
+            return function _fn() { toggleEnabled(check_id, inputs_query, this.checked); };
+        };
+
+        toggleEnabled(check_id, inputs_query, $(check_id).is(":checked"));
+        $(check_id).change(onChanged(check_id, inputs_query));
+
     }
     let OrgTypes = {
         "0": { "name": "Owner", "color": "orange" },
@@ -193,5 +208,11 @@
             e.style.backgroundColor = orgtype.color;
             e.title = orgtype.name;
         });
+
+        // These are formatted because otherwise the 
+        // VSCode formatter breaks But they still work
+        // {{#each config}} {{#if grouptoggle}}
+        masterCheck("#input_{{grouptoggle}}", "#g_{{group}} input");
+        // {{/if}} {{/each}}       
     });
 </script>
