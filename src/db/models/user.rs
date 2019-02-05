@@ -184,10 +184,12 @@ impl User {
 
     pub fn update_revision(&mut self, conn: &DbConn) -> EmptyResult {
         self.updated_at = Utc::now().naive_utc();
-        diesel::update(users::table.filter(users::uuid.eq(&self.uuid)))
-            .set(users::updated_at.eq(&self.updated_at))
-            .execute(&**conn)
-            .map_res("Error updating user revision")
+        crate::util::retry( || {
+            diesel::update(users::table.filter(users::uuid.eq(&self.uuid)))
+                .set(users::updated_at.eq(&self.updated_at))
+                .execute(&**conn)
+        }, 10)
+        .map_res("Error updating user revision")
     }
 
     pub fn find_by_mail(mail: &str, conn: &DbConn) -> Option<Self> {

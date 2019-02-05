@@ -842,7 +842,7 @@ fn move_cipher_selected(data: JsonUpcase<MoveCipherData>, headers: Headers, conn
     }
 
     for uuid in data.Ids {
-        let mut cipher = match Cipher::find_by_uuid(&uuid, &conn) {
+        let cipher = match Cipher::find_by_uuid(&uuid, &conn) {
             Some(cipher) => cipher,
             None => err!("Cipher doesn't exist"),
         };
@@ -853,12 +853,11 @@ fn move_cipher_selected(data: JsonUpcase<MoveCipherData>, headers: Headers, conn
 
         // Move cipher
         cipher.move_to_folder(data.FolderId.clone(), &user_uuid, &conn)?;
-        cipher.save(&conn)?;
 
         nt.send_cipher_update(
             UpdateType::CipherUpdate,
             &cipher,
-            &User::update_uuid_revision(&user_uuid, &conn),
+            &[user_uuid.clone()]
         );
     }
 
