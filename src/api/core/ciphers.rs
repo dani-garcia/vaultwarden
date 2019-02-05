@@ -857,7 +857,7 @@ fn move_cipher_selected(data: JsonUpcase<MoveCipherData>, headers: Headers, conn
         nt.send_cipher_update(
             UpdateType::CipherUpdate,
             &cipher,
-            &vec![user_uuid.clone()]
+            &[user_uuid.clone()]
         );
     }
 
