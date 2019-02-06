@@ -44,12 +44,7 @@ use crate::error::MapResult;
 /// Database methods
 impl Collection {
     pub fn save(&mut self, conn: &DbConn) -> EmptyResult {
-        // Update affected users revision
-        UserOrganization::find_by_collection_and_org(&self.uuid, &self.org_uuid, conn)
-            .iter()
-            .for_each(|user_org| {
-                User::update_uuid_revision(&user_org.user_uuid, conn);
-            });
+        self.update_users_revision(conn);
 
         diesel::replace_into(collections::table)
             .values(&*self)
@@ -58,6 +53,7 @@ impl Collection {
     }
 
     pub fn delete(self, conn: &DbConn) -> EmptyResult {
+        self.update_users_revision(conn);
         CollectionCipher::delete_all_by_collection(&self.uuid, &conn)?;
         CollectionUser::delete_all_by_collection(&self.uuid, &conn)?;
 
@@ -71,6 +67,14 @@ impl Collection {
             collection.delete(&conn)?;
         }
         Ok(())
+    }
+
+    pub fn update_users_revision(&self, conn: &DbConn) {
+        UserOrganization::find_by_collection_and_org(&self.uuid, &self.org_uuid, conn)
+            .iter()
+            .for_each(|user_org| {
+                User::update_uuid_revision(&user_org.user_uuid, conn);
+            });
     }
 
     pub fn find_by_uuid(uuid: &str, conn: &DbConn) -> Option<Self> {
