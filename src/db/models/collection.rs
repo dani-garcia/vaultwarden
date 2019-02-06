@@ -278,6 +278,7 @@ pub struct CollectionCipher {
 /// Database methods
 impl CollectionCipher {
     pub fn save(cipher_uuid: &str, collection_uuid: &str, conn: &DbConn) -> EmptyResult {
+        Self::update_users_revision(&collection_uuid, conn);
         diesel::replace_into(ciphers_collections::table)
             .values((
                 ciphers_collections::cipher_uuid.eq(cipher_uuid),
@@ -288,6 +289,7 @@ impl CollectionCipher {
     }
 
     pub fn delete(cipher_uuid: &str, collection_uuid: &str, conn: &DbConn) -> EmptyResult {
+        Self::update_users_revision(&collection_uuid, conn);
         diesel::delete(
             ciphers_collections::table
                 .filter(ciphers_collections::cipher_uuid.eq(cipher_uuid))
@@ -307,5 +309,11 @@ impl CollectionCipher {
         diesel::delete(ciphers_collections::table.filter(ciphers_collections::collection_uuid.eq(collection_uuid)))
             .execute(&**conn)
             .map_res("Error removing ciphers from collection")
+    }
+
+    pub fn update_users_revision(collection_uuid: &str, conn: &DbConn) {
+        if let Some(collection) = Collection::find_by_uuid(collection_uuid, conn) {
+            collection.update_users_revision(conn);
+        }
     }
 }
