@@ -44,7 +44,7 @@ macro_rules! make_config {
 
         impl ConfigBuilder {
             fn from_env() -> Self {
-                dotenv::dotenv().ok();
+                dotenv::from_path(".env").ok();
 
                 let mut builder = ConfigBuilder::default();
                 $($(
