@@ -13,17 +13,14 @@ lazy_static! {
 }
 
 macro_rules! make_config {
-    (   
+    ($(
+        $(#[doc = $groupdoc:literal])?
+        $group:ident $(: $group_enabled:ident)? {
         $(
-            $(#[doc = $groupdoc:literal])?
-            $group:ident $(: $group_enabled:ident)? {
-            $(  
-                $(#[doc = $doc:literal])+
-                $name:ident : $ty:ty, $editable:literal, $none_action:ident $(, $default:expr)?;
-            )+
-        },)+
-        
-    ) => {
+            $(#[doc = $doc:literal])+
+            $name:ident : $ty:ty, $editable:literal, $none_action:ident $(, $default:expr)?;
+        )+},
+    )+) => {
         pub struct Config { inner: RwLock<Inner> }
 
         struct Inner {
@@ -199,7 +196,7 @@ make_config! {
         rsa_key_filename:       String, false,  auto,   |c| format!("{}/{}", c.data_folder, "rsa_key");
         /// Web vault folder
         web_vault_folder:       String, false,  def,    "web-vault/".to_string();
-    }, 
+    },
     ws {
         /// Enable websocket notifications
         websocket_enabled:      bool,   false,  def,    false;
@@ -208,7 +205,7 @@ make_config! {
         /// Websocket port
         websocket_port:         u16,    false,  def,    3012;
     },
-    
+
     /// General settings
     settings {
         /// Domain URL |> This needs to be set to the URL used to access the server, including 'http[s]://' and port, if it's different than the default. Some server functions don't work correctly without this value
@@ -236,7 +233,7 @@ make_config! {
     },
 
     /// Advanced settings
-    advanced {  
+    advanced {
         /// Positive icon cache expiry |> Number of seconds to consider that an already cached icon is fresh. After this period, the icon will be redownloaded
         icon_cache_ttl:         u64,    true,   def,    2_592_000;
         /// Negative icon cache expiry |> Number of seconds before trying to download an icon that failed again.
@@ -355,6 +352,28 @@ impl Config {
         Ok(())
     }
 
+    pub fn delete_user_config(&self) -> Result<(), Error> {
+        crate::util::delete_file(&CONFIG_FILE)?;
+
+        // Empty user config
+        let usr = ConfigBuilder::default();
+
+        // Config now is env + defaults
+        let config = {
+            let env = &self.inner.read().unwrap()._env;
+            env.build()
+        };
+
+        // Save configs
+        {
+            let mut writer = self.inner.write().unwrap();
+            writer.config = config;
+            writer._usr = usr;
+        }
+
+        Ok(())
+    }
+
     pub fn private_rsa_key(&self) -> String {
         format!("{}.der", CONFIG.rsa_key_filename())
     }
@@ -366,14 +385,11 @@ impl Config {
     }
     pub fn mail_enabled(&self) -> bool {
         let inner = &self.inner.read().unwrap().config;
-        inner._enable_smtp 
-        && inner.smtp_host.is_some()
+        inner._enable_smtp && inner.smtp_host.is_some()
     }
     pub fn yubico_enabled(&self) -> bool {
         let inner = &self.inner.read().unwrap().config;
-        inner._enable_yubico 
-        && inner.yubico_client_id.is_some() 
-        && inner.yubico_secret_key.is_some()
+        inner._enable_yubico && inner.yubico_client_id.is_some() && inner.yubico_secret_key.is_some()
     }
 
     pub fn render_template<T: serde::ser::Serialize>(

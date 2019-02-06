@@ -27,6 +27,7 @@ pub fn routes() -> Vec<Route> {
         delete_user,
         deauth_user,
         post_config,
+        delete_config,
     ]
 }
 
@@ -171,6 +172,11 @@ fn deauth_user(uuid: String, _token: AdminToken, conn: DbConn) -> EmptyResult {
 fn post_config(data: Json<ConfigBuilder>, _token: AdminToken) -> EmptyResult {
     let data: ConfigBuilder = data.into_inner();
     CONFIG.update_config(data)
+}
+
+#[post("/config/delete")]
+fn delete_config(_token: AdminToken) -> EmptyResult {
+    CONFIG.delete_user_config()
 }
 
 pub struct AdminToken {}
