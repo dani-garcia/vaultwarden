@@ -15,7 +15,7 @@ pub struct TwoFactor {
 }
 
 #[allow(dead_code)]
-#[derive(FromPrimitive, ToPrimitive)]
+#[derive(FromPrimitive)]
 pub enum TwoFactorType {
     Authenticator = 0,
     Email = 1,

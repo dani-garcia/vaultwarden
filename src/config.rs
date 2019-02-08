@@ -9,7 +9,7 @@ lazy_static! {
         println!("Error loading config:\n\t{:?}\n", e);
         exit(12)
     });
-    pub static ref CONFIG_FILE: String = get_env("CONFIG_FILE").unwrap_or("data/config.json".into());
+    pub static ref CONFIG_FILE: String = get_env("CONFIG_FILE").unwrap_or_else(|| "data/config.json".into());
 }
 
 macro_rules! make_config {
@@ -71,7 +71,7 @@ macro_rules! make_config {
 
             /// Returns a new builder with all the elements from self,
             /// except those that are equal in both sides
-            fn remove(&self, other: &Self) -> Self {
+            fn _remove(&self, other: &Self) -> Self {
                 let mut builder = ConfigBuilder::default();
                 $($(
                     if &self.$name != &other.$name {

@@ -462,7 +462,7 @@ pub fn validate_u2f_login(user_uuid: &str, response: &str, conn: &DbConn) -> Emp
             }
             Err(e) => {
                 info!("E {:#}", e);
-                break;
+                // break;
             }
         }
     }
@@ -494,7 +494,7 @@ use yubico::Yubico;
 fn parse_yubikeys(data: &EnableYubikeyData) -> Vec<String> {
     let data_keys = [&data.Key1, &data.Key2, &data.Key3, &data.Key4, &data.Key5];
 
-    data_keys.into_iter().filter_map(|e| e.as_ref().cloned()).collect()
+    data_keys.iter().filter_map(|e| e.as_ref().cloned()).collect()
 }
 
 fn jsonify_yubikeys(yubikeys: Vec<String>) -> serde_json::Value {

@@ -172,23 +172,27 @@ impl User {
             .map_res("Error deleting user")
     }
 
-    pub fn update_uuid_revision(uuid: &str, conn: &DbConn) -> Vec<String> {
-        if let Some(mut user) = User::find_by_uuid(&uuid, conn) {
-            if user.update_revision(conn).is_err() {
-                warn!("Failed to update revision for {}", user.email);
-            };
-        };
-
-        vec![uuid.to_string()]
+    pub fn update_uuid_revision(uuid: &str, conn: &DbConn) {
+        if let Err(e) = Self::_update_revision(uuid, &Utc::now().naive_utc(), conn) {
+            warn!("Failed to update revision for {}: {:#?}", uuid, e);
+        }
     }
 
     pub fn update_revision(&mut self, conn: &DbConn) -> EmptyResult {
         self.updated_at = Utc::now().naive_utc();
-        crate::util::retry( || {
-            diesel::update(users::table.filter(users::uuid.eq(&self.uuid)))
-                .set(users::updated_at.eq(&self.updated_at))
-                .execute(&**conn)
-        }, 10)
+
+        Self::_update_revision(&self.uuid, &self.updated_at, conn)
+    }
+
+    fn _update_revision(uuid: &str, date: &NaiveDateTime, conn: &DbConn) -> EmptyResult {
+        crate::util::retry(
+            || {
+                diesel::update(users::table.filter(users::uuid.eq(uuid)))
+                    .set(users::updated_at.eq(date))
+                    .execute(&**conn)
+            },
+            10,
+        )
         .map_res("Error updating user revision")
     }
 

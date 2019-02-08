@@ -86,8 +86,8 @@ pub fn send_invite(
         "email/send_org_invite",
         json!({
             "url": CONFIG.domain(),
-            "org_id": org_id.unwrap_or("_".to_string()),
-            "org_user_id": org_user_id.unwrap_or("_".to_string()),
+            "org_id": org_id.unwrap_or_else(|| "_".to_string()),
+            "org_user_id": org_user_id.unwrap_or_else(|| "_".to_string()),
             "email": address,
             "org_name": org_name,
             "token": invite_token,

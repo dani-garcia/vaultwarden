@@ -452,7 +452,7 @@ where
     D: Deserializer<'de>,
 {
     // Deserialize null to empty Vec
-    Deserialize::deserialize(deserializer).or(Ok(vec![]))
+    Deserialize::deserialize(deserializer).or_else(|_| Ok(vec![]))
 }
 
 #[derive(Deserialize)]
@@ -486,9 +486,10 @@ fn send_invite(org_id: String, data: JsonUpcase<InviteData>, headers: AdminHeade
     }
 
     for email in data.Emails.iter() {
-        let mut user_org_status = match CONFIG.mail_enabled() {
-            true => UserOrgStatus::Invited as i32,
-            false => UserOrgStatus::Accepted as i32, // Automatically mark user as accepted if no email invites
+        let mut user_org_status = if CONFIG.mail_enabled() {
+            UserOrgStatus::Invited as i32
+        } else {
+            UserOrgStatus::Accepted as i32 // Automatically mark user as accepted if no email invites
         };
         let user = match User::find_by_mail(&email, &conn) {
             None => {
