@@ -12,6 +12,8 @@ lazy_static! {
     pub static ref CONFIG_FILE: String = get_env("CONFIG_FILE").unwrap_or_else(|| "data/config.json".into());
 }
 
+pub type Pass = String;
+
 macro_rules! make_config {
     ($(
         $(#[doc = $groupdoc:literal])?
@@ -114,6 +116,7 @@ macro_rules! make_config {
 
                 fn _get_form_type(rust_type: &str) -> &'static str {
                     match rust_type {
+                        "Pass" => "password",
                         "String" => "text",
                         "bool" => "checkbox",
                         _ => "number"
@@ -229,7 +232,7 @@ make_config! {
         show_password_hint:     bool,   true,   def,    true;
 
         /// Admin page token |> The token used to authenticate in this very same page. Changing it here won't deauthorize the current session
-        admin_token:            String, true,   option;
+        admin_token:            Pass,   true,   option;
     },
 
     /// Advanced settings
@@ -255,7 +258,7 @@ make_config! {
         /// Client ID
         yubico_client_id:       String, true,   option;
         /// Secret Key
-        yubico_secret_key:      String, true,   option;
+        yubico_secret_key:      Pass,   true,   option;
         /// Server
         yubico_server:          String, true,   option;
     },
@@ -277,7 +280,7 @@ make_config! {
         /// Username
         smtp_username:          String, true,   option;
         /// Password
-        smtp_password:          String, true,   option;
+        smtp_password:          Pass,   true,   option;
     },
 }
 

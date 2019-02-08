@@ -67,11 +67,19 @@
                         {{#each elements}}
                         {{#if editable}}
                         <div class="form-group row" title="{{doc.description}}">
-                            {{#case type "text" "number"}}
+                            {{#case type "text" "number" "password"}}
                             <label for="input_{{name}}" class="col-sm-3 col-form-label">{{doc.name}}</label>
-                            <div class="col-sm-8">
-                                <input class="form-control conf-{{type}}" id="input_{{name}}" type="{{type}}" name="{{name}}"
-                                    value="{{value}}" {{#if default}} placeholder="Default: {{default}}" {{/if}}>
+                            <div class="col-sm-8 input-group">
+                                <input class="form-control conf-{{type}}" id="input_{{name}}" type="{{type}}"
+                                    name="{{name}}" value="{{value}}" {{#if default}} placeholder="Default: {{default}}"
+                                    {{/if}}>
+
+                                {{#case type "password"}}
+                                <div class="input-group-append">
+                                    <button class="btn btn-outline-secondary" type="button"
+                                        onclick="toggleVis('#input_{{name}}');">Show/hide</button>
+                                </div>
+                                {{/case}}
                             </div>
                             {{/case}}
                             {{#case type "checkbox"}}
@@ -113,6 +121,15 @@
     function identicon(email) {
         const data = new Identicon(md5(email), { size: 48, format: 'svg' });
         return "data:image/svg+xml;base64," + data.toString();
+    }
+    function toggleVis(input_id) {
+        var type = $(input_id).attr("type");
+        if (type === "text") {
+            $(input_id).attr("type", "password");
+        } else {
+            $(input_id).attr("type", "text");
+        }
+        return false;
     }
     function _post(url, successMsg, errMsg, data) {
         $.post({
@@ -166,7 +183,7 @@
             data[e.name] = +e.value;
         });
 
-        $(".conf-text").each(function (i, e) {
+        $(".conf-text, .conf-password").each(function (i, e) {
             data[e.name] = e.value || null;
         });
         return data;
