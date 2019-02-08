@@ -1,21 +1,16 @@
 use rocket::request::Form;
+use rocket::Route;
 use rocket_contrib::json::Json;
 use serde_json::Value;
-
-use crate::db::models::*;
-use crate::db::DbConn;
-use crate::CONFIG;
 
 use crate::api::{
     EmptyResult, JsonResult, JsonUpcase, JsonUpcaseVec, Notify, NumberOrString, PasswordData, UpdateType,
 };
 use crate::auth::{decode_invite, AdminHeaders, Headers, OwnerHeaders};
-
+use crate::db::models::*;
+use crate::db::DbConn;
 use crate::mail;
-
-use serde::{Deserialize, Deserializer};
-
-use rocket::Route;
+use crate::CONFIG;
 
 pub fn routes() -> Vec<Route> {
     routes![
@@ -447,14 +442,6 @@ fn get_org_users(org_id: String, _headers: AdminHeaders, conn: DbConn) -> JsonRe
     })))
 }
 
-fn deserialize_collections<'de, D>(deserializer: D) -> Result<Vec<CollectionData>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    // Deserialize null to empty Vec
-    Deserialize::deserialize(deserializer).or_else(|_| Ok(vec![]))
-}
-
 #[derive(Deserialize)]
 #[allow(non_snake_case)]
 struct CollectionData {
@@ -467,8 +454,7 @@ struct CollectionData {
 struct InviteData {
     Emails: Vec<String>,
     Type: NumberOrString,
-    #[serde(deserialize_with = "deserialize_collections")]
-    Collections: Vec<CollectionData>,
+    Collections: Option<Vec<CollectionData>>,
     AccessAll: Option<bool>,
 }
 
@@ -524,7 +510,7 @@ fn send_invite(org_id: String, data: JsonUpcase<InviteData>, headers: AdminHeade
 
         // If no accessAll, add the collections received
         if !access_all {
-            for col in &data.Collections {
+            for col in data.Collections.iter().flatten() {
                 match Collection::find_by_uuid_and_org(&col.Id, &org_id, &conn) {
                     None => err!("Collection not found in Organization"),
                     Some(collection) => {
@@ -714,8 +700,7 @@ fn get_user(org_id: String, org_user_id: String, _headers: AdminHeaders, conn: D
 #[allow(non_snake_case)]
 struct EditUserData {
     Type: NumberOrString,
-    #[serde(deserialize_with = "deserialize_collections")]
-    Collections: Vec<CollectionData>,
+    Collections: Option<Vec<CollectionData>>,
     AccessAll: bool,
 }
 
@@ -780,7 +765,7 @@ fn edit_user(
 
     // If no accessAll, add the collections received
     if !data.AccessAll {
-        for col in &data.Collections {
+        for col in data.Collections.iter().flatten() {
             match Collection::find_by_uuid_and_org(&col.Id, &org_id, &conn) {
                 None => err!("Collection not found in Organization"),
                 Some(collection) => {
