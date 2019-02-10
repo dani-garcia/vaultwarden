@@ -16,7 +16,7 @@ use crate::CONFIG;
 
 pub fn routes() -> Vec<Route> {
     if CONFIG.admin_token().is_none() {
-        return Vec::new();
+        return routes![admin_disabled];
     }
 
     routes![
@@ -29,6 +29,11 @@ pub fn routes() -> Vec<Route> {
         post_config,
         delete_config,
     ]
+}
+
+#[get("/")]
+fn admin_disabled() -> &'static str {
+    "The admin panel is disabled, please configure the 'ADMIN_TOKEN' variable to enable it"
 }
 
 const COOKIE_NAME: &str = "BWRS_ADMIN";
