@@ -426,14 +426,18 @@ fn load_templates(path: &str) -> Handlebars {
             let template = include_str!(concat!("static/templates/", $name, ".hbs"));
             hb.register_template_string($name, template).unwrap();
         }};
+        ($name:expr, $ext:expr) => {{
+            reg!($name);
+            reg!(concat!($name, $ext));
+        }};
     }
 
     // First register default templates here
-    reg!("email/invite_accepted");
-    reg!("email/invite_confirmed");
-    reg!("email/pw_hint_none");
-    reg!("email/pw_hint_some");
-    reg!("email/send_org_invite");
+    reg!("email/invite_accepted", ".html");
+    reg!("email/invite_confirmed", ".html");
+    reg!("email/pw_hint_none", ".html");
+    reg!("email/pw_hint_some", ".html");
+    reg!("email/send_org_invite", ".html");
 
     reg!("admin/base");
     reg!("admin/login");
