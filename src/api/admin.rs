@@ -40,12 +40,13 @@ const COOKIE_NAME: &str = "BWRS_ADMIN";
 const ADMIN_PATH: &str = "/admin";
 
 const BASE_TEMPLATE: &str = "admin/base";
+const VERSION: Option<&str> = option_env!("GIT_VERSION");
 
 #[get("/", rank = 2)]
 fn admin_login(flash: Option<FlashMessage>) -> ApiResult<Html<String>> {
     // If there is an error, show it
     let msg = flash.map(|msg| format!("{}: {}", msg.name(), msg.msg()));
-    let json = json!({"page_content": "admin/login", "error": msg});
+    let json = json!({"page_content": "admin/login", "version": VERSION, "error": msg});
 
     // Return the page
     let text = CONFIG.render_template(BASE_TEMPLATE, &json)?;
@@ -94,16 +95,18 @@ fn _validate_token(token: &str) -> bool {
 
 #[derive(Serialize)]
 struct AdminTemplateData {
-    users: Vec<Value>,
     page_content: String,
+    version: Option<&'static str>,
+    users: Vec<Value>,
     config: Value,
 }
 
 impl AdminTemplateData {
     fn new(users: Vec<Value>) -> Self {
         Self {
-            users,
             page_content: String::from("admin/page"),
+            version: VERSION,
+            users,
             config: CONFIG.prepare_json(),
         }
     }
