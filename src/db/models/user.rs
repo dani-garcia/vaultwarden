@@ -86,7 +86,7 @@ impl User {
 
     pub fn check_valid_recovery_code(&self, recovery_code: &str) -> bool {
         if let Some(ref totp_recover) = self.totp_recover {
-            recovery_code == totp_recover.to_lowercase()
+            crate::crypto::ct_eq(recovery_code, totp_recover.to_lowercase())
         } else {
             false
         }

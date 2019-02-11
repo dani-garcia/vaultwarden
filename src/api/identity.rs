@@ -170,8 +170,9 @@ fn twofactor_auth(
 
     match TwoFactorType::from_i32(provider) {
         Some(TwoFactorType::Remember) => {
+            use crate::crypto::ct_eq;
             match device.twofactor_remember {
-                Some(ref remember) if remember == twofactor_code => return Ok(None), // No twofactor token needed here
+                Some(ref remember) if ct_eq(remember, twofactor_code) => return Ok(None), // No twofactor token needed here
                 _ => err_json!(_json_err_twofactor(&providers, user_uuid, conn)?),
             }
         }

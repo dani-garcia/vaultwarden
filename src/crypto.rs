@@ -36,3 +36,12 @@ pub fn get_random(mut array: Vec<u8>) -> Vec<u8> {
 
     array
 }
+
+//
+// Constant time compare
+//
+pub fn ct_eq<T: AsRef<[u8]>, U: AsRef<[u8]>>(a: T, b: U) -> bool {
+    use ring::constant_time::verify_slices_are_equal;
+
+    verify_slices_are_equal(a.as_ref(), b.as_ref()).is_ok()
+}
