@@ -241,6 +241,8 @@ make_config! {
         icon_cache_ttl:         u64,    true,   def,    2_592_000;
         /// Negative icon cache expiry |> Number of seconds before trying to download an icon that failed again.
         icon_cache_negttl:      u64,    true,   def,    259_200;
+        /// Icon download timeout |> Number of seconds when to stop attempting to download an icon.
+        icon_download_timeout:  u64,   true,   def,    10;
 
         /// Reload templates (Dev) |> When this is set to true, the templates get reloaded with every request. ONLY use this during development, as it can slow down the server
         reload_templates:       bool,   true,   def,    false;

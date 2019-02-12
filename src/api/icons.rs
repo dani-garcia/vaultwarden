@@ -26,7 +26,7 @@ lazy_static! {
     // Reuse the client between requests
     static ref CLIENT: Client = Client::builder()
         .gzip(true)
-        .timeout(Duration::from_secs(5))
+        .timeout(Duration::from_secs(CONFIG.icon_download_timeout()))
         .default_headers(_header_map())
         .build()
         .unwrap();
