@@ -247,6 +247,8 @@ make_config! {
         /// Reload templates (Dev) |> When this is set to true, the templates get reloaded with every request. ONLY use this during development, as it can slow down the server
         reload_templates:       bool,   true,   def,    false;
 
+        /// Log routes at launch (Dev)
+        log_mounts:             bool,   true,   def,    false;
         /// Enable extended logging
         extended_logging:       bool,   false,  def,    true;
         /// Log file path

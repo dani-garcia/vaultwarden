@@ -39,18 +39,37 @@ mod util;
 
 pub use config::CONFIG;
 
-fn init_rocket() -> Rocket {
-    rocket::ignite()
+fn launch_rocket() {
+    // Create Rocket object, this stores current log level and sets it's own
+    let rocket = rocket::ignite();
+
+    // If we aren't logging the mounts, we force the logging level down
+    if !CONFIG.log_mounts() {
+        log::set_max_level(log::LevelFilter::Warn);
+    }
+
+    let rocket = rocket
         .mount("/", api::web_routes())
         .mount("/api", api::core_routes())
         .mount("/admin", api::admin_routes())
         .mount("/identity", api::identity_routes())
         .mount("/icons", api::icons_routes())
-        .mount("/notifications", api::notifications_routes())
+        .mount("/notifications", api::notifications_routes());
+
+    // Force the level up for the fairings, managed state and lauch
+    if !CONFIG.log_mounts() {
+        log::set_max_level(log::LevelFilter::max());
+    }
+
+    let rocket = rocket
         .manage(db::init_pool())
         .manage(api::start_notification_server())
         .attach(util::AppHeaders())
-        .attach(AdHoc::on_launch("Launch Info", launch_info))
+        .attach(AdHoc::on_launch("Launch Info", launch_info));
+
+    // Launch and print error if there is one
+    // The launch will restore the original logging level
+    error!("Launch error {:#?}", rocket.launch());
 }
 
 // Embed the migrations from the migrations folder into the application
@@ -79,7 +98,7 @@ fn main() {
     check_web_vault();
     migrations::run_migrations();
 
-    init_rocket().launch();
+    launch_rocket();
 }
 
 fn init_logging() -> Result<(), fern::InitError> {
