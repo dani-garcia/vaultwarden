@@ -34,9 +34,9 @@ rmpv = "0.4.0"
 chashmap = "2.2.0"
 
 # A generic serialization/deserialization framework
-serde = "1.0.85"
-serde_derive = "1.0.85"
-serde_json = "1.0.37"
+serde = "1.0.87"
+serde_derive = "1.0.87"
+serde_json = "1.0.38"
 
 # Logging
 log = "0.4.6"
@@ -81,7 +81,7 @@ dotenv = { version = "0.13.0", default-features = false }
 lazy_static = { version = "1.2.0", features = ["nightly"] }
 
 # More derives
-derive_more = "0.13.0"
+derive_more = "0.14.0"
 
 # Numerical libraries
 num-traits = "0.2.6"
@@ -106,4 +106,7 @@ rmp = { git = 'https://github.com/dani-garcia/msgpack-rust' }
 # Use new native_tls version 0.2
 lettre = { git = 'https://github.com/lettre/lettre', rev = 'c988b1760ad81' }
 lettre_email = { git = 'https://github.com/lettre/lettre', rev = 'c988b1760ad81' }
+
+# Allow emails with domains that start with numbers
+fast_chemail = { git = 'https://github.com/dani-garcia/fast_chemail_rs' }
 
