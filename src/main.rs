@@ -50,7 +50,7 @@ fn init_rocket() -> Rocket {
         .manage(db::init_pool())
         .manage(api::start_notification_server())
         .attach(util::AppHeaders())
-        .attach(unofficial_warning())
+        .attach(AdHoc::on_launch("Launch Info", launch_info))
 }
 
 // Embed the migrations from the migrations folder into the application
@@ -227,12 +227,20 @@ fn check_web_vault() {
     }
 }
 
-fn unofficial_warning() -> AdHoc {
-    AdHoc::on_launch("Unofficial Warning", |_| {
-        warn!("/--------------------------------------------------------------------\\");
-        warn!("| This is an *unofficial* Bitwarden implementation, DO NOT use the   |");
-        warn!("| official channels to report bugs/features, regardless of client.   |");
-        warn!("| Report URL: https://github.com/dani-garcia/bitwarden_rs/issues/new |");
-        warn!("\\--------------------------------------------------------------------/");
-    })
+fn launch_info(_: &Rocket) {
+    // Remove the target to keep the message more centered
+    macro_rules! w {( $l:literal $(,$e:expr)* ) => {warn!(target: "", $l, $($e),* )}}
+
+    w!("/--------------------------------------------------------------------\\");
+    w!("|                       Starting Bitwarden_RS                        |");
+
+    if let Some(version) = option_env!("GIT_VERSION") {
+        w!("|{:^68}|", format!("Version {}", version));
+    }
+
+    w!("|--------------------------------------------------------------------|");
+    w!("| This is an *unofficial* Bitwarden implementation, DO NOT use the   |");
+    w!("| official channels to report bugs/features, regardless of client.   |");
+    w!("| Report URL: https://github.com/dani-garcia/bitwarden_rs/issues/new |");
+    w!("\\--------------------------------------------------------------------/");
 }
