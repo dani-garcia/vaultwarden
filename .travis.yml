@@ -1,9 +1,9 @@
-# Copied from Rocket's .travis.yml
+dist: xenial
+
 language: rust
-sudo: required # so we get a VM with higher specs
-dist: trusty # so we get a VM with higher specs
+rust: nightly
 cache: cargo
-rust:
-- nightly
-script:
-- cargo build --verbose --all-features
+
+# Nothing to install
+install: true
+script: cargo build --verbose --all-features
