@@ -38,6 +38,7 @@ mod mail;
 mod util;
 
 pub use config::CONFIG;
+pub use error::{Error, MapResult};
 
 fn launch_rocket() {
     // Create Rocket object, this stores current log level and sets it's own
