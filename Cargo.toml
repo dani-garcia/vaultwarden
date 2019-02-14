@@ -99,6 +99,9 @@ handlebars = "1.1.0"
 soup = "0.3.0"
 regex = "1.1.0"
 
+# LDAP libraries
+ldap3 = "0.6"
+
 [patch.crates-io]
 # Add support for Timestamp type
 rmp = { git = 'https://github.com/dani-garcia/msgpack-rust' }

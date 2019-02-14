@@ -286,6 +286,28 @@ make_config! {
         /// Password
         smtp_password:          Pass,   true,   option;
     },
+
+    /// LDAP settings
+    ldap: _enable_ldap {
+        /// Enabled
+        _enable_ldap:           bool,   true,   def,     true;
+        /// Host
+        ldap_host:              String, true,   option;
+        /// Enable SSL
+        ldap_ssl:               bool,   true,   def,     false;
+        /// Port
+        ldap_port:              u16,    true,   auto,    |c| if c.ldap_ssl {636} else {389};
+        /// Bind dn
+        ldap_bind_dn:           String, true,   option;
+        /// Bind password
+        ldap_bind_password:     Pass,   true,   option;
+        /// Search base dn
+        ldap_search_base_dn:    String, true,   option;
+        /// Search filter
+        ldap_search_filter:     String, true,   def,     "(&(objectClass=*)(uid=*))".to_string();
+        /// Email field
+        ldap_mail_field:        String, true,   def,     "mail".to_string();
+    },
 }
 
 fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
@@ -299,6 +321,10 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
 
     if cfg.smtp_username.is_some() != cfg.smtp_password.is_some() {
         err!("Both `SMTP_USERNAME` and `SMTP_PASSWORD` need to be set to enable email authentication")
+    }
+
+    if cfg.ldap_bind_dn.is_some() != cfg.ldap_bind_password.is_some() {
+        err!("Both `LDAP_BIND_DN` and `LDAP_BIND_PASSWORD` need to be set to enable ldap authentication")
     }
 
     Ok(())
@@ -397,6 +423,10 @@ impl Config {
     pub fn yubico_enabled(&self) -> bool {
         let inner = &self.inner.read().unwrap().config;
         inner._enable_yubico && inner.yubico_client_id.is_some() && inner.yubico_secret_key.is_some()
+    }
+    pub fn ldap_enabled(&self) -> bool {
+        let inner = &self.inner.read().unwrap().config;
+        inner._enable_ldap && inner.ldap_host.is_some() && inner.ldap_search_base_dn.is_some()
     }
 
     pub fn render_template<T: serde::ser::Serialize>(
