@@ -1,3 +1,4 @@
+use std::error::Error;
 use std::ops::Deref;
 
 use diesel::r2d2;
@@ -47,6 +48,13 @@ impl<'a, 'r> FromRequest<'a, 'r> for DbConn {
             Err(_) => Outcome::Failure((Status::ServiceUnavailable, ())),
         }
     }
+}
+
+/// Attempts to initialize a new connection from a pool
+pub fn get_dbconn() -> Result<DbConn, Box<Error>> {
+    let pool = init_pool();
+
+    Ok(DbConn(pool.get()?))
 }
 
 // For the convenience of using an &DbConn as a &Database.

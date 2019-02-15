@@ -34,6 +34,7 @@ mod auth;
 mod config;
 mod crypto;
 mod db;
+mod ldap;
 mod mail;
 mod util;
 
@@ -65,6 +66,7 @@ fn launch_rocket() {
         .manage(db::init_pool())
         .manage(api::start_notification_server())
         .attach(util::AppHeaders())
+        .attach(AdHoc::on_launch("LDAP Sync", launch_ldap_sync))
         .attach(AdHoc::on_launch("Launch Info", launch_info));
 
     // Launch and print error if there is one
@@ -85,6 +87,14 @@ mod migrations {
 
         use std::io::stdout;
         embedded_migrations::run_with_output(&connection, &mut stdout()).expect("Can't run migrations");
+    }
+}
+
+fn launch_ldap_sync(_: &Rocket) {
+    if CONFIG.ldap_enabled() {
+        ldap::start_ldap_sync().expect("Failed to start ldap sync");
+    } else {
+        println!("LDAP is not enabled");
     }
 }
 

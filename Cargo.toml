@@ -101,6 +101,9 @@ regex = "1.1.0"
 
 # LDAP libraries
 ldap3 = "0.6"
+tokio = "0.1"
+tokio-timer = "0.1"
+tokio-core = "0.1"
 
 [patch.crates-io]
 # Add support for Timestamp type
