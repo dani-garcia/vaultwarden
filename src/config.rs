@@ -307,6 +307,8 @@ make_config! {
         ldap_search_filter:     String, true,   def,     "(&(objectClass=*)(uid=*))".to_string();
         /// Email field
         ldap_mail_field:        String, true,   def,     "mail".to_string();
+        /// Sync interval in seconds
+        ldap_sync_interval:     u64,    true,   def,     600;
     },
 }
 
