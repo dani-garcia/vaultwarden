@@ -17,6 +17,7 @@ use crate::db::models::{Invitation, User};
 use crate::db::DbConn;
 use crate::CONFIG;
 
+/// Generates invites for all users in LDAP who don't yet have an account or invite.
 fn invite_from_results(conn: DbConn, results: Vec<SearchEntry>) -> Result<(), Box<Error>> {
     let mail_field = CONFIG.ldap_mail_field();
     for ldap_user in results {
@@ -40,6 +41,7 @@ fn invite_from_results(conn: DbConn, results: Vec<SearchEntry>) -> Result<(), Bo
     Ok(())
 }
 
+/// Initializes an LdapConnAsync client using provided configuration
 fn new_ldap_client_async(handle: &Handle) -> Result<LdapConnAsync, Box<Error>> {
     let scheme = if CONFIG.ldap_ssl() { "ldaps" } else { "ldap" };
     let host = CONFIG.ldap_host().unwrap();
@@ -52,6 +54,7 @@ fn new_ldap_client_async(handle: &Handle) -> Result<LdapConnAsync, Box<Error>> {
     Ok(ldap)
 }
 
+/// Given syncs users from LDAP
 fn ldap_sync(handle: &Handle) -> Result<(), Box<Error>> {
     let handle = handle.clone();
 
@@ -84,7 +87,7 @@ fn ldap_sync(handle: &Handle) -> Result<(), Box<Error>> {
             }
             let conn = db::get_dbconn().expect("Can't reach database");
             // Can't figure out how to use this result
-            invite_from_results(conn, entries);
+            invite_from_results(conn, entries).expect("Could not invite users");
             Ok(())
         })
         .map_err(|e| panic!("Error searching: {:?}", e));
@@ -94,6 +97,7 @@ fn ldap_sync(handle: &Handle) -> Result<(), Box<Error>> {
     Ok(())
 }
 
+/// Starts a new thread with event loop to sync LDAP users
 pub fn start_ldap_sync() -> Result<(), Box<Error>> {
     thread::spawn(move || {
         let mut core = Core::new().expect("Could not create core");
@@ -105,10 +109,10 @@ pub fn start_ldap_sync() -> Result<(), Box<Error>> {
         let task = Interval::new(now, Duration::from_secs(sync_interval))
             .for_each(|_| {
                 // Can't figure out how to get this error handled
-                ldap_sync(&handle);
+                ldap_sync(&handle).expect("Failed to sync from LDAP");
                 Ok(())
             })
-            .map_err(|e| panic!("interval errored: {:?}", e));
+            .map_err(|e| panic!("LDAP sync interval errored: {:?}", e));
 
         core.run(task)
     });
