@@ -106,7 +106,3 @@ rmp = { git = 'https://github.com/dani-garcia/msgpack-rust' }
 # Use new native_tls version 0.2
 lettre = { git = 'https://github.com/lettre/lettre', rev = 'c988b1760ad81' }
 lettre_email = { git = 'https://github.com/lettre/lettre', rev = 'c988b1760ad81' }
-
-# Allow emails with domains that start with numbers
-fast_chemail = { git = 'https://github.com/dani-garcia/fast_chemail_rs' }
-
