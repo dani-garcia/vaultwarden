@@ -9,11 +9,12 @@ use rocket_contrib::json::Json;
 use serde_json::Value;
 
 use crate::util::Cached;
+use crate::error::Error;
 use crate::CONFIG;
 
 pub fn routes() -> Vec<Route> {
     if CONFIG.web_vault_enabled() {
-        routes![web_index, app_id, web_files, attachments, alive]
+        routes![web_index, app_id, web_files, attachments, alive, images]
     } else {
         routes![attachments, alive]
     }
@@ -61,4 +62,14 @@ fn alive() -> Json<String> {
     use chrono::Utc;
 
     Json(format_date(&Utc::now().naive_utc()))
+}
+
+#[get("/images/<filename>")]
+fn images(filename: String) -> Result<Content<Vec<u8>>, Error> {
+    let image_type = ContentType::new("image", "x-icon");
+    match filename.as_ref() {
+        "mail-github.png" => Ok(Content(image_type , include_bytes!("../static/images/mail-github.png").to_vec())),
+        "logo-gray.png" => Ok(Content(image_type, include_bytes!("../static/images/logo-gray.png").to_vec())),
+        _ => err!("Image not found")
+    }
 }
