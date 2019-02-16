@@ -322,6 +322,7 @@ fn post_sstamp(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn) -
         err!("Invalid password")
     }
 
+    Device::delete_all_by_user(&user.uuid, &conn)?;
     user.reset_security_stamp();
     user.save(&conn)
 }

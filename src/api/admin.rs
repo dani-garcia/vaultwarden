@@ -171,6 +171,7 @@ fn deauth_user(uuid: String, _token: AdminToken, conn: DbConn) -> EmptyResult {
         None => err!("User doesn't exist"),
     };
 
+    Device::delete_all_by_user(&user.uuid, &conn)?;
     user.reset_security_stamp();
 
     user.save(&conn)
