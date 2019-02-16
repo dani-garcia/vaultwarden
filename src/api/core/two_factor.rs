@@ -573,11 +573,10 @@ fn activate_yubikey(data: JsonUpcase<EnableYubikeyData>, headers: Headers, conn:
     }
 
     // Check if we already have some data
-    let yubikey_data = TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::YubiKey as i32, &conn);
-
-    if let Some(yubikey_data) = yubikey_data {
-        yubikey_data.delete(&conn)?;
-    }
+    let mut yubikey_data = match TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::YubiKey as i32, &conn) {
+        Some(data) => data,
+        None => TwoFactor::new(user.uuid.clone(), TwoFactorType::YubiKey, String::new()),
+    };
 
     let yubikeys = parse_yubikeys(&data);
 
@@ -605,12 +604,8 @@ fn activate_yubikey(data: JsonUpcase<EnableYubikeyData>, headers: Headers, conn:
         Nfc: data.Nfc,
     };
 
-    let yubikey_registration = TwoFactor::new(
-        user.uuid.clone(),
-        TwoFactorType::YubiKey,
-        serde_json::to_string(&yubikey_metadata).unwrap(),
-    );
-    yubikey_registration.save(&conn)?;
+    yubikey_data.data = serde_json::to_string(&yubikey_metadata).unwrap();
+    yubikey_data.save(&conn)?;
 
     _generate_recover_code(&mut user, &conn);
 
