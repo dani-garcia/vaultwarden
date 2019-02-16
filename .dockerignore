@@ -9,10 +9,6 @@ data
 .idea
 *.iml
 
-# Git files
-.git
-.gitignore
-
 # Documentation
 *.md
 
