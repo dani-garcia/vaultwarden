@@ -66,7 +66,7 @@ fn alive() -> Json<String> {
 
 #[get("/images/<filename>")]
 fn images(filename: String) -> Result<Content<Vec<u8>>, Error> {
-    let image_type = ContentType::new("image", "x-icon");
+    let image_type = ContentType::new("image", "png");
     match filename.as_ref() {
         "mail-github.png" => Ok(Content(image_type , include_bytes!("../static/images/mail-github.png").to_vec())),
         "logo-gray.png" => Ok(Content(image_type, include_bytes!("../static/images/logo-gray.png").to_vec())),
