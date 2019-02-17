@@ -423,7 +423,9 @@ fn load_templates(path: &str) -> Handlebars {
     let mut hb = Handlebars::new();
     // Error on missing params
     hb.set_strict_mode(true);
+    // Register helpers
     hb.register_helper("case", Box::new(CaseHelper));
+    hb.register_helper("jsesc", Box::new(JsEscapeHelper));
 
     macro_rules! reg {
         ($name:expr) => {{
@@ -455,7 +457,6 @@ fn load_templates(path: &str) -> Handlebars {
     hb
 }
 
-#[derive(Clone, Copy)]
 pub struct CaseHelper;
 
 impl HelperDef for CaseHelper {
@@ -477,5 +478,33 @@ impl HelperDef for CaseHelper {
         } else {
             Ok(())
         }
+    }
+}
+
+pub struct JsEscapeHelper;
+
+impl HelperDef for JsEscapeHelper {
+    fn call<'reg: 'rc, 'rc>(
+        &self,
+        h: &Helper<'reg, 'rc>,
+        _: &'reg Handlebars,
+        _: &Context,
+        _: &mut RenderContext<'reg>,
+        out: &mut Output,
+    ) -> HelperResult {
+        let param = h
+            .param(0)
+            .ok_or_else(|| RenderError::new("Param not found for helper \"js_escape\""))?;
+
+        let value = param
+            .value()
+            .as_str()
+            .ok_or_else(|| RenderError::new("Param for helper \"js_escape\" is not a String"))?;
+
+        let escaped_value = value.replace('\\', "").replace('\'', "\\x22").replace('\"', "\\x27");
+        let quoted_value = format!("&quot;{}&quot;", escaped_value);
+
+        out.write(&quoted_value)?;
+        Ok(())
     }
 }

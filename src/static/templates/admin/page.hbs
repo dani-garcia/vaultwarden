@@ -27,8 +27,8 @@
                             </span>
                         </div>
                         <div style="flex: 0 0 240px;">
-                            <a class="mr-3" href="#" onclick='deauthUser("{{Id}}")'>Deauthorize sessions</a>
-                            <a class="mr-3" href="#" onclick='deleteUser("{{Id}}", "{{Email}}")'>Delete User</a>
+                            <a class="mr-3" href="#" onclick='deauthUser({{jsesc Id}})'>Deauthorize sessions</a>
+                            <a class="mr-3" href="#" onclick='deleteUser({{jsesc Id}}, {{jsesc Email}})'>Delete User</a>
                         </div>
                     </div>
                 </div>
@@ -101,7 +101,7 @@
                 {{/if}}
                 {{/each}}
                 <button type="submit" class="btn btn-primary">Save</button>
-                <button type="button" class="btn btn-danger float-right" onclick="deleteConfig();">Reset defaults</button>
+                <button type="button" class="btn btn-danger float-right" onclick="deleteConf();">Reset defaults</button>
             </form>
         </div>
     </div>
@@ -192,7 +192,7 @@
             "Error saving config", data);
         return false;
     }
-    function deleteConfig() {
+    function deleteConf() {
         var input = prompt("This will remove all user configurations, and restore the defaults and the " +
             "values set by the environment. This operation could be dangerous. Type 'DELETE' to proceed:");
         if (input === "DELETE") {
