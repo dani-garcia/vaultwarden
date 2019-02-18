@@ -213,7 +213,7 @@ make_config! {
     settings {
         /// Domain URL |> This needs to be set to the URL used to access the server, including 'http[s]://' and port, if it's different than the default. Some server functions don't work correctly without this value
         domain:                 String, true,   def,    "http://localhost".to_string();
-        /// PRIVATE |> Domain set
+        /// Domain Set |> Indicates if the domain is set by the admin. Otherwise the default will be used.
         domain_set:             bool,   false,  def,    false;
         /// Enable web vault
         web_vault_enabled:      bool,   false,  def,    true;

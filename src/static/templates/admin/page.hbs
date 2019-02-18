@@ -66,7 +66,7 @@
                     <div id="g_{{group}}" class="card-body collapse" data-parent="#config-form">
                         {{#each elements}}
                         {{#if editable}}
-                        <div class="form-group row" title="{{doc.description}}">
+                        <div class="form-group row" title="[{{name}}] {{doc.description}}">
                             {{#case type "text" "number" "password"}}
                             <label for="input_{{name}}" class="col-sm-3 col-form-label">{{doc.name}}</label>
                             <div class="col-sm-8 input-group">
@@ -100,6 +100,53 @@
                 </div>
                 {{/if}}
                 {{/each}}
+
+                <div class="card bg-light mb-3">
+                    <div class="card-header"><button type="button" class="btn btn-link collapsed" data-toggle="collapse"
+                            data-target="#g_readonly">Read-Only Config</button></div>
+                    <div id="g_readonly" class="card-body collapse" data-parent="#config-form">
+                        <p>
+                            NOTE: These options can't be modified in the editor because they would require the server
+                            to be restarted. To modify them, you need to set the correct environment variables when
+                            launching the server. You can check the variable names in the tooltips of each option.
+                        </p>
+
+                        {{#each config}}
+                        {{#each elements}}
+                        {{#unless editable}}
+                        <div class="form-group row" title="[{{name}}] {{doc.description}}">
+                            {{#case type "text" "number" "password"}}
+                            <label for="input_{{name}}" class="col-sm-3 col-form-label">{{doc.name}}</label>
+                            <div class="col-sm-8 input-group">
+                                <input readonly class="form-control" id="input_{{name}}" type="{{type}}"
+                                    value="{{value}}" {{#if default}} placeholder="Default: {{default}}" {{/if}}>
+
+                                {{#case type "password"}}
+                                <div class="input-group-append">
+                                    <button class="btn btn-outline-secondary" type="button"
+                                        onclick="toggleVis('#input_{{name}}');">Show/hide</button>
+                                </div>
+                                {{/case}}
+                            </div>
+                            {{/case}}
+                            {{#case type "checkbox"}}
+                            <div class="col-sm-3">{{doc.name}}</div>
+                            <div class="col-sm-8">
+                                <div class="form-check">
+                                    <input disabled class="form-check-input" type="checkbox" id="input_{{name}}"
+                                        {{#if value}} checked {{/if}}>
+
+                                    <label class="form-check-label" for="input_{{name}}"> Default: {{default}} </label>
+                                </div>
+                            </div>
+                            {{/case}}
+                        </div>
+                        {{/unless}}
+                        {{/each}}
+                        {{/each}}
+                    </div>
+                </div>
+
                 <button type="submit" class="btn btn-primary">Save</button>
                 <button type="button" class="btn btn-danger float-right" onclick="deleteConf();">Reset defaults</button>
             </form>
