@@ -15,7 +15,7 @@ use crate::mail;
 use crate::CONFIG;
 
 pub fn routes() -> Vec<Route> {
-    if CONFIG.admin_token().is_none() {
+    if CONFIG.admin_token().is_none() && !CONFIG.disable_admin_token() {
         return routes![admin_disabled];
     }
 
@@ -194,25 +194,30 @@ impl<'a, 'r> FromRequest<'a, 'r> for AdminToken {
     type Error = &'static str;
 
     fn from_request(request: &'a Request<'r>) -> request::Outcome<Self, Self::Error> {
-        let mut cookies = request.cookies();
-
-        let access_token = match cookies.get(COOKIE_NAME) {
-            Some(cookie) => cookie.value(),
-            None => return Outcome::Forward(()), // If there is no cookie, redirect to login
-        };
-
-        let ip = match request.guard::<ClientIp>() {
-            Outcome::Success(ip) => ip.ip,
-            _ => err_handler!("Error getting Client IP"),
-        };
-
-        if decode_admin(access_token).is_err() {
-            // Remove admin cookie
-            cookies.remove(Cookie::named(COOKIE_NAME));
-            error!("Invalid or expired admin JWT. IP: {}.", ip);
-            return Outcome::Forward(());
+        if CONFIG.disable_admin_token() {
+            Outcome::Success(AdminToken {})
         }
+        else {
+            let mut cookies = request.cookies();
 
-        Outcome::Success(AdminToken {})
+            let access_token = match cookies.get(COOKIE_NAME) {
+                Some(cookie) => cookie.value(),
+                None => return Outcome::Forward(()), // If there is no cookie, redirect to login
+            };
+
+            let ip = match request.guard::<ClientIp>() {
+                Outcome::Success(ip) => ip.ip,
+                _ => err_handler!("Error getting Client IP"),
+            };
+
+            if decode_admin(access_token).is_err() {
+                // Remove admin cookie
+                cookies.remove(Cookie::named(COOKIE_NAME));
+                error!("Invalid or expired admin JWT. IP: {}.", ip);
+                return Outcome::Forward(());
+            }
+
+            Outcome::Success(AdminToken {})
+        }
     }
 }

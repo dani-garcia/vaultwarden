@@ -269,6 +269,9 @@ make_config! {
 
         /// Enable DB WAL |> Turning this off might lead to worse performance, but might help if using bitwarden_rs on some exotic filesystems, that do not support WAL. Please make sure you read project wiki on the topic before changing this setting.
         enable_db_wal:          bool,   false,  def,    true;
+
+        /// Disable Admin Token (Know the risks!) |> Disables the Admin Token for the admin page so you may use your own auth in-front
+        disable_admin_token:    bool,   true,   def,    false;
     },
 
     /// Yubikey settings
