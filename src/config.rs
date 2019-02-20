@@ -62,12 +62,25 @@ macro_rules! make_config {
             /// Merges the values of both builders into a new builder.
             /// If both have the same element, `other` wins.
             fn merge(&self, other: &Self) -> Self {
+                let mut overrides = Vec::new();
                 let mut builder = self.clone();
                 $($(
                     if let v @Some(_) = &other.$name {
                         builder.$name = v.clone();
+
+                        if self.$name.is_some() {
+                            overrides.push(stringify!($name).to_uppercase());
+                        }
                     }
                 )+)+
+
+                if !overrides.is_empty() {
+                    // We can't use warn! here because logging isn't setup yet.
+                    println!("[WARNING] The following environment variables are being overriden by the config file,");
+                    println!("[WARNING] please use the admin panel to make changes to them:");
+                    println!("[WARNING] {}\n", overrides.join(", "));
+                }
+
                 builder
             }
 

@@ -20,8 +20,6 @@ extern crate derive_more;
 #[macro_use]
 extern crate num_derive;
 
-use rocket::{fairing::AdHoc, Rocket};
-
 use std::{
     path::Path,
     process::{exit, Command},
@@ -40,56 +38,9 @@ mod util;
 pub use config::CONFIG;
 pub use error::{Error, MapResult};
 
-fn launch_rocket() {
-    // Create Rocket object, this stores current log level and sets it's own
-    let rocket = rocket::ignite();
-
-    // If we aren't logging the mounts, we force the logging level down
-    if !CONFIG.log_mounts() {
-        log::set_max_level(log::LevelFilter::Warn);
-    }
-
-    let rocket = rocket
-        .mount("/", api::web_routes())
-        .mount("/api", api::core_routes())
-        .mount("/admin", api::admin_routes())
-        .mount("/identity", api::identity_routes())
-        .mount("/icons", api::icons_routes())
-        .mount("/notifications", api::notifications_routes());
-
-    // Force the level up for the fairings, managed state and lauch
-    if !CONFIG.log_mounts() {
-        log::set_max_level(log::LevelFilter::max());
-    }
-
-    let rocket = rocket
-        .manage(db::init_pool())
-        .manage(api::start_notification_server())
-        .attach(util::AppHeaders())
-        .attach(AdHoc::on_launch("Launch Info", launch_info));
-
-    // Launch and print error if there is one
-    // The launch will restore the original logging level
-    error!("Launch error {:#?}", rocket.launch());
-}
-
-// Embed the migrations from the migrations folder into the application
-// This way, the program automatically migrates the database to the latest version
-// https://docs.rs/diesel_migrations/*/diesel_migrations/macro.embed_migrations.html
-#[allow(unused_imports)]
-mod migrations {
-    embed_migrations!();
-
-    pub fn run_migrations() {
-        // Make sure the database is up to date (create if it doesn't exist, or run the migrations)
-        let connection = crate::db::get_connection().expect("Can't conect to DB");
-
-        use std::io::stdout;
-        embedded_migrations::run_with_output(&connection, &mut stdout()).expect("Can't run migrations");
-    }
-}
-
 fn main() {
+    launch_info();
+
     if CONFIG.extended_logging() {
         init_logging().ok();
     }
@@ -100,6 +51,21 @@ fn main() {
     migrations::run_migrations();
 
     launch_rocket();
+}
+
+fn launch_info() {
+    println!("/--------------------------------------------------------------------\\");
+    println!("|                       Starting Bitwarden_RS                        |");
+
+    if let Some(version) = option_env!("GIT_VERSION") {
+        println!("|{:^68}|", format!("Version {}", version));
+    }
+
+    println!("|--------------------------------------------------------------------|");
+    println!("| This is an *unofficial* Bitwarden implementation, DO NOT use the   |");
+    println!("| official channels to report bugs/features, regardless of client.   |");
+    println!("| Report URL: https://github.com/dani-garcia/bitwarden_rs/issues/new |");
+    println!("\\--------------------------------------------------------------------/\n");
 }
 
 fn init_logging() -> Result<(), fern::InitError> {
@@ -182,49 +148,36 @@ fn check_rsa_keys() {
     if !util::file_exists(&CONFIG.private_rsa_key()) || !util::file_exists(&CONFIG.public_rsa_key()) {
         info!("JWT keys don't exist, checking if OpenSSL is available...");
 
-        Command::new("openssl").arg("version").output().unwrap_or_else(|_| {
+        Command::new("openssl").arg("version").status().unwrap_or_else(|_| {
             info!("Can't create keys because OpenSSL is not available, make sure it's installed and available on the PATH");
             exit(1);
         });
 
         info!("OpenSSL detected, creating keys...");
 
+        let key = CONFIG.rsa_key_filename();
+
+        let pem = format!("{}.pem", key);
+        let priv_der = format!("{}.der", key);
+        let pub_der = format!("{}.pub.der", key);
+
         let mut success = Command::new("openssl")
-            .arg("genrsa")
-            .arg("-out")
-            .arg(&CONFIG.private_rsa_key_pem())
-            .output()
+            .args(&["genrsa", "-out", &pem])
+            .status()
             .expect("Failed to create private pem file")
-            .status
             .success();
 
         success &= Command::new("openssl")
-            .arg("rsa")
-            .arg("-in")
-            .arg(&CONFIG.private_rsa_key_pem())
-            .arg("-outform")
-            .arg("DER")
-            .arg("-out")
-            .arg(&CONFIG.private_rsa_key())
-            .output()
+            .args(&["rsa", "-in", &pem, "-outform", "DER", "-out", &priv_der])
+            .status()
             .expect("Failed to create private der file")
-            .status
             .success();
 
         success &= Command::new("openssl")
-            .arg("rsa")
-            .arg("-in")
-            .arg(&CONFIG.private_rsa_key())
-            .arg("-inform")
-            .arg("DER")
-            .arg("-RSAPublicKey_out")
-            .arg("-outform")
-            .arg("DER")
-            .arg("-out")
-            .arg(&CONFIG.public_rsa_key())
-            .output()
+            .args(&["rsa", "-in", &priv_der, "-inform", "DER"])
+            .args(&["-RSAPublicKey_out", "-outform", "DER", "-out", &pub_der])
+            .status()
             .expect("Failed to create public der file")
-            .status
             .success();
 
         if success {
@@ -249,20 +202,50 @@ fn check_web_vault() {
     }
 }
 
-fn launch_info(_: &Rocket) {
-    // Remove the target to keep the message more centered
-    macro_rules! w {( $l:literal $(,$e:expr)* ) => {warn!(target: "", $l, $($e),* )}}
+// Embed the migrations from the migrations folder into the application
+// This way, the program automatically migrates the database to the latest version
+// https://docs.rs/diesel_migrations/*/diesel_migrations/macro.embed_migrations.html
+#[allow(unused_imports)]
+mod migrations {
+    embed_migrations!();
 
-    w!("/--------------------------------------------------------------------\\");
-    w!("|                       Starting Bitwarden_RS                        |");
+    pub fn run_migrations() {
+        // Make sure the database is up to date (create if it doesn't exist, or run the migrations)
+        let connection = crate::db::get_connection().expect("Can't conect to DB");
 
-    if let Some(version) = option_env!("GIT_VERSION") {
-        w!("|{:^68}|", format!("Version {}", version));
+        use std::io::stdout;
+        embedded_migrations::run_with_output(&connection, &mut stdout()).expect("Can't run migrations");
+    }
+}
+
+fn launch_rocket() {
+    // Create Rocket object, this stores current log level and sets it's own
+    let rocket = rocket::ignite();
+
+    // If we aren't logging the mounts, we force the logging level down
+    if !CONFIG.log_mounts() {
+        log::set_max_level(log::LevelFilter::Warn);
     }
 
-    w!("|--------------------------------------------------------------------|");
-    w!("| This is an *unofficial* Bitwarden implementation, DO NOT use the   |");
-    w!("| official channels to report bugs/features, regardless of client.   |");
-    w!("| Report URL: https://github.com/dani-garcia/bitwarden_rs/issues/new |");
-    w!("\\--------------------------------------------------------------------/");
+    let rocket = rocket
+        .mount("/", api::web_routes())
+        .mount("/api", api::core_routes())
+        .mount("/admin", api::admin_routes())
+        .mount("/identity", api::identity_routes())
+        .mount("/icons", api::icons_routes())
+        .mount("/notifications", api::notifications_routes());
+
+    // Force the level up for the fairings, managed state and lauch
+    if !CONFIG.log_mounts() {
+        log::set_max_level(log::LevelFilter::max());
+    }
+
+    let rocket = rocket
+        .manage(db::init_pool())
+        .manage(api::start_notification_server())
+        .attach(util::AppHeaders());
+
+    // Launch and print error if there is one
+    // The launch will restore the original logging level
+    error!("Launch error {:#?}", rocket.launch());
 }
