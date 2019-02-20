@@ -101,7 +101,7 @@ pub fn delete_file(path: &str) -> IOResult<()> {
 const UNITS: [&str; 6] = ["bytes", "KB", "MB", "GB", "TB", "PB"];
 
 pub fn get_display_size(size: i32) -> String {
-    let mut size = size as f64;
+    let mut size: f64 = size.into();
     let mut unit_counter = 0;
 
     loop {

@@ -407,7 +407,7 @@ fn _create_u2f_challenge(user_uuid: &str, type_: TwoFactorType, conn: &DbConn) -
     challenge
 }
 
-fn save_u2f_registrations(user_uuid: &str, regs: &Vec<U2FRegistration>, conn: &DbConn) -> EmptyResult {
+fn save_u2f_registrations(user_uuid: &str, regs: &[U2FRegistration], conn: &DbConn) -> EmptyResult {
     TwoFactor::new(user_uuid.into(), TwoFactorType::U2f, serde_json::to_string(regs)?).save(&conn)
 }
 

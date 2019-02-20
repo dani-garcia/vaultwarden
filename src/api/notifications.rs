@@ -88,7 +88,7 @@ fn serialize(val: Value) -> Vec<u8> {
 
 fn serialize_date(date: NaiveDateTime) -> Value {
     let seconds: i64 = date.timestamp();
-    let nanos: i64 = date.timestamp_subsec_nanos() as i64;
+    let nanos: i64 = date.timestamp_subsec_nanos().into();
     let timestamp = nanos << 34 | seconds;
 
     let bs = timestamp.to_be_bytes();
@@ -249,7 +249,7 @@ impl WebSocketUsers {
             ut,
         );
 
-        self.send_update(&user.uuid.clone(), &data).ok();
+        self.send_update(&user.uuid, &data).ok();
     }
 
     pub fn send_folder_update(&self, ut: UpdateType, folder: &Folder) {

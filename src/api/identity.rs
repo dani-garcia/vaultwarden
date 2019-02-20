@@ -118,7 +118,7 @@ fn _password_login(data: ConnectData, conn: DbConn, ip: ClientIp) -> JsonResult 
         None => Device::new(device_id, user.uuid.clone(), device_name, device_type),
     };
 
-    let twofactor_token = twofactor_auth(&user.uuid, &data.clone(), &mut device, &conn)?;
+    let twofactor_token = twofactor_auth(&user.uuid, &data, &mut device, &conn)?;
 
     // Common
     let user = User::find_by_uuid(&device.user_uuid, &conn).unwrap();
