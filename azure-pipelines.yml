@@ -1,0 +1,17 @@
+pool:
+  vmImage: 'Ubuntu-16.04'
+
+steps:
+- script: |
+    ls -la
+    curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain $(cat rust-toolchain)
+    echo "##vso[task.prependpath]$HOME/.cargo/bin"
+  displayName: 'Install Rust'
+
+- script: |
+    rustc -Vv
+    cargo -V
+  displayName: Query rust and cargo versions
+
+- script : cargo build --verbose --all-features
+  displayName: 'Build project'
