@@ -225,13 +225,13 @@ impl Invitation {
         Self { email }
     }
 
-    pub fn save(&mut self, conn: &DbConn) -> EmptyResult {
+    pub fn save(&self, conn: &DbConn) -> EmptyResult {
         if self.email.trim().is_empty() {
             err!("Invitation email can't be empty")
         }
 
         diesel::replace_into(invitations::table)
-            .values(&*self)
+            .values(self)
             .execute(&**conn)
             .map_res("Error saving invitation")
     }

@@ -43,11 +43,11 @@ use crate::error::MapResult;
 
 /// Database methods
 impl Collection {
-    pub fn save(&mut self, conn: &DbConn) -> EmptyResult {
+    pub fn save(&self, conn: &DbConn) -> EmptyResult {
         self.update_users_revision(conn);
 
         diesel::replace_into(collections::table)
-            .values(&*self)
+            .values(self)
             .execute(&**conn)
             .map_res("Error saving collection")
     }

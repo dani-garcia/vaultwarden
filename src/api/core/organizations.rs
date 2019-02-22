@@ -76,9 +76,9 @@ struct NewCollectionData {
 fn create_organization(headers: Headers, data: JsonUpcase<OrgData>, conn: DbConn) -> JsonResult {
     let data: OrgData = data.into_inner().data;
 
-    let mut org = Organization::new(data.Name, data.BillingEmail);
+    let org = Organization::new(data.Name, data.BillingEmail);
     let mut user_org = UserOrganization::new(headers.user.uuid.clone(), org.uuid.clone());
-    let mut collection = Collection::new(org.uuid.clone(), data.CollectionName);
+    let collection = Collection::new(org.uuid.clone(), data.CollectionName);
 
     user_org.key = data.Key;
     user_org.access_all = true;
@@ -221,7 +221,7 @@ fn post_organization_collections(
         None => err!("Can't find organization details"),
     };
 
-    let mut collection = Collection::new(org.uuid.clone(), data.Name);
+    let collection = Collection::new(org.uuid.clone(), data.Name);
     collection.save(&conn)?;
 
     Ok(Json(collection.to_json()))
@@ -484,7 +484,7 @@ fn send_invite(org_id: String, data: JsonUpcase<InviteData>, headers: AdminHeade
                 }
 
                 if !CONFIG.mail_enabled() {
-                    let mut invitation = Invitation::new(email.clone());
+                    let invitation = Invitation::new(email.clone());
                     invitation.save(&conn)?;
                 }
 
@@ -581,7 +581,7 @@ fn reinvite_user(org_id: String, user_org: String, headers: AdminHeaders, conn: 
             Some(headers.user.email),
         )?;
     } else {
-        let mut invitation = Invitation::new(user.email.clone());
+        let invitation = Invitation::new(user.email.clone());
         invitation.save(&conn)?;
     }
 
@@ -851,7 +851,7 @@ fn post_org_import(
         .Collections
         .into_iter()
         .map(|coll| {
-            let mut collection = Collection::new(org_id.clone(), coll.Name);
+            let collection = Collection::new(org_id.clone(), coll.Name);
             if collection.save(&conn).is_err() {
                 err!("Failed to create Collection");
             }
