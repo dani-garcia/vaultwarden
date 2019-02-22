@@ -6,4 +6,4 @@ cache: cargo
 
 # Nothing to install
 install: true
-script: cargo build --verbose --all-features
+script: cargo build --all-features

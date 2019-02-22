@@ -13,5 +13,5 @@ steps:
     cargo -V
   displayName: Query rust and cargo versions
 
-- script : cargo build --verbose --all-features
+- script : cargo build --all-features
   displayName: 'Build project'
