@@ -149,7 +149,7 @@ fn invite_user(data: Json<InviteData>, _token: AdminToken, conn: DbConn) -> Empt
         let org_name = "bitwarden_rs";
         mail::send_invite(&user.email, &user.uuid, None, None, &org_name, None)
     } else {
-        let mut invitation = Invitation::new(data.email);
+        let invitation = Invitation::new(data.email);
         invitation.save(&conn)
     }
 }

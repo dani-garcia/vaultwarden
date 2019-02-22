@@ -213,7 +213,7 @@ use crate::error::MapResult;
 
 /// Database methods
 impl Organization {
-    pub fn save(&mut self, conn: &DbConn) -> EmptyResult {
+    pub fn save(&self, conn: &DbConn) -> EmptyResult {
         UserOrganization::find_by_org(&self.uuid, conn)
             .iter()
             .for_each(|user_org| {
@@ -221,7 +221,7 @@ impl Organization {
             });
 
         diesel::replace_into(organizations::table)
-            .values(&*self)
+            .values(self)
             .execute(&**conn)
             .map_res("Error saving organization")
     }
@@ -323,11 +323,11 @@ impl UserOrganization {
         })
     }
 
-    pub fn save(&mut self, conn: &DbConn) -> EmptyResult {
+    pub fn save(&self, conn: &DbConn) -> EmptyResult {
         User::update_uuid_revision(&self.user_uuid, conn);
 
         diesel::replace_into(users_organizations::table)
-            .values(&*self)
+            .values(self)
             .execute(&**conn)
             .map_res("Error adding user to organization")
     }
