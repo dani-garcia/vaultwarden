@@ -211,7 +211,7 @@ mod migrations {
 
     pub fn run_migrations() {
         // Make sure the database is up to date (create if it doesn't exist, or run the migrations)
-        let connection = crate::db::get_connection().expect("Can't conect to DB");
+        let connection = crate::db::get_connection().expect("Can't connect to DB");
 
         use std::io::stdout;
         embedded_migrations::run_with_output(&connection, &mut stdout()).expect("Can't run migrations");
