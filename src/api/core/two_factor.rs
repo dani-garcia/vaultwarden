@@ -37,7 +37,7 @@ pub fn routes() -> Vec<Route> {
 #[get("/two-factor")]
 fn get_twofactor(headers: Headers, conn: DbConn) -> JsonResult {
     let twofactors = TwoFactor::find_by_user(&headers.user.uuid, &conn);
-    let twofactors_json: Vec<Value> = twofactors.iter().map(|c| c.to_json_list()).collect();
+    let twofactors_json: Vec<Value> = twofactors.iter().map(TwoFactor::to_json_list).collect();
 
     Ok(Json(json!({
         "Data": twofactors_json,
@@ -248,7 +248,7 @@ fn generate_u2f(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn) 
     }
 
     let (enabled, keys) = get_u2f_registrations(&headers.user.uuid, &conn)?;
-    let keys_json: Vec<Value> = keys.iter().map(|r| r.to_json()).collect();
+    let keys_json: Vec<Value> = keys.iter().map(U2FRegistration::to_json).collect();
 
     Ok(Json(json!({
         "Enabled": enabled,
@@ -384,7 +384,7 @@ fn activate_u2f(data: JsonUpcase<EnableU2FData>, headers: Headers, conn: DbConn)
 
     _generate_recover_code(&mut user, &conn);
 
-    let keys_json: Vec<Value> = regs.iter().map(|r| r.to_json()).collect();
+    let keys_json: Vec<Value> = regs.iter().map(U2FRegistration::to_json).collect();
     Ok(Json(json!({
         "Enabled": true,
         "Keys": keys_json,

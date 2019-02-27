@@ -74,10 +74,10 @@ fn sync(data: Form<SyncData>, headers: Headers, conn: DbConn) -> JsonResult {
     let user_json = headers.user.to_json(&conn);
 
     let folders = Folder::find_by_user(&headers.user.uuid, &conn);
-    let folders_json: Vec<Value> = folders.iter().map(|c| c.to_json()).collect();
+    let folders_json: Vec<Value> = folders.iter().map(Folder::to_json).collect();
 
     let collections = Collection::find_by_user_uuid(&headers.user.uuid, &conn);
-    let collections_json: Vec<Value> = collections.iter().map(|c| c.to_json()).collect();
+    let collections_json: Vec<Value> = collections.iter().map(Collection::to_json).collect();
 
     let ciphers = Cipher::find_by_user(&headers.user.uuid, &conn);
     let ciphers_json: Vec<Value> = ciphers
