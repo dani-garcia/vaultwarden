@@ -196,8 +196,7 @@ impl<'a, 'r> FromRequest<'a, 'r> for AdminToken {
     fn from_request(request: &'a Request<'r>) -> request::Outcome<Self, Self::Error> {
         if CONFIG.disable_admin_token() {
             Outcome::Success(AdminToken {})
-        }
-        else {
+        } else {
             let mut cookies = request.cookies();
 
             let access_token = match cookies.get(COOKIE_NAME) {

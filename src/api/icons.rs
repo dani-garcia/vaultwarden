@@ -8,7 +8,7 @@ use rocket::Route;
 
 use reqwest::{header::HeaderMap, Client, Response};
 
-use rocket::http::{Cookie};
+use rocket::http::Cookie;
 
 use regex::Regex;
 use soup::prelude::*;
@@ -278,13 +278,13 @@ fn parse_sizes(sizes: &str) -> (u16, u16) {
 
     if !sizes.is_empty() {
         match Regex::new(r"(?x)(\d+)\D*(\d+)").unwrap().captures(sizes.trim()) {
-            None => {},
+            None => {}
             Some(dimensions) => {
                 if dimensions.len() >= 3 {
                     width = dimensions[1].parse::<u16>().unwrap_or_default();
                     height = dimensions[2].parse::<u16>().unwrap_or_default();
                 }
-            },
+            }
         }
     }
 
@@ -305,7 +305,7 @@ fn download_icon(domain: &str) -> Result<Vec<u8>, Error> {
                 info!("Download finished for {}", url);
                 res.copy_to(&mut buffer)?;
                 break;
-            },
+            }
             Err(_) => info!("Download failed for {}", url),
         };
     }

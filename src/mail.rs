@@ -67,7 +67,7 @@ pub fn send_password_hint(address: &str, hint: Option<String>) -> EmptyResult {
     };
 
     let (subject, body_html, body_text) = get_text(template_name, json!({ "hint": hint, "url": CONFIG.domain() }))?;
- 
+
     send_email(&address, &subject, &body_html, &body_text)
 }
 

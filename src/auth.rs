@@ -21,17 +21,11 @@ lazy_static! {
     pub static ref JWT_ADMIN_ISSUER: String = format!("{}|admin", CONFIG.domain());
     static ref PRIVATE_RSA_KEY: Vec<u8> = match read_file(&CONFIG.private_rsa_key()) {
         Ok(key) => key,
-        Err(e) => panic!(
-            "Error loading private RSA Key from {}\n Error: {}",
-            CONFIG.private_rsa_key(), e
-        ),
+        Err(e) => panic!("Error loading private RSA Key.\n Error: {}", e),
     };
     static ref PUBLIC_RSA_KEY: Vec<u8> = match read_file(&CONFIG.public_rsa_key()) {
         Ok(key) => key,
-        Err(e) => panic!(
-            "Error loading public RSA Key from {}\n Error: {}",
-            CONFIG.public_rsa_key(), e
-        ),
+        Err(e) => panic!("Error loading public RSA Key.\n Error: {}", e),
     };
 }
 

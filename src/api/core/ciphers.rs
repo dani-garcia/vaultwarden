@@ -854,11 +854,7 @@ fn move_cipher_selected(data: JsonUpcase<MoveCipherData>, headers: Headers, conn
         // Move cipher
         cipher.move_to_folder(data.FolderId.clone(), &user_uuid, &conn)?;
 
-        nt.send_cipher_update(
-            UpdateType::CipherUpdate,
-            &cipher,
-            &[user_uuid.clone()]
-        );
+        nt.send_cipher_update(UpdateType::CipherUpdate, &cipher, &[user_uuid.clone()]);
     }
 
     Ok(())
