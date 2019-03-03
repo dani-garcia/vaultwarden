@@ -42,21 +42,6 @@ impl TwoFactor {
         }
     }
 
-    pub fn check_totp_code(&self, totp_code: u64) -> bool {
-        let totp_secret = self.data.as_bytes();
-
-        use data_encoding::BASE32;
-        use oath::{totp_raw_now, HashType};
-
-        let decoded_secret = match BASE32.decode(totp_secret) {
-            Ok(s) => s,
-            Err(_) => return false,
-        };
-
-        let generated = totp_raw_now(&decoded_secret, 6, 0, 30, &HashType::SHA1);
-        generated == totp_code
-    }
-
     pub fn to_json(&self) -> Value {
         json!({
             "Enabled": self.enabled,

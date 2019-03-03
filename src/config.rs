@@ -224,24 +224,27 @@ make_config! {
 
     /// General settings
     settings {
-        /// Domain URL |> This needs to be set to the URL used to access the server, including 'http[s]://' and port, if it's different than the default. Some server functions don't work correctly without this value
+        /// Domain URL |> This needs to be set to the URL used to access the server, including 'http[s]://'
+        /// and port, if it's different than the default. Some server functions don't work correctly without this value
         domain:                 String, true,   def,    "http://localhost".to_string();
         /// Domain Set |> Indicates if the domain is set by the admin. Otherwise the default will be used.
         domain_set:             bool,   false,  def,    false;
         /// Enable web vault
         web_vault_enabled:      bool,   false,  def,    true;
 
-        /// Disable icon downloads |> Set to true to disable icon downloading, this would still serve icons from $ICON_CACHE_FOLDER,
-        /// but it won't produce any external network request. Needs to set $ICON_CACHE_TTL to 0,
+        /// Disable icon downloads |> Set to true to disable icon downloading, this would still serve icons from
+        /// $ICON_CACHE_FOLDER, but it won't produce any external network request. Needs to set $ICON_CACHE_TTL to 0,
         /// otherwise it will delete them and they won't be downloaded again.
         disable_icon_download:  bool,   true,   def,    false;
         /// Allow new signups |> Controls if new users can register. Note that while this is disabled, users could still be invited
         signups_allowed:        bool,   true,   def,    true;
         /// Allow invitations |> Controls whether users can be invited by organization admins, even when signups are disabled
         invitations_allowed:    bool,   true,   def,    true;
-        /// Password iterations |> Number of server-side passwords hashing iterations. The changes only apply when a user changes their password. Not recommended to lower the value
+        /// Password iterations |> Number of server-side passwords hashing iterations.
+        /// The changes only apply when a user changes their password. Not recommended to lower the value
         password_iterations:    i32,    true,   def,    100_000;
-        /// Show password hints |> Controls if the password hint should be shown directly in the web page. Otherwise, if email is disabled, there is no way to see the password hint
+        /// Show password hints |> Controls if the password hint should be shown directly in the web page.
+        /// Otherwise, if email is disabled, there is no way to see the password hint
         show_password_hint:     bool,   true,   def,    true;
 
         /// Admin page token |> The token used to authenticate in this very same page. Changing it here won't deauthorize the current session
@@ -255,9 +258,14 @@ make_config! {
         /// Negative icon cache expiry |> Number of seconds before trying to download an icon that failed again.
         icon_cache_negttl:      u64,    true,   def,    259_200;
         /// Icon download timeout |> Number of seconds when to stop attempting to download an icon.
-        icon_download_timeout:  u64,   true,   def,    10;
+        icon_download_timeout:  u64,    true,   def,    10;
 
-        /// Reload templates (Dev) |> When this is set to true, the templates get reloaded with every request. ONLY use this during development, as it can slow down the server
+        /// Disable Two-Factor remember |> Enabling this would force the users to use a second factor to login every time.
+        /// Note that the checkbox would still be present, but ignored.
+        disable_2fa_remember:   bool,   true,   def,    false;
+
+        /// Reload templates (Dev) |> When this is set to true, the templates get reloaded with every request.
+        /// ONLY use this during development, as it can slow down the server
         reload_templates:       bool,   true,   def,    false;
 
         /// Log routes at launch (Dev)
@@ -267,7 +275,8 @@ make_config! {
         /// Log file path
         log_file:               String, false,  option;
 
-        /// Enable DB WAL |> Turning this off might lead to worse performance, but might help if using bitwarden_rs on some exotic filesystems, that do not support WAL. Please make sure you read project wiki on the topic before changing this setting.
+        /// Enable DB WAL |> Turning this off might lead to worse performance, but might help if using bitwarden_rs on some exotic filesystems,
+        /// that do not support WAL. Please make sure you read project wiki on the topic before changing this setting.
         enable_db_wal:          bool,   false,  def,    true;
 
         /// Disable Admin Token (Know the risks!) |> Disables the Admin Token for the admin page so you may use your own auth in-front

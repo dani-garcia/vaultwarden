@@ -152,67 +152,56 @@ fn twofactor_auth(
     conn: &DbConn,
 ) -> ApiResult<Option<String>> {
     let twofactors = TwoFactor::find_by_user(user_uuid, conn);
-    let providers: Vec<_> = twofactors.iter().map(|tf| tf.type_).collect();
 
     // No twofactor token if twofactor is disabled
     if twofactors.is_empty() {
         return Ok(None);
     }
 
-    let provider = data.two_factor_provider.unwrap_or(providers[0]); // If we aren't given a two factor provider, asume the first one
+    let twofactor_ids: Vec<_> = twofactors.iter().map(|tf| tf.type_).collect();
+    let selected_id = data.two_factor_provider.unwrap_or(twofactor_ids[0]); // If we aren't given a two factor provider, asume the first one
 
     let twofactor_code = match data.two_factor_token {
         Some(ref code) => code,
-        None => err_json!(_json_err_twofactor(&providers, user_uuid, conn)?),
+        None => err_json!(_json_err_twofactor(&twofactor_ids, user_uuid, conn)?),
     };
 
-    let twofactor = twofactors.iter().filter(|tf| tf.type_ == provider).nth(0);
+    let selected_twofactor = twofactors.into_iter().filter(|tf| tf.type_ == selected_id).nth(0);
 
-    match TwoFactorType::from_i32(provider) {
+    use crate::api::core::two_factor as _tf;
+    use crate::crypto::ct_eq;
+
+    let selected_data = _selected_data(selected_twofactor);
+    let mut remember = data.two_factor_remember.unwrap_or(0);
+
+    match TwoFactorType::from_i32(selected_id) {
+        Some(TwoFactorType::Authenticator) => _tf::validate_totp_code_str(twofactor_code, &selected_data?)?,
+        Some(TwoFactorType::U2f) => _tf::validate_u2f_login(user_uuid, twofactor_code, conn)?,
+        Some(TwoFactorType::YubiKey) => _tf::validate_yubikey_login(twofactor_code, &selected_data?)?,
+
         Some(TwoFactorType::Remember) => {
-            use crate::crypto::ct_eq;
             match device.twofactor_remember {
-                Some(ref remember) if ct_eq(remember, twofactor_code) => return Ok(None), // No twofactor token needed here
-                _ => err_json!(_json_err_twofactor(&providers, user_uuid, conn)?),
+                Some(ref code) if !CONFIG.disable_2fa_remember() && ct_eq(code, twofactor_code) => {
+                    remember = 1; // Make sure we also return the token here, otherwise it will only remember the first time
+                }
+                _ => err_json!(_json_err_twofactor(&twofactor_ids, user_uuid, conn)?),
             }
         }
-
-        Some(TwoFactorType::Authenticator) => {
-            let twofactor = match twofactor {
-                Some(tf) => tf,
-                None => err!("TOTP not enabled"),
-            };
-
-            let totp_code: u64 = match twofactor_code.parse() {
-                Ok(code) => code,
-                _ => err!("Invalid TOTP code"),
-            };
-
-            if !twofactor.check_totp_code(totp_code) {
-                err_json!(_json_err_twofactor(&providers, user_uuid, conn)?)
-            }
-        }
-
-        Some(TwoFactorType::U2f) => {
-            use crate::api::core::two_factor;
-
-            two_factor::validate_u2f_login(user_uuid, &twofactor_code, conn)?;
-        }
-
-        Some(TwoFactorType::YubiKey) => {
-            use crate::api::core::two_factor;
-
-            two_factor::validate_yubikey_login(user_uuid, twofactor_code, conn)?;
-        }
-
         _ => err!("Invalid two factor provider"),
     }
 
-    if data.two_factor_remember.unwrap_or(0) == 1 {
+    if !CONFIG.disable_2fa_remember() && remember == 1 {
         Ok(Some(device.refresh_twofactor_remember()))
     } else {
         device.delete_twofactor_remember();
         Ok(None)
+    }
+}
+
+fn _selected_data(tf: Option<TwoFactor>) -> ApiResult<String> {
+    match tf {
+        Some(tf) => Ok(tf.data),
+        None => err!("Two factor doesn't exist"),
     }
 }
 

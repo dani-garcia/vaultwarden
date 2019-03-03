@@ -102,6 +102,14 @@ fn recover(data: JsonUpcase<RecoverTwoFactor>, conn: DbConn) -> JsonResult {
     Ok(Json(json!({})))
 }
 
+fn _generate_recover_code(user: &mut User, conn: &DbConn) {
+    if user.totp_recover.is_none() {
+        let totp_recover = BASE32.encode(&crypto::get_random(vec![0u8; 20]));
+        user.totp_recover = Some(totp_recover);
+        user.save(conn).ok();
+    }
+}
+
 #[derive(Deserialize)]
 #[allow(non_snake_case)]
 struct DisableTwoFactorData {
@@ -196,9 +204,7 @@ fn activate_authenticator(data: JsonUpcase<EnableAuthenticatorData>, headers: He
     let twofactor = TwoFactor::new(user.uuid.clone(), type_, key.to_uppercase());
 
     // Validate the token provided with the key
-    if !twofactor.check_totp_code(token) {
-        err!("Invalid totp code")
-    }
+    validate_totp_code(token, &twofactor.data)?;
 
     _generate_recover_code(&mut user, &conn);
     twofactor.save(&conn)?;
@@ -215,12 +221,30 @@ fn activate_authenticator_put(data: JsonUpcase<EnableAuthenticatorData>, headers
     activate_authenticator(data, headers, conn)
 }
 
-fn _generate_recover_code(user: &mut User, conn: &DbConn) {
-    if user.totp_recover.is_none() {
-        let totp_recover = BASE32.encode(&crypto::get_random(vec![0u8; 20]));
-        user.totp_recover = Some(totp_recover);
-        user.save(conn).ok();
+pub fn validate_totp_code_str(totp_code: &str, secret: &str) -> EmptyResult {
+    let totp_code: u64 = match totp_code.parse() {
+        Ok(code) => code,
+        _ => err!("TOTP code is not a number"),
+    };
+
+    validate_totp_code(totp_code, secret)
+}
+
+pub fn validate_totp_code(totp_code: u64, secret: &str) -> EmptyResult {
+    use data_encoding::BASE32;
+    use oath::{totp_raw_now, HashType};
+
+    let decoded_secret = match BASE32.decode(secret.as_bytes()) {
+        Ok(s) => s,
+        Err(_) => err!("Invalid TOTP secret"),
+    };
+
+    let generated = totp_raw_now(&decoded_secret, 6, 0, 30, &HashType::SHA1);
+    if generated != totp_code {
+        err!("Invalid TOTP code");
     }
+
+    Ok(())
 }
 
 use u2f::messages::{RegisterResponse, SignResponse, U2fSignRequest};
@@ -671,20 +695,12 @@ fn activate_yubikey_put(data: JsonUpcase<EnableYubikeyData>, headers: Headers, c
     activate_yubikey(data, headers, conn)
 }
 
-pub fn validate_yubikey_login(user_uuid: &str, response: &str, conn: &DbConn) -> EmptyResult {
+pub fn validate_yubikey_login(response: &str, twofactor_data: &str) -> EmptyResult {
     if response.len() != 44 {
         err!("Invalid Yubikey OTP length");
     }
 
-    let yubikey_type = TwoFactorType::YubiKey as i32;
-
-    let twofactor = match TwoFactor::find_by_user_and_type(user_uuid, yubikey_type, &conn) {
-        Some(tf) => tf,
-        None => err!("No YubiKey devices registered"),
-    };
-
-    let yubikey_metadata: YubikeyMetadata =
-        serde_json::from_str(&twofactor.data).expect("Can't parse Yubikey Metadata");
+    let yubikey_metadata: YubikeyMetadata = serde_json::from_str(twofactor_data).expect("Can't parse Yubikey Metadata");
     let response_id = &response[..12];
 
     if !yubikey_metadata.Keys.contains(&response_id.to_owned()) {
