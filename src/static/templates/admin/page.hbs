@@ -57,6 +57,10 @@
     <div id="config-block" class="align-items-center p-3 mb-3 bg-secondary rounded shadow">
         <div>
             <h6 class="text-white mb-3">Configuration</h6>
+            <div class="small text-white mb-3">
+            NOTE: The settings here override the environment variables. Once saved, it's recommended to stop setting them 
+            to avoid confusion. This does not apply to the read-only section, which can only be set through the environment.
+            </div>
             <form class="form accordion" id="config-form">
                 {{#each config}}
                 {{#if groupdoc}}
@@ -105,11 +109,11 @@
                     <div class="card-header"><button type="button" class="btn btn-link collapsed" data-toggle="collapse"
                             data-target="#g_readonly">Read-Only Config</button></div>
                     <div id="g_readonly" class="card-body collapse" data-parent="#config-form">
-                        <p>
+                        <div class="small mb-3">
                             NOTE: These options can't be modified in the editor because they would require the server
                             to be restarted. To modify them, you need to set the correct environment variables when
                             launching the server. You can check the variable names in the tooltips of each option.
-                        </p>
+                        </div>
 
                         {{#each config}}
                         {{#each elements}}
