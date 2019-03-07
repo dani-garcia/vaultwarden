@@ -137,8 +137,14 @@ fn send_email(address: &str, subject: &str, body_html: &str, body_text: &str) ->
         .build()
         .map_err(|e| Error::new("Error building email", e.to_string()))?;
 
-    mailer()
+    let mut transport = mailer();
+
+    let result = transport
         .send(email.into())
         .map_err(|e| Error::new("Error sending email", e.to_string()))
-        .and(Ok(()))
+        .and(Ok(()));
+
+    // Explicitly close the connection, in case of error
+    transport.close();
+    result
 }
