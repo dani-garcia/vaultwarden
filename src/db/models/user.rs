@@ -178,6 +178,20 @@ impl User {
         }
     }
 
+    pub fn update_all_revisions(conn: &DbConn) -> EmptyResult {
+        let updated_at = Utc::now().naive_utc();
+
+        crate::util::retry(
+            || {
+                diesel::update(users::table)
+                    .set(users::updated_at.eq(updated_at))
+                    .execute(&**conn)
+            },
+            10,
+        )
+        .map_res("Error updating revision date for all users")
+    }
+
     pub fn update_revision(&mut self, conn: &DbConn) -> EmptyResult {
         self.updated_at = Utc::now().naive_utc();
 

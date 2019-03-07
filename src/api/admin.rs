@@ -26,6 +26,7 @@ pub fn routes() -> Vec<Route> {
         invite_user,
         delete_user,
         deauth_user,
+        update_revision_users,
         post_config,
         delete_config,
     ]
@@ -175,6 +176,11 @@ fn deauth_user(uuid: String, _token: AdminToken, conn: DbConn) -> EmptyResult {
     user.reset_security_stamp();
 
     user.save(&conn)
+}
+
+#[post("/users/update_revision")]
+fn update_revision_users(_token: AdminToken, conn: DbConn) -> EmptyResult {
+    User::update_all_revisions(&conn)
 }
 
 #[post("/config", data = "<data>")]

@@ -37,9 +37,14 @@
 
         </div>
 
-        <small class="d-block text-right mt-3">
-            <a id="reload-btn" href="">Reload users</a>
-        </small>
+        <div class="mt-3">
+            <button type="button" class="btn btn-sm btn-link" onclick="updateRevisions();" title="Force all clients to fetch
+             new data next time they connect. Useful after restoring a backup to remove any stale data.">
+                Force clients to resync
+            </button>
+
+            <button type="button" class="btn btn-sm btn-primary float-right" onclick="reload();">Reload users</button>
+        </div>
     </div>
 
     <div id="invite-form-block" class="align-items-center p-3 mb-3 text-white-50 bg-secondary rounded shadow">
@@ -58,8 +63,9 @@
         <div>
             <h6 class="text-white mb-3">Configuration</h6>
             <div class="small text-white mb-3">
-            NOTE: The settings here override the environment variables. Once saved, it's recommended to stop setting them 
-            to avoid confusion. This does not apply to the read-only section, which can only be set through the environment.
+                NOTE: The settings here override the environment variables. Once saved, it's recommended to stop setting
+                them to avoid confusion. This does not apply to the read-only section, which can only be set through the
+                environment.
             </div>
             <form class="form accordion" id="config-form">
                 {{#each config}}
@@ -211,6 +217,12 @@
         _post("/admin/users/" + id + "/deauth",
             "Sessions deauthorized correctly",
             "Error deauthorizing sessions");
+        return false;
+    }
+    function updateRevisions() {
+        _post("/admin/users/update_revision",
+            "Success, clients will sync next time they connect",
+            "Error forcing clients to sync");
         return false;
     }
     function inviteUser() {
