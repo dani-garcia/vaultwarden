@@ -89,7 +89,7 @@ fn post_admin_login(data: Form<LoginForm>, mut cookies: Cookies, ip: ClientIp) -
 fn _validate_token(token: &str) -> bool {
     match CONFIG.admin_token().as_ref() {
         None => false,
-        Some(t) => crate::crypto::ct_eq(t, token),
+        Some(t) => crate::crypto::ct_eq(t.trim(), token.trim()),
     }
 }
 
