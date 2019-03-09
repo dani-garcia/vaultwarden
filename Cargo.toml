@@ -54,7 +54,7 @@ diesel_migrations = { version = "1.4.0", features = ["sqlite"] }
 libsqlite3-sys = { version = "0.12.0", features = ["bundled"] }
 
 # Crypto library
-ring = { version = "0.13.5", features = ["rsa_signing"] }
+ring = "0.14.6"
 
 # UUID generation
 uuid = { version = "0.7.4", features = ["v4"] }
@@ -69,10 +69,10 @@ oath = "0.10.2"
 data-encoding = "2.1.2"
 
 # JWT library
-jsonwebtoken = "5.0.1"
+jsonwebtoken = "6.0.1"
 
 # U2F library
-u2f = "0.1.4"
+u2f = "0.1.5"
 
 # Yubico Library
 yubico = { version = "0.5.1", features = ["online"], default-features = false }
@@ -106,3 +106,6 @@ regex = "1.1.6"
 [patch.crates-io]
 # Add support for Timestamp type
 rmp = { git = 'https://github.com/dani-garcia/msgpack-rust' }
+
+rocket = { git = 'https://github.com/brndnmtthws/Rocket', rev = '7eda4bc09828160f30df6ffe07963993bd2e4651' }
+rocket_contrib = { git = 'https://github.com/brndnmtthws/Rocket', rev = '7eda4bc09828160f30df6ffe07963993bd2e4651' }
