@@ -18,7 +18,13 @@ fn mailer() -> SmtpTransport {
             .build()
             .unwrap();
 
-        ClientSecurity::Required(ClientTlsParameters::new(host.clone(), tls))
+        let params = ClientTlsParameters::new(host.clone(), tls);
+
+        if CONFIG.smtp_explicit_tls() {
+            ClientSecurity::Wrapper(params)
+        } else {
+            ClientSecurity::Required(params)
+        }
     } else {
         ClientSecurity::None
     };

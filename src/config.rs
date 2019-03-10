@@ -303,8 +303,10 @@ make_config! {
         smtp_host:              String, true,   option;
         /// Enable SSL
         smtp_ssl:               bool,   true,   def,     true;
+        /// Use explicit TLS |> Enabling this would force the use of an explicit TLS connection, instead of upgrading an insecure one with STARTTLS
+        smtp_explicit_tls:      bool,   true,   def,     false;
         /// Port
-        smtp_port:              u16,    true,   auto,    |c| if c.smtp_ssl {587} else {25};
+        smtp_port:              u16,    true,   auto,    |c| if c.smtp_explicit_tls {465} else if c.smtp_ssl {587} else {25};
         /// From Address
         smtp_from:              String, true,   def,     String::new();
         /// From Name
