@@ -22,7 +22,7 @@ rocket_contrib = "0.4.0"
 reqwest = "0.9.11"
 
 # multipart/form-data support
-multipart = "0.16.1"
+multipart = { version = "0.16.1", features = ["server"], default-features = false }
 
 # WebSockets library
 ws = "0.8.0"
