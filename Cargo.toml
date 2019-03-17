@@ -102,7 +102,3 @@ regex = "1.1.2"
 [patch.crates-io]
 # Add support for Timestamp type
 rmp = { git = 'https://github.com/dani-garcia/msgpack-rust' }
-
-# Use new native_tls version 0.2
-lettre = { git = 'https://github.com/lettre/lettre', rev = 'c988b1760ad81' }
-lettre_email = { git = 'https://github.com/lettre/lettre', rev = 'c988b1760ad81' }
