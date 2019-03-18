@@ -259,6 +259,9 @@ make_config! {
         icon_cache_negttl:      u64,    true,   def,    259_200;
         /// Icon download timeout |> Number of seconds when to stop attempting to download an icon.
         icon_download_timeout:  u64,    true,   def,    10;
+        /// Icon blacklist Regex |> Any domains or IPs that match this regex won't be fetched by the icon service.
+        /// Useful to hide other servers in the local network. Check the WIKI for more details
+        icon_blacklist_regex:   String, true,   option;
 
         /// Disable Two-Factor remember |> Enabling this would force the users to use a second factor to login every time.
         /// Note that the checkbox would still be present, but ignored.
