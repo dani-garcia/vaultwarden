@@ -218,7 +218,7 @@ impl<'de> Visitor<'de> for UpCaseVisitor {
         let mut result_map = JsonMap::new();
 
         while let Some((key, value)) = map.next_entry()? {
-            result_map.insert(upcase_first(key), upcase_value(&value));
+            result_map.insert(upcase_first(key), upcase_value(value));
         }
 
         Ok(Value::Object(result_map))
@@ -231,32 +231,32 @@ impl<'de> Visitor<'de> for UpCaseVisitor {
         let mut result_seq = Vec::<Value>::new();
 
         while let Some(value) = seq.next_element()? {
-            result_seq.push(upcase_value(&value));
+            result_seq.push(upcase_value(value));
         }
 
         Ok(Value::Array(result_seq))
     }
 }
 
-fn upcase_value(value: &Value) -> Value {
-    if let Some(map) = value.as_object() {
+fn upcase_value(value: Value) -> Value {
+    if let Value::Object(map) = value {
         let mut new_value = json!({});
 
-        for (key, val) in map {
-            let processed_key = _process_key(key);
+        for (key, val) in map.into_iter() {
+            let processed_key = _process_key(&key);
             new_value[processed_key] = upcase_value(val);
         }
         new_value
-    } else if let Some(array) = value.as_array() {
+    } else if let Value::Array(array) = value {
         // Initialize array with null values
         let mut new_value = json!(vec![Value::Null; array.len()]);
 
-        for (index, val) in array.iter().enumerate() {
+        for (index, val) in array.into_iter().enumerate() {
             new_value[index] = upcase_value(val);
         }
         new_value
     } else {
-        value.clone()
+        value
     }
 }
 
