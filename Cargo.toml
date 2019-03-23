@@ -19,7 +19,7 @@ rocket = { version = "0.4.0", features = ["tls"], default-features = false }
 rocket_contrib = "0.4.0"
 
 # HTTP client
-reqwest = "0.9.11"
+reqwest = "0.9.12"
 
 # multipart/form-data support
 multipart = { version = "0.16.1", features = ["server"], default-features = false }
@@ -44,7 +44,7 @@ fern = "0.5.7"
 syslog = { version = "4.0.1", optional = true }
 
 # A safe, extensible ORM and Query builder
-diesel = { version = "1.4.1", features = ["sqlite", "chrono", "r2d2"] }
+diesel = { version = "1.4.2", features = ["sqlite", "chrono", "r2d2"] }
 diesel_migrations = { version = "1.4.0", features = ["sqlite"] }
 
 # Bundled SQLite
