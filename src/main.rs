@@ -79,13 +79,11 @@ fn init_logging() -> Result<(), fern::InitError> {
                 message
             ))
         })
-        .level(log::LevelFilter::Debug)
-        .level_for("hyper", log::LevelFilter::Warn)
-        .level_for("rustls", log::LevelFilter::Warn)
-        .level_for("handlebars", log::LevelFilter::Warn)
-        .level_for("ws", log::LevelFilter::Info)
-        .level_for("multipart", log::LevelFilter::Info)
-        .level_for("html5ever", log::LevelFilter::Info)
+        .level(log::LevelFilter::Info)
+        // Hide unknown certificate errors if using self-signed
+        .level_for("rustls::session", log::LevelFilter::Off)
+        // Hide failed to close stream messages
+        .level_for("hyper::server", log::LevelFilter::Warn)
         .chain(std::io::stdout());
 
     if let Some(log_file) = CONFIG.log_file() {
