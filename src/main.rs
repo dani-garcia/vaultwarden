@@ -69,6 +69,7 @@ fn launch_info() {
 }
 
 fn init_logging() -> Result<(), fern::InitError> {
+    use std::str::FromStr;
     let mut logger = fern::Dispatch::new()
         .format(|out, message, record| {
             out.finish(format_args!(
@@ -79,7 +80,7 @@ fn init_logging() -> Result<(), fern::InitError> {
                 message
             ))
         })
-        .level(log::LevelFilter::Info)
+        .level(log::LevelFilter::from_str(&CONFIG.log_level()).expect("Valid log level"))
         // Hide unknown certificate errors if using self-signed
         .level_for("rustls::session", log::LevelFilter::Off)
         // Hide failed to close stream messages

@@ -277,6 +277,8 @@ make_config! {
         extended_logging:       bool,   false,  def,    true;
         /// Log file path
         log_file:               String, false,  option;
+        /// Log level
+        log_level:              String, false,  def,    "Info".to_string();
 
         /// Enable DB WAL |> Turning this off might lead to worse performance, but might help if using bitwarden_rs on some exotic filesystems,
         /// that do not support WAL. Please make sure you read project wiki on the topic before changing this setting.
