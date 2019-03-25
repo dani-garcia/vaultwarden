@@ -91,6 +91,7 @@ num-derive = "0.2.4"
 lettre = "0.9.0"
 lettre_email = "0.9.0"
 native-tls = "0.2.2"
+quoted_printable = "0.4"
 
 # Template library
 handlebars = "1.1.0"

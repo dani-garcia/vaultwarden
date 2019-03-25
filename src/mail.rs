@@ -1,8 +1,9 @@
 use lettre::smtp::authentication::Credentials;
 use lettre::smtp::ConnectionReuseParameters;
 use lettre::{ClientSecurity, ClientTlsParameters, SmtpClient, SmtpTransport, Transport};
-use lettre_email::EmailBuilder;
+use lettre_email::{EmailBuilder,PartBuilder,MimeMultipartType};
 use native_tls::{Protocol, TlsConnector};
+use quoted_printable::encode_to_str;
 
 use crate::api::EmptyResult;
 use crate::auth::{encode_jwt, generate_invite_claims};
@@ -135,11 +136,28 @@ pub fn send_invite_confirmed(address: &str, org_name: &str) -> EmptyResult {
 }
 
 fn send_email(address: &str, subject: &str, body_html: &str, body_text: &str) -> EmptyResult {
+    let html = PartBuilder::new()
+        .body(encode_to_str(body_html))
+        .header(("Content-Type", "text/html; charset=utf-8"))
+        .header(("Content-Transfer-Encoding", "quoted-printable"))
+        .build();
+
+    let text = PartBuilder::new()
+        .body(encode_to_str(body_text))
+        .header(("Content-Type", "text/plain; charset=utf-8"))
+        .header(("Content-Transfer-Encoding", "quoted-printable"))
+        .build();
+
+    let alternative = PartBuilder::new()
+        .message_type(MimeMultipartType::Alternative)
+        .child(text)
+        .child(html);
+
     let email = EmailBuilder::new()
         .to(address)
         .from((CONFIG.smtp_from().as_str(), CONFIG.smtp_from_name().as_str()))
         .subject(subject)
-        .alternative(body_html, body_text)
+        .child(alternative.build())
         .build()
         .map_err(|e| Error::new("Error building email", e.to_string()))?;
 
