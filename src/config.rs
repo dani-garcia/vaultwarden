@@ -275,6 +275,8 @@ make_config! {
         log_mounts:             bool,   true,   def,    false;
         /// Enable extended logging
         extended_logging:       bool,   false,  def,    true;
+        /// Enable the log to output to Syslog
+        use_syslog:             bool,   false,  def,    false;
         /// Log file path
         log_file:               String, false,  option;
         /// Log level
