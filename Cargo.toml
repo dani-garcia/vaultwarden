@@ -14,13 +14,16 @@ build = "build.rs"
 # Empty to keep compatibility, prefer to set USE_SYSLOG=true
 enable_syslog = []
 
+[target."cfg(not(windows))".dependencies]
+syslog = "4.0.1"
+
 [dependencies]
 # Web framework for nightly with a focus on ease-of-use, expressibility, and speed.
 rocket = { version = "0.4.0", features = ["tls"], default-features = false }
 rocket_contrib = "0.4.0"
 
 # HTTP client
-reqwest = "0.9.12"
+reqwest = "0.9.13"
 
 # multipart/form-data support
 multipart = { version = "0.16.1", features = ["server"], default-features = false }
@@ -42,7 +45,6 @@ serde_json = "1.0.39"
 # Logging
 log = "0.4.6"
 fern = { version = "0.5.8", features = ["syslog-4"] }
-syslog = { version = "4.0.1", optional = true }
 
 # A safe, extensible ORM and Query builder
 diesel = { version = "1.4.2", features = ["sqlite", "chrono", "r2d2"] }
@@ -92,14 +94,14 @@ num-derive = "0.2.4"
 lettre = "0.9.0"
 lettre_email = "0.9.0"
 native-tls = "0.2.2"
-quoted_printable = "0.4"
+quoted_printable = "0.4.0"
 
 # Template library
 handlebars = "1.1.0"
 
 # For favicon extraction from main website
 soup = "0.3.0"
-regex = "1.1.2"
+regex = "1.1.5"
 
 [patch.crates-io]
 # Add support for Timestamp type
