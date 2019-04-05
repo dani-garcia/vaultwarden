@@ -6,7 +6,7 @@ use rocket::response::{content::Html, Flash, Redirect};
 use rocket::{Outcome, Route};
 use rocket_contrib::json::Json;
 
-use crate::api::{ApiResult, EmptyResult};
+use crate::api::{ApiResult, EmptyResult, JsonResult};
 use crate::auth::{decode_admin, encode_jwt, generate_admin_claims, ClientIp};
 use crate::config::ConfigBuilder;
 use crate::db::{models::*, DbConn};
@@ -21,6 +21,7 @@ pub fn routes() -> Vec<Route> {
 
     routes![
         admin_login,
+        get_users,
         post_admin_login,
         admin_page,
         invite_user,
@@ -153,6 +154,14 @@ fn invite_user(data: Json<InviteData>, _token: AdminToken, conn: DbConn) -> Empt
         let invitation = Invitation::new(data.email);
         invitation.save(&conn)
     }
+}
+
+#[get("/users")]
+fn get_users(_token: AdminToken, conn: DbConn) ->JsonResult {
+    let users = User::get_all(&conn);
+    let users_json: Vec<Value> = users.iter().map(|u| u.to_json(&conn)).collect();
+
+    Ok(Json(Value::Array(users_json)))
 }
 
 #[post("/users/<uuid>/delete")]
