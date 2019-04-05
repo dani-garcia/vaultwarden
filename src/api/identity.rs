@@ -178,6 +178,7 @@ fn twofactor_auth(
         Some(TwoFactorType::Authenticator) => _tf::validate_totp_code_str(twofactor_code, &selected_data?)?,
         Some(TwoFactorType::U2f) => _tf::validate_u2f_login(user_uuid, twofactor_code, conn)?,
         Some(TwoFactorType::YubiKey) => _tf::validate_yubikey_login(twofactor_code, &selected_data?)?,
+        Some(TwoFactorType::Duo) => _tf::validate_duo_login(twofactor_code, &selected_data?)?,
 
         Some(TwoFactorType::Remember) => {
             match device.twofactor_remember {
@@ -237,11 +238,31 @@ fn _json_err_twofactor(providers: &[i32], user_uuid: &str, conn: &DbConn) -> Api
                 }
 
                 let mut map = JsonMap::new();
-                use serde_json;
                 let challenge_list_str = serde_json::to_string(&challenge_list).unwrap();
 
                 map.insert("Challenges".into(), Value::String(challenge_list_str));
                 result["TwoFactorProviders2"][provider.to_string()] = Value::Object(map);
+            }
+
+            Some(tf_type @ TwoFactorType::Duo) => {
+                let twofactor = match TwoFactor::find_by_user_and_type(user_uuid, tf_type as i32, &conn) {
+                    Some(tf) => tf,
+                    None => err!("No Duo devices registered"),
+                };        
+
+                let duo_data: two_factor::DuoData = serde_json::from_str(&twofactor.data)?;
+
+                let email = match User::find_by_uuid(user_uuid, &conn) {
+                    Some(u) => u.email,
+                    None => err!("User does not exist")
+                };
+
+                let signature = two_factor::generate_duo_signature(&duo_data, &email);
+
+                let mut map = JsonMap::new();
+                map.insert("Host".into(), Value::String(duo_data.host));
+                map.insert("Signature".into(), Value::String(signature));
+                result["TwoFactorProviders2"][provider.to_string()] = Value::Object(map);     
             }
 
             Some(tf_type @ TwoFactorType::YubiKey) => {
@@ -251,7 +272,7 @@ fn _json_err_twofactor(providers: &[i32], user_uuid: &str, conn: &DbConn) -> Api
                 };
 
                 let yubikey_metadata: two_factor::YubikeyMetadata =
-                    serde_json::from_str(&twofactor.data).expect("Can't parse Yubikey Metadata");
+                    serde_json::from_str(&twofactor.data)?;
 
                 let mut map = JsonMap::new();
                 map.insert("Nfc".into(), Value::Bool(yubikey_metadata.Nfc));

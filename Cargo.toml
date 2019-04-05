@@ -38,8 +38,8 @@ rmpv = "0.4.0"
 chashmap = "2.2.2"
 
 # A generic serialization/deserialization framework
-serde = "1.0.89"
-serde_derive = "1.0.89"
+serde = "1.0.90"
+serde_derive = "1.0.90"
 serde_json = "1.0.39"
 
 # Logging
