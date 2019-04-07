@@ -717,16 +717,12 @@ pub fn validate_yubikey_login(response: &str, twofactor_data: &str) -> EmptyResu
     }
 }
 
-#[derive(Serialize, Deserialize, Default)]
-pub struct DuoData {
-    pub host: String,
-    sk: String,
-    ik: String,
-    ak: String,
-}
-
 #[post("/two-factor/get-duo", data = "<data>")]
 fn get_duo(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn) -> JsonResult {
+    if CONFIG.duo_host().is_none() {
+        err!("Duo is disabled. Refer to the Wiki for instructions in how to enable it")
+    }
+
     let data: PasswordData = data.into_inner().data;
 
     if !headers.user.check_valid_password(&data.MasterPasswordHash) {
@@ -736,24 +732,22 @@ fn get_duo(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn) -> Js
     let type_ = TwoFactorType::Duo as i32;
     let twofactor = TwoFactor::find_by_user_and_type(&headers.user.uuid, type_, &conn);
 
-    let (enabled, data) = match twofactor {
-        Some(tf) => (true, serde_json::from_str(&tf.data)?),
-        _ => (false, DuoData::default()),
+    let (enabled, msg) = match twofactor {
+        Some(_) => (true, "<secret>"),
+        _ => (false, "<Ignore this, click enable, then log out and log back in to activate>"),
     };
-
-    // TODO: It's probably not the best idea to return the keys here
 
     Ok(Json(json!({
         "Enabled": enabled,
-        "Host": data.host,
-        "SecretKey": data.sk,
-        "IntegrationKey": data.ik,
+        "Host": msg,
+        "SecretKey": msg,
+        "IntegrationKey": msg,
         "Object": "twoFactorDuo"
     })))
 }
 
 #[derive(Deserialize)]
-#[allow(non_snake_case)]
+#[allow(non_snake_case, dead_code)]
 struct EnableDuoData {
     MasterPasswordHash: String,
     Host: String,
@@ -769,27 +763,15 @@ fn activate_duo(data: JsonUpcase<EnableDuoData>, headers: Headers, conn: DbConn)
         err!("Invalid password");
     }
 
-    let data = DuoData {
-        host: data.Host,
-        sk: data.SecretKey,
-        ik: data.IntegrationKey,
-        ak: BASE64.encode(&crypto::get_random_64()),
-    };
-
-    // Validate parameters with the server
-    duo_api_request("GET", "/auth/v2/check", "", &data)?;
-
-    let data_json = serde_json::to_string(&data)?;
     let type_ = TwoFactorType::Duo;
-    let twofactor = TwoFactor::new(headers.user.uuid.clone(), type_, data_json);
+    let twofactor = TwoFactor::new(headers.user.uuid.clone(), type_, String::new());
     twofactor.save(&conn)?;
 
-    // TODO: It's probably not the best idea to return the keys here
     Ok(Json(json!({
         "Enabled": true,
-        "Host": data.host,
-        "SecretKey": data.sk,
-        "IntegrationKey": data.ik,
+        "Host": "<secret>",
+        "SecretKey": "<secret>",
+        "IntegrationKey": "<secret>",
         "Object": "twoFactorDuo"
     })))
 }
@@ -799,7 +781,8 @@ fn activate_duo_put(data: JsonUpcase<EnableDuoData>, headers: Headers, conn: DbC
     activate_duo(data, headers, conn)
 }
 
-fn duo_api_request(method: &str, path: &str, params: &str, data: &DuoData) -> EmptyResult {
+// duo_api_request("GET", "/auth/v2/check", "", &data)?;
+fn _duo_api_request(method: &str, path: &str, params: &str) -> EmptyResult {
     const AGENT: &str = "bitwarden_rs:Duo/1.0 (Rust)";
 
     use std::str::FromStr;
@@ -807,13 +790,15 @@ fn duo_api_request(method: &str, path: &str, params: &str, data: &DuoData) -> Em
     use chrono::Utc;
     use reqwest::{header::*, Client, Method};
 
-    let url = format!("https://{}{}", data.host, path);
+    let ik = CONFIG.duo_ikey().unwrap();
+    let sk = CONFIG.duo_skey().unwrap();
+    let host = CONFIG.duo_host().unwrap();
 
+    let url = format!("https://{}{}", host, path);
     let date = Utc::now().to_rfc2822();
-
-    let username = &data.ik;
-    let fields = [&date, method, &data.host, path, params];
-    let password = crypto::hmac_sign(&data.sk, &fields.join("\n"));
+    let username = &ik;
+    let fields = [&date, method, &host, path, params];
+    let password = crypto::hmac_sign(&sk, &fields.join("\n"));
 
     let m = Method::from_str(method).unwrap_or_default();
 
@@ -837,11 +822,15 @@ const APP_PREFIX: &str = "APP";
 
 use chrono::Utc;
 
-pub fn generate_duo_signature(data: &DuoData, email: &str) -> String {
+pub fn generate_duo_signature(email: &str) -> String {
     let now = Utc::now().timestamp();
 
-    let duo_sign = sign_duo_values(&data.sk, email, &data.ik, DUO_PREFIX, now + DUO_EXPIRE);
-    let app_sign = sign_duo_values(&data.ak, email, &data.ik, APP_PREFIX, now + APP_EXPIRE);
+    let ik = CONFIG.duo_ikey().unwrap();
+    let sk = CONFIG.duo_skey().unwrap();
+    let ak = CONFIG.duo_akey().unwrap();
+
+    let duo_sign = sign_duo_values(&sk, email, &ik, DUO_PREFIX, now + DUO_EXPIRE);
+    let app_sign = sign_duo_values(&ak, email, &ik, APP_PREFIX, now + APP_EXPIRE);
 
     format!("{}:{}", duo_sign, app_sign)
 }
@@ -853,10 +842,8 @@ fn sign_duo_values(key: &str, email: &str, ikey: &str, prefix: &str, expire: i64
     format!("{}|{}", cookie, crypto::hmac_sign(key, &cookie))
 }
 
-pub fn validate_duo_login(response: &str, twofactor_data: &str) -> EmptyResult {
-    let data: DuoData = serde_json::from_str(twofactor_data)?;
-
-    let split: Vec<&str> = response.split(":").collect();
+pub fn validate_duo_login(email: &str, response: &str) -> EmptyResult {
+    let split: Vec<&str> = response.split(':').collect();
     if split.len() != 2 {
         err!("Invalid response length");
     }
@@ -866,10 +853,14 @@ pub fn validate_duo_login(response: &str, twofactor_data: &str) -> EmptyResult {
 
     let now = Utc::now().timestamp();
 
-    let auth_user = parse_duo_values(&data.sk, auth_sig, &data.ik, AUTH_PREFIX, now)?;
-    let app_user = parse_duo_values(&data.ak, app_sig, &data.ik, APP_PREFIX, now)?;
+    let ik = CONFIG.duo_ikey().unwrap();
+    let sk = CONFIG.duo_skey().unwrap();
+    let ak = CONFIG.duo_akey().unwrap();
 
-    if !crypto::ct_eq(auth_user, app_user) {
+    let auth_user = parse_duo_values(&sk, auth_sig, &ik, AUTH_PREFIX, now)?;
+    let app_user = parse_duo_values(&ak, app_sig, &ik, APP_PREFIX, now)?;
+
+    if !crypto::ct_eq(&auth_user, app_user) || !crypto::ct_eq(&auth_user, email) {
         err!("Error validating duo authentication")
     }
 
@@ -877,7 +868,7 @@ pub fn validate_duo_login(response: &str, twofactor_data: &str) -> EmptyResult {
 }
 
 fn parse_duo_values(key: &str, val: &str, ikey: &str, prefix: &str, time: i64) -> ApiResult<String> {
-    let split: Vec<&str> = val.split("|").collect();
+    let split: Vec<&str> = val.split('|').collect();
     if split.len() != 3 {
         err!("Invalid value length")
     }
@@ -906,7 +897,7 @@ fn parse_duo_values(key: &str, val: &str, ikey: &str, prefix: &str, time: i64) -
         Err(_) => err!("Invalid Duo cookie encoding"),
     };
 
-    let cookie_split: Vec<&str> = cookie.split("|").collect();
+    let cookie_split: Vec<&str> = cookie.split('|').collect();
     if cookie_split.len() != 3 {
         err!("Invalid cookie length")
     }

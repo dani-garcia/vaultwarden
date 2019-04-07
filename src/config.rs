@@ -302,6 +302,20 @@ make_config! {
         yubico_server:          String, true,   option;
     },
 
+    /// Duo settings
+    duo: _enable_duo {
+        /// Enabled
+        _enable_duo:            bool,   true,   def,     true;
+        /// Integration Key
+        duo_ikey:               String, true,   option;
+        /// Secret Key
+        duo_skey:               Pass,   true,   option;
+        /// Host
+        duo_host:               String, true,   option;
+        /// Application Key
+        duo_akey:               Pass,   true,   option;
+    },
+
     /// SMTP Email Settings
     smtp: _enable_smtp {
         /// Enabled
@@ -330,6 +344,12 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         if token.trim().is_empty() {
             err!("`ADMIN_TOKEN` is enabled but has an empty value. To enable the admin page without token, use `DISABLE_ADMIN_TOKEN`")
         }
+    }
+
+    if (cfg.duo_host.is_some() || cfg.duo_ikey.is_some() || cfg.duo_skey.is_some() || cfg.duo_akey.is_some())
+        && !(cfg.duo_host.is_some() && cfg.duo_ikey.is_some() && cfg.duo_skey.is_some() && cfg.duo_akey.is_some())
+    {
+        err!("All Duo options need to be set for Duo support")
     }
 
     if cfg.yubico_client_id.is_some() != cfg.yubico_secret_key.is_some() {
