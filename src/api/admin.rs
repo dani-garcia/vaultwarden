@@ -22,6 +22,7 @@ pub fn routes() -> Vec<Route> {
     routes![
         admin_login,
         get_users,
+        get_invites,
         post_admin_login,
         admin_page,
         invite_user,
@@ -154,6 +155,14 @@ fn invite_user(data: Json<InviteData>, _token: AdminToken, conn: DbConn) -> Empt
         let invitation = Invitation::new(data.email);
         invitation.save(&conn)
     }
+}
+
+#[get("/invites")]
+fn get_invites(_token: AdminToken, conn: DbConn) ->JsonResult {
+    let invites = Invitation::get_all(&conn);
+    let invites_json: Vec<Value> = invites.iter().map(|u| u.to_json(&conn)).collect();
+
+    Ok(Json(Value::Array(invites_json)))
 }
 
 #[get("/users")]

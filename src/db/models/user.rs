@@ -239,6 +239,12 @@ impl Invitation {
         Self { email }
     }
 
+    pub fn to_json(&self, conn: &DbConn) -> Value {
+        json!({
+            "Email": self.email,
+        })
+    }
+
     pub fn save(&self, conn: &DbConn) -> EmptyResult {
         if self.email.trim().is_empty() {
             err!("Invitation email can't be empty")
@@ -270,5 +276,9 @@ impl Invitation {
                 Some(invitation) => invitation.delete(&conn).is_ok(),
                 None => false,
             }
+    }
+
+    pub fn get_all(conn: &DbConn) -> Vec<Self> {
+        invitations::table.load::<Self>(&**conn).expect("Error loading invitations")
     }
 }
