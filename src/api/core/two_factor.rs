@@ -821,12 +821,19 @@ const APP_PREFIX: &str = "APP";
 
 use chrono::Utc;
 
+// let (ik, sk, ak) = get_duo_keys();
+fn get_duo_keys() -> (String, String, String) {
+    (
+        CONFIG.duo_ikey().unwrap(),
+        CONFIG.duo_skey().unwrap(),
+        CONFIG.get_duo_akey(),
+    )
+}
+
 pub fn generate_duo_signature(email: &str) -> String {
     let now = Utc::now().timestamp();
 
-    let ik = CONFIG.duo_ikey().unwrap();
-    let sk = CONFIG.duo_skey().unwrap();
-    let ak = CONFIG.duo_akey().unwrap();
+    let (ik, sk, ak) = get_duo_keys();
 
     let duo_sign = sign_duo_values(&sk, email, &ik, DUO_PREFIX, now + DUO_EXPIRE);
     let app_sign = sign_duo_values(&ak, email, &ik, APP_PREFIX, now + APP_EXPIRE);
@@ -852,9 +859,7 @@ pub fn validate_duo_login(email: &str, response: &str) -> EmptyResult {
 
     let now = Utc::now().timestamp();
 
-    let ik = CONFIG.duo_ikey().unwrap();
-    let sk = CONFIG.duo_skey().unwrap();
-    let ak = CONFIG.duo_akey().unwrap();
+    let (ik, sk, ak) = get_duo_keys();
 
     let auth_user = parse_duo_values(&sk, auth_sig, &ik, AUTH_PREFIX, now)?;
     let app_user = parse_duo_values(&ak, app_sig, &ik, APP_PREFIX, now)?;
