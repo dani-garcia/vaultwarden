@@ -9,7 +9,10 @@ lazy_static! {
         println!("Error loading config:\n\t{:?}\n", e);
         exit(12)
     });
-    pub static ref CONFIG_FILE: String = get_env("CONFIG_FILE").unwrap_or_else(|| "data/config.json".into());
+    pub static ref CONFIG_FILE: String =  {
+        let data_folder = get_env("DATA_FOLDER").unwrap_or_else(|| String::from("data"));
+        get_env("CONFIG_FILE").unwrap_or_else(|| format!("{}/config.json", data_folder))
+    };
 }
 
 pub type Pass = String;
