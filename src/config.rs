@@ -305,10 +305,10 @@ make_config! {
         yubico_server:          String, true,   option;
     },
 
-    /// Duo settings
+    /// Global Duo settings (Note that users can override them)
     duo: _enable_duo {
         /// Enabled
-        _enable_duo:            bool,   true,   def,     true;
+        _enable_duo:            bool,   true,   def,     false;
         /// Integration Key
         duo_ikey:               String, true,   option;
         /// Secret Key

@@ -178,7 +178,7 @@ fn twofactor_auth(
         Some(TwoFactorType::Authenticator) => _tf::validate_totp_code_str(twofactor_code, &selected_data?)?,
         Some(TwoFactorType::U2f) => _tf::validate_u2f_login(user_uuid, twofactor_code, conn)?,
         Some(TwoFactorType::YubiKey) => _tf::validate_yubikey_login(twofactor_code, &selected_data?)?,
-        Some(TwoFactorType::Duo) => _tf::validate_duo_login(data.username.as_ref().unwrap(), twofactor_code)?,
+        Some(TwoFactorType::Duo) => _tf::validate_duo_login(data.username.as_ref().unwrap(), twofactor_code, conn)?,
 
         Some(TwoFactorType::Remember) => {
             match device.twofactor_remember {
@@ -248,7 +248,7 @@ fn _json_err_twofactor(providers: &[i32], user_uuid: &str, conn: &DbConn) -> Api
                     None => err!("User does not exist"),
                 };
 
-                let signature = two_factor::generate_duo_signature(&email);
+                let signature = two_factor::generate_duo_signature(&email, conn)?;
 
                 result["TwoFactorProviders2"][provider.to_string()] = json!({
                     "Host": CONFIG.duo_host(),

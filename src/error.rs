@@ -41,6 +41,8 @@ use regex::Error as RegexErr;
 use reqwest::Error as ReqErr;
 use serde_json::{Error as SerdeErr, Value};
 use std::io::Error as IOErr;
+
+use std::option::NoneError as NoneErr;
 use std::time::SystemTimeError as TimeErr;
 use u2f::u2ferror::U2fError as U2fErr;
 use yubico::yubicoerror::YubicoError as YubiErr;
@@ -71,6 +73,13 @@ make_error! {
     ReqError(ReqErr):     _has_source, _api_error,
     RegexError(RegexErr): _has_source, _api_error,
     YubiError(YubiErr):   _has_source, _api_error,
+}
+
+// This is implemented by hand because NoneError doesn't implement neither Display nor Error
+impl From<NoneErr> for Error {
+    fn from(_: NoneErr) -> Self {
+        Error::from(("NoneError", String::new()))
+    }
 }
 
 impl std::fmt::Debug for Error {
@@ -115,6 +124,12 @@ impl<S, E: Into<Error>> MapResult<S> for Result<S, E> {
 impl<E: Into<Error>> MapResult<()> for Result<usize, E> {
     fn map_res(self, msg: &str) -> Result<(), Error> {
         self.and(Ok(())).map_res(msg)
+    }
+}
+
+impl<S> MapResult<S> for Option<S> {
+    fn map_res(self, msg: &str) -> Result<S, Error> {
+        self.ok_or_else(|| Error::new(msg, ""))
     }
 }
 
