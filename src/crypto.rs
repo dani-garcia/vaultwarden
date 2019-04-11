@@ -2,7 +2,7 @@
 // PBKDF2 derivation
 //
 
-use ring::{digest, pbkdf2};
+use ring::{digest, pbkdf2, hmac};
 
 static DIGEST_ALG: &digest::Algorithm = &digest::SHA256;
 const OUTPUT_LEN: usize = digest::SHA256_OUTPUT_LEN;
@@ -24,7 +24,6 @@ pub fn verify_password_hash(secret: &[u8], salt: &[u8], previous: &[u8], iterati
 //
 pub fn hmac_sign(key: &str, data:&str) -> String {
     use data_encoding::HEXLOWER;
-    use ring::{digest, hmac};
 
     let key = hmac::SigningKey::new(&digest::SHA1, key.as_bytes());
     let signature = hmac::sign(&key, data.as_bytes());

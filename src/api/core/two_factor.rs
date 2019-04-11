@@ -787,7 +787,6 @@ fn _duo_api_request(method: &str, path: &str, params: &str) -> EmptyResult {
 
     use std::str::FromStr;
 
-    use chrono::Utc;
     use reqwest::{header::*, Client, Method};
 
     let ik = CONFIG.duo_ikey().unwrap();
