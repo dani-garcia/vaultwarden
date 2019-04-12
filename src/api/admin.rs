@@ -145,9 +145,10 @@ fn invite_user(data: Json<InviteData>, _token: AdminToken, conn: DbConn) -> Empt
         err!("Invitations are not allowed")
     }
 
+    let mut user = User::new(email);
+    user.save(&conn)?;
+
     if CONFIG.mail_enabled() {
-        let mut user = User::new(email);
-        user.save(&conn)?;
         let org_name = "bitwarden_rs";
         mail::send_invite(&user.email, &user.uuid, None, None, &org_name, None)
     } else {
