@@ -13,9 +13,9 @@
                             {{#if TwoFactorEnabled}}
                             <span class="badge badge-success ml-2">2FA</span>
                             {{/if}}
-                            {{#unless _Enabled}}
-                            <span class="badge badge-warning ml-2">Disabled</span>
-                            {{/unless}}
+                            {{#case _Status 1}}
+                            <span class="badge badge-warning ml-2">Invited</span>
+                            {{/case}}
                             <span class="d-block">{{Email}}</span>
                         </div>
                         <div class="col">

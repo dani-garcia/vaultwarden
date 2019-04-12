@@ -37,6 +37,12 @@ pub struct User {
     pub client_kdf_iter: i32,
 }
 
+enum UserStatus {
+    Enabled = 0,
+    Invited = 1,
+    _Disabled = 2,
+}
+
 /// Local methods
 impl User {
     pub const CLIENT_KDF_TYPE_DEFAULT: i32 = 0; // PBKDF2: 0
@@ -119,8 +125,15 @@ impl User {
         let orgs_json: Vec<Value> = orgs.iter().map(|c| c.to_json(&conn)).collect();
         let twofactor_enabled = !TwoFactor::find_by_user(&self.uuid, conn).is_empty();
 
+        // TODO: Might want to save the status field in the DB
+        let status = if self.password_hash.is_empty() {
+            UserStatus::Invited
+        } else {
+            UserStatus::Enabled
+        };
+
         json!({
-            "_Enabled": !self.password_hash.is_empty(),
+            "_Status": status as i32,
             "Id": self.uuid,
             "Name": self.name,
             "Email": self.email,
