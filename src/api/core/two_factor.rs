@@ -854,7 +854,7 @@ fn activate_duo(data: JsonUpcase<EnableDuoData>, headers: Headers, conn: DbConn)
     let (data, data_str) = if check_duo_fields_custom(&data) {
         let data_req: DuoData = data.into();
         let data_str = serde_json::to_string(&data_req)?;
-        //duo_api_request("GET", "/auth/v2/check", "", &data_req).map_res("Failed to validate Duo credentials")?;
+        duo_api_request("GET", "/auth/v2/check", "", &data_req).map_res("Failed to validate Duo credentials")?;
         (data_req.obscure(), data_str)
     } else {
         (DuoData::secret(), String::new())
