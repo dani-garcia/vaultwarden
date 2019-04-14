@@ -9,7 +9,10 @@ lazy_static! {
         println!("Error loading config:\n\t{:?}\n", e);
         exit(12)
     });
-    pub static ref CONFIG_FILE: String = get_env("CONFIG_FILE").unwrap_or_else(|| "data/config.json".into());
+    pub static ref CONFIG_FILE: String = {
+        let data_folder = get_env("DATA_FOLDER").unwrap_or_else(|| String::from("data"));
+        get_env("CONFIG_FILE").unwrap_or_else(|| format!("{}/config.json", data_folder))
+    };
 }
 
 pub type Pass = String;
@@ -61,7 +64,7 @@ macro_rules! make_config {
 
             /// Merges the values of both builders into a new builder.
             /// If both have the same element, `other` wins.
-            fn merge(&self, other: &Self) -> Self {
+            fn merge(&self, other: &Self, show_overrides: bool) -> Self {
                 let mut overrides = Vec::new();
                 let mut builder = self.clone();
                 $($(
@@ -74,7 +77,7 @@ macro_rules! make_config {
                     }
                 )+)+
 
-                if !overrides.is_empty() {
+                if show_overrides && !overrides.is_empty() {
                     // We can't use warn! here because logging isn't setup yet.
                     println!("[WARNING] The following environment variables are being overriden by the config file,");
                     println!("[WARNING] please use the admin panel to make changes to them:");
@@ -302,6 +305,20 @@ make_config! {
         yubico_server:          String, true,   option;
     },
 
+    /// Global Duo settings (Note that users can override them)
+    duo: _enable_duo {
+        /// Enabled
+        _enable_duo:            bool,   true,   def,     false;
+        /// Integration Key
+        duo_ikey:               String, true,   option;
+        /// Secret Key
+        duo_skey:               Pass,   true,   option;
+        /// Host
+        duo_host:               String, true,   option;
+        /// Application Key (generated automatically)
+        _duo_akey:              Pass,   false,  option;
+    },
+
     /// SMTP Email Settings
     smtp: _enable_smtp {
         /// Enabled
@@ -332,6 +349,12 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         }
     }
 
+    if (cfg.duo_host.is_some() || cfg.duo_ikey.is_some() || cfg.duo_skey.is_some())
+        && !(cfg.duo_host.is_some() && cfg.duo_ikey.is_some() && cfg.duo_skey.is_some())
+    {
+        err!("All Duo options need to be set for global Duo support")
+    }
+
     if cfg.yubico_client_id.is_some() != cfg.yubico_secret_key.is_some() {
         err!("Both `YUBICO_CLIENT_ID` and `YUBICO_SECRET_KEY` need to be set for Yubikey OTP support")
     }
@@ -354,7 +377,7 @@ impl Config {
         let _usr = ConfigBuilder::from_file(&CONFIG_FILE).unwrap_or_default();
 
         // Create merged config, config file overwrites env
-        let builder = _env.merge(&_usr);
+        let builder = _env.merge(&_usr, true);
 
         // Fill any missing with defaults
         let config = builder.build();
@@ -383,7 +406,7 @@ impl Config {
         // Prepare the combined config
         let config = {
             let env = &self.inner.read().unwrap()._env;
-            env.merge(&builder).build()
+            env.merge(&builder, false).build()
         };
         validate_config(&config)?;
 
@@ -400,6 +423,14 @@ impl Config {
         file.write_all(config_str.as_bytes())?;
 
         Ok(())
+    }
+
+    pub fn update_config_partial(&self, other: ConfigBuilder) -> Result<(), Error> {
+        let builder = {
+            let usr = &self.inner.read().unwrap()._usr;
+            usr.merge(&other, false)
+        };
+        self.update_config(builder)
     }
 
     pub fn delete_user_config(&self) -> Result<(), Error> {
@@ -437,9 +468,21 @@ impl Config {
         let inner = &self.inner.read().unwrap().config;
         inner._enable_smtp && inner.smtp_host.is_some()
     }
-    pub fn yubico_enabled(&self) -> bool {
-        let inner = &self.inner.read().unwrap().config;
-        inner._enable_yubico && inner.yubico_client_id.is_some() && inner.yubico_secret_key.is_some()
+
+    pub fn get_duo_akey(&self) -> String {
+        if let Some(akey) = self._duo_akey() {
+            akey
+        } else {
+            let akey = crate::crypto::get_random_64();
+            let akey_s = data_encoding::BASE64.encode(&akey);
+
+            // Save the new value
+            let mut builder = ConfigBuilder::default();
+            builder._duo_akey = Some(akey_s.clone());
+            self.update_config_partial(builder).ok();
+
+            akey_s
+        }
     }
 
     pub fn render_template<T: serde::ser::Serialize>(

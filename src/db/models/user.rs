@@ -119,8 +119,6 @@ use crate::error::MapResult;
 /// Database methods
 impl User {
     pub fn to_json(&self, conn: &DbConn) -> Value {
-        use super::{TwoFactor, UserOrganization};
-
         let orgs = UserOrganization::find_by_user(&self.uuid, conn);
         let orgs_json: Vec<Value> = orgs.iter().map(|c| c.to_json(&conn)).collect();
         let twofactor_enabled = !TwoFactor::find_by_user(&self.uuid, conn).is_empty();

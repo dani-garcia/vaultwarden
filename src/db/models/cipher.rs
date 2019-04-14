@@ -72,9 +72,7 @@ use crate::error::MapResult;
 /// Database methods
 impl Cipher {
     pub fn to_json(&self, host: &str, user_uuid: &str, conn: &DbConn) -> Value {
-        use super::Attachment;
         use crate::util::format_date;
-        use serde_json;
 
         let attachments = Attachment::find_by_cipher(&self.uuid, conn);
         let attachments_json: Vec<Value> = attachments.iter().map(|c| c.to_json(host)).collect();
