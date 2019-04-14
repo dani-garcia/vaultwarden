@@ -870,8 +870,14 @@ fn move_cipher_selected_put(
     move_cipher_selected(data, headers, conn, nt)
 }
 
-#[post("/ciphers/purge", data = "<data>")]
-fn delete_all(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn, nt: Notify) -> EmptyResult {
+#[derive(FromForm)]
+struct OrganizationId {
+    #[form(field = "organizationId")]
+    org_id: String,
+}
+
+#[post("/ciphers/purge?<organization..>", data = "<data>")]
+fn delete_all(organization: Option<Form<OrganizationId>>, data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn, nt: Notify) -> EmptyResult {
     let data: PasswordData = data.into_inner().data;
     let password_hash = data.MasterPasswordHash;
 
@@ -881,19 +887,40 @@ fn delete_all(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn, nt
         err!("Invalid password")
     }
 
-    // Delete ciphers and their attachments
-    for cipher in Cipher::find_owned_by_user(&user.uuid, &conn) {
-        cipher.delete(&conn)?;
-    }
+    match organization {
+        Some(org_data) => {
+            // Organization ID in query params, purging organization vault
+            match UserOrganization::find_by_user_and_org(&user.uuid, &org_data.org_id, &conn) {
+                None => err!("You don't have permission to purge the organization vault"),
+                Some(user_org) => {
+                    if user_org.type_ == UserOrgType::Owner {
+                        Cipher::delete_all_by_organization(&org_data.org_id, &conn)?;
+                        Collection::delete_all_by_organization(&org_data.org_id, &conn)?;
+                        nt.send_user_update(UpdateType::Vault, &user);
+                        Ok(())
+                    } else {
+                        err!("You don't have permission to purge the organization vault");
+                    }
+                }
+            }
+        },
+        None => {
+            // No organization ID in query params, purging user vault
+            // Delete ciphers and their attachments
+            for cipher in Cipher::find_owned_by_user(&user.uuid, &conn) {
+                cipher.delete(&conn)?;
+            }
 
-    // Delete folders
-    for f in Folder::find_by_user(&user.uuid, &conn) {
-        f.delete(&conn)?;
-    }
+            // Delete folders
+            for f in Folder::find_by_user(&user.uuid, &conn) {
+                f.delete(&conn)?;
+            }
 
-    user.update_revision(&conn)?;
-    nt.send_user_update(UpdateType::Vault, &user);
-    Ok(())
+            user.update_revision(&conn)?;
+            nt.send_user_update(UpdateType::Vault, &user);
+            Ok(())
+        },
+    }
 }
 
 fn _delete_cipher_by_uuid(uuid: &str, headers: &Headers, conn: &DbConn, nt: &Notify) -> EmptyResult {
