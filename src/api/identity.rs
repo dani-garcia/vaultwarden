@@ -248,10 +248,10 @@ fn _json_err_twofactor(providers: &[i32], user_uuid: &str, conn: &DbConn) -> Api
                     None => err!("User does not exist"),
                 };
 
-                let signature = two_factor::generate_duo_signature(&email, conn)?;
+                let (signature, host) = two_factor::generate_duo_signature(&email, conn)?;
 
                 result["TwoFactorProviders2"][provider.to_string()] = json!({
-                    "Host": CONFIG.duo_host(),
+                    "Host": host,
                     "Signature": signature,
                 });
             }

@@ -936,25 +936,25 @@ fn get_user_duo_data(uuid: &str, conn: &DbConn) -> DuoStatus {
     DuoStatus::Disabled(false)
 }
 
-// let (ik, sk, ak) = get_duo_keys();
-fn get_duo_keys_email(email: &str, conn: &DbConn) -> ApiResult<(String, String, String)> {
+// let (ik, sk, ak, host) = get_duo_keys();
+fn get_duo_keys_email(email: &str, conn: &DbConn) -> ApiResult<(String, String, String, String)> {
     let data = User::find_by_mail(email, &conn)
         .and_then(|u| get_user_duo_data(&u.uuid, &conn).data())
         .or_else(|| DuoData::global())
         .map_res("Can't fetch Duo keys")?;
 
-    Ok((data.ik, data.sk, CONFIG.get_duo_akey()))
+    Ok((data.ik, data.sk, CONFIG.get_duo_akey(), data.host))
 }
 
-pub fn generate_duo_signature(email: &str, conn: &DbConn) -> ApiResult<String> {
+pub fn generate_duo_signature(email: &str, conn: &DbConn) -> ApiResult<(String, String)> {
     let now = Utc::now().timestamp();
 
-    let (ik, sk, ak) = get_duo_keys_email(email, conn)?;
+    let (ik, sk, ak, host) = get_duo_keys_email(email, conn)?;
 
     let duo_sign = sign_duo_values(&sk, email, &ik, DUO_PREFIX, now + DUO_EXPIRE);
     let app_sign = sign_duo_values(&ak, email, &ik, APP_PREFIX, now + APP_EXPIRE);
 
-    Ok(format!("{}:{}", duo_sign, app_sign))
+    Ok((format!("{}:{}", duo_sign, app_sign), host))
 }
 
 fn sign_duo_values(key: &str, email: &str, ikey: &str, prefix: &str, expire: i64) -> String {
@@ -975,7 +975,7 @@ pub fn validate_duo_login(email: &str, response: &str, conn: &DbConn) -> EmptyRe
 
     let now = Utc::now().timestamp();
 
-    let (ik, sk, ak) = get_duo_keys_email(email, conn)?;
+    let (ik, sk, ak, _host) = get_duo_keys_email(email, conn)?;
 
     let auth_user = parse_duo_values(&sk, auth_sig, &ik, AUTH_PREFIX, now)?;
     let app_user = parse_duo_values(&ak, app_sig, &ik, APP_PREFIX, now)?;
