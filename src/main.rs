@@ -90,9 +90,10 @@ fn init_logging() -> Result<(), fern::InitError> {
     if let Some(log_file) = CONFIG.log_file() {
         logger = logger.chain(fern::log_file(log_file)?);
     }
-    
-    #[cfg(not(windows))] {
-        if cfg!(feature="enable_syslog") || CONFIG.use_syslog() {
+
+    #[cfg(not(windows))]
+    {
+        if cfg!(feature = "enable_syslog") || CONFIG.use_syslog() {
             logger = chain_syslog(logger);
         }
     }

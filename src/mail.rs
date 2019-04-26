@@ -1,7 +1,7 @@
 use lettre::smtp::authentication::Credentials;
 use lettre::smtp::ConnectionReuseParameters;
 use lettre::{ClientSecurity, ClientTlsParameters, SmtpClient, SmtpTransport, Transport};
-use lettre_email::{EmailBuilder,PartBuilder,MimeMultipartType};
+use lettre_email::{EmailBuilder, MimeMultipartType, PartBuilder};
 use native_tls::{Protocol, TlsConnector};
 use quoted_printable::encode_to_str;
 

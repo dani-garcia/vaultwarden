@@ -877,7 +877,13 @@ struct OrganizationId {
 }
 
 #[post("/ciphers/purge?<organization..>", data = "<data>")]
-fn delete_all(organization: Option<Form<OrganizationId>>, data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn, nt: Notify) -> EmptyResult {
+fn delete_all(
+    organization: Option<Form<OrganizationId>>,
+    data: JsonUpcase<PasswordData>,
+    headers: Headers,
+    conn: DbConn,
+    nt: Notify,
+) -> EmptyResult {
     let data: PasswordData = data.into_inner().data;
     let password_hash = data.MasterPasswordHash;
 
@@ -903,7 +909,7 @@ fn delete_all(organization: Option<Form<OrganizationId>>, data: JsonUpcase<Passw
                     }
                 }
             }
-        },
+        }
         None => {
             // No organization ID in query params, purging user vault
             // Delete ciphers and their attachments
@@ -919,7 +925,7 @@ fn delete_all(organization: Option<Form<OrganizationId>>, data: JsonUpcase<Passw
             user.update_revision(&conn)?;
             nt.send_user_update(UpdateType::Vault, &user);
             Ok(())
-        },
+        }
     }
 }
 

@@ -158,7 +158,7 @@ fn invite_user(data: Json<InviteData>, _token: AdminToken, conn: DbConn) -> Empt
 }
 
 #[get("/users")]
-fn get_users(_token: AdminToken, conn: DbConn) ->JsonResult {
+fn get_users(_token: AdminToken, conn: DbConn) -> JsonResult {
     let users = User::get_all(&conn);
     let users_json: Vec<Value> = users.iter().map(|u| u.to_json(&conn)).collect();
 

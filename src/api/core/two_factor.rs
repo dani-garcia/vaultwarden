@@ -734,7 +734,6 @@ impl DuoData {
             }),
             None => None,
         }
-
     }
     fn msg(s: &str) -> Self {
         Self {
@@ -761,7 +760,6 @@ impl DuoData {
         Self { host, ik, sk }
     }
 }
-
 
 enum DuoStatus {
     Global(DuoData), // Using the global duo config
@@ -912,7 +910,6 @@ const APP_PREFIX: &str = "APP";
 
 use chrono::Utc;
 
-
 fn get_user_duo_data(uuid: &str, conn: &DbConn) -> DuoStatus {
     let type_ = TwoFactorType::Duo as i32;
 
@@ -940,7 +937,7 @@ fn get_user_duo_data(uuid: &str, conn: &DbConn) -> DuoStatus {
 fn get_duo_keys_email(email: &str, conn: &DbConn) -> ApiResult<(String, String, String, String)> {
     let data = User::find_by_mail(email, &conn)
         .and_then(|u| get_user_duo_data(&u.uuid, &conn).data())
-        .or_else(|| DuoData::global())
+        .or_else(DuoData::global)
         .map_res("Can't fetch Duo keys")?;
 
     Ok((data.ik, data.sk, CONFIG.get_duo_akey(), data.host))
