@@ -64,7 +64,7 @@ fn alive() -> Json<String> {
     Json(format_date(&Utc::now().naive_utc()))
 }
 
-#[get("/images/<filename>")]
+#[get("/bwrs_images/<filename>")]
 fn images(filename: String) -> Result<Content<Vec<u8>>, Error> {
     let image_type = ContentType::new("image", "png");
     match filename.as_ref() {
