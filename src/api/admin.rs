@@ -9,7 +9,7 @@ use rocket_contrib::json::Json;
 use crate::api::{ApiResult, EmptyResult, JsonResult};
 use crate::auth::{decode_admin, encode_jwt, generate_admin_claims, ClientIp};
 use crate::config::ConfigBuilder;
-use crate::db::{models::*, DbConn};
+use crate::db::{models::*, DbConn, backup_database};
 use crate::error::Error;
 use crate::mail;
 use crate::CONFIG;
@@ -30,6 +30,7 @@ pub fn routes() -> Vec<Route> {
         update_revision_users,
         post_config,
         delete_config,
+        backup_db,
     ]
 }
 
@@ -202,6 +203,11 @@ fn post_config(data: Json<ConfigBuilder>, _token: AdminToken) -> EmptyResult {
 #[post("/config/delete")]
 fn delete_config(_token: AdminToken) -> EmptyResult {
     CONFIG.delete_user_config()
+}
+
+#[post("/config/backup_db")]
+fn backup_db(_token: AdminToken) -> EmptyResult {
+    backup_database()
 }
 
 pub struct AdminToken {}
