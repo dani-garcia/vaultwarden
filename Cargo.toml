@@ -19,8 +19,8 @@ syslog = "4.0.1"
 
 [dependencies]
 # Web framework for nightly with a focus on ease-of-use, expressibility, and speed.
-rocket = { version = "0.4.0", features = ["tls"], default-features = false }
-rocket_contrib = "0.4.0"
+rocket = { version = "0.5.0-dev", features = ["tls"], default-features = false }
+rocket_contrib = "0.5.0-dev"
 
 # HTTP client
 reqwest = "0.9.16"
@@ -107,5 +107,9 @@ regex = "1.1.6"
 # Add support for Timestamp type
 rmp = { git = 'https://github.com/dani-garcia/msgpack-rust' }
 
-rocket = { git = 'https://github.com/brndnmtthws/Rocket', rev = '7eda4bc09828160f30df6ffe07963993bd2e4651' }
-rocket_contrib = { git = 'https://github.com/brndnmtthws/Rocket', rev = '7eda4bc09828160f30df6ffe07963993bd2e4651' }
+# Fix chrome 74+ U2F
+u2f = { git = 'https://github.com/dani-garcia/u2f-rs', branch='base64url' }
+
+# Use newest ring
+rocket = { git = 'https://github.com/dani-garcia/Rocket', rev = 'c28919f17a0b8' }
+rocket_contrib = { git = 'https://github.com/dani-garcia/Rocket', rev = 'c28919f17a0b8' }
