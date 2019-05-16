@@ -3,7 +3,7 @@
 ---
 
 [![Travis Build Status](https://travis-ci.org/dani-garcia/bitwarden_rs.svg?branch=master)](https://travis-ci.org/dani-garcia/bitwarden_rs)
-[![Docker Pulls](https://img.shields.io/docker/pulls/mprasil/bitwarden.svg)](https://hub.docker.com/r/mprasil/bitwarden)
+[![Docker Pulls](https://img.shields.io/docker/pulls/bitwardenrs/server.svg)](https://hub.docker.com/r/bitwardenrs/server)
 [![Dependency Status](https://deps.rs/repo/github/dani-garcia/bitwarden_rs/status.svg)](https://deps.rs/repo/github/dani-garcia/bitwarden_rs)
 [![GitHub Release](https://img.shields.io/github/release/dani-garcia/bitwarden_rs.svg)](https://github.com/dani-garcia/bitwarden_rs/releases/latest)
 [![GPL-3.0 Licensed](https://img.shields.io/github/license/dani-garcia/bitwarden_rs.svg)](https://github.com/dani-garcia/bitwarden_rs/blob/master/LICENSE.txt)
@@ -34,8 +34,8 @@ Basically full implementation of Bitwarden API is provided including:
 Pull the docker image and mount a volume from the host for persistent storage:
 
 ```sh
-docker pull mprasil/bitwarden:latest
-docker run -d --name bitwarden -v /bw-data/:/data/ -p 80:80 mprasil/bitwarden:latest
+docker pull bitwardenrs/server:latest
+docker run -d --name bitwarden -v /bw-data/:/data/ -p 80:80 bitwardenrs/server:latest
 ```
 This will preserve any persistent data under /bw-data/, you can adapt the path to whatever suits you.
 
