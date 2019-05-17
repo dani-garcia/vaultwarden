@@ -23,7 +23,7 @@ rocket = { version = "0.5.0-dev", features = ["tls"], default-features = false }
 rocket_contrib = "0.5.0-dev"
 
 # HTTP client
-reqwest = "0.9.16"
+reqwest = "0.9.17"
 
 # multipart/form-data support
 multipart = { version = "0.16.1", features = ["server"], default-features = false }
@@ -72,13 +72,13 @@ data-encoding = "2.1.2"
 jsonwebtoken = "6.0.1"
 
 # U2F library
-u2f = "0.1.5"
+u2f = "0.1.6"
 
 # Yubico Library
 yubico = { version = "0.5.1", features = ["online"], default-features = false }
 
 # A `dotenv` implementation for Rust
-dotenv = { version = "0.14.0", default-features = false }
+dotenv = { version = "0.14.1", default-features = false }
 
 # Lazy static macro
 lazy_static = "1.3.0"
@@ -107,9 +107,6 @@ regex = "1.1.6"
 # Add support for Timestamp type
 rmp = { git = 'https://github.com/dani-garcia/msgpack-rust' }
 
-# Fix chrome 74+ U2F
-u2f = { git = 'https://github.com/dani-garcia/u2f-rs', branch='base64url' }
-
 # Use newest ring
-rocket = { git = 'https://github.com/dani-garcia/Rocket', rev = 'c28919f17a0b8' }
-rocket_contrib = { git = 'https://github.com/dani-garcia/Rocket', rev = 'c28919f17a0b8' }
+rocket = { git = 'https://github.com/SergioBenitez/Rocket', rev = 'dbcb0a75b9556763ac3ab708f40c8f8ed75f1a1e' }
+rocket_contrib = { git = 'https://github.com/SergioBenitez/Rocket', rev = 'dbcb0a75b9556763ac3ab708f40c8f8ed75f1a1e' }
