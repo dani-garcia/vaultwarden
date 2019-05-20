@@ -139,6 +139,22 @@ table! {
     }
 }
 
+joinable!(attachments -> ciphers (cipher_uuid));
+joinable!(ciphers -> organizations (organization_uuid));
+joinable!(ciphers -> users (user_uuid));
+joinable!(ciphers_collections -> ciphers (cipher_uuid));
+joinable!(ciphers_collections -> collections (collection_uuid));
+joinable!(collections -> organizations (org_uuid));
+joinable!(devices -> users (user_uuid));
+joinable!(folders -> users (user_uuid));
+joinable!(folders_ciphers -> ciphers (cipher_uuid));
+joinable!(folders_ciphers -> folders (folder_uuid));
+joinable!(twofactor -> users (user_uuid));
+joinable!(users_collections -> collections (collection_uuid));
+joinable!(users_collections -> users (user_uuid));
+joinable!(users_organizations -> organizations (org_uuid));
+joinable!(users_organizations -> users (user_uuid));
+
 allow_tables_to_appear_in_same_query!(
     attachments,
     ciphers,
