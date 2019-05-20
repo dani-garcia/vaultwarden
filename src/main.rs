@@ -69,6 +69,7 @@ fn launch_info() {
 }
 
 fn init_logging() -> Result<(), fern::InitError> {
+    use std::str::FromStr;
     let mut logger = fern::Dispatch::new()
         .format(|out, message, record| {
             out.finish(format_args!(
@@ -79,31 +80,30 @@ fn init_logging() -> Result<(), fern::InitError> {
                 message
             ))
         })
-        .level(log::LevelFilter::Debug)
-        .level_for("hyper", log::LevelFilter::Warn)
-        .level_for("rustls", log::LevelFilter::Warn)
-        .level_for("handlebars", log::LevelFilter::Warn)
-        .level_for("ws", log::LevelFilter::Info)
-        .level_for("multipart", log::LevelFilter::Info)
-        .level_for("html5ever", log::LevelFilter::Info)
+        .level(log::LevelFilter::from_str(&CONFIG.log_level()).expect("Valid log level"))
+        // Hide unknown certificate errors if using self-signed
+        .level_for("rustls::session", log::LevelFilter::Off)
+        // Hide failed to close stream messages
+        .level_for("hyper::server", log::LevelFilter::Warn)
         .chain(std::io::stdout());
 
     if let Some(log_file) = CONFIG.log_file() {
         logger = logger.chain(fern::log_file(log_file)?);
     }
 
-    logger = chain_syslog(logger);
+    #[cfg(not(windows))]
+    {
+        if cfg!(feature = "enable_syslog") || CONFIG.use_syslog() {
+            logger = chain_syslog(logger);
+        }
+    }
+
     logger.apply()?;
 
     Ok(())
 }
 
-#[cfg(not(feature = "enable_syslog"))]
-fn chain_syslog(logger: fern::Dispatch) -> fern::Dispatch {
-    logger
-}
-
-#[cfg(feature = "enable_syslog")]
+#[cfg(not(windows))]
 fn chain_syslog(logger: fern::Dispatch) -> fern::Dispatch {
     let syslog_fmt = syslog::Formatter3164 {
         facility: syslog::Facility::LOG_USER,

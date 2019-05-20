@@ -9,7 +9,7 @@ use num_traits::FromPrimitive;
 use crate::db::models::*;
 use crate::db::DbConn;
 
-use crate::util::{self, JsonMap};
+use crate::util;
 
 use crate::api::{ApiResult, EmptyResult, JsonResult};
 
@@ -152,67 +152,57 @@ fn twofactor_auth(
     conn: &DbConn,
 ) -> ApiResult<Option<String>> {
     let twofactors = TwoFactor::find_by_user(user_uuid, conn);
-    let providers: Vec<_> = twofactors.iter().map(|tf| tf.type_).collect();
 
     // No twofactor token if twofactor is disabled
     if twofactors.is_empty() {
         return Ok(None);
     }
 
-    let provider = data.two_factor_provider.unwrap_or(providers[0]); // If we aren't given a two factor provider, asume the first one
+    let twofactor_ids: Vec<_> = twofactors.iter().map(|tf| tf.type_).collect();
+    let selected_id = data.two_factor_provider.unwrap_or(twofactor_ids[0]); // If we aren't given a two factor provider, asume the first one
 
     let twofactor_code = match data.two_factor_token {
         Some(ref code) => code,
-        None => err_json!(_json_err_twofactor(&providers, user_uuid, conn)?),
+        None => err_json!(_json_err_twofactor(&twofactor_ids, user_uuid, conn)?),
     };
 
-    let twofactor = twofactors.iter().filter(|tf| tf.type_ == provider).nth(0);
+    let selected_twofactor = twofactors.into_iter().filter(|tf| tf.type_ == selected_id).nth(0);
 
-    match TwoFactorType::from_i32(provider) {
+    use crate::api::core::two_factor as _tf;
+    use crate::crypto::ct_eq;
+
+    let selected_data = _selected_data(selected_twofactor);
+    let mut remember = data.two_factor_remember.unwrap_or(0);
+
+    match TwoFactorType::from_i32(selected_id) {
+        Some(TwoFactorType::Authenticator) => _tf::validate_totp_code_str(twofactor_code, &selected_data?)?,
+        Some(TwoFactorType::U2f) => _tf::validate_u2f_login(user_uuid, twofactor_code, conn)?,
+        Some(TwoFactorType::YubiKey) => _tf::validate_yubikey_login(twofactor_code, &selected_data?)?,
+        Some(TwoFactorType::Duo) => _tf::validate_duo_login(data.username.as_ref().unwrap(), twofactor_code, conn)?,
+
         Some(TwoFactorType::Remember) => {
-            use crate::crypto::ct_eq;
             match device.twofactor_remember {
-                Some(ref remember) if ct_eq(remember, twofactor_code) => return Ok(None), // No twofactor token needed here
-                _ => err_json!(_json_err_twofactor(&providers, user_uuid, conn)?),
+                Some(ref code) if !CONFIG.disable_2fa_remember() && ct_eq(code, twofactor_code) => {
+                    remember = 1; // Make sure we also return the token here, otherwise it will only remember the first time
+                }
+                _ => err_json!(_json_err_twofactor(&twofactor_ids, user_uuid, conn)?),
             }
         }
-
-        Some(TwoFactorType::Authenticator) => {
-            let twofactor = match twofactor {
-                Some(tf) => tf,
-                None => err!("TOTP not enabled"),
-            };
-
-            let totp_code: u64 = match twofactor_code.parse() {
-                Ok(code) => code,
-                _ => err!("Invalid TOTP code"),
-            };
-
-            if !twofactor.check_totp_code(totp_code) {
-                err_json!(_json_err_twofactor(&providers, user_uuid, conn)?)
-            }
-        }
-
-        Some(TwoFactorType::U2f) => {
-            use crate::api::core::two_factor;
-
-            two_factor::validate_u2f_login(user_uuid, &twofactor_code, conn)?;
-        }
-
-        Some(TwoFactorType::YubiKey) => {
-            use crate::api::core::two_factor;
-
-            two_factor::validate_yubikey_login(user_uuid, twofactor_code, conn)?;
-        }
-
         _ => err!("Invalid two factor provider"),
     }
 
-    if data.two_factor_remember.unwrap_or(0) == 1 {
+    if !CONFIG.disable_2fa_remember() && remember == 1 {
         Ok(Some(device.refresh_twofactor_remember()))
     } else {
         device.delete_twofactor_remember();
         Ok(None)
+    }
+}
+
+fn _selected_data(tf: Option<TwoFactor>) -> ApiResult<String> {
+    match tf {
+        Some(tf) => Ok(tf.data),
+        None => err!("Two factor doesn't exist"),
     }
 }
 
@@ -237,22 +227,33 @@ fn _json_err_twofactor(providers: &[i32], user_uuid: &str, conn: &DbConn) -> Api
                 let mut challenge_list = Vec::new();
 
                 for key in request.registered_keys {
-                    let mut challenge_map = JsonMap::new();
-
-                    challenge_map.insert("appId".into(), Value::String(request.app_id.clone()));
-                    challenge_map.insert("challenge".into(), Value::String(request.challenge.clone()));
-                    challenge_map.insert("version".into(), Value::String(key.version));
-                    challenge_map.insert("keyHandle".into(), Value::String(key.key_handle.unwrap_or_default()));
-
-                    challenge_list.push(Value::Object(challenge_map));
+                    challenge_list.push(json!({
+                        "appId": request.app_id,
+                        "challenge": request.challenge,
+                        "version": key.version,
+                        "keyHandle": key.key_handle,
+                    }));
                 }
 
-                let mut map = JsonMap::new();
-                use serde_json;
                 let challenge_list_str = serde_json::to_string(&challenge_list).unwrap();
 
-                map.insert("Challenges".into(), Value::String(challenge_list_str));
-                result["TwoFactorProviders2"][provider.to_string()] = Value::Object(map);
+                result["TwoFactorProviders2"][provider.to_string()] = json!({
+                    "Challenges": challenge_list_str,
+                });
+            }
+
+            Some(TwoFactorType::Duo) => {
+                let email = match User::find_by_uuid(user_uuid, &conn) {
+                    Some(u) => u.email,
+                    None => err!("User does not exist"),
+                };
+
+                let (signature, host) = two_factor::generate_duo_signature(&email, conn)?;
+
+                result["TwoFactorProviders2"][provider.to_string()] = json!({
+                    "Host": host,
+                    "Signature": signature,
+                });
             }
 
             Some(tf_type @ TwoFactorType::YubiKey) => {
@@ -261,12 +262,11 @@ fn _json_err_twofactor(providers: &[i32], user_uuid: &str, conn: &DbConn) -> Api
                     None => err!("No YubiKey devices registered"),
                 };
 
-                let yubikey_metadata: two_factor::YubikeyMetadata =
-                    serde_json::from_str(&twofactor.data).expect("Can't parse Yubikey Metadata");
+                let yubikey_metadata: two_factor::YubikeyMetadata = serde_json::from_str(&twofactor.data)?;
 
-                let mut map = JsonMap::new();
-                map.insert("Nfc".into(), Value::Bool(yubikey_metadata.Nfc));
-                result["TwoFactorProviders2"][provider.to_string()] = Value::Object(map);
+                result["TwoFactorProviders2"][provider.to_string()] = json!({
+                    "Nfc": yubikey_metadata.Nfc,
+                })
             }
 
             _ => {}

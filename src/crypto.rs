@@ -2,7 +2,8 @@
 // PBKDF2 derivation
 //
 
-use ring::{digest, pbkdf2};
+use ring::{digest, hmac, pbkdf2};
+use std::num::NonZeroU32;
 
 static DIGEST_ALG: &digest::Algorithm = &digest::SHA256;
 const OUTPUT_LEN: usize = digest::SHA256_OUTPUT_LEN;
@@ -10,13 +11,27 @@ const OUTPUT_LEN: usize = digest::SHA256_OUTPUT_LEN;
 pub fn hash_password(secret: &[u8], salt: &[u8], iterations: u32) -> Vec<u8> {
     let mut out = vec![0u8; OUTPUT_LEN]; // Initialize array with zeros
 
+    let iterations = NonZeroU32::new(iterations).expect("Iterations can't be zero");
     pbkdf2::derive(DIGEST_ALG, iterations, salt, secret, &mut out);
 
     out
 }
 
 pub fn verify_password_hash(secret: &[u8], salt: &[u8], previous: &[u8], iterations: u32) -> bool {
+    let iterations = NonZeroU32::new(iterations).expect("Iterations can't be zero");
     pbkdf2::verify(DIGEST_ALG, iterations, salt, secret, previous).is_ok()
+}
+
+//
+// HMAC
+//
+pub fn hmac_sign(key: &str, data: &str) -> String {
+    use data_encoding::HEXLOWER;
+
+    let key = hmac::SigningKey::new(&digest::SHA1, key.as_bytes());
+    let signature = hmac::sign(&key, data.as_bytes());
+
+    HEXLOWER.encode(signature.as_ref())
 }
 
 //

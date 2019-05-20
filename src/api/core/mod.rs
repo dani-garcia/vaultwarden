@@ -33,10 +33,10 @@ use rocket::Route;
 use rocket_contrib::json::Json;
 use serde_json::Value;
 
-use crate::db::DbConn;
-
 use crate::api::{EmptyResult, JsonResult, JsonUpcase};
 use crate::auth::Headers;
+use crate::db::DbConn;
+use crate::error::Error;
 
 #[put("/devices/identifier/<uuid>/clear-token")]
 fn clear_device_token(uuid: String) -> EmptyResult {
@@ -137,12 +137,13 @@ fn hibp_breach(username: String) -> JsonResult {
 
     use reqwest::{header::USER_AGENT, Client};
 
-    let value: Value = Client::new()
-        .get(&url)
-        .header(USER_AGENT, user_agent)
-        .send()?
-        .error_for_status()?
-        .json()?;
+    let res = Client::new().get(&url).header(USER_AGENT, user_agent).send()?;
 
+    // If we get a 404, return a 404, it means no breached accounts
+    if res.status() == 404 {
+        return Err(Error::empty().with_code(404));
+    }
+
+    let value: Value = res.error_for_status()?.json()?;
     Ok(Json(value))
 }

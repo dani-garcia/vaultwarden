@@ -37,6 +37,12 @@ pub struct User {
     pub client_kdf_iter: i32,
 }
 
+enum UserStatus {
+    Enabled = 0,
+    Invited = 1,
+    _Disabled = 2,
+}
+
 /// Local methods
 impl User {
     pub const CLIENT_KDF_TYPE_DEFAULT: i32 = 0; // PBKDF2: 0
@@ -113,14 +119,19 @@ use crate::error::MapResult;
 /// Database methods
 impl User {
     pub fn to_json(&self, conn: &DbConn) -> Value {
-        use super::{TwoFactor, UserOrganization};
-
         let orgs = UserOrganization::find_by_user(&self.uuid, conn);
         let orgs_json: Vec<Value> = orgs.iter().map(|c| c.to_json(&conn)).collect();
         let twofactor_enabled = !TwoFactor::find_by_user(&self.uuid, conn).is_empty();
 
+        // TODO: Might want to save the status field in the DB
+        let status = if self.password_hash.is_empty() {
+            UserStatus::Invited
+        } else {
+            UserStatus::Enabled
+        };
+
         json!({
-            "_Enabled": !self.password_hash.is_empty(),
+            "_Status": status as i32,
             "Id": self.uuid,
             "Name": self.name,
             "Email": self.email,
@@ -176,6 +187,20 @@ impl User {
         if let Err(e) = Self::_update_revision(uuid, &Utc::now().naive_utc(), conn) {
             warn!("Failed to update revision for {}: {:#?}", uuid, e);
         }
+    }
+
+    pub fn update_all_revisions(conn: &DbConn) -> EmptyResult {
+        let updated_at = Utc::now().naive_utc();
+
+        crate::util::retry(
+            || {
+                diesel::update(users::table)
+                    .set(users::updated_at.eq(updated_at))
+                    .execute(&**conn)
+            },
+            10,
+        )
+        .map_res("Error updating revision date for all users")
     }
 
     pub fn update_revision(&mut self, conn: &DbConn) -> EmptyResult {

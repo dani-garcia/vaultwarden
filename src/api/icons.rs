@@ -8,7 +8,7 @@ use rocket::Route;
 
 use reqwest::{header::HeaderMap, Client, Response};
 
-use rocket::http::{Cookie};
+use rocket::http::Cookie;
 
 use regex::Regex;
 use soup::prelude::*;
@@ -22,6 +22,8 @@ pub fn routes() -> Vec<Route> {
 
 const FALLBACK_ICON: &[u8; 344] = include_bytes!("../static/fallback-icon.png");
 
+const ALLOWED_CHARS: &str = "_-.";
+
 lazy_static! {
     // Reuse the client between requests
     static ref CLIENT: Client = Client::builder()
@@ -32,13 +34,40 @@ lazy_static! {
         .unwrap();
 }
 
+fn is_valid_domain(domain: &str) -> bool {
+    // Don't allow empty or too big domains or path traversal
+    if domain.is_empty() || domain.len() > 255 || domain.contains("..") {
+        return false;
+    }
+
+    // Only alphanumeric or specific characters
+    for c in domain.chars() {
+        if !c.is_alphanumeric() && !ALLOWED_CHARS.contains(c) {
+            return false;
+        }
+    }
+
+    true
+}
+
 #[get("/<domain>/icon.png")]
 fn icon(domain: String) -> Content<Vec<u8>> {
     let icon_type = ContentType::new("image", "x-icon");
 
-    // Validate the domain to avoid directory traversal attacks
-    if domain.contains('/') || domain.contains("..") {
+    if !is_valid_domain(&domain) {
+        warn!("Invalid domain: {:#?}", domain);
         return Content(icon_type, FALLBACK_ICON.to_vec());
+    }
+
+    if let Some(blacklist) = CONFIG.icon_blacklist_regex() {
+        info!("Icon blacklist enabled: {:#?}", blacklist);
+
+        let regex = Regex::new(&blacklist).expect("Valid Regex");
+
+        if regex.is_match(&domain) {
+            warn!("Blacklisted domain: {:#?}", domain);
+            return Content(icon_type, FALLBACK_ICON.to_vec());
+        }
     }
 
     let icon = get_icon(&domain);
@@ -132,9 +161,15 @@ fn icon_is_expired(path: &str) -> bool {
 }
 
 #[derive(Debug)]
-struct IconList {
+struct Icon {
     priority: u8,
     href: String,
+}
+
+impl Icon {
+    fn new(priority: u8, href: String) -> Self {
+        Self { href, priority }
+    }
 }
 
 /// Returns a Result/Tuple which holds a Vector IconList and a string which holds the cookies from the last response.
@@ -149,13 +184,13 @@ struct IconList {
 /// let (mut iconlist, cookie_str) = get_icon_url("github.com")?;
 /// let (mut iconlist, cookie_str) = get_icon_url("gitlab.com")?;
 /// ```
-fn get_icon_url(domain: &str) -> Result<(Vec<IconList>, String), Error> {
+fn get_icon_url(domain: &str) -> Result<(Vec<Icon>, String), Error> {
     // Default URL with secure and insecure schemes
     let ssldomain = format!("https://{}", domain);
     let httpdomain = format!("http://{}", domain);
 
     // Create the iconlist
-    let mut iconlist: Vec<IconList> = Vec::new();
+    let mut iconlist: Vec<Icon> = Vec::new();
 
     // Create the cookie_str to fill it all the cookies from the response
     // These cookies can be used to request/download the favicon image.
@@ -167,13 +202,16 @@ fn get_icon_url(domain: &str) -> Result<(Vec<IconList>, String), Error> {
         // Extract the URL from the respose in case redirects occured (like @ gitlab.com)
         let url = content.url().clone();
         let raw_cookies = content.headers().get_all("set-cookie");
-        cookie_str = raw_cookies.iter().map(|raw_cookie| {
-            let cookie = Cookie::parse(raw_cookie.to_str().unwrap_or_default()).unwrap();
-            format!("{}={}; ", cookie.name(), cookie.value())
-        }).collect::<String>();
+        cookie_str = raw_cookies
+            .iter()
+            .map(|raw_cookie| {
+                let cookie = Cookie::parse(raw_cookie.to_str().unwrap_or_default()).unwrap();
+                format!("{}={}; ", cookie.name(), cookie.value())
+            })
+            .collect::<String>();
 
         // Add the default favicon.ico to the list with the domain the content responded from.
-        iconlist.push(IconList { priority: 35, href: url.join("/favicon.ico").unwrap().into_string() });
+        iconlist.push(Icon::new(35, url.join("/favicon.ico").unwrap().into_string()));
 
         let soup = Soup::from_reader(content)?;
         // Search for and filter
@@ -185,15 +223,17 @@ fn get_icon_url(domain: &str) -> Result<(Vec<IconList>, String), Error> {
 
         // Loop through all the found icons and determine it's priority
         for favicon in favicons {
-            let sizes = favicon.get("sizes").unwrap_or_default();
-            let href = url.join(&favicon.get("href").unwrap_or_default()).unwrap().into_string();
-            let priority = get_icon_priority(&href, &sizes);
+            let sizes = favicon.get("sizes");
+            let href = favicon.get("href").expect("Missing href");
+            let full_href = url.join(&href).unwrap().into_string();
 
-            iconlist.push(IconList { priority, href })
+            let priority = get_icon_priority(&full_href, sizes);
+
+            iconlist.push(Icon::new(priority, full_href))
         }
     } else {
         // Add the default favicon.ico to the list with just the given domain
-        iconlist.push(IconList { priority: 35, href: format!("{}/favicon.ico", ssldomain) });
+        iconlist.push(Icon::new(35, format!("{}/favicon.ico", ssldomain)));
     }
 
     // Sort the iconlist by priority
@@ -204,12 +244,16 @@ fn get_icon_url(domain: &str) -> Result<(Vec<IconList>, String), Error> {
 }
 
 fn get_page(url: &str) -> Result<Response, Error> {
-    //CLIENT.get(url).send()?.error_for_status().map_err(Into::into)
     get_page_with_cookies(url, "")
 }
 
 fn get_page_with_cookies(url: &str, cookie_str: &str) -> Result<Response, Error> {
-    CLIENT.get(url).header("cookie", cookie_str).send()?.error_for_status().map_err(Into::into)
+    CLIENT
+        .get(url)
+        .header("cookie", cookie_str)
+        .send()?
+        .error_for_status()
+        .map_err(Into::into)
 }
 
 /// Returns a Integer with the priority of the type of the icon which to prefer.
@@ -224,7 +268,7 @@ fn get_page_with_cookies(url: &str, cookie_str: &str) -> Result<Response, Error>
 /// priority1 = get_icon_priority("http://example.com/path/to/a/favicon.png", "32x32");
 /// priority2 = get_icon_priority("https://example.com/path/to/a/favicon.ico", "");
 /// ```
-fn get_icon_priority(href: &str, sizes: &str) -> u8 {
+fn get_icon_priority(href: &str, sizes: Option<String>) -> u8 {
     // Check if there is a dimension set
     let (width, height) = parse_sizes(sizes);
 
@@ -272,19 +316,19 @@ fn get_icon_priority(href: &str, sizes: &str) -> u8 {
 /// let (width, height) = parse_sizes("x128x128"); // (128, 128)
 /// let (width, height) = parse_sizes("32"); // (0, 0)
 /// ```
-fn parse_sizes(sizes: &str) -> (u16, u16) {
+fn parse_sizes(sizes: Option<String>) -> (u16, u16) {
     let mut width: u16 = 0;
     let mut height: u16 = 0;
 
-    if !sizes.is_empty() {
+    if let Some(sizes) = sizes {
         match Regex::new(r"(?x)(\d+)\D*(\d+)").unwrap().captures(sizes.trim()) {
-            None => {},
+            None => {}
             Some(dimensions) => {
                 if dimensions.len() >= 3 {
                     width = dimensions[1].parse::<u16>().unwrap_or_default();
                     height = dimensions[2].parse::<u16>().unwrap_or_default();
                 }
-            },
+            }
         }
     }
 
@@ -292,21 +336,18 @@ fn parse_sizes(sizes: &str) -> (u16, u16) {
 }
 
 fn download_icon(domain: &str) -> Result<Vec<u8>, Error> {
-    let (mut iconlist, cookie_str) = get_icon_url(&domain)?;
+    let (iconlist, cookie_str) = get_icon_url(&domain)?;
 
     let mut buffer = Vec::new();
 
-    iconlist.truncate(5);
-    for icon in iconlist {
-        let url = icon.href;
-        info!("Downloading icon for {} via {}...", domain, url);
-        match get_page_with_cookies(&url, &cookie_str) {
+    for icon in iconlist.iter().take(5) {
+        match get_page_with_cookies(&icon.href, &cookie_str) {
             Ok(mut res) => {
-                info!("Download finished for {}", url);
+                info!("Downloaded icon from {}", icon.href);
                 res.copy_to(&mut buffer)?;
                 break;
-            },
-            Err(_) => info!("Download failed for {}", url),
+            }
+            Err(_) => info!("Download failed for {}", icon.href),
         };
     }
 

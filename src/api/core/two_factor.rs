@@ -1,4 +1,4 @@
-use data_encoding::BASE32;
+use data_encoding::{BASE32, BASE64};
 use rocket_contrib::json::Json;
 use serde_json;
 use serde_json::Value;
@@ -31,13 +31,16 @@ pub fn routes() -> Vec<Route> {
         generate_yubikey,
         activate_yubikey,
         activate_yubikey_put,
+        get_duo,
+        activate_duo,
+        activate_duo_put,
     ]
 }
 
 #[get("/two-factor")]
 fn get_twofactor(headers: Headers, conn: DbConn) -> JsonResult {
     let twofactors = TwoFactor::find_by_user(&headers.user.uuid, &conn);
-    let twofactors_json: Vec<Value> = twofactors.iter().map(|c| c.to_json_list()).collect();
+    let twofactors_json: Vec<Value> = twofactors.iter().map(TwoFactor::to_json_list).collect();
 
     Ok(Json(json!({
         "Data": twofactors_json,
@@ -100,6 +103,14 @@ fn recover(data: JsonUpcase<RecoverTwoFactor>, conn: DbConn) -> JsonResult {
     user.totp_recover = None;
     user.save(&conn)?;
     Ok(Json(json!({})))
+}
+
+fn _generate_recover_code(user: &mut User, conn: &DbConn) {
+    if user.totp_recover.is_none() {
+        let totp_recover = BASE32.encode(&crypto::get_random(vec![0u8; 20]));
+        user.totp_recover = Some(totp_recover);
+        user.save(conn).ok();
+    }
 }
 
 #[derive(Deserialize)]
@@ -196,9 +207,7 @@ fn activate_authenticator(data: JsonUpcase<EnableAuthenticatorData>, headers: He
     let twofactor = TwoFactor::new(user.uuid.clone(), type_, key.to_uppercase());
 
     // Validate the token provided with the key
-    if !twofactor.check_totp_code(token) {
-        err!("Invalid totp code")
-    }
+    validate_totp_code(token, &twofactor.data)?;
 
     _generate_recover_code(&mut user, &conn);
     twofactor.save(&conn)?;
@@ -215,12 +224,29 @@ fn activate_authenticator_put(data: JsonUpcase<EnableAuthenticatorData>, headers
     activate_authenticator(data, headers, conn)
 }
 
-fn _generate_recover_code(user: &mut User, conn: &DbConn) {
-    if user.totp_recover.is_none() {
-        let totp_recover = BASE32.encode(&crypto::get_random(vec![0u8; 20]));
-        user.totp_recover = Some(totp_recover);
-        user.save(conn).ok();
+pub fn validate_totp_code_str(totp_code: &str, secret: &str) -> EmptyResult {
+    let totp_code: u64 = match totp_code.parse() {
+        Ok(code) => code,
+        _ => err!("TOTP code is not a number"),
+    };
+
+    validate_totp_code(totp_code, secret)
+}
+
+pub fn validate_totp_code(totp_code: u64, secret: &str) -> EmptyResult {
+    use oath::{totp_raw_now, HashType};
+
+    let decoded_secret = match BASE32.decode(secret.as_bytes()) {
+        Ok(s) => s,
+        Err(_) => err!("Invalid TOTP secret"),
+    };
+
+    let generated = totp_raw_now(&decoded_secret, 6, 0, 30, &HashType::SHA1);
+    if generated != totp_code {
+        err!("Invalid TOTP code");
     }
+
+    Ok(())
 }
 
 use u2f::messages::{RegisterResponse, SignResponse, U2fSignRequest};
@@ -248,7 +274,7 @@ fn generate_u2f(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn) 
     }
 
     let (enabled, keys) = get_u2f_registrations(&headers.user.uuid, &conn)?;
-    let keys_json: Vec<Value> = keys.iter().map(|r| r.to_json()).collect();
+    let keys_json: Vec<Value> = keys.iter().map(U2FRegistration::to_json).collect();
 
     Ok(Json(json!({
         "Enabled": enabled,
@@ -384,7 +410,7 @@ fn activate_u2f(data: JsonUpcase<EnableU2FData>, headers: Headers, conn: DbConn)
 
     _generate_recover_code(&mut user, &conn);
 
-    let keys_json: Vec<Value> = regs.iter().map(|r| r.to_json()).collect();
+    let keys_json: Vec<Value> = regs.iter().map(U2FRegistration::to_json).collect();
     Ok(Json(json!({
         "Enabled": true,
         "Keys": keys_json,
@@ -671,20 +697,12 @@ fn activate_yubikey_put(data: JsonUpcase<EnableYubikeyData>, headers: Headers, c
     activate_yubikey(data, headers, conn)
 }
 
-pub fn validate_yubikey_login(user_uuid: &str, response: &str, conn: &DbConn) -> EmptyResult {
+pub fn validate_yubikey_login(response: &str, twofactor_data: &str) -> EmptyResult {
     if response.len() != 44 {
         err!("Invalid Yubikey OTP length");
     }
 
-    let yubikey_type = TwoFactorType::YubiKey as i32;
-
-    let twofactor = match TwoFactor::find_by_user_and_type(user_uuid, yubikey_type, &conn) {
-        Some(tf) => tf,
-        None => err!("No YubiKey devices registered"),
-    };
-
-    let yubikey_metadata: YubikeyMetadata =
-        serde_json::from_str(&twofactor.data).expect("Can't parse Yubikey Metadata");
+    let yubikey_metadata: YubikeyMetadata = serde_json::from_str(twofactor_data).expect("Can't parse Yubikey Metadata");
     let response_id = &response[..12];
 
     if !yubikey_metadata.Keys.contains(&response_id.to_owned()) {
@@ -697,4 +715,326 @@ pub fn validate_yubikey_login(user_uuid: &str, response: &str, conn: &DbConn) ->
         Ok(_answer) => Ok(()),
         Err(_e) => err!("Failed to verify Yubikey against OTP server"),
     }
+}
+
+#[derive(Serialize, Deserialize)]
+struct DuoData {
+    host: String,
+    ik: String,
+    sk: String,
+}
+
+impl DuoData {
+    fn global() -> Option<Self> {
+        match CONFIG.duo_host() {
+            Some(host) => Some(Self {
+                host,
+                ik: CONFIG.duo_ikey().unwrap(),
+                sk: CONFIG.duo_skey().unwrap(),
+            }),
+            None => None,
+        }
+    }
+    fn msg(s: &str) -> Self {
+        Self {
+            host: s.into(),
+            ik: s.into(),
+            sk: s.into(),
+        }
+    }
+    fn secret() -> Self {
+        Self::msg("<global_secret>")
+    }
+    fn obscure(self) -> Self {
+        let mut host = self.host;
+        let mut ik = self.ik;
+        let mut sk = self.sk;
+
+        let digits = 4;
+        let replaced = "************";
+
+        host.replace_range(digits.., replaced);
+        ik.replace_range(digits.., replaced);
+        sk.replace_range(digits.., replaced);
+
+        Self { host, ik, sk }
+    }
+}
+
+enum DuoStatus {
+    Global(DuoData), // Using the global duo config
+    User(DuoData),   // Using the user's config
+    Disabled(bool),  // True if there is a global setting
+}
+
+impl DuoStatus {
+    fn data(self) -> Option<DuoData> {
+        match self {
+            DuoStatus::Global(data) => Some(data),
+            DuoStatus::User(data) => Some(data),
+            DuoStatus::Disabled(_) => None,
+        }
+    }
+}
+const DISABLED_MESSAGE_DEFAULT: &str = "<To use the global Duo keys, please leave these fields untouched>";
+
+#[post("/two-factor/get-duo", data = "<data>")]
+fn get_duo(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn) -> JsonResult {
+    let data: PasswordData = data.into_inner().data;
+
+    if !headers.user.check_valid_password(&data.MasterPasswordHash) {
+        err!("Invalid password");
+    }
+
+    let data = get_user_duo_data(&headers.user.uuid, &conn);
+
+    let (enabled, data) = match data {
+        DuoStatus::Global(_) => (true, Some(DuoData::secret())),
+        DuoStatus::User(data) => (true, Some(data.obscure())),
+        DuoStatus::Disabled(true) => (false, Some(DuoData::msg(DISABLED_MESSAGE_DEFAULT))),
+        DuoStatus::Disabled(false) => (false, None),
+    };
+
+    let json = if let Some(data) = data {
+        json!({
+            "Enabled": enabled,
+            "Host": data.host,
+            "SecretKey": data.sk,
+            "IntegrationKey": data.ik,
+            "Object": "twoFactorDuo"
+        })
+    } else {
+        json!({
+            "Enabled": enabled,
+            "Object": "twoFactorDuo"
+        })
+    };
+
+    Ok(Json(json))
+}
+
+#[derive(Deserialize)]
+#[allow(non_snake_case, dead_code)]
+struct EnableDuoData {
+    MasterPasswordHash: String,
+    Host: String,
+    SecretKey: String,
+    IntegrationKey: String,
+}
+
+impl From<EnableDuoData> for DuoData {
+    fn from(d: EnableDuoData) -> Self {
+        Self {
+            host: d.Host,
+            ik: d.IntegrationKey,
+            sk: d.SecretKey,
+        }
+    }
+}
+
+fn check_duo_fields_custom(data: &EnableDuoData) -> bool {
+    fn empty_or_default(s: &str) -> bool {
+        let st = s.trim();
+        st.is_empty() || s == DISABLED_MESSAGE_DEFAULT
+    }
+
+    !empty_or_default(&data.Host) && !empty_or_default(&data.SecretKey) && !empty_or_default(&data.IntegrationKey)
+}
+
+#[post("/two-factor/duo", data = "<data>")]
+fn activate_duo(data: JsonUpcase<EnableDuoData>, headers: Headers, conn: DbConn) -> JsonResult {
+    let data: EnableDuoData = data.into_inner().data;
+
+    if !headers.user.check_valid_password(&data.MasterPasswordHash) {
+        err!("Invalid password");
+    }
+
+    let (data, data_str) = if check_duo_fields_custom(&data) {
+        let data_req: DuoData = data.into();
+        let data_str = serde_json::to_string(&data_req)?;
+        duo_api_request("GET", "/auth/v2/check", "", &data_req).map_res("Failed to validate Duo credentials")?;
+        (data_req.obscure(), data_str)
+    } else {
+        (DuoData::secret(), String::new())
+    };
+
+    let type_ = TwoFactorType::Duo;
+    let twofactor = TwoFactor::new(headers.user.uuid.clone(), type_, data_str);
+    twofactor.save(&conn)?;
+
+    Ok(Json(json!({
+        "Enabled": true,
+        "Host": data.host,
+        "SecretKey": data.sk,
+        "IntegrationKey": data.ik,
+        "Object": "twoFactorDuo"
+    })))
+}
+
+#[put("/two-factor/duo", data = "<data>")]
+fn activate_duo_put(data: JsonUpcase<EnableDuoData>, headers: Headers, conn: DbConn) -> JsonResult {
+    activate_duo(data, headers, conn)
+}
+
+fn duo_api_request(method: &str, path: &str, params: &str, data: &DuoData) -> EmptyResult {
+    const AGENT: &str = "bitwarden_rs:Duo/1.0 (Rust)";
+
+    use reqwest::{header::*, Client, Method};
+    use std::str::FromStr;
+
+    let url = format!("https://{}{}", &data.host, path);
+    let date = Utc::now().to_rfc2822();
+    let username = &data.ik;
+    let fields = [&date, method, &data.host, path, params];
+    let password = crypto::hmac_sign(&data.sk, &fields.join("\n"));
+
+    let m = Method::from_str(method).unwrap_or_default();
+
+    Client::new()
+        .request(m, &url)
+        .basic_auth(username, Some(password))
+        .header(USER_AGENT, AGENT)
+        .header(DATE, date)
+        .send()?
+        .error_for_status()?;
+
+    Ok(())
+}
+
+const DUO_EXPIRE: i64 = 300;
+const APP_EXPIRE: i64 = 3600;
+
+const AUTH_PREFIX: &str = "AUTH";
+const DUO_PREFIX: &str = "TX";
+const APP_PREFIX: &str = "APP";
+
+use chrono::Utc;
+
+fn get_user_duo_data(uuid: &str, conn: &DbConn) -> DuoStatus {
+    let type_ = TwoFactorType::Duo as i32;
+
+    // If the user doesn't have an entry, disabled
+    let twofactor = match TwoFactor::find_by_user_and_type(uuid, type_, &conn) {
+        Some(t) => t,
+        None => return DuoStatus::Disabled(DuoData::global().is_some()),
+    };
+
+    // If the user has the required values, we use those
+    if let Ok(data) = serde_json::from_str(&twofactor.data) {
+        return DuoStatus::User(data);
+    }
+
+    // Otherwise, we try to use the globals
+    if let Some(global) = DuoData::global() {
+        return DuoStatus::Global(global);
+    }
+
+    // If there are no globals configured, just disable it
+    DuoStatus::Disabled(false)
+}
+
+// let (ik, sk, ak, host) = get_duo_keys();
+fn get_duo_keys_email(email: &str, conn: &DbConn) -> ApiResult<(String, String, String, String)> {
+    let data = User::find_by_mail(email, &conn)
+        .and_then(|u| get_user_duo_data(&u.uuid, &conn).data())
+        .or_else(DuoData::global)
+        .map_res("Can't fetch Duo keys")?;
+
+    Ok((data.ik, data.sk, CONFIG.get_duo_akey(), data.host))
+}
+
+pub fn generate_duo_signature(email: &str, conn: &DbConn) -> ApiResult<(String, String)> {
+    let now = Utc::now().timestamp();
+
+    let (ik, sk, ak, host) = get_duo_keys_email(email, conn)?;
+
+    let duo_sign = sign_duo_values(&sk, email, &ik, DUO_PREFIX, now + DUO_EXPIRE);
+    let app_sign = sign_duo_values(&ak, email, &ik, APP_PREFIX, now + APP_EXPIRE);
+
+    Ok((format!("{}:{}", duo_sign, app_sign), host))
+}
+
+fn sign_duo_values(key: &str, email: &str, ikey: &str, prefix: &str, expire: i64) -> String {
+    let val = format!("{}|{}|{}", email, ikey, expire);
+    let cookie = format!("{}|{}", prefix, BASE64.encode(val.as_bytes()));
+
+    format!("{}|{}", cookie, crypto::hmac_sign(key, &cookie))
+}
+
+pub fn validate_duo_login(email: &str, response: &str, conn: &DbConn) -> EmptyResult {
+    let split: Vec<&str> = response.split(':').collect();
+    if split.len() != 2 {
+        err!("Invalid response length");
+    }
+
+    let auth_sig = split[0];
+    let app_sig = split[1];
+
+    let now = Utc::now().timestamp();
+
+    let (ik, sk, ak, _host) = get_duo_keys_email(email, conn)?;
+
+    let auth_user = parse_duo_values(&sk, auth_sig, &ik, AUTH_PREFIX, now)?;
+    let app_user = parse_duo_values(&ak, app_sig, &ik, APP_PREFIX, now)?;
+
+    if !crypto::ct_eq(&auth_user, app_user) || !crypto::ct_eq(&auth_user, email) {
+        err!("Error validating duo authentication")
+    }
+
+    Ok(())
+}
+
+fn parse_duo_values(key: &str, val: &str, ikey: &str, prefix: &str, time: i64) -> ApiResult<String> {
+    let split: Vec<&str> = val.split('|').collect();
+    if split.len() != 3 {
+        err!("Invalid value length")
+    }
+
+    let u_prefix = split[0];
+    let u_b64 = split[1];
+    let u_sig = split[2];
+
+    let sig = crypto::hmac_sign(key, &format!("{}|{}", u_prefix, u_b64));
+
+    if !crypto::ct_eq(crypto::hmac_sign(key, &sig), crypto::hmac_sign(key, u_sig)) {
+        err!("Duo signatures don't match")
+    }
+
+    if u_prefix != prefix {
+        err!("Prefixes don't match")
+    }
+
+    let cookie_vec = match BASE64.decode(u_b64.as_bytes()) {
+        Ok(c) => c,
+        Err(_) => err!("Invalid Duo cookie encoding"),
+    };
+
+    let cookie = match String::from_utf8(cookie_vec) {
+        Ok(c) => c,
+        Err(_) => err!("Invalid Duo cookie encoding"),
+    };
+
+    let cookie_split: Vec<&str> = cookie.split('|').collect();
+    if cookie_split.len() != 3 {
+        err!("Invalid cookie length")
+    }
+
+    let username = cookie_split[0];
+    let u_ikey = cookie_split[1];
+    let expire = cookie_split[2];
+
+    if !crypto::ct_eq(ikey, u_ikey) {
+        err!("Invalid ikey")
+    }
+
+    let expire = match expire.parse() {
+        Ok(e) => e,
+        Err(_) => err!("Invalid expire time"),
+    };
+
+    if time >= expire {
+        err!("Expired authorization")
+    }
+
+    Ok(username.into())
 }

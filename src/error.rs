@@ -5,16 +5,18 @@ use std::error::Error as StdError;
 
 macro_rules! make_error {
     ( $( $name:ident ( $ty:ty ): $src_fn:expr, $usr_msg_fun:expr ),+ $(,)? ) => {
+        const BAD_REQUEST: u16 = 400;
+
         #[derive(Display)]
         pub enum ErrorKind { $($name( $ty )),+ }
-        pub struct Error { message: String, error: ErrorKind }
+        pub struct Error { message: String, error: ErrorKind, error_code: u16 }
 
         $(impl From<$ty> for Error {
             fn from(err: $ty) -> Self { Error::from((stringify!($name), err)) }
         })+
         $(impl<S: Into<String>> From<(S, $ty)> for Error {
             fn from(val: (S, $ty)) -> Self {
-                Error { message: val.0.into(), error: ErrorKind::$name(val.1) }
+                Error { message: val.0.into(), error: ErrorKind::$name(val.1), error_code: BAD_REQUEST }
             }
         })+
         impl StdError for Error {
@@ -39,9 +41,14 @@ use regex::Error as RegexErr;
 use reqwest::Error as ReqErr;
 use serde_json::{Error as SerdeErr, Value};
 use std::io::Error as IOErr;
+
+use std::option::NoneError as NoneErr;
 use std::time::SystemTimeError as TimeErr;
 use u2f::u2ferror::U2fError as U2fErr;
 use yubico::yubicoerror::YubicoError as YubiErr;
+
+#[derive(Display, Serialize)]
+pub struct Empty {}
 
 // Error struct
 // Contains a String error message, meant for the user and an enum variant, with an error of different types.
@@ -49,6 +56,8 @@ use yubico::yubicoerror::YubicoError as YubiErr;
 // After the variant itself, there are two expressions. The first one indicates whether the error contains a source error (that we pretty print).
 // The second one contains the function used to obtain the response sent to the client
 make_error! {
+    // Just an empty error
+    EmptyError(Empty):     _no_source, _serialize,
     // Used to represent err! calls
     SimpleError(String):  _no_source,  _api_error,
     // Used for special return values, like 2FA errors
@@ -66,6 +75,13 @@ make_error! {
     YubiError(YubiErr):   _has_source, _api_error,
 }
 
+// This is implemented by hand because NoneError doesn't implement neither Display nor Error
+impl From<NoneErr> for Error {
+    fn from(_: NoneErr) -> Self {
+        Error::from(("NoneError", String::new()))
+    }
+}
+
 impl std::fmt::Debug for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self.source() {
@@ -80,8 +96,17 @@ impl Error {
         (usr_msg, log_msg.into()).into()
     }
 
+    pub fn empty() -> Self {
+        Empty {}.into()
+    }
+
     pub fn with_msg<M: Into<String>>(mut self, msg: M) -> Self {
         self.message = msg.into();
+        self
+    }
+
+    pub fn with_code(mut self, code: u16) -> Self {
+        self.error_code = code;
         self
     }
 }
@@ -99,6 +124,12 @@ impl<S, E: Into<Error>> MapResult<S> for Result<S, E> {
 impl<E: Into<Error>> MapResult<()> for Result<usize, E> {
     fn map_res(self, msg: &str) -> Result<(), Error> {
         self.and(Ok(())).map_res(msg)
+    }
+}
+
+impl<S> MapResult<S> for Option<S> {
+    fn map_res(self, msg: &str) -> Result<S, Error> {
+        self.ok_or_else(|| Error::new(msg, ""))
     }
 }
 
@@ -142,8 +173,10 @@ impl<'r> Responder<'r> for Error {
         let usr_msg = format!("{}", self);
         error!("{:#?}", self);
 
+        let code = Status::from_code(self.error_code).unwrap_or(Status::BadRequest);
+
         Response::build()
-            .status(Status::BadRequest)
+            .status(code)
             .header(ContentType::JSON)
             .sized_body(Cursor::new(usr_msg))
             .ok()

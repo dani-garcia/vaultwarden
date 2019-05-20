@@ -11,50 +11,53 @@ publish = false
 build = "build.rs"
 
 [features]
-enable_syslog = ["syslog", "fern/syslog-4"]
+# Empty to keep compatibility, prefer to set USE_SYSLOG=true
+enable_syslog = []
+
+[target."cfg(not(windows))".dependencies]
+syslog = "4.0.1"
 
 [dependencies]
 # Web framework for nightly with a focus on ease-of-use, expressibility, and speed.
-rocket = { version = "0.4.0", features = ["tls"], default-features = false }
-rocket_contrib = "0.4.0"
+rocket = { version = "0.5.0-dev", features = ["tls"], default-features = false }
+rocket_contrib = "0.5.0-dev"
 
 # HTTP client
-reqwest = "0.9.10"
+reqwest = "0.9.17"
 
 # multipart/form-data support
-multipart = "0.16.1"
+multipart = { version = "0.16.1", features = ["server"], default-features = false }
 
 # WebSockets library
-ws = "0.7.9"
+ws = "0.8.1"
 
 # MessagePack library
 rmpv = "0.4.0"
 
 # Concurrent hashmap implementation
-chashmap = "2.2.0"
+chashmap = "2.2.2"
 
 # A generic serialization/deserialization framework
-serde = "1.0.88"
-serde_derive = "1.0.88"
-serde_json = "1.0.38"
+serde = "1.0.91"
+serde_derive = "1.0.91"
+serde_json = "1.0.39"
 
 # Logging
 log = "0.4.6"
-fern = "0.5.7"
-syslog = { version = "4.0.1", optional = true }
+fern = { version = "0.5.8", features = ["syslog-4"] }
 
 # A safe, extensible ORM and Query builder
-diesel = { version = "1.4.1", features = ["sqlite", "chrono", "r2d2"] }
+diesel = { version = "1.4.2", features = ["sqlite", "chrono", "r2d2"] }
 diesel_migrations = { version = "1.4.0", features = ["sqlite"] }
 
 # Bundled SQLite
 libsqlite3-sys = { version = "0.12.0", features = ["bundled"] }
 
 # Crypto library
-ring = { version = "0.13.5", features = ["rsa_signing"] }
+ring = "0.14.6"
 
 # UUID generation
-uuid = { version = "0.7.2", features = ["v4"] }
+uuid = { version = "0.7.4", features = ["v4"] }
 
 # Date and time library for Rust
 chrono = "0.4.6"
@@ -66,43 +69,44 @@ oath = "0.10.2"
 data-encoding = "2.1.2"
 
 # JWT library
-jsonwebtoken = "5.0.1"
+jsonwebtoken = "6.0.1"
 
 # U2F library
-u2f = "0.1.4"
+u2f = "0.1.6"
 
 # Yubico Library
 yubico = { version = "0.5.1", features = ["online"], default-features = false }
 
 # A `dotenv` implementation for Rust
-dotenv = { version = "0.13.0", default-features = false }
+dotenv = { version = "0.14.1", default-features = false }
 
 # Lazy static macro
-lazy_static = { version = "1.2.0", features = ["nightly"] }
+lazy_static = "1.3.0"
 
 # More derives
 derive_more = "0.14.0"
 
 # Numerical libraries
 num-traits = "0.2.6"
-num-derive = "0.2.4"
+num-derive = "0.2.5"
 
 # Email libraries
-lettre = "0.9.0"
-lettre_email = "0.9.0"
-native-tls = "0.2.2"
+lettre = "0.9.1"
+lettre_email = "0.9.1"
+native-tls = "0.2.3"
+quoted_printable = "0.4.0"
 
 # Template library
 handlebars = "1.1.0"
 
 # For favicon extraction from main website
-soup = "0.3.0"
-regex = "1.1.0"
+soup = "0.4.1"
+regex = "1.1.6"
 
 [patch.crates-io]
 # Add support for Timestamp type
 rmp = { git = 'https://github.com/dani-garcia/msgpack-rust' }
 
-# Use new native_tls version 0.2
-lettre = { git = 'https://github.com/lettre/lettre', rev = 'c988b1760ad81' }
-lettre_email = { git = 'https://github.com/lettre/lettre', rev = 'c988b1760ad81' }
+# Use newest ring
+rocket = { git = 'https://github.com/SergioBenitez/Rocket', rev = 'dbcb0a75b9556763ac3ab708f40c8f8ed75f1a1e' }
+rocket_contrib = { git = 'https://github.com/SergioBenitez/Rocket', rev = 'dbcb0a75b9556763ac3ab708f40c8f8ed75f1a1e' }

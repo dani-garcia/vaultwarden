@@ -6,7 +6,7 @@ use rocket::response::{content::Html, Flash, Redirect};
 use rocket::{Outcome, Route};
 use rocket_contrib::json::Json;
 
-use crate::api::{ApiResult, EmptyResult};
+use crate::api::{ApiResult, EmptyResult, JsonResult};
 use crate::auth::{decode_admin, encode_jwt, generate_admin_claims, ClientIp};
 use crate::config::ConfigBuilder;
 use crate::db::{models::*, DbConn};
@@ -21,11 +21,13 @@ pub fn routes() -> Vec<Route> {
 
     routes![
         admin_login,
+        get_users,
         post_admin_login,
         admin_page,
         invite_user,
         delete_user,
         deauth_user,
+        update_revision_users,
         post_config,
         delete_config,
     ]
@@ -89,7 +91,7 @@ fn post_admin_login(data: Form<LoginForm>, mut cookies: Cookies, ip: ClientIp) -
 fn _validate_token(token: &str) -> bool {
     match CONFIG.admin_token().as_ref() {
         None => false,
-        Some(t) => crate::crypto::ct_eq(t, token),
+        Some(t) => crate::crypto::ct_eq(t.trim(), token.trim()),
     }
 }
 
@@ -143,15 +145,24 @@ fn invite_user(data: Json<InviteData>, _token: AdminToken, conn: DbConn) -> Empt
         err!("Invitations are not allowed")
     }
 
+    let mut user = User::new(email);
+    user.save(&conn)?;
+
     if CONFIG.mail_enabled() {
-        let mut user = User::new(email);
-        user.save(&conn)?;
         let org_name = "bitwarden_rs";
         mail::send_invite(&user.email, &user.uuid, None, None, &org_name, None)
     } else {
         let invitation = Invitation::new(data.email);
         invitation.save(&conn)
     }
+}
+
+#[get("/users")]
+fn get_users(_token: AdminToken, conn: DbConn) -> JsonResult {
+    let users = User::get_all(&conn);
+    let users_json: Vec<Value> = users.iter().map(|u| u.to_json(&conn)).collect();
+
+    Ok(Json(Value::Array(users_json)))
 }
 
 #[post("/users/<uuid>/delete")]
@@ -177,6 +188,11 @@ fn deauth_user(uuid: String, _token: AdminToken, conn: DbConn) -> EmptyResult {
     user.save(&conn)
 }
 
+#[post("/users/update_revision")]
+fn update_revision_users(_token: AdminToken, conn: DbConn) -> EmptyResult {
+    User::update_all_revisions(&conn)
+}
+
 #[post("/config", data = "<data>")]
 fn post_config(data: Json<ConfigBuilder>, _token: AdminToken) -> EmptyResult {
     let data: ConfigBuilder = data.into_inner();
@@ -196,8 +212,7 @@ impl<'a, 'r> FromRequest<'a, 'r> for AdminToken {
     fn from_request(request: &'a Request<'r>) -> request::Outcome<Self, Self::Error> {
         if CONFIG.disable_admin_token() {
             Outcome::Success(AdminToken {})
-        }
-        else {
+        } else {
             let mut cookies = request.cookies();
 
             let access_token = match cookies.get(COOKIE_NAME) {

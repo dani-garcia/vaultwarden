@@ -230,7 +230,7 @@ pub struct WebSocketUsers {
 }
 
 impl WebSocketUsers {
-    fn send_update(&self, user_uuid: &String, data: &[u8]) -> ws::Result<()> {
+    fn send_update(&self, user_uuid: &str, data: &[u8]) -> ws::Result<()> {
         if let Some(user) = self.map.get(user_uuid) {
             for sender in user.iter() {
                 sender.send(data)?;

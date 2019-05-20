@@ -9,7 +9,10 @@ lazy_static! {
         println!("Error loading config:\n\t{:?}\n", e);
         exit(12)
     });
-    pub static ref CONFIG_FILE: String = get_env("CONFIG_FILE").unwrap_or_else(|| "data/config.json".into());
+    pub static ref CONFIG_FILE: String = {
+        let data_folder = get_env("DATA_FOLDER").unwrap_or_else(|| String::from("data"));
+        get_env("CONFIG_FILE").unwrap_or_else(|| format!("{}/config.json", data_folder))
+    };
 }
 
 pub type Pass = String;
@@ -61,7 +64,7 @@ macro_rules! make_config {
 
             /// Merges the values of both builders into a new builder.
             /// If both have the same element, `other` wins.
-            fn merge(&self, other: &Self) -> Self {
+            fn merge(&self, other: &Self, show_overrides: bool) -> Self {
                 let mut overrides = Vec::new();
                 let mut builder = self.clone();
                 $($(
@@ -74,7 +77,7 @@ macro_rules! make_config {
                     }
                 )+)+
 
-                if !overrides.is_empty() {
+                if show_overrides && !overrides.is_empty() {
                     // We can't use warn! here because logging isn't setup yet.
                     println!("[WARNING] The following environment variables are being overriden by the config file,");
                     println!("[WARNING] please use the admin panel to make changes to them:");
@@ -224,24 +227,27 @@ make_config! {
 
     /// General settings
     settings {
-        /// Domain URL |> This needs to be set to the URL used to access the server, including 'http[s]://' and port, if it's different than the default. Some server functions don't work correctly without this value
+        /// Domain URL |> This needs to be set to the URL used to access the server, including 'http[s]://'
+        /// and port, if it's different than the default. Some server functions don't work correctly without this value
         domain:                 String, true,   def,    "http://localhost".to_string();
         /// Domain Set |> Indicates if the domain is set by the admin. Otherwise the default will be used.
         domain_set:             bool,   false,  def,    false;
         /// Enable web vault
         web_vault_enabled:      bool,   false,  def,    true;
 
-        /// Disable icon downloads |> Set to true to disable icon downloading, this would still serve icons from $ICON_CACHE_FOLDER,
-        /// but it won't produce any external network request. Needs to set $ICON_CACHE_TTL to 0,
+        /// Disable icon downloads |> Set to true to disable icon downloading, this would still serve icons from
+        /// $ICON_CACHE_FOLDER, but it won't produce any external network request. Needs to set $ICON_CACHE_TTL to 0,
         /// otherwise it will delete them and they won't be downloaded again.
         disable_icon_download:  bool,   true,   def,    false;
         /// Allow new signups |> Controls if new users can register. Note that while this is disabled, users could still be invited
         signups_allowed:        bool,   true,   def,    true;
         /// Allow invitations |> Controls whether users can be invited by organization admins, even when signups are disabled
         invitations_allowed:    bool,   true,   def,    true;
-        /// Password iterations |> Number of server-side passwords hashing iterations. The changes only apply when a user changes their password. Not recommended to lower the value
+        /// Password iterations |> Number of server-side passwords hashing iterations.
+        /// The changes only apply when a user changes their password. Not recommended to lower the value
         password_iterations:    i32,    true,   def,    100_000;
-        /// Show password hints |> Controls if the password hint should be shown directly in the web page. Otherwise, if email is disabled, there is no way to see the password hint
+        /// Show password hints |> Controls if the password hint should be shown directly in the web page.
+        /// Otherwise, if email is disabled, there is no way to see the password hint
         show_password_hint:     bool,   true,   def,    true;
 
         /// Admin page token |> The token used to authenticate in this very same page. Changing it here won't deauthorize the current session
@@ -255,19 +261,32 @@ make_config! {
         /// Negative icon cache expiry |> Number of seconds before trying to download an icon that failed again.
         icon_cache_negttl:      u64,    true,   def,    259_200;
         /// Icon download timeout |> Number of seconds when to stop attempting to download an icon.
-        icon_download_timeout:  u64,   true,   def,    10;
+        icon_download_timeout:  u64,    true,   def,    10;
+        /// Icon blacklist Regex |> Any domains or IPs that match this regex won't be fetched by the icon service.
+        /// Useful to hide other servers in the local network. Check the WIKI for more details
+        icon_blacklist_regex:   String, true,   option;
 
-        /// Reload templates (Dev) |> When this is set to true, the templates get reloaded with every request. ONLY use this during development, as it can slow down the server
+        /// Disable Two-Factor remember |> Enabling this would force the users to use a second factor to login every time.
+        /// Note that the checkbox would still be present, but ignored.
+        disable_2fa_remember:   bool,   true,   def,    false;
+
+        /// Reload templates (Dev) |> When this is set to true, the templates get reloaded with every request.
+        /// ONLY use this during development, as it can slow down the server
         reload_templates:       bool,   true,   def,    false;
 
         /// Log routes at launch (Dev)
         log_mounts:             bool,   true,   def,    false;
         /// Enable extended logging
         extended_logging:       bool,   false,  def,    true;
+        /// Enable the log to output to Syslog
+        use_syslog:             bool,   false,  def,    false;
         /// Log file path
         log_file:               String, false,  option;
+        /// Log level
+        log_level:              String, false,  def,    "Info".to_string();
 
-        /// Enable DB WAL |> Turning this off might lead to worse performance, but might help if using bitwarden_rs on some exotic filesystems, that do not support WAL. Please make sure you read project wiki on the topic before changing this setting.
+        /// Enable DB WAL |> Turning this off might lead to worse performance, but might help if using bitwarden_rs on some exotic filesystems,
+        /// that do not support WAL. Please make sure you read project wiki on the topic before changing this setting.
         enable_db_wal:          bool,   false,  def,    true;
 
         /// Disable Admin Token (Know the risks!) |> Disables the Admin Token for the admin page so you may use your own auth in-front
@@ -286,6 +305,20 @@ make_config! {
         yubico_server:          String, true,   option;
     },
 
+    /// Global Duo settings (Note that users can override them)
+    duo: _enable_duo {
+        /// Enabled
+        _enable_duo:            bool,   true,   def,     false;
+        /// Integration Key
+        duo_ikey:               String, true,   option;
+        /// Secret Key
+        duo_skey:               Pass,   true,   option;
+        /// Host
+        duo_host:               String, true,   option;
+        /// Application Key (generated automatically)
+        _duo_akey:              Pass,   false,  option;
+    },
+
     /// SMTP Email Settings
     smtp: _enable_smtp {
         /// Enabled
@@ -294,8 +327,10 @@ make_config! {
         smtp_host:              String, true,   option;
         /// Enable SSL
         smtp_ssl:               bool,   true,   def,     true;
+        /// Use explicit TLS |> Enabling this would force the use of an explicit TLS connection, instead of upgrading an insecure one with STARTTLS
+        smtp_explicit_tls:      bool,   true,   def,     false;
         /// Port
-        smtp_port:              u16,    true,   auto,    |c| if c.smtp_ssl {587} else {25};
+        smtp_port:              u16,    true,   auto,    |c| if c.smtp_explicit_tls {465} else if c.smtp_ssl {587} else {25};
         /// From Address
         smtp_from:              String, true,   def,     String::new();
         /// From Name
@@ -308,6 +343,18 @@ make_config! {
 }
 
 fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
+    if let Some(ref token) = cfg.admin_token {
+        if token.trim().is_empty() {
+            err!("`ADMIN_TOKEN` is enabled but has an empty value. To enable the admin page without token, use `DISABLE_ADMIN_TOKEN`")
+        }
+    }
+
+    if (cfg.duo_host.is_some() || cfg.duo_ikey.is_some() || cfg.duo_skey.is_some())
+        && !(cfg.duo_host.is_some() && cfg.duo_ikey.is_some() && cfg.duo_skey.is_some())
+    {
+        err!("All Duo options need to be set for global Duo support")
+    }
+
     if cfg.yubico_client_id.is_some() != cfg.yubico_secret_key.is_some() {
         err!("Both `YUBICO_CLIENT_ID` and `YUBICO_SECRET_KEY` need to be set for Yubikey OTP support")
     }
@@ -330,7 +377,7 @@ impl Config {
         let _usr = ConfigBuilder::from_file(&CONFIG_FILE).unwrap_or_default();
 
         // Create merged config, config file overwrites env
-        let builder = _env.merge(&_usr);
+        let builder = _env.merge(&_usr, true);
 
         // Fill any missing with defaults
         let config = builder.build();
@@ -359,7 +406,7 @@ impl Config {
         // Prepare the combined config
         let config = {
             let env = &self.inner.read().unwrap()._env;
-            env.merge(&builder).build()
+            env.merge(&builder, false).build()
         };
         validate_config(&config)?;
 
@@ -376,6 +423,14 @@ impl Config {
         file.write_all(config_str.as_bytes())?;
 
         Ok(())
+    }
+
+    pub fn update_config_partial(&self, other: ConfigBuilder) -> Result<(), Error> {
+        let builder = {
+            let usr = &self.inner.read().unwrap()._usr;
+            usr.merge(&other, false)
+        };
+        self.update_config(builder)
     }
 
     pub fn delete_user_config(&self) -> Result<(), Error> {
@@ -413,9 +468,21 @@ impl Config {
         let inner = &self.inner.read().unwrap().config;
         inner._enable_smtp && inner.smtp_host.is_some()
     }
-    pub fn yubico_enabled(&self) -> bool {
-        let inner = &self.inner.read().unwrap().config;
-        inner._enable_yubico && inner.yubico_client_id.is_some() && inner.yubico_secret_key.is_some()
+
+    pub fn get_duo_akey(&self) -> String {
+        if let Some(akey) = self._duo_akey() {
+            akey
+        } else {
+            let akey = crate::crypto::get_random_64();
+            let akey_s = data_encoding::BASE64.encode(&akey);
+
+            // Save the new value
+            let mut builder = ConfigBuilder::default();
+            builder._duo_akey = Some(akey_s.clone());
+            self.update_config_partial(builder).ok();
+
+            akey_s
+        }
     }
 
     pub fn render_template<T: serde::ser::Serialize>(
