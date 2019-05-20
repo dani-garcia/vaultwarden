@@ -9,6 +9,11 @@ steps:
   displayName: 'Install Rust'
 
 - script: |
+    apt-get update
+    apt-get install -y libmysql++-dev
+  displayName: Install libmysql
+
+- script: |
     rustc -Vv
     cargo -V
   displayName: Query rust and cargo versions
