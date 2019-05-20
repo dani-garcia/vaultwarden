@@ -201,7 +201,7 @@ make_config! {
         data_folder:            String, false,  def,    "data".to_string();
 
         /// Database URL
-        database_url:           String, false,  auto,   |c| format!("{}/{}", c.data_folder, "db.sqlite3");
+        database_url:           String, false,  auto,   |c| format!("mysql://root:my-secret-pw@localhost:3306/");
         /// Icon chache folder
         icon_cache_folder:      String, false,  auto,   |c| format!("{}/{}", c.data_folder, "icon_cache");
         /// Attachments folder
