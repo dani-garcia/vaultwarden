@@ -29,6 +29,12 @@ FROM rust as build
 #    --no-install-recommends\
 # && rm -rf /var/lib/apt/lists/*
 
+# Install MySQL package
+RUN apt-get update && apt-get install -y \
+    libmysql++-dev \
+    --no-install-recommends \
+ && rm -rf /var/lib/apt/lists/*
+
 # Creates a dummy project used to grab dependencies
 RUN USER=root cargo new --bin app
 WORKDIR /app
