@@ -21,7 +21,7 @@ pub struct UserOrganization {
     pub org_uuid: String,
 
     pub access_all: bool,
-    pub key: String,
+    pub akey: String,
     pub status: i32,
     pub atype: i32,
 }
@@ -196,7 +196,7 @@ impl UserOrganization {
             org_uuid,
 
             access_all: false,
-            key: String::new(),
+            akey: String::new(),
             status: UserOrgStatus::Accepted as i32,
             atype: UserOrgType::User as i32,
         }
@@ -266,7 +266,7 @@ impl UserOrganization {
             "MaxStorageGb": 10, // The value doesn't matter, we don't check server-side
 
             // These are per user
-            "Key": self.key,
+            "Key": self.akey,
             "Status": self.status,
             "Type": self.atype,
             "Enabled": true,

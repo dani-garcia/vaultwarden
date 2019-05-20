@@ -286,7 +286,7 @@ impl<'a, 'r> FromRequest<'a, 'r> for OrgHeaders {
                             device: headers.device,
                             user,
                             org_user_type: {
-                                if let Some(org_usr_type) = UserOrgType::from_i32(org_user.type_) {
+                                if let Some(org_usr_type) = UserOrgType::from_i32(org_user.atype) {
                                     org_usr_type
                                 } else {
                                     // This should only happen if the DB is corrupted

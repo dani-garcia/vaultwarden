@@ -267,7 +267,7 @@ pub fn update_cipher_from_data(
                 err!("Attachment is not owned by the cipher")
             }
 
-            saved_att.key = Some(attachment.Key);
+            saved_att.akey = Some(attachment.Key);
             saved_att.file_name = attachment.FileName;
 
             saved_att.save(&conn)?;
@@ -691,7 +691,7 @@ fn post_attachment(
                     };
 
                     let mut attachment = Attachment::new(file_name, cipher.uuid.clone(), name, size);
-                    attachment.key = attachment_key.clone();
+                    attachment.akey = attachment_key.clone();
                     attachment.save(&conn).expect("Error saving attachment");
                 }
                 _ => error!("Invalid multipart name"),
@@ -899,7 +899,7 @@ fn delete_all(
             match UserOrganization::find_by_user_and_org(&user.uuid, &org_data.org_id, &conn) {
                 None => err!("You don't have permission to purge the organization vault"),
                 Some(user_org) => {
-                    if user_org.type_ == UserOrgType::Owner {
+                    if user_org.atype == UserOrgType::Owner {
                         Cipher::delete_all_by_organization(&org_data.org_id, &conn)?;
                         Collection::delete_all_by_organization(&org_data.org_id, &conn)?;
                         nt.send_user_update(UpdateType::Vault, &user);

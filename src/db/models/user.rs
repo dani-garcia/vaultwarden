@@ -163,7 +163,7 @@ impl User {
 
     pub fn delete(self, conn: &DbConn) -> EmptyResult {
         for user_org in UserOrganization::find_by_user(&self.uuid, &*conn) {
-            if user_org.type_ == UserOrgType::Owner {
+            if user_org.atype == UserOrgType::Owner {
                 let owner_type = UserOrgType::Owner as i32;
                 if UserOrganization::find_by_org_and_type(&user_org.org_uuid, owner_type, &conn).len() <= 1 {
                     err!("Can't delete last owner")

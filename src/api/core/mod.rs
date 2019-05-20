@@ -63,7 +63,7 @@ fn put_device_token(uuid: String, data: JsonUpcase<Value>, headers: Headers) -> 
     Ok(Json(json!({
         "Id": headers.device.uuid,
         "Name": headers.device.name,
-        "Type": headers.device.type_,
+        "Type": headers.device.atype,
         "Identifier": headers.device.uuid,
         "CreationDate": crate::util::format_date(&headers.device.created_at),
     })))

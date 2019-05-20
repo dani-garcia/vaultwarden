@@ -68,7 +68,7 @@ fn _refresh_login(data: ConnectData, conn: DbConn) -> JsonResult {
         "expires_in": expires_in,
         "token_type": "Bearer",
         "refresh_token": device.refresh_token,
-        "Key": user.key,
+        "Key": user.akey,
         "PrivateKey": user.private_key,
     })))
 }
@@ -132,7 +132,7 @@ fn _password_login(data: ConnectData, conn: DbConn, ip: ClientIp) -> JsonResult 
         "expires_in": expires_in,
         "token_type": "Bearer",
         "refresh_token": device.refresh_token,
-        "Key": user.key,
+        "Key": user.akey,
         "PrivateKey": user.private_key,
         //"TwoFactorToken": "11122233333444555666777888999"
     });
@@ -158,7 +158,7 @@ fn twofactor_auth(
         return Ok(None);
     }
 
-    let twofactor_ids: Vec<_> = twofactors.iter().map(|tf| tf.type_).collect();
+    let twofactor_ids: Vec<_> = twofactors.iter().map(|tf| tf.atype).collect();
     let selected_id = data.two_factor_provider.unwrap_or(twofactor_ids[0]); // If we aren't given a two factor provider, asume the first one
 
     let twofactor_code = match data.two_factor_token {
@@ -166,7 +166,7 @@ fn twofactor_auth(
         None => err_json!(_json_err_twofactor(&twofactor_ids, user_uuid, conn)?),
     };
 
-    let selected_twofactor = twofactors.into_iter().filter(|tf| tf.type_ == selected_id).nth(0);
+    let selected_twofactor = twofactors.into_iter().filter(|tf| tf.atype == selected_id).nth(0);
 
     use crate::api::core::two_factor as _tf;
     use crate::crypto::ct_eq;
