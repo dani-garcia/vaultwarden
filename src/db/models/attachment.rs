@@ -12,7 +12,7 @@ pub struct Attachment {
     pub cipher_uuid: String,
     pub file_name: String,
     pub file_size: i32,
-    pub key: Option<String>,
+    pub akey: Option<String>,
 }
 
 /// Local methods
@@ -23,7 +23,7 @@ impl Attachment {
             cipher_uuid,
             file_name,
             file_size,
-            key: None,
+            akey: None,
         }
     }
 
@@ -43,7 +43,7 @@ impl Attachment {
             "FileName": self.file_name,
             "Size": self.file_size.to_string(),
             "SizeName": display_size,
-            "Key": self.key,
+            "Key": self.akey,
             "Object": "attachment"
         })
     }

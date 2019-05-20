@@ -47,11 +47,8 @@ log = "0.4.6"
 fern = { version = "0.5.8", features = ["syslog-4"] }
 
 # A safe, extensible ORM and Query builder
-diesel = { version = "1.4.2", features = ["sqlite", "chrono", "r2d2"] }
-diesel_migrations = { version = "1.4.0", features = ["sqlite"] }
-
-# Bundled SQLite
-libsqlite3-sys = { version = "0.12.0", features = ["bundled"] }
+diesel = { version = "1.4.2", features = ["mysql", "chrono", "r2d2"] }
+diesel_migrations = { version = "1.4.0", features = ["mysql"] }
 
 # Crypto library
 ring = "0.14.6"

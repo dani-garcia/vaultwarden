@@ -9,7 +9,7 @@ use super::User;
 pub struct TwoFactor {
     pub uuid: String,
     pub user_uuid: String,
-    pub type_: i32,
+    pub atype: i32,
     pub enabled: bool,
     pub data: String,
 }
@@ -32,11 +32,11 @@ pub enum TwoFactorType {
 
 /// Local methods
 impl TwoFactor {
-    pub fn new(user_uuid: String, type_: TwoFactorType, data: String) -> Self {
+    pub fn new(user_uuid: String, atype: TwoFactorType, data: String) -> Self {
         Self {
             uuid: crate::util::get_uuid(),
             user_uuid,
-            type_: type_ as i32,
+            atype: atype as i32,
             enabled: true,
             data,
         }
@@ -53,7 +53,7 @@ impl TwoFactor {
     pub fn to_json_list(&self) -> Value {
         json!({
             "Enabled": self.enabled,
-            "Type": self.type_,
+            "Type": self.atype,
             "Object": "twoFactorProvider"
         })
     }
@@ -85,15 +85,15 @@ impl TwoFactor {
     pub fn find_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
         twofactor::table
             .filter(twofactor::user_uuid.eq(user_uuid))
-            .filter(twofactor::type_.lt(1000)) // Filter implementation types
+            .filter(twofactor::atype.lt(1000)) // Filter implementation types
             .load::<Self>(&**conn)
             .expect("Error loading twofactor")
     }
 
-    pub fn find_by_user_and_type(user_uuid: &str, type_: i32, conn: &DbConn) -> Option<Self> {
+    pub fn find_by_user_and_type(user_uuid: &str, atype: i32, conn: &DbConn) -> Option<Self> {
         twofactor::table
             .filter(twofactor::user_uuid.eq(user_uuid))
-            .filter(twofactor::type_.eq(type_))
+            .filter(twofactor::atype.eq(atype))
             .first::<Self>(&**conn)
             .ok()
     }

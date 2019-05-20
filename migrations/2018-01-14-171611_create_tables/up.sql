@@ -1,14 +1,14 @@
 CREATE TABLE users (
-  uuid                TEXT     NOT NULL PRIMARY KEY,
+  uuid                VARCHAR(40) NOT NULL PRIMARY KEY,
   created_at          DATETIME NOT NULL,
   updated_at          DATETIME NOT NULL,
-  email               TEXT     NOT NULL UNIQUE,
+  email               VARCHAR(255) NOT NULL UNIQUE,
   name                TEXT     NOT NULL,
   password_hash       BLOB     NOT NULL,
   salt                BLOB     NOT NULL,
   password_iterations INTEGER  NOT NULL,
   password_hint       TEXT,
-  key                 TEXT     NOT NULL,
+  akey                TEXT     NOT NULL,
   private_key         TEXT,
   public_key          TEXT,
   totp_secret         TEXT,
@@ -19,24 +19,24 @@ CREATE TABLE users (
 );
 
 CREATE TABLE devices (
-  uuid          TEXT     NOT NULL PRIMARY KEY,
+  uuid          VARCHAR(40) NOT NULL PRIMARY KEY,
   created_at    DATETIME NOT NULL,
   updated_at    DATETIME NOT NULL,
-  user_uuid     TEXT     NOT NULL REFERENCES users (uuid),
+  user_uuid     VARCHAR(40) NOT NULL REFERENCES users (uuid),
   name          TEXT     NOT NULL,
-  type          INTEGER  NOT NULL,
+  atype         INTEGER  NOT NULL,
   push_token    TEXT,
   refresh_token TEXT     NOT NULL
 );
 
 CREATE TABLE ciphers (
-  uuid              TEXT     NOT NULL PRIMARY KEY,
+  uuid              VARCHAR(40) NOT NULL PRIMARY KEY,
   created_at        DATETIME NOT NULL,
   updated_at        DATETIME NOT NULL,
-  user_uuid         TEXT     NOT NULL REFERENCES users (uuid),
-  folder_uuid       TEXT REFERENCES folders (uuid),
-  organization_uuid TEXT,
-  type              INTEGER  NOT NULL,
+  user_uuid         VARCHAR(40) NOT NULL REFERENCES users (uuid),
+  folder_uuid       VARCHAR(40) REFERENCES folders (uuid),
+  organization_uuid VARCHAR(40),
+  atype             INTEGER  NOT NULL,
   name              TEXT     NOT NULL,
   notes             TEXT,
   fields            TEXT,
@@ -45,18 +45,18 @@ CREATE TABLE ciphers (
 );
 
 CREATE TABLE attachments (
-  id          TEXT    NOT NULL PRIMARY KEY,
-  cipher_uuid TEXT    NOT NULL REFERENCES ciphers (uuid),
+  id          VARCHAR(40) NOT NULL PRIMARY KEY,
+  cipher_uuid VARCHAR(40) NOT NULL REFERENCES ciphers (uuid),
   file_name   TEXT    NOT NULL,
   file_size   INTEGER NOT NULL
 
 );
 
 CREATE TABLE folders (
-  uuid       TEXT     NOT NULL PRIMARY KEY,
+  uuid       VARCHAR(40) NOT NULL PRIMARY KEY,
   created_at DATETIME NOT NULL,
   updated_at DATETIME NOT NULL,
-  user_uuid  TEXT     NOT NULL REFERENCES users (uuid),
+  user_uuid  VARCHAR(40) NOT NULL REFERENCES users (uuid),
   name       TEXT     NOT NULL
 );
   

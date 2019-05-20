@@ -123,7 +123,8 @@ fn chain_syslog(logger: fern::Dispatch) -> fern::Dispatch {
 
 fn check_db() {
     let url = CONFIG.database_url();
-    println!(url.to_string());
+    println!("{}", url.to_string());
+    db::get_connection().expect("Can't conect to DB");
 }
 
 fn check_rsa_keys() {

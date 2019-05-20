@@ -146,7 +146,7 @@ impl Collection {
         .filter(
             users_collections::collection_uuid.eq(uuid).or( // Directly accessed collection
                 users_organizations::access_all.eq(true).or( // access_all in Organization
-                    users_organizations::type_.le(UserOrgType::Admin as i32) // Org admin or owner
+                    users_organizations::atype.le(UserOrgType::Admin as i32) // Org admin or owner
                 )
             )
         ).select(collections::all_columns)

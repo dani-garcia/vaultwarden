@@ -1,3 +1,3 @@
 ALTER TABLE attachments
     ADD COLUMN
-    key TEXT;
+    akey TEXT;

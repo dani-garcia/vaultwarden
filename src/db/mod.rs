@@ -2,7 +2,7 @@ use std::ops::Deref;
 
 use diesel::r2d2;
 use diesel::r2d2::ConnectionManager;
-use diesel::sqlite::MysqlConnection;
+use diesel::mysql::MysqlConnection;
 use diesel::{Connection as DieselConnection, ConnectionError};
 
 use rocket::http::Status;
@@ -31,7 +31,9 @@ pub fn init_pool() -> Pool {
 }
 
 pub fn get_connection() -> Result<Connection, ConnectionError> {
-    Connection::establish(&CONFIG.database_url())
+    let url = CONFIG.database_url();
+    println!("{}", url.to_string());
+    Connection::establish(&url)
 }
 
 /// Attempts to retrieve a single connection from the managed database pool. If
