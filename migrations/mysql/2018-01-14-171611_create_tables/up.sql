@@ -8,7 +8,7 @@ CREATE TABLE users (
   salt                BLOB     NOT NULL,
   password_iterations INTEGER  NOT NULL,
   password_hint       TEXT,
-  akey                TEXT     NOT NULL,
+  `key`               TEXT     NOT NULL,
   private_key         TEXT,
   public_key          TEXT,
   totp_secret         TEXT,
@@ -24,7 +24,7 @@ CREATE TABLE devices (
   updated_at    DATETIME NOT NULL,
   user_uuid     VARCHAR(40) NOT NULL REFERENCES users (uuid),
   name          TEXT     NOT NULL,
-  atype         INTEGER  NOT NULL,
+  type          INTEGER  NOT NULL,
   push_token    TEXT,
   refresh_token TEXT     NOT NULL
 );
@@ -36,7 +36,7 @@ CREATE TABLE ciphers (
   user_uuid         VARCHAR(40) NOT NULL REFERENCES users (uuid),
   folder_uuid       VARCHAR(40) REFERENCES folders (uuid),
   organization_uuid VARCHAR(40),
-  atype             INTEGER  NOT NULL,
+  type              INTEGER  NOT NULL,
   name              TEXT     NOT NULL,
   notes             TEXT,
   fields            TEXT,

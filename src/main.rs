@@ -191,7 +191,11 @@ fn check_web_vault() {
 // https://docs.rs/diesel_migrations/*/diesel_migrations/macro.embed_migrations.html
 #[allow(unused_imports)]
 mod migrations {
-    embed_migrations!();
+    
+    #[cfg(feature = "sqlite")]
+    embed_migrations!("migrations/sqlite");
+    #[cfg(feature = "mysql")]
+    embed_migrations!("migrations/mysql");
 
     pub fn run_migrations() {
         // Make sure the database is up to date (create if it doesn't exist, or run the migrations)

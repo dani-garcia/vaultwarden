@@ -13,6 +13,8 @@ build = "build.rs"
 [features]
 # Empty to keep compatibility, prefer to set USE_SYSLOG=true
 enable_syslog = []
+mysql = []
+sqlite = []
 
 [target."cfg(not(windows))".dependencies]
 syslog = "4.0.1"
@@ -47,8 +49,11 @@ log = "0.4.6"
 fern = { version = "0.5.8", features = ["syslog-4"] }
 
 # A safe, extensible ORM and Query builder
-diesel = { version = "1.4.2", features = ["mysql", "chrono", "r2d2"] }
-diesel_migrations = { version = "1.4.0", features = ["mysql"] }
+diesel = { version = "1.4.2", features = ["mysql", "sqlite", "chrono", "r2d2"] }
+diesel_migrations = { version = "1.4.0", features = ["mysql", "sqlite"] }
+
+# Bundled SQLite                                           
+libsqlite3-sys = { version = "0.12.0", features = ["bundled"] }
 
 # Crypto library
 ring = "0.14.6"

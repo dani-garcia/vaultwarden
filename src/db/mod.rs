@@ -2,6 +2,9 @@ use std::ops::Deref;
 
 use diesel::r2d2;
 use diesel::r2d2::ConnectionManager;
+#[cfg(feature = "sqlite")]
+use diesel::sqlite::SqliteConnection;
+#[cfg(feature = "mysql")]
 use diesel::mysql::MysqlConnection;
 use diesel::{Connection as DieselConnection, ConnectionError};
 
@@ -12,6 +15,9 @@ use rocket::{Outcome, Request, State};
 use crate::CONFIG;
 
 /// An alias to the database connection used
+#[cfg(feature = "sqlite")]
+type Connection = SqliteConnection;
+#[cfg(feature = "mysql")]
 type Connection = MysqlConnection;
 
 /// An alias to the type for a pool of Diesel MySQL connections.
@@ -21,7 +27,13 @@ type Pool = r2d2::Pool<ConnectionManager<Connection>>;
 pub struct DbConn(pub r2d2::PooledConnection<ConnectionManager<Connection>>);
 
 pub mod models;
+#[cfg(feature = "sqlite")]
+#[path = "schemas/sqlite/schema.rs"]
 pub mod schema;
+#[cfg(feature = "mysql")]
+#[path = "schemas/mysql/schema.rs"]
+pub mod schema;
+
 
 /// Initializes a database pool.
 pub fn init_pool() -> Pool {

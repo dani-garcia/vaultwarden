@@ -22,9 +22,9 @@ CREATE TABLE users_organizations (
   org_uuid   VARCHAR(40) NOT NULL REFERENCES organizations (uuid),
 
   access_all BOOLEAN NOT NULL,
-  akey       TEXT    NOT NULL,
+  `key`      TEXT    NOT NULL,
   status     INTEGER NOT NULL,
-  atype      INTEGER NOT NULL,
+  type       INTEGER NOT NULL,
 
   UNIQUE (user_uuid, org_uuid)
 );

@@ -1,0 +1,7 @@
+ALTER TABLE users
+    ADD COLUMN
+    client_kdf_type INTEGER NOT NULL DEFAULT 0; -- PBKDF2
+
+ALTER TABLE users
+    ADD COLUMN
+    client_kdf_iter INTEGER NOT NULL DEFAULT 5000;

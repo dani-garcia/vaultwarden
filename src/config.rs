@@ -204,8 +204,8 @@ make_config! {
         data_folder:            String, false,  def,    "data".to_string();
 
         /// Database URL
-        /// docker run -e MYSQL_ROOT_PASSWORD=my-secret-pw -e MYSQL_DATABASE=bitwarden -p 3306:3306 -d mysql:5.7
-        database_url:           String, false,  auto,   |_c| format!("mysql://root:my-secret-pw@0.0.0.0:3306/bitwarden");
+        /// Database URL
+        database_url:           String, false,  auto,   |c| format!("{}/{}", c.data_folder, "db.sqlite3");
         /// Icon chache folder
         icon_cache_folder:      String, false,  auto,   |c| format!("{}/{}", c.data_folder, "icon_cache");
         /// Attachments folder
