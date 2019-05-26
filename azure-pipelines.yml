@@ -10,7 +10,7 @@ steps:
 
 - script: |
     sudo apt-get update
-    sudo apt-get install -y libmysql++-dev
+    sudo apt-get install -y libmariadb-dev
   displayName: Install libmysql
 
 - script: |
@@ -18,5 +18,8 @@ steps:
     cargo -V
   displayName: Query rust and cargo versions
 
-- script : cargo build --all-features
-  displayName: 'Build project'
+- script : cargo build --features sqlite enable_syslog
+  displayName: 'Build project with sqlite backend'
+
+- script : cargo build --features mysql enable_syslog
+  displayName: 'Build project with mysql backend'
