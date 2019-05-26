@@ -18,8 +18,8 @@ steps:
     cargo -V
   displayName: Query rust and cargo versions
 
-- script : cargo build --features sqlite enable_syslog
+- script : cargo build --features "sqlite enable_syslog"
   displayName: 'Build project with sqlite backend'
 
-- script : cargo build --features mysql enable_syslog
+- script : cargo build --features "mysql enable_syslog"
   displayName: 'Build project with mysql backend'
