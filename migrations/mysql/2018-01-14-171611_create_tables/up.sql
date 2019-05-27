@@ -1,5 +1,5 @@
 CREATE TABLE users (
-  uuid                VARCHAR(40) NOT NULL PRIMARY KEY,
+  uuid                CHAR(36) NOT NULL PRIMARY KEY,
   created_at          DATETIME NOT NULL,
   updated_at          DATETIME NOT NULL,
   email               VARCHAR(255) NOT NULL UNIQUE,
@@ -19,10 +19,10 @@ CREATE TABLE users (
 );
 
 CREATE TABLE devices (
-  uuid          VARCHAR(40) NOT NULL PRIMARY KEY,
+  uuid          CHAR(36) NOT NULL PRIMARY KEY,
   created_at    DATETIME NOT NULL,
   updated_at    DATETIME NOT NULL,
-  user_uuid     VARCHAR(40) NOT NULL REFERENCES users (uuid),
+  user_uuid     CHAR(36) NOT NULL REFERENCES users (uuid),
   name          TEXT     NOT NULL,
   type          INTEGER  NOT NULL,
   push_token    TEXT,
@@ -30,12 +30,12 @@ CREATE TABLE devices (
 );
 
 CREATE TABLE ciphers (
-  uuid              VARCHAR(40) NOT NULL PRIMARY KEY,
+  uuid              CHAR(36) NOT NULL PRIMARY KEY,
   created_at        DATETIME NOT NULL,
   updated_at        DATETIME NOT NULL,
-  user_uuid         VARCHAR(40) NOT NULL REFERENCES users (uuid),
-  folder_uuid       VARCHAR(40) REFERENCES folders (uuid),
-  organization_uuid VARCHAR(40),
+  user_uuid         CHAR(36) NOT NULL REFERENCES users (uuid),
+  folder_uuid       CHAR(36) REFERENCES folders (uuid),
+  organization_uuid CHAR(36),
   type              INTEGER  NOT NULL,
   name              TEXT     NOT NULL,
   notes             TEXT,
@@ -45,18 +45,18 @@ CREATE TABLE ciphers (
 );
 
 CREATE TABLE attachments (
-  id          VARCHAR(40) NOT NULL PRIMARY KEY,
-  cipher_uuid VARCHAR(40) NOT NULL REFERENCES ciphers (uuid),
+  id          CHAR(36) NOT NULL PRIMARY KEY,
+  cipher_uuid CHAR(36) NOT NULL REFERENCES ciphers (uuid),
   file_name   TEXT    NOT NULL,
   file_size   INTEGER NOT NULL
 
 );
 
 CREATE TABLE folders (
-  uuid       VARCHAR(40) NOT NULL PRIMARY KEY,
+  uuid       CHAR(36) NOT NULL PRIMARY KEY,
   created_at DATETIME NOT NULL,
   updated_at DATETIME NOT NULL,
-  user_uuid  VARCHAR(40) NOT NULL REFERENCES users (uuid),
+  user_uuid  CHAR(36) NOT NULL REFERENCES users (uuid),
   name       TEXT     NOT NULL
 );
   

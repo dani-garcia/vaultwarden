@@ -1,6 +1,6 @@
 CREATE TABLE twofactor (
-  uuid      VARCHAR(40) NOT NULL PRIMARY KEY,
-  user_uuid VARCHAR(40) NOT NULL REFERENCES users (uuid),
+  uuid      CHAR(36) NOT NULL PRIMARY KEY,
+  user_uuid CHAR(36) NOT NULL REFERENCES users (uuid),
   type      INTEGER  NOT NULL,
   enabled   BOOLEAN  NOT NULL,
   data      TEXT     NOT NULL,

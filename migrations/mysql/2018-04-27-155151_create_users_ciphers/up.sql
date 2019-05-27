@@ -1,11 +1,11 @@
 ALTER TABLE ciphers RENAME TO oldCiphers;
 
 CREATE TABLE ciphers (
-  uuid              VARCHAR(40) NOT NULL PRIMARY KEY,
+  uuid              CHAR(36) NOT NULL PRIMARY KEY,
   created_at        DATETIME NOT NULL,
   updated_at        DATETIME NOT NULL,
-  user_uuid         VARCHAR(40) REFERENCES users (uuid), -- Make this optional
-  organization_uuid VARCHAR(40) REFERENCES organizations (uuid), -- Add reference to orgs table
+  user_uuid         CHAR(36) REFERENCES users (uuid), -- Make this optional
+  organization_uuid CHAR(36) REFERENCES organizations (uuid), -- Add reference to orgs table
   -- Remove folder_uuid
   type              INTEGER  NOT NULL,
   name              TEXT     NOT NULL,
@@ -16,8 +16,8 @@ CREATE TABLE ciphers (
 );
 
 CREATE TABLE folders_ciphers (
-  cipher_uuid VARCHAR(40) NOT NULL REFERENCES ciphers (uuid),
-  folder_uuid VARCHAR(40) NOT NULL REFERENCES folders (uuid),
+  cipher_uuid CHAR(36) NOT NULL REFERENCES ciphers (uuid),
+  folder_uuid CHAR(36) NOT NULL REFERENCES folders (uuid),
 
   PRIMARY KEY (cipher_uuid, folder_uuid)
 );

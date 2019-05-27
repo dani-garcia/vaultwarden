@@ -1,8 +1,8 @@
 ALTER TABLE attachments RENAME TO oldAttachments;
 
 CREATE TABLE attachments (
-  id          VARCHAR(40) NOT NULL PRIMARY KEY,
-  cipher_uuid VARCHAR(40) NOT NULL REFERENCES ciphers (uuid),
+  id          CHAR(36) NOT NULL PRIMARY KEY,
+  cipher_uuid CHAR(36) NOT NULL REFERENCES ciphers (uuid),
   file_name   TEXT    NOT NULL,
   file_size   INTEGER NOT NULL
 
