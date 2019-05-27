@@ -13,8 +13,8 @@ build = "build.rs"
 [features]
 # Empty to keep compatibility, prefer to set USE_SYSLOG=true
 enable_syslog = []
-mysql = []
-sqlite = []
+mysql = ["diesel/mysql", "diesel_migrations/mysql"]
+sqlite = ["diesel/sqlite", "diesel_migrations/sqlite"]
 
 [target."cfg(not(windows))".dependencies]
 syslog = "4.0.1"

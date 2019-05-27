@@ -2,10 +2,6 @@ use std::ops::Deref;
 
 use diesel::r2d2;
 use diesel::r2d2::ConnectionManager;
-#[cfg(feature = "sqlite")]
-use diesel::sqlite::SqliteConnection;
-#[cfg(feature = "mysql")]
-use diesel::mysql::MysqlConnection;
 use diesel::{Connection as DieselConnection, ConnectionError};
 
 use rocket::http::Status;
@@ -16,11 +12,11 @@ use crate::CONFIG;
 
 /// An alias to the database connection used
 #[cfg(feature = "sqlite")]
-type Connection = SqliteConnection;
+type Connection = diesel::sqlite::SqliteConnection;
 #[cfg(feature = "mysql")]
-type Connection = MysqlConnection;
+type Connection = diesel::mysql::MysqlConnection;
 
-/// An alias to the type for a pool of Diesel MySQL connections.
+/// An alias to the type for a pool of Diesel connections.
 type Pool = r2d2::Pool<ConnectionManager<Connection>>;
 
 /// Connection request guard type: a wrapper around an r2d2 pooled connection.

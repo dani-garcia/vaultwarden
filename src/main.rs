@@ -45,6 +45,9 @@ fn main() {
         init_logging().ok();
     }
 
+    #[cfg(all(feature = "sqlite", feature = "mysql"))]
+    compile_error!("Can't enable both backends");
+
     check_db();
     check_rsa_keys();
     check_web_vault();
@@ -123,6 +126,26 @@ fn chain_syslog(logger: fern::Dispatch) -> fern::Dispatch {
 
 fn check_db() {
     let url = CONFIG.database_url();
+    if cfg!(feature = "sqlite") {
+        let path = Path::new(&url);
+
+        if let Some(parent) = path.parent() {
+            use std::fs;
+            if fs::create_dir_all(parent).is_err() {
+                error!("Error creating database directory");
+                exit(1);
+            }
+        }
+
+        // Turn on WAL in SQLite
+        if CONFIG.enable_db_wal() {
+            use diesel::RunQueryDsl;
+            let connection = db::get_connection().expect("Can't conect to DB");
+            diesel::sql_query("PRAGMA journal_mode=wal")
+                .execute(&connection)
+                .expect("Failed to turn on WAL");
+        }
+    }
     println!("{}", url.to_string());
     db::get_connection().expect("Can't conect to DB");
 }
