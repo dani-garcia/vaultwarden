@@ -147,7 +147,7 @@ fn check_db() {
         }
     }
     println!("{}", url.to_string());
-    db::get_connection().expect("Can't conect to DB");
+    db::get_connection().expect("Can't connect to DB");
 }
 
 fn check_rsa_keys() {
