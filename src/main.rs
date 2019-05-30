@@ -48,6 +48,9 @@ fn main() {
     #[cfg(all(feature = "sqlite", feature = "mysql"))]
     compile_error!("Can't enable both backends");
 
+    #[cfg(not(any(feature = "sqlite", feature = "mysql")))]
+    compile_error!("You need to enable one DB backend. To build with previous defaults do: cargo build --features sqlite");
+
     check_db();
     check_rsa_keys();
     check_web_vault();
