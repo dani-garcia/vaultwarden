@@ -7,5 +7,5 @@ cache: cargo
 # Nothing to install
 install: true
 script:
-- cargo build --features "sqlite enable_syslog"
-- cargo build --features "mysql enable_syslog"
+- cargo build --features "sqlite"
+- cargo build --features "mysql"

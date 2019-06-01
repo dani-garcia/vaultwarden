@@ -40,8 +40,8 @@ rmpv = "0.4.0"
 chashmap = "2.2.2"
 
 # A generic serialization/deserialization framework
-serde = "1.0.91"
-serde_derive = "1.0.91"
+serde = "1.0.92"
+serde_derive = "1.0.92"
 serde_json = "1.0.39"
 
 # Logging
@@ -50,7 +50,7 @@ fern = { version = "0.5.8", features = ["syslog-4"] }
 
 # A safe, extensible ORM and Query builder
 diesel = { version = "1.4.2", features = [ "chrono", "r2d2"] }
-diesel_migrations = { version = "1.4.0" }
+diesel_migrations = "1.4.0"
 
 # Bundled SQLite                                           
 libsqlite3-sys = { version = "0.12.0", features = ["bundled"], optional = true }
@@ -86,17 +86,17 @@ dotenv = { version = "0.14.1", default-features = false }
 lazy_static = "1.3.0"
 
 # More derives
-derive_more = "0.14.0"
+derive_more = "0.14.1"
 
 # Numerical libraries
-num-traits = "0.2.6"
+num-traits = "0.2.8"
 num-derive = "0.2.5"
 
 # Email libraries
 lettre = "0.9.1"
 lettre_email = "0.9.1"
 native-tls = "0.2.3"
-quoted_printable = "0.4.0"
+quoted_printable = "0.4.1"
 
 # Template library
 handlebars = "1.1.0"
@@ -112,3 +112,7 @@ rmp = { git = 'https://github.com/dani-garcia/msgpack-rust' }
 # Use newest ring
 rocket = { git = 'https://github.com/SergioBenitez/Rocket', rev = 'dbcb0a75b9556763ac3ab708f40c8f8ed75f1a1e' }
 rocket_contrib = { git = 'https://github.com/SergioBenitez/Rocket', rev = 'dbcb0a75b9556763ac3ab708f40c8f8ed75f1a1e' }
+
+# Fix lettre on newer nightlies
+lettre = { version = "0.9", git = "https://github.com/lettre/lettre", rev= '0ead3cde09a02918e3976aa442329fe247f05c55' }
+lettre_email = { version = "0.9", git = "https://github.com/lettre/lettre", rev= '0ead3cde09a02918e3976aa442329fe247f05c55' }

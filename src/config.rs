@@ -180,7 +180,7 @@ macro_rules! make_config {
         match $value {
             Some(v) => v,
             None => {
-                let f: &Fn(&ConfigItems) -> _ = &$default_fn;
+                let f: &dyn Fn(&ConfigItems) -> _ = &$default_fn;
                 f($config)
             }
         }
@@ -551,7 +551,7 @@ impl HelperDef for CaseHelper {
         r: &'reg Handlebars,
         ctx: &Context,
         rc: &mut RenderContext<'reg>,
-        out: &mut Output,
+        out: &mut dyn Output,
     ) -> HelperResult {
         let param = h
             .param(0)
@@ -575,7 +575,7 @@ impl HelperDef for JsEscapeHelper {
         _: &'reg Handlebars,
         _: &Context,
         _: &mut RenderContext<'reg>,
-        out: &mut Output,
+        out: &mut dyn Output,
     ) -> HelperResult {
         let param = h
             .param(0)
