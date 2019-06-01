@@ -154,6 +154,17 @@
                         {{/unless}}
                         {{/each}}
                         {{/each}}
+
+                    </div>
+                </div>
+                <div class="card bg-light mb-3">
+                    <div class="card-header"><button type="button" class="btn btn-link collapsed" data-toggle="collapse"
+                                                     data-target="#g_database">Database</button></div>
+                    <div id="g_database" class="card-body collapse" data-parent="#config-form">
+                        <div class="small mb-3">
+                            NOTE: A local installation of sqlite3 is required for this section to work.
+                        </div>
+                        <button type="button" class="btn btn-primary" onclick="backupDatabase();">Backup Database</button>
                     </div>
                 </div>
 
@@ -266,6 +277,12 @@
             alert("Wrong input, please try again")
         }
 
+        return false;
+    }
+    function backupDatabase() {
+        _post("/admin/config/backup_db",
+            "Backup created successfully",
+            "Error creating backup");
         return false;
     }
     function masterCheck(check_id, inputs_query) {

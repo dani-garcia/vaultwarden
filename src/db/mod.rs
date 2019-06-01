@@ -9,6 +9,11 @@ use rocket::http::Status;
 use rocket::request::{self, FromRequest};
 use rocket::{Outcome, Request, State};
 
+use std::process::Command;
+use chrono::prelude::*;
+use crate::error::Error;
+
+
 use crate::CONFIG;
 
 /// An alias to the database connection used
@@ -32,6 +37,21 @@ pub fn init_pool() -> Pool {
 
 pub fn get_connection() -> Result<Connection, ConnectionError> {
     Connection::establish(&CONFIG.database_url())
+}
+
+/// Creates a back-up of the database using sqlite3
+pub fn backup_database() -> Result<(), Error> {
+    let now: DateTime<Utc> = Utc::now();
+    let file_date = String::from(now.format("%Y%m%d").to_string());
+    let backup_command: String = format!("{}{}{}", ".backup 'db_", file_date, ".sqlite3'");
+
+    Command::new("sqlite3")
+        .current_dir("./data")
+        .args(&["db.sqlite3", &backup_command])
+        .output()
+        .expect("Can't open database, sqlite3 is not available, make sure it's installed and available on the PATH");
+
+    Ok(())
 }
 
 /// Attempts to retrieve a single connection from the managed database pool. If
