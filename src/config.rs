@@ -202,7 +202,6 @@ make_config! {
     folders {
         ///  Data folder |> Main data folder
         data_folder:            String, false,  def,    "data".to_string();
-
         /// Database URL
         database_url:           String, false,  auto,   |c| format!("{}/{}", c.data_folder, "db.sqlite3");
         /// Icon chache folder

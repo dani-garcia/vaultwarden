@@ -2,7 +2,6 @@ use std::ops::Deref;
 
 use diesel::r2d2;
 use diesel::r2d2::ConnectionManager;
-use diesel::sqlite::SqliteConnection;
 use diesel::{Connection as DieselConnection, ConnectionError};
 
 use rocket::http::Status;
@@ -17,16 +16,25 @@ use crate::error::Error;
 use crate::CONFIG;
 
 /// An alias to the database connection used
-type Connection = SqliteConnection;
+#[cfg(feature = "sqlite")]
+type Connection = diesel::sqlite::SqliteConnection;
+#[cfg(feature = "mysql")]
+type Connection = diesel::mysql::MysqlConnection;
 
-/// An alias to the type for a pool of Diesel SQLite connections.
+/// An alias to the type for a pool of Diesel connections.
 type Pool = r2d2::Pool<ConnectionManager<Connection>>;
 
 /// Connection request guard type: a wrapper around an r2d2 pooled connection.
 pub struct DbConn(pub r2d2::PooledConnection<ConnectionManager<Connection>>);
 
 pub mod models;
+#[cfg(feature = "sqlite")]
+#[path = "schemas/sqlite/schema.rs"]
 pub mod schema;
+#[cfg(feature = "mysql")]
+#[path = "schemas/mysql/schema.rs"]
+pub mod schema;
+
 
 /// Initializes a database pool.
 pub fn init_pool() -> Pool {
@@ -36,7 +44,9 @@ pub fn init_pool() -> Pool {
 }
 
 pub fn get_connection() -> Result<Connection, ConnectionError> {
-    Connection::establish(&CONFIG.database_url())
+    let url = CONFIG.database_url();
+    println!("{}", url.to_string());
+    Connection::establish(&url)
 }
 
 /// Creates a back-up of the database using sqlite3

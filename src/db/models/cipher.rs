@@ -24,7 +24,7 @@ pub struct Cipher {
     Card = 3,
     Identity = 4
     */
-    pub type_: i32,
+    pub atype: i32,
     pub name: String,
     pub notes: Option<String>,
     pub fields: Option<String>,
@@ -37,7 +37,7 @@ pub struct Cipher {
 
 /// Local methods
 impl Cipher {
-    pub fn new(type_: i32, name: String) -> Self {
+    pub fn new(atype: i32, name: String) -> Self {
         let now = Utc::now().naive_utc();
 
         Self {
@@ -48,7 +48,7 @@ impl Cipher {
             user_uuid: None,
             organization_uuid: None,
 
-            type_,
+            atype,
             favorite: false,
             name,
 
@@ -94,7 +94,7 @@ impl Cipher {
         // TODO: ******* Backwards compat start **********
         // To remove backwards compatibility, just remove this entire section
         // and remove the compat code from ciphers::update_cipher_from_data
-        if self.type_ == 1 && data_json["Uris"].is_array() {
+        if self.atype == 1 && data_json["Uris"].is_array() {
             let uri = data_json["Uris"][0]["Uri"].clone();
             data_json["Uri"] = uri;
         }
@@ -102,7 +102,7 @@ impl Cipher {
 
         let mut json_object = json!({
             "Id": self.uuid,
-            "Type": self.type_,
+            "Type": self.atype,
             "RevisionDate": format_date(&self.updated_at),
             "FolderId": self.get_folder_uuid(&user_uuid, &conn),
             "Favorite": self.favorite,
@@ -123,7 +123,7 @@ impl Cipher {
             "PasswordHistory": password_history_json,
         });
 
-        let key = match self.type_ {
+        let key = match self.atype {
             1 => "Login",
             2 => "SecureNote",
             3 => "Card",
@@ -237,7 +237,7 @@ impl Cipher {
                 // Cipher owner
                 users_organizations::access_all.eq(true).or(
                     // access_all in Organization
-                    users_organizations::type_.le(UserOrgType::Admin as i32).or(
+                    users_organizations::atype.le(UserOrgType::Admin as i32).or(
                         // Org admin or owner
                         users_collections::user_uuid.eq(user_uuid).and(
                             users_collections::read_only.eq(false), //R/W access to collection
@@ -268,7 +268,7 @@ impl Cipher {
                 // Cipher owner
                 users_organizations::access_all.eq(true).or(
                     // access_all in Organization
-                    users_organizations::type_.le(UserOrgType::Admin as i32).or(
+                    users_organizations::atype.le(UserOrgType::Admin as i32).or(
                         // Org admin or owner
                         users_collections::user_uuid.eq(user_uuid), // Access to Collection
                     ),
@@ -315,7 +315,7 @@ impl Cipher {
         ))
         .filter(ciphers::user_uuid.eq(user_uuid).or( // Cipher owner
             users_organizations::access_all.eq(true).or( // access_all in Organization
-                users_organizations::type_.le(UserOrgType::Admin as i32).or( // Org admin or owner
+                users_organizations::atype.le(UserOrgType::Admin as i32).or( // Org admin or owner
                     users_collections::user_uuid.eq(user_uuid).and( // Access to Collection
                         users_organizations::status.eq(UserOrgStatus::Confirmed as i32)
                     )
@@ -365,7 +365,7 @@ impl Cipher {
         .filter(ciphers_collections::cipher_uuid.eq(&self.uuid))
         .filter(users_collections::user_uuid.eq(user_id).or( // User has access to collection
             users_organizations::access_all.eq(true).or( // User has access all
-                users_organizations::type_.le(UserOrgType::Admin as i32) // User is admin or owner
+                users_organizations::atype.le(UserOrgType::Admin as i32) // User is admin or owner
             )
         ))
         .select(ciphers_collections::collection_uuid)

@@ -23,6 +23,9 @@ RUN ls
 # we need the Rust compiler and Cargo tooling
 FROM rust as build
 
+# set sqlite as default for DB ARG for backward comaptibility
+ARG DB=sqlite
+
 RUN apt-get update \
     && apt-get install -y \
         gcc-arm-linux-gnueabihf \
@@ -42,7 +45,9 @@ RUN sed 's/^deb/deb-src/' /etc/apt/sources.list > \
     && apt-get update \
     && apt-get install -y \
         libssl-dev:armhf \
-        libc6-dev:armhf
+        libc6-dev:armhf \
+        libmariadb-dev:armhf
+
 
 ENV CC_armv7_unknown_linux_gnueabihf="/usr/bin/arm-linux-gnueabihf-gcc"
 ENV CROSS_COMPILE="1"
@@ -55,7 +60,7 @@ COPY . .
 
 # Build
 RUN rustup target add armv7-unknown-linux-gnueabihf
-RUN cargo build --release --target=armv7-unknown-linux-gnueabihf -v
+RUN cargo build --features ${DB} --release --target=armv7-unknown-linux-gnueabihf -v
 
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image
@@ -72,6 +77,7 @@ RUN [ "cross-build-start" ]
 RUN apt-get update && apt-get install -y\
     openssl\
     ca-certificates\
+    libmariadbclient-dev\
     --no-install-recommends\
  && rm -rf /var/lib/apt/lists/*
 

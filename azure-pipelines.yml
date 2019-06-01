@@ -9,9 +9,17 @@ steps:
   displayName: 'Install Rust'
 
 - script: |
+    sudo apt-get update
+    sudo apt-get install -y libmysql++-dev
+  displayName: Install libmysql
+
+- script: |
     rustc -Vv
     cargo -V
   displayName: Query rust and cargo versions
 
-- script : cargo build --all-features
-  displayName: 'Build project'
+- script : cargo build --features "sqlite"
+  displayName: 'Build project with sqlite backend'
+
+- script : cargo build --features "mysql"
+  displayName: 'Build project with mysql backend'

@@ -23,6 +23,9 @@ RUN ls
 # we need the Rust compiler and Cargo tooling
 FROM rust as build
 
+# set sqlite as default for DB ARG for backward comaptibility
+ARG DB=sqlite
+
 RUN apt-get update \
     && apt-get install -y \
         gcc-arm-linux-gnueabi \
@@ -42,7 +45,8 @@ RUN sed 's/^deb/deb-src/' /etc/apt/sources.list > \
     && apt-get update \
     && apt-get install -y \
         libssl-dev:armel \
-        libc6-dev:armel
+        libc6-dev:armel \
+        libmariadb-dev:armel
 
 ENV CC_arm_unknown_linux_gnueabi="/usr/bin/arm-linux-gnueabi-gcc"
 ENV CROSS_COMPILE="1"
@@ -55,7 +59,7 @@ COPY . .
 
 # Build
 RUN rustup target add arm-unknown-linux-gnueabi
-RUN cargo build --release --target=arm-unknown-linux-gnueabi -v
+RUN cargo build --features ${DB} --release --target=arm-unknown-linux-gnueabi -v
 
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image
@@ -72,6 +76,7 @@ RUN [ "cross-build-start" ]
 RUN apt-get update && apt-get install -y\
     openssl\
     ca-certificates\
+    libmariadbclient-dev\
     --no-install-recommends\
  && ln -s /lib/ld-linux-armhf.so.3 /lib/ld-linux.so.3\
  && rm -rf /var/lib/apt/lists/*

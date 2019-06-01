@@ -23,11 +23,20 @@ RUN ls
 # we need the Rust compiler and Cargo tooling
 FROM rust as build
 
+# set sqlite as default for DB ARG for backward comaptibility
+ARG DB=sqlite
+
 # Using bundled SQLite, no need to install it
 # RUN apt-get update && apt-get install -y\
 #    sqlite3\
 #    --no-install-recommends\
 # && rm -rf /var/lib/apt/lists/*
+
+# Install MySQL package
+RUN apt-get update && apt-get install -y \
+    libmariadb-dev\
+    --no-install-recommends\
+ && rm -rf /var/lib/apt/lists/*
 
 # Creates a dummy project used to grab dependencies
 RUN USER=root cargo new --bin app
@@ -41,7 +50,7 @@ COPY ./build.rs ./build.rs
 # Builds your dependencies and removes the
 # dummy project, except the target folder
 # This folder contains the compiled dependencies
-RUN cargo build --release
+RUN cargo build --features ${DB} --release
 RUN find . -not -path "./target*" -delete
 
 # Copies the complete project
@@ -53,7 +62,7 @@ RUN touch src/main.rs
 
 # Builds again, this time it'll just be
 # your actual source files being built
-RUN cargo build --release
+RUN cargo build --features ${DB} --release
 
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image
@@ -68,6 +77,7 @@ ENV ROCKET_WORKERS=10
 RUN apt-get update && apt-get install -y\
     openssl\
     ca-certificates\
+    libmariadbclient-dev\
     --no-install-recommends\
  && rm -rf /var/lib/apt/lists/*
 

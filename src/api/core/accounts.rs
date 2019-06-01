@@ -106,7 +106,7 @@ fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> EmptyResult {
     }
 
     user.set_password(&data.MasterPasswordHash);
-    user.key = data.Key;
+    user.akey = data.Key;
 
     // Add extra fields if present
     if let Some(name) = data.Name {
@@ -204,7 +204,7 @@ fn post_password(data: JsonUpcase<ChangePassData>, headers: Headers, conn: DbCon
     }
 
     user.set_password(&data.NewMasterPasswordHash);
-    user.key = data.Key;
+    user.akey = data.Key;
     user.save(&conn)
 }
 
@@ -231,7 +231,7 @@ fn post_kdf(data: JsonUpcase<ChangeKdfData>, headers: Headers, conn: DbConn) -> 
     user.client_kdf_iter = data.KdfIterations;
     user.client_kdf_type = data.Kdf;
     user.set_password(&data.NewMasterPasswordHash);
-    user.key = data.Key;
+    user.akey = data.Key;
     user.save(&conn)
 }
 
@@ -306,7 +306,7 @@ fn post_rotatekey(data: JsonUpcase<KeyData>, headers: Headers, conn: DbConn, nt:
     // Update user data
     let mut user = headers.user;
 
-    user.key = data.Key;
+    user.akey = data.Key;
     user.private_key = Some(data.PrivateKey);
     user.reset_security_stamp();
 
@@ -377,7 +377,7 @@ fn post_email(data: JsonUpcase<ChangeEmailData>, headers: Headers, conn: DbConn)
     user.email = data.NewEmail;
 
     user.set_password(&data.NewMasterPasswordHash);
-    user.key = data.Key;
+    user.akey = data.Key;
 
     user.save(&conn)
 }

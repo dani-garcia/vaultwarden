@@ -23,6 +23,9 @@ RUN ls
 # we need the Rust compiler and Cargo tooling
 FROM rust as build
 
+# set sqlite as default for DB ARG for backward comaptibility
+ARG DB=sqlite
+
 RUN apt-get update \
     && apt-get install -y \
         gcc-aarch64-linux-gnu \
@@ -42,7 +45,8 @@ RUN sed 's/^deb/deb-src/' /etc/apt/sources.list > \
     && apt-get update \
     && apt-get install -y \
         libssl-dev:arm64 \
-        libc6-dev:arm64
+        libc6-dev:arm64 \
+        libmariadb-dev:arm64
 
 ENV CC_aarch64_unknown_linux_gnu="/usr/bin/aarch64-linux-gnu-gcc"
 ENV CROSS_COMPILE="1"
@@ -55,7 +59,7 @@ COPY . .
 
 # Build
 RUN rustup target add aarch64-unknown-linux-gnu
-RUN cargo build --release --target=aarch64-unknown-linux-gnu -v
+RUN cargo build --features ${DB} --release --target=aarch64-unknown-linux-gnu -v
 
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image
@@ -72,6 +76,7 @@ RUN [ "cross-build-start" ]
 RUN apt-get update && apt-get install -y\
     openssl\
     ca-certificates\
+    libmariadbclient-dev\
     --no-install-recommends\
  && rm -rf /var/lib/apt/lists/*
 

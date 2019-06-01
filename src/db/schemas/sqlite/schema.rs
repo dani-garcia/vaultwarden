@@ -4,7 +4,7 @@ table! {
         cipher_uuid -> Text,
         file_name -> Text,
         file_size -> Integer,
-        key -> Nullable<Text>,
+        akey -> Nullable<Text>,
     }
 }
 
@@ -15,8 +15,7 @@ table! {
         updated_at -> Timestamp,
         user_uuid -> Nullable<Text>,
         organization_uuid -> Nullable<Text>,
-        #[sql_name = "type"]
-        type_ -> Integer,
+        atype -> Integer,
         name -> Text,
         notes -> Nullable<Text>,
         fields -> Nullable<Text>,
@@ -48,8 +47,7 @@ table! {
         updated_at -> Timestamp,
         user_uuid -> Text,
         name -> Text,
-        #[sql_name = "type"]
-        type_ -> Integer,
+        atype -> Integer,
         push_token -> Nullable<Text>,
         refresh_token -> Text,
         twofactor_remember -> Nullable<Text>,
@@ -91,8 +89,7 @@ table! {
     twofactor (uuid) {
         uuid -> Text,
         user_uuid -> Text,
-        #[sql_name = "type"]
-        type_ -> Integer,
+        atype -> Integer,
         enabled -> Bool,
         data -> Text,
     }
@@ -109,7 +106,7 @@ table! {
         salt -> Binary,
         password_iterations -> Integer,
         password_hint -> Nullable<Text>,
-        key -> Text,
+        akey -> Text,
         private_key -> Nullable<Text>,
         public_key -> Nullable<Text>,
         totp_secret -> Nullable<Text>,
@@ -136,10 +133,9 @@ table! {
         user_uuid -> Text,
         org_uuid -> Text,
         access_all -> Bool,
-        key -> Text,
+        akey -> Text,
         status -> Integer,
-        #[sql_name = "type"]
-        type_ -> Integer,
+        atype -> Integer,
     }
 }
 

@@ -22,7 +22,16 @@ RUN ls
 # Musl build image for statically compiled binary
 FROM clux/muslrust:nightly-2018-12-01 as build
 
+# set sqlite as default for DB ARG for backward comaptibility
+ARG DB=sqlite
+
 ENV USER "root"
+
+# Install needed libraries
+RUN apt-get update && apt-get install -y\
+    libmysqlclient-dev\
+    --no-install-recommends\
+ && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -32,8 +41,11 @@ COPY . .
 
 RUN rustup target add x86_64-unknown-linux-musl
 
+# Make sure that we actually build the project
+RUN touch src/main.rs
+
 # Build
-RUN cargo build --release
+RUN cargo build --features ${DB} --release
 
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image
@@ -47,7 +59,8 @@ ENV SSL_CERT_DIR=/etc/ssl/certs
 
 # Install needed libraries
 RUN apk add \
-        openssl\
+        openssl \
+        mariadb-connector-c \
         ca-certificates \
     && rm /var/cache/apk/*
 

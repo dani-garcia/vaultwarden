@@ -45,6 +45,12 @@ fn main() {
         init_logging().ok();
     }
 
+    #[cfg(all(feature = "sqlite", feature = "mysql"))]
+    compile_error!("Can't enable both backends");
+
+    #[cfg(not(any(feature = "sqlite", feature = "mysql")))]
+    compile_error!("You need to enable one DB backend. To build with previous defaults do: cargo build --features sqlite");
+
     check_db();
     check_rsa_keys();
     check_web_vault();
@@ -123,24 +129,28 @@ fn chain_syslog(logger: fern::Dispatch) -> fern::Dispatch {
 
 fn check_db() {
     let url = CONFIG.database_url();
-    let path = Path::new(&url);
+    if cfg!(feature = "sqlite") {
+        let path = Path::new(&url);
 
-    if let Some(parent) = path.parent() {
-        use std::fs;
-        if fs::create_dir_all(parent).is_err() {
-            error!("Error creating database directory");
-            exit(1);
+        if let Some(parent) = path.parent() {
+            use std::fs;
+            if fs::create_dir_all(parent).is_err() {
+                error!("Error creating database directory");
+                exit(1);
+            }
+        }
+
+        // Turn on WAL in SQLite
+        if CONFIG.enable_db_wal() {
+            use diesel::RunQueryDsl;
+            let connection = db::get_connection().expect("Can't conect to DB");
+            diesel::sql_query("PRAGMA journal_mode=wal")
+                .execute(&connection)
+                .expect("Failed to turn on WAL");
         }
     }
-
-    // Turn on WAL in SQLite
-    if CONFIG.enable_db_wal() {
-        use diesel::RunQueryDsl;
-        let connection = db::get_connection().expect("Can't conect to DB");
-        diesel::sql_query("PRAGMA journal_mode=wal")
-            .execute(&connection)
-            .expect("Failed to turn on WAL");
-    }
+    println!("{}", url.to_string());
+    db::get_connection().expect("Can't connect to DB");
 }
 
 fn check_rsa_keys() {
@@ -207,7 +217,11 @@ fn check_web_vault() {
 // https://docs.rs/diesel_migrations/*/diesel_migrations/macro.embed_migrations.html
 #[allow(unused_imports)]
 mod migrations {
-    embed_migrations!();
+    
+    #[cfg(feature = "sqlite")]
+    embed_migrations!("migrations/sqlite");
+    #[cfg(feature = "mysql")]
+    embed_migrations!("migrations/mysql");
 
     pub fn run_migrations() {
         // Make sure the database is up to date (create if it doesn't exist, or run the migrations)

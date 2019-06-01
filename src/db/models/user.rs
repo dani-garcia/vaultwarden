@@ -20,7 +20,7 @@ pub struct User {
     pub password_iterations: i32,
     pub password_hint: Option<String>,
 
-    pub key: String,
+    pub akey: String,
     pub private_key: Option<String>,
     pub public_key: Option<String>,
 
@@ -58,7 +58,7 @@ impl User {
             updated_at: now,
             name: email.clone(),
             email,
-            key: String::new(),
+            akey: String::new(),
 
             password_hash: Vec::new(),
             salt: crypto::get_random_64(),
@@ -140,7 +140,7 @@ impl User {
             "MasterPasswordHint": self.password_hint,
             "Culture": "en-US",
             "TwoFactorEnabled": twofactor_enabled,
-            "Key": self.key,
+            "Key": self.akey,
             "PrivateKey": self.private_key,
             "SecurityStamp": self.security_stamp,
             "Organizations": orgs_json,
@@ -163,7 +163,7 @@ impl User {
 
     pub fn delete(self, conn: &DbConn) -> EmptyResult {
         for user_org in UserOrganization::find_by_user(&self.uuid, &*conn) {
-            if user_org.type_ == UserOrgType::Owner {
+            if user_org.atype == UserOrgType::Owner {
                 let owner_type = UserOrgType::Owner as i32;
                 if UserOrganization::find_by_org_and_type(&user_org.org_uuid, owner_type, &conn).len() <= 1 {
                     err!("Can't delete last owner")

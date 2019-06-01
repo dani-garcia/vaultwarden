@@ -1,0 +1,7 @@
+ALTER TABLE attachments CHANGE COLUMN akey `key` TEXT;
+ALTER TABLE ciphers CHANGE COLUMN atype type INTEGER NOT NULL;
+ALTER TABLE devices CHANGE COLUMN atype type INTEGER NOT NULL;
+ALTER TABLE twofactor CHANGE COLUMN atype type INTEGER NOT NULL;
+ALTER TABLE users CHANGE COLUMN akey `key` TEXT;
+ALTER TABLE users_organizations CHANGE COLUMN akey `key` TEXT;
+ALTER TABLE users_organizations CHANGE COLUMN atype type INTEGER NOT NULL;

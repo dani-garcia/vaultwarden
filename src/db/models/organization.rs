@@ -21,9 +21,9 @@ pub struct UserOrganization {
     pub org_uuid: String,
 
     pub access_all: bool,
-    pub key: String,
+    pub akey: String,
     pub status: i32,
-    pub type_: i32,
+    pub atype: i32,
 }
 
 pub enum UserOrgStatus {
@@ -196,9 +196,9 @@ impl UserOrganization {
             org_uuid,
 
             access_all: false,
-            key: String::new(),
+            akey: String::new(),
             status: UserOrgStatus::Accepted as i32,
-            type_: UserOrgType::User as i32,
+            atype: UserOrgType::User as i32,
         }
     }
 }
@@ -266,9 +266,9 @@ impl UserOrganization {
             "MaxStorageGb": 10, // The value doesn't matter, we don't check server-side
 
             // These are per user
-            "Key": self.key,
+            "Key": self.akey,
             "Status": self.status,
-            "Type": self.type_,
+            "Type": self.atype,
             "Enabled": true,
 
             "Object": "profileOrganization",
@@ -285,7 +285,7 @@ impl UserOrganization {
             "Email": user.email,
 
             "Status": self.status,
-            "Type": self.type_,
+            "Type": self.atype,
             "AccessAll": self.access_all,
 
             "Object": "organizationUserUserDetails",
@@ -315,7 +315,7 @@ impl UserOrganization {
             "UserId": self.user_uuid,
 
             "Status": self.status,
-            "Type": self.type_,
+            "Type": self.atype,
             "AccessAll": self.access_all,
             "Collections": coll_uuids,
 
@@ -357,7 +357,7 @@ impl UserOrganization {
     }
 
     pub fn has_full_access(self) -> bool {
-        self.access_all || self.type_ >= UserOrgType::Admin
+        self.access_all || self.atype >= UserOrgType::Admin
     }
 
     pub fn find_by_uuid(uuid: &str, conn: &DbConn) -> Option<Self> {
@@ -405,10 +405,10 @@ impl UserOrganization {
             .expect("Error loading user organizations")
     }
 
-    pub fn find_by_org_and_type(org_uuid: &str, type_: i32, conn: &DbConn) -> Vec<Self> {
+    pub fn find_by_org_and_type(org_uuid: &str, atype: i32, conn: &DbConn) -> Vec<Self> {
         users_organizations::table
             .filter(users_organizations::org_uuid.eq(org_uuid))
-            .filter(users_organizations::type_.eq(type_))
+            .filter(users_organizations::atype.eq(atype))
             .load::<Self>(&**conn)
             .expect("Error loading user organizations")
     }
