@@ -1,4 +1,5 @@
 use serde_json::Value;
+use std::process::Command;
 
 use rocket::http::{Cookie, Cookies, SameSite};
 use rocket::request::{self, FlashMessage, Form, FromRequest, Request};
@@ -9,7 +10,7 @@ use rocket_contrib::json::Json;
 use crate::api::{ApiResult, EmptyResult, JsonResult};
 use crate::auth::{decode_admin, encode_jwt, generate_admin_claims, ClientIp};
 use crate::config::ConfigBuilder;
-use crate::db::{models::*, DbConn, backup_database};
+use crate::db::{backup_database, models::*, DbConn};
 use crate::error::Error;
 use crate::mail;
 use crate::CONFIG;
@@ -32,6 +33,10 @@ pub fn routes() -> Vec<Route> {
         delete_config,
         backup_db,
     ]
+}
+
+lazy_static! {
+    static ref CAN_BACKUP: bool = cfg!(feature = "sqlite") && Command::new("sqlite").arg("-version").status().is_ok();
 }
 
 #[get("/")]
@@ -102,6 +107,7 @@ struct AdminTemplateData {
     version: Option<&'static str>,
     users: Vec<Value>,
     config: Value,
+    can_backup: bool,
 }
 
 impl AdminTemplateData {
@@ -111,6 +117,7 @@ impl AdminTemplateData {
             version: VERSION,
             users,
             config: CONFIG.prepare_json(),
+            can_backup: *CAN_BACKUP,
         }
     }
 
@@ -207,7 +214,11 @@ fn delete_config(_token: AdminToken) -> EmptyResult {
 
 #[post("/config/backup_db")]
 fn backup_db(_token: AdminToken) -> EmptyResult {
-    backup_database()
+    if *CAN_BACKUP {
+        backup_database()
+    } else {
+        err!("Can't back up current DB (either it's not SQLite or the 'sqlite' binary is not present)");
+    }
 }
 
 pub struct AdminToken {}
