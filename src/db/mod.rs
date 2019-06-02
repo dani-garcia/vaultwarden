@@ -8,10 +8,9 @@ use rocket::http::Status;
 use rocket::request::{self, FromRequest};
 use rocket::{Outcome, Request, State};
 
-use std::process::Command;
-use chrono::prelude::*;
 use crate::error::Error;
-
+use chrono::prelude::*;
+use std::process::Command;
 
 use crate::CONFIG;
 
@@ -35,7 +34,6 @@ pub mod schema;
 #[path = "schemas/mysql/schema.rs"]
 pub mod schema;
 
-
 /// Initializes a database pool.
 pub fn init_pool() -> Pool {
     let manager = ConnectionManager::new(CONFIG.database_url());
@@ -44,9 +42,7 @@ pub fn init_pool() -> Pool {
 }
 
 pub fn get_connection() -> Result<Connection, ConnectionError> {
-    let url = CONFIG.database_url();
-    println!("{}", url.to_string());
-    Connection::establish(&url)
+    Connection::establish(&CONFIG.database_url())
 }
 
 /// Creates a back-up of the database using sqlite3

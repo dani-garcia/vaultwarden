@@ -128,8 +128,8 @@ fn chain_syslog(logger: fern::Dispatch) -> fern::Dispatch {
 }
 
 fn check_db() {
-    let url = CONFIG.database_url();
     if cfg!(feature = "sqlite") {
+        let url = CONFIG.database_url();
         let path = Path::new(&url);
 
         if let Some(parent) = path.parent() {
@@ -149,7 +149,6 @@ fn check_db() {
                 .expect("Failed to turn on WAL");
         }
     }
-    println!("{}", url.to_string());
     db::get_connection().expect("Can't connect to DB");
 }
 
@@ -217,7 +216,7 @@ fn check_web_vault() {
 // https://docs.rs/diesel_migrations/*/diesel_migrations/macro.embed_migrations.html
 #[allow(unused_imports)]
 mod migrations {
-    
+
     #[cfg(feature = "sqlite")]
     embed_migrations!("migrations/sqlite");
     #[cfg(feature = "mysql")]
