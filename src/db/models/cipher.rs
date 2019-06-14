@@ -77,19 +77,10 @@ impl Cipher {
         let attachments = Attachment::find_by_cipher(&self.uuid, conn);
         let attachments_json: Vec<Value> = attachments.iter().map(|c| c.to_json(host)).collect();
 
-        let fields_json: Value = if let Some(ref fields) = self.fields {
-            serde_json::from_str(fields).unwrap()
-        } else {
-            Value::Null
-        };
+        let fields_json = self.fields.as_ref().and_then(|s| serde_json::from_str(s).ok()).unwrap_or(Value::Null);
+        let password_history_json = self.password_history.as_ref().and_then(|s| serde_json::from_str(s).ok()).unwrap_or(Value::Null);
 
-        let password_history_json: Value = if let Some(ref password_history) = self.password_history {
-            serde_json::from_str(password_history).unwrap()
-        } else {
-            Value::Null
-        };
-
-        let mut data_json: Value = serde_json::from_str(&self.data).unwrap();
+        let mut data_json: Value = serde_json::from_str(&self.data).unwrap_or(Value::Null);
 
         // TODO: ******* Backwards compat start **********
         // To remove backwards compatibility, just remove this entire section
