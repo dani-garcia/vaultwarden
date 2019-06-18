@@ -204,7 +204,7 @@ make_config! {
         data_folder:            String, false,  def,    "data".to_string();
         /// Database URL
         database_url:           String, false,  auto,   |c| format!("{}/{}", c.data_folder, "db.sqlite3");
-        /// Icon chache folder
+        /// Icon cache folder
         icon_cache_folder:      String, false,  auto,   |c| format!("{}/{}", c.data_folder, "icon_cache");
         /// Attachments folder
         attachments_folder:     String, false,  auto,   |c| format!("{}/{}", c.data_folder, "attachments");
