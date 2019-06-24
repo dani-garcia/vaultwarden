@@ -65,7 +65,7 @@ RUN cargo build --features ${DB} --release --target=armv7-unknown-linux-gnueabih
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image
 # because we already have a binary built
-FROM balenalib/armv7hf-debian
+FROM balenalib/armv7hf-debian:stretch
 
 ENV ROCKET_ENV "staging"
 ENV ROCKET_PORT=80
