@@ -1,4 +1,4 @@
-# Using multistage build: 
+# Using multistage build:
 # 	https://docs.docker.com/develop/develop-images/multistage-build/
 # 	https://whitfin.io/speeding-up-rust-docker-builds/
 ####################### VAULT BUILD IMAGE  #######################
@@ -34,8 +34,8 @@ ARG DB=sqlite
 
 # Install MySQL package
 RUN apt-get update && apt-get install -y \
-    libmariadb-dev\
-    --no-install-recommends\
+    libmariadb-dev \
+    --no-install-recommends \
  && rm -rf /var/lib/apt/lists/*
 
 # Creates a dummy project used to grab dependencies
@@ -67,18 +67,18 @@ RUN cargo build --features ${DB} --release
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image
 # because we already have a binary built
-FROM debian:stretch-slim
+FROM debian:stable-slim
 
 ENV ROCKET_ENV "staging"
 ENV ROCKET_PORT=80
 ENV ROCKET_WORKERS=10
 
 # Install needed libraries
-RUN apt-get update && apt-get install -y\
-    openssl\
-    ca-certificates\
-    libmariadbclient-dev\
-    --no-install-recommends\
+RUN apt-get update && apt-get install -y \
+    openssl \
+    ca-certificates \
+    libmariadbclient-dev \
+    --no-install-recommends \
  && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir /data
