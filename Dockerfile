@@ -67,7 +67,7 @@ RUN cargo build --features ${DB} --release
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image
 # because we already have a binary built
-FROM debian:stable-slim
+FROM debian:stretch-slim
 
 ENV ROCKET_ENV "staging"
 ENV ROCKET_PORT=80
