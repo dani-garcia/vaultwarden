@@ -50,7 +50,7 @@ RUN cargo build --features ${DB} --release
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image
 # because we already have a binary built
-FROM alpine
+FROM alpine:3.10
 
 ENV ROCKET_ENV "staging"
 ENV ROCKET_PORT=80
