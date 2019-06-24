@@ -20,7 +20,7 @@ RUN ls
 
 ########################## BUILD IMAGE  ##########################
 # Musl build image for statically compiled binary
-FROM clux/muslrust:stable as build
+FROM clux/muslrust:1.35.0-stable as build
 
 # set sqlite as default for DB ARG for backward comaptibility
 ARG DB=sqlite
