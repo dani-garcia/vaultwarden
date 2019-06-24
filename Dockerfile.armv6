@@ -64,7 +64,7 @@ RUN cargo build --features ${DB} --release --target=arm-unknown-linux-gnueabi -v
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image
 # because we already have a binary built
-FROM balenalib/rpi-debian
+FROM balenalib/rpi-debian:stretch
 
 ENV ROCKET_ENV "staging"
 ENV ROCKET_PORT=80
