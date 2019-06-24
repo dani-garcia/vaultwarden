@@ -65,7 +65,7 @@ RUN cargo build --features ${DB} --release --target=armv7-unknown-linux-gnueabih
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image
 # because we already have a binary built
-FROM balenalib/armv7hf-debian:stretch
+FROM balenalib/armv7hf-debian
 
 ENV ROCKET_ENV "staging"
 ENV ROCKET_PORT=80
@@ -74,11 +74,11 @@ ENV ROCKET_WORKERS=10
 RUN [ "cross-build-start" ]
 
 # Install needed libraries
-RUN apt-get update && apt-get install -y\
-    openssl\
-    ca-certificates\
-    libmariadbclient-dev\
-    --no-install-recommends\
+RUN apt-get update && apt-get install -y \
+    openssl \
+    ca-certificates \
+    libmariadbclient-dev \
+    --no-install-recommends \
  && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir /data
