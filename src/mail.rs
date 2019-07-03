@@ -4,6 +4,7 @@ use lettre::{ClientSecurity, ClientTlsParameters, SmtpClient, SmtpTransport, Tra
 use lettre_email::{EmailBuilder, MimeMultipartType, PartBuilder};
 use native_tls::{Protocol, TlsConnector};
 use quoted_printable::encode_to_str;
+use percent_encoding::{percent_encode, DEFAULT_ENCODE_SET};
 
 use crate::api::EmptyResult;
 use crate::auth::{encode_jwt, generate_invite_claims};
@@ -101,7 +102,7 @@ pub fn send_invite(
             "url": CONFIG.domain(),
             "org_id": org_id.unwrap_or_else(|| "_".to_string()),
             "org_user_id": org_user_id.unwrap_or_else(|| "_".to_string()),
-            "email": address,
+            "email": percent_encode(address.as_bytes(), DEFAULT_ENCODE_SET).to_string().replace("+", "%2b"),
             "org_name": org_name,
             "token": invite_token,
         }),

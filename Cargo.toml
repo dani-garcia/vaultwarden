@@ -105,6 +105,9 @@ handlebars = "1.1.0"
 soup = "0.4.1"
 regex = "1.1.7"
 
+# URL encoding library
+percent-encoding = "1.0.1"
+
 [patch.crates-io]
 # Add support for Timestamp type
 rmp = { git = 'https://github.com/dani-garcia/msgpack-rust' }
