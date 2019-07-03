@@ -118,6 +118,7 @@ dependencies = [
  "num-derive 0.2.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "num-traits 0.2.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "oath 0.10.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "percent-encoding 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "quoted_printable 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "regex 1.1.7 (registry+https://github.com/rust-lang/crates.io-index)",
  "reqwest 0.9.18 (registry+https://github.com/rust-lang/crates.io-index)",
