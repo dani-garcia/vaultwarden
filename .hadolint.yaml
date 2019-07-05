@@ -1,0 +1,7 @@
+ignored:
+  # disable explicit version for apt install
+  - DL3008
+  # disable explicit version for apk install
+  - DL3018
+trustedRegistries:
+  - docker.io
