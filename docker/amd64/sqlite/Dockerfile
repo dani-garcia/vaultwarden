@@ -30,15 +30,15 @@ ARG DB=sqlite
 
 # Using bundled SQLite, no need to install it
 # RUN apt-get update && apt-get install -y\
-#    sqlite3\
-#    --no-install-recommends\
+#    --no-install-recommends \
+#    sqlite3 \
 # && rm -rf /var/lib/apt/lists/*
 
 # Install MySQL package
 RUN apt-get update && apt-get install -y \
-    libmariadb-dev\
-    --no-install-recommends\
- && rm -rf /var/lib/apt/lists/*
+    --no-install-recommends \
+    libmariadb-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 # Creates a dummy project used to grab dependencies
 RUN USER=root cargo new --bin app
@@ -76,12 +76,12 @@ ENV ROCKET_PORT=80
 ENV ROCKET_WORKERS=10
 
 # Install needed libraries
-RUN apt-get update && apt-get install -y\
-    openssl\
-    ca-certificates\
-    libmariadbclient-dev\
-    --no-install-recommends\
- && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y \
+    --no-install-recommends \
+    openssl \
+    ca-certificates \
+    libmariadbclient-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir /data
 VOLUME /data
