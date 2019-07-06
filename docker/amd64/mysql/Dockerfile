@@ -2,18 +2,20 @@
 # 	https://docs.docker.com/develop/develop-images/multistage-build/
 # 	https://whitfin.io/speeding-up-rust-docker-builds/
 ####################### VAULT BUILD IMAGE  #######################
-FROM alpine as vault
+FROM alpine:3.10 as vault
 
 ENV VAULT_VERSION "v2.10.1"
 
 ENV URL "https://github.com/dani-garcia/bw_web_builds/releases/download/$VAULT_VERSION/bw_web_$VAULT_VERSION.tar.gz"
 
-RUN apk add --update-cache --upgrade \
+RUN apk add --no-cache --upgrade \
     curl \
     tar
 
 RUN mkdir /web-vault
 WORKDIR /web-vault
+
+SHELL ["/bin/ash", "-eo", "pipefail", "-c"]
 
 RUN curl -L $URL | tar xz
 RUN ls
@@ -21,7 +23,7 @@ RUN ls
 ########################## BUILD IMAGE  ##########################
 # We need to use the Rust build image, because
 # we need the Rust compiler and Cargo tooling
-FROM rust as build
+FROM rust:1.36 as build
 
 # set mysql backend
 ARG DB=mysql
@@ -34,9 +36,9 @@ ARG DB=mysql
 
 # Install MySQL package
 RUN apt-get update && apt-get install -y \
-    libmariadb-dev\
-    --no-install-recommends\
- && rm -rf /var/lib/apt/lists/*
+    libmariadb-dev \
+    --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
 
 # Creates a dummy project used to grab dependencies
 RUN USER=root cargo new --bin app
@@ -74,12 +76,12 @@ ENV ROCKET_PORT=80
 ENV ROCKET_WORKERS=10
 
 # Install needed libraries
-RUN apt-get update && apt-get install -y\
-    openssl\
-    ca-certificates\
-    libmariadbclient-dev\
-    --no-install-recommends\
- && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y \
+    openssl \
+    ca-certificates \
+    libmariadbclient-dev \
+    --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir /data
 VOLUME /data
@@ -93,4 +95,4 @@ COPY --from=vault /web-vault ./web-vault
 COPY --from=build app/target/release/bitwarden_rs .
 
 # Configures the startup!
-CMD ./bitwarden_rs
+CMD ["./bitwarden_rs"]
