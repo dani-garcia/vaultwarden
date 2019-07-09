@@ -563,7 +563,7 @@ pub struct YubikeyMetadata {
 }
 
 use yubico::config::Config;
-use yubico::Yubico;
+use yubico::verify;
 
 fn parse_yubikeys(data: &EnableYubikeyData) -> Vec<String> {
     let data_keys = [&data.Key1, &data.Key2, &data.Key3, &data.Key4, &data.Key5];
@@ -591,12 +591,11 @@ fn get_yubico_credentials() -> Result<(String, String), Error> {
 fn verify_yubikey_otp(otp: String) -> EmptyResult {
     let (yubico_id, yubico_secret) = get_yubico_credentials()?;
 
-    let yubico = Yubico::new();
     let config = Config::default().set_client_id(yubico_id).set_key(yubico_secret);
 
     match CONFIG.yubico_server() {
-        Some(server) => yubico.verify(otp, config.set_api_hosts(vec![server])),
-        None => yubico.verify(otp, config),
+        Some(server) => verify(otp, config.set_api_hosts(vec![server])),
+        None => verify(otp, config),
     }
     .map_res("Failed to verify OTP")
     .and(Ok(()))

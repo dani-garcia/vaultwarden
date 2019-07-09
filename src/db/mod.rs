@@ -48,7 +48,7 @@ pub fn get_connection() -> Result<Connection, ConnectionError> {
 /// Creates a back-up of the database using sqlite3
 pub fn backup_database() -> Result<(), Error> {
     let now: DateTime<Utc> = Utc::now();
-    let file_date = String::from(now.format("%Y%m%d").to_string());
+    let file_date = now.format("%Y%m%d").to_string();
     let backup_command: String = format!("{}{}{}", ".backup 'db_", file_date, ".sqlite3'");
 
     Command::new("sqlite3")
