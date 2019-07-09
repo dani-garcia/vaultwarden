@@ -2,18 +2,20 @@
 # 	https://docs.docker.com/develop/develop-images/multistage-build/
 # 	https://whitfin.io/speeding-up-rust-docker-builds/
 ####################### VAULT BUILD IMAGE  #######################
-FROM alpine as vault
+FROM alpine:3.10 as vault
 
 ENV VAULT_VERSION "v2.10.1"
 
 ENV URL "https://github.com/dani-garcia/bw_web_builds/releases/download/$VAULT_VERSION/bw_web_$VAULT_VERSION.tar.gz"
 
-RUN apk add --update-cache --upgrade \
+RUN apk add --no-cache --upgrade \
     curl \
     tar
 
 RUN mkdir /web-vault
 WORKDIR /web-vault
+
+SHELL ["/bin/ash", "-eo", "pipefail", "-c"]
 
 RUN curl -L $URL | tar xz
 RUN ls
@@ -28,10 +30,10 @@ ARG DB=sqlite
 ENV USER "root"
 
 # Install needed libraries
-RUN apt-get update && apt-get install -y\
-    libmysqlclient-dev\
-    --no-install-recommends\
- && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y \
+    --no-install-recommends \
+    libmysqlclient-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -50,7 +52,7 @@ RUN cargo build --features ${DB} --release
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image
 # because we already have a binary built
-FROM alpine:3.9
+FROM alpine:3.10
 
 ENV ROCKET_ENV "staging"
 ENV ROCKET_PORT=80
@@ -58,11 +60,10 @@ ENV ROCKET_WORKERS=10
 ENV SSL_CERT_DIR=/etc/ssl/certs
 
 # Install needed libraries
-RUN apk add \
+RUN apk add --no-cache \
         openssl \
         mariadb-connector-c \
-        ca-certificates \
-    && rm /var/cache/apk/*
+        ca-certificates
 
 RUN mkdir /data
 VOLUME /data
@@ -76,4 +77,4 @@ COPY --from=vault /web-vault ./web-vault
 COPY --from=build /app/target/x86_64-unknown-linux-musl/release/bitwarden_rs .
 
 # Configures the startup!
-CMD ./bitwarden_rs
+CMD ["./bitwarden_rs"]
