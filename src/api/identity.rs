@@ -101,38 +101,7 @@ fn _password_login(data: ConnectData, conn: DbConn, ip: ClientIp) -> JsonResult 
         )
     }
 
-    // On iOS, device_type sends "iOS", on others it sends a number
-    let device_type = util::try_parse_string(data.device_type.as_ref()).unwrap_or(0);
-    let device_id = data.device_identifier.clone().expect("No device id provided");
-    let device_name = data.device_name.clone().expect("No device name provided");
-
-    let mut send_email = false;
-    // Find device or create new
-    let mut device = match Device::find_by_uuid(&device_id, &conn) {
-        Some(device) => {
-            // Check if owned device, and recreate if not
-            if device.user_uuid != user.uuid {
-                info!("Device exists but is owned by another user. The old device will be discarded");
-                send_email = true;
-                Device::new(device_id, user.uuid.clone(), device_name, device_type)
-            } else {
-                device
-            }
-        }
-        None => {
-            send_email = true;
-            Device::new(device_id, user.uuid.clone(), device_name, device_type)
-        }
-    };
-
-    if CONFIG.mail_enabled() && send_email {
-        mail::send_new_device_logged_in(
-            &username,
-            &ip.ip.to_string(),
-            &device.updated_at,
-            &device.name,
-        )?;
-    }
+    let mut device = get_device(&data, &conn, &user, &ip)?;
 
     let twofactor_token = twofactor_auth(&user.uuid, &data, &mut device, &conn)?;
 
@@ -159,6 +128,38 @@ fn _password_login(data: ConnectData, conn: DbConn, ip: ClientIp) -> JsonResult 
 
     info!("User {} logged in successfully. IP: {}", username, ip.ip);
     Ok(Json(result))
+}
+
+fn get_device(data: &ConnectData, conn: &DbConn, user: &User, ip: &ClientIp) -> Result<Device, crate::error::Error> {
+    // On iOS, device_type sends "iOS", on others it sends a number
+    let device_type = util::try_parse_string(data.device_type.as_ref()).unwrap_or(0);
+    let device_id = data.device_identifier.clone().expect("No device id provided");
+    let device_name = data.device_name.clone().expect("No device name provided");
+
+    let mut new_device = false;
+    // Find device or create new
+    let device = match Device::find_by_uuid(&device_id, &conn) {
+        Some(device) => {
+            // Check if owned device, and recreate if not
+            if device.user_uuid != user.uuid {
+                info!("Device exists but is owned by another user. The old device will be discarded");
+                new_device = true;
+                Device::new(device_id, user.uuid.clone(), device_name, device_type)
+            } else {
+                device
+            }
+        }
+        None => {
+            new_device = true;
+            Device::new(device_id, user.uuid.clone(), device_name, device_type)
+        }
+    };
+
+    if CONFIG.mail_enabled() && new_device {
+        mail::send_new_device_logged_in(&user.email, &ip.ip.to_string(), &device.updated_at, &device.name)?
+    }
+
+    Ok(device)
 }
 
 fn twofactor_auth(

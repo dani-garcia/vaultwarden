@@ -137,12 +137,7 @@ pub fn send_invite_confirmed(address: &str, org_name: &str) -> EmptyResult {
     send_email(&address, &subject, &body_html, &body_text)
 }
 
-pub fn send_new_device_logged_in(
-    address: &str,
-    ip: &str,
-    dt: &NaiveDateTime,
-    device: &str,
-) -> EmptyResult {
+pub fn send_new_device_logged_in(address: &str, ip: &str, dt: &NaiveDateTime, device: &str) -> EmptyResult {
     use crate::util::upcase_first;
     let device = upcase_first(device);
 
