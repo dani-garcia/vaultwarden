@@ -15,6 +15,8 @@ use crate::api::{ApiResult, EmptyResult, JsonResult};
 
 use crate::auth::ClientIp;
 
+use crate::mail;
+
 use crate::CONFIG;
 
 pub fn routes() -> Vec<Route> {
@@ -104,19 +106,33 @@ fn _password_login(data: ConnectData, conn: DbConn, ip: ClientIp) -> JsonResult 
     let device_id = data.device_identifier.clone().expect("No device id provided");
     let device_name = data.device_name.clone().expect("No device name provided");
 
+    let mut send_email = false;
     // Find device or create new
     let mut device = match Device::find_by_uuid(&device_id, &conn) {
         Some(device) => {
             // Check if owned device, and recreate if not
             if device.user_uuid != user.uuid {
                 info!("Device exists but is owned by another user. The old device will be discarded");
+                send_email = true;
                 Device::new(device_id, user.uuid.clone(), device_name, device_type)
             } else {
                 device
             }
         }
-        None => Device::new(device_id, user.uuid.clone(), device_name, device_type),
+        None => {
+            send_email = true;
+            Device::new(device_id, user.uuid.clone(), device_name, device_type)
+        }
     };
+
+    if CONFIG.mail_enabled() && send_email {
+        mail::send_new_device_logged_in(
+            &username,
+            &ip.ip.to_string(),
+            &device.updated_at,
+            &device.name,
+        )?;
+    }
 
     let twofactor_token = twofactor_auth(&user.uuid, &data, &mut device, &conn)?;
 
