@@ -101,9 +101,13 @@ fn _password_login(data: ConnectData, conn: DbConn, ip: ClientIp) -> JsonResult 
         )
     }
 
-    let mut device = get_device(&data, &conn, &user, &ip)?;
+    let (mut device, new_device) = get_device(&data, &conn, &user);
 
     let twofactor_token = twofactor_auth(&user.uuid, &data, &mut device, &conn)?;
+
+    if CONFIG.mail_enabled() && new_device {
+        mail::send_new_device_logged_in(&user.email, &ip.ip.to_string(), &device.updated_at, &device.name)?
+    }
 
     // Common
     let user = User::find_by_uuid(&device.user_uuid, &conn).unwrap();
@@ -119,7 +123,6 @@ fn _password_login(data: ConnectData, conn: DbConn, ip: ClientIp) -> JsonResult 
         "refresh_token": device.refresh_token,
         "Key": user.akey,
         "PrivateKey": user.private_key,
-        //"TwoFactorToken": "11122233333444555666777888999"
     });
 
     if let Some(token) = twofactor_token {
@@ -130,7 +133,8 @@ fn _password_login(data: ConnectData, conn: DbConn, ip: ClientIp) -> JsonResult 
     Ok(Json(result))
 }
 
-fn get_device(data: &ConnectData, conn: &DbConn, user: &User, ip: &ClientIp) -> Result<Device, crate::error::Error> {
+/// Retrieves an existing device or creates a new device from ConnectData and the User
+fn get_device(data: &ConnectData, conn: &DbConn, user: &User) -> (Device, bool) {
     // On iOS, device_type sends "iOS", on others it sends a number
     let device_type = util::try_parse_string(data.device_type.as_ref()).unwrap_or(0);
     let device_id = data.device_identifier.clone().expect("No device id provided");
@@ -155,11 +159,7 @@ fn get_device(data: &ConnectData, conn: &DbConn, user: &User, ip: &ClientIp) -> 
         }
     };
 
-    if CONFIG.mail_enabled() && new_device {
-        mail::send_new_device_logged_in(&user.email, &ip.ip.to_string(), &device.updated_at, &device.name)?
-    }
-
-    Ok(device)
+    (device, new_device)
 }
 
 fn twofactor_auth(
