@@ -25,13 +25,13 @@ rocket = { version = "0.5.0-dev", features = ["tls"], default-features = false }
 rocket_contrib = "0.5.0-dev"
 
 # HTTP client
-reqwest = "0.9.18"
+reqwest = "0.9.19"
 
 # multipart/form-data support
 multipart = { version = "0.16.1", features = ["server"], default-features = false }
 
 # WebSockets library
-ws = "0.8.1"
+ws = "0.9.0"
 
 # MessagePack library
 rmpv = "0.4.0"
@@ -40,12 +40,12 @@ rmpv = "0.4.0"
 chashmap = "2.2.2"
 
 # A generic serialization/deserialization framework
-serde = "1.0.94"
-serde_derive = "1.0.94"
+serde = "1.0.98"
+serde_derive = "1.0.98"
 serde_json = "1.0.40"
 
 # Logging
-log = "0.4.6"
+log = "0.4.8"
 fern = { version = "0.5.8", features = ["syslog-4"] }
 
 # A safe, extensible ORM and Query builder
@@ -99,14 +99,14 @@ native-tls = "0.2.3"
 quoted_printable = "0.4.1"
 
 # Template library
-handlebars = "2.0.0"
+handlebars = "2.0.1"
 
 # For favicon extraction from main website
 soup = "0.4.1"
-regex = "1.1.9"
+regex = "1.2.0"
 
 # URL encoding library
-percent-encoding = "1.0.1"
+percent-encoding = "2.0.0"
 
 [patch.crates-io]
 # Add support for Timestamp type

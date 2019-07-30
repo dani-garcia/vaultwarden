@@ -204,9 +204,13 @@ fn get_icon_url(domain: &str) -> Result<(Vec<Icon>, String), Error> {
         let raw_cookies = content.headers().get_all("set-cookie");
         cookie_str = raw_cookies
             .iter()
-            .map(|raw_cookie| {
-                let cookie = Cookie::parse(raw_cookie.to_str().unwrap_or_default()).unwrap();
-                format!("{}={}; ", cookie.name(), cookie.value())
+            .filter_map(|raw_cookie| raw_cookie.to_str().ok())
+            .map(|cookie_str| {
+                if let Ok(cookie) = Cookie::parse(cookie_str) {
+                    format!("{}={}; ", cookie.name(), cookie.value())
+                } else {
+                    String::new()
+                }
             })
             .collect::<String>();
 

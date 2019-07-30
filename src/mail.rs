@@ -3,7 +3,7 @@ use lettre::smtp::ConnectionReuseParameters;
 use lettre::{ClientSecurity, ClientTlsParameters, SmtpClient, SmtpTransport, Transport};
 use lettre_email::{EmailBuilder, MimeMultipartType, PartBuilder};
 use native_tls::{Protocol, TlsConnector};
-use percent_encoding::{percent_encode, DEFAULT_ENCODE_SET};
+use percent_encoding::{percent_encode, NON_ALPHANUMERIC};
 use quoted_printable::encode_to_str;
 
 use crate::api::EmptyResult;
@@ -103,7 +103,7 @@ pub fn send_invite(
             "url": CONFIG.domain(),
             "org_id": org_id.unwrap_or_else(|| "_".to_string()),
             "org_user_id": org_user_id.unwrap_or_else(|| "_".to_string()),
-            "email": percent_encode(address.as_bytes(), DEFAULT_ENCODE_SET).to_string().replace("+", "%2b"),
+            "email": percent_encode(address.as_bytes(), NON_ALPHANUMERIC).to_string(),
             "org_name": org_name,
             "token": invite_token,
         }),
