@@ -3,13 +3,14 @@ use lettre::smtp::ConnectionReuseParameters;
 use lettre::{ClientSecurity, ClientTlsParameters, SmtpClient, SmtpTransport, Transport};
 use lettre_email::{EmailBuilder, MimeMultipartType, PartBuilder};
 use native_tls::{Protocol, TlsConnector};
-use quoted_printable::encode_to_str;
 use percent_encoding::{percent_encode, DEFAULT_ENCODE_SET};
+use quoted_printable::encode_to_str;
 
 use crate::api::EmptyResult;
 use crate::auth::{encode_jwt, generate_invite_claims};
 use crate::error::Error;
 use crate::CONFIG;
+use chrono::NaiveDateTime;
 
 fn mailer() -> SmtpTransport {
     let host = CONFIG.smtp_host().unwrap();
@@ -130,6 +131,25 @@ pub fn send_invite_confirmed(address: &str, org_name: &str) -> EmptyResult {
         json!({
             "url": CONFIG.domain(),
             "org_name": org_name,
+        }),
+    )?;
+
+    send_email(&address, &subject, &body_html, &body_text)
+}
+
+pub fn send_new_device_logged_in(address: &str, ip: &str, dt: &NaiveDateTime, device: &str) -> EmptyResult {
+    use crate::util::upcase_first;
+    let device = upcase_first(device);
+
+    let datetime = dt.format("%A, %B %_d, %Y at %H:%M").to_string();
+
+    let (subject, body_html, body_text) = get_text(
+        "email/new_device_logged_in",
+        json!({
+            "url": CONFIG.domain(),
+            "ip": ip,
+            "device": device,
+            "datetime": datetime,
         }),
     )?;
 

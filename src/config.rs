@@ -526,6 +526,7 @@ fn load_templates(path: &str) -> Handlebars {
     // First register default templates here
     reg!("email/invite_accepted", ".html");
     reg!("email/invite_confirmed", ".html");
+    reg!("email/new_device_logged_in", ".html");
     reg!("email/pw_hint_none", ".html");
     reg!("email/pw_hint_some", ".html");
     reg!("email/send_org_invite", ".html");
