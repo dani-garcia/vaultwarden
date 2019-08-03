@@ -1,23 +1,18 @@
+use num_traits::FromPrimitive;
 use rocket::request::{Form, FormItems, FromForm};
 use rocket::Route;
-
 use rocket_contrib::json::Json;
 use serde_json::Value;
 
-use num_traits::FromPrimitive;
-
-use crate::db::models::*;
-use crate::db::DbConn;
-
-use crate::util;
-
 use crate::api::{ApiResult, EmptyResult, JsonResult};
-
+use crate::api::core::two_factor::{duo, email, yubikey};
+use crate::api::core::two_factor::email::EmailTokenData;
 use crate::auth::ClientIp;
-
-use crate::mail;
-
 use crate::CONFIG;
+use crate::db::DbConn;
+use crate::db::models::*;
+use crate::mail;
+use crate::util;
 
 pub fn routes() -> Vec<Route> {
     routes![login]
@@ -193,11 +188,11 @@ fn twofactor_auth(
     let mut remember = data.two_factor_remember.unwrap_or(0);
 
     match TwoFactorType::from_i32(selected_id) {
-        Some(TwoFactorType::Authenticator) => _tf::validate_totp_code_str(twofactor_code, &selected_data?)?,
-        Some(TwoFactorType::U2f) => _tf::validate_u2f_login(user_uuid, twofactor_code, conn)?,
-        Some(TwoFactorType::YubiKey) => _tf::validate_yubikey_login(twofactor_code, &selected_data?)?,
-        Some(TwoFactorType::Duo) => _tf::validate_duo_login(data.username.as_ref().unwrap(), twofactor_code, conn)?,
-        Some(TwoFactorType::Email) => _tf::validate_totp_code_str(twofactor_code, &selected_data?)?,
+        Some(TwoFactorType::Authenticator) => _tf::totp::validate_totp_code_str(twofactor_code, &selected_data?)?,
+        Some(TwoFactorType::U2f) => _tf::u2f::validate_u2f_login(user_uuid, twofactor_code, conn)?,
+        Some(TwoFactorType::YubiKey) => _tf::yubikey::validate_yubikey_login(twofactor_code, &selected_data?)?,
+        Some(TwoFactorType::Duo) => _tf::duo::validate_duo_login(data.username.as_ref().unwrap(), twofactor_code, conn)?,
+        Some(TwoFactorType::Email) => _tf::email::validate_email_code_str(twofactor_code, &selected_data?)?,
 
         Some(TwoFactorType::Remember) => {
             match device.twofactor_remember {
@@ -242,7 +237,7 @@ fn _json_err_twofactor(providers: &[i32], user_uuid: &str, conn: &DbConn) -> Api
             Some(TwoFactorType::Authenticator) => { /* Nothing to do for TOTP */ }
 
             Some(TwoFactorType::U2f) if CONFIG.domain_set() => {
-                let request = two_factor::generate_u2f_login(user_uuid, conn)?;
+                let request = two_factor::u2f::generate_u2f_login(user_uuid, conn)?;
                 let mut challenge_list = Vec::new();
 
                 for key in request.registered_keys {
@@ -267,7 +262,7 @@ fn _json_err_twofactor(providers: &[i32], user_uuid: &str, conn: &DbConn) -> Api
                     None => err!("User does not exist"),
                 };
 
-                let (signature, host) = two_factor::generate_duo_signature(&email, conn)?;
+                let (signature, host) = duo::generate_duo_signature(&email, conn)?;
 
                 result["TwoFactorProviders2"][provider.to_string()] = json!({
                     "Host": host,
@@ -281,7 +276,7 @@ fn _json_err_twofactor(providers: &[i32], user_uuid: &str, conn: &DbConn) -> Api
                     None => err!("No YubiKey devices registered"),
                 };
 
-                let yubikey_metadata: two_factor::YubikeyMetadata = serde_json::from_str(&twofactor.data)?;
+                let yubikey_metadata: yubikey::YubikeyMetadata = serde_json::from_str(&twofactor.data)?;
 
                 result["TwoFactorProviders2"][provider.to_string()] = json!({
                     "Nfc": yubikey_metadata.Nfc,
@@ -293,6 +288,12 @@ fn _json_err_twofactor(providers: &[i32], user_uuid: &str, conn: &DbConn) -> Api
                     Some(tf) => tf,
                     None => err!("No twofactor email registered"),
                 };
+
+                let email_data = EmailTokenData::from_json(&twofactor.data)?;
+
+                result["TwoFactorProviders2"][provider.to_string()] = json!({
+                    "Email": email::obscure_email(&email_data.Email),
+                })
             }
 
             _ => {}
