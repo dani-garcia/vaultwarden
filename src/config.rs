@@ -530,6 +530,7 @@ fn load_templates(path: &str) -> Handlebars {
     reg!("email/pw_hint_none", ".html");
     reg!("email/pw_hint_some", ".html");
     reg!("email/send_org_invite", ".html");
+    reg!("email/twofactor_email", ".html");
 
     reg!("admin/base");
     reg!("admin/login");
