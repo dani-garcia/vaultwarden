@@ -1,4 +1,3 @@
-use data_encoding::{BASE32, BASE64};
 use rocket::Route;
 use rocket_contrib::json::Json;
 use serde_json;
@@ -6,23 +5,18 @@ use serde_json::Value;
 use yubico::config::Config;
 use yubico::verify;
 
-use crate::api::{ApiResult, EmptyResult, JsonResult, JsonUpcase, NumberOrString, PasswordData};
 use crate::api::core::two_factor::_generate_recover_code;
+use crate::api::{EmptyResult, JsonResult, JsonUpcase, PasswordData};
 use crate::auth::Headers;
-use crate::CONFIG;
-use crate::crypto;
 use crate::db::{
+    models::{TwoFactor, TwoFactorType},
     DbConn,
-    models::{TwoFactor, TwoFactorType, User},
 };
 use crate::error::{Error, MapResult};
+use crate::CONFIG;
 
 pub fn routes() -> Vec<Route> {
-    routes![
-        generate_yubikey,
-        activate_yubikey,
-        activate_yubikey_put,
-    ]
+    routes![generate_yubikey, activate_yubikey, activate_yubikey_put,]
 }
 
 #[derive(Deserialize, Debug)]
@@ -76,8 +70,8 @@ fn verify_yubikey_otp(otp: String) -> EmptyResult {
         Some(server) => verify(otp, config.set_api_hosts(vec![server])),
         None => verify(otp, config),
     }
-        .map_res("Failed to verify OTP")
-        .and(Ok(()))
+    .map_res("Failed to verify OTP")
+    .and(Ok(()))
 }
 
 #[post("/two-factor/get-yubikey", data = "<data>")]

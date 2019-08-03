@@ -292,7 +292,7 @@ fn _json_err_twofactor(providers: &[i32], user_uuid: &str, conn: &DbConn) -> Api
                 let email_data = EmailTokenData::from_json(&twofactor.data)?;
 
                 result["TwoFactorProviders2"][provider.to_string()] = json!({
-                    "Email": email::obscure_email(&email_data.Email),
+                    "Email": email::obscure_email(&email_data.email),
                 })
             }
 

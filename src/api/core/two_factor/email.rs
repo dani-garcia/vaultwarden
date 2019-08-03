@@ -1,20 +1,17 @@
-use data_encoding::{BASE32, BASE64};
-use lettre_email::Email;
+use data_encoding::{BASE32};
 use oath::{totp_raw_now, HashType};
 use rocket::Route;
 use rocket_contrib::json::Json;
 use serde_json;
-use serde_json::Value;
 
 use crate::api::core::two_factor::totp;
-use crate::api::core::two_factor::totp::validate_totp_code_with_time_step;
-use crate::api::{ApiResult, EmptyResult, JsonResult, JsonUpcase, NumberOrString, PasswordData};
+use crate::api::{EmptyResult, JsonResult, JsonUpcase, PasswordData};
 use crate::auth::Headers;
 use crate::db::{
-    models::{TwoFactor, TwoFactorType, User},
+    models::{TwoFactor, TwoFactorType},
     DbConn,
 };
-use crate::error::{Error, MapResult};
+use crate::error::{Error};
 use crate::{crypto, mail};
 
 const TOTP_TIME_STEP: u64 = 120;
@@ -38,7 +35,7 @@ fn send_email_login(data: JsonUpcase<SendEmailLoginData>, conn: DbConn) -> Empty
     use crate::db::models::User;
 
     // Get the user
-    let mut user = match User::find_by_mail(&data.Email, &conn) {
+    let user = match User::find_by_mail(&data.Email, &conn) {
         Some(user) => user,
         None => err!("Username or password is incorrect. Try again."),
     };
@@ -49,16 +46,16 @@ fn send_email_login(data: JsonUpcase<SendEmailLoginData>, conn: DbConn) -> Empty
     }
 
     let type_ = TwoFactorType::Email as i32;
-    let mut twofactor = TwoFactor::find_by_user_and_type(&user.uuid, type_, &conn)?;
+    let twofactor = TwoFactor::find_by_user_and_type(&user.uuid, type_, &conn)?;
 
     let twofactor_data = EmailTokenData::from_json(&twofactor.data)?;
 
-    let decoded_key = totp::validate_decode_key(&twofactor_data.TotpSecret)?;
+    let decoded_key = totp::validate_decode_key(&twofactor_data.totp_secret)?;
 
     let generated_token = totp_raw_now(&decoded_key, 6, 0, TOTP_TIME_STEP, &HashType::SHA1);
     let token_string = generated_token.to_string();
 
-    mail::send_token(&twofactor_data.Email, &token_string)?;
+    mail::send_token(&twofactor_data.email, &token_string)?;
 
     Ok(())
 }
@@ -119,7 +116,7 @@ fn send_email(data: JsonUpcase<SendEmailData>, headers: Headers, conn: DbConn) -
     let twofactor_data = EmailTokenData::new(data.Email, base32_secret);
 
     // Uses EmailVerificationChallenge as type to show that it's not verified yet.
-    let mut twofactor = TwoFactor::new(
+    let twofactor = TwoFactor::new(
         user.uuid,
         TwoFactorType::EmailVerificationChallenge,
         twofactor_data.to_json(),
@@ -129,7 +126,7 @@ fn send_email(data: JsonUpcase<SendEmailData>, headers: Headers, conn: DbConn) -
     let generated_token = totp_raw_now(&secret, 6, 0, TOTP_TIME_STEP, &HashType::SHA1);
     let token_string = generated_token.to_string();
 
-    mail::send_token(&twofactor_data.Email, &token_string)?;
+    mail::send_token(&twofactor_data.email, &token_string)?;
 
     Ok(())
 }
@@ -162,13 +159,13 @@ fn email(data: JsonUpcase<EmailData>, headers: Headers, conn: DbConn) -> JsonRes
 
     let email_data = EmailTokenData::from_json(&twofactor.data)?;
 
-    totp::validate_totp_code_with_time_step(token_u64, &email_data.TotpSecret, TOTP_TIME_STEP)?;
+    totp::validate_totp_code_with_time_step(token_u64, &email_data.totp_secret, TOTP_TIME_STEP)?;
 
     twofactor.atype = TwoFactorType::Email as i32;
     twofactor.save(&conn)?;
 
     Ok(Json(json!({
-        "Email": email_data.Email,
+        "Email": email_data.email,
         "Enabled": "true",
         "Object": "twoFactorEmail"
     })))
@@ -186,7 +183,7 @@ pub fn validate_email_code_str(code: &str, data: &str) -> EmptyResult {
 pub fn validate_email_code(code: u64, data: &str) -> EmptyResult {
     let email_data = EmailTokenData::from_json(&data)?;
 
-    let decoded_secret = match BASE32.decode(email_data.TotpSecret.as_bytes()) {
+    let decoded_secret = match BASE32.decode(email_data.totp_secret.as_bytes()) {
         Ok(s) => s,
         Err(_) => err!("Invalid email secret"),
     };
@@ -201,15 +198,15 @@ pub fn validate_email_code(code: u64, data: &str) -> EmptyResult {
 
 #[derive(Serialize, Deserialize)]
 pub struct EmailTokenData {
-    pub Email: String,
-    pub TotpSecret: String,
+    pub email: String,
+    pub totp_secret: String,
 }
 
 impl EmailTokenData {
-    pub fn new(email: String, secret: String) -> EmailTokenData {
+    pub fn new(email: String, totp_secret: String) -> EmailTokenData {
         EmailTokenData {
-            Email: email,
-            TotpSecret: secret,
+            email,
+            totp_secret,
         }
     }
 
@@ -226,6 +223,7 @@ impl EmailTokenData {
     }
 }
 
+/// Takes an email address and obscures it by replacing it with asterisks except two characters.
 pub fn obscure_email(email: &str) -> String {
     let split: Vec<&str> = email.split("@").collect();
 
@@ -235,7 +233,7 @@ pub fn obscure_email(email: &str) -> String {
     let name_size = name.chars().count();
 
     let new_name = match name_size {
-        1..=2 => "*".repeat(name_size),
+        1..=3 => "*".repeat(name_size),
         _ => {
             let stars = "*".repeat(name_size-2);
             name.truncate(2);
@@ -262,11 +260,11 @@ mod tests {
 
     #[test]
     fn test_obscure_email_short() {
-        let email = "by@example.ext";
+        let email = "byt@example.ext";
 
         let result = obscure_email(&email);
 
         // If it's smaller than 3 characters it should only show asterisks.
-        assert_eq!(result, "**@example.ext");
+        assert_eq!(result, "***@example.ext");
     }
 }

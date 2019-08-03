@@ -1,19 +1,16 @@
-use chrono::Utc;
-use data_encoding::{BASE32, BASE64};
-use oath::{HashType, totp_raw_now};
+use data_encoding::{BASE32};
 use rocket::Route;
 use rocket_contrib::json::Json;
 use serde_json;
 use serde_json::Value;
 
-use crate::api::{ApiResult, EmptyResult, JsonResult, JsonUpcase, NumberOrString, PasswordData};
+use crate::api::{JsonResult, JsonUpcase, NumberOrString, PasswordData};
 use crate::auth::Headers;
 use crate::crypto;
 use crate::db::{
     DbConn,
-    models::{TwoFactor, TwoFactorType, User},
+    models::{TwoFactor, User},
 };
-use crate::error::{Error, MapResult};
 
 pub(crate) mod authenticator;
 pub(crate) mod duo;

@@ -1,4 +1,3 @@
-use data_encoding::{BASE32, BASE64};
 use rocket::Route;
 use rocket_contrib::json::Json;
 use serde_json;
@@ -11,12 +10,11 @@ use crate::api::{ApiResult, EmptyResult, JsonResult, JsonUpcase, NumberOrString,
 use crate::api::core::two_factor::_generate_recover_code;
 use crate::auth::Headers;
 use crate::CONFIG;
-use crate::crypto;
 use crate::db::{
     DbConn,
-    models::{TwoFactor, TwoFactorType, User},
+    models::{TwoFactor, TwoFactorType},
 };
-use crate::error::{Error, MapResult};
+use crate::error::{Error};
 
 const U2F_VERSION: &str = "U2F_V2";
 

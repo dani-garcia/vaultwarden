@@ -1,12 +1,10 @@
 use chrono::Utc;
-use data_encoding::{BASE32, BASE64};
-use oath::{HashType, totp_raw_now};
+use data_encoding::{BASE64};
 use rocket::Route;
 use rocket_contrib::json::Json;
 use serde_json;
-use serde_json::Value;
 
-use crate::api::{ApiResult, EmptyResult, JsonResult, JsonUpcase, NumberOrString, PasswordData};
+use crate::api::{ApiResult, EmptyResult, JsonResult, JsonUpcase, PasswordData};
 use crate::auth::Headers;
 use crate::CONFIG;
 use crate::crypto;
@@ -14,7 +12,7 @@ use crate::db::{
     DbConn,
     models::{TwoFactor, TwoFactorType, User},
 };
-use crate::error::{Error, MapResult};
+use crate::error::{MapResult};
 
 pub fn routes() -> Vec<Route> {
     routes![

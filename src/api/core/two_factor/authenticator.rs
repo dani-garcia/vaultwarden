@@ -1,18 +1,15 @@
-use data_encoding::{BASE32, BASE64};
+use data_encoding::{BASE32};
 use rocket::Route;
 use rocket_contrib::json::Json;
-use serde_json;
-use serde_json::Value;
 
-use crate::api::{ApiResult, EmptyResult, JsonResult, JsonUpcase, NumberOrString, PasswordData};
+use crate::api::{JsonResult, JsonUpcase, NumberOrString, PasswordData};
 use crate::api::core::two_factor::{_generate_recover_code, totp};
 use crate::auth::Headers;
 use crate::crypto;
 use crate::db::{
     DbConn,
-    models::{TwoFactor, TwoFactorType, User},
+    models::{TwoFactor, TwoFactorType},
 };
-use crate::error::{Error, MapResult};
 
 const TOTP_TIME_STEP: u64 = 30;
 
