@@ -1,4 +1,4 @@
-use data_encoding::{BASE32};
+use data_encoding::BASE32;
 use rocket::Route;
 use rocket_contrib::json::Json;
 use serde_json;
@@ -8,8 +8,8 @@ use crate::api::{JsonResult, JsonUpcase, NumberOrString, PasswordData};
 use crate::auth::Headers;
 use crate::crypto;
 use crate::db::{
-    DbConn,
     models::{TwoFactor, User},
+    DbConn,
 };
 
 pub(crate) mod authenticator;
@@ -17,7 +17,6 @@ pub(crate) mod duo;
 pub(crate) mod email;
 pub(crate) mod u2f;
 pub(crate) mod yubikey;
-pub(crate) mod totp;
 
 pub fn routes() -> Vec<Route> {
     let mut routes = routes![

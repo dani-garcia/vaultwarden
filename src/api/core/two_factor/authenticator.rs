@@ -1,17 +1,15 @@
-use data_encoding::{BASE32};
+use data_encoding::BASE32;
 use rocket::Route;
 use rocket_contrib::json::Json;
 
-use crate::api::{JsonResult, JsonUpcase, NumberOrString, PasswordData};
-use crate::api::core::two_factor::{_generate_recover_code, totp};
+use crate::api::core::two_factor::_generate_recover_code;
+use crate::api::{EmptyResult, JsonResult, JsonUpcase, NumberOrString, PasswordData};
 use crate::auth::Headers;
 use crate::crypto;
 use crate::db::{
-    DbConn,
     models::{TwoFactor, TwoFactorType},
+    DbConn,
 };
-
-const TOTP_TIME_STEP: u64 = 30;
 
 pub fn routes() -> Vec<Route> {
     routes![
@@ -20,7 +18,6 @@ pub fn routes() -> Vec<Route> {
         activate_authenticator_put,
     ]
 }
-
 #[post("/two-factor/get-authenticator", data = "<data>")]
 fn generate_authenticator(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: PasswordData = data.into_inner().data;
@@ -80,7 +77,7 @@ fn activate_authenticator(data: JsonUpcase<EnableAuthenticatorData>, headers: He
     let twofactor = TwoFactor::new(user.uuid.clone(), type_, key.to_uppercase());
 
     // Validate the token provided with the key
-    totp::validate_totp_code(token, &twofactor.data)?;
+    validate_totp_code(token, &twofactor.data)?;
 
     _generate_recover_code(&mut user, &conn);
     twofactor.save(&conn)?;
@@ -95,4 +92,29 @@ fn activate_authenticator(data: JsonUpcase<EnableAuthenticatorData>, headers: He
 #[put("/two-factor/authenticator", data = "<data>")]
 fn activate_authenticator_put(data: JsonUpcase<EnableAuthenticatorData>, headers: Headers, conn: DbConn) -> JsonResult {
     activate_authenticator(data, headers, conn)
+}
+
+pub fn validate_totp_code_str(totp_code: &str, secret: &str) -> EmptyResult {
+    let totp_code: u64 = match totp_code.parse() {
+        Ok(code) => code,
+        _ => err!("TOTP code is not a number"),
+    };
+
+    validate_totp_code(totp_code, secret)
+}
+
+pub fn validate_totp_code(totp_code: u64, secret: &str) -> EmptyResult {
+    use oath::{totp_raw_now, HashType};
+
+    let decoded_secret = match BASE32.decode(secret.as_bytes()) {
+        Ok(s) => s,
+        Err(_) => err!("Invalid TOTP secret"),
+    };
+
+    let generated = totp_raw_now(&decoded_secret, 6, 0, 30, &HashType::SHA1);
+    if generated != totp_code {
+        err!("Invalid TOTP code");
+    }
+
+    Ok(())
 }

@@ -118,6 +118,7 @@ dependencies = [
  "oath 0.10.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "percent-encoding 2.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "quoted_printable 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rand 0.7.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "regex 1.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "reqwest 0.9.19 (registry+https://github.com/rust-lang/crates.io-index)",
  "ring 0.14.6 (registry+https://github.com/rust-lang/crates.io-index)",

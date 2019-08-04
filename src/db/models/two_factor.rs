@@ -3,8 +3,8 @@ use diesel::prelude::*;
 use serde_json::Value;
 
 use crate::api::EmptyResult;
-use crate::db::DbConn;
 use crate::db::schema::twofactor;
+use crate::db::DbConn;
 use crate::error::MapResult;
 
 use super::User;
@@ -36,7 +36,6 @@ pub enum TwoFactorType {
     U2fRegisterChallenge = 1000,
     U2fLoginChallenge = 1001,
     EmailVerificationChallenge = 1002,
-
 }
 
 /// Local methods

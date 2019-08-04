@@ -6,15 +6,15 @@ use u2f::messages::{RegisterResponse, SignResponse, U2fSignRequest};
 use u2f::protocol::{Challenge, U2f};
 use u2f::register::Registration;
 
-use crate::api::{ApiResult, EmptyResult, JsonResult, JsonUpcase, NumberOrString, PasswordData};
 use crate::api::core::two_factor::_generate_recover_code;
+use crate::api::{ApiResult, EmptyResult, JsonResult, JsonUpcase, NumberOrString, PasswordData};
 use crate::auth::Headers;
-use crate::CONFIG;
 use crate::db::{
-    DbConn,
     models::{TwoFactor, TwoFactorType},
+    DbConn,
 };
-use crate::error::{Error};
+use crate::error::Error;
+use crate::CONFIG;
 
 const U2F_VERSION: &str = "U2F_V2";
 

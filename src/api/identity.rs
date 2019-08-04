@@ -4,15 +4,15 @@ use rocket::Route;
 use rocket_contrib::json::Json;
 use serde_json::Value;
 
-use crate::api::{ApiResult, EmptyResult, JsonResult};
-use crate::api::core::two_factor::{duo, email, yubikey};
 use crate::api::core::two_factor::email::EmailTokenData;
+use crate::api::core::two_factor::{duo, email, yubikey};
+use crate::api::{ApiResult, EmptyResult, JsonResult};
 use crate::auth::ClientIp;
-use crate::CONFIG;
-use crate::db::DbConn;
 use crate::db::models::*;
+use crate::db::DbConn;
 use crate::mail;
 use crate::util;
+use crate::CONFIG;
 
 pub fn routes() -> Vec<Route> {
     routes![login]
@@ -179,7 +179,10 @@ fn twofactor_auth(
         None => err_json!(_json_err_twofactor(&twofactor_ids, user_uuid, conn)?),
     };
 
-    let selected_twofactor = twofactors.into_iter().filter(|tf| tf.atype == selected_id && tf.enabled).nth(0);
+    let selected_twofactor = twofactors
+        .into_iter()
+        .filter(|tf| tf.atype == selected_id && tf.enabled)
+        .nth(0);
 
     use crate::api::core::two_factor as _tf;
     use crate::crypto::ct_eq;
@@ -188,11 +191,11 @@ fn twofactor_auth(
     let mut remember = data.two_factor_remember.unwrap_or(0);
 
     match TwoFactorType::from_i32(selected_id) {
-        Some(TwoFactorType::Authenticator) => _tf::totp::validate_totp_code_str(twofactor_code, &selected_data?)?,
+        Some(TwoFactorType::Authenticator) => _tf::authenticator::validate_totp_code_str(twofactor_code, &selected_data?)?,
         Some(TwoFactorType::U2f) => _tf::u2f::validate_u2f_login(user_uuid, twofactor_code, conn)?,
         Some(TwoFactorType::YubiKey) => _tf::yubikey::validate_yubikey_login(twofactor_code, &selected_data?)?,
         Some(TwoFactorType::Duo) => _tf::duo::validate_duo_login(data.username.as_ref().unwrap(), twofactor_code, conn)?,
-        Some(TwoFactorType::Email) => _tf::email::validate_email_code_str(twofactor_code, &selected_data?)?,
+        Some(TwoFactorType::Email) => _tf::email::validate_email_code_str(user_uuid, twofactor_code, &selected_data?, conn)?,
 
         Some(TwoFactorType::Remember) => {
             match device.twofactor_remember {

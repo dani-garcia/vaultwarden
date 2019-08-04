@@ -16,7 +16,11 @@ use crate::error::{Error, MapResult};
 use crate::CONFIG;
 
 pub fn routes() -> Vec<Route> {
-    routes![generate_yubikey, activate_yubikey, activate_yubikey_put,]
+    routes![
+        generate_yubikey,
+        activate_yubikey,
+        activate_yubikey_put,
+    ]
 }
 
 #[derive(Deserialize, Debug)]

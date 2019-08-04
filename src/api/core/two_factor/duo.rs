@@ -1,18 +1,18 @@
 use chrono::Utc;
-use data_encoding::{BASE64};
+use data_encoding::BASE64;
 use rocket::Route;
 use rocket_contrib::json::Json;
 use serde_json;
 
 use crate::api::{ApiResult, EmptyResult, JsonResult, JsonUpcase, PasswordData};
 use crate::auth::Headers;
-use crate::CONFIG;
 use crate::crypto;
 use crate::db::{
-    DbConn,
     models::{TwoFactor, TwoFactorType, User},
+    DbConn,
 };
-use crate::error::{MapResult};
+use crate::error::MapResult;
+use crate::CONFIG;
 
 pub fn routes() -> Vec<Route> {
     routes![
@@ -71,7 +71,7 @@ enum DuoStatus {
     // Using the global duo config
     User(DuoData),
     // Using the user's config
-    Disabled(bool),  // True if there is a global setting
+    Disabled(bool), // True if there is a global setting
 }
 
 impl DuoStatus {
