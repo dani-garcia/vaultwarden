@@ -123,6 +123,7 @@ fn _password_login(data: ConnectData, conn: DbConn, ip: ClientIp) -> JsonResult 
         "refresh_token": device.refresh_token,
         "Key": user.akey,
         "PrivateKey": user.private_key,
+        //"TwoFactorToken": "11122233333444555666777888999"
     });
 
     if let Some(token) = twofactor_token {
@@ -183,7 +184,7 @@ fn twofactor_auth(
         None => err_json!(_json_err_twofactor(&twofactor_ids, user_uuid, conn)?),
     };
 
-    let selected_twofactor = twofactors.into_iter().filter(|tf| tf.atype == selected_id).nth(0);
+    let selected_twofactor = twofactors.into_iter().filter(|tf| tf.atype == selected_id && tf.enabled).nth(0);
 
     use crate::api::core::two_factor as _tf;
     use crate::crypto::ct_eq;
@@ -196,6 +197,7 @@ fn twofactor_auth(
         Some(TwoFactorType::U2f) => _tf::validate_u2f_login(user_uuid, twofactor_code, conn)?,
         Some(TwoFactorType::YubiKey) => _tf::validate_yubikey_login(twofactor_code, &selected_data?)?,
         Some(TwoFactorType::Duo) => _tf::validate_duo_login(data.username.as_ref().unwrap(), twofactor_code, conn)?,
+        Some(TwoFactorType::Email) => _tf::validate_totp_code_str(twofactor_code, &selected_data?)?,
 
         Some(TwoFactorType::Remember) => {
             match device.twofactor_remember {
@@ -284,6 +286,13 @@ fn _json_err_twofactor(providers: &[i32], user_uuid: &str, conn: &DbConn) -> Api
                 result["TwoFactorProviders2"][provider.to_string()] = json!({
                     "Nfc": yubikey_metadata.Nfc,
                 })
+            }
+
+            Some(tf_type @ TwoFactorType::Email) => {
+                let twofactor = match TwoFactor::find_by_user_and_type(user_uuid, tf_type as i32, &conn) {
+                    Some(tf) => tf,
+                    None => err!("No twofactor email registered"),
+                };
             }
 
             _ => {}
