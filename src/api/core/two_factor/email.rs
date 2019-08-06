@@ -10,12 +10,14 @@ use crate::db::{
 };
 use crate::error::Error;
 use crate::mail;
+use crate::crypto;
+
 use chrono::{Duration, NaiveDateTime, Utc};
-use rand::Rng;
 use std::char;
 use std::ops::Add;
 
 const MAX_TIME_DIFFERENCE: i64 = 600;
+const TOKEN_LEN: usize = 6;
 
 pub fn routes() -> Vec<Route> {
     routes![
@@ -97,13 +99,12 @@ struct SendEmailData {
 }
 
 fn generate_token() -> String {
-    const TOKEN_LEN: usize = 6;
-    let mut rng = rand::thread_rng();
-
-    (0..TOKEN_LEN)
-        .map(|_| {
-            let num = rng.gen_range(0, 9);
-            char::from_digit(num, 10).unwrap()
+    crypto::get_random(vec![0; TOKEN_LEN])
+        .iter()
+        .map(|byte| { (byte % 10)})
+        .map(|num| {
+            dbg!(num);
+            char::from_digit(num as u32, 10).unwrap()
         })
         .collect()
 }
@@ -290,5 +291,12 @@ mod tests {
 
         // If it's smaller than 3 characters it should only show asterisks.
         assert_eq!(result, "***@example.ext");
+    }
+
+    #[test]
+    fn test_token() {
+        let result = generate_token();
+
+        assert_eq!(result.chars().count(), 6);
     }
 }
