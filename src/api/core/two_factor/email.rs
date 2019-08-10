@@ -4,20 +4,18 @@ use serde_json;
 
 use crate::api::{EmptyResult, JsonResult, JsonUpcase, PasswordData};
 use crate::auth::Headers;
+use crate::crypto;
 use crate::db::{
     models::{TwoFactor, TwoFactorType},
     DbConn,
 };
 use crate::error::Error;
 use crate::mail;
-use crate::crypto;
+use crate::CONFIG;
 
 use chrono::{Duration, NaiveDateTime, Utc};
 use std::char;
 use std::ops::Add;
-
-const MAX_TIME_DIFFERENCE: i64 = 600;
-const TOKEN_LEN: usize = 6;
 
 pub fn routes() -> Vec<Route> {
     routes![
@@ -54,10 +52,14 @@ fn send_email_login(data: JsonUpcase<SendEmailLoginData>, conn: DbConn) -> Empty
         err!("Username or password is incorrect. Try again.")
     }
 
+    if !CONFIG._enable_email_2fa() {
+        err!("Email 2FA is disabled")
+    }
+
     let type_ = TwoFactorType::Email as i32;
     let mut twofactor = TwoFactor::find_by_user_and_type(&user.uuid, type_, &conn)?;
 
-    let generated_token = generate_token();
+    let generated_token = generate_token(CONFIG.email_token_size());
     let mut twofactor_data = EmailTokenData::from_json(&twofactor.data)?;
     twofactor_data.set_token(generated_token);
     twofactor.data = twofactor_data.to_json();
@@ -68,6 +70,7 @@ fn send_email_login(data: JsonUpcase<SendEmailLoginData>, conn: DbConn) -> Empty
     Ok(())
 }
 
+/// When user clicks on Manage email 2FA show the user the related information
 #[post("/two-factor/get-email", data = "<data>")]
 fn get_email(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: PasswordData = data.into_inner().data;
@@ -98,12 +101,11 @@ struct SendEmailData {
     MasterPasswordHash: String,
 }
 
-fn generate_token() -> String {
-    crypto::get_random(vec![0; TOKEN_LEN])
+fn generate_token(token_size: u64) -> String {
+    crypto::get_random(vec![0; token_size as usize])
         .iter()
         .map(|byte| { (byte % 10)})
         .map(|num| {
-            dbg!(num);
             char::from_digit(num as u32, 10).unwrap()
         })
         .collect()
@@ -119,13 +121,17 @@ fn send_email(data: JsonUpcase<SendEmailData>, headers: Headers, conn: DbConn) -
         err!("Invalid password");
     }
 
+    if !CONFIG._enable_email_2fa() {
+        err!("Email 2FA is disabled")
+    }
+
     let type_ = TwoFactorType::Email as i32;
 
     if let Some(tf) = TwoFactor::find_by_user_and_type(&user.uuid, type_, &conn) {
         tf.delete(&conn)?;
     }
 
-    let generated_token = generate_token();
+    let generated_token = generate_token(CONFIG.email_token_size());
     let twofactor_data = EmailTokenData::new(data.Email, generated_token);
 
     // Uses EmailVerificationChallenge as type to show that it's not verified yet.
@@ -170,7 +176,7 @@ fn email(data: JsonUpcase<EmailData>, headers: Headers, conn: DbConn) -> JsonRes
     };
 
     if issued_token != &data.Token {
-        err!("Email token does not match")
+        err!("Token is invalid")
     }
 
     email_data.reset_token();
@@ -195,7 +201,14 @@ pub fn validate_email_code_str(user_uuid: &str, token: &str, data: &str, conn: &
     };
 
     if issued_token != &*token {
-        err!("Email token does not match")
+        email_data.add_attempt();
+        if email_data.attempts >= CONFIG.email_attempts_limit() {
+            email_data.reset_token();
+        }
+        twofactor.data = email_data.to_json();
+        twofactor.save(&conn)?;
+
+        err!("Token is invalid")
     }
 
     email_data.reset_token();
@@ -203,18 +216,25 @@ pub fn validate_email_code_str(user_uuid: &str, token: &str, data: &str, conn: &
     twofactor.save(&conn)?;
 
     let date = NaiveDateTime::from_timestamp(email_data.token_sent, 0);
-    if date.add(Duration::seconds(MAX_TIME_DIFFERENCE)) < Utc::now().naive_utc() {
-        err!("Email token too old")
+    let max_time = CONFIG.email_expiration_time() as i64;
+    if date.add(Duration::seconds(max_time)) < Utc::now().naive_utc() {
+        err!("Token has expired")
     }
 
     Ok(())
 }
-
+/// Data stored in the TwoFactor table in the db
 #[derive(Serialize, Deserialize)]
 pub struct EmailTokenData {
+    /// Email address where the token will be sent to. Can be different from account email.
     pub email: String,
+    /// Some(token): last valid token issued that has not been entered.
+    /// None: valid token was used and removed.
     pub last_token: Option<String>,
+    /// UNIX timestamp of token issue.
     pub token_sent: i64,
+    /// Amount of token entry attempts for last_token.
+    pub attempts: u64,
 }
 
 impl EmailTokenData {
@@ -223,6 +243,7 @@ impl EmailTokenData {
             email,
             last_token: Some(token),
             token_sent: Utc::now().naive_utc().timestamp(),
+            attempts: 0,
         }
     }
 
@@ -233,6 +254,11 @@ impl EmailTokenData {
 
     pub fn reset_token(&mut self) {
         self.last_token = None;
+        self.attempts = 0;
+    }
+
+    pub fn add_attempt(&mut self) {
+        self.attempts = self.attempts + 1;
     }
 
     pub fn to_json(&self) -> String {
@@ -295,8 +321,8 @@ mod tests {
 
     #[test]
     fn test_token() {
-        let result = generate_token();
+        let result = generate_token(100);
 
-        assert_eq!(result.chars().count(), 6);
+        assert_eq!(result.chars().count(), 100);
     }
 }

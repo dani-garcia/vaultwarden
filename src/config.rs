@@ -318,6 +318,18 @@ make_config! {
         _duo_akey:              Pass,   false,  option;
     },
 
+    /// Email 2FA Settings
+    email_2fa: _enable_email_2fa {
+        /// Enabled |> Disabling will prevent users from setting up new email 2FA and using existing email 2FA configured
+        _enable_email_2fa:      bool,   true,   def,      true;
+        /// Token number length |> Length of the numbers in an email token
+        email_token_size:       u64,    true,   def,      6;
+        /// Token expiration time |> Maximum time in seconds a token is valid. The time the user has to open email client and copy token.
+        email_expiration_time:  u64,    true,   def,      600;
+        /// Maximum attempts |> Maximum attempts before an email token is reset and a new email will need to be sent
+        email_attempts_limit:   u64,    true,   def,      3;
+    },
+
     /// SMTP Email Settings
     smtp: _enable_smtp {
         /// Enabled
