@@ -27,6 +27,7 @@ const ALLOWED_CHARS: &str = "_-.";
 lazy_static! {
     // Reuse the client between requests
     static ref CLIENT: Client = Client::builder()
+        .use_sys_proxy()
         .gzip(true)
         .timeout(Duration::from_secs(CONFIG.icon_download_timeout()))
         .default_headers(_header_map())
