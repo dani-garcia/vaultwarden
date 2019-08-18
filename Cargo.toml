@@ -40,8 +40,8 @@ rmpv = "0.4.0"
 chashmap = "2.2.2"
 
 # A generic serialization/deserialization framework
-serde = "1.0.98"
-serde_derive = "1.0.98"
+serde = "1.0.99"
+serde_derive = "1.0.99"
 serde_json = "1.0.40"
 
 # Logging
@@ -103,10 +103,10 @@ handlebars = "2.0.1"
 
 # For favicon extraction from main website
 soup = "0.4.1"
-regex = "1.2.0"
+regex = "1.2.1"
 
 # URL encoding library
-percent-encoding = "2.0.0"
+percent-encoding = "2.1.0"
 
 [patch.crates-io]
 # Add support for Timestamp type
