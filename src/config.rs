@@ -269,6 +269,10 @@ make_config! {
         /// Note that the checkbox would still be present, but ignored.
         disable_2fa_remember:   bool,   true,   def,    false;
 
+        /// Require new device emails |> When a user logs in an email is required to be sent.
+        /// If sending the email fails the login attempt will fail.
+        require_device_email:   bool,   true,   def,     false;
+
         /// Reload templates (Dev) |> When this is set to true, the templates get reloaded with every request.
         /// ONLY use this during development, as it can slow down the server
         reload_templates:       bool,   true,   def,    false;
