@@ -65,11 +65,11 @@ fn alive() -> Json<String> {
 }
 
 #[get("/bwrs_images/<filename>")]
-fn images(filename: String) -> Result<Content<Vec<u8>>, Error> {
-    let image_type = ContentType::new("image", "png");
+fn images(filename: String) -> Result<Content<&'static [u8]>, Error> {
     match filename.as_ref() {
-        "mail-github.png" => Ok(Content(image_type , include_bytes!("../static/images/mail-github.png").to_vec())),
-        "logo-gray.png" => Ok(Content(image_type, include_bytes!("../static/images/logo-gray.png").to_vec())),
-        _ => err!("Image not found")
+        "mail-github.png" => Ok(Content(ContentType::PNG, include_bytes!("../static/images/mail-github.png"))),
+        "logo-gray.png" => Ok(Content(ContentType::PNG, include_bytes!("../static/images/logo-gray.png"))),
+        "error-x.svg" => Ok(Content(ContentType::SVG, include_bytes!("../static/images/error-x.svg"))),
+        _ => err!("Image not found"),
     }
 }

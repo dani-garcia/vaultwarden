@@ -234,6 +234,9 @@ make_config! {
         /// Enable web vault
         web_vault_enabled:      bool,   false,  def,    true;
 
+        /// HIBP Api Key |> HaveIBeenPwned API Key, request it here: https://haveibeenpwned.com/API/Key
+        hibp_api_key:           String, false,  option;
+
         /// Disable icon downloads |> Set to true to disable icon downloading, this would still serve icons from
         /// $ICON_CACHE_FOLDER, but it won't produce any external network request. Needs to set $ICON_CACHE_TTL to 0,
         /// otherwise it will delete them and they won't be downloaded again.
