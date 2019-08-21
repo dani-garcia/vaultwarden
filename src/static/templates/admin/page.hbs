@@ -26,9 +26,13 @@
                                 {{/each}}
                             </span>
                         </div>
-                        <div style="flex: 0 0 240px;">
-                            <a class="mr-3" href="#" onclick='deauthUser({{jsesc Id}})'>Deauthorize sessions</a>
-                            <a class="mr-3" href="#" onclick='deleteUser({{jsesc Id}}, {{jsesc Email}})'>Delete User</a>
+                        <div style="flex: 0 0 300px; font-size: 90%; text-align: right; padding-right: 15px">
+                            {{#if TwoFactorEnabled}}
+                            <a class="mr-2" href="#" onclick='remove2fa({{jsesc Id}})'>Remove all 2FA</a>
+                            {{/if}}
+
+                            <a class="mr-2" href="#" onclick='deauthUser({{jsesc Id}})'>Deauthorize sessions</a>
+                            <a class="mr-2" href="#" onclick='deleteUser({{jsesc Id}}, {{jsesc Email}})'>Delete User</a>
                         </div>
                     </div>
                 </div>
@@ -225,6 +229,12 @@
                 alert("Wrong email, please try again")
             }
         }
+        return false;
+    }
+    function remove2fa(id) {
+        _post("/admin/users/" + id + "/remove-2fa",
+            "2FA removed correctly",
+            "Error removing 2FA");
         return false;
     }
     function deauthUser(id) {
