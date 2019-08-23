@@ -1,4 +1,5 @@
 use lettre::smtp::authentication::Credentials;
+use lettre::smtp::authentication::Mechanism as SmtpAuthMechanism;
 use lettre::smtp::ConnectionReuseParameters;
 use lettre::{ClientSecurity, ClientTlsParameters, SmtpClient, SmtpTransport, Transport};
 use lettre_email::{EmailBuilder, MimeMultipartType, PartBuilder};
@@ -36,6 +37,17 @@ fn mailer() -> SmtpTransport {
 
     let smtp_client = match (&CONFIG.smtp_username(), &CONFIG.smtp_password()) {
         (Some(user), Some(pass)) => smtp_client.credentials(Credentials::new(user.clone(), pass.clone())),
+        _ => smtp_client,
+    };
+
+    let smtp_client = match &CONFIG.smtp_auth_mechanism() {
+        Some(auth_mechanism_json) => {
+            let auth_mechanism = serde_json::from_str::<SmtpAuthMechanism>(&auth_mechanism_json.clone());
+            match auth_mechanism {
+                Ok(auth_mechanism) => smtp_client.authentication_mechanism(auth_mechanism),
+                Err(_) => panic!("Failure to parse mechanism. Is it proper Json? Eg. `\"Plain\"` not `Plain`"),
+            }
+        },
         _ => smtp_client,
     };
 

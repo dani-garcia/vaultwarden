@@ -345,6 +345,8 @@ make_config! {
         smtp_username:          String, true,   option;
         /// Password
         smtp_password:          Pass,   true,   option;
+        /// Json form auth mechanism |> Defaults for ssl is "Plain" and "Login" and nothing for non-ssl connections. Possible values: ["Plain", "Login", "Xoauth2"]
+        smtp_auth_mechanism:    String, true,   option;
     },
 }
 
