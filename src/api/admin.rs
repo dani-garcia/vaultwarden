@@ -28,6 +28,7 @@ pub fn routes() -> Vec<Route> {
         invite_user,
         delete_user,
         deauth_user,
+        remove_2fa,
         update_revision_users,
         post_config,
         delete_config,
@@ -193,6 +194,18 @@ fn deauth_user(uuid: String, _token: AdminToken, conn: DbConn) -> EmptyResult {
     Device::delete_all_by_user(&user.uuid, &conn)?;
     user.reset_security_stamp();
 
+    user.save(&conn)
+}
+
+#[post("/users/<uuid>/remove-2fa")]
+fn remove_2fa(uuid: String, _token: AdminToken, conn: DbConn) -> EmptyResult {
+    let mut user = match User::find_by_uuid(&uuid, &conn) {
+        Some(user) => user,
+        None => err!("User doesn't exist"),
+    };
+
+    TwoFactor::delete_all_by_user(&user.uuid, &conn)?;
+    user.totp_recover = None;
     user.save(&conn)
 }
 

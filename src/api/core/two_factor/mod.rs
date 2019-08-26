@@ -94,9 +94,7 @@ fn recover(data: JsonUpcase<RecoverTwoFactor>, conn: DbConn) -> JsonResult {
     }
 
     // Remove all twofactors from the user
-    for twofactor in TwoFactor::find_by_user(&user.uuid, &conn) {
-        twofactor.delete(&conn)?;
-    }
+    TwoFactor::delete_all_by_user(&user.uuid, &conn)?;
 
     // Remove the recovery code, not needed without twofactors
     user.totp_recover = None;

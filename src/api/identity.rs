@@ -101,7 +101,13 @@ fn _password_login(data: ConnectData, conn: DbConn, ip: ClientIp) -> JsonResult 
     let twofactor_token = twofactor_auth(&user.uuid, &data, &mut device, &conn)?;
 
     if CONFIG.mail_enabled() && new_device {
-        mail::send_new_device_logged_in(&user.email, &ip.ip.to_string(), &device.updated_at, &device.name)?
+        if let Err(e) = mail::send_new_device_logged_in(&user.email, &ip.ip.to_string(), &device.updated_at, &device.name) {
+            error!("Error sending new device email: {:#?}", e);
+
+            if CONFIG.require_device_email() {
+                err!("Could not send login notification email. Please contact your administrator.")
+            }
+        }
     }
 
     // Common

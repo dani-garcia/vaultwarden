@@ -132,18 +132,33 @@ fn put_eq_domains(data: JsonUpcase<EquivDomainData>, headers: Headers, conn: DbC
 
 #[get("/hibp/breach?<username>")]
 fn hibp_breach(username: String) -> JsonResult {
-    let url = format!("https://haveibeenpwned.com/api/v2/breachedaccount/{}", username);
     let user_agent = "Bitwarden_RS";
+    let url = format!(
+        "https://haveibeenpwned.com/api/v3/breachedaccount/{}?truncateResponse=false&includeUnverified=false",
+        username
+    );
 
     use reqwest::{header::USER_AGENT, Client};
 
-    let res = Client::new().get(&url).header(USER_AGENT, user_agent).send()?;
+    if let Some(api_key) = crate::CONFIG.hibp_api_key() {
+        let res = Client::new()
+            .get(&url)
+            .header(USER_AGENT, user_agent)
+            .header("hibp-api-key", api_key)
+            .send()?;
 
-    // If we get a 404, return a 404, it means no breached accounts
-    if res.status() == 404 {
-        return Err(Error::empty().with_code(404));
+        // If we get a 404, return a 404, it means no breached accounts
+        if res.status() == 404 {
+            return Err(Error::empty().with_code(404));
+        }
+
+        let value: Value = res.error_for_status()?.json()?;
+        Ok(Json(value))
+    } else {
+        Ok(Json(json!([{
+            "title": "--- Error! ---",
+            "description": "HaveIBeenPwned API key not set! Go to https://haveibeenpwned.com/API/Key",
+            "logopath": "/bwrs_images/error-x.svg"
+        }])))
     }
-
-    let value: Value = res.error_for_status()?.json()?;
-    Ok(Json(value))
 }
