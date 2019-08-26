@@ -181,7 +181,7 @@ fn email(data: JsonUpcase<EmailData>, headers: Headers, conn: DbConn) -> JsonRes
         _ => err!("No token available"),
     };
 
-    if issued_token != &data.Token {
+    if !crypto::ct_eq(issued_token, data.Token) {
         err!("Token is invalid")
     }
 
@@ -206,7 +206,7 @@ pub fn validate_email_code_str(user_uuid: &str, token: &str, data: &str, conn: &
         _ => err!("No token available"),
     };
 
-    if issued_token != &*token {
+    if !crypto::ct_eq(issued_token, token) {
         email_data.add_attempt();
         if email_data.attempts >= CONFIG.email_attempts_limit() {
             email_data.reset_token();
