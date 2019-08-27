@@ -94,5 +94,9 @@ COPY Rocket.toml .
 COPY --from=vault /web-vault ./web-vault
 COPY --from=build app/target/release/bitwarden_rs .
 
+COPY docker/healthcheck.sh ./healthcheck.sh
+
+HEALTHCHECK --interval=10s --timeout=1s CMD bash healthcheck.sh || exit 1
+
 # Configures the startup!
 CMD ["./bitwarden_rs"]
