@@ -325,6 +325,18 @@ make_config! {
         _duo_akey:              Pass,   false,  option;
     },
 
+    /// Email 2FA Settings
+    email_2fa: _enable_email_2fa {
+        /// Enabled |> Disabling will prevent users from setting up new email 2FA and using existing email 2FA configured
+        _enable_email_2fa:      bool,   true,   def,      true;
+        /// Token number length |> Length of the numbers in an email token. Minimum of 6. Maximum is 19.
+        email_token_size:       u32,    true,   def,      6;
+        /// Token expiration time |> Maximum time in seconds a token is valid. The time the user has to open email client and copy token.
+        email_expiration_time:  u64,    true,   def,      600;
+        /// Maximum attempts |> Maximum attempts before an email token is reset and a new email will need to be sent
+        email_attempts_limit:   u64,    true,   def,      3;
+    },
+
     /// SMTP Email Settings
     smtp: _enable_smtp {
         /// Enabled
@@ -373,6 +385,14 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
 
     if cfg.smtp_username.is_some() != cfg.smtp_password.is_some() {
         err!("Both `SMTP_USERNAME` and `SMTP_PASSWORD` need to be set to enable email authentication")
+    }
+
+    if cfg.email_token_size < 6 {
+        err!("`EMAIL_TOKEN_SIZE` has a minimum size of 6")
+    }
+
+    if cfg.email_token_size > 19 {
+        err!("`EMAIL_TOKEN_SIZE` has a maximum size of 19")
     }
 
     Ok(())
@@ -539,6 +559,7 @@ fn load_templates(path: &str) -> Handlebars {
     reg!("email/pw_hint_none", ".html");
     reg!("email/pw_hint_some", ".html");
     reg!("email/send_org_invite", ".html");
+    reg!("email/twofactor_email", ".html");
 
     reg!("admin/base");
     reg!("admin/login");

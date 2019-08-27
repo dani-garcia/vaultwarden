@@ -168,6 +168,19 @@ pub fn send_new_device_logged_in(address: &str, ip: &str, dt: &NaiveDateTime, de
     send_email(&address, &subject, &body_html, &body_text)
 }
 
+pub fn send_token(address: &str, token: &str) -> EmptyResult {
+
+    let (subject, body_html, body_text) = get_text(
+        "email/twofactor_email",
+        json!({
+            "url": CONFIG.domain(),
+            "token": token,
+        }),
+    )?;
+
+    send_email(&address, &subject, &body_html, &body_text)
+}
+
 fn send_email(address: &str, subject: &str, body_html: &str, body_text: &str) -> EmptyResult {
     let html = PartBuilder::new()
         .body(encode_to_str(body_html))
