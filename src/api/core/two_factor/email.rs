@@ -14,7 +14,6 @@ use crate::mail;
 use crate::CONFIG;
 
 use chrono::{Duration, NaiveDateTime, Utc};
-use std::char;
 use std::ops::Add;
 
 pub fn routes() -> Vec<Route> {
