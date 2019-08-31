@@ -56,7 +56,7 @@
             <h6 class="mb-0 text-white">Invite User</h6>
             <small>Email:</small>
 
-            <form class="form-inline" id="invite-form">
+            <form class="form-inline" id="invite-form" onsubmit="inviteUser(); return false;">
                 <input type="email" class="form-control w-50 mr-2" id="email-invite" placeholder="Enter email">
                 <button type="submit" class="btn btn-primary">Invite</button>
             </form>
@@ -71,7 +71,7 @@
                 them to avoid confusion. This does not apply to the read-only section, which can only be set through the
                 environment.
             </div>
-            <form class="form accordion" id="config-form">
+            <form class="form accordion" id="config-form" onsubmit="saveConfig(); return false;">
                 {{#each config}}
                 {{#if groupdoc}}
                 <div class="card bg-light mb-3">
@@ -320,9 +320,6 @@
         "2": { "name": "User", "color": "blue" },
         "3": { "name": "Manager", "color": "green" },
     };
-
-    document.getElementById("invite-form").addEventListener("submit", inviteUser);
-    document.getElementById("config-form").addEventListener("submit", saveConfig);
 
     document.querySelectorAll("img.identicon").forEach(function (e, i) {
         e.src = identicon(e.dataset.src);
