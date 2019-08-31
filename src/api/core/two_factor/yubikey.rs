@@ -59,6 +59,10 @@ fn jsonify_yubikeys(yubikeys: Vec<String>) -> serde_json::Value {
 }
 
 fn get_yubico_credentials() -> Result<(String, String), Error> {
+    if !CONFIG._enable_yubico() {
+        err!("Yubico support is disabled");
+    }
+
     match (CONFIG.yubico_client_id(), CONFIG.yubico_secret_key()) {
         (Some(id), Some(secret)) => Ok((id, secret)),
         _ => err!("`YUBICO_CLIENT_ID` or `YUBICO_SECRET_KEY` environment variable is not set. Yubikey OTP Disabled"),

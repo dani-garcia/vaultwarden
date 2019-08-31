@@ -31,13 +31,13 @@ struct DuoData {
 
 impl DuoData {
     fn global() -> Option<Self> {
-        match CONFIG.duo_host() {
-            Some(host) => Some(Self {
+        match (CONFIG._enable_duo(), CONFIG.duo_host()) {
+            (true, Some(host)) => Some(Self {
                 host,
                 ik: CONFIG.duo_ikey().unwrap(),
                 sk: CONFIG.duo_skey().unwrap(),
             }),
-            None => None,
+            _ => None,
         }
     }
     fn msg(s: &str) -> Self {
