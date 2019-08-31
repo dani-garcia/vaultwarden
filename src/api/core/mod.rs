@@ -158,7 +158,7 @@ fn hibp_breach(username: String) -> JsonResult {
         Ok(Json(json!([{
             "title": "--- Error! ---",
             "description": "HaveIBeenPwned API key not set! Go to https://haveibeenpwned.com/API/Key",
-            "logopath": "/bwrs_images/error-x.svg"
+            "logopath": "/bwrs_static/error-x.svg"
         }])))
     }
 }

@@ -14,9 +14,9 @@ use crate::CONFIG;
 
 pub fn routes() -> Vec<Route> {
     if CONFIG.web_vault_enabled() {
-        routes![web_index, app_id, web_files, attachments, alive, images]
+        routes![web_index, app_id, web_files, attachments, alive, static_files]
     } else {
-        routes![attachments, alive]
+        routes![attachments, alive, static_files]
     }
 }
 
@@ -64,8 +64,8 @@ fn alive() -> Json<String> {
     Json(format_date(&Utc::now().naive_utc()))
 }
 
-#[get("/bwrs_images/<filename>")]
-fn images(filename: String) -> Result<Content<&'static [u8]>, Error> {
+#[get("/bwrs_static/<filename>")]
+fn static_files(filename: String) -> Result<Content<&'static [u8]>, Error> {
     match filename.as_ref() {
         "mail-github.png" => Ok(Content(ContentType::PNG, include_bytes!("../static/images/mail-github.png"))),
         "logo-gray.png" => Ok(Content(ContentType::PNG, include_bytes!("../static/images/logo-gray.png"))),
