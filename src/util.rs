@@ -4,6 +4,8 @@
 use rocket::fairing::{Fairing, Info, Kind};
 use rocket::response::{self, Responder};
 use rocket::{Request, Response};
+use rocket::http::{Header, ContentType, Method};
+use std::io::Cursor;
 
 pub struct AppHeaders();
 
@@ -27,6 +29,39 @@ impl Fairing for AppHeaders {
         // Disable cache unless otherwise specified
         if !res.headers().contains("cache-control") {
             res.set_raw_header("Cache-Control", "no-cache, no-store, max-age=0");
+        }
+    }
+}
+
+
+pub struct CORS();
+
+impl Fairing for CORS {
+    fn info(&self) -> Info {
+        Info {
+            name: "Add CORS headers to requests",
+            kind: Kind::Response
+        }
+    }
+
+    fn on_response(&self, request: &Request, response: &mut Response) {
+        // We need to explictly get the Origin header for Access-Control-Allow-Origin
+        let origin = match request.headers().get_one("Origin") {
+            Some(h) => h.to_string(),
+            _ => "".to_string(),
+        };
+
+        if request.method() == Method::Options || response.content_type() == Some(ContentType::JSON) {
+            // Requests with credentials need explicit values since they do not allow wildcards.
+            response.set_header(Header::new("Access-Control-Allow-Origin", origin));
+            response.set_header(Header::new("Access-Control-Allow-Methods", "GET, HEAD, POST, PUT, DELETE, CONNECT, OPTIONS, TRACE, PATCH"));
+            response.set_header(Header::new("Access-Control-Allow-Headers", "*, Authorization"));
+            response.set_header(Header::new("Access-Control-Allow-Credentials", "true"));
+        }
+
+        if request.method() == Method::Options {
+            response.set_header(ContentType::Plain);
+            response.set_sized_body(Cursor::new(""));
         }
     }
 }

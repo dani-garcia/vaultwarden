@@ -250,7 +250,8 @@ fn launch_rocket() {
     let rocket = rocket
         .manage(db::init_pool())
         .manage(api::start_notification_server())
-        .attach(util::AppHeaders());
+        .attach(util::AppHeaders())
+        .attach(util::CORS());
 
     // Launch and print error if there is one
     // The launch will restore the original logging level
