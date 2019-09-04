@@ -2,7 +2,7 @@
 
 if [ -z "$ROCKET_TLS"]
 then
-  curl --fail http://localhost/alive || exit 1
+  curl --fail http://localhost:${ROCKET_PORT:-"80"}/alive || exit 1
 else
-  curl --fail https://localhost/alive || exit 1
+  curl --fail https://localhost:${ROCKET_PORT:-"80"}/alive || exit 1
 fi
