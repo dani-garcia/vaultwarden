@@ -46,7 +46,7 @@ enum UserStatus {
 /// Local methods
 impl User {
     pub const CLIENT_KDF_TYPE_DEFAULT: i32 = 0; // PBKDF2: 0
-    pub const CLIENT_KDF_ITER_DEFAULT: i32 = 5_000;
+    pub const CLIENT_KDF_ITER_DEFAULT: i32 = 100_000;
 
     pub fn new(mail: String) -> Self {
         let now = Utc::now().naive_utc();

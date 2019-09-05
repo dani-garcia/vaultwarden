@@ -263,7 +263,7 @@ impl EmailTokenData {
     }
 
     pub fn add_attempt(&mut self) {
-        self.attempts = self.attempts + 1;
+        self.attempts += 1;
     }
 
     pub fn to_json(&self) -> String {
@@ -281,7 +281,7 @@ impl EmailTokenData {
 
 /// Takes an email address and obscures it by replacing it with asterisks except two characters.
 pub fn obscure_email(email: &str) -> String {
-    let split: Vec<&str> = email.split("@").collect();
+    let split: Vec<&str> = email.split('@').collect();
 
     let mut name = split[0].to_string();
     let domain = &split[1];

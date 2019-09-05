@@ -34,7 +34,7 @@ multipart = { version = "0.16.1", features = ["server"], default-features = fals
 ws = "0.9.0"
 
 # MessagePack library
-rmpv = "0.4.0"
+rmpv = "0.4.1"
 
 # Concurrent hashmap implementation
 chashmap = "2.2.2"
@@ -62,7 +62,7 @@ ring = "0.14.6"
 uuid = { version = "0.7.4", features = ["v4"] }
 
 # Date and time library for Rust
-chrono = "0.4.7"
+chrono = "0.4.9"
 
 # TOTP library
 oath = "0.10.2"
@@ -99,18 +99,18 @@ native-tls = "0.2.3"
 quoted_printable = "0.4.1"
 
 # Template library
-handlebars = "2.0.1"
+handlebars = "2.0.2"
 
 # For favicon extraction from main website
 soup = "0.4.1"
-regex = "1.2.1"
+regex = "1.3.1"
 
 # URL encoding library
 percent-encoding = "2.1.0"
 
 [patch.crates-io]
 # Add support for Timestamp type
-rmp = { git = 'https://github.com/dani-garcia/msgpack-rust' }
+rmp = { git = 'https://github.com/dani-garcia/msgpack-rust', branch='ext_types' }
 
 # Use newest ring
 rocket = { git = 'https://github.com/SergioBenitez/Rocket', rev = 'dbcb0a75b9556763ac3ab708f40c8f8ed75f1a1e' }

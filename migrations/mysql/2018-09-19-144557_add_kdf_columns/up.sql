@@ -4,4 +4,4 @@ ALTER TABLE users
 
 ALTER TABLE users
     ADD COLUMN
-    client_kdf_iter INTEGER NOT NULL DEFAULT 5000;
+    client_kdf_iter INTEGER NOT NULL DEFAULT 100000;

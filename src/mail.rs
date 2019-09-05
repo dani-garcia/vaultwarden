@@ -45,9 +45,9 @@ fn mailer() -> SmtpTransport {
             let auth_mechanism = serde_json::from_str::<SmtpAuthMechanism>(&auth_mechanism_json);
             match auth_mechanism {
                 Ok(auth_mechanism) => smtp_client.authentication_mechanism(auth_mechanism),
-                Err(_) => panic!("Failure to parse mechanism. Is it proper Json? Eg. `\"Plain\"` not `Plain`"),
+                _ => panic!("Failure to parse mechanism. Is it proper Json? Eg. `\"Plain\"` not `Plain`"),
             }
-        },
+        }
         _ => smtp_client,
     };
 
@@ -169,7 +169,6 @@ pub fn send_new_device_logged_in(address: &str, ip: &str, dt: &NaiveDateTime, de
 }
 
 pub fn send_token(address: &str, token: &str) -> EmptyResult {
-
     let (subject, body_html, body_text) = get_text(
         "email/twofactor_email",
         json!({
