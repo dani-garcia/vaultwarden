@@ -62,7 +62,7 @@ ENV SSL_CERT_DIR=/etc/ssl/certs
 # Install needed libraries
 RUN apk add --no-cache \
         openssl \
-        mariadb-connector-c \
+        curl \
         ca-certificates
 
 RUN mkdir /data
@@ -78,7 +78,7 @@ COPY --from=build /app/target/x86_64-unknown-linux-musl/release/bitwarden_rs .
 
 COPY docker/healthcheck.sh ./healthcheck.sh
 
-HEALTHCHECK --interval=10s --timeout=1s CMD bash healthcheck.sh || exit 1
+HEALTHCHECK --interval=10s --timeout=1s CMD sh healthcheck.sh || exit 1
 
 
 # Configures the startup!

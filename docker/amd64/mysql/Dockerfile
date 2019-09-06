@@ -80,6 +80,7 @@ RUN apt-get update && apt-get install -y \
     --no-install-recommends \
     openssl \
     ca-certificates \
+    curl \
     libmariadbclient-dev \
     && rm -rf /var/lib/apt/lists/*
 
@@ -96,7 +97,7 @@ COPY --from=build app/target/release/bitwarden_rs .
 
 COPY docker/healthcheck.sh ./healthcheck.sh
 
-HEALTHCHECK --interval=10s --timeout=1s CMD bash healthcheck.sh || exit 1
+HEALTHCHECK --interval=10s --timeout=1s CMD sh healthcheck.sh || exit 1
 
 # Configures the startup!
 CMD ["./bitwarden_rs"]
