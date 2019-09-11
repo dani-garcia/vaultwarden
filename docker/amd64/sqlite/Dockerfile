@@ -96,7 +96,7 @@ COPY --from=build app/target/release/bitwarden_rs .
 
 COPY docker/healthcheck.sh ./healthcheck.sh
 
-HEALTHCHECK --interval=10s --timeout=1s CMD sh healthcheck.sh || exit 1
+HEALTHCHECK --interval=30s --timeout=3s CMD sh healthcheck.sh || exit 1
 
 # Configures the startup!
 CMD ["./bitwarden_rs"]
