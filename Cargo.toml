@@ -14,6 +14,7 @@ build = "build.rs"
 # Empty to keep compatibility, prefer to set USE_SYSLOG=true
 enable_syslog = []
 mysql = ["diesel/mysql", "diesel_migrations/mysql"]
+postgresql = ["diesel/postgres", "diesel_migrations/postgres", "openssl"]
 sqlite = ["diesel/sqlite", "diesel_migrations/sqlite", "libsqlite3-sys"]
 
 [target."cfg(not(windows))".dependencies]
@@ -104,6 +105,9 @@ handlebars = "2.0.2"
 # For favicon extraction from main website
 soup = "0.4.1"
 regex = "1.3.1"
+
+# Required for SSL support for PostgreSQL
+openssl = { version = "0.10.24", optional = true }
 
 # URL encoding library
 percent-encoding = "2.1.0"

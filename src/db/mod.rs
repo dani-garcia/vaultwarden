@@ -19,6 +19,8 @@ use crate::CONFIG;
 type Connection = diesel::sqlite::SqliteConnection;
 #[cfg(feature = "mysql")]
 type Connection = diesel::mysql::MysqlConnection;
+#[cfg(feature = "postgresql")]
+type Connection = diesel::pg::PgConnection;
 
 /// An alias to the type for a pool of Diesel connections.
 type Pool = r2d2::Pool<ConnectionManager<Connection>>;
@@ -32,6 +34,9 @@ pub mod models;
 pub mod schema;
 #[cfg(feature = "mysql")]
 #[path = "schemas/mysql/schema.rs"]
+pub mod schema;
+#[cfg(feature = "postgresql")]
+#[path = "schemas/postgresql/schema.rs"]
 pub mod schema;
 
 /// Initializes a database pool.
