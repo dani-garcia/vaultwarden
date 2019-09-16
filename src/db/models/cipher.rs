@@ -5,7 +5,7 @@ use super::{
     Attachment, CollectionCipher, FolderCipher, Organization, User, UserOrgStatus, UserOrgType, UserOrganization,
 };
 
-#[derive(Debug, Identifiable, Queryable, Insertable, Associations)]
+#[derive(Debug, Identifiable, Queryable, Insertable, Associations, AsChangeset)]
 #[table_name = "ciphers"]
 #[belongs_to(User, foreign_key = "user_uuid")]
 #[belongs_to(Organization, foreign_key = "organization_uuid")]
@@ -148,6 +148,21 @@ impl Cipher {
         user_uuids
     }
 
+    #[cfg(feature = "postgresql")]
+    pub fn save(&mut self, conn: &DbConn) -> EmptyResult {
+        self.update_users_revision(conn);
+        self.updated_at = Utc::now().naive_utc();
+
+        diesel::insert_into(ciphers::table)
+            .values(&*self)
+            .on_conflict(ciphers::uuid)
+            .do_update()
+            .set(&*self)
+            .execute(&**conn)
+            .map_res("Error saving cipher")
+    }
+
+    #[cfg(not(feature = "postgresql"))]
     pub fn save(&mut self, conn: &DbConn) -> EmptyResult {
         self.update_users_revision(conn);
         self.updated_at = Utc::now().naive_utc();

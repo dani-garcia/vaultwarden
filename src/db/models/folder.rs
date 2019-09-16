@@ -3,7 +3,7 @@ use serde_json::Value;
 
 use super::{Cipher, User};
 
-#[derive(Debug, Identifiable, Queryable, Insertable, Associations)]
+#[derive(Debug, Identifiable, Queryable, Insertable, Associations, AsChangeset)]
 #[table_name = "folders"]
 #[belongs_to(User, foreign_key = "user_uuid")]
 #[primary_key(uuid)]
@@ -71,6 +71,21 @@ use crate::error::MapResult;
 
 /// Database methods
 impl Folder {
+    #[cfg(feature = "postgresql")]
+    pub fn save(&mut self, conn: &DbConn) -> EmptyResult {
+        User::update_uuid_revision(&self.user_uuid, conn);
+        self.updated_at = Utc::now().naive_utc();
+
+        diesel::insert_into(folders::table)
+            .values(&*self)
+            .on_conflict(folders::uuid)
+            .do_update()
+            .set(&*self)
+            .execute(&**conn)
+            .map_res("Error saving folder")
+    }
+
+    #[cfg(not(feature = "postgresql"))]
     pub fn save(&mut self, conn: &DbConn) -> EmptyResult {
         User::update_uuid_revision(&self.user_uuid, conn);
         self.updated_at = Utc::now().naive_utc();
@@ -113,6 +128,17 @@ impl Folder {
 }
 
 impl FolderCipher {
+    #[cfg(feature = "postgresql")]
+    pub fn save(&self, conn: &DbConn) -> EmptyResult {
+        diesel::insert_into(folders_ciphers::table)
+            .values(&*self)
+            .on_conflict((folders_ciphers::cipher_uuid, folders_ciphers::folder_uuid))
+            .do_nothing()
+            .execute(&**conn)
+            .map_res("Error adding cipher to folder")
+    }
+
+    #[cfg(not(feature = "postgresql"))]
     pub fn save(&self, conn: &DbConn) -> EmptyResult {
         diesel::replace_into(folders_ciphers::table)
             .values(&*self)
