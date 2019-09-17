@@ -61,7 +61,7 @@ use crate::error::MapResult;
 impl Attachment {
     #[cfg(feature = "postgresql")]
     pub fn save(&self, conn: &DbConn) -> EmptyResult {
-        return diesel::insert_into(attachments::table)
+        diesel::insert_into(attachments::table)
             .values(self)
             .on_conflict(attachments::id)
             .do_update()
@@ -72,7 +72,7 @@ impl Attachment {
 
     #[cfg(not(feature = "postgresql"))]
     pub fn save(&self, conn: &DbConn) -> EmptyResult {
-        return diesel::replace_into(attachments::table)
+        diesel::replace_into(attachments::table)
             .values(self)
             .execute(&**conn)
             .map_res("Error saving attachment")

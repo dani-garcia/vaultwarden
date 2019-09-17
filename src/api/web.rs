@@ -1,4 +1,3 @@
-use std::io;
 use std::path::{Path, PathBuf};
 
 use rocket::http::ContentType;
@@ -21,10 +20,10 @@ pub fn routes() -> Vec<Route> {
 }
 
 #[get("/")]
-fn web_index() -> Cached<io::Result<NamedFile>> {
+fn web_index() -> Cached<Option<NamedFile>> {
     Cached::short(NamedFile::open(
         Path::new(&CONFIG.web_vault_folder()).join("index.html"),
-    ))
+    ).ok())
 }
 
 #[get("/app-id.json")]
@@ -47,13 +46,13 @@ fn app_id() -> Cached<Content<Json<Value>>> {
 }
 
 #[get("/<p..>", rank = 10)] // Only match this if the other routes don't match
-fn web_files(p: PathBuf) -> Cached<io::Result<NamedFile>> {
-    Cached::long(NamedFile::open(Path::new(&CONFIG.web_vault_folder()).join(p)))
+fn web_files(p: PathBuf) -> Cached<Option<NamedFile>> {
+    Cached::long(NamedFile::open(Path::new(&CONFIG.web_vault_folder()).join(p)).ok())
 }
 
 #[get("/attachments/<uuid>/<file..>")]
-fn attachments(uuid: String, file: PathBuf) -> io::Result<NamedFile> {
-    NamedFile::open(Path::new(&CONFIG.attachments_folder()).join(uuid).join(file))
+fn attachments(uuid: String, file: PathBuf) -> Option<NamedFile> {
+    NamedFile::open(Path::new(&CONFIG.attachments_folder()).join(uuid).join(file)).ok()
 }
 
 #[get("/alive")]
