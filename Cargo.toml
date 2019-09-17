@@ -41,8 +41,8 @@ rmpv = "0.4.1"
 chashmap = "2.2.2"
 
 # A generic serialization/deserialization framework
-serde = "1.0.99"
-serde_derive = "1.0.99"
+serde = "1.0.101"
+serde_derive = "1.0.101"
 serde_json = "1.0.40"
 
 # Logging
@@ -114,7 +114,7 @@ percent-encoding = "2.1.0"
 
 [patch.crates-io]
 # Add support for Timestamp type
-rmp = { git = 'https://github.com/dani-garcia/msgpack-rust', branch='ext_types' }
+rmp = { git = 'https://github.com/3Hren/msgpack-rust', rev = 'd6c6c672e470341207ed9feb69b56322b5597a11' }
 
 # Use newest ring
 rocket = { git = 'https://github.com/SergioBenitez/Rocket', rev = 'dbcb0a75b9556763ac3ab708f40c8f8ed75f1a1e' }
