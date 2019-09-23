@@ -47,7 +47,7 @@ impl CORS {
 impl Fairing for CORS {
     fn info(&self) -> Info {
         Info {
-            name: "Add CORS headers to requests",
+            name: "CORS",
             kind: Kind::Response
         }
     }
@@ -60,12 +60,12 @@ impl Fairing for CORS {
 
         let req_allow_headers = CORS::get_header(&req_headers, "Access-Control-Request-Headers");
 
-        let req_allow_methods =CORS::get_header(&req_headers,"Access-Control-Request-Methods");
+        let req_allow_method = CORS::get_header(&req_headers,"Access-Control-Request-Method");
 
         if request.method() == Method::Options || response.content_type() == Some(ContentType::JSON) {
             // Requests with credentials need explicit values since they do not allow wildcards.
             response.set_header(Header::new("Access-Control-Allow-Origin", req_allow_origin));
-            response.set_header(Header::new("Access-Control-Allow-Methods", req_allow_methods));
+            response.set_header(Header::new("Access-Control-Allow-Methods", req_allow_method));
             response.set_header(Header::new("Access-Control-Allow-Headers", req_allow_headers));
             response.set_header(Header::new("Access-Control-Allow-Credentials", "true"));
         }
