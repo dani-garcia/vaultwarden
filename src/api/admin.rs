@@ -37,7 +37,11 @@ pub fn routes() -> Vec<Route> {
 }
 
 lazy_static! {
-    static ref CAN_BACKUP: bool = cfg!(feature = "sqlite") && Command::new("sqlite").arg("-version").status().is_ok();
+    static ref CAN_BACKUP: bool = cfg!(feature = "sqlite") && 
+    ( 
+        Command::new("sqlite").arg("-version").status().is_ok() ||
+        Command::new("sqlite3").arg("-version").status().is_ok()
+    );
 }
 
 #[get("/")]

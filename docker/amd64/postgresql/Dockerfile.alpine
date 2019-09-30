@@ -64,6 +64,7 @@ RUN apk add --no-cache \
         openssl \
         postgresql-libs \
         curl \
+        sqlite \
         ca-certificates
 
 RUN mkdir /data
