@@ -81,6 +81,7 @@ RUN apt-get update && apt-get install -y \
     openssl \
     ca-certificates \
     curl \
+    sqlite3 \
     libpq5 \
     && rm -rf /var/lib/apt/lists/*
 
