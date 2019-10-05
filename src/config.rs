@@ -267,6 +267,9 @@ make_config! {
         /// Icon blacklist Regex |> Any domains or IPs that match this regex won't be fetched by the icon service.
         /// Useful to hide other servers in the local network. Check the WIKI for more details
         icon_blacklist_regex:   String, true,   option;
+        /// Icon blacklist non global IPs |> Any IP which is not defined as a global IP will be blacklisted.
+        /// Usefull to secure your internal environment: See https://en.wikipedia.org/wiki/Reserved_IP_addresses for a list of IPs which it will block
+        icon_blacklist_non_global_ips:  bool,   true,   def,    true;
 
         /// Disable Two-Factor remember |> Enabling this would force the users to use a second factor to login every time.
         /// Note that the checkbox would still be present, but ignored.
