@@ -283,12 +283,21 @@ fn get_page_with_cookies(url: &str, cookie_str: &str) -> Result<Response, Error>
     if check_icon_domain_is_blacklisted(Url::parse(url).unwrap().host_str().unwrap_or_default()) {
         err!("Favicon rel linked to a non blacklisted domain!");
     }
-    CLIENT
-        .get(url)
-        .header("cookie", cookie_str)
-        .send()?
-        .error_for_status()
-        .map_err(Into::into)
+
+    if cookie_str.is_empty() {
+        CLIENT
+            .get(url)
+            .send()?
+            .error_for_status()
+            .map_err(Into::into)
+    } else {
+        CLIENT
+            .get(url)
+            .header("cookie", cookie_str)
+            .send()?
+            .error_for_status()
+            .map_err(Into::into)
+    }
 }
 
 /// Returns a Integer with the priority of the type of the icon which to prefer.
