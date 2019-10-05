@@ -1,4 +1,4 @@
-#![feature(proc_macro_hygiene, decl_macro, vec_remove_item, try_trait)]
+#![feature(proc_macro_hygiene, decl_macro, vec_remove_item, try_trait, ip)]
 #![recursion_limit = "256"]
 
 #[cfg(feature = "openssl")]
