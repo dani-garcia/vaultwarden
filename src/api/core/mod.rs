@@ -160,15 +160,15 @@ fn hibp_breach(username: String) -> JsonResult {
     } else {
         Ok(Json(json!([{
             "Name": "HaveIBeenPwned",
-            "Title": "--- Error! ---",
+            "Title": "Manual HIBP Check",
             "Domain": "haveibeenpwned.com",
             "BreachDate": "2019-08-18T00:00:00Z",
             "AddedDate": "2019-08-18T00:00:00Z",
-            "Description": format!("HaveIBeenPwned API key not set!<br/>Go to <a href=\"https://haveibeenpwned.com/API/Key\" target=\"_blank\" rel=\"noopener\">https://haveibeenpwned.com/API/Key</a><br/><br/>Or go to: <a href=\"https://haveibeenpwned.com/account/{account}\" target=\"_blank\" rel=\"noopener\">https://haveibeenpwned.com/account/{account}</a> for a manual check.", account=username),
-            "LogoPath": "/bwrs_static/error-x.svg",
+            "Description": format!("Go to: <a href=\"https://haveibeenpwned.com/account/{account}\" target=\"_blank\" rel=\"noopener\">https://haveibeenpwned.com/account/{account}</a> for a manual check.<br/><br/>HaveIBeenPwned API key not set!<br/>Go to <a href=\"https://haveibeenpwned.com/API/Key\" target=\"_blank\" rel=\"noopener\">https://haveibeenpwned.com/API/Key</a> to purchase an API key from HaveIBeenPwned.<br/><br/>", account=username),
+            "LogoPath": "/bwrs_static/hibp.png",
             "PwnCount": 0,
             "DataClasses": [
-                "Error - No API key"
+                "Error - No API key set!"
             ]
         }])))
     }
