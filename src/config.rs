@@ -298,7 +298,7 @@ make_config! {
         /// that do not support WAL. Please make sure you read project wiki on the topic before changing this setting.
         enable_db_wal:          bool,   false,  def,    true;
 
-        /// Disable Admin Token (Know the risks!) |> Disables the Admin Token for the admin page so you may use your own auth in-front
+        /// Bypass admin page security (Know the risks!) |> Disables the Admin Token for the admin page so you may use your own auth in-front
         disable_admin_token:    bool,   true,   def,    false;
     },
 
