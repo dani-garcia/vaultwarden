@@ -141,8 +141,11 @@ fn hibp_breach(username: String) -> JsonResult {
     use reqwest::{header::USER_AGENT, Client};
 
     if let Some(api_key) = crate::CONFIG.hibp_api_key() {
-        let res = Client::new()
-            .get(&url)
+        let hibp_client = Client::builder()
+            .use_sys_proxy()
+            .build()?;
+
+        let res = hibp_client.get(&url)
             .header(USER_AGENT, user_agent)
             .header("hibp-api-key", api_key)
             .send()?;
@@ -156,9 +159,17 @@ fn hibp_breach(username: String) -> JsonResult {
         Ok(Json(value))
     } else {
         Ok(Json(json!([{
-            "title": "--- Error! ---",
-            "description": "HaveIBeenPwned API key not set! Go to https://haveibeenpwned.com/API/Key",
-            "logopath": "/bwrs_static/error-x.svg"
+            "Name": "HaveIBeenPwned",
+            "Title": "--- Error! ---",
+            "Domain": "haveibeenpwned.com",
+            "BreachDate": "2019-08-18T00:00:00Z",
+            "AddedDate": "2019-08-18T00:00:00Z",
+            "Description": format!("HaveIBeenPwned API key not set!<br/>Go to <a href=\"https://haveibeenpwned.com/API/Key\" target=\"_blank\" rel=\"noopener\">https://haveibeenpwned.com/API/Key</a><br/><br/>Or go to: <a href=\"https://haveibeenpwned.com/account/{account}\" target=\"_blank\" rel=\"noopener\">https://haveibeenpwned.com/account/{account}</a> for a manual check.", account=username),
+            "LogoPath": "/bwrs_static/error-x.svg",
+            "PwnCount": 0,
+            "DataClasses": [
+                "Error - No API key"
+            ]
         }])))
     }
 }
