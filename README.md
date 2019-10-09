@@ -50,6 +50,6 @@ See the [bitwarden_rs wiki](https://github.com/dani-garcia/bitwarden_rs/wiki) fo
 
 ## Get in touch
 
-To ask an question, [raising an issue](https://github.com/dani-garcia/bitwarden_rs/issues/new) is fine, also please report any bugs spotted here.
+To ask a question, [raising an issue](https://github.com/dani-garcia/bitwarden_rs/issues/new) is fine. Please also report any bugs spotted here.
 
 If you prefer to chat, we're usually hanging around at [#bitwarden_rs:matrix.org](https://matrix.to/#/#bitwarden_rs:matrix.org) room on Matrix. Feel free to join us!
