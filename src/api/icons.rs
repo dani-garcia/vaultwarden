@@ -61,14 +61,7 @@ fn icon(domain: String) -> Content<Vec<u8>> {
         return Content(icon_type, FALLBACK_ICON.to_vec());
     }
 
-    if check_icon_domain_is_blacklisted(&domain) {
-        warn!("Domain is blacklisted: {:#?}", domain);
-        return Content(icon_type, FALLBACK_ICON.to_vec());
-    }
-
-    let icon = get_icon(&domain);
-
-    Content(icon_type, icon)
+    Content(icon_type, get_icon(&domain))
 }
 
 fn check_icon_domain_is_blacklisted(domain: &str) -> bool {
@@ -380,6 +373,10 @@ fn parse_sizes(sizes: Option<String>) -> (u16, u16) {
 }
 
 fn download_icon(domain: &str) -> Result<Vec<u8>, Error> {
+    if check_icon_domain_is_blacklisted(domain) {
+        err!("Domain is blacklisted", domain)
+    }
+
     let (iconlist, cookie_str) = get_icon_url(&domain)?;
 
     let mut buffer = Vec::new();
