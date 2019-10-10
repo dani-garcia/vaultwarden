@@ -77,7 +77,7 @@ fn activate_authenticator(data: JsonUpcase<EnableAuthenticatorData>, headers: He
     let twofactor = TwoFactor::new(user.uuid.clone(), type_, key.to_uppercase());
 
     // Validate the token provided with the key
-    validate_totp_code(token, &twofactor.data)?;
+    validate_totp_code(&user.uuid, token, &twofactor.data, &conn)?;
 
     _generate_recover_code(&mut user, &conn);
     twofactor.save(&conn)?;
@@ -94,27 +94,69 @@ fn activate_authenticator_put(data: JsonUpcase<EnableAuthenticatorData>, headers
     activate_authenticator(data, headers, conn)
 }
 
-pub fn validate_totp_code_str(totp_code: &str, secret: &str) -> EmptyResult {
+pub fn validate_totp_code_str(user_uuid: &str, totp_code: &str, secret: &str, conn: &DbConn) -> EmptyResult {
     let totp_code: u64 = match totp_code.parse() {
         Ok(code) => code,
         _ => err!("TOTP code is not a number"),
     };
 
-    validate_totp_code(totp_code, secret)
+    validate_totp_code(user_uuid, totp_code, secret, &conn)
 }
 
-pub fn validate_totp_code(totp_code: u64, secret: &str) -> EmptyResult {
-    use oath::{totp_raw_now, HashType};
+pub fn validate_totp_code(user_uuid: &str, totp_code: u64, secret: &str, conn: &DbConn) -> EmptyResult {
+    use oath::{totp_raw_custom_time, HashType};
+    use std::time::{UNIX_EPOCH, SystemTime};
 
     let decoded_secret = match BASE32.decode(secret.as_bytes()) {
         Ok(s) => s,
         Err(_) => err!("Invalid TOTP secret"),
     };
 
-    let generated = totp_raw_now(&decoded_secret, 6, 0, 30, &HashType::SHA1);
-    if generated != totp_code {
-        err!("Invalid TOTP code");
+    let mut twofactor = TwoFactor::find_by_user_and_type(&user_uuid, TwoFactorType::Authenticator as i32, &conn)?;
+
+    // Get the current system time in UNIX Epoch (UTC)
+    let current_time: u64 = SystemTime::now().duration_since(UNIX_EPOCH)
+        .expect("Earlier than 1970-01-01 00:00:00 UTC").as_secs();
+
+    // First check the current time for a valid token.
+    let time_step_now = (current_time / 30) as i32;
+    let generated_now = totp_raw_custom_time(&decoded_secret, 6, 0, 30, current_time, &HashType::SHA1);
+    if generated_now == totp_code && time_step_now > twofactor.last_used {
+        twofactor.last_used = time_step_now;
+        twofactor.save(&conn)?;
+        return Ok(());
+    } else if generated_now == totp_code && time_step_now <= twofactor.last_used {
+        warn!("This or a future TOTP code has already been used!");
+        err!("Invalid TOTP code!");
     }
 
-    Ok(())
+    // Check for time drifted codes
+    // First check the previous TOTP code
+    let time_step_prev = ((current_time - 30) / 30) as i32;
+    let generated_prev = totp_raw_custom_time(&decoded_secret, 6, 0, 30, current_time - 30, &HashType::SHA1);
+    if generated_prev == totp_code && time_step_prev > twofactor.last_used {
+        info!("TOTP Time drift detected. Token is valide for one step on the past.");
+        twofactor.last_used = time_step_prev;
+        twofactor.save(&conn)?;
+        return Ok(());
+    } else if generated_prev == totp_code && time_step_prev <= twofactor.last_used {
+        warn!("This or a future TOTP code has already been used!");
+        err!("Invalid TOTP code!");
+    }
+
+    // Second check the next TOTP code
+    let time_step_next = ((current_time + 30) / 30) as i32;
+    let generated_next = totp_raw_custom_time(&decoded_secret, 6, 0, 30, current_time + 30, &HashType::SHA1);
+    if generated_next == totp_code && time_step_next > twofactor.last_used {
+        info!("TOTP Time drift detected. Token is valide for one step on the future.");
+        twofactor.last_used = time_step_next;
+        twofactor.save(&conn)?;
+        return Ok(());
+    } else if generated_next == totp_code && time_step_next <= twofactor.last_used {
+        warn!("This or a previous TOTP code has already been used!");
+        err!("Invalid TOTP code!");
+    }
+
+    // Else no valide code received, deny access
+    err!("Invalid TOTP code!");
 }

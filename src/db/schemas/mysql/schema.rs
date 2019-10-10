@@ -92,6 +92,7 @@ table! {
         atype -> Integer,
         enabled -> Bool,
         data -> Text,
+        last_used -> Integer,
     }
 }
 
