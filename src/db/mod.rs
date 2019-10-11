@@ -52,12 +52,16 @@ pub fn get_connection() -> Result<Connection, ConnectionError> {
 
 /// Creates a back-up of the database using sqlite3
 pub fn backup_database() -> Result<(), Error> {
+    use std::path::Path;
+    let db_url = CONFIG.database_url();
+    let db_path = Path::new(&db_url).parent().unwrap();
+
     let now: DateTime<Utc> = Utc::now();
     let file_date = now.format("%Y%m%d").to_string();
     let backup_command: String = format!("{}{}{}", ".backup 'db_", file_date, ".sqlite3'");
 
     Command::new("sqlite3")
-        .current_dir("./data")
+        .current_dir(db_path)
         .args(&["db.sqlite3", &backup_command])
         .output()
         .expect("Can't open database, sqlite3 is not available, make sure it's installed and available on the PATH");
