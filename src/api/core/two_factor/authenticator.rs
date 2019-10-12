@@ -118,43 +118,32 @@ pub fn validate_totp_code(user_uuid: &str, totp_code: u64, secret: &str, conn: &
     let current_time: u64 = SystemTime::now().duration_since(UNIX_EPOCH)
         .expect("Earlier than 1970-01-01 00:00:00 UTC").as_secs();
 
-    // First check the current time for a valid token.
-    let time_step_now = (current_time / 30) as i32;
-    let generated_now = totp_raw_custom_time(&decoded_secret, 6, 0, 30, current_time, &HashType::SHA1);
-    if generated_now == totp_code && time_step_now > twofactor.last_used {
-        twofactor.last_used = time_step_now;
-        twofactor.save(&conn)?;
-        return Ok(());
-    } else if generated_now == totp_code && time_step_now <= twofactor.last_used {
-        warn!("This or a future TOTP code has already been used!");
-        err!("Invalid TOTP code!");
-    }
+    // The amount of steps back and forward in time
+    let steps = 1;
+    for step in -steps..=steps {
 
-    // Check for time drifted codes
-    // First check the previous TOTP code
-    let time_step_prev = ((current_time - 30) / 30) as i32;
-    let generated_prev = totp_raw_custom_time(&decoded_secret, 6, 0, 30, current_time - 30, &HashType::SHA1);
-    if generated_prev == totp_code && time_step_prev > twofactor.last_used {
-        info!("TOTP Time drift detected. Token is valide for one step on the past.");
-        twofactor.last_used = time_step_prev;
-        twofactor.save(&conn)?;
-        return Ok(());
-    } else if generated_prev == totp_code && time_step_prev <= twofactor.last_used {
-        warn!("This or a future TOTP code has already been used!");
-        err!("Invalid TOTP code!");
-    }
+        let time_step = (current_time / 30) as i32 + step;
+        // We need to calculate the time offsite and cast it as an i128.
+        // Else we can't do math with it on a default u64 variable.
+        let time_offset: i128 = (step * 30).into();
+        let generated = totp_raw_custom_time(&decoded_secret, 6, 0, 30, (current_time as i128 + time_offset) as u64, &HashType::SHA1);
 
-    // Second check the next TOTP code
-    let time_step_next = ((current_time + 30) / 30) as i32;
-    let generated_next = totp_raw_custom_time(&decoded_secret, 6, 0, 30, current_time + 30, &HashType::SHA1);
-    if generated_next == totp_code && time_step_next > twofactor.last_used {
-        info!("TOTP Time drift detected. Token is valide for one step on the future.");
-        twofactor.last_used = time_step_next;
-        twofactor.save(&conn)?;
-        return Ok(());
-    } else if generated_next == totp_code && time_step_next <= twofactor.last_used {
-        warn!("This or a previous TOTP code has already been used!");
-        err!("Invalid TOTP code!");
+        // Check the the given code equals the generated and if the time_step is larger then the one last used.
+        if generated == totp_code && time_step > twofactor.last_used {
+
+            // If the step does not equals 0 the time is drifted either server or client side.
+            if step != 0 {
+                info!("TOTP Time drift detected. The step offset is {}", step);
+            }
+
+            // Save the last used time step so only totp time steps higher then this one are allowed.
+            twofactor.last_used = time_step;
+            twofactor.save(&conn)?;
+            return Ok(());
+        } else if generated == totp_code && time_step <= twofactor.last_used {
+            warn!("This or a TOTP code within {} steps back and forward has already been used!", steps);
+            err!("Invalid TOTP Code!");
+        }
     }
 
     // Else no valide code received, deny access
