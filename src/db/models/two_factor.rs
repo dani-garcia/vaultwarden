@@ -19,6 +19,7 @@ pub struct TwoFactor {
     pub atype: i32,
     pub enabled: bool,
     pub data: String,
+    pub last_used: i32,
 }
 
 #[allow(dead_code)]
@@ -47,6 +48,7 @@ impl TwoFactor {
             atype: atype as i32,
             enabled: true,
             data,
+            last_used: 0,
         }
     }
 

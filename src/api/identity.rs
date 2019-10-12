@@ -197,7 +197,7 @@ fn twofactor_auth(
     let mut remember = data.two_factor_remember.unwrap_or(0);
 
     match TwoFactorType::from_i32(selected_id) {
-        Some(TwoFactorType::Authenticator) => _tf::authenticator::validate_totp_code_str(twofactor_code, &selected_data?)?,
+        Some(TwoFactorType::Authenticator) => _tf::authenticator::validate_totp_code_str(user_uuid, twofactor_code, &selected_data?, conn)?,
         Some(TwoFactorType::U2f) => _tf::u2f::validate_u2f_login(user_uuid, twofactor_code, conn)?,
         Some(TwoFactorType::YubiKey) => _tf::yubikey::validate_yubikey_login(twofactor_code, &selected_data?)?,
         Some(TwoFactorType::Duo) => _tf::duo::validate_duo_login(data.username.as_ref().unwrap(), twofactor_code, conn)?,
