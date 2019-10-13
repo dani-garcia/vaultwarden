@@ -73,14 +73,10 @@ fn activate_authenticator(data: JsonUpcase<EnableAuthenticatorData>, headers: He
         err!("Invalid key length")
     }
 
-    let type_ = TwoFactorType::Authenticator;
-    let twofactor = TwoFactor::new(user.uuid.clone(), type_, key.to_uppercase());
-
-    // Validate the token provided with the key
-    validate_totp_code(&user.uuid, token, &twofactor.data, &conn)?;
+    // Validate the token provided with the key, and save new twofactor
+    validate_totp_code(&user.uuid, token, &key.to_uppercase(), &conn)?;
 
     _generate_recover_code(&mut user, &conn);
-    twofactor.save(&conn)?;
 
     Ok(Json(json!({
         "Enabled": true,
@@ -112,7 +108,10 @@ pub fn validate_totp_code(user_uuid: &str, totp_code: u64, secret: &str, conn: &
         Err(_) => err!("Invalid TOTP secret"),
     };
 
-    let mut twofactor = TwoFactor::find_by_user_and_type(&user_uuid, TwoFactorType::Authenticator as i32, &conn)?;
+    let mut twofactor = match TwoFactor::find_by_user_and_type(&user_uuid, TwoFactorType::Authenticator as i32, &conn) {
+        Some(tf) => tf,
+        _ => TwoFactor::new(user_uuid.to_string(), TwoFactorType::Authenticator, secret.to_string()),
+    };
 
     // Get the current system time in UNIX Epoch (UTC)
     let current_time: u64 = SystemTime::now().duration_since(UNIX_EPOCH)
@@ -137,6 +136,7 @@ pub fn validate_totp_code(user_uuid: &str, totp_code: u64, secret: &str, conn: &
             }
 
             // Save the last used time step so only totp time steps higher then this one are allowed.
+            // This will also save a newly created twofactor if the code is correct.
             twofactor.last_used = time_step;
             twofactor.save(&conn)?;
             return Ok(());
