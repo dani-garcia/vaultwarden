@@ -32,7 +32,7 @@ reqwest = "0.9.22"
 multipart = { version = "0.16.1", features = ["server"], default-features = false }
 
 # WebSockets library
-ws = "0.9.0"
+ws = "0.9.1"
 
 # MessagePack library
 rmpv = "0.4.2"

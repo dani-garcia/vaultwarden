@@ -4,7 +4,7 @@ pool:
 steps:
 - script: |
     ls -la
-    curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain $(cat rust-toolchain)
+    curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain $(cat rust-toolchain) --profile=minimal
     echo "##vso[task.prependpath]$HOME/.cargo/bin"
   displayName: 'Install Rust'
 
