@@ -55,10 +55,18 @@ fn send_email_login(data: JsonUpcase<SendEmailLoginData>, conn: DbConn) -> Empty
         err!("Email 2FA is disabled")
     }
 
+    send_token(&user.uuid, &conn)?;
+
+    Ok(())
+}
+
+/// Generate the token, save the data for later verification and send email to user
+pub fn send_token(user_uuid: &str, conn: &DbConn) -> EmptyResult {
     let type_ = TwoFactorType::Email as i32;
-    let mut twofactor = TwoFactor::find_by_user_and_type(&user.uuid, type_, &conn)?;
+    let mut twofactor = TwoFactor::find_by_user_and_type(user_uuid, type_, &conn)?;
 
     let generated_token = generate_token(CONFIG.email_token_size())?;
+
     let mut twofactor_data = EmailTokenData::from_json(&twofactor.data)?;
     twofactor_data.set_token(generated_token);
     twofactor.data = twofactor_data.to_json();
