@@ -293,13 +293,19 @@ fn _json_err_twofactor(providers: &[i32], user_uuid: &str, conn: &DbConn) -> Api
             }
 
             Some(tf_type @ TwoFactorType::Email) => {
-                let twofactor = match TwoFactor::find_by_user_and_type(user_uuid, tf_type as i32, &conn) {
+                use crate::api::core::two_factor as _tf;
+
+                let mut twofactor = match TwoFactor::find_by_user_and_type(user_uuid, tf_type as i32, &conn) {
                     Some(tf) => tf,
                     None => err!("No twofactor email registered"),
                 };
 
-                let email_data = EmailTokenData::from_json(&twofactor.data)?;
+                // Send email immediately if email is the only 2FA option
+                if providers.len() == 1 {
+                    _tf::email::prepare_send_token(&mut twofactor, &conn)?
+                }
 
+                let email_data = EmailTokenData::from_json(&twofactor.data)?;
                 result["TwoFactorProviders2"][provider.to_string()] = json!({
                     "Email": email::obscure_email(&email_data.email),
                 })

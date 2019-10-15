@@ -58,6 +58,13 @@ fn send_email_login(data: JsonUpcase<SendEmailLoginData>, conn: DbConn) -> Empty
     let type_ = TwoFactorType::Email as i32;
     let mut twofactor = TwoFactor::find_by_user_and_type(&user.uuid, type_, &conn)?;
 
+    prepare_send_token(&mut twofactor, &conn)?;
+
+    Ok(())
+}
+
+/// Generate the token, save the data for later verification and send email to user
+pub fn prepare_send_token(twofactor: &mut TwoFactor, conn: &DbConn) -> EmptyResult {
     let generated_token = generate_token(CONFIG.email_token_size())?;
     let mut twofactor_data = EmailTokenData::from_json(&twofactor.data)?;
     twofactor_data.set_token(generated_token);
