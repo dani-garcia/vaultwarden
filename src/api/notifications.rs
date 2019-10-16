@@ -26,7 +26,7 @@ fn negotiate(_headers: Headers, _conn: DbConn) -> JsonResult {
     let mut available_transports: Vec<JsonValue> = Vec::new();
 
     if CONFIG.websocket_enabled() {
-        available_transports.push(json!({"transport":"WebSockets", "transferFormats":["Text","Binary"]}));
+        available_transports.push(json!({"transport":"WebSockets", "transferFormats":["Text"]}));
     }
 
     // TODO: Implement transports
