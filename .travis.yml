@@ -11,6 +11,7 @@ cache: cargo
 before_install:
   - sudo curl -L https://github.com/hadolint/hadolint/releases/download/v$HADOLINT_VERSION/hadolint-$(uname -s)-$(uname -m) -o /usr/local/bin/hadolint
   - sudo chmod +rx /usr/local/bin/hadolint
+  - rustup set profile minimal
 
 # Nothing to install
 install: true

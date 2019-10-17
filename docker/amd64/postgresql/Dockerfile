@@ -25,56 +25,55 @@ RUN ls
 # we need the Rust compiler and Cargo tooling
 FROM rust:1.36 as build
 
-# set sqlite as default for DB ARG for backward comaptibility
-ARG DB=sqlite
+# set mysql backend
+ARG DB=postgresql
 
-RUN apt-get update \
-    && apt-get install -y \
-        --no-install-recommends \
-        gcc-aarch64-linux-gnu \
-    && mkdir -p ~/.cargo \
-    && echo '[target.aarch64-unknown-linux-gnu]' >> ~/.cargo/config \
-    && echo 'linker = "aarch64-linux-gnu-gcc"' >> ~/.cargo/config
+# Using bundled SQLite, no need to install it
+# RUN apt-get update && apt-get install -y\
+#    --no-install-recommends \
+#    sqlite3\
+# && rm -rf /var/lib/apt/lists/*
 
-ENV CARGO_HOME "/root/.cargo"
-ENV USER "root"
+# Install MySQL package
+RUN apt-get update && apt-get install -y \
+    --no-install-recommends \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
 
+# Creates a dummy project used to grab dependencies
+RUN USER=root cargo new --bin app
 WORKDIR /app
 
-# Prepare openssl arm64 libs
-RUN sed 's/^deb/deb-src/' /etc/apt/sources.list > \
-        /etc/apt/sources.list.d/deb-src.list \
-    && dpkg --add-architecture arm64 \
-    && apt-get update \
-    && apt-get install -y \
-        --no-install-recommends \
-        libssl-dev:arm64 \
-        libc6-dev:arm64 \
-        libmariadb-dev:arm64
+# Copies over *only* your manifests and build files
+COPY ./Cargo.* ./
+COPY ./rust-toolchain ./rust-toolchain
+COPY ./build.rs ./build.rs
 
-ENV CC_aarch64_unknown_linux_gnu="/usr/bin/aarch64-linux-gnu-gcc"
-ENV CROSS_COMPILE="1"
-ENV OPENSSL_INCLUDE_DIR="/usr/include/aarch64-linux-gnu"
-ENV OPENSSL_LIB_DIR="/usr/lib/aarch64-linux-gnu"
+# Builds your dependencies and removes the
+# dummy project, except the target folder
+# This folder contains the compiled dependencies
+RUN cargo build --features ${DB} --release
+RUN find . -not -path "./target*" -delete
 
 # Copies the complete project
 # To avoid copying unneeded files, use .dockerignore
 COPY . .
 
-# Build
-RUN rustup target add aarch64-unknown-linux-gnu
-RUN cargo build --features ${DB} --release --target=aarch64-unknown-linux-gnu -v
+# Make sure that we actually build the project
+RUN touch src/main.rs
+
+# Builds again, this time it'll just be
+# your actual source files being built
+RUN cargo build --features ${DB} --release
 
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image
 # because we already have a binary built
-FROM balenalib/aarch64-debian:stretch
+FROM debian:stretch-slim
 
 ENV ROCKET_ENV "staging"
 ENV ROCKET_PORT=80
 ENV ROCKET_WORKERS=10
-
-RUN [ "cross-build-start" ]
 
 # Install needed libraries
 RUN apt-get update && apt-get install -y \
@@ -83,20 +82,19 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     curl \
     sqlite3 \
- && rm -rf /var/lib/apt/lists/*
+    libpq5 \
+    && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir /data
-
-RUN [ "cross-build-end" ]  
-
 VOLUME /data
 EXPOSE 80
+EXPOSE 3012
 
 # Copies the files from the context (Rocket.toml file and web-vault)
 # and the binary from the "build" stage to the current stage
 COPY Rocket.toml .
 COPY --from=vault /web-vault ./web-vault
-COPY --from=build /app/target/aarch64-unknown-linux-gnu/release/bitwarden_rs .
+COPY --from=build app/target/release/bitwarden_rs .
 
 COPY docker/healthcheck.sh ./healthcheck.sh
 

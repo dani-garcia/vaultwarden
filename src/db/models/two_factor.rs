@@ -9,7 +9,7 @@ use crate::error::MapResult;
 
 use super::User;
 
-#[derive(Debug, Identifiable, Queryable, Insertable, Associations)]
+#[derive(Debug, Identifiable, Queryable, Insertable, Associations, AsChangeset)]
 #[table_name = "twofactor"]
 #[belongs_to(User, foreign_key = "user_uuid")]
 #[primary_key(uuid)]
@@ -19,6 +19,7 @@ pub struct TwoFactor {
     pub atype: i32,
     pub enabled: bool,
     pub data: String,
+    pub last_used: i32,
 }
 
 #[allow(dead_code)]
@@ -47,6 +48,7 @@ impl TwoFactor {
             atype: atype as i32,
             enabled: true,
             data,
+            last_used: 0,
         }
     }
 
@@ -69,6 +71,18 @@ impl TwoFactor {
 
 /// Database methods
 impl TwoFactor {
+    #[cfg(feature = "postgresql")]
+    pub fn save(&self, conn: &DbConn) -> EmptyResult {
+        diesel::insert_into(twofactor::table)
+            .values(self)
+            .on_conflict(twofactor::uuid)
+            .do_update()
+            .set(self)
+            .execute(&**conn)
+            .map_res("Error saving twofactor")
+    }
+
+    #[cfg(not(feature = "postgresql"))]
     pub fn save(&self, conn: &DbConn) -> EmptyResult {
         diesel::replace_into(twofactor::table)
             .values(self)

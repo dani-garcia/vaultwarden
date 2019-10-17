@@ -267,6 +267,9 @@ make_config! {
         /// Icon blacklist Regex |> Any domains or IPs that match this regex won't be fetched by the icon service.
         /// Useful to hide other servers in the local network. Check the WIKI for more details
         icon_blacklist_regex:   String, true,   option;
+        /// Icon blacklist non global IPs |> Any IP which is not defined as a global IP will be blacklisted.
+        /// Usefull to secure your internal environment: See https://en.wikipedia.org/wiki/Reserved_IP_addresses for a list of IPs which it will block
+        icon_blacklist_non_global_ips:  bool,   true,   def,    true;
 
         /// Disable Two-Factor remember |> Enabling this would force the users to use a second factor to login every time.
         /// Note that the checkbox would still be present, but ignored.
@@ -295,7 +298,7 @@ make_config! {
         /// that do not support WAL. Please make sure you read project wiki on the topic before changing this setting.
         enable_db_wal:          bool,   false,  def,    true;
 
-        /// Disable Admin Token (Know the risks!) |> Disables the Admin Token for the admin page so you may use your own auth in-front
+        /// Bypass admin page security (Know the risks!) |> Disables the Admin Token for the admin page so you may use your own auth in-front
         disable_admin_token:    bool,   true,   def,    false;
     },
 
@@ -325,18 +328,6 @@ make_config! {
         _duo_akey:              Pass,   false,  option;
     },
 
-    /// Email 2FA Settings
-    email_2fa: _enable_email_2fa {
-        /// Enabled |> Disabling will prevent users from setting up new email 2FA and using existing email 2FA configured
-        _enable_email_2fa:      bool,   true,   auto,    |c| c._enable_smtp && c.smtp_host.is_some();
-        /// Token number length |> Length of the numbers in an email token. Minimum of 6. Maximum is 19.
-        email_token_size:       u32,    true,   def,      6;
-        /// Token expiration time |> Maximum time in seconds a token is valid. The time the user has to open email client and copy token.
-        email_expiration_time:  u64,    true,   def,      600;
-        /// Maximum attempts |> Maximum attempts before an email token is reset and a new email will need to be sent
-        email_attempts_limit:   u64,    true,   def,      3;
-    },
-
     /// SMTP Email Settings
     smtp: _enable_smtp {
         /// Enabled
@@ -360,9 +351,41 @@ make_config! {
         /// Json form auth mechanism |> Defaults for ssl is "Plain" and "Login" and nothing for non-ssl connections. Possible values: ["Plain", "Login", "Xoauth2"]
         smtp_auth_mechanism:    String, true,   option;
     },
+
+    /// Email 2FA Settings
+    email_2fa: _enable_email_2fa {
+        /// Enabled |> Disabling will prevent users from setting up new email 2FA and using existing email 2FA configured
+        _enable_email_2fa:      bool,   true,   auto,    |c| c._enable_smtp && c.smtp_host.is_some();
+        /// Token number length |> Length of the numbers in an email token. Minimum of 6. Maximum is 19.
+        email_token_size:       u32,    true,   def,      6;
+        /// Token expiration time |> Maximum time in seconds a token is valid. The time the user has to open email client and copy token.
+        email_expiration_time:  u64,    true,   def,      600;
+        /// Maximum attempts |> Maximum attempts before an email token is reset and a new email will need to be sent
+        email_attempts_limit:   u64,    true,   def,      3;
+    },
 }
 
 fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
+    let db_url = cfg.database_url.to_lowercase();
+    
+    if cfg!(feature = "sqlite") {
+        if db_url.starts_with("mysql:") || db_url.starts_with("postgresql:") {
+            err!("`DATABASE_URL` is meant for MySQL or Postgres, while this server is meant for SQLite")
+        }
+    }
+
+    if cfg!(feature = "mysql") {
+        if !db_url.starts_with("mysql:") {
+            err!("`DATABASE_URL` should start with mysql: when using the MySQL server")
+        }
+    }
+
+    if cfg!(feature = "postgresql") {
+        if !db_url.starts_with("postgresql:") {
+            err!("`DATABASE_URL` should start with postgresql: when using the PostgreSQL server")
+        }
+    }
+
     if let Some(ref token) = cfg.admin_token {
         if token.trim().is_empty() {
             err!("`ADMIN_TOKEN` is enabled but has an empty value. To enable the admin page without token, use `DISABLE_ADMIN_TOKEN`")

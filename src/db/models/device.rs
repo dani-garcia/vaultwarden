@@ -2,7 +2,7 @@ use chrono::{NaiveDateTime, Utc};
 
 use super::User;
 
-#[derive(Debug, Identifiable, Queryable, Insertable, Associations)]
+#[derive(Debug, Identifiable, Queryable, Insertable, Associations, AsChangeset)]
 #[table_name = "devices"]
 #[belongs_to(User, foreign_key = "user_uuid")]
 #[primary_key(uuid)]
@@ -114,6 +114,18 @@ use crate::error::MapResult;
 
 /// Database methods
 impl Device {
+    #[cfg(feature = "postgresql")]
+    pub fn save(&mut self, conn: &DbConn) -> EmptyResult {
+        self.updated_at = Utc::now().naive_utc();
+
+        crate::util::retry(
+            || diesel::insert_into(devices::table).values(&*self).on_conflict(devices::uuid).do_update().set(&*self).execute(&**conn),
+            10,
+        )
+            .map_res("Error saving device")
+    }
+
+    #[cfg(not(feature = "postgresql"))]
     pub fn save(&mut self, conn: &DbConn) -> EmptyResult {
         self.updated_at = Utc::now().naive_utc();
 

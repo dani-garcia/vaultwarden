@@ -2,7 +2,7 @@ use serde_json::Value;
 
 use super::{Organization, UserOrgStatus, UserOrgType, UserOrganization};
 
-#[derive(Debug, Identifiable, Queryable, Insertable, Associations)]
+#[derive(Debug, Identifiable, Queryable, Insertable, Associations, AsChangeset)]
 #[table_name = "collections"]
 #[belongs_to(Organization, foreign_key = "org_uuid")]
 #[primary_key(uuid)]
@@ -43,6 +43,20 @@ use crate::error::MapResult;
 
 /// Database methods
 impl Collection {
+    #[cfg(feature = "postgresql")]
+    pub fn save(&self, conn: &DbConn) -> EmptyResult {
+        self.update_users_revision(conn);
+
+        diesel::insert_into(collections::table)
+            .values(self)
+            .on_conflict(collections::uuid)
+            .do_update()
+            .set(self)
+            .execute(&**conn)
+            .map_res("Error saving collection")
+    }
+
+    #[cfg(not(feature = "postgresql"))]
     pub fn save(&self, conn: &DbConn) -> EmptyResult {
         self.update_users_revision(conn);
 
@@ -200,6 +214,24 @@ impl CollectionUser {
             .expect("Error loading users_collections")
     }
 
+    #[cfg(feature = "postgresql")]
+    pub fn save(user_uuid: &str, collection_uuid: &str, read_only: bool, conn: &DbConn) -> EmptyResult {
+        User::update_uuid_revision(&user_uuid, conn);
+
+        diesel::insert_into(users_collections::table)
+            .values((
+                users_collections::user_uuid.eq(user_uuid),
+                users_collections::collection_uuid.eq(collection_uuid),
+                users_collections::read_only.eq(read_only),
+            ))
+            .on_conflict((users_collections::user_uuid, users_collections::collection_uuid))
+            .do_update()
+            .set(users_collections::read_only.eq(read_only))
+            .execute(&**conn)
+            .map_res("Error adding user to collection")
+    }
+
+    #[cfg(not(feature = "postgresql"))]
     pub fn save(user_uuid: &str, collection_uuid: &str, read_only: bool, conn: &DbConn) -> EmptyResult {
         User::update_uuid_revision(&user_uuid, conn);
 
@@ -277,6 +309,21 @@ pub struct CollectionCipher {
 
 /// Database methods
 impl CollectionCipher {
+    #[cfg(feature = "postgresql")]
+    pub fn save(cipher_uuid: &str, collection_uuid: &str, conn: &DbConn) -> EmptyResult {
+        Self::update_users_revision(&collection_uuid, conn);
+        diesel::insert_into(ciphers_collections::table)
+            .values((
+                ciphers_collections::cipher_uuid.eq(cipher_uuid),
+                ciphers_collections::collection_uuid.eq(collection_uuid),
+            ))
+            .on_conflict((ciphers_collections::cipher_uuid, ciphers_collections::collection_uuid))
+            .do_nothing()
+            .execute(&**conn)
+            .map_res("Error adding cipher to collection")
+    }
+
+    #[cfg(not(feature = "postgresql"))]
     pub fn save(cipher_uuid: &str, collection_uuid: &str, conn: &DbConn) -> EmptyResult {
         Self::update_users_revision(&collection_uuid, conn);
         diesel::replace_into(ciphers_collections::table)

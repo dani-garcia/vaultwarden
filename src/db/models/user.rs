@@ -4,7 +4,7 @@ use serde_json::Value;
 use crate::crypto;
 use crate::CONFIG;
 
-#[derive(Debug, Identifiable, Queryable, Insertable)]
+#[derive(Debug, Identifiable, Queryable, Insertable, AsChangeset)]
 #[table_name = "users"]
 #[primary_key(uuid)]
 pub struct User {
@@ -148,6 +148,24 @@ impl User {
         })
     }
 
+    #[cfg(feature = "postgresql")]
+    pub fn save(&mut self, conn: &DbConn) -> EmptyResult {
+        if self.email.trim().is_empty() {
+            err!("User email can't be empty")
+        }
+
+        self.updated_at = Utc::now().naive_utc();
+
+        diesel::insert_into(users::table) // Insert or update
+            .values(&*self)
+            .on_conflict(users::uuid)
+            .do_update()
+            .set(&*self)
+            .execute(&**conn)
+            .map_res("Error saving user")
+    }
+
+    #[cfg(not(feature = "postgresql"))]
     pub fn save(&mut self, conn: &DbConn) -> EmptyResult {
         if self.email.trim().is_empty() {
             err!("User email can't be empty")
@@ -250,6 +268,21 @@ impl Invitation {
         Self { email }
     }
 
+    #[cfg(feature = "postgresql")]
+    pub fn save(&self, conn: &DbConn) -> EmptyResult {
+        if self.email.trim().is_empty() {
+            err!("Invitation email can't be empty")
+        }
+
+        diesel::insert_into(invitations::table)
+            .values(self)
+            .on_conflict(invitations::email)
+            .do_nothing()
+            .execute(&**conn)
+            .map_res("Error saving invitation")
+    }
+
+    #[cfg(not(feature = "postgresql"))]
     pub fn save(&self, conn: &DbConn) -> EmptyResult {
         if self.email.trim().is_empty() {
             err!("Invitation email can't be empty")

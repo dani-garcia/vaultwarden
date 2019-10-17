@@ -1,7 +1,7 @@
 table! {
     attachments (id) {
-        id -> Varchar,
-        cipher_uuid -> Varchar,
+        id -> Text,
+        cipher_uuid -> Text,
         file_name -> Text,
         file_size -> Integer,
         akey -> Nullable<Text>,
@@ -10,11 +10,11 @@ table! {
 
 table! {
     ciphers (uuid) {
-        uuid -> Varchar,
-        created_at -> Datetime,
-        updated_at -> Datetime,
-        user_uuid -> Nullable<Varchar>,
-        organization_uuid -> Nullable<Varchar>,
+        uuid -> Text,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+        user_uuid -> Nullable<Text>,
+        organization_uuid -> Nullable<Text>,
         atype -> Integer,
         name -> Text,
         notes -> Nullable<Text>,
@@ -27,25 +27,25 @@ table! {
 
 table! {
     ciphers_collections (cipher_uuid, collection_uuid) {
-        cipher_uuid -> Varchar,
-        collection_uuid -> Varchar,
+        cipher_uuid -> Text,
+        collection_uuid -> Text,
     }
 }
 
 table! {
     collections (uuid) {
-        uuid -> Varchar,
-        org_uuid -> Varchar,
+        uuid -> Text,
+        org_uuid -> Text,
         name -> Text,
     }
 }
 
 table! {
     devices (uuid) {
-        uuid -> Varchar,
-        created_at -> Datetime,
-        updated_at -> Datetime,
-        user_uuid -> Varchar,
+        uuid -> Text,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+        user_uuid -> Text,
         name -> Text,
         atype -> Integer,
         push_token -> Nullable<Text>,
@@ -56,30 +56,30 @@ table! {
 
 table! {
     folders (uuid) {
-        uuid -> Varchar,
-        created_at -> Datetime,
-        updated_at -> Datetime,
-        user_uuid -> Varchar,
+        uuid -> Text,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+        user_uuid -> Text,
         name -> Text,
     }
 }
 
 table! {
     folders_ciphers (cipher_uuid, folder_uuid) {
-        cipher_uuid -> Varchar,
-        folder_uuid -> Varchar,
+        cipher_uuid -> Text,
+        folder_uuid -> Text,
     }
 }
 
 table! {
     invitations (email) {
-        email -> Varchar,
+        email -> Text,
     }
 }
 
 table! {
     organizations (uuid) {
-        uuid -> Varchar,
+        uuid -> Text,
         name -> Text,
         billing_email -> Text,
     }
@@ -87,8 +87,8 @@ table! {
 
 table! {
     twofactor (uuid) {
-        uuid -> Varchar,
-        user_uuid -> Varchar,
+        uuid -> Text,
+        user_uuid -> Text,
         atype -> Integer,
         enabled -> Bool,
         data -> Text,
@@ -98,13 +98,13 @@ table! {
 
 table! {
     users (uuid) {
-        uuid -> Varchar,
-        created_at -> Datetime,
-        updated_at -> Datetime,
-        email -> Varchar,
+        uuid -> Text,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+        email -> Text,
         name -> Text,
-        password_hash -> Blob,
-        salt -> Blob,
+        password_hash -> Binary,
+        salt -> Binary,
         password_iterations -> Integer,
         password_hint -> Nullable<Text>,
         akey -> Text,
@@ -122,17 +122,17 @@ table! {
 
 table! {
     users_collections (user_uuid, collection_uuid) {
-        user_uuid -> Varchar,
-        collection_uuid -> Varchar,
+        user_uuid -> Text,
+        collection_uuid -> Text,
         read_only -> Bool,
     }
 }
 
 table! {
     users_organizations (uuid) {
-        uuid -> Varchar,
-        user_uuid -> Varchar,
-        org_uuid -> Varchar,
+        uuid -> Text,
+        user_uuid -> Text,
+        org_uuid -> Text,
         access_all -> Bool,
         akey -> Text,
         status -> Integer,

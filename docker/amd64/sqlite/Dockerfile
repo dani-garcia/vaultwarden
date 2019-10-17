@@ -81,6 +81,7 @@ RUN apt-get update && apt-get install -y \
     openssl \
     ca-certificates \
     curl \
+    sqlite3 \
     && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir /data
@@ -96,7 +97,7 @@ COPY --from=build app/target/release/bitwarden_rs .
 
 COPY docker/healthcheck.sh ./healthcheck.sh
 
-HEALTHCHECK --interval=10s --timeout=1s CMD sh healthcheck.sh || exit 1
+HEALTHCHECK --interval=30s --timeout=3s CMD sh healthcheck.sh || exit 1
 
 # Configures the startup!
 CMD ["./bitwarden_rs"]

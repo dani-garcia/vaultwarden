@@ -1,6 +1,8 @@
-#![feature(proc_macro_hygiene, decl_macro, vec_remove_item, try_trait)]
+#![feature(proc_macro_hygiene, decl_macro, vec_remove_item, try_trait, ip)]
 #![recursion_limit = "256"]
 
+#[cfg(feature = "openssl")]
+extern crate openssl;
 #[macro_use]
 extern crate rocket;
 #[macro_use]
@@ -215,6 +217,8 @@ mod migrations {
     embed_migrations!("migrations/sqlite");
     #[cfg(feature = "mysql")]
     embed_migrations!("migrations/mysql");
+    #[cfg(feature = "postgresql")]
+    embed_migrations!("migrations/postgresql");
 
     pub fn run_migrations() {
         // Make sure the database is up to date (create if it doesn't exist, or run the migrations)

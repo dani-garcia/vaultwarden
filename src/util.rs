@@ -42,12 +42,19 @@ impl CORS {
             _ => "".to_string(),
         }
     }
+
+    fn valid_url(url: String) -> String {
+        match url.as_ref() {
+            "file://" => "*".to_string(),
+            _ => url,
+        }
+    }
 }
 
 impl Fairing for CORS {
     fn info(&self) -> Info {
         Info {
-            name: "Add CORS headers to requests",
+            name: "CORS",
             kind: Kind::Response
         }
     }
@@ -56,21 +63,17 @@ impl Fairing for CORS {
         let req_headers = request.headers();
 
         // We need to explicitly get the Origin header for Access-Control-Allow-Origin
-        let req_allow_origin = CORS::get_header(&req_headers, "Origin");
+        let req_allow_origin = CORS::valid_url(CORS::get_header(&req_headers, "Origin"));
 
-        let req_allow_headers = CORS::get_header(&req_headers, "Access-Control-Request-Headers");
-
-        let req_allow_methods =CORS::get_header(&req_headers,"Access-Control-Request-Methods");
-
-        if request.method() == Method::Options || response.content_type() == Some(ContentType::JSON) {
-            // Requests with credentials need explicit values since they do not allow wildcards.
-            response.set_header(Header::new("Access-Control-Allow-Origin", req_allow_origin));
-            response.set_header(Header::new("Access-Control-Allow-Methods", req_allow_methods));
-            response.set_header(Header::new("Access-Control-Allow-Headers", req_allow_headers));
-            response.set_header(Header::new("Access-Control-Allow-Credentials", "true"));
-        }
+        response.set_header(Header::new("Access-Control-Allow-Origin", req_allow_origin));
 
         if request.method() == Method::Options {
+            let req_allow_headers = CORS::get_header(&req_headers, "Access-Control-Request-Headers");
+            let req_allow_method = CORS::get_header(&req_headers,"Access-Control-Request-Method");
+
+            response.set_header(Header::new("Access-Control-Allow-Methods", req_allow_method));
+            response.set_header(Header::new("Access-Control-Allow-Headers", req_allow_headers));
+            response.set_header(Header::new("Access-Control-Allow-Credentials", "true"));
             response.set_status(Status::Ok);
             response.set_header(ContentType::Plain);
             response.set_sized_body(Cursor::new(""));

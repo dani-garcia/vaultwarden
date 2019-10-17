@@ -24,15 +24,15 @@ RUN ls
 # Musl build image for statically compiled binary
 FROM clux/muslrust:nightly-2019-07-08 as build
 
-# set sqlite as default for DB ARG for backward comaptibility
-ARG DB=sqlite
+# set mysql backend
+ARG DB=postgresql
 
 ENV USER "root"
 
 # Install needed libraries
 RUN apt-get update && apt-get install -y \
     --no-install-recommends \
-    libmysqlclient-dev \
+    libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -62,6 +62,7 @@ ENV SSL_CERT_DIR=/etc/ssl/certs
 # Install needed libraries
 RUN apk add --no-cache \
         openssl \
+        postgresql-libs \
         curl \
         sqlite \
         ca-certificates
@@ -80,7 +81,6 @@ COPY --from=build /app/target/x86_64-unknown-linux-musl/release/bitwarden_rs .
 COPY docker/healthcheck.sh ./healthcheck.sh
 
 HEALTHCHECK --interval=30s --timeout=3s CMD sh healthcheck.sh || exit 1
-
 
 # Configures the startup!
 CMD ["./bitwarden_rs"]

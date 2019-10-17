@@ -3,7 +3,7 @@ use std::cmp::Ordering;
 
 use super::{CollectionUser, User};
 
-#[derive(Debug, Identifiable, Queryable, Insertable)]
+#[derive(Debug, Identifiable, Queryable, Insertable, AsChangeset)]
 #[table_name = "organizations"]
 #[primary_key(uuid)]
 pub struct Organization {
@@ -12,7 +12,7 @@ pub struct Organization {
     pub billing_email: String,
 }
 
-#[derive(Debug, Identifiable, Queryable, Insertable)]
+#[derive(Debug, Identifiable, Queryable, Insertable, AsChangeset)]
 #[table_name = "users_organizations"]
 #[primary_key(uuid)]
 pub struct UserOrganization {
@@ -213,6 +213,24 @@ use crate::error::MapResult;
 
 /// Database methods
 impl Organization {
+    #[cfg(feature = "postgresql")]
+    pub fn save(&self, conn: &DbConn) -> EmptyResult {
+        UserOrganization::find_by_org(&self.uuid, conn)
+            .iter()
+            .for_each(|user_org| {
+                User::update_uuid_revision(&user_org.user_uuid, conn);
+            });
+
+        diesel::insert_into(organizations::table)
+            .values(self)
+            .on_conflict(organizations::uuid)
+            .do_update()
+            .set(self)
+            .execute(&**conn)
+            .map_res("Error saving organization")
+    }
+
+    #[cfg(not(feature = "postgresql"))]
     pub fn save(&self, conn: &DbConn) -> EmptyResult {
         UserOrganization::find_by_org(&self.uuid, conn)
             .iter()
@@ -323,6 +341,20 @@ impl UserOrganization {
         })
     }
 
+    #[cfg(feature = "postgresql")]
+    pub fn save(&self, conn: &DbConn) -> EmptyResult {
+        User::update_uuid_revision(&self.user_uuid, conn);
+
+        diesel::insert_into(users_organizations::table)
+            .values(self)
+            .on_conflict(users_organizations::uuid)
+            .do_update()
+            .set(self)
+            .execute(&**conn)
+            .map_res("Error adding user to organization")
+    }
+
+    #[cfg(not(feature = "postgresql"))]
     pub fn save(&self, conn: &DbConn) -> EmptyResult {
         User::update_uuid_revision(&self.user_uuid, conn);
 
