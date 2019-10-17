@@ -157,8 +157,6 @@ impl Handler for WSHandler {
     }
 
     fn on_message(&mut self, msg: Message) -> ws::Result<()> {
-        info!("Server got message '{}'. ", msg);
-
         if let Message::Text(text) = msg.clone() {
             let json = &text[..text.len() - 1]; // Remove last char
 
