@@ -369,21 +369,21 @@ make_config! {
         /// Enabled |> Disabling will prevent users from being able to login through ldap
         _enable_ldap:           bool,   true,  def,    false;
         /// Bitwarden URL |> The root URL for accessing bitwarden_rs. Eg: https://bw.example.com
-        bitwarden_url:          String,   true,  def,    false;
+        bitwarden_url:          String,   true,  def,    String::new();
         /// Bitwarden Admin Token
-        bitwarden_admin_token:  String,   true,  def,    false;
+        bitwarden_admin_token:  String,   true,  def,    String::new();
         /// LDAP Host
-        ldap_host:              String,   true,  def,    false;
+        ldap_host:              String,   true,  def,    String::new();
         /// LDAP Bind DN
-        ldap_bind_dn:           String,   true,  def,    false;
+        ldap_bind_dn:           String,   true,  def,    String::new();
         /// LDAP Bind Password
-        ldap_bind_password:     String,   true,  def,    false;
+        ldap_bind_password:     String,   true,  def,    String::new();
         /// LDAP Search base DN
-        ldap_search_base_dn:    String,   true,  def,    false;
+        ldap_search_base_dn:    String,   true,  def,    String::new();
         /// LDAP Search filter
-        ldap_search_filter:     String,   true,  def,    false;
+        ldap_search_filter:     String,   true,  def,    String::new();
         /// LDAP Sync interval
-        ldap_sync_interval:     u32,   true,  def,    false;
+        ldap_sync_interval:     u32,   true,  def,    10;
     },
 }
 
