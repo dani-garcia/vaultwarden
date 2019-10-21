@@ -101,7 +101,7 @@ fn _password_login(data: ConnectData, conn: DbConn, ip: ClientIp) -> JsonResult 
     }
     */
 
-    let password = data.password.as_ref().unwrap()
+    let password = data.password.as_ref().unwrap();
     let ldap = LdapConn::new(CONFIG.ldap_host().as_str())?;
     let bind = ldap.simple_bind(username, password);
 
