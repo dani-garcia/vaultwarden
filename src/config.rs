@@ -363,6 +363,28 @@ make_config! {
         /// Maximum attempts |> Maximum attempts before an email token is reset and a new email will need to be sent
         email_attempts_limit:   u64,    true,   def,      3;
     },
+
+    /// LDAP Settings
+    ldap: _enable_ldap {
+        /// Enabled |> Disabling will prevent users from being able to login through ldap
+        _enable_ldap:           bool,   true,  def,    false;
+        /// Bitwarden URL |> The root URL for accessing bitwarden_rs. Eg: https://bw.example.com
+        bitwarden_url:          String,   true,  def,    false;
+        /// Bitwarden Admin Token
+        bitwarden_admin_token:  String,   true,  def,    false;
+        /// LDAP Host
+        ldap_host:              String,   true,  def,    false;
+        /// LDAP Bind DN
+        ldap_bind_dn:           String,   true,  def,    false;
+        /// LDAP Bind Password
+        ldap_bind_password:     String,   true,  def,    false;
+        /// LDAP Search base DN
+        ldap_search_base_dn:    String,   true,  def,    false;
+        /// LDAP Search filter
+        ldap_search_filter:     String,   true,  def,    false;
+        /// LDAP Sync interval
+        ldap_sync_interval:     u32,   true,  def,    false;
+    },
 }
 
 fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
