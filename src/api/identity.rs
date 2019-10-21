@@ -102,7 +102,7 @@ fn _password_login(data: ConnectData, conn: DbConn, ip: ClientIp) -> JsonResult 
     */
 
     let ldap = LdapConn::new(CONFIG.ldap_host.as_str())?;
-    match ldap.simple_bind(data.username, data.password) {
+    match ldap.simple_bind(data.username.unwrap(), data.password.unwrap()) {
         _ => {}
     };
 
