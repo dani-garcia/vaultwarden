@@ -112,6 +112,9 @@ openssl = { version = "0.10.25", optional = true }
 # URL encoding library
 percent-encoding = "2.1.0"
 
+# LDAP
+ldap3 = "0.6.1"
+
 [patch.crates-io]
 # Add support for Timestamp type
 rmp = { git = 'https://github.com/3Hren/msgpack-rust', rev = 'd6c6c672e470341207ed9feb69b56322b5597a11' }

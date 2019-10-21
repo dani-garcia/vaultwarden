@@ -14,6 +14,8 @@ use crate::mail;
 use crate::util;
 use crate::CONFIG;
 
+use ldap3::{DerefAliases, LdapConn, Scope, SearchEntry, SearchOptions};
+
 pub fn routes() -> Vec<Route> {
     routes![login]
 }
@@ -77,6 +79,7 @@ fn _password_login(data: ConnectData, conn: DbConn, ip: ClientIp) -> JsonResult 
         err!("Scope not supported")
     }
 
+    
     // Get the user
     let username = data.username.as_ref().unwrap();
     let user = match User::find_by_mail(username, &conn) {
@@ -87,6 +90,7 @@ fn _password_login(data: ConnectData, conn: DbConn, ip: ClientIp) -> JsonResult 
         ),
     };
 
+    /*
     // Check password
     let password = data.password.as_ref().unwrap();
     if !user.check_valid_password(password) {
@@ -94,6 +98,19 @@ fn _password_login(data: ConnectData, conn: DbConn, ip: ClientIp) -> JsonResult 
             "Username or password is incorrect. Try again",
             format!("IP: {}. Username: {}.", ip.ip, username)
         )
+    }
+    */
+
+    let ldap = LdapConn::new(CONFIG.ldap_host.as_str())?;
+    match ldap.simple_bind(data.username, data.password) {
+        _ => {}
+    };
+
+    if ldap.is_err() {
+        err!(
+            "Username or password is incorrect. Try again",
+            format!("IP: {}. Username: {}.", ip.ip, username)
+        );
     }
 
     let (mut device, new_device) = get_device(&data, &conn, &user);

@@ -22,6 +22,8 @@ extern crate derive_more;
 #[macro_use]
 extern crate num_derive;
 
+extern crate ldap3;
+
 use std::{
     path::Path,
     process::{exit, Command},
