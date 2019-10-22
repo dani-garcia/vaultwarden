@@ -36,6 +36,7 @@ mod auth;
 mod config;
 mod crypto;
 mod db;
+mod ldap;
 mod mail;
 mod util;
 
@@ -55,6 +56,8 @@ fn main() {
     migrations::run_migrations();
 
     launch_rocket();
+
+    ldap::launch_ldap_connector();
 }
 
 fn launch_info() {

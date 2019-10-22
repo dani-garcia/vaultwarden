@@ -91,9 +91,9 @@ fn _password_login(data: ConnectData, conn: DbConn, ip: ClientIp) -> JsonResult 
 
     if CONFIG._enable_ldap() {
         // Extract ldap username from email
-        let email_parts: Vec<_> = username.split("@").collect();
-        let ldap_username = email_parts[0];
+        let ldap_username = username.split("@").nth(0).unwrap();
         let password = data.password.as_ref().unwrap();
+        // Attempt to bind to ldap with these credentials
         match LdapConn::new(CONFIG.ldap_host().as_str()) {
             Ok(ldap) => {
                 let bind = ldap.simple_bind(ldap_username, password);

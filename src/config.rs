@@ -368,10 +368,6 @@ make_config! {
     ldap: _enable_ldap {
         /// Enabled |> Disabling will prevent users from being able to login through ldap
         _enable_ldap:           bool,   true,  def,    false;
-        /// Bitwarden URL |> The root URL for accessing bitwarden_rs. Eg: https://bw.example.com
-        bitwarden_url:          String,   true,  def,    String::new();
-        /// Bitwarden Admin Token
-        bitwarden_admin_token:  String,   true,  def,    String::new();
         /// LDAP Host
         ldap_host:              String,   true,  def,    String::new();
         /// LDAP Bind DN
@@ -383,13 +379,12 @@ make_config! {
         /// LDAP Search filter
         ldap_search_filter:     String,   true,  def,    String::new();
         /// LDAP Sync interval
-        ldap_sync_interval:     u32,   true,  def,    10;
+        ldap_sync_interval:     u64,   true,  def,    10;
     },
 }
 
 fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
     let db_url = cfg.database_url.to_lowercase();
-    
     if cfg!(feature = "sqlite") {
         if db_url.starts_with("mysql:") || db_url.starts_with("postgresql:") {
             err!("`DATABASE_URL` is meant for MySQL or Postgres, while this server is meant for SQLite")
