@@ -90,17 +90,22 @@ fn _password_login(data: ConnectData, conn: DbConn, ip: ClientIp) -> JsonResult 
     };
 
     if CONFIG._enable_ldap() {
+        // Extract ldap username from email
         let email_parts: Vec<_> = username.split("@").collect();
         let ldap_username = email_parts[0];
         let password = data.password.as_ref().unwrap();
-        let ldap = LdapConn::new(CONFIG.ldap_host().as_str())?;
-        let bind = ldap.simple_bind(ldap_username, password);
+        match LdapConn::new(CONFIG.ldap_host().as_str()) {
+            Ok(ldap) => {
+                let bind = ldap.simple_bind(ldap_username, password);
 
-        if bind.is_err() {
-            err!(
-                "Username or password is incorrect. Try again",
-                format!("IP: {}. Username: {}.", ip.ip, ldap_username)
-            );
+                if bind.is_err() {
+                    err!(
+                        "LDAP Username or password is incorrect. Try again",
+                        format!("IP: {}. Username: {}.", ip.ip, ldap_username)
+                    );
+                }
+            }
+            Err(_) => err!("Can't connect to LDAP, check LDAP host"),
         }
     } else {
         // Check password
