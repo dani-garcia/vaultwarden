@@ -14,7 +14,7 @@ use crate::mail;
 use crate::util;
 use crate::CONFIG;
 
-use ldap3::{DerefAliases, LdapConn, Scope, SearchEntry, SearchOptions};
+use ldap3::LdapConn;
 
 pub fn routes() -> Vec<Route> {
     routes![login]
@@ -79,7 +79,6 @@ fn _password_login(data: ConnectData, conn: DbConn, ip: ClientIp) -> JsonResult 
         err!("Scope not supported")
     }
 
-    
     // Get the user
     let username = data.username.as_ref().unwrap();
     let user = match User::find_by_mail(username, &conn) {
@@ -90,26 +89,28 @@ fn _password_login(data: ConnectData, conn: DbConn, ip: ClientIp) -> JsonResult 
         ),
     };
 
-    /*
-    // Check password
-    let password = data.password.as_ref().unwrap();
-    if !user.check_valid_password(password) {
-        err!(
-            "Username or password is incorrect. Try again",
-            format!("IP: {}. Username: {}.", ip.ip, username)
-        )
-    }
-    */
+    if CONFIG._enable_ldap() {
+        let email_parts: Vec<_> = username.split("@").collect();
+        let ldap_username = email_parts[0];
+        let password = data.password.as_ref().unwrap();
+        let ldap = LdapConn::new(CONFIG.ldap_host().as_str())?;
+        let bind = ldap.simple_bind(ldap_username, password);
 
-    let password = data.password.as_ref().unwrap();
-    let ldap = LdapConn::new(CONFIG.ldap_host().as_str())?;
-    let bind = ldap.simple_bind(username, password);
-
-    if bind.is_err() {
-        err!(
-            "Username or password is incorrect. Try again",
-            format!("IP: {}. Username: {}.", ip.ip, username)
-        );
+        if bind.is_err() {
+            err!(
+                "Username or password is incorrect. Try again",
+                format!("IP: {}. Username: {}.", ip.ip, ldap_username)
+            );
+        }
+    } else {
+        // Check password
+        let password = data.password.as_ref().unwrap();
+        if !user.check_valid_password(password) {
+            err!(
+                "Username or password is incorrect. Try again",
+                format!("IP: {}. Username: {}.", ip.ip, username)
+            )
+        }
     }
 
     let (mut device, new_device) = get_device(&data, &conn, &user);
@@ -117,7 +118,9 @@ fn _password_login(data: ConnectData, conn: DbConn, ip: ClientIp) -> JsonResult 
     let twofactor_token = twofactor_auth(&user.uuid, &data, &mut device, &conn)?;
 
     if CONFIG.mail_enabled() && new_device {
-        if let Err(e) = mail::send_new_device_logged_in(&user.email, &ip.ip.to_string(), &device.updated_at, &device.name) {
+        if let Err(e) =
+            mail::send_new_device_logged_in(&user.email, &ip.ip.to_string(), &device.updated_at, &device.name)
+        {
             error!("Error sending new device email: {:#?}", e);
 
             if CONFIG.require_device_email() {
@@ -213,11 +216,17 @@ fn twofactor_auth(
     let mut remember = data.two_factor_remember.unwrap_or(0);
 
     match TwoFactorType::from_i32(selected_id) {
-        Some(TwoFactorType::Authenticator) => _tf::authenticator::validate_totp_code_str(user_uuid, twofactor_code, &selected_data?, conn)?,
+        Some(TwoFactorType::Authenticator) => {
+            _tf::authenticator::validate_totp_code_str(user_uuid, twofactor_code, &selected_data?, conn)?
+        }
         Some(TwoFactorType::U2f) => _tf::u2f::validate_u2f_login(user_uuid, twofactor_code, conn)?,
         Some(TwoFactorType::YubiKey) => _tf::yubikey::validate_yubikey_login(twofactor_code, &selected_data?)?,
-        Some(TwoFactorType::Duo) => _tf::duo::validate_duo_login(data.username.as_ref().unwrap(), twofactor_code, conn)?,
-        Some(TwoFactorType::Email) => _tf::email::validate_email_code_str(user_uuid, twofactor_code, &selected_data?, conn)?,
+        Some(TwoFactorType::Duo) => {
+            _tf::duo::validate_duo_login(data.username.as_ref().unwrap(), twofactor_code, conn)?
+        }
+        Some(TwoFactorType::Email) => {
+            _tf::email::validate_email_code_str(user_uuid, twofactor_code, &selected_data?, conn)?
+        }
 
         Some(TwoFactorType::Remember) => {
             match device.twofactor_remember {
