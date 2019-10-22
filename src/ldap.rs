@@ -1,7 +1,9 @@
 use crate::db;
 use crate::CONFIG;
 use ldap3::{DerefAliases, LdapConn, Scope, SearchEntry, SearchOptions};
+use ring::{digest, pbkdf2};
 use std::collections::HashSet;
+use std::convert::TryInto;
 use std::error::Error;
 use std::thread::sleep;
 use std::time::Duration;
@@ -22,33 +24,39 @@ pub fn launch_ldap_connector() {
 
 /// Invite all LDAP users to Bitwarden
 fn sync_from_ldap(conn: &db::DbConn) -> Result<(), Box<Error>> {
-    match get_existing_users(&conn) {
-        Ok(existing_users) => {
-            let mut num_users = 0;
-            for ldap_user in search_entries()? {
-                // Safely get first email from list of emails in field
-                if let Some(user_email) = ldap_user.attrs.get("mail").and_then(|l| (l.first())) {
-                    if existing_users.contains(user_email) {
-                        println!("User with email already exists: {}", user_email);
-                    } else {
-                        println!("Try to add user: {}", user_email);
-                        // Add user
-                        db::models::User::new(user_email.to_string()).save(conn)?;
-                        num_users = num_users + 1;
-                    }
-                } else {
-                    println!("Warning: Email field, mail, not found on user");
-                }
+    let existing_users = get_existing_users(&conn).expect("Error: Failed to get existing users from Bitwarden");
+    let mut num_users = 0;
+    for ldap_user in search_entries()? {
+        // Safely get first email from list of emails in field
+        if let Some(user_email) = ldap_user.attrs.get("mail").and_then(|l| (l.first())) {
+            if !existing_users.contains(user_email) {
+                println!("Try to add user: {}", user_email);
+                // Add user
+                let mut user = db::models::User::new(user_email.to_string());
+                let mut password_bytes = vec![0u8; 16];
+                password_bytes = crate::crypto::get_random(password_bytes);
+                let password = std::str::from_utf8(password_bytes.as_slice()).unwrap();
+                user.set_password(password);
+                user.client_kdf_iter = 100000;
+                let key = &mut [0u8; digest::SHA256_OUTPUT_LEN];
+                pbkdf2::derive(
+                    &digest::SHA256,
+                    std::num::NonZeroU32::new(user.client_kdf_iter.try_into().unwrap()).unwrap(),
+                    user.email.as_bytes(),
+                    password.as_bytes(),
+                    key,
+                );
+                user.akey = String::from_utf8(key.to_vec()).unwrap();
+                user.save(conn)?;
+                num_users = num_users + 1;
             }
-
-            // Maybe think about returning this value for some other use
-            println!("Added {} user(s).", num_users);
-        }
-        Err(e) => {
-            println!("Error: Failed to get existing users from Bitwarden");
-            return Err(e);
+        } else {
+            println!("Warning: Email field, mail, not found on user");
         }
     }
+
+    // Maybe think about returning this value for some other use
+    println!("Added {} user(s).", num_users);
 
     Ok(())
 }
