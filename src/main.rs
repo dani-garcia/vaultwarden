@@ -55,9 +55,9 @@ fn main() {
     check_web_vault();
     migrations::run_migrations();
 
-    launch_rocket();
-
     ldap::launch_ldap_connector();
+
+    launch_rocket();
 }
 
 fn launch_info() {

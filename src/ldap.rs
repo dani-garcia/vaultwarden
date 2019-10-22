@@ -7,13 +7,17 @@ use std::thread::sleep;
 use std::time::Duration;
 
 pub fn launch_ldap_connector() {
-    let pool = db::init_pool();
-    let conn = db::DbConn(pool.get().expect("Couldn't connect to DB."));
-    let interval = Duration::from_secs(CONFIG.ldap_sync_interval());
-    loop {
-        sync_from_ldap(&conn).expect("Couldn't sync users from LDAP.");
-        sleep(interval);
-    }
+    std::thread::spawn(move || {
+        let pool = db::init_pool();
+        let conn = db::DbConn(pool.get().expect("Couldn't connect to DB."));
+        let interval = Duration::from_secs(CONFIG.ldap_sync_interval());
+        loop {
+            if CONFIG._enable_ldap() {
+                sync_from_ldap(&conn).expect("Couldn't sync users from LDAP.");
+            }
+            sleep(interval);
+        }
+    });
 }
 
 /// Invite all LDAP users to Bitwarden
