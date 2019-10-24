@@ -23,7 +23,7 @@ RUN ls
 ########################## BUILD IMAGE  ##########################
 # We need to use the Rust build image, because
 # we need the Rust compiler and Cargo tooling
-FROM rust:1.36 as build
+FROM rust:1.38 as build
 
 # set mysql backend
 ARG DB=mysql
@@ -69,7 +69,7 @@ RUN cargo build --features ${DB} --release --target=armv7-unknown-linux-gnueabih
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image
 # because we already have a binary built
-FROM balenalib/armv7hf-debian:stretch
+FROM balenalib/armv7hf-debian:buster
 
 ENV ROCKET_ENV "staging"
 ENV ROCKET_PORT=80
