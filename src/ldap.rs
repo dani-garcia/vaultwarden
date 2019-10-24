@@ -17,7 +17,10 @@ pub fn launch_ldap_connector() {
         let interval = Duration::from_secs(CONFIG.ldap_sync_interval());
         loop {
             if CONFIG._enable_ldap() {
-                sync_from_ldap(&conn).expect("Couldn't sync users from LDAP.");
+                match sync_from_ldap(&conn) {
+                    Err(_) => println!("Couldn't sync from LDAP, check LDAP config"),
+                    _ => {}
+                }
             }
             sleep(interval);
         }
