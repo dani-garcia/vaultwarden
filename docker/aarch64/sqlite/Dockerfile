@@ -23,7 +23,7 @@ RUN ls
 ########################## BUILD IMAGE  ##########################
 # We need to use the Rust build image, because
 # we need the Rust compiler and Cargo tooling
-FROM rust:1.36 as build
+FROM rust:1.38 as build
 
 # set sqlite as default for DB ARG for backward comaptibility
 ARG DB=sqlite
@@ -68,7 +68,7 @@ RUN cargo build --features ${DB} --release --target=aarch64-unknown-linux-gnu -v
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image
 # because we already have a binary built
-FROM balenalib/aarch64-debian:stretch
+FROM balenalib/aarch64-debian:buster
 
 ENV ROCKET_ENV "staging"
 ENV ROCKET_PORT=80
