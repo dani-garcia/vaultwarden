@@ -41,6 +41,8 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Creates a dummy project used to grab dependencies
+RUN rustup self update
+RUN rustup set profile minimal
 RUN USER=root cargo new --bin app
 WORKDIR /app
 

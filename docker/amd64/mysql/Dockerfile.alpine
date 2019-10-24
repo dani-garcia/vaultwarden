@@ -41,6 +41,8 @@ WORKDIR /app
 # To avoid copying unneeded files, use .dockerignore
 COPY . .
 
+RUN rustup self update
+RUN rustup set profile minimal
 RUN rustup target add x86_64-unknown-linux-musl
 
 # Make sure that we actually build the project

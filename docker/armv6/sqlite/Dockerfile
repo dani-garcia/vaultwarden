@@ -62,6 +62,8 @@ ENV OPENSSL_LIB_DIR="/usr/lib/arm-linux-gnueabi"
 COPY . .
 
 # Build
+RUN rustup self update
+RUN rustup set profile minimal
 RUN rustup target add arm-unknown-linux-gnueabi
 RUN cargo build --features ${DB} --release --target=arm-unknown-linux-gnueabi -v
 

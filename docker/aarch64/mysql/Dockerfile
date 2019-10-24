@@ -62,6 +62,8 @@ ENV OPENSSL_LIB_DIR="/usr/lib/aarch64-linux-gnu"
 COPY . .
 
 # Build
+RUN rustup self update
+RUN rustup set profile minimal
 RUN rustup target add aarch64-unknown-linux-gnu
 RUN cargo build --features ${DB} --release --target=aarch64-unknown-linux-gnu -v
 
