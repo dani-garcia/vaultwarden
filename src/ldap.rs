@@ -28,9 +28,11 @@ pub fn launch_ldap_connector() {
 fn sync_from_ldap(conn: &DbConn) -> Result<(), Box<Error>> {
     let existing_users = get_existing_users(&conn).expect("Error: Failed to get existing users from Bitwarden");
     let mut num_users = 0;
+    let mut ldap_emails = HashSet::new();
     for ldap_user in search_entries()? {
         // Safely get first email from list of emails in field
         if let Some(user_email) = ldap_user.attrs.get("mail").and_then(|l| (l.first())) {
+            ldap_emails.insert(user_email.to_string());
             if !existing_users.contains(user_email) {
                 println!("Try to add user: {}", user_email);
                 // Invite user
@@ -39,19 +41,26 @@ fn sync_from_ldap(conn: &DbConn) -> Result<(), Box<Error>> {
                 }
 
                 let mut user = User::new(user_email.to_string());
-                user.save(&conn)?;
+                user.save(conn)?;
 
                 if CONFIG.mail_enabled() {
                     let org_name = "bitwarden_rs";
                     mail::send_invite(&user.email, &user.uuid, None, None, &org_name, None)?;
                 } else {
                     let invitation = Invitation::new(user_email.to_string());
-                    invitation.save(&conn)?;
+                    invitation.save(conn)?;
                 }
                 num_users = num_users + 1;
             }
         } else {
             println!("Warning: Email field, mail, not found on user");
+        }
+    }
+
+    for bw_email in existing_users {
+        if !ldap_emails.contains(&bw_email) {
+            // Delete user
+            User::find_by_mail(bw_email.as_ref(), conn).unwrap().delete(conn)?;
         }
     }
 
