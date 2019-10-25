@@ -19,7 +19,7 @@ pub fn launch_ldap_connector() {
             if CONFIG._enable_ldap() {
                 match sync_from_ldap(&conn) {
                     Ok(_) => println!("Sucessfully synced LDAP users"),
-                    Err(_) => println!("Couldn't sync from LDAP, check LDAP config"),
+                    Err(error) => println!("Couldn't sync from LDAP, check LDAP config : {:?}", error),
                 }
             }
             sleep(interval);
