@@ -29,6 +29,7 @@ Basically full implementation of Bitwarden API is provided including:
  * Website icons API
  * Authenticator and U2F support
  * YubiKey OTP
+ * LDAP support
 
 ## Installation
 Pull the docker image and mount a volume from the host for persistent storage:
