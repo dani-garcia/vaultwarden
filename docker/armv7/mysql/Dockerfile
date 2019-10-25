@@ -63,8 +63,6 @@ ENV OPENSSL_LIB_DIR="/usr/lib/arm-linux-gnueabihf"
 COPY . .
 
 # Build
-RUN rustup self update
-RUN rustup set profile minimal
 RUN rustup target add armv7-unknown-linux-gnueabihf
 RUN cargo build --features ${DB} --release --target=armv7-unknown-linux-gnueabihf -v
 
