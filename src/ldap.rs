@@ -28,7 +28,7 @@ pub fn launch_ldap_connector() {
 }
 
 /// Invite all LDAP users to Bitwarden
-fn sync_from_ldap(conn: &DbConn) -> Result<(), Box<Error>> {
+fn sync_from_ldap(conn: &DbConn) -> Result<(), Box<dyn Error>> {
     let existing_users = get_existing_users(&conn).expect("Error: Failed to get existing users from Bitwarden");
     let mut num_users = 0;
     let mut ldap_emails = HashSet::new();
@@ -74,7 +74,7 @@ fn sync_from_ldap(conn: &DbConn) -> Result<(), Box<Error>> {
 }
 
 /// Retrieves search results from ldap
-fn search_entries() -> Result<Vec<SearchEntry>, Box<Error>> {
+fn search_entries() -> Result<Vec<SearchEntry>, Box<dyn Error>> {
     let ldap = LdapConn::new(CONFIG.ldap_host().as_str())?;
     ldap.simple_bind(CONFIG.ldap_bind_dn().as_str(), CONFIG.ldap_bind_password().as_str())?;
 
@@ -101,7 +101,7 @@ fn search_entries() -> Result<Vec<SearchEntry>, Box<Error>> {
 }
 
 /// Creates set of email addresses for users that already exist in Bitwarden
-fn get_existing_users(conn: &DbConn) -> Result<HashSet<String>, Box<Error>> {
+fn get_existing_users(conn: &DbConn) -> Result<HashSet<String>, Box<dyn Error>> {
     let all_users = User::get_all(conn);
 
     let mut user_emails = HashSet::with_capacity(all_users.len());
