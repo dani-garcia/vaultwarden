@@ -1282,7 +1282,7 @@
     if ( !!element && !(stringModal in element) ) {
       on(element, clickEvent, clickHandler);
     }
-    if ( !!self[content] ) { self.setContent( self[content] ); }
+    if ( self[content] ) { self.setContent( self[content] ); }
     if (element) { element[stringModal] = self; modal[modalTrigger] = element; }
     else { modal[stringModal] = self; }
   };
@@ -1372,7 +1372,7 @@
         titleString = options.title || element[getAttribute](dataTitle);
         contentString = options.content || element[getAttribute](dataContent);
         // fixing https://github.com/thednp/bootstrap.native/issues/233
-        contentString = !!contentString ? contentString.trim() : null;
+        contentString = contentString ? contentString.trim() : null;
   
         popover = DOC[createElement](div);
   
@@ -1452,7 +1452,7 @@
           updatePopover();
           showPopover();
           bootstrapCustomEvent.call(element, showEvent, component);
-          !!self[animation] ? emulateTransitionEnd(popover, showTrigger) : showTrigger();
+          self[animation] ? emulateTransitionEnd(popover, showTrigger) : showTrigger();
         }
       }, 20 );
     };
@@ -1462,7 +1462,7 @@
         if (popover && popover !== null && hasClass(popover,showClass)) {
           bootstrapCustomEvent.call(element, hideEvent, component);
           removeClass(popover,showClass);
-          !!self[animation] ? emulateTransitionEnd(popover, hideTrigger) : hideTrigger();
+          self[animation] ? emulateTransitionEnd(popover, hideTrigger) : hideTrigger();
         }
       }, self[delay] );
     };
@@ -1516,7 +1516,7 @@
     for (var i=0, il=links[length]; i<il; i++) {
       var href = links[i][getAttribute]('href'), 
           targetItem = href && href.charAt(0) === '#' && href.slice(-1) !== '#' && queryElement(href);
-      if ( !!targetItem ) {
+      if ( targetItem ) {
         items[push](links[i]);
         targetItems[push](targetItem);
       }
@@ -1940,7 +1940,7 @@
             updateTooltip();
             showTooltip();
             bootstrapCustomEvent.call(element, showEvent, component);
-            !!self[animation] ? emulateTransitionEnd(tooltip, showTrigger) : showTrigger();          
+            self[animation] ? emulateTransitionEnd(tooltip, showTrigger) : showTrigger();          
           }
         }
       }, 20 );
@@ -1951,7 +1951,7 @@
         if (tooltip && hasClass(tooltip,showClass)) {
           bootstrapCustomEvent.call(element, hideEvent, component);
           removeClass(tooltip,showClass);
-          !!self[animation] ? emulateTransitionEnd(tooltip, hideTrigger) : hideTrigger();
+          self[animation] ? emulateTransitionEnd(tooltip, hideTrigger) : hideTrigger();
         }
       }, self[delay]);
     };
