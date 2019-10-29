@@ -259,6 +259,7 @@ fn get_icon_url(domain: &str) -> Result<(Vec<Icon>, String), Error> {
     } else {
         // Add the default favicon.ico to the list with just the given domain
         iconlist.push(Icon::new(35, format!("{}/favicon.ico", ssldomain)));
+        iconlist.push(Icon::new(35, format!("{}/favicon.ico", httpdomain)));
     }
 
     // Sort the iconlist by priority
