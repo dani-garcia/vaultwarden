@@ -96,7 +96,7 @@ fn _password_login(data: ConnectData, conn: DbConn, ip: ClientIp) -> JsonResult 
         // Attempt to bind to ldap with these credentials
         match LdapConn::new(CONFIG.ldap_host().as_str()) {
             Ok(ldap) => {
-                let bind = ldap.simple_bind(ldap_username, password)?.success();
+                let bind = ldap.simple_bind(ldap_username, password)?.non_error();
 
                 if bind.is_err() {
                     err!(
