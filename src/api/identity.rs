@@ -122,6 +122,7 @@ fn _password_login(data: ConnectData, conn: DbConn, ip: ClientIp) -> JsonResult 
                 }
 
                 if let Some(entry) = entries.iter().nth(0) {
+                    println!("Trying to bind with dn \"{}\"", entry.dn);
                     let bind = ldap.simple_bind(entry.dn.as_ref(), password)?.success();
 
                     if let Err(error) = bind {
