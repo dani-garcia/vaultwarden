@@ -96,10 +96,11 @@ fn _password_login(data: ConnectData, conn: DbConn, ip: ClientIp) -> JsonResult 
         // Attempt to bind to ldap with these credentials
         match LdapConn::new(CONFIG.ldap_host().as_str()) {
             Ok(ldap) => {
-                let bind_dn = format!("uid={}", ldap_username);
+                let bind_dn = format!("uid={},{}", ldap_username, CONFIG.ldap_search_base_dn());
                 let bind = ldap.simple_bind(bind_dn.as_ref(), password)?.success();
 
-                if bind.is_err() {
+                if let Err(error) = bind {
+                    println!("{:?}", error);
                     err!(
                         "LDAP Username or password is incorrect. Try again",
                         format!("IP: {}. Username: {}.", ip.ip, ldap_username)
