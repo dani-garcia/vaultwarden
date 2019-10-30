@@ -14,7 +14,7 @@ use crate::mail;
 use crate::util;
 use crate::CONFIG;
 
-use ldap3::LdapConn;
+use ldap3::{DerefAliases, LdapConn, Scope, SearchEntry, SearchOptions};
 
 pub fn routes() -> Vec<Route> {
     routes![login]
@@ -93,16 +93,47 @@ fn _password_login(data: ConnectData, conn: DbConn, ip: ClientIp) -> JsonResult 
         // Extract ldap username from email
         let ldap_username = username.split("@").nth(0).unwrap();
         let password = data.password.as_ref().unwrap();
+
         // Attempt to bind to ldap with these credentials
         match LdapConn::new(CONFIG.ldap_host().as_str()) {
             Ok(ldap) => {
-                let bind_dn = format!("uid={},{}", ldap_username, CONFIG.ldap_search_base_dn());
-                let bind = ldap.simple_bind(bind_dn.as_ref(), password)?.success();
+                ldap.simple_bind(CONFIG.ldap_bind_dn().as_str(), CONFIG.ldap_bind_password().as_str())?;
 
-                if let Err(error) = bind {
-                    println!("{:?}", error);
+                let fields = vec!["uid", "givenname", "sn", "cn", "mail"];
+
+                // TODO: Something something error handling
+                let (results, _res) = ldap
+                    .with_search_options(SearchOptions::new().deref(DerefAliases::Always))
+                    .search(
+                        CONFIG.ldap_search_base_dn().as_str(),
+                        Scope::Subtree,
+                        CONFIG
+                            .ldap_search_filter()
+                            .replace("uid=*", format!("uid={}", ldap_username).as_ref())
+                            .as_str(),
+                        fields,
+                    )?
+                    .success()?;
+
+                // Build list of entries
+                let mut entries = Vec::new();
+                for result in results {
+                    entries.push(SearchEntry::construct(result));
+                }
+
+                if let Some(entry) = entries.iter().nth(0) {
+                    let bind = ldap.simple_bind(entry.dn.as_ref(), password)?.success();
+
+                    if let Err(error) = bind {
+                        println!("{:?}", error);
+                        err!(
+                            "LDAP Username or password is incorrect. Try again",
+                            format!("IP: {}. Username: {}.", ip.ip, ldap_username)
+                        );
+                    }
+                } else {
                     err!(
-                        "LDAP Username or password is incorrect. Try again",
+                        "LDAP Username not found. Try again",
                         format!("IP: {}. Username: {}.", ip.ip, ldap_username)
                     );
                 }
