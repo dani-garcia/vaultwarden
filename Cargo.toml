@@ -47,7 +47,7 @@ serde_json = "1.0.41"
 
 # Logging
 log = "0.4.8"
-fern = { version = "0.5.8", features = ["syslog-4"] }
+fern = { version = "0.5.9", features = ["syslog-4"] }
 
 # A safe, extensible ORM and Query builder
 diesel = { version = "1.4.3", features = [ "chrono", "r2d2"] }
@@ -60,7 +60,7 @@ libsqlite3-sys = { version = "0.16.0", features = ["bundled"], optional = true }
 ring = "0.14.6"
 
 # UUID generation
-uuid = { version = "0.7.4", features = ["v4"] }
+uuid = { version = "0.8.1", features = ["v4"] }
 
 # Date and time library for Rust
 chrono = "0.4.9"
@@ -81,7 +81,7 @@ u2f = "0.1.6"
 yubico = { version = "0.7.1", features = ["online-tokio"], default-features = false }
 
 # A `dotenv` implementation for Rust
-dotenv = { version = "0.14.1", default-features = false }
+dotenv = { version = "0.15.0", default-features = false }
 
 # Lazy static macro
 lazy_static = "1.4.0"
@@ -117,5 +117,5 @@ percent-encoding = "2.1.0"
 rmp = { git = 'https://github.com/3Hren/msgpack-rust', rev = 'd6c6c672e470341207ed9feb69b56322b5597a11' }
 
 # Use newest ring
-rocket = { git = 'https://github.com/SergioBenitez/Rocket', rev = 'dbcb0a75b9556763ac3ab708f40c8f8ed75f1a1e' }
-rocket_contrib = { git = 'https://github.com/SergioBenitez/Rocket', rev = 'dbcb0a75b9556763ac3ab708f40c8f8ed75f1a1e' }
+rocket = { git = 'https://github.com/SergioBenitez/Rocket', rev = '4e6a7ddd5fffe66185baade28b421b7e6a46c70d' }
+rocket_contrib = { git = 'https://github.com/SergioBenitez/Rocket', rev = '4e6a7ddd5fffe66185baade28b421b7e6a46c70d' }
