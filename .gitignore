@@ -14,3 +14,5 @@ data
 
 # Web vault
 web-vault
+# Environment variables
+docker-compose.yml

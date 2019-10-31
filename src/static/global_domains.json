@@ -106,7 +106,8 @@
       "windows.com",
       "microsoftonline.com",
       "office365.com",
-      "microsoftstore.com"
+      "microsoftstore.com",
+      "office.com"
     ],
     "Excluded": false
   },
