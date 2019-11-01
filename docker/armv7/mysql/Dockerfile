@@ -64,7 +64,7 @@ COPY . .
 
 # Build
 RUN rustup target add armv7-unknown-linux-gnueabihf
-RUN cargo build --features ${DB} --release --target=armv7-unknown-linux-gnueabihf -v
+RUN cargo build --no-default-features --features ${DB} --release --target=armv7-unknown-linux-gnueabihf -v
 
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image

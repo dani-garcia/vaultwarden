@@ -52,7 +52,7 @@ COPY ./build.rs ./build.rs
 # Builds your dependencies and removes the
 # dummy project, except the target folder
 # This folder contains the compiled dependencies
-RUN cargo build --features ${DB} --release
+RUN cargo build --no-default-features --features ${DB} --release
 RUN find . -not -path "./target*" -delete
 
 # Copies the complete project
@@ -64,7 +64,7 @@ RUN touch src/main.rs
 
 # Builds again, this time it'll just be
 # your actual source files being built
-RUN cargo build --features ${DB} --release
+RUN cargo build --no-default-features --features ${DB} --release
 
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image

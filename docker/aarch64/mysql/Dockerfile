@@ -63,7 +63,7 @@ COPY . .
 
 # Build
 RUN rustup target add aarch64-unknown-linux-gnu
-RUN cargo build --features ${DB} --release --target=aarch64-unknown-linux-gnu -v
+RUN cargo build --no-default-features --features ${DB} --release --target=aarch64-unknown-linux-gnu -v
 
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image

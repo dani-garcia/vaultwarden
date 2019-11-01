@@ -47,7 +47,7 @@ RUN rustup target add x86_64-unknown-linux-musl
 RUN touch src/main.rs
 
 # Build
-RUN cargo build --features ${DB} --release
+RUN cargo build --no-default-features --features ${DB} --release
 
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image

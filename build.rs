@@ -2,14 +2,14 @@ use std::process::Command;
 
 fn main() {
     #[cfg(all(feature = "sqlite", feature = "mysql"))]
-    compile_error!("Can't enable both sqlite and mysql at the same time");
+    compile_error!("Can't enable both sqlite and mysql at the same time. To build with mysql support do: cargo build --no-default-features --features mysql");
     #[cfg(all(feature = "sqlite", feature = "postgresql"))]
-    compile_error!("Can't enable both sqlite and postgresql at the same time");
+    compile_error!("Can't enable both sqlite and postgresql at the same time. To build with postgresql support do: cargo build --no-default-features --features postgresql");
     #[cfg(all(feature = "mysql", feature = "postgresql"))]
     compile_error!("Can't enable both mysql and postgresql at the same time");
 
     #[cfg(not(any(feature = "sqlite", feature = "mysql", feature = "postgresql")))]
-    compile_error!("You need to enable one DB backend. To build with previous defaults do: cargo build --features sqlite");
+    compile_error!("You need to enable one DB backend. To build with your preferred backend do: cargo build --no-default-features --features <backend>");
 
     read_git_info().ok();
 }

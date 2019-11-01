@@ -11,6 +11,11 @@ publish = false
 build = "build.rs"
 
 [features]
+# By default compile the sqlite version
+# different DB backend can be compiled by running:
+# cargo build --no-default-features --features <mysql|postgresql>
+default = ["sqlite"]
+
 # Empty to keep compatibility, prefer to set USE_SYSLOG=true
 enable_syslog = []
 mysql = ["diesel/mysql", "diesel_migrations/mysql"]

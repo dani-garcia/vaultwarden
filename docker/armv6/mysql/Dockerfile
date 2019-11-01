@@ -63,7 +63,7 @@ COPY . .
 
 # Build
 RUN rustup target add arm-unknown-linux-gnueabi
-RUN cargo build --features ${DB} --release --target=arm-unknown-linux-gnueabi -v
+RUN cargo build --no-default-features --features ${DB} --release --target=arm-unknown-linux-gnueabi -v
 
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image
