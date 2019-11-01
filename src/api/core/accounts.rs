@@ -62,7 +62,11 @@ fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> EmptyResult {
     let mut user = match User::find_by_mail(&data.Email, &conn) {
         Some(user) => {
             if !user.password_hash.is_empty() {
-                err!("User already exists")
+                if CONFIG.signups_allowed() {
+                    err!("User already exists")
+                } else {
+                    err!("Registration not allowed or user already exists")
+                }
             }
 
             if let Some(token) = data.Token {
@@ -82,14 +86,14 @@ fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> EmptyResult {
             } else if CONFIG.signups_allowed() {
                 err!("Account with this email already exists")
             } else {
-                err!("Registration not allowed")
+                err!("Registration not allowed or user already exists")
             }
         }
         None => {
             if CONFIG.signups_allowed() || Invitation::take(&data.Email, &conn) {
                 User::new(data.Email.clone())
             } else {
-                err!("Registration not allowed")
+                err!("Registration not allowed or user already exists")
             }
         }
     };
