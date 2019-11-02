@@ -2,6 +2,7 @@ use rocket::Route;
 use rocket_contrib::json::Json;
 use serde_json;
 
+use crate::api::core::two_factor::_generate_recover_code;
 use crate::api::{EmptyResult, JsonResult, JsonUpcase, PasswordData};
 use crate::auth::Headers;
 use crate::crypto;
@@ -172,7 +173,7 @@ struct EmailData {
 #[put("/two-factor/email", data = "<data>")]
 fn email(data: JsonUpcase<EmailData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: EmailData = data.into_inner().data;
-    let user = headers.user;
+    let mut user = headers.user;
 
     if !user.check_valid_password(&data.MasterPasswordHash) {
         err!("Invalid password");
@@ -196,6 +197,8 @@ fn email(data: JsonUpcase<EmailData>, headers: Headers, conn: DbConn) -> JsonRes
     twofactor.atype = TwoFactorType::Email as i32;
     twofactor.data = email_data.to_json();
     twofactor.save(&conn)?;
+
+    _generate_recover_code(&mut user, &conn);
 
     Ok(Json(json!({
         "Email": email_data.email,

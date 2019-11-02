@@ -4,6 +4,7 @@ use rocket::Route;
 use rocket_contrib::json::Json;
 use serde_json;
 
+use crate::api::core::two_factor::_generate_recover_code;
 use crate::api::{ApiResult, EmptyResult, JsonResult, JsonUpcase, PasswordData};
 use crate::auth::Headers;
 use crate::crypto;
@@ -152,8 +153,9 @@ fn check_duo_fields_custom(data: &EnableDuoData) -> bool {
 #[post("/two-factor/duo", data = "<data>")]
 fn activate_duo(data: JsonUpcase<EnableDuoData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: EnableDuoData = data.into_inner().data;
+    let mut user = headers.user;
 
-    if !headers.user.check_valid_password(&data.MasterPasswordHash) {
+    if !user.check_valid_password(&data.MasterPasswordHash) {
         err!("Invalid password");
     }
 
@@ -167,8 +169,10 @@ fn activate_duo(data: JsonUpcase<EnableDuoData>, headers: Headers, conn: DbConn)
     };
 
     let type_ = TwoFactorType::Duo;
-    let twofactor = TwoFactor::new(headers.user.uuid, type_, data_str);
+    let twofactor = TwoFactor::new(user.uuid.clone(), type_, data_str);
     twofactor.save(&conn)?;
+    
+    _generate_recover_code(&mut user, &conn);
 
     Ok(Json(json!({
         "Enabled": true,
