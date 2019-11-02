@@ -65,9 +65,8 @@ fn icon(domain: String) -> Content<Vec<u8>> {
 }
 
 fn check_icon_domain_is_blacklisted(domain: &str) -> bool {
-    let mut is_blacklisted = false;
-    if CONFIG.icon_blacklist_non_global_ips() {
-        is_blacklisted = (domain, 0)
+    let mut is_blacklisted = CONFIG.icon_blacklist_non_global_ips()
+        && (domain, 0)
             .to_socket_addrs()
             .map(|x| {
                 for ip_port in x {
@@ -79,7 +78,6 @@ fn check_icon_domain_is_blacklisted(domain: &str) -> bool {
                 false
             })
             .unwrap_or(false);
-    }
 
     // Skip the regex check if the previous one is true already
     if !is_blacklisted {
@@ -279,11 +277,7 @@ fn get_page_with_cookies(url: &str, cookie_str: &str) -> Result<Response, Error>
     }
 
     if cookie_str.is_empty() {
-        CLIENT
-            .get(url)
-            .send()?
-            .error_for_status()
-            .map_err(Into::into)
+        CLIENT.get(url).send()?.error_for_status().map_err(Into::into)
     } else {
         CLIENT
             .get(url)

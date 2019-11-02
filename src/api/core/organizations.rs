@@ -77,7 +77,7 @@ fn create_organization(headers: Headers, data: JsonUpcase<OrgData>, conn: DbConn
     let data: OrgData = data.into_inner().data;
 
     let org = Organization::new(data.Name, data.BillingEmail);
-    let mut user_org = UserOrganization::new(headers.user.uuid.clone(), org.uuid.clone());
+    let mut user_org = UserOrganization::new(headers.user.uuid, org.uuid.clone());
     let collection = Collection::new(org.uuid.clone(), data.CollectionName);
 
     user_org.akey = data.Key;
@@ -221,7 +221,7 @@ fn post_organization_collections(
         None => err!("Can't find organization details"),
     };
 
-    let collection = Collection::new(org.uuid.clone(), data.Name);
+    let collection = Collection::new(org.uuid, data.Name);
     collection.save(&conn)?;
 
     Ok(Json(collection.to_json()))
@@ -262,7 +262,7 @@ fn post_organization_collection_update(
         err!("Collection is not owned by organization");
     }
 
-    collection.name = data.Name.clone();
+    collection.name = data.Name;
     collection.save(&conn)?;
 
     Ok(Json(collection.to_json()))
@@ -581,7 +581,7 @@ fn reinvite_user(org_id: String, user_org: String, headers: AdminHeaders, conn: 
             Some(headers.user.email),
         )?;
     } else {
-        let invitation = Invitation::new(user.email.clone());
+        let invitation = Invitation::new(user.email);
         invitation.save(&conn)?;
     }
 

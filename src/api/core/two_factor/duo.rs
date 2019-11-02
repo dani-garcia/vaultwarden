@@ -167,7 +167,7 @@ fn activate_duo(data: JsonUpcase<EnableDuoData>, headers: Headers, conn: DbConn)
     };
 
     let type_ = TwoFactorType::Duo;
-    let twofactor = TwoFactor::new(headers.user.uuid.clone(), type_, data_str);
+    let twofactor = TwoFactor::new(headers.user.uuid, type_, data_str);
     twofactor.save(&conn)?;
 
     Ok(Json(json!({

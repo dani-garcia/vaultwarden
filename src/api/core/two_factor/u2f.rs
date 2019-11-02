@@ -164,7 +164,7 @@ fn activate_u2f(data: JsonUpcase<EnableU2FData>, headers: Headers, conn: DbConn)
         err!("Error registering U2F token")
     }
 
-    let registration = U2F.register_response(challenge.clone(), response.into())?;
+    let registration = U2F.register_response(challenge, response.into())?;
     let full_registration = U2FRegistration {
         id: data.Id.into_i32()?,
         name: data.Name,

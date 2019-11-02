@@ -59,7 +59,7 @@ pub struct FolderData {
 fn post_folders(data: JsonUpcase<FolderData>, headers: Headers, conn: DbConn, nt: Notify) -> JsonResult {
     let data: FolderData = data.into_inner().data;
 
-    let mut folder = Folder::new(headers.user.uuid.clone(), data.Name);
+    let mut folder = Folder::new(headers.user.uuid, data.Name);
 
     folder.save(&conn)?;
     nt.send_folder_update(UpdateType::FolderCreate, &folder);

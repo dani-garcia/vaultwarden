@@ -105,7 +105,7 @@ pub fn send_invite(
         String::from(address),
         org_id.clone(),
         org_user_id.clone(),
-        invited_by_email.clone(),
+        invited_by_email,
     );
     let invite_token = encode_jwt(&claims);
 
