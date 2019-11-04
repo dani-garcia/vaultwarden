@@ -117,5 +117,5 @@ percent-encoding = "2.1.0"
 rmp = { git = 'https://github.com/3Hren/msgpack-rust', rev = 'd6c6c672e470341207ed9feb69b56322b5597a11' }
 
 # Use newest ring
-rocket = { git = 'https://github.com/SergioBenitez/Rocket', rev = '4e6a7ddd5fffe66185baade28b421b7e6a46c70d' }
-rocket_contrib = { git = 'https://github.com/SergioBenitez/Rocket', rev = '4e6a7ddd5fffe66185baade28b421b7e6a46c70d' }
+rocket = { git = 'https://github.com/SergioBenitez/Rocket', rev = 'b95b6765e1cc8be7c1e7eaef8a9d9ad940b0ac13' }
+rocket_contrib = { git = 'https://github.com/SergioBenitez/Rocket', rev = 'b95b6765e1cc8be7c1e7eaef8a9d9ad940b0ac13' }

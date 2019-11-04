@@ -76,8 +76,7 @@ impl<'a, 'r> FromRequest<'a, 'r> for DbConn {
     type Error = ();
 
     fn from_request(request: &'a Request<'r>) -> request::Outcome<DbConn, ()> {
-        // https://github.com/SergioBenitez/Rocket/commit/e3c1a4ad3ab9b840482ec6de4200d30df43e357c
-        let pool = try_outcome!(request.guard::<State<Pool>>());
+        let pool = request.guard::<State<Pool>>()?;
         match pool.get() {
             Ok(conn) => Outcome::Success(DbConn(conn)),
             Err(_) => Outcome::Failure((Status::ServiceUnavailable, ())),

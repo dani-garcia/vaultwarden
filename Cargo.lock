@@ -113,8 +113,8 @@ dependencies = [
  "reqwest 0.9.22 (registry+https://github.com/rust-lang/crates.io-index)",
  "ring 0.14.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "rmpv 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "rocket 0.5.0-dev (git+https://github.com/SergioBenitez/Rocket?rev=4e6a7ddd5fffe66185baade28b421b7e6a46c70d)",
- "rocket_contrib 0.5.0-dev (git+https://github.com/SergioBenitez/Rocket?rev=4e6a7ddd5fffe66185baade28b421b7e6a46c70d)",
+ "rocket 0.5.0-dev (git+https://github.com/SergioBenitez/Rocket?rev=b95b6765e1cc8be7c1e7eaef8a9d9ad940b0ac13)",
+ "rocket_contrib 0.5.0-dev (git+https://github.com/SergioBenitez/Rocket?rev=b95b6765e1cc8be7c1e7eaef8a9d9ad940b0ac13)",
  "serde 1.0.102 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_derive 1.0.102 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_json 1.0.41 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1901,7 +1901,7 @@ dependencies = [
 [[package]]
 name = "rocket"
 version = "0.5.0-dev"
-source = "git+https://github.com/SergioBenitez/Rocket?rev=4e6a7ddd5fffe66185baade28b421b7e6a46c70d#4e6a7ddd5fffe66185baade28b421b7e6a46c70d"
+source = "git+https://github.com/SergioBenitez/Rocket?rev=b95b6765e1cc8be7c1e7eaef8a9d9ad940b0ac13#b95b6765e1cc8be7c1e7eaef8a9d9ad940b0ac13"
 dependencies = [
  "atty 0.2.13 (registry+https://github.com/rust-lang/crates.io-index)",
  "base64 0.10.1 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1909,8 +1909,8 @@ dependencies = [
  "memchr 2.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "num_cpus 1.11.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "pear 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "rocket_codegen 0.5.0-dev (git+https://github.com/SergioBenitez/Rocket?rev=4e6a7ddd5fffe66185baade28b421b7e6a46c70d)",
- "rocket_http 0.5.0-dev (git+https://github.com/SergioBenitez/Rocket?rev=4e6a7ddd5fffe66185baade28b421b7e6a46c70d)",
+ "rocket_codegen 0.5.0-dev (git+https://github.com/SergioBenitez/Rocket?rev=b95b6765e1cc8be7c1e7eaef8a9d9ad940b0ac13)",
+ "rocket_http 0.5.0-dev (git+https://github.com/SergioBenitez/Rocket?rev=b95b6765e1cc8be7c1e7eaef8a9d9ad940b0ac13)",
  "state 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "time 0.1.42 (registry+https://github.com/rust-lang/crates.io-index)",
  "toml 0.4.10 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1921,12 +1921,12 @@ dependencies = [
 [[package]]
 name = "rocket_codegen"
 version = "0.5.0-dev"
-source = "git+https://github.com/SergioBenitez/Rocket?rev=4e6a7ddd5fffe66185baade28b421b7e6a46c70d#4e6a7ddd5fffe66185baade28b421b7e6a46c70d"
+source = "git+https://github.com/SergioBenitez/Rocket?rev=b95b6765e1cc8be7c1e7eaef8a9d9ad940b0ac13#b95b6765e1cc8be7c1e7eaef8a9d9ad940b0ac13"
 dependencies = [
  "devise 0.3.0 (git+https://github.com/SergioBenitez/Devise.git?rev=e58b3ac9a)",
  "indexmap 1.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "quote 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "rocket_http 0.5.0-dev (git+https://github.com/SergioBenitez/Rocket?rev=4e6a7ddd5fffe66185baade28b421b7e6a46c70d)",
+ "rocket_http 0.5.0-dev (git+https://github.com/SergioBenitez/Rocket?rev=b95b6765e1cc8be7c1e7eaef8a9d9ad940b0ac13)",
  "version_check 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "yansi 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
@@ -1934,11 +1934,11 @@ dependencies = [
 [[package]]
 name = "rocket_contrib"
 version = "0.5.0-dev"
-source = "git+https://github.com/SergioBenitez/Rocket?rev=4e6a7ddd5fffe66185baade28b421b7e6a46c70d#4e6a7ddd5fffe66185baade28b421b7e6a46c70d"
+source = "git+https://github.com/SergioBenitez/Rocket?rev=b95b6765e1cc8be7c1e7eaef8a9d9ad940b0ac13#b95b6765e1cc8be7c1e7eaef8a9d9ad940b0ac13"
 dependencies = [
  "log 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "notify 4.0.14 (registry+https://github.com/rust-lang/crates.io-index)",
- "rocket 0.5.0-dev (git+https://github.com/SergioBenitez/Rocket?rev=4e6a7ddd5fffe66185baade28b421b7e6a46c70d)",
+ "rocket 0.5.0-dev (git+https://github.com/SergioBenitez/Rocket?rev=b95b6765e1cc8be7c1e7eaef8a9d9ad940b0ac13)",
  "serde 1.0.102 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_json 1.0.41 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
@@ -1946,7 +1946,7 @@ dependencies = [
 [[package]]
 name = "rocket_http"
 version = "0.5.0-dev"
-source = "git+https://github.com/SergioBenitez/Rocket?rev=4e6a7ddd5fffe66185baade28b421b7e6a46c70d#4e6a7ddd5fffe66185baade28b421b7e6a46c70d"
+source = "git+https://github.com/SergioBenitez/Rocket?rev=b95b6765e1cc8be7c1e7eaef8a9d9ad940b0ac13#b95b6765e1cc8be7c1e7eaef8a9d9ad940b0ac13"
 dependencies = [
  "cookie 0.12.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "hyper 0.10.16 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -2984,10 +2984,10 @@ dependencies = [
 "checksum ring 0.14.6 (registry+https://github.com/rust-lang/crates.io-index)" = "426bc186e3e95cac1e4a4be125a4aca7e84c2d616ffc02244eef36e2a60a093c"
 "checksum rmp 0.8.8 (git+https://github.com/3Hren/msgpack-rust?rev=d6c6c672e470341207ed9feb69b56322b5597a11)" = "<none>"
 "checksum rmpv 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)" = "83caf745acbd99179ab6ce95398ddf548edfa2d3a99ff195248b30cd1524c43f"
-"checksum rocket 0.5.0-dev (git+https://github.com/SergioBenitez/Rocket?rev=4e6a7ddd5fffe66185baade28b421b7e6a46c70d)" = "<none>"
-"checksum rocket_codegen 0.5.0-dev (git+https://github.com/SergioBenitez/Rocket?rev=4e6a7ddd5fffe66185baade28b421b7e6a46c70d)" = "<none>"
-"checksum rocket_contrib 0.5.0-dev (git+https://github.com/SergioBenitez/Rocket?rev=4e6a7ddd5fffe66185baade28b421b7e6a46c70d)" = "<none>"
-"checksum rocket_http 0.5.0-dev (git+https://github.com/SergioBenitez/Rocket?rev=4e6a7ddd5fffe66185baade28b421b7e6a46c70d)" = "<none>"
+"checksum rocket 0.5.0-dev (git+https://github.com/SergioBenitez/Rocket?rev=b95b6765e1cc8be7c1e7eaef8a9d9ad940b0ac13)" = "<none>"
+"checksum rocket_codegen 0.5.0-dev (git+https://github.com/SergioBenitez/Rocket?rev=b95b6765e1cc8be7c1e7eaef8a9d9ad940b0ac13)" = "<none>"
+"checksum rocket_contrib 0.5.0-dev (git+https://github.com/SergioBenitez/Rocket?rev=b95b6765e1cc8be7c1e7eaef8a9d9ad940b0ac13)" = "<none>"
+"checksum rocket_http 0.5.0-dev (git+https://github.com/SergioBenitez/Rocket?rev=b95b6765e1cc8be7c1e7eaef8a9d9ad940b0ac13)" = "<none>"
 "checksum rustc-demangle 0.1.16 (registry+https://github.com/rust-lang/crates.io-index)" = "4c691c0e608126e00913e33f0ccf3727d5fc84573623b8d65b2df340b5201783"
 "checksum rustc-hex 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)" = "0ceb8ce7a5e520de349e1fa172baeba4a9e8d5ef06c47471863530bc4972ee1e"
 "checksum rustc_version 0.2.3 (registry+https://github.com/rust-lang/crates.io-index)" = "138e3e0acb6c9fb258b19b67cb8abd63c00679d2851805ea151465464fe9030a"
