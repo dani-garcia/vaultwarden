@@ -88,7 +88,7 @@ fn sync(data: Form<SyncData>, headers: Headers, conn: DbConn) -> JsonResult {
     let domains_json = if data.exclude_domains {
         Value::Null
     } else {
-        api::core::get_eq_domains(headers).unwrap().into_inner()
+        api::core::_get_eq_domains(headers, true).unwrap().into_inner()
     };
 
     Ok(Json(json!({

@@ -81,6 +81,10 @@ const GLOBAL_DOMAINS: &str = include_str!("../../static/global_domains.json");
 
 #[get("/settings/domains")]
 fn get_eq_domains(headers: Headers) -> JsonResult {
+    _get_eq_domains(headers, false)
+}
+
+fn _get_eq_domains(headers: Headers, no_excluded: bool) -> JsonResult {
     let user = headers.user;
     use serde_json::from_str;
 
@@ -91,6 +95,10 @@ fn get_eq_domains(headers: Headers) -> JsonResult {
 
     for global in &mut globals {
         global.Excluded = excluded_globals.contains(&global.Type);
+    }
+
+    if no_excluded {
+        globals.retain(|g| !g.Excluded);
     }
 
     Ok(Json(json!({
