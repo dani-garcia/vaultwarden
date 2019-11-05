@@ -29,12 +29,6 @@ ARG DB=sqlite
 
 ENV USER "root"
 
-# Install needed libraries
-RUN apt-get update && apt-get install -y \
-    --no-install-recommends \
-    libmysqlclient-dev \
-    && rm -rf /var/lib/apt/lists/*
-
 WORKDIR /app
 
 # Copies the complete project

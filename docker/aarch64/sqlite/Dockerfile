@@ -49,8 +49,7 @@ RUN sed 's/^deb/deb-src/' /etc/apt/sources.list > \
     && apt-get install -y \
         --no-install-recommends \
         libssl-dev:arm64 \
-        libc6-dev:arm64 \
-        libmariadb-dev:arm64
+        libc6-dev:arm64
 
 ENV CC_aarch64_unknown_linux_gnu="/usr/bin/aarch64-linux-gnu-gcc"
 ENV CROSS_COMPILE="1"
