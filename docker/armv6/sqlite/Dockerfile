@@ -49,8 +49,7 @@ RUN sed 's/^deb/deb-src/' /etc/apt/sources.list > \
     && apt-get install -y \
         --no-install-recommends \
         libssl-dev:armel \
-        libc6-dev:armel \
-        libmariadb-dev:armel
+        libc6-dev:armel
 
 ENV CC_arm_unknown_linux_gnueabi="/usr/bin/arm-linux-gnueabi-gcc"
 ENV CROSS_COMPILE="1"

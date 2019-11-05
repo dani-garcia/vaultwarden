@@ -49,8 +49,7 @@ RUN sed 's/^deb/deb-src/' /etc/apt/sources.list > \
     && apt-get install -y \
         --no-install-recommends \
         libssl-dev:armhf \
-        libc6-dev:armhf \
-        libmariadb-dev:armhf
+        libc6-dev:armhf
 
 ENV CC_armv7_unknown_linux_gnueabihf="/usr/bin/arm-linux-gnueabihf-gcc"
 ENV CROSS_COMPILE="1"

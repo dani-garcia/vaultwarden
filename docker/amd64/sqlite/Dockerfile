@@ -34,12 +34,6 @@ ARG DB=sqlite
 #    sqlite3 \
 # && rm -rf /var/lib/apt/lists/*
 
-# Install MySQL package
-RUN apt-get update && apt-get install -y \
-    --no-install-recommends \
-    libmariadb-dev \
-    && rm -rf /var/lib/apt/lists/*
-
 # Creates a dummy project used to grab dependencies
 RUN USER=root cargo new --bin app
 WORKDIR /app
