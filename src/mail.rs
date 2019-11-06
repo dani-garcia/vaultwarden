@@ -33,6 +33,8 @@ fn mailer() -> SmtpTransport {
         ClientSecurity::None
     };
 
+    use std::time::Duration;
+
     let smtp_client = SmtpClient::new((host.as_str(), CONFIG.smtp_port()), client_security).unwrap();
 
     let smtp_client = match (&CONFIG.smtp_username(), &CONFIG.smtp_password()) {
@@ -53,6 +55,7 @@ fn mailer() -> SmtpTransport {
 
     smtp_client
         .smtp_utf8(true)
+        .timeout(Some(Duration::from_secs(CONFIG.smtp_timeout())))
         .connection_reuse(ConnectionReuseParameters::NoReuse)
         .transport()
 }
