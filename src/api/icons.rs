@@ -104,6 +104,9 @@ fn get_icon(domain: &str) -> Vec<u8> {
         return FALLBACK_ICON.to_vec();
     }
 
+    // Create icon_cache_folder before fetching
+    create_dir_all(&CONFIG.icon_cache_folder()).expect("Error creating icon cache");
+
     // Get the icon, or fallback in case of error
     match download_icon(&domain) {
         Ok(icon) => {
@@ -395,8 +398,6 @@ fn download_icon(domain: &str) -> Result<Vec<u8>, Error> {
 }
 
 fn save_icon(path: &str, icon: &[u8]) {
-    create_dir_all(&CONFIG.icon_cache_folder()).expect("Error creating icon cache");
-
     if let Ok(mut f) = File::create(path) {
         f.write_all(icon).expect("Error writing icon file");
     };
