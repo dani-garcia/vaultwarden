@@ -112,7 +112,7 @@ fn get_icon(domain: &str) -> Vec<u8> {
         }
         Err(e) => {
             error!("Error downloading icon: {:?}", e);
-            let miss_indicator = path.to_owned() + ".miss";
+            let miss_indicator = path + ".miss";
             let empty_icon = Vec::new();
             save_icon(&miss_indicator, &empty_icon);
             FALLBACK_ICON.to_vec()
