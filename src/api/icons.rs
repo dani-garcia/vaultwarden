@@ -104,9 +104,6 @@ fn get_icon(domain: &str) -> Vec<u8> {
         return FALLBACK_ICON.to_vec();
     }
 
-    // Create icon_cache_folder before fetching
-    create_dir_all(&CONFIG.icon_cache_folder()).expect("Error creating icon cache");
-
     // Get the icon, or fallback in case of error
     match download_icon(&domain) {
         Ok(icon) => {
@@ -115,7 +112,9 @@ fn get_icon(domain: &str) -> Vec<u8> {
         }
         Err(e) => {
             error!("Error downloading icon: {:?}", e);
-            mark_negcache(&path);
+            let miss_indicator = path.to_owned() + ".miss";
+            let empty_icon = Vec::new();
+            save_icon(&miss_indicator, &empty_icon);
             FALLBACK_ICON.to_vec()
         }
     }
@@ -169,11 +168,6 @@ fn icon_is_negcached(path: &str) -> bool {
         // The marker is missing or inaccessible in some way.
         Err(_) => false,
     }
-}
-
-fn mark_negcache(path: &str) {
-    let miss_indicator = path.to_owned() + ".miss";
-    File::create(&miss_indicator).expect("Error creating negative cache marker");
 }
 
 fn icon_is_expired(path: &str) -> bool {
@@ -398,9 +392,17 @@ fn download_icon(domain: &str) -> Result<Vec<u8>, Error> {
 }
 
 fn save_icon(path: &str, icon: &[u8]) {
-    if let Ok(mut f) = File::create(path) {
-        f.write_all(icon).expect("Error writing icon file");
-    };
+    match File::create(path) {
+        Ok(mut f) => {
+            f.write_all(icon).expect("Error writing icon file");
+        }
+        Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => {
+            create_dir_all(&CONFIG.icon_cache_folder()).expect("Error creating icon cache");
+        }
+        Err(e) => {
+            info!("Icon save error: {:?}", e);
+        }
+    }
 }
 
 fn _header_map() -> HeaderMap {
