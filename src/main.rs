@@ -25,6 +25,7 @@ extern crate num_derive;
 use std::{
     path::Path,
     process::{exit, Command},
+    fs::create_dir_all,
 };
 
 #[macro_use]
@@ -51,6 +52,8 @@ fn main() {
     check_rsa_keys();
     check_web_vault();
     migrations::run_migrations();
+
+    create_icon_cache_folder();
 
     launch_rocket();
 }
@@ -129,8 +132,7 @@ fn check_db() {
         let path = Path::new(&url);
 
         if let Some(parent) = path.parent() {
-            use std::fs;
-            if fs::create_dir_all(parent).is_err() {
+            if create_dir_all(parent).is_err() {
                 error!("Error creating database directory");
                 exit(1);
             }
@@ -146,6 +148,11 @@ fn check_db() {
         }
     }
     db::get_connection().expect("Can't connect to DB");
+}
+
+fn create_icon_cache_folder() {
+    // Try to create the icon cache folder, and generate an error if it could not.
+    create_dir_all(&CONFIG.icon_cache_folder()).expect("Error creating icon cache directory");
 }
 
 fn check_rsa_keys() {
