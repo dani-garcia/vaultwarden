@@ -275,6 +275,10 @@ make_config! {
         /// Note that the checkbox would still be present, but ignored.
         disable_2fa_remember:   bool,   true,   def,    false;
 
+        /// Disable authenticator time drifted codes to be valid |> Enabling this only allows the current TOTP code to be valid
+        /// TOTP codes of the previous and next 30 seconds will be invalid.
+        authenticator_disable_time_drift:     bool,   true,  def,    false;
+
         /// Require new device emails |> When a user logs in an email is required to be sent.
         /// If sending the email fails the login attempt will fail.
         require_device_email:   bool,   true,   def,     false;

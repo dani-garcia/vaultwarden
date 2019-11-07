@@ -11,6 +11,8 @@ use crate::db::{
     DbConn,
 };
 
+pub use crate::config::CONFIG;
+
 pub fn routes() -> Vec<Route> {
     routes![
         generate_authenticator,
@@ -118,9 +120,11 @@ pub fn validate_totp_code(user_uuid: &str, totp_code: u64, secret: &str, conn: &
         .expect("Earlier than 1970-01-01 00:00:00 UTC").as_secs();
 
     // The amount of steps back and forward in time
-    let steps = 1;
-    for step in -steps..=steps {
+    // Also check if we need to disable time drifted TOTP codes.
+    // If that is the case, we set the steps to 0 so only the current TOTP is valid.
+    let steps = if CONFIG.authenticator_disable_time_drift() { 0 } else { 1 };
 
+    for step in -steps..=steps {
         let time_step = (current_time / 30) as i32 + step;
         // We need to calculate the time offsite and cast it as an i128.
         // Else we can't do math with it on a default u64 variable.
