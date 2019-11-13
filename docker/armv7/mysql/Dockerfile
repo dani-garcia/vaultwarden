@@ -104,4 +104,5 @@ COPY docker/healthcheck.sh ./healthcheck.sh
 HEALTHCHECK --interval=30s --timeout=3s CMD sh healthcheck.sh || exit 1
 
 # Configures the startup!
-CMD ["./bitwarden_rs"]
+WORKDIR /
+CMD ["/bitwarden_rs"]
