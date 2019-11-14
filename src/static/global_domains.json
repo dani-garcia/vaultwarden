@@ -39,7 +39,8 @@
     "Type": 1,
     "Domains": [
       "apple.com",
-      "icloud.com"
+      "icloud.com",
+      "tv.apple.com"
     ],
     "Excluded": false
   },
