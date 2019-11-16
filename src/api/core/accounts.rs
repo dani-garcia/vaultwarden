@@ -90,7 +90,7 @@ fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> EmptyResult {
             }
         }
         None => {
-            if CONFIG.signups_allowed() || Invitation::take(&data.Email, &conn) {
+            if CONFIG.signups_allowed() || Invitation::take(&data.Email, &conn) || CONFIG.can_signup_user(&data.Email) {
                 User::new(data.Email.clone())
             } else {
                 err!("Registration not allowed or user already exists")
