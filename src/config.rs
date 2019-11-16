@@ -243,6 +243,8 @@ make_config! {
         disable_icon_download:  bool,   true,   def,    false;
         /// Allow new signups |> Controls if new users can register. Note that while this is disabled, users could still be invited
         signups_allowed:        bool,   true,   def,    true;
+        /// Allow signups only from this list of comma-separated domains
+        signups_domains_whitelist: String, true, def,   "".to_string();
         /// Allow invitations |> Controls whether users can be invited by organization admins, even when signups are disabled
         invitations_allowed:    bool,   true,   def,    true;
         /// Password iterations |> Number of server-side passwords hashing iterations.
@@ -489,6 +491,16 @@ impl Config {
             usr.merge(&other, false)
         };
         self.update_config(builder)
+    }
+
+    pub fn can_signup_user(&self, email: &str) -> bool {
+        let e: Vec<&str> = email.rsplitn(2, "@").collect();
+        if e.len() != 2 || e[0].is_empty() || e[1].is_empty() {
+            warn!("Failed to parse email address '{}'", email);
+            return false
+        }
+        
+        self.signups_domains_whitelist().split(",").any(|d| d == e[0])
     }
 
     pub fn delete_user_config(&self) -> Result<(), Error> {
