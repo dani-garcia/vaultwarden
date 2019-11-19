@@ -87,10 +87,10 @@ dotenv = { version = "0.15.0", default-features = false }
 lazy_static = "1.4.0"
 
 # More derives
-derive_more = "0.15.0"
+derive_more = "0.99.2"
 
 # Numerical libraries
-num-traits = "0.2.8"
+num-traits = "0.2.9"
 num-derive = "0.3.0"
 
 # Email libraries

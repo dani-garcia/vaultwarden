@@ -107,7 +107,8 @@
       "windows.com",
       "microsoftonline.com",
       "office365.com",
-      "microsoftstore.com"
+      "microsoftstore.com",
+      "xbox.com"
     ],
     "Excluded": false
   },
@@ -761,7 +762,8 @@
       "superuser.com",
       "stackoverflow.com",
       "serverfault.com",
-      "mathoverflow.net"
+      "mathoverflow.net",
+      "askubuntu.com"
     ],
     "Excluded": false
   }
