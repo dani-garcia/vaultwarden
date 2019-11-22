@@ -766,5 +766,14 @@
       "askubuntu.com"
     ],
     "Excluded": false
+  },
+  {
+    "Type": 75,
+    "Domains": [
+      "netcup.de",
+      "netcup.eu",
+      "customercontrolpanel.de"
+    ],
+    "Excluded": false
   }
 ]
