@@ -238,7 +238,7 @@ fn get_icon_url(domain: &str) -> Result<(Vec<Icon>, String), Error> {
         let favicons = soup
             .tag("link")
             .attr("rel", Regex::new(r"icon$|apple.*icon")?) // Only use icon rels
-            .attr("href", Regex::new(r"(?i)\w+\.(jpg|jpeg|png|ico)(\?.*)?$")?) // Only allow specific extensions
+            .attr("href", Regex::new(r"(?i)\w+\.(jpg|jpeg|png|ico)(\?.*)?$|^data:image.*base64")?) // Only allow specific extensions
             .find_all();
 
         // Loop through all the found icons and determine it's priority
@@ -373,15 +373,32 @@ fn download_icon(domain: &str) -> Result<Vec<u8>, Error> {
 
     let mut buffer = Vec::new();
 
+    use data_url::DataUrl;
+
     for icon in iconlist.iter().take(5) {
-        match get_page_with_cookies(&icon.href, &cookie_str) {
-            Ok(mut res) => {
-                info!("Downloaded icon from {}", icon.href);
-                res.copy_to(&mut buffer)?;
-                break;
-            }
-            Err(_) => info!("Download failed for {}", icon.href),
-        };
+        if icon.href.starts_with("data:image") {
+            let datauri = DataUrl::process(&icon.href).unwrap();
+            // Check if we are able to decode the data uri
+            match datauri.decode_to_vec() {
+                Ok((body, _fragment)) => {
+                    // Also check if the size is atleast 67 bytes, which seems to be the smallest png i could create
+                    if body.len() >= 67 {
+                        buffer = body;
+                        break;
+                    }
+                }
+                _ => warn!("data uri is invalid")
+            };
+        } else {
+            match get_page_with_cookies(&icon.href, &cookie_str) {
+                Ok(mut res) => {
+                    info!("Downloaded icon from {}", icon.href);
+                    res.copy_to(&mut buffer)?;
+                    break;
+                }
+                Err(_) => info!("Download failed for {}", icon.href),
+            };
+        }
     }
 
     if buffer.is_empty() {
