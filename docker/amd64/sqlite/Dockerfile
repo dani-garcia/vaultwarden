@@ -23,16 +23,13 @@ RUN ls
 ########################## BUILD IMAGE  ##########################
 # We need to use the Rust build image, because
 # we need the Rust compiler and Cargo tooling
-FROM rust:1.38 as build
+FROM rust:1.39 as build
 
 # set sqlite as default for DB ARG for backward comaptibility
 ARG DB=sqlite
 
-# Using bundled SQLite, no need to install it
-# RUN apt-get update && apt-get install -y\
-#    --no-install-recommends \
-#    sqlite3 \
-# && rm -rf /var/lib/apt/lists/*
+# Don't download rust docs
+RUN rustup set profile minimal
 
 # Creates a dummy project used to grab dependencies
 RUN USER=root cargo new --bin app

@@ -23,10 +23,13 @@ RUN ls
 ########################## BUILD IMAGE  ##########################
 # We need to use the Rust build image, because
 # we need the Rust compiler and Cargo tooling
-FROM rust:1.38 as build
+FROM rust:1.39 as build
 
 # set mysql backend
 ARG DB=postgresql
+
+# Don't download rust docs
+RUN rustup set profile minimal
 
 # Using bundled SQLite, no need to install it
 # RUN apt-get update && apt-get install -y\

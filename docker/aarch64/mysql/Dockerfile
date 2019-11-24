@@ -23,10 +23,13 @@ RUN ls
 ########################## BUILD IMAGE  ##########################
 # We need to use the Rust build image, because
 # we need the Rust compiler and Cargo tooling
-FROM rust:1.38 as build
+FROM rust:1.39 as build
 
 # set mysql backend
 ARG DB=mysql
+
+# Don't download rust docs
+RUN rustup set profile minimal
 
 RUN apt-get update \
     && apt-get install -y \
@@ -63,7 +66,7 @@ COPY . .
 
 # Build
 RUN rustup target add aarch64-unknown-linux-gnu
-RUN cargo build --features ${DB} --release --target=aarch64-unknown-linux-gnu -v
+RUN cargo build --features ${DB} --release --target=aarch64-unknown-linux-gnu
 
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image

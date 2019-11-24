@@ -22,10 +22,13 @@ RUN ls
 
 ########################## BUILD IMAGE  ##########################
 # Musl build image for statically compiled binary
-FROM clux/muslrust:nightly-2019-10-19 as build
+FROM clux/muslrust:nightly-2019-11-23 as build
 
 # set sqlite as default for DB ARG for backward comaptibility
 ARG DB=sqlite
+
+# Don't download rust docs
+RUN rustup set profile minimal
 
 ENV USER "root"
 
