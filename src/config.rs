@@ -243,6 +243,12 @@ make_config! {
         disable_icon_download:  bool,   true,   def,    false;
         /// Allow new signups |> Controls if new users can register. Note that while this is disabled, users could still be invited
         signups_allowed:        bool,   true,   def,    true;
+        /// Require email verification on signups. This will prevent logins from succeeding until the address has been verified
+        signups_verify:         bool,   true,   def,    false;
+        /// If signups require email verification, automatically re-send verification email if it hasn't been sent for a while (in seconds)
+        signups_verify_resend_time: u64, true,  def,    3_600;
+        /// If signups require email verification, limit how many emails are automatically sent when login is attempted (0 means no limit)
+        signups_verify_resend_limit: u32, true, def,    6;
         /// Allow signups only from this list of comma-separated domains
         signups_domains_whitelist: String, true, def,   "".to_string();
         /// Allow invitations |> Controls whether users can be invited by organization admins, even when signups are disabled
@@ -595,6 +601,8 @@ fn load_templates(path: &str) -> Handlebars {
     }
 
     // First register default templates here
+    reg!("email/change_email", ".html");
+    reg!("email/delete_account", ".html");
     reg!("email/invite_accepted", ".html");
     reg!("email/invite_confirmed", ".html");
     reg!("email/new_device_logged_in", ".html");
@@ -602,6 +610,9 @@ fn load_templates(path: &str) -> Handlebars {
     reg!("email/pw_hint_some", ".html");
     reg!("email/send_org_invite", ".html");
     reg!("email/twofactor_email", ".html");
+    reg!("email/verify_email", ".html");
+    reg!("email/welcome", ".html");
+    reg!("email/welcome_must_verify", ".html");
 
     reg!("admin/base");
     reg!("admin/login");

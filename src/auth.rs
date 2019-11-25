@@ -18,6 +18,8 @@ lazy_static! {
     static ref JWT_HEADER: Header = Header::new(JWT_ALGORITHM);
     pub static ref JWT_LOGIN_ISSUER: String = format!("{}|login", CONFIG.domain());
     pub static ref JWT_INVITE_ISSUER: String = format!("{}|invite", CONFIG.domain());
+    pub static ref JWT_DELETE_ISSUER: String = format!("{}|delete", CONFIG.domain());
+    pub static ref JWT_VERIFYEMAIL_ISSUER: String = format!("{}|verifyemail", CONFIG.domain());
     pub static ref JWT_ADMIN_ISSUER: String = format!("{}|admin", CONFIG.domain());
     static ref PRIVATE_RSA_KEY: Vec<u8> = match read_file(&CONFIG.private_rsa_key()) {
         Ok(key) => key,
@@ -60,6 +62,14 @@ pub fn decode_login(token: &str) -> Result<LoginJWTClaims, Error> {
 
 pub fn decode_invite(token: &str) -> Result<InviteJWTClaims, Error> {
     decode_jwt(token, JWT_INVITE_ISSUER.to_string())
+}
+
+pub fn decode_delete(token: &str) -> Result<DeleteJWTClaims, Error> {
+    decode_jwt(token, JWT_DELETE_ISSUER.to_string())
+}
+
+pub fn decode_verify_email(token: &str) -> Result<VerifyEmailJWTClaims, Error> {
+    decode_jwt(token, JWT_VERIFYEMAIL_ISSUER.to_string())
 }
 
 pub fn decode_admin(token: &str) -> Result<AdminJWTClaims, Error> {
@@ -131,6 +141,54 @@ pub fn generate_invite_claims(
         org_id,
         user_org_id,
         invited_by_email,
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DeleteJWTClaims {
+    // Not before
+    pub nbf: i64,
+    // Expiration time
+    pub exp: i64,
+    // Issuer
+    pub iss: String,
+    // Subject
+    pub sub: String,
+}
+
+pub fn generate_delete_claims(
+    uuid: String,
+) -> DeleteJWTClaims {
+    let time_now = Utc::now().naive_utc();
+    DeleteJWTClaims {
+        nbf: time_now.timestamp(),
+        exp: (time_now + Duration::days(5)).timestamp(),
+        iss: JWT_DELETE_ISSUER.to_string(),
+        sub: uuid,
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct VerifyEmailJWTClaims {
+    // Not before
+    pub nbf: i64,
+    // Expiration time
+    pub exp: i64,
+    // Issuer
+    pub iss: String,
+    // Subject
+    pub sub: String,
+}
+
+pub fn generate_verify_email_claims(
+    uuid: String,
+) -> DeleteJWTClaims {
+    let time_now = Utc::now().naive_utc();
+    DeleteJWTClaims {
+        nbf: time_now.timestamp(),
+        exp: (time_now + Duration::days(5)).timestamp(),
+        iss: JWT_VERIFYEMAIL_ISSUER.to_string(),
+        sub: uuid,
     }
 }
 

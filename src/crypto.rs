@@ -4,6 +4,7 @@
 
 use ring::{digest, hmac, pbkdf2};
 use std::num::NonZeroU32;
+use crate::error::Error;
 
 static DIGEST_ALG: &digest::Algorithm = &digest::SHA256;
 const OUTPUT_LEN: usize = digest::SHA256_OUTPUT_LEN;
@@ -50,6 +51,21 @@ pub fn get_random(mut array: Vec<u8>) -> Vec<u8> {
         .expect("Error generating random values");
 
     array
+}
+
+pub fn generate_token(token_size: u32) -> Result<String, Error> {
+    if token_size > 19 {
+        err!("Generating token failed")
+    }
+
+    // 8 bytes to create an u64 for up to 19 token digits
+    let bytes = get_random(vec![0; 8]);
+    let mut bytes_array = [0u8; 8];
+    bytes_array.copy_from_slice(&bytes);
+
+    let number = u64::from_be_bytes(bytes_array) % 10u64.pow(token_size);
+    let token = format!("{:0size$}", number, size = token_size as usize);
+    Ok(token)
 }
 
 //

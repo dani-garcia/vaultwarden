@@ -1,6 +1,7 @@
 use chrono::{NaiveDateTime, Utc};
 
 use super::User;
+use crate::CONFIG;
 
 #[derive(Debug, Identifiable, Queryable, Insertable, Associations, AsChangeset)]
 #[table_name = "devices"]
@@ -87,7 +88,7 @@ impl Device {
             premium: true,
             name: user.name.to_string(),
             email: user.email.to_string(),
-            email_verified: true,
+            email_verified: !CONFIG.mail_enabled() || user.verified_at.is_some(),
 
             orgowner,
             orgadmin,

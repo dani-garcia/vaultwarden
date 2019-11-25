@@ -66,7 +66,7 @@ pub fn send_token(user_uuid: &str, conn: &DbConn) -> EmptyResult {
     let type_ = TwoFactorType::Email as i32;
     let mut twofactor = TwoFactor::find_by_user_and_type(user_uuid, type_, &conn)?;
 
-    let generated_token = generate_token(CONFIG.email_token_size())?;
+    let generated_token = crypto::generate_token(CONFIG.email_token_size())?;
 
     let mut twofactor_data = EmailTokenData::from_json(&twofactor.data)?;
     twofactor_data.set_token(generated_token);
@@ -109,22 +109,6 @@ struct SendEmailData {
     MasterPasswordHash: String,
 }
 
-
-fn generate_token(token_size: u32) -> Result<String, Error> {
-    if token_size > 19 {
-        err!("Generating token failed")
-    }
-
-    // 8 bytes to create an u64 for up to 19 token digits
-    let bytes = crypto::get_random(vec![0; 8]);
-    let mut bytes_array = [0u8; 8];
-    bytes_array.copy_from_slice(&bytes);
-
-    let number = u64::from_be_bytes(bytes_array) % 10u64.pow(token_size);
-    let token = format!("{:0size$}", number, size = token_size as usize);
-    Ok(token)
-}
-
 /// Send a verification email to the specified email address to check whether it exists/belongs to user.
 #[post("/two-factor/send-email", data = "<data>")]
 fn send_email(data: JsonUpcase<SendEmailData>, headers: Headers, conn: DbConn) -> EmptyResult {
@@ -145,7 +129,7 @@ fn send_email(data: JsonUpcase<SendEmailData>, headers: Headers, conn: DbConn) -
         tf.delete(&conn)?;
     }
 
-    let generated_token = generate_token(CONFIG.email_token_size())?;
+    let generated_token = crypto::generate_token(CONFIG.email_token_size())?;
     let twofactor_data = EmailTokenData::new(data.Email, generated_token);
 
     // Uses EmailVerificationChallenge as type to show that it's not verified yet.
