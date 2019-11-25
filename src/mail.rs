@@ -8,7 +8,7 @@ use percent_encoding::{percent_encode, NON_ALPHANUMERIC};
 use quoted_printable::encode_to_str;
 
 use crate::api::EmptyResult;
-use crate::auth::{encode_jwt, generate_invite_claims};
+use crate::auth::{encode_jwt, generate_invite_claims, generate_delete_claims, generate_verify_email_claims};
 use crate::error::Error;
 use crate::CONFIG;
 use chrono::NaiveDateTime;
@@ -95,6 +95,73 @@ pub fn send_password_hint(address: &str, hint: Option<String>) -> EmptyResult {
     send_email(&address, &subject, &body_html, &body_text)
 }
 
+pub fn send_delete_account(address: &str, uuid: &str) -> EmptyResult {
+    let claims = generate_delete_claims(
+        uuid.to_string(),
+    );
+    let delete_token = encode_jwt(&claims);
+
+    let (subject, body_html, body_text) = get_text(
+        "email/delete_account",
+        json!({
+            "url": CONFIG.domain(),
+            "user_id": uuid,
+            "email": percent_encode(address.as_bytes(), NON_ALPHANUMERIC).to_string(),
+            "token": delete_token,
+        }),
+    )?;
+
+    send_email(&address, &subject, &body_html, &body_text)
+}
+
+pub fn send_verify_email(address: &str, uuid: &str) -> EmptyResult {
+    let claims = generate_verify_email_claims(
+        uuid.to_string(),
+    );
+    let verify_email_token = encode_jwt(&claims);
+
+    let (subject, body_html, body_text) = get_text(
+        "email/verify_email",
+        json!({
+            "url": CONFIG.domain(),
+            "user_id": uuid,
+            "email": percent_encode(address.as_bytes(), NON_ALPHANUMERIC).to_string(),
+            "token": verify_email_token,
+        }),
+    )?;
+
+    send_email(&address, &subject, &body_html, &body_text)
+}
+
+pub fn send_welcome(address: &str) -> EmptyResult {
+    let (subject, body_html, body_text) = get_text(
+        "email/welcome",
+        json!({
+            "url": CONFIG.domain(),
+        }),
+    )?;
+
+    send_email(&address, &subject, &body_html, &body_text)
+}
+
+pub fn send_welcome_must_verify(address: &str, uuid: &str) -> EmptyResult {
+    let claims = generate_verify_email_claims(
+        uuid.to_string(),
+    );
+    let verify_email_token = encode_jwt(&claims);
+
+    let (subject, body_html, body_text) = get_text(
+        "email/welcome_must_verify",
+        json!({
+            "url": CONFIG.domain(),
+            "user_id": uuid,
+            "token": verify_email_token,
+        }),
+    )?;
+
+    send_email(&address, &subject, &body_html, &body_text)
+}
+
 pub fn send_invite(
     address: &str,
     uuid: &str,
@@ -174,6 +241,18 @@ pub fn send_new_device_logged_in(address: &str, ip: &str, dt: &NaiveDateTime, de
 pub fn send_token(address: &str, token: &str) -> EmptyResult {
     let (subject, body_html, body_text) = get_text(
         "email/twofactor_email",
+        json!({
+            "url": CONFIG.domain(),
+            "token": token,
+        }),
+    )?;
+
+    send_email(&address, &subject, &body_html, &body_text)
+}
+
+pub fn send_change_email(address: &str, token: &str) -> EmptyResult {
+    let (subject, body_html, body_text) = get_text(
+        "email/change_email",
         json!({
             "url": CONFIG.domain(),
             "token": token,
