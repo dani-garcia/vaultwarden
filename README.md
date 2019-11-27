@@ -53,3 +53,8 @@ See the [bitwarden_rs wiki](https://github.com/dani-garcia/bitwarden_rs/wiki) fo
 To ask a question, [raising an issue](https://github.com/dani-garcia/bitwarden_rs/issues/new) is fine. Please also report any bugs spotted here.
 
 If you prefer to chat, we're usually hanging around at [#bitwarden_rs:matrix.org](https://matrix.to/#/#bitwarden_rs:matrix.org) room on Matrix. Feel free to join us!
+
+### Sponsors
+Thanks for your contribution to the project!
+
+- [@Skaronator](https://github.com/Skaronator)
