@@ -500,13 +500,13 @@ impl Config {
     }
 
     pub fn can_signup_user(&self, email: &str) -> bool {
-        let e: Vec<&str> = email.rsplitn(2, "@").collect();
+        let e: Vec<&str> = email.rsplitn(2, '@').collect();
         if e.len() != 2 || e[0].is_empty() || e[1].is_empty() {
             warn!("Failed to parse email address '{}'", email);
             return false
         }
         
-        self.signups_domains_whitelist().split(",").any(|d| d == e[0])
+        self.signups_domains_whitelist().split(',').any(|d| d == e[0])
     }
 
     pub fn delete_user_config(&self) -> Result<(), Error> {
