@@ -17,5 +17,5 @@ before_install:
 install: true
 script:
 - git ls-files --exclude='Dockerfile*' --ignored | xargs --max-lines=1 hadolint
-- cargo build --features "sqlite"
-- cargo build --features "mysql"
+- cargo test --features "sqlite"
+- cargo test --features "mysql"
