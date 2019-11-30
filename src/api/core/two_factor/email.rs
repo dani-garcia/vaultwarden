@@ -321,14 +321,14 @@ mod tests {
 
     #[test]
     fn test_token() {
-        let result = generate_token(19).unwrap();
+        let result = crypto::generate_token(19).unwrap();
 
         assert_eq!(result.chars().count(), 19);
     }
 
     #[test]
     fn test_token_too_large() {
-        let result = generate_token(20);
+        let result = crypto::generate_token(20);
 
         assert!(result.is_err(), "too large token should give an error");
     }
