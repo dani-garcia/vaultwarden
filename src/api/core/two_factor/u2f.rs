@@ -29,6 +29,7 @@ pub fn routes() -> Vec<Route> {
         generate_u2f_challenge,
         activate_u2f,
         activate_u2f_put,
+        delete_u2f,
     ]
 }
 
@@ -192,6 +193,50 @@ fn activate_u2f(data: JsonUpcase<EnableU2FData>, headers: Headers, conn: DbConn)
 #[put("/two-factor/u2f", data = "<data>")]
 fn activate_u2f_put(data: JsonUpcase<EnableU2FData>, headers: Headers, conn: DbConn) -> JsonResult {
     activate_u2f(data, headers, conn)
+}
+
+#[derive(Deserialize, Debug)]
+#[allow(non_snake_case)]
+struct DeleteU2FData {
+    Id: NumberOrString,
+    MasterPasswordHash: String,
+}
+
+#[delete("/two-factor/u2f", data = "<data>")]
+fn delete_u2f(data: JsonUpcase<DeleteU2FData>, headers: Headers, conn: DbConn) -> JsonResult {
+    let data: DeleteU2FData = data.into_inner().data;
+
+    let id = data.Id.into_i32()?;
+
+    if !headers.user.check_valid_password(&data.MasterPasswordHash) {
+        err!("Invalid password");
+    }
+
+    let type_ = TwoFactorType::U2f as i32;
+    let mut tf = match TwoFactor::find_by_user_and_type(&headers.user.uuid, type_, &conn) {
+        Some(tf) => tf,
+        None => err!("U2F data not found!"),
+    };
+
+    let mut data: Vec<U2FRegistration> = match serde_json::from_str(&tf.data) {
+        Ok(d) => d,
+        Err(_) => err!("Error parsing U2F data"),
+    };
+
+    data.retain(|r| r.id != id);
+
+    let new_data_str = serde_json::to_string(&data)?;
+
+    tf.data = new_data_str;
+    tf.save(&conn)?;
+
+    let keys_json: Vec<Value> = data.iter().map(U2FRegistration::to_json).collect();
+
+    Ok(Json(json!({
+        "Enabled": true,
+        "Keys": keys_json,
+        "Object": "twoFactorU2f"
+    })))
 }
 
 fn _create_u2f_challenge(user_uuid: &str, type_: TwoFactorType, conn: &DbConn) -> Challenge {
