@@ -26,6 +26,7 @@ pub fn routes() -> Vec<Route> {
         post_admin_login,
         admin_page,
         invite_user,
+        logout,
         delete_user,
         deauth_user,
         remove_2fa,
@@ -109,6 +110,7 @@ struct AdminTemplateData {
     users: Vec<Value>,
     config: Value,
     can_backup: bool,
+    logged_in: bool
 }
 
 impl AdminTemplateData {
@@ -119,6 +121,7 @@ impl AdminTemplateData {
             users,
             config: CONFIG.prepare_json(),
             can_backup: *CAN_BACKUP,
+            logged_in: true
         }
     }
 
@@ -164,6 +167,12 @@ fn invite_user(data: Json<InviteData>, _token: AdminToken, conn: DbConn) -> Empt
         let invitation = Invitation::new(data.email);
         invitation.save(&conn)
     }
+}
+
+#[get("/logout")]
+fn logout(mut cookies: Cookies) -> Result<Redirect, ()> {
+    cookies.remove(Cookie::named(COOKIE_NAME));
+    Ok(Redirect::to(ADMIN_PATH))
 }
 
 #[get("/users")]

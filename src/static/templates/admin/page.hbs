@@ -191,7 +191,7 @@
 
 <script>
     function reload() { window.location.reload(); }
-    function msg(text) { alert(text); reload(); }
+    function msg(text) { text && alert(text); reload(); }
     function identicon(email) {
         const data = new Identicon(md5(email), { size: 48, format: 'svg' });
         return "data:image/svg+xml;base64," + data.toString();

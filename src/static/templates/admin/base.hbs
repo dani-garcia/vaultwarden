@@ -33,7 +33,7 @@
 </head>
 
 <body class="bg-light">
-    <nav class="navbar navbar-expand-md navbar-dark bg-dark fixed-top shadow">
+    <nav class="navbar navbar-expand-sm navbar-dark bg-dark fixed-top shadow">
         <a class="navbar-brand" href="#">Bitwarden_rs</a>
         <div class="navbar-collapse">
             <ul class="navbar-nav">
@@ -45,9 +45,20 @@
                 </li>
             </ul>
         </div>
-        {{#if version}}
-        <div class="navbar-text">Version: {{version}}</div>
-        {{/if}}
+
+        <ul class="navbar-nav">
+            {{#if version}}
+            <li class="nav-item">
+                <span class="navbar-text mr-2">Version: {{version}}</span>
+            </li>
+            {{/if}}
+
+            {{#if logged_in}}
+            <li class="nav-item">
+                <a class="nav-link" href="/admin/logout">Log Out</a>
+            </li>
+            {{/if}}
+        </ul>
     </nav>
 
     {{> (page_content) }}
