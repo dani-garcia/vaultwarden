@@ -147,15 +147,22 @@ impl Fairing for BetterLogging {
     }
 
     fn on_request(&self, request: &mut Request<'_>, _data: &Data) {
+        let method = request.method();
+        if !self.0 && method == Method::Options {
+            return;
+        }
         let mut uri = request.uri().to_string();
         uri.truncate(50);
 
         if self.0 || LOGGED_ROUTES.iter().any(|r| uri.starts_with(r)) {
-            info!(target: "request", "{} {}", request.method(), uri);
+            info!(target: "request", "{} {}", method, uri);
         }
     }
 
     fn on_response(&self, request: &Request, response: &mut Response) {
+        if !self.0 && request.method() == Method::Options {
+            return;
+        }
         let uri = request.uri().to_string();
         if self.0 || LOGGED_ROUTES.iter().any(|r| uri.starts_with(r)) {
             let status = response.status();
