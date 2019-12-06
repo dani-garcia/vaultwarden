@@ -12,6 +12,8 @@ use crate::error::Error;
 use crate::CONFIG;
 
 pub fn routes() -> Vec<Route> {
+    // If addding more routes here, consider also adding them to 
+    // crate::utils::LOGGED_ROUTES to make sure they appear in the log
     if CONFIG.web_vault_enabled() {
         routes![web_index, app_id, web_files, attachments, alive, static_files]
     } else {

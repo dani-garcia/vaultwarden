@@ -2,9 +2,9 @@
 // Web Headers and caching
 //
 use rocket::fairing::{Fairing, Info, Kind};
+use rocket::http::{ContentType, Header, HeaderMap, Method, Status};
 use rocket::response::{self, Responder};
-use rocket::{Request, Response};
-use rocket::http::{Header, HeaderMap, ContentType, Method, Status};
+use rocket::{Data, Request, Response, Rocket};
 use std::io::Cursor;
 
 pub struct AppHeaders();
@@ -55,7 +55,7 @@ impl Fairing for CORS {
     fn info(&self) -> Info {
         Info {
             name: "CORS",
-            kind: Kind::Response
+            kind: Kind::Response,
         }
     }
 
@@ -69,7 +69,7 @@ impl Fairing for CORS {
 
         if request.method() == Method::Options {
             let req_allow_headers = CORS::get_header(&req_headers, "Access-Control-Request-Headers");
-            let req_allow_method = CORS::get_header(&req_headers,"Access-Control-Request-Method");
+            let req_allow_method = CORS::get_header(&req_headers, "Access-Control-Request-Method");
 
             response.set_header(Header::new("Access-Control-Allow-Methods", req_allow_method));
             response.set_header(Header::new("Access-Control-Allow-Headers", req_allow_headers));
@@ -103,6 +103,67 @@ impl<'r, R: Responder<'r>> Responder<'r> for Cached<R> {
                 Ok(res)
             }
             e @ Err(_) => e,
+        }
+    }
+}
+
+// Log all the routes from the main base paths list, and the attachments endoint
+// Effectively ignores, any static file route, and the alive endpoint
+const LOGGED_ROUTES: [&str; 6] = [
+    "/api",
+    "/admin",
+    "/identity",
+    "/icons",
+    "/notifications/hub/negotiate",
+    "/attachments",
+];
+
+// Boolean is extra debug, when true, we ignore the whitelist above and also print the mounts
+pub struct BetterLogging(pub bool);
+impl Fairing for BetterLogging {
+    fn info(&self) -> Info {
+        Info {
+            name: "Better Logging",
+            kind: Kind::Launch | Kind::Request | Kind::Response,
+        }
+    }
+
+    fn on_launch(&self, rocket: &Rocket) {
+        if self.0 {
+            info!(target: "routes", "Routes loaded:");
+            for route in rocket.routes() {
+                if route.rank < 0 {
+                    info!(target: "routes", "{:<6} {}", route.method, route.uri);
+                } else {
+                    info!(target: "routes", "{:<6} {} [{}]", route.method, route.uri, route.rank);
+                }
+            }
+        }
+
+        let config = rocket.config();
+        let scheme = if config.tls_enabled() { "https" } else { "http" };
+        let addr = format!("{}://{}:{}", &scheme, &config.address, &config.port);
+        info!(target: "start", "Rocket has launched from {}", addr);
+    }
+
+    fn on_request(&self, request: &mut Request<'_>, _data: &Data) {
+        let mut uri = request.uri().to_string();
+        uri.truncate(50);
+
+        if self.0 || LOGGED_ROUTES.iter().any(|r| uri.starts_with(r)) {
+            info!(target: "request", "{} {}", request.method(), uri);
+        }
+    }
+
+    fn on_response(&self, request: &Request, response: &mut Response) {
+        let uri = request.uri().to_string();
+        if self.0 || LOGGED_ROUTES.iter().any(|r| uri.starts_with(r)) {
+            let status = response.status();
+            if let Some(ref route) = request.route() {
+                info!(target: "response", "{} => {} {}", route, status.code, status.reason)
+            } else {
+                info!(target: "response", "{} {}", status.code, status.reason)
+            }
         }
     }
 }

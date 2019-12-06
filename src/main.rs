@@ -23,9 +23,10 @@ extern crate derive_more;
 extern crate num_derive;
 
 use std::{
+    fs::create_dir_all,
     path::Path,
     process::{exit, Command},
-    fs::create_dir_all,
+    str::FromStr,
 };
 
 #[macro_use]
@@ -44,9 +45,14 @@ pub use error::{Error, MapResult};
 fn main() {
     launch_info();
 
-    if CONFIG.extended_logging() {
-        init_logging().ok();
-    }
+    use log::LevelFilter as LF;
+    let level = LF::from_str(&CONFIG.log_level()).expect("Valid log level");
+    init_logging(level).ok();
+
+    let extra_debug = match level {
+        LF::Trace | LF::Debug => true,
+        _ => false,
+    };
 
     check_db();
     check_rsa_keys();
@@ -55,7 +61,7 @@ fn main() {
 
     create_icon_cache_folder();
 
-    launch_rocket();
+    launch_rocket(extra_debug);
 }
 
 fn launch_info() {
@@ -73,10 +79,23 @@ fn launch_info() {
     println!("\\--------------------------------------------------------------------/\n");
 }
 
-fn init_logging() -> Result<(), fern::InitError> {
-    use std::str::FromStr;
+fn init_logging(level: log::LevelFilter) -> Result<(), fern::InitError> {
     let mut logger = fern::Dispatch::new()
-        .format(|out, message, record| {
+        .level(level)
+        // Hide unknown certificate errors if using self-signed
+        .level_for("rustls::session", log::LevelFilter::Off)
+        // Hide failed to close stream messages
+        .level_for("hyper::server", log::LevelFilter::Warn)
+        // Silence rocket logs
+        .level_for("_", log::LevelFilter::Off)
+        .level_for("launch", log::LevelFilter::Off)
+        .level_for("launch_", log::LevelFilter::Off)
+        .level_for("rocket::rocket", log::LevelFilter::Off)
+        .level_for("rocket::fairing", log::LevelFilter::Off)
+        .chain(std::io::stdout());
+
+    if CONFIG.extended_logging() {
+        logger = logger.format(|out, message, record| {
             out.finish(format_args!(
                 "{}[{}][{}] {}",
                 chrono::Local::now().format("[%Y-%m-%d %H:%M:%S]"),
@@ -84,13 +103,10 @@ fn init_logging() -> Result<(), fern::InitError> {
                 record.level(),
                 message
             ))
-        })
-        .level(log::LevelFilter::from_str(&CONFIG.log_level()).expect("Valid log level"))
-        // Hide unknown certificate errors if using self-signed
-        .level_for("rustls::session", log::LevelFilter::Off)
-        // Hide failed to close stream messages
-        .level_for("hyper::server", log::LevelFilter::Warn)
-        .chain(std::io::stdout());
+        });
+    } else {
+        logger = logger.format(|out, message, _| out.finish(format_args!("{}", message)));
+    }
 
     if let Some(log_file) = CONFIG.log_file() {
         logger = logger.chain(fern::log_file(log_file)?);
@@ -236,33 +252,24 @@ mod migrations {
     }
 }
 
-fn launch_rocket() {
+fn launch_rocket(extra_debug: bool) {
     // Create Rocket object, this stores current log level and sets it's own
     let rocket = rocket::ignite();
 
-    // If we aren't logging the mounts, we force the logging level down
-    if !CONFIG.log_mounts() {
-        log::set_max_level(log::LevelFilter::Warn);
-    }
-
+    // If addding more base paths here, consider also adding them to
+    // crate::utils::LOGGED_ROUTES to make sure they appear in the log
     let rocket = rocket
         .mount("/", api::web_routes())
         .mount("/api", api::core_routes())
         .mount("/admin", api::admin_routes())
         .mount("/identity", api::identity_routes())
         .mount("/icons", api::icons_routes())
-        .mount("/notifications", api::notifications_routes());
-
-    // Force the level up for the fairings, managed state and lauch
-    if !CONFIG.log_mounts() {
-        log::set_max_level(log::LevelFilter::max());
-    }
-
-    let rocket = rocket
+        .mount("/notifications", api::notifications_routes())
         .manage(db::init_pool())
         .manage(api::start_notification_server())
         .attach(util::AppHeaders())
-        .attach(util::CORS());
+        .attach(util::CORS())
+        .attach(util::BetterLogging(extra_debug));
 
     // Launch and print error if there is one
     // The launch will restore the original logging level

@@ -1,20 +1,31 @@
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use rocket::Route;
 use rocket_contrib::json::Json;
 use serde_json::Value as JsonValue;
 
-use crate::api::JsonResult;
+use crate::api::{EmptyResult, JsonResult};
 use crate::auth::Headers;
 use crate::db::DbConn;
 
-use crate::CONFIG;
+use crate::{Error, CONFIG};
 
 pub fn routes() -> Vec<Route> {
     routes![negotiate, websockets_err]
 }
 
+static SHOW_WEBSOCKETS_MSG: AtomicBool = AtomicBool::new(true);
+
 #[get("/hub")]
-fn websockets_err() -> JsonResult {
-    err!("'/notifications/hub' should be proxied to the websocket server or notifications won't work. Go to the README for more info.")
+fn websockets_err() -> EmptyResult {
+    if CONFIG.websocket_enabled() && SHOW_WEBSOCKETS_MSG.compare_and_swap(true, false, Ordering::Relaxed) {
+        err!("###########################################################
+    '/notifications/hub' should be proxied to the websocket server or notifications won't work.
+    Go to the Wiki for more info, or disable WebSockets setting WEBSOCKET_ENABLED=false.
+    ###########################################################################################")
+    } else {
+        Err(Error::empty())
+    }
 }
 
 #[post("/hub/negotiate")]

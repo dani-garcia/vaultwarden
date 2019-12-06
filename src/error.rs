@@ -86,7 +86,7 @@ impl std::fmt::Debug for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self.source() {
             Some(e) => write!(f, "{}.\n[CAUSE] {:#?}", self.message, e),
-            None => write!(f, "{}. {}", self.message, self.error),
+            None => write!(f, "{}", self.message),
         }
     }
 }
@@ -170,15 +170,17 @@ use rocket::response::{self, Responder, Response};
 
 impl<'r> Responder<'r> for Error {
     fn respond_to(self, _: &Request) -> response::Result<'r> {
-        let usr_msg = format!("{}", self);
-        error!("{:#?}", self);
+        match self.error {
+            ErrorKind::EmptyError(_) => {} // Don't print the error in this situation
+            _ => error!(target: "error", "{:#?}", self),
+        };
 
         let code = Status::from_code(self.error_code).unwrap_or(Status::BadRequest);
 
         Response::build()
             .status(code)
             .header(ContentType::JSON)
-            .sized_body(Cursor::new(usr_msg))
+            .sized_body(Cursor::new(format!("{}", self)))
             .ok()
     }
 }
@@ -206,11 +208,11 @@ macro_rules! err_json {
 #[macro_export]
 macro_rules! err_handler {
     ($expr:expr) => {{
-        error!("Unauthorized Error: {}", $expr);
+        error!(target: "auth", "Unauthorized Error: {}", $expr);
         return rocket::Outcome::Failure((rocket::http::Status::Unauthorized, $expr));
     }};
     ($usr_msg:expr, $log_value:expr) => {{
-        error!("Unauthorized Error: {}. {}", $usr_msg, $log_value);
+        error!(target: "auth", "Unauthorized Error: {}. {}", $usr_msg, $log_value);
         return rocket::Outcome::Failure((rocket::http::Status::Unauthorized, $usr_msg));
     }};
 }
