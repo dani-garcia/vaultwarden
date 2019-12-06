@@ -1,13 +1,13 @@
-use rocket_contrib::json::Json;
 use chrono::Utc;
+use rocket_contrib::json::Json;
 
 use crate::db::models::*;
 use crate::db::DbConn;
 
 use crate::api::{EmptyResult, JsonResult, JsonUpcase, Notify, NumberOrString, PasswordData, UpdateType};
-use crate::auth::{decode_invite, decode_delete, decode_verify_email, Headers};
-use crate::mail;
+use crate::auth::{decode_delete, decode_invite, decode_verify_email, Headers};
 use crate::crypto;
+use crate::mail;
 
 use crate::CONFIG;
 
@@ -414,20 +414,21 @@ fn post_email(data: JsonUpcase<ChangeEmailData>, headers: Headers, conn: DbConn)
 
     match user.email_new {
         Some(ref val) => {
-            if *val != data.NewEmail.to_string() {
+            if val != &data.NewEmail {
                 err!("Email change mismatch");
             }
-        },
+        }
         None => err!("No email change pending"),
     }
 
     if CONFIG.mail_enabled() {
         // Only check the token if we sent out an email...
         match user.email_new_token {
-            Some(ref val) =>
+            Some(ref val) => {
                 if *val != data.Token.into_string() {
                     err!("Token mismatch");
                 }
+            }
             None => err!("No email change pending"),
         }
         user.verified_at = Some(Utc::now().naive_utc());
@@ -480,11 +481,9 @@ fn post_verify_email_token(data: JsonUpcase<VerifyEmailTokenData>, conn: DbConn)
         Ok(claims) => claims,
         Err(_) => err!("Invalid claim"),
     };
-    
     if claims.sub != user.uuid {
-       err!("Invalid claim");
+        err!("Invalid claim");
     }
-    
     user.verified_at = Some(Utc::now().naive_utc());
     user.last_verifying_at = None;
     user.login_verify_count = 0;
@@ -501,7 +500,7 @@ struct DeleteRecoverData {
     Email: String,
 }
 
-#[post("/accounts/delete-recover", data="<data>")]
+#[post("/accounts/delete-recover", data = "<data>")]
 fn post_delete_recover(data: JsonUpcase<DeleteRecoverData>, conn: DbConn) -> EmptyResult {
     let data: DeleteRecoverData = data.into_inner().data;
 
@@ -530,7 +529,7 @@ struct DeleteRecoverTokenData {
     Token: String,
 }
 
-#[post("/accounts/delete-recover-token", data="<data>")]
+#[post("/accounts/delete-recover-token", data = "<data>")]
 fn post_delete_recover_token(data: JsonUpcase<DeleteRecoverTokenData>, conn: DbConn) -> EmptyResult {
     let data: DeleteRecoverTokenData = data.into_inner().data;
 
@@ -543,11 +542,9 @@ fn post_delete_recover_token(data: JsonUpcase<DeleteRecoverTokenData>, conn: DbC
         Ok(claims) => claims,
         Err(_) => err!("Invalid claim"),
     };
-    
     if claims.sub != user.uuid {
-       err!("Invalid claim");
+        err!("Invalid claim");
     }
-    
     user.delete(&conn)
 }
 
