@@ -211,7 +211,7 @@ fn twofactor_auth(
 
     let twofactor_code = match data.two_factor_token {
         Some(ref code) => code,
-        None => err_json!(_json_err_twofactor(&twofactor_ids, user_uuid, conn)?),
+        None => err_json!(_json_err_twofactor(&twofactor_ids, user_uuid, conn)?, "2FA token not provided"),
     };
 
     let selected_twofactor = twofactors
@@ -237,7 +237,7 @@ fn twofactor_auth(
                 Some(ref code) if !CONFIG.disable_2fa_remember() && ct_eq(code, twofactor_code) => {
                     remember = 1; // Make sure we also return the token here, otherwise it will only remember the first time
                 }
-                _ => err_json!(_json_err_twofactor(&twofactor_ids, user_uuid, conn)?),
+                _ => err_json!(_json_err_twofactor(&twofactor_ids, user_uuid, conn)?, "2FA Remember token not provided"),
             }
         }
         _ => err!("Invalid two factor provider"),

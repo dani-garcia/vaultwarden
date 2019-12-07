@@ -86,7 +86,18 @@ impl std::fmt::Debug for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self.source() {
             Some(e) => write!(f, "{}.\n[CAUSE] {:#?}", self.message, e),
-            None => write!(f, "{}", self.message),
+            None => match self.error {
+                ErrorKind::EmptyError(_) => Ok(()),
+                ErrorKind::SimpleError(ref s) => {
+                    if &self.message == s {
+                        write!(f, "{}", self.message)
+                    } else {
+                        write!(f, "{}. {}", self.message, s)
+                    }
+                },
+                ErrorKind::JsonError(_) => write!(f, "{}", self.message),
+                _ => unreachable!(),
+            },
         }
     }
 }
@@ -200,8 +211,8 @@ macro_rules! err {
 
 #[macro_export]
 macro_rules! err_json {
-    ($expr:expr) => {{
-        return Err(crate::error::Error::from($expr));
+    ($expr:expr, $log_value:expr) => {{
+        return Err(($log_value, $expr).into());
     }};
 }
 
