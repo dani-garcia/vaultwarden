@@ -78,12 +78,17 @@ ENV ROCKET_PORT=80
 ENV ROCKET_WORKERS=10
 
 # Install needed libraries
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+     gnupg dirmngr ca-certificates wget rsync libaio1 libatomic1 libcurl3 libev4\
+     && for i in $(seq 1 10); do apt-key adv --no-tty --recv-keys --keyserver keyserver.ubuntu.com 8C718D3B5072E1F5 && break; done \
+     && echo 'deb http://repo.mysql.com/apt/debian/ stretch mysql-5.7' > /etc/apt/sources.list.d/mysql.list \
+     && apt-get update && apt-get install -y \
     --no-install-recommends \
     openssl \
     ca-certificates \
     curl \
     libmariadbclient-dev \
+    libmysqlclient20 \
     && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir /data
