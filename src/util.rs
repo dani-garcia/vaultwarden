@@ -216,6 +216,33 @@ pub fn delete_file(path: &str) -> IOResult<()> {
     res
 }
 
+pub struct LimitedReader<'a> {
+    reader: &'a mut dyn std::io::Read,
+    limit: usize, // In bytes
+    count: usize,
+}
+impl<'a> LimitedReader<'a> {
+    pub fn new(reader: &'a mut dyn std::io::Read, limit: usize) -> LimitedReader<'a> {
+        LimitedReader {
+            reader,
+            limit,
+            count: 0,
+        }
+    }
+}
+
+impl<'a> std::io::Read for LimitedReader<'a> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.count += buf.len();
+
+        if self.count > self.limit {
+            Ok(0) // End of the read
+        } else {
+            self.reader.read(buf)
+        }
+    }
+}
+
 const UNITS: [&str; 6] = ["bytes", "KB", "MB", "GB", "TB", "PB"];
 
 pub fn get_display_size(size: i32) -> String {

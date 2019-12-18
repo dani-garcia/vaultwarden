@@ -213,7 +213,7 @@ fn get_icon_url(domain: &str) -> Result<(Vec<Icon>, String), Error> {
     let mut cookie_str = String::new();
 
     let resp = get_page(&ssldomain).or_else(|_| get_page(&httpdomain));
-    if let Ok(content) = resp {
+    if let Ok(mut content) = resp {
         // Extract the URL from the respose in case redirects occured (like @ gitlab.com)
         let url = content.url().clone();
 
@@ -233,7 +233,11 @@ fn get_icon_url(domain: &str) -> Result<(Vec<Icon>, String), Error> {
         // Add the default favicon.ico to the list with the domain the content responded from.
         iconlist.push(Icon::new(35, url.join("/favicon.ico").unwrap().into_string()));
 
-        let soup = Soup::from_reader(content)?;
+        // 512KB should be more than enough for the HTML, though as we only really need
+        // the HTML header, it could potentially be reduced even further
+        let limited_reader = crate::util::LimitedReader::new(&mut content, 512 * 1024);
+
+        let soup = Soup::from_reader(limited_reader)?;
         // Search for and filter
         let favicons = soup
             .tag("link")
