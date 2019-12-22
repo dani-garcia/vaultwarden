@@ -1,0 +1,30 @@
+name: build-mac
+
+on: [push]
+
+jobs:
+  build:
+
+    runs-on: macos-latest
+
+    steps:
+    - uses: actions/checkout@v1
+    - name: Cache
+      uses: actions/cache@v1.0.3
+      with:
+        path: target
+        key: ${{ runner.os }}
+    - name: Install latest nightly
+      uses: actions-rs/toolchain@v1
+      with:
+            toolchain: nightly
+            override: true
+            profile: minimal
+            target: x86_64-apple-darwin
+    - name: Build x86_64-apple-darwin
+      run: cargo build --verbose --features sqlite --release --target x86_64-apple-darwin
+    - name: Upload macOS artifact
+      uses: actions/upload-artifact@v1.0.0
+      with:
+        name: x86_64-apple-darwin-bitwarden_rs
+        path: target/x86_64-apple-darwin/release/bitwarden_rs

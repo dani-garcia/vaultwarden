@@ -1,0 +1,31 @@
+name: build-windows
+
+on: [push]
+
+jobs:
+  build:
+
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v1
+    - name: install dependencies
+      run: choco install sqlite openssl
+    - name: Install latest nightly
+      uses: actions-rs/toolchain@v1
+      with:
+            toolchain: nightly
+            override: true
+            profile: minimal
+    - name: Cache
+      uses: actions/cache@v1.0.3
+      with:
+        path: target
+        key: ${{ runner.os }}
+    - name: Build
+      run: cargo.exe build --verbose --features sqlite --release
+    - name: Upload windows artifact
+      uses: actions/upload-artifact@v1.0.0
+      with:
+        name: x86_64-pc-windows-bitwarden_rs
+        path: target/release/bitwarden_rs.exe

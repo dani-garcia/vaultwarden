@@ -1,0 +1,34 @@
+name: build-linux
+
+on: [push]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v1
+    - name: install dependencies
+      run: sudo apt update && sudo apt install --no-install-recommends openssl ca-certificates curl sqlite3
+    - name: Cache
+      uses: actions/cache@v1.0.3
+      with:
+        path: target
+        key: ${{ runner.os }}
+    - name: Install latest nightly
+      uses: actions-rs/toolchain@v1
+      with:
+            toolchain: nightly
+            override: true
+            profile: minimal
+            target: x86_64-unknown-linux-gnu
+    - name: Build x86_64-unknown-linux-gnu
+      run: cargo build --verbose --features sqlite --release --target x86_64-unknown-linux-gnu
+    - name: Run tests
+      run: cargo test --features sqlite
+    - name: Upload linux artifact
+      uses: actions/upload-artifact@v1.0.0
+      with:
+        name: x86_64-unknown-linux-gnu-bitwarden_rs
+        path: target/x86_64-unknown-linux-gnu/release/bitwarden_rs
