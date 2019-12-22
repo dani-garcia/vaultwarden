@@ -2,7 +2,7 @@
 # 	https://docs.docker.com/develop/develop-images/multistage-build/
 # 	https://whitfin.io/speeding-up-rust-docker-builds/
 ####################### VAULT BUILD IMAGE  #######################
-FROM alpine:3.10 as vault
+FROM alpine:3.11 as vault
 
 ENV VAULT_VERSION "v2.12.0b"
 
@@ -23,7 +23,7 @@ RUN ls
 ########################## BUILD IMAGE  ##########################
 # We need to use the Rust build image, because
 # we need the Rust compiler and Cargo tooling
-FROM rust:1.39 as build
+FROM rust:1.40 as build
 
 # set sqlite as default for DB ARG for backward comaptibility
 ARG DB=sqlite

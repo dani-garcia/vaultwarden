@@ -2,7 +2,7 @@
 # 	https://docs.docker.com/develop/develop-images/multistage-build/
 # 	https://whitfin.io/speeding-up-rust-docker-builds/
 ####################### VAULT BUILD IMAGE  #######################
-FROM alpine:3.10 as vault
+FROM alpine:3.11 as vault
 
 ENV VAULT_VERSION "v2.12.0b"
 
@@ -22,9 +22,9 @@ RUN ls
 
 ########################## BUILD IMAGE  ##########################
 # Musl build image for statically compiled binary
-FROM clux/muslrust:nightly-2019-11-23 as build
+FROM clux/muslrust:nightly-2019-12-19 as build
 
-# set mysql backend
+# set postgresql backend
 ARG DB=postgresql
 
 # Don't download rust docs
@@ -55,7 +55,7 @@ RUN cargo build --features ${DB} --release
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image
 # because we already have a binary built
-FROM alpine:3.10
+FROM alpine:3.11
 
 ENV ROCKET_ENV "staging"
 ENV ROCKET_PORT=80
