@@ -53,7 +53,7 @@ jobs:
         path: target/x86_64-apple-darwin/release/bitwarden_rs
 
     - name: Release
-      uses: Shopify/upload-to-release@v1
+      uses: Shopify/upload-to-release@1.0.0
       if: startsWith(github.ref, 'refs/tags/')
       with:
         name: x86_64-apple-darwin-${{ matrix.db-backend }}-bitwarden_rs
