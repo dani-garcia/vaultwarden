@@ -1,30 +1,61 @@
 name: build-mac
 
-on: [push]
+on: [push, pull_request]
 
 jobs:
   build:
 
     runs-on: macos-latest
 
+    strategy:
+      matrix:
+        db-backend: [sqlite, mysql, postgresql]
+
     steps:
     - uses: actions/checkout@v1
-    - name: Cache
+    - name: Install dependencies
+      run: brew install openssl sqlite mysql++
+
+    - name: Cache cargo registry
+      uses: actions/cache@v1.0.3
+      with:
+        path: ~/.cargo/registry
+        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+    - name: Cache cargo index
+      uses: actions/cache@v1.0.3
+      with:
+        path: ~/.cargo/git
+        key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+    - name: Cache cargo build
       uses: actions/cache@v1.0.3
       with:
         path: target
-        key: ${{ runner.os }}
+        key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+
     - name: Install latest nightly
       uses: actions-rs/toolchain@v1
       with:
-            toolchain: nightly
-            override: true
-            profile: minimal
-            target: x86_64-apple-darwin
-    - name: Build x86_64-apple-darwin
-      run: cargo build --verbose --features sqlite --release --target x86_64-apple-darwin
+        toolchain: nightly
+        override: true
+        profile: minimal
+        target: x86_64-apple-darwin
+
+    - name: Build
+      run: cargo build --verbose --features ${{ matrix.db-backend }} --release --target x86_64-apple-darwin
+
+    - name: Run tests
+      run: cargo test --features ${{ matrix.db-backend }}
+
     - name: Upload macOS artifact
       uses: actions/upload-artifact@v1.0.0
       with:
-        name: x86_64-apple-darwin-bitwarden_rs
+        name: x86_64-apple-darwin-${{ matrix.db-backend }}-bitwarden_rs
         path: target/x86_64-apple-darwin/release/bitwarden_rs
+
+    - name: Release
+      uses: Shopify/upload-to-release
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        name: x86_64-apple-darwin-${{ matrix.db-backend }}-bitwarden_rs
+        path: target/x86_64-apple-darwin/release/bitwarden_rs
+        repo-token: ${{ secrets.GITHUB_TOKEN }}

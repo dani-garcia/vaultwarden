@@ -1,31 +1,60 @@
 name: build-windows
 
-on: [push]
+on: [push, pull_request]
 
 jobs:
   build:
 
     runs-on: windows-latest
 
+    strategy:
+      matrix:
+        db-backend: [sqlite, mysql, postgresql]
+
     steps:
     - uses: actions/checkout@v1
-    - name: install dependencies
-      run: choco install sqlite openssl
-    - name: Install latest nightly
-      uses: actions-rs/toolchain@v1
+    - name: Install dependencies
+      run: choco install openssl sqlite
+
+    - name: Cache cargo registry
+      uses: actions/cache@v1.0.3
       with:
-            toolchain: nightly
-            override: true
-            profile: minimal
-    - name: Cache
+        path: ~/.cargo/registry
+        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+    - name: Cache cargo index
+      uses: actions/cache@v1.0.3
+      with:
+        path: ~/.cargo/git
+        key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+    - name: Cache cargo build
       uses: actions/cache@v1.0.3
       with:
         path: target
-        key: ${{ runner.os }}
+        key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Install latest nightly
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: nightly
+        override: true
+        profile: minimal
+
     - name: Build
-      run: cargo.exe build --verbose --features sqlite --release
+      run: cargo.exe build --verbose --features ${{ matrix.db-backend }} --release
+
+    - name: Run tests
+      run: cargo test --features ${{ matrix.db-backend }}
+
     - name: Upload windows artifact
       uses: actions/upload-artifact@v1.0.0
       with:
-        name: x86_64-pc-windows-bitwarden_rs
+        name: x86_64-pc-windows-${{ matrix.db-backend }}-bitwarden_rs
         path: target/release/bitwarden_rs.exe
+
+    - name: Release
+      uses: Shopify/upload-to-release
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        name: x86_64-pc-windows-${{ matrix.db-backend }}-bitwarden_rs
+        path: target/release/bitwarden_rs.exe
+        repo-token: ${{ secrets.GITHUB_TOKEN }}
