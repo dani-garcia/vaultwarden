@@ -14,7 +14,7 @@ jobs:
     steps:
     - uses: actions/checkout@v1
     - name: Install dependencies
-      run: sudo apt update && sudo apt install --no-install-recommends openssl sqlite3 libmysql++-dev
+      run: sudo apt update && sudo apt install --no-install-recommends openssl sqlite3 libmysql++-dev libpq-dev
 
     - name: Cache cargo registry
       uses: actions/cache@v1.0.3
