@@ -426,11 +426,20 @@ pub struct ClientIp {
 impl<'a, 'r> FromRequest<'a, 'r> for ClientIp {
     type Error = ();
 
-    fn from_request(request: &'a Request<'r>) -> request::Outcome<Self, Self::Error> {
-        let ip = match request.client_ip() {
-            Some(addr) => addr,
-            None => "0.0.0.0".parse().unwrap(),
+    fn from_request(req: &'a Request<'r>) -> request::Outcome<Self, Self::Error> {
+        let ip = if CONFIG._ip_header_enabled() {
+            req.headers().get_one(&CONFIG.ip_header()).and_then(|ip| {
+                ip.parse()
+                    .map_err(|_| warn_!("'{}' header is malformed: {}", CONFIG.ip_header(), ip))
+                    .ok()
+            })
+        } else {
+            None
         };
+
+        let ip = ip
+            .or_else(|| req.remote().map(|r| r.ip()))
+            .unwrap_or_else(|| "0.0.0.0".parse().unwrap());
 
         Outcome::Success(ClientIp { ip })
     }
