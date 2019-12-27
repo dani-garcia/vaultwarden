@@ -391,7 +391,7 @@ fn download_icon(domain: &str) -> Result<Vec<u8>, Error> {
                         break;
                     }
                 }
-                _ => warn!("data uri is invalid")
+                _ => warn!("data uri is invalid"),
             };
         } else {
             match get_page_with_cookies(&icon.href, &cookie_str) {

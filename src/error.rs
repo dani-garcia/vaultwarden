@@ -94,7 +94,7 @@ impl std::fmt::Debug for Error {
                     } else {
                         write!(f, "{}. {}", self.message, s)
                     }
-                },
+                }
                 ErrorKind::JsonError(_) => write!(f, "{}", self.message),
                 _ => unreachable!(),
             },

@@ -2,9 +2,9 @@
 // PBKDF2 derivation
 //
 
+use crate::error::Error;
 use ring::{digest, hmac, pbkdf2};
 use std::num::NonZeroU32;
-use crate::error::Error;
 
 static DIGEST_ALG: &digest::Algorithm = &digest::SHA256;
 const OUTPUT_LEN: usize = digest::SHA256_OUTPUT_LEN;

@@ -149,11 +149,10 @@ fn hibp_breach(username: String) -> JsonResult {
     use reqwest::{header::USER_AGENT, Client};
 
     if let Some(api_key) = crate::CONFIG.hibp_api_key() {
-        let hibp_client = Client::builder()
-            .use_sys_proxy()
-            .build()?;
+        let hibp_client = Client::builder().use_sys_proxy().build()?;
 
-        let res = hibp_client.get(&url)
+        let res = hibp_client
+            .get(&url)
             .header(USER_AGENT, user_agent)
             .header("hibp-api-key", api_key)
             .send()?;

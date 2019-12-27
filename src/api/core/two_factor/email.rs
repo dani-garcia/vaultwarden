@@ -18,12 +18,7 @@ use chrono::{Duration, NaiveDateTime, Utc};
 use std::ops::Add;
 
 pub fn routes() -> Vec<Route> {
-    routes![
-        get_email,
-        send_email_login,
-        send_email,
-        email,
-    ]
+    routes![get_email, send_email_login, send_email, email,]
 }
 
 #[derive(Deserialize)]

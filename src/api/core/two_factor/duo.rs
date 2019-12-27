@@ -16,11 +16,7 @@ use crate::error::MapResult;
 use crate::CONFIG;
 
 pub fn routes() -> Vec<Route> {
-    routes![
-        get_duo,
-        activate_duo,
-        activate_duo_put,
-    ]
+    routes![get_duo, activate_duo, activate_duo_put,]
 }
 
 #[derive(Serialize, Deserialize)]
@@ -171,7 +167,7 @@ fn activate_duo(data: JsonUpcase<EnableDuoData>, headers: Headers, conn: DbConn)
     let type_ = TwoFactorType::Duo;
     let twofactor = TwoFactor::new(user.uuid.clone(), type_, data_str);
     twofactor.save(&conn)?;
-    
+
     _generate_recover_code(&mut user, &conn);
 
     Ok(Json(json!({

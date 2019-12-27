@@ -378,7 +378,6 @@ make_config! {
 
 fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
     let db_url = cfg.database_url.to_lowercase();
-    
     if cfg!(feature = "sqlite") && (db_url.starts_with("mysql:") || db_url.starts_with("postgresql:")) {
         err!("`DATABASE_URL` is meant for MySQL or Postgres, while this server is meant for SQLite")
     }
@@ -447,12 +446,7 @@ impl Config {
         validate_config(&config)?;
 
         Ok(Config {
-            inner: RwLock::new(Inner {
-                templates: load_templates(&config.templates_folder),
-                config,
-                _env,
-                _usr,
-            }),
+            inner: RwLock::new(Inner { templates: load_templates(&config.templates_folder), config, _env, _usr }),
         })
     }
 
@@ -500,9 +494,8 @@ impl Config {
         let e: Vec<&str> = email.rsplitn(2, '@').collect();
         if e.len() != 2 || e[0].is_empty() || e[1].is_empty() {
             warn!("Failed to parse email address '{}'", email);
-            return false
+            return false;
         }
-        
         self.signups_domains_whitelist().split(',').any(|d| d == e[0])
     }
 
@@ -634,9 +627,7 @@ impl HelperDef for CaseHelper {
         rc: &mut RenderContext<'reg>,
         out: &mut dyn Output,
     ) -> HelperResult {
-        let param = h
-            .param(0)
-            .ok_or_else(|| RenderError::new("Param not found for helper \"case\""))?;
+        let param = h.param(0).ok_or_else(|| RenderError::new("Param not found for helper \"case\""))?;
         let value = param.value().clone();
 
         if h.params().iter().skip(1).any(|x| x.value() == &value) {
@@ -658,14 +649,10 @@ impl HelperDef for JsEscapeHelper {
         _: &mut RenderContext<'reg>,
         out: &mut dyn Output,
     ) -> HelperResult {
-        let param = h
-            .param(0)
-            .ok_or_else(|| RenderError::new("Param not found for helper \"js_escape\""))?;
+        let param = h.param(0).ok_or_else(|| RenderError::new("Param not found for helper \"js_escape\""))?;
 
-        let value = param
-            .value()
-            .as_str()
-            .ok_or_else(|| RenderError::new("Param for helper \"js_escape\" is not a String"))?;
+        let value =
+            param.value().as_str().ok_or_else(|| RenderError::new("Param for helper \"js_escape\" is not a String"))?;
 
         let escaped_value = value.replace('\\', "").replace('\'', "\\x22").replace('\"', "\\x27");
         let quoted_value = format!("&quot;{}&quot;", escaped_value);

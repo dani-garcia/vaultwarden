@@ -7,12 +7,12 @@ use rocket::Route;
 use rocket_contrib::json::Json;
 use serde_json::Value;
 
-use crate::util::Cached;
 use crate::error::Error;
+use crate::util::Cached;
 use crate::CONFIG;
 
 pub fn routes() -> Vec<Route> {
-    // If addding more routes here, consider also adding them to 
+    // If addding more routes here, consider also adding them to
     // crate::utils::LOGGED_ROUTES to make sure they appear in the log
     if CONFIG.web_vault_enabled() {
         routes![web_index, app_id, web_files, attachments, alive, static_files]
@@ -23,9 +23,7 @@ pub fn routes() -> Vec<Route> {
 
 #[get("/")]
 fn web_index() -> Cached<Option<NamedFile>> {
-    Cached::short(NamedFile::open(
-        Path::new(&CONFIG.web_vault_folder()).join("index.html"),
-    ).ok())
+    Cached::short(NamedFile::open(Path::new(&CONFIG.web_vault_folder()).join("index.html")).ok())
 }
 
 #[get("/app-id.json")]

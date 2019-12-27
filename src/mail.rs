@@ -8,7 +8,7 @@ use percent_encoding::{percent_encode, NON_ALPHANUMERIC};
 use quoted_printable::encode_to_str;
 
 use crate::api::EmptyResult;
-use crate::auth::{encode_jwt, generate_invite_claims, generate_delete_claims, generate_verify_email_claims};
+use crate::auth::{encode_jwt, generate_delete_claims, generate_invite_claims, generate_verify_email_claims};
 use crate::error::Error;
 use crate::CONFIG;
 use chrono::NaiveDateTime;
@@ -96,9 +96,7 @@ pub fn send_password_hint(address: &str, hint: Option<String>) -> EmptyResult {
 }
 
 pub fn send_delete_account(address: &str, uuid: &str) -> EmptyResult {
-    let claims = generate_delete_claims(
-        uuid.to_string(),
-    );
+    let claims = generate_delete_claims(uuid.to_string());
     let delete_token = encode_jwt(&claims);
 
     let (subject, body_html, body_text) = get_text(
@@ -115,9 +113,7 @@ pub fn send_delete_account(address: &str, uuid: &str) -> EmptyResult {
 }
 
 pub fn send_verify_email(address: &str, uuid: &str) -> EmptyResult {
-    let claims = generate_verify_email_claims(
-        uuid.to_string(),
-    );
+    let claims = generate_verify_email_claims(uuid.to_string());
     let verify_email_token = encode_jwt(&claims);
 
     let (subject, body_html, body_text) = get_text(
@@ -145,9 +141,7 @@ pub fn send_welcome(address: &str) -> EmptyResult {
 }
 
 pub fn send_welcome_must_verify(address: &str, uuid: &str) -> EmptyResult {
-    let claims = generate_verify_email_claims(
-        uuid.to_string(),
-    );
+    let claims = generate_verify_email_claims(uuid.to_string());
     let verify_email_token = encode_jwt(&claims);
 
     let (subject, body_html, body_text) = get_text(

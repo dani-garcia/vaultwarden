@@ -156,9 +156,7 @@ pub struct DeleteJWTClaims {
     pub sub: String,
 }
 
-pub fn generate_delete_claims(
-    uuid: String,
-) -> DeleteJWTClaims {
+pub fn generate_delete_claims(uuid: String) -> DeleteJWTClaims {
     let time_now = Utc::now().naive_utc();
     DeleteJWTClaims {
         nbf: time_now.timestamp(),
@@ -180,9 +178,7 @@ pub struct VerifyEmailJWTClaims {
     pub sub: String,
 }
 
-pub fn generate_verify_email_claims(
-    uuid: String,
-) -> DeleteJWTClaims {
+pub fn generate_verify_email_claims(uuid: String) -> DeleteJWTClaims {
     let time_now = Utc::now().naive_utc();
     DeleteJWTClaims {
         nbf: time_now.timestamp(),

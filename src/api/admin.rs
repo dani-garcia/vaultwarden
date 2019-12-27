@@ -110,7 +110,7 @@ struct AdminTemplateData {
     users: Vec<Value>,
     config: Value,
     can_backup: bool,
-    logged_in: bool
+    logged_in: bool,
 }
 
 impl AdminTemplateData {
@@ -121,7 +121,7 @@ impl AdminTemplateData {
             users,
             config: CONFIG.prepare_json(),
             can_backup: *CAN_BACKUP,
-            logged_in: true
+            logged_in: true,
         }
     }
 
