@@ -429,9 +429,13 @@ impl<'a, 'r> FromRequest<'a, 'r> for ClientIp {
     fn from_request(req: &'a Request<'r>) -> request::Outcome<Self, Self::Error> {
         let ip = if CONFIG._ip_header_enabled() {
             req.headers().get_one(&CONFIG.ip_header()).and_then(|ip| {
-                ip.parse()
-                    .map_err(|_| warn_!("'{}' header is malformed: {}", CONFIG.ip_header(), ip))
-                    .ok()
+                match ip.find(',') {
+                    Some(idx) => &ip[..idx],
+                    None => ip,
+                }
+                .parse()
+                .map_err(|_| warn!("'{}' header is malformed: {}", CONFIG.ip_header(), ip))
+                .ok()
             })
         } else {
             None
