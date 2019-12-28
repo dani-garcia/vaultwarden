@@ -1,21 +1,27 @@
-# Using multistage build: 
+# Using multistage build:
 # 	https://docs.docker.com/develop/develop-images/multistage-build/
 # 	https://whitfin.io/speeding-up-rust-docker-builds/
 ####################### VAULT BUILD IMAGE  #######################
-FROM alpine:3.11 as vault
+FROM balenalib/aarch64-debian:buster as vault
 
 ENV VAULT_VERSION "v2.12.0b"
 
 ENV URL "https://github.com/dani-garcia/bw_web_builds/releases/download/$VAULT_VERSION/bw_web_$VAULT_VERSION.tar.gz"
 
-RUN apk add --no-cache --upgrade \
-    curl \
-    tar
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8 \
+    TZ=UTC \
+    TERM=xterm-256color
+
+RUN apt update -y \
+    && apt install -y \
+        curl \
+        tar
 
 RUN mkdir /web-vault
 WORKDIR /web-vault
 
-SHELL ["/bin/ash", "-eo", "pipefail", "-c"]
+SHELL ["/bin/bash", "-o", "nounset", "-o", "pipefail", "-o", "errexit", "-c"]
 
 RUN curl -L $URL | tar xz
 RUN ls
@@ -25,7 +31,7 @@ RUN ls
 # we need the Rust compiler and Cargo tooling
 FROM rust:1.40 as build
 
-# set sqlite as default for DB ARG for backward comaptibility
+# set sqlite as default for DB ARG for backward compatibility
 ARG DB=sqlite
 
 # Don't download rust docs
@@ -42,9 +48,11 @@ RUN apt-get update \
 ENV CARGO_HOME "/root/.cargo"
 ENV USER "root"
 
+# Creates a dummy project used to grab dependencies
+RUN USER=root cargo new --bin app
 WORKDIR /app
 
-# Prepare openssl arm64 libs
+# Install required build libs for arm64 architecture.
 RUN sed 's/^deb/deb-src/' /etc/apt/sources.list > \
         /etc/apt/sources.list.d/deb-src.list \
     && dpkg --add-architecture arm64 \
@@ -54,16 +62,30 @@ RUN sed 's/^deb/deb-src/' /etc/apt/sources.list > \
         libssl-dev:arm64 \
         libc6-dev:arm64
 
+# Copies over *only* your manifests and build files
+COPY ./Cargo.* ./
+COPY ./rust-toolchain ./rust-toolchain
+COPY ./build.rs ./build.rs
+
 ENV CC_aarch64_unknown_linux_gnu="/usr/bin/aarch64-linux-gnu-gcc"
 ENV CROSS_COMPILE="1"
 ENV OPENSSL_INCLUDE_DIR="/usr/include/aarch64-linux-gnu"
 ENV OPENSSL_LIB_DIR="/usr/lib/aarch64-linux-gnu"
+# Builds your dependencies and removes the
+# dummy project, except the target folder
+# This folder contains the compiled dependencies
+RUN cargo build --features ${DB} --release
+RUN find . -not -path "./target*" -delete
 
 # Copies the complete project
 # To avoid copying unneeded files, use .dockerignore
 COPY . .
 
-# Build
+# Make sure that we actually build the project
+RUN touch src/main.rs
+
+# Builds again, this time it'll just be
+# your actual source files being built
 RUN rustup target add aarch64-unknown-linux-gnu
 RUN cargo build --features ${DB} --release --target=aarch64-unknown-linux-gnu
 
@@ -85,14 +107,15 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     curl \
     sqlite3 \
- && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir /data
 
-RUN [ "cross-build-end" ]  
+RUN [ "cross-build-end" ]
 
 VOLUME /data
 EXPOSE 80
+EXPOSE 3012
 
 # Copies the files from the context (Rocket.toml file and web-vault)
 # and the binary from the "build" stage to the current stage

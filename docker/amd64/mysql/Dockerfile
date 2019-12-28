@@ -1,21 +1,27 @@
-# Using multistage build: 
+# Using multistage build:
 # 	https://docs.docker.com/develop/develop-images/multistage-build/
 # 	https://whitfin.io/speeding-up-rust-docker-builds/
 ####################### VAULT BUILD IMAGE  #######################
-FROM alpine:3.11 as vault
+FROM debian:buster-slim as vault
 
 ENV VAULT_VERSION "v2.12.0b"
 
 ENV URL "https://github.com/dani-garcia/bw_web_builds/releases/download/$VAULT_VERSION/bw_web_$VAULT_VERSION.tar.gz"
 
-RUN apk add --no-cache --upgrade \
-    curl \
-    tar
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8 \
+    TZ=UTC \
+    TERM=xterm-256color
+
+RUN apt update -y \
+    && apt install -y \
+        curl \
+        tar
 
 RUN mkdir /web-vault
 WORKDIR /web-vault
 
-SHELL ["/bin/ash", "-eo", "pipefail", "-c"]
+SHELL ["/bin/bash", "-o", "nounset", "-o", "pipefail", "-o", "errexit", "-c"]
 
 RUN curl -L $URL | tar xz
 RUN ls
@@ -71,6 +77,7 @@ FROM debian:buster-slim
 ENV ROCKET_ENV "staging"
 ENV ROCKET_PORT=80
 ENV ROCKET_WORKERS=10
+
 
 # Install needed libraries
 RUN apt-get update && apt-get install -y \

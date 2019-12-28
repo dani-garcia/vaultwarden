@@ -1,0 +1,276 @@
+# Using multistage build:
+# 	https://docs.docker.com/develop/develop-images/multistage-build/
+# 	https://whitfin.io/speeding-up-rust-docker-builds/
+####################### VAULT BUILD IMAGE  #######################
+{% if "alpine" in target_file %}
+{%   set preferred_base_image = "alpine:3.11" %}
+{%   set package_arch_name = "" %}
+{% elif "amd64" in target_file %}
+{%   set preferred_base_image = "debian:buster-slim" %}
+{%   set package_arch_name = "" %}
+{% elif "aarch64" in target_file %}
+{%   set preferred_base_image = "balenalib/aarch64-debian:buster" %}
+{%   set package_arch_name = "arm64" %}
+{% elif "armv6" in target_file %}
+{%   set preferred_base_image = "balenalib/rpi-debian:buster" %}
+{%   set package_arch_name = "armel" %}
+{% elif "armv7" in target_file %}
+{%   set preferred_base_image = "balenalib/armv7hf-debian:buster" %}
+{%   set package_arch_name = "armhf" %}
+{% endif %}
+{% set package_arch_prefix = ":" + package_arch_name %}
+{% if package_arch_name == "" %}
+{%   set package_arch_prefix = "" %}
+{% endif %}
+FROM {{ preferred_base_image }} as vault
+
+ENV VAULT_VERSION "v2.12.0b"
+
+ENV URL "https://github.com/dani-garcia/bw_web_builds/releases/download/$VAULT_VERSION/bw_web_$VAULT_VERSION.tar.gz"
+
+{% if "alpine" in target_file %}
+RUN apk add --no-cache --upgrade \
+    curl \
+    tar
+{% else %}
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8 \
+    TZ=UTC \
+    TERM=xterm-256color
+
+RUN apt update -y \
+    && apt install -y \
+        curl \
+        tar
+{% endif %}
+
+RUN mkdir /web-vault
+WORKDIR /web-vault
+
+{% if "alpine" in target_file %}
+SHELL ["/bin/ash", "-o", "nounset", "-o", "pipefail", "-o", "errexit", "-c"]
+{% else %}
+SHELL ["/bin/bash", "-o", "nounset", "-o", "pipefail", "-o", "errexit", "-c"]
+{% endif %}
+
+RUN curl -L $URL | tar xz
+RUN ls
+
+########################## BUILD IMAGE  ##########################
+{% if "alpine" in target_file %}
+# Musl build image for statically compiled binary
+FROM clux/muslrust:nightly-2019-12-19 as build
+{% else %}
+# We need to use the Rust build image, because
+# we need the Rust compiler and Cargo tooling
+FROM rust:1.40 as build
+{% endif %}
+
+{% if "sqlite" in target_file %}
+# set sqlite as default for DB ARG for backward compatibility
+ARG DB=sqlite
+{% elif "mysql" in target_file %}
+# set mysql backend
+ARG DB=mysql
+{% elif "postgresql" in target_file %}
+# set postgresql backend
+ARG DB=postgresql
+{% endif %}
+
+# Don't download rust docs
+RUN rustup set profile minimal
+
+{% if "alpine" in target_file %}
+ENV USER "root"
+
+{% endif %}
+{% if "aarch64" in target_file %}
+RUN apt-get update \
+    && apt-get install -y \
+        --no-install-recommends \
+        gcc-aarch64-linux-gnu \
+    && mkdir -p ~/.cargo \
+    && echo '[target.aarch64-unknown-linux-gnu]' >> ~/.cargo/config \
+    && echo 'linker = "aarch64-linux-gnu-gcc"' >> ~/.cargo/config
+
+ENV CARGO_HOME "/root/.cargo"
+ENV USER "root"
+
+{% elif "armv6" in target_file %}
+RUN apt-get update \
+    && apt-get install -y \
+        --no-install-recommends \
+        gcc-arm-linux-gnueabi \
+    && mkdir -p ~/.cargo \
+    && echo '[target.arm-unknown-linux-gnueabi]' >> ~/.cargo/config \
+    && echo 'linker = "arm-linux-gnueabi-gcc"' >> ~/.cargo/config
+
+ENV CARGO_HOME "/root/.cargo"
+ENV USER "root"
+
+{% elif "armv6" in target_file %}
+RUN apt-get update \
+    && apt-get install -y \
+        --no-install-recommends \
+        gcc-arm-linux-gnueabihf \
+    && mkdir -p ~/.cargo \
+    && echo '[target.armv7-unknown-linux-gnueabihf]' >> ~/.cargo/config \
+    && echo 'linker = "arm-linux-gnueabihf-gcc"' >> ~/.cargo/config
+
+ENV CARGO_HOME "/root/.cargo"
+ENV USER "root"
+
+{% endif %}
+{% if "mysql" in target_file %}
+# Install MySQL package
+RUN apt-get update && apt-get install -y \
+    --no-install-recommends \
+    libmariadb-dev{{ package_arch_prefix }} \
+    && rm -rf /var/lib/apt/lists/*
+
+{% elif "postgresql" in target_file %}
+# Install PostgreSQL package
+RUN apt-get update && apt-get install -y \
+    --no-install-recommends \
+    libpq-dev{{ package_arch_prefix }} \
+    && rm -rf /var/lib/apt/lists/*
+
+{% endif %}
+# Creates a dummy project used to grab dependencies
+RUN USER=root cargo new --bin app
+WORKDIR /app
+
+{% if "aarch64" in target_file or "armv" in target_file %}
+# Install required build libs for {{ package_arch_name }} architecture.
+RUN sed 's/^deb/deb-src/' /etc/apt/sources.list > \
+        /etc/apt/sources.list.d/deb-src.list \
+    && dpkg --add-architecture {{ package_arch_name }} \
+    && apt-get update \
+    && apt-get install -y \
+        --no-install-recommends \
+        libssl-dev{{ package_arch_prefix }} \
+        libc6-dev{{ package_arch_prefix }}
+
+{% endif -%}
+
+# Copies over *only* your manifests and build files
+COPY ./Cargo.* ./
+COPY ./rust-toolchain ./rust-toolchain
+COPY ./build.rs ./build.rs
+
+{% if "aarch64" in target_file %}
+ENV CC_aarch64_unknown_linux_gnu="/usr/bin/aarch64-linux-gnu-gcc"
+ENV CROSS_COMPILE="1"
+ENV OPENSSL_INCLUDE_DIR="/usr/include/aarch64-linux-gnu"
+ENV OPENSSL_LIB_DIR="/usr/lib/aarch64-linux-gnu"
+{% elif "armv6" in target_file %}
+ENV CC_arm_unknown_linux_gnueabi="/usr/bin/arm-linux-gnueabi-gcc"
+ENV CROSS_COMPILE="1"
+ENV OPENSSL_INCLUDE_DIR="/usr/include/arm-linux-gnueabi"
+ENV OPENSSL_LIB_DIR="/usr/lib/arm-linux-gnueabi"
+{% endif -%}
+
+# Builds your dependencies and removes the
+# dummy project, except the target folder
+# This folder contains the compiled dependencies
+RUN cargo build --features ${DB} --release
+RUN find . -not -path "./target*" -delete
+
+# Copies the complete project
+# To avoid copying unneeded files, use .dockerignore
+COPY . .
+
+# Make sure that we actually build the project
+RUN touch src/main.rs
+
+{% if "alpine" in target_file %}
+RUN rustup target add x86_64-unknown-linux-musl
+
+{% endif %}
+# Builds again, this time it'll just be
+# your actual source files being built
+{% if "amd64" in target_file %}
+RUN cargo build --features ${DB} --release
+{% elif "aarch64" in target_file %}
+RUN rustup target add aarch64-unknown-linux-gnu
+RUN cargo build --features ${DB} --release --target=aarch64-unknown-linux-gnu
+{% endif %}
+
+######################## RUNTIME IMAGE  ########################
+# Create a new stage with a minimal image
+# because we already have a binary built
+FROM {{ preferred_base_image }}
+
+ENV ROCKET_ENV "staging"
+ENV ROCKET_PORT=80
+ENV ROCKET_WORKERS=10
+{% if "alpine" in target_file %}
+ENV SSL_CERT_DIR=/etc/ssl/certs
+{% endif %}
+
+{% if "amd64" not in target_file %}
+RUN [ "cross-build-start" ]
+{% endif %}
+
+# Install needed libraries
+{% if "alpine" in target_file %}
+RUN apk add --no-cache \
+        openssl \
+        curl \
+{% if "sqlite" in target_file %}
+        sqlite \
+{% elif "mysql" in target_file %}
+        mariadb-connector-c \
+{% elif "postgresql" in target_file %}
+        postgresql-libs \
+{% endif %}
+        ca-certificates
+{% else %}
+RUN apt-get update && apt-get install -y \
+    --no-install-recommends \
+    openssl \
+    ca-certificates \
+    curl \
+{% if "sqlite" in target_file %}
+    sqlite3 \
+{% elif "mysql" in target_file %}
+    libmariadbclient-dev \
+{% elif "postgresql" in target_file %}
+    libpq5 \
+{% endif %}
+    && rm -rf /var/lib/apt/lists/*
+{% endif %}
+
+RUN mkdir /data
+{% if "amd64" not in target_file %}
+
+RUN [ "cross-build-end" ]
+
+{% endif %}
+VOLUME /data
+EXPOSE 80
+EXPOSE 3012
+
+# Copies the files from the context (Rocket.toml file and web-vault)
+# and the binary from the "build" stage to the current stage
+COPY Rocket.toml .
+COPY --from=vault /web-vault ./web-vault
+{% if "alpine" in target_file %}
+COPY --from=build /app/target/x86_64-unknown-linux-musl/release/bitwarden_rs .
+{% elif "aarch64" in target_file %}
+COPY --from=build /app/target/aarch64-unknown-linux-gnu/release/bitwarden_rs .
+{% elif "armv6" in target_file %}
+COPY --from=build /app/target/arm-unknown-linux-gnueabi/release/bitwarden_rs .
+{% elif "armv7" in target_file %}
+COPY --from=build /app/target/armv7-unknown-linux-gnueabihf/release/bitwarden_rs .
+{% else %}
+COPY --from=build app/target/release/bitwarden_rs .
+{% endif %}
+
+COPY docker/healthcheck.sh ./healthcheck.sh
+
+HEALTHCHECK --interval=30s --timeout=3s CMD sh healthcheck.sh || exit 1
+
+# Configures the startup!
+WORKDIR /
+CMD ["/bitwarden_rs"]

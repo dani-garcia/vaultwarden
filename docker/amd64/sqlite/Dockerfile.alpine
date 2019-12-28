@@ -1,4 +1,4 @@
-# Using multistage build: 
+# Using multistage build:
 # 	https://docs.docker.com/develop/develop-images/multistage-build/
 # 	https://whitfin.io/speeding-up-rust-docker-builds/
 ####################### VAULT BUILD IMAGE  #######################
@@ -15,7 +15,7 @@ RUN apk add --no-cache --upgrade \
 RUN mkdir /web-vault
 WORKDIR /web-vault
 
-SHELL ["/bin/ash", "-eo", "pipefail", "-c"]
+SHELL ["/bin/ash", "-o", "nounset", "-o", "pipefail", "-o", "errexit", "-c"]
 
 RUN curl -L $URL | tar xz
 RUN ls
@@ -24,7 +24,7 @@ RUN ls
 # Musl build image for statically compiled binary
 FROM clux/muslrust:nightly-2019-12-19 as build
 
-# set sqlite as default for DB ARG for backward comaptibility
+# set sqlite as default for DB ARG for backward compatibility
 ARG DB=sqlite
 
 # Don't download rust docs
@@ -32,18 +32,32 @@ RUN rustup set profile minimal
 
 ENV USER "root"
 
+# Creates a dummy project used to grab dependencies
+RUN USER=root cargo new --bin app
 WORKDIR /app
+
+# Copies over *only* your manifests and build files
+COPY ./Cargo.* ./
+COPY ./rust-toolchain ./rust-toolchain
+COPY ./build.rs ./build.rs
+
+# Builds your dependencies and removes the
+# dummy project, except the target folder
+# This folder contains the compiled dependencies
+RUN cargo build --features ${DB} --release
+RUN find . -not -path "./target*" -delete
 
 # Copies the complete project
 # To avoid copying unneeded files, use .dockerignore
 COPY . .
 
-RUN rustup target add x86_64-unknown-linux-musl
-
 # Make sure that we actually build the project
 RUN touch src/main.rs
 
-# Build
+RUN rustup target add x86_64-unknown-linux-musl
+
+# Builds again, this time it'll just be
+# your actual source files being built
 RUN cargo build --features ${DB} --release
 
 ######################## RUNTIME IMAGE  ########################
@@ -55,6 +69,7 @@ ENV ROCKET_ENV "staging"
 ENV ROCKET_PORT=80
 ENV ROCKET_WORKERS=10
 ENV SSL_CERT_DIR=/etc/ssl/certs
+
 
 # Install needed libraries
 RUN apk add --no-cache \
@@ -77,7 +92,6 @@ COPY --from=build /app/target/x86_64-unknown-linux-musl/release/bitwarden_rs .
 COPY docker/healthcheck.sh ./healthcheck.sh
 
 HEALTHCHECK --interval=30s --timeout=3s CMD sh healthcheck.sh || exit 1
-
 
 # Configures the startup!
 WORKDIR /

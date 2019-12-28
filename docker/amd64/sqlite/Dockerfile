@@ -1,4 +1,4 @@
-# Using multistage build: 
+# Using multistage build:
 # 	https://docs.docker.com/develop/develop-images/multistage-build/
 # 	https://whitfin.io/speeding-up-rust-docker-builds/
 ####################### VAULT BUILD IMAGE  #######################
@@ -31,7 +31,7 @@ RUN ls
 # we need the Rust compiler and Cargo tooling
 FROM rust:1.40 as build
 
-# set sqlite as default for DB ARG for backward comaptibility
+# set sqlite as default for DB ARG for backward compatibility
 ARG DB=sqlite
 
 # Don't download rust docs
@@ -71,6 +71,7 @@ FROM debian:buster-slim
 ENV ROCKET_ENV "staging"
 ENV ROCKET_PORT=80
 ENV ROCKET_WORKERS=10
+
 
 # Install needed libraries
 RUN apt-get update && apt-get install -y \

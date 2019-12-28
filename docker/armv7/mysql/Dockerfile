@@ -1,21 +1,27 @@
-# Using multistage build: 
+# Using multistage build:
 # 	https://docs.docker.com/develop/develop-images/multistage-build/
 # 	https://whitfin.io/speeding-up-rust-docker-builds/
 ####################### VAULT BUILD IMAGE  #######################
-FROM alpine:3.11 as vault
+FROM balenalib/armv7hf-debian:buster as vault
 
 ENV VAULT_VERSION "v2.12.0b"
 
 ENV URL "https://github.com/dani-garcia/bw_web_builds/releases/download/$VAULT_VERSION/bw_web_$VAULT_VERSION.tar.gz"
 
-RUN apk add --no-cache --upgrade \
-    curl \
-    tar
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8 \
+    TZ=UTC \
+    TERM=xterm-256color
+
+RUN apt update -y \
+    && apt install -y \
+        curl \
+        tar
 
 RUN mkdir /web-vault
 WORKDIR /web-vault
 
-SHELL ["/bin/ash", "-eo", "pipefail", "-c"]
+SHELL ["/bin/bash", "-o", "nounset", "-o", "pipefail", "-o", "errexit", "-c"]
 
 RUN curl -L $URL | tar xz
 RUN ls
@@ -31,20 +37,17 @@ ARG DB=mysql
 # Don't download rust docs
 RUN rustup set profile minimal
 
-RUN apt-get update \
-    && apt-get install -y \
-        --no-install-recommends \
-        gcc-arm-linux-gnueabihf \
-    && mkdir -p ~/.cargo \
-    && echo '[target.armv7-unknown-linux-gnueabihf]' >> ~/.cargo/config \
-    && echo 'linker = "arm-linux-gnueabihf-gcc"' >> ~/.cargo/config
+# Install MySQL package
+RUN apt-get update && apt-get install -y \
+    --no-install-recommends \
+    libmariadb-dev:armhf \
+    && rm -rf /var/lib/apt/lists/*
 
-ENV CARGO_HOME "/root/.cargo"
-ENV USER "root"
-
+# Creates a dummy project used to grab dependencies
+RUN USER=root cargo new --bin app
 WORKDIR /app
 
-# Prepare openssl armhf libs
+# Install required build libs for armhf architecture.
 RUN sed 's/^deb/deb-src/' /etc/apt/sources.list > \
         /etc/apt/sources.list.d/deb-src.list \
     && dpkg --add-architecture armhf \
@@ -52,22 +55,28 @@ RUN sed 's/^deb/deb-src/' /etc/apt/sources.list > \
     && apt-get install -y \
         --no-install-recommends \
         libssl-dev:armhf \
-        libc6-dev:armhf \
-        libmariadb-dev:armhf
+        libc6-dev:armhf
 
+# Copies over *only* your manifests and build files
+COPY ./Cargo.* ./
+COPY ./rust-toolchain ./rust-toolchain
+COPY ./build.rs ./build.rs
 
-ENV CC_armv7_unknown_linux_gnueabihf="/usr/bin/arm-linux-gnueabihf-gcc"
-ENV CROSS_COMPILE="1"
-ENV OPENSSL_INCLUDE_DIR="/usr/include/arm-linux-gnueabihf"
-ENV OPENSSL_LIB_DIR="/usr/lib/arm-linux-gnueabihf"
+# Builds your dependencies and removes the
+# dummy project, except the target folder
+# This folder contains the compiled dependencies
+RUN cargo build --features ${DB} --release
+RUN find . -not -path "./target*" -delete
 
 # Copies the complete project
 # To avoid copying unneeded files, use .dockerignore
 COPY . .
 
-# Build
-RUN rustup target add armv7-unknown-linux-gnueabihf
-RUN cargo build --features ${DB} --release --target=armv7-unknown-linux-gnueabihf
+# Make sure that we actually build the project
+RUN touch src/main.rs
+
+# Builds again, this time it'll just be
+# your actual source files being built
 
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image
@@ -91,10 +100,11 @@ RUN apt-get update && apt-get install -y \
 
 RUN mkdir /data
 
-RUN [ "cross-build-end" ]  
+RUN [ "cross-build-end" ]
 
 VOLUME /data
 EXPOSE 80
+EXPOSE 3012
 
 # Copies the files from the context (Rocket.toml file and web-vault)
 # and the binary from the "build" stage to the current stage
