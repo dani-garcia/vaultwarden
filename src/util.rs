@@ -151,11 +151,13 @@ impl Fairing for BetterLogging {
         if !self.0 && method == Method::Options {
             return;
         }
-        let mut uri = request.uri().to_string();
-        uri.truncate(50);
-
-        if self.0 || LOGGED_ROUTES.iter().any(|r| uri.starts_with(r)) {
-            info!(target: "request", "{} {}", method, uri);
+        let uri = request.uri();
+        let uri_path = uri.path();
+        if self.0 || LOGGED_ROUTES.iter().any(|r| uri_path.starts_with(r)) {
+            match uri.query() {
+                Some(q) => info!(target: "request", "{} {}?{}", method, uri_path, &q[..q.len().min(30)]),
+                None => info!(target: "request", "{} {}", method, uri_path),
+            };
         }
     }
 
@@ -163,8 +165,8 @@ impl Fairing for BetterLogging {
         if !self.0 && request.method() == Method::Options {
             return;
         }
-        let uri = request.uri().to_string();
-        if self.0 || LOGGED_ROUTES.iter().any(|r| uri.starts_with(r)) {
+        let uri_path = request.uri().path();
+        if self.0 || LOGGED_ROUTES.iter().any(|r| uri_path.starts_with(r)) {
             let status = response.status();
             if let Some(ref route) = request.route() {
                 info!(target: "response", "{} => {} {}", route, status.code, status.reason)

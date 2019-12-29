@@ -225,7 +225,9 @@ fn check_web_vault() {
     let index_path = Path::new(&CONFIG.web_vault_folder()).join("index.html");
 
     if !index_path.exists() {
-        error!("Web vault is not found. To install it, please follow the steps in https://github.com/dani-garcia/bitwarden_rs/wiki/Building-binary#install-the-web-vault");
+        error!("Web vault is not found. To install it, please follow the steps in: ");
+        error!("https://github.com/dani-garcia/bitwarden_rs/wiki/Building-binary#install-the-web-vault");
+        error!("You can also set the environment variable 'WEB_VAULT_ENABLED=false' to disable it");
         exit(1);
     }
 }
