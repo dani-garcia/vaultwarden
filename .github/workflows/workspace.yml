@@ -23,13 +23,13 @@ jobs:
         include:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
-            ext: ''
+            ext:
           # - target: x86_64-unknown-linux-musl
           #   os: ubuntu-latest
-          #   ext: ''
+          #   ext:
           - target: x86_64-apple-darwin
             os: macOS-latest
-            ext: ''
+            ext:
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             ext: .exe
@@ -48,15 +48,19 @@ jobs:
       uses: actions/cache@v1.0.3
       if: matrix.os == 'windows-latest'
       with:
-        path: $VCPKG_DIR/installed
+        path: $VCPKG_ROOT/installed
         key: ${{ runner.os }}-vcpkg-cache-${{ matrix.db-backend }}
+      env:
+        VCPKG_ROOT: 'C:\vcpkg'
 
     - name: Cache vcpkg downloads
       uses: actions/cache@v1.0.3
       if: matrix.os == 'windows-latest'
       with:
-        path: $VCPKG_DIR/downloads
+        path: $VCPKG_ROOT/downloads
         key: ${{ runner.os }}-vcpkg-cache-${{ matrix.db-backend }}
+      env:
+        VCPKG_ROOT: 'C:\vcpkg'
 
     # - name: Cache homebrew
     #   uses: actions/cache@v1.0.3
@@ -84,6 +88,8 @@ jobs:
     - name: Install dependencies Windows
       run: vcpkg integrate install; vcpkg install sqlite3:x64-windows openssl:x64-windows libpq:x64-windows libmysql:x64-windows
       if: matrix.os == 'windows-latest'
+      env:
+        VCPKG_ROOT: 'C:\vcpkg'
     # End Install dependencies
 
     # Install rust nightly toolchain
@@ -116,10 +122,8 @@ jobs:
       if: matrix.os == 'windows-latest'
       run: cargo.exe build --features ${{ matrix.db-backend }} --release --target ${{ matrix.target }}
       env:
-        OPENSSL_DIR: C:\Program Files\OpenSSL\
-        MYSQLCLIENT_LIB_DIR: C:\Program Files\MySQL\MySQL Server 8.0\lib
-        PQ_LIB_DIR: C:\Program Files\PostgreSQL\12\lib
         RUSTFLAGS: -Ctarget-feature=+crt-static
+        VCPKG_ROOT: 'C:\vcpkg'
 
     - name: Build macOS / Ubuntu
       if: matrix.os == 'macOS-latest' || matrix.os == 'ubuntu-latest'
