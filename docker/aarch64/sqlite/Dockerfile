@@ -59,7 +59,7 @@ ENV CARGO_HOME "/root/.cargo"
 ENV USER "root"
 
 # Creates a dummy project used to grab dependencies
-RUN USER=root cargo new --bin app
+RUN USER=root cargo new --bin /app
 WORKDIR /app
 
 # Copies over *only* your manifests and build files
