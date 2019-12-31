@@ -47,6 +47,17 @@ RUN sed 's/^deb/deb-src/' /etc/apt/sources.list > \
         libssl-dev:armhf \
         libc6-dev:armhf
 
+RUN apt-get update \
+    && apt-get install -y \
+        --no-install-recommends \
+        gcc-arm-linux-gnueabihf \
+    && mkdir -p ~/.cargo \
+    && echo '[target.armv7-unknown-linux-gnueabihf]' >> ~/.cargo/config \
+    && echo 'linker = "arm-linux-gnueabihf-gcc"' >> ~/.cargo/config
+
+ENV CARGO_HOME "/root/.cargo"
+ENV USER "root"
+
 # Creates a dummy project used to grab dependencies
 RUN USER=root cargo new --bin /app
 WORKDIR /app
