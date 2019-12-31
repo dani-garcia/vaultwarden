@@ -86,8 +86,7 @@ RUN rustup set profile minimal
 {% if "alpine" in target_file %}
 ENV USER "root"
 
-{% endif %}
-{% if "aarch64" in target_file or "armv" in target_file %}
+{% elif "aarch64" in target_file or "armv" in target_file %}
 # Install required build libs for {{ package_arch_name }} architecture.
 RUN sed 's/^deb/deb-src/' /etc/apt/sources.list > \
         /etc/apt/sources.list.d/deb-src.list \
