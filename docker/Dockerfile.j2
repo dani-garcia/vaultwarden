@@ -45,8 +45,9 @@ ARG TERM=xterm-256color
 
 RUN echo $TERM
 
-RUN apt update -y \
-    && apt install -y \
+RUN apt-get update \
+    && apt-get install -y \
+        --no-install-recommends \
         curl \
         tar
 {% endif %}
