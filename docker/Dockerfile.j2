@@ -2,33 +2,37 @@
 # 	https://docs.docker.com/develop/develop-images/multistage-build/
 # 	https://whitfin.io/speeding-up-rust-docker-builds/
 ####################### VAULT BUILD IMAGE  #######################
+{% set build_stage_base_image = "rust:1.40" %}
+{% set vault_stage_base_image = build_stage_base_image %}
 {% if "alpine" in target_file %}
-{%   set preferred_base_image = "alpine:3.11" %}
+{%   set build_stage_base_image = "clux/muslrust:nightly-2019-12-19" %}
+{%   set runtime_stage_base_image = "alpine:3.11" %}
+{%   set vault_stage_base_image = runtime_stage_base_image %}
 {%   set package_arch_name = "" %}
 {% elif "amd64" in target_file %}
-{%   set preferred_base_image = "debian:buster-slim" %}
+{%   set runtime_stage_base_image = "debian:buster-slim" %}
 {%   set package_arch_name = "" %}
 {% elif "aarch64" in target_file %}
-{%   set preferred_base_image = "balenalib/aarch64-debian:buster" %}
+{%   set runtime_stage_base_image = "balenalib/aarch64-debian:buster" %}
 {%   set package_arch_name = "arm64" %}
 {% elif "armv6" in target_file %}
-{%   set preferred_base_image = "balenalib/rpi-debian:buster" %}
+{%   set runtime_stage_base_image = "balenalib/rpi-debian:buster" %}
 {%   set package_arch_name = "armel" %}
 {% elif "armv7" in target_file %}
-{%   set preferred_base_image = "balenalib/armv7hf-debian:buster" %}
+{%   set runtime_stage_base_image = "balenalib/armv7hf-debian:buster" %}
 {%   set package_arch_name = "armhf" %}
 {% endif %}
 {% set package_arch_prefix = ":" + package_arch_name %}
 {% if package_arch_name == "" %}
 {%   set package_arch_prefix = "" %}
 {% endif %}
-FROM {{ preferred_base_image }} as vault
+FROM {{ vault_stage_base_image }} as vault
 
 ENV VAULT_VERSION "v2.12.0b"
 
 ENV URL "https://github.com/dani-garcia/bw_web_builds/releases/download/$VAULT_VERSION/bw_web_$VAULT_VERSION.tar.gz"
 
-{% if "alpine" in target_file %}
+{% if "alpine" in vault_stage_base_image %}
 RUN apk add --no-cache --upgrade \
     curl \
     tar
@@ -47,7 +51,7 @@ RUN apt update -y \
 RUN mkdir /web-vault
 WORKDIR /web-vault
 
-{% if "alpine" in target_file %}
+{% if "alpine" in vault_stage_base_image %}
 SHELL ["/bin/ash", "-o", "nounset", "-o", "pipefail", "-o", "errexit", "-c"]
 {% else %}
 SHELL ["/bin/bash", "-o", "nounset", "-o", "pipefail", "-o", "errexit", "-c"]
@@ -57,14 +61,13 @@ RUN curl -L $URL | tar xz
 RUN ls
 
 ########################## BUILD IMAGE  ##########################
-{% if "alpine" in target_file %}
+{% if "musl" in build_stage_base_image %}
 # Musl build image for statically compiled binary
-FROM clux/muslrust:nightly-2019-12-19 as build
 {% else %}
 # We need to use the Rust build image, because
 # we need the Rust compiler and Cargo tooling
-FROM rust:1.40 as build
 {% endif %}
+FROM {{ build_stage_base_image }} as build
 
 {% if "sqlite" in target_file %}
 # set sqlite as default for DB ARG for backward compatibility
@@ -199,12 +202,12 @@ RUN cargo build --features ${DB} --release --target=aarch64-unknown-linux-gnu
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image
 # because we already have a binary built
-FROM {{ preferred_base_image }}
+FROM {{ runtime_stage_base_image }}
 
 ENV ROCKET_ENV "staging"
 ENV ROCKET_PORT=80
 ENV ROCKET_WORKERS=10
-{% if "alpine" in target_file %}
+{% if "alpine" in runtime_stage_base_image %}
 ENV SSL_CERT_DIR=/etc/ssl/certs
 {% endif %}
 
@@ -213,17 +216,17 @@ RUN [ "cross-build-start" ]
 {% endif %}
 
 # Install needed libraries
-{% if "alpine" in target_file %}
+{% if "alpine" in runtime_stage_base_image %}
 RUN apk add --no-cache \
         openssl \
         curl \
-{% if "sqlite" in target_file %}
+{%   if "sqlite" in target_file %}
         sqlite \
-{% elif "mysql" in target_file %}
+{%   elif "mysql" in target_file %}
         mariadb-connector-c \
-{% elif "postgresql" in target_file %}
+{%   elif "postgresql" in target_file %}
         postgresql-libs \
-{% endif %}
+{%   endif %}
         ca-certificates
 {% else %}
 RUN apt-get update && apt-get install -y \
@@ -231,13 +234,13 @@ RUN apt-get update && apt-get install -y \
     openssl \
     ca-certificates \
     curl \
-{% if "sqlite" in target_file %}
+{%   if "sqlite" in target_file %}
     sqlite3 \
-{% elif "mysql" in target_file %}
+{%   elif "mysql" in target_file %}
     libmariadbclient-dev \
-{% elif "postgresql" in target_file %}
+{%   elif "postgresql" in target_file %}
     libpq5 \
-{% endif %}
+{%   endif %}
     && rm -rf /var/lib/apt/lists/*
 {% endif %}
 

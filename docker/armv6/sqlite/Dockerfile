@@ -2,7 +2,7 @@
 # 	https://docs.docker.com/develop/develop-images/multistage-build/
 # 	https://whitfin.io/speeding-up-rust-docker-builds/
 ####################### VAULT BUILD IMAGE  #######################
-FROM balenalib/rpi-debian:buster as vault
+FROM rust:1.40 as vault
 
 ENV VAULT_VERSION "v2.12.0b"
 
