@@ -35,7 +35,7 @@ multipart = { version = "0.16.1", features = ["server"], default-features = fals
 ws = "0.9.1"
 
 # MessagePack library
-rmpv = "0.4.2"
+rmpv = "0.4.3"
 
 # Concurrent hashmap implementation
 chashmap = "2.2.2"
@@ -114,9 +114,6 @@ openssl = { version = "0.10.26", optional = true }
 percent-encoding = "2.1.0"
 
 [patch.crates-io]
-# Add support for Timestamp type
-rmp = { git = 'https://github.com/3Hren/msgpack-rust', rev = 'd6c6c672e470341207ed9feb69b56322b5597a11' }
-
 # Use newest ring
 rocket = { git = 'https://github.com/SergioBenitez/Rocket', rev = 'b95b6765e1cc8be7c1e7eaef8a9d9ad940b0ac13' }
 rocket_contrib = { git = 'https://github.com/SergioBenitez/Rocket', rev = 'b95b6765e1cc8be7c1e7eaef8a9d9ad940b0ac13' }
