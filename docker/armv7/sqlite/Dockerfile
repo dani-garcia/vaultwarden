@@ -8,7 +8,6 @@ ENV VAULT_VERSION "v2.12.0b"
 
 ENV URL "https://github.com/dani-garcia/bw_web_builds/releases/download/$VAULT_VERSION/bw_web_$VAULT_VERSION.tar.gz"
 
-
 # Build time options to avoid dpkg warnings and help with reproducible builds.
 ARG DEBIAN_FRONTEND=noninteractive
 ARG LANG=C.UTF-8

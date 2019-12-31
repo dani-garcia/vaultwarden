@@ -76,7 +76,6 @@ ENV ROCKET_PORT=80
 ENV ROCKET_WORKERS=10
 ENV SSL_CERT_DIR=/etc/ssl/certs
 
-
 # Install needed libraries
 RUN apk add --no-cache \
         openssl \

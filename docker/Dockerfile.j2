@@ -37,7 +37,6 @@ RUN apk add --no-cache --upgrade \
     curl \
     tar
 {% else %}
-
 # Build time options to avoid dpkg warnings and help with reproducible builds.
 ARG DEBIAN_FRONTEND=noninteractive
 ARG LANG=C.UTF-8
@@ -76,14 +75,16 @@ FROM {{ build_stage_base_image }} as build
 {% if "sqlite" in target_file %}
 # set sqlite as default for DB ARG for backward compatibility
 ARG DB=sqlite
+
 {% elif "mysql" in target_file %}
 # set mysql backend
 ARG DB=mysql
+
 {% elif "postgresql" in target_file %}
 # set postgresql backend
 ARG DB=postgresql
-{% endif %}
 
+{% endif %}
 # Build time options to avoid dpkg warnings and help with reproducible builds.
 ARG DEBIAN_FRONTEND=noninteractive
 ARG LANG=C.UTF-8
@@ -244,8 +245,8 @@ ENV SSL_CERT_DIR=/etc/ssl/certs
 
 {% if "amd64" not in target_file %}
 RUN [ "cross-build-start" ]
-{% endif %}
 
+{% endif %}
 # Install needed libraries
 {% if "alpine" in runtime_stage_base_image %}
 RUN apk add --no-cache \
