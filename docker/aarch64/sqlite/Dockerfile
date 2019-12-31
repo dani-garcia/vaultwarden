@@ -37,6 +37,16 @@ ARG DB=sqlite
 # Don't download rust docs
 RUN rustup set profile minimal
 
+# Install required build libs for arm64 architecture.
+RUN sed 's/^deb/deb-src/' /etc/apt/sources.list > \
+        /etc/apt/sources.list.d/deb-src.list \
+    && dpkg --add-architecture arm64 \
+    && apt-get update \
+    && apt-get install -y \
+        --no-install-recommends \
+        libssl-dev:arm64 \
+        libc6-dev:arm64
+
 RUN apt-get update \
     && apt-get install -y \
         --no-install-recommends \
@@ -51,16 +61,6 @@ ENV USER "root"
 # Creates a dummy project used to grab dependencies
 RUN USER=root cargo new --bin app
 WORKDIR /app
-
-# Install required build libs for arm64 architecture.
-RUN sed 's/^deb/deb-src/' /etc/apt/sources.list > \
-        /etc/apt/sources.list.d/deb-src.list \
-    && dpkg --add-architecture arm64 \
-    && apt-get update \
-    && apt-get install -y \
-        --no-install-recommends \
-        libssl-dev:arm64 \
-        libc6-dev:arm64
 
 # Copies over *only* your manifests and build files
 COPY ./Cargo.* ./

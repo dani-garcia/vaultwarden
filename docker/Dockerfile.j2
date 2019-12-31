@@ -87,6 +87,18 @@ RUN rustup set profile minimal
 ENV USER "root"
 
 {% endif %}
+{% if "aarch64" in target_file or "armv" in target_file %}
+# Install required build libs for {{ package_arch_name }} architecture.
+RUN sed 's/^deb/deb-src/' /etc/apt/sources.list > \
+        /etc/apt/sources.list.d/deb-src.list \
+    && dpkg --add-architecture {{ package_arch_name }} \
+    && apt-get update \
+    && apt-get install -y \
+        --no-install-recommends \
+        libssl-dev{{ package_arch_prefix }} \
+        libc6-dev{{ package_arch_prefix }}
+
+{% endif -%}
 {% if "aarch64" in target_file %}
 RUN apt-get update \
     && apt-get install -y \
@@ -142,19 +154,6 @@ RUN apt-get update && apt-get install -y \
 # Creates a dummy project used to grab dependencies
 RUN USER=root cargo new --bin app
 WORKDIR /app
-
-{% if "aarch64" in target_file or "armv" in target_file %}
-# Install required build libs for {{ package_arch_name }} architecture.
-RUN sed 's/^deb/deb-src/' /etc/apt/sources.list > \
-        /etc/apt/sources.list.d/deb-src.list \
-    && dpkg --add-architecture {{ package_arch_name }} \
-    && apt-get update \
-    && apt-get install -y \
-        --no-install-recommends \
-        libssl-dev{{ package_arch_prefix }} \
-        libc6-dev{{ package_arch_prefix }}
-
-{% endif -%}
 
 # Copies over *only* your manifests and build files
 COPY ./Cargo.* ./

@@ -37,16 +37,6 @@ ARG DB=mysql
 # Don't download rust docs
 RUN rustup set profile minimal
 
-# Install MySQL package
-RUN apt-get update && apt-get install -y \
-    --no-install-recommends \
-    libmariadb-dev:armhf \
-    && rm -rf /var/lib/apt/lists/*
-
-# Creates a dummy project used to grab dependencies
-RUN USER=root cargo new --bin app
-WORKDIR /app
-
 # Install required build libs for armhf architecture.
 RUN sed 's/^deb/deb-src/' /etc/apt/sources.list > \
         /etc/apt/sources.list.d/deb-src.list \
@@ -56,6 +46,16 @@ RUN sed 's/^deb/deb-src/' /etc/apt/sources.list > \
         --no-install-recommends \
         libssl-dev:armhf \
         libc6-dev:armhf
+
+# Install MySQL package
+RUN apt-get update && apt-get install -y \
+    --no-install-recommends \
+    libmariadb-dev:armhf \
+    && rm -rf /var/lib/apt/lists/*
+
+# Creates a dummy project used to grab dependencies
+RUN USER=root cargo new --bin app
+WORKDIR /app
 
 # Copies over *only* your manifests and build files
 COPY ./Cargo.* ./
