@@ -176,6 +176,13 @@ ENV OPENSSL_INCLUDE_DIR="/usr/include/arm-linux-gnueabi"
 ENV OPENSSL_LIB_DIR="/usr/lib/arm-linux-gnueabi"
 {% endif -%}
 
+{% if "alpine" in target_file %}
+RUN rustup target add x86_64-unknown-linux-musl
+
+{% elif "aarch64" in target_file %}
+RUN rustup target add aarch64-unknown-linux-gnu
+
+{% endif %}
 # Builds your dependencies and removes the
 # dummy project, except the target folder
 # This folder contains the compiled dependencies
@@ -189,16 +196,11 @@ COPY . .
 # Make sure that we actually build the project
 RUN touch src/main.rs
 
-{% if "alpine" in target_file %}
-RUN rustup target add x86_64-unknown-linux-musl
-
-{% endif %}
 # Builds again, this time it'll just be
 # your actual source files being built
 {% if "amd64" in target_file %}
 RUN cargo build --features ${DB} --release
 {% elif "aarch64" in target_file %}
-RUN rustup target add aarch64-unknown-linux-gnu
 RUN cargo build --features ${DB} --release --target=aarch64-unknown-linux-gnu
 {% endif %}
 

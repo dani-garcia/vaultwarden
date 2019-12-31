@@ -77,6 +77,8 @@ ENV CC_aarch64_unknown_linux_gnu="/usr/bin/aarch64-linux-gnu-gcc"
 ENV CROSS_COMPILE="1"
 ENV OPENSSL_INCLUDE_DIR="/usr/include/aarch64-linux-gnu"
 ENV OPENSSL_LIB_DIR="/usr/lib/aarch64-linux-gnu"
+RUN rustup target add aarch64-unknown-linux-gnu
+
 # Builds your dependencies and removes the
 # dummy project, except the target folder
 # This folder contains the compiled dependencies
@@ -92,7 +94,6 @@ RUN touch src/main.rs
 
 # Builds again, this time it'll just be
 # your actual source files being built
-RUN rustup target add aarch64-unknown-linux-gnu
 RUN cargo build --features ${DB} --release --target=aarch64-unknown-linux-gnu
 
 ######################## RUNTIME IMAGE  ########################

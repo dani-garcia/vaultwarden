@@ -47,6 +47,8 @@ COPY ./Cargo.* ./
 COPY ./rust-toolchain ./rust-toolchain
 COPY ./build.rs ./build.rs
 
+RUN rustup target add x86_64-unknown-linux-musl
+
 # Builds your dependencies and removes the
 # dummy project, except the target folder
 # This folder contains the compiled dependencies
@@ -59,8 +61,6 @@ COPY . .
 
 # Make sure that we actually build the project
 RUN touch src/main.rs
-
-RUN rustup target add x86_64-unknown-linux-musl
 
 # Builds again, this time it'll just be
 # your actual source files being built
