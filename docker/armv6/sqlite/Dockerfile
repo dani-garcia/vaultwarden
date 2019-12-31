@@ -71,6 +71,8 @@ ENV CC_arm_unknown_linux_gnueabi="/usr/bin/arm-linux-gnueabi-gcc"
 ENV CROSS_COMPILE="1"
 ENV OPENSSL_INCLUDE_DIR="/usr/include/arm-linux-gnueabi"
 ENV OPENSSL_LIB_DIR="/usr/lib/arm-linux-gnueabi"
+RUN rustup target add arm-unknown-linux-gnueabi
+
 # Builds your dependencies and removes the
 # dummy project, except the target folder
 # This folder contains the compiled dependencies
@@ -86,6 +88,7 @@ RUN touch src/main.rs
 
 # Builds again, this time it'll just be
 # your actual source files being built
+RUN cargo build --features ${DB} --release --target=arm-unknown-linux-gnueabi
 
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image

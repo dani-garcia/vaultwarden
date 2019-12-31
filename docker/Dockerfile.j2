@@ -182,6 +182,9 @@ RUN rustup target add x86_64-unknown-linux-musl
 {% elif "aarch64" in target_file %}
 RUN rustup target add aarch64-unknown-linux-gnu
 
+{% elif "armv6" in target_file %}
+RUN rustup target add arm-unknown-linux-gnueabi
+
 {% endif %}
 # Builds your dependencies and removes the
 # dummy project, except the target folder
@@ -202,6 +205,8 @@ RUN touch src/main.rs
 RUN cargo build --features ${DB} --release
 {% elif "aarch64" in target_file %}
 RUN cargo build --features ${DB} --release --target=aarch64-unknown-linux-gnu
+{% elif "armv6" in target_file %}
+RUN cargo build --features ${DB} --release --target=arm-unknown-linux-gnueabi
 {% endif %}
 
 ######################## RUNTIME IMAGE  ########################
