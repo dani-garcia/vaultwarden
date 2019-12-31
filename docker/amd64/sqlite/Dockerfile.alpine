@@ -27,6 +27,12 @@ FROM clux/muslrust:nightly-2019-12-19 as build
 # set sqlite as default for DB ARG for backward compatibility
 ARG DB=sqlite
 
+# Build time options to avoid dpkg warnings and help with reproducible builds.
+ARG DEBIAN_FRONTEND=noninteractive
+ARG LANG=C.UTF-8
+ARG TZ=UTC
+ARG TERM=xterm-256color
+
 # Don't download rust docs
 RUN rustup set profile minimal
 
