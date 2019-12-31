@@ -140,7 +140,11 @@ ENV USER "root"
 # Install MySQL package
 RUN apt-get update && apt-get install -y \
     --no-install-recommends \
+{% if "musl" in build_stage_base_image %}
+    libmysqlclient-dev{{ package_arch_prefix }} \
+{% else %}
     libmariadb-dev{{ package_arch_prefix }} \
+{% endif %}
     && rm -rf /var/lib/apt/lists/*
 
 {% elif "postgresql" in target_file %}

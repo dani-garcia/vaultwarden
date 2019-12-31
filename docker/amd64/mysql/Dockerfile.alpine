@@ -35,7 +35,7 @@ ENV USER "root"
 # Install MySQL package
 RUN apt-get update && apt-get install -y \
     --no-install-recommends \
-    libmariadb-dev \
+    libmysqlclient-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Creates a dummy project used to grab dependencies
