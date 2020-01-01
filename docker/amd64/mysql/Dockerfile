@@ -1,3 +1,6 @@
+# This file was generated using a Jinja2 template.
+# Please make your changes in `Dockerfile.j2` and then `make` the individual Dockerfile's.
+
 # Using multistage build:
 # 	https://docs.docker.com/develop/develop-images/multistage-build/
 # 	https://whitfin.io/speeding-up-rust-docker-builds/
