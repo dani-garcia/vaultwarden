@@ -96,6 +96,7 @@ RUN touch src/main.rs
 
 # Builds again, this time it'll just be
 # your actual source files being built
+RUN cargo build --features ${DB} --release --target=armv7-unknown-linux-gnueabihf
 
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image

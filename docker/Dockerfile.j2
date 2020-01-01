@@ -228,6 +228,8 @@ RUN cargo build --features ${DB} --release
 RUN cargo build --features ${DB} --release --target=aarch64-unknown-linux-gnu
 {% elif "armv6" in target_file %}
 RUN cargo build --features ${DB} --release --target=arm-unknown-linux-gnueabi
+{% elif "armv7" in target_file %}
+RUN cargo build --features ${DB} --release --target=armv7-unknown-linux-gnueabihf
 {% endif %}
 
 ######################## RUNTIME IMAGE  ########################
