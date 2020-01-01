@@ -14,8 +14,6 @@ ARG LANG=C.UTF-8
 ARG TZ=UTC
 ARG TERM=xterm-256color
 
-RUN echo $TERM
-
 RUN apt-get update \
     && apt-get install -y \
         --no-install-recommends \
