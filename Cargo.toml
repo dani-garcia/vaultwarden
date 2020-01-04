@@ -100,7 +100,7 @@ native-tls = "0.2.3"
 quoted_printable = "0.4.1"
 
 # Template library
-handlebars = "2.0.2"
+handlebars = "=2.0.2"
 
 # For favicon extraction from main website
 soup = "0.4.1"
