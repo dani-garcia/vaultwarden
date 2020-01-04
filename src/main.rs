@@ -157,7 +157,7 @@ fn check_db() {
         // Turn on WAL in SQLite
         if CONFIG.enable_db_wal() {
             use diesel::RunQueryDsl;
-            let connection = db::get_connection().expect("Can't conect to DB");
+            let connection = db::get_connection().expect("Can't connect to DB");
             diesel::sql_query("PRAGMA journal_mode=wal")
                 .execute(&connection)
                 .expect("Failed to turn on WAL");
