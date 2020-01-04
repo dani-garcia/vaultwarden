@@ -1,6 +1,6 @@
 <main class="container">
     <div id="users-block" class="my-3 p-3 bg-white rounded shadow">
-        <h6 class="border-bottom pb-2 mb-0">Registered Users</h6>
+        <h6 class="border-bottom pb-2 mb-0">Registrovaní uživatelé</h6>
 
         <div id="users-list">
             {{#each users}}
@@ -14,7 +14,7 @@
                             <span class="badge badge-success ml-2">2FA</span>
                             {{/if}}
                             {{#case _Status 1}}
-                            <span class="badge badge-warning ml-2">Invited</span>
+                            <span class="badge badge-warning ml-2">Pozvání odesláno</span>
                             {{/case}}
                             <span class="d-block">{{Email}}</span>
                         </div>
@@ -28,11 +28,11 @@
                         </div>
                         <div style="flex: 0 0 300px; font-size: 90%; text-align: right; padding-right: 15px">
                             {{#if TwoFactorEnabled}}
-                            <a class="mr-2" href="#" onclick='remove2fa({{jsesc Id}})'>Remove all 2FA</a>
+                            <a class="mr-2" href="#" onclick='remove2fa({{jsesc Id}})'>Odstranit všechny 2FA</a>
                             {{/if}}
 
-                            <a class="mr-2" href="#" onclick='deauthUser({{jsesc Id}})'>Deauthorize sessions</a>
-                            <a class="mr-2" href="#" onclick='deleteUser({{jsesc Id}}, {{jsesc Email}})'>Delete User</a>
+                            <a class="mr-2" href="#" onclick='deauthUser({{jsesc Id}})'>Odhlásit ze všech zařízení</a>
+                            <a class="mr-2" href="#" onclick='deleteUser({{jsesc Id}}, {{jsesc Email}})'>Smazat uživatele</a>
                         </div>
                     </div>
                 </div>
@@ -43,33 +43,33 @@
 
         <div class="mt-3">
             <button type="button" class="btn btn-sm btn-link" onclick="updateRevisions();"
-                title="Force all clients to fetch new data next time they connect. Useful after restoring a backup to remove any stale data.">
-                Force clients to resync
+                title="Vynutí u všech klientů, aby se synchronizovali jakmile se znovu připojí. Užitečně např. po obnovení zálohy pro smazání všech uložených starých dat.">
+                Vynutit synchronizaci u klientů
             </button>
 
-            <button type="button" class="btn btn-sm btn-primary float-right" onclick="reload();">Reload users</button>
+            <button type="button" class="btn btn-sm btn-primary float-right" onclick="reload();">Obnovit seznam</button>
         </div>
     </div>
 
     <div id="invite-form-block" class="align-items-center p-3 mb-3 text-white-50 bg-secondary rounded shadow">
         <div>
-            <h6 class="mb-0 text-white">Invite User</h6>
+            <h6 class="mb-0 text-white">Pozvat uživatele</h6>
             <small>Email:</small>
 
             <form class="form-inline" id="invite-form" onsubmit="inviteUser(); return false;">
-                <input type="email" class="form-control w-50 mr-2" id="email-invite" placeholder="Enter email">
-                <button type="submit" class="btn btn-primary">Invite</button>
+                <input type="email" class="form-control w-50 mr-2" id="email-invite" placeholder="Zadej email">
+                <button type="submit" class="btn btn-primary">Odeslat pozvánku</button>
             </form>
         </div>
     </div>
 
     <div id="config-block" class="align-items-center p-3 mb-3 bg-secondary rounded shadow">
         <div>
-            <h6 class="text-white mb-3">Configuration</h6>
+            <h6 class="text-white mb-3">Konfigurace</h6>
             <div class="small text-white mb-3">
-                NOTE: The settings here override the environment variables. Once saved, it's recommended to stop setting
-                them to avoid confusion. This does not apply to the read-only section, which can only be set through the
-                environment.
+                POZNÁMKA: Tato nastavení přepíšou všechny proměnné pro toto prostředí. Jakmile nastavení uložíte, doporučujeme
+                proměnné nastavovat aby se zabránilo zmatkům.
+                To ovšem neplatí pro sekci pouze pro čtení, která může být nastavena pouze přes prostředí.
             </div>
             <form class="form accordion" id="config-form" onsubmit="saveConfig(); return false;">
                 {{#each config}}
@@ -85,13 +85,13 @@
                             <label for="input_{{name}}" class="col-sm-3 col-form-label">{{doc.name}}</label>
                             <div class="col-sm-8 input-group">
                                 <input class="form-control conf-{{type}}" id="input_{{name}}" type="{{type}}"
-                                    name="{{name}}" value="{{value}}" {{#if default}} placeholder="Default: {{default}}"
+                                    name="{{name}}" value="{{value}}" {{#if default}} placeholder="Výchozí: {{default}}"
                                     {{/if}}>
 
                                 {{#case type "password"}}
                                 <div class="input-group-append">
                                     <button class="btn btn-outline-secondary" type="button"
-                                        onclick="toggleVis('input_{{name}}');">Show/hide</button>
+                                        onclick="toggleVis('input_{{name}}');">Zobrazit/skrýt</button>
                                 </div>
                                 {{/case}}
                             </div>
@@ -103,7 +103,7 @@
                                     <input class="form-check-input conf-{{type}}" type="checkbox" id="input_{{name}}"
                                         name="{{name}}" {{#if value}} checked {{/if}}>
 
-                                    <label class="form-check-label" for="input_{{name}}"> Default: {{default}} </label>
+                                    <label class="form-check-label" for="input_{{name}}"> Výchozí: {{default}} </label>
                                 </div>
                             </div>
                             {{/case}}
@@ -117,12 +117,12 @@
 
                 <div class="card bg-light mb-3">
                     <div class="card-header"><button type="button" class="btn btn-link collapsed" data-toggle="collapse"
-                            data-target="#g_readonly">Read-Only Config</button></div>
+                            data-target="#g_readonly">Nastavení pouze pro čtení</button></div>
                     <div id="g_readonly" class="card-body collapse" data-parent="#config-form">
                         <div class="small mb-3">
-                            NOTE: These options can't be modified in the editor because they would require the server
-                            to be restarted. To modify them, you need to set the correct environment variables when
-                            launching the server. You can check the variable names in the tooltips of each option.
+                            POZNÁMKA: Tato nastavení nemohou být v editoru upravována, jelikož by potřebovaly restart
+                            serveru. Pro jejich úpravu je potřeba nastavit správné proměnné pro prostředí při 
+                            spouštění serveru. Pro názvy proměnných můžeš najét myší na každou z nastavitelných položek.
                         </div>
 
                         {{#each config}}
@@ -133,12 +133,12 @@
                             <label for="input_{{name}}" class="col-sm-3 col-form-label">{{doc.name}}</label>
                             <div class="col-sm-8 input-group">
                                 <input readonly class="form-control" id="input_{{name}}" type="{{type}}"
-                                    value="{{value}}" {{#if default}} placeholder="Default: {{default}}" {{/if}}>
+                                    value="{{value}}" {{#if default}} placeholder="Výchozí: {{default}}" {{/if}}>
 
                                 {{#case type "password"}}
                                 <div class="input-group-append">
                                     <button class="btn btn-outline-secondary" type="button"
-                                        onclick="toggleVis('input_{{name}}');">Show/hide</button>
+                                        onclick="toggleVis('input_{{name}}');">Zobrazit/skrýt</button>
                                 </div>
                                 {{/case}}
                             </div>
@@ -150,7 +150,7 @@
                                     <input disabled class="form-check-input" type="checkbox" id="input_{{name}}"
                                         {{#if value}} checked {{/if}}>
 
-                                    <label class="form-check-label" for="input_{{name}}"> Default: {{default}} </label>
+                                    <label class="form-check-label" for="input_{{name}}"> Výchozí: {{default}} </label>
                                 </div>
                             </div>
                             {{/case}}
@@ -165,18 +165,18 @@
                 {{#if can_backup}}
                 <div class="card bg-light mb-3">
                     <div class="card-header"><button type="button" class="btn btn-link collapsed" data-toggle="collapse"
-                            data-target="#g_database">Backup Database</button></div>
+                            data-target="#g_database">Záloha databáze</button></div>
                     <div id="g_database" class="card-body collapse" data-parent="#config-form">
                         <div class="small mb-3">
-                            NOTE: A local installation of sqlite3 is required for this section to work.
+                            POZNÁMKA: Lokální instalace sqlite3 je pro funkčnost této sekce povinná.
                         </div>
-                        <button type="button" class="btn btn-primary" onclick="backupDatabase();">Backup Database</button>
+                        <button type="button" class="btn btn-primary" onclick="backupDatabase();">Zálohovat</button>
                     </div>
                 </div>
                 {{/if}}
 
-                <button type="submit" class="btn btn-primary">Save</button>
-                <button type="button" class="btn btn-danger float-right" onclick="deleteConf();">Reset defaults</button>
+                <button type="submit" class="btn btn-primary">Uložit</button>
+                <button type="button" class="btn btn-danger float-right" onclick="deleteConf();">Nastavit výchozí</button>
             </form>
         </div>
     </div>
@@ -222,42 +222,42 @@
         }).catch(e => { msg(errMsg + ": Unknown error") });
     }
     function deleteUser(id, mail) {
-        var input_mail = prompt("To delete user '" + mail + "', please type the email below")
+        var input_mail = prompt("Pro smazání uživatele '" + mail + "', opište níže jeho email.")
         if (input_mail != null) {
             if (input_mail == mail) {
                 _post("/admin/users/" + id + "/delete",
-                    "User deleted correctly",
-                    "Error deleting user");
+                    "Uživatel byl smazán",
+                    "Při smazání uživatele se stala chyba");
             } else {
-                alert("Wrong email, please try again")
+                alert("Špatně opsaný email, zkus to znovu")
             }
         }
         return false;
     }
     function remove2fa(id) {
         _post("/admin/users/" + id + "/remove-2fa",
-            "2FA removed correctly",
-            "Error removing 2FA");
+            "2FA úspěšně smazáno",
+            "Při mazání 2FA se vyskytla chyba");
         return false;
     }
     function deauthUser(id) {
         _post("/admin/users/" + id + "/deauth",
-            "Sessions deauthorized correctly",
-            "Error deauthorizing sessions");
+            "Odhlášení na zařízeních proběhlo úspěšně",
+            "Při odhlašování se vyskytla chyba");
         return false;
     }
     function updateRevisions() {
         _post("/admin/users/update_revision",
-            "Success, clients will sync next time they connect",
-            "Error forcing clients to sync");
+            "Úspěch, při příštím připojení dojde ke synchronizaci",
+            "Při vyžádání synchronizace se vyskytla chyba");
         return false;
     }
     function inviteUser() {
         inv = document.getElementById("email-invite");
         data = JSON.stringify({ "email": inv.value });
         inv.value = "";
-        _post("/admin/invite/", "User invited correctly",
-            "Error inviting user", data);
+        _post("/admin/invite/", "Uživatel úspěšně pozván",
+            "Vyskytla se chyba při posílání pozvánky pro", data);
         return false;
     }
     function getFormData() {
@@ -278,27 +278,27 @@
     }
     function saveConfig() {
         data = JSON.stringify(getFormData());
-        _post("/admin/config/", "Config saved correctly",
-            "Error saving config", data);
+        _post("/admin/config/", "Nastavení úspěšně uloženo",
+            "Při ukládání se vyskytla chyba:", data);
         return false;
     }
     function deleteConf() {
-        var input = prompt("This will remove all user configurations, and restore the defaults and the " +
-            "values set by the environment. This operation could be dangerous. Type 'DELETE' to proceed:");
+        var input = prompt("Tímto smažeš všechna uživatelská nastavení a obnovíš původní " +
+            "hodnoty nastavené prostředím. Toto může být docela nebezpečné. Napiš 'DELETE' pro potvrzení:");
         if (input === "DELETE") {
             _post("/admin/config/delete",
-                "Config deleted correctly",
-                "Error deleting config");
+                "Konfigurace úspěšně smazána",
+                "Při mazání konfigurace došlo k chybě");
         } else {
-            alert("Wrong input, please try again")
+            alert("Špatně opsáno, zkus to znovu")
         }
 
         return false;
     }
     function backupDatabase() {
         _post("/admin/config/backup_db",
-            "Backup created successfully",
-            "Error creating backup");
+            "Záloha úspěšně vytvořena",
+            "Při tvorbě zálohy se vyskytla chyba");
         return false;
     }
     function masterCheck(check_id, inputs_query) {
@@ -315,10 +315,10 @@
         checkbox.addEventListener("change", onChange);
     }
     let OrgTypes = {
-        "0": { "name": "Owner", "color": "orange" },
-        "1": { "name": "Admin", "color": "blueviolet" },
-        "2": { "name": "User", "color": "blue" },
-        "3": { "name": "Manager", "color": "green" },
+        "0": { "name": "Superadministrátor", "color": "orange" },
+        "1": { "name": "Administrátor", "color": "blueviolet" },
+        "2": { "name": "GUGer", "color": "blue" },
+        "3": { "name": "Leader", "color": "green" },
     };
 
     document.querySelectorAll("img.identicon").forEach(function (e, i) {
