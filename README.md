@@ -45,6 +45,10 @@ This can be configured in [bitwarden_rs directly](https://github.com/dani-garcia
 
 If you have an available domain name, you can get HTTPS certificates with [Let's Encrypt](https://letsencrypt.org/), or you can generate self-signed certificates with utilities like [mkcert](https://github.com/FiloSottile/mkcert). Some proxies automatically do this step, like Caddy (see examples linked above).
 
+### Kubernetes installation
+
+To run this in Kubernetes head over to [cdwv/bitwarden-k8s](https://github.com/cdwv/bitwarden-k8s).
+
 ## Usage
 See the [bitwarden_rs wiki](https://github.com/dani-garcia/bitwarden_rs/wiki) for more information on how to configure and run the bitwarden_rs server.
 
