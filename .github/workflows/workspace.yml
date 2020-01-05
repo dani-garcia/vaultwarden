@@ -19,7 +19,7 @@ jobs:
           - x86_64-unknown-linux-gnu
           # - x86_64-unknown-linux-musl
           - x86_64-apple-darwin
-          - x86_64-pc-windows-msvc
+          # - x86_64-pc-windows-msvc
         include:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
@@ -30,9 +30,9 @@ jobs:
           - target: x86_64-apple-darwin
             os: macOS-latest
             ext:
-          - target: x86_64-pc-windows-msvc
-            os: windows-latest
-            ext: .exe
+          # - target: x86_64-pc-windows-msvc
+          #   os: windows-latest
+          #   ext: .exe
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v1
