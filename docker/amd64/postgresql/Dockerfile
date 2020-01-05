@@ -1,21 +1,32 @@
-# Using multistage build: 
+# This file was generated using a Jinja2 template.
+# Please make your changes in `Dockerfile.j2` and then `make` the individual Dockerfile's.
+
+# Using multistage build:
 # 	https://docs.docker.com/develop/develop-images/multistage-build/
 # 	https://whitfin.io/speeding-up-rust-docker-builds/
 ####################### VAULT BUILD IMAGE  #######################
-FROM alpine:3.11 as vault
+FROM rust:1.40 as vault
 
 ENV VAULT_VERSION "v2.12.0b"
 
 ENV URL "https://github.com/dani-garcia/bw_web_builds/releases/download/$VAULT_VERSION/bw_web_$VAULT_VERSION.tar.gz"
 
-RUN apk add --no-cache --upgrade \
-    curl \
-    tar
+# Build time options to avoid dpkg warnings and help with reproducible builds.
+ARG DEBIAN_FRONTEND=noninteractive
+ARG LANG=C.UTF-8
+ARG TZ=UTC
+ARG TERM=xterm-256color
+
+RUN apt-get update \
+    && apt-get install -y \
+        --no-install-recommends \
+        curl \
+        tar
 
 RUN mkdir /web-vault
 WORKDIR /web-vault
 
-SHELL ["/bin/ash", "-eo", "pipefail", "-c"]
+SHELL ["/bin/bash", "-o", "nounset", "-o", "pipefail", "-o", "errexit", "-c"]
 
 RUN curl -L $URL | tar xz
 RUN ls
@@ -25,26 +36,26 @@ RUN ls
 # we need the Rust compiler and Cargo tooling
 FROM rust:1.40 as build
 
-# set mysql backend
+# set postgresql backend
 ARG DB=postgresql
+
+# Build time options to avoid dpkg warnings and help with reproducible builds.
+ARG DEBIAN_FRONTEND=noninteractive
+ARG LANG=C.UTF-8
+ARG TZ=UTC
+ARG TERM=xterm-256color
 
 # Don't download rust docs
 RUN rustup set profile minimal
 
-# Using bundled SQLite, no need to install it
-# RUN apt-get update && apt-get install -y\
-#    --no-install-recommends \
-#    sqlite3\
-# && rm -rf /var/lib/apt/lists/*
-
-# Install MySQL package
+# Install PostgreSQL package
 RUN apt-get update && apt-get install -y \
     --no-install-recommends \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Creates a dummy project used to grab dependencies
-RUN USER=root cargo new --bin app
+RUN USER=root cargo new --bin /app
 WORKDIR /app
 
 # Copies over *only* your manifests and build files
@@ -84,7 +95,6 @@ RUN apt-get update && apt-get install -y \
     openssl \
     ca-certificates \
     curl \
-    sqlite3 \
     libpq5 \
     && rm -rf /var/lib/apt/lists/*
 

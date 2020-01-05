@@ -1,4 +1,7 @@
-# Using multistage build: 
+# This file was generated using a Jinja2 template.
+# Please make your changes in `Dockerfile.j2` and then `make` the individual Dockerfile's.
+
+# Using multistage build:
 # 	https://docs.docker.com/develop/develop-images/multistage-build/
 # 	https://whitfin.io/speeding-up-rust-docker-builds/
 ####################### VAULT BUILD IMAGE  #######################
@@ -15,7 +18,7 @@ RUN apk add --no-cache --upgrade \
 RUN mkdir /web-vault
 WORKDIR /web-vault
 
-SHELL ["/bin/ash", "-eo", "pipefail", "-c"]
+SHELL ["/bin/ash", "-o", "nounset", "-o", "pipefail", "-o", "errexit", "-c"]
 
 RUN curl -L $URL | tar xz
 RUN ls
@@ -27,29 +30,49 @@ FROM clux/muslrust:nightly-2019-12-19 as build
 # set mysql backend
 ARG DB=mysql
 
+# Build time options to avoid dpkg warnings and help with reproducible builds.
+ARG DEBIAN_FRONTEND=noninteractive
+ARG LANG=C.UTF-8
+ARG TZ=UTC
+ARG TERM=xterm-256color
+
 # Don't download rust docs
 RUN rustup set profile minimal
 
 ENV USER "root"
 
-# Install needed libraries
+# Install MySQL package
 RUN apt-get update && apt-get install -y \
     --no-install-recommends \
     libmysqlclient-dev \
     && rm -rf /var/lib/apt/lists/*
 
+# Creates a dummy project used to grab dependencies
+RUN USER=root cargo new --bin /app
 WORKDIR /app
+
+# Copies over *only* your manifests and build files
+COPY ./Cargo.* ./
+COPY ./rust-toolchain ./rust-toolchain
+COPY ./build.rs ./build.rs
+
+RUN rustup target add x86_64-unknown-linux-musl
+
+# Builds your dependencies and removes the
+# dummy project, except the target folder
+# This folder contains the compiled dependencies
+RUN cargo build --features ${DB} --release
+RUN find . -not -path "./target*" -delete
 
 # Copies the complete project
 # To avoid copying unneeded files, use .dockerignore
 COPY . .
 
-RUN rustup target add x86_64-unknown-linux-musl
-
 # Make sure that we actually build the project
 RUN touch src/main.rs
 
-# Build
+# Builds again, this time it'll just be
+# your actual source files being built
 RUN cargo build --features ${DB} --release
 
 ######################## RUNTIME IMAGE  ########################
@@ -65,8 +88,8 @@ ENV SSL_CERT_DIR=/etc/ssl/certs
 # Install needed libraries
 RUN apk add --no-cache \
         openssl \
-        mariadb-connector-c \
         curl \
+        mariadb-connector-c \
         ca-certificates
 
 RUN mkdir /data

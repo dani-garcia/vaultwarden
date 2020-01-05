@@ -1,21 +1,32 @@
-# Using multistage build: 
+# This file was generated using a Jinja2 template.
+# Please make your changes in `Dockerfile.j2` and then `make` the individual Dockerfile's.
+
+# Using multistage build:
 # 	https://docs.docker.com/develop/develop-images/multistage-build/
 # 	https://whitfin.io/speeding-up-rust-docker-builds/
 ####################### VAULT BUILD IMAGE  #######################
-FROM alpine:3.11 as vault
+FROM rust:1.40 as vault
 
 ENV VAULT_VERSION "v2.12.0b"
 
 ENV URL "https://github.com/dani-garcia/bw_web_builds/releases/download/$VAULT_VERSION/bw_web_$VAULT_VERSION.tar.gz"
 
-RUN apk add --no-cache --upgrade \
-    curl \
-    tar
+# Build time options to avoid dpkg warnings and help with reproducible builds.
+ARG DEBIAN_FRONTEND=noninteractive
+ARG LANG=C.UTF-8
+ARG TZ=UTC
+ARG TERM=xterm-256color
+
+RUN apt-get update \
+    && apt-get install -y \
+        --no-install-recommends \
+        curl \
+        tar
 
 RUN mkdir /web-vault
 WORKDIR /web-vault
 
-SHELL ["/bin/ash", "-eo", "pipefail", "-c"]
+SHELL ["/bin/bash", "-o", "nounset", "-o", "pipefail", "-o", "errexit", "-c"]
 
 RUN curl -L $URL | tar xz
 RUN ls
@@ -28,8 +39,24 @@ FROM rust:1.40 as build
 # set mysql backend
 ARG DB=mysql
 
+# Build time options to avoid dpkg warnings and help with reproducible builds.
+ARG DEBIAN_FRONTEND=noninteractive
+ARG LANG=C.UTF-8
+ARG TZ=UTC
+ARG TERM=xterm-256color
+
 # Don't download rust docs
 RUN rustup set profile minimal
+
+# Install required build libs for armel architecture.
+RUN sed 's/^deb/deb-src/' /etc/apt/sources.list > \
+        /etc/apt/sources.list.d/deb-src.list \
+    && dpkg --add-architecture armel \
+    && apt-get update \
+    && apt-get install -y \
+        --no-install-recommends \
+        libssl-dev:armel \
+        libc6-dev:armel
 
 RUN apt-get update \
     && apt-get install -y \
@@ -42,30 +69,42 @@ RUN apt-get update \
 ENV CARGO_HOME "/root/.cargo"
 ENV USER "root"
 
+# Install MySQL package
+RUN apt-get update && apt-get install -y \
+    --no-install-recommends \
+    libmariadb-dev:armel \
+    && rm -rf /var/lib/apt/lists/*
+
+# Creates a dummy project used to grab dependencies
+RUN USER=root cargo new --bin /app
 WORKDIR /app
 
-# Prepare openssl armel libs
-RUN sed 's/^deb/deb-src/' /etc/apt/sources.list > \
-        /etc/apt/sources.list.d/deb-src.list \
-    && dpkg --add-architecture armel \
-    && apt-get update \
-    && apt-get install -y \
-        --no-install-recommends \
-        libssl-dev:armel \
-        libc6-dev:armel \
-        libmariadb-dev:armel
+# Copies over *only* your manifests and build files
+COPY ./Cargo.* ./
+COPY ./rust-toolchain ./rust-toolchain
+COPY ./build.rs ./build.rs
 
 ENV CC_arm_unknown_linux_gnueabi="/usr/bin/arm-linux-gnueabi-gcc"
 ENV CROSS_COMPILE="1"
 ENV OPENSSL_INCLUDE_DIR="/usr/include/arm-linux-gnueabi"
 ENV OPENSSL_LIB_DIR="/usr/lib/arm-linux-gnueabi"
+RUN rustup target add arm-unknown-linux-gnueabi
+
+# Builds your dependencies and removes the
+# dummy project, except the target folder
+# This folder contains the compiled dependencies
+RUN cargo build --features ${DB} --release
+RUN find . -not -path "./target*" -delete
 
 # Copies the complete project
 # To avoid copying unneeded files, use .dockerignore
 COPY . .
 
-# Build
-RUN rustup target add arm-unknown-linux-gnueabi
+# Make sure that we actually build the project
+RUN touch src/main.rs
+
+# Builds again, this time it'll just be
+# your actual source files being built
 RUN cargo build --features ${DB} --release --target=arm-unknown-linux-gnueabi
 
 ######################## RUNTIME IMAGE  ########################
@@ -90,10 +129,11 @@ RUN apt-get update && apt-get install -y \
 
 RUN mkdir /data
 
-RUN [ "cross-build-end" ]  
+RUN [ "cross-build-end" ]
 
 VOLUME /data
 EXPOSE 80
+EXPOSE 3012
 
 # Copies the files from the context (Rocket.toml file and web-vault)
 # and the binary from the "build" stage to the current stage
