@@ -198,6 +198,11 @@ ENV CC_arm_unknown_linux_gnueabi="/usr/bin/arm-linux-gnueabi-gcc"
 ENV CROSS_COMPILE="1"
 ENV OPENSSL_INCLUDE_DIR="/usr/include/arm-linux-gnueabi"
 ENV OPENSSL_LIB_DIR="/usr/lib/arm-linux-gnueabi"
+{% elif "armv7" in target_file %}
+ENV CC_armv7_unknown_linux_gnueabihf="/usr/bin/arm-linux-gnueabihf-gcc"
+ENV CROSS_COMPILE="1"
+ENV OPENSSL_INCLUDE_DIR="/usr/include/arm-linux-gnueabihf"
+ENV OPENSSL_LIB_DIR="/usr/lib/arm-linux-gnueabihf"
 {% endif -%}
 
 {% if "alpine" in target_file %}
@@ -209,6 +214,8 @@ RUN rustup target add aarch64-unknown-linux-gnu
 {% elif "armv6" in target_file %}
 RUN rustup target add arm-unknown-linux-gnueabi
 
+{% elif "armv7" in target_file %}
+RUN rustup target add armv7-unknown-linux-gnueabihf
 {% endif %}
 # Builds your dependencies and removes the
 # dummy project, except the target folder

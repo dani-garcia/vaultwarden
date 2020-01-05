@@ -84,6 +84,11 @@ COPY ./Cargo.* ./
 COPY ./rust-toolchain ./rust-toolchain
 COPY ./build.rs ./build.rs
 
+ENV CC_armv7_unknown_linux_gnueabihf="/usr/bin/arm-linux-gnueabihf-gcc"
+ENV CROSS_COMPILE="1"
+ENV OPENSSL_INCLUDE_DIR="/usr/include/arm-linux-gnueabihf"
+ENV OPENSSL_LIB_DIR="/usr/lib/arm-linux-gnueabihf"
+RUN rustup target add armv7-unknown-linux-gnueabihf
 # Builds your dependencies and removes the
 # dummy project, except the target folder
 # This folder contains the compiled dependencies
