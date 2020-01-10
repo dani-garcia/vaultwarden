@@ -90,7 +90,7 @@ lazy_static = "1.4.0"
 derive_more = "0.99.2"
 
 # Numerical libraries
-num-traits = "0.2.10"
+num-traits = "0.2.11"
 num-derive = "0.3.0"
 
 # Email libraries
@@ -100,11 +100,11 @@ native-tls = "0.2.3"
 quoted_printable = "0.4.1"
 
 # Template library
-handlebars = "=2.0.2"
+handlebars = "2.0.4"
 
 # For favicon extraction from main website
 soup = "0.4.1"
-regex = "1.3.1"
+regex = "1.3.3"
 data-url = "0.1.0"
 
 # Required for SSL support for PostgreSQL
