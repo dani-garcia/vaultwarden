@@ -58,3 +58,4 @@ If you prefer to chat, we're usually hanging around at [#bitwarden_rs:matrix.org
 Thanks for your contribution to the project!
 
 - [@Skaronator](https://github.com/Skaronator)
+- [@ChonoN](https://github.com/ChonoN)
