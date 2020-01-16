@@ -73,6 +73,13 @@ impl TwoFactor {
 impl TwoFactor {
     #[cfg(feature = "postgresql")]
     pub fn save(&self, conn: &DbConn) -> EmptyResult {
+        // We need to make sure we're not going to violate the unique constraint on user_uuid and atype.
+        // This happens automatically on other DBMS backends due to replace_into(). PostgreSQL does
+        // not support multiple constraints on ON CONFLICT clauses.
+        diesel::delete(twofactor::table.filter(twofactor::user_uuid.eq(&self.user_uuid)).filter(twofactor::atype.eq(&self.atype)))
+            .execute(&**conn)
+            .map_res("Error deleting twofactor for insert")?;
+
         diesel::insert_into(twofactor::table)
             .values(self)
             .on_conflict(twofactor::uuid)
