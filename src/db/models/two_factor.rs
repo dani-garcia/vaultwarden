@@ -76,12 +76,9 @@ impl TwoFactor {
         // We need to make sure we're not going to violate the unique constraint on user_uuid and atype.
         // This happens automatically on other DBMS backends due to replace_into(). PostgreSQL does
         // not support multiple constraints on ON CONFLICT clauses.
-        let result: EmptyResult = diesel::delete(twofactor::table.filter(twofactor::user_uuid.eq(&self.user_uuid)).filter(twofactor::atype.eq(&self.atype)))
+        diesel::delete(twofactor::table.filter(twofactor::user_uuid.eq(&self.user_uuid)).filter(twofactor::atype.eq(&self.atype)))
             .execute(&**conn)
-            .map_res("Error deleting twofactor for insert");
-        if result.is_err() {
-            return result;
-        }
+            .map_res("Error deleting twofactor for insert")?;
 
         diesel::insert_into(twofactor::table)
             .values(self)
