@@ -14,7 +14,7 @@ build = "build.rs"
 # Empty to keep compatibility, prefer to set USE_SYSLOG=true
 enable_syslog = []
 mysql = ["diesel/mysql", "diesel_migrations/mysql"]
-postgresql = ["diesel/postgres", "diesel_migrations/postgres", "openssl"]
+postgresql = ["diesel/postgres", "diesel_migrations/postgres"]
 sqlite = ["diesel/sqlite", "diesel_migrations/sqlite", "libsqlite3-sys"]
 
 [target."cfg(not(windows))".dependencies]
@@ -75,7 +75,7 @@ data-encoding = "2.1.2"
 jsonwebtoken = "6.0.1"
 
 # U2F library
-u2f = "0.1.6"
+u2f = "0.2.0"
 
 # Yubico Library
 yubico = { version = "0.7.1", features = ["online-tokio"], default-features = false }
@@ -107,8 +107,8 @@ soup = "0.4.1"
 regex = "1.3.3"
 data-url = "0.1.0"
 
-# Required for SSL support for PostgreSQL
-openssl = { version = "0.10.26", optional = true }
+# Used by U2F, JWT and Postgres
+openssl = "0.10.26"
 
 # URL encoding library
 percent-encoding = "2.1.0"

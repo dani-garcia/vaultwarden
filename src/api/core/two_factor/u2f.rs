@@ -92,6 +92,7 @@ struct RegistrationDef {
     key_handle: Vec<u8>,
     pub_key: Vec<u8>,
     attestation_cert: Option<Vec<u8>>,
+    device_name: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]

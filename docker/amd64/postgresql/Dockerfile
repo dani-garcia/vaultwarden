@@ -12,16 +12,7 @@ ENV VAULT_VERSION "v2.12.0b"
 ENV URL "https://github.com/dani-garcia/bw_web_builds/releases/download/$VAULT_VERSION/bw_web_$VAULT_VERSION.tar.gz"
 
 # Build time options to avoid dpkg warnings and help with reproducible builds.
-ARG DEBIAN_FRONTEND=noninteractive
-ARG LANG=C.UTF-8
-ARG TZ=UTC
-ARG TERM=xterm-256color
-
-RUN apt-get update \
-    && apt-get install -y \
-        --no-install-recommends \
-        curl \
-        tar
+ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8 TZ=UTC TERM=xterm-256color
 
 RUN mkdir /web-vault
 WORKDIR /web-vault
@@ -40,10 +31,7 @@ FROM rust:1.40 as build
 ARG DB=postgresql
 
 # Build time options to avoid dpkg warnings and help with reproducible builds.
-ARG DEBIAN_FRONTEND=noninteractive
-ARG LANG=C.UTF-8
-ARG TZ=UTC
-ARG TERM=xterm-256color
+ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8 TZ=UTC TERM=xterm-256color
 
 # Don't download rust docs
 RUN rustup set profile minimal
