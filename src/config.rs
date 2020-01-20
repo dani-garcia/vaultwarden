@@ -2,7 +2,7 @@ use std::process::exit;
 use std::sync::RwLock;
 
 use crate::error::Error;
-use crate::util::get_env;
+use crate::util::{get_env, get_env_bool};
 
 lazy_static! {
     pub static ref CONFIG: Config = Config::load().unwrap_or_else(|e| {
@@ -23,7 +23,7 @@ macro_rules! make_config {
         $group:ident $(: $group_enabled:ident)? {
         $(
             $(#[doc = $doc:literal])+
-            $name:ident : $ty:ty, $editable:literal, $none_action:ident $(, $default:expr)?;
+            $name:ident : $ty:ident, $editable:literal, $none_action:ident $(, $default:expr)?;
         )+},
     )+) => {
         pub struct Config { inner: RwLock<Inner> }
@@ -50,9 +50,9 @@ macro_rules! make_config {
 
                 let mut builder = ConfigBuilder::default();
                 $($(
-                    builder.$name = get_env(&stringify!($name).to_uppercase());
+                    builder.$name = make_config! { @getenv &stringify!($name).to_uppercase(), $ty };
                 )+)+
-
+                
                 builder
             }
 
@@ -189,6 +189,10 @@ macro_rules! make_config {
         let f: &dyn Fn(&ConfigItems) -> _ = &$default_fn;
         f($config)
     }};
+
+    ( @getenv $name:expr, bool ) => { get_env_bool($name) };
+    ( @getenv $name:expr, $ty:ident ) => { get_env($name) };
+
 }
 
 //STRUCTURE:

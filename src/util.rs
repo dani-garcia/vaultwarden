@@ -309,6 +309,17 @@ where
     try_parse_string(env::var(key))
 }
 
+const TRUE_VALUES: &[&str] = &["true", "t", "yes", "y", "1"];
+const FALSE_VALUES: &[&str] = &["false", "f", "no", "n", "0"];
+
+pub fn get_env_bool(key: &str) -> Option<bool> {
+    match env::var(key) {
+        Ok(val) if TRUE_VALUES.contains(&val.to_lowercase().as_ref()) => Some(true),
+        Ok(val) if FALSE_VALUES.contains(&val.to_lowercase().as_ref()) => Some(false),
+        _ => None,
+    }
+}
+
 //
 // Date util methods
 //
