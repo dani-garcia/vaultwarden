@@ -29,7 +29,7 @@ macro_rules! make_config {
         pub struct Config { inner: RwLock<Inner> }
 
         struct Inner {
-            templates: Handlebars,
+            templates: Handlebars<'static>,
             config: ConfigItems,
 
             _env: ConfigBuilder,
@@ -572,7 +572,7 @@ impl Config {
     ) -> Result<String, crate::error::Error> {
         if CONFIG.reload_templates() {
             warn!("RELOADING TEMPLATES");
-            let hb = load_templates(CONFIG.templates_folder().as_ref());
+            let hb = load_templates(CONFIG.templates_folder());
             hb.render(name, data).map_err(Into::into)
         } else {
             let hb = &CONFIG.inner.read().unwrap().templates;
@@ -581,17 +581,18 @@ impl Config {
     }
 }
 
-use handlebars::{
-    Context, Handlebars, Helper, HelperDef, HelperResult, Output, RenderContext, RenderError, Renderable,
-};
+use handlebars::{Context, Handlebars, Helper, HelperResult, Output, RenderContext, RenderError, Renderable};
 
-fn load_templates(path: &str) -> Handlebars {
+fn load_templates<P>(path: P) -> Handlebars<'static>
+where
+    P: AsRef<std::path::Path>,
+{
     let mut hb = Handlebars::new();
     // Error on missing params
     hb.set_strict_mode(true);
     // Register helpers
-    hb.register_helper("case", Box::new(CaseHelper));
-    hb.register_helper("jsesc", Box::new(JsEscapeHelper));
+    hb.register_helper("case", Box::new(case_helper));
+    hb.register_helper("jsesc", Box::new(js_escape_helper));
 
     macro_rules! reg {
         ($name:expr) => {{
@@ -630,48 +631,44 @@ fn load_templates(path: &str) -> Handlebars {
     hb
 }
 
-pub struct CaseHelper;
+fn case_helper<'reg, 'rc>(
+    h: &Helper<'reg, 'rc>,
+    r: &'reg Handlebars,
+    ctx: &'rc Context,
+    rc: &mut RenderContext<'reg, 'rc>,
+    out: &mut dyn Output,
+) -> HelperResult {
+    let param = h
+        .param(0)
+        .ok_or_else(|| RenderError::new("Param not found for helper \"case\""))?;
+    let value = param.value().clone();
 
-impl HelperDef for CaseHelper {
-    fn call<'reg: 'rc, 'rc>(
-        &self,
-        h: &Helper<'reg, 'rc>,
-        r: &'reg Handlebars,
-        ctx: &Context,
-        rc: &mut RenderContext<'reg>,
-        out: &mut dyn Output,
-    ) -> HelperResult {
-        let param = h.param(0).ok_or_else(|| RenderError::new("Param not found for helper \"case\""))?;
-        let value = param.value().clone();
-
-        if h.params().iter().skip(1).any(|x| x.value() == &value) {
-            h.template().map(|t| t.render(r, ctx, rc, out)).unwrap_or(Ok(()))
-        } else {
-            Ok(())
-        }
+    if h.params().iter().skip(1).any(|x| x.value() == &value) {
+        h.template().map(|t| t.render(r, ctx, rc, out)).unwrap_or(Ok(()))
+    } else {
+        Ok(())
     }
 }
 
-pub struct JsEscapeHelper;
+fn js_escape_helper<'reg, 'rc>(
+    h: &Helper<'reg, 'rc>,
+    _r: &'reg Handlebars,
+    _ctx: &'rc Context,
+    _rc: &mut RenderContext<'reg, 'rc>,
+    out: &mut dyn Output,
+) -> HelperResult {
+    let param = h
+        .param(0)
+        .ok_or_else(|| RenderError::new("Param not found for helper \"js_escape\""))?;
 
-impl HelperDef for JsEscapeHelper {
-    fn call<'reg: 'rc, 'rc>(
-        &self,
-        h: &Helper<'reg, 'rc>,
-        _: &'reg Handlebars,
-        _: &Context,
-        _: &mut RenderContext<'reg>,
-        out: &mut dyn Output,
-    ) -> HelperResult {
-        let param = h.param(0).ok_or_else(|| RenderError::new("Param not found for helper \"js_escape\""))?;
+    let value = param
+        .value()
+        .as_str()
+        .ok_or_else(|| RenderError::new("Param for helper \"js_escape\" is not a String"))?;
 
-        let value =
-            param.value().as_str().ok_or_else(|| RenderError::new("Param for helper \"js_escape\" is not a String"))?;
+    let escaped_value = value.replace('\\', "").replace('\'', "\\x22").replace('\"', "\\x27");
+    let quoted_value = format!("&quot;{}&quot;", escaped_value);
 
-        let escaped_value = value.replace('\\', "").replace('\'', "\\x22").replace('\"', "\\x27");
-        let quoted_value = format!("&quot;{}&quot;", escaped_value);
-
-        out.write(&quoted_value)?;
-        Ok(())
-    }
+    out.write(&quoted_value)?;
+    Ok(())
 }

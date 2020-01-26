@@ -1,8 +1,10 @@
 use lettre::smtp::authentication::Credentials;
 use lettre::smtp::authentication::Mechanism as SmtpAuthMechanism;
 use lettre::smtp::ConnectionReuseParameters;
-use lettre::{ClientSecurity, ClientTlsParameters, SmtpClient, SmtpTransport, Transport};
-use lettre_email::{EmailBuilder, MimeMultipartType, PartBuilder};
+use lettre::{
+    builder::{EmailBuilder, MimeMultipartType, PartBuilder},
+    ClientSecurity, ClientTlsParameters, SmtpClient, SmtpTransport, Transport,
+};
 use native_tls::{Protocol, TlsConnector};
 use percent_encoding::{percent_encode, NON_ALPHANUMERIC};
 use quoted_printable::encode_to_str;
@@ -284,12 +286,11 @@ fn send_email(address: &str, subject: &str, body_html: &str, body_text: &str) ->
 
     let mut transport = mailer();
 
-    let result = transport
-        .send(email.into())
-        .map_err(|e| Error::new("Error sending email", e.to_string()))
-        .and(Ok(()));
+    let result = transport.send(email);
 
     // Explicitly close the connection, in case of error
     transport.close();
-    result
+    
+    result?;
+    Ok(())
 }

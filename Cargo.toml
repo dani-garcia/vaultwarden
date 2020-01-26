@@ -43,7 +43,7 @@ chashmap = "2.2.2"
 # A generic serialization/deserialization framework
 serde = "1.0.104"
 serde_derive = "1.0.104"
-serde_json = "1.0.44"
+serde_json = "1.0.45"
 
 # Logging
 log = "0.4.8"
@@ -94,13 +94,12 @@ num-traits = "0.2.11"
 num-derive = "0.3.0"
 
 # Email libraries
-lettre = "0.9.2"
-lettre_email = "0.9.2"
+lettre = "0.10.0-pre"
 native-tls = "0.2.3"
 quoted_printable = "0.4.1"
 
 # Template library
-handlebars = "2.0.4"
+handlebars = { version = "3.0.1", features = ["dir_source"] }
 
 # For favicon extraction from main website
 soup = "0.4.1"
@@ -119,8 +118,7 @@ rocket = { git = 'https://github.com/SergioBenitez/Rocket', rev = 'b95b6765e1cc8
 rocket_contrib = { git = 'https://github.com/SergioBenitez/Rocket', rev = 'b95b6765e1cc8be7c1e7eaef8a9d9ad940b0ac13' }
 
 # Use git version for timeout fix #706
-lettre = { git = 'https://github.com/lettre/lettre', rev = '24d694db3be017d82b1cdc8bf9da601420b31bb0' }
-lettre_email = { git = 'https://github.com/lettre/lettre', rev = '24d694db3be017d82b1cdc8bf9da601420b31bb0' }
+lettre = { git = 'https://github.com/lettre/lettre', rev = '245c600c82ee18b766e8729f005ff453a55dce34' }
 
 # For favicon extraction from main website
 data-url = { git = 'https://github.com/servo/rust-url', package="data-url", rev = '7f1bd6ce1c2fde599a757302a843a60e714c5f72' }
