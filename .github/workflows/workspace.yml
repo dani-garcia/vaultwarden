@@ -18,7 +18,7 @@ jobs:
         target:
           - x86_64-unknown-linux-gnu
           # - x86_64-unknown-linux-musl
-          - x86_64-apple-darwin
+          # - x86_64-apple-darwin
           # - x86_64-pc-windows-msvc
         include:
           - target: x86_64-unknown-linux-gnu
@@ -27,9 +27,9 @@ jobs:
           # - target: x86_64-unknown-linux-musl
           #   os: ubuntu-latest
           #   ext:
-          - target: x86_64-apple-darwin
-            os: macOS-latest
-            ext:
+          # - target: x86_64-apple-darwin
+          #   os: macOS-latest
+          #   ext:
           # - target: x86_64-pc-windows-msvc
           #   os: windows-latest
           #   ext: .exe
@@ -110,10 +110,9 @@ jobs:
         key: ${{ runner.os }}-${{matrix.db-backend}}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
 
     - name: Install latest nightly
-      uses: actions-rs/toolchain@v1
+      uses: actions-rs/toolchain@v1.0.5
       with:
-        toolchain: nightly
-        override: true
+        # Uses rust-toolchain to determine version
         profile: minimal
         target: ${{ matrix.target }}
 
