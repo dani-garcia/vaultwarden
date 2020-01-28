@@ -510,7 +510,12 @@ impl Config {
             warn!("Failed to parse email address '{}'", email);
             return false;
         }
-        self.signups_domains_whitelist().split(',').any(|d| d == e[0])
+        
+        // Allow signups if the whitelist is empty/not configured
+        // (it doesn't contain any domains), or if it matches at least
+        // one domain.
+        let whitelist_str = self.signups_domains_whitelist();
+        whitelist_str.is_empty() || whitelist_str.split(',').filter(|s| !s.is_empty()).any(|d| d == e[0])
     }
 
     pub fn delete_user_config(&self) -> Result<(), Error> {
