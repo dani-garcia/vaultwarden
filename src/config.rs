@@ -515,7 +515,7 @@ impl Config {
         // (it doesn't contain any domains), or if it matches at least
         // one domain.
         let whitelist_str = self.signups_domains_whitelist();
-        whitelist_str.is_empty() || whitelist_str.split(',').filter(|s| !s.is_empty()).any(|d| d == e[0])
+        ( whitelist_str.is_empty() && CONFIG.signups_allowed() )|| whitelist_str.split(',').filter(|s| !s.is_empty()).any(|d| d == e[0])
     }
 
     pub fn delete_user_config(&self) -> Result<(), Error> {
