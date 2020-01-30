@@ -405,7 +405,7 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
     }
 
     if let Some(ref token) = cfg.admin_token {
-        if token.trim().is_empty() {
+        if token.trim().is_empty() && !cfg.disable_admin_token {
             err!("`ADMIN_TOKEN` is enabled but has an empty value. To enable the admin page without token, use `DISABLE_ADMIN_TOKEN`")
         }
     }
