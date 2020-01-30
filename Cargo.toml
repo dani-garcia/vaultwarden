@@ -111,6 +111,8 @@ openssl = "0.10.26"
 
 # URL encoding library
 percent-encoding = "2.1.0"
+# Punycode conversion
+idna = "0.2.0"
 
 [patch.crates-io]
 # Use newest ring

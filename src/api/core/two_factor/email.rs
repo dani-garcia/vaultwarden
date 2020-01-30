@@ -271,7 +271,7 @@ impl EmailTokenData {
 
 /// Takes an email address and obscures it by replacing it with asterisks except two characters.
 pub fn obscure_email(email: &str) -> String {
-    let split: Vec<&str> = email.split('@').collect();
+    let split: Vec<&str> = email.rsplitn(2, '@').collect();
 
     let mut name = split[0].to_string();
     let domain = &split[1];
