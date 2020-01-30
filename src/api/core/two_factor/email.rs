@@ -273,8 +273,8 @@ impl EmailTokenData {
 pub fn obscure_email(email: &str) -> String {
     let split: Vec<&str> = email.rsplitn(2, '@').collect();
 
-    let mut name = split[0].to_string();
-    let domain = &split[1];
+    let mut name = split[1].to_string();
+    let domain = &split[0];
 
     let name_size = name.chars().count();
 
