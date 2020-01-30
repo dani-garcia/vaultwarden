@@ -16,6 +16,7 @@ use soup::prelude::*;
 
 use crate::error::Error;
 use crate::CONFIG;
+use crate::util::Cached;
 
 pub fn routes() -> Vec<Route> {
     routes![icon]
@@ -53,15 +54,15 @@ fn is_valid_domain(domain: &str) -> bool {
 }
 
 #[get("/<domain>/icon.png")]
-fn icon(domain: String) -> Content<Vec<u8>> {
+fn icon(domain: String) -> Cached<Content<Vec<u8>>> {
     let icon_type = ContentType::new("image", "x-icon");
 
     if !is_valid_domain(&domain) {
         warn!("Invalid domain: {:#?}", domain);
-        return Content(icon_type, FALLBACK_ICON.to_vec());
+        return Cached::long(Content(icon_type, FALLBACK_ICON.to_vec()));
     }
 
-    Content(icon_type, get_icon(&domain))
+    Cached::long(Content(icon_type, get_icon(&domain)))
 }
 
 fn check_icon_domain_is_blacklisted(domain: &str) -> bool {
