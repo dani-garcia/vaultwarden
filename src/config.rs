@@ -271,6 +271,9 @@ make_config! {
 
         /// Admin page token |> The token used to authenticate in this very same page. Changing it here won't deauthorize the current session
         admin_token:            Pass,   true,   option;
+
+        /// Invitation organization name |> Name shown in the invitation emails that don't come from a specific organization
+        invitation_org_name:    String, true,   def,    "Bitwarden_RS".to_string();
     },
 
     /// Advanced settings
@@ -299,7 +302,7 @@ make_config! {
 
         /// Disable authenticator time drifted codes to be valid |> Enabling this only allows the current TOTP code to be valid
         /// TOTP codes of the previous and next 30 seconds will be invalid.
-        authenticator_disable_time_drift:     bool,   true,  def,    false;
+        authenticator_disable_time_drift: bool, true, def, false;
 
         /// Require new device emails |> When a user logs in an email is required to be sent.
         /// If sending the email fails the login attempt will fail.
@@ -323,6 +326,9 @@ make_config! {
 
         /// Bypass admin page security (Know the risks!) |> Disables the Admin Token for the admin page so you may use your own auth in-front
         disable_admin_token:    bool,   true,   def,    false;
+
+        /// Allowed iframe ancestors (Know the risks!) |> Allows other domains to embed the web vault into an iframe, useful for embedding into secure intranets
+        allowed_iframe_ancestors: String, true, def,    String::new();
     },
 
     /// Yubikey settings

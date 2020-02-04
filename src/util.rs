@@ -7,6 +7,8 @@ use rocket::response::{self, Responder};
 use rocket::{Data, Request, Response, Rocket};
 use std::io::Cursor;
 
+use crate::CONFIG;
+
 pub struct AppHeaders();
 
 impl Fairing for AppHeaders {
@@ -23,7 +25,7 @@ impl Fairing for AppHeaders {
         res.set_raw_header("X-Frame-Options", "SAMEORIGIN");
         res.set_raw_header("X-Content-Type-Options", "nosniff");
         res.set_raw_header("X-XSS-Protection", "1; mode=block");
-        let csp = "frame-ancestors 'self' chrome-extension://nngceckbapebfimnlniiiahkandclblb moz-extension://*;";
+        let csp = format!("frame-ancestors 'self' chrome-extension://nngceckbapebfimnlniiiahkandclblb moz-extension://* {};", CONFIG.allowed_iframe_ancestors());
         res.set_raw_header("Content-Security-Policy", csp);
 
         // Disable cache unless otherwise specified
@@ -131,7 +133,9 @@ impl Fairing for BetterLogging {
     fn on_launch(&self, rocket: &Rocket) {
         if self.0 {
             info!(target: "routes", "Routes loaded:");
-            for route in rocket.routes() {
+            let mut routes: Vec<_> = rocket.routes().collect();
+            routes.sort_by_key(|r| r.uri.path());
+            for route in routes {
                 if route.rank < 0 {
                     info!(target: "routes", "{:<6} {}", route.method, route.uri);
                 } else {
