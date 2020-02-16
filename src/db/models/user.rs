@@ -319,10 +319,9 @@ impl Invitation {
     }
 
     pub fn take(mail: &str, conn: &DbConn) -> bool {
-        CONFIG.invitations_allowed()
-            && match Self::find_by_mail(mail, &conn) {
-                Some(invitation) => invitation.delete(&conn).is_ok(),
-                None => false,
-            }
+        match Self::find_by_mail(mail, &conn) {
+            Some(invitation) => invitation.delete(&conn).is_ok(),
+            None => false,
+        }
     }
 }
