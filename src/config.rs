@@ -250,6 +250,8 @@ make_config! {
         /// $ICON_CACHE_FOLDER, but it won't produce any external network request. Needs to set $ICON_CACHE_TTL to 0,
         /// otherwise it will delete them and they won't be downloaded again.
         disable_icon_download:  bool,   true,   def,    false;
+        /// Disable uploading attachments. |> Set this to true to disable uploading attachments. Already uploaded attachments will continue to work.
+        disable_attachments:  bool,   true,   def,    false;
         /// Allow new signups |> Controls if new users can register. Note that while this is disabled, users could still be invited
         signups_allowed:        bool,   true,   def,    true;
         /// Require email verification on signups. This will prevent logins from succeeding until the address has been verified

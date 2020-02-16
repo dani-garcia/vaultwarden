@@ -631,8 +631,7 @@ fn share_cipher_by_uuid(
     }
 }
 
-#[post("/ciphers/<uuid>/attachment", format = "multipart/form-data", data = "<data>")]
-fn post_attachment(
+fn _post_attachment(
     uuid: String,
     data: Data,
     content_type: &ContentType,
@@ -704,6 +703,23 @@ fn post_attachment(
     Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, &conn)))
 }
 
+#[post("/ciphers/<uuid>/attachment", format = "multipart/form-data", data = "<data>")]
+fn post_attachment(
+    uuid: String,
+    data: Data,
+    content_type: &ContentType,
+    headers: Headers,
+    conn: DbConn,
+    nt: Notify,
+) -> JsonResult {
+    if CONFIG.disable_attachments() {
+        err!("Uploading attachments is not allowed on server")
+    }
+
+    _post_attachment(uuid, data, content_type, headers, conn, nt)
+}
+
+
 #[post("/ciphers/<uuid>/attachment-admin", format = "multipart/form-data", data = "<data>")]
 fn post_attachment_admin(
     uuid: String,
@@ -713,7 +729,11 @@ fn post_attachment_admin(
     conn: DbConn,
     nt: Notify,
 ) -> JsonResult {
-    post_attachment(uuid, data, content_type, headers, conn, nt)
+    if CONFIG.disable_attachments() {
+        err!("Uploading attachments is not allowed on server")
+    }
+
+    _post_attachment(uuid, data, content_type, headers, conn, nt)
 }
 
 #[post(
@@ -731,7 +751,7 @@ fn post_attachment_share(
     nt: Notify,
 ) -> JsonResult {
     _delete_cipher_attachment_by_id(&uuid, &attachment_id, &headers, &conn, &nt)?;
-    post_attachment(uuid, data, content_type, headers, conn, nt)
+    _post_attachment(uuid, data, content_type, headers, conn, nt)
 }
 
 #[post("/ciphers/<uuid>/attachment/<attachment_id>/delete-admin")]
