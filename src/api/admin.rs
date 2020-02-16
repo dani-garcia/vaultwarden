@@ -153,10 +153,6 @@ fn invite_user(data: Json<InviteData>, _token: AdminToken, conn: DbConn) -> Empt
         err!("User already exists")
     }
 
-    if !CONFIG.invitations_allowed() {
-        err!("Invitations are not allowed")
-    }
-
     let mut user = User::new(email);
     user.save(&conn)?;
 
