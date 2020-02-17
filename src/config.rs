@@ -246,6 +246,11 @@ make_config! {
         /// HIBP Api Key |> HaveIBeenPwned API Key, request it here: https://haveibeenpwned.com/API/Key
         hibp_api_key:           Pass,   true,   option;
 
+        /// Per-user attachment limit (KB) |> Limit in kilobytes for a users attachments, once the limit is exceeded it won't be possible to upload more
+        user_attachment_limit:  i64,    true,   option;
+        /// Per-organization attachment limit (KB) |> Limit in kilobytes for an organization attachments, once the limit is exceeded it won't be possible to upload more
+        org_attachment_limit:   i64,    true,   option;
+
         /// Disable icon downloads |> Set to true to disable icon downloading, this would still serve icons from
         /// $ICON_CACHE_FOLDER, but it won't produce any external network request. Needs to set $ICON_CACHE_TTL to 0,
         /// otherwise it will delete them and they won't be downloaded again.

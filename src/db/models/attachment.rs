@@ -49,7 +49,7 @@ impl Attachment {
     }
 }
 
-use crate::db::schema::attachments;
+use crate::db::schema::{attachments, ciphers};
 use crate::db::DbConn;
 use diesel;
 use diesel::prelude::*;
@@ -117,5 +117,27 @@ impl Attachment {
             .filter(attachments::cipher_uuid.eq_any(cipher_uuids))
             .load::<Self>(&**conn)
             .expect("Error loading attachments")
+    }
+
+    pub fn size_by_user(user_uuid: &str, conn: &DbConn) -> i64 {
+        let result: Option<i64> = attachments::table
+            .left_join(ciphers::table.on(ciphers::uuid.eq(attachments::cipher_uuid)))
+            .filter(ciphers::user_uuid.eq(user_uuid))
+            .select(diesel::dsl::sum(attachments::file_size))
+            .first(&**conn)
+            .expect("Error loading user attachment total size");
+
+        result.unwrap_or(0)
+    }
+
+    pub fn size_by_org(org_uuid: &str, conn: &DbConn) -> i64 {
+        let result: Option<i64> = attachments::table
+            .left_join(ciphers::table.on(ciphers::uuid.eq(attachments::cipher_uuid)))
+            .filter(ciphers::organization_uuid.eq(org_uuid))
+            .select(diesel::dsl::sum(attachments::file_size))
+            .first(&**conn)
+            .expect("Error loading user attachment total size");
+
+        result.unwrap_or(0)
     }
 }

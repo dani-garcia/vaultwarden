@@ -642,20 +642,49 @@ fn post_attachment(
 ) -> JsonResult {
     let cipher = match Cipher::find_by_uuid(&uuid, &conn) {
         Some(cipher) => cipher,
-        None => err!("Cipher doesn't exist"),
+        None => err_discard!("Cipher doesn't exist", data),
     };
 
     if !cipher.is_write_accessible_to_user(&headers.user.uuid, &conn) {
-        err!("Cipher is not write accessible")
+        err_discard!("Cipher is not write accessible", data)
     }
-
+    
     let mut params = content_type.params();
     let boundary_pair = params.next().expect("No boundary provided");
     let boundary = boundary_pair.1;
 
+    let size_limit = if let Some(ref user_uuid) = cipher.user_uuid {
+        match CONFIG.user_attachment_limit() {
+            Some(0) => err_discard!("Attachments are disabled", data),
+            Some(limit) => {
+                let left = limit - Attachment::size_by_user(user_uuid, &conn);
+                if left <= 0 {
+                    err_discard!("Attachment size limit reached! Delete some files to open space", data)
+                }
+                Some(left as u64)
+            }
+            None => None,
+        }
+    } else if let Some(ref org_uuid) = cipher.organization_uuid {
+        match CONFIG.org_attachment_limit() {
+            Some(0) => err_discard!("Attachments are disabled", data),
+            Some(limit) => {
+                let left = limit - Attachment::size_by_org(org_uuid, &conn);
+                if left <= 0 {
+                    err_discard!("Attachment size limit reached! Delete some files to open space", data)
+                }
+                Some(left as u64)
+            }
+            None => None,
+        }
+    } else {
+        err_discard!("Cipher is neither owned by a user nor an organization", data);
+    };
+
     let base_path = Path::new(&CONFIG.attachments_folder()).join(&cipher.uuid);
 
     let mut attachment_key = None;
+    let mut error = None;
 
     Multipart::with_body(data.open(), boundary)
         .foreach_entry(|mut field| {
@@ -674,18 +703,21 @@ fn post_attachment(
                     let file_name = HEXLOWER.encode(&crypto::get_random(vec![0; 10]));
                     let path = base_path.join(&file_name);
 
-                    let size = match field.data.save().memory_threshold(0).size_limit(None).with_path(path) {
+                    let size = match field.data.save().memory_threshold(0).size_limit(size_limit).with_path(path.clone()) {
                         SaveResult::Full(SavedData::File(_, size)) => size as i32,
                         SaveResult::Full(other) => {
-                            error!("Attachment is not a file: {:?}", other);
+                            std::fs::remove_file(path).ok();
+                            error = Some(format!("Attachment is not a file: {:?}", other));
                             return;
                         }
                         SaveResult::Partial(_, reason) => {
-                            error!("Partial result: {:?}", reason);
+                            std::fs::remove_file(path).ok();
+                            error = Some(format!("Attachment size limit exceeded with this file: {:?}", reason));
                             return;
                         }
                         SaveResult::Error(e) => {
-                            error!("Error: {:?}", e);
+                            std::fs::remove_file(path).ok();
+                            error = Some(format!("Error: {:?}", e));
                             return;
                         }
                     };
@@ -698,6 +730,10 @@ fn post_attachment(
             }
         })
         .expect("Error processing multipart data");
+
+    if let Some(ref e) = error {
+        err!(e);
+    }
 
     nt.send_cipher_update(UpdateType::CipherUpdate, &cipher, &cipher.update_users_revision(&conn));
 
