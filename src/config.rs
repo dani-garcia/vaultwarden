@@ -1,6 +1,8 @@
 use std::process::exit;
 use std::sync::RwLock;
 
+use reqwest::Url;
+
 use crate::error::Error;
 use crate::util::{get_env, get_env_bool};
 
@@ -240,6 +242,10 @@ make_config! {
         domain:                 String, true,   def,    "http://localhost".to_string();
         /// Domain Set |> Indicates if the domain is set by the admin. Otherwise the default will be used.
         domain_set:             bool,   false,  def,    false;
+        /// Domain origin |> Domain URL origin (in https://example.com:8443/path, https://example.com:8443 is the origin)
+        domain_origin:          String, false,  auto,   |c| extract_url_origin(&c.domain);
+        /// Domain path |> Domain URL path (in https://example.com:8443/path, /path is the path)
+        domain_path:            String, false,  auto,   |c| extract_url_path(&c.domain);
         /// Enable web vault
         web_vault_enabled:      bool,   false,  def,    true;
 
@@ -455,6 +461,21 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
     }
 
     Ok(())
+}
+
+/// Extracts an RFC 6454 web origin from a URL.
+fn extract_url_origin(url: &str) -> String {
+    let url = Url::parse(url).expect("valid URL");
+
+    url.origin().ascii_serialization()
+}
+
+/// Extracts the path from a URL.
+/// All trailing '/' chars are trimmed, even if the path is a lone '/'.
+fn extract_url_path(url: &str) -> String {
+    let url = Url::parse(url).expect("valid URL");
+
+    url.path().trim_end_matches('/').to_string()
 }
 
 impl Config {

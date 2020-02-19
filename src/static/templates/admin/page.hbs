@@ -225,7 +225,7 @@
         var input_mail = prompt("To delete user '" + mail + "', please type the email below")
         if (input_mail != null) {
             if (input_mail == mail) {
-                _post("/admin/users/" + id + "/delete",
+                _post("admin/users/" + id + "/delete",
                     "User deleted correctly",
                     "Error deleting user");
             } else {
@@ -235,19 +235,19 @@
         return false;
     }
     function remove2fa(id) {
-        _post("/admin/users/" + id + "/remove-2fa",
+        _post("admin/users/" + id + "/remove-2fa",
             "2FA removed correctly",
             "Error removing 2FA");
         return false;
     }
     function deauthUser(id) {
-        _post("/admin/users/" + id + "/deauth",
+        _post("admin/users/" + id + "/deauth",
             "Sessions deauthorized correctly",
             "Error deauthorizing sessions");
         return false;
     }
     function updateRevisions() {
-        _post("/admin/users/update_revision",
+        _post("admin/users/update_revision",
             "Success, clients will sync next time they connect",
             "Error forcing clients to sync");
         return false;
@@ -256,7 +256,7 @@
         inv = document.getElementById("email-invite");
         data = JSON.stringify({ "email": inv.value });
         inv.value = "";
-        _post("/admin/invite/", "User invited correctly",
+        _post("admin/invite/", "User invited correctly",
             "Error inviting user", data);
         return false;
     }
@@ -278,7 +278,7 @@
     }
     function saveConfig() {
         data = JSON.stringify(getFormData());
-        _post("/admin/config/", "Config saved correctly",
+        _post("admin/config/", "Config saved correctly",
             "Error saving config", data);
         return false;
     }
@@ -286,7 +286,7 @@
         var input = prompt("This will remove all user configurations, and restore the defaults and the " +
             "values set by the environment. This operation could be dangerous. Type 'DELETE' to proceed:");
         if (input === "DELETE") {
-            _post("/admin/config/delete",
+            _post("admin/config/delete",
                 "Config deleted correctly",
                 "Error deleting config");
         } else {
@@ -296,7 +296,7 @@
         return false;
     }
     function backupDatabase() {
-        _post("/admin/config/backup_db",
+        _post("admin/config/backup_db",
             "Backup created successfully",
             "Error creating backup");
         return false;
