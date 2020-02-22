@@ -7,15 +7,14 @@
 ####################### VAULT BUILD IMAGE  #######################
 FROM rust:1.40 as vault
 
-ENV VAULT_VERSION "v2.12.0c"
+ENV VAULT_VERSION "v2.12.0d"
 
 ENV URL "https://github.com/dani-garcia/bw_web_builds/releases/download/$VAULT_VERSION/bw_web_$VAULT_VERSION.tar.gz"
 
 # Build time options to avoid dpkg warnings and help with reproducible builds.
 ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8 TZ=UTC TERM=xterm-256color
 
-RUN mkdir /web-vault
-WORKDIR /web-vault
+WORKDIR /
 
 SHELL ["/bin/bash", "-o", "nounset", "-o", "pipefail", "-o", "errexit", "-c"]
 
