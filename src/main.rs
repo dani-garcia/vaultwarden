@@ -255,18 +255,20 @@ mod migrations {
 }
 
 fn launch_rocket(extra_debug: bool) {
-    // Create Rocket object, this stores current log level and sets it's own
+    // Create Rocket object, this stores current log level and sets its own
     let rocket = rocket::ignite();
 
-    // If addding more base paths here, consider also adding them to
+    let basepath = &CONFIG.domain_path();
+
+    // If adding more paths here, consider also adding them to
     // crate::utils::LOGGED_ROUTES to make sure they appear in the log
     let rocket = rocket
-        .mount("/", api::web_routes())
-        .mount("/api", api::core_routes())
-        .mount("/admin", api::admin_routes())
-        .mount("/identity", api::identity_routes())
-        .mount("/icons", api::icons_routes())
-        .mount("/notifications", api::notifications_routes())
+        .mount(&[basepath, "/"].concat(), api::web_routes())
+        .mount(&[basepath, "/api"].concat(), api::core_routes())
+        .mount(&[basepath, "/admin"].concat(), api::admin_routes())
+        .mount(&[basepath, "/identity"].concat(), api::identity_routes())
+        .mount(&[basepath, "/icons"].concat(), api::icons_routes())
+        .mount(&[basepath, "/notifications"].concat(), api::notifications_routes())
         .manage(db::init_pool())
         .manage(api::start_notification_server())
         .attach(util::AppHeaders())

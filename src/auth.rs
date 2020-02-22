@@ -16,11 +16,11 @@ const JWT_ALGORITHM: Algorithm = Algorithm::RS256;
 lazy_static! {
     pub static ref DEFAULT_VALIDITY: Duration = Duration::hours(2);
     static ref JWT_HEADER: Header = Header::new(JWT_ALGORITHM);
-    pub static ref JWT_LOGIN_ISSUER: String = format!("{}|login", CONFIG.domain());
-    pub static ref JWT_INVITE_ISSUER: String = format!("{}|invite", CONFIG.domain());
-    pub static ref JWT_DELETE_ISSUER: String = format!("{}|delete", CONFIG.domain());
-    pub static ref JWT_VERIFYEMAIL_ISSUER: String = format!("{}|verifyemail", CONFIG.domain());
-    pub static ref JWT_ADMIN_ISSUER: String = format!("{}|admin", CONFIG.domain());
+    pub static ref JWT_LOGIN_ISSUER: String = format!("{}|login", CONFIG.domain_origin());
+    pub static ref JWT_INVITE_ISSUER: String = format!("{}|invite", CONFIG.domain_origin());
+    pub static ref JWT_DELETE_ISSUER: String = format!("{}|delete", CONFIG.domain_origin());
+    pub static ref JWT_VERIFYEMAIL_ISSUER: String = format!("{}|verifyemail", CONFIG.domain_origin());
+    pub static ref JWT_ADMIN_ISSUER: String = format!("{}|admin", CONFIG.domain_origin());
     static ref PRIVATE_RSA_KEY: Vec<u8> = match read_file(&CONFIG.private_rsa_key()) {
         Ok(key) => key,
         Err(e) => panic!("Error loading private RSA Key.\n Error: {}", e),

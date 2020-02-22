@@ -31,7 +31,7 @@
 {% endif %}
 FROM {{ vault_stage_base_image }} as vault
 
-ENV VAULT_VERSION "v2.12.0c"
+ENV VAULT_VERSION "v2.12.0d"
 
 ENV URL "https://github.com/dani-garcia/bw_web_builds/releases/download/$VAULT_VERSION/bw_web_$VAULT_VERSION.tar.gz"
 
@@ -42,8 +42,7 @@ RUN apk add --no-cache --upgrade curl tar
 ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8 TZ=UTC TERM=xterm-256color
 {% endif %}
 
-RUN mkdir /web-vault
-WORKDIR /web-vault
+WORKDIR /
 
 {% if "alpine" in vault_stage_base_image %}
 SHELL ["/bin/ash", "-o", "nounset", "-o", "pipefail", "-o", "errexit", "-c"]
