@@ -420,6 +420,11 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
     if cfg!(feature = "postgresql") && !db_url.starts_with("postgresql:") {
         err!("`DATABASE_URL` should start with postgresql: when using the PostgreSQL server")
     }
+    
+    let dom = cfg.domain.to_lowercase(); 
+    if !dom.starts_with("http://") && !dom.starts_with("https://") {
+        err!("DOMAIN variable needs to contain the protocol (http, https). Use 'http[s]://bw.example.com' instead of 'bw.example.com'"); 
+    }
 
     if let Some(ref token) = cfg.admin_token {
         if token.trim().is_empty() && !cfg.disable_admin_token {
@@ -465,17 +470,25 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
 
 /// Extracts an RFC 6454 web origin from a URL.
 fn extract_url_origin(url: &str) -> String {
-    let url = Url::parse(url).expect("valid URL");
-
-    url.origin().ascii_serialization()
+    match Url::parse(url) {
+        Ok(u) => u.origin().ascii_serialization(),
+        Err(e) => {
+            println!("Error validating domain: {}", e);
+            String::new()
+        }
+    }
 }
 
 /// Extracts the path from a URL.
 /// All trailing '/' chars are trimmed, even if the path is a lone '/'.
 fn extract_url_path(url: &str) -> String {
-    let url = Url::parse(url).expect("valid URL");
-
-    url.path().trim_end_matches('/').to_string()
+    match Url::parse(url) {
+        Ok(u) => u.path().trim_end_matches('/').to_string(),
+        Err(_) => {
+            // We already print it in the method above, no need to do it again
+            String::new()
+        }
+    }
 }
 
 impl Config {
