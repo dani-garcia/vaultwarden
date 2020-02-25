@@ -27,6 +27,7 @@ use std::{
     path::Path,
     process::{exit, Command},
     str::FromStr,
+    panic,
 };
 
 #[macro_use]
@@ -120,6 +121,11 @@ fn init_logging(level: log::LevelFilter) -> Result<(), fern::InitError> {
     }
 
     logger.apply()?;
+
+    // Catch panics and log them instead of default output to StdErr
+    panic::set_hook(Box::new(|info| {
+        warn!("[PANIC] {}", info);
+    }));
 
     Ok(())
 }
