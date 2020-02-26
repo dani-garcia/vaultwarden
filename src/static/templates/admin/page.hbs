@@ -286,7 +286,7 @@
         inv = document.getElementById("smtp-test-email");
         data = JSON.stringify({ "email": inv.value });
         inv.value = "";
-        _post("/admin/test/smtp/",
+        _post("{{urlpath}}/admin/test/smtp/",
             "SMTP Test email sent correctly",
             "Error sending SMTP test email", data);
         return false;
