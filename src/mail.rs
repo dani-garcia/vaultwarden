@@ -258,6 +258,17 @@ pub fn send_change_email(address: &str, token: &str) -> EmptyResult {
     send_email(&address, &subject, &body_html, &body_text)
 }
 
+pub fn send_test(address: &str) -> EmptyResult {
+    let (subject, body_html, body_text) = get_text(
+        "email/smtp_test",
+        json!({
+            "url": CONFIG.domain(),
+        }),
+    )?;
+
+    send_email(&address, &subject, &body_html, &body_text)
+}
+
 fn send_email(address: &str, subject: &str, body_html: &str, body_text: &str) -> EmptyResult {
     let address_split: Vec<&str> = address.rsplitn(2, '@').collect();
     if address_split.len() != 2 {
