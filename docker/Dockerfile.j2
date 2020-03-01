@@ -1,16 +1,10 @@
-{{ "# This file was generated using a Jinja2 template." }}
-{{ "# Please make your changes in `Dockerfile.j2` and then `make` the individual Dockerfile's." }}
+# This file was generated using a Jinja2 template.
+# Please make your changes in `Dockerfile.j2` and then `make` the individual Dockerfile's.
 
-# Using multistage build:
-# 	https://docs.docker.com/develop/develop-images/multistage-build/
-# 	https://whitfin.io/speeding-up-rust-docker-builds/
-####################### VAULT BUILD IMAGE  #######################
 {% set build_stage_base_image = "rust:1.40" %}
-{% set vault_stage_base_image = build_stage_base_image %}
 {% if "alpine" in target_file %}
 {%   set build_stage_base_image = "clux/muslrust:nightly-2019-12-19" %}
 {%   set runtime_stage_base_image = "alpine:3.11" %}
-{%   set vault_stage_base_image = runtime_stage_base_image %}
 {%   set package_arch_name = "" %}
 {% elif "amd64" in target_file %}
 {%   set runtime_stage_base_image = "debian:buster-slim" %}
@@ -29,29 +23,23 @@
 {% if package_arch_name == "" %}
 {%   set package_arch_prefix = "" %}
 {% endif %}
-FROM {{ vault_stage_base_image }} as vault
-
-ENV VAULT_VERSION "v2.12.0d"
-
-ENV URL "https://github.com/dani-garcia/bw_web_builds/releases/download/$VAULT_VERSION/bw_web_$VAULT_VERSION.tar.gz"
-
-{% if "alpine" in vault_stage_base_image %}
-RUN apk add --no-cache --upgrade curl tar
-{% else %}
-# Build time options to avoid dpkg warnings and help with reproducible builds.
-ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8 TZ=UTC TERM=xterm-256color
-{% endif %}
-
-WORKDIR /
-
-{% if "alpine" in vault_stage_base_image %}
-SHELL ["/bin/ash", "-o", "nounset", "-o", "pipefail", "-o", "errexit", "-c"]
-{% else %}
-SHELL ["/bin/bash", "-o", "nounset", "-o", "pipefail", "-o", "errexit", "-c"]
-{% endif %}
-
-RUN curl -L $URL | tar xz
-RUN ls
+# Using multistage build:
+# 	https://docs.docker.com/develop/develop-images/multistage-build/
+# 	https://whitfin.io/speeding-up-rust-docker-builds/
+####################### VAULT BUILD IMAGE  #######################
+{% set vault_image_hash = "sha256:ce56b3f5e538351411785ac45e9b4b913259c3508b1323d62e8fa0f30717dd1c" %}
+{% raw %}
+#  This hash is extracted from the docker web-vault builds and it's prefered over a simple tag because it's immutable.
+#  It can be viewed in multiple ways:
+#  - From the https://hub.docker.com/repository/docker/bitwardenrs/web-vault/tags page, click the tag name and the digest should be there.
+#  - From the console, with the following commands:
+#      docker pull bitwardenrs/web-vault:v2.12.0e
+#      docker image inspect --format "{{.RepoDigests}}" bitwardenrs/web-vault:v2.12.0e
+#      
+#  - To do the opposite, and get the tag from the hash, you can do:
+#      docker image inspect --format "{{.RepoTags}}" bitwardenrs/web-vault@sha256:ce56b3f5e538351411785ac45e9b4b913259c3508b1323d62e8fa0f30717dd1c
+{% endraw %}
+FROM bitwardenrs/web-vault@{{ vault_image_hash }} as vault
 
 ########################## BUILD IMAGE  ##########################
 {% if "musl" in build_stage_base_image %}
