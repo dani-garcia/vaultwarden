@@ -34,6 +34,7 @@ pub fn routes() -> Vec<Route> {
         post_config,
         delete_config,
         backup_db,
+        test_smtp,
     ]
 }
 
@@ -167,6 +168,18 @@ fn invite_user(data: Json<InviteData>, _token: AdminToken, conn: DbConn) -> Empt
     } else {
         let invitation = Invitation::new(data.email);
         invitation.save(&conn)
+    }
+}
+
+#[post("/test/smtp", data = "<data>")]
+fn test_smtp(data: Json<InviteData>, _token: AdminToken) -> EmptyResult {
+    let data: InviteData = data.into_inner();
+    let email = data.email.clone();
+
+    if CONFIG.mail_enabled() {
+        mail::send_test(&email)
+    } else {
+        err!("Mail is not enabled")
     }
 }
 

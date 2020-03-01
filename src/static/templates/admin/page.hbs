@@ -71,6 +71,17 @@
                 them to avoid confusion. This does not apply to the read-only section, which can only be set through the
                 environment.
             </div>
+
+            <div id="smtp-test-form-block" class="align-items-center mb-3 text-white-50 bg-secondary">
+                <h6 class="mb-0 text-white">SMTP Test</h6>
+                <small>Email:</small>
+
+                <form class="form-inline" id="smtp-test-form" onsubmit="smtpTest(); return false;">
+                    <input type="email" class="form-control w-50 mr-2" id="smtp-test-email" placeholder="Enter email">
+                    <button type="submit" class="btn btn-primary">Send test email</button>
+                </form>
+            </div>
+
             <form class="form accordion" id="config-form" onsubmit="saveConfig(); return false;">
                 {{#each config}}
                 {{#if groupdoc}}
@@ -213,13 +224,24 @@
             mode: "same-origin",
             credentials: "same-origin",
             headers: { "Content-Type": "application/json" }
-        }).then(e => {
-            if (e.ok) { return msg(successMsg); }
-            e.json().then(json => {
-                const msg = json ? json.ErrorModel.Message : "Unknown error";
-                msg(errMsg + ": " + msg);
-            });
-        }).catch(e => { msg(errMsg + ": Unknown error") });
+        }).then( resp => {
+            if (resp.ok) { msg(successMsg); return Promise.reject({error: false}); }
+            respStatus = resp.status;
+            respStatusText = resp.statusText;
+            return resp.text();
+        }).then( respText => {
+            try {
+                const respJson = JSON.parse(respText);
+                return respJson ? respJson.ErrorModel.Message : "Unknown error";
+            } catch (e) {
+                return Promise.reject({body:respStatus + ' - ' + respStatusText, error: true});
+            }
+        }).then( apiMsg => {
+            msg(errMsg + "\n" + apiMsg);
+        }).catch( e => {
+            if (e.error === false) { return true; }
+            else { msg(errMsg + "\n" + e.body); }
+        });
     }
     function deleteUser(id, mail) {
         var input_mail = prompt("To delete user '" + mail + "', please type the email below")
@@ -258,6 +280,15 @@
         inv.value = "";
         _post("{{urlpath}}/admin/invite/", "User invited correctly",
             "Error inviting user", data);
+        return false;
+    }
+    function smtpTest() {
+        inv = document.getElementById("smtp-test-email");
+        data = JSON.stringify({ "email": inv.value });
+        inv.value = "";
+        _post("{{urlpath}}/admin/test/smtp/",
+            "SMTP Test email sent correctly",
+            "Error sending SMTP test email", data);
         return false;
     }
     function getFormData() {
@@ -331,7 +362,7 @@
         e.title = orgtype.name;
     });
 
-    // These are formatted because otherwise the 
+    // These are formatted because otherwise the
     // VSCode formatter breaks But they still work
     // {{#each config}} {{#if grouptoggle}}
     masterCheck("input_{{grouptoggle}}", "#g_{{group}} input");

@@ -668,6 +668,7 @@ where
     reg!("email/verify_email", ".html");
     reg!("email/welcome", ".html");
     reg!("email/welcome_must_verify", ".html");
+    reg!("email/smtp_test", ".html");
 
     reg!("admin/base");
     reg!("admin/login");
