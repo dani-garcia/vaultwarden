@@ -13,7 +13,7 @@ Image is based on [Rust implementation of Bitwarden API](https://github.com/dani
 
 **This project is not associated with the [Bitwarden](https://bitwarden.com/) project nor 8bit Solutions LLC.**
 
-#### ⚠️**IMPORTANT**⚠️: When using this server, please report any Bitwarden related bug-reports or suggestions [here](https://github.com/dani-garcia/bitwarden_rs/issues/new), regardless of whatever clients you are using (mobile, desktop, browser...). DO NOT use the official support channels.
+#### ⚠️**IMPORTANT**⚠️: When using this server, please report any bugs or suggestions to us directly (look at the bottom of this page for ways to get in touch), regardless of whatever clients you are using (mobile, desktop, browser...). DO NOT use the official support channels.
 
 ---
 
@@ -21,14 +21,14 @@ Image is based on [Rust implementation of Bitwarden API](https://github.com/dani
 
 Basically full implementation of Bitwarden API is provided including:
 
- * Basic single user functionality
+ * Single user functionality
  * Organizations support
  * Attachments
  * Vault API support
  * Serving the static files for Vault interface
  * Website icons API
  * Authenticator and U2F support
- * YubiKey OTP
+ * YubiKey and Duo support
 
 ## Installation
 Pull the docker image and mount a volume from the host for persistent storage:
@@ -49,13 +49,13 @@ If you have an available domain name, you can get HTTPS certificates with [Let's
 See the [bitwarden_rs wiki](https://github.com/dani-garcia/bitwarden_rs/wiki) for more information on how to configure and run the bitwarden_rs server.
 
 ## Get in touch
+To ask a question, offer suggestions or new features or to get help configuring or installing the software, please [use the forum](https://bitwardenrs.discourse.group/).
 
-To ask a question, [raising an issue](https://github.com/dani-garcia/bitwarden_rs/issues/new) is fine. Please also report any bugs spotted here.
+If you spot any bugs or crashes with bitwarden_rs itself, please [create an issue](https://github.com/dani-garcia/bitwarden_rs/issues/). Make sure there aren't any similar issues open, though!
 
 If you prefer to chat, we're usually hanging around at [#bitwarden_rs:matrix.org](https://matrix.to/#/#bitwarden_rs:matrix.org) room on Matrix. Feel free to join us!
 
 ### Sponsors
 Thanks for your contribution to the project!
 
-- [@Skaronator](https://github.com/Skaronator)
 - [@ChonoN](https://github.com/ChonoN)
