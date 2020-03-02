@@ -53,7 +53,7 @@ fern = { version = "0.5.9", features = ["syslog-4"] }
 diesel = { version = "1.4.3", features = [ "chrono", "r2d2"] }
 diesel_migrations = "1.4.0"
 
-# Bundled SQLite                                           
+# Bundled SQLite
 libsqlite3-sys = { version = "0.16.0", features = ["bundled"], optional = true }
 
 # Crypto library
@@ -113,6 +113,9 @@ openssl = "0.10.26"
 percent-encoding = "2.1.0"
 # Punycode conversion
 idna = "0.2.0"
+
+# CLI argument parsing
+structopt = "0.3.11"
 
 [patch.crates-io]
 # Use newest ring

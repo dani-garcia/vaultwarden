@@ -42,7 +42,18 @@ mod util;
 pub use config::CONFIG;
 pub use error::{Error, MapResult};
 
+use structopt::StructOpt;
+
+#[derive(Debug, StructOpt)]
+#[structopt(name = "bitwarden_rs", about = "A Bitwarden API server written in Rust")]
+struct Opt {
+    /// Prints the app version
+    #[structopt(short, long)]
+    version: bool,
+}
+
 fn main() {
+    parse_args();
     launch_info();
 
     use log::LevelFilter as LF;
@@ -62,6 +73,18 @@ fn main() {
     create_icon_cache_folder();
 
     launch_rocket(extra_debug);
+}
+
+fn parse_args() {
+    let opt = Opt::from_args();
+    if opt.version {
+        if let Some(version) = option_env!("GIT_VERSION") {
+            println!("bitwarden_rs {}", version);
+        } else {
+            println!("bitwarden_rs (Version info from Git not present)");
+        }
+        exit(0);
+    }
 }
 
 fn launch_info() {
@@ -177,7 +200,9 @@ fn check_rsa_keys() {
         info!("JWT keys don't exist, checking if OpenSSL is available...");
 
         Command::new("openssl").arg("version").status().unwrap_or_else(|_| {
-            info!("Can't create keys because OpenSSL is not available, make sure it's installed and available on the PATH");
+            info!(
+                "Can't create keys because OpenSSL is not available, make sure it's installed and available on the PATH"
+            );
             exit(1);
         });
 
