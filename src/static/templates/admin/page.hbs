@@ -203,8 +203,7 @@
 
 <script>
     function reload() { window.location.reload(); }
-    function msg(text, reload_page) {
-        reload_page = (reload_page === undefined) ? true : reload_page;
+    function msg(text, reload_page = true) {
         text && alert(text);
         reload_page && reload();
     }
@@ -222,8 +221,7 @@
         }
         return false;
     }
-    function _post(url, successMsg, errMsg, body, reload_page) {
-        reload_page = (reload_page === undefined) ? true : reload_page;
+    function _post(url, successMsg, errMsg, body, reload_page = true) {
         fetch(url, {
             method: 'POST',
             body: body,
