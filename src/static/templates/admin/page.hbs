@@ -72,16 +72,6 @@
                 environment.
             </div>
 
-            <div id="smtp-test-form-block" class="align-items-center mb-3 text-white-50 bg-secondary">
-                <h6 class="mb-0 text-white">SMTP Test</h6>
-                <small>Email:</small>
-
-                <form class="form-inline" id="smtp-test-form" onsubmit="smtpTest(); return false;">
-                    <input type="email" class="form-control w-50 mr-2" id="smtp-test-email" placeholder="Enter email">
-                    <button type="submit" class="btn btn-primary">Send test email</button>
-                </form>
-            </div>
-
             <form class="form accordion" id="config-form" onsubmit="saveConfig(); return false;">
                 {{#each config}}
                 {{#if groupdoc}}
@@ -121,6 +111,17 @@
                         </div>
                         {{/if}}
                         {{/each}}
+                        {{#case group "smtp"}}
+                            <div class="form-group row pt-3 border-top" title="Send a test email to given email address">
+                                <label for="smtp-test-email" class="col-sm-3 col-form-label">Test SMTP</label>
+                                <div class="col-sm-8 input-group">
+                                    <input class="form-control" id="smtp-test-email" type="email" placeholder="Enter test email">
+                                    <div class="input-group-append">
+                                        <button type="button" class="btn btn-outline-primary" onclick="smtpTest(); return false;">Send test email</button>
+                                    </div>
+                                </div>
+                            </div>
+                        {{/case}}
                     </div>
                 </div>
                 {{/if}}
@@ -202,7 +203,11 @@
 
 <script>
     function reload() { window.location.reload(); }
-    function msg(text) { text && alert(text); reload(); }
+    function msg(text, reload_page) {
+        reload_page = (reload_page === undefined) ? true : reload_page;
+        text && alert(text);
+        reload_page && reload();
+    }
     function identicon(email) {
         const data = new Identicon(md5(email), { size: 48, format: 'svg' });
         return "data:image/svg+xml;base64," + data.toString();
@@ -217,7 +222,8 @@
         }
         return false;
     }
-    function _post(url, successMsg, errMsg, body) {
+    function _post(url, successMsg, errMsg, body, reload_page) {
+        reload_page = (reload_page === undefined) ? true : reload_page;
         fetch(url, {
             method: 'POST',
             body: body,
@@ -225,7 +231,7 @@
             credentials: "same-origin",
             headers: { "Content-Type": "application/json" }
         }).then( resp => {
-            if (resp.ok) { msg(successMsg); return Promise.reject({error: false}); }
+            if (resp.ok) { msg(successMsg, reload_page); return Promise.reject({error: false}); }
             respStatus = resp.status;
             respStatusText = resp.statusText;
             return resp.text();
@@ -237,10 +243,10 @@
                 return Promise.reject({body:respStatus + ' - ' + respStatusText, error: true});
             }
         }).then( apiMsg => {
-            msg(errMsg + "\n" + apiMsg);
+            msg(errMsg + "\n" + apiMsg, reload_page);
         }).catch( e => {
             if (e.error === false) { return true; }
-            else { msg(errMsg + "\n" + e.body); }
+            else { msg(errMsg + "\n" + e.body, reload_page); }
         });
     }
     function deleteUser(id, mail) {
@@ -283,12 +289,11 @@
         return false;
     }
     function smtpTest() {
-        inv = document.getElementById("smtp-test-email");
-        data = JSON.stringify({ "email": inv.value });
-        inv.value = "";
+        test_email = document.getElementById("smtp-test-email");
+        data = JSON.stringify({ "email": test_email.value });
         _post("{{urlpath}}/admin/test/smtp/",
             "SMTP Test email sent correctly",
-            "Error sending SMTP test email", data);
+            "Error sending SMTP test email", data, false);
         return false;
     }
     function getFormData() {
@@ -329,7 +334,7 @@
     function backupDatabase() {
         _post("{{urlpath}}/admin/config/backup_db",
             "Backup created successfully",
-            "Error creating backup");
+            "Error creating backup", null, false);
         return false;
     }
     function masterCheck(check_id, inputs_query) {
