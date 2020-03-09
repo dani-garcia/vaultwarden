@@ -3,7 +3,7 @@
 
 {% set build_stage_base_image = "rust:1.40" %}
 {% if "alpine" in target_file %}
-{%   set build_stage_base_image = "clux/muslrust:nightly-2019-12-19" %}
+{%   set build_stage_base_image = "clux/muslrust:nightly-2020-03-09" %}
 {%   set runtime_stage_base_image = "alpine:3.11" %}
 {%   set package_arch_name = "" %}
 {% elif "amd64" in target_file %}
