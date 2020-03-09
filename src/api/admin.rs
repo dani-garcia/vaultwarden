@@ -1,3 +1,4 @@
+use once_cell::sync::Lazy;
 use serde_json::Value;
 use std::process::Command;
 
@@ -38,9 +39,8 @@ pub fn routes() -> Vec<Route> {
     ]
 }
 
-lazy_static! {
-    static ref CAN_BACKUP: bool = cfg!(feature = "sqlite") && Command::new("sqlite3").arg("-version").status().is_ok();
-}
+static CAN_BACKUP: Lazy<bool> =
+    Lazy::new(|| cfg!(feature = "sqlite") && Command::new("sqlite3").arg("-version").status().is_ok());
 
 #[get("/")]
 fn admin_disabled() -> &'static str {

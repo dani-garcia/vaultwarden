@@ -83,8 +83,8 @@ yubico = { version = "0.7.1", features = ["online-tokio"], default-features = fa
 # A `dotenv` implementation for Rust
 dotenv = { version = "0.15.0", default-features = false }
 
-# Lazy static macro
-lazy_static = "1.4.0"
+# Lazy initialization
+once_cell = "1.3.1"
 
 # More derives
 derive_more = "0.99.3"

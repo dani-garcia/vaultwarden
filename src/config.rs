@@ -1,3 +1,4 @@
+use once_cell::sync::Lazy;
 use std::process::exit;
 use std::sync::RwLock;
 
@@ -6,16 +7,17 @@ use reqwest::Url;
 use crate::error::Error;
 use crate::util::{get_env, get_env_bool};
 
-lazy_static! {
-    pub static ref CONFIG: Config = Config::load().unwrap_or_else(|e| {
+static CONFIG_FILE: Lazy<String> = Lazy::new(|| {
+    let data_folder = get_env("DATA_FOLDER").unwrap_or_else(|| String::from("data"));
+    get_env("CONFIG_FILE").unwrap_or_else(|| format!("{}/config.json", data_folder))
+});
+
+pub static CONFIG: Lazy<Config> = Lazy::new(|| {
+    Config::load().unwrap_or_else(|e| {
         println!("Error loading config:\n\t{:?}\n", e);
         exit(12)
-    });
-    pub static ref CONFIG_FILE: String = {
-        let data_folder = get_env("DATA_FOLDER").unwrap_or_else(|| String::from("data"));
-        get_env("CONFIG_FILE").unwrap_or_else(|| format!("{}/config.json", data_folder))
-    };
-}
+    })
+});
 
 pub type Pass = String;
 
@@ -54,7 +56,7 @@ macro_rules! make_config {
                 $($(
                     builder.$name = make_config! { @getenv &stringify!($name).to_uppercase(), $ty };
                 )+)+
-                
+
                 builder
             }
 
@@ -420,8 +422,8 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
     if cfg!(feature = "postgresql") && !db_url.starts_with("postgresql:") {
         err!("`DATABASE_URL` should start with postgresql: when using the PostgreSQL server")
     }
-    
-    let dom = cfg.domain.to_lowercase(); 
+
+    let dom = cfg.domain.to_lowercase();
     if !dom.starts_with("http://") && !dom.starts_with("https://") {
         err!("DOMAIN variable needs to contain the protocol (http, https). Use 'http[s]://bw.example.com' instead of 'bw.example.com'"); 
     }
@@ -555,7 +557,7 @@ impl Config {
             warn!("Failed to parse email address '{}'", email);
             return false;
         }
-        
+
         // Allow signups if the whitelist is empty/not configured
         // (it doesn't contain any domains), or if it matches at least
         // one domain.

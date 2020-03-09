@@ -3,6 +3,7 @@
 //
 use crate::util::read_file;
 use chrono::{Duration, Utc};
+use once_cell::sync::Lazy;
 
 use jsonwebtoken::{self, Algorithm, Header};
 use serde::de::DeserializeOwned;
@@ -13,23 +14,21 @@ use crate::CONFIG;
 
 const JWT_ALGORITHM: Algorithm = Algorithm::RS256;
 
-lazy_static! {
-    pub static ref DEFAULT_VALIDITY: Duration = Duration::hours(2);
-    static ref JWT_HEADER: Header = Header::new(JWT_ALGORITHM);
-    pub static ref JWT_LOGIN_ISSUER: String = format!("{}|login", CONFIG.domain_origin());
-    pub static ref JWT_INVITE_ISSUER: String = format!("{}|invite", CONFIG.domain_origin());
-    pub static ref JWT_DELETE_ISSUER: String = format!("{}|delete", CONFIG.domain_origin());
-    pub static ref JWT_VERIFYEMAIL_ISSUER: String = format!("{}|verifyemail", CONFIG.domain_origin());
-    pub static ref JWT_ADMIN_ISSUER: String = format!("{}|admin", CONFIG.domain_origin());
-    static ref PRIVATE_RSA_KEY: Vec<u8> = match read_file(&CONFIG.private_rsa_key()) {
-        Ok(key) => key,
-        Err(e) => panic!("Error loading private RSA Key.\n Error: {}", e),
-    };
-    static ref PUBLIC_RSA_KEY: Vec<u8> = match read_file(&CONFIG.public_rsa_key()) {
-        Ok(key) => key,
-        Err(e) => panic!("Error loading public RSA Key.\n Error: {}", e),
-    };
-}
+pub static DEFAULT_VALIDITY: Lazy<Duration> = Lazy::new(|| Duration::hours(2));
+static JWT_HEADER: Lazy<Header> = Lazy::new(|| Header::new(JWT_ALGORITHM));
+pub static JWT_LOGIN_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|login", CONFIG.domain_origin()));
+static JWT_INVITE_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|invite", CONFIG.domain_origin()));
+static JWT_DELETE_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|delete", CONFIG.domain_origin()));
+static JWT_VERIFYEMAIL_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|verifyemail", CONFIG.domain_origin()));
+static JWT_ADMIN_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|admin", CONFIG.domain_origin()));
+static PRIVATE_RSA_KEY: Lazy<Vec<u8>> = Lazy::new(|| match read_file(&CONFIG.private_rsa_key()) {
+    Ok(key) => key,
+    Err(e) => panic!("Error loading private RSA Key.\n Error: {}", e),
+});
+static PUBLIC_RSA_KEY: Lazy<Vec<u8>> = Lazy::new(|| match read_file(&CONFIG.public_rsa_key()) {
+    Ok(key) => key,
+    Err(e) => panic!("Error loading public RSA Key.\n Error: {}", e),
+});
 
 pub fn encode_jwt<T: Serialize>(claims: &T) -> String {
     match jsonwebtoken::encode(&JWT_HEADER, claims, &PRIVATE_RSA_KEY) {
