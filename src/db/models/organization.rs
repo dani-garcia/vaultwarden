@@ -1,7 +1,8 @@
 use serde_json::Value;
 use std::cmp::Ordering;
+use num_traits::FromPrimitive;
 
-use super::{CollectionUser, User};
+use super::{CollectionUser, User, OrgPolicy};
 
 #[derive(Debug, Identifiable, Queryable, Insertable, AsChangeset)]
 #[table_name = "organizations"]
@@ -33,6 +34,7 @@ pub enum UserOrgStatus {
 }
 
 #[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(FromPrimitive)]
 pub enum UserOrgType {
     Owner = 0,
     Admin = 1,
@@ -135,16 +137,6 @@ impl UserOrgType {
             _ => None,
         }
     }
-
-    pub fn from_i32(i: i32) -> Option<Self> {
-        match i {
-            0 => Some(UserOrgType::Owner),
-            1 => Some(UserOrgType::Admin),
-            2 => Some(UserOrgType::User),
-            3 => Some(UserOrgType::Manager),
-            _ => None,
-        }
-    }
 }
 
 /// Local methods
@@ -170,6 +162,7 @@ impl Organization {
             "UseEvents": false,
             "UseGroups": false,
             "UseTotp": true,
+            "UsePolicies": true,
 
             "BusinessName": null,
             "BusinessAddress1":	null,
@@ -250,6 +243,7 @@ impl Organization {
         Cipher::delete_all_by_organization(&self.uuid, &conn)?;
         Collection::delete_all_by_organization(&self.uuid, &conn)?;
         UserOrganization::delete_all_by_organization(&self.uuid, &conn)?;
+        OrgPolicy::delete_all_by_organization(&self.uuid, &conn)?;
 
         diesel::delete(organizations::table.filter(organizations::uuid.eq(self.uuid)))
             .execute(&**conn)
@@ -267,7 +261,7 @@ impl Organization {
 impl UserOrganization {
     pub fn to_json(&self, conn: &DbConn) -> Value {
         let org = Organization::find_by_uuid(&self.org_uuid, conn).unwrap();
-
+        
         json!({
             "Id": self.org_uuid,
             "Name": org.name,
@@ -280,6 +274,7 @@ impl UserOrganization {
             "UseEvents": false,
             "UseGroups": false,
             "UseTotp": true,
+            "UsePolicies": true,
 
             "MaxStorageGb": 10, // The value doesn't matter, we don't check server-side
 

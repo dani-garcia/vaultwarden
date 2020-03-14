@@ -4,6 +4,7 @@
 use crate::util::read_file;
 use chrono::{Duration, Utc};
 use once_cell::sync::Lazy;
+use num_traits::FromPrimitive;
 
 use jsonwebtoken::{self, Algorithm, Header};
 use serde::de::DeserializeOwned;
@@ -383,6 +384,16 @@ impl<'a, 'r> FromRequest<'a, 'r> for AdminHeaders {
             }
         }
     }
+}
+
+impl Into<Headers> for AdminHeaders {    
+    fn into(self) -> Headers { 
+        Headers {
+            host: self.host,
+            device: self.device,
+            user: self.user
+        }
+     }
 }
 
 pub struct OwnerHeaders {

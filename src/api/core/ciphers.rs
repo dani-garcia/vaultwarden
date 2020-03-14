@@ -79,6 +79,9 @@ fn sync(data: Form<SyncData>, headers: Headers, conn: DbConn) -> JsonResult {
     let collections = Collection::find_by_user_uuid(&headers.user.uuid, &conn);
     let collections_json: Vec<Value> = collections.iter().map(Collection::to_json).collect();
 
+    let policies = OrgPolicy::find_by_user(&headers.user.uuid, &conn);
+    let policies_json: Vec<Value> = policies.iter().map(OrgPolicy::to_json).collect();
+
     let ciphers = Cipher::find_by_user(&headers.user.uuid, &conn);
     let ciphers_json: Vec<Value> = ciphers
         .iter()
@@ -95,6 +98,7 @@ fn sync(data: Form<SyncData>, headers: Headers, conn: DbConn) -> JsonResult {
         "Profile": user_json,
         "Folders": folders_json,
         "Collections": collections_json,
+        "Policies": policies_json,
         "Ciphers": ciphers_json,
         "Domains": domains_json,
         "Object": "sync"
@@ -648,7 +652,7 @@ fn post_attachment(
     if !cipher.is_write_accessible_to_user(&headers.user.uuid, &conn) {
         err_discard!("Cipher is not write accessible", data)
     }
-    
+
     let mut params = content_type.params();
     let boundary_pair = params.next().expect("No boundary provided");
     let boundary = boundary_pair.1;
