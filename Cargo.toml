@@ -26,7 +26,8 @@ rocket = { version = "0.5.0-dev", features = ["tls"], default-features = false }
 rocket_contrib = "0.5.0-dev"
 
 # HTTP client
-reqwest = "0.9.24"
+# reqwest = "0.9.24"
+reqwest = { version = "0.10.4", features = ["blocking", "json"] }
 
 # multipart/form-data support
 multipart = { version = "0.16.1", features = ["server"], default-features = false }

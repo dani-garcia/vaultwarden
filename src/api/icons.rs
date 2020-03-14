@@ -8,7 +8,7 @@ use rocket::http::ContentType;
 use rocket::response::Content;
 use rocket::Route;
 
-use reqwest::{header::HeaderMap, Client, Response, Url};
+use reqwest::{Url, header::HeaderMap, blocking::Client, blocking::Response};
 
 use rocket::http::Cookie;
 
@@ -30,8 +30,6 @@ const ALLOWED_CHARS: &str = "_-.";
 static CLIENT: Lazy<Client> = Lazy::new(|| {
     // Reuse the client between requests
     Client::builder()
-        .use_sys_proxy()
-        .gzip(true)
         .timeout(Duration::from_secs(CONFIG.icon_download_timeout()))
         .default_headers(_header_map())
         .build()
