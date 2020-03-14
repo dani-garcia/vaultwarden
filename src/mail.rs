@@ -44,10 +44,11 @@ fn mailer() -> SmtpTransport {
         _ => smtp_client,
     };
 
-    let smtp_client = match &CONFIG.smtp_auth_mechanism() {
-        Some(auth_mechanism_json) => {
-            let auth_mechanism = serde_json::from_str::<SmtpAuthMechanism>(&auth_mechanism_json);
-            match auth_mechanism {
+    let smtp_client = match CONFIG.smtp_auth_mechanism() {
+        Some(mechanism) => {
+            let correct_mechanism = format!("\"{}\"", crate::util::upcase_first(&mechanism.trim_matches('"')));
+
+            match serde_json::from_str::<SmtpAuthMechanism>(&correct_mechanism) {
                 Ok(auth_mechanism) => smtp_client.authentication_mechanism(auth_mechanism),
                 _ => panic!("Failure to parse mechanism. Is it proper Json? Eg. `\"Plain\"` not `Plain`"),
             }
