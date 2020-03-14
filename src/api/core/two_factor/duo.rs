@@ -187,7 +187,7 @@ fn activate_duo_put(data: JsonUpcase<EnableDuoData>, headers: Headers, conn: DbC
 fn duo_api_request(method: &str, path: &str, params: &str, data: &DuoData) -> EmptyResult {
     const AGENT: &str = "bitwarden_rs:Duo/1.0 (Rust)";
 
-    use reqwest::{header::*, Client, Method};
+    use reqwest::{header::*, Method, blocking::Client};
     use std::str::FromStr;
 
     let url = format!("https://{}{}", &data.host, path);
