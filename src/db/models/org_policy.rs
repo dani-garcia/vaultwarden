@@ -57,14 +57,14 @@ impl OrgPolicy {
 /// Database methods
 impl OrgPolicy {
     #[cfg(feature = "postgresql")]
-    pub fn save(&mut self, conn: &DbConn) -> EmptyResult {
+    pub fn save(&self, conn: &DbConn) -> EmptyResult {
         // We need to make sure we're not going to violate the unique constraint on org_uuid and atype.
         // This happens automatically on other DBMS backends due to replace_into(). PostgreSQL does
         // not support multiple constraints on ON CONFLICT clauses.
         diesel::delete(
             org_policies::table
-                .filter(org_policies::org_uuid.eq(&self.org_uuid))
-                .filter(org_policies::atype.eq(&self.atype)),
+                .filter(org_policies::org_uuid.eq(self.org_uuid))
+                .filter(org_policies::atype.eq(self.atype)),
         )
         .execute(&**conn)
         .map_res("Error deleting org_policy for insert")?;
@@ -79,7 +79,7 @@ impl OrgPolicy {
     }
 
     #[cfg(not(feature = "postgresql"))]
-    pub fn save(&mut self, conn: &DbConn) -> EmptyResult {
+    pub fn save(&self, conn: &DbConn) -> EmptyResult {
         diesel::replace_into(org_policies::table)
             .values(&*self)
             .execute(&**conn)
