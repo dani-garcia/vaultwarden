@@ -63,8 +63,8 @@ impl OrgPolicy {
         // not support multiple constraints on ON CONFLICT clauses.
         diesel::delete(
             org_policies::table
-                .filter(org_policies::org_uuid.eq(self.org_uuid))
-                .filter(org_policies::atype.eq(self.atype)),
+                .filter(org_policies::org_uuid.eq(&self.org_uuid))
+                .filter(org_policies::atype.eq(&self.atype)),
         )
         .execute(&**conn)
         .map_res("Error deleting org_policy for insert")?;
