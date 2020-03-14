@@ -604,7 +604,9 @@ fn share_cipher_by_uuid(
     };
 
     match data.Cipher.OrganizationId.clone() {
-        None => err!("Organization id not provided"),
+        // If we don't get an organization ID, we don't do anything
+        // No error because this is used when using the Clone functionality
+        None => Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, &conn))),
         Some(organization_uuid) => {
             let mut shared_to_collection = false;
             for uuid in &data.CollectionIds {
