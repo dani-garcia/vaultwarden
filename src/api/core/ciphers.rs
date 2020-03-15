@@ -603,12 +603,14 @@ fn share_cipher_by_uuid(
         None => err!("Cipher doesn't exist"),
     };
 
+    let mut shared_to_collection = false;
+
     match data.Cipher.OrganizationId.clone() {
         // If we don't get an organization ID, we don't do anything
         // No error because this is used when using the Clone functionality
-        None => Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, &conn))),
+        None => {},
         Some(organization_uuid) => {
-            let mut shared_to_collection = false;
+
             for uuid in &data.CollectionIds {
                 match Collection::find_by_uuid_and_org(uuid, &organization_uuid, &conn) {
                     None => err!("Invalid collection ID provided"),
@@ -622,19 +624,20 @@ fn share_cipher_by_uuid(
                     }
                 }
             }
-            update_cipher_from_data(
-                &mut cipher,
-                data.Cipher,
-                &headers,
-                shared_to_collection,
-                &conn,
-                &nt,
-                UpdateType::CipherUpdate,
-            )?;
-
-            Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, &conn)))
         }
-    }
+    };
+
+    update_cipher_from_data(
+        &mut cipher,
+        data.Cipher,
+        &headers,
+        shared_to_collection,
+        &conn,
+        &nt,
+        UpdateType::CipherUpdate,
+    )?;
+
+    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, &conn)))
 }
 
 #[post("/ciphers/<uuid>/attachment", format = "multipart/form-data", data = "<data>")]
