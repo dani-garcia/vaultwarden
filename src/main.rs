@@ -1,7 +1,6 @@
 #![feature(proc_macro_hygiene, vec_remove_item, try_trait, ip)]
 #![recursion_limit = "256"]
 
-#[cfg(feature = "openssl")]
 extern crate openssl;
 #[macro_use]
 extern crate rocket;
