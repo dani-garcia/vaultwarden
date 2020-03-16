@@ -26,7 +26,8 @@ rocket = { version = "0.5.0-dev", features = ["tls"], default-features = false }
 rocket_contrib = "0.5.0-dev"
 
 # HTTP client
-reqwest = "0.9.24"
+# reqwest = "0.9.24"
+reqwest = { version = "0.10.4", features = ["blocking", "json"] }
 
 # multipart/form-data support
 multipart = { version = "0.16.1", features = ["server"], default-features = false }
@@ -35,7 +36,7 @@ multipart = { version = "0.16.1", features = ["server"], default-features = fals
 ws = "0.9.1"
 
 # MessagePack library
-rmpv = "0.4.3"
+rmpv = "0.4.4"
 
 # Concurrent hashmap implementation
 chashmap = "2.2.2"
@@ -43,17 +44,17 @@ chashmap = "2.2.2"
 # A generic serialization/deserialization framework
 serde = "1.0.104"
 serde_derive = "1.0.104"
-serde_json = "1.0.45"
+serde_json = "1.0.48"
 
 # Logging
 log = "0.4.8"
-fern = { version = "0.5.9", features = ["syslog-4"] }
+fern = { version = "0.6.0", features = ["syslog-4"] }
 
 # A safe, extensible ORM and Query builder
 diesel = { version = "1.4.3", features = [ "chrono", "r2d2"] }
 diesel_migrations = "1.4.0"
 
-# Bundled SQLite                                           
+# Bundled SQLite
 libsqlite3-sys = { version = "0.16.0", features = ["bundled"], optional = true }
 
 # Crypto library
@@ -63,13 +64,13 @@ ring = "0.14.6"
 uuid = { version = "0.8.1", features = ["v4"] }
 
 # Date and time library for Rust
-chrono = "0.4.10"
+chrono = "0.4.11"
 
 # TOTP library
 oath = "0.10.2"
 
 # Data encoding library
-data-encoding = "2.1.2"
+data-encoding = "2.2.0"
 
 # JWT library
 jsonwebtoken = "6.0.1"
@@ -83,11 +84,11 @@ yubico = { version = "0.7.1", features = ["online-tokio"], default-features = fa
 # A `dotenv` implementation for Rust
 dotenv = { version = "0.15.0", default-features = false }
 
-# Lazy static macro
-lazy_static = "1.4.0"
+# Lazy initialization
+once_cell = "1.3.1"
 
 # More derives
-derive_more = "0.99.2"
+derive_more = "0.99.3"
 
 # Numerical libraries
 num-traits = "0.2.11"
@@ -95,24 +96,27 @@ num-derive = "0.3.0"
 
 # Email libraries
 lettre = "0.10.0-pre"
-native-tls = "0.2.3"
-quoted_printable = "0.4.1"
+native-tls = "0.2.4"
+quoted_printable = "0.4.2"
 
 # Template library
 handlebars = { version = "3.0.1", features = ["dir_source"] }
 
 # For favicon extraction from main website
-soup = "0.4.1"
-regex = "1.3.3"
+soup = "0.5.0"
+regex = "1.3.4"
 data-url = "0.1.0"
 
 # Used by U2F, JWT and Postgres
-openssl = "0.10.26"
+openssl = "0.10.28"
 
 # URL encoding library
 percent-encoding = "2.1.0"
 # Punycode conversion
 idna = "0.2.0"
+
+# CLI argument parsing
+structopt = "0.3.11"
 
 [patch.crates-io]
 # Use newest ring

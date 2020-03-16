@@ -79,6 +79,9 @@ fn sync(data: Form<SyncData>, headers: Headers, conn: DbConn) -> JsonResult {
     let collections = Collection::find_by_user_uuid(&headers.user.uuid, &conn);
     let collections_json: Vec<Value> = collections.iter().map(Collection::to_json).collect();
 
+    let policies = OrgPolicy::find_by_user(&headers.user.uuid, &conn);
+    let policies_json: Vec<Value> = policies.iter().map(OrgPolicy::to_json).collect();
+
     let ciphers = Cipher::find_by_user(&headers.user.uuid, &conn);
     let ciphers_json: Vec<Value> = ciphers
         .iter()
@@ -95,6 +98,7 @@ fn sync(data: Form<SyncData>, headers: Headers, conn: DbConn) -> JsonResult {
         "Profile": user_json,
         "Folders": folders_json,
         "Collections": collections_json,
+        "Policies": policies_json,
         "Ciphers": ciphers_json,
         "Domains": domains_json,
         "Object": "sync"
@@ -599,10 +603,14 @@ fn share_cipher_by_uuid(
         None => err!("Cipher doesn't exist"),
     };
 
+    let mut shared_to_collection = false;
+
     match data.Cipher.OrganizationId.clone() {
-        None => err!("Organization id not provided"),
+        // If we don't get an organization ID, we don't do anything
+        // No error because this is used when using the Clone functionality
+        None => {},
         Some(organization_uuid) => {
-            let mut shared_to_collection = false;
+
             for uuid in &data.CollectionIds {
                 match Collection::find_by_uuid_and_org(uuid, &organization_uuid, &conn) {
                     None => err!("Invalid collection ID provided"),
@@ -616,19 +624,20 @@ fn share_cipher_by_uuid(
                     }
                 }
             }
-            update_cipher_from_data(
-                &mut cipher,
-                data.Cipher,
-                &headers,
-                shared_to_collection,
-                &conn,
-                &nt,
-                UpdateType::CipherUpdate,
-            )?;
-
-            Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, &conn)))
         }
-    }
+    };
+
+    update_cipher_from_data(
+        &mut cipher,
+        data.Cipher,
+        &headers,
+        shared_to_collection,
+        &conn,
+        &nt,
+        UpdateType::CipherUpdate,
+    )?;
+
+    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, &conn)))
 }
 
 #[post("/ciphers/<uuid>/attachment", format = "multipart/form-data", data = "<data>")]
@@ -648,7 +657,7 @@ fn post_attachment(
     if !cipher.is_write_accessible_to_user(&headers.user.uuid, &conn) {
         err_discard!("Cipher is not write accessible", data)
     }
-    
+
     let mut params = content_type.params();
     let boundary_pair = params.next().expect("No boundary provided");
     let boundary = boundary_pair.1;

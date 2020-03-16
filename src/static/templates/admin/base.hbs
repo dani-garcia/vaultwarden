@@ -6,10 +6,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
     <title>Bitwarden_rs Admin Panel</title>
 
-    <link rel="stylesheet" href="/bwrs_static/bootstrap.css" />
-    <script src="/bwrs_static/bootstrap-native-v4.js"></script>
-    <script src="/bwrs_static/md5.js"></script>
-    <script src="/bwrs_static/identicon.js"></script>
+    <link rel="stylesheet" href="{{urlpath}}/bwrs_static/bootstrap.css" />
+    <script src="{{urlpath}}/bwrs_static/bootstrap-native-v4.js"></script>
+    <script src="{{urlpath}}/bwrs_static/md5.js"></script>
+    <script src="{{urlpath}}/bwrs_static/identicon.js"></script>
     <style>
         body {
             padding-top: 70px;
@@ -38,10 +38,10 @@
         <div class="navbar-collapse">
             <ul class="navbar-nav">
                 <li class="nav-item active">
-                    <a class="nav-link" href="/admin">Admin Panel</a>
+                    <a class="nav-link" href="{{urlpath}}/admin">Admin Panel</a>
                 </li>
                 <li class="nav-item">
-                    <a class="nav-link" href="/">Vault</a>
+                    <a class="nav-link" href="{{urlpath}}/">Vault</a>
                 </li>
             </ul>
         </div>
@@ -55,7 +55,7 @@
 
             {{#if logged_in}}
             <li class="nav-item">
-                <a class="nav-link" href="/admin/logout">Log Out</a>
+                <a class="nav-link" href="{{urlpath}}/admin/logout">Log Out</a>
             </li>
             {{/if}}
         </ul>

@@ -78,6 +78,16 @@ table! {
 }
 
 table! {
+    org_policies (uuid) {
+        uuid -> Text,
+        org_uuid -> Text,
+        atype -> Integer,
+        enabled -> Bool,
+        data -> Text,
+    }
+}
+
+table! {
     organizations (uuid) {
         uuid -> Text,
         name -> Text,
@@ -155,6 +165,7 @@ joinable!(devices -> users (user_uuid));
 joinable!(folders -> users (user_uuid));
 joinable!(folders_ciphers -> ciphers (cipher_uuid));
 joinable!(folders_ciphers -> folders (folder_uuid));
+joinable!(org_policies -> organizations (org_uuid));
 joinable!(twofactor -> users (user_uuid));
 joinable!(users_collections -> collections (collection_uuid));
 joinable!(users_collections -> users (user_uuid));
@@ -170,6 +181,7 @@ allow_tables_to_appear_in_same_query!(
     folders,
     folders_ciphers,
     invitations,
+    org_policies,
     organizations,
     twofactor,
     users,

@@ -18,21 +18,21 @@ use chrono::NaiveDateTime;
 fn mailer() -> SmtpTransport {
     let host = CONFIG.smtp_host().unwrap();
 
+    let tls = TlsConnector::builder()
+        .min_protocol_version(Some(Protocol::Tlsv11))
+        .build()
+        .unwrap();
+
+    let tls_params = ClientTlsParameters::new(host.clone(), tls);
+
     let client_security = if CONFIG.smtp_ssl() {
-        let tls = TlsConnector::builder()
-            .min_protocol_version(Some(Protocol::Tlsv11))
-            .build()
-            .unwrap();
-
-        let params = ClientTlsParameters::new(host.clone(), tls);
-
         if CONFIG.smtp_explicit_tls() {
-            ClientSecurity::Wrapper(params)
+            ClientSecurity::Wrapper(tls_params)
         } else {
-            ClientSecurity::Required(params)
+            ClientSecurity::Required(tls_params)
         }
     } else {
-        ClientSecurity::None
+        ClientSecurity::Opportunistic(tls_params)
     };
 
     use std::time::Duration;
@@ -44,10 +44,11 @@ fn mailer() -> SmtpTransport {
         _ => smtp_client,
     };
 
-    let smtp_client = match &CONFIG.smtp_auth_mechanism() {
-        Some(auth_mechanism_json) => {
-            let auth_mechanism = serde_json::from_str::<SmtpAuthMechanism>(&auth_mechanism_json);
-            match auth_mechanism {
+    let smtp_client = match CONFIG.smtp_auth_mechanism() {
+        Some(mechanism) => {
+            let correct_mechanism = format!("\"{}\"", crate::util::upcase_first(&mechanism.trim_matches('"')));
+
+            match serde_json::from_str::<SmtpAuthMechanism>(&correct_mechanism) {
                 Ok(auth_mechanism) => smtp_client.authentication_mechanism(auth_mechanism),
                 _ => panic!("Failure to parse mechanism. Is it proper Json? Eg. `\"Plain\"` not `Plain`"),
             }
@@ -252,6 +253,17 @@ pub fn send_change_email(address: &str, token: &str) -> EmptyResult {
         json!({
             "url": CONFIG.domain(),
             "token": token,
+        }),
+    )?;
+
+    send_email(&address, &subject, &body_html, &body_text)
+}
+
+pub fn send_test(address: &str) -> EmptyResult {
+    let (subject, body_html, body_text) = get_text(
+        "email/smtp_test",
+        json!({
+            "url": CONFIG.domain(),
         }),
     )?;
 

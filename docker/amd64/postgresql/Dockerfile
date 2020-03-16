@@ -5,22 +5,17 @@
 # 	https://docs.docker.com/develop/develop-images/multistage-build/
 # 	https://whitfin.io/speeding-up-rust-docker-builds/
 ####################### VAULT BUILD IMAGE  #######################
-FROM rust:1.40 as vault
 
-ENV VAULT_VERSION "v2.12.0c"
-
-ENV URL "https://github.com/dani-garcia/bw_web_builds/releases/download/$VAULT_VERSION/bw_web_$VAULT_VERSION.tar.gz"
-
-# Build time options to avoid dpkg warnings and help with reproducible builds.
-ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8 TZ=UTC TERM=xterm-256color
-
-RUN mkdir /web-vault
-WORKDIR /web-vault
-
-SHELL ["/bin/bash", "-o", "nounset", "-o", "pipefail", "-o", "errexit", "-c"]
-
-RUN curl -L $URL | tar xz
-RUN ls
+#  This hash is extracted from the docker web-vault builds and it's prefered over a simple tag because it's immutable.
+#  It can be viewed in multiple ways:
+#  - From the https://hub.docker.com/repository/docker/bitwardenrs/web-vault/tags page, click the tag name and the digest should be there.
+#  - From the console, with the following commands:
+#      docker pull bitwardenrs/web-vault:v2.12.0e
+#      docker image inspect --format "{{.RepoDigests}}" bitwardenrs/web-vault:v2.12.0e
+#      
+#  - To do the opposite, and get the tag from the hash, you can do:
+#      docker image inspect --format "{{.RepoTags}}" bitwardenrs/web-vault@sha256:feb3f46d15738191b9043be4cdb1be2c0078ed411e7b7be73a2f4fcbca01e13c
+FROM bitwardenrs/web-vault@sha256:feb3f46d15738191b9043be4cdb1be2c0078ed411e7b7be73a2f4fcbca01e13c as vault
 
 ########################## BUILD IMAGE  ##########################
 # We need to use the Rust build image, because

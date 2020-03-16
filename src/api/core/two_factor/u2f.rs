@@ -1,3 +1,4 @@
+use once_cell::sync::Lazy;
 use rocket::Route;
 use rocket_contrib::json::Json;
 use serde_json;
@@ -18,10 +19,8 @@ use crate::CONFIG;
 
 const U2F_VERSION: &str = "U2F_V2";
 
-lazy_static! {
-    static ref APP_ID: String = format!("{}/app-id.json", &CONFIG.domain());
-    static ref U2F: U2f = U2f::new(APP_ID.clone());
-}
+static APP_ID: Lazy<String> = Lazy::new(|| format!("{}/app-id.json", &CONFIG.domain()));
+static U2F: Lazy<U2f> = Lazy::new(|| U2f::new(APP_ID.clone()));
 
 pub fn routes() -> Vec<Route> {
     routes![

@@ -1,19 +1,23 @@
+use once_cell::sync::Lazy;
 use std::process::exit;
 use std::sync::RwLock;
+
+use reqwest::Url;
 
 use crate::error::Error;
 use crate::util::{get_env, get_env_bool};
 
-lazy_static! {
-    pub static ref CONFIG: Config = Config::load().unwrap_or_else(|e| {
+static CONFIG_FILE: Lazy<String> = Lazy::new(|| {
+    let data_folder = get_env("DATA_FOLDER").unwrap_or_else(|| String::from("data"));
+    get_env("CONFIG_FILE").unwrap_or_else(|| format!("{}/config.json", data_folder))
+});
+
+pub static CONFIG: Lazy<Config> = Lazy::new(|| {
+    Config::load().unwrap_or_else(|e| {
         println!("Error loading config:\n\t{:?}\n", e);
         exit(12)
-    });
-    pub static ref CONFIG_FILE: String = {
-        let data_folder = get_env("DATA_FOLDER").unwrap_or_else(|| String::from("data"));
-        get_env("CONFIG_FILE").unwrap_or_else(|| format!("{}/config.json", data_folder))
-    };
-}
+    })
+});
 
 pub type Pass = String;
 
@@ -52,7 +56,7 @@ macro_rules! make_config {
                 $($(
                     builder.$name = make_config! { @getenv &stringify!($name).to_uppercase(), $ty };
                 )+)+
-                
+
                 builder
             }
 
@@ -240,6 +244,10 @@ make_config! {
         domain:                 String, true,   def,    "http://localhost".to_string();
         /// Domain Set |> Indicates if the domain is set by the admin. Otherwise the default will be used.
         domain_set:             bool,   false,  def,    false;
+        /// Domain origin |> Domain URL origin (in https://example.com:8443/path, https://example.com:8443 is the origin)
+        domain_origin:          String, false,  auto,   |c| extract_url_origin(&c.domain);
+        /// Domain path |> Domain URL path (in https://example.com:8443/path, /path is the path)
+        domain_path:            String, false,  auto,   |c| extract_url_path(&c.domain);
         /// Enable web vault
         web_vault_enabled:      bool,   false,  def,    true;
 
@@ -415,6 +423,11 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         err!("`DATABASE_URL` should start with postgresql: when using the PostgreSQL server")
     }
 
+    let dom = cfg.domain.to_lowercase();
+    if !dom.starts_with("http://") && !dom.starts_with("https://") {
+        err!("DOMAIN variable needs to contain the protocol (http, https). Use 'http[s]://bw.example.com' instead of 'bw.example.com'"); 
+    }
+
     if let Some(ref token) = cfg.admin_token {
         if token.trim().is_empty() && !cfg.disable_admin_token {
             err!("`ADMIN_TOKEN` is enabled but has an empty value. To enable the admin page without token, use `DISABLE_ADMIN_TOKEN`")
@@ -455,6 +468,29 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
     }
 
     Ok(())
+}
+
+/// Extracts an RFC 6454 web origin from a URL.
+fn extract_url_origin(url: &str) -> String {
+    match Url::parse(url) {
+        Ok(u) => u.origin().ascii_serialization(),
+        Err(e) => {
+            println!("Error validating domain: {}", e);
+            String::new()
+        }
+    }
+}
+
+/// Extracts the path from a URL.
+/// All trailing '/' chars are trimmed, even if the path is a lone '/'.
+fn extract_url_path(url: &str) -> String {
+    match Url::parse(url) {
+        Ok(u) => u.path().trim_end_matches('/').to_string(),
+        Err(_) => {
+            // We already print it in the method above, no need to do it again
+            String::new()
+        }
+    }
 }
 
 impl Config {
@@ -521,7 +557,7 @@ impl Config {
             warn!("Failed to parse email address '{}'", email);
             return false;
         }
-        
+
         // Allow signups if the whitelist is empty/not configured
         // (it doesn't contain any domains), or if it matches at least
         // one domain.
@@ -634,6 +670,7 @@ where
     reg!("email/verify_email", ".html");
     reg!("email/welcome", ".html");
     reg!("email/welcome_must_verify", ".html");
+    reg!("email/smtp_test", ".html");
 
     reg!("admin/base");
     reg!("admin/login");

@@ -1,3 +1,4 @@
+use once_cell::sync::Lazy;
 use std::fs::{create_dir_all, remove_file, symlink_metadata, File};
 use std::io::prelude::*;
 use std::net::ToSocketAddrs;
@@ -7,7 +8,7 @@ use rocket::http::ContentType;
 use rocket::response::Content;
 use rocket::Route;
 
-use reqwest::{header::HeaderMap, Client, Response, Url};
+use reqwest::{Url, header::HeaderMap, blocking::Client, blocking::Response};
 
 use rocket::http::Cookie;
 
@@ -26,16 +27,14 @@ const FALLBACK_ICON: &[u8; 344] = include_bytes!("../static/fallback-icon.png");
 
 const ALLOWED_CHARS: &str = "_-.";
 
-lazy_static! {
+static CLIENT: Lazy<Client> = Lazy::new(|| {
     // Reuse the client between requests
-    static ref CLIENT: Client = Client::builder()
-        .use_sys_proxy()
-        .gzip(true)
+    Client::builder()
         .timeout(Duration::from_secs(CONFIG.icon_download_timeout()))
         .default_headers(_header_map())
         .build()
-        .unwrap();
-}
+        .unwrap()
+});
 
 fn is_valid_domain(domain: &str) -> bool {
     // Don't allow empty or too big domains or path traversal

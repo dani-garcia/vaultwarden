@@ -1,3 +1,12 @@
+---
+name: Bug report
+about: Create a report to help us improve
+title: ''
+labels: ''
+assignees: ''
+
+---
+
 <!--
 Please fill out the following template to make solving your problem easier and faster for us.
 This is only a guideline. If you think that parts are unneccessary for your issue, feel free to remove them.

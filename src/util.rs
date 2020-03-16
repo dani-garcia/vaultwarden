@@ -109,7 +109,7 @@ impl<'r, R: Responder<'r>> Responder<'r> for Cached<R> {
     }
 }
 
-// Log all the routes from the main base paths list, and the attachments endoint
+// Log all the routes from the main paths list, and the attachments endpoint
 // Effectively ignores, any static file route, and the alive endpoint
 const LOGGED_ROUTES: [&str; 6] = [
     "/api",
@@ -157,7 +157,10 @@ impl Fairing for BetterLogging {
         }
         let uri = request.uri();
         let uri_path = uri.path();
-        if self.0 || LOGGED_ROUTES.iter().any(|r| uri_path.starts_with(r)) {
+        // FIXME: trim_start_matches() could result in over-trimming in pathological cases;
+        // strip_prefix() would be a better option once it's stable.
+        let uri_subpath = uri_path.trim_start_matches(&CONFIG.domain_path());
+        if self.0 || LOGGED_ROUTES.iter().any(|r| uri_subpath.starts_with(r)) {
             match uri.query() {
                 Some(q) => info!(target: "request", "{} {}?{}", method, uri_path, &q[..q.len().min(30)]),
                 None => info!(target: "request", "{} {}", method, uri_path),
@@ -169,8 +172,10 @@ impl Fairing for BetterLogging {
         if !self.0 && request.method() == Method::Options {
             return;
         }
-        let uri_path = request.uri().path();
-        if self.0 || LOGGED_ROUTES.iter().any(|r| uri_path.starts_with(r)) {
+        // FIXME: trim_start_matches() could result in over-trimming in pathological cases;
+        // strip_prefix() would be a better option once it's stable.
+        let uri_subpath = request.uri().path().trim_start_matches(&CONFIG.domain_path());
+        if self.0 || LOGGED_ROUTES.iter().any(|r| uri_subpath.starts_with(r)) {
             let status = response.status();
             if let Some(ref route) = request.route() {
                 info!(target: "response", "{} => {} {}", route, status.code, status.reason)

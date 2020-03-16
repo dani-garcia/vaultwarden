@@ -1,3 +1,4 @@
+use once_cell::sync::Lazy;
 use serde_json::Value;
 use std::process::Command;
 
@@ -34,12 +35,12 @@ pub fn routes() -> Vec<Route> {
         post_config,
         delete_config,
         backup_db,
+        test_smtp,
     ]
 }
 
-lazy_static! {
-    static ref CAN_BACKUP: bool = cfg!(feature = "sqlite") && Command::new("sqlite3").arg("-version").status().is_ok();
-}
+static CAN_BACKUP: Lazy<bool> =
+    Lazy::new(|| cfg!(feature = "sqlite") && Command::new("sqlite3").arg("-version").status().is_ok());
 
 #[get("/")]
 fn admin_disabled() -> &'static str {
@@ -52,11 +53,15 @@ const ADMIN_PATH: &str = "/admin";
 const BASE_TEMPLATE: &str = "admin/base";
 const VERSION: Option<&str> = option_env!("GIT_VERSION");
 
+fn admin_path() -> String {
+    format!("{}{}", CONFIG.domain_path(), ADMIN_PATH)
+}
+
 #[get("/", rank = 2)]
 fn admin_login(flash: Option<FlashMessage>) -> ApiResult<Html<String>> {
     // If there is an error, show it
     let msg = flash.map(|msg| format!("{}: {}", msg.name(), msg.msg()));
-    let json = json!({"page_content": "admin/login", "version": VERSION, "error": msg});
+    let json = json!({"page_content": "admin/login", "version": VERSION, "error": msg, "urlpath": CONFIG.domain_path()});
 
     // Return the page
     let text = CONFIG.render_template(BASE_TEMPLATE, &json)?;
@@ -76,7 +81,7 @@ fn post_admin_login(data: Form<LoginForm>, mut cookies: Cookies, ip: ClientIp) -
     if !_validate_token(&data.token) {
         error!("Invalid admin token. IP: {}", ip.ip);
         Err(Flash::error(
-            Redirect::to(ADMIN_PATH),
+            Redirect::to(admin_path()),
             "Invalid admin token, please try again.",
         ))
     } else {
@@ -85,14 +90,14 @@ fn post_admin_login(data: Form<LoginForm>, mut cookies: Cookies, ip: ClientIp) -
         let jwt = encode_jwt(&claims);
 
         let cookie = Cookie::build(COOKIE_NAME, jwt)
-            .path(ADMIN_PATH)
+            .path(admin_path())
             .max_age(chrono::Duration::minutes(20))
             .same_site(SameSite::Strict)
             .http_only(true)
             .finish();
 
         cookies.add(cookie);
-        Ok(Redirect::to(ADMIN_PATH))
+        Ok(Redirect::to(admin_path()))
     }
 }
 
@@ -111,6 +116,7 @@ struct AdminTemplateData {
     config: Value,
     can_backup: bool,
     logged_in: bool,
+    urlpath: String,
 }
 
 impl AdminTemplateData {
@@ -122,6 +128,7 @@ impl AdminTemplateData {
             config: CONFIG.prepare_json(),
             can_backup: *CAN_BACKUP,
             logged_in: true,
+            urlpath: CONFIG.domain_path(),
         }
     }
 
@@ -164,10 +171,22 @@ fn invite_user(data: Json<InviteData>, _token: AdminToken, conn: DbConn) -> Empt
     }
 }
 
+#[post("/test/smtp", data = "<data>")]
+fn test_smtp(data: Json<InviteData>, _token: AdminToken) -> EmptyResult {
+    let data: InviteData = data.into_inner();
+    let email = data.email.clone();
+
+    if CONFIG.mail_enabled() {
+        mail::send_test(&email)
+    } else {
+        err!("Mail is not enabled")
+    }
+}
+
 #[get("/logout")]
 fn logout(mut cookies: Cookies) -> Result<Redirect, ()> {
     cookies.remove(Cookie::named(COOKIE_NAME));
-    Ok(Redirect::to(ADMIN_PATH))
+    Ok(Redirect::to(admin_path()))
 }
 
 #[get("/users")]

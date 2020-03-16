@@ -146,10 +146,10 @@ fn hibp_breach(username: String) -> JsonResult {
         username
     );
 
-    use reqwest::{header::USER_AGENT, Client};
+    use reqwest::{header::USER_AGENT, blocking::Client};
 
     if let Some(api_key) = crate::CONFIG.hibp_api_key() {
-        let hibp_client = Client::builder().use_sys_proxy().build()?;
+        let hibp_client = Client::builder().build()?;
 
         let res = hibp_client
             .get(&url)
@@ -172,7 +172,7 @@ fn hibp_breach(username: String) -> JsonResult {
             "BreachDate": "2019-08-18T00:00:00Z",
             "AddedDate": "2019-08-18T00:00:00Z",
             "Description": format!("Go to: <a href=\"https://haveibeenpwned.com/account/{account}\" target=\"_blank\" rel=\"noopener\">https://haveibeenpwned.com/account/{account}</a> for a manual check.<br/><br/>HaveIBeenPwned API key not set!<br/>Go to <a href=\"https://haveibeenpwned.com/API/Key\" target=\"_blank\" rel=\"noopener\">https://haveibeenpwned.com/API/Key</a> to purchase an API key from HaveIBeenPwned.<br/><br/>", account=username),
-            "LogoPath": "/bwrs_static/hibp.png",
+            "LogoPath": "bwrs_static/hibp.png",
             "PwnCount": 0,
             "DataClasses": [
                 "Error - No API key set!"

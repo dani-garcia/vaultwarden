@@ -19,7 +19,7 @@
                             <span class="d-block">{{Email}}</span>
                         </div>
                         <div class="col">
-                            <strong> Organizations:</strong>
+                            <strong> Organizations: </strong>
                             <span class="d-block">
                                 {{#each Organizations}}
                                 <span class="badge badge-primary" data-orgtype="{{Type}}">{{Name}}</span>
@@ -71,6 +71,7 @@
                 them to avoid confusion. This does not apply to the read-only section, which can only be set through the
                 environment.
             </div>
+
             <form class="form accordion" id="config-form" onsubmit="saveConfig(); return false;">
                 {{#each config}}
                 {{#if groupdoc}}
@@ -110,6 +111,17 @@
                         </div>
                         {{/if}}
                         {{/each}}
+                        {{#case group "smtp"}}
+                            <div class="form-group row pt-3 border-top" title="Send a test email to given email address">
+                                <label for="smtp-test-email" class="col-sm-3 col-form-label">Test SMTP</label>
+                                <div class="col-sm-8 input-group">
+                                    <input class="form-control" id="smtp-test-email" type="email" placeholder="Enter test email">
+                                    <div class="input-group-append">
+                                        <button type="button" class="btn btn-outline-primary" onclick="smtpTest(); return false;">Send test email</button>
+                                    </div>
+                                </div>
+                            </div>
+                        {{/case}}
                     </div>
                 </div>
                 {{/if}}
@@ -191,7 +203,10 @@
 
 <script>
     function reload() { window.location.reload(); }
-    function msg(text) { text && alert(text); reload(); }
+    function msg(text, reload_page = true) {
+        text && alert(text);
+        reload_page && reload();
+    }
     function identicon(email) {
         const data = new Identicon(md5(email), { size: 48, format: 'svg' });
         return "data:image/svg+xml;base64," + data.toString();
@@ -206,26 +221,37 @@
         }
         return false;
     }
-    function _post(url, successMsg, errMsg, body) {
+    function _post(url, successMsg, errMsg, body, reload_page = true) {
         fetch(url, {
             method: 'POST',
             body: body,
             mode: "same-origin",
             credentials: "same-origin",
             headers: { "Content-Type": "application/json" }
-        }).then(e => {
-            if (e.ok) { return msg(successMsg); }
-            e.json().then(json => {
-                const msg = json ? json.ErrorModel.Message : "Unknown error";
-                msg(errMsg + ": " + msg);
-            });
-        }).catch(e => { msg(errMsg + ": Unknown error") });
+        }).then( resp => {
+            if (resp.ok) { msg(successMsg, reload_page); return Promise.reject({error: false}); }
+            respStatus = resp.status;
+            respStatusText = resp.statusText;
+            return resp.text();
+        }).then( respText => {
+            try {
+                const respJson = JSON.parse(respText);
+                return respJson ? respJson.ErrorModel.Message : "Unknown error";
+            } catch (e) {
+                return Promise.reject({body:respStatus + ' - ' + respStatusText, error: true});
+            }
+        }).then( apiMsg => {
+            msg(errMsg + "\n" + apiMsg, reload_page);
+        }).catch( e => {
+            if (e.error === false) { return true; }
+            else { msg(errMsg + "\n" + e.body, reload_page); }
+        });
     }
     function deleteUser(id, mail) {
         var input_mail = prompt("To delete user '" + mail + "', please type the email below")
         if (input_mail != null) {
             if (input_mail == mail) {
-                _post("/admin/users/" + id + "/delete",
+                _post("{{urlpath}}/admin/users/" + id + "/delete",
                     "User deleted correctly",
                     "Error deleting user");
             } else {
@@ -235,19 +261,19 @@
         return false;
     }
     function remove2fa(id) {
-        _post("/admin/users/" + id + "/remove-2fa",
+        _post("{{urlpath}}/admin/users/" + id + "/remove-2fa",
             "2FA removed correctly",
             "Error removing 2FA");
         return false;
     }
     function deauthUser(id) {
-        _post("/admin/users/" + id + "/deauth",
+        _post("{{urlpath}}/admin/users/" + id + "/deauth",
             "Sessions deauthorized correctly",
             "Error deauthorizing sessions");
         return false;
     }
     function updateRevisions() {
-        _post("/admin/users/update_revision",
+        _post("{{urlpath}}/admin/users/update_revision",
             "Success, clients will sync next time they connect",
             "Error forcing clients to sync");
         return false;
@@ -256,8 +282,16 @@
         inv = document.getElementById("email-invite");
         data = JSON.stringify({ "email": inv.value });
         inv.value = "";
-        _post("/admin/invite/", "User invited correctly",
+        _post("{{urlpath}}/admin/invite/", "User invited correctly",
             "Error inviting user", data);
+        return false;
+    }
+    function smtpTest() {
+        test_email = document.getElementById("smtp-test-email");
+        data = JSON.stringify({ "email": test_email.value });
+        _post("{{urlpath}}/admin/test/smtp/",
+            "SMTP Test email sent correctly",
+            "Error sending SMTP test email", data, false);
         return false;
     }
     function getFormData() {
@@ -278,7 +312,7 @@
     }
     function saveConfig() {
         data = JSON.stringify(getFormData());
-        _post("/admin/config/", "Config saved correctly",
+        _post("{{urlpath}}/admin/config/", "Config saved correctly",
             "Error saving config", data);
         return false;
     }
@@ -286,7 +320,7 @@
         var input = prompt("This will remove all user configurations, and restore the defaults and the " +
             "values set by the environment. This operation could be dangerous. Type 'DELETE' to proceed:");
         if (input === "DELETE") {
-            _post("/admin/config/delete",
+            _post("{{urlpath}}/admin/config/delete",
                 "Config deleted correctly",
                 "Error deleting config");
         } else {
@@ -296,9 +330,9 @@
         return false;
     }
     function backupDatabase() {
-        _post("/admin/config/backup_db",
+        _post("{{urlpath}}/admin/config/backup_db",
             "Backup created successfully",
-            "Error creating backup");
+            "Error creating backup", null, false);
         return false;
     }
     function masterCheck(check_id, inputs_query) {
@@ -331,7 +365,7 @@
         e.title = orgtype.name;
     });
 
-    // These are formatted because otherwise the 
+    // These are formatted because otherwise the
     // VSCode formatter breaks But they still work
     // {{#each config}} {{#if grouptoggle}}
     masterCheck("input_{{grouptoggle}}", "#g_{{group}} input");
