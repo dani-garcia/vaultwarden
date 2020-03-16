@@ -71,6 +71,7 @@ RUN rustup set profile minimal
 
 {% if "alpine" in target_file %}
 ENV USER "root"
+ENV RUSTFLAGS='-C link-arg=-s'
 
 {% elif "aarch64" in target_file or "armv" in target_file %}
 # Install required build libs for {{ package_arch_name }} architecture.
@@ -202,6 +203,9 @@ COPY . .
 
 # Make sure that we actually build the project
 RUN touch src/main.rs
+{% if "alpine" in target_file %}
+RUN sed -i '/#\[cfg(feature = "openssl")\]/d' src/main.rs
+{% endif %}
 
 # Builds again, this time it'll just be
 # your actual source files being built
