@@ -6,7 +6,7 @@ use crate::error::Error;
 use ring::{digest, hmac, pbkdf2};
 use std::num::NonZeroU32;
 
-static DIGEST_ALG: &digest::Algorithm = &digest::SHA256;
+static DIGEST_ALG: pbkdf2::Algorithm = pbkdf2::PBKDF2_HMAC_SHA256;
 const OUTPUT_LEN: usize = digest::SHA256_OUTPUT_LEN;
 
 pub fn hash_password(secret: &[u8], salt: &[u8], iterations: u32) -> Vec<u8> {
@@ -29,7 +29,7 @@ pub fn verify_password_hash(secret: &[u8], salt: &[u8], previous: &[u8], iterati
 pub fn hmac_sign(key: &str, data: &str) -> String {
     use data_encoding::HEXLOWER;
 
-    let key = hmac::SigningKey::new(&digest::SHA1, key.as_bytes());
+    let key = hmac::Key::new(hmac::HMAC_SHA1_FOR_LEGACY_USE_ONLY, key.as_bytes());
     let signature = hmac::sign(&key, data.as_bytes());
 
     HEXLOWER.encode(signature.as_ref())
