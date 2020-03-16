@@ -118,6 +118,9 @@ idna = "0.2.0"
 # CLI argument parsing
 structopt = "0.3.11"
 
+# Logging panics to logfile instead stderr only
+backtrace = "0.3.45"
+
 [patch.crates-io]
 # Use newest ring
 rocket = { git = 'https://github.com/SergioBenitez/Rocket', rev = 'b95b6765e1cc8be7c1e7eaef8a9d9ad940b0ac13' }
