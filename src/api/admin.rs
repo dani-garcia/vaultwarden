@@ -91,7 +91,7 @@ fn post_admin_login(data: Form<LoginForm>, mut cookies: Cookies, ip: ClientIp) -
 
         let cookie = Cookie::build(COOKIE_NAME, jwt)
             .path(admin_path())
-            .max_age(chrono::Duration::minutes(20))
+            .max_age(time::Duration::minutes(20))
             .same_site(SameSite::Strict)
             .http_only(true)
             .finish();

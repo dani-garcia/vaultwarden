@@ -6,7 +6,7 @@ use chrono::{Duration, Utc};
 use once_cell::sync::Lazy;
 use num_traits::FromPrimitive;
 
-use jsonwebtoken::{self, Algorithm, Header};
+use jsonwebtoken::{self, Algorithm, Header, EncodingKey, DecodingKey};
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
 
@@ -32,7 +32,7 @@ static PUBLIC_RSA_KEY: Lazy<Vec<u8>> = Lazy::new(|| match read_file(&CONFIG.publ
 });
 
 pub fn encode_jwt<T: Serialize>(claims: &T) -> String {
-    match jsonwebtoken::encode(&JWT_HEADER, claims, &PRIVATE_RSA_KEY) {
+    match jsonwebtoken::encode(&JWT_HEADER, claims, &EncodingKey::from_rsa_der(&PRIVATE_RSA_KEY)) {
         Ok(token) => token,
         Err(e) => panic!("Error encoding jwt {}", e),
     }
@@ -51,7 +51,7 @@ fn decode_jwt<T: DeserializeOwned>(token: &str, issuer: String) -> Result<T, Err
 
     let token = token.replace(char::is_whitespace, "");
 
-    jsonwebtoken::decode(&token, &PUBLIC_RSA_KEY, &validation)
+    jsonwebtoken::decode(&token, &DecodingKey::from_rsa_der(&PUBLIC_RSA_KEY), &validation)
         .map(|d| d.claims)
         .map_res("Error decoding JWT")
 }

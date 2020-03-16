@@ -26,7 +26,6 @@ rocket = { version = "0.5.0-dev", features = ["tls"], default-features = false }
 rocket_contrib = "0.5.0-dev"
 
 # HTTP client
-# reqwest = "0.9.24"
 reqwest = { version = "0.10.4", features = ["blocking", "json"] }
 
 # multipart/form-data support
@@ -58,13 +57,14 @@ diesel_migrations = "1.4.0"
 libsqlite3-sys = { version = "0.16.0", features = ["bundled"], optional = true }
 
 # Crypto library
-ring = "0.14.6"
+ring = "0.16.11"
 
 # UUID generation
 uuid = { version = "0.8.1", features = ["v4"] }
 
-# Date and time library for Rust
+# Date and time librar for Rust
 chrono = "0.4.11"
+time = "0.2.9"
 
 # TOTP library
 oath = "0.10.2"
@@ -73,13 +73,13 @@ oath = "0.10.2"
 data-encoding = "2.2.0"
 
 # JWT library
-jsonwebtoken = "6.0.1"
+jsonwebtoken = "7.1.0"
 
 # U2F library
 u2f = "0.2.0"
 
 # Yubico Library
-yubico = { version = "0.7.1", features = ["online-tokio"], default-features = false }
+yubico = { version = "0.9.0", features = ["online-tokio"], default-features = false }
 
 # A `dotenv` implementation for Rust
 dotenv = { version = "0.15.0", default-features = false }
@@ -123,8 +123,8 @@ backtrace = "0.3.45"
 
 [patch.crates-io]
 # Use newest ring
-rocket = { git = 'https://github.com/SergioBenitez/Rocket', rev = 'b95b6765e1cc8be7c1e7eaef8a9d9ad940b0ac13' }
-rocket_contrib = { git = 'https://github.com/SergioBenitez/Rocket', rev = 'b95b6765e1cc8be7c1e7eaef8a9d9ad940b0ac13' }
+rocket = { git = 'https://github.com/SergioBenitez/Rocket', rev = 'dfc9e9aab01d349da32c52db393e35b7fffea63c' }
+rocket_contrib = { git = 'https://github.com/SergioBenitez/Rocket', rev = 'dfc9e9aab01d349da32c52db393e35b7fffea63c' }
 
 # Use git version for timeout fix #706
 lettre = { git = 'https://github.com/lettre/lettre', rev = '245c600c82ee18b766e8729f005ff453a55dce34' }
