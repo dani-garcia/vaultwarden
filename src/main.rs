@@ -323,6 +323,16 @@ mod migrations {
         let connection = crate::db::get_connection().expect("Can't connect to DB");
 
         use std::io::stdout;
+
+        // Disable Foreign Key Checks during migration
+        use diesel::RunQueryDsl;
+        #[cfg(feature = "postgres")]
+        diesel::sql_query("SET CONSTRAINTS ALL DEFERRED").execute(&connection).expect("Failed to disable Foreign Key Checks during migrations");
+        #[cfg(feature = "mysql")]
+        diesel::sql_query("SET FOREIGN_KEY_CHECKS = 0").execute(&connection).expect("Failed to disable Foreign Key Checks during migrations");
+        #[cfg(feature = "sqlite")]
+        diesel::sql_query("PRAGMA defer_foreign_keys = ON").execute(&connection).expect("Failed to disable Foreign Key Checks during migrations");
+
         embedded_migrations::run_with_output(&connection, &mut stdout()).expect("Can't run migrations");
     }
 }
