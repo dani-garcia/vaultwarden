@@ -18,21 +18,21 @@ use chrono::NaiveDateTime;
 fn mailer() -> SmtpTransport {
     let host = CONFIG.smtp_host().unwrap();
 
-    let tls = TlsConnector::builder()
-        .min_protocol_version(Some(Protocol::Tlsv11))
-        .build()
-        .unwrap();
-
-    let tls_params = ClientTlsParameters::new(host.clone(), tls);
-
     let client_security = if CONFIG.smtp_ssl() {
+        let tls = TlsConnector::builder()
+            .min_protocol_version(Some(Protocol::Tlsv11))
+            .build()
+            .unwrap();
+
+        let params = ClientTlsParameters::new(host.clone(), tls);
+
         if CONFIG.smtp_explicit_tls() {
-            ClientSecurity::Wrapper(tls_params)
+            ClientSecurity::Wrapper(params)
         } else {
-            ClientSecurity::Required(tls_params)
+            ClientSecurity::Required(params)
         }
     } else {
-        ClientSecurity::Opportunistic(tls_params)
+        ClientSecurity::None
     };
 
     use std::time::Duration;
