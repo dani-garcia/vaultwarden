@@ -315,41 +315,60 @@ impl<'a, 'r> FromRequest<'a, 'r> for OrgHeaders {
             Outcome::Forward(_) => Outcome::Forward(()),
             Outcome::Failure(f) => Outcome::Failure(f),
             Outcome::Success(headers) => {
-                // org_id is expected to be the second param ("/organizations/<org_id>")
-                match request.get_param::<String>(1) {
-                    Some(Ok(org_id)) => {
-                        let conn = match request.guard::<DbConn>() {
-                            Outcome::Success(conn) => conn,
-                            _ => err_handler!("Error getting DB"),
-                        };
+                // org_id is usually the second param ("/organizations/<org_id>")
+                // But there are cases where it is located in a query value.
+                // First check the param, if this is not a valid uuid, we will try the query value.
+                let query_org_id = match request.get_query_value::<String>("organizationId") {
+                    Some(Ok(query_org_id)) => { query_org_id }
+                    _ => { "".into() }
+                };
+                let param_org_id = match request.get_param::<String>(1) {
+                    Some(Ok(param_org_id)) => { param_org_id }
+                    _ => { "".into() }
+                };
 
-                        let user = headers.user;
-                        let org_user = match UserOrganization::find_by_user_and_org(&user.uuid, &org_id, &conn) {
-                            Some(user) => {
-                                if user.status == UserOrgStatus::Confirmed as i32 {
-                                    user
-                                } else {
-                                    err_handler!("The current user isn't confirmed member of the organization")
-                                }
-                            }
-                            None => err_handler!("The current user isn't member of the organization"),
-                        };
-
-                        Outcome::Success(Self {
-                            host: headers.host,
-                            device: headers.device,
-                            user,
-                            org_user_type: {
-                                if let Some(org_usr_type) = UserOrgType::from_i32(org_user.atype) {
-                                    org_usr_type
-                                } else {
-                                    // This should only happen if the DB is corrupted
-                                    err_handler!("Unknown user type in the database")
-                                }
-                            },
-                        })
+                let org_uuid: _ = match uuid::Uuid::parse_str(&param_org_id) {
+                    Ok(uuid) => uuid,
+                    _ => match uuid::Uuid::parse_str(&query_org_id) {
+                        Ok(uuid) => uuid,
+                        _ => err_handler!("Error getting the organization id"),
                     }
-                    _ => err_handler!("Error getting the organization id"),
+                };
+
+                let org_id: &str = &org_uuid.to_string();
+                if !org_id.is_empty() {
+                    let conn = match request.guard::<DbConn>() {
+                        Outcome::Success(conn) => conn,
+                        _ => err_handler!("Error getting DB"),
+                    };
+
+                    let user = headers.user;
+                    let org_user = match UserOrganization::find_by_user_and_org(&user.uuid, &org_id, &conn) {
+                        Some(user) => {
+                            if user.status == UserOrgStatus::Confirmed as i32 {
+                                user
+                            } else {
+                                err_handler!("The current user isn't confirmed member of the organization")
+                            }
+                        }
+                        None => err_handler!("The current user isn't member of the organization"),
+                    };
+
+                    Outcome::Success(Self {
+                        host: headers.host,
+                        device: headers.device,
+                        user,
+                        org_user_type: {
+                            if let Some(org_usr_type) = UserOrgType::from_i32(org_user.atype) {
+                                org_usr_type
+                            } else {
+                                // This should only happen if the DB is corrupted
+                                err_handler!("Unknown user type in the database")
+                            }
+                        },
+                    })
+                } else {
+                    err_handler!("Error getting the organization id")
                 }
             }
         }
