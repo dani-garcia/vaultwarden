@@ -307,6 +307,25 @@ pub struct OrgHeaders {
     pub org_user_type: UserOrgType,
 }
 
+// org_id is usually the second param ("/organizations/<org_id>")
+// But there are cases where it is located in a query value.
+// First check the param, if this is not a valid uuid, we will try the query value.
+fn get_org_id(request: &Request) -> Option<String> {
+    if let Some(Ok(org_id)) = request.get_param::<String>(1) {
+        if uuid::Uuid::parse_str(&org_id).is_ok() {
+            return Some(org_id);
+        }
+    }
+
+    if let Some(Ok(org_id)) = request.get_query_value::<String>("organizationId") {
+        if uuid::Uuid::parse_str(&org_id).is_ok() {
+            return Some(org_id);
+        }
+    }
+
+    None
+}
+
 impl<'a, 'r> FromRequest<'a, 'r> for OrgHeaders {
     type Error = &'static str;
 
@@ -315,9 +334,8 @@ impl<'a, 'r> FromRequest<'a, 'r> for OrgHeaders {
             Outcome::Forward(_) => Outcome::Forward(()),
             Outcome::Failure(f) => Outcome::Failure(f),
             Outcome::Success(headers) => {
-                // org_id is expected to be the second param ("/organizations/<org_id>")
-                match request.get_param::<String>(1) {
-                    Some(Ok(org_id)) => {
+                match get_org_id(request) {
+                    Some(org_id) => {
                         let conn = match request.guard::<DbConn>() {
                             Outcome::Success(conn) => conn,
                             _ => err_handler!("Error getting DB"),
@@ -348,7 +366,7 @@ impl<'a, 'r> FromRequest<'a, 'r> for OrgHeaders {
                                 }
                             },
                         })
-                    }
+                    },
                     _ => err_handler!("Error getting the organization id"),
                 }
             }
