@@ -47,6 +47,7 @@ pub fn routes() -> Vec<Route> {
         post_delete_user,
         post_org_import,
         list_policies,
+        list_policies_token,
         get_policy,
         put_policy,
     ]
@@ -901,6 +902,30 @@ fn post_org_import(
 
 #[get("/organizations/<org_id>/policies")]
 fn list_policies(org_id: String, _headers: AdminHeaders, conn: DbConn) -> JsonResult {
+    let policies = OrgPolicy::find_by_org(&org_id, &conn);
+    let policies_json: Vec<Value> = policies.iter().map(OrgPolicy::to_json).collect();
+
+    Ok(Json(json!({
+        "Data": policies_json,
+        "Object": "list",
+        "ContinuationToken": null
+    })))
+}
+
+#[get("/organizations/<org_id>/policies/token?<token>")]
+fn list_policies_token(org_id: String, token: String, conn: DbConn) -> JsonResult {
+    let invite = crate::auth::decode_invite(&token)?;
+
+    let invite_org_id = match invite.org_id {
+        Some(invite_org_id) => invite_org_id,
+        None => err!("Invalid token"),
+    };
+
+    if invite_org_id != org_id {
+        err!("Token doesn't match request organization");
+    }
+    
+    // TODO: We receive the invite token as ?token=<>, validate it contains the org id
     let policies = OrgPolicy::find_by_org(&org_id, &conn);
     let policies_json: Vec<Value> = policies.iter().map(OrgPolicy::to_json).collect();
 
