@@ -1,4 +1,5 @@
 use std::process::Command;
+use std::env;
 
 fn main() {
     #[cfg(all(feature = "sqlite", feature = "mysql"))]
@@ -10,8 +11,13 @@ fn main() {
 
     #[cfg(not(any(feature = "sqlite", feature = "mysql", feature = "postgresql")))]
     compile_error!("You need to enable one DB backend. To build with previous defaults do: cargo build --features sqlite");
-
-    read_git_info().ok();
+    
+    if let Ok(version) = env::var("BWRS_VERSION") {
+        println!("cargo:rustc-env=BWRS_VERSION={}", version);
+        println!("cargo:rustc-env=CARGO_PKG_VERSION={}", version);
+    } else {
+        read_git_info().ok();
+    }
 }
 
 fn run(args: &[&str]) -> Result<String, std::io::Error> {
@@ -54,14 +60,16 @@ fn read_git_info() -> Result<(), std::io::Error> {
     } else {
         format!("{}-{}", last_tag, rev_short)
     };
-    println!("cargo:rustc-env=GIT_VERSION={}", version);
+    
+    println!("cargo:rustc-env=BWRS_VERSION={}", version);
+    println!("cargo:rustc-env=CARGO_PKG_VERSION={}", version);
 
     // To access these values, use:
     //    env!("GIT_EXACT_TAG")
     //    env!("GIT_LAST_TAG")
     //    env!("GIT_BRANCH")
     //    env!("GIT_REV")
-    //    env!("GIT_VERSION")
+    //    env!("BWRS_VERSION")
 
     Ok(())
 }

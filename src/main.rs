@@ -88,7 +88,7 @@ fn main() {
 fn parse_args() {
     let opt = Opt::from_args();
     if opt.version {
-        if let Some(version) = option_env!("GIT_VERSION") {
+        if let Some(version) = option_env!("BWRS_VERSION") {
             println!("bitwarden_rs {}", version);
         } else {
             println!("bitwarden_rs (Version info from Git not present)");
@@ -101,7 +101,7 @@ fn launch_info() {
     println!("/--------------------------------------------------------------------\\");
     println!("|                       Starting Bitwarden_RS                        |");
 
-    if let Some(version) = option_env!("GIT_VERSION") {
+    if let Some(version) = option_env!("BWRS_VERSION") {
         println!("|{:^68}|", format!("Version {}", version));
     }
 

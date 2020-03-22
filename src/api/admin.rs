@@ -51,7 +51,7 @@ const COOKIE_NAME: &str = "BWRS_ADMIN";
 const ADMIN_PATH: &str = "/admin";
 
 const BASE_TEMPLATE: &str = "admin/base";
-const VERSION: Option<&str> = option_env!("GIT_VERSION");
+const VERSION: Option<&str> = option_env!("BWRS_VERSION");
 
 fn admin_path() -> String {
     format!("{}{}", CONFIG.domain_path(), ADMIN_PATH)
