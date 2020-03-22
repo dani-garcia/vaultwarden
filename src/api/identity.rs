@@ -347,6 +347,7 @@ fn _json_err_twofactor(providers: &[i32], user_uuid: &str, conn: &DbConn) -> Api
     Ok(result)
 }
 
+// https://github.com/bitwarden/mobile/blob/master/src/Core/Models/Request/TokenRequest.cs
 #[derive(Debug, Clone, Default)]
 #[allow(non_snake_case)]
 struct ConnectData {
@@ -364,6 +365,7 @@ struct ConnectData {
     device_identifier: Option<String>,
     device_name: Option<String>,
     device_type: Option<String>,
+    device_push_token: Option<String>, // Unused; mobile device push not yet supported.
 
     // Needed for two-factor auth
     two_factor_provider: Option<i32>,
@@ -391,6 +393,7 @@ impl<'f> FromForm<'f> for ConnectData {
                 "deviceidentifier" => form.device_identifier = Some(value),
                 "devicename" => form.device_name = Some(value),
                 "devicetype" => form.device_type = Some(value),
+                "devicepushtoken" => form.device_push_token = Some(value),
                 "twofactorprovider" => form.two_factor_provider = value.parse().ok(),
                 "twofactortoken" => form.two_factor_token = Some(value),
                 "twofactorremember" => form.two_factor_remember = value.parse().ok(),
