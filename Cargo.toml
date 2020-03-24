@@ -41,8 +41,8 @@ rmpv = "0.4.4"
 chashmap = "2.2.2"
 
 # A generic serialization/deserialization framework
-serde = "1.0.104"
-serde_derive = "1.0.104"
+serde = "1.0.105"
+serde_derive = "1.0.105"
 serde_json = "1.0.48"
 
 # Logging
@@ -50,11 +50,11 @@ log = "0.4.8"
 fern = { version = "0.6.0", features = ["syslog-4"] }
 
 # A safe, extensible ORM and Query builder
-diesel = { version = "1.4.3", features = [ "chrono", "r2d2"] }
+diesel = { version = "1.4.4", features = [ "chrono", "r2d2"] }
 diesel_migrations = "1.4.0"
 
 # Bundled SQLite
-libsqlite3-sys = { version = "0.16.0", features = ["bundled"], optional = true }
+libsqlite3-sys = { version = "0.17.1", features = ["bundled"], optional = true }
 
 # Crypto library
 ring = "0.16.11"
@@ -104,7 +104,7 @@ handlebars = { version = "3.0.1", features = ["dir_source"] }
 
 # For favicon extraction from main website
 soup = "0.5.0"
-regex = "1.3.4"
+regex = "1.3.5"
 data-url = "0.1.0"
 
 # Used by U2F, JWT and Postgres
@@ -116,10 +116,10 @@ percent-encoding = "2.1.0"
 idna = "0.2.0"
 
 # CLI argument parsing
-structopt = "0.3.11"
+structopt = "0.3.12"
 
 # Logging panics to logfile instead stderr only
-backtrace = "0.3.45"
+backtrace = "0.3.46"
 
 [patch.crates-io]
 # Use newest ring
