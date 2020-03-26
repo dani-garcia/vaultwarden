@@ -49,4 +49,5 @@ base_path="$(get_base_path "${DOMAIN}")"
 if [ -n "${ROCKET_TLS}" ]; then
     s='s'
 fi
-curl --insecure --fail "http${s}://localhost:${ROCKET_PORT}${base_path}/alive" || exit 1
+curl --insecure --fail --silent --show-error \
+     "http${s}://localhost:${ROCKET_PORT}${base_path}/alive" || exit 1
