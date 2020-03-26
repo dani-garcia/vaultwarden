@@ -287,9 +287,9 @@ COPY --from=build /app/target/armv7-unknown-linux-gnueabihf/release/bitwarden_rs
 COPY --from=build app/target/release/bitwarden_rs .
 {% endif %}
 
-COPY docker/healthcheck.sh ./healthcheck.sh
+COPY docker/healthcheck.sh /healthcheck.sh
 
-HEALTHCHECK --interval=30s --timeout=3s CMD sh healthcheck.sh || exit 1
+HEALTHCHECK --interval=60s --timeout=10s CMD ["/healthcheck.sh"]
 
 # Configures the startup!
 WORKDIR /

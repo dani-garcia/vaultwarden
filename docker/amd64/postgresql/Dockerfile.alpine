@@ -12,7 +12,7 @@
 #  - From the console, with the following commands:
 #      docker pull bitwardenrs/web-vault:v2.12.0e
 #      docker image inspect --format "{{.RepoDigests}}" bitwardenrs/web-vault:v2.12.0e
-#      
+#
 #  - To do the opposite, and get the tag from the hash, you can do:
 #      docker image inspect --format "{{.RepoTags}}" bitwardenrs/web-vault@sha256:feb3f46d15738191b9043be4cdb1be2c0078ed411e7b7be73a2f4fcbca01e13c
 FROM bitwardenrs/web-vault@sha256:feb3f46d15738191b9043be4cdb1be2c0078ed411e7b7be73a2f4fcbca01e13c as vault
@@ -94,9 +94,9 @@ COPY Rocket.toml .
 COPY --from=vault /web-vault ./web-vault
 COPY --from=build /app/target/x86_64-unknown-linux-musl/release/bitwarden_rs .
 
-COPY docker/healthcheck.sh ./healthcheck.sh
+COPY docker/healthcheck.sh /healthcheck.sh
 
-HEALTHCHECK --interval=30s --timeout=3s CMD sh healthcheck.sh || exit 1
+HEALTHCHECK --interval=60s --timeout=10s CMD ["/healthcheck.sh"]
 
 # Configures the startup!
 WORKDIR /
