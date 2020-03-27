@@ -19,7 +19,7 @@ FROM bitwardenrs/web-vault@sha256:61db9fab4dfc8259177fbcd25d239b88202c11f039a94c
 
 ########################## BUILD IMAGE  ##########################
 # Musl build image for statically compiled binary
-FROM clux/muslrust:nightly-2019-12-19 as build
+FROM clux/muslrust:nightly-2020-03-09 as build
 
 # set mysql backend
 ARG DB=mysql
@@ -31,6 +31,7 @@ ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8 TZ=UTC TERM=xterm-256color
 RUN rustup set profile minimal
 
 ENV USER "root"
+ENV RUSTFLAGS='-C link-arg=-s'
 
 # Install MySQL package
 RUN apt-get update && apt-get install -y \
