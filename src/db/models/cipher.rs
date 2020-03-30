@@ -80,7 +80,19 @@ impl Cipher {
         let fields_json = self.fields.as_ref().and_then(|s| serde_json::from_str(s).ok()).unwrap_or(Value::Null);
         let password_history_json = self.password_history.as_ref().and_then(|s| serde_json::from_str(s).ok()).unwrap_or(Value::Null);
 
-        let mut data_json: Value = serde_json::from_str(&self.data).unwrap_or(Value::Null);
+        // Get the data or a default empty value to avoid issues with the mobile apps
+        let mut data_json: Value = serde_json::from_str(&self.data).unwrap_or_else(|_| json!({
+            "Fields":null,
+            "Name": self.name,
+            "Notes":null,
+            "Password":null,
+            "PasswordHistory":null,
+            "PasswordRevisionDate":null,
+            "Response":null,
+            "Totp":null,
+            "Uris":null,
+            "Username":null
+        }));
 
         // TODO: ******* Backwards compat start **********
         // To remove backwards compatibility, just remove this entire section
