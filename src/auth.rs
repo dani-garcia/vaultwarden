@@ -4,7 +4,6 @@
 use crate::util::read_file;
 use chrono::{Duration, Utc};
 use once_cell::sync::Lazy;
-use num_traits::FromPrimitive;
 
 use jsonwebtoken::{self, Algorithm, Header, EncodingKey, DecodingKey};
 use serde::de::DeserializeOwned;
@@ -76,7 +75,7 @@ pub fn decode_admin(token: &str) -> Result<AdminJWTClaims, Error> {
     decode_jwt(token, JWT_ADMIN_ISSUER.to_string())
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct LoginJWTClaims {
     // Not before
     pub nbf: i64,
@@ -105,6 +104,42 @@ pub struct LoginJWTClaims {
     pub scope: Vec<String>,
     // [ "Application" ]
     pub amr: Vec<String>,
+}
+
+impl LoginJWTClaims {
+    pub fn is_organization_owner(&self, org_uuid: &str) -> bool {
+        if self.orgowner.contains(&org_uuid.to_string()) {
+            return true;
+        }
+
+        false
+    }
+
+    pub fn is_organization_admin(&self, org_uuid: &str) -> bool {
+        if self.orgadmin.contains(&org_uuid.to_string()) {
+            return true;
+        }
+
+        self.is_organization_owner(&org_uuid)
+    }
+
+    #[allow(dead_code)]
+    pub fn is_organization_manager(&self, org_uuid: &str) -> bool {
+        if self.orgmanager.contains(&org_uuid.to_string()) {
+            return true;
+        }
+
+        self.is_organization_admin(&org_uuid)
+    }
+
+    #[allow(dead_code)]
+    pub fn is_organization_user(&self, org_uuid: &str) -> bool {
+        if self.orguser.contains(&org_uuid.to_string()) {
+            return true;
+        }
+
+        self.is_organization_manager(&org_uuid)
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -216,13 +251,14 @@ pub fn generate_admin_claims() -> AdminJWTClaims {
 use rocket::request::{self, FromRequest, Request};
 use rocket::Outcome;
 
-use crate::db::models::{Device, User, UserOrgStatus, UserOrgType, UserOrganization};
+use crate::db::models::{Device, User, UserOrgStatus, UserOrganization};
 use crate::db::DbConn;
 
 pub struct Headers {
     pub host: String,
     pub device: Device,
     pub user: User,
+    pub claims: LoginJWTClaims,
 }
 
 impl<'a, 'r> FromRequest<'a, 'r> for Headers {
@@ -273,9 +309,10 @@ impl<'a, 'r> FromRequest<'a, 'r> for Headers {
             Ok(claims) => claims,
             Err(_) => err_handler!("Invalid claim"),
         };
+        let claim = claims.clone();
 
-        let device_uuid = claims.device;
-        let user_uuid = claims.sub;
+        let device_uuid = claim.device;
+        let user_uuid = claim.sub;
 
         let conn = match request.guard::<DbConn>() {
             Outcome::Success(conn) => conn,
@@ -292,11 +329,11 @@ impl<'a, 'r> FromRequest<'a, 'r> for Headers {
             None => err_handler!("Device has no user associated"),
         };
 
-        if user.security_stamp != claims.sstamp {
+        if user.security_stamp != claim.sstamp {
             err_handler!("Invalid security stamp")
         }
 
-        Outcome::Success(Headers { host, device, user })
+        Outcome::Success(Headers { host, device, user, claims })
     }
 }
 
@@ -304,7 +341,8 @@ pub struct OrgHeaders {
     pub host: String,
     pub device: Device,
     pub user: User,
-    pub org_user_type: UserOrgType,
+    pub claims: LoginJWTClaims,
+    pub context_org_uuid: String,
 }
 
 // org_id is usually the second param ("/organizations/<org_id>")
@@ -336,13 +374,19 @@ impl<'a, 'r> FromRequest<'a, 'r> for OrgHeaders {
             Outcome::Success(headers) => {
                 match get_org_id(request) {
                     Some(org_id) => {
+                        // This check would have been sufficient if the claims would be updated.
+                        // Since this is not the case, we keep the database check here and disable this check for now.
+                        // if !headers.claims.is_organization_user(&org_id) {
+                        //     err_handler!("The current user isn't member of the organization")
+                        // }
+
                         let conn = match request.guard::<DbConn>() {
                             Outcome::Success(conn) => conn,
                             _ => err_handler!("Error getting DB"),
                         };
 
                         let user = headers.user;
-                        let org_user = match UserOrganization::find_by_user_and_org(&user.uuid, &org_id, &conn) {
+                        match UserOrganization::find_by_user_and_org(&user.uuid, &org_id, &conn) {
                             Some(user) => {
                                 if user.status == UserOrgStatus::Confirmed as i32 {
                                     user
@@ -357,14 +401,8 @@ impl<'a, 'r> FromRequest<'a, 'r> for OrgHeaders {
                             host: headers.host,
                             device: headers.device,
                             user,
-                            org_user_type: {
-                                if let Some(org_usr_type) = UserOrgType::from_i32(org_user.atype) {
-                                    org_usr_type
-                                } else {
-                                    // This should only happen if the DB is corrupted
-                                    err_handler!("Unknown user type in the database")
-                                }
-                            },
+                            claims: headers.claims,
+                            context_org_uuid: org_id,
                         })
                     },
                     _ => err_handler!("Error getting the organization id"),
@@ -378,7 +416,8 @@ pub struct AdminHeaders {
     pub host: String,
     pub device: Device,
     pub user: User,
-    pub org_user_type: UserOrgType,
+    pub claims: LoginJWTClaims,
+    pub context_org_uuid: String,
 }
 
 impl<'a, 'r> FromRequest<'a, 'r> for AdminHeaders {
@@ -389,12 +428,13 @@ impl<'a, 'r> FromRequest<'a, 'r> for AdminHeaders {
             Outcome::Forward(_) => Outcome::Forward(()),
             Outcome::Failure(f) => Outcome::Failure(f),
             Outcome::Success(headers) => {
-                if headers.org_user_type >= UserOrgType::Admin {
+                if headers.claims.is_organization_admin(&headers.context_org_uuid) {
                     Outcome::Success(Self {
                         host: headers.host,
                         device: headers.device,
                         user: headers.user,
-                        org_user_type: headers.org_user_type,
+                        claims: headers.claims,
+                        context_org_uuid: headers.context_org_uuid,
                     })
                 } else {
                     err_handler!("You need to be Admin or Owner to call this endpoint")
@@ -409,7 +449,8 @@ impl Into<Headers> for AdminHeaders {
         Headers {
             host: self.host,
             device: self.device,
-            user: self.user
+            user: self.user,
+            claims: self.claims
         }
      }
 }
@@ -418,6 +459,8 @@ pub struct OwnerHeaders {
     pub host: String,
     pub device: Device,
     pub user: User,
+    pub claims: LoginJWTClaims,
+    pub context_org_uuid: String,
 }
 
 impl<'a, 'r> FromRequest<'a, 'r> for OwnerHeaders {
@@ -428,11 +471,13 @@ impl<'a, 'r> FromRequest<'a, 'r> for OwnerHeaders {
             Outcome::Forward(_) => Outcome::Forward(()),
             Outcome::Failure(f) => Outcome::Failure(f),
             Outcome::Success(headers) => {
-                if headers.org_user_type == UserOrgType::Owner {
+                if headers.claims.is_organization_owner(&headers.context_org_uuid) {
                     Outcome::Success(Self {
                         host: headers.host,
                         device: headers.device,
                         user: headers.user,
+                        claims: headers.claims,
+                        context_org_uuid: headers.context_org_uuid,
                     })
                 } else {
                     err_handler!("You need to be Owner to call this endpoint")

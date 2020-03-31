@@ -472,7 +472,7 @@ fn send_invite(org_id: String, data: JsonUpcase<InviteData>, headers: AdminHeade
         None => err!("Invalid type"),
     };
 
-    if new_type != UserOrgType::User && headers.org_user_type != UserOrgType::Owner {
+    if new_type != UserOrgType::User && !headers.claims.is_organization_owner(&org_id) {
         err!("Only Owners can invite Managers, Admins or Owners")
     }
 
@@ -662,7 +662,7 @@ fn confirm_invite(
         None => err!("The specified user isn't a member of the organization"),
     };
 
-    if user_to_confirm.atype != UserOrgType::User && headers.org_user_type != UserOrgType::Owner {
+    if user_to_confirm.atype != UserOrgType::User && !headers.claims.is_organization_owner(&org_id) {
         err!("Only Owners can confirm Managers, Admins or Owners")
     }
 
@@ -742,12 +742,12 @@ fn edit_user(
 
     if new_type != user_to_edit.atype
         && (user_to_edit.atype >= UserOrgType::Admin || new_type >= UserOrgType::Admin)
-        && headers.org_user_type != UserOrgType::Owner
+        && !headers.claims.is_organization_owner(&org_id)
     {
         err!("Only Owners can grant and remove Admin or Owner privileges")
     }
 
-    if user_to_edit.atype == UserOrgType::Owner && headers.org_user_type != UserOrgType::Owner {
+    if user_to_edit.atype == UserOrgType::Owner && !headers.claims.is_organization_owner(&org_id) {
         err!("Only Owners can edit Owner users")
     }
 
@@ -790,7 +790,7 @@ fn delete_user(org_id: String, org_user_id: String, headers: AdminHeaders, conn:
         None => err!("User to delete isn't member of the organization"),
     };
 
-    if user_to_delete.atype != UserOrgType::User && headers.org_user_type != UserOrgType::Owner {
+    if user_to_delete.atype != UserOrgType::User && !headers.claims.is_organization_owner(&org_id) {
         err!("Only Owners can delete Admins or Owners")
     }
 
