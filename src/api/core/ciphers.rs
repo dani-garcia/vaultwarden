@@ -665,8 +665,8 @@ fn post_attachment(
     let size_limit = if let Some(ref user_uuid) = cipher.user_uuid {
         match CONFIG.user_attachment_limit() {
             Some(0) => err_discard!("Attachments are disabled", data),
-            Some(limit) => {
-                let left = limit - Attachment::size_by_user(user_uuid, &conn);
+            Some(limit_kb) => {
+                let left = (limit_kb * 1024) - Attachment::size_by_user(user_uuid, &conn);
                 if left <= 0 {
                     err_discard!("Attachment size limit reached! Delete some files to open space", data)
                 }
@@ -677,8 +677,8 @@ fn post_attachment(
     } else if let Some(ref org_uuid) = cipher.organization_uuid {
         match CONFIG.org_attachment_limit() {
             Some(0) => err_discard!("Attachments are disabled", data),
-            Some(limit) => {
-                let left = limit - Attachment::size_by_org(org_uuid, &conn);
+            Some(limit_kb) => {
+                let left = (limit_kb * 1024) - Attachment::size_by_org(org_uuid, &conn);
                 if left <= 0 {
                     err_discard!("Attachment size limit reached! Delete some files to open space", data)
                 }
