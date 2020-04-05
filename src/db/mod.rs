@@ -42,8 +42,11 @@ pub mod schema;
 /// Initializes a database pool.
 pub fn init_pool() -> Pool {
     let manager = ConnectionManager::new(CONFIG.database_url());
-
-    r2d2::Pool::builder().build(manager).expect("Failed to create pool")
+    println!(CONFIG.db_connection_pool_max_size())
+    r2d2::Pool::builder()
+        .max_size(CONFIG.db_connection_pool_max_size())
+        .build(manager)
+        .expect("Failed to create pool")
 }
 
 pub fn get_connection() -> Result<Connection, ConnectionError> {
