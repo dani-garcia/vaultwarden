@@ -112,6 +112,8 @@ macro_rules! make_config {
                 )+)+
                 config.domain_set = _domain_set;
 
+                config.signups_domains_whitelist = config.signups_domains_whitelist.trim().to_lowercase();
+
                 config
             }
         }
@@ -263,7 +265,7 @@ make_config! {
         /// $ICON_CACHE_FOLDER, but it won't produce any external network request. Needs to set $ICON_CACHE_TTL to 0,
         /// otherwise it will delete them and they won't be downloaded again.
         disable_icon_download:  bool,   true,   def,    false;
-        /// Allow new signups |> Controls if new users can register. Note that while this is disabled, users could still be invited
+        /// Allow new signups |> Controls whether new users can register. Users can be invited by the bitwarden_rs admin even if this is disabled
         signups_allowed:        bool,   true,   def,    true;
         /// Require email verification on signups. This will prevent logins from succeeding until the address has been verified
         signups_verify:         bool,   true,   def,    false;
@@ -271,9 +273,9 @@ make_config! {
         signups_verify_resend_time: u64, true,  def,    3_600;
         /// If signups require email verification, limit how many emails are automatically sent when login is attempted (0 means no limit)
         signups_verify_resend_limit: u32, true, def,    6;
-        /// Allow signups only from this list of comma-separated domains
+        /// Email domain whitelist |> Allow signups only from this list of comma-separated domains, even when signups are otherwise disabled
         signups_domains_whitelist: String, true, def,   "".to_string();
-        /// Allow invitations |> Controls whether users can be invited by organization admins, even when signups are disabled
+        /// Allow invitations |> Controls whether users can be invited by organization admins, even when signups are otherwise disabled
         invitations_allowed:    bool,   true,   def,    true;
         /// Password iterations |> Number of server-side passwords hashing iterations.
         /// The changes only apply when a user changes their password. Not recommended to lower the value
@@ -428,6 +430,11 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         err!("DOMAIN variable needs to contain the protocol (http, https). Use 'http[s]://bw.example.com' instead of 'bw.example.com'"); 
     }
 
+    let whitelist = &cfg.signups_domains_whitelist;
+    if !whitelist.is_empty() && whitelist.split(',').any(|d| d.trim().is_empty()) {
+        err!("`SIGNUPS_DOMAINS_WHITELIST` contains empty tokens");
+    }
+
     if let Some(ref token) = cfg.admin_token {
         if token.trim().is_empty() && !cfg.disable_admin_token {
             err!("`ADMIN_TOKEN` is enabled but has an empty value. To enable the admin page without token, use `DISABLE_ADMIN_TOKEN`")
@@ -551,18 +558,29 @@ impl Config {
         self.update_config(builder)
     }
 
-    pub fn can_signup_user(&self, email: &str) -> bool {
+    /// Tests whether an email's domain is in signups_domains_whitelist.
+    /// Returns false if no whitelist is set.
+    pub fn is_email_domain_whitelisted(&self, email: &str) -> bool {
         let e: Vec<&str> = email.rsplitn(2, '@').collect();
         if e.len() != 2 || e[0].is_empty() || e[1].is_empty() {
             warn!("Failed to parse email address '{}'", email);
             return false;
         }
+        let email_domain = e[0];
+        let whitelist = self.signups_domains_whitelist();
 
-        // Allow signups if the whitelist is empty/not configured
-        // (it doesn't contain any domains), or if it matches at least
-        // one domain.
-        let whitelist_str = self.signups_domains_whitelist();
-        ( whitelist_str.is_empty() && CONFIG.signups_allowed() )|| whitelist_str.split(',').filter(|s| !s.is_empty()).any(|d| d == e[0])
+        !whitelist.is_empty() && whitelist.split(',').any(|d| d.trim() == email_domain)
+    }
+
+    /// Tests whether signup is allowed for an email address, taking into
+    /// account the signups_allowed and signups_domains_whitelist settings.
+    pub fn is_signup_allowed(&self, email: &str) -> bool {
+        if !self.signups_domains_whitelist().is_empty() {
+            // The whitelist setting overrides the signups_allowed setting.
+            self.is_email_domain_whitelisted(email)
+        } else {
+            self.signups_allowed()
+        }
     }
 
     pub fn delete_user_config(&self) -> Result<(), Error> {
