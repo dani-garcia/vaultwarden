@@ -41,9 +41,9 @@ rmpv = "0.4.4"
 chashmap = "2.2.2"
 
 # A generic serialization/deserialization framework
-serde = "1.0.105"
-serde_derive = "1.0.105"
-serde_json = "1.0.48"
+serde = "1.0.106"
+serde_derive = "1.0.106"
+serde_json = "1.0.51"
 
 # Logging
 log = "0.4.8"
@@ -54,10 +54,10 @@ diesel = { version = "1.4.4", features = [ "chrono", "r2d2"] }
 diesel_migrations = "1.4.0"
 
 # Bundled SQLite
-libsqlite3-sys = { version = "0.17.1", features = ["bundled"], optional = true }
+libsqlite3-sys = { version = "0.17.3", features = ["bundled"], optional = true }
 
 # Crypto library
-ring = "0.16.11"
+ring = "0.16.12"
 
 # UUID generation
 uuid = { version = "0.8.1", features = ["v4"] }
@@ -88,7 +88,7 @@ dotenv = { version = "0.15.0", default-features = false }
 once_cell = "1.3.1"
 
 # More derives
-derive_more = "0.99.3"
+derive_more = "0.99.5"
 
 # Numerical libraries
 num-traits = "0.2.11"
@@ -104,11 +104,11 @@ handlebars = { version = "3.0.1", features = ["dir_source"] }
 
 # For favicon extraction from main website
 soup = "0.5.0"
-regex = "1.3.5"
+regex = "1.3.6"
 data-url = "0.1.0"
 
 # Used by U2F, JWT and Postgres
-openssl = "0.10.28"
+openssl = "0.10.29"
 
 # URL encoding library
 percent-encoding = "2.1.0"
@@ -116,7 +116,7 @@ percent-encoding = "2.1.0"
 idna = "0.2.0"
 
 # CLI argument parsing
-structopt = "0.3.12"
+structopt = "0.3.13"
 
 # Logging panics to logfile instead stderr only
 backtrace = "0.3.46"
