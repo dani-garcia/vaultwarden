@@ -17,7 +17,7 @@ use crate::mail;
 use crate::CONFIG;
 
 pub fn routes() -> Vec<Route> {
-    if CONFIG.admin_token().is_none() && !CONFIG.disable_admin_token() {
+    if !CONFIG.disable_admin_token() && !CONFIG.is_admin_token_set() {
         return routes![admin_disabled];
     }
 

@@ -430,7 +430,8 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
 
     if let Some(ref token) = cfg.admin_token {
         if token.trim().is_empty() && !cfg.disable_admin_token {
-            err!("`ADMIN_TOKEN` is enabled but has an empty value. To enable the admin page without token, use `DISABLE_ADMIN_TOKEN`")
+            println!("[WARNING] `ADMIN_TOKEN` is enabled but has an empty value, so the admin page will be disabled.");
+            println!("[WARNING] To enable the admin page without a token, use `DISABLE_ADMIN_TOKEN`.");
         }
     }
 
@@ -615,6 +616,13 @@ impl Config {
 
             akey_s
         }
+    }
+
+    /// Tests whether the admin token is set to a non-empty value.
+    pub fn is_admin_token_set(&self) -> bool {
+        let token = self.admin_token();
+
+        !token.is_none() && !token.unwrap().trim().is_empty()
     }
 
     pub fn render_template<T: serde::ser::Serialize>(
