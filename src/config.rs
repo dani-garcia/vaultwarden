@@ -566,7 +566,7 @@ impl Config {
             warn!("Failed to parse email address '{}'", email);
             return false;
         }
-        let email_domain = e[0];
+        let email_domain = e[0].to_lowercase();
         let whitelist = self.signups_domains_whitelist();
 
         !whitelist.is_empty() && whitelist.split(',').any(|d| d.trim() == email_domain)
