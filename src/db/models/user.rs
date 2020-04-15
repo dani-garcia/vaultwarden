@@ -6,6 +6,7 @@ use crate::CONFIG;
 
 #[derive(Debug, Identifiable, Queryable, Insertable, AsChangeset)]
 #[table_name = "users"]
+#[changeset_options(treat_none_as_null="true")]
 #[primary_key(uuid)]
 pub struct User {
     pub uuid: String,

@@ -7,6 +7,7 @@ use super::{
 
 #[derive(Debug, Identifiable, Queryable, Insertable, Associations, AsChangeset)]
 #[table_name = "ciphers"]
+#[changeset_options(treat_none_as_null="true")]
 #[belongs_to(User, foreign_key = "user_uuid")]
 #[belongs_to(Organization, foreign_key = "organization_uuid")]
 #[primary_key(uuid)]

@@ -5,6 +5,7 @@ use crate::CONFIG;
 
 #[derive(Debug, Identifiable, Queryable, Insertable, Associations, AsChangeset)]
 #[table_name = "attachments"]
+#[changeset_options(treat_none_as_null="true")]
 #[belongs_to(Cipher, foreign_key = "cipher_uuid")]
 #[primary_key(id)]
 pub struct Attachment {
