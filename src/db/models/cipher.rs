@@ -34,6 +34,7 @@ pub struct Cipher {
 
     pub favorite: bool,
     pub password_history: Option<String>,
+    pub deleted_at: Option<NaiveDateTime>,
 }
 
 /// Local methods
@@ -58,6 +59,7 @@ impl Cipher {
 
             data: String::new(),
             password_history: None,
+            deleted_at: None,
         }
     }
 }
@@ -108,6 +110,7 @@ impl Cipher {
             "Id": self.uuid,
             "Type": self.atype,
             "RevisionDate": format_date(&self.updated_at),
+            "DeletedDate": self.deleted_at.map_or(Value::Null, |d| Value::String(format_date(&d))),
             "FolderId": self.get_folder_uuid(&user_uuid, &conn),
             "Favorite": self.favorite,
             "OrganizationId": self.organization_uuid,

@@ -22,6 +22,7 @@ table! {
         data -> Text,
         favorite -> Bool,
         password_history -> Nullable<Text>,
+        deleted_at -> Nullable<Timestamp>,
     }
 }
 
