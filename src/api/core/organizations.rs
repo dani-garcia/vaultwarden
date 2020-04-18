@@ -485,7 +485,11 @@ fn send_invite(org_id: String, data: JsonUpcase<InviteData>, headers: AdminHeade
         let user = match User::find_by_mail(&email, &conn) {
             None => {
                 if !CONFIG.invitations_allowed() {
-                    err!(format!("User email does not exist: {}", email))
+                    err!(format!("User does not exist: {}", email))
+                }
+
+                if !CONFIG.signups_domains_whitelist().is_empty() && !CONFIG.is_email_domain_whitelisted(&email) {
+                    err!("Email domain not eligible for invitations")
                 }
 
                 if !CONFIG.mail_enabled() {
