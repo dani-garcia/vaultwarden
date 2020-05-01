@@ -57,6 +57,12 @@ fn admin_path() -> String {
     format!("{}{}", CONFIG.domain_path(), ADMIN_PATH)
 }
 
+/// Used for `Location` response headers, which must specify an absolute URI
+/// (see https://tools.ietf.org/html/rfc2616#section-14.30).
+fn admin_url() -> String {
+    format!("{}{}", CONFIG.domain(), ADMIN_PATH)
+}
+
 #[get("/", rank = 2)]
 fn admin_login(flash: Option<FlashMessage>) -> ApiResult<Html<String>> {
     // If there is an error, show it
@@ -81,7 +87,7 @@ fn post_admin_login(data: Form<LoginForm>, mut cookies: Cookies, ip: ClientIp) -
     if !_validate_token(&data.token) {
         error!("Invalid admin token. IP: {}", ip.ip);
         Err(Flash::error(
-            Redirect::to(admin_path()),
+            Redirect::to(admin_url()),
             "Invalid admin token, please try again.",
         ))
     } else {
@@ -97,7 +103,7 @@ fn post_admin_login(data: Form<LoginForm>, mut cookies: Cookies, ip: ClientIp) -
             .finish();
 
         cookies.add(cookie);
-        Ok(Redirect::to(admin_path()))
+        Ok(Redirect::to(admin_url()))
     }
 }
 
@@ -186,7 +192,7 @@ fn test_smtp(data: Json<InviteData>, _token: AdminToken) -> EmptyResult {
 #[get("/logout")]
 fn logout(mut cookies: Cookies) -> Result<Redirect, ()> {
     cookies.remove(Cookie::named(COOKIE_NAME));
-    Ok(Redirect::to(admin_path()))
+    Ok(Redirect::to(admin_url()))
 }
 
 #[get("/users")]
