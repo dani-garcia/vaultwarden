@@ -1,13 +1,11 @@
-use lettre::smtp::authentication::Credentials;
-use lettre::smtp::authentication::Mechanism as SmtpAuthMechanism;
-use lettre::smtp::ConnectionReuseParameters;
-use lettre::{
-    builder::{EmailBuilder, MimeMultipartType, PartBuilder},
-    ClientSecurity, ClientTlsParameters, SmtpClient, SmtpTransport, Transport,
-};
+use std::str::FromStr;
+
+use lettre::message::{header, Mailbox, Message, MultiPart, SinglePart};
+use lettre::transport::smtp::authentication::{Credentials, Mechanism as SmtpAuthMechanism};
+use lettre::{Address, SmtpTransport, Tls, TlsParameters, Transport};
+
 use native_tls::{Protocol, TlsConnector};
 use percent_encoding::{percent_encode, NON_ALPHANUMERIC};
-use quoted_printable::encode_to_str;
 
 use crate::api::EmptyResult;
 use crate::auth::{encode_jwt, generate_delete_claims, generate_invite_claims, generate_verify_email_claims};
@@ -24,23 +22,23 @@ fn mailer() -> SmtpTransport {
             .build()
             .unwrap();
 
-        let params = ClientTlsParameters::new(host.clone(), tls);
+        let params = TlsParameters::new(host.clone(), tls);
 
         if CONFIG.smtp_explicit_tls() {
-            ClientSecurity::Wrapper(params)
+            Tls::Wrapper(params)
         } else {
-            ClientSecurity::Required(params)
+            Tls::Required(params)
         }
     } else {
-        ClientSecurity::None
+        Tls::None
     };
 
     use std::time::Duration;
 
-    let smtp_client = SmtpClient::new((host.as_str(), CONFIG.smtp_port()), client_security).unwrap();
+    let smtp_client = SmtpTransport::new(host).port(CONFIG.smtp_port()).tls(client_security);
 
-    let smtp_client = match (&CONFIG.smtp_username(), &CONFIG.smtp_password()) {
-        (Some(user), Some(pass)) => smtp_client.credentials(Credentials::new(user.clone(), pass.clone())),
+    let smtp_client = match (CONFIG.smtp_username(), CONFIG.smtp_password()) {
+        (Some(user), Some(pass)) => smtp_client.credentials(Credentials::new(user, pass)),
         _ => smtp_client,
     };
 
@@ -48,19 +46,16 @@ fn mailer() -> SmtpTransport {
         Some(mechanism) => {
             let correct_mechanism = format!("\"{}\"", crate::util::upcase_first(mechanism.trim_matches('"')));
 
+            // TODO: Allow more than one mechanism
             match serde_json::from_str::<SmtpAuthMechanism>(&correct_mechanism) {
-                Ok(auth_mechanism) => smtp_client.authentication_mechanism(auth_mechanism),
+                Ok(auth_mechanism) => smtp_client.authentication(vec![auth_mechanism]),
                 _ => panic!("Failure to parse mechanism. Is it proper Json? Eg. `\"Plain\"` not `Plain`"),
             }
         }
         _ => smtp_client,
     };
 
-    smtp_client
-        .smtp_utf8(true)
-        .timeout(Some(Duration::from_secs(CONFIG.smtp_timeout())))
-        .connection_reuse(ConnectionReuseParameters::NoReuse)
-        .transport()
+    smtp_client.timeout(Some(Duration::from_secs(CONFIG.smtp_timeout())))
 }
 
 fn get_text(template_name: &'static str, data: serde_json::Value) -> Result<(String, String, String), Error> {
@@ -283,38 +278,28 @@ fn send_email(address: &str, subject: &str, body_html: &str, body_text: &str) ->
 
     let address = format!("{}@{}", address_split[1], domain_puny);
 
-    let html = PartBuilder::new()
-        .body(encode_to_str(body_html))
-        .header(("Content-Type", "text/html; charset=utf-8"))
-        .header(("Content-Transfer-Encoding", "quoted-printable"))
-        .build();
+    let html = SinglePart::builder()
+        .header(header::ContentType("text/html; charset=utf-8".parse().unwrap()))
+        .header(header::ContentTransferEncoding::QuotedPrintable)
+        .body(body_html);
 
-    let text = PartBuilder::new()
-        .body(encode_to_str(body_text))
-        .header(("Content-Type", "text/plain; charset=utf-8"))
-        .header(("Content-Transfer-Encoding", "quoted-printable"))
-        .build();
+    let text = SinglePart::builder()
+        .header(header::ContentType("text/plain; charset=utf-8".parse().unwrap()))
+        .header(header::ContentTransferEncoding::QuotedPrintable)
+        .body(body_text);
 
-    let alternative = PartBuilder::new()
-        .message_type(MimeMultipartType::Alternative)
-        .child(text)
-        .child(html);
+    let alternative = MultiPart::alternative().singlepart(text).singlepart(html);
 
-    let email = EmailBuilder::new()
-        .to(address)
-        .from((CONFIG.smtp_from().as_str(), CONFIG.smtp_from_name().as_str()))
+    let email = Message::builder()
+        .to(Mailbox::new(None, Address::from_str(&address)?))
+        .from(Mailbox::new(
+            Some(CONFIG.smtp_from_name()),
+            Address::from_str(&CONFIG.smtp_from())?,
+        ))
         .subject(subject)
-        .child(alternative.build())
-        .build()
+        .multipart(alternative)
         .map_err(|e| Error::new("Error building email", e.to_string()))?;
 
-    let mut transport = mailer();
-
-    let result = transport.send(email);
-
-    // Explicitly close the connection, in case of error
-    transport.close();
-    
-    result?;
+    let _ = mailer().send(&email)?;
     Ok(())
 }

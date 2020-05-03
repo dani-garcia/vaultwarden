@@ -92,9 +92,8 @@ num-traits = "0.2.11"
 num-derive = "0.3.0"
 
 # Email libraries
-lettre = "0.10.0-pre"
+lettre = { version = "0.10.0-pre", features = ["smtp-transport", "builder", "serde", "native-tls"], default-features = false }
 native-tls = "0.2.4"
-quoted_printable = "0.4.2"
 
 # Template library
 handlebars = { version = "3.0.1", features = ["dir_source"] }
@@ -124,7 +123,7 @@ rocket = { git = 'https://github.com/SergioBenitez/Rocket', rev = '1010f6a2a88fa
 rocket_contrib = { git = 'https://github.com/SergioBenitez/Rocket', rev = '1010f6a2a88fac899dec0cd2f642156908038a53' }
 
 # Use git version for timeout fix #706
-lettre = { git = 'https://github.com/lettre/lettre', rev = '245c600c82ee18b766e8729f005ff453a55dce34' }
+lettre = { git = 'https://github.com/lettre/lettre', rev = '88df2a502d537ebfdd4218fb6b9f4168fb0f7943' }
 
 # For favicon extraction from main website
 data-url = { git = 'https://github.com/servo/rust-url', package="data-url", rev = '7f1bd6ce1c2fde599a757302a843a60e714c5f72' }
