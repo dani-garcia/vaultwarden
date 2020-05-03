@@ -1,4 +1,3 @@
-use diesel;
 use diesel::prelude::*;
 use serde_json::Value;
 
@@ -22,7 +21,7 @@ pub struct OrgPolicy {
 }
 
 #[allow(dead_code)]
-#[derive(FromPrimitive)]
+#[derive(num_derive::FromPrimitive)]
 pub enum OrgPolicyType {
     TwoFactorAuthentication = 0,
     MasterPassword = 1,

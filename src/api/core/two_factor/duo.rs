@@ -2,7 +2,6 @@ use chrono::Utc;
 use data_encoding::BASE64;
 use rocket::Route;
 use rocket_contrib::json::Json;
-use serde_json;
 
 use crate::api::core::two_factor::_generate_recover_code;
 use crate::api::{ApiResult, EmptyResult, JsonResult, JsonUpcase, PasswordData};

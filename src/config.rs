@@ -640,7 +640,7 @@ impl Config {
     pub fn is_admin_token_set(&self) -> bool {
         let token = self.admin_token();
 
-        !token.is_none() && !token.unwrap().trim().is_empty()
+        token.is_some() && !token.unwrap().trim().is_empty()
     }
 
     pub fn render_template<T: serde::ser::Serialize>(

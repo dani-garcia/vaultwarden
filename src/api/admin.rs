@@ -174,10 +174,9 @@ fn invite_user(data: Json<InviteData>, _token: AdminToken, conn: DbConn) -> Empt
 #[post("/test/smtp", data = "<data>")]
 fn test_smtp(data: Json<InviteData>, _token: AdminToken) -> EmptyResult {
     let data: InviteData = data.into_inner();
-    let email = data.email.clone();
 
     if CONFIG.mail_enabled() {
-        mail::send_test(&email)
+        mail::send_test(&data.email)
     } else {
         err!("Mail is not enabled")
     }

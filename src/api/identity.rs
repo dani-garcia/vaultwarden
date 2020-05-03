@@ -216,8 +216,7 @@ fn twofactor_auth(
 
     let selected_twofactor = twofactors
         .into_iter()
-        .filter(|tf| tf.atype == selected_id && tf.enabled)
-        .nth(0);
+        .find(|tf| tf.atype == selected_id && tf.enabled);
 
     use crate::api::core::two_factor as _tf;
     use crate::crypto::ct_eq;

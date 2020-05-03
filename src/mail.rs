@@ -46,7 +46,7 @@ fn mailer() -> SmtpTransport {
 
     let smtp_client = match CONFIG.smtp_auth_mechanism() {
         Some(mechanism) => {
-            let correct_mechanism = format!("\"{}\"", crate::util::upcase_first(&mechanism.trim_matches('"')));
+            let correct_mechanism = format!("\"{}\"", crate::util::upcase_first(mechanism.trim_matches('"')));
 
             match serde_json::from_str::<SmtpAuthMechanism>(&correct_mechanism) {
                 Ok(auth_mechanism) => smtp_client.authentication_mechanism(auth_mechanism),
@@ -95,7 +95,7 @@ pub fn send_password_hint(address: &str, hint: Option<String>) -> EmptyResult {
 
     let (subject, body_html, body_text) = get_text(template_name, json!({ "hint": hint, "url": CONFIG.domain() }))?;
 
-    send_email(&address, &subject, &body_html, &body_text)
+    send_email(address, &subject, &body_html, &body_text)
 }
 
 pub fn send_delete_account(address: &str, uuid: &str) -> EmptyResult {
@@ -112,7 +112,7 @@ pub fn send_delete_account(address: &str, uuid: &str) -> EmptyResult {
         }),
     )?;
 
-    send_email(&address, &subject, &body_html, &body_text)
+    send_email(address, &subject, &body_html, &body_text)
 }
 
 pub fn send_verify_email(address: &str, uuid: &str) -> EmptyResult {
@@ -129,7 +129,7 @@ pub fn send_verify_email(address: &str, uuid: &str) -> EmptyResult {
         }),
     )?;
 
-    send_email(&address, &subject, &body_html, &body_text)
+    send_email(address, &subject, &body_html, &body_text)
 }
 
 pub fn send_welcome(address: &str) -> EmptyResult {
@@ -140,7 +140,7 @@ pub fn send_welcome(address: &str) -> EmptyResult {
         }),
     )?;
 
-    send_email(&address, &subject, &body_html, &body_text)
+    send_email(address, &subject, &body_html, &body_text)
 }
 
 pub fn send_welcome_must_verify(address: &str, uuid: &str) -> EmptyResult {
@@ -156,7 +156,7 @@ pub fn send_welcome_must_verify(address: &str, uuid: &str) -> EmptyResult {
         }),
     )?;
 
-    send_email(&address, &subject, &body_html, &body_text)
+    send_email(address, &subject, &body_html, &body_text)
 }
 
 pub fn send_invite(
@@ -188,7 +188,7 @@ pub fn send_invite(
         }),
     )?;
 
-    send_email(&address, &subject, &body_html, &body_text)
+    send_email(address, &subject, &body_html, &body_text)
 }
 
 pub fn send_invite_accepted(new_user_email: &str, address: &str, org_name: &str) -> EmptyResult {
@@ -201,7 +201,7 @@ pub fn send_invite_accepted(new_user_email: &str, address: &str, org_name: &str)
         }),
     )?;
 
-    send_email(&address, &subject, &body_html, &body_text)
+    send_email(address, &subject, &body_html, &body_text)
 }
 
 pub fn send_invite_confirmed(address: &str, org_name: &str) -> EmptyResult {
@@ -213,7 +213,7 @@ pub fn send_invite_confirmed(address: &str, org_name: &str) -> EmptyResult {
         }),
     )?;
 
-    send_email(&address, &subject, &body_html, &body_text)
+    send_email(address, &subject, &body_html, &body_text)
 }
 
 pub fn send_new_device_logged_in(address: &str, ip: &str, dt: &NaiveDateTime, device: &str) -> EmptyResult {
@@ -232,7 +232,7 @@ pub fn send_new_device_logged_in(address: &str, ip: &str, dt: &NaiveDateTime, de
         }),
     )?;
 
-    send_email(&address, &subject, &body_html, &body_text)
+    send_email(address, &subject, &body_html, &body_text)
 }
 
 pub fn send_token(address: &str, token: &str) -> EmptyResult {
@@ -244,7 +244,7 @@ pub fn send_token(address: &str, token: &str) -> EmptyResult {
         }),
     )?;
 
-    send_email(&address, &subject, &body_html, &body_text)
+    send_email(address, &subject, &body_html, &body_text)
 }
 
 pub fn send_change_email(address: &str, token: &str) -> EmptyResult {
@@ -256,7 +256,7 @@ pub fn send_change_email(address: &str, token: &str) -> EmptyResult {
         }),
     )?;
 
-    send_email(&address, &subject, &body_html, &body_text)
+    send_email(address, &subject, &body_html, &body_text)
 }
 
 pub fn send_test(address: &str) -> EmptyResult {
@@ -267,7 +267,7 @@ pub fn send_test(address: &str) -> EmptyResult {
         }),
     )?;
 
-    send_email(&address, &subject, &body_html, &body_text)
+    send_email(address, &subject, &body_html, &body_text)
 }
 
 fn send_email(address: &str, subject: &str, body_html: &str, body_text: &str) -> EmptyResult {

@@ -1,7 +1,7 @@
-#![feature(proc_macro_hygiene, vec_remove_item, try_trait, ip)]
+#![forbid(unsafe_code)]
+#![feature(proc_macro_hygiene, try_trait, ip)]
 #![recursion_limit = "256"]
 
-extern crate openssl;
 #[macro_use]
 extern crate rocket;
 #[macro_use]
@@ -14,12 +14,6 @@ extern crate log;
 extern crate diesel;
 #[macro_use]
 extern crate diesel_migrations;
-#[macro_use]
-extern crate derive_more;
-#[macro_use]
-extern crate num_derive;
-
-extern crate backtrace;
 
 use std::{
     fs::create_dir_all,

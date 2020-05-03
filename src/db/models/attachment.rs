@@ -18,7 +18,7 @@ pub struct Attachment {
 
 /// Local methods
 impl Attachment {
-    pub fn new(id: String, cipher_uuid: String, file_name: String, file_size: i32) -> Self {
+    pub const fn new(id: String, cipher_uuid: String, file_name: String, file_size: i32) -> Self {
         Self {
             id,
             cipher_uuid,
@@ -52,7 +52,6 @@ impl Attachment {
 
 use crate::db::schema::{attachments, ciphers};
 use crate::db::DbConn;
-use diesel;
 use diesel::prelude::*;
 
 use crate::api::EmptyResult;

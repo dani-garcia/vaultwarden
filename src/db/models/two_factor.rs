@@ -1,4 +1,3 @@
-use diesel;
 use diesel::prelude::*;
 use serde_json::Value;
 
@@ -23,7 +22,7 @@ pub struct TwoFactor {
 }
 
 #[allow(dead_code)]
-#[derive(FromPrimitive)]
+#[derive(num_derive::FromPrimitive)]
 pub enum TwoFactorType {
     Authenticator = 0,
     Email = 1,

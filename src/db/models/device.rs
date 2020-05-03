@@ -108,7 +108,6 @@ impl Device {
 
 use crate::db::schema::devices;
 use crate::db::DbConn;
-use diesel;
 use diesel::prelude::*;
 
 use crate::api::EmptyResult;

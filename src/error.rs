@@ -7,7 +7,6 @@ macro_rules! make_error {
     ( $( $name:ident ( $ty:ty ): $src_fn:expr, $usr_msg_fun:expr ),+ $(,)? ) => {
         const BAD_REQUEST: u16 = 400;
 
-        #[derive(Display)]
         pub enum ErrorKind { $($name( $ty )),+ }
         pub struct Error { message: String, error: ErrorKind, error_code: u16 }
 
@@ -48,7 +47,7 @@ use u2f::u2ferror::U2fError as U2fErr;
 use yubico::yubicoerror::YubicoError as YubiErr;
 use lettre::smtp::error::Error as LettreErr;
 
-#[derive(Display, Serialize)]
+#[derive(Serialize)]
 pub struct Empty {}
 
 // Error struct
@@ -118,7 +117,7 @@ impl Error {
         self
     }
 
-    pub fn with_code(mut self, code: u16) -> Self {
+    pub const fn with_code(mut self, code: u16) -> Self {
         self.error_code = code;
         self
     }
@@ -146,7 +145,7 @@ impl<S> MapResult<S> for Option<S> {
     }
 }
 
-fn _has_source<T>(e: T) -> Option<T> {
+const fn _has_source<T>(e: T) -> Option<T> {
     Some(e)
 }
 fn _no_source<T, S>(_: T) -> Option<S> {

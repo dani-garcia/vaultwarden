@@ -159,11 +159,12 @@ impl Handler for WSHandler {
 
         let (_id, access_token) = match path.split('?').nth(1) {
             Some(params) => {
-                let mut params_iter = params.split('&').take(2);
+                let params_iter = params.split('&').take(2);
 
                 let mut id = None;
                 let mut access_token = None;
-                while let Some(val) = params_iter.next() {
+                
+                for val in params_iter {
                     if val.starts_with(ID_KEY) {
                         id = Some(&val[ID_KEY.len()..]);
                     } else if val.starts_with(ACCESS_TOKEN_KEY) {
@@ -260,7 +261,9 @@ impl Factory for WSFactory {
         // Remove handler
         if let Some(user_uuid) = &handler.user_uuid {
             if let Some(mut user_conn) = self.users.map.get_mut(user_uuid) {
-                user_conn.remove_item(&handler.out);
+                if let Some(pos) = user_conn.iter().position(|x| x == &handler.out) {
+                    user_conn.remove(pos);
+                }
             }
         }
     }

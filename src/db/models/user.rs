@@ -121,7 +121,6 @@ impl User {
 use super::{Cipher, Device, Folder, TwoFactor, UserOrgType, UserOrganization};
 use crate::db::schema::{invitations, users};
 use crate::db::DbConn;
-use diesel;
 use diesel::prelude::*;
 
 use crate::api::EmptyResult;
@@ -275,7 +274,7 @@ pub struct Invitation {
 }
 
 impl Invitation {
-    pub fn new(email: String) -> Self {
+    pub const fn new(email: String) -> Self {
         Self { email }
     }
 

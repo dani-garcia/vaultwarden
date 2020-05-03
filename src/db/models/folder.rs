@@ -63,7 +63,6 @@ impl FolderCipher {
 
 use crate::db::schema::{folders, folders_ciphers};
 use crate::db::DbConn;
-use diesel;
 use diesel::prelude::*;
 
 use crate::api::EmptyResult;

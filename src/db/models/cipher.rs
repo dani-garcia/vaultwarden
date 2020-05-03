@@ -66,7 +66,6 @@ impl Cipher {
 
 use crate::db::schema::*;
 use crate::db::DbConn;
-use diesel;
 use diesel::prelude::*;
 
 use crate::api::EmptyResult;

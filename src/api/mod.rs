@@ -1,5 +1,5 @@
 mod admin;
-pub(crate) mod core;
+pub mod core;
 mod icons;
 mod identity;
 mod notifications;

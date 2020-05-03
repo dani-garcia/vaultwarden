@@ -65,13 +65,13 @@ impl Fairing for CORS {
         let req_headers = request.headers();
 
         // We need to explicitly get the Origin header for Access-Control-Allow-Origin
-        let req_allow_origin = CORS::valid_url(CORS::get_header(&req_headers, "Origin"));
+        let req_allow_origin = CORS::valid_url(CORS::get_header(req_headers, "Origin"));
 
         response.set_header(Header::new("Access-Control-Allow-Origin", req_allow_origin));
 
         if request.method() == Method::Options {
-            let req_allow_headers = CORS::get_header(&req_headers, "Access-Control-Request-Headers");
-            let req_allow_method = CORS::get_header(&req_headers, "Access-Control-Request-Method");
+            let req_allow_headers = CORS::get_header(req_headers, "Access-Control-Request-Headers");
+            let req_allow_method = CORS::get_header(req_headers, "Access-Control-Request-Method");
 
             response.set_header(Header::new("Access-Control-Allow-Methods", req_allow_method));
             response.set_header(Header::new("Access-Control-Allow-Headers", req_allow_headers));
@@ -86,14 +86,14 @@ impl Fairing for CORS {
 pub struct Cached<R>(R, &'static str);
 
 impl<R> Cached<R> {
-    pub fn long(r: R) -> Cached<R> {
+    pub const fn long(r: R) -> Cached<R> {
         // 7 days
-        Cached(r, "public, max-age=604800")
+        Self(r, "public, max-age=604800")
     }
 
-    pub fn short(r: R) -> Cached<R> {
+    pub const fn short(r: R) -> Cached<R> {
         // 10 minutes
-        Cached(r, "public, max-age=600")
+        Self(r, "public, max-age=600")
     }
 }
 
@@ -177,7 +177,7 @@ impl Fairing for BetterLogging {
         let uri_subpath = request.uri().path().trim_start_matches(&CONFIG.domain_path());
         if self.0 || LOGGED_ROUTES.iter().any(|r| uri_subpath.starts_with(r)) {
             let status = response.status();
-            if let Some(ref route) = request.route() {
+            if let Some(route) = request.route() {
                 info!(target: "response", "{} => {} {}", route, status.code, status.reason)
             } else {
                 info!(target: "response", "{} {}", status.code, status.reason)
@@ -225,33 +225,6 @@ pub fn delete_file(path: &str) -> IOResult<()> {
     }
 
     res
-}
-
-pub struct LimitedReader<'a> {
-    reader: &'a mut dyn std::io::Read,
-    limit: usize, // In bytes
-    count: usize,
-}
-impl<'a> LimitedReader<'a> {
-    pub fn new(reader: &'a mut dyn std::io::Read, limit: usize) -> LimitedReader<'a> {
-        LimitedReader {
-            reader,
-            limit,
-            count: 0,
-        }
-    }
-}
-
-impl<'a> std::io::Read for LimitedReader<'a> {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        self.count += buf.len();
-
-        if self.count > self.limit {
-            Ok(0) // End of the read
-        } else {
-            self.reader.read(buf)
-        }
-    }
 }
 
 const UNITS: [&str; 6] = ["bytes", "KB", "MB", "GB", "TB", "PB"];

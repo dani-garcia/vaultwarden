@@ -50,7 +50,6 @@ fn get_folder(uuid: String, headers: Headers, conn: DbConn) -> JsonResult {
 
 #[derive(Deserialize)]
 #[allow(non_snake_case)]
-
 pub struct FolderData {
     pub Name: String,
 }

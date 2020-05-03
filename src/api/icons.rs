@@ -182,7 +182,7 @@ struct Icon {
 }
 
 impl Icon {
-    fn new(priority: u8, href: String) -> Self {
+    const fn new(priority: u8, href: String) -> Self {
         Self { href, priority }
     }
 }
@@ -213,7 +213,7 @@ fn get_icon_url(domain: &str) -> Result<(Vec<Icon>, String), Error> {
     let mut cookie_str = String::new();
 
     let resp = get_page(&ssldomain).or_else(|_| get_page(&httpdomain));
-    if let Ok(mut content) = resp {
+    if let Ok(content) = resp {
         // Extract the URL from the respose in case redirects occured (like @ gitlab.com)
         let url = content.url().clone();
 
@@ -235,7 +235,7 @@ fn get_icon_url(domain: &str) -> Result<(Vec<Icon>, String), Error> {
 
         // 512KB should be more than enough for the HTML, though as we only really need
         // the HTML header, it could potentially be reduced even further
-        let limited_reader = crate::util::LimitedReader::new(&mut content, 512 * 1024);
+        let limited_reader = content.take(512 * 1024);
 
         let soup = Soup::from_reader(limited_reader)?;
         // Search for and filter

@@ -1,6 +1,5 @@
 use rocket::Route;
 use rocket_contrib::json::Json;
-use serde_json;
 
 use crate::api::core::two_factor::_generate_recover_code;
 use crate::api::{EmptyResult, JsonResult, JsonUpcase, PasswordData};

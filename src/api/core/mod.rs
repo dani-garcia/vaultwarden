@@ -2,7 +2,7 @@ mod accounts;
 mod ciphers;
 mod folders;
 mod organizations;
-pub(crate) mod two_factor;
+pub mod two_factor;
 
 pub fn routes() -> Vec<Route> {
     let mut mod_routes = routes![
