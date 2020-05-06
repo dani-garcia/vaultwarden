@@ -123,7 +123,7 @@ rocket = { git = 'https://github.com/SergioBenitez/Rocket', rev = '1010f6a2a88fa
 rocket_contrib = { git = 'https://github.com/SergioBenitez/Rocket', rev = '1010f6a2a88fac899dec0cd2f642156908038a53' }
 
 # Use git version for timeout fix #706
-lettre = { git = 'https://github.com/lettre/lettre', rev = '88df2a502d537ebfdd4218fb6b9f4168fb0f7943' }
+lettre = { git = 'https://github.com/lettre/lettre', rev = '2ade0b884630ce1125ffc1011e8604244c1e62e5' }
 
 # For favicon extraction from main website
 data-url = { git = 'https://github.com/servo/rust-url', package="data-url", rev = '7f1bd6ce1c2fde599a757302a843a60e714c5f72' }

@@ -45,8 +45,10 @@ use std::option::NoneError as NoneErr;
 use std::time::SystemTimeError as TimeErr;
 use u2f::u2ferror::U2fError as U2fErr;
 use yubico::yubicoerror::YubicoError as YubiErr;
-use lettre::error::Error as LettreErr;
+
 use lettre::address::AddressError as AddrErr;
+use lettre::error::Error as LettreErr;
+use lettre::message::mime::FromStrError as FromStrErr;
 use lettre::transport::smtp::error::Error as SmtpErr;
 
 #[derive(Serialize)]
@@ -75,9 +77,11 @@ make_error! {
     ReqError(ReqErr):     _has_source, _api_error,
     RegexError(RegexErr): _has_source, _api_error,
     YubiError(YubiErr):   _has_source, _api_error,
-    LetreError(LettreErr):_has_source, _api_error,
-    AddressError(AddrErr):_has_source, _api_error,
-    SmtpError(SmtpErr):   _has_source, _api_error,
+
+    LetreError(LettreErr):    _has_source, _api_error,
+    AddressError(AddrErr):    _has_source, _api_error,
+    SmtpError(SmtpErr):       _has_source, _api_error,
+    FromStrError(FromStrErr): _has_source, _api_error,
 }
 
 // This is implemented by hand because NoneError doesn't implement neither Display nor Error

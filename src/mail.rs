@@ -278,17 +278,25 @@ fn send_email(address: &str, subject: &str, body_html: &str, body_text: &str) ->
 
     let address = format!("{}@{}", address_split[1], domain_puny);
 
-    let html = SinglePart::builder()
-        .header(header::ContentType("text/html; charset=utf-8".parse().unwrap()))
-        .header(header::ContentTransferEncoding::QuotedPrintable)
-        .body(body_html);
-
-    let text = SinglePart::builder()
-        .header(header::ContentType("text/plain; charset=utf-8".parse().unwrap()))
-        .header(header::ContentTransferEncoding::QuotedPrintable)
-        .body(body_text);
-
-    let alternative = MultiPart::alternative().singlepart(text).singlepart(html);
+    let data = MultiPart::mixed()
+        .multipart(
+            MultiPart::alternative()
+                .singlepart(
+                    SinglePart::quoted_printable()
+                        .header(header::ContentType("text/plain; charset=utf-8".parse()?))
+                        .body(body_text),
+                )
+                .multipart(
+                    MultiPart::related().singlepart(
+                        SinglePart::quoted_printable()
+                            .header(header::ContentType("text/html; charset=utf-8".parse()?))
+                            .body(body_html),
+                    )
+                    // .singlepart(SinglePart::base64() -- Inline files would go here
+                ),
+        )
+        // .singlepart(SinglePart::base64()  -- Attachments would go here
+        ;
 
     let email = Message::builder()
         .to(Mailbox::new(None, Address::from_str(&address)?))
@@ -297,8 +305,7 @@ fn send_email(address: &str, subject: &str, body_html: &str, body_text: &str) ->
             Address::from_str(&CONFIG.smtp_from())?,
         ))
         .subject(subject)
-        .multipart(alternative)
-        .map_err(|e| Error::new("Error building email", e.to_string()))?;
+        .multipart(data)?;
 
     let _ = mailer().send(&email)?;
     Ok(())

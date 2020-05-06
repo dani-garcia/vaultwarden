@@ -1046,7 +1046,7 @@ checksum = "b294d6fa9ee409a054354afc4352b0b9ef7ca222c69b8812cbea9e7d2bf3783f"
 [[package]]
 name = "lettre"
 version = "0.10.0-pre"
-source = "git+https://github.com/lettre/lettre?rev=88df2a502d537ebfdd4218fb6b9f4168fb0f7943#88df2a502d537ebfdd4218fb6b9f4168fb0f7943"
+source = "git+https://github.com/lettre/lettre?rev=2ade0b884630ce1125ffc1011e8604244c1e62e5#2ade0b884630ce1125ffc1011e8604244c1e62e5"
 dependencies = [
  "base64 0.12.0",
  "bufstream",
