@@ -108,7 +108,9 @@
       "microsoftonline.com",
       "office365.com",
       "microsoftstore.com",
-      "xbox.com"
+      "xbox.com",
+      "azure.com",
+      "windowsazure.com"
     ],
     "Excluded": false
   },
@@ -126,8 +128,7 @@
     "Type": 12,
     "Domains": [
       "overture.com",
-      "yahoo.com",
-      "flickr.com"
+      "yahoo.com"
     ],
     "Excluded": false
   },
@@ -192,7 +193,6 @@
       "amazon.it",
       "amazon.com.au",
       "amazon.co.nz",
-      "amazon.co.jp",
       "amazon.in"
     ],
     "Excluded": false
@@ -777,69 +777,69 @@
     "Excluded": false
   },
   {
-  	"Type": 76,
-  	"Domains": [
-  		"docusign.com",
-  		"docusign.net"
-  	],
-  	"Excluded": false
+    "Type": 76,
+    "Domains": [
+      "docusign.com",
+      "docusign.net"
+    ],
+    "Excluded": false
   },
   {
-  	"Type": 77,
-  	"Domains": [
-  		"envato.com",
-  		"themeforest.net",
-  		"codecanyon.net",
-  		"videohive.net",
-  		"audiojungle.net",
-  		"graphicriver.net",
-  		"photodune.net",
-  		"3docean.net"
-  	],
-  	"Excluded": false
+    "Type": 77,
+    "Domains": [
+      "envato.com",
+      "themeforest.net",
+      "codecanyon.net",
+      "videohive.net",
+      "audiojungle.net",
+      "graphicriver.net",
+      "photodune.net",
+      "3docean.net"
+    ],
+    "Excluded": false
   },
   {
-  	"Type": 78,
-  	"Domains": [
-  		"x10hosting.com",
-  		"x10premium.com"
-  	],
-  	"Excluded": false
+    "Type": 78,
+    "Domains": [
+      "x10hosting.com",
+      "x10premium.com"
+    ],
+    "Excluded": false
   },
   {
-  	"Type": 79,
-  	"Domains": [
-  		"dnsomatic.com",
-  		"opendns.com",
-  		"umbrella.com"
-  	],
-  	"Excluded": false
+    "Type": 79,
+    "Domains": [
+      "dnsomatic.com",
+      "opendns.com",
+      "umbrella.com"
+    ],
+    "Excluded": false
   },
   {
-  	"Type": 80,
-  	"Domains": [
-  		"cagreatamerica.com",
-  		"canadaswonderland.com",
-  		"carowinds.com",
-  		"cedarfair.com",
-  		"cedarpoint.com",
-  		"dorneypark.com",
-  		"kingsdominion.com",
-  		"knotts.com",
-  		"miadventure.com",
-  		"schlitterbahn.com",
-  		"valleyfair.com",
-  		"visitkingsisland.com",
-  		"worldsoffun.com"
-  	],
-  	"Excluded": false
+    "Type": 80,
+    "Domains": [
+      "cagreatamerica.com",
+      "canadaswonderland.com",
+      "carowinds.com",
+      "cedarfair.com",
+      "cedarpoint.com",
+      "dorneypark.com",
+      "kingsdominion.com",
+      "knotts.com",
+      "miadventure.com",
+      "schlitterbahn.com",
+      "valleyfair.com",
+      "visitkingsisland.com",
+      "worldsoffun.com"
+    ],
+    "Excluded": false
   },
   {
-  	"Type": 81,
-  	"Domains": [
-  		"ubnt.com",
-  		"ui.com"
-  	],
-  	"Excluded": false
+    "Type": 81,
+    "Domains": [
+      "ubnt.com",
+      "ui.com"
+    ],
+    "Excluded": false
   }
 ]

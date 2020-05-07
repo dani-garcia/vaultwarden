@@ -767,11 +767,7 @@ fn post_attachment_admin(
     post_attachment(uuid, data, content_type, headers, conn, nt)
 }
 
-#[post(
-    "/ciphers/<uuid>/attachment/<attachment_id>/share",
-    format = "multipart/form-data",
-    data = "<data>"
-)]
+#[post("/ciphers/<uuid>/attachment/<attachment_id>/share", format = "multipart/form-data", data = "<data>")]
 fn post_attachment_share(
     uuid: String,
     attachment_id: String,

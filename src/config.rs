@@ -135,7 +135,6 @@ macro_rules! make_config {
                     (inner._env.build(), inner.config.clone())
                 };
 
-
                 fn _get_form_type(rust_type: &str) -> &'static str {
                     match rust_type {
                         "Pass" => "password",
