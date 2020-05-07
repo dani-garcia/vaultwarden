@@ -20,6 +20,7 @@ pub fn routes() -> Vec<Route> {
         activate_authenticator_put,
     ]
 }
+
 #[post("/two-factor/get-authenticator", data = "<data>")]
 fn generate_authenticator(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: PasswordData = data.into_inner().data;
