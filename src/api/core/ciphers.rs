@@ -208,6 +208,11 @@ fn post_ciphers_admin(data: JsonUpcase<ShareCipherData>, headers: Headers, conn:
 fn _post_ciphers_admin(data: JsonUpcase<ShareCipherData>, headers: Headers, conn: DbConn, nt: Notify, resp_model: &str) -> JsonResult {
     let data: ShareCipherData = data.into_inner().data;
 
+    // Require a collection, otherwise it will be saved as "Unassigned" without regard to read_only
+    if data.CollectionIds.is_empty() {
+        err!("You must select at least one collection.")
+    }
+
     let mut cipher = Cipher::new(data.Cipher.Type, data.Cipher.Name.clone());
     cipher.user_uuid = Some(headers.user.uuid.clone());
     cipher.save(&conn)?;
