@@ -304,7 +304,7 @@ impl UserOrganization {
         })
     }
 
-    pub fn to_json_collection_user_details(&self, read_only: bool) -> Value {
+    pub fn to_json_read_only(&self, read_only: bool) -> Value {
         json!({
             "Id": self.uuid,
             "ReadOnly": read_only

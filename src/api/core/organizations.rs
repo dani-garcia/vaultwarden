@@ -374,7 +374,7 @@ fn get_collection_users(org_id: String, coll_id: String, _headers: AdminHeaders,
         .map(|col_user| {
             UserOrganization::find_by_user_and_org(&col_user.user_uuid, &org_id, &conn)
                 .unwrap()
-                .to_json_collection_user_details(col_user.read_only)
+                .to_json_read_only(col_user.read_only)
         })
         .collect();
 
