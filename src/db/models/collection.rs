@@ -23,13 +23,23 @@ impl Collection {
         }
     }
 
-    pub fn to_json(&self) -> Value {
-        json!({
+    pub fn to_json(&self, user_uuid: &str, conn: &DbConn, resp_model: &str) -> Value {
+        let mut json_object = json!({
             "Id": self.uuid,
             "OrganizationId": self.org_uuid,
             "Name": self.name,
-            "Object": "collection",
-        })
+            "Object": resp_model,
+            "ExternalId": "", //NOT_IMPLEMENTED
+        });
+
+        if resp_model == "collectionDetails" {
+            json_object["ReadOnly"] = json!(!self.is_writable_by_user(&user_uuid, &conn));
+        } else if resp_model == "collectionGroupDetails" {
+            json_object["ExternalId"] = json!("Not supported in bitwarden_rs"); //NOT_IMPLEMENTED
+            json_object["Groups"] = json!([]); //NOT_IMPLEMENTED
+        }
+
+        json_object
     }
 }
 

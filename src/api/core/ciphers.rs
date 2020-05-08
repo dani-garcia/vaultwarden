@@ -83,7 +83,10 @@ fn sync(data: Form<SyncData>, headers: Headers, conn: DbConn) -> JsonResult {
     let folders_json: Vec<Value> = folders.iter().map(Folder::to_json).collect();
 
     let collections = Collection::find_by_user_uuid(&headers.user.uuid, &conn);
-    let collections_json: Vec<Value> = collections.iter().map(Collection::to_json).collect();
+    let collections_json: Vec<Value> = collections
+        .iter()
+        .map(|coll| coll.to_json(&headers.user.uuid, &conn, "collectionDetails"))
+        .collect();
 
     let policies = OrgPolicy::find_by_user(&headers.user.uuid, &conn);
     let policies_json: Vec<Value> = policies.iter().map(OrgPolicy::to_json).collect();

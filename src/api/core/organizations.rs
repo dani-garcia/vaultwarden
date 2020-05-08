@@ -192,7 +192,7 @@ fn get_user_collections(headers: Headers, conn: DbConn) -> JsonResult {
         "Data":
             Collection::find_by_user_uuid(&headers.user.uuid, &conn)
             .iter()
-            .map(Collection::to_json)
+            .map(|coll| coll.to_json(&headers.user.uuid, &conn, "collectionDetails"))
             .collect::<Value>(),
         "Object": "list",
         "ContinuationToken": null,
@@ -205,7 +205,7 @@ fn get_org_collections(org_id: String, _headers: AdminHeaders, conn: DbConn) -> 
         "Data":
             Collection::find_by_organization(&org_id, &conn)
             .iter()
-            .map(Collection::to_json)
+            .map(|coll| coll.to_json("", &conn, "collection"))
             .collect::<Value>(),
         "Object": "list",
         "ContinuationToken": null,
@@ -229,7 +229,7 @@ fn post_organization_collections(
     let collection = Collection::new(org.uuid, data.Name);
     collection.save(&conn)?;
 
-    Ok(Json(collection.to_json()))
+    Ok(Json(collection.to_json("", &conn, "collection")))
 }
 
 #[put("/organizations/<org_id>/collections/<col_id>", data = "<data>")]
@@ -270,7 +270,7 @@ fn post_organization_collection_update(
     collection.name = data.Name;
     collection.save(&conn)?;
 
-    Ok(Json(collection.to_json()))
+    Ok(Json(collection.to_json("", &conn, "collection")))
 }
 
 #[delete("/organizations/<org_id>/collections/<col_id>/user/<org_user_id>")]
@@ -355,7 +355,7 @@ fn get_org_collection_detail(org_id: String, coll_id: String, headers: AdminHead
                 err!("Collection is not owned by organization")
             }
 
-            Ok(Json(collection.to_json()))
+            Ok(Json(collection.to_json(&headers.user.uuid, &conn, "collectionGroupDetails")))
         }
     }
 }
