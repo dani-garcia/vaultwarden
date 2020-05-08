@@ -59,7 +59,7 @@ impl TwoFactor {
         })
     }
 
-    pub fn to_json_list(&self) -> Value {
+    pub fn to_json_provider(&self) -> Value {
         json!({
             "Enabled": self.enabled,
             "Type": self.atype,
