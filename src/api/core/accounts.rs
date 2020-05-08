@@ -210,7 +210,12 @@ fn post_keys(data: JsonUpcase<KeysData>, headers: Headers, conn: DbConn) -> Json
     user.public_key = Some(data.PublicKey);
 
     user.save(&conn)?;
-    Ok(Json(user.to_json(&conn)))
+
+    Ok(Json(json!({
+        "PrivateKey": user.private_key,
+        "PublicKey": user.public_key,
+        "Object":"keys"
+    })))
 }
 
 #[derive(Deserialize)]
