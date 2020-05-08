@@ -73,49 +73,77 @@ use crate::error::MapResult;
 
 /// Database methods
 impl Cipher {
-    pub fn to_json(&self, host: &str, user_uuid: &str, conn: &DbConn) -> Value {
+    pub fn to_json(&self, host: &str, user_uuid: &str, conn: &DbConn, resp_model: &str) -> Value {
         use crate::util::format_date;
 
         let attachments = Attachment::find_by_cipher(&self.uuid, conn);
-        let attachments_json: Vec<Value> = attachments.iter().map(|c| c.to_json(host)).collect();
+        let attachments_json = if attachments.is_empty() {Value::Null} else {attachments.iter().map(|c| c.to_json(host)).collect()};
 
-        let fields_json = self.fields.as_ref().and_then(|s| serde_json::from_str(s).ok()).unwrap_or(Value::Null);
+        let mut fields_json = self.fields.as_ref().and_then(|s| serde_json::from_str(s).ok()).unwrap_or(Value::Null);
         let password_history_json = self.password_history.as_ref().and_then(|s| serde_json::from_str(s).ok()).unwrap_or(Value::Null);
 
-        // Get the data or a default empty value to avoid issues with the mobile apps
+        // Get the data or a default empty value of common items to avoid issues with the mobile apps
         let mut data_json: Value = serde_json::from_str(&self.data).unwrap_or_else(|_| json!({
-            "Fields":null,
+            "Fields": null,
             "Name": self.name,
-            "Notes":null,
-            "Password":null,
-            "PasswordHistory":null,
-            "PasswordRevisionDate":null,
-            "Response":null,
-            "Totp":null,
-            "Uris":null,
-            "Username":null
+            "Notes": null,
+            "PasswordHistory": null
         }));
 
         // TODO: ******* Backwards compat start **********
         // To remove backwards compatibility, just remove this entire section
         // and remove the compat code from ciphers::update_cipher_from_data
-        if self.atype == 1 && data_json["Uris"].is_array() {
-            let uri = data_json["Uris"][0]["Uri"].clone();
-            data_json["Uri"] = uri;
+        if self.atype == 1 && (data_json["Uris"].is_array() || data_json["Uris"].is_null()) {
+            data_json["Uri"] = data_json["Uris"][0]["Uri"].clone();
         }
         // TODO: ******* Backwards compat end **********
+
+        // Make sure a SecureNote doesn't end up null
+        if self.atype == 2 && !data_json["Type"].is_i64() {
+            data_json["Type"] = json!(0);
+        }
+
+        // Do not include "Response" in data_json
+        data_json.as_object_mut().unwrap().remove("Response");
+
+        // Do not include "Response" in data_json.Fields
+        if data_json["Fields"].is_array() {
+            data_json["Fields"].as_array_mut()
+                .unwrap()
+                .iter_mut()
+                .for_each(|ref mut f| {
+                    f.as_object_mut().unwrap().remove("Response");
+                });
+        };
+
+        // Do not include "Response" in fields_json
+        if fields_json.is_array() {
+            fields_json.as_array_mut()
+                .unwrap()
+                .iter_mut()
+                .for_each(|ref mut f| {
+                    f.as_object_mut().unwrap().remove("Response");
+                });
+        };
+
+        // Do not include "Response" in Uris
+        if data_json["Uris"].is_array() {
+            data_json["Uris"].as_array_mut()
+                .unwrap()
+                .iter_mut()
+                .for_each(|ref mut f| {
+                    f.as_object_mut().unwrap().remove("Response");
+                });
+        };
 
         let mut json_object = json!({
             "Id": self.uuid,
             "Type": self.atype,
             "RevisionDate": format_date(&self.updated_at),
             "DeletedDate": self.deleted_at.map_or(Value::Null, |d| Value::String(format_date(&d))),
-            "FolderId": self.get_folder_uuid(&user_uuid, &conn),
-            "Favorite": self.favorite,
             "OrganizationId": self.organization_uuid,
             "Attachments": attachments_json,
-            "OrganizationUseTotp": true,
-            "CollectionIds": self.get_collections(user_uuid, &conn),
+            "OrganizationUseTotp": self.organization_uuid.is_some(),
 
             "Name": self.name,
             "Notes": self.notes,
@@ -123,11 +151,32 @@ impl Cipher {
 
             "Data": data_json,
 
-            "Object": "cipher",
-            "Edit": true,
+            "Object": resp_model,
 
             "PasswordHistory": password_history_json,
+
+            // These are all included, but only gets populated
+            "Login": null,
+            "Card": null,
+            "Identity": null,
+            "SecureNote": null,
         });
+
+        // Add additional items based on the requested response model
+        if resp_model == "cipher" || resp_model == "cipherDetails" {
+            json_object["FolderId"] = json!(self.get_folder_uuid(&user_uuid, &conn));
+            json_object["Favorite"] = json!(self.favorite);
+            json_object["Edit"] = json!(self.is_write_accessible_to_user(user_uuid, &conn));
+        } 
+        if resp_model == "cipherDetails" || resp_model == "cipherMiniDetails" {
+            json_object["CollectionIds"] = json!(self.get_collections(user_uuid, &conn));
+        }
+
+        // data_json is reused for the json_object[key] value, but do not include the backwards compatibility items
+        data_json.as_object_mut().unwrap().remove("Fields");
+        data_json.as_object_mut().unwrap().remove("Name");
+        data_json.as_object_mut().unwrap().remove("Notes");
+        data_json.as_object_mut().unwrap().remove("PasswordHistory");
 
         let key = match self.atype {
             1 => "Login",

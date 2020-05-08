@@ -91,7 +91,7 @@ fn sync(data: Form<SyncData>, headers: Headers, conn: DbConn) -> JsonResult {
     let ciphers = Cipher::find_by_user(&headers.user.uuid, &conn);
     let ciphers_json: Vec<Value> = ciphers
         .iter()
-        .map(|c| c.to_json(&headers.host, &headers.user.uuid, &conn))
+        .map(|c| c.to_json(&headers.host, &headers.user.uuid, &conn, "cipherDetails"))
         .collect();
 
     let domains_json = if data.exclude_domains {
@@ -117,7 +117,7 @@ fn get_ciphers(headers: Headers, conn: DbConn) -> JsonResult {
 
     let ciphers_json: Vec<Value> = ciphers
         .iter()
-        .map(|c| c.to_json(&headers.host, &headers.user.uuid, &conn))
+        .map(|c| c.to_json(&headers.host, &headers.user.uuid, &conn, "cipherDetails"))
         .collect();
 
     Ok(Json(json!({
@@ -129,6 +129,10 @@ fn get_ciphers(headers: Headers, conn: DbConn) -> JsonResult {
 
 #[get("/ciphers/<uuid>")]
 fn get_cipher(uuid: String, headers: Headers, conn: DbConn) -> JsonResult {
+    _get_cipher(uuid, headers, conn, "cipher")
+}
+
+fn _get_cipher(uuid: String, headers: Headers, conn: DbConn, resp_model: &str) -> JsonResult {
     let cipher = match Cipher::find_by_uuid(&uuid, &conn) {
         Some(cipher) => cipher,
         None => err!("Cipher doesn't exist"),
@@ -138,18 +142,18 @@ fn get_cipher(uuid: String, headers: Headers, conn: DbConn) -> JsonResult {
         err!("Cipher is not owned by user")
     }
 
-    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, &conn)))
+    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, &conn, resp_model)))
 }
 
 #[get("/ciphers/<uuid>/admin")]
 fn get_cipher_admin(uuid: String, headers: Headers, conn: DbConn) -> JsonResult {
     // TODO: Implement this correctly
-    get_cipher(uuid, headers, conn)
+    _get_cipher(uuid, headers, conn, "cipherMini")
 }
 
 #[get("/ciphers/<uuid>/details")]
 fn get_cipher_details(uuid: String, headers: Headers, conn: DbConn) -> JsonResult {
-    get_cipher(uuid, headers, conn)
+    _get_cipher(uuid, headers, conn, "cipherDetails")
 }
 
 #[derive(Deserialize, Debug)]
@@ -198,18 +202,22 @@ pub struct Attachments2Data {
 
 #[post("/ciphers/admin", data = "<data>")]
 fn post_ciphers_admin(data: JsonUpcase<ShareCipherData>, headers: Headers, conn: DbConn, nt: Notify) -> JsonResult {
+    _post_ciphers_admin(data, headers, conn, nt, "cipherMini")
+}
+
+fn _post_ciphers_admin(data: JsonUpcase<ShareCipherData>, headers: Headers, conn: DbConn, nt: Notify, resp_model: &str) -> JsonResult {
     let data: ShareCipherData = data.into_inner().data;
 
     let mut cipher = Cipher::new(data.Cipher.Type, data.Cipher.Name.clone());
     cipher.user_uuid = Some(headers.user.uuid.clone());
     cipher.save(&conn)?;
 
-    share_cipher_by_uuid(&cipher.uuid, data, &headers, &conn, &nt)
+    share_cipher_by_uuid(&cipher.uuid, data, &headers, &conn, &nt, &resp_model)
 }
 
 #[post("/ciphers/create", data = "<data>")]
 fn post_ciphers_create(data: JsonUpcase<ShareCipherData>, headers: Headers, conn: DbConn, nt: Notify) -> JsonResult {
-    post_ciphers_admin(data, headers, conn, nt)
+    _post_ciphers_admin(data, headers, conn, nt, "cipher")
 }
 
 #[post("/ciphers", data = "<data>")]
@@ -219,7 +227,7 @@ fn post_ciphers(data: JsonUpcase<CipherData>, headers: Headers, conn: DbConn, nt
     let mut cipher = Cipher::new(data.Type, data.Name.clone());
     update_cipher_from_data(&mut cipher, data, &headers, false, &conn, &nt, UpdateType::CipherCreate)?;
 
-    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, &conn)))
+    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, &conn, "cipher")))
 }
 
 pub fn update_cipher_from_data(
@@ -385,7 +393,7 @@ fn put_cipher_admin(
     conn: DbConn,
     nt: Notify,
 ) -> JsonResult {
-    put_cipher(uuid, data, headers, conn, nt)
+    _put_cipher(uuid, data, headers, conn, nt, "cipherMini")
 }
 
 #[post("/ciphers/<uuid>/admin", data = "<data>")]
@@ -396,16 +404,20 @@ fn post_cipher_admin(
     conn: DbConn,
     nt: Notify,
 ) -> JsonResult {
-    post_cipher(uuid, data, headers, conn, nt)
+    _put_cipher(uuid, data, headers, conn, nt, "cipherMini")
 }
 
 #[post("/ciphers/<uuid>", data = "<data>")]
 fn post_cipher(uuid: String, data: JsonUpcase<CipherData>, headers: Headers, conn: DbConn, nt: Notify) -> JsonResult {
-    put_cipher(uuid, data, headers, conn, nt)
+    _put_cipher(uuid, data, headers, conn, nt, "cipher")
 }
 
 #[put("/ciphers/<uuid>", data = "<data>")]
 fn put_cipher(uuid: String, data: JsonUpcase<CipherData>, headers: Headers, conn: DbConn, nt: Notify) -> JsonResult {
+    _put_cipher(uuid, data, headers, conn, nt, "cipher")
+}
+
+fn _put_cipher(uuid: String, data: JsonUpcase<CipherData>, headers: Headers, conn: DbConn, nt: Notify, resp_model: &str) -> JsonResult {
     let data: CipherData = data.into_inner().data;
 
     let mut cipher = match Cipher::find_by_uuid(&uuid, &conn) {
@@ -419,7 +431,7 @@ fn put_cipher(uuid: String, data: JsonUpcase<CipherData>, headers: Headers, conn
 
     update_cipher_from_data(&mut cipher, data, &headers, false, &conn, &nt, UpdateType::CipherUpdate)?;
 
-    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, &conn)))
+    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, &conn, resp_model)))
 }
 
 #[derive(Deserialize)]
@@ -522,7 +534,7 @@ fn post_cipher_share(
 ) -> JsonResult {
     let data: ShareCipherData = data.into_inner().data;
 
-    share_cipher_by_uuid(&uuid, data, &headers, &conn, &nt)
+    share_cipher_by_uuid(&uuid, data, &headers, &conn, &nt, "cipher")
 }
 
 #[put("/ciphers/<uuid>/share", data = "<data>")]
@@ -535,7 +547,7 @@ fn put_cipher_share(
 ) -> JsonResult {
     let data: ShareCipherData = data.into_inner().data;
 
-    share_cipher_by_uuid(&uuid, data, &headers, &conn, &nt)
+    share_cipher_by_uuid(&uuid, data, &headers, &conn, &nt, "cipher")
 }
 
 #[derive(Deserialize)]
@@ -583,7 +595,7 @@ fn put_cipher_share_seleted(
         };
 
         match shared_cipher_data.Cipher.Id.take() {
-            Some(id) => share_cipher_by_uuid(&id, shared_cipher_data, &headers, &conn, &nt)?,
+            Some(id) => share_cipher_by_uuid(&id, shared_cipher_data, &headers, &conn, &nt, "cipher")?,
             None => err!("Request missing ids field"),
         };
     }
@@ -597,6 +609,7 @@ fn share_cipher_by_uuid(
     headers: &Headers,
     conn: &DbConn,
     nt: &Notify,
+    resp_model: &str,
 ) -> JsonResult {
     let mut cipher = match Cipher::find_by_uuid(&uuid, &conn) {
         Some(cipher) => {
@@ -643,7 +656,7 @@ fn share_cipher_by_uuid(
         UpdateType::CipherUpdate,
     )?;
 
-    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, &conn)))
+    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, &conn, resp_model)))
 }
 
 #[post("/ciphers/<uuid>/attachment", format = "multipart/form-data", data = "<data>")]
@@ -654,6 +667,18 @@ fn post_attachment(
     headers: Headers,
     conn: DbConn,
     nt: Notify,
+) -> JsonResult {
+    _post_attachment(uuid, data, content_type, headers, conn, nt, "cipher")
+}
+
+fn _post_attachment(
+    uuid: String,
+    data: Data,
+    content_type: &ContentType,
+    headers: Headers,
+    conn: DbConn,
+    nt: Notify,
+    resp_model: &str,
 ) -> JsonResult {
     let cipher = match Cipher::find_by_uuid(&uuid, &conn) {
         Some(cipher) => cipher,
@@ -752,7 +777,7 @@ fn post_attachment(
 
     nt.send_cipher_update(UpdateType::CipherUpdate, &cipher, &cipher.update_users_revision(&conn));
 
-    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, &conn)))
+    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, &conn, &resp_model)))
 }
 
 #[post("/ciphers/<uuid>/attachment-admin", format = "multipart/form-data", data = "<data>")]
@@ -764,7 +789,7 @@ fn post_attachment_admin(
     conn: DbConn,
     nt: Notify,
 ) -> JsonResult {
-    post_attachment(uuid, data, content_type, headers, conn, nt)
+    _post_attachment(uuid, data, content_type, headers, conn, nt, "cipherMini")
 }
 
 #[post("/ciphers/<uuid>/attachment/<attachment_id>/share", format = "multipart/form-data", data = "<data>")]
@@ -778,7 +803,7 @@ fn post_attachment_share(
     nt: Notify,
 ) -> JsonResult {
     _delete_cipher_attachment_by_id(&uuid, &attachment_id, &headers, &conn, &nt)?;
-    post_attachment(uuid, data, content_type, headers, conn, nt)
+    _post_attachment(uuid, data, content_type, headers, conn, nt, "cipher")
 }
 
 #[post("/ciphers/<uuid>/attachment/<attachment_id>/delete-admin")]

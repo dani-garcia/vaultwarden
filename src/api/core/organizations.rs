@@ -425,7 +425,7 @@ fn get_org_details(data: Form<OrgIdData>, headers: Headers, conn: DbConn) -> Jso
     let ciphers = Cipher::find_by_org(&data.organization_id, &conn);
     let ciphers_json: Vec<Value> = ciphers
         .iter()
-        .map(|c| c.to_json(&headers.host, &headers.user.uuid, &conn))
+        .map(|c| c.to_json(&headers.host, &headers.user.uuid, &conn, "cipherMiniDetails"))
         .collect();
 
     Ok(Json(json!({
