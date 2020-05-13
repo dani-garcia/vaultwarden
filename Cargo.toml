@@ -41,9 +41,9 @@ rmpv = "0.4.4"
 chashmap = "2.2.2"
 
 # A generic serialization/deserialization framework
-serde = "1.0.106"
-serde_derive = "1.0.106"
-serde_json = "1.0.52"
+serde = "1.0.110"
+serde_derive = "1.0.110"
+serde_json = "1.0.53"
 
 # Logging
 log = "0.4.8"
@@ -64,7 +64,7 @@ uuid = { version = "0.8.1", features = ["v4"] }
 
 # Date and time librar for Rust
 chrono = "0.4.11"
-time = "0.2.14"
+time = "0.2.16"
 
 # TOTP library
 oath = "0.10.2"
@@ -115,7 +115,7 @@ idna = "0.2.0"
 structopt = "0.3.14"
 
 # Logging panics to logfile instead stderr only
-backtrace = "0.3.46"
+backtrace = "0.3.48"
 
 [patch.crates-io]
 # Use newest ring
