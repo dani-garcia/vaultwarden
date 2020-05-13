@@ -274,6 +274,8 @@ impl UserOrganization {
             "UseGroups": false,
             "UseTotp": true,
             "UsePolicies": true,
+            "UseApi": false,
+            "SelfHost": true,
 
             "MaxStorageGb": 10, // The value doesn't matter, we don't check server-side
 
