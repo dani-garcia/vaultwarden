@@ -4,7 +4,7 @@ use rocket_contrib::json::Json;
 
 use crate::api::core::two_factor::_generate_recover_code;
 use crate::api::{EmptyResult, JsonResult, JsonUpcase, NumberOrString, PasswordData};
-use crate::auth::Headers;
+use crate::auth::{ClientIp, Headers};
 use crate::crypto;
 use crate::db::{
     models::{TwoFactor, TwoFactorType},
@@ -54,7 +54,12 @@ struct EnableAuthenticatorData {
 }
 
 #[post("/two-factor/authenticator", data = "<data>")]
-fn activate_authenticator(data: JsonUpcase<EnableAuthenticatorData>, headers: Headers, conn: DbConn) -> JsonResult {
+fn activate_authenticator(
+    data: JsonUpcase<EnableAuthenticatorData>,
+    headers: Headers,
+    ip: ClientIp,
+    conn: DbConn,
+) -> JsonResult {
     let data: EnableAuthenticatorData = data.into_inner().data;
     let password_hash = data.MasterPasswordHash;
     let key = data.Key;
@@ -77,7 +82,7 @@ fn activate_authenticator(data: JsonUpcase<EnableAuthenticatorData>, headers: He
     }
 
     // Validate the token provided with the key, and save new twofactor
-    validate_totp_code(&user.uuid, token, &key.to_uppercase(), &conn)?;
+    validate_totp_code(&user.uuid, token, &key.to_uppercase(), &ip, &conn)?;
 
     _generate_recover_code(&mut user, &conn);
 
@@ -89,20 +94,31 @@ fn activate_authenticator(data: JsonUpcase<EnableAuthenticatorData>, headers: He
 }
 
 #[put("/two-factor/authenticator", data = "<data>")]
-fn activate_authenticator_put(data: JsonUpcase<EnableAuthenticatorData>, headers: Headers, conn: DbConn) -> JsonResult {
-    activate_authenticator(data, headers, conn)
+fn activate_authenticator_put(
+    data: JsonUpcase<EnableAuthenticatorData>,
+    headers: Headers,
+    ip: ClientIp,
+    conn: DbConn,
+) -> JsonResult {
+    activate_authenticator(data, headers, ip, conn)
 }
 
-pub fn validate_totp_code_str(user_uuid: &str, totp_code: &str, secret: &str, conn: &DbConn) -> EmptyResult {
+pub fn validate_totp_code_str(
+    user_uuid: &str,
+    totp_code: &str,
+    secret: &str,
+    ip: &ClientIp,
+    conn: &DbConn,
+) -> EmptyResult {
     let totp_code: u64 = match totp_code.parse() {
         Ok(code) => code,
         _ => err!("TOTP code is not a number"),
     };
 
-    validate_totp_code(user_uuid, totp_code, secret, &conn)
+    validate_totp_code(user_uuid, totp_code, secret, ip, &conn)
 }
 
-pub fn validate_totp_code(user_uuid: &str, totp_code: u64, secret: &str, conn: &DbConn) -> EmptyResult {
+pub fn validate_totp_code(user_uuid: &str, totp_code: u64, secret: &str, ip: &ClientIp, conn: &DbConn) -> EmptyResult {
     use oath::{totp_raw_custom_time, HashType};
 
     let decoded_secret = match BASE32.decode(secret.as_bytes()) {
@@ -144,11 +160,22 @@ pub fn validate_totp_code(user_uuid: &str, totp_code: u64, secret: &str, conn: &
             twofactor.save(&conn)?;
             return Ok(());
         } else if generated == totp_code && time_step <= twofactor.last_used as i64 {
-            warn!("This or a TOTP code within {} steps back and forward has already been used!", steps);
-            err!(format!("Invalid TOTP code! Server time: {}", current_time.format("%F %T UTC")));
+            warn!(
+                "This or a TOTP code within {} steps back and forward has already been used!",
+                steps
+            );
+            err!(format!(
+                "Invalid TOTP code! Server time: {} IP: {}",
+                current_time.format("%F %T UTC"),
+                ip.ip
+            ));
         }
     }
 
     // Else no valide code received, deny access
-    err!(format!("Invalid TOTP code! Server time: {}", current_time.format("%F %T UTC")));
+    err!(format!(
+        "Invalid TOTP code! Server time: {} IP: {}",
+        current_time.format("%F %T UTC"),
+        ip.ip
+    ));
 }
