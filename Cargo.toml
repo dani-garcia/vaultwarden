@@ -1,6 +1,6 @@
 [package]
-name = "vaultwarden"
-version = "1.0.0"
+name = "bitwarden_rs"
+version = "1.24.0"
 authors = ["Daniel García <dani-garcia@users.noreply.github.com>"]
 edition = "2021"
 rust-version = "1.60"
@@ -11,6 +11,7 @@ readme = "README.md"
 license = "GPL-3.0-only"
 publish = false
 build = "build.rs"
+description = "foo"
 
 [features]
 # Empty to keep compatibility, prefer to set USE_SYSLOG=true
@@ -152,3 +153,12 @@ rocket_contrib = { git = 'https://github.com/SergioBenitez/Rocket', rev = '263e3
 # In particular, `cron` has since implemented parsing of some common syntax
 # that wasn't previously supported (https://github.com/zslayton/cron/pull/64).
 job_scheduler = { git = 'https://github.com/jjlin/job_scheduler', rev = 'ee023418dbba2bfe1e30a5fd7d937f9e33739806' }
+
+[package.metadata.rpm.cargo]
+buildflags = ["--release", "--features=sqlite"]
+
+[package.metadata.rpm.targets]
+bitwarden_rs = { path = "/usr/bin/bitwarden_rs" }
+
+[package.metadata.rpm.files]
+"bitwarden_rs.service" = { path = "/usr/lib/systemd/system/bitwarden_rs.service" }

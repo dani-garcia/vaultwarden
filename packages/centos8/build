@@ -1,0 +1,15 @@
+#!/bin/sh
+
+set -ue
+
+mkdir -p target
+docker build . --build-arg toolchain=$(cat rust-toolchain) -f packages/centos8/Dockerfile -t bitwarden_centos8_rpm
+
+# to build locally, and not push to copr:
+#
+# $ docker run -it --rm -v $(pwd)/target:/root/src/target bitwarden_centos8_rpm
+# $ cargo rpm build
+#
+# RPMs will be in target/release/rpmbuild/RPMS/x86_64/
+
+docker run -it --rm --env copr_login --env copr_token bitwarden_centos8_rpm ./packages/centos8/build-in-docker

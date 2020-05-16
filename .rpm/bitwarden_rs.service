@@ -1,0 +1,13 @@
+[Unit]
+Description=bitwarden_rs
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/bitwarden_rs
+Environment=WEB_VAULT_ENABLED=false
+Environment=DATA_FOLDER=/var/lib/bitwarden_rs
+User=bitwarden_rs
+Group=bitwarden_rs
+
+[Install]
+WantedBy=multi-user.target

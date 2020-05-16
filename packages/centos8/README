@@ -1,0 +1,7 @@
+Run:
+
+$ ./packages/centos8/build
+
+From the repo root to build RPMs and push them to COPR.
+
+Check the contents of the build script to see how to develop.

@@ -1,0 +1,18 @@
+#!/bin/bash
+
+set -ue
+
+mkdir -p ~/.config
+
+cat >~/.config/copr <<EOF
+[copr-cli]
+login = $copr_login
+username = koalillo
+token = $copr_token
+copr_url = https://copr.fedorainfracloud.org
+EOF
+
+mkdir -p target
+
+cargo rpm build
+copr-cli build bitwarden_rs target/release/rpmbuild/SRPMS/bitwarden_rs*.src.rpm
