@@ -243,7 +243,7 @@ pub fn get_display_size(size: i32) -> String {
     }
 
     // Round to two decimals
-    size = (size * 100.).round() / 100.;
+    let size = ((size * 100.) as f32).round() / 100.;
     format!("{} {}", size, UNITS[unit_counter])
 }
 
