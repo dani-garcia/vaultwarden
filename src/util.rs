@@ -242,9 +242,7 @@ pub fn get_display_size(size: i32) -> String {
         }
     }
 
-    // Round to two decimals
-    let size = ((size * 100.) as f32).round() / 100.;
-    format!("{} {}", size, UNITS[unit_counter])
+    format!("{:.2} {}", size, UNITS[unit_counter])
 }
 
 pub fn get_uuid() -> String {
