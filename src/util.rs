@@ -227,7 +227,7 @@ pub fn delete_file(path: &str) -> IOResult<()> {
     res
 }
 
-const UNITS: [&str; 6] = ["bytes", "KB", "MB", "GB", "TB", "PB"];
+const UNITS: [&str; 6] = ["bytes", "KiB", "MiB", "GiB", "TiB", "PiB"];
 
 pub fn get_display_size(size: i32) -> String {
     let mut size: f64 = size.into();
