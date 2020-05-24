@@ -558,9 +558,10 @@ impl Config {
         self.update_config(builder)
     }
 
-    /// Tests whether an email's domain is in signups_domains_whitelist.
-    /// Returns false if no whitelist is set.
-    pub fn is_email_domain_whitelisted(&self, email: &str) -> bool {
+    /// Tests whether an email's domain is allowed. A domain is allowed if it
+    /// is in signups_domains_whitelist, or if no whitelist is set (so there
+    /// are no domain restrictions in effect).
+    pub fn is_email_domain_allowed(&self, email: &str) -> bool {
         let e: Vec<&str> = email.rsplitn(2, '@').collect();
         if e.len() != 2 || e[0].is_empty() || e[1].is_empty() {
             warn!("Failed to parse email address '{}'", email);
@@ -569,7 +570,7 @@ impl Config {
         let email_domain = e[0].to_lowercase();
         let whitelist = self.signups_domains_whitelist();
 
-        !whitelist.is_empty() && whitelist.split(',').any(|d| d.trim() == email_domain)
+        whitelist.is_empty() || whitelist.split(',').any(|d| d.trim() == email_domain)
     }
 
     /// Tests whether signup is allowed for an email address, taking into
@@ -577,7 +578,7 @@ impl Config {
     pub fn is_signup_allowed(&self, email: &str) -> bool {
         if !self.signups_domains_whitelist().is_empty() {
             // The whitelist setting overrides the signups_allowed setting.
-            self.is_email_domain_whitelisted(email)
+            self.is_email_domain_allowed(email)
         } else {
             self.signups_allowed()
         }
