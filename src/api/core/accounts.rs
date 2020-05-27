@@ -379,8 +379,8 @@ fn post_email_token(data: JsonUpcase<EmailTokenData>, headers: Headers, conn: Db
         err!("Email already in use");
     }
 
-    if !CONFIG.is_signup_allowed(&data.NewEmail) {
-        err!("Email cannot be changed to this address");
+    if !CONFIG.is_email_domain_allowed(&data.NewEmail) {
+        err!("Email domain not allowed");
     }
 
     let token = crypto::generate_token(6)?;

@@ -488,7 +488,7 @@ fn send_invite(org_id: String, data: JsonUpcase<InviteData>, headers: AdminHeade
                     err!(format!("User does not exist: {}", email))
                 }
 
-                if !CONFIG.signups_domains_whitelist().is_empty() && !CONFIG.is_email_domain_whitelisted(&email) {
+                if !CONFIG.is_email_domain_allowed(&email) {
                     err!("Email domain not eligible for invitations")
                 }
 
