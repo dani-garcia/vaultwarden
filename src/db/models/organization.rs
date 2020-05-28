@@ -255,6 +255,10 @@ impl Organization {
             .first::<Self>(&**conn)
             .ok()
     }
+
+    pub fn get_all(conn: &DbConn) -> Vec<Self> {
+        organizations::table.load::<Self>(&**conn).expect("Error loading organizations")
+    }
 }
 
 impl UserOrganization {

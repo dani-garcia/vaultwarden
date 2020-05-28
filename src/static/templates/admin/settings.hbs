@@ -1,68 +1,4 @@
 <main class="container">
-    <div id="users-block" class="my-3 p-3 bg-white rounded shadow">
-        <h6 class="border-bottom pb-2 mb-0">Registered Users</h6>
-
-        <div id="users-list">
-            {{#each users}}
-            <div class="media pt-3">
-                <img class="mr-2 rounded identicon" data-src="{{Email}}">
-                <div class="media-body pb-3 mb-0 small border-bottom">
-                    <div class="row justify-content-between">
-                        <div class="col">
-                            <strong>{{Name}}</strong>
-                            {{#if TwoFactorEnabled}}
-                            <span class="badge badge-success ml-2">2FA</span>
-                            {{/if}}
-                            {{#case _Status 1}}
-                            <span class="badge badge-warning ml-2">Invited</span>
-                            {{/case}}
-                            <span class="d-block">{{Email}}</span>
-                        </div>
-                        <div class="col">
-                            <strong> Organizations: </strong>
-                            <span class="d-block">
-                                {{#each Organizations}}
-                                <span class="badge badge-primary" data-orgtype="{{Type}}">{{Name}}</span>
-                                {{/each}}
-                            </span>
-                        </div>
-                        <div style="flex: 0 0 300px; font-size: 90%; text-align: right; padding-right: 15px">
-                            {{#if TwoFactorEnabled}}
-                            <a class="mr-2" href="#" onclick='remove2fa({{jsesc Id}})'>Remove all 2FA</a>
-                            {{/if}}
-
-                            <a class="mr-2" href="#" onclick='deauthUser({{jsesc Id}})'>Deauthorize sessions</a>
-                            <a class="mr-2" href="#" onclick='deleteUser({{jsesc Id}}, {{jsesc Email}})'>Delete User</a>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            {{/each}}
-
-        </div>
-
-        <div class="mt-3">
-            <button type="button" class="btn btn-sm btn-link" onclick="updateRevisions();"
-                title="Force all clients to fetch new data next time they connect. Useful after restoring a backup to remove any stale data.">
-                Force clients to resync
-            </button>
-
-            <button type="button" class="btn btn-sm btn-primary float-right" onclick="reload();">Reload users</button>
-        </div>
-    </div>
-
-    <div id="invite-form-block" class="align-items-center p-3 mb-3 text-white-50 bg-secondary rounded shadow">
-        <div>
-            <h6 class="mb-0 text-white">Invite User</h6>
-            <small>Email:</small>
-
-            <form class="form-inline" id="invite-form" onsubmit="inviteUser(); return false;">
-                <input type="email" class="form-control w-50 mr-2" id="email-invite" placeholder="Enter email">
-                <button type="submit" class="btn btn-primary">Invite</button>
-            </form>
-        </div>
-    </div>
-
     <div id="config-block" class="align-items-center p-3 mb-3 bg-secondary rounded shadow">
         <div>
             <h6 class="text-white mb-3">Configuration</h6>
@@ -202,90 +138,6 @@
 </style>
 
 <script>
-    function reload() { window.location.reload(); }
-    function msg(text, reload_page = true) {
-        text && alert(text);
-        reload_page && reload();
-    }
-    function identicon(email) {
-        const data = new Identicon(md5(email), { size: 48, format: 'svg' });
-        return "data:image/svg+xml;base64," + data.toString();
-    }
-    function toggleVis(input_id) {
-        const elem = document.getElementById(input_id);
-        const type = elem.getAttribute("type");
-        if (type === "text") {
-            elem.setAttribute("type", "password");
-        } else {
-            elem.setAttribute("type", "text");
-        }
-        return false;
-    }
-    function _post(url, successMsg, errMsg, body, reload_page = true) {
-        fetch(url, {
-            method: 'POST',
-            body: body,
-            mode: "same-origin",
-            credentials: "same-origin",
-            headers: { "Content-Type": "application/json" }
-        }).then( resp => {
-            if (resp.ok) { msg(successMsg, reload_page); return Promise.reject({error: false}); }
-            respStatus = resp.status;
-            respStatusText = resp.statusText;
-            return resp.text();
-        }).then( respText => {
-            try {
-                const respJson = JSON.parse(respText);
-                return respJson ? respJson.ErrorModel.Message : "Unknown error";
-            } catch (e) {
-                return Promise.reject({body:respStatus + ' - ' + respStatusText, error: true});
-            }
-        }).then( apiMsg => {
-            msg(errMsg + "\n" + apiMsg, reload_page);
-        }).catch( e => {
-            if (e.error === false) { return true; }
-            else { msg(errMsg + "\n" + e.body, reload_page); }
-        });
-    }
-    function deleteUser(id, mail) {
-        var input_mail = prompt("To delete user '" + mail + "', please type the email below")
-        if (input_mail != null) {
-            if (input_mail == mail) {
-                _post("{{urlpath}}/admin/users/" + id + "/delete",
-                    "User deleted correctly",
-                    "Error deleting user");
-            } else {
-                alert("Wrong email, please try again")
-            }
-        }
-        return false;
-    }
-    function remove2fa(id) {
-        _post("{{urlpath}}/admin/users/" + id + "/remove-2fa",
-            "2FA removed correctly",
-            "Error removing 2FA");
-        return false;
-    }
-    function deauthUser(id) {
-        _post("{{urlpath}}/admin/users/" + id + "/deauth",
-            "Sessions deauthorized correctly",
-            "Error deauthorizing sessions");
-        return false;
-    }
-    function updateRevisions() {
-        _post("{{urlpath}}/admin/users/update_revision",
-            "Success, clients will sync next time they connect",
-            "Error forcing clients to sync");
-        return false;
-    }
-    function inviteUser() {
-        inv = document.getElementById("email-invite");
-        data = JSON.stringify({ "email": inv.value });
-        inv.value = "";
-        _post("{{urlpath}}/admin/invite/", "User invited correctly",
-            "Error inviting user", data);
-        return false;
-    }
     function smtpTest() {
         test_email = document.getElementById("smtp-test-email");
         data = JSON.stringify({ "email": test_email.value });
@@ -348,23 +200,6 @@
         onChange(); // Trigger the event initially
         checkbox.addEventListener("change", onChange);
     }
-    let OrgTypes = {
-        "0": { "name": "Owner", "color": "orange" },
-        "1": { "name": "Admin", "color": "blueviolet" },
-        "2": { "name": "User", "color": "blue" },
-        "3": { "name": "Manager", "color": "green" },
-    };
-
-    document.querySelectorAll("img.identicon").forEach(function (e, i) {
-        e.src = identicon(e.dataset.src);
-    });
-
-    document.querySelectorAll("[data-orgtype]").forEach(function (e, i) {
-        let orgtype = OrgTypes[e.dataset.orgtype];
-        e.style.backgroundColor = orgtype.color;
-        e.title = orgtype.name;
-    });
-
     // These are formatted because otherwise the
     // VSCode formatter breaks But they still work
     // {{#each config}} {{#if grouptoggle}}
