@@ -1,0 +1,30 @@
+<main class="container">
+    <div id="organizations-block" class="my-3 p-3 bg-white rounded shadow">
+        <h6 class="border-bottom pb-2 mb-0">Organizations</h6>
+
+        <div id="organizations-list">
+            {{#each organizations}}
+            <div class="media pt-3">
+                <img class="mr-2 rounded identicon" data-src="{{Name}}_{{BillingEmail}}">
+                <div class="media-body pb-3 mb-0 small border-bottom">
+                    <div class="row justify-content-between">
+                        <div class="col">
+                            <strong>{{Name}}</strong>
+                            {{#if Id}}
+                            <span class="badge badge-success ml-2">{{Id}}</span>
+                            {{/if}}
+                            <span class="d-block">{{BillingEmail}}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {{/each}}
+        </div>
+    </div>
+</main>
+
+<script>
+    document.querySelectorAll("img.identicon").forEach(function (e, i) {
+        e.src = identicon(e.dataset.src);
+    });
+</script>

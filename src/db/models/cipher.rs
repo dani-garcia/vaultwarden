@@ -355,6 +355,14 @@ impl Cipher {
         .load::<Self>(&**conn).expect("Error loading ciphers")
     }
 
+    pub fn count_owned_by_user(user_uuid: &str, conn: &DbConn) -> Option<i64> {
+        ciphers::table
+        .filter(ciphers::user_uuid.eq(user_uuid))
+        .count()
+        .first::<i64>(&**conn)
+        .ok()
+    }
+
     pub fn find_by_org(org_uuid: &str, conn: &DbConn) -> Vec<Self> {
         ciphers::table
             .filter(ciphers::organization_uuid.eq(org_uuid))

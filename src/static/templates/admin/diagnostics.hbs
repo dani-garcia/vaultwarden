@@ -1,0 +1,117 @@
+<main class="container">
+    <div id="diagnostics-block" class="my-3 p-3 bg-white rounded shadow">
+        <h6 class="border-bottom pb-2 mb-2">Diagnostics</h6>
+
+        <h3>Version</h3>
+        <div class="row">
+            <div class="col-md">
+                <dl class="row">
+                    <dt class="col-sm-5">Server Installed
+                        <span class="badge badge-success d-none" id="server-success" title="Latest version is installed.">Ok</span>
+                        <span class="badge badge-warning d-none" id="server-warning" title="There seems to be an update available.">Update</span>
+                        <span class="badge badge-danger d-none" id="server-failed" title="Unable to determine latest version.">Unknown</span>
+                    </dt>
+                    <dd class="col-sm-7">
+                        <span id="server-installed">{{version}}</span>
+                    </dd>
+                    <dt class="col-sm-5">Server Latest</dt>
+                    <dd class="col-sm-7">
+                        <span id="server-latest">{{diagnostics.latest_release}}<span id="server-latest-commit" class="d-none">-{{diagnostics.latest_commit}}</span></span>
+                    </dd>
+                    <dt class="col-sm-5">Web Installed
+                        <span class="badge badge-success d-none" id="web-success" title="Latest version is installed.">Ok</span>
+                        <span class="badge badge-warning d-none" id="web-warning" title="There seems to be an update available.">Update</span>
+                        <span class="badge badge-danger d-none" id="web-failed" title="Unable to determine latest version.">Unknown</span>
+                    </dt>
+                    <dd class="col-sm-7">
+                        <span id="web-installed">{{diagnostics.web_vault_version}}</span>
+                    </dd>
+                    <dt class="col-sm-5">Web Latest</dt>
+                    <dd class="col-sm-7">
+                        <span id="web-latest">{{diagnostics.latest_web_build}}</span>
+                    </dd>
+                </dl>
+            </div>
+        </div>
+
+        <h3>Checks</h3>
+        <div class="row">
+            <div class="col-md">
+                <dl class="row">
+                    <dt class="col-sm-5">DNS (github.com)
+                        <span class="badge badge-success d-none" id="dns-success" title="DNS Resolving works!">Ok</span>
+                        <span class="badge badge-danger d-none" id="dns-warning" title="DNS Resolving failed. Please fix.">Error</span>
+                    </dt>
+                    <dd class="col-sm-7">
+                        <span id="dns-resolved">{{diagnostics.dns_resolved}}</span>
+                    </dd>
+
+                    <dt class="col-sm-5">Date & Time (UTC)
+                        <span class="badge badge-success d-none" id="time-success" title="Time offsets seem to be correct.">Ok</span>
+                        <span class="badge badge-danger d-none" id="time-warning" title="Time offsets are too mouch at drift.">Error</span>
+                    </dt>
+                    <dd class="col-sm-7">
+                        <span id="time-server" class="d-block"><b>Server:</b> <span id="time-server-string">{{diagnostics.server_time}}</span></span>
+                        <span id="time-browser" class="d-block"><b>Browser:</b> <span id="time-browser-string"></span></span>
+                    </dd>
+                </dl>
+            </div>
+        </div>
+    </div>
+</main>
+
+<script>
+    (() => {
+        const d = new Date();
+        const year = d.getUTCFullYear();
+        const month = String((d.getUTCMonth()+1)).padStart(2, '0');
+        const day = String(d.getUTCDate()).padStart(2, '0');
+        const hour = String(d.getUTCHours()).padStart(2, '0');
+        const minute = String(d.getUTCMinutes()).padStart(2, '0');
+        const seconds = String(d.getUTCSeconds()).padStart(2, '0');
+        const browserUTC = year + '-' + month + '-' + day + ' ' + hour + ':' + minute + ':' + seconds;
+        document.getElementById("time-browser-string").innerText = browserUTC;
+
+        const serverUTC = document.getElementById("time-server-string").innerText;
+        const timeDrift = (Date.parse(serverUTC) - Date.parse(browserUTC)) / 1000;
+        if (timeDrift > 30 || timeDrift < -30) {
+            document.getElementById('time-warning').classList.remove('d-none');
+        } else {
+            document.getElementById('time-success').classList.remove('d-none');
+        }
+
+        // Check if the output is a valid IP
+        const isValidIp = value => (/^(?:(?:^|\.)(?:2(?:5[0-5]|[0-4]\d)|1?\d?\d)){4}$/.test(value) ? true : false);
+        if (isValidIp(document.getElementById('dns-resolved').innerText)) {
+            document.getElementById('dns-success').classList.remove('d-none');
+        } else {
+            document.getElementById('dns-warning').classList.remove('d-none');
+        }
+
+        let serverInstalled = document.getElementById('server-installed').innerText;
+        let serverLatest = document.getElementById('server-latest').innerText;
+        if (serverInstalled.indexOf('-') > -1 && serverLatest !== '-') {
+            document.getElementById('server-latest-commit').classList.remove('d-none');
+            serverLatest += document.getElementById('server-latest-commit').innerText;
+        }
+
+        const webInstalled = document.getElementById('web-installed').innerText;
+        const webLatest = document.getElementById('web-latest').innerText;
+
+        checkVersions('server', serverInstalled, serverLatest);
+        checkVersions('web', webInstalled, webLatest);
+
+        function checkVersions(platform, installed, latest) {
+            if (installed === '-' || latest === '-') {
+                document.getElementById(platform + '-failed').classList.remove('d-none');
+                return;
+            }
+
+            if (installed !== latest) {
+                document.getElementById(platform + '-warning').classList.remove('d-none');
+            } else {
+                document.getElementById(platform + '-success').classList.remove('d-none');
+            }
+        }
+    })();
+</script>

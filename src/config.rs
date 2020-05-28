@@ -700,7 +700,10 @@ where
 
     reg!("admin/base");
     reg!("admin/login");
-    reg!("admin/page");
+    reg!("admin/settings");
+    reg!("admin/users");
+    reg!("admin/organizations");
+    reg!("admin/diagnostics");
 
     // And then load user templates to overwrite the defaults
     // Use .hbs extension for the files
