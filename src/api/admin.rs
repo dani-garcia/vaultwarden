@@ -319,6 +319,24 @@ pub struct WebVaultVersion {
     version: String,
 }
 
+fn get_github_api(url: &str) -> Result<Value, Error> {
+    use reqwest::{header::USER_AGENT, blocking::Client};
+    let github_api = Client::builder().build()?;
+
+    let res = github_api
+        .get(url)
+        .header(USER_AGENT, "Bitwarden_RS")
+        .send()?;
+
+    let res_status = res.status();
+    if res_status != 200 {
+        error!("Could not retrieve '{}', response code: {}", url, res_status);
+    }
+
+    let value: Value = res.error_for_status()?.json()?;
+    Ok(value)
+}
+
 #[get("/diagnostics")]
 fn diagnostics(_token: AdminToken, _conn: DbConn) -> ApiResult<Html<String>> {
     use std::net::ToSocketAddrs;
@@ -331,8 +349,29 @@ fn diagnostics(_token: AdminToken, _conn: DbConn) -> ApiResult<Html<String>> {
 
     let github_ips = ("github.com", 0).to_socket_addrs().map(|mut i| i.next());
     let dns_resolved = match github_ips {
-        Ok(Some(a)) => a.ip().to_string() ,
+        Ok(Some(a)) => a.ip().to_string(),
         _ => "Could not resolve domain name.".to_string(),
+    };
+
+    let bitwarden_rs_releases = get_github_api("https://api.github.com/repos/dani-garcia/bitwarden_rs/releases/latest");
+    let latest_release = match &bitwarden_rs_releases {
+        Ok(j) => j["tag_name"].as_str().unwrap(),
+        _ => "-",
+    };
+
+    let bitwarden_rs_commits = get_github_api("https://api.github.com/repos/dani-garcia/bitwarden_rs/commits/master");
+    let mut latest_commit = match &bitwarden_rs_commits {
+        Ok(j) => j["sha"].as_str().unwrap(),
+        _ => "-",
+    };
+    if latest_commit.len() >= 8 {
+        latest_commit = &latest_commit[..8];
+    }
+
+    let bw_web_builds_releases = get_github_api("https://api.github.com/repos/dani-garcia/bw_web_builds/releases/latest");
+    let latest_web_build = match &bw_web_builds_releases {
+        Ok(j) => j["tag_name"].as_str().unwrap(),
+        _ => "-",
     };
 
     let dt = Utc::now();
@@ -342,6 +381,9 @@ fn diagnostics(_token: AdminToken, _conn: DbConn) -> ApiResult<Html<String>> {
         "dns_resolved": dns_resolved,
         "server_time": server_time,
         "web_vault_version": web_vault_version.version,
+        "latest_release": latest_release,
+        "latest_commit": latest_commit,
+        "latest_web_build": latest_web_build.replace("v", ""),
     });
 
     let text = AdminTemplateData::diagnostics(diagnostics_json).render()?;
