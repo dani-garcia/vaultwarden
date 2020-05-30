@@ -63,7 +63,9 @@ fn admin_path() -> String {
 /// Used for `Location` response headers, which must specify an absolute URI
 /// (see https://tools.ietf.org/html/rfc2616#section-14.30).
 fn admin_url() -> String {
-    format!("{}{}", CONFIG.domain(), ADMIN_PATH)
+    // Don't use CONFIG.domain() directly, since the user may want to keep a
+    // trailing slash there, particularly when running under a subpath.
+    format!("{}{}{}", CONFIG.domain_origin(), CONFIG.domain_path(), ADMIN_PATH)
 }
 
 #[get("/", rank = 2)]
