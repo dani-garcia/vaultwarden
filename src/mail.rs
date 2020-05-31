@@ -35,7 +35,7 @@ fn mailer() -> SmtpTransport {
 
     use std::time::Duration;
 
-    let smtp_client = SmtpTransport::new(host).port(CONFIG.smtp_port()).tls(client_security);
+    let smtp_client = SmtpTransport::builder(host).port(CONFIG.smtp_port()).tls(client_security);
 
     let smtp_client = match (CONFIG.smtp_username(), CONFIG.smtp_password()) {
         (Some(user), Some(pass)) => smtp_client.credentials(Credentials::new(user, pass)),
@@ -55,7 +55,7 @@ fn mailer() -> SmtpTransport {
         _ => smtp_client,
     };
 
-    smtp_client.timeout(Some(Duration::from_secs(CONFIG.smtp_timeout())))
+    smtp_client.timeout(Some(Duration::from_secs(CONFIG.smtp_timeout()))).build()
 }
 
 fn get_text(template_name: &'static str, data: serde_json::Value) -> Result<(String, String, String), Error> {
