@@ -2,57 +2,61 @@
     <div id="users-block" class="my-3 p-3 bg-white rounded shadow">
         <h6 class="border-bottom pb-2 mb-0">Registered Users</h6>
 
-        <div id="users-list">
-            {{#each users}}
-            <div class="media pt-3">
-                <img class="mr-2 rounded identicon" data-src="{{Email}}">
-                <div class="media-body pb-3 mb-0 small border-bottom">
-                    <div class="row justify-content-between">
-                        <div class="col">
+
+
+        <div class="table-responsive-xl small">
+            <table class="table table-sm table-striped table-hover">
+                <thead>
+                    <tr>
+                        <th style="width: 24px;">User</th>
+                        <th></th>
+                        <th style="width:90px; min-width: 90px;">Items</th>
+                        <th style="min-width: 140px;">Organizations</th>
+                        <th style="width: 140px; min-width: 140px;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{#each users}}
+                    <tr>
+                        <td><img class="mr-2 rounded identicon" data-src="{{Email}}"></td>
+                        <td>
                             <strong>{{Name}}</strong>
-                            {{#if TwoFactorEnabled}}
-                            <span class="badge badge-success ml-2">2FA</span>
-                            {{/if}}
-                            {{#case _Status 1}}
-                            <span class="badge badge-warning ml-2">Invited</span>
-                            {{/case}}
-                            <span class="d-block">{{Email}}
+                            <span class="d-block">{{Email}}</span>
+                            <span class="d-block">
+                                {{#if TwoFactorEnabled}}
+                                    <span class="badge badge-success mr-2" title="2FA is enabled">2FA</span>
+                                {{/if}}
+                                {{#case _Status 1}}
+                                    <span class="badge badge-warning mr-2" title="User is invited">Invited</span>
+                                {{/case}}
                                 {{#if EmailVerified}}
-                                <span class="badge badge-success ml-2">Verified</span>
+                                    <span class="badge badge-success mr-2" title="Email has been verified">Verified</span>
                                 {{/if}}
                             </span>
-                        </div>
-                        <div class="col">
-                            <strong> Personal Items: </strong>
-                            <span class="d-block">
-                                {{cipher_count}}
-                            </span>
-                        </div>
-                        <div class="col-4">
-                            <strong> Organizations: </strong>
-                            <span class="d-block">
-                                {{#each Organizations}}
-                                <span class="badge badge-primary" data-orgtype="{{Type}}">{{Name}}</span>
-                                {{/each}}
-                            </span>
-                        </div>
-                        <div class="col" style="font-size: 90%; text-align: right; padding-right: 15px">
+                        </td>
+                        <td>
+                            <span class="d-block">{{cipher_count}}</span>
+                        </td>
+                        <td>
+                            {{#each Organizations}}
+                            <span class="badge badge-primary" data-orgtype="{{Type}}">{{Name}}</span>
+                            {{/each}}
+                        </td>
+                        <td style="font-size: 90%; text-align: right; padding-right: 15px">
                             {{#if TwoFactorEnabled}}
-                            <a class="mr-2" href="#" onclick='remove2fa({{jsesc Id}})'>Remove all 2FA</a>
+                            <a class="d-block" href="#" onclick='remove2fa({{jsesc Id}})'>Remove all 2FA</a>
                             {{/if}}
-
-                            <a class="mr-2" href="#" onclick='deauthUser({{jsesc Id}})'>Deauthorize sessions</a>
-                            <a class="mr-2" href="#" onclick='deleteUser({{jsesc Id}}, {{jsesc Email}})'>Delete User</a>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            {{/each}}
-
+                            <a class="d-block" href="#" onclick='deauthUser({{jsesc Id}})'>Deauthorize sessions</a>
+                            <a class="d-block" href="#" onclick='deleteUser({{jsesc Id}}, {{jsesc Email}})'>Delete User</a>
+                        </td>
+                    </tr>
+                    {{/each}}
+                </tbody>
+            </table>
         </div>
 
         <div class="mt-3">
-            <button type="button" class="btn btn-sm btn-link" onclick="updateRevisions();"
+            <button type="button" class="btn btn-sm btn-danger" onclick="updateRevisions();"
                 title="Force all clients to fetch new data next time they connect. Useful after restoring a backup to remove any stale data.">
                 Force clients to resync
             </button>

@@ -1,40 +1,26 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-    <meta http-equiv="content-type" content="text/html; charset=UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <meta http-equiv="content-type" content="text/html; charset=UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+    <meta name="robots" content="noindex,nofollow" />
     <title>Bitwarden_rs Admin Panel</title>
-
     <link rel="stylesheet" href="{{urlpath}}/bwrs_static/bootstrap.css" />
-    <script src="{{urlpath}}/bwrs_static/bootstrap-native-v4.js"></script>
-    <script src="{{urlpath}}/bwrs_static/md5.js"></script>
-    <script src="{{urlpath}}/bwrs_static/identicon.js"></script>
     <style>
         body {
-            padding-top: 70px;
+            padding-top: 75px;
         }
-
-        @media (max-width:768px) {
-            body {
-                padding-top: 190px;
-            }
-
-            .container {
-                max-width: 100%;
-            }
-        }
-
         img {
             width: 48px;
             height: 48px;
         }
-
         .navbar img {
             height: 24px;
             width: auto;
         }
     </style>
+    <script src="{{urlpath}}/bwrs_static/md5.js"></script>
+    <script src="{{urlpath}}/bwrs_static/identicon.js"></script>
     <script>
         function reload() { window.location.reload(); }
         function msg(text, reload_page = true) {
@@ -86,47 +72,44 @@
 </head>
 
 <body class="bg-light">
-    <nav class="navbar navbar-expand-sm navbar-dark bg-dark fixed-top shadow mb-4">
-    <div class="container">
-        <a class="navbar-brand" href="{{urlpath}}/admin"><img class="pr-1" src="{{urlpath}}/bwrs_static/shield-white.png">Bitwarden_rs Admin</a>
-        <div class="navbar-collapse">
-            <ul class="navbar-nav">
-                <li class="nav-item">
-                    <a class="nav-link" href="{{urlpath}}/admin">Settings</a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" href="{{urlpath}}/admin/users/overview">Users</a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" href="{{urlpath}}/admin/organizations/overview">Organizations</a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" href="{{urlpath}}/admin/diagnostics">Diagnostics</a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" href="{{urlpath}}/">Vault</a>
-                </li>
-            </ul>
+    <nav class="navbar navbar-expand-md navbar-dark bg-dark mb-4 shadow fixed-top">
+        <div class="container">
+            <a class="navbar-brand" href="{{urlpath}}/admin"><img class="pr-1" src="{{urlpath}}/bwrs_static/shield-white.png">Bitwarden_rs Admin</a>
+            <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarCollapse"
+                    aria-controls="navbarCollapse" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarCollapse">
+                <ul class="navbar-nav mr-auto">
+                {{#if logged_in}}
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{urlpath}}/admin">Settings</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{urlpath}}/admin/users/overview">Users</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{urlpath}}/admin/organizations/overview">Organizations</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{urlpath}}/admin/diagnostics">Diagnostics</a>
+                    </li>
+                {{/if}}
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{urlpath}}/">Vault</a>
+                    </li>
+                </ul>
+
+                {{#if logged_in}}
+                    <a class="btn btn-sm btn-secondary" href="{{urlpath}}/admin/logout">Log Out</a>
+                {{/if}}
+            </div>
         </div>
-
-        <ul class="navbar-nav">
-            {{#if version}}
-            <li class="nav-item">
-                <span class="navbar-text mr-2">Version: {{version}}</span>
-            </li>
-            {{/if}}
-
-            {{#if logged_in}}
-            <li class="nav-item rounded btn-secondary">
-                <a class="nav-link" href="{{urlpath}}/admin/logout">Log Out</a>
-            </li>
-            {{/if}}
-        </ul>
-    </div>
     </nav>
 
     {{> (page_content) }}
 
+    <!-- This script needs to be at the bottom, else it will fail! -->
     <script>
         // get current URL path and assign 'active' class to the correct nav-item
         (function () {
@@ -138,6 +121,7 @@
             }
         })();
     </script>
+    <!-- This script needs to be at the bottom, else it will fail! -->
+    <script src="{{urlpath}}/bwrs_static/bootstrap-native-v4.js"></script>
 </body>
-
 </html>
