@@ -35,9 +35,10 @@ Pull the docker image and mount a volume from the host for persistent storage:
 
 ```sh
 docker pull bitwardenrs/server:latest
-docker run -d --name bitwarden -v /bw-data/:/data/ -p 80:80 bitwardenrs/server:latest
+docker run -d --name bitwarden -v /bw-data/:/data/ -p 8080:80 bitwardenrs/server:latest
 ```
 This will preserve any persistent data under /bw-data/, you can adapt the path to whatever suits you.
+By default the container will run with `UID=999`, you may want to add `-u some_user` to the run command above, as well as make sure that user has read/write access to `/data`.
 
 **IMPORTANT**: Some web browsers, like Chrome, disallow the use of Web Crypto APIs in insecure contexts. In this case, you might get an error like `Cannot read property 'importKey'`. To solve this problem, you need to access the web vault from HTTPS. 
 

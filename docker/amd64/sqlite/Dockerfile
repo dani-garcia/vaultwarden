@@ -63,7 +63,7 @@ RUN cargo build --features ${DB} --release
 FROM debian:buster-slim
 
 ENV ROCKET_ENV "staging"
-ENV ROCKET_PORT=80
+ENV ROCKET_PORT=8080
 ENV ROCKET_WORKERS=10
 
 # Install needed libraries
@@ -77,8 +77,9 @@ RUN apt-get update && apt-get install -y \
 
 RUN mkdir /data
 VOLUME /data
-EXPOSE 80
+EXPOSE 8080
 EXPOSE 3012
+USER 999
 
 # Copies the files from the context (Rocket.toml file and web-vault)
 # and the binary from the "build" stage to the current stage

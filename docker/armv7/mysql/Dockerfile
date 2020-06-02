@@ -95,7 +95,7 @@ RUN cargo build --features ${DB} --release --target=armv7-unknown-linux-gnueabih
 FROM balenalib/armv7hf-debian:buster
 
 ENV ROCKET_ENV "staging"
-ENV ROCKET_PORT=80
+ENV ROCKET_PORT=8080
 ENV ROCKET_WORKERS=10
 
 RUN [ "cross-build-start" ]
@@ -114,8 +114,9 @@ RUN mkdir /data
 RUN [ "cross-build-end" ]
 
 VOLUME /data
-EXPOSE 80
+EXPOSE 8080
 EXPOSE 3012
+USER 999
 
 # Copies the files from the context (Rocket.toml file and web-vault)
 # and the binary from the "build" stage to the current stage
