@@ -15,6 +15,7 @@ use crate::config::ConfigBuilder;
 use crate::db::{backup_database, models::*, DbConn};
 use crate::error::Error;
 use crate::mail;
+use crate::util::get_display_size;
 use crate::CONFIG;
 
 pub fn routes() -> Vec<Route> {
@@ -253,8 +254,6 @@ fn get_users_json(_token: AdminToken, conn: DbConn) -> JsonResult {
 
 #[get("/users/overview")]
 fn users_overview(_token: AdminToken, conn: DbConn) -> ApiResult<Html<String>> {
-    use crate::util::get_display_size;
-
     let users = User::get_all(&conn);
     let users_json: Vec<Value> = users.iter()
     .map(|u| {
@@ -312,7 +311,14 @@ fn update_revision_users(_token: AdminToken, conn: DbConn) -> EmptyResult {
 #[get("/organizations/overview")]
 fn organizations_overview(_token: AdminToken, conn: DbConn) -> ApiResult<Html<String>> {
     let organizations = Organization::get_all(&conn);
-    let organizations_json: Vec<Value> = organizations.iter().map(|o| o.to_json()).collect();
+    let organizations_json: Vec<Value> = organizations.iter().map(|o| {
+        let mut org = o.to_json();
+        org["user_count"] = json!(UserOrganization::count_by_org(&o.uuid, &conn));
+        org["cipher_count"] = json!(Cipher::count_by_org(&o.uuid, &conn));
+        org["attachment_count"] = json!(Attachment::count_by_org(&o.uuid, &conn));
+        org["attachment_size"] = json!(get_display_size(Attachment::size_by_org(&o.uuid, &conn) as i32));
+        org
+    }).collect();
 
     let text = AdminTemplateData::organizations(organizations_json).render()?;
     Ok(Html(text))

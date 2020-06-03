@@ -437,6 +437,15 @@ impl UserOrganization {
             .expect("Error loading user organizations")
     }
 
+    pub fn count_by_org(org_uuid: &str, conn: &DbConn) -> i64 {
+        users_organizations::table
+            .filter(users_organizations::org_uuid.eq(org_uuid))
+            .count()
+            .first::<i64>(&**conn)
+            .ok()
+            .unwrap_or(0)
+    }
+
     pub fn find_by_org_and_type(org_uuid: &str, atype: i32, conn: &DbConn) -> Vec<Self> {
         users_organizations::table
             .filter(users_organizations::org_uuid.eq(org_uuid))

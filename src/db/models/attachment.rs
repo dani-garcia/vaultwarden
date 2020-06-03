@@ -150,4 +150,14 @@ impl Attachment {
 
         result.unwrap_or(0)
     }
+
+    pub fn count_by_org(org_uuid: &str, conn: &DbConn) -> i64 {
+        attachments::table
+            .left_join(ciphers::table.on(ciphers::uuid.eq(attachments::cipher_uuid)))
+            .filter(ciphers::organization_uuid.eq(org_uuid))
+            .count()
+            .first(&**conn)
+            .ok()
+            .unwrap_or(0)
+    }
 }

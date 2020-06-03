@@ -2,24 +2,45 @@
     <div id="organizations-block" class="my-3 p-3 bg-white rounded shadow">
         <h6 class="border-bottom pb-2 mb-0">Organizations</h6>
 
-        <div id="organizations-list">
-            {{#each organizations}}
-            <div class="media pt-3">
-                <img class="mr-2 rounded identicon" data-src="{{Name}}_{{BillingEmail}}">
-                <div class="media-body pb-3 mb-0 small border-bottom">
-                    <div class="row justify-content-between">
-                        <div class="col">
+        <div class="table-responsive-xl small">
+            <table class="table table-sm table-striped table-hover">
+                <thead>
+                    <tr>
+                        <th style="width: 24px;" colspan="2">Organization</th>
+                        <th>Users</th>
+                        <th>Items</th>
+                        <th>Attachments</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{#each organizations}}
+                    <tr>
+                        <td><img class="rounded identicon" data-src="{{Id}}"></td>
+                        <td>
                             <strong>{{Name}}</strong>
-                            {{#if Id}}
-                            <span class="badge badge-success ml-2">{{Id}}</span>
+                            <span class="mr-2">({{BillingEmail}})</span>
+                            <span class="d-block">
+                                <span class="badge badge-success">{{Id}}</span>
+                            </span>
+                        </td>
+                        <td>
+                            <span class="d-block">{{user_count}}</span>
+                        </td>
+                        <td>
+                            <span class="d-block">{{cipher_count}}</span>
+                        </td>
+                        <td>
+                            <span class="d-block"><strong>Amount:</strong> {{attachment_count}}</span>
+                            {{#if attachment_count}}
+                            <span class="d-block"><strong>Size:</strong> {{attachment_size}}</span>
                             {{/if}}
-                            <span class="d-block">{{BillingEmail}}</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            {{/each}}
+                        </td>
+                    </tr>
+                    {{/each}}
+                </tbody>
+            </table>
         </div>
+        
     </div>
 </main>
 
