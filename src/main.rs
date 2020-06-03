@@ -2,6 +2,7 @@
 #![feature(proc_macro_hygiene, try_trait, ip)]
 #![recursion_limit = "256"]
 
+extern crate openssl;
 #[macro_use]
 extern crate rocket;
 #[macro_use]
