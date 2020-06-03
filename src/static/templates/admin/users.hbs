@@ -10,7 +10,8 @@
                     <tr>
                         <th style="width: 24px;">User</th>
                         <th></th>
-                        <th style="width:90px; min-width: 90px;">Items</th>
+                        <th style="width:60px; min-width: 60px;">Items</th>
+                        <th>Attachments</th>
                         <th style="min-width: 140px;">Organizations</th>
                         <th style="width: 140px; min-width: 140px;">Actions</th>
                     </tr>
@@ -36,6 +37,12 @@
                         </td>
                         <td>
                             <span class="d-block">{{cipher_count}}</span>
+                        </td>
+                        <td>
+                            <span class="d-block"><strong>Amount:</strong> {{attachment_count}}</span>
+                            {{#if attachment_count}}
+                            <span class="d-block"><strong>Size:</strong> {{attachment_size}}</span>
+                            {{/if}}
                         </td>
                         <td>
                             {{#each Organizations}}

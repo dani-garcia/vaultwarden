@@ -253,13 +253,15 @@ fn get_users_json(_token: AdminToken, conn: DbConn) -> JsonResult {
 
 #[get("/users/overview")]
 fn users_overview(_token: AdminToken, conn: DbConn) -> ApiResult<Html<String>> {
+    use crate::util::get_display_size;
+
     let users = User::get_all(&conn);
     let users_json: Vec<Value> = users.iter()
     .map(|u| {
         let mut usr = u.to_json(&conn);
-        if let Some(ciphers) = Cipher::count_owned_by_user(&u.uuid, &conn) {
-            usr["cipher_count"] = json!(ciphers);
-        };
+        usr["cipher_count"] = json!(Cipher::count_owned_by_user(&u.uuid, &conn));
+        usr["attachment_count"] = json!(Attachment::count_by_user(&u.uuid, &conn));
+        usr["attachment_size"] = json!(get_display_size(Attachment::size_by_user(&u.uuid, &conn) as i32));
         usr
     }).collect();
 
