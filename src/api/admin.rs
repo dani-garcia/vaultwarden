@@ -1,5 +1,6 @@
 use once_cell::sync::Lazy;
 use serde_json::Value;
+use serde::de::DeserializeOwned;
 use std::process::Command;
 
 use rocket::http::{Cookie, Cookies, SameSite};
@@ -315,28 +316,34 @@ fn organizations_overview(_token: AdminToken, conn: DbConn) -> ApiResult<Html<St
     Ok(Html(text))
 }
 
-#[derive(Deserialize, Serialize, Debug)]
-#[allow(non_snake_case)]
-pub struct WebVaultVersion {
+#[derive(Deserialize)]
+struct WebVaultVersion {
     version: String,
 }
 
-fn get_github_api(url: &str) -> Result<Value, Error> {
+#[derive(Deserialize)]
+struct GitRelease {
+    tag_name: String,
+}
+
+#[derive(Deserialize)]
+struct GitCommit {
+    sha: String,
+}
+
+fn get_github_api<T: DeserializeOwned>(url: &str) -> Result<T, Error> {
     use reqwest::{header::USER_AGENT, blocking::Client};
+    use std::time::Duration;
     let github_api = Client::builder().build()?;
 
-    let res = github_api
-        .get(url)
+    Ok(
+        github_api.get(url)
+        .timeout(Duration::from_secs(10))
         .header(USER_AGENT, "Bitwarden_RS")
-        .send()?;
-
-    let res_status = res.status();
-    if res_status != 200 {
-        error!("Could not retrieve '{}', response code: {}", url, res_status);
-    }
-
-    let value: Value = res.error_for_status()?.json()?;
-    Ok(value)
+        .send()?
+        .error_for_status()?
+        .json::<T>()?
+    )
 }
 
 #[get("/diagnostics")]
@@ -350,32 +357,36 @@ fn diagnostics(_token: AdminToken, _conn: DbConn) -> ApiResult<Html<String>> {
     let web_vault_version: WebVaultVersion = serde_json::from_str(&vault_version_str)?;
 
     let github_ips = ("github.com", 0).to_socket_addrs().map(|mut i| i.next());
-    let dns_resolved = match github_ips {
-        Ok(Some(a)) => a.ip().to_string(),
-        _ => "Could not resolve domain name.".to_string(),
+    let (dns_resolved, dns_ok) = match github_ips {
+        Ok(Some(a)) => (a.ip().to_string(), true),
+        _ => ("Could not resolve domain name.".to_string(), false),
     };
 
-    let bitwarden_rs_releases = get_github_api("https://api.github.com/repos/dani-garcia/bitwarden_rs/releases/latest");
-    let latest_release = match &bitwarden_rs_releases {
-        Ok(j) => j["tag_name"].as_str().unwrap(),
-        _ => "-",
+    // If the DNS Check failed, do not even attempt to check for new versions since we were not able to resolve github.com
+    let (latest_release, latest_commit, latest_web_build) = if dns_ok {
+        (
+            match get_github_api::<GitRelease>("https://api.github.com/repos/dani-garcia/bitwarden_rs/releases/latest") {
+                Ok(r) => r.tag_name,
+                _ => "-".to_string()
+            },
+            match get_github_api::<GitCommit>("https://api.github.com/repos/dani-garcia/bitwarden_rs/commits/master") {
+                Ok(mut c) => {
+                    c.sha.truncate(8);
+                    c.sha
+                },
+                _ => "-".to_string()
+            },
+            match get_github_api::<GitRelease>("https://api.github.com/repos/dani-garcia/bw_web_builds/releases/latest") {
+                Ok(r) => r.tag_name.trim_start_matches('v').to_string(),
+                _ => "-".to_string()
+            },
+        )
+    } else {
+        ("-".to_string(), "-".to_string(), "-".to_string())
     };
-
-    let bitwarden_rs_commits = get_github_api("https://api.github.com/repos/dani-garcia/bitwarden_rs/commits/master");
-    let mut latest_commit = match &bitwarden_rs_commits {
-        Ok(j) => j["sha"].as_str().unwrap(),
-        _ => "-",
-    };
-    if latest_commit.len() >= 8 {
-        latest_commit = &latest_commit[..8];
-    }
-
-    let bw_web_builds_releases = get_github_api("https://api.github.com/repos/dani-garcia/bw_web_builds/releases/latest");
-    let latest_web_build = match &bw_web_builds_releases {
-        Ok(j) => j["tag_name"].as_str().unwrap(),
-        _ => "-",
-    };
-
+    
+    // Run the date check as the last item right before filling the json.
+    // This should ensure that the time difference between the browser and the server is as minimal as possible.
     let dt = Utc::now();
     let server_time = dt.format("%Y-%m-%d %H:%M:%S").to_string();
 
@@ -385,7 +396,7 @@ fn diagnostics(_token: AdminToken, _conn: DbConn) -> ApiResult<Html<String>> {
         "web_vault_version": web_vault_version.version,
         "latest_release": latest_release,
         "latest_commit": latest_commit,
-        "latest_web_build": latest_web_build.replace("v", ""),
+        "latest_web_build": latest_web_build,
     });
 
     let text = AdminTemplateData::diagnostics(diagnostics_json).render()?;

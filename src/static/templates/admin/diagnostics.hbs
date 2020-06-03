@@ -9,24 +9,26 @@
                     <dt class="col-sm-5">Server Installed
                         <span class="badge badge-success d-none" id="server-success" title="Latest version is installed.">Ok</span>
                         <span class="badge badge-warning d-none" id="server-warning" title="There seems to be an update available.">Update</span>
-                        <span class="badge badge-danger d-none" id="server-failed" title="Unable to determine latest version.">Unknown</span>
                     </dt>
                     <dd class="col-sm-7">
                         <span id="server-installed">{{version}}</span>
                     </dd>
-                    <dt class="col-sm-5">Server Latest</dt>
+                    <dt class="col-sm-5">Server Latest
+                        <span class="badge badge-danger d-none" id="server-failed" title="Unable to determine latest version.">Unknown</span>
+                    </dt>
                     <dd class="col-sm-7">
                         <span id="server-latest">{{diagnostics.latest_release}}<span id="server-latest-commit" class="d-none">-{{diagnostics.latest_commit}}</span></span>
                     </dd>
                     <dt class="col-sm-5">Web Installed
                         <span class="badge badge-success d-none" id="web-success" title="Latest version is installed.">Ok</span>
                         <span class="badge badge-warning d-none" id="web-warning" title="There seems to be an update available.">Update</span>
-                        <span class="badge badge-danger d-none" id="web-failed" title="Unable to determine latest version.">Unknown</span>
                     </dt>
                     <dd class="col-sm-7">
                         <span id="web-installed">{{diagnostics.web_vault_version}}</span>
                     </dd>
-                    <dt class="col-sm-5">Web Latest</dt>
+                    <dt class="col-sm-5">Web Latest
+                        <span class="badge badge-danger d-none" id="web-failed" title="Unable to determine latest version.">Unknown</span>
+                    </dt>
                     <dd class="col-sm-7">
                         <span id="web-latest">{{diagnostics.latest_web_build}}</span>
                     </dd>
