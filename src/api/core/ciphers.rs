@@ -274,7 +274,10 @@ pub fn update_cipher_from_data(
             };
 
             if saved_att.cipher_uuid != cipher.uuid {
-                err!("Attachment is not owned by the cipher")
+                // Warn and break here since cloning ciphers provides attachment data but will not be cloned.
+                // If we error out here it will break the whole cloning and causes empty ciphers to appear.
+                warn!("Attachment is not owned by the cipher");
+                break;
             }
 
             saved_att.akey = Some(attachment.Key);
