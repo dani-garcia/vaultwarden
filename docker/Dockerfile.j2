@@ -109,18 +109,6 @@ RUN apt-get update \
 ENV CARGO_HOME "/root/.cargo"
 ENV USER "root"
 
-{% elif "armv6" in target_file %}
-RUN apt-get update \
-    && apt-get install -y \
-        --no-install-recommends \
-        gcc-arm-linux-gnueabihf \
-    && mkdir -p ~/.cargo \
-    && echo '[target.armv7-unknown-linux-gnueabihf]' >> ~/.cargo/config \
-    && echo 'linker = "arm-linux-gnueabihf-gcc"' >> ~/.cargo/config
-
-ENV CARGO_HOME "/root/.cargo"
-ENV USER "root"
-
 {% elif "armv7" in target_file %}
 RUN apt-get update \
     && apt-get install -y \
