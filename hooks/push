@@ -1,0 +1,55 @@
+#!/bin/bash
+
+echo ">>> Pushing images..."
+
+export DOCKER_CLI_EXPERIMENTAL=enabled
+
+declare -A annotations=(
+    [amd64]="--os linux --arch amd64"
+    [arm32v6]="--os linux --arch arm --variant v6"
+    [arm32v7]="--os linux --arch arm --variant v7"
+    [arm64v8]="--os linux --arch arm64 --variant v8"
+)
+
+source ./hooks/arches.sh
+
+set -ex
+
+declare -A images
+for arch in ${arches[@]}; do
+    images[$arch]="${DOCKER_REPO}:${DOCKER_TAG}-${arch}"
+done
+
+# Push the images that were just built; manifest list creation fails if the
+# images (manifests) referenced don't already exist in the Docker registry.
+for image in "${images[@]}"; do
+    docker push "${image}"
+done
+
+manifest_lists=("${DOCKER_REPO}:${DOCKER_TAG}")
+
+# If the Docker tag starts with a version number, assume the latest release is
+# being pushed. Add an extra manifest (`latest-release` or `alpine-release`,
+# as appropriate) to make it easier to track the latest release.
+if [[ "${DOCKER_TAG}" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+    if [[ "${DOCKER_TAG}" == *alpine ]]; then
+        manifest_lists+=(${DOCKER_REPO}:alpine-release)
+    else
+        manifest_lists+=(${DOCKER_REPO}:latest-release)
+    fi
+fi
+
+for manifest_list in "${manifest_lists[@]}"; do
+    # Create the (multi-arch) manifest list of arch-specific images.
+    docker manifest create ${manifest_list} ${images[@]}
+
+    # Make sure each image manifest is annotated with the correct arch info.
+    # Docker does not auto-detect the arch of each cross-compiled image, so
+    # everything would appear as `linux/amd64` otherwise.
+    for arch in "${arches[@]}"; do
+        docker manifest annotate ${annotations[$arch]} ${manifest_list} ${images[$arch]}
+    done
+
+    # Push the manifest list.
+    docker manifest push --purge ${manifest_list}
+done
