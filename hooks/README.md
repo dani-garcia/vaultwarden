@@ -17,3 +17,4 @@ The current multi-arch image build relies on the original bitwarden_rs Dockerfil
 * https://docs.docker.com/docker-hub/builds/advanced/
 * https://docs.docker.com/engine/reference/commandline/manifest/
 * https://www.docker.com/blog/multi-arch-build-and-images-the-simple-way/
+* https://success.docker.com/article/how-do-i-authenticate-with-the-v2-api
