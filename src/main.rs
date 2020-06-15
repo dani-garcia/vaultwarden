@@ -17,11 +17,13 @@ extern crate diesel;
 extern crate diesel_migrations;
 
 use std::{
+    fmt, // For panic logging
     fs::create_dir_all,
+    panic,
     path::Path,
     process::{exit, Command},
     str::FromStr,
-    panic, thread, fmt // For panic logging
+    thread,
 };
 
 #[macro_use]
@@ -178,15 +180,13 @@ fn init_logging(level: log::LevelFilter) -> Result<(), fern::InitError> {
                     Shim(backtrace)
                 );
             }
-            None => {
-                error!(
-                    target: "panic",
-                    "thread '{}' panicked at '{}'{:?}",
-                    thread,
-                    msg,
-                    Shim(backtrace)
-                )
-            }
+            None => error!(
+                target: "panic",
+                "thread '{}' panicked at '{}'{:?}",
+                thread,
+                msg,
+                Shim(backtrace)
+            ),
         }
     }));
 
@@ -336,14 +336,11 @@ mod migrations {
 }
 
 fn launch_rocket(extra_debug: bool) {
-    // Create Rocket object, this stores current log level and sets its own
-    let rocket = rocket::ignite();
-
     let basepath = &CONFIG.domain_path();
 
     // If adding more paths here, consider also adding them to
     // crate::utils::LOGGED_ROUTES to make sure they appear in the log
-    let rocket = rocket
+    let result = rocket::ignite()
         .mount(&[basepath, "/"].concat(), api::web_routes())
         .mount(&[basepath, "/api"].concat(), api::core_routes())
         .mount(&[basepath, "/admin"].concat(), api::admin_routes())
@@ -354,9 +351,10 @@ fn launch_rocket(extra_debug: bool) {
         .manage(api::start_notification_server())
         .attach(util::AppHeaders())
         .attach(util::CORS())
-        .attach(util::BetterLogging(extra_debug));
+        .attach(util::BetterLogging(extra_debug))
+        .launch();
 
     // Launch and print error if there is one
     // The launch will restore the original logging level
-    error!("Launch error {:#?}", rocket.launch());
+    error!("Launch error {:#?}", result);
 }
