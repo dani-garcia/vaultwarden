@@ -41,8 +41,8 @@ rmpv = "0.4.4"
 chashmap = "2.2.2"
 
 # A generic serialization/deserialization framework
-serde = "1.0.112"
-serde_derive = "1.0.112"
+serde = "1.0.114"
+serde_derive = "1.0.114"
 serde_json = "1.0.55"
 
 # Logging
@@ -57,7 +57,7 @@ diesel_migrations = "1.4.0"
 libsqlite3-sys = { version = "0.17.3", features = ["bundled"], optional = true }
 
 # Crypto library
-ring = "0.16.14"
+ring = "0.16.15"
 
 # UUID generation
 uuid = { version = "0.8.1", features = ["v4"] }
@@ -73,7 +73,7 @@ oath = "0.10.2"
 data-encoding = "2.2.1"
 
 # JWT library
-jsonwebtoken = "7.1.1"
+jsonwebtoken = "7.1.2"
 
 # U2F library
 u2f = "0.2.0"
@@ -112,7 +112,7 @@ percent-encoding = "2.1.0"
 idna = "0.2.0"
 
 # CLI argument parsing
-structopt = "0.3.14"
+structopt = "0.3.15"
 
 # Logging panics to logfile instead stderr only
 backtrace = "0.3.49"
