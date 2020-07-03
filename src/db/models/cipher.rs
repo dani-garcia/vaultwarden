@@ -270,26 +270,13 @@ impl Cipher {
 
     /// Returns whether this cipher is owned by an org in which the user has full access.
     pub fn is_in_full_access_org(&self, user_uuid: &str, conn: &DbConn) -> bool {
-        if self.organization_uuid.is_none() {
-            return false;
+        if let Some(ref org_uuid) = self.organization_uuid {
+            if let Some(user_org) = UserOrganization::find_by_user_and_org(&user_uuid, &org_uuid, &conn) {
+                return user_org.has_full_access();
+            }
         }
-        let org_uuid = self.organization_uuid.as_ref().unwrap();
-        let rows = users_organizations::table
-            .filter(users_organizations::user_uuid.eq(user_uuid))
-            .filter(users_organizations::org_uuid.eq(org_uuid))
-            .filter(users_organizations::status.eq(UserOrgStatus::Confirmed as i32))
-            .filter(
-                // The user is an org admin or higher.
-                users_organizations::atype.le(UserOrgType::Admin as i32)
-                // The user was granted full access to the org by an org owner/admin.
-                    .or(users_organizations::access_all.eq(true))
-            )
-            .count()
-            .first(&**conn)
-            .ok()
-            .unwrap_or(0);
 
-        rows != 0
+        false
     }
 
     /// Returns the user's access restrictions to this cipher. A return value
@@ -324,21 +311,18 @@ impl Cipher {
         // and `hide_passwords` columns. This could ideally be done as part
         // of the query, but Diesel doesn't support a max() or bool_or()
         // function on booleans and this behavior isn't portable anyway.
-        match query.load::<(bool, bool)>(&**conn).ok() {
-            Some(vec) => {
-                let mut read_only = false;
-                let mut hide_passwords = false;
-                for (ro, hp) in vec.iter() {
-                    read_only |= ro;
-                    hide_passwords |= hp;
-                }
-
-                Some((read_only, hide_passwords))
-            },
-            None => {
-                // This cipher isn't in any collections accessible to the user.
-                None
+        if let Some(vec) = query.load::<(bool, bool)>(&**conn).ok() {
+            let mut read_only = false;
+            let mut hide_passwords = false;
+            for (ro, hp) in vec.iter() {
+                read_only |= ro;
+                hide_passwords |= hp;
             }
+
+            Some((read_only, hide_passwords))
+        } else {
+            // This cipher isn't in any collections accessible to the user.
+            None
         }
     }
 

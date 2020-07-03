@@ -393,8 +393,13 @@ impl UserOrganization {
         Ok(())
     }
 
+    pub fn has_status(self, status: UserOrgStatus) -> bool {
+        self.status == status as i32
+    }
+
     pub fn has_full_access(self) -> bool {
-        self.access_all || self.atype >= UserOrgType::Admin
+        (self.access_all || self.atype >= UserOrgType::Admin) &&
+            self.has_status(UserOrgStatus::Confirmed)
     }
 
     pub fn find_by_uuid(uuid: &str, conn: &DbConn) -> Option<Self> {
