@@ -264,33 +264,32 @@ impl Cipher {
     }
 
     /// Returns whether this cipher is directly owned by the user.
-    pub fn is_owned_by_user(&self, user_uuid: &str, conn: &DbConn) -> bool {
-        ciphers::table
-            .filter(ciphers::uuid.eq(&self.uuid))
-            .filter(ciphers::user_uuid.eq(&user_uuid))
-            .first::<Self>(&**conn)
-            .ok()
-            .is_some()
+    pub fn is_owned_by_user(&self, user_uuid: &str) -> bool {
+        self.user_uuid.is_some() && self.user_uuid.as_ref().unwrap() == user_uuid
     }
 
     /// Returns whether this cipher is owned by an org in which the user has full access.
     pub fn is_in_full_access_org(&self, user_uuid: &str, conn: &DbConn) -> bool {
-        ciphers::table
-            .filter(ciphers::uuid.eq(&self.uuid))
-            .inner_join(ciphers_collections::table.on(
-                ciphers::uuid.eq(ciphers_collections::cipher_uuid)))
-            .inner_join(users_organizations::table.on(
-                ciphers::organization_uuid.eq(users_organizations::org_uuid.nullable())
-                    .and(users_organizations::user_uuid.eq(user_uuid))
-                    .and(users_organizations::status.eq(UserOrgStatus::Confirmed as i32))))
-            // The user is an org admin or higher.
-            .filter(users_organizations::atype.le(UserOrgType::Admin as i32))
-            // The user was granted full access to the org by an org owner/admin.
-            .or_filter(users_organizations::access_all.eq(true))
-            .select(ciphers::uuid)
-            .first::<String>(&**conn)
+        if self.organization_uuid.is_none() {
+            return false;
+        }
+        let org_uuid = self.organization_uuid.as_ref().unwrap();
+        let rows = users_organizations::table
+            .filter(users_organizations::user_uuid.eq(user_uuid))
+            .filter(users_organizations::org_uuid.eq(org_uuid))
+            .filter(users_organizations::status.eq(UserOrgStatus::Confirmed as i32))
+            .filter(
+                // The user is an org admin or higher.
+                users_organizations::atype.le(UserOrgType::Admin as i32)
+                // The user was granted full access to the org by an org owner/admin.
+                    .or(users_organizations::access_all.eq(true))
+            )
+            .count()
+            .first(&**conn)
             .ok()
-            .is_some()
+            .unwrap_or(0);
+
+        rows != 0
     }
 
     /// Returns the user's access restrictions to this cipher. A return value
@@ -302,7 +301,7 @@ impl Cipher {
         // Check whether this cipher is directly owned by the user, or is in
         // a collection that the user has full access to. If so, there are no
         // access restrictions.
-        if self.is_owned_by_user(&user_uuid, &conn) || self.is_in_full_access_org(&user_uuid, &conn) {
+        if self.is_owned_by_user(&user_uuid) || self.is_in_full_access_org(&user_uuid, &conn) {
             return Some((false, false));
         }
 
