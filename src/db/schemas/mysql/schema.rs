@@ -141,6 +141,7 @@ table! {
         user_uuid -> Varchar,
         collection_uuid -> Varchar,
         read_only -> Bool,
+        hide_passwords -> Bool,
     }
 }
 

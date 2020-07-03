@@ -141,6 +141,7 @@ table! {
         user_uuid -> Text,
         collection_uuid -> Text,
         read_only -> Bool,
+        hide_passwords -> Bool,
     }
 }
 
