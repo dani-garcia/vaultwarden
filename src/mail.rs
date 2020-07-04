@@ -2,6 +2,7 @@ use std::str::FromStr;
 
 use lettre::message::{header, Mailbox, Message, MultiPart, SinglePart};
 use lettre::transport::smtp::authentication::{Credentials, Mechanism as SmtpAuthMechanism};
+use lettre::transport::smtp::extension::ClientId;
 use lettre::{Address, SmtpTransport, Tls, TlsParameters, Transport};
 
 use native_tls::{Protocol, TlsConnector};
@@ -40,6 +41,11 @@ fn mailer() -> SmtpTransport {
     let smtp_client = match (CONFIG.smtp_username(), CONFIG.smtp_password()) {
         (Some(user), Some(pass)) => smtp_client.credentials(Credentials::new(user, pass)),
         _ => smtp_client,
+    };
+
+    let smtp_client = match CONFIG.helo_name() {
+        Some(helo_name) => smtp_client.hello_name(ClientId::new(helo_name)),
+        None => smtp_client,
     };
 
     let smtp_client = match CONFIG.smtp_auth_mechanism() {

@@ -92,7 +92,7 @@ num-traits = "0.2.12"
 num-derive = "0.3.0"
 
 # Email libraries
-lettre = { version = "0.10.0-alpha.1", features = ["smtp-transport", "builder", "serde", "native-tls"], default-features = false }
+lettre = { version = "0.10.0-alpha.1", features = ["smtp-transport", "builder", "serde", "native-tls", "hostname"], default-features = false }
 native-tls = "0.2.4"
 
 # Template library

@@ -838,6 +838,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "hostname"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3c731c3e10504cc8ed35cfe2f1db4c9274c3d35fa486e3b31df46f068ef3e867"
+dependencies = [
+ "libc",
+ "match_cfg",
+ "winapi 0.3.9",
+]
+
+[[package]]
 name = "html5ever"
 version = "0.22.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1095,6 +1106,7 @@ checksum = "deaf9b74d40fcb52d0f762eb08e45d5152b4db59d29bb73edd4cac7fe796862c"
 dependencies = [
  "base64 0.12.3",
  "bufstream",
+ "hostname",
  "hyperx",
  "idna 0.2.0",
  "line-wrap",
@@ -1213,6 +1225,12 @@ dependencies = [
  "string_cache_codegen",
  "tendril",
 ]
+
+[[package]]
+name = "match_cfg"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ffbee8634e0d45d258acb448e7eaab3fce7a0a467395d4d9f228e3c1f01fb2e4"
 
 [[package]]
 name = "matches"

@@ -394,7 +394,9 @@ make_config! {
         /// Json form auth mechanism |> Defaults for ssl is "Plain" and "Login" and nothing for non-ssl connections. Possible values: ["Plain", "Login", "Xoauth2"]
         smtp_auth_mechanism:    String, true,   option;
         /// SMTP connection timeout |> Number of seconds when to stop trying to connect to the SMTP server
-        smtp_timeout:           u64,     true,   def,     15;
+        smtp_timeout:           u64,    true,   def,     15;
+        /// Server name sent during HELO |> By default this value should be is on the machine's hostname, but might need to be changed in case it trips some anti-spam filters
+        helo_name:              String, true,   option;
     },
 
     /// Email 2FA Settings
