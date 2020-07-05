@@ -93,9 +93,10 @@ COPY --from=vault /web-vault ./web-vault
 COPY --from=build app/target/release/bitwarden_rs .
 
 COPY docker/healthcheck.sh /healthcheck.sh
+COPY docker/start.sh /start.sh
 
 HEALTHCHECK --interval=60s --timeout=10s CMD ["/healthcheck.sh"]
 
 # Configures the startup!
 WORKDIR /
-CMD ["/bitwarden_rs"]
+CMD ["/start.sh"]
