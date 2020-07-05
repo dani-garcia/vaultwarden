@@ -90,6 +90,8 @@ COPY docker/healthcheck.sh /healthcheck.sh
 
 HEALTHCHECK --interval=60s --timeout=10s CMD ["/healthcheck.sh"]
 
+COPY docker/bootstrap.sh /bootstrap.sh
+
 # Configures the startup!
 WORKDIR /
-CMD ["/bitwarden_rs"]
+CMD ["/bootstrap.sh"]
