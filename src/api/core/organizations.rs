@@ -374,7 +374,7 @@ fn get_collection_users(org_id: String, coll_id: String, _headers: AdminHeaders,
         .map(|col_user| {
             UserOrganization::find_by_user_and_org(&col_user.user_uuid, &org_id, &conn)
                 .unwrap()
-                .to_json_read_only(col_user.read_only)
+                .to_json_user_access_restrictions(&col_user)
         })
         .collect();
 
@@ -408,7 +408,9 @@ fn put_collection_users(
             continue;
         }
 
-        CollectionUser::save(&user.user_uuid, &coll_id, d.ReadOnly, &conn)?;
+        CollectionUser::save(&user.user_uuid, &coll_id,
+                             d.ReadOnly, d.HidePasswords,
+                             &conn)?;
     }
 
     Ok(())
@@ -452,6 +454,7 @@ fn get_org_users(org_id: String, _headers: AdminHeaders, conn: DbConn) -> JsonRe
 struct CollectionData {
     Id: String,
     ReadOnly: bool,
+    HidePasswords: bool,
 }
 
 #[derive(Deserialize)]
@@ -523,7 +526,9 @@ fn send_invite(org_id: String, data: JsonUpcase<InviteData>, headers: AdminHeade
                 match Collection::find_by_uuid_and_org(&col.Id, &org_id, &conn) {
                     None => err!("Collection not found in Organization"),
                     Some(collection) => {
-                        CollectionUser::save(&user.uuid, &collection.uuid, col.ReadOnly, &conn)?;
+                        CollectionUser::save(&user.uuid, &collection.uuid,
+                                             col.ReadOnly, col.HidePasswords,
+                                             &conn)?;
                     }
                 }
             }
@@ -778,7 +783,9 @@ fn edit_user(
             match Collection::find_by_uuid_and_org(&col.Id, &org_id, &conn) {
                 None => err!("Collection not found in Organization"),
                 Some(collection) => {
-                    CollectionUser::save(&user_to_edit.user_uuid, &collection.uuid, col.ReadOnly, &conn)?;
+                    CollectionUser::save(&user_to_edit.user_uuid, &collection.uuid,
+                                         col.ReadOnly, col.HidePasswords,
+                                         &conn)?;
                 }
             }
         }

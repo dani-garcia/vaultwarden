@@ -82,6 +82,15 @@ impl Cipher {
         let fields_json = self.fields.as_ref().and_then(|s| serde_json::from_str(s).ok()).unwrap_or(Value::Null);
         let password_history_json = self.password_history.as_ref().and_then(|s| serde_json::from_str(s).ok()).unwrap_or(Value::Null);
 
+        let (read_only, hide_passwords) =
+            match self.get_access_restrictions(&user_uuid, &conn) {
+                Some((ro, hp)) => (ro, hp),
+                None => {
+                    error!("Cipher ownership assertion failure");
+                    (true, true)
+                },
+            };
+
         // Get the data or a default empty value to avoid issues with the mobile apps
         let mut data_json: Value = serde_json::from_str(&self.data).unwrap_or_else(|_| json!({
             "Fields":null,
@@ -105,7 +114,15 @@ impl Cipher {
         }
         // TODO: ******* Backwards compat end **********
 
+        // There are three types of cipher response models in upstream
+        // Bitwarden: "cipherMini", "cipher", and "cipherDetails" (in order
+        // of increasing level of detail). bitwarden_rs currently only
+        // supports the "cipherDetails" type, though it seems like the
+        // Bitwarden clients will ignore extra fields.
+        //
+        // Ref: https://github.com/bitwarden/server/blob/master/src/Core/Models/Api/Response/CipherResponseModel.cs
         let mut json_object = json!({
+            "Object": "cipherDetails",
             "Id": self.uuid,
             "Type": self.atype,
             "RevisionDate": format_date(&self.updated_at),
@@ -115,6 +132,8 @@ impl Cipher {
             "OrganizationId": self.organization_uuid,
             "Attachments": attachments_json,
             "OrganizationUseTotp": true,
+
+            // This field is specific to the cipherDetails type.
             "CollectionIds": self.get_collections(user_uuid, &conn),
 
             "Name": self.name,
@@ -123,8 +142,11 @@ impl Cipher {
 
             "Data": data_json,
 
-            "Object": "cipher",
-            "Edit": true,
+            // These values are true by default, but can be false if the
+            // cipher belongs to a collection where the org owner has enabled
+            // the "Read Only" or "Hide Passwords" restrictions for the user.
+            "Edit": !read_only,
+            "ViewPassword": !hide_passwords,
 
             "PasswordHistory": password_history_json,
         });
@@ -241,64 +263,78 @@ impl Cipher {
         }
     }
 
-    pub fn is_write_accessible_to_user(&self, user_uuid: &str, conn: &DbConn) -> bool {
-        ciphers::table
+    /// Returns whether this cipher is directly owned by the user.
+    pub fn is_owned_by_user(&self, user_uuid: &str) -> bool {
+        self.user_uuid.is_some() && self.user_uuid.as_ref().unwrap() == user_uuid
+    }
+
+    /// Returns whether this cipher is owned by an org in which the user has full access.
+    pub fn is_in_full_access_org(&self, user_uuid: &str, conn: &DbConn) -> bool {
+        if let Some(ref org_uuid) = self.organization_uuid {
+            if let Some(user_org) = UserOrganization::find_by_user_and_org(&user_uuid, &org_uuid, &conn) {
+                return user_org.has_full_access();
+            }
+        }
+
+        false
+    }
+
+    /// Returns the user's access restrictions to this cipher. A return value
+    /// of None means that this cipher does not belong to the user, and is
+    /// not in any collection the user has access to. Otherwise, the user has
+    /// access to this cipher, and Some(read_only, hide_passwords) represents
+    /// the access restrictions.
+    pub fn get_access_restrictions(&self, user_uuid: &str, conn: &DbConn) -> Option<(bool, bool)> {
+        // Check whether this cipher is directly owned by the user, or is in
+        // a collection that the user has full access to. If so, there are no
+        // access restrictions.
+        if self.is_owned_by_user(&user_uuid) || self.is_in_full_access_org(&user_uuid, &conn) {
+            return Some((false, false));
+        }
+
+        // Check whether this cipher is in any collections accessible to the
+        // user. If so, retrieve the access flags for each collection.
+        let query = ciphers::table
             .filter(ciphers::uuid.eq(&self.uuid))
-            .left_join(
-                users_organizations::table.on(ciphers::organization_uuid
-                    .eq(users_organizations::org_uuid.nullable())
-                    .and(users_organizations::user_uuid.eq(user_uuid))),
-            )
-            .left_join(ciphers_collections::table)
-            .left_join(
-                users_collections::table
-                    .on(ciphers_collections::collection_uuid.eq(users_collections::collection_uuid)),
-            )
-            .filter(ciphers::user_uuid.eq(user_uuid).or(
-                // Cipher owner
-                users_organizations::access_all.eq(true).or(
-                    // access_all in Organization
-                    users_organizations::atype.le(UserOrgType::Admin as i32).or(
-                        // Org admin or owner
-                        users_collections::user_uuid.eq(user_uuid).and(
-                            users_collections::read_only.eq(false), //R/W access to collection
-                        ),
-                    ),
-                ),
-            ))
-            .select(ciphers::all_columns)
-            .first::<Self>(&**conn)
-            .ok()
-            .is_some()
+            .inner_join(ciphers_collections::table.on(
+                ciphers::uuid.eq(ciphers_collections::cipher_uuid)))
+            .inner_join(users_collections::table.on(
+                ciphers_collections::collection_uuid.eq(users_collections::collection_uuid)
+                    .and(users_collections::user_uuid.eq(user_uuid))))
+            .select((users_collections::read_only, users_collections::hide_passwords));
+
+        // There's an edge case where a cipher can be in multiple collections
+        // with inconsistent access flags. For example, a cipher could be in
+        // one collection where the user has read-only access, but also in
+        // another collection where the user has read/write access. To handle
+        // this, we do a boolean OR of all values in each of the `read_only`
+        // and `hide_passwords` columns. This could ideally be done as part
+        // of the query, but Diesel doesn't support a max() or bool_or()
+        // function on booleans and this behavior isn't portable anyway.
+        if let Some(vec) = query.load::<(bool, bool)>(&**conn).ok() {
+            let mut read_only = false;
+            let mut hide_passwords = false;
+            for (ro, hp) in vec.iter() {
+                read_only |= ro;
+                hide_passwords |= hp;
+            }
+
+            Some((read_only, hide_passwords))
+        } else {
+            // This cipher isn't in any collections accessible to the user.
+            None
+        }
+    }
+
+    pub fn is_write_accessible_to_user(&self, user_uuid: &str, conn: &DbConn) -> bool {
+        match self.get_access_restrictions(&user_uuid, &conn) {
+            Some((read_only, _hide_passwords)) => !read_only,
+            None => false,
+        }
     }
 
     pub fn is_accessible_to_user(&self, user_uuid: &str, conn: &DbConn) -> bool {
-        ciphers::table
-            .filter(ciphers::uuid.eq(&self.uuid))
-            .left_join(
-                users_organizations::table.on(ciphers::organization_uuid
-                    .eq(users_organizations::org_uuid.nullable())
-                    .and(users_organizations::user_uuid.eq(user_uuid))),
-            )
-            .left_join(ciphers_collections::table)
-            .left_join(
-                users_collections::table
-                    .on(ciphers_collections::collection_uuid.eq(users_collections::collection_uuid)),
-            )
-            .filter(ciphers::user_uuid.eq(user_uuid).or(
-                // Cipher owner
-                users_organizations::access_all.eq(true).or(
-                    // access_all in Organization
-                    users_organizations::atype.le(UserOrgType::Admin as i32).or(
-                        // Org admin or owner
-                        users_collections::user_uuid.eq(user_uuid), // Access to Collection
-                    ),
-                ),
-            ))
-            .select(ciphers::all_columns)
-            .first::<Self>(&**conn)
-            .ok()
-            .is_some()
+        self.get_access_restrictions(&user_uuid, &conn).is_some()
     }
 
     pub fn get_folder_uuid(&self, user_uuid: &str, conn: &DbConn) -> Option<String> {

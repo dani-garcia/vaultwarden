@@ -199,6 +199,7 @@ pub struct CollectionUser {
     pub user_uuid: String,
     pub collection_uuid: String,
     pub read_only: bool,
+    pub hide_passwords: bool,
 }
 
 /// Database methods
@@ -214,7 +215,7 @@ impl CollectionUser {
     }
 
     #[cfg(feature = "postgresql")]
-    pub fn save(user_uuid: &str, collection_uuid: &str, read_only: bool, conn: &DbConn) -> EmptyResult {
+    pub fn save(user_uuid: &str, collection_uuid: &str, read_only: bool, hide_passwords: bool, conn: &DbConn) -> EmptyResult {
         User::update_uuid_revision(&user_uuid, conn);
 
         diesel::insert_into(users_collections::table)
@@ -222,16 +223,18 @@ impl CollectionUser {
                 users_collections::user_uuid.eq(user_uuid),
                 users_collections::collection_uuid.eq(collection_uuid),
                 users_collections::read_only.eq(read_only),
+                users_collections::hide_passwords.eq(hide_passwords),
             ))
             .on_conflict((users_collections::user_uuid, users_collections::collection_uuid))
             .do_update()
             .set(users_collections::read_only.eq(read_only))
+            .set(users_collections::hide_passwords.eq(hide_passwords))
             .execute(&**conn)
             .map_res("Error adding user to collection")
     }
 
     #[cfg(not(feature = "postgresql"))]
-    pub fn save(user_uuid: &str, collection_uuid: &str, read_only: bool, conn: &DbConn) -> EmptyResult {
+    pub fn save(user_uuid: &str, collection_uuid: &str, read_only: bool, hide_passwords: bool, conn: &DbConn) -> EmptyResult {
         User::update_uuid_revision(&user_uuid, conn);
 
         diesel::replace_into(users_collections::table)
@@ -239,6 +242,7 @@ impl CollectionUser {
                 users_collections::user_uuid.eq(user_uuid),
                 users_collections::collection_uuid.eq(collection_uuid),
                 users_collections::read_only.eq(read_only),
+                users_collections::hide_passwords.eq(hide_passwords),
             ))
             .execute(&**conn)
             .map_res("Error adding user to collection")

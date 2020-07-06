@@ -310,10 +310,11 @@ impl UserOrganization {
         })
     }
 
-    pub fn to_json_read_only(&self, read_only: bool) -> Value {
+    pub fn to_json_user_access_restrictions(&self, col_user: &CollectionUser) -> Value {
         json!({
             "Id": self.uuid,
-            "ReadOnly": read_only
+            "ReadOnly": col_user.read_only,
+            "HidePasswords": col_user.hide_passwords,
         })
     }
 
@@ -324,7 +325,11 @@ impl UserOrganization {
             let collections = CollectionUser::find_by_organization_and_user_uuid(&self.org_uuid, &self.user_uuid, conn);
             collections
                 .iter()
-                .map(|c| json!({"Id": c.collection_uuid, "ReadOnly": c.read_only}))
+                .map(|c| json!({
+                    "Id": c.collection_uuid,
+                    "ReadOnly": c.read_only,
+                    "HidePasswords": c.hide_passwords,
+                }))
                 .collect()
         };
 
@@ -388,8 +393,13 @@ impl UserOrganization {
         Ok(())
     }
 
+    pub fn has_status(self, status: UserOrgStatus) -> bool {
+        self.status == status as i32
+    }
+
     pub fn has_full_access(self) -> bool {
-        self.access_all || self.atype >= UserOrgType::Admin
+        (self.access_all || self.atype >= UserOrgType::Admin) &&
+            self.has_status(UserOrgStatus::Confirmed)
     }
 
     pub fn find_by_uuid(uuid: &str, conn: &DbConn) -> Option<Self> {
