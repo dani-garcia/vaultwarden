@@ -62,8 +62,9 @@ ring = "0.16.15"
 # UUID generation
 uuid = { version = "0.8.1", features = ["v4"] }
 
-# Date and time librar for Rust
-chrono = "0.4.12"
+# Date and time libraries
+chrono = "0.4.13"
+chrono-tz = "0.5.2"
 time = "0.2.16"
 
 # TOTP library

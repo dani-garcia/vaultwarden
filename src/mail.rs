@@ -1,3 +1,4 @@
+use std::env;
 use std::str::FromStr;
 
 use lettre::message::{header, Mailbox, Message, MultiPart, SinglePart};
@@ -12,7 +13,9 @@ use crate::api::EmptyResult;
 use crate::auth::{encode_jwt, generate_delete_claims, generate_invite_claims, generate_verify_email_claims};
 use crate::error::Error;
 use crate::CONFIG;
-use chrono::NaiveDateTime;
+
+use chrono::{DateTime, Local};
+use chrono_tz::Tz;
 
 fn mailer() -> SmtpTransport {
     let host = CONFIG.smtp_host().unwrap();
@@ -85,6 +88,22 @@ fn get_template(template_name: &str, data: &serde_json::Value) -> Result<(String
     };
 
     Ok((subject, body))
+}
+
+pub fn format_datetime(dt: &DateTime<Local>) -> String {
+    let fmt = "%A, %B %_d, %Y at %r %Z";
+
+    // With a DateTime<Local>, `%Z` formats as the time zone's UTC offset
+    // (e.g., `+00:00`). If the `TZ` environment variable is set, try to
+    // format as a time zone abbreviation instead (e.g., `UTC`).
+    if let Ok(tz) = env::var("TZ") {
+        if let Ok(tz) = tz.parse::<Tz>() {
+            return dt.with_timezone(&tz).format(fmt).to_string();
+        }
+    }
+
+    // Otherwise, fall back to just displaying the UTC offset.
+    dt.format(fmt).to_string()
 }
 
 pub fn send_password_hint(address: &str, hint: Option<String>) -> EmptyResult {
@@ -217,11 +236,9 @@ pub fn send_invite_confirmed(address: &str, org_name: &str) -> EmptyResult {
     send_email(address, &subject, &body_html, &body_text)
 }
 
-pub fn send_new_device_logged_in(address: &str, ip: &str, dt: &NaiveDateTime, device: &str) -> EmptyResult {
+pub fn send_new_device_logged_in(address: &str, ip: &str, dt: &DateTime<Local>, device: &str) -> EmptyResult {
     use crate::util::upcase_first;
     let device = upcase_first(device);
-
-    let datetime = dt.format("%A, %B %_d, %Y at %H:%M").to_string();
 
     let (subject, body_html, body_text) = get_text(
         "email/new_device_logged_in",
@@ -229,7 +246,7 @@ pub fn send_new_device_logged_in(address: &str, ip: &str, dt: &NaiveDateTime, de
             "url": CONFIG.domain(),
             "ip": ip,
             "device": device,
-            "datetime": datetime,
+            "datetime": format_datetime(dt),
         }),
     )?;
 

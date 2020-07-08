@@ -1,4 +1,4 @@
-use chrono::Utc;
+use chrono::Local;
 use num_traits::FromPrimitive;
 use rocket::request::{Form, FormItems, FromForm};
 use rocket::Route;
@@ -97,8 +97,10 @@ fn _password_login(data: ConnectData, conn: DbConn, ip: &ClientIp) -> JsonResult
         )
     }
 
+    let now = Local::now();
+
     if user.verified_at.is_none() && CONFIG.mail_enabled() && CONFIG.signups_verify() {
-        let now = Utc::now().naive_utc();
+        let now = now.naive_utc();
         if user.last_verifying_at.is_none() || now.signed_duration_since(user.last_verifying_at.unwrap()).num_seconds() > CONFIG.signups_verify_resend_time() as i64 {
             let resend_limit = CONFIG.signups_verify_resend_limit() as i32;
             if resend_limit == 0 || user.login_verify_count < resend_limit {
@@ -130,7 +132,7 @@ fn _password_login(data: ConnectData, conn: DbConn, ip: &ClientIp) -> JsonResult
     let twofactor_token = twofactor_auth(&user.uuid, &data, &mut device, &ip, &conn)?;
 
     if CONFIG.mail_enabled() && new_device {
-        if let Err(e) = mail::send_new_device_logged_in(&user.email, &ip.ip.to_string(), &device.updated_at, &device.name) {
+        if let Err(e) = mail::send_new_device_logged_in(&user.email, &ip.ip.to_string(), &now, &device.name) {
             error!("Error sending new device email: {:#?}", e);
 
             if CONFIG.require_device_email() {
