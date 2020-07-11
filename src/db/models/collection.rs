@@ -227,8 +227,10 @@ impl CollectionUser {
             ))
             .on_conflict((users_collections::user_uuid, users_collections::collection_uuid))
             .do_update()
-            .set(users_collections::read_only.eq(read_only))
-            .set(users_collections::hide_passwords.eq(hide_passwords))
+            .set((
+                users_collections::read_only.eq(read_only),
+                users_collections::hide_passwords.eq(hide_passwords),
+            ))
             .execute(&**conn)
             .map_res("Error adding user to collection")
     }
