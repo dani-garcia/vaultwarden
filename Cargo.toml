@@ -116,7 +116,7 @@ idna = "0.2.0"
 structopt = "0.3.15"
 
 # Logging panics to logfile instead stderr only
-backtrace = "0.3.49"
+backtrace = "0.3.50"
 
 [patch.crates-io]
 # Use newest ring
