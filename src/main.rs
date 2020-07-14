@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-#![feature(proc_macro_hygiene, ip)]
+#![cfg_attr(feature = "unstable", feature(ip))]
 #![recursion_limit = "256"]
 
 extern crate openssl;

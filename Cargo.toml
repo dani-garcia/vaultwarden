@@ -17,6 +17,10 @@ mysql = ["diesel/mysql", "diesel_migrations/mysql"]
 postgresql = ["diesel/postgres", "diesel_migrations/postgres"]
 sqlite = ["diesel/sqlite", "diesel_migrations/sqlite", "libsqlite3-sys"]
 
+# Enable unstable features, requires nightly
+# Currently only used to enable rusts official ip support 
+unstable = []
+
 [target."cfg(not(windows))".dependencies]
 syslog = "4.0.1"
 
