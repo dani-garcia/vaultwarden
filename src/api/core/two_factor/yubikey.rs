@@ -1,18 +1,18 @@
 use rocket::Route;
 use rocket_contrib::json::Json;
 use serde_json::Value;
-use yubico::config::Config;
-use yubico::verify;
+use yubico::{config::Config, verify};
 
-use crate::api::core::two_factor::_generate_recover_code;
-use crate::api::{EmptyResult, JsonResult, JsonUpcase, PasswordData};
-use crate::auth::Headers;
-use crate::db::{
-    models::{TwoFactor, TwoFactorType},
-    DbConn,
+use crate::{
+    api::{core::two_factor::_generate_recover_code, EmptyResult, JsonResult, JsonUpcase, PasswordData},
+    auth::Headers,
+    db::{
+        models::{TwoFactor, TwoFactorType},
+        DbConn,
+    },
+    error::{Error, MapResult},
+    CONFIG,
 };
-use crate::error::{Error, MapResult};
-use crate::CONFIG;
 
 pub fn routes() -> Vec<Route> {
     routes![generate_yubikey, activate_yubikey, activate_yubikey_put,]

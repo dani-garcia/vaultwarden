@@ -1,17 +1,19 @@
 //
 // JWT Handling
 //
-use crate::util::read_file;
 use chrono::{Duration, Utc};
-use once_cell::sync::Lazy;
 use num_traits::FromPrimitive;
+use once_cell::sync::Lazy;
 
-use jsonwebtoken::{self, Algorithm, Header, EncodingKey, DecodingKey};
+use jsonwebtoken::{self, Algorithm, DecodingKey, EncodingKey, Header};
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
 
-use crate::error::{Error, MapResult};
-use crate::CONFIG;
+use crate::{
+    error::{Error, MapResult},
+    util::read_file,
+    CONFIG,
+};
 
 const JWT_ALGORITHM: Algorithm = Algorithm::RS256;
 
@@ -213,11 +215,15 @@ pub fn generate_admin_claims() -> AdminJWTClaims {
 //
 // Bearer token authentication
 //
-use rocket::request::{self, FromRequest, Request};
-use rocket::Outcome;
+use rocket::{
+    request::{self, FromRequest, Request},
+    Outcome,
+};
 
-use crate::db::models::{Device, User, UserOrgStatus, UserOrgType, UserOrganization};
-use crate::db::DbConn;
+use crate::db::{
+    models::{Device, User, UserOrgStatus, UserOrgType, UserOrganization},
+    DbConn,
+};
 
 pub struct Headers {
     pub host: String,
@@ -366,7 +372,7 @@ impl<'a, 'r> FromRequest<'a, 'r> for OrgHeaders {
                                 }
                             },
                         })
-                    },
+                    }
                     _ => err_handler!("Error getting the organization id"),
                 }
             }
@@ -404,14 +410,14 @@ impl<'a, 'r> FromRequest<'a, 'r> for AdminHeaders {
     }
 }
 
-impl Into<Headers> for AdminHeaders {    
-    fn into(self) -> Headers { 
+impl Into<Headers> for AdminHeaders {
+    fn into(self) -> Headers {
         Headers {
             host: self.host,
             device: self.device,
-            user: self.user
+            user: self.user,
         }
-     }
+    }
 }
 
 pub struct OwnerHeaders {

@@ -3,16 +3,17 @@ use data_encoding::BASE64;
 use rocket::Route;
 use rocket_contrib::json::Json;
 
-use crate::api::core::two_factor::_generate_recover_code;
-use crate::api::{ApiResult, EmptyResult, JsonResult, JsonUpcase, PasswordData};
-use crate::auth::Headers;
-use crate::crypto;
-use crate::db::{
-    models::{TwoFactor, TwoFactorType, User},
-    DbConn,
+use crate::{
+    api::{core::two_factor::_generate_recover_code, ApiResult, EmptyResult, JsonResult, JsonUpcase, PasswordData},
+    auth::Headers,
+    crypto,
+    db::{
+        models::{TwoFactor, TwoFactorType, User},
+        DbConn,
+    },
+    error::MapResult,
+    CONFIG,
 };
-use crate::error::MapResult;
-use crate::CONFIG;
 
 pub fn routes() -> Vec<Route> {
     routes![get_duo, activate_duo, activate_duo_put,]
@@ -186,7 +187,7 @@ fn activate_duo_put(data: JsonUpcase<EnableDuoData>, headers: Headers, conn: DbC
 fn duo_api_request(method: &str, path: &str, params: &str, data: &DuoData) -> EmptyResult {
     const AGENT: &str = "bitwarden_rs:Duo/1.0 (Rust)";
 
-    use reqwest::{header::*, Method, blocking::Client};
+    use reqwest::{blocking::Client, header::*, Method};
     use std::str::FromStr;
 
     // https://duo.com/docs/authapi#api-details

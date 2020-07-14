@@ -2,19 +2,25 @@ use once_cell::sync::Lazy;
 use rocket::Route;
 use rocket_contrib::json::Json;
 use serde_json::Value;
-use u2f::messages::{RegisterResponse, SignResponse, U2fSignRequest};
-use u2f::protocol::{Challenge, U2f};
-use u2f::register::Registration;
-
-use crate::api::core::two_factor::_generate_recover_code;
-use crate::api::{ApiResult, EmptyResult, JsonResult, JsonUpcase, NumberOrString, PasswordData};
-use crate::auth::Headers;
-use crate::db::{
-    models::{TwoFactor, TwoFactorType},
-    DbConn,
+use u2f::{
+    messages::{RegisterResponse, SignResponse, U2fSignRequest},
+    protocol::{Challenge, U2f},
+    register::Registration,
 };
-use crate::error::Error;
-use crate::CONFIG;
+
+use crate::{
+    api::{
+        core::two_factor::_generate_recover_code, ApiResult, EmptyResult, JsonResult, JsonUpcase, NumberOrString,
+        PasswordData,
+    },
+    auth::Headers,
+    db::{
+        models::{TwoFactor, TwoFactorType},
+        DbConn,
+    },
+    error::Error,
+    CONFIG,
+};
 
 const U2F_VERSION: &str = "U2F_V2";
 

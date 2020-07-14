@@ -1,19 +1,15 @@
 use chrono::Utc;
 use rocket_contrib::json::Json;
 
-use crate::db::models::*;
-use crate::db::DbConn;
+use crate::{
+    api::{EmptyResult, JsonResult, JsonUpcase, Notify, NumberOrString, PasswordData, UpdateType},
+    auth::{decode_delete, decode_invite, decode_verify_email, Headers},
+    crypto,
+    db::{models::*, DbConn},
+    mail, CONFIG,
+};
 
-use crate::api::{EmptyResult, JsonResult, JsonUpcase, Notify, NumberOrString, PasswordData, UpdateType};
-use crate::auth::{decode_delete, decode_invite, decode_verify_email, Headers};
-use crate::crypto;
-use crate::mail;
-
-use crate::CONFIG;
-
-use rocket::Route;
-
-pub fn routes() -> Vec<Route> {
+pub fn routes() -> Vec<rocket::Route> {
     routes![
         register,
         profile,

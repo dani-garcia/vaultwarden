@@ -1,11 +1,13 @@
-use once_cell::sync::Lazy;
 use std::process::exit;
 use std::sync::RwLock;
 
+use once_cell::sync::Lazy;
 use reqwest::Url;
 
-use crate::error::Error;
-use crate::util::{get_env, get_env_bool};
+use crate::{
+    error::Error,
+    util::{get_env, get_env_bool},
+};
 
 static CONFIG_FILE: Lazy<String> = Lazy::new(|| {
     let data_folder = get_env("DATA_FOLDER").unwrap_or_else(|| String::from("data"));

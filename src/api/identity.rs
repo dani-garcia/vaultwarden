@@ -1,19 +1,22 @@
 use chrono::Local;
 use num_traits::FromPrimitive;
-use rocket::request::{Form, FormItems, FromForm};
-use rocket::Route;
+use rocket::{
+    request::{Form, FormItems, FromForm},
+    Route,
+};
 use rocket_contrib::json::Json;
 use serde_json::Value;
 
-use crate::api::core::two_factor::email::EmailTokenData;
-use crate::api::core::two_factor::{duo, email, yubikey};
-use crate::api::{ApiResult, EmptyResult, JsonResult};
-use crate::auth::ClientIp;
-use crate::db::models::*;
-use crate::db::DbConn;
-use crate::mail;
-use crate::util;
-use crate::CONFIG;
+use crate::{
+    api::{
+        core::two_factor::{duo, email, email::EmailTokenData, yubikey},
+        ApiResult, EmptyResult, JsonResult,
+    },
+    auth::ClientIp,
+    db::{models::*, DbConn},
+    error::MapResult,
+    mail, util, CONFIG,
+};
 
 pub fn routes() -> Vec<Route> {
     routes![login]
@@ -49,10 +52,7 @@ fn _refresh_login(data: ConnectData, conn: DbConn) -> JsonResult {
     let token = data.refresh_token.unwrap();
 
     // Get device by refresh token
-    let mut device = match Device::find_by_refresh_token(&token, &conn) {
-        Some(device) => device,
-        None => err!("Invalid refresh token"),
-    };
+    let mut device = Device::find_by_refresh_token(&token, &conn).map_res("Invalid refresh token")?;
 
     // COMMON
     let user = User::find_by_uuid(&device.user_uuid, &conn).unwrap();
@@ -254,10 +254,7 @@ fn twofactor_auth(
 }
 
 fn _selected_data(tf: Option<TwoFactor>) -> ApiResult<String> {
-    match tf {
-        Some(tf) => Ok(tf.data),
-        None => err!("Two factor doesn't exist"),
-    }
+    tf.map(|t| t.data).map_res("Two factor doesn't exist")
 }
 
 fn _json_err_twofactor(providers: &[i32], user_uuid: &str, conn: &DbConn) -> ApiResult<Value> {

@@ -1,23 +1,17 @@
+use std::{
+    fs::{create_dir_all, remove_file, symlink_metadata, File},
+    io::prelude::*,
+    net::ToSocketAddrs,
+    time::{Duration, SystemTime},
+};
+
 use once_cell::sync::Lazy;
-use std::fs::{create_dir_all, remove_file, symlink_metadata, File};
-use std::io::prelude::*;
-use std::net::ToSocketAddrs;
-use std::time::{Duration, SystemTime};
-
-use rocket::http::ContentType;
-use rocket::response::Content;
-use rocket::Route;
-
-use reqwest::{Url, header::HeaderMap, blocking::Client, blocking::Response};
-
-use rocket::http::Cookie;
-
 use regex::Regex;
+use reqwest::{blocking::Client, blocking::Response, header::HeaderMap, Url};
+use rocket::{http::ContentType, http::Cookie, response::Content, Route};
 use soup::prelude::*;
 
-use crate::error::Error;
-use crate::CONFIG;
-use crate::util::Cached;
+use crate::{error::Error, util::Cached, CONFIG};
 
 pub fn routes() -> Vec<Route> {
     routes![icon]

@@ -29,14 +29,15 @@ pub fn routes() -> Vec<Route> {
 // Move this somewhere else
 //
 use rocket::Route;
-
 use rocket_contrib::json::Json;
 use serde_json::Value;
 
-use crate::api::{EmptyResult, JsonResult, JsonUpcase};
-use crate::auth::Headers;
-use crate::db::DbConn;
-use crate::error::Error;
+use crate::{
+    api::{EmptyResult, JsonResult, JsonUpcase},
+    auth::Headers,
+    db::DbConn,
+    error::Error,
+};
 
 #[put("/devices/identifier/<uuid>/clear-token")]
 fn clear_device_token(uuid: String) -> EmptyResult {
@@ -146,7 +147,7 @@ fn hibp_breach(username: String) -> JsonResult {
         username
     );
 
-    use reqwest::{header::USER_AGENT, blocking::Client};
+    use reqwest::{blocking::Client, header::USER_AGENT};
 
     if let Some(api_key) = crate::CONFIG.hibp_api_key() {
         let hibp_client = Client::builder().build()?;

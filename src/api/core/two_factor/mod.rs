@@ -3,12 +3,14 @@ use rocket::Route;
 use rocket_contrib::json::Json;
 use serde_json::Value;
 
-use crate::api::{JsonResult, JsonUpcase, NumberOrString, PasswordData};
-use crate::auth::Headers;
-use crate::crypto;
-use crate::db::{
-    models::{TwoFactor, User},
-    DbConn,
+use crate::{
+    api::{JsonResult, JsonUpcase, NumberOrString, PasswordData},
+    auth::Headers,
+    crypto,
+    db::{
+        models::{TwoFactor, User},
+        DbConn,
+    },
 };
 
 pub mod authenticator;

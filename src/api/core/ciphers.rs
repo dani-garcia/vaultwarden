@@ -1,26 +1,20 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
-use rocket::http::ContentType;
-use rocket::{request::Form, Data, Route};
-
+use rocket::{http::ContentType, request::Form, Data, Route};
 use rocket_contrib::json::Json;
 use serde_json::Value;
 
-use multipart::server::save::SavedData;
-use multipart::server::{Multipart, SaveResult};
-
 use data_encoding::HEXLOWER;
+use multipart::server::{save::SavedData, Multipart, SaveResult};
 
-use crate::db::models::*;
-use crate::db::DbConn;
-
-use crate::crypto;
-
-use crate::api::{self, EmptyResult, JsonResult, JsonUpcase, Notify, PasswordData, UpdateType};
-use crate::auth::Headers;
-
-use crate::CONFIG;
+use crate::{
+    api::{self, EmptyResult, JsonResult, JsonUpcase, Notify, PasswordData, UpdateType},
+    auth::Headers,
+    crypto,
+    db::{models::*, DbConn},
+    CONFIG,
+};
 
 pub fn routes() -> Vec<Route> {
     routes![
@@ -617,9 +611,8 @@ fn share_cipher_by_uuid(
     match data.Cipher.OrganizationId.clone() {
         // If we don't get an organization ID, we don't do anything
         // No error because this is used when using the Clone functionality
-        None => {},
+        None => {}
         Some(organization_uuid) => {
-
             for uuid in &data.CollectionIds {
                 match Collection::find_by_uuid_and_org(uuid, &organization_uuid, &conn) {
                     None => err!("Invalid collection ID provided"),

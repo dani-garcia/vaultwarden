@@ -1,22 +1,26 @@
 use once_cell::sync::Lazy;
-use serde_json::Value;
 use serde::de::DeserializeOwned;
+use serde_json::Value;
 use std::process::Command;
 
-use rocket::http::{Cookie, Cookies, SameSite};
-use rocket::request::{self, FlashMessage, Form, FromRequest, Request};
-use rocket::response::{content::Html, Flash, Redirect};
-use rocket::{Outcome, Route};
+use rocket::{
+    http::{Cookie, Cookies, SameSite},
+    request::{self, FlashMessage, Form, FromRequest, Request},
+    response::{content::Html, Flash, Redirect},
+    Outcome, Route,
+};
 use rocket_contrib::json::Json;
 
-use crate::api::{ApiResult, EmptyResult, JsonResult};
-use crate::auth::{decode_admin, encode_jwt, generate_admin_claims, ClientIp};
-use crate::config::ConfigBuilder;
-use crate::db::{backup_database, models::*, DbConn};
-use crate::error::Error;
-use crate::mail;
-use crate::util::get_display_size;
-use crate::CONFIG;
+use crate::{
+    api::{ApiResult, EmptyResult, JsonResult},
+    auth::{decode_admin, encode_jwt, generate_admin_claims, ClientIp},
+    config::ConfigBuilder,
+    db::{backup_database, models::*, DbConn},
+    error::{Error, MapResult},
+    mail,
+    util::get_display_size,
+    CONFIG,
+};
 
 pub fn routes() -> Vec<Route> {
     if !CONFIG.disable_admin_token() && !CONFIG.is_admin_token_set() {
@@ -270,21 +274,13 @@ fn users_overview(_token: AdminToken, conn: DbConn) -> ApiResult<Html<String>> {
 
 #[post("/users/<uuid>/delete")]
 fn delete_user(uuid: String, _token: AdminToken, conn: DbConn) -> EmptyResult {
-    let user = match User::find_by_uuid(&uuid, &conn) {
-        Some(user) => user,
-        None => err!("User doesn't exist"),
-    };
-
+    let user = User::find_by_uuid(&uuid, &conn).map_res("User doesn't exist")?;
     user.delete(&conn)
 }
 
 #[post("/users/<uuid>/deauth")]
 fn deauth_user(uuid: String, _token: AdminToken, conn: DbConn) -> EmptyResult {
-    let mut user = match User::find_by_uuid(&uuid, &conn) {
-        Some(user) => user,
-        None => err!("User doesn't exist"),
-    };
-
+    let mut user = User::find_by_uuid(&uuid, &conn).map_res("User doesn't exist")?;
     Device::delete_all_by_user(&user.uuid, &conn)?;
     user.reset_security_stamp();
 
@@ -293,11 +289,7 @@ fn deauth_user(uuid: String, _token: AdminToken, conn: DbConn) -> EmptyResult {
 
 #[post("/users/<uuid>/remove-2fa")]
 fn remove_2fa(uuid: String, _token: AdminToken, conn: DbConn) -> EmptyResult {
-    let mut user = match User::find_by_uuid(&uuid, &conn) {
-        Some(user) => user,
-        None => err!("User doesn't exist"),
-    };
-
+    let mut user = User::find_by_uuid(&uuid, &conn).map_res("User doesn't exist")?;
     TwoFactor::delete_all_by_user(&user.uuid, &conn)?;
     user.totp_recover = None;
     user.save(&conn)
@@ -340,7 +332,7 @@ struct GitCommit {
 }
 
 fn get_github_api<T: DeserializeOwned>(url: &str) -> Result<T, Error> {
-    use reqwest::{header::USER_AGENT, blocking::Client};
+    use reqwest::{blocking::Client, header::USER_AGENT};
     use std::time::Duration;
     let github_api = Client::builder().build()?;
 

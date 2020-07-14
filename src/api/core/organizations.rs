@@ -1,17 +1,14 @@
-use rocket::request::Form;
-use rocket::Route;
+use num_traits::FromPrimitive;
+use rocket::{request::Form, Route};
 use rocket_contrib::json::Json;
 use serde_json::Value;
-use num_traits::FromPrimitive;
 
-use crate::api::{
-    EmptyResult, JsonResult, JsonUpcase, JsonUpcaseVec, Notify, NumberOrString, PasswordData, UpdateType,
+use crate::{
+    api::{EmptyResult, JsonResult, JsonUpcase, JsonUpcaseVec, Notify, NumberOrString, PasswordData, UpdateType},
+    auth::{decode_invite, AdminHeaders, Headers, OwnerHeaders},
+    db::{models::*, DbConn},
+    mail, CONFIG,
 };
-use crate::auth::{decode_invite, AdminHeaders, Headers, OwnerHeaders};
-use crate::db::models::*;
-use crate::db::DbConn;
-use crate::mail;
-use crate::CONFIG;
 
 pub fn routes() -> Vec<Route> {
     routes![
@@ -935,7 +932,7 @@ fn list_policies_token(org_id: String, token: String, conn: DbConn) -> JsonResul
     if invite_org_id != org_id {
         err!("Token doesn't match request organization");
     }
-    
+
     // TODO: We receive the invite token as ?token=<>, validate it contains the org id
     let policies = OrgPolicy::find_by_org(&org_id, &conn);
     let policies_json: Vec<Value> = policies.iter().map(OrgPolicy::to_json).collect();

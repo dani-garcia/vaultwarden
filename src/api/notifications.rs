@@ -4,11 +4,12 @@ use rocket::Route;
 use rocket_contrib::json::Json;
 use serde_json::Value as JsonValue;
 
-use crate::api::{EmptyResult, JsonResult};
-use crate::auth::Headers;
-use crate::db::DbConn;
-
-use crate::{Error, CONFIG};
+use crate::{
+    api::{EmptyResult, JsonResult},
+    auth::Headers,
+    db::DbConn,
+    Error, CONFIG,
+};
 
 pub fn routes() -> Vec<Route> {
     routes![negotiate, websockets_err]
@@ -163,7 +164,7 @@ impl Handler for WSHandler {
 
                 let mut id = None;
                 let mut access_token = None;
-                
+
                 for val in params_iter {
                     if val.starts_with(ID_KEY) {
                         id = Some(&val[ID_KEY.len()..]);

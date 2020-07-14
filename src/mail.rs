@@ -1,21 +1,23 @@
-use std::env;
-use std::str::FromStr;
-
-use lettre::message::{header, Mailbox, Message, MultiPart, SinglePart};
-use lettre::transport::smtp::authentication::{Credentials, Mechanism as SmtpAuthMechanism};
-use lettre::transport::smtp::extension::ClientId;
-use lettre::{Address, SmtpTransport, Tls, TlsParameters, Transport};
-
-use native_tls::{Protocol, TlsConnector};
-use percent_encoding::{percent_encode, NON_ALPHANUMERIC};
-
-use crate::api::EmptyResult;
-use crate::auth::{encode_jwt, generate_delete_claims, generate_invite_claims, generate_verify_email_claims};
-use crate::error::Error;
-use crate::CONFIG;
+use std::{env, str::FromStr};
 
 use chrono::{DateTime, Local};
 use chrono_tz::Tz;
+use native_tls::{Protocol, TlsConnector};
+use percent_encoding::{percent_encode, NON_ALPHANUMERIC};
+
+use lettre::{
+    message::{header, Mailbox, Message, MultiPart, SinglePart},
+    transport::smtp::authentication::{Credentials, Mechanism as SmtpAuthMechanism},
+    transport::smtp::extension::ClientId,
+    Address, SmtpTransport, Tls, TlsParameters, Transport,
+};
+
+use crate::{
+    api::EmptyResult,
+    auth::{encode_jwt, generate_delete_claims, generate_invite_claims, generate_verify_email_claims},
+    error::Error,
+    CONFIG,
+};
 
 fn mailer() -> SmtpTransport {
     let host = CONFIG.smtp_host().unwrap();

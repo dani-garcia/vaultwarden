@@ -1,15 +1,13 @@
 use rocket_contrib::json::Json;
 use serde_json::Value;
 
-use crate::db::models::*;
-use crate::db::DbConn;
+use crate::{
+    api::{EmptyResult, JsonResult, JsonUpcase, Notify, UpdateType},
+    auth::Headers,
+    db::{models::*, DbConn},
+};
 
-use crate::api::{EmptyResult, JsonResult, JsonUpcase, Notify, UpdateType};
-use crate::auth::Headers;
-
-use rocket::Route;
-
-pub fn routes() -> Vec<Route> {
+pub fn routes() -> Vec<rocket::Route> {
     routes![
         get_folders,
         get_folder,

@@ -1,11 +1,14 @@
 //
 // Web Headers and caching
 //
-use rocket::fairing::{Fairing, Info, Kind};
-use rocket::http::{ContentType, Header, HeaderMap, Method, Status};
-use rocket::response::{self, Responder};
-use rocket::{Data, Request, Response, Rocket};
 use std::io::Cursor;
+
+use rocket::{
+    fairing::{Fairing, Info, Kind},
+    http::{ContentType, Header, HeaderMap, Method, Status},
+    response::{self, Responder},
+    Data, Request, Response, Rocket,
+};
 
 use crate::CONFIG;
 
@@ -189,9 +192,11 @@ impl Fairing for BetterLogging {
 //
 // File handling
 //
-use std::fs::{self, File};
-use std::io::{Read, Result as IOResult};
-use std::path::Path;
+use std::{
+    fs::{self, File},
+    io::{Read, Result as IOResult},
+    path::Path,
+};
 
 pub fn file_exists(path: &str) -> bool {
     Path::new(path).exists()
@@ -253,7 +258,6 @@ pub fn get_uuid() -> String {
 // String util methods
 //
 
-use std::ops::Try;
 use std::str::FromStr;
 
 pub fn upcase_first(s: &str) -> String {
@@ -264,12 +268,12 @@ pub fn upcase_first(s: &str) -> String {
     }
 }
 
-pub fn try_parse_string<S, T, U>(string: impl Try<Ok = S, Error = U>) -> Option<T>
+pub fn try_parse_string<S, T>(string: Option<S>) -> Option<T>
 where
     S: AsRef<str>,
     T: FromStr,
 {
-    if let Ok(Ok(value)) = string.into_result().map(|s| s.as_ref().parse::<T>()) {
+    if let Some(Ok(value)) = string.map(|s| s.as_ref().parse::<T>()) {
         Some(value)
     } else {
         None
@@ -286,7 +290,7 @@ pub fn get_env<V>(key: &str) -> Option<V>
 where
     V: FromStr,
 {
-    try_parse_string(env::var(key))
+    try_parse_string(env::var(key).ok())
 }
 
 const TRUE_VALUES: &[&str] = &["true", "t", "yes", "y", "1"];

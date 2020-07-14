@@ -2,13 +2,16 @@ use data_encoding::BASE32;
 use rocket::Route;
 use rocket_contrib::json::Json;
 
-use crate::api::core::two_factor::_generate_recover_code;
-use crate::api::{EmptyResult, JsonResult, JsonUpcase, NumberOrString, PasswordData};
-use crate::auth::{ClientIp, Headers};
-use crate::crypto;
-use crate::db::{
-    models::{TwoFactor, TwoFactorType},
-    DbConn,
+use crate::{
+    api::{
+        core::two_factor::_generate_recover_code, EmptyResult, JsonResult, JsonUpcase, NumberOrString, PasswordData,
+    },
+    auth::{ClientIp, Headers},
+    crypto,
+    db::{
+        models::{TwoFactor, TwoFactorType},
+        DbConn,
+    },
 };
 
 pub use crate::config::CONFIG;

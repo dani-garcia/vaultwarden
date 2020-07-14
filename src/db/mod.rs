@@ -1,18 +1,14 @@
-use std::ops::Deref;
-
-use diesel::r2d2;
-use diesel::r2d2::ConnectionManager;
-use diesel::{Connection as DieselConnection, ConnectionError};
-
-use rocket::http::Status;
-use rocket::request::{self, FromRequest};
-use rocket::{Outcome, Request, State};
-
-use crate::error::Error;
-use chrono::prelude::*;
 use std::process::Command;
 
-use crate::CONFIG;
+use chrono::prelude::*;
+use diesel::{r2d2, r2d2::ConnectionManager, Connection as DieselConnection, ConnectionError};
+use rocket::{
+    http::Status,
+    request::{self, FromRequest},
+    Outcome, Request, State,
+};
+
+use crate::{error::Error, CONFIG};
 
 /// An alias to the database connection used
 #[cfg(feature = "sqlite")]
@@ -86,7 +82,7 @@ impl<'a, 'r> FromRequest<'a, 'r> for DbConn {
 }
 
 // For the convenience of using an &DbConn as a &Database.
-impl Deref for DbConn {
+impl std::ops::Deref for DbConn {
     type Target = Connection;
     fn deref(&self) -> &Self::Target {
         &self.0

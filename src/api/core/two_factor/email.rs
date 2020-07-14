@@ -1,20 +1,18 @@
+use chrono::{Duration, NaiveDateTime, Utc};
 use rocket::Route;
 use rocket_contrib::json::Json;
 
-use crate::api::core::two_factor::_generate_recover_code;
-use crate::api::{EmptyResult, JsonResult, JsonUpcase, PasswordData};
-use crate::auth::Headers;
-use crate::crypto;
-use crate::db::{
-    models::{TwoFactor, TwoFactorType},
-    DbConn,
+use crate::{
+    api::{core::two_factor::_generate_recover_code, EmptyResult, JsonResult, JsonUpcase, PasswordData},
+    auth::Headers,
+    crypto,
+    db::{
+        models::{TwoFactor, TwoFactorType},
+        DbConn,
+    },
+    error::{Error, MapResult},
+    mail, CONFIG,
 };
-use crate::error::Error;
-use crate::mail;
-use crate::CONFIG;
-
-use chrono::{Duration, NaiveDateTime, Utc};
-use std::ops::Add;
 
 pub fn routes() -> Vec<Route> {
     routes![get_email, send_email_login, send_email, email,]
@@ -58,7 +56,7 @@ fn send_email_login(data: JsonUpcase<SendEmailLoginData>, conn: DbConn) -> Empty
 /// Generate the token, save the data for later verification and send email to user
 pub fn send_token(user_uuid: &str, conn: &DbConn) -> EmptyResult {
     let type_ = TwoFactorType::Email as i32;
-    let mut twofactor = TwoFactor::find_by_user_and_type(user_uuid, type_, &conn)?;
+    let mut twofactor = TwoFactor::find_by_user_and_type(user_uuid, type_, &conn).map_res("Two factor not found")?;
 
     let generated_token = crypto::generate_token(CONFIG.email_token_size())?;
 
@@ -67,7 +65,7 @@ pub fn send_token(user_uuid: &str, conn: &DbConn) -> EmptyResult {
     twofactor.data = twofactor_data.to_json();
     twofactor.save(&conn)?;
 
-    mail::send_token(&twofactor_data.email, &twofactor_data.last_token?)?;
+    mail::send_token(&twofactor_data.email, &twofactor_data.last_token.map_res("Token is empty")?)?;
 
     Ok(())
 }
@@ -134,7 +132,7 @@ fn send_email(data: JsonUpcase<SendEmailData>, headers: Headers, conn: DbConn) -
     );
     twofactor.save(&conn)?;
 
-    mail::send_token(&twofactor_data.email, &twofactor_data.last_token?)?;
+    mail::send_token(&twofactor_data.email, &twofactor_data.last_token.map_res("Token is empty")?)?;
 
     Ok(())
 }
@@ -158,7 +156,7 @@ fn email(data: JsonUpcase<EmailData>, headers: Headers, conn: DbConn) -> JsonRes
     }
 
     let type_ = TwoFactorType::EmailVerificationChallenge as i32;
-    let mut twofactor = TwoFactor::find_by_user_and_type(&user.uuid, type_, &conn)?;
+    let mut twofactor = TwoFactor::find_by_user_and_type(&user.uuid, type_, &conn).map_res("Two factor not found")?;
 
     let mut email_data = EmailTokenData::from_json(&twofactor.data)?;
 
@@ -188,7 +186,7 @@ fn email(data: JsonUpcase<EmailData>, headers: Headers, conn: DbConn) -> JsonRes
 /// Validate the email code when used as TwoFactor token mechanism
 pub fn validate_email_code_str(user_uuid: &str, token: &str, data: &str, conn: &DbConn) -> EmptyResult {
     let mut email_data = EmailTokenData::from_json(&data)?;
-    let mut twofactor = TwoFactor::find_by_user_and_type(&user_uuid, TwoFactorType::Email as i32, &conn)?;
+    let mut twofactor = TwoFactor::find_by_user_and_type(&user_uuid, TwoFactorType::Email as i32, &conn).map_res("Two factor not found")?;
     let issued_token = match &email_data.last_token {
         Some(t) => t,
         _ => err!("No token available"),
@@ -211,7 +209,7 @@ pub fn validate_email_code_str(user_uuid: &str, token: &str, data: &str, conn: &
 
     let date = NaiveDateTime::from_timestamp(email_data.token_sent, 0);
     let max_time = CONFIG.email_expiration_time() as i64;
-    if date.add(Duration::seconds(max_time)) < Utc::now().naive_utc() {
+    if date + Duration::seconds(max_time) < Utc::now().naive_utc() {
         err!("Token has expired")
     }
 
