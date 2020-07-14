@@ -30,6 +30,11 @@ static CLIENT: Lazy<Client> = Lazy::new(|| {
         .unwrap()
 });
 
+static ICON_REL_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"icon$|apple.*icon").unwrap());
+static ICON_HREF_REGEX: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(?i)\w+\.(jpg|jpeg|png|ico)(\?.*)?$|^data:image.*base64").unwrap());
+static ICON_SIZE_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?x)(\d+)\D*(\d+)").unwrap());
+
 fn is_valid_domain(domain: &str) -> bool {
     // Don't allow empty or too big domains or path traversal
     if domain.is_empty() || domain.len() > 255 || domain.contains("..") {
@@ -235,8 +240,8 @@ fn get_icon_url(domain: &str) -> Result<(Vec<Icon>, String), Error> {
         // Search for and filter
         let favicons = soup
             .tag("link")
-            .attr("rel", Regex::new(r"icon$|apple.*icon")?) // Only use icon rels
-            .attr("href", Regex::new(r"(?i)\w+\.(jpg|jpeg|png|ico)(\?.*)?$|^data:image.*base64")?) // Only allow specific extensions
+            .attr("rel", ICON_REL_REGEX.clone()) // Only use icon rels
+            .attr("href", ICON_HREF_REGEX.clone()) // Only allow specific extensions
             .find_all();
 
         // Loop through all the found icons and determine it's priority
@@ -348,7 +353,7 @@ fn parse_sizes(sizes: Option<String>) -> (u16, u16) {
     let mut height: u16 = 0;
 
     if let Some(sizes) = sizes {
-        match Regex::new(r"(?x)(\d+)\D*(\d+)").unwrap().captures(sizes.trim()) {
+        match ICON_SIZE_REGEX.captures(sizes.trim()) {
             None => {}
             Some(dimensions) => {
                 if dimensions.len() >= 3 {
