@@ -1,0 +1,14 @@
+#!/bin/bash
+
+echo ">>> Building images..."
+
+source ./hooks/arches.sh
+
+set -ex
+
+for arch in "${arches[@]}"; do
+    docker build \
+           -t "${DOCKER_REPO}:${DOCKER_TAG}-${arch}" \
+           -f docker/${arch}/${db}/Dockerfile${os_suffix} \
+           .
+done

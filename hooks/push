@@ -1,0 +1,96 @@
+#!/bin/bash
+
+echo ">>> Pushing images..."
+
+export DOCKER_CLI_EXPERIMENTAL=enabled
+
+declare -A annotations=(
+    [amd64]="--os linux --arch amd64"
+    [arm32v6]="--os linux --arch arm --variant v6"
+    [arm32v7]="--os linux --arch arm --variant v7"
+    [arm64v8]="--os linux --arch arm64 --variant v8"
+)
+
+source ./hooks/arches.sh
+
+set -ex
+
+declare -A images
+for arch in ${arches[@]}; do
+    images[$arch]="${DOCKER_REPO}:${DOCKER_TAG}-${arch}"
+done
+
+# Push the images that were just built; manifest list creation fails if the
+# images (manifests) referenced don't already exist in the Docker registry.
+for image in "${images[@]}"; do
+    docker push "${image}"
+done
+
+manifest_lists=("${DOCKER_REPO}:${DOCKER_TAG}")
+
+# If the Docker tag starts with a version number, assume the latest release is
+# being pushed. Add an extra manifest (`latest` or `alpine`, as appropriate)
+# to make it easier for users to track the latest release.
+if [[ "${DOCKER_TAG}" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+    if [[ "${DOCKER_TAG}" == *alpine ]]; then
+        manifest_lists+=(${DOCKER_REPO}:alpine)
+    else
+        manifest_lists+=(${DOCKER_REPO}:latest)
+    fi
+fi
+
+for manifest_list in "${manifest_lists[@]}"; do
+    # Create the (multi-arch) manifest list of arch-specific images.
+    docker manifest create ${manifest_list} ${images[@]}
+
+    # Make sure each image manifest is annotated with the correct arch info.
+    # Docker does not auto-detect the arch of each cross-compiled image, so
+    # everything would appear as `linux/amd64` otherwise.
+    for arch in "${arches[@]}"; do
+        docker manifest annotate ${annotations[$arch]} ${manifest_list} ${images[$arch]}
+    done
+
+    # Push the manifest list.
+    docker manifest push --purge ${manifest_list}
+done
+
+# Avoid logging credentials and tokens.
+set +ex
+
+# Delete the arch-specific tags, if credentials for doing so are available.
+# Note that `DOCKER_PASSWORD` must be the actual user password. Passing a JWT
+# obtained using a personal access token results in a 403 error with
+# {"detail": "access to the resource is forbidden with personal access token"}
+if [[ -z "${DOCKER_USERNAME}" || -z "${DOCKER_PASSWORD}" ]]; then
+    exit 0
+fi
+
+# Given a JSON input on stdin, extract the string value associated with the
+# specified key. This avoids an extra dependency on a tool like `jq`.
+extract() {
+    local key="$1"
+    # Extract "<key>":"<val>" (assumes key/val won't contain double quotes).
+    # The colon may have whitespace on either side.
+    grep -o "\"${key}\"[[:space:]]*:[[:space:]]*\"[^\"]\+\"" |
+    # Extract just <val> by deleting the last '"', and then greedily deleting
+    # everything up to '"'.
+    sed -e 's/"$//' -e 's/.*"//'
+}
+
+echo ">>> Getting API token..."
+jwt=$(curl -sS -X POST \
+           -H "Content-Type: application/json" \
+           -d "{\"username\":\"${DOCKER_USERNAME}\",\"password\": \"${DOCKER_PASSWORD}\"}" \
+           "https://hub.docker.com/v2/users/login" |
+      extract 'token')
+
+# Strip the registry portion from `index.docker.io/user/repo`.
+repo="${DOCKER_REPO#*/}"
+
+for arch in ${arches[@]}; do
+    tag="${DOCKER_TAG}-${arch}"
+    echo ">>> Deleting '${repo}:${tag}'..."
+    curl -sS -X DELETE \
+         -H "Authorization: Bearer ${jwt}" \
+         "https://hub.docker.com/v2/repositories/${repo}/tags/${tag}/"
+done
