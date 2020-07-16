@@ -29,13 +29,13 @@ done
 manifest_lists=("${DOCKER_REPO}:${DOCKER_TAG}")
 
 # If the Docker tag starts with a version number, assume the latest release is
-# being pushed. Add an extra manifest (`latest-release` or `alpine-release`,
-# as appropriate) to make it easier to track the latest release.
+# being pushed. Add an extra manifest (`latest` or `alpine`, as appropriate)
+# to make it easier for users to track the latest release.
 if [[ "${DOCKER_TAG}" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
     if [[ "${DOCKER_TAG}" == *alpine ]]; then
-        manifest_lists+=(${DOCKER_REPO}:alpine-release)
+        manifest_lists+=(${DOCKER_REPO}:alpine)
     else
-        manifest_lists+=(${DOCKER_REPO}:latest-release)
+        manifest_lists+=(${DOCKER_REPO}:latest)
     fi
 fi
 
