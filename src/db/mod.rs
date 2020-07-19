@@ -4,8 +4,8 @@ use chrono::prelude::*;
 use diesel::{r2d2, r2d2::ConnectionManager, Connection as DieselConnection, ConnectionError};
 use rocket::{
     http::Status,
-    request::{self, FromRequest},
-    Outcome, Request, State,
+    request::{FromRequest, Outcome},
+    Request, State,
 };
 
 use crate::{error::Error, CONFIG};
@@ -71,7 +71,7 @@ pub fn backup_database() -> Result<(), Error> {
 impl<'a, 'r> FromRequest<'a, 'r> for DbConn {
     type Error = ();
 
-    fn from_request(request: &'a Request<'r>) -> request::Outcome<DbConn, ()> {
+    fn from_request(request: &'a Request<'r>) -> Outcome<DbConn, ()> {
         // https://github.com/SergioBenitez/Rocket/commit/e3c1a4ad3ab9b840482ec6de4200d30df43e357c
         let pool = try_outcome!(request.guard::<State<Pool>>());
         match pool.get() {

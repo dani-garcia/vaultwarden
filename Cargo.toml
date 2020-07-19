@@ -50,7 +50,7 @@ serde_derive = "1.0.114"
 serde_json = "1.0.56"
 
 # Logging
-log = "0.4.8"
+log = "0.4.11"
 fern = { version = "0.6.0", features = ["syslog-4"] }
 
 # A safe, extensible ORM and Query builder
@@ -58,7 +58,7 @@ diesel = { version = "1.4.5", features = [ "chrono", "r2d2"] }
 diesel_migrations = "1.4.0"
 
 # Bundled SQLite
-libsqlite3-sys = { version = "0.17.3", features = ["bundled"], optional = true }
+libsqlite3-sys = { version = "0.18.0", features = ["bundled"], optional = true }
 
 # Crypto library
 ring = "0.16.15"
@@ -84,7 +84,7 @@ jsonwebtoken = "7.2.0"
 u2f = "0.2.0"
 
 # Yubico Library
-yubico = { version = "0.9.0", features = ["online-tokio"], default-features = false }
+yubico = { version = "0.9.1", features = ["online-tokio"], default-features = false }
 
 # A `dotenv` implementation for Rust
 dotenv = { version = "0.15.0", default-features = false }
@@ -101,7 +101,7 @@ lettre = { version = "0.10.0-alpha.1", features = ["smtp-transport", "builder", 
 native-tls = "0.2.4"
 
 # Template library
-handlebars = { version = "3.2.1", features = ["dir_source"] }
+handlebars = { version = "3.3.0", features = ["dir_source"] }
 
 # For favicon extraction from main website
 soup = "0.5.0"

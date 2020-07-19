@@ -216,8 +216,7 @@ pub fn generate_admin_claims() -> AdminJWTClaims {
 // Bearer token authentication
 //
 use rocket::{
-    request::{self, FromRequest, Request},
-    Outcome,
+    request::{FromRequest, Request, Outcome},
 };
 
 use crate::db::{
@@ -234,7 +233,7 @@ pub struct Headers {
 impl<'a, 'r> FromRequest<'a, 'r> for Headers {
     type Error = &'static str;
 
-    fn from_request(request: &'a Request<'r>) -> request::Outcome<Self, Self::Error> {
+    fn from_request(request: &'a Request<'r>) -> Outcome<Self, Self::Error> {
         let headers = request.headers();
 
         // Get host
@@ -335,7 +334,7 @@ fn get_org_id(request: &Request) -> Option<String> {
 impl<'a, 'r> FromRequest<'a, 'r> for OrgHeaders {
     type Error = &'static str;
 
-    fn from_request(request: &'a Request<'r>) -> request::Outcome<Self, Self::Error> {
+    fn from_request(request: &'a Request<'r>) -> Outcome<Self, Self::Error> {
         match request.guard::<Headers>() {
             Outcome::Forward(_) => Outcome::Forward(()),
             Outcome::Failure(f) => Outcome::Failure(f),
@@ -390,7 +389,7 @@ pub struct AdminHeaders {
 impl<'a, 'r> FromRequest<'a, 'r> for AdminHeaders {
     type Error = &'static str;
 
-    fn from_request(request: &'a Request<'r>) -> request::Outcome<Self, Self::Error> {
+    fn from_request(request: &'a Request<'r>) -> Outcome<Self, Self::Error> {
         match request.guard::<OrgHeaders>() {
             Outcome::Forward(_) => Outcome::Forward(()),
             Outcome::Failure(f) => Outcome::Failure(f),
@@ -429,7 +428,7 @@ pub struct OwnerHeaders {
 impl<'a, 'r> FromRequest<'a, 'r> for OwnerHeaders {
     type Error = &'static str;
 
-    fn from_request(request: &'a Request<'r>) -> request::Outcome<Self, Self::Error> {
+    fn from_request(request: &'a Request<'r>) -> Outcome<Self, Self::Error> {
         match request.guard::<OrgHeaders>() {
             Outcome::Forward(_) => Outcome::Forward(()),
             Outcome::Failure(f) => Outcome::Failure(f),
@@ -460,7 +459,7 @@ pub struct ClientIp {
 impl<'a, 'r> FromRequest<'a, 'r> for ClientIp {
     type Error = ();
 
-    fn from_request(req: &'a Request<'r>) -> request::Outcome<Self, Self::Error> {
+    fn from_request(req: &'a Request<'r>) -> Outcome<Self, Self::Error> {
         let ip = if CONFIG._ip_header_enabled() {
             req.headers().get_one(&CONFIG.ip_header()).and_then(|ip| {
                 match ip.find(',') {
