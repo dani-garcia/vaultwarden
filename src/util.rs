@@ -160,9 +160,7 @@ impl Fairing for BetterLogging {
         }
         let uri = request.uri();
         let uri_path = uri.path();
-        // FIXME: trim_start_matches() could result in over-trimming in pathological cases;
-        // strip_prefix() would be a better option once it's stable.
-        let uri_subpath = uri_path.trim_start_matches(&CONFIG.domain_path());
+        let uri_subpath = uri_path.strip_prefix(&CONFIG.domain_path()).unwrap_or(uri_path);
         if self.0 || LOGGED_ROUTES.iter().any(|r| uri_subpath.starts_with(r)) {
             match uri.query() {
                 Some(q) => info!(target: "request", "{} {}?{}", method, uri_path, &q[..q.len().min(30)]),
@@ -175,9 +173,8 @@ impl Fairing for BetterLogging {
         if !self.0 && request.method() == Method::Options {
             return;
         }
-        // FIXME: trim_start_matches() could result in over-trimming in pathological cases;
-        // strip_prefix() would be a better option once it's stable.
-        let uri_subpath = request.uri().path().trim_start_matches(&CONFIG.domain_path());
+        let uri_path = request.uri().path();
+        let uri_subpath = uri_path.strip_prefix(&CONFIG.domain_path()).unwrap_or(uri_path);
         if self.0 || LOGGED_ROUTES.iter().any(|r| uri_subpath.starts_with(r)) {
             let status = response.status();
             if let Some(route) = request.route() {
