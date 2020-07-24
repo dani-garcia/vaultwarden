@@ -88,6 +88,12 @@ jwt=$(curl -sS -X POST \
 repo="${DOCKER_REPO#*/}"
 
 for arch in ${arches[@]}; do
+    # Don't delete the `arm32v6` tag; Docker can't seem to properly
+    # auto-select that image on Armv6 platforms like Raspberry Pi 1 and Zero
+    # (https://github.com/moby/moby/issues/41017).
+    if [[ ${arch} == 'arm32v6' ]]; then
+        continue
+    fi
     tag="${DOCKER_TAG}-${arch}"
     echo ">>> Deleting '${repo}:${tag}'..."
     curl -sS -X DELETE \
