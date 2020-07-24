@@ -329,6 +329,8 @@ make_config! {
         reload_templates:       bool,   true,   def,    false;
         /// Enable extended logging
         extended_logging:       bool,   false,  def,    true;
+        /// Log timestamp format
+        log_timestamp_format:   String, true,   def,    "%Y-%m-%d %H:%M:%S.%3f".to_string();
         /// Enable the log to output to Syslog
         use_syslog:             bool,   false,  def,    false;
         /// Log file path

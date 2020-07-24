@@ -130,8 +130,8 @@ fn init_logging(level: log::LevelFilter) -> Result<(), fern::InitError> {
     if CONFIG.extended_logging() {
         logger = logger.format(|out, message, record| {
             out.finish(format_args!(
-                "{}[{}][{}] {}",
-                chrono::Local::now().format("[%Y-%m-%d %H:%M:%S]"),
+                "[{}][{}][{}] {}",
+                chrono::Local::now().format(&CONFIG.log_timestamp_format()),
                 record.target(),
                 record.level(),
                 message
