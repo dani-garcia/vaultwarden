@@ -36,6 +36,16 @@ if [[ "${DOCKER_TAG}" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
         manifest_lists+=(${DOCKER_REPO}:alpine)
     else
         manifest_lists+=(${DOCKER_REPO}:latest)
+
+        # Add an extra `latest-arm32v6` tag; Docker can't seem to properly
+        # auto-select that image on Armv6 platforms like Raspberry Pi 1 and Zero
+        # (https://github.com/moby/moby/issues/41017).
+        #
+        # TODO: Also add an `alpine-arm32v6` tag if multi-arch support for
+        # Alpine-based bitwarden_rs images is implemented before this Docker
+        # issue is fixed.
+        docker tag "${DOCKER_REPO}:${DOCKER_TAG}-arm32v6" "${DOCKER_REPO}:latest-arm32v6"
+        docker push "${DOCKER_REPO}:latest-arm32v6"
     fi
 fi
 
