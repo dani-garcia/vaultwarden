@@ -999,11 +999,12 @@ fn _delete_cipher_by_uuid(uuid: &str, headers: &Headers, conn: &DbConn, soft_del
     if soft_delete {
         cipher.deleted_at = Some(chrono::Utc::now().naive_utc());
         cipher.save(&conn)?;
+        nt.send_cipher_update(UpdateType::CipherUpdate, &cipher, &cipher.update_users_revision(&conn));
     } else {
         cipher.delete(&conn)?;
+        nt.send_cipher_update(UpdateType::CipherDelete, &cipher, &cipher.update_users_revision(&conn));
     }
 
-    nt.send_cipher_update(UpdateType::CipherDelete, &cipher, &cipher.update_users_revision(&conn));
     Ok(())
 }
 
