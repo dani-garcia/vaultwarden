@@ -841,5 +841,21 @@
       "ui.com"
     ],
     "Excluded": false
+  },
+  {
+    "Type": 82,
+    "Domains": [
+      "klm.com",
+      "flyingblue.com"
+    ],
+    "Excluded": false
+  },
+  {
+    "Type": 83,
+    "Domains": [
+      "eventbrite.com",
+      "eventbrite.de"
+    ],
+    "Excluded": false
   }
 ]
