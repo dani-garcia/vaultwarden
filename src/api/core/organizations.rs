@@ -76,6 +76,10 @@ struct NewCollectionData {
 
 #[post("/organizations", data = "<data>")]
 fn create_organization(headers: Headers, data: JsonUpcase<OrgData>, conn: DbConn) -> JsonResult {
+    if !CONFIG.is_org_creation_allowed(&headers.user.email) {
+        err!("User not allowed to create organizations")
+    }
+
     let data: OrgData = data.into_inner().data;
 
     let org = Organization::new(data.Name, data.BillingEmail);
