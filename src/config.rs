@@ -115,6 +115,7 @@ macro_rules! make_config {
                 config.domain_set = _domain_set;
 
                 config.signups_domains_whitelist = config.signups_domains_whitelist.trim().to_lowercase();
+                config.org_creation_users = config.org_creation_users.trim().to_lowercase();
 
                 config
             }
@@ -276,6 +277,9 @@ make_config! {
         signups_verify_resend_limit: u32, true, def,    6;
         /// Email domain whitelist |> Allow signups only from this list of comma-separated domains, even when signups are otherwise disabled
         signups_domains_whitelist: String, true, def,   "".to_string();
+        /// Org creation users |> Allow org creation only by this list of comma-separated user emails.
+        /// Blank or 'all' means all users can create orgs; 'none' means no users can create orgs.
+        org_creation_users:     String, true,   def,    "".to_string();
         /// Allow invitations |> Controls whether users can be invited by organization admins, even when signups are otherwise disabled
         invitations_allowed:    bool,   true,   def,    true;
         /// Password iterations |> Number of server-side passwords hashing iterations.
@@ -442,6 +446,13 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         err!("`SIGNUPS_DOMAINS_WHITELIST` contains empty tokens");
     }
 
+    let org_creation_users = cfg.org_creation_users.trim().to_lowercase();
+    if !(org_creation_users.is_empty() || org_creation_users == "all" || org_creation_users == "none") {
+        if org_creation_users.split(',').any(|u| !u.contains('@')) {
+            err!("`ORG_CREATION_USERS` contains invalid email addresses");
+        }
+    }
+
     if let Some(ref token) = cfg.admin_token {
         if token.trim().is_empty() && !cfg.disable_admin_token {
             println!("[WARNING] `ADMIN_TOKEN` is enabled but has an empty value, so the admin page will be disabled.");
@@ -589,6 +600,19 @@ impl Config {
             self.is_email_domain_allowed(email)
         } else {
             self.signups_allowed()
+        }
+    }
+
+    /// Tests whether the specified user is allowed to create an organization.
+    pub fn is_org_creation_allowed(&self, email: &str) -> bool {
+        let users = self.org_creation_users();
+        if users == "" || users == "all" {
+            true
+        } else if users == "none" {
+            false
+        } else {
+            let email = email.to_lowercase();
+            users.split(',').any(|u| u.trim() == email)
         }
     }
 
