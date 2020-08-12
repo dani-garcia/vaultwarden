@@ -30,7 +30,7 @@ rocket = { version = "0.5.0-dev", features = ["tls"], default-features = false }
 rocket_contrib = "0.5.0-dev"
 
 # HTTP client
-reqwest = { version = "0.10.6", features = ["blocking", "json"] }
+reqwest = { version = "0.10.7", features = ["blocking", "json"] }
 
 # multipart/form-data support
 multipart = { version = "0.17.0", features = ["server"], default-features = false }
@@ -39,15 +39,15 @@ multipart = { version = "0.17.0", features = ["server"], default-features = fals
 ws = "0.9.1"
 
 # MessagePack library
-rmpv = "0.4.4"
+rmpv = "0.4.5"
 
 # Concurrent hashmap implementation
 chashmap = "2.2.2"
 
 # A generic serialization/deserialization framework
-serde = "1.0.114"
-serde_derive = "1.0.114"
-serde_json = "1.0.56"
+serde = "1.0.115"
+serde_derive = "1.0.115"
+serde_json = "1.0.57"
 
 # Logging
 log = "0.4.11"
@@ -75,7 +75,7 @@ time = "0.2.16"
 oath = "0.10.2"
 
 # Data encoding library
-data-encoding = "2.2.1"
+data-encoding = "2.3.0"
 
 # JWT library
 jsonwebtoken = "7.2.0"
@@ -94,7 +94,7 @@ once_cell = "1.4.0"
 
 # Numerical libraries
 num-traits = "0.2.12"
-num-derive = "0.3.0"
+num-derive = "0.3.1"
 
 # Email libraries
 lettre = { version = "0.10.0-alpha.1", features = ["smtp-transport", "builder", "serde", "native-tls", "hostname"], default-features = false }
@@ -117,7 +117,7 @@ percent-encoding = "2.1.0"
 idna = "0.2.0"
 
 # CLI argument parsing
-structopt = "0.3.15"
+structopt = "0.3.16"
 
 # Logging panics to logfile instead stderr only
 backtrace = "0.3.50"
