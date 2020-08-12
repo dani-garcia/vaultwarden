@@ -17,7 +17,6 @@ extern crate diesel;
 extern crate diesel_migrations;
 
 use std::{
-    fmt, // For panic logging
     fs::create_dir_all,
     panic,
     path::Path,
@@ -25,6 +24,8 @@ use std::{
     str::FromStr,
     thread,
 };
+
+use structopt::StructOpt;
 
 #[macro_use]
 mod error;
@@ -38,18 +39,6 @@ mod util;
 
 pub use config::CONFIG;
 pub use error::{Error, MapResult};
-
-use structopt::StructOpt;
-
-// Used for catching panics and log them to file instead of stderr
-use backtrace::Backtrace;
-struct Shim(Backtrace);
-
-impl fmt::Debug for Shim {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        write!(fmt, "\n{:?}", self.0)
-    }
-}
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "bitwarden_rs", about = "A Bitwarden API server written in Rust")]
@@ -156,8 +145,6 @@ fn init_logging(level: log::LevelFilter) -> Result<(), fern::InitError> {
 
     // Catch panics and log them instead of default output to StdErr
     panic::set_hook(Box::new(|info| {
-        let backtrace = Backtrace::new();
-
         let thread = thread::current();
         let thread = thread.name().unwrap_or("unnamed");
 
@@ -169,23 +156,25 @@ fn init_logging(level: log::LevelFilter) -> Result<(), fern::InitError> {
             },
         };
 
+        let backtrace = backtrace::Backtrace::new();
+
         match info.location() {
             Some(location) => {
                 error!(
-                    target: "panic", "thread '{}' panicked at '{}': {}:{}{:?}",
+                    target: "panic", "thread '{}' panicked at '{}': {}:{}\n{:?}",
                     thread,
                     msg,
                     location.file(),
                     location.line(),
-                    Shim(backtrace)
+                    backtrace
                 );
             }
             None => error!(
                 target: "panic",
-                "thread '{}' panicked at '{}'{:?}",
+                "thread '{}' panicked at '{}'\n{:?}",
                 thread,
                 msg,
-                Shim(backtrace)
+                backtrace
             ),
         }
     }));
