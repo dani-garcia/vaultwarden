@@ -830,5 +830,14 @@
       "discord.com"
     ],
     "Excluded": false
+  },
+  {
+    "Type": 82,
+    "Domains": [
+      "netcup.de",
+      "netcup.eu",
+      "customercontrolpanel.de"
+    ],
+    "Excluded": false
   }
 ]
