@@ -9,6 +9,6 @@ set -ex
 for arch in "${arches[@]}"; do
     docker build \
            -t "${DOCKER_REPO}:${DOCKER_TAG}-${arch}" \
-           -f docker/${arch}/${db}/Dockerfile${os_suffix} \
+           -f docker/${arch}/Dockerfile${os_suffix} \
            .
 done

@@ -18,11 +18,9 @@
 FROM bitwardenrs/web-vault@sha256:afba1e3bded09dc0a6a0dbacb3363ac33b6f122b4b26d3682cafb9115bdf785c as vault
 
 ########################## BUILD IMAGE  ##########################
-# We need to use the Rust build image, because
-# we need the Rust compiler and Cargo tooling
-FROM rust:1.40 as build
+FROM rust:1.45 as build
 
-# set sqlite as default for DB ARG for backward compatibility
+# ARM only supports SQLite for now
 ARG DB=sqlite
 
 # Build time options to avoid dpkg warnings and help with reproducible builds.
@@ -31,23 +29,23 @@ ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8 TZ=UTC TERM=xterm-256color
 # Don't download rust docs
 RUN rustup set profile minimal
 
-# Install required build libs for armel architecture.
+# Install required build libs for armhf architecture.
 RUN sed 's/^deb/deb-src/' /etc/apt/sources.list > \
         /etc/apt/sources.list.d/deb-src.list \
-    && dpkg --add-architecture armel \
+    && dpkg --add-architecture armhf \
     && apt-get update \
     && apt-get install -y \
         --no-install-recommends \
-        libssl-dev:armel \
-        libc6-dev:armel
+        libssl-dev:armhf \
+        libc6-dev:armhf
 
 RUN apt-get update \
     && apt-get install -y \
         --no-install-recommends \
-        gcc-arm-linux-gnueabi \
+        gcc-arm-linux-gnueabihf \
     && mkdir -p ~/.cargo \
-    && echo '[target.arm-unknown-linux-gnueabi]' >> ~/.cargo/config \
-    && echo 'linker = "arm-linux-gnueabi-gcc"' >> ~/.cargo/config
+    && echo '[target.armv7-unknown-linux-gnueabihf]' >> ~/.cargo/config \
+    && echo 'linker = "arm-linux-gnueabihf-gcc"' >> ~/.cargo/config
 
 ENV CARGO_HOME "/root/.cargo"
 ENV USER "root"
@@ -61,11 +59,11 @@ COPY ./Cargo.* ./
 COPY ./rust-toolchain ./rust-toolchain
 COPY ./build.rs ./build.rs
 
-ENV CC_arm_unknown_linux_gnueabi="/usr/bin/arm-linux-gnueabi-gcc"
+ENV CC_armv7_unknown_linux_gnueabihf="/usr/bin/arm-linux-gnueabihf-gcc"
 ENV CROSS_COMPILE="1"
-ENV OPENSSL_INCLUDE_DIR="/usr/include/arm-linux-gnueabi"
-ENV OPENSSL_LIB_DIR="/usr/lib/arm-linux-gnueabi"
-RUN rustup target add arm-unknown-linux-gnueabi
+ENV OPENSSL_INCLUDE_DIR="/usr/include/arm-linux-gnueabihf"
+ENV OPENSSL_LIB_DIR="/usr/lib/arm-linux-gnueabihf"
+RUN rustup target add armv7-unknown-linux-gnueabihf
 
 # Builds your dependencies and removes the
 # dummy project, except the target folder
@@ -82,12 +80,12 @@ RUN touch src/main.rs
 
 # Builds again, this time it'll just be
 # your actual source files being built
-RUN cargo build --features ${DB} --release --target=arm-unknown-linux-gnueabi
+RUN cargo build --features ${DB} --release --target=armv7-unknown-linux-gnueabihf
 
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image
 # because we already have a binary built
-FROM balenalib/rpi-debian:buster
+FROM balenalib/armv7hf-debian:buster
 
 ENV ROCKET_ENV "staging"
 ENV ROCKET_PORT=80
@@ -116,7 +114,7 @@ EXPOSE 3012
 # and the binary from the "build" stage to the current stage
 COPY Rocket.toml .
 COPY --from=vault /web-vault ./web-vault
-COPY --from=build /app/target/arm-unknown-linux-gnueabi/release/bitwarden_rs .
+COPY --from=build /app/target/armv7-unknown-linux-gnueabihf/release/bitwarden_rs .
 
 COPY docker/healthcheck.sh /healthcheck.sh
 COPY docker/start.sh /start.sh

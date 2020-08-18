@@ -18,12 +18,10 @@
 FROM bitwardenrs/web-vault@sha256:afba1e3bded09dc0a6a0dbacb3363ac33b6f122b4b26d3682cafb9115bdf785c as vault
 
 ########################## BUILD IMAGE  ##########################
-# We need to use the Rust build image, because
-# we need the Rust compiler and Cargo tooling
-FROM rust:1.40 as build
+FROM rust:1.45 as build
 
-# set postgresql backend
-ARG DB=postgresql
+# ARM only supports SQLite for now
+ARG DB=sqlite
 
 # Build time options to avoid dpkg warnings and help with reproducible builds.
 ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8 TZ=UTC TERM=xterm-256color
@@ -31,11 +29,26 @@ ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8 TZ=UTC TERM=xterm-256color
 # Don't download rust docs
 RUN rustup set profile minimal
 
-# Install PostgreSQL package
-RUN apt-get update && apt-get install -y \
-    --no-install-recommends \
-    libpq-dev \
-    && rm -rf /var/lib/apt/lists/*
+# Install required build libs for armel architecture.
+RUN sed 's/^deb/deb-src/' /etc/apt/sources.list > \
+        /etc/apt/sources.list.d/deb-src.list \
+    && dpkg --add-architecture armel \
+    && apt-get update \
+    && apt-get install -y \
+        --no-install-recommends \
+        libssl-dev:armel \
+        libc6-dev:armel
+
+RUN apt-get update \
+    && apt-get install -y \
+        --no-install-recommends \
+        gcc-arm-linux-gnueabi \
+    && mkdir -p ~/.cargo \
+    && echo '[target.arm-unknown-linux-gnueabi]' >> ~/.cargo/config \
+    && echo 'linker = "arm-linux-gnueabi-gcc"' >> ~/.cargo/config
+
+ENV CARGO_HOME "/root/.cargo"
+ENV USER "root"
 
 # Creates a dummy project used to grab dependencies
 RUN USER=root cargo new --bin /app
@@ -45,6 +58,12 @@ WORKDIR /app
 COPY ./Cargo.* ./
 COPY ./rust-toolchain ./rust-toolchain
 COPY ./build.rs ./build.rs
+
+ENV CC_arm_unknown_linux_gnueabi="/usr/bin/arm-linux-gnueabi-gcc"
+ENV CROSS_COMPILE="1"
+ENV OPENSSL_INCLUDE_DIR="/usr/include/arm-linux-gnueabi"
+ENV OPENSSL_LIB_DIR="/usr/lib/arm-linux-gnueabi"
+RUN rustup target add arm-unknown-linux-gnueabi
 
 # Builds your dependencies and removes the
 # dummy project, except the target folder
@@ -61,16 +80,18 @@ RUN touch src/main.rs
 
 # Builds again, this time it'll just be
 # your actual source files being built
-RUN cargo build --features ${DB} --release
+RUN cargo build --features ${DB} --release --target=arm-unknown-linux-gnueabi
 
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image
 # because we already have a binary built
-FROM debian:buster-slim
+FROM balenalib/rpi-debian:buster
 
 ENV ROCKET_ENV "staging"
 ENV ROCKET_PORT=80
 ENV ROCKET_WORKERS=10
+
+RUN [ "cross-build-start" ]
 
 # Install needed libraries
 RUN apt-get update && apt-get install -y \
@@ -78,10 +99,13 @@ RUN apt-get update && apt-get install -y \
     openssl \
     ca-certificates \
     curl \
-    libpq5 \
+    sqlite3 \
     && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir /data
+
+RUN [ "cross-build-end" ]
+
 VOLUME /data
 EXPOSE 80
 EXPOSE 3012
@@ -90,7 +114,7 @@ EXPOSE 3012
 # and the binary from the "build" stage to the current stage
 COPY Rocket.toml .
 COPY --from=vault /web-vault ./web-vault
-COPY --from=build app/target/release/bitwarden_rs .
+COPY --from=build /app/target/arm-unknown-linux-gnueabi/release/bitwarden_rs .
 
 COPY docker/healthcheck.sh /healthcheck.sh
 COPY docker/start.sh /start.sh

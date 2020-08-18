@@ -1,10 +1,10 @@
 # This file was generated using a Jinja2 template.
 # Please make your changes in `Dockerfile.j2` and then `make` the individual Dockerfile's.
 
-{% set build_stage_base_image = "rust:1.40" %}
+{% set build_stage_base_image = "rust:1.45" %}
 {% if "alpine" in target_file %}
-{%   set build_stage_base_image = "clux/muslrust:nightly-2020-03-09" %}
-{%   set runtime_stage_base_image = "alpine:3.11" %}
+{%   set build_stage_base_image = "clux/muslrust:nightly-2020-07-09" %}
+{%   set runtime_stage_base_image = "alpine:3.12" %}
 {%   set package_arch_name = "" %}
 {% elif "amd64" in target_file %}
 {%   set runtime_stage_base_image = "debian:buster-slim" %}
@@ -42,25 +42,19 @@
 FROM bitwardenrs/web-vault@{{ vault_image_hash }} as vault
 
 ########################## BUILD IMAGE  ##########################
-{% if "musl" in build_stage_base_image %}
-# Musl build image for statically compiled binary
-{% else %}
-# We need to use the Rust build image, because
-# we need the Rust compiler and Cargo tooling
-{% endif %}
 FROM {{ build_stage_base_image }} as build
 
-{% if "sqlite" in target_file %}
-# set sqlite as default for DB ARG for backward compatibility
+{% if "alpine" in target_file %}
+# Alpine only works on SQlite
 ARG DB=sqlite
 
-{% elif "mysql" in target_file %}
-# set mysql backend
-ARG DB=mysql
+{% elif "amd64" in target_file %}
+# AMD64 supports all
+ARG DB=sqlite,mysql,postgresql
 
-{% elif "postgresql" in target_file %}
-# set postgresql backend
-ARG DB=postgresql
+{% else %}
+# ARM only supports SQLite for now
+ARG DB=sqlite
 
 {% endif %}
 # Build time options to avoid dpkg warnings and help with reproducible builds.
@@ -73,7 +67,7 @@ RUN rustup set profile minimal
 ENV USER "root"
 ENV RUSTFLAGS='-C link-arg=-s'
 
-{% elif "arm32" in target_file or "arm64" in target_file %}
+{% elif "arm" in target_file %}
 # Install required build libs for {{ package_arch_name }} architecture.
 RUN sed 's/^deb/deb-src/' /etc/apt/sources.list > \
         /etc/apt/sources.list.d/deb-src.list \
@@ -96,7 +90,6 @@ RUN apt-get update \
 
 ENV CARGO_HOME "/root/.cargo"
 ENV USER "root"
-
 {% elif "arm32v6" in target_file %}
 RUN apt-get update \
     && apt-get install -y \
@@ -108,7 +101,6 @@ RUN apt-get update \
 
 ENV CARGO_HOME "/root/.cargo"
 ENV USER "root"
-
 {% elif "arm32v7" in target_file %}
 RUN apt-get update \
     && apt-get install -y \
@@ -120,27 +112,16 @@ RUN apt-get update \
 
 ENV CARGO_HOME "/root/.cargo"
 ENV USER "root"
-
 {% endif %}
-{% if "mysql" in target_file %}
-# Install MySQL package
+{% if "amd64" in target_file %}
+# Install DB packages
 RUN apt-get update && apt-get install -y \
     --no-install-recommends \
-{% if "musl" in build_stage_base_image %}
-    libmysqlclient-dev{{ package_arch_prefix }} \
-{% else %}
     libmariadb-dev{{ package_arch_prefix }} \
-{% endif %}
-    && rm -rf /var/lib/apt/lists/*
-
-{% elif "postgresql" in target_file %}
-# Install PostgreSQL package
-RUN apt-get update && apt-get install -y \
-    --no-install-recommends \
     libpq-dev{{ package_arch_prefix }} \
     && rm -rf /var/lib/apt/lists/*
-
 {% endif %}
+
 # Creates a dummy project used to grab dependencies
 RUN USER=root cargo new --bin /app
 WORKDIR /app
@@ -178,6 +159,7 @@ RUN rustup target add arm-unknown-linux-gnueabi
 
 {% elif "arm32v7" in target_file %}
 RUN rustup target add armv7-unknown-linux-gnueabihf
+
 {% endif %}
 # Builds your dependencies and removes the
 # dummy project, except the target folder
@@ -239,11 +221,9 @@ RUN apt-get update && apt-get install -y \
     openssl \
     ca-certificates \
     curl \
-{%   if "sqlite" in target_file %}
     sqlite3 \
-{%   elif "mysql" in target_file %}
+{%   if "amd64" in target_file %}
     libmariadbclient-dev \
-{%   elif "postgresql" in target_file %}
     libpq5 \
 {%   endif %}
     && rm -rf /var/lib/apt/lists/*

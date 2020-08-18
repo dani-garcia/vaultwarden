@@ -11,15 +11,10 @@ arches=(
 
 case "${DOCKER_REPO}" in
     *-mysql)
-        db=mysql
         arches=(amd64)
         ;;
     *-postgresql)
-        db=postgresql
         arches=(amd64)
-        ;;
-    *)
-        db=sqlite
         ;;
 esac
 

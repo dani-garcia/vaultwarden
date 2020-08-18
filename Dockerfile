@@ -1,1 +1,1 @@
-docker/amd64/sqlite/Dockerfile
+docker/amd64/Dockerfile

@@ -3,6 +3,7 @@ target
 
 # Data folder
 data
+.env
 
 # IDE files
 .vscode
@@ -10,5 +11,15 @@ data
 *.iml
 
 # Documentation
+.github
 *.md
+*.txt
+*.yml
+*.yaml
 
+# Docker folders
+hooks
+tools
+
+# Web vault
+web-vault

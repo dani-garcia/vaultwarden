@@ -18,10 +18,9 @@
 FROM bitwardenrs/web-vault@sha256:afba1e3bded09dc0a6a0dbacb3363ac33b6f122b4b26d3682cafb9115bdf785c as vault
 
 ########################## BUILD IMAGE  ##########################
-# Musl build image for statically compiled binary
-FROM clux/muslrust:nightly-2020-03-09 as build
+FROM rust:1.45 as build
 
-# set sqlite as default for DB ARG for backward compatibility
+# ARM only supports SQLite for now
 ARG DB=sqlite
 
 # Build time options to avoid dpkg warnings and help with reproducible builds.
@@ -30,8 +29,26 @@ ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8 TZ=UTC TERM=xterm-256color
 # Don't download rust docs
 RUN rustup set profile minimal
 
+# Install required build libs for arm64 architecture.
+RUN sed 's/^deb/deb-src/' /etc/apt/sources.list > \
+        /etc/apt/sources.list.d/deb-src.list \
+    && dpkg --add-architecture arm64 \
+    && apt-get update \
+    && apt-get install -y \
+        --no-install-recommends \
+        libssl-dev:arm64 \
+        libc6-dev:arm64
+
+RUN apt-get update \
+    && apt-get install -y \
+        --no-install-recommends \
+        gcc-aarch64-linux-gnu \
+    && mkdir -p ~/.cargo \
+    && echo '[target.aarch64-unknown-linux-gnu]' >> ~/.cargo/config \
+    && echo 'linker = "aarch64-linux-gnu-gcc"' >> ~/.cargo/config
+
+ENV CARGO_HOME "/root/.cargo"
 ENV USER "root"
-ENV RUSTFLAGS='-C link-arg=-s'
 
 # Creates a dummy project used to grab dependencies
 RUN USER=root cargo new --bin /app
@@ -42,7 +59,11 @@ COPY ./Cargo.* ./
 COPY ./rust-toolchain ./rust-toolchain
 COPY ./build.rs ./build.rs
 
-RUN rustup target add x86_64-unknown-linux-musl
+ENV CC_aarch64_unknown_linux_gnu="/usr/bin/aarch64-linux-gnu-gcc"
+ENV CROSS_COMPILE="1"
+ENV OPENSSL_INCLUDE_DIR="/usr/include/aarch64-linux-gnu"
+ENV OPENSSL_LIB_DIR="/usr/lib/aarch64-linux-gnu"
+RUN rustup target add aarch64-unknown-linux-gnu
 
 # Builds your dependencies and removes the
 # dummy project, except the target folder
@@ -59,26 +80,32 @@ RUN touch src/main.rs
 
 # Builds again, this time it'll just be
 # your actual source files being built
-RUN cargo build --features ${DB} --release
+RUN cargo build --features ${DB} --release --target=aarch64-unknown-linux-gnu
 
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image
 # because we already have a binary built
-FROM alpine:3.11
+FROM balenalib/aarch64-debian:buster
 
 ENV ROCKET_ENV "staging"
 ENV ROCKET_PORT=80
 ENV ROCKET_WORKERS=10
-ENV SSL_CERT_DIR=/etc/ssl/certs
+
+RUN [ "cross-build-start" ]
 
 # Install needed libraries
-RUN apk add --no-cache \
-        openssl \
-        curl \
-        sqlite \
-        ca-certificates
+RUN apt-get update && apt-get install -y \
+    --no-install-recommends \
+    openssl \
+    ca-certificates \
+    curl \
+    sqlite3 \
+    && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir /data
+
+RUN [ "cross-build-end" ]
+
 VOLUME /data
 EXPOSE 80
 EXPOSE 3012
@@ -87,7 +114,7 @@ EXPOSE 3012
 # and the binary from the "build" stage to the current stage
 COPY Rocket.toml .
 COPY --from=vault /web-vault ./web-vault
-COPY --from=build /app/target/x86_64-unknown-linux-musl/release/bitwarden_rs .
+COPY --from=build /app/target/aarch64-unknown-linux-gnu/release/bitwarden_rs .
 
 COPY docker/healthcheck.sh /healthcheck.sh
 COPY docker/start.sh /start.sh
