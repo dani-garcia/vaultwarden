@@ -15,7 +15,7 @@ use crate::{
     api::{ApiResult, EmptyResult, JsonResult},
     auth::{decode_admin, encode_jwt, generate_admin_claims, ClientIp},
     config::ConfigBuilder,
-    db::{backup_database, models::*, DbConn},
+    db::{backup_database, models::*, DbConn, DbConnType},
     error::{Error, MapResult},
     mail,
     util::get_display_size,
@@ -48,8 +48,12 @@ pub fn routes() -> Vec<Route> {
     ]
 }
 
-static CAN_BACKUP: Lazy<bool> =
-    Lazy::new(|| cfg!(feature = "sqlite") && Command::new("sqlite3").arg("-version").status().is_ok());
+static CAN_BACKUP: Lazy<bool> = Lazy::new(|| {
+    DbConnType::from_url(&CONFIG.database_url())
+        .map(|t| t == DbConnType::sqlite)
+        .unwrap_or(false)
+        && Command::new("sqlite3").arg("-version").status().is_ok()
+});
 
 #[get("/")]
 fn admin_disabled() -> &'static str {

@@ -5,6 +5,7 @@ use once_cell::sync::Lazy;
 use reqwest::Url;
 
 use crate::{
+    db::DbConnType,
     error::Error,
     util::{get_env, get_env_bool},
 };
@@ -421,20 +422,9 @@ make_config! {
 }
 
 fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
-    let db_url = cfg.database_url.to_lowercase();
-    if cfg!(feature = "sqlite")
-        && (db_url.starts_with("mysql:") || db_url.starts_with("postgresql:") || db_url.starts_with("postgres:"))
-    {
-        err!("`DATABASE_URL` is meant for MySQL or Postgres, while this server is meant for SQLite")
-    }
 
-    if cfg!(feature = "mysql") && !db_url.starts_with("mysql:") {
-        err!("`DATABASE_URL` should start with mysql: when using the MySQL server")
-    }
-
-    if cfg!(feature = "postgresql") && !(db_url.starts_with("postgresql:") || db_url.starts_with("postgres:")) {
-        err!("`DATABASE_URL` should start with postgresql: when using the PostgreSQL server")
-    }
+    // Validate connection URL is valid and DB feature is enabled
+    DbConnType::from_url(&cfg.database_url)?;
 
     let dom = cfg.domain.to_lowercase();
     if !dom.starts_with("http://") && !dom.starts_with("https://") {

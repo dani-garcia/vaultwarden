@@ -34,6 +34,7 @@ macro_rules! make_error {
 }
 
 use diesel::result::Error as DieselErr;
+use diesel::r2d2::PoolError as R2d2Err;
 use handlebars::RenderError as HbErr;
 use jsonwebtoken::errors::Error as JWTErr;
 use regex::Error as RegexErr;
@@ -66,6 +67,7 @@ make_error! {
     // Used for special return values, like 2FA errors
     JsonError(Value):     _no_source,  _serialize,
     DbError(DieselErr):   _has_source, _api_error,
+    R2d2Error(R2d2Err):   _has_source, _api_error,
     U2fError(U2fErr):     _has_source, _api_error,
     SerdeError(SerdeErr): _has_source, _api_error,
     JWTError(JWTErr):     _has_source, _api_error,

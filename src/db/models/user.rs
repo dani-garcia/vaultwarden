@@ -4,43 +4,53 @@ use serde_json::Value;
 use crate::crypto;
 use crate::CONFIG;
 
-#[derive(Debug, Identifiable, Queryable, Insertable, AsChangeset)]
-#[table_name = "users"]
-#[changeset_options(treat_none_as_null="true")]
-#[primary_key(uuid)]
-pub struct User {
-    pub uuid: String,
-    pub created_at: NaiveDateTime,
-    pub updated_at: NaiveDateTime,
-    pub verified_at: Option<NaiveDateTime>,
-    pub last_verifying_at: Option<NaiveDateTime>,
-    pub login_verify_count: i32,
+db_object! {
+    #[derive(Debug, Identifiable, Queryable, Insertable, AsChangeset)]
+    #[table_name = "users"]
+    #[changeset_options(treat_none_as_null="true")]
+    #[primary_key(uuid)]
+    pub struct User {
+        pub uuid: String,
+        pub created_at: NaiveDateTime,
+        pub updated_at: NaiveDateTime,
+        pub verified_at: Option<NaiveDateTime>,
+        pub last_verifying_at: Option<NaiveDateTime>,
+        pub login_verify_count: i32,
 
-    pub email: String,
-    pub email_new: Option<String>,
-    pub email_new_token: Option<String>,
-    pub name: String,
+        pub email: String,
+        pub email_new: Option<String>,
+        pub email_new_token: Option<String>,
+        pub name: String,
 
-    pub password_hash: Vec<u8>,
-    pub salt: Vec<u8>,
-    pub password_iterations: i32,
-    pub password_hint: Option<String>,
+        pub password_hash: Vec<u8>,
+        pub salt: Vec<u8>,
+        pub password_iterations: i32,
+        pub password_hint: Option<String>,
 
-    pub akey: String,
-    pub private_key: Option<String>,
-    pub public_key: Option<String>,
+        pub akey: String,
+        pub private_key: Option<String>,
+        pub public_key: Option<String>,
 
-    #[column_name = "totp_secret"]
-    _totp_secret: Option<String>,
-    pub totp_recover: Option<String>,
+        #[column_name = "totp_secret"] // Note, this is only added to the UserDb structs, not to User
+        _totp_secret: Option<String>,
+        pub totp_recover: Option<String>,
 
-    pub security_stamp: String,
+        pub security_stamp: String,
 
-    pub equivalent_domains: String,
-    pub excluded_globals: String,
+        pub equivalent_domains: String,
+        pub excluded_globals: String,
 
-    pub client_kdf_type: i32,
-    pub client_kdf_iter: i32,
+        pub client_kdf_type: i32,
+        pub client_kdf_iter: i32,
+    }
+
+
+    #[derive(Debug, Identifiable, Queryable, Insertable)]
+    #[table_name = "invitations"]
+    #[primary_key(email)]
+    pub struct Invitation {
+        pub email: String,
+    }
 }
 
 enum UserStatus {
@@ -119,9 +129,7 @@ impl User {
 }
 
 use super::{Cipher, Device, Folder, TwoFactor, UserOrgType, UserOrganization};
-use crate::db::schema::{invitations, users};
 use crate::db::DbConn;
-use diesel::prelude::*;
 
 use crate::api::EmptyResult;
 use crate::error::MapResult;
@@ -158,7 +166,6 @@ impl User {
         })
     }
 
-    #[cfg(feature = "postgresql")]
     pub fn save(&mut self, conn: &DbConn) -> EmptyResult {
         if self.email.trim().is_empty() {
             err!("User email can't be empty")
@@ -166,49 +173,48 @@ impl User {
 
         self.updated_at = Utc::now().naive_utc();
 
-        diesel::insert_into(users::table) // Insert or update
-            .values(&*self)
-            .on_conflict(users::uuid)
-            .do_update()
-            .set(&*self)
-            .execute(&**conn)
-            .map_res("Error saving user")
-    }
-
-    #[cfg(not(feature = "postgresql"))]
-    pub fn save(&mut self, conn: &DbConn) -> EmptyResult {
-        if self.email.trim().is_empty() {
-            err!("User email can't be empty")
+        db_run! {conn:
+            sqlite, mysql {
+                diesel::replace_into(users::table) // Insert or update
+                    .values(&UserDb::to_db(self))
+                    .execute(conn)
+                    .map_res("Error saving user")
+            }
+            postgresql {
+                let value = UserDb::to_db(self);
+                diesel::insert_into(users::table) // Insert or update
+                    .values(&value)
+                    .on_conflict(users::uuid)
+                    .do_update()
+                    .set(&value)
+                    .execute(conn)
+                    .map_res("Error saving user")
+            }
         }
-
-        self.updated_at = Utc::now().naive_utc();
-
-        diesel::replace_into(users::table) // Insert or update
-            .values(&*self)
-            .execute(&**conn)
-            .map_res("Error saving user")
     }
 
     pub fn delete(self, conn: &DbConn) -> EmptyResult {
-        for user_org in UserOrganization::find_by_user(&self.uuid, &*conn) {
+        for user_org in UserOrganization::find_by_user(&self.uuid, conn) {
             if user_org.atype == UserOrgType::Owner {
                 let owner_type = UserOrgType::Owner as i32;
-                if UserOrganization::find_by_org_and_type(&user_org.org_uuid, owner_type, &conn).len() <= 1 {
+                if UserOrganization::find_by_org_and_type(&user_org.org_uuid, owner_type, conn).len() <= 1 {
                     err!("Can't delete last owner")
                 }
             }
         }
 
-        UserOrganization::delete_all_by_user(&self.uuid, &*conn)?;
-        Cipher::delete_all_by_user(&self.uuid, &*conn)?;
-        Folder::delete_all_by_user(&self.uuid, &*conn)?;
-        Device::delete_all_by_user(&self.uuid, &*conn)?;
-        TwoFactor::delete_all_by_user(&self.uuid, &*conn)?;
-        Invitation::take(&self.email, &*conn); // Delete invitation if any
+        UserOrganization::delete_all_by_user(&self.uuid, conn)?;
+        Cipher::delete_all_by_user(&self.uuid, conn)?;
+        Folder::delete_all_by_user(&self.uuid, conn)?;
+        Device::delete_all_by_user(&self.uuid, conn)?;
+        TwoFactor::delete_all_by_user(&self.uuid, conn)?;
+        Invitation::take(&self.email, conn); // Delete invitation if any
 
-        diesel::delete(users::table.filter(users::uuid.eq(self.uuid)))
-            .execute(&**conn)
-            .map_res("Error deleting user")
+        db_run! {conn: {
+            diesel::delete(users::table.filter(users::uuid.eq(self.uuid)))
+                .execute(conn)
+                .map_res("Error deleting user")
+        }}
     }
 
     pub fn update_uuid_revision(uuid: &str, conn: &DbConn) {
@@ -220,15 +226,14 @@ impl User {
     pub fn update_all_revisions(conn: &DbConn) -> EmptyResult {
         let updated_at = Utc::now().naive_utc();
 
-        crate::util::retry(
-            || {
+        db_run! {conn: {
+            crate::util::retry(|| {
                 diesel::update(users::table)
                     .set(users::updated_at.eq(updated_at))
-                    .execute(&**conn)
-            },
-            10,
-        )
-        .map_res("Error updating revision date for all users")
+                    .execute(conn)
+            }, 10)
+            .map_res("Error updating revision date for all users")
+        }}
     }
 
     pub fn update_revision(&mut self, conn: &DbConn) -> EmptyResult {
@@ -238,39 +243,38 @@ impl User {
     }
 
     fn _update_revision(uuid: &str, date: &NaiveDateTime, conn: &DbConn) -> EmptyResult {
-        crate::util::retry(
-            || {
+        db_run! {conn: {
+            crate::util::retry(|| {
                 diesel::update(users::table.filter(users::uuid.eq(uuid)))
                     .set(users::updated_at.eq(date))
-                    .execute(&**conn)
-            },
-            10,
-        )
-        .map_res("Error updating user revision")
+                    .execute(conn)
+            }, 10)
+            .map_res("Error updating user revision")
+        }}
     }
 
     pub fn find_by_mail(mail: &str, conn: &DbConn) -> Option<Self> {
         let lower_mail = mail.to_lowercase();
-        users::table
-            .filter(users::email.eq(lower_mail))
-            .first::<Self>(&**conn)
-            .ok()
+        db_run! {conn: {
+            users::table
+                .filter(users::email.eq(lower_mail))
+                .first::<UserDb>(conn)
+                .ok()
+                .from_db()
+        }}
     }
 
     pub fn find_by_uuid(uuid: &str, conn: &DbConn) -> Option<Self> {
-        users::table.filter(users::uuid.eq(uuid)).first::<Self>(&**conn).ok()
+        db_run! {conn: {
+            users::table.filter(users::uuid.eq(uuid)).first::<UserDb>(conn).ok().from_db()
+        }}
     }
 
     pub fn get_all(conn: &DbConn) -> Vec<Self> {
-        users::table.load::<Self>(&**conn).expect("Error loading users")
+        db_run! {conn: {
+            users::table.load::<UserDb>(conn).expect("Error loading users").from_db()
+        }}
     }
-}
-
-#[derive(Debug, Identifiable, Queryable, Insertable)]
-#[table_name = "invitations"]
-#[primary_key(email)]
-pub struct Invitation {
-    pub email: String,
 }
 
 impl Invitation {
@@ -278,44 +282,46 @@ impl Invitation {
         Self { email }
     }
 
-    #[cfg(feature = "postgresql")]
     pub fn save(&self, conn: &DbConn) -> EmptyResult {
         if self.email.trim().is_empty() {
             err!("Invitation email can't be empty")
         }
 
-        diesel::insert_into(invitations::table)
-            .values(self)
-            .on_conflict(invitations::email)
-            .do_nothing()
-            .execute(&**conn)
-            .map_res("Error saving invitation")
-    }
-
-    #[cfg(not(feature = "postgresql"))]
-    pub fn save(&self, conn: &DbConn) -> EmptyResult {
-        if self.email.trim().is_empty() {
-            err!("Invitation email can't be empty")
+        db_run! {conn:
+            sqlite, mysql {
+                diesel::replace_into(invitations::table)
+                    .values(InvitationDb::to_db(self))
+                    .execute(conn)
+                    .map_res("Error saving invitation")        
+            }
+            postgresql {
+                diesel::insert_into(invitations::table)
+                    .values(InvitationDb::to_db(self))
+                    .on_conflict(invitations::email)
+                    .do_nothing()
+                    .execute(conn)
+                    .map_res("Error saving invitation")                
+            }
         }
-
-        diesel::replace_into(invitations::table)
-            .values(self)
-            .execute(&**conn)
-            .map_res("Error saving invitation")
     }
 
     pub fn delete(self, conn: &DbConn) -> EmptyResult {
-        diesel::delete(invitations::table.filter(invitations::email.eq(self.email)))
-            .execute(&**conn)
-            .map_res("Error deleting invitation")
+        db_run! {conn: {
+            diesel::delete(invitations::table.filter(invitations::email.eq(self.email)))
+                .execute(conn)
+                .map_res("Error deleting invitation")
+        }}
     }
 
     pub fn find_by_mail(mail: &str, conn: &DbConn) -> Option<Self> {
         let lower_mail = mail.to_lowercase();
-        invitations::table
-            .filter(invitations::email.eq(lower_mail))
-            .first::<Self>(&**conn)
-            .ok()
+        db_run! {conn: {
+            invitations::table
+                .filter(invitations::email.eq(lower_mail))
+                .first::<InvitationDb>(conn)
+                .ok()
+                .from_db()
+        }}
     }
 
     pub fn take(mail: &str, conn: &DbConn) -> bool {

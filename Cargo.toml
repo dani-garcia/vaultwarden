@@ -123,6 +123,9 @@ structopt = "0.3.16"
 # Logging panics to logfile instead stderr only
 backtrace = "0.3.50"
 
+# Macro ident concatenation
+paste = "1.0"
+
 [patch.crates-io]
 # Use newest ring
 rocket = { git = 'https://github.com/SergioBenitez/Rocket', rev = '1010f6a2a88fac899dec0cd2f642156908038a53' }
