@@ -1,0 +1,4 @@
+DROP TABLE favorites;
+
+ALTER TABLE ciphers
+ADD COLUMN favorite BOOLEAN NOT NULL;

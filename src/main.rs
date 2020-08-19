@@ -313,12 +313,23 @@ mod migrations {
 
         // Disable Foreign Key Checks during migration
         use diesel::RunQueryDsl;
+
+        // FIXME: Per https://www.postgresql.org/docs/12/sql-set-constraints.html,
+        // "SET CONSTRAINTS sets the behavior of constraint checking within the
+        // current transaction", so this setting probably won't take effect for
+        // any of the migrations since it's being run outside of a transaction.
+        // Migrations that need to disable foreign key checks should run this
+        // from within the migration script itself.
         #[cfg(feature = "postgres")]
         diesel::sql_query("SET CONSTRAINTS ALL DEFERRED").execute(&connection).expect("Failed to disable Foreign Key Checks during migrations");
+
+        // Scoped to a connection/session.
         #[cfg(feature = "mysql")]
         diesel::sql_query("SET FOREIGN_KEY_CHECKS = 0").execute(&connection).expect("Failed to disable Foreign Key Checks during migrations");
+
+        // Scoped to a connection.
         #[cfg(feature = "sqlite")]
-        diesel::sql_query("PRAGMA defer_foreign_keys = ON").execute(&connection).expect("Failed to disable Foreign Key Checks during migrations");
+        diesel::sql_query("PRAGMA foreign_keys = OFF").execute(&connection).expect("Failed to disable Foreign Key Checks during migrations");
 
         embedded_migrations::run_with_output(&connection, &mut stdout()).expect("Can't run migrations");
     }
