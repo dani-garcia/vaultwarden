@@ -857,5 +857,33 @@
       "customercontrolpanel.de"
     ],
     "Excluded": false
+  },
+  {
+    "Type": 83,
+    "Domains": [
+      "yandex.com",
+      "ya.ru",
+      "yandex.az",
+      "yandex.by",
+      "yandex.co.il",
+      "yandex.com.am",
+      "yandex.com.ge",
+      "yandex.com.tr",
+      "yandex.ee",
+      "yandex.fi",
+      "yandex.fr",
+      "yandex.kg",
+      "yandex.kz",
+      "yandex.lt",
+      "yandex.lv",
+      "yandex.md",
+      "yandex.pl",
+      "yandex.ru",
+      "yandex.tj",
+      "yandex.tm",
+      "yandex.ua",
+      "yandex.uz"
+    ],
+    "Excluded": false
   }
 ]
