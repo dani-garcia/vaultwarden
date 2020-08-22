@@ -55,17 +55,21 @@ pub fn get_random(mut array: Vec<u8>) -> Vec<u8> {
 }
 
 pub fn generate_token(token_size: u32) -> Result<String, Error> {
+    // A u64 can represent all whole numbers up to 19 digits long.
     if token_size > 19 {
-        err!("Generating token failed")
+        err!("Token size is limited to 19 digits")
     }
 
-    // 8 bytes to create an u64 for up to 19 token digits
-    let bytes = get_random(vec![0; 8]);
-    let mut bytes_array = [0u8; 8];
-    bytes_array.copy_from_slice(&bytes);
+    let low: u64 = 0;
+    let high: u64 = 10u64.pow(token_size);
 
-    let number = u64::from_be_bytes(bytes_array) % 10u64.pow(token_size);
+    // Generate a random number in the range [low, high), then format it as a
+    // token of fixed width, left-padding with 0 as needed.
+    use rand::{thread_rng, Rng};
+    let mut rng = thread_rng();
+    let number: u64 = rng.gen_range(low, high);
     let token = format!("{:0size$}", number, size = token_size as usize);
+
     Ok(token)
 }
 
