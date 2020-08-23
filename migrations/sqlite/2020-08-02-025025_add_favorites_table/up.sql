@@ -5,6 +5,13 @@ CREATE TABLE favorites (
   PRIMARY KEY (user_uuid, cipher_uuid)
 );
 
+-- Transfer favorite status for user-owned ciphers.
+INSERT INTO favorites(user_uuid, cipher_uuid)
+SELECT user_uuid, uuid
+FROM ciphers
+WHERE favorite = 1
+  AND user_uuid IS NOT NULL;
+
 -- Drop the `favorite` column from the `ciphers` table, using the 12-step
 -- procedure from <https://www.sqlite.org/lang_altertable.html#altertabrename>.
 -- Note that some steps aren't applicable and are omitted.
