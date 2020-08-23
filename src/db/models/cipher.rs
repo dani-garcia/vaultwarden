@@ -32,7 +32,6 @@ pub struct Cipher {
 
     pub data: String,
 
-    pub favorite: bool,
     pub password_history: Option<String>,
     pub deleted_at: Option<NaiveDateTime>,
 }
@@ -51,7 +50,6 @@ impl Cipher {
             organization_uuid: None,
 
             atype,
-            favorite: false,
             name,
 
             notes: None,
@@ -128,7 +126,7 @@ impl Cipher {
             "RevisionDate": format_date(&self.updated_at),
             "DeletedDate": self.deleted_at.map_or(Value::Null, |d| Value::String(format_date(&d))),
             "FolderId": self.get_folder_uuid(&user_uuid, &conn),
-            "Favorite": self.favorite,
+            "Favorite": self.is_favorite(&user_uuid, &conn),
             "OrganizationId": self.organization_uuid,
             "Attachments": attachments_json,
             "OrganizationUseTotp": true,
@@ -335,6 +333,50 @@ impl Cipher {
 
     pub fn is_accessible_to_user(&self, user_uuid: &str, conn: &DbConn) -> bool {
         self.get_access_restrictions(&user_uuid, &conn).is_some()
+    }
+
+    // Returns whether this cipher is a favorite of the specified user.
+    pub fn is_favorite(&self, user_uuid: &str, conn: &DbConn) -> bool {
+        let query = favorites::table
+            .filter(favorites::user_uuid.eq(user_uuid))
+            .filter(favorites::cipher_uuid.eq(&self.uuid))
+            .count();
+
+        query.first::<i64>(&**conn).ok().unwrap_or(0) != 0
+    }
+
+    // Updates whether this cipher is a favorite of the specified user.
+    pub fn set_favorite(&self, favorite: Option<bool>, user_uuid: &str, conn: &DbConn) -> EmptyResult {
+        if favorite.is_none() {
+            // No change requested.
+            return Ok(());
+        }
+
+        let (old, new) = (self.is_favorite(user_uuid, &conn), favorite.unwrap());
+        match (old, new) {
+            (false, true) => {
+                User::update_uuid_revision(user_uuid, &conn);
+                diesel::insert_into(favorites::table)
+                    .values((
+                        favorites::user_uuid.eq(user_uuid),
+                        favorites::cipher_uuid.eq(&self.uuid),
+                    ))
+                    .execute(&**conn)
+                    .map_res("Error adding favorite")
+            }
+            (true, false) => {
+                User::update_uuid_revision(user_uuid, &conn);
+                diesel::delete(
+                    favorites::table
+                        .filter(favorites::user_uuid.eq(user_uuid))
+                        .filter(favorites::cipher_uuid.eq(&self.uuid))
+                )
+                .execute(&**conn)
+                .map_res("Error removing favorite")
+            }
+            // Otherwise, the favorite status is already what it should be.
+            _ => Ok(())
+        }
     }
 
     pub fn get_folder_uuid(&self, user_uuid: &str, conn: &DbConn) -> Option<String> {

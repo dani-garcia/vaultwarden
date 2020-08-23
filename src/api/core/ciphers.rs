@@ -303,7 +303,6 @@ pub fn update_cipher_from_data(
     type_data["PasswordHistory"] = data.PasswordHistory.clone().unwrap_or(Value::Null);
     // TODO: ******* Backwards compat end **********
 
-    cipher.favorite = data.Favorite.unwrap_or(false);
     cipher.name = data.Name;
     cipher.notes = data.Notes;
     cipher.fields = data.Fields.map(|f| f.to_string());
@@ -312,6 +311,7 @@ pub fn update_cipher_from_data(
 
     cipher.save(&conn)?;
     cipher.move_to_folder(data.FolderId, &headers.user.uuid, &conn)?;
+    cipher.set_favorite(data.Favorite, &headers.user.uuid, &conn)?;
 
     if ut != UpdateType::None {
         nt.send_cipher_update(ut, &cipher, &cipher.update_users_revision(&conn));
@@ -409,6 +409,11 @@ fn put_cipher(uuid: String, data: JsonUpcase<CipherData>, headers: Headers, conn
         Some(cipher) => cipher,
         None => err!("Cipher doesn't exist"),
     };
+
+    // TODO: Check if only the folder ID or favorite status is being changed.
+    // These are per-user properties that technically aren't part of the
+    // cipher itself, so the user shouldn't need write access to change these.
+    // Interestingly, upstream Bitwarden doesn't properly handle this either.
 
     if !cipher.is_write_accessible_to_user(&headers.user.uuid, &conn) {
         err!("Cipher is not write accessible")
