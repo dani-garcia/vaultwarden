@@ -411,7 +411,7 @@ make_config! {
     email_2fa: _enable_email_2fa {
         /// Enabled |> Disabling will prevent users from setting up new email 2FA and using existing email 2FA configured
         _enable_email_2fa:      bool,   true,   auto,    |c| c._enable_smtp && c.smtp_host.is_some();
-        /// Token number length |> Length of the numbers in an email token. Minimum of 6. Maximum is 19.
+        /// Email token size |> Number of digits in an email token (min: 6, max: 19). Note that the Bitwarden clients are hardcoded to mention 6 digit codes regardless of this setting.
         email_token_size:       u32,    true,   def,      6;
         /// Token expiration time |> Maximum time in seconds a token is valid. The time the user has to open email client and copy token.
         email_expiration_time:  u64,    true,   def,      600;
