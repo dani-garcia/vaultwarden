@@ -153,6 +153,7 @@ dependencies = [
  "once_cell",
  "openssl",
  "percent-encoding 2.1.0",
+ "rand 0.7.3",
  "regex",
  "reqwest",
  "ring",

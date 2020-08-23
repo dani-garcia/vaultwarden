@@ -60,7 +60,8 @@ diesel_migrations = "1.4.0"
 # Bundled SQLite
 libsqlite3-sys = { version = "0.18.0", features = ["bundled"], optional = true }
 
-# Crypto library
+# Crypto-related libraries
+rand = "0.7.3"
 ring = "0.16.15"
 
 # UUID generation
