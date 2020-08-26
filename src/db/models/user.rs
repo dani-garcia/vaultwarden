@@ -128,7 +128,7 @@ impl User {
     }
 }
 
-use super::{Cipher, Device, Folder, TwoFactor, UserOrgType, UserOrganization};
+use super::{Cipher, Device, Favorite, Folder, TwoFactor, UserOrgType, UserOrganization};
 use crate::db::DbConn;
 
 use crate::api::EmptyResult;
@@ -205,6 +205,7 @@ impl User {
 
         UserOrganization::delete_all_by_user(&self.uuid, conn)?;
         Cipher::delete_all_by_user(&self.uuid, conn)?;
+        Favorite::delete_all_by_user(&self.uuid, conn)?;
         Folder::delete_all_by_user(&self.uuid, conn)?;
         Device::delete_all_by_user(&self.uuid, conn)?;
         TwoFactor::delete_all_by_user(&self.uuid, conn)?;
