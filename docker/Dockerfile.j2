@@ -113,7 +113,7 @@ RUN apt-get update \
 ENV CARGO_HOME "/root/.cargo"
 ENV USER "root"
 {% endif %}
-{% if "amd64" in target_file %}
+{% if "amd64" in target_file and "alpine" not in target_file %}
 # Install DB packages
 RUN apt-get update && apt-get install -y \
     --no-install-recommends \
