@@ -320,7 +320,7 @@ impl Cipher {
             // and `hide_passwords` columns. This could ideally be done as part
             // of the query, but Diesel doesn't support a max() or bool_or()
             // function on booleans and this behavior isn't portable anyway.
-            if let Some(vec) = query.load::<(bool, bool)>(conn).ok() {
+            if let Ok(vec) = query.load::<(bool, bool)>(conn) {
                 let mut read_only = false;
                 let mut hide_passwords = false;
                 for (ro, hp) in vec.iter() {

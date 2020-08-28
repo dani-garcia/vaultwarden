@@ -136,6 +136,7 @@ macro_rules! db_run {
 
 pub trait FromDb {
     type Output;
+    #[allow(clippy::wrong_self_convention)]
     fn from_db(self) -> Self::Output;
 }
 
@@ -173,7 +174,7 @@ macro_rules! db_object {
             )+ }
 
             impl [<$name Db>] {
-                #[inline(always)] pub fn from_db(self) -> super::$name { super::$name { $( $field: self.$field, )+ } }
+                #[allow(clippy::wrong_self_convention)] 
                 #[inline(always)] pub fn to_db(x: &super::$name) -> Self { Self { $( $field: x.$field.clone(), )+ } }
             }
 
