@@ -21,7 +21,6 @@ Image is based on [Rust implementation of Bitwarden API](https://github.com/dani
 
 Basically full implementation of Bitwarden API is provided including:
 
- * Single user functionality
  * Organizations support
  * Attachments
  * Vault API support
