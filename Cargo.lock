@@ -286,9 +286,9 @@ dependencies = [
 
 [[package]]
 name = "chrono-tz"
-version = "0.5.2"
+version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "65d96be7c3e993c9ee4356442db24ba364c924b6b8331866be6b6952bfe74b9d"
+checksum = "2554a3155fec064362507487171dcc4edc3df60cb10f3a1fb10ed8094822b120"
 dependencies = [
  "chrono",
  "parse-zoneinfo",
@@ -965,11 +965,11 @@ dependencies = [
 
 [[package]]
 name = "hyperx"
-version = "1.0.0"
+version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "81d7ed6ec7d25c4de28b999a5693f14609a8b756137b1b4cb4927d119f59ef25"
+checksum = "9eae1ec4abdc4530fb001ebf585fd14e52ed17f0aacd3e13de497b71ed451750"
 dependencies = [
- "base64 0.11.0",
+ "base64 0.12.3",
  "bytes 0.5.6",
  "http",
  "httparse",

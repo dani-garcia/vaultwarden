@@ -78,7 +78,7 @@ fn static_files(filename: String) -> Result<Content<&'static [u8]>, Error> {
         "hibp.png" => Ok(Content(ContentType::PNG, include_bytes!("../static/images/hibp.png"))),
 
         "bootstrap.css" => Ok(Content(ContentType::CSS, include_bytes!("../static/scripts/bootstrap.css"))),
-        "bootstrap-native-v4.js" => Ok(Content(ContentType::JavaScript, include_bytes!("../static/scripts/bootstrap-native-v4.js"))),
+        "bootstrap-native.js" => Ok(Content(ContentType::JavaScript, include_bytes!("../static/scripts/bootstrap-native.js"))),
         "md5.js" => Ok(Content(ContentType::JavaScript, include_bytes!("../static/scripts/md5.js"))),
         "identicon.js" => Ok(Content(ContentType::JavaScript, include_bytes!("../static/scripts/identicon.js"))),
         _ => err!(format!("Static file not found: {}", filename)),
