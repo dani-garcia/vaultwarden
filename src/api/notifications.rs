@@ -20,10 +20,12 @@ static SHOW_WEBSOCKETS_MSG: AtomicBool = AtomicBool::new(true);
 #[get("/hub")]
 fn websockets_err() -> EmptyResult {
     if CONFIG.websocket_enabled() && SHOW_WEBSOCKETS_MSG.compare_and_swap(true, false, Ordering::Relaxed) {
-        err!("###########################################################
+        err!(
+            "###########################################################
     '/notifications/hub' should be proxied to the websocket server or notifications won't work.
     Go to the Wiki for more info, or disable WebSockets setting WEBSOCKET_ENABLED=false.
-    ###########################################################################################")
+    ###########################################################################################"
+        )
     } else {
         Err(Error::empty())
     }
@@ -148,6 +150,39 @@ impl WSHandler {
         let io_error = io::Error::from(io::ErrorKind::InvalidData);
         Err(ws::Error::new(ws::ErrorKind::Io(io_error), msg))
     }
+
+    fn get_request_token(&self, hs: Handshake, token: &mut String) {
+        let path = hs.request.resource();
+
+        match hs.request.header("Authorization") {
+            Some(header_value) => match std::str::from_utf8(header_value) {
+                Ok(converted) => match converted.split("Bearer ").nth(1) {
+                    Some(token_part) => token.push_str(token_part),
+                    _ => (),
+                },
+                _ => (),
+            },
+            _ => (),
+        };
+
+        match token.is_empty() {
+            true => {
+                match path.split('?').nth(1) {
+                    Some(params) => {
+                        let params_iter = params.split('&').take(2);
+                        for val in params_iter {
+                            if val.starts_with(ACCESS_TOKEN_KEY) {
+                                token.push_str(&val[ACCESS_TOKEN_KEY.len()..]);
+                                break;
+                            }
+                        }
+                    }
+                    _ => (),
+                };
+            }
+            false => (),
+        }
+    }
 }
 
 impl Handler for WSHandler {
@@ -156,35 +191,14 @@ impl Handler for WSHandler {
         //
         // We don't use `id`, and as of around 2020-03-25, the official clients
         // no longer seem to pass `id` (only `access_token`).
-        let path = hs.request.resource();
 
-        let (_id, access_token) = match path.split('?').nth(1) {
-            Some(params) => {
-                let params_iter = params.split('&').take(2);
-
-                let mut id = None;
-                let mut access_token = None;
-
-                for val in params_iter {
-                    if val.starts_with(ID_KEY) {
-                        id = Some(&val[ID_KEY.len()..]);
-                    } else if val.starts_with(ACCESS_TOKEN_KEY) {
-                        access_token = Some(&val[ACCESS_TOKEN_KEY.len()..]);
-                    }
-                }
-
-                match (id, access_token) {
-                    (Some(a), Some(b)) => (a, b),
-                    (None, Some(b)) => ("", b), // Ignore missing `id`.
-                    _ => return self.err("Missing access token"),
-                }
-            }
-            None => return self.err("Missing query parameters"),
-        };
+        // Get user token from header or query parameter
+        let mut access_token = "".into();
+        self.get_request_token(hs, &mut access_token);
 
         // Validate the user
         use crate::auth;
-        let claims = match auth::decode_login(access_token) {
+        let claims = match auth::decode_login(&mut access_token.as_str()) {
             Ok(claims) => claims,
             Err(_) => return self.err("Invalid access token provided"),
         };
@@ -335,7 +349,7 @@ impl WebSocketUsers {
 /* Message Structure
 [
     1, // MessageType.Invocation
-    {}, // Headers
+    {}, // Headers (map)
     null, // InvocationId
     "ReceiveMessage", // Target
     [ // Arguments
@@ -352,7 +366,7 @@ fn create_update(payload: Vec<(Value, Value)>, ut: UpdateType) -> Vec<u8> {
 
     let value = V::Array(vec![
         1.into(),
-        V::Array(vec![]),
+        V::Map(vec![]),
         V::Nil,
         "ReceiveMessage".into(),
         V::Array(vec![V::Map(vec![
