@@ -21,7 +21,7 @@ static SHOW_WEBSOCKETS_MSG: AtomicBool = AtomicBool::new(true);
 fn websockets_err() -> EmptyResult {
     if CONFIG.websocket_enabled() && SHOW_WEBSOCKETS_MSG.compare_and_swap(true, false, Ordering::Relaxed) {
         err!(
-            "###########################################################
+    "###########################################################
     '/notifications/hub' should be proxied to the websocket server or notifications won't work.
     Go to the Wiki for more info, or disable WebSockets setting WEBSOCKET_ENABLED=false.
     ###########################################################################################"
@@ -139,7 +139,6 @@ struct InitialMessage {
 const PING_MS: u64 = 15_000;
 const PING: Token = Token(1);
 
-const ID_KEY: &str = "id=";
 const ACCESS_TOKEN_KEY: &str = "access_token=";
 
 impl WSHandler {
@@ -151,37 +150,30 @@ impl WSHandler {
         Err(ws::Error::new(ws::ErrorKind::Io(io_error), msg))
     }
 
-    fn get_request_token(&self, hs: Handshake, token: &mut String) {
-        let path = hs.request.resource();
+    fn get_request_token(&self, hs: Handshake) -> Option<String> {
+        use std::str::from_utf8;
 
-        match hs.request.header("Authorization") {
-            Some(header_value) => match std::str::from_utf8(header_value) {
-                Ok(converted) => match converted.split("Bearer ").nth(1) {
-                    Some(token_part) => token.push_str(token_part),
-                    _ => (),
-                },
-                _ => (),
-            },
-            _ => (),
+        // Verify we have a token header
+        if let Some(header_value) = hs.request.header("Authorization") {
+            if let Ok(converted) = from_utf8(header_value) {
+                if let Some(token_part) = converted.split("Bearer ").nth(1) {
+                    return Some(token_part.into());
+                }
+            }
+        };
+        
+        // Otherwise verify the query parameter value
+        let path = hs.request.resource();
+        if let Some(params) = path.split('?').nth(1) {
+            let params_iter = params.split('&').take(1);
+            for val in params_iter {
+                if val.starts_with(ACCESS_TOKEN_KEY) {
+                    return Some(val[ACCESS_TOKEN_KEY.len()..].into());
+                }
+            }
         };
 
-        match token.is_empty() {
-            true => {
-                match path.split('?').nth(1) {
-                    Some(params) => {
-                        let params_iter = params.split('&').take(2);
-                        for val in params_iter {
-                            if val.starts_with(ACCESS_TOKEN_KEY) {
-                                token.push_str(&val[ACCESS_TOKEN_KEY.len()..]);
-                                break;
-                            }
-                        }
-                    }
-                    _ => (),
-                };
-            }
-            false => (),
-        }
+        None
     }
 }
 
@@ -193,12 +185,14 @@ impl Handler for WSHandler {
         // no longer seem to pass `id` (only `access_token`).
 
         // Get user token from header or query parameter
-        let mut access_token = "".into();
-        self.get_request_token(hs, &mut access_token);
+        let access_token = match self.get_request_token(hs) {
+            Some(token) => token,
+            _ => return self.err("Missing access token"),
+        };
 
         // Validate the user
         use crate::auth;
-        let claims = match auth::decode_login(&mut access_token.as_str()) {
+        let claims = match auth::decode_login(access_token.as_str()) {
             Ok(claims) => claims,
             Err(_) => return self.err("Invalid access token provided"),
         };
