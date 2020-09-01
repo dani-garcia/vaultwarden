@@ -82,7 +82,7 @@ fn sync(data: Form<SyncData>, headers: Headers, conn: DbConn) -> JsonResult {
     let policies = OrgPolicy::find_by_user(&headers.user.uuid, &conn);
     let policies_json: Vec<Value> = policies.iter().map(OrgPolicy::to_json).collect();
 
-    let ciphers = Cipher::find_by_user(&headers.user.uuid, &conn);
+    let ciphers = Cipher::find_by_user_visible(&headers.user.uuid, &conn);
     let ciphers_json: Vec<Value> = ciphers
         .iter()
         .map(|c| c.to_json(&headers.host, &headers.user.uuid, &conn))
@@ -107,7 +107,7 @@ fn sync(data: Form<SyncData>, headers: Headers, conn: DbConn) -> JsonResult {
 
 #[get("/ciphers")]
 fn get_ciphers(headers: Headers, conn: DbConn) -> JsonResult {
-    let ciphers = Cipher::find_by_user(&headers.user.uuid, &conn);
+    let ciphers = Cipher::find_by_user_visible(&headers.user.uuid, &conn);
 
     let ciphers_json: Vec<Value> = ciphers
         .iter()

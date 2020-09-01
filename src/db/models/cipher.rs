@@ -382,39 +382,58 @@ impl Cipher {
         }}
     }
 
-    // Find all ciphers accessible to user
-    pub fn find_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
+    // Find all ciphers accessible or visible to the specified user.
+    //
+    // "Accessible" means the user has read access to the cipher, either via
+    // direct ownership or via collection access.
+    //
+    // "Visible" usually means the same as accessible, except when an org
+    // owner/admin sets their account to have access to only selected
+    // collections in the org (presumably because they aren't interested in
+    // the other collections in the org). In this case, if `visible_only` is
+    // true, then the non-interesting ciphers will not be returned. As a
+    // result, those ciphers will not appear in "My Vault" for the org
+    // owner/admin, but they can still be accessed via the org vault view.
+    pub fn find_by_user(user_uuid: &str, visible_only: bool, conn: &DbConn) -> Vec<Self> {
         db_run! {conn: {
-            ciphers::table
-                .left_join(users_organizations::table.on(
-                    ciphers::organization_uuid.eq(users_organizations::org_uuid.nullable()).and(
-                        users_organizations::user_uuid.eq(user_uuid).and(
-                            users_organizations::status.eq(UserOrgStatus::Confirmed as i32)
-                        )
-                    )
-                ))
+            let mut query = ciphers::table
                 .left_join(ciphers_collections::table.on(
                     ciphers::uuid.eq(ciphers_collections::cipher_uuid)
                 ))
+                .left_join(users_organizations::table.on(
+                    ciphers::organization_uuid.eq(users_organizations::org_uuid.nullable())
+                        .and(users_organizations::user_uuid.eq(user_uuid))
+                        .and(users_organizations::status.eq(UserOrgStatus::Confirmed as i32))
+                ))
                 .left_join(users_collections::table.on(
                     ciphers_collections::collection_uuid.eq(users_collections::collection_uuid)
+                        // Ensure that users_collections::user_uuid is NULL for unconfirmed users.
+                        .and(users_organizations::user_uuid.eq(users_collections::user_uuid))
                 ))
-                .filter(ciphers::user_uuid.eq(user_uuid).or( // Cipher owner
-                    users_organizations::access_all.eq(true).or( // access_all in Organization
-                        users_organizations::atype.le(UserOrgType::Admin as i32).or( // Org admin or owner
-                            users_collections::user_uuid.eq(user_uuid).and( // Access to Collection
-                                users_organizations::status.eq(UserOrgStatus::Confirmed as i32)
-                            )
-                        )
-                    )
-                ))
+                .filter(ciphers::user_uuid.eq(user_uuid)) // Cipher owner
+                .or_filter(users_organizations::access_all.eq(true)) // access_all in org
+                .or_filter(users_collections::user_uuid.eq(user_uuid)) // Access to collection
+                .into_boxed();
+
+            if !visible_only {
+                query = query.or_filter(
+                    users_organizations::atype.le(UserOrgType::Admin as i32) // Org admin/owner
+                );
+            }
+
+            query
                 .select(ciphers::all_columns)
                 .distinct()
                 .load::<CipherDb>(conn).expect("Error loading ciphers").from_db()
         }}
     }
 
-    // Find all ciphers directly owned by user
+    // Find all ciphers visible to the specified user.
+    pub fn find_by_user_visible(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
+        Self::find_by_user(user_uuid, true, conn)
+    }
+
+    // Find all ciphers directly owned by the specified user.
     pub fn find_owned_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
         db_run! {conn: {
             ciphers::table
