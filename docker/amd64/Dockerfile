@@ -15,7 +15,7 @@
 #
 #  - To do the opposite, and get the tag from the hash, you can do:
 #      docker image inspect --format "{{.RepoTags}}" bitwardenrs/web-vault@sha256:afba1e3bded09dc0a6a0dbacb3363ac33b6f122b4b26d3682cafb9115bdf785c
-FROM bitwardenrs/web-vault@sha256:afba1e3bded09dc0a6a0dbacb3363ac33b6f122b4b26d3682cafb9115bdf785c as vault
+FROM bitwardenrs/web-vault@sha256:3581afd49201ea11edc5372ee3ffd8945f005602d9adc0300dcc7ef6860f232c as vault
 
 ########################## BUILD IMAGE  ##########################
 FROM rust:1.45 as build

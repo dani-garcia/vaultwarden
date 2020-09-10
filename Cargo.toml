@@ -124,7 +124,7 @@ structopt = "0.3.17"
 backtrace = "0.3.50"
 
 # Macro ident concatenation
-paste = "1.0"
+paste = "1.0.0"
 
 [patch.crates-io]
 # Use newest ring
