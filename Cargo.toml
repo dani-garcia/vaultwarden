@@ -18,7 +18,7 @@ postgresql = ["diesel/postgres", "diesel_migrations/postgres"]
 sqlite = ["diesel/sqlite", "diesel_migrations/sqlite", "libsqlite3-sys"]
 
 # Enable unstable features, requires nightly
-# Currently only used to enable rusts official ip support 
+# Currently only used to enable rusts official ip support
 unstable = []
 
 [target."cfg(not(windows))".dependencies]
@@ -30,7 +30,7 @@ rocket = { version = "0.5.0-dev", features = ["tls"], default-features = false }
 rocket_contrib = "0.5.0-dev"
 
 # HTTP client
-reqwest = { version = "0.10.7", features = ["blocking", "json"] }
+reqwest = { version = "0.10.8", features = ["blocking", "json"] }
 
 # multipart/form-data support
 multipart = { version = "0.17.0", features = ["server"], default-features = false }
@@ -45,8 +45,8 @@ rmpv = "0.4.5"
 chashmap = "2.2.2"
 
 # A generic serialization/deserialization framework
-serde = "1.0.115"
-serde_derive = "1.0.115"
+serde = "1.0.116"
+serde_derive = "1.0.116"
 serde_json = "1.0.57"
 
 # Logging
@@ -68,9 +68,9 @@ ring = "0.16.15"
 uuid = { version = "0.8.1", features = ["v4"] }
 
 # Date and time libraries
-chrono = "0.4.13"
-chrono-tz = "0.5.2"
-time = "0.2.16"
+chrono = "0.4.15"
+chrono-tz = "0.5.3"
+time = "0.2.18"
 
 # TOTP library
 oath = "0.10.2"
@@ -91,18 +91,18 @@ yubico = { version = "0.9.1", features = ["online-tokio"], default-features = fa
 dotenv = { version = "0.15.0", default-features = false }
 
 # Lazy initialization
-once_cell = "1.4.0"
+once_cell = "1.4.1"
 
 # Numerical libraries
 num-traits = "0.2.12"
-num-derive = "0.3.1"
+num-derive = "0.3.2"
 
 # Email libraries
-lettre = { version = "0.10.0-alpha.1", features = ["smtp-transport", "builder", "serde", "native-tls", "hostname"], default-features = false }
-native-tls = "0.2.4"
+lettre = { version = "0.10.0-alpha.2", features = ["smtp-transport", "builder", "serde", "native-tls", "hostname"], default-features = false }
+newline-converter = "0.1.0"
 
 # Template library
-handlebars = { version = "3.3.0", features = ["dir_source"] }
+handlebars = { version = "3.4.0", features = ["dir_source"] }
 
 # For favicon extraction from main website
 soup = "0.5.0"
@@ -118,7 +118,7 @@ percent-encoding = "2.1.0"
 idna = "0.2.0"
 
 # CLI argument parsing
-structopt = "0.3.16"
+structopt = "0.3.17"
 
 # Logging panics to logfile instead stderr only
 backtrace = "0.3.50"
