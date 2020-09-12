@@ -400,7 +400,7 @@ make_config! {
         smtp_username:          String, true,   option;
         /// Password
         smtp_password:          Pass,   true,   option;
-        /// Json form auth mechanism |> Defaults for ssl is "Plain" and "Login" and nothing for non-ssl connections. Possible values: ["Plain", "Login", "Xoauth2"]
+        /// Json form auth mechanism |> Defaults for ssl is "Plain" and "Login" and nothing for non-ssl connections. Possible values: ["Plain", "Login", "Xoauth2"]. Multiple options need to be separated by a comma.
         smtp_auth_mechanism:    String, true,   option;
         /// SMTP connection timeout |> Number of seconds when to stop trying to connect to the SMTP server
         smtp_timeout:           u64,    true,   def,     15;
@@ -428,7 +428,7 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
 
     let dom = cfg.domain.to_lowercase();
     if !dom.starts_with("http://") && !dom.starts_with("https://") {
-        err!("DOMAIN variable needs to contain the protocol (http, https). Use 'http[s]://bw.example.com' instead of 'bw.example.com'"); 
+        err!("DOMAIN variable needs to contain the protocol (http, https). Use 'http[s]://bw.example.com' instead of 'bw.example.com'");
     }
 
     let whitelist = &cfg.signups_domains_whitelist;
