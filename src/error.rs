@@ -49,7 +49,7 @@ use yubico::yubicoerror::YubicoError as YubiErr;
 use lettre::address::AddressError as AddrErr;
 use lettre::error::Error as LettreErr;
 use lettre::message::mime::FromStrError as FromStrErr;
-use lettre::transport::smtp::error::Error as SmtpErr;
+use lettre::transport::smtp::Error as SmtpErr;
 
 #[derive(Serialize)]
 pub struct Empty {}
