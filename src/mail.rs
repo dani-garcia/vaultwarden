@@ -49,12 +49,22 @@ fn mailer() -> SmtpTransport {
 
     let smtp_client = match CONFIG.smtp_auth_mechanism() {
         Some(mechanism) => {
-            let correct_mechanism = format!("\"{}\"", crate::util::upcase_first(mechanism.trim_matches('"')));
+            let allowed_mechanisms = vec![SmtpAuthMechanism::Plain, SmtpAuthMechanism::Login, SmtpAuthMechanism::Xoauth2];
+            let mut selected_mechanisms = vec![];
+            for wanted_mechanism in mechanism.split(',') {
+                for m in &allowed_mechanisms {
+                    if m.to_string().to_lowercase() == wanted_mechanism.trim_matches(|c| c == '"' || c == '\'' || c == ' ').to_lowercase() {
+                        selected_mechanisms.push(m.clone());
+                    }
+                }
+            };
 
-            // TODO: Allow more than one mechanism
-            match serde_json::from_str::<SmtpAuthMechanism>(&correct_mechanism) {
-                Ok(auth_mechanism) => smtp_client.authentication(vec![auth_mechanism]),
-                _ => panic!("Failure to parse mechanism. Is it proper Json? Eg. `\"Plain\"` not `Plain`"),
+            if !selected_mechanisms.is_empty() {
+                smtp_client.authentication(selected_mechanisms)
+            } else {
+                // Only show a warning, and return without setting an actual authentication mechanism
+                warn!("No valid SMTP Auth mechanism found for '{}', using default values", mechanism);
+                smtp_client
             }
         }
         _ => smtp_client,
