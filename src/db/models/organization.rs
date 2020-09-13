@@ -44,24 +44,28 @@ pub enum UserOrgType {
     Manager = 3,
 }
 
+impl UserOrgType {
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "0" | "Owner" => Some(UserOrgType::Owner),
+            "1" | "Admin" => Some(UserOrgType::Admin),
+            "2" | "User" => Some(UserOrgType::User),
+            "3" | "Manager" => Some(UserOrgType::Manager),
+            _ => None,
+        }
+    }
+}
+
 impl Ord for UserOrgType {
     fn cmp(&self, other: &UserOrgType) -> Ordering {
-        if self == other {
-            Ordering::Equal
-        } else {
-            match self {
-                UserOrgType::Owner => Ordering::Greater,
-                UserOrgType::Admin => match other {
-                    UserOrgType::Owner => Ordering::Less,
-                    _ => Ordering::Greater,
-                },
-                UserOrgType::Manager => match other {
-                    UserOrgType::Owner | UserOrgType::Admin => Ordering::Less,
-                    _ => Ordering::Greater,
-                },
-                UserOrgType::User => Ordering::Less,
-            }
-        }
+        // For easy comparison, map each variant to an access level (where 0 is lowest).
+        static ACCESS_LEVEL: [i32; 4] = [
+            3, // Owner
+            2, // Admin
+            0, // User
+            1, // Manager
+        ];
+        ACCESS_LEVEL[*self as usize].cmp(&ACCESS_LEVEL[*other as usize])
     }
 }
 
@@ -125,18 +129,6 @@ impl PartialOrd<UserOrgType> for i32 {
         match self.partial_cmp(other) {
             Some(Ordering::Less) | Some(Ordering::Equal) | None => true,
             _ => false,
-        }
-    }
-}
-
-impl UserOrgType {
-    pub fn from_str(s: &str) -> Option<Self> {
-        match s {
-            "0" | "Owner" => Some(UserOrgType::Owner),
-            "1" | "Admin" => Some(UserOrgType::Admin),
-            "2" | "User" => Some(UserOrgType::User),
-            "3" | "Manager" => Some(UserOrgType::Manager),
-            _ => None,
         }
     }
 }
@@ -531,5 +523,18 @@ impl UserOrganization {
             .select(users_organizations::all_columns)
             .load::<UserOrganizationDb>(conn).expect("Error loading user organizations").from_db()
         }}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn partial_cmp_UserOrgType() {
+        assert!(UserOrgType::Owner > UserOrgType::Admin);
+        assert!(UserOrgType::Admin > UserOrgType::Manager);
+        assert!(UserOrgType::Manager > UserOrgType::User);
     }
 }
