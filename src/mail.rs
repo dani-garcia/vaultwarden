@@ -54,7 +54,7 @@ fn mailer() -> SmtpTransport {
             for wanted_mechanism in mechanism.split(',') {
                 for m in &allowed_mechanisms {
                     if m.to_string().to_lowercase() == wanted_mechanism.trim_matches(|c| c == '"' || c == '\'' || c == ' ').to_lowercase() {
-                        selected_mechanisms.push(m.clone());
+                        selected_mechanisms.push(*m);
                     }
                 }
             };
@@ -330,6 +330,24 @@ fn send_email(address: &str, subject: &str, body_html: &str, body_text: &str) ->
         .subject(subject)
         .multipart(alternative)?;
 
-    let _ = mailer().send(&email)?;
-    Ok(())
+    match mailer().send(&email) {
+        Ok(_) => Ok(()),
+        // Match some common errors and make them more user friendly
+        Err(e) => match e {
+            lettre::transport::smtp::Error::Client(x) => {
+                err!(format!("SMTP Client error: {}", x));
+            },
+            lettre::transport::smtp::Error::Transient(x) => {
+                err!(format!("SMTP 4xx error: {:?}", x.message));
+            },
+            lettre::transport::smtp::Error::Permanent(x) => {
+                err!(format!("SMTP 5xx error: {:?}", x.message));
+            },
+            lettre::transport::smtp::Error::Io(x) => {
+                err!(format!("SMTP IO error: {}", x));
+            },
+            // Fallback for all other errors
+            _ => Err(e.into())
+        }
+    }
 }
