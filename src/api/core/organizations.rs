@@ -47,6 +47,7 @@ pub fn routes() -> Vec<Route> {
         list_policies_token,
         get_policy,
         put_policy,
+        get_plans,
     ]
 }
 
@@ -990,4 +991,56 @@ fn put_policy(org_id: String, pol_type: i32, data: Json<PolicyData>, _headers: A
     policy.save(&conn)?;
 
     Ok(Json(policy.to_json()))
+}
+
+#[get("/plans")]
+fn get_plans(_headers: Headers, _conn: DbConn) -> JsonResult {
+    Ok(Json(json!({
+        "Object": "list",
+        "Data": [
+        {
+            "Object": "plan",
+            "Type": 0,
+            "Product": 0,
+            "Name": "Free",
+            "IsAnnual": false,
+            "NameLocalizationKey": "planNameFree",
+            "DescriptionLocalizationKey": "planDescFree",
+            "CanBeUsedByBusiness": false,
+            "BaseSeats": 2,
+            "BaseStorageGb": null,
+            "MaxCollections": 2,
+            "MaxUsers": 2,
+            "HasAdditionalSeatsOption": false,
+            "MaxAdditionalSeats": null,
+            "HasAdditionalStorageOption": false,
+            "MaxAdditionalStorage": null,
+            "HasPremiumAccessOption": false,
+            "TrialPeriodDays": null,
+            "HasSelfHost": false,
+            "HasPolicies": false,
+            "HasGroups": false,
+            "HasDirectory": false,
+            "HasEvents": false,
+            "HasTotp": false,
+            "Has2fa": false,
+            "HasApi": false,
+            "HasSso": false,
+            "UsersGetPremium": false,
+            "UpgradeSortOrder": -1,
+            "DisplaySortOrder": -1,
+            "LegacyYear": null,
+            "Disabled": false,
+            "StripePlanId": null,
+            "StripeSeatPlanId": null,
+            "StripeStoragePlanId": null,
+            "StripePremiumAccessPlanId": null,
+            "BasePrice": 0.0,
+            "SeatPrice": 0.0,
+            "AdditionalStoragePricePerGb": 0.0,
+            "PremiumAccessOptionPrice": 0.0
+            }
+        ],
+        "ContinuationToken": null
+    })))
 }
