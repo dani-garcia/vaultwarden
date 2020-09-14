@@ -79,7 +79,7 @@ make_error! {
     RegexError(RegexErr): _has_source, _api_error,
     YubiError(YubiErr):   _has_source, _api_error,
 
-    LetreError(LettreErr):    _has_source, _api_error,
+    LettreError(LettreErr):   _has_source, _api_error,
     AddressError(AddrErr):    _has_source, _api_error,
     SmtpError(SmtpErr):       _has_source, _api_error,
     FromStrError(FromStrErr): _has_source, _api_error,
