@@ -1,37 +1,38 @@
 <main class="container">
     <div id="users-block" class="my-3 p-3 bg-white rounded shadow">
-        <h6 class="border-bottom pb-2 mb-0">Registered Users</h6>
+        <h6 class="border-bottom pb-2 mb-3">Registered Users</h6>
 
         <div class="table-responsive-xl small">
-            <table class="table table-sm table-striped table-hover">
+            <table id="users-table" class="table table-sm table-striped table-hover">
                 <thead>
                     <tr>
-                        <th style="width: 24px;">User</th>
-                        <th></th>
+                        <th>User</th>
                         <th style="width:60px; min-width: 60px;">Items</th>
                         <th>Attachments</th>
-                        <th style="min-width: 140px;">Organizations</th>
+                        <th style="min-width: 120px;">Organizations</th>
                         <th style="width: 140px; min-width: 140px;">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
                     {{#each users}}
                     <tr>
-                        <td><img class="mr-2 rounded identicon" data-src="{{Email}}"></td>
                         <td>
-                            <strong>{{Name}}</strong>
-                            <span class="d-block">{{Email}}</span>
-                            <span class="d-block">
-                                {{#if TwoFactorEnabled}}
-                                    <span class="badge badge-success mr-2" title="2FA is enabled">2FA</span>
-                                {{/if}}
-                                {{#case _Status 1}}
-                                    <span class="badge badge-warning mr-2" title="User is invited">Invited</span>
-                                {{/case}}
-                                {{#if EmailVerified}}
-                                    <span class="badge badge-success mr-2" title="Email has been verified">Verified</span>
-                                {{/if}}
-                            </span>
+                            <img class="float-left mr-2 rounded identicon" data-src="{{Email}}">
+                            <div class="float-left">
+                                <strong>{{Name}}</strong>
+                                <span class="d-block">{{Email}}</span>
+                                <span class="d-block">
+                                    {{#if TwoFactorEnabled}}
+                                        <span class="badge badge-success mr-2" title="2FA is enabled">2FA</span>
+                                    {{/if}}
+                                    {{#case _Status 1}}
+                                        <span class="badge badge-warning mr-2" title="User is invited">Invited</span>
+                                    {{/case}}
+                                    {{#if EmailVerified}}
+                                        <span class="badge badge-success mr-2" title="Email has been verified">Verified</span>
+                                    {{/if}}
+                                </span>
+                            </div>
                         </td>
                         <td>
                             <span class="d-block">{{cipher_count}}</span>
@@ -83,6 +84,9 @@
     </div>
 </main>
 
+<link rel="stylesheet" href="{{urlpath}}/bwrs_static/datatables.css" />
+<script src="{{urlpath}}/bwrs_static/jquery-3.5.1.slim.js"></script>
+<script src="{{urlpath}}/bwrs_static/datatables.js"></script>
 <script>
     function deleteUser(id, mail) {
         var input_mail = prompt("To delete user '" + mail + "', please type the email below")
@@ -139,5 +143,20 @@
         let orgtype = OrgTypes[e.dataset.orgtype];
         e.style.backgroundColor = orgtype.color;
         e.title = orgtype.name;
+    });
+
+    document.addEventListener("DOMContentLoaded", function(event) {
+        $('#users-table').DataTable({
+            "responsive": true,
+            "lengthMenu": [ [-1, 5, 10, 25, 50], ["All", 5, 10, 25, 50] ],
+            "pageLength": -1, // Default show all
+            "columns": [
+                null,                                        // Userdata
+                null,                                        // Items
+                null,                                        // Attachments
+                null,                                        // Organizations
+                { "searchable": false, "orderable": false }, // Actions
+            ],
+        });
     });
 </script>
