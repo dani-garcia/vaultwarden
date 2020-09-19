@@ -386,9 +386,9 @@ make_config! {
         _enable_smtp:           bool,   true,   def,     true;
         /// Host
         smtp_host:              String, true,   option;
-        /// Enable SSL
+        /// Enable Secure SMTP |> (Explicit) - Enabling this by default would use STARTTLS (Standard ports 587 or 25)
         smtp_ssl:               bool,   true,   def,     true;
-        /// Use explicit TLS |> Enabling this would force the use of an explicit TLS connection, instead of upgrading an insecure one with STARTTLS
+        /// Force TLS |> (Implicit) - Enabling this would force the use of an SSL/TLS connection, instead of upgrading an insecure one with STARTTLS (Standard port 465)
         smtp_explicit_tls:      bool,   true,   def,     false;
         /// Port
         smtp_port:              u16,    true,   auto,    |c| if c.smtp_explicit_tls {465} else if c.smtp_ssl {587} else {25};
@@ -400,7 +400,7 @@ make_config! {
         smtp_username:          String, true,   option;
         /// Password
         smtp_password:          Pass,   true,   option;
-        /// Json form auth mechanism |> Defaults for ssl is "Plain" and "Login" and nothing for non-ssl connections. Possible values: ["Plain", "Login", "Xoauth2"]. Multiple options need to be separated by a comma.
+        /// SMTP Auth mechanism |> Defaults for SSL is "Plain" and "Login" and nothing for Non-SSL connections. Possible values: ["Plain", "Login", "Xoauth2"]. Multiple options need to be separated by a comma ','.
         smtp_auth_mechanism:    String, true,   option;
         /// SMTP connection timeout |> Number of seconds when to stop trying to connect to the SMTP server
         smtp_timeout:           u64,    true,   def,     15;
