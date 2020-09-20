@@ -1,12 +1,12 @@
 <main class="container">
     <div id="organizations-block" class="my-3 p-3 bg-white rounded shadow">
-        <h6 class="border-bottom pb-2 mb-0">Organizations</h6>
+        <h6 class="border-bottom pb-2 mb-3">Organizations</h6>
 
         <div class="table-responsive-xl small">
-            <table class="table table-sm table-striped table-hover">
+            <table id="orgs-table" class="table table-sm table-striped table-hover">
                 <thead>
                     <tr>
-                        <th style="width: 24px;" colspan="2">Organization</th>
+                        <th>Organization</th>
                         <th>Users</th>
                         <th>Items</th>
                         <th>Attachments</th>
@@ -15,13 +15,15 @@
                 <tbody>
                     {{#each organizations}}
                     <tr>
-                        <td><img class="rounded identicon" data-src="{{Id}}"></td>
                         <td>
-                            <strong>{{Name}}</strong>
-                            <span class="mr-2">({{BillingEmail}})</span>
-                            <span class="d-block">
-                                <span class="badge badge-success">{{Id}}</span>
-                            </span>
+                            <img class="mr-2 float-left rounded identicon" data-src="{{Id}}">
+                            <div class="float-left">
+                                <strong>{{Name}}</strong>
+                                <span class="mr-2">({{BillingEmail}})</span>
+                                <span class="d-block">
+                                    <span class="badge badge-success">{{Id}}</span>
+                                </span>
+                            </div>
                         </td>
                         <td>
                             <span class="d-block">{{user_count}}</span>
@@ -40,12 +42,23 @@
                 </tbody>
             </table>
         </div>
-        
+
     </div>
 </main>
 
+<link rel="stylesheet" href="{{urlpath}}/bwrs_static/datatables.css" />
+<script src="{{urlpath}}/bwrs_static/jquery-3.5.1.slim.js"></script>
+<script src="{{urlpath}}/bwrs_static/datatables.js"></script>
 <script>
     document.querySelectorAll("img.identicon").forEach(function (e, i) {
         e.src = identicon(e.dataset.src);
+    });
+
+    document.addEventListener("DOMContentLoaded", function(event) {
+        $('#orgs-table').DataTable({
+            "responsive": true,
+            "lengthMenu": [ [-1, 5, 10, 25, 50], ["All", 5, 10, 25, 50] ],
+            "pageLength": -1, // Default show all
+        });
     });
 </script>
