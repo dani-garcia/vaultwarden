@@ -67,12 +67,23 @@ impl Collection {
     pub fn save(&self, conn: &DbConn) -> EmptyResult {
         self.update_users_revision(conn);
 
-        db_run! { conn: 
+        db_run! { conn:
             sqlite, mysql {
-                diesel::replace_into(collections::table)
+                match diesel::replace_into(collections::table)
                     .values(CollectionDb::to_db(self))
                     .execute(conn)
-                    .map_res("Error saving collection")
+                {
+                    Ok(_) => Ok(()),
+                    // Record already exists and causes a Foreign Key Violation because replace_into() wants to delete the record first.
+                    Err(diesel::result::Error::DatabaseError(diesel::result::DatabaseErrorKind::ForeignKeyViolation, _)) => {
+                        diesel::update(collections::table)
+                            .filter(collections::uuid.eq(&self.uuid))
+                            .set(CollectionDb::to_db(self))
+                            .execute(conn)
+                            .map_res("Error saving collection")
+                    }
+                    Err(e) => Err(e.into()),
+                }.map_res("Error saving collection")
             }
             postgresql {
                 let value = CollectionDb::to_db(self);
@@ -82,7 +93,7 @@ impl Collection {
                     .do_update()
                     .set(&value)
                     .execute(conn)
-                    .map_res("Error saving collection")  
+                    .map_res("Error saving collection")
             }
         }
     }
@@ -245,9 +256,9 @@ impl CollectionUser {
     pub fn save(user_uuid: &str, collection_uuid: &str, read_only: bool, hide_passwords: bool, conn: &DbConn) -> EmptyResult {
         User::update_uuid_revision(&user_uuid, conn);
 
-        db_run! { conn: 
+        db_run! { conn:
             sqlite, mysql {
-                diesel::replace_into(users_collections::table)
+                match diesel::replace_into(users_collections::table)
                     .values((
                         users_collections::user_uuid.eq(user_uuid),
                         users_collections::collection_uuid.eq(collection_uuid),
@@ -255,7 +266,24 @@ impl CollectionUser {
                         users_collections::hide_passwords.eq(hide_passwords),
                     ))
                     .execute(conn)
-                    .map_res("Error adding user to collection")
+                {
+                    Ok(_) => Ok(()),
+                    // Record already exists and causes a Foreign Key Violation because replace_into() wants to delete the record first.
+                    Err(diesel::result::Error::DatabaseError(diesel::result::DatabaseErrorKind::ForeignKeyViolation, _)) => {
+                        diesel::update(users_collections::table)
+                            .filter(users_collections::user_uuid.eq(user_uuid))
+                            .filter(users_collections::collection_uuid.eq(collection_uuid))
+                            .set((
+                                users_collections::user_uuid.eq(user_uuid),
+                                users_collections::collection_uuid.eq(collection_uuid),
+                                users_collections::read_only.eq(read_only),
+                                users_collections::hide_passwords.eq(hide_passwords),
+                            ))
+                            .execute(conn)
+                            .map_res("Error adding user to collection")
+                    }
+                    Err(e) => Err(e.into()),
+                }.map_res("Error adding user to collection")
             }
             postgresql {
                 diesel::insert_into(users_collections::table)
@@ -344,8 +372,11 @@ impl CollectionCipher {
     pub fn save(cipher_uuid: &str, collection_uuid: &str, conn: &DbConn) -> EmptyResult {
         Self::update_users_revision(&collection_uuid, conn);
 
-        db_run! { conn: 
+        db_run! { conn:
             sqlite, mysql {
+                // Not checking for ForeignKey Constraints here.
+                // Table ciphers_collections does not have ForeignKey Constraints which would cause conflicts.
+                // This table has no constraints pointing to itself, but only to others.
                 diesel::replace_into(ciphers_collections::table)
                     .values((
                         ciphers_collections::cipher_uuid.eq(cipher_uuid),
@@ -370,7 +401,7 @@ impl CollectionCipher {
 
     pub fn delete(cipher_uuid: &str, collection_uuid: &str, conn: &DbConn) -> EmptyResult {
         Self::update_users_revision(&collection_uuid, conn);
-        
+
         db_run! { conn: {
             diesel::delete(
                 ciphers_collections::table

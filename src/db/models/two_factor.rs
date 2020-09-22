@@ -71,12 +71,23 @@ impl TwoFactor {
 /// Database methods
 impl TwoFactor {
     pub fn save(&self, conn: &DbConn) -> EmptyResult {
-        db_run! { conn: 
+        db_run! { conn:
             sqlite, mysql {
-                diesel::replace_into(twofactor::table)
+                match diesel::replace_into(twofactor::table)
                     .values(TwoFactorDb::to_db(self))
                     .execute(conn)
-                    .map_res("Error saving twofactor")        
+                {
+                    Ok(_) => Ok(()),
+                    // Record already exists and causes a Foreign Key Violation because replace_into() wants to delete the record first.
+                    Err(diesel::result::Error::DatabaseError(diesel::result::DatabaseErrorKind::ForeignKeyViolation, _)) => {
+                        diesel::update(twofactor::table)
+                            .filter(twofactor::uuid.eq(&self.uuid))
+                            .set(TwoFactorDb::to_db(self))
+                            .execute(conn)
+                            .map_res("Error saving twofactor")
+                    }
+                    Err(e) => Err(e.into()),
+                }.map_res("Error saving twofactor")
             }
             postgresql {
                 let value = TwoFactorDb::to_db(self);
@@ -93,7 +104,7 @@ impl TwoFactor {
                     .do_update()
                     .set(&value)
                     .execute(conn)
-                    .map_res("Error saving twofactor")            
+                    .map_res("Error saving twofactor")
             }
         }
     }

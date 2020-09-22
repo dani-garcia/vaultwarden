@@ -74,12 +74,23 @@ impl Folder {
         User::update_uuid_revision(&self.user_uuid, conn);
         self.updated_at = Utc::now().naive_utc();
 
-        db_run! { conn: 
-            sqlite, mysql {   
-                diesel::replace_into(folders::table)
+        db_run! { conn:
+            sqlite, mysql {
+                match diesel::replace_into(folders::table)
                     .values(FolderDb::to_db(self))
                     .execute(conn)
-                    .map_res("Error saving folder")
+                {
+                    Ok(_) => Ok(()),
+                    // Record already exists and causes a Foreign Key Violation because replace_into() wants to delete the record first.
+                    Err(diesel::result::Error::DatabaseError(diesel::result::DatabaseErrorKind::ForeignKeyViolation, _)) => {
+                        diesel::update(folders::table)
+                            .filter(folders::uuid.eq(&self.uuid))
+                            .set(FolderDb::to_db(self))
+                            .execute(conn)
+                            .map_res("Error saving folder")
+                    }
+                    Err(e) => Err(e.into()),
+                }.map_res("Error saving folder")
             }
             postgresql {
                 let value = FolderDb::to_db(self);
@@ -98,7 +109,7 @@ impl Folder {
         User::update_uuid_revision(&self.user_uuid, conn);
         FolderCipher::delete_all_by_folder(&self.uuid, &conn)?;
 
-        
+
         db_run! { conn: {
             diesel::delete(folders::table.filter(folders::uuid.eq(&self.uuid)))
                 .execute(conn)
@@ -136,8 +147,11 @@ impl Folder {
 
 impl FolderCipher {
     pub fn save(&self, conn: &DbConn) -> EmptyResult {
-        db_run! { conn: 
+        db_run! { conn:
             sqlite, mysql {
+                // Not checking for ForeignKey Constraints here.
+                // Table folders_ciphers does not have ForeignKey Constraints which would cause conflicts.
+                // This table has no constraints pointing to itself, but only to others.
                 diesel::replace_into(folders_ciphers::table)
                     .values(FolderCipherDb::to_db(self))
                     .execute(conn)
@@ -149,9 +163,9 @@ impl FolderCipher {
                     .on_conflict((folders_ciphers::cipher_uuid, folders_ciphers::folder_uuid))
                     .do_nothing()
                     .execute(conn)
-                    .map_res("Error adding cipher to folder") 
+                    .map_res("Error adding cipher to folder")
             }
-        }  
+        }
     }
 
     pub fn delete(self, conn: &DbConn) -> EmptyResult {

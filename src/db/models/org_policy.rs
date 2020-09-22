@@ -56,12 +56,23 @@ impl OrgPolicy {
 /// Database methods
 impl OrgPolicy {
     pub fn save(&self, conn: &DbConn) -> EmptyResult {
-        db_run! { conn: 
+        db_run! { conn:
             sqlite, mysql {
-                diesel::replace_into(org_policies::table)
+                match diesel::replace_into(org_policies::table)
                     .values(OrgPolicyDb::to_db(self))
                     .execute(conn)
-                    .map_res("Error saving org_policy")      
+                {
+                    Ok(_) => Ok(()),
+                    // Record already exists and causes a Foreign Key Violation because replace_into() wants to delete the record first.
+                    Err(diesel::result::Error::DatabaseError(diesel::result::DatabaseErrorKind::ForeignKeyViolation, _)) => {
+                        diesel::update(org_policies::table)
+                            .filter(org_policies::uuid.eq(&self.uuid))
+                            .set(OrgPolicyDb::to_db(self))
+                            .execute(conn)
+                            .map_res("Error saving org_policy")
+                    }
+                    Err(e) => Err(e.into()),
+                }.map_res("Error saving org_policy")
             }
             postgresql {
                 let value = OrgPolicyDb::to_db(self);

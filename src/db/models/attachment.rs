@@ -63,10 +63,21 @@ impl Attachment {
     pub fn save(&self, conn: &DbConn) -> EmptyResult {
         db_run! { conn:
             sqlite, mysql {
-                diesel::replace_into(attachments::table)
+                match diesel::replace_into(attachments::table)
                     .values(AttachmentDb::to_db(self))
                     .execute(conn)
-                    .map_res("Error saving attachment")
+                {
+                    Ok(_) => Ok(()),
+                    // Record already exists and causes a Foreign Key Violation because replace_into() wants to delete the record first.
+                    Err(diesel::result::Error::DatabaseError(diesel::result::DatabaseErrorKind::ForeignKeyViolation, _)) => {
+                        diesel::update(attachments::table)
+                            .filter(attachments::id.eq(&self.id))
+                            .set(AttachmentDb::to_db(self))
+                            .execute(conn)
+                            .map_res("Error saving attachment")
+                    }
+                    Err(e) => Err(e.into()),
+                }.map_res("Error saving attachment")
             }
             postgresql {
                 let value = AttachmentDb::to_db(self);
