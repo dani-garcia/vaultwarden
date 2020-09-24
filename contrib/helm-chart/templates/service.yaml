@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "bitwardenrs.fullname" . }}
+  labels:
+    {{- include "bitwardenrs.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  {{- if (or (eq .Values.service.type "LoadBalancer") (eq .Values.service.type "NodePort")) }}
+  externalTrafficPolicy: {{ .Values.service.externalTrafficPolicy | quote }}
+  {{- end }}
+  {{- if eq .Values.service.type "LoadBalancer" }}
+  loadBalancerIP: {{ default "" .Values.service.loadBalancerIP }}
+  {{- end }}
+  ports:
+    - name: http
+      port: {{ .Values.service.httpPort }}
+      targetPort: http
+      protocol: TCP
+      {{- if (and (eq .Values.service.type "NodePort") (not (empty .Values.service.nodePorts.http)))}}
+      nodePort: {{ .Values.service.nodePorts.http }}
+      {{- end }}
+    {{- if .Values.bitwardenrs.enableWebsockets }}
+    - name: websocket
+      port: {{ .Values.service.websocketPort }}
+      targetPort: websocket
+      protocol: TCP
+      {{- if (and (eq .Values.service.type "NodePort") (not (empty .Values.service.nodePorts.websocket)))}}
+      nodePort: {{ .Values.service.nodePorts.websocket }}
+      {{- end }}
+    {{- end }}
+  selector:
+    {{- include "bitwardenrs.selectorLabels" . | nindent 4 }}

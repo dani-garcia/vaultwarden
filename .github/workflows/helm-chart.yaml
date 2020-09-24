@@ -1,0 +1,42 @@
+name: Test&Release HelmChart
+on:
+  push:
+    paths:
+      - 'contrib/helm-chart/**'
+      - '.github/workflows/**'
+  pull_request:
+    paths:
+      - 'contrib/helm-chart/**'
+      - '.github/workflows/**'
+jobs:
+  test-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Fetch history
+        run: |
+          git fetch --prune --unshallow;
+          echo ::set-env name=commitmsg::$(git log --format=%B -n 1 ${{ github.event.after }})
+      - name: Run chart-testing (lint)
+        id: lint
+        uses: helm/chart-testing-action@v1.0.0
+        if: "! contains(env.commitmsg, '[skip lint]')"
+        with:
+          command: lint
+          config: .github/ct_test_config.yaml
+      - name: Create kind cluster
+        uses: helm/kind-action@v1.0.0
+        if: "! contains(env.commitmsg, '[skip install]')"
+      - name: Run chart-testing (install)
+        uses: helm/chart-testing-action@v1.0.0
+        if: "! contains(env.commitmsg, '[skip install]')"
+        with:
+          command: install
+          config: .github/ct_test_config.yaml
+      - name: Publish Helm charts
+        uses: stefanprodan/helm-gh-pages@master
+        if: "contains(env.commitmsg, '[release chart]') && github.event_name == 'push' && github.ref == 'refs/heads/master'"
+        with:
+          charts_dir: contrib/
+          token: ${{ secrets.GITHUB_TOKEN }}

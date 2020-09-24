@@ -1,0 +1,3 @@
+helm-extra-args: --timeout 600s
+charts:
+  - contrib/helm-chart/

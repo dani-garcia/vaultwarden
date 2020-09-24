@@ -1,0 +1,210 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "bitwardenrs.fullname" . }}
+  labels:
+    {{- include "bitwardenrs.labels" . | nindent 4 }}
+spec:
+  {{- with .Values.strategy }}
+  strategy:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "bitwardenrs.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+    {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+      labels:
+        {{- include "bitwardenrs.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "bitwardenrs.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ include "bitwardenrs.image" . }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: ROCKET_PORT
+              value: "8080"
+            - name: SIGNUPS_ALLOWED
+              value: {{ .Values.bitwardenrs.allowSignups | quote }}
+            {{- if .Values.bitwardenrs.signupDomains }}
+            - name: SIGNUPS_DOMAINS_WHITELIST
+              value: {{ join "," .Values.bitwardenrs.signupDomains | quote }}
+            {{- end }}
+            {{- if and (eq .Values.bitwardenrs.verifySignup true) (eq .Values.bitwardenrs.smtp.enabled false) }}{{ required "Signup verification requires SMTP to be enabled" nil}}{{end}}
+            - name: SIGNUPS_VERIFY
+              value: {{ .Values.bitwardenrs.verifySignup | quote }}
+            - name: INVITATIONS_ALLOWED
+              value: {{ .Values.bitwardenrs.allowInvitation | quote }}
+            {{- if .Values.bitwardenrs.defaultInviteName }}
+            - name: INVITATION_ORG_NAME
+              value: {{ .Values.bitwardenrs.defaultInviteName | quote }}
+            {{- end }}
+            - name: SHOW_PASSWORD_HINT
+              value: {{ .Values.bitwardenrs.showPasswordHint | quote }}
+            - name: WEBSOCKET_ENABLED
+              value: {{ .Values.bitwardenrs.enableWebsockets | quote }}
+            - name: WEB_VAULT_ENABLED
+              value: {{ .Values.bitwardenrs.enableWebVault | quote }}
+            - name: ORG_CREATION_USERS
+              value: {{ .Values.bitwardenrs.orgCreationUsers | quote }}
+            {{- if .Values.bitwardenrs.extraEnv }}
+            {{- range $key, $val := .Values.bitwardenrs.extraEnv }}
+            - name: {{ $key }}
+              value: {{ $val | quote }}
+            {{- end }}
+            {{- end }}
+            {{- if eq .Values.database.type "sqlite" }}
+            - name: ENABLE_DB_WAL
+              value: {{ .Values.database.wal | quote }}
+            {{- else }}
+            - name: ENABLE_DB_WAL
+              value: "false"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ if .Values.database.existingSecret }}{{ .Values.database.existingSecret }}{{else}}{{ include "bitwardenrs.fullname" . }}{{end}}
+                  key: database-url
+            {{- end }}
+            {{- if .Values.bitwardenrs.domain }}
+            - name: DOMAIN
+              value: {{ .Values.bitwardenrs.domain | quote }}
+            {{- end }}
+            {{- if eq .Values.bitwardenrs.admin.enabled true }}
+            {{- if eq .Values.bitwardenrs.admin.disableAdminToken true }}
+            - name: DISABLE_ADMIN_TOKEN
+              value: "true"
+            {{- else }}
+            - name: ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.bitwardenrs.admin.existingSecret | default (include "bitwardenrs.fullname" .) }}
+                  key: admin-token
+            {{- end }}
+            {{- end }}
+            {{- if eq .Values.bitwardenrs.smtp.enabled true }}
+            - name: SMTP_HOST
+              value: {{ required "SMTP host is required to enable SMTP" .Values.bitwardenrs.smtp.host | quote }}
+            - name: SMTP_FROM
+              value: {{ required "SMTP sender address ('from') is required to enable SMTP" .Values.bitwardenrs.smtp.from | quote }}
+            {{- if .Values.bitwardenrs.smtp.fromName }}
+            - name: SMTP_FROM_NAME
+              value: {{ .Values.bitwardenrs.smtp.fromName | quote }}
+            {{- end }}
+            {{- if .Values.bitwardenrs.smtp.ssl }}
+            - name: SMTP_SSL
+              value: {{ .Values.bitwardenrs.smtp.ssl | quote }}
+            {{- end }}
+            {{- if .Values.bitwardenrs.smtp.port }}
+            - name: SMTP_PORT
+              value: {{ .Values.bitwardenrs.smtp.port | quote }}
+            {{- end }}
+            {{- if .Values.bitwardenrs.smtp.authMechanism }}
+            - name: SMTP_AUTH_MECHANISM
+              value: {{ .Values.bitwardenrs.smtp.authMechanism | quote }}
+            {{- end }}
+            {{- if .Values.bitwardenrs.smtp.heloName }}
+            - name: HELO_NAME
+              value: {{ .Values.bitwardenrs.smtp.heloName | quote }}
+            {{- end }}
+            {{- if or .Values.bitwardenrs.smtp.existingSecret .Values.bitwardenrs.smtp.user }}
+            - name: SMTP_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.bitwardenrs.smtp.existingSecret | default (include "bitwardenrs.fullname" .) }}
+                  key: smtp-user
+            - name: SMTP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.bitwardenrs.smtp.existingSecret | default (include "bitwardenrs.fullname" .) }}
+                  key: smtp-password
+            {{- end }}
+            {{- end }}
+            {{- if eq .Values.bitwardenrs.yubico.enabled true }}
+            {{- if .Values.bitwardenrs.yubico.server }}
+            - name: YUBICO_SERVER
+              value: {{ .Values.bitwardenrs.yubico.server | quote }}
+            {{- end }}  
+            - name: YUBICO_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.bitwardenrs.yubico.existingSecret | default (include "bitwardenrs.fullname" .) }}
+                  key: yubico-client-id
+            - name: YUBICO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.bitwardenrs.yubico.existingSecret | default (include "bitwardenrs.fullname" .) }}
+                  key: yubico-secret-key
+            {{- end }}
+            {{- if .Values.bitwardenrs.log.file }}
+            - name: LOG_FILE
+              value: {{ .Values.bitwardenrs.log.file | quote }}
+            {{- end }}
+            {{- if or .Values.bitwardenrs.log.level .Values.bitwardenrs.log.timeFormat }}
+            - name: EXTENDED_LOGGING
+              value: "true"
+            {{- end }}
+            {{- if .Values.bitwardenrs.log.level }}
+            {{- include "bitwardenrs.logLevelValid" . }}
+            - name: LOG_LEVEL
+              value: {{ .Values.bitwardenrs.log.level | quote }}
+            {{- end }}
+            {{- if .Values.bitwardenrs.log.timeFormat }}
+            - name: LOG_TIMESTAMP_FORMAT
+              value: {{ .Values.bitwardenrs.log.timeFormat | quote }}
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          {{- if .Values.bitwardenrs.enableWebsockets }}
+            - name: websocket
+              containerPort: 3012
+              protocol: TCP
+          {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+          volumeMounts:
+          - name: {{ include "bitwardenrs.fullname" . }}
+            mountPath: /data
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+      - name: {{ include "bitwardenrs.fullname" . }}
+        {{- if .Values.persistence.enabled }}
+        persistentVolumeClaim:
+          claimName: {{ if .Values.persistence.existingClaim }}{{ .Values.persistence.existingClaim | quote }}{{- else }}{{ include "bitwardenrs.fullname" . }}{{- end }}
+        {{- else }}
+        emptyDir: {}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

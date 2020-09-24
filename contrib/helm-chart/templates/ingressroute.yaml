@@ -1,0 +1,40 @@
+{{- if .Values.ingressRoute.enabled -}}
+{{- $fullName := include "bitwardenrs.fullname" . -}}
+{{- $host := (required "Host required for IngressRoute" .Values.ingressRoute.host ) -}}
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ $fullName }}
+  labels:
+    {{- include "bitwardenrs.labels" . | nindent 4 }}
+spec:
+  entryPoints:
+  {{- range .Values.ingressRoute.entrypoints }}
+    - {{ . | quote }}
+  {{- end }}
+  routes:
+  {{- if .Values.bitwardenrs.enableWebsockets }}
+  - match: Host(`{{ $host }}`) && PathPrefix(`/notifications/hub`)
+    kind: Rule
+    {{- if .Values.ingressRoute.middlewares }}
+    middlewares:
+      {{- toYaml .Values.ingressRoute.middlewares | nindent 6 }}
+    {{- end }}
+    services:
+    - name: {{ $fullName }} 
+      port: {{ .Values.service.websocketPort }}
+  {{- end }}
+  - match: Host(`{{ $host }}`)
+    kind: Rule
+    {{- if .Values.ingressRoute.middlewares }}
+    middlewares:
+      {{- toYaml .Values.ingressRoute.middlewares | nindent 6 }}
+    {{- end }}
+    services:
+    - name: {{ $fullName }}
+      port: {{ .Values.service.httpPort }}
+  {{- if .Values.ingressRoute.tls }}
+  tls:
+    {{- toYaml .Values.ingressRoute.tls | nindent 4 }}
+  {{- end }}
+{{- end }}

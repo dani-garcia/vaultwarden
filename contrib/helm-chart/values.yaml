@@ -1,0 +1,190 @@
+# Default values for bitwarden_rs.
+
+database:
+  # Database type, must be one of: 'sqlite', 'mysql' or 'postgresql'.
+  type: sqlite
+  # Enable DB Write-Ahead-Log for SQLite, disabled for other databases. https://github.com/dani-garcia/bitwarden_rs/wiki/Running-without-WAL-enabled
+  wal: true
+  ## URL for external databases (mysql://user:pass@host:port or postgresql://user:pass@host:port).
+  # url: ""
+  ## Use existing secret for database URL, key 'database-url'.
+  # existingSecret:
+
+# Set Bitwarden_rs application variables
+bitwardenrs:
+  ## Set Bitwarden URL, mandatory for invitations over email. Recommended if using a reverse proxy / ingress. Format is https://name or http://name
+  # domain:
+  # Allow any user to sign-up: https://github.com/dani-garcia/bitwarden_rs/wiki/Disable-registration-of-new-users
+  allowSignups: true
+  ## Whitelist domains allowed to sign-up. 'allowSignups' is ignored if set.
+  # signupDomains:
+  #  - domain.tld
+  # Verify e-mail before login is enabled. SMTP must be enabled.
+  verifySignup: false
+  # Allow invited users to sign-up even feature is disabled: https://github.com/dani-garcia/bitwarden_rs/wiki/Disable-invitations
+  allowInvitation: true
+  # Show password hints: https://github.com/dani-garcia/bitwarden_rs/wiki/Password-hint-display
+  ## Default organization name in invitation e-mails that are not coming from a specific organization.
+  # defaultInviteName: ""
+  showPasswordHint: true
+  # Enable Websockets for notification. https://github.com/dani-garcia/bitwarden_rs/wiki/Enabling-WebSocket-notifications
+  # Redirect HTTP path "/notifications/hub" to port 3012. Ingress/IngressRoute controllers are automatically configured.
+  enableWebsockets: true
+  # Enable Web Vault (static content). https://github.com/dani-garcia/bitwarden_rs/wiki/Disabling-or-overriding-the-Vault-interface-hosting
+  enableWebVault: true
+  # Restrict creation of orgs. Options are: 'all', 'none' or a comma-separated list of users.
+  orgCreationUsers: all
+  ## Map of custom environment variables. Use carefully.
+  # extraEnv:
+  #  IP_HEADER=CF-Connecting-IP
+
+  admin:
+    # Enable admin portal.
+    enabled: false
+    # Disabling the admin token will make the admin portal accessible to anyone, use carefully: https://github.com/dani-garcia/bitwarden_rs/wiki/Disable-admin-token
+    disableAdminToken: false
+    ## Token for admin login, will be generated if not defined. https://github.com/dani-garcia/bitwarden_rs/wiki/Enabling-admin-page
+    # token:
+    ## Use existing secret for the admin token. Key is 'admin-token'.
+    # existingSecret:
+
+  # Enable SMTP. https://github.com/dani-garcia/bitwarden_rs/wiki/SMTP-configuration
+  smtp:
+    enabled: false
+    # SMTP hostname, required if SMTP is enabled.
+    host: ""
+    # SMTP sender e-mail address, required if SMTP is enabled.
+    from: ""
+    ## SMTP sender name, defaults to 'Bitwarden_RS'.
+    # fromName: ""
+    ## Enable SSL connection.
+    # ssl: true
+    ## SMTP port. Defaults to 25 without SSL, 587 with SSL.
+    # port: 587
+    # SMTP Authentication Mechanisms. Comma-separated options: 'Plain', 'Login' and 'Xoauth2'. Defaults to 'Plain'.
+    # authMechanism: Plain
+    # Hostname to be sent for SMTP HELO. Defaults to pod name.
+    # heloName: ""
+    ## SMTP username.
+    # user: ""
+    ## SMTP password. Required is user is specified, ignored if no user provided.
+    # password: ""
+    ## Use existing secret for SMTP authentication. Keys are 'smtp-user' and 'smtp-password'.
+    # existingSecret:
+
+  ## Enable Yubico OPT authentication. https://github.com/dani-garcia/bitwarden_rs/wiki/Enabling-Yubikey-OTP-authentication
+  yubico:
+    enabled: false
+    ## Yubico server. Defaults to YubiCloud.
+    # server:
+    ## Yubico ID and Secret Key.
+    # clientId:
+    # secretKey:
+    ## Use existing secret for Yubico. Keys are 'yubico-client-id' and 'yubico-secret-key'.
+    # existingSecret:
+
+  ## Logging options. https://github.com/dani-garcia/bitwarden_rs/wiki/Logging
+  log:
+    # Log to file.
+    file: ""
+    # Log level. Options are "trace", "debug", "info", "warn", "error" or "off".
+    level: ""
+    ## Log timestamp format. See https://docs.rs/chrono/0.4.15/chrono/format/strftime/index.html. Defaults to time in milliseconds.
+    # timeFormat: ""
+
+service:
+  type: ClusterIP
+  httpPort: 80
+  websocketPort: 3012
+  externalTrafficPolicy: Cluster
+  # loadBalancerIP:
+  nodePorts:
+    # Choose NodePorts manually
+    http: ""
+    websocket: ""
+
+# Kubernetes Ingress
+ingress:
+  enabled: false
+  host: ""
+  annotations: {}
+    # kubernetes.io/ingress.class: nginx
+    # kubernetes.io/tls-acme: "true"
+  tls: []
+  #  - secretName: bitwardenrs-tls
+  #    hosts:
+  #      - bitwardenrs.local
+
+# Traefik IngressRoute CRD
+ingressRoute:
+  enabled: false
+  # Mandatory to enable IngressRoute
+  host: ""
+  entrypoints:
+    - websecure
+  ## Enable Traefik middlewares
+  middlewares: {}
+  #  - name: my_middleware
+  #    namespace: default
+  tls: {}
+    # certResolver: letsencrypt
+
+persistence:
+  enabled: false
+  size: 1Gi
+  accessMode: ReadWriteOnce
+  ## Persistent Volume storage class
+  # storageClass: "-"
+  ## Use existing Persistent Volume Claim
+  # existingClaim:
+
+image:
+  pullPolicy: IfNotPresent
+  tag: ""
+  sqliteRepository: bitwardenrs/server
+  mysqlRepository: bitwardenrs/server-mysql
+  postgresqlRepository: bitwardenrs/server-postgresql
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+replicaCount: 1
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: false
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext:
+  fsGroup: 65534
+
+securityContext:
+  runAsUser: 65534
+  runAsGroup: 65534
+
+strategy: {}
+
+resources: {}
+  # We usually recommend not to specify default resources and to leave this as a conscious
+  # choice for the user. This also increases chances charts run on environments with little
+  # resources, such as Minikube. If you do want to specify resources, uncomment the following
+  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
+  # limits:
+  #   cpu: 100m
+  #   memory: 128Mi
+  # requests:
+  #   cpu: 100m
+  #   memory: 128Mi
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}

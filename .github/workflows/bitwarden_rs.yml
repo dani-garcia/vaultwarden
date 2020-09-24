@@ -1,9 +1,10 @@
-name: Workflow
+name: Test&Release Bitwarden_rs
 
 on:
   push:
     paths-ignore:
       - "**.md"
+      - 'contrib/helm-chart/**'
   #pull_request:
   #  paths-ignore:
   #    - "**.md"
