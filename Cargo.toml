@@ -16,6 +16,8 @@ enable_syslog = []
 mysql = ["diesel/mysql", "diesel_migrations/mysql"]
 postgresql = ["diesel/postgres", "diesel_migrations/postgres"]
 sqlite = ["diesel/sqlite", "diesel_migrations/sqlite", "libsqlite3-sys"]
+# Enable to use a vendored and statically linked openssl
+vendored_openssl = ["openssl/vendored"]
 
 # Enable unstable features, requires nightly
 # Currently only used to enable rusts official ip support
