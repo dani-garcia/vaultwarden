@@ -32,6 +32,7 @@ pub fn routes() -> Vec<rocket::Route> {
         revision_date,
         password_hint,
         prelogin,
+        verify_password,
     ]
 }
 
@@ -622,4 +623,21 @@ fn prelogin(data: JsonUpcase<PreloginData>, conn: DbConn) -> JsonResult {
         "Kdf": kdf_type,
         "KdfIterations": kdf_iter
     })))
+}
+#[derive(Deserialize)]
+#[allow(non_snake_case)]
+struct VerifyPasswordData {
+    MasterPasswordHash: String,
+}
+
+#[post("/accounts/verify-password", data = "<data>")]
+fn verify_password(data: JsonUpcase<VerifyPasswordData>, headers: Headers, _conn: DbConn) -> EmptyResult {
+    let data: VerifyPasswordData = data.into_inner().data;
+    let user = headers.user;
+
+    if !user.check_valid_password(&data.MasterPasswordHash) {
+        err!("Invalid password")
+    }
+
+    Ok(())
 }
