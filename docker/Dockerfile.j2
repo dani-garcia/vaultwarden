@@ -9,7 +9,7 @@
 {%     set package_arch_name = "" %}
 {%   elif "arm32v7" in target_file %}
 {%     set build_stage_base_image = "messense/rust-musl-cross:armv7-musleabihf" %}
-{%     set runtime_stage_base_image = "cmosh/alpine-arm" %}
+{%     set runtime_stage_base_image = "cmosh/alpine-arm:3.6" %}
 {%     set package_arch_name = "" %}
 {%   endif %}
 {% elif "amd64" in target_file %}
