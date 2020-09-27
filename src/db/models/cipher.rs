@@ -194,14 +194,25 @@ impl Cipher {
     pub fn save(&mut self, conn: &DbConn) -> EmptyResult {
         self.update_users_revision(conn);
         self.updated_at = Utc::now().naive_utc();
-        
-        db_run! { conn: 
+
+        db_run! { conn:
             sqlite, mysql {
-                diesel::replace_into(ciphers::table)
+                match diesel::replace_into(ciphers::table)
                     .values(CipherDb::to_db(self))
                     .execute(conn)
-                    .map_res("Error saving cipher")
-                }
+                {
+                    Ok(_) => Ok(()),
+                    // Record already exists and causes a Foreign Key Violation because replace_into() wants to delete the record first.
+                    Err(diesel::result::Error::DatabaseError(diesel::result::DatabaseErrorKind::ForeignKeyViolation, _)) => {
+                        diesel::update(ciphers::table)
+                            .filter(ciphers::uuid.eq(&self.uuid))
+                            .set(CipherDb::to_db(self))
+                            .execute(conn)
+                            .map_res("Error saving cipher")
+                    }
+                    Err(e) => Err(e.into()),
+                }.map_res("Error saving cipher")
+            }
             postgresql {
                 let value = CipherDb::to_db(self);
                 diesel::insert_into(ciphers::table)

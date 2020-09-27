@@ -204,12 +204,24 @@ impl Organization {
                 User::update_uuid_revision(&user_org.user_uuid, conn);
             });
 
-        db_run! { conn: 
+        db_run! { conn:
             sqlite, mysql {
-                diesel::replace_into(organizations::table)
+                match diesel::replace_into(organizations::table)
                     .values(OrganizationDb::to_db(self))
                     .execute(conn)
-                    .map_res("Error saving organization")            
+                {
+                    Ok(_) => Ok(()),
+                    // Record already exists and causes a Foreign Key Violation because replace_into() wants to delete the record first.
+                    Err(diesel::result::Error::DatabaseError(diesel::result::DatabaseErrorKind::ForeignKeyViolation, _)) => {
+                        diesel::update(organizations::table)
+                            .filter(organizations::uuid.eq(&self.uuid))
+                            .set(OrganizationDb::to_db(self))
+                            .execute(conn)
+                            .map_res("Error saving organization")
+                    }
+                    Err(e) => Err(e.into()),
+                }.map_res("Error saving organization")
+
             }
             postgresql {
                 let value = OrganizationDb::to_db(self);
@@ -219,7 +231,7 @@ impl Organization {
                     .do_update()
                     .set(&value)
                     .execute(conn)
-                    .map_res("Error saving organization")                
+                    .map_res("Error saving organization")
             }
         }
     }
@@ -259,7 +271,7 @@ impl Organization {
 impl UserOrganization {
     pub fn to_json(&self, conn: &DbConn) -> Value {
         let org = Organization::find_by_uuid(&self.org_uuid, conn).unwrap();
-        
+
         json!({
             "Id": self.org_uuid,
             "Name": org.name,
@@ -343,12 +355,23 @@ impl UserOrganization {
     pub fn save(&self, conn: &DbConn) -> EmptyResult {
         User::update_uuid_revision(&self.user_uuid, conn);
 
-        db_run! { conn: 
+        db_run! { conn:
             sqlite, mysql {
-                diesel::replace_into(users_organizations::table)
+                match diesel::replace_into(users_organizations::table)
                     .values(UserOrganizationDb::to_db(self))
                     .execute(conn)
-                    .map_res("Error adding user to organization")        
+                {
+                    Ok(_) => Ok(()),
+                    // Record already exists and causes a Foreign Key Violation because replace_into() wants to delete the record first.
+                    Err(diesel::result::Error::DatabaseError(diesel::result::DatabaseErrorKind::ForeignKeyViolation, _)) => {
+                        diesel::update(users_organizations::table)
+                            .filter(users_organizations::uuid.eq(&self.uuid))
+                            .set(UserOrganizationDb::to_db(self))
+                            .execute(conn)
+                            .map_res("Error adding user to organization")
+                    }
+                    Err(e) => Err(e.into()),
+                }.map_res("Error adding user to organization")
             }
             postgresql {
                 let value = UserOrganizationDb::to_db(self);
@@ -358,7 +381,7 @@ impl UserOrganization {
                     .do_update()
                     .set(&value)
                     .execute(conn)
-                    .map_res("Error adding user to organization")            
+                    .map_res("Error adding user to organization")
             }
         }
     }

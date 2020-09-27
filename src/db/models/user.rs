@@ -175,10 +175,21 @@ impl User {
 
         db_run! {conn:
             sqlite, mysql {
-                diesel::replace_into(users::table) // Insert or update
-                    .values(&UserDb::to_db(self))
+                match diesel::replace_into(users::table)
+                    .values(UserDb::to_db(self))
                     .execute(conn)
-                    .map_res("Error saving user")
+                {
+                    Ok(_) => Ok(()),
+                    // Record already exists and causes a Foreign Key Violation because replace_into() wants to delete the record first.
+                    Err(diesel::result::Error::DatabaseError(diesel::result::DatabaseErrorKind::ForeignKeyViolation, _)) => {
+                        diesel::update(users::table)
+                            .filter(users::uuid.eq(&self.uuid))
+                            .set(UserDb::to_db(self))
+                            .execute(conn)
+                            .map_res("Error saving user")
+                    }
+                    Err(e) => Err(e.into()),
+                }.map_res("Error saving user")
             }
             postgresql {
                 let value = UserDb::to_db(self);
@@ -290,10 +301,12 @@ impl Invitation {
 
         db_run! {conn:
             sqlite, mysql {
+                // Not checking for ForeignKey Constraints here
+                // Table invitations does not have any ForeignKey Constraints.
                 diesel::replace_into(invitations::table)
                     .values(InvitationDb::to_db(self))
                     .execute(conn)
-                    .map_res("Error saving invitation")        
+                    .map_res("Error saving invitation")
             }
             postgresql {
                 diesel::insert_into(invitations::table)
@@ -301,7 +314,7 @@ impl Invitation {
                     .on_conflict(invitations::email)
                     .do_nothing()
                     .execute(conn)
-                    .map_res("Error saving invitation")                
+                    .map_res("Error saving invitation")
             }
         }
     }
