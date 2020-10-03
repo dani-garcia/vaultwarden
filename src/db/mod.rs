@@ -49,7 +49,7 @@ macro_rules! generate_connections {
                     DbConnType::$name => {
                         #[cfg($name)]
                         {
-                            paste::paste!{ [< $name _migrations >]::run_migrations(); }
+                            paste::paste!{ [< $name _migrations >]::run_migrations()?; }
                             let manager = ConnectionManager::new(&url);
                             let pool = Pool::builder().build(manager).map_res("Failed to create pool")?;
                             return Ok(Self::$name(pool));
@@ -242,7 +242,7 @@ mod sqlite_migrations {
     #[allow(unused_imports)]
     embed_migrations!("migrations/sqlite");
 
-    pub fn run_migrations() {
+    pub fn run_migrations() -> Result<(), super::Error> {
         // Make sure the directory exists
         let url = crate::CONFIG.database_url();
         let path = std::path::Path::new(&url);
@@ -257,7 +257,7 @@ mod sqlite_migrations {
         use diesel::{Connection, RunQueryDsl};
         // Make sure the database is up to date (create if it doesn't exist, or run the migrations)
         let connection =
-            diesel::sqlite::SqliteConnection::establish(&crate::CONFIG.database_url()).expect("Can't connect to DB");
+            diesel::sqlite::SqliteConnection::establish(&crate::CONFIG.database_url())?;
         // Disable Foreign Key Checks during migration
         
         // Scoped to a connection.
@@ -272,7 +272,8 @@ mod sqlite_migrations {
                 .expect("Failed to turn on WAL");
         }
 
-        embedded_migrations::run_with_output(&connection, &mut std::io::stdout()).expect("Can't run migrations");
+        embedded_migrations::run_with_output(&connection, &mut std::io::stdout())?;
+        Ok(())
     }
 }
 
@@ -281,11 +282,11 @@ mod mysql_migrations {
     #[allow(unused_imports)]
     embed_migrations!("migrations/mysql");
 
-    pub fn run_migrations() {
+    pub fn run_migrations() -> Result<(), super::Error> {
         use diesel::{Connection, RunQueryDsl};
         // Make sure the database is up to date (create if it doesn't exist, or run the migrations)
         let connection =
-            diesel::mysql::MysqlConnection::establish(&crate::CONFIG.database_url()).expect("Can't connect to DB");
+            diesel::mysql::MysqlConnection::establish(&crate::CONFIG.database_url())?;
         // Disable Foreign Key Checks during migration
 
         // Scoped to a connection/session.
@@ -293,7 +294,8 @@ mod mysql_migrations {
             .execute(&connection)
             .expect("Failed to disable Foreign Key Checks during migrations");
 
-        embedded_migrations::run_with_output(&connection, &mut std::io::stdout()).expect("Can't run migrations");
+        embedded_migrations::run_with_output(&connection, &mut std::io::stdout())?;
+        Ok(())
     }
 }
 
@@ -302,11 +304,11 @@ mod postgresql_migrations {
     #[allow(unused_imports)]
     embed_migrations!("migrations/postgresql");
 
-    pub fn run_migrations() {
+    pub fn run_migrations() -> Result<(), super::Error> {
         use diesel::{Connection, RunQueryDsl};
         // Make sure the database is up to date (create if it doesn't exist, or run the migrations)
         let connection =
-            diesel::pg::PgConnection::establish(&crate::CONFIG.database_url()).expect("Can't connect to DB");
+            diesel::pg::PgConnection::establish(&crate::CONFIG.database_url())?;
         // Disable Foreign Key Checks during migration
         
         // FIXME: Per https://www.postgresql.org/docs/12/sql-set-constraints.html,
@@ -319,6 +321,7 @@ mod postgresql_migrations {
             .execute(&connection)
             .expect("Failed to disable Foreign Key Checks during migrations");
 
-        embedded_migrations::run_with_output(&connection, &mut std::io::stdout()).expect("Can't run migrations");
+        embedded_migrations::run_with_output(&connection, &mut std::io::stdout())?;
+        Ok(())
     }
 }

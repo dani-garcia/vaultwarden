@@ -347,6 +347,9 @@ make_config! {
         /// that do not support WAL. Please make sure you read project wiki on the topic before changing this setting.
         enable_db_wal:          bool,   false,  def,    true;
 
+        /// Max database connection retries |> Number of times to retry the database connection during startup, with 1 second between each retry, set to 0 to retry indefinitely
+        db_connection_retries:  u32,    false,  def,    15;
+
         /// Bypass admin page security (Know the risks!) |> Disables the Admin Token for the admin page so you may use your own auth in-front
         disable_admin_token:    bool,   true,   def,    false;
 

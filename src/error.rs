@@ -34,6 +34,8 @@ macro_rules! make_error {
 }
 
 use diesel::result::Error as DieselErr;
+use diesel::ConnectionError as DieselConErr;
+use diesel_migrations::RunMigrationsError as DieselMigErr;
 use diesel::r2d2::PoolError as R2d2Err;
 use handlebars::RenderError as HbErr;
 use jsonwebtoken::errors::Error as JWTErr;
@@ -83,6 +85,9 @@ make_error! {
     AddressError(AddrErr):    _has_source, _api_error,
     SmtpError(SmtpErr):       _has_source, _api_error,
     FromStrError(FromStrErr): _has_source, _api_error,
+
+    DieselConError(DieselConErr): _has_source, _api_error,
+    DieselMigError(DieselMigErr): _has_source, _api_error,
 }
 
 impl std::fmt::Debug for Error {

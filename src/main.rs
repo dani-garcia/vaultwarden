@@ -268,7 +268,7 @@ fn check_web_vault() {
 }
 
 fn launch_rocket(extra_debug: bool) {
-    let pool = match db::DbPool::from_config() {
+    let pool = match util::retry_db(db::DbPool::from_config, CONFIG.db_connection_retries()) {
         Ok(p) => p,
         Err(e) => {
             error!("Error creating database pool: {:?}", e);

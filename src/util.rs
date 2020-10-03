@@ -410,7 +410,7 @@ fn _process_key(key: &str) -> String {
 // Retry methods
 //
 
-pub fn retry<F, T, E>(func: F, max_tries: i32) -> Result<T, E>
+pub fn retry<F, T, E>(func: F, max_tries: u32) -> Result<T, E>
 where
     F: Fn() -> Result<T, E>,
 {
@@ -428,6 +428,32 @@ where
                 }
 
                 sleep(Duration::from_millis(500));
+            }
+        }
+    }
+}
+
+pub fn retry_db<F, T, E>(func: F, max_tries: u32) -> Result<T, E>
+where
+    F: Fn() -> Result<T, E>,
+    E: std::error::Error,
+{
+    use std::{thread::sleep, time::Duration};
+    let mut tries = 0;
+
+    loop {
+        match func() {
+            ok @ Ok(_) => return ok,
+            Err(e) => {
+                tries += 1;
+
+                if tries >= max_tries && max_tries > 0 {
+                    return Err(e);
+                }
+
+                warn!("Can't connect to database, retrying: {:?}", e);
+
+                sleep(Duration::from_millis(1_000));
             }
         }
     }
