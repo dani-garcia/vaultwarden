@@ -3,9 +3,15 @@
 
 {% set build_stage_base_image = "rust:1.45" %}
 {% if "alpine" in target_file %}
-{%   set build_stage_base_image = "clux/muslrust:nightly-2020-07-09" %}
-{%   set runtime_stage_base_image = "alpine:3.12" %}
-{%   set package_arch_name = "" %}
+{%   if "amd64" in target_file %}
+{%     set build_stage_base_image = "clux/muslrust:nightly-2020-07-09" %}
+{%     set runtime_stage_base_image = "alpine:3.12" %}
+{%     set package_arch_name = "" %}
+{%   elif "arm32v7" in target_file %}
+{%     set build_stage_base_image = "messense/rust-musl-cross:armv7-musleabihf" %}
+{%     set runtime_stage_base_image = "cmosh/alpine-arm:3.6" %}
+{%     set package_arch_name = "" %}
+{%   endif %}
 {% elif "amd64" in target_file %}
 {%   set runtime_stage_base_image = "debian:buster-slim" %}
 {%   set package_arch_name = "" %}
@@ -101,7 +107,7 @@ RUN apt-get update \
 
 ENV CARGO_HOME "/root/.cargo"
 ENV USER "root"
-{% elif "arm32v7" in target_file %}
+{% elif "arm32v7" in target_file and "alpine" not in target_file %}
 RUN apt-get update \
     && apt-get install -y \
         --no-install-recommends \
@@ -131,36 +137,41 @@ COPY ./Cargo.* ./
 COPY ./rust-toolchain ./rust-toolchain
 COPY ./build.rs ./build.rs
 
-{% if "arm64v8" in target_file %}
+{% if "alpine" not in target_file %}
+{%   if "arm64v8" in target_file %}
 ENV CC_aarch64_unknown_linux_gnu="/usr/bin/aarch64-linux-gnu-gcc"
 ENV CROSS_COMPILE="1"
 ENV OPENSSL_INCLUDE_DIR="/usr/include/aarch64-linux-gnu"
 ENV OPENSSL_LIB_DIR="/usr/lib/aarch64-linux-gnu"
-{% elif "arm32v6" in target_file %}
+{%   elif "arm32v6" in target_file %}
 ENV CC_arm_unknown_linux_gnueabi="/usr/bin/arm-linux-gnueabi-gcc"
 ENV CROSS_COMPILE="1"
 ENV OPENSSL_INCLUDE_DIR="/usr/include/arm-linux-gnueabi"
 ENV OPENSSL_LIB_DIR="/usr/lib/arm-linux-gnueabi"
-{% elif "arm32v7" in target_file %}
+{%   elif "arm32v7" in target_file %}
 ENV CC_armv7_unknown_linux_gnueabihf="/usr/bin/arm-linux-gnueabihf-gcc"
 ENV CROSS_COMPILE="1"
 ENV OPENSSL_INCLUDE_DIR="/usr/include/arm-linux-gnueabihf"
 ENV OPENSSL_LIB_DIR="/usr/lib/arm-linux-gnueabihf"
+{%   endif -%}
 {% endif -%}
 
 {% if "alpine" in target_file %}
+{%   if "amd64" in target_file %}
 RUN rustup target add x86_64-unknown-linux-musl
-
-{% elif "arm64v8" in target_file %}
+{%   elif "arm32v7" in target_file %}
+RUN rustup target add armv7-unknown-linux-musleabihf
+{%   endif %}
+{% elif "alpine" not in target_file %}
+{%   if "arm64v8" in target_file %}
 RUN rustup target add aarch64-unknown-linux-gnu
-
-{% elif "arm32v6" in target_file %}
+{%   elif "arm32v6" in target_file %}
 RUN rustup target add arm-unknown-linux-gnueabi
-
-{% elif "arm32v7" in target_file %}
+{%   elif "arm32v7" in target_file %}
 RUN rustup target add armv7-unknown-linux-gnueabihf
-
+{%   endif %}
 {% endif %}
+
 # Builds your dependencies and removes the
 # dummy project, except the target folder
 # This folder contains the compiled dependencies
@@ -176,14 +187,23 @@ RUN touch src/main.rs
 
 # Builds again, this time it'll just be
 # your actual source files being built
-{% if "amd64" in target_file %}
+{% if "alpine" in target_file %}
+{%   if "amd64" in target_file %}
+RUN cargo build --features ${DB} --release --target=x86_64-unknown-linux-musl
+{%   elif "arm32v7" in target_file %}
+RUN cargo build --features ${DB} --release --target=armv7-unknown-linux-musleabihf
+RUN musl-strip target/armv7-unknown-linux-musleabihf/release/bitwarden_rs
+{%   endif %}
+{% elif "alpine" not in target_file %}
+{%   if "amd64" in target_file %}
 RUN cargo build --features ${DB} --release
-{% elif "arm64v8" in target_file %}
+{%   elif "arm64v8" in target_file %}
 RUN cargo build --features ${DB} --release --target=aarch64-unknown-linux-gnu
-{% elif "arm32v6" in target_file %}
+{%   elif "arm32v6" in target_file %}
 RUN cargo build --features ${DB} --release --target=arm-unknown-linux-gnueabi
-{% elif "arm32v7" in target_file %}
+{%   elif "arm32v7" in target_file %}
 RUN cargo build --features ${DB} --release --target=armv7-unknown-linux-gnueabihf
+{%   endif %}
 {% endif %}
 
 ######################## RUNTIME IMAGE  ########################
@@ -228,6 +248,9 @@ RUN apt-get update && apt-get install -y \
 {%   endif %}
     && rm -rf /var/lib/apt/lists/*
 {% endif %}
+{% if "alpine" in target_file and "arm32v7" in target_file %}
+RUN apk add --no-cache -X http://dl-cdn.alpinelinux.org/alpine/edge/testing catatonit
+{% endif %}
 
 RUN mkdir /data
 {% if "amd64" not in target_file %}
@@ -244,15 +267,21 @@ EXPOSE 3012
 COPY Rocket.toml .
 COPY --from=vault /web-vault ./web-vault
 {% if "alpine" in target_file %}
+{%   if "amd64" in target_file %}
 COPY --from=build /app/target/x86_64-unknown-linux-musl/release/bitwarden_rs .
-{% elif "arm64v8" in target_file %}
+{%   elif "arm32v7" in target_file %}
+COPY --from=build /app/target/armv7-unknown-linux-musleabihf/release/bitwarden_rs .
+{%   endif %}
+{% elif "alpine" not in target_file %}
+{%   if "arm64v8" in target_file %}
 COPY --from=build /app/target/aarch64-unknown-linux-gnu/release/bitwarden_rs .
-{% elif "arm32v6" in target_file %}
+{%   elif "arm32v6" in target_file %}
 COPY --from=build /app/target/arm-unknown-linux-gnueabi/release/bitwarden_rs .
-{% elif "arm32v7" in target_file %}
+{%   elif "arm32v7" in target_file %}
 COPY --from=build /app/target/armv7-unknown-linux-gnueabihf/release/bitwarden_rs .
-{% else %}
+{%   else %}
 COPY --from=build app/target/release/bitwarden_rs .
+{%   endif %}
 {% endif %}
 
 COPY docker/healthcheck.sh /healthcheck.sh
@@ -262,4 +291,8 @@ HEALTHCHECK --interval=60s --timeout=10s CMD ["/healthcheck.sh"]
 
 # Configures the startup!
 WORKDIR /
+{% if "alpine" in target_file and "arm32v7" in target_file %}
+CMD ["catatonit", "/start.sh"]
+{% else %}
 CMD ["/start.sh"]
+{% endif %}

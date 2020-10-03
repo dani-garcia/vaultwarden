@@ -21,5 +21,8 @@ esac
 if [[ "${DOCKER_TAG}" == *alpine ]]; then
     # The Alpine build currently only works for amd64.
     os_suffix=.alpine
-    arches=(amd64)
+    arches=(
+        amd64
+        arm32v7
+    )
 fi
