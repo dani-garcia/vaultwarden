@@ -121,6 +121,7 @@ impl User {
 
     pub fn set_password(&mut self, password: &str) {
         self.password_hash = crypto::hash_password(password.as_bytes(), &self.salt, self.password_iterations as u32);
+        self.reset_security_stamp();
     }
 
     pub fn reset_security_stamp(&mut self) {
