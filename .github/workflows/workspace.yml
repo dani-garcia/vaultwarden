@@ -4,6 +4,10 @@ on:
   push:
     paths-ignore:
       - "**.md"
+    branches:
+      - "*"
+    tags:
+      - "*"
   #pull_request:
   #  paths-ignore:
   #    - "**.md"
@@ -139,10 +143,66 @@ jobs:
         name: bitwarden_rs-${{ matrix.db-backend }}-${{ matrix.target }}${{ matrix.ext }}
         path: target/${{ matrix.target }}/release/bitwarden_rs${{ matrix.ext }}
 
-    - name: Release
-      uses: Shopify/upload-to-release@1.0.0
-      if: startsWith(github.ref, 'refs/tags/')
+  prepare-release:
+    name: Prepare release
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [build]
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+    runs-on: ubuntu-latest
+    steps:
+    - name: Create Pre-Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: ${{ github.ref }}
+        draft: false
+        prerelease: true
+
+  upload-release-assets:
+    name: Upload release assets
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [build, prepare-release]
+    strategy:
+      fail-fast: false
+      # TODO: YAML Anchors could reduce the matrix repetition but they are not
+      # supported https://github.community/t/support-for-yaml-anchors/16128
+      matrix: 
+        db-backend: [sqlite, mysql, postgresql]
+        target:
+          - x86_64-unknown-linux-gnu
+          # - x86_64-unknown-linux-musl
+          # - x86_64-apple-darwin
+          # - x86_64-pc-windows-msvc
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            ext:
+          # - target: x86_64-unknown-linux-musl
+          #   os: ubuntu-latest
+          #   ext:
+          # - target: x86_64-apple-darwin
+          #   os: macOS-latest
+          #   ext:
+          # - target: x86_64-pc-windows-msvc
+          #   os: windows-latest
+          #   ext: .exe
+    runs-on: ${{ matrix.os }}
+    steps:
+    - uses: actions/download-artifact@v2
       with:
         name: bitwarden_rs-${{ matrix.db-backend }}-${{ matrix.target }}${{ matrix.ext }}
-        path: target/${{ matrix.target }}/release/bitwarden_rs${{ matrix.ext }}
-        repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Upload release assets
+      id: upload-release-asset 
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ needs.prepare-release.outputs.upload_url }}
+        asset_path: bitwarden_rs${{ matrix.ext }}
+        asset_name: bitwarden_rs-${{ matrix.db-backend }}-${{ matrix.target }}${{ matrix.ext }}
+        asset_content_type: application/octet-stream
