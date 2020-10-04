@@ -79,7 +79,7 @@ RUN apk add --no-cache \
         openssl \
         curl \
         ca-certificates
-RUN apk add --no-cache -X http://dl-cdn.alpinelinux.org/alpine/edge/testing catatonit
+RUN apk add --no-cache -X http://dl-cdn.alpinelinux.org/alpine/edge/community catatonit
 
 RUN mkdir /data
 

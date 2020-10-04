@@ -242,7 +242,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 {% endif %}
 {% if "alpine" in target_file and "arm32v7" in target_file %}
-RUN apk add --no-cache -X http://dl-cdn.alpinelinux.org/alpine/edge/testing catatonit
+RUN apk add --no-cache -X http://dl-cdn.alpinelinux.org/alpine/edge/community catatonit
 {% endif %}
 
 RUN mkdir /data
