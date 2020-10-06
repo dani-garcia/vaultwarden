@@ -44,14 +44,14 @@ macro_rules! generate_connections {
             pub fn from_config() -> Result<Self, Error> {
                 let url = CONFIG.database_url();
                 let conn_type = DbConnType::from_url(&url)?;
-
+                let max_size = CONFIG.db_pool_max_size();
                 match conn_type { $(
                     DbConnType::$name => {
                         #[cfg($name)]
                         {
                             paste::paste!{ [< $name _migrations >]::run_migrations()?; }
                             let manager = ConnectionManager::new(&url);
-                            let pool = Pool::builder().build(manager).map_res("Failed to create pool")?;
+                            let pool = Pool::builder().max_size(max_size).build(manager).map_res("Failed to create pool")?;
                             return Ok(Self::$name(pool));
                         }
                         #[cfg(not($name))]
