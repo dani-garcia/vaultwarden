@@ -87,8 +87,10 @@ RUN cargo build --features ${DB} --release --target=arm-unknown-linux-gnueabi
 # because we already have a binary built
 FROM balenalib/rpi-debian:buster
 
+ARG ROCKET_PORT=80
+ARG WEBSOCKET_PORT=3012
 ENV ROCKET_ENV "staging"
-ENV ROCKET_PORT=80
+ENV ROCKET_PORT=$ROCKET_PORT
 ENV ROCKET_WORKERS=10
 
 RUN [ "cross-build-start" ]
@@ -107,8 +109,8 @@ RUN mkdir /data
 RUN [ "cross-build-end" ]
 
 VOLUME /data
-EXPOSE 80
-EXPOSE 3012
+EXPOSE $ROCKET_PORT
+EXPOSE $WEBSOCKET_PORT
 
 # Copies the files from the context (Rocket.toml file and web-vault)
 # and the binary from the "build" stage to the current stage

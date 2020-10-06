@@ -66,8 +66,10 @@ RUN cargo build --features ${DB} --release --target=x86_64-unknown-linux-musl
 # because we already have a binary built
 FROM alpine:3.12
 
+ARG ROCKET_PORT=80
+ARG WEBSOCKET_PORT=3012
 ENV ROCKET_ENV "staging"
-ENV ROCKET_PORT=80
+ENV ROCKET_PORT=$ROCKET_PORT
 ENV ROCKET_WORKERS=10
 ENV SSL_CERT_DIR=/etc/ssl/certs
 
@@ -79,8 +81,8 @@ RUN apk add --no-cache \
 
 RUN mkdir /data
 VOLUME /data
-EXPOSE 80
-EXPOSE 3012
+EXPOSE $ROCKET_PORT
+EXPOSE $WEBSOCKET_PORT
 
 # Copies the files from the context (Rocket.toml file and web-vault)
 # and the binary from the "build" stage to the current stage
