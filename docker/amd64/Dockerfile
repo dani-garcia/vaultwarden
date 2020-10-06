@@ -6,11 +6,11 @@
 # 	https://whitfin.io/speeding-up-rust-docker-builds/
 ####################### VAULT BUILD IMAGE  #######################
 
-#  This hash is extracted from the docker web-vault builds and it's prefered over a simple tag because it's immutable.
+#  This hash is extracted from the docker web-vault builds and it's preferred over a simple tag because it's immutable.
 #  It can be viewed in multiple ways:
 #  - From the https://hub.docker.com/repository/docker/bitwardenrs/web-vault/tags page, click the tag name and the digest should be there.
 #  - From the console, with the following commands:
-#      docker pull bitwardenrs/web-vault:v2.16.0b
+#      docker pull bitwardenrs/web-vault:v2.16.1
 #      docker image inspect --format "{{.RepoDigests}}" bitwardenrs/web-vault:v2.16.1
 #
 #  - To do the opposite, and get the tag from the hash, you can do:
@@ -20,7 +20,7 @@ FROM bitwardenrs/web-vault@sha256:e40228f94cead5e50af6575fb39850a002dad146dab683
 ########################## BUILD IMAGE  ##########################
 FROM rust:1.46 as build
 
-# AMD64 supports all
+# Debian-based builds support multidb
 ARG DB=sqlite,mysql,postgresql
 
 # Build time options to avoid dpkg warnings and help with reproducible builds.
@@ -79,7 +79,7 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     curl \
     sqlite3 \
-    libmariadbclient-dev \
+    libmariadb-dev-compat \
     libpq5 \
     && rm -rf /var/lib/apt/lists/*
 

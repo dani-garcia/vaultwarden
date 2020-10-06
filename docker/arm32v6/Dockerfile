@@ -6,11 +6,11 @@
 # 	https://whitfin.io/speeding-up-rust-docker-builds/
 ####################### VAULT BUILD IMAGE  #######################
 
-#  This hash is extracted from the docker web-vault builds and it's prefered over a simple tag because it's immutable.
+#  This hash is extracted from the docker web-vault builds and it's preferred over a simple tag because it's immutable.
 #  It can be viewed in multiple ways:
 #  - From the https://hub.docker.com/repository/docker/bitwardenrs/web-vault/tags page, click the tag name and the digest should be there.
 #  - From the console, with the following commands:
-#      docker pull bitwardenrs/web-vault:v2.16.0b
+#      docker pull bitwardenrs/web-vault:v2.16.1
 #      docker image inspect --format "{{.RepoDigests}}" bitwardenrs/web-vault:v2.16.1
 #
 #  - To do the opposite, and get the tag from the hash, you can do:
@@ -20,8 +20,8 @@ FROM bitwardenrs/web-vault@sha256:e40228f94cead5e50af6575fb39850a002dad146dab683
 ########################## BUILD IMAGE  ##########################
 FROM rust:1.46 as build
 
-# ARM only supports SQLite for now
-ARG DB=sqlite
+# Debian-based builds support multidb
+ARG DB=sqlite,mysql,postgresql
 
 # Build time options to avoid dpkg warnings and help with reproducible builds.
 ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8 TZ=UTC TERM=xterm-256color
@@ -30,6 +30,7 @@ ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8 TZ=UTC TERM=xterm-256color
 RUN rustup set profile minimal
 
 # Install required build libs for armel architecture.
+# To compile both mysql and postgresql we need some extra packages for both host arch and target arch
 RUN sed 's/^deb/deb-src/' /etc/apt/sources.list > \
         /etc/apt/sources.list.d/deb-src.list \
     && dpkg --add-architecture armel \
@@ -37,7 +38,11 @@ RUN sed 's/^deb/deb-src/' /etc/apt/sources.list > \
     && apt-get install -y \
         --no-install-recommends \
         libssl-dev:armel \
-        libc6-dev:armel
+        libc6-dev:armel \
+        libpq5:armel \
+        libpq-dev \
+        libmariadb-dev:armel \
+        libmariadb-dev-compat:armel
 
 RUN apt-get update \
     && apt-get install -y \
@@ -45,7 +50,8 @@ RUN apt-get update \
         gcc-arm-linux-gnueabi \
     && mkdir -p ~/.cargo \
     && echo '[target.arm-unknown-linux-gnueabi]' >> ~/.cargo/config \
-    && echo 'linker = "arm-linux-gnueabi-gcc"' >> ~/.cargo/config
+    && echo 'linker = "arm-linux-gnueabi-gcc"' >> ~/.cargo/config \
+    && echo 'rustflags = ["-L/usr/lib/arm-linux-gnueabi"]' >> ~/.cargo/config
 
 ENV CARGO_HOME "/root/.cargo"
 ENV USER "root"
@@ -59,6 +65,24 @@ COPY ./Cargo.* ./
 COPY ./rust-toolchain ./rust-toolchain
 COPY ./build.rs ./build.rs
 
+# NOTE: This should be the last apt-get/dpkg for this stage, since after this it will fail because of broken dependencies.
+# For Diesel-RS migrations_macros to compile with MySQL/MariaDB we need to do some magic.
+# We at least need libmariadb3:amd64 installed for the x86_64 version of libmariadb.so (client)
+# We also need the libmariadb-dev-compat:amd64 but it can not be installed together with the :armel version.
+# What we can do is a force install, because nothing important is overlapping each other.
+RUN apt-get install -y libmariadb3:amd64 && \
+    mkdir -pv /tmp/dpkg && \
+    cd /tmp/dpkg && \
+    apt-get download libmariadb-dev-compat:amd64 && \
+    dpkg --force-all -i *.deb && \
+    rm -rf /tmp/dpkg
+
+# For Diesel-RS migrations_macros to compile with PostgreSQL we need to do some magic.
+# The libpq5:armel package seems to not provide a symlink to libpq.so.5 with the name libpq.so.
+# This is only provided by the libpq-dev package which can't be installed for both arch at the same time.
+# Without this specific file the ld command will fail and compilation fails with it.
+RUN ln -sfnr /usr/lib/arm-linux-gnueabi/libpq.so.5 /usr/lib/arm-linux-gnueabi/libpq.so
+
 ENV CC_arm_unknown_linux_gnueabi="/usr/bin/arm-linux-gnueabi-gcc"
 ENV CROSS_COMPILE="1"
 ENV OPENSSL_INCLUDE_DIR="/usr/include/arm-linux-gnueabi"
@@ -68,7 +92,7 @@ RUN rustup target add arm-unknown-linux-gnueabi
 # Builds your dependencies and removes the
 # dummy project, except the target folder
 # This folder contains the compiled dependencies
-RUN cargo build --features ${DB} --release
+RUN cargo build --features ${DB} --release --target=arm-unknown-linux-gnueabi
 RUN find . -not -path "./target*" -delete
 
 # Copies the complete project
@@ -100,6 +124,8 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     curl \
     sqlite3 \
+    libmariadb-dev-compat \
+    libpq5 \
     && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir /data
