@@ -222,6 +222,8 @@ make_config! {
         data_folder:            String, false,  def,    "data".to_string();
         /// Database URL
         database_url:           String, false,  auto,   |c| format!("{}/{}", c.data_folder, "db.sqlite3");
+        /// Database connection pool size
+        database_max_conns:     u32,    false,  def,    10;
         /// Icon cache folder
         icon_cache_folder:      String, false,  auto,   |c| format!("{}/{}", c.data_folder, "icon_cache");
         /// Attachments folder
@@ -428,6 +430,14 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
 
     // Validate connection URL is valid and DB feature is enabled
     DbConnType::from_url(&cfg.database_url)?;
+
+    let limit = 256;
+    if cfg.database_max_conns < 1 || cfg.database_max_conns > limit {
+        err!(format!(
+            "`DATABASE_MAX_CONNS` contains an invalid value. Ensure it is between 1 and {}.",
+            limit,
+        ));
+    }
 
     let dom = cfg.domain.to_lowercase();
     if !dom.starts_with("http://") && !dom.starts_with("https://") {

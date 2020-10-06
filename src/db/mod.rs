@@ -51,7 +51,10 @@ macro_rules! generate_connections {
                         {
                             paste::paste!{ [< $name _migrations >]::run_migrations()?; }
                             let manager = ConnectionManager::new(&url);
-                            let pool = Pool::builder().build(manager).map_res("Failed to create pool")?;
+                            let pool = Pool::builder()
+                                .max_size(CONFIG.database_max_conns())
+                                .build(manager)
+                                .map_res("Failed to create pool")?;
                             return Ok(Self::$name(pool));
                         }
                         #[cfg(not($name))]
