@@ -35,11 +35,11 @@
 ####################### VAULT BUILD IMAGE  #######################
 {% set vault_image_hash = "sha256:e40228f94cead5e50af6575fb39850a002dad146dab6836e5da5663e6d214303" %}
 {% raw %}
-#  This hash is extracted from the docker web-vault builds and it's prefered over a simple tag because it's immutable.
+#  This hash is extracted from the docker web-vault builds and it's preferred over a simple tag because it's immutable.
 #  It can be viewed in multiple ways:
 #  - From the https://hub.docker.com/repository/docker/bitwardenrs/web-vault/tags page, click the tag name and the digest should be there.
 #  - From the console, with the following commands:
-#      docker pull bitwardenrs/web-vault:v2.16.0b
+#      docker pull bitwardenrs/web-vault:v2.16.1
 #      docker image inspect --format "{{.RepoDigests}}" bitwardenrs/web-vault:v2.16.1
 #
 #  - To do the opposite, and get the tag from the hash, you can do:
@@ -54,13 +54,9 @@ FROM {{ build_stage_base_image }} as build
 # Alpine only works on SQlite
 ARG DB=sqlite
 
-{% elif "amd64" in target_file %}
-# AMD64 supports all
-ARG DB=sqlite,mysql,postgresql
-
 {% else %}
-# ARM only supports SQLite for now
-ARG DB=sqlite
+# Debian-based builds support multidb
+ARG DB=sqlite,mysql,postgresql
 
 {% endif %}
 # Build time options to avoid dpkg warnings and help with reproducible builds.
@@ -75,6 +71,7 @@ ENV RUSTFLAGS='-C link-arg=-s'
 
 {% elif "arm" in target_file %}
 # Install required build libs for {{ package_arch_name }} architecture.
+# To compile both mysql and postgresql we need some extra packages for both host arch and target arch
 RUN sed 's/^deb/deb-src/' /etc/apt/sources.list > \
         /etc/apt/sources.list.d/deb-src.list \
     && dpkg --add-architecture {{ package_arch_name }} \
@@ -82,7 +79,11 @@ RUN sed 's/^deb/deb-src/' /etc/apt/sources.list > \
     && apt-get install -y \
         --no-install-recommends \
         libssl-dev{{ package_arch_prefix }} \
-        libc6-dev{{ package_arch_prefix }}
+        libc6-dev{{ package_arch_prefix }} \
+        libpq5{{ package_arch_prefix }} \
+        libpq-dev \
+        libmariadb-dev{{ package_arch_prefix }} \
+        libmariadb-dev-compat{{ package_arch_prefix }}
 
 {% endif -%}
 {% if "arm64v8" in target_file %}
@@ -92,7 +93,8 @@ RUN apt-get update \
         gcc-aarch64-linux-gnu \
     && mkdir -p ~/.cargo \
     && echo '[target.aarch64-unknown-linux-gnu]' >> ~/.cargo/config \
-    && echo 'linker = "aarch64-linux-gnu-gcc"' >> ~/.cargo/config
+    && echo 'linker = "aarch64-linux-gnu-gcc"' >> ~/.cargo/config \
+    && echo 'rustflags = ["-L/usr/lib/aarch64-linux-gnu"]' >> ~/.cargo/config
 
 ENV CARGO_HOME "/root/.cargo"
 ENV USER "root"
@@ -103,7 +105,8 @@ RUN apt-get update \
         gcc-arm-linux-gnueabi \
     && mkdir -p ~/.cargo \
     && echo '[target.arm-unknown-linux-gnueabi]' >> ~/.cargo/config \
-    && echo 'linker = "arm-linux-gnueabi-gcc"' >> ~/.cargo/config
+    && echo 'linker = "arm-linux-gnueabi-gcc"' >> ~/.cargo/config \
+    && echo 'rustflags = ["-L/usr/lib/arm-linux-gnueabi"]' >> ~/.cargo/config
 
 ENV CARGO_HOME "/root/.cargo"
 ENV USER "root"
@@ -114,7 +117,8 @@ RUN apt-get update \
         gcc-arm-linux-gnueabihf \
     && mkdir -p ~/.cargo \
     && echo '[target.armv7-unknown-linux-gnueabihf]' >> ~/.cargo/config \
-    && echo 'linker = "arm-linux-gnueabihf-gcc"' >> ~/.cargo/config
+    && echo 'linker = "arm-linux-gnueabihf-gcc"' >> ~/.cargo/config \
+    && echo 'rustflags = ["-L/usr/lib/arm-linux-gnueabihf"]' >> ~/.cargo/config
 
 ENV CARGO_HOME "/root/.cargo"
 ENV USER "root"
@@ -138,19 +142,43 @@ COPY ./rust-toolchain ./rust-toolchain
 COPY ./build.rs ./build.rs
 
 {% if "alpine" not in target_file %}
+{%   if "arm" in target_file %}
+# NOTE: This should be the last apt-get/dpkg for this stage, since after this it will fail because of broken dependencies.
+# For Diesel-RS migrations_macros to compile with MySQL/MariaDB we need to do some magic.
+# We at least need libmariadb3:amd64 installed for the x86_64 version of libmariadb.so (client)
+# We also need the libmariadb-dev-compat:amd64 but it can not be installed together with the {{ package_arch_prefix }} version.
+# What we can do is a force install, because nothing important is overlapping each other.
+RUN apt-get install -y libmariadb3:amd64 && \
+    mkdir -pv /tmp/dpkg && \
+    cd /tmp/dpkg && \
+    apt-get download libmariadb-dev-compat:amd64 && \
+    dpkg --force-all -i *.deb && \
+    rm -rf /tmp/dpkg
+
+# For Diesel-RS migrations_macros to compile with PostgreSQL we need to do some magic.
+# The libpq5{{ package_arch_prefix }} package seems to not provide a symlink to libpq.so.5 with the name libpq.so.
+# This is only provided by the libpq-dev package which can't be installed for both arch at the same time.
+# Without this specific file the ld command will fail and compilation fails with it.
+{%   endif -%}
 {%   if "arm64v8" in target_file %}
+RUN ln -sfnr /usr/lib/aarch64-linux-gnu/libpq.so.5 /usr/lib/aarch64-linux-gnu/libpq.so
+
 ENV CC_aarch64_unknown_linux_gnu="/usr/bin/aarch64-linux-gnu-gcc"
 ENV CROSS_COMPILE="1"
 ENV OPENSSL_INCLUDE_DIR="/usr/include/aarch64-linux-gnu"
 ENV OPENSSL_LIB_DIR="/usr/lib/aarch64-linux-gnu"
 RUN rustup target add aarch64-unknown-linux-gnu
 {%   elif "arm32v6" in target_file %}
+RUN ln -sfnr /usr/lib/arm-linux-gnueabi/libpq.so.5 /usr/lib/arm-linux-gnueabi/libpq.so
+
 ENV CC_arm_unknown_linux_gnueabi="/usr/bin/arm-linux-gnueabi-gcc"
 ENV CROSS_COMPILE="1"
 ENV OPENSSL_INCLUDE_DIR="/usr/include/arm-linux-gnueabi"
 ENV OPENSSL_LIB_DIR="/usr/lib/arm-linux-gnueabi"
 RUN rustup target add arm-unknown-linux-gnueabi
 {%   elif "arm32v7" in target_file %}
+RUN ln -sfnr /usr/lib/arm-linux-gnueabihf/libpq.so.5 /usr/lib/arm-linux-gnueabihf/libpq.so
+
 ENV CC_armv7_unknown_linux_gnueabihf="/usr/bin/arm-linux-gnueabihf-gcc"
 ENV CROSS_COMPILE="1"
 ENV OPENSSL_INCLUDE_DIR="/usr/include/arm-linux-gnueabihf"
@@ -168,7 +196,23 @@ RUN rustup target add armv7-unknown-linux-musleabihf
 # Builds your dependencies and removes the
 # dummy project, except the target folder
 # This folder contains the compiled dependencies
+{% if "alpine" in target_file %}
+{%   if "amd64" in target_file %}
+RUN cargo build --features ${DB} --release --target=x86_64-unknown-linux-musl
+{%   elif "arm32v7" in target_file %}
+RUN cargo build --features ${DB} --release --target=armv7-unknown-linux-musleabihf
+{%   endif %}
+{% elif "alpine" not in target_file %}
+{%   if "amd64" in target_file %}
 RUN cargo build --features ${DB} --release
+{%   elif "arm64v8" in target_file %}
+RUN cargo build --features ${DB} --release --target=aarch64-unknown-linux-gnu
+{%   elif "arm32v6" in target_file %}
+RUN cargo build --features ${DB} --release --target=arm-unknown-linux-gnueabi
+{%   elif "arm32v7" in target_file %}
+RUN cargo build --features ${DB} --release --target=armv7-unknown-linux-gnueabihf
+{%   endif %}
+{% endif %}
 RUN find . -not -path "./target*" -delete
 
 # Copies the complete project
@@ -235,10 +279,8 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     curl \
     sqlite3 \
-{%   if "amd64" in target_file %}
-    libmariadbclient-dev \
+    libmariadb-dev-compat \
     libpq5 \
-{%   endif %}
     && rm -rf /var/lib/apt/lists/*
 {% endif %}
 {% if "alpine" in target_file and "arm32v7" in target_file %}
