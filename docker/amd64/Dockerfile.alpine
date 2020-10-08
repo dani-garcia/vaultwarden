@@ -6,11 +6,11 @@
 # 	https://whitfin.io/speeding-up-rust-docker-builds/
 ####################### VAULT BUILD IMAGE  #######################
 
-#  This hash is extracted from the docker web-vault builds and it's prefered over a simple tag because it's immutable.
+#  This hash is extracted from the docker web-vault builds and it's preferred over a simple tag because it's immutable.
 #  It can be viewed in multiple ways:
 #  - From the https://hub.docker.com/repository/docker/bitwardenrs/web-vault/tags page, click the tag name and the digest should be there.
 #  - From the console, with the following commands:
-#      docker pull bitwardenrs/web-vault:v2.16.0b
+#      docker pull bitwardenrs/web-vault:v2.16.1
 #      docker image inspect --format "{{.RepoDigests}}" bitwardenrs/web-vault:v2.16.1
 #
 #  - To do the opposite, and get the tag from the hash, you can do:
@@ -47,7 +47,7 @@ RUN rustup target add x86_64-unknown-linux-musl
 # Builds your dependencies and removes the
 # dummy project, except the target folder
 # This folder contains the compiled dependencies
-RUN cargo build --features ${DB} --release
+RUN cargo build --features ${DB} --release --target=x86_64-unknown-linux-musl
 RUN find . -not -path "./target*" -delete
 
 # Copies the complete project
