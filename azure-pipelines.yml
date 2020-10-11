@@ -1,5 +1,5 @@
 pool:
-  vmImage: 'Ubuntu-16.04'
+  vmImage: 'Ubuntu-18.04'
 
 steps:
 - script: |
@@ -10,16 +10,13 @@ steps:
 
 - script: |
     sudo apt-get update
-    sudo apt-get install -y libmysql++-dev
-  displayName: Install libmysql
+    sudo apt-get install -y --no-install-recommends build-essential libmariadb-dev-compat libpq-dev libssl-dev pkgconf
+  displayName: 'Install build libraries.'
 
 - script: |
     rustc -Vv
     cargo -V
   displayName: Query rust and cargo versions
 
-- script : cargo test --features "sqlite"
-  displayName: 'Test project with sqlite backend'
-
-- script : cargo test --features "mysql"
-  displayName: 'Test project with mysql backend'
+- script : cargo test --features "sqlite,mysql,postgresql"
+  displayName: 'Test project with sqlite, mysql and postgresql backends'
