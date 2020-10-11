@@ -6,28 +6,39 @@
 {%   if "amd64" in target_file %}
 {%     set build_stage_base_image = "clux/muslrust:nightly-2020-10-02" %}
 {%     set runtime_stage_base_image = "alpine:3.12" %}
-{%     set package_arch_name = "" %}
+{%     set package_arch_target = "x86_64-unknown-linux-musl" %}
 {%   elif "arm32v7" in target_file %}
 {%     set build_stage_base_image = "messense/rust-musl-cross:armv7-musleabihf" %}
 {%     set runtime_stage_base_image = "balenalib/armv7hf-alpine:3.12" %}
-{%     set package_arch_name = "" %}
+{%     set package_arch_target = "armv7-unknown-linux-musleabihf" %}
 {%   endif %}
 {% elif "amd64" in target_file %}
 {%   set runtime_stage_base_image = "debian:buster-slim" %}
-{%   set package_arch_name = "" %}
 {% elif "arm64v8" in target_file %}
 {%   set runtime_stage_base_image = "balenalib/aarch64-debian:buster" %}
 {%   set package_arch_name = "arm64" %}
+{%   set package_arch_target = "aarch64-unknown-linux-gnu" %}
+{%   set package_cross_compiler = "aarch64-linux-gnu" %}
 {% elif "arm32v6" in target_file %}
 {%   set runtime_stage_base_image = "balenalib/rpi-debian:buster" %}
 {%   set package_arch_name = "armel" %}
+{%   set package_arch_target = "arm-unknown-linux-gnueabi" %}
+{%   set package_cross_compiler = "arm-linux-gnueabi" %}
 {% elif "arm32v7" in target_file %}
 {%   set runtime_stage_base_image = "balenalib/armv7hf-debian:buster" %}
 {%   set package_arch_name = "armhf" %}
+{%   set package_arch_target = "armv7-unknown-linux-gnueabihf" %}
+{%   set package_cross_compiler = "arm-linux-gnueabihf" %}
 {% endif %}
-{% set package_arch_prefix = ":" + package_arch_name %}
-{% if package_arch_name == "" %}
+{% if package_arch_name is defined %}
+{%   set package_arch_prefix = ":" + package_arch_name %}
+{% else %}
 {%   set package_arch_prefix = "" %}
+{% endif %}
+{% if package_arch_target is defined %}
+{%   set package_arch_target_param = " --target=" + package_arch_target %}
+{% else %}
+{%   set package_arch_target_param = "" %}
 {% endif %}
 # Using multistage build:
 # 	https://docs.docker.com/develop/develop-images/multistage-build/
@@ -53,12 +64,11 @@ FROM {{ build_stage_base_image }} as build
 {% if "alpine" in target_file %}
 # Alpine only works on SQlite
 ARG DB=sqlite
-
 {% else %}
 # Debian-based builds support multidb
 ARG DB=sqlite,mysql,postgresql
-
 {% endif %}
+
 # Build time options to avoid dpkg warnings and help with reproducible builds.
 ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8 TZ=UTC TERM=xterm-256color
 
@@ -68,7 +78,6 @@ RUN rustup set profile minimal
 {% if "alpine" in target_file %}
 ENV USER "root"
 ENV RUSTFLAGS='-C link-arg=-s'
-
 {% elif "arm" in target_file %}
 # Install required build libs for {{ package_arch_name }} architecture.
 # To compile both mysql and postgresql we need some extra packages for both host arch and target arch
@@ -85,44 +94,19 @@ RUN sed 's/^deb/deb-src/' /etc/apt/sources.list > \
         libmariadb-dev{{ package_arch_prefix }} \
         libmariadb-dev-compat{{ package_arch_prefix }}
 
+RUN apt-get update \
+    && apt-get install -y \
+        --no-install-recommends \
+        gcc-{{ package_cross_compiler }} \
+    && mkdir -p ~/.cargo \
+    && echo '[target.{{ package_arch_target }}]' >> ~/.cargo/config \
+    && echo 'linker = "{{ package_cross_compiler }}-gcc"' >> ~/.cargo/config \
+    && echo 'rustflags = ["-L/usr/lib/{{ package_cross_compiler }}"]' >> ~/.cargo/config
+
+ENV CARGO_HOME "/root/.cargo"
+ENV USER "root"
 {% endif -%}
-{% if "arm64v8" in target_file %}
-RUN apt-get update \
-    && apt-get install -y \
-        --no-install-recommends \
-        gcc-aarch64-linux-gnu \
-    && mkdir -p ~/.cargo \
-    && echo '[target.aarch64-unknown-linux-gnu]' >> ~/.cargo/config \
-    && echo 'linker = "aarch64-linux-gnu-gcc"' >> ~/.cargo/config \
-    && echo 'rustflags = ["-L/usr/lib/aarch64-linux-gnu"]' >> ~/.cargo/config
 
-ENV CARGO_HOME "/root/.cargo"
-ENV USER "root"
-{% elif "arm32v6" in target_file %}
-RUN apt-get update \
-    && apt-get install -y \
-        --no-install-recommends \
-        gcc-arm-linux-gnueabi \
-    && mkdir -p ~/.cargo \
-    && echo '[target.arm-unknown-linux-gnueabi]' >> ~/.cargo/config \
-    && echo 'linker = "arm-linux-gnueabi-gcc"' >> ~/.cargo/config \
-    && echo 'rustflags = ["-L/usr/lib/arm-linux-gnueabi"]' >> ~/.cargo/config
-
-ENV CARGO_HOME "/root/.cargo"
-ENV USER "root"
-{% elif "arm32v7" in target_file and "alpine" not in target_file %}
-RUN apt-get update \
-    && apt-get install -y \
-        --no-install-recommends \
-        gcc-arm-linux-gnueabihf \
-    && mkdir -p ~/.cargo \
-    && echo '[target.armv7-unknown-linux-gnueabihf]' >> ~/.cargo/config \
-    && echo 'linker = "arm-linux-gnueabihf-gcc"' >> ~/.cargo/config \
-    && echo 'rustflags = ["-L/usr/lib/arm-linux-gnueabihf"]' >> ~/.cargo/config
-
-ENV CARGO_HOME "/root/.cargo"
-ENV USER "root"
-{% endif %}
 {% if "amd64" in target_file and "alpine" not in target_file %}
 # Install DB packages
 RUN apt-get update && apt-get install -y \
@@ -159,60 +143,22 @@ RUN apt-get install -y libmariadb3:amd64 && \
 # The libpq5{{ package_arch_prefix }} package seems to not provide a symlink to libpq.so.5 with the name libpq.so.
 # This is only provided by the libpq-dev package which can't be installed for both arch at the same time.
 # Without this specific file the ld command will fail and compilation fails with it.
+RUN ln -sfnr /usr/lib/{{ package_cross_compiler }}/libpq.so.5 /usr/lib/{{ package_cross_compiler }}/libpq.so
+
+ENV CC_{{ package_arch_target | replace("-", "_") }}="/usr/bin/{{ package_cross_compiler }}-gcc"
+ENV CROSS_COMPILE="1"
+ENV OPENSSL_INCLUDE_DIR="/usr/include/{{ package_cross_compiler }}"
+ENV OPENSSL_LIB_DIR="/usr/lib/{{ package_cross_compiler }}"
 {%   endif -%}
-{%   if "arm64v8" in target_file %}
-RUN ln -sfnr /usr/lib/aarch64-linux-gnu/libpq.so.5 /usr/lib/aarch64-linux-gnu/libpq.so
-
-ENV CC_aarch64_unknown_linux_gnu="/usr/bin/aarch64-linux-gnu-gcc"
-ENV CROSS_COMPILE="1"
-ENV OPENSSL_INCLUDE_DIR="/usr/include/aarch64-linux-gnu"
-ENV OPENSSL_LIB_DIR="/usr/lib/aarch64-linux-gnu"
-RUN rustup target add aarch64-unknown-linux-gnu
-{%   elif "arm32v6" in target_file %}
-RUN ln -sfnr /usr/lib/arm-linux-gnueabi/libpq.so.5 /usr/lib/arm-linux-gnueabi/libpq.so
-
-ENV CC_arm_unknown_linux_gnueabi="/usr/bin/arm-linux-gnueabi-gcc"
-ENV CROSS_COMPILE="1"
-ENV OPENSSL_INCLUDE_DIR="/usr/include/arm-linux-gnueabi"
-ENV OPENSSL_LIB_DIR="/usr/lib/arm-linux-gnueabi"
-RUN rustup target add arm-unknown-linux-gnueabi
-{%   elif "arm32v7" in target_file %}
-RUN ln -sfnr /usr/lib/arm-linux-gnueabihf/libpq.so.5 /usr/lib/arm-linux-gnueabihf/libpq.so
-
-ENV CC_armv7_unknown_linux_gnueabihf="/usr/bin/arm-linux-gnueabihf-gcc"
-ENV CROSS_COMPILE="1"
-ENV OPENSSL_INCLUDE_DIR="/usr/include/arm-linux-gnueabihf"
-ENV OPENSSL_LIB_DIR="/usr/lib/arm-linux-gnueabihf"
-RUN rustup target add armv7-unknown-linux-gnueabihf
-{%   endif -%}
-{% else -%}
-{%   if "amd64" in target_file %}
-RUN rustup target add x86_64-unknown-linux-musl
-{%   elif "arm32v7" in target_file %}
-RUN rustup target add armv7-unknown-linux-musleabihf
-{%   endif %}
+{% endif %}
+{% if package_arch_target is defined %}
+RUN rustup target add {{ package_arch_target }}
 {% endif %}
 
 # Builds your dependencies and removes the
 # dummy project, except the target folder
 # This folder contains the compiled dependencies
-{% if "alpine" in target_file %}
-{%   if "amd64" in target_file %}
-RUN cargo build --features ${DB} --release --target=x86_64-unknown-linux-musl
-{%   elif "arm32v7" in target_file %}
-RUN cargo build --features ${DB} --release --target=armv7-unknown-linux-musleabihf
-{%   endif %}
-{% elif "alpine" not in target_file %}
-{%   if "amd64" in target_file %}
-RUN cargo build --features ${DB} --release
-{%   elif "arm64v8" in target_file %}
-RUN cargo build --features ${DB} --release --target=aarch64-unknown-linux-gnu
-{%   elif "arm32v6" in target_file %}
-RUN cargo build --features ${DB} --release --target=arm-unknown-linux-gnueabi
-{%   elif "arm32v7" in target_file %}
-RUN cargo build --features ${DB} --release --target=armv7-unknown-linux-gnueabihf
-{%   endif %}
-{% endif %}
+RUN cargo build --features ${DB} --release{{ package_arch_target_param }}
 RUN find . -not -path "./target*" -delete
 
 # Copies the complete project
@@ -224,22 +170,10 @@ RUN touch src/main.rs
 
 # Builds again, this time it'll just be
 # your actual source files being built
+RUN cargo build --features ${DB} --release{{ package_arch_target_param }}
 {% if "alpine" in target_file %}
-{%   if "amd64" in target_file %}
-RUN cargo build --features ${DB} --release --target=x86_64-unknown-linux-musl
-{%   elif "arm32v7" in target_file %}
-RUN cargo build --features ${DB} --release --target=armv7-unknown-linux-musleabihf
-RUN musl-strip target/armv7-unknown-linux-musleabihf/release/bitwarden_rs
-{%   endif %}
-{% elif "alpine" not in target_file %}
-{%   if "amd64" in target_file %}
-RUN cargo build --features ${DB} --release
-{%   elif "arm64v8" in target_file %}
-RUN cargo build --features ${DB} --release --target=aarch64-unknown-linux-gnu
-{%   elif "arm32v6" in target_file %}
-RUN cargo build --features ${DB} --release --target=arm-unknown-linux-gnueabi
-{%   elif "arm32v7" in target_file %}
-RUN cargo build --features ${DB} --release --target=armv7-unknown-linux-gnueabihf
+{%   if "arm32v7" in target_file %}
+RUN musl-strip target/{{ package_arch_target }}/release/bitwarden_rs
 {%   endif %}
 {% endif %}
 
@@ -301,22 +235,10 @@ EXPOSE 3012
 # and the binary from the "build" stage to the current stage
 COPY Rocket.toml .
 COPY --from=vault /web-vault ./web-vault
-{% if "alpine" in target_file %}
-{%   if "amd64" in target_file %}
-COPY --from=build /app/target/x86_64-unknown-linux-musl/release/bitwarden_rs .
-{%   elif "arm32v7" in target_file %}
-COPY --from=build /app/target/armv7-unknown-linux-musleabihf/release/bitwarden_rs .
-{%   endif %}
-{% elif "alpine" not in target_file %}
-{%   if "arm64v8" in target_file %}
-COPY --from=build /app/target/aarch64-unknown-linux-gnu/release/bitwarden_rs .
-{%   elif "arm32v6" in target_file %}
-COPY --from=build /app/target/arm-unknown-linux-gnueabi/release/bitwarden_rs .
-{%   elif "arm32v7" in target_file %}
-COPY --from=build /app/target/armv7-unknown-linux-gnueabihf/release/bitwarden_rs .
-{%   else %}
-COPY --from=build app/target/release/bitwarden_rs .
-{%   endif %}
+{% if package_arch_target is defined %}
+COPY --from=build /app/target/{{ package_arch_target }}/release/bitwarden_rs .
+{% else %}
+COPY --from=build /app/target/release/bitwarden_rs .
 {% endif %}
 
 COPY docker/healthcheck.sh /healthcheck.sh

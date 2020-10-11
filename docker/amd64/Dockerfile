@@ -92,7 +92,7 @@ EXPOSE 3012
 # and the binary from the "build" stage to the current stage
 COPY Rocket.toml .
 COPY --from=vault /web-vault ./web-vault
-COPY --from=build app/target/release/bitwarden_rs .
+COPY --from=build /app/target/release/bitwarden_rs .
 
 COPY docker/healthcheck.sh /healthcheck.sh
 COPY docker/start.sh /start.sh
