@@ -47,9 +47,9 @@ rmpv = "0.4.5"
 chashmap = "2.2.2"
 
 # A generic serialization/deserialization framework
-serde = "1.0.115"
-serde_derive = "1.0.115"
-serde_json = "1.0.57"
+serde = "1.0.117"
+serde_derive = "1.0.117"
+serde_json = "1.0.59"
 
 # Logging
 log = "0.4.11"
@@ -70,9 +70,9 @@ ring = "0.16.15"
 uuid = { version = "0.8.1", features = ["v4"] }
 
 # Date and time libraries
-chrono = "0.4.15"
+chrono = "0.4.19"
 chrono-tz = "0.5.3"
-time = "0.2.18"
+time = "0.2.22"
 
 # TOTP library
 oath = "0.10.2"
@@ -104,11 +104,11 @@ lettre = { version = "0.10.0-alpha.2", features = ["smtp-transport", "builder", 
 newline-converter = "0.1.0"
 
 # Template library
-handlebars = { version = "3.4.0", features = ["dir_source"] }
+handlebars = { version = "3.5.0", features = ["dir_source"] }
 
 # For favicon extraction from main website
 soup = "0.5.0"
-regex = "1.3.9"
+regex = "1.4.1"
 data-url = "0.1.0"
 
 # Used by U2F, JWT and Postgres
@@ -120,13 +120,13 @@ percent-encoding = "2.1.0"
 idna = "0.2.0"
 
 # CLI argument parsing
-structopt = "0.3.17"
+structopt = "0.3.20"
 
 # Logging panics to logfile instead stderr only
-backtrace = "0.3.50"
+backtrace = "0.3.53"
 
 # Macro ident concatenation
-paste = "1.0.0"
+paste = "1.0.1"
 
 [patch.crates-io]
 # Use newest ring
