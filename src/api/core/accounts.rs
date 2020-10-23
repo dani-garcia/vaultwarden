@@ -460,7 +460,7 @@ fn post_verify_email(headers: Headers, _conn: DbConn) -> EmptyResult {
     }
 
     if let Err(e) = mail::send_verify_email(&user.email, &user.uuid) {
-        error!("Error sending delete account email: {:#?}", e);
+        error!("Error sending verify_email email: {:#?}", e);
     }
 
     Ok(())
