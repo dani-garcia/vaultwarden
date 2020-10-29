@@ -17,6 +17,16 @@ use crate::{
 };
 
 pub fn routes() -> Vec<Route> {
+    // Note that many routes have an `admin` variant; this seems to be
+    // because the stored procedure that upstream Bitwarden uses to determine
+    // whether the user can edit a cipher doesn't take into account whether
+    // the user is an org owner/admin. The `admin` variant first checks
+    // whether the user is an owner/admin of the relevant org, and if so,
+    // allows the operation unconditionally.
+    //
+    // bitwarden_rs factors in the org owner/admin status as part of
+    // determining the write accessibility of a cipher, so most
+    // admin/non-admin implementations can be shared.
     routes![
         sync,
         get_ciphers,
@@ -50,6 +60,9 @@ pub fn routes() -> Vec<Route> {
         delete_cipher_selected,
         delete_cipher_selected_post,
         delete_cipher_selected_put,
+        delete_cipher_selected_admin,
+        delete_cipher_selected_post_admin,
+        delete_cipher_selected_put_admin,
         restore_cipher_put,
         restore_cipher_put_admin,
         restore_cipher_selected,
@@ -862,7 +875,22 @@ fn delete_cipher_selected_post(data: JsonUpcase<Value>, headers: Headers, conn: 
 
 #[put("/ciphers/delete", data = "<data>")]
 fn delete_cipher_selected_put(data: JsonUpcase<Value>, headers: Headers, conn: DbConn, nt: Notify) -> EmptyResult {
-    _delete_multiple_ciphers(data, headers, conn, true, nt)
+    _delete_multiple_ciphers(data, headers, conn, true, nt) // soft delete
+}
+
+#[delete("/ciphers/admin", data = "<data>")]
+fn delete_cipher_selected_admin(data: JsonUpcase<Value>, headers: Headers, conn: DbConn, nt: Notify) -> EmptyResult {
+    delete_cipher_selected(data, headers, conn, nt)
+}
+
+#[post("/ciphers/delete-admin", data = "<data>")]
+fn delete_cipher_selected_post_admin(data: JsonUpcase<Value>, headers: Headers, conn: DbConn, nt: Notify) -> EmptyResult {
+    delete_cipher_selected_post(data, headers, conn, nt)
+}
+
+#[put("/ciphers/delete-admin", data = "<data>")]
+fn delete_cipher_selected_put_admin(data: JsonUpcase<Value>, headers: Headers, conn: DbConn, nt: Notify) -> EmptyResult {
+    delete_cipher_selected_put(data, headers, conn, nt)
 }
 
 #[put("/ciphers/<uuid>/restore")]
