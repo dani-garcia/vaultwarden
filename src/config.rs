@@ -53,7 +53,14 @@ macro_rules! make_config {
 
         impl ConfigBuilder {
             fn from_env() -> Self {
-                dotenv::from_path(".env").ok();
+                match dotenv::from_path(".env") {
+                    Ok(_) => (),
+                    Err(err) => {
+                        println!("[WARNING] There was an issue loading the .env file:");
+                        println!("[WARNING] {:?}\n", err);
+                        ()
+                    }
+                };
 
                 let mut builder = ConfigBuilder::default();
                 $($(
