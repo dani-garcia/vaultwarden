@@ -389,7 +389,7 @@ impl UserOrganization {
     pub fn delete(self, conn: &DbConn) -> EmptyResult {
         User::update_uuid_revision(&self.user_uuid, conn);
 
-        CollectionUser::delete_all_by_user(&self.user_uuid, &conn)?;
+        CollectionUser::delete_all_by_user_and_org(&self.user_uuid, &self.org_uuid, &conn)?;
 
         db_run! { conn: {
             diesel::delete(users_organizations::table.filter(users_organizations::uuid.eq(self.uuid)))

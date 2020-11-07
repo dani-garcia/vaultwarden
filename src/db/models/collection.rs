@@ -356,13 +356,20 @@ impl CollectionUser {
         }}
     }
 
-    pub fn delete_all_by_user(user_uuid: &str, conn: &DbConn) -> EmptyResult {
-        User::update_uuid_revision(&user_uuid, conn);
+    pub fn delete_all_by_user_and_org(user_uuid: &str, org_uuid: &str, conn: &DbConn) -> EmptyResult {
+        let collectionusers = Self::find_by_organization_and_user_uuid(org_uuid, user_uuid, conn);
 
         db_run! { conn: {
-            diesel::delete(users_collections::table.filter(users_collections::user_uuid.eq(user_uuid)))
-                .execute(conn)
-                .map_res("Error removing user from collections")
+            for user in collectionusers {
+                diesel::delete(users_collections::table.filter(
+                    users_collections::user_uuid.eq(user_uuid)
+                    .and(users_collections::collection_uuid.eq(user.collection_uuid))
+                
+                ))
+                    .execute(conn)
+                    .map_res("Error removing user from collections")?;
+            }
+            Ok(())
         }}
     }
 }
