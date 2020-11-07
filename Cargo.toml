@@ -78,7 +78,7 @@ time = "0.2.22"
 oath = "0.10.2"
 
 # Data encoding library
-data-encoding = "2.3.0"
+data-encoding = "2.3.1"
 
 # JWT library
 jsonwebtoken = "7.2.0"
@@ -96,19 +96,19 @@ dotenv = { version = "0.15.0", default-features = false }
 once_cell = "1.4.1"
 
 # Numerical libraries
-num-traits = "0.2.12"
-num-derive = "0.3.2"
+num-traits = "0.2.14"
+num-derive = "0.3.3"
 
 # Email libraries
-lettre = { version = "0.10.0-alpha.2", features = ["smtp-transport", "builder", "serde", "native-tls", "hostname"], default-features = false }
+lettre = { version = "0.10.0-alpha.3", features = ["smtp-transport", "builder", "serde", "native-tls", "hostname"], default-features = false }
 newline-converter = "0.1.0"
 
 # Template library
-handlebars = { version = "3.5.0", features = ["dir_source"] }
+handlebars = { version = "3.5.1", features = ["dir_source"] }
 
 # For favicon extraction from main website
 soup = "0.5.0"
-regex = "1.4.1"
+regex = "1.4.2"
 data-url = "0.1.0"
 
 # Used by U2F, JWT and Postgres
@@ -123,10 +123,10 @@ idna = "0.2.0"
 structopt = "0.3.20"
 
 # Logging panics to logfile instead stderr only
-backtrace = "0.3.53"
+backtrace = "0.3.54"
 
 # Macro ident concatenation
-paste = "1.0.1"
+paste = "1.0.2"
 
 [patch.crates-io]
 # Use newest ring
