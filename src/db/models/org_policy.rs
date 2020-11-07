@@ -129,7 +129,7 @@ impl OrgPolicy {
     pub fn find_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
         db_run! { conn: {
             org_policies::table
-                .left_join(
+                .inner_join(
                     users_organizations::table.on(
                         users_organizations::org_uuid.eq(org_policies::org_uuid)
                             .and(users_organizations::user_uuid.eq(user_uuid)))
