@@ -191,6 +191,11 @@ fn check_icon_domain_is_blacklisted(domain: &str) -> bool {
 fn get_icon(domain: &str) -> Option<Vec<u8>> {
     let path = format!("{}/{}.png", CONFIG.icon_cache_folder(), domain);
 
+    // Check for expiration of negatively cached copy
+    if icon_is_negcached(&path) {
+        return None;
+    }
+
     if let Some(icon) = get_cached_icon(&path) {
         return Some(icon);
     }
@@ -216,11 +221,6 @@ fn get_icon(domain: &str) -> Option<Vec<u8>> {
 }
 
 fn get_cached_icon(path: &str) -> Option<Vec<u8>> {
-    // Check for expiration of negatively cached copy
-    if icon_is_negcached(path) {
-        return None;
-    }
-
     // Check for expiration of successfully cached copy
     if icon_is_expired(path) {
         return None;
