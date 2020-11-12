@@ -379,6 +379,47 @@ impl<'a, 'r> FromRequest<'a, 'r> for OrgHeaders {
     }
 }
 
+pub struct ManagerHeaders {
+    pub host: String,
+    pub device: Device,
+    pub user: User,
+    pub org_user_type: UserOrgType,
+}
+
+impl<'a, 'r> FromRequest<'a, 'r> for ManagerHeaders {
+    type Error = &'static str;
+
+    fn from_request(request: &'a Request<'r>) -> Outcome<Self, Self::Error> {
+        match request.guard::<OrgHeaders>() {
+            Outcome::Forward(_) => Outcome::Forward(()),
+            Outcome::Failure(f) => Outcome::Failure(f),
+            Outcome::Success(headers) => {
+                if headers.org_user_type >= UserOrgType::Manager {
+                    Outcome::Success(Self {
+                        host: headers.host,
+                        device: headers.device,
+                        user: headers.user,
+                        org_user_type: headers.org_user_type,
+                    })
+                } else {
+                    err_handler!("You need to be Manager, Admin or Owner to call this endpoint")
+                }
+            }
+        }
+    }
+}
+
+impl Into<Headers> for ManagerHeaders {
+    fn into(self) -> Headers {
+        Headers {
+            host: self.host,
+            device: self.device,
+            user: self.user,
+        }
+    }
+}
+
+
 pub struct AdminHeaders {
     pub host: String,
     pub device: Device,

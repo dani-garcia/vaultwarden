@@ -5,7 +5,7 @@ use serde_json::Value;
 
 use crate::{
     api::{EmptyResult, JsonResult, JsonUpcase, JsonUpcaseVec, Notify, NumberOrString, PasswordData, UpdateType},
-    auth::{decode_invite, AdminHeaders, Headers, OwnerHeaders},
+    auth::{decode_invite, AdminHeaders, Headers, OwnerHeaders, ManagerHeaders},
     db::{models::*, DbConn},
     mail, CONFIG,
 };
@@ -217,7 +217,7 @@ fn get_org_collections(org_id: String, _headers: AdminHeaders, conn: DbConn) -> 
 #[post("/organizations/<org_id>/collections", data = "<data>")]
 fn post_organization_collections(
     org_id: String,
-    _headers: AdminHeaders,
+    headers: ManagerHeaders,
     data: JsonUpcase<NewCollectionData>,
     conn: DbConn,
 ) -> JsonResult {
@@ -230,6 +230,7 @@ fn post_organization_collections(
 
     let collection = Collection::new(org.uuid, data.Name);
     collection.save(&conn)?;
+    CollectionUser::save(&headers.user.uuid, &collection.uuid, false, false, &conn)?;
 
     Ok(Json(collection.to_json()))
 }
@@ -317,10 +318,14 @@ fn post_organization_collection_delete_user(
 }
 
 #[delete("/organizations/<org_id>/collections/<col_id>")]
-fn delete_organization_collection(org_id: String, col_id: String, _headers: AdminHeaders, conn: DbConn) -> EmptyResult {
+fn delete_organization_collection(org_id: String, col_id: String, headers: ManagerHeaders, conn: DbConn) -> EmptyResult {
     match Collection::find_by_uuid(&col_id, &conn) {
         None => err!("Collection not found"),
         Some(collection) => {
+            match check_manager_in_collection(&org_id, &col_id, &headers.user.uuid, &conn) {
+				Err(_error) => err!("You have no permission to edit this collection"),
+				Ok(result) => result,
+			}
             if collection.org_uuid == org_id {
                 collection.delete(&conn)
             } else {
@@ -341,7 +346,7 @@ struct DeleteCollectionData {
 fn post_organization_collection_delete(
     org_id: String,
     col_id: String,
-    headers: AdminHeaders,
+    headers: ManagerHeaders,
     _data: JsonUpcase<DeleteCollectionData>,
     conn: DbConn,
 ) -> EmptyResult {
@@ -349,7 +354,12 @@ fn post_organization_collection_delete(
 }
 
 #[get("/organizations/<org_id>/collections/<coll_id>/details")]
-fn get_org_collection_detail(org_id: String, coll_id: String, headers: AdminHeaders, conn: DbConn) -> JsonResult {
+fn get_org_collection_detail(org_id: String, coll_id: String, headers: ManagerHeaders, conn: DbConn) -> JsonResult {
+    match check_manager_in_collection(&org_id, &coll_id, &headers.user.uuid, &conn) {
+		Err(_error) => err!("You have no permission to edit this collection"),
+		Ok(result) => result,
+	}
+
     match Collection::find_by_uuid_and_user(&coll_id, &headers.user.uuid, &conn) {
         None => err!("Collection not found"),
         Some(collection) => {
@@ -363,12 +373,17 @@ fn get_org_collection_detail(org_id: String, coll_id: String, headers: AdminHead
 }
 
 #[get("/organizations/<org_id>/collections/<coll_id>/users")]
-fn get_collection_users(org_id: String, coll_id: String, _headers: AdminHeaders, conn: DbConn) -> JsonResult {
+fn get_collection_users(org_id: String, coll_id: String, headers: ManagerHeaders, conn: DbConn) -> JsonResult {
     // Get org and collection, check that collection is from org
     let collection = match Collection::find_by_uuid_and_org(&coll_id, &org_id, &conn) {
         None => err!("Collection not found in Organization"),
         Some(collection) => collection,
     };
+
+    match check_manager_in_collection(&org_id, &coll_id, &headers.user.uuid, &conn) {
+		Err(_error) => err!("You have no permission to edit this collection"),
+		Ok(result) => result,
+	}
 
     // Get the users from collection
     let user_list: Vec<Value> = CollectionUser::find_by_collection(&collection.uuid, &conn)
@@ -388,13 +403,19 @@ fn put_collection_users(
     org_id: String,
     coll_id: String,
     data: JsonUpcaseVec<CollectionData>,
-    _headers: AdminHeaders,
+    headers: ManagerHeaders,
     conn: DbConn,
 ) -> EmptyResult {
     // Get org and collection, check that collection is from org
     if Collection::find_by_uuid_and_org(&coll_id, &org_id, &conn).is_none() {
         err!("Collection not found in Organization")
     }
+
+    match check_manager_in_collection(&org_id, &coll_id, &headers.user.uuid, &conn) {
+		Err(_error) => err!("You have no permission to edit this collection"),
+		Ok(result) => result,
+	}
+
 
     // Delete all the user-collections
     CollectionUser::delete_all_by_collection(&coll_id, &conn)?;
@@ -440,7 +461,7 @@ fn get_org_details(data: Form<OrgIdData>, headers: Headers, conn: DbConn) -> Jso
 }
 
 #[get("/organizations/<org_id>/users")]
-fn get_org_users(org_id: String, _headers: AdminHeaders, conn: DbConn) -> JsonResult {
+fn get_org_users(org_id: String, _headers: ManagerHeaders, conn: DbConn) -> JsonResult {
     let users = UserOrganization::find_by_org(&org_id, &conn);
     let users_json: Vec<Value> = users.iter().map(|c| c.to_json_user_details(&conn)).collect();
 
@@ -1044,3 +1065,23 @@ fn get_plans(_headers: Headers, _conn: DbConn) -> JsonResult {
         "ContinuationToken": null
     })))
 }
+
+fn check_manager_in_collection(org_id: &str, col_id: &str, user_id: &str, conn: &DbConn) -> EmptyResult {
+    // Check current manager is in collection
+    let col_user = match CollectionUser::find_by_collection_and_user(&col_id, &user_id, &conn) {
+        None => err!("Manager not in Collection"),
+        Some(col_user) => col_user,
+    };
+
+    // Check current manager is manager of that the org
+    let user_org = match UserOrganization::find_by_user_and_org(&col_user.user_uuid, &org_id, &conn) {
+        None => err!("User is not manager of the Organisation"),
+        Some(user_org) => user_org,
+    };
+    if user_org.atype != UserOrgType::Manager {
+        err!("Current user is not manager")
+    }
+    Ok(())
+}
+
+
