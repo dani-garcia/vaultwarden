@@ -17,8 +17,6 @@ pub fn routes() -> Vec<Route> {
     routes![icon]
 }
 
-const FALLBACK_ICON: &[u8; 344] = include_bytes!("../static/fallback-icon.png");
-
 const ALLOWED_CHARS: &str = "_-.";
 
 static CLIENT: Lazy<Client> = Lazy::new(|| {
@@ -52,15 +50,15 @@ fn is_valid_domain(domain: &str) -> bool {
 }
 
 #[get("/<domain>/icon.png")]
-fn icon(domain: String) -> Cached<Content<Vec<u8>>> {
-    let icon_type = ContentType::new("image", "x-icon");
-
+fn icon(domain: String) -> Option<Cached<Content<Vec<u8>>>> {
     if !is_valid_domain(&domain) {
         warn!("Invalid domain: {:#?}", domain);
-        return Cached::long(Content(icon_type, FALLBACK_ICON.to_vec()));
+        return None;
     }
 
-    Cached::long(Content(icon_type, get_icon(&domain)))
+    get_icon(&domain).map(|icon| {
+        Cached::long(Content(ContentType::new("image", "x-icon"), icon))
+    })
 }
 
 /// TODO: This is extracted from IpAddr::is_global, which is unstable:
@@ -190,39 +188,39 @@ fn check_icon_domain_is_blacklisted(domain: &str) -> bool {
     is_blacklisted
 }
 
-fn get_icon(domain: &str) -> Vec<u8> {
+fn get_icon(domain: &str) -> Option<Vec<u8>> {
     let path = format!("{}/{}.png", CONFIG.icon_cache_folder(), domain);
 
+    // Check for expiration of negatively cached copy
+    if icon_is_negcached(&path) {
+        return None;
+    }
+
     if let Some(icon) = get_cached_icon(&path) {
-        return icon;
+        return Some(icon);
     }
 
     if CONFIG.disable_icon_download() {
-        return FALLBACK_ICON.to_vec();
+        return None;
     }
 
-    // Get the icon, or fallback in case of error
+    // Get the icon, or None in case of error
     match download_icon(&domain) {
         Ok(icon) => {
             save_icon(&path, &icon);
-            icon
+            Some(icon)
         }
         Err(e) => {
             error!("Error downloading icon: {:?}", e);
             let miss_indicator = path + ".miss";
             let empty_icon = Vec::new();
             save_icon(&miss_indicator, &empty_icon);
-            FALLBACK_ICON.to_vec()
+            None
         }
     }
 }
 
 fn get_cached_icon(path: &str) -> Option<Vec<u8>> {
-    // Check for expiration of negatively cached copy
-    if icon_is_negcached(path) {
-        return Some(FALLBACK_ICON.to_vec());
-    }
-
     // Check for expiration of successfully cached copy
     if icon_is_expired(path) {
         return None;
