@@ -53,7 +53,32 @@ macro_rules! make_config {
 
         impl ConfigBuilder {
             fn from_env() -> Self {
-                dotenv::from_path(".env").ok();
+                match dotenv::from_path(".env") {
+                    Ok(_) => (),
+                    Err(e) => match e {
+                        dotenv::Error::LineParse(msg, pos) => {
+                            panic!("Error loading the .env file:\nNear {:?} on position {}\nPlease fix and restart!\n", msg, pos);
+                        },
+                        dotenv::Error::Io(ioerr) => match ioerr.kind() {
+                            std::io::ErrorKind::NotFound => {
+                                println!("[INFO] No .env file found.\n");
+                                ()
+                            },
+                            std::io::ErrorKind::PermissionDenied => {
+                                println!("[WARNING] Permission Denied while trying to read the .env file!\n");
+                                ()
+                            },
+                            _ => {
+                                println!("[WARNING] Reading the .env file failed:\n{:?}\n", ioerr);
+                                ()
+                            }
+                        },
+                        _ => {
+                            println!("[WARNING] Reading the .env file failed:\n{:?}\n", e);
+                            ()
+                        }
+                    }
+                };
 
                 let mut builder = ConfigBuilder::default();
                 $($(
