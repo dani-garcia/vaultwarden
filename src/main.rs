@@ -115,6 +115,16 @@ fn init_logging(level: log::LevelFilter) -> Result<(), fern::InitError> {
         .level_for("rocket::fairing", log::LevelFilter::Off)
         .chain(std::io::stdout());
 
+    // Enable smtp debug logging only specifically for smtp when need.
+    // This can contain sensitive information we do not want in the default debug/trace logging.
+    if CONFIG.smtp_debug() {
+        println!("[WARNING] SMTP Debugging is enabled (SMTP_DEBUG=true). Sensitive information could be disclosed via logs!");
+        println!("[WARNING] Only enable SMTP_DEBUG during troubleshooting!\n");
+        logger = logger.level_for("lettre::transport::smtp", log::LevelFilter::Debug)
+    } else {
+        logger = logger.level_for("lettre::transport::smtp", log::LevelFilter::Off)
+    }
+
     if CONFIG.extended_logging() {
         logger = logger.format(|out, message, record| {
             out.finish(format_args!(

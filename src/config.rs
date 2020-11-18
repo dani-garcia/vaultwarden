@@ -413,29 +413,35 @@ make_config! {
     /// SMTP Email Settings
     smtp: _enable_smtp {
         /// Enabled
-        _enable_smtp:           bool,   true,   def,     true;
+        _enable_smtp:                  bool,   true,   def,     true;
         /// Host
-        smtp_host:              String, true,   option;
+        smtp_host:                     String, true,   option;
         /// Enable Secure SMTP |> (Explicit) - Enabling this by default would use STARTTLS (Standard ports 587 or 25)
-        smtp_ssl:               bool,   true,   def,     true;
+        smtp_ssl:                      bool,   true,   def,     true;
         /// Force TLS |> (Implicit) - Enabling this would force the use of an SSL/TLS connection, instead of upgrading an insecure one with STARTTLS (Standard port 465)
-        smtp_explicit_tls:      bool,   true,   def,     false;
+        smtp_explicit_tls:             bool,   true,   def,     false;
         /// Port
-        smtp_port:              u16,    true,   auto,    |c| if c.smtp_explicit_tls {465} else if c.smtp_ssl {587} else {25};
+        smtp_port:                     u16,    true,   auto,    |c| if c.smtp_explicit_tls {465} else if c.smtp_ssl {587} else {25};
         /// From Address
-        smtp_from:              String, true,   def,     String::new();
+        smtp_from:                     String, true,   def,     String::new();
         /// From Name
-        smtp_from_name:         String, true,   def,     "Bitwarden_RS".to_string();
+        smtp_from_name:                String, true,   def,     "Bitwarden_RS".to_string();
         /// Username
-        smtp_username:          String, true,   option;
+        smtp_username:                 String, true,   option;
         /// Password
-        smtp_password:          Pass,   true,   option;
+        smtp_password:                 Pass,   true,   option;
         /// SMTP Auth mechanism |> Defaults for SSL is "Plain" and "Login" and nothing for Non-SSL connections. Possible values: ["Plain", "Login", "Xoauth2"]. Multiple options need to be separated by a comma ','.
-        smtp_auth_mechanism:    String, true,   option;
+        smtp_auth_mechanism:           String, true,   option;
         /// SMTP connection timeout |> Number of seconds when to stop trying to connect to the SMTP server
-        smtp_timeout:           u64,    true,   def,     15;
+        smtp_timeout:                  u64,    true,   def,     15;
         /// Server name sent during HELO |> By default this value should be is on the machine's hostname, but might need to be changed in case it trips some anti-spam filters
-        helo_name:              String, true,   option;
+        helo_name:                     String, true,   option;
+        /// Enable SMTP debugging (Know the risks!) |> DANGEROUS: Enabling this will output very detailed SMTP messages. This could contain sensitive information like passwords and usernames! Only enable this during troubleshooting!
+        smtp_debug:                    bool,   true,   def,     false;
+        /// Accept Invalid Certs (Know the risks!) |> DANGEROUS: Allow invalid certificates. This option introduces significant vulnerabilities to man-in-the-middle attacks!
+        smtp_accept_invalid_certs:     bool,   true,   def,     false;
+        /// Accept Invalid Hostnames (Know the risks!) |> DANGEROUS: Allow invalid hostnames. This option introduces significant vulnerabilities to man-in-the-middle attacks!
+        smtp_accept_invalid_hostnames: bool,   true,   def,     false;
     },
 
     /// Email 2FA Settings

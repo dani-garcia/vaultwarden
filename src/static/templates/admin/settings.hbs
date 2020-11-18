@@ -17,7 +17,7 @@
                     <div id="g_{{group}}" class="card-body collapse" data-parent="#config-form">
                         {{#each elements}}
                         {{#if editable}}
-                        <div class="form-group row" title="[{{name}}] {{doc.description}}">
+                        <div class="form-group row align-items-center" title="[{{name}}] {{doc.description}}">
                             {{#case type "text" "number" "password"}}
                             <label for="input_{{name}}" class="col-sm-3 col-form-label">{{doc.name}}</label>
                             <div class="col-sm-8 input-group">
@@ -34,7 +34,7 @@
                             </div>
                             {{/case}}
                             {{#case type "checkbox"}}
-                            <div class="col-sm-3">{{doc.name}}</div>
+                            <div class="col-sm-3 col-form-label">{{doc.name}}</div>
                             <div class="col-sm-8">
                                 <div class="form-check">
                                     <input class="form-check-input conf-{{type}}" type="checkbox" id="input_{{name}}"
@@ -48,7 +48,7 @@
                         {{/if}}
                         {{/each}}
                         {{#case group "smtp"}}
-                            <div class="form-group row pt-3 border-top" title="Send a test email to given email address">
+                            <div class="form-group row align-items-center pt-3 border-top" title="Send a test email to given email address">
                                 <label for="smtp-test-email" class="col-sm-3 col-form-label">Test SMTP</label>
                                 <div class="col-sm-8 input-group">
                                     <input class="form-control" id="smtp-test-email" type="email" placeholder="Enter test email">
@@ -76,7 +76,7 @@
                         {{#each config}}
                         {{#each elements}}
                         {{#unless editable}}
-                        <div class="form-group row" title="[{{name}}] {{doc.description}}">
+                        <div class="form-group row align-items-center" title="[{{name}}] {{doc.description}}">
                             {{#case type "text" "number" "password"}}
                             <label for="input_{{name}}" class="col-sm-3 col-form-label">{{doc.name}}</label>
                             <div class="col-sm-8 input-group">
@@ -92,9 +92,9 @@
                             </div>
                             {{/case}}
                             {{#case type "checkbox"}}
-                            <div class="col-sm-3">{{doc.name}}</div>
+                            <div class="col-sm-3 col-form-label">{{doc.name}}</div>
                             <div class="col-sm-8">
-                                <div class="form-check">
+                                <div class="form-check align-middle">
                                     <input disabled class="form-check-input" type="checkbox" id="input_{{name}}"
                                         {{#if value}} checked {{/if}}>
 
@@ -139,6 +139,10 @@
 
 <script>
     function smtpTest() {
+        if (formHasChanges(config_form)) {
+            alert("Config has been changed but not yet saved.\nPlease save the changes first before sending a test email.");
+            return false;
+        }
         test_email = document.getElementById("smtp-test-email");
         data = JSON.stringify({ "email": test_email.value });
         _post("{{urlpath}}/admin/test/smtp/",
@@ -205,4 +209,35 @@
     // {{#each config}} {{#if grouptoggle}}
     masterCheck("input_{{grouptoggle}}", "#g_{{group}} input");
     // {{/if}} {{/each}}
+
+    // Two functions to help check if there were changes to the form fields
+    // Useful for example during the smtp test to prevent people from clicking save before testing there new settings
+    function initChangeDetection(form) {
+        const ignore_fields = ["smtp-test-email"];
+        Array.from(form).forEach((el) => {
+            if (! ignore_fields.includes(el.id)) {
+                el.dataset.origValue = el.value
+            }
+        });
+    }
+    function formHasChanges(form) {
+        return Array.from(form).some(el => 'origValue' in el.dataset && ( el.dataset.origValue !== el.value));
+    }
+
+    // Trigger Form Change Detection
+    const config_form = document.getElementById('config-form');
+    initChangeDetection(config_form);
+
+    // Colorize some settings which are high risk
+    const risk_items = document.getElementsByClassName('col-form-label');
+    function colorRiskSettings(risk_el) {
+        Array.from(risk_el).forEach((el) => {
+            if (el.innerText.toLowerCase().includes('risks') ) {
+                el.parentElement.className += ' alert-danger'
+                console.log(el)
+            }
+        });
+    }
+    colorRiskSettings(risk_items);
+
 </script>
