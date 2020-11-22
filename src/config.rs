@@ -1,3 +1,4 @@
+use std::fs;
 use std::process::exit;
 use std::sync::RwLock;
 
@@ -430,6 +431,10 @@ make_config! {
         smtp_username:                 String, true,   option;
         /// Password
         smtp_password:                 Pass,   true,   option;
+        /// Password file
+        smtp_password_file:            String, true,   option;
+        /// Field to store the actual SMTP password
+        smtp_password_used:            String, false,  gen,      |c| decide_smtp_password(&c.smtp_password, &c.smtp_password_file);
         /// SMTP Auth mechanism |> Defaults for SSL is "Plain" and "Login" and nothing for Non-SSL connections. Possible values: ["Plain", "Login", "Xoauth2"]. Multiple options need to be separated by a comma ','.
         smtp_auth_mechanism:           String, true,   option;
         /// SMTP connection timeout |> Number of seconds when to stop trying to connect to the SMTP server
@@ -510,8 +515,12 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
             err!("Both `SMTP_HOST` and `SMTP_FROM` need to be set for email support")
         }
 
-        if cfg.smtp_username.is_some() != cfg.smtp_password.is_some() {
-            err!("Both `SMTP_USERNAME` and `SMTP_PASSWORD` need to be set to enable email authentication")
+        if cfg.smtp_username.is_some() && (cfg.smtp_password.is_some() && cfg.smtp_password_file.is_some()) {
+          err!("When `SMTP_USERNAME` is set, only one of `SMTP_PASSWORD` or `SMTP_PASSWORD_FILE` must be set to enable email authentication")
+        }
+
+        if cfg.smtp_password.is_some() && cfg.smtp_password_file.is_some() {
+          err!("Only one of the following can be set at once: `SMTP_PASSWORD`, `SMTP_PASSWORD_FILE`")
         }
 
         if cfg._enable_email_2fa && (!cfg._enable_smtp || cfg.smtp_host.is_none()) {
@@ -551,6 +560,20 @@ fn extract_url_path(url: &str) -> String {
             String::new()
         }
     }
+}
+
+fn decide_smtp_password(smtp_password: &Option<String>, smtp_password_file: &Option<String>) -> String {
+  match smtp_password_file {
+    Some(f) => {
+      fs::read_to_string(f).expect("Error loading SMTP password file")
+    },
+    None => {
+      match smtp_password {
+        Some(p) => p.to_string(),
+        None => "".to_string()
+      }
+    }
+  }
 }
 
 impl Config {

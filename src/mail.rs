@@ -47,8 +47,8 @@ fn mailer() -> SmtpTransport {
         smtp_client
     };
 
-    let smtp_client = match (CONFIG.smtp_username(), CONFIG.smtp_password()) {
-        (Some(user), Some(pass)) => smtp_client.credentials(Credentials::new(user, pass)),
+    let smtp_client = match (CONFIG.smtp_username(), CONFIG.smtp_password_used()) {
+        (Some(user), pass) => smtp_client.credentials(Credentials::new(user, pass)),
         _ => smtp_client,
     };
 
