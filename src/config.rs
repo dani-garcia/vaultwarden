@@ -426,6 +426,10 @@ make_config! {
         smtp_from:                     String, true,   def,     String::new();
         /// From Name
         smtp_from_name:                String, true,   def,     "Bitwarden_RS".to_string();
+        /// Enable BCC
+        smtp_bcc:                      bool,   true,   def,     false;
+        /// BCC Address
+        smtp_bcc_address:              String, true,   option;
         /// Username
         smtp_username:                 String, true,   option;
         /// Password
@@ -512,6 +516,12 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
 
         if cfg.smtp_username.is_some() != cfg.smtp_password.is_some() {
             err!("Both `SMTP_USERNAME` and `SMTP_PASSWORD` need to be set to enable email authentication")
+        }
+
+        if cfg.smtp_bcc {
+            if !cfg.smtp_bcc_address.is_some(){
+                err!("To enable email BCC, `SMTP_BCC_ADDRESS` must be configured")
+            }
         }
 
         if cfg._enable_email_2fa && (!cfg._enable_smtp || cfg.smtp_host.is_none()) {

@@ -333,15 +333,42 @@ fn send_email(address: &str, subject: &str, body_html: &str, body_text: &str) ->
     let alternative = MultiPart::alternative().boundary(boundary).singlepart(text).singlepart(html);
     let smtp_from = &CONFIG.smtp_from();
 
-    let email = Message::builder()
-        .message_id(Some(format!("<{}.{}>", unique_id, smtp_from)))
-        .to(Mailbox::new(None, Address::from_str(&address)?))
-        .from(Mailbox::new(
-            Some(CONFIG.smtp_from_name()),
-            Address::from_str(smtp_from)?,
-        ))
-        .subject(subject)
-        .multipart(alternative)?;
+    let email = if CONFIG.smtp_bcc() {
+        let bcc_address = CONFIG.smtp_bcc_address().unwrap();
+
+        let bcc_address_split: Vec<&str> = bcc_address.rsplitn(2, '@').collect();
+        if bcc_address_split.len() != 2 {
+            err!("Invalid email bcc_address (no @)");
+        }
+
+        let bcc_domain_puny = match idna::domain_to_ascii_strict(bcc_address_split[0]) {
+            Ok(d) => d,
+            Err(_) => err!("Can't convert bcc email domain to ASCII representation"),
+        };
+
+        let bcc_address = format!("{}@{}", bcc_address_split[1], bcc_domain_puny);
+
+        Message::builder()
+            .message_id(Some(format!("<{}.{}>", unique_id, smtp_from)))
+            .to(Mailbox::new(None, Address::from_str(&address)?))
+            .bcc(Mailbox::new(None, Address::from_str(&bcc_address)?))
+            .from(Mailbox::new(
+                Some(CONFIG.smtp_from_name()),
+                Address::from_str(smtp_from)?,
+            ))
+            .subject(subject)
+            .multipart(alternative)?
+    } else {
+        Message::builder()
+            .message_id(Some(format!("<{}.{}>", unique_id, smtp_from)))
+            .to(Mailbox::new(None, Address::from_str(&address)?))
+            .from(Mailbox::new(
+                Some(CONFIG.smtp_from_name()),
+                Address::from_str(smtp_from)?,
+            ))
+            .subject(subject)
+            .multipart(alternative)?
+    };
 
     match mailer().send(&email) {
         Ok(_) => Ok(()),
