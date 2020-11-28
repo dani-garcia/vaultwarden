@@ -191,6 +191,7 @@ impl<'r> Responder<'r> for Error {
     fn respond_to(self, _: &Request) -> response::Result<'r> {
         match self.error {
             ErrorKind::EmptyError(_) => {} // Don't print the error in this situation
+            ErrorKind::SimpleError(_) => {} // Don't print the error in this situation
             _ => error!(target: "error", "{:#?}", self),
         };
 
@@ -210,9 +211,11 @@ impl<'r> Responder<'r> for Error {
 #[macro_export]
 macro_rules! err {
     ($msg:expr) => {{
+        error!("{}", $msg);
         return Err(crate::error::Error::new($msg, $msg));
     }};
     ($usr_msg:expr, $log_value:expr) => {{
+        error!("{}. {}", $usr_msg, $log_value);
         return Err(crate::error::Error::new($usr_msg, $log_value));
     }};
 }
