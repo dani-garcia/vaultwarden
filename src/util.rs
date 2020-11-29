@@ -283,20 +283,37 @@ where
 
 use std::env;
 
+pub fn get_env_str_value(key: &str) -> Option<String>
+{
+    let key_file = format!("{}_FILE", key);
+    let value_from_env = env::var(key);
+    let value_file = env::var(&key_file);
+
+    match (value_from_env, value_file) {
+        (Ok(_), Ok(_)) => panic!("You should not define both {} and {}!", key, key_file),
+        (Ok(v_env), Err(_)) => Some(v_env),
+        (Err(_), Ok(v_file)) => match fs::read_to_string(v_file) {
+            Ok(content) => Some(content.trim().to_string()),
+            Err(e) => panic!("Failed to load {}: {:?}", key, e)
+        },
+        _ => None
+    }
+}
+
 pub fn get_env<V>(key: &str) -> Option<V>
 where
     V: FromStr,
 {
-    try_parse_string(env::var(key).ok())
+    try_parse_string(get_env_str_value(key))
 }
 
 const TRUE_VALUES: &[&str] = &["true", "t", "yes", "y", "1"];
 const FALSE_VALUES: &[&str] = &["false", "f", "no", "n", "0"];
 
 pub fn get_env_bool(key: &str) -> Option<bool> {
-    match env::var(key) {
-        Ok(val) if TRUE_VALUES.contains(&val.to_lowercase().as_ref()) => Some(true),
-        Ok(val) if FALSE_VALUES.contains(&val.to_lowercase().as_ref()) => Some(false),
+    match get_env_str_value(key) {
+        Some(val) if TRUE_VALUES.contains(&val.to_lowercase().as_ref()) => Some(true),
+        Some(val) if FALSE_VALUES.contains(&val.to_lowercase().as_ref()) => Some(false),
         _ => None,
     }
 }
