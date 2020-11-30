@@ -36,6 +36,8 @@ pub fn routes() -> Vec<Route> {
         logout,
         delete_user,
         deauth_user,
+        disable_user,
+        enable_user,
         remove_2fa,
         update_revision_users,
         post_config,
@@ -297,6 +299,7 @@ fn users_overview(_token: AdminToken, conn: DbConn) -> ApiResult<Html<String>> {
             usr["cipher_count"] = json!(Cipher::count_owned_by_user(&u.uuid, &conn));
             usr["attachment_count"] = json!(Attachment::count_by_user(&u.uuid, &conn));
             usr["attachment_size"] = json!(get_display_size(Attachment::size_by_user(&u.uuid, &conn) as i32));
+            usr["user_enabled"] = json!(u.enabled);
             usr
     }).collect();
 
@@ -315,6 +318,24 @@ fn deauth_user(uuid: String, _token: AdminToken, conn: DbConn) -> EmptyResult {
     let mut user = User::find_by_uuid(&uuid, &conn).map_res("User doesn't exist")?;
     Device::delete_all_by_user(&user.uuid, &conn)?;
     user.reset_security_stamp();
+
+    user.save(&conn)
+}
+
+#[post("/users/<uuid>/disable")]
+fn disable_user(uuid: String, _token: AdminToken, conn: DbConn) -> EmptyResult {
+    let mut user = User::find_by_uuid(&uuid, &conn).map_res("User doesn't exist")?;
+    Device::delete_all_by_user(&user.uuid, &conn)?;
+    user.reset_security_stamp();
+    user.enabled = false;
+
+    user.save(&conn)
+}
+
+#[post("/users/<uuid>/enable")]
+fn enable_user(uuid: String, _token: AdminToken, conn: DbConn) -> EmptyResult {
+    let mut user = User::find_by_uuid(&uuid, &conn).map_res("User doesn't exist")?;
+    user.enabled = true;
 
     user.save(&conn)
 }

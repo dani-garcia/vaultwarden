@@ -11,6 +11,7 @@ db_object! {
     #[primary_key(uuid)]
     pub struct User {
         pub uuid: String,
+        pub enabled: bool,
         pub created_at: NaiveDateTime,
         pub updated_at: NaiveDateTime,
         pub verified_at: Option<NaiveDateTime>,
@@ -70,6 +71,7 @@ impl User {
 
         Self {
             uuid: crate::util::get_uuid(),
+            enabled: true,
             created_at: now,
             updated_at: now,
             verified_at: None,

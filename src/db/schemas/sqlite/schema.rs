@@ -116,6 +116,7 @@ table! {
 table! {
     users (uuid) {
         uuid -> Text,
+        enabled -> Bool,
         created_at -> Timestamp,
         updated_at -> Timestamp,
         verified_at -> Nullable<Timestamp>,

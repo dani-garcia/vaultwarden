@@ -102,6 +102,14 @@ fn _password_login(data: ConnectData, conn: DbConn, ip: &ClientIp) -> JsonResult
         )
     }
 
+    // Check if the user is disabled
+    if !user.enabled {
+        err!(
+            "This user has been disabled",
+            format!("IP: {}. Username: {}.", ip.ip, username)
+        )
+    }
+
     let now = Local::now();
 
     if user.verified_at.is_none() && CONFIG.mail_enabled() && CONFIG.signups_verify() {
