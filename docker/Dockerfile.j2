@@ -1,10 +1,10 @@
 # This file was generated using a Jinja2 template.
 # Please make your changes in `Dockerfile.j2` and then `make` the individual Dockerfile's.
 
-{% set build_stage_base_image = "rust:1.46" %}
+{% set build_stage_base_image = "rust:1.48" %}
 {% if "alpine" in target_file %}
 {%   if "amd64" in target_file %}
-{%     set build_stage_base_image = "clux/muslrust:nightly-2020-10-02" %}
+{%     set build_stage_base_image = "clux/muslrust:nightly-2020-11-22" %}
 {%     set runtime_stage_base_image = "alpine:3.12" %}
 {%     set package_arch_target = "x86_64-unknown-linux-musl" %}
 {%   elif "arm32v7" in target_file %}
@@ -62,8 +62,13 @@ FROM bitwardenrs/web-vault@{{ vault_image_hash }} as vault
 FROM {{ build_stage_base_image }} as build
 
 {% if "alpine" in target_file %}
-# Alpine only works on SQlite
+{% if "amd64" in target_file -%}
+# Alpine-based AMD64 (musl) does not support mysql/mariadb during compile time.
+ARG DB=sqlite,postgresql
+{% else -%}
+# Alpine-based ARM (musl) only supports sqlite during compile time.
 ARG DB=sqlite
+{% endif %}
 {% else %}
 # Debian-based builds support multidb
 ARG DB=sqlite,mysql,postgresql

@@ -32,7 +32,7 @@ rocket = { version = "0.5.0-dev", features = ["tls"], default-features = false }
 rocket_contrib = "0.5.0-dev"
 
 # HTTP client
-reqwest = { version = "0.10.8", features = ["blocking", "json"] }
+reqwest = { version = "0.10.9", features = ["blocking", "json"] }
 
 # multipart/form-data support
 multipart = { version = "0.17.0", features = ["server"], default-features = false }
@@ -49,7 +49,7 @@ chashmap = "2.2.2"
 # A generic serialization/deserialization framework
 serde = "1.0.117"
 serde_derive = "1.0.117"
-serde_json = "1.0.59"
+serde_json = "1.0.60"
 
 # Logging
 log = "0.4.11"
@@ -64,7 +64,7 @@ libsqlite3-sys = { version = "0.18.0", features = ["bundled"], optional = true }
 
 # Crypto-related libraries
 rand = "0.7.3"
-ring = "0.16.15"
+ring = "0.16.19"
 
 # UUID generation
 uuid = { version = "0.8.1", features = ["v4"] }
@@ -72,7 +72,7 @@ uuid = { version = "0.8.1", features = ["v4"] }
 # Date and time libraries
 chrono = "0.4.19"
 chrono-tz = "0.5.3"
-time = "0.2.22"
+time = "0.2.23"
 
 # TOTP library
 oath = "0.10.2"
@@ -93,7 +93,7 @@ yubico = { version = "0.9.1", features = ["online-tokio"], default-features = fa
 dotenv = { version = "0.15.0", default-features = false }
 
 # Lazy initialization
-once_cell = "1.4.1"
+once_cell = "1.5.2"
 
 # Numerical libraries
 num-traits = "0.2.14"
@@ -120,18 +120,18 @@ percent-encoding = "2.1.0"
 idna = "0.2.0"
 
 # CLI argument parsing
-structopt = "0.3.20"
+structopt = "0.3.21"
 
 # Logging panics to logfile instead stderr only
-backtrace = "0.3.54"
+backtrace = "0.3.55"
 
 # Macro ident concatenation
-paste = "1.0.2"
+paste = "1.0.3"
 
 [patch.crates-io]
 # Use newest ring
-rocket = { git = 'https://github.com/SergioBenitez/Rocket', rev = '1010f6a2a88fac899dec0cd2f642156908038a53' }
-rocket_contrib = { git = 'https://github.com/SergioBenitez/Rocket', rev = '1010f6a2a88fac899dec0cd2f642156908038a53' }
+rocket = { git = 'https://github.com/SergioBenitez/Rocket', rev = '263e39b5b429de1913ce7e3036575a7b4d88b6d7' }
+rocket_contrib = { git = 'https://github.com/SergioBenitez/Rocket', rev = '263e39b5b429de1913ce7e3036575a7b4d88b6d7' }
 
 # For favicon extraction from main website
-data-url = { git = 'https://github.com/servo/rust-url', package="data-url", rev = '7f1bd6ce1c2fde599a757302a843a60e714c5f72' }
+data-url = { git = 'https://github.com/servo/rust-url', package="data-url", rev = '540ede02d0771824c0c80ff9f57fe8eff38b1291' }

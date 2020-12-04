@@ -18,7 +18,7 @@
 FROM bitwardenrs/web-vault@sha256:e40228f94cead5e50af6575fb39850a002dad146dab6836e5da5663e6d214303 as vault
 
 ########################## BUILD IMAGE  ##########################
-FROM rust:1.46 as build
+FROM rust:1.48 as build
 
 # Debian-based builds support multidb
 ARG DB=sqlite,mysql,postgresql
