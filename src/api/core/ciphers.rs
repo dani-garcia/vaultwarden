@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
+use chrono::{NaiveDateTime, Utc};
 use rocket::{http::ContentType, request::Form, Data, Route};
 use rocket_contrib::json::Json;
 use serde_json::Value;
@@ -194,6 +195,14 @@ pub struct CipherData {
     #[serde(rename = "Attachments")]
     _Attachments: Option<Value>, // Unused, contains map of {id: filename}
     Attachments2: Option<HashMap<String, Attachments2Data>>,
+
+    // The revision datetime (in ISO 8601 format) of the client's local copy
+    // of the cipher. This is used to prevent a client from updating a cipher
+    // when it doesn't have the latest version, as that can result in data
+    // loss. It's not an error when no value is provided; this can happen
+    // when using older client versions, or if the operation doesn't involve
+    // updating an existing cipher.
+    LastKnownRevisionDate: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -238,6 +247,17 @@ pub fn update_cipher_from_data(
     nt: &Notify,
     ut: UpdateType,
 ) -> EmptyResult {
+    // Check that the client isn't updating an existing cipher with stale data.
+    if let Some(dt) = data.LastKnownRevisionDate {
+        match NaiveDateTime::parse_from_str(&dt, "%+") { // ISO 8601 format
+            Err(err) =>
+                warn!("Error parsing LastKnownRevisionDate '{}': {}", dt, err),
+            Ok(dt) if cipher.updated_at.signed_duration_since(dt).num_seconds() > 1 =>
+                err!("The client copy of this cipher is out of date. Resync the client and try again."),
+            Ok(_) => (),
+        }
+    }
+
     if cipher.organization_uuid.is_some() && cipher.organization_uuid != data.OrganizationId {
         err!("Organization mismatch. Please resync the client before updating the cipher")
     }
@@ -1030,7 +1050,7 @@ fn _delete_cipher_by_uuid(uuid: &str, headers: &Headers, conn: &DbConn, soft_del
     }
 
     if soft_delete {
-        cipher.deleted_at = Some(chrono::Utc::now().naive_utc());
+        cipher.deleted_at = Some(Utc::now().naive_utc());
         cipher.save(&conn)?;
         nt.send_cipher_update(UpdateType::CipherUpdate, &cipher, &cipher.update_users_revision(&conn));
     } else {
