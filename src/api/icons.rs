@@ -56,9 +56,7 @@ fn icon(domain: String) -> Option<Cached<Content<Vec<u8>>>> {
         return None;
     }
 
-    get_icon(&domain).map(|icon| {
-        Cached::long(Content(ContentType::new("image", "x-icon"), icon))
-    })
+    get_icon(&domain).map(|icon| Cached::long(Content(ContentType::new("image", "x-icon"), icon)))
 }
 
 /// TODO: This is extracted from IpAddr::is_global, which is unstable:

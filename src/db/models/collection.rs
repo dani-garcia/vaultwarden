@@ -1,6 +1,6 @@
 use serde_json::Value;
 
-use super::{Organization, UserOrgStatus, UserOrgType, UserOrganization, User, Cipher};
+use super::{Cipher, Organization, User, UserOrgStatus, UserOrgType, UserOrganization};
 
 db_object! {
     #[derive(Debug, Identifiable, Queryable, Insertable, Associations, AsChangeset)]
@@ -253,7 +253,13 @@ impl CollectionUser {
         }}
     }
 
-    pub fn save(user_uuid: &str, collection_uuid: &str, read_only: bool, hide_passwords: bool, conn: &DbConn) -> EmptyResult {
+    pub fn save(
+        user_uuid: &str,
+        collection_uuid: &str,
+        read_only: bool,
+        hide_passwords: bool,
+        conn: &DbConn,
+    ) -> EmptyResult {
         User::update_uuid_revision(&user_uuid, conn);
 
         db_run! { conn:
@@ -364,7 +370,7 @@ impl CollectionUser {
                 diesel::delete(users_collections::table.filter(
                     users_collections::user_uuid.eq(user_uuid)
                     .and(users_collections::collection_uuid.eq(user.collection_uuid))
-                
+
                 ))
                     .execute(conn)
                     .map_res("Error removing user from collections")?;

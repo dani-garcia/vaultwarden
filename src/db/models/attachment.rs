@@ -59,7 +59,6 @@ use crate::error::MapResult;
 
 /// Database methods
 impl Attachment {
-
     pub fn save(&self, conn: &DbConn) -> EmptyResult {
         db_run! { conn:
             sqlite, mysql {

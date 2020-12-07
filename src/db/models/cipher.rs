@@ -2,14 +2,7 @@ use chrono::{NaiveDateTime, Utc};
 use serde_json::Value;
 
 use super::{
-    Attachment,
-    CollectionCipher,
-    Favorite,
-    FolderCipher,
-    Organization,
-    User,
-    UserOrgStatus,
-    UserOrgType,
+    Attachment, CollectionCipher, Favorite, FolderCipher, Organization, User, UserOrgStatus, UserOrgType,
     UserOrganization,
 };
 
@@ -85,31 +78,40 @@ impl Cipher {
         let attachments = Attachment::find_by_cipher(&self.uuid, conn);
         let attachments_json: Vec<Value> = attachments.iter().map(|c| c.to_json(host)).collect();
 
-        let fields_json = self.fields.as_ref().and_then(|s| serde_json::from_str(s).ok()).unwrap_or(Value::Null);
-        let password_history_json = self.password_history.as_ref().and_then(|s| serde_json::from_str(s).ok()).unwrap_or(Value::Null);
+        let fields_json = self
+            .fields
+            .as_ref()
+            .and_then(|s| serde_json::from_str(s).ok())
+            .unwrap_or(Value::Null);
+        let password_history_json = self
+            .password_history
+            .as_ref()
+            .and_then(|s| serde_json::from_str(s).ok())
+            .unwrap_or(Value::Null);
 
-        let (read_only, hide_passwords) =
-            match self.get_access_restrictions(&user_uuid, conn) {
-                Some((ro, hp)) => (ro, hp),
-                None => {
-                    error!("Cipher ownership assertion failure");
-                    (true, true)
-                },
-            };
+        let (read_only, hide_passwords) = match self.get_access_restrictions(&user_uuid, conn) {
+            Some((ro, hp)) => (ro, hp),
+            None => {
+                error!("Cipher ownership assertion failure");
+                (true, true)
+            }
+        };
 
         // Get the data or a default empty value to avoid issues with the mobile apps
-        let mut data_json: Value = serde_json::from_str(&self.data).unwrap_or_else(|_| json!({
-            "Fields":null,
-            "Name": self.name,
-            "Notes":null,
-            "Password":null,
-            "PasswordHistory":null,
-            "PasswordRevisionDate":null,
-            "Response":null,
-            "Totp":null,
-            "Uris":null,
-            "Username":null
-        }));
+        let mut data_json: Value = serde_json::from_str(&self.data).unwrap_or_else(|_| {
+            json!({
+                "Fields":null,
+                "Name": self.name,
+                "Notes":null,
+                "Password":null,
+                "PasswordHistory":null,
+                "PasswordRevisionDate":null,
+                "Response":null,
+                "Totp":null,
+                "Uris":null,
+                "Username":null
+            })
+        });
 
         // TODO: ******* Backwards compat start **********
         // To remove backwards compatibility, just remove this entire section

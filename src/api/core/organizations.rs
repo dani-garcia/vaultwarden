@@ -410,9 +410,7 @@ fn put_collection_users(
             continue;
         }
 
-        CollectionUser::save(&user.user_uuid, &coll_id,
-                             d.ReadOnly, d.HidePasswords,
-                             &conn)?;
+        CollectionUser::save(&user.user_uuid, &coll_id, d.ReadOnly, d.HidePasswords, &conn)?;
     }
 
     Ok(())
@@ -528,9 +526,7 @@ fn send_invite(org_id: String, data: JsonUpcase<InviteData>, headers: AdminHeade
                 match Collection::find_by_uuid_and_org(&col.Id, &org_id, &conn) {
                     None => err!("Collection not found in Organization"),
                     Some(collection) => {
-                        CollectionUser::save(&user.uuid, &collection.uuid,
-                                             col.ReadOnly, col.HidePasswords,
-                                             &conn)?;
+                        CollectionUser::save(&user.uuid, &collection.uuid, col.ReadOnly, col.HidePasswords, &conn)?;
                     }
                 }
             }
@@ -785,9 +781,13 @@ fn edit_user(
             match Collection::find_by_uuid_and_org(&col.Id, &org_id, &conn) {
                 None => err!("Collection not found in Organization"),
                 Some(collection) => {
-                    CollectionUser::save(&user_to_edit.user_uuid, &collection.uuid,
-                                         col.ReadOnly, col.HidePasswords,
-                                         &conn)?;
+                    CollectionUser::save(
+                        &user_to_edit.user_uuid,
+                        &collection.uuid,
+                        col.ReadOnly,
+                        col.HidePasswords,
+                        &conn,
+                    )?;
                 }
             }
         }
@@ -973,7 +973,13 @@ struct PolicyData {
 }
 
 #[put("/organizations/<org_id>/policies/<pol_type>", data = "<data>")]
-fn put_policy(org_id: String, pol_type: i32, data: Json<PolicyData>, _headers: AdminHeaders, conn: DbConn) -> JsonResult {
+fn put_policy(
+    org_id: String,
+    pol_type: i32,
+    data: Json<PolicyData>,
+    _headers: AdminHeaders,
+    conn: DbConn,
+) -> JsonResult {
     let data: PolicyData = data.into_inner();
 
     let pol_type_enum = match OrgPolicyType::from_i32(pol_type) {

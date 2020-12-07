@@ -105,7 +105,8 @@ fn admin_url(referer: Referer) -> String {
 fn admin_login(flash: Option<FlashMessage>) -> ApiResult<Html<String>> {
     // If there is an error, show it
     let msg = flash.map(|msg| format!("{}: {}", msg.name(), msg.msg()));
-    let json = json!({"page_content": "admin/login", "version": VERSION, "error": msg, "urlpath": CONFIG.domain_path()});
+    let json =
+        json!({"page_content": "admin/login", "version": VERSION, "error": msg, "urlpath": CONFIG.domain_path()});
 
     // Return the page
     let text = CONFIG.render_template(BASE_TEMPLATE, &json)?;
@@ -291,14 +292,16 @@ fn get_users_json(_token: AdminToken, conn: DbConn) -> JsonResult {
 #[get("/users/overview")]
 fn users_overview(_token: AdminToken, conn: DbConn) -> ApiResult<Html<String>> {
     let users = User::get_all(&conn);
-    let users_json: Vec<Value> = users.iter()
+    let users_json: Vec<Value> = users
+        .iter()
         .map(|u| {
             let mut usr = u.to_json(&conn);
             usr["cipher_count"] = json!(Cipher::count_owned_by_user(&u.uuid, &conn));
             usr["attachment_count"] = json!(Attachment::count_by_user(&u.uuid, &conn));
             usr["attachment_size"] = json!(get_display_size(Attachment::size_by_user(&u.uuid, &conn) as i32));
             usr
-    }).collect();
+        })
+        .collect();
 
     let text = AdminTemplateData::users(users_json).render()?;
     Ok(Html(text))
@@ -335,14 +338,17 @@ fn update_revision_users(_token: AdminToken, conn: DbConn) -> EmptyResult {
 #[get("/organizations/overview")]
 fn organizations_overview(_token: AdminToken, conn: DbConn) -> ApiResult<Html<String>> {
     let organizations = Organization::get_all(&conn);
-    let organizations_json: Vec<Value> = organizations.iter().map(|o| {
+    let organizations_json: Vec<Value> = organizations
+        .iter()
+        .map(|o| {
             let mut org = o.to_json();
             org["user_count"] = json!(UserOrganization::count_by_org(&o.uuid, &conn));
             org["cipher_count"] = json!(Cipher::count_by_org(&o.uuid, &conn));
             org["attachment_count"] = json!(Attachment::count_by_org(&o.uuid, &conn));
             org["attachment_size"] = json!(get_display_size(Attachment::size_by_org(&o.uuid, &conn) as i32));
             org
-    }).collect();
+        })
+        .collect();
 
     let text = AdminTemplateData::organizations(organizations_json).render()?;
     Ok(Html(text))
@@ -368,21 +374,20 @@ fn get_github_api<T: DeserializeOwned>(url: &str) -> Result<T, Error> {
     use std::time::Duration;
     let github_api = Client::builder().build()?;
 
-    Ok(
-        github_api.get(url)
+    Ok(github_api
+        .get(url)
         .timeout(Duration::from_secs(10))
         .header(USER_AGENT, "Bitwarden_RS")
         .send()?
         .error_for_status()?
-        .json::<T>()?
-    )
+        .json::<T>()?)
 }
 
 #[get("/diagnostics")]
 fn diagnostics(_token: AdminToken, _conn: DbConn) -> ApiResult<Html<String>> {
-    use std::net::ToSocketAddrs;
-    use chrono::prelude::*;
     use crate::util::read_file_string;
+    use chrono::prelude::*;
+    use std::net::ToSocketAddrs;
 
     let vault_version_path = format!("{}/{}", CONFIG.web_vault_folder(), "version.json");
     let vault_version_str = read_file_string(&vault_version_path)?;
@@ -397,20 +402,22 @@ fn diagnostics(_token: AdminToken, _conn: DbConn) -> ApiResult<Html<String>> {
     // If the DNS Check failed, do not even attempt to check for new versions since we were not able to resolve github.com
     let (latest_release, latest_commit, latest_web_build) = if dns_ok {
         (
-            match get_github_api::<GitRelease>("https://api.github.com/repos/dani-garcia/bitwarden_rs/releases/latest") {
+            match get_github_api::<GitRelease>("https://api.github.com/repos/dani-garcia/bitwarden_rs/releases/latest")
+            {
                 Ok(r) => r.tag_name,
-                _ => "-".to_string()
+                _ => "-".to_string(),
             },
             match get_github_api::<GitCommit>("https://api.github.com/repos/dani-garcia/bitwarden_rs/commits/master") {
                 Ok(mut c) => {
                     c.sha.truncate(8);
                     c.sha
+                }
+                _ => "-".to_string(),
             },
-                _ => "-".to_string()
-            },
-            match get_github_api::<GitRelease>("https://api.github.com/repos/dani-garcia/bw_web_builds/releases/latest") {
+            match get_github_api::<GitRelease>("https://api.github.com/repos/dani-garcia/bw_web_builds/releases/latest")
+            {
                 Ok(r) => r.tag_name.trim_start_matches('v').to_string(),
-                _ => "-".to_string()
+                _ => "-".to_string(),
             },
         )
     } else {

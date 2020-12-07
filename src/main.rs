@@ -118,7 +118,9 @@ fn init_logging(level: log::LevelFilter) -> Result<(), fern::InitError> {
     // Enable smtp debug logging only specifically for smtp when need.
     // This can contain sensitive information we do not want in the default debug/trace logging.
     if CONFIG.smtp_debug() {
-        println!("[WARNING] SMTP Debugging is enabled (SMTP_DEBUG=true). Sensitive information could be disclosed via logs!");
+        println!(
+            "[WARNING] SMTP Debugging is enabled (SMTP_DEBUG=true). Sensitive information could be disclosed via logs!"
+        );
         println!("[WARNING] Only enable SMTP_DEBUG during troubleshooting!\n");
         logger = logger.level_for("lettre::transport::smtp", log::LevelFilter::Debug)
     } else {
@@ -270,7 +272,10 @@ fn check_web_vault() {
     let index_path = Path::new(&CONFIG.web_vault_folder()).join("index.html");
 
     if !index_path.exists() {
-        error!("Web vault is not found at '{}'. To install it, please follow the steps in: ", CONFIG.web_vault_folder());
+        error!(
+            "Web vault is not found at '{}'. To install it, please follow the steps in: ",
+            CONFIG.web_vault_folder()
+        );
         error!("https://github.com/dani-garcia/bitwarden_rs/wiki/Building-binary#install-the-web-vault");
         error!("You can also set the environment variable 'WEB_VAULT_ENABLED=false' to disable it");
         exit(1);

@@ -33,10 +33,10 @@ macro_rules! make_error {
     };
 }
 
+use diesel::r2d2::PoolError as R2d2Err;
 use diesel::result::Error as DieselErr;
 use diesel::ConnectionError as DieselConErr;
 use diesel_migrations::RunMigrationsError as DieselMigErr;
-use diesel::r2d2::PoolError as R2d2Err;
 use handlebars::RenderError as HbErr;
 use jsonwebtoken::errors::Error as JWTErr;
 use regex::Error as RegexErr;
@@ -190,7 +190,7 @@ use rocket::response::{self, Responder, Response};
 impl<'r> Responder<'r> for Error {
     fn respond_to(self, _: &Request) -> response::Result<'r> {
         match self.error {
-            ErrorKind::EmptyError(_) => {} // Don't print the error in this situation
+            ErrorKind::EmptyError(_) => {}  // Don't print the error in this situation
             ErrorKind::SimpleError(_) => {} // Don't print the error in this situation
             _ => error!(target: "error", "{:#?}", self),
         };

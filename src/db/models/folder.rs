@@ -109,7 +109,6 @@ impl Folder {
         User::update_uuid_revision(&self.user_uuid, conn);
         FolderCipher::delete_all_by_folder(&self.uuid, &conn)?;
 
-
         db_run! { conn: {
             diesel::delete(folders::table.filter(folders::uuid.eq(&self.uuid)))
                 .execute(conn)

@@ -25,7 +25,6 @@ pub mod __mysql_schema;
 #[path = "schemas/postgresql/schema.rs"]
 pub mod __postgresql_schema;
 
-
 // This is used to generate the main DbConn and DbPool enums, which contain one variant for each database supported
 macro_rules! generate_connections {
     ( $( $name:ident: $ty:ty ),+ ) => {
@@ -109,7 +108,6 @@ impl DbConnType {
     }
 }
 
-
 #[macro_export]
 macro_rules! db_run {
     // Same for all dbs
@@ -124,10 +122,10 @@ macro_rules! db_run {
             $($(
                 #[cfg($db)]
                 crate::db::DbConn::$db(ref $conn) => {
-                    paste::paste! { 
+                    paste::paste! {
                         #[allow(unused)] use crate::db::[<__ $db _schema>]::{self as schema, *};
                         #[allow(unused)] use [<__ $db _model>]::*;
-                        #[allow(unused)] use crate::db::FromDb;  
+                        #[allow(unused)] use crate::db::FromDb;
                     }
                     $body
                 },
@@ -136,14 +134,13 @@ macro_rules! db_run {
     };
 }
 
-
 pub trait FromDb {
     type Output;
     #[allow(clippy::wrong_self_convention)]
     fn from_db(self) -> Self::Output;
 }
 
-// For each struct eg. Cipher, we create a CipherDb inside a module named __$db_model (where $db is sqlite, mysql or postgresql), 
+// For each struct eg. Cipher, we create a CipherDb inside a module named __$db_model (where $db is sqlite, mysql or postgresql),
 // to implement the Diesel traits. We also provide methods to convert between them and the basic structs. Later, that module will be auto imported when using db_run!
 #[macro_export]
 macro_rules! db_object {
@@ -153,10 +150,10 @@ macro_rules! db_object {
             $( $( #[$field_attr:meta] )* $vis:vis $field:ident : $typ:ty ),+
             $(,)?
         }
-    )+ ) => { 
+    )+ ) => {
         // Create the normal struct, without attributes
         $( pub struct $name { $( /*$( #[$field_attr] )**/ $vis $field : $typ, )+ } )+
-        
+
         #[cfg(sqlite)]
         pub mod __sqlite_model     { $( db_object! { @db sqlite     |  $( #[$attr] )* | $name |  $( $( #[$field_attr] )* $field : $typ ),+ } )+ }
         #[cfg(mysql)]
@@ -177,7 +174,7 @@ macro_rules! db_object {
             )+ }
 
             impl [<$name Db>] {
-                #[allow(clippy::wrong_self_convention)] 
+                #[allow(clippy::wrong_self_convention)]
                 #[inline(always)] pub fn to_db(x: &super::$name) -> Self { Self { $( $field: x.$field.clone(), )+ } }
             }
 
@@ -259,10 +256,9 @@ mod sqlite_migrations {
 
         use diesel::{Connection, RunQueryDsl};
         // Make sure the database is up to date (create if it doesn't exist, or run the migrations)
-        let connection =
-            diesel::sqlite::SqliteConnection::establish(&crate::CONFIG.database_url())?;
+        let connection = diesel::sqlite::SqliteConnection::establish(&crate::CONFIG.database_url())?;
         // Disable Foreign Key Checks during migration
-        
+
         // Scoped to a connection.
         diesel::sql_query("PRAGMA foreign_keys = OFF")
             .execute(&connection)
@@ -288,8 +284,7 @@ mod mysql_migrations {
     pub fn run_migrations() -> Result<(), super::Error> {
         use diesel::{Connection, RunQueryDsl};
         // Make sure the database is up to date (create if it doesn't exist, or run the migrations)
-        let connection =
-            diesel::mysql::MysqlConnection::establish(&crate::CONFIG.database_url())?;
+        let connection = diesel::mysql::MysqlConnection::establish(&crate::CONFIG.database_url())?;
         // Disable Foreign Key Checks during migration
 
         // Scoped to a connection/session.
@@ -310,10 +305,9 @@ mod postgresql_migrations {
     pub fn run_migrations() -> Result<(), super::Error> {
         use diesel::{Connection, RunQueryDsl};
         // Make sure the database is up to date (create if it doesn't exist, or run the migrations)
-        let connection =
-            diesel::pg::PgConnection::establish(&crate::CONFIG.database_url())?;
+        let connection = diesel::pg::PgConnection::establish(&crate::CONFIG.database_url())?;
         // Disable Foreign Key Checks during migration
-        
+
         // FIXME: Per https://www.postgresql.org/docs/12/sql-set-constraints.html,
         // "SET CONSTRAINTS sets the behavior of constraint checking within the
         // current transaction", so this setting probably won't take effect for

@@ -141,7 +141,11 @@ pub fn validate_totp_code(user_uuid: &str, totp_code: u64, secret: &str, ip: &Cl
     // The amount of steps back and forward in time
     // Also check if we need to disable time drifted TOTP codes.
     // If that is the case, we set the steps to 0 so only the current TOTP is valid.
-    let steps: i64 = if CONFIG.authenticator_disable_time_drift() { 0 } else { 1 };
+    let steps: i64 = if CONFIG.authenticator_disable_time_drift() {
+        0
+    } else {
+        1
+    };
 
     for step in -steps..=steps {
         let time_step = current_timestamp / 30i64 + step;

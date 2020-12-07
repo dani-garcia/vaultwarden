@@ -215,9 +215,7 @@ pub fn generate_admin_claims() -> AdminJWTClaims {
 //
 // Bearer token authentication
 //
-use rocket::{
-    request::{FromRequest, Request, Outcome},
-};
+use rocket::request::{FromRequest, Outcome, Request};
 
 use crate::db::{
     models::{Device, User, UserOrgStatus, UserOrgType, UserOrganization},

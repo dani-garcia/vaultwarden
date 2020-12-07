@@ -1,8 +1,8 @@
+use num_traits::FromPrimitive;
 use serde_json::Value;
 use std::cmp::Ordering;
-use num_traits::FromPrimitive;
 
-use super::{CollectionUser, User, OrgPolicy};
+use super::{CollectionUser, OrgPolicy, User};
 
 db_object! {
     #[derive(Debug, Identifiable, Queryable, Insertable, AsChangeset)]
@@ -35,8 +35,7 @@ pub enum UserOrgStatus {
     Confirmed = 2,
 }
 
-#[derive(Copy, Clone, PartialEq, Eq)]
-#[derive(num_derive::FromPrimitive)]
+#[derive(Copy, Clone, PartialEq, Eq, num_derive::FromPrimitive)]
 pub enum UserOrgType {
     Owner = 0,
     Admin = 1,
@@ -244,7 +243,6 @@ impl Organization {
         UserOrganization::delete_all_by_organization(&self.uuid, &conn)?;
         OrgPolicy::delete_all_by_organization(&self.uuid, &conn)?;
 
-
         db_run! { conn: {
             diesel::delete(organizations::table.filter(organizations::uuid.eq(self.uuid)))
                 .execute(conn)
@@ -332,11 +330,13 @@ impl UserOrganization {
             let collections = CollectionUser::find_by_organization_and_user_uuid(&self.org_uuid, &self.user_uuid, conn);
             collections
                 .iter()
-                .map(|c| json!({
-                    "Id": c.collection_uuid,
-                    "ReadOnly": c.read_only,
-                    "HidePasswords": c.hide_passwords,
-                }))
+                .map(|c| {
+                    json!({
+                        "Id": c.collection_uuid,
+                        "ReadOnly": c.read_only,
+                        "HidePasswords": c.hide_passwords,
+                    })
+                })
                 .collect()
         };
 
@@ -417,8 +417,7 @@ impl UserOrganization {
     }
 
     pub fn has_full_access(self) -> bool {
-        (self.access_all || self.atype >= UserOrgType::Admin) &&
-            self.has_status(UserOrgStatus::Confirmed)
+        (self.access_all || self.atype >= UserOrgType::Admin) && self.has_status(UserOrgStatus::Confirmed)
     }
 
     pub fn find_by_uuid(uuid: &str, conn: &DbConn) -> Option<Self> {

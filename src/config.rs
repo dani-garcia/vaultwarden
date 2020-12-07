@@ -458,7 +458,6 @@ make_config! {
 }
 
 fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
-
     // Validate connection URL is valid and DB feature is enabled
     DbConnType::from_url(&cfg.database_url)?;
 
@@ -472,7 +471,9 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
 
     let dom = cfg.domain.to_lowercase();
     if !dom.starts_with("http://") && !dom.starts_with("https://") {
-        err!("DOMAIN variable needs to contain the protocol (http, https). Use 'http[s]://bw.example.com' instead of 'bw.example.com'");
+        err!(
+            "DOMAIN variable needs to contain the protocol (http, https). Use 'http[s]://bw.example.com' instead of 'bw.example.com'"
+        );
     }
 
     let whitelist = &cfg.signups_domains_whitelist;
@@ -567,7 +568,12 @@ impl Config {
         validate_config(&config)?;
 
         Ok(Config {
-            inner: RwLock::new(Inner { templates: load_templates(&config.templates_folder), config, _env, _usr }),
+            inner: RwLock::new(Inner {
+                templates: load_templates(&config.templates_folder),
+                config,
+                _env,
+                _usr,
+            }),
         })
     }
 

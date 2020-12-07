@@ -59,21 +59,32 @@ fn mailer() -> SmtpTransport {
 
     let smtp_client = match CONFIG.smtp_auth_mechanism() {
         Some(mechanism) => {
-            let allowed_mechanisms = vec![SmtpAuthMechanism::Plain, SmtpAuthMechanism::Login, SmtpAuthMechanism::Xoauth2];
+            let allowed_mechanisms = vec![
+                SmtpAuthMechanism::Plain,
+                SmtpAuthMechanism::Login,
+                SmtpAuthMechanism::Xoauth2,
+            ];
             let mut selected_mechanisms = vec![];
             for wanted_mechanism in mechanism.split(',') {
                 for m in &allowed_mechanisms {
-                    if m.to_string().to_lowercase() == wanted_mechanism.trim_matches(|c| c == '"' || c == '\'' || c == ' ').to_lowercase() {
+                    if m.to_string().to_lowercase()
+                        == wanted_mechanism
+                            .trim_matches(|c| c == '"' || c == '\'' || c == ' ')
+                            .to_lowercase()
+                    {
                         selected_mechanisms.push(*m);
                     }
                 }
-            };
+            }
 
             if !selected_mechanisms.is_empty() {
                 smtp_client.authentication(selected_mechanisms)
             } else {
                 // Only show a warning, and return without setting an actual authentication mechanism
-                warn!("No valid SMTP Auth mechanism found for '{}', using default values", mechanism);
+                warn!(
+                    "No valid SMTP Auth mechanism found for '{}', using default values",
+                    mechanism
+                );
                 smtp_client
             }
         }
@@ -330,7 +341,10 @@ fn send_email(address: &str, subject: &str, body_html: &str, body_text: &str) ->
     use uuid::Uuid;
     let unique_id = Uuid::new_v4().to_simple();
     let boundary = format!("_Part_{}_", unique_id);
-    let alternative = MultiPart::alternative().boundary(boundary).singlepart(text).singlepart(html);
+    let alternative = MultiPart::alternative()
+        .boundary(boundary)
+        .singlepart(text)
+        .singlepart(html);
     let smtp_from = &CONFIG.smtp_from();
 
     let email = Message::builder()
@@ -349,18 +363,18 @@ fn send_email(address: &str, subject: &str, body_html: &str, body_text: &str) ->
         Err(e) => match e {
             lettre::transport::smtp::Error::Client(x) => {
                 err!(format!("SMTP Client error: {}", x));
-            },
+            }
             lettre::transport::smtp::Error::Transient(x) => {
                 err!(format!("SMTP 4xx error: {:?}", x.message));
-            },
+            }
             lettre::transport::smtp::Error::Permanent(x) => {
                 err!(format!("SMTP 5xx error: {:?}", x.message));
-            },
+            }
             lettre::transport::smtp::Error::Io(x) => {
                 err!(format!("SMTP IO error: {}", x));
-            },
+            }
             // Fallback for all other errors
-            _ => Err(e.into())
-        }
+            _ => Err(e.into()),
+        },
     }
 }

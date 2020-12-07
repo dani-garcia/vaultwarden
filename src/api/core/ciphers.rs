@@ -732,7 +732,13 @@ fn post_attachment(
                     let file_name = HEXLOWER.encode(&crypto::get_random(vec![0; 10]));
                     let path = base_path.join(&file_name);
 
-                    let size = match field.data.save().memory_threshold(0).size_limit(size_limit).with_path(path.clone()) {
+                    let size = match field
+                        .data
+                        .save()
+                        .memory_threshold(0)
+                        .size_limit(size_limit)
+                        .with_path(path.clone())
+                    {
                         SaveResult::Full(SavedData::File(_, size)) => size as i32,
                         SaveResult::Full(other) => {
                             std::fs::remove_file(path).ok();
@@ -781,7 +787,11 @@ fn post_attachment_admin(
     post_attachment(uuid, data, content_type, headers, conn, nt)
 }
 
-#[post("/ciphers/<uuid>/attachment/<attachment_id>/share", format = "multipart/form-data", data = "<data>")]
+#[post(
+    "/ciphers/<uuid>/attachment/<attachment_id>/share",
+    format = "multipart/form-data",
+    data = "<data>"
+)]
 fn post_attachment_share(
     uuid: String,
     attachment_id: String,
@@ -884,12 +894,22 @@ fn delete_cipher_selected_admin(data: JsonUpcase<Value>, headers: Headers, conn:
 }
 
 #[post("/ciphers/delete-admin", data = "<data>")]
-fn delete_cipher_selected_post_admin(data: JsonUpcase<Value>, headers: Headers, conn: DbConn, nt: Notify) -> EmptyResult {
+fn delete_cipher_selected_post_admin(
+    data: JsonUpcase<Value>,
+    headers: Headers,
+    conn: DbConn,
+    nt: Notify,
+) -> EmptyResult {
     delete_cipher_selected_post(data, headers, conn, nt)
 }
 
 #[put("/ciphers/delete-admin", data = "<data>")]
-fn delete_cipher_selected_put_admin(data: JsonUpcase<Value>, headers: Headers, conn: DbConn, nt: Notify) -> EmptyResult {
+fn delete_cipher_selected_put_admin(
+    data: JsonUpcase<Value>,
+    headers: Headers,
+    conn: DbConn,
+    nt: Notify,
+) -> EmptyResult {
     delete_cipher_selected_put(data, headers, conn, nt)
 }
 
@@ -1041,7 +1061,13 @@ fn _delete_cipher_by_uuid(uuid: &str, headers: &Headers, conn: &DbConn, soft_del
     Ok(())
 }
 
-fn _delete_multiple_ciphers(data: JsonUpcase<Value>, headers: Headers, conn: DbConn, soft_delete: bool, nt: Notify) -> EmptyResult {
+fn _delete_multiple_ciphers(
+    data: JsonUpcase<Value>,
+    headers: Headers,
+    conn: DbConn,
+    soft_delete: bool,
+    nt: Notify,
+) -> EmptyResult {
     let data: Value = data.into_inner().data;
 
     let uuids = match data.get("Ids") {
