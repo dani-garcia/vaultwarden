@@ -9,6 +9,24 @@ on:
   #    - "**.md"
 
 jobs:
+  fmt:
+    name: fmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install Rust toolchain
+        run: cargo
+      - name: Install rustfmt
+        run: rustup component add rustfmt
+      # Check fmt
+      - name: "rustfmt --check"
+        # Workaround for rust-lang/cargo#7732
+        run: |
+          if ! rustfmt --check --edition 2018 $(find ./src -name '*.rs' -print); then
+            printf "Please run \`rustfmt --edition 2018 \$(find . -name '*.rs' -print)\` to fix rustfmt errors.\n" >&2
+            exit 1
+          fi
+
   build:
     name: Build
     strategy:
