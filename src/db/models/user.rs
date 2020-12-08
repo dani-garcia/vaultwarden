@@ -288,6 +288,13 @@ impl User {
             users::table.load::<UserDb>(conn).expect("Error loading users").from_db()
         }}
     }
+
+    pub fn last_active(&self, conn: &DbConn) -> Option<NaiveDateTime> {
+        match Device::find_latest_active_by_user(&self.uuid, conn) {
+            Some(device) => Some(device.updated_at),
+            None => None
+        }        
+    }
 }
 
 impl Invitation {
