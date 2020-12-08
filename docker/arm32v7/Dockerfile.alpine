@@ -20,7 +20,7 @@ FROM bitwardenrs/web-vault@sha256:e40228f94cead5e50af6575fb39850a002dad146dab683
 ########################## BUILD IMAGE  ##########################
 FROM messense/rust-musl-cross:armv7-musleabihf as build
 
-# Alpine only works on SQlite
+# Alpine-based ARM (musl) only supports sqlite during compile time.
 ARG DB=sqlite
 
 # Build time options to avoid dpkg warnings and help with reproducible builds.
