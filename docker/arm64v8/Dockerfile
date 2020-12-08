@@ -10,12 +10,12 @@
 #  It can be viewed in multiple ways:
 #  - From the https://hub.docker.com/repository/docker/bitwardenrs/web-vault/tags page, click the tag name and the digest should be there.
 #  - From the console, with the following commands:
-#      docker pull bitwardenrs/web-vault:v2.16.1
-#      docker image inspect --format "{{.RepoDigests}}" bitwardenrs/web-vault:v2.16.1
+#      docker pull bitwardenrs/web-vault:v2.17.1
+#      docker image inspect --format "{{.RepoDigests}}" bitwardenrs/web-vault:v2.17.1
 #
 #  - To do the opposite, and get the tag from the hash, you can do:
-#      docker image inspect --format "{{.RepoTags}}" bitwardenrs/web-vault@sha256:e40228f94cead5e50af6575fb39850a002dad146dab6836e5da5663e6d214303
-FROM bitwardenrs/web-vault@sha256:e40228f94cead5e50af6575fb39850a002dad146dab6836e5da5663e6d214303 as vault
+#      docker image inspect --format "{{.RepoTags}}" bitwardenrs/web-vault@sha256:dcb7884dc5845b3842ff2204fe77482000b771495c6c359297ec3c03330d65e0
+FROM bitwardenrs/web-vault@sha256:dcb7884dc5845b3842ff2204fe77482000b771495c6c359297ec3c03330d65e0 as vault
 
 ########################## BUILD IMAGE  ##########################
 FROM rust:1.48 as build

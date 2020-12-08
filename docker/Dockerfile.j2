@@ -44,17 +44,17 @@
 # 	https://docs.docker.com/develop/develop-images/multistage-build/
 # 	https://whitfin.io/speeding-up-rust-docker-builds/
 ####################### VAULT BUILD IMAGE  #######################
-{% set vault_image_hash = "sha256:e40228f94cead5e50af6575fb39850a002dad146dab6836e5da5663e6d214303" %}
+{% set vault_image_hash = "sha256:dcb7884dc5845b3842ff2204fe77482000b771495c6c359297ec3c03330d65e0" %}
 {% raw %}
 #  This hash is extracted from the docker web-vault builds and it's preferred over a simple tag because it's immutable.
 #  It can be viewed in multiple ways:
 #  - From the https://hub.docker.com/repository/docker/bitwardenrs/web-vault/tags page, click the tag name and the digest should be there.
 #  - From the console, with the following commands:
-#      docker pull bitwardenrs/web-vault:v2.16.1
-#      docker image inspect --format "{{.RepoDigests}}" bitwardenrs/web-vault:v2.16.1
+#      docker pull bitwardenrs/web-vault:v2.17.1
+#      docker image inspect --format "{{.RepoDigests}}" bitwardenrs/web-vault:v2.17.1
 #
 #  - To do the opposite, and get the tag from the hash, you can do:
-#      docker image inspect --format "{{.RepoTags}}" bitwardenrs/web-vault@sha256:e40228f94cead5e50af6575fb39850a002dad146dab6836e5da5663e6d214303
+#      docker image inspect --format "{{.RepoTags}}" bitwardenrs/web-vault@sha256:dcb7884dc5845b3842ff2204fe77482000b771495c6c359297ec3c03330d65e0
 {% endraw %}
 FROM bitwardenrs/web-vault@{{ vault_image_hash }} as vault
 
