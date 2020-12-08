@@ -300,6 +300,11 @@ fn users_overview(_token: AdminToken, conn: DbConn) -> ApiResult<Html<String>> {
             usr["attachment_count"] = json!(Attachment::count_by_user(&u.uuid, &conn));
             usr["attachment_size"] = json!(get_display_size(Attachment::size_by_user(&u.uuid, &conn) as i32));
             usr["user_enabled"] = json!(u.enabled);
+            usr["created_at"] = json!(&u.created_at.format("%Y-%m-%d %H:%M:%S").to_string());
+            usr["last_active"] = match u.last_active(&conn) {
+                Some(timestamp) => json!(timestamp.format("%Y-%m-%d %H:%M:%S").to_string()),
+                None => json!("Never")
+            };
             usr
     }).collect();
 

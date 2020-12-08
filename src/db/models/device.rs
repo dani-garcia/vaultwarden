@@ -178,4 +178,15 @@ impl Device {
                 .from_db()
         }}
     }
+
+    pub fn find_latest_active_by_user(user_uuid: &str, conn: &DbConn) -> Option<Self> {
+        db_run! { conn: {
+            devices::table
+                .filter(devices::user_uuid.eq(user_uuid))
+                .order(devices::updated_at.desc())
+                .first::<DeviceDb>(conn)
+                .ok()
+                .from_db()
+        }}
+    }
 }
