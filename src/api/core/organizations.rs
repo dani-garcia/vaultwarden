@@ -5,7 +5,7 @@ use serde_json::Value;
 
 use crate::{
     api::{EmptyResult, JsonResult, JsonUpcase, JsonUpcaseVec, Notify, NumberOrString, PasswordData, UpdateType},
-    auth::{decode_invite, AdminHeaders, Headers, OwnerHeaders},
+    auth::{decode_invite, AdminHeaders, Headers, OwnerHeaders, ManagerHeaders, ManagerHeadersLoose},
     db::{models::*, DbConn},
     mail, CONFIG,
 };
@@ -217,7 +217,7 @@ fn get_org_collections(org_id: String, _headers: AdminHeaders, conn: DbConn) -> 
 #[post("/organizations/<org_id>/collections", data = "<data>")]
 fn post_organization_collections(
     org_id: String,
-    _headers: AdminHeaders,
+    headers: ManagerHeadersLoose,
     data: JsonUpcase<NewCollectionData>,
     conn: DbConn,
 ) -> JsonResult {
@@ -228,8 +228,21 @@ fn post_organization_collections(
         None => err!("Can't find organization details"),
     };
 
+    // Get the user_organization record so that we can check if the user has access to all collections.
+    let user_org = match UserOrganization::find_by_user_and_org(&headers.user.uuid, &org_id, &conn) {
+        Some(u) => u,
+        None => err!("User is not part of organization"),
+    };
+
     let collection = Collection::new(org.uuid, data.Name);
     collection.save(&conn)?;
+
+    // If the user doesn't have access to all collections, only in case of a Manger,
+    // then we need to save the creating user uuid (Manager) to the users_collection table.
+    // Else the user will not have access to his own created collection.
+    if !user_org.access_all {
+        CollectionUser::save(&headers.user.uuid, &collection.uuid, false, false, &conn)?;
+    }
 
     Ok(Json(collection.to_json()))
 }
@@ -238,7 +251,7 @@ fn post_organization_collections(
 fn put_organization_collection_update(
     org_id: String,
     col_id: String,
-    headers: AdminHeaders,
+    headers: ManagerHeaders,
     data: JsonUpcase<NewCollectionData>,
     conn: DbConn,
 ) -> JsonResult {
@@ -249,7 +262,7 @@ fn put_organization_collection_update(
 fn post_organization_collection_update(
     org_id: String,
     col_id: String,
-    _headers: AdminHeaders,
+    _headers: ManagerHeaders,
     data: JsonUpcase<NewCollectionData>,
     conn: DbConn,
 ) -> JsonResult {
@@ -317,7 +330,7 @@ fn post_organization_collection_delete_user(
 }
 
 #[delete("/organizations/<org_id>/collections/<col_id>")]
-fn delete_organization_collection(org_id: String, col_id: String, _headers: AdminHeaders, conn: DbConn) -> EmptyResult {
+fn delete_organization_collection(org_id: String, col_id: String, _headers: ManagerHeaders, conn: DbConn) -> EmptyResult {
     match Collection::find_by_uuid(&col_id, &conn) {
         None => err!("Collection not found"),
         Some(collection) => {
@@ -341,7 +354,7 @@ struct DeleteCollectionData {
 fn post_organization_collection_delete(
     org_id: String,
     col_id: String,
-    headers: AdminHeaders,
+    headers: ManagerHeaders,
     _data: JsonUpcase<DeleteCollectionData>,
     conn: DbConn,
 ) -> EmptyResult {
@@ -349,7 +362,7 @@ fn post_organization_collection_delete(
 }
 
 #[get("/organizations/<org_id>/collections/<coll_id>/details")]
-fn get_org_collection_detail(org_id: String, coll_id: String, headers: AdminHeaders, conn: DbConn) -> JsonResult {
+fn get_org_collection_detail(org_id: String, coll_id: String, headers: ManagerHeaders, conn: DbConn) -> JsonResult {
     match Collection::find_by_uuid_and_user(&coll_id, &headers.user.uuid, &conn) {
         None => err!("Collection not found"),
         Some(collection) => {
@@ -363,7 +376,7 @@ fn get_org_collection_detail(org_id: String, coll_id: String, headers: AdminHead
 }
 
 #[get("/organizations/<org_id>/collections/<coll_id>/users")]
-fn get_collection_users(org_id: String, coll_id: String, _headers: AdminHeaders, conn: DbConn) -> JsonResult {
+fn get_collection_users(org_id: String, coll_id: String, _headers: ManagerHeaders, conn: DbConn) -> JsonResult {
     // Get org and collection, check that collection is from org
     let collection = match Collection::find_by_uuid_and_org(&coll_id, &org_id, &conn) {
         None => err!("Collection not found in Organization"),
@@ -388,7 +401,7 @@ fn put_collection_users(
     org_id: String,
     coll_id: String,
     data: JsonUpcaseVec<CollectionData>,
-    _headers: AdminHeaders,
+    _headers: ManagerHeaders,
     conn: DbConn,
 ) -> EmptyResult {
     // Get org and collection, check that collection is from org
@@ -440,7 +453,7 @@ fn get_org_details(data: Form<OrgIdData>, headers: Headers, conn: DbConn) -> Jso
 }
 
 #[get("/organizations/<org_id>/users")]
-fn get_org_users(org_id: String, _headers: AdminHeaders, conn: DbConn) -> JsonResult {
+fn get_org_users(org_id: String, _headers: ManagerHeadersLoose, conn: DbConn) -> JsonResult {
     let users = UserOrganization::find_by_org(&org_id, &conn);
     let users_json: Vec<Value> = users.iter().map(|c| c.to_json_user_details(&conn)).collect();
 

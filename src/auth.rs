@@ -220,7 +220,7 @@ use rocket::{
 };
 
 use crate::db::{
-    models::{Device, User, UserOrgStatus, UserOrgType, UserOrganization},
+    models::{Device, User, UserOrgStatus, UserOrgType, UserOrganization, CollectionUser},
     DbConn,
 };
 
@@ -310,6 +310,8 @@ pub struct OrgHeaders {
     pub device: Device,
     pub user: User,
     pub org_user_type: UserOrgType,
+    pub org_user: UserOrganization,
+    pub org_id: String,
 }
 
 // org_id is usually the second param ("/organizations/<org_id>")
@@ -370,6 +372,8 @@ impl<'a, 'r> FromRequest<'a, 'r> for OrgHeaders {
                                     err_handler!("Unknown user type in the database")
                                 }
                             },
+                            org_user,
+                            org_id,
                         })
                     }
                     _ => err_handler!("Error getting the organization id"),
@@ -410,6 +414,131 @@ impl<'a, 'r> FromRequest<'a, 'r> for AdminHeaders {
 }
 
 impl Into<Headers> for AdminHeaders {
+    fn into(self) -> Headers {
+        Headers {
+            host: self.host,
+            device: self.device,
+            user: self.user,
+        }
+    }
+}
+
+
+
+
+
+// col_id is usually the forth param ("/organizations/<org_id>/collections/<col_id>")
+// But there cloud be cases where it is located in a query value.
+// First check the param, if this is not a valid uuid, we will try the query value.
+fn get_col_id(request: &Request) -> Option<String> {
+    if let Some(Ok(col_id)) = request.get_param::<String>(3) {
+        if uuid::Uuid::parse_str(&col_id).is_ok() {
+            return Some(col_id);
+        }
+    }
+
+    if let Some(Ok(col_id)) = request.get_query_value::<String>("collectionId") {
+        if uuid::Uuid::parse_str(&col_id).is_ok() {
+            return Some(col_id);
+        }
+    }
+
+    None
+}
+
+/// The ManagerHeaders are used to check if you are at least a Manager
+/// and have access to the specific collection provided via the <col_id>/collections/collectionId.
+/// This does strict checking on the collection_id, ManagerHeadersLoose does not.
+pub struct ManagerHeaders {
+    pub host: String,
+    pub device: Device,
+    pub user: User,
+    pub org_user_type: UserOrgType,
+}
+
+impl<'a, 'r> FromRequest<'a, 'r> for ManagerHeaders {
+    type Error = &'static str;
+
+    fn from_request(request: &'a Request<'r>) -> Outcome<Self, Self::Error> {
+        match request.guard::<OrgHeaders>() {
+            Outcome::Forward(_) => Outcome::Forward(()),
+            Outcome::Failure(f) => Outcome::Failure(f),
+            Outcome::Success(headers) => {
+                if headers.org_user_type >= UserOrgType::Manager {
+                    match get_col_id(request) {
+                        Some(col_id) => {
+                            let conn = match request.guard::<DbConn>() {
+                                Outcome::Success(conn) => conn,
+                                _ => err_handler!("Error getting DB"),
+                            };
+
+                            if !headers.org_user.access_all {
+                                match CollectionUser::find_by_collection_and_user(&col_id, &headers.org_user.user_uuid, &conn) {
+                                    Some(_) => (),
+                                    None => err_handler!("The current user isn't a manager for this collection"),
+                                }
+                            }
+                        },
+                        _ => err_handler!("Error getting the collection id"),
+                    }
+
+                    Outcome::Success(Self {
+                        host: headers.host,
+                        device: headers.device,
+                        user: headers.user,
+                        org_user_type: headers.org_user_type,
+                    })
+                } else {
+                    err_handler!("You need to be a Manager, Admin or Owner to call this endpoint")
+                }
+            }
+        }
+    }
+}
+
+impl Into<Headers> for ManagerHeaders {
+    fn into(self) -> Headers {
+        Headers {
+            host: self.host,
+            device: self.device,
+            user: self.user,
+        }
+    }
+}
+
+/// The ManagerHeadersLoose is used when you at least need to be a Manager,
+/// but there is no collection_id sent with the request (either in the path or as form data).
+pub struct ManagerHeadersLoose {
+    pub host: String,
+    pub device: Device,
+    pub user: User,
+    pub org_user_type: UserOrgType,
+}
+
+impl<'a, 'r> FromRequest<'a, 'r> for ManagerHeadersLoose {
+    type Error = &'static str;
+
+    fn from_request(request: &'a Request<'r>) -> Outcome<Self, Self::Error> {
+        match request.guard::<OrgHeaders>() {
+            Outcome::Forward(_) => Outcome::Forward(()),
+            Outcome::Failure(f) => Outcome::Failure(f),
+            Outcome::Success(headers) => {
+                if headers.org_user_type >= UserOrgType::Manager {
+                    Outcome::Success(Self {
+                        host: headers.host,
+                        device: headers.device,
+                        user: headers.user,
+                        org_user_type: headers.org_user_type,
+                    })
+                } else {
+                    err_handler!("You need to be a Manager, Admin or Owner to call this endpoint")
+                }
+            }
+        }
+    }
+}
+
+impl Into<Headers> for ManagerHeadersLoose {
     fn into(self) -> Headers {
         Headers {
             host: self.host,
