@@ -527,6 +527,16 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         }
     }
 
+    // Check if the icon blacklist regex is valid
+    if let Some(ref r) = cfg.icon_blacklist_regex {
+        use regex::Regex;
+        let validate_regex = Regex::new(&r);
+        match validate_regex {
+            Ok(_) => (),
+            Err(e) => err!(format!("`ICON_BLACKLIST_REGEX` is invalid: {:#?}", e)),
+        }
+    }
+
     Ok(())
 }
 
