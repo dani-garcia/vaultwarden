@@ -9,7 +9,7 @@ use std::{
 
 use once_cell::sync::Lazy;
 use regex::Regex;
-use reqwest::{blocking::Client, blocking::Response, header::HeaderMap, Url};
+use reqwest::{blocking::Client, blocking::Response, header, Url};
 use rocket::{http::ContentType, http::Cookie, response::Content, Route};
 use soup::prelude::*;
 
@@ -22,10 +22,18 @@ pub fn routes() -> Vec<Route> {
 const ALLOWED_CHARS: &str = "_-.";
 
 static CLIENT: Lazy<Client> = Lazy::new(|| {
+    // Generate the default headers
+    let mut default_headers = header::HeaderMap::new();
+    default_headers.insert(header::USER_AGENT, header::HeaderValue::from_static("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.1.1 Safari/605.1.15"));
+    default_headers.insert(header::ACCEPT_LANGUAGE, header::HeaderValue::from_static("en-US,en;q=0.8"));
+    default_headers.insert(header::CACHE_CONTROL, header::HeaderValue::from_static("no-cache"));
+    default_headers.insert(header::PRAGMA, header::HeaderValue::from_static("no-cache"));
+    default_headers.insert(header::ACCEPT, header::HeaderValue::from_static("text/html,application/xhtml+xml,application/xml; q=0.9,image/webp,image/apng,*/*;q=0.8"));
+
     // Reuse the client between requests
     Client::builder()
         .timeout(Duration::from_secs(CONFIG.icon_download_timeout()))
-        .default_headers(_header_map())
+        .default_headers(default_headers)
         .build()
         .unwrap()
 });
@@ -324,6 +332,12 @@ impl Icon {
     }
 }
 
+struct IconUrlResult {
+    iconlist: Vec<Icon>,
+    cookies: String,
+    referer: String,
+}
+
 /// Returns a Result/Tuple which holds a Vector IconList and a string which holds the cookies from the last response.
 /// There will always be a result with a string which will contain https://example.com/favicon.ico and an empty string for the cookies.
 /// This does not mean that that location does exists, but it is the default location browser use.
@@ -336,18 +350,10 @@ impl Icon {
 /// let (mut iconlist, cookie_str) = get_icon_url("github.com")?;
 /// let (mut iconlist, cookie_str) = get_icon_url("gitlab.com")?;
 /// ```
-fn get_icon_url(domain: &str) -> Result<(Vec<Icon>, String), Error> {
+fn get_icon_url(domain: &str) -> Result<IconUrlResult, Error> {
     // Default URL with secure and insecure schemes
     let ssldomain = format!("https://{}", domain);
     let httpdomain = format!("http://{}", domain);
-
-    // Create the iconlist
-    let mut iconlist: Vec<Icon> = Vec::new();
-
-    // Create the cookie_str to fill it all the cookies from the response
-    // These cookies can be used to request/download the favicon image.
-    // Some sites have extra security in place with for example XSRF Tokens.
-    let mut cookie_str = String::new();
 
     // First check the domain as given during the request for both HTTPS and HTTP.
     let resp = match get_page(&ssldomain).or_else(|_| get_page(&httpdomain)) {
@@ -388,6 +394,15 @@ fn get_icon_url(domain: &str) -> Result<(Vec<Icon>, String), Error> {
         }
     };
 
+    // Create the iconlist
+    let mut iconlist: Vec<Icon> = Vec::new();
+
+    // Create the cookie_str to fill it all the cookies from the response
+    // These cookies can be used to request/download the favicon image.
+    // Some sites have extra security in place with for example XSRF Tokens.
+    let mut cookie_str = "".to_string();
+    let mut referer = "".to_string();
+
     if let Ok(content) = resp {
         // Extract the URL from the respose in case redirects occured (like @ gitlab.com)
         let url = content.url().clone();
@@ -406,6 +421,10 @@ fn get_icon_url(domain: &str) -> Result<(Vec<Icon>, String), Error> {
                 }
             })
             .collect::<String>();
+
+        // Set the referer to be used on the final request, some sites check this.
+        // Mostly used to prevent direct linking and other security resons.
+        referer = url.as_str().to_string();
 
         // Add the default favicon.ico to the list with the domain the content responded from.
         iconlist.push(Icon::new(35, url.join("/favicon.ico").unwrap().into_string()));
@@ -446,21 +465,28 @@ fn get_icon_url(domain: &str) -> Result<(Vec<Icon>, String), Error> {
     iconlist.sort_by_key(|x| x.priority);
 
     // There always is an icon in the list, so no need to check if it exists, and just return the first one
-    Ok((iconlist, cookie_str))
+    Ok(IconUrlResult{
+        iconlist,
+        cookies: cookie_str,
+        referer
+    })
 }
 
 fn get_page(url: &str) -> Result<Response, Error> {
-    get_page_with_cookies(url, "")
+    get_page_with_cookies(url, "", "")
 }
 
-fn get_page_with_cookies(url: &str, cookie_str: &str) -> Result<Response, Error> {
+fn get_page_with_cookies(url: &str, cookie_str: &str, referer: &str) -> Result<Response, Error> {
     if is_domain_blacklisted(Url::parse(url).unwrap().host_str().unwrap_or_default()) {
         err!("Favicon rel linked to a blacklisted domain!");
     }
 
     let mut client = CLIENT.get(url);
     if !cookie_str.is_empty() {
-        client = client.header("cookie", cookie_str)
+        client = client.header("Cookie", cookie_str)
+    }
+    if !referer.is_empty() {
+        client = client.header("Referer", referer)
     }
 
     client.send()?
@@ -493,7 +519,7 @@ fn get_icon_priority(href: &str, sizes: Option<String>) -> u8 {
                 1
             } else if width == 64 {
                 2
-            } else if width >= 24 && width <= 128 {
+            } else if (24..=128).contains(&width) {
                 3
             } else if width == 16 {
                 4
@@ -552,13 +578,13 @@ fn download_icon(domain: &str) -> Result<Vec<u8>, Error> {
         err!("Domain is blacklisted", domain)
     }
 
-    let (iconlist, cookie_str) = get_icon_url(&domain)?;
+    let icon_result = get_icon_url(&domain)?;
 
     let mut buffer = Vec::new();
 
     use data_url::DataUrl;
 
-    for icon in iconlist.iter().take(5) {
+    for icon in icon_result.iconlist.iter().take(5) {
         if icon.href.starts_with("data:image") {
             let datauri = DataUrl::process(&icon.href).unwrap();
             // Check if we are able to decode the data uri
@@ -573,13 +599,13 @@ fn download_icon(domain: &str) -> Result<Vec<u8>, Error> {
                 _ => warn!("data uri is invalid"),
             };
         } else {
-            match get_page_with_cookies(&icon.href, &cookie_str) {
+            match get_page_with_cookies(&icon.href, &icon_result.cookies, &icon_result.referer) {
                 Ok(mut res) => {
                     info!("Downloaded icon from {}", icon.href);
                     res.copy_to(&mut buffer)?;
                     break;
-                }
-                Err(_) => warn!("Download failed for {}", icon.href),
+                },
+                _ => warn!("Download failed for {}", icon.href),
             };
         }
     }
@@ -602,27 +628,5 @@ fn save_icon(path: &str, icon: &[u8]) {
         Err(e) => {
             info!("Icon save error: {:?}", e);
         }
-    }
-}
-
-fn _header_map() -> HeaderMap {
-    // Set some default headers for the request.
-    // Use a browser like user-agent to make sure most websites will return there correct website.
-    use reqwest::header::*;
-
-    macro_rules! headers {
-        ($( $name:ident : $value:literal),+ $(,)? ) => {
-            let mut headers = HeaderMap::new();
-            $( headers.insert($name, HeaderValue::from_static($value)); )+
-            headers
-        };
-    }
-
-    headers! {
-        USER_AGENT: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36 Edge/16.16299",
-        ACCEPT_LANGUAGE: "en-US,en;q=0.8",
-        CACHE_CONTROL: "no-cache",
-        PRAGMA: "no-cache",
-        ACCEPT: "text/html,application/xhtml+xml,application/xml; q=0.9,image/webp,image/apng,*/*;q=0.8",
     }
 }
