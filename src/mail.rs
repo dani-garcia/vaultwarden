@@ -1,7 +1,6 @@
-use std::{env, str::FromStr};
+use std::{str::FromStr};
 
 use chrono::{DateTime, Local};
-use chrono_tz::Tz;
 use percent_encoding::{percent_encode, NON_ALPHANUMERIC};
 
 use lettre::{
@@ -105,22 +104,6 @@ fn get_template(template_name: &str, data: &serde_json::Value) -> Result<(String
     };
 
     Ok((subject, body))
-}
-
-pub fn format_datetime(dt: &DateTime<Local>) -> String {
-    let fmt = "%A, %B %_d, %Y at %r %Z";
-
-    // With a DateTime<Local>, `%Z` formats as the time zone's UTC offset
-    // (e.g., `+00:00`). If the `TZ` environment variable is set, try to
-    // format as a time zone abbreviation instead (e.g., `UTC`).
-    if let Ok(tz) = env::var("TZ") {
-        if let Ok(tz) = tz.parse::<Tz>() {
-            return dt.with_timezone(&tz).format(fmt).to_string();
-        }
-    }
-
-    // Otherwise, fall back to just displaying the UTC offset.
-    dt.format(fmt).to_string()
 }
 
 pub fn send_password_hint(address: &str, hint: Option<String>) -> EmptyResult {
@@ -257,13 +240,14 @@ pub fn send_new_device_logged_in(address: &str, ip: &str, dt: &DateTime<Local>, 
     use crate::util::upcase_first;
     let device = upcase_first(device);
 
+    let fmt = "%A, %B %_d, %Y at %r %Z";
     let (subject, body_html, body_text) = get_text(
         "email/new_device_logged_in",
         json!({
             "url": CONFIG.domain(),
             "ip": ip,
             "device": device,
-            "datetime": format_datetime(dt),
+            "datetime": crate::util::format_datetime_local(dt, fmt),
         }),
     )?;
 

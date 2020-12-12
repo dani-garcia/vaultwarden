@@ -18,7 +18,7 @@ use crate::{
     db::{backup_database, models::*, DbConn, DbConnType},
     error::{Error, MapResult},
     mail,
-    util::get_display_size,
+    util::{get_display_size, format_naive_datetime_local},
     CONFIG,
 };
 
@@ -293,6 +293,7 @@ fn get_users_json(_token: AdminToken, conn: DbConn) -> JsonResult {
 #[get("/users/overview")]
 fn users_overview(_token: AdminToken, conn: DbConn) -> ApiResult<Html<String>> {
     let users = User::get_all(&conn);
+    let dt_fmt = "%Y-%m-%d %H:%M:%S %Z";
     let users_json: Vec<Value> = users.iter()
         .map(|u| {
             let mut usr = u.to_json(&conn);
@@ -300,9 +301,9 @@ fn users_overview(_token: AdminToken, conn: DbConn) -> ApiResult<Html<String>> {
             usr["attachment_count"] = json!(Attachment::count_by_user(&u.uuid, &conn));
             usr["attachment_size"] = json!(get_display_size(Attachment::size_by_user(&u.uuid, &conn) as i32));
             usr["user_enabled"] = json!(u.enabled);
-            usr["created_at"] = json!(&u.created_at.format("%Y-%m-%d %H:%M:%S").to_string());
+            usr["created_at"] = json!(format_naive_datetime_local(&u.created_at, dt_fmt));
             usr["last_active"] = match u.last_active(&conn) {
-                Some(timestamp) => json!(timestamp.format("%Y-%m-%d %H:%M:%S").to_string()),
+                Some(dt) => json!(format_naive_datetime_local(&dt, dt_fmt)),
                 None => json!("Never")
             };
             usr
@@ -446,7 +447,7 @@ fn diagnostics(_token: AdminToken, _conn: DbConn) -> ApiResult<Html<String>> {
     // Run the date check as the last item right before filling the json.
     // This should ensure that the time difference between the browser and the server is as minimal as possible.
     let dt = Utc::now();
-    let server_time = dt.format("%Y-%m-%d %H:%M:%S").to_string();
+    let server_time = dt.format("%Y-%m-%d %H:%M:%S UTC").to_string();
 
     let diagnostics_json = json!({
         "dns_resolved": dns_resolved,

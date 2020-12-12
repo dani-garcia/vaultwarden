@@ -72,7 +72,7 @@
         const hour = String(d.getUTCHours()).padStart(2, '0');
         const minute = String(d.getUTCMinutes()).padStart(2, '0');
         const seconds = String(d.getUTCSeconds()).padStart(2, '0');
-        const browserUTC = year + '-' + month + '-' + day + ' ' + hour + ':' + minute + ':' + seconds;
+        const browserUTC = `${year}-${month}-${day} ${hour}:${minute}:${seconds} UTC`;
         document.getElementById("time-browser-string").innerText = browserUTC;
 
         const serverUTC = document.getElementById("time-server-string").innerText;

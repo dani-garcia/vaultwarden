@@ -322,12 +322,40 @@ pub fn get_env_bool(key: &str) -> Option<bool> {
 // Date util methods
 //
 
-use chrono::NaiveDateTime;
+use chrono::{DateTime, Local, NaiveDateTime, TimeZone};
+use chrono_tz::Tz;
 
-const DATETIME_FORMAT: &str = "%Y-%m-%dT%H:%M:%S%.6fZ";
+/// Formats a UTC-offset `NaiveDateTime` in the format used by Bitwarden API
+/// responses with "date" fields (`CreationDate`, `RevisionDate`, etc.).
+pub fn format_date(dt: &NaiveDateTime) -> String {
+    dt.format("%Y-%m-%dT%H:%M:%S%.6fZ").to_string()
+}
 
-pub fn format_date(date: &NaiveDateTime) -> String {
-    date.format(DATETIME_FORMAT).to_string()
+/// Formats a `DateTime<Local>` using the specified format string.
+///
+/// For a `DateTime<Local>`, the `%Z` specifier normally formats as the
+/// time zone's UTC offset (e.g., `+00:00`). In this function, if the
+/// `TZ` environment variable is set, then `%Z` instead formats as the
+/// abbreviation for that time zone (e.g., `UTC`).
+pub fn format_datetime_local(dt: &DateTime<Local>, fmt: &str) -> String {
+    // Try parsing the `TZ` environment variable to enable formatting `%Z` as
+    // a time zone abbreviation.
+    if let Ok(tz) = env::var("TZ") {
+        if let Ok(tz) = tz.parse::<Tz>() {
+            return dt.with_timezone(&tz).format(fmt).to_string();
+        }
+    }
+
+    // Otherwise, fall back to formatting `%Z` as a UTC offset.
+    dt.format(fmt).to_string()
+}
+
+/// Formats a UTC-offset `NaiveDateTime` as a datetime in the local time zone.
+///
+/// This function basically converts the `NaiveDateTime` to a `DateTime<Local>`,
+/// and then calls [format_datetime_local](crate::util::format_datetime_local).
+pub fn format_naive_datetime_local(dt: &NaiveDateTime, fmt: &str) -> String {
+    format_datetime_local(&Local.from_utc_datetime(dt), fmt)
 }
 
 //
