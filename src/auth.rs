@@ -215,12 +215,10 @@ pub fn generate_admin_claims() -> AdminJWTClaims {
 //
 // Bearer token authentication
 //
-use rocket::{
-    request::{FromRequest, Request, Outcome},
-};
+use rocket::request::{FromRequest, Outcome, Request};
 
 use crate::db::{
-    models::{Device, User, UserOrgStatus, UserOrgType, UserOrganization, CollectionUser},
+    models::{CollectionUser, Device, User, UserOrgStatus, UserOrgType, UserOrganization, UserStampException},
     DbConn,
 };
 
@@ -298,7 +296,25 @@ impl<'a, 'r> FromRequest<'a, 'r> for Headers {
         };
 
         if user.security_stamp != claims.sstamp {
-            err_handler!("Invalid security stamp")
+            if let Some(stamp_exception) = user
+                .stamp_exception
+                .as_deref()
+                .and_then(|s| serde_json::from_str::<UserStampException>(s).ok())
+            {
+                let current_route = match request.route().and_then(|r| r.name) {
+                    Some(name) => name,
+                    _ => err_handler!("Error getting current route for stamp exception"),
+                };
+
+                // Check if both match, if not this route is not allowed with the current security stamp.
+                if stamp_exception.route != current_route {
+                    err_handler!("Invalid security stamp: Current route and exception route do not match")
+                } else if stamp_exception.security_stamp != claims.sstamp {
+                    err_handler!("Invalid security stamp for matched stamp exception")
+                }
+            } else {
+                err_handler!("Invalid security stamp")
+            }
         }
 
         Outcome::Success(Headers { host, device, user })
@@ -423,10 +439,6 @@ impl Into<Headers> for AdminHeaders {
     }
 }
 
-
-
-
-
 // col_id is usually the forth param ("/organizations/<org_id>/collections/<col_id>")
 // But there cloud be cases where it is located in a query value.
 // First check the param, if this is not a valid uuid, we will try the query value.
@@ -478,7 +490,7 @@ impl<'a, 'r> FromRequest<'a, 'r> for ManagerHeaders {
                                     None => err_handler!("The current user isn't a manager for this collection"),
                                 }
                             }
-                        },
+                        }
                         _ => err_handler!("Error getting the collection id"),
                     }
 

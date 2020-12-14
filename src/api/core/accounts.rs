@@ -115,7 +115,7 @@ fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> EmptyResult {
         user.client_kdf_type = client_kdf_type;
     }
 
-    user.set_password(&data.MasterPasswordHash);
+    user.set_password(&data.MasterPasswordHash, None);
     user.akey = data.Key;
 
     // Add extra fields if present
@@ -232,7 +232,7 @@ fn post_password(data: JsonUpcase<ChangePassData>, headers: Headers, conn: DbCon
         err!("Invalid password")
     }
 
-    user.set_password(&data.NewMasterPasswordHash);
+    user.set_password(&data.NewMasterPasswordHash, Some("post_rotatekey"));
     user.akey = data.Key;
     user.save(&conn)
 }
@@ -259,7 +259,7 @@ fn post_kdf(data: JsonUpcase<ChangeKdfData>, headers: Headers, conn: DbConn) -> 
 
     user.client_kdf_iter = data.KdfIterations;
     user.client_kdf_type = data.Kdf;
-    user.set_password(&data.NewMasterPasswordHash);
+    user.set_password(&data.NewMasterPasswordHash, None);
     user.akey = data.Key;
     user.save(&conn)
 }
@@ -338,6 +338,7 @@ fn post_rotatekey(data: JsonUpcase<KeyData>, headers: Headers, conn: DbConn, nt:
     user.akey = data.Key;
     user.private_key = Some(data.PrivateKey);
     user.reset_security_stamp();
+    user.reset_stamp_exception();
 
     user.save(&conn)
 }
@@ -445,7 +446,7 @@ fn post_email(data: JsonUpcase<ChangeEmailData>, headers: Headers, conn: DbConn)
     user.email_new = None;
     user.email_new_token = None;
 
-    user.set_password(&data.NewMasterPasswordHash);
+    user.set_password(&data.NewMasterPasswordHash, None);
     user.akey = data.Key;
 
     user.save(&conn)

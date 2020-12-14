@@ -18,4 +18,4 @@ pub use self::folder::{Folder, FolderCipher};
 pub use self::org_policy::{OrgPolicy, OrgPolicyType};
 pub use self::organization::{Organization, UserOrgStatus, UserOrgType, UserOrganization};
 pub use self::two_factor::{TwoFactor, TwoFactorType};
-pub use self::user::{Invitation, User};
+pub use self::user::{Invitation, User, UserStampException};

@@ -136,6 +136,7 @@ table! {
         totp_secret -> Nullable<Text>,
         totp_recover -> Nullable<Text>,
         security_stamp -> Text,
+        stamp_exception -> Nullable<Text>,
         equivalent_domains -> Text,
         excluded_globals -> Text,
         client_kdf_type -> Integer,
