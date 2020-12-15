@@ -32,23 +32,23 @@ rocket = { version = "0.5.0-dev", features = ["tls"], default-features = false }
 rocket_contrib = "0.5.0-dev"
 
 # HTTP client
-reqwest = { version = "0.10.9", features = ["blocking", "json"] }
+reqwest = { version = "0.10.10", features = ["blocking", "json"] }
 
 # multipart/form-data support
 multipart = { version = "0.17.0", features = ["server"], default-features = false }
 
 # WebSockets library
-ws = "0.9.1"
+ws = { version = "0.10.0", package = "parity-ws" }
 
 # MessagePack library
-rmpv = "0.4.5"
+rmpv = "0.4.6"
 
 # Concurrent hashmap implementation
 chashmap = "2.2.2"
 
 # A generic serialization/deserialization framework
-serde = "1.0.117"
-serde_derive = "1.0.117"
+serde = "1.0.118"
+serde_derive = "1.0.118"
 serde_json = "1.0.60"
 
 # Logging
@@ -112,7 +112,7 @@ regex = "1.4.2"
 data-url = "0.1.0"
 
 # Used by U2F, JWT and Postgres
-openssl = "0.10.30"
+openssl = "0.10.31"
 
 # URL encoding library
 percent-encoding = "2.1.0"
@@ -126,7 +126,7 @@ structopt = "0.3.21"
 backtrace = "0.3.55"
 
 # Macro ident concatenation
-paste = "1.0.3"
+paste = "1.0.4"
 
 [patch.crates-io]
 # Use newest ring
