@@ -70,12 +70,10 @@ COPY ./build.rs ./build.rs
 # We at least need libmariadb3:amd64 installed for the x86_64 version of libmariadb.so (client)
 # We also need the libmariadb-dev-compat:amd64 but it can not be installed together with the :armhf version.
 # What we can do is a force install, because nothing important is overlapping each other.
-RUN apt-get install -y libmariadb3:amd64 && \
-    mkdir -pv /tmp/dpkg && \
-    cd /tmp/dpkg && \
+RUN apt-get install -y --no-install-recommends libmariadb3:amd64 && \
     apt-get download libmariadb-dev-compat:amd64 && \
-    dpkg --force-all -i *.deb && \
-    rm -rf /tmp/dpkg
+    dpkg --force-all -i ./libmariadb-dev-compat*.deb && \
+    rm -rvf ./libmariadb-dev-compat*.deb
 
 # For Diesel-RS migrations_macros to compile with PostgreSQL we need to do some magic.
 # The libpq5:armhf package seems to not provide a symlink to libpq.so.5 with the name libpq.so.

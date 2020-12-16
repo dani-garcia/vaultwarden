@@ -1,0 +1,34 @@
+name: Hadolint
+
+on:
+  pull_request:
+    # Ignore when there are only changes done too one of these paths
+    paths:
+      - "docker/**"
+
+jobs:
+  hadolint:
+    name: Validate Dockerfile syntax
+    runs-on: ubuntu-20.04
+    steps:
+      # Checkout the repo
+      - name: Checkout
+        uses: actions/checkout@v2
+      # End Checkout the repo
+
+
+      # Download hadolint
+      - name: Download hadolint
+        shell: bash
+        run: |
+          sudo curl -L https://github.com/hadolint/hadolint/releases/download/v$HADOLINT_VERSION/hadolint-$(uname -s)-$(uname -m) -o /usr/local/bin/hadolint && \
+          sudo chmod +x /usr/local/bin/hadolint
+        env:
+          HADOLINT_VERSION: 1.19.0
+      # End Download hadolint
+
+      # Test Dockerfiles
+      - name: Run hadolint
+        shell: bash
+        run:  git ls-files --exclude='docker/*/Dockerfile*' --ignored | xargs hadolint
+      # End Test Dockerfiles
