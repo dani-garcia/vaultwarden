@@ -1,0 +1,125 @@
+name: Build
+
+on:
+  push:
+    # Ignore when there are only changes done too one of these paths
+    paths-ignore:
+      - "**.md"
+      - "**.txt"
+      - "azure-pipelines.yml"
+      - "docker/**"
+      - "hooks/**"
+      - "tools/**"
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        channel:
+          - nightly
+          # - stable
+        target-triple:
+          - x86_64-unknown-linux-gnu
+          # - x86_64-unknown-linux-musl
+        include:
+          - target-triple: x86_64-unknown-linux-gnu
+            host-triple: x86_64-unknown-linux-gnu
+            features: "sqlite,mysql,postgresql"
+            channel: nightly
+            os: ubuntu-18.04
+            ext:
+          # - target-triple: x86_64-unknown-linux-gnu
+          #   host-triple: x86_64-unknown-linux-gnu
+          #   features: "sqlite,mysql,postgresql"
+          #   channel: stable
+          #   os: ubuntu-18.04
+          #   ext:
+          # - target-triple: x86_64-unknown-linux-musl
+          #   host-triple: x86_64-unknown-linux-gnu
+          #   features: "sqlite,postgresql"
+          #   channel: nightly
+          #   os: ubuntu-18.04
+          #   ext:
+          # - target-triple: x86_64-unknown-linux-musl
+          #   host-triple: x86_64-unknown-linux-gnu
+          #   features: "sqlite,postgresql"
+          #   channel: stable
+          #   os: ubuntu-18.04
+          #   ext:
+
+    name: Building ${{ matrix.channel }}-${{ matrix.target-triple }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      # Checkout the repo
+      - name: Checkout
+        uses: actions/checkout@v2
+      # End Checkout the repo
+
+
+      # Install musl-tools when needed
+      - name: Install musl tools
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends musl-dev musl-tools cmake
+        if: matrix.target-triple == 'x86_64-unknown-linux-musl'
+      # End Install musl-tools when needed
+
+
+      # Install dependencies
+      - name: Install dependencies Ubuntu
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends openssl sqlite build-essential libmariadb-dev-compat libpq-dev libssl-dev pkgconf
+        if: startsWith( matrix.os, 'ubuntu' )
+      # End Install dependencies
+
+
+      # Enable Rust Caching
+      - uses: Swatinem/rust-cache@v1
+      # End Enable Rust Caching
+
+
+      # Uses the rust-toolchain file to determine version
+      - name: 'Install ${{ matrix.channel }}-${{ matrix.host-triple }} for target: ${{ matrix.target-triple }}'
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          target: ${{ matrix.target-triple }}
+      # End Uses the rust-toolchain file to determine version
+
+
+      # Run cargo tests (In release mode to speed up cargo build afterwards)
+      - name: '`cargo test --release --features ${{ matrix.features }} --target ${{ matrix.target-triple }}`'
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --release --features ${{ matrix.features }} --target ${{ matrix.target-triple }}
+      # End Run cargo tests
+
+
+      # Build the binary
+      - name: '`cargo build --release --features ${{ matrix.features }} --target ${{ matrix.target-triple }}`'
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --release --features ${{ matrix.features }} --target ${{ matrix.target-triple }}
+      # End Build the binary
+
+
+      # Upload artifact to Github Actions
+      - name: Upload artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: bitwarden_rs-${{ matrix.target-triple }}${{ matrix.ext }}
+          path: target/${{ matrix.target-triple }}/release/bitwarden_rs${{ matrix.ext }}
+      # End Upload artifact to Github Actions
+
+
+      ## This is not used at the moment
+      ## We could start using this when we can build static binaries
+      # Upload to github actions release
+      # - name: Release
+      #   uses: Shopify/upload-to-release@1
+      #   if: startsWith(github.ref, 'refs/tags/')
+      #   with:
+      #     name: bitwarden_rs-${{ matrix.target-triple }}${{ matrix.ext }}
+      #     path: target/${{ matrix.target-triple }}/release/bitwarden_rs${{ matrix.ext }}
+      #     repo-token: ${{ secrets.GITHUB_TOKEN }}
+      # End Upload to github actions release

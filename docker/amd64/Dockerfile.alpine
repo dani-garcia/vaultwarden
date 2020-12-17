@@ -74,6 +74,8 @@ ENV SSL_CERT_DIR=/etc/ssl/certs
 RUN apk add --no-cache \
         openssl \
         curl \
+        sqlite \
+        postgresql-libs \
         ca-certificates
 
 RUN mkdir /data

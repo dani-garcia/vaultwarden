@@ -62,16 +62,19 @@ FROM bitwardenrs/web-vault@{{ vault_image_hash }} as vault
 FROM {{ build_stage_base_image }} as build
 
 {% if "alpine" in target_file %}
-{% if "amd64" in target_file -%}
+{%   if "amd64" in target_file %}
 # Alpine-based AMD64 (musl) does not support mysql/mariadb during compile time.
 ARG DB=sqlite,postgresql
-{% else -%}
+{%     set features = "sqlite,postgresql" %}
+{%   else %}
 # Alpine-based ARM (musl) only supports sqlite during compile time.
 ARG DB=sqlite
-{% endif %}
+{%     set features = "sqlite" %}
+{%   endif %}
 {% else %}
 # Debian-based builds support multidb
 ARG DB=sqlite,mysql,postgresql
+{%   set features = "sqlite,mysql,postgresql" %}
 {% endif %}
 
 # Build time options to avoid dpkg warnings and help with reproducible builds.
@@ -137,12 +140,10 @@ COPY ./build.rs ./build.rs
 # We at least need libmariadb3:amd64 installed for the x86_64 version of libmariadb.so (client)
 # We also need the libmariadb-dev-compat:amd64 but it can not be installed together with the {{ package_arch_prefix }} version.
 # What we can do is a force install, because nothing important is overlapping each other.
-RUN apt-get install -y libmariadb3:amd64 && \
-    mkdir -pv /tmp/dpkg && \
-    cd /tmp/dpkg && \
+RUN apt-get install -y --no-install-recommends libmariadb3:amd64 && \
     apt-get download libmariadb-dev-compat:amd64 && \
-    dpkg --force-all -i *.deb && \
-    rm -rf /tmp/dpkg
+    dpkg --force-all -i ./libmariadb-dev-compat*.deb && \
+    rm -rvf ./libmariadb-dev-compat*.deb
 
 # For Diesel-RS migrations_macros to compile with PostgreSQL we need to do some magic.
 # The libpq5{{ package_arch_prefix }} package seems to not provide a symlink to libpq.so.5 with the name libpq.so.
@@ -203,11 +204,13 @@ RUN [ "cross-build-start" ]
 RUN apk add --no-cache \
         openssl \
         curl \
-{%   if "sqlite" in target_file %}
+{%   if "sqlite" in features %}
         sqlite \
-{%   elif "mysql" in target_file %}
+{%   endif %}
+{%   if "mysql" in features %}
         mariadb-connector-c \
-{%   elif "postgresql" in target_file %}
+{%   endif %}
+{%   if "postgresql" in features %}
         postgresql-libs \
 {%   endif %}
         ca-certificates
