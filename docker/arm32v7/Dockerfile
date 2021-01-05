@@ -109,6 +109,10 @@ RUN cargo build --features ${DB} --release --target=armv7-unknown-linux-gnueabih
 # because we already have a binary built
 FROM balenalib/armv7hf-debian:buster
 
+LABEL org.opencontainers.image.source="https://github.com/dani-garcia/bitwarden_rs" \
+    org.opencontainers.image.url="https://bitwardenrs.discourse.group" \
+    org.opencontainers.image.licenses="GPL-3.0"
+
 ENV ROCKET_ENV "staging"
 ENV ROCKET_PORT=80
 ENV ROCKET_WORKERS=10
