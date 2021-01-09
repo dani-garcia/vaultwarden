@@ -7,24 +7,24 @@
 {%     set build_stage_base_image = "clux/muslrust:nightly-2020-11-22" %}
 {%     set runtime_stage_base_image = "alpine:3.12" %}
 {%     set package_arch_target = "x86_64-unknown-linux-musl" %}
-{%   elif "arm32v7" in target_file %}
+{%   elif "armv7" in target_file %}
 {%     set build_stage_base_image = "messense/rust-musl-cross:armv7-musleabihf" %}
 {%     set runtime_stage_base_image = "balenalib/armv7hf-alpine:3.12" %}
 {%     set package_arch_target = "armv7-unknown-linux-musleabihf" %}
 {%   endif %}
 {% elif "amd64" in target_file %}
 {%   set runtime_stage_base_image = "debian:buster-slim" %}
-{% elif "arm64v8" in target_file %}
+{% elif "arm64" in target_file %}
 {%   set runtime_stage_base_image = "balenalib/aarch64-debian:buster" %}
 {%   set package_arch_name = "arm64" %}
 {%   set package_arch_target = "aarch64-unknown-linux-gnu" %}
 {%   set package_cross_compiler = "aarch64-linux-gnu" %}
-{% elif "arm32v6" in target_file %}
+{% elif "armv6" in target_file %}
 {%   set runtime_stage_base_image = "balenalib/rpi-debian:buster" %}
 {%   set package_arch_name = "armel" %}
 {%   set package_arch_target = "arm-unknown-linux-gnueabi" %}
 {%   set package_cross_compiler = "arm-linux-gnueabi" %}
-{% elif "arm32v7" in target_file %}
+{% elif "armv7" in target_file %}
 {%   set runtime_stage_base_image = "balenalib/armv7hf-debian:buster" %}
 {%   set package_arch_name = "armhf" %}
 {%   set package_arch_target = "armv7-unknown-linux-gnueabihf" %}
@@ -178,7 +178,7 @@ RUN touch src/main.rs
 # your actual source files being built
 RUN cargo build --features ${DB} --release{{ package_arch_target_param }}
 {% if "alpine" in target_file %}
-{%   if "arm32v7" in target_file %}
+{%   if "armv7" in target_file %}
 RUN musl-strip target/{{ package_arch_target }}/release/bitwarden_rs
 {%   endif %}
 {% endif %}
@@ -225,7 +225,7 @@ RUN apt-get update && apt-get install -y \
     libpq5 \
     && rm -rf /var/lib/apt/lists/*
 {% endif %}
-{% if "alpine" in target_file and "arm32v7" in target_file %}
+{% if "alpine" in target_file and "armv7" in target_file %}
 RUN apk add --no-cache -X http://dl-cdn.alpinelinux.org/alpine/edge/community catatonit
 {% endif %}
 
@@ -256,7 +256,7 @@ HEALTHCHECK --interval=60s --timeout=10s CMD ["/healthcheck.sh"]
 
 # Configures the startup!
 WORKDIR /
-{% if "alpine" in target_file and "arm32v7" in target_file %}
+{% if "alpine" in target_file and "armv7" in target_file %}
 CMD ["catatonit", "/start.sh"]
 {% else %}
 CMD ["/start.sh"]

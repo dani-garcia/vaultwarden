@@ -1,19 +1,16 @@
-# The default Debian-based images support these arches for all database connections
-#
-# Other images (Alpine-based) currently
-# support only a subset of these.
+# The default Debian-based images support these arches for all database backends.
 arches=(
     amd64
-    arm32v6
-    arm32v7
-    arm64v8
+    armv6
+    armv7
+    arm64
 )
 
 if [[ "${DOCKER_TAG}" == *alpine ]]; then
-    # The Alpine build currently only works for amd64.
-    os_suffix=.alpine
+    # The Alpine image build currently only works for certain arches.
+    distro_suffix=.alpine
     arches=(
         amd64
-        arm32v7
+        armv7
     )
 fi

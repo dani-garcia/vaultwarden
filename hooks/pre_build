@@ -1,0 +1,18 @@
+#!/bin/bash
+
+set -ex
+
+# Print some environment info in case it's useful for troubleshooting.
+id
+pwd
+df -h
+env
+docker info
+docker version
+
+# Install build dependencies.
+deps=(
+    jq
+)
+apt-get update
+apt-get install -y "${deps[@]}"
