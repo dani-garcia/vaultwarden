@@ -1,117 +1,138 @@
 #!/bin/bash
 
-echo ">>> Pushing images..."
+source ./hooks/arches.sh
 
 export DOCKER_CLI_EXPERIMENTAL=enabled
 
-declare -A annotations=(
-    [amd64]="--os linux --arch amd64"
-    [arm32v6]="--os linux --arch arm --variant v6"
-    [arm32v7]="--os linux --arch arm --variant v7"
-    [arm64v8]="--os linux --arch arm64 --variant v8"
-)
-
-source ./hooks/arches.sh
+# Join a list of args with a single char.
+# Ref: https://stackoverflow.com/a/17841619
+join() { local IFS="$1"; shift; echo "$*"; }
 
 set -ex
 
-declare -A images
+echo ">>> Starting local Docker registry..."
+
+# Docker Buildx's `docker-container` driver is needed for multi-platform
+# builds, but it can't access existing images on the Docker host (like the
+# cross-compiled ones we just built). Those images first need to be pushed to
+# a registry -- Docker Hub could be used, but since it's not trivial to clean
+# up those intermediate images on Docker Hub, it's easier to just run a local
+# Docker registry, which gets cleaned up automatically once the build job ends.
+#
+# https://docs.docker.com/registry/deploying/
+# https://hub.docker.com/_/registry
+#
+# Use host networking so the buildx container can access the registry via
+# localhost.
+#
+docker run -d --name registry --network host registry:2 # defaults to port 5000
+
+# Docker Hub sets a `DOCKER_REPO` env var with the format `index.docker.io/user/repo`.
+# Strip the registry portion to construct a local repo path for use in `Dockerfile.buildx`.
+LOCAL_REGISTRY="localhost:5000"
+REPO="${DOCKER_REPO#*/}"
+LOCAL_REPO="${LOCAL_REGISTRY}/${REPO}"
+
+echo ">>> Pushing images to local registry..."
+
 for arch in ${arches[@]}; do
-    images[$arch]="${DOCKER_REPO}:${DOCKER_TAG}-${arch}"
+    docker_image="${DOCKER_REPO}:${DOCKER_TAG}-${arch}"
+    local_image="${LOCAL_REPO}:${DOCKER_TAG}-${arch}"
+    docker tag "${docker_image}" "${local_image}"
+    docker push "${local_image}"
 done
 
-# Push the images that were just built; manifest list creation fails if the
-# images (manifests) referenced don't already exist in the Docker registry.
-for image in "${images[@]}"; do
-    docker push "${image}"
-done
+echo ">>> Setting up Docker Buildx..."
 
-manifest_lists=("${DOCKER_REPO}:${DOCKER_TAG}")
+# Same as earlier, use host networking so the buildx container can access the
+# registry via localhost.
+#
+# Ref: https://github.com/docker/buildx/issues/94#issuecomment-534367714
+#
+docker buildx create --name builder --use --driver-opt network=host
 
-# If the Docker tag starts with a version number, assume the latest release is
-# being pushed. Add an extra manifest (`latest` or `alpine`, as appropriate)
+echo ">>> Running Docker Buildx..."
+
+tags=("${DOCKER_REPO}:${DOCKER_TAG}")
+
+# If the Docker tag starts with a version number, assume the latest release
+# is being pushed. Add an extra tag (`latest` or `alpine`, as appropriate)
 # to make it easier for users to track the latest release.
 if [[ "${DOCKER_TAG}" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
     if [[ "${DOCKER_TAG}" == *alpine ]]; then
-        manifest_lists+=(${DOCKER_REPO}:alpine)
+        tags+=(${DOCKER_REPO}:alpine)
     else
-        manifest_lists+=(${DOCKER_REPO}:latest)
-
-        # Add an extra `latest-arm32v6` tag; Docker can't seem to properly
-        # auto-select that image on Armv6 platforms like Raspberry Pi 1 and Zero
-        # (https://github.com/moby/moby/issues/41017).
-        #
-        # Add this tag only for the SQLite image, as the MySQL and PostgreSQL
-        # builds don't currently work on non-amd64 arches.
-        #
-        # TODO: Also add an `alpine-arm32v6` tag if multi-arch support for
-        # Alpine-based bitwarden_rs images is implemented before this Docker
-        # issue is fixed.
-        if [[ ${DOCKER_REPO} == *server ]]; then
-            docker tag "${DOCKER_REPO}:${DOCKER_TAG}-arm32v6" "${DOCKER_REPO}:latest-arm32v6"
-            docker push "${DOCKER_REPO}:latest-arm32v6"
-        fi
+        tags+=(${DOCKER_REPO}:latest)
     fi
 fi
 
-for manifest_list in "${manifest_lists[@]}"; do
-    # Create the (multi-arch) manifest list of arch-specific images.
-    docker manifest create ${manifest_list} ${images[@]}
-
-    # Make sure each image manifest is annotated with the correct arch info.
-    # Docker does not auto-detect the arch of each cross-compiled image, so
-    # everything would appear as `linux/amd64` otherwise.
-    for arch in "${arches[@]}"; do
-        docker manifest annotate ${annotations[$arch]} ${manifest_list} ${images[$arch]}
-    done
-
-    # Push the manifest list.
-    docker manifest push --purge ${manifest_list}
+tag_args=()
+for tag in "${tags[@]}"; do
+    tag_args+=(--tag "${tag}")
 done
 
-# Avoid logging credentials and tokens.
-set +ex
-
-# Delete the arch-specific tags, if credentials for doing so are available.
-# Note that `DOCKER_PASSWORD` must be the actual user password. Passing a JWT
-# obtained using a personal access token results in a 403 error with
-# {"detail": "access to the resource is forbidden with personal access token"}
-if [[ -z "${DOCKER_USERNAME}" || -z "${DOCKER_PASSWORD}" ]]; then
-    exit 0
-fi
-
-# Given a JSON input on stdin, extract the string value associated with the
-# specified key. This avoids an extra dependency on a tool like `jq`.
-extract() {
-    local key="$1"
-    # Extract "<key>":"<val>" (assumes key/val won't contain double quotes).
-    # The colon may have whitespace on either side.
-    grep -o "\"${key}\"[[:space:]]*:[[:space:]]*\"[^\"]\+\"" |
-    # Extract just <val> by deleting the last '"', and then greedily deleting
-    # everything up to '"'.
-    sed -e 's/"$//' -e 's/.*"//'
-}
-
-echo ">>> Getting API token..."
-jwt=$(curl -sS -X POST \
-           -H "Content-Type: application/json" \
-           -d "{\"username\":\"${DOCKER_USERNAME}\",\"password\": \"${DOCKER_PASSWORD}\"}" \
-           "https://hub.docker.com/v2/users/login" |
-      extract 'token')
-
-# Strip the registry portion from `index.docker.io/user/repo`.
-repo="${DOCKER_REPO#*/}"
-
+# Docker Buildx takes a list of target platforms (OS/arch/variant), so map
+# the arch list to a platform list (assuming the OS is always `linux`).
+declare -A arch_to_platform=(
+    [amd64]="linux/amd64"
+    [armv6]="linux/arm/v6"
+    [armv7]="linux/arm/v7"
+    [arm64]="linux/arm64"
+)
+platforms=()
 for arch in ${arches[@]}; do
-    # Don't delete the `arm32v6` tag; Docker can't seem to properly
-    # auto-select that image on Armv6 platforms like Raspberry Pi 1 and Zero
-    # (https://github.com/moby/moby/issues/41017).
-    if [[ ${arch} == 'arm32v6' ]]; then
-        continue
-    fi
-    tag="${DOCKER_TAG}-${arch}"
-    echo ">>> Deleting '${repo}:${tag}'..."
-    curl -sS -X DELETE \
-         -H "Authorization: Bearer ${jwt}" \
-         "https://hub.docker.com/v2/repositories/${repo}/tags/${tag}/"
+    platforms+=("${arch_to_platform[$arch]}")
 done
+platforms="$(join "," "${platforms[@]}")"
+
+# Run the build, pushing the resulting images and multi-arch manifest list to
+# Docker Hub. The Dockerfile is read from stdin to avoid sending any build
+# context, which isn't needed here since the actual cross-compiled images
+# have already been built.
+docker buildx build \
+       --network host \
+       --build-arg LOCAL_REPO="${LOCAL_REPO}" \
+       --build-arg DOCKER_TAG="${DOCKER_TAG}" \
+       --platform "${platforms}" \
+       "${tag_args[@]}" \
+       --push \
+       - < ./docker/Dockerfile.buildx
+
+# Add an extra arch-specific tag for `arm32v6`; Docker can't seem to properly
+# auto-select that image on ARMv6 platforms like Raspberry Pi 1 and Zero
+# (https://github.com/moby/moby/issues/41017).
+#
+# Note that we use `arm32v6` instead of `armv6` to be consistent with the
+# existing bitwarden_rs tags, which adhere to the naming conventions of the
+# Docker per-architecture repos (e.g., https://hub.docker.com/u/arm32v6).
+# Unfortunately, these per-arch repo names aren't always consistent with the
+# corresponding platform (OS/arch/variant) IDs, particularly in the case of
+# 32-bit ARM arches (e.g., `linux/arm/v6` is used, not `linux/arm32/v6`).
+#
+# TODO: It looks like this issue should be fixed starting in Docker 20.10.0,
+# so this step can be removed once fixed versions are in wider distribution.
+#
+# Tags:
+#
+#   testing        => testing-arm32v6
+#   testing-alpine => <ignored>
+#   x.y.z          => x.y.z-arm32v6, latest-arm32v6
+#   x.y.z-alpine   => <ignored>
+#
+if [[ "${DOCKER_TAG}" != *alpine ]]; then
+    image="${DOCKER_REPO}":"${DOCKER_TAG}"
+
+    # Fetch the multi-arch manifest list and find the digest of the armv6 image.
+    filter='.manifests|.[]|select(.platform.architecture=="arm" and .platform.variant=="v6")|.digest'
+    digest="$(docker manifest inspect "${image}" | jq -r "${filter}")"
+
+    # Pull the armv6 image by digest, retag it, and repush it.
+    docker pull "${DOCKER_REPO}"@"${digest}"
+    docker tag "${DOCKER_REPO}"@"${digest}" "${image}"-arm32v6
+    docker push "${image}"-arm32v6
+
+    if [[ "${DOCKER_TAG}" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+        docker tag "${image}"-arm32v6 "${DOCKER_REPO}:latest"-arm32v6
+        docker push "${DOCKER_REPO}:latest"-arm32v6
+    fi
+fi
