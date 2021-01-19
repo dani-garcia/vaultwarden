@@ -1,4 +1,4 @@
-<main class="container">
+<main class="container-xl">
     <div id="diagnostics-block" class="my-3 p-3 bg-white rounded shadow">
         <h6 class="border-bottom pb-2 mb-2">Diagnostics</h6>
 
@@ -15,7 +15,7 @@
                         <span id="server-installed">{{version}}</span>
                     </dd>
                     <dt class="col-sm-5">Server Latest
-                        <span class="badge badge-danger d-none" id="server-failed" title="Unable to determine latest version.">Unknown</span>
+                        <span class="badge badge-secondary d-none" id="server-failed" title="Unable to determine latest version.">Unknown</span>
                     </dt>
                     <dd class="col-sm-7">
                         <span id="server-latest">{{diagnostics.latest_release}}<span id="server-latest-commit" class="d-none">-{{diagnostics.latest_commit}}</span></span>
@@ -28,7 +28,7 @@
                         <span id="web-installed">{{diagnostics.web_vault_version}}</span>
                     </dd>
                     <dt class="col-sm-5">Web Latest
-                        <span class="badge badge-danger d-none" id="web-failed" title="Unable to determine latest version.">Unknown</span>
+                        <span class="badge badge-secondary d-none" id="web-failed" title="Unable to determine latest version.">Unknown</span>
                     </dt>
                     <dd class="col-sm-7">
                         <span id="web-latest">{{diagnostics.latest_web_build}}</span>
@@ -41,6 +41,40 @@
         <div class="row">
             <div class="col-md">
                 <dl class="row">
+                    <dt class="col-sm-5">Running within Docker</dt>
+                    <dd class="col-sm-7">
+                    {{#if diagnostics.running_within_docker}}
+                        <span id="running-docker" class="d-block"><b>Yes</b></span>
+                    {{/if}}
+                    {{#unless diagnostics.running_within_docker}}
+                        <span id="running-docker" class="d-block"><b>No</b></span>
+                    {{/unless}}
+                    </dd>
+                    <dt class="col-sm-5">Uses a proxy</dt>
+                    <dd class="col-sm-7">
+                    {{#if diagnostics.uses_proxy}}
+                        <span id="running-docker" class="d-block"><b>Yes</b></span>
+                    {{/if}}
+                    {{#unless diagnostics.uses_proxy}}
+                        <span id="running-docker" class="d-block"><b>No</b></span>
+                    {{/unless}}
+                    </dd>
+                    <dt class="col-sm-5">Internet access
+                    {{#if diagnostics.has_http_access}}
+                        <span class="badge badge-success" id="internet-success" title="We have internet access!">Ok</span>
+                    {{/if}}
+                    {{#unless diagnostics.has_http_access}}
+                        <span class="badge badge-danger" id="internet-warning" title="There seems to be no internet access. Please fix.">Error</span>
+                    {{/unless}}
+                    </dt>
+                    <dd class="col-sm-7">
+                    {{#if diagnostics.has_http_access}}
+                        <span id="running-docker" class="d-block"><b>Yes</b></span>
+                    {{/if}}
+                    {{#unless diagnostics.has_http_access}}
+                        <span id="running-docker" class="d-block"><b>No</b></span>
+                    {{/unless}}
+                    </dd>
                     <dt class="col-sm-5">DNS (github.com)
                         <span class="badge badge-success d-none" id="dns-success" title="DNS Resolving works!">Ok</span>
                         <span class="badge badge-danger d-none" id="dns-warning" title="DNS Resolving failed. Please fix.">Error</span>
@@ -57,6 +91,44 @@
                         <span id="time-server" class="d-block"><b>Server:</b> <span id="time-server-string">{{diagnostics.server_time}}</span></span>
                         <span id="time-browser" class="d-block"><b>Browser:</b> <span id="time-browser-string"></span></span>
                     </dd>
+
+                    <dt class="col-sm-5">Domain configuration
+                        <span class="badge badge-success d-none" id="domain-success" title="Domain variable seems to be correct.">Ok</span>
+                        <span class="badge badge-danger d-none" id="domain-warning" title="Domain variable is not configured correctly.&#013;&#010;Some features may not work as expected!">Error</span>
+                    </dt>
+                    <dd class="col-sm-7">
+                        <span id="domain-server" class="d-block"><b>Server:</b> <span id="domain-server-string">{{diagnostics.admin_url}}</span></span>
+                        <span id="domain-browser" class="d-block"><b>Browser:</b> <span id="domain-browser-string"></span></span>
+                    </dd>
+                </dl>
+            </div>
+        </div>
+
+        <h3>Support</h3>
+        <div class="row">
+            <div class="col-md">
+                <dl class="row">
+                    <dd class="col-sm-12">
+                        If you need support please check the following links first before you create a new issue:
+                         <a href="https://bitwardenrs.discourse.group/" target="_blank" rel="noreferrer">Bitwarden_RS Forum</a>
+                         | <a href="https://github.com/dani-garcia/bitwarden_rs/discussions" target="_blank" rel="noreferrer">Github Discussions</a>
+                    </dd>
+                </dl>
+                <dl class="row">
+                    <dd class="col-sm-12">
+                        You can use the button below to pre-generate a string which you can copy/paste on either the Forum or when Creating a new issue at Github.<br>
+                        We try to hide the most sensitive values from the generated support string by default, but please verify if there is nothing in there which you want to hide!<br>
+                    </dd>
+                </dl>
+                <dl class="row">
+                    <dt class="col-sm-3">
+                        <button type="button" id="gen-support" class="btn btn-primary" onclick="generateSupportString(); return false;">Generate Support String</button>
+                        <br><br>
+                        <button type="button" id="copy-support" class="btn btn-info d-none" onclick="copyToClipboard(); return false;">Copy To Clipboard</button>
+                    </dt>
+                    <dd class="col-sm-9">
+                        <pre id="support-string" class="pre-scrollable d-none" style="width: 100%; height: 16em; size: 0.6em; border: 1px solid; padding: 4px;"></pre>
+                    </dd>
                 </dl>
             </div>
         </div>
@@ -64,7 +136,12 @@
 </main>
 
 <script>
+    dnsCheck = false;
+    timeCheck = false;
+    domainCheck = false;
     (() => {
+        // ================================
+        // Date & Time Check
         const d = new Date();
         const year = d.getUTCFullYear();
         const month = String(d.getUTCMonth()+1).padStart(2, '0');
@@ -81,16 +158,21 @@
             document.getElementById('time-warning').classList.remove('d-none');
         } else {
             document.getElementById('time-success').classList.remove('d-none');
+            timeCheck = true;
         }
 
+        // ================================
         // Check if the output is a valid IP
         const isValidIp = value => (/^(?:(?:^|\.)(?:2(?:5[0-5]|[0-4]\d)|1?\d?\d)){4}$/.test(value) ? true : false);
         if (isValidIp(document.getElementById('dns-resolved').innerText)) {
             document.getElementById('dns-success').classList.remove('d-none');
+            dnsCheck = true;
         } else {
             document.getElementById('dns-warning').classList.remove('d-none');
         }
 
+        // ================================
+        // Version check for both bitwarden_rs and web-vault
         let serverInstalled = document.getElementById('server-installed').innerText;
         let serverLatest = document.getElementById('server-latest').innerText;
         let serverLatestCommit = document.getElementById('server-latest-commit').innerText.replace('-', '');
@@ -146,5 +228,56 @@
                 }
             }
         }
+
+        // ================================
+        // Check valid DOMAIN configuration
+        document.getElementById('domain-browser-string').innerText = location.href.toLowerCase();
+        if (document.getElementById('domain-server-string').innerText.toLowerCase() == location.href.toLowerCase()) {
+            document.getElementById('domain-success').classList.remove('d-none');
+            domainCheck = true;
+        } else {
+            document.getElementById('domain-warning').classList.remove('d-none');
+        }
     })();
+
+    // ================================
+    // Generate support string to be pasted on github or the forum
+    async function generateSupportString() {
+        supportString = "### Your environment (Generated via diagnostics page)\n";
+
+        supportString += "* Bitwarden_rs version: v{{ version }}\n";
+        supportString += "* Web-vault version: v{{ diagnostics.web_vault_version }}\n";
+        supportString += "* Running within Docker: {{ diagnostics.running_within_docker }}\n";
+        supportString += "* Internet access: {{ diagnostics.has_http_access }}\n";
+        supportString += "* Uses a proxy: {{ diagnostics.uses_proxy }}\n";
+        supportString += "* DNS Check: " + dnsCheck + "\n";
+        supportString += "* Time Check: " + timeCheck + "\n";
+        supportString += "* Domain Configuration Check: " + domainCheck + "\n";
+        supportString += "* Database type: {{ diagnostics.db_type }}\n";
+        {{#case diagnostics.db_type "MySQL" "PostgreSQL"}}
+        supportString += "* Database version: [PLEASE PROVIDE DATABASE VERSION]\n";
+        {{/case}}
+
+        jsonResponse = await fetch('{{urlpath}}/admin/diagnostics/config');
+        configJson = await jsonResponse.json();
+        supportString += "\n### Config (Generated via diagnostics page)\n```json\n" + JSON.stringify(configJson, undefined, 2) + "\n```\n";
+
+        document.getElementById('support-string').innerText = supportString;
+        document.getElementById('support-string').classList.remove('d-none');
+        document.getElementById('copy-support').classList.remove('d-none');
+    }
+
+    function copyToClipboard() {
+        const str = document.getElementById('support-string').innerText;
+        const el = document.createElement('textarea');
+        el.value = str;
+        el.setAttribute('readonly', '');
+        el.style.position = 'absolute';
+        el.style.left = '-9999px';
+        document.body.appendChild(el);
+        el.select();
+        document.execCommand('copy');
+        document.body.removeChild(el);
+    }
+
 </script>

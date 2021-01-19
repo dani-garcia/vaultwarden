@@ -4,12 +4,13 @@
  *
  * To rebuild or modify this file with the latest versions of the included
  * software please visit:
- *   https://datatables.net/download/#bs4/dt-1.10.22
+ *   https://datatables.net/download/#bs4/dt-1.10.23
  *
  * Included libraries:
- *   DataTables 1.10.22
+ *   DataTables 1.10.23
  */
 
+@charset "UTF-8";
 table.dataTable {
   clear: both;
   margin-top: 6px !important;
@@ -114,7 +115,7 @@ table.dataTable > thead .sorting_desc:before,
 table.dataTable > thead .sorting_asc_disabled:before,
 table.dataTable > thead .sorting_desc_disabled:before {
   right: 1em;
-  content: "\2191";
+  content: "↑";
 }
 table.dataTable > thead .sorting:after,
 table.dataTable > thead .sorting_asc:after,
@@ -122,7 +123,7 @@ table.dataTable > thead .sorting_desc:after,
 table.dataTable > thead .sorting_asc_disabled:after,
 table.dataTable > thead .sorting_desc_disabled:after {
   right: 0.5em;
-  content: "\2193";
+  content: "↓";
 }
 table.dataTable > thead .sorting_asc:before,
 table.dataTable > thead .sorting_desc:after {
@@ -165,9 +166,9 @@ div.dataTables_scrollFoot > .dataTables_scrollFootInner > table {
 
 @media screen and (max-width: 767px) {
   div.dataTables_wrapper div.dataTables_length,
-  div.dataTables_wrapper div.dataTables_filter,
-  div.dataTables_wrapper div.dataTables_info,
-  div.dataTables_wrapper div.dataTables_paginate {
+div.dataTables_wrapper div.dataTables_filter,
+div.dataTables_wrapper div.dataTables_info,
+div.dataTables_wrapper div.dataTables_paginate {
     text-align: center;
   }
   div.dataTables_wrapper div.dataTables_paginate ul.pagination {
@@ -213,10 +214,10 @@ div.dataTables_scrollHead table.table-bordered {
 div.table-responsive > div.dataTables_wrapper > div.row {
   margin: 0;
 }
-div.table-responsive > div.dataTables_wrapper > div.row > div[class^="col-"]:first-child {
+div.table-responsive > div.dataTables_wrapper > div.row > div[class^=col-]:first-child {
   padding-left: 0;
 }
-div.table-responsive > div.dataTables_wrapper > div.row > div[class^="col-"]:last-child {
+div.table-responsive > div.dataTables_wrapper > div.row > div[class^=col-]:last-child {
   padding-right: 0;
 }
 

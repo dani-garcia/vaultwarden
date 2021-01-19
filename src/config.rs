@@ -2,6 +2,7 @@ use std::process::exit;
 use std::sync::RwLock;
 
 use once_cell::sync::Lazy;
+use regex::Regex;
 use reqwest::Url;
 
 use crate::{
@@ -21,6 +22,21 @@ pub static CONFIG: Lazy<Config> = Lazy::new(|| {
         exit(12)
     })
 });
+
+static PRIVACY_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"[\w]").unwrap());
+const PRIVACY_CONFIG: &[&str] = &[
+    "allowed_iframe_ancestors",
+    "database_url",
+    "domain_origin",
+    "domain_path",
+    "domain",
+    "helo_name",
+    "org_creation_users",
+    "signups_domains_whitelist",
+    "smtp_from",
+    "smtp_host",
+    "smtp_username",
+];
 
 pub type Pass = String;
 
@@ -52,6 +68,7 @@ macro_rules! make_config {
         }
 
         impl ConfigBuilder {
+            #[allow(clippy::field_reassign_with_default)]
             fn from_env() -> Self {
                 match dotenv::from_path(".env") {
                     Ok(_) => (),
@@ -196,7 +213,36 @@ macro_rules! make_config {
                     }, )+
                     ]}, )+ ])
             }
+
+            pub fn get_support_json(&self) -> serde_json::Value {
+                let cfg = {
+                    let inner = &self.inner.read().unwrap();
+                    inner.config.clone()
+                };
+
+                json!({ $($(
+                    stringify!($name): make_config!{ @supportstr $name, cfg.$name, $ty, $none_action },
+                )+)+ })
+            }
         }
+    };
+
+    // Support string print
+    ( @supportstr $name:ident, $value:expr, Pass, option ) => { $value.as_ref().map(|_| String::from("***")) }; // Optional pass, we map to an Option<String> with "***"
+    ( @supportstr $name:ident, $value:expr, Pass, $none_action:ident ) => { String::from("***") }; // Required pass, we return "***"
+    ( @supportstr $name:ident, $value:expr, $ty:ty, option ) => { // Optional other value, we return as is or convert to string to apply the privacy config
+        if PRIVACY_CONFIG.contains(&stringify!($name)) {
+            json!($value.as_ref().map(|x| PRIVACY_REGEX.replace_all(&x.to_string(), "${1}*").to_string()))
+        } else {
+            json!($value)
+        }
+    };
+    ( @supportstr $name:ident, $value:expr, $ty:ty, $none_action:ident ) => { // Required other value, we return as is or convert to string to apply the privacy config
+        if PRIVACY_CONFIG.contains(&stringify!($name)) {
+             json!(PRIVACY_REGEX.replace_all(&$value.to_string(), "${1}*").to_string())
+         } else {
+             json!($value)
+         }
     };
 
     // Group or empty string
@@ -458,7 +504,6 @@ make_config! {
 }
 
 fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
-
     // Validate connection URL is valid and DB feature is enabled
     DbConnType::from_url(&cfg.database_url)?;
 
@@ -472,7 +517,9 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
 
     let dom = cfg.domain.to_lowercase();
     if !dom.starts_with("http://") && !dom.starts_with("https://") {
-        err!("DOMAIN variable needs to contain the protocol (http, https). Use 'http[s]://bw.example.com' instead of 'bw.example.com'");
+        err!(
+            "DOMAIN variable needs to contain the protocol (http, https). Use 'http[s]://bw.example.com' instead of 'bw.example.com'"
+        );
     }
 
     let whitelist = &cfg.signups_domains_whitelist;
@@ -481,10 +528,10 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
     }
 
     let org_creation_users = cfg.org_creation_users.trim().to_lowercase();
-    if !(org_creation_users.is_empty() || org_creation_users == "all" || org_creation_users == "none") {
-        if org_creation_users.split(',').any(|u| !u.contains('@')) {
-            err!("`ORG_CREATION_USERS` contains invalid email addresses");
-        }
+    if !(org_creation_users.is_empty() || org_creation_users == "all" || org_creation_users == "none")
+        && org_creation_users.split(',').any(|u| !u.contains('@'))
+    {
+        err!("`ORG_CREATION_USERS` contains invalid email addresses");
     }
 
     if let Some(ref token) = cfg.admin_token {
@@ -529,7 +576,6 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
 
     // Check if the icon blacklist regex is valid
     if let Some(ref r) = cfg.icon_blacklist_regex {
-        use regex::Regex;
         let validate_regex = Regex::new(&r);
         match validate_regex {
             Ok(_) => (),
@@ -577,7 +623,12 @@ impl Config {
         validate_config(&config)?;
 
         Ok(Config {
-            inner: RwLock::new(Inner { templates: load_templates(&config.templates_folder), config, _env, _usr }),
+            inner: RwLock::new(Inner {
+                templates: load_templates(&config.templates_folder),
+                config,
+                _env,
+                _usr,
+            }),
         })
     }
 
@@ -650,7 +701,7 @@ impl Config {
     /// Tests whether the specified user is allowed to create an organization.
     pub fn is_org_creation_allowed(&self, email: &str) -> bool {
         let users = self.org_creation_users();
-        if users == "" || users == "all" {
+        if users.is_empty() || users == "all" {
             true
         } else if users == "none" {
             false
@@ -704,8 +755,10 @@ impl Config {
             let akey_s = data_encoding::BASE64.encode(&akey);
 
             // Save the new value
-            let mut builder = ConfigBuilder::default();
-            builder._duo_akey = Some(akey_s.clone());
+            let builder = ConfigBuilder {
+                _duo_akey: Some(akey_s.clone()),
+                ..Default::default()
+            };
             self.update_config_partial(builder).ok();
 
             akey_s
