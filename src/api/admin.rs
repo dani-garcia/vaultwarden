@@ -1,8 +1,9 @@
 use once_cell::sync::Lazy;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
-use std::process::Command;
+use std::{env, process::Command, time::Duration};
 
+use reqwest::{blocking::Client, header::USER_AGENT};
 use rocket::{
     http::{Cookie, Cookies, SameSite},
     request::{self, FlashMessage, Form, FromRequest, Outcome, Request},
@@ -18,7 +19,7 @@ use crate::{
     db::{backup_database, models::*, DbConn, DbConnType},
     error::{Error, MapResult},
     mail,
-    util::{get_display_size, format_naive_datetime_local},
+    util::{format_naive_datetime_local, get_display_size},
     CONFIG,
 };
 
@@ -47,8 +48,19 @@ pub fn routes() -> Vec<Route> {
         users_overview,
         organizations_overview,
         diagnostics,
+        get_diagnostics_config
     ]
 }
+
+static DB_TYPE: Lazy<&str> = Lazy::new(|| {
+    DbConnType::from_url(&CONFIG.database_url())
+        .map(|t| match t {
+            DbConnType::sqlite => "SQLite",
+            DbConnType::mysql => "MySQL",
+            DbConnType::postgresql => "PostgreSQL",
+        })
+        .unwrap_or("Unknown")
+});
 
 static CAN_BACKUP: Lazy<bool> = Lazy::new(|| {
     DbConnType::from_url(&CONFIG.database_url())
@@ -307,7 +319,8 @@ fn users_overview(_token: AdminToken, conn: DbConn) -> ApiResult<Html<String>> {
                 None => json!("Never")
             };
             usr
-    }).collect();
+        })
+        .collect();
 
     let text = AdminTemplateData::users(users_json).render()?;
     Ok(Html(text))
@@ -362,14 +375,16 @@ fn update_revision_users(_token: AdminToken, conn: DbConn) -> EmptyResult {
 #[get("/organizations/overview")]
 fn organizations_overview(_token: AdminToken, conn: DbConn) -> ApiResult<Html<String>> {
     let organizations = Organization::get_all(&conn);
-    let organizations_json: Vec<Value> = organizations.iter().map(|o| {
+    let organizations_json: Vec<Value> = organizations.iter()
+        .map(|o| {
             let mut org = o.to_json();
             org["user_count"] = json!(UserOrganization::count_by_org(&o.uuid, &conn));
             org["cipher_count"] = json!(Cipher::count_by_org(&o.uuid, &conn));
             org["attachment_count"] = json!(Attachment::count_by_org(&o.uuid, &conn));
             org["attachment_size"] = json!(get_display_size(Attachment::size_by_org(&o.uuid, &conn) as i32));
             org
-    }).collect();
+        })
+        .collect();
 
     let text = AdminTemplateData::organizations(organizations_json).render()?;
     Ok(Html(text))
@@ -391,75 +406,102 @@ struct GitCommit {
 }
 
 fn get_github_api<T: DeserializeOwned>(url: &str) -> Result<T, Error> {
-    use reqwest::{blocking::Client, header::USER_AGENT};
-    use std::time::Duration;
     let github_api = Client::builder().build()?;
 
-    Ok(
-        github_api.get(url)
+    Ok(github_api
+        .get(url)
         .timeout(Duration::from_secs(10))
         .header(USER_AGENT, "Bitwarden_RS")
         .send()?
         .error_for_status()?
-        .json::<T>()?
-    )
+        .json::<T>()?)
+}
+
+fn has_http_access() -> bool {
+    let http_access = Client::builder().build().unwrap();
+
+    match http_access
+        .head("https://github.com/dani-garcia/bitwarden_rs")
+        .timeout(Duration::from_secs(10))
+        .header(USER_AGENT, "Bitwarden_RS")
+        .send()
+    {
+        Ok(r) => r.status().is_success(),
+        _ => false,
+    }
 }
 
 #[get("/diagnostics")]
 fn diagnostics(_token: AdminToken, _conn: DbConn) -> ApiResult<Html<String>> {
-    use std::net::ToSocketAddrs;
-    use chrono::prelude::*;
     use crate::util::read_file_string;
+    use chrono::prelude::*;
+    use std::net::ToSocketAddrs;
 
+    // Get current running versions
     let vault_version_path = format!("{}/{}", CONFIG.web_vault_folder(), "version.json");
     let vault_version_str = read_file_string(&vault_version_path)?;
     let web_vault_version: WebVaultVersion = serde_json::from_str(&vault_version_str)?;
 
-    let github_ips = ("github.com", 0).to_socket_addrs().map(|mut i| i.next());
-    let (dns_resolved, dns_ok) = match github_ips {
-        Ok(Some(a)) => (a.ip().to_string(), true),
-        _ => ("Could not resolve domain name.".to_string(), false),
+    // Execute some environment checks
+    let running_within_docker = std::path::Path::new("/.dockerenv").exists();
+    let has_http_access = has_http_access();
+    let uses_proxy = env::var_os("HTTP_PROXY").is_some()
+        || env::var_os("http_proxy").is_some()
+        || env::var_os("HTTPS_PROXY").is_some()
+        || env::var_os("https_proxy").is_some();
+
+    // Check if we are able to resolve DNS entries
+    let dns_resolved = match ("github.com", 0).to_socket_addrs().map(|mut i| i.next()) {
+        Ok(Some(a)) => a.ip().to_string(),
+        _ => "Could not resolve domain name.".to_string(),
     };
 
-    // If the DNS Check failed, do not even attempt to check for new versions since we were not able to resolve github.com
-    let (latest_release, latest_commit, latest_web_build) = if dns_ok {
+    // If the HTTP Check failed, do not even attempt to check for new versions since we were not able to connect with github.com anyway.
+    // TODO: Maybe we need to cache this using a LazyStatic or something. Github only allows 60 requests per hour, and we use 3 here already.
+    let (latest_release, latest_commit, latest_web_build) = if has_http_access {
         (
             match get_github_api::<GitRelease>("https://api.github.com/repos/dani-garcia/bitwarden_rs/releases/latest") {
                 Ok(r) => r.tag_name,
-                _ => "-".to_string()
+                _ => "-".to_string(),
             },
             match get_github_api::<GitCommit>("https://api.github.com/repos/dani-garcia/bitwarden_rs/commits/master") {
                 Ok(mut c) => {
                     c.sha.truncate(8);
                     c.sha
-            },
-                _ => "-".to_string()
+                }
+                _ => "-".to_string(),
             },
             match get_github_api::<GitRelease>("https://api.github.com/repos/dani-garcia/bw_web_builds/releases/latest") {
                 Ok(r) => r.tag_name.trim_start_matches('v').to_string(),
-                _ => "-".to_string()
+                _ => "-".to_string(),
             },
         )
     } else {
         ("-".to_string(), "-".to_string(), "-".to_string())
     };
 
-    // Run the date check as the last item right before filling the json.
-    // This should ensure that the time difference between the browser and the server is as minimal as possible.
-    let dt = Utc::now();
-    let server_time = dt.format("%Y-%m-%d %H:%M:%S UTC").to_string();
-
     let diagnostics_json = json!({
         "dns_resolved": dns_resolved,
-        "server_time": server_time,
         "web_vault_version": web_vault_version.version,
         "latest_release": latest_release,
         "latest_commit": latest_commit,
         "latest_web_build": latest_web_build,
+        "running_within_docker": running_within_docker,
+        "has_http_access": has_http_access,
+        "uses_proxy": uses_proxy,
+        "db_type": *DB_TYPE,
+        "admin_url": format!("{}/diagnostics", admin_url(Referer(None))),
+        "server_time": Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string(), // Run the date/time check as the last item to minimize the difference
     });
 
     let text = AdminTemplateData::diagnostics(diagnostics_json).render()?;
     Ok(Html(text))
+}
+
+#[get("/diagnostics/config")]
+fn get_diagnostics_config(_token: AdminToken) -> JsonResult {
+    let support_json = CONFIG.get_support_json();
+    Ok(Json(support_json))
 }
 
 #[post("/config", data = "<data>")]

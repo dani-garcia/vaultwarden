@@ -1,4 +1,4 @@
-<main class="container">
+<main class="container-xl">
     <div id="users-block" class="my-3 p-3 bg-white rounded shadow">
         <h6 class="border-bottom pb-2 mb-3">Registered Users</h6>
 
@@ -7,10 +7,12 @@
                 <thead>
                     <tr>
                         <th>User</th>
-                        <th style="width:60px; min-width: 60px;">Items</th>
+                        <th style="width:65px; min-width: 65px;">Created at</th>
+                        <th style="width:70px; min-width: 65px;">Last Active</th>
+                        <th style="width:35px; min-width: 35px;">Items</th>
                         <th>Attachments</th>
                         <th style="min-width: 120px;">Organizations</th>
-                        <th style="width: 140px; min-width: 140px;">Actions</th>
+                        <th style="width: 120px; min-width: 120px;">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -21,8 +23,6 @@
                             <div class="float-left">
                                 <strong>{{Name}}</strong>
                                 <span class="d-block">{{Email}}</span>
-                                <span class="d-block">Created at: {{created_at}}</span>
-                                <span class="d-block">Last active: {{last_active}}</span>
                                 <span class="d-block">
                                     {{#unless user_enabled}}
                                         <span class="badge badge-danger mr-2" title="User is disabled">Disabled</span>
@@ -40,6 +40,12 @@
                             </div>
                         </td>
                         <td>
+                            <span class="d-block">{{created_at}}</span>
+                        </td>
+                        <td>
+                            <span class="d-block">{{last_active}}</span>
+                        </td>
+                        <td>
                             <span class="d-block">{{cipher_count}}</span>
                         </td>
                         <td>
@@ -49,9 +55,11 @@
                             {{/if}}
                         </td>
                         <td>
+                            <div class="overflow-auto" style="max-height: 120px;">
                             {{#each Organizations}}
                             <span class="badge badge-primary" data-orgtype="{{Type}}">{{Name}}</span>
                             {{/each}}
+                            </div>
                         </td>
                         <td style="font-size: 90%; text-align: right; padding-right: 15px">
                             {{#if TwoFactorEnabled}}
@@ -173,18 +181,43 @@
         e.title = orgtype.name;
     });
 
+    // Special sort function to sort dates in ISO format
+    jQuery.extend( jQuery.fn.dataTableExt.oSort, {
+        "date-iso-pre": function ( a ) {
+            let x;
+            let sortDate = a.replace(/(<([^>]+)>)/gi, "").trim();
+            if ( sortDate !== '' ) {
+                let dtParts = sortDate.split(' ');
+                var timeParts = (undefined != dtParts[1]) ? dtParts[1].split(':') : [00,00,00];
+                var dateParts = dtParts[0].split('-');
+                x = (dateParts[0] + dateParts[1] + dateParts[2] + timeParts[0] + timeParts[1] + ((undefined != timeParts[2]) ? timeParts[2] : 0)) * 1;
+                if ( isNaN(x) ) {
+                    x = 0;
+                }
+            } else {
+                x = Infinity;
+            }
+            return x;
+        },
+
+        "date-iso-asc": function ( a, b ) {
+            return a - b;
+        },
+
+        "date-iso-desc": function ( a, b ) {
+            return b - a;
+        }
+    });
+
     document.addEventListener("DOMContentLoaded", function(event) {
         $('#users-table').DataTable({
             "responsive": true,
             "lengthMenu": [ [-1, 5, 10, 25, 50], ["All", 5, 10, 25, 50] ],
             "pageLength": -1, // Default show all
-            "columns": [
-                null,                                        // Userdata
-                null,                                        // Items
-                null,                                        // Attachments
-                null,                                        // Organizations
-                { "searchable": false, "orderable": false }, // Actions
-            ],
+            "columnDefs": [
+                { "targets": [1,2], "type": "date-iso" },
+                { "targets": 6, "searchable": false, "orderable": false }
+            ]
         });
     });
 </script>

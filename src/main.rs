@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 #![cfg_attr(feature = "unstable", feature(ip))]
-#![recursion_limit = "256"]
+#![recursion_limit = "512"]
 
 extern crate openssl;
 #[macro_use]
