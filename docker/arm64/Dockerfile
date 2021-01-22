@@ -121,6 +121,7 @@ RUN apt-get update && apt-get install -y \
     openssl \
     ca-certificates \
     curl \
+    dumb-init \
     sqlite3 \
     libmariadb-dev-compat \
     libpq5 \
@@ -147,5 +148,5 @@ HEALTHCHECK --interval=60s --timeout=10s CMD ["/healthcheck.sh"]
 
 # Configures the startup!
 WORKDIR /
+ENTRYPOINT ["/usr/bin/dumb-init", "--"]
 CMD ["/start.sh"]
-
