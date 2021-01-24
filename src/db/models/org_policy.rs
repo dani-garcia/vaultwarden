@@ -26,6 +26,9 @@ pub enum OrgPolicyType {
     TwoFactorAuthentication = 0,
     MasterPassword = 1,
     PasswordGenerator = 2,
+    // SingleOrg = 3, // Not currently supported.
+    // RequireSso = 4, // Not currently supported.
+    PersonalOwnership = 5,
 }
 
 /// Local methods
@@ -38,6 +41,10 @@ impl OrgPolicy {
             enabled: false,
             data,
         }
+    }
+
+    pub fn has_type(&self, policy_type: OrgPolicyType) -> bool {
+        self.atype == policy_type as i32
     }
 
     pub fn to_json(&self) -> Value {

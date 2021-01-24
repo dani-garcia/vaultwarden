@@ -225,6 +225,11 @@ fn post_ciphers_admin(data: JsonUpcase<ShareCipherData>, headers: Headers, conn:
 fn post_ciphers_create(data: JsonUpcase<ShareCipherData>, headers: Headers, conn: DbConn, nt: Notify) -> JsonResult {
     let mut data: ShareCipherData = data.into_inner().data;
 
+    // This check is usually only needed in update_cipher_from_data(), but we
+    // need it here as well to avoid creating an empty cipher in the call to
+    // cipher.save() below.
+    enforce_personal_ownership_policy(&data.Cipher, &headers, &conn)?;
+
     let mut cipher = Cipher::new(data.Cipher.Type, data.Cipher.Name.clone());
     cipher.user_uuid = Some(headers.user.uuid.clone());
     cipher.save(&conn)?;
@@ -251,6 +256,38 @@ fn post_ciphers(data: JsonUpcase<CipherData>, headers: Headers, conn: DbConn, nt
     Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, &conn)))
 }
 
+/// Enforces the personal ownership policy on user-owned ciphers, if applicable.
+/// A non-owner/admin user belonging to an org with the personal ownership policy
+/// enabled isn't allowed to create new user-owned ciphers or modify existing ones
+/// (that were created before the policy was applicable to the user). The user is
+/// allowed to delete or share such ciphers to an org, however.
+///
+/// Ref: https://bitwarden.com/help/article/policies/#personal-ownership
+fn enforce_personal_ownership_policy(
+    data: &CipherData,
+    headers: &Headers,
+    conn: &DbConn
+) -> EmptyResult {
+    if data.OrganizationId.is_none() {
+        let user_uuid = &headers.user.uuid;
+        for policy in OrgPolicy::find_by_user(user_uuid, conn) {
+            if policy.enabled && policy.has_type(OrgPolicyType::PersonalOwnership) {
+                let org_uuid = &policy.org_uuid;
+                match UserOrganization::find_by_user_and_org(user_uuid, org_uuid, conn) {
+                    Some(user) =>
+                        if user.atype < UserOrgType::Admin &&
+                           user.has_status(UserOrgStatus::Confirmed) {
+                            err!("Due to an Enterprise Policy, you are restricted \
+                                  from saving items to your personal vault.")
+                        },
+                    None => err!("Error looking up user type"),
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 pub fn update_cipher_from_data(
     cipher: &mut Cipher,
     data: CipherData,
@@ -260,6 +297,8 @@ pub fn update_cipher_from_data(
     nt: &Notify,
     ut: UpdateType,
 ) -> EmptyResult {
+    enforce_personal_ownership_policy(&data, headers, conn)?;
+
     // Check that the client isn't updating an existing cipher with stale data.
     if let Some(dt) = data.LastKnownRevisionDate {
         match NaiveDateTime::parse_from_str(&dt, "%+") { // ISO 8601 format
