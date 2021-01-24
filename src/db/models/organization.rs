@@ -412,11 +412,15 @@ impl UserOrganization {
         Ok(())
     }
 
-    pub fn has_status(self, status: UserOrgStatus) -> bool {
+    pub fn has_status(&self, status: UserOrgStatus) -> bool {
         self.status == status as i32
     }
 
-    pub fn has_full_access(self) -> bool {
+    pub fn has_type(&self, user_type: UserOrgType) -> bool {
+        self.atype == user_type as i32
+    }
+
+    pub fn has_full_access(&self) -> bool {
         (self.access_all || self.atype >= UserOrgType::Admin) &&
             self.has_status(UserOrgStatus::Confirmed)
     }

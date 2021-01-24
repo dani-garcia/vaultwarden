@@ -966,7 +966,7 @@ fn list_policies_token(org_id: String, token: String, conn: DbConn) -> JsonResul
 fn get_policy(org_id: String, pol_type: i32, _headers: AdminHeaders, conn: DbConn) -> JsonResult {
     let pol_type_enum = match OrgPolicyType::from_i32(pol_type) {
         Some(pt) => pt,
-        None => err!("Invalid policy type"),
+        None => err!("Invalid or unsupported policy type"),
     };
 
     let policy = match OrgPolicy::find_by_org_and_type(&org_id, pol_type, &conn) {
