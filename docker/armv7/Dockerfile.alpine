@@ -77,9 +77,9 @@ RUN [ "cross-build-start" ]
 RUN apk add --no-cache \
         openssl \
         curl \
+        dumb-init \
         sqlite \
         ca-certificates
-RUN apk add --no-cache -X http://dl-cdn.alpinelinux.org/alpine/edge/community catatonit
 
 RUN mkdir /data
 
@@ -102,5 +102,5 @@ HEALTHCHECK --interval=60s --timeout=10s CMD ["/healthcheck.sh"]
 
 # Configures the startup!
 WORKDIR /
-CMD ["catatonit", "/start.sh"]
-
+ENTRYPOINT ["/usr/bin/dumb-init", "--"]
+CMD ["/start.sh"]

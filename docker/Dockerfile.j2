@@ -204,6 +204,7 @@ RUN [ "cross-build-start" ]
 RUN apk add --no-cache \
         openssl \
         curl \
+        dumb-init \
 {%   if "sqlite" in features %}
         sqlite \
 {%   endif %}
@@ -220,13 +221,11 @@ RUN apt-get update && apt-get install -y \
     openssl \
     ca-certificates \
     curl \
+    dumb-init \
     sqlite3 \
     libmariadb-dev-compat \
     libpq5 \
     && rm -rf /var/lib/apt/lists/*
-{% endif %}
-{% if "alpine" in target_file and "armv7" in target_file %}
-RUN apk add --no-cache -X http://dl-cdn.alpinelinux.org/alpine/edge/community catatonit
 {% endif %}
 
 RUN mkdir /data
@@ -256,8 +255,5 @@ HEALTHCHECK --interval=60s --timeout=10s CMD ["/healthcheck.sh"]
 
 # Configures the startup!
 WORKDIR /
-{% if "alpine" in target_file and "armv7" in target_file %}
-CMD ["catatonit", "/start.sh"]
-{% else %}
+ENTRYPOINT ["/usr/bin/dumb-init", "--"]
 CMD ["/start.sh"]
-{% endif %}
