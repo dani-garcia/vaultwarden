@@ -967,18 +967,18 @@ fn delete_cipher_selected_put_admin(data: JsonUpcase<Value>, headers: Headers, c
 }
 
 #[put("/ciphers/<uuid>/restore")]
-fn restore_cipher_put(uuid: String, headers: Headers, conn: DbConn, nt: Notify) -> EmptyResult {
+fn restore_cipher_put(uuid: String, headers: Headers, conn: DbConn, nt: Notify) -> JsonResult {
     _restore_cipher_by_uuid(&uuid, &headers, &conn, &nt)
 }
 
 #[put("/ciphers/<uuid>/restore-admin")]
-fn restore_cipher_put_admin(uuid: String, headers: Headers, conn: DbConn, nt: Notify) -> EmptyResult {
+fn restore_cipher_put_admin(uuid: String, headers: Headers, conn: DbConn, nt: Notify) -> JsonResult {
     _restore_cipher_by_uuid(&uuid, &headers, &conn, &nt)
 }
 
 #[put("/ciphers/restore", data = "<data>")]
-fn restore_cipher_selected(data: JsonUpcase<Value>, headers: Headers, conn: DbConn, nt: Notify) -> EmptyResult {
-    _restore_multiple_ciphers(data, headers, conn, nt)
+fn restore_cipher_selected(data: JsonUpcase<Value>, headers: Headers, conn: DbConn, nt: Notify) -> JsonResult {
+    _restore_multiple_ciphers(data, &headers, &conn, &nt)
 }
 
 #[derive(Deserialize)]
@@ -1134,7 +1134,7 @@ fn _delete_multiple_ciphers(data: JsonUpcase<Value>, headers: Headers, conn: DbC
     Ok(())
 }
 
-fn _restore_cipher_by_uuid(uuid: &str, headers: &Headers, conn: &DbConn, nt: &Notify) -> EmptyResult {
+fn _restore_cipher_by_uuid(uuid: &str, headers: &Headers, conn: &DbConn, nt: &Notify) -> JsonResult {
     let mut cipher = match Cipher::find_by_uuid(&uuid, &conn) {
         Some(cipher) => cipher,
         None => err!("Cipher doesn't exist"),
@@ -1148,10 +1148,10 @@ fn _restore_cipher_by_uuid(uuid: &str, headers: &Headers, conn: &DbConn, nt: &No
     cipher.save(&conn)?;
 
     nt.send_cipher_update(UpdateType::CipherUpdate, &cipher, &cipher.update_users_revision(&conn));
-    Ok(())
+    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, &conn)))
 }
 
-fn _restore_multiple_ciphers(data: JsonUpcase<Value>, headers: Headers, conn: DbConn, nt: Notify) -> EmptyResult {
+fn _restore_multiple_ciphers(data: JsonUpcase<Value>, headers: &Headers, conn: &DbConn, nt: &Notify) -> JsonResult {
     let data: Value = data.into_inner().data;
 
     let uuids = match data.get("Ids") {
@@ -1162,13 +1162,19 @@ fn _restore_multiple_ciphers(data: JsonUpcase<Value>, headers: Headers, conn: Db
         None => err!("Request missing ids field"),
     };
 
+    let mut ciphers: Vec<Value> = Vec::new();
     for uuid in uuids {
-        if let error @ Err(_) = _restore_cipher_by_uuid(uuid, &headers, &conn, &nt) {
-            return error;
-        };
+        match _restore_cipher_by_uuid(uuid, headers, conn, nt) {
+            Ok(json) => ciphers.push(json.into_inner()),
+            err => return err
+        }
     }
 
-    Ok(())
+    Ok(Json(json!({
+      "Data": ciphers,
+      "Object": "list",
+      "ContinuationToken": null
+    })))
 }
 
 fn _delete_cipher_attachment_by_id(
