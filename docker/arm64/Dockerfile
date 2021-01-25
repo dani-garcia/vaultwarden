@@ -1,20 +1,27 @@
 # This file was generated using a Jinja2 template.
-# Please make your changes in `Dockerfile.j2` and then `make` the individual Dockerfile's.
+# Please make your changes in `Dockerfile.j2` and then `make` the individual Dockerfiles.
 
 # Using multistage build:
 # 	https://docs.docker.com/develop/develop-images/multistage-build/
 # 	https://whitfin.io/speeding-up-rust-docker-builds/
 ####################### VAULT BUILD IMAGE  #######################
-
-#  This hash is extracted from the docker web-vault builds and it's preferred over a simple tag because it's immutable.
-#  It can be viewed in multiple ways:
-#  - From the https://hub.docker.com/repository/docker/bitwardenrs/web-vault/tags page, click the tag name and the digest should be there.
-#  - From the console, with the following commands:
-#      docker pull bitwardenrs/web-vault:v2.17.1
-#      docker image inspect --format "{{.RepoDigests}}" bitwardenrs/web-vault:v2.17.1
+# The web-vault digest specifies a particular web-vault build on Docker Hub.
+# Using the digest instead of the tag name provides better security,
+# as the digest of an image is immutable, whereas a tag name can later
+# be changed to point to a malicious image.
 #
-#  - To do the opposite, and get the tag from the hash, you can do:
-#      docker image inspect --format "{{.RepoTags}}" bitwardenrs/web-vault@sha256:dcb7884dc5845b3842ff2204fe77482000b771495c6c359297ec3c03330d65e0
+# To verify the current digest for a given tag name:
+# - From https://hub.docker.com/r/bitwardenrs/web-vault/tags,
+#   click the tag name to view the digest of the image it currently points to.
+# - From the command line:
+#     $ docker pull bitwardenrs/web-vault:v2.17.1
+#     $ docker image inspect --format "{{.RepoDigests}}" bitwardenrs/web-vault:v2.17.1
+#     [bitwardenrs/web-vault@sha256:dcb7884dc5845b3842ff2204fe77482000b771495c6c359297ec3c03330d65e0]
+#
+# - Conversely, to get the tag name from the digest:
+#     $ docker image inspect --format "{{.RepoTags}}" bitwardenrs/web-vault@sha256:dcb7884dc5845b3842ff2204fe77482000b771495c6c359297ec3c03330d65e0
+#     [bitwardenrs/web-vault:v2.17.1]
+#
 FROM bitwardenrs/web-vault@sha256:dcb7884dc5845b3842ff2204fe77482000b771495c6c359297ec3c03330d65e0 as vault
 
 ########################## BUILD IMAGE  ##########################
