@@ -330,9 +330,9 @@ pub struct OrgHeaders {
     pub org_id: String,
 }
 
-// org_id is usually the second param ("/organizations/<org_id>")
-// But there are cases where it is located in a query value.
-// First check the param, if this is not a valid uuid, we will try the query value.
+// org_id is usually the second path param ("/organizations/<org_id>"),
+// but there are cases where it is a query value.
+// First check the path, if this is not a valid uuid, try the query values.
 fn get_org_id(request: &Request) -> Option<String> {
     if let Some(Ok(org_id)) = request.get_param::<String>(1) {
         if uuid::Uuid::parse_str(&org_id).is_ok() {
@@ -439,9 +439,9 @@ impl Into<Headers> for AdminHeaders {
     }
 }
 
-// col_id is usually the forth param ("/organizations/<org_id>/collections/<col_id>")
-// But there cloud be cases where it is located in a query value.
-// First check the param, if this is not a valid uuid, we will try the query value.
+// col_id is usually the fourth path param ("/organizations/<org_id>/collections/<col_id>"),
+// but there could be cases where it is a query value.
+// First check the path, if this is not a valid uuid, try the query values.
 fn get_col_id(request: &Request) -> Option<String> {
     if let Some(Ok(col_id)) = request.get_param::<String>(3) {
         if uuid::Uuid::parse_str(&col_id).is_ok() {
@@ -484,7 +484,7 @@ impl<'a, 'r> FromRequest<'a, 'r> for ManagerHeaders {
                                 _ => err_handler!("Error getting DB"),
                             };
 
-                            if !headers.org_user.access_all {
+                            if !headers.org_user.has_full_access() {
                                 match CollectionUser::find_by_collection_and_user(&col_id, &headers.org_user.user_uuid, &conn) {
                                     Some(_) => (),
                                     None => err_handler!("The current user isn't a manager for this collection"),
