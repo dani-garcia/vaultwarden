@@ -67,7 +67,7 @@ pub fn generate_token(token_size: u32) -> Result<String, Error> {
     // token of fixed width, left-padding with 0 as needed.
     use rand::{thread_rng, Rng};
     let mut rng = thread_rng();
-    let number: u64 = rng.gen_range(low, high);
+    let number: u64 = rng.gen_range(low..high);
     let token = format!("{:0size$}", number, size = token_size as usize);
 
     Ok(token)
