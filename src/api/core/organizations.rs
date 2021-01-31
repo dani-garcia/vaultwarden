@@ -47,7 +47,9 @@ pub fn routes() -> Vec<Route> {
         list_policies_token,
         get_policy,
         put_policy,
+        get_organization_tax,
         get_plans,
+        get_plans_tax_rates,
     ]
 }
 
@@ -1006,6 +1008,13 @@ fn put_policy(org_id: String, pol_type: i32, data: Json<PolicyData>, _headers: A
     Ok(Json(policy.to_json()))
 }
 
+#[allow(unused_variables)]
+#[get("/organizations/<org_id>/tax")]
+fn get_organization_tax(org_id: String, _headers: Headers, _conn: DbConn) -> EmptyResult {
+    // Prevent a 404 error, which also causes Javascript errors.
+    err!("Only allowed when not self hosted.")
+}
+
 #[get("/plans")]
 fn get_plans(_headers: Headers, _conn: DbConn) -> JsonResult {
     Ok(Json(json!({
@@ -1054,6 +1063,16 @@ fn get_plans(_headers: Headers, _conn: DbConn) -> JsonResult {
             "PremiumAccessOptionPrice": 0.0
             }
         ],
+        "ContinuationToken": null
+    })))
+}
+
+#[get("/plans/sales-tax-rates")]
+fn get_plans_tax_rates(_headers: Headers, _conn: DbConn) -> JsonResult {
+    // Prevent a 404 error, which also causes Javascript errors.
+    Ok(Json(json!({
+        "Object": "list",
+        "Data": [],
         "ContinuationToken": null
     })))
 }
