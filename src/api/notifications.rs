@@ -19,13 +19,12 @@ static SHOW_WEBSOCKETS_MSG: AtomicBool = AtomicBool::new(true);
 
 #[get("/hub")]
 fn websockets_err() -> EmptyResult {
-    if CONFIG.websocket_enabled() && SHOW_WEBSOCKETS_MSG.compare_and_swap(true, false, Ordering::Relaxed) {
-        err!(
-    "###########################################################
+    if CONFIG.websocket_enabled() && SHOW_WEBSOCKETS_MSG.compare_exchange(true, false, Ordering::Relaxed, Ordering::Relaxed).is_ok() {
+        err!("
+    ###########################################################
     '/notifications/hub' should be proxied to the websocket server or notifications won't work.
     Go to the Wiki for more info, or disable WebSockets setting WEBSOCKET_ENABLED=false.
-    ###########################################################################################"
-        )
+    ###########################################################################################\n")
     } else {
         Err(Error::empty())
     }
@@ -161,7 +160,7 @@ impl WSHandler {
                 }
             }
         };
-        
+
         // Otherwise verify the query parameter value
         let path = hs.request.resource();
         if let Some(params) = path.split('?').nth(1) {

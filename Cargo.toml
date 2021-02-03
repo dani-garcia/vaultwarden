@@ -32,10 +32,10 @@ rocket = { version = "0.5.0-dev", features = ["tls"], default-features = false }
 rocket_contrib = "0.5.0-dev"
 
 # HTTP client
-reqwest = { version = "0.10.10", features = ["blocking", "json"] }
+reqwest = { version = "0.11.0", features = ["blocking", "json"] }
 
 # multipart/form-data support
-multipart = { version = "0.17.0", features = ["server"], default-features = false }
+multipart = { version = "0.17.1", features = ["server"], default-features = false }
 
 # WebSockets library
 ws = { version = "0.10.0", package = "parity-ws" }
@@ -47,12 +47,11 @@ rmpv = "0.4.6"
 chashmap = "2.2.2"
 
 # A generic serialization/deserialization framework
-serde = "1.0.118"
-serde_derive = "1.0.118"
-serde_json = "1.0.60"
+serde = { version = "1.0.123", features = ["derive"] }
+serde_json = "1.0.61"
 
 # Logging
-log = "0.4.11"
+log = "0.4.14"
 fern = { version = "0.6.0", features = ["syslog-4"] }
 
 # A safe, extensible ORM and Query builder
@@ -63,22 +62,22 @@ diesel_migrations = "1.4.0"
 libsqlite3-sys = { version = "0.18.0", features = ["bundled"], optional = true }
 
 # Crypto-related libraries
-rand = "0.7.3"
+rand = "0.8.3"
 ring = "0.16.19"
 
 # UUID generation
-uuid = { version = "0.8.1", features = ["v4"] }
+uuid = { version = "0.8.2", features = ["v4"] }
 
 # Date and time libraries
 chrono = "0.4.19"
 chrono-tz = "0.5.3"
-time = "0.2.23"
+time = "0.2.25"
 
 # TOTP library
 oath = "0.10.2"
 
 # Data encoding library
-data-encoding = "2.3.1"
+data-encoding = "2.3.2"
 
 # JWT library
 jsonwebtoken = "7.2.0"
@@ -100,19 +99,19 @@ num-traits = "0.2.14"
 num-derive = "0.3.3"
 
 # Email libraries
-lettre = { version = "0.10.0-alpha.4", features = ["smtp-transport", "builder", "serde", "native-tls", "hostname", "tracing"], default-features = false }
+lettre = { version = "0.10.0-alpha.5", features = ["smtp-transport", "builder", "serde", "native-tls", "hostname", "tracing"], default-features = false }
 newline-converter = "0.1.0"
 
 # Template library
-handlebars = { version = "3.5.1", features = ["dir_source"] }
+handlebars = { version = "3.5.2", features = ["dir_source"] }
 
 # For favicon extraction from main website
 soup = "0.5.0"
-regex = "1.4.2"
+regex = { version = "1.4.3", features = ["std", "perf"], default-features = false }
 data-url = "0.1.0"
 
 # Used by U2F, JWT and Postgres
-openssl = "0.10.31"
+openssl = "0.10.32"
 
 # URL encoding library
 percent-encoding = "2.1.0"
@@ -123,7 +122,7 @@ idna = "0.2.0"
 structopt = "0.3.21"
 
 # Logging panics to logfile instead stderr only
-backtrace = "0.3.55"
+backtrace = "0.3.56"
 
 # Macro ident concatenation
 paste = "1.0.4"
