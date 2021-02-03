@@ -557,7 +557,7 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
             err!("Both `SMTP_HOST` and `SMTP_FROM` need to be set for email support")
         }
 
-        if !cfg.smtp_from.contains('@') {
+        if cfg.smtp_host.is_some() && !cfg.smtp_from.contains('@') {
             err!("SMTP_FROM does not contain a mandatory @ sign")
         }
 
