@@ -508,7 +508,8 @@
       "disneymoviesanywhere.com",
       "go.com",
       "disney.com",
-      "dadt.com"
+      "dadt.com",
+      "disneyplus.com"
     ],
     "Excluded": false
   },
@@ -883,6 +884,14 @@
       "yandex.tm",
       "yandex.ua",
       "yandex.uz"
+    ],
+    "Excluded": false
+  },
+  {
+    "Type": 84,
+    "Domains": [
+      "sonyentertainmentnetwork.com",
+      "sony.com"
     ],
     "Excluded": false
   }
