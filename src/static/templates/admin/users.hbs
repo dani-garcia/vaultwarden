@@ -57,7 +57,7 @@
                         <td>
                             <div class="overflow-auto" style="max-height: 120px;">
                             {{#each Organizations}}
-                            <span class="badge badge-primary" data-orgtype="{{Type}}">{{Name}}</span>
+                            <button class="badge badge-primary" data-toggle="modal" data-target="#userOrgTypeDialog" data-orgtype="{{Type}}" data-orguuid="{{jsesc Id no_quote}}" data-orgname="{{jsesc Name no_quote}}" data-useremail="{{jsesc ../Email no_quote}}" data-useruuid="{{jsesc ../Id no_quote}}">{{Name}}</button>
                             {{/each}}
                             </div>
                         </td>
@@ -98,6 +98,41 @@
                 <input type="email" class="form-control w-50 mr-2" id="email-invite" placeholder="Enter email">
                 <button type="submit" class="btn btn-primary">Invite</button>
             </form>
+        </div>
+    </div>
+
+    <div id="userOrgTypeDialog" class="modal fade" tabindex="-1" role="dialog" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-sm">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h6 class="modal-title" id="userOrgTypeDialogTitle"></h6>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+                <form class="form" id="userOrgTypeForm" onsubmit="updateUserOrgType(); return false;">
+                    <input type="hidden" name="user_uuid" id="userOrgTypeUserUuid" value="">
+                    <input type="hidden" name="org_uuid" id="userOrgTypeOrgUuid" value="">
+                    <div class="modal-body">
+                        <div class="radio">
+                            <label><input type="radio" value="2" class="form-radio-input" name="user_type" id="userOrgTypeUser">&nbsp;User</label>
+                        </div>
+                        <div class="radio">
+                            <label><input type="radio" value="3" class="form-radio-input" name="user_type" id="userOrgTypeManager">&nbsp;Manager</label>
+                        </div>
+                        <div class="radio">
+                            <label><input type="radio" value="1" class="form-radio-input" name="user_type" id="userOrgTypeAdmin">&nbsp;Admin</label>
+                        </div>
+                        <div class="radio">
+                            <label><input type="radio" value="0" class="form-radio-input" name="user_type" id="userOrgTypeOwner">&nbsp;Owner</label>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-sm btn-secondary" data-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-sm btn-primary">Change Role</button>
+                    </div>
+                </form>
+            </div>
         </div>
     </div>
 </main>
@@ -220,4 +255,37 @@
             ]
         });
     });
+
+    var userOrgTypeDialog = document.getElementById('userOrgTypeDialog');
+    // Fill the form and title
+    userOrgTypeDialog.addEventListener('show.bs.modal', function(event){
+        let userOrgType = event.relatedTarget.getAttribute("data-orgtype");
+        let userOrgTypeName = OrgTypes[userOrgType]["name"];
+        let orgName = event.relatedTarget.getAttribute("data-orgname");
+        let userEmail = event.relatedTarget.getAttribute("data-useremail");
+        let orgUuid = event.relatedTarget.getAttribute("data-orguuid");
+        let userUuid = event.relatedTarget.getAttribute("data-useruuid");
+
+        document.getElementById("userOrgTypeDialogTitle").innerHTML = "<b>Update User Type:</b><br><b>Organization:</b> " + orgName + "<br><b>User:</b> " + userEmail;
+        document.getElementById("userOrgTypeUserUuid").value = userUuid;
+        document.getElementById("userOrgTypeOrgUuid").value = orgUuid;
+        document.getElementById("userOrgType"+userOrgTypeName).checked = true;
+    }, false);
+
+    // Prevent accidental submission of the form with valid elements after the modal has been hidden.
+    userOrgTypeDialog.addEventListener('hide.bs.modal', function(event){
+        document.getElementById("userOrgTypeDialogTitle").innerHTML = '';
+        document.getElementById("userOrgTypeUserUuid").value = '';
+        document.getElementById("userOrgTypeOrgUuid").value = '';
+    }, false);
+
+    function updateUserOrgType() {
+        let orgForm = document.getElementById("userOrgTypeForm");
+        const data = JSON.stringify(Object.fromEntries(new FormData(orgForm).entries()));
+
+        _post("{{urlpath}}/admin/users/org_type",
+            "Updated organization type of the user successfully",
+            "Error updating organization type of the user", data);
+        return false;
+    }
 </script>

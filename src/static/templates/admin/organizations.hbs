@@ -10,6 +10,7 @@
                         <th>Users</th>
                         <th>Items</th>
                         <th>Attachments</th>
+                        <th style="width: 120px; min-width: 120px;">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -37,6 +38,9 @@
                             <span class="d-block"><strong>Size:</strong> {{attachment_size}}</span>
                             {{/if}}
                         </td>
+                        <td style="font-size: 90%; text-align: right; padding-right: 15px">
+                            <a class="d-block" href="#" onclick='deleteOrganization({{jsesc Id}}, {{jsesc Name}}, {{jsesc BillingEmail}})'>Delete Organization</a>
+                        </td>
                     </tr>
                     {{/each}}
                 </tbody>
@@ -50,6 +54,25 @@
 <script src="{{urlpath}}/bwrs_static/jquery-3.5.1.slim.js"></script>
 <script src="{{urlpath}}/bwrs_static/datatables.js"></script>
 <script>
+    function deleteOrganization(id, name, billing_email) {
+        // First make sure the user wants to delete this organization
+        var continueDelete = confirm("WARNING: All data of this organization ("+ name +") will be lost!\nMake sure you have a backup, this cannot be undone!");
+        if (continueDelete == true) {
+            var input_org_uuid = prompt("To delete the organization '" + name + " (" + billing_email +")', please type the organization uuid below.")
+            if (input_org_uuid != null) {
+                if (input_org_uuid == id) {
+                    _post("{{urlpath}}/admin/organizations/" + id + "/delete",
+                        "Organization deleted correctly",
+                        "Error deleting organization");
+                } else {
+                    alert("Wrong organization uuid, please try again")
+                }
+            }
+        }
+
+        return false;
+    }
+
     document.querySelectorAll("img.identicon").forEach(function (e, i) {
         e.src = identicon(e.dataset.src);
     });
@@ -59,6 +82,9 @@
             "responsive": true,
             "lengthMenu": [ [-1, 5, 10, 25, 50], ["All", 5, 10, 25, 50] ],
             "pageLength": -1, // Default show all
+            "columnDefs": [
+                { "targets": 4, "searchable": false, "orderable": false }
+            ]
         });
     });
 </script>
