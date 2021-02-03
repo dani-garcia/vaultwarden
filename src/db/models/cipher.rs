@@ -83,7 +83,12 @@ impl Cipher {
         use crate::util::format_date;
 
         let attachments = Attachment::find_by_cipher(&self.uuid, conn);
-        let attachments_json: Vec<Value> = attachments.iter().map(|c| c.to_json(host)).collect();
+        // When there are no attachments use null instead of an empty array
+        let attachments_json = if attachments.is_empty() {
+            Value::Null
+        } else {
+            attachments.iter().map(|c| c.to_json(host)).collect()
+        };
 
         let fields_json = self.fields.as_ref().and_then(|s| serde_json::from_str(s).ok()).unwrap_or(Value::Null);
         let password_history_json = self.password_history.as_ref().and_then(|s| serde_json::from_str(s).ok()).unwrap_or(Value::Null);
@@ -97,28 +102,31 @@ impl Cipher {
                 },
             };
 
-        // Get the data or a default empty value to avoid issues with the mobile apps
-        let mut data_json: Value = serde_json::from_str(&self.data).unwrap_or_else(|_| json!({
-            "Fields":null,
-            "Name": self.name,
-            "Notes":null,
-            "Password":null,
-            "PasswordHistory":null,
-            "PasswordRevisionDate":null,
-            "Response":null,
-            "Totp":null,
-            "Uris":null,
-            "Username":null
-        }));
+        // Get the type_data or a default to an empty json object '{}'.
+        // If not passing an empty object, mobile clients will crash.
+        let mut type_data_json: Value = serde_json::from_str(&self.data).unwrap_or(json!({}));
 
-        // TODO: ******* Backwards compat start **********
-        // To remove backwards compatibility, just remove this entire section
-        // and remove the compat code from ciphers::update_cipher_from_data
-        if self.atype == 1 && data_json["Uris"].is_array() {
-            let uri = data_json["Uris"][0]["Uri"].clone();
-            data_json["Uri"] = uri;
+        // NOTE: This was marked as *Backwards Compatibilty Code*, but as of January 2021 this is still being used by upstream
+        // Set the first element of the Uris array as Uri, this is needed several (mobile) clients.
+        if self.atype == 1 {
+            if type_data_json["Uris"].is_array() {
+                let uri = type_data_json["Uris"][0]["Uri"].clone();
+                type_data_json["Uri"] = uri;
+            } else {
+                // Upstream always has an Uri key/value
+                type_data_json["Uri"] = Value::Null;
+            }
         }
-        // TODO: ******* Backwards compat end **********
+
+        // Clone the type_data and add some default value.
+        let mut data_json = type_data_json.clone();
+
+        // NOTE: This was marked as *Backwards Compatibilty Code*, but as of January 2021 this is still being used by upstream
+        // data_json should always contain the following keys with every atype
+        data_json["Fields"] = json!(fields_json);
+        data_json["Name"] = json!(self.name);
+        data_json["Notes"] = json!(self.notes);
+        data_json["PasswordHistory"] = json!(password_history_json);
 
         // There are three types of cipher response models in upstream
         // Bitwarden: "cipherMini", "cipher", and "cipherDetails" (in order
@@ -137,6 +145,8 @@ impl Cipher {
             "Favorite": self.is_favorite(&user_uuid, conn),
             "OrganizationId": self.organization_uuid,
             "Attachments": attachments_json,
+            // We have UseTotp set to true by default within the Organization model.
+            // This variable together with UsersGetPremium is used to show or hide the TOTP counter.
             "OrganizationUseTotp": true,
 
             // This field is specific to the cipherDetails type.
@@ -155,6 +165,12 @@ impl Cipher {
             "ViewPassword": !hide_passwords,
 
             "PasswordHistory": password_history_json,
+
+            // All Cipher types are included by default as null, but only the matching one will be populated
+            "Login": null,
+            "SecureNote": null,
+            "Card": null,
+            "Identity": null,
         });
 
         let key = match self.atype {
@@ -165,7 +181,7 @@ impl Cipher {
             _ => panic!("Wrong type"),
         };
 
-        json_object[key] = data_json;
+        json_object[key] = type_data_json;
         json_object
     }
 
@@ -448,7 +464,10 @@ impl Cipher {
     pub fn find_owned_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
         db_run! {conn: {
             ciphers::table
-                .filter(ciphers::user_uuid.eq(user_uuid))
+                .filter(
+                    ciphers::user_uuid.eq(user_uuid)
+                    .and(ciphers::organization_uuid.is_null())
+                )
                 .load::<CipherDb>(conn).expect("Error loading ciphers").from_db()
         }}
     }
