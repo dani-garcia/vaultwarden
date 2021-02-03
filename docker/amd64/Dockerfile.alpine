@@ -25,7 +25,7 @@
 FROM bitwardenrs/web-vault@sha256:57af3fd71706bf6a594488d809ec73f04f77f3f5e97f72fab74c681c4f5a5272 as vault
 
 ########################## BUILD IMAGE  ##########################
-FROM clux/muslrust:nightly-2020-11-22 as build
+FROM clux/muslrust:nightly-2021-01-25 as build
 
 # Alpine-based AMD64 (musl) does not support mysql/mariadb during compile time.
 ARG DB=sqlite,postgresql
