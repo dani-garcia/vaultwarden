@@ -27,12 +27,14 @@
                     <dd class="col-sm-7">
                         <span id="web-installed">{{diagnostics.web_vault_version}}</span>
                     </dd>
+                    {{#unless diagnostics.running_within_docker}}
                     <dt class="col-sm-5">Web Latest
                         <span class="badge badge-secondary d-none" id="web-failed" title="Unable to determine latest version.">Unknown</span>
                     </dt>
                     <dd class="col-sm-7">
                         <span id="web-latest">{{diagnostics.latest_web_build}}</span>
                     </dd>
+                    {{/unless}}
                 </dl>
             </div>
         </div>
@@ -93,8 +95,10 @@
                     </dd>
 
                     <dt class="col-sm-5">Domain configuration
-                        <span class="badge badge-success d-none" id="domain-success" title="Domain variable seems to be correct.">Ok</span>
-                        <span class="badge badge-danger d-none" id="domain-warning" title="Domain variable is not configured correctly.&#013;&#010;Some features may not work as expected!">Error</span>
+                        <span class="badge badge-success d-none" id="domain-success" title="The domain variable matches the browser location and seems to be configured correctly.">Match</span>
+                        <span class="badge badge-danger d-none" id="domain-warning" title="The domain variable does not matches the browsers location.&#013;&#010;The domain variable does not seem to be configured correctly.&#013;&#010;Some features may not work as expected!">No Match</span>
+                        <span class="badge badge-success d-none" id="https-success" title="Configurued to use HTTPS">HTTPS</span>
+                        <span class="badge badge-danger d-none" id="https-warning" title="Not configured to use HTTPS.&#013;&#010;Some features may not work as expected!">No HTTPS</span>
                     </dt>
                     <dd class="col-sm-7">
                         <span id="domain-server" class="d-block"><b>Server:</b> <span id="domain-server-string">{{diagnostics.admin_url}}</span></span>
@@ -139,6 +143,7 @@
     dnsCheck = false;
     timeCheck = false;
     domainCheck = false;
+    httpsCheck = false;
     (() => {
         // ================================
         // Date & Time Check
@@ -181,10 +186,12 @@
         }
 
         const webInstalled = document.getElementById('web-installed').innerText;
-        const webLatest = document.getElementById('web-latest').innerText;
-
         checkVersions('server', serverInstalled, serverLatest, serverLatestCommit);
+
+        {{#unless diagnostics.running_within_docker}}
+        const webLatest = document.getElementById('web-latest').innerText;
         checkVersions('web', webInstalled, webLatest);
+        {{/unless}}
 
         function checkVersions(platform, installed, latest, commit=null) {
             if (installed === '-' || latest === '-') {
@@ -238,6 +245,14 @@
         } else {
             document.getElementById('domain-warning').classList.remove('d-none');
         }
+
+        // Check for HTTPS at domain-server-string
+        if (document.getElementById('domain-server-string').innerText.toLowerCase().startsWith('https://') ) {
+            document.getElementById('https-success').classList.remove('d-none');
+            httpsCheck = true;
+        } else {
+            document.getElementById('https-warning').classList.remove('d-none');
+        }
     })();
 
     // ================================
@@ -253,10 +268,14 @@
         supportString += "* DNS Check: " + dnsCheck + "\n";
         supportString += "* Time Check: " + timeCheck + "\n";
         supportString += "* Domain Configuration Check: " + domainCheck + "\n";
+        supportString += "* HTTPS Check: " + httpsCheck + "\n";
         supportString += "* Database type: {{ diagnostics.db_type }}\n";
         {{#case diagnostics.db_type "MySQL" "PostgreSQL"}}
         supportString += "* Database version: [PLEASE PROVIDE DATABASE VERSION]\n";
         {{/case}}
+        supportString += "* Clients used: \n";
+        supportString += "* Reverse proxy and version: \n";
+        supportString += "* Other relevant information: \n";
 
         jsonResponse = await fetch('{{urlpath}}/admin/diagnostics/config');
         configJson = await jsonResponse.json();

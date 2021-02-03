@@ -13,7 +13,7 @@ use rocket::{
 use rocket_contrib::json::Json;
 
 use crate::{
-    api::{ApiResult, EmptyResult, JsonResult},
+    api::{ApiResult, EmptyResult, JsonResult, NumberOrString},
     auth::{decode_admin, encode_jwt, generate_admin_claims, ClientIp},
     config::ConfigBuilder,
     db::{backup_database, models::*, DbConn, DbConnType},
@@ -40,6 +40,7 @@ pub fn routes() -> Vec<Route> {
         disable_user,
         enable_user,
         remove_2fa,
+        update_user_org_type,
         update_revision_users,
         post_config,
         delete_config,
@@ -47,6 +48,7 @@ pub fn routes() -> Vec<Route> {
         test_smtp,
         users_overview,
         organizations_overview,
+        delete_organization,
         diagnostics,
         get_diagnostics_config
     ]
@@ -367,6 +369,41 @@ fn remove_2fa(uuid: String, _token: AdminToken, conn: DbConn) -> EmptyResult {
     user.save(&conn)
 }
 
+#[derive(Deserialize, Debug)]
+struct UserOrgTypeData {
+    user_type: NumberOrString,
+    user_uuid: String,
+    org_uuid: String,
+}
+
+#[post("/users/org_type", data = "<data>")]
+fn update_user_org_type(data: Json<UserOrgTypeData>, _token: AdminToken, conn: DbConn) -> EmptyResult {
+    let data: UserOrgTypeData = data.into_inner();
+
+    let mut user_to_edit = match UserOrganization::find_by_user_and_org(&data.user_uuid, &data.org_uuid, &conn) {
+        Some(user) => user,
+        None => err!("The specified user isn't member of the organization"),
+    };
+
+    let new_type = match UserOrgType::from_str(&data.user_type.into_string()) {
+        Some(new_type) => new_type as i32,
+        None => err!("Invalid type"),
+    };
+
+    if user_to_edit.atype == UserOrgType::Owner && new_type != UserOrgType::Owner {
+        // Removing owner permmission, check that there are at least another owner
+        let num_owners = UserOrganization::find_by_org_and_type(&data.org_uuid, UserOrgType::Owner as i32, &conn).len();
+
+        if num_owners <= 1 {
+            err!("Can't change the type of the last owner")
+        }
+    }
+
+    user_to_edit.atype = new_type as i32;
+    user_to_edit.save(&conn)
+}
+
+
 #[post("/users/update_revision")]
 fn update_revision_users(_token: AdminToken, conn: DbConn) -> EmptyResult {
     User::update_all_revisions(&conn)
@@ -388,6 +425,12 @@ fn organizations_overview(_token: AdminToken, conn: DbConn) -> ApiResult<Html<St
 
     let text = AdminTemplateData::organizations(organizations_json).render()?;
     Ok(Html(text))
+}
+
+#[post("/organizations/<uuid>/delete")]
+fn delete_organization(uuid: String, _token: AdminToken, conn: DbConn) -> EmptyResult {
+    let org = Organization::find_by_uuid(&uuid, &conn).map_res("Organization doesn't exist")?;
+    org.delete(&conn)
 }
 
 #[derive(Deserialize)]
@@ -443,7 +486,7 @@ fn diagnostics(_token: AdminToken, _conn: DbConn) -> ApiResult<Html<String>> {
     let web_vault_version: WebVaultVersion = serde_json::from_str(&vault_version_str)?;
 
     // Execute some environment checks
-    let running_within_docker = std::path::Path::new("/.dockerenv").exists();
+    let running_within_docker = std::path::Path::new("/.dockerenv").exists() || std::path::Path::new("/run/.containerenv").exists();
     let has_http_access = has_http_access();
     let uses_proxy = env::var_os("HTTP_PROXY").is_some()
         || env::var_os("http_proxy").is_some()
@@ -471,9 +514,15 @@ fn diagnostics(_token: AdminToken, _conn: DbConn) -> ApiResult<Html<String>> {
                 }
                 _ => "-".to_string(),
             },
-            match get_github_api::<GitRelease>("https://api.github.com/repos/dani-garcia/bw_web_builds/releases/latest") {
-                Ok(r) => r.tag_name.trim_start_matches('v').to_string(),
-                _ => "-".to_string(),
+            // Do not fetch the web-vault version when running within Docker.
+            // The web-vault version is embedded within the container it self, and should not be updated manually
+            if running_within_docker {
+                "-".to_string()
+            } else {
+                match get_github_api::<GitRelease>("https://api.github.com/repos/dani-garcia/bw_web_builds/releases/latest") {
+                    Ok(r) => r.tag_name.trim_start_matches('v').to_string(),
+                    _ => "-".to_string(),
+                }
             },
         )
     } else {
