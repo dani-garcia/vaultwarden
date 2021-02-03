@@ -147,9 +147,10 @@ impl Organization {
     pub fn to_json(&self) -> Value {
         json!({
             "Id": self.uuid,
+            "Identifier": null, // not supported by us
             "Name": self.name,
-            "Seats": 10,
-            "MaxCollections": 10,
+            "Seats": 10, // The value doesn't matter, we don't check server-side
+            "MaxCollections": 10, // The value doesn't matter, we don't check server-side
             "MaxStorageGb": 10, // The value doesn't matter, we don't check server-side
             "Use2fa": true,
             "UseDirectory": false,
@@ -157,6 +158,9 @@ impl Organization {
             "UseGroups": false,
             "UseTotp": true,
             "UsePolicies": true,
+            "UseSso": false, // We do not support SSO
+            "SelfHost": true,
+            "UseApi": false, // not supported by us
 
             "BusinessName": null,
             "BusinessAddress1": null,
@@ -274,9 +278,10 @@ impl UserOrganization {
 
         json!({
             "Id": self.org_uuid,
+            "Identifier": null, // not supported by us
             "Name": org.name,
-            "Seats": 10,
-            "MaxCollections": 10,
+            "Seats": 10, // The value doesn't matter, we don't check server-side
+            "MaxCollections": 10, // The value doesn't matter, we don't check server-side
             "UsersGetPremium": true,
 
             "Use2fa": true,
@@ -285,8 +290,30 @@ impl UserOrganization {
             "UseGroups": false,
             "UseTotp": true,
             "UsePolicies": true,
-            "UseApi": false,
+            "UseApi": false, // not supported by us
             "SelfHost": true,
+            "SsoBound": false, // We do not support SSO
+            "UseSso": false, // We do not support SSO
+            // TODO: Add support for Business Portal
+            // Upstream is moving Policies and SSO management outside of the web-vault to /portal
+            // For now they still have that code also in the web-vault, but they will remove it at some point.
+            // https://github.com/bitwarden/server/tree/master/bitwarden_license/src/
+            "UseBusinessPortal": false, // Disable BusinessPortal Button
+
+            // TODO: Add support for Custom User Roles
+            // See: https://bitwarden.com/help/article/user-types-access-control/#custom-role
+            // "Permissions": {
+            //     "AccessBusinessPortal": false,
+            //     "AccessEventLogs": false,
+            //     "AccessImportExport": false,
+            //     "AccessReports": false,
+            //     "ManageAllCollections": false,
+            //     "ManageAssignedCollections": false,
+            //     "ManageGroups": false,
+            //     "ManagePolicies": false,
+            //     "ManageSso": false,
+            //     "ManageUsers": false
+            // },
 
             "MaxStorageGb": 10, // The value doesn't matter, we don't check server-side
 

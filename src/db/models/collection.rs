@@ -49,11 +49,20 @@ impl Collection {
 
     pub fn to_json(&self) -> Value {
         json!({
+            "ExternalId": null, // Not support by us
             "Id": self.uuid,
             "OrganizationId": self.org_uuid,
             "Name": self.name,
             "Object": "collection",
         })
+    }
+
+    pub fn to_json_details(&self, user_uuid: &str, conn: &DbConn) -> Value {
+        let mut json_object = self.to_json();
+        json_object["Object"] = json!("collectionDetails");
+        json_object["ReadOnly"] = json!(!self.is_writable_by_user(user_uuid, conn));
+        json_object["HidePasswords"] = json!(self.hide_passwords_for_user(user_uuid, conn));
+        json_object
     }
 }
 
@@ -236,6 +245,28 @@ impl Collection {
             }
         }
     }
+
+    pub fn hide_passwords_for_user(&self, user_uuid: &str, conn: &DbConn) -> bool {
+        match UserOrganization::find_by_user_and_org(&user_uuid, &self.org_uuid, &conn) {
+            None => true, // Not in Org
+            Some(user_org) => {
+                if user_org.has_full_access() {
+                    return false;
+                }
+
+                db_run! { conn: {
+                    users_collections::table
+                        .filter(users_collections::collection_uuid.eq(&self.uuid))
+                        .filter(users_collections::user_uuid.eq(user_uuid))
+                        .filter(users_collections::hide_passwords.eq(true))
+                        .count()
+                        .first::<i64>(conn)
+                        .ok()
+                        .unwrap_or(0) != 0
+                }}
+            }
+        }
+    }
 }
 
 /// Database methods
@@ -364,7 +395,6 @@ impl CollectionUser {
                 diesel::delete(users_collections::table.filter(
                     users_collections::user_uuid.eq(user_uuid)
                     .and(users_collections::collection_uuid.eq(user.collection_uuid))
-                
                 ))
                     .execute(conn)
                     .map_res("Error removing user from collections")?;

@@ -91,7 +91,9 @@ fn sync(data: Form<SyncData>, headers: Headers, conn: DbConn) -> JsonResult {
     let folders_json: Vec<Value> = folders.iter().map(Folder::to_json).collect();
 
     let collections = Collection::find_by_user_uuid(&headers.user.uuid, &conn);
-    let collections_json: Vec<Value> = collections.iter().map(Collection::to_json).collect();
+    let collections_json: Vec<Value> = collections.iter()
+        .map(|c| c.to_json_details(&headers.user.uuid, &conn))
+        .collect();
 
     let policies = OrgPolicy::find_by_user(&headers.user.uuid, &conn);
     let policies_json: Vec<Value> = policies.iter().map(OrgPolicy::to_json).collect();
@@ -225,6 +227,12 @@ fn post_ciphers_admin(data: JsonUpcase<ShareCipherData>, headers: Headers, conn:
 fn post_ciphers_create(data: JsonUpcase<ShareCipherData>, headers: Headers, conn: DbConn, nt: Notify) -> JsonResult {
     let mut data: ShareCipherData = data.into_inner().data;
 
+    // Check if there are one more more collections selected when this cipher is part of an organization.
+    // err if this is not the case before creating an empty cipher.
+    if  data.Cipher.OrganizationId.is_some() && data.CollectionIds.is_empty() {
+        err!("You must select at least one collection.");
+    }
+
     // This check is usually only needed in update_cipher_from_data(), but we
     // need it here as well to avoid creating an empty cipher in the call to
     // cipher.save() below.
@@ -323,6 +331,11 @@ pub fn update_cipher_from_data(
                     || cipher.is_write_accessible_to_user(&headers.user.uuid, &conn)
                 {
                     cipher.organization_uuid = Some(org_id);
+                    // After some discussion in PR #1329 re-added the user_uuid = None again.
+                    // TODO: Audit/Check the whole save/update cipher chain.
+                    // Upstream uses the user_uuid to allow a cipher added by a user to an org to still allow the user to view/edit the cipher
+                    // even when the user has hide-passwords configured as there policy.
+                    // Removing the line below would fix that, but we have to check which effect this would have on the rest of the code.
                     cipher.user_uuid = None;
                 } else {
                     err!("You don't have permission to add cipher directly to organization")
@@ -366,6 +379,23 @@ pub fn update_cipher_from_data(
         }
     }
 
+    // Cleanup cipher data, like removing the 'Response' key.
+    // This key is somewhere generated during Javascript so no way for us this fix this.
+    // Also, upstream only retrieves keys they actually want to store, and thus skip the 'Response' key.
+    // We do not mind which data is in it, the keep our model more flexible when there are upstream changes.
+    // But, we at least know we do not need to store and return this specific key.
+    fn _clean_cipher_data(mut json_data: Value) -> Value {
+        if json_data.is_array() {
+            json_data.as_array_mut()
+                .unwrap()
+                .iter_mut()
+                .for_each(|ref mut f| {
+                    f.as_object_mut().unwrap().remove("Response");
+                });
+        };
+        json_data
+    }
+
     let type_data_opt = match data.Type {
         1 => data.Login,
         2 => data.SecureNote,
@@ -374,23 +404,22 @@ pub fn update_cipher_from_data(
         _ => err!("Invalid type"),
     };
 
-    let mut type_data = match type_data_opt {
-        Some(data) => data,
+    let type_data = match type_data_opt {
+        Some(mut data) => {
+            // Remove the 'Response' key from the base object.
+            data.as_object_mut().unwrap().remove("Response");
+            // Remove the 'Response' key from every Uri.
+            if data["Uris"].is_array() {
+                data["Uris"] = _clean_cipher_data(data["Uris"].clone());
+            }
+            data
+        },
         None => err!("Data missing"),
     };
 
-    // TODO: ******* Backwards compat start **********
-    // To remove backwards compatibility, just delete this code,
-    // and remove the compat code from cipher::to_json
-    type_data["Name"] = Value::String(data.Name.clone());
-    type_data["Notes"] = data.Notes.clone().map(Value::String).unwrap_or(Value::Null);
-    type_data["Fields"] = data.Fields.clone().unwrap_or(Value::Null);
-    type_data["PasswordHistory"] = data.PasswordHistory.clone().unwrap_or(Value::Null);
-    // TODO: ******* Backwards compat end **********
-
     cipher.name = data.Name;
     cipher.notes = data.Notes;
-    cipher.fields = data.Fields.map(|f| f.to_string());
+    cipher.fields = data.Fields.map(|f| _clean_cipher_data(f).to_string() );
     cipher.data = type_data.to_string();
     cipher.password_history = data.PasswordHistory.map(|f| f.to_string());
 
@@ -1064,7 +1093,6 @@ fn delete_all(
                 Some(user_org) => {
                     if user_org.atype == UserOrgType::Owner {
                         Cipher::delete_all_by_organization(&org_data.org_id, &conn)?;
-                        Collection::delete_all_by_organization(&org_data.org_id, &conn)?;
                         nt.send_user_update(UpdateType::Vault, &user);
                         Ok(())
                     } else {
