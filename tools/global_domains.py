@@ -10,16 +10,17 @@ import urllib.request
 
 from collections import OrderedDict
 
-if len(sys.argv) != 2:
-    print("usage: %s <OUTPUT-FILE>" % sys.argv[0])
+if not (2 <= len(sys.argv) <= 3):
+    print("usage: %s <OUTPUT-FILE> [GIT-REF]" % sys.argv[0])
     print()
     print("This script generates a global equivalent domains JSON file from")
     print("the upstream Bitwarden source repo.")
     sys.exit(1)
 
 OUTPUT_FILE = sys.argv[1]
+GIT_REF = 'master' if len(sys.argv) == 2 else sys.argv[2]
 
-BASE_URL = 'https://github.com/bitwarden/server/raw/master'
+BASE_URL = 'https://github.com/bitwarden/server/raw/%s' % GIT_REF
 ENUMS_URL = '%s/src/Core/Enums/GlobalEquivalentDomainsType.cs' % BASE_URL
 DOMAIN_LISTS_URL = '%s/src/Core/Utilities/StaticStore.cs' % BASE_URL
 
