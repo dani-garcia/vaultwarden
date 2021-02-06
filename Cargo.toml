@@ -41,14 +41,14 @@ multipart = { version = "0.17.1", features = ["server"], default-features = fals
 ws = { version = "0.10.0", package = "parity-ws" }
 
 # MessagePack library
-rmpv = "0.4.6"
+rmpv = "0.4.7"
 
 # Concurrent hashmap implementation
 chashmap = "2.2.2"
 
 # A generic serialization/deserialization framework
 serde = { version = "1.0.123", features = ["derive"] }
-serde_json = "1.0.61"
+serde_json = "1.0.62"
 
 # Logging
 log = "0.4.14"
@@ -63,7 +63,7 @@ libsqlite3-sys = { version = "0.18.0", features = ["bundled"], optional = true }
 
 # Crypto-related libraries
 rand = "0.8.3"
-ring = "0.16.19"
+ring = "0.16.20"
 
 # UUID generation
 uuid = { version = "0.8.2", features = ["v4"] }
@@ -86,7 +86,7 @@ jsonwebtoken = "7.2.0"
 u2f = "0.2.0"
 
 # Yubico Library
-yubico = { version = "0.9.1", features = ["online-tokio"], default-features = false }
+yubico = { version = "0.9.2", features = ["online-tokio"], default-features = false }
 
 # A `dotenv` implementation for Rust
 dotenv = { version = "0.15.0", default-features = false }
@@ -116,7 +116,7 @@ openssl = "0.10.32"
 # URL encoding library
 percent-encoding = "2.1.0"
 # Punycode conversion
-idna = "0.2.0"
+idna = "0.2.1"
 
 # CLI argument parsing
 structopt = "0.3.21"
