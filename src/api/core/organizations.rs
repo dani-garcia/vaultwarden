@@ -50,6 +50,7 @@ pub fn routes() -> Vec<Route> {
         get_organization_tax,
         get_plans,
         get_plans_tax_rates,
+        import,
     ]
 }
 
@@ -1075,4 +1076,102 @@ fn get_plans_tax_rates(_headers: Headers, _conn: DbConn) -> JsonResult {
         "Data": [],
         "ContinuationToken": null
     })))
+}
+
+#[derive(Deserialize, Debug)]
+#[allow(non_snake_case)]
+struct OrgImportGroupData {
+    Name: String,       // "GroupName"
+    ExternalId: String, // "cn=GroupName,ou=Groups,dc=example,dc=com"
+    Users: Vec<String>, // ["uid=user,ou=People,dc=example,dc=com"]
+}
+
+#[derive(Deserialize, Debug)]
+#[allow(non_snake_case)]
+struct OrgImportUserData {
+    Email: String,      // "user@maildomain.net"
+    ExternalId: String, // "uid=user,ou=People,dc=example,dc=com"
+    Deleted: bool,
+}
+
+#[derive(Deserialize, Debug)]
+#[allow(non_snake_case)]
+struct OrgImportData {
+    Groups: Vec<OrgImportGroupData>,
+    OverwriteExisting: bool,
+    Users: Vec<OrgImportUserData>,
+}
+
+#[post("/organizations/<org_id>/import", data = "<data>")]
+fn import(org_id: String, data: JsonUpcase<OrgImportData>, headers: Headers, conn: DbConn) -> EmptyResult {
+    let data = data.into_inner().data;
+    println!("{:#?}", data);
+
+    // TODO: Currently we aren't storing the externalId's anywhere, so we also don't have a way
+    // to differentiate between auto-imported users and manually added ones.
+    // This means that this endpoint can end up removing users that were added manually by an admin,
+    // as opposed to upstream which only removes auto-imported users.
+
+    // User needs to be admin or owner to use the Directry Connector
+    match UserOrganization::find_by_user_and_org(&headers.user.uuid, &org_id, &conn) {
+        Some(user_org) if user_org.atype >= UserOrgType::Admin => { /* Okay, nothing to do */ }
+        Some(_) => err!("User has insufficient permissions to use Directory Connector"),
+        None => err!("User not part of organization"),
+    };
+
+    for user_data in &data.Users {
+        if user_data.Deleted {
+            // If user is marked for deletion and it exists, delete it
+            if let Some(user_org) = UserOrganization::find_by_email_and_org(&user_data.Email, &org_id, &conn) {
+                user_org.delete(&conn)?;
+            }
+
+        // If user is not part of the organization, but it exists
+        } else if UserOrganization::find_by_email_and_org(&user_data.Email, &org_id, &conn).is_none() {
+            if let Some (user) = User::find_by_mail(&user_data.Email, &conn) {
+                
+                let user_org_status = if CONFIG.mail_enabled() {
+                    UserOrgStatus::Invited as i32
+                } else {
+                    UserOrgStatus::Accepted as i32 // Automatically mark user as accepted if no email invites
+                };
+
+                let mut new_org_user = UserOrganization::new(user.uuid.clone(), org_id.clone());
+                new_org_user.access_all = false;
+                new_org_user.atype = UserOrgType::User as i32;
+                new_org_user.status = user_org_status;
+
+                new_org_user.save(&conn)?;
+
+                if CONFIG.mail_enabled() {
+                    let org_name = match Organization::find_by_uuid(&org_id, &conn) {
+                        Some(org) => org.name,
+                        None => err!("Error looking up organization"),
+                    };
+
+                    mail::send_invite(
+                        &user_data.Email,
+                        &user.uuid,
+                        Some(org_id.clone()),
+                        Some(new_org_user.uuid),
+                        &org_name,
+                        Some(headers.user.email.clone()),
+                    )?;
+                }
+            }  
+        }
+    }
+
+    // If this flag is enabled, any user that isn't provided in the Users list will be removed (by default they will be kept unless they have Deleted == true)
+    if data.OverwriteExisting {
+        for user_org in UserOrganization::find_by_org_and_type(&org_id, UserOrgType::User as i32, &conn) {  
+            if let Some (user_email) = User::find_by_uuid(&user_org.user_uuid, &conn).map(|u| u.email) {
+                if !data.Users.iter().any(|u| u.Email == user_email) {
+                    user_org.delete(&conn)?;
+                }
+            } 
+        }
+    }
+
+    Ok(())
 }

@@ -439,6 +439,16 @@ impl UserOrganization {
         Ok(())
     }
 
+    pub fn find_by_email_and_org(email: &str, org_id: &str, conn: &DbConn) -> Option<UserOrganization> {
+        if let Some(user) = super::User::find_by_mail(email, conn) {
+            if let Some(user_org) = UserOrganization::find_by_user_and_org(&user.uuid, org_id, &conn) {
+                return Some(user_org);
+            }
+        }
+
+        None
+    }
+
     pub fn has_status(&self, status: UserOrgStatus) -> bool {
         self.status == status as i32
     }
