@@ -1105,7 +1105,6 @@ struct OrgImportData {
 #[post("/organizations/<org_id>/import", data = "<data>")]
 fn import(org_id: String, data: JsonUpcase<OrgImportData>, headers: Headers, conn: DbConn) -> EmptyResult {
     let data = data.into_inner().data;
-    println!("{:#?}", data);
 
     // TODO: Currently we aren't storing the externalId's anywhere, so we also don't have a way
     // to differentiate between auto-imported users and manually added ones.
