@@ -11,7 +11,6 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use reqwest::{blocking::Client, blocking::Response, header, Url};
 use rocket::{http::ContentType, http::Cookie, response::Content, Route};
-use soup::prelude::*;
 
 use crate::{error::Error, util::Cached, CONFIG};
 
@@ -332,6 +331,42 @@ impl Icon {
     }
 }
 
+fn get_favicons_node(node: &std::rc::Rc<markup5ever_rcdom::Node>, icons: &mut Vec<Icon>, url: &Url) {
+    if let markup5ever_rcdom::NodeData::Element { name, attrs, .. } = &node.data {
+        if name.local.as_ref() == "link" {
+            let mut has_rel = false;
+            let mut href = None;
+            let mut sizes = None;
+
+            let attrs = attrs.borrow();
+            for attr in attrs.iter() {
+                let attr_name = attr.name.local.as_ref();
+                let attr_value = attr.value.as_ref();
+
+                if attr_name == "rel" && ICON_REL_REGEX.is_match(attr_value) {
+                    has_rel = true;
+                } else if attr_name == "href" {
+                    href = Some(attr_value);
+                } else if attr_name == "sizes" {
+                    sizes = Some(attr_value);
+                }
+            }
+
+            if has_rel && href.is_some() {
+                if let Ok(full_href) = url.join(&href.unwrap()).map(|h| h.into_string()) {
+                    let priority = get_icon_priority(&full_href, sizes);
+                    icons.push(Icon::new(priority, full_href));
+                }
+            }
+        }
+    }
+
+    // TODO: Might want to limit the recursion depth?
+    for child in node.children.borrow().iter() {
+        get_favicons_node(child, icons, url);
+    }
+}
+
 struct IconUrlResult {
     iconlist: Vec<Icon>,
     cookies: String,
@@ -431,30 +466,14 @@ fn get_icon_url(domain: &str) -> Result<IconUrlResult, Error> {
 
         // 512KB should be more than enough for the HTML, though as we only really need
         // the HTML header, it could potentially be reduced even further
-        let limited_reader = content.take(512 * 1024);
+        let mut limited_reader = content.take(512 * 1024);
 
-        let soup = Soup::from_reader(limited_reader)?;
-        // Search for and filter
-        let favicons = soup
-            .tag("link")
-            .attr("rel", ICON_REL_REGEX.clone()) // Only use icon rels
-            .attr_name("href") // Make sure there is a href
-            .find_all();
-
-        // Loop through all the found icons and determine it's priority
-        for favicon in favicons {
-            let sizes = favicon.get("sizes");
-            let href = favicon.get("href").unwrap();
-            // Skip invalid url's
-            let full_href = match url.join(&href) {
-                Ok(h) => h.into_string(),
-                _ => continue,
-            };
-
-            let priority = get_icon_priority(&full_href, sizes);
-
-            iconlist.push(Icon::new(priority, full_href))
-        }
+        use html5ever::tendril::TendrilSink;
+        let dom = html5ever::parse_document(markup5ever_rcdom::RcDom::default(), Default::default())
+            .from_utf8()
+            .read_from(&mut limited_reader)?;
+    
+        get_favicons_node(&dom.document, &mut iconlist, &url);
     } else {
         // Add the default favicon.ico to the list with just the given domain
         iconlist.push(Icon::new(35, format!("{}/favicon.ico", ssldomain)));
@@ -506,7 +525,7 @@ fn get_page_with_cookies(url: &str, cookie_str: &str, referer: &str) -> Result<R
 /// priority1 = get_icon_priority("http://example.com/path/to/a/favicon.png", "32x32");
 /// priority2 = get_icon_priority("https://example.com/path/to/a/favicon.ico", "");
 /// ```
-fn get_icon_priority(href: &str, sizes: Option<String>) -> u8 {
+fn get_icon_priority(href: &str, sizes: Option<&str>) -> u8 {
     // Check if there is a dimension set
     let (width, height) = parse_sizes(sizes);
 
@@ -554,7 +573,7 @@ fn get_icon_priority(href: &str, sizes: Option<String>) -> u8 {
 /// let (width, height) = parse_sizes("x128x128"); // (128, 128)
 /// let (width, height) = parse_sizes("32"); // (0, 0)
 /// ```
-fn parse_sizes(sizes: Option<String>) -> (u16, u16) {
+fn parse_sizes(sizes: Option<&str>) -> (u16, u16) {
     let mut width: u16 = 0;
     let mut height: u16 = 0;
 

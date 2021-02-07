@@ -106,7 +106,8 @@ newline-converter = "0.1.0"
 handlebars = { version = "3.5.2", features = ["dir_source"] }
 
 # For favicon extraction from main website
-soup = "0.5.0"
+html5ever = "0.25.1"
+markup5ever_rcdom = "0.1.0"
 regex = { version = "1.4.3", features = ["std", "perf"], default-features = false }
 data-url = "0.1.0"
 
