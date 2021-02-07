@@ -119,7 +119,7 @@ percent-encoding = "2.1.0"
 idna = "0.2.1"
 
 # CLI argument parsing
-structopt = "0.3.21"
+pico-args = "0.4.0"
 
 # Logging panics to logfile instead stderr only
 backtrace = "0.3.56"

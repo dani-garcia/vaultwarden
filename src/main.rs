@@ -25,8 +25,6 @@ use std::{
     thread,
 };
 
-use structopt::StructOpt;
-
 #[macro_use]
 mod error;
 mod api;
@@ -40,14 +38,6 @@ mod util;
 
 pub use config::CONFIG;
 pub use error::{Error, MapResult};
-
-#[derive(Debug, StructOpt)]
-#[structopt(name = "bitwarden_rs", about = "A Bitwarden API server written in Rust")]
-struct Opt {
-    /// Prints the app version
-    #[structopt(short, long)]
-    version: bool,
-}
 
 fn main() {
     parse_args();
@@ -70,14 +60,27 @@ fn main() {
     launch_rocket(extra_debug);
 }
 
+const HELP: &str = "\
+        A Bitwarden API server written in Rust
+        
+        USAGE:
+            bitwarden_rs
+        
+        FLAGS:
+            -h, --help       Prints help information
+            -v, --version    Prints the app version
+";
+
 fn parse_args() {
-    let opt = Opt::from_args();
-    if opt.version {
-        if let Some(version) = option_env!("BWRS_VERSION") {
-            println!("bitwarden_rs {}", version);
-        } else {
-            println!("bitwarden_rs (Version info from Git not present)");
-        }
+    const NO_VERSION: &str = "(Version info from Git not present)";
+    let mut pargs = pico_args::Arguments::from_env();
+
+    if pargs.contains(["-h", "--help"]) {
+        println!("bitwarden_rs {}", option_env!("BWRS_VERSION").unwrap_or(NO_VERSION));
+        print!("{}", HELP);
+        exit(0);
+    } else if pargs.contains(["-v", "--version"]) {
+        println!("bitwarden_rs {}", option_env!("BWRS_VERSION").unwrap_or(NO_VERSION));
         exit(0);
     }
 }
