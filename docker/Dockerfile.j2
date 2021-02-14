@@ -5,11 +5,11 @@
 {% if "alpine" in target_file %}
 {%   if "amd64" in target_file %}
 {%     set build_stage_base_image = "clux/muslrust:nightly-2021-01-25" %}
-{%     set runtime_stage_base_image = "alpine:3.12" %}
+{%     set runtime_stage_base_image = "alpine:3.13" %}
 {%     set package_arch_target = "x86_64-unknown-linux-musl" %}
 {%   elif "armv7" in target_file %}
 {%     set build_stage_base_image = "messense/rust-musl-cross:armv7-musleabihf" %}
-{%     set runtime_stage_base_image = "balenalib/armv7hf-alpine:3.12" %}
+{%     set runtime_stage_base_image = "balenalib/armv7hf-alpine:3.13" %}
 {%     set package_arch_target = "armv7-unknown-linux-musleabihf" %}
 {%   endif %}
 {% elif "amd64" in target_file %}

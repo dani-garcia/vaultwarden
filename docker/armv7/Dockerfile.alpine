@@ -71,7 +71,7 @@ RUN musl-strip target/armv7-unknown-linux-musleabihf/release/bitwarden_rs
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image
 # because we already have a binary built
-FROM balenalib/armv7hf-alpine:3.12
+FROM balenalib/armv7hf-alpine:3.13
 
 ENV ROCKET_ENV "staging"
 ENV ROCKET_PORT=80
