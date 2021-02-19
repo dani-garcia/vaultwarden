@@ -58,7 +58,7 @@ fn mailer() -> SmtpTransport {
 
     let smtp_client = match CONFIG.smtp_auth_mechanism() {
         Some(mechanism) => {
-            let allowed_mechanisms = vec![SmtpAuthMechanism::Plain, SmtpAuthMechanism::Login, SmtpAuthMechanism::Xoauth2];
+            let allowed_mechanisms = [SmtpAuthMechanism::Plain, SmtpAuthMechanism::Login, SmtpAuthMechanism::Xoauth2];
             let mut selected_mechanisms = vec![];
             for wanted_mechanism in mechanism.split(',') {
                 for m in &allowed_mechanisms {
@@ -115,7 +115,7 @@ pub fn send_password_hint(address: &str, hint: Option<String>) -> EmptyResult {
 
     let (subject, body_html, body_text) = get_text(template_name, json!({ "hint": hint, "url": CONFIG.domain() }))?;
 
-    send_email(address, &subject, &body_html, &body_text)
+    send_email(address, &subject, body_html, body_text)
 }
 
 pub fn send_delete_account(address: &str, uuid: &str) -> EmptyResult {
@@ -132,7 +132,7 @@ pub fn send_delete_account(address: &str, uuid: &str) -> EmptyResult {
         }),
     )?;
 
-    send_email(address, &subject, &body_html, &body_text)
+    send_email(address, &subject, body_html, body_text)
 }
 
 pub fn send_verify_email(address: &str, uuid: &str) -> EmptyResult {
@@ -149,7 +149,7 @@ pub fn send_verify_email(address: &str, uuid: &str) -> EmptyResult {
         }),
     )?;
 
-    send_email(address, &subject, &body_html, &body_text)
+    send_email(address, &subject, body_html, body_text)
 }
 
 pub fn send_welcome(address: &str) -> EmptyResult {
@@ -160,7 +160,7 @@ pub fn send_welcome(address: &str) -> EmptyResult {
         }),
     )?;
 
-    send_email(address, &subject, &body_html, &body_text)
+    send_email(address, &subject, body_html, body_text)
 }
 
 pub fn send_welcome_must_verify(address: &str, uuid: &str) -> EmptyResult {
@@ -176,7 +176,7 @@ pub fn send_welcome_must_verify(address: &str, uuid: &str) -> EmptyResult {
         }),
     )?;
 
-    send_email(address, &subject, &body_html, &body_text)
+    send_email(address, &subject, body_html, body_text)
 }
 
 pub fn send_invite(
@@ -200,15 +200,15 @@ pub fn send_invite(
         "email/send_org_invite",
         json!({
             "url": CONFIG.domain(),
-            "org_id": org_id.unwrap_or_else(|| "_".to_string()),
-            "org_user_id": org_user_id.unwrap_or_else(|| "_".to_string()),
+            "org_id": org_id.as_deref().unwrap_or("_"),
+            "org_user_id": org_user_id.as_deref().unwrap_or("_"),
             "email": percent_encode(address.as_bytes(), NON_ALPHANUMERIC).to_string(),
             "org_name": org_name,
             "token": invite_token,
         }),
     )?;
 
-    send_email(address, &subject, &body_html, &body_text)
+    send_email(address, &subject, body_html, body_text)
 }
 
 pub fn send_invite_accepted(new_user_email: &str, address: &str, org_name: &str) -> EmptyResult {
@@ -221,7 +221,7 @@ pub fn send_invite_accepted(new_user_email: &str, address: &str, org_name: &str)
         }),
     )?;
 
-    send_email(address, &subject, &body_html, &body_text)
+    send_email(address, &subject, body_html, body_text)
 }
 
 pub fn send_invite_confirmed(address: &str, org_name: &str) -> EmptyResult {
@@ -233,7 +233,7 @@ pub fn send_invite_confirmed(address: &str, org_name: &str) -> EmptyResult {
         }),
     )?;
 
-    send_email(address, &subject, &body_html, &body_text)
+    send_email(address, &subject, body_html, body_text)
 }
 
 pub fn send_new_device_logged_in(address: &str, ip: &str, dt: &DateTime<Local>, device: &str) -> EmptyResult {
@@ -251,7 +251,7 @@ pub fn send_new_device_logged_in(address: &str, ip: &str, dt: &DateTime<Local>, 
         }),
     )?;
 
-    send_email(address, &subject, &body_html, &body_text)
+    send_email(address, &subject, body_html, body_text)
 }
 
 pub fn send_token(address: &str, token: &str) -> EmptyResult {
@@ -263,7 +263,7 @@ pub fn send_token(address: &str, token: &str) -> EmptyResult {
         }),
     )?;
 
-    send_email(address, &subject, &body_html, &body_text)
+    send_email(address, &subject, body_html, body_text)
 }
 
 pub fn send_change_email(address: &str, token: &str) -> EmptyResult {
@@ -275,7 +275,7 @@ pub fn send_change_email(address: &str, token: &str) -> EmptyResult {
         }),
     )?;
 
-    send_email(address, &subject, &body_html, &body_text)
+    send_email(address, &subject, body_html, body_text)
 }
 
 pub fn send_test(address: &str) -> EmptyResult {
@@ -286,10 +286,10 @@ pub fn send_test(address: &str) -> EmptyResult {
         }),
     )?;
 
-    send_email(address, &subject, &body_html, &body_text)
+    send_email(address, &subject, body_html, body_text)
 }
 
-fn send_email(address: &str, subject: &str, body_html: &str, body_text: &str) -> EmptyResult {
+fn send_email(address: &str, subject: &str, body_html: String, body_text: String) -> EmptyResult {
     let address_split: Vec<&str> = address.rsplitn(2, '@').collect();
     if address_split.len() != 2 {
         err!("Invalid email address (no @)");
@@ -306,13 +306,13 @@ fn send_email(address: &str, subject: &str, body_html: &str, body_text: &str) ->
         // We force Base64 encoding because in the past we had issues with different encodings.
         .header(header::ContentTransferEncoding::Base64)
         .header(header::ContentType("text/html; charset=utf-8".parse()?))
-        .body(String::from(body_html));
+        .body(body_html);
 
     let text = SinglePart::builder()
         // We force Base64 encoding because in the past we had issues with different encodings.
         .header(header::ContentTransferEncoding::Base64)
         .header(header::ContentType("text/plain; charset=utf-8".parse()?))
-        .body(String::from(body_text));
+        .body(body_text);
 
     let smtp_from = &CONFIG.smtp_from();
     let email = Message::builder()
