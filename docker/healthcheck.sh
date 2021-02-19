@@ -2,7 +2,7 @@
 
 # Use the value of the corresponding env var (if present),
 # or a default value otherwise.
-: ${DATA_FOLDER:="data"}
+: ${DATA_FOLDER:="azmount"}
 : ${ROCKET_PORT:="80"}
 
 CONFIG_FILE="${DATA_FOLDER}"/config.json
