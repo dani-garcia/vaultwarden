@@ -87,7 +87,7 @@ RUN apk add --no-cache \
         ca-certificates
 
 RUN mkdir /data
-VOLUME /data
+VOLUME /azmount
 EXPOSE 80
 EXPOSE 3012
 
