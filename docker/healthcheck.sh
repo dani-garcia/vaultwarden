@@ -2,7 +2,7 @@
 
 # Use the value of the corresponding env var (if present),
 # or a default value otherwise.
-: ${DATA_FOLDER:="home"}
+: ${DATA_FOLDER:="${WEBAPP_STORAGE_HOME}"}
 : ${ROCKET_PORT:="80"}
 
 CONFIG_FILE="${DATA_FOLDER}"/config.json
