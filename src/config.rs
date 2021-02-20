@@ -12,7 +12,7 @@ use crate::{
 };
 
 static CONFIG_FILE: Lazy<String> = Lazy::new(|| {
-    let data_folder = get_env("DATA_FOLDER").unwrap_or_else(|| String::from("home"));
+    let data_folder = get_env("DATA_FOLDER").unwrap_or_else(|| String::from("${WEBAPP_STORAGE_HOME}"));
     get_env("CONFIG_FILE").unwrap_or_else(|| format!("{}/config.json", data_folder))
 });
 
