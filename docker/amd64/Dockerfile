@@ -14,15 +14,15 @@
 # - From https://hub.docker.com/r/bitwardenrs/web-vault/tags,
 #   click the tag name to view the digest of the image it currently points to.
 # - From the command line:
-#     $ docker pull bitwardenrs/web-vault:v2.18.1b
-#     $ docker image inspect --format "{{.RepoDigests}}" bitwardenrs/web-vault:v2.18.1b
-#     [bitwardenrs/web-vault@sha256:345a509dd5482343458b672dcd69203836ffac2e5181a1c99826d9695b9cb1eb]
+#     $ docker pull bitwardenrs/web-vault:v2.18.1d
+#     $ docker image inspect --format "{{.RepoDigests}}" bitwardenrs/web-vault:v2.18.1d
+#     [bitwardenrs/web-vault@sha256:1134fd81589b0955ff6c87b0228e96b4ccc283679fcd05fc652e99e4861c14ae]
 #
 # - Conversely, to get the tag name from the digest:
-#     $ docker image inspect --format "{{.RepoTags}}" bitwardenrs/web-vault@sha256:345a509dd5482343458b672dcd69203836ffac2e5181a1c99826d9695b9cb1eb
-#     [bitwardenrs/web-vault:v2.18.1b]
+#     $ docker image inspect --format "{{.RepoTags}}" bitwardenrs/web-vault@sha256:1134fd81589b0955ff6c87b0228e96b4ccc283679fcd05fc652e99e4861c14ae
+#     [bitwardenrs/web-vault:v2.18.1d]
 #
-FROM bitwardenrs/web-vault@sha256:345a509dd5482343458b672dcd69203836ffac2e5181a1c99826d9695b9cb1eb as vault
+FROM bitwardenrs/web-vault@sha256:1134fd81589b0955ff6c87b0228e96b4ccc283679fcd05fc652e99e4861c14ae as vault
 
 ########################## BUILD IMAGE  ##########################
 FROM rust:1.48 as build
