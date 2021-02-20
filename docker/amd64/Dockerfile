@@ -92,7 +92,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir /data
-VOLUME ${WEBAPP_STORAGE_HOME}
+VOLUME home
 EXPOSE 80
 EXPOSE 3012
 
