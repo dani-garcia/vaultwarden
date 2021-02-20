@@ -87,7 +87,7 @@ RUN apk add --no-cache \
         ca-certificates
 
 RUN mkdir /data
-VOLUME ${WEBAPP_STORAGE_HOME}
+VOLUME home
 EXPOSE 80
 EXPOSE 3012
 
