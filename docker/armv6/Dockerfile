@@ -14,18 +14,18 @@
 # - From https://hub.docker.com/r/bitwardenrs/web-vault/tags,
 #   click the tag name to view the digest of the image it currently points to.
 # - From the command line:
-#     $ docker pull bitwardenrs/web-vault:v2.18.1d
-#     $ docker image inspect --format "{{.RepoDigests}}" bitwardenrs/web-vault:v2.18.1d
-#     [bitwardenrs/web-vault@sha256:1134fd81589b0955ff6c87b0228e96b4ccc283679fcd05fc652e99e4861c14ae]
+#     $ docker pull bitwardenrs/web-vault:v2.18.2
+#     $ docker image inspect --format "{{.RepoDigests}}" bitwardenrs/web-vault:v2.18.2
+#     [bitwardenrs/web-vault@sha256:c287301264c7dc86d89aa80487fd7960cc24048390d2bef9ef910dfc77d2c7d5]
 #
 # - Conversely, to get the tag name from the digest:
-#     $ docker image inspect --format "{{.RepoTags}}" bitwardenrs/web-vault@sha256:1134fd81589b0955ff6c87b0228e96b4ccc283679fcd05fc652e99e4861c14ae
-#     [bitwardenrs/web-vault:v2.18.1d]
+#     $ docker image inspect --format "{{.RepoTags}}" bitwardenrs/web-vault@sha256:c287301264c7dc86d89aa80487fd7960cc24048390d2bef9ef910dfc77d2c7d5
+#     [bitwardenrs/web-vault:v2.18.2]
 #
-FROM bitwardenrs/web-vault@sha256:1134fd81589b0955ff6c87b0228e96b4ccc283679fcd05fc652e99e4861c14ae as vault
+FROM bitwardenrs/web-vault@sha256:c287301264c7dc86d89aa80487fd7960cc24048390d2bef9ef910dfc77d2c7d5 as vault
 
 ########################## BUILD IMAGE  ##########################
-FROM rust:1.48 as build
+FROM rust:1.50 as build
 
 # Debian-based builds support multidb
 ARG DB=sqlite,mysql,postgresql
