@@ -206,9 +206,11 @@
         "3": { "name": "Manager", "color": "green" },
     };
 
-    document.querySelectorAll("img.identicon").forEach(function (e, i) {
-        e.src = identicon(e.dataset.src);
-    });
+    (async () => {
+        for (let e of document.querySelectorAll("img.identicon")) {
+            e.src = await identicon(e.dataset.src);
+        }
+    })();
 
     document.querySelectorAll("[data-orgtype]").forEach(function (e, i) {
         let orgtype = OrgTypes[e.dataset.orgtype];
