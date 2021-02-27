@@ -359,6 +359,15 @@ pub fn format_naive_datetime_local(dt: &NaiveDateTime, fmt: &str) -> String {
 }
 
 //
+// Deployment environment methods
+//
+
+/// Returns true if the program is running in Docker or Podman.
+pub fn is_running_in_docker() -> bool {
+    Path::new("/.dockerenv").exists() || Path::new("/run/.containerenv").exists()
+}
+
+//
 // Deserialization methods
 //
 

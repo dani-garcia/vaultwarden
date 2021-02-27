@@ -19,7 +19,7 @@ use crate::{
     db::{backup_database, models::*, DbConn, DbConnType},
     error::{Error, MapResult},
     mail,
-    util::{format_naive_datetime_local, get_display_size},
+    util::{format_naive_datetime_local, get_display_size, is_running_in_docker},
     CONFIG,
 };
 
@@ -486,7 +486,7 @@ fn diagnostics(_token: AdminToken, _conn: DbConn) -> ApiResult<Html<String>> {
     let web_vault_version: WebVaultVersion = serde_json::from_str(&vault_version_str)?;
 
     // Execute some environment checks
-    let running_within_docker = std::path::Path::new("/.dockerenv").exists() || std::path::Path::new("/run/.containerenv").exists();
+    let running_within_docker = is_running_in_docker();
     let has_http_access = has_http_access();
     let uses_proxy = env::var_os("HTTP_PROXY").is_some()
         || env::var_os("http_proxy").is_some()

@@ -38,6 +38,7 @@ mod util;
 
 pub use config::CONFIG;
 pub use error::{Error, MapResult};
+pub use util::is_running_in_docker;
 
 fn main() {
     parse_args();
@@ -52,6 +53,7 @@ fn main() {
         _ => false,
     };
 
+    check_data_folder();
     check_rsa_keys();
     check_web_vault();
 
@@ -215,9 +217,28 @@ fn chain_syslog(logger: fern::Dispatch) -> fern::Dispatch {
     }
 }
 
+fn create_dir(path: &str, description: &str) {
+    // Try to create the specified dir, if it doesn't already exist.
+    let err_msg = format!("Error creating {} directory '{}'", description, path);
+    create_dir_all(path).expect(&err_msg);
+}
+
 fn create_icon_cache_folder() {
-    // Try to create the icon cache folder, and generate an error if it could not.
-    create_dir_all(&CONFIG.icon_cache_folder()).expect("Error creating icon cache directory");
+    create_dir(&CONFIG.icon_cache_folder(), "icon cache");
+}
+
+fn check_data_folder() {
+    let data_folder = &CONFIG.data_folder();
+    let path = Path::new(data_folder);
+    if !path.exists() {
+        error!("Data folder '{}' doesn't exist.", data_folder);
+        if is_running_in_docker() {
+            error!("Verify that your data volume is mounted at the correct location.");
+        } else {
+            error!("Create the data folder and try again.");
+        }
+        exit(1);
+    }
 }
 
 fn check_rsa_keys() {
