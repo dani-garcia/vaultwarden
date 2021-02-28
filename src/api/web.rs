@@ -79,7 +79,6 @@ fn static_files(filename: String) -> Result<Content<&'static [u8]>, Error> {
 
         "bootstrap.css" => Ok(Content(ContentType::CSS, include_bytes!("../static/scripts/bootstrap.css"))),
         "bootstrap-native.js" => Ok(Content(ContentType::JavaScript, include_bytes!("../static/scripts/bootstrap-native.js"))),
-        "md5.js" => Ok(Content(ContentType::JavaScript, include_bytes!("../static/scripts/md5.js"))),
         "identicon.js" => Ok(Content(ContentType::JavaScript, include_bytes!("../static/scripts/identicon.js"))),
         "datatables.js" => Ok(Content(ContentType::JavaScript, include_bytes!("../static/scripts/datatables.js"))),
         "datatables.css" => Ok(Content(ContentType::CSS, include_bytes!("../static/scripts/datatables.css"))),

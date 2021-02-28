@@ -20,7 +20,6 @@
             width: auto;
         }
     </style>
-    <script src="{{urlpath}}/bwrs_static/md5.js"></script>
     <script src="{{urlpath}}/bwrs_static/identicon.js"></script>
     <script>
         function reload() { window.location.reload(); }
@@ -28,8 +27,17 @@
             text && alert(text);
             reload_page && reload();
         }
-        function identicon(email) {
-            const data = new Identicon(md5(email), { size: 48, format: 'svg' });
+        async function sha256(message) {
+            // https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/digest
+            const msgUint8 = new TextEncoder().encode(message);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+            return hashHex;
+        }
+        async function identicon(email) {
+            const hash = await sha256(email);
+            const data = new Identicon(hash, { size: 48, format: 'svg' });
             return "data:image/svg+xml;base64," + data.toString();
         }
         function toggleVis(input_id) {
