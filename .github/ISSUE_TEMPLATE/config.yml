@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Discourse forum for bitwarden_rs
+    url: https://bitwardenrs.discourse.group/
+    about: Use this forum to request features or get help with usage/configuration.
+  - name: GitHub Discussions for bitwarden_rs
+    url: https://github.com/dani-garcia/bitwarden_rs/discussions
+    about: An alternative to the Discourse forum, if this is easier for you.

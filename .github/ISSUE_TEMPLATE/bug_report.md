@@ -1,51 +1,66 @@
 ---
 name: Bug report
-about: Create a report to help us improve
+about: Use this ONLY for bugs in bitwarden_rs itself. Use the Discourse forum (link below) to request features or get help with usage/configuration. If in doubt, use the forum.
 title: ''
 labels: ''
 assignees: ''
 
 ---
 <!--
-     # ###
-     NOTE: Please update to the latest version of bitwarden_rs before reporting an issue!
-     This saves you and us a lot of time and troubleshooting.
-     See: https://github.com/dani-garcia/bitwarden_rs/issues/1180
-     # ###
+    # ###
+    NOTE: Please update to the latest version of bitwarden_rs before reporting an issue!
+    This saves you and us a lot of time and troubleshooting.
+    See:
+    * https://github.com/dani-garcia/bitwarden_rs/issues/1180
+    * https://github.com/dani-garcia/bitwarden_rs/wiki/Updating-the-bitwarden-image
+    # ###
 -->
-
 
 <!--
 Please fill out the following template to make solving your problem easier and faster for us.
 This is only a guideline. If you think that parts are unnecessary for your issue, feel free to remove them.
 
-Remember to hide/obfuscate personal and confidential information,
-such as names, global IP/DNS addresses and especially passwords, if necessary.
+Remember to hide/redact personal or confidential information,
+such as passwords, IP addresses, and DNS names as appropriate.
 -->
 
 ### Subject of the issue
-<!-- Describe your issue here.-->
+<!-- Describe your issue here. -->
 
-### Your environment
-<!-- The version number, obtained from the logs or the admin diagnostics page -->
-<!-- Remember to check your issue on the latest version first! -->
-* Bitwarden_rs version:
-<!-- How the server was installed: Docker image / package / built from source -->
+### Deployment environment
+
+<!--
+    =========================================================================================
+    Preferably, use the `Generate Support String` button on the admin page's Diagnostics tab.
+    That will auto-generate most of the info requested in this section.
+    =========================================================================================
+-->
+
+<!-- The version number, obtained from the logs (at startup) or the admin diagnostics page -->
+<!-- This is NOT the version number shown on the web vault, which is versioned separately from bitwarden_rs -->
+<!-- Remember to check if your issue exists on the latest version first! -->
+* bitwarden_rs version:
+
+<!-- How the server was installed: Docker image, OS package, built from source, etc. -->
 * Install method:
-* Clients used: <!-- if applicable -->
+
+* Clients used: <!-- web vault, desktop, Android, iOS, etc. (if applicable) -->
+
 * Reverse proxy and version: <!-- if applicable -->
-* Version of mysql/postgresql: <!-- if applicable -->
-* Other relevant information:
+
+* MySQL/MariaDB or PostgreSQL version: <!-- if applicable -->
+
+* Other relevant details:
 
 ### Steps to reproduce
 <!-- Tell us how to reproduce this issue. What parameters did you set (differently from the defaults)
 and how did you start bitwarden_rs? -->
 
 ### Expected behaviour
-<!-- Tell us what should happen -->
+<!-- Tell us what you expected to happen -->
 
 ### Actual behaviour
-<!-- Tell us what happens instead -->
+<!-- Tell us what actually happened -->
 
-### Relevant logs
-<!-- Share some logfiles, screenshots or output of relevant programs with us. -->
+### Troubleshooting data
+<!-- Share any log files, screenshots, or other relevant troubleshooting data -->
