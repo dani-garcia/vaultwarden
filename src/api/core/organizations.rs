@@ -655,7 +655,7 @@ fn accept_invite(_org_id: String, _org_user_id: String, data: JsonUpcase<AcceptD
     }
 
     if CONFIG.mail_enabled() {
-        let mut org_name = String::from("bitwarden_rs");
+        let mut org_name = CONFIG.invitation_org_name();
         if let Some(org_id) = &claims.org_id {
             org_name = match Organization::find_by_uuid(&org_id, &conn) {
                 Some(org) => org.name,
