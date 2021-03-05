@@ -1,4 +1,4 @@
-OBJECTS := $(shell find -mindepth 2 -name 'Dockerfile*')
+OBJECTS := $(shell find ./ -mindepth 2 -name 'Dockerfile*')
 
 all: $(OBJECTS)
 
