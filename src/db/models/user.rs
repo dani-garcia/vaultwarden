@@ -5,7 +5,7 @@ use crate::crypto;
 use crate::CONFIG;
 
 db_object! {
-    #[derive(Debug, Identifiable, Queryable, Insertable, AsChangeset)]
+    #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
     #[table_name = "users"]
     #[changeset_options(treat_none_as_null="true")]
     #[primary_key(uuid)]
@@ -47,7 +47,7 @@ db_object! {
     }
 
 
-    #[derive(Debug, Identifiable, Queryable, Insertable)]
+    #[derive(Identifiable, Queryable, Insertable)]
     #[table_name = "invitations"]
     #[primary_key(email)]
     pub struct Invitation {

@@ -4,7 +4,7 @@ use serde_json::Value;
 use super::{Cipher, User};
 
 db_object! {
-    #[derive(Debug, Identifiable, Queryable, Insertable, Associations, AsChangeset)]
+    #[derive(Identifiable, Queryable, Insertable, Associations, AsChangeset)]
     #[table_name = "folders"]
     #[belongs_to(User, foreign_key = "user_uuid")]
     #[primary_key(uuid)]
@@ -16,7 +16,7 @@ db_object! {
         pub name: String,
     }
 
-    #[derive(Debug, Identifiable, Queryable, Insertable, Associations)]
+    #[derive(Identifiable, Queryable, Insertable, Associations)]
     #[table_name = "folders_ciphers"]
     #[belongs_to(Cipher, foreign_key = "cipher_uuid")]
     #[belongs_to(Folder, foreign_key = "folder_uuid")]

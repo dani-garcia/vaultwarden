@@ -1,7 +1,7 @@
 use super::{Cipher, User};
 
 db_object! {
-    #[derive(Debug, Identifiable, Queryable, Insertable, Associations)]
+    #[derive(Identifiable, Queryable, Insertable, Associations)]
     #[table_name = "favorites"]
     #[belongs_to(User, foreign_key = "user_uuid")]
     #[belongs_to(Cipher, foreign_key = "cipher_uuid")]
