@@ -104,6 +104,12 @@ fn sync(data: Form<SyncData>, headers: Headers, conn: DbConn) -> JsonResult {
         .map(|c| c.to_json(&headers.host, &headers.user.uuid, &conn))
         .collect();
 
+    let sends = Send::find_by_user(&headers.user.uuid, &conn);
+    let sends_json: Vec<Value> = sends
+        .iter()
+        .map(|s| s.to_json())
+        .collect();
+
     let domains_json = if data.exclude_domains {
         Value::Null
     } else {
@@ -117,6 +123,7 @@ fn sync(data: Form<SyncData>, headers: Headers, conn: DbConn) -> JsonResult {
         "Policies": policies_json,
         "Ciphers": ciphers_json,
         "Domains": domains_json,
+        "Sends": sends_json,
         "Object": "sync"
     })))
 }
