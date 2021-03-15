@@ -197,18 +197,18 @@ fn post_access(access_id: String, data: JsonUpcase<SendAccessData>, conn: DbConn
     };
 
     if let Some(max_access_count) = send.max_access_count {
-        if send.access_count > max_access_count {
+        if send.access_count >= max_access_count {
             err_code!("Max access count reached", 404);
         }
     }
 
     if let Some(expiration) = send.expiration_date {
-        if Utc::now().naive_utc() > expiration {
+        if Utc::now().naive_utc() >= expiration {
             err_code!("Send has expired", 404)
         }
     }
 
-    if Utc::now().naive_utc() > send.deletion_date {
+    if Utc::now().naive_utc() >= send.deletion_date {
         err_code!("Send has been deleted", 404)
     }
 
@@ -248,18 +248,18 @@ fn post_access_file(
     };
 
     if let Some(max_access_count) = send.max_access_count {
-        if send.access_count > max_access_count {
+        if send.access_count >= max_access_count {
             err_code!("Max access count reached", 404);
         }
     }
 
     if let Some(expiration) = send.expiration_date {
-        if Utc::now().naive_utc() > expiration {
+        if Utc::now().naive_utc() >= expiration {
             err_code!("Send has expired", 404)
         }
     }
 
-    if Utc::now().naive_utc() > send.deletion_date {
+    if Utc::now().naive_utc() >= send.deletion_date {
         err_code!("Send has been deleted", 404)
     }
 
