@@ -222,13 +222,12 @@ use crate::db::{
     DbConn,
 };
 
-pub struct Headers {
-    pub host: String,
-    pub device: Device,
-    pub user: User,
+pub struct Host {
+    pub host: String
 }
 
-impl<'a, 'r> FromRequest<'a, 'r> for Headers {
+
+impl<'a, 'r> FromRequest<'a, 'r> for Host {
     type Error = &'static str;
 
     fn from_request(request: &'a Request<'r>) -> Outcome<Self, Self::Error> {
@@ -260,6 +259,28 @@ impl<'a, 'r> FromRequest<'a, 'r> for Headers {
             };
 
             format!("{}://{}", protocol, host)
+        };
+
+        Outcome::Success(Host { host })
+    }
+}
+
+pub struct Headers {
+    pub host: String,
+    pub device: Device,
+    pub user: User,
+}
+
+impl<'a, 'r> FromRequest<'a, 'r> for Headers {
+    type Error = &'static str;
+
+    fn from_request(request: &'a Request<'r>) -> Outcome<Self, Self::Error> {
+        let headers = request.headers();
+
+        let host = match Host::from_request(request) {
+            Outcome::Forward(_) => return Outcome::Forward(()),
+            Outcome::Failure(f) => return Outcome::Failure(f),
+            Outcome::Success(host) => host.host,
         };
 
         // Get access_token

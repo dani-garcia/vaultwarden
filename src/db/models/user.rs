@@ -5,7 +5,7 @@ use crate::crypto;
 use crate::CONFIG;
 
 db_object! {
-    #[derive(Debug, Identifiable, Queryable, Insertable, AsChangeset)]
+    #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
     #[table_name = "users"]
     #[changeset_options(treat_none_as_null="true")]
     #[primary_key(uuid)]
@@ -47,7 +47,7 @@ db_object! {
     }
 
 
-    #[derive(Debug, Identifiable, Queryable, Insertable)]
+    #[derive(Identifiable, Queryable, Insertable)]
     #[table_name = "invitations"]
     #[primary_key(email)]
     pub struct Invitation {
@@ -177,7 +177,7 @@ impl User {
     }
 }
 
-use super::{Cipher, Device, Favorite, Folder, TwoFactor, UserOrgType, UserOrganization};
+use super::{Cipher, Device, Favorite, Folder, Send, TwoFactor, UserOrgType, UserOrganization};
 use crate::db::DbConn;
 
 use crate::api::EmptyResult;
@@ -263,6 +263,7 @@ impl User {
             }
         }
 
+        Send::delete_all_by_user(&self.uuid, conn)?;
         UserOrganization::delete_all_by_user(&self.uuid, conn)?;
         Cipher::delete_all_by_user(&self.uuid, conn)?;
         Favorite::delete_all_by_user(&self.uuid, conn)?;

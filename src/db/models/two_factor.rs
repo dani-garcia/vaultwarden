@@ -7,7 +7,7 @@ use crate::error::MapResult;
 use super::User;
 
 db_object! {
-    #[derive(Debug, Identifiable, Queryable, Insertable, Associations, AsChangeset)]
+    #[derive(Identifiable, Queryable, Insertable, Associations, AsChangeset)]
     #[table_name = "twofactor"]
     #[belongs_to(User, foreign_key = "user_uuid")]
     #[primary_key(uuid)]

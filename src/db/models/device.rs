@@ -4,7 +4,7 @@ use super::User;
 use crate::CONFIG;
 
 db_object! {
-    #[derive(Debug, Identifiable, Queryable, Insertable, Associations, AsChangeset)]
+    #[derive(Identifiable, Queryable, Insertable, Associations, AsChangeset)]
     #[table_name = "devices"]
     #[changeset_options(treat_none_as_null="true")]
     #[belongs_to(User, foreign_key = "user_uuid")]

@@ -8,6 +8,7 @@ mod org_policy;
 mod organization;
 mod two_factor;
 mod user;
+mod send;
 
 pub use self::attachment::Attachment;
 pub use self::cipher::Cipher;
@@ -19,3 +20,4 @@ pub use self::org_policy::{OrgPolicy, OrgPolicyType};
 pub use self::organization::{Organization, UserOrgStatus, UserOrgType, UserOrganization};
 pub use self::two_factor::{TwoFactor, TwoFactorType};
 pub use self::user::{Invitation, User, UserStampException};
+pub use self::send::{Send, SendType};

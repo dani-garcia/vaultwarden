@@ -221,6 +221,18 @@ macro_rules! err {
 }
 
 #[macro_export]
+macro_rules! err_code {
+    ($msg:expr, $err_code: literal) => {{
+        error!("{}", $msg);
+        return Err(crate::error::Error::new($msg, $msg).with_code($err_code));
+    }};
+    ($usr_msg:expr, $log_value:expr, $err_code: literal) => {{
+        error!("{}. {}", $usr_msg, $log_value);
+        return Err(crate::error::Error::new($usr_msg, $log_value).with_code($err_code));
+    }};
+}
+
+#[macro_export]
 macro_rules! err_discard {
     ($msg:expr, $data:expr) => {{
         std::io::copy(&mut $data.open(), &mut std::io::sink()).ok();

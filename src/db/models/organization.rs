@@ -5,7 +5,7 @@ use num_traits::FromPrimitive;
 use super::{CollectionUser, User, OrgPolicy};
 
 db_object! {
-    #[derive(Debug, Identifiable, Queryable, Insertable, AsChangeset)]
+    #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
     #[table_name = "organizations"]
     #[primary_key(uuid)]
     pub struct Organization {
@@ -14,7 +14,7 @@ db_object! {
         pub billing_email: String,
     }
 
-    #[derive(Debug, Identifiable, Queryable, Insertable, AsChangeset)]
+    #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
     #[table_name = "users_organizations"]
     #[primary_key(uuid)]
     pub struct UserOrganization {

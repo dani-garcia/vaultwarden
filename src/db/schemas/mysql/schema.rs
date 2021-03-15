@@ -103,6 +103,29 @@ table! {
 }
 
 table! {
+    sends (uuid) {
+        uuid -> Text,
+        user_uuid -> Nullable<Text>,
+        organization_uuid -> Nullable<Text>,
+        name -> Text,
+        notes -> Nullable<Text>,
+        atype -> Integer,
+        data -> Text,
+        akey -> Text,
+        password_hash -> Nullable<Binary>,
+        password_salt -> Nullable<Binary>,
+        password_iter -> Nullable<Integer>,
+        max_access_count -> Nullable<Integer>,
+        access_count -> Integer,
+        creation_date -> Datetime,
+        revision_date -> Datetime,
+        expiration_date -> Nullable<Datetime>,
+        deletion_date -> Datetime,
+        disabled -> Bool,
+    }
+}
+
+table! {
     twofactor (uuid) {
         uuid -> Text,
         user_uuid -> Text,
@@ -176,6 +199,8 @@ joinable!(folders -> users (user_uuid));
 joinable!(folders_ciphers -> ciphers (cipher_uuid));
 joinable!(folders_ciphers -> folders (folder_uuid));
 joinable!(org_policies -> organizations (org_uuid));
+joinable!(sends -> organizations (organization_uuid));
+joinable!(sends -> users (user_uuid));
 joinable!(twofactor -> users (user_uuid));
 joinable!(users_collections -> collections (collection_uuid));
 joinable!(users_collections -> users (user_uuid));
@@ -193,6 +218,7 @@ allow_tables_to_appear_in_same_query!(
     invitations,
     org_policies,
     organizations,
+    sends,
     twofactor,
     users,
     users_collections,

@@ -7,7 +7,7 @@ use crate::error::MapResult;
 use super::{Organization, UserOrgStatus};
 
 db_object! {
-    #[derive(Debug, Identifiable, Queryable, Insertable, Associations, AsChangeset)]
+    #[derive(Identifiable, Queryable, Insertable, Associations, AsChangeset)]
     #[table_name = "org_policies"]
     #[belongs_to(Organization, foreign_key = "org_uuid")]
     #[primary_key(uuid)]

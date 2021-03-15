@@ -299,6 +299,8 @@ make_config! {
         icon_cache_folder:      String, false,  auto,   |c| format!("{}/{}", c.data_folder, "icon_cache");
         /// Attachments folder
         attachments_folder:     String, false,  auto,   |c| format!("{}/{}", c.data_folder, "attachments");
+        /// Sends folder
+        sends_folder:           String, false,  auto,   |c| format!("{}/{}", c.data_folder, "sends");
         /// Templates folder
         templates_folder:       String, false,  auto,   |c| format!("{}/{}", c.data_folder, "templates");
         /// Session JWT key

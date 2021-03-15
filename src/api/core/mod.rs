@@ -3,6 +3,7 @@ mod ciphers;
 mod folders;
 mod organizations;
 pub mod two_factor;
+mod sends;
 
 pub fn routes() -> Vec<Route> {
     let mut mod_routes = routes![
@@ -20,6 +21,7 @@ pub fn routes() -> Vec<Route> {
     routes.append(&mut folders::routes());
     routes.append(&mut organizations::routes());
     routes.append(&mut two_factor::routes());
+    routes.append(&mut sends::routes());
     routes.append(&mut mod_routes);
 
     routes

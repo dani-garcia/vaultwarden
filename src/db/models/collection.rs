@@ -3,7 +3,7 @@ use serde_json::Value;
 use super::{Organization, UserOrgStatus, UserOrgType, UserOrganization, User, Cipher};
 
 db_object! {
-    #[derive(Debug, Identifiable, Queryable, Insertable, Associations, AsChangeset)]
+    #[derive(Identifiable, Queryable, Insertable, Associations, AsChangeset)]
     #[table_name = "collections"]
     #[belongs_to(Organization, foreign_key = "org_uuid")]
     #[primary_key(uuid)]
@@ -13,7 +13,7 @@ db_object! {
         pub name: String,
     }
 
-    #[derive(Debug, Identifiable, Queryable, Insertable, Associations)]
+    #[derive(Identifiable, Queryable, Insertable, Associations)]
     #[table_name = "users_collections"]
     #[belongs_to(User, foreign_key = "user_uuid")]
     #[belongs_to(Collection, foreign_key = "collection_uuid")]
@@ -25,7 +25,7 @@ db_object! {
         pub hide_passwords: bool,
     }
 
-    #[derive(Debug, Identifiable, Queryable, Insertable, Associations)]
+    #[derive(Identifiable, Queryable, Insertable, Associations)]
     #[table_name = "ciphers_collections"]
     #[belongs_to(Cipher, foreign_key = "cipher_uuid")]
     #[belongs_to(Collection, foreign_key = "collection_uuid")]
