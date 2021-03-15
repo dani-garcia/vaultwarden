@@ -22,7 +22,7 @@ db_object! {
 
         pub atype: i32,
         pub data: String,
-        pub key: String,
+        pub akey: String,
         pub password_hash: Option<Vec<u8>>,
         password_salt: Option<Vec<u8>>,
         password_iter: Option<i32>,
@@ -46,7 +46,7 @@ pub enum SendType {
 }
 
 impl Send {
-    pub fn new(atype: i32, name: String, data: String, key: String, deletion_date: NaiveDateTime) -> Self {
+    pub fn new(atype: i32, name: String, data: String, akey: String, deletion_date: NaiveDateTime) -> Self {
         let now = Utc::now().naive_utc();
 
         Self {
@@ -59,7 +59,7 @@ impl Send {
 
             atype,
             data,
-            key,
+            akey,
             password_hash: None,
             password_salt: None,
             password_iter: None,
@@ -118,7 +118,7 @@ impl Send {
             "Text": if self.atype == SendType::Text as i32 { Some(&data) } else { None },
             "File": if self.atype == SendType::File as i32 { Some(&data) } else { None },
 
-            "Key": self.key,
+            "Key": self.akey,
             "MaxAccessCount": self.max_access_count,
             "AccessCount": self.access_count,
             "Password": self.password_hash.as_deref().map(|h| BASE64URL_NOPAD.encode(h)),

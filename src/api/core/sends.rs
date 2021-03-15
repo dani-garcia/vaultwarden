@@ -325,7 +325,7 @@ fn put_send(id: String, data: JsonUpcase<SendData>, headers: Headers, conn: DbCo
     }
     send.data = data_str;
     send.name = data.Name;
-    send.key = data.Key;
+    send.akey = data.Key;
     send.deletion_date = data.DeletionDate.naive_utc();
     send.notes = data.Notes;
     send.max_access_count = data.MaxAccessCount;

@@ -111,7 +111,7 @@ table! {
         notes -> Nullable<Text>,
         atype -> Integer,
         data -> Text,
-        key -> Text,
+        akey -> Text,
         password_hash -> Nullable<Binary>,
         password_salt -> Nullable<Binary>,
         password_iter -> Nullable<Integer>,

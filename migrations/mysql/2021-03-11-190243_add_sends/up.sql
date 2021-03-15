@@ -8,7 +8,7 @@ CREATE TABLE sends (
 
   atype             INTEGER NOT NULL,
   data              TEXT    NOT NULL,
-  key               TEXT    NOT NULL,
+  akey              TEXT    NOT NULL,
   password_hash     BLOB,
   password_salt     BLOB,
   password_iter     INTEGER,
