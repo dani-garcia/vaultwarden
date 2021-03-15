@@ -48,10 +48,16 @@ impl CORS {
         }
     }
 
-    fn valid_url(url: String) -> String {
-        match url.as_ref() {
-            "file://" => "*".to_string(),
-            _ => url,
+    // Check a request's `Origin` header against the list of allowed origins.
+    // If a match exists, return it. Otherwise, return None.
+    fn get_allowed_origin(headers: &HeaderMap) -> Option<String> {
+        let origin = CORS::get_header(headers, "Origin");
+        let domain_origin = CONFIG.domain_origin();
+        let safari_extension_origin = "file://";
+        if origin == domain_origin || origin == safari_extension_origin {
+            Some(origin)
+        } else {
+            None
         }
     }
 }
@@ -67,11 +73,11 @@ impl Fairing for CORS {
     fn on_response(&self, request: &Request, response: &mut Response) {
         let req_headers = request.headers();
 
-        // We need to explicitly get the Origin header for Access-Control-Allow-Origin
-        let req_allow_origin = CORS::valid_url(CORS::get_header(req_headers, "Origin"));
+        if let Some(origin) = CORS::get_allowed_origin(req_headers) {
+            response.set_header(Header::new("Access-Control-Allow-Origin", origin));
+        }
 
-        response.set_header(Header::new("Access-Control-Allow-Origin", req_allow_origin));
-
+        // Preflight request
         if request.method() == Method::Options {
             let req_allow_headers = CORS::get_header(req_headers, "Access-Control-Request-Headers");
             let req_allow_method = CORS::get_header(req_headers, "Access-Control-Request-Method");
