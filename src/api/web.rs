@@ -82,7 +82,7 @@ fn static_files(filename: String) -> Result<Content<&'static [u8]>, Error> {
         "error-x.svg" => Ok(Content(ContentType::SVG, include_bytes!("../static/images/error-x.svg"))),
         "hibp.png" => Ok(Content(ContentType::PNG, include_bytes!("../static/images/hibp.png"))),
 
-        "bootstrap.css" => Ok(Content(ContentType::CSS, include_bytes!("../static/scripts/bootstrap.css"))),
+        "bootstrap.min.css" => Ok(Content(ContentType::CSS, include_bytes!("../static/scripts/bootstrap.min.css"))),
         "bootstrap-native.js" => Ok(Content(ContentType::JavaScript, include_bytes!("../static/scripts/bootstrap-native.js"))),
         "identicon.js" => Ok(Content(ContentType::JavaScript, include_bytes!("../static/scripts/identicon.js"))),
         "datatables.min.js" => Ok(Content(ContentType::JavaScript, include_bytes!("../static/scripts/datatables.min.js"))),
