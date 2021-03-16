@@ -86,7 +86,7 @@ fn static_files(filename: String) -> Result<Content<&'static [u8]>, Error> {
         "bootstrap-native.js" => Ok(Content(ContentType::JavaScript, include_bytes!("../static/scripts/bootstrap-native.js"))),
         "identicon.js" => Ok(Content(ContentType::JavaScript, include_bytes!("../static/scripts/identicon.js"))),
         "datatables.min.js" => Ok(Content(ContentType::JavaScript, include_bytes!("../static/scripts/datatables.min.js"))),
-        "datatables.css" => Ok(Content(ContentType::CSS, include_bytes!("../static/scripts/datatables.css"))),
+        "datatables.min.css" => Ok(Content(ContentType::CSS, include_bytes!("../static/scripts/datatables.min.css"))),
         "jquery-3.5.1.slim.min.js" => Ok(Content(ContentType::JavaScript, include_bytes!("../static/scripts/jquery-3.5.1.slim.min.js"))),
         _ => err!(format!("Static file not found: {}", filename)),
     }
