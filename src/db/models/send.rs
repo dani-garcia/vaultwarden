@@ -130,6 +130,24 @@ impl Send {
             "Object": "send",
         })
     }
+
+    pub fn to_json_access(&self) -> Value {
+        use crate::util::format_date;
+
+        let data: Value = serde_json::from_str(&self.data).unwrap_or_default();
+
+        json!({
+            "Id": self.uuid,
+            "Type": self.atype,
+
+            "Name": self.name,
+            "Text": if self.atype == SendType::Text as i32 { Some(&data) } else { None },
+            "File": if self.atype == SendType::File as i32 { Some(&data) } else { None },
+
+            "ExpirationDate": self.expiration_date.as_ref().map(format_date),
+            "Object": "send-access",
+        })
+    }
 }
 
 use crate::db::DbConn;

@@ -231,7 +231,7 @@ fn post_access(access_id: String, data: JsonUpcase<SendAccessData>, conn: DbConn
 
     send.save(&conn)?;
 
-    Ok(Json(send.to_json()))
+    Ok(Json(send.to_json_access()))
 }
 
 #[post("/sends/<send_id>/access/file/<file_id>", data = "<data>")]
