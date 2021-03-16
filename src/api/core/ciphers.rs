@@ -285,19 +285,10 @@ fn enforce_personal_ownership_policy(
 ) -> EmptyResult {
     if data.OrganizationId.is_none() {
         let user_uuid = &headers.user.uuid;
-        for policy in OrgPolicy::find_by_user(user_uuid, conn) {
-            if policy.enabled && policy.has_type(OrgPolicyType::PersonalOwnership) {
-                let org_uuid = &policy.org_uuid;
-                match UserOrganization::find_by_user_and_org(user_uuid, org_uuid, conn) {
-                    Some(user) =>
-                        if user.atype < UserOrgType::Admin &&
-                           user.has_status(UserOrgStatus::Confirmed) {
-                            err!("Due to an Enterprise Policy, you are restricted \
-                                  from saving items to your personal vault.")
-                        },
-                    None => err!("Error looking up user type"),
-                }
-            }
+        let policy_type = OrgPolicyType::PersonalOwnership;
+        if OrgPolicy::is_applicable_to_user(user_uuid, policy_type, conn) {
+            err!("Due to an Enterprise Policy, you are restricted from \
+                  saving items to your personal vault.")
         }
     }
     Ok(())

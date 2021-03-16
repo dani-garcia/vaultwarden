@@ -43,6 +43,20 @@ pub struct SendData {
     pub File: Option<Value>,
 }
 
+/// Enforces the `Disable Send` policy. A non-owner/admin user belonging to
+/// an org with this policy enabled isn't allowed to create new Sends or
+/// modify existing ones, but is allowed to delete them.
+///
+/// Ref: https://bitwarden.com/help/article/policies/#disable-send
+fn enforce_disable_send_policy(headers: &Headers,conn: &DbConn) -> EmptyResult {
+    let user_uuid = &headers.user.uuid;
+    let policy_type = OrgPolicyType::DisableSend;
+    if OrgPolicy::is_applicable_to_user(user_uuid, policy_type, conn) {
+        err!("Due to an Enterprise Policy, you are only able to delete an existing Send.")
+    }
+    Ok(())
+}
+
 fn create_send(data: SendData, user_uuid: String) -> ApiResult<Send> {
     let data_val = if data.Type == SendType::Text as i32 {
         data.Text
@@ -80,6 +94,8 @@ fn create_send(data: SendData, user_uuid: String) -> ApiResult<Send> {
 
 #[post("/sends", data = "<data>")]
 fn post_send(data: JsonUpcase<SendData>, headers: Headers, conn: DbConn, nt: Notify) -> JsonResult {
+    enforce_disable_send_policy(&headers, &conn)?;
+
     let data: SendData = data.into_inner().data;
 
     if data.Type == SendType::File as i32 {
@@ -95,6 +111,8 @@ fn post_send(data: JsonUpcase<SendData>, headers: Headers, conn: DbConn, nt: Not
 
 #[post("/sends/file", format = "multipart/form-data", data = "<data>")]
 fn post_send_file(data: Data, content_type: &ContentType, headers: Headers, conn: DbConn, nt: Notify) -> JsonResult {
+    enforce_disable_send_policy(&headers, &conn)?;
+
     let boundary = content_type.params().next().expect("No boundary provided").1;
 
     let mut mpart = Multipart::with_body(data.open(), boundary);
@@ -288,6 +306,8 @@ fn post_access_file(
 
 #[put("/sends/<id>", data = "<data>")]
 fn put_send(id: String, data: JsonUpcase<SendData>, headers: Headers, conn: DbConn, nt: Notify) -> JsonResult {
+    enforce_disable_send_policy(&headers, &conn)?;
+
     let data: SendData = data.into_inner().data;
 
     let mut send = match Send::find_by_uuid(&id, &conn) {
@@ -366,6 +386,8 @@ fn delete_send(id: String, headers: Headers, conn: DbConn, nt: Notify) -> EmptyR
 
 #[put("/sends/<id>/remove-password")]
 fn put_remove_password(id: String, headers: Headers, conn: DbConn, nt: Notify) -> JsonResult {
+    enforce_disable_send_policy(&headers, &conn)?;
+
     let mut send = match Send::find_by_uuid(&id, &conn) {
         Some(s) => s,
         None => err!("Send not found"),
