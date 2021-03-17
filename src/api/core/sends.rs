@@ -48,7 +48,7 @@ pub struct SendData {
 /// modify existing ones, but is allowed to delete them.
 ///
 /// Ref: https://bitwarden.com/help/article/policies/#disable-send
-fn enforce_disable_send_policy(headers: &Headers,conn: &DbConn) -> EmptyResult {
+fn enforce_disable_send_policy(headers: &Headers, conn: &DbConn) -> EmptyResult {
     let user_uuid = &headers.user.uuid;
     let policy_type = OrgPolicyType::DisableSend;
     if OrgPolicy::is_applicable_to_user(user_uuid, policy_type, conn) {
@@ -323,27 +323,23 @@ fn put_send(id: String, data: JsonUpcase<SendData>, headers: Headers, conn: DbCo
         err!("Sends can't change type")
     }
 
-    let data_val = if data.Type == SendType::Text as i32 {
-        data.Text
-    } else if data.Type == SendType::File as i32 {
-        data.File
-    } else {
-        err!("Invalid Send type")
-    };
-
-    let data_str = if let Some(mut d) = data_val {
-        d.as_object_mut().and_then(|d| d.remove("Response"));
-        serde_json::to_string(&d)?
-    } else {
-        err!("Send data not provided");
-    };
+    // When updating a file Send, we receive nulls in the File field, as it's immutable,
+    // so we only need to update the data field in the Text case
+    if data.Type == SendType::Text as i32 {
+        let data_str = if let Some(mut d) = data.Text {
+            d.as_object_mut().and_then(|d| d.remove("Response"));
+            serde_json::to_string(&d)?
+        } else {
+            err!("Send data not provided");
+        };
+        send.data = data_str;
+    }
 
     if data.DeletionDate > Utc::now() + Duration::days(31) {
         err!(
             "You cannot have a Send with a deletion date that far into the future. Adjust the Deletion Date to a value less than 31 days from now and try again."
         );
     }
-    send.data = data_str;
     send.name = data.Name;
     send.akey = data.Key;
     send.deletion_date = data.DeletionDate.naive_utc();
