@@ -37,6 +37,7 @@ macro_rules! generate_connections {
         pub enum DbConn { $( #[cfg($name)] $name(PooledConnection<ConnectionManager< $ty >>), )+ }
 
         #[allow(non_camel_case_types)]
+        #[derive(Clone)]
         pub enum DbPool { $( #[cfg($name)] $name(Pool<ConnectionManager< $ty >>), )+ }
 
         impl DbPool {

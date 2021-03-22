@@ -25,6 +25,23 @@ pub fn routes() -> Vec<rocket::Route> {
     ]
 }
 
+pub fn start_send_deletion_scheduler(pool: crate::db::DbPool) {
+    std::thread::spawn(move || {
+        loop {
+            if let Ok(conn) = pool.get() {
+                info!("Initiating send deletion");
+                for send in Send::find_all(&conn) {
+                    if chrono::Utc::now().naive_utc() >= send.deletion_date {
+                        send.delete(&conn).ok();
+                    }
+                }
+            }
+
+            std::thread::sleep(std::time::Duration::from_secs(3600));
+        }
+    });
+}
+
 #[derive(Deserialize)]
 #[allow(non_snake_case)]
 pub struct SendData {
@@ -368,10 +385,6 @@ fn delete_send(id: String, headers: Headers, conn: DbConn, nt: Notify) -> EmptyR
 
     if send.user_uuid.as_ref() != Some(&headers.user.uuid) {
         err!("Send is not owned by user")
-    }
-
-    if send.atype == SendType::File as i32 {
-        std::fs::remove_dir_all(Path::new(&CONFIG.sends_folder()).join(&send.uuid)).ok();
     }
 
     send.delete(&conn)?;

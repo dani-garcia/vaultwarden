@@ -194,6 +194,10 @@ impl Send {
     pub fn delete(&self, conn: &DbConn) -> EmptyResult {
         self.update_users_revision(conn);
 
+        if self.atype == SendType::File as i32 {
+            std::fs::remove_dir_all(std::path::Path::new(&crate::CONFIG.sends_folder()).join(&self.uuid)).ok();
+        }
+
         db_run! { conn: {
             diesel::delete(sends::table.filter(sends::uuid.eq(&self.uuid)))
                 .execute(conn)
@@ -202,7 +206,7 @@ impl Send {
     }
 
     pub fn update_users_revision(&self, conn: &DbConn) {
-        match self.user_uuid {
+        match &self.user_uuid {
             Some(user_uuid) => {
                 User::update_uuid_revision(&user_uuid, conn);
             }
@@ -217,6 +221,12 @@ impl Send {
             send.delete(&conn)?;
         }
         Ok(())
+    }
+
+    pub fn find_all(conn: &DbConn) -> Vec<Self> {
+        db_run! {conn: {
+            sends::table.load::<SendDb>(conn).expect("Error loading sends").from_db()
+        }}
     }
 
     pub fn find_by_access_id(access_id: &str, conn: &DbConn) -> Option<Self> {

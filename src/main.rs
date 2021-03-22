@@ -313,6 +313,8 @@ fn launch_rocket(extra_debug: bool) {
         }
     };
 
+    api::start_send_deletion_scheduler(pool.clone());
+
     let basepath = &CONFIG.domain_path();
 
     // If adding more paths here, consider also adding them to
