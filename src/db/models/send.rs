@@ -75,7 +75,7 @@ impl Send {
             disabled: false,
         }
     }
-    
+
     pub fn set_password(&mut self, password: Option<&str>) {
         const PASSWORD_ITER: i32 = 100_000;
 
@@ -157,7 +157,7 @@ use crate::error::MapResult;
 
 impl Send {
     pub fn save(&mut self, conn: &DbConn) -> EmptyResult {
-        // self.update_users_revision(conn);
+        self.update_users_revision(conn);
         self.revision_date = Utc::now().naive_utc();
 
         db_run! { conn:
@@ -192,13 +192,24 @@ impl Send {
     }
 
     pub fn delete(&self, conn: &DbConn) -> EmptyResult {
-        // self.update_users_revision(conn);
+        self.update_users_revision(conn);
 
         db_run! { conn: {
             diesel::delete(sends::table.filter(sends::uuid.eq(&self.uuid)))
                 .execute(conn)
                 .map_res("Error deleting send")
         }}
+    }
+
+    pub fn update_users_revision(&self, conn: &DbConn) {
+        match self.user_uuid {
+            Some(user_uuid) => {
+                User::update_uuid_revision(&user_uuid, conn);
+            }
+            None => {
+                // Belongs to Organization, not implemented
+            }
+        }
     }
 
     pub fn delete_all_by_user(user_uuid: &str, conn: &DbConn) -> EmptyResult {
