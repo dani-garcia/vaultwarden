@@ -71,7 +71,7 @@ uuid = { version = "0.8.2", features = ["v4"] }
 # Date and time libraries
 chrono = { version = "0.4.19", features = ["serde"] }
 chrono-tz = "0.5.3"
-time = "0.2.25"
+time = "0.2.26"
 
 # TOTP library
 oath = "0.10.2"
@@ -99,7 +99,7 @@ num-traits = "0.2.14"
 num-derive = "0.3.3"
 
 # Email libraries
-lettre = { version = "0.10.0-beta.2", features = ["smtp-transport", "builder", "serde", "native-tls", "hostname", "tracing"], default-features = false }
+lettre = { version = "0.10.0-beta.3", features = ["smtp-transport", "builder", "serde", "native-tls", "hostname", "tracing"], default-features = false }
 newline-converter = "0.2.0"
 
 # Template library
@@ -108,11 +108,11 @@ handlebars = { version = "3.5.3", features = ["dir_source"] }
 # For favicon extraction from main website
 html5ever = "0.25.1"
 markup5ever_rcdom = "0.1.0"
-regex = { version = "1.4.4", features = ["std", "perf"], default-features = false }
+regex = { version = "1.4.5", features = ["std", "perf"], default-features = false }
 data-url = "0.1.0"
 
 # Used by U2F, JWT and Postgres
-openssl = "0.10.32"
+openssl = "0.10.33"
 
 # URL encoding library
 percent-encoding = "2.1.0"
@@ -126,7 +126,7 @@ pico-args = "0.4.0"
 backtrace = "0.3.56"
 
 # Macro ident concatenation
-paste = "1.0.4"
+paste = "1.0.5"
 
 [patch.crates-io]
 # Use newest ring
