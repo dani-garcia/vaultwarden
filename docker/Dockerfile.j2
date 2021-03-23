@@ -93,6 +93,9 @@ RUN rustup set profile minimal
 {% if "alpine" in target_file %}
 ENV USER "root"
 ENV RUSTFLAGS='-C link-arg=-s'
+{%   if "armv7" in target_file %}
+ENV CFLAGS_armv7_unknown_linux_musleabihf="-mfpu=vfpv3-d16"
+{%   endif %}
 {% elif "arm" in target_file %}
 # Install required build libs for {{ package_arch_name }} architecture.
 # To compile both mysql and postgresql we need some extra packages for both host arch and target arch
