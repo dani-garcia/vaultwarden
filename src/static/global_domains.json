@@ -894,5 +894,13 @@
       "sony.com"
     ],
     "Excluded": false
+  },
+  {
+    "Type": 85,
+    "Domains": [
+      "protonmail.com",
+      "protonvpn.com"
+    ],
+    "Excluded": false
   }
 ]
