@@ -13,7 +13,10 @@ use lettre::{
 
 use crate::{
     api::EmptyResult,
-    auth::{encode_jwt, generate_delete_claims, generate_invite_claims, generate_verify_email_claims},
+    auth::{
+        encode_jwt, generate_delete_claims, generate_emergency_access_invite_claims, generate_invite_claims,
+        generate_verify_email_claims,
+    },
     error::Error,
     CONFIG,
 };
@@ -218,6 +221,136 @@ pub fn send_invite(
             "email": percent_encode(address.as_bytes(), NON_ALPHANUMERIC).to_string(),
             "org_name": org_name,
             "token": invite_token,
+        }),
+    )?;
+
+    send_email(address, &subject, body_html, body_text)
+}
+
+pub fn send_emergency_access_invite(
+    address: &str,
+    uuid: &str,
+    emer_id: Option<String>,
+    grantor_name: Option<String>,
+    grantor_email: Option<String>,
+) -> EmptyResult {
+    let claims = generate_emergency_access_invite_claims(
+        uuid.to_string(),
+        String::from(address),
+        emer_id.clone(),
+        grantor_name.clone(),
+        grantor_email,
+    );
+
+    let invite_token = encode_jwt(&claims);
+
+    let (subject, body_html, body_text) = get_text(
+        "email/send_emergency_access_invite",
+        json!({
+            "url": CONFIG.domain(),
+            "emer_id": emer_id.unwrap_or_else(|| "_".to_string()),
+            "email": percent_encode(address.as_bytes(), NON_ALPHANUMERIC).to_string(),
+            "grantor_name": grantor_name,
+            "token": invite_token,
+        }),
+    )?;
+
+    send_email(address, &subject, body_html, body_text)
+}
+
+pub fn send_emergency_access_invite_accepted(address: &str, grantee_email: &str) -> EmptyResult {
+    let (subject, body_html, body_text) = get_text(
+        "email/emergency_access_invite_accepted",
+        json!({
+            "url": CONFIG.domain(),
+            "grantee_email": grantee_email,
+        }),
+    )?;
+
+    send_email(address, &subject, body_html, body_text)
+}
+
+pub fn send_emergency_access_invite_confirmed(address: &str, grantor_name: &str) -> EmptyResult {
+    let (subject, body_html, body_text) = get_text(
+        "email/emergency_access_invite_confirmed",
+        json!({
+            "url": CONFIG.domain(),
+            "grantor_name": grantor_name,
+        }),
+    )?;
+
+    send_email(address, &subject, body_html, body_text)
+}
+
+pub fn send_emergency_access_recovery_approved(address: &str, grantor_name: &str) -> EmptyResult {
+    let (subject, body_html, body_text) = get_text(
+        "email/emergency_access_recovery_approved",
+        json!({
+            "url": CONFIG.domain(),
+            "grantor_name": grantor_name,
+        }),
+    )?;
+
+    send_email(address, &subject, body_html, body_text)
+}
+
+pub fn send_emergency_access_recovery_initiated(
+    address: &str,
+    grantee_name: &str,
+    atype: &str,
+    wait_time_days: &str,
+) -> EmptyResult {
+    let (subject, body_html, body_text) = get_text(
+        "email/emergency_access_recovery_initiated",
+        json!({
+            "url": CONFIG.domain(),
+            "grantee_name": grantee_name,
+            "atype": atype,
+            "wait_time_days": wait_time_days,
+        }),
+    )?;
+
+    send_email(address, &subject, body_html, body_text)
+}
+
+pub fn send_emergency_access_recovery_reminder(
+    address: &str,
+    grantee_name: &str,
+    atype: &str,
+    wait_time_days: &str,
+) -> EmptyResult {
+    let (subject, body_html, body_text) = get_text(
+        "email/emergency_access_recovery_reminder",
+        json!({
+            "url": CONFIG.domain(),
+            "grantee_name": grantee_name,
+            "atype": atype,
+            "wait_time_days": wait_time_days,
+        }),
+    )?;
+
+    send_email(address, &subject, body_html, body_text)
+}
+
+pub fn send_emergency_access_recovery_rejected(address: &str, grantor_name: &str) -> EmptyResult {
+    let (subject, body_html, body_text) = get_text(
+        "email/emergency_access_recovery_rejected",
+        json!({
+            "url": CONFIG.domain(),
+            "grantor_name": grantor_name,
+        }),
+    )?;
+
+    send_email(address, &subject, body_html, body_text)
+}
+
+pub fn send_emergency_access_recovery_timed_out(address: &str, grantee_name: &str, atype: &str) -> EmptyResult {
+    let (subject, body_html, body_text) = get_text(
+        "email/emergency_access_recovery_timed_out",
+        json!({
+            "url": CONFIG.domain(),
+            "grantee_name": grantee_name,
+            "atype": atype,
         }),
     )?;
 

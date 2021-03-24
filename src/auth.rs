@@ -22,6 +22,8 @@ static JWT_HEADER: Lazy<Header> = Lazy::new(|| Header::new(JWT_ALGORITHM));
 
 pub static JWT_LOGIN_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|login", CONFIG.domain_origin()));
 static JWT_INVITE_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|invite", CONFIG.domain_origin()));
+static JWT_EMERGENCY_ACCESS_INVITE_ISSUER: Lazy<String> =
+    Lazy::new(|| format!("{}|emergencyaccessinvite", CONFIG.domain_origin()));
 static JWT_DELETE_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|delete", CONFIG.domain_origin()));
 static JWT_VERIFYEMAIL_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|verifyemail", CONFIG.domain_origin()));
 static JWT_ADMIN_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|admin", CONFIG.domain_origin()));
@@ -73,6 +75,10 @@ pub fn decode_login(token: &str) -> Result<LoginJwtClaims, Error> {
 
 pub fn decode_invite(token: &str) -> Result<InviteJwtClaims, Error> {
     decode_jwt(token, JWT_INVITE_ISSUER.to_string())
+}
+
+pub fn decode_emergency_access_invite(token: &str) -> Result<EmergencyAccessInviteJwtClaims, Error> {
+    decode_jwt(token, JWT_EMERGENCY_ACCESS_INVITE_ISSUER.to_string())
 }
 
 pub fn decode_delete(token: &str) -> Result<BasicJwtClaims, Error> {
@@ -156,6 +162,44 @@ pub fn generate_invite_claims(
         org_id,
         user_org_id,
         invited_by_email,
+    }
+}
+
+//           var token = _dataProtector.Protect($"EmergencyAccessInvite {emergencyAccess.Id} {emergencyAccess.Email} {nowMillis}");
+#[derive(Debug, Serialize, Deserialize)]
+pub struct EmergencyAccessInviteJwtClaims {
+    // Not before
+    pub nbf: i64,
+    // Expiration time
+    pub exp: i64,
+    // Issuer
+    pub iss: String,
+    // Subject
+    pub sub: String,
+
+    pub email: String,
+    pub emer_id: Option<String>,
+    pub grantor_name: Option<String>,
+    pub grantor_email: Option<String>,
+}
+
+pub fn generate_emergency_access_invite_claims(
+    uuid: String,
+    email: String,
+    emer_id: Option<String>,
+    grantor_name: Option<String>,
+    grantor_email: Option<String>,
+) -> EmergencyAccessInviteJwtClaims {
+    let time_now = Utc::now().naive_utc();
+    EmergencyAccessInviteJwtClaims {
+        nbf: time_now.timestamp(),
+        exp: (time_now + Duration::days(5)).timestamp(),
+        iss: JWT_EMERGENCY_ACCESS_INVITE_ISSUER.to_string(),
+        sub: uuid,
+        email,
+        emer_id,
+        grantor_name,
+        grantor_email,
     }
 }
 
