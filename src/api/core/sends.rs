@@ -13,6 +13,8 @@ use crate::{
     CONFIG,
 };
 
+const SEND_INACCESSIBLE_MSG: &str = "Send does not exist or is no longer available";
+
 pub fn routes() -> Vec<rocket::Route> {
     routes![
         post_send,
@@ -228,27 +230,27 @@ pub struct SendAccessData {
 fn post_access(access_id: String, data: JsonUpcase<SendAccessData>, conn: DbConn) -> JsonResult {
     let mut send = match Send::find_by_access_id(&access_id, &conn) {
         Some(s) => s,
-        None => err_code!("Send does not exist or is no longer available", 404),
+        None => err_code!(SEND_INACCESSIBLE_MSG, 404),
     };
 
     if let Some(max_access_count) = send.max_access_count {
         if send.access_count >= max_access_count {
-            err_code!("Send does not exist or is no longer available", 404);
+            err_code!(SEND_INACCESSIBLE_MSG, 404);
         }
     }
 
     if let Some(expiration) = send.expiration_date {
         if Utc::now().naive_utc() >= expiration {
-            err_code!("Send does not exist or is no longer available", 404)
+            err_code!(SEND_INACCESSIBLE_MSG, 404)
         }
     }
 
     if Utc::now().naive_utc() >= send.deletion_date {
-        err_code!("Send does not exist or is no longer available", 404)
+        err_code!(SEND_INACCESSIBLE_MSG, 404)
     }
 
     if send.disabled {
-        err_code!("Send does not exist or is no longer available", 404)
+        err_code!(SEND_INACCESSIBLE_MSG, 404)
     }
 
     if send.password_hash.is_some() {
@@ -279,27 +281,27 @@ fn post_access_file(
 ) -> JsonResult {
     let mut send = match Send::find_by_uuid(&send_id, &conn) {
         Some(s) => s,
-        None => err_code!("Send does not exist or is no longer available", 404),
+        None => err_code!(SEND_INACCESSIBLE_MSG, 404),
     };
 
     if let Some(max_access_count) = send.max_access_count {
         if send.access_count >= max_access_count {
-            err_code!("Send does not exist or is no longer available", 404)
+            err_code!(SEND_INACCESSIBLE_MSG, 404)
         }
     }
 
     if let Some(expiration) = send.expiration_date {
         if Utc::now().naive_utc() >= expiration {
-            err_code!("Send does not exist or is no longer available", 404)
+            err_code!(SEND_INACCESSIBLE_MSG, 404)
         }
     }
 
     if Utc::now().naive_utc() >= send.deletion_date {
-        err_code!("Send does not exist or is no longer available", 404)
+        err_code!(SEND_INACCESSIBLE_MSG, 404)
     }
 
     if send.disabled {
-        err_code!("Send does not exist or is no longer available", 404)
+        err_code!(SEND_INACCESSIBLE_MSG, 404)
     }
 
     if send.password_hash.is_some() {
