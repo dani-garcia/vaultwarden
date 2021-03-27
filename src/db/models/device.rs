@@ -80,8 +80,8 @@ impl Device {
         let orgmanager: Vec<_> = orgs.iter().filter(|o| o.atype == 3).map(|o| o.org_uuid.clone()).collect();
 
         // Create the JWT claims struct, to send to the client
-        use crate::auth::{encode_jwt, LoginJWTClaims, DEFAULT_VALIDITY, JWT_LOGIN_ISSUER};
-        let claims = LoginJWTClaims {
+        use crate::auth::{encode_jwt, LoginJwtClaims, DEFAULT_VALIDITY, JWT_LOGIN_ISSUER};
+        let claims = LoginJwtClaims {
             nbf: time_now.timestamp(),
             exp: (time_now + *DEFAULT_VALIDITY).timestamp(),
             iss: JWT_LOGIN_ISSUER.to_string(),
@@ -117,7 +117,7 @@ impl Device {
     pub fn save(&mut self, conn: &DbConn) -> EmptyResult {
         self.updated_at = Utc::now().naive_utc();
 
-        db_run! { conn: 
+        db_run! { conn:
             sqlite, mysql {
                 crate::util::retry(
                     || diesel::replace_into(devices::table).values(DeviceDb::to_db(self)).execute(conn),

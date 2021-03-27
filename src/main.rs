@@ -326,7 +326,7 @@ fn launch_rocket(extra_debug: bool) {
         .manage(pool)
         .manage(api::start_notification_server())
         .attach(util::AppHeaders())
-        .attach(util::CORS())
+        .attach(util::Cors())
         .attach(util::BetterLogging(extra_debug))
         .launch();
 

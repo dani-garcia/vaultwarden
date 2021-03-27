@@ -58,28 +58,28 @@ fn decode_jwt<T: DeserializeOwned>(token: &str, issuer: String) -> Result<T, Err
         .map_res("Error decoding JWT")
 }
 
-pub fn decode_login(token: &str) -> Result<LoginJWTClaims, Error> {
+pub fn decode_login(token: &str) -> Result<LoginJwtClaims, Error> {
     decode_jwt(token, JWT_LOGIN_ISSUER.to_string())
 }
 
-pub fn decode_invite(token: &str) -> Result<InviteJWTClaims, Error> {
+pub fn decode_invite(token: &str) -> Result<InviteJwtClaims, Error> {
     decode_jwt(token, JWT_INVITE_ISSUER.to_string())
 }
 
-pub fn decode_delete(token: &str) -> Result<DeleteJWTClaims, Error> {
+pub fn decode_delete(token: &str) -> Result<DeleteJwtClaims, Error> {
     decode_jwt(token, JWT_DELETE_ISSUER.to_string())
 }
 
-pub fn decode_verify_email(token: &str) -> Result<VerifyEmailJWTClaims, Error> {
+pub fn decode_verify_email(token: &str) -> Result<VerifyEmailJwtClaims, Error> {
     decode_jwt(token, JWT_VERIFYEMAIL_ISSUER.to_string())
 }
 
-pub fn decode_admin(token: &str) -> Result<AdminJWTClaims, Error> {
+pub fn decode_admin(token: &str) -> Result<AdminJwtClaims, Error> {
     decode_jwt(token, JWT_ADMIN_ISSUER.to_string())
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct LoginJWTClaims {
+pub struct LoginJwtClaims {
     // Not before
     pub nbf: i64,
     // Expiration time
@@ -110,7 +110,7 @@ pub struct LoginJWTClaims {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct InviteJWTClaims {
+pub struct InviteJwtClaims {
     // Not before
     pub nbf: i64,
     // Expiration time
@@ -132,9 +132,9 @@ pub fn generate_invite_claims(
     org_id: Option<String>,
     user_org_id: Option<String>,
     invited_by_email: Option<String>,
-) -> InviteJWTClaims {
+) -> InviteJwtClaims {
     let time_now = Utc::now().naive_utc();
-    InviteJWTClaims {
+    InviteJwtClaims {
         nbf: time_now.timestamp(),
         exp: (time_now + Duration::days(5)).timestamp(),
         iss: JWT_INVITE_ISSUER.to_string(),
@@ -147,7 +147,7 @@ pub fn generate_invite_claims(
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct DeleteJWTClaims {
+pub struct DeleteJwtClaims {
     // Not before
     pub nbf: i64,
     // Expiration time
@@ -158,9 +158,9 @@ pub struct DeleteJWTClaims {
     pub sub: String,
 }
 
-pub fn generate_delete_claims(uuid: String) -> DeleteJWTClaims {
+pub fn generate_delete_claims(uuid: String) -> DeleteJwtClaims {
     let time_now = Utc::now().naive_utc();
-    DeleteJWTClaims {
+    DeleteJwtClaims {
         nbf: time_now.timestamp(),
         exp: (time_now + Duration::days(5)).timestamp(),
         iss: JWT_DELETE_ISSUER.to_string(),
@@ -169,7 +169,7 @@ pub fn generate_delete_claims(uuid: String) -> DeleteJWTClaims {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct VerifyEmailJWTClaims {
+pub struct VerifyEmailJwtClaims {
     // Not before
     pub nbf: i64,
     // Expiration time
@@ -180,9 +180,9 @@ pub struct VerifyEmailJWTClaims {
     pub sub: String,
 }
 
-pub fn generate_verify_email_claims(uuid: String) -> DeleteJWTClaims {
+pub fn generate_verify_email_claims(uuid: String) -> DeleteJwtClaims {
     let time_now = Utc::now().naive_utc();
-    DeleteJWTClaims {
+    DeleteJwtClaims {
         nbf: time_now.timestamp(),
         exp: (time_now + Duration::days(5)).timestamp(),
         iss: JWT_VERIFYEMAIL_ISSUER.to_string(),
@@ -191,7 +191,7 @@ pub fn generate_verify_email_claims(uuid: String) -> DeleteJWTClaims {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct AdminJWTClaims {
+pub struct AdminJwtClaims {
     // Not before
     pub nbf: i64,
     // Expiration time
@@ -202,9 +202,9 @@ pub struct AdminJWTClaims {
     pub sub: String,
 }
 
-pub fn generate_admin_claims() -> AdminJWTClaims {
+pub fn generate_admin_claims() -> AdminJwtClaims {
     let time_now = Utc::now().naive_utc();
-    AdminJWTClaims {
+    AdminJwtClaims {
         nbf: time_now.timestamp(),
         exp: (time_now + Duration::minutes(20)).timestamp(),
         iss: JWT_ADMIN_ISSUER.to_string(),

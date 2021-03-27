@@ -120,7 +120,7 @@ fn convert_option<T: Into<Value>>(option: Option<T>) -> Value {
 }
 
 // Server WebSocket handler
-pub struct WSHandler {
+pub struct WsHandler {
     out: Sender,
     user_uuid: Option<String>,
     users: WebSocketUsers,
@@ -140,7 +140,7 @@ const PING: Token = Token(1);
 
 const ACCESS_TOKEN_KEY: &str = "access_token=";
 
-impl WSHandler {
+impl WsHandler {
     fn err(&self, msg: &'static str) -> ws::Result<()> {
         self.out.close(ws::CloseCode::Invalid)?;
 
@@ -176,7 +176,7 @@ impl WSHandler {
     }
 }
 
-impl Handler for WSHandler {
+impl Handler for WsHandler {
     fn on_open(&mut self, hs: Handshake) -> ws::Result<()> {
         // Path == "/notifications/hub?id=<id>==&access_token=<access_token>"
         //
@@ -240,13 +240,13 @@ impl Handler for WSHandler {
     }
 }
 
-struct WSFactory {
+struct WsFactory {
     pub users: WebSocketUsers,
 }
 
-impl WSFactory {
+impl WsFactory {
     pub fn init() -> Self {
-        WSFactory {
+        WsFactory {
             users: WebSocketUsers {
                 map: Arc::new(CHashMap::new()),
             },
@@ -254,11 +254,11 @@ impl WSFactory {
     }
 }
 
-impl Factory for WSFactory {
-    type Handler = WSHandler;
+impl Factory for WsFactory {
+    type Handler = WsHandler;
 
     fn connection_made(&mut self, out: Sender) -> Self::Handler {
-        WSHandler {
+        WsHandler {
             out,
             user_uuid: None,
             users: self.users.clone(),
@@ -405,7 +405,7 @@ use rocket::State;
 pub type Notify<'a> = State<'a, WebSocketUsers>;
 
 pub fn start_notification_server() -> WebSocketUsers {
-    let factory = WSFactory::init();
+    let factory = WsFactory::init();
     let users = factory.users.clone();
 
     if CONFIG.websocket_enabled() {
