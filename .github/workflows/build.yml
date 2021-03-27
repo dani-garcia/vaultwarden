@@ -10,6 +10,15 @@ on:
       - "docker/**"
       - "hooks/**"
       - "tools/**"
+  pull_request:
+    # Ignore when there are only changes done too one of these paths
+    paths-ignore:
+      - "**.md"
+      - "**.txt"
+      - "azure-pipelines.yml"
+      - "docker/**"
+      - "hooks/**"
+      - "tools/**"
 
 jobs:
   build:
