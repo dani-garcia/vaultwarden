@@ -51,7 +51,10 @@ fn icon(domain: String) -> Option<Cached<Content<Vec<u8>>>> {
         return None;
     }
 
-    get_icon(&domain).map(|icon| Cached::long(Content(ContentType::new("image", "x-icon"), icon)))
+    get_icon(&domain).map(|(icon, cached)| {
+        let cache_ttl = if cached {CONFIG.icon_cache_ttl()} else {CONFIG.icon_cache_negttl()};
+        Cached::ttl(Content(ContentType::new("image", "x-icon"), icon), cache_ttl)
+    })
 }
 
 /// Returns if the domain provided is valid or not.
@@ -238,7 +241,7 @@ fn is_domain_blacklisted(domain: &str) -> bool {
     is_blacklisted
 }
 
-fn get_icon(domain: &str) -> Option<Vec<u8>> {
+fn get_icon(domain: &str) -> Option<(Vec<u8>, bool)> {
     let path = format!("{}/{}.png", CONFIG.icon_cache_folder(), domain);
 
     // Check for expiration of negatively cached copy
@@ -247,7 +250,7 @@ fn get_icon(domain: &str) -> Option<Vec<u8>> {
     }
 
     if let Some(icon) = get_cached_icon(&path) {
-        return Some(icon);
+        return Some((icon, true));
     }
 
     if CONFIG.disable_icon_download() {
@@ -258,7 +261,7 @@ fn get_icon(domain: &str) -> Option<Vec<u8>> {
     match download_icon(&domain) {
         Ok(icon) => {
             save_icon(&path, &icon);
-            Some(icon)
+            Some((icon, false))
         }
         Err(e) => {
             error!("Error downloading icon: {:?}", e);
@@ -472,7 +475,7 @@ fn get_icon_url(domain: &str) -> Result<IconUrlResult, Error> {
         let dom = html5ever::parse_document(markup5ever_rcdom::RcDom::default(), Default::default())
             .from_utf8()
             .read_from(&mut limited_reader)?;
-    
+
         get_favicons_node(&dom.document, &mut iconlist, &url);
     } else {
         // Add the default favicon.ico to the list with just the given domain
