@@ -450,12 +450,12 @@ impl<'a, 'r> FromRequest<'a, 'r> for AdminHeaders {
     }
 }
 
-impl Into<Headers> for AdminHeaders {
-    fn into(self) -> Headers {
+impl From<AdminHeaders> for Headers {
+    fn from(h: AdminHeaders) -> Headers {
         Headers {
-            host: self.host,
-            device: self.device,
-            user: self.user,
+            host: h.host,
+            device: h.device,
+            user: h.user,
         }
     }
 }
@@ -529,12 +529,12 @@ impl<'a, 'r> FromRequest<'a, 'r> for ManagerHeaders {
     }
 }
 
-impl Into<Headers> for ManagerHeaders {
-    fn into(self) -> Headers {
+impl From<ManagerHeaders> for Headers {
+    fn from(h: ManagerHeaders) -> Headers {
         Headers {
-            host: self.host,
-            device: self.device,
-            user: self.user,
+            host: h.host,
+            device: h.device,
+            user: h.user,
         }
     }
 }
@@ -571,12 +571,12 @@ impl<'a, 'r> FromRequest<'a, 'r> for ManagerHeadersLoose {
     }
 }
 
-impl Into<Headers> for ManagerHeadersLoose {
-    fn into(self) -> Headers {
+impl From<ManagerHeadersLoose> for Headers {
+    fn from(h: ManagerHeadersLoose) -> Headers {
         Headers {
-            host: self.host,
-            device: self.device,
-            user: self.user,
+            host: h.host,
+            device: h.device,
+            user: h.user,
         }
     }
 }

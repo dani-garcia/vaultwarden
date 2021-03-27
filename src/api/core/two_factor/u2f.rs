@@ -131,12 +131,12 @@ struct RegisterResponseCopy {
     pub error_code: Option<NumberOrString>,
 }
 
-impl Into<RegisterResponse> for RegisterResponseCopy {
-    fn into(self) -> RegisterResponse {
+impl From<RegisterResponseCopy> for RegisterResponse {
+    fn from(r: RegisterResponseCopy) -> RegisterResponse {
         RegisterResponse {
-            registration_data: self.registration_data,
-            version: self.version,
-            client_data: self.client_data,
+            registration_data: r.registration_data,
+            version: r.version,
+            client_data: r.client_data,
         }
     }
 }
