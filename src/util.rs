@@ -97,7 +97,7 @@ pub struct Cached<R>(R, String);
 impl<R> Cached<R> {
     pub fn long(r: R) -> Cached<R> {
         // 7 days
-        Self(r, String::from("public, max-age=604800"))
+        Self::ttl(r, 604800)
     }
 
     pub fn short(r: R) -> Cached<R> {
