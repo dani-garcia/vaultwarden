@@ -166,8 +166,8 @@ impl WSHandler {
         if let Some(params) = path.split('?').nth(1) {
             let params_iter = params.split('&').take(1);
             for val in params_iter {
-                if val.starts_with(ACCESS_TOKEN_KEY) {
-                    return Some(val[ACCESS_TOKEN_KEY.len()..].into());
+                if let Some(stripped) = val.strip_prefix(ACCESS_TOKEN_KEY) {
+                    return Some(stripped.into());
                 }
             }
         };
@@ -410,10 +410,12 @@ pub fn start_notification_server() -> WebSocketUsers {
 
     if CONFIG.websocket_enabled() {
         thread::spawn(move || {
-            let mut settings = ws::Settings::default();
-            settings.max_connections = 500;
-            settings.queue_size = 2;
-            settings.panic_on_internal = false;
+            let settings = ws::Settings {
+                max_connections: 500,
+                queue_size: 2,
+                panic_on_internal: false,
+                ..Default::default()
+            };
 
             ws::Builder::new()
                 .with_settings(settings)

@@ -139,10 +139,8 @@ fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> EmptyResult {
             }
 
             user.last_verifying_at = Some(user.created_at);
-        } else {
-            if let Err(e) = mail::send_welcome(&user.email) {
-                error!("Error sending welcome email: {:#?}", e);
-            }
+        } else if let Err(e) = mail::send_welcome(&user.email) {
+            error!("Error sending welcome email: {:#?}", e);
         }
     }
 
