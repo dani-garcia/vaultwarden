@@ -125,11 +125,29 @@ macro_rules! db_run {
             $($(
                 #[cfg($db)]
                 crate::db::DbConn::$db(ref $conn) => {
-                    paste::paste! { 
+                    paste::paste! {
                         #[allow(unused)] use crate::db::[<__ $db _schema>]::{self as schema, *};
                         #[allow(unused)] use [<__ $db _model>]::*;
-                        #[allow(unused)] use crate::db::FromDb;  
+                        #[allow(unused)] use crate::db::FromDb;
                     }
+                    $body
+                },
+            )+)+
+        }
+    };
+
+    // Same for all dbs
+    ( @raw $conn:ident: $body:block ) => {
+        db_run! { @raw $conn: sqlite, mysql, postgresql $body }
+    };
+
+    // Different code for each db
+    ( @raw $conn:ident: $( $($db:ident),+ $body:block )+ ) => {
+        #[allow(unused)] use diesel::prelude::*;
+        match $conn {
+            $($(
+                #[cfg($db)]
+                crate::db::DbConn::$db(ref $conn) => {
                     $body
                 },
             )+)+
@@ -144,7 +162,7 @@ pub trait FromDb {
     fn from_db(self) -> Self::Output;
 }
 
-// For each struct eg. Cipher, we create a CipherDb inside a module named __$db_model (where $db is sqlite, mysql or postgresql), 
+// For each struct eg. Cipher, we create a CipherDb inside a module named __$db_model (where $db is sqlite, mysql or postgresql),
 // to implement the Diesel traits. We also provide methods to convert between them and the basic structs. Later, that module will be auto imported when using db_run!
 #[macro_export]
 macro_rules! db_object {
@@ -154,10 +172,10 @@ macro_rules! db_object {
             $( $( #[$field_attr:meta] )* $vis:vis $field:ident : $typ:ty ),+
             $(,)?
         }
-    )+ ) => { 
+    )+ ) => {
         // Create the normal struct, without attributes
         $( pub struct $name { $( /*$( #[$field_attr] )**/ $vis $field : $typ, )+ } )+
-        
+
         #[cfg(sqlite)]
         pub mod __sqlite_model     { $( db_object! { @db sqlite     |  $( #[$attr] )* | $name |  $( $( #[$field_attr] )* $field : $typ ),+ } )+ }
         #[cfg(mysql)]
@@ -178,7 +196,7 @@ macro_rules! db_object {
             )+ }
 
             impl [<$name Db>] {
-                #[allow(clippy::wrong_self_convention)] 
+                #[allow(clippy::wrong_self_convention)]
                 #[inline(always)] pub fn to_db(x: &super::$name) -> Self { Self { $( $field: x.$field.clone(), )+ } }
             }
 
@@ -222,6 +240,36 @@ pub fn backup_database() -> Result<(), Error> {
     Ok(())
 }
 
+
+use diesel::sql_types::Text;
+#[derive(QueryableByName,Debug)]
+struct SqlVersion {
+    #[sql_type = "Text"]
+    version: String,
+}
+
+/// Get the SQL Server version
+pub fn get_sql_server_version(conn: &DbConn) -> String {
+    db_run! {@raw conn:
+        postgresql, mysql {
+            match diesel::sql_query("SELECT version() AS version;").get_result::<SqlVersion>(conn).ok() {
+                Some(v) => {
+                    v.version
+                },
+                _ => "Unknown".to_string()
+            }
+        }
+        sqlite {
+            match diesel::sql_query("SELECT sqlite_version() AS version;").get_result::<SqlVersion>(conn).ok() {
+                Some(v) => {
+                    v.version
+                },
+                _ => "Unknown".to_string()
+            }
+        }
+    }
+}
+
 /// Attempts to retrieve a single connection from the managed database pool. If
 /// no pool is currently managed, fails with an `InternalServerError` status. If
 /// no connections are available, fails with a `ServiceUnavailable` status.
@@ -263,7 +311,7 @@ mod sqlite_migrations {
         let connection =
             diesel::sqlite::SqliteConnection::establish(&crate::CONFIG.database_url())?;
         // Disable Foreign Key Checks during migration
-        
+
         // Scoped to a connection.
         diesel::sql_query("PRAGMA foreign_keys = OFF")
             .execute(&connection)
@@ -314,7 +362,7 @@ mod postgresql_migrations {
         let connection =
             diesel::pg::PgConnection::establish(&crate::CONFIG.database_url())?;
         // Disable Foreign Key Checks during migration
-        
+
         // FIXME: Per https://www.postgresql.org/docs/12/sql-set-constraints.html,
         // "SET CONSTRAINTS sets the behavior of constraint checking within the
         // current transaction", so this setting probably won't take effect for
