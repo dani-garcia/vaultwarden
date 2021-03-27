@@ -90,17 +90,11 @@ impl PartialOrd<i32> for UserOrgType {
     }
 
     fn gt(&self, other: &i32) -> bool {
-        match self.partial_cmp(other) {
-            Some(Ordering::Less) | Some(Ordering::Equal) => false,
-            _ => true,
-        }
+        !matches!(self.partial_cmp(other), Some(Ordering::Less) | Some(Ordering::Equal))
     }
 
     fn ge(&self, other: &i32) -> bool {
-        match self.partial_cmp(other) {
-            Some(Ordering::Less) => false,
-            _ => true,
-        }
+        !matches!(self.partial_cmp(other), Some(Ordering::Less))
     }
 }
 
@@ -119,17 +113,11 @@ impl PartialOrd<UserOrgType> for i32 {
     }
 
     fn lt(&self, other: &UserOrgType) -> bool {
-        match self.partial_cmp(other) {
-            Some(Ordering::Less) | None => true,
-            _ => false,
-        }
+        matches!(self.partial_cmp(other), Some(Ordering::Less) | None)
     }
 
     fn le(&self, other: &UserOrgType) -> bool {
-        match self.partial_cmp(other) {
-            Some(Ordering::Less) | Some(Ordering::Equal) | None => true,
-            _ => false,
-        }
+        matches!(self.partial_cmp(other), Some(Ordering::Less) | Some(Ordering::Equal) | None)
     }
 }
 
