@@ -13,7 +13,7 @@ use rocket::{
 use rocket_contrib::json::Json;
 
 use crate::{
-    api::{ApiResult, EmptyResult, JsonResult, NumberOrString},
+    api::{ApiResult, EmptyResult, NumberOrString},
     auth::{decode_admin, encode_jwt, generate_admin_claims, ClientIp},
     config::ConfigBuilder,
     db::{backup_database, models::*, DbConn, DbConnType},
@@ -291,17 +291,17 @@ fn test_smtp(data: Json<InviteData>, _token: AdminToken) -> EmptyResult {
 }
 
 #[get("/logout")]
-fn logout(mut cookies: Cookies, referer: Referer) -> Result<Redirect, ()> {
+fn logout(mut cookies: Cookies, referer: Referer) -> Redirect {
     cookies.remove(Cookie::named(COOKIE_NAME));
-    Ok(Redirect::to(admin_url(referer)))
+    Redirect::to(admin_url(referer))
 }
 
 #[get("/users")]
-fn get_users_json(_token: AdminToken, conn: DbConn) -> JsonResult {
+fn get_users_json(_token: AdminToken, conn: DbConn) -> Json<Value> {
     let users = User::get_all(&conn);
     let users_json: Vec<Value> = users.iter().map(|u| u.to_json(&conn)).collect();
 
-    Ok(Json(Value::Array(users_json)))
+    Json(Value::Array(users_json))
 }
 
 #[get("/users/overview")]
@@ -548,9 +548,9 @@ fn diagnostics(_token: AdminToken, _conn: DbConn) -> ApiResult<Html<String>> {
 }
 
 #[get("/diagnostics/config")]
-fn get_diagnostics_config(_token: AdminToken) -> JsonResult {
+fn get_diagnostics_config(_token: AdminToken) -> Json<Value> {
     let support_json = CONFIG.get_support_json();
-    Ok(Json(support_json))
+    Json(support_json)
 }
 
 #[post("/config", data = "<data>")]

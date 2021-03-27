@@ -1,5 +1,6 @@
 use chrono::Utc;
 use rocket_contrib::json::Json;
+use serde_json::Value;
 
 use crate::{
     api::{EmptyResult, JsonResult, JsonUpcase, Notify, NumberOrString, PasswordData, UpdateType},
@@ -148,8 +149,8 @@ fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> EmptyResult {
 }
 
 #[get("/accounts/profile")]
-fn profile(headers: Headers, conn: DbConn) -> JsonResult {
-    Ok(Json(headers.user.to_json(&conn)))
+fn profile(headers: Headers, conn: DbConn) -> Json<Value> {
+    Json(headers.user.to_json(&conn))
 }
 
 #[derive(Deserialize, Debug)]
@@ -610,7 +611,7 @@ struct PreloginData {
 }
 
 #[post("/accounts/prelogin", data = "<data>")]
-fn prelogin(data: JsonUpcase<PreloginData>, conn: DbConn) -> JsonResult {
+fn prelogin(data: JsonUpcase<PreloginData>, conn: DbConn) -> Json<Value> {
     let data: PreloginData = data.into_inner().data;
 
     let (kdf_type, kdf_iter) = match User::find_by_mail(&data.Email, &conn) {
@@ -618,10 +619,10 @@ fn prelogin(data: JsonUpcase<PreloginData>, conn: DbConn) -> JsonResult {
         None => (User::CLIENT_KDF_TYPE_DEFAULT, User::CLIENT_KDF_ITER_DEFAULT),
     };
 
-    Ok(Json(json!({
+    Json(json!({
         "Kdf": kdf_type,
         "KdfIterations": kdf_iter
-    })))
+    }))
 }
 #[derive(Deserialize)]
 #[allow(non_snake_case)]

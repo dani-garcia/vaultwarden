@@ -5,7 +5,7 @@ use rocket_contrib::json::Json;
 use serde_json::Value as JsonValue;
 
 use crate::{
-    api::{EmptyResult, JsonResult},
+    api::EmptyResult,
     auth::Headers,
     db::DbConn,
     Error, CONFIG,
@@ -31,7 +31,7 @@ fn websockets_err() -> EmptyResult {
 }
 
 #[post("/hub/negotiate")]
-fn negotiate(_headers: Headers, _conn: DbConn) -> JsonResult {
+fn negotiate(_headers: Headers, _conn: DbConn) -> Json<JsonValue> {
     use crate::crypto;
     use data_encoding::BASE64URL;
 
@@ -47,10 +47,10 @@ fn negotiate(_headers: Headers, _conn: DbConn) -> JsonResult {
     // Rocket SSE support: https://github.com/SergioBenitez/Rocket/issues/33
     // {"transport":"ServerSentEvents", "transferFormats":["Text"]},
     // {"transport":"LongPolling", "transferFormats":["Text","Binary"]}
-    Ok(Json(json!({
+    Json(json!({
         "connectionId": conn_id,
         "availableTransports": available_transports
-    })))
+    }))
 }
 
 //
