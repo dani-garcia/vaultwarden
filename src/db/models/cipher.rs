@@ -104,7 +104,7 @@ impl Cipher {
 
         // Get the type_data or a default to an empty json object '{}'.
         // If not passing an empty object, mobile clients will crash.
-        let mut type_data_json: Value = serde_json::from_str(&self.data).unwrap_or(json!({}));
+        let mut type_data_json: Value = serde_json::from_str(&self.data).unwrap_or_else(|_| json!({}));
 
         // NOTE: This was marked as *Backwards Compatibilty Code*, but as of January 2021 this is still being used by upstream
         // Set the first element of the Uris array as Uri, this is needed several (mobile) clients.
