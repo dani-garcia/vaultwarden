@@ -82,16 +82,26 @@ jobs:
         with:
           profile: minimal
           target: ${{ matrix.target-triple }}
+          components: clippy
       # End Uses the rust-toolchain file to determine version
 
 
-      # Run cargo tests (In release mode to speed up cargo build afterwards)
+      # Run cargo tests (In release mode to speed up future builds)
       - name: '`cargo test --release --features ${{ matrix.features }} --target ${{ matrix.target-triple }}`'
         uses: actions-rs/cargo@v1
         with:
           command: test
           args: --release --features ${{ matrix.features }} --target ${{ matrix.target-triple }}
       # End Run cargo tests
+
+
+      # Run cargo clippy (In release mode to speed up future builds)
+      - name: '`cargo clippy --release --features ${{ matrix.features }} --target ${{ matrix.target-triple }}`'
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: --release --features ${{ matrix.features }} --target ${{ matrix.target-triple }}
+      # End Run cargo clippy
 
 
       # Build the binary
