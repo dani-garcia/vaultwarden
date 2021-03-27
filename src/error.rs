@@ -152,6 +152,7 @@ impl<S> MapResult<S> for Option<S> {
     }
 }
 
+#[allow(clippy::unnecessary_wraps)]
 const fn _has_source<T>(e: T) -> Option<T> {
     Some(e)
 }
