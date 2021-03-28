@@ -564,7 +564,7 @@ fn diagnostics(_token: AdminToken, ip_header: IpHeader, conn: DbConn) -> ApiResu
         "running_within_docker": running_within_docker,
         "has_http_access": has_http_access,
         "ip_header_exists": &ip_header.0.is_some(),
-        "ip_header_match": ip_header_name == &CONFIG.ip_header(),
+        "ip_header_match": ip_header_name == CONFIG.ip_header(),
         "ip_header_name": ip_header_name,
         "ip_header_config": &CONFIG.ip_header(),
         "uses_proxy": uses_proxy,
