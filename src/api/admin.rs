@@ -16,7 +16,7 @@ use crate::{
     api::{ApiResult, EmptyResult, JsonResult, NumberOrString},
     auth::{decode_admin, encode_jwt, generate_admin_claims, ClientIp},
     config::ConfigBuilder,
-    db::{backup_database, models::*, DbConn, DbConnType},
+    db::{backup_database, get_sql_server_version, models::*, DbConn, DbConnType},
     error::{Error, MapResult},
     mail,
     util::{format_naive_datetime_local, get_display_size, is_running_in_docker},
@@ -93,6 +93,27 @@ impl<'a, 'r> FromRequest<'a, 'r> for Referer {
 
     fn from_request(request: &'a Request<'r>) -> request::Outcome<Self, Self::Error> {
         Outcome::Success(Referer(request.headers().get_one("Referer").map(str::to_string)))
+    }
+}
+
+#[derive(Debug)]
+struct IpHeader(Option<String>);
+
+impl<'a, 'r> FromRequest<'a, 'r> for IpHeader {
+    type Error = ();
+
+    fn from_request(req: &'a Request<'r>) -> Outcome<Self, Self::Error> {
+        if req.headers().get_one(&CONFIG.ip_header()).is_some() {
+            Outcome::Success(IpHeader(Some(CONFIG.ip_header())))
+        } else if req.headers().get_one("X-Client-IP").is_some() {
+            Outcome::Success(IpHeader(Some(String::from("X-Client-IP"))))
+        } else if req.headers().get_one("X-Real-IP").is_some() {
+            Outcome::Success(IpHeader(Some(String::from("X-Real-IP"))))
+        } else if req.headers().get_one("X-Forwarded-For").is_some() {
+            Outcome::Success(IpHeader(Some(String::from("X-Forwarded-For"))))
+        } else {
+            Outcome::Success(IpHeader(None))
+        }
     }
 }
 
@@ -475,7 +496,7 @@ fn has_http_access() -> bool {
 }
 
 #[get("/diagnostics")]
-fn diagnostics(_token: AdminToken, _conn: DbConn) -> ApiResult<Html<String>> {
+fn diagnostics(_token: AdminToken, ip_header: IpHeader, conn: DbConn) -> ApiResult<Html<String>> {
     use crate::util::read_file_string;
     use chrono::prelude::*;
     use std::net::ToSocketAddrs;
@@ -529,6 +550,11 @@ fn diagnostics(_token: AdminToken, _conn: DbConn) -> ApiResult<Html<String>> {
         ("-".to_string(), "-".to_string(), "-".to_string())
     };
 
+    let ip_header_name = match &ip_header.0 {
+        Some(h) => h,
+        _ => ""
+    };
+
     let diagnostics_json = json!({
         "dns_resolved": dns_resolved,
         "web_vault_version": web_vault_version.version,
@@ -537,8 +563,13 @@ fn diagnostics(_token: AdminToken, _conn: DbConn) -> ApiResult<Html<String>> {
         "latest_web_build": latest_web_build,
         "running_within_docker": running_within_docker,
         "has_http_access": has_http_access,
+        "ip_header_exists": &ip_header.0.is_some(),
+        "ip_header_match": ip_header_name == &CONFIG.ip_header(),
+        "ip_header_name": ip_header_name,
+        "ip_header_config": &CONFIG.ip_header(),
         "uses_proxy": uses_proxy,
         "db_type": *DB_TYPE,
+        "db_version": get_sql_server_version(&conn),
         "admin_url": format!("{}/diagnostics", admin_url(Referer(None))),
         "server_time": Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string(), // Run the date/time check as the last item to minimize the difference
     });
