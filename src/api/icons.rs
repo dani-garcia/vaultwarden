@@ -51,10 +51,7 @@ fn icon(domain: String) -> Option<Cached<Content<Vec<u8>>>> {
         return None;
     }
 
-    get_icon(&domain).map(|(icon, cached)| {
-        let cache_ttl = if cached {CONFIG.icon_cache_ttl()} else {CONFIG.icon_cache_negttl()};
-        Cached::ttl(Content(ContentType::new("image", "x-icon"), icon), cache_ttl)
-    })
+    get_icon(&domain).map(|icon| Cached::ttl(Content(ContentType::new("image", "x-icon"), icon), CONFIG.icon_cache_ttl()))
 }
 
 /// Returns if the domain provided is valid or not.
@@ -241,7 +238,7 @@ fn is_domain_blacklisted(domain: &str) -> bool {
     is_blacklisted
 }
 
-fn get_icon(domain: &str) -> Option<(Vec<u8>, bool)> {
+fn get_icon(domain: &str) -> Option<Vec<u8>> {
     let path = format!("{}/{}.png", CONFIG.icon_cache_folder(), domain);
 
     // Check for expiration of negatively cached copy
@@ -250,7 +247,7 @@ fn get_icon(domain: &str) -> Option<(Vec<u8>, bool)> {
     }
 
     if let Some(icon) = get_cached_icon(&path) {
-        return Some((icon, true));
+        return Some(icon);
     }
 
     if CONFIG.disable_icon_download() {
@@ -261,7 +258,7 @@ fn get_icon(domain: &str) -> Option<(Vec<u8>, bool)> {
     match download_icon(&domain) {
         Ok(icon) => {
             save_icon(&path, &icon);
-            Some((icon, false))
+            Some(icon)
         }
         Err(e) => {
             error!("Error downloading icon: {:?}", e);
