@@ -51,7 +51,7 @@ fn icon(domain: String) -> Option<Cached<Content<Vec<u8>>>> {
         return None;
     }
 
-    get_icon(&domain).map(|icon| Cached::long(Content(ContentType::new("image", "x-icon"), icon)))
+    get_icon(&domain).map(|icon| Cached::ttl(Content(ContentType::new("image", "x-icon"), icon), CONFIG.icon_cache_ttl()))
 }
 
 /// Returns if the domain provided is valid or not.
@@ -472,7 +472,7 @@ fn get_icon_url(domain: &str) -> Result<IconUrlResult, Error> {
         let dom = html5ever::parse_document(markup5ever_rcdom::RcDom::default(), Default::default())
             .from_utf8()
             .read_from(&mut limited_reader)?;
-    
+
         get_favicons_node(&dom.document, &mut iconlist, &url);
     } else {
         // Add the default favicon.ico to the list with just the given domain

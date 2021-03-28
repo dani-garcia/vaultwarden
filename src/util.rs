@@ -92,17 +92,21 @@ impl Fairing for CORS {
     }
 }
 
-pub struct Cached<R>(R, &'static str);
+pub struct Cached<R>(R, String);
 
 impl<R> Cached<R> {
-    pub const fn long(r: R) -> Cached<R> {
+    pub fn long(r: R) -> Cached<R> {
         // 7 days
-        Self(r, "public, max-age=604800")
+        Self::ttl(r, 604800)
     }
 
-    pub const fn short(r: R) -> Cached<R> {
+    pub fn short(r: R) -> Cached<R> {
         // 10 minutes
-        Self(r, "public, max-age=600")
+        Self(r, String::from("public, max-age=600"))
+    }
+
+    pub fn ttl(r: R, ttl: u64) -> Cached<R> {
+        Self(r, format!("public, immutable, max-age={}", ttl))
     }
 }
 
