@@ -13,7 +13,7 @@ use rocket::{
 use rocket_contrib::json::Json;
 
 use crate::{
-    api::{ApiResult, EmptyResult, JsonResult, NumberOrString},
+    api::{ApiResult, EmptyResult, NumberOrString},
     auth::{decode_admin, encode_jwt, generate_admin_claims, ClientIp},
     config::ConfigBuilder,
     db::{backup_database, get_sql_server_version, models::*, DbConn, DbConnType},
@@ -312,17 +312,17 @@ fn test_smtp(data: Json<InviteData>, _token: AdminToken) -> EmptyResult {
 }
 
 #[get("/logout")]
-fn logout(mut cookies: Cookies, referer: Referer) -> Result<Redirect, ()> {
+fn logout(mut cookies: Cookies, referer: Referer) -> Redirect {
     cookies.remove(Cookie::named(COOKIE_NAME));
-    Ok(Redirect::to(admin_url(referer)))
+    Redirect::to(admin_url(referer))
 }
 
 #[get("/users")]
-fn get_users_json(_token: AdminToken, conn: DbConn) -> JsonResult {
+fn get_users_json(_token: AdminToken, conn: DbConn) -> Json<Value> {
     let users = User::get_all(&conn);
     let users_json: Vec<Value> = users.iter().map(|u| u.to_json(&conn)).collect();
 
-    Ok(Json(Value::Array(users_json)))
+    Json(Value::Array(users_json))
 }
 
 #[get("/users/overview")]
@@ -564,7 +564,7 @@ fn diagnostics(_token: AdminToken, ip_header: IpHeader, conn: DbConn) -> ApiResu
         "running_within_docker": running_within_docker,
         "has_http_access": has_http_access,
         "ip_header_exists": &ip_header.0.is_some(),
-        "ip_header_match": ip_header_name == &CONFIG.ip_header(),
+        "ip_header_match": ip_header_name == CONFIG.ip_header(),
         "ip_header_name": ip_header_name,
         "ip_header_config": &CONFIG.ip_header(),
         "uses_proxy": uses_proxy,
@@ -579,9 +579,9 @@ fn diagnostics(_token: AdminToken, ip_header: IpHeader, conn: DbConn) -> ApiResu
 }
 
 #[get("/diagnostics/config")]
-fn get_diagnostics_config(_token: AdminToken) -> JsonResult {
+fn get_diagnostics_config(_token: AdminToken) -> Json<Value> {
     let support_json = CONFIG.get_support_json();
-    Ok(Json(support_json))
+    Json(support_json)
 }
 
 #[post("/config", data = "<data>")]

@@ -48,10 +48,7 @@ fn main() {
     let level = LF::from_str(&CONFIG.log_level()).expect("Valid log level");
     init_logging(level).ok();
 
-    let extra_debug = match level {
-        LF::Trace | LF::Debug => true,
-        _ => false,
-    };
+    let extra_debug = matches!(level, LF::Trace | LF::Debug);
 
     check_data_folder();
     check_rsa_keys();
@@ -64,10 +61,10 @@ fn main() {
 
 const HELP: &str = "\
         A Bitwarden API server written in Rust
-        
+
         USAGE:
             bitwarden_rs
-        
+
         FLAGS:
             -h, --help       Prints help information
             -v, --version    Prints the app version
@@ -329,7 +326,7 @@ fn launch_rocket(extra_debug: bool) {
         .manage(pool)
         .manage(api::start_notification_server())
         .attach(util::AppHeaders())
-        .attach(util::CORS())
+        .attach(util::Cors())
         .attach(util::BetterLogging(extra_debug))
         .launch();
 

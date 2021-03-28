@@ -38,15 +38,15 @@ pub fn routes() -> Vec<Route> {
 }
 
 #[get("/two-factor")]
-fn get_twofactor(headers: Headers, conn: DbConn) -> JsonResult {
+fn get_twofactor(headers: Headers, conn: DbConn) -> Json<Value> {
     let twofactors = TwoFactor::find_by_user(&headers.user.uuid, &conn);
     let twofactors_json: Vec<Value> = twofactors.iter().map(TwoFactor::to_json_provider).collect();
 
-    Ok(Json(json!({
+    Json(json!({
         "Data": twofactors_json,
         "Object": "list",
         "ContinuationToken": null,
-    })))
+    }))
 }
 
 #[post("/two-factor/get-recover", data = "<data>")]

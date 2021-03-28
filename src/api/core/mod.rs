@@ -34,17 +34,18 @@ pub fn routes() -> Vec<Route> {
 //
 use rocket::Route;
 use rocket_contrib::json::Json;
+use rocket::response::Response;
 use serde_json::Value;
 
 use crate::{
-    api::{EmptyResult, JsonResult, JsonUpcase},
+    api::{JsonResult, JsonUpcase},
     auth::Headers,
     db::DbConn,
     error::Error,
 };
 
 #[put("/devices/identifier/<uuid>/clear-token")]
-fn clear_device_token(uuid: String) -> EmptyResult {
+fn clear_device_token<'a>(uuid: String) -> Response<'a> {
     // This endpoint doesn't have auth header
 
     let _ = uuid;
@@ -53,11 +54,11 @@ fn clear_device_token(uuid: String) -> EmptyResult {
     // This only clears push token
     // https://github.com/bitwarden/core/blob/master/src/Api/Controllers/DevicesController.cs#L109
     // https://github.com/bitwarden/core/blob/master/src/Core/Services/Implementations/DeviceService.cs#L37
-    Ok(())
+    Response::new()
 }
 
 #[put("/devices/identifier/<uuid>/token", data = "<data>")]
-fn put_device_token(uuid: String, data: JsonUpcase<Value>, headers: Headers) -> JsonResult {
+fn put_device_token(uuid: String, data: JsonUpcase<Value>, headers: Headers) -> Json<Value> {
     let _data: Value = data.into_inner().data;
     // Data has a single string value "PushToken"
     let _ = uuid;
@@ -65,13 +66,13 @@ fn put_device_token(uuid: String, data: JsonUpcase<Value>, headers: Headers) -> 
 
     // TODO: This should save the push token, but we don't have push functionality
 
-    Ok(Json(json!({
+    Json(json!({
         "Id": headers.device.uuid,
         "Name": headers.device.name,
         "Type": headers.device.atype,
         "Identifier": headers.device.uuid,
         "CreationDate": crate::util::format_date(&headers.device.created_at),
-    })))
+    }))
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -85,11 +86,11 @@ struct GlobalDomain {
 const GLOBAL_DOMAINS: &str = include_str!("../../static/global_domains.json");
 
 #[get("/settings/domains")]
-fn get_eq_domains(headers: Headers) -> JsonResult {
+fn get_eq_domains(headers: Headers) -> Json<Value> {
     _get_eq_domains(headers, false)
 }
 
-fn _get_eq_domains(headers: Headers, no_excluded: bool) -> JsonResult {
+fn _get_eq_domains(headers: Headers, no_excluded: bool) -> Json<Value> {
     let user = headers.user;
     use serde_json::from_str;
 
@@ -106,11 +107,11 @@ fn _get_eq_domains(headers: Headers, no_excluded: bool) -> JsonResult {
         globals.retain(|g| !g.Excluded);
     }
 
-    Ok(Json(json!({
+    Json(json!({
         "EquivalentDomains": equivalent_domains,
         "GlobalEquivalentDomains": globals,
         "Object": "domains",
-    })))
+    }))
 }
 
 #[derive(Deserialize, Debug)]

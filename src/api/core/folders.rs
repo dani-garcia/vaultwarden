@@ -20,16 +20,16 @@ pub fn routes() -> Vec<rocket::Route> {
 }
 
 #[get("/folders")]
-fn get_folders(headers: Headers, conn: DbConn) -> JsonResult {
+fn get_folders(headers: Headers, conn: DbConn) -> Json<Value> {
     let folders = Folder::find_by_user(&headers.user.uuid, &conn);
 
     let folders_json: Vec<Value> = folders.iter().map(Folder::to_json).collect();
 
-    Ok(Json(json!({
+    Json(json!({
       "Data": folders_json,
       "Object": "list",
       "ContinuationToken": null,
-    })))
+    }))
 }
 
 #[get("/folders/<uuid>")]

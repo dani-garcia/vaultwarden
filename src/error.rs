@@ -38,11 +38,11 @@ use diesel::ConnectionError as DieselConErr;
 use diesel_migrations::RunMigrationsError as DieselMigErr;
 use diesel::r2d2::PoolError as R2d2Err;
 use handlebars::RenderError as HbErr;
-use jsonwebtoken::errors::Error as JWTErr;
+use jsonwebtoken::errors::Error as JwtErr;
 use regex::Error as RegexErr;
 use reqwest::Error as ReqErr;
 use serde_json::{Error as SerdeErr, Value};
-use std::io::Error as IOErr;
+use std::io::Error as IoErr;
 
 use std::time::SystemTimeError as TimeErr;
 use u2f::u2ferror::U2fError as U2fErr;
@@ -72,10 +72,10 @@ make_error! {
     R2d2Error(R2d2Err):   _has_source, _api_error,
     U2fError(U2fErr):     _has_source, _api_error,
     SerdeError(SerdeErr): _has_source, _api_error,
-    JWTError(JWTErr):     _has_source, _api_error,
+    JWtError(JwtErr):     _has_source, _api_error,
     TemplError(HbErr):    _has_source, _api_error,
     //WsError(ws::Error): _has_source, _api_error,
-    IOError(IOErr):       _has_source, _api_error,
+    IoError(IoErr):       _has_source, _api_error,
     TimeError(TimeErr):   _has_source, _api_error,
     ReqError(ReqErr):     _has_source, _api_error,
     RegexError(RegexErr): _has_source, _api_error,
@@ -152,6 +152,7 @@ impl<S> MapResult<S> for Option<S> {
     }
 }
 
+#[allow(clippy::unnecessary_wraps)]
 const fn _has_source<T>(e: T) -> Option<T> {
     Some(e)
 }

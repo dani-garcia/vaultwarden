@@ -5,7 +5,7 @@ use rocket_contrib::json::Json;
 use serde_json::Value as JsonValue;
 
 use crate::{
-    api::{EmptyResult, JsonResult},
+    api::EmptyResult,
     auth::Headers,
     db::DbConn,
     Error, CONFIG,
@@ -31,7 +31,7 @@ fn websockets_err() -> EmptyResult {
 }
 
 #[post("/hub/negotiate")]
-fn negotiate(_headers: Headers, _conn: DbConn) -> JsonResult {
+fn negotiate(_headers: Headers, _conn: DbConn) -> Json<JsonValue> {
     use crate::crypto;
     use data_encoding::BASE64URL;
 
@@ -47,10 +47,10 @@ fn negotiate(_headers: Headers, _conn: DbConn) -> JsonResult {
     // Rocket SSE support: https://github.com/SergioBenitez/Rocket/issues/33
     // {"transport":"ServerSentEvents", "transferFormats":["Text"]},
     // {"transport":"LongPolling", "transferFormats":["Text","Binary"]}
-    Ok(Json(json!({
+    Json(json!({
         "connectionId": conn_id,
         "availableTransports": available_transports
-    })))
+    }))
 }
 
 //
@@ -120,7 +120,7 @@ fn convert_option<T: Into<Value>>(option: Option<T>) -> Value {
 }
 
 // Server WebSocket handler
-pub struct WSHandler {
+pub struct WsHandler {
     out: Sender,
     user_uuid: Option<String>,
     users: WebSocketUsers,
@@ -140,7 +140,7 @@ const PING: Token = Token(1);
 
 const ACCESS_TOKEN_KEY: &str = "access_token=";
 
-impl WSHandler {
+impl WsHandler {
     fn err(&self, msg: &'static str) -> ws::Result<()> {
         self.out.close(ws::CloseCode::Invalid)?;
 
@@ -166,8 +166,8 @@ impl WSHandler {
         if let Some(params) = path.split('?').nth(1) {
             let params_iter = params.split('&').take(1);
             for val in params_iter {
-                if val.starts_with(ACCESS_TOKEN_KEY) {
-                    return Some(val[ACCESS_TOKEN_KEY.len()..].into());
+                if let Some(stripped) = val.strip_prefix(ACCESS_TOKEN_KEY) {
+                    return Some(stripped.into());
                 }
             }
         };
@@ -176,7 +176,7 @@ impl WSHandler {
     }
 }
 
-impl Handler for WSHandler {
+impl Handler for WsHandler {
     fn on_open(&mut self, hs: Handshake) -> ws::Result<()> {
         // Path == "/notifications/hub?id=<id>==&access_token=<access_token>"
         //
@@ -240,13 +240,13 @@ impl Handler for WSHandler {
     }
 }
 
-struct WSFactory {
+struct WsFactory {
     pub users: WebSocketUsers,
 }
 
-impl WSFactory {
+impl WsFactory {
     pub fn init() -> Self {
-        WSFactory {
+        WsFactory {
             users: WebSocketUsers {
                 map: Arc::new(CHashMap::new()),
             },
@@ -254,11 +254,11 @@ impl WSFactory {
     }
 }
 
-impl Factory for WSFactory {
-    type Handler = WSHandler;
+impl Factory for WsFactory {
+    type Handler = WsHandler;
 
     fn connection_made(&mut self, out: Sender) -> Self::Handler {
-        WSHandler {
+        WsHandler {
             out,
             user_uuid: None,
             users: self.users.clone(),
@@ -405,15 +405,17 @@ use rocket::State;
 pub type Notify<'a> = State<'a, WebSocketUsers>;
 
 pub fn start_notification_server() -> WebSocketUsers {
-    let factory = WSFactory::init();
+    let factory = WsFactory::init();
     let users = factory.users.clone();
 
     if CONFIG.websocket_enabled() {
         thread::spawn(move || {
-            let mut settings = ws::Settings::default();
-            settings.max_connections = 500;
-            settings.queue_size = 2;
-            settings.panic_on_internal = false;
+            let settings = ws::Settings {
+                max_connections: 500,
+                queue_size: 2,
+                panic_on_internal: false,
+                ..Default::default()
+            };
 
             ws::Builder::new()
                 .with_settings(settings)

@@ -352,10 +352,12 @@ fn get_favicons_node(node: &std::rc::Rc<markup5ever_rcdom::Node>, icons: &mut Ve
                 }
             }
 
-            if has_rel && href.is_some() {
-                if let Ok(full_href) = url.join(&href.unwrap()).map(|h| h.into_string()) {
-                    let priority = get_icon_priority(&full_href, sizes);
-                    icons.push(Icon::new(priority, full_href));
+            if has_rel {
+                if let Some(inner_href) = href {
+                    if let Ok(full_href) = url.join(&inner_href).map(|h| h.into_string()) {
+                        let priority = get_icon_priority(&full_href, sizes);
+                        icons.push(Icon::new(priority, full_href));
+                    }
                 }
             }
         }

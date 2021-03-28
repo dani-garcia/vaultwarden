@@ -84,7 +84,7 @@ struct SyncData {
 }
 
 #[get("/sync?<data..>")]
-fn sync(data: Form<SyncData>, headers: Headers, conn: DbConn) -> JsonResult {
+fn sync(data: Form<SyncData>, headers: Headers, conn: DbConn) -> Json<Value> {
     let user_json = headers.user.to_json(&conn);
 
     let folders = Folder::find_by_user(&headers.user.uuid, &conn);
@@ -113,10 +113,10 @@ fn sync(data: Form<SyncData>, headers: Headers, conn: DbConn) -> JsonResult {
     let domains_json = if data.exclude_domains {
         Value::Null
     } else {
-        api::core::_get_eq_domains(headers, true).unwrap().into_inner()
+        api::core::_get_eq_domains(headers, true).into_inner()
     };
 
-    Ok(Json(json!({
+    Json(json!({
         "Profile": user_json,
         "Folders": folders_json,
         "Collections": collections_json,
@@ -125,11 +125,11 @@ fn sync(data: Form<SyncData>, headers: Headers, conn: DbConn) -> JsonResult {
         "Domains": domains_json,
         "Sends": sends_json,
         "Object": "sync"
-    })))
+    }))
 }
 
 #[get("/ciphers")]
-fn get_ciphers(headers: Headers, conn: DbConn) -> JsonResult {
+fn get_ciphers(headers: Headers, conn: DbConn) -> Json<Value> {
     let ciphers = Cipher::find_by_user_visible(&headers.user.uuid, &conn);
 
     let ciphers_json: Vec<Value> = ciphers
@@ -137,11 +137,11 @@ fn get_ciphers(headers: Headers, conn: DbConn) -> JsonResult {
         .map(|c| c.to_json(&headers.host, &headers.user.uuid, &conn))
         .collect();
 
-    Ok(Json(json!({
+    Json(json!({
       "Data": ciphers_json,
       "Object": "list",
       "ContinuationToken": null
-    })))
+    }))
 }
 
 #[get("/ciphers/<uuid>")]
