@@ -2,7 +2,7 @@
     <div id="diagnostics-block" class="my-3 p-3 bg-white rounded shadow">
         <h6 class="border-bottom pb-2 mb-2">Diagnostics</h6>
 
-        <h3>Version</h3>
+        <h3>Versions</h3>
         <div class="row">
             <div class="col-md">
                 <dl class="row">
@@ -35,6 +35,10 @@
                         <span id="web-latest">{{diagnostics.latest_web_build}}</span>
                     </dd>
                     {{/unless}}
+                    <dt class="col-sm-5">Database</dt>
+                    <dd class="col-sm-7">
+                        <span><b>{{diagnostics.db_type}}:</b> {{diagnostics.db_version}}</span>
+                    </dd>
                 </dl>
             </div>
         </div>
@@ -46,35 +50,65 @@
                     <dt class="col-sm-5">Running within Docker</dt>
                     <dd class="col-sm-7">
                     {{#if diagnostics.running_within_docker}}
-                        <span id="running-docker" class="d-block"><b>Yes</b></span>
+                        <span class="d-block"><b>Yes</b></span>
                     {{/if}}
                     {{#unless diagnostics.running_within_docker}}
-                        <span id="running-docker" class="d-block"><b>No</b></span>
+                        <span class="d-block"><b>No</b></span>
                     {{/unless}}
                     </dd>
-                    <dt class="col-sm-5">Uses a proxy</dt>
+                    <dt class="col-sm-5">Uses a reverse proxy</dt>
                     <dd class="col-sm-7">
-                    {{#if diagnostics.uses_proxy}}
-                        <span id="running-docker" class="d-block"><b>Yes</b></span>
+                    {{#if diagnostics.ip_header_exists}}
+                        <span class="d-block" title="IP Header found."><b>Yes</b></span>
                     {{/if}}
-                    {{#unless diagnostics.uses_proxy}}
-                        <span id="running-docker" class="d-block"><b>No</b></span>
+                    {{#unless diagnostics.ip_header_exists}}
+                        <span class="d-block" title="No IP Header found."><b>No</b></span>
                     {{/unless}}
                     </dd>
+                    {{!-- Only show this if the IP Header Exists --}}
+                    {{#if diagnostics.ip_header_exists}}
+                    <dt class="col-sm-5">IP header
+                    {{#if diagnostics.ip_header_match}}
+                        <span class="badge badge-success" title="IP_HEADER config seems to be valid.">Match</span>
+                    {{/if}}
+                    {{#unless diagnostics.ip_header_match}}
+                        <span class="badge badge-danger" title="IP_HEADER config seems to be invalid. IP's in the log could be invalid. Please fix.">No Match</span>
+                    {{/unless}}
+                    </dt>
+                    <dd class="col-sm-7">
+                    {{#if diagnostics.ip_header_match}}
+                        <span class="d-block"><b>Config/Server:</b> {{ diagnostics.ip_header_name }}</span>
+                    {{/if}}
+                    {{#unless diagnostics.ip_header_match}}
+                        <span class="d-block"><b>Config:</b> {{ diagnostics.ip_header_config }}</span>
+                        <span class="d-block"><b>Server:</b> {{ diagnostics.ip_header_name }}</span>
+                    {{/unless}}
+                    </dd>
+                    {{/if}}
+                    {{!-- End if IP Header Exists --}}
                     <dt class="col-sm-5">Internet access
                     {{#if diagnostics.has_http_access}}
-                        <span class="badge badge-success" id="internet-success" title="We have internet access!">Ok</span>
+                        <span class="badge badge-success" title="We have internet access!">Ok</span>
                     {{/if}}
                     {{#unless diagnostics.has_http_access}}
-                        <span class="badge badge-danger" id="internet-warning" title="There seems to be no internet access. Please fix.">Error</span>
+                        <span class="badge badge-danger" title="There seems to be no internet access. Please fix.">Error</span>
                     {{/unless}}
                     </dt>
                     <dd class="col-sm-7">
                     {{#if diagnostics.has_http_access}}
-                        <span id="running-docker" class="d-block"><b>Yes</b></span>
+                        <span class="d-block"><b>Yes</b></span>
                     {{/if}}
                     {{#unless diagnostics.has_http_access}}
-                        <span id="running-docker" class="d-block"><b>No</b></span>
+                        <span class="d-block"><b>No</b></span>
+                    {{/unless}}
+                    </dd>
+                    <dt class="col-sm-5">Internet access via a proxy</dt>
+                    <dd class="col-sm-7">
+                    {{#if diagnostics.uses_proxy}}
+                        <span class="d-block" title="Internet access goes via a proxy (HTTPS_PROXY or HTTP_PROXY is configured)."><b>Yes</b></span>
+                    {{/if}}
+                    {{#unless diagnostics.uses_proxy}}
+                        <span class="d-block" title="We have direct internet access, no outgoing proxy configured."><b>No</b></span>
                     {{/unless}}
                     </dd>
                     <dt class="col-sm-5">DNS (github.com)
@@ -263,16 +297,18 @@
         supportString += "* Bitwarden_rs version: v{{ version }}\n";
         supportString += "* Web-vault version: v{{ diagnostics.web_vault_version }}\n";
         supportString += "* Running within Docker: {{ diagnostics.running_within_docker }}\n";
+        supportString += "* Uses a reverse proxy: {{ diagnostics.ip_header_exists }}\n";
+        {{#if diagnostics.ip_header_exists}}
+        supportString += "* IP Header check: {{ diagnostics.ip_header_match }} ({{ diagnostics.ip_header_name }})\n";
+        {{/if}}
         supportString += "* Internet access: {{ diagnostics.has_http_access }}\n";
-        supportString += "* Uses a proxy: {{ diagnostics.uses_proxy }}\n";
+        supportString += "* Internet access via a proxy: {{ diagnostics.uses_proxy }}\n";
         supportString += "* DNS Check: " + dnsCheck + "\n";
         supportString += "* Time Check: " + timeCheck + "\n";
         supportString += "* Domain Configuration Check: " + domainCheck + "\n";
         supportString += "* HTTPS Check: " + httpsCheck + "\n";
         supportString += "* Database type: {{ diagnostics.db_type }}\n";
-        {{#case diagnostics.db_type "MySQL" "PostgreSQL"}}
-        supportString += "* Database version: [PLEASE PROVIDE DATABASE VERSION]\n";
-        {{/case}}
+        supportString += "* Database version: {{ diagnostics.db_version }}\n";
         supportString += "* Clients used: \n";
         supportString += "* Reverse proxy and version: \n";
         supportString += "* Other relevant information: \n";
