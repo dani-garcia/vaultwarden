@@ -18,8 +18,6 @@ pub fn routes() -> Vec<Route> {
     routes![icon]
 }
 
-const ALLOWED_CHARS: &str = "_-.";
-
 static CLIENT: Lazy<Client> = Lazy::new(|| {
     // Generate the default headers
     let mut default_headers = header::HeaderMap::new();
@@ -45,13 +43,18 @@ static ICON_SIZE_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?x)(\d+)\D*(\d+
 static ICON_BLACKLIST_REGEX: Lazy<RwLock<HashMap<String, Regex>>> = Lazy::new(|| RwLock::new(HashMap::new()));
 
 #[get("/<domain>/icon.png")]
-fn icon(domain: String) -> Option<Cached<Content<Vec<u8>>>> {
+fn icon(domain: String) -> Cached<Content<Vec<u8>>> {
+    const FALLBACK_ICON: &[u8] = include_bytes!("../static/images/fallback-icon.png");
+
     if !is_valid_domain(&domain) {
         warn!("Invalid domain: {}", domain);
-        return None;
+        return Cached::ttl(Content(ContentType::new("image", "png"), FALLBACK_ICON.to_vec()), CONFIG.icon_cache_negttl());
     }
 
-    get_icon(&domain).map(|icon| Cached::ttl(Content(ContentType::new("image", "x-icon"), icon), CONFIG.icon_cache_ttl()))
+    match get_icon(&domain) {
+        Some(i) => Cached::ttl(Content(ContentType::new("image", "x-icon"), i), CONFIG.icon_cache_ttl()),
+        _ => Cached::ttl(Content(ContentType::new("image", "png"), FALLBACK_ICON.to_vec()), CONFIG.icon_cache_negttl()),
+    }
 }
 
 /// Returns if the domain provided is valid or not.
@@ -59,6 +62,8 @@ fn icon(domain: String) -> Option<Cached<Content<Vec<u8>>>> {
 /// This does some manual checks and makes use of Url to do some basic checking.
 /// domains can't be larger then 63 characters (not counting multiple subdomains) according to the RFC's, but we limit the total size to 255.
 fn is_valid_domain(domain: &str) -> bool {
+    const ALLOWED_CHARS: &str = "_-.";
+
     // If parsing the domain fails using Url, it will not work with reqwest.
     if let Err(parse_error) = Url::parse(format!("https://{}", domain).as_str()) {
         debug!("Domain parse error: '{}' - {:?}", domain, parse_error);
@@ -486,10 +491,10 @@ fn get_icon_url(domain: &str) -> Result<IconUrlResult, Error> {
     iconlist.sort_by_key(|x| x.priority);
 
     // There always is an icon in the list, so no need to check if it exists, and just return the first one
-    Ok(IconUrlResult{
+    Ok(IconUrlResult {
         iconlist,
         cookies: cookie_str,
-        referer
+        referer,
     })
 }
 
@@ -510,9 +515,7 @@ fn get_page_with_cookies(url: &str, cookie_str: &str, referer: &str) -> Result<R
         client = client.header("Referer", referer)
     }
 
-    client.send()?
-        .error_for_status()
-        .map_err(Into::into)
+    client.send()?.error_for_status().map_err(Into::into)
 }
 
 /// Returns a Integer with the priority of the type of the icon which to prefer.
@@ -625,7 +628,7 @@ fn download_icon(domain: &str) -> Result<Vec<u8>, Error> {
                     info!("Downloaded icon from {}", icon.href);
                     res.copy_to(&mut buffer)?;
                     break;
-                },
+                }
                 _ => warn!("Download failed for {}", icon.href),
             };
         }
