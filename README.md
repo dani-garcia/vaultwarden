@@ -57,5 +57,33 @@ If you prefer to chat, we're usually hanging around at [#bitwarden_rs:matrix.org
 ### Sponsors
 Thanks for your contribution to the project!
 
-- [@ChonoN](https://github.com/ChonoN)
-- [@themightychris](https://github.com/themightychris)
+<table>
+  <tr>
+    <td align="center">
+      <a href="https://github.com/netDpay">
+        <img src="https://avatars.githubusercontent.com/u/77323954?s=75&v=4" width="75px;" alt="netDpay"/>
+        <br />
+        <sub><b>netDpay</b></sub>
+      </a>
+  </td>
+  </tr>
+</table>
+
+<br/>
+
+<table>
+  <tr>
+    <td align="center">
+      <a href="https://github.com/ChonoN" style="width: 75px">
+        <sub><b>ChonoN</b></sub>
+      </a>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+       <a href="https://github.com/themightychris">
+        <sub><b>themightychris</b></sub>
+      </a>
+    </td>
+  </tr>
+</table>
