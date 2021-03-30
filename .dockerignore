@@ -4,6 +4,8 @@ target
 # Data folder
 data
 .env
+.env.template
+.gitattributes
 
 # IDE files
 .vscode
