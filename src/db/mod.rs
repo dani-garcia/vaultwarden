@@ -241,15 +241,15 @@ pub fn backup_database() -> Result<(), Error> {
 }
 
 
-use diesel::sql_types::Text;
-#[derive(QueryableByName,Debug)]
-struct SqlVersion {
-    #[sql_type = "Text"]
-    version: String,
-}
-
 /// Get the SQL Server version
 pub fn get_sql_server_version(conn: &DbConn) -> String {
+    use diesel::sql_types::Text;
+    #[derive(QueryableByName)]
+    struct SqlVersion {
+        #[sql_type = "Text"]
+        version: String,
+    }
+
     db_run! {@raw conn:
         postgresql, mysql {
             match diesel::sql_query("SELECT version() AS version;").get_result::<SqlVersion>(conn).ok() {
