@@ -174,8 +174,8 @@ impl OrgPolicy {
     /// and the user is not an owner or admin of that org. This is only useful for checking
     /// applicability of policy types that have these particular semantics.
     pub fn is_applicable_to_user(user_uuid: &str, policy_type: OrgPolicyType, conn: &DbConn) -> bool {
+        // Returns confirmed users only.
         for policy in OrgPolicy::find_by_user(user_uuid, conn) {
-            // Returns confirmed users only.
             if policy.enabled && policy.has_type(policy_type) {
                 let org_uuid = &policy.org_uuid;
                 if let Some(user) = UserOrganization::find_by_user_and_org(user_uuid, org_uuid, conn) {

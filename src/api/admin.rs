@@ -142,8 +142,12 @@ fn admin_url(referer: Referer) -> String {
 fn admin_login(flash: Option<FlashMessage>) -> ApiResult<Html<String>> {
     // If there is an error, show it
     let msg = flash.map(|msg| format!("{}: {}", msg.name(), msg.msg()));
-    let json =
-        json!({"page_content": "admin/login", "version": VERSION, "error": msg, "urlpath": CONFIG.domain_path()});
+    let json = json!({
+        "page_content": "admin/login",
+        "version": VERSION,
+        "error": msg,
+        "urlpath": CONFIG.domain_path()
+    });
 
     // Return the page
     let text = CONFIG.render_template(BASE_TEMPLATE, &json)?;
