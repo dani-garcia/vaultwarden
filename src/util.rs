@@ -28,7 +28,10 @@ impl Fairing for AppHeaders {
         res.set_raw_header("X-Frame-Options", "SAMEORIGIN");
         res.set_raw_header("X-Content-Type-Options", "nosniff");
         res.set_raw_header("X-XSS-Protection", "1; mode=block");
-        let csp = format!("frame-ancestors 'self' chrome-extension://nngceckbapebfimnlniiiahkandclblb moz-extension://* {};", CONFIG.allowed_iframe_ancestors());
+        let csp = format!(
+            "frame-ancestors 'self' chrome-extension://nngceckbapebfimnlniiiahkandclblb moz-extension://* {};",
+            CONFIG.allowed_iframe_ancestors()
+        );
         res.set_raw_header("Content-Security-Policy", csp);
 
         // Disable cache unless otherwise specified
@@ -293,8 +296,7 @@ where
 
 use std::env;
 
-pub fn get_env_str_value(key: &str) -> Option<String>
-{
+pub fn get_env_str_value(key: &str) -> Option<String> {
     let key_file = format!("{}_FILE", key);
     let value_from_env = env::var(key);
     let value_file = env::var(&key_file);
@@ -304,9 +306,9 @@ pub fn get_env_str_value(key: &str) -> Option<String>
         (Ok(v_env), Err(_)) => Some(v_env),
         (Err(_), Ok(v_file)) => match fs::read_to_string(v_file) {
             Ok(content) => Some(content.trim().to_string()),
-            Err(e) => panic!("Failed to load {}: {:?}", key, e)
+            Err(e) => panic!("Failed to load {}: {:?}", key, e),
         },
-        _ => None
+        _ => None,
     }
 }
 

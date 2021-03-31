@@ -2,8 +2,8 @@ mod accounts;
 mod ciphers;
 mod folders;
 mod organizations;
-pub mod two_factor;
 mod sends;
+pub mod two_factor;
 
 pub use sends::start_send_deletion_scheduler;
 
@@ -32,9 +32,9 @@ pub fn routes() -> Vec<Route> {
 //
 // Move this somewhere else
 //
+use rocket::response::Response;
 use rocket::Route;
 use rocket_contrib::json::Json;
-use rocket::response::Response;
 use serde_json::Value;
 
 use crate::{

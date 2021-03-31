@@ -142,7 +142,8 @@ fn admin_url(referer: Referer) -> String {
 fn admin_login(flash: Option<FlashMessage>) -> ApiResult<Html<String>> {
     // If there is an error, show it
     let msg = flash.map(|msg| format!("{}: {}", msg.name(), msg.msg()));
-    let json = json!({"page_content": "admin/login", "version": VERSION, "error": msg, "urlpath": CONFIG.domain_path()});
+    let json =
+        json!({"page_content": "admin/login", "version": VERSION, "error": msg, "urlpath": CONFIG.domain_path()});
 
     // Return the page
     let text = CONFIG.render_template(BASE_TEMPLATE, &json)?;
@@ -329,7 +330,8 @@ fn get_users_json(_token: AdminToken, conn: DbConn) -> Json<Value> {
 fn users_overview(_token: AdminToken, conn: DbConn) -> ApiResult<Html<String>> {
     let users = User::get_all(&conn);
     let dt_fmt = "%Y-%m-%d %H:%M:%S %Z";
-    let users_json: Vec<Value> = users.iter()
+    let users_json: Vec<Value> = users
+        .iter()
         .map(|u| {
             let mut usr = u.to_json(&conn);
             usr["cipher_count"] = json!(Cipher::count_owned_by_user(&u.uuid, &conn));
@@ -339,7 +341,7 @@ fn users_overview(_token: AdminToken, conn: DbConn) -> ApiResult<Html<String>> {
             usr["created_at"] = json!(format_naive_datetime_local(&u.created_at, dt_fmt));
             usr["last_active"] = match u.last_active(&conn) {
                 Some(dt) => json!(format_naive_datetime_local(&dt, dt_fmt)),
-                None => json!("Never")
+                None => json!("Never"),
             };
             usr
         })
@@ -424,7 +426,6 @@ fn update_user_org_type(data: Json<UserOrgTypeData>, _token: AdminToken, conn: D
     user_to_edit.save(&conn)
 }
 
-
 #[post("/users/update_revision")]
 fn update_revision_users(_token: AdminToken, conn: DbConn) -> EmptyResult {
     User::update_all_revisions(&conn)
@@ -433,7 +434,8 @@ fn update_revision_users(_token: AdminToken, conn: DbConn) -> EmptyResult {
 #[get("/organizations/overview")]
 fn organizations_overview(_token: AdminToken, conn: DbConn) -> ApiResult<Html<String>> {
     let organizations = Organization::get_all(&conn);
-    let organizations_json: Vec<Value> = organizations.iter()
+    let organizations_json: Vec<Value> = organizations
+        .iter()
         .map(|o| {
             let mut org = o.to_json();
             org["user_count"] = json!(UserOrganization::count_by_org(&o.uuid, &conn));
@@ -524,7 +526,8 @@ fn diagnostics(_token: AdminToken, ip_header: IpHeader, conn: DbConn) -> ApiResu
     // TODO: Maybe we need to cache this using a LazyStatic or something. Github only allows 60 requests per hour, and we use 3 here already.
     let (latest_release, latest_commit, latest_web_build) = if has_http_access {
         (
-            match get_github_api::<GitRelease>("https://api.github.com/repos/dani-garcia/bitwarden_rs/releases/latest") {
+            match get_github_api::<GitRelease>("https://api.github.com/repos/dani-garcia/bitwarden_rs/releases/latest")
+            {
                 Ok(r) => r.tag_name,
                 _ => "-".to_string(),
             },
@@ -540,7 +543,9 @@ fn diagnostics(_token: AdminToken, ip_header: IpHeader, conn: DbConn) -> ApiResu
             if running_within_docker {
                 "-".to_string()
             } else {
-                match get_github_api::<GitRelease>("https://api.github.com/repos/dani-garcia/bw_web_builds/releases/latest") {
+                match get_github_api::<GitRelease>(
+                    "https://api.github.com/repos/dani-garcia/bw_web_builds/releases/latest",
+                ) {
                     Ok(r) => r.tag_name.trim_start_matches('v').to_string(),
                     _ => "-".to_string(),
                 }
@@ -552,7 +557,7 @@ fn diagnostics(_token: AdminToken, ip_header: IpHeader, conn: DbConn) -> ApiResu
 
     let ip_header_name = match &ip_header.0 {
         Some(h) => h,
-        _ => ""
+        _ => "",
     };
 
     let diagnostics_json = json!({

@@ -878,9 +878,7 @@ fn js_escape_helper<'reg, 'rc>(
         .param(0)
         .ok_or_else(|| RenderError::new("Param not found for helper \"js_escape\""))?;
 
-    let no_quote = h
-        .param(1)
-        .is_some();
+    let no_quote = h.param(1).is_some();
 
     let value = param
         .value()
@@ -888,7 +886,7 @@ fn js_escape_helper<'reg, 'rc>(
         .ok_or_else(|| RenderError::new("Param for helper \"js_escape\" is not a String"))?;
 
     let mut escaped_value = value.replace('\\', "").replace('\'', "\\x22").replace('\"', "\\x27");
-    if ! no_quote {
+    if !no_quote {
         escaped_value = format!("&quot;{}&quot;", escaped_value);
     }
 

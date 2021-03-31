@@ -2,14 +2,7 @@ use chrono::{NaiveDateTime, Utc};
 use serde_json::Value;
 
 use super::{
-    Attachment,
-    CollectionCipher,
-    Favorite,
-    FolderCipher,
-    Organization,
-    User,
-    UserOrgStatus,
-    UserOrgType,
+    Attachment, CollectionCipher, Favorite, FolderCipher, Organization, User, UserOrgStatus, UserOrgType,
     UserOrganization,
 };
 
@@ -90,17 +83,24 @@ impl Cipher {
             attachments.iter().map(|c| c.to_json(host)).collect()
         };
 
-        let fields_json = self.fields.as_ref().and_then(|s| serde_json::from_str(s).ok()).unwrap_or(Value::Null);
-        let password_history_json = self.password_history.as_ref().and_then(|s| serde_json::from_str(s).ok()).unwrap_or(Value::Null);
+        let fields_json = self
+            .fields
+            .as_ref()
+            .and_then(|s| serde_json::from_str(s).ok())
+            .unwrap_or(Value::Null);
+        let password_history_json = self
+            .password_history
+            .as_ref()
+            .and_then(|s| serde_json::from_str(s).ok())
+            .unwrap_or(Value::Null);
 
-        let (read_only, hide_passwords) =
-            match self.get_access_restrictions(&user_uuid, conn) {
-                Some((ro, hp)) => (ro, hp),
-                None => {
-                    error!("Cipher ownership assertion failure");
-                    (true, true)
-                },
-            };
+        let (read_only, hide_passwords) = match self.get_access_restrictions(&user_uuid, conn) {
+            Some((ro, hp)) => (ro, hp),
+            None => {
+                error!("Cipher ownership assertion failure");
+                (true, true)
+            }
+        };
 
         // Get the type_data or a default to an empty json object '{}'.
         // If not passing an empty object, mobile clients will crash.

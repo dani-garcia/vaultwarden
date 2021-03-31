@@ -223,9 +223,8 @@ use crate::db::{
 };
 
 pub struct Host {
-    pub host: String
+    pub host: String,
 }
-
 
 impl<'a, 'r> FromRequest<'a, 'r> for Host {
     type Error = &'static str;
@@ -506,7 +505,11 @@ impl<'a, 'r> FromRequest<'a, 'r> for ManagerHeaders {
                             };
 
                             if !headers.org_user.has_full_access() {
-                                match CollectionUser::find_by_collection_and_user(&col_id, &headers.org_user.user_uuid, &conn) {
+                                match CollectionUser::find_by_collection_and_user(
+                                    &col_id,
+                                    &headers.org_user.user_uuid,
+                                    &conn,
+                                ) {
                                     Some(_) => (),
                                     None => err_handler!("The current user isn't a manager for this collection"),
                                 }

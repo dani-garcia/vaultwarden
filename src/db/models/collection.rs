@@ -1,6 +1,6 @@
 use serde_json::Value;
 
-use super::{Organization, UserOrgStatus, UserOrgType, UserOrganization, User, Cipher};
+use super::{Cipher, Organization, User, UserOrgStatus, UserOrgType, UserOrganization};
 
 db_object! {
     #[derive(Identifiable, Queryable, Insertable, Associations, AsChangeset)]
@@ -284,7 +284,13 @@ impl CollectionUser {
         }}
     }
 
-    pub fn save(user_uuid: &str, collection_uuid: &str, read_only: bool, hide_passwords: bool, conn: &DbConn) -> EmptyResult {
+    pub fn save(
+        user_uuid: &str,
+        collection_uuid: &str,
+        read_only: bool,
+        hide_passwords: bool,
+        conn: &DbConn,
+    ) -> EmptyResult {
         User::update_uuid_revision(&user_uuid, conn);
 
         db_run! { conn:

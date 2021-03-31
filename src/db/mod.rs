@@ -25,7 +25,6 @@ pub mod __mysql_schema;
 #[path = "schemas/postgresql/schema.rs"]
 pub mod __postgresql_schema;
 
-
 // This is used to generate the main DbConn and DbPool enums, which contain one variant for each database supported
 macro_rules! generate_connections {
     ( $( $name:ident: $ty:ty ),+ ) => {
@@ -110,7 +109,6 @@ impl DbConnType {
     }
 }
 
-
 #[macro_export]
 macro_rules! db_run {
     // Same for all dbs
@@ -154,7 +152,6 @@ macro_rules! db_run {
         }
     };
 }
-
 
 pub trait FromDb {
     type Output;
@@ -240,7 +237,6 @@ pub fn backup_database() -> Result<(), Error> {
     Ok(())
 }
 
-
 /// Get the SQL Server version
 pub fn get_sql_server_version(conn: &DbConn) -> String {
     use diesel::sql_types::Text;
@@ -308,8 +304,7 @@ mod sqlite_migrations {
 
         use diesel::{Connection, RunQueryDsl};
         // Make sure the database is up to date (create if it doesn't exist, or run the migrations)
-        let connection =
-            diesel::sqlite::SqliteConnection::establish(&crate::CONFIG.database_url())?;
+        let connection = diesel::sqlite::SqliteConnection::establish(&crate::CONFIG.database_url())?;
         // Disable Foreign Key Checks during migration
 
         // Scoped to a connection.
@@ -337,8 +332,7 @@ mod mysql_migrations {
     pub fn run_migrations() -> Result<(), super::Error> {
         use diesel::{Connection, RunQueryDsl};
         // Make sure the database is up to date (create if it doesn't exist, or run the migrations)
-        let connection =
-            diesel::mysql::MysqlConnection::establish(&crate::CONFIG.database_url())?;
+        let connection = diesel::mysql::MysqlConnection::establish(&crate::CONFIG.database_url())?;
         // Disable Foreign Key Checks during migration
 
         // Scoped to a connection/session.
@@ -359,8 +353,7 @@ mod postgresql_migrations {
     pub fn run_migrations() -> Result<(), super::Error> {
         use diesel::{Connection, RunQueryDsl};
         // Make sure the database is up to date (create if it doesn't exist, or run the migrations)
-        let connection =
-            diesel::pg::PgConnection::establish(&crate::CONFIG.database_url())?;
+        let connection = diesel::pg::PgConnection::establish(&crate::CONFIG.database_url())?;
         // Disable Foreign Key Checks during migration
 
         // FIXME: Per https://www.postgresql.org/docs/12/sql-set-constraints.html,

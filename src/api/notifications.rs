@@ -4,12 +4,7 @@ use rocket::Route;
 use rocket_contrib::json::Json;
 use serde_json::Value as JsonValue;
 
-use crate::{
-    api::EmptyResult,
-    auth::Headers,
-    db::DbConn,
-    Error, CONFIG,
-};
+use crate::{api::EmptyResult, auth::Headers, db::DbConn, Error, CONFIG};
 
 pub fn routes() -> Vec<Route> {
     routes![negotiate, websockets_err]
@@ -19,12 +14,18 @@ static SHOW_WEBSOCKETS_MSG: AtomicBool = AtomicBool::new(true);
 
 #[get("/hub")]
 fn websockets_err() -> EmptyResult {
-    if CONFIG.websocket_enabled() && SHOW_WEBSOCKETS_MSG.compare_exchange(true, false, Ordering::Relaxed, Ordering::Relaxed).is_ok() {
-        err!("
+    if CONFIG.websocket_enabled()
+        && SHOW_WEBSOCKETS_MSG
+            .compare_exchange(true, false, Ordering::Relaxed, Ordering::Relaxed)
+            .is_ok()
+    {
+        err!(
+            "
     ###########################################################
     '/notifications/hub' should be proxied to the websocket server or notifications won't work.
     Go to the Wiki for more info, or disable WebSockets setting WEBSOCKET_ENABLED=false.
-    ###########################################################################################\n")
+    ###########################################################################################\n"
+        )
     } else {
         Err(Error::empty())
     }
