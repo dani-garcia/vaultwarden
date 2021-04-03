@@ -354,6 +354,13 @@ fn schedule_jobs(pool: db::DbPool) {
             }));
         }
 
+        // Purge trashed items that are old enough to be auto-deleted.
+        if !CONFIG.trash_purge_schedule().is_empty() {
+            sched.add(Job::new(CONFIG.trash_purge_schedule().parse().unwrap(), || {
+                api::purge_trashed_ciphers(pool.clone());
+            }));
+        }
+
         // Periodically check for jobs to run. We probably won't need any
         // jobs that run more often than once a minute, so a default poll
         // interval of 30 seconds should be sufficient. Users who want to

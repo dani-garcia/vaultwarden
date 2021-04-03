@@ -13,7 +13,7 @@ use crate::{
     api::{self, EmptyResult, JsonResult, JsonUpcase, Notify, PasswordData, UpdateType},
     auth::Headers,
     crypto,
-    db::{models::*, DbConn},
+    db::{models::*, DbConn, DbPool},
     CONFIG,
 };
 
@@ -75,6 +75,15 @@ pub fn routes() -> Vec<Route> {
         post_collections_admin,
         put_collections_admin,
     ]
+}
+
+pub fn purge_trashed_ciphers(pool: DbPool) {
+    debug!("Purging trashed ciphers");
+    if let Ok(conn) = pool.get() {
+        Cipher::purge_trash(&conn);
+    } else {
+        error!("Failed to get DB connection while purging trashed ciphers")
+    }
 }
 
 #[derive(FromForm, Default)]

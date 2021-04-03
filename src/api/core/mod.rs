@@ -5,6 +5,7 @@ mod organizations;
 pub mod two_factor;
 mod sends;
 
+pub use ciphers::purge_trashed_ciphers;
 pub use sends::purge_sends;
 
 pub fn routes() -> Vec<Route> {
