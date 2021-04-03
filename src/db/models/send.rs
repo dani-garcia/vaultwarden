@@ -205,6 +205,13 @@ impl Send {
         }}
     }
 
+    /// Purge all sends that are past their deletion date.
+    pub fn purge(conn: &DbConn) {
+        for send in Self::find_by_past_deletion_date(&conn) {
+            send.delete(&conn).ok();
+        }
+    }
+
     pub fn update_users_revision(&self, conn: &DbConn) {
         match &self.user_uuid {
             Some(user_uuid) => {
@@ -221,12 +228,6 @@ impl Send {
             send.delete(&conn)?;
         }
         Ok(())
-    }
-
-    pub fn find_all(conn: &DbConn) -> Vec<Self> {
-        db_run! {conn: {
-            sends::table.load::<SendDb>(conn).expect("Error loading sends").from_db()
-        }}
     }
 
     pub fn find_by_access_id(access_id: &str, conn: &DbConn) -> Option<Self> {
@@ -268,6 +269,15 @@ impl Send {
         db_run! {conn: {
             sends::table
                 .filter(sends::organization_uuid.eq(org_uuid))
+                .load::<SendDb>(conn).expect("Error loading sends").from_db()
+        }}
+    }
+
+    pub fn find_by_past_deletion_date(conn: &DbConn) -> Vec<Self> {
+        let now = Utc::now().naive_utc();
+        db_run! {conn: {
+            sends::table
+                .filter(sends::deletion_date.lt(now))
                 .load::<SendDb>(conn).expect("Error loading sends").from_db()
         }}
     }

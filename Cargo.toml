@@ -73,6 +73,9 @@ chrono = { version = "0.4.19", features = ["serde"] }
 chrono-tz = "0.5.3"
 time = "0.2.26"
 
+# Job scheduler
+job_scheduler = "1.2.1"
+
 # TOTP library
 oath = "0.10.2"
 
@@ -136,3 +139,10 @@ rocket_contrib = { git = 'https://github.com/SergioBenitez/Rocket', rev = '263e3
 
 # For favicon extraction from main website
 data-url = { git = 'https://github.com/servo/rust-url', package="data-url", rev = '540ede02d0771824c0c80ff9f57fe8eff38b1291' }
+
+# The maintainer of the `job_scheduler` crate doesn't seem to have responded
+# to any issues or PRs for almost a year (as of April 2021). This hopefully
+# temporary fork updates Cargo.toml to use more up-to-date dependencies.
+# In particular, `cron` has since implemented parsing of some common syntax
+# that wasn't previously supported (https://github.com/zslayton/cron/pull/64).
+job_scheduler = { git = 'https://github.com/jjlin/job_scheduler', rev = 'ee023418dbba2bfe1e30a5fd7d937f9e33739806' }

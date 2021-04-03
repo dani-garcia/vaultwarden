@@ -316,6 +316,14 @@ make_config! {
         /// Websocket port
         websocket_port:         u16,    false,  def,    3012;
     },
+    jobs {
+        /// Job scheduler poll interval |> How often the job scheduler thread checks for jobs to run.
+        /// Set to 0 to globally disable scheduled jobs.
+        job_poll_interval_ms:   u64,    false,  def,    30_000;
+        /// Send purge schedule |> Cron schedule of the job that checks for Sends past their deletion date.
+        /// Defaults to hourly. Set blank to disable this job.
+        send_purge_schedule:    String, false,  def,    "0 0 * * * *".to_string();
+    },
 
     /// General settings
     settings {

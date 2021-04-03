@@ -9,7 +9,7 @@ use serde_json::Value;
 use crate::{
     api::{ApiResult, EmptyResult, JsonResult, JsonUpcase, Notify, UpdateType},
     auth::{Headers, Host},
-    db::{models::*, DbConn},
+    db::{models::*, DbConn, DbPool},
     CONFIG,
 };
 
@@ -27,21 +27,13 @@ pub fn routes() -> Vec<rocket::Route> {
     ]
 }
 
-pub fn start_send_deletion_scheduler(pool: crate::db::DbPool) {
-    std::thread::spawn(move || {
-        loop {
-            if let Ok(conn) = pool.get() {
-                info!("Initiating send deletion");
-                for send in Send::find_all(&conn) {
-                    if chrono::Utc::now().naive_utc() >= send.deletion_date {
-                        send.delete(&conn).ok();
-                    }
-                }
-            }
-
-            std::thread::sleep(std::time::Duration::from_secs(3600));
-        }
-    });
+pub fn purge_sends(pool: DbPool) {
+    debug!("Purging sends");
+    if let Ok(conn) = pool.get() {
+        Send::purge(&conn);
+    } else {
+        error!("Failed to get DB connection while purging sends")
+    }
 }
 
 #[derive(Deserialize)]
