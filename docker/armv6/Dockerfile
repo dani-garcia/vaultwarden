@@ -129,7 +129,6 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     curl \
     dumb-init \
-    sqlite3 \
     libmariadb-dev-compat \
     libpq5 \
     && rm -rf /var/lib/apt/lists/*

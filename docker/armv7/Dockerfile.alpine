@@ -86,7 +86,6 @@ RUN apk add --no-cache \
         openssl \
         curl \
         dumb-init \
-        sqlite \
         ca-certificates
 
 RUN mkdir /data

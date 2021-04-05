@@ -1,7 +1,7 @@
 use once_cell::sync::Lazy;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
-use std::{env, process::Command, time::Duration};
+use std::{env, time::Duration};
 
 use reqwest::{blocking::Client, header::USER_AGENT};
 use rocket::{
@@ -68,7 +68,6 @@ static CAN_BACKUP: Lazy<bool> = Lazy::new(|| {
     DbConnType::from_url(&CONFIG.database_url())
         .map(|t| t == DbConnType::sqlite)
         .unwrap_or(false)
-        && Command::new("sqlite3").arg("-version").status().is_ok()
 });
 
 #[get("/")]
@@ -502,9 +501,17 @@ fn diagnostics(_token: AdminToken, ip_header: IpHeader, conn: DbConn) -> ApiResu
     use std::net::ToSocketAddrs;
 
     // Get current running versions
-    let vault_version_path = format!("{}/{}", CONFIG.web_vault_folder(), "version.json");
-    let vault_version_str = read_file_string(&vault_version_path)?;
-    let web_vault_version: WebVaultVersion = serde_json::from_str(&vault_version_str)?;
+    let web_vault_version: WebVaultVersion = match read_file_string(&format!("{}/{}", CONFIG.web_vault_folder(), "bwrs-version.json")) {
+        Ok(s) => serde_json::from_str(&s)?,
+        _ => {
+            match read_file_string(&format!("{}/{}", CONFIG.web_vault_folder(), "version.json")) {
+                Ok(s) => serde_json::from_str(&s)?,
+                _ => {
+                    WebVaultVersion{version: String::from("Version file missing")}
+                },
+            }
+        },
+    };
 
     // Execute some environment checks
     let running_within_docker = is_running_in_docker();
@@ -557,9 +564,10 @@ fn diagnostics(_token: AdminToken, ip_header: IpHeader, conn: DbConn) -> ApiResu
 
     let diagnostics_json = json!({
         "dns_resolved": dns_resolved,
-        "web_vault_version": web_vault_version.version,
         "latest_release": latest_release,
         "latest_commit": latest_commit,
+        "web_vault_enabled": &CONFIG.web_vault_enabled(),
+        "web_vault_version": web_vault_version.version,
         "latest_web_build": latest_web_build,
         "running_within_docker": running_within_docker,
         "has_http_access": has_http_access,
@@ -571,6 +579,7 @@ fn diagnostics(_token: AdminToken, ip_header: IpHeader, conn: DbConn) -> ApiResu
         "db_type": *DB_TYPE,
         "db_version": get_sql_server_version(&conn),
         "admin_url": format!("{}/diagnostics", admin_url(Referer(None))),
+        "server_time_local": Local::now().format("%Y-%m-%d %H:%M:%S %Z").to_string(),
         "server_time": Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string(), // Run the date/time check as the last item to minimize the difference
     });
 
@@ -596,11 +605,11 @@ fn delete_config(_token: AdminToken) -> EmptyResult {
 }
 
 #[post("/config/backup_db")]
-fn backup_db(_token: AdminToken) -> EmptyResult {
+fn backup_db(_token: AdminToken, conn: DbConn) -> EmptyResult {
     if *CAN_BACKUP {
-        backup_database()
+        backup_database(&conn)
     } else {
-        err!("Can't back up current DB (either it's not SQLite or the 'sqlite' binary is not present)");
+        err!("Can't back up current DB (Only SQLite supports this feature)");
     }
 }
 
