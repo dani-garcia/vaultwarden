@@ -65,9 +65,7 @@ static DB_TYPE: Lazy<&str> = Lazy::new(|| {
 });
 
 static CAN_BACKUP: Lazy<bool> = Lazy::new(|| {
-    DbConnType::from_url(&CONFIG.database_url())
-        .map(|t| t == DbConnType::sqlite)
-        .unwrap_or(false)
+    DbConnType::from_url(&CONFIG.database_url()).map(|t| t == DbConnType::sqlite).unwrap_or(false)
         && Command::new("sqlite3").arg("-version").status().is_ok()
 });
 
@@ -171,10 +169,7 @@ fn post_admin_login(
     // If the token is invalid, redirect to login page
     if !_validate_token(&data.token) {
         error!("Invalid admin token. IP: {}", ip.ip);
-        Err(Flash::error(
-            Redirect::to(admin_url(referer)),
-            "Invalid admin token, please try again.",
-        ))
+        Err(Flash::error(Redirect::to(admin_url(referer)), "Invalid admin token, please try again."))
     } else {
         // If the token received is valid, generate JWT and save it as a cookie
         let claims = generate_admin_claims();

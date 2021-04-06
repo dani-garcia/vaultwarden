@@ -314,9 +314,7 @@ mod sqlite_migrations {
 
         // Turn on WAL in SQLite
         if crate::CONFIG.enable_db_wal() {
-            diesel::sql_query("PRAGMA journal_mode=wal")
-                .execute(&connection)
-                .expect("Failed to turn on WAL");
+            diesel::sql_query("PRAGMA journal_mode=wal").execute(&connection).expect("Failed to turn on WAL");
         }
 
         embedded_migrations::run_with_output(&connection, &mut std::io::stdout())?;

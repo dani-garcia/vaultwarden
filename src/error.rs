@@ -198,11 +198,7 @@ impl<'r> Responder<'r> for Error {
 
         let code = Status::from_code(self.error_code).unwrap_or(Status::BadRequest);
 
-        Response::build()
-            .status(code)
-            .header(ContentType::JSON)
-            .sized_body(Cursor::new(format!("{}", self)))
-            .ok()
+        Response::build().status(code).header(ContentType::JSON).sized_body(Cursor::new(format!("{}", self))).ok()
     }
 }
 

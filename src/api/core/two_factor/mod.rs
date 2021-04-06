@@ -20,13 +20,7 @@ pub mod u2f;
 pub mod yubikey;
 
 pub fn routes() -> Vec<Route> {
-    let mut routes = routes![
-        get_twofactor,
-        get_recover,
-        recover,
-        disable_twofactor,
-        disable_twofactor_put,
-    ];
+    let mut routes = routes![get_twofactor, get_recover, recover, disable_twofactor, disable_twofactor_put,];
 
     routes.append(&mut authenticator::routes());
     routes.append(&mut duo::routes());

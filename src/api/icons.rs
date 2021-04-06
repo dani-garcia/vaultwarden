@@ -22,10 +22,7 @@ static CLIENT: Lazy<Client> = Lazy::new(|| {
     // Generate the default headers
     let mut default_headers = header::HeaderMap::new();
     default_headers.insert(header::USER_AGENT, header::HeaderValue::from_static("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.1.1 Safari/605.1.15"));
-    default_headers.insert(
-        header::ACCEPT_LANGUAGE,
-        header::HeaderValue::from_static("en-US,en;q=0.8"),
-    );
+    default_headers.insert(header::ACCEPT_LANGUAGE, header::HeaderValue::from_static("en-US,en;q=0.8"));
     default_headers.insert(header::CACHE_CONTROL, header::HeaderValue::from_static("no-cache"));
     default_headers.insert(header::PRAGMA, header::HeaderValue::from_static("no-cache"));
     default_headers.insert(
@@ -64,10 +61,7 @@ fn icon(domain: String) -> Cached<Content<Vec<u8>>> {
 
     match get_icon(&domain) {
         Some(i) => Cached::ttl(Content(ContentType::new("image", "x-icon"), i), CONFIG.icon_cache_ttl()),
-        _ => Cached::ttl(
-            Content(ContentType::new("image", "png"), FALLBACK_ICON.to_vec()),
-            CONFIG.icon_cache_negttl(),
-        ),
+        _ => Cached::ttl(Content(ContentType::new("image", "png"), FALLBACK_ICON.to_vec()), CONFIG.icon_cache_negttl()),
     }
 }
 
@@ -100,10 +94,7 @@ fn is_valid_domain(domain: &str) -> bool {
 
     for c in domain.chars() {
         if !c.is_alphanumeric() && !ALLOWED_CHARS.contains(c) {
-            debug!(
-                "Domain validation error: '{}' contains an invalid character '{}'",
-                domain, c
-            );
+            debug!("Domain validation error: '{}' contains an invalid character '{}'", domain, c);
             return false;
         }
     }
@@ -352,12 +343,20 @@ struct Icon {
 
 impl Icon {
     const fn new(priority: u8, href: String) -> Self {
-        Self { href, priority }
+        Self {
+            href,
+            priority,
+        }
     }
 }
 
 fn get_favicons_node(node: &std::rc::Rc<markup5ever_rcdom::Node>, icons: &mut Vec<Icon>, url: &Url) {
-    if let markup5ever_rcdom::NodeData::Element { name, attrs, .. } = &node.data {
+    if let markup5ever_rcdom::NodeData::Element {
+        name,
+        attrs,
+        ..
+    } = &node.data
+    {
         if name.local.as_ref() == "link" {
             let mut has_rel = false;
             let mut href = None;

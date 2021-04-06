@@ -17,11 +17,7 @@ use crate::{
 pub use crate::config::CONFIG;
 
 pub fn routes() -> Vec<Route> {
-    routes![
-        generate_authenticator,
-        activate_authenticator,
-        activate_authenticator_put,
-    ]
+    routes![generate_authenticator, activate_authenticator, activate_authenticator_put,]
 }
 
 #[post("/two-factor/get-authenticator", data = "<data>")]
@@ -163,22 +159,11 @@ pub fn validate_totp_code(user_uuid: &str, totp_code: u64, secret: &str, ip: &Cl
             twofactor.save(&conn)?;
             return Ok(());
         } else if generated == totp_code && time_step <= twofactor.last_used as i64 {
-            warn!(
-                "This or a TOTP code within {} steps back and forward has already been used!",
-                steps
-            );
-            err!(format!(
-                "Invalid TOTP code! Server time: {} IP: {}",
-                current_time.format("%F %T UTC"),
-                ip.ip
-            ));
+            warn!("This or a TOTP code within {} steps back and forward has already been used!", steps);
+            err!(format!("Invalid TOTP code! Server time: {} IP: {}", current_time.format("%F %T UTC"), ip.ip));
         }
     }
 
     // Else no valide code received, deny access
-    err!(format!(
-        "Invalid TOTP code! Server time: {} IP: {}",
-        current_time.format("%F %T UTC"),
-        ip.ip
-    ));
+    err!(format!("Invalid TOTP code! Server time: {} IP: {}", current_time.format("%F %T UTC"), ip.ip));
 }

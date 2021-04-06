@@ -348,7 +348,9 @@ impl User {
 
 impl Invitation {
     pub const fn new(email: String) -> Self {
-        Self { email }
+        Self {
+            email,
+        }
     }
 
     pub fn save(&self, conn: &DbConn) -> EmptyResult {

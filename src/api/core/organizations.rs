@@ -446,10 +446,8 @@ struct OrgIdData {
 #[get("/ciphers/organization-details?<data..>")]
 fn get_org_details(data: Form<OrgIdData>, headers: Headers, conn: DbConn) -> Json<Value> {
     let ciphers = Cipher::find_by_org(&data.organization_id, &conn);
-    let ciphers_json: Vec<Value> = ciphers
-        .iter()
-        .map(|c| c.to_json(&headers.host, &headers.user.uuid, &conn))
-        .collect();
+    let ciphers_json: Vec<Value> =
+        ciphers.iter().map(|c| c.to_json(&headers.host, &headers.user.uuid, &conn)).collect();
 
     Json(json!({
       "Data": ciphers_json,
@@ -904,16 +902,8 @@ fn post_org_import(
         .into_iter()
         .map(|cipher_data| {
             let mut cipher = Cipher::new(cipher_data.Type, cipher_data.Name.clone());
-            update_cipher_from_data(
-                &mut cipher,
-                cipher_data,
-                &headers,
-                false,
-                &conn,
-                &nt,
-                UpdateType::CipherCreate,
-            )
-            .ok();
+            update_cipher_from_data(&mut cipher, cipher_data, &headers, false, &conn, &nt, UpdateType::CipherCreate)
+                .ok();
             cipher
         })
         .collect();

@@ -127,14 +127,8 @@ impl<'r, R: Responder<'r>> Responder<'r> for Cached<R> {
 
 // Log all the routes from the main paths list, and the attachments endpoint
 // Effectively ignores, any static file route, and the alive endpoint
-const LOGGED_ROUTES: [&str; 6] = [
-    "/api",
-    "/admin",
-    "/identity",
-    "/icons",
-    "/notifications/hub/negotiate",
-    "/attachments",
-];
+const LOGGED_ROUTES: [&str; 6] =
+    ["/api", "/admin", "/identity", "/icons", "/notifications/hub/negotiate", "/attachments"];
 
 // Boolean is extra debug, when true, we ignore the whitelist above and also print the mounts
 pub struct BetterLogging(pub bool);
@@ -161,7 +155,11 @@ impl Fairing for BetterLogging {
         }
 
         let config = rocket.config();
-        let scheme = if config.tls_enabled() { "https" } else { "http" };
+        let scheme = if config.tls_enabled() {
+            "https"
+        } else {
+            "http"
+        };
         let addr = format!("{}://{}:{}", &scheme, &config.address, &config.port);
         info!(target: "start", "Rocket has launched from {}", addr);
     }

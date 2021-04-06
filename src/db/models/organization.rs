@@ -116,10 +116,7 @@ impl PartialOrd<UserOrgType> for i32 {
     }
 
     fn le(&self, other: &UserOrgType) -> bool {
-        matches!(
-            self.partial_cmp(other),
-            Some(Ordering::Less) | Some(Ordering::Equal) | None
-        )
+        matches!(self.partial_cmp(other), Some(Ordering::Less) | Some(Ordering::Equal) | None)
     }
 }
 
@@ -192,11 +189,9 @@ use crate::error::MapResult;
 /// Database methods
 impl Organization {
     pub fn save(&self, conn: &DbConn) -> EmptyResult {
-        UserOrganization::find_by_org(&self.uuid, conn)
-            .iter()
-            .for_each(|user_org| {
-                User::update_uuid_revision(&user_org.user_uuid, conn);
-            });
+        UserOrganization::find_by_org(&self.uuid, conn).iter().for_each(|user_org| {
+            User::update_uuid_revision(&user_org.user_uuid, conn);
+        });
 
         db_run! { conn:
             sqlite, mysql {

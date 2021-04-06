@@ -58,18 +58,12 @@ fn mailer() -> SmtpTransport {
 
     let smtp_client = match CONFIG.smtp_auth_mechanism() {
         Some(mechanism) => {
-            let allowed_mechanisms = [
-                SmtpAuthMechanism::Plain,
-                SmtpAuthMechanism::Login,
-                SmtpAuthMechanism::Xoauth2,
-            ];
+            let allowed_mechanisms = [SmtpAuthMechanism::Plain, SmtpAuthMechanism::Login, SmtpAuthMechanism::Xoauth2];
             let mut selected_mechanisms = vec![];
             for wanted_mechanism in mechanism.split(',') {
                 for m in &allowed_mechanisms {
                     if m.to_string().to_lowercase()
-                        == wanted_mechanism
-                            .trim_matches(|c| c == '"' || c == '\'' || c == ' ')
-                            .to_lowercase()
+                        == wanted_mechanism.trim_matches(|c| c == '"' || c == '\'' || c == ' ').to_lowercase()
                     {
                         selected_mechanisms.push(*m);
                     }
@@ -80,10 +74,7 @@ fn mailer() -> SmtpTransport {
                 smtp_client.authentication(selected_mechanisms)
             } else {
                 // Only show a warning, and return without setting an actual authentication mechanism
-                warn!(
-                    "No valid SMTP Auth mechanism found for '{}', using default values",
-                    mechanism
-                );
+                warn!("No valid SMTP Auth mechanism found for '{}', using default values", mechanism);
                 smtp_client
             }
         }
@@ -327,16 +318,9 @@ fn send_email(address: &str, subject: &str, body_html: String, body_text: String
 
     let smtp_from = &CONFIG.smtp_from();
     let email = Message::builder()
-        .message_id(Some(format!(
-            "<{}@{}>",
-            crate::util::get_uuid(),
-            smtp_from.split('@').collect::<Vec<&str>>()[1]
-        )))
+        .message_id(Some(format!("<{}@{}>", crate::util::get_uuid(), smtp_from.split('@').collect::<Vec<&str>>()[1])))
         .to(Mailbox::new(None, Address::from_str(&address)?))
-        .from(Mailbox::new(
-            Some(CONFIG.smtp_from_name()),
-            Address::from_str(smtp_from)?,
-        ))
+        .from(Mailbox::new(Some(CONFIG.smtp_from_name()), Address::from_str(smtp_from)?))
         .subject(subject)
         .multipart(MultiPart::alternative().singlepart(text).singlepart(html))?;
 

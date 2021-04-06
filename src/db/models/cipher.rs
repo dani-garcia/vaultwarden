@@ -83,16 +83,9 @@ impl Cipher {
             attachments.iter().map(|c| c.to_json(host)).collect()
         };
 
-        let fields_json = self
-            .fields
-            .as_ref()
-            .and_then(|s| serde_json::from_str(s).ok())
-            .unwrap_or(Value::Null);
-        let password_history_json = self
-            .password_history
-            .as_ref()
-            .and_then(|s| serde_json::from_str(s).ok())
-            .unwrap_or(Value::Null);
+        let fields_json = self.fields.as_ref().and_then(|s| serde_json::from_str(s).ok()).unwrap_or(Value::Null);
+        let password_history_json =
+            self.password_history.as_ref().and_then(|s| serde_json::from_str(s).ok()).unwrap_or(Value::Null);
 
         let (read_only, hide_passwords) = match self.get_access_restrictions(&user_uuid, conn) {
             Some((ro, hp)) => (ro, hp),
@@ -195,12 +188,10 @@ impl Cipher {
             None => {
                 // Belongs to Organization, need to update affected users
                 if let Some(ref org_uuid) = self.organization_uuid {
-                    UserOrganization::find_by_cipher_and_org(&self.uuid, &org_uuid, conn)
-                        .iter()
-                        .for_each(|user_org| {
-                            User::update_uuid_revision(&user_org.user_uuid, conn);
-                            user_uuids.push(user_org.user_uuid.clone())
-                        });
+                    UserOrganization::find_by_cipher_and_org(&self.uuid, &org_uuid, conn).iter().for_each(|user_org| {
+                        User::update_uuid_revision(&user_org.user_uuid, conn);
+                        user_uuids.push(user_org.user_uuid.clone())
+                    });
                 }
             }
         };

@@ -8,14 +8,8 @@ pub mod two_factor;
 pub use sends::start_send_deletion_scheduler;
 
 pub fn routes() -> Vec<Route> {
-    let mut mod_routes = routes![
-        clear_device_token,
-        put_device_token,
-        get_eq_domains,
-        post_eq_domains,
-        put_eq_domains,
-        hibp_breach,
-    ];
+    let mut mod_routes =
+        routes![clear_device_token, put_device_token, get_eq_domains, post_eq_domains, put_eq_domains, hibp_breach,];
 
     let mut routes = Vec::new();
     routes.append(&mut accounts::routes());
@@ -157,11 +151,7 @@ fn hibp_breach(username: String) -> JsonResult {
     if let Some(api_key) = crate::CONFIG.hibp_api_key() {
         let hibp_client = Client::builder().build()?;
 
-        let res = hibp_client
-            .get(&url)
-            .header(USER_AGENT, user_agent)
-            .header("hibp-api-key", api_key)
-            .send()?;
+        let res = hibp_client.get(&url).header(USER_AGENT, user_agent).header("hibp-api-key", api_key).send()?;
 
         // If we get a 404, return a 404, it means no breached accounts
         if res.status() == 404 {

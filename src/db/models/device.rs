@@ -74,26 +74,10 @@ impl Device {
         let time_now = Utc::now().naive_utc();
         self.updated_at = time_now;
 
-        let orgowner: Vec<_> = orgs
-            .iter()
-            .filter(|o| o.atype == 0)
-            .map(|o| o.org_uuid.clone())
-            .collect();
-        let orgadmin: Vec<_> = orgs
-            .iter()
-            .filter(|o| o.atype == 1)
-            .map(|o| o.org_uuid.clone())
-            .collect();
-        let orguser: Vec<_> = orgs
-            .iter()
-            .filter(|o| o.atype == 2)
-            .map(|o| o.org_uuid.clone())
-            .collect();
-        let orgmanager: Vec<_> = orgs
-            .iter()
-            .filter(|o| o.atype == 3)
-            .map(|o| o.org_uuid.clone())
-            .collect();
+        let orgowner: Vec<_> = orgs.iter().filter(|o| o.atype == 0).map(|o| o.org_uuid.clone()).collect();
+        let orgadmin: Vec<_> = orgs.iter().filter(|o| o.atype == 1).map(|o| o.org_uuid.clone()).collect();
+        let orguser: Vec<_> = orgs.iter().filter(|o| o.atype == 2).map(|o| o.org_uuid.clone()).collect();
+        let orgmanager: Vec<_> = orgs.iter().filter(|o| o.atype == 3).map(|o| o.org_uuid.clone()).collect();
 
         // Create the JWT claims struct, to send to the client
         use crate::auth::{encode_jwt, LoginJwtClaims, DEFAULT_VALIDITY, JWT_LOGIN_ISSUER};

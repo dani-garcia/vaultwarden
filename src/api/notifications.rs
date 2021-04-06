@@ -15,9 +15,7 @@ static SHOW_WEBSOCKETS_MSG: AtomicBool = AtomicBool::new(true);
 #[get("/hub")]
 fn websockets_err() -> EmptyResult {
     if CONFIG.websocket_enabled()
-        && SHOW_WEBSOCKETS_MSG
-            .compare_exchange(true, false, Ordering::Relaxed, Ordering::Relaxed)
-            .is_ok()
+        && SHOW_WEBSOCKETS_MSG.compare_exchange(true, false, Ordering::Relaxed, Ordering::Relaxed).is_ok()
     {
         err!(
             "
@@ -205,9 +203,7 @@ impl Handler for WsHandler {
         let handler_insert = self.out.clone();
         let handler_update = self.out.clone();
 
-        self.users
-            .map
-            .upsert(user_uuid, || vec![handler_insert], |ref mut v| v.push(handler_update));
+        self.users.map.upsert(user_uuid, || vec![handler_insert], |ref mut v| v.push(handler_update));
 
         // Schedule a ping to keep the connection alive
         self.out.timeout(PING_MS, PING)
@@ -217,7 +213,11 @@ impl Handler for WsHandler {
         if let Message::Text(text) = msg.clone() {
             let json = &text[..text.len() - 1]; // Remove last char
 
-            if let Ok(InitialMessage { protocol, version }) = from_str::<InitialMessage>(json) {
+            if let Ok(InitialMessage {
+                protocol,
+                version,
+            }) = from_str::<InitialMessage>(json)
+            {
                 if &protocol == "messagepack" && version == 1 {
                     return self.out.send(&INITIAL_RESPONSE[..]); // Respond to initial message
                 }
@@ -296,10 +296,7 @@ impl WebSocketUsers {
     // NOTE: The last modified date needs to be updated before calling these methods
     pub fn send_user_update(&self, ut: UpdateType, user: &User) {
         let data = create_update(
-            vec![
-                ("UserId".into(), user.uuid.clone().into()),
-                ("Date".into(), serialize_date(user.updated_at)),
-            ],
+            vec![("UserId".into(), user.uuid.clone().into()), ("Date".into(), serialize_date(user.updated_at))],
             ut,
         );
 

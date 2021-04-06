@@ -91,19 +91,15 @@ fn sync(data: Form<SyncData>, headers: Headers, conn: DbConn) -> Json<Value> {
     let folders_json: Vec<Value> = folders.iter().map(Folder::to_json).collect();
 
     let collections = Collection::find_by_user_uuid(&headers.user.uuid, &conn);
-    let collections_json: Vec<Value> = collections
-        .iter()
-        .map(|c| c.to_json_details(&headers.user.uuid, &conn))
-        .collect();
+    let collections_json: Vec<Value> =
+        collections.iter().map(|c| c.to_json_details(&headers.user.uuid, &conn)).collect();
 
     let policies = OrgPolicy::find_by_user(&headers.user.uuid, &conn);
     let policies_json: Vec<Value> = policies.iter().map(OrgPolicy::to_json).collect();
 
     let ciphers = Cipher::find_by_user_visible(&headers.user.uuid, &conn);
-    let ciphers_json: Vec<Value> = ciphers
-        .iter()
-        .map(|c| c.to_json(&headers.host, &headers.user.uuid, &conn))
-        .collect();
+    let ciphers_json: Vec<Value> =
+        ciphers.iter().map(|c| c.to_json(&headers.host, &headers.user.uuid, &conn)).collect();
 
     let sends = Send::find_by_user(&headers.user.uuid, &conn);
     let sends_json: Vec<Value> = sends.iter().map(|s| s.to_json()).collect();
@@ -130,10 +126,8 @@ fn sync(data: Form<SyncData>, headers: Headers, conn: DbConn) -> Json<Value> {
 fn get_ciphers(headers: Headers, conn: DbConn) -> Json<Value> {
     let ciphers = Cipher::find_by_user_visible(&headers.user.uuid, &conn);
 
-    let ciphers_json: Vec<Value> = ciphers
-        .iter()
-        .map(|c| c.to_json(&headers.host, &headers.user.uuid, &conn))
-        .collect();
+    let ciphers_json: Vec<Value> =
+        ciphers.iter().map(|c| c.to_json(&headers.host, &headers.user.uuid, &conn)).collect();
 
     Json(json!({
       "Data": ciphers_json,
@@ -583,11 +577,8 @@ fn post_collections_admin(
     }
 
     let posted_collections: HashSet<String> = data.CollectionIds.iter().cloned().collect();
-    let current_collections: HashSet<String> = cipher
-        .get_collections(&headers.user.uuid, &conn)
-        .iter()
-        .cloned()
-        .collect();
+    let current_collections: HashSet<String> =
+        cipher.get_collections(&headers.user.uuid, &conn).iter().cloned().collect();
 
     for collection in posted_collections.symmetric_difference(&current_collections) {
         match Collection::find_by_uuid(&collection, &conn) {
@@ -823,30 +814,25 @@ fn post_attachment(
                     let file_name = HEXLOWER.encode(&crypto::get_random(vec![0; 10]));
                     let path = base_path.join(&file_name);
 
-                    let size = match field
-                        .data
-                        .save()
-                        .memory_threshold(0)
-                        .size_limit(size_limit)
-                        .with_path(path.clone())
-                    {
-                        SaveResult::Full(SavedData::File(_, size)) => size as i32,
-                        SaveResult::Full(other) => {
-                            std::fs::remove_file(path).ok();
-                            error = Some(format!("Attachment is not a file: {:?}", other));
-                            return;
-                        }
-                        SaveResult::Partial(_, reason) => {
-                            std::fs::remove_file(path).ok();
-                            error = Some(format!("Attachment size limit exceeded with this file: {:?}", reason));
-                            return;
-                        }
-                        SaveResult::Error(e) => {
-                            std::fs::remove_file(path).ok();
-                            error = Some(format!("Error: {:?}", e));
-                            return;
-                        }
-                    };
+                    let size =
+                        match field.data.save().memory_threshold(0).size_limit(size_limit).with_path(path.clone()) {
+                            SaveResult::Full(SavedData::File(_, size)) => size as i32,
+                            SaveResult::Full(other) => {
+                                std::fs::remove_file(path).ok();
+                                error = Some(format!("Attachment is not a file: {:?}", other));
+                                return;
+                            }
+                            SaveResult::Partial(_, reason) => {
+                                std::fs::remove_file(path).ok();
+                                error = Some(format!("Attachment size limit exceeded with this file: {:?}", reason));
+                                return;
+                            }
+                            SaveResult::Error(e) => {
+                                std::fs::remove_file(path).ok();
+                                error = Some(format!("Error: {:?}", e));
+                                return;
+                            }
+                        };
 
                     let mut attachment = Attachment::new(file_name, cipher.uuid.clone(), name, size);
                     attachment.akey = attachment_key.clone();
@@ -878,11 +864,7 @@ fn post_attachment_admin(
     post_attachment(uuid, data, content_type, headers, conn, nt)
 }
 
-#[post(
-    "/ciphers/<uuid>/attachment/<attachment_id>/share",
-    format = "multipart/form-data",
-    data = "<data>"
-)]
+#[post("/ciphers/<uuid>/attachment/<attachment_id>/share", format = "multipart/form-data", data = "<data>")]
 fn post_attachment_share(
     uuid: String,
     attachment_id: String,

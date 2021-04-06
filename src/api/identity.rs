@@ -87,27 +87,18 @@ fn _password_login(data: ConnectData, conn: DbConn, ip: &ClientIp) -> JsonResult
     let username = data.username.as_ref().unwrap();
     let user = match User::find_by_mail(username, &conn) {
         Some(user) => user,
-        None => err!(
-            "Username or password is incorrect. Try again",
-            format!("IP: {}. Username: {}.", ip.ip, username)
-        ),
+        None => err!("Username or password is incorrect. Try again", format!("IP: {}. Username: {}.", ip.ip, username)),
     };
 
     // Check password
     let password = data.password.as_ref().unwrap();
     if !user.check_valid_password(password) {
-        err!(
-            "Username or password is incorrect. Try again",
-            format!("IP: {}. Username: {}.", ip.ip, username)
-        )
+        err!("Username or password is incorrect. Try again", format!("IP: {}. Username: {}.", ip.ip, username))
     }
 
     // Check if the user is disabled
     if !user.enabled {
-        err!(
-            "This user has been disabled",
-            format!("IP: {}. Username: {}.", ip.ip, username)
-        )
+        err!("This user has been disabled", format!("IP: {}. Username: {}.", ip.ip, username))
     }
 
     let now = Local::now();
@@ -137,10 +128,7 @@ fn _password_login(data: ConnectData, conn: DbConn, ip: &ClientIp) -> JsonResult
         }
 
         // We still want the login to fail until they actually verified the email address
-        err!(
-            "Please verify your email before trying again.",
-            format!("IP: {}. Username: {}.", ip.ip, username)
-        )
+        err!("Please verify your email before trying again.", format!("IP: {}. Username: {}.", ip.ip, username))
     }
 
     let (mut device, new_device) = get_device(&data, &conn, &user);
@@ -234,10 +222,7 @@ fn twofactor_auth(
 
     let twofactor_code = match data.two_factor_token {
         Some(ref code) => code,
-        None => err_json!(
-            _json_err_twofactor(&twofactor_ids, user_uuid, conn)?,
-            "2FA token not provided"
-        ),
+        None => err_json!(_json_err_twofactor(&twofactor_ids, user_uuid, conn)?, "2FA token not provided"),
     };
 
     let selected_twofactor = twofactors.into_iter().find(|tf| tf.atype == selected_id && tf.enabled);
@@ -266,10 +251,9 @@ fn twofactor_auth(
                 Some(ref code) if !CONFIG.disable_2fa_remember() && ct_eq(code, twofactor_code) => {
                     remember = 1; // Make sure we also return the token here, otherwise it will only remember the first time
                 }
-                _ => err_json!(
-                    _json_err_twofactor(&twofactor_ids, user_uuid, conn)?,
-                    "2FA Remember token not provided"
-                ),
+                _ => {
+                    err_json!(_json_err_twofactor(&twofactor_ids, user_uuid, conn)?, "2FA Remember token not provided")
+                }
             }
         }
         _ => err!("Invalid two factor provider"),
