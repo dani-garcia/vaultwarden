@@ -322,10 +322,10 @@ make_config! {
         job_poll_interval_ms:   u64,    false,  def,    30_000;
         /// Send purge schedule |> Cron schedule of the job that checks for Sends past their deletion date.
         /// Defaults to hourly. Set blank to disable this job.
-        send_purge_schedule:    String, false,  def,    "0 0 * * * *".to_string();
+        send_purge_schedule:    String, false,  def,    "0 5 * * * *".to_string();
         /// Trash purge schedule |> Cron schedule of the job that checks for trashed items to delete permanently.
         /// Defaults to daily. Set blank to disable this job.
-        trash_purge_schedule:   String, false,  def,    "0 0 0 * * *".to_string();
+        trash_purge_schedule:   String, false,  def,    "0 5 0 * * *".to_string();
     },
 
     /// General settings
