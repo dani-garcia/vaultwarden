@@ -5,7 +5,8 @@ mod organizations;
 mod sends;
 pub mod two_factor;
 
-pub use sends::start_send_deletion_scheduler;
+pub use ciphers::purge_trashed_ciphers;
+pub use sends::purge_sends;
 
 pub fn routes() -> Vec<Route> {
     let mut mod_routes =

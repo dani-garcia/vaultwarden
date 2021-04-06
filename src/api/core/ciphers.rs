@@ -13,7 +13,7 @@ use crate::{
     api::{self, EmptyResult, JsonResult, JsonUpcase, Notify, PasswordData, UpdateType},
     auth::Headers,
     crypto,
-    db::{models::*, DbConn},
+    db::{models::*, DbConn, DbPool},
     CONFIG,
 };
 
@@ -77,6 +77,15 @@ pub fn routes() -> Vec<Route> {
     ]
 }
 
+pub fn purge_trashed_ciphers(pool: DbPool) {
+    debug!("Purging trashed ciphers");
+    if let Ok(conn) = pool.get() {
+        Cipher::purge_trash(&conn);
+    } else {
+        error!("Failed to get DB connection while purging trashed ciphers")
+    }
+}
+
 #[derive(FromForm, Default)]
 struct SyncData {
     #[form(field = "excludeDomains")]
@@ -118,6 +127,7 @@ fn sync(data: Form<SyncData>, headers: Headers, conn: DbConn) -> Json<Value> {
         "Ciphers": ciphers_json,
         "Domains": domains_json,
         "Sends": sends_json,
+        "unofficialServer": true,
         "Object": "sync"
     }))
 }

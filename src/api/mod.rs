@@ -10,8 +10,9 @@ use serde_json::Value;
 
 pub use crate::api::{
     admin::routes as admin_routes,
+    core::purge_sends,
+    core::purge_trashed_ciphers,
     core::routes as core_routes,
-    core::start_send_deletion_scheduler,
     icons::routes as icons_routes,
     identity::routes as identity_routes,
     notifications::routes as notifications_routes,

@@ -44,8 +44,8 @@
 # 	https://docs.docker.com/develop/develop-images/multistage-build/
 # 	https://whitfin.io/speeding-up-rust-docker-builds/
 ####################### VAULT BUILD IMAGE  #######################
-{% set vault_version = "2.19.0" %}
-{% set vault_image_digest = "sha256:8747cfaa2c6d87d1749e119dd884697e8099389aa9aca30a4d73d4ff796fe0e4" %}
+{% set vault_version = "2.19.0b" %}
+{% set vault_image_digest = "sha256:27631b913f5858895a3e109c5e701341b9d01e69818f5283e72a49fa545eb40e" %}
 # The web-vault digest specifies a particular web-vault build on Docker Hub.
 # Using the digest instead of the tag name provides better security,
 # as the digest of an image is immutable, whereas a tag name can later
@@ -215,9 +215,6 @@ RUN apk add --no-cache \
         openssl \
         curl \
         dumb-init \
-{%   if "sqlite" in features %}
-        sqlite \
-{%   endif %}
 {%   if "mysql" in features %}
         mariadb-connector-c \
 {%   endif %}
@@ -232,7 +229,6 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     curl \
     dumb-init \
-    sqlite3 \
     libmariadb-dev-compat \
     libpq5 \
     && rm -rf /var/lib/apt/lists/*

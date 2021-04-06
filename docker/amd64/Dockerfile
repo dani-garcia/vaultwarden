@@ -14,15 +14,15 @@
 # - From https://hub.docker.com/r/bitwardenrs/web-vault/tags,
 #   click the tag name to view the digest of the image it currently points to.
 # - From the command line:
-#     $ docker pull bitwardenrs/web-vault:v2.19.0
-#     $ docker image inspect --format "{{.RepoDigests}}" bitwardenrs/web-vault:v2.19.0
-#     [bitwardenrs/web-vault@sha256:8747cfaa2c6d87d1749e119dd884697e8099389aa9aca30a4d73d4ff796fe0e4]
+#     $ docker pull bitwardenrs/web-vault:v2.19.0b
+#     $ docker image inspect --format "{{.RepoDigests}}" bitwardenrs/web-vault:v2.19.0b
+#     [bitwardenrs/web-vault@sha256:27631b913f5858895a3e109c5e701341b9d01e69818f5283e72a49fa545eb40e]
 #
 # - Conversely, to get the tag name from the digest:
-#     $ docker image inspect --format "{{.RepoTags}}" bitwardenrs/web-vault@sha256:8747cfaa2c6d87d1749e119dd884697e8099389aa9aca30a4d73d4ff796fe0e4
-#     [bitwardenrs/web-vault:v2.19.0]
+#     $ docker image inspect --format "{{.RepoTags}}" bitwardenrs/web-vault@sha256:27631b913f5858895a3e109c5e701341b9d01e69818f5283e72a49fa545eb40e
+#     [bitwardenrs/web-vault:v2.19.0b]
 #
-FROM bitwardenrs/web-vault@sha256:8747cfaa2c6d87d1749e119dd884697e8099389aa9aca30a4d73d4ff796fe0e4 as vault
+FROM bitwardenrs/web-vault@sha256:27631b913f5858895a3e109c5e701341b9d01e69818f5283e72a49fa545eb40e as vault
 
 ########################## BUILD IMAGE  ##########################
 FROM rust:1.50 as build
@@ -86,7 +86,6 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     curl \
     dumb-init \
-    sqlite3 \
     libmariadb-dev-compat \
     libpq5 \
     && rm -rf /var/lib/apt/lists/*

@@ -1,5 +1,3 @@
-use std::process::Command;
-
 use chrono::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool, PooledConnection};
 use rocket::{
@@ -142,6 +140,7 @@ macro_rules! db_run {
     // Different code for each db
     ( @raw $conn:ident: $( $($db:ident),+ $body:block )+ ) => {
         #[allow(unused)] use diesel::prelude::*;
+        #[allow(unused_variables)]
         match $conn {
             $($(
                 #[cfg($db)]
@@ -218,50 +217,35 @@ macro_rules! db_object {
 // Reexport the models, needs to be after the macros are defined so it can access them
 pub mod models;
 
-/// Creates a back-up of the database using sqlite3
-pub fn backup_database() -> Result<(), Error> {
-    use std::path::Path;
-    let db_url = CONFIG.database_url();
-    let db_path = Path::new(&db_url).parent().unwrap();
-
-    let now: DateTime<Utc> = Utc::now();
-    let file_date = now.format("%Y%m%d").to_string();
-    let backup_command: String = format!("{}{}{}", ".backup 'db_", file_date, ".sqlite3'");
-
-    Command::new("sqlite3")
-        .current_dir(db_path)
-        .args(&["db.sqlite3", &backup_command])
-        .output()
-        .expect("Can't open database, sqlite3 is not available, make sure it's installed and available on the PATH");
+/// Creates a back-up of the sqlite database
+/// MySQL/MariaDB and PostgreSQL are not supported.
+pub fn backup_database(conn: &DbConn) -> Result<(), Error> {
+    db_run! {@raw conn:
+        postgresql, mysql {
+            err!("PostgreSQL and MySQL/MariaDB do not support this backup feature");
+        }
+        sqlite {
+            use std::path::Path;
+            let db_url = CONFIG.database_url();
+            let db_path = Path::new(&db_url).parent().unwrap().to_string_lossy();
+            let file_date = Utc::now().format("%Y%m%d_%H%M%S").to_string();
+            diesel::sql_query(format!("VACUUM INTO '{}/db_{}.sqlite3'", db_path, file_date)).execute(conn)?;
+        }
+    }
 
     Ok(())
 }
 
 /// Get the SQL Server version
 pub fn get_sql_server_version(conn: &DbConn) -> String {
-    use diesel::sql_types::Text;
-    #[derive(QueryableByName)]
-    struct SqlVersion {
-        #[sql_type = "Text"]
-        version: String,
-    }
-
     db_run! {@raw conn:
         postgresql, mysql {
-            match diesel::sql_query("SELECT version() AS version;").get_result::<SqlVersion>(conn).ok() {
-                Some(v) => {
-                    v.version
-                },
-                _ => "Unknown".to_string()
-            }
+            no_arg_sql_function!(version, diesel::sql_types::Text);
+            diesel::select(version).get_result::<String>(conn).unwrap_or_else(|_| "Unknown".to_string())
         }
         sqlite {
-            match diesel::sql_query("SELECT sqlite_version() AS version;").get_result::<SqlVersion>(conn).ok() {
-                Some(v) => {
-                    v.version
-                },
-                _ => "Unknown".to_string()
-            }
+            no_arg_sql_function!(sqlite_version, diesel::sql_types::Text);
+            diesel::select(sqlite_version).get_result::<String>(conn).unwrap_or_else(|_| "Unknown".to_string())
         }
     }
 }
