@@ -72,7 +72,8 @@ fn _refresh_login(data: ConnectData, conn: DbConn) -> JsonResult {
         "Kdf": user.client_kdf_type,
         "KdfIterations": user.client_kdf_iter,
         "ResetMasterPassword": false, // TODO: according to official server seems something like: user.password_hash.is_empty(), but would need testing
-        "scope": "api offline_access"
+        "scope": "api offline_access",
+        "unofficialServer": true,
     })))
 }
 
@@ -172,7 +173,8 @@ fn _password_login(data: ConnectData, conn: DbConn, ip: &ClientIp) -> JsonResult
         "Kdf": user.client_kdf_type,
         "KdfIterations": user.client_kdf_iter,
         "ResetMasterPassword": false,// TODO: Same as above
-        "scope": "api offline_access"
+        "scope": "api offline_access",
+        "unofficialServer": true,
     });
 
     if let Some(token) = twofactor_token {

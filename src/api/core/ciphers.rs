@@ -133,6 +133,7 @@ fn sync(data: Form<SyncData>, headers: Headers, conn: DbConn) -> Json<Value> {
         "Ciphers": ciphers_json,
         "Domains": domains_json,
         "Sends": sends_json,
+        "unofficialServer": true,
         "Object": "sync"
     }))
 }
