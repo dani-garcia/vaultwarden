@@ -43,6 +43,7 @@ use crate::{
     auth::Headers,
     db::DbConn,
     error::Error,
+    util::get_reqwest_client,
 };
 
 #[put("/devices/identifier/<uuid>/clear-token")]
@@ -147,20 +148,16 @@ fn put_eq_domains(data: JsonUpcase<EquivDomainData>, headers: Headers, conn: DbC
 
 #[get("/hibp/breach?<username>")]
 fn hibp_breach(username: String) -> JsonResult {
-    let user_agent = "Bitwarden_RS";
     let url = format!(
         "https://haveibeenpwned.com/api/v3/breachedaccount/{}?truncateResponse=false&includeUnverified=false",
         username
     );
 
-    use reqwest::{blocking::Client, header::USER_AGENT};
-
     if let Some(api_key) = crate::CONFIG.hibp_api_key() {
-        let hibp_client = Client::builder().build()?;
+        let hibp_client = get_reqwest_client();
 
         let res = hibp_client
             .get(&url)
-            .header(USER_AGENT, user_agent)
             .header("hibp-api-key", api_key)
             .send()?;
 
