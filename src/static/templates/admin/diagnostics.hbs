@@ -20,6 +20,7 @@
                     <dd class="col-sm-7">
                         <span id="server-latest">{{diagnostics.latest_release}}<span id="server-latest-commit" class="d-none">-{{diagnostics.latest_commit}}</span></span>
                     </dd>
+                    {{#if diagnostics.web_vault_enabled}}
                     <dt class="col-sm-5">Web Installed
                         <span class="badge badge-success d-none" id="web-success" title="Latest version is installed.">Ok</span>
                         <span class="badge badge-warning d-none" id="web-warning" title="There seems to be an update available.">Update</span>
@@ -33,6 +34,13 @@
                     </dt>
                     <dd class="col-sm-7">
                         <span id="web-latest">{{diagnostics.latest_web_build}}</span>
+                    </dd>
+                    {{/unless}}
+                    {{/if}}
+                    {{#unless diagnostics.web_vault_enabled}}
+                    <dt class="col-sm-5">Web Installed</dt>
+                    <dd class="col-sm-7">
+                        <span id="web-installed">Web Vault is disabled</span>
                     </dd>
                     {{/unless}}
                     <dt class="col-sm-5">Database</dt>
@@ -118,7 +126,10 @@
                     <dd class="col-sm-7">
                         <span id="dns-resolved">{{diagnostics.dns_resolved}}</span>
                     </dd>
-
+                    <dt class="col-sm-5">Date & Time (Local)</dt>
+                    <dd class="col-sm-7">
+                        <span><b>Server:</b> {{diagnostics.server_time_local}}</span>
+                    </dd>
                     <dt class="col-sm-5">Date & Time (UTC)
                         <span class="badge badge-success d-none" id="time-success" title="Time offsets seem to be correct.">Ok</span>
                         <span class="badge badge-danger d-none" id="time-warning" title="Time offsets are too mouch at drift.">Error</span>

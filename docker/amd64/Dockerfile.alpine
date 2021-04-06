@@ -82,7 +82,6 @@ RUN apk add --no-cache \
         openssl \
         curl \
         dumb-init \
-        sqlite \
         postgresql-libs \
         ca-certificates
 
