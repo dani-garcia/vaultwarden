@@ -316,6 +316,17 @@ make_config! {
         /// Websocket port
         websocket_port:         u16,    false,  def,    3012;
     },
+    jobs {
+        /// Job scheduler poll interval |> How often the job scheduler thread checks for jobs to run.
+        /// Set to 0 to globally disable scheduled jobs.
+        job_poll_interval_ms:   u64,    false,  def,    30_000;
+        /// Send purge schedule |> Cron schedule of the job that checks for Sends past their deletion date.
+        /// Defaults to hourly. Set blank to disable this job.
+        send_purge_schedule:    String, false,  def,    "0 5 * * * *".to_string();
+        /// Trash purge schedule |> Cron schedule of the job that checks for trashed items to delete permanently.
+        /// Defaults to daily. Set blank to disable this job.
+        trash_purge_schedule:   String, false,  def,    "0 5 0 * * *".to_string();
+    },
 
     /// General settings
     settings {
@@ -338,6 +349,11 @@ make_config! {
         user_attachment_limit:  i64,    true,   option;
         /// Per-organization attachment limit (KB) |> Limit in kilobytes for an organization attachments, once the limit is exceeded it won't be possible to upload more
         org_attachment_limit:   i64,    true,   option;
+
+        /// Trash auto-delete days |> Number of days to wait before auto-deleting a trashed item.
+        /// If unset, trashed items are not auto-deleted. This setting applies globally, so make
+        /// sure to inform all users of any changes to this setting.
+        trash_auto_delete_days: i64,    true,   option;
 
         /// Disable icon downloads |> Set to true to disable icon downloading, this would still serve icons from
         /// $ICON_CACHE_FOLDER, but it won't produce any external network request. Needs to set $ICON_CACHE_TTL to 0,

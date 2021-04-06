@@ -1,5 +1,7 @@
-use chrono::{NaiveDateTime, Utc};
+use chrono::{Duration, NaiveDateTime, Utc};
 use serde_json::Value;
+
+use crate::CONFIG;
 
 use super::{
     Attachment,
@@ -271,6 +273,17 @@ impl Cipher {
         Ok(())
     }
 
+    /// Purge all ciphers that are old enough to be auto-deleted.
+    pub fn purge_trash(conn: &DbConn) {
+        if let Some(auto_delete_days) = CONFIG.trash_auto_delete_days() {
+            let now = Utc::now().naive_utc();
+            let dt = now - Duration::days(auto_delete_days);
+            for cipher in Self::find_deleted_before(&dt, conn) {
+                cipher.delete(&conn).ok();
+            }
+        }
+    }
+
     pub fn move_to_folder(&self, folder_uuid: Option<String>, user_uuid: &str, conn: &DbConn) -> EmptyResult {
         User::update_uuid_revision(user_uuid, conn);
 
@@ -507,6 +520,15 @@ impl Cipher {
             folders_ciphers::table.inner_join(ciphers::table)
                 .filter(folders_ciphers::folder_uuid.eq(folder_uuid))
                 .select(ciphers::all_columns)
+                .load::<CipherDb>(conn).expect("Error loading ciphers").from_db()
+        }}
+    }
+
+    /// Find all ciphers that were deleted before the specified datetime.
+    pub fn find_deleted_before(dt: &NaiveDateTime, conn: &DbConn) -> Vec<Self> {
+        db_run! {conn: {
+            ciphers::table
+                .filter(ciphers::deleted_at.lt(dt))
                 .load::<CipherDb>(conn).expect("Error loading ciphers").from_db()
         }}
     }
