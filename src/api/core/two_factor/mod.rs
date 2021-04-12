@@ -8,9 +8,10 @@ use crate::{
     auth::Headers,
     crypto,
     db::{
-        models::{TwoFactor, User},
+        models::*,
         DbConn,
     },
+    mail,
 };
 
 pub mod authenticator;
@@ -132,6 +133,23 @@ fn disable_twofactor(data: JsonUpcase<DisableTwoFactorData>, headers: Headers, c
 
     if let Some(twofactor) = TwoFactor::find_by_user_and_type(&user.uuid, type_, &conn) {
         twofactor.delete(&conn)?;
+    }
+
+    let twofactor_disabled = TwoFactor::find_by_user(&user.uuid, &conn).is_empty();
+
+    if twofactor_disabled {
+        let policy_type = OrgPolicyType::TwoFactorAuthentication;
+        let org_list = UserOrganization::find_by_user_and_policy(&user.uuid, policy_type, &conn);
+
+        for user_org in org_list.into_iter() {
+
+            if user_org.atype < UserOrgType::Admin {
+                let org = Organization::find_by_uuid(&user_org.org_uuid, &conn).unwrap();
+
+                mail::send_2fa_removed_from_org(&user.email, &org.name)?;
+                user_org.delete(&conn)?;
+            }
+        }
     }
 
     Ok(Json(json!({

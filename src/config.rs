@@ -842,6 +842,7 @@ where
     reg!("email/new_device_logged_in", ".html");
     reg!("email/pw_hint_none", ".html");
     reg!("email/pw_hint_some", ".html");
+    reg!("email/send_2fa_removed_from_org", ".html");
     reg!("email/send_org_invite", ".html");
     reg!("email/twofactor_email", ".html");
     reg!("email/verify_email", ".html");

@@ -2,7 +2,7 @@ use serde_json::Value;
 use std::cmp::Ordering;
 use num_traits::FromPrimitive;
 
-use super::{CollectionUser, User, OrgPolicy};
+use super::{CollectionUser, User, OrgPolicy, OrgPolicyType};
 
 db_object! {
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -535,6 +535,25 @@ impl UserOrganization {
                 .filter(users_organizations::org_uuid.eq(org_uuid))
                 .first::<UserOrganizationDb>(conn)
                 .ok().from_db()
+        }}
+    }
+
+    pub fn find_by_user_and_policy(user_uuid: &str, policy_type: OrgPolicyType, conn: &DbConn) -> Vec<Self> {
+        db_run! { conn: {
+            users_organizations::table
+                .inner_join(
+                    org_policies::table.on(
+                        org_policies::org_uuid.eq(users_organizations::org_uuid)
+                            .and(users_organizations::user_uuid.eq(user_uuid))
+                            .and(org_policies::atype.eq(policy_type as i32))
+                            .and(org_policies::enabled.eq(true)))
+                )
+                .filter(
+                    users_organizations::status.eq(UserOrgStatus::Confirmed as i32)
+                )
+                .select(users_organizations::all_columns)
+                .load::<UserOrganizationDb>(conn)
+                .unwrap_or_default().from_db()
         }}
     }
 
