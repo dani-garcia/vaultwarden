@@ -11,7 +11,7 @@ use crate::{
         models::*,
         DbConn,
     },
-    mail,
+    mail, CONFIG,
 };
 
 pub mod authenticator;
@@ -144,9 +144,11 @@ fn disable_twofactor(data: JsonUpcase<DisableTwoFactorData>, headers: Headers, c
         for user_org in org_list.into_iter() {
 
             if user_org.atype < UserOrgType::Admin {
-                let org = Organization::find_by_uuid(&user_org.org_uuid, &conn).unwrap();
 
-                mail::send_2fa_removed_from_org(&user.email, &org.name)?;
+                if CONFIG.mail_enabled() {
+                    let org = Organization::find_by_uuid(&user_org.org_uuid, &conn).unwrap();
+                    mail::send_2fa_removed_from_org(&user.email, &org.name)?;
+                }
                 user_org.delete(&conn)?;
             }
         }

@@ -656,10 +656,8 @@ fn accept_invite(_org_id: String, _org_user_id: String, data: JsonUpcase<AcceptD
                 };
 
                 if org_twofactor_policy_enabled && user_twofactor_disabled {
-                    let org = Organization::find_by_uuid(&org, &conn).unwrap();
-                    // you haven't joined yet, but mail explains why you were unable to accept invitation
-                    mail::send_2fa_removed_from_org(&claims.email, &org.name)?;
-                    err!("Organization policy requires that you enable two Two-step Login begin joining.")
+
+                    err!("You cannot join this organization until you enable two-step login on your user account.")
                 }
 
                 user_org.status = UserOrgStatus::Accepted as i32;
@@ -1021,10 +1019,12 @@ fn put_policy(org_id: String, pol_type: i32, data: Json<PolicyData>, _headers: A
 
             if user_twofactor_disabled && user_org.atype < UserOrgType::Admin {
 
-                let org = Organization::find_by_uuid(&user_org.org_uuid, &conn).unwrap();
-                let user = User::find_by_uuid(&user_org.user_uuid, &conn).unwrap();
+                if CONFIG.mail_enabled() {
+                    let org = Organization::find_by_uuid(&user_org.org_uuid, &conn).unwrap();
+                    let user = User::find_by_uuid(&user_org.user_uuid, &conn).unwrap();
 
-                mail::send_2fa_removed_from_org(&user.email, &org.name)?;
+                    mail::send_2fa_removed_from_org(&user.email, &org.name)?;
+                }
                 user_org.delete(&conn)?;
             }
         }        
