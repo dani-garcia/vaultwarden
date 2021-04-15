@@ -320,15 +320,7 @@ fn post_rotatekey(data: JsonUpcase<KeyData>, headers: Headers, conn: DbConn, nt:
             err!("The cipher is not owned by the user")
         }
 
-        update_cipher_from_data(
-            &mut saved_cipher,
-            cipher_data,
-            &headers,
-            false,
-            &conn,
-            &nt,
-            UpdateType::CipherUpdate,
-        )?
+        update_cipher_from_data(&mut saved_cipher, cipher_data, &headers, false, &conn, &nt, UpdateType::CipherUpdate)?
     }
 
     // Update user data
