@@ -478,7 +478,6 @@ pub fn retry<F, T, E>(func: F, max_tries: u32) -> Result<T, E>
 where
     F: Fn() -> Result<T, E>,
 {
-    use std::{thread::sleep, time::Duration};
     let mut tries = 0;
 
     loop {
@@ -497,12 +496,13 @@ where
     }
 }
 
+use std::{thread::sleep, time::Duration};
+
 pub fn retry_db<F, T, E>(func: F, max_tries: u32) -> Result<T, E>
 where
     F: Fn() -> Result<T, E>,
     E: std::error::Error,
 {
-    use std::{thread::sleep, time::Duration};
     let mut tries = 0;
 
     loop {
@@ -521,4 +521,19 @@ where
             }
         }
     }
+}
+
+use reqwest::{blocking::{Client, ClientBuilder}, header};
+
+pub fn get_reqwest_client() -> Client {
+    get_reqwest_client_builder().build().expect("Failed to build client")
+}
+
+pub fn get_reqwest_client_builder() -> ClientBuilder {
+    let mut headers = header::HeaderMap::new();
+    headers.insert(header::USER_AGENT, header::HeaderValue::from_static("Bitwarden_RS"));
+    Client::builder()
+        .default_headers(headers)
+        .timeout(Duration::from_secs(10))
+
 }
