@@ -12,7 +12,11 @@ use regex::Regex;
 use reqwest::{blocking::Client, blocking::Response, header, Url};
 use rocket::{http::ContentType, http::Cookie, response::Content, Route};
 
-use crate::{error::Error, util::{Cached, get_reqwest_client_builder}, CONFIG};
+use crate::{
+    error::Error,
+    util::{get_reqwest_client_builder, Cached},
+    CONFIG,
+};
 
 pub fn routes() -> Vec<Route> {
     routes![icon]

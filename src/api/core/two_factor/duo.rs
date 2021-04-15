@@ -204,7 +204,8 @@ fn duo_api_request(method: &str, path: &str, params: &str, data: &DuoData) -> Em
 
     let client = get_reqwest_client();
 
-    client.request(m, &url)
+    client
+        .request(m, &url)
         .basic_auth(username, Some(password))
         .header(header::USER_AGENT, "bitwarden_rs:Duo/1.0 (Rust)")
         .header(header::DATE, date)

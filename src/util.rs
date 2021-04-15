@@ -523,7 +523,10 @@ where
     }
 }
 
-use reqwest::{blocking::{Client, ClientBuilder}, header};
+use reqwest::{
+    blocking::{Client, ClientBuilder},
+    header,
+};
 
 pub fn get_reqwest_client() -> Client {
     get_reqwest_client_builder().build().expect("Failed to build client")
@@ -532,8 +535,5 @@ pub fn get_reqwest_client() -> Client {
 pub fn get_reqwest_client_builder() -> ClientBuilder {
     let mut headers = header::HeaderMap::new();
     headers.insert(header::USER_AGENT, header::HeaderValue::from_static("Bitwarden_RS"));
-    Client::builder()
-        .default_headers(headers)
-        .timeout(Duration::from_secs(10))
-
+    Client::builder().default_headers(headers).timeout(Duration::from_secs(10))
 }

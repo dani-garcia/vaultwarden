@@ -3,7 +3,6 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 use std::{env, time::Duration};
 
-
 use rocket::{
     http::{Cookie, Cookies, SameSite},
     request::{self, FlashMessage, Form, FromRequest, Outcome, Request},
@@ -19,7 +18,7 @@ use crate::{
     db::{backup_database, get_sql_server_version, models::*, DbConn, DbConnType},
     error::{Error, MapResult},
     mail,
-    util::{format_naive_datetime_local, get_display_size, is_running_in_docker, get_reqwest_client},
+    util::{format_naive_datetime_local, get_display_size, get_reqwest_client, is_running_in_docker},
     CONFIG,
 };
 
@@ -471,22 +470,13 @@ struct GitCommit {
 fn get_github_api<T: DeserializeOwned>(url: &str) -> Result<T, Error> {
     let github_api = get_reqwest_client();
 
-    Ok(github_api
-        .get(url)
-        .timeout(Duration::from_secs(10))
-        .send()?
-        .error_for_status()?
-        .json::<T>()?)
+    Ok(github_api.get(url).timeout(Duration::from_secs(10)).send()?.error_for_status()?.json::<T>()?)
 }
 
 fn has_http_access() -> bool {
     let http_access = get_reqwest_client();
 
-    match http_access
-        .head("https://github.com/dani-garcia/bitwarden_rs")
-        .timeout(Duration::from_secs(10))
-        .send()
-    {
+    match http_access.head("https://github.com/dani-garcia/bitwarden_rs").timeout(Duration::from_secs(10)).send() {
         Ok(r) => r.status().is_success(),
         _ => false,
     }
