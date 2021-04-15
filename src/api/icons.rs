@@ -12,7 +12,7 @@ use regex::Regex;
 use reqwest::{blocking::Client, blocking::Response, header, Url};
 use rocket::{http::ContentType, http::Cookie, response::Content, Route};
 
-use crate::{error::Error, util::Cached, CONFIG};
+use crate::{error::Error, util::{Cached, get_reqwest_client_builder}, CONFIG};
 
 pub fn routes() -> Vec<Route> {
     routes![icon]
@@ -33,11 +33,11 @@ static CLIENT: Lazy<Client> = Lazy::new(|| {
     );
 
     // Reuse the client between requests
-    Client::builder()
+    get_reqwest_client_builder()
         .timeout(Duration::from_secs(CONFIG.icon_download_timeout()))
         .default_headers(default_headers)
         .build()
-        .unwrap()
+        .expect("Failed to build icon client")
 });
 
 // Build Regex only once since this takes a lot of time.
