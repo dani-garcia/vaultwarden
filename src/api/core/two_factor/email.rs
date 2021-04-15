@@ -125,11 +125,7 @@ fn send_email(data: JsonUpcase<SendEmailData>, headers: Headers, conn: DbConn) -
     let twofactor_data = EmailTokenData::new(data.Email, generated_token);
 
     // Uses EmailVerificationChallenge as type to show that it's not verified yet.
-    let twofactor = TwoFactor::new(
-        user.uuid,
-        TwoFactorType::EmailVerificationChallenge,
-        twofactor_data.to_json(),
-    );
+    let twofactor = TwoFactor::new(user.uuid, TwoFactorType::EmailVerificationChallenge, twofactor_data.to_json());
     twofactor.save(&conn)?;
 
     mail::send_token(&twofactor_data.email, &twofactor_data.last_token.map_res("Token is empty")?)?;
@@ -186,7 +182,8 @@ fn email(data: JsonUpcase<EmailData>, headers: Headers, conn: DbConn) -> JsonRes
 /// Validate the email code when used as TwoFactor token mechanism
 pub fn validate_email_code_str(user_uuid: &str, token: &str, data: &str, conn: &DbConn) -> EmptyResult {
     let mut email_data = EmailTokenData::from_json(&data)?;
-    let mut twofactor = TwoFactor::find_by_user_and_type(&user_uuid, TwoFactorType::Email as i32, &conn).map_res("Two factor not found")?;
+    let mut twofactor = TwoFactor::find_by_user_and_type(&user_uuid, TwoFactorType::Email as i32, &conn)
+        .map_res("Two factor not found")?;
     let issued_token = match &email_data.last_token {
         Some(t) => t,
         _ => err!("No token available"),

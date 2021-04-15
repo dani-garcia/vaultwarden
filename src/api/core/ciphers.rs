@@ -100,24 +100,18 @@ fn sync(data: Form<SyncData>, headers: Headers, conn: DbConn) -> Json<Value> {
     let folders_json: Vec<Value> = folders.iter().map(Folder::to_json).collect();
 
     let collections = Collection::find_by_user_uuid(&headers.user.uuid, &conn);
-    let collections_json: Vec<Value> = collections.iter()
-        .map(|c| c.to_json_details(&headers.user.uuid, &conn))
-        .collect();
+    let collections_json: Vec<Value> =
+        collections.iter().map(|c| c.to_json_details(&headers.user.uuid, &conn)).collect();
 
     let policies = OrgPolicy::find_by_user(&headers.user.uuid, &conn);
     let policies_json: Vec<Value> = policies.iter().map(OrgPolicy::to_json).collect();
 
     let ciphers = Cipher::find_by_user_visible(&headers.user.uuid, &conn);
-    let ciphers_json: Vec<Value> = ciphers
-        .iter()
-        .map(|c| c.to_json(&headers.host, &headers.user.uuid, &conn))
-        .collect();
+    let ciphers_json: Vec<Value> =
+        ciphers.iter().map(|c| c.to_json(&headers.host, &headers.user.uuid, &conn)).collect();
 
     let sends = Send::find_by_user(&headers.user.uuid, &conn);
-    let sends_json: Vec<Value> = sends
-        .iter()
-        .map(|s| s.to_json())
-        .collect();
+    let sends_json: Vec<Value> = sends.iter().map(|s| s.to_json()).collect();
 
     let domains_json = if data.exclude_domains {
         Value::Null
@@ -142,10 +136,8 @@ fn sync(data: Form<SyncData>, headers: Headers, conn: DbConn) -> Json<Value> {
 fn get_ciphers(headers: Headers, conn: DbConn) -> Json<Value> {
     let ciphers = Cipher::find_by_user_visible(&headers.user.uuid, &conn);
 
-    let ciphers_json: Vec<Value> = ciphers
-        .iter()
-        .map(|c| c.to_json(&headers.host, &headers.user.uuid, &conn))
-        .collect();
+    let ciphers_json: Vec<Value> =
+        ciphers.iter().map(|c| c.to_json(&headers.host, &headers.user.uuid, &conn)).collect();
 
     Json(json!({
       "Data": ciphers_json,
@@ -246,7 +238,7 @@ fn post_ciphers_create(data: JsonUpcase<ShareCipherData>, headers: Headers, conn
 
     // Check if there are one more more collections selected when this cipher is part of an organization.
     // err if this is not the case before creating an empty cipher.
-    if  data.Cipher.OrganizationId.is_some() && data.CollectionIds.is_empty() {
+    if data.Cipher.OrganizationId.is_some() && data.CollectionIds.is_empty() {
         err!("You must select at least one collection.");
     }
 
@@ -288,17 +280,12 @@ fn post_ciphers(data: JsonUpcase<CipherData>, headers: Headers, conn: DbConn, nt
 /// allowed to delete or share such ciphers to an org, however.
 ///
 /// Ref: https://bitwarden.com/help/article/policies/#personal-ownership
-fn enforce_personal_ownership_policy(
-    data: &CipherData,
-    headers: &Headers,
-    conn: &DbConn
-) -> EmptyResult {
+fn enforce_personal_ownership_policy(data: &CipherData, headers: &Headers, conn: &DbConn) -> EmptyResult {
     if data.OrganizationId.is_none() {
         let user_uuid = &headers.user.uuid;
         let policy_type = OrgPolicyType::PersonalOwnership;
         if OrgPolicy::is_applicable_to_user(user_uuid, policy_type, conn) {
-            err!("Due to an Enterprise Policy, you are restricted from \
-                  saving items to your personal vault.")
+            err!("Due to an Enterprise Policy, you are restricted from saving items to your personal vault.")
         }
     }
     Ok(())
@@ -317,11 +304,12 @@ pub fn update_cipher_from_data(
 
     // Check that the client isn't updating an existing cipher with stale data.
     if let Some(dt) = data.LastKnownRevisionDate {
-        match NaiveDateTime::parse_from_str(&dt, "%+") { // ISO 8601 format
-            Err(err) =>
-                warn!("Error parsing LastKnownRevisionDate '{}': {}", dt, err),
-            Ok(dt) if cipher.updated_at.signed_duration_since(dt).num_seconds() > 1 =>
-                err!("The client copy of this cipher is out of date. Resync the client and try again."),
+        match NaiveDateTime::parse_from_str(&dt, "%+") {
+            // ISO 8601 format
+            Err(err) => warn!("Error parsing LastKnownRevisionDate '{}': {}", dt, err),
+            Ok(dt) if cipher.updated_at.signed_duration_since(dt).num_seconds() > 1 => {
+                err!("The client copy of this cipher is out of date. Resync the client and try again.")
+            }
             Ok(_) => (),
         }
     }
@@ -394,12 +382,9 @@ pub fn update_cipher_from_data(
     // But, we at least know we do not need to store and return this specific key.
     fn _clean_cipher_data(mut json_data: Value) -> Value {
         if json_data.is_array() {
-            json_data.as_array_mut()
-                .unwrap()
-                .iter_mut()
-                .for_each(|ref mut f| {
-                    f.as_object_mut().unwrap().remove("Response");
-                });
+            json_data.as_array_mut().unwrap().iter_mut().for_each(|ref mut f| {
+                f.as_object_mut().unwrap().remove("Response");
+            });
         };
         json_data
     }
@@ -421,13 +406,13 @@ pub fn update_cipher_from_data(
                 data["Uris"] = _clean_cipher_data(data["Uris"].clone());
             }
             data
-        },
+        }
         None => err!("Data missing"),
     };
 
     cipher.name = data.Name;
     cipher.notes = data.Notes;
-    cipher.fields = data.Fields.map(|f| _clean_cipher_data(f).to_string() );
+    cipher.fields = data.Fields.map(|f| _clean_cipher_data(f).to_string());
     cipher.data = type_data.to_string();
     cipher.password_history = data.PasswordHistory.map(|f| f.to_string());
 
@@ -602,11 +587,8 @@ fn post_collections_admin(
     }
 
     let posted_collections: HashSet<String> = data.CollectionIds.iter().cloned().collect();
-    let current_collections: HashSet<String> = cipher
-        .get_collections(&headers.user.uuid, &conn)
-        .iter()
-        .cloned()
-        .collect();
+    let current_collections: HashSet<String> =
+        cipher.get_collections(&headers.user.uuid, &conn).iter().cloned().collect();
 
     for collection in posted_collections.symmetric_difference(&current_collections) {
         match Collection::find_by_uuid(&collection, &conn) {
@@ -842,24 +824,25 @@ fn post_attachment(
                     let file_name = HEXLOWER.encode(&crypto::get_random(vec![0; 10]));
                     let path = base_path.join(&file_name);
 
-                    let size = match field.data.save().memory_threshold(0).size_limit(size_limit).with_path(path.clone()) {
-                        SaveResult::Full(SavedData::File(_, size)) => size as i32,
-                        SaveResult::Full(other) => {
-                            std::fs::remove_file(path).ok();
-                            error = Some(format!("Attachment is not a file: {:?}", other));
-                            return;
-                        }
-                        SaveResult::Partial(_, reason) => {
-                            std::fs::remove_file(path).ok();
-                            error = Some(format!("Attachment size limit exceeded with this file: {:?}", reason));
-                            return;
-                        }
-                        SaveResult::Error(e) => {
-                            std::fs::remove_file(path).ok();
-                            error = Some(format!("Error: {:?}", e));
-                            return;
-                        }
-                    };
+                    let size =
+                        match field.data.save().memory_threshold(0).size_limit(size_limit).with_path(path.clone()) {
+                            SaveResult::Full(SavedData::File(_, size)) => size as i32,
+                            SaveResult::Full(other) => {
+                                std::fs::remove_file(path).ok();
+                                error = Some(format!("Attachment is not a file: {:?}", other));
+                                return;
+                            }
+                            SaveResult::Partial(_, reason) => {
+                                std::fs::remove_file(path).ok();
+                                error = Some(format!("Attachment size limit exceeded with this file: {:?}", reason));
+                                return;
+                            }
+                            SaveResult::Error(e) => {
+                                std::fs::remove_file(path).ok();
+                                error = Some(format!("Error: {:?}", e));
+                                return;
+                            }
+                        };
 
                     let mut attachment = Attachment::new(file_name, cipher.uuid.clone(), name, size);
                     attachment.akey = attachment_key.clone();
@@ -994,12 +977,22 @@ fn delete_cipher_selected_admin(data: JsonUpcase<Value>, headers: Headers, conn:
 }
 
 #[post("/ciphers/delete-admin", data = "<data>")]
-fn delete_cipher_selected_post_admin(data: JsonUpcase<Value>, headers: Headers, conn: DbConn, nt: Notify) -> EmptyResult {
+fn delete_cipher_selected_post_admin(
+    data: JsonUpcase<Value>,
+    headers: Headers,
+    conn: DbConn,
+    nt: Notify,
+) -> EmptyResult {
     delete_cipher_selected_post(data, headers, conn, nt)
 }
 
 #[put("/ciphers/delete-admin", data = "<data>")]
-fn delete_cipher_selected_put_admin(data: JsonUpcase<Value>, headers: Headers, conn: DbConn, nt: Notify) -> EmptyResult {
+fn delete_cipher_selected_put_admin(
+    data: JsonUpcase<Value>,
+    headers: Headers,
+    conn: DbConn,
+    nt: Notify,
+) -> EmptyResult {
     delete_cipher_selected_put(data, headers, conn, nt)
 }
 
@@ -1150,7 +1143,13 @@ fn _delete_cipher_by_uuid(uuid: &str, headers: &Headers, conn: &DbConn, soft_del
     Ok(())
 }
 
-fn _delete_multiple_ciphers(data: JsonUpcase<Value>, headers: Headers, conn: DbConn, soft_delete: bool, nt: Notify) -> EmptyResult {
+fn _delete_multiple_ciphers(
+    data: JsonUpcase<Value>,
+    headers: Headers,
+    conn: DbConn,
+    soft_delete: bool,
+    nt: Notify,
+) -> EmptyResult {
     let data: Value = data.into_inner().data;
 
     let uuids = match data.get("Ids") {
@@ -1202,7 +1201,7 @@ fn _restore_multiple_ciphers(data: JsonUpcase<Value>, headers: &Headers, conn: &
     for uuid in uuids {
         match _restore_cipher_by_uuid(uuid, headers, conn, nt) {
             Ok(json) => ciphers.push(json.into_inner()),
-            err => return err
+            err => return err,
         }
     }
 

@@ -16,15 +16,7 @@ use crate::{
 const SEND_INACCESSIBLE_MSG: &str = "Send does not exist or is no longer available";
 
 pub fn routes() -> Vec<rocket::Route> {
-    routes![
-        post_send,
-        post_send_file,
-        post_access,
-        post_access_file,
-        put_send,
-        delete_send,
-        put_remove_password
-    ]
+    routes![post_send, post_send_file, post_access, post_access_file, put_send, delete_send, put_remove_password]
 }
 
 pub fn purge_sends(pool: DbPool) {
@@ -171,13 +163,7 @@ fn post_send_file(data: Data, content_type: &ContentType, headers: Headers, conn
         None => err!("No model entry present"),
     };
 
-    let size = match data_entry
-        .data
-        .save()
-        .memory_threshold(0)
-        .size_limit(size_limit)
-        .with_path(&file_path)
-    {
+    let size = match data_entry.data.save().memory_threshold(0).size_limit(size_limit).with_path(&file_path) {
         SaveResult::Full(SavedData::File(_, size)) => size as i32,
         SaveResult::Full(other) => {
             std::fs::remove_file(&file_path).ok();
@@ -198,10 +184,7 @@ fn post_send_file(data: Data, content_type: &ContentType, headers: Headers, conn
     if let Some(o) = data_value.as_object_mut() {
         o.insert(String::from("Id"), Value::String(file_id));
         o.insert(String::from("Size"), Value::Number(size.into()));
-        o.insert(
-            String::from("SizeName"),
-            Value::String(crate::util::get_display_size(size)),
-        );
+        o.insert(String::from("SizeName"), Value::String(crate::util::get_display_size(size)));
     }
     send.data = serde_json::to_string(&data_value)?;
 

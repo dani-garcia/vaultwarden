@@ -8,15 +8,7 @@ use crate::{
 };
 
 pub fn routes() -> Vec<rocket::Route> {
-    routes![
-        get_folders,
-        get_folder,
-        post_folders,
-        post_folder,
-        put_folder,
-        delete_folder_post,
-        delete_folder,
-    ]
+    routes![get_folders, get_folder, post_folders, post_folder, put_folder, delete_folder_post, delete_folder,]
 }
 
 #[get("/folders")]

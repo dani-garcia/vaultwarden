@@ -527,10 +527,7 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
 
     let limit = 256;
     if cfg.database_max_conns < 1 || cfg.database_max_conns > limit {
-        err!(format!(
-            "`DATABASE_MAX_CONNS` contains an invalid value. Ensure it is between 1 and {}.",
-            limit,
-        ));
+        err!(format!("`DATABASE_MAX_CONNS` contains an invalid value. Ensure it is between 1 and {}.", limit,));
     }
 
     let dom = cfg.domain.to_lowercase();
@@ -871,9 +868,7 @@ fn case_helper<'reg, 'rc>(
     rc: &mut RenderContext<'reg, 'rc>,
     out: &mut dyn Output,
 ) -> HelperResult {
-    let param = h
-        .param(0)
-        .ok_or_else(|| RenderError::new("Param not found for helper \"case\""))?;
+    let param = h.param(0).ok_or_else(|| RenderError::new("Param not found for helper \"case\""))?;
     let value = param.value().clone();
 
     if h.params().iter().skip(1).any(|x| x.value() == &value) {
@@ -890,21 +885,15 @@ fn js_escape_helper<'reg, 'rc>(
     _rc: &mut RenderContext<'reg, 'rc>,
     out: &mut dyn Output,
 ) -> HelperResult {
-    let param = h
-        .param(0)
-        .ok_or_else(|| RenderError::new("Param not found for helper \"js_escape\""))?;
+    let param = h.param(0).ok_or_else(|| RenderError::new("Param not found for helper \"js_escape\""))?;
 
-    let no_quote = h
-        .param(1)
-        .is_some();
+    let no_quote = h.param(1).is_some();
 
-    let value = param
-        .value()
-        .as_str()
-        .ok_or_else(|| RenderError::new("Param for helper \"js_escape\" is not a String"))?;
+    let value =
+        param.value().as_str().ok_or_else(|| RenderError::new("Param for helper \"js_escape\" is not a String"))?;
 
     let mut escaped_value = value.replace('\\', "").replace('\'', "\\x22").replace('\"', "\\x27");
-    if ! no_quote {
+    if !no_quote {
         escaped_value = format!("&quot;{}&quot;", escaped_value);
     }
 

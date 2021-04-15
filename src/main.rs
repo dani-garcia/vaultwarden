@@ -16,7 +16,7 @@ extern crate diesel;
 #[macro_use]
 extern crate diesel_migrations;
 
-use job_scheduler::{JobScheduler, Job};
+use job_scheduler::{Job, JobScheduler};
 use std::{
     fs::create_dir_all,
     panic,
@@ -127,7 +127,9 @@ fn init_logging(level: log::LevelFilter) -> Result<(), fern::InitError> {
     // Enable smtp debug logging only specifically for smtp when need.
     // This can contain sensitive information we do not want in the default debug/trace logging.
     if CONFIG.smtp_debug() {
-        println!("[WARNING] SMTP Debugging is enabled (SMTP_DEBUG=true). Sensitive information could be disclosed via logs!");
+        println!(
+            "[WARNING] SMTP Debugging is enabled (SMTP_DEBUG=true). Sensitive information could be disclosed via logs!"
+        );
         println!("[WARNING] Only enable SMTP_DEBUG during troubleshooting!\n");
         logger = logger.level_for("lettre::transport::smtp", log::LevelFilter::Debug)
     } else {
@@ -298,7 +300,10 @@ fn check_web_vault() {
     let index_path = Path::new(&CONFIG.web_vault_folder()).join("index.html");
 
     if !index_path.exists() {
-        error!("Web vault is not found at '{}'. To install it, please follow the steps in: ", CONFIG.web_vault_folder());
+        error!(
+            "Web vault is not found at '{}'. To install it, please follow the steps in: ",
+            CONFIG.web_vault_folder()
+        );
         error!("https://github.com/dani-garcia/bitwarden_rs/wiki/Building-binary#install-the-web-vault");
         error!("You can also set the environment variable 'WEB_VAULT_ENABLED=false' to disable it");
         exit(1);
@@ -344,31 +349,34 @@ fn schedule_jobs(pool: db::DbPool) {
         info!("Job scheduler disabled.");
         return;
     }
-    thread::Builder::new().name("job-scheduler".to_string()).spawn(move || {
-        let mut sched = JobScheduler::new();
+    thread::Builder::new()
+        .name("job-scheduler".to_string())
+        .spawn(move || {
+            let mut sched = JobScheduler::new();
 
-        // Purge sends that are past their deletion date.
-        if !CONFIG.send_purge_schedule().is_empty() {
-            sched.add(Job::new(CONFIG.send_purge_schedule().parse().unwrap(), || {
-                api::purge_sends(pool.clone());
-            }));
-        }
+            // Purge sends that are past their deletion date.
+            if !CONFIG.send_purge_schedule().is_empty() {
+                sched.add(Job::new(CONFIG.send_purge_schedule().parse().unwrap(), || {
+                    api::purge_sends(pool.clone());
+                }));
+            }
 
-        // Purge trashed items that are old enough to be auto-deleted.
-        if !CONFIG.trash_purge_schedule().is_empty() {
-            sched.add(Job::new(CONFIG.trash_purge_schedule().parse().unwrap(), || {
-                api::purge_trashed_ciphers(pool.clone());
-            }));
-        }
+            // Purge trashed items that are old enough to be auto-deleted.
+            if !CONFIG.trash_purge_schedule().is_empty() {
+                sched.add(Job::new(CONFIG.trash_purge_schedule().parse().unwrap(), || {
+                    api::purge_trashed_ciphers(pool.clone());
+                }));
+            }
 
-        // Periodically check for jobs to run. We probably won't need any
-        // jobs that run more often than once a minute, so a default poll
-        // interval of 30 seconds should be sufficient. Users who want to
-        // schedule jobs to run more frequently for some reason can reduce
-        // the poll interval accordingly.
-        loop {
-            sched.tick();
-            thread::sleep(Duration::from_millis(CONFIG.job_poll_interval_ms()));
-        }
-    }).expect("Error spawning job scheduler thread");
+            // Periodically check for jobs to run. We probably won't need any
+            // jobs that run more often than once a minute, so a default poll
+            // interval of 30 seconds should be sufficient. Users who want to
+            // schedule jobs to run more frequently for some reason can reduce
+            // the poll interval accordingly.
+            loop {
+                sched.tick();
+                thread::sleep(Duration::from_millis(CONFIG.job_poll_interval_ms()));
+            }
+        })
+        .expect("Error spawning job scheduler thread");
 }

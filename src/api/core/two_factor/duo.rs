@@ -60,7 +60,11 @@ impl DuoData {
         ik.replace_range(digits.., replaced);
         sk.replace_range(digits.., replaced);
 
-        Self { host, ik, sk }
+        Self {
+            host,
+            ik,
+            sk,
+        }
     }
 }
 
