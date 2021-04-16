@@ -28,7 +28,10 @@ impl Fairing for AppHeaders {
         res.set_raw_header("X-Frame-Options", "SAMEORIGIN");
         res.set_raw_header("X-Content-Type-Options", "nosniff");
         res.set_raw_header("X-XSS-Protection", "1; mode=block");
-        let csp = format!("frame-ancestors 'self' chrome-extension://nngceckbapebfimnlniiiahkandclblb moz-extension://* {};", CONFIG.allowed_iframe_ancestors());
+        let csp = format!(
+            "frame-ancestors 'self' chrome-extension://nngceckbapebfimnlniiiahkandclblb moz-extension://* {};",
+            CONFIG.allowed_iframe_ancestors()
+        );
         res.set_raw_header("Content-Security-Policy", csp);
 
         // Disable cache unless otherwise specified
@@ -124,14 +127,8 @@ impl<'r, R: Responder<'r>> Responder<'r> for Cached<R> {
 
 // Log all the routes from the main paths list, and the attachments endpoint
 // Effectively ignores, any static file route, and the alive endpoint
-const LOGGED_ROUTES: [&str; 6] = [
-    "/api",
-    "/admin",
-    "/identity",
-    "/icons",
-    "/notifications/hub/negotiate",
-    "/attachments",
-];
+const LOGGED_ROUTES: [&str; 6] =
+    ["/api", "/admin", "/identity", "/icons", "/notifications/hub/negotiate", "/attachments"];
 
 // Boolean is extra debug, when true, we ignore the whitelist above and also print the mounts
 pub struct BetterLogging(pub bool);
@@ -158,7 +155,11 @@ impl Fairing for BetterLogging {
         }
 
         let config = rocket.config();
-        let scheme = if config.tls_enabled() { "https" } else { "http" };
+        let scheme = if config.tls_enabled() {
+            "https"
+        } else {
+            "http"
+        };
         let addr = format!("{}://{}:{}", &scheme, &config.address, &config.port);
         info!(target: "start", "Rocket has launched from {}", addr);
     }
@@ -293,8 +294,7 @@ where
 
 use std::env;
 
-pub fn get_env_str_value(key: &str) -> Option<String>
-{
+pub fn get_env_str_value(key: &str) -> Option<String> {
     let key_file = format!("{}_FILE", key);
     let value_from_env = env::var(key);
     let value_file = env::var(&key_file);
@@ -304,9 +304,9 @@ pub fn get_env_str_value(key: &str) -> Option<String>
         (Ok(v_env), Err(_)) => Some(v_env),
         (Err(_), Ok(v_file)) => match fs::read_to_string(v_file) {
             Ok(content) => Some(content.trim().to_string()),
-            Err(e) => panic!("Failed to load {}: {:?}", key, e)
+            Err(e) => panic!("Failed to load {}: {:?}", key, e),
         },
-        _ => None
+        _ => None,
     }
 }
 
@@ -478,7 +478,6 @@ pub fn retry<F, T, E>(func: F, max_tries: u32) -> Result<T, E>
 where
     F: Fn() -> Result<T, E>,
 {
-    use std::{thread::sleep, time::Duration};
     let mut tries = 0;
 
     loop {
@@ -497,12 +496,13 @@ where
     }
 }
 
+use std::{thread::sleep, time::Duration};
+
 pub fn retry_db<F, T, E>(func: F, max_tries: u32) -> Result<T, E>
 where
     F: Fn() -> Result<T, E>,
     E: std::error::Error,
 {
-    use std::{thread::sleep, time::Duration};
     let mut tries = 0;
 
     loop {
@@ -521,4 +521,19 @@ where
             }
         }
     }
+}
+
+use reqwest::{
+    blocking::{Client, ClientBuilder},
+    header,
+};
+
+pub fn get_reqwest_client() -> Client {
+    get_reqwest_client_builder().build().expect("Failed to build client")
+}
+
+pub fn get_reqwest_client_builder() -> ClientBuilder {
+    let mut headers = header::HeaderMap::new();
+    headers.insert(header::USER_AGENT, header::HeaderValue::from_static("Bitwarden_RS"));
+    Client::builder().default_headers(headers).timeout(Duration::from_secs(10))
 }

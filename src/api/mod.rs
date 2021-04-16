@@ -55,9 +55,9 @@ impl NumberOrString {
         use std::num::ParseIntError as PIE;
         match self {
             NumberOrString::Number(n) => Ok(n),
-            NumberOrString::String(s) => s
-                .parse()
-                .map_err(|e: PIE| crate::Error::new("Can't convert to number", e.to_string())),
+            NumberOrString::String(s) => {
+                s.parse().map_err(|e: PIE| crate::Error::new("Can't convert to number", e.to_string()))
+            }
         }
     }
 }

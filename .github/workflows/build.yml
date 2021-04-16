@@ -89,7 +89,7 @@ jobs:
         with:
           profile: minimal
           target: ${{ matrix.target-triple }}
-          components: clippy
+          components: clippy, rustfmt
       # End Uses the rust-toolchain file to determine version
 
 
@@ -109,6 +109,15 @@ jobs:
           command: clippy
           args: --release --features ${{ matrix.features }} --target ${{ matrix.target-triple }}
       # End Run cargo clippy
+
+
+      # Run cargo fmt
+      - name: '`cargo fmt`'
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --all -- --check
+      # End Run cargo fmt
 
 
       # Build the binary

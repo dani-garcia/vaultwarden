@@ -2,21 +2,15 @@ mod accounts;
 mod ciphers;
 mod folders;
 mod organizations;
-pub mod two_factor;
 mod sends;
+pub mod two_factor;
 
 pub use ciphers::purge_trashed_ciphers;
 pub use sends::purge_sends;
 
 pub fn routes() -> Vec<Route> {
-    let mut mod_routes = routes![
-        clear_device_token,
-        put_device_token,
-        get_eq_domains,
-        post_eq_domains,
-        put_eq_domains,
-        hibp_breach,
-    ];
+    let mut mod_routes =
+        routes![clear_device_token, put_device_token, get_eq_domains, post_eq_domains, put_eq_domains, hibp_breach,];
 
     let mut routes = Vec::new();
     routes.append(&mut accounts::routes());
@@ -33,9 +27,9 @@ pub fn routes() -> Vec<Route> {
 //
 // Move this somewhere else
 //
+use rocket::response::Response;
 use rocket::Route;
 use rocket_contrib::json::Json;
-use rocket::response::Response;
 use serde_json::Value;
 
 use crate::{
@@ -43,6 +37,7 @@ use crate::{
     auth::Headers,
     db::DbConn,
     error::Error,
+    util::get_reqwest_client,
 };
 
 #[put("/devices/identifier/<uuid>/clear-token")]
@@ -147,22 +142,15 @@ fn put_eq_domains(data: JsonUpcase<EquivDomainData>, headers: Headers, conn: DbC
 
 #[get("/hibp/breach?<username>")]
 fn hibp_breach(username: String) -> JsonResult {
-    let user_agent = "Bitwarden_RS";
     let url = format!(
         "https://haveibeenpwned.com/api/v3/breachedaccount/{}?truncateResponse=false&includeUnverified=false",
         username
     );
 
-    use reqwest::{blocking::Client, header::USER_AGENT};
-
     if let Some(api_key) = crate::CONFIG.hibp_api_key() {
-        let hibp_client = Client::builder().build()?;
+        let hibp_client = get_reqwest_client();
 
-        let res = hibp_client
-            .get(&url)
-            .header(USER_AGENT, user_agent)
-            .header("hibp-api-key", api_key)
-            .send()?;
+        let res = hibp_client.get(&url).header("hibp-api-key", api_key).send()?;
 
         // If we get a 404, return a 404, it means no breached accounts
         if res.status() == 404 {

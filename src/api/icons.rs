@@ -12,7 +12,11 @@ use regex::Regex;
 use reqwest::{blocking::Client, blocking::Response, header, Url};
 use rocket::{http::ContentType, http::Cookie, response::Content, Route};
 
-use crate::{error::Error, util::Cached, CONFIG};
+use crate::{
+    error::Error,
+    util::{get_reqwest_client_builder, Cached},
+    CONFIG,
+};
 
 pub fn routes() -> Vec<Route> {
     routes![icon]
@@ -25,14 +29,19 @@ static CLIENT: Lazy<Client> = Lazy::new(|| {
     default_headers.insert(header::ACCEPT_LANGUAGE, header::HeaderValue::from_static("en-US,en;q=0.8"));
     default_headers.insert(header::CACHE_CONTROL, header::HeaderValue::from_static("no-cache"));
     default_headers.insert(header::PRAGMA, header::HeaderValue::from_static("no-cache"));
-    default_headers.insert(header::ACCEPT, header::HeaderValue::from_static("text/html,application/xhtml+xml,application/xml; q=0.9,image/webp,image/apng,*/*;q=0.8"));
+    default_headers.insert(
+        header::ACCEPT,
+        header::HeaderValue::from_static(
+            "text/html,application/xhtml+xml,application/xml; q=0.9,image/webp,image/apng,*/*;q=0.8",
+        ),
+    );
 
     // Reuse the client between requests
-    Client::builder()
+    get_reqwest_client_builder()
         .timeout(Duration::from_secs(CONFIG.icon_download_timeout()))
         .default_headers(default_headers)
         .build()
-        .unwrap()
+        .expect("Failed to build icon client")
 });
 
 // Build Regex only once since this takes a lot of time.
@@ -49,13 +58,16 @@ fn icon(domain: String) -> Cached<Content<Vec<u8>>> {
 
     if !is_valid_domain(&domain) {
         warn!("Invalid domain: {}", domain);
-        return Cached::ttl(Content(ContentType::new("image", "png"), FALLBACK_ICON.to_vec()), CONFIG.icon_cache_negttl());
+        return Cached::ttl(
+            Content(ContentType::new("image", "png"), FALLBACK_ICON.to_vec()),
+            CONFIG.icon_cache_negttl(),
+        );
     }
 
     match get_icon(&domain) {
         Some((icon, icon_type)) => {
             Cached::ttl(Content(ContentType::new("image", icon_type), icon), CONFIG.icon_cache_ttl())
-        },
+        }
         _ => Cached::ttl(Content(ContentType::new("image", "png"), FALLBACK_ICON.to_vec()), CONFIG.icon_cache_negttl()),
     }
 }
@@ -77,7 +89,10 @@ fn is_valid_domain(domain: &str) -> bool {
         || domain.starts_with('-')
         || domain.ends_with('-')
     {
-        debug!("Domain validation error: '{}' is either empty, contains '..', starts with an '.', starts or ends with a '-'", domain);
+        debug!(
+            "Domain validation error: '{}' is either empty, contains '..', starts with an '.', starts or ends with a '-'",
+            domain
+        );
         return false;
     } else if domain.len() > 255 {
         debug!("Domain validation error: '{}' exceeds 255 characters", domain);
@@ -255,7 +270,7 @@ fn get_icon(domain: &str) -> Option<(Vec<u8>, String)> {
     }
 
     if let Some(icon) = get_cached_icon(&path) {
-        let icon_type =  match get_icon_type(&icon) {
+        let icon_type = match get_icon_type(&icon) {
             Some(x) => x,
             _ => "x-icon",
         };
@@ -338,12 +353,20 @@ struct Icon {
 
 impl Icon {
     const fn new(priority: u8, href: String) -> Self {
-        Self { href, priority }
+        Self {
+            href,
+            priority,
+        }
     }
 }
 
 fn get_favicons_node(node: &std::rc::Rc<markup5ever_rcdom::Node>, icons: &mut Vec<Icon>, url: &Url) {
-    if let markup5ever_rcdom::NodeData::Element { name, attrs, .. } = &node.data {
+    if let markup5ever_rcdom::NodeData::Element {
+        name,
+        attrs,
+        ..
+    } = &node.data
+    {
         if name.local.as_ref() == "link" {
             let mut has_rel = false;
             let mut href = None;
@@ -354,7 +377,8 @@ fn get_favicons_node(node: &std::rc::Rc<markup5ever_rcdom::Node>, icons: &mut Ve
                 let attr_name = attr.name.local.as_ref();
                 let attr_value = attr.value.as_ref();
 
-                if attr_name == "rel" && ICON_REL_REGEX.is_match(attr_value) && !ICON_REL_BLACKLIST.is_match(attr_value) {
+                if attr_name == "rel" && ICON_REL_REGEX.is_match(attr_value) && !ICON_REL_BLACKLIST.is_match(attr_value)
+                {
                     has_rel = true;
                 } else if attr_name == "href" {
                     href = Some(attr_value);
@@ -683,6 +707,6 @@ fn get_icon_type(bytes: &[u8]) -> Option<&'static str> {
         [82, 73, 70, 70, ..] => Some("webp"),
         [255, 216, 255, ..] => Some("jpeg"),
         [66, 77, ..] => Some("bmp"),
-        _ => None
+        _ => None,
     }
 }

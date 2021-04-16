@@ -60,10 +60,10 @@ Thanks for your contribution to the project!
 <table>
   <tr>
     <td align="center">
-      <a href="https://github.com/netDpay">
-        <img src="https://avatars.githubusercontent.com/u/77323954?s=75&v=4" width="75px;" alt="netDpay"/>
+      <a href="https://github.com/netdadaltd">
+        <img src="https://avatars.githubusercontent.com/u/77323954?s=75&v=4" width="75px;" alt="netdadaltd"/>
         <br />
-        <sub><b>netDpay</b></sub>
+        <sub><b>netDada Ltd.</b></sub>
       </a>
   </td>
   </tr>

@@ -12,6 +12,7 @@ use crate::{
         DbConn,
     },
     error::MapResult,
+    util::get_reqwest_client,
     CONFIG,
 };
 
@@ -59,7 +60,11 @@ impl DuoData {
         ik.replace_range(digits.., replaced);
         sk.replace_range(digits.., replaced);
 
-        Self { host, ik, sk }
+        Self {
+            host,
+            ik,
+            sk,
+        }
     }
 }
 
@@ -185,9 +190,7 @@ fn activate_duo_put(data: JsonUpcase<EnableDuoData>, headers: Headers, conn: DbC
 }
 
 fn duo_api_request(method: &str, path: &str, params: &str, data: &DuoData) -> EmptyResult {
-    const AGENT: &str = "bitwarden_rs:Duo/1.0 (Rust)";
-
-    use reqwest::{blocking::Client, header::*, Method};
+    use reqwest::{header, Method};
     use std::str::FromStr;
 
     // https://duo.com/docs/authapi#api-details
@@ -199,11 +202,13 @@ fn duo_api_request(method: &str, path: &str, params: &str, data: &DuoData) -> Em
 
     let m = Method::from_str(method).unwrap_or_default();
 
-    Client::new()
+    let client = get_reqwest_client();
+
+    client
         .request(m, &url)
         .basic_auth(username, Some(password))
-        .header(USER_AGENT, AGENT)
-        .header(DATE, date)
+        .header(header::USER_AGENT, "bitwarden_rs:Duo/1.0 (Rust)")
+        .header(header::DATE, date)
         .send()?
         .error_for_status()?;
 

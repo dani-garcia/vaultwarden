@@ -83,11 +83,15 @@ fn static_files(filename: String) -> Result<Content<&'static [u8]>, Error> {
         "hibp.png" => Ok(Content(ContentType::PNG, include_bytes!("../static/images/hibp.png"))),
 
         "bootstrap.css" => Ok(Content(ContentType::CSS, include_bytes!("../static/scripts/bootstrap.css"))),
-        "bootstrap-native.js" => Ok(Content(ContentType::JavaScript, include_bytes!("../static/scripts/bootstrap-native.js"))),
+        "bootstrap-native.js" => {
+            Ok(Content(ContentType::JavaScript, include_bytes!("../static/scripts/bootstrap-native.js")))
+        }
         "identicon.js" => Ok(Content(ContentType::JavaScript, include_bytes!("../static/scripts/identicon.js"))),
         "datatables.js" => Ok(Content(ContentType::JavaScript, include_bytes!("../static/scripts/datatables.js"))),
         "datatables.css" => Ok(Content(ContentType::CSS, include_bytes!("../static/scripts/datatables.css"))),
-        "jquery-3.5.1.slim.js" => Ok(Content(ContentType::JavaScript, include_bytes!("../static/scripts/jquery-3.5.1.slim.js"))),
+        "jquery-3.5.1.slim.js" => {
+            Ok(Content(ContentType::JavaScript, include_bytes!("../static/scripts/jquery-3.5.1.slim.js")))
+        }
         _ => err!(format!("Static file not found: {}", filename)),
     }
 }
