@@ -649,13 +649,13 @@ fn accept_invite(_org_id: String, _org_user_id: String, data: JsonUpcase<AcceptD
                 let user_twofactor_disabled = TwoFactor::find_by_user(&user_org.user_uuid, &conn).is_empty();
 
                 let policy = OrgPolicyType::TwoFactorAuthentication as i32;
-                let org_twofactor_policy_enabled = match OrgPolicy::find_by_org_and_type(&user_org.org_uuid, policy, &conn) {
-                    Some(p) => p.enabled,
-                    None => false,
-                };
+                let org_twofactor_policy_enabled =
+                    match OrgPolicy::find_by_org_and_type(&user_org.org_uuid, policy, &conn) {
+                        Some(p) => p.enabled,
+                        None => false,
+                    };
 
                 if org_twofactor_policy_enabled && user_twofactor_disabled {
-
                     err!("You cannot join this organization until you enable two-step login on your user account.")
                 }
 
@@ -1010,16 +1010,14 @@ fn put_policy(
         Some(pt) => pt,
         None => err!("Invalid policy type"),
     };
-       
-    if pol_type_enum == OrgPolicyType::TwoFactorAuthentication && data.enabled {
 
+    if pol_type_enum == OrgPolicyType::TwoFactorAuthentication && data.enabled {
         let org_list = UserOrganization::find_by_org(&org_id, &conn);
 
         for user_org in org_list.into_iter() {
             let user_twofactor_disabled = TwoFactor::find_by_user(&user_org.user_uuid, &conn).is_empty();
 
             if user_twofactor_disabled && user_org.atype < UserOrgType::Admin {
-
                 if CONFIG.mail_enabled() {
                     let org = Organization::find_by_uuid(&user_org.org_uuid, &conn).unwrap();
                     let user = User::find_by_uuid(&user_org.user_uuid, &conn).unwrap();
@@ -1028,7 +1026,7 @@ fn put_policy(
                 }
                 user_org.delete(&conn)?;
             }
-        }        
+        }
     }
 
     let mut policy = match OrgPolicy::find_by_org_and_type(&org_id, pol_type, &conn) {
