@@ -534,6 +534,6 @@ pub fn get_reqwest_client() -> Client {
 
 pub fn get_reqwest_client_builder() -> ClientBuilder {
     let mut headers = header::HeaderMap::new();
-    headers.insert(header::USER_AGENT, header::HeaderValue::from_static("Bitwarden_RS"));
+    headers.insert(header::USER_AGENT, header::HeaderValue::from_static("Vaultwarden"));
     Client::builder().default_headers(headers).timeout(Duration::from_secs(10))
 }

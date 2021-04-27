@@ -11,21 +11,21 @@
 # be changed to point to a malicious image.
 #
 # To verify the current digest for a given tag name:
-# - From https://hub.docker.com/r/bitwardenrs/web-vault/tags,
+# - From https://hub.docker.com/r/vaultwarden/web-vault/tags,
 #   click the tag name to view the digest of the image it currently points to.
 # - From the command line:
-#     $ docker pull bitwardenrs/web-vault:v2.19.0b
-#     $ docker image inspect --format "{{.RepoDigests}}" bitwardenrs/web-vault:v2.19.0b
-#     [bitwardenrs/web-vault@sha256:27631b913f5858895a3e109c5e701341b9d01e69818f5283e72a49fa545eb40e]
+#     $ docker pull vaultwarden/web-vault:v2.19.0d
+#     $ docker image inspect --format "{{.RepoDigests}}" vaultwarden/web-vault:v2.19.0d
+#     [vaultwarden/web-vault@sha256:a7bd6bc4db33bd45f723c4b1ac90918b7f80204560683cfc8efd9efd03a9b233]
 #
 # - Conversely, to get the tag name from the digest:
-#     $ docker image inspect --format "{{.RepoTags}}" bitwardenrs/web-vault@sha256:27631b913f5858895a3e109c5e701341b9d01e69818f5283e72a49fa545eb40e
-#     [bitwardenrs/web-vault:v2.19.0b]
+#     $ docker image inspect --format "{{.RepoTags}}" vaultwarden/web-vault@sha256:a7bd6bc4db33bd45f723c4b1ac90918b7f80204560683cfc8efd9efd03a9b233
+#     [vaultwarden/web-vault:v2.19.0d]
 #
-FROM bitwardenrs/web-vault@sha256:27631b913f5858895a3e109c5e701341b9d01e69818f5283e72a49fa545eb40e as vault
+FROM vaultwarden/web-vault@sha256:a7bd6bc4db33bd45f723c4b1ac90918b7f80204560683cfc8efd9efd03a9b233 as vault
 
 ########################## BUILD IMAGE  ##########################
-FROM rust:1.50 as build
+FROM rust:1.51 as build
 
 # Debian-based builds support multidb
 ARG DB=sqlite,mysql,postgresql
@@ -146,7 +146,7 @@ EXPOSE 3012
 WORKDIR /
 COPY Rocket.toml .
 COPY --from=vault /web-vault ./web-vault
-COPY --from=build /app/target/aarch64-unknown-linux-gnu/release/bitwarden_rs .
+COPY --from=build /app/target/aarch64-unknown-linux-gnu/release/vaultwarden .
 
 COPY docker/healthcheck.sh /healthcheck.sh
 COPY docker/start.sh /start.sh

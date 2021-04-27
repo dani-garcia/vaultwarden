@@ -1,10 +1,10 @@
 [package]
-name = "bitwarden_rs"
+name = "vaultwarden"
 version = "1.0.0"
 authors = ["Daniel García <dani-garcia@users.noreply.github.com>"]
 edition = "2018"
 
-repository = "https://github.com/dani-garcia/bitwarden_rs"
+repository = "https://github.com/dani-garcia/vaultwarden"
 readme = "README.md"
 license = "GPL-3.0-only"
 publish = false

@@ -133,8 +133,8 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v2
         with:
-          name: bitwarden_rs-${{ matrix.target-triple }}${{ matrix.ext }}
-          path: target/${{ matrix.target-triple }}/release/bitwarden_rs${{ matrix.ext }}
+          name: vaultwarden-${{ matrix.target-triple }}${{ matrix.ext }}
+          path: target/${{ matrix.target-triple }}/release/vaultwarden${{ matrix.ext }}
       # End Upload artifact to Github Actions
 
 
@@ -145,7 +145,7 @@ jobs:
       #   uses: Shopify/upload-to-release@1
       #   if: startsWith(github.ref, 'refs/tags/')
       #   with:
-      #     name: bitwarden_rs-${{ matrix.target-triple }}${{ matrix.ext }}
-      #     path: target/${{ matrix.target-triple }}/release/bitwarden_rs${{ matrix.ext }}
+      #     name: vaultwarden-${{ matrix.target-triple }}${{ matrix.ext }}
+      #     path: target/${{ matrix.target-triple }}/release/vaultwarden${{ matrix.ext }}
       #     repo-token: ${{ secrets.GITHUB_TOKEN }}
       # End Upload to github actions release

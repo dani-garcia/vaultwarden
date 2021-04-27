@@ -64,10 +64,10 @@ fn main() {
 }
 
 const HELP: &str = "\
-        A Bitwarden API server written in Rust
+        Alternative implementation of the Bitwarden server API written in Rust
 
         USAGE:
-            bitwarden_rs
+            vaultwarden
 
         FLAGS:
             -h, --help       Prints help information
@@ -79,18 +79,18 @@ fn parse_args() {
     let mut pargs = pico_args::Arguments::from_env();
 
     if pargs.contains(["-h", "--help"]) {
-        println!("bitwarden_rs {}", option_env!("BWRS_VERSION").unwrap_or(NO_VERSION));
+        println!("vaultwarden {}", option_env!("BWRS_VERSION").unwrap_or(NO_VERSION));
         print!("{}", HELP);
         exit(0);
     } else if pargs.contains(["-v", "--version"]) {
-        println!("bitwarden_rs {}", option_env!("BWRS_VERSION").unwrap_or(NO_VERSION));
+        println!("vaultwarden {}", option_env!("BWRS_VERSION").unwrap_or(NO_VERSION));
         exit(0);
     }
 }
 
 fn launch_info() {
     println!("/--------------------------------------------------------------------\\");
-    println!("|                       Starting Bitwarden_RS                        |");
+    println!("|                        Starting Vaultwarden                        |");
 
     if let Some(version) = option_env!("BWRS_VERSION") {
         println!("|{:^68}|", format!("Version {}", version));
@@ -102,7 +102,7 @@ fn launch_info() {
     println!("| Send usage/configuration questions or feature requests to:         |");
     println!("|   https://bitwardenrs.discourse.group/                             |");
     println!("| Report suspected bugs/issues in the software itself at:            |");
-    println!("|   https://github.com/dani-garcia/bitwarden_rs/issues/new           |");
+    println!("|   https://github.com/dani-garcia/vaultwarden/issues/new            |");
     println!("\\--------------------------------------------------------------------/\n");
 }
 
@@ -207,7 +207,7 @@ fn chain_syslog(logger: fern::Dispatch) -> fern::Dispatch {
     let syslog_fmt = syslog::Formatter3164 {
         facility: syslog::Facility::LOG_USER,
         hostname: None,
-        process: "bitwarden_rs".into(),
+        process: "vaultwarden".into(),
         pid: 0,
     };
 
@@ -304,7 +304,7 @@ fn check_web_vault() {
             "Web vault is not found at '{}'. To install it, please follow the steps in: ",
             CONFIG.web_vault_folder()
         );
-        error!("https://github.com/dani-garcia/bitwarden_rs/wiki/Building-binary#install-the-web-vault");
+        error!("https://github.com/dani-garcia/vaultwarden/wiki/Building-binary#install-the-web-vault");
         error!("You can also set the environment variable 'WEB_VAULT_ENABLED=false' to disable it");
         exit(1);
     }

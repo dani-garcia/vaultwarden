@@ -159,8 +159,8 @@
                 <dl class="row">
                     <dd class="col-sm-12">
                         If you need support please check the following links first before you create a new issue:
-                         <a href="https://bitwardenrs.discourse.group/" target="_blank" rel="noreferrer">Bitwarden_RS Forum</a>
-                         | <a href="https://github.com/dani-garcia/bitwarden_rs/discussions" target="_blank" rel="noreferrer">Github Discussions</a>
+                         <a href="https://bitwardenrs.discourse.group/" target="_blank" rel="noreferrer">Vaultwarden Forum</a>
+                         | <a href="https://github.com/dani-garcia/vaultwarden/discussions" target="_blank" rel="noreferrer">Github Discussions</a>
                     </dd>
                 </dl>
                 <dl class="row">
@@ -222,7 +222,7 @@
         }
 
         // ================================
-        // Version check for both bitwarden_rs and web-vault
+        // Version check for both vaultwarden and web-vault
         let serverInstalled = document.getElementById('server-installed').innerText;
         let serverLatest = document.getElementById('server-latest').innerText;
         let serverLatestCommit = document.getElementById('server-latest-commit').innerText.replace('-', '');
@@ -305,7 +305,7 @@
     async function generateSupportString() {
         supportString = "### Your environment (Generated via diagnostics page)\n";
 
-        supportString += "* Bitwarden_rs version: v{{ version }}\n";
+        supportString += "* Vaultwarden version: v{{ version }}\n";
         supportString += "* Web-vault version: v{{ diagnostics.web_vault_version }}\n";
         supportString += "* Running within Docker: {{ diagnostics.running_within_docker }}\n";
         supportString += "* Uses a reverse proxy: {{ diagnostics.ip_header_exists }}\n";

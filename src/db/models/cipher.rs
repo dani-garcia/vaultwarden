@@ -125,7 +125,7 @@ impl Cipher {
 
         // There are three types of cipher response models in upstream
         // Bitwarden: "cipherMini", "cipher", and "cipherDetails" (in order
-        // of increasing level of detail). bitwarden_rs currently only
+        // of increasing level of detail). vaultwarden currently only
         // supports the "cipherDetails" type, though it seems like the
         // Bitwarden clients will ignore extra fields.
         //

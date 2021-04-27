@@ -207,7 +207,7 @@ fn duo_api_request(method: &str, path: &str, params: &str, data: &DuoData) -> Em
     client
         .request(m, &url)
         .basic_auth(username, Some(password))
-        .header(header::USER_AGENT, "bitwarden_rs:Duo/1.0 (Rust)")
+        .header(header::USER_AGENT, "vaultwarden:Duo/1.0 (Rust)")
         .header(header::DATE, date)
         .send()?
         .error_for_status()?;

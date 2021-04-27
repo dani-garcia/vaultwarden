@@ -145,57 +145,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bitwarden_rs"
-version = "1.0.0"
-dependencies = [
- "backtrace",
- "chashmap",
- "chrono",
- "chrono-tz",
- "data-encoding",
- "data-url",
- "diesel",
- "diesel_migrations",
- "dotenv",
- "fern",
- "handlebars",
- "html5ever",
- "idna 0.2.2",
- "job_scheduler",
- "jsonwebtoken",
- "lettre",
- "libsqlite3-sys",
- "log 0.4.14",
- "markup5ever_rcdom",
- "multipart",
- "newline-converter",
- "num-derive",
- "num-traits",
- "oath",
- "once_cell",
- "openssl",
- "parity-ws",
- "paste",
- "percent-encoding 2.1.0",
- "pico-args",
- "rand 0.8.3",
- "regex",
- "reqwest",
- "ring",
- "rmpv",
- "rocket",
- "rocket_contrib",
- "serde",
- "serde_json",
- "syslog",
- "time 0.2.26",
- "tracing",
- "u2f",
- "uuid",
- "yubico",
-]
-
-[[package]]
 name = "block-buffer"
 version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3112,6 +3061,57 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bc5cf98d8186244414c848017f0e2676b3fcb46807f6668a97dfe67359a3c4b7"
 dependencies = [
  "getrandom 0.2.2",
+]
+
+[[package]]
+name = "vaultwarden"
+version = "1.0.0"
+dependencies = [
+ "backtrace",
+ "chashmap",
+ "chrono",
+ "chrono-tz",
+ "data-encoding",
+ "data-url",
+ "diesel",
+ "diesel_migrations",
+ "dotenv",
+ "fern",
+ "handlebars",
+ "html5ever",
+ "idna 0.2.2",
+ "job_scheduler",
+ "jsonwebtoken",
+ "lettre",
+ "libsqlite3-sys",
+ "log 0.4.14",
+ "markup5ever_rcdom",
+ "multipart",
+ "newline-converter",
+ "num-derive",
+ "num-traits",
+ "oath",
+ "once_cell",
+ "openssl",
+ "parity-ws",
+ "paste",
+ "percent-encoding 2.1.0",
+ "pico-args",
+ "rand 0.8.3",
+ "regex",
+ "reqwest",
+ "ring",
+ "rmpv",
+ "rocket",
+ "rocket_contrib",
+ "serde",
+ "serde_json",
+ "syslog",
+ "time 0.2.26",
+ "tracing",
+ "u2f",
+ "uuid",
+ "yubico",
 ]
 
 [[package]]
