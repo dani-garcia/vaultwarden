@@ -44,26 +44,26 @@
 # 	https://docs.docker.com/develop/develop-images/multistage-build/
 # 	https://whitfin.io/speeding-up-rust-docker-builds/
 ####################### VAULT BUILD IMAGE  #######################
-{% set vault_version = "2.19.0b" %}
-{% set vault_image_digest = "sha256:27631b913f5858895a3e109c5e701341b9d01e69818f5283e72a49fa545eb40e" %}
+{% set vault_version = "2.19.0d" %}
+{% set vault_image_digest = "sha256:a7bd6bc4db33bd45f723c4b1ac90918b7f80204560683cfc8efd9efd03a9b233" %}
 # The web-vault digest specifies a particular web-vault build on Docker Hub.
 # Using the digest instead of the tag name provides better security,
 # as the digest of an image is immutable, whereas a tag name can later
 # be changed to point to a malicious image.
 #
 # To verify the current digest for a given tag name:
-# - From https://hub.docker.com/r/bitwardenrs/web-vault/tags,
+# - From https://hub.docker.com/r/vaultwarden/web-vault/tags,
 #   click the tag name to view the digest of the image it currently points to.
 # - From the command line:
-#     $ docker pull bitwardenrs/web-vault:v{{ vault_version }}
-#     $ docker image inspect --format "{{ '{{' }}.RepoDigests}}" bitwardenrs/web-vault:v{{ vault_version }}
-#     [bitwardenrs/web-vault@{{ vault_image_digest }}]
+#     $ docker pull vaultwarden/web-vault:v{{ vault_version }}
+#     $ docker image inspect --format "{{ '{{' }}.RepoDigests}}" vaultwarden/web-vault:v{{ vault_version }}
+#     [vaultwarden/web-vault@{{ vault_image_digest }}]
 #
 # - Conversely, to get the tag name from the digest:
-#     $ docker image inspect --format "{{ '{{' }}.RepoTags}}" bitwardenrs/web-vault@{{ vault_image_digest }}
-#     [bitwardenrs/web-vault:v{{ vault_version }}]
+#     $ docker image inspect --format "{{ '{{' }}.RepoTags}}" vaultwarden/web-vault@{{ vault_image_digest }}
+#     [vaultwarden/web-vault:v{{ vault_version }}]
 #
-FROM bitwardenrs/web-vault@{{ vault_image_digest }} as vault
+FROM vaultwarden/web-vault@{{ vault_image_digest }} as vault
 
 ########################## BUILD IMAGE  ##########################
 FROM {{ build_stage_base_image }} as build
@@ -189,7 +189,7 @@ RUN touch src/main.rs
 RUN cargo build --features ${DB} --release{{ package_arch_target_param }}
 {% if "alpine" in target_file %}
 {%   if "armv7" in target_file %}
-RUN musl-strip target/{{ package_arch_target }}/release/bitwarden_rs
+RUN musl-strip target/{{ package_arch_target }}/release/vaultwarden
 {%   endif %}
 {% endif %}
 
@@ -250,9 +250,9 @@ WORKDIR /
 COPY Rocket.toml .
 COPY --from=vault /web-vault ./web-vault
 {% if package_arch_target is defined %}
-COPY --from=build /app/target/{{ package_arch_target }}/release/bitwarden_rs .
+COPY --from=build /app/target/{{ package_arch_target }}/release/vaultwarden .
 {% else %}
-COPY --from=build /app/target/release/bitwarden_rs .
+COPY --from=build /app/target/release/vaultwarden .
 {% endif %}
 
 COPY docker/healthcheck.sh /healthcheck.sh

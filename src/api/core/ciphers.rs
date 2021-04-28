@@ -25,7 +25,7 @@ pub fn routes() -> Vec<Route> {
     // whether the user is an owner/admin of the relevant org, and if so,
     // allows the operation unconditionally.
     //
-    // bitwarden_rs factors in the org owner/admin status as part of
+    // vaultwarden factors in the org owner/admin status as part of
     // determining the write accessibility of a cipher, so most
     // admin/non-admin implementations can be shared.
     routes![

@@ -476,7 +476,7 @@ fn get_github_api<T: DeserializeOwned>(url: &str) -> Result<T, Error> {
 fn has_http_access() -> bool {
     let http_access = get_reqwest_client();
 
-    match http_access.head("https://github.com/dani-garcia/bitwarden_rs").timeout(Duration::from_secs(10)).send() {
+    match http_access.head("https://github.com/dani-garcia/vaultwarden").timeout(Duration::from_secs(10)).send() {
         Ok(r) => r.status().is_success(),
         _ => false,
     }
@@ -518,12 +518,11 @@ fn diagnostics(_token: AdminToken, ip_header: IpHeader, conn: DbConn) -> ApiResu
     // TODO: Maybe we need to cache this using a LazyStatic or something. Github only allows 60 requests per hour, and we use 3 here already.
     let (latest_release, latest_commit, latest_web_build) = if has_http_access {
         (
-            match get_github_api::<GitRelease>("https://api.github.com/repos/dani-garcia/bitwarden_rs/releases/latest")
-            {
+            match get_github_api::<GitRelease>("https://api.github.com/repos/dani-garcia/vaultwarden/releases/latest") {
                 Ok(r) => r.tag_name,
                 _ => "-".to_string(),
             },
-            match get_github_api::<GitCommit>("https://api.github.com/repos/dani-garcia/bitwarden_rs/commits/master") {
+            match get_github_api::<GitCommit>("https://api.github.com/repos/dani-garcia/vaultwarden/commits/master") {
                 Ok(mut c) => {
                     c.sha.truncate(8);
                     c.sha

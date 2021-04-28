@@ -10,7 +10,7 @@ Docker Hub hooks provide these predefined [environment variables](https://docs.d
 * `DOCKER_TAG`: the Docker repository tag being built.
 * `IMAGE_NAME`: the name and tag of the Docker repository being built. (This variable is a combination of `DOCKER_REPO:DOCKER_TAG`.)
 
-The current multi-arch image build relies on the original bitwarden_rs Dockerfiles, which use cross-compilation for architectures other than `amd64`, and don't yet support all arch/distro combinations. However, cross-compilation is much faster than QEMU-based builds (e.g., using `docker buildx`). This situation may need to be revisited at some point.
+The current multi-arch image build relies on the original vaultwarden Dockerfiles, which use cross-compilation for architectures other than `amd64`, and don't yet support all arch/distro combinations. However, cross-compilation is much faster than QEMU-based builds (e.g., using `docker buildx`). This situation may need to be revisited at some point.
 
 ## References
 

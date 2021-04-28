@@ -359,7 +359,7 @@ make_config! {
         /// $ICON_CACHE_FOLDER, but it won't produce any external network request. Needs to set $ICON_CACHE_TTL to 0,
         /// otherwise it will delete them and they won't be downloaded again.
         disable_icon_download:  bool,   true,   def,    false;
-        /// Allow new signups |> Controls whether new users can register. Users can be invited by the bitwarden_rs admin even if this is disabled
+        /// Allow new signups |> Controls whether new users can register. Users can be invited by the vaultwarden admin even if this is disabled
         signups_allowed:        bool,   true,   def,    true;
         /// Require email verification on signups. This will prevent logins from succeeding until the address has been verified
         signups_verify:         bool,   true,   def,    false;
@@ -385,7 +385,7 @@ make_config! {
         admin_token:            Pass,   true,   option;
 
         /// Invitation organization name |> Name shown in the invitation emails that don't come from a specific organization
-        invitation_org_name:    String, true,   def,    "Bitwarden_RS".to_string();
+        invitation_org_name:    String, true,   def,    "Vaultwarden".to_string();
     },
 
     /// Advanced settings
@@ -434,7 +434,7 @@ make_config! {
         /// Log level
         log_level:              String, false,  def,    "Info".to_string();
 
-        /// Enable DB WAL |> Turning this off might lead to worse performance, but might help if using bitwarden_rs on some exotic filesystems,
+        /// Enable DB WAL |> Turning this off might lead to worse performance, but might help if using vaultwarden on some exotic filesystems,
         /// that do not support WAL. Please make sure you read project wiki on the topic before changing this setting.
         enable_db_wal:          bool,   false,  def,    true;
 
@@ -489,7 +489,7 @@ make_config! {
         /// From Address
         smtp_from:                     String, true,   def,     String::new();
         /// From Name
-        smtp_from_name:                String, true,   def,     "Bitwarden_RS".to_string();
+        smtp_from_name:                String, true,   def,     "Vaultwarden".to_string();
         /// Username
         smtp_username:                 String, true,   option;
         /// Password
