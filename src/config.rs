@@ -482,7 +482,7 @@ make_config! {
         smtp_host:                     String, true,   option;
         /// Enable Secure SMTP |> (Explicit) - Enabling this by default would use STARTTLS (Standard ports 587 or 25)
         smtp_ssl:                      bool,   true,   def,     true;
-        /// Force TLS |> (Implicit) - Enabling this would force the use of an SSL/TLS connection, instead of upgrading an insecure one with STARTTLS (Standard port 465)
+        /// Force TLS |> (Implicit) - Enabling this would force the use of an SSL/TLS connection, instead of upgrading an insecure one with STARTTLS (Standard port 465). If you enable this, you have to enable "Enable Secure SMTP", too.
         smtp_explicit_tls:             bool,   true,   def,     false;
         /// Port
         smtp_port:                     u16,    true,   auto,    |c| if c.smtp_explicit_tls {465} else if c.smtp_ssl {587} else {25};
