@@ -35,7 +35,7 @@ Pull the docker image and mount a volume from the host for persistent storage:
 docker pull vaultwarden/server:latest
 docker run -d --name vaultwarden -v /vw-data/:/data/ -p 80:80 vaultwarden/server:latest
 ```
-This will preserve any persistent data under /bw-data/, you can adapt the path to whatever suits you.
+This will preserve any persistent data under /vw-data/, you can adapt the path to whatever suits you.
 
 **IMPORTANT**: Some web browsers, like Chrome, disallow the use of Web Crypto APIs in insecure contexts. In this case, you might get an error like `Cannot read property 'importKey'`. To solve this problem, you need to access the web vault from HTTPS. 
 
