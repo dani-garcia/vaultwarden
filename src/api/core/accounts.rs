@@ -95,7 +95,7 @@ fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> EmptyResult {
         }
         None => {
             // Order is important here; the invitation check must come first
-            // because the bitwarden_rs admin can invite anyone, regardless
+            // because the vaultwarden admin can invite anyone, regardless
             // of other signup restrictions.
             if Invitation::take(&data.Email, &conn) || CONFIG.is_signup_allowed(&data.Email) {
                 User::new(data.Email.clone())
@@ -320,15 +320,7 @@ fn post_rotatekey(data: JsonUpcase<KeyData>, headers: Headers, conn: DbConn, nt:
             err!("The cipher is not owned by the user")
         }
 
-        update_cipher_from_data(
-            &mut saved_cipher,
-            cipher_data,
-            &headers,
-            false,
-            &conn,
-            &nt,
-            UpdateType::CipherUpdate,
-        )?
+        update_cipher_from_data(&mut saved_cipher, cipher_data, &headers, false, &conn, &nt, UpdateType::CipherUpdate)?
     }
 
     // Update user data

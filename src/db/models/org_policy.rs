@@ -4,7 +4,7 @@ use crate::api::EmptyResult;
 use crate::db::DbConn;
 use crate::error::MapResult;
 
-use super::{Organization, UserOrganization, UserOrgStatus, UserOrgType};
+use super::{Organization, UserOrgStatus, UserOrgType, UserOrganization};
 
 db_object! {
     #[derive(Identifiable, Queryable, Insertable, Associations, AsChangeset)]
@@ -20,8 +20,7 @@ db_object! {
     }
 }
 
-#[derive(Copy, Clone)]
-#[derive(num_derive::FromPrimitive)]
+#[derive(Copy, Clone, num_derive::FromPrimitive)]
 pub enum OrgPolicyType {
     TwoFactorAuthentication = 0,
     MasterPassword = 1,
@@ -175,7 +174,8 @@ impl OrgPolicy {
     /// and the user is not an owner or admin of that org. This is only useful for checking
     /// applicability of policy types that have these particular semantics.
     pub fn is_applicable_to_user(user_uuid: &str, policy_type: OrgPolicyType, conn: &DbConn) -> bool {
-        for policy in OrgPolicy::find_by_user(user_uuid, conn) { // Returns confirmed users only.
+        // Returns confirmed users only.
+        for policy in OrgPolicy::find_by_user(user_uuid, conn) {
             if policy.enabled && policy.has_type(policy_type) {
                 let org_uuid = &policy.org_uuid;
                 if let Some(user) = UserOrganization::find_by_user_and_org(user_uuid, org_uuid, conn) {

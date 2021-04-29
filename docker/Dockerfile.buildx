@@ -1,7 +1,7 @@
 # The cross-built images have the build arch (`amd64`) embedded in the image
 # manifest, rather than the target arch. For example:
 #
-#   $ docker inspect bitwardenrs/server:latest-armv7 | jq -r '.[]|.Architecture'
+#   $ docker inspect vaultwarden/server:latest-armv7 | jq -r '.[]|.Architecture'
 #   amd64
 #
 # Recent versions of Docker have started printing a warning when the image's

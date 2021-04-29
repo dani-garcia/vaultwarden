@@ -103,7 +103,7 @@ docker buildx build \
 # (https://github.com/moby/moby/issues/41017).
 #
 # Note that we use `arm32v6` instead of `armv6` to be consistent with the
-# existing bitwarden_rs tags, which adhere to the naming conventions of the
+# existing vaultwarden tags, which adhere to the naming conventions of the
 # Docker per-architecture repos (e.g., https://hub.docker.com/u/arm32v6).
 # Unfortunately, these per-arch repo names aren't always consistent with the
 # corresponding platform (OS/arch/variant) IDs, particularly in the case of

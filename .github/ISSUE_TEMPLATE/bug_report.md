@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Use this ONLY for bugs in bitwarden_rs itself. Use the Discourse forum (link below) to request features or get help with usage/configuration. If in doubt, use the forum.
+about: Use this ONLY for bugs in vaultwarden itself. Use the Discourse forum (link below) to request features or get help with usage/configuration. If in doubt, use the forum.
 title: ''
 labels: ''
 assignees: ''
@@ -8,11 +8,11 @@ assignees: ''
 ---
 <!--
     # ###
-    NOTE: Please update to the latest version of bitwarden_rs before reporting an issue!
+    NOTE: Please update to the latest version of vaultwarden before reporting an issue!
     This saves you and us a lot of time and troubleshooting.
     See:
-    * https://github.com/dani-garcia/bitwarden_rs/issues/1180
-    * https://github.com/dani-garcia/bitwarden_rs/wiki/Updating-the-bitwarden-image
+    * https://github.com/dani-garcia/vaultwarden/issues/1180
+    * https://github.com/dani-garcia/vaultwarden/wiki/Updating-the-vaultwarden-image
     # ###
 -->
 
@@ -37,9 +37,9 @@ such as passwords, IP addresses, and DNS names as appropriate.
 -->
 
 <!-- The version number, obtained from the logs (at startup) or the admin diagnostics page -->
-<!-- This is NOT the version number shown on the web vault, which is versioned separately from bitwarden_rs -->
+<!-- This is NOT the version number shown on the web vault, which is versioned separately from vaultwarden -->
 <!-- Remember to check if your issue exists on the latest version first! -->
-* bitwarden_rs version:
+* vaultwarden version:
 
 <!-- How the server was installed: Docker image, OS package, built from source, etc. -->
 * Install method:
@@ -54,7 +54,7 @@ such as passwords, IP addresses, and DNS names as appropriate.
 
 ### Steps to reproduce
 <!-- Tell us how to reproduce this issue. What parameters did you set (differently from the defaults)
-and how did you start bitwarden_rs? -->
+and how did you start vaultwarden? -->
 
 ### Expected behaviour
 <!-- Tell us what you expected to happen -->

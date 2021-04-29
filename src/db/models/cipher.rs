@@ -1,15 +1,10 @@
-use chrono::{NaiveDateTime, Utc};
+use chrono::{Duration, NaiveDateTime, Utc};
 use serde_json::Value;
 
+use crate::CONFIG;
+
 use super::{
-    Attachment,
-    CollectionCipher,
-    Favorite,
-    FolderCipher,
-    Organization,
-    User,
-    UserOrgStatus,
-    UserOrgType,
+    Attachment, CollectionCipher, Favorite, FolderCipher, Organization, User, UserOrgStatus, UserOrgType,
     UserOrganization,
 };
 
@@ -91,16 +86,16 @@ impl Cipher {
         };
 
         let fields_json = self.fields.as_ref().and_then(|s| serde_json::from_str(s).ok()).unwrap_or(Value::Null);
-        let password_history_json = self.password_history.as_ref().and_then(|s| serde_json::from_str(s).ok()).unwrap_or(Value::Null);
+        let password_history_json =
+            self.password_history.as_ref().and_then(|s| serde_json::from_str(s).ok()).unwrap_or(Value::Null);
 
-        let (read_only, hide_passwords) =
-            match self.get_access_restrictions(&user_uuid, conn) {
-                Some((ro, hp)) => (ro, hp),
-                None => {
-                    error!("Cipher ownership assertion failure");
-                    (true, true)
-                },
-            };
+        let (read_only, hide_passwords) = match self.get_access_restrictions(&user_uuid, conn) {
+            Some((ro, hp)) => (ro, hp),
+            None => {
+                error!("Cipher ownership assertion failure");
+                (true, true)
+            }
+        };
 
         // Get the type_data or a default to an empty json object '{}'.
         // If not passing an empty object, mobile clients will crash.
@@ -130,7 +125,7 @@ impl Cipher {
 
         // There are three types of cipher response models in upstream
         // Bitwarden: "cipherMini", "cipher", and "cipherDetails" (in order
-        // of increasing level of detail). bitwarden_rs currently only
+        // of increasing level of detail). vaultwarden currently only
         // supports the "cipherDetails" type, though it seems like the
         // Bitwarden clients will ignore extra fields.
         //
@@ -195,12 +190,10 @@ impl Cipher {
             None => {
                 // Belongs to Organization, need to update affected users
                 if let Some(ref org_uuid) = self.organization_uuid {
-                    UserOrganization::find_by_cipher_and_org(&self.uuid, &org_uuid, conn)
-                        .iter()
-                        .for_each(|user_org| {
-                            User::update_uuid_revision(&user_org.user_uuid, conn);
-                            user_uuids.push(user_org.user_uuid.clone())
-                        });
+                    UserOrganization::find_by_cipher_and_org(&self.uuid, &org_uuid, conn).iter().for_each(|user_org| {
+                        User::update_uuid_revision(&user_org.user_uuid, conn);
+                        user_uuids.push(user_org.user_uuid.clone())
+                    });
                 }
             }
         };
@@ -269,6 +262,17 @@ impl Cipher {
             cipher.delete(&conn)?;
         }
         Ok(())
+    }
+
+    /// Purge all ciphers that are old enough to be auto-deleted.
+    pub fn purge_trash(conn: &DbConn) {
+        if let Some(auto_delete_days) = CONFIG.trash_auto_delete_days() {
+            let now = Utc::now().naive_utc();
+            let dt = now - Duration::days(auto_delete_days);
+            for cipher in Self::find_deleted_before(&dt, conn) {
+                cipher.delete(&conn).ok();
+            }
+        }
     }
 
     pub fn move_to_folder(&self, folder_uuid: Option<String>, user_uuid: &str, conn: &DbConn) -> EmptyResult {
@@ -507,6 +511,15 @@ impl Cipher {
             folders_ciphers::table.inner_join(ciphers::table)
                 .filter(folders_ciphers::folder_uuid.eq(folder_uuid))
                 .select(ciphers::all_columns)
+                .load::<CipherDb>(conn).expect("Error loading ciphers").from_db()
+        }}
+    }
+
+    /// Find all ciphers that were deleted before the specified datetime.
+    pub fn find_deleted_before(dt: &NaiveDateTime, conn: &DbConn) -> Vec<Self> {
+        db_run! {conn: {
+            ciphers::table
+                .filter(ciphers::deleted_at.lt(dt))
                 .load::<CipherDb>(conn).expect("Error loading ciphers").from_db()
         }}
     }

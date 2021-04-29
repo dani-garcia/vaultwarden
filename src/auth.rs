@@ -223,9 +223,8 @@ use crate::db::{
 };
 
 pub struct Host {
-    pub host: String
+    pub host: String,
 }
-
 
 impl<'a, 'r> FromRequest<'a, 'r> for Host {
     type Error = &'static str;
@@ -261,7 +260,9 @@ impl<'a, 'r> FromRequest<'a, 'r> for Host {
             format!("{}://{}", protocol, host)
         };
 
-        Outcome::Success(Host { host })
+        Outcome::Success(Host {
+            host,
+        })
     }
 }
 
@@ -317,10 +318,8 @@ impl<'a, 'r> FromRequest<'a, 'r> for Headers {
         };
 
         if user.security_stamp != claims.sstamp {
-            if let Some(stamp_exception) = user
-                .stamp_exception
-                .as_deref()
-                .and_then(|s| serde_json::from_str::<UserStampException>(s).ok())
+            if let Some(stamp_exception) =
+                user.stamp_exception.as_deref().and_then(|s| serde_json::from_str::<UserStampException>(s).ok())
             {
                 let current_route = match request.route().and_then(|r| r.name) {
                     Some(name) => name,
@@ -338,7 +337,11 @@ impl<'a, 'r> FromRequest<'a, 'r> for Headers {
             }
         }
 
-        Outcome::Success(Headers { host, device, user })
+        Outcome::Success(Headers {
+            host,
+            device,
+            user,
+        })
     }
 }
 
@@ -506,7 +509,11 @@ impl<'a, 'r> FromRequest<'a, 'r> for ManagerHeaders {
                             };
 
                             if !headers.org_user.has_full_access() {
-                                match CollectionUser::find_by_collection_and_user(&col_id, &headers.org_user.user_uuid, &conn) {
+                                match CollectionUser::find_by_collection_and_user(
+                                    &col_id,
+                                    &headers.org_user.user_uuid,
+                                    &conn,
+                                ) {
                                     Some(_) => (),
                                     None => err_handler!("The current user isn't a manager for this collection"),
                                 }
@@ -636,10 +643,10 @@ impl<'a, 'r> FromRequest<'a, 'r> for ClientIp {
             None
         };
 
-        let ip = ip
-            .or_else(|| req.remote().map(|r| r.ip()))
-            .unwrap_or_else(|| "0.0.0.0".parse().unwrap());
+        let ip = ip.or_else(|| req.remote().map(|r| r.ip())).unwrap_or_else(|| "0.0.0.0".parse().unwrap());
 
-        Outcome::Success(ClientIp { ip })
+        Outcome::Success(ClientIp {
+            ip,
+        })
     }
 }

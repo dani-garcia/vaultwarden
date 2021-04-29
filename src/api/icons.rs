@@ -12,13 +12,15 @@ use regex::Regex;
 use reqwest::{blocking::Client, blocking::Response, header, Url};
 use rocket::{http::ContentType, http::Cookie, response::Content, Route};
 
-use crate::{error::Error, util::Cached, CONFIG};
+use crate::{
+    error::Error,
+    util::{get_reqwest_client_builder, Cached},
+    CONFIG,
+};
 
 pub fn routes() -> Vec<Route> {
     routes![icon]
 }
-
-const ALLOWED_CHARS: &str = "_-.";
 
 static CLIENT: Lazy<Client> = Lazy::new(|| {
     // Generate the default headers
@@ -27,31 +29,47 @@ static CLIENT: Lazy<Client> = Lazy::new(|| {
     default_headers.insert(header::ACCEPT_LANGUAGE, header::HeaderValue::from_static("en-US,en;q=0.8"));
     default_headers.insert(header::CACHE_CONTROL, header::HeaderValue::from_static("no-cache"));
     default_headers.insert(header::PRAGMA, header::HeaderValue::from_static("no-cache"));
-    default_headers.insert(header::ACCEPT, header::HeaderValue::from_static("text/html,application/xhtml+xml,application/xml; q=0.9,image/webp,image/apng,*/*;q=0.8"));
+    default_headers.insert(
+        header::ACCEPT,
+        header::HeaderValue::from_static(
+            "text/html,application/xhtml+xml,application/xml; q=0.9,image/webp,image/apng,*/*;q=0.8",
+        ),
+    );
 
     // Reuse the client between requests
-    Client::builder()
+    get_reqwest_client_builder()
         .timeout(Duration::from_secs(CONFIG.icon_download_timeout()))
         .default_headers(default_headers)
         .build()
-        .unwrap()
+        .expect("Failed to build icon client")
 });
 
 // Build Regex only once since this takes a lot of time.
 static ICON_REL_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)icon$|apple.*icon").unwrap());
+static ICON_REL_BLACKLIST: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)mask-icon").unwrap());
 static ICON_SIZE_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?x)(\d+)\D*(\d+)").unwrap());
 
 // Special HashMap which holds the user defined Regex to speedup matching the regex.
 static ICON_BLACKLIST_REGEX: Lazy<RwLock<HashMap<String, Regex>>> = Lazy::new(|| RwLock::new(HashMap::new()));
 
 #[get("/<domain>/icon.png")]
-fn icon(domain: String) -> Option<Cached<Content<Vec<u8>>>> {
+fn icon(domain: String) -> Cached<Content<Vec<u8>>> {
+    const FALLBACK_ICON: &[u8] = include_bytes!("../static/images/fallback-icon.png");
+
     if !is_valid_domain(&domain) {
         warn!("Invalid domain: {}", domain);
-        return None;
+        return Cached::ttl(
+            Content(ContentType::new("image", "png"), FALLBACK_ICON.to_vec()),
+            CONFIG.icon_cache_negttl(),
+        );
     }
 
-    get_icon(&domain).map(|icon| Cached::ttl(Content(ContentType::new("image", "x-icon"), icon), CONFIG.icon_cache_ttl()))
+    match get_icon(&domain) {
+        Some((icon, icon_type)) => {
+            Cached::ttl(Content(ContentType::new("image", icon_type), icon), CONFIG.icon_cache_ttl())
+        }
+        _ => Cached::ttl(Content(ContentType::new("image", "png"), FALLBACK_ICON.to_vec()), CONFIG.icon_cache_negttl()),
+    }
 }
 
 /// Returns if the domain provided is valid or not.
@@ -59,6 +77,8 @@ fn icon(domain: String) -> Option<Cached<Content<Vec<u8>>>> {
 /// This does some manual checks and makes use of Url to do some basic checking.
 /// domains can't be larger then 63 characters (not counting multiple subdomains) according to the RFC's, but we limit the total size to 255.
 fn is_valid_domain(domain: &str) -> bool {
+    const ALLOWED_CHARS: &str = "_-.";
+
     // If parsing the domain fails using Url, it will not work with reqwest.
     if let Err(parse_error) = Url::parse(format!("https://{}", domain).as_str()) {
         debug!("Domain parse error: '{}' - {:?}", domain, parse_error);
@@ -69,7 +89,10 @@ fn is_valid_domain(domain: &str) -> bool {
         || domain.starts_with('-')
         || domain.ends_with('-')
     {
-        debug!("Domain validation error: '{}' is either empty, contains '..', starts with an '.', starts or ends with a '-'", domain);
+        debug!(
+            "Domain validation error: '{}' is either empty, contains '..', starts with an '.', starts or ends with a '-'",
+            domain
+        );
         return false;
     } else if domain.len() > 255 {
         debug!("Domain validation error: '{}' exceeds 255 characters", domain);
@@ -238,7 +261,7 @@ fn is_domain_blacklisted(domain: &str) -> bool {
     is_blacklisted
 }
 
-fn get_icon(domain: &str) -> Option<Vec<u8>> {
+fn get_icon(domain: &str) -> Option<(Vec<u8>, String)> {
     let path = format!("{}/{}.png", CONFIG.icon_cache_folder(), domain);
 
     // Check for expiration of negatively cached copy
@@ -247,7 +270,11 @@ fn get_icon(domain: &str) -> Option<Vec<u8>> {
     }
 
     if let Some(icon) = get_cached_icon(&path) {
-        return Some(icon);
+        let icon_type = match get_icon_type(&icon) {
+            Some(x) => x,
+            _ => "x-icon",
+        };
+        return Some((icon, icon_type.to_string()));
     }
 
     if CONFIG.disable_icon_download() {
@@ -256,9 +283,9 @@ fn get_icon(domain: &str) -> Option<Vec<u8>> {
 
     // Get the icon, or None in case of error
     match download_icon(&domain) {
-        Ok(icon) => {
+        Ok((icon, icon_type)) => {
             save_icon(&path, &icon);
-            Some(icon)
+            Some((icon, icon_type.unwrap_or("x-icon").to_string()))
         }
         Err(e) => {
             error!("Error downloading icon: {:?}", e);
@@ -319,7 +346,6 @@ fn icon_is_expired(path: &str) -> bool {
     expired.unwrap_or(true)
 }
 
-#[derive(Debug)]
 struct Icon {
     priority: u8,
     href: String,
@@ -327,12 +353,20 @@ struct Icon {
 
 impl Icon {
     const fn new(priority: u8, href: String) -> Self {
-        Self { href, priority }
+        Self {
+            href,
+            priority,
+        }
     }
 }
 
 fn get_favicons_node(node: &std::rc::Rc<markup5ever_rcdom::Node>, icons: &mut Vec<Icon>, url: &Url) {
-    if let markup5ever_rcdom::NodeData::Element { name, attrs, .. } = &node.data {
+    if let markup5ever_rcdom::NodeData::Element {
+        name,
+        attrs,
+        ..
+    } = &node.data
+    {
         if name.local.as_ref() == "link" {
             let mut has_rel = false;
             let mut href = None;
@@ -343,7 +377,8 @@ fn get_favicons_node(node: &std::rc::Rc<markup5ever_rcdom::Node>, icons: &mut Ve
                 let attr_name = attr.name.local.as_ref();
                 let attr_value = attr.value.as_ref();
 
-                if attr_name == "rel" && ICON_REL_REGEX.is_match(attr_value) {
+                if attr_name == "rel" && ICON_REL_REGEX.is_match(attr_value) && !ICON_REL_BLACKLIST.is_match(attr_value)
+                {
                     has_rel = true;
                 } else if attr_name == "href" {
                     href = Some(attr_value);
@@ -486,10 +521,10 @@ fn get_icon_url(domain: &str) -> Result<IconUrlResult, Error> {
     iconlist.sort_by_key(|x| x.priority);
 
     // There always is an icon in the list, so no need to check if it exists, and just return the first one
-    Ok(IconUrlResult{
+    Ok(IconUrlResult {
         iconlist,
         cookies: cookie_str,
-        referer
+        referer,
     })
 }
 
@@ -510,9 +545,7 @@ fn get_page_with_cookies(url: &str, cookie_str: &str, referer: &str) -> Result<R
         client = client.header("Referer", referer)
     }
 
-    client.send()?
-        .error_for_status()
-        .map_err(Into::into)
+    client.send()?.error_for_status().map_err(Into::into)
 }
 
 /// Returns a Integer with the priority of the type of the icon which to prefer.
@@ -594,7 +627,7 @@ fn parse_sizes(sizes: Option<&str>) -> (u16, u16) {
     (width, height)
 }
 
-fn download_icon(domain: &str) -> Result<Vec<u8>, Error> {
+fn download_icon(domain: &str) -> Result<(Vec<u8>, Option<&str>), Error> {
     if is_domain_blacklisted(domain) {
         err!("Domain is blacklisted", domain)
     }
@@ -602,6 +635,7 @@ fn download_icon(domain: &str) -> Result<Vec<u8>, Error> {
     let icon_result = get_icon_url(&domain)?;
 
     let mut buffer = Vec::new();
+    let mut icon_type: Option<&str> = None;
 
     use data_url::DataUrl;
 
@@ -613,29 +647,43 @@ fn download_icon(domain: &str) -> Result<Vec<u8>, Error> {
                 Ok((body, _fragment)) => {
                     // Also check if the size is atleast 67 bytes, which seems to be the smallest png i could create
                     if body.len() >= 67 {
+                        // Check if the icon type is allowed, else try an icon from the list.
+                        icon_type = get_icon_type(&body);
+                        if icon_type.is_none() {
+                            debug!("Icon from {} data:image uri, is not a valid image type", domain);
+                            continue;
+                        }
+                        info!("Extracted icon from data:image uri for {}", domain);
                         buffer = body;
                         break;
                     }
                 }
-                _ => warn!("data uri is invalid"),
+                _ => warn!("Extracted icon from data:image uri is invalid"),
             };
         } else {
             match get_page_with_cookies(&icon.href, &icon_result.cookies, &icon_result.referer) {
                 Ok(mut res) => {
-                    info!("Downloaded icon from {}", icon.href);
                     res.copy_to(&mut buffer)?;
+                    // Check if the icon type is allowed, else try an icon from the list.
+                    icon_type = get_icon_type(&buffer);
+                    if icon_type.is_none() {
+                        buffer.clear();
+                        debug!("Icon from {}, is not a valid image type", icon.href);
+                        continue;
+                    }
+                    info!("Downloaded icon from {}", icon.href);
                     break;
-                },
+                }
                 _ => warn!("Download failed for {}", icon.href),
             };
         }
     }
 
     if buffer.is_empty() {
-        err!("Empty response")
+        err!("Empty response downloading icon")
     }
 
-    Ok(buffer)
+    Ok((buffer, icon_type))
 }
 
 fn save_icon(path: &str, icon: &[u8]) {
@@ -647,7 +695,18 @@ fn save_icon(path: &str, icon: &[u8]) {
             create_dir_all(&CONFIG.icon_cache_folder()).expect("Error creating icon cache");
         }
         Err(e) => {
-            info!("Icon save error: {:?}", e);
+            warn!("Icon save error: {:?}", e);
         }
+    }
+}
+
+fn get_icon_type(bytes: &[u8]) -> Option<&'static str> {
+    match bytes {
+        [137, 80, 78, 71, ..] => Some("png"),
+        [0, 0, 1, 0, ..] => Some("x-icon"),
+        [82, 73, 70, 70, ..] => Some("webp"),
+        [255, 216, 255, ..] => Some("jpeg"),
+        [66, 77, ..] => Some("bmp"),
+        _ => None,
     }
 }

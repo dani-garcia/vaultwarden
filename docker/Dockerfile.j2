@@ -1,10 +1,10 @@
 # This file was generated using a Jinja2 template.
 # Please make your changes in `Dockerfile.j2` and then `make` the individual Dockerfiles.
 
-{% set build_stage_base_image = "rust:1.50" %}
+{% set build_stage_base_image = "rust:1.51" %}
 {% if "alpine" in target_file %}
 {%   if "amd64" in target_file %}
-{%     set build_stage_base_image = "clux/muslrust:nightly-2021-02-22" %}
+{%     set build_stage_base_image = "clux/muslrust:nightly-2021-04-14" %}
 {%     set runtime_stage_base_image = "alpine:3.13" %}
 {%     set package_arch_target = "x86_64-unknown-linux-musl" %}
 {%   elif "armv7" in target_file %}
@@ -44,26 +44,26 @@
 # 	https://docs.docker.com/develop/develop-images/multistage-build/
 # 	https://whitfin.io/speeding-up-rust-docker-builds/
 ####################### VAULT BUILD IMAGE  #######################
-{% set vault_version = "2.19.0" %}
-{% set vault_image_digest = "sha256:8747cfaa2c6d87d1749e119dd884697e8099389aa9aca30a4d73d4ff796fe0e4" %}
+{% set vault_version = "2.19.0d" %}
+{% set vault_image_digest = "sha256:a7bd6bc4db33bd45f723c4b1ac90918b7f80204560683cfc8efd9efd03a9b233" %}
 # The web-vault digest specifies a particular web-vault build on Docker Hub.
 # Using the digest instead of the tag name provides better security,
 # as the digest of an image is immutable, whereas a tag name can later
 # be changed to point to a malicious image.
 #
 # To verify the current digest for a given tag name:
-# - From https://hub.docker.com/r/bitwardenrs/web-vault/tags,
+# - From https://hub.docker.com/r/vaultwarden/web-vault/tags,
 #   click the tag name to view the digest of the image it currently points to.
 # - From the command line:
-#     $ docker pull bitwardenrs/web-vault:v{{ vault_version }}
-#     $ docker image inspect --format "{{ '{{' }}.RepoDigests}}" bitwardenrs/web-vault:v{{ vault_version }}
-#     [bitwardenrs/web-vault@{{ vault_image_digest }}]
+#     $ docker pull vaultwarden/web-vault:v{{ vault_version }}
+#     $ docker image inspect --format "{{ '{{' }}.RepoDigests}}" vaultwarden/web-vault:v{{ vault_version }}
+#     [vaultwarden/web-vault@{{ vault_image_digest }}]
 #
 # - Conversely, to get the tag name from the digest:
-#     $ docker image inspect --format "{{ '{{' }}.RepoTags}}" bitwardenrs/web-vault@{{ vault_image_digest }}
-#     [bitwardenrs/web-vault:v{{ vault_version }}]
+#     $ docker image inspect --format "{{ '{{' }}.RepoTags}}" vaultwarden/web-vault@{{ vault_image_digest }}
+#     [vaultwarden/web-vault:v{{ vault_version }}]
 #
-FROM bitwardenrs/web-vault@{{ vault_image_digest }} as vault
+FROM vaultwarden/web-vault@{{ vault_image_digest }} as vault
 
 ########################## BUILD IMAGE  ##########################
 FROM {{ build_stage_base_image }} as build
@@ -189,7 +189,7 @@ RUN touch src/main.rs
 RUN cargo build --features ${DB} --release{{ package_arch_target_param }}
 {% if "alpine" in target_file %}
 {%   if "armv7" in target_file %}
-RUN musl-strip target/{{ package_arch_target }}/release/bitwarden_rs
+RUN musl-strip target/{{ package_arch_target }}/release/vaultwarden
 {%   endif %}
 {% endif %}
 
@@ -215,9 +215,6 @@ RUN apk add --no-cache \
         openssl \
         curl \
         dumb-init \
-{%   if "sqlite" in features %}
-        sqlite \
-{%   endif %}
 {%   if "mysql" in features %}
         mariadb-connector-c \
 {%   endif %}
@@ -232,7 +229,6 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     curl \
     dumb-init \
-    sqlite3 \
     libmariadb-dev-compat \
     libpq5 \
     && rm -rf /var/lib/apt/lists/*
@@ -250,12 +246,13 @@ EXPOSE 3012
 
 # Copies the files from the context (Rocket.toml file and web-vault)
 # and the binary from the "build" stage to the current stage
+WORKDIR /
 COPY Rocket.toml .
 COPY --from=vault /web-vault ./web-vault
 {% if package_arch_target is defined %}
-COPY --from=build /app/target/{{ package_arch_target }}/release/bitwarden_rs .
+COPY --from=build /app/target/{{ package_arch_target }}/release/vaultwarden .
 {% else %}
-COPY --from=build /app/target/release/bitwarden_rs .
+COPY --from=build /app/target/release/vaultwarden .
 {% endif %}
 
 COPY docker/healthcheck.sh /healthcheck.sh
@@ -264,6 +261,5 @@ COPY docker/start.sh /start.sh
 HEALTHCHECK --interval=60s --timeout=10s CMD ["/healthcheck.sh"]
 
 # Configures the startup!
-WORKDIR /
 ENTRYPOINT ["/usr/bin/dumb-init", "--"]
 CMD ["/start.sh"]

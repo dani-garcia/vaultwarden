@@ -11,18 +11,18 @@
 # be changed to point to a malicious image.
 #
 # To verify the current digest for a given tag name:
-# - From https://hub.docker.com/r/bitwardenrs/web-vault/tags,
+# - From https://hub.docker.com/r/vaultwarden/web-vault/tags,
 #   click the tag name to view the digest of the image it currently points to.
 # - From the command line:
-#     $ docker pull bitwardenrs/web-vault:v2.19.0
-#     $ docker image inspect --format "{{.RepoDigests}}" bitwardenrs/web-vault:v2.19.0
-#     [bitwardenrs/web-vault@sha256:8747cfaa2c6d87d1749e119dd884697e8099389aa9aca30a4d73d4ff796fe0e4]
+#     $ docker pull vaultwarden/web-vault:v2.19.0d
+#     $ docker image inspect --format "{{.RepoDigests}}" vaultwarden/web-vault:v2.19.0d
+#     [vaultwarden/web-vault@sha256:a7bd6bc4db33bd45f723c4b1ac90918b7f80204560683cfc8efd9efd03a9b233]
 #
 # - Conversely, to get the tag name from the digest:
-#     $ docker image inspect --format "{{.RepoTags}}" bitwardenrs/web-vault@sha256:8747cfaa2c6d87d1749e119dd884697e8099389aa9aca30a4d73d4ff796fe0e4
-#     [bitwardenrs/web-vault:v2.19.0]
+#     $ docker image inspect --format "{{.RepoTags}}" vaultwarden/web-vault@sha256:a7bd6bc4db33bd45f723c4b1ac90918b7f80204560683cfc8efd9efd03a9b233
+#     [vaultwarden/web-vault:v2.19.0d]
 #
-FROM bitwardenrs/web-vault@sha256:8747cfaa2c6d87d1749e119dd884697e8099389aa9aca30a4d73d4ff796fe0e4 as vault
+FROM vaultwarden/web-vault@sha256:a7bd6bc4db33bd45f723c4b1ac90918b7f80204560683cfc8efd9efd03a9b233 as vault
 
 ########################## BUILD IMAGE  ##########################
 FROM messense/rust-musl-cross:armv7-musleabihf as build
@@ -67,7 +67,7 @@ RUN touch src/main.rs
 # Builds again, this time it'll just be
 # your actual source files being built
 RUN cargo build --features ${DB} --release --target=armv7-unknown-linux-musleabihf
-RUN musl-strip target/armv7-unknown-linux-musleabihf/release/bitwarden_rs
+RUN musl-strip target/armv7-unknown-linux-musleabihf/release/vaultwarden
 
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image
@@ -86,7 +86,6 @@ RUN apk add --no-cache \
         openssl \
         curl \
         dumb-init \
-        sqlite \
         ca-certificates
 
 RUN mkdir /data
@@ -99,9 +98,10 @@ EXPOSE 3012
 
 # Copies the files from the context (Rocket.toml file and web-vault)
 # and the binary from the "build" stage to the current stage
+WORKDIR /
 COPY Rocket.toml .
 COPY --from=vault /web-vault ./web-vault
-COPY --from=build /app/target/armv7-unknown-linux-musleabihf/release/bitwarden_rs .
+COPY --from=build /app/target/armv7-unknown-linux-musleabihf/release/vaultwarden .
 
 COPY docker/healthcheck.sh /healthcheck.sh
 COPY docker/start.sh /start.sh
@@ -109,6 +109,5 @@ COPY docker/start.sh /start.sh
 HEALTHCHECK --interval=60s --timeout=10s CMD ["/healthcheck.sh"]
 
 # Configures the startup!
-WORKDIR /
 ENTRYPOINT ["/usr/bin/dumb-init", "--"]
 CMD ["/start.sh"]

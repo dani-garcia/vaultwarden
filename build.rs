@@ -1,7 +1,7 @@
-use std::process::Command;
 use std::env;
+use std::process::Command;
 
-fn main() { 
+fn main() {
     // This allow using #[cfg(sqlite)] instead of #[cfg(feature = "sqlite")], which helps when trying to add them through macros
     #[cfg(feature = "sqlite")]
     println!("cargo:rustc-cfg=sqlite");
@@ -11,8 +11,10 @@ fn main() {
     println!("cargo:rustc-cfg=postgresql");
 
     #[cfg(not(any(feature = "sqlite", feature = "mysql", feature = "postgresql")))]
-    compile_error!("You need to enable one DB backend. To build with previous defaults do: cargo build --features sqlite");
-    
+    compile_error!(
+        "You need to enable one DB backend. To build with previous defaults do: cargo build --features sqlite"
+    );
+
     if let Ok(version) = env::var("BWRS_VERSION") {
         println!("cargo:rustc-env=BWRS_VERSION={}", version);
         println!("cargo:rustc-env=CARGO_PKG_VERSION={}", version);
@@ -56,12 +58,12 @@ fn read_git_info() -> Result<(), std::io::Error> {
     // Combined version
     let version = if let Some(exact) = exact_tag {
         exact
-    } else if &branch != "master" {
+    } else if &branch != "main" && &branch != "master" {
         format!("{}-{} ({})", last_tag, rev_short, branch)
     } else {
         format!("{}-{}", last_tag, rev_short)
     };
-    
+
     println!("cargo:rustc-env=BWRS_VERSION={}", version);
     println!("cargo:rustc-env=CARGO_PKG_VERSION={}", version);
 

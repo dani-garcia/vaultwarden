@@ -28,13 +28,7 @@ static APP_ID: Lazy<String> = Lazy::new(|| format!("{}/app-id.json", &CONFIG.dom
 static U2F: Lazy<U2f> = Lazy::new(|| U2f::new(APP_ID.clone()));
 
 pub fn routes() -> Vec<Route> {
-    routes![
-        generate_u2f,
-        generate_u2f_challenge,
-        activate_u2f,
-        activate_u2f_put,
-        delete_u2f,
-    ]
+    routes![generate_u2f, generate_u2f_challenge, activate_u2f, activate_u2f_put, delete_u2f,]
 }
 
 #[post("/two-factor/get-u2f", data = "<data>")]
@@ -161,10 +155,7 @@ fn activate_u2f(data: JsonUpcase<EnableU2FData>, headers: Headers, conn: DbConn)
 
     let response: RegisterResponseCopy = serde_json::from_str(&data.DeviceResponse)?;
 
-    let error_code = response
-        .error_code
-        .clone()
-        .map_or("0".into(), NumberOrString::into_string);
+    let error_code = response.error_code.clone().map_or("0".into(), NumberOrString::into_string);
 
     if error_code != "0" {
         err!("Error registering U2F token")
@@ -300,20 +291,13 @@ fn _old_parse_registrations(registations: &str) -> Vec<Registration> {
 
     let regs: Vec<Value> = serde_json::from_str(registations).expect("Can't parse Registration data");
 
-    regs.into_iter()
-        .map(|r| serde_json::from_value(r).unwrap())
-        .map(|Helper(r)| r)
-        .collect()
+    regs.into_iter().map(|r| serde_json::from_value(r).unwrap()).map(|Helper(r)| r).collect()
 }
 
 pub fn generate_u2f_login(user_uuid: &str, conn: &DbConn) -> ApiResult<U2fSignRequest> {
     let challenge = _create_u2f_challenge(user_uuid, TwoFactorType::U2fLoginChallenge, conn);
 
-    let registrations: Vec<_> = get_u2f_registrations(user_uuid, conn)?
-        .1
-        .into_iter()
-        .map(|r| r.reg)
-        .collect();
+    let registrations: Vec<_> = get_u2f_registrations(user_uuid, conn)?.1.into_iter().map(|r| r.reg).collect();
 
     if registrations.is_empty() {
         err!("No U2F devices registered")

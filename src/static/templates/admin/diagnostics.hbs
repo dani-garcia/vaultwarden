@@ -20,6 +20,7 @@
                     <dd class="col-sm-7">
                         <span id="server-latest">{{diagnostics.latest_release}}<span id="server-latest-commit" class="d-none">-{{diagnostics.latest_commit}}</span></span>
                     </dd>
+                    {{#if diagnostics.web_vault_enabled}}
                     <dt class="col-sm-5">Web Installed
                         <span class="badge badge-success d-none" id="web-success" title="Latest version is installed.">Ok</span>
                         <span class="badge badge-warning d-none" id="web-warning" title="There seems to be an update available.">Update</span>
@@ -33,6 +34,13 @@
                     </dt>
                     <dd class="col-sm-7">
                         <span id="web-latest">{{diagnostics.latest_web_build}}</span>
+                    </dd>
+                    {{/unless}}
+                    {{/if}}
+                    {{#unless diagnostics.web_vault_enabled}}
+                    <dt class="col-sm-5">Web Installed</dt>
+                    <dd class="col-sm-7">
+                        <span id="web-installed">Web Vault is disabled</span>
                     </dd>
                     {{/unless}}
                     <dt class="col-sm-5">Database</dt>
@@ -118,7 +126,10 @@
                     <dd class="col-sm-7">
                         <span id="dns-resolved">{{diagnostics.dns_resolved}}</span>
                     </dd>
-
+                    <dt class="col-sm-5">Date & Time (Local)</dt>
+                    <dd class="col-sm-7">
+                        <span><b>Server:</b> {{diagnostics.server_time_local}}</span>
+                    </dd>
                     <dt class="col-sm-5">Date & Time (UTC)
                         <span class="badge badge-success d-none" id="time-success" title="Time offsets seem to be correct.">Ok</span>
                         <span class="badge badge-danger d-none" id="time-warning" title="Time offsets are too mouch at drift.">Error</span>
@@ -148,8 +159,8 @@
                 <dl class="row">
                     <dd class="col-sm-12">
                         If you need support please check the following links first before you create a new issue:
-                         <a href="https://bitwardenrs.discourse.group/" target="_blank" rel="noreferrer">Bitwarden_RS Forum</a>
-                         | <a href="https://github.com/dani-garcia/bitwarden_rs/discussions" target="_blank" rel="noreferrer">Github Discussions</a>
+                         <a href="https://bitwardenrs.discourse.group/" target="_blank" rel="noreferrer">Vaultwarden Forum</a>
+                         | <a href="https://github.com/dani-garcia/vaultwarden/discussions" target="_blank" rel="noreferrer">Github Discussions</a>
                     </dd>
                 </dl>
                 <dl class="row">
@@ -211,7 +222,7 @@
         }
 
         // ================================
-        // Version check for both bitwarden_rs and web-vault
+        // Version check for both vaultwarden and web-vault
         let serverInstalled = document.getElementById('server-installed').innerText;
         let serverLatest = document.getElementById('server-latest').innerText;
         let serverLatestCommit = document.getElementById('server-latest-commit').innerText.replace('-', '');
@@ -294,7 +305,7 @@
     async function generateSupportString() {
         supportString = "### Your environment (Generated via diagnostics page)\n";
 
-        supportString += "* Bitwarden_rs version: v{{ version }}\n";
+        supportString += "* Vaultwarden version: v{{ version }}\n";
         supportString += "* Web-vault version: v{{ diagnostics.web_vault_version }}\n";
         supportString += "* Running within Docker: {{ diagnostics.running_within_docker }}\n";
         supportString += "* Uses a reverse proxy: {{ diagnostics.ip_header_exists }}\n";

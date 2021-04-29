@@ -63,8 +63,8 @@ enum UserStatus {
 
 #[derive(Serialize, Deserialize)]
 pub struct UserStampException {
-  pub route: String,
-  pub security_stamp: String
+    pub route: String,
+    pub security_stamp: String,
 }
 
 /// Local methods
@@ -162,7 +162,7 @@ impl User {
     pub fn set_stamp_exception(&mut self, route_exception: &str) {
         let stamp_exception = UserStampException {
             route: route_exception.to_string(),
-            security_stamp: self.security_stamp.to_string()
+            security_stamp: self.security_stamp.to_string(),
         };
         self.stamp_exception = Some(serde_json::to_string(&stamp_exception).unwrap_or_default());
     }
@@ -341,14 +341,16 @@ impl User {
     pub fn last_active(&self, conn: &DbConn) -> Option<NaiveDateTime> {
         match Device::find_latest_active_by_user(&self.uuid, conn) {
             Some(device) => Some(device.updated_at),
-            None => None
+            None => None,
         }
     }
 }
 
 impl Invitation {
     pub const fn new(email: String) -> Self {
-        Self { email }
+        Self {
+            email,
+        }
     }
 
     pub fn save(&self, conn: &DbConn) -> EmptyResult {
