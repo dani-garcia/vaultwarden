@@ -1,4 +1,3 @@
-use chrono::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool, PooledConnection};
 use rocket::{
     http::Status,
@@ -228,12 +227,11 @@ pub fn backup_database(conn: &DbConn) -> Result<(), Error> {
             use std::path::Path;
             let db_url = CONFIG.database_url();
             let db_path = Path::new(&db_url).parent().unwrap().to_string_lossy();
-            let file_date = Utc::now().format("%Y%m%d_%H%M%S").to_string();
+            let file_date = chrono::Utc::now().format("%Y%m%d_%H%M%S").to_string();
             diesel::sql_query(format!("VACUUM INTO '{}/db_{}.sqlite3'", db_path, file_date)).execute(conn)?;
+            Ok(())
         }
     }
-
-    Ok(())
 }
 
 /// Get the SQL Server version

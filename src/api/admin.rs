@@ -522,7 +522,7 @@ fn diagnostics(_token: AdminToken, ip_header: IpHeader, conn: DbConn) -> ApiResu
                 Ok(r) => r.tag_name,
                 _ => "-".to_string(),
             },
-            match get_github_api::<GitCommit>("https://api.github.com/repos/dani-garcia/vaultwarden/commits/master") {
+            match get_github_api::<GitCommit>("https://api.github.com/repos/dani-garcia/vaultwarden/commits/main") {
                 Ok(mut c) => {
                     c.sha.truncate(8);
                     c.sha
