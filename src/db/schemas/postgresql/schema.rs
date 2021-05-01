@@ -22,6 +22,7 @@ table! {
         data -> Text,
         password_history -> Nullable<Text>,
         deleted_at -> Nullable<Timestamp>,
+        reprompt -> Nullable<Integer>,
     }
 }
 
