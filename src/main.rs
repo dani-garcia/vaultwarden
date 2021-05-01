@@ -100,7 +100,7 @@ fn launch_info() {
     println!("| This is an *unofficial* Bitwarden implementation, DO NOT use the   |");
     println!("| official channels to report bugs/features, regardless of client.   |");
     println!("| Send usage/configuration questions or feature requests to:         |");
-    println!("|   https://bitwardenrs.discourse.group/                             |");
+    println!("|   https://vaultwarden.discourse.group/                             |");
     println!("| Report suspected bugs/issues in the software itself at:            |");
     println!("|   https://github.com/dani-garcia/vaultwarden/issues/new            |");
     println!("\\--------------------------------------------------------------------/\n");
