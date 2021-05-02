@@ -157,6 +157,24 @@ pub trait FromDb {
     fn from_db(self) -> Self::Output;
 }
 
+impl<T: FromDb> FromDb for Vec<T> {
+    type Output = Vec<T::Output>;
+    #[allow(clippy::wrong_self_convention)]
+    #[inline(always)]
+    fn from_db(self) -> Self::Output {
+        self.into_iter().map(crate::db::FromDb::from_db).collect()
+    }
+}
+
+impl<T: FromDb> FromDb for Option<T> {
+    type Output = Option<T::Output>;
+    #[allow(clippy::wrong_self_convention)]
+    #[inline(always)]
+    fn from_db(self) -> Self::Output {
+        self.map(crate::db::FromDb::from_db)
+    }
+}
+
 // For each struct eg. Cipher, we create a CipherDb inside a module named __$db_model (where $db is sqlite, mysql or postgresql),
 // to implement the Diesel traits. We also provide methods to convert between them and the basic structs. Later, that module will be auto imported when using db_run!
 #[macro_export]
@@ -197,17 +215,8 @@ macro_rules! db_object {
 
             impl crate::db::FromDb for [<$name Db>] {
                 type Output = super::$name;
+                #[allow(clippy::wrong_self_convention)]
                 #[inline(always)] fn from_db(self) -> Self::Output { super::$name { $( $field: self.$field, )+ } }
-            }
-
-            impl crate::db::FromDb for Vec<[<$name Db>]> {
-                type Output = Vec<super::$name>;
-                #[inline(always)] fn from_db(self) -> Self::Output { self.into_iter().map(crate::db::FromDb::from_db).collect() }
-            }
-
-            impl crate::db::FromDb for Option<[<$name Db>]> {
-                type Output = Option<super::$name>;
-                #[inline(always)] fn from_db(self) -> Self::Output { self.map(crate::db::FromDb::from_db) }
             }
         }
     };

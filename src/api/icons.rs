@@ -354,8 +354,8 @@ struct Icon {
 impl Icon {
     const fn new(priority: u8, href: String) -> Self {
         Self {
-            href,
             priority,
+            href,
         }
     }
 }
