@@ -12,7 +12,7 @@ use rocket::{
 use rocket_contrib::json::Json;
 
 use crate::{
-    api::{ApiResult, EmptyResult, NumberOrString},
+    api::{ApiResult, EmptyResult, JsonResult, NumberOrString},
     auth::{decode_admin, encode_jwt, generate_admin_claims, ClientIp},
     config::ConfigBuilder,
     db::{backup_database, get_sql_server_version, models::*, DbConn, DbConnType},
@@ -279,7 +279,7 @@ struct InviteData {
 }
 
 #[post("/invite", data = "<data>")]
-fn invite_user(data: Json<InviteData>, _token: AdminToken, conn: DbConn) -> EmptyResult {
+fn invite_user(data: Json<InviteData>, _token: AdminToken, conn: DbConn) -> JsonResult {
     let data: InviteData = data.into_inner();
     let email = data.email.clone();
     if User::find_by_mail(&data.email, &conn).is_some() {
@@ -287,14 +287,16 @@ fn invite_user(data: Json<InviteData>, _token: AdminToken, conn: DbConn) -> Empt
     }
 
     let mut user = User::new(email);
-    user.save(&conn)?;
 
     if CONFIG.mail_enabled() {
-        mail::send_invite(&user.email, &user.uuid, None, None, &CONFIG.invitation_org_name(), None)
+        mail::send_invite(&user.email, &user.uuid, None, None, &CONFIG.invitation_org_name(), None)?;
     } else {
         let invitation = Invitation::new(data.email);
-        invitation.save(&conn)
+        invitation.save(&conn)?;
     }
+
+    user.save(&conn)?;
+    Ok(Json(user.to_json(&conn)))
 }
 
 #[post("/test/smtp", data = "<data>")]
