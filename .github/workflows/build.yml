@@ -5,8 +5,8 @@ on:
   pull_request:
     # Ignore when there are only changes done too one of these paths
     paths-ignore:
-      - "**.md"
-      - "**.txt"
+      - "*.md"
+      - "*.txt"
       - ".dockerignore"
       - ".env.template"
       - ".gitattributes"
@@ -20,6 +20,10 @@ on:
 
 jobs:
   build:
+    # Make warnings errors, this is to prevent warnings slipping through.
+    # This is done globally to prevent rebuilds when the RUSTFLAGS env variable changes.
+    env:
+      RUSTFLAGS: "-D warnings"
     strategy:
       fail-fast: false
       matrix:
@@ -32,25 +36,13 @@ jobs:
         include:
           - target-triple: x86_64-unknown-linux-gnu
             host-triple: x86_64-unknown-linux-gnu
-            features: "sqlite,mysql,postgresql"
+            features: [sqlite,mysql,postgresql] # Remember to update the `cargo test` to match the amount of features
             channel: nightly
             os: ubuntu-18.04
             ext:
           # - target-triple: x86_64-unknown-linux-gnu
           #   host-triple: x86_64-unknown-linux-gnu
           #   features: "sqlite,mysql,postgresql"
-          #   channel: stable
-          #   os: ubuntu-18.04
-          #   ext:
-          # - target-triple: x86_64-unknown-linux-musl
-          #   host-triple: x86_64-unknown-linux-gnu
-          #   features: "sqlite,postgresql"
-          #   channel: nightly
-          #   os: ubuntu-18.04
-          #   ext:
-          # - target-triple: x86_64-unknown-linux-musl
-          #   host-triple: x86_64-unknown-linux-gnu
-          #   features: "sqlite,postgresql"
           #   channel: stable
           #   os: ubuntu-18.04
           #   ext:
@@ -94,20 +86,43 @@ jobs:
 
 
       # Run cargo tests (In release mode to speed up future builds)
-      - name: '`cargo test --release --features ${{ matrix.features }} --target ${{ matrix.target-triple }}`'
+      # First test all features together, afterwards test them separately.
+      - name: "`cargo test --release --features ${{ join(matrix.features, ',') }} --target ${{ matrix.target-triple }}`"
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --release --features ${{ matrix.features }} --target ${{ matrix.target-triple }}
+          args: --release --features ${{ join(matrix.features, ',') }} --target ${{ matrix.target-triple }}
+      # Test single features
+      # 0: sqlite
+      - name: "`cargo test --release --features ${{ matrix.features[0] }} --target ${{ matrix.target-triple }}`"
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --release --features ${{ matrix.features[0] }} --target ${{ matrix.target-triple }}
+        if: ${{ matrix.features[0] != '' }}
+      # 1: mysql
+      - name: "`cargo test --release --features ${{ matrix.features[1] }} --target ${{ matrix.target-triple }}`"
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --release --features ${{ matrix.features[1] }} --target ${{ matrix.target-triple }}
+        if: ${{ matrix.features[1] != '' }}
+      # 2: postgresql
+      - name: "`cargo test --release --features ${{ matrix.features[2] }} --target ${{ matrix.target-triple }}`"
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --release --features ${{ matrix.features[2] }} --target ${{ matrix.target-triple }}
+        if: ${{ matrix.features[2] != '' }}
       # End Run cargo tests
 
 
-      # Run cargo clippy (In release mode to speed up future builds)
-      - name: '`cargo clippy --release --features ${{ matrix.features }} --target ${{ matrix.target-triple }}`'
+      # Run cargo clippy, and fail on warnings (In release mode to speed up future builds)
+      - name: "`cargo clippy --release --features ${{ join(matrix.features, ',') }} --target ${{ matrix.target-triple }}`"
         uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: --release --features ${{ matrix.features }} --target ${{ matrix.target-triple }}
+          args: --release --features ${{ join(matrix.features, ',') }} --target ${{ matrix.target-triple }} -- -D warnings
       # End Run cargo clippy
 
 
@@ -121,11 +136,11 @@ jobs:
 
 
       # Build the binary
-      - name: '`cargo build --release --features ${{ matrix.features }} --target ${{ matrix.target-triple }}`'
+      - name: "`cargo build --release --features ${{ join(matrix.features, ',') }} --target ${{ matrix.target-triple }}`"
         uses: actions-rs/cargo@v1
         with:
           command: build
-          args: --release --features ${{ matrix.features }} --target ${{ matrix.target-triple }}
+          args: --release --features ${{ join(matrix.features, ',') }} --target ${{ matrix.target-triple }}
       # End Build the binary
 
 

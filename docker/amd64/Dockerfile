@@ -56,8 +56,8 @@ COPY ./build.rs ./build.rs
 # Builds your dependencies and removes the
 # dummy project, except the target folder
 # This folder contains the compiled dependencies
-RUN cargo build --features ${DB} --release
-RUN find . -not -path "./target*" -delete
+RUN cargo build --features ${DB} --release \
+    && find . -not -path "./target*" -delete
 
 # Copies the complete project
 # To avoid copying unneeded files, use .dockerignore
@@ -79,8 +79,10 @@ ENV ROCKET_ENV "staging"
 ENV ROCKET_PORT=80
 ENV ROCKET_WORKERS=10
 
-# Install needed libraries
-RUN apt-get update && apt-get install -y \
+
+# Create data folder and Install needed libraries
+RUN mkdir /data \
+    && apt-get update && apt-get install -y \
     --no-install-recommends \
     openssl \
     ca-certificates \
@@ -90,7 +92,7 @@ RUN apt-get update && apt-get install -y \
     libpq5 \
     && rm -rf /var/lib/apt/lists/*
 
-RUN mkdir /data
+
 VOLUME /data
 EXPOSE 80
 EXPOSE 3012

@@ -49,11 +49,7 @@ RUN sed 's/^deb/deb-src/' /etc/apt/sources.list > \
         libpq5:armhf \
         libpq-dev \
         libmariadb-dev:armhf \
-        libmariadb-dev-compat:armhf
-
-RUN apt-get update \
-    && apt-get install -y \
-        --no-install-recommends \
+        libmariadb-dev-compat:armhf \
         gcc-arm-linux-gnueabihf \
     && mkdir -p ~/.cargo \
     && echo '[target.armv7-unknown-linux-gnueabihf]' >> ~/.cargo/config \
@@ -77,16 +73,15 @@ COPY ./build.rs ./build.rs
 # We at least need libmariadb3:amd64 installed for the x86_64 version of libmariadb.so (client)
 # We also need the libmariadb-dev-compat:amd64 but it can not be installed together with the :armhf version.
 # What we can do is a force install, because nothing important is overlapping each other.
-RUN apt-get install -y --no-install-recommends libmariadb3:amd64 && \
-    apt-get download libmariadb-dev-compat:amd64 && \
-    dpkg --force-all -i ./libmariadb-dev-compat*.deb && \
-    rm -rvf ./libmariadb-dev-compat*.deb
-
-# For Diesel-RS migrations_macros to compile with PostgreSQL we need to do some magic.
-# The libpq5:armhf package seems to not provide a symlink to libpq.so.5 with the name libpq.so.
-# This is only provided by the libpq-dev package which can't be installed for both arch at the same time.
-# Without this specific file the ld command will fail and compilation fails with it.
-RUN ln -sfnr /usr/lib/arm-linux-gnueabihf/libpq.so.5 /usr/lib/arm-linux-gnueabihf/libpq.so
+RUN apt-get install -y --no-install-recommends libmariadb3:amd64 \
+    && apt-get download libmariadb-dev-compat:amd64 \
+    && dpkg --force-all -i ./libmariadb-dev-compat*.deb \
+    && rm -rvf ./libmariadb-dev-compat*.deb \
+    # For Diesel-RS migrations_macros to compile with PostgreSQL we need to do some magic.
+    # The libpq5:armhf package seems to not provide a symlink to libpq.so.5 with the name libpq.so.
+    # This is only provided by the libpq-dev package which can't be installed for both arch at the same time.
+    # Without this specific file the ld command will fail and compilation fails with it.
+    && ln -sfnr /usr/lib/arm-linux-gnueabihf/libpq.so.5 /usr/lib/arm-linux-gnueabihf/libpq.so
 
 ENV CC_armv7_unknown_linux_gnueabihf="/usr/bin/arm-linux-gnueabihf-gcc"
 ENV CROSS_COMPILE="1"
@@ -97,8 +92,8 @@ RUN rustup target add armv7-unknown-linux-gnueabihf
 # Builds your dependencies and removes the
 # dummy project, except the target folder
 # This folder contains the compiled dependencies
-RUN cargo build --features ${DB} --release --target=armv7-unknown-linux-gnueabihf
-RUN find . -not -path "./target*" -delete
+RUN cargo build --features ${DB} --release --target=armv7-unknown-linux-gnueabihf \
+    && find . -not -path "./target*" -delete
 
 # Copies the complete project
 # To avoid copying unneeded files, use .dockerignore
@@ -120,10 +115,12 @@ ENV ROCKET_ENV "staging"
 ENV ROCKET_PORT=80
 ENV ROCKET_WORKERS=10
 
+# hadolint ignore=DL3059
 RUN [ "cross-build-start" ]
 
-# Install needed libraries
-RUN apt-get update && apt-get install -y \
+# Create data folder and Install needed libraries
+RUN mkdir /data \
+    && apt-get update && apt-get install -y \
     --no-install-recommends \
     openssl \
     ca-certificates \
@@ -133,8 +130,7 @@ RUN apt-get update && apt-get install -y \
     libpq5 \
     && rm -rf /var/lib/apt/lists/*
 
-RUN mkdir /data
-
+# hadolint ignore=DL3059
 RUN [ "cross-build-end" ]
 
 VOLUME /data
