@@ -75,15 +75,15 @@ Thanks for your contribution to the project!
 <table>
   <tr>
     <td align="center">
-      <a href="https://github.com/ChonoN" style="width: 75px">
-        <sub><b>ChonoN</b></sub>
+      <a href="https://github.com/Gyarbij" style="width: 75px">
+        <sub><b>Chono N</b></sub>
       </a>
     </td>
   </tr>
   <tr>
     <td align="center">
        <a href="https://github.com/themightychris">
-        <sub><b>themightychris</b></sub>
+        <sub><b>Chris Alfano</b></sub>
       </a>
     </td>
   </tr>
