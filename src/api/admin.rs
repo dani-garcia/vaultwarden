@@ -30,6 +30,7 @@ pub fn routes() -> Vec<Route> {
     routes![
         admin_login,
         get_users_json,
+        get_user_json,
         post_admin_login,
         admin_page,
         invite_user,
@@ -347,6 +348,13 @@ fn users_overview(_token: AdminToken, conn: DbConn) -> ApiResult<Html<String>> {
 
     let text = AdminTemplateData::users(users_json).render()?;
     Ok(Html(text))
+}
+
+#[get("/users/<uuid>")]
+fn get_user_json(uuid: String, _token: AdminToken, conn: DbConn) -> JsonResult {
+    let user = User::find_by_uuid(&uuid, &conn).map_res("User doesn't exist")?;
+
+    Ok(Json(user.to_json(&conn)))
 }
 
 #[post("/users/<uuid>/delete")]
