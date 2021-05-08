@@ -389,7 +389,7 @@ fn get_favicons_node(node: &std::rc::Rc<markup5ever_rcdom::Node>, icons: &mut Ve
 
             if has_rel {
                 if let Some(inner_href) = href {
-                    if let Ok(full_href) = url.join(&inner_href).map(|h| h.into_string()) {
+                    if let Ok(full_href) = url.join(&inner_href).map(String::from) {
                         let priority = get_icon_priority(&full_href, sizes);
                         icons.push(Icon::new(priority, full_href));
                     }
@@ -499,7 +499,7 @@ fn get_icon_url(domain: &str) -> Result<IconUrlResult, Error> {
         referer = url.as_str().to_string();
 
         // Add the default favicon.ico to the list with the domain the content responded from.
-        iconlist.push(Icon::new(35, url.join("/favicon.ico").unwrap().into_string()));
+        iconlist.push(Icon::new(35, String::from(url.join("/favicon.ico").unwrap())));
 
         // 512KB should be more than enough for the HTML, though as we only really need
         // the HTML header, it could potentially be reduced even further

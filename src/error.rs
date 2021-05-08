@@ -50,7 +50,6 @@ use yubico::yubicoerror::YubicoError as YubiErr;
 
 use lettre::address::AddressError as AddrErr;
 use lettre::error::Error as LettreErr;
-use lettre::message::mime::FromStrError as FromStrErr;
 use lettre::transport::smtp::Error as SmtpErr;
 
 #[derive(Serialize)]
@@ -84,7 +83,6 @@ make_error! {
     LettreError(LettreErr):   _has_source, _api_error,
     AddressError(AddrErr):    _has_source, _api_error,
     SmtpError(SmtpErr):       _has_source, _api_error,
-    FromStrError(FromStrErr): _has_source, _api_error,
 
     DieselConError(DieselConErr): _has_source, _api_error,
     DieselMigError(DieselMigErr): _has_source, _api_error,

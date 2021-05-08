@@ -27,7 +27,7 @@ fn mailer() -> SmtpTransport {
         .timeout(Some(Duration::from_secs(CONFIG.smtp_timeout())));
 
     // Determine security
-    let smtp_client = if CONFIG.smtp_ssl() {
+    let smtp_client = if CONFIG.smtp_ssl() || CONFIG.smtp_explicit_tls() {
         let mut tls_parameters = TlsParameters::builder(host);
         if CONFIG.smtp_accept_invalid_hostnames() {
             tls_parameters = tls_parameters.dangerous_accept_invalid_hostnames(true);
@@ -99,9 +99,8 @@ fn get_template(template_name: &str, data: &serde_json::Value) -> Result<(String
         None => err!("Template doesn't contain subject"),
     };
 
-    use newline_converter::unix2dos;
     let body = match text_split.next() {
-        Some(s) => unix2dos(s.trim()).to_string(),
+        Some(s) => s.trim().to_string(),
         None => err!("Template doesn't contain body"),
     };
 
@@ -307,13 +306,13 @@ fn send_email(address: &str, subject: &str, body_html: String, body_text: String
     let html = SinglePart::builder()
         // We force Base64 encoding because in the past we had issues with different encodings.
         .header(header::ContentTransferEncoding::Base64)
-        .header(header::ContentType("text/html; charset=utf-8".parse()?))
+        .header(header::ContentType::TEXT_HTML)
         .body(body_html);
 
     let text = SinglePart::builder()
         // We force Base64 encoding because in the past we had issues with different encodings.
         .header(header::ContentTransferEncoding::Base64)
-        .header(header::ContentType("text/plain; charset=utf-8".parse()?))
+        .header(header::ContentType::TEXT_PLAIN)
         .body(body_text);
 
     let smtp_from = &CONFIG.smtp_from();
