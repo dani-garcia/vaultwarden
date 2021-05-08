@@ -110,11 +110,7 @@ RUN sed 's/^deb/deb-src/' /etc/apt/sources.list > \
         libpq5{{ package_arch_prefix }} \
         libpq-dev \
         libmariadb-dev{{ package_arch_prefix }} \
-        libmariadb-dev-compat{{ package_arch_prefix }}
-
-RUN apt-get update \
-    && apt-get install -y \
-        --no-install-recommends \
+        libmariadb-dev-compat{{ package_arch_prefix }} \
         gcc-{{ package_cross_compiler }} \
     && mkdir -p ~/.cargo \
     && echo '[target.{{ package_arch_target }}]' >> ~/.cargo/config \
@@ -150,16 +146,15 @@ COPY ./build.rs ./build.rs
 # We at least need libmariadb3:amd64 installed for the x86_64 version of libmariadb.so (client)
 # We also need the libmariadb-dev-compat:amd64 but it can not be installed together with the {{ package_arch_prefix }} version.
 # What we can do is a force install, because nothing important is overlapping each other.
-RUN apt-get install -y --no-install-recommends libmariadb3:amd64 && \
-    apt-get download libmariadb-dev-compat:amd64 && \
-    dpkg --force-all -i ./libmariadb-dev-compat*.deb && \
-    rm -rvf ./libmariadb-dev-compat*.deb
-
-# For Diesel-RS migrations_macros to compile with PostgreSQL we need to do some magic.
-# The libpq5{{ package_arch_prefix }} package seems to not provide a symlink to libpq.so.5 with the name libpq.so.
-# This is only provided by the libpq-dev package which can't be installed for both arch at the same time.
-# Without this specific file the ld command will fail and compilation fails with it.
-RUN ln -sfnr /usr/lib/{{ package_cross_compiler }}/libpq.so.5 /usr/lib/{{ package_cross_compiler }}/libpq.so
+RUN apt-get install -y --no-install-recommends libmariadb3:amd64 \
+    && apt-get download libmariadb-dev-compat:amd64 \
+    && dpkg --force-all -i ./libmariadb-dev-compat*.deb \
+    && rm -rvf ./libmariadb-dev-compat*.deb \
+    # For Diesel-RS migrations_macros to compile with PostgreSQL we need to do some magic.
+    # The libpq5{{ package_arch_prefix }} package seems to not provide a symlink to libpq.so.5 with the name libpq.so.
+    # This is only provided by the libpq-dev package which can't be installed for both arch at the same time.
+    # Without this specific file the ld command will fail and compilation fails with it.
+    && ln -sfnr /usr/lib/{{ package_cross_compiler }}/libpq.so.5 /usr/lib/{{ package_cross_compiler }}/libpq.so
 
 ENV CC_{{ package_arch_target | replace("-", "_") }}="/usr/bin/{{ package_cross_compiler }}-gcc"
 ENV CROSS_COMPILE="1"
@@ -174,8 +169,8 @@ RUN rustup target add {{ package_arch_target }}
 # Builds your dependencies and removes the
 # dummy project, except the target folder
 # This folder contains the compiled dependencies
-RUN cargo build --features ${DB} --release{{ package_arch_target_param }}
-RUN find . -not -path "./target*" -delete
+RUN cargo build --features ${DB} --release{{ package_arch_target_param }} \
+    && find . -not -path "./target*" -delete
 
 # Copies the complete project
 # To avoid copying unneeded files, use .dockerignore
@@ -189,6 +184,7 @@ RUN touch src/main.rs
 RUN cargo build --features ${DB} --release{{ package_arch_target_param }}
 {% if "alpine" in target_file %}
 {%   if "armv7" in target_file %}
+# hadolint ignore=DL3059
 RUN musl-strip target/{{ package_arch_target }}/release/vaultwarden
 {%   endif %}
 {% endif %}
@@ -206,12 +202,14 @@ ENV SSL_CERT_DIR=/etc/ssl/certs
 {% endif %}
 
 {% if "amd64" not in target_file %}
+# hadolint ignore=DL3059
 RUN [ "cross-build-start" ]
-
 {% endif %}
-# Install needed libraries
+
+# Create data folder and Install needed libraries
+RUN mkdir /data \
 {% if "alpine" in runtime_stage_base_image %}
-RUN apk add --no-cache \
+    && apk add --no-cache \
         openssl \
         curl \
         dumb-init \
@@ -223,7 +221,7 @@ RUN apk add --no-cache \
 {%   endif %}
         ca-certificates
 {% else %}
-RUN apt-get update && apt-get install -y \
+    && apt-get update && apt-get install -y \
     --no-install-recommends \
     openssl \
     ca-certificates \
@@ -234,12 +232,11 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 {% endif %}
 
-RUN mkdir /data
 {% if "amd64" not in target_file %}
-
+# hadolint ignore=DL3059
 RUN [ "cross-build-end" ]
-
 {% endif %}
+
 VOLUME /data
 EXPOSE 80
 EXPOSE 3012

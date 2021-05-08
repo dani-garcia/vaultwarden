@@ -53,8 +53,8 @@ RUN rustup target add x86_64-unknown-linux-musl
 # Builds your dependencies and removes the
 # dummy project, except the target folder
 # This folder contains the compiled dependencies
-RUN cargo build --features ${DB} --release --target=x86_64-unknown-linux-musl
-RUN find . -not -path "./target*" -delete
+RUN cargo build --features ${DB} --release --target=x86_64-unknown-linux-musl \
+    && find . -not -path "./target*" -delete
 
 # Copies the complete project
 # To avoid copying unneeded files, use .dockerignore
@@ -77,15 +77,17 @@ ENV ROCKET_PORT=80
 ENV ROCKET_WORKERS=10
 ENV SSL_CERT_DIR=/etc/ssl/certs
 
-# Install needed libraries
-RUN apk add --no-cache \
+
+# Create data folder and Install needed libraries
+RUN mkdir /data \
+    && apk add --no-cache \
         openssl \
         curl \
         dumb-init \
         postgresql-libs \
         ca-certificates
 
-RUN mkdir /data
+
 VOLUME /data
 EXPOSE 80
 EXPOSE 3012
