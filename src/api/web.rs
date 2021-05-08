@@ -78,9 +78,11 @@ fn static_files(filename: String) -> Result<Content<&'static [u8]>, Error> {
     match filename.as_ref() {
         "mail-github.png" => Ok(Content(ContentType::PNG, include_bytes!("../static/images/mail-github.png"))),
         "logo-gray.png" => Ok(Content(ContentType::PNG, include_bytes!("../static/images/logo-gray.png"))),
-        "shield-white.png" => Ok(Content(ContentType::PNG, include_bytes!("../static/images/shield-white.png"))),
         "error-x.svg" => Ok(Content(ContentType::SVG, include_bytes!("../static/images/error-x.svg"))),
         "hibp.png" => Ok(Content(ContentType::PNG, include_bytes!("../static/images/hibp.png"))),
+        "vaultwarden-icon.png" => {
+            Ok(Content(ContentType::PNG, include_bytes!("../static/images/vaultwarden-icon.png")))
+        }
 
         "bootstrap.css" => Ok(Content(ContentType::CSS, include_bytes!("../static/scripts/bootstrap.css"))),
         "bootstrap-native.js" => {

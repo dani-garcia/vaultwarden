@@ -832,6 +832,10 @@ where
     }
 
     // First register default templates here
+    reg!("email/email_header");
+    reg!("email/email_footer");
+    reg!("email/email_footer_text");
+
     reg!("email/change_email", ".html");
     reg!("email/delete_account", ".html");
     reg!("email/invite_accepted", ".html");
