@@ -217,11 +217,11 @@ macro_rules! err {
 
 #[macro_export]
 macro_rules! err_code {
-    ($msg:expr, $err_code: literal) => {{
+    ($msg:expr, $err_code: expr) => {{
         error!("{}", $msg);
         return Err(crate::error::Error::new($msg, $msg).with_code($err_code));
     }};
-    ($usr_msg:expr, $log_value:expr, $err_code: literal) => {{
+    ($usr_msg:expr, $log_value:expr, $err_code: expr) => {{
         error!("{}. {}", $usr_msg, $log_value);
         return Err(crate::error::Error::new($usr_msg, $log_value).with_code($err_code));
     }};
