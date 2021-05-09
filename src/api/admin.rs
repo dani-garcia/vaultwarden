@@ -292,19 +292,24 @@ fn invite_user(data: Json<InviteData>, _token: AdminToken, conn: DbConn) -> Json
     let data: InviteData = data.into_inner();
     let email = data.email.clone();
     if User::find_by_mail(&data.email, &conn).is_some() {
-        err!("User already exists")
+        err_code!("User already exists", Status::Conflict.code)
     }
 
     let mut user = User::new(email);
 
-    if CONFIG.mail_enabled() {
-        mail::send_invite(&user.email, &user.uuid, None, None, &CONFIG.invitation_org_name(), None)?;
-    } else {
-        let invitation = Invitation::new(data.email);
-        invitation.save(&conn)?;
-    }
+    // TODO: After try_blocks is stabilized, this can be made more readable
+    // See: https://github.com/rust-lang/rust/issues/31436
+    (|| {
+        if CONFIG.mail_enabled() {
+            mail::send_invite(&user.email, &user.uuid, None, None, &CONFIG.invitation_org_name(), None)?;
+        } else {
+            let invitation = Invitation::new(data.email);
+            invitation.save(&conn)?;
+        }
 
-    user.save(&conn)?;
+        user.save(&conn)
+    })().map_err(|e| e.with_code(Status::InternalServerError.code))?;
+
     Ok(Json(user.to_json(&conn)))
 }
 
