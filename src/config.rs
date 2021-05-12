@@ -342,6 +342,10 @@ make_config! {
         /// Enable web vault
         web_vault_enabled:      bool,   false,  def,    true;
 
+        /// Allow Sends |> Controls whether users are allowed to create Bitwarden Sends.
+        /// This setting applies globally to all users. To control this on a per-org basis instead, use the "Disable Send" org policy.
+        sends_allowed:          bool,   true,   def,    true;
+
         /// HIBP Api Key |> HaveIBeenPwned API Key, request it here: https://haveibeenpwned.com/API/Key
         hibp_api_key:           Pass,   true,   option;
 

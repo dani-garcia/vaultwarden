@@ -51,10 +51,13 @@ pub struct SendData {
 /// modify existing ones, but is allowed to delete them.
 ///
 /// Ref: https://bitwarden.com/help/article/policies/#disable-send
+///
+/// There is also a Vaultwarden-specific `sends_allowed` config setting that
+/// controls this policy globally.
 fn enforce_disable_send_policy(headers: &Headers, conn: &DbConn) -> EmptyResult {
     let user_uuid = &headers.user.uuid;
     let policy_type = OrgPolicyType::DisableSend;
-    if OrgPolicy::is_applicable_to_user(user_uuid, policy_type, conn) {
+    if !CONFIG.sends_allowed() || OrgPolicy::is_applicable_to_user(user_uuid, policy_type, conn) {
         err!("Due to an Enterprise Policy, you are only able to delete an existing Send.")
     }
     Ok(())
