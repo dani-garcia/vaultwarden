@@ -38,7 +38,14 @@ db_object! {
 
         pub password_history: Option<String>,
         pub deleted_at: Option<NaiveDateTime>,
+        pub reprompt: Option<i32>,
     }
+}
+
+#[allow(dead_code)]
+pub enum RepromptType {
+    None = 0,
+    Password = 1, // not currently used in server
 }
 
 /// Local methods
@@ -63,6 +70,7 @@ impl Cipher {
             data: String::new(),
             password_history: None,
             deleted_at: None,
+            reprompt: None,
         }
     }
 }
@@ -138,6 +146,7 @@ impl Cipher {
             "DeletedDate": self.deleted_at.map_or(Value::Null, |d| Value::String(format_date(&d))),
             "FolderId": self.get_folder_uuid(&user_uuid, conn),
             "Favorite": self.is_favorite(&user_uuid, conn),
+            "Reprompt": self.reprompt.unwrap_or(RepromptType::None as i32),
             "OrganizationId": self.organization_uuid,
             "Attachments": attachments_json,
             // We have UseTotp set to true by default within the Organization model.

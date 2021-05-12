@@ -199,6 +199,7 @@ pub struct CipherData {
     Identity: Option<Value>,
 
     Favorite: Option<bool>,
+    Reprompt: Option<i32>,
 
     PasswordHistory: Option<Value>,
 
@@ -415,6 +416,7 @@ pub fn update_cipher_from_data(
     cipher.fields = data.Fields.map(|f| _clean_cipher_data(f).to_string());
     cipher.data = type_data.to_string();
     cipher.password_history = data.PasswordHistory.map(|f| f.to_string());
+    cipher.reprompt = data.Reprompt;
 
     cipher.save(&conn)?;
     cipher.move_to_folder(data.FolderId, &headers.user.uuid, &conn)?;
