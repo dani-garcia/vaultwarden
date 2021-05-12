@@ -4,7 +4,7 @@ use serde_json::Value;
 use std::{env, time::Duration};
 
 use rocket::{
-    http::{Cookie, Cookies, SameSite},
+    http::{Cookie, Cookies, SameSite, Status},
     request::{self, FlashMessage, Form, FromRequest, Outcome, Request},
     response::{content::Html, Flash, Redirect},
     Route,
@@ -279,24 +279,37 @@ struct InviteData {
     email: String,
 }
 
+fn get_user_or_404(uuid: &str, conn: &DbConn) -> ApiResult<User> {
+    if let Some(user) = User::find_by_uuid(uuid, conn) {
+        Ok(user)
+    } else {
+        err_code!("User doesn't exist", Status::NotFound.code);
+    }
+}
+
 #[post("/invite", data = "<data>")]
 fn invite_user(data: Json<InviteData>, _token: AdminToken, conn: DbConn) -> JsonResult {
     let data: InviteData = data.into_inner();
     let email = data.email.clone();
     if User::find_by_mail(&data.email, &conn).is_some() {
-        err!("User already exists")
+        err_code!("User already exists", Status::Conflict.code)
     }
 
     let mut user = User::new(email);
 
-    if CONFIG.mail_enabled() {
-        mail::send_invite(&user.email, &user.uuid, None, None, &CONFIG.invitation_org_name(), None)?;
-    } else {
-        let invitation = Invitation::new(data.email);
-        invitation.save(&conn)?;
-    }
+    // TODO: After try_blocks is stabilized, this can be made more readable
+    // See: https://github.com/rust-lang/rust/issues/31436
+    (|| {
+        if CONFIG.mail_enabled() {
+            mail::send_invite(&user.email, &user.uuid, None, None, &CONFIG.invitation_org_name(), None)?;
+        } else {
+            let invitation = Invitation::new(data.email);
+            invitation.save(&conn)?;
+        }
 
-    user.save(&conn)?;
+        user.save(&conn)
+    })().map_err(|e| e.with_code(Status::InternalServerError.code))?;
+
     Ok(Json(user.to_json(&conn)))
 }
 
@@ -352,20 +365,20 @@ fn users_overview(_token: AdminToken, conn: DbConn) -> ApiResult<Html<String>> {
 
 #[get("/users/<uuid>")]
 fn get_user_json(uuid: String, _token: AdminToken, conn: DbConn) -> JsonResult {
-    let user = User::find_by_uuid(&uuid, &conn).map_res("User doesn't exist")?;
+    let user = get_user_or_404(&uuid, &conn)?;
 
     Ok(Json(user.to_json(&conn)))
 }
 
 #[post("/users/<uuid>/delete")]
 fn delete_user(uuid: String, _token: AdminToken, conn: DbConn) -> EmptyResult {
-    let user = User::find_by_uuid(&uuid, &conn).map_res("User doesn't exist")?;
+    let user = get_user_or_404(&uuid, &conn)?;
     user.delete(&conn)
 }
 
 #[post("/users/<uuid>/deauth")]
 fn deauth_user(uuid: String, _token: AdminToken, conn: DbConn) -> EmptyResult {
-    let mut user = User::find_by_uuid(&uuid, &conn).map_res("User doesn't exist")?;
+    let mut user = get_user_or_404(&uuid, &conn)?;
     Device::delete_all_by_user(&user.uuid, &conn)?;
     user.reset_security_stamp();
 
@@ -374,7 +387,7 @@ fn deauth_user(uuid: String, _token: AdminToken, conn: DbConn) -> EmptyResult {
 
 #[post("/users/<uuid>/disable")]
 fn disable_user(uuid: String, _token: AdminToken, conn: DbConn) -> EmptyResult {
-    let mut user = User::find_by_uuid(&uuid, &conn).map_res("User doesn't exist")?;
+    let mut user = get_user_or_404(&uuid, &conn)?;
     Device::delete_all_by_user(&user.uuid, &conn)?;
     user.reset_security_stamp();
     user.enabled = false;
@@ -384,7 +397,7 @@ fn disable_user(uuid: String, _token: AdminToken, conn: DbConn) -> EmptyResult {
 
 #[post("/users/<uuid>/enable")]
 fn enable_user(uuid: String, _token: AdminToken, conn: DbConn) -> EmptyResult {
-    let mut user = User::find_by_uuid(&uuid, &conn).map_res("User doesn't exist")?;
+    let mut user = get_user_or_404(&uuid, &conn)?;
     user.enabled = true;
 
     user.save(&conn)
@@ -392,7 +405,7 @@ fn enable_user(uuid: String, _token: AdminToken, conn: DbConn) -> EmptyResult {
 
 #[post("/users/<uuid>/remove-2fa")]
 fn remove_2fa(uuid: String, _token: AdminToken, conn: DbConn) -> EmptyResult {
-    let mut user = User::find_by_uuid(&uuid, &conn).map_res("User doesn't exist")?;
+    let mut user = get_user_or_404(&uuid, &conn)?;
     TwoFactor::delete_all_by_user(&user.uuid, &conn)?;
     user.totp_recover = None;
     user.save(&conn)
