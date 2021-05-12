@@ -36,6 +36,7 @@ db_object! {
         pub deletion_date: NaiveDateTime,
 
         pub disabled: bool,
+        pub hide_email: Option<bool>,
     }
 }
 
@@ -73,6 +74,7 @@ impl Send {
             deletion_date,
 
             disabled: false,
+            hide_email: None,
         }
     }
 
@@ -101,6 +103,22 @@ impl Send {
         }
     }
 
+    pub fn creator_identifier(&self, conn: &DbConn) -> Option<String> {
+        if let Some(hide_email) = self.hide_email {
+            if hide_email {
+                return None;
+            }
+        }
+
+        if let Some(user_uuid) = &self.user_uuid {
+            if let Some(user) = User::find_by_uuid(user_uuid, conn) {
+                return Some(user.email);
+            }
+        }
+
+        None
+    }
+
     pub fn to_json(&self) -> Value {
         use crate::util::format_date;
         use data_encoding::BASE64URL_NOPAD;
@@ -123,6 +141,7 @@ impl Send {
             "AccessCount": self.access_count,
             "Password": self.password_hash.as_deref().map(|h| BASE64URL_NOPAD.encode(h)),
             "Disabled": self.disabled,
+            "HideEmail": self.hide_email,
 
             "RevisionDate": format_date(&self.revision_date),
             "ExpirationDate": self.expiration_date.as_ref().map(format_date),
@@ -131,7 +150,7 @@ impl Send {
         })
     }
 
-    pub fn to_json_access(&self) -> Value {
+    pub fn to_json_access(&self, conn: &DbConn) -> Value {
         use crate::util::format_date;
 
         let data: Value = serde_json::from_str(&self.data).unwrap_or_default();
@@ -145,6 +164,7 @@ impl Send {
             "File": if self.atype == SendType::File as i32 { Some(&data) } else { None },
 
             "ExpirationDate": self.expiration_date.as_ref().map(format_date),
+            "CreatorIdentifier": self.creator_identifier(conn),
             "Object": "send-access",
         })
     }

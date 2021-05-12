@@ -1,8 +1,10 @@
+use serde::Deserialize;
 use serde_json::Value;
 
 use crate::api::EmptyResult;
 use crate::db::DbConn;
 use crate::error::MapResult;
+use crate::util::UpCase;
 
 use super::{Organization, UserOrgStatus, UserOrgType, UserOrganization};
 
@@ -29,6 +31,14 @@ pub enum OrgPolicyType {
     // RequireSso = 4, // Not currently supported.
     PersonalOwnership = 5,
     DisableSend = 6,
+    SendOptions = 7,
+}
+
+// https://github.com/bitwarden/server/blob/master/src/Core/Models/Data/SendOptionsPolicyData.cs
+#[derive(Deserialize)]
+#[allow(non_snake_case)]
+pub struct SendOptionsPolicyData {
+    pub DisableHideEmail: bool,
 }
 
 /// Local methods
@@ -181,6 +191,30 @@ impl OrgPolicy {
                 if let Some(user) = UserOrganization::find_by_user_and_org(user_uuid, org_uuid, conn) {
                     if user.atype < UserOrgType::Admin {
                         return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    /// Returns true if the user belongs to an org that has enabled the `DisableHideEmail`
+    /// option of the `Send Options` policy, and the user is not an owner or admin of that org.
+    pub fn is_hide_email_disabled(user_uuid: &str, conn: &DbConn) -> bool {
+        // Returns confirmed users only.
+        for policy in OrgPolicy::find_by_user(user_uuid, conn) {
+            if policy.enabled && policy.has_type(OrgPolicyType::SendOptions) {
+                let org_uuid = &policy.org_uuid;
+                if let Some(user) = UserOrganization::find_by_user_and_org(user_uuid, org_uuid, conn) {
+                    if user.atype < UserOrgType::Admin {
+                        match serde_json::from_str::<UpCase<SendOptionsPolicyData>>(&policy.data) {
+                            Ok(opts) => {
+                                if opts.data.DisableHideEmail {
+                                    return true;
+                                }
+                            }
+                            _ => error!("Failed to deserialize policy data: {}", policy.data),
+                        }
                     }
                 }
             }

@@ -38,6 +38,7 @@ pub struct SendData {
     pub ExpirationDate: Option<DateTime<Utc>>,
     pub DeletionDate: DateTime<Utc>,
     pub Disabled: bool,
+    pub HideEmail: Option<bool>,
 
     // Data field
     pub Name: String,
@@ -59,6 +60,24 @@ fn enforce_disable_send_policy(headers: &Headers, conn: &DbConn) -> EmptyResult 
     let policy_type = OrgPolicyType::DisableSend;
     if !CONFIG.sends_allowed() || OrgPolicy::is_applicable_to_user(user_uuid, policy_type, conn) {
         err!("Due to an Enterprise Policy, you are only able to delete an existing Send.")
+    }
+    Ok(())
+}
+
+/// Enforces the `DisableHideEmail` option of the `Send Options` policy.
+/// A non-owner/admin user belonging to an org with this option enabled isn't
+/// allowed to hide their email address from the recipient of a Bitwarden Send,
+/// but is allowed to remove this option from an existing Send.
+///
+/// Ref: https://bitwarden.com/help/article/policies/#send-options
+fn enforce_disable_hide_email_policy(data: &SendData, headers: &Headers, conn: &DbConn) -> EmptyResult {
+    let user_uuid = &headers.user.uuid;
+    let hide_email = data.HideEmail.unwrap_or(false);
+    if hide_email && OrgPolicy::is_hide_email_disabled(user_uuid, conn) {
+        err!(
+            "Due to an Enterprise Policy, you are not allowed to hide your email address \
+              from recipients when creating or editing a Send."
+        )
     }
     Ok(())
 }
@@ -91,6 +110,7 @@ fn create_send(data: SendData, user_uuid: String) -> ApiResult<Send> {
     send.max_access_count = data.MaxAccessCount;
     send.expiration_date = data.ExpirationDate.map(|d| d.naive_utc());
     send.disabled = data.Disabled;
+    send.hide_email = data.HideEmail;
     send.atype = data.Type;
 
     send.set_password(data.Password.as_deref());
@@ -103,6 +123,7 @@ fn post_send(data: JsonUpcase<SendData>, headers: Headers, conn: DbConn, nt: Not
     enforce_disable_send_policy(&headers, &conn)?;
 
     let data: SendData = data.into_inner().data;
+    enforce_disable_hide_email_policy(&data, &headers, &conn)?;
 
     if data.Type == SendType::File as i32 {
         err!("File sends should use /api/sends/file")
@@ -133,6 +154,7 @@ fn post_send_file(data: Data, content_type: &ContentType, headers: Headers, conn
     let mut buf = String::new();
     model_entry.data.read_to_string(&mut buf)?;
     let data = serde_json::from_str::<crate::util::UpCase<SendData>>(&buf)?;
+    enforce_disable_hide_email_policy(&data.data, &headers, &conn)?;
 
     // Get the file length and add an extra 10% to avoid issues
     const SIZE_110_MB: u64 = 115_343_360;
@@ -246,7 +268,7 @@ fn post_access(access_id: String, data: JsonUpcase<SendAccessData>, conn: DbConn
 
     send.save(&conn)?;
 
-    Ok(Json(send.to_json_access()))
+    Ok(Json(send.to_json_access(&conn)))
 }
 
 #[post("/sends/<send_id>/access/file/<file_id>", data = "<data>")]
@@ -306,6 +328,7 @@ fn put_send(id: String, data: JsonUpcase<SendData>, headers: Headers, conn: DbCo
     enforce_disable_send_policy(&headers, &conn)?;
 
     let data: SendData = data.into_inner().data;
+    enforce_disable_hide_email_policy(&data, &headers, &conn)?;
 
     let mut send = match Send::find_by_uuid(&id, &conn) {
         Some(s) => s,
@@ -343,6 +366,7 @@ fn put_send(id: String, data: JsonUpcase<SendData>, headers: Headers, conn: DbCo
     send.notes = data.Notes;
     send.max_access_count = data.MaxAccessCount;
     send.expiration_date = data.ExpirationDate.map(|d| d.naive_utc());
+    send.hide_email = data.HideEmail;
     send.disabled = data.Disabled;
 
     // Only change the value if it's present
