@@ -122,6 +122,7 @@ table! {
         expiration_date -> Nullable<Datetime>,
         deletion_date -> Datetime,
         disabled -> Bool,
+        hide_email -> Nullable<Bool>,
     }
 }
 

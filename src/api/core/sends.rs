@@ -38,6 +38,7 @@ pub struct SendData {
     pub ExpirationDate: Option<DateTime<Utc>>,
     pub DeletionDate: DateTime<Utc>,
     pub Disabled: bool,
+    pub HideEmail: Option<bool>,
 
     // Data field
     pub Name: String,
@@ -88,6 +89,7 @@ fn create_send(data: SendData, user_uuid: String) -> ApiResult<Send> {
     send.max_access_count = data.MaxAccessCount;
     send.expiration_date = data.ExpirationDate.map(|d| d.naive_utc());
     send.disabled = data.Disabled;
+    send.hide_email = data.HideEmail;
     send.atype = data.Type;
 
     send.set_password(data.Password.as_deref());
@@ -243,7 +245,7 @@ fn post_access(access_id: String, data: JsonUpcase<SendAccessData>, conn: DbConn
 
     send.save(&conn)?;
 
-    Ok(Json(send.to_json_access()))
+    Ok(Json(send.to_json_access(&conn)))
 }
 
 #[post("/sends/<send_id>/access/file/<file_id>", data = "<data>")]
@@ -340,6 +342,7 @@ fn put_send(id: String, data: JsonUpcase<SendData>, headers: Headers, conn: DbCo
     send.notes = data.Notes;
     send.max_access_count = data.MaxAccessCount;
     send.expiration_date = data.ExpirationDate.map(|d| d.naive_utc());
+    send.hide_email = data.HideEmail;
     send.disabled = data.Disabled;
 
     // Only change the value if it's present
