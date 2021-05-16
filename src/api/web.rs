@@ -55,9 +55,9 @@ fn web_files(p: PathBuf) -> Cached<Option<NamedFile>> {
     Cached::long(NamedFile::open(Path::new(&CONFIG.web_vault_folder()).join(p)).ok())
 }
 
-#[get("/attachments/<uuid>/<file..>")]
-fn attachments(uuid: String, file: PathBuf) -> Option<NamedFile> {
-    NamedFile::open(Path::new(&CONFIG.attachments_folder()).join(uuid).join(file)).ok()
+#[get("/attachments/<uuid>/<file_id>")]
+fn attachments(uuid: String, file_id: String) -> Option<NamedFile> {
+    NamedFile::open(Path::new(&CONFIG.attachments_folder()).join(uuid).join(file_id)).ok()
 }
 
 #[get("/sends/<send_id>/<file_id>")]
