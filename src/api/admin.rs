@@ -308,7 +308,8 @@ fn invite_user(data: Json<InviteData>, _token: AdminToken, conn: DbConn) -> Json
         }
 
         user.save(&conn)
-    })().map_err(|e| e.with_code(Status::InternalServerError.code))?;
+    })()
+    .map_err(|e| e.with_code(Status::InternalServerError.code))?;
 
     Ok(Json(user.to_json(&conn)))
 }

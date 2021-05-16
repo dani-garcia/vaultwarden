@@ -39,6 +39,7 @@ pub fn routes() -> Vec<Route> {
         post_ciphers_admin,
         post_ciphers_create,
         post_ciphers_import,
+        get_attachment,
         post_attachment,
         post_attachment_admin,
         post_attachment_share,
@@ -752,6 +753,15 @@ fn share_cipher_by_uuid(
     )?;
 
     Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, &conn)))
+}
+
+#[get("/ciphers/<uuid>/attachment/<attachment_id>")]
+fn get_attachment(uuid: String, attachment_id: String, headers: Headers, conn: DbConn) -> JsonResult {
+    match Attachment::find_by_id(&attachment_id, &conn) {
+        Some(attachment) if uuid == attachment.cipher_uuid => Ok(Json(attachment.to_json(&headers.host))),
+        Some(_) => err!("Attachment doesn't belong to cipher"),
+        None => err!("Attachment doesn't exist"),
+    }
 }
 
 #[post("/ciphers/<uuid>/attachment", format = "multipart/form-data", data = "<data>")]
