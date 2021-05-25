@@ -6,7 +6,6 @@ use rocket::{http::ContentType, request::Form, Data, Route};
 use rocket_contrib::json::Json;
 use serde_json::Value;
 
-use data_encoding::HEXLOWER;
 use multipart::server::{save::SavedData, Multipart, SaveResult};
 
 use crate::{
@@ -40,8 +39,10 @@ pub fn routes() -> Vec<Route> {
         post_ciphers_create,
         post_ciphers_import,
         get_attachment,
-        post_attachment,
-        post_attachment_admin,
+        post_attachment_v2,
+        post_attachment_v2_data,
+        post_attachment,       // legacy
+        post_attachment_admin, // legacy
         post_attachment_share,
         delete_attachment_post,
         delete_attachment_post_admin,
@@ -755,6 +756,12 @@ fn share_cipher_by_uuid(
     Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, &conn)))
 }
 
+/// v2 API for downloading an attachment. This just redirects the client to
+/// the actual location of an attachment.
+///
+/// Upstream added this v2 API to support direct download of attachments from
+/// their object storage service. For self-hosted instances, it basically just
+/// redirects to the same location as before the v2 API.
 #[get("/ciphers/<uuid>/attachment/<attachment_id>")]
 fn get_attachment(uuid: String, attachment_id: String, headers: Headers, conn: DbConn) -> JsonResult {
     match Attachment::find_by_id(&attachment_id, &conn) {
@@ -764,16 +771,79 @@ fn get_attachment(uuid: String, attachment_id: String, headers: Headers, conn: D
     }
 }
 
-#[post("/ciphers/<uuid>/attachment", format = "multipart/form-data", data = "<data>")]
-fn post_attachment(
+#[derive(Deserialize)]
+#[allow(non_snake_case)]
+struct AttachmentRequestData {
+    Key: String,
+    FileName: String,
+    FileSize: i32,
+    // We check org owner/admin status via is_write_accessible_to_user(),
+    // so we can just ignore this field.
+    //
+    // AdminRequest: bool,
+}
+
+enum FileUploadType {
+    Direct = 0,
+    // Azure = 1, // only used upstream
+}
+
+/// v2 API for creating an attachment associated with a cipher.
+/// This redirects the client to the API it should use to upload the attachment.
+/// For upstream's cloud-hosted service, it's an Azure object storage API.
+/// For self-hosted instances, it's another API on the local instance.
+#[post("/ciphers/<uuid>/attachment/v2", data = "<data>")]
+fn post_attachment_v2(
     uuid: String,
-    data: Data,
-    content_type: &ContentType,
+    data: JsonUpcase<AttachmentRequestData>,
     headers: Headers,
     conn: DbConn,
-    nt: Notify,
 ) -> JsonResult {
     let cipher = match Cipher::find_by_uuid(&uuid, &conn) {
+        Some(cipher) => cipher,
+        None => err!("Cipher doesn't exist"),
+    };
+
+    if !cipher.is_write_accessible_to_user(&headers.user.uuid, &conn) {
+        err!("Cipher is not write accessible")
+    }
+
+    let attachment_id = crypto::generate_file_id();
+    let data: AttachmentRequestData = data.into_inner().data;
+    let attachment =
+        Attachment::new(attachment_id.clone(), cipher.uuid.clone(), data.FileName, data.FileSize, Some(data.Key));
+    attachment.save(&conn).expect("Error saving attachment");
+
+    let url = format!("/ciphers/{}/attachment/{}", cipher.uuid, attachment_id);
+
+    Ok(Json(json!({ // AttachmentUploadDataResponseModel
+        "Object": "attachment-fileUpload",
+        "AttachmentId": attachment_id,
+        "Url": url,
+        "FileUploadType": FileUploadType::Direct as i32,
+        "CipherResponse": cipher.to_json(&headers.host, &headers.user.uuid, &conn),
+        "CipherMiniResponse": null,
+    })))
+}
+
+/// Saves the data content of an attachment to a file. This is common code
+/// shared between the v2 and legacy attachment APIs.
+///
+/// When used with the legacy API, this function is responsible for creating
+/// the attachment database record, so `attachment` is None.
+///
+/// When used with the v2 API, post_attachment_v2() has already created the
+/// database record, which is passed in as `attachment`.
+fn save_attachment(
+    mut attachment: Option<Attachment>,
+    cipher_uuid: String,
+    data: Data,
+    content_type: &ContentType,
+    headers: &Headers,
+    conn: &DbConn,
+    nt: Notify,
+) -> Result<Cipher, crate::error::Error> {
+    let cipher = match Cipher::find_by_uuid(&cipher_uuid, conn) {
         Some(cipher) => cipher,
         None => err_discard!("Cipher doesn't exist", data),
     };
@@ -781,10 +851,6 @@ fn post_attachment(
     if !cipher.is_write_accessible_to_user(&headers.user.uuid, &conn) {
         err_discard!("Cipher is not write accessible", data)
     }
-
-    let mut params = content_type.params();
-    let boundary_pair = params.next().expect("No boundary provided");
-    let boundary = boundary_pair.1;
 
     let size_limit = if let Some(ref user_uuid) = cipher.user_uuid {
         match CONFIG.user_attachment_limit() {
@@ -814,7 +880,11 @@ fn post_attachment(
         err_discard!("Cipher is neither owned by a user nor an organization", data);
     };
 
-    let base_path = Path::new(&CONFIG.attachments_folder()).join(&cipher.uuid);
+    let mut params = content_type.params();
+    let boundary_pair = params.next().expect("No boundary provided");
+    let boundary = boundary_pair.1;
+
+    let base_path = Path::new(&CONFIG.attachments_folder()).join(&cipher_uuid);
 
     let mut attachment_key = None;
     let mut error = None;
@@ -830,11 +900,20 @@ fn post_attachment(
                     }
                 }
                 "data" => {
-                    // This is provided by the client, don't trust it
-                    let name = field.headers.filename.expect("No filename provided");
+                    // In the legacy API, this is the encrypted filename
+                    // provided by the client, stored to the database as-is.
+                    // In the v2 API, this value doesn't matter, as it was
+                    // already provided and stored via an earlier API call.
+                    let encrypted_filename = field.headers.filename;
 
-                    let file_name = HEXLOWER.encode(&crypto::get_random(vec![0; 10]));
-                    let path = base_path.join(&file_name);
+                    // This random ID is used as the name of the file on disk.
+                    // In the legacy API, we need to generate this value here.
+                    // In the v2 API, we use the value from post_attachment_v2().
+                    let file_id = match &attachment {
+                        Some(attachment) => attachment.id.clone(), // v2 API
+                        None => crypto::generate_file_id(),        // Legacy API
+                    };
+                    let path = base_path.join(&file_id);
 
                     let size =
                         match field.data.save().memory_threshold(0).size_limit(size_limit).with_path(path.clone()) {
@@ -856,9 +935,50 @@ fn post_attachment(
                             }
                         };
 
-                    let mut attachment = Attachment::new(file_name, cipher.uuid.clone(), name, size);
-                    attachment.akey = attachment_key.clone();
-                    attachment.save(&conn).expect("Error saving attachment");
+                    if let Some(attachment) = &mut attachment {
+                        // v2 API
+
+                        // Check the actual size against the size initially provided by
+                        // the client. Upstream allows +/- 1 MiB deviation from this
+                        // size, but it's not clear when or why this is needed.
+                        const LEEWAY: i32 = 1024 * 1024; // 1 MiB
+                        let min_size = attachment.file_size - LEEWAY;
+                        let max_size = attachment.file_size + LEEWAY;
+
+                        if min_size <= size && size <= max_size {
+                            if size != attachment.file_size {
+                                // Update the attachment with the actual file size.
+                                attachment.file_size = size;
+                                attachment.save(conn).expect("Error updating attachment");
+                            }
+                        } else {
+                            std::fs::remove_file(path).ok();
+                            attachment.delete(conn).ok();
+
+                            let err_msg = "Attachment size mismatch".to_string();
+                            error!("{} (expected within [{}, {}], got {})", err_msg, min_size, max_size, size);
+                            error = Some(err_msg);
+                        }
+                    } else {
+                        // Legacy API
+
+                        if encrypted_filename.is_none() {
+                            error = Some("No filename provided".to_string());
+                            return;
+                        }
+                        if attachment_key.is_none() {
+                            error = Some("No attachment key provided".to_string());
+                            return;
+                        }
+                        let attachment = Attachment::new(
+                            file_id,
+                            cipher_uuid.clone(),
+                            encrypted_filename.unwrap(),
+                            size,
+                            attachment_key.clone(),
+                        );
+                        attachment.save(conn).expect("Error saving attachment");
+                    }
                 }
                 _ => error!("Invalid multipart name"),
             }
@@ -870,6 +990,50 @@ fn post_attachment(
     }
 
     nt.send_cipher_update(UpdateType::CipherUpdate, &cipher, &cipher.update_users_revision(&conn));
+
+    Ok(cipher)
+}
+
+/// v2 API for uploading the actual data content of an attachment.
+/// This route needs a rank specified so that Rocket prioritizes the
+/// /ciphers/<uuid>/attachment/v2 route, which would otherwise conflict
+/// with this one.
+#[post("/ciphers/<uuid>/attachment/<attachment_id>", format = "multipart/form-data", data = "<data>", rank = 1)]
+fn post_attachment_v2_data(
+    uuid: String,
+    attachment_id: String,
+    data: Data,
+    content_type: &ContentType,
+    headers: Headers,
+    conn: DbConn,
+    nt: Notify,
+) -> EmptyResult {
+    let attachment = match Attachment::find_by_id(&attachment_id, &conn) {
+        Some(attachment) if uuid == attachment.cipher_uuid => Some(attachment),
+        Some(_) => err!("Attachment doesn't belong to cipher"),
+        None => err!("Attachment doesn't exist"),
+    };
+
+    save_attachment(attachment, uuid, data, content_type, &headers, &conn, nt)?;
+
+    Ok(())
+}
+
+/// Legacy API for creating an attachment associated with a cipher.
+#[post("/ciphers/<uuid>/attachment", format = "multipart/form-data", data = "<data>")]
+fn post_attachment(
+    uuid: String,
+    data: Data,
+    content_type: &ContentType,
+    headers: Headers,
+    conn: DbConn,
+    nt: Notify,
+) -> JsonResult {
+    // Setting this as None signifies to save_attachment() that it should create
+    // the attachment database record as well as saving the data to disk.
+    let attachment = None;
+
+    let cipher = save_attachment(attachment, uuid, data, content_type, &headers, &conn, nt)?;
 
     Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, &conn)))
 }

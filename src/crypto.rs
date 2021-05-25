@@ -3,6 +3,7 @@
 //
 use std::num::NonZeroU32;
 
+use data_encoding::HEXLOWER;
 use ring::{digest, hmac, pbkdf2};
 
 use crate::error::Error;
@@ -28,8 +29,6 @@ pub fn verify_password_hash(secret: &[u8], salt: &[u8], previous: &[u8], iterati
 // HMAC
 //
 pub fn hmac_sign(key: &str, data: &str) -> String {
-    use data_encoding::HEXLOWER;
-
     let key = hmac::Key::new(hmac::HMAC_SHA1_FOR_LEGACY_USE_ONLY, key.as_bytes());
     let signature = hmac::sign(&key, data.as_bytes());
 
@@ -50,6 +49,10 @@ pub fn get_random(mut array: Vec<u8>) -> Vec<u8> {
     SystemRandom::new().fill(&mut array).expect("Error generating random values");
 
     array
+}
+
+pub fn generate_file_id() -> String {
+    HEXLOWER.encode(&get_random(vec![0; 16])) // 128 bits
 }
 
 pub fn generate_token(token_size: u32) -> Result<String, Error> {
