@@ -852,11 +852,18 @@ fn save_attachment(
         err_discard!("Cipher is not write accessible", data)
     }
 
+    // In the v2 API, the attachment record has already been created,
+    // so the size limit needs to be adjusted to account for that.
+    let size_adjust = match &attachment {
+        None => 0,                     // Legacy API
+        Some(a) => a.file_size as i64, // v2 API
+    };
+
     let size_limit = if let Some(ref user_uuid) = cipher.user_uuid {
         match CONFIG.user_attachment_limit() {
             Some(0) => err_discard!("Attachments are disabled", data),
             Some(limit_kb) => {
-                let left = (limit_kb * 1024) - Attachment::size_by_user(user_uuid, &conn);
+                let left = (limit_kb * 1024) - Attachment::size_by_user(user_uuid, &conn) + size_adjust;
                 if left <= 0 {
                     err_discard!("Attachment size limit reached! Delete some files to open space", data)
                 }
@@ -868,7 +875,7 @@ fn save_attachment(
         match CONFIG.org_attachment_limit() {
             Some(0) => err_discard!("Attachments are disabled", data),
             Some(limit_kb) => {
-                let left = (limit_kb * 1024) - Attachment::size_by_org(org_uuid, &conn);
+                let left = (limit_kb * 1024) - Attachment::size_by_org(org_uuid, &conn) + size_adjust;
                 if left <= 0 {
                     err_discard!("Attachment size limit reached! Delete some files to open space", data)
                 }
