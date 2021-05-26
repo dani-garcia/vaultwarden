@@ -1,3 +1,5 @@
+use std::io::ErrorKind;
+
 use serde_json::Value;
 
 use super::Cipher;
@@ -98,8 +100,19 @@ impl Attachment {
             )
             .map_res("Error deleting attachment")?;
 
-            crate::util::delete_file(&self.get_file_path())?;
-            Ok(())
+            let file_path = &self.get_file_path();
+
+            match crate::util::delete_file(file_path) {
+                // Ignore "file not found" errors. This can happen when the
+                // upstream caller has already cleaned up the file as part of
+                // its own error handling.
+                Err(e) if e.kind() == ErrorKind::NotFound => {
+                    debug!("File '{}' already deleted.", file_path);
+                    Ok(())
+                }
+                Err(e) => Err(e.into()),
+                _ => Ok(()),
+            }
         }}
     }
 

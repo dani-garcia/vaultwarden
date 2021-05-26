@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use chrono::{NaiveDateTime, Utc};
 use rocket::{http::ContentType, request::Form, Data, Route};
@@ -885,6 +885,7 @@ fn save_attachment(
     let boundary = boundary_pair.1;
 
     let base_path = Path::new(&CONFIG.attachments_folder()).join(&cipher_uuid);
+    let mut path = PathBuf::new();
 
     let mut attachment_key = None;
     let mut error = None;
@@ -913,23 +914,20 @@ fn save_attachment(
                         Some(attachment) => attachment.id.clone(), // v2 API
                         None => crypto::generate_file_id(),        // Legacy API
                     };
-                    let path = base_path.join(&file_id);
+                    path = base_path.join(&file_id);
 
                     let size =
                         match field.data.save().memory_threshold(0).size_limit(size_limit).with_path(path.clone()) {
                             SaveResult::Full(SavedData::File(_, size)) => size as i32,
                             SaveResult::Full(other) => {
-                                std::fs::remove_file(path).ok();
                                 error = Some(format!("Attachment is not a file: {:?}", other));
                                 return;
                             }
                             SaveResult::Partial(_, reason) => {
-                                std::fs::remove_file(path).ok();
                                 error = Some(format!("Attachment size limit exceeded with this file: {:?}", reason));
                                 return;
                             }
                             SaveResult::Error(e) => {
-                                std::fs::remove_file(path).ok();
                                 error = Some(format!("Error: {:?}", e));
                                 return;
                             }
@@ -952,7 +950,6 @@ fn save_attachment(
                                 attachment.save(conn).expect("Error updating attachment");
                             }
                         } else {
-                            std::fs::remove_file(path).ok();
                             attachment.delete(conn).ok();
 
                             let err_msg = "Attachment size mismatch".to_string();
@@ -986,6 +983,7 @@ fn save_attachment(
         .expect("Error processing multipart data");
 
     if let Some(ref e) = error {
+        std::fs::remove_file(path).ok();
         err!(e);
     }
 
