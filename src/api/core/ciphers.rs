@@ -808,7 +808,7 @@ fn post_attachment_v2(
         err!("Cipher is not write accessible")
     }
 
-    let attachment_id = crypto::generate_file_id();
+    let attachment_id = crypto::generate_attachment_id();
     let data: AttachmentRequestData = data.into_inner().data;
     let attachment =
         Attachment::new(attachment_id.clone(), cipher.uuid.clone(), data.FileName, data.FileSize, Some(data.Key));
@@ -912,7 +912,7 @@ fn save_attachment(
                     // In the v2 API, we use the value from post_attachment_v2().
                     let file_id = match &attachment {
                         Some(attachment) => attachment.id.clone(), // v2 API
-                        None => crypto::generate_file_id(),        // Legacy API
+                        None => crypto::generate_attachment_id(),  // Legacy API
                     };
                     path = base_path.join(&file_id);
 

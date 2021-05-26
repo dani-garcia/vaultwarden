@@ -51,8 +51,18 @@ pub fn get_random(mut array: Vec<u8>) -> Vec<u8> {
     array
 }
 
-pub fn generate_file_id() -> String {
-    HEXLOWER.encode(&get_random(vec![0; 16])) // 128 bits
+pub fn generate_id(num_bytes: usize) -> String {
+    HEXLOWER.encode(&get_random(vec![0; num_bytes]))
+}
+
+pub fn generate_send_id() -> String {
+    // Send IDs are globally scoped, so make them longer to avoid collisions.
+    generate_id(32) // 256 bits
+}
+
+pub fn generate_attachment_id() -> String {
+    // Attachment IDs are scoped to a cipher, so they can be smaller.
+    generate_id(10) // 80 bits
 }
 
 pub fn generate_token(token_size: u32) -> Result<String, Error> {

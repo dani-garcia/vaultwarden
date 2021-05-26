@@ -173,7 +173,7 @@ fn post_send_file(data: Data, content_type: &ContentType, headers: Headers, conn
 
     // Create the Send
     let mut send = create_send(data.data, headers.user.uuid.clone())?;
-    let file_id = crate::crypto::generate_file_id();
+    let file_id = crate::crypto::generate_send_id();
 
     if send.atype != SendType::File as i32 {
         err!("Send content is not a file");
