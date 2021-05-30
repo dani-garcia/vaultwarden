@@ -1,3 +1,5 @@
+use std::io::ErrorKind;
+
 use serde_json::Value;
 
 use super::Cipher;
@@ -12,7 +14,7 @@ db_object! {
     pub struct Attachment {
         pub id: String,
         pub cipher_uuid: String,
-        pub file_name: String,
+        pub file_name: String, // encrypted
         pub file_size: i32,
         pub akey: Option<String>,
     }
@@ -20,13 +22,13 @@ db_object! {
 
 /// Local methods
 impl Attachment {
-    pub const fn new(id: String, cipher_uuid: String, file_name: String, file_size: i32) -> Self {
+    pub const fn new(id: String, cipher_uuid: String, file_name: String, file_size: i32, akey: Option<String>) -> Self {
         Self {
             id,
             cipher_uuid,
             file_name,
             file_size,
-            akey: None,
+            akey,
         }
     }
 
@@ -34,18 +36,17 @@ impl Attachment {
         format!("{}/{}/{}", CONFIG.attachments_folder(), self.cipher_uuid, self.id)
     }
 
+    pub fn get_url(&self, host: &str) -> String {
+        format!("{}/attachments/{}/{}", host, self.cipher_uuid, self.id)
+    }
+
     pub fn to_json(&self, host: &str) -> Value {
-        use crate::util::get_display_size;
-
-        let web_path = format!("{}/attachments/{}/{}", host, self.cipher_uuid, self.id);
-        let display_size = get_display_size(self.file_size);
-
         json!({
             "Id": self.id,
-            "Url": web_path,
+            "Url": self.get_url(host),
             "FileName": self.file_name,
             "Size": self.file_size.to_string(),
-            "SizeName": display_size,
+            "SizeName": crate::util::get_display_size(self.file_size),
             "Key": self.akey,
             "Object": "attachment"
         })
@@ -91,7 +92,7 @@ impl Attachment {
         }
     }
 
-    pub fn delete(self, conn: &DbConn) -> EmptyResult {
+    pub fn delete(&self, conn: &DbConn) -> EmptyResult {
         db_run! { conn: {
             crate::util::retry(
                 || diesel::delete(attachments::table.filter(attachments::id.eq(&self.id))).execute(conn),
@@ -99,8 +100,19 @@ impl Attachment {
             )
             .map_res("Error deleting attachment")?;
 
-            crate::util::delete_file(&self.get_file_path())?;
-            Ok(())
+            let file_path = &self.get_file_path();
+
+            match crate::util::delete_file(file_path) {
+                // Ignore "file not found" errors. This can happen when the
+                // upstream caller has already cleaned up the file as part of
+                // its own error handling.
+                Err(e) if e.kind() == ErrorKind::NotFound => {
+                    debug!("File '{}' already deleted.", file_path);
+                    Ok(())
+                }
+                Err(e) => Err(e.into()),
+                _ => Ok(()),
+            }
         }}
     }
 
