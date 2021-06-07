@@ -31,11 +31,14 @@ pub enum TwoFactorType {
     U2f = 4,
     Remember = 5,
     OrganizationDuo = 6,
+    Webauthn = 7,
 
     // These are implementation details
     U2fRegisterChallenge = 1000,
     U2fLoginChallenge = 1001,
     EmailVerificationChallenge = 1002,
+    WebauthnRegisterChallenge = 1003,
+    WebauthnLoginChallenge = 1004,
 }
 
 /// Local methods
@@ -145,5 +148,74 @@ impl TwoFactor {
                 .execute(conn)
                 .map_res("Error deleting twofactors")
         }}
+    }
+
+    pub fn migrate_u2f_to_webauthn(conn: &DbConn) -> EmptyResult {
+        let u2f_factors = db_run! { conn: {
+            twofactor::table
+                .filter(twofactor::atype.eq(TwoFactorType::U2f as i32))
+                .load::<TwoFactorDb>(conn)
+                .expect("Error loading twofactor")
+                .from_db()
+        }};
+
+        use crate::api::core::two_factor::u2f::U2FRegistration;
+        use crate::api::core::two_factor::webauthn::{get_webauthn_registrations, WebauthnRegistration};
+        use std::convert::TryInto;
+        use webauthn_rs::proto::*;
+
+        for mut u2f in u2f_factors {
+            let mut regs: Vec<U2FRegistration> = serde_json::from_str(&u2f.data)?;
+            // If there are no registrations or they are migrated (we do the migration in batch so we can consider them all migrated when the first one is)
+            if regs.is_empty() || regs[0].migrated == Some(true) {
+                continue;
+            }
+
+            let (_, mut webauthn_regs) = get_webauthn_registrations(&u2f.user_uuid, &conn)?;
+
+            // If the user already has webauthn registrations saved, don't overwrite them
+            if !webauthn_regs.is_empty() {
+                continue;
+            }
+
+            for reg in &mut regs {
+                let x: [u8; 32] = reg.reg.pub_key[1..33].try_into().unwrap();
+                let y: [u8; 32] = reg.reg.pub_key[33..65].try_into().unwrap();
+
+                let key = COSEKey {
+                    type_: COSEAlgorithm::ES256,
+                    key: COSEKeyType::EC_EC2(COSEEC2Key {
+                        curve: ECDSACurve::SECP256R1,
+                        x,
+                        y,
+                    }),
+                };
+
+                let new_reg = WebauthnRegistration {
+                    id: reg.id,
+                    migrated: true,
+                    name: reg.name.clone(),
+                    credential: Credential {
+                        counter: reg.counter,
+                        verified: false,
+                        cred: key,
+                        cred_id: reg.reg.key_handle.clone(),
+                        registration_policy: UserVerificationPolicy::Discouraged,
+                    },
+                };
+
+                webauthn_regs.push(new_reg);
+
+                reg.migrated = Some(true);
+            }
+
+            u2f.data = serde_json::to_string(&regs)?;
+            u2f.save(&conn)?;
+
+            TwoFactor::new(u2f.user_uuid.clone(), TwoFactorType::Webauthn, serde_json::to_string(&webauthn_regs)?)
+                .save(&conn)?;
+        }
+
+        Ok(())
     }
 }

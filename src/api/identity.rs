@@ -240,6 +240,7 @@ fn twofactor_auth(
             _tf::authenticator::validate_totp_code_str(user_uuid, twofactor_code, &selected_data?, ip, conn)?
         }
         Some(TwoFactorType::U2f) => _tf::u2f::validate_u2f_login(user_uuid, twofactor_code, conn)?,
+        Some(TwoFactorType::Webauthn) => _tf::webauthn::validate_webauthn_login(user_uuid, twofactor_code, conn)?,
         Some(TwoFactorType::YubiKey) => _tf::yubikey::validate_yubikey_login(twofactor_code, &selected_data?)?,
         Some(TwoFactorType::Duo) => {
             _tf::duo::validate_duo_login(data.username.as_ref().unwrap(), twofactor_code, conn)?
@@ -307,6 +308,11 @@ fn _json_err_twofactor(providers: &[i32], user_uuid: &str, conn: &DbConn) -> Api
                 result["TwoFactorProviders2"][provider.to_string()] = json!({
                     "Challenges": challenge_list_str,
                 });
+            }
+
+            Some(TwoFactorType::Webauthn) if CONFIG.domain_set() => {
+                let request = two_factor::webauthn::generate_webauthn_login(user_uuid, conn)?;
+                result["TwoFactorProviders2"][provider.to_string()] = request.0;
             }
 
             Some(TwoFactorType::Duo) => {

@@ -39,18 +39,17 @@ use diesel::ConnectionError as DieselConErr;
 use diesel_migrations::RunMigrationsError as DieselMigErr;
 use handlebars::RenderError as HbErr;
 use jsonwebtoken::errors::Error as JwtErr;
+use lettre::address::AddressError as AddrErr;
+use lettre::error::Error as LettreErr;
+use lettre::transport::smtp::Error as SmtpErr;
 use regex::Error as RegexErr;
 use reqwest::Error as ReqErr;
 use serde_json::{Error as SerdeErr, Value};
 use std::io::Error as IoErr;
-
 use std::time::SystemTimeError as TimeErr;
 use u2f::u2ferror::U2fError as U2fErr;
+use webauthn_rs::error::WebauthnError as WebauthnErr;
 use yubico::yubicoerror::YubicoError as YubiErr;
-
-use lettre::address::AddressError as AddrErr;
-use lettre::error::Error as LettreErr;
-use lettre::transport::smtp::Error as SmtpErr;
 
 #[derive(Serialize)]
 pub struct Empty {}
@@ -86,6 +85,7 @@ make_error! {
 
     DieselConError(DieselConErr): _has_source, _api_error,
     DieselMigError(DieselMigErr): _has_source, _api_error,
+    WebauthnError(WebauthnErr):   _has_source, _api_error,
 }
 
 impl std::fmt::Debug for Error {

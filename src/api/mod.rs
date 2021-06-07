@@ -51,10 +51,10 @@ impl NumberOrString {
         }
     }
 
-    fn into_i32(self) -> ApiResult<i32> {
+    fn into_i32(&self) -> ApiResult<i32> {
         use std::num::ParseIntError as PIE;
         match self {
-            NumberOrString::Number(n) => Ok(n),
+            NumberOrString::Number(n) => Ok(*n),
             NumberOrString::String(s) => {
                 s.parse().map_err(|e: PIE| crate::Error::new("Can't convert to number", e.to_string()))
             }

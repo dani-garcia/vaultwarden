@@ -17,6 +17,7 @@ pub mod authenticator;
 pub mod duo;
 pub mod email;
 pub mod u2f;
+pub mod webauthn;
 pub mod yubikey;
 
 pub fn routes() -> Vec<Route> {
@@ -26,6 +27,7 @@ pub fn routes() -> Vec<Route> {
     routes.append(&mut duo::routes());
     routes.append(&mut email::routes());
     routes.append(&mut u2f::routes());
+    routes.append(&mut webauthn::routes());
     routes.append(&mut yubikey::routes());
 
     routes

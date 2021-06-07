@@ -60,6 +60,8 @@ fn main() {
 
     let pool = create_db_pool();
     schedule_jobs(pool.clone());
+    crate::db::models::TwoFactor::migrate_u2f_to_webauthn(&pool.get().unwrap()).unwrap();
+
     launch_rocket(pool, extra_debug); // Blocks until program termination.
 }
 

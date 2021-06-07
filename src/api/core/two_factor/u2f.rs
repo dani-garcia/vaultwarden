@@ -94,13 +94,14 @@ struct RegistrationDef {
 }
 
 #[derive(Serialize, Deserialize)]
-struct U2FRegistration {
-    id: i32,
-    name: String,
+pub struct U2FRegistration {
+    pub id: i32,
+    pub name: String,
     #[serde(with = "RegistrationDef")]
-    reg: Registration,
-    counter: u32,
+    pub reg: Registration,
+    pub counter: u32,
     compromised: bool,
+    pub migrated: Option<bool>,
 }
 
 impl U2FRegistration {
@@ -168,6 +169,7 @@ fn activate_u2f(data: JsonUpcase<EnableU2FData>, headers: Headers, conn: DbConn)
         reg: registration,
         compromised: false,
         counter: 0,
+        migrated: None,
     };
 
     let mut regs = get_u2f_registrations(&user.uuid, &conn)?.1;
@@ -273,6 +275,7 @@ fn get_u2f_registrations(user_uuid: &str, conn: &DbConn) -> Result<(bool, Vec<U2
                 reg: old_regs.remove(0),
                 compromised: false,
                 counter: 0,
+                migrated: None,
             }];
 
             // Save new format

@@ -114,7 +114,7 @@ macro_rules! db_run {
     };
 
     // Different code for each db
-    ( $conn:ident: $( $($db:ident),+ $body:block )+ ) => {
+    ( $conn:ident: $( $($db:ident),+ $body:block )+ ) => {{
         #[allow(unused)] use diesel::prelude::*;
         match $conn {
             $($(
@@ -128,7 +128,7 @@ macro_rules! db_run {
                     $body
                 },
             )+)+
-        }
+        }}
     };
 
     // Same for all dbs
