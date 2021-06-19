@@ -57,6 +57,8 @@ macro_rules! make_config {
 
             _env: ConfigBuilder,
             _usr: ConfigBuilder,
+
+            _overrides: Vec<String>,
         }
 
         #[derive(Debug, Clone, Default, Deserialize, Serialize)]
@@ -113,8 +115,7 @@ macro_rules! make_config {
 
             /// Merges the values of both builders into a new builder.
             /// If both have the same element, `other` wins.
-            fn merge(&self, other: &Self, show_overrides: bool) -> Self {
-                let mut overrides = Vec::new();
+            fn merge(&self, other: &Self, show_overrides: bool, overrides: &mut Vec<String>) -> Self {
                 let mut builder = self.clone();
                 $($(
                     if let v @Some(_) = &other.$name {
@@ -176,9 +177,9 @@ macro_rules! make_config {
             )+)+
 
             pub fn prepare_json(&self) -> serde_json::Value {
-                let (def, cfg) = {
+                let (def, cfg, overriden) = {
                     let inner = &self.inner.read().unwrap();
-                    (inner._env.build(), inner.config.clone())
+                    (inner._env.build(), inner.config.clone(), inner._overrides.clone())
                 };
 
                 fn _get_form_type(rust_type: &str) -> &'static str {
@@ -210,6 +211,7 @@ macro_rules! make_config {
                         "default": def.$name,
                         "type":  _get_form_type(stringify!($ty)),
                         "doc": _get_doc(concat!($($doc),+)),
+                        "overridden": overriden.contains(&stringify!($name).to_uppercase()),
                     }, )+
                     ]}, )+ ])
             }
@@ -223,6 +225,15 @@ macro_rules! make_config {
                 json!({ $($(
                     stringify!($name): make_config!{ @supportstr $name, cfg.$name, $ty, $none_action },
                 )+)+ })
+            }
+
+            pub fn get_overrides(&self) -> Vec<String> {
+                let overrides = {
+                    let inner = &self.inner.read().unwrap();
+                    inner._overrides.clone()
+                };
+
+                overrides
             }
         }
     };
@@ -505,7 +516,7 @@ make_config! {
         /// Server name sent during HELO |> By default this value should be is on the machine's hostname, but might need to be changed in case it trips some anti-spam filters
         helo_name:                     String, true,   option;
         /// Enable SMTP debugging (Know the risks!) |> DANGEROUS: Enabling this will output very detailed SMTP messages. This could contain sensitive information like passwords and usernames! Only enable this during troubleshooting!
-        smtp_debug:                    bool,   true,   def,     false;
+        smtp_debug:                    bool,   false,  def,     false;
         /// Accept Invalid Certs (Know the risks!) |> DANGEROUS: Allow invalid certificates. This option introduces significant vulnerabilities to man-in-the-middle attacks!
         smtp_accept_invalid_certs:     bool,   true,   def,     false;
         /// Accept Invalid Hostnames (Know the risks!) |> DANGEROUS: Allow invalid hostnames. This option introduces significant vulnerabilities to man-in-the-middle attacks!
@@ -639,7 +650,8 @@ impl Config {
         let _usr = ConfigBuilder::from_file(&CONFIG_FILE).unwrap_or_default();
 
         // Create merged config, config file overwrites env
-        let builder = _env.merge(&_usr, true);
+        let mut _overrides = Vec::new();
+        let builder = _env.merge(&_usr, true, &mut _overrides);
 
         // Fill any missing with defaults
         let config = builder.build();
@@ -651,6 +663,7 @@ impl Config {
                 config,
                 _env,
                 _usr,
+                _overrides,
             }),
         })
     }
@@ -666,9 +679,10 @@ impl Config {
         let config_str = serde_json::to_string_pretty(&builder)?;
 
         // Prepare the combined config
+        let mut overrides = Vec::new();
         let config = {
             let env = &self.inner.read().unwrap()._env;
-            env.merge(&builder, false).build()
+            env.merge(&builder, false, &mut overrides).build()
         };
         validate_config(&config)?;
 
@@ -677,6 +691,7 @@ impl Config {
             let mut writer = self.inner.write().unwrap();
             writer.config = config;
             writer._usr = builder;
+            writer._overrides = overrides;
         }
 
         //Save to file
@@ -690,7 +705,8 @@ impl Config {
     pub fn update_config_partial(&self, other: ConfigBuilder) -> Result<(), Error> {
         let builder = {
             let usr = &self.inner.read().unwrap()._usr;
-            usr.merge(&other, false)
+            let mut _overrides = Vec::new();
+            usr.merge(&other, false, &mut _overrides)
         };
         self.update_config(builder)
     }
@@ -751,6 +767,7 @@ impl Config {
             let mut writer = self.inner.write().unwrap();
             writer.config = config;
             writer._usr = usr;
+            writer._overrides = Vec::new();
         }
 
         Ok(())

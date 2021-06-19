@@ -7,37 +7,37 @@
             <div class="col-md">
                 <dl class="row">
                     <dt class="col-sm-5">Server Installed
-                        <span class="badge badge-success d-none" id="server-success" title="Latest version is installed.">Ok</span>
-                        <span class="badge badge-warning d-none" id="server-warning" title="There seems to be an update available.">Update</span>
-                        <span class="badge badge-info d-none" id="server-branch" title="This is a branched version.">Branched</span>
+                        <span class="badge bg-success d-none" id="server-success" title="Latest version is installed.">Ok</span>
+                        <span class="badge bg-warning d-none" id="server-warning" title="There seems to be an update available.">Update</span>
+                        <span class="badge bg-info d-none" id="server-branch" title="This is a branched version.">Branched</span>
                     </dt>
                     <dd class="col-sm-7">
                         <span id="server-installed">{{version}}</span>
                     </dd>
                     <dt class="col-sm-5">Server Latest
-                        <span class="badge badge-secondary d-none" id="server-failed" title="Unable to determine latest version.">Unknown</span>
+                        <span class="badge bg-secondary d-none" id="server-failed" title="Unable to determine latest version.">Unknown</span>
                     </dt>
                     <dd class="col-sm-7">
-                        <span id="server-latest">{{diagnostics.latest_release}}<span id="server-latest-commit" class="d-none">-{{diagnostics.latest_commit}}</span></span>
+                        <span id="server-latest">{{page_data.latest_release}}<span id="server-latest-commit" class="d-none">-{{page_data.latest_commit}}</span></span>
                     </dd>
-                    {{#if diagnostics.web_vault_enabled}}
+                    {{#if page_data.web_vault_enabled}}
                     <dt class="col-sm-5">Web Installed
-                        <span class="badge badge-success d-none" id="web-success" title="Latest version is installed.">Ok</span>
-                        <span class="badge badge-warning d-none" id="web-warning" title="There seems to be an update available.">Update</span>
+                        <span class="badge bg-success d-none" id="web-success" title="Latest version is installed.">Ok</span>
+                        <span class="badge bg-warning d-none" id="web-warning" title="There seems to be an update available.">Update</span>
                     </dt>
                     <dd class="col-sm-7">
-                        <span id="web-installed">{{diagnostics.web_vault_version}}</span>
+                        <span id="web-installed">{{page_data.web_vault_version}}</span>
                     </dd>
-                    {{#unless diagnostics.running_within_docker}}
+                    {{#unless page_data.running_within_docker}}
                     <dt class="col-sm-5">Web Latest
-                        <span class="badge badge-secondary d-none" id="web-failed" title="Unable to determine latest version.">Unknown</span>
+                        <span class="badge bg-secondary d-none" id="web-failed" title="Unable to determine latest version.">Unknown</span>
                     </dt>
                     <dd class="col-sm-7">
-                        <span id="web-latest">{{diagnostics.latest_web_build}}</span>
+                        <span id="web-latest">{{page_data.latest_web_build}}</span>
                     </dd>
                     {{/unless}}
                     {{/if}}
-                    {{#unless diagnostics.web_vault_enabled}}
+                    {{#unless page_data.web_vault_enabled}}
                     <dt class="col-sm-5">Web Installed</dt>
                     <dd class="col-sm-7">
                         <span id="web-installed">Web Vault is disabled</span>
@@ -45,7 +45,7 @@
                     {{/unless}}
                     <dt class="col-sm-5">Database</dt>
                     <dd class="col-sm-7">
-                        <span><b>{{diagnostics.db_type}}:</b> {{diagnostics.db_version}}</span>
+                        <span><b>{{page_data.db_type}}:</b> {{page_data.db_version}}</span>
                     </dd>
                 </dl>
             </div>
@@ -57,96 +57,105 @@
                 <dl class="row">
                     <dt class="col-sm-5">Running within Docker</dt>
                     <dd class="col-sm-7">
-                    {{#if diagnostics.running_within_docker}}
+                    {{#if page_data.running_within_docker}}
                         <span class="d-block"><b>Yes</b></span>
                     {{/if}}
-                    {{#unless diagnostics.running_within_docker}}
+                    {{#unless page_data.running_within_docker}}
+                        <span class="d-block"><b>No</b></span>
+                    {{/unless}}
+                    </dd>
+                    <dt class="col-sm-5">Environment settings overridden</dt>
+                    <dd class="col-sm-7">
+                    {{#if page_data.overrides}}
+                        <span class="d-block" title="The following settings are overridden: {{page_data.overrides}}"><b>Yes</b></span>
+                    {{/if}}
+                    {{#unless page_data.overrides}}
                         <span class="d-block"><b>No</b></span>
                     {{/unless}}
                     </dd>
                     <dt class="col-sm-5">Uses a reverse proxy</dt>
                     <dd class="col-sm-7">
-                    {{#if diagnostics.ip_header_exists}}
+                    {{#if page_data.ip_header_exists}}
                         <span class="d-block" title="IP Header found."><b>Yes</b></span>
                     {{/if}}
-                    {{#unless diagnostics.ip_header_exists}}
+                    {{#unless page_data.ip_header_exists}}
                         <span class="d-block" title="No IP Header found."><b>No</b></span>
                     {{/unless}}
                     </dd>
                     {{!-- Only show this if the IP Header Exists --}}
-                    {{#if diagnostics.ip_header_exists}}
+                    {{#if page_data.ip_header_exists}}
                     <dt class="col-sm-5">IP header
-                    {{#if diagnostics.ip_header_match}}
-                        <span class="badge badge-success" title="IP_HEADER config seems to be valid.">Match</span>
+                    {{#if page_data.ip_header_match}}
+                        <span class="badge bg-success" title="IP_HEADER config seems to be valid.">Match</span>
                     {{/if}}
-                    {{#unless diagnostics.ip_header_match}}
-                        <span class="badge badge-danger" title="IP_HEADER config seems to be invalid. IP's in the log could be invalid. Please fix.">No Match</span>
+                    {{#unless page_data.ip_header_match}}
+                        <span class="badge bg-danger" title="IP_HEADER config seems to be invalid. IP's in the log could be invalid. Please fix.">No Match</span>
                     {{/unless}}
                     </dt>
                     <dd class="col-sm-7">
-                    {{#if diagnostics.ip_header_match}}
-                        <span class="d-block"><b>Config/Server:</b> {{ diagnostics.ip_header_name }}</span>
+                    {{#if page_data.ip_header_match}}
+                        <span class="d-block"><b>Config/Server:</b> {{ page_data.ip_header_name }}</span>
                     {{/if}}
-                    {{#unless diagnostics.ip_header_match}}
-                        <span class="d-block"><b>Config:</b> {{ diagnostics.ip_header_config }}</span>
-                        <span class="d-block"><b>Server:</b> {{ diagnostics.ip_header_name }}</span>
+                    {{#unless page_data.ip_header_match}}
+                        <span class="d-block"><b>Config:</b> {{ page_data.ip_header_config }}</span>
+                        <span class="d-block"><b>Server:</b> {{ page_data.ip_header_name }}</span>
                     {{/unless}}
                     </dd>
                     {{/if}}
                     {{!-- End if IP Header Exists --}}
                     <dt class="col-sm-5">Internet access
-                    {{#if diagnostics.has_http_access}}
-                        <span class="badge badge-success" title="We have internet access!">Ok</span>
+                    {{#if page_data.has_http_access}}
+                        <span class="badge bg-success" title="We have internet access!">Ok</span>
                     {{/if}}
-                    {{#unless diagnostics.has_http_access}}
-                        <span class="badge badge-danger" title="There seems to be no internet access. Please fix.">Error</span>
+                    {{#unless page_data.has_http_access}}
+                        <span class="badge bg-danger" title="There seems to be no internet access. Please fix.">Error</span>
                     {{/unless}}
                     </dt>
                     <dd class="col-sm-7">
-                    {{#if diagnostics.has_http_access}}
+                    {{#if page_data.has_http_access}}
                         <span class="d-block"><b>Yes</b></span>
                     {{/if}}
-                    {{#unless diagnostics.has_http_access}}
+                    {{#unless page_data.has_http_access}}
                         <span class="d-block"><b>No</b></span>
                     {{/unless}}
                     </dd>
                     <dt class="col-sm-5">Internet access via a proxy</dt>
                     <dd class="col-sm-7">
-                    {{#if diagnostics.uses_proxy}}
+                    {{#if page_data.uses_proxy}}
                         <span class="d-block" title="Internet access goes via a proxy (HTTPS_PROXY or HTTP_PROXY is configured)."><b>Yes</b></span>
                     {{/if}}
-                    {{#unless diagnostics.uses_proxy}}
+                    {{#unless page_data.uses_proxy}}
                         <span class="d-block" title="We have direct internet access, no outgoing proxy configured."><b>No</b></span>
                     {{/unless}}
                     </dd>
                     <dt class="col-sm-5">DNS (github.com)
-                        <span class="badge badge-success d-none" id="dns-success" title="DNS Resolving works!">Ok</span>
-                        <span class="badge badge-danger d-none" id="dns-warning" title="DNS Resolving failed. Please fix.">Error</span>
+                        <span class="badge bg-success d-none" id="dns-success" title="DNS Resolving works!">Ok</span>
+                        <span class="badge bg-danger d-none" id="dns-warning" title="DNS Resolving failed. Please fix.">Error</span>
                     </dt>
                     <dd class="col-sm-7">
-                        <span id="dns-resolved">{{diagnostics.dns_resolved}}</span>
+                        <span id="dns-resolved">{{page_data.dns_resolved}}</span>
                     </dd>
                     <dt class="col-sm-5">Date & Time (Local)</dt>
                     <dd class="col-sm-7">
-                        <span><b>Server:</b> {{diagnostics.server_time_local}}</span>
+                        <span><b>Server:</b> {{page_data.server_time_local}}</span>
                     </dd>
                     <dt class="col-sm-5">Date & Time (UTC)
-                        <span class="badge badge-success d-none" id="time-success" title="Time offsets seem to be correct.">Ok</span>
-                        <span class="badge badge-danger d-none" id="time-warning" title="Time offsets are too mouch at drift.">Error</span>
+                        <span class="badge bg-success d-none" id="time-success" title="Time offsets seem to be correct.">Ok</span>
+                        <span class="badge bg-danger d-none" id="time-warning" title="Time offsets are too mouch at drift.">Error</span>
                     </dt>
                     <dd class="col-sm-7">
-                        <span id="time-server" class="d-block"><b>Server:</b> <span id="time-server-string">{{diagnostics.server_time}}</span></span>
+                        <span id="time-server" class="d-block"><b>Server:</b> <span id="time-server-string">{{page_data.server_time}}</span></span>
                         <span id="time-browser" class="d-block"><b>Browser:</b> <span id="time-browser-string"></span></span>
                     </dd>
 
                     <dt class="col-sm-5">Domain configuration
-                        <span class="badge badge-success d-none" id="domain-success" title="The domain variable matches the browser location and seems to be configured correctly.">Match</span>
-                        <span class="badge badge-danger d-none" id="domain-warning" title="The domain variable does not matches the browsers location.&#013;&#010;The domain variable does not seem to be configured correctly.&#013;&#010;Some features may not work as expected!">No Match</span>
-                        <span class="badge badge-success d-none" id="https-success" title="Configurued to use HTTPS">HTTPS</span>
-                        <span class="badge badge-danger d-none" id="https-warning" title="Not configured to use HTTPS.&#013;&#010;Some features may not work as expected!">No HTTPS</span>
+                        <span class="badge bg-success d-none" id="domain-success" title="The domain variable matches the browser location and seems to be configured correctly.">Match</span>
+                        <span class="badge bg-danger d-none" id="domain-warning" title="The domain variable does not matches the browsers location.&#013;&#010;The domain variable does not seem to be configured correctly.&#013;&#010;Some features may not work as expected!">No Match</span>
+                        <span class="badge bg-success d-none" id="https-success" title="Configurued to use HTTPS">HTTPS</span>
+                        <span class="badge bg-danger d-none" id="https-warning" title="Not configured to use HTTPS.&#013;&#010;Some features may not work as expected!">No HTTPS</span>
                     </dt>
                     <dd class="col-sm-7">
-                        <span id="domain-server" class="d-block"><b>Server:</b> <span id="domain-server-string">{{diagnostics.admin_url}}</span></span>
+                        <span id="domain-server" class="d-block"><b>Server:</b> <span id="domain-server-string">{{page_data.admin_url}}</span></span>
                         <span id="domain-browser" class="d-block"><b>Browser:</b> <span id="domain-browser-string"></span></span>
                     </dd>
                 </dl>
@@ -173,10 +182,17 @@
                     <dt class="col-sm-3">
                         <button type="button" id="gen-support" class="btn btn-primary" onclick="generateSupportString(); return false;">Generate Support String</button>
                         <br><br>
-                        <button type="button" id="copy-support" class="btn btn-info d-none" onclick="copyToClipboard(); return false;">Copy To Clipboard</button>
+                        <button type="button" id="copy-support" class="btn btn-info mb-3 d-none" onclick="copyToClipboard(); return false;">Copy To Clipboard</button>
+                        <div class="toast-container position-absolute float-start" style="width: 15rem;">
+                            <div id="toastClipboardCopy" class="toast fade hide" role="status" aria-live="polite" aria-atomic="true" data-bs-autohide="true" data-bs-delay="1500">
+                                <div class="toast-body">
+                                    Copied to clipboard!
+                                </div>
+                            </div>
+                        </div>
                     </dt>
                     <dd class="col-sm-9">
-                        <pre id="support-string" class="pre-scrollable d-none" style="width: 100%; height: 16em; size: 0.6em; border: 1px solid; padding: 4px;"></pre>
+                        <pre id="support-string" class="pre-scrollable d-none w-100 border p-2" style="height: 16rem;"></pre>
                     </dd>
                 </dl>
             </div>
@@ -185,10 +201,13 @@
 </main>
 
 <script>
-    dnsCheck = false;
-    timeCheck = false;
-    domainCheck = false;
-    httpsCheck = false;
+    'use strict';
+
+    var dnsCheck = false;
+    var timeCheck = false;
+    var domainCheck = false;
+    var httpsCheck = false;
+
     (() => {
         // ================================
         // Date & Time Check
@@ -203,7 +222,10 @@
         document.getElementById("time-browser-string").innerText = browserUTC;
 
         const serverUTC = document.getElementById("time-server-string").innerText;
-        const timeDrift = (Date.parse(serverUTC) - Date.parse(browserUTC)) / 1000;
+        const timeDrift = (
+                Date.parse(serverUTC.replace(' ', 'T').replace(' UTC', '')) -
+                Date.parse(browserUTC.replace(' ', 'T').replace(' UTC', ''))
+            ) / 1000;
         if (timeDrift > 30 || timeDrift < -30) {
             document.getElementById('time-warning').classList.remove('d-none');
         } else {
@@ -233,7 +255,7 @@
         const webInstalled = document.getElementById('web-installed').innerText;
         checkVersions('server', serverInstalled, serverLatest, serverLatestCommit);
 
-        {{#unless diagnostics.running_within_docker}}
+        {{#unless page_data.running_within_docker}}
         const webLatest = document.getElementById('web-latest').innerText;
         checkVersions('web', webInstalled, webLatest);
         {{/unless}}
@@ -303,30 +325,38 @@
     // ================================
     // Generate support string to be pasted on github or the forum
     async function generateSupportString() {
-        supportString = "### Your environment (Generated via diagnostics page)\n";
+        let supportString = "### Your environment (Generated via diagnostics page)\n";
 
         supportString += "* Vaultwarden version: v{{ version }}\n";
-        supportString += "* Web-vault version: v{{ diagnostics.web_vault_version }}\n";
-        supportString += "* Running within Docker: {{ diagnostics.running_within_docker }}\n";
-        supportString += "* Uses a reverse proxy: {{ diagnostics.ip_header_exists }}\n";
-        {{#if diagnostics.ip_header_exists}}
-        supportString += "* IP Header check: {{ diagnostics.ip_header_match }} ({{ diagnostics.ip_header_name }})\n";
+        supportString += "* Web-vault version: v{{ page_data.web_vault_version }}\n";
+        supportString += "* Running within Docker: {{ page_data.running_within_docker }}\n";
+        supportString += "* Environment settings overridden: ";
+        {{#if page_data.overrides}}
+            supportString += "true\n"
+        {{else}}
+            supportString += "false\n"
         {{/if}}
-        supportString += "* Internet access: {{ diagnostics.has_http_access }}\n";
-        supportString += "* Internet access via a proxy: {{ diagnostics.uses_proxy }}\n";
+        supportString += "* Uses a reverse proxy: {{ page_data.ip_header_exists }}\n";
+        {{#if page_data.ip_header_exists}}
+        supportString += "* IP Header check: {{ page_data.ip_header_match }} ({{ page_data.ip_header_name }})\n";
+        {{/if}}
+        supportString += "* Internet access: {{ page_data.has_http_access }}\n";
+        supportString += "* Internet access via a proxy: {{ page_data.uses_proxy }}\n";
         supportString += "* DNS Check: " + dnsCheck + "\n";
         supportString += "* Time Check: " + timeCheck + "\n";
         supportString += "* Domain Configuration Check: " + domainCheck + "\n";
         supportString += "* HTTPS Check: " + httpsCheck + "\n";
-        supportString += "* Database type: {{ diagnostics.db_type }}\n";
-        supportString += "* Database version: {{ diagnostics.db_version }}\n";
+        supportString += "* Database type: {{ page_data.db_type }}\n";
+        supportString += "* Database version: {{ page_data.db_version }}\n";
         supportString += "* Clients used: \n";
         supportString += "* Reverse proxy and version: \n";
         supportString += "* Other relevant information: \n";
 
-        jsonResponse = await fetch('{{urlpath}}/admin/diagnostics/config');
-        configJson = await jsonResponse.json();
-        supportString += "\n### Config (Generated via diagnostics page)\n```json\n" + JSON.stringify(configJson, undefined, 2) + "\n```\n";
+        let jsonResponse = await fetch('{{urlpath}}/admin/diagnostics/config');
+        const configJson = await jsonResponse.json();
+        supportString += "\n### Config (Generated via diagnostics page)\n<details><summary>Show Running Config</summary>\n"
+        supportString += "\n**Environment settings which are overridden:** {{page_data.overrides}}\n"
+        supportString += "\n\n```json\n" + JSON.stringify(configJson, undefined, 2) + "\n```\n</details>\n";
 
         document.getElementById('support-string').innerText = supportString;
         document.getElementById('support-string').classList.remove('d-none');
@@ -334,16 +364,19 @@
     }
 
     function copyToClipboard() {
-        const str = document.getElementById('support-string').innerText;
-        const el = document.createElement('textarea');
-        el.value = str;
-        el.setAttribute('readonly', '');
-        el.style.position = 'absolute';
-        el.style.left = '-9999px';
-        document.body.appendChild(el);
-        el.select();
-        document.execCommand('copy');
-        document.body.removeChild(el);
-    }
+        const supportStr = document.getElementById('support-string').innerText;
+        const tmpCopyEl = document.createElement('textarea');
 
+        tmpCopyEl.setAttribute('id', 'copy-support-string');
+        tmpCopyEl.setAttribute('readonly', '');
+        tmpCopyEl.value = supportStr;
+        tmpCopyEl.style.position = 'absolute';
+        tmpCopyEl.style.left = '-9999px';
+        document.body.appendChild(tmpCopyEl);
+        tmpCopyEl.select();
+        document.execCommand('copy');
+        tmpCopyEl.remove();
+
+        new BSN.Toast('#toastClipboardCopy').show();
+    }
 </script>

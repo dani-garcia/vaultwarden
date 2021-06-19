@@ -2,6 +2,9 @@ name: Hadolint
 
 on:
   push:
+    # Ignore when there are only changes done too one of these paths
+    paths:
+      - "docker/**"
   pull_request:
     # Ignore when there are only changes done too one of these paths
     paths:
@@ -22,14 +25,14 @@ jobs:
       - name: Download hadolint
         shell: bash
         run: |
-          sudo curl -L https://github.com/hadolint/hadolint/releases/download/v$HADOLINT_VERSION/hadolint-$(uname -s)-$(uname -m) -o /usr/local/bin/hadolint && \
+          sudo curl -L https://github.com/hadolint/hadolint/releases/download/v${HADOLINT_VERSION}/hadolint-$(uname -s)-$(uname -m) -o /usr/local/bin/hadolint && \
           sudo chmod +x /usr/local/bin/hadolint
         env:
-          HADOLINT_VERSION: 2.3.0
+          HADOLINT_VERSION: 2.5.0
       # End Download hadolint
 
       # Test Dockerfiles
       - name: Run hadolint
         shell: bash
-        run:  git ls-files --exclude='docker/*/Dockerfile*' --ignored | xargs hadolint
+        run:  git ls-files --exclude='docker/*/Dockerfile*' --ignored --cached | xargs hadolint
       # End Test Dockerfiles

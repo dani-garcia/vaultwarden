@@ -196,9 +196,7 @@ fn _validate_token(token: &str) -> bool {
 struct AdminTemplateData {
     page_content: String,
     version: Option<&'static str>,
-    users: Option<Vec<Value>>,
-    organizations: Option<Vec<Value>>,
-    diagnostics: Option<Value>,
+    page_data: Option<Value>,
     config: Value,
     can_backup: bool,
     logged_in: bool,
@@ -214,51 +212,19 @@ impl AdminTemplateData {
             can_backup: *CAN_BACKUP,
             logged_in: true,
             urlpath: CONFIG.domain_path(),
-            users: None,
-            organizations: None,
-            diagnostics: None,
+            page_data: None,
         }
     }
 
-    fn users(users: Vec<Value>) -> Self {
+    fn with_data(page_content: &str, page_data: Value) -> Self {
         Self {
-            page_content: String::from("admin/users"),
+            page_content: String::from(page_content),
             version: VERSION,
-            users: Some(users),
+            page_data: Some(page_data),
             config: CONFIG.prepare_json(),
             can_backup: *CAN_BACKUP,
             logged_in: true,
             urlpath: CONFIG.domain_path(),
-            organizations: None,
-            diagnostics: None,
-        }
-    }
-
-    fn organizations(organizations: Vec<Value>) -> Self {
-        Self {
-            page_content: String::from("admin/organizations"),
-            version: VERSION,
-            organizations: Some(organizations),
-            config: CONFIG.prepare_json(),
-            can_backup: *CAN_BACKUP,
-            logged_in: true,
-            urlpath: CONFIG.domain_path(),
-            users: None,
-            diagnostics: None,
-        }
-    }
-
-    fn diagnostics(diagnostics: Value) -> Self {
-        Self {
-            page_content: String::from("admin/diagnostics"),
-            version: VERSION,
-            organizations: None,
-            config: CONFIG.prepare_json(),
-            can_backup: *CAN_BACKUP,
-            logged_in: true,
-            urlpath: CONFIG.domain_path(),
-            users: None,
-            diagnostics: Some(diagnostics),
         }
     }
 
@@ -360,7 +326,7 @@ fn users_overview(_token: AdminToken, conn: DbConn) -> ApiResult<Html<String>> {
         })
         .collect();
 
-    let text = AdminTemplateData::users(users_json).render()?;
+    let text = AdminTemplateData::with_data("admin/users", json!(users_json)).render()?;
     Ok(Html(text))
 }
 
@@ -466,7 +432,7 @@ fn organizations_overview(_token: AdminToken, conn: DbConn) -> ApiResult<Html<St
         })
         .collect();
 
-    let text = AdminTemplateData::organizations(organizations_json).render()?;
+    let text = AdminTemplateData::with_data("admin/organizations", json!(organizations_json)).render()?;
     Ok(Html(text))
 }
 
@@ -592,11 +558,12 @@ fn diagnostics(_token: AdminToken, ip_header: IpHeader, conn: DbConn) -> ApiResu
         "db_type": *DB_TYPE,
         "db_version": get_sql_server_version(&conn),
         "admin_url": format!("{}/diagnostics", admin_url(Referer(None))),
+        "overrides": &CONFIG.get_overrides().join(", "),
         "server_time_local": Local::now().format("%Y-%m-%d %H:%M:%S %Z").to_string(),
         "server_time": Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string(), // Run the date/time check as the last item to minimize the difference
     });
 
-    let text = AdminTemplateData::diagnostics(diagnostics_json).render()?;
+    let text = AdminTemplateData::with_data("admin/diagnostics", diagnostics_json).render()?;
     Ok(Html(text))
 }
 
