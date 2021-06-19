@@ -154,4 +154,4 @@ data-url = { git = 'https://github.com/servo/rust-url', package="data-url", rev 
 job_scheduler = { git = 'https://github.com/jjlin/job_scheduler', rev = 'ee023418dbba2bfe1e30a5fd7d937f9e33739806' }
 
 # Add support for U2F appid extension compatibility
-webauthn-rs = { git = 'https://github.com/dani-garcia/webauthn-rs', rev = '70b458f246d207e5b6333ada9f1d5794c5e01da1' }
+webauthn-rs = { git = 'https://github.com/kanidm/webauthn-rs', rev = 'ee887befbf57c5406136d8617183aa8d2b9ef387' }
