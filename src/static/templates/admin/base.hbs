@@ -15,14 +15,16 @@
             width: 48px;
             height: 48px;
         }
-        .navbar .vaultwarden-icon {
+        .vaultwarden-icon {
             height: 32px;
             width: auto;
-            margin: -5px -3px 0 0;
+            margin: -5px 0 0 0;
         }
     </style>
     <script src="{{urlpath}}/bwrs_static/identicon.js"></script>
     <script>
+        'use strict';
+
         function reload() { window.location.reload(); }
         function msg(text, reload_page = true) {
             text && alert(text);
@@ -78,19 +80,18 @@
             });
         }
     </script>
-
 </head>
 
 <body class="bg-light">
     <nav class="navbar navbar-expand-md navbar-dark bg-dark mb-4 shadow fixed-top">
         <div class="container-xl">
-            <a class="navbar-brand" href="{{urlpath}}/admin"><img class="pr-1 vaultwarden-icon" src="{{urlpath}}/bwrs_static/vaultwarden-icon.png" alt="V">aultwarden Admin</a>
-            <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarCollapse"
+            <a class="navbar-brand" href="{{urlpath}}/admin"><img class="vaultwarden-icon" src="{{urlpath}}/bwrs_static/vaultwarden-icon.png" alt="V">aultwarden Admin</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse"
                     aria-controls="navbarCollapse" aria-expanded="false" aria-label="Toggle navigation">
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="collapse navbar-collapse" id="navbarCollapse">
-                <ul class="navbar-nav mr-auto">
+                <ul class="navbar-nav me-auto">
                 {{#if logged_in}}
                     <li class="nav-item">
                         <a class="nav-link" href="{{urlpath}}/admin">Settings</a>
@@ -121,17 +122,19 @@
 
     <!-- This script needs to be at the bottom, else it will fail! -->
     <script>
+        'use strict';
+
         // get current URL path and assign 'active' class to the correct nav-item
-        (function () {
+        (() => {
             var pathname = window.location.pathname;
             if (pathname === "") return;
             var navItem = document.querySelectorAll('.navbar-nav .nav-item a[href="'+pathname+'"]');
             if (navItem.length === 1) {
-                navItem[0].parentElement.className = navItem[0].parentElement.className + ' active';
+                navItem[0].className = navItem[0].className + ' active';
+                navItem[0].setAttribute('aria-current', 'page');
             }
         })();
     </script>
-    <!-- This script needs to be at the bottom, else it will fail! -->
     <script src="{{urlpath}}/bwrs_static/bootstrap-native.js"></script>
 </body>
 </html>

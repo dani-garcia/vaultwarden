@@ -2,6 +2,19 @@ name: Build
 
 on:
   push:
+    paths-ignore:
+      - "*.md"
+      - "*.txt"
+      - ".dockerignore"
+      - ".env.template"
+      - ".gitattributes"
+      - ".gitignore"
+      - "azure-pipelines.yml"
+      - "docker/**"
+      - "hooks/**"
+      - "tools/**"
+      - ".github/FUNDING.yml"
+      - ".github/ISSUE_TEMPLATE/**"
   pull_request:
     # Ignore when there are only changes done too one of these paths
     paths-ignore:
@@ -39,13 +52,13 @@ jobs:
             features: [sqlite,mysql,postgresql] # Remember to update the `cargo test` to match the amount of features
             channel: nightly
             os: ubuntu-18.04
-            ext:
+            ext: ""
           # - target-triple: x86_64-unknown-linux-gnu
           #   host-triple: x86_64-unknown-linux-gnu
           #   features: "sqlite,mysql,postgresql"
           #   channel: stable
           #   os: ubuntu-18.04
-          #   ext:
+          #   ext: ""
 
     name: Building ${{ matrix.channel }}-${{ matrix.target-triple }}
     runs-on: ${{ matrix.os }}

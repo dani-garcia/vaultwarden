@@ -1,7 +1,6 @@
 <main class="container-xl">
     <div id="organizations-block" class="my-3 p-3 bg-white rounded shadow">
         <h6 class="border-bottom pb-2 mb-3">Organizations</h6>
-
         <div class="table-responsive-xl small">
             <table id="orgs-table" class="table table-sm table-striped table-hover">
                 <thead>
@@ -10,19 +9,19 @@
                         <th>Users</th>
                         <th>Items</th>
                         <th>Attachments</th>
-                        <th style="width: 120px; min-width: 120px;">Actions</th>
+                        <th style="width: 130px; min-width: 130px;">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {{#each organizations}}
+                    {{#each page_data}}
                     <tr>
                         <td>
-                            <img class="mr-2 float-left rounded identicon" data-src="{{Id}}">
-                            <div class="float-left">
+                            <img class="float-start me-2 rounded identicon" data-src="{{Id}}">
+                            <div class="float-start">
                                 <strong>{{Name}}</strong>
-                                <span class="mr-2">({{BillingEmail}})</span>
+                                <span class="me-2">({{BillingEmail}})</span>
                                 <span class="d-block">
-                                    <span class="badge badge-success">{{Id}}</span>
+                                    <span class="badge bg-success">{{Id}}</span>
                                 </span>
                             </div>
                         </td>
@@ -38,7 +37,7 @@
                             <span class="d-block"><strong>Size:</strong> {{attachment_size}}</span>
                             {{/if}}
                         </td>
-                        <td style="font-size: 90%; text-align: right; padding-right: 15px">
+                        <td class="text-end pe-2 small">
                             <a class="d-block" href="#" onclick='deleteOrganization({{jsesc Id}}, {{jsesc Name}}, {{jsesc BillingEmail}})'>Delete Organization</a>
                         </td>
                     </tr>
@@ -46,14 +45,15 @@
                 </tbody>
             </table>
         </div>
-
     </div>
 </main>
 
 <link rel="stylesheet" href="{{urlpath}}/bwrs_static/datatables.css" />
-<script src="{{urlpath}}/bwrs_static/jquery-3.5.1.slim.js"></script>
+<script src="{{urlpath}}/bwrs_static/jquery-3.6.0.slim.js"></script>
 <script src="{{urlpath}}/bwrs_static/datatables.js"></script>
 <script>
+    'use strict';
+
     function deleteOrganization(id, name, billing_email) {
         // First make sure the user wants to delete this organization
         var continueDelete = confirm("WARNING: All data of this organization ("+ name +") will be lost!\nMake sure you have a backup, this cannot be undone!");
@@ -79,7 +79,7 @@
         }
     })();
 
-    document.addEventListener("DOMContentLoaded", function(event) {
+    document.addEventListener("DOMContentLoaded", function() {
         $('#orgs-table').DataTable({
             "responsive": true,
             "lengthMenu": [ [-1, 5, 10, 25, 50], ["All", 5, 10, 25, 50] ],
