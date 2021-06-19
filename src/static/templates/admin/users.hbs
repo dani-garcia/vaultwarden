@@ -7,34 +7,34 @@
                 <thead>
                     <tr>
                         <th>User</th>
-                        <th style="width:65px; min-width: 65px;">Created at</th>
-                        <th style="width:70px; min-width: 65px;">Last Active</th>
-                        <th style="width:35px; min-width: 35px;">Items</th>
+                        <th style="width: 85px; min-width: 70px;">Created at</th>
+                        <th style="width: 85px; min-width: 70px;">Last Active</th>
+                        <th style="width: 35px; min-width: 35px;">Items</th>
                         <th>Attachments</th>
                         <th style="min-width: 120px;">Organizations</th>
-                        <th style="width: 120px; min-width: 120px;">Actions</th>
+                        <th style="width: 130px; min-width: 130px;">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {{#each users}}
+                    {{#each page_data}}
                     <tr>
                         <td>
-                            <img class="float-left mr-2 rounded identicon" data-src="{{Email}}">
-                            <div class="float-left">
+                            <img class="float-start me-2 rounded identicon" data-src="{{Email}}">
+                            <div class="float-start">
                                 <strong>{{Name}}</strong>
                                 <span class="d-block">{{Email}}</span>
                                 <span class="d-block">
                                     {{#unless user_enabled}}
-                                        <span class="badge badge-danger mr-2" title="User is disabled">Disabled</span>
+                                        <span class="badge bg-danger me-2" title="User is disabled">Disabled</span>
                                     {{/unless}}
                                     {{#if TwoFactorEnabled}}
-                                        <span class="badge badge-success mr-2" title="2FA is enabled">2FA</span>
+                                        <span class="badge bg-success me-2" title="2FA is enabled">2FA</span>
                                     {{/if}}
                                     {{#case _Status 1}}
-                                        <span class="badge badge-warning mr-2" title="User is invited">Invited</span>
+                                        <span class="badge bg-warning me-2" title="User is invited">Invited</span>
                                     {{/case}}
                                     {{#if EmailVerified}}
-                                        <span class="badge badge-success mr-2" title="Email has been verified">Verified</span>
+                                        <span class="badge bg-success me-2" title="Email has been verified">Verified</span>
                                     {{/if}}
                                 </span>
                             </div>
@@ -57,11 +57,11 @@
                         <td>
                             <div class="overflow-auto" style="max-height: 120px;">
                             {{#each Organizations}}
-                            <button class="badge badge-primary" data-toggle="modal" data-target="#userOrgTypeDialog" data-orgtype="{{Type}}" data-orguuid="{{jsesc Id no_quote}}" data-orgname="{{jsesc Name no_quote}}" data-useremail="{{jsesc ../Email no_quote}}" data-useruuid="{{jsesc ../Id no_quote}}">{{Name}}</button>
+                            <button class="badge" data-bs-toggle="modal" data-bs-target="#userOrgTypeDialog" data-orgtype="{{Type}}" data-orguuid="{{jsesc Id no_quote}}" data-orgname="{{jsesc Name no_quote}}" data-useremail="{{jsesc ../Email no_quote}}" data-useruuid="{{jsesc ../Id no_quote}}">{{Name}}</button>
                             {{/each}}
                             </div>
                         </td>
-                        <td style="font-size: 90%; text-align: right; padding-right: 15px">
+                        <td class="text-end pe-2 small">
                             {{#if TwoFactorEnabled}}
                             <a class="d-block" href="#" onclick='remove2fa({{jsesc Id}})'>Remove all 2FA</a>
                             {{/if}}
@@ -85,7 +85,7 @@
                 Force clients to resync
             </button>
 
-            <button type="button" class="btn btn-sm btn-primary float-right" onclick="reload();">Reload users</button>
+            <button type="button" class="btn btn-sm btn-primary float-end" onclick="reload();">Reload users</button>
         </div>
     </div>
 
@@ -94,8 +94,8 @@
             <h6 class="mb-0 text-white">Invite User</h6>
             <small>Email:</small>
 
-            <form class="form-inline" id="invite-form" onsubmit="inviteUser(); return false;">
-                <input type="email" class="form-control w-50 mr-2" id="email-invite" placeholder="Enter email">
+            <form class="form-inline input-group w-50" id="invite-form" onsubmit="inviteUser(); return false;">
+                <input type="email" class="form-control me-2" id="email-invite" placeholder="Enter email" required>
                 <button type="submit" class="btn btn-primary">Invite</button>
             </form>
         </div>
@@ -106,9 +106,7 @@
             <div class="modal-content">
                 <div class="modal-header">
                     <h6 class="modal-title" id="userOrgTypeDialogTitle"></h6>
-                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
-                        <span aria-hidden="true">&times;</span>
-                    </button>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <form class="form" id="userOrgTypeForm" onsubmit="updateUserOrgType(); return false;">
                     <input type="hidden" name="user_uuid" id="userOrgTypeUserUuid" value="">
@@ -128,7 +126,7 @@
                         </div>
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-sm btn-secondary" data-dismiss="modal">Cancel</button>
+                        <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
                         <button type="submit" class="btn btn-sm btn-primary">Change Role</button>
                     </div>
                 </form>
@@ -138,9 +136,11 @@
 </main>
 
 <link rel="stylesheet" href="{{urlpath}}/bwrs_static/datatables.css" />
-<script src="{{urlpath}}/bwrs_static/jquery-3.5.1.slim.js"></script>
+<script src="{{urlpath}}/bwrs_static/jquery-3.6.0.slim.js"></script>
 <script src="{{urlpath}}/bwrs_static/datatables.js"></script>
 <script>
+    'use strict';
+
     function deleteUser(id, mail) {
         var input_mail = prompt("To delete user '" + mail + "', please type the email below")
         if (input_mail != null) {
@@ -191,8 +191,8 @@
         return false;
     }
     function inviteUser() {
-        inv = document.getElementById("email-invite");
-        data = JSON.stringify({ "email": inv.value });
+        const inv = document.getElementById("email-invite");
+        const data = JSON.stringify({ "email": inv.value });
         inv.value = "";
         _post("{{urlpath}}/admin/invite/", "User invited correctly",
             "Error inviting user", data);
@@ -212,7 +212,7 @@
         }
     })();
 
-    document.querySelectorAll("[data-orgtype]").forEach(function (e, i) {
+    document.querySelectorAll("[data-orgtype]").forEach(function (e) {
         let orgtype = OrgTypes[e.dataset.orgtype];
         e.style.backgroundColor = orgtype.color;
         e.title = orgtype.name;
@@ -225,7 +225,7 @@
             let sortDate = a.replace(/(<([^>]+)>)/gi, "").trim();
             if ( sortDate !== '' ) {
                 let dtParts = sortDate.split(' ');
-                var timeParts = (undefined != dtParts[1]) ? dtParts[1].split(':') : [00,00,00];
+                var timeParts = (undefined != dtParts[1]) ? dtParts[1].split(':') : ['00','00','00'];
                 var dateParts = dtParts[0].split('-');
                 x = (dateParts[0] + dateParts[1] + dateParts[2] + timeParts[0] + timeParts[1] + ((undefined != timeParts[2]) ? timeParts[2] : 0)) * 1;
                 if ( isNaN(x) ) {
@@ -246,7 +246,7 @@
         }
     });
 
-    document.addEventListener("DOMContentLoaded", function(event) {
+    document.addEventListener("DOMContentLoaded", function() {
         $('#users-table').DataTable({
             "responsive": true,
             "lengthMenu": [ [-1, 5, 10, 25, 50], ["All", 5, 10, 25, 50] ],
@@ -275,7 +275,7 @@
     }, false);
 
     // Prevent accidental submission of the form with valid elements after the modal has been hidden.
-    userOrgTypeDialog.addEventListener('hide.bs.modal', function(event){
+    userOrgTypeDialog.addEventListener('hide.bs.modal', function(){
         document.getElementById("userOrgTypeDialogTitle").innerHTML = '';
         document.getElementById("userOrgTypeUserUuid").value = '';
         document.getElementById("userOrgTypeOrgUuid").value = '';

@@ -4,24 +4,24 @@
  *
  * To rebuild or modify this file with the latest versions of the included
  * software please visit:
- *   https://datatables.net/download/#bs4/dt-1.10.23
+ *   https://datatables.net/download/#bs5/dt-1.10.25
  *
  * Included libraries:
- *   DataTables 1.10.23
+ *   DataTables 1.10.25
  */
 
-/*! DataTables 1.10.23
- * ©2008-2020 SpryMedia Ltd - datatables.net/license
+/*! DataTables 1.10.25
+ * ©2008-2021 SpryMedia Ltd - datatables.net/license
  */
 
 /**
  * @summary     DataTables
  * @description Paginate, search and order HTML tables
- * @version     1.10.23
+ * @version     1.10.25
  * @file        jquery.dataTables.js
  * @author      SpryMedia Ltd
  * @contact     www.datatables.net
- * @copyright   Copyright 2008-2020 SpryMedia Ltd.
+ * @copyright   Copyright 2008-2021 SpryMedia Ltd.
  *
  * This source file is free software, available under the following license:
  *   MIT license - http://datatables.net/license
@@ -1100,6 +1100,8 @@
 						_fnLanguageCompat( json );
 						_fnCamelToHungarian( defaults.oLanguage, json );
 						$.extend( true, oLanguage, json );
+			
+						_fnCallbackFire( oSettings, null, 'i18n', [oSettings]);
 						_fnInitialise( oSettings );
 					},
 					error: function () {
@@ -1108,6 +1110,9 @@
 					}
 				} );
 				bInitHandedOff = true;
+			}
+			else {
+				_fnCallbackFire( oSettings, null, 'i18n', [oSettings]);
 			}
 			
 			/*
@@ -1260,7 +1265,7 @@
 			
 				var tbody = $this.children('tbody');
 				if ( tbody.length === 0 ) {
-					tbody = $('<tbody/>').appendTo($this);
+					tbody = $('<tbody/>').insertAfter(thead);
 				}
 				oSettings.nTBody = tbody[0];
 			
@@ -2315,8 +2320,9 @@
 						}
 	
 						// Only a single match is needed for html type since it is
-						// bottom of the pile and very similar to string
-						if ( detectedType === 'html' ) {
+						// bottom of the pile and very similar to string - but it
+						// must not be empty
+						if ( detectedType === 'html' && ! _empty(cache[k]) ) {
 							break;
 						}
 					}
@@ -3421,9 +3427,10 @@
 	/**
 	 * Insert the required TR nodes into the table for display
 	 *  @param {object} oSettings dataTables settings object
+	 *  @param ajaxComplete true after ajax call to complete rendering
 	 *  @memberof DataTable#oApi
 	 */
-	function _fnDraw( oSettings )
+	function _fnDraw( oSettings, ajaxComplete )
 	{
 		/* Provide a pre-callback function which can be used to cancel the draw is false is returned */
 		var aPreDraw = _fnCallbackFire( oSettings, 'aoPreDrawCallback', 'preDraw', [oSettings] );
@@ -3472,8 +3479,9 @@
 		{
 			oSettings.iDraw++;
 		}
-		else if ( !oSettings.bDestroying && !_fnAjaxUpdate( oSettings ) )
+		else if ( !oSettings.bDestroying && !ajaxComplete)
 		{
+			_fnAjaxUpdate( oSettings );
 			return;
 		}
 	
@@ -4005,21 +4013,16 @@
 	 */
 	function _fnAjaxUpdate( settings )
 	{
-		if ( settings.bAjaxDataGet ) {
-			settings.iDraw++;
-			_fnProcessingDisplay( settings, true );
+		settings.iDraw++;
+		_fnProcessingDisplay( settings, true );
 	
-			_fnBuildAjax(
-				settings,
-				_fnAjaxParameters( settings ),
-				function(json) {
-					_fnAjaxUpdateDraw( settings, json );
-				}
-			);
-	
-			return false;
-		}
-		return true;
+		_fnBuildAjax(
+			settings,
+			_fnAjaxParameters( settings ),
+			function(json) {
+				_fnAjaxUpdateDraw( settings, json );
+			}
+		);
 	}
 	
 	
@@ -4172,14 +4175,12 @@
 		}
 		settings.aiDisplay = settings.aiDisplayMaster.slice();
 	
-		settings.bAjaxDataGet = false;
-		_fnDraw( settings );
+		_fnDraw( settings, true );
 	
 		if ( ! settings._bInitComplete ) {
 			_fnInitComplete( settings, json );
 		}
 	
-		settings.bAjaxDataGet = true;
 		_fnProcessingDisplay( settings, false );
 	}
 	
@@ -6108,7 +6109,7 @@
 		{
 			var col = columns[i];
 			var asSorting = col.asSorting;
-			var sTitle = col.sTitle.replace( /<.*?>/g, "" );
+			var sTitle = col.ariaTitle || col.sTitle.replace( /<.*?>/g, "" );
 			var th = col.nTh;
 	
 			// IE7 is throwing an error when setting these properties with jQuery's
@@ -9542,7 +9543,7 @@
 	 *  @type string
 	 *  @default Version number
 	 */
-	DataTable.version = "1.10.23";
+	DataTable.version = "1.10.25";
 
 	/**
 	 * Private data store, containing all of the settings objects that are
@@ -13624,13 +13625,6 @@
 		"sAjaxDataProp": null,
 	
 		/**
-		 * Note if draw should be blocked while getting data
-		 *  @type boolean
-		 *  @default true
-		 */
-		"bAjaxDataGet": true,
-	
-		/**
 		 * The last jQuery XHR object that was used for server-side data gathering.
 		 * This can be used for working with the XHR information in one of the
 		 * callbacks
@@ -13966,7 +13960,7 @@
 		 *
 		 *  @type string
 		 */
-		build:"bs4/dt-1.10.23",
+		build:"bs5/dt-1.10.25",
 	
 	
 		/**
@@ -14494,8 +14488,8 @@
 		"sSortAsc": "sorting_asc",
 		"sSortDesc": "sorting_desc",
 		"sSortable": "sorting", /* Sortable in both directions */
-		"sSortableAsc": "sorting_asc_disabled",
-		"sSortableDesc": "sorting_desc_disabled",
+		"sSortableAsc": "sorting_desc_disabled",
+		"sSortableDesc": "sorting_asc_disabled",
 		"sSortableNone": "sorting_disabled",
 		"sSortColumn": "sorting_", /* Note that an int is postfixed for the sorting order */
 	
@@ -14936,7 +14930,6 @@
 	
 					cell
 						.removeClass(
-							column.sSortingClass +' '+
 							classes.sSortAsc +' '+
 							classes.sSortDesc
 						)
@@ -15060,6 +15053,11 @@
 					var floatPart = precision ?
 						decimal+(d - intPart).toFixed( precision ).substring( 2 ):
 						'';
+	
+					// If zero, then can't have a negative prefix
+					if (intPart === 0 && parseFloat(floatPart) === 0) {
+						negative = '';
+					}
 	
 					return negative + (prefix||'') +
 						intPart.toString().replace(
@@ -15395,12 +15393,12 @@
 }));
 
 
-/*! DataTables Bootstrap 4 integration
- * ©2011-2017 SpryMedia Ltd - datatables.net/license
+/*! DataTables Bootstrap 5 integration
+ * 2020 SpryMedia Ltd - datatables.net/license
  */
 
 /**
- * DataTables integration for Bootstrap 4. This requires Bootstrap 4 and
+ * DataTables integration for Bootstrap 4. This requires Bootstrap 5 and
  * DataTables 1.10 or newer.
  *
  * This file sets the defaults and adds options to DataTables to style its
@@ -15452,9 +15450,9 @@ $.extend( true, DataTable.defaults, {
 
 /* Default class modification */
 $.extend( DataTable.ext.classes, {
-	sWrapper:      "dataTables_wrapper dt-bootstrap4",
+	sWrapper:      "dataTables_wrapper dt-bootstrap5",
 	sFilterInput:  "form-control form-control-sm",
-	sLengthSelect: "custom-select custom-select-sm form-control form-control-sm",
+	sLengthSelect: "form-select form-select-sm",
 	sProcessing:   "dataTables_processing card",
 	sPageButton:   "paginate_button page-item"
 } );
