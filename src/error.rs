@@ -61,31 +61,31 @@ pub struct Empty {}
 // The second one contains the function used to obtain the response sent to the client
 make_error! {
     // Just an empty error
-    EmptyError(Empty):     _no_source, _serialize,
+    Empty(Empty):     _no_source, _serialize,
     // Used to represent err! calls
-    SimpleError(String):  _no_source,  _api_error,
+    Simple(String):  _no_source,  _api_error,
     // Used for special return values, like 2FA errors
-    JsonError(Value):     _no_source,  _serialize,
-    DbError(DieselErr):   _has_source, _api_error,
-    R2d2Error(R2d2Err):   _has_source, _api_error,
-    U2fError(U2fErr):     _has_source, _api_error,
-    SerdeError(SerdeErr): _has_source, _api_error,
-    JWtError(JwtErr):     _has_source, _api_error,
-    TemplError(HbErr):    _has_source, _api_error,
+    Json(Value):     _no_source,  _serialize,
+    Db(DieselErr):   _has_source, _api_error,
+    R2d2(R2d2Err):   _has_source, _api_error,
+    U2f(U2fErr):     _has_source, _api_error,
+    Serde(SerdeErr): _has_source, _api_error,
+    JWt(JwtErr):     _has_source, _api_error,
+    Handlebars(HbErr): _has_source, _api_error,
     //WsError(ws::Error): _has_source, _api_error,
-    IoError(IoErr):       _has_source, _api_error,
-    TimeError(TimeErr):   _has_source, _api_error,
-    ReqError(ReqErr):     _has_source, _api_error,
-    RegexError(RegexErr): _has_source, _api_error,
-    YubiError(YubiErr):   _has_source, _api_error,
+    Io(IoErr):       _has_source, _api_error,
+    Time(TimeErr):   _has_source, _api_error,
+    Req(ReqErr):     _has_source, _api_error,
+    Regex(RegexErr): _has_source, _api_error,
+    Yubico(YubiErr): _has_source, _api_error,
 
-    LettreError(LettreErr):   _has_source, _api_error,
-    AddressError(AddrErr):    _has_source, _api_error,
-    SmtpError(SmtpErr):       _has_source, _api_error,
+    Lettre(LettreErr): _has_source, _api_error,
+    Address(AddrErr):  _has_source, _api_error,
+    Smtp(SmtpErr):     _has_source, _api_error,
 
-    DieselConError(DieselConErr): _has_source, _api_error,
-    DieselMigError(DieselMigErr): _has_source, _api_error,
-    WebauthnError(WebauthnErr):   _has_source, _api_error,
+    DieselCon(DieselConErr): _has_source, _api_error,
+    DieselMig(DieselMigErr): _has_source, _api_error,
+    Webauthn(WebauthnErr):   _has_source, _api_error,
 }
 
 impl std::fmt::Debug for Error {
@@ -93,15 +93,15 @@ impl std::fmt::Debug for Error {
         match self.source() {
             Some(e) => write!(f, "{}.\n[CAUSE] {:#?}", self.message, e),
             None => match self.error {
-                ErrorKind::EmptyError(_) => Ok(()),
-                ErrorKind::SimpleError(ref s) => {
+                ErrorKind::Empty(_) => Ok(()),
+                ErrorKind::Simple(ref s) => {
                     if &self.message == s {
                         write!(f, "{}", self.message)
                     } else {
                         write!(f, "{}. {}", self.message, s)
                     }
                 }
-                ErrorKind::JsonError(_) => write!(f, "{}", self.message),
+                ErrorKind::Json(_) => write!(f, "{}", self.message),
                 _ => unreachable!(),
             },
         }
@@ -189,8 +189,8 @@ use rocket::response::{self, Responder, Response};
 impl<'r> Responder<'r> for Error {
     fn respond_to(self, _: &Request) -> response::Result<'r> {
         match self.error {
-            ErrorKind::EmptyError(_) => {}  // Don't print the error in this situation
-            ErrorKind::SimpleError(_) => {} // Don't print the error in this situation
+            ErrorKind::Empty(_) => {}  // Don't print the error in this situation
+            ErrorKind::Simple(_) => {} // Don't print the error in this situation
             _ => error!(target: "error", "{:#?}", self),
         };
 

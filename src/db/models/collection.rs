@@ -109,8 +109,8 @@ impl Collection {
 
     pub fn delete(self, conn: &DbConn) -> EmptyResult {
         self.update_users_revision(conn);
-        CollectionCipher::delete_all_by_collection(&self.uuid, &conn)?;
-        CollectionUser::delete_all_by_collection(&self.uuid, &conn)?;
+        CollectionCipher::delete_all_by_collection(&self.uuid, conn)?;
+        CollectionUser::delete_all_by_collection(&self.uuid, conn)?;
 
         db_run! { conn: {
             diesel::delete(collections::table.filter(collections::uuid.eq(self.uuid)))
@@ -120,8 +120,8 @@ impl Collection {
     }
 
     pub fn delete_all_by_organization(org_uuid: &str, conn: &DbConn) -> EmptyResult {
-        for collection in Self::find_by_organization(org_uuid, &conn) {
-            collection.delete(&conn)?;
+        for collection in Self::find_by_organization(org_uuid, conn) {
+            collection.delete(conn)?;
         }
         Ok(())
     }
@@ -220,7 +220,7 @@ impl Collection {
     }
 
     pub fn is_writable_by_user(&self, user_uuid: &str, conn: &DbConn) -> bool {
-        match UserOrganization::find_by_user_and_org(&user_uuid, &self.org_uuid, &conn) {
+        match UserOrganization::find_by_user_and_org(user_uuid, &self.org_uuid, conn) {
             None => false, // Not in Org
             Some(user_org) => {
                 if user_org.has_full_access() {
@@ -242,7 +242,7 @@ impl Collection {
     }
 
     pub fn hide_passwords_for_user(&self, user_uuid: &str, conn: &DbConn) -> bool {
-        match UserOrganization::find_by_user_and_org(&user_uuid, &self.org_uuid, &conn) {
+        match UserOrganization::find_by_user_and_org(user_uuid, &self.org_uuid, conn) {
             None => true, // Not in Org
             Some(user_org) => {
                 if user_org.has_full_access() {
@@ -286,7 +286,7 @@ impl CollectionUser {
         hide_passwords: bool,
         conn: &DbConn,
     ) -> EmptyResult {
-        User::update_uuid_revision(&user_uuid, conn);
+        User::update_uuid_revision(user_uuid, conn);
 
         db_run! { conn:
             sqlite, mysql {
@@ -375,7 +375,7 @@ impl CollectionUser {
     }
 
     pub fn delete_all_by_collection(collection_uuid: &str, conn: &DbConn) -> EmptyResult {
-        CollectionUser::find_by_collection(&collection_uuid, conn).iter().for_each(|collection| {
+        CollectionUser::find_by_collection(collection_uuid, conn).iter().for_each(|collection| {
             User::update_uuid_revision(&collection.user_uuid, conn);
         });
 
@@ -406,7 +406,7 @@ impl CollectionUser {
 /// Database methods
 impl CollectionCipher {
     pub fn save(cipher_uuid: &str, collection_uuid: &str, conn: &DbConn) -> EmptyResult {
-        Self::update_users_revision(&collection_uuid, conn);
+        Self::update_users_revision(collection_uuid, conn);
 
         db_run! { conn:
             sqlite, mysql {
@@ -436,7 +436,7 @@ impl CollectionCipher {
     }
 
     pub fn delete(cipher_uuid: &str, collection_uuid: &str, conn: &DbConn) -> EmptyResult {
-        Self::update_users_revision(&collection_uuid, conn);
+        Self::update_users_revision(collection_uuid, conn);
 
         db_run! { conn: {
             diesel::delete(

@@ -117,8 +117,8 @@ impl Attachment {
     }
 
     pub fn delete_all_by_cipher(cipher_uuid: &str, conn: &DbConn) -> EmptyResult {
-        for attachment in Attachment::find_by_cipher(&cipher_uuid, &conn) {
-            attachment.delete(&conn)?;
+        for attachment in Attachment::find_by_cipher(cipher_uuid, conn) {
+            attachment.delete(conn)?;
         }
         Ok(())
     }

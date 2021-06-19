@@ -227,15 +227,15 @@ impl Send {
 
     /// Purge all sends that are past their deletion date.
     pub fn purge(conn: &DbConn) {
-        for send in Self::find_by_past_deletion_date(&conn) {
-            send.delete(&conn).ok();
+        for send in Self::find_by_past_deletion_date(conn) {
+            send.delete(conn).ok();
         }
     }
 
     pub fn update_users_revision(&self, conn: &DbConn) {
         match &self.user_uuid {
             Some(user_uuid) => {
-                User::update_uuid_revision(&user_uuid, conn);
+                User::update_uuid_revision(user_uuid, conn);
             }
             None => {
                 // Belongs to Organization, not implemented
@@ -244,8 +244,8 @@ impl Send {
     }
 
     pub fn delete_all_by_user(user_uuid: &str, conn: &DbConn) -> EmptyResult {
-        for send in Self::find_by_user(user_uuid, &conn) {
-            send.delete(&conn)?;
+        for send in Self::find_by_user(user_uuid, conn) {
+            send.delete(conn)?;
         }
         Ok(())
     }

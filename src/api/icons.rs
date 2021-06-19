@@ -249,7 +249,7 @@ fn is_domain_blacklisted(domain: &str) -> bool {
             };
 
             // Use the pre-generate Regex stored in a Lazy HashMap.
-            if regex.is_match(&domain) {
+            if regex.is_match(domain) {
                 warn!("Blacklisted domain: {:#?} matched {:#?}", domain, blacklist);
                 is_blacklisted = true;
             }
@@ -280,7 +280,7 @@ fn get_icon(domain: &str) -> Option<(Vec<u8>, String)> {
     }
 
     // Get the icon, or None in case of error
-    match download_icon(&domain) {
+    match download_icon(domain) {
         Ok((icon, icon_type)) => {
             save_icon(&path, &icon);
             Some((icon, icon_type.unwrap_or("x-icon").to_string()))
@@ -431,7 +431,7 @@ fn get_favicons_node(node: &std::rc::Rc<markup5ever_rcdom::Node>, icons: &mut Ve
 
             if has_rel {
                 if let Some(inner_href) = href {
-                    if let Ok(full_href) = url.join(&inner_href).map(String::from) {
+                    if let Ok(full_href) = url.join(inner_href).map(String::from) {
                         let priority = get_icon_priority(&full_href, sizes);
                         icons.push(Icon::new(priority, full_href));
                     }
@@ -650,7 +650,7 @@ fn download_icon(domain: &str) -> Result<(Vec<u8>, Option<&str>), Error> {
         err!("Domain is blacklisted", domain)
     }
 
-    let icon_result = get_icon_url(&domain)?;
+    let icon_result = get_icon_url(domain)?;
 
     let mut buffer = Vec::new();
     let mut icon_type: Option<&str> = None;

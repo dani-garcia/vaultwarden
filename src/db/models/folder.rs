@@ -107,7 +107,7 @@ impl Folder {
 
     pub fn delete(&self, conn: &DbConn) -> EmptyResult {
         User::update_uuid_revision(&self.user_uuid, conn);
-        FolderCipher::delete_all_by_folder(&self.uuid, &conn)?;
+        FolderCipher::delete_all_by_folder(&self.uuid, conn)?;
 
         db_run! { conn: {
             diesel::delete(folders::table.filter(folders::uuid.eq(&self.uuid)))
@@ -117,8 +117,8 @@ impl Folder {
     }
 
     pub fn delete_all_by_user(user_uuid: &str, conn: &DbConn) -> EmptyResult {
-        for folder in Self::find_by_user(user_uuid, &conn) {
-            folder.delete(&conn)?;
+        for folder in Self::find_by_user(user_uuid, conn) {
+            folder.delete(conn)?;
         }
         Ok(())
     }

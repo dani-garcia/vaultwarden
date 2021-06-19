@@ -128,7 +128,7 @@ fn generate_webauthn_challenge(data: JsonUpcase<PasswordData>, headers: Headers,
     )?;
 
     let type_ = TwoFactorType::WebauthnRegisterChallenge;
-    TwoFactor::new(headers.user.uuid.clone(), type_, serde_json::to_string(&state)?).save(&conn)?;
+    TwoFactor::new(headers.user.uuid, type_, serde_json::to_string(&state)?).save(&conn)?;
 
     let mut challenge_value = serde_json::to_value(challenge.public_key)?;
     challenge_value["status"] = "ok".into();
@@ -354,7 +354,7 @@ pub fn generate_webauthn_login(user_uuid: &str, conn: &DbConn) -> JsonResult {
 
     // Save the challenge state for later validation
     TwoFactor::new(user_uuid.into(), TwoFactorType::WebauthnLoginChallenge, serde_json::to_string(&state)?)
-        .save(&conn)?;
+        .save(conn)?;
 
     // Return challenge to the clients
     Ok(Json(serde_json::to_value(response.public_key)?))
@@ -365,7 +365,7 @@ pub fn validate_webauthn_login(user_uuid: &str, response: &str, conn: &DbConn) -
     let state = match TwoFactor::find_by_user_and_type(user_uuid, type_, conn) {
         Some(tf) => {
             let state: AuthenticationState = serde_json::from_str(&tf.data)?;
-            tf.delete(&conn)?;
+            tf.delete(conn)?;
             state
         }
         None => err!("Can't recover login challenge"),
@@ -385,7 +385,7 @@ pub fn validate_webauthn_login(user_uuid: &str, response: &str, conn: &DbConn) -
             reg.credential.counter = auth_data.counter;
 
             TwoFactor::new(user_uuid.to_string(), TwoFactorType::Webauthn, serde_json::to_string(&registrations)?)
-                .save(&conn)?;
+                .save(conn)?;
             return Ok(());
         }
     }

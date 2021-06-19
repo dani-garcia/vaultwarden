@@ -134,7 +134,7 @@ fn _password_login(data: ConnectData, conn: DbConn, ip: &ClientIp) -> JsonResult
 
     let (mut device, new_device) = get_device(&data, &conn, &user);
 
-    let twofactor_token = twofactor_auth(&user.uuid, &data, &mut device, &ip, &conn)?;
+    let twofactor_token = twofactor_auth(&user.uuid, &data, &mut device, ip, &conn)?;
 
     if CONFIG.mail_enabled() && new_device {
         if let Err(e) = mail::send_new_device_logged_in(&user.email, &ip.ip.to_string(), &now, &device.name) {
@@ -185,7 +185,7 @@ fn get_device(data: &ConnectData, conn: &DbConn, user: &User) -> (Device, bool) 
 
     let mut new_device = false;
     // Find device or create new
-    let device = match Device::find_by_uuid(&device_id, &conn) {
+    let device = match Device::find_by_uuid(&device_id, conn) {
         Some(device) => {
             // Check if owned device, and recreate if not
             if device.user_uuid != user.uuid {
@@ -316,7 +316,7 @@ fn _json_err_twofactor(providers: &[i32], user_uuid: &str, conn: &DbConn) -> Api
             }
 
             Some(TwoFactorType::Duo) => {
-                let email = match User::find_by_uuid(user_uuid, &conn) {
+                let email = match User::find_by_uuid(user_uuid, conn) {
                     Some(u) => u.email,
                     None => err!("User does not exist"),
                 };
@@ -330,7 +330,7 @@ fn _json_err_twofactor(providers: &[i32], user_uuid: &str, conn: &DbConn) -> Api
             }
 
             Some(tf_type @ TwoFactorType::YubiKey) => {
-                let twofactor = match TwoFactor::find_by_user_and_type(user_uuid, tf_type as i32, &conn) {
+                let twofactor = match TwoFactor::find_by_user_and_type(user_uuid, tf_type as i32, conn) {
                     Some(tf) => tf,
                     None => err!("No YubiKey devices registered"),
                 };
@@ -345,14 +345,14 @@ fn _json_err_twofactor(providers: &[i32], user_uuid: &str, conn: &DbConn) -> Api
             Some(tf_type @ TwoFactorType::Email) => {
                 use crate::api::core::two_factor as _tf;
 
-                let twofactor = match TwoFactor::find_by_user_and_type(user_uuid, tf_type as i32, &conn) {
+                let twofactor = match TwoFactor::find_by_user_and_type(user_uuid, tf_type as i32, conn) {
                     Some(tf) => tf,
                     None => err!("No twofactor email registered"),
                 };
 
                 // Send email immediately if email is the only 2FA option
                 if providers.len() == 1 {
-                    _tf::email::send_token(&user_uuid, &conn)?
+                    _tf::email::send_token(user_uuid, conn)?
                 }
 
                 let email_data = EmailTokenData::from_json(&twofactor.data)?;

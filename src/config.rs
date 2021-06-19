@@ -81,20 +81,16 @@ macro_rules! make_config {
                         dotenv::Error::Io(ioerr) => match ioerr.kind() {
                             std::io::ErrorKind::NotFound => {
                                 println!("[INFO] No .env file found.\n");
-                                ()
                             },
                             std::io::ErrorKind::PermissionDenied => {
                                 println!("[WARNING] Permission Denied while trying to read the .env file!\n");
-                                ()
                             },
                             _ => {
                                 println!("[WARNING] Reading the .env file failed:\n{:?}\n", ioerr);
-                                ()
                             }
                         },
                         _ => {
                             println!("[WARNING] Reading the .env file failed:\n{:?}\n", e);
-                            ()
                         }
                     }
                 };
@@ -610,7 +606,7 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
 
     // Check if the icon blacklist regex is valid
     if let Some(ref r) = cfg.icon_blacklist_regex {
-        let validate_regex = Regex::new(&r);
+        let validate_regex = Regex::new(r);
         match validate_regex {
             Ok(_) => (),
             Err(e) => err!(format!("`ICON_BLACKLIST_REGEX` is invalid: {:#?}", e)),

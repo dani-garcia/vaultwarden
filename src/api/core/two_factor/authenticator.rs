@@ -114,7 +114,7 @@ pub fn validate_totp_code_str(
         _ => err!("TOTP code is not a number"),
     };
 
-    validate_totp_code(user_uuid, totp_code, secret, ip, &conn)
+    validate_totp_code(user_uuid, totp_code, secret, ip, conn)
 }
 
 pub fn validate_totp_code(user_uuid: &str, totp_code: u64, secret: &str, ip: &ClientIp, conn: &DbConn) -> EmptyResult {
@@ -125,7 +125,7 @@ pub fn validate_totp_code(user_uuid: &str, totp_code: u64, secret: &str, ip: &Cl
         Err(_) => err!("Invalid TOTP secret"),
     };
 
-    let mut twofactor = match TwoFactor::find_by_user_and_type(&user_uuid, TwoFactorType::Authenticator as i32, &conn) {
+    let mut twofactor = match TwoFactor::find_by_user_and_type(user_uuid, TwoFactorType::Authenticator as i32, conn) {
         Some(tf) => tf,
         _ => TwoFactor::new(user_uuid.to_string(), TwoFactorType::Authenticator, secret.to_string()),
     };
@@ -156,7 +156,7 @@ pub fn validate_totp_code(user_uuid: &str, totp_code: u64, secret: &str, ip: &Cl
             // Save the last used time step so only totp time steps higher then this one are allowed.
             // This will also save a newly created twofactor if the code is correct.
             twofactor.last_used = time_step as i32;
-            twofactor.save(&conn)?;
+            twofactor.save(conn)?;
             return Ok(());
         } else if generated == totp_code && time_step <= twofactor.last_used as i64 {
             warn!("This or a TOTP code within {} steps back and forward has already been used!", steps);

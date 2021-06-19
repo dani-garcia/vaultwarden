@@ -397,7 +397,7 @@ fn get_collection_users(org_id: String, coll_id: String, _headers: ManagerHeader
         .map(|col_user| {
             UserOrganization::find_by_user_and_org(&col_user.user_uuid, &org_id, &conn)
                 .unwrap()
-                .to_json_user_access_restrictions(&col_user)
+                .to_json_user_access_restrictions(col_user)
         })
         .collect();
 
@@ -504,13 +504,13 @@ fn send_invite(org_id: String, data: JsonUpcase<InviteData>, headers: AdminHeade
         } else {
             UserOrgStatus::Accepted as i32 // Automatically mark user as accepted if no email invites
         };
-        let user = match User::find_by_mail(&email, &conn) {
+        let user = match User::find_by_mail(email, &conn) {
             None => {
                 if !CONFIG.invitations_allowed() {
                     err!(format!("User does not exist: {}", email))
                 }
 
-                if !CONFIG.is_email_domain_allowed(&email) {
+                if !CONFIG.is_email_domain_allowed(email) {
                     err!("Email domain not eligible for invitations")
                 }
 
@@ -560,7 +560,7 @@ fn send_invite(org_id: String, data: JsonUpcase<InviteData>, headers: AdminHeade
             };
 
             mail::send_invite(
-                &email,
+                email,
                 &user.uuid,
                 Some(org_id.clone()),
                 Some(new_user.uuid),
@@ -630,7 +630,7 @@ fn accept_invite(_org_id: String, _org_user_id: String, data: JsonUpcase<AcceptD
     // The web-vault passes org_id and org_user_id in the URL, but we are just reading them from the JWT instead
     let data: AcceptData = data.into_inner().data;
     let token = &data.Token;
-    let claims = decode_invite(&token)?;
+    let claims = decode_invite(token)?;
 
     match User::find_by_mail(&claims.email, &conn) {
         Some(_) => {
@@ -656,7 +656,7 @@ fn accept_invite(_org_id: String, _org_user_id: String, data: JsonUpcase<AcceptD
     if CONFIG.mail_enabled() {
         let mut org_name = CONFIG.invitation_org_name();
         if let Some(org_id) = &claims.org_id {
-            org_name = match Organization::find_by_uuid(&org_id, &conn) {
+            org_name = match Organization::find_by_uuid(org_id, &conn) {
                 Some(org) => org.name,
                 None => err!("Organization not found."),
             };

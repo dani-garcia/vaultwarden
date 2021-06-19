@@ -56,14 +56,14 @@ fn send_email_login(data: JsonUpcase<SendEmailLoginData>, conn: DbConn) -> Empty
 /// Generate the token, save the data for later verification and send email to user
 pub fn send_token(user_uuid: &str, conn: &DbConn) -> EmptyResult {
     let type_ = TwoFactorType::Email as i32;
-    let mut twofactor = TwoFactor::find_by_user_and_type(user_uuid, type_, &conn).map_res("Two factor not found")?;
+    let mut twofactor = TwoFactor::find_by_user_and_type(user_uuid, type_, conn).map_res("Two factor not found")?;
 
     let generated_token = crypto::generate_token(CONFIG.email_token_size())?;
 
     let mut twofactor_data = EmailTokenData::from_json(&twofactor.data)?;
     twofactor_data.set_token(generated_token);
     twofactor.data = twofactor_data.to_json();
-    twofactor.save(&conn)?;
+    twofactor.save(conn)?;
 
     mail::send_token(&twofactor_data.email, &twofactor_data.last_token.map_res("Token is empty")?)?;
 
@@ -181,8 +181,8 @@ fn email(data: JsonUpcase<EmailData>, headers: Headers, conn: DbConn) -> JsonRes
 
 /// Validate the email code when used as TwoFactor token mechanism
 pub fn validate_email_code_str(user_uuid: &str, token: &str, data: &str, conn: &DbConn) -> EmptyResult {
-    let mut email_data = EmailTokenData::from_json(&data)?;
-    let mut twofactor = TwoFactor::find_by_user_and_type(&user_uuid, TwoFactorType::Email as i32, &conn)
+    let mut email_data = EmailTokenData::from_json(data)?;
+    let mut twofactor = TwoFactor::find_by_user_and_type(user_uuid, TwoFactorType::Email as i32, conn)
         .map_res("Two factor not found")?;
     let issued_token = match &email_data.last_token {
         Some(t) => t,
@@ -195,14 +195,14 @@ pub fn validate_email_code_str(user_uuid: &str, token: &str, data: &str, conn: &
             email_data.reset_token();
         }
         twofactor.data = email_data.to_json();
-        twofactor.save(&conn)?;
+        twofactor.save(conn)?;
 
         err!("Token is invalid")
     }
 
     email_data.reset_token();
     twofactor.data = email_data.to_json();
-    twofactor.save(&conn)?;
+    twofactor.save(conn)?;
 
     let date = NaiveDateTime::from_timestamp(email_data.token_sent, 0);
     let max_time = CONFIG.email_expiration_time() as i64;
@@ -255,7 +255,7 @@ impl EmailTokenData {
     }
 
     pub fn from_json(string: &str) -> Result<EmailTokenData, Error> {
-        let res: Result<EmailTokenData, crate::serde_json::Error> = serde_json::from_str(&string);
+        let res: Result<EmailTokenData, crate::serde_json::Error> = serde_json::from_str(string);
         match res {
             Ok(x) => Ok(x),
             Err(_) => err!("Could not decode EmailTokenData from string"),
@@ -292,7 +292,7 @@ mod tests {
     fn test_obscure_email_long() {
         let email = "bytes@example.ext";
 
-        let result = obscure_email(&email);
+        let result = obscure_email(email);
 
         // Only first two characters should be visible.
         assert_eq!(result, "by***@example.ext");
@@ -302,7 +302,7 @@ mod tests {
     fn test_obscure_email_short() {
         let email = "byt@example.ext";
 
-        let result = obscure_email(&email);
+        let result = obscure_email(email);
 
         // If it's smaller than 3 characters it should only show asterisks.
         assert_eq!(result, "***@example.ext");

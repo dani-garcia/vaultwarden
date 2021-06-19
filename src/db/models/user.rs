@@ -187,7 +187,7 @@ use crate::error::MapResult;
 impl User {
     pub fn to_json(&self, conn: &DbConn) -> Value {
         let orgs = UserOrganization::find_by_user(&self.uuid, conn);
-        let orgs_json: Vec<Value> = orgs.iter().map(|c| c.to_json(&conn)).collect();
+        let orgs_json: Vec<Value> = orgs.iter().map(|c| c.to_json(conn)).collect();
         let twofactor_enabled = !TwoFactor::find_by_user(&self.uuid, conn).is_empty();
 
         // TODO: Might want to save the status field in the DB
@@ -398,8 +398,8 @@ impl Invitation {
     }
 
     pub fn take(mail: &str, conn: &DbConn) -> bool {
-        match Self::find_by_mail(mail, &conn) {
-            Some(invitation) => invitation.delete(&conn).is_ok(),
+        match Self::find_by_mail(mail, conn) {
+            Some(invitation) => invitation.delete(conn).is_ok(),
             None => false,
         }
     }

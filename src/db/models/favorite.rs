@@ -32,10 +32,10 @@ impl Favorite {
 
     // Sets whether the specified cipher is a favorite of the specified user.
     pub fn set_favorite(favorite: bool, cipher_uuid: &str, user_uuid: &str, conn: &DbConn) -> EmptyResult {
-        let (old, new) = (Self::is_favorite(cipher_uuid, user_uuid, &conn), favorite);
+        let (old, new) = (Self::is_favorite(cipher_uuid, user_uuid, conn), favorite);
         match (old, new) {
             (false, true) => {
-                User::update_uuid_revision(user_uuid, &conn);
+                User::update_uuid_revision(user_uuid, conn);
                 db_run! { conn: {
                 diesel::insert_into(favorites::table)
                     .values((
@@ -47,7 +47,7 @@ impl Favorite {
                 }}
             }
             (true, false) => {
-                User::update_uuid_revision(user_uuid, &conn);
+                User::update_uuid_revision(user_uuid, conn);
                 db_run! { conn: {
                     diesel::delete(
                         favorites::table

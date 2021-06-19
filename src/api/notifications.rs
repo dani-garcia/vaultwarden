@@ -332,7 +332,7 @@ impl WebSocketUsers {
         );
 
         for uuid in user_uuids {
-            self.send_update(&uuid, &data).ok();
+            self.send_update(uuid, &data).ok();
         }
     }
 }

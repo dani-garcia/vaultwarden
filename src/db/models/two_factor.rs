@@ -171,7 +171,7 @@ impl TwoFactor {
                 continue;
             }
 
-            let (_, mut webauthn_regs) = get_webauthn_registrations(&u2f.user_uuid, &conn)?;
+            let (_, mut webauthn_regs) = get_webauthn_registrations(&u2f.user_uuid, conn)?;
 
             // If the user already has webauthn registrations saved, don't overwrite them
             if !webauthn_regs.is_empty() {
@@ -210,10 +210,10 @@ impl TwoFactor {
             }
 
             u2f.data = serde_json::to_string(&regs)?;
-            u2f.save(&conn)?;
+            u2f.save(conn)?;
 
             TwoFactor::new(u2f.user_uuid.clone(), TwoFactorType::Webauthn, serde_json::to_string(&webauthn_regs)?)
-                .save(&conn)?;
+                .save(conn)?;
         }
 
         Ok(())

@@ -248,7 +248,7 @@ fn _create_u2f_challenge(user_uuid: &str, type_: TwoFactorType, conn: &DbConn) -
 }
 
 fn save_u2f_registrations(user_uuid: &str, regs: &[U2FRegistration], conn: &DbConn) -> EmptyResult {
-    TwoFactor::new(user_uuid.into(), TwoFactorType::U2f, serde_json::to_string(regs)?).save(&conn)
+    TwoFactor::new(user_uuid.into(), TwoFactorType::U2f, serde_json::to_string(regs)?).save(conn)
 }
 
 fn get_u2f_registrations(user_uuid: &str, conn: &DbConn) -> Result<(bool, Vec<U2FRegistration>), Error> {
@@ -279,7 +279,7 @@ fn get_u2f_registrations(user_uuid: &str, conn: &DbConn) -> Result<(bool, Vec<U2
             }];
 
             // Save new format
-            save_u2f_registrations(user_uuid, &new_regs, &conn)?;
+            save_u2f_registrations(user_uuid, &new_regs, conn)?;
 
             new_regs
         }
@@ -311,12 +311,12 @@ pub fn generate_u2f_login(user_uuid: &str, conn: &DbConn) -> ApiResult<U2fSignRe
 
 pub fn validate_u2f_login(user_uuid: &str, response: &str, conn: &DbConn) -> EmptyResult {
     let challenge_type = TwoFactorType::U2fLoginChallenge as i32;
-    let tf_challenge = TwoFactor::find_by_user_and_type(user_uuid, challenge_type, &conn);
+    let tf_challenge = TwoFactor::find_by_user_and_type(user_uuid, challenge_type, conn);
 
     let challenge = match tf_challenge {
         Some(tf_challenge) => {
             let challenge: Challenge = serde_json::from_str(&tf_challenge.data)?;
-            tf_challenge.delete(&conn)?;
+            tf_challenge.delete(conn)?;
             challenge
         }
         None => err!("Can't recover login challenge"),
@@ -332,13 +332,13 @@ pub fn validate_u2f_login(user_uuid: &str, response: &str, conn: &DbConn) -> Emp
         match response {
             Ok(new_counter) => {
                 reg.counter = new_counter;
-                save_u2f_registrations(user_uuid, &registrations, &conn)?;
+                save_u2f_registrations(user_uuid, &registrations, conn)?;
 
                 return Ok(());
             }
             Err(u2f::u2ferror::U2fError::CounterTooLow) => {
                 reg.compromised = true;
-                save_u2f_registrations(user_uuid, &registrations, &conn)?;
+                save_u2f_registrations(user_uuid, &registrations, conn)?;
 
                 err!("This device might be compromised!");
             }

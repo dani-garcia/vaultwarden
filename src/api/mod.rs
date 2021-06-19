@@ -51,6 +51,7 @@ impl NumberOrString {
         }
     }
 
+    #[allow(clippy::wrong_self_convention)]
     fn into_i32(&self) -> ApiResult<i32> {
         use std::num::ParseIntError as PIE;
         match self {

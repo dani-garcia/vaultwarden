@@ -97,7 +97,7 @@ impl Cipher {
         let password_history_json =
             self.password_history.as_ref().and_then(|s| serde_json::from_str(s).ok()).unwrap_or(Value::Null);
 
-        let (read_only, hide_passwords) = match self.get_access_restrictions(&user_uuid, conn) {
+        let (read_only, hide_passwords) = match self.get_access_restrictions(user_uuid, conn) {
             Some((ro, hp)) => (ro, hp),
             None => {
                 error!("Cipher ownership assertion failure");
@@ -144,8 +144,8 @@ impl Cipher {
             "Type": self.atype,
             "RevisionDate": format_date(&self.updated_at),
             "DeletedDate": self.deleted_at.map_or(Value::Null, |d| Value::String(format_date(&d))),
-            "FolderId": self.get_folder_uuid(&user_uuid, conn),
-            "Favorite": self.is_favorite(&user_uuid, conn),
+            "FolderId": self.get_folder_uuid(user_uuid, conn),
+            "Favorite": self.is_favorite(user_uuid, conn),
             "Reprompt": self.reprompt.unwrap_or(RepromptType::None as i32),
             "OrganizationId": self.organization_uuid,
             "Attachments": attachments_json,
@@ -193,13 +193,13 @@ impl Cipher {
         let mut user_uuids = Vec::new();
         match self.user_uuid {
             Some(ref user_uuid) => {
-                User::update_uuid_revision(&user_uuid, conn);
+                User::update_uuid_revision(user_uuid, conn);
                 user_uuids.push(user_uuid.clone())
             }
             None => {
                 // Belongs to Organization, need to update affected users
                 if let Some(ref org_uuid) = self.organization_uuid {
-                    UserOrganization::find_by_cipher_and_org(&self.uuid, &org_uuid, conn).iter().for_each(|user_org| {
+                    UserOrganization::find_by_cipher_and_org(&self.uuid, org_uuid, conn).iter().for_each(|user_org| {
                         User::update_uuid_revision(&user_org.user_uuid, conn);
                         user_uuids.push(user_org.user_uuid.clone())
                     });
@@ -260,15 +260,15 @@ impl Cipher {
     }
 
     pub fn delete_all_by_organization(org_uuid: &str, conn: &DbConn) -> EmptyResult {
-        for cipher in Self::find_by_org(org_uuid, &conn) {
-            cipher.delete(&conn)?;
+        for cipher in Self::find_by_org(org_uuid, conn) {
+            cipher.delete(conn)?;
         }
         Ok(())
     }
 
     pub fn delete_all_by_user(user_uuid: &str, conn: &DbConn) -> EmptyResult {
-        for cipher in Self::find_owned_by_user(user_uuid, &conn) {
-            cipher.delete(&conn)?;
+        for cipher in Self::find_owned_by_user(user_uuid, conn) {
+            cipher.delete(conn)?;
         }
         Ok(())
     }
@@ -279,7 +279,7 @@ impl Cipher {
             let now = Utc::now().naive_utc();
             let dt = now - Duration::days(auto_delete_days);
             for cipher in Self::find_deleted_before(&dt, conn) {
-                cipher.delete(&conn).ok();
+                cipher.delete(conn).ok();
             }
         }
     }
@@ -287,7 +287,7 @@ impl Cipher {
     pub fn move_to_folder(&self, folder_uuid: Option<String>, user_uuid: &str, conn: &DbConn) -> EmptyResult {
         User::update_uuid_revision(user_uuid, conn);
 
-        match (self.get_folder_uuid(&user_uuid, conn), folder_uuid) {
+        match (self.get_folder_uuid(user_uuid, conn), folder_uuid) {
             // No changes
             (None, None) => Ok(()),
             (Some(ref old), Some(ref new)) if old == new => Ok(()),
@@ -319,7 +319,7 @@ impl Cipher {
     /// Returns whether this cipher is owned by an org in which the user has full access.
     pub fn is_in_full_access_org(&self, user_uuid: &str, conn: &DbConn) -> bool {
         if let Some(ref org_uuid) = self.organization_uuid {
-            if let Some(user_org) = UserOrganization::find_by_user_and_org(&user_uuid, &org_uuid, conn) {
+            if let Some(user_org) = UserOrganization::find_by_user_and_org(user_uuid, org_uuid, conn) {
                 return user_org.has_full_access();
             }
         }
@@ -336,7 +336,7 @@ impl Cipher {
         // Check whether this cipher is directly owned by the user, or is in
         // a collection that the user has full access to. If so, there are no
         // access restrictions.
-        if self.is_owned_by_user(&user_uuid) || self.is_in_full_access_org(&user_uuid, &conn) {
+        if self.is_owned_by_user(user_uuid) || self.is_in_full_access_org(user_uuid, conn) {
             return Some((false, false));
         }
 
@@ -377,14 +377,14 @@ impl Cipher {
     }
 
     pub fn is_write_accessible_to_user(&self, user_uuid: &str, conn: &DbConn) -> bool {
-        match self.get_access_restrictions(&user_uuid, &conn) {
+        match self.get_access_restrictions(user_uuid, conn) {
             Some((read_only, _hide_passwords)) => !read_only,
             None => false,
         }
     }
 
     pub fn is_accessible_to_user(&self, user_uuid: &str, conn: &DbConn) -> bool {
-        self.get_access_restrictions(&user_uuid, &conn).is_some()
+        self.get_access_restrictions(user_uuid, conn).is_some()
     }
 
     // Returns whether this cipher is a favorite of the specified user.

@@ -322,12 +322,12 @@ pub fn update_cipher_from_data(
     }
 
     if let Some(org_id) = data.OrganizationId {
-        match UserOrganization::find_by_user_and_org(&headers.user.uuid, &org_id, &conn) {
+        match UserOrganization::find_by_user_and_org(&headers.user.uuid, &org_id, conn) {
             None => err!("You don't have permission to add item to organization"),
             Some(org_user) => {
                 if shared_to_collection
                     || org_user.has_full_access()
-                    || cipher.is_write_accessible_to_user(&headers.user.uuid, &conn)
+                    || cipher.is_write_accessible_to_user(&headers.user.uuid, conn)
                 {
                     cipher.organization_uuid = Some(org_id);
                     // After some discussion in PR #1329 re-added the user_uuid = None again.
@@ -359,7 +359,7 @@ pub fn update_cipher_from_data(
     // Modify attachments name and keys when rotating
     if let Some(attachments) = data.Attachments2 {
         for (id, attachment) in attachments {
-            let mut saved_att = match Attachment::find_by_id(&id, &conn) {
+            let mut saved_att = match Attachment::find_by_id(&id, conn) {
                 Some(att) => att,
                 None => err!("Attachment doesn't exist"),
             };
@@ -374,7 +374,7 @@ pub fn update_cipher_from_data(
             saved_att.akey = Some(attachment.Key);
             saved_att.file_name = attachment.FileName;
 
-            saved_att.save(&conn)?;
+            saved_att.save(conn)?;
         }
     }
 
@@ -420,12 +420,12 @@ pub fn update_cipher_from_data(
     cipher.password_history = data.PasswordHistory.map(|f| f.to_string());
     cipher.reprompt = data.Reprompt;
 
-    cipher.save(&conn)?;
-    cipher.move_to_folder(data.FolderId, &headers.user.uuid, &conn)?;
-    cipher.set_favorite(data.Favorite, &headers.user.uuid, &conn)?;
+    cipher.save(conn)?;
+    cipher.move_to_folder(data.FolderId, &headers.user.uuid, conn)?;
+    cipher.set_favorite(data.Favorite, &headers.user.uuid, conn)?;
 
     if ut != UpdateType::None {
-        nt.send_cipher_update(ut, &cipher, &cipher.update_users_revision(&conn));
+        nt.send_cipher_update(ut, cipher, &cipher.update_users_revision(conn));
     }
 
     Ok(())
@@ -595,7 +595,7 @@ fn post_collections_admin(
         cipher.get_collections(&headers.user.uuid, &conn).iter().cloned().collect();
 
     for collection in posted_collections.symmetric_difference(&current_collections) {
-        match Collection::find_by_uuid(&collection, &conn) {
+        match Collection::find_by_uuid(collection, &conn) {
             None => err!("Invalid collection ID provided"),
             Some(collection) => {
                 if collection.is_writable_by_user(&headers.user.uuid, &conn) {
@@ -709,9 +709,9 @@ fn share_cipher_by_uuid(
     conn: &DbConn,
     nt: &Notify,
 ) -> JsonResult {
-    let mut cipher = match Cipher::find_by_uuid(&uuid, &conn) {
+    let mut cipher = match Cipher::find_by_uuid(uuid, conn) {
         Some(cipher) => {
-            if cipher.is_write_accessible_to_user(&headers.user.uuid, &conn) {
+            if cipher.is_write_accessible_to_user(&headers.user.uuid, conn) {
                 cipher
             } else {
                 err!("Cipher is not write accessible")
@@ -728,11 +728,11 @@ fn share_cipher_by_uuid(
         None => {}
         Some(organization_uuid) => {
             for uuid in &data.CollectionIds {
-                match Collection::find_by_uuid_and_org(uuid, &organization_uuid, &conn) {
+                match Collection::find_by_uuid_and_org(uuid, &organization_uuid, conn) {
                     None => err!("Invalid collection ID provided"),
                     Some(collection) => {
-                        if collection.is_writable_by_user(&headers.user.uuid, &conn) {
-                            CollectionCipher::save(&cipher.uuid, &collection.uuid, &conn)?;
+                        if collection.is_writable_by_user(&headers.user.uuid, conn) {
+                            CollectionCipher::save(&cipher.uuid, &collection.uuid, conn)?;
                             shared_to_collection = true;
                         } else {
                             err!("No rights to modify the collection")
@@ -746,14 +746,14 @@ fn share_cipher_by_uuid(
     update_cipher_from_data(
         &mut cipher,
         data.Cipher,
-        &headers,
+        headers,
         shared_to_collection,
-        &conn,
-        &nt,
+        conn,
+        nt,
         UpdateType::CipherUpdate,
     )?;
 
-    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, &conn)))
+    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, conn)))
 }
 
 /// v2 API for downloading an attachment. This just redirects the client to
@@ -848,7 +848,7 @@ fn save_attachment(
         None => err_discard!("Cipher doesn't exist", data),
     };
 
-    if !cipher.is_write_accessible_to_user(&headers.user.uuid, &conn) {
+    if !cipher.is_write_accessible_to_user(&headers.user.uuid, conn) {
         err_discard!("Cipher is not write accessible", data)
     }
 
@@ -863,7 +863,7 @@ fn save_attachment(
         match CONFIG.user_attachment_limit() {
             Some(0) => err_discard!("Attachments are disabled", data),
             Some(limit_kb) => {
-                let left = (limit_kb * 1024) - Attachment::size_by_user(user_uuid, &conn) + size_adjust;
+                let left = (limit_kb * 1024) - Attachment::size_by_user(user_uuid, conn) + size_adjust;
                 if left <= 0 {
                     err_discard!("Attachment size limit reached! Delete some files to open space", data)
                 }
@@ -875,7 +875,7 @@ fn save_attachment(
         match CONFIG.org_attachment_limit() {
             Some(0) => err_discard!("Attachments are disabled", data),
             Some(limit_kb) => {
-                let left = (limit_kb * 1024) - Attachment::size_by_org(org_uuid, &conn) + size_adjust;
+                let left = (limit_kb * 1024) - Attachment::size_by_org(org_uuid, conn) + size_adjust;
                 if left <= 0 {
                     err_discard!("Attachment size limit reached! Delete some files to open space", data)
                 }
@@ -994,7 +994,7 @@ fn save_attachment(
         err!(e);
     }
 
-    nt.send_cipher_update(UpdateType::CipherUpdate, &cipher, &cipher.update_users_revision(&conn));
+    nt.send_cipher_update(UpdateType::CipherUpdate, &cipher, &cipher.update_users_revision(conn));
 
     Ok(cipher)
 }
@@ -1303,22 +1303,22 @@ fn delete_all(
 }
 
 fn _delete_cipher_by_uuid(uuid: &str, headers: &Headers, conn: &DbConn, soft_delete: bool, nt: &Notify) -> EmptyResult {
-    let mut cipher = match Cipher::find_by_uuid(&uuid, &conn) {
+    let mut cipher = match Cipher::find_by_uuid(uuid, conn) {
         Some(cipher) => cipher,
         None => err!("Cipher doesn't exist"),
     };
 
-    if !cipher.is_write_accessible_to_user(&headers.user.uuid, &conn) {
+    if !cipher.is_write_accessible_to_user(&headers.user.uuid, conn) {
         err!("Cipher can't be deleted by user")
     }
 
     if soft_delete {
         cipher.deleted_at = Some(Utc::now().naive_utc());
-        cipher.save(&conn)?;
-        nt.send_cipher_update(UpdateType::CipherUpdate, &cipher, &cipher.update_users_revision(&conn));
+        cipher.save(conn)?;
+        nt.send_cipher_update(UpdateType::CipherUpdate, &cipher, &cipher.update_users_revision(conn));
     } else {
-        cipher.delete(&conn)?;
-        nt.send_cipher_update(UpdateType::CipherDelete, &cipher, &cipher.update_users_revision(&conn));
+        cipher.delete(conn)?;
+        nt.send_cipher_update(UpdateType::CipherDelete, &cipher, &cipher.update_users_revision(conn));
     }
 
     Ok(())
@@ -1351,20 +1351,20 @@ fn _delete_multiple_ciphers(
 }
 
 fn _restore_cipher_by_uuid(uuid: &str, headers: &Headers, conn: &DbConn, nt: &Notify) -> JsonResult {
-    let mut cipher = match Cipher::find_by_uuid(&uuid, &conn) {
+    let mut cipher = match Cipher::find_by_uuid(uuid, conn) {
         Some(cipher) => cipher,
         None => err!("Cipher doesn't exist"),
     };
 
-    if !cipher.is_write_accessible_to_user(&headers.user.uuid, &conn) {
+    if !cipher.is_write_accessible_to_user(&headers.user.uuid, conn) {
         err!("Cipher can't be restored by user")
     }
 
     cipher.deleted_at = None;
-    cipher.save(&conn)?;
+    cipher.save(conn)?;
 
-    nt.send_cipher_update(UpdateType::CipherUpdate, &cipher, &cipher.update_users_revision(&conn));
-    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, &conn)))
+    nt.send_cipher_update(UpdateType::CipherUpdate, &cipher, &cipher.update_users_revision(conn));
+    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, conn)))
 }
 
 fn _restore_multiple_ciphers(data: JsonUpcase<Value>, headers: &Headers, conn: &DbConn, nt: &Notify) -> JsonResult {
@@ -1400,7 +1400,7 @@ fn _delete_cipher_attachment_by_id(
     conn: &DbConn,
     nt: &Notify,
 ) -> EmptyResult {
-    let attachment = match Attachment::find_by_id(&attachment_id, &conn) {
+    let attachment = match Attachment::find_by_id(attachment_id, conn) {
         Some(attachment) => attachment,
         None => err!("Attachment doesn't exist"),
     };
@@ -1409,17 +1409,17 @@ fn _delete_cipher_attachment_by_id(
         err!("Attachment from other cipher")
     }
 
-    let cipher = match Cipher::find_by_uuid(&uuid, &conn) {
+    let cipher = match Cipher::find_by_uuid(uuid, conn) {
         Some(cipher) => cipher,
         None => err!("Cipher doesn't exist"),
     };
 
-    if !cipher.is_write_accessible_to_user(&headers.user.uuid, &conn) {
+    if !cipher.is_write_accessible_to_user(&headers.user.uuid, conn) {
         err!("Cipher cannot be deleted by user")
     }
 
     // Delete attachment
-    attachment.delete(&conn)?;
-    nt.send_cipher_update(UpdateType::CipherUpdate, &cipher, &cipher.update_users_revision(&conn));
+    attachment.delete(conn)?;
+    nt.send_cipher_update(UpdateType::CipherUpdate, &cipher, &cipher.update_users_revision(conn));
     Ok(())
 }

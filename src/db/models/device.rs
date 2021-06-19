@@ -143,8 +143,8 @@ impl Device {
     }
 
     pub fn delete_all_by_user(user_uuid: &str, conn: &DbConn) -> EmptyResult {
-        for device in Self::find_by_user(user_uuid, &conn) {
-            device.delete(&conn)?;
+        for device in Self::find_by_user(user_uuid, conn) {
+            device.delete(conn)?;
         }
         Ok(())
     }

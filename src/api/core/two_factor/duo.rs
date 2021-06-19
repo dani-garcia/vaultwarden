@@ -226,7 +226,7 @@ fn get_user_duo_data(uuid: &str, conn: &DbConn) -> DuoStatus {
     let type_ = TwoFactorType::Duo as i32;
 
     // If the user doesn't have an entry, disabled
-    let twofactor = match TwoFactor::find_by_user_and_type(uuid, type_, &conn) {
+    let twofactor = match TwoFactor::find_by_user_and_type(uuid, type_, conn) {
         Some(t) => t,
         None => return DuoStatus::Disabled(DuoData::global().is_some()),
     };
@@ -247,8 +247,8 @@ fn get_user_duo_data(uuid: &str, conn: &DbConn) -> DuoStatus {
 
 // let (ik, sk, ak, host) = get_duo_keys();
 fn get_duo_keys_email(email: &str, conn: &DbConn) -> ApiResult<(String, String, String, String)> {
-    let data = User::find_by_mail(email, &conn)
-        .and_then(|u| get_user_duo_data(&u.uuid, &conn).data())
+    let data = User::find_by_mail(email, conn)
+        .and_then(|u| get_user_duo_data(&u.uuid, conn).data())
         .or_else(DuoData::global)
         .map_res("Can't fetch Duo keys")?;
 
