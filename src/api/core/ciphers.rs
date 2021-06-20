@@ -268,7 +268,13 @@ fn post_ciphers_create(data: JsonUpcase<ShareCipherData>, headers: Headers, conn
 /// Called when creating a new user-owned cipher.
 #[post("/ciphers", data = "<data>")]
 fn post_ciphers(data: JsonUpcase<CipherData>, headers: Headers, conn: DbConn, nt: Notify) -> JsonResult {
-    let data: CipherData = data.into_inner().data;
+    let mut data: CipherData = data.into_inner().data;
+
+    // The web/browser clients set this field to null as expected, but the
+    // mobile clients seem to set the invalid value `0001-01-01T00:00:00`,
+    // which results in a warning message being logged. This field isn't
+    // needed when creating a new cipher, so just ignore it unconditionally.
+    data.LastKnownRevisionDate = None;
 
     let mut cipher = Cipher::new(data.Type, data.Name.clone());
     update_cipher_from_data(&mut cipher, data, &headers, false, &conn, &nt, UpdateType::CipherCreate)?;
