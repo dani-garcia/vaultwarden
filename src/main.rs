@@ -263,17 +263,19 @@ fn check_rsa_keys() {
 
         info!("OpenSSL detected, creating keys...");
 
-        let key = CONFIG.rsa_key_filename();
+        let pem = CONFIG.private_rsa_key_pem();
+        let priv_der = CONFIG.private_rsa_key();
+        let pub_der = CONFIG.public_rsa_key();
 
-        let pem = format!("{}.pem", key);
-        let priv_der = format!("{}.der", key);
-        let pub_der = format!("{}.pub.der", key);
+        let mut success = true;
 
-        let mut success = Command::new("openssl")
-            .args(&["genrsa", "-out", &pem])
-            .status()
-            .expect("Failed to create private pem file")
-            .success();
+        if !util::file_exists(&pem) {
+            success = Command::new("openssl")
+                .args(&["genrsa", "-out", &pem])
+                .status()
+                .expect("Failed to create private pem file")
+                .success();
+        }
 
         success &= Command::new("openssl")
             .args(&["rsa", "-in", &pem, "-outform", "DER", "-out", &priv_der])
