@@ -50,6 +50,7 @@ use std::time::SystemTimeError as TimeErr;
 use u2f::u2ferror::U2fError as U2fErr;
 use webauthn_rs::error::WebauthnError as WebauthnErr;
 use yubico::yubicoerror::YubicoError as YubiErr;
+use openssl::error::ErrorStack as SSLErr;
 
 #[derive(Serialize)]
 pub struct Empty {}
@@ -82,6 +83,7 @@ make_error! {
     Lettre(LettreErr): _has_source, _api_error,
     Address(AddrErr):  _has_source, _api_error,
     Smtp(SmtpErr):     _has_source, _api_error,
+    OpenSSL(SSLErr):   _has_source, _api_error,
 
     DieselCon(DieselConErr): _has_source, _api_error,
     DieselMig(DieselMigErr): _has_source, _api_error,

@@ -770,13 +770,10 @@ impl Config {
     }
 
     pub fn private_rsa_key(&self) -> String {
-        format!("{}.der", CONFIG.rsa_key_filename())
-    }
-    pub fn private_rsa_key_pem(&self) -> String {
         format!("{}.pem", CONFIG.rsa_key_filename())
     }
     pub fn public_rsa_key(&self) -> String {
-        format!("{}.pub.der", CONFIG.rsa_key_filename())
+        format!("{}.pub.pem", CONFIG.rsa_key_filename())
     }
     pub fn mail_enabled(&self) -> bool {
         let inner = &self.inner.read().unwrap().config;

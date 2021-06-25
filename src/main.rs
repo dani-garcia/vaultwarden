@@ -21,7 +21,7 @@ use std::{
     fs::create_dir_all,
     panic,
     path::Path,
-    process::{exit, Command},
+    process::exit,
     str::FromStr,
     thread,
     time::Duration,
@@ -53,7 +53,10 @@ fn main() {
     let extra_debug = matches!(level, LF::Trace | LF::Debug);
 
     check_data_folder();
-    check_rsa_keys();
+    check_rsa_keys().unwrap_or_else(|_| {
+        error!("Error creating keys, exiting...");
+        exit(1);
+    });
     check_web_vault();
 
     create_icon_cache_folder();
@@ -249,52 +252,29 @@ fn check_data_folder() {
     }
 }
 
-fn check_rsa_keys() {
+fn check_rsa_keys()-> Result<(), crate::error::Error> {
     // If the RSA keys don't exist, try to create them
-    if !util::file_exists(&CONFIG.private_rsa_key()) || !util::file_exists(&CONFIG.public_rsa_key()) {
-        info!("JWT keys don't exist, checking if OpenSSL is available...");
+    let priv_path = CONFIG.private_rsa_key();
+    let pub_path = CONFIG.public_rsa_key();
 
-        Command::new("openssl").arg("version").status().unwrap_or_else(|_| {
-            info!(
-                "Can't create keys because OpenSSL is not available, make sure it's installed and available on the PATH"
-            );
-            exit(1);
-        });
+    if !util::file_exists(&priv_path) {
+        let rsa_key = openssl::rsa::Rsa::generate(2048)?;
 
-        info!("OpenSSL detected, creating keys...");
-
-        let key = CONFIG.rsa_key_filename();
-
-        let pem = format!("{}.pem", key);
-        let priv_der = format!("{}.der", key);
-        let pub_der = format!("{}.pub.der", key);
-
-        let mut success = Command::new("openssl")
-            .args(&["genrsa", "-out", &pem])
-            .status()
-            .expect("Failed to create private pem file")
-            .success();
-
-        success &= Command::new("openssl")
-            .args(&["rsa", "-in", &pem, "-outform", "DER", "-out", &priv_der])
-            .status()
-            .expect("Failed to create private der file")
-            .success();
-
-        success &= Command::new("openssl")
-            .args(&["rsa", "-in", &priv_der, "-inform", "DER"])
-            .args(&["-RSAPublicKey_out", "-outform", "DER", "-out", &pub_der])
-            .status()
-            .expect("Failed to create public der file")
-            .success();
-
-        if success {
-            info!("Keys created correctly.");
-        } else {
-            error!("Error creating keys, exiting...");
-            exit(1);
-        }
+        let priv_key = rsa_key.private_key_to_pem()?;
+        crate::util::write_file(&priv_path, &priv_key)?;
+        info!("Private key created correctly.");
     }
+
+    if !util::file_exists(&pub_path) {
+        let rsa_key = openssl::rsa::Rsa::private_key_from_pem(&util::read_file(&priv_path)?)?;
+
+        let pub_key = rsa_key.public_key_to_pem()?;
+        crate::util::write_file(&pub_path, &pub_key)?;
+        info!("Public key created correctly.");
+    }
+
+    auth::load_keys();
+    Ok(())
 }
 
 fn check_web_vault() {

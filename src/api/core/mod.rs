@@ -27,7 +27,6 @@ pub fn routes() -> Vec<Route> {
 //
 // Move this somewhere else
 //
-use rocket::response::Response;
 use rocket::Route;
 use rocket_contrib::json::Json;
 use serde_json::Value;
@@ -41,7 +40,7 @@ use crate::{
 };
 
 #[put("/devices/identifier/<uuid>/clear-token")]
-fn clear_device_token<'a>(uuid: String) -> Response<'a> {
+fn clear_device_token<'a>(uuid: String) -> &'static str {
     // This endpoint doesn't have auth header
 
     let _ = uuid;
@@ -50,7 +49,7 @@ fn clear_device_token<'a>(uuid: String) -> Response<'a> {
     // This only clears push token
     // https://github.com/bitwarden/core/blob/master/src/Api/Controllers/DevicesController.cs#L109
     // https://github.com/bitwarden/core/blob/master/src/Core/Services/Implementations/DeviceService.cs#L37
-    Response::new()
+    ""
 }
 
 #[put("/devices/identifier/<uuid>/token", data = "<data>")]

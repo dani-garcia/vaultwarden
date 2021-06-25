@@ -343,7 +343,7 @@ fn parse_duo_values(key: &str, val: &str, ikey: &str, prefix: &str, time: i64) -
         err!("Invalid ikey")
     }
 
-    let expire = match expire.parse() {
+    let expire: i64 = match expire.parse() {
         Ok(e) => e,
         Err(_) => err!("Invalid expire time"),
     };

@@ -27,17 +27,26 @@ static JWT_VERIFYEMAIL_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|verifyema
 static JWT_ADMIN_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|admin", CONFIG.domain_origin()));
 static JWT_SEND_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|send", CONFIG.domain_origin()));
 
-static PRIVATE_RSA_KEY: Lazy<Vec<u8>> = Lazy::new(|| match read_file(&CONFIG.private_rsa_key()) {
-    Ok(key) => key,
-    Err(e) => panic!("Error loading private RSA Key.\n Error: {}", e),
+static PRIVATE_RSA_KEY_VEC: Lazy<Vec<u8>> = Lazy::new(|| {
+    read_file(&CONFIG.private_rsa_key()).unwrap_or_else(|e| panic!("Error loading private RSA Key.\n{}", e))
 });
-static PUBLIC_RSA_KEY: Lazy<Vec<u8>> = Lazy::new(|| match read_file(&CONFIG.public_rsa_key()) {
-    Ok(key) => key,
-    Err(e) => panic!("Error loading public RSA Key.\n Error: {}", e),
+static PRIVATE_RSA_KEY: Lazy<EncodingKey> = Lazy::new(|| {
+    EncodingKey::from_rsa_pem(&PRIVATE_RSA_KEY_VEC).unwrap_or_else(|e| panic!("Error decoding private RSA Key.\n{}", e))
+});
+static PUBLIC_RSA_KEY_VEC: Lazy<Vec<u8>> = Lazy::new(|| {
+    read_file(&CONFIG.public_rsa_key()).unwrap_or_else(|e| panic!("Error loading public RSA Key.\n{}", e))
+});
+static PUBLIC_RSA_KEY: Lazy<DecodingKey> = Lazy::new(|| {
+    DecodingKey::from_rsa_pem(&PUBLIC_RSA_KEY_VEC).unwrap_or_else(|e| panic!("Error decoding public RSA Key.\n{}", e))
 });
 
+pub fn load_keys() {
+    Lazy::force(&PRIVATE_RSA_KEY);
+    Lazy::force(&PUBLIC_RSA_KEY);
+}
+
 pub fn encode_jwt<T: Serialize>(claims: &T) -> String {
-    match jsonwebtoken::encode(&JWT_HEADER, claims, &EncodingKey::from_rsa_der(&PRIVATE_RSA_KEY)) {
+    match jsonwebtoken::encode(&JWT_HEADER, claims, &PRIVATE_RSA_KEY) {
         Ok(token) => token,
         Err(e) => panic!("Error encoding jwt {}", e),
     }
@@ -55,10 +64,7 @@ fn decode_jwt<T: DeserializeOwned>(token: &str, issuer: String) -> Result<T, Err
     };
 
     let token = token.replace(char::is_whitespace, "");
-
-    jsonwebtoken::decode(&token, &DecodingKey::from_rsa_der(&PUBLIC_RSA_KEY), &validation)
-        .map(|d| d.claims)
-        .map_res("Error decoding JWT")
+    jsonwebtoken::decode(&token, &&PUBLIC_RSA_KEY, &validation).map(|d| d.claims).map_res("Error decoding JWT")
 }
 
 pub fn decode_login(token: &str) -> Result<LoginJwtClaims, Error> {
