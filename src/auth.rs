@@ -19,11 +19,14 @@ const JWT_ALGORITHM: Algorithm = Algorithm::RS256;
 
 pub static DEFAULT_VALIDITY: Lazy<Duration> = Lazy::new(|| Duration::hours(2));
 static JWT_HEADER: Lazy<Header> = Lazy::new(|| Header::new(JWT_ALGORITHM));
+
 pub static JWT_LOGIN_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|login", CONFIG.domain_origin()));
 static JWT_INVITE_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|invite", CONFIG.domain_origin()));
 static JWT_DELETE_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|delete", CONFIG.domain_origin()));
 static JWT_VERIFYEMAIL_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|verifyemail", CONFIG.domain_origin()));
 static JWT_ADMIN_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|admin", CONFIG.domain_origin()));
+static JWT_SEND_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|send", CONFIG.domain_origin()));
+
 static PRIVATE_RSA_KEY: Lazy<Vec<u8>> = Lazy::new(|| match read_file(&CONFIG.private_rsa_key()) {
     Ok(key) => key,
     Err(e) => panic!("Error loading private RSA Key.\n Error: {}", e),
@@ -66,16 +69,20 @@ pub fn decode_invite(token: &str) -> Result<InviteJwtClaims, Error> {
     decode_jwt(token, JWT_INVITE_ISSUER.to_string())
 }
 
-pub fn decode_delete(token: &str) -> Result<DeleteJwtClaims, Error> {
+pub fn decode_delete(token: &str) -> Result<BasicJwtClaims, Error> {
     decode_jwt(token, JWT_DELETE_ISSUER.to_string())
 }
 
-pub fn decode_verify_email(token: &str) -> Result<VerifyEmailJwtClaims, Error> {
+pub fn decode_verify_email(token: &str) -> Result<BasicJwtClaims, Error> {
     decode_jwt(token, JWT_VERIFYEMAIL_ISSUER.to_string())
 }
 
-pub fn decode_admin(token: &str) -> Result<AdminJwtClaims, Error> {
+pub fn decode_admin(token: &str) -> Result<BasicJwtClaims, Error> {
     decode_jwt(token, JWT_ADMIN_ISSUER.to_string())
+}
+
+pub fn decode_send(token: &str) -> Result<BasicJwtClaims, Error> {
+    decode_jwt(token, JWT_SEND_ISSUER.to_string())
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -147,7 +154,7 @@ pub fn generate_invite_claims(
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct DeleteJwtClaims {
+pub struct BasicJwtClaims {
     // Not before
     pub nbf: i64,
     // Expiration time
@@ -158,9 +165,9 @@ pub struct DeleteJwtClaims {
     pub sub: String,
 }
 
-pub fn generate_delete_claims(uuid: String) -> DeleteJwtClaims {
+pub fn generate_delete_claims(uuid: String) -> BasicJwtClaims {
     let time_now = Utc::now().naive_utc();
-    DeleteJwtClaims {
+    BasicJwtClaims {
         nbf: time_now.timestamp(),
         exp: (time_now + Duration::days(5)).timestamp(),
         iss: JWT_DELETE_ISSUER.to_string(),
@@ -168,21 +175,9 @@ pub fn generate_delete_claims(uuid: String) -> DeleteJwtClaims {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct VerifyEmailJwtClaims {
-    // Not before
-    pub nbf: i64,
-    // Expiration time
-    pub exp: i64,
-    // Issuer
-    pub iss: String,
-    // Subject
-    pub sub: String,
-}
-
-pub fn generate_verify_email_claims(uuid: String) -> DeleteJwtClaims {
+pub fn generate_verify_email_claims(uuid: String) -> BasicJwtClaims {
     let time_now = Utc::now().naive_utc();
-    DeleteJwtClaims {
+    BasicJwtClaims {
         nbf: time_now.timestamp(),
         exp: (time_now + Duration::days(5)).timestamp(),
         iss: JWT_VERIFYEMAIL_ISSUER.to_string(),
@@ -190,25 +185,23 @@ pub fn generate_verify_email_claims(uuid: String) -> DeleteJwtClaims {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct AdminJwtClaims {
-    // Not before
-    pub nbf: i64,
-    // Expiration time
-    pub exp: i64,
-    // Issuer
-    pub iss: String,
-    // Subject
-    pub sub: String,
-}
-
-pub fn generate_admin_claims() -> AdminJwtClaims {
+pub fn generate_admin_claims() -> BasicJwtClaims {
     let time_now = Utc::now().naive_utc();
-    AdminJwtClaims {
+    BasicJwtClaims {
         nbf: time_now.timestamp(),
         exp: (time_now + Duration::minutes(20)).timestamp(),
         iss: JWT_ADMIN_ISSUER.to_string(),
         sub: "admin_panel".to_string(),
+    }
+}
+
+pub fn generate_send_claims(send_id: &str, file_id: &str) -> BasicJwtClaims {
+    let time_now = Utc::now().naive_utc();
+    BasicJwtClaims {
+        nbf: time_now.timestamp(),
+        exp: (time_now + Duration::minutes(2)).timestamp(),
+        iss: JWT_SEND_ISSUER.to_string(),
+        sub: format!("{}/{}", send_id, file_id),
     }
 }
 

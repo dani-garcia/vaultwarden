@@ -2,7 +2,7 @@ use std::{io::Read, path::Path};
 
 use chrono::{DateTime, Duration, Utc};
 use multipart::server::{save::SavedData, Multipart, SaveResult};
-use rocket::{http::ContentType, Data};
+use rocket::{http::ContentType, response::NamedFile, Data};
 use rocket_contrib::json::Json;
 use serde_json::Value;
 
@@ -16,7 +16,16 @@ use crate::{
 const SEND_INACCESSIBLE_MSG: &str = "Send does not exist or is no longer available";
 
 pub fn routes() -> Vec<rocket::Route> {
-    routes![post_send, post_send_file, post_access, post_access_file, put_send, delete_send, put_remove_password]
+    routes![
+        post_send,
+        post_send_file,
+        post_access,
+        post_access_file,
+        put_send,
+        delete_send,
+        put_remove_password,
+        download_send
+    ]
 }
 
 pub fn purge_sends(pool: DbPool) {
@@ -316,11 +325,23 @@ fn post_access_file(
 
     send.save(&conn)?;
 
+    let token_claims = crate::auth::generate_send_claims(&send_id, &file_id);
+    let token = crate::auth::encode_jwt(&token_claims);
     Ok(Json(json!({
         "Object": "send-fileDownload",
         "Id": file_id,
-        "Url": format!("{}/sends/{}/{}", &host.host, send_id, file_id)
+        "Url": format!("{}/api/sends/{}/{}?t={}", &host.host, send_id, file_id, token)
     })))
+}
+
+#[get("/sends/<send_id>/<file_id>?<t>")]
+fn download_send(send_id: String, file_id: String, t: String) -> Option<NamedFile> {
+    if let Ok(claims) = crate::auth::decode_send(&t) {
+        if claims.sub == format!("{}/{}", send_id, file_id) {
+            return NamedFile::open(Path::new(&CONFIG.sends_folder()).join(send_id).join(file_id)).ok();
+        }
+    }
+    None
 }
 
 #[put("/sends/<id>", data = "<data>")]

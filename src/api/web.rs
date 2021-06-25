@@ -10,7 +10,7 @@ pub fn routes() -> Vec<Route> {
     // If addding more routes here, consider also adding them to
     // crate::utils::LOGGED_ROUTES to make sure they appear in the log
     if CONFIG.web_vault_enabled() {
-        routes![web_index, app_id, web_files, attachments, sends, alive, static_files]
+        routes![web_index, app_id, web_files, attachments, alive, static_files]
     } else {
         routes![attachments, alive, static_files]
     }
@@ -58,11 +58,6 @@ fn web_files(p: PathBuf) -> Cached<Option<NamedFile>> {
 #[get("/attachments/<uuid>/<file_id>")]
 fn attachments(uuid: String, file_id: String) -> Option<NamedFile> {
     NamedFile::open(Path::new(&CONFIG.attachments_folder()).join(uuid).join(file_id)).ok()
-}
-
-#[get("/sends/<send_id>/<file_id>")]
-fn sends(send_id: String, file_id: String) -> Option<NamedFile> {
-    NamedFile::open(Path::new(&CONFIG.sends_folder()).join(send_id).join(file_id)).ok()
 }
 
 #[get("/alive")]
