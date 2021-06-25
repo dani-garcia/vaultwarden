@@ -32,7 +32,7 @@ rocket = { version = "=0.5.0-dev", features = ["tls"], default-features = false 
 rocket_contrib = "=0.5.0-dev"
 
 # HTTP client
-reqwest = { version = "0.11.3", features = ["blocking", "json", "gzip", "brotli", "socks", "cookies"] }
+reqwest = { version = "0.11.4", features = ["blocking", "json", "gzip", "brotli", "socks", "cookies"] }
 
 # Used for custom short lived cookie jar
 cookie = "0.15.0"
@@ -68,7 +68,7 @@ diesel_migrations = "1.4.0"
 libsqlite3-sys = { version = "0.22.2", features = ["bundled"], optional = true }
 
 # Crypto-related libraries
-rand = "0.8.3"
+rand = "0.8.4"
 ring = "0.16.20"
 
 # UUID generation
@@ -113,7 +113,7 @@ tracing = { version = "0.1.26", features = ["log"] } # Needed to have lettre tra
 lettre = { version = "0.10.0-rc.3", features = ["smtp-transport", "builder", "serde", "native-tls", "hostname", "tracing"], default-features = false }
 
 # Template library
-handlebars = { version = "4.0.0", features = ["dir_source"] }
+handlebars = { version = "4.0.1", features = ["dir_source"] }
 
 # For favicon extraction from main website
 html5ever = "0.25.1"
