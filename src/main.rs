@@ -17,15 +17,7 @@ extern crate diesel;
 extern crate diesel_migrations;
 
 use job_scheduler::{Job, JobScheduler};
-use std::{
-    fs::create_dir_all,
-    panic,
-    path::Path,
-    process::exit,
-    str::FromStr,
-    thread,
-    time::Duration,
-};
+use std::{fs::create_dir_all, panic, path::Path, process::exit, str::FromStr, thread, time::Duration};
 
 #[macro_use]
 mod error;
@@ -252,7 +244,7 @@ fn check_data_folder() {
     }
 }
 
-fn check_rsa_keys()-> Result<(), crate::error::Error> {
+fn check_rsa_keys() -> Result<(), crate::error::Error> {
     // If the RSA keys don't exist, try to create them
     let priv_path = CONFIG.private_rsa_key();
     let pub_path = CONFIG.public_rsa_key();

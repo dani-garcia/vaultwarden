@@ -42,6 +42,7 @@ use jsonwebtoken::errors::Error as JwtErr;
 use lettre::address::AddressError as AddrErr;
 use lettre::error::Error as LettreErr;
 use lettre::transport::smtp::Error as SmtpErr;
+use openssl::error::ErrorStack as SSLErr;
 use regex::Error as RegexErr;
 use reqwest::Error as ReqErr;
 use serde_json::{Error as SerdeErr, Value};
@@ -50,7 +51,6 @@ use std::time::SystemTimeError as TimeErr;
 use u2f::u2ferror::U2fError as U2fErr;
 use webauthn_rs::error::WebauthnError as WebauthnErr;
 use yubico::yubicoerror::YubicoError as YubiErr;
-use openssl::error::ErrorStack as SSLErr;
 
 #[derive(Serialize)]
 pub struct Empty {}
