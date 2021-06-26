@@ -64,7 +64,7 @@ fn decode_jwt<T: DeserializeOwned>(token: &str, issuer: String) -> Result<T, Err
     };
 
     let token = token.replace(char::is_whitespace, "");
-    jsonwebtoken::decode(&token, &&PUBLIC_RSA_KEY, &validation).map(|d| d.claims).map_res("Error decoding JWT")
+    jsonwebtoken::decode(&token, &PUBLIC_RSA_KEY, &validation).map(|d| d.claims).map_res("Error decoding JWT")
 }
 
 pub fn decode_login(token: &str) -> Result<LoginJwtClaims, Error> {

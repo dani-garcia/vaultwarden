@@ -40,7 +40,7 @@ use crate::{
 };
 
 #[put("/devices/identifier/<uuid>/clear-token")]
-fn clear_device_token<'a>(uuid: String) -> &'static str {
+fn clear_device_token(uuid: String) -> &'static str {
     // This endpoint doesn't have auth header
 
     let _ = uuid;
