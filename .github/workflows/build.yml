@@ -15,6 +15,7 @@ on:
       - "tools/**"
       - ".github/FUNDING.yml"
       - ".github/ISSUE_TEMPLATE/**"
+      - ".github/security-contact.gif"
   pull_request:
     # Ignore when there are only changes done too one of these paths
     paths-ignore:
@@ -30,6 +31,7 @@ on:
       - "tools/**"
       - ".github/FUNDING.yml"
       - ".github/ISSUE_TEMPLATE/**"
+      - ".github/security-contact.gif"
 
 jobs:
   build:
