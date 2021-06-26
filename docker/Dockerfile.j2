@@ -1,15 +1,15 @@
 # This file was generated using a Jinja2 template.
 # Please make your changes in `Dockerfile.j2` and then `make` the individual Dockerfiles.
 
-{% set build_stage_base_image = "rust:1.51" %}
+{% set build_stage_base_image = "rust:1.53" %}
 {% if "alpine" in target_file %}
 {%   if "amd64" in target_file %}
-{%     set build_stage_base_image = "clux/muslrust:nightly-2021-04-14" %}
-{%     set runtime_stage_base_image = "alpine:3.13" %}
+{%     set build_stage_base_image = "clux/muslrust:nightly-2021-06-24" %}
+{%     set runtime_stage_base_image = "alpine:3.14" %}
 {%     set package_arch_target = "x86_64-unknown-linux-musl" %}
 {%   elif "armv7" in target_file %}
 {%     set build_stage_base_image = "messense/rust-musl-cross:armv7-musleabihf" %}
-{%     set runtime_stage_base_image = "balenalib/armv7hf-alpine:3.13" %}
+{%     set runtime_stage_base_image = "balenalib/armv7hf-alpine:3.14" %}
 {%     set package_arch_target = "armv7-unknown-linux-musleabihf" %}
 {%   endif %}
 {% elif "amd64" in target_file %}
@@ -44,8 +44,8 @@
 # 	https://docs.docker.com/develop/develop-images/multistage-build/
 # 	https://whitfin.io/speeding-up-rust-docker-builds/
 ####################### VAULT BUILD IMAGE  #######################
-{% set vault_version = "2.20.4" %}
-{% set vault_image_digest = "sha256:810919341388a50d3a88225ce234333f72eb80382953997e9fd5590cca829e1b" %}
+{% set vault_version = "2.20.4b" %}
+{% set vault_image_digest = "sha256:894e266d4491494dd5a8a736855a6772aa146fa14206853b11b41cf3f3f64d05" %}
 # The web-vault digest specifies a particular web-vault build on Docker Hub.
 # Using the digest instead of the tag name provides better security,
 # as the digest of an image is immutable, whereas a tag name can later

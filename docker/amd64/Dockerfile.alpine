@@ -14,18 +14,18 @@
 # - From https://hub.docker.com/r/vaultwarden/web-vault/tags,
 #   click the tag name to view the digest of the image it currently points to.
 # - From the command line:
-#     $ docker pull vaultwarden/web-vault:v2.20.4
-#     $ docker image inspect --format "{{.RepoDigests}}" vaultwarden/web-vault:v2.20.4
-#     [vaultwarden/web-vault@sha256:810919341388a50d3a88225ce234333f72eb80382953997e9fd5590cca829e1b]
+#     $ docker pull vaultwarden/web-vault:v2.20.4b
+#     $ docker image inspect --format "{{.RepoDigests}}" vaultwarden/web-vault:v2.20.4b
+#     [vaultwarden/web-vault@sha256:894e266d4491494dd5a8a736855a6772aa146fa14206853b11b41cf3f3f64d05]
 #
 # - Conversely, to get the tag name from the digest:
-#     $ docker image inspect --format "{{.RepoTags}}" vaultwarden/web-vault@sha256:810919341388a50d3a88225ce234333f72eb80382953997e9fd5590cca829e1b
-#     [vaultwarden/web-vault:v2.20.4]
+#     $ docker image inspect --format "{{.RepoTags}}" vaultwarden/web-vault@sha256:894e266d4491494dd5a8a736855a6772aa146fa14206853b11b41cf3f3f64d05
+#     [vaultwarden/web-vault:v2.20.4b]
 #
-FROM vaultwarden/web-vault@sha256:810919341388a50d3a88225ce234333f72eb80382953997e9fd5590cca829e1b as vault
+FROM vaultwarden/web-vault@sha256:894e266d4491494dd5a8a736855a6772aa146fa14206853b11b41cf3f3f64d05 as vault
 
 ########################## BUILD IMAGE  ##########################
-FROM clux/muslrust:nightly-2021-04-14 as build
+FROM clux/muslrust:nightly-2021-06-24 as build
 
 # Alpine-based AMD64 (musl) does not support mysql/mariadb during compile time.
 ARG DB=sqlite,postgresql
@@ -70,7 +70,7 @@ RUN cargo build --features ${DB} --release --target=x86_64-unknown-linux-musl
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image
 # because we already have a binary built
-FROM alpine:3.13
+FROM alpine:3.14
 
 ENV ROCKET_ENV "staging"
 ENV ROCKET_PORT=80
