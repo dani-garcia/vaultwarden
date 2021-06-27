@@ -3327,7 +3327,7 @@ dependencies = [
 [[package]]
 name = "webauthn-rs"
 version = "0.3.0-alpha.7"
-source = "git+https://github.com/kanidm/webauthn-rs?rev=ee887befbf57c5406136d8617183aa8d2b9ef387#ee887befbf57c5406136d8617183aa8d2b9ef387"
+source = "git+https://github.com/kanidm/webauthn-rs?rev=02a99f534127b30c6f4df7f2d42bc24f76dc4211#02a99f534127b30c6f4df7f2d42bc24f76dc4211"
 dependencies = [
  "base64 0.13.0",
  "log 0.4.14",
