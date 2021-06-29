@@ -75,7 +75,8 @@ ARG DB=sqlite,postgresql
 {%     set features = "sqlite,postgresql" %}
 {%   else %}
 # Alpine-based ARM (musl) only supports sqlite during compile time.
-ARG DB=sqlite
+# We now also need to add vendored_openssl, because the current base image we use to build has OpenSSL removed.
+ARG DB=sqlite,vendored_openssl
 {%     set features = "sqlite" %}
 {%   endif %}
 {% else %}

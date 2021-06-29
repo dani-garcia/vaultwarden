@@ -28,7 +28,8 @@ FROM vaultwarden/web-vault@sha256:894e266d4491494dd5a8a736855a6772aa146fa1420685
 FROM messense/rust-musl-cross:armv7-musleabihf as build
 
 # Alpine-based ARM (musl) only supports sqlite during compile time.
-ARG DB=sqlite
+# We now also need to add vendored_openssl, because the current base image we use to build has OpenSSL removed.
+ARG DB=sqlite,vendored_openssl
 
 # Build time options to avoid dpkg warnings and help with reproducible builds.
 ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8 TZ=UTC TERM=xterm-256color
