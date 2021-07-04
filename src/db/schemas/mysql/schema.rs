@@ -100,6 +100,8 @@ table! {
         uuid -> Text,
         name -> Text,
         billing_email -> Text,
+        private_key -> Nullable<Text>,
+        public_key -> Nullable<Text>,
     }
 }
 

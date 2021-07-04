@@ -165,8 +165,8 @@ fn post_send_file(data: Data, content_type: &ContentType, headers: Headers, conn
     let data = serde_json::from_str::<crate::util::UpCase<SendData>>(&buf)?;
     enforce_disable_hide_email_policy(&data.data, &headers, &conn)?;
 
-    // Get the file length and add an extra 10% to avoid issues
-    const SIZE_110_MB: u64 = 115_343_360;
+    // Get the file length and add an extra 5% to avoid issues
+    const SIZE_525_MB: u64 = 550_502_400;
 
     let size_limit = match CONFIG.user_attachment_limit() {
         Some(0) => err!("File uploads are disabled"),
@@ -175,9 +175,9 @@ fn post_send_file(data: Data, content_type: &ContentType, headers: Headers, conn
             if left <= 0 {
                 err!("Attachment size limit reached! Delete some files to open space")
             }
-            std::cmp::Ord::max(left as u64, SIZE_110_MB)
+            std::cmp::Ord::max(left as u64, SIZE_525_MB)
         }
-        None => SIZE_110_MB,
+        None => SIZE_525_MB,
     };
 
     // Create the Send

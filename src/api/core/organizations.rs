@@ -51,6 +51,7 @@ pub fn routes() -> Vec<Route> {
         get_plans,
         get_plans_tax_rates,
         import,
+        post_org_keys,
     ]
 }
 
@@ -61,6 +62,7 @@ struct OrgData {
     CollectionName: String,
     Key: String,
     Name: String,
+    Keys: Option<OrgKeyData>,
     #[serde(rename = "PlanType")]
     _PlanType: NumberOrString, // Ignored, always use the same plan
 }
@@ -78,6 +80,13 @@ struct NewCollectionData {
     Name: String,
 }
 
+#[derive(Deserialize)]
+#[allow(non_snake_case)]
+struct OrgKeyData {
+    EncryptedPrivateKey: String,
+    PublicKey: String,
+}
+
 #[post("/organizations", data = "<data>")]
 fn create_organization(headers: Headers, data: JsonUpcase<OrgData>, conn: DbConn) -> JsonResult {
     if !CONFIG.is_org_creation_allowed(&headers.user.email) {
@@ -85,8 +94,14 @@ fn create_organization(headers: Headers, data: JsonUpcase<OrgData>, conn: DbConn
     }
 
     let data: OrgData = data.into_inner().data;
+    let (private_key, public_key) = if data.Keys.is_some() {
+        let keys: OrgKeyData = data.Keys.unwrap();
+        (Some(keys.EncryptedPrivateKey), Some(keys.PublicKey))
+    } else {
+        (None, None)
+    };
 
-    let org = Organization::new(data.Name, data.BillingEmail);
+    let org = Organization::new(data.Name, data.BillingEmail, private_key, public_key);
     let mut user_org = UserOrganization::new(headers.user.uuid, org.uuid.clone());
     let collection = Collection::new(org.uuid.clone(), data.CollectionName);
 
@@ -466,6 +481,32 @@ fn get_org_users(org_id: String, _headers: ManagerHeadersLoose, conn: DbConn) ->
         "Object": "list",
         "ContinuationToken": null,
     }))
+}
+
+#[post("/organizations/<org_id>/keys", data = "<data>")]
+fn post_org_keys(org_id: String, data: JsonUpcase<OrgKeyData>, _headers: AdminHeaders, conn: DbConn) -> JsonResult {
+    let data: OrgKeyData = data.into_inner().data;
+
+    let mut org = match Organization::find_by_uuid(&org_id, &conn) {
+        Some(organization) => {
+            if organization.private_key.is_some() && organization.public_key.is_some() {
+                err!("Organization Keys already exist")
+            }
+            organization
+        }
+        None => err!("Can't find organization details"),
+    };
+
+    org.private_key = Some(data.EncryptedPrivateKey);
+    org.public_key = Some(data.PublicKey);
+
+    org.save(&conn)?;
+
+    Ok(Json(json!({
+        "Object": "organizationKeys",
+        "PublicKey": org.public_key,
+        "PrivateKey": org.private_key,
+    })))
 }
 
 #[derive(Deserialize)]
