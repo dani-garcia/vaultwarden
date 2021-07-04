@@ -1,0 +1,37 @@
+---
+repos:
+-   repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.0.1
+    hooks:
+    - id: check-yaml
+    - id: check-json
+    - id: check-toml
+    - id: end-of-file-fixer
+    - id: check-case-conflict
+    - id: check-merge-conflict
+    - id: detect-private-key
+-   repo: local
+    hooks:
+    - id: fmt
+      name: fmt
+      description: Format files with cargo fmt.
+      entry: cargo fmt
+      language: system
+      types: [rust]
+      args: ["--", "--check"]
+    - id: cargo-test
+      name: cargo test
+      description: Test the package for errors.
+      entry: cargo test
+      language: system
+      args: ["--features", "sqlite,mysql,postgresql", "--"]
+      types: [rust]
+      pass_filenames: false
+    - id: cargo-clippy
+      name: cargo clippy
+      description: Lint Rust sources
+      entry: cargo clippy
+      language: system
+      args: ["--features", "sqlite,mysql,postgresql", "--", "-D", "warnings"]
+      types: [rust]
+      pass_filenames: false
