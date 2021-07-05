@@ -134,7 +134,7 @@ RUN mkdir /data \
 RUN [ "cross-build-end" ]
 
 VOLUME /data
-EXPOSE 80
+EXPOSE $ROCKET_PORT
 EXPOSE 3012
 
 # Copies the files from the context (Rocket.toml file and web-vault)
