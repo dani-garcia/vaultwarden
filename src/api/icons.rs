@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    fs::{create_dir_all, remove_file, symlink_metadata, File},
+    fs::{remove_file, symlink_metadata, File},
     io::prelude::*,
     net::{IpAddr, ToSocketAddrs},
     sync::{Arc, RwLock},
@@ -14,7 +14,7 @@ use rocket::{http::ContentType, response::Content, Route};
 
 use crate::{
     error::Error,
-    util::{get_reqwest_client_builder, Cached},
+    util::{get_reqwest_client_builder, write_file, Cached},
     CONFIG,
 };
 
@@ -705,13 +705,8 @@ fn download_icon(domain: &str) -> Result<(Vec<u8>, Option<&str>), Error> {
 }
 
 fn save_icon(path: &str, icon: &[u8]) {
-    match File::create(path) {
-        Ok(mut f) => {
-            f.write_all(icon).expect("Error writing icon file");
-        }
-        Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => {
-            create_dir_all(&CONFIG.icon_cache_folder()).expect("Error creating icon cache");
-        }
+    match write_file(path, icon) {
+        Ok(_) => (),
         Err(e) => {
             warn!("Icon save error: {:?}", e);
         }

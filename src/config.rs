@@ -8,7 +8,7 @@ use reqwest::Url;
 use crate::{
     db::DbConnType,
     error::Error,
-    util::{get_env, get_env_bool},
+    util::{get_env, get_env_bool, write_file},
 };
 
 static CONFIG_FILE: Lazy<String> = Lazy::new(|| {
@@ -691,9 +691,7 @@ impl Config {
         }
 
         //Save to file
-        use std::{fs::File, io::Write};
-        let mut file = File::create(&*CONFIG_FILE)?;
-        file.write_all(config_str.as_bytes())?;
+        write_file(&CONFIG_FILE, config_str.as_bytes())?;
 
         Ok(())
     }
