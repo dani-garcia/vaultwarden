@@ -248,6 +248,17 @@ pub fn delete_file(path: &str) -> IOResult<()> {
     res
 }
 
+pub fn set_file_mode<P: AsRef<Path>>(path: P, mode: u32) -> IOResult<()> {
+    if !cfg!(unix) {
+        // noop on non-unix
+        return Ok(());
+    }
+    use std::fs::{set_permissions, Permissions};
+    use std::os::unix::fs::PermissionsExt;
+
+    set_permissions(&path, Permissions::from_mode(mode))
+}
+
 const UNITS: [&str; 6] = ["bytes", "KB", "MB", "GB", "TB", "PB"];
 
 pub fn get_display_size(size: i32) -> String {

@@ -13,6 +13,7 @@ use crate::{
     auth::Headers,
     crypto,
     db::{models::*, DbConn, DbPool},
+    util::set_file_mode,
     CONFIG,
 };
 
@@ -929,22 +930,26 @@ fn save_attachment(
                     };
                     path = base_path.join(&file_id);
 
-                    let size =
-                        match field.data.save().memory_threshold(0).size_limit(size_limit).with_path(path.clone()) {
-                            SaveResult::Full(SavedData::File(_, size)) => size as i32,
-                            SaveResult::Full(other) => {
-                                error = Some(format!("Attachment is not a file: {:?}", other));
-                                return;
-                            }
-                            SaveResult::Partial(_, reason) => {
-                                error = Some(format!("Attachment size limit exceeded with this file: {:?}", reason));
-                                return;
-                            }
-                            SaveResult::Error(e) => {
-                                error = Some(format!("Error: {:?}", e));
-                                return;
-                            }
-                        };
+                    let size = match field.data.save().memory_threshold(0).size_limit(size_limit).with_path(&path) {
+                        SaveResult::Full(SavedData::File(_, size)) => size as i32,
+                        SaveResult::Full(other) => {
+                            error = Some(format!("Attachment is not a file: {:?}", other));
+                            return;
+                        }
+                        SaveResult::Partial(_, reason) => {
+                            error = Some(format!("Attachment size limit exceeded with this file: {:?}", reason));
+                            return;
+                        }
+                        SaveResult::Error(e) => {
+                            error = Some(format!("Error: {:?}", e));
+                            return;
+                        }
+                    };
+
+                    if let Err(e) = set_file_mode(&path, 0o600) {
+                        error = Some(format!("Error: {:?}", e));
+                        return;
+                    };
 
                     if let Some(attachment) = &mut attachment {
                         // v2 API

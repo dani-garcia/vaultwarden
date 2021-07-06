@@ -32,7 +32,7 @@ mod util;
 
 pub use config::CONFIG;
 pub use error::{Error, MapResult};
-pub use util::is_running_in_docker;
+pub use util::{is_running_in_docker, set_file_mode};
 
 fn main() {
     parse_args();
@@ -254,6 +254,7 @@ fn check_rsa_keys() -> Result<(), crate::error::Error> {
 
         let priv_key = rsa_key.private_key_to_pem()?;
         crate::util::write_file(&priv_path, &priv_key)?;
+        set_file_mode(&priv_path, 0o600)?;
         info!("Private key created correctly.");
     }
 
@@ -262,6 +263,7 @@ fn check_rsa_keys() -> Result<(), crate::error::Error> {
 
         let pub_key = rsa_key.public_key_to_pem()?;
         crate::util::write_file(&pub_path, &pub_key)?;
+        set_file_mode(&pub_path, 0o600)?;
         info!("Public key created correctly.");
     }
 

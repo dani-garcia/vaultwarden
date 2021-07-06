@@ -10,6 +10,7 @@ use crate::{
     api::{ApiResult, EmptyResult, JsonResult, JsonUpcase, Notify, UpdateType},
     auth::{Headers, Host},
     db::{models::*, DbConn, DbPool},
+    util::set_file_mode,
     CONFIG,
 };
 
@@ -212,6 +213,8 @@ fn post_send_file(data: Data, content_type: &ContentType, headers: Headers, conn
             err!(format!("Error: {:?}", e));
         }
     };
+
+    set_file_mode(&file_path, 0o600)?;
 
     // Set ID and sizes
     let mut data_value: Value = serde_json::from_str(&send.data)?;
