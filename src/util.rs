@@ -29,7 +29,7 @@ impl Fairing for AppHeaders {
         res.set_raw_header("X-Content-Type-Options", "nosniff");
         res.set_raw_header("X-XSS-Protection", "1; mode=block");
         let csp = format!(
-            "frame-ancestors 'self' chrome-extension://nngceckbapebfimnlniiiahkandclblb moz-extension://* {};",
+            "frame-ancestors 'self' chrome-extension://nngceckbapebfimnlniiiahkandclblb chrome-extension://jbkfoedolllekgbhcbcoahefnbanhhlh moz-extension://* {};",
             CONFIG.allowed_iframe_ancestors()
         );
         res.set_raw_header("Content-Security-Policy", csp);
