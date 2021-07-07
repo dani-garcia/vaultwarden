@@ -31,7 +31,7 @@ impl Fairing for AppHeaders {
         let csp = format!(
             // Chrome Web Store: https://chrome.google.com/webstore/detail/bitwarden-free-password-m/nngceckbapebfimnlniiiahkandclblb
             // Edge Add-ons: https://microsoftedge.microsoft.com/addons/detail/bitwarden-free-password/jbkfoedolllekgbhcbcoahefnbanhhlh?hl=en-US
-            // Firefox Browser Add-ons: https://addons.mozilla.org/ja/firefox/addon/bitwarden-password-manager/
+            // Firefox Browser Add-ons: https://addons.mozilla.org/en-US/firefox/addon/bitwarden-password-manager/
             "frame-ancestors 'self' chrome-extension://nngceckbapebfimnlniiiahkandclblb chrome-extension://jbkfoedolllekgbhcbcoahefnbanhhlh moz-extension://* {};",
             CONFIG.allowed_iframe_ancestors()
         );
