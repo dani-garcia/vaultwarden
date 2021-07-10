@@ -388,9 +388,10 @@ make_config! {
         /// Password iterations |> Number of server-side passwords hashing iterations.
         /// The changes only apply when a user changes their password. Not recommended to lower the value
         password_iterations:    i32,    true,   def,    100_000;
-        /// Show password hints |> Controls if the password hint should be shown directly in the web page.
-        /// Otherwise, if email is disabled, there is no way to see the password hint
-        show_password_hint:     bool,   true,   def,    true;
+        /// Show password hint |> Controls whether a password hint should be shown directly in the web page
+        /// if SMTP service is not configured. Not recommended for publicly-accessible instances as this
+        /// provides unauthenticated access to potentially sensitive data.
+        show_password_hint:     bool,   true,   def,    false;
 
         /// Admin page token |> The token used to authenticate in this very same page. Changing it here won't deauthorize the current session
         admin_token:            Pass,   true,   option;
