@@ -4,7 +4,7 @@ use rocket::{http::ContentType, response::content::Content, response::NamedFile,
 use rocket_contrib::json::Json;
 use serde_json::Value;
 
-use crate::{error::Error, util::Cached, CONFIG};
+use crate::{CONFIG, error::Error, util::{Cached, SafeString}};
 
 pub fn routes() -> Vec<Route> {
     // If addding more routes here, consider also adding them to
@@ -56,7 +56,7 @@ fn web_files(p: PathBuf) -> Cached<Option<NamedFile>> {
 }
 
 #[get("/attachments/<uuid>/<file_id>")]
-fn attachments(uuid: String, file_id: String) -> Option<NamedFile> {
+fn attachments(uuid: SafeString, file_id: SafeString) -> Option<NamedFile> {
     NamedFile::open(Path::new(&CONFIG.attachments_folder()).join(uuid).join(file_id)).ok()
 }
 

@@ -871,7 +871,7 @@ fn save_attachment(
             Some(limit_kb) => {
                 let left = (limit_kb * 1024) - Attachment::size_by_user(user_uuid, conn) + size_adjust;
                 if left <= 0 {
-                    err_discard!("Attachment size limit reached! Delete some files to open space", data)
+                    err_discard!("Attachment storage limit reached! Delete some attachments to free up space", data)
                 }
                 Some(left as u64)
             }
@@ -883,7 +883,7 @@ fn save_attachment(
             Some(limit_kb) => {
                 let left = (limit_kb * 1024) - Attachment::size_by_org(org_uuid, conn) + size_adjust;
                 if left <= 0 {
-                    err_discard!("Attachment size limit reached! Delete some files to open space", data)
+                    err_discard!("Attachment storage limit reached! Delete some attachments to free up space", data)
                 }
                 Some(left as u64)
             }
@@ -937,7 +937,7 @@ fn save_attachment(
                                 return;
                             }
                             SaveResult::Partial(_, reason) => {
-                                error = Some(format!("Attachment size limit exceeded with this file: {:?}", reason));
+                                error = Some(format!("Attachment storage limit exceeded with this file: {:?}", reason));
                                 return;
                             }
                             SaveResult::Error(e) => {

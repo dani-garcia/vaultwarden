@@ -166,7 +166,7 @@ fn _serialize(e: &impl serde::Serialize, _msg: &str) -> String {
 
 fn _api_error(_: &impl std::any::Any, msg: &str) -> String {
     let json = json!({
-        "Message": "",
+        "Message": msg,
         "error": "",
         "error_description": "",
         "ValidationErrors": {"": [ msg ]},

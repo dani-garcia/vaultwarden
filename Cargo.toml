@@ -35,7 +35,7 @@ rocket_contrib = "=0.5.0-dev"
 reqwest = { version = "0.11.4", features = ["blocking", "json", "gzip", "brotli", "socks", "cookies"] }
 
 # Used for custom short lived cookie jar
-cookie = "0.15.0"
+cookie = "0.15.1"
 cookie_store = "0.15.0"
 bytes = "1.0.1"
 url = "2.2.2"
@@ -93,7 +93,7 @@ jsonwebtoken = "7.2.0"
 
 # U2F library
 u2f = "0.2.0"
-webauthn-rs = "0.3.0-alpha.7"
+webauthn-rs = "=0.3.0-alpha.7"
 
 # Yubico Library
 yubico = { version = "0.10.0", features = ["online-tokio"], default-features = false }
@@ -113,7 +113,7 @@ tracing = { version = "0.1.26", features = ["log"] } # Needed to have lettre tra
 lettre = { version = "0.10.0-rc.3", features = ["smtp-transport", "builder", "serde", "native-tls", "hostname", "tracing"], default-features = false }
 
 # Template library
-handlebars = { version = "4.0.1", features = ["dir_source"] }
+handlebars = { version = "4.1.0", features = ["dir_source"] }
 
 # For favicon extraction from main website
 html5ever = "0.25.1"
@@ -122,7 +122,7 @@ regex = { version = "1.5.4", features = ["std", "perf"], default-features = fals
 data-url = "0.1.0"
 
 # Used by U2F, JWT and Postgres
-openssl = "0.10.34"
+openssl = "0.10.35"
 
 # URL encoding library
 percent-encoding = "2.1.0"

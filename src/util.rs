@@ -5,7 +5,8 @@ use std::io::Cursor;
 
 use rocket::{
     fairing::{Fairing, Info, Kind},
-    http::{ContentType, Header, HeaderMap, Method, Status},
+    http::{ContentType, Header, HeaderMap, Method, RawStr, Status},
+    request::FromParam,
     response::{self, Responder},
     Data, Request, Response, Rocket,
 };
@@ -29,7 +30,10 @@ impl Fairing for AppHeaders {
         res.set_raw_header("X-Content-Type-Options", "nosniff");
         res.set_raw_header("X-XSS-Protection", "1; mode=block");
         let csp = format!(
-            "frame-ancestors 'self' chrome-extension://nngceckbapebfimnlniiiahkandclblb moz-extension://* {};",
+            // Chrome Web Store: https://chrome.google.com/webstore/detail/bitwarden-free-password-m/nngceckbapebfimnlniiiahkandclblb
+            // Edge Add-ons: https://microsoftedge.microsoft.com/addons/detail/bitwarden-free-password/jbkfoedolllekgbhcbcoahefnbanhhlh?hl=en-US
+            // Firefox Browser Add-ons: https://addons.mozilla.org/en-US/firefox/addon/bitwarden-password-manager/
+            "frame-ancestors 'self' chrome-extension://nngceckbapebfimnlniiiahkandclblb chrome-extension://jbkfoedolllekgbhcbcoahefnbanhhlh moz-extension://* {};",
             CONFIG.allowed_iframe_ancestors()
         );
         res.set_raw_header("Content-Security-Policy", csp);
@@ -121,6 +125,36 @@ impl<'r, R: Responder<'r>> Responder<'r> for Cached<R> {
                 Ok(res)
             }
             e @ Err(_) => e,
+        }
+    }
+}
+
+pub struct SafeString(String);
+
+impl std::fmt::Display for SafeString {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl AsRef<Path> for SafeString {
+    #[inline]
+    fn as_ref(&self) -> &Path {
+        Path::new(&self.0)
+    }
+}
+
+impl<'r> FromParam<'r> for SafeString {
+    type Error = ();
+
+    #[inline(always)]
+    fn from_param(param: &'r RawStr) -> Result<Self, Self::Error> {
+        let s = param.percent_decode().map(|cow| cow.into_owned()).map_err(|_| ())?;
+
+        if s.chars().all(|c| matches!(c, 'a'..='z' | 'A'..='Z' |'0'..='9' | '-')) {
+            Ok(SafeString(s))
+        } else {
+            Err(())
         }
     }
 }

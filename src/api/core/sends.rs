@@ -10,6 +10,7 @@ use crate::{
     api::{ApiResult, EmptyResult, JsonResult, JsonUpcase, Notify, UpdateType},
     auth::{Headers, Host},
     db::{models::*, DbConn, DbPool},
+    util::SafeString,
     CONFIG,
 };
 
@@ -173,7 +174,7 @@ fn post_send_file(data: Data, content_type: &ContentType, headers: Headers, conn
         Some(limit_kb) => {
             let left = (limit_kb * 1024) - Attachment::size_by_user(&headers.user.uuid, &conn);
             if left <= 0 {
-                err!("Attachment size limit reached! Delete some files to open space")
+                err!("Attachment storage limit reached! Delete some attachments to free up space")
             }
             std::cmp::Ord::max(left as u64, SIZE_525_MB)
         }
@@ -205,7 +206,7 @@ fn post_send_file(data: Data, content_type: &ContentType, headers: Headers, conn
         }
         SaveResult::Partial(_, reason) => {
             std::fs::remove_file(&file_path).ok();
-            err!(format!("Attachment size limit exceeded with this file: {:?}", reason));
+            err!(format!("Attachment storage limit exceeded with this file: {:?}", reason));
         }
         SaveResult::Error(e) => {
             std::fs::remove_file(&file_path).ok();
@@ -335,7 +336,7 @@ fn post_access_file(
 }
 
 #[get("/sends/<send_id>/<file_id>?<t>")]
-fn download_send(send_id: String, file_id: String, t: String) -> Option<NamedFile> {
+fn download_send(send_id: SafeString, file_id: SafeString, t: String) -> Option<NamedFile> {
     if let Ok(claims) = crate::auth::decode_send(&t) {
         if claims.sub == format!("{}/{}", send_id, file_id) {
             return NamedFile::open(Path::new(&CONFIG.sends_folder()).join(send_id).join(file_id)).ok();

@@ -580,24 +580,45 @@ struct PasswordHintData {
 
 #[post("/accounts/password-hint", data = "<data>")]
 fn password_hint(data: JsonUpcase<PasswordHintData>, conn: DbConn) -> EmptyResult {
-    let data: PasswordHintData = data.into_inner().data;
-
-    let hint = match User::find_by_mail(&data.Email, &conn) {
-        Some(user) => user.password_hint,
-        None => return Ok(()),
-    };
-
-    if CONFIG.mail_enabled() {
-        mail::send_password_hint(&data.Email, hint)?;
-    } else if CONFIG.show_password_hint() {
-        if let Some(hint) = hint {
-            err!(format!("Your password hint is: {}", &hint));
-        } else {
-            err!("Sorry, you have no password hint...");
-        }
+    if !CONFIG.mail_enabled() && !CONFIG.show_password_hint() {
+        err!("This server is not configured to provide password hints.");
     }
 
-    Ok(())
+    const NO_HINT: &str = "Sorry, you have no password hint...";
+
+    let data: PasswordHintData = data.into_inner().data;
+    let email = &data.Email;
+
+    match User::find_by_mail(email, &conn) {
+        None => {
+            // To prevent user enumeration, act as if the user exists.
+            if CONFIG.mail_enabled() {
+                // There is still a timing side channel here in that the code
+                // paths that send mail take noticeably longer than ones that
+                // don't. Add a randomized sleep to mitigate this somewhat.
+                use rand::{thread_rng, Rng};
+                let mut rng = thread_rng();
+                let base = 1000;
+                let delta: i32 = 100;
+                let sleep_ms = (base + rng.gen_range(-delta..=delta)) as u64;
+                std::thread::sleep(std::time::Duration::from_millis(sleep_ms));
+                Ok(())
+            } else {
+                err!(NO_HINT);
+            }
+        }
+        Some(user) => {
+            let hint: Option<String> = user.password_hint;
+            if CONFIG.mail_enabled() {
+                mail::send_password_hint(email, hint)?;
+                Ok(())
+            } else if let Some(hint) = hint {
+                err!(format!("Your password hint is: {}", hint));
+            } else {
+                err!(NO_HINT);
+            }
+        }
+    }
 }
 
 #[derive(Deserialize)]

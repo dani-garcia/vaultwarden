@@ -356,9 +356,9 @@ make_config! {
         /// HIBP Api Key |> HaveIBeenPwned API Key, request it here: https://haveibeenpwned.com/API/Key
         hibp_api_key:           Pass,   true,   option;
 
-        /// Per-user attachment limit (KB) |> Limit in kilobytes for a users attachments, once the limit is exceeded it won't be possible to upload more
+        /// Per-user attachment storage limit (KB) |> Max kilobytes of attachment storage allowed per user. When this limit is reached, the user will not be allowed to upload further attachments.
         user_attachment_limit:  i64,    true,   option;
-        /// Per-organization attachment limit (KB) |> Limit in kilobytes for an organization attachments, once the limit is exceeded it won't be possible to upload more
+        /// Per-organization attachment storage limit (KB) |> Max kilobytes of attachment storage allowed per org. When this limit is reached, org members will not be allowed to upload further attachments for ciphers owned by that org.
         org_attachment_limit:   i64,    true,   option;
 
         /// Trash auto-delete days |> Number of days to wait before auto-deleting a trashed item.
@@ -388,9 +388,10 @@ make_config! {
         /// Password iterations |> Number of server-side passwords hashing iterations.
         /// The changes only apply when a user changes their password. Not recommended to lower the value
         password_iterations:    i32,    true,   def,    100_000;
-        /// Show password hints |> Controls if the password hint should be shown directly in the web page.
-        /// Otherwise, if email is disabled, there is no way to see the password hint
-        show_password_hint:     bool,   true,   def,    true;
+        /// Show password hint |> Controls whether a password hint should be shown directly in the web page
+        /// if SMTP service is not configured. Not recommended for publicly-accessible instances as this
+        /// provides unauthenticated access to potentially sensitive data.
+        show_password_hint:     bool,   true,   def,    false;
 
         /// Admin page token |> The token used to authenticate in this very same page. Changing it here won't deauthorize the current session
         admin_token:            Pass,   true,   option;
@@ -857,6 +858,7 @@ where
     reg!("email/new_device_logged_in", ".html");
     reg!("email/pw_hint_none", ".html");
     reg!("email/pw_hint_some", ".html");
+    reg!("email/send_2fa_removed_from_org", ".html");
     reg!("email/send_org_invite", ".html");
     reg!("email/twofactor_email", ".html");
     reg!("email/verify_email", ".html");
