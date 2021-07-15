@@ -5,7 +5,8 @@ use std::io::Cursor;
 
 use rocket::{
     fairing::{Fairing, Info, Kind},
-    http::{ContentType, Header, HeaderMap, Method, Status},
+    http::{ContentType, Header, HeaderMap, Method, RawStr, Status},
+    request::FromParam,
     response::{self, Responder},
     Data, Request, Response, Rocket,
 };
@@ -121,6 +122,36 @@ impl<'r, R: Responder<'r>> Responder<'r> for Cached<R> {
                 Ok(res)
             }
             e @ Err(_) => e,
+        }
+    }
+}
+
+pub struct SafeString(String);
+
+impl std::fmt::Display for SafeString {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl AsRef<Path> for SafeString {
+    #[inline]
+    fn as_ref(&self) -> &Path {
+        Path::new(&self.0)
+    }
+}
+
+impl<'r> FromParam<'r> for SafeString {
+    type Error = ();
+
+    #[inline(always)]
+    fn from_param(param: &'r RawStr) -> Result<Self, Self::Error> {
+        let s = param.percent_decode().map(|cow| cow.into_owned()).map_err(|_| ())?;
+
+        if s.chars().all(|c| matches!(c, 'a'..='z' | 'A'..='Z' |'0'..='9' | '-')) {
+            Ok(SafeString(s))
+        } else {
+            Err(())
         }
     }
 }
