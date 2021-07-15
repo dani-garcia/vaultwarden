@@ -4,7 +4,11 @@ use rocket::{http::ContentType, response::content::Content, response::NamedFile,
 use rocket_contrib::json::Json;
 use serde_json::Value;
 
-use crate::{CONFIG, error::Error, util::{Cached, SafeString}};
+use crate::{
+    error::Error,
+    util::{Cached, SafeString},
+    CONFIG,
+};
 
 pub fn routes() -> Vec<Route> {
     // If addding more routes here, consider also adding them to
