@@ -174,7 +174,7 @@ fn post_send_file(data: Data, content_type: &ContentType, headers: Headers, conn
         Some(limit_kb) => {
             let left = (limit_kb * 1024) - Attachment::size_by_user(&headers.user.uuid, &conn);
             if left <= 0 {
-                err!("Attachment size limit reached! Delete some files to open space")
+                err!("Attachment storage limit reached! Delete some attachments to free up space")
             }
             std::cmp::Ord::max(left as u64, SIZE_110_MB)
         }
@@ -206,7 +206,7 @@ fn post_send_file(data: Data, content_type: &ContentType, headers: Headers, conn
         }
         SaveResult::Partial(_, reason) => {
             std::fs::remove_file(&file_path).ok();
-            err!(format!("Attachment size limit exceeded with this file: {:?}", reason));
+            err!(format!("Attachment storage limit exceeded with this file: {:?}", reason));
         }
         SaveResult::Error(e) => {
             std::fs::remove_file(&file_path).ok();

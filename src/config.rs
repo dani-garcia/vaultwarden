@@ -356,9 +356,9 @@ make_config! {
         /// HIBP Api Key |> HaveIBeenPwned API Key, request it here: https://haveibeenpwned.com/API/Key
         hibp_api_key:           Pass,   true,   option;
 
-        /// Per-user attachment limit (KB) |> Limit in kilobytes for a users attachments, once the limit is exceeded it won't be possible to upload more
+        /// Per-user attachment storage limit (KB) |> Max kilobytes of attachment storage allowed per user. When this limit is reached, the user will not be allowed to upload further attachments.
         user_attachment_limit:  i64,    true,   option;
-        /// Per-organization attachment limit (KB) |> Limit in kilobytes for an organization attachments, once the limit is exceeded it won't be possible to upload more
+        /// Per-organization attachment storage limit (KB) |> Max kilobytes of attachment storage allowed per org. When this limit is reached, org members will not be allowed to upload further attachments for ciphers owned by that org.
         org_attachment_limit:   i64,    true,   option;
 
         /// Trash auto-delete days |> Number of days to wait before auto-deleting a trashed item.
