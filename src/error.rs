@@ -174,6 +174,9 @@ fn _api_error(_: &impl std::any::Any, msg: &str) -> String {
             "Message": msg,
             "Object": "error"
         },
+        "ExceptionMessage": null,
+        "ExceptionStackTrace": null,
+        "InnerExceptionMessage": null,
         "Object": "error"
     });
     _serialize(&json, "")

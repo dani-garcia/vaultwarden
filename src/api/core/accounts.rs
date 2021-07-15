@@ -231,7 +231,10 @@ fn post_password(data: JsonUpcase<ChangePassData>, headers: Headers, conn: DbCon
         err!("Invalid password")
     }
 
-    user.set_password(&data.NewMasterPasswordHash, Some("post_rotatekey"));
+    user.set_password(
+        &data.NewMasterPasswordHash,
+        Some(vec![String::from("post_rotatekey"), String::from("get_contacts")]),
+    );
     user.akey = data.Key;
     user.save(&conn)
 }
@@ -320,7 +323,9 @@ fn post_rotatekey(data: JsonUpcase<KeyData>, headers: Headers, conn: DbConn, nt:
             err!("The cipher is not owned by the user")
         }
 
-        update_cipher_from_data(&mut saved_cipher, cipher_data, &headers, false, &conn, &nt, UpdateType::CipherUpdate)?
+        // Prevent triggering cipher updates via WebSockets by settings UpdateType::None
+        // The user sessions are invalidated because all the ciphers were re-encrypted and thus triggering an update could cause issues.
+        update_cipher_from_data(&mut saved_cipher, cipher_data, &headers, false, &conn, &nt, UpdateType::None)?
     }
 
     // Update user data
@@ -329,7 +334,6 @@ fn post_rotatekey(data: JsonUpcase<KeyData>, headers: Headers, conn: DbConn, nt:
     user.akey = data.Key;
     user.private_key = Some(data.PrivateKey);
     user.reset_security_stamp();
-    user.reset_stamp_exception();
 
     user.save(&conn)
 }

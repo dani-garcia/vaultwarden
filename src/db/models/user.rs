@@ -1,4 +1,4 @@
-use chrono::{NaiveDateTime, Utc};
+use chrono::{Duration, NaiveDateTime, Utc};
 use serde_json::Value;
 
 use crate::crypto;
@@ -63,8 +63,9 @@ enum UserStatus {
 
 #[derive(Serialize, Deserialize)]
 pub struct UserStampException {
-    pub route: String,
+    pub routes: Vec<String>,
     pub security_stamp: String,
+    pub expire: i64,
 }
 
 /// Local methods
@@ -135,9 +136,11 @@ impl User {
     /// # Arguments
     ///
     /// * `password` - A str which contains a hashed version of the users master password.
-    /// * `allow_next_route` - A Option<&str> with the function name of the next allowed (rocket) route.
+    /// * `allow_next_route` - A Option<Vec<String>> with the function names of the next allowed (rocket) routes.
+    ///                       These routes are able to use the previous stamp id for the next 2 minutes.
+    ///                       After these 2 minutes this stamp will expire.
     ///
-    pub fn set_password(&mut self, password: &str, allow_next_route: Option<&str>) {
+    pub fn set_password(&mut self, password: &str, allow_next_route: Option<Vec<String>>) {
         self.password_hash = crypto::hash_password(password.as_bytes(), &self.salt, self.password_iterations as u32);
 
         if let Some(route) = allow_next_route {
@@ -154,24 +157,20 @@ impl User {
     /// Set the stamp_exception to only allow a subsequent request matching a specific route using the current security-stamp.
     ///
     /// # Arguments
-    /// * `route_exception` - A str with the function name of the next allowed (rocket) route.
+    /// * `route_exception` - A Vec<String> with the function names of the next allowed (rocket) routes.
+    ///                       These routes are able to use the previous stamp id for the next 2 minutes.
+    ///                       After these 2 minutes this stamp will expire.
     ///
-    /// ### Future
-    /// In the future it could be posible that we need more of these exception routes.
-    /// In that case we could use an Vec<UserStampException> and add multiple exceptions.
-    pub fn set_stamp_exception(&mut self, route_exception: &str) {
+    pub fn set_stamp_exception(&mut self, route_exception: Vec<String>) {
         let stamp_exception = UserStampException {
-            route: route_exception.to_string(),
+            routes: route_exception,
             security_stamp: self.security_stamp.to_string(),
+            expire: (Utc::now().naive_utc() + Duration::minutes(2)).timestamp(),
         };
         self.stamp_exception = Some(serde_json::to_string(&stamp_exception).unwrap_or_default());
     }
 
     /// Resets the stamp_exception to prevent re-use of the previous security-stamp
-    ///
-    /// ### Future
-    /// In the future it could be posible that we need more of these exception routes.
-    /// In that case we could use an Vec<UserStampException> and add multiple exceptions.
     pub fn reset_stamp_exception(&mut self) {
         self.stamp_exception = None;
     }

@@ -12,6 +12,8 @@ db_object! {
         pub uuid: String,
         pub name: String,
         pub billing_email: String,
+        pub private_key: Option<String>,
+        pub public_key: Option<String>,
     }
 
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -122,12 +124,13 @@ impl PartialOrd<UserOrgType> for i32 {
 
 /// Local methods
 impl Organization {
-    pub fn new(name: String, billing_email: String) -> Self {
+    pub fn new(name: String, billing_email: String, private_key: Option<String>, public_key: Option<String>) -> Self {
         Self {
             uuid: crate::util::get_uuid(),
-
             name,
             billing_email,
+            private_key,
+            public_key,
         }
     }
 
@@ -140,14 +143,16 @@ impl Organization {
             "MaxCollections": 10, // The value doesn't matter, we don't check server-side
             "MaxStorageGb": 10, // The value doesn't matter, we don't check server-side
             "Use2fa": true,
-            "UseDirectory": false,
-            "UseEvents": false,
-            "UseGroups": false,
+            "UseDirectory": false, // Is supported, but this value isn't checked anywhere (yet)
+            "UseEvents": false, // not supported by us
+            "UseGroups": false, // not supported by us
             "UseTotp": true,
             "UsePolicies": true,
             "UseSso": false, // We do not support SSO
             "SelfHost": true,
             "UseApi": false, // not supported by us
+            "HasPublicAndPrivateKeys": self.private_key.is_some() && self.public_key.is_some(),
+            "ResetPasswordEnrolled": false, // not supported by us
 
             "BusinessName": null,
             "BusinessAddress1": null,
@@ -269,13 +274,15 @@ impl UserOrganization {
             "UsersGetPremium": true,
 
             "Use2fa": true,
-            "UseDirectory": false,
-            "UseEvents": false,
-            "UseGroups": false,
+            "UseDirectory": false, // Is supported, but this value isn't checked anywhere (yet)
+            "UseEvents": false, // not supported by us
+            "UseGroups": false, // not supported by us
             "UseTotp": true,
             "UsePolicies": true,
             "UseApi": false, // not supported by us
             "SelfHost": true,
+            "HasPublicAndPrivateKeys": org.private_key.is_some() && org.public_key.is_some(),
+            "ResetPasswordEnrolled": false, // not supported by us
             "SsoBound": false, // We do not support SSO
             "UseSso": false, // We do not support SSO
             // TODO: Add support for Business Portal
@@ -293,10 +300,12 @@ impl UserOrganization {
             //     "AccessReports": false,
             //     "ManageAllCollections": false,
             //     "ManageAssignedCollections": false,
+            //     "ManageCiphers": false,
             //     "ManageGroups": false,
             //     "ManagePolicies": false,
+            //     "ManageResetPassword": false,
             //     "ManageSso": false,
-            //     "ManageUsers": false
+            //     "ManageUsers": false,
             // },
 
             "MaxStorageGb": 10, // The value doesn't matter, we don't check server-side
