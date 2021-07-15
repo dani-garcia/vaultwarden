@@ -22,7 +22,7 @@ db_object! {
     }
 }
 
-#[derive(Copy, Clone, num_derive::FromPrimitive)]
+#[derive(Copy, Clone, PartialEq, num_derive::FromPrimitive)]
 pub enum OrgPolicyType {
     TwoFactorAuthentication = 0,
     MasterPassword = 1,
