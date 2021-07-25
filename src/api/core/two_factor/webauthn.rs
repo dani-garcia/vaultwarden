@@ -51,19 +51,12 @@ impl webauthn_rs::WebauthnConfig for WebauthnConfig {
     fn get_relying_party_id(&self) -> &str {
         &self.rpid
     }
-}
 
-impl webauthn_rs::WebauthnConfig for &WebauthnConfig {
-    fn get_relying_party_name(&self) -> &str {
-        &self.url
-    }
-
-    fn get_origin(&self) -> &str {
-        &self.url
-    }
-
-    fn get_relying_party_id(&self) -> &str {
-        &self.rpid
+    /// We have WebAuthn configured to discourage user verification
+    /// if we leave this enabled, it will cause verification issues when a keys send UV=1.
+    /// Upstream (the library they use) ignores this when set to discouraged, so we should too.
+    fn get_require_uv_consistency(&self) -> bool {
+        false
     }
 }
 
@@ -289,15 +282,14 @@ fn delete_webauthn(data: JsonUpcase<DeleteU2FData>, headers: Headers, conn: DbCo
         err!("Invalid password");
     }
 
-    let type_ = TwoFactorType::Webauthn as i32;
-    let mut tf = match TwoFactor::find_by_user_and_type(&headers.user.uuid, type_, &conn) {
+    let mut tf = match TwoFactor::find_by_user_and_type(&headers.user.uuid, TwoFactorType::Webauthn as i32, &conn) {
         Some(tf) => tf,
         None => err!("Webauthn data not found!"),
     };
 
     let mut data: Vec<WebauthnRegistration> = serde_json::from_str(&tf.data)?;
 
-    let item_pos = match data.iter().position(|r| r.id != id) {
+    let item_pos = match data.iter().position(|r| r.id == id) {
         Some(p) => p,
         None => err!("Webauthn entry not found"),
     };

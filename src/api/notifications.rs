@@ -408,12 +408,10 @@ pub fn start_notification_server() -> WebSocketUsers {
 
     if CONFIG.websocket_enabled() {
         thread::spawn(move || {
-            let settings = ws::Settings {
-                max_connections: 500,
-                queue_size: 2,
-                panic_on_internal: false,
-                ..Default::default()
-            };
+            let mut settings = ws::Settings::default();
+            settings.max_connections = 500;
+            settings.queue_size = 2;
+            settings.panic_on_internal = false;
 
             ws::Builder::new()
                 .with_settings(settings)
