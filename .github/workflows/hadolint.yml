@@ -28,7 +28,7 @@ jobs:
           sudo curl -L https://github.com/hadolint/hadolint/releases/download/v${HADOLINT_VERSION}/hadolint-$(uname -s)-$(uname -m) -o /usr/local/bin/hadolint && \
           sudo chmod +x /usr/local/bin/hadolint
         env:
-          HADOLINT_VERSION: 2.5.0
+          HADOLINT_VERSION: 2.6.1
       # End Download hadolint
 
       # Test Dockerfiles
