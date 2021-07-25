@@ -44,7 +44,7 @@ url = "2.2.2"
 multipart = { version = "0.18.0", features = ["server"], default-features = false }
 
 # WebSockets library
-ws = { version = "0.10.0", package = "parity-ws" }
+ws = { version = "0.11.0", package = "parity-ws" }
 
 # MessagePack library
 rmpv = "0.4.7"
@@ -93,7 +93,7 @@ jsonwebtoken = "7.2.0"
 
 # U2F library
 u2f = "0.2.0"
-webauthn-rs = "=0.3.0-alpha.7"
+webauthn-rs = "=0.3.0-alpha.9"
 
 # Yubico Library
 yubico = { version = "0.10.0", features = ["online-tokio"], default-features = false }
@@ -152,6 +152,3 @@ data-url = { git = 'https://github.com/servo/rust-url', package="data-url", rev 
 # In particular, `cron` has since implemented parsing of some common syntax
 # that wasn't previously supported (https://github.com/zslayton/cron/pull/64).
 job_scheduler = { git = 'https://github.com/jjlin/job_scheduler', rev = 'ee023418dbba2bfe1e30a5fd7d937f9e33739806' }
-
-# Add support for U2F appid extension compatibility
-webauthn-rs = { git = 'https://github.com/kanidm/webauthn-rs', rev = '02a99f534127b30c6f4df7f2d42bc24f76dc4211' }
