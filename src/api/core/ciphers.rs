@@ -783,10 +783,7 @@ struct AttachmentRequestData {
     Key: String,
     FileName: String,
     FileSize: i32,
-    // We check org owner/admin status via is_write_accessible_to_user(),
-    // so we can just ignore this field.
-    //
-    // AdminRequest: bool,
+    AdminRequest: Option<bool>, // true when attaching from an org vault view
 }
 
 enum FileUploadType {
@@ -821,14 +818,17 @@ fn post_attachment_v2(
     attachment.save(&conn).expect("Error saving attachment");
 
     let url = format!("/ciphers/{}/attachment/{}", cipher.uuid, attachment_id);
+    let response_key = match data.AdminRequest {
+        Some(b) if b => "CipherMiniResponse",
+        _ => "CipherResponse",
+    };
 
     Ok(Json(json!({ // AttachmentUploadDataResponseModel
         "Object": "attachment-fileUpload",
         "AttachmentId": attachment_id,
         "Url": url,
         "FileUploadType": FileUploadType::Direct as i32,
-        "CipherResponse": cipher.to_json(&headers.host, &headers.user.uuid, &conn),
-        "CipherMiniResponse": null,
+        response_key: cipher.to_json(&headers.host, &headers.user.uuid, &conn),
     })))
 }
 
