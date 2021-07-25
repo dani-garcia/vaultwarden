@@ -210,7 +210,10 @@ impl User {
             "PrivateKey": self.private_key,
             "SecurityStamp": self.security_stamp,
             "Organizations": orgs_json,
-            "Object": "profile"
+            "Providers": [],
+            "ProviderOrganizations": [],
+            "ForcePasswordReset": false,
+            "Object": "profile",
         })
     }
 
