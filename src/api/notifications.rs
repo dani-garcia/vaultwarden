@@ -65,7 +65,7 @@ use chashmap::CHashMap;
 use chrono::NaiveDateTime;
 use serde_json::from_str;
 
-use crate::db::models::{Cipher, Folder, User, Send};
+use crate::db::models::{Cipher, Folder, Send, User};
 
 use rmpv::Value;
 
