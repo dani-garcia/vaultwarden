@@ -167,7 +167,7 @@ fn post_send(data: JsonUpcase<SendData>, headers: Headers, conn: DbConn, nt: Not
         err!("File sends should use /api/sends/file")
     }
 
-    let mut send = create_send(data, headers.user.uuid.clone())?;
+    let mut send = create_send(data, headers.user.uuid)?;
     send.save(&conn)?;
     nt.send_send_update(UpdateType::SyncSendCreate, &send, &send.update_users_revision(&conn));
 
@@ -210,7 +210,7 @@ fn post_send_file(data: Data, content_type: &ContentType, headers: Headers, conn
     };
 
     // Create the Send
-    let mut send = create_send(data.data, headers.user.uuid.clone())?;
+    let mut send = create_send(data.data, headers.user.uuid)?;
     let file_id = crate::crypto::generate_send_id();
 
     if send.atype != SendType::File as i32 {

@@ -234,8 +234,8 @@ impl Send {
 
     pub fn update_users_revision(&self, conn: &DbConn) -> Vec<String> {
         let mut user_uuids = Vec::new();
-        match self.user_uuid {
-            Some(ref user_uuid) => {
+        match &self.user_uuid {
+            Some(user_uuid) => {
                 User::update_uuid_revision(user_uuid, conn);
                 user_uuids.push(user_uuid.clone())
             }
