@@ -88,6 +88,7 @@ RUN [ "cross-build-start" ]
 RUN mkdir /data \
     && apk add --no-cache \
         openssl \
+        tzdata \
         curl \
         dumb-init \
         ca-certificates
