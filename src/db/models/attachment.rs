@@ -143,16 +143,6 @@ impl Attachment {
         }}
     }
 
-    pub fn find_by_ciphers(cipher_uuids: Vec<String>, conn: &DbConn) -> Vec<Self> {
-        db_run! { conn: {
-            attachments::table
-                .filter(attachments::cipher_uuid.eq_any(cipher_uuids))
-                .load::<AttachmentDb>(conn)
-                .expect("Error loading attachments")
-                .from_db()
-        }}
-    }
-
     pub fn size_by_user(user_uuid: &str, conn: &DbConn) -> i64 {
         db_run! { conn: {
             let result: Option<i64> = attachments::table

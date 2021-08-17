@@ -687,12 +687,6 @@ fn put_cipher_share_selected(
         };
     }
 
-    let attachments = Attachment::find_by_ciphers(cipher_ids, &conn);
-
-    if !attachments.is_empty() {
-        err!("Ciphers should not have any attachments.")
-    }
-
     while let Some(cipher) = data.Ciphers.pop() {
         let mut shared_cipher_data = ShareCipherData {
             Cipher: cipher,
