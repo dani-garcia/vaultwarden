@@ -80,14 +80,16 @@ fn get_email(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn) -> 
         err!("Invalid password");
     }
 
-    let type_ = TwoFactorType::Email as i32;
-    let enabled = match TwoFactor::find_by_user_and_type(&user.uuid, type_, &conn) {
-        Some(x) => x.enabled,
-        _ => false,
+    let (enabled, mfa_email) = match TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::Email as i32, &conn) {
+        Some(x) => {
+            let twofactor_data = EmailTokenData::from_json(&x.data)?;
+            (true, json!(twofactor_data.email))
+        }
+        _ => (false, json!(null)),
     };
 
     Ok(Json(json!({
-        "Email": user.email,
+        "Email": mfa_email,
         "Enabled": enabled,
         "Object": "twoFactorEmail"
     })))
