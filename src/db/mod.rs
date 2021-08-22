@@ -278,7 +278,6 @@ impl<'a, 'r> FromRequest<'a, 'r> for DbConn {
 // https://docs.rs/diesel_migrations/*/diesel_migrations/macro.embed_migrations.html
 #[cfg(sqlite)]
 mod sqlite_migrations {
-    #[allow(unused_imports)]
     embed_migrations!("migrations/sqlite");
 
     pub fn run_migrations() -> Result<(), super::Error> {
@@ -315,7 +314,6 @@ mod sqlite_migrations {
 
 #[cfg(mysql)]
 mod mysql_migrations {
-    #[allow(unused_imports)]
     embed_migrations!("migrations/mysql");
 
     pub fn run_migrations() -> Result<(), super::Error> {
@@ -336,7 +334,6 @@ mod mysql_migrations {
 
 #[cfg(postgresql)]
 mod postgresql_migrations {
-    #[allow(unused_imports)]
     embed_migrations!("migrations/postgresql");
 
     pub fn run_migrations() -> Result<(), super::Error> {

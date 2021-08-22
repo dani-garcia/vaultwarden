@@ -62,7 +62,7 @@ fn activate_authenticator(
     let data: EnableAuthenticatorData = data.into_inner().data;
     let password_hash = data.MasterPasswordHash;
     let key = data.Key;
-    let token = data.Token.into_i32()? as u64;
+    let token = data.Token.into_string();
 
     let mut user = headers.user;
 
@@ -81,7 +81,7 @@ fn activate_authenticator(
     }
 
     // Validate the token provided with the key, and save new twofactor
-    validate_totp_code(&user.uuid, token, &key.to_uppercase(), &ip, &conn)?;
+    validate_totp_code(&user.uuid, &token, &key.to_uppercase(), &ip, &conn)?;
 
     _generate_recover_code(&mut user, &conn);
 
@@ -109,16 +109,15 @@ pub fn validate_totp_code_str(
     ip: &ClientIp,
     conn: &DbConn,
 ) -> EmptyResult {
-    let totp_code: u64 = match totp_code.parse() {
-        Ok(code) => code,
-        _ => err!("TOTP code is not a number"),
-    };
+    if !totp_code.chars().all(char::is_numeric) {
+        err!("TOTP code is not a number");
+    }
 
     validate_totp_code(user_uuid, totp_code, secret, ip, conn)
 }
 
-pub fn validate_totp_code(user_uuid: &str, totp_code: u64, secret: &str, ip: &ClientIp, conn: &DbConn) -> EmptyResult {
-    use oath::{totp_raw_custom_time, HashType};
+pub fn validate_totp_code(user_uuid: &str, totp_code: &str, secret: &str, ip: &ClientIp, conn: &DbConn) -> EmptyResult {
+    use totp_lite::{totp_custom, Sha1};
 
     let decoded_secret = match BASE32.decode(secret.as_bytes()) {
         Ok(s) => s,
@@ -130,27 +129,28 @@ pub fn validate_totp_code(user_uuid: &str, totp_code: u64, secret: &str, ip: &Cl
         _ => TwoFactor::new(user_uuid.to_string(), TwoFactorType::Authenticator, secret.to_string()),
     };
 
-    // Get the current system time in UNIX Epoch (UTC)
-    let current_time = chrono::Utc::now();
-    let current_timestamp = current_time.timestamp();
-
     // The amount of steps back and forward in time
     // Also check if we need to disable time drifted TOTP codes.
     // If that is the case, we set the steps to 0 so only the current TOTP is valid.
     let steps = !CONFIG.authenticator_disable_time_drift() as i64;
 
+    // Get the current system time in UNIX Epoch (UTC)
+    let current_time = chrono::Utc::now();
+    let current_timestamp = current_time.timestamp();
+
     for step in -steps..=steps {
         let time_step = current_timestamp / 30i64 + step;
-        // We need to calculate the time offsite and cast it as an i128.
-        // Else we can't do math with it on a default u64 variable.
+
+        // We need to calculate the time offsite and cast it as an u64.
+        // Since we only have times into the future and the totp generator needs an u64 instead of the default i64.
         let time = (current_timestamp + step * 30i64) as u64;
-        let generated = totp_raw_custom_time(&decoded_secret, 6, 0, 30, time, &HashType::SHA1);
+        let generated = totp_custom::<Sha1>(30, 6, &decoded_secret, time);
 
         // Check the the given code equals the generated and if the time_step is larger then the one last used.
         if generated == totp_code && time_step > twofactor.last_used as i64 {
             // If the step does not equals 0 the time is drifted either server or client side.
             if step != 0 {
-                info!("TOTP Time drift detected. The step offset is {}", step);
+                warn!("TOTP Time drift detected. The step offset is {}", step);
             }
 
             // Save the last used time step so only totp time steps higher then this one are allowed.
@@ -159,7 +159,7 @@ pub fn validate_totp_code(user_uuid: &str, totp_code: u64, secret: &str, ip: &Cl
             twofactor.save(conn)?;
             return Ok(());
         } else if generated == totp_code && time_step <= twofactor.last_used as i64 {
-            warn!("This or a TOTP code within {} steps back and forward has already been used!", steps);
+            warn!("This TOTP or a TOTP code within {} steps back or forward has already been used!", steps);
             err!(format!("Invalid TOTP code! Server time: {} IP: {}", current_time.format("%F %T UTC"), ip.ip));
         }
     }
