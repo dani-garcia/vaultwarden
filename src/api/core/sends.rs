@@ -18,6 +18,8 @@ const SEND_INACCESSIBLE_MSG: &str = "Send does not exist or is no longer availab
 
 pub fn routes() -> Vec<rocket::Route> {
     routes![
+        get_sends,
+        get_send,
         post_send,
         post_send_file,
         post_access,
@@ -128,6 +130,32 @@ fn create_send(data: SendData, user_uuid: String) -> ApiResult<Send> {
     Ok(send)
 }
 
+#[get("/sends")]
+fn get_sends(headers: Headers, conn: DbConn) -> Json<Value> {
+    let sends = Send::find_by_user(&headers.user.uuid, &conn);
+    let sends_json: Vec<Value> = sends.iter().map(|s| s.to_json()).collect();
+
+    Json(json!({
+      "Data": sends_json,
+      "Object": "list",
+      "ContinuationToken": null
+    }))
+}
+
+#[get("/sends/<uuid>")]
+fn get_send(uuid: String, headers: Headers, conn: DbConn) -> JsonResult {
+    let send = match Send::find_by_uuid(&uuid, &conn) {
+        Some(send) => send,
+        None => err!("Send not found"),
+    };
+
+    if send.user_uuid.as_ref() != Some(&headers.user.uuid) {
+        err!("Send is not owned by user")
+    }
+
+    Ok(Json(send.to_json()))
+}
+
 #[post("/sends", data = "<data>")]
 fn post_send(data: JsonUpcase<SendData>, headers: Headers, conn: DbConn, nt: Notify) -> JsonResult {
     enforce_disable_send_policy(&headers, &conn)?;
@@ -139,9 +167,9 @@ fn post_send(data: JsonUpcase<SendData>, headers: Headers, conn: DbConn, nt: Not
         err!("File sends should use /api/sends/file")
     }
 
-    let mut send = create_send(data, headers.user.uuid.clone())?;
+    let mut send = create_send(data, headers.user.uuid)?;
     send.save(&conn)?;
-    nt.send_user_update(UpdateType::SyncSendCreate, &headers.user);
+    nt.send_send_update(UpdateType::SyncSendCreate, &send, &send.update_users_revision(&conn));
 
     Ok(Json(send.to_json()))
 }
@@ -182,7 +210,7 @@ fn post_send_file(data: Data, content_type: &ContentType, headers: Headers, conn
     };
 
     // Create the Send
-    let mut send = create_send(data.data, headers.user.uuid.clone())?;
+    let mut send = create_send(data.data, headers.user.uuid)?;
     let file_id = crate::crypto::generate_send_id();
 
     if send.atype != SendType::File as i32 {
@@ -225,7 +253,7 @@ fn post_send_file(data: Data, content_type: &ContentType, headers: Headers, conn
 
     // Save the changes in the database
     send.save(&conn)?;
-    nt.send_user_update(UpdateType::SyncSendCreate, &headers.user);
+    nt.send_send_update(UpdateType::SyncSendUpdate, &send, &send.update_users_revision(&conn));
 
     Ok(Json(send.to_json()))
 }
@@ -397,7 +425,7 @@ fn put_send(id: String, data: JsonUpcase<SendData>, headers: Headers, conn: DbCo
     }
 
     send.save(&conn)?;
-    nt.send_user_update(UpdateType::SyncSendUpdate, &headers.user);
+    nt.send_send_update(UpdateType::SyncSendUpdate, &send, &send.update_users_revision(&conn));
 
     Ok(Json(send.to_json()))
 }
@@ -414,7 +442,7 @@ fn delete_send(id: String, headers: Headers, conn: DbConn, nt: Notify) -> EmptyR
     }
 
     send.delete(&conn)?;
-    nt.send_user_update(UpdateType::SyncSendDelete, &headers.user);
+    nt.send_send_update(UpdateType::SyncSendDelete, &send, &send.update_users_revision(&conn));
 
     Ok(())
 }
@@ -434,7 +462,7 @@ fn put_remove_password(id: String, headers: Headers, conn: DbConn, nt: Notify) -
 
     send.set_password(None);
     send.save(&conn)?;
-    nt.send_user_update(UpdateType::SyncSendUpdate, &headers.user);
+    nt.send_send_update(UpdateType::SyncSendUpdate, &send, &send.update_users_revision(&conn));
 
     Ok(Json(send.to_json()))
 }

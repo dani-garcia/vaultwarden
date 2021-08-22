@@ -232,15 +232,18 @@ impl Send {
         }
     }
 
-    pub fn update_users_revision(&self, conn: &DbConn) {
+    pub fn update_users_revision(&self, conn: &DbConn) -> Vec<String> {
+        let mut user_uuids = Vec::new();
         match &self.user_uuid {
             Some(user_uuid) => {
                 User::update_uuid_revision(user_uuid, conn);
+                user_uuids.push(user_uuid.clone())
             }
             None => {
                 // Belongs to Organization, not implemented
             }
-        }
+        };
+        user_uuids
     }
 
     pub fn delete_all_by_user(user_uuid: &str, conn: &DbConn) -> EmptyResult {
