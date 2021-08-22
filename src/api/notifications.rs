@@ -65,7 +65,7 @@ use chashmap::CHashMap;
 use chrono::NaiveDateTime;
 use serde_json::from_str;
 
-use crate::db::models::{Cipher, Folder, User};
+use crate::db::models::{Cipher, Folder, Send, User};
 
 use rmpv::Value;
 
@@ -327,6 +327,23 @@ impl WebSocketUsers {
                 ("OrganizationId".into(), org_uuid),
                 ("CollectionIds".into(), Value::Nil),
                 ("RevisionDate".into(), serialize_date(cipher.updated_at)),
+            ],
+            ut,
+        );
+
+        for uuid in user_uuids {
+            self.send_update(uuid, &data).ok();
+        }
+    }
+
+    pub fn send_send_update(&self, ut: UpdateType, send: &Send, user_uuids: &[String]) {
+        let user_uuid = convert_option(send.user_uuid.clone());
+
+        let data = create_update(
+            vec![
+                ("Id".into(), send.uuid.clone().into()),
+                ("UserId".into(), user_uuid),
+                ("RevisionDate".into(), serialize_date(send.revision_date)),
             ],
             ut,
         );
