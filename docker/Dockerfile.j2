@@ -212,6 +212,7 @@ RUN mkdir /data \
 {% if "alpine" in runtime_stage_base_image %}
     && apk add --no-cache \
         openssl \
+        tzdata \
         curl \
         dumb-init \
 {%   if "mysql" in features %}

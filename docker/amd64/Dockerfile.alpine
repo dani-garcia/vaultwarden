@@ -82,6 +82,7 @@ ENV SSL_CERT_DIR=/etc/ssl/certs
 RUN mkdir /data \
     && apk add --no-cache \
         openssl \
+        tzdata \
         curl \
         dumb-init \
         postgresql-libs \
