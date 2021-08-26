@@ -1,6 +1,7 @@
 use chrono::Local;
 use num_traits::FromPrimitive;
 use rocket::{
+    http::{RawStr, Status},
     request::{Form, FormItems, FromForm},
     Route,
 };
@@ -19,7 +20,7 @@ use crate::{
 };
 
 pub fn routes() -> Vec<Route> {
-    routes![login]
+    routes![login, prevalidate, authorize]
 }
 
 #[post("/connect/token", data = "<data>")]
@@ -421,7 +422,6 @@ impl<'f> FromForm<'f> for ConnectData {
                 key => warn!("Detected unexpected parameter during login: {}", key),
             }
         }
-
         Ok(form)
     }
 }
@@ -431,4 +431,59 @@ fn _check_is_some<T>(value: &Option<T>, msg: &str) -> EmptyResult {
         err!(msg)
     }
     Ok(())
+}
+
+fn invalid_json(error_message: &str, exception: bool) -> JsonResult {
+    if exception {
+        err_code!(error_message, Status::BadRequest.code)
+    }
+    err_code!(error_message, Status::InternalServerError.code)
+}
+
+#[get("/account/prevalidate?<domainHint>")]
+#[allow(non_snake_case)]
+fn prevalidate(domainHint: &RawStr, conn: DbConn) -> JsonResult {
+    let empty_result = json!({});
+
+    // TODO as_str shouldn't be used here
+    let organization = Organization::find_by_identifier(domainHint.as_str(), &conn);
+    match organization {
+        Some(organization) => {
+            if !organization.use_sso {
+                return invalid_json("SSO Not allowed for organization", false);
+            }
+        },
+        None => {
+            return invalid_json("Organization not found by identifier", false);
+        },
+    }
+
+    if domainHint == "" {
+        return invalid_json("No Organization Identifier Provided", false);
+    }
+
+    Ok(Json(empty_result))
+}
+
+
+#[get("/connect/authorize?<domain_hint>")]
+fn authorize(
+    domain_hint: &RawStr,
+    conn: DbConn,
+) {
+    let empty_result = json!({});
+    let organization = Organization::find_by_identifier(domain_hint.as_str(), &conn);
+    match organization {
+        Some(organization) => {
+            println!("found org. authority: {}", organization.authority);
+            let redirect = Some(organization.callback_path.to_string());
+            let issuer = reqwest::Url::parse(&organization.authority).unwrap();
+            println!("got issuer: {}", issuer);
+            // return Ok(Json(empty_result));
+        },
+        None => {
+            println!("error");
+            // return invalid_json("No Organization found", false);
+        }
+    }
 }

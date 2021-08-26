@@ -100,8 +100,17 @@ table! {
         uuid -> Text,
         name -> Text,
         billing_email -> Text,
+        identifier -> Text,
         private_key -> Nullable<Text>,
         public_key -> Nullable<Text>,
+        use_sso -> Bool,
+        callback_path -> Text,
+        signed_out_callback_path -> Text,
+        authority -> Text,
+        client_id -> Text,
+        client_secret -> Text,
+        metadata_address -> Text,
+        oidc_redirect_behavior -> Text,
     }
 }
 

@@ -24,6 +24,7 @@ pub fn routes() -> Vec<Route> {
         put_collection_users,
         put_organization,
         post_organization,
+        put_organization_sso,
         post_organization_collections,
         delete_organization_collection_user,
         post_organization_collection_delete_user,
@@ -72,6 +73,20 @@ struct OrgData {
 struct OrganizationUpdateData {
     BillingEmail: String,
     Name: String,
+    Identifier: Option<String>,
+}
+
+#[derive(Deserialize, Debug)]
+#[allow(non_snake_case)]
+struct OrganizationSsoUpdateData {
+    UseSso: bool,
+    CallbackPath: String,
+    SignedOutCallbackPath: String,
+    Authority: String,
+    ClientId: String,
+    ClientSecret: String,
+    MetadataAddress: String,
+    OidcRedirectBehavior: String,
 }
 
 #[derive(Deserialize, Debug)]
@@ -200,6 +215,37 @@ fn post_organization(
 
     org.name = data.Name;
     org.billing_email = data.BillingEmail;
+    org.identifier = match data.Identifier {
+        Some(identifier) => identifier,
+        None => String::from(""),
+    };
+
+    org.save(&conn)?;
+    Ok(Json(org.to_json()))
+}
+
+#[put("/organizations/<org_id>/sso", data = "<data>")]
+fn put_organization_sso(
+    org_id: String,
+    _headers: OwnerHeaders,
+    data: JsonUpcase<OrganizationSsoUpdateData>,
+    conn: DbConn,
+) -> JsonResult {
+    let data: OrganizationSsoUpdateData = data.into_inner().data;
+
+    let mut org = match Organization::find_by_uuid(&org_id, &conn) {
+        Some(organization) => organization,
+        None => err!("Can't find organization details"),
+    };
+
+    org.use_sso = data.UseSso;
+    org.callback_path = data.CallbackPath;
+    org.signed_out_callback_path = data.SignedOutCallbackPath;
+    org.authority = data.Authority;
+    org.client_id = data.ClientId;
+    org.client_secret = data.ClientSecret;
+    org.metadata_address = data.MetadataAddress;
+    org.oidc_redirect_behavior = data.OidcRedirectBehavior;
 
     org.save(&conn)?;
     Ok(Json(org.to_json()))

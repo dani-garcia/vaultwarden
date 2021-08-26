@@ -12,8 +12,17 @@ db_object! {
         pub uuid: String,
         pub name: String,
         pub billing_email: String,
+        pub identifier: String,
         pub private_key: Option<String>,
         pub public_key: Option<String>,
+        pub use_sso: bool,
+        pub callback_path: String,
+        pub signed_out_callback_path: String,
+        pub authority: String,
+        pub client_id: String,
+        pub client_secret: String,
+        pub metadata_address: String,
+        pub oidc_redirect_behavior: String,
     }
 
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -131,13 +140,22 @@ impl Organization {
             billing_email,
             private_key,
             public_key,
+            identifier: String::from(""),
+            use_sso: false,
+            callback_path: String::from("http://localhost/oidc-signin"),
+            signed_out_callback_path: String::from("http://localhost/sso/oidc-signin"),
+            authority: String::from(""),
+            client_id: String::from(""),
+            client_secret: String::from(""),
+            metadata_address: String::from(""),
+            oidc_redirect_behavior: String::from(""),
         }
     }
 
     pub fn to_json(&self) -> Value {
         json!({
             "Id": self.uuid,
-            "Identifier": null, // not supported by us
+            "Identifier": self.identifier,
             "Name": self.name,
             "Seats": 10, // The value doesn't matter, we don't check server-side
             "MaxCollections": 10, // The value doesn't matter, we don't check server-side
@@ -148,7 +166,7 @@ impl Organization {
             "UseGroups": false, // not supported by us
             "UseTotp": true,
             "UsePolicies": true,
-            "UseSso": false, // We do not support SSO
+            "UseSso": self.use_sso,
             "SelfHost": true,
             "UseApi": false, // not supported by us
             "HasPublicAndPrivateKeys": self.private_key.is_some() && self.public_key.is_some(),
@@ -166,6 +184,13 @@ impl Organization {
             "PlanType": 5, // TeamsAnnually plan
             "UsersGetPremium": true,
             "Object": "organization",
+            "CallbackPath": self.callback_path,
+            "SignedOutCallbackPath": self.signed_out_callback_path,
+            "Authority": self.authority,
+            "ClientId": self.client_id,
+            "ClientSecret": self.client_secret,
+            "MetadataAddress": self.metadata_address,
+            "OidcRedirectBehavior": self.oidc_redirect_behavior,
         })
     }
 }
@@ -254,6 +279,15 @@ impl Organization {
         }}
     }
 
+    pub fn find_by_identifier(identifier: &str, conn: &DbConn) -> Option<Self> {
+        db_run! { conn: {
+            organizations::table
+                .filter(organizations::identifier.eq(identifier))
+                .first::<OrganizationDb>(conn)
+                .ok().from_db()
+        }}
+    }
+
     pub fn get_all(conn: &DbConn) -> Vec<Self> {
         db_run! { conn: {
             organizations::table.load::<OrganizationDb>(conn).expect("Error loading organizations").from_db()
@@ -283,8 +317,8 @@ impl UserOrganization {
             "SelfHost": true,
             "HasPublicAndPrivateKeys": org.private_key.is_some() && org.public_key.is_some(),
             "ResetPasswordEnrolled": false, // not supported by us
-            "SsoBound": false, // We do not support SSO
-            "UseSso": false, // We do not support SSO
+            "SsoBound": true,
+            "UseSso": true,
             // TODO: Add support for Business Portal
             // Upstream is moving Policies and SSO management outside of the web-vault to /portal
             // For now they still have that code also in the web-vault, but they will remove it at some point.
