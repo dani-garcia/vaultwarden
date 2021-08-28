@@ -1,0 +1,105 @@
+name: Release
+
+on:
+  push:
+    paths:
+      - ".github/workflows/release.yml"
+      - "src/**"
+      - "migrations/**"
+      - "hooks/**"
+      - "docker/**"
+      - "Cargo.*"
+      - "build.rs"
+      - "diesel.toml"
+      - "rust-toolchain"
+
+    branches: # Only on paths above
+      - main
+
+    tags: # Always, regardless of paths above
+      - '*'
+
+jobs:
+  # https://github.com/marketplace/actions/skip-duplicate-actions
+  # Some checks to determine if we need to continue with building a new docker.
+  # We will skip this check if we are creating a tag, because that has the same hash as a previous run already.
+  skip_check:
+    runs-on: ubuntu-latest
+    if: ${{ github.repository == 'dani-garcia/vaultwarden' }}
+    outputs:
+      should_skip: ${{ steps.skip_check.outputs.should_skip }}
+    steps:
+      - name: Skip Duplicates Actions
+        id: skip_check
+        uses: fkirc/skip-duplicate-actions@master
+        with:
+          cancel_others: 'true'
+        # Only run this when not creating a tag
+        if: ${{ startsWith(github.ref, 'refs/heads/') }}
+
+  docker-build:
+    runs-on: ubuntu-latest
+    needs: skip_check
+    if: ${{ needs.skip_check.outputs.should_skip != 'true' }}
+    env:
+      # DOCKER_BUILDKIT: 1 # Disabled for now, but we should look at this because it will speedup building!
+      # DOCKER_REPO/secrets.DOCKERHUB_REPO needs to be 'index.docker.io/<user>/<repo>'
+      DOCKER_REPO: ${{ secrets.DOCKERHUB_REPO }}
+      SOURCE_COMMIT: ${{ github.sha }}
+      SOURCE_REPOSITORY_URL: "https://github.com/${{ github.repository }}"
+    steps:
+      # Checkout the repo
+      - name: Checkout
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+
+      # Login to Docker Hub
+      - name: Login to Docker Hub
+        uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # Determine Docker Tag
+      - name: Init Variables
+        id: vars
+        shell: bash
+        run: |
+          # Check which main tag we are going to build determined by github.ref
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            echo "set-output name=DOCKER_TAG::${GITHUB_REF#refs/*/}"
+            echo "::set-output name=DOCKER_TAG::${GITHUB_REF#refs/*/}"
+          elif [[ "${{ github.ref }}" == refs/heads/* ]]; then
+            echo "set-output name=DOCKER_TAG::testing"
+            echo "::set-output name=DOCKER_TAG::testing"
+          fi
+      # End Determine Docker Tag
+
+      - name: Build Debian based images
+        shell: bash
+        env:
+          DOCKER_TAG: ${{steps.vars.outputs.DOCKER_TAG}}
+        run: |
+          ./hooks/build
+
+      - name: Push Debian based images
+        shell: bash
+        env:
+          DOCKER_TAG: ${{steps.vars.outputs.DOCKER_TAG}}
+        run: |
+          ./hooks/push
+
+      - name: Build Alpine based images
+        shell: bash
+        env:
+          DOCKER_TAG: "${{steps.vars.outputs.DOCKER_TAG}}-alpine"
+        run: |
+          ./hooks/build
+
+      - name: Push Alpine based images
+        shell: bash
+        env:
+          DOCKER_TAG: "${{steps.vars.outputs.DOCKER_TAG}}-alpine"
+        run: |
+          ./hooks/push
