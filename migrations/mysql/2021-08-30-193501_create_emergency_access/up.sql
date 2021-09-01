@@ -1,8 +1,8 @@
 CREATE TABLE emergency_access (
-  uuid                      TEXT     NOT NULL PRIMARY KEY,
-  grantor_uuid              TEXT     REFERENCES users (uuid),
-  grantee_uuid              TEXT     REFERENCES users (uuid),
-  email                     TEXT,
+  uuid                      CHAR(36)     NOT NULL PRIMARY KEY,
+  grantor_uuid              CHAR(36)     REFERENCES users (uuid),
+  grantee_uuid              CHAR(36)     REFERENCES users (uuid),
+  email                     VARCHAR(255),
   key_encrypted             TEXT,
   atype                     INTEGER  NOT NULL,
   status                    INTEGER  NOT NULL,

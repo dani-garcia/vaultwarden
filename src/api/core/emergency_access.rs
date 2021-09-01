@@ -268,13 +268,9 @@ fn resend_invite(emer_id: String, headers: Headers, conn: DbConn) -> EmptyResult
         None => err!("Email not valid."),
     };
 
-    if !CONFIG.is_email_domain_allowed(&email) {
-        err!("Email domain not eligible for invitations.")
-    }
-
     let grantee_user = match User::find_by_mail(&email, &conn) {
-        None => err!("Grantee user not found."),
         Some(user) => user,
+        None => err!("Grantee user not found."),
     };
 
     let grantor_user = headers.user;
@@ -346,10 +342,6 @@ fn accept_invite(emer_id: String, data: JsonUpcase<AcceptData>, conn: DbConn) ->
         }
 
         if CONFIG.mail_enabled() {
-            if !CONFIG.is_email_domain_allowed(&grantor_user.email) {
-                err!("Email domain not valid.")
-            }
-
             mail::send_emergency_access_invite_accepted(&grantor_user.email, &grantee_user.email)?;
         }
 
@@ -428,10 +420,6 @@ fn confirm_emergency_access(
         emergency_access.save(&conn)?;
 
         if CONFIG.mail_enabled() {
-            if !CONFIG.is_email_domain_allowed(&grantee_user.email) {
-                err!("Email domain not valid.")
-            }
-
             mail::send_emergency_access_invite_confirmed(&grantee_user.email, &grantor_user.name)?;
         }
         Ok(Json(emergency_access.to_json()))
@@ -473,10 +461,6 @@ fn initiate_emergency_access(emer_id: String, headers: Headers, conn: DbConn) ->
     emergency_access.save(&conn)?;
 
     if CONFIG.mail_enabled() {
-        if !CONFIG.is_email_domain_allowed(&grantor_user.email) {
-            err!("Email domain not valid.")
-        }
-
         mail::send_emergency_access_recovery_initiated(
             &grantor_user.email,
             &initiating_user.name,
@@ -518,10 +502,6 @@ fn approve_emergency_access(emer_id: String, headers: Headers, conn: DbConn) -> 
         emergency_access.save(&conn)?;
 
         if CONFIG.mail_enabled() {
-            if !CONFIG.is_email_domain_allowed(&grantee_user.email) {
-                err!("Email domain not valid.")
-            }
-
             mail::send_emergency_access_recovery_approved(&grantee_user.email, &grantor_user.name)?;
         }
         Ok(Json(emergency_access.to_json()))
@@ -563,10 +543,6 @@ fn reject_emergency_access(emer_id: String, headers: Headers, conn: DbConn) -> J
         emergency_access.save(&conn)?;
 
         if CONFIG.mail_enabled() {
-            if !CONFIG.is_email_domain_allowed(&grantee_user.email) {
-                err!("Email domain not valid.")
-            }
-
             mail::send_emergency_access_recovery_rejected(&grantee_user.email, &grantor_user.name)?;
         }
         Ok(Json(emergency_access.to_json()))
@@ -764,20 +740,12 @@ pub fn emergency_request_timeout_job(pool: DbPool) {
                         User::find_by_uuid(&emer.grantee_uuid.clone().expect("Grantee user invalid."), &conn)
                             .expect("Grantee user not found.");
 
-                    if !CONFIG.is_email_domain_allowed(&grantor_user.email) {
-                        error!("Email domain not valid.")
-                    }
-
                     mail::send_emergency_access_recovery_timed_out(
                         &grantor_user.email,
                         &grantee_user.name.clone(),
                         emer.get_atype_as_str(),
                     )
                     .expect("Error on sending email");
-
-                    if !CONFIG.is_email_domain_allowed(&grantee_user.email) {
-                        error!("Email not valid.")
-                    }
 
                     mail::send_emergency_access_recovery_approved(&grantee_user.email, &grantor_user.name.clone())
                         .expect("Error on sending email");
@@ -815,10 +783,6 @@ pub fn emergency_notification_reminder_job(pool: DbPool) {
                 if CONFIG.mail_enabled() {
                     // get grantor user to send Accepted email
                     let grantor_user = User::find_by_uuid(&emer.grantor_uuid, &conn).expect("Grantor user not found.");
-
-                    if !CONFIG.is_email_domain_allowed(&grantor_user.email) {
-                        error!("Email not valid.")
-                    }
 
                     // get grantee user to send Accepted email
                     let grantee_user =

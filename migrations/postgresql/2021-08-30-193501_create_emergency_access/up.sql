@@ -7,8 +7,8 @@ CREATE TABLE emergency_access (
   atype                     INTEGER  NOT NULL,
   status                    INTEGER  NOT NULL,
   wait_time_days            INTEGER  NOT NULL,
-  recovery_initiated_at     DATETIME,
-  last_notification_at      DATETIME,
-  updated_at                DATETIME NOT NULL,
-  created_at                DATETIME NOT NULL
+  recovery_initiated_at     TIMESTAMP,
+  last_notification_at      TIMESTAMP,
+  updated_at                TIMESTAMP NOT NULL,
+  created_at                TIMESTAMP NOT NULL
 );

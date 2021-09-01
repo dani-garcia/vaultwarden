@@ -239,7 +239,7 @@ fn post_password(data: JsonUpcase<ChangePassData>, headers: Headers, conn: DbCon
 
     user.set_password(
         &data.NewMasterPasswordHash,
-        Some(vec![String::from("post_rotatekey"), String::from("get_contacts")]),
+        Some(vec![String::from("post_rotatekey"), String::from("get_contacts"), String::from("get_public_keys")]),
     );
     user.akey = data.Key;
     user.save(&conn)

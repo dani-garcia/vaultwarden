@@ -29,6 +29,8 @@ db_object! {
 
 impl EmergencyAccess {
     pub fn new(grantor_uuid: String, email: Option<String>, status: i32, atype: i32, wait_time_days: i32) -> Self {
+        let now = Utc::now().naive_utc();
+
         Self {
             uuid: crate::util::get_uuid(),
             grantor_uuid,
@@ -38,8 +40,8 @@ impl EmergencyAccess {
             atype,
             wait_time_days,
             recovery_initiated_at: None,
-            created_at: Utc::now().naive_utc(),
-            updated_at: Utc::now().naive_utc(),
+            created_at: now,
+            updated_at: now,
             key_encrypted: None,
             last_notification_at: None,
         }
