@@ -51,7 +51,7 @@ fn login(data: Form<ConnectData>, conn: DbConn, ip: ClientIp) -> JsonResult {
             _check_is_some(&data.org_identifier, "org_identifier cannot be blank")?;
             _check_is_some(&data.device_identifier, "device identifier cannot be blank")?;
 
-            _authorization_login(data, conn)
+            _authorization_login(data, conn, &ip)
         }
         t => err!("Invalid type", t),
     }
@@ -87,21 +87,46 @@ fn _refresh_login(data: ConnectData, conn: DbConn) -> JsonResult {
     })))
 }
 
-fn _authorization_login(data: ConnectData, conn: DbConn) -> JsonResult {
-    let (access_token, refresh_token) = get_auth_code_access_token(data.code.unwrap(), data.org_identifier.unwrap(), &conn);
-    // let expiry = jsonwebtoken::decode_header(access_token.as_str()).unwrap();
-    let time_now = std::time::SystemTime::now().duration_since(std::time::SystemTime::UNIX_EPOCH).unwrap().as_secs();
+#[derive(Debug, Serialize, Deserialize)]
+struct TokenPayload {
+    exp: i64,
+    email: String,
+}
 
-    let mut device = Device::find_by_uuid(&data.device_identifier.unwrap(), &conn).map_res("device not found")?;
+fn _authorization_login(data: ConnectData, conn: DbConn, ip: &ClientIp) -> JsonResult {
+    let org_identifier = data.org_identifier.as_ref().unwrap();
+    let code = data.code.as_ref().unwrap();
+    let (access_token, refresh_token) = get_auth_code_access_token(&code, &org_identifier, &conn);
+    let token = jsonwebtoken::dangerous_insecure_decode::<TokenPayload>(access_token.as_str()).unwrap().claims;
+    let expiry = token.exp;
+    let user_email = token.email;
+    let now = Local::now();
 
     // COMMON
-    let user = User::find_by_uuid(&device.user_uuid, &conn).unwrap();
+    let user = User::find_by_mail(&user_email, &conn).unwrap();
 
-    Ok(Json(json!({
+    let (mut device, new_device) = get_device(&data, &conn, &user);
+
+    let twofactor_token = twofactor_auth(&user.uuid, &data, &mut device, ip, &conn)?;
+
+    if CONFIG.mail_enabled() && new_device {
+        if let Err(e) = mail::send_new_device_logged_in(&user.email, &ip.ip.to_string(), &now, &device.name) {
+            error!("Error sending new device email: {:#?}", e);
+
+            if CONFIG.require_device_email() {
+                err!("Could not send login notification email. Please contact your administrator.")
+            }
+        }
+    }
+
+    device.refresh_token = refresh_token.clone();
+    device.save(&conn)?;
+
+    let mut result = json!({
         "access_token": access_token,
-        "expires_in": 1000000,
+        "expires_in": expiry - now.naive_utc().timestamp(),
         "token_type": "Bearer",
-        "refresh_token": device.refresh_token,
+        "refresh_token": refresh_token,
         "Key": user.akey,
         "PrivateKey": user.private_key,
 
@@ -110,7 +135,13 @@ fn _authorization_login(data: ConnectData, conn: DbConn) -> JsonResult {
         "ResetMasterPassword": false, // TODO: according to official server seems something like: user.password_hash.is_empty(), but would need testing
         "scope": "api offline_access",
         "unofficialServer": true,
-    })))
+    });
+
+    if let Some(token) = twofactor_token {
+        result["TwoFactorToken"] = Value::String(token);
+    }
+
+    Ok(Json(result))
 }
 
 fn _password_login(data: ConnectData, conn: DbConn, ip: &ClientIp) -> JsonResult {
@@ -136,6 +167,15 @@ fn _password_login(data: ConnectData, conn: DbConn, ip: &ClientIp) -> JsonResult
     // Check if the user is disabled
     if !user.enabled {
         err!("This user has been disabled", format!("IP: {}. Username: {}.", ip.ip, username))
+    }
+
+    // Check if org policy prevents password login
+    let user_orgs = UserOrganization::find_by_user_and_policy(&user.uuid, OrgPolicyType::RequireSso, &conn);
+    if user_orgs.len() == 1 && user_orgs[0].atype >= 2 {
+        // if requires SSO is active, user is in exactly one org by policy rules
+        // policy only applies to "non-owner/non-admin" members
+
+        err!("Organization policy requires SSO sign in");
     }
 
     let now = Local::now();
@@ -532,10 +572,8 @@ fn get_client_from_identifier (identifier: &str, conn: &DbConn) -> CoreClient {
 
     match organization {
         Some(organization) => {
-            println!("found org. authority: {}", organization.authority);
             let redirect = organization.callback_path.to_string();
             let issuer = reqwest::Url::parse(&organization.authority).unwrap();
-            println!("got issuer: {}", issuer);
             let client_id = ClientId::new(organization.client_id);
             let client_secret = ClientSecret::new(organization.client_secret);
             let issuer_url = IssuerUrl::new(organization.authority).expect("invalid issuer URL");
@@ -564,10 +602,9 @@ fn authorize(
     state: &RawStr,
     conn: DbConn,
 ) -> Redirect {
-    let empty_result = json!({});
     let client = get_client_from_identifier(domain_hint.as_str(), &conn);
 
-    let (mut authorize_url, csrf_state, _nonce) = client
+    let (mut authorize_url, _csrf_state, _nonce) = client
         .authorize_url(
             AuthenticationFlow::<CoreResponseType>::AuthorizationCode,
             CsrfToken::new_random,
@@ -590,22 +627,17 @@ fn authorize(
     let full_query = Vec::from_iter(new_pairs).join("&");
     authorize_url.set_query(Some(full_query.as_str()));
 
-    // return Redirect::to(rocket::uri!(&authorize_url.to_string()));
     return Redirect::to(authorize_url.to_string());
-    // return Ok(Json(empty_result));
 }
 
 fn get_auth_code_access_token (
-    code: String,
-    org_identifier: String,
+    code: &str,
+    org_identifier: &str,
     conn: &DbConn,
 ) -> (String, String) {
-    let oidc_code = AuthorizationCode::new(code);
+    let oidc_code = AuthorizationCode::new(String::from(code));
 
-    println!("code: {}", oidc_code.secret());
-    println!("identifier: {}", org_identifier);
-
-    let client = get_client_from_identifier(&org_identifier, conn);
+    let client = get_client_from_identifier(org_identifier, conn);
 
     let token_response = client
         .exchange_code(oidc_code)
@@ -618,7 +650,6 @@ fn get_auth_code_access_token (
 
     let access_token = token_response.access_token().secret().to_string();
     let refresh_token = token_response.refresh_token().unwrap().secret().to_string();
-    println!("access token: {}, refresh token: {}", access_token, refresh_token);
 
     (access_token, refresh_token)
 }
