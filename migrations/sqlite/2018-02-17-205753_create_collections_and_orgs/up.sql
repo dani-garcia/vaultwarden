@@ -14,9 +14,7 @@ CREATE TABLE organizations (
   signed_out_callback_path TEXT NOT NULL,
   authority                TEXT NOT NULL,
   client_id                TEXT NOT NULL,
-  client_secret            TEXT NOT NULL,
-  metadata_address         TEXT NOT NULL,
-  oidc_redirect_behavior   TEXT NOT NULL
+  client_secret            TEXT NOT NULL
 );
 
 

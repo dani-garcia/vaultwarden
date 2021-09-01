@@ -85,8 +85,6 @@ struct OrganizationSsoUpdateData {
     Authority: String,
     ClientId: String,
     ClientSecret: String,
-    MetadataAddress: String,
-    OidcRedirectBehavior: String,
 }
 
 #[derive(Deserialize, Debug)]
@@ -244,8 +242,6 @@ fn put_organization_sso(
     org.authority = data.Authority;
     org.client_id = data.ClientId;
     org.client_secret = data.ClientSecret;
-    org.metadata_address = data.MetadataAddress;
-    org.oidc_redirect_behavior = data.OidcRedirectBehavior;
 
     org.save(&conn)?;
     Ok(Json(org.to_json()))

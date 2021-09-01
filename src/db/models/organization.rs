@@ -21,8 +21,6 @@ db_object! {
         pub authority: String,
         pub client_id: String,
         pub client_secret: String,
-        pub metadata_address: String,
-        pub oidc_redirect_behavior: String,
     }
 
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -147,8 +145,6 @@ impl Organization {
             authority: String::from(""),
             client_id: String::from(""),
             client_secret: String::from(""),
-            metadata_address: String::from(""),
-            oidc_redirect_behavior: String::from(""),
         }
     }
 
@@ -189,8 +185,6 @@ impl Organization {
             "Authority": self.authority,
             "ClientId": self.client_id,
             "ClientSecret": self.client_secret,
-            "MetadataAddress": self.metadata_address,
-            "OidcRedirectBehavior": self.oidc_redirect_behavior,
         })
     }
 }

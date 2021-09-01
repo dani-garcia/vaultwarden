@@ -573,7 +573,6 @@ fn get_client_from_identifier (identifier: &str, conn: &DbConn) -> CoreClient {
     match organization {
         Some(organization) => {
             let redirect = organization.callback_path.to_string();
-            let issuer = reqwest::Url::parse(&organization.authority).unwrap();
             let client_id = ClientId::new(organization.client_id);
             let client_secret = ClientSecret::new(organization.client_secret);
             let issuer_url = IssuerUrl::new(organization.authority).expect("invalid issuer URL");

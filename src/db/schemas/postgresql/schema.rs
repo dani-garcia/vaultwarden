@@ -109,8 +109,6 @@ table! {
         authority -> Text,
         client_id -> Text,
         client_secret -> Text,
-        metadata_address -> Text,
-        oidc_redirect_behavior -> Text,
     }
 }
 
