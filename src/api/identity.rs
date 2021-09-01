@@ -610,6 +610,8 @@ fn authorize(
     let state_decoded = &state.percent_decode().expect("Invalid state").into_owned();
     let client = get_client_from_identifier(domain_hint_decoded, &conn);
 
+    // TODO store the nonce for validation on authorization token exchange - unclear where to store
+    // this
     let (mut authorize_url, _csrf_state, _nonce) = client
         .authorize_url(
             AuthenticationFlow::<CoreResponseType>::AuthorizationCode,
@@ -621,7 +623,7 @@ fn authorize(
         .url();
 
     // it seems impossible to set the state going in dynamically (requires static lifetime string)
-    // so I change it after the fact (will it work? Let's find out)
+    // so I change it after the fact
     let old_pairs = authorize_url.query_pairs().clone();
     let new_pairs = old_pairs.map(|pair| {
         let (key, value) = pair;
