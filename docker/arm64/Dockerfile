@@ -25,7 +25,7 @@
 FROM vaultwarden/web-vault@sha256:29a4fa7bf3790fff9d908b02ac5a154913491f4bf30c95b87b06d8cf1c5516b5 as vault
 
 ########################## BUILD IMAGE  ##########################
-FROM rust:1.54 as build
+FROM rust:1.54-bullseye as build
 
 # Debian-based builds support multidb
 ARG DB=sqlite,mysql,postgresql
@@ -109,7 +109,7 @@ RUN cargo build --features ${DB} --release --target=aarch64-unknown-linux-gnu
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image
 # because we already have a binary built
-FROM balenalib/aarch64-debian:buster
+FROM balenalib/aarch64-debian:bullseye
 
 ENV ROCKET_ENV "staging"
 ENV ROCKET_PORT=80
