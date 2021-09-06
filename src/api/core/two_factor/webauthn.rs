@@ -22,12 +22,14 @@ pub fn routes() -> Vec<Route> {
 
 struct WebauthnConfig {
     url: String,
+    origin: String,
     rpid: String,
 }
 
 impl WebauthnConfig {
     fn load() -> Webauthn<Self> {
         let domain = CONFIG.domain();
+        let domain_origin = CONFIG.domain_origin();
         Webauthn::new(Self {
             rpid: reqwest::Url::parse(&domain)
                 .map(|u| u.domain().map(str::to_owned))
@@ -35,6 +37,7 @@ impl WebauthnConfig {
                 .flatten()
                 .unwrap_or_default(),
             url: domain,
+            origin: domain_origin,
         })
     }
 }
@@ -45,7 +48,7 @@ impl webauthn_rs::WebauthnConfig for WebauthnConfig {
     }
 
     fn get_origin(&self) -> &str {
-        &self.url
+        &self.origin
     }
 
     fn get_relying_party_id(&self) -> &str {
