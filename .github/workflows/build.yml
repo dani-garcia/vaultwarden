@@ -2,36 +2,23 @@ name: Build
 
 on:
   push:
-    paths-ignore:
-      - "*.md"
-      - "*.txt"
-      - ".dockerignore"
-      - ".env.template"
-      - ".gitattributes"
-      - ".gitignore"
-      - "azure-pipelines.yml"
-      - "docker/**"
-      - "hooks/**"
-      - "tools/**"
-      - ".github/FUNDING.yml"
-      - ".github/ISSUE_TEMPLATE/**"
-      - ".github/security-contact.gif"
+    paths:
+      - ".github/workflows/build.yml"
+      - "src/**"
+      - "migrations/**"
+      - "Cargo.*"
+      - "build.rs"
+      - "diesel.toml"
+      - "rust-toolchain"
   pull_request:
-    # Ignore when there are only changes done too one of these paths
-    paths-ignore:
-      - "*.md"
-      - "*.txt"
-      - ".dockerignore"
-      - ".env.template"
-      - ".gitattributes"
-      - ".gitignore"
-      - "azure-pipelines.yml"
-      - "docker/**"
-      - "hooks/**"
-      - "tools/**"
-      - ".github/FUNDING.yml"
-      - ".github/ISSUE_TEMPLATE/**"
-      - ".github/security-contact.gif"
+    paths:
+      - ".github/workflows/build.yml"
+      - "src/**"
+      - "migrations/**"
+      - "Cargo.*"
+      - "build.rs"
+      - "diesel.toml"
+      - "rust-toolchain"
 
 jobs:
   build:
