@@ -540,18 +540,19 @@ fn send_invite(org_id: String, data: JsonUpcase<InviteData>, headers: AdminHeade
     }
 
     for email in data.Emails.iter() {
+        let email = email.to_lowercase();
         let mut user_org_status = if CONFIG.mail_enabled() {
             UserOrgStatus::Invited as i32
         } else {
             UserOrgStatus::Accepted as i32 // Automatically mark user as accepted if no email invites
         };
-        let user = match User::find_by_mail(email, &conn) {
+        let user = match User::find_by_mail(&email, &conn) {
             None => {
                 if !CONFIG.invitations_allowed() {
                     err!(format!("User does not exist: {}", email))
                 }
 
-                if !CONFIG.is_email_domain_allowed(email) {
+                if !CONFIG.is_email_domain_allowed(&email) {
                     err!("Email domain not eligible for invitations")
                 }
 
@@ -601,7 +602,7 @@ fn send_invite(org_id: String, data: JsonUpcase<InviteData>, headers: AdminHeade
             };
 
             mail::send_invite(
-                email,
+                &email,
                 &user.uuid,
                 Some(org_id.clone()),
                 Some(new_user.uuid),

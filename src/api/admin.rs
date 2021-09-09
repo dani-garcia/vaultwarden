@@ -269,7 +269,7 @@ fn invite_user(data: Json<InviteData>, _token: AdminToken, conn: DbConn) -> Json
         if CONFIG.mail_enabled() {
             mail::send_invite(&user.email, &user.uuid, None, None, &CONFIG.invitation_org_name(), None)?;
         } else {
-            let invitation = Invitation::new(data.email);
+            let invitation = Invitation::new(user.email.clone());
             invitation.save(&conn)?;
         }
 
