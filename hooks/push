@@ -10,7 +10,7 @@ join() { local IFS="$1"; shift; echo "$*"; }
 
 set -ex
 
-echo ">>> Starting local Docker registry..."
+echo ">>> Starting local Docker registry when needed..."
 
 # Docker Buildx's `docker-container` driver is needed for multi-platform
 # builds, but it can't access existing images on the Docker host (like the
@@ -28,7 +28,10 @@ echo ">>> Starting local Docker registry..."
 # First check if there already is a registry container running, else skip it.
 # This will only happen either locally or running it via Github Actions
 #
-docker start registry > /dev/null 2>&1 || docker run -d --name registry --network host registry:2 # defaults to port 5000
+if ! timeout 5 bash -c 'cat < /dev/null > /dev/tcp/localhost/5000'; then
+    # defaults to port 5000
+    docker run -d --name registry --network host registry:2
+fi
 
 # Docker Hub sets a `DOCKER_REPO` env var with the format `index.docker.io/user/repo`.
 # Strip the registry portion to construct a local repo path for use in `Dockerfile.buildx`.

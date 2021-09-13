@@ -34,12 +34,17 @@ for label in "${LABELS[@]}"; do
     LABEL_ARGS+=(--label "${label}")
 done
 
+# Check if DOCKER_BUILDKIT is set, if so, use the Dockerfile.buildx as template
+if [[ -n "${DOCKER_BUILDKIT}" ]]; then
+    buildx_suffix=.buildx
+fi
+
 set -ex
 
 for arch in "${arches[@]}"; do
     docker build \
            "${LABEL_ARGS[@]}" \
            -t "${DOCKER_REPO}:${DOCKER_TAG}-${arch}" \
-           -f docker/${arch}/Dockerfile${distro_suffix} \
+           -f docker/${arch}/Dockerfile${buildx_suffix}${distro_suffix} \
            .
 done

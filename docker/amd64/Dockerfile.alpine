@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1
+
 # This file was generated using a Jinja2 template.
 # Please make your changes in `Dockerfile.j2` and then `make` the individual Dockerfiles.
 
@@ -31,12 +33,18 @@ FROM clux/muslrust:nightly-2021-08-22 as build
 ARG DB=sqlite,postgresql
 
 # Build time options to avoid dpkg warnings and help with reproducible builds.
-ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8 TZ=UTC TERM=xterm-256color
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8 \
+    TZ=UTC \
+    TERM=xterm-256color \
+    CARGO_HOME="/root/.cargo" \
+    USER="root"
 
-# Don't download rust docs
-RUN rustup set profile minimal
 
-ENV USER "root"
+# Create CARGO_HOME folder and don't download rust docs
+RUN mkdir -pv "${CARGO_HOME}" \
+    && rustup set profile minimal
+
 ENV RUSTFLAGS='-C link-arg=-s'
 
 # Creates a dummy project used to grab dependencies
