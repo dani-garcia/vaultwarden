@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1
+
 # This file was generated using a Jinja2 template.
 # Please make your changes in `Dockerfile.j2` and then `make` the individual Dockerfiles.
 
@@ -31,16 +33,25 @@ FROM rust:1.54-bullseye as build
 ARG DB=sqlite,mysql,postgresql
 
 # Build time options to avoid dpkg warnings and help with reproducible builds.
-ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8 TZ=UTC TERM=xterm-256color
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8 \
+    TZ=UTC \
+    TERM=xterm-256color \
+    CARGO_HOME="/root/.cargo" \
+    USER="root"
 
-# Don't download rust docs
-RUN rustup set profile minimal
+
+# Create CARGO_HOME folder and don't download rust docs
+RUN mkdir -pv "${CARGO_HOME}" \
+    && rustup set profile minimal
 
 # Install DB packages
-RUN apt-get update && apt-get install -y \
-    --no-install-recommends \
-    libmariadb-dev \
-    libpq-dev \
+RUN apt-get update \
+    && apt-get install -y \
+        --no-install-recommends \
+        libmariadb-dev \
+        libpq-dev \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 # Creates a dummy project used to grab dependencies
@@ -90,6 +101,7 @@ RUN mkdir /data \
     dumb-init \
     libmariadb-dev-compat \
     libpq5 \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 
