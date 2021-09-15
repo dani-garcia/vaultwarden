@@ -121,6 +121,20 @@ index ac7ef04..5b1b774 100644
      logInApiKey: (clientId: string, clientSecret: string) => Promise<AuthResult>;
      logInTwoFactor: (twoFactorProvider: TwoFactorProviderType, twoFactorToken: string,
          remember?: boolean) => Promise<AuthResult>;
+diff --git a/jslib/common/src/models/request/organizationSsoUpdateRequest.ts b/jslib/common/src/models/request/organizationSsoUpdateRequest.ts
+new file mode 100644
+index 0000000..7075aec
+--- /dev/null
++++ b/jslib/common/src/models/request/organizationSsoUpdateRequest.ts
+@@ -0,0 +1,8 @@
++export class OrganizationSsoUpdateRequest {
++    useSso: boolean;
++    callbackPath: string;
++    signedOutCallbackPath: string;
++    authority: string;
++    clientId: string;
++    clientSecret: string;
++}
 diff --git a/jslib/common/src/models/request/tokenRequest.ts b/jslib/common/src/models/request/tokenRequest.ts
 index 7578012..964364f 100644
 --- a/jslib/common/src/models/request/tokenRequest.ts
@@ -184,6 +198,82 @@ index 21d8d43..896b7a6 100644
 +        this.clientSecret = this.getResponseProperty('ClientSecret');
      }
  }
+diff --git a/jslib/common/src/models/response/organizationSsoResponse.ts b/jslib/common/src/models/response/organizationSsoResponse.ts
+new file mode 100644
+index 0000000..896b7a6
+--- /dev/null
++++ b/jslib/common/src/models/response/organizationSsoResponse.ts
+@@ -0,0 +1,70 @@
++import { BaseResponse } from './baseResponse';
++import { PlanResponse } from './planResponse';
++
++import { PlanType } from '../../enums/planType';
++
++export class OrganizationResponse extends BaseResponse {
++    id: string;
++    identifier: string;
++    name: string;
++    businessName: string;
++    businessAddress1: string;
++    businessAddress2: string;
++    businessAddress3: string;
++    businessCountry: string;
++    businessTaxNumber: string;
++    billingEmail: string;
++    plan: PlanResponse;
++    planType: PlanType;
++    seats: number;
++    maxCollections: number;
++    maxStorageGb: number;
++    useGroups: boolean;
++    useDirectory: boolean;
++    useEvents: boolean;
++    useTotp: boolean;
++    use2fa: boolean;
++    useApi: boolean;
++    useResetPassword: boolean;
++    hasPublicAndPrivateKeys: boolean;
++    useSso: boolean;
++    callbackPath: string;
++    signedOutCallbackPath: string;
++    authority: string;
++    clientId: string;
++    clientSecret: string;
++
++    constructor(response: any) {
++        super(response);
++        this.id = this.getResponseProperty('Id');
++        this.identifier = this.getResponseProperty('Identifier');
++        this.name = this.getResponseProperty('Name');
++        this.businessName = this.getResponseProperty('BusinessName');
++        this.businessAddress1 = this.getResponseProperty('BusinessAddress1');
++        this.businessAddress2 = this.getResponseProperty('BusinessAddress2');
++        this.businessAddress3 = this.getResponseProperty('BusinessAddress3');
++        this.businessCountry = this.getResponseProperty('BusinessCountry');
++        this.businessTaxNumber = this.getResponseProperty('BusinessTaxNumber');
++        this.billingEmail = this.getResponseProperty('BillingEmail');
++        const plan = this.getResponseProperty('Plan');
++        this.plan = plan == null ? null : new PlanResponse(plan);
++        this.planType = this.getResponseProperty('PlanType');
++        this.seats = this.getResponseProperty('Seats');
++        this.maxCollections = this.getResponseProperty('MaxCollections');
++        this.maxStorageGb = this.getResponseProperty('MaxStorageGb');
++        this.useGroups = this.getResponseProperty('UseGroups');
++        this.useDirectory = this.getResponseProperty('UseDirectory');
++        this.useEvents = this.getResponseProperty('UseEvents');
++        this.useTotp = this.getResponseProperty('UseTotp');
++        this.use2fa = this.getResponseProperty('Use2fa');
++        this.useApi = this.getResponseProperty('UseApi');
++        this.useResetPassword = this.getResponseProperty('UseResetPassword');
++        this.hasPublicAndPrivateKeys = this.getResponseProperty('HasPublicAndPrivateKeys');
++        this.useSso = this.getResponseProperty('UseSso');
++        this.callbackPath = this.getResponseProperty('CallbackPath');
++        this.signedOutCallbackPath = this.getResponseProperty('SignedOutCallbackPath');
++        this.authority = this.getResponseProperty('Authority');
++        this.clientId = this.getResponseProperty('ClientId');
++        this.clientSecret = this.getResponseProperty('ClientSecret');
++    }
++}
 diff --git a/jslib/common/src/services/api.service.ts b/jslib/common/src/services/api.service.ts
 index 51c1c14..1a5b088 100644
 --- a/jslib/common/src/services/api.service.ts
@@ -387,6 +477,140 @@ index 2dac5ac1..21ce9848 100644
                      <a routerLink="subscription" class="list-group-item" routerLinkActive="active">
                          {{'subscription' | i18n}}
                      </a>
+diff --git a/src/app/organizations/settings/sso.component.html b/src/app/organizations/settings/sso.component.html
+new file mode 100644
+index 00000000..41d0e89e
+--- /dev/null
++++ b/src/app/organizations/settings/sso.component.html
+@@ -0,0 +1,51 @@
++<div class="page-header">
++    <h1>{{'singleSignOn' | i18n}}</h1>
++</div>
++<div *ngIf="loading">
++    <i class="fa fa-spinner fa-spin text-muted" title="{{'loading' | i18n}}" aria-hidden="true"></i>
++    <span class="sr-only">{{'loading' | i18n}}</span>
++</div>
++<form *ngIf="org && !loading" #form (ngSubmit)="submit()" [appApiAction]="formPromise" ngNativeValidate>
++    <div class="row">
++        <div class="col-12">
++            <div class="form-group">
++                <label for="enabled">{{'enabled' | i18n}}</label>
++                <input id="enabled" class="form-control" type="checkbox" name="Enabled" [(ngModel)]="org.useSso" [disabled]="selfHosted">
++            </div>
++            <h2>OpenId Connect Configuration</h2>
++            <div class="form-group">
++                <label for="callbackPath">{{'callbackPath' | i18n}}</label>
++                <input id="callbackPath" class="form-control" type="text" name="Callback Path" [(ngModel)]="org.callbackPath"
++                    [disabled]="selfHosted">
++            </div>
++            <div class="form-group">
++                <label for="signedOutCallbackPath">{{'signedOutCallbackPath' | i18n}}</label>
++                <input id="signedOutCallbackPath" class="form-control" type="text" name="Signed Out Callback Path"
++                    [(ngModel)]="org.signedOutCallbackPath" [disabled]="selfHosted">
++            </div>
++            <div class="form-group">
++                <label for="authority">{{'authority' | i18n}}</label>
++                <input id="authority" class="form-control" type="text" name="Authority"
++                    [(ngModel)]="org.authority" [disabled]="selfHosted">
++            </div>
++            <div class="form-group">
++                <label for="clientId">{{'clientId' | i18n}}</label>
++                <input id="authority" class="form-control" type="text" name="Client ID"
++                    [(ngModel)]="org.clientId" [disabled]="selfHosted">
++            </div>
++            <div class="form-group">
++                <label for="clientSecret">{{'clientSecret' | i18n}}</label>
++                <input id="clientSecret" class="form-control" type="password" name="Client Secret"
++                    [(ngModel)]="org.clientSecret" [disabled]="selfHosted">
++            </div>
++        </div>
++    </div>
++    <button type="submit" class="btn btn-primary btn-submit" [disabled]="form.loading">
++        <i class="fa fa-spinner fa-spin" title="{{'loading' | i18n}}" aria-hidden="true"></i>
++        <span>{{'save' | i18n}}</span>
++    </button>
++</form>
++<div *ngIf="!org || loading">
++    <i class="fa fa-spinner fa-spin text-muted" title="{{'loading' | i18n}}" aria-hidden="true"></i>
++    <span class="sr-only">{{'loading' | i18n}}</span>
++</div>
+diff --git a/src/app/organizations/settings/sso.component.ts b/src/app/organizations/settings/sso.component.ts
+new file mode 100644
+index 00000000..f40a54f2
+--- /dev/null
++++ b/src/app/organizations/settings/sso.component.ts
+@@ -0,0 +1,71 @@
++import {
++    Component,
++    ComponentFactoryResolver,
++    ViewChild,
++    ViewContainerRef,
++} from '@angular/core';
++
++import { ActivatedRoute } from '@angular/router';
++
++import { ToasterService } from 'angular2-toaster';
++
++import { ApiService } from 'jslib-common/abstractions/api.service';
++import { CryptoService } from 'jslib-common/abstractions/crypto.service';
++import { I18nService } from 'jslib-common/abstractions/i18n.service';
++import { PlatformUtilsService } from 'jslib-common/abstractions/platformUtils.service';
++import { SyncService } from 'jslib-common/abstractions/sync.service';
++
++import { OrganizationSsoUpdateRequest } from 'jslib-common/models/request/organizationSsoUpdateRequest';
++
++import { OrganizationResponse } from 'jslib-common/models/response/organizationResponse';
++
++import { ModalComponent } from '../../modal.component';
++
++@Component({
++    selector: 'app-org-sso',
++    templateUrl: 'sso.component.html',
++})
++export class SsoComponent {
++    selfHosted = false;
++    loading = true;
++    org: OrganizationResponse;
++    formPromise: Promise<any>;
++
++    private organizationId: string;
++    private modal: ModalComponent = null;
++
++    constructor(private componentFactoryResolver: ComponentFactoryResolver,
++        private apiService: ApiService, private i18nService: I18nService,
++        private toasterService: ToasterService, private route: ActivatedRoute,
++        private syncService: SyncService, private platformUtilsService: PlatformUtilsService,
++        private cryptoService: CryptoService) { }
++
++    async ngOnInit() {
++        this.selfHosted = this.platformUtilsService.isSelfHost();
++        this.route.parent.parent.params.subscribe(async params => {
++            this.organizationId = params.organizationId;
++            try {
++                this.org = await this.apiService.getOrganization(this.organizationId);
++            } catch { }
++        });
++        this.loading = false;
++    }
++
++    async submit() {
++        try {
++            const request = new OrganizationSsoUpdateRequest();
++            request.useSso = this.org.useSso;
++            request.callbackPath = this.org.callbackPath;
++            request.signedOutCallbackPath = this.org.signedOutCallbackPath;
++            request.authority = this.org.authority;
++            request.clientId = this.org.clientId;
++            request.clientSecret = this.org.clientSecret;
++
++            this.formPromise = this.apiService.putOrganizationSso(this.organizationId, request).then(() => {
++                return this.syncService.fullSync(true);
++            });
++            await this.formPromise;
++            this.toasterService.popAsync('success', null, this.i18nService.t('organizationUpdated'));
++        } catch { }
++    }
++}
 diff --git a/src/app/send/access.component.html b/src/app/send/access.component.html
 index 84944a2b..b736bbe4 100644
 --- a/src/app/send/access.component.html

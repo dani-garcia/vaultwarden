@@ -138,7 +138,6 @@ backtrace = "0.3.60"
 # Macro ident concatenation
 paste = "1.0.5"
 openidconnect = "2.0.1"
-urlencoding = "1.1.1"
 
 [patch.crates-io]
 # Use newest ring

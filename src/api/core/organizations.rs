@@ -213,10 +213,7 @@ fn post_organization(
 
     org.name = data.Name;
     org.billing_email = data.BillingEmail;
-    org.identifier = match data.Identifier {
-        Some(identifier) => identifier,
-        None => String::from(""),
-    };
+    org.identifier = data.Identifier.unwrap_or_default();
 
     org.save(&conn)?;
     Ok(Json(org.to_json()))

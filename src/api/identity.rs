@@ -171,7 +171,7 @@ fn _password_login(data: ConnectData, conn: DbConn, ip: &ClientIp) -> JsonResult
 
     // Check if org policy prevents password login
     let user_orgs = UserOrganization::find_by_user_and_policy(&user.uuid, OrgPolicyType::RequireSso, &conn);
-    if user_orgs.len() == 1 && user_orgs[0].atype >= 2 {
+    if user_orgs.len() >= 1 && user_orgs[0].atype != UserOrgType::Owner && user_orgs[0].atype != UserOrgType::Admin {
         // if requires SSO is active, user is in exactly one org by policy rules
         // policy only applies to "non-owner/non-admin" members
 
