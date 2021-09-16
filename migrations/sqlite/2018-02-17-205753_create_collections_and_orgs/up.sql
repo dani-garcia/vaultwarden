@@ -5,16 +5,9 @@ CREATE TABLE collections (
 );
 
 CREATE TABLE organizations (
-  uuid                     TEXT NOT NULL PRIMARY KEY,
-  name                     TEXT NOT NULL,
-  billing_email            TEXT NOT NULL,
-  identifier               TEXT NOT NULL,
-  use_sso                  BOOLEAN NOT NULL,
-  callback_path            TEXT NOT NULL,
-  signed_out_callback_path TEXT NOT NULL,
-  authority                TEXT NOT NULL,
-  client_id                TEXT NOT NULL,
-  client_secret            TEXT NOT NULL
+  uuid          TEXT NOT NULL PRIMARY KEY,
+  name          TEXT NOT NULL,
+  billing_email TEXT NOT NULL
 );
 
 
