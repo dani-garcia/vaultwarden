@@ -571,9 +571,9 @@ fn get_client_from_identifier (identifier: &str, conn: &DbConn) -> Result<CoreCl
     match organization {
         Some(organization) => {
             let redirect = organization.callback_path.to_string();
-            let client_id = ClientId::new(organization.client_id);
-            let client_secret = ClientSecret::new(organization.client_secret);
-            let issuer_url = IssuerUrl::new(organization.authority).expect("invalid issuer URL");
+            let client_id = ClientId::new(organization.client_id.unwrap_or_default());
+            let client_secret = ClientSecret::new(organization.client_secret.unwrap_or_default());
+            let issuer_url = IssuerUrl::new(organization.authority.unwrap_or_default()).expect("invalid issuer URL");
             let provider_metadata = match CoreProviderMetadata::discover(&issuer_url, http_client) {
                 Ok(metadata) => metadata,
                 Err(_err) => {

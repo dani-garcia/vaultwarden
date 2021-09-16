@@ -12,15 +12,15 @@ db_object! {
         pub uuid: String,
         pub name: String,
         pub billing_email: String,
-        pub identifier: String,
+        pub identifier: Option<String>,
         pub private_key: Option<String>,
         pub public_key: Option<String>,
         pub use_sso: bool,
         pub callback_path: String,
         pub signed_out_callback_path: String,
-        pub authority: String,
-        pub client_id: String,
-        pub client_secret: String,
+        pub authority: Option<String>,
+        pub client_id: Option<String>,
+        pub client_secret: Option<String>,
     }
 
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -138,13 +138,13 @@ impl Organization {
             billing_email,
             private_key,
             public_key,
-            identifier: String::from(""),
+            identifier: None,
             use_sso: false,
             callback_path: String::from("http://localhost/#/sso/"),
             signed_out_callback_path: String::from("http://localhost/#/sso/"),
-            authority: String::from(""),
-            client_id: String::from(""),
-            client_secret: String::from(""),
+            authority: None,
+            client_id: None,
+            client_secret: None,
         }
     }
 

@@ -82,9 +82,9 @@ struct OrganizationSsoUpdateData {
     UseSso: bool,
     CallbackPath: String,
     SignedOutCallbackPath: String,
-    Authority: String,
-    ClientId: String,
-    ClientSecret: String,
+    Authority: Option<String>,
+    ClientId: Option<String>,
+    ClientSecret: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -213,7 +213,7 @@ fn post_organization(
 
     org.name = data.Name;
     org.billing_email = data.BillingEmail;
-    org.identifier = data.Identifier.unwrap_or_default();
+    org.identifier = data.Identifier;
 
     org.save(&conn)?;
     Ok(Json(org.to_json()))
