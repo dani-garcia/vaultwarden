@@ -35,12 +35,15 @@ pub fn routes() -> Vec<Route> {
         get_org_users,
         send_invite,
         reinvite_user,
+        bulk_reinvite_user,
         confirm_invite,
+        bulk_confirm_invite,
         accept_invite,
         get_user,
         edit_user,
         put_organization_user,
         delete_user,
+        bulk_delete_user,
         post_delete_user,
         post_org_import,
         list_policies,
@@ -52,6 +55,7 @@ pub fn routes() -> Vec<Route> {
         get_plans_tax_rates,
         import,
         post_org_keys,
+        bulk_public_keys,
     ]
 }
 
@@ -85,6 +89,12 @@ struct NewCollectionData {
 struct OrgKeyData {
     EncryptedPrivateKey: String,
     PublicKey: String,
+}
+
+#[derive(Deserialize, Debug)]
+#[allow(non_snake_case)]
+struct OrgBulkIds {
+    Ids: Vec<String>,
 }
 
 #[post("/organizations", data = "<data>")]
@@ -615,8 +625,44 @@ fn send_invite(org_id: String, data: JsonUpcase<InviteData>, headers: AdminHeade
     Ok(())
 }
 
+#[post("/organizations/<org_id>/users/reinvite", data = "<data>")]
+fn bulk_reinvite_user(
+    org_id: String,
+    data: JsonUpcase<OrgBulkIds>,
+    headers: AdminHeaders,
+    conn: DbConn,
+) -> Json<Value> {
+    let data: OrgBulkIds = data.into_inner().data;
+
+    let mut bulk_response = Vec::new();
+    for org_user_id in data.Ids {
+        let err_msg = match _reinvite_user(&org_id, &org_user_id, &headers.user.email, &conn) {
+            Ok(_) => String::from(""),
+            Err(e) => format!("{:?}", e),
+        };
+
+        bulk_response.push(json!(
+            {
+                "Object": "OrganizationBulkConfirmResponseModel",
+                "Id": org_user_id,
+                "Error": err_msg
+            }
+        ))
+    }
+
+    Json(json!({
+        "Data": bulk_response,
+        "Object": "list",
+        "ContinuationToken": null
+    }))
+}
+
 #[post("/organizations/<org_id>/users/<user_org>/reinvite")]
 fn reinvite_user(org_id: String, user_org: String, headers: AdminHeaders, conn: DbConn) -> EmptyResult {
+    _reinvite_user(&org_id, &user_org, &headers.user.email, &conn)
+}
+
+fn _reinvite_user(org_id: &str, user_org: &str, invited_by_email: &str, conn: &DbConn) -> EmptyResult {
     if !CONFIG.invitations_allowed() {
         err!("Invitations are not allowed.")
     }
@@ -625,7 +671,7 @@ fn reinvite_user(org_id: String, user_org: String, headers: AdminHeaders, conn: 
         err!("SMTP is not configured.")
     }
 
-    let user_org = match UserOrganization::find_by_uuid(&user_org, &conn) {
+    let user_org = match UserOrganization::find_by_uuid(user_org, conn) {
         Some(user_org) => user_org,
         None => err!("The user hasn't been invited to the organization."),
     };
@@ -634,12 +680,12 @@ fn reinvite_user(org_id: String, user_org: String, headers: AdminHeaders, conn: 
         err!("The user is already accepted or confirmed to the organization")
     }
 
-    let user = match User::find_by_uuid(&user_org.user_uuid, &conn) {
+    let user = match User::find_by_uuid(&user_org.user_uuid, conn) {
         Some(user) => user,
         None => err!("User not found."),
     };
 
-    let org_name = match Organization::find_by_uuid(&org_id, &conn) {
+    let org_name = match Organization::find_by_uuid(org_id, conn) {
         Some(org) => org.name,
         None => err!("Error looking up organization."),
     };
@@ -648,14 +694,14 @@ fn reinvite_user(org_id: String, user_org: String, headers: AdminHeaders, conn: 
         mail::send_invite(
             &user.email,
             &user.uuid,
-            Some(org_id),
+            Some(org_id.to_string()),
             Some(user_org.uuid),
             &org_name,
-            Some(headers.user.email),
+            Some(invited_by_email.to_string()),
         )?;
     } else {
         let invitation = Invitation::new(user.email);
-        invitation.save(&conn)?;
+        invitation.save(conn)?;
     }
 
     Ok(())
@@ -728,6 +774,40 @@ fn accept_invite(_org_id: String, _org_user_id: String, data: JsonUpcase<AcceptD
     Ok(())
 }
 
+#[post("/organizations/<org_id>/users/confirm", data = "<data>")]
+fn bulk_confirm_invite(org_id: String, data: JsonUpcase<Value>, headers: AdminHeaders, conn: DbConn) -> Json<Value> {
+    let data = data.into_inner().data;
+
+    let mut bulk_response = Vec::new();
+    match data["Keys"].as_array() {
+        Some(keys) => {
+            for invite in keys {
+                let org_user_id = invite["Id"].as_str().unwrap_or_default();
+                let user_key = invite["Key"].as_str().unwrap_or_default();
+                let err_msg = match _confirm_invite(&org_id, org_user_id, user_key, &headers, &conn) {
+                    Ok(_) => String::from(""),
+                    Err(e) => format!("{:?}", e),
+                };
+
+                bulk_response.push(json!(
+                    {
+                        "Object": "OrganizationBulkConfirmResponseModel",
+                        "Id": org_user_id,
+                        "Error": err_msg
+                    }
+                ));
+            }
+        }
+        None => error!("No keys to confirm"),
+    }
+
+    Json(json!({
+        "Data": bulk_response,
+        "Object": "list",
+        "ContinuationToken": null
+    }))
+}
+
 #[post("/organizations/<org_id>/users/<org_user_id>/confirm", data = "<data>")]
 fn confirm_invite(
     org_id: String,
@@ -737,8 +817,16 @@ fn confirm_invite(
     conn: DbConn,
 ) -> EmptyResult {
     let data = data.into_inner().data;
+    let user_key = data["Key"].as_str().unwrap_or_default();
+    _confirm_invite(&org_id, &org_user_id, user_key, &headers, &conn)
+}
 
-    let mut user_to_confirm = match UserOrganization::find_by_uuid_and_org(&org_user_id, &org_id, &conn) {
+fn _confirm_invite(org_id: &str, org_user_id: &str, key: &str, headers: &AdminHeaders, conn: &DbConn) -> EmptyResult {
+    if key.is_empty() || org_user_id.is_empty() {
+        err!("Key or UserId is not set, unable to process request");
+    }
+
+    let mut user_to_confirm = match UserOrganization::find_by_uuid_and_org(org_user_id, org_id, conn) {
         Some(user) => user,
         None => err!("The specified user isn't a member of the organization"),
     };
@@ -752,24 +840,21 @@ fn confirm_invite(
     }
 
     user_to_confirm.status = UserOrgStatus::Confirmed as i32;
-    user_to_confirm.akey = match data["Key"].as_str() {
-        Some(key) => key.to_string(),
-        None => err!("Invalid key provided"),
-    };
+    user_to_confirm.akey = key.to_string();
 
     if CONFIG.mail_enabled() {
-        let org_name = match Organization::find_by_uuid(&org_id, &conn) {
+        let org_name = match Organization::find_by_uuid(org_id, conn) {
             Some(org) => org.name,
             None => err!("Error looking up organization."),
         };
-        let address = match User::find_by_uuid(&user_to_confirm.user_uuid, &conn) {
+        let address = match User::find_by_uuid(&user_to_confirm.user_uuid, conn) {
             Some(user) => user.email,
             None => err!("Error looking up user."),
         };
         mail::send_invite_confirmed(&address, &org_name)?;
     }
 
-    user_to_confirm.save(&conn)
+    user_to_confirm.save(conn)
 }
 
 #[get("/organizations/<org_id>/users/<org_user_id>")]
@@ -870,9 +955,40 @@ fn edit_user(
     user_to_edit.save(&conn)
 }
 
+#[delete("/organizations/<org_id>/users", data = "<data>")]
+fn bulk_delete_user(org_id: String, data: JsonUpcase<OrgBulkIds>, headers: AdminHeaders, conn: DbConn) -> Json<Value> {
+    let data: OrgBulkIds = data.into_inner().data;
+
+    let mut bulk_response = Vec::new();
+    for org_user_id in data.Ids {
+        let err_msg = match _delete_user(&org_id, &org_user_id, &headers, &conn) {
+            Ok(_) => String::from(""),
+            Err(e) => format!("{:?}", e),
+        };
+
+        bulk_response.push(json!(
+            {
+                "Object": "OrganizationBulkConfirmResponseModel",
+                "Id": org_user_id,
+                "Error": err_msg
+            }
+        ))
+    }
+
+    Json(json!({
+        "Data": bulk_response,
+        "Object": "list",
+        "ContinuationToken": null
+    }))
+}
+
 #[delete("/organizations/<org_id>/users/<org_user_id>")]
 fn delete_user(org_id: String, org_user_id: String, headers: AdminHeaders, conn: DbConn) -> EmptyResult {
-    let user_to_delete = match UserOrganization::find_by_uuid_and_org(&org_user_id, &org_id, &conn) {
+    _delete_user(&org_id, &org_user_id, &headers, &conn)
+}
+
+fn _delete_user(org_id: &str, org_user_id: &str, headers: &AdminHeaders, conn: &DbConn) -> EmptyResult {
+    let user_to_delete = match UserOrganization::find_by_uuid_and_org(org_user_id, org_id, conn) {
         Some(user) => user,
         None => err!("User to delete isn't member of the organization"),
     };
@@ -883,19 +999,51 @@ fn delete_user(org_id: String, org_user_id: String, headers: AdminHeaders, conn:
 
     if user_to_delete.atype == UserOrgType::Owner {
         // Removing owner, check that there are at least another owner
-        let num_owners = UserOrganization::find_by_org_and_type(&org_id, UserOrgType::Owner as i32, &conn).len();
+        let num_owners = UserOrganization::find_by_org_and_type(org_id, UserOrgType::Owner as i32, conn).len();
 
         if num_owners <= 1 {
             err!("Can't delete the last owner")
         }
     }
 
-    user_to_delete.delete(&conn)
+    user_to_delete.delete(conn)
 }
 
 #[post("/organizations/<org_id>/users/<org_user_id>/delete")]
 fn post_delete_user(org_id: String, org_user_id: String, headers: AdminHeaders, conn: DbConn) -> EmptyResult {
     delete_user(org_id, org_user_id, headers, conn)
+}
+
+#[post("/organizations/<org_id>/users/public-keys", data = "<data>")]
+fn bulk_public_keys(org_id: String, data: JsonUpcase<OrgBulkIds>, _headers: AdminHeaders, conn: DbConn) -> Json<Value> {
+    let data: OrgBulkIds = data.into_inner().data;
+
+    let mut bulk_response = Vec::new();
+    // Check all received UserOrg UUID's and find the matching User to retreive the public-key.
+    // If the user does not exists, just ignore it, and do not return any information regarding that UserOrg UUID.
+    // The web-vault will then ignore that user for the folowing steps.
+    for user_org_id in data.Ids {
+        match UserOrganization::find_by_uuid_and_org(&user_org_id, &org_id, &conn) {
+            Some(user_org) => match User::find_by_uuid(&user_org.user_uuid, &conn) {
+                Some(user) => bulk_response.push(json!(
+                    {
+                        "Object": "organizationUserPublicKeyResponseModel",
+                        "Id": user_org_id,
+                        "UserId": user.uuid,
+                        "Key": user.public_key
+                    }
+                )),
+                None => debug!("User doesn't exist"),
+            },
+            None => debug!("UserOrg doesn't exist"),
+        }
+    }
+
+    Json(json!({
+        "Data": bulk_response,
+        "Object": "list",
+        "ContinuationToken": null
+    }))
 }
 
 use super::ciphers::update_cipher_from_data;
