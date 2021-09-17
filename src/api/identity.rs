@@ -517,31 +517,31 @@ fn _check_is_some<T>(value: &Option<T>, msg: &str) -> EmptyResult {
     Ok(())
 }
 
-fn invalid_json(error_message: &str, exception: bool) -> JsonResult {
-    if exception {
-        err_code!(error_message, Status::BadRequest.code)
-    }
-    err_code!(error_message, Status::InternalServerError.code)
-}
-
 #[get("/account/prevalidate?<domainHint>")]
 #[allow(non_snake_case)]
 fn prevalidate(domainHint: String, conn: DbConn) -> JsonResult {
     let empty_result = json!({});
     let organization = Organization::find_by_identifier(&domainHint, &conn);
+    // The compiler warns about unreachable code here. But I've tested it, and it seems to work
+    // as expected. All errors appear to be reachable, as is the Ok response.
     match organization {
         Some(organization) => {
             if !organization.use_sso {
-                return invalid_json("SSO Not allowed for organization", false);
+                return err_code!("SSO Not allowed for organization", Status::BadRequest.code);
+            }
+            if organization.authority.is_none()
+                || organization.client_id.is_none()
+                || organization.client_secret.is_none() {
+                return err_code!("Organization is incorrectly configured for SSO", Status::BadRequest.code);
             }
         },
         None => {
-            return invalid_json("Organization not found by identifier", false);
+            return err_code!("Organization not found by identifier", Status::BadRequest.code);
         },
     }
 
     if domainHint == "" {
-        return invalid_json("No Organization Identifier Provided", false);
+        return err_code!("No Organization Identifier Provided", Status::BadRequest.code);
     }
 
     Ok(Json(empty_result))
