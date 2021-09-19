@@ -13,6 +13,7 @@ pub use crate::api::{
     core::purge_sends,
     core::purge_trashed_ciphers,
     core::routes as core_routes,
+    core::{emergency_notification_reminder_job, emergency_request_timeout_job},
     icons::routes as icons_routes,
     identity::routes as identity_routes,
     notifications::routes as notifications_routes,

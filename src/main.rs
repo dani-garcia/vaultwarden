@@ -345,6 +345,18 @@ fn schedule_jobs(pool: db::DbPool) {
                 }));
             }
 
+            if !CONFIG.emergency_request_timeout_schedule().is_empty() {
+                sched.add(Job::new(CONFIG.emergency_request_timeout_schedule().parse().unwrap(), || {
+                    api::emergency_request_timeout_job(pool.clone());
+                }));
+            }
+
+            if !CONFIG.emergency_notification_reminder_schedule().is_empty() {
+                sched.add(Job::new(CONFIG.emergency_notification_reminder_schedule().parse().unwrap(), || {
+                    api::emergency_notification_reminder_job(pool.clone());
+                }));
+            }
+
             // Periodically check for jobs to run. We probably won't need any
             // jobs that run more often than once a minute, so a default poll
             // interval of 30 seconds should be sufficient. Users who want to

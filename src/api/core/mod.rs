@@ -7,6 +7,7 @@ mod sends;
 pub mod two_factor;
 
 pub use ciphers::purge_trashed_ciphers;
+pub use emergency_access::{emergency_notification_reminder_job, emergency_request_timeout_job};
 pub use sends::purge_sends;
 
 pub fn routes() -> Vec<Route> {

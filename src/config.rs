@@ -333,6 +333,12 @@ make_config! {
         /// Trash purge schedule |> Cron schedule of the job that checks for trashed items to delete permanently.
         /// Defaults to daily. Set blank to disable this job.
         trash_purge_schedule:   String, false,  def,    "0 5 0 * * *".to_string();
+        /// Emergency notification reminder schedule |> Cron schedule of the job that sends expiration reminders to emergency request grantors.
+        /// Defaults to hourly. Set blank to disable this job.
+        emergency_notification_reminder_schedule:   String, false,  def,    "0 10 * * * *".to_string();
+        /// Emergency request timeout schedule |> Cron schedule of the job that checks for expired (i.e granted by timeout) emergency requests.
+        /// Defaults to hourly. Set blank to disable this job.
+        emergency_request_timeout_schedule:   String, false,  def,    "0 15 * * * *".to_string();
     },
 
     /// General settings
@@ -385,6 +391,8 @@ make_config! {
         org_creation_users:     String, true,   def,    "".to_string();
         /// Allow invitations |> Controls whether users can be invited by organization admins, even when signups are otherwise disabled
         invitations_allowed:    bool,   true,   def,    true;
+        /// Allow emergency access |> Controls whether users can enable emergency access to their accounts
+        emergency_access_allowed:    bool,   true,   def,    true;
         /// Password iterations |> Number of server-side passwords hashing iterations.
         /// The changes only apply when a user changes their password. Not recommended to lower the value
         password_iterations:    i32,    true,   def,    100_000;
@@ -855,11 +863,19 @@ where
     reg!("email/delete_account", ".html");
     reg!("email/invite_accepted", ".html");
     reg!("email/invite_confirmed", ".html");
+    reg!("email/emergency_access_invite_accepted", ".html");
+    reg!("email/emergency_access_invite_confirmed", ".html");
+    reg!("email/emergency_access_recovery_approved", ".html");
+    reg!("email/emergency_access_recovery_initiated", ".html");
+    reg!("email/emergency_access_recovery_rejected", ".html");
+    reg!("email/emergency_access_recovery_reminder", ".html");
+    reg!("email/emergency_access_recovery_timed_out", ".html");
     reg!("email/new_device_logged_in", ".html");
     reg!("email/pw_hint_none", ".html");
     reg!("email/pw_hint_some", ".html");
     reg!("email/send_2fa_removed_from_org", ".html");
     reg!("email/send_org_invite", ".html");
+    reg!("email/send_emergency_access_invite", ".html");
     reg!("email/twofactor_email", ".html");
     reg!("email/verify_email", ".html");
     reg!("email/welcome", ".html");

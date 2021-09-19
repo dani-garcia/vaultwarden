@@ -89,7 +89,12 @@ fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> EmptyResult {
 
                 user
             } else if CONFIG.is_signup_allowed(&email) {
-                err!("Account with this email already exists")
+                // check if it's invited by emergency contact
+                if EmergencyAccess::find_invited_by_grantee_email(&data.Email, &conn).is_some() {
+                    user
+                } else {
+                    err!("Account with this email already exists")
+                }
             } else {
                 err!("Registration not allowed or user already exists")
             }
@@ -234,7 +239,7 @@ fn post_password(data: JsonUpcase<ChangePassData>, headers: Headers, conn: DbCon
 
     user.set_password(
         &data.NewMasterPasswordHash,
-        Some(vec![String::from("post_rotatekey"), String::from("get_contacts")]),
+        Some(vec![String::from("post_rotatekey"), String::from("get_contacts"), String::from("get_public_keys")]),
     );
     user.akey = data.Key;
     user.save(&conn)
