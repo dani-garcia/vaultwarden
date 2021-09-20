@@ -3269,12 +3269,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "urlencoding"
-version = "1.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5a1f0175e03a0973cf4afd476bef05c26e228520400eb1fd473ad417b1c00ffb"
-
-[[package]]
 name = "utf-8"
 version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3340,7 +3334,6 @@ dependencies = [
  "tracing",
  "u2f",
  "url 2.2.2",
- "urlencoding",
  "uuid",
  "webauthn-rs",
  "yubico",

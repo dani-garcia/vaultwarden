@@ -199,6 +199,14 @@ table! {
     }
 }
 
+table! {
+    sso_nonce (uuid) {
+        uuid -> Text,
+        org_uuid -> Text,
+        nonce -> Text,
+    }
+}
+
 joinable!(attachments -> ciphers (cipher_uuid));
 joinable!(ciphers -> organizations (organization_uuid));
 joinable!(ciphers -> users (user_uuid));
@@ -217,6 +225,7 @@ joinable!(users_collections -> collections (collection_uuid));
 joinable!(users_collections -> users (user_uuid));
 joinable!(users_organizations -> organizations (org_uuid));
 joinable!(users_organizations -> users (user_uuid));
+joinable!(sso_nonce -> organizations (org_uuid));
 
 allow_tables_to_appear_in_same_query!(
     attachments,

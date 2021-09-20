@@ -91,60 +91,78 @@ fn _refresh_login(data: ConnectData, conn: DbConn) -> JsonResult {
 struct TokenPayload {
     exp: i64,
     email: String,
+    nonce: String,
 }
 
 fn _authorization_login(data: ConnectData, conn: DbConn, ip: &ClientIp) -> JsonResult {
     let org_identifier = data.org_identifier.as_ref().unwrap();
     let code = data.code.as_ref().unwrap();
-    let (access_token, refresh_token) = match get_auth_code_access_token(&code, &org_identifier, &conn) {
+    let organization = Organization::find_by_identifier(org_identifier, &conn).unwrap();
+
+    let (access_token, refresh_token) = match get_auth_code_access_token(&code, &organization) {
         Ok((access_token, refresh_token)) => (access_token, refresh_token),
         Err(err) => err!(err),
     };
+
     let token = jsonwebtoken::dangerous_insecure_decode::<TokenPayload>(access_token.as_str()).unwrap().claims;
-    let expiry = token.exp;
-    let user_email = token.email;
-    let now = Local::now();
+    let nonce = token.nonce;
 
-    // COMMON
-    let user = User::find_by_mail(&user_email, &conn).unwrap();
+    match SsoNonce::find_by_org_and_nonce(&organization.uuid, &nonce, &conn) {
+        Some(sso_nonce) => {
+            match sso_nonce.delete(&conn) {
+                Ok(_) => {
+                    let expiry = token.exp;
+                    let user_email = token.email;
+                    let now = Local::now();
 
-    let (mut device, new_device) = get_device(&data, &conn, &user);
+                    // COMMON
+                    let user = User::find_by_mail(&user_email, &conn).unwrap();
 
-    let twofactor_token = twofactor_auth(&user.uuid, &data, &mut device, ip, &conn)?;
+                    let (mut device, new_device) = get_device(&data, &conn, &user);
 
-    if CONFIG.mail_enabled() && new_device {
-        if let Err(e) = mail::send_new_device_logged_in(&user.email, &ip.ip.to_string(), &now, &device.name) {
-            error!("Error sending new device email: {:#?}", e);
+                    let twofactor_token = twofactor_auth(&user.uuid, &data, &mut device, ip, &conn)?;
 
-            if CONFIG.require_device_email() {
-                err!("Could not send login notification email. Please contact your administrator.")
+                    if CONFIG.mail_enabled() && new_device {
+                        if let Err(e) = mail::send_new_device_logged_in(&user.email, &ip.ip.to_string(), &now, &device.name) {
+                            error!("Error sending new device email: {:#?}", e);
+
+                            if CONFIG.require_device_email() {
+                                err!("Could not send login notification email. Please contact your administrator.")
+                            }
+                        }
+                    }
+
+                    device.refresh_token = refresh_token.clone();
+                    device.save(&conn)?;
+
+                    let mut result = json!({
+                        "access_token": access_token,
+                        "expires_in": expiry - now.naive_utc().timestamp(),
+                        "token_type": "Bearer",
+                        "refresh_token": refresh_token,
+                        "Key": user.akey,
+                        "PrivateKey": user.private_key,
+
+                        "Kdf": user.client_kdf_type,
+                        "KdfIterations": user.client_kdf_iter,
+                        "ResetMasterPassword": false, // TODO: according to official server seems something like: user.password_hash.is_empty(), but would need testing
+                        "scope": "api offline_access",
+                        "unofficialServer": true,
+                    });
+
+                    if let Some(token) = twofactor_token {
+                        result["TwoFactorToken"] = Value::String(token);
+                    }
+
+                    Ok(Json(result))
+                },
+                Err(_) => err!("Failed to delete nonce"),
             }
+        },
+        None => {
+            err!("Invalid nonce")
         }
     }
-
-    device.refresh_token = refresh_token.clone();
-    device.save(&conn)?;
-
-    let mut result = json!({
-        "access_token": access_token,
-        "expires_in": expiry - now.naive_utc().timestamp(),
-        "token_type": "Bearer",
-        "refresh_token": refresh_token,
-        "Key": user.akey,
-        "PrivateKey": user.private_key,
-
-        "Kdf": user.client_kdf_type,
-        "KdfIterations": user.client_kdf_iter,
-        "ResetMasterPassword": false, // TODO: according to official server seems something like: user.password_hash.is_empty(), but would need testing
-        "scope": "api offline_access",
-        "unofficialServer": true,
-    });
-
-    if let Some(token) = twofactor_token {
-        result["TwoFactorToken"] = Value::String(token);
-    }
-
-    Ok(Json(result))
 }
 
 fn _password_login(data: ConnectData, conn: DbConn, ip: &ClientIp) -> JsonResult {
@@ -558,33 +576,24 @@ use openidconnect::{
     Scope, OAuth2TokenResponse,
 };
 
-fn get_client_from_identifier (identifier: &str, conn: &DbConn) -> Result<CoreClient, &'static str> {
-    let organization = Organization::find_by_identifier(identifier, conn);
-
-    match organization {
-        Some(organization) => {
-            let redirect = organization.callback_path.to_string();
-            let client_id = ClientId::new(organization.client_id.unwrap_or_default());
-            let client_secret = ClientSecret::new(organization.client_secret.unwrap_or_default());
-            let issuer_url = IssuerUrl::new(organization.authority.unwrap_or_default()).expect("invalid issuer URL");
-            let provider_metadata = match CoreProviderMetadata::discover(&issuer_url, http_client) {
-                Ok(metadata) => metadata,
-                Err(_err) => {
-                    return Err("Failed to discover OpenID provider");
-                },
-            };
-            let client = CoreClient::from_provider_metadata(
-                provider_metadata,
-                client_id,
-                Some(client_secret),
-            )
-            .set_redirect_uri(RedirectUrl::new(redirect).expect("Invalid redirect URL"));
-            return Ok(client);
+fn get_client_from_org (organization: &Organization) -> Result<CoreClient, &'static str> {
+    let redirect = organization.callback_path.to_string();
+    let client_id = ClientId::new(organization.client_id.as_ref().unwrap().to_string());
+    let client_secret = ClientSecret::new(organization.client_secret.as_ref().unwrap().to_string());
+    let issuer_url = IssuerUrl::new(organization.authority.as_ref().unwrap().to_string()).expect("invalid issuer URL");
+    let provider_metadata = match CoreProviderMetadata::discover(&issuer_url, http_client) {
+        Ok(metadata) => metadata,
+        Err(_err) => {
+            return Err("Failed to discover OpenID provider");
         },
-        None => {
-            Err("unable to find org")
-        },
-    }
+    };
+    let client = CoreClient::from_provider_metadata(
+        provider_metadata,
+        client_id,
+        Some(client_secret),
+    )
+    .set_redirect_uri(RedirectUrl::new(redirect).expect("Invalid redirect URL"));
+    return Ok(client);
 }
 
 #[get("/connect/authorize?<domain_hint>&<state>")]
@@ -593,11 +602,10 @@ fn authorize(
     state: String,
     conn: DbConn,
 ) -> ApiResult<Redirect> {
-    match get_client_from_identifier(&domain_hint, &conn) {
+    let organization = Organization::find_by_identifier(&domain_hint, &conn).unwrap();
+    match get_client_from_org(&organization) {
         Ok(client) => {
-            // TODO store the nonce for validation on authorization token exchange - unclear where to store
-            // this
-            let (mut authorize_url, _csrf_state, _nonce) = client
+            let (mut authorize_url, _csrf_state, nonce) = client
                 .authorize_url(
                     AuthenticationFlow::<CoreResponseType>::AuthorizationCode,
                     CsrfToken::new_random,
@@ -606,6 +614,9 @@ fn authorize(
                 .add_scope(Scope::new("email".to_string()))
                 .add_scope(Scope::new("profile".to_string()))
                 .url();
+
+            let sso_nonce = SsoNonce::new(organization.uuid, nonce.secret().to_string());
+            sso_nonce.save(&conn)?;
 
             // it seems impossible to set the state going in dynamically (requires static lifetime string)
             // so I change it after the fact
@@ -628,12 +639,10 @@ fn authorize(
 
 fn get_auth_code_access_token (
     code: &str,
-    org_identifier: &str,
-    conn: &DbConn,
+    organization: &Organization,
 ) -> Result<(String, String), &'static str> {
     let oidc_code = AuthorizationCode::new(String::from(code));
-
-    match get_client_from_identifier(org_identifier, conn) {
+    match get_client_from_org(organization) {
         Ok(client) => {
             match client.exchange_code(oidc_code).request(http_client) {
                 Ok(token_response) => {
