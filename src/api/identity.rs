@@ -583,7 +583,7 @@ fn get_client_from_sso_config (sso_config: &SsoConfig) -> Result<CoreClient, &'s
     let redirect = sso_config.callback_path.to_string();
     let client_id = ClientId::new(sso_config.client_id.as_ref().unwrap().to_string());
     let client_secret = ClientSecret::new(sso_config.client_secret.as_ref().unwrap().to_string());
-    let issuer_url = IssuerUrl::new(sso_config.authority.as_ref().unwrap().to_string()).expect("invalid issuer URL");
+    let issuer_url = IssuerUrl::new(sso_config.authority.as_ref().unwrap().to_string()).or(Err("invalid issuer URL"))?;
     let provider_metadata = match CoreProviderMetadata::discover(&issuer_url, http_client) {
         Ok(metadata) => metadata,
         Err(_err) => {
@@ -595,7 +595,7 @@ fn get_client_from_sso_config (sso_config: &SsoConfig) -> Result<CoreClient, &'s
         client_id,
         Some(client_secret),
     )
-    .set_redirect_uri(RedirectUrl::new(redirect).expect("Invalid redirect URL"));
+    .set_redirect_uri(RedirectUrl::new(redirect).or(Err("Invalid redirect URL"))?);
     return Ok(client);
 }
 
