@@ -377,7 +377,7 @@ fn delete_organization_collection(
 }
 
 #[derive(Deserialize, Debug)]
-#[allow(non_snake_case)]
+#[allow(non_snake_case, dead_code)]
 struct DeleteCollectionData {
     Id: String,
     OrgId: String,
@@ -1301,7 +1301,7 @@ fn get_plans_tax_rates(_headers: Headers, _conn: DbConn) -> Json<Value> {
 }
 
 #[derive(Deserialize, Debug)]
-#[allow(non_snake_case)]
+#[allow(non_snake_case, dead_code)]
 struct OrgImportGroupData {
     Name: String,       // "GroupName"
     ExternalId: String, // "cn=GroupName,ou=Groups,dc=example,dc=com"
@@ -1311,7 +1311,8 @@ struct OrgImportGroupData {
 #[derive(Deserialize, Debug)]
 #[allow(non_snake_case)]
 struct OrgImportUserData {
-    Email: String,      // "user@maildomain.net"
+    Email: String, // "user@maildomain.net"
+    #[allow(dead_code)]
     ExternalId: String, // "uid=user,ou=People,dc=example,dc=com"
     Deleted: bool,
 }
@@ -1319,6 +1320,7 @@ struct OrgImportUserData {
 #[derive(Deserialize, Debug)]
 #[allow(non_snake_case)]
 struct OrgImportData {
+    #[allow(dead_code)]
     Groups: Vec<OrgImportGroupData>,
     OverwriteExisting: bool,
     Users: Vec<OrgImportUserData>,

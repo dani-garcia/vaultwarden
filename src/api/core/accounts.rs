@@ -49,6 +49,7 @@ struct RegisterData {
     MasterPasswordHint: Option<String>,
     Name: Option<String>,
     Token: Option<String>,
+    #[allow(dead_code)]
     OrganizationUserId: Option<String>,
 }
 
