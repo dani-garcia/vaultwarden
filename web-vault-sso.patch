@@ -89,7 +89,7 @@ index d4512a1..ad57f69 100644
              if (response.twoFactor) {
                  if (this.onSuccessfulLoginTwoFactorNavigate != null) {
 diff --git a/jslib/common/src/abstractions/api.service.ts b/jslib/common/src/abstractions/api.service.ts
-index 67131df..e75a874 100644
+index 67131df..ce498ff 100644
 --- a/jslib/common/src/abstractions/api.service.ts
 +++ b/jslib/common/src/abstractions/api.service.ts
 @@ -33,6 +33,7 @@ import { KeysRequest } from '../models/request/keysRequest';
@@ -100,11 +100,20 @@ index 67131df..e75a874 100644
  import { OrganizationTaxInfoUpdateRequest } from '../models/request/organizationTaxInfoUpdateRequest';
  import { OrganizationUpdateRequest } from '../models/request/organizationUpdateRequest';
  import { OrganizationUpgradeRequest } from '../models/request/organizationUpgradeRequest';
-@@ -360,6 +361,7 @@ export abstract class ApiService {
+@@ -122,6 +123,7 @@ import { SendAccessResponse } from '../models/response/sendAccessResponse';
+ import { SendFileDownloadDataResponse } from '../models/response/sendFileDownloadDataResponse';
+ import { SendFileUploadDataResponse } from '../models/response/sendFileUploadDataResponse';
+ import { SendResponse } from '../models/response/sendResponse';
++import { SsoConfigResponse } from '../models/response/ssoConfigResponse';
+ import { SubscriptionResponse } from '../models/response/subscriptionResponse';
+ import { SyncResponse } from '../models/response/syncResponse';
+ import { TaxInfoResponse } from '../models/response/taxInfoResponse';
+@@ -360,6 +362,8 @@ export abstract class ApiService {
      getOrganizationTaxInfo: (id: string) => Promise<TaxInfoResponse>;
      postOrganization: (request: OrganizationCreateRequest) => Promise<OrganizationResponse>;
      putOrganization: (id: string, request: OrganizationUpdateRequest) => Promise<OrganizationResponse>;
-+    putOrganizationSso: (id: string, request: OrganizationSsoUpdateRequest) => Promise<OrganizationResponse>;
++    getSsoConfig: (id: string) => Promise<SsoConfigResponse>;
++    putOrganizationSso: (id: string, request: OrganizationSsoUpdateRequest) => Promise<SsoConfigResponse>;
      putOrganizationTaxInfo: (id: string, request: OrganizationTaxInfoUpdateRequest) => Promise<any>;
      postLeaveOrganization: (id: string) => Promise<any>;
      postOrganizationLicense: (data: FormData) => Promise<OrganizationResponse>;
@@ -169,113 +178,8 @@ index 7578012..964364f 100644
          } else {
              throw new Error('must provide credentials or codes');
          }
-diff --git a/jslib/common/src/models/response/organizationResponse.ts b/jslib/common/src/models/response/organizationResponse.ts
-index 21d8d43..896b7a6 100644
---- a/jslib/common/src/models/response/organizationResponse.ts
-+++ b/jslib/common/src/models/response/organizationResponse.ts
-@@ -27,6 +27,12 @@ export class OrganizationResponse extends BaseResponse {
-     useApi: boolean;
-     useResetPassword: boolean;
-     hasPublicAndPrivateKeys: boolean;
-+    useSso: boolean;
-+    callbackPath: string;
-+    signedOutCallbackPath: string;
-+    authority: string;
-+    clientId: string;
-+    clientSecret: string;
- 
-     constructor(response: any) {
-         super(response);
-@@ -54,5 +60,11 @@ export class OrganizationResponse extends BaseResponse {
-         this.useApi = this.getResponseProperty('UseApi');
-         this.useResetPassword = this.getResponseProperty('UseResetPassword');
-         this.hasPublicAndPrivateKeys = this.getResponseProperty('HasPublicAndPrivateKeys');
-+        this.useSso = this.getResponseProperty('UseSso');
-+        this.callbackPath = this.getResponseProperty('CallbackPath');
-+        this.signedOutCallbackPath = this.getResponseProperty('SignedOutCallbackPath');
-+        this.authority = this.getResponseProperty('Authority');
-+        this.clientId = this.getResponseProperty('ClientId');
-+        this.clientSecret = this.getResponseProperty('ClientSecret');
-     }
- }
-diff --git a/jslib/common/src/models/response/organizationSsoResponse.ts b/jslib/common/src/models/response/organizationSsoResponse.ts
-new file mode 100644
-index 0000000..896b7a6
---- /dev/null
-+++ b/jslib/common/src/models/response/organizationSsoResponse.ts
-@@ -0,0 +1,70 @@
-+import { BaseResponse } from './baseResponse';
-+import { PlanResponse } from './planResponse';
-+
-+import { PlanType } from '../../enums/planType';
-+
-+export class OrganizationResponse extends BaseResponse {
-+    id: string;
-+    identifier: string;
-+    name: string;
-+    businessName: string;
-+    businessAddress1: string;
-+    businessAddress2: string;
-+    businessAddress3: string;
-+    businessCountry: string;
-+    businessTaxNumber: string;
-+    billingEmail: string;
-+    plan: PlanResponse;
-+    planType: PlanType;
-+    seats: number;
-+    maxCollections: number;
-+    maxStorageGb: number;
-+    useGroups: boolean;
-+    useDirectory: boolean;
-+    useEvents: boolean;
-+    useTotp: boolean;
-+    use2fa: boolean;
-+    useApi: boolean;
-+    useResetPassword: boolean;
-+    hasPublicAndPrivateKeys: boolean;
-+    useSso: boolean;
-+    callbackPath: string;
-+    signedOutCallbackPath: string;
-+    authority: string;
-+    clientId: string;
-+    clientSecret: string;
-+
-+    constructor(response: any) {
-+        super(response);
-+        this.id = this.getResponseProperty('Id');
-+        this.identifier = this.getResponseProperty('Identifier');
-+        this.name = this.getResponseProperty('Name');
-+        this.businessName = this.getResponseProperty('BusinessName');
-+        this.businessAddress1 = this.getResponseProperty('BusinessAddress1');
-+        this.businessAddress2 = this.getResponseProperty('BusinessAddress2');
-+        this.businessAddress3 = this.getResponseProperty('BusinessAddress3');
-+        this.businessCountry = this.getResponseProperty('BusinessCountry');
-+        this.businessTaxNumber = this.getResponseProperty('BusinessTaxNumber');
-+        this.billingEmail = this.getResponseProperty('BillingEmail');
-+        const plan = this.getResponseProperty('Plan');
-+        this.plan = plan == null ? null : new PlanResponse(plan);
-+        this.planType = this.getResponseProperty('PlanType');
-+        this.seats = this.getResponseProperty('Seats');
-+        this.maxCollections = this.getResponseProperty('MaxCollections');
-+        this.maxStorageGb = this.getResponseProperty('MaxStorageGb');
-+        this.useGroups = this.getResponseProperty('UseGroups');
-+        this.useDirectory = this.getResponseProperty('UseDirectory');
-+        this.useEvents = this.getResponseProperty('UseEvents');
-+        this.useTotp = this.getResponseProperty('UseTotp');
-+        this.use2fa = this.getResponseProperty('Use2fa');
-+        this.useApi = this.getResponseProperty('UseApi');
-+        this.useResetPassword = this.getResponseProperty('UseResetPassword');
-+        this.hasPublicAndPrivateKeys = this.getResponseProperty('HasPublicAndPrivateKeys');
-+        this.useSso = this.getResponseProperty('UseSso');
-+        this.callbackPath = this.getResponseProperty('CallbackPath');
-+        this.signedOutCallbackPath = this.getResponseProperty('SignedOutCallbackPath');
-+        this.authority = this.getResponseProperty('Authority');
-+        this.clientId = this.getResponseProperty('ClientId');
-+        this.clientSecret = this.getResponseProperty('ClientSecret');
-+    }
-+}
 diff --git a/jslib/common/src/services/api.service.ts b/jslib/common/src/services/api.service.ts
-index 51c1c14..1a5b088 100644
+index 51c1c14..b615672 100644
 --- a/jslib/common/src/services/api.service.ts
 +++ b/jslib/common/src/services/api.service.ts
 @@ -37,6 +37,7 @@ import { KeysRequest } from '../models/request/keysRequest';
@@ -286,13 +190,26 @@ index 51c1c14..1a5b088 100644
  import { OrganizationTaxInfoUpdateRequest } from '../models/request/organizationTaxInfoUpdateRequest';
  import { OrganizationUpdateRequest } from '../models/request/organizationUpdateRequest';
  import { OrganizationUpgradeRequest } from '../models/request/organizationUpgradeRequest';
-@@ -1158,6 +1159,11 @@ export class ApiService implements ApiServiceAbstraction {
+@@ -128,6 +129,7 @@ import { SendAccessResponse } from '../models/response/sendAccessResponse';
+ import { SendFileDownloadDataResponse } from '../models/response/sendFileDownloadDataResponse';
+ import { SendFileUploadDataResponse } from '../models/response/sendFileUploadDataResponse';
+ import { SendResponse } from '../models/response/sendResponse';
++import { SsoConfigResponse } from '../models/response/ssoConfigResponse';
+ import { SubscriptionResponse } from '../models/response/subscriptionResponse';
+ import { SyncResponse } from '../models/response/syncResponse';
+ import { TaxInfoResponse } from '../models/response/taxInfoResponse';
+@@ -1158,6 +1160,16 @@ export class ApiService implements ApiServiceAbstraction {
          return new OrganizationResponse(r);
      }
  
-+    async putOrganizationSso(id: string, request: OrganizationSsoUpdateRequest): Promise<OrganizationResponse> {
++    async getSsoConfig(id: string): Promise<SsoConfigResponse> {
++        const r = await this.send('GET', '/organizations/' + id + '/sso', null, true, true);
++        return new SsoConfigResponse(r);
++    }
++
++    async putOrganizationSso(id: string, request: OrganizationSsoUpdateRequest): Promise<SsoConfigResponse> {
 +        const r = await this.send('PUT', '/organizations/' + id + '/sso', request, true, false);
-+        return new OrganizationResponse(r);
++        return new SsoConfigResponse(r);
 +    }
 +
      async putOrganizationTaxInfo(id: string, request: OrganizationTaxInfoUpdateRequest): Promise<any> {
@@ -478,139 +395,114 @@ index 2dac5ac1..21ce9848 100644
                          {{'subscription' | i18n}}
                      </a>
 diff --git a/src/app/organizations/settings/sso.component.html b/src/app/organizations/settings/sso.component.html
-new file mode 100644
-index 00000000..41d0e89e
---- /dev/null
+index 41d0e89e..c1f2ccf5 100644
+--- a/src/app/organizations/settings/sso.component.html
 +++ b/src/app/organizations/settings/sso.component.html
-@@ -0,0 +1,51 @@
-+<div class="page-header">
-+    <h1>{{'singleSignOn' | i18n}}</h1>
-+</div>
-+<div *ngIf="loading">
-+    <i class="fa fa-spinner fa-spin text-muted" title="{{'loading' | i18n}}" aria-hidden="true"></i>
-+    <span class="sr-only">{{'loading' | i18n}}</span>
-+</div>
-+<form *ngIf="org && !loading" #form (ngSubmit)="submit()" [appApiAction]="formPromise" ngNativeValidate>
-+    <div class="row">
-+        <div class="col-12">
-+            <div class="form-group">
-+                <label for="enabled">{{'enabled' | i18n}}</label>
-+                <input id="enabled" class="form-control" type="checkbox" name="Enabled" [(ngModel)]="org.useSso" [disabled]="selfHosted">
-+            </div>
-+            <h2>OpenId Connect Configuration</h2>
-+            <div class="form-group">
-+                <label for="callbackPath">{{'callbackPath' | i18n}}</label>
-+                <input id="callbackPath" class="form-control" type="text" name="Callback Path" [(ngModel)]="org.callbackPath"
-+                    [disabled]="selfHosted">
-+            </div>
-+            <div class="form-group">
-+                <label for="signedOutCallbackPath">{{'signedOutCallbackPath' | i18n}}</label>
-+                <input id="signedOutCallbackPath" class="form-control" type="text" name="Signed Out Callback Path"
-+                    [(ngModel)]="org.signedOutCallbackPath" [disabled]="selfHosted">
-+            </div>
-+            <div class="form-group">
-+                <label for="authority">{{'authority' | i18n}}</label>
-+                <input id="authority" class="form-control" type="text" name="Authority"
-+                    [(ngModel)]="org.authority" [disabled]="selfHosted">
-+            </div>
-+            <div class="form-group">
-+                <label for="clientId">{{'clientId' | i18n}}</label>
-+                <input id="authority" class="form-control" type="text" name="Client ID"
-+                    [(ngModel)]="org.clientId" [disabled]="selfHosted">
-+            </div>
-+            <div class="form-group">
-+                <label for="clientSecret">{{'clientSecret' | i18n}}</label>
-+                <input id="clientSecret" class="form-control" type="password" name="Client Secret"
-+                    [(ngModel)]="org.clientSecret" [disabled]="selfHosted">
-+            </div>
-+        </div>
-+    </div>
-+    <button type="submit" class="btn btn-primary btn-submit" [disabled]="form.loading">
-+        <i class="fa fa-spinner fa-spin" title="{{'loading' | i18n}}" aria-hidden="true"></i>
-+        <span>{{'save' | i18n}}</span>
-+    </button>
-+</form>
-+<div *ngIf="!org || loading">
-+    <i class="fa fa-spinner fa-spin text-muted" title="{{'loading' | i18n}}" aria-hidden="true"></i>
-+    <span class="sr-only">{{'loading' | i18n}}</span>
-+</div>
+@@ -5,38 +5,38 @@
+     <i class="fa fa-spinner fa-spin text-muted" title="{{'loading' | i18n}}" aria-hidden="true"></i>
+     <span class="sr-only">{{'loading' | i18n}}</span>
+ </div>
+-<form *ngIf="org && !loading" #form (ngSubmit)="submit()" [appApiAction]="formPromise" ngNativeValidate>
++<form *ngIf="ssoConfig && !loading" #form (ngSubmit)="submit()" [appApiAction]="formPromise" ngNativeValidate>
+     <div class="row">
+         <div class="col-12">
+             <div class="form-group">
+                 <label for="enabled">{{'enabled' | i18n}}</label>
+-                <input id="enabled" class="form-control" type="checkbox" name="Enabled" [(ngModel)]="org.useSso" [disabled]="selfHosted">
++                <input id="enabled" class="form-control" type="checkbox" name="Enabled" [(ngModel)]="ssoConfig.useSso" [disabled]="selfHosted">
+             </div>
+             <h2>OpenId Connect Configuration</h2>
+             <div class="form-group">
+                 <label for="callbackPath">{{'callbackPath' | i18n}}</label>
+-                <input id="callbackPath" class="form-control" type="text" name="Callback Path" [(ngModel)]="org.callbackPath"
++                <input id="callbackPath" class="form-control" type="text" name="Callback Path" [(ngModel)]="ssoConfig.callbackPath"
+                     [disabled]="selfHosted">
+             </div>
+             <div class="form-group">
+                 <label for="signedOutCallbackPath">{{'signedOutCallbackPath' | i18n}}</label>
+                 <input id="signedOutCallbackPath" class="form-control" type="text" name="Signed Out Callback Path"
+-                    [(ngModel)]="org.signedOutCallbackPath" [disabled]="selfHosted">
++                    [(ngModel)]="ssoConfig.signedOutCallbackPath" [disabled]="selfHosted">
+             </div>
+             <div class="form-group">
+                 <label for="authority">{{'authority' | i18n}}</label>
+                 <input id="authority" class="form-control" type="text" name="Authority"
+-                    [(ngModel)]="org.authority" [disabled]="selfHosted">
++                    [(ngModel)]="ssoConfig.authority" [disabled]="selfHosted">
+             </div>
+             <div class="form-group">
+                 <label for="clientId">{{'clientId' | i18n}}</label>
+                 <input id="authority" class="form-control" type="text" name="Client ID"
+-                    [(ngModel)]="org.clientId" [disabled]="selfHosted">
++                    [(ngModel)]="ssoConfig.clientId" [disabled]="selfHosted">
+             </div>
+             <div class="form-group">
+                 <label for="clientSecret">{{'clientSecret' | i18n}}</label>
+                 <input id="clientSecret" class="form-control" type="password" name="Client Secret"
+-                    [(ngModel)]="org.clientSecret" [disabled]="selfHosted">
++                    [(ngModel)]="ssoConfig.clientSecret" [disabled]="selfHosted">
+             </div>
+         </div>
+     </div>
+@@ -45,7 +45,7 @@
+         <span>{{'save' | i18n}}</span>
+     </button>
+ </form>
+-<div *ngIf="!org || loading">
++<div *ngIf="!ssoConfig || loading">
+     <i class="fa fa-spinner fa-spin text-muted" title="{{'loading' | i18n}}" aria-hidden="true"></i>
+     <span class="sr-only">{{'loading' | i18n}}</span>
+ </div>
 diff --git a/src/app/organizations/settings/sso.component.ts b/src/app/organizations/settings/sso.component.ts
-new file mode 100644
-index 00000000..f40a54f2
---- /dev/null
+index f40a54f2..5eeef132 100644
+--- a/src/app/organizations/settings/sso.component.ts
 +++ b/src/app/organizations/settings/sso.component.ts
-@@ -0,0 +1,71 @@
-+import {
-+    Component,
-+    ComponentFactoryResolver,
-+    ViewChild,
-+    ViewContainerRef,
-+} from '@angular/core';
-+
-+import { ActivatedRoute } from '@angular/router';
-+
-+import { ToasterService } from 'angular2-toaster';
-+
-+import { ApiService } from 'jslib-common/abstractions/api.service';
-+import { CryptoService } from 'jslib-common/abstractions/crypto.service';
-+import { I18nService } from 'jslib-common/abstractions/i18n.service';
-+import { PlatformUtilsService } from 'jslib-common/abstractions/platformUtils.service';
-+import { SyncService } from 'jslib-common/abstractions/sync.service';
-+
-+import { OrganizationSsoUpdateRequest } from 'jslib-common/models/request/organizationSsoUpdateRequest';
-+
-+import { OrganizationResponse } from 'jslib-common/models/response/organizationResponse';
-+
-+import { ModalComponent } from '../../modal.component';
-+
-+@Component({
-+    selector: 'app-org-sso',
-+    templateUrl: 'sso.component.html',
-+})
-+export class SsoComponent {
-+    selfHosted = false;
-+    loading = true;
-+    org: OrganizationResponse;
-+    formPromise: Promise<any>;
-+
-+    private organizationId: string;
-+    private modal: ModalComponent = null;
-+
-+    constructor(private componentFactoryResolver: ComponentFactoryResolver,
-+        private apiService: ApiService, private i18nService: I18nService,
-+        private toasterService: ToasterService, private route: ActivatedRoute,
-+        private syncService: SyncService, private platformUtilsService: PlatformUtilsService,
-+        private cryptoService: CryptoService) { }
-+
-+    async ngOnInit() {
-+        this.selfHosted = this.platformUtilsService.isSelfHost();
-+        this.route.parent.parent.params.subscribe(async params => {
-+            this.organizationId = params.organizationId;
-+            try {
-+                this.org = await this.apiService.getOrganization(this.organizationId);
-+            } catch { }
-+        });
-+        this.loading = false;
-+    }
-+
-+    async submit() {
-+        try {
-+            const request = new OrganizationSsoUpdateRequest();
-+            request.useSso = this.org.useSso;
-+            request.callbackPath = this.org.callbackPath;
-+            request.signedOutCallbackPath = this.org.signedOutCallbackPath;
-+            request.authority = this.org.authority;
-+            request.clientId = this.org.clientId;
-+            request.clientSecret = this.org.clientSecret;
-+
-+            this.formPromise = this.apiService.putOrganizationSso(this.organizationId, request).then(() => {
-+                return this.syncService.fullSync(true);
-+            });
-+            await this.formPromise;
-+            this.toasterService.popAsync('success', null, this.i18nService.t('organizationUpdated'));
-+        } catch { }
-+    }
-+}
+@@ -17,7 +17,7 @@ import { SyncService } from 'jslib-common/abstractions/sync.service';
+ 
+ import { OrganizationSsoUpdateRequest } from 'jslib-common/models/request/organizationSsoUpdateRequest';
+ 
+-import { OrganizationResponse } from 'jslib-common/models/response/organizationResponse';
++import { SsoConfigResponse } from 'jslib-common/models/response/ssoConfigResponse';
+ 
+ import { ModalComponent } from '../../modal.component';
+ 
+@@ -28,7 +28,7 @@ import { ModalComponent } from '../../modal.component';
+ export class SsoComponent {
+     selfHosted = false;
+     loading = true;
+-    org: OrganizationResponse;
++    ssoConfig: SsoConfigResponse;
+     formPromise: Promise<any>;
+ 
+     private organizationId: string;
+@@ -45,7 +45,7 @@ export class SsoComponent {
+         this.route.parent.parent.params.subscribe(async params => {
+             this.organizationId = params.organizationId;
+             try {
+-                this.org = await this.apiService.getOrganization(this.organizationId);
++                this.ssoConfig = await this.apiService.getSsoConfig(this.organizationId);
+             } catch { }
+         });
+         this.loading = false;
+@@ -54,12 +54,12 @@ export class SsoComponent {
+     async submit() {
+         try {
+             const request = new OrganizationSsoUpdateRequest();
+-            request.useSso = this.org.useSso;
+-            request.callbackPath = this.org.callbackPath;
+-            request.signedOutCallbackPath = this.org.signedOutCallbackPath;
+-            request.authority = this.org.authority;
+-            request.clientId = this.org.clientId;
+-            request.clientSecret = this.org.clientSecret;
++            request.useSso = this.ssoConfig.useSso;
++            request.callbackPath = this.ssoConfig.callbackPath;
++            request.signedOutCallbackPath = this.ssoConfig.signedOutCallbackPath;
++            request.authority = this.ssoConfig.authority;
++            request.clientId = this.ssoConfig.clientId;
++            request.clientSecret = this.ssoConfig.clientSecret;
+ 
+             this.formPromise = this.apiService.putOrganizationSso(this.organizationId, request).then(() => {
+                 return this.syncService.fullSync(true);
 diff --git a/src/app/send/access.component.html b/src/app/send/access.component.html
 index 84944a2b..b736bbe4 100644
 --- a/src/app/send/access.component.html
