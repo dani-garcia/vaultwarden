@@ -3,6 +3,7 @@ name = "vaultwarden"
 version = "1.0.0"
 authors = ["Daniel García <dani-garcia@users.noreply.github.com>"]
 edition = "2018"
+resolver = "2"
 
 repository = "https://github.com/dani-garcia/vaultwarden"
 readme = "README.md"
@@ -61,7 +62,7 @@ log = "0.4.14"
 fern = { version = "0.6.0", features = ["syslog-4"] }
 
 # A safe, extensible ORM and Query builder
-diesel = { version = "1.4.7", features = [ "chrono", "r2d2"] }
+diesel = { version = "1.4.8", features = [ "chrono", "r2d2"] }
 diesel_migrations = "1.4.0"
 
 # Bundled SQLite
@@ -76,7 +77,7 @@ uuid = { version = "0.8.2", features = ["v4"] }
 
 # Date and time libraries
 chrono = { version = "0.4.19", features = ["serde"] }
-chrono-tz = "0.5.3"
+chrono-tz = "0.6.0"
 time = "0.2.27"
 
 # Job scheduler
@@ -109,7 +110,7 @@ num-traits = "0.2.14"
 num-derive = "0.3.3"
 
 # Email libraries
-tracing = { version = "0.1.27", features = ["log"] } # Needed to have lettre trace logging used when SMTP_DEBUG is enabled.
+tracing = { version = "0.1.28", features = ["log"] } # Needed to have lettre trace logging used when SMTP_DEBUG is enabled.
 lettre = { version = "0.10.0-rc.3", features = ["smtp-transport", "builder", "serde", "native-tls", "hostname", "tracing"], default-features = false }
 
 # Template library
