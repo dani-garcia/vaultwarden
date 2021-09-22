@@ -10,6 +10,7 @@ mod send;
 mod two_factor;
 mod user;
 mod sso_nonce;
+mod sso_config;
 
 pub use self::attachment::Attachment;
 pub use self::cipher::Cipher;
@@ -23,3 +24,4 @@ pub use self::send::{Send, SendType};
 pub use self::two_factor::{TwoFactor, TwoFactorType};
 pub use self::user::{Invitation, User, UserStampException};
 pub use self::sso_nonce::SsoNonce;
+pub use self::sso_config::SsoConfig;

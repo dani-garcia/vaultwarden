@@ -15,12 +15,6 @@ db_object! {
         pub identifier: Option<String>,
         pub private_key: Option<String>,
         pub public_key: Option<String>,
-        pub use_sso: bool,
-        pub callback_path: String,
-        pub signed_out_callback_path: String,
-        pub authority: Option<String>,
-        pub client_id: Option<String>,
-        pub client_secret: Option<String>,
     }
 
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -139,12 +133,6 @@ impl Organization {
             private_key,
             public_key,
             identifier: None,
-            use_sso: false,
-            callback_path: String::from("http://localhost/#/sso/"),
-            signed_out_callback_path: String::from("http://localhost/#/sso/"),
-            authority: None,
-            client_id: None,
-            client_secret: None,
         }
     }
 
@@ -162,7 +150,6 @@ impl Organization {
             "UseGroups": false, // not supported by us
             "UseTotp": true,
             "UsePolicies": true,
-            "UseSso": self.use_sso,
             "SelfHost": true,
             "UseApi": false, // not supported by us
             "HasPublicAndPrivateKeys": self.private_key.is_some() && self.public_key.is_some(),
@@ -180,11 +167,6 @@ impl Organization {
             "PlanType": 5, // TeamsAnnually plan
             "UsersGetPremium": true,
             "Object": "organization",
-            "CallbackPath": self.callback_path,
-            "SignedOutCallbackPath": self.signed_out_callback_path,
-            "Authority": self.authority,
-            "ClientId": self.client_id,
-            "ClientSecret": self.client_secret,
         })
     }
 }

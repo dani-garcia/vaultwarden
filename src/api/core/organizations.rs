@@ -24,6 +24,7 @@ pub fn routes() -> Vec<Route> {
         put_collection_users,
         put_organization,
         post_organization,
+        get_organization_sso,
         put_organization_sso,
         post_organization_collections,
         delete_organization_collection_user,
@@ -116,6 +117,7 @@ fn create_organization(headers: Headers, data: JsonUpcase<OrgData>, conn: DbConn
 
     let org = Organization::new(data.Name, data.BillingEmail, private_key, public_key);
     let mut user_org = UserOrganization::new(headers.user.uuid, org.uuid.clone());
+    let sso_config = SsoConfig::new(org.uuid.clone());
     let collection = Collection::new(org.uuid.clone(), data.CollectionName);
 
     user_org.akey = data.Key;
@@ -125,6 +127,7 @@ fn create_organization(headers: Headers, data: JsonUpcase<OrgData>, conn: DbConn
 
     org.save(&conn)?;
     user_org.save(&conn)?;
+    sso_config.save(&conn)?;
     collection.save(&conn)?;
 
     Ok(Json(org.to_json()))
@@ -182,7 +185,9 @@ fn leave_organization(org_id: String, headers: Headers, conn: DbConn) -> EmptyRe
 #[get("/organizations/<org_id>")]
 fn get_organization(org_id: String, _headers: OwnerHeaders, conn: DbConn) -> JsonResult {
     match Organization::find_by_uuid(&org_id, &conn) {
-        Some(organization) => Ok(Json(organization.to_json())),
+        Some(organization) => {
+            Ok(Json(organization.to_json()))
+        },
         None => err!("Can't find organization details"),
     }
 }
@@ -219,6 +224,14 @@ fn post_organization(
     Ok(Json(org.to_json()))
 }
 
+#[get("/organizations/<org_id>/sso")]
+fn get_organization_sso(org_id: String, _headers: OwnerHeaders, conn: DbConn) -> JsonResult {
+    match SsoConfig::find_by_org(&org_id, &conn) {
+        Some(sso_config) => Ok(Json(sso_config.to_json())),
+        None => err!("Can't find organization sso config"),
+    }
+}
+
 #[put("/organizations/<org_id>/sso", data = "<data>")]
 fn put_organization_sso(
     org_id: String,
@@ -228,20 +241,23 @@ fn put_organization_sso(
 ) -> JsonResult {
     let data: OrganizationSsoUpdateData = data.into_inner().data;
 
-    let mut org = match Organization::find_by_uuid(&org_id, &conn) {
-        Some(organization) => organization,
-        None => err!("Can't find organization details"),
+    let mut sso_config = match SsoConfig::find_by_org(&org_id, &conn) {
+        Some(sso_config) => sso_config,
+        None => {
+            let sso_config = SsoConfig::new(org_id);
+            sso_config
+        },
     };
 
-    org.use_sso = data.UseSso;
-    org.callback_path = data.CallbackPath;
-    org.signed_out_callback_path = data.SignedOutCallbackPath;
-    org.authority = data.Authority;
-    org.client_id = data.ClientId;
-    org.client_secret = data.ClientSecret;
+    sso_config.use_sso = data.UseSso;
+    sso_config.callback_path = data.CallbackPath;
+    sso_config.signed_out_callback_path = data.SignedOutCallbackPath;
+    sso_config.authority = data.Authority;
+    sso_config.client_id = data.ClientId;
+    sso_config.client_secret = data.ClientSecret;
 
-    org.save(&conn)?;
-    Ok(Json(org.to_json()))
+    sso_config.save(&conn)?;
+    Ok(Json(sso_config.to_json()))
 }
 
 // GET /api/collections?writeOnly=false

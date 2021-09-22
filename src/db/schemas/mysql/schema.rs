@@ -103,6 +103,13 @@ table! {
         identifier -> Nullable<Text>,
         private_key -> Nullable<Text>,
         public_key -> Nullable<Text>,
+    }
+}
+
+table! {
+    sso_config (uuid) {
+        uuid -> Text,
+        org_uuid -> Text,
         use_sso -> Bool,
         callback_path -> Text,
         signed_out_callback_path -> Text,

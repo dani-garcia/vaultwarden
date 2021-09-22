@@ -98,8 +98,9 @@ fn _authorization_login(data: ConnectData, conn: DbConn, ip: &ClientIp) -> JsonR
     let org_identifier = data.org_identifier.as_ref().unwrap();
     let code = data.code.as_ref().unwrap();
     let organization = Organization::find_by_identifier(org_identifier, &conn).unwrap();
+    let sso_config = SsoConfig::find_by_org(&organization.uuid, &conn).unwrap();
 
-    let (access_token, refresh_token) = match get_auth_code_access_token(&code, &organization) {
+    let (access_token, refresh_token) = match get_auth_code_access_token(&code, &sso_config) {
         Ok((access_token, refresh_token)) => (access_token, refresh_token),
         Err(err) => err!(err),
     };
@@ -537,24 +538,26 @@ fn _check_is_some<T>(value: &Option<T>, msg: &str) -> EmptyResult {
 
 #[get("/account/prevalidate?<domainHint>")]
 #[allow(non_snake_case)]
+// The compiler warns about unreachable code here. But I've tested it, and it seems to work
+// as expected. All errors appear to be reachable, as is the Ok response.
+#[allow(unreachable_code)]
 fn prevalidate(domainHint: String, conn: DbConn) -> JsonResult {
     let empty_result = json!({});
-    let organization = Organization::find_by_identifier(&domainHint, &conn);
-    // The compiler warns about unreachable code here. But I've tested it, and it seems to work
-    // as expected. All errors appear to be reachable, as is the Ok response.
-    match organization {
-        Some(organization) => {
-            if !organization.use_sso {
+    let organization = Organization::find_by_identifier(&domainHint, &conn).unwrap();
+    let sso_config = SsoConfig::find_by_org(&organization.uuid, &conn);
+    match sso_config {
+        Some(sso_config) => {
+            if !sso_config.use_sso {
                 return err_code!("SSO Not allowed for organization", Status::BadRequest.code);
             }
-            if organization.authority.is_none()
-                || organization.client_id.is_none()
-                || organization.client_secret.is_none() {
+            if sso_config.authority.is_none()
+                || sso_config.client_id.is_none()
+                || sso_config.client_secret.is_none() {
                 return err_code!("Organization is incorrectly configured for SSO", Status::BadRequest.code);
             }
         },
         None => {
-            return err_code!("Organization not found by identifier", Status::BadRequest.code);
+            return err_code!("Unable to find sso config", Status::BadRequest.code);
         },
     }
 
@@ -576,11 +579,11 @@ use openidconnect::{
     Scope, OAuth2TokenResponse,
 };
 
-fn get_client_from_org (organization: &Organization) -> Result<CoreClient, &'static str> {
-    let redirect = organization.callback_path.to_string();
-    let client_id = ClientId::new(organization.client_id.as_ref().unwrap().to_string());
-    let client_secret = ClientSecret::new(organization.client_secret.as_ref().unwrap().to_string());
-    let issuer_url = IssuerUrl::new(organization.authority.as_ref().unwrap().to_string()).expect("invalid issuer URL");
+fn get_client_from_sso_config (sso_config: &SsoConfig) -> Result<CoreClient, &'static str> {
+    let redirect = sso_config.callback_path.to_string();
+    let client_id = ClientId::new(sso_config.client_id.as_ref().unwrap().to_string());
+    let client_secret = ClientSecret::new(sso_config.client_secret.as_ref().unwrap().to_string());
+    let issuer_url = IssuerUrl::new(sso_config.authority.as_ref().unwrap().to_string()).expect("invalid issuer URL");
     let provider_metadata = match CoreProviderMetadata::discover(&issuer_url, http_client) {
         Ok(metadata) => metadata,
         Err(_err) => {
@@ -603,7 +606,8 @@ fn authorize(
     conn: DbConn,
 ) -> ApiResult<Redirect> {
     let organization = Organization::find_by_identifier(&domain_hint, &conn).unwrap();
-    match get_client_from_org(&organization) {
+    let sso_config = SsoConfig::find_by_org(&organization.uuid, &conn).unwrap();
+    match get_client_from_sso_config(&sso_config) {
         Ok(client) => {
             let (mut authorize_url, _csrf_state, nonce) = client
                 .authorize_url(
@@ -639,10 +643,10 @@ fn authorize(
 
 fn get_auth_code_access_token (
     code: &str,
-    organization: &Organization,
+    sso_config: &SsoConfig,
 ) -> Result<(String, String), &'static str> {
     let oidc_code = AuthorizationCode::new(String::from(code));
-    match get_client_from_org(organization) {
+    match get_client_from_sso_config(sso_config) {
         Ok(client) => {
             match client.exchange_code(oidc_code).request(http_client) {
                 Ok(token_response) => {
