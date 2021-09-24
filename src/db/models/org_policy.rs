@@ -27,7 +27,7 @@ pub enum OrgPolicyType {
     TwoFactorAuthentication = 0,
     MasterPassword = 1,
     PasswordGenerator = 2,
-    // SingleOrg = 3, // Not currently supported.
+    SingleOrg = 3,
     // RequireSso = 4, // Not currently supported.
     PersonalOwnership = 5,
     DisableSend = 6,
@@ -143,7 +143,7 @@ impl OrgPolicy {
         }}
     }
 
-    pub fn find_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
+    pub fn find_confirmed_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
         db_run! { conn: {
             org_policies::table
                 .inner_join(
@@ -184,8 +184,8 @@ impl OrgPolicy {
     /// and the user is not an owner or admin of that org. This is only useful for checking
     /// applicability of policy types that have these particular semantics.
     pub fn is_applicable_to_user(user_uuid: &str, policy_type: OrgPolicyType, conn: &DbConn) -> bool {
-        // Returns confirmed users only.
-        for policy in OrgPolicy::find_by_user(user_uuid, conn) {
+        // TODO: Should check confirmed and accepted users
+        for policy in OrgPolicy::find_confirmed_by_user(user_uuid, conn) {
             if policy.enabled && policy.has_type(policy_type) {
                 let org_uuid = &policy.org_uuid;
                 if let Some(user) = UserOrganization::find_by_user_and_org(user_uuid, org_uuid, conn) {
@@ -201,8 +201,7 @@ impl OrgPolicy {
     /// Returns true if the user belongs to an org that has enabled the `DisableHideEmail`
     /// option of the `Send Options` policy, and the user is not an owner or admin of that org.
     pub fn is_hide_email_disabled(user_uuid: &str, conn: &DbConn) -> bool {
-        // Returns confirmed users only.
-        for policy in OrgPolicy::find_by_user(user_uuid, conn) {
+        for policy in OrgPolicy::find_confirmed_by_user(user_uuid, conn) {
             if policy.enabled && policy.has_type(OrgPolicyType::SendOptions) {
                 let org_uuid = &policy.org_uuid;
                 if let Some(user) = UserOrganization::find_by_user_and_org(user_uuid, org_uuid, conn) {

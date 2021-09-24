@@ -102,6 +102,11 @@ fn create_organization(headers: Headers, data: JsonUpcase<OrgData>, conn: DbConn
     if !CONFIG.is_org_creation_allowed(&headers.user.email) {
         err!("User not allowed to create organizations")
     }
+    if OrgPolicy::is_applicable_to_user(&headers.user.uuid, OrgPolicyType::SingleOrg, &conn) {
+        err!(
+            "You may not create an organization. You belong to an organization which has a policy that prohibits you from being a member of any other organization."
+        )
+    }
 
     let data: OrgData = data.into_inner().data;
     let (private_key, public_key) = if data.Keys.is_some() {
@@ -747,6 +752,30 @@ fn accept_invite(_org_id: String, _org_user_id: String, data: JsonUpcase<AcceptD
                     err!("You cannot join this organization until you enable two-step login on your user account.")
                 }
 
+                // Enforce Single Organization Policy of organization user is trying to join
+                let single_org_policy_enabled =
+                    match OrgPolicy::find_by_org_and_type(&user_org.org_uuid, OrgPolicyType::SingleOrg as i32, &conn) {
+                        Some(p) => p.enabled,
+                        None => false,
+                    };
+                if single_org_policy_enabled && user_org.atype < UserOrgType::Admin {
+                    let is_member_of_another_org = UserOrganization::find_any_state_by_user(&user_org.user_uuid, &conn)
+                        .into_iter()
+                        .filter(|uo| uo.org_uuid != user_org.org_uuid)
+                        .count()
+                        > 1;
+                    if is_member_of_another_org {
+                        err!("You may not join this organization until you leave or remove all other organizations.")
+                    }
+                }
+
+                // Enforce Single Organization Policy of other organizations user is a member of
+                if OrgPolicy::is_applicable_to_user(&user_org.user_uuid, OrgPolicyType::SingleOrg, &conn) {
+                    err!(
+                        "You cannot join this organization because you are a member of an organization which forbids it"
+                    )
+                }
+
                 user_org.status = UserOrgStatus::Accepted as i32;
                 user_org.save(&conn)?;
             }
@@ -1215,6 +1244,33 @@ fn put_policy(
                     mail::send_2fa_removed_from_org(&user.email, &org.name)?;
                 }
                 user_org.delete(&conn)?;
+            }
+        }
+    }
+
+    // If enabling the SingleOrg policy, remove this org's members that are members of other orgs
+    if pol_type_enum == OrgPolicyType::SingleOrg && data.enabled {
+        let org_members = UserOrganization::find_by_org(&org_id, &conn);
+
+        for member in org_members.into_iter() {
+            // Policy only applies to non-Owner/non-Admin members who have accepted joining the org
+            if member.atype < UserOrgType::Admin && member.status != UserOrgStatus::Invited as i32 {
+                let is_member_of_another_org = UserOrganization::find_any_state_by_user(&member.user_uuid, &conn)
+                    .into_iter()
+                    // Other UserOrganization's where they have accepted being a member of
+                    .filter(|uo| uo.uuid != member.uuid && uo.status != UserOrgStatus::Invited as i32)
+                    .count()
+                    > 1;
+
+                if is_member_of_another_org {
+                    if CONFIG.mail_enabled() {
+                        let org = Organization::find_by_uuid(&member.org_uuid, &conn).unwrap();
+                        let user = User::find_by_uuid(&member.user_uuid, &conn).unwrap();
+
+                        mail::send_single_org_removed_from_org(&user.email, &org.name)?;
+                    }
+                    member.delete(&conn)?;
+                }
             }
         }
     }

@@ -56,7 +56,7 @@ fn _refresh_login(data: ConnectData, conn: DbConn) -> JsonResult {
 
     // COMMON
     let user = User::find_by_uuid(&device.user_uuid, &conn).unwrap();
-    let orgs = UserOrganization::find_by_user(&user.uuid, &conn);
+    let orgs = UserOrganization::find_confirmed_by_user(&user.uuid, &conn);
 
     let (access_token, expires_in) = device.refresh_tokens(&user, orgs);
 
@@ -147,7 +147,7 @@ fn _password_login(data: ConnectData, conn: DbConn, ip: &ClientIp) -> JsonResult
     }
 
     // Common
-    let orgs = UserOrganization::find_by_user(&user.uuid, &conn);
+    let orgs = UserOrganization::find_confirmed_by_user(&user.uuid, &conn);
 
     let (access_token, expires_in) = device.refresh_tokens(&user, orgs);
     device.save(&conn)?;

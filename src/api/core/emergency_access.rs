@@ -683,7 +683,7 @@ fn policies_emergency_access(emer_id: String, headers: Headers, conn: DbConn) ->
         None => err!("Grantor user not found."),
     };
 
-    let policies = OrgPolicy::find_by_user(&grantor_user.uuid, &conn);
+    let policies = OrgPolicy::find_confirmed_by_user(&grantor_user.uuid, &conn);
     let policies_json: Vec<Value> = policies.iter().map(OrgPolicy::to_json).collect();
 
     Ok(Json(json!({
