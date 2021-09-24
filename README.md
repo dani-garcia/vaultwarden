@@ -55,6 +55,16 @@ If you spot any bugs or crashes with vaultwarden itself, please [create an issue
 
 If you prefer to chat, we're usually hanging around at [#vaultwarden:matrix.org](https://matrix.to/#/#vaultwarden:matrix.org) room on Matrix. Feel free to join us!
 
+## Contributing
+To get started with development:
+
+1. [Install Rust](https://www.rust-lang.org/tools/install)
+2. Create the data directory with `mkdir data`
+3. Download and extract the [latest bw_web_builds](https://github.com/dani-garcia/bw_web_builds/releases/latest) artifact to a `web-vault` folder.
+4. Run `cargo run --features sqlite --release` (alternatively `mysql` or `postgresql`)
+
+For full details, see [the vaultwarden wiki](https://github.com/dani-garcia/vaultwarden/wiki/Building-binary).
+
 ### Sponsors
 Thanks for your contribution to the project!
 
