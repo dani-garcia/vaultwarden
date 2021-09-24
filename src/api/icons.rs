@@ -250,7 +250,7 @@ fn is_domain_blacklisted(domain: &str) -> bool {
 
             // Use the pre-generate Regex stored in a Lazy HashMap.
             if regex.is_match(domain) {
-                warn!("Blacklisted domain: {:#?} matched {:#?}", domain, blacklist);
+                warn!("Blacklisted domain: {} matched ICON_BLACKLIST_REGEX", domain);
                 is_blacklisted = true;
             }
         }
@@ -555,7 +555,7 @@ fn get_page(url: &str) -> Result<Response, Error> {
 
 fn get_page_with_referer(url: &str, referer: &str) -> Result<Response, Error> {
     if is_domain_blacklisted(url::Url::parse(url).unwrap().host_str().unwrap_or_default()) {
-        err!("Favicon rel linked to a blacklisted domain!");
+        err!("Favicon resolves to a blacklisted domain or IP!", url);
     }
 
     let mut client = CLIENT.get(url);
@@ -563,7 +563,10 @@ fn get_page_with_referer(url: &str, referer: &str) -> Result<Response, Error> {
         client = client.header("Referer", referer)
     }
 
-    client.send()?.error_for_status().map_err(Into::into)
+    match client.send() {
+        Ok(c) => c.error_for_status().map_err(Into::into),
+        Err(e) => err_silent!(format!("{}", e)),
+    }
 }
 
 /// Returns a Integer with the priority of the type of the icon which to prefer.
@@ -647,7 +650,7 @@ fn parse_sizes(sizes: Option<&str>) -> (u16, u16) {
 
 fn download_icon(domain: &str) -> Result<(Vec<u8>, Option<&str>), Error> {
     if is_domain_blacklisted(domain) {
-        err!("Domain is blacklisted", domain)
+        err_silent!("Domain is blacklisted", domain)
     }
 
     let icon_result = get_icon_url(domain)?;
@@ -676,7 +679,7 @@ fn download_icon(domain: &str) -> Result<(Vec<u8>, Option<&str>), Error> {
                         break;
                     }
                 }
-                _ => warn!("Extracted icon from data:image uri is invalid"),
+                _ => debug!("Extracted icon from data:image uri is invalid"),
             };
         } else {
             match get_page_with_referer(&icon.href, &icon_result.referer) {
@@ -692,13 +695,13 @@ fn download_icon(domain: &str) -> Result<(Vec<u8>, Option<&str>), Error> {
                     info!("Downloaded icon from {}", icon.href);
                     break;
                 }
-                _ => warn!("Download failed for {}", icon.href),
+                Err(e) => debug!("{:?}", e),
             };
         }
     }
 
     if buffer.is_empty() {
-        err!("Empty response downloading icon")
+        err_silent!("Empty response or unable find a valid icon", domain);
     }
 
     Ok((buffer, icon_type))
