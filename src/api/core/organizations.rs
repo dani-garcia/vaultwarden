@@ -1183,7 +1183,7 @@ struct PolicyData {
     enabled: bool,
     #[serde(rename = "type")]
     _type: i32,
-    data: Value,
+    data: Option<Value>,
 }
 
 #[put("/organizations/<org_id>/policies/<pol_type>", data = "<data>")]
