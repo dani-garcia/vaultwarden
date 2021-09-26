@@ -220,6 +220,15 @@ macro_rules! err {
     }};
 }
 
+macro_rules! err_silent {
+    ($msg:expr) => {{
+        return Err(crate::error::Error::new($msg, $msg));
+    }};
+    ($usr_msg:expr, $log_value:expr) => {{
+        return Err(crate::error::Error::new($usr_msg, $log_value));
+    }};
+}
+
 #[macro_export]
 macro_rules! err_code {
     ($msg:expr, $err_code: expr) => {{
