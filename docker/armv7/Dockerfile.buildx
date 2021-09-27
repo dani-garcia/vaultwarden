@@ -27,7 +27,7 @@
 FROM vaultwarden/web-vault@sha256:68790f9a62bf3edd6d54ce62ba9f0a2d2ddc7d3e1e9e36324fcbe632293f8fbc as vault
 
 ########################## BUILD IMAGE  ##########################
-FROM rust:1.54-bullseye as build
+FROM rust:1.55-buster as build
 
 # Debian-based builds support multidb
 ARG DB=sqlite,mysql,postgresql
@@ -123,7 +123,7 @@ RUN --mount=type=cache,target=/root/.cargo/git --mount=type=cache,target=/root/.
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image
 # because we already have a binary built
-FROM balenalib/armv7hf-debian:bullseye
+FROM balenalib/armv7hf-debian:buster
 
 ENV ROCKET_ENV "staging"
 ENV ROCKET_PORT=80
