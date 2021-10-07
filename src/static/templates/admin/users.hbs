@@ -61,16 +61,16 @@
                             {{/each}}
                             </div>
                         </td>
-                        <td class="text-end pe-2 small">
+                        <td class="text-end px-0 small">
                             {{#if TwoFactorEnabled}}
-                            <a class="d-block" href="#" onclick='remove2fa({{jsesc Id}})'>Remove all 2FA</a>
+                            <button type="button" class="btn btn-sm btn-link p-0 border-0" onclick='remove2fa({{jsesc Id}})'>Remove all 2FA</button>
                             {{/if}}
-                            <a class="d-block" href="#" onclick='deauthUser({{jsesc Id}})'>Deauthorize sessions</a>
-                            <a class="d-block" href="#" onclick='deleteUser({{jsesc Id}}, {{jsesc Email}})'>Delete User</a>
+                            <button type="button" class="btn btn-sm btn-link p-0 border-0" onclick='deauthUser({{jsesc Id}})'>Deauthorize sessions</button>
+                            <button type="button" class="btn btn-sm btn-link p-0 border-0" onclick='deleteUser({{jsesc Id}}, {{jsesc Email}})'>Delete User</button>
                             {{#if user_enabled}}
-                            <a class="d-block" href="#" onclick='disableUser({{jsesc Id}}, {{jsesc Email}})'>Disable User</a>
+                            <button type="button" class="btn btn-sm btn-link p-0 border-0" onclick='disableUser({{jsesc Id}}, {{jsesc Email}})'>Disable User</button>
                             {{else}}
-                            <a class="d-block" href="#" onclick='enableUser({{jsesc Id}}, {{jsesc Email}})'>Enable User</a>
+                            <button type="button" class="btn btn-sm btn-link p-0 border-0" onclick='enableUser({{jsesc Id}}, {{jsesc Email}})'>Enable User</button>
                             {{/if}}
                         </td>
                     </tr>

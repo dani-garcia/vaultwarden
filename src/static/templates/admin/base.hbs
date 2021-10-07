@@ -62,8 +62,8 @@
                 headers: { "Content-Type": "application/json" }
             }).then( resp => {
                 if (resp.ok) { msg(successMsg, reload_page); return Promise.reject({error: false}); }
-                respStatus = resp.status;
-                respStatusText = resp.statusText;
+                const respStatus = resp.status;
+                const respStatusText = resp.statusText;
                 return resp.text();
             }).then( respText => {
                 try {
@@ -126,9 +126,9 @@
 
         // get current URL path and assign 'active' class to the correct nav-item
         (() => {
-            var pathname = window.location.pathname;
+            const pathname = window.location.pathname;
             if (pathname === "") return;
-            var navItem = document.querySelectorAll('.navbar-nav .nav-item a[href="'+pathname+'"]');
+            let navItem = document.querySelectorAll('.navbar-nav .nav-item a[href="'+pathname+'"]');
             if (navItem.length === 1) {
                 navItem[0].className = navItem[0].className + ' active';
                 navItem[0].setAttribute('aria-current', 'page');

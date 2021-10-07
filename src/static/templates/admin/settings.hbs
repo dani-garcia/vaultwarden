@@ -219,11 +219,10 @@
         onChange(); // Trigger the event initially
         checkbox.addEventListener("change", onChange);
     }
-    // These are formatted because otherwise the
-    // VSCode formatter breaks But they still work
-    // {{#each config}} {{#if grouptoggle}}
+
+    {{#each config}} {{#if grouptoggle}}
     masterCheck("input_{{grouptoggle}}", "#g_{{group}} input");
-    // {{/if}} {{/each}}
+    {{/if}} {{/each}}
 
     // Two functions to help check if there were changes to the form fields
     // Useful for example during the smtp test to prevent people from clicking save before testing there new settings
