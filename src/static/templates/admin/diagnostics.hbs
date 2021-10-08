@@ -58,7 +58,7 @@
                     <dt class="col-sm-5">Running within Docker</dt>
                     <dd class="col-sm-7">
                     {{#if page_data.running_within_docker}}
-                        <span class="d-block"><b>Yes</b></span>
+                        <span class="d-block"><b>Yes (Base: {{ page_data.docker_base_image }})</b></span>
                     {{/if}}
                     {{#unless page_data.running_within_docker}}
                         <span class="d-block"><b>No</b></span>
@@ -329,7 +329,7 @@
 
         supportString += "* Vaultwarden version: v{{ version }}\n";
         supportString += "* Web-vault version: v{{ page_data.web_vault_version }}\n";
-        supportString += "* Running within Docker: {{ page_data.running_within_docker }}\n";
+        supportString += "* Running within Docker: {{ page_data.running_within_docker }} (Base: {{ page_data.docker_base_image }})\n";
         supportString += "* Environment settings overridden: ";
         {{#if page_data.overrides}}
             supportString += "true\n"
