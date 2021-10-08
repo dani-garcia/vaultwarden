@@ -195,6 +195,18 @@ pub fn send_2fa_removed_from_org(address: &str, org_name: &str) -> EmptyResult {
     send_email(address, &subject, body_html, body_text)
 }
 
+pub fn send_single_org_removed_from_org(address: &str, org_name: &str) -> EmptyResult {
+    let (subject, body_html, body_text) = get_text(
+        "email/send_single_org_removed_from_org",
+        json!({
+            "url": CONFIG.domain(),
+            "org_name": org_name,
+        }),
+    )?;
+
+    send_email(address, &subject, body_html, body_text)
+}
+
 pub fn send_invite(
     address: &str,
     uuid: &str,

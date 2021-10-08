@@ -105,7 +105,7 @@ fn sync(data: Form<SyncData>, headers: Headers, conn: DbConn) -> Json<Value> {
     let collections_json: Vec<Value> =
         collections.iter().map(|c| c.to_json_details(&headers.user.uuid, &conn)).collect();
 
-    let policies = OrgPolicy::find_by_user(&headers.user.uuid, &conn);
+    let policies = OrgPolicy::find_confirmed_by_user(&headers.user.uuid, &conn);
     let policies_json: Vec<Value> = policies.iter().map(OrgPolicy::to_json).collect();
 
     let ciphers = Cipher::find_by_user_visible(&headers.user.uuid, &conn);

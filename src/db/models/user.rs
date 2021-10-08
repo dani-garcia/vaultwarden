@@ -185,7 +185,7 @@ use crate::error::MapResult;
 /// Database methods
 impl User {
     pub fn to_json(&self, conn: &DbConn) -> Value {
-        let orgs = UserOrganization::find_by_user(&self.uuid, conn);
+        let orgs = UserOrganization::find_confirmed_by_user(&self.uuid, conn);
         let orgs_json: Vec<Value> = orgs.iter().map(|c| c.to_json(conn)).collect();
         let twofactor_enabled = !TwoFactor::find_by_user(&self.uuid, conn).is_empty();
 
@@ -256,7 +256,7 @@ impl User {
     }
 
     pub fn delete(self, conn: &DbConn) -> EmptyResult {
-        for user_org in UserOrganization::find_by_user(&self.uuid, conn) {
+        for user_org in UserOrganization::find_confirmed_by_user(&self.uuid, conn) {
             if user_org.atype == UserOrgType::Owner {
                 let owner_type = UserOrgType::Owner as i32;
                 if UserOrganization::find_by_org_and_type(&user_org.org_uuid, owner_type, conn).len() <= 1 {
