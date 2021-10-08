@@ -485,15 +485,28 @@ fn send_email(address: &str, subject: &str, body_html: String, body_text: String
         // Match some common errors and make them more user friendly
         Err(e) => {
             if e.is_client() {
-                err!(format!("SMTP Client error: {}", e));
+                debug!("SMTP Client error: {:#?}", e);
+                err!(format!("SMTP Client error: {}", e.to_string()));
             } else if e.is_transient() {
-                err!(format!("SMTP 4xx error: {:?}", e));
+                debug!("SMTP 4xx error: {:#?}", e);
+                err!(format!("SMTP 4xx error: {}", e.to_string()));
             } else if e.is_permanent() {
-                err!(format!("SMTP 5xx error: {:?}", e));
+                debug!("SMTP 5xx error: {:#?}", e);
+                let mut msg = e.to_string();
+                // Add a special check for 535 to add a more descriptive message
+                if msg.contains("(535)") {
+                    msg = format!("{} - Authentication credentials invalid", msg);
+                }
+                err!(format!("SMTP 5xx error: {}", msg));
             } else if e.is_timeout() {
-                err!(format!("SMTP timeout error: {:?}", e));
+                debug!("SMTP timeout error: {:#?}", e);
+                err!(format!("SMTP timeout error: {}", e.to_string()));
+            } else if e.is_tls() {
+                debug!("SMTP Encryption error: {:#?}", e);
+                err!(format!("SMTP Encryption error: {}", e.to_string()));
             } else {
-                Err(e.into())
+                debug!("SMTP {:#?}", e);
+                err!(format!("SMTP {}", e.to_string()));
             }
         }
     }

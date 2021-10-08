@@ -419,6 +419,18 @@ pub fn is_running_in_docker() -> bool {
     Path::new("/.dockerenv").exists() || Path::new("/run/.containerenv").exists()
 }
 
+/// Simple check to determine on which docker base image vaultwarden is running.
+/// We build images based upon Debian or Alpine, so these we check here.
+pub fn docker_base_image() -> String {
+    if Path::new("/etc/debian_version").exists() {
+        "Debian".to_string()
+    } else if Path::new("/etc/alpine-release").exists() {
+        "Alpine".to_string()
+    } else {
+        "Unknown".to_string()
+    }
+}
+
 //
 // Deserialization methods
 //

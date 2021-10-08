@@ -37,8 +37,8 @@
                             <span class="d-block"><strong>Size:</strong> {{attachment_size}}</span>
                             {{/if}}
                         </td>
-                        <td class="text-end pe-2 small">
-                            <a class="d-block" href="#" onclick='deleteOrganization({{jsesc Id}}, {{jsesc Name}}, {{jsesc BillingEmail}})'>Delete Organization</a>
+                        <td class="text-end px-0 small">
+                            <button type="button" class="btn btn-sm btn-link p-0 border-0" onclick='deleteOrganization({{jsesc Id}}, {{jsesc Name}}, {{jsesc BillingEmail}})'>Delete Organization</button>
                         </td>
                     </tr>
                     {{/each}}
