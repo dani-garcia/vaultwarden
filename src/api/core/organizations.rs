@@ -1238,7 +1238,10 @@ fn put_policy(
             let user_twofactor_disabled = TwoFactor::find_by_user(&member.user_uuid, &conn).is_empty();
 
             // Policy only applies to non-Owner/non-Admin members who have accepted joining the org
-            if user_twofactor_disabled && member.atype < UserOrgType::Admin && member.status != UserOrgStatus::Invited as i32 {
+            if user_twofactor_disabled
+                && member.atype < UserOrgType::Admin
+                && member.status != UserOrgStatus::Invited as i32
+            {
                 if CONFIG.mail_enabled() {
                     let org = Organization::find_by_uuid(&member.org_uuid, &conn).unwrap();
                     let user = User::find_by_uuid(&member.user_uuid, &conn).unwrap();
