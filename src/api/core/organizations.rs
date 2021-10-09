@@ -1230,20 +1230,22 @@ fn put_policy(
         None => err!("Invalid policy type"),
     };
 
+    // If enabling the TwoFactorAuthentication policy, remove this org's members that do have 2FA
     if pol_type_enum == OrgPolicyType::TwoFactorAuthentication && data.enabled {
-        let org_list = UserOrganization::find_by_org(&org_id, &conn);
+        let org_members = UserOrganization::find_by_org(&org_id, &conn);
 
-        for user_org in org_list.into_iter() {
-            let user_twofactor_disabled = TwoFactor::find_by_user(&user_org.user_uuid, &conn).is_empty();
+        for member in org_members.into_iter() {
+            let user_twofactor_disabled = TwoFactor::find_by_user(&member.user_uuid, &conn).is_empty();
 
-            if user_twofactor_disabled && user_org.atype < UserOrgType::Admin {
+            // Policy only applies to non-Owner/non-Admin members who have accepted joining the org
+            if user_twofactor_disabled && member.atype < UserOrgType::Admin && member.status != UserOrgStatus::Invited as i32 {
                 if CONFIG.mail_enabled() {
-                    let org = Organization::find_by_uuid(&user_org.org_uuid, &conn).unwrap();
-                    let user = User::find_by_uuid(&user_org.user_uuid, &conn).unwrap();
+                    let org = Organization::find_by_uuid(&member.org_uuid, &conn).unwrap();
+                    let user = User::find_by_uuid(&member.user_uuid, &conn).unwrap();
 
                     mail::send_2fa_removed_from_org(&user.email, &org.name)?;
                 }
-                user_org.delete(&conn)?;
+                member.delete(&conn)?;
             }
         }
     }
