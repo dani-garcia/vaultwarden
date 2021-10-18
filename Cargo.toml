@@ -3,6 +3,7 @@ name = "vaultwarden"
 version = "1.0.0"
 authors = ["Daniel García <dani-garcia@users.noreply.github.com>"]
 edition = "2018"
+rust-version = "1.57"
 resolver = "2"
 
 repository = "https://github.com/dani-garcia/vaultwarden"
@@ -33,7 +34,7 @@ rocket = { version = "=0.5.0-dev", features = ["tls"], default-features = false 
 rocket_contrib = "=0.5.0-dev"
 
 # HTTP client
-reqwest = { version = "0.11.4", features = ["blocking", "json", "gzip", "brotli", "socks", "cookies"] }
+reqwest = { version = "0.11.5", features = ["blocking", "json", "gzip", "brotli", "socks", "cookies"] }
 
 # Used for custom short lived cookie jar
 cookie = "0.15.1"
@@ -94,7 +95,7 @@ jsonwebtoken = "7.2.0"
 
 # U2F library
 u2f = "0.2.0"
-webauthn-rs = "=0.3.0-alpha.10"
+webauthn-rs = "0.3.0-alpha.12"
 
 # Yubico Library
 yubico = { version = "0.10.0", features = ["online-tokio"], default-features = false }
@@ -110,7 +111,7 @@ num-traits = "0.2.14"
 num-derive = "0.3.3"
 
 # Email libraries
-tracing = { version = "0.1.28", features = ["log"] } # Needed to have lettre trace logging used when SMTP_DEBUG is enabled.
+tracing = { version = "0.1.29", features = ["log"] } # Needed to have lettre trace logging used when SMTP_DEBUG is enabled.
 lettre = { version = "0.10.0-rc.3", features = ["smtp-transport", "builder", "serde", "native-tls", "hostname", "tracing"], default-features = false }
 
 # Template library
