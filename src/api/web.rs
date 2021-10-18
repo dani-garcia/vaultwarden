@@ -64,8 +64,10 @@ fn attachments(uuid: SafeString, file_id: SafeString) -> Option<NamedFile> {
     NamedFile::open(Path::new(&CONFIG.attachments_folder()).join(uuid).join(file_id)).ok()
 }
 
+// We use DbConn here to let the alive healthcheck also verify the database connection.
+use crate::db::DbConn;
 #[get("/alive")]
-fn alive() -> Json<String> {
+fn alive(_conn: DbConn) -> Json<String> {
     use crate::util::format_date;
     use chrono::Utc;
 
