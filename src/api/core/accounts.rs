@@ -91,10 +91,9 @@ fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> EmptyResult {
                 user
             } else if CONFIG.is_signup_allowed(&email) {
                 // check if it's invited by emergency contact
-                if EmergencyAccess::find_invited_by_grantee_email(&data.Email, &conn).is_some() {
-                    user
-                } else {
-                    err!("Account with this email already exists")
+                match EmergencyAccess::find_invited_by_grantee_email(&data.Email, &conn) {
+                    Some(_) => user,
+                    _ => err!("Account with this email already exists"),
                 }
             } else {
                 err!("Registration not allowed or user already exists")

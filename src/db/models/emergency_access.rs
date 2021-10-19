@@ -47,12 +47,20 @@ impl EmergencyAccess {
         }
     }
 
-    pub fn get_atype_as_str(&self) -> &'static str {
+    pub fn get_type_as_str(&self) -> &'static str {
         if self.atype == EmergencyAccessType::View as i32 {
             "View"
         } else {
             "Takeover"
         }
+    }
+
+    pub fn has_type(&self, access_type: EmergencyAccessType) -> bool {
+        self.atype == access_type as i32
+    }
+
+    pub fn has_status(&self, status: EmergencyAccessStatus) -> bool {
+        self.status == status as i32
     }
 
     pub fn to_json(&self) -> Value {
@@ -66,55 +74,40 @@ impl EmergencyAccess {
     }
 
     pub fn to_json_grantor_details(&self, conn: &DbConn) -> Value {
-        // find grantor
-        let grantor_user = User::find_by_uuid(&self.grantor_uuid, conn).unwrap();
+        let grantor_user = User::find_by_uuid(&self.grantor_uuid, conn).expect("Grantor user not found.");
+
         json!({
-             "Id": self.uuid,
+            "Id": self.uuid,
             "Status": self.status,
             "Type": self.atype,
             "WaitTimeDays": self.wait_time_days,
             "GrantorId": grantor_user.uuid,
             "Email": grantor_user.email,
             "Name": grantor_user.name,
-            "Object": "emergencyAccessGrantorDetails",})
+            "Object": "emergencyAccessGrantorDetails",
+        })
     }
 
+    #[allow(clippy::manual_map)]
     pub fn to_json_grantee_details(&self, conn: &DbConn) -> Value {
-        if self.grantee_uuid.is_some() {
-            let grantee_user =
-                User::find_by_uuid(&self.grantee_uuid.clone().unwrap(), conn).expect("Grantee user not found.");
-
-            json!({
-                "Id": self.uuid,
-                "Status": self.status,
-                "Type": self.atype,
-                "WaitTimeDays": self.wait_time_days,
-                "GranteeId": grantee_user.uuid,
-                "Email": grantee_user.email,
-                "Name": grantee_user.name,
-                "Object": "emergencyAccessGranteeDetails",})
-        } else if self.email.is_some() {
-            let grantee_user = User::find_by_mail(&self.email.clone().unwrap(), conn).expect("Grantee user not found.");
-            json!({
-                    "Id": self.uuid,
-                    "Status": self.status,
-                    "Type": self.atype,
-                    "WaitTimeDays": self.wait_time_days,
-                    "GranteeId": grantee_user.uuid,
-                    "Email": grantee_user.email,
-                    "Name": grantee_user.name,
-                    "Object": "emergencyAccessGranteeDetails",})
+        let grantee_user = if let Some(grantee_uuid) = self.grantee_uuid.as_deref() {
+            Some(User::find_by_uuid(grantee_uuid, conn).expect("Grantee user not found."))
+        } else if let Some(email) = self.email.as_deref() {
+            Some(User::find_by_mail(email, conn).expect("Grantee user not found."))
         } else {
-            json!({
-                "Id": self.uuid,
-                "Status": self.status,
-                "Type": self.atype,
-                "WaitTimeDays": self.wait_time_days,
-                "GranteeId": "",
-                "Email": "",
-                "Name": "",
-                "Object": "emergencyAccessGranteeDetails",})
-        }
+            None
+        };
+
+        json!({
+            "Id": self.uuid,
+            "Status": self.status,
+            "Type": self.atype,
+            "WaitTimeDays": self.wait_time_days,
+            "GranteeId": grantee_user.as_ref().map_or("", |u| &u.uuid),
+            "Email": grantee_user.as_ref().map_or("", |u| &u.email),
+            "Name": grantee_user.as_ref().map_or("", |u| &u.name),
+            "Object": "emergencyAccessGranteeDetails",
+        })
     }
 }
 
@@ -198,11 +191,11 @@ impl EmergencyAccess {
     }
 
     pub fn delete_all_by_user(user_uuid: &str, conn: &DbConn) -> EmptyResult {
-        for user_org in Self::find_all_by_grantor_uuid(user_uuid, conn) {
-            user_org.delete(conn)?;
+        for ea in Self::find_all_by_grantor_uuid(user_uuid, conn) {
+            ea.delete(conn)?;
         }
-        for user_org in Self::find_all_by_grantee_uuid(user_uuid, conn) {
-            user_org.delete(conn)?;
+        for ea in Self::find_all_by_grantee_uuid(user_uuid, conn) {
+            ea.delete(conn)?;
         }
         Ok(())
     }
@@ -213,7 +206,7 @@ impl EmergencyAccess {
         db_run! { conn: {
             diesel::delete(emergency_access::table.filter(emergency_access::uuid.eq(self.uuid)))
                 .execute(conn)
-                .map_res("Error removing user from organization")
+                .map_res("Error removing user from emergency access")
         }}
     }
 
@@ -246,7 +239,6 @@ impl EmergencyAccess {
             emergency_access::table
                 .filter(emergency_access::status.eq(EmergencyAccessStatus::RecoveryInitiated as i32))
                 .load::<EmergencyAccessDb>(conn).expect("Error loading emergency_access").from_db()
-
         }}
     }
 
