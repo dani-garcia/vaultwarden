@@ -464,7 +464,7 @@ fn initiate_emergency_access(emer_id: String, headers: Headers, conn: DbConn) ->
         mail::send_emergency_access_recovery_initiated(
             &grantor_user.email,
             &initiating_user.name,
-            emergency_access.get_atype_as_str(),
+            emergency_access.get_type_as_str(),
             &emergency_access.wait_time_days.clone().to_string(),
         )?;
     }
@@ -743,7 +743,7 @@ pub fn emergency_request_timeout_job(pool: DbPool) {
                     mail::send_emergency_access_recovery_timed_out(
                         &grantor_user.email,
                         &grantee_user.name.clone(),
-                        emer.get_atype_as_str(),
+                        emer.get_type_as_str(),
                     )
                     .expect("Error on sending email");
 
@@ -792,8 +792,8 @@ pub fn emergency_notification_reminder_job(pool: DbPool) {
                     mail::send_emergency_access_recovery_reminder(
                         &grantor_user.email,
                         &grantee_user.name.clone(),
-                        emer.get_atype_as_str(),
-                        &emer.wait_time_days.to_string(),
+                        emer.get_type_as_str(),
+                        &emer.wait_time_days.to_string(), // TODO(jjlin): This should be the number of days left.
                     )
                     .expect("Error on sending email");
                 }

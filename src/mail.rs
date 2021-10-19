@@ -329,7 +329,7 @@ pub fn send_emergency_access_recovery_reminder(
     address: &str,
     grantee_name: &str,
     atype: &str,
-    wait_time_days: &str,
+    days_left: &str,
 ) -> EmptyResult {
     let (subject, body_html, body_text) = get_text(
         "email/emergency_access_recovery_reminder",
@@ -337,7 +337,7 @@ pub fn send_emergency_access_recovery_reminder(
             "url": CONFIG.domain(),
             "grantee_name": grantee_name,
             "atype": atype,
-            "wait_time_days": wait_time_days,
+            "days_left": days_left,
         }),
     )?;
 
