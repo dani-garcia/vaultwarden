@@ -162,11 +162,12 @@ macro_rules! make_config {
         }
 
         #[derive(Debug, Clone, Default)]
-        pub struct ConfigItems { $($(pub $name: make_config!{@type $ty, $none_action}, )+)+ }
+        struct ConfigItems { $($( $name: make_config!{@type $ty, $none_action}, )+)+ }
 
         #[allow(unused)]
         impl Config {
             $($(
+                $(#[doc = $doc])+
                 pub fn $name(&self) -> make_config!{@type $ty, $none_action} {
                     self.inner.read().unwrap().config.$name.clone()
                 }
@@ -707,7 +708,7 @@ impl Config {
         Ok(())
     }
 
-    pub fn update_config_partial(&self, other: ConfigBuilder) -> Result<(), Error> {
+    fn update_config_partial(&self, other: ConfigBuilder) -> Result<(), Error> {
         let builder = {
             let usr = &self.inner.read().unwrap()._usr;
             let mut _overrides = Vec::new();
