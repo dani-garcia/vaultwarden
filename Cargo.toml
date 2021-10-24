@@ -34,7 +34,7 @@ rocket = { version = "=0.5.0-dev", features = ["tls"], default-features = false 
 rocket_contrib = "=0.5.0-dev"
 
 # HTTP client
-reqwest = { version = "0.11.5", features = ["blocking", "json", "gzip", "brotli", "socks", "cookies"] }
+reqwest = { version = "0.11.6", features = ["blocking", "json", "gzip", "brotli", "socks", "cookies"] }
 
 # Used for custom short lived cookie jar
 cookie = "0.15.1"
@@ -95,7 +95,7 @@ jsonwebtoken = "7.2.0"
 
 # U2F library
 u2f = "0.2.0"
-webauthn-rs = "0.3.0-alpha.12"
+webauthn-rs = "0.3.0"
 
 # Yubico Library
 yubico = { version = "0.10.0", features = ["online-tokio"], default-features = false }
@@ -135,7 +135,7 @@ idna = "0.2.3"
 pico-args = "0.4.2"
 
 # Logging panics to logfile instead stderr only
-backtrace = "0.3.61"
+backtrace = "0.3.62"
 
 # Macro ident concatenation
 paste = "1.0.5"
