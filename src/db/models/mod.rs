@@ -9,6 +9,7 @@ mod org_policy;
 mod organization;
 mod send;
 mod two_factor;
+mod two_factor_incomplete;
 mod user;
 
 pub use self::attachment::Attachment;
@@ -22,4 +23,5 @@ pub use self::org_policy::{OrgPolicy, OrgPolicyType};
 pub use self::organization::{Organization, UserOrgStatus, UserOrgType, UserOrganization};
 pub use self::send::{Send, SendType};
 pub use self::two_factor::{TwoFactor, TwoFactorType};
+pub use self::two_factor_incomplete::TwoFactorIncomplete;
 pub use self::user::{Invitation, User, UserStampException};

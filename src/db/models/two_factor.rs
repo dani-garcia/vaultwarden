@@ -1,8 +1,6 @@
 use serde_json::Value;
 
-use crate::api::EmptyResult;
-use crate::db::DbConn;
-use crate::error::MapResult;
+use crate::{api::EmptyResult, db::DbConn, error::MapResult};
 
 use super::User;
 

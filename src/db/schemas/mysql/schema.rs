@@ -141,6 +141,16 @@ table! {
 }
 
 table! {
+    twofactor_incomplete (user_uuid, device_uuid) {
+        user_uuid -> Text,
+        device_uuid -> Text,
+        device_name -> Text,
+        login_time -> Timestamp,
+        ip_address -> Text,
+    }
+}
+
+table! {
     users (uuid) {
         uuid -> Text,
         enabled -> Bool,

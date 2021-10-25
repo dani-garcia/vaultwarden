@@ -1,3 +1,4 @@
+use chrono::{Duration, Utc};
 use data_encoding::BASE32;
 use rocket::Route;
 use rocket_contrib::json::Json;
@@ -7,7 +8,7 @@ use crate::{
     api::{JsonResult, JsonUpcase, NumberOrString, PasswordData},
     auth::Headers,
     crypto,
-    db::{models::*, DbConn},
+    db::{models::*, DbConn, DbPool},
     mail, CONFIG,
 };
 
@@ -155,4 +156,34 @@ fn disable_twofactor(data: JsonUpcase<DisableTwoFactorData>, headers: Headers, c
 #[put("/two-factor/disable", data = "<data>")]
 fn disable_twofactor_put(data: JsonUpcase<DisableTwoFactorData>, headers: Headers, conn: DbConn) -> JsonResult {
     disable_twofactor(data, headers, conn)
+}
+
+pub fn send_incomplete_2fa_notifications(pool: DbPool) {
+    debug!("Sending notifications for incomplete 2FA logins");
+
+    if CONFIG.incomplete_2fa_time_limit() <= 0 || !CONFIG.mail_enabled() {
+        return;
+    }
+
+    let conn = match pool.get() {
+        Ok(conn) => conn,
+        _ => {
+            error!("Failed to get DB connection in send_incomplete_2fa_notifications()");
+            return;
+        }
+    };
+
+    let now = Utc::now().naive_utc();
+    let time_limit = Duration::minutes(CONFIG.incomplete_2fa_time_limit());
+    let incomplete_logins = TwoFactorIncomplete::find_logins_before(&(now - time_limit), &conn);
+    for login in incomplete_logins {
+        let user = User::find_by_uuid(&login.user_uuid, &conn).expect("User not found");
+        info!(
+            "User {} did not complete a 2FA login within the configured time limit. IP: {}",
+            user.email, login.ip_address
+        );
+        mail::send_incomplete_2fa_login(&user.email, &login.ip_address, &login.login_time, &login.device_name)
+            .expect("Error sending incomplete 2FA email");
+        login.delete(&conn).expect("Error deleting incomplete 2FA record");
+    }
 }

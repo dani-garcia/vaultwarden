@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use chrono::{DateTime, Local};
+use chrono::NaiveDateTime;
 use percent_encoding::{percent_encode, NON_ALPHANUMERIC};
 
 use lettre::{
@@ -394,7 +394,7 @@ pub fn send_invite_confirmed(address: &str, org_name: &str) -> EmptyResult {
     send_email(address, &subject, body_html, body_text)
 }
 
-pub fn send_new_device_logged_in(address: &str, ip: &str, dt: &DateTime<Local>, device: &str) -> EmptyResult {
+pub fn send_new_device_logged_in(address: &str, ip: &str, dt: &NaiveDateTime, device: &str) -> EmptyResult {
     use crate::util::upcase_first;
     let device = upcase_first(device);
 
@@ -405,7 +405,26 @@ pub fn send_new_device_logged_in(address: &str, ip: &str, dt: &DateTime<Local>, 
             "url": CONFIG.domain(),
             "ip": ip,
             "device": device,
-            "datetime": crate::util::format_datetime_local(dt, fmt),
+            "datetime": crate::util::format_naive_datetime_local(dt, fmt),
+        }),
+    )?;
+
+    send_email(address, &subject, body_html, body_text)
+}
+
+pub fn send_incomplete_2fa_login(address: &str, ip: &str, dt: &NaiveDateTime, device: &str) -> EmptyResult {
+    use crate::util::upcase_first;
+    let device = upcase_first(device);
+
+    let fmt = "%A, %B %_d, %Y at %r %Z";
+    let (subject, body_html, body_text) = get_text(
+        "email/incomplete_2fa_login",
+        json!({
+            "url": CONFIG.domain(),
+            "ip": ip,
+            "device": device,
+            "datetime": crate::util::format_naive_datetime_local(dt, fmt),
+            "time_limit": CONFIG.incomplete_2fa_time_limit(),
         }),
     )?;
 

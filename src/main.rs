@@ -345,6 +345,14 @@ fn schedule_jobs(pool: db::DbPool) {
                 }));
             }
 
+            // Send email notifications about incomplete 2FA logins, which potentially
+            // indicates that a user's master password has been compromised.
+            if !CONFIG.incomplete_2fa_schedule().is_empty() {
+                sched.add(Job::new(CONFIG.incomplete_2fa_schedule().parse().unwrap(), || {
+                    api::send_incomplete_2fa_notifications(pool.clone());
+                }));
+            }
+
             // Grant emergency access requests that have met the required wait time.
             // This job should run before the emergency access reminders job to avoid
             // sending reminders for requests that are about to be granted anyway.
