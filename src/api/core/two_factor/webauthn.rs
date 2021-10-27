@@ -32,11 +32,7 @@ impl WebauthnConfig {
         let domain = CONFIG.domain();
         let domain_origin = CONFIG.domain_origin();
         Webauthn::new(Self {
-            rpid: Url::parse(&domain)
-                .map(|u| u.domain().map(str::to_owned))
-                .ok()
-                .flatten()
-                .unwrap_or_default(),
+            rpid: Url::parse(&domain).map(|u| u.domain().map(str::to_owned)).ok().flatten().unwrap_or_default(),
             url: domain,
             origin: Url::parse(&domain_origin).unwrap(),
         })
