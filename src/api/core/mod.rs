@@ -9,6 +9,7 @@ pub mod two_factor;
 pub use ciphers::purge_trashed_ciphers;
 pub use emergency_access::{emergency_notification_reminder_job, emergency_request_timeout_job};
 pub use sends::purge_sends;
+pub use two_factor::send_incomplete_2fa_notifications;
 
 pub fn routes() -> Vec<Route> {
     let mut mod_routes =

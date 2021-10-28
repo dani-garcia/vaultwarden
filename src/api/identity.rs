@@ -1,4 +1,4 @@
-use chrono::Local;
+use chrono::Utc;
 use num_traits::FromPrimitive;
 use rocket::{
     request::{Form, FormItems, FromForm},
@@ -102,10 +102,9 @@ fn _password_login(data: ConnectData, conn: DbConn, ip: &ClientIp) -> JsonResult
         err!("This user has been disabled", format!("IP: {}. Username: {}.", ip.ip, username))
     }
 
-    let now = Local::now();
+    let now = Utc::now().naive_utc();
 
     if user.verified_at.is_none() && CONFIG.mail_enabled() && CONFIG.signups_verify() {
-        let now = now.naive_utc();
         if user.last_verifying_at.is_none()
             || now.signed_duration_since(user.last_verifying_at.unwrap()).num_seconds()
                 > CONFIG.signups_verify_resend_time() as i64
@@ -219,6 +218,8 @@ fn twofactor_auth(
         return Ok(None);
     }
 
+    TwoFactorIncomplete::mark_incomplete(user_uuid, &device.uuid, &device.name, ip, conn)?;
+
     let twofactor_ids: Vec<_> = twofactors.iter().map(|tf| tf.atype).collect();
     let selected_id = data.two_factor_provider.unwrap_or(twofactor_ids[0]); // If we aren't given a two factor provider, asume the first one
 
@@ -261,6 +262,8 @@ fn twofactor_auth(
         }
         _ => err!("Invalid two factor provider"),
     }
+
+    TwoFactorIncomplete::mark_complete(user_uuid, &device.uuid, conn)?;
 
     if !CONFIG.disable_2fa_remember() && remember == 1 {
         Ok(Some(device.refresh_twofactor_remember()))

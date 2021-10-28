@@ -176,7 +176,10 @@ impl User {
     }
 }
 
-use super::{Cipher, Device, EmergencyAccess, Favorite, Folder, Send, TwoFactor, UserOrgType, UserOrganization};
+use super::{
+    Cipher, Device, EmergencyAccess, Favorite, Folder, Send, TwoFactor, TwoFactorIncomplete, UserOrgType,
+    UserOrganization,
+};
 use crate::db::DbConn;
 
 use crate::api::EmptyResult;
@@ -273,6 +276,7 @@ impl User {
         Folder::delete_all_by_user(&self.uuid, conn)?;
         Device::delete_all_by_user(&self.uuid, conn)?;
         TwoFactor::delete_all_by_user(&self.uuid, conn)?;
+        TwoFactorIncomplete::delete_all_by_user(&self.uuid, conn)?;
         Invitation::take(&self.email, conn); // Delete invitation if any
 
         db_run! {conn: {

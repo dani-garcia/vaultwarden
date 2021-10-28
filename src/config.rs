@@ -332,6 +332,9 @@ make_config! {
         /// Trash purge schedule |> Cron schedule of the job that checks for trashed items to delete permanently.
         /// Defaults to daily. Set blank to disable this job.
         trash_purge_schedule:   String, false,  def,    "0 5 0 * * *".to_string();
+        /// Incomplete 2FA login schedule |> Cron schedule of the job that checks for incomplete 2FA logins.
+        /// Defaults to once every minute. Set blank to disable this job.
+        incomplete_2fa_schedule: String, false,  def,   "30 * * * * *".to_string();
         /// Emergency notification reminder schedule |> Cron schedule of the job that sends expiration reminders to emergency access grantors.
         /// Defaults to hourly. Set blank to disable this job.
         emergency_notification_reminder_schedule:   String, false,  def,    "0 5 * * * *".to_string();
@@ -370,6 +373,13 @@ make_config! {
         /// If unset, trashed items are not auto-deleted. This setting applies globally, so make
         /// sure to inform all users of any changes to this setting.
         trash_auto_delete_days: i64,    true,   option;
+
+        /// Incomplete 2FA time limit |> Number of minutes to wait before a 2FA-enabled login is
+        /// considered incomplete, resulting in an email notification. An incomplete 2FA login is one
+        /// where the correct master password was provided but the required 2FA step was not completed,
+        /// which potentially indicates a master password compromise. Set to 0 to disable this check.
+        /// This setting applies globally to all users.
+        incomplete_2fa_time_limit: i64, true,   def,    3;
 
         /// Disable icon downloads |> Set to true to disable icon downloading, this would still serve icons from
         /// $ICON_CACHE_FOLDER, but it won't produce any external network request. Needs to set $ICON_CACHE_TTL to 0,
@@ -863,8 +873,6 @@ where
 
     reg!("email/change_email", ".html");
     reg!("email/delete_account", ".html");
-    reg!("email/invite_accepted", ".html");
-    reg!("email/invite_confirmed", ".html");
     reg!("email/emergency_access_invite_accepted", ".html");
     reg!("email/emergency_access_invite_confirmed", ".html");
     reg!("email/emergency_access_recovery_approved", ".html");
@@ -872,6 +880,9 @@ where
     reg!("email/emergency_access_recovery_rejected", ".html");
     reg!("email/emergency_access_recovery_reminder", ".html");
     reg!("email/emergency_access_recovery_timed_out", ".html");
+    reg!("email/incomplete_2fa_login", ".html");
+    reg!("email/invite_accepted", ".html");
+    reg!("email/invite_confirmed", ".html");
     reg!("email/new_device_logged_in", ".html");
     reg!("email/pw_hint_none", ".html");
     reg!("email/pw_hint_some", ".html");
