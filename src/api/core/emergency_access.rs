@@ -539,7 +539,6 @@ fn reject_emergency_access(emer_id: String, headers: Headers, conn: DbConn) -> J
         };
 
         emergency_access.status = EmergencyAccessStatus::Confirmed as i32;
-        emergency_access.key_encrypted = None;
         emergency_access.save(&conn)?;
 
         if CONFIG.mail_enabled() {
