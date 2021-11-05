@@ -165,7 +165,6 @@ pub fn generate_invite_claims(
     }
 }
 
-//           var token = _dataProtector.Protect($"EmergencyAccessInvite {emergencyAccess.Id} {emergencyAccess.Email} {nowMillis}");
 #[derive(Debug, Serialize, Deserialize)]
 pub struct EmergencyAccessInviteJwtClaims {
     // Not before

@@ -1,6 +1,10 @@
 #![forbid(unsafe_code)]
 #![cfg_attr(feature = "unstable", feature(ip))]
-#![recursion_limit = "512"]
+// The recursion_limit is mainly triggered by the json!() macro.
+// The more key/value pairs there are the more recursion occurs.
+// We want to keep this as low as possible, but not higher then 128.
+// If you go above 128 it will cause rust-analyzer to fail,
+#![recursion_limit = "87"]
 
 extern crate openssl;
 #[macro_use]

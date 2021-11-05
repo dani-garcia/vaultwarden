@@ -73,7 +73,7 @@ make_error! {
     Serde(SerdeErr): _has_source, _api_error,
     JWt(JwtErr):     _has_source, _api_error,
     Handlebars(HbErr): _has_source, _api_error,
-    //WsError(ws::Error): _has_source, _api_error,
+
     Io(IoErr):       _has_source, _api_error,
     Time(TimeErr):   _has_source, _api_error,
     Req(ReqErr):     _has_source, _api_error,

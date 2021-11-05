@@ -4,7 +4,7 @@ use rocket::Route;
 use rocket_contrib::json::Json;
 use serde_json::Value as JsonValue;
 
-use crate::{api::EmptyResult, auth::Headers, db::DbConn, Error, CONFIG};
+use crate::{api::EmptyResult, auth::Headers, Error, CONFIG};
 
 pub fn routes() -> Vec<Route> {
     routes![negotiate, websockets_err]
@@ -30,7 +30,7 @@ fn websockets_err() -> EmptyResult {
 }
 
 #[post("/hub/negotiate")]
-fn negotiate(_headers: Headers, _conn: DbConn) -> Json<JsonValue> {
+fn negotiate(_headers: Headers) -> Json<JsonValue> {
     use crate::crypto;
     use data_encoding::BASE64URL;
 

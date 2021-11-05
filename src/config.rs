@@ -2,7 +2,6 @@ use std::process::exit;
 use std::sync::RwLock;
 
 use once_cell::sync::Lazy;
-use regex::Regex;
 use reqwest::Url;
 
 use crate::{
@@ -22,21 +21,6 @@ pub static CONFIG: Lazy<Config> = Lazy::new(|| {
         exit(12)
     })
 });
-
-static PRIVACY_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"[\w]").unwrap());
-const PRIVACY_CONFIG: &[&str] = &[
-    "allowed_iframe_ancestors",
-    "database_url",
-    "domain_origin",
-    "domain_path",
-    "domain",
-    "helo_name",
-    "org_creation_users",
-    "signups_domains_whitelist",
-    "smtp_from",
-    "smtp_host",
-    "smtp_username",
-];
 
 pub type Pass = String;
 
@@ -61,7 +45,7 @@ macro_rules! make_config {
             _overrides: Vec<String>,
         }
 
-        #[derive(Debug, Clone, Default, Deserialize, Serialize)]
+        #[derive(Clone, Default, Deserialize, Serialize)]
         pub struct ConfigBuilder {
             $($(
                 #[serde(skip_serializing_if = "Option::is_none")]
@@ -133,19 +117,6 @@ macro_rules! make_config {
                 builder
             }
 
-            /// Returns a new builder with all the elements from self,
-            /// except those that are equal in both sides
-            fn _remove(&self, other: &Self) -> Self {
-                let mut builder = ConfigBuilder::default();
-                $($(
-                    if &self.$name != &other.$name {
-                        builder.$name = self.$name.clone();
-                    }
-
-                )+)+
-                builder
-            }
-
             fn build(&self) -> ConfigItems {
                 let mut config = ConfigItems::default();
                 let _domain_set = self.domain.is_some();
@@ -161,7 +132,7 @@ macro_rules! make_config {
             }
         }
 
-        #[derive(Debug, Clone, Default)]
+        #[derive(Clone, Default)]
         struct ConfigItems { $($( $name: make_config!{@type $ty, $none_action}, )+)+ }
 
         #[allow(unused)]
@@ -190,38 +161,91 @@ macro_rules! make_config {
 
                 fn _get_doc(doc: &str) -> serde_json::Value {
                     let mut split = doc.split("|>").map(str::trim);
-                    json!({
-                        "name": split.next(),
-                        "description": split.next()
+
+                    // We do not use the json!() macro here since that causes a lot of macro recursion.
+                    // This slows down compile time and it also causes issues with rust-analyzer
+                    serde_json::Value::Object({
+                        let mut doc_json = serde_json::Map::new();
+                        doc_json.insert("name".into(), serde_json::to_value(split.next()).unwrap());
+                        doc_json.insert("description".into(), serde_json::to_value(split.next()).unwrap());
+                        doc_json
                     })
                 }
 
-                json!([ $({
-                    "group": stringify!($group),
-                    "grouptoggle": stringify!($($group_enabled)?),
-                    "groupdoc": make_config!{ @show $($groupdoc)? },
-                    "elements": [
-                    $( {
-                        "editable": $editable,
-                        "name": stringify!($name),
-                        "value": cfg.$name,
-                        "default": def.$name,
-                        "type":  _get_form_type(stringify!($ty)),
-                        "doc": _get_doc(concat!($($doc),+)),
-                        "overridden": overriden.contains(&stringify!($name).to_uppercase()),
-                    }, )+
-                    ]}, )+ ])
+                // We do not use the json!() macro here since that causes a lot of macro recursion.
+                // This slows down compile time and it also causes issues with rust-analyzer
+                serde_json::Value::Array(<[_]>::into_vec(Box::new([
+                $(
+                    serde_json::Value::Object({
+                        let mut group = serde_json::Map::new();
+                        group.insert("group".into(), (stringify!($group)).into());
+                        group.insert("grouptoggle".into(), (stringify!($($group_enabled)?)).into());
+                        group.insert("groupdoc".into(), (make_config!{ @show $($groupdoc)? }).into());
+
+                        group.insert("elements".into(), serde_json::Value::Array(<[_]>::into_vec(Box::new([
+                        $(
+                            serde_json::Value::Object({
+                                let mut element = serde_json::Map::new();
+                                element.insert("editable".into(), ($editable).into());
+                                element.insert("name".into(), (stringify!($name)).into());
+                                element.insert("value".into(), serde_json::to_value(cfg.$name).unwrap());
+                                element.insert("default".into(), serde_json::to_value(def.$name).unwrap());
+                                element.insert("type".into(), (_get_form_type(stringify!($ty))).into());
+                                element.insert("doc".into(), (_get_doc(concat!($($doc),+))).into());
+                                element.insert("overridden".into(), (overriden.contains(&stringify!($name).to_uppercase())).into());
+                                element
+                            }),
+                        )+
+                        ]))));
+                        group
+                    }),
+                )+
+                ])))
             }
 
             pub fn get_support_json(&self) -> serde_json::Value {
+                // Define which config keys need to be masked.
+                // Pass types will always be masked and no need to put them in the list.
+                // Besides Pass, only String types will be masked via _privacy_mask.
+                const PRIVACY_CONFIG: &[&str] = &[
+                    "allowed_iframe_ancestors",
+                    "database_url",
+                    "domain_origin",
+                    "domain_path",
+                    "domain",
+                    "helo_name",
+                    "org_creation_users",
+                    "signups_domains_whitelist",
+                    "smtp_from",
+                    "smtp_host",
+                    "smtp_username",
+                ];
+
                 let cfg = {
                     let inner = &self.inner.read().unwrap();
                     inner.config.clone()
                 };
 
-                json!({ $($(
-                    stringify!($name): make_config!{ @supportstr $name, cfg.$name, $ty, $none_action },
-                )+)+ })
+                /// We map over the string and remove all alphanumeric, _ and - characters.
+                /// This is the fastest way (within micro-seconds) instead of using a regex (which takes mili-seconds)
+                fn _privacy_mask(value: &str) -> String {
+                    value.chars().map(|c|
+                        match c {
+                            c if c.is_alphanumeric() => '*',
+                            '_' => '*',
+                            '-' => '*',
+                            _ => c
+                        }
+                    ).collect::<String>()
+                }
+
+                serde_json::Value::Object({
+                    let mut json = serde_json::Map::new();
+                    $($(
+                        json.insert(stringify!($name).into(), make_config!{ @supportstr $name, cfg.$name, $ty, $none_action });
+                    )+)+;
+                    json
+                })
             }
 
             pub fn get_overrides(&self) -> Vec<String> {
@@ -229,29 +253,30 @@ macro_rules! make_config {
                     let inner = &self.inner.read().unwrap();
                     inner._overrides.clone()
                 };
-
                 overrides
             }
         }
     };
 
     // Support string print
-    ( @supportstr $name:ident, $value:expr, Pass, option ) => { $value.as_ref().map(|_| String::from("***")) }; // Optional pass, we map to an Option<String> with "***"
-    ( @supportstr $name:ident, $value:expr, Pass, $none_action:ident ) => { String::from("***") }; // Required pass, we return "***"
-    ( @supportstr $name:ident, $value:expr, $ty:ty, option ) => { // Optional other value, we return as is or convert to string to apply the privacy config
+    ( @supportstr $name:ident, $value:expr, Pass, option ) => { serde_json::to_value($value.as_ref().map(|_| String::from("***"))).unwrap() }; // Optional pass, we map to an Option<String> with "***"
+    ( @supportstr $name:ident, $value:expr, Pass, $none_action:ident ) => { "***".into() }; // Required pass, we return "***"
+    ( @supportstr $name:ident, $value:expr, String, option ) => { // Optional other value, we return as is or convert to string to apply the privacy config
         if PRIVACY_CONFIG.contains(&stringify!($name)) {
-            json!($value.as_ref().map(|x| PRIVACY_REGEX.replace_all(&x.to_string(), "${1}*").to_string()))
+            serde_json::to_value($value.as_ref().map(|x| _privacy_mask(x) )).unwrap()
         } else {
-            json!($value)
+            serde_json::to_value($value).unwrap()
         }
     };
-    ( @supportstr $name:ident, $value:expr, $ty:ty, $none_action:ident ) => { // Required other value, we return as is or convert to string to apply the privacy config
+    ( @supportstr $name:ident, $value:expr, String, $none_action:ident ) => { // Required other value, we return as is or convert to string to apply the privacy config
         if PRIVACY_CONFIG.contains(&stringify!($name)) {
-             json!(PRIVACY_REGEX.replace_all(&$value.to_string(), "${1}*").to_string())
-         } else {
-             json!($value)
-         }
+            _privacy_mask(&$value).into()
+        } else {
+            ($value).into()
+        }
     };
+    ( @supportstr $name:ident, $value:expr, $ty:ty, option ) => { serde_json::to_value($value).unwrap() }; // Optional other value, we return as is or convert to string to apply the privacy config
+    ( @supportstr $name:ident, $value:expr, $ty:ty, $none_action:ident ) => { ($value).into() }; // Required other value, we return as is or convert to string to apply the privacy config
 
     // Group or empty string
     ( @show ) => { "" };
@@ -627,7 +652,7 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
 
     // Check if the icon blacklist regex is valid
     if let Some(ref r) = cfg.icon_blacklist_regex {
-        let validate_regex = Regex::new(r);
+        let validate_regex = regex::Regex::new(r);
         match validate_regex {
             Ok(_) => (),
             Err(e) => err!(format!("`ICON_BLACKLIST_REGEX` is invalid: {:#?}", e)),

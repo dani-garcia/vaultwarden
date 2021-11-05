@@ -1294,71 +1294,43 @@ fn put_policy(
 
 #[allow(unused_variables)]
 #[get("/organizations/<org_id>/tax")]
-fn get_organization_tax(org_id: String, _headers: Headers, _conn: DbConn) -> EmptyResult {
+fn get_organization_tax(org_id: String, _headers: Headers) -> Json<Value> {
     // Prevent a 404 error, which also causes Javascript errors.
-    err!("Only allowed when not self hosted.")
+    // Upstream sends "Only allowed when not self hosted." As an error message.
+    // If we do the same it will also output this to the log, which is overkill.
+    // An empty list/data also works fine.
+    Json(_empty_data_json())
 }
 
 #[get("/plans")]
-fn get_plans(_headers: Headers, _conn: DbConn) -> Json<Value> {
+fn get_plans(_headers: Headers) -> Json<Value> {
+    // Respond with a minimal json just enough to allow the creation of an new organization.
     Json(json!({
         "Object": "list",
-        "Data": [
-        {
+        "Data": [{
             "Object": "plan",
             "Type": 0,
             "Product": 0,
             "Name": "Free",
-            "IsAnnual": false,
             "NameLocalizationKey": "planNameFree",
-            "DescriptionLocalizationKey": "planDescFree",
-            "CanBeUsedByBusiness": false,
-            "BaseSeats": 2,
-            "BaseStorageGb": null,
-            "MaxCollections": 2,
-            "MaxUsers": 2,
-            "HasAdditionalSeatsOption": false,
-            "MaxAdditionalSeats": null,
-            "HasAdditionalStorageOption": false,
-            "MaxAdditionalStorage": null,
-            "HasPremiumAccessOption": false,
-            "TrialPeriodDays": null,
-            "HasSelfHost": false,
-            "HasPolicies": false,
-            "HasGroups": false,
-            "HasDirectory": false,
-            "HasEvents": false,
-            "HasTotp": false,
-            "Has2fa": false,
-            "HasApi": false,
-            "HasSso": false,
-            "UsersGetPremium": false,
-            "UpgradeSortOrder": -1,
-            "DisplaySortOrder": -1,
-            "LegacyYear": null,
-            "Disabled": false,
-            "StripePlanId": null,
-            "StripeSeatPlanId": null,
-            "StripeStoragePlanId": null,
-            "StripePremiumAccessPlanId": null,
-            "BasePrice": 0.0,
-            "SeatPrice": 0.0,
-            "AdditionalStoragePricePerGb": 0.0,
-            "PremiumAccessOptionPrice": 0.0
-            }
-        ],
+            "DescriptionLocalizationKey": "planDescFree"
+        }],
         "ContinuationToken": null
     }))
 }
 
 #[get("/plans/sales-tax-rates")]
-fn get_plans_tax_rates(_headers: Headers, _conn: DbConn) -> Json<Value> {
+fn get_plans_tax_rates(_headers: Headers) -> Json<Value> {
     // Prevent a 404 error, which also causes Javascript errors.
-    Json(json!({
+    Json(_empty_data_json())
+}
+
+fn _empty_data_json() -> Value {
+    json!({
         "Object": "list",
         "Data": [],
         "ContinuationToken": null
-    }))
+    })
 }
 
 #[derive(Deserialize, Debug)]

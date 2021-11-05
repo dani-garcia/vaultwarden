@@ -2,7 +2,7 @@
 name = "vaultwarden"
 version = "1.0.0"
 authors = ["Daniel García <dani-garcia@users.noreply.github.com>"]
-edition = "2018"
+edition = "2021"
 rust-version = "1.57"
 resolver = "2"
 
@@ -46,7 +46,7 @@ url = "2.2.2"
 multipart = { version = "0.18.0", features = ["server"], default-features = false }
 
 # WebSockets library
-ws = { version = "0.11.0", package = "parity-ws" }
+ws = { version = "0.11.1", package = "parity-ws" }
 
 # MessagePack library
 rmpv = "1.0.0"
@@ -112,7 +112,7 @@ num-derive = "0.3.3"
 
 # Email libraries
 tracing = { version = "0.1.29", features = ["log"] } # Needed to have lettre trace logging used when SMTP_DEBUG is enabled.
-lettre = { version = "0.10.0-rc.3", features = ["smtp-transport", "builder", "serde", "native-tls", "hostname", "tracing"], default-features = false }
+lettre = { version = "0.10.0-rc.4", features = ["smtp-transport", "builder", "serde", "native-tls", "hostname", "tracing"], default-features = false }
 
 # Template library
 handlebars = { version = "4.1.3", features = ["dir_source"] }
@@ -124,7 +124,7 @@ regex = { version = "1.5.4", features = ["std", "perf", "unicode-perl"], default
 data-url = "0.1.0"
 
 # Used by U2F, JWT and Postgres
-openssl = "0.10.36"
+openssl = "0.10.38"
 
 # URL encoding library
 percent-encoding = "2.1.0"
@@ -135,7 +135,7 @@ idna = "0.2.3"
 pico-args = "0.4.2"
 
 # Logging panics to logfile instead stderr only
-backtrace = "0.3.62"
+backtrace = "0.3.63"
 
 # Macro ident concatenation
 paste = "1.0.5"
