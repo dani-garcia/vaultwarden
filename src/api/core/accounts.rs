@@ -454,7 +454,7 @@ fn post_email(data: JsonUpcase<ChangeEmailData>, headers: Headers, conn: DbConn)
 }
 
 #[post("/accounts/verify-email")]
-fn post_verify_email(headers: Headers, _conn: DbConn) -> EmptyResult {
+fn post_verify_email(headers: Headers) -> EmptyResult {
     let user = headers.user;
 
     if !CONFIG.mail_enabled() {
@@ -654,7 +654,7 @@ struct VerifyPasswordData {
 }
 
 #[post("/accounts/verify-password", data = "<data>")]
-fn verify_password(data: JsonUpcase<VerifyPasswordData>, headers: Headers, _conn: DbConn) -> EmptyResult {
+fn verify_password(data: JsonUpcase<VerifyPasswordData>, headers: Headers) -> EmptyResult {
     let data: VerifyPasswordData = data.into_inner().data;
     let user = headers.user;
 

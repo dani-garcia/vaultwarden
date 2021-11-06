@@ -6,7 +6,7 @@
 {% set build_stage_base_image = "rust:1.55-buster" %}
 {% if "alpine" in target_file %}
 {%   if "amd64" in target_file %}
-{%     set build_stage_base_image = "clux/muslrust:nightly-2021-10-06" %}
+{%     set build_stage_base_image = "clux/muslrust:nightly-2021-10-23" %}
 {%     set runtime_stage_base_image = "alpine:3.14" %}
 {%     set package_arch_target = "x86_64-unknown-linux-musl" %}
 {%   elif "armv7" in target_file %}

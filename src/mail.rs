@@ -505,10 +505,10 @@ fn send_email(address: &str, subject: &str, body_html: String, body_text: String
         Err(e) => {
             if e.is_client() {
                 debug!("SMTP Client error: {:#?}", e);
-                err!(format!("SMTP Client error: {}", e.to_string()));
+                err!(format!("SMTP Client error: {}", e));
             } else if e.is_transient() {
                 debug!("SMTP 4xx error: {:#?}", e);
-                err!(format!("SMTP 4xx error: {}", e.to_string()));
+                err!(format!("SMTP 4xx error: {}", e));
             } else if e.is_permanent() {
                 debug!("SMTP 5xx error: {:#?}", e);
                 let mut msg = e.to_string();
@@ -519,13 +519,13 @@ fn send_email(address: &str, subject: &str, body_html: String, body_text: String
                 err!(format!("SMTP 5xx error: {}", msg));
             } else if e.is_timeout() {
                 debug!("SMTP timeout error: {:#?}", e);
-                err!(format!("SMTP timeout error: {}", e.to_string()));
+                err!(format!("SMTP timeout error: {}", e));
             } else if e.is_tls() {
                 debug!("SMTP Encryption error: {:#?}", e);
-                err!(format!("SMTP Encryption error: {}", e.to_string()));
+                err!(format!("SMTP Encryption error: {}", e));
             } else {
                 debug!("SMTP {:#?}", e);
-                err!(format!("SMTP {}", e.to_string()));
+                err!(format!("SMTP {}", e));
             }
         }
     }

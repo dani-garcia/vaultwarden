@@ -236,7 +236,7 @@ impl AdminTemplateData {
 }
 
 #[get("/", rank = 1)]
-fn admin_page(_token: AdminToken, _conn: DbConn) -> ApiResult<Html<String>> {
+fn admin_page(_token: AdminToken) -> ApiResult<Html<String>> {
     let text = AdminTemplateData::new().render()?;
     Ok(Html(text))
 }
@@ -494,7 +494,6 @@ fn diagnostics(_token: AdminToken, ip_header: IpHeader, conn: DbConn) -> ApiResu
 
     // Execute some environment checks
     let running_within_docker = is_running_in_docker();
-    let docker_base_image = docker_base_image();
     let has_http_access = has_http_access();
     let uses_proxy = env::var_os("HTTP_PROXY").is_some()
         || env::var_os("http_proxy").is_some()
@@ -552,7 +551,7 @@ fn diagnostics(_token: AdminToken, ip_header: IpHeader, conn: DbConn) -> ApiResu
         "web_vault_version": web_vault_version.version,
         "latest_web_build": latest_web_build,
         "running_within_docker": running_within_docker,
-        "docker_base_image": docker_base_image,
+        "docker_base_image": docker_base_image(),
         "has_http_access": has_http_access,
         "ip_header_exists": &ip_header.0.is_some(),
         "ip_header_match": ip_header_name == CONFIG.ip_header(),
