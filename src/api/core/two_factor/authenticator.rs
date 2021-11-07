@@ -1,6 +1,6 @@
 use data_encoding::BASE32;
+use rocket::serde::json::Json;
 use rocket::Route;
-use rocket_contrib::json::Json;
 
 use crate::{
     api::{

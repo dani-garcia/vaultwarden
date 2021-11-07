@@ -1,7 +1,7 @@
 use chrono::{Duration, Utc};
 use data_encoding::BASE32;
+use rocket::serde::json::Json;
 use rocket::Route;
-use rocket_contrib::json::Json;
 use serde_json::Value;
 
 use crate::{
@@ -158,14 +158,14 @@ fn disable_twofactor_put(data: JsonUpcase<DisableTwoFactorData>, headers: Header
     disable_twofactor(data, headers, conn)
 }
 
-pub fn send_incomplete_2fa_notifications(pool: DbPool) {
+pub async fn send_incomplete_2fa_notifications(pool: DbPool) {
     debug!("Sending notifications for incomplete 2FA logins");
 
     if CONFIG.incomplete_2fa_time_limit() <= 0 || !CONFIG.mail_enabled() {
         return;
     }
 
-    let conn = match pool.get() {
+    let conn = match pool.get().await {
         Ok(conn) => conn,
         _ => {
             error!("Failed to get DB connection in send_incomplete_2fa_notifications()");

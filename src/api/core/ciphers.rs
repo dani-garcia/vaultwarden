@@ -1,12 +1,13 @@
 use std::collections::{HashMap, HashSet};
-use std::path::{Path, PathBuf};
 
 use chrono::{NaiveDateTime, Utc};
-use rocket::{http::ContentType, request::Form, Data, Route};
-use rocket_contrib::json::Json;
+use rocket::fs::TempFile;
+use rocket::serde::json::Json;
+use rocket::{
+    form::{Form, FromForm},
+    Route,
+};
 use serde_json::Value;
-
-use multipart::server::{save::SavedData, Multipart, SaveResult};
 
 use crate::{
     api::{self, EmptyResult, JsonResult, JsonUpcase, Notify, PasswordData, UpdateType},
@@ -79,9 +80,9 @@ pub fn routes() -> Vec<Route> {
     ]
 }
 
-pub fn purge_trashed_ciphers(pool: DbPool) {
+pub async fn purge_trashed_ciphers(pool: DbPool) {
     debug!("Purging trashed ciphers");
-    if let Ok(conn) = pool.get() {
+    if let Ok(conn) = pool.get().await {
         Cipher::purge_trash(&conn);
     } else {
         error!("Failed to get DB connection while purging trashed ciphers")
@@ -90,12 +91,12 @@ pub fn purge_trashed_ciphers(pool: DbPool) {
 
 #[derive(FromForm, Default)]
 struct SyncData {
-    #[form(field = "excludeDomains")]
+    #[field(name = "excludeDomains")]
     exclude_domains: bool, // Default: 'false'
 }
 
 #[get("/sync?<data..>")]
-fn sync(data: Form<SyncData>, headers: Headers, conn: DbConn) -> Json<Value> {
+fn sync(data: SyncData, headers: Headers, conn: DbConn) -> Json<Value> {
     let user_json = headers.user.to_json(&conn);
 
     let folders = Folder::find_by_user(&headers.user.uuid, &conn);
@@ -828,6 +829,12 @@ fn post_attachment_v2(
     })))
 }
 
+#[derive(FromForm)]
+struct UploadData<'f> {
+    key: Option<String>,
+    data: TempFile<'f>,
+}
+
 /// Saves the data content of an attachment to a file. This is common code
 /// shared between the v2 and legacy attachment APIs.
 ///
@@ -836,22 +843,21 @@ fn post_attachment_v2(
 ///
 /// When used with the v2 API, post_attachment_v2() has already created the
 /// database record, which is passed in as `attachment`.
-fn save_attachment(
+async fn save_attachment(
     mut attachment: Option<Attachment>,
     cipher_uuid: String,
-    data: Data,
-    content_type: &ContentType,
+    data: Form<UploadData<'_>>,
     headers: &Headers,
-    conn: &DbConn,
-    nt: Notify,
-) -> Result<Cipher, crate::error::Error> {
-    let cipher = match Cipher::find_by_uuid(&cipher_uuid, conn) {
+    conn: DbConn,
+    nt: Notify<'_>,
+) -> Result<(Cipher, DbConn), crate::error::Error> {
+    let cipher = match Cipher::find_by_uuid(&cipher_uuid, &conn) {
         Some(cipher) => cipher,
-        None => err_discard!("Cipher doesn't exist", data),
+        None => err!("Cipher doesn't exist"),
     };
 
-    if !cipher.is_write_accessible_to_user(&headers.user.uuid, conn) {
-        err_discard!("Cipher is not write accessible", data)
+    if !cipher.is_write_accessible_to_user(&headers.user.uuid, &conn) {
+        err!("Cipher is not write accessible")
     }
 
     // In the v2 API, the attachment record has already been created,
@@ -863,11 +869,11 @@ fn save_attachment(
 
     let size_limit = if let Some(ref user_uuid) = cipher.user_uuid {
         match CONFIG.user_attachment_limit() {
-            Some(0) => err_discard!("Attachments are disabled", data),
+            Some(0) => err!("Attachments are disabled"),
             Some(limit_kb) => {
-                let left = (limit_kb * 1024) - Attachment::size_by_user(user_uuid, conn) + size_adjust;
+                let left = (limit_kb * 1024) - Attachment::size_by_user(user_uuid, &conn) + size_adjust;
                 if left <= 0 {
-                    err_discard!("Attachment storage limit reached! Delete some attachments to free up space", data)
+                    err!("Attachment storage limit reached! Delete some attachments to free up space")
                 }
                 Some(left as u64)
             }
@@ -875,130 +881,78 @@ fn save_attachment(
         }
     } else if let Some(ref org_uuid) = cipher.organization_uuid {
         match CONFIG.org_attachment_limit() {
-            Some(0) => err_discard!("Attachments are disabled", data),
+            Some(0) => err!("Attachments are disabled"),
             Some(limit_kb) => {
-                let left = (limit_kb * 1024) - Attachment::size_by_org(org_uuid, conn) + size_adjust;
+                let left = (limit_kb * 1024) - Attachment::size_by_org(org_uuid, &conn) + size_adjust;
                 if left <= 0 {
-                    err_discard!("Attachment storage limit reached! Delete some attachments to free up space", data)
+                    err!("Attachment storage limit reached! Delete some attachments to free up space")
                 }
                 Some(left as u64)
             }
             None => None,
         }
     } else {
-        err_discard!("Cipher is neither owned by a user nor an organization", data);
+        err!("Cipher is neither owned by a user nor an organization");
     };
 
-    let mut params = content_type.params();
-    let boundary_pair = params.next().expect("No boundary provided");
-    let boundary = boundary_pair.1;
+    let mut data = data.into_inner();
 
-    let base_path = Path::new(&CONFIG.attachments_folder()).join(&cipher_uuid);
-    let mut path = PathBuf::new();
-
-    let mut attachment_key = None;
-    let mut error = None;
-
-    Multipart::with_body(data.open(), boundary)
-        .foreach_entry(|mut field| {
-            match &*field.headers.name {
-                "key" => {
-                    use std::io::Read;
-                    let mut key_buffer = String::new();
-                    if field.data.read_to_string(&mut key_buffer).is_ok() {
-                        attachment_key = Some(key_buffer);
-                    }
-                }
-                "data" => {
-                    // In the legacy API, this is the encrypted filename
-                    // provided by the client, stored to the database as-is.
-                    // In the v2 API, this value doesn't matter, as it was
-                    // already provided and stored via an earlier API call.
-                    let encrypted_filename = field.headers.filename;
-
-                    // This random ID is used as the name of the file on disk.
-                    // In the legacy API, we need to generate this value here.
-                    // In the v2 API, we use the value from post_attachment_v2().
-                    let file_id = match &attachment {
-                        Some(attachment) => attachment.id.clone(), // v2 API
-                        None => crypto::generate_attachment_id(),  // Legacy API
-                    };
-                    path = base_path.join(&file_id);
-
-                    let size =
-                        match field.data.save().memory_threshold(0).size_limit(size_limit).with_path(path.clone()) {
-                            SaveResult::Full(SavedData::File(_, size)) => size as i32,
-                            SaveResult::Full(other) => {
-                                error = Some(format!("Attachment is not a file: {:?}", other));
-                                return;
-                            }
-                            SaveResult::Partial(_, reason) => {
-                                error = Some(format!("Attachment storage limit exceeded with this file: {:?}", reason));
-                                return;
-                            }
-                            SaveResult::Error(e) => {
-                                error = Some(format!("Error: {:?}", e));
-                                return;
-                            }
-                        };
-
-                    if let Some(attachment) = &mut attachment {
-                        // v2 API
-
-                        // Check the actual size against the size initially provided by
-                        // the client. Upstream allows +/- 1 MiB deviation from this
-                        // size, but it's not clear when or why this is needed.
-                        const LEEWAY: i32 = 1024 * 1024; // 1 MiB
-                        let min_size = attachment.file_size - LEEWAY;
-                        let max_size = attachment.file_size + LEEWAY;
-
-                        if min_size <= size && size <= max_size {
-                            if size != attachment.file_size {
-                                // Update the attachment with the actual file size.
-                                attachment.file_size = size;
-                                attachment.save(conn).expect("Error updating attachment");
-                            }
-                        } else {
-                            attachment.delete(conn).ok();
-
-                            let err_msg = "Attachment size mismatch".to_string();
-                            error!("{} (expected within [{}, {}], got {})", err_msg, min_size, max_size, size);
-                            error = Some(err_msg);
-                        }
-                    } else {
-                        // Legacy API
-
-                        if encrypted_filename.is_none() {
-                            error = Some("No filename provided".to_string());
-                            return;
-                        }
-                        if attachment_key.is_none() {
-                            error = Some("No attachment key provided".to_string());
-                            return;
-                        }
-                        let attachment = Attachment::new(
-                            file_id,
-                            cipher_uuid.clone(),
-                            encrypted_filename.unwrap(),
-                            size,
-                            attachment_key.clone(),
-                        );
-                        attachment.save(conn).expect("Error saving attachment");
-                    }
-                }
-                _ => error!("Invalid multipart name"),
-            }
-        })
-        .expect("Error processing multipart data");
-
-    if let Some(ref e) = error {
-        std::fs::remove_file(path).ok();
-        err!(e);
+    if let Some(size_limit) = size_limit {
+        if data.data.len() > size_limit {
+            err!("Attachment storage limit exceeded with this file");
+        }
     }
 
-    nt.send_cipher_update(UpdateType::CipherUpdate, &cipher, &cipher.update_users_revision(conn));
+    let file_id = match &attachment {
+        Some(attachment) => attachment.id.clone(), // v2 API
+        None => crypto::generate_attachment_id(),  // Legacy API
+    };
 
-    Ok(cipher)
+    let folder_path = tokio::fs::canonicalize(&CONFIG.attachments_folder()).await?.join(&cipher_uuid);
+    let file_path = folder_path.join(&file_id);
+    tokio::fs::create_dir_all(&folder_path).await?;
+
+    let size = data.data.len() as i32;
+    if let Some(attachment) = &mut attachment {
+        // v2 API
+
+        // Check the actual size against the size initially provided by
+        // the client. Upstream allows +/- 1 MiB deviation from this
+        // size, but it's not clear when or why this is needed.
+        const LEEWAY: i32 = 1024 * 1024; // 1 MiB
+        let min_size = attachment.file_size - LEEWAY;
+        let max_size = attachment.file_size + LEEWAY;
+
+        if min_size <= size && size <= max_size {
+            if size != attachment.file_size {
+                // Update the attachment with the actual file size.
+                attachment.file_size = size;
+                attachment.save(&conn).expect("Error updating attachment");
+            }
+        } else {
+            attachment.delete(&conn).ok();
+
+            err!(format!("Attachment size mismatch (expected within [{}, {}], got {})", min_size, max_size, size));
+        }
+    } else {
+        // Legacy API
+        let encrypted_filename = data.data.raw_name().map(|s| s.dangerous_unsafe_unsanitized_raw().to_string());
+
+        if encrypted_filename.is_none() {
+            err!("No filename provided")
+        }
+        if data.key.is_none() {
+            err!("No attachment key provided")
+        }
+        let attachment = Attachment::new(file_id, cipher_uuid.clone(), encrypted_filename.unwrap(), size, data.key);
+        attachment.save(&conn).expect("Error saving attachment");
+    }
+
+    data.data.persist_to(file_path).await?;
+
+    nt.send_cipher_update(UpdateType::CipherUpdate, &cipher, &cipher.update_users_revision(&conn));
+
+    Ok((cipher, conn))
 }
 
 /// v2 API for uploading the actual data content of an attachment.
@@ -1006,14 +960,13 @@ fn save_attachment(
 /// /ciphers/<uuid>/attachment/v2 route, which would otherwise conflict
 /// with this one.
 #[post("/ciphers/<uuid>/attachment/<attachment_id>", format = "multipart/form-data", data = "<data>", rank = 1)]
-fn post_attachment_v2_data(
+async fn post_attachment_v2_data(
     uuid: String,
     attachment_id: String,
-    data: Data,
-    content_type: &ContentType,
+    data: Form<UploadData<'_>>,
     headers: Headers,
     conn: DbConn,
-    nt: Notify,
+    nt: Notify<'_>,
 ) -> EmptyResult {
     let attachment = match Attachment::find_by_id(&attachment_id, &conn) {
         Some(attachment) if uuid == attachment.cipher_uuid => Some(attachment),
@@ -1021,54 +974,51 @@ fn post_attachment_v2_data(
         None => err!("Attachment doesn't exist"),
     };
 
-    save_attachment(attachment, uuid, data, content_type, &headers, &conn, nt)?;
+    save_attachment(attachment, uuid, data, &headers, conn, nt).await?;
 
     Ok(())
 }
 
 /// Legacy API for creating an attachment associated with a cipher.
 #[post("/ciphers/<uuid>/attachment", format = "multipart/form-data", data = "<data>")]
-fn post_attachment(
+async fn post_attachment(
     uuid: String,
-    data: Data,
-    content_type: &ContentType,
+    data: Form<UploadData<'_>>,
     headers: Headers,
     conn: DbConn,
-    nt: Notify,
+    nt: Notify<'_>,
 ) -> JsonResult {
     // Setting this as None signifies to save_attachment() that it should create
     // the attachment database record as well as saving the data to disk.
     let attachment = None;
 
-    let cipher = save_attachment(attachment, uuid, data, content_type, &headers, &conn, nt)?;
+    let (cipher, conn) = save_attachment(attachment, uuid, data, &headers, conn, nt).await?;
 
     Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, &conn)))
 }
 
 #[post("/ciphers/<uuid>/attachment-admin", format = "multipart/form-data", data = "<data>")]
-fn post_attachment_admin(
+async fn post_attachment_admin(
     uuid: String,
-    data: Data,
-    content_type: &ContentType,
+    data: Form<UploadData<'_>>,
     headers: Headers,
     conn: DbConn,
-    nt: Notify,
+    nt: Notify<'_>,
 ) -> JsonResult {
-    post_attachment(uuid, data, content_type, headers, conn, nt)
+    post_attachment(uuid, data, headers, conn, nt).await
 }
 
 #[post("/ciphers/<uuid>/attachment/<attachment_id>/share", format = "multipart/form-data", data = "<data>")]
-fn post_attachment_share(
+async fn post_attachment_share(
     uuid: String,
     attachment_id: String,
-    data: Data,
-    content_type: &ContentType,
+    data: Form<UploadData<'_>>,
     headers: Headers,
     conn: DbConn,
-    nt: Notify,
+    nt: Notify<'_>,
 ) -> JsonResult {
     _delete_cipher_attachment_by_id(&uuid, &attachment_id, &headers, &conn, &nt)?;
-    post_attachment(uuid, data, content_type, headers, conn, nt)
+    post_attachment(uuid, data, headers, conn, nt).await
 }
 
 #[post("/ciphers/<uuid>/attachment/<attachment_id>/delete-admin")]
@@ -1248,13 +1198,13 @@ fn move_cipher_selected_put(
 
 #[derive(FromForm)]
 struct OrganizationId {
-    #[form(field = "organizationId")]
+    #[field(name = "organizationId")]
     org_id: String,
 }
 
 #[post("/ciphers/purge?<organization..>", data = "<data>")]
 fn delete_all(
-    organization: Option<Form<OrganizationId>>,
+    organization: Option<OrganizationId>,
     data: JsonUpcase<PasswordData>,
     headers: Headers,
     conn: DbConn,
