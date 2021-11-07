@@ -5,7 +5,7 @@ mod identity;
 mod notifications;
 mod web;
 
-use rocket_contrib::json::Json;
+use rocket::serde::json::Json;
 use serde_json::Value;
 
 pub use crate::api::{

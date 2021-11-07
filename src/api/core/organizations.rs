@@ -1,6 +1,6 @@
 use num_traits::FromPrimitive;
-use rocket::{request::Form, Route};
-use rocket_contrib::json::Json;
+use rocket::serde::json::Json;
+use rocket::Route;
 use serde_json::Value;
 
 use crate::{
@@ -469,12 +469,12 @@ fn put_collection_users(
 
 #[derive(FromForm)]
 struct OrgIdData {
-    #[form(field = "organizationId")]
+    #[field(name = "organizationId")]
     organization_id: String,
 }
 
 #[get("/ciphers/organization-details?<data..>")]
-fn get_org_details(data: Form<OrgIdData>, headers: Headers, conn: DbConn) -> Json<Value> {
+fn get_org_details(data: OrgIdData, headers: Headers, conn: DbConn) -> Json<Value> {
     let ciphers = Cipher::find_by_org(&data.organization_id, &conn);
     let ciphers_json: Vec<Value> =
         ciphers.iter().map(|c| c.to_json(&headers.host, &headers.user.uuid, &conn)).collect();
@@ -1097,14 +1097,14 @@ struct RelationsData {
 
 #[post("/ciphers/import-organization?<query..>", data = "<data>")]
 fn post_org_import(
-    query: Form<OrgIdData>,
+    query: OrgIdData,
     data: JsonUpcase<ImportData>,
     headers: AdminHeaders,
     conn: DbConn,
     nt: Notify,
 ) -> EmptyResult {
     let data: ImportData = data.into_inner().data;
-    let org_id = query.into_inner().organization_id;
+    let org_id = query.organization_id;
 
     // Read and create the collections
     let collections: Vec<_> = data

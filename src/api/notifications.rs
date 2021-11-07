@@ -1,7 +1,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use rocket::serde::json::Json;
 use rocket::Route;
-use rocket_contrib::json::Json;
 use serde_json::Value as JsonValue;
 
 use crate::{api::EmptyResult, auth::Headers, Error, CONFIG};
@@ -417,7 +417,7 @@ pub enum UpdateType {
 }
 
 use rocket::State;
-pub type Notify<'a> = State<'a, WebSocketUsers>;
+pub type Notify<'a> = &'a State<WebSocketUsers>;
 
 pub fn start_notification_server() -> WebSocketUsers {
     let factory = WsFactory::init();
@@ -430,12 +430,11 @@ pub fn start_notification_server() -> WebSocketUsers {
             settings.queue_size = 2;
             settings.panic_on_internal = false;
 
-            ws::Builder::new()
-                .with_settings(settings)
-                .build(factory)
-                .unwrap()
-                .listen((CONFIG.websocket_address().as_str(), CONFIG.websocket_port()))
-                .unwrap();
+            let ws = ws::Builder::new().with_settings(settings).build(factory).unwrap();
+            CONFIG.set_ws_shutdown_handle(ws.broadcaster());
+            ws.listen((CONFIG.websocket_address().as_str(), CONFIG.websocket_port())).unwrap();
+
+            warn!("WS Server stopped!");
         });
     }
 

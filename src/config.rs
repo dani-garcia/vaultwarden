@@ -36,6 +36,9 @@ macro_rules! make_config {
         pub struct Config { inner: RwLock<Inner> }
 
         struct Inner {
+            rocket_shutdown_handle: Option<rocket::Shutdown>,
+            ws_shutdown_handle: Option<ws::Sender>,
+
             templates: Handlebars<'static>,
             config: ConfigItems,
 
@@ -332,6 +335,8 @@ make_config! {
         attachments_folder:     String, false,  auto,   |c| format!("{}/{}", c.data_folder, "attachments");
         /// Sends folder
         sends_folder:           String, false,  auto,   |c| format!("{}/{}", c.data_folder, "sends");
+        /// Temp folder |> Used for storing temporary file uploads
+        tmp_folder:           String, false,  auto,   |c| format!("{}/{}", c.data_folder, "tmp");
         /// Templates folder
         templates_folder:       String, false,  auto,   |c| format!("{}/{}", c.data_folder, "templates");
         /// Session JWT key
@@ -508,6 +513,9 @@ make_config! {
 
         /// Max database connection retries |> Number of times to retry the database connection during startup, with 1 second between each retry, set to 0 to retry indefinitely
         db_connection_retries:  u32,    false,  def,    15;
+
+        /// Timeout when aquiring database connection
+        database_timeout:     u64,    false,  def,    30;
 
         /// Database connection pool size
         database_max_conns:     u32,    false,  def,    10;
@@ -743,6 +751,8 @@ impl Config {
 
         Ok(Config {
             inner: RwLock::new(Inner {
+                rocket_shutdown_handle: None,
+                ws_shutdown_handle: None,
                 templates: load_templates(&config.templates_folder),
                 config,
                 _env,
@@ -905,6 +915,27 @@ impl Config {
         } else {
             let hb = &CONFIG.inner.read().unwrap().templates;
             hb.render(name, data).map_err(Into::into)
+        }
+    }
+
+    pub fn set_rocket_shutdown_handle(&self, handle: rocket::Shutdown) {
+        self.inner.write().unwrap().rocket_shutdown_handle = Some(handle);
+    }
+
+    pub fn set_ws_shutdown_handle(&self, handle: ws::Sender) {
+        self.inner.write().unwrap().ws_shutdown_handle = Some(handle);
+    }
+
+    pub fn shutdown(&self) {
+        if let Ok(c) = self.inner.read() {
+            if let Some(handle) = c.ws_shutdown_handle.clone() {
+                handle.shutdown().ok();
+            }
+            // Wait a bit before stopping the web server
+            std::thread::sleep(std::time::Duration::from_secs(1));
+            if let Some(handle) = c.rocket_shutdown_handle.clone() {
+                handle.notify();
+            }
         }
     }
 }

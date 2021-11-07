@@ -1,9 +1,10 @@
-use std::{io::Read, path::Path};
+use std::path::Path;
 
 use chrono::{DateTime, Duration, Utc};
-use multipart::server::{save::SavedData, Multipart, SaveResult};
-use rocket::{http::ContentType, response::NamedFile, Data};
-use rocket_contrib::json::Json;
+use rocket::form::Form;
+use rocket::fs::NamedFile;
+use rocket::fs::TempFile;
+use rocket::serde::json::Json;
 use serde_json::Value;
 
 use crate::{
@@ -31,9 +32,9 @@ pub fn routes() -> Vec<rocket::Route> {
     ]
 }
 
-pub fn purge_sends(pool: DbPool) {
+pub async fn purge_sends(pool: DbPool) {
     debug!("Purging sends");
-    if let Ok(conn) = pool.get() {
+    if let Ok(conn) = pool.get().await {
         Send::purge(&conn);
     } else {
         error!("Failed to get DB connection while purging sends")
@@ -177,25 +178,23 @@ fn post_send(data: JsonUpcase<SendData>, headers: Headers, conn: DbConn, nt: Not
     Ok(Json(send.to_json()))
 }
 
+#[derive(FromForm)]
+struct UploadData<'f> {
+    model: Json<crate::util::UpCase<SendData>>,
+    data: TempFile<'f>,
+}
+
 #[post("/sends/file", format = "multipart/form-data", data = "<data>")]
-fn post_send_file(data: Data, content_type: &ContentType, headers: Headers, conn: DbConn, nt: Notify) -> JsonResult {
+async fn post_send_file(data: Form<UploadData<'_>>, headers: Headers, conn: DbConn, nt: Notify<'_>) -> JsonResult {
     enforce_disable_send_policy(&headers, &conn)?;
 
-    let boundary = content_type.params().next().expect("No boundary provided").1;
+    let UploadData {
+        model,
+        mut data,
+    } = data.into_inner();
+    let model = model.into_inner().data;
 
-    let mut mpart = Multipart::with_body(data.open(), boundary);
-
-    // First entry is the SendData JSON
-    let mut model_entry = match mpart.read_entry()? {
-        Some(e) if &*e.headers.name == "model" => e,
-        Some(_) => err!("Invalid entry name"),
-        None => err!("No model entry present"),
-    };
-
-    let mut buf = String::new();
-    model_entry.data.read_to_string(&mut buf)?;
-    let data = serde_json::from_str::<crate::util::UpCase<SendData>>(&buf)?;
-    enforce_disable_hide_email_policy(&data.data, &headers, &conn)?;
+    enforce_disable_hide_email_policy(&model, &headers, &conn)?;
 
     // Get the file length and add an extra 5% to avoid issues
     const SIZE_525_MB: u64 = 550_502_400;
@@ -212,45 +211,27 @@ fn post_send_file(data: Data, content_type: &ContentType, headers: Headers, conn
         None => SIZE_525_MB,
     };
 
-    // Create the Send
-    let mut send = create_send(data.data, headers.user.uuid)?;
-    let file_id = crate::crypto::generate_send_id();
-
+    let mut send = create_send(model, headers.user.uuid)?;
     if send.atype != SendType::File as i32 {
         err!("Send content is not a file");
     }
 
-    let file_path = Path::new(&CONFIG.sends_folder()).join(&send.uuid).join(&file_id);
+    let size = data.len();
+    if size > size_limit {
+        err!("Attachment storage limit exceeded with this file");
+    }
 
-    // Read the data entry and save the file
-    let mut data_entry = match mpart.read_entry()? {
-        Some(e) if &*e.headers.name == "data" => e,
-        Some(_) => err!("Invalid entry name"),
-        None => err!("No model entry present"),
-    };
+    let file_id = crate::crypto::generate_send_id();
+    let folder_path = tokio::fs::canonicalize(&CONFIG.sends_folder()).await?.join(&send.uuid);
+    let file_path = folder_path.join(&file_id);
+    tokio::fs::create_dir_all(&folder_path).await?;
+    data.persist_to(&file_path).await?;
 
-    let size = match data_entry.data.save().memory_threshold(0).size_limit(size_limit).with_path(&file_path) {
-        SaveResult::Full(SavedData::File(_, size)) => size as i32,
-        SaveResult::Full(other) => {
-            std::fs::remove_file(&file_path).ok();
-            err!(format!("Attachment is not a file: {:?}", other));
-        }
-        SaveResult::Partial(_, reason) => {
-            std::fs::remove_file(&file_path).ok();
-            err!(format!("Attachment storage limit exceeded with this file: {:?}", reason));
-        }
-        SaveResult::Error(e) => {
-            std::fs::remove_file(&file_path).ok();
-            err!(format!("Error: {:?}", e));
-        }
-    };
-
-    // Set ID and sizes
     let mut data_value: Value = serde_json::from_str(&send.data)?;
     if let Some(o) = data_value.as_object_mut() {
         o.insert(String::from("Id"), Value::String(file_id));
         o.insert(String::from("Size"), Value::Number(size.into()));
-        o.insert(String::from("SizeName"), Value::String(crate::util::get_display_size(size)));
+        o.insert(String::from("SizeName"), Value::String(crate::util::get_display_size(size as i32)));
     }
     send.data = serde_json::to_string(&data_value)?;
 
@@ -367,10 +348,10 @@ fn post_access_file(
 }
 
 #[get("/sends/<send_id>/<file_id>?<t>")]
-fn download_send(send_id: SafeString, file_id: SafeString, t: String) -> Option<NamedFile> {
+async fn download_send(send_id: SafeString, file_id: SafeString, t: String) -> Option<NamedFile> {
     if let Ok(claims) = crate::auth::decode_send(&t) {
         if claims.sub == format!("{}/{}", send_id, file_id) {
-            return NamedFile::open(Path::new(&CONFIG.sends_folder()).join(send_id).join(file_id)).ok();
+            return NamedFile::open(Path::new(&CONFIG.sends_folder()).join(send_id).join(file_id)).await.ok();
         }
     }
     None

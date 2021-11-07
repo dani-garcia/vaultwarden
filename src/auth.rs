@@ -257,7 +257,10 @@ pub fn generate_send_claims(send_id: &str, file_id: &str) -> BasicJwtClaims {
 //
 // Bearer token authentication
 //
-use rocket::request::{FromRequest, Outcome, Request};
+use rocket::{
+    outcome::try_outcome,
+    request::{FromRequest, Outcome, Request},
+};
 
 use crate::db::{
     models::{CollectionUser, Device, User, UserOrgStatus, UserOrgType, UserOrganization, UserStampException},
@@ -268,10 +271,11 @@ pub struct Host {
     pub host: String,
 }
 
-impl<'a, 'r> FromRequest<'a, 'r> for Host {
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for Host {
     type Error = &'static str;
 
-    fn from_request(request: &'a Request<'r>) -> Outcome<Self, Self::Error> {
+    async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         let headers = request.headers();
 
         // Get host
@@ -314,17 +318,14 @@ pub struct Headers {
     pub user: User,
 }
 
-impl<'a, 'r> FromRequest<'a, 'r> for Headers {
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for Headers {
     type Error = &'static str;
 
-    fn from_request(request: &'a Request<'r>) -> Outcome<Self, Self::Error> {
+    async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         let headers = request.headers();
 
-        let host = match Host::from_request(request) {
-            Outcome::Forward(_) => return Outcome::Forward(()),
-            Outcome::Failure(f) => return Outcome::Failure(f),
-            Outcome::Success(host) => host.host,
-        };
+        let host = try_outcome!(Host::from_request(request).await).host;
 
         // Get access_token
         let access_token: &str = match headers.get_one("Authorization") {
@@ -344,7 +345,7 @@ impl<'a, 'r> FromRequest<'a, 'r> for Headers {
         let device_uuid = claims.device;
         let user_uuid = claims.sub;
 
-        let conn = match request.guard::<DbConn>() {
+        let conn = match DbConn::from_request(request).await {
             Outcome::Success(conn) => conn,
             _ => err_handler!("Error getting DB"),
         };
@@ -363,7 +364,7 @@ impl<'a, 'r> FromRequest<'a, 'r> for Headers {
             if let Some(stamp_exception) =
                 user.stamp_exception.as_deref().and_then(|s| serde_json::from_str::<UserStampException>(s).ok())
             {
-                let current_route = match request.route().and_then(|r| r.name) {
+                let current_route = match request.route().and_then(|r| r.name.as_deref()) {
                     Some(name) => name,
                     _ => err_handler!("Error getting current route for stamp exception"),
                 };
@@ -411,13 +412,13 @@ pub struct OrgHeaders {
 // but there are cases where it is a query value.
 // First check the path, if this is not a valid uuid, try the query values.
 fn get_org_id(request: &Request) -> Option<String> {
-    if let Some(Ok(org_id)) = request.get_param::<String>(1) {
+    if let Some(Ok(org_id)) = request.param::<String>(1) {
         if uuid::Uuid::parse_str(&org_id).is_ok() {
             return Some(org_id);
         }
     }
 
-    if let Some(Ok(org_id)) = request.get_query_value::<String>("organizationId") {
+    if let Some(Ok(org_id)) = request.query_value::<String>("organizationId") {
         if uuid::Uuid::parse_str(&org_id).is_ok() {
             return Some(org_id);
         }
@@ -426,52 +427,48 @@ fn get_org_id(request: &Request) -> Option<String> {
     None
 }
 
-impl<'a, 'r> FromRequest<'a, 'r> for OrgHeaders {
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for OrgHeaders {
     type Error = &'static str;
 
-    fn from_request(request: &'a Request<'r>) -> Outcome<Self, Self::Error> {
-        match request.guard::<Headers>() {
-            Outcome::Forward(_) => Outcome::Forward(()),
-            Outcome::Failure(f) => Outcome::Failure(f),
-            Outcome::Success(headers) => {
-                match get_org_id(request) {
-                    Some(org_id) => {
-                        let conn = match request.guard::<DbConn>() {
-                            Outcome::Success(conn) => conn,
-                            _ => err_handler!("Error getting DB"),
-                        };
+    async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+        let headers = try_outcome!(Headers::from_request(request).await);
+        match get_org_id(request) {
+            Some(org_id) => {
+                let conn = match DbConn::from_request(request).await {
+                    Outcome::Success(conn) => conn,
+                    _ => err_handler!("Error getting DB"),
+                };
 
-                        let user = headers.user;
-                        let org_user = match UserOrganization::find_by_user_and_org(&user.uuid, &org_id, &conn) {
-                            Some(user) => {
-                                if user.status == UserOrgStatus::Confirmed as i32 {
-                                    user
-                                } else {
-                                    err_handler!("The current user isn't confirmed member of the organization")
-                                }
-                            }
-                            None => err_handler!("The current user isn't member of the organization"),
-                        };
-
-                        Outcome::Success(Self {
-                            host: headers.host,
-                            device: headers.device,
-                            user,
-                            org_user_type: {
-                                if let Some(org_usr_type) = UserOrgType::from_i32(org_user.atype) {
-                                    org_usr_type
-                                } else {
-                                    // This should only happen if the DB is corrupted
-                                    err_handler!("Unknown user type in the database")
-                                }
-                            },
-                            org_user,
-                            org_id,
-                        })
+                let user = headers.user;
+                let org_user = match UserOrganization::find_by_user_and_org(&user.uuid, &org_id, &conn) {
+                    Some(user) => {
+                        if user.status == UserOrgStatus::Confirmed as i32 {
+                            user
+                        } else {
+                            err_handler!("The current user isn't confirmed member of the organization")
+                        }
                     }
-                    _ => err_handler!("Error getting the organization id"),
-                }
+                    None => err_handler!("The current user isn't member of the organization"),
+                };
+
+                Outcome::Success(Self {
+                    host: headers.host,
+                    device: headers.device,
+                    user,
+                    org_user_type: {
+                        if let Some(org_usr_type) = UserOrgType::from_i32(org_user.atype) {
+                            org_usr_type
+                        } else {
+                            // This should only happen if the DB is corrupted
+                            err_handler!("Unknown user type in the database")
+                        }
+                    },
+                    org_user,
+                    org_id,
+                })
             }
+            _ => err_handler!("Error getting the organization id"),
         }
     }
 }
@@ -483,25 +480,21 @@ pub struct AdminHeaders {
     pub org_user_type: UserOrgType,
 }
 
-impl<'a, 'r> FromRequest<'a, 'r> for AdminHeaders {
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for AdminHeaders {
     type Error = &'static str;
 
-    fn from_request(request: &'a Request<'r>) -> Outcome<Self, Self::Error> {
-        match request.guard::<OrgHeaders>() {
-            Outcome::Forward(_) => Outcome::Forward(()),
-            Outcome::Failure(f) => Outcome::Failure(f),
-            Outcome::Success(headers) => {
-                if headers.org_user_type >= UserOrgType::Admin {
-                    Outcome::Success(Self {
-                        host: headers.host,
-                        device: headers.device,
-                        user: headers.user,
-                        org_user_type: headers.org_user_type,
-                    })
-                } else {
-                    err_handler!("You need to be Admin or Owner to call this endpoint")
-                }
-            }
+    async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+        let headers = try_outcome!(OrgHeaders::from_request(request).await);
+        if headers.org_user_type >= UserOrgType::Admin {
+            Outcome::Success(Self {
+                host: headers.host,
+                device: headers.device,
+                user: headers.user,
+                org_user_type: headers.org_user_type,
+            })
+        } else {
+            err_handler!("You need to be Admin or Owner to call this endpoint")
         }
     }
 }
@@ -520,13 +513,13 @@ impl From<AdminHeaders> for Headers {
 // but there could be cases where it is a query value.
 // First check the path, if this is not a valid uuid, try the query values.
 fn get_col_id(request: &Request) -> Option<String> {
-    if let Some(Ok(col_id)) = request.get_param::<String>(3) {
+    if let Some(Ok(col_id)) = request.param::<String>(3) {
         if uuid::Uuid::parse_str(&col_id).is_ok() {
             return Some(col_id);
         }
     }
 
-    if let Some(Ok(col_id)) = request.get_query_value::<String>("collectionId") {
+    if let Some(Ok(col_id)) = request.query_value::<String>("collectionId") {
         if uuid::Uuid::parse_str(&col_id).is_ok() {
             return Some(col_id);
         }
@@ -545,46 +538,38 @@ pub struct ManagerHeaders {
     pub org_user_type: UserOrgType,
 }
 
-impl<'a, 'r> FromRequest<'a, 'r> for ManagerHeaders {
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for ManagerHeaders {
     type Error = &'static str;
 
-    fn from_request(request: &'a Request<'r>) -> Outcome<Self, Self::Error> {
-        match request.guard::<OrgHeaders>() {
-            Outcome::Forward(_) => Outcome::Forward(()),
-            Outcome::Failure(f) => Outcome::Failure(f),
-            Outcome::Success(headers) => {
-                if headers.org_user_type >= UserOrgType::Manager {
-                    match get_col_id(request) {
-                        Some(col_id) => {
-                            let conn = match request.guard::<DbConn>() {
-                                Outcome::Success(conn) => conn,
-                                _ => err_handler!("Error getting DB"),
-                            };
+    async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+        let headers = try_outcome!(OrgHeaders::from_request(request).await);
+        if headers.org_user_type >= UserOrgType::Manager {
+            match get_col_id(request) {
+                Some(col_id) => {
+                    let conn = match DbConn::from_request(request).await {
+                        Outcome::Success(conn) => conn,
+                        _ => err_handler!("Error getting DB"),
+                    };
 
-                            if !headers.org_user.has_full_access() {
-                                match CollectionUser::find_by_collection_and_user(
-                                    &col_id,
-                                    &headers.org_user.user_uuid,
-                                    &conn,
-                                ) {
-                                    Some(_) => (),
-                                    None => err_handler!("The current user isn't a manager for this collection"),
-                                }
-                            }
+                    if !headers.org_user.has_full_access() {
+                        match CollectionUser::find_by_collection_and_user(&col_id, &headers.org_user.user_uuid, &conn) {
+                            Some(_) => (),
+                            None => err_handler!("The current user isn't a manager for this collection"),
                         }
-                        _ => err_handler!("Error getting the collection id"),
                     }
-
-                    Outcome::Success(Self {
-                        host: headers.host,
-                        device: headers.device,
-                        user: headers.user,
-                        org_user_type: headers.org_user_type,
-                    })
-                } else {
-                    err_handler!("You need to be a Manager, Admin or Owner to call this endpoint")
                 }
+                _ => err_handler!("Error getting the collection id"),
             }
+
+            Outcome::Success(Self {
+                host: headers.host,
+                device: headers.device,
+                user: headers.user,
+                org_user_type: headers.org_user_type,
+            })
+        } else {
+            err_handler!("You need to be a Manager, Admin or Owner to call this endpoint")
         }
     }
 }
@@ -608,25 +593,21 @@ pub struct ManagerHeadersLoose {
     pub org_user_type: UserOrgType,
 }
 
-impl<'a, 'r> FromRequest<'a, 'r> for ManagerHeadersLoose {
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for ManagerHeadersLoose {
     type Error = &'static str;
 
-    fn from_request(request: &'a Request<'r>) -> Outcome<Self, Self::Error> {
-        match request.guard::<OrgHeaders>() {
-            Outcome::Forward(_) => Outcome::Forward(()),
-            Outcome::Failure(f) => Outcome::Failure(f),
-            Outcome::Success(headers) => {
-                if headers.org_user_type >= UserOrgType::Manager {
-                    Outcome::Success(Self {
-                        host: headers.host,
-                        device: headers.device,
-                        user: headers.user,
-                        org_user_type: headers.org_user_type,
-                    })
-                } else {
-                    err_handler!("You need to be a Manager, Admin or Owner to call this endpoint")
-                }
-            }
+    async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+        let headers = try_outcome!(OrgHeaders::from_request(request).await);
+        if headers.org_user_type >= UserOrgType::Manager {
+            Outcome::Success(Self {
+                host: headers.host,
+                device: headers.device,
+                user: headers.user,
+                org_user_type: headers.org_user_type,
+            })
+        } else {
+            err_handler!("You need to be a Manager, Admin or Owner to call this endpoint")
         }
     }
 }
@@ -647,24 +628,20 @@ pub struct OwnerHeaders {
     pub user: User,
 }
 
-impl<'a, 'r> FromRequest<'a, 'r> for OwnerHeaders {
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for OwnerHeaders {
     type Error = &'static str;
 
-    fn from_request(request: &'a Request<'r>) -> Outcome<Self, Self::Error> {
-        match request.guard::<OrgHeaders>() {
-            Outcome::Forward(_) => Outcome::Forward(()),
-            Outcome::Failure(f) => Outcome::Failure(f),
-            Outcome::Success(headers) => {
-                if headers.org_user_type == UserOrgType::Owner {
-                    Outcome::Success(Self {
-                        host: headers.host,
-                        device: headers.device,
-                        user: headers.user,
-                    })
-                } else {
-                    err_handler!("You need to be Owner to call this endpoint")
-                }
-            }
+    async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+        let headers = try_outcome!(OrgHeaders::from_request(request).await);
+        if headers.org_user_type == UserOrgType::Owner {
+            Outcome::Success(Self {
+                host: headers.host,
+                device: headers.device,
+                user: headers.user,
+            })
+        } else {
+            err_handler!("You need to be Owner to call this endpoint")
         }
     }
 }
@@ -678,10 +655,11 @@ pub struct ClientIp {
     pub ip: IpAddr,
 }
 
-impl<'a, 'r> FromRequest<'a, 'r> for ClientIp {
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for ClientIp {
     type Error = ();
 
-    fn from_request(req: &'a Request<'r>) -> Outcome<Self, Self::Error> {
+    async fn from_request(req: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         let ip = if CONFIG._ip_header_enabled() {
             req.headers().get_one(&CONFIG.ip_header()).and_then(|ip| {
                 match ip.find(',') {
