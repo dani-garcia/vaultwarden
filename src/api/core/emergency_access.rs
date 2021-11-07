@@ -1,6 +1,6 @@
 use chrono::{Duration, Utc};
+use rocket::serde::json::Json;
 use rocket::Route;
-use rocket_contrib::json::Json;
 use serde_json::Value;
 use std::borrow::Borrow;
 
@@ -709,13 +709,13 @@ fn check_emergency_access_allowed() -> EmptyResult {
     Ok(())
 }
 
-pub fn emergency_request_timeout_job(pool: DbPool) {
+pub async fn emergency_request_timeout_job(pool: DbPool) {
     debug!("Start emergency_request_timeout_job");
     if !CONFIG.emergency_access_allowed() {
         return;
     }
 
-    if let Ok(conn) = pool.get() {
+    if let Ok(conn) = pool.get().await {
         let emergency_access_list = EmergencyAccess::find_all_recoveries(&conn);
 
         if emergency_access_list.is_empty() {
@@ -756,13 +756,13 @@ pub fn emergency_request_timeout_job(pool: DbPool) {
     }
 }
 
-pub fn emergency_notification_reminder_job(pool: DbPool) {
+pub async fn emergency_notification_reminder_job(pool: DbPool) {
     debug!("Start emergency_notification_reminder_job");
     if !CONFIG.emergency_access_allowed() {
         return;
     }
 
-    if let Ok(conn) = pool.get() {
+    if let Ok(conn) = pool.get().await {
         let emergency_access_list = EmergencyAccess::find_all_recoveries(&conn);
 
         if emergency_access_list.is_empty() {

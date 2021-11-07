@@ -1,6 +1,6 @@
 use once_cell::sync::Lazy;
+use rocket::serde::json::Json;
 use rocket::Route;
-use rocket_contrib::json::Json;
 use serde_json::Value;
 use u2f::{
     messages::{RegisterResponse, SignResponse, U2fSignRequest},

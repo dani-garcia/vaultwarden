@@ -1,5 +1,5 @@
+use rocket::serde::json::Json;
 use rocket::Route;
-use rocket_contrib::json::Json;
 use serde_json::Value;
 use yubico::{config::Config, verify};
 
