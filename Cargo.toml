@@ -3,7 +3,7 @@ name = "vaultwarden"
 version = "1.0.0"
 authors = ["Daniel García <dani-garcia@users.noreply.github.com>"]
 edition = "2021"
-rust-version = "1.57"
+rust-version = "1.56"
 resolver = "2"
 
 repository = "https://github.com/dani-garcia/vaultwarden"
@@ -13,6 +13,7 @@ publish = false
 build = "build.rs"
 
 [features]
+# default = ["sqlite"]
 # Empty to keep compatibility, prefer to set USE_SYSLOG=true
 enable_syslog = []
 mysql = ["diesel/mysql", "diesel_migrations/mysql"]
@@ -29,21 +30,21 @@ unstable = []
 syslog = "4.0.1"
 
 [dependencies]
-# Web framework for nightly with a focus on ease-of-use, expressibility, and speed.
-rocket = { version = "=0.5.0-dev", features = ["tls"], default-features = false }
-rocket_contrib = "=0.5.0-dev"
+# Web framework
+rocket = { version = "0.5.0-rc.1", features = ["tls", "json"], default-features = false }
 
-# HTTP client
-reqwest = { version = "0.11.6", features = ["blocking", "json", "gzip", "brotli", "socks", "cookies"] }
+# Async futures
+futures = "0.3.17"
+tokio = { version = "1.13.0", features = ["rt-multi-thread", "fs", "io-util", "parking_lot"] }
+ 
+ # HTTP client
+reqwest = { version = "0.11.6", features = ["stream", "json", "gzip", "brotli", "socks", "cookies"] }
+bytes = "1.1.0"
 
 # Used for custom short lived cookie jar
 cookie = "0.15.1"
 cookie_store = "0.15.0"
-bytes = "1.1.0"
 url = "2.2.2"
-
-# multipart/form-data support
-multipart = { version = "0.18.0", features = ["server"], default-features = false }
 
 # WebSockets library
 ws = { version = "0.11.1", package = "parity-ws" }
@@ -140,10 +141,10 @@ backtrace = "0.3.63"
 # Macro ident concatenation
 paste = "1.0.5"
 
+ctrlc = { version = "3.2.1", features = ["termination"] }
+
 [patch.crates-io]
-# Use newest ring
-rocket = { git = 'https://github.com/SergioBenitez/Rocket', rev = '263e39b5b429de1913ce7e3036575a7b4d88b6d7' }
-rocket_contrib = { git = 'https://github.com/SergioBenitez/Rocket', rev = '263e39b5b429de1913ce7e3036575a7b4d88b6d7' }
+rocket = { git = 'https://github.com/SergioBenitez/Rocket', rev = '8cae077ba1d54b92cdef3e171a730b819d5eeb8e' }
 
 # For favicon extraction from main website
 data-url = { git = 'https://github.com/servo/rust-url', package="data-url", rev = 'eb7330b5296c0d43816d1346211b74182bb4ae37' }

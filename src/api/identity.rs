@@ -1,10 +1,10 @@
 use chrono::Utc;
 use num_traits::FromPrimitive;
+use rocket::serde::json::Json;
 use rocket::{
-    request::{Form, FormItems, FromForm},
+    form::{Form, FromForm},
     Route,
 };
-use rocket_contrib::json::Json;
 use serde_json::Value;
 
 use crate::{
@@ -372,61 +372,52 @@ fn _json_err_twofactor(providers: &[i32], user_uuid: &str, conn: &DbConn) -> Api
 }
 
 // https://github.com/bitwarden/mobile/blob/master/src/Core/Models/Request/TokenRequest.cs
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, FromForm)]
 #[allow(non_snake_case)]
 struct ConnectData {
+    #[field(name = uncased("grant_type"))]
+    #[field(name = uncased("granttype"))]
     grant_type: String, // refresh_token, password
 
     // Needed for grant_type="refresh_token"
+    #[field(name = uncased("refresh_token"))]
+    #[field(name = uncased("refreshtoken"))]
     refresh_token: Option<String>,
 
     // Needed for grant_type="password"
+    #[field(name = uncased("client_id"))]
+    #[field(name = uncased("clientid"))]
     client_id: Option<String>, // web, cli, desktop, browser, mobile
+    #[field(name = uncased("password"))]
     password: Option<String>,
+    #[field(name = uncased("scope"))]
     scope: Option<String>,
+    #[field(name = uncased("username"))]
     username: Option<String>,
 
+    #[field(name = uncased("device_identifier"))]
+    #[field(name = uncased("deviceidentifier"))]
     device_identifier: Option<String>,
+    #[field(name = uncased("device_name"))]
+    #[field(name = uncased("devicename"))]
     device_name: Option<String>,
+    #[field(name = uncased("device_type"))]
+    #[field(name = uncased("devicetype"))]
     device_type: Option<String>,
+    #[field(name = uncased("device_push_token"))]
+    #[field(name = uncased("devicepushtoken"))]
     device_push_token: Option<String>, // Unused; mobile device push not yet supported.
 
     // Needed for two-factor auth
+    #[field(name = uncased("two_factor_provider"))]
+    #[field(name = uncased("twofactorprovider"))]
     two_factor_provider: Option<i32>,
+    #[field(name = uncased("two_factor_token"))]
+    #[field(name = uncased("twofactortoken"))]
     two_factor_token: Option<String>,
+    #[field(name = uncased("two_factor_remember"))]
+    #[field(name = uncased("twofactorremember"))]
     two_factor_remember: Option<i32>,
-}
-
-impl<'f> FromForm<'f> for ConnectData {
-    type Error = String;
-
-    fn from_form(items: &mut FormItems<'f>, _strict: bool) -> Result<Self, Self::Error> {
-        let mut form = Self::default();
-        for item in items {
-            let (key, value) = item.key_value_decoded();
-            let mut normalized_key = key.to_lowercase();
-            normalized_key.retain(|c| c != '_'); // Remove '_'
-
-            match normalized_key.as_ref() {
-                "granttype" => form.grant_type = value,
-                "refreshtoken" => form.refresh_token = Some(value),
-                "clientid" => form.client_id = Some(value),
-                "password" => form.password = Some(value),
-                "scope" => form.scope = Some(value),
-                "username" => form.username = Some(value),
-                "deviceidentifier" => form.device_identifier = Some(value),
-                "devicename" => form.device_name = Some(value),
-                "devicetype" => form.device_type = Some(value),
-                "devicepushtoken" => form.device_push_token = Some(value),
-                "twofactorprovider" => form.two_factor_provider = value.parse().ok(),
-                "twofactortoken" => form.two_factor_token = Some(value),
-                "twofactorremember" => form.two_factor_remember = value.parse().ok(),
-                key => warn!("Detected unexpected parameter during login: {}", key),
-            }
-        }
-
-        Ok(form)
-    }
 }
 
 fn _check_is_some<T>(value: &Option<T>, msg: &str) -> EmptyResult {

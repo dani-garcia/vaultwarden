@@ -1,6 +1,6 @@
 use chrono::{Duration, NaiveDateTime, Utc};
+use rocket::serde::json::Json;
 use rocket::Route;
-use rocket_contrib::json::Json;
 
 use crate::{
     api::{core::two_factor::_generate_recover_code, EmptyResult, JsonResult, JsonUpcase, PasswordData},
