@@ -350,12 +350,12 @@ impl<'r> FromRequest<'r> for Headers {
             _ => err_handler!("Error getting DB"),
         };
 
-        let device = match Device::find_by_uuid(&device_uuid, &conn) {
+        let device = match Device::find_by_uuid(&device_uuid, &conn).await {
             Some(device) => device,
             None => err_handler!("Invalid device id"),
         };
 
-        let user = match User::find_by_uuid(&user_uuid, &conn) {
+        let user = match User::find_by_uuid(&user_uuid, &conn).await {
             Some(user) => user,
             None => err_handler!("Device has no user associated"),
         };
@@ -377,7 +377,7 @@ impl<'r> FromRequest<'r> for Headers {
                     // This prevents checking this stamp exception for new requests.
                     let mut user = user;
                     user.reset_stamp_exception();
-                    if let Err(e) = user.save(&conn) {
+                    if let Err(e) = user.save(&conn).await {
                         error!("Error updating user: {:#?}", e);
                     }
                     err_handler!("Stamp exception is expired")
@@ -441,7 +441,7 @@ impl<'r> FromRequest<'r> for OrgHeaders {
                 };
 
                 let user = headers.user;
-                let org_user = match UserOrganization::find_by_user_and_org(&user.uuid, &org_id, &conn) {
+                let org_user = match UserOrganization::find_by_user_and_org(&user.uuid, &org_id, &conn).await {
                     Some(user) => {
                         if user.status == UserOrgStatus::Confirmed as i32 {
                             user
@@ -553,7 +553,9 @@ impl<'r> FromRequest<'r> for ManagerHeaders {
                     };
 
                     if !headers.org_user.has_full_access() {
-                        match CollectionUser::find_by_collection_and_user(&col_id, &headers.org_user.user_uuid, &conn) {
+                        match CollectionUser::find_by_collection_and_user(&col_id, &headers.org_user.user_uuid, &conn)
+                            .await
+                        {
                             Some(_) => (),
                             None => err_handler!("The current user isn't a manager for this collection"),
                         }

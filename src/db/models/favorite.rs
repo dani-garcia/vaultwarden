@@ -19,7 +19,7 @@ use crate::error::MapResult;
 
 impl Favorite {
     // Returns whether the specified cipher is a favorite of the specified user.
-    pub fn is_favorite(cipher_uuid: &str, user_uuid: &str, conn: &DbConn) -> bool {
+    pub async fn is_favorite(cipher_uuid: &str, user_uuid: &str, conn: &DbConn) -> bool {
         db_run! { conn: {
             let query = favorites::table
                 .filter(favorites::cipher_uuid.eq(cipher_uuid))
@@ -31,11 +31,11 @@ impl Favorite {
     }
 
     // Sets whether the specified cipher is a favorite of the specified user.
-    pub fn set_favorite(favorite: bool, cipher_uuid: &str, user_uuid: &str, conn: &DbConn) -> EmptyResult {
-        let (old, new) = (Self::is_favorite(cipher_uuid, user_uuid, conn), favorite);
+    pub async fn set_favorite(favorite: bool, cipher_uuid: &str, user_uuid: &str, conn: &DbConn) -> EmptyResult {
+        let (old, new) = (Self::is_favorite(cipher_uuid, user_uuid, conn).await, favorite);
         match (old, new) {
             (false, true) => {
-                User::update_uuid_revision(user_uuid, conn);
+                User::update_uuid_revision(user_uuid, conn).await;
                 db_run! { conn: {
                 diesel::insert_into(favorites::table)
                     .values((
@@ -47,7 +47,7 @@ impl Favorite {
                 }}
             }
             (true, false) => {
-                User::update_uuid_revision(user_uuid, conn);
+                User::update_uuid_revision(user_uuid, conn).await;
                 db_run! { conn: {
                     diesel::delete(
                         favorites::table
@@ -64,7 +64,7 @@ impl Favorite {
     }
 
     // Delete all favorite entries associated with the specified cipher.
-    pub fn delete_all_by_cipher(cipher_uuid: &str, conn: &DbConn) -> EmptyResult {
+    pub async fn delete_all_by_cipher(cipher_uuid: &str, conn: &DbConn) -> EmptyResult {
         db_run! { conn: {
             diesel::delete(favorites::table.filter(favorites::cipher_uuid.eq(cipher_uuid)))
                 .execute(conn)
@@ -73,7 +73,7 @@ impl Favorite {
     }
 
     // Delete all favorite entries associated with the specified user.
-    pub fn delete_all_by_user(user_uuid: &str, conn: &DbConn) -> EmptyResult {
+    pub async fn delete_all_by_user(user_uuid: &str, conn: &DbConn) -> EmptyResult {
         db_run! { conn: {
             diesel::delete(favorites::table.filter(favorites::user_uuid.eq(user_uuid)))
                 .execute(conn)
