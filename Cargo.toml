@@ -35,7 +35,7 @@ rocket = { version = "0.5.0-rc.1", features = ["tls", "json"], default-features 
 
 # Async futures
 futures = "0.3.17"
-tokio = { version = "1.13.0", features = ["rt-multi-thread", "fs", "io-util", "parking_lot"] }
+tokio = { version = "1.14.0", features = ["rt-multi-thread", "fs", "io-util", "parking_lot"] }
 
  # HTTP client
 reqwest = { version = "0.11.7", features = ["stream", "json", "gzip", "brotli", "socks", "cookies", "trust-dns"] }
@@ -80,7 +80,7 @@ uuid = { version = "0.8.2", features = ["v4"] }
 # Date and time libraries
 chrono = { version = "0.4.19", features = ["serde"] }
 chrono-tz = "0.6.0"
-time = "0.2.27"
+time = "=0.2.27"
 
 # Job scheduler
 job_scheduler = "1.2.1"

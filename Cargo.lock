@@ -346,7 +346,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "188a7c2ae2a1026b9831889fd6461db5d33c4f6d54d6f862bd8b81a2fcefbdba"
 dependencies = [
  "percent-encoding 2.1.0",
- "time 0.3.4",
+ "time 0.3.5",
  "version_check",
 ]
 
@@ -2372,7 +2372,7 @@ dependencies = [
  "serde_json",
  "state",
  "tempfile",
- "time 0.3.4",
+ "time 0.3.5",
  "tokio",
  "tokio-stream",
  "tokio-util",
@@ -2417,7 +2417,7 @@ dependencies = [
  "smallvec 1.7.0",
  "stable-pattern",
  "state",
- "time 0.3.4",
+ "time 0.3.5",
  "tokio",
  "tokio-rustls",
  "uncased",
@@ -2974,9 +2974,9 @@ dependencies = [
 
 [[package]]
 name = "time"
-version = "0.3.4"
+version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "99beeb0daeac2bd1e86ac2c21caddecb244b39a093594da1a661ec2060c7aedd"
+checksum = "41effe7cfa8af36f439fac33861b66b049edc6f9a32331e2312660529c1c24ad"
 dependencies = [
  "itoa",
  "libc",

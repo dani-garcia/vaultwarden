@@ -47,7 +47,7 @@ pub enum SendType {
 }
 
 impl Send {
-    pub fn new(atype: i32, name: String, data: String, akey: String, deletion_date: NaiveDateTime) -> Self {
+    pub async fn new(atype: i32, name: String, data: String, akey: String, deletion_date: NaiveDateTime) -> Self {
         let now = Utc::now().naive_utc();
 
         Self {
@@ -103,7 +103,7 @@ impl Send {
         }
     }
 
-    pub fn creator_identifier(&self, conn: &DbConn) -> Option<String> {
+    pub async fn creator_identifier(&self, conn: &DbConn) -> Option<String> {
         if let Some(hide_email) = self.hide_email {
             if hide_email {
                 return None;
@@ -111,7 +111,7 @@ impl Send {
         }
 
         if let Some(user_uuid) = &self.user_uuid {
-            if let Some(user) = User::find_by_uuid(user_uuid, conn) {
+            if let Some(user) = User::find_by_uuid(user_uuid, conn).await {
                 return Some(user.email);
             }
         }
@@ -150,7 +150,7 @@ impl Send {
         })
     }
 
-    pub fn to_json_access(&self, conn: &DbConn) -> Value {
+    pub async fn to_json_access(&self, conn: &DbConn) -> Value {
         use crate::util::format_date;
 
         let data: Value = serde_json::from_str(&self.data).unwrap_or_default();
@@ -164,7 +164,7 @@ impl Send {
             "File": if self.atype == SendType::File as i32 { Some(&data) } else { None },
 
             "ExpirationDate": self.expiration_date.as_ref().map(format_date),
-            "CreatorIdentifier": self.creator_identifier(conn),
+            "CreatorIdentifier": self.creator_identifier(conn).await,
             "Object": "send-access",
         })
     }
@@ -176,8 +176,8 @@ use crate::api::EmptyResult;
 use crate::error::MapResult;
 
 impl Send {
-    pub fn save(&mut self, conn: &DbConn) -> EmptyResult {
-        self.update_users_revision(conn);
+    pub async fn save(&mut self, conn: &DbConn) -> EmptyResult {
+        self.update_users_revision(conn).await;
         self.revision_date = Utc::now().naive_utc();
 
         db_run! { conn:
@@ -211,8 +211,8 @@ impl Send {
         }
     }
 
-    pub fn delete(&self, conn: &DbConn) -> EmptyResult {
-        self.update_users_revision(conn);
+    pub async fn delete(&self, conn: &DbConn) -> EmptyResult {
+        self.update_users_revision(conn).await;
 
         if self.atype == SendType::File as i32 {
             std::fs::remove_dir_all(std::path::Path::new(&crate::CONFIG.sends_folder()).join(&self.uuid)).ok();
@@ -226,17 +226,17 @@ impl Send {
     }
 
     /// Purge all sends that are past their deletion date.
-    pub fn purge(conn: &DbConn) {
-        for send in Self::find_by_past_deletion_date(conn) {
-            send.delete(conn).ok();
+    pub async fn purge(conn: &DbConn) {
+        for send in Self::find_by_past_deletion_date(conn).await {
+            send.delete(conn).await.ok();
         }
     }
 
-    pub fn update_users_revision(&self, conn: &DbConn) -> Vec<String> {
+    pub async fn update_users_revision(&self, conn: &DbConn) -> Vec<String> {
         let mut user_uuids = Vec::new();
         match &self.user_uuid {
             Some(user_uuid) => {
-                User::update_uuid_revision(user_uuid, conn);
+                User::update_uuid_revision(user_uuid, conn).await;
                 user_uuids.push(user_uuid.clone())
             }
             None => {
@@ -246,14 +246,14 @@ impl Send {
         user_uuids
     }
 
-    pub fn delete_all_by_user(user_uuid: &str, conn: &DbConn) -> EmptyResult {
-        for send in Self::find_by_user(user_uuid, conn) {
-            send.delete(conn)?;
+    pub async fn delete_all_by_user(user_uuid: &str, conn: &DbConn) -> EmptyResult {
+        for send in Self::find_by_user(user_uuid, conn).await {
+            send.delete(conn).await?;
         }
         Ok(())
     }
 
-    pub fn find_by_access_id(access_id: &str, conn: &DbConn) -> Option<Self> {
+    pub async fn find_by_access_id(access_id: &str, conn: &DbConn) -> Option<Self> {
         use data_encoding::BASE64URL_NOPAD;
         use uuid::Uuid;
 
@@ -267,10 +267,10 @@ impl Send {
             Err(_) => return None,
         };
 
-        Self::find_by_uuid(&uuid, conn)
+        Self::find_by_uuid(&uuid, conn).await
     }
 
-    pub fn find_by_uuid(uuid: &str, conn: &DbConn) -> Option<Self> {
+    pub async fn find_by_uuid(uuid: &str, conn: &DbConn) -> Option<Self> {
         db_run! {conn: {
             sends::table
                 .filter(sends::uuid.eq(uuid))
@@ -280,7 +280,7 @@ impl Send {
         }}
     }
 
-    pub fn find_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
+    pub async fn find_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
         db_run! {conn: {
             sends::table
                 .filter(sends::user_uuid.eq(user_uuid))
@@ -288,7 +288,7 @@ impl Send {
         }}
     }
 
-    pub fn find_by_org(org_uuid: &str, conn: &DbConn) -> Vec<Self> {
+    pub async fn find_by_org(org_uuid: &str, conn: &DbConn) -> Vec<Self> {
         db_run! {conn: {
             sends::table
                 .filter(sends::organization_uuid.eq(org_uuid))
@@ -296,7 +296,7 @@ impl Send {
         }}
     }
 
-    pub fn find_by_past_deletion_date(conn: &DbConn) -> Vec<Self> {
+    pub async fn find_by_past_deletion_date(conn: &DbConn) -> Vec<Self> {
         let now = Utc::now().naive_utc();
         db_run! {conn: {
             sends::table

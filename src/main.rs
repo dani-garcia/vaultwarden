@@ -1,4 +1,6 @@
 #![forbid(unsafe_code)]
+// #![warn(rust_2018_idioms)]
+#![warn(rust_2021_compatibility)]
 #![cfg_attr(feature = "unstable", feature(ip))]
 // The recursion_limit is mainly triggered by the json!() macro.
 // The more key/value pairs there are the more recursion occurs.
@@ -71,7 +73,7 @@ async fn main() -> Result<(), Error> {
 
     let pool = create_db_pool();
     schedule_jobs(pool.clone()).await;
-    crate::db::models::TwoFactor::migrate_u2f_to_webauthn(&pool.get().await.unwrap()).unwrap();
+    crate::db::models::TwoFactor::migrate_u2f_to_webauthn(&pool.get().await.unwrap()).await.unwrap();
 
     launch_rocket(pool, extra_debug).await // Blocks until program termination.
 }
