@@ -113,7 +113,7 @@ use crate::error::MapResult;
 
 /// Database methods
 impl Device {
-    pub fn save(&mut self, conn: &DbConn) -> EmptyResult {
+    pub async fn save(&mut self, conn: &DbConn) -> EmptyResult {
         self.updated_at = Utc::now().naive_utc();
 
         db_run! { conn:
@@ -133,7 +133,7 @@ impl Device {
         }
     }
 
-    pub fn delete(self, conn: &DbConn) -> EmptyResult {
+    pub async fn delete(self, conn: &DbConn) -> EmptyResult {
         db_run! { conn: {
             diesel::delete(devices::table.filter(devices::uuid.eq(self.uuid)))
                 .execute(conn)
@@ -141,14 +141,14 @@ impl Device {
         }}
     }
 
-    pub fn delete_all_by_user(user_uuid: &str, conn: &DbConn) -> EmptyResult {
-        for device in Self::find_by_user(user_uuid, conn) {
-            device.delete(conn)?;
+    pub async fn delete_all_by_user(user_uuid: &str, conn: &DbConn) -> EmptyResult {
+        for device in Self::find_by_user(user_uuid, conn).await {
+            device.delete(conn).await?;
         }
         Ok(())
     }
 
-    pub fn find_by_uuid(uuid: &str, conn: &DbConn) -> Option<Self> {
+    pub async fn find_by_uuid(uuid: &str, conn: &DbConn) -> Option<Self> {
         db_run! { conn: {
             devices::table
                 .filter(devices::uuid.eq(uuid))
@@ -158,7 +158,7 @@ impl Device {
         }}
     }
 
-    pub fn find_by_refresh_token(refresh_token: &str, conn: &DbConn) -> Option<Self> {
+    pub async fn find_by_refresh_token(refresh_token: &str, conn: &DbConn) -> Option<Self> {
         db_run! { conn: {
             devices::table
                 .filter(devices::refresh_token.eq(refresh_token))
@@ -168,7 +168,7 @@ impl Device {
         }}
     }
 
-    pub fn find_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
+    pub async fn find_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
         db_run! { conn: {
             devices::table
                 .filter(devices::user_uuid.eq(user_uuid))
@@ -178,7 +178,7 @@ impl Device {
         }}
     }
 
-    pub fn find_latest_active_by_user(user_uuid: &str, conn: &DbConn) -> Option<Self> {
+    pub async fn find_latest_active_by_user(user_uuid: &str, conn: &DbConn) -> Option<Self> {
         db_run! { conn: {
             devices::table
                 .filter(devices::user_uuid.eq(user_uuid))

@@ -30,7 +30,7 @@ pub mod __mysql_schema;
 #[path = "schemas/postgresql/schema.rs"]
 pub mod __postgresql_schema;
 
-// There changes are based on Rocket 0.5-rc wrapper of Diesel: https://github.com/SergioBenitez/Rocket/blob/v0.5-rc/contrib/sync_db_pools
+// These changes are based on Rocket 0.5-rc wrapper of Diesel: https://github.com/SergioBenitez/Rocket/blob/v0.5-rc/contrib/sync_db_pools
 
 // A wrapper around spawn_blocking that propagates panics to the calling code.
 pub async fn run_blocking<F, R>(job: F) -> R

@@ -185,12 +185,20 @@ use crate::db::DbConn;
 use crate::api::EmptyResult;
 use crate::error::MapResult;
 
+use futures::{stream, stream::StreamExt};
+
 /// Database methods
 impl User {
-    pub fn to_json(&self, conn: &DbConn) -> Value {
-        let orgs = UserOrganization::find_confirmed_by_user(&self.uuid, conn);
-        let orgs_json: Vec<Value> = orgs.iter().map(|c| c.to_json(conn)).collect();
-        let twofactor_enabled = !TwoFactor::find_by_user(&self.uuid, conn).is_empty();
+    pub async fn to_json(&self, conn: &DbConn) -> Value {
+        let orgs_json = stream::iter(UserOrganization::find_confirmed_by_user(&self.uuid, conn).await)
+            .then(|c| async {
+                let c = c; // Move out this single variable
+                c.to_json(conn).await
+            })
+            .collect::<Vec<Value>>()
+            .await;
+
+        let twofactor_enabled = !TwoFactor::find_by_user(&self.uuid, conn).await.is_empty();
 
         // TODO: Might want to save the status field in the DB
         let status = if self.password_hash.is_empty() {
@@ -220,7 +228,7 @@ impl User {
         })
     }
 
-    pub fn save(&mut self, conn: &DbConn) -> EmptyResult {
+    pub async fn save(&mut self, conn: &DbConn) -> EmptyResult {
         if self.email.trim().is_empty() {
             err!("User email can't be empty")
         }
@@ -258,26 +266,26 @@ impl User {
         }
     }
 
-    pub fn delete(self, conn: &DbConn) -> EmptyResult {
-        for user_org in UserOrganization::find_confirmed_by_user(&self.uuid, conn) {
+    pub async fn delete(self, conn: &DbConn) -> EmptyResult {
+        for user_org in UserOrganization::find_confirmed_by_user(&self.uuid, conn).await {
             if user_org.atype == UserOrgType::Owner {
                 let owner_type = UserOrgType::Owner as i32;
-                if UserOrganization::find_by_org_and_type(&user_org.org_uuid, owner_type, conn).len() <= 1 {
+                if UserOrganization::find_by_org_and_type(&user_org.org_uuid, owner_type, conn).await.len() <= 1 {
                     err!("Can't delete last owner")
                 }
             }
         }
 
-        Send::delete_all_by_user(&self.uuid, conn)?;
-        EmergencyAccess::delete_all_by_user(&self.uuid, conn)?;
-        UserOrganization::delete_all_by_user(&self.uuid, conn)?;
-        Cipher::delete_all_by_user(&self.uuid, conn)?;
-        Favorite::delete_all_by_user(&self.uuid, conn)?;
-        Folder::delete_all_by_user(&self.uuid, conn)?;
-        Device::delete_all_by_user(&self.uuid, conn)?;
-        TwoFactor::delete_all_by_user(&self.uuid, conn)?;
-        TwoFactorIncomplete::delete_all_by_user(&self.uuid, conn)?;
-        Invitation::take(&self.email, conn); // Delete invitation if any
+        Send::delete_all_by_user(&self.uuid, conn).await?;
+        EmergencyAccess::delete_all_by_user(&self.uuid, conn).await?;
+        UserOrganization::delete_all_by_user(&self.uuid, conn).await?;
+        Cipher::delete_all_by_user(&self.uuid, conn).await?;
+        Favorite::delete_all_by_user(&self.uuid, conn).await?;
+        Folder::delete_all_by_user(&self.uuid, conn).await?;
+        Device::delete_all_by_user(&self.uuid, conn).await?;
+        TwoFactor::delete_all_by_user(&self.uuid, conn).await?;
+        TwoFactorIncomplete::delete_all_by_user(&self.uuid, conn).await?;
+        Invitation::take(&self.email, conn).await; // Delete invitation if any
 
         db_run! {conn: {
             diesel::delete(users::table.filter(users::uuid.eq(self.uuid)))
@@ -286,13 +294,13 @@ impl User {
         }}
     }
 
-    pub fn update_uuid_revision(uuid: &str, conn: &DbConn) {
-        if let Err(e) = Self::_update_revision(uuid, &Utc::now().naive_utc(), conn) {
+    pub async fn update_uuid_revision(uuid: &str, conn: &DbConn) {
+        if let Err(e) = Self::_update_revision(uuid, &Utc::now().naive_utc(), conn).await {
             warn!("Failed to update revision for {}: {:#?}", uuid, e);
         }
     }
 
-    pub fn update_all_revisions(conn: &DbConn) -> EmptyResult {
+    pub async fn update_all_revisions(conn: &DbConn) -> EmptyResult {
         let updated_at = Utc::now().naive_utc();
 
         db_run! {conn: {
@@ -305,13 +313,13 @@ impl User {
         }}
     }
 
-    pub fn update_revision(&mut self, conn: &DbConn) -> EmptyResult {
+    pub async fn update_revision(&mut self, conn: &DbConn) -> EmptyResult {
         self.updated_at = Utc::now().naive_utc();
 
-        Self::_update_revision(&self.uuid, &self.updated_at, conn)
+        Self::_update_revision(&self.uuid, &self.updated_at, conn).await
     }
 
-    fn _update_revision(uuid: &str, date: &NaiveDateTime, conn: &DbConn) -> EmptyResult {
+    async fn _update_revision(uuid: &str, date: &NaiveDateTime, conn: &DbConn) -> EmptyResult {
         db_run! {conn: {
             crate::util::retry(|| {
                 diesel::update(users::table.filter(users::uuid.eq(uuid)))
@@ -322,7 +330,7 @@ impl User {
         }}
     }
 
-    pub fn find_by_mail(mail: &str, conn: &DbConn) -> Option<Self> {
+    pub async fn find_by_mail(mail: &str, conn: &DbConn) -> Option<Self> {
         let lower_mail = mail.to_lowercase();
         db_run! {conn: {
             users::table
@@ -333,20 +341,20 @@ impl User {
         }}
     }
 
-    pub fn find_by_uuid(uuid: &str, conn: &DbConn) -> Option<Self> {
+    pub async fn find_by_uuid(uuid: &str, conn: &DbConn) -> Option<Self> {
         db_run! {conn: {
             users::table.filter(users::uuid.eq(uuid)).first::<UserDb>(conn).ok().from_db()
         }}
     }
 
-    pub fn get_all(conn: &DbConn) -> Vec<Self> {
+    pub async fn get_all(conn: &DbConn) -> Vec<Self> {
         db_run! {conn: {
             users::table.load::<UserDb>(conn).expect("Error loading users").from_db()
         }}
     }
 
-    pub fn last_active(&self, conn: &DbConn) -> Option<NaiveDateTime> {
-        match Device::find_latest_active_by_user(&self.uuid, conn) {
+    pub async fn last_active(&self, conn: &DbConn) -> Option<NaiveDateTime> {
+        match Device::find_latest_active_by_user(&self.uuid, conn).await {
             Some(device) => Some(device.updated_at),
             None => None,
         }
@@ -361,7 +369,7 @@ impl Invitation {
         }
     }
 
-    pub fn save(&self, conn: &DbConn) -> EmptyResult {
+    pub async fn save(&self, conn: &DbConn) -> EmptyResult {
         if self.email.trim().is_empty() {
             err!("Invitation email can't be empty")
         }
@@ -386,7 +394,7 @@ impl Invitation {
         }
     }
 
-    pub fn delete(self, conn: &DbConn) -> EmptyResult {
+    pub async fn delete(self, conn: &DbConn) -> EmptyResult {
         db_run! {conn: {
             diesel::delete(invitations::table.filter(invitations::email.eq(self.email)))
                 .execute(conn)
@@ -394,7 +402,7 @@ impl Invitation {
         }}
     }
 
-    pub fn find_by_mail(mail: &str, conn: &DbConn) -> Option<Self> {
+    pub async fn find_by_mail(mail: &str, conn: &DbConn) -> Option<Self> {
         let lower_mail = mail.to_lowercase();
         db_run! {conn: {
             invitations::table
@@ -405,9 +413,9 @@ impl Invitation {
         }}
     }
 
-    pub fn take(mail: &str, conn: &DbConn) -> bool {
-        match Self::find_by_mail(mail, conn) {
-            Some(invitation) => invitation.delete(conn).is_ok(),
+    pub async fn take(mail: &str, conn: &DbConn) -> bool {
+        match Self::find_by_mail(mail, conn).await {
+            Some(invitation) => invitation.delete(conn).await.is_ok(),
             None => false,
         }
     }

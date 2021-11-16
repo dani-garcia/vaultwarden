@@ -688,8 +688,8 @@ async fn download_icon(domain: &str) -> Result<(Bytes, Option<&str>), Error> {
             match get_page_with_referer(&icon.href, &icon_result.referer).await {
                 Ok(res) => {
                     buffer = stream_to_bytes_limit(res, 512 * 1024).await?; // 512 KB for each icon max
-                    // Check if the icon type is allowed, else try an icon from the list.
                     icon_type = get_icon_type(&buffer);
+                    // Check if the icon type is allowed, else try an icon from the list.
                     if icon_type.is_none() {
                         buffer.clear();
                         debug!("Icon from {}, is not a valid image type", icon.href);
