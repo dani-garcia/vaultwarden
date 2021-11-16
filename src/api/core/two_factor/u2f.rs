@@ -32,7 +32,7 @@ pub fn routes() -> Vec<Route> {
 }
 
 #[post("/two-factor/get-u2f", data = "<data>")]
-fn generate_u2f(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn) -> JsonResult {
+async fn generate_u2f(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn) -> JsonResult {
     if !CONFIG.domain_set() {
         err!("`DOMAIN` environment variable is not set. U2F disabled")
     }
@@ -42,7 +42,7 @@ fn generate_u2f(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn) 
         err!("Invalid password");
     }
 
-    let (enabled, keys) = get_u2f_registrations(&headers.user.uuid, &conn)?;
+    let (enabled, keys) = get_u2f_registrations(&headers.user.uuid, &conn).await?;
     let keys_json: Vec<Value> = keys.iter().map(U2FRegistration::to_json).collect();
 
     Ok(Json(json!({
@@ -53,7 +53,7 @@ fn generate_u2f(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn) 
 }
 
 #[post("/two-factor/get-u2f-challenge", data = "<data>")]
-fn generate_u2f_challenge(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn) -> JsonResult {
+async fn generate_u2f_challenge(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: PasswordData = data.into_inner().data;
 
     if !headers.user.check_valid_password(&data.MasterPasswordHash) {
@@ -61,7 +61,7 @@ fn generate_u2f_challenge(data: JsonUpcase<PasswordData>, headers: Headers, conn
     }
 
     let _type = TwoFactorType::U2fRegisterChallenge;
-    let challenge = _create_u2f_challenge(&headers.user.uuid, _type, &conn).challenge;
+    let challenge = _create_u2f_challenge(&headers.user.uuid, _type, &conn).await.challenge;
 
     Ok(Json(json!({
         "UserId": headers.user.uuid,
@@ -137,7 +137,7 @@ impl From<RegisterResponseCopy> for RegisterResponse {
 }
 
 #[post("/two-factor/u2f", data = "<data>")]
-fn activate_u2f(data: JsonUpcase<EnableU2FData>, headers: Headers, conn: DbConn) -> JsonResult {
+async fn activate_u2f(data: JsonUpcase<EnableU2FData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: EnableU2FData = data.into_inner().data;
     let mut user = headers.user;
 
@@ -146,13 +146,13 @@ fn activate_u2f(data: JsonUpcase<EnableU2FData>, headers: Headers, conn: DbConn)
     }
 
     let tf_type = TwoFactorType::U2fRegisterChallenge as i32;
-    let tf_challenge = match TwoFactor::find_by_user_and_type(&user.uuid, tf_type, &conn) {
+    let tf_challenge = match TwoFactor::find_by_user_and_type(&user.uuid, tf_type, &conn).await {
         Some(c) => c,
         None => err!("Can't recover challenge"),
     };
 
     let challenge: Challenge = serde_json::from_str(&tf_challenge.data)?;
-    tf_challenge.delete(&conn)?;
+    tf_challenge.delete(&conn).await?;
 
     let response: RegisterResponseCopy = serde_json::from_str(&data.DeviceResponse)?;
 
@@ -172,13 +172,13 @@ fn activate_u2f(data: JsonUpcase<EnableU2FData>, headers: Headers, conn: DbConn)
         migrated: None,
     };
 
-    let mut regs = get_u2f_registrations(&user.uuid, &conn)?.1;
+    let mut regs = get_u2f_registrations(&user.uuid, &conn).await?.1;
 
     // TODO: Check that there is no repeat Id
     regs.push(full_registration);
-    save_u2f_registrations(&user.uuid, &regs, &conn)?;
+    save_u2f_registrations(&user.uuid, &regs, &conn).await?;
 
-    _generate_recover_code(&mut user, &conn);
+    _generate_recover_code(&mut user, &conn).await;
 
     let keys_json: Vec<Value> = regs.iter().map(U2FRegistration::to_json).collect();
     Ok(Json(json!({
@@ -189,8 +189,8 @@ fn activate_u2f(data: JsonUpcase<EnableU2FData>, headers: Headers, conn: DbConn)
 }
 
 #[put("/two-factor/u2f", data = "<data>")]
-fn activate_u2f_put(data: JsonUpcase<EnableU2FData>, headers: Headers, conn: DbConn) -> JsonResult {
-    activate_u2f(data, headers, conn)
+async fn activate_u2f_put(data: JsonUpcase<EnableU2FData>, headers: Headers, conn: DbConn) -> JsonResult {
+    activate_u2f(data, headers, conn).await
 }
 
 #[derive(Deserialize, Debug)]
@@ -201,7 +201,7 @@ struct DeleteU2FData {
 }
 
 #[delete("/two-factor/u2f", data = "<data>")]
-fn delete_u2f(data: JsonUpcase<DeleteU2FData>, headers: Headers, conn: DbConn) -> JsonResult {
+async fn delete_u2f(data: JsonUpcase<DeleteU2FData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: DeleteU2FData = data.into_inner().data;
 
     let id = data.Id.into_i32()?;
@@ -211,7 +211,7 @@ fn delete_u2f(data: JsonUpcase<DeleteU2FData>, headers: Headers, conn: DbConn) -
     }
 
     let type_ = TwoFactorType::U2f as i32;
-    let mut tf = match TwoFactor::find_by_user_and_type(&headers.user.uuid, type_, &conn) {
+    let mut tf = match TwoFactor::find_by_user_and_type(&headers.user.uuid, type_, &conn).await {
         Some(tf) => tf,
         None => err!("U2F data not found!"),
     };
@@ -226,7 +226,7 @@ fn delete_u2f(data: JsonUpcase<DeleteU2FData>, headers: Headers, conn: DbConn) -
     let new_data_str = serde_json::to_string(&data)?;
 
     tf.data = new_data_str;
-    tf.save(&conn)?;
+    tf.save(&conn).await?;
 
     let keys_json: Vec<Value> = data.iter().map(U2FRegistration::to_json).collect();
 
@@ -237,23 +237,24 @@ fn delete_u2f(data: JsonUpcase<DeleteU2FData>, headers: Headers, conn: DbConn) -
     })))
 }
 
-fn _create_u2f_challenge(user_uuid: &str, type_: TwoFactorType, conn: &DbConn) -> Challenge {
+async fn _create_u2f_challenge(user_uuid: &str, type_: TwoFactorType, conn: &DbConn) -> Challenge {
     let challenge = U2F.generate_challenge().unwrap();
 
     TwoFactor::new(user_uuid.into(), type_, serde_json::to_string(&challenge).unwrap())
         .save(conn)
+        .await
         .expect("Error saving challenge");
 
     challenge
 }
 
-fn save_u2f_registrations(user_uuid: &str, regs: &[U2FRegistration], conn: &DbConn) -> EmptyResult {
-    TwoFactor::new(user_uuid.into(), TwoFactorType::U2f, serde_json::to_string(regs)?).save(conn)
+async fn save_u2f_registrations(user_uuid: &str, regs: &[U2FRegistration], conn: &DbConn) -> EmptyResult {
+    TwoFactor::new(user_uuid.into(), TwoFactorType::U2f, serde_json::to_string(regs)?).save(conn).await
 }
 
-fn get_u2f_registrations(user_uuid: &str, conn: &DbConn) -> Result<(bool, Vec<U2FRegistration>), Error> {
+async fn get_u2f_registrations(user_uuid: &str, conn: &DbConn) -> Result<(bool, Vec<U2FRegistration>), Error> {
     let type_ = TwoFactorType::U2f as i32;
-    let (enabled, regs) = match TwoFactor::find_by_user_and_type(user_uuid, type_, conn) {
+    let (enabled, regs) = match TwoFactor::find_by_user_and_type(user_uuid, type_, conn).await {
         Some(tf) => (tf.enabled, tf.data),
         None => return Ok((false, Vec::new())), // If no data, return empty list
     };
@@ -279,7 +280,7 @@ fn get_u2f_registrations(user_uuid: &str, conn: &DbConn) -> Result<(bool, Vec<U2
             }];
 
             // Save new format
-            save_u2f_registrations(user_uuid, &new_regs, conn)?;
+            save_u2f_registrations(user_uuid, &new_regs, conn).await?;
 
             new_regs
         }
@@ -297,10 +298,10 @@ fn _old_parse_registrations(registations: &str) -> Vec<Registration> {
     regs.into_iter().map(|r| serde_json::from_value(r).unwrap()).map(|Helper(r)| r).collect()
 }
 
-pub fn generate_u2f_login(user_uuid: &str, conn: &DbConn) -> ApiResult<U2fSignRequest> {
-    let challenge = _create_u2f_challenge(user_uuid, TwoFactorType::U2fLoginChallenge, conn);
+pub async fn generate_u2f_login(user_uuid: &str, conn: &DbConn) -> ApiResult<U2fSignRequest> {
+    let challenge = _create_u2f_challenge(user_uuid, TwoFactorType::U2fLoginChallenge, conn).await;
 
-    let registrations: Vec<_> = get_u2f_registrations(user_uuid, conn)?.1.into_iter().map(|r| r.reg).collect();
+    let registrations: Vec<_> = get_u2f_registrations(user_uuid, conn).await?.1.into_iter().map(|r| r.reg).collect();
 
     if registrations.is_empty() {
         err!("No U2F devices registered")
@@ -309,20 +310,20 @@ pub fn generate_u2f_login(user_uuid: &str, conn: &DbConn) -> ApiResult<U2fSignRe
     Ok(U2F.sign_request(challenge, registrations))
 }
 
-pub fn validate_u2f_login(user_uuid: &str, response: &str, conn: &DbConn) -> EmptyResult {
+pub async fn validate_u2f_login(user_uuid: &str, response: &str, conn: &DbConn) -> EmptyResult {
     let challenge_type = TwoFactorType::U2fLoginChallenge as i32;
-    let tf_challenge = TwoFactor::find_by_user_and_type(user_uuid, challenge_type, conn);
+    let tf_challenge = TwoFactor::find_by_user_and_type(user_uuid, challenge_type, conn).await;
 
     let challenge = match tf_challenge {
         Some(tf_challenge) => {
             let challenge: Challenge = serde_json::from_str(&tf_challenge.data)?;
-            tf_challenge.delete(conn)?;
+            tf_challenge.delete(conn).await?;
             challenge
         }
         None => err!("Can't recover login challenge"),
     };
     let response: SignResponse = serde_json::from_str(response)?;
-    let mut registrations = get_u2f_registrations(user_uuid, conn)?.1;
+    let mut registrations = get_u2f_registrations(user_uuid, conn).await?.1;
     if registrations.is_empty() {
         err!("No U2F devices registered")
     }
@@ -332,13 +333,13 @@ pub fn validate_u2f_login(user_uuid: &str, response: &str, conn: &DbConn) -> Emp
         match response {
             Ok(new_counter) => {
                 reg.counter = new_counter;
-                save_u2f_registrations(user_uuid, &registrations, conn)?;
+                save_u2f_registrations(user_uuid, &registrations, conn).await?;
 
                 return Ok(());
             }
             Err(u2f::u2ferror::U2fError::CounterTooLow) => {
                 reg.compromised = true;
-                save_u2f_registrations(user_uuid, &registrations, conn)?;
+                save_u2f_registrations(user_uuid, &registrations, conn).await?;
 
                 err!("This device might be compromised!");
             }
