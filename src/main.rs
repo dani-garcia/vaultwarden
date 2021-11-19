@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-// #![warn(rust_2018_idioms)]
+#![warn(rust_2018_idioms)]
 #![warn(rust_2021_compatibility)]
 #![cfg_attr(feature = "unstable", feature(ip))]
 // The recursion_limit is mainly triggered by the json!() macro.
@@ -8,7 +8,6 @@
 // If you go above 128 it will cause rust-analyzer to fail,
 #![recursion_limit = "87"]
 
-extern crate openssl;
 #[macro_use]
 extern crate rocket;
 #[macro_use]

@@ -24,7 +24,7 @@ macro_rules! make_error {
             }
         }
         impl std::fmt::Display for Error {
-            fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 match &self.error {$(
                    ErrorKind::$name(e) => f.write_str(&$usr_msg_fun(e, &self.message)),
                 )+}
@@ -93,7 +93,7 @@ make_error! {
 }
 
 impl std::fmt::Debug for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.source() {
             Some(e) => write!(f, "{}.\n[CAUSE] {:#?}", self.message, e),
             None => match self.error {
@@ -194,7 +194,7 @@ use rocket::request::Request;
 use rocket::response::{self, Responder, Response};
 
 impl<'r> Responder<'r, 'static> for Error {
-    fn respond_to(self, _: &Request) -> response::Result<'static> {
+    fn respond_to(self, _: &Request<'_>) -> response::Result<'static> {
         match self.error {
             ErrorKind::Empty(_) => {}  // Don't print the error in this situation
             ErrorKind::Simple(_) => {} // Don't print the error in this situation

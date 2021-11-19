@@ -57,7 +57,7 @@ chashmap = "2.2.2"
 
 # A generic serialization/deserialization framework
 serde = { version = "1.0.130", features = ["derive"] }
-serde_json = "1.0.70"
+serde_json = "1.0.71"
 
 # Logging
 log = "0.4.14"
@@ -116,7 +116,7 @@ tracing = { version = "0.1.29", features = ["log"] } # Needed to have lettre tra
 lettre = { version = "0.10.0-rc.4", features = ["smtp-transport", "builder", "serde", "native-tls", "hostname", "tracing"], default-features = false }
 
 # Template library
-handlebars = { version = "4.1.4", features = ["dir_source"] }
+handlebars = { version = "4.1.5", features = ["dir_source"] }
 
 # For favicon extraction from main website
 html5ever = "0.25.1"

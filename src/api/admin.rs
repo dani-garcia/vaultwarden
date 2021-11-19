@@ -142,7 +142,7 @@ fn admin_url(referer: Referer) -> String {
 }
 
 #[get("/", rank = 2)]
-fn admin_login(flash: Option<FlashMessage>) -> ApiResult<Html<String>> {
+fn admin_login(flash: Option<FlashMessage<'_>>) -> ApiResult<Html<String>> {
     // If there is an error, show it
     let msg = flash.map(|msg| format!("{}: {}", msg.kind(), msg.message()));
     let json = json!({
@@ -165,7 +165,7 @@ struct LoginForm {
 #[post("/", data = "<data>")]
 fn post_admin_login(
     data: Form<LoginForm>,
-    cookies: &CookieJar,
+    cookies: &CookieJar<'_>,
     ip: ClientIp,
     referer: Referer,
 ) -> Result<Redirect, Flash<Redirect>> {
@@ -297,7 +297,7 @@ fn test_smtp(data: Json<InviteData>, _token: AdminToken) -> EmptyResult {
 }
 
 #[get("/logout")]
-fn logout(cookies: &CookieJar, referer: Referer) -> Redirect {
+fn logout(cookies: &CookieJar<'_>, referer: Referer) -> Redirect {
     cookies.remove(Cookie::named(COOKIE_NAME));
     Redirect::to(admin_url(referer))
 }
