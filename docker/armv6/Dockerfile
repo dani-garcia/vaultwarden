@@ -139,7 +139,6 @@ EXPOSE 3012
 # Copies the files from the context (Rocket.toml file and web-vault)
 # and the binary from the "build" stage to the current stage
 WORKDIR /
-COPY Rocket.toml .
 COPY --from=vault /web-vault ./web-vault
 COPY --from=build /app/target/arm-unknown-linux-gnueabi/release/vaultwarden .
 
@@ -149,5 +148,9 @@ COPY docker/start.sh /start.sh
 HEALTHCHECK --interval=60s --timeout=10s CMD ["/healthcheck.sh"]
 
 # Configures the startup!
+# We should be able to remove the dumb-init now with Rocket 0.5
+# But the balenalib images have some issues with there entry.sh
+# See: https://github.com/balena-io-library/base-images/issues/735
+# Lets keep using dumb-init for now, since that is working fine.
 ENTRYPOINT ["/usr/bin/dumb-init", "--"]
 CMD ["/start.sh"]

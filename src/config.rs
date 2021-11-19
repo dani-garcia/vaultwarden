@@ -1011,7 +1011,7 @@ where
 
 fn case_helper<'reg, 'rc>(
     h: &Helper<'reg, 'rc>,
-    r: &'reg Handlebars,
+    r: &'reg Handlebars<'_>,
     ctx: &'rc Context,
     rc: &mut RenderContext<'reg, 'rc>,
     out: &mut dyn Output,
@@ -1028,7 +1028,7 @@ fn case_helper<'reg, 'rc>(
 
 fn js_escape_helper<'reg, 'rc>(
     h: &Helper<'reg, 'rc>,
-    _r: &'reg Handlebars,
+    _r: &'reg Handlebars<'_>,
     _ctx: &'rc Context,
     _rc: &mut RenderContext<'reg, 'rc>,
     out: &mut dyn Output,

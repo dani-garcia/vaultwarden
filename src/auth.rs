@@ -38,7 +38,7 @@ static PRIVATE_RSA_KEY: Lazy<EncodingKey> = Lazy::new(|| {
 static PUBLIC_RSA_KEY_VEC: Lazy<Vec<u8>> = Lazy::new(|| {
     read_file(&CONFIG.public_rsa_key()).unwrap_or_else(|e| panic!("Error loading public RSA Key.\n{}", e))
 });
-static PUBLIC_RSA_KEY: Lazy<DecodingKey> = Lazy::new(|| {
+static PUBLIC_RSA_KEY: Lazy<DecodingKey<'_>> = Lazy::new(|| {
     DecodingKey::from_rsa_pem(&PUBLIC_RSA_KEY_VEC).unwrap_or_else(|e| panic!("Error decoding public RSA Key.\n{}", e))
 });
 
@@ -411,7 +411,7 @@ pub struct OrgHeaders {
 // org_id is usually the second path param ("/organizations/<org_id>"),
 // but there are cases where it is a query value.
 // First check the path, if this is not a valid uuid, try the query values.
-fn get_org_id(request: &Request) -> Option<String> {
+fn get_org_id(request: &Request<'_>) -> Option<String> {
     if let Some(Ok(org_id)) = request.param::<String>(1) {
         if uuid::Uuid::parse_str(&org_id).is_ok() {
             return Some(org_id);
@@ -512,7 +512,7 @@ impl From<AdminHeaders> for Headers {
 // col_id is usually the fourth path param ("/organizations/<org_id>/collections/<col_id>"),
 // but there could be cases where it is a query value.
 // First check the path, if this is not a valid uuid, try the query values.
-fn get_col_id(request: &Request) -> Option<String> {
+fn get_col_id(request: &Request<'_>) -> Option<String> {
     if let Some(Ok(col_id)) = request.param::<String>(3) {
         if uuid::Uuid::parse_str(&col_id).is_ok() {
             return Some(col_id);
