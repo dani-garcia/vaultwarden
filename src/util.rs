@@ -49,7 +49,7 @@ impl Fairing for AppHeaders {
 pub struct Cors();
 
 impl Cors {
-    fn get_header(headers: &HeaderMap, name: &str) -> String {
+    fn get_header(headers: &HeaderMap<'_>, name: &str) -> String {
         match headers.get_one(name) {
             Some(h) => h.to_string(),
             _ => "".to_string(),
@@ -58,7 +58,7 @@ impl Cors {
 
     // Check a request's `Origin` header against the list of allowed origins.
     // If a match exists, return it. Otherwise, return None.
-    fn get_allowed_origin(headers: &HeaderMap) -> Option<String> {
+    fn get_allowed_origin(headers: &HeaderMap<'_>) -> Option<String> {
         let origin = Cors::get_header(headers, "Origin");
         let domain_origin = CONFIG.domain_origin();
         let safari_extension_origin = "file://";
@@ -130,7 +130,7 @@ impl<'r, R: 'r + Responder<'r, 'static> + Send> Responder<'r, 'static> for Cache
 pub struct SafeString(String);
 
 impl std::fmt::Display for SafeString {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
     }
 }
@@ -462,7 +462,7 @@ struct UpCaseVisitor;
 impl<'de> Visitor<'de> for UpCaseVisitor {
     type Value = Value;
 
-    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("an object or an array")
     }
 
