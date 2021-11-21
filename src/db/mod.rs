@@ -206,87 +206,44 @@ macro_rules! db_run {
     // Different code for each db
     ( $conn:ident: $( $($db:ident),+ $body:block )+ ) => {{
         #[allow(unused)] use diesel::prelude::*;
+        #[allow(unused)] use crate::db::FromDb;
 
-        // It is important that this inner Arc<Mutex<>> (or the OwnedMutexGuard
-        // derived from it) never be a variable on the stack at an await point,
-        // where Drop might be called at any time. This causes (synchronous)
-        // Drop to be called from asynchronous code, which some database
-        // wrappers do not or can not handle.
         let conn = $conn.conn.clone();
+        let mut conn = conn.lock_owned().await;
+        match conn.as_mut().expect("internal invariant broken: self.connection is Some") {
+                $($(
+                #[cfg($db)]
+                crate::db::DbConnInner::$db($conn) => {
+                    paste::paste! {
+                        #[allow(unused)] use crate::db::[<__ $db _schema>]::{self as schema, *};
+                        #[allow(unused)] use [<__ $db _model>]::*;
+                    }
 
-        // Since connection can't be on the stack in an async fn during an
-        // await, we have to spawn a new blocking-safe thread...
-        /*
-        run_blocking(move || {
-            // And then re-enter the runtime to wait on the async mutex, but in
-            // a blocking fashion.
-            let mut conn = tokio::runtime::Handle::current().block_on(conn.lock_owned());
-            let conn = conn.as_mut().expect("internal invariant broken: self.connection is Some");
-            */
-            let mut __conn_mutex = conn.try_lock_owned().unwrap();
-            let conn = __conn_mutex.as_mut().unwrap();
-            match conn {
-                    $($(
-                    #[cfg($db)]
-                    crate::db::DbConnInner::$db($conn) => {
-                        paste::paste! {
-                            #[allow(unused)] use crate::db::[<__ $db _schema>]::{self as schema, *};
-                            #[allow(unused)] use [<__ $db _model>]::*;
-                            #[allow(unused)] use crate::db::FromDb;
-                        }
-
-                        /*
-                        // Since connection can't be on the stack in an async fn during an
-                        // await, we have to spawn a new blocking-safe thread...
-                        run_blocking(move || {
-                            // And then re-enter the runtime to wait on the async mutex, but in
-                            // a blocking fashion.
-                            let mut conn = tokio::runtime::Handle::current().block_on(async {
-                                conn.lock_owned().await
-                            });
-
-                            let conn = conn.as_mut().expect("internal invariant broken: self.connection is Some");
-                            f(conn)
-                        }).await;*/
-
-                        $body
-                    },
-                )+)+
-            }
-        // }).await
+                    tokio::task::block_in_place(move || { $body }) // Run blocking can't be used due to the 'static limitation, use block_in_place instead
+                },
+            )+)+
+        }
     }};
 
     ( @raw $conn:ident: $( $($db:ident),+ $body:block )+ ) => {{
         #[allow(unused)] use diesel::prelude::*;
+        #[allow(unused)] use crate::db::FromDb;
 
-        // It is important that this inner Arc<Mutex<>> (or the OwnedMutexGuard
-        // derived from it) never be a variable on the stack at an await point,
-        // where Drop might be called at any time. This causes (synchronous)
-        // Drop to be called from asynchronous code, which some database
-        // wrappers do not or can not handle.
         let conn = $conn.conn.clone();
+        let mut conn = conn.lock_owned().await;
+        match conn.as_mut().expect("internal invariant broken: self.connection is Some") {
+                $($(
+                #[cfg($db)]
+                crate::db::DbConnInner::$db($conn) => {
+                    paste::paste! {
+                        #[allow(unused)] use crate::db::[<__ $db _schema>]::{self as schema, *};
+                        // @ RAW: #[allow(unused)] use [<__ $db _model>]::*;
+                    }
 
-        // Since connection can't be on the stack in an async fn during an
-        // await, we have to spawn a new blocking-safe thread...
-        run_blocking(move || {
-            // And then re-enter the runtime to wait on the async mutex, but in
-            // a blocking fashion.
-            let mut conn = tokio::runtime::Handle::current().block_on(conn.lock_owned());
-            match conn.as_mut().expect("internal invariant broken: self.connection is Some") {
-                    $($(
-                    #[cfg($db)]
-                    crate::db::DbConnInner::$db($conn) => {
-                        paste::paste! {
-                            #[allow(unused)] use crate::db::[<__ $db _schema>]::{self as schema, *};
-                            // @RAW: #[allow(unused)] use [<__ $db _model>]::*;
-                            #[allow(unused)] use crate::db::FromDb;
-                        }
-
-                        $body
-                    },
-                )+)+
-            }
-        }).await
+                    tokio::task::block_in_place(move || { $body }) // Run blocking can't be used due to the 'static limitation, use block_in_place instead
+                },
+            )+)+
+        }
     }};
 }
 
