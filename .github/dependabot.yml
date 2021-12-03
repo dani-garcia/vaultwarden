@@ -1,0 +1,23 @@
+# Docs: <https://docs.github.com/en/free-pro-team@latest/github/administering-a-repository/customizing-dependency-updates>
+
+version: 2
+
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule: {interval: monthly}
+    reviewers: [dani-garcia]
+    assignees: [dani-garcia]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: {interval: monthly}
+    reviewers: [dani-garcia]
+    assignees: [dani-garcia]
+
+  - package-ecosystem: docker
+    directory: /docker
+    schedule: {interval: monthly}
+    reviewers: [dani-garcia]
+    assignees: [dani-garcia]
+
