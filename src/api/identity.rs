@@ -409,6 +409,7 @@ struct ConnectData {
     #[field(name = uncased("device_type"))]
     #[field(name = uncased("devicetype"))]
     device_type: Option<String>,
+    #[allow(dead_code)]
     #[field(name = uncased("device_push_token"))]
     #[field(name = uncased("devicepushtoken"))]
     device_push_token: Option<String>, // Unused; mobile device push not yet supported.
