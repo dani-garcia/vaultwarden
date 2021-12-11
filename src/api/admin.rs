@@ -1,7 +1,7 @@
 use once_cell::sync::Lazy;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
-use std::{env, time::Duration};
+use std::env;
 
 use rocket::{
     http::{Cookie, Cookies, SameSite, Status},
@@ -462,13 +462,13 @@ struct GitCommit {
 fn get_github_api<T: DeserializeOwned>(url: &str) -> Result<T, Error> {
     let github_api = get_reqwest_client();
 
-    Ok(github_api.get(url).timeout(Duration::from_secs(10)).send()?.error_for_status()?.json::<T>()?)
+    Ok(github_api.get(url).send()?.error_for_status()?.json::<T>()?)
 }
 
 fn has_http_access() -> bool {
     let http_access = get_reqwest_client();
 
-    match http_access.head("https://github.com/dani-garcia/vaultwarden").timeout(Duration::from_secs(10)).send() {
+    match http_access.head("https://github.com/dani-garcia/vaultwarden").send() {
         Ok(r) => r.status().is_success(),
         _ => false,
     }

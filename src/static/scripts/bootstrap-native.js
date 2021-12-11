@@ -1,5 +1,5 @@
 /*!
-  * Native JavaScript for Bootstrap v4.0.6 (https://thednp.github.io/bootstrap.native/)
+  * Native JavaScript for Bootstrap v4.0.8 (https://thednp.github.io/bootstrap.native/)
   * Copyright 2015-2021 © dnp_theme
   * Licensed under MIT (https://github.com/thednp/bootstrap.native/blob/master/LICENSE)
   */
@@ -7,7 +7,7 @@
   typeof exports === 'object' && typeof module !== 'undefined' ? module.exports = factory() :
   typeof define === 'function' && define.amd ? define(factory) :
   (global = typeof globalThis !== 'undefined' ? globalThis : global || self, global.BSN = factory());
-}(this, (function () { 'use strict';
+})(this, (function () { 'use strict';
 
   const transitionEndEvent = 'webkitTransition' in document.head.style ? 'webkitTransitionEnd' : 'transitionend';
 
@@ -188,7 +188,7 @@
     element.dispatchEvent(closedAlertEvent);
 
     self.dispose();
-    element.parentNode.removeChild(element);
+    element.remove();
   }
 
   // ALERT PRIVATE METHOD
@@ -1022,9 +1022,9 @@
   function isEmptyAnchor(elem) {
     const parentAnchor = elem.closest('A');
     // anchor href starts with #
-    return elem && ((elem.href && elem.href.slice(-1) === '#')
+    return elem && ((elem.hasAttribute('href') && elem.href.slice(-1) === '#')
       // OR a child of an anchor with href starts with #
-      || (parentAnchor && parentAnchor.href && parentAnchor.href.slice(-1) === '#'));
+      || (parentAnchor && parentAnchor.hasAttribute('href') && parentAnchor.href.slice(-1) === '#'));
   }
 
   function setFocus(element) {
@@ -1487,7 +1487,7 @@
 
   function appendOverlay(hasFade, isModal) {
     toggleOverlayType(isModal);
-    document.body.appendChild(overlay);
+    document.body.append(overlay);
     if (hasFade) addClass(overlay, fadeClass);
   }
 
@@ -1501,12 +1501,11 @@
   }
 
   function removeOverlay() {
-    const bd = document.body;
     const currentOpen = getCurrentOpen();
 
     if (!currentOpen) {
       removeClass(overlay, fadeClass);
-      bd.removeChild(overlay);
+      overlay.remove();
       resetScrollbar();
     }
   }
@@ -1928,7 +1927,7 @@
 
     if ((!element.contains(target) && options.backdrop
       && (!trigger || (trigger && !triggers.includes(trigger))))
-      || offCanvasDismiss.contains(target)) {
+      || (offCanvasDismiss && offCanvasDismiss.contains(target))) {
       self.relatedTarget = target === offCanvasDismiss ? offCanvasDismiss : null;
       self.hide();
     }
@@ -2122,19 +2121,6 @@
       .some((mediaType) => element instanceof mediaType);
   }
 
-  function closestRelative(element) {
-    let retval = null;
-    let el = element;
-    while (el !== document.body) {
-      el = el.parentElement;
-      if (getComputedStyle(el).position === 'relative') {
-        retval = el;
-        break;
-      }
-    }
-    return retval;
-  }
-
   // both popovers and tooltips (this, event)
   function styleTip(self, e) {
     const tipClasses = /\b(top|bottom|start|end)+/;
@@ -2148,32 +2134,32 @@
     let tipDimensions = { w: tip.offsetWidth, h: tip.offsetHeight };
     const windowWidth = (document.documentElement.clientWidth || document.body.clientWidth);
     const windowHeight = (document.documentElement.clientHeight || document.body.clientHeight);
-    const { element, options, arrow } = self;
+    const {
+      element, options, arrow, positions,
+    } = self;
     let { container, placement } = options;
     let parentIsBody = container === document.body;
-    const targetPosition = getComputedStyle(element).position;
-    const parentPosition = getComputedStyle(container).position;
-    const staticParent = !parentIsBody && parentPosition === 'static';
-    let relativeParent = !parentIsBody && parentPosition === 'relative';
-    const relContainer = staticParent && closestRelative(container);
+
+    const { elementPosition, containerIsStatic, relContainer } = positions;
+    let { containerIsRelative } = positions;
     // static containers should refer to another relative container or the body
     container = relContainer || container;
-    relativeParent = staticParent && relContainer ? 1 : relativeParent;
+    containerIsRelative = containerIsStatic && relContainer ? 1 : containerIsRelative;
     parentIsBody = container === document.body;
     const parentRect = container.getBoundingClientRect();
-    const leftBoundry = relativeParent ? parentRect.left : 0;
-    const rightBoundry = relativeParent ? parentRect.right : windowWidth;
+    const leftBoundry = containerIsRelative ? parentRect.left : 0;
+    const rightBoundry = containerIsRelative ? parentRect.right : windowWidth;
     // this case should not be possible
-    // absoluteParent = !parentIsBody && parentPosition === 'absolute',
-    // this case requires a container with placement: relative
-    const absoluteTarget = targetPosition === 'absolute';
+    // containerIsAbsolute = !parentIsBody && containerPosition === 'absolute',
+    // this case requires a container with position: relative
+    const absoluteTarget = elementPosition === 'absolute';
     const targetRect = element.getBoundingClientRect();
     const scroll = parentIsBody
       ? { x: window.pageXOffset, y: window.pageYOffset }
       : { x: container.scrollLeft, y: container.scrollTop };
     const elemDimensions = { w: element.offsetWidth, h: element.offsetHeight };
-    const top = relativeParent ? element.offsetTop : targetRect.top;
-    const left = relativeParent ? element.offsetLeft : targetRect.left;
+    const top = containerIsRelative ? element.offsetTop : targetRect.top;
+    const left = containerIsRelative ? element.offsetLeft : targetRect.left;
     // reset arrow style
     arrow.style.top = '';
     arrow.style.left = '';
@@ -2245,8 +2231,12 @@
       }
     } else if (['top', 'bottom'].includes(placement)) {
       if (e && isMedia(element)) {
-        const eX = !relativeParent ? e.pageX : e.layerX + (absoluteTarget ? element.offsetLeft : 0);
-        const eY = !relativeParent ? e.pageY : e.layerY + (absoluteTarget ? element.offsetTop : 0);
+        const eX = !containerIsRelative
+          ? e.pageX
+          : e.layerX + (absoluteTarget ? element.offsetLeft : 0);
+        const eY = !containerIsRelative
+          ? e.pageY
+          : e.layerY + (absoluteTarget ? element.offsetTop : 0);
 
         if (placement === 'top') {
           topPosition = eY - tipDimensions.h - (isPopover ? arrowWidth : arrowHeight);
@@ -2323,6 +2313,36 @@
     return modal || navbarFixed || document.body;
   }
 
+  function closestRelative(element) {
+    let retval = null;
+    let el = element;
+    while (el !== document.body) {
+      el = el.parentElement;
+      if (getComputedStyle(el).position === 'relative') {
+        retval = el;
+        break;
+      }
+    }
+    return retval;
+  }
+
+  function setHtml(element, content, sanitizeFn) {
+    if (typeof content === 'string' && !content.length) return;
+
+    if (typeof content === 'object') {
+      element.append(content);
+    } else {
+      let dirty = content.trim(); // fixing #233
+
+      if (typeof sanitizeFn === 'function') dirty = sanitizeFn(dirty);
+
+      const domParser = new DOMParser();
+      const tempDocument = domParser.parseFromString(dirty, 'text/html');
+      const method = tempDocument.children.length ? 'innerHTML' : 'innerText';
+      element[method] = tempDocument.body[method];
+    }
+  }
+
   /* Native JavaScript for Bootstrap 5 | Popover
   ---------------------------------------------- */
 
@@ -2335,12 +2355,13 @@
     template: '<div class="popover" role="tooltip"><div class="popover-arrow"></div><h3 class="popover-header"></h3><div class="popover-body"></div></div>', // string
     title: null, // string
     content: null, // string
-    sanitizeFn: null, // function
     customClass: null, // string
-    dismissible: false, // boolean
-    animation: true, // boolean
     trigger: 'hover', // string
     placement: 'top', // string
+    btnClose: '<button class="btn-close" aria-label="Close"></button>', // string
+    sanitizeFn: null, // function
+    dismissible: false, // boolean
+    animation: true, // boolean
     delay: 200, // number
   };
 
@@ -2350,11 +2371,8 @@
   const isIphone = navigator.userAgentData
     ? navigator.userAgentData.brands.some((x) => appleBrands.test(x.brand))
     : appleBrands.test(navigator.userAgent);
-  // popoverArrowClass = `${popoverString}-arrow`,
   const popoverHeaderClass = `${popoverString}-header`;
   const popoverBodyClass = `${popoverString}-body`;
-  // close btn for dissmissible popover
-  let popoverCloseButton = '<button type="button" class="btn-close"></button>';
 
   // POPOVER CUSTOM EVENTS
   // =====================
@@ -2387,51 +2405,59 @@
     const {
       animation, customClass, sanitizeFn, placement, dismissible,
     } = options;
-    let { title, content, template } = options;
+    let {
+      title, content,
+    } = options;
+    const {
+      template, btnClose,
+    } = options;
 
     // set initial popover class
     const placementClass = `bs-${popoverString}-${tipClassPositions[placement]}`;
 
-    // fixing #233
-    title = title ? title.trim() : null;
-    content = content ? content.trim() : null;
-
-    // sanitize title && content
-    if (sanitizeFn) {
-      title = title ? sanitizeFn(title) : null;
-      content = content ? sanitizeFn(content) : null;
-      template = template ? sanitizeFn(template) : null;
-      popoverCloseButton = sanitizeFn(popoverCloseButton);
+    // load template
+    let popoverTemplate;
+    if (typeof template === 'object') {
+      popoverTemplate = template;
+    } else {
+      const htmlMarkup = document.createElement('div');
+      setHtml(htmlMarkup, template, sanitizeFn);
+      popoverTemplate = htmlMarkup.firstChild;
     }
+    // set popover markup
+    self.popover = popoverTemplate.cloneNode(true);
 
-    self.popover = document.createElement('div');
     const { popover } = self;
 
-    // set id and aria-describedby
+    // set id and role attributes
     popover.setAttribute('id', id);
     popover.setAttribute('role', 'tooltip');
-
-    // load template
-    const popoverTemplate = document.createElement('div');
-    popoverTemplate.innerHTML = template.trim();
-    popover.className = popoverTemplate.firstChild.className;
-    popover.innerHTML = popoverTemplate.firstChild.innerHTML;
 
     const popoverHeader = queryElement(`.${popoverHeaderClass}`, popover);
     const popoverBody = queryElement(`.${popoverBodyClass}`, popover);
 
-    // set arrow
+    // set arrow and enable access for styleTip
     self.arrow = queryElement(`.${popoverString}-arrow`, popover);
 
     // set dismissible button
     if (dismissible) {
-      title = title ? title + popoverCloseButton : title;
-      content = title === null ? +popoverCloseButton : content;
+      if (title) {
+        if (title instanceof Element) setHtml(title, btnClose, sanitizeFn);
+        else title += btnClose;
+      } else {
+        if (popoverHeader) popoverHeader.remove();
+        if (content instanceof Element) setHtml(content, btnClose, sanitizeFn);
+        else content += btnClose;
+      }
     }
 
-    // fill the template with content from data attributes
-    if (title && popoverHeader) popoverHeader.innerHTML = title.trim();
-    if (content && popoverBody) popoverBody.innerHTML = content.trim();
+    // fill the template with content from options / data attributes
+    // also sanitize title && content
+    if (title && popoverHeader) setHtml(popoverHeader, title, sanitizeFn);
+    if (content && popoverBody) setHtml(popoverBody, content, sanitizeFn);
+
+    // set btn and enable access for styleTip
+    [self.btn] = popover.getElementsByClassName('btn-close');
 
     // set popover animation and placement
     if (!hasClass(popover, popoverString)) addClass(popover, popoverString);
@@ -2443,9 +2469,9 @@
   }
 
   function removePopover(self) {
-    const { element, popover, options } = self;
+    const { element, popover } = self;
     element.removeAttribute(ariaDescribedBy);
-    options.container.removeChild(popover);
+    popover.remove();
     self.timer = null;
   }
 
@@ -2470,12 +2496,11 @@
 
   function dismissHandlerToggle(self, add) {
     const action = add ? addEventListener : removeEventListener;
-    const { options, element, popover } = self;
+    const { options, element, btn } = self;
     const { trigger, dismissible } = options;
 
     if (dismissible) {
-      const [btnClose] = popover.getElementsByClassName('btn-close');
-      if (btnClose) btnClose[action]('click', self.hide);
+      if (btn) btn[action]('click', self.hide);
     } else {
       if (trigger === 'focus') element[action]('focusout', self.hide);
       if (trigger === 'hover') document[action]('touchstart', popoverTouchHandler, passiveHandler);
@@ -2488,12 +2513,10 @@
   }
 
   function popoverShowTrigger(self) {
-    dismissHandlerToggle(self, 1);
     self.element.dispatchEvent(shownPopoverEvent);
   }
 
   function popoverHideTrigger(self) {
-    dismissHandlerToggle(self);
     removePopover(self);
     self.element.dispatchEvent(hiddenPopoverEvent);
   }
@@ -2514,6 +2537,7 @@
       self.timer = null;
       self.popover = null;
       self.arrow = null;
+      self.btn = null;
       self.enabled = false;
       // set unique ID for aria-describedby
       self.id = `${popoverString}-${getUID(element)}`;
@@ -2534,6 +2558,21 @@
 
       // crate popover
       createPopover(self);
+
+      // set positions
+      const { container } = self.options;
+      const elementPosition = getComputedStyle(element).position;
+      const containerPosition = getComputedStyle(container).position;
+      const parentIsBody = container === document.body;
+      const containerIsStatic = !parentIsBody && containerPosition === 'static';
+      const containerIsRelative = !parentIsBody && containerPosition === 'relative';
+      const relContainer = containerIsStatic && closestRelative(container);
+      self.positions = {
+        elementPosition,
+        containerIsRelative,
+        containerIsStatic,
+        relContainer,
+      };
 
       // bind
       self.update = self.update.bind(self);
@@ -2563,23 +2602,21 @@
       const { container } = options;
 
       clearTimeout(self.timer);
+      if (!isVisibleTip(popover, container)) {
+        element.dispatchEvent(showPopoverEvent);
+        if (showPopoverEvent.defaultPrevented) return;
 
-      self.timer = setTimeout(() => {
-        if (!isVisibleTip(popover, container)) {
-          element.dispatchEvent(showPopoverEvent);
-          if (showPopoverEvent.defaultPrevented) return;
+        // append to the container
+        container.append(popover);
+        element.setAttribute(ariaDescribedBy, id);
 
-          // append to the container
-          container.appendChild(popover);
-          element.setAttribute(ariaDescribedBy, id);
+        self.update(e);
+        if (!hasClass(popover, showClass)) addClass(popover, showClass);
+        dismissHandlerToggle(self, 1);
 
-          self.update(e);
-          if (!hasClass(popover, showClass)) addClass(popover, showClass);
-
-          if (options.animation) emulateTransitionEnd(popover, () => popoverShowTrigger(self));
-          else popoverShowTrigger(self);
-        }
-      }, 17);
+        if (options.animation) emulateTransitionEnd(popover, () => popoverShowTrigger(self));
+        else popoverShowTrigger(self);
+      }
     }
 
     hide(e) {
@@ -2596,13 +2633,13 @@
       const { element, popover, options } = self;
 
       clearTimeout(self.timer);
-
       self.timer = setTimeout(() => {
         if (isVisibleTip(popover, options.container)) {
           element.dispatchEvent(hidePopoverEvent);
           if (hidePopoverEvent.defaultPrevented) return;
 
           removeClass(popover, showClass);
+          dismissHandlerToggle(self);
 
           if (options.animation) emulateTransitionEnd(popover, () => popoverHideTrigger(self));
           else popoverHideTrigger(self);
@@ -2648,7 +2685,7 @@
       const { popover, options } = self;
       const { container, animation } = options;
       if (animation && isVisibleTip(popover, container)) {
-        options.delay = 0; // reset delay
+        self.options.delay = 0; // reset delay
         self.hide();
         emulateTransitionEnd(popover, () => togglePopoverHandlers(self));
       } else {
@@ -3067,7 +3104,7 @@
   const toastSelector = `.${toastString}`;
   const toastDismissSelector = `[${dataBsDismiss}="${toastString}"]`;
   const showingClass = 'showing';
-  const hideClass = 'hide';
+  const hideClass = 'hide'; // marked as deprecated
   const toastDefaultOptions = {
     animation: true,
     autohide: true,
@@ -3085,10 +3122,7 @@
   // =====================
   function showToastComplete(self) {
     const { element, options } = self;
-    if (!options.animation) {
-      removeClass(element, showingClass);
-      addClass(element, showClass);
-    }
+    removeClass(element, showingClass);
 
     element.dispatchEvent(shownToastEvent);
     if (options.autohide) self.hide();
@@ -3096,13 +3130,15 @@
 
   function hideToastComplete(self) {
     const { element } = self;
-    addClass(element, hideClass);
+    removeClass(element, showingClass);
+    removeClass(element, showClass);
+    addClass(element, hideClass); // B/C
     element.dispatchEvent(hiddenToastEvent);
   }
 
-  function closeToast(self) {
+  function hideToast(self) {
     const { element, options } = self;
-    removeClass(element, showClass);
+    addClass(element, showingClass);
 
     if (options.animation) {
       reflow(element);
@@ -3112,15 +3148,14 @@
     }
   }
 
-  function openToast(self) {
+  function showToast(self) {
     const { element, options } = self;
-    removeClass(element, hideClass);
+    removeClass(element, hideClass); // B/C
+    reflow(element);
+    addClass(element, showClass);
+    addClass(element, showingClass);
 
     if (options.animation) {
-      reflow(element);
-      addClass(element, showingClass);
-      addClass(element, showClass);
-
       emulateTransitionEnd(element, () => showToastComplete(self));
     } else {
       showToastComplete(self);
@@ -3148,9 +3183,13 @@
       super(toastComponent, target, toastDefaultOptions, config);
       // bind
       const self = this;
+      const { element, options } = self;
 
+      // set fadeClass, the options.animation will override the markup
+      if (options.animation && !hasClass(element, fadeClass)) addClass(element, fadeClass);
+      else if (!options.animation && hasClass(element, fadeClass)) removeClass(element, fadeClass);
       // dismiss button
-      self.dismiss = queryElement(toastDismissSelector, self.element);
+      self.dismiss = queryElement(toastDismissSelector, element);
 
       // bind
       self.show = self.show.bind(self);
@@ -3165,13 +3204,12 @@
     show() {
       const self = this;
       const { element } = self;
-      if (element && hasClass(element, hideClass)) {
+      if (element && !hasClass(element, showClass)) {
         element.dispatchEvent(showToastEvent);
         if (showToastEvent.defaultPrevented) return;
 
-        addClass(element, fadeClass);
         clearTimeout(self.timer);
-        self.timer = setTimeout(() => openToast(self), 10);
+        self.timer = setTimeout(() => showToast(self), 10);
       }
     }
 
@@ -3184,7 +3222,7 @@
         if (hideToastEvent.defaultPrevented) return;
 
         clearTimeout(self.timer);
-        self.timer = setTimeout(() => closeToast(self),
+        self.timer = setTimeout(() => hideToast(self),
           noTimer ? 10 : options.delay);
       }
     }
@@ -3192,7 +3230,7 @@
     dispose() {
       const self = this;
       const { element, options } = self;
-      self.hide();
+      self.hide(1);
 
       if (options.animation) emulateTransitionEnd(element, () => completeDisposeToast(self));
       else completeDisposeToast(self);
@@ -3221,13 +3259,14 @@
   const titleAttr = 'title';
   const tooltipInnerClass = `${tooltipString}-inner`;
   const tooltipDefaultOptions = {
-    title: null,
     template: '<div class="tooltip" role="tooltip"><div class="tooltip-arrow"></div><div class="tooltip-inner"></div></div>',
-    placement: 'top',
-    animation: true,
-    customClass: null,
-    delay: 200,
-    sanitizeFn: null,
+    title: null, // string
+    customClass: null, // string | null
+    placement: 'top', // string
+    sanitizeFn: null, // function
+    animation: true, // bool
+    html: false, // bool
+    delay: 200, // number
   };
 
   // TOOLTIP CUSTOM EVENTS
@@ -3241,51 +3280,48 @@
   // =======================
   function createTooltip(self) {
     const { options, id } = self;
-    const placementClass = `bs-${tooltipString}-${tipClassPositions[options.placement]}`;
-    let titleString = options.title.trim();
+    const {
+      title, template, customClass, animation, placement, sanitizeFn,
+    } = options;
+    const placementClass = `bs-${tooltipString}-${tipClassPositions[placement]}`;
 
-    // sanitize stuff
-    if (options.sanitizeFn) {
-      titleString = options.sanitizeFn(titleString);
-      options.template = options.sanitizeFn(options.template);
+    if (!title) return;
+
+    // load template
+    let tooltipTemplate;
+    if (typeof template === 'object') {
+      tooltipTemplate = template;
+    } else {
+      const htmlMarkup = document.createElement('div');
+      setHtml(htmlMarkup, template, sanitizeFn);
+      tooltipTemplate = htmlMarkup.firstChild;
     }
 
-    if (!titleString) return;
-
     // create tooltip
-    self.tooltip = document.createElement('div');
+    self.tooltip = tooltipTemplate.cloneNode(true);
     const { tooltip } = self;
-
-    // set aria
+    // set title
+    setHtml(queryElement(`.${tooltipInnerClass}`, tooltip), title, sanitizeFn);
+    // set id & role attribute
     tooltip.setAttribute('id', id);
-
-    // set markup
-    const tooltipMarkup = document.createElement('div');
-    tooltipMarkup.innerHTML = options.template.trim();
-
-    tooltip.className = tooltipMarkup.firstChild.className;
-    tooltip.innerHTML = tooltipMarkup.firstChild.innerHTML;
-
-    queryElement(`.${tooltipInnerClass}`, tooltip).innerHTML = titleString;
+    tooltip.setAttribute('role', tooltipString);
 
     // set arrow
     self.arrow = queryElement(`.${tooltipString}-arrow`, tooltip);
 
-    // set class and role attribute
-    tooltip.setAttribute('role', tooltipString);
     // set classes
     if (!hasClass(tooltip, tooltipString)) addClass(tooltip, tooltipString);
-    if (options.animation && !hasClass(tooltip, fadeClass)) addClass(tooltip, fadeClass);
-    if (options.customClass && !hasClass(tooltip, options.customClass)) {
-      addClass(tooltip, options.customClass);
+    if (animation && !hasClass(tooltip, fadeClass)) addClass(tooltip, fadeClass);
+    if (customClass && !hasClass(tooltip, customClass)) {
+      addClass(tooltip, customClass);
     }
     if (!hasClass(tooltip, placementClass)) addClass(tooltip, placementClass);
   }
 
   function removeTooltip(self) {
-    const { element, options, tooltip } = self;
+    const { element, tooltip } = self;
     element.removeAttribute(ariaDescribedBy);
-    options.container.removeChild(tooltip);
+    tooltip.remove();
     self.timer = null;
   }
 
@@ -3387,6 +3423,21 @@
       self.id = `${tooltipString}-${getUID(element)}`;
       createTooltip(self);
 
+      // set positions
+      const { container } = self.options;
+      const elementPosition = getComputedStyle(element).position;
+      const containerPosition = getComputedStyle(container).position;
+      const parentIsBody = container === document.body;
+      const containerIsStatic = !parentIsBody && containerPosition === 'static';
+      const containerIsRelative = !parentIsBody && containerPosition === 'relative';
+      const relContainer = containerIsStatic && closestRelative(container);
+      self.positions = {
+        elementPosition,
+        containerIsRelative,
+        containerIsStatic,
+        relContainer,
+      };
+
       // attach events
       toggleTooltipHandlers(self, 1);
     }
@@ -3398,22 +3449,23 @@
       const {
         options, tooltip, element, id,
       } = self;
+      const {
+        container, animation,
+      } = options;
       clearTimeout(self.timer);
-      self.timer = setTimeout(() => {
-        if (!isVisibleTip(tooltip, options.container)) {
-          element.dispatchEvent(showTooltipEvent);
-          if (showTooltipEvent.defaultPrevented) return;
+      if (!isVisibleTip(tooltip, container)) {
+        element.dispatchEvent(showTooltipEvent);
+        if (showTooltipEvent.defaultPrevented) return;
 
-          // append to container
-          options.container.appendChild(tooltip);
-          element.setAttribute(ariaDescribedBy, id);
+        // append to container
+        container.append(tooltip);
+        element.setAttribute(ariaDescribedBy, id);
 
-          self.update(e);
-          if (!hasClass(tooltip, showClass)) addClass(tooltip, showClass);
-          if (options.animation) emulateTransitionEnd(tooltip, () => tooltipShownAction(self));
-          else tooltipShownAction(self);
-        }
-      }, 20);
+        self.update(e);
+        if (!hasClass(tooltip, showClass)) addClass(tooltip, showClass);
+        if (animation) emulateTransitionEnd(tooltip, () => tooltipShownAction(self));
+        else tooltipShownAction(self);
+      }
     }
 
     hide(e) {
@@ -3498,20 +3550,9 @@
     constructor: Tooltip,
   };
 
-  var version = "4.0.6";
+  var version = "4.0.8";
 
-  // import { alertInit } from '../components/alert-native.js';
-  // import { buttonInit } from '../components/button-native.js';
-  // import { carouselInit } from '../components/carousel-native.js';
-  // import { collapseInit } from '../components/collapse-native.js';
-  // import { dropdownInit } from '../components/dropdown-native.js';
-  // import { modalInit } from '../components/modal-native.js';
-  // import { offcanvasInit } from '../components/offcanvas-native.js';
-  // import { popoverInit } from '../components/popover-native.js';
-  // import { scrollSpyInit } from '../components/scrollspy-native.js';
-  // import { tabInit } from '../components/tab-native.js';
-  // import { toastInit } from '../components/toast-native.js';
-  // import { tooltipInit } from '../components/tooltip-native.js';
+  const Version = version;
 
   const componentsInit = {
     Alert: Alert.init,
@@ -3547,7 +3588,7 @@
     document.addEventListener('DOMContentLoaded', () => initCallback(), { once: true });
   }
 
-  var index = {
+  const BSN = {
     Alert,
     Button,
     Carousel,
@@ -3562,9 +3603,9 @@
     Tooltip,
 
     initCallback,
-    Version: version,
+    Version,
   };
 
-  return index;
+  return BSN;
 
-})));
+}));

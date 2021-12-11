@@ -108,6 +108,14 @@ fn launch_info() {
 }
 
 fn init_logging(level: log::LevelFilter) -> Result<(), fern::InitError> {
+    // Depending on the main log level we either want to disable or enable logging for trust-dns.
+    // Else if there are timeouts it will clutter the logs since trust-dns uses warn for this.
+    let trust_dns_level = if level >= log::LevelFilter::Debug {
+        level
+    } else {
+        log::LevelFilter::Off
+    };
+
     let mut logger = fern::Dispatch::new()
         .level(level)
         // Hide unknown certificate errors if using self-signed
@@ -126,6 +134,8 @@ fn init_logging(level: log::LevelFilter) -> Result<(), fern::InitError> {
         .level_for("hyper::client", log::LevelFilter::Off)
         // Prevent cookie_store logs
         .level_for("cookie_store", log::LevelFilter::Off)
+        // Variable level for trust-dns used by reqwest
+        .level_for("trust_dns_proto", trust_dns_level)
         .chain(std::io::stdout());
 
     // Enable smtp debug logging only specifically for smtp when need.
