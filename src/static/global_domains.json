@@ -47,7 +47,8 @@
     "Type": 5,
     "Domains": [
       "wellsfargo.com",
-      "wf.com"
+      "wf.com",
+      "wellsfargoadvisors.com"
     ],
     "Excluded": false
   },
