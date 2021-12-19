@@ -905,5 +905,13 @@
       "protonvpn.com"
     ],
     "Excluded": false
+  },
+  {
+    "Type": 86,
+    "Domains": [
+      "ubisoft.com",
+      "ubi.com"
+    ],
+    "Excluded": false
   }
 ]
