@@ -10,7 +10,11 @@ use std::{
 use once_cell::sync::Lazy;
 use regex::Regex;
 use reqwest::{blocking::Client, blocking::Response, header};
-use rocket::{http::ContentType, response::Content, Route};
+use rocket::{
+    http::ContentType,
+    response::{Content, Redirect},
+    Route,
+};
 
 use crate::{
     error::Error,
@@ -19,7 +23,13 @@ use crate::{
 };
 
 pub fn routes() -> Vec<Route> {
-    routes![icon]
+    match CONFIG.icon_service().as_str() {
+        "internal" => routes![icon_internal],
+        "bitwarden" => routes![icon_bitwarden],
+        "duckduckgo" => routes![icon_duckduckgo],
+        "google" => routes![icon_google],
+        _ => routes![icon_custom],
+    }
 }
 
 static CLIENT: Lazy<Client> = Lazy::new(|| {
@@ -50,8 +60,42 @@ static ICON_SIZE_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?x)(\d+)\D*(\d+
 // Special HashMap which holds the user defined Regex to speedup matching the regex.
 static ICON_BLACKLIST_REGEX: Lazy<RwLock<HashMap<String, Regex>>> = Lazy::new(|| RwLock::new(HashMap::new()));
 
+fn icon_redirect(domain: &str, template: &str) -> Option<Redirect> {
+    if !is_valid_domain(domain) {
+        warn!("Invalid domain: {}", domain);
+        return None;
+    }
+
+    if is_domain_blacklisted(domain) {
+        return None;
+    }
+
+    let url = template.replace("{}", domain);
+    Some(Redirect::temporary(url))
+}
+
 #[get("/<domain>/icon.png")]
-fn icon(domain: String) -> Cached<Content<Vec<u8>>> {
+fn icon_custom(domain: String) -> Option<Redirect> {
+    icon_redirect(&domain, &CONFIG.icon_service())
+}
+
+#[get("/<domain>/icon.png")]
+fn icon_bitwarden(domain: String) -> Option<Redirect> {
+    icon_redirect(&domain, "https://icons.bitwarden.net/{}/icon.png")
+}
+
+#[get("/<domain>/icon.png")]
+fn icon_duckduckgo(domain: String) -> Option<Redirect> {
+    icon_redirect(&domain, "https://icons.duckduckgo.com/ip3/{}.ico")
+}
+
+#[get("/<domain>/icon.png")]
+fn icon_google(domain: String) -> Option<Redirect> {
+    icon_redirect(&domain, "https://www.google.com/s2/favicons?domain={}&sz=32")
+}
+
+#[get("/<domain>/icon.png")]
+fn icon_internal(domain: String) -> Cached<Content<Vec<u8>>> {
     const FALLBACK_ICON: &[u8] = include_bytes!("../static/images/fallback-icon.png");
 
     if !is_valid_domain(&domain) {

@@ -406,9 +406,10 @@ make_config! {
         /// This setting applies globally to all users.
         incomplete_2fa_time_limit: i64, true,   def,    3;
 
-        /// Disable icon downloads |> Set to true to disable icon downloading, this would still serve icons from
-        /// $ICON_CACHE_FOLDER, but it won't produce any external network request. Needs to set $ICON_CACHE_TTL to 0,
-        /// otherwise it will delete them and they won't be downloaded again.
+        /// Disable icon downloads |> Set to true to disable icon downloading in the internal icon service.
+        /// This still serves existing icons from $ICON_CACHE_FOLDER, without generating any external
+        /// network requests. $ICON_CACHE_TTL must also be set to 0; otherwise, the existing icons
+        /// will be deleted eventually, but won't be downloaded again.
         disable_icon_download:  bool,   true,   def,    false;
         /// Allow new signups |> Controls whether new users can register. Users can be invited by the vaultwarden admin even if this is disabled
         signups_allowed:        bool,   true,   def,    true;
@@ -449,6 +450,13 @@ make_config! {
         ip_header:              String, true,   def,    "X-Real-IP".to_string();
         /// Internal IP header property, used to avoid recomputing each time
         _ip_header_enabled:     bool,   false,  gen,    |c| &c.ip_header.trim().to_lowercase() != "none";
+        /// Icon service |> The predefined icon services are: internal, bitwarden, duckduckgo, google.
+        /// To specify a custom icon service, set a URL template with exactly one instance of `{}`,
+        /// which is replaced with the domain. For example: `https://icon.example.com/domain/{}`.
+        /// `internal` refers to Vaultwarden's built-in icon fetching implementation. If an external
+        /// service is set, an icon request to Vaultwarden will return an HTTP 307 redirect to the
+        /// corresponding icon at the external service.
+        icon_service:           String, false,  def,    "internal".to_string();
         /// Positive icon cache expiry |> Number of seconds to consider that an already cached icon is fresh. After this period, the icon will be redownloaded
         icon_cache_ttl:         u64,    true,   def,    2_592_000;
         /// Negative icon cache expiry |> Number of seconds before trying to download an icon that failed again.
@@ -656,6 +664,22 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         match validate_regex {
             Ok(_) => (),
             Err(e) => err!(format!("`ICON_BLACKLIST_REGEX` is invalid: {:#?}", e)),
+        }
+    }
+
+    // Check if the icon service is valid
+    let icon_service = cfg.icon_service.as_str();
+    match icon_service {
+        "internal" | "bitwarden" | "duckduckgo" | "google" => (),
+        _ => {
+            if !icon_service.starts_with("http") {
+                err!(format!("Icon service URL `{}` must start with \"http\"", icon_service))
+            }
+            match icon_service.matches("{}").count() {
+                1 => (), // nominal
+                0 => err!(format!("Icon service URL `{}` has no placeholder \"{{}}\"", icon_service)),
+                _ => err!(format!("Icon service URL `{}` has more than one placeholder \"{{}}\"", icon_service)),
+            }
         }
     }
 
