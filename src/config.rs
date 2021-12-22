@@ -511,6 +511,16 @@ make_config! {
 
         /// Allowed iframe ancestors (Know the risks!) |> Allows other domains to embed the web vault into an iframe, useful for embedding into secure intranets
         allowed_iframe_ancestors: String, true, def,    String::new();
+
+        /// Seconds between login requests |> Number of seconds, on average, between login requests before rate limiting kicks in. Note that this applies to both the login and the 2FA, so it's recommended to allow a burst size of at least 2
+        login_ratelimit_seconds:       u64, false, def, 60;
+        /// Max burst size for login requests |> Allow a burst of requests of up to this size, while maintaining the average indicated by `login_ratelimit_seconds`
+        login_ratelimit_max_burst:     u32, false, def, 10;
+
+        /// Seconds between admin requests |> Number of seconds, on average, between admin requests before rate limiting kicks in
+        admin_ratelimit_seconds:       u64, false, def, 300;
+        /// Max burst size for login requests |> Allow a burst of requests of up to this size, while maintaining the average indicated by `admin_ratelimit_seconds`
+        admin_ratelimit_max_burst:     u32, false, def, 3;
     },
 
     /// Yubikey settings

@@ -166,6 +166,10 @@ fn post_admin_login(
 ) -> Result<Redirect, Flash<Redirect>> {
     let data = data.into_inner();
 
+    if crate::ratelimit::check_limit_admin(&ip.ip).is_err() {
+        return Err(Flash::error(Redirect::to(admin_url(referer)), "Too many requests, try again later."));
+    }
+
     // If the token is invalid, redirect to login page
     if !_validate_token(&data.token) {
         error!("Invalid admin token. IP: {}", ip.ip);
