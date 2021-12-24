@@ -914,5 +914,13 @@
       "ubi.com"
     ],
     "Excluded": false
+  },
+  {
+    "Type": 87,
+    "Domains": [
+      "transferwise.com",
+      "wise.com"
+    ],
+    "Excluded": false
   }
 ]
