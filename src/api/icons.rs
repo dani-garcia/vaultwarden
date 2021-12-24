@@ -294,7 +294,7 @@ fn is_domain_blacklisted(domain: &str) -> bool {
 
             // Use the pre-generate Regex stored in a Lazy HashMap.
             if regex.is_match(domain) {
-                warn!("Blacklisted domain: {} matched ICON_BLACKLIST_REGEX", domain);
+                debug!("Blacklisted domain: {} matched ICON_BLACKLIST_REGEX", domain);
                 is_blacklisted = true;
             }
         }
@@ -330,7 +330,7 @@ fn get_icon(domain: &str) -> Option<(Vec<u8>, String)> {
             Some((icon, icon_type.unwrap_or("x-icon").to_string()))
         }
         Err(e) => {
-            error!("Error downloading icon: {:?}", e);
+            warn!("Unable to download icon: {:?}", e);
             let miss_indicator = path + ".miss";
             save_icon(&miss_indicator, &[]);
             None
@@ -599,7 +599,7 @@ fn get_page(url: &str) -> Result<Response, Error> {
 
 fn get_page_with_referer(url: &str, referer: &str) -> Result<Response, Error> {
     if is_domain_blacklisted(url::Url::parse(url).unwrap().host_str().unwrap_or_default()) {
-        err!("Favicon resolves to a blacklisted domain or IP!", url);
+        warn!("Favicon '{}' resolves to a blacklisted domain or IP!", url);
     }
 
     let mut client = CLIENT.get(url);
@@ -757,10 +757,10 @@ fn save_icon(path: &str, icon: &[u8]) {
             f.write_all(icon).expect("Error writing icon file");
         }
         Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => {
-            create_dir_all(&CONFIG.icon_cache_folder()).expect("Error creating icon cache");
+            create_dir_all(&CONFIG.icon_cache_folder()).expect("Error creating icon cache folder");
         }
         Err(e) => {
-            warn!("Icon save error: {:?}", e);
+            warn!("Unable to save icon: {:?}", e);
         }
     }
 }
