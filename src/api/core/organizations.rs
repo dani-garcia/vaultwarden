@@ -235,7 +235,7 @@ fn get_user_collections(headers: Headers, conn: DbConn) -> Json<Value> {
 }
 
 #[get("/organizations/<org_id>/collections")]
-fn get_org_collections(org_id: String, _headers: AdminHeaders, conn: DbConn) -> Json<Value> {
+fn get_org_collections(org_id: String, _headers: ManagerHeadersLoose, conn: DbConn) -> Json<Value> {
     Json(json!({
         "Data":
             Collection::find_by_organization(&org_id, &conn)
