@@ -32,6 +32,7 @@ mod crypto;
 #[macro_use]
 mod db;
 mod mail;
+mod ratelimit;
 mod util;
 
 pub use config::CONFIG;

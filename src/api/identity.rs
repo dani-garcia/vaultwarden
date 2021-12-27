@@ -84,6 +84,9 @@ fn _password_login(data: ConnectData, conn: DbConn, ip: &ClientIp) -> JsonResult
         err!("Scope not supported")
     }
 
+    // Ratelimit the login
+    crate::ratelimit::check_limit_login(&ip.ip)?;
+
     // Get the user
     let username = data.username.as_ref().unwrap();
     let user = match User::find_by_mail(username, &conn) {

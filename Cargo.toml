@@ -139,6 +139,7 @@ backtrace = "0.3.63"
 
 # Macro ident concatenation
 paste = "1.0.6"
+governor = "0.3.2"
 
 [patch.crates-io]
 # Use newest ring
