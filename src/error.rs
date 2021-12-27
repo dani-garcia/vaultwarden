@@ -119,11 +119,13 @@ impl Error {
         Empty {}.into()
     }
 
+    #[must_use]
     pub fn with_msg<M: Into<String>>(mut self, msg: M) -> Self {
         self.message = msg.into();
         self
     }
 
+    #[must_use]
     pub const fn with_code(mut self, code: u16) -> Self {
         self.error_code = code;
         self
