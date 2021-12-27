@@ -27,10 +27,9 @@
 FROM vaultwarden/web-vault@sha256:0df389deac9e83c739a1f4ff595f12f493b6c27cb4a22bb8fcaba9dc49b9b527 as vault
 
 ########################## BUILD IMAGE  ##########################
-FROM rust:1.55-buster as build
+FROM rust:1.57-buster as build
 
-# Debian-based builds support multidb
-ARG DB=sqlite,mysql,postgresql
+
 
 # Build time options to avoid dpkg warnings and help with reproducible builds.
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -45,40 +44,21 @@ ENV DEBIAN_FRONTEND=noninteractive \
 RUN mkdir -pv "${CARGO_HOME}" \
     && rustup set profile minimal
 
-# NOTE: Any apt-get/dpkg after this stage will fail because of broken dependencies.
-# For Diesel-RS migrations_macros to compile with MySQL/MariaDB we need to do some magic.
-# We at least need libmariadb3:amd64 installed for the x86_64 version of libmariadb.so (client)
-# We also need the libmariadb-dev-compat:amd64 but it can not be installed together with the :armhf version.
-# What we can do is a force install, because nothing important is overlapping each other.
 #
 # Install required build libs for armhf architecture.
-# To compile both mysql and postgresql we need some extra packages for both host arch and target arch
-RUN sed 's/^deb/deb-src/' /etc/apt/sources.list > /etc/apt/sources.list.d/deb-src.list \
-    && dpkg --add-architecture armhf \
+# hadolint ignore=DL3059
+RUN dpkg --add-architecture armhf \
     && apt-get update \
     && apt-get install -y \
         --no-install-recommends \
         libssl-dev:armhf \
         libc6-dev:armhf \
         libpq5:armhf \
-        libpq-dev \
-        libmariadb3:amd64 \
+        libpq-dev:armhf \
+        libmariadb3:armhf \
         libmariadb-dev:armhf \
         libmariadb-dev-compat:armhf \
         gcc-arm-linux-gnueabihf \
-    #
-    # Manual install libmariadb-dev-compat:amd64 ( After this broken dependencies will break apt )
-    && apt-get download libmariadb-dev-compat:amd64 \
-    && dpkg --force-all -i ./libmariadb-dev-compat*.deb \
-    && rm -rvf ./libmariadb-dev-compat*.deb \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* \
-    #
-    # For Diesel-RS migrations_macros to compile with PostgreSQL we need to do some magic.
-    # The libpq5:armhf package seems to not provide a symlink to libpq.so.5 with the name libpq.so.
-    # This is only provided by the libpq-dev package which can't be installed for both arch at the same time.
-    # Without this specific file the ld command will fail and compilation fails with it.
-    && ln -sfnr /usr/lib/arm-linux-gnueabihf/libpq.so.5 /usr/lib/arm-linux-gnueabihf/libpq.so \
     #
     # Make sure cargo has the right target config
     && echo '[target.armv7-unknown-linux-gnueabihf]' >> "${CARGO_HOME}/config" \
@@ -86,10 +66,10 @@ RUN sed 's/^deb/deb-src/' /etc/apt/sources.list > /etc/apt/sources.list.d/deb-sr
     && echo 'rustflags = ["-L/usr/lib/arm-linux-gnueabihf"]' >> "${CARGO_HOME}/config"
 
 # Set arm specific environment values
-ENV CC_armv7_unknown_linux_gnueabihf="/usr/bin/arm-linux-gnueabihf-gcc"
-ENV CROSS_COMPILE="1"
-ENV OPENSSL_INCLUDE_DIR="/usr/include/arm-linux-gnueabihf"
-ENV OPENSSL_LIB_DIR="/usr/lib/arm-linux-gnueabihf"
+ENV CC_armv7_unknown_linux_gnueabihf="/usr/bin/arm-linux-gnueabihf-gcc" \
+    CROSS_COMPILE="1" \
+    OPENSSL_INCLUDE_DIR="/usr/include/arm-linux-gnueabihf" \
+    OPENSSL_LIB_DIR="/usr/lib/arm-linux-gnueabihf"
 
 
 # Creates a dummy project used to grab dependencies
@@ -102,6 +82,9 @@ COPY ./rust-toolchain ./rust-toolchain
 COPY ./build.rs ./build.rs
 
 RUN rustup target add armv7-unknown-linux-gnueabihf
+
+# Configure the DB ARG as late as possible to not invalidate the cached layers above
+ARG DB=sqlite,mysql,postgresql
 
 # Builds your dependencies and removes the
 # dummy project, except the target folder
@@ -118,6 +101,7 @@ RUN touch src/main.rs
 
 # Builds again, this time it'll just be
 # your actual source files being built
+# hadolint ignore=DL3059
 RUN cargo build --features ${DB} --release --target=armv7-unknown-linux-gnueabihf
 
 ######################## RUNTIME IMAGE  ########################
@@ -125,9 +109,9 @@ RUN cargo build --features ${DB} --release --target=armv7-unknown-linux-gnueabih
 # because we already have a binary built
 FROM balenalib/armv7hf-debian:buster
 
-ENV ROCKET_ENV "staging"
-ENV ROCKET_PORT=80
-ENV ROCKET_WORKERS=10
+ENV ROCKET_ENV="staging" \
+    ROCKET_PORT=80 \
+    ROCKET_WORKERS=10
 
 # hadolint ignore=DL3059
 RUN [ "cross-build-start" ]

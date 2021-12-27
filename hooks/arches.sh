@@ -7,10 +7,5 @@ arches=(
 )
 
 if [[ "${DOCKER_TAG}" == *alpine ]]; then
-    # The Alpine image build currently only works for certain arches.
     distro_suffix=.alpine
-    arches=(
-        amd64
-        armv7
-    )
 fi

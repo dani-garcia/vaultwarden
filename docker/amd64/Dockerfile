@@ -27,10 +27,9 @@
 FROM vaultwarden/web-vault@sha256:0df389deac9e83c739a1f4ff595f12f493b6c27cb4a22bb8fcaba9dc49b9b527 as vault
 
 ########################## BUILD IMAGE  ##########################
-FROM rust:1.55-buster as build
+FROM rust:1.57-buster as build
 
-# Debian-based builds support multidb
-ARG DB=sqlite,mysql,postgresql
+
 
 # Build time options to avoid dpkg warnings and help with reproducible builds.
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -64,6 +63,9 @@ COPY ./rust-toolchain ./rust-toolchain
 COPY ./build.rs ./build.rs
 
 
+# Configure the DB ARG as late as possible to not invalidate the cached layers above
+ARG DB=sqlite,mysql,postgresql
+
 # Builds your dependencies and removes the
 # dummy project, except the target folder
 # This folder contains the compiled dependencies
@@ -79,6 +81,7 @@ RUN touch src/main.rs
 
 # Builds again, this time it'll just be
 # your actual source files being built
+# hadolint ignore=DL3059
 RUN cargo build --features ${DB} --release
 
 ######################## RUNTIME IMAGE  ########################
@@ -86,9 +89,9 @@ RUN cargo build --features ${DB} --release
 # because we already have a binary built
 FROM debian:buster-slim
 
-ENV ROCKET_ENV "staging"
-ENV ROCKET_PORT=80
-ENV ROCKET_WORKERS=10
+ENV ROCKET_ENV="staging" \
+    ROCKET_PORT=80 \
+    ROCKET_WORKERS=10
 
 
 # Create data folder and Install needed libraries
