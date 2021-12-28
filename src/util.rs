@@ -130,7 +130,7 @@ impl<R> Cached<R> {
         Self {
             response,
             is_immutable,
-            ttl: ttl,
+            ttl,
         }
     }
 }
