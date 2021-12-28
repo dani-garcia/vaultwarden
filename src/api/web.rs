@@ -22,41 +22,44 @@ pub fn routes() -> Vec<Route> {
 
 #[get("/")]
 fn web_index() -> Cached<Option<NamedFile>> {
-    Cached::short(NamedFile::open(Path::new(&CONFIG.web_vault_folder()).join("index.html")).ok())
+    Cached::short(NamedFile::open(Path::new(&CONFIG.web_vault_folder()).join("index.html")).ok(), false)
 }
 
 #[get("/app-id.json")]
 fn app_id() -> Cached<Content<Json<Value>>> {
     let content_type = ContentType::new("application", "fido.trusted-apps+json");
 
-    Cached::long(Content(
-        content_type,
-        Json(json!({
-        "trustedFacets": [
-            {
-            "version": { "major": 1, "minor": 0 },
-            "ids": [
-                // Per <https://fidoalliance.org/specs/fido-v2.0-id-20180227/fido-appid-and-facets-v2.0-id-20180227.html#determining-the-facetid-of-a-calling-application>:
-                //
-                // "In the Web case, the FacetID MUST be the Web Origin [RFC6454]
-                // of the web page triggering the FIDO operation, written as
-                // a URI with an empty path. Default ports are omitted and any
-                // path component is ignored."
-                //
-                // This leaves it unclear as to whether the path must be empty,
-                // or whether it can be non-empty and will be ignored. To be on
-                // the safe side, use a proper web origin (with empty path).
-                &CONFIG.domain_origin(),
-                "ios:bundle-id:com.8bit.bitwarden",
-                "android:apk-key-hash:dUGFzUzf3lmHSLBDBIv+WaFyZMI" ]
-            }]
-        })),
-    ))
+    Cached::long(
+        Content(
+            content_type,
+            Json(json!({
+            "trustedFacets": [
+                {
+                "version": { "major": 1, "minor": 0 },
+                "ids": [
+                    // Per <https://fidoalliance.org/specs/fido-v2.0-id-20180227/fido-appid-and-facets-v2.0-id-20180227.html#determining-the-facetid-of-a-calling-application>:
+                    //
+                    // "In the Web case, the FacetID MUST be the Web Origin [RFC6454]
+                    // of the web page triggering the FIDO operation, written as
+                    // a URI with an empty path. Default ports are omitted and any
+                    // path component is ignored."
+                    //
+                    // This leaves it unclear as to whether the path must be empty,
+                    // or whether it can be non-empty and will be ignored. To be on
+                    // the safe side, use a proper web origin (with empty path).
+                    &CONFIG.domain_origin(),
+                    "ios:bundle-id:com.8bit.bitwarden",
+                    "android:apk-key-hash:dUGFzUzf3lmHSLBDBIv+WaFyZMI" ]
+                }]
+            })),
+        ),
+        true,
+    )
 }
 
 #[get("/<p..>", rank = 10)] // Only match this if the other routes don't match
 fn web_files(p: PathBuf) -> Cached<Option<NamedFile>> {
-    Cached::long(NamedFile::open(Path::new(&CONFIG.web_vault_folder()).join(p)).ok())
+    Cached::long(NamedFile::open(Path::new(&CONFIG.web_vault_folder()).join(p)).ok(), true)
 }
 
 #[get("/attachments/<uuid>/<file_id>")]

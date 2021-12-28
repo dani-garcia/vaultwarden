@@ -3295,6 +3295,7 @@ dependencies = [
  "governor",
  "handlebars",
  "html5ever",
+ "httpdate",
  "idna 0.2.3",
  "job_scheduler",
  "jsonwebtoken",

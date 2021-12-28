@@ -11,6 +11,10 @@ use rocket::{
     Data, Request, Response, Rocket,
 };
 
+use httpdate::HttpDate;
+use std::thread::sleep;
+use std::time::{Duration, SystemTime};
+
 use crate::CONFIG;
 
 pub struct AppHeaders();
@@ -99,29 +103,52 @@ impl Fairing for Cors {
     }
 }
 
-pub struct Cached<R>(R, String);
+pub struct Cached<R> {
+    response: R,
+    is_immutable: bool,
+    ttl: u64,
+}
 
 impl<R> Cached<R> {
-    pub fn long(r: R) -> Cached<R> {
-        // 7 days
-        Self::ttl(r, 604800)
+    pub fn long(response: R, is_immutable: bool) -> Cached<R> {
+        Self {
+            response,
+            is_immutable,
+            ttl: 604800, // 7 days
+        }
     }
 
-    pub fn short(r: R) -> Cached<R> {
-        // 10 minutes
-        Self(r, String::from("public, max-age=600"))
+    pub fn short(response: R, is_immutable: bool) -> Cached<R> {
+        Self {
+            response,
+            is_immutable,
+            ttl: 600, // 10 minutes
+        }
     }
 
-    pub fn ttl(r: R, ttl: u64) -> Cached<R> {
-        Self(r, format!("public, immutable, max-age={}", ttl))
+    pub fn ttl(response: R, ttl: u64, is_immutable: bool) -> Cached<R> {
+        Self {
+            response,
+            is_immutable,
+            ttl: ttl,
+        }
     }
 }
 
 impl<'r, R: Responder<'r>> Responder<'r> for Cached<R> {
     fn respond_to(self, req: &Request) -> response::Result<'r> {
-        match self.0.respond_to(req) {
+        let cache_control_header = if self.is_immutable {
+            format!("public, immutable, max-age={}", self.ttl)
+        } else {
+            format!("public, max-age={}", self.ttl)
+        };
+
+        let time_now = SystemTime::now();
+
+        match self.response.respond_to(req) {
             Ok(mut res) => {
-                res.set_raw_header("Cache-Control", self.1);
+                res.set_raw_header("Cache-Control", cache_control_header);
+                res.set_raw_header("Expires", HttpDate::from(time_now + Duration::from_secs(self.ttl)).to_string());
                 Ok(res)
             }
             e @ Err(_) => e,
@@ -550,8 +577,6 @@ where
         }
     }
 }
-
-use std::{thread::sleep, time::Duration};
 
 pub fn retry_db<F, T, E>(func: F, max_tries: u32) -> Result<T, E>
 where
