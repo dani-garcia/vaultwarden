@@ -444,7 +444,7 @@ pub fn format_datetime_http(dt: &DateTime<Local>) -> String {
 
     // HACK: HTTP expects the date to always be GMT (UTC) rather than giving an
     // offset (which would always be 0 in UTC anyway)
-    return expiry_time.to_rfc2822().replace("+0000", "GMT");
+    expiry_time.to_rfc2822().replace("+0000", "GMT")
 }
 
 //
