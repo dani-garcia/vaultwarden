@@ -80,7 +80,6 @@ uuid = { version = "0.8.2", features = ["v4"] }
 chrono = { version = "0.4.19", features = ["serde"] }
 chrono-tz = "0.6.1"
 time = "0.2.27"
-httpdate = "1.0"
 
 # Job scheduler
 job_scheduler = "1.2.1"

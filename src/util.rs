@@ -11,9 +11,8 @@ use rocket::{
     Data, Request, Response, Rocket,
 };
 
-use httpdate::HttpDate;
 use std::thread::sleep;
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 
 use crate::CONFIG;
 
@@ -143,12 +142,13 @@ impl<'r, R: Responder<'r>> Responder<'r> for Cached<R> {
             format!("public, max-age={}", self.ttl)
         };
 
-        let time_now = SystemTime::now();
+        let time_now = chrono::Local::now();
 
         match self.response.respond_to(req) {
             Ok(mut res) => {
                 res.set_raw_header("Cache-Control", cache_control_header);
-                res.set_raw_header("Expires", HttpDate::from(time_now + Duration::from_secs(self.ttl)).to_string());
+                let expiry_time = time_now + chrono::Duration::seconds(self.ttl.try_into().unwrap());
+                res.set_raw_header("Expires", format_datetime_http(&expiry_time));
                 Ok(res)
             }
             e @ Err(_) => e,
@@ -434,6 +434,17 @@ pub fn format_datetime_local(dt: &DateTime<Local>, fmt: &str) -> String {
 /// and then calls [format_datetime_local](crate::util::format_datetime_local).
 pub fn format_naive_datetime_local(dt: &NaiveDateTime, fmt: &str) -> String {
     format_datetime_local(&Local.from_utc_datetime(dt), fmt)
+}
+
+/// Formats a `DateTime<Local>` as required for HTTP
+///
+/// https://httpwg.org/specs/rfc7231.html#http.date
+pub fn format_datetime_http(dt: &DateTime<Local>) -> String {
+    let expiry_time: chrono::DateTime<chrono::Utc> = chrono::DateTime::from_utc(dt.naive_utc(), chrono::Utc);
+
+    // HACK: HTTP expects the date to always be GMT (UTC) rather than giving an
+    // offset (which would always be 0 in UTC anyway)
+    return expiry_time.to_rfc2822().replace("+0000", "GMT");
 }
 
 //
