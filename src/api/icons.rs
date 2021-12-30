@@ -103,14 +103,19 @@ fn icon_internal(domain: String) -> Cached<Content<Vec<u8>>> {
         return Cached::ttl(
             Content(ContentType::new("image", "png"), FALLBACK_ICON.to_vec()),
             CONFIG.icon_cache_negttl(),
+            true,
         );
     }
 
     match get_icon(&domain) {
         Some((icon, icon_type)) => {
-            Cached::ttl(Content(ContentType::new("image", icon_type), icon), CONFIG.icon_cache_ttl())
+            Cached::ttl(Content(ContentType::new("image", icon_type), icon), CONFIG.icon_cache_ttl(), true)
         }
-        _ => Cached::ttl(Content(ContentType::new("image", "png"), FALLBACK_ICON.to_vec()), CONFIG.icon_cache_negttl()),
+        _ => Cached::ttl(
+            Content(ContentType::new("image", "png"), FALLBACK_ICON.to_vec()),
+            CONFIG.icon_cache_negttl(),
+            true,
+        ),
     }
 }
 
