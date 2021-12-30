@@ -454,9 +454,14 @@ make_config! {
         /// To specify a custom icon service, set a URL template with exactly one instance of `{}`,
         /// which is replaced with the domain. For example: `https://icon.example.com/domain/{}`.
         /// `internal` refers to Vaultwarden's built-in icon fetching implementation. If an external
-        /// service is set, an icon request to Vaultwarden will return an HTTP 307 redirect to the
+        /// service is set, an icon request to Vaultwarden will return an HTTP redirect to the
         /// corresponding icon at the external service.
         icon_service:           String, false,  def,    "internal".to_string();
+        /// Icon redirect code |> The HTTP status code to use for redirects to an external icon service.
+        /// The supported codes are 307 (temporary) and 308 (permanent).
+        /// Temporary redirects are useful while testing different icon services, but once a service
+        /// has been decided on, consider using permanent redirects for cacheability.
+        icon_redirect_code:     u32,    true,   def,    307;
         /// Positive icon cache expiry |> Number of seconds to consider that an already cached icon is fresh. After this period, the icon will be redownloaded
         icon_cache_ttl:         u64,    true,   def,    2_592_000;
         /// Negative icon cache expiry |> Number of seconds before trying to download an icon that failed again.
@@ -691,6 +696,12 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
                 _ => err!(format!("Icon service URL `{}` has more than one placeholder \"{{}}\"", icon_service)),
             }
         }
+    }
+
+    // Check if the icon redirect code is valid
+    match cfg.icon_redirect_code {
+        307 | 308 => (),
+        _ => err!("Only HTTP 307/308 redirects are supported"),
     }
 
     Ok(())
