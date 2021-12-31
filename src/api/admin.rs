@@ -21,7 +21,7 @@ use crate::{
     util::{
         docker_base_image, format_naive_datetime_local, get_display_size, get_reqwest_client, is_running_in_docker,
     },
-    CONFIG,
+    CONFIG, VERSION,
 };
 
 pub fn routes() -> Vec<Route> {
@@ -74,11 +74,10 @@ fn admin_disabled() -> &'static str {
     "The admin panel is disabled, please configure the 'ADMIN_TOKEN' variable to enable it"
 }
 
-const COOKIE_NAME: &str = "BWRS_ADMIN";
+const COOKIE_NAME: &str = "VW_ADMIN";
 const ADMIN_PATH: &str = "/admin";
 
 const BASE_TEMPLATE: &str = "admin/base";
-const VERSION: Option<&str> = option_env!("BWRS_VERSION");
 
 fn admin_path() -> String {
     format!("{}{}", CONFIG.domain_path(), ADMIN_PATH)

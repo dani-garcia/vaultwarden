@@ -15,8 +15,8 @@ fn main() {
         "You need to enable one DB backend. To build with previous defaults do: cargo build --features sqlite"
     );
 
-    if let Ok(version) = env::var("BWRS_VERSION") {
-        println!("cargo:rustc-env=BWRS_VERSION={}", version);
+    if let Ok(version) = env::var("VW_VERSION") {
+        println!("cargo:rustc-env=VW_VERSION={}", version);
         println!("cargo:rustc-env=CARGO_PKG_VERSION={}", version);
     } else {
         read_git_info().ok();
@@ -64,7 +64,7 @@ fn read_git_info() -> Result<(), std::io::Error> {
         format!("{}-{}", last_tag, rev_short)
     };
 
-    println!("cargo:rustc-env=BWRS_VERSION={}", version);
+    println!("cargo:rustc-env=VW_VERSION={}", version);
     println!("cargo:rustc-env=CARGO_PKG_VERSION={}", version);
 
     // To access these values, use:
@@ -72,7 +72,7 @@ fn read_git_info() -> Result<(), std::io::Error> {
     //    env!("GIT_LAST_TAG")
     //    env!("GIT_BRANCH")
     //    env!("GIT_REV")
-    //    env!("BWRS_VERSION")
+    //    env!("VW_VERSION")
 
     Ok(())
 }

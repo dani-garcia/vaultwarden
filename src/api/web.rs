@@ -77,7 +77,7 @@ fn alive(_conn: DbConn) -> Json<String> {
     Json(format_date(&Utc::now().naive_utc()))
 }
 
-#[get("/bwrs_static/<filename>")]
+#[get("/vw_static/<filename>")]
 fn static_files(filename: String) -> Result<Content<&'static [u8]>, Error> {
     match filename.as_ref() {
         "mail-github.png" => Ok(Content(ContentType::PNG, include_bytes!("../static/images/mail-github.png"))),
