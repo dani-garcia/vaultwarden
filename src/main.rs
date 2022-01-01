@@ -1,4 +1,5 @@
 #![forbid(unsafe_code)]
+#![feature(const_option_ext)]
 #![cfg_attr(feature = "unstable", feature(ip))]
 // The recursion_limit is mainly triggered by the json!() macro.
 // The more key/value pairs there are the more recursion occurs.
@@ -76,15 +77,7 @@ const HELP: &str = "\
             -v, --version    Prints the app version
 ";
 
-// HACK: Option::or cannot be used in a constant context
-const fn get_version() -> Option<&'static str> {
-    let bwrs_version = option_env!("BWRS_VERSION");
-    match bwrs_version {
-        Some(_) => bwrs_version,
-        None => option_env!("VW_VERSION"),
-    }
-}
-pub const VERSION: Option<&str> = get_version();
+pub const VERSION: Option<&str> = option_env!("BWRS_VERSION").or(option_env!("VW_VERSION"));
 
 fn parse_args() {
     let mut pargs = pico_args::Arguments::from_env();
