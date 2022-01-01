@@ -76,7 +76,15 @@ const HELP: &str = "\
             -v, --version    Prints the app version
 ";
 
-pub const VERSION: Option<&str> = option_env!("VW_VERSION");
+// HACK: Option::or cannot be used in a constant context
+const fn get_version() -> Option<&'static str> {
+    let bwrs_version = option_env!("BWRS_VERSION");
+    match bwrs_version {
+        Some(_) => bwrs_version,
+        None => option_env!("VW_VERSION"),
+    }
+}
+pub const VERSION: Option<&str> = get_version();
 
 fn parse_args() {
     let mut pargs = pico_args::Arguments::from_env();
