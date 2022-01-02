@@ -182,7 +182,7 @@ fn send_invite(data: JsonUpcase<EmergencyAccessInviteData>, headers: Headers, co
 
     let grantee_user = match User::find_by_mail(&email, &conn) {
         None => {
-            if !CONFIG.signups_allowed() {
+            if !CONFIG.invitations_allowed() {
                 err!(format!("Grantee user does not exist: {}", email))
             }
 
