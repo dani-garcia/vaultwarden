@@ -18,7 +18,7 @@ fn main() {
     // Support $BWRS_VERSION for legacy compatibility, but default to $VW_VERSION.
     // If neither exist, read from git.
     let maybe_vaultwarden_version =
-        env::var("VW_VERSION").or(env::var("BWRS_VERSION")).or_else(|_| version_from_git_info());
+        env::var("VW_VERSION").or_else(|_| env::var("BWRS_VERSION")).or_else(|_| version_from_git_info());
 
     if let Ok(version) = maybe_vaultwarden_version {
         println!("cargo:rustc-env=VW_VERSION={}", version);
