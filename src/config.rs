@@ -458,10 +458,11 @@ make_config! {
         /// corresponding icon at the external service.
         icon_service:           String, false,  def,    "internal".to_string();
         /// Icon redirect code |> The HTTP status code to use for redirects to an external icon service.
-        /// The supported codes are 307 (temporary) and 308 (permanent).
+        /// The supported codes are 301 (legacy permanent), 302 (legacy temporary), 307 (temporary), and 308 (permanent).
         /// Temporary redirects are useful while testing different icon services, but once a service
-        /// has been decided on, consider using permanent redirects for cacheability.
-        icon_redirect_code:     u32,    true,   def,    307;
+        /// has been decided on, consider using permanent redirects for cacheability. The legacy codes
+        /// are currently better supported by the Bitwarden clients.
+        icon_redirect_code:     u32,    true,   def,    302;
         /// Positive icon cache expiry |> Number of seconds to consider that an already cached icon is fresh. After this period, the icon will be redownloaded
         icon_cache_ttl:         u64,    true,   def,    2_592_000;
         /// Negative icon cache expiry |> Number of seconds before trying to download an icon that failed again.
@@ -700,8 +701,8 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
 
     // Check if the icon redirect code is valid
     match cfg.icon_redirect_code {
-        307 | 308 => (),
-        _ => err!("Only HTTP 307/308 redirects are supported"),
+        301 | 302 | 307 | 308 => (),
+        _ => err!("Only HTTP 301/302 and 307/308 redirects are supported"),
     }
 
     Ok(())
