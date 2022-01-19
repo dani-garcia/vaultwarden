@@ -178,6 +178,7 @@ table! {
         excluded_globals -> Text,
         client_kdf_type -> Integer,
         client_kdf_iter -> Integer,
+        api_key -> Nullable<Text>,
     }
 }
 
