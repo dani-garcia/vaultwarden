@@ -61,13 +61,15 @@ fn _refresh_login(data: ConnectData, conn: DbConn) -> JsonResult {
     // Get device by refresh token
     let mut device = Device::find_by_refresh_token(&token, &conn).map_res("Invalid refresh token")?;
 
-    // COMMON
+    let scope = "api offline_access";
+    let scope_vec = vec!["api".into(), "offline_access".into()];
+
+    // Common
     let user = User::find_by_uuid(&device.user_uuid, &conn).unwrap();
     let orgs = UserOrganization::find_confirmed_by_user(&user.uuid, &conn);
-
-    let (access_token, expires_in) = device.refresh_tokens(&user, orgs);
-
+    let (access_token, expires_in) = device.refresh_tokens(&user, orgs, scope_vec);
     device.save(&conn)?;
+
     Ok(Json(json!({
         "access_token": access_token,
         "expires_in": expires_in,
@@ -79,7 +81,7 @@ fn _refresh_login(data: ConnectData, conn: DbConn) -> JsonResult {
         "Kdf": user.client_kdf_type,
         "KdfIterations": user.client_kdf_iter,
         "ResetMasterPassword": false, // TODO: according to official server seems something like: user.password_hash.is_empty(), but would need testing
-        "scope": "api offline_access",
+        "scope": scope,
         "unofficialServer": true,
     })))
 }
@@ -90,6 +92,7 @@ fn _password_login(data: ConnectData, conn: DbConn, ip: &ClientIp) -> JsonResult
     if scope != "api offline_access" {
         err!("Scope not supported")
     }
+    let scope_vec = vec!["api".into(), "offline_access".into()];
 
     // Ratelimit the login
     crate::ratelimit::check_limit_login(&ip.ip)?;
@@ -157,8 +160,7 @@ fn _password_login(data: ConnectData, conn: DbConn, ip: &ClientIp) -> JsonResult
 
     // Common
     let orgs = UserOrganization::find_confirmed_by_user(&user.uuid, &conn);
-
-    let (access_token, expires_in) = device.refresh_tokens(&user, orgs);
+    let (access_token, expires_in) = device.refresh_tokens(&user, orgs, scope_vec);
     device.save(&conn)?;
 
     let mut result = json!({
@@ -173,7 +175,7 @@ fn _password_login(data: ConnectData, conn: DbConn, ip: &ClientIp) -> JsonResult
         "Kdf": user.client_kdf_type,
         "KdfIterations": user.client_kdf_iter,
         "ResetMasterPassword": false,// TODO: Same as above
-        "scope": "api offline_access",
+        "scope": scope,
         "unofficialServer": true,
     });
 
@@ -191,6 +193,7 @@ fn _api_key_login(data: ConnectData, conn: DbConn, ip: &ClientIp) -> JsonResult 
     if scope != "api" {
         err!("Scope not supported")
     }
+    let scope_vec = vec!["api".into()];
 
     // Ratelimit the login
     crate::ratelimit::check_limit_login(&ip.ip)?;
@@ -232,24 +235,24 @@ fn _api_key_login(data: ConnectData, conn: DbConn, ip: &ClientIp) -> JsonResult 
 
     // Common
     let orgs = UserOrganization::find_confirmed_by_user(&user.uuid, &conn);
-
-    let (access_token, expires_in) = device.refresh_tokens(&user, orgs);
+    let (access_token, expires_in) = device.refresh_tokens(&user, orgs, scope_vec);
     device.save(&conn)?;
 
     info!("User {} logged in successfully via API key. IP: {}", user.email, ip.ip);
 
+    // Note: No refresh_token is returned. The CLI just repeats the
+    // client_credentials login flow when the existing token expires.
     Ok(Json(json!({
         "access_token": access_token,
         "expires_in": expires_in,
         "token_type": "Bearer",
-        "refresh_token": device.refresh_token,
         "Key": user.akey,
         "PrivateKey": user.private_key,
 
         "Kdf": user.client_kdf_type,
         "KdfIterations": user.client_kdf_iter,
         "ResetMasterPassword": false, // TODO: Same as above
-        "scope": "api",
+        "scope": scope,
         "unofficialServer": true,
     })))
 }
