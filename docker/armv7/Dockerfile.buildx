@@ -27,7 +27,7 @@
 FROM vaultwarden/web-vault@sha256:0df389deac9e83c739a1f4ff595f12f493b6c27cb4a22bb8fcaba9dc49b9b527 as vault
 
 ########################## BUILD IMAGE  ##########################
-FROM rust:1.57-buster as build
+FROM rust:1.58-buster as build
 
 
 
