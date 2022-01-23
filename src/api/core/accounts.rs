@@ -34,6 +34,8 @@ pub fn routes() -> Vec<rocket::Route> {
         password_hint,
         prelogin,
         verify_password,
+        api_key,
+        rotate_api_key,
     ]
 }
 
@@ -644,15 +646,17 @@ fn prelogin(data: JsonUpcase<PreloginData>, conn: DbConn) -> Json<Value> {
         "KdfIterations": kdf_iter
     }))
 }
+
+// https://github.com/bitwarden/server/blob/master/src/Api/Models/Request/Accounts/SecretVerificationRequestModel.cs
 #[derive(Deserialize)]
 #[allow(non_snake_case)]
-struct VerifyPasswordData {
+struct SecretVerificationRequest {
     MasterPasswordHash: String,
 }
 
 #[post("/accounts/verify-password", data = "<data>")]
-fn verify_password(data: JsonUpcase<VerifyPasswordData>, headers: Headers) -> EmptyResult {
-    let data: VerifyPasswordData = data.into_inner().data;
+fn verify_password(data: JsonUpcase<SecretVerificationRequest>, headers: Headers) -> EmptyResult {
+    let data: SecretVerificationRequest = data.into_inner().data;
     let user = headers.user;
 
     if !user.check_valid_password(&data.MasterPasswordHash) {
@@ -660,4 +664,33 @@ fn verify_password(data: JsonUpcase<VerifyPasswordData>, headers: Headers) -> Em
     }
 
     Ok(())
+}
+
+fn _api_key(data: JsonUpcase<SecretVerificationRequest>, rotate: bool, headers: Headers, conn: DbConn) -> JsonResult {
+    let data: SecretVerificationRequest = data.into_inner().data;
+    let mut user = headers.user;
+
+    if !user.check_valid_password(&data.MasterPasswordHash) {
+        err!("Invalid password")
+    }
+
+    if rotate || user.api_key.is_none() {
+        user.api_key = Some(crypto::generate_api_key());
+        user.save(&conn).expect("Error saving API key");
+    }
+
+    Ok(Json(json!({
+      "ApiKey": user.api_key,
+      "Object": "apiKey",
+    })))
+}
+
+#[post("/accounts/api-key", data = "<data>")]
+fn api_key(data: JsonUpcase<SecretVerificationRequest>, headers: Headers, conn: DbConn) -> JsonResult {
+    _api_key(data, false, headers, conn)
+}
+
+#[post("/accounts/rotate-api-key", data = "<data>")]
+fn rotate_api_key(data: JsonUpcase<SecretVerificationRequest>, headers: Headers, conn: DbConn) -> JsonResult {
+    _api_key(data, true, headers, conn)
 }

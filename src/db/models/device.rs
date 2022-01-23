@@ -60,7 +60,12 @@ impl Device {
         self.twofactor_remember = None;
     }
 
-    pub fn refresh_tokens(&mut self, user: &super::User, orgs: Vec<super::UserOrganization>) -> (String, i64) {
+    pub fn refresh_tokens(
+        &mut self,
+        user: &super::User,
+        orgs: Vec<super::UserOrganization>,
+        scope: Vec<String>,
+    ) -> (String, i64) {
         // If there is no refresh token, we create one
         if self.refresh_token.is_empty() {
             use crate::crypto;
@@ -98,7 +103,7 @@ impl Device {
 
             sstamp: user.security_stamp.to_string(),
             device: self.uuid.to_string(),
-            scope: vec!["api".into(), "offline_access".into()],
+            scope,
             amr: vec!["Application".into()],
         };
 
