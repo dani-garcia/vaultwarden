@@ -3,22 +3,22 @@
 # This file was generated using a Jinja2 template.
 # Please make your changes in `Dockerfile.j2` and then `make` the individual Dockerfiles.
 
-{% set build_stage_base_image = "rust:1.60-buster" %}
+{% set build_stage_base_image = "rust:1.58-buster" %}
 {% if "alpine" in target_file %}
 {%   if "amd64" in target_file %}
-{%     set build_stage_base_image = "blackdex/rust-musl:x86_64-musl-nightly-2021-12-25" %}
+{%     set build_stage_base_image = "blackdex/rust-musl:x86_64-musl-nightly-2022-01-23" %}
 {%     set runtime_stage_base_image = "alpine:3.15" %}
 {%     set package_arch_target = "x86_64-unknown-linux-musl" %}
 {%   elif "armv7" in target_file %}
-{%     set build_stage_base_image = "blackdex/rust-musl:armv7-musleabihf-nightly-2021-12-25" %}
+{%     set build_stage_base_image = "blackdex/rust-musl:armv7-musleabihf-nightly-2022-01-23" %}
 {%     set runtime_stage_base_image = "balenalib/armv7hf-alpine:3.15" %}
 {%     set package_arch_target = "armv7-unknown-linux-musleabihf" %}
 {%   elif "armv6" in target_file %}
-{%     set build_stage_base_image = "blackdex/rust-musl:arm-musleabi-nightly-2021-12-25" %}
+{%     set build_stage_base_image = "blackdex/rust-musl:arm-musleabi-nightly-2022-01-23" %}
 {%     set runtime_stage_base_image = "balenalib/rpi-alpine:3.15" %}
 {%     set package_arch_target = "arm-unknown-linux-musleabi" %}
 {%   elif "arm64" in target_file %}
-{%     set build_stage_base_image = "blackdex/rust-musl:aarch64-musl-nightly-2021-12-25" %}
+{%     set build_stage_base_image = "blackdex/rust-musl:aarch64-musl-nightly-2022-01-23" %}
 {%     set runtime_stage_base_image = "balenalib/aarch64-alpine:3.15" %}
 {%     set package_arch_target = "aarch64-unknown-linux-musl" %}
 {%   endif %}
@@ -59,8 +59,8 @@
 # 	https://docs.docker.com/develop/develop-images/multistage-build/
 # 	https://whitfin.io/speeding-up-rust-docker-builds/
 ####################### VAULT BUILD IMAGE  #######################
-{% set vault_version = "2.25.0" %}
-{% set vault_image_digest = "sha256:0df389deac9e83c739a1f4ff595f12f493b6c27cb4a22bb8fcaba9dc49b9b527" %}
+{% set vault_version = "2.25.1" %}
+{% set vault_image_digest = "sha256:4f9b7a6b0eaceb511cca8c6a5ed5aa92f527960b1b33d86fbbfd4e5795943965" %}
 # The web-vault digest specifies a particular web-vault build on Docker Hub.
 # Using the digest instead of the tag name provides better security,
 # as the digest of an image is immutable, whereas a tag name can later
