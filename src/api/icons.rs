@@ -72,8 +72,10 @@ fn icon_redirect(domain: &str, template: &str) -> Option<Redirect> {
 
     let url = template.replace("{}", domain);
     match CONFIG.icon_redirect_code() {
-        308 => Some(Redirect::permanent(url)),
+        301 => Some(Redirect::moved(url)), // legacy permanent redirect
+        302 => Some(Redirect::found(url)), // legacy temporary redirect
         307 => Some(Redirect::temporary(url)),
+        308 => Some(Redirect::permanent(url)),
         _ => {
             error!("Unexpected redirect code {}", CONFIG.icon_redirect_code());
             None
