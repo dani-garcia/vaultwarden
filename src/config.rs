@@ -593,8 +593,8 @@ make_config! {
     email_2fa: _enable_email_2fa {
         /// Enabled |> Disabling will prevent users from setting up new email 2FA and using existing email 2FA configured
         _enable_email_2fa:      bool,   true,   auto,    |c| c._enable_smtp && c.smtp_host.is_some();
-        /// Email token size |> Number of digits in an email token (min: 6, max: 19). Note that the Bitwarden clients are hardcoded to mention 6 digit codes regardless of this setting.
-        email_token_size:       u32,    true,   def,      6;
+        /// Email token size |> Number of digits in an email 2FA token (min: 6, max: 255). Note that the Bitwarden clients are hardcoded to mention 6 digit codes regardless of this setting.
+        email_token_size:       u8,     true,   def,      6;
         /// Token expiration time |> Maximum time in seconds a token is valid. The time the user has to open email client and copy token.
         email_expiration_time:  u64,    true,   def,      600;
         /// Maximum attempts |> Maximum attempts before an email token is reset and a new email will need to be sent
@@ -667,10 +667,6 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
 
         if cfg._enable_email_2fa && cfg.email_token_size < 6 {
             err!("`EMAIL_TOKEN_SIZE` has a minimum size of 6")
-        }
-
-        if cfg._enable_email_2fa && cfg.email_token_size > 19 {
-            err!("`EMAIL_TOKEN_SIZE` has a maximum size of 19")
         }
     }
 

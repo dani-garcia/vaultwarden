@@ -381,7 +381,7 @@ fn post_email_token(data: JsonUpcase<EmailTokenData>, headers: Headers, conn: Db
         err!("Email domain not allowed");
     }
 
-    let token = crypto::generate_token(6)?;
+    let token = crypto::generate_email_token(6);
 
     if CONFIG.mail_enabled() {
         if let Err(e) = mail::send_change_email(&data.NewEmail, &token) {
