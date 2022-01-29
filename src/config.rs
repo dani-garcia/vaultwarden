@@ -406,9 +406,10 @@ make_config! {
         /// This setting applies globally to all users.
         incomplete_2fa_time_limit: i64, true,   def,    3;
 
-        /// Disable icon downloads |> Set to true to disable icon downloading, this would still serve icons from
-        /// $ICON_CACHE_FOLDER, but it won't produce any external network request. Needs to set $ICON_CACHE_TTL to 0,
-        /// otherwise it will delete them and they won't be downloaded again.
+        /// Disable icon downloads |> Set to true to disable icon downloading in the internal icon service.
+        /// This still serves existing icons from $ICON_CACHE_FOLDER, without generating any external
+        /// network requests. $ICON_CACHE_TTL must also be set to 0; otherwise, the existing icons
+        /// will be deleted eventually, but won't be downloaded again.
         disable_icon_download:  bool,   true,   def,    false;
         /// Allow new signups |> Controls whether new users can register. Users can be invited by the vaultwarden admin even if this is disabled
         signups_allowed:        bool,   true,   def,    true;
@@ -449,6 +450,19 @@ make_config! {
         ip_header:              String, true,   def,    "X-Real-IP".to_string();
         /// Internal IP header property, used to avoid recomputing each time
         _ip_header_enabled:     bool,   false,  gen,    |c| &c.ip_header.trim().to_lowercase() != "none";
+        /// Icon service |> The predefined icon services are: internal, bitwarden, duckduckgo, google.
+        /// To specify a custom icon service, set a URL template with exactly one instance of `{}`,
+        /// which is replaced with the domain. For example: `https://icon.example.com/domain/{}`.
+        /// `internal` refers to Vaultwarden's built-in icon fetching implementation. If an external
+        /// service is set, an icon request to Vaultwarden will return an HTTP redirect to the
+        /// corresponding icon at the external service.
+        icon_service:           String, false,  def,    "internal".to_string();
+        /// Icon redirect code |> The HTTP status code to use for redirects to an external icon service.
+        /// The supported codes are 301 (legacy permanent), 302 (legacy temporary), 307 (temporary), and 308 (permanent).
+        /// Temporary redirects are useful while testing different icon services, but once a service
+        /// has been decided on, consider using permanent redirects for cacheability. The legacy codes
+        /// are currently better supported by the Bitwarden clients.
+        icon_redirect_code:     u32,    true,   def,    302;
         /// Positive icon cache expiry |> Number of seconds to consider that an already cached icon is fresh. After this period, the icon will be redownloaded
         icon_cache_ttl:         u64,    true,   def,    2_592_000;
         /// Negative icon cache expiry |> Number of seconds before trying to download an icon that failed again.
@@ -503,6 +517,16 @@ make_config! {
 
         /// Allowed iframe ancestors (Know the risks!) |> Allows other domains to embed the web vault into an iframe, useful for embedding into secure intranets
         allowed_iframe_ancestors: String, true, def,    String::new();
+
+        /// Seconds between login requests |> Number of seconds, on average, between login and 2FA requests from the same IP address before rate limiting kicks in
+        login_ratelimit_seconds:       u64, false, def, 60;
+        /// Max burst size for login requests |> Allow a burst of requests of up to this size, while maintaining the average indicated by `login_ratelimit_seconds`. Note that this applies to both the login and the 2FA, so it's recommended to allow a burst size of at least 2
+        login_ratelimit_max_burst:     u32, false, def, 10;
+
+        /// Seconds between admin requests |> Number of seconds, on average, between admin requests from the same IP address before rate limiting kicks in
+        admin_ratelimit_seconds:       u64, false, def, 300;
+        /// Max burst size for login requests |> Allow a burst of requests of up to this size, while maintaining the average indicated by `admin_ratelimit_seconds`
+        admin_ratelimit_max_burst:     u32, false, def, 3;
     },
 
     /// Yubikey settings
@@ -569,8 +593,8 @@ make_config! {
     email_2fa: _enable_email_2fa {
         /// Enabled |> Disabling will prevent users from setting up new email 2FA and using existing email 2FA configured
         _enable_email_2fa:      bool,   true,   auto,    |c| c._enable_smtp && c.smtp_host.is_some();
-        /// Email token size |> Number of digits in an email token (min: 6, max: 19). Note that the Bitwarden clients are hardcoded to mention 6 digit codes regardless of this setting.
-        email_token_size:       u32,    true,   def,      6;
+        /// Email token size |> Number of digits in an email 2FA token (min: 6, max: 255). Note that the Bitwarden clients are hardcoded to mention 6 digit codes regardless of this setting.
+        email_token_size:       u8,     true,   def,      6;
         /// Token expiration time |> Maximum time in seconds a token is valid. The time the user has to open email client and copy token.
         email_expiration_time:  u64,    true,   def,      600;
         /// Maximum attempts |> Maximum attempts before an email token is reset and a new email will need to be sent
@@ -644,10 +668,6 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         if cfg._enable_email_2fa && cfg.email_token_size < 6 {
             err!("`EMAIL_TOKEN_SIZE` has a minimum size of 6")
         }
-
-        if cfg._enable_email_2fa && cfg.email_token_size > 19 {
-            err!("`EMAIL_TOKEN_SIZE` has a maximum size of 19")
-        }
     }
 
     // Check if the icon blacklist regex is valid
@@ -657,6 +677,28 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
             Ok(_) => (),
             Err(e) => err!(format!("`ICON_BLACKLIST_REGEX` is invalid: {:#?}", e)),
         }
+    }
+
+    // Check if the icon service is valid
+    let icon_service = cfg.icon_service.as_str();
+    match icon_service {
+        "internal" | "bitwarden" | "duckduckgo" | "google" => (),
+        _ => {
+            if !icon_service.starts_with("http") {
+                err!(format!("Icon service URL `{}` must start with \"http\"", icon_service))
+            }
+            match icon_service.matches("{}").count() {
+                1 => (), // nominal
+                0 => err!(format!("Icon service URL `{}` has no placeholder \"{{}}\"", icon_service)),
+                _ => err!(format!("Icon service URL `{}` has more than one placeholder \"{{}}\"", icon_service)),
+            }
+        }
+    }
+
+    // Check if the icon redirect code is valid
+    match cfg.icon_redirect_code {
+        301 | 302 | 307 | 308 => (),
+        _ => err!("Only HTTP 301/302 and 307/308 redirects are supported"),
     }
 
     Ok(())

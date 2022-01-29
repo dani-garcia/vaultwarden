@@ -3,7 +3,7 @@ name = "vaultwarden"
 version = "1.0.0"
 authors = ["Daniel García <dani-garcia@users.noreply.github.com>"]
 edition = "2021"
-rust-version = "1.57"
+rust-version = "1.60"
 resolver = "2"
 
 repository = "https://github.com/dani-garcia/vaultwarden"
@@ -34,7 +34,7 @@ rocket = { version = "=0.5.0-dev", features = ["tls"], default-features = false 
 rocket_contrib = "=0.5.0-dev"
 
 # HTTP client
-reqwest = { version = "0.11.7", features = ["blocking", "json", "gzip", "brotli", "socks", "cookies", "trust-dns"] }
+reqwest = { version = "0.11.8", features = ["blocking", "json", "gzip", "brotli", "socks", "cookies", "trust-dns"] }
 
 # Used for custom short lived cookie jar
 cookie = "0.15.1"
@@ -55,8 +55,8 @@ rmpv = "1.0.0"
 chashmap = "2.2.2"
 
 # A generic serialization/deserialization framework
-serde = { version = "1.0.130", features = ["derive"] }
-serde_json = "1.0.72"
+serde = { version = "1.0.132", features = ["derive"] }
+serde_json = "1.0.73"
 
 # Logging
 log = "0.4.14"
@@ -78,7 +78,7 @@ uuid = { version = "0.8.2", features = ["v4"] }
 
 # Date and time libraries
 chrono = { version = "0.4.19", features = ["serde"] }
-chrono-tz = "0.6.0"
+chrono-tz = "0.6.1"
 time = "0.2.27"
 
 # Job scheduler
@@ -95,7 +95,7 @@ jsonwebtoken = "7.2.0"
 
 # U2F library
 u2f = "0.2.0"
-webauthn-rs = "0.3.0"
+webauthn-rs = "0.3.1"
 
 # Yubico Library
 yubico = { version = "0.10.0", features = ["online-tokio"], default-features = false }
@@ -104,7 +104,7 @@ yubico = { version = "0.10.0", features = ["online-tokio"], default-features = f
 dotenv = { version = "0.15.0", default-features = false }
 
 # Lazy initialization
-once_cell = "1.8.0"
+once_cell = "1.9.0"
 
 # Numerical libraries
 num-traits = "0.2.14"
@@ -115,7 +115,7 @@ tracing = { version = "0.1.29", features = ["log"] } # Needed to have lettre tra
 lettre = { version = "0.10.0-rc.4", features = ["smtp-transport", "builder", "serde", "native-tls", "hostname", "tracing"], default-features = false }
 
 # Template library
-handlebars = { version = "4.1.5", features = ["dir_source"] }
+handlebars = { version = "4.1.6", features = ["dir_source"] }
 
 # For favicon extraction from main website
 html5ever = "0.25.1"
@@ -139,6 +139,7 @@ backtrace = "0.3.63"
 
 # Macro ident concatenation
 paste = "1.0.6"
+governor = "0.3.2"
 
 [patch.crates-io]
 # Use newest ring

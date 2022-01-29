@@ -7,7 +7,7 @@ use rocket_contrib::json::Json;
 use serde_json::Value;
 
 use crate::{
-    api::{ApiResult, EmptyResult, JsonResult, JsonUpcase, Notify, UpdateType},
+    api::{ApiResult, EmptyResult, JsonResult, JsonUpcase, Notify, NumberOrString, UpdateType},
     auth::{Headers, Host},
     db::{models::*, DbConn, DbPool},
     util::SafeString,
@@ -42,21 +42,21 @@ pub fn purge_sends(pool: DbPool) {
 
 #[derive(Deserialize)]
 #[allow(non_snake_case)]
-pub struct SendData {
-    pub Type: i32,
-    pub Key: String,
-    pub Password: Option<String>,
-    pub MaxAccessCount: Option<i32>,
-    pub ExpirationDate: Option<DateTime<Utc>>,
-    pub DeletionDate: DateTime<Utc>,
-    pub Disabled: bool,
-    pub HideEmail: Option<bool>,
+struct SendData {
+    Type: i32,
+    Key: String,
+    Password: Option<String>,
+    MaxAccessCount: Option<NumberOrString>,
+    ExpirationDate: Option<DateTime<Utc>>,
+    DeletionDate: DateTime<Utc>,
+    Disabled: bool,
+    HideEmail: Option<bool>,
 
     // Data field
-    pub Name: String,
-    pub Notes: Option<String>,
-    pub Text: Option<Value>,
-    pub File: Option<Value>,
+    Name: String,
+    Notes: Option<String>,
+    Text: Option<Value>,
+    File: Option<Value>,
 }
 
 /// Enforces the `Disable Send` policy. A non-owner/admin user belonging to
@@ -119,7 +119,10 @@ fn create_send(data: SendData, user_uuid: String) -> ApiResult<Send> {
     let mut send = Send::new(data.Type, data.Name, data_str, data.Key, data.DeletionDate.naive_utc());
     send.user_uuid = Some(user_uuid);
     send.notes = data.Notes;
-    send.max_access_count = data.MaxAccessCount;
+    send.max_access_count = match data.MaxAccessCount {
+        Some(m) => Some(m.into_i32()?),
+        _ => None,
+    };
     send.expiration_date = data.ExpirationDate.map(|d| d.naive_utc());
     send.disabled = data.Disabled;
     send.hide_email = data.HideEmail;
@@ -414,7 +417,10 @@ fn put_send(id: String, data: JsonUpcase<SendData>, headers: Headers, conn: DbCo
     send.akey = data.Key;
     send.deletion_date = data.DeletionDate.naive_utc();
     send.notes = data.Notes;
-    send.max_access_count = data.MaxAccessCount;
+    send.max_access_count = match data.MaxAccessCount {
+        Some(m) => Some(m.into_i32()?),
+        _ => None,
+    };
     send.expiration_date = data.ExpirationDate.map(|d| d.naive_utc());
     send.hide_email = data.HideEmail;
     send.disabled = data.Disabled;

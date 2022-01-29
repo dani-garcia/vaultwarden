@@ -32,6 +32,7 @@ mod crypto;
 #[macro_use]
 mod db;
 mod mail;
+mod ratelimit;
 mod util;
 
 pub use config::CONFIG;
@@ -75,16 +76,18 @@ const HELP: &str = "\
             -v, --version    Prints the app version
 ";
 
+pub const VERSION: Option<&str> = option_env!("VW_VERSION");
+
 fn parse_args() {
-    const NO_VERSION: &str = "(Version info from Git not present)";
     let mut pargs = pico_args::Arguments::from_env();
+    let version = VERSION.unwrap_or("(Version info from Git not present)");
 
     if pargs.contains(["-h", "--help"]) {
-        println!("vaultwarden {}", option_env!("BWRS_VERSION").unwrap_or(NO_VERSION));
+        println!("vaultwarden {}", version);
         print!("{}", HELP);
         exit(0);
     } else if pargs.contains(["-v", "--version"]) {
-        println!("vaultwarden {}", option_env!("BWRS_VERSION").unwrap_or(NO_VERSION));
+        println!("vaultwarden {}", version);
         exit(0);
     }
 }
@@ -93,7 +96,7 @@ fn launch_info() {
     println!("/--------------------------------------------------------------------\\");
     println!("|                        Starting Vaultwarden                        |");
 
-    if let Some(version) = option_env!("BWRS_VERSION") {
+    if let Some(version) = VERSION {
         println!("|{:^68}|", format!("Version {}", version));
     }
 

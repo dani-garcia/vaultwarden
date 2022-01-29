@@ -21,7 +21,7 @@ use crate::{
     util::{
         docker_base_image, format_naive_datetime_local, get_display_size, get_reqwest_client, is_running_in_docker,
     },
-    CONFIG,
+    CONFIG, VERSION,
 };
 
 pub fn routes() -> Vec<Route> {
@@ -74,11 +74,10 @@ fn admin_disabled() -> &'static str {
     "The admin panel is disabled, please configure the 'ADMIN_TOKEN' variable to enable it"
 }
 
-const COOKIE_NAME: &str = "BWRS_ADMIN";
+const COOKIE_NAME: &str = "VW_ADMIN";
 const ADMIN_PATH: &str = "/admin";
 
 const BASE_TEMPLATE: &str = "admin/base";
-const VERSION: Option<&str> = option_env!("BWRS_VERSION");
 
 fn admin_path() -> String {
     format!("{}{}", CONFIG.domain_path(), ADMIN_PATH)
@@ -165,6 +164,10 @@ fn post_admin_login(
     referer: Referer,
 ) -> Result<Redirect, Flash<Redirect>> {
     let data = data.into_inner();
+
+    if crate::ratelimit::check_limit_admin(&ip.ip).is_err() {
+        return Err(Flash::error(Redirect::to(admin_url(referer)), "Too many requests, try again later."));
+    }
 
     // If the token is invalid, redirect to login page
     if !_validate_token(&data.token) {
@@ -482,7 +485,7 @@ fn diagnostics(_token: AdminToken, ip_header: IpHeader, conn: DbConn) -> ApiResu
 
     // Get current running versions
     let web_vault_version: WebVaultVersion =
-        match read_file_string(&format!("{}/{}", CONFIG.web_vault_folder(), "bwrs-version.json")) {
+        match read_file_string(&format!("{}/{}", CONFIG.web_vault_folder(), "vw-version.json")) {
             Ok(s) => serde_json::from_str(&s)?,
             _ => match read_file_string(&format!("{}/{}", CONFIG.web_vault_folder(), "version.json")) {
                 Ok(s) => serde_json::from_str(&s)?,

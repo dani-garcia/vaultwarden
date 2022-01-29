@@ -16,21 +16,20 @@
 # - From https://hub.docker.com/r/vaultwarden/web-vault/tags,
 #   click the tag name to view the digest of the image it currently points to.
 # - From the command line:
-#     $ docker pull vaultwarden/web-vault:v2.25.0
-#     $ docker image inspect --format "{{.RepoDigests}}" vaultwarden/web-vault:v2.25.0
-#     [vaultwarden/web-vault@sha256:0df389deac9e83c739a1f4ff595f12f493b6c27cb4a22bb8fcaba9dc49b9b527]
+#     $ docker pull vaultwarden/web-vault:v2.25.1
+#     $ docker image inspect --format "{{.RepoDigests}}" vaultwarden/web-vault:v2.25.1
+#     [vaultwarden/web-vault@sha256:4f9b7a6b0eaceb511cca8c6a5ed5aa92f527960b1b33d86fbbfd4e5795943965]
 #
 # - Conversely, to get the tag name from the digest:
-#     $ docker image inspect --format "{{.RepoTags}}" vaultwarden/web-vault@sha256:0df389deac9e83c739a1f4ff595f12f493b6c27cb4a22bb8fcaba9dc49b9b527
-#     [vaultwarden/web-vault:v2.25.0]
+#     $ docker image inspect --format "{{.RepoTags}}" vaultwarden/web-vault@sha256:4f9b7a6b0eaceb511cca8c6a5ed5aa92f527960b1b33d86fbbfd4e5795943965
+#     [vaultwarden/web-vault:v2.25.1]
 #
-FROM vaultwarden/web-vault@sha256:0df389deac9e83c739a1f4ff595f12f493b6c27cb4a22bb8fcaba9dc49b9b527 as vault
+FROM vaultwarden/web-vault@sha256:4f9b7a6b0eaceb511cca8c6a5ed5aa92f527960b1b33d86fbbfd4e5795943965 as vault
 
 ########################## BUILD IMAGE  ##########################
-FROM rust:1.55-buster as build
+FROM rust:1.58-buster as build
 
-# Debian-based builds support multidb
-ARG DB=sqlite,mysql,postgresql
+
 
 # Build time options to avoid dpkg warnings and help with reproducible builds.
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -64,6 +63,9 @@ COPY ./rust-toolchain ./rust-toolchain
 COPY ./build.rs ./build.rs
 
 
+# Configure the DB ARG as late as possible to not invalidate the cached layers above
+ARG DB=sqlite,mysql,postgresql
+
 # Builds your dependencies and removes the
 # dummy project, except the target folder
 # This folder contains the compiled dependencies
@@ -79,6 +81,7 @@ RUN touch src/main.rs
 
 # Builds again, this time it'll just be
 # your actual source files being built
+# hadolint ignore=DL3059
 RUN cargo build --features ${DB} --release
 
 ######################## RUNTIME IMAGE  ########################
@@ -86,9 +89,9 @@ RUN cargo build --features ${DB} --release
 # because we already have a binary built
 FROM debian:buster-slim
 
-ENV ROCKET_ENV "staging"
-ENV ROCKET_PORT=80
-ENV ROCKET_WORKERS=10
+ENV ROCKET_ENV="staging" \
+    ROCKET_PORT=80 \
+    ROCKET_WORKERS=10
 
 
 # Create data folder and Install needed libraries

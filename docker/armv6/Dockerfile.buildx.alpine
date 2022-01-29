@@ -27,7 +27,7 @@
 FROM vaultwarden/web-vault@sha256:4f9b7a6b0eaceb511cca8c6a5ed5aa92f527960b1b33d86fbbfd4e5795943965 as vault
 
 ########################## BUILD IMAGE  ##########################
-FROM rust:1.58-buster as build
+FROM blackdex/rust-musl:arm-musleabi-nightly-2022-01-23 as build
 
 
 
@@ -41,36 +41,10 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 
 # Create CARGO_HOME folder and don't download rust docs
-RUN mkdir -pv "${CARGO_HOME}" \
+RUN --mount=type=cache,target=/root/.cargo/git --mount=type=cache,target=/root/.cargo/registry mkdir -pv "${CARGO_HOME}" \
     && rustup set profile minimal
 
-#
-# Install required build libs for arm64 architecture.
-# hadolint ignore=DL3059
-RUN dpkg --add-architecture arm64 \
-    && apt-get update \
-    && apt-get install -y \
-        --no-install-recommends \
-        libssl-dev:arm64 \
-        libc6-dev:arm64 \
-        libpq5:arm64 \
-        libpq-dev:arm64 \
-        libmariadb3:arm64 \
-        libmariadb-dev:arm64 \
-        libmariadb-dev-compat:arm64 \
-        gcc-aarch64-linux-gnu \
-    #
-    # Make sure cargo has the right target config
-    && echo '[target.aarch64-unknown-linux-gnu]' >> "${CARGO_HOME}/config" \
-    && echo 'linker = "aarch64-linux-gnu-gcc"' >> "${CARGO_HOME}/config" \
-    && echo 'rustflags = ["-L/usr/lib/aarch64-linux-gnu"]' >> "${CARGO_HOME}/config"
-
-# Set arm specific environment values
-ENV CC_aarch64_unknown_linux_gnu="/usr/bin/aarch64-linux-gnu-gcc" \
-    CROSS_COMPILE="1" \
-    OPENSSL_INCLUDE_DIR="/usr/include/aarch64-linux-gnu" \
-    OPENSSL_LIB_DIR="/usr/lib/aarch64-linux-gnu"
-
+ENV RUSTFLAGS='-C link-arg=-s'
 
 # Creates a dummy project used to grab dependencies
 RUN USER=root cargo new --bin /app
@@ -81,7 +55,7 @@ COPY ./Cargo.* ./
 COPY ./rust-toolchain ./rust-toolchain
 COPY ./build.rs ./build.rs
 
-RUN rustup target add aarch64-unknown-linux-gnu
+RUN --mount=type=cache,target=/root/.cargo/git --mount=type=cache,target=/root/.cargo/registry rustup target add arm-unknown-linux-musleabi
 
 # Configure the DB ARG as late as possible to not invalidate the cached layers above
 ARG DB=sqlite,mysql,postgresql
@@ -89,7 +63,7 @@ ARG DB=sqlite,mysql,postgresql
 # Builds your dependencies and removes the
 # dummy project, except the target folder
 # This folder contains the compiled dependencies
-RUN cargo build --features ${DB} --release --target=aarch64-unknown-linux-gnu \
+RUN --mount=type=cache,target=/root/.cargo/git --mount=type=cache,target=/root/.cargo/registry cargo build --features ${DB} --release --target=arm-unknown-linux-musleabi \
     && find . -not -path "./target*" -delete
 
 # Copies the complete project
@@ -102,32 +76,30 @@ RUN touch src/main.rs
 # Builds again, this time it'll just be
 # your actual source files being built
 # hadolint ignore=DL3059
-RUN cargo build --features ${DB} --release --target=aarch64-unknown-linux-gnu
+RUN --mount=type=cache,target=/root/.cargo/git --mount=type=cache,target=/root/.cargo/registry cargo build --features ${DB} --release --target=arm-unknown-linux-musleabi
 
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image
 # because we already have a binary built
-FROM balenalib/aarch64-debian:buster
+FROM balenalib/rpi-alpine:3.15
 
 ENV ROCKET_ENV="staging" \
     ROCKET_PORT=80 \
-    ROCKET_WORKERS=10
+    ROCKET_WORKERS=10 \
+    SSL_CERT_DIR=/etc/ssl/certs
+
 
 # hadolint ignore=DL3059
 RUN [ "cross-build-start" ]
 
 # Create data folder and Install needed libraries
 RUN mkdir /data \
-    && apt-get update && apt-get install -y \
-    --no-install-recommends \
-    openssl \
-    ca-certificates \
-    curl \
-    dumb-init \
-    libmariadb-dev-compat \
-    libpq5 \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+    && apk add --no-cache \
+        openssl \
+        tzdata \
+        curl \
+        dumb-init \
+        ca-certificates
 
 # hadolint ignore=DL3059
 RUN [ "cross-build-end" ]
@@ -141,7 +113,7 @@ EXPOSE 3012
 WORKDIR /
 COPY Rocket.toml .
 COPY --from=vault /web-vault ./web-vault
-COPY --from=build /app/target/aarch64-unknown-linux-gnu/release/vaultwarden .
+COPY --from=build /app/target/arm-unknown-linux-musleabi/release/vaultwarden .
 
 COPY docker/healthcheck.sh /healthcheck.sh
 COPY docker/start.sh /start.sh

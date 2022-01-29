@@ -11,6 +11,9 @@ use rocket::{
     Data, Request, Response, Rocket,
 };
 
+use std::thread::sleep;
+use std::time::Duration;
+
 use crate::CONFIG;
 
 pub struct AppHeaders();
@@ -24,7 +27,7 @@ impl Fairing for AppHeaders {
     }
 
     fn on_response(&self, _req: &Request, res: &mut Response) {
-        res.set_raw_header("Feature-Policy", "accelerometer 'none'; ambient-light-sensor 'none'; autoplay 'none'; camera 'none'; encrypted-media 'none'; fullscreen 'none'; geolocation 'none'; gyroscope 'none'; magnetometer 'none'; microphone 'none'; midi 'none'; payment 'none'; picture-in-picture 'none'; sync-xhr 'self' https://haveibeenpwned.com https://2fa.directory; usb 'none'; vr 'none'");
+        res.set_raw_header("Permissions-Policy", "accelerometer=(), ambient-light-sensor=(), autoplay=(), camera=(), encrypted-media=(), fullscreen=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), midi=(), payment=(), picture-in-picture=(), sync-xhr=(self \"https://haveibeenpwned.com\" \"https://2fa.directory\"), usb=(), vr=()");
         res.set_raw_header("Referrer-Policy", "same-origin");
         res.set_raw_header("X-Frame-Options", "SAMEORIGIN");
         res.set_raw_header("X-Content-Type-Options", "nosniff");
@@ -99,29 +102,53 @@ impl Fairing for Cors {
     }
 }
 
-pub struct Cached<R>(R, String);
+pub struct Cached<R> {
+    response: R,
+    is_immutable: bool,
+    ttl: u64,
+}
 
 impl<R> Cached<R> {
-    pub fn long(r: R) -> Cached<R> {
-        // 7 days
-        Self::ttl(r, 604800)
+    pub fn long(response: R, is_immutable: bool) -> Cached<R> {
+        Self {
+            response,
+            is_immutable,
+            ttl: 604800, // 7 days
+        }
     }
 
-    pub fn short(r: R) -> Cached<R> {
-        // 10 minutes
-        Self(r, String::from("public, max-age=600"))
+    pub fn short(response: R, is_immutable: bool) -> Cached<R> {
+        Self {
+            response,
+            is_immutable,
+            ttl: 600, // 10 minutes
+        }
     }
 
-    pub fn ttl(r: R, ttl: u64) -> Cached<R> {
-        Self(r, format!("public, immutable, max-age={}", ttl))
+    pub fn ttl(response: R, ttl: u64, is_immutable: bool) -> Cached<R> {
+        Self {
+            response,
+            is_immutable,
+            ttl,
+        }
     }
 }
 
 impl<'r, R: Responder<'r>> Responder<'r> for Cached<R> {
     fn respond_to(self, req: &Request) -> response::Result<'r> {
-        match self.0.respond_to(req) {
+        let cache_control_header = if self.is_immutable {
+            format!("public, immutable, max-age={}", self.ttl)
+        } else {
+            format!("public, max-age={}", self.ttl)
+        };
+
+        let time_now = chrono::Local::now();
+
+        match self.response.respond_to(req) {
             Ok(mut res) => {
-                res.set_raw_header("Cache-Control", self.1);
+                res.set_raw_header("Cache-Control", cache_control_header);
+                let expiry_time = time_now + chrono::Duration::seconds(self.ttl.try_into().unwrap());
+                res.set_raw_header("Expires", format_datetime_http(&expiry_time));
                 Ok(res)
             }
             e @ Err(_) => e,
@@ -409,6 +436,17 @@ pub fn format_naive_datetime_local(dt: &NaiveDateTime, fmt: &str) -> String {
     format_datetime_local(&Local.from_utc_datetime(dt), fmt)
 }
 
+/// Formats a `DateTime<Local>` as required for HTTP
+///
+/// https://httpwg.org/specs/rfc7231.html#http.date
+pub fn format_datetime_http(dt: &DateTime<Local>) -> String {
+    let expiry_time: chrono::DateTime<chrono::Utc> = chrono::DateTime::from_utc(dt.naive_utc(), chrono::Utc);
+
+    // HACK: HTTP expects the date to always be GMT (UTC) rather than giving an
+    // offset (which would always be 0 in UTC anyway)
+    expiry_time.to_rfc2822().replace("+0000", "GMT")
+}
+
 //
 // Deployment environment methods
 //
@@ -550,8 +588,6 @@ where
         }
     }
 }
-
-use std::{thread::sleep, time::Duration};
 
 pub fn retry_db<F, T, E>(func: F, max_tries: u32) -> Result<T, E>
 where

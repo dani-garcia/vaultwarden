@@ -58,7 +58,7 @@ pub fn send_token(user_uuid: &str, conn: &DbConn) -> EmptyResult {
     let type_ = TwoFactorType::Email as i32;
     let mut twofactor = TwoFactor::find_by_user_and_type(user_uuid, type_, conn).map_res("Two factor not found")?;
 
-    let generated_token = crypto::generate_token(CONFIG.email_token_size())?;
+    let generated_token = crypto::generate_email_token(CONFIG.email_token_size());
 
     let mut twofactor_data = EmailTokenData::from_json(&twofactor.data)?;
     twofactor_data.set_token(generated_token);
@@ -123,7 +123,7 @@ fn send_email(data: JsonUpcase<SendEmailData>, headers: Headers, conn: DbConn) -
         tf.delete(&conn)?;
     }
 
-    let generated_token = crypto::generate_token(CONFIG.email_token_size())?;
+    let generated_token = crypto::generate_email_token(CONFIG.email_token_size());
     let twofactor_data = EmailTokenData::new(data.Email, generated_token);
 
     // Uses EmailVerificationChallenge as type to show that it's not verified yet.
@@ -308,19 +308,5 @@ mod tests {
 
         // If it's smaller than 3 characters it should only show asterisks.
         assert_eq!(result, "***@example.ext");
-    }
-
-    #[test]
-    fn test_token() {
-        let result = crypto::generate_token(19).unwrap();
-
-        assert_eq!(result.chars().count(), 19);
-    }
-
-    #[test]
-    fn test_token_too_large() {
-        let result = crypto::generate_token(20);
-
-        assert!(result.is_err(), "too large token should give an error");
     }
 }

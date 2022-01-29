@@ -44,8 +44,9 @@ db_object! {
 
         pub client_kdf_type: i32,
         pub client_kdf_iter: i32,
-    }
 
+        pub api_key: Option<String>,
+    }
 
     #[derive(Identifiable, Queryable, Insertable)]
     #[table_name = "invitations"]
@@ -110,6 +111,8 @@ impl User {
 
             client_kdf_type: Self::CLIENT_KDF_TYPE_DEFAULT,
             client_kdf_iter: Self::CLIENT_KDF_ITER_DEFAULT,
+
+            api_key: None,
         }
     }
 
@@ -128,6 +131,10 @@ impl User {
         } else {
             false
         }
+    }
+
+    pub fn check_valid_api_key(&self, key: &str) -> bool {
+        matches!(self.api_key, Some(ref api_key) if crate::crypto::ct_eq(api_key, key))
     }
 
     /// Set the password hash generated

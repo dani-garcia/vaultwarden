@@ -15,11 +15,14 @@ fn main() {
         "You need to enable one DB backend. To build with previous defaults do: cargo build --features sqlite"
     );
 
-    if let Ok(version) = env::var("BWRS_VERSION") {
-        println!("cargo:rustc-env=BWRS_VERSION={}", version);
+    // Support $BWRS_VERSION for legacy compatibility, but default to $VW_VERSION.
+    // If neither exist, read from git.
+    let maybe_vaultwarden_version =
+        env::var("VW_VERSION").or_else(|_| env::var("BWRS_VERSION")).or_else(|_| version_from_git_info());
+
+    if let Ok(version) = maybe_vaultwarden_version {
+        println!("cargo:rustc-env=VW_VERSION={}", version);
         println!("cargo:rustc-env=CARGO_PKG_VERSION={}", version);
-    } else {
-        read_git_info().ok();
     }
 }
 
@@ -33,7 +36,13 @@ fn run(args: &[&str]) -> Result<String, std::io::Error> {
 }
 
 /// This method reads info from Git, namely tags, branch, and revision
-fn read_git_info() -> Result<(), std::io::Error> {
+/// To access these values, use:
+///    - env!("GIT_EXACT_TAG")
+///    - env!("GIT_LAST_TAG")
+///    - env!("GIT_BRANCH")
+///    - env!("GIT_REV")
+///    - env!("VW_VERSION")
+fn version_from_git_info() -> Result<String, std::io::Error> {
     // The exact tag for the current commit, can be empty when
     // the current commit doesn't have an associated tag
     let exact_tag = run(&["git", "describe", "--abbrev=0", "--tags", "--exact-match"]).ok();
@@ -56,23 +65,11 @@ fn read_git_info() -> Result<(), std::io::Error> {
     println!("cargo:rustc-env=GIT_REV={}", rev_short);
 
     // Combined version
-    let version = if let Some(exact) = exact_tag {
-        exact
+    if let Some(exact) = exact_tag {
+        Ok(exact)
     } else if &branch != "main" && &branch != "master" {
-        format!("{}-{} ({})", last_tag, rev_short, branch)
+        Ok(format!("{}-{} ({})", last_tag, rev_short, branch))
     } else {
-        format!("{}-{}", last_tag, rev_short)
-    };
-
-    println!("cargo:rustc-env=BWRS_VERSION={}", version);
-    println!("cargo:rustc-env=CARGO_PKG_VERSION={}", version);
-
-    // To access these values, use:
-    //    env!("GIT_EXACT_TAG")
-    //    env!("GIT_LAST_TAG")
-    //    env!("GIT_BRANCH")
-    //    env!("GIT_REV")
-    //    env!("BWRS_VERSION")
-
-    Ok(())
+        Ok(format!("{}-{}", last_tag, rev_short))
+    }
 }
