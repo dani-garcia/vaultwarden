@@ -664,7 +664,12 @@ fn verify_password(data: JsonUpcase<SecretVerificationRequest>, headers: Headers
     Ok(())
 }
 
-async fn _api_key(data: JsonUpcase<SecretVerificationRequest>, rotate: bool, headers: Headers, conn: DbConn) -> JsonResult {
+async fn _api_key(
+    data: JsonUpcase<SecretVerificationRequest>,
+    rotate: bool,
+    headers: Headers,
+    conn: DbConn,
+) -> JsonResult {
     let data: SecretVerificationRequest = data.into_inner().data;
     let mut user = headers.user;
 
