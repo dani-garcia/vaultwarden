@@ -16,15 +16,15 @@
 # - From https://hub.docker.com/r/vaultwarden/web-vault/tags,
 #   click the tag name to view the digest of the image it currently points to.
 # - From the command line:
-#     $ docker pull vaultwarden/web-vault:v2.25.1
-#     $ docker image inspect --format "{{.RepoDigests}}" vaultwarden/web-vault:v2.25.1
-#     [vaultwarden/web-vault@sha256:4f9b7a6b0eaceb511cca8c6a5ed5aa92f527960b1b33d86fbbfd4e5795943965]
+#     $ docker pull vaultwarden/web-vault:v2.25.1b
+#     $ docker image inspect --format "{{.RepoDigests}}" vaultwarden/web-vault:v2.25.1b
+#     [vaultwarden/web-vault@sha256:9b82318d553d72f091e8755f5aff80eed495f90bbe5b0703522953480f5c2fba]
 #
 # - Conversely, to get the tag name from the digest:
-#     $ docker image inspect --format "{{.RepoTags}}" vaultwarden/web-vault@sha256:4f9b7a6b0eaceb511cca8c6a5ed5aa92f527960b1b33d86fbbfd4e5795943965
-#     [vaultwarden/web-vault:v2.25.1]
+#     $ docker image inspect --format "{{.RepoTags}}" vaultwarden/web-vault@sha256:9b82318d553d72f091e8755f5aff80eed495f90bbe5b0703522953480f5c2fba
+#     [vaultwarden/web-vault:v2.25.1b]
 #
-FROM vaultwarden/web-vault@sha256:4f9b7a6b0eaceb511cca8c6a5ed5aa92f527960b1b33d86fbbfd4e5795943965 as vault
+FROM vaultwarden/web-vault@sha256:9b82318d553d72f091e8755f5aff80eed495f90bbe5b0703522953480f5c2fba as vault
 
 ########################## BUILD IMAGE  ##########################
 FROM blackdex/rust-musl:arm-musleabi-nightly-2022-01-23 as build
