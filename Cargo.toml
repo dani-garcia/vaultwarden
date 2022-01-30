@@ -34,7 +34,7 @@ rocket = { version = "=0.5.0-dev", features = ["tls"], default-features = false 
 rocket_contrib = "=0.5.0-dev"
 
 # HTTP client
-reqwest = { version = "0.11.8", features = ["blocking", "json", "gzip", "brotli", "socks", "cookies", "trust-dns"] }
+reqwest = { version = "0.11.9", features = ["blocking", "json", "gzip", "brotli", "socks", "cookies", "trust-dns"] }
 
 # Used for custom short lived cookie jar
 cookie = "0.15.1"
@@ -55,8 +55,8 @@ rmpv = "1.0.0"
 chashmap = "2.2.2"
 
 # A generic serialization/deserialization framework
-serde = { version = "1.0.132", features = ["derive"] }
-serde_json = "1.0.73"
+serde = { version = "1.0.136", features = ["derive"] }
+serde_json = "1.0.78"
 
 # Logging
 log = "0.4.14"
@@ -95,7 +95,7 @@ jsonwebtoken = "7.2.0"
 
 # U2F library
 u2f = "0.2.0"
-webauthn-rs = "0.3.1"
+webauthn-rs = "0.3.2"
 
 # Yubico Library
 yubico = { version = "0.10.0", features = ["online-tokio"], default-features = false }
@@ -115,7 +115,7 @@ tracing = { version = "0.1.29", features = ["log"] } # Needed to have lettre tra
 lettre = { version = "0.10.0-rc.4", features = ["smtp-transport", "builder", "serde", "native-tls", "hostname", "tracing"], default-features = false }
 
 # Template library
-handlebars = { version = "4.1.6", features = ["dir_source"] }
+handlebars = { version = "4.2.1", features = ["dir_source"] }
 
 # For favicon extraction from main website
 html5ever = "0.25.1"
@@ -135,11 +135,11 @@ idna = "0.2.3"
 pico-args = "0.4.2"
 
 # Logging panics to logfile instead stderr only
-backtrace = "0.3.63"
+backtrace = "0.3.64"
 
 # Macro ident concatenation
 paste = "1.0.6"
-governor = "0.3.2"
+governor = "0.4.1"
 
 [patch.crates-io]
 # Use newest ring
