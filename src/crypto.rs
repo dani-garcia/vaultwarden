@@ -6,8 +6,6 @@ use std::num::NonZeroU32;
 use data_encoding::HEXLOWER;
 use ring::{digest, hmac, pbkdf2};
 
-use crate::error::Error;
-
 static DIGEST_ALG: pbkdf2::Algorithm = pbkdf2::PBKDF2_HMAC_SHA256;
 const OUTPUT_LEN: usize = digest::SHA256_OUTPUT_LEN;
 
@@ -51,6 +49,34 @@ pub fn get_random(mut array: Vec<u8>) -> Vec<u8> {
     array
 }
 
+/// Generates a random string over a specified alphabet.
+pub fn get_random_string(alphabet: &[u8], num_chars: usize) -> String {
+    // Ref: https://rust-lang-nursery.github.io/rust-cookbook/algorithms/randomness.html
+    use rand::Rng;
+    let mut rng = rand::thread_rng();
+
+    (0..num_chars)
+        .map(|_| {
+            let i = rng.gen_range(0..alphabet.len());
+            alphabet[i] as char
+        })
+        .collect()
+}
+
+/// Generates a random numeric string.
+pub fn get_random_string_numeric(num_chars: usize) -> String {
+    const ALPHABET: &[u8] = b"0123456789";
+    get_random_string(ALPHABET, num_chars)
+}
+
+/// Generates a random alphanumeric string.
+pub fn get_random_string_alphanum(num_chars: usize) -> String {
+    const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ\
+                              abcdefghijklmnopqrstuvwxyz\
+                              0123456789";
+    get_random_string(ALPHABET, num_chars)
+}
+
 pub fn generate_id(num_bytes: usize) -> String {
     HEXLOWER.encode(&get_random(vec![0; num_bytes]))
 }
@@ -65,23 +91,15 @@ pub fn generate_attachment_id() -> String {
     generate_id(10) // 80 bits
 }
 
-pub fn generate_token(token_size: u32) -> Result<String, Error> {
-    // A u64 can represent all whole numbers up to 19 digits long.
-    if token_size > 19 {
-        err!("Token size is limited to 19 digits")
-    }
+/// Generates a numeric token for email-based verifications.
+pub fn generate_email_token(token_size: u8) -> String {
+    get_random_string_numeric(token_size as usize)
+}
 
-    let low: u64 = 0;
-    let high: u64 = 10u64.pow(token_size);
-
-    // Generate a random number in the range [low, high), then format it as a
-    // token of fixed width, left-padding with 0 as needed.
-    use rand::{thread_rng, Rng};
-    let mut rng = thread_rng();
-    let number: u64 = rng.gen_range(low..high);
-    let token = format!("{:0size$}", number, size = token_size as usize);
-
-    Ok(token)
+/// Generates a personal API key.
+/// Upstream uses 30 chars, which is ~178 bits of entropy.
+pub fn generate_api_key() -> String {
+    get_random_string_alphanum(30)
 }
 
 //

@@ -1,7 +1,7 @@
 use once_cell::sync::Lazy;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
-use std::{env, time::Duration};
+use std::env;
 
 use rocket::{
     http::{Cookie, Cookies, SameSite, Status},
@@ -18,8 +18,10 @@ use crate::{
     db::{backup_database, get_sql_server_version, models::*, DbConn, DbConnType},
     error::{Error, MapResult},
     mail,
-    util::{format_naive_datetime_local, get_display_size, get_reqwest_client, is_running_in_docker},
-    CONFIG,
+    util::{
+        docker_base_image, format_naive_datetime_local, get_display_size, get_reqwest_client, is_running_in_docker,
+    },
+    CONFIG, VERSION,
 };
 
 pub fn routes() -> Vec<Route> {
@@ -72,11 +74,10 @@ fn admin_disabled() -> &'static str {
     "The admin panel is disabled, please configure the 'ADMIN_TOKEN' variable to enable it"
 }
 
-const COOKIE_NAME: &str = "BWRS_ADMIN";
+const COOKIE_NAME: &str = "VW_ADMIN";
 const ADMIN_PATH: &str = "/admin";
 
 const BASE_TEMPLATE: &str = "admin/base";
-const VERSION: Option<&str> = option_env!("BWRS_VERSION");
 
 fn admin_path() -> String {
     format!("{}{}", CONFIG.domain_path(), ADMIN_PATH)
@@ -164,6 +165,10 @@ fn post_admin_login(
 ) -> Result<Redirect, Flash<Redirect>> {
     let data = data.into_inner();
 
+    if crate::ratelimit::check_limit_admin(&ip.ip).is_err() {
+        return Err(Flash::error(Redirect::to(admin_url(referer)), "Too many requests, try again later."));
+    }
+
     // If the token is invalid, redirect to login page
     if !_validate_token(&data.token) {
         error!("Invalid admin token. IP: {}", ip.ip);
@@ -234,7 +239,7 @@ impl AdminTemplateData {
 }
 
 #[get("/", rank = 1)]
-fn admin_page(_token: AdminToken, _conn: DbConn) -> ApiResult<Html<String>> {
+fn admin_page(_token: AdminToken) -> ApiResult<Html<String>> {
     let text = AdminTemplateData::new().render()?;
     Ok(Html(text))
 }
@@ -269,7 +274,7 @@ fn invite_user(data: Json<InviteData>, _token: AdminToken, conn: DbConn) -> Json
         if CONFIG.mail_enabled() {
             mail::send_invite(&user.email, &user.uuid, None, None, &CONFIG.invitation_org_name(), None)?;
         } else {
-            let invitation = Invitation::new(data.email);
+            let invitation = Invitation::new(user.email.clone());
             invitation.save(&conn)?;
         }
 
@@ -460,13 +465,13 @@ struct GitCommit {
 fn get_github_api<T: DeserializeOwned>(url: &str) -> Result<T, Error> {
     let github_api = get_reqwest_client();
 
-    Ok(github_api.get(url).timeout(Duration::from_secs(10)).send()?.error_for_status()?.json::<T>()?)
+    Ok(github_api.get(url).send()?.error_for_status()?.json::<T>()?)
 }
 
 fn has_http_access() -> bool {
     let http_access = get_reqwest_client();
 
-    match http_access.head("https://github.com/dani-garcia/vaultwarden").timeout(Duration::from_secs(10)).send() {
+    match http_access.head("https://github.com/dani-garcia/vaultwarden").send() {
         Ok(r) => r.status().is_success(),
         _ => false,
     }
@@ -480,7 +485,7 @@ fn diagnostics(_token: AdminToken, ip_header: IpHeader, conn: DbConn) -> ApiResu
 
     // Get current running versions
     let web_vault_version: WebVaultVersion =
-        match read_file_string(&format!("{}/{}", CONFIG.web_vault_folder(), "bwrs-version.json")) {
+        match read_file_string(&format!("{}/{}", CONFIG.web_vault_folder(), "vw-version.json")) {
             Ok(s) => serde_json::from_str(&s)?,
             _ => match read_file_string(&format!("{}/{}", CONFIG.web_vault_folder(), "version.json")) {
                 Ok(s) => serde_json::from_str(&s)?,
@@ -549,6 +554,7 @@ fn diagnostics(_token: AdminToken, ip_header: IpHeader, conn: DbConn) -> ApiResu
         "web_vault_version": web_vault_version.version,
         "latest_web_build": latest_web_build,
         "running_within_docker": running_within_docker,
+        "docker_base_image": docker_base_image(),
         "has_http_access": has_http_access,
         "ip_header_exists": &ip_header.0.is_some(),
         "ip_header_match": ip_header_name == CONFIG.ip_header(),

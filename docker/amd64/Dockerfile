@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1
+
 # This file was generated using a Jinja2 template.
 # Please make your changes in `Dockerfile.j2` and then `make` the individual Dockerfiles.
 
@@ -14,33 +16,41 @@
 # - From https://hub.docker.com/r/vaultwarden/web-vault/tags,
 #   click the tag name to view the digest of the image it currently points to.
 # - From the command line:
-#     $ docker pull vaultwarden/web-vault:v2.21.1
-#     $ docker image inspect --format "{{.RepoDigests}}" vaultwarden/web-vault:v2.21.1
-#     [vaultwarden/web-vault@sha256:29a4fa7bf3790fff9d908b02ac5a154913491f4bf30c95b87b06d8cf1c5516b5]
+#     $ docker pull vaultwarden/web-vault:v2.25.1b
+#     $ docker image inspect --format "{{.RepoDigests}}" vaultwarden/web-vault:v2.25.1b
+#     [vaultwarden/web-vault@sha256:9b82318d553d72f091e8755f5aff80eed495f90bbe5b0703522953480f5c2fba]
 #
 # - Conversely, to get the tag name from the digest:
-#     $ docker image inspect --format "{{.RepoTags}}" vaultwarden/web-vault@sha256:29a4fa7bf3790fff9d908b02ac5a154913491f4bf30c95b87b06d8cf1c5516b5
-#     [vaultwarden/web-vault:v2.21.1]
+#     $ docker image inspect --format "{{.RepoTags}}" vaultwarden/web-vault@sha256:9b82318d553d72f091e8755f5aff80eed495f90bbe5b0703522953480f5c2fba
+#     [vaultwarden/web-vault:v2.25.1b]
 #
-FROM vaultwarden/web-vault@sha256:29a4fa7bf3790fff9d908b02ac5a154913491f4bf30c95b87b06d8cf1c5516b5 as vault
+FROM vaultwarden/web-vault@sha256:9b82318d553d72f091e8755f5aff80eed495f90bbe5b0703522953480f5c2fba as vault
 
 ########################## BUILD IMAGE  ##########################
-FROM rust:1.54 as build
+FROM rust:1.58-buster as build
 
-# Debian-based builds support multidb
-ARG DB=sqlite,mysql,postgresql
+
 
 # Build time options to avoid dpkg warnings and help with reproducible builds.
-ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8 TZ=UTC TERM=xterm-256color
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8 \
+    TZ=UTC \
+    TERM=xterm-256color \
+    CARGO_HOME="/root/.cargo" \
+    USER="root"
 
-# Don't download rust docs
-RUN rustup set profile minimal
+
+# Create CARGO_HOME folder and don't download rust docs
+RUN mkdir -pv "${CARGO_HOME}" \
+    && rustup set profile minimal
 
 # Install DB packages
-RUN apt-get update && apt-get install -y \
-    --no-install-recommends \
-    libmariadb-dev \
-    libpq-dev \
+RUN apt-get update \
+    && apt-get install -y \
+        --no-install-recommends \
+        libmariadb-dev \
+        libpq-dev \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 # Creates a dummy project used to grab dependencies
@@ -52,6 +62,9 @@ COPY ./Cargo.* ./
 COPY ./rust-toolchain ./rust-toolchain
 COPY ./build.rs ./build.rs
 
+
+# Configure the DB ARG as late as possible to not invalidate the cached layers above
+ARG DB=sqlite,mysql,postgresql
 
 # Builds your dependencies and removes the
 # dummy project, except the target folder
@@ -68,6 +81,7 @@ RUN touch src/main.rs
 
 # Builds again, this time it'll just be
 # your actual source files being built
+# hadolint ignore=DL3059
 RUN cargo build --features ${DB} --release
 
 ######################## RUNTIME IMAGE  ########################
@@ -75,9 +89,9 @@ RUN cargo build --features ${DB} --release
 # because we already have a binary built
 FROM debian:buster-slim
 
-ENV ROCKET_ENV "staging"
-ENV ROCKET_PORT=80
-ENV ROCKET_WORKERS=10
+ENV ROCKET_ENV="staging" \
+    ROCKET_PORT=80 \
+    ROCKET_WORKERS=10
 
 
 # Create data folder and Install needed libraries
@@ -90,6 +104,7 @@ RUN mkdir /data \
     dumb-init \
     libmariadb-dev-compat \
     libpq5 \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 

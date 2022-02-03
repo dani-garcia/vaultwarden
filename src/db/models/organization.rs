@@ -487,7 +487,7 @@ impl UserOrganization {
         }}
     }
 
-    pub fn find_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
+    pub fn find_confirmed_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
         db_run! { conn: {
             users_organizations::table
                 .filter(users_organizations::user_uuid.eq(user_uuid))

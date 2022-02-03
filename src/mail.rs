@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use chrono::{DateTime, Local};
+use chrono::NaiveDateTime;
 use percent_encoding::{percent_encode, NON_ALPHANUMERIC};
 
 use lettre::{
@@ -13,7 +13,10 @@ use lettre::{
 
 use crate::{
     api::EmptyResult,
-    auth::{encode_jwt, generate_delete_claims, generate_invite_claims, generate_verify_email_claims},
+    auth::{
+        encode_jwt, generate_delete_claims, generate_emergency_access_invite_claims, generate_invite_claims,
+        generate_verify_email_claims,
+    },
     error::Error,
     CONFIG,
 };
@@ -192,6 +195,18 @@ pub fn send_2fa_removed_from_org(address: &str, org_name: &str) -> EmptyResult {
     send_email(address, &subject, body_html, body_text)
 }
 
+pub fn send_single_org_removed_from_org(address: &str, org_name: &str) -> EmptyResult {
+    let (subject, body_html, body_text) = get_text(
+        "email/send_single_org_removed_from_org",
+        json!({
+            "url": CONFIG.domain(),
+            "org_name": org_name,
+        }),
+    )?;
+
+    send_email(address, &subject, body_html, body_text)
+}
+
 pub fn send_invite(
     address: &str,
     uuid: &str,
@@ -224,6 +239,136 @@ pub fn send_invite(
     send_email(address, &subject, body_html, body_text)
 }
 
+pub fn send_emergency_access_invite(
+    address: &str,
+    uuid: &str,
+    emer_id: Option<String>,
+    grantor_name: Option<String>,
+    grantor_email: Option<String>,
+) -> EmptyResult {
+    let claims = generate_emergency_access_invite_claims(
+        uuid.to_string(),
+        String::from(address),
+        emer_id.clone(),
+        grantor_name.clone(),
+        grantor_email,
+    );
+
+    let invite_token = encode_jwt(&claims);
+
+    let (subject, body_html, body_text) = get_text(
+        "email/send_emergency_access_invite",
+        json!({
+            "url": CONFIG.domain(),
+            "emer_id": emer_id.unwrap_or_else(|| "_".to_string()),
+            "email": percent_encode(address.as_bytes(), NON_ALPHANUMERIC).to_string(),
+            "grantor_name": grantor_name,
+            "token": invite_token,
+        }),
+    )?;
+
+    send_email(address, &subject, body_html, body_text)
+}
+
+pub fn send_emergency_access_invite_accepted(address: &str, grantee_email: &str) -> EmptyResult {
+    let (subject, body_html, body_text) = get_text(
+        "email/emergency_access_invite_accepted",
+        json!({
+            "url": CONFIG.domain(),
+            "grantee_email": grantee_email,
+        }),
+    )?;
+
+    send_email(address, &subject, body_html, body_text)
+}
+
+pub fn send_emergency_access_invite_confirmed(address: &str, grantor_name: &str) -> EmptyResult {
+    let (subject, body_html, body_text) = get_text(
+        "email/emergency_access_invite_confirmed",
+        json!({
+            "url": CONFIG.domain(),
+            "grantor_name": grantor_name,
+        }),
+    )?;
+
+    send_email(address, &subject, body_html, body_text)
+}
+
+pub fn send_emergency_access_recovery_approved(address: &str, grantor_name: &str) -> EmptyResult {
+    let (subject, body_html, body_text) = get_text(
+        "email/emergency_access_recovery_approved",
+        json!({
+            "url": CONFIG.domain(),
+            "grantor_name": grantor_name,
+        }),
+    )?;
+
+    send_email(address, &subject, body_html, body_text)
+}
+
+pub fn send_emergency_access_recovery_initiated(
+    address: &str,
+    grantee_name: &str,
+    atype: &str,
+    wait_time_days: &str,
+) -> EmptyResult {
+    let (subject, body_html, body_text) = get_text(
+        "email/emergency_access_recovery_initiated",
+        json!({
+            "url": CONFIG.domain(),
+            "grantee_name": grantee_name,
+            "atype": atype,
+            "wait_time_days": wait_time_days,
+        }),
+    )?;
+
+    send_email(address, &subject, body_html, body_text)
+}
+
+pub fn send_emergency_access_recovery_reminder(
+    address: &str,
+    grantee_name: &str,
+    atype: &str,
+    days_left: &str,
+) -> EmptyResult {
+    let (subject, body_html, body_text) = get_text(
+        "email/emergency_access_recovery_reminder",
+        json!({
+            "url": CONFIG.domain(),
+            "grantee_name": grantee_name,
+            "atype": atype,
+            "days_left": days_left,
+        }),
+    )?;
+
+    send_email(address, &subject, body_html, body_text)
+}
+
+pub fn send_emergency_access_recovery_rejected(address: &str, grantor_name: &str) -> EmptyResult {
+    let (subject, body_html, body_text) = get_text(
+        "email/emergency_access_recovery_rejected",
+        json!({
+            "url": CONFIG.domain(),
+            "grantor_name": grantor_name,
+        }),
+    )?;
+
+    send_email(address, &subject, body_html, body_text)
+}
+
+pub fn send_emergency_access_recovery_timed_out(address: &str, grantee_name: &str, atype: &str) -> EmptyResult {
+    let (subject, body_html, body_text) = get_text(
+        "email/emergency_access_recovery_timed_out",
+        json!({
+            "url": CONFIG.domain(),
+            "grantee_name": grantee_name,
+            "atype": atype,
+        }),
+    )?;
+
+    send_email(address, &subject, body_html, body_text)
+}
+
 pub fn send_invite_accepted(new_user_email: &str, address: &str, org_name: &str) -> EmptyResult {
     let (subject, body_html, body_text) = get_text(
         "email/invite_accepted",
@@ -249,7 +394,7 @@ pub fn send_invite_confirmed(address: &str, org_name: &str) -> EmptyResult {
     send_email(address, &subject, body_html, body_text)
 }
 
-pub fn send_new_device_logged_in(address: &str, ip: &str, dt: &DateTime<Local>, device: &str) -> EmptyResult {
+pub fn send_new_device_logged_in(address: &str, ip: &str, dt: &NaiveDateTime, device: &str) -> EmptyResult {
     use crate::util::upcase_first;
     let device = upcase_first(device);
 
@@ -260,7 +405,26 @@ pub fn send_new_device_logged_in(address: &str, ip: &str, dt: &DateTime<Local>, 
             "url": CONFIG.domain(),
             "ip": ip,
             "device": device,
-            "datetime": crate::util::format_datetime_local(dt, fmt),
+            "datetime": crate::util::format_naive_datetime_local(dt, fmt),
+        }),
+    )?;
+
+    send_email(address, &subject, body_html, body_text)
+}
+
+pub fn send_incomplete_2fa_login(address: &str, ip: &str, dt: &NaiveDateTime, device: &str) -> EmptyResult {
+    use crate::util::upcase_first;
+    let device = upcase_first(device);
+
+    let fmt = "%A, %B %_d, %Y at %r %Z";
+    let (subject, body_html, body_text) = get_text(
+        "email/incomplete_2fa_login",
+        json!({
+            "url": CONFIG.domain(),
+            "ip": ip,
+            "device": device,
+            "datetime": crate::util::format_naive_datetime_local(dt, fmt),
+            "time_limit": CONFIG.incomplete_2fa_time_limit(),
         }),
     )?;
 
@@ -340,15 +504,28 @@ fn send_email(address: &str, subject: &str, body_html: String, body_text: String
         // Match some common errors and make them more user friendly
         Err(e) => {
             if e.is_client() {
+                debug!("SMTP Client error: {:#?}", e);
                 err!(format!("SMTP Client error: {}", e));
             } else if e.is_transient() {
-                err!(format!("SMTP 4xx error: {:?}", e));
+                debug!("SMTP 4xx error: {:#?}", e);
+                err!(format!("SMTP 4xx error: {}", e));
             } else if e.is_permanent() {
-                err!(format!("SMTP 5xx error: {:?}", e));
+                debug!("SMTP 5xx error: {:#?}", e);
+                let mut msg = e.to_string();
+                // Add a special check for 535 to add a more descriptive message
+                if msg.contains("(535)") {
+                    msg = format!("{} - Authentication credentials invalid", msg);
+                }
+                err!(format!("SMTP 5xx error: {}", msg));
             } else if e.is_timeout() {
-                err!(format!("SMTP timeout error: {:?}", e));
+                debug!("SMTP timeout error: {:#?}", e);
+                err!(format!("SMTP timeout error: {}", e));
+            } else if e.is_tls() {
+                debug!("SMTP Encryption error: {:#?}", e);
+                err!(format!("SMTP Encryption error: {}", e));
             } else {
-                Err(e.into())
+                debug!("SMTP {:#?}", e);
+                err!(format!("SMTP {}", e));
             }
         }
     }

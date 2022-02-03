@@ -34,6 +34,8 @@ pub fn routes() -> Vec<rocket::Route> {
         password_hint,
         prelogin,
         verify_password,
+        api_key,
+        rotate_api_key,
     ]
 }
 
@@ -49,6 +51,7 @@ struct RegisterData {
     MasterPasswordHint: Option<String>,
     Name: Option<String>,
     Token: Option<String>,
+    #[allow(dead_code)]
     OrganizationUserId: Option<String>,
 }
 
@@ -62,11 +65,12 @@ struct KeysData {
 #[post("/accounts/register", data = "<data>")]
 fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> EmptyResult {
     let data: RegisterData = data.into_inner().data;
+    let email = data.Email.to_lowercase();
 
-    let mut user = match User::find_by_mail(&data.Email, &conn) {
+    let mut user = match User::find_by_mail(&email, &conn) {
         Some(user) => {
             if !user.password_hash.is_empty() {
-                if CONFIG.is_signup_allowed(&data.Email) {
+                if CONFIG.is_signup_allowed(&email) {
                     err!("User already exists")
                 } else {
                     err!("Registration not allowed or user already exists")
@@ -75,19 +79,20 @@ fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> EmptyResult {
 
             if let Some(token) = data.Token {
                 let claims = decode_invite(&token)?;
-                if claims.email == data.Email {
+                if claims.email == email {
                     user
                 } else {
                     err!("Registration email does not match invite email")
                 }
-            } else if Invitation::take(&data.Email, &conn) {
+            } else if Invitation::take(&email, &conn) {
                 for mut user_org in UserOrganization::find_invited_by_user(&user.uuid, &conn).iter_mut() {
                     user_org.status = UserOrgStatus::Accepted as i32;
                     user_org.save(&conn)?;
                 }
-
                 user
-            } else if CONFIG.is_signup_allowed(&data.Email) {
+            } else if EmergencyAccess::find_invited_by_grantee_email(&email, &conn).is_some() {
+                user
+            } else if CONFIG.is_signup_allowed(&email) {
                 err!("Account with this email already exists")
             } else {
                 err!("Registration not allowed or user already exists")
@@ -97,8 +102,8 @@ fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> EmptyResult {
             // Order is important here; the invitation check must come first
             // because the vaultwarden admin can invite anyone, regardless
             // of other signup restrictions.
-            if Invitation::take(&data.Email, &conn) || CONFIG.is_signup_allowed(&data.Email) {
-                User::new(data.Email.clone())
+            if Invitation::take(&email, &conn) || CONFIG.is_signup_allowed(&email) {
+                User::new(email.clone())
             } else {
                 err!("Registration not allowed or user already exists")
             }
@@ -106,7 +111,7 @@ fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> EmptyResult {
     };
 
     // Make sure we don't leave a lingering invitation.
-    Invitation::take(&data.Email, &conn);
+    Invitation::take(&email, &conn);
 
     if let Some(client_kdf_iter) = data.KdfIterations {
         user.client_kdf_iter = client_kdf_iter;
@@ -233,7 +238,7 @@ fn post_password(data: JsonUpcase<ChangePassData>, headers: Headers, conn: DbCon
 
     user.set_password(
         &data.NewMasterPasswordHash,
-        Some(vec![String::from("post_rotatekey"), String::from("get_contacts")]),
+        Some(vec![String::from("post_rotatekey"), String::from("get_contacts"), String::from("get_public_keys")]),
     );
     user.akey = data.Key;
     user.save(&conn)
@@ -376,7 +381,7 @@ fn post_email_token(data: JsonUpcase<EmailTokenData>, headers: Headers, conn: Db
         err!("Email domain not allowed");
     }
 
-    let token = crypto::generate_token(6)?;
+    let token = crypto::generate_email_token(6);
 
     if CONFIG.mail_enabled() {
         if let Err(e) = mail::send_change_email(&data.NewEmail, &token) {
@@ -448,7 +453,7 @@ fn post_email(data: JsonUpcase<ChangeEmailData>, headers: Headers, conn: DbConn)
 }
 
 #[post("/accounts/verify-email")]
-fn post_verify_email(headers: Headers, _conn: DbConn) -> EmptyResult {
+fn post_verify_email(headers: Headers) -> EmptyResult {
     let user = headers.user;
 
     if !CONFIG.mail_enabled() {
@@ -641,15 +646,17 @@ fn prelogin(data: JsonUpcase<PreloginData>, conn: DbConn) -> Json<Value> {
         "KdfIterations": kdf_iter
     }))
 }
+
+// https://github.com/bitwarden/server/blob/master/src/Api/Models/Request/Accounts/SecretVerificationRequestModel.cs
 #[derive(Deserialize)]
 #[allow(non_snake_case)]
-struct VerifyPasswordData {
+struct SecretVerificationRequest {
     MasterPasswordHash: String,
 }
 
 #[post("/accounts/verify-password", data = "<data>")]
-fn verify_password(data: JsonUpcase<VerifyPasswordData>, headers: Headers, _conn: DbConn) -> EmptyResult {
-    let data: VerifyPasswordData = data.into_inner().data;
+fn verify_password(data: JsonUpcase<SecretVerificationRequest>, headers: Headers) -> EmptyResult {
+    let data: SecretVerificationRequest = data.into_inner().data;
     let user = headers.user;
 
     if !user.check_valid_password(&data.MasterPasswordHash) {
@@ -657,4 +664,33 @@ fn verify_password(data: JsonUpcase<VerifyPasswordData>, headers: Headers, _conn
     }
 
     Ok(())
+}
+
+fn _api_key(data: JsonUpcase<SecretVerificationRequest>, rotate: bool, headers: Headers, conn: DbConn) -> JsonResult {
+    let data: SecretVerificationRequest = data.into_inner().data;
+    let mut user = headers.user;
+
+    if !user.check_valid_password(&data.MasterPasswordHash) {
+        err!("Invalid password")
+    }
+
+    if rotate || user.api_key.is_none() {
+        user.api_key = Some(crypto::generate_api_key());
+        user.save(&conn).expect("Error saving API key");
+    }
+
+    Ok(Json(json!({
+      "ApiKey": user.api_key,
+      "Object": "apiKey",
+    })))
+}
+
+#[post("/accounts/api-key", data = "<data>")]
+fn api_key(data: JsonUpcase<SecretVerificationRequest>, headers: Headers, conn: DbConn) -> JsonResult {
+    _api_key(data, false, headers, conn)
+}
+
+#[post("/accounts/rotate-api-key", data = "<data>")]
+fn rotate_api_key(data: JsonUpcase<SecretVerificationRequest>, headers: Headers, conn: DbConn) -> JsonResult {
+    _api_key(data, true, headers, conn)
 }

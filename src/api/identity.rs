@@ -1,4 +1,4 @@
-use chrono::Local;
+use chrono::Utc;
 use num_traits::FromPrimitive;
 use rocket::{
     http::Status,
@@ -53,6 +53,13 @@ fn login(data: Form<ConnectData>, conn: DbConn, ip: ClientIp) -> JsonResult {
 
             _authorization_login(data, conn, &ip)
         }
+        "client_credentials" => {
+            _check_is_some(&data.client_id, "client_id cannot be blank")?;
+            _check_is_some(&data.client_secret, "client_secret cannot be blank")?;
+            _check_is_some(&data.scope, "scope cannot be blank")?;
+
+            _api_key_login(data, conn, &ip)
+        }
         t => err!("Invalid type", t),
     }
 }
@@ -64,13 +71,15 @@ fn _refresh_login(data: ConnectData, conn: DbConn) -> JsonResult {
     // Get device by refresh token
     let mut device = Device::find_by_refresh_token(&token, &conn).map_res("Invalid refresh token")?;
 
-    // COMMON
+    let scope = "api offline_access";
+    let scope_vec = vec!["api".into(), "offline_access".into()];
+
+    // Common
     let user = User::find_by_uuid(&device.user_uuid, &conn).unwrap();
-    let orgs = UserOrganization::find_by_user(&user.uuid, &conn);
-
-    let (access_token, expires_in) = device.refresh_tokens(&user, orgs);
-
+    let orgs = UserOrganization::find_confirmed_by_user(&user.uuid, &conn);
+    let (access_token, expires_in) = device.refresh_tokens(&user, orgs, scope_vec);
     device.save(&conn)?;
+
     Ok(Json(json!({
         "access_token": access_token,
         "expires_in": expires_in,
@@ -82,7 +91,7 @@ fn _refresh_login(data: ConnectData, conn: DbConn) -> JsonResult {
         "Kdf": user.client_kdf_type,
         "KdfIterations": user.client_kdf_iter,
         "ResetMasterPassword": false, // TODO: according to official server seems something like: user.password_hash.is_empty(), but would need testing
-        "scope": "api offline_access",
+        "scope": scope,
         "unofficialServer": true,
     })))
 }
@@ -114,7 +123,7 @@ fn _authorization_login(data: ConnectData, conn: DbConn, ip: &ClientIp) -> JsonR
                 Ok(_) => {
                     let expiry = token.exp;
                     let user_email = token.email;
-                    let now = Local::now();
+                    let now = Utc::now().naive_utc();
 
                     // COMMON
                     let user = User::find_by_mail(&user_email, &conn).unwrap();
@@ -138,7 +147,7 @@ fn _authorization_login(data: ConnectData, conn: DbConn, ip: &ClientIp) -> JsonR
 
                     let mut result = json!({
                         "access_token": access_token,
-                        "expires_in": expiry - now.naive_utc().timestamp(),
+                        "expires_in": expiry - now.timestamp(),
                         "token_type": "Bearer",
                         "refresh_token": refresh_token,
                         "Key": user.akey,
@@ -172,6 +181,10 @@ fn _password_login(data: ConnectData, conn: DbConn, ip: &ClientIp) -> JsonResult
     if scope != "api offline_access" {
         err!("Scope not supported")
     }
+    let scope_vec = vec!["api".into(), "offline_access".into()];
+
+    // Ratelimit the login
+    crate::ratelimit::check_limit_login(&ip.ip)?;
 
     // Get the user
     let username = data.username.as_ref().unwrap();
@@ -200,10 +213,9 @@ fn _password_login(data: ConnectData, conn: DbConn, ip: &ClientIp) -> JsonResult
         err!("Organization policy requires SSO sign in");
     }
 
-    let now = Local::now();
+    let now = Utc::now().naive_utc();
 
     if user.verified_at.is_none() && CONFIG.mail_enabled() && CONFIG.signups_verify() {
-        let now = now.naive_utc();
         if user.last_verifying_at.is_none()
             || now.signed_duration_since(user.last_verifying_at.unwrap()).num_seconds()
                 > CONFIG.signups_verify_resend_time() as i64
@@ -245,9 +257,8 @@ fn _password_login(data: ConnectData, conn: DbConn, ip: &ClientIp) -> JsonResult
     }
 
     // Common
-    let orgs = UserOrganization::find_by_user(&user.uuid, &conn);
-
-    let (access_token, expires_in) = device.refresh_tokens(&user, orgs);
+    let orgs = UserOrganization::find_confirmed_by_user(&user.uuid, &conn);
+    let (access_token, expires_in) = device.refresh_tokens(&user, orgs, scope_vec);
     device.save(&conn)?;
 
     let mut result = json!({
@@ -262,7 +273,7 @@ fn _password_login(data: ConnectData, conn: DbConn, ip: &ClientIp) -> JsonResult
         "Kdf": user.client_kdf_type,
         "KdfIterations": user.client_kdf_iter,
         "ResetMasterPassword": false,// TODO: Same as above
-        "scope": "api offline_access",
+        "scope": scope,
         "unofficialServer": true,
     });
 
@@ -272,6 +283,76 @@ fn _password_login(data: ConnectData, conn: DbConn, ip: &ClientIp) -> JsonResult
 
     info!("User {} logged in successfully. IP: {}", username, ip.ip);
     Ok(Json(result))
+}
+
+fn _api_key_login(data: ConnectData, conn: DbConn, ip: &ClientIp) -> JsonResult {
+    // Validate scope
+    let scope = data.scope.as_ref().unwrap();
+    if scope != "api" {
+        err!("Scope not supported")
+    }
+    let scope_vec = vec!["api".into()];
+
+    // Ratelimit the login
+    crate::ratelimit::check_limit_login(&ip.ip)?;
+
+    // Get the user via the client_id
+    let client_id = data.client_id.as_ref().unwrap();
+    let user_uuid = match client_id.strip_prefix("user.") {
+        Some(uuid) => uuid,
+        None => err!("Malformed client_id", format!("IP: {}.", ip.ip)),
+    };
+    let user = match User::find_by_uuid(user_uuid, &conn) {
+        Some(user) => user,
+        None => err!("Invalid client_id", format!("IP: {}.", ip.ip)),
+    };
+
+    // Check if the user is disabled
+    if !user.enabled {
+        err!("This user has been disabled (API key login)", format!("IP: {}. Username: {}.", ip.ip, user.email))
+    }
+
+    // Check API key. Note that API key logins bypass 2FA.
+    let client_secret = data.client_secret.as_ref().unwrap();
+    if !user.check_valid_api_key(client_secret) {
+        err!("Incorrect client_secret", format!("IP: {}. Username: {}.", ip.ip, user.email))
+    }
+
+    let (mut device, new_device) = get_device(&data, &conn, &user);
+
+    if CONFIG.mail_enabled() && new_device {
+        let now = Utc::now().naive_utc();
+        if let Err(e) = mail::send_new_device_logged_in(&user.email, &ip.ip.to_string(), &now, &device.name) {
+            error!("Error sending new device email: {:#?}", e);
+
+            if CONFIG.require_device_email() {
+                err!("Could not send login notification email. Please contact your administrator.")
+            }
+        }
+    }
+
+    // Common
+    let orgs = UserOrganization::find_confirmed_by_user(&user.uuid, &conn);
+    let (access_token, expires_in) = device.refresh_tokens(&user, orgs, scope_vec);
+    device.save(&conn)?;
+
+    info!("User {} logged in successfully via API key. IP: {}", user.email, ip.ip);
+
+    // Note: No refresh_token is returned. The CLI just repeats the
+    // client_credentials login flow when the existing token expires.
+    Ok(Json(json!({
+        "access_token": access_token,
+        "expires_in": expires_in,
+        "token_type": "Bearer",
+        "Key": user.akey,
+        "PrivateKey": user.private_key,
+
+        "Kdf": user.client_kdf_type,
+        "KdfIterations": user.client_kdf_iter,
+        "ResetMasterPassword": false, // TODO: Same as above
+        "scope": scope,
+        "unofficialServer": true,
+    })))
 }
 
 /// Retrieves an existing device or creates a new device from ConnectData and the User
@@ -317,6 +398,8 @@ fn twofactor_auth(
         return Ok(None);
     }
 
+    TwoFactorIncomplete::mark_incomplete(user_uuid, &device.uuid, &device.name, ip, conn)?;
+
     let twofactor_ids: Vec<_> = twofactors.iter().map(|tf| tf.atype).collect();
     let selected_id = data.two_factor_provider.unwrap_or(twofactor_ids[0]); // If we aren't given a two factor provider, asume the first one
 
@@ -359,6 +442,8 @@ fn twofactor_auth(
         }
         _ => err!("Invalid two factor provider"),
     }
+
+    TwoFactorIncomplete::mark_complete(user_uuid, &device.uuid, conn)?;
 
     if !CONFIG.disable_2fa_remember() && remember == 1 {
         Ok(Some(device.refresh_twofactor_remember()))
@@ -466,17 +551,20 @@ fn _json_err_twofactor(providers: &[i32], user_uuid: &str, conn: &DbConn) -> Api
     Ok(result)
 }
 
+// https://github.com/bitwarden/jslib/blob/master/common/src/models/request/tokenRequest.ts
 // https://github.com/bitwarden/mobile/blob/master/src/Core/Models/Request/TokenRequest.cs
 #[derive(Debug, Clone, Default)]
 #[allow(non_snake_case)]
 struct ConnectData {
-    grant_type: String, // refresh_token, password
+    // refresh_token, password, client_credentials (API key)
+    grant_type: String,
 
     // Needed for grant_type="refresh_token"
     refresh_token: Option<String>,
 
-    // Needed for grant_type="password"
-    client_id: Option<String>, // web, cli, desktop, browser, mobile
+    // Needed for grant_type = "password" | "client_credentials"
+    client_id: Option<String>,     // web, cli, desktop, browser, mobile
+    client_secret: Option<String>, // API key login (cli only)
     password: Option<String>,
     scope: Option<String>,
     username: Option<String>,
@@ -510,6 +598,7 @@ impl<'f> FromForm<'f> for ConnectData {
                 "granttype" => form.grant_type = value,
                 "refreshtoken" => form.refresh_token = Some(value),
                 "clientid" => form.client_id = Some(value),
+                "clientsecret" => form.client_secret = Some(value),
                 "password" => form.password = Some(value),
                 "scope" => form.scope = Some(value),
                 "username" => form.username = Some(value),

@@ -1,6 +1,10 @@
 #![forbid(unsafe_code)]
 #![cfg_attr(feature = "unstable", feature(ip))]
-#![recursion_limit = "512"]
+// The recursion_limit is mainly triggered by the json!() macro.
+// The more key/value pairs there are the more recursion occurs.
+// We want to keep this as low as possible, but not higher then 128.
+// If you go above 128 it will cause rust-analyzer to fail,
+#![recursion_limit = "87"]
 
 extern crate openssl;
 #[macro_use]
@@ -28,6 +32,7 @@ mod crypto;
 #[macro_use]
 mod db;
 mod mail;
+mod ratelimit;
 mod util;
 
 pub use config::CONFIG;
@@ -71,16 +76,18 @@ const HELP: &str = "\
             -v, --version    Prints the app version
 ";
 
+pub const VERSION: Option<&str> = option_env!("VW_VERSION");
+
 fn parse_args() {
-    const NO_VERSION: &str = "(Version info from Git not present)";
     let mut pargs = pico_args::Arguments::from_env();
+    let version = VERSION.unwrap_or("(Version info from Git not present)");
 
     if pargs.contains(["-h", "--help"]) {
-        println!("vaultwarden {}", option_env!("BWRS_VERSION").unwrap_or(NO_VERSION));
+        println!("vaultwarden {}", version);
         print!("{}", HELP);
         exit(0);
     } else if pargs.contains(["-v", "--version"]) {
-        println!("vaultwarden {}", option_env!("BWRS_VERSION").unwrap_or(NO_VERSION));
+        println!("vaultwarden {}", version);
         exit(0);
     }
 }
@@ -89,7 +96,7 @@ fn launch_info() {
     println!("/--------------------------------------------------------------------\\");
     println!("|                        Starting Vaultwarden                        |");
 
-    if let Some(version) = option_env!("BWRS_VERSION") {
+    if let Some(version) = VERSION {
         println!("|{:^68}|", format!("Version {}", version));
     }
 
@@ -104,6 +111,14 @@ fn launch_info() {
 }
 
 fn init_logging(level: log::LevelFilter) -> Result<(), fern::InitError> {
+    // Depending on the main log level we either want to disable or enable logging for trust-dns.
+    // Else if there are timeouts it will clutter the logs since trust-dns uses warn for this.
+    let trust_dns_level = if level >= log::LevelFilter::Debug {
+        level
+    } else {
+        log::LevelFilter::Off
+    };
+
     let mut logger = fern::Dispatch::new()
         .level(level)
         // Hide unknown certificate errors if using self-signed
@@ -122,6 +137,8 @@ fn init_logging(level: log::LevelFilter) -> Result<(), fern::InitError> {
         .level_for("hyper::client", log::LevelFilter::Off)
         // Prevent cookie_store logs
         .level_for("cookie_store", log::LevelFilter::Off)
+        // Variable level for trust-dns used by reqwest
+        .level_for("trust_dns_proto", trust_dns_level)
         .chain(std::io::stdout());
 
     // Enable smtp debug logging only specifically for smtp when need.
@@ -345,11 +362,40 @@ fn schedule_jobs(pool: db::DbPool) {
                 }));
             }
 
+            // Send email notifications about incomplete 2FA logins, which potentially
+            // indicates that a user's master password has been compromised.
+            if !CONFIG.incomplete_2fa_schedule().is_empty() {
+                sched.add(Job::new(CONFIG.incomplete_2fa_schedule().parse().unwrap(), || {
+                    api::send_incomplete_2fa_notifications(pool.clone());
+                }));
+            }
+
+            // Grant emergency access requests that have met the required wait time.
+            // This job should run before the emergency access reminders job to avoid
+            // sending reminders for requests that are about to be granted anyway.
+            if !CONFIG.emergency_request_timeout_schedule().is_empty() {
+                sched.add(Job::new(CONFIG.emergency_request_timeout_schedule().parse().unwrap(), || {
+                    api::emergency_request_timeout_job(pool.clone());
+                }));
+            }
+
+            // Send reminders to emergency access grantors that there are pending
+            // emergency access requests.
+            if !CONFIG.emergency_notification_reminder_schedule().is_empty() {
+                sched.add(Job::new(CONFIG.emergency_notification_reminder_schedule().parse().unwrap(), || {
+                    api::emergency_notification_reminder_job(pool.clone());
+                }));
+            }
+
             // Periodically check for jobs to run. We probably won't need any
             // jobs that run more often than once a minute, so a default poll
             // interval of 30 seconds should be sufficient. Users who want to
             // schedule jobs to run more frequently for some reason can reduce
             // the poll interval accordingly.
+            //
+            // Note that the scheduler checks jobs in the order in which they
+            // were added, so if two jobs are both eligible to run at a given
+            // tick, the one that was added earlier will run first.
             loop {
                 sched.tick();
                 thread::sleep(Duration::from_millis(CONFIG.job_poll_interval_ms()));

@@ -10,7 +10,11 @@ use std::{
 use once_cell::sync::Lazy;
 use regex::Regex;
 use reqwest::{blocking::Client, blocking::Response, header};
-use rocket::{http::ContentType, response::Content, Route};
+use rocket::{
+    http::ContentType,
+    response::{Content, Redirect},
+    Route,
+};
 
 use crate::{
     error::Error,
@@ -19,7 +23,13 @@ use crate::{
 };
 
 pub fn routes() -> Vec<Route> {
-    routes![icon]
+    match CONFIG.icon_service().as_str() {
+        "internal" => routes![icon_internal],
+        "bitwarden" => routes![icon_bitwarden],
+        "duckduckgo" => routes![icon_duckduckgo],
+        "google" => routes![icon_google],
+        _ => routes![icon_custom],
+    }
 }
 
 static CLIENT: Lazy<Client> = Lazy::new(|| {
@@ -50,8 +60,51 @@ static ICON_SIZE_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?x)(\d+)\D*(\d+
 // Special HashMap which holds the user defined Regex to speedup matching the regex.
 static ICON_BLACKLIST_REGEX: Lazy<RwLock<HashMap<String, Regex>>> = Lazy::new(|| RwLock::new(HashMap::new()));
 
+fn icon_redirect(domain: &str, template: &str) -> Option<Redirect> {
+    if !is_valid_domain(domain) {
+        warn!("Invalid domain: {}", domain);
+        return None;
+    }
+
+    if is_domain_blacklisted(domain) {
+        return None;
+    }
+
+    let url = template.replace("{}", domain);
+    match CONFIG.icon_redirect_code() {
+        301 => Some(Redirect::moved(url)), // legacy permanent redirect
+        302 => Some(Redirect::found(url)), // legacy temporary redirect
+        307 => Some(Redirect::temporary(url)),
+        308 => Some(Redirect::permanent(url)),
+        _ => {
+            error!("Unexpected redirect code {}", CONFIG.icon_redirect_code());
+            None
+        }
+    }
+}
+
 #[get("/<domain>/icon.png")]
-fn icon(domain: String) -> Cached<Content<Vec<u8>>> {
+fn icon_custom(domain: String) -> Option<Redirect> {
+    icon_redirect(&domain, &CONFIG.icon_service())
+}
+
+#[get("/<domain>/icon.png")]
+fn icon_bitwarden(domain: String) -> Option<Redirect> {
+    icon_redirect(&domain, "https://icons.bitwarden.net/{}/icon.png")
+}
+
+#[get("/<domain>/icon.png")]
+fn icon_duckduckgo(domain: String) -> Option<Redirect> {
+    icon_redirect(&domain, "https://icons.duckduckgo.com/ip3/{}.ico")
+}
+
+#[get("/<domain>/icon.png")]
+fn icon_google(domain: String) -> Option<Redirect> {
+    icon_redirect(&domain, "https://www.google.com/s2/favicons?domain={}&sz=32")
+}
+
+#[get("/<domain>/icon.png")]
+fn icon_internal(domain: String) -> Cached<Content<Vec<u8>>> {
     const FALLBACK_ICON: &[u8] = include_bytes!("../static/images/fallback-icon.png");
 
     if !is_valid_domain(&domain) {
@@ -59,14 +112,19 @@ fn icon(domain: String) -> Cached<Content<Vec<u8>>> {
         return Cached::ttl(
             Content(ContentType::new("image", "png"), FALLBACK_ICON.to_vec()),
             CONFIG.icon_cache_negttl(),
+            true,
         );
     }
 
     match get_icon(&domain) {
         Some((icon, icon_type)) => {
-            Cached::ttl(Content(ContentType::new("image", icon_type), icon), CONFIG.icon_cache_ttl())
+            Cached::ttl(Content(ContentType::new("image", icon_type), icon), CONFIG.icon_cache_ttl(), true)
         }
-        _ => Cached::ttl(Content(ContentType::new("image", "png"), FALLBACK_ICON.to_vec()), CONFIG.icon_cache_negttl()),
+        _ => Cached::ttl(
+            Content(ContentType::new("image", "png"), FALLBACK_ICON.to_vec()),
+            CONFIG.icon_cache_negttl(),
+            true,
+        ),
     }
 }
 
@@ -250,7 +308,7 @@ fn is_domain_blacklisted(domain: &str) -> bool {
 
             // Use the pre-generate Regex stored in a Lazy HashMap.
             if regex.is_match(domain) {
-                warn!("Blacklisted domain: {:#?} matched {:#?}", domain, blacklist);
+                debug!("Blacklisted domain: {} matched ICON_BLACKLIST_REGEX", domain);
                 is_blacklisted = true;
             }
         }
@@ -286,7 +344,7 @@ fn get_icon(domain: &str) -> Option<(Vec<u8>, String)> {
             Some((icon, icon_type.unwrap_or("x-icon").to_string()))
         }
         Err(e) => {
-            error!("Error downloading icon: {:?}", e);
+            warn!("Unable to download icon: {:?}", e);
             let miss_indicator = path + ".miss";
             save_icon(&miss_indicator, &[]);
             None
@@ -555,7 +613,7 @@ fn get_page(url: &str) -> Result<Response, Error> {
 
 fn get_page_with_referer(url: &str, referer: &str) -> Result<Response, Error> {
     if is_domain_blacklisted(url::Url::parse(url).unwrap().host_str().unwrap_or_default()) {
-        err!("Favicon rel linked to a blacklisted domain!");
+        warn!("Favicon '{}' resolves to a blacklisted domain or IP!", url);
     }
 
     let mut client = CLIENT.get(url);
@@ -563,7 +621,10 @@ fn get_page_with_referer(url: &str, referer: &str) -> Result<Response, Error> {
         client = client.header("Referer", referer)
     }
 
-    client.send()?.error_for_status().map_err(Into::into)
+    match client.send() {
+        Ok(c) => c.error_for_status().map_err(Into::into),
+        Err(e) => err_silent!(format!("{}", e)),
+    }
 }
 
 /// Returns a Integer with the priority of the type of the icon which to prefer.
@@ -647,7 +708,7 @@ fn parse_sizes(sizes: Option<&str>) -> (u16, u16) {
 
 fn download_icon(domain: &str) -> Result<(Vec<u8>, Option<&str>), Error> {
     if is_domain_blacklisted(domain) {
-        err!("Domain is blacklisted", domain)
+        err_silent!("Domain is blacklisted", domain)
     }
 
     let icon_result = get_icon_url(domain)?;
@@ -676,7 +737,7 @@ fn download_icon(domain: &str) -> Result<(Vec<u8>, Option<&str>), Error> {
                         break;
                     }
                 }
-                _ => warn!("Extracted icon from data:image uri is invalid"),
+                _ => debug!("Extracted icon from data:image uri is invalid"),
             };
         } else {
             match get_page_with_referer(&icon.href, &icon_result.referer) {
@@ -692,13 +753,13 @@ fn download_icon(domain: &str) -> Result<(Vec<u8>, Option<&str>), Error> {
                     info!("Downloaded icon from {}", icon.href);
                     break;
                 }
-                _ => warn!("Download failed for {}", icon.href),
+                Err(e) => debug!("{:?}", e),
             };
         }
     }
 
     if buffer.is_empty() {
-        err!("Empty response downloading icon")
+        err_silent!("Empty response or unable find a valid icon", domain);
     }
 
     Ok((buffer, icon_type))
@@ -710,10 +771,10 @@ fn save_icon(path: &str, icon: &[u8]) {
             f.write_all(icon).expect("Error writing icon file");
         }
         Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => {
-            create_dir_all(&CONFIG.icon_cache_folder()).expect("Error creating icon cache");
+            create_dir_all(&CONFIG.icon_cache_folder()).expect("Error creating icon cache folder");
         }
         Err(e) => {
-            warn!("Icon save error: {:?}", e);
+            warn!("Unable to save icon: {:?}", e);
         }
     }
 }

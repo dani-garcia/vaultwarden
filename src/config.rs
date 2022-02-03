@@ -2,7 +2,6 @@ use std::process::exit;
 use std::sync::RwLock;
 
 use once_cell::sync::Lazy;
-use regex::Regex;
 use reqwest::Url;
 
 use crate::{
@@ -22,21 +21,6 @@ pub static CONFIG: Lazy<Config> = Lazy::new(|| {
         exit(12)
     })
 });
-
-static PRIVACY_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"[\w]").unwrap());
-const PRIVACY_CONFIG: &[&str] = &[
-    "allowed_iframe_ancestors",
-    "database_url",
-    "domain_origin",
-    "domain_path",
-    "domain",
-    "helo_name",
-    "org_creation_users",
-    "signups_domains_whitelist",
-    "smtp_from",
-    "smtp_host",
-    "smtp_username",
-];
 
 pub type Pass = String;
 
@@ -61,7 +45,7 @@ macro_rules! make_config {
             _overrides: Vec<String>,
         }
 
-        #[derive(Debug, Clone, Default, Deserialize, Serialize)]
+        #[derive(Clone, Default, Deserialize, Serialize)]
         pub struct ConfigBuilder {
             $($(
                 #[serde(skip_serializing_if = "Option::is_none")]
@@ -133,19 +117,6 @@ macro_rules! make_config {
                 builder
             }
 
-            /// Returns a new builder with all the elements from self,
-            /// except those that are equal in both sides
-            fn _remove(&self, other: &Self) -> Self {
-                let mut builder = ConfigBuilder::default();
-                $($(
-                    if &self.$name != &other.$name {
-                        builder.$name = self.$name.clone();
-                    }
-
-                )+)+
-                builder
-            }
-
             fn build(&self) -> ConfigItems {
                 let mut config = ConfigItems::default();
                 let _domain_set = self.domain.is_some();
@@ -161,12 +132,13 @@ macro_rules! make_config {
             }
         }
 
-        #[derive(Debug, Clone, Default)]
-        pub struct ConfigItems { $($(pub $name: make_config!{@type $ty, $none_action}, )+)+ }
+        #[derive(Clone, Default)]
+        struct ConfigItems { $($( $name: make_config!{@type $ty, $none_action}, )+)+ }
 
         #[allow(unused)]
         impl Config {
             $($(
+                $(#[doc = $doc])+
                 pub fn $name(&self) -> make_config!{@type $ty, $none_action} {
                     self.inner.read().unwrap().config.$name.clone()
                 }
@@ -189,38 +161,91 @@ macro_rules! make_config {
 
                 fn _get_doc(doc: &str) -> serde_json::Value {
                     let mut split = doc.split("|>").map(str::trim);
-                    json!({
-                        "name": split.next(),
-                        "description": split.next()
+
+                    // We do not use the json!() macro here since that causes a lot of macro recursion.
+                    // This slows down compile time and it also causes issues with rust-analyzer
+                    serde_json::Value::Object({
+                        let mut doc_json = serde_json::Map::new();
+                        doc_json.insert("name".into(), serde_json::to_value(split.next()).unwrap());
+                        doc_json.insert("description".into(), serde_json::to_value(split.next()).unwrap());
+                        doc_json
                     })
                 }
 
-                json!([ $({
-                    "group": stringify!($group),
-                    "grouptoggle": stringify!($($group_enabled)?),
-                    "groupdoc": make_config!{ @show $($groupdoc)? },
-                    "elements": [
-                    $( {
-                        "editable": $editable,
-                        "name": stringify!($name),
-                        "value": cfg.$name,
-                        "default": def.$name,
-                        "type":  _get_form_type(stringify!($ty)),
-                        "doc": _get_doc(concat!($($doc),+)),
-                        "overridden": overriden.contains(&stringify!($name).to_uppercase()),
-                    }, )+
-                    ]}, )+ ])
+                // We do not use the json!() macro here since that causes a lot of macro recursion.
+                // This slows down compile time and it also causes issues with rust-analyzer
+                serde_json::Value::Array(<[_]>::into_vec(Box::new([
+                $(
+                    serde_json::Value::Object({
+                        let mut group = serde_json::Map::new();
+                        group.insert("group".into(), (stringify!($group)).into());
+                        group.insert("grouptoggle".into(), (stringify!($($group_enabled)?)).into());
+                        group.insert("groupdoc".into(), (make_config!{ @show $($groupdoc)? }).into());
+
+                        group.insert("elements".into(), serde_json::Value::Array(<[_]>::into_vec(Box::new([
+                        $(
+                            serde_json::Value::Object({
+                                let mut element = serde_json::Map::new();
+                                element.insert("editable".into(), ($editable).into());
+                                element.insert("name".into(), (stringify!($name)).into());
+                                element.insert("value".into(), serde_json::to_value(cfg.$name).unwrap());
+                                element.insert("default".into(), serde_json::to_value(def.$name).unwrap());
+                                element.insert("type".into(), (_get_form_type(stringify!($ty))).into());
+                                element.insert("doc".into(), (_get_doc(concat!($($doc),+))).into());
+                                element.insert("overridden".into(), (overriden.contains(&stringify!($name).to_uppercase())).into());
+                                element
+                            }),
+                        )+
+                        ]))));
+                        group
+                    }),
+                )+
+                ])))
             }
 
             pub fn get_support_json(&self) -> serde_json::Value {
+                // Define which config keys need to be masked.
+                // Pass types will always be masked and no need to put them in the list.
+                // Besides Pass, only String types will be masked via _privacy_mask.
+                const PRIVACY_CONFIG: &[&str] = &[
+                    "allowed_iframe_ancestors",
+                    "database_url",
+                    "domain_origin",
+                    "domain_path",
+                    "domain",
+                    "helo_name",
+                    "org_creation_users",
+                    "signups_domains_whitelist",
+                    "smtp_from",
+                    "smtp_host",
+                    "smtp_username",
+                ];
+
                 let cfg = {
                     let inner = &self.inner.read().unwrap();
                     inner.config.clone()
                 };
 
-                json!({ $($(
-                    stringify!($name): make_config!{ @supportstr $name, cfg.$name, $ty, $none_action },
-                )+)+ })
+                /// We map over the string and remove all alphanumeric, _ and - characters.
+                /// This is the fastest way (within micro-seconds) instead of using a regex (which takes mili-seconds)
+                fn _privacy_mask(value: &str) -> String {
+                    value.chars().map(|c|
+                        match c {
+                            c if c.is_alphanumeric() => '*',
+                            '_' => '*',
+                            '-' => '*',
+                            _ => c
+                        }
+                    ).collect::<String>()
+                }
+
+                serde_json::Value::Object({
+                    let mut json = serde_json::Map::new();
+                    $($(
+                        json.insert(stringify!($name).into(), make_config!{ @supportstr $name, cfg.$name, $ty, $none_action });
+                    )+)+;
+                    json
+                })
             }
 
             pub fn get_overrides(&self) -> Vec<String> {
@@ -228,29 +253,30 @@ macro_rules! make_config {
                     let inner = &self.inner.read().unwrap();
                     inner._overrides.clone()
                 };
-
                 overrides
             }
         }
     };
 
     // Support string print
-    ( @supportstr $name:ident, $value:expr, Pass, option ) => { $value.as_ref().map(|_| String::from("***")) }; // Optional pass, we map to an Option<String> with "***"
-    ( @supportstr $name:ident, $value:expr, Pass, $none_action:ident ) => { String::from("***") }; // Required pass, we return "***"
-    ( @supportstr $name:ident, $value:expr, $ty:ty, option ) => { // Optional other value, we return as is or convert to string to apply the privacy config
+    ( @supportstr $name:ident, $value:expr, Pass, option ) => { serde_json::to_value($value.as_ref().map(|_| String::from("***"))).unwrap() }; // Optional pass, we map to an Option<String> with "***"
+    ( @supportstr $name:ident, $value:expr, Pass, $none_action:ident ) => { "***".into() }; // Required pass, we return "***"
+    ( @supportstr $name:ident, $value:expr, String, option ) => { // Optional other value, we return as is or convert to string to apply the privacy config
         if PRIVACY_CONFIG.contains(&stringify!($name)) {
-            json!($value.as_ref().map(|x| PRIVACY_REGEX.replace_all(&x.to_string(), "${1}*").to_string()))
+            serde_json::to_value($value.as_ref().map(|x| _privacy_mask(x) )).unwrap()
         } else {
-            json!($value)
+            serde_json::to_value($value).unwrap()
         }
     };
-    ( @supportstr $name:ident, $value:expr, $ty:ty, $none_action:ident ) => { // Required other value, we return as is or convert to string to apply the privacy config
+    ( @supportstr $name:ident, $value:expr, String, $none_action:ident ) => { // Required other value, we return as is or convert to string to apply the privacy config
         if PRIVACY_CONFIG.contains(&stringify!($name)) {
-             json!(PRIVACY_REGEX.replace_all(&$value.to_string(), "${1}*").to_string())
-         } else {
-             json!($value)
-         }
+            _privacy_mask(&$value).into()
+        } else {
+            ($value).into()
+        }
     };
+    ( @supportstr $name:ident, $value:expr, $ty:ty, option ) => { serde_json::to_value($value).unwrap() }; // Optional other value, we return as is or convert to string to apply the privacy config
+    ( @supportstr $name:ident, $value:expr, $ty:ty, $none_action:ident ) => { ($value).into() }; // Required other value, we return as is or convert to string to apply the privacy config
 
     // Group or empty string
     ( @show ) => { "" };
@@ -300,8 +326,6 @@ make_config! {
         data_folder:            String, false,  def,    "data".to_string();
         /// Database URL
         database_url:           String, false,  auto,   |c| format!("{}/{}", c.data_folder, "db.sqlite3");
-        /// Database connection pool size
-        database_max_conns:     u32,    false,  def,    10;
         /// Icon cache folder
         icon_cache_folder:      String, false,  auto,   |c| format!("{}/{}", c.data_folder, "icon_cache");
         /// Attachments folder
@@ -333,6 +357,15 @@ make_config! {
         /// Trash purge schedule |> Cron schedule of the job that checks for trashed items to delete permanently.
         /// Defaults to daily. Set blank to disable this job.
         trash_purge_schedule:   String, false,  def,    "0 5 0 * * *".to_string();
+        /// Incomplete 2FA login schedule |> Cron schedule of the job that checks for incomplete 2FA logins.
+        /// Defaults to once every minute. Set blank to disable this job.
+        incomplete_2fa_schedule: String, false,  def,   "30 * * * * *".to_string();
+        /// Emergency notification reminder schedule |> Cron schedule of the job that sends expiration reminders to emergency access grantors.
+        /// Defaults to hourly. Set blank to disable this job.
+        emergency_notification_reminder_schedule:   String, false,  def,    "0 5 * * * *".to_string();
+        /// Emergency request timeout schedule |> Cron schedule of the job that grants emergency access requests that have met the required wait time.
+        /// Defaults to hourly. Set blank to disable this job.
+        emergency_request_timeout_schedule:   String, false,  def,    "0 5 * * * *".to_string();
     },
 
     /// General settings
@@ -366,9 +399,17 @@ make_config! {
         /// sure to inform all users of any changes to this setting.
         trash_auto_delete_days: i64,    true,   option;
 
-        /// Disable icon downloads |> Set to true to disable icon downloading, this would still serve icons from
-        /// $ICON_CACHE_FOLDER, but it won't produce any external network request. Needs to set $ICON_CACHE_TTL to 0,
-        /// otherwise it will delete them and they won't be downloaded again.
+        /// Incomplete 2FA time limit |> Number of minutes to wait before a 2FA-enabled login is
+        /// considered incomplete, resulting in an email notification. An incomplete 2FA login is one
+        /// where the correct master password was provided but the required 2FA step was not completed,
+        /// which potentially indicates a master password compromise. Set to 0 to disable this check.
+        /// This setting applies globally to all users.
+        incomplete_2fa_time_limit: i64, true,   def,    3;
+
+        /// Disable icon downloads |> Set to true to disable icon downloading in the internal icon service.
+        /// This still serves existing icons from $ICON_CACHE_FOLDER, without generating any external
+        /// network requests. $ICON_CACHE_TTL must also be set to 0; otherwise, the existing icons
+        /// will be deleted eventually, but won't be downloaded again.
         disable_icon_download:  bool,   true,   def,    false;
         /// Allow new signups |> Controls whether new users can register. Users can be invited by the vaultwarden admin even if this is disabled
         signups_allowed:        bool,   true,   def,    true;
@@ -385,6 +426,8 @@ make_config! {
         org_creation_users:     String, true,   def,    "".to_string();
         /// Allow invitations |> Controls whether users can be invited by organization admins, even when signups are otherwise disabled
         invitations_allowed:    bool,   true,   def,    true;
+        /// Allow emergency access |> Controls whether users can enable emergency access to their accounts. This setting applies globally to all users.
+        emergency_access_allowed:    bool,   true,   def,    true;
         /// Password iterations |> Number of server-side passwords hashing iterations.
         /// The changes only apply when a user changes their password. Not recommended to lower the value
         password_iterations:    i32,    true,   def,    100_000;
@@ -407,6 +450,19 @@ make_config! {
         ip_header:              String, true,   def,    "X-Real-IP".to_string();
         /// Internal IP header property, used to avoid recomputing each time
         _ip_header_enabled:     bool,   false,  gen,    |c| &c.ip_header.trim().to_lowercase() != "none";
+        /// Icon service |> The predefined icon services are: internal, bitwarden, duckduckgo, google.
+        /// To specify a custom icon service, set a URL template with exactly one instance of `{}`,
+        /// which is replaced with the domain. For example: `https://icon.example.com/domain/{}`.
+        /// `internal` refers to Vaultwarden's built-in icon fetching implementation. If an external
+        /// service is set, an icon request to Vaultwarden will return an HTTP redirect to the
+        /// corresponding icon at the external service.
+        icon_service:           String, false,  def,    "internal".to_string();
+        /// Icon redirect code |> The HTTP status code to use for redirects to an external icon service.
+        /// The supported codes are 301 (legacy permanent), 302 (legacy temporary), 307 (temporary), and 308 (permanent).
+        /// Temporary redirects are useful while testing different icon services, but once a service
+        /// has been decided on, consider using permanent redirects for cacheability. The legacy codes
+        /// are currently better supported by the Bitwarden clients.
+        icon_redirect_code:     u32,    true,   def,    302;
         /// Positive icon cache expiry |> Number of seconds to consider that an already cached icon is fresh. After this period, the icon will be redownloaded
         icon_cache_ttl:         u64,    true,   def,    2_592_000;
         /// Negative icon cache expiry |> Number of seconds before trying to download an icon that failed again.
@@ -453,11 +509,24 @@ make_config! {
         /// Max database connection retries |> Number of times to retry the database connection during startup, with 1 second between each retry, set to 0 to retry indefinitely
         db_connection_retries:  u32,    false,  def,    15;
 
+        /// Database connection pool size
+        database_max_conns:     u32,    false,  def,    10;
+
         /// Bypass admin page security (Know the risks!) |> Disables the Admin Token for the admin page so you may use your own auth in-front
         disable_admin_token:    bool,   true,   def,    false;
 
         /// Allowed iframe ancestors (Know the risks!) |> Allows other domains to embed the web vault into an iframe, useful for embedding into secure intranets
         allowed_iframe_ancestors: String, true, def,    String::new();
+
+        /// Seconds between login requests |> Number of seconds, on average, between login and 2FA requests from the same IP address before rate limiting kicks in
+        login_ratelimit_seconds:       u64, false, def, 60;
+        /// Max burst size for login requests |> Allow a burst of requests of up to this size, while maintaining the average indicated by `login_ratelimit_seconds`. Note that this applies to both the login and the 2FA, so it's recommended to allow a burst size of at least 2
+        login_ratelimit_max_burst:     u32, false, def, 10;
+
+        /// Seconds between admin requests |> Number of seconds, on average, between admin requests from the same IP address before rate limiting kicks in
+        admin_ratelimit_seconds:       u64, false, def, 300;
+        /// Max burst size for login requests |> Allow a burst of requests of up to this size, while maintaining the average indicated by `admin_ratelimit_seconds`
+        admin_ratelimit_max_burst:     u32, false, def, 3;
     },
 
     /// Yubikey settings
@@ -524,8 +593,8 @@ make_config! {
     email_2fa: _enable_email_2fa {
         /// Enabled |> Disabling will prevent users from setting up new email 2FA and using existing email 2FA configured
         _enable_email_2fa:      bool,   true,   auto,    |c| c._enable_smtp && c.smtp_host.is_some();
-        /// Email token size |> Number of digits in an email token (min: 6, max: 19). Note that the Bitwarden clients are hardcoded to mention 6 digit codes regardless of this setting.
-        email_token_size:       u32,    true,   def,      6;
+        /// Email token size |> Number of digits in an email 2FA token (min: 6, max: 255). Note that the Bitwarden clients are hardcoded to mention 6 digit codes regardless of this setting.
+        email_token_size:       u8,     true,   def,      6;
         /// Token expiration time |> Maximum time in seconds a token is valid. The time the user has to open email client and copy token.
         email_expiration_time:  u64,    true,   def,      600;
         /// Maximum attempts |> Maximum attempts before an email token is reset and a new email will need to be sent
@@ -599,19 +668,37 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         if cfg._enable_email_2fa && cfg.email_token_size < 6 {
             err!("`EMAIL_TOKEN_SIZE` has a minimum size of 6")
         }
-
-        if cfg._enable_email_2fa && cfg.email_token_size > 19 {
-            err!("`EMAIL_TOKEN_SIZE` has a maximum size of 19")
-        }
     }
 
     // Check if the icon blacklist regex is valid
     if let Some(ref r) = cfg.icon_blacklist_regex {
-        let validate_regex = Regex::new(r);
+        let validate_regex = regex::Regex::new(r);
         match validate_regex {
             Ok(_) => (),
             Err(e) => err!(format!("`ICON_BLACKLIST_REGEX` is invalid: {:#?}", e)),
         }
+    }
+
+    // Check if the icon service is valid
+    let icon_service = cfg.icon_service.as_str();
+    match icon_service {
+        "internal" | "bitwarden" | "duckduckgo" | "google" => (),
+        _ => {
+            if !icon_service.starts_with("http") {
+                err!(format!("Icon service URL `{}` must start with \"http\"", icon_service))
+            }
+            match icon_service.matches("{}").count() {
+                1 => (), // nominal
+                0 => err!(format!("Icon service URL `{}` has no placeholder \"{{}}\"", icon_service)),
+                _ => err!(format!("Icon service URL `{}` has more than one placeholder \"{{}}\"", icon_service)),
+            }
+        }
+    }
+
+    // Check if the icon redirect code is valid
+    match cfg.icon_redirect_code {
+        301 | 302 | 307 | 308 => (),
+        _ => err!("Only HTTP 301/302 and 307/308 redirects are supported"),
     }
 
     Ok(())
@@ -699,7 +786,7 @@ impl Config {
         Ok(())
     }
 
-    pub fn update_config_partial(&self, other: ConfigBuilder) -> Result<(), Error> {
+    fn update_config_partial(&self, other: ConfigBuilder) -> Result<(), Error> {
         let builder = {
             let usr = &self.inner.read().unwrap()._usr;
             let mut _overrides = Vec::new();
@@ -853,13 +940,23 @@ where
 
     reg!("email/change_email", ".html");
     reg!("email/delete_account", ".html");
+    reg!("email/emergency_access_invite_accepted", ".html");
+    reg!("email/emergency_access_invite_confirmed", ".html");
+    reg!("email/emergency_access_recovery_approved", ".html");
+    reg!("email/emergency_access_recovery_initiated", ".html");
+    reg!("email/emergency_access_recovery_rejected", ".html");
+    reg!("email/emergency_access_recovery_reminder", ".html");
+    reg!("email/emergency_access_recovery_timed_out", ".html");
+    reg!("email/incomplete_2fa_login", ".html");
     reg!("email/invite_accepted", ".html");
     reg!("email/invite_confirmed", ".html");
     reg!("email/new_device_logged_in", ".html");
     reg!("email/pw_hint_none", ".html");
     reg!("email/pw_hint_some", ".html");
     reg!("email/send_2fa_removed_from_org", ".html");
+    reg!("email/send_single_org_removed_from_org", ".html");
     reg!("email/send_org_invite", ".html");
+    reg!("email/send_emergency_access_invite", ".html");
     reg!("email/twofactor_email", ".html");
     reg!("email/verify_email", ".html");
     reg!("email/welcome", ".html");

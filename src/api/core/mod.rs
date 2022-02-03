@@ -7,7 +7,9 @@ mod sends;
 pub mod two_factor;
 
 pub use ciphers::purge_trashed_ciphers;
+pub use emergency_access::{emergency_notification_reminder_job, emergency_request_timeout_job};
 pub use sends::purge_sends;
+pub use two_factor::send_incomplete_2fa_notifications;
 
 pub fn routes() -> Vec<Route> {
     let mut mod_routes =
@@ -168,7 +170,7 @@ fn hibp_breach(username: String) -> JsonResult {
             "BreachDate": "2019-08-18T00:00:00Z",
             "AddedDate": "2019-08-18T00:00:00Z",
             "Description": format!("Go to: <a href=\"https://haveibeenpwned.com/account/{account}\" target=\"_blank\" rel=\"noreferrer\">https://haveibeenpwned.com/account/{account}</a> for a manual check.<br/><br/>HaveIBeenPwned API key not set!<br/>Go to <a href=\"https://haveibeenpwned.com/API/Key\" target=\"_blank\" rel=\"noreferrer\">https://haveibeenpwned.com/API/Key</a> to purchase an API key from HaveIBeenPwned.<br/><br/>", account=username),
-            "LogoPath": "bwrs_static/hibp.png",
+            "LogoPath": "vw_static/hibp.png",
             "PwnCount": 0,
             "DataClasses": [
                 "Error - No API key set!"

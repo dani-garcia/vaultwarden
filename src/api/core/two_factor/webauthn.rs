@@ -1,6 +1,7 @@
 use rocket::Route;
 use rocket_contrib::json::Json;
 use serde_json::Value;
+use url::Url;
 use webauthn_rs::{base64_data::Base64UrlSafeData, proto::*, AuthenticationState, RegistrationState, Webauthn};
 
 use crate::{
@@ -22,19 +23,18 @@ pub fn routes() -> Vec<Route> {
 
 struct WebauthnConfig {
     url: String,
+    origin: Url,
     rpid: String,
 }
 
 impl WebauthnConfig {
     fn load() -> Webauthn<Self> {
         let domain = CONFIG.domain();
+        let domain_origin = CONFIG.domain_origin();
         Webauthn::new(Self {
-            rpid: reqwest::Url::parse(&domain)
-                .map(|u| u.domain().map(str::to_owned))
-                .ok()
-                .flatten()
-                .unwrap_or_default(),
+            rpid: Url::parse(&domain).map(|u| u.domain().map(str::to_owned)).ok().flatten().unwrap_or_default(),
             url: domain,
+            origin: Url::parse(&domain_origin).unwrap(),
         })
     }
 }
@@ -44,8 +44,8 @@ impl webauthn_rs::WebauthnConfig for WebauthnConfig {
         &self.url
     }
 
-    fn get_origin(&self) -> &str {
-        &self.url
+    fn get_origin(&self) -> &Url {
+        &self.origin
     }
 
     fn get_relying_party_id(&self) -> &str {

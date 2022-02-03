@@ -343,36 +343,39 @@ impl Cipher {
         db_run! {conn: {
             // Check whether this cipher is in any collections accessible to the
             // user. If so, retrieve the access flags for each collection.
-            let query = ciphers::table
+            let rows = ciphers::table
                 .filter(ciphers::uuid.eq(&self.uuid))
                 .inner_join(ciphers_collections::table.on(
                     ciphers::uuid.eq(ciphers_collections::cipher_uuid)))
                 .inner_join(users_collections::table.on(
                     ciphers_collections::collection_uuid.eq(users_collections::collection_uuid)
                         .and(users_collections::user_uuid.eq(user_uuid))))
-                .select((users_collections::read_only, users_collections::hide_passwords));
+                .select((users_collections::read_only, users_collections::hide_passwords))
+                .load::<(bool, bool)>(conn)
+                .expect("Error getting access restrictions");
 
-            // There's an edge case where a cipher can be in multiple collections
-            // with inconsistent access flags. For example, a cipher could be in
-            // one collection where the user has read-only access, but also in
-            // another collection where the user has read/write access. To handle
-            // this, we do a boolean OR of all values in each of the `read_only`
-            // and `hide_passwords` columns. This could ideally be done as part
-            // of the query, but Diesel doesn't support a max() or bool_or()
-            // function on booleans and this behavior isn't portable anyway.
-            if let Ok(vec) = query.load::<(bool, bool)>(conn) {
-                let mut read_only = false;
-                let mut hide_passwords = false;
-                for (ro, hp) in vec.iter() {
-                    read_only |= ro;
-                    hide_passwords |= hp;
-                }
-
-                Some((read_only, hide_passwords))
-            } else {
+            if rows.is_empty() {
                 // This cipher isn't in any collections accessible to the user.
-                None
+                return None;
             }
+
+            // A cipher can be in multiple collections with inconsistent access flags.
+            // For example, a cipher could be in one collection where the user has
+            // read-only access, but also in another collection where the user has
+            // read/write access. For a flag to be in effect for a cipher, upstream
+            // requires all collections the cipher is in to have that flag set.
+            // Therefore, we do a boolean AND of all values in each of the `read_only`
+            // and `hide_passwords` columns. This could ideally be done as part of the
+            // query, but Diesel doesn't support a min() or bool_and() function on
+            // booleans and this behavior isn't portable anyway.
+            let mut read_only = true;
+            let mut hide_passwords = true;
+            for (ro, hp) in rows.iter() {
+                read_only &= ro;
+                hide_passwords &= hp;
+            }
+
+            Some((read_only, hide_passwords))
         }}
     }
 

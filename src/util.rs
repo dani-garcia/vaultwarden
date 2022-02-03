@@ -11,6 +11,9 @@ use rocket::{
     Data, Request, Response, Rocket,
 };
 
+use std::thread::sleep;
+use std::time::Duration;
+
 use crate::CONFIG;
 
 pub struct AppHeaders();
@@ -24,7 +27,7 @@ impl Fairing for AppHeaders {
     }
 
     fn on_response(&self, _req: &Request, res: &mut Response) {
-        res.set_raw_header("Feature-Policy", "accelerometer 'none'; ambient-light-sensor 'none'; autoplay 'none'; camera 'none'; encrypted-media 'none'; fullscreen 'none'; geolocation 'none'; gyroscope 'none'; magnetometer 'none'; microphone 'none'; midi 'none'; payment 'none'; picture-in-picture 'none'; sync-xhr 'self' https://haveibeenpwned.com https://2fa.directory; usb 'none'; vr 'none'");
+        res.set_raw_header("Permissions-Policy", "accelerometer=(), ambient-light-sensor=(), autoplay=(), camera=(), encrypted-media=(), fullscreen=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), midi=(), payment=(), picture-in-picture=(), sync-xhr=(self \"https://haveibeenpwned.com\" \"https://2fa.directory\"), usb=(), vr=()");
         res.set_raw_header("Referrer-Policy", "same-origin");
         res.set_raw_header("X-Frame-Options", "SAMEORIGIN");
         res.set_raw_header("X-Content-Type-Options", "nosniff");
@@ -99,29 +102,53 @@ impl Fairing for Cors {
     }
 }
 
-pub struct Cached<R>(R, String);
+pub struct Cached<R> {
+    response: R,
+    is_immutable: bool,
+    ttl: u64,
+}
 
 impl<R> Cached<R> {
-    pub fn long(r: R) -> Cached<R> {
-        // 7 days
-        Self::ttl(r, 604800)
+    pub fn long(response: R, is_immutable: bool) -> Cached<R> {
+        Self {
+            response,
+            is_immutable,
+            ttl: 604800, // 7 days
+        }
     }
 
-    pub fn short(r: R) -> Cached<R> {
-        // 10 minutes
-        Self(r, String::from("public, max-age=600"))
+    pub fn short(response: R, is_immutable: bool) -> Cached<R> {
+        Self {
+            response,
+            is_immutable,
+            ttl: 600, // 10 minutes
+        }
     }
 
-    pub fn ttl(r: R, ttl: u64) -> Cached<R> {
-        Self(r, format!("public, immutable, max-age={}", ttl))
+    pub fn ttl(response: R, ttl: u64, is_immutable: bool) -> Cached<R> {
+        Self {
+            response,
+            is_immutable,
+            ttl,
+        }
     }
 }
 
 impl<'r, R: Responder<'r>> Responder<'r> for Cached<R> {
     fn respond_to(self, req: &Request) -> response::Result<'r> {
-        match self.0.respond_to(req) {
+        let cache_control_header = if self.is_immutable {
+            format!("public, immutable, max-age={}", self.ttl)
+        } else {
+            format!("public, max-age={}", self.ttl)
+        };
+
+        let time_now = chrono::Local::now();
+
+        match self.response.respond_to(req) {
             Ok(mut res) => {
-                res.set_raw_header("Cache-Control", self.1);
+                res.set_raw_header("Cache-Control", cache_control_header);
+                let expiry_time = time_now + chrono::Duration::seconds(self.ttl.try_into().unwrap());
+                res.set_raw_header("Expires", format_datetime_http(&expiry_time));
                 Ok(res)
             }
             e @ Err(_) => e,
@@ -282,9 +309,9 @@ pub fn delete_file(path: &str) -> IOResult<()> {
     res
 }
 
-const UNITS: [&str; 6] = ["bytes", "KB", "MB", "GB", "TB", "PB"];
-
 pub fn get_display_size(size: i32) -> String {
+    const UNITS: [&str; 6] = ["bytes", "KB", "MB", "GB", "TB", "PB"];
+
     let mut size: f64 = size.into();
     let mut unit_counter = 0;
 
@@ -359,10 +386,10 @@ where
     try_parse_string(get_env_str_value(key))
 }
 
-const TRUE_VALUES: &[&str] = &["true", "t", "yes", "y", "1"];
-const FALSE_VALUES: &[&str] = &["false", "f", "no", "n", "0"];
-
 pub fn get_env_bool(key: &str) -> Option<bool> {
+    const TRUE_VALUES: &[&str] = &["true", "t", "yes", "y", "1"];
+    const FALSE_VALUES: &[&str] = &["false", "f", "no", "n", "0"];
+
     match get_env_str_value(key) {
         Some(val) if TRUE_VALUES.contains(&val.to_lowercase().as_ref()) => Some(true),
         Some(val) if FALSE_VALUES.contains(&val.to_lowercase().as_ref()) => Some(false),
@@ -375,7 +402,6 @@ pub fn get_env_bool(key: &str) -> Option<bool> {
 //
 
 use chrono::{DateTime, Local, NaiveDateTime, TimeZone};
-use chrono_tz::Tz;
 
 /// Formats a UTC-offset `NaiveDateTime` in the format used by Bitwarden API
 /// responses with "date" fields (`CreationDate`, `RevisionDate`, etc.).
@@ -393,7 +419,7 @@ pub fn format_datetime_local(dt: &DateTime<Local>, fmt: &str) -> String {
     // Try parsing the `TZ` environment variable to enable formatting `%Z` as
     // a time zone abbreviation.
     if let Ok(tz) = env::var("TZ") {
-        if let Ok(tz) = tz.parse::<Tz>() {
+        if let Ok(tz) = tz.parse::<chrono_tz::Tz>() {
             return dt.with_timezone(&tz).format(fmt).to_string();
         }
     }
@@ -410,6 +436,17 @@ pub fn format_naive_datetime_local(dt: &NaiveDateTime, fmt: &str) -> String {
     format_datetime_local(&Local.from_utc_datetime(dt), fmt)
 }
 
+/// Formats a `DateTime<Local>` as required for HTTP
+///
+/// https://httpwg.org/specs/rfc7231.html#http.date
+pub fn format_datetime_http(dt: &DateTime<Local>) -> String {
+    let expiry_time: chrono::DateTime<chrono::Utc> = chrono::DateTime::from_utc(dt.naive_utc(), chrono::Utc);
+
+    // HACK: HTTP expects the date to always be GMT (UTC) rather than giving an
+    // offset (which would always be 0 in UTC anyway)
+    expiry_time.to_rfc2822().replace("+0000", "GMT")
+}
+
 //
 // Deployment environment methods
 //
@@ -417,6 +454,18 @@ pub fn format_naive_datetime_local(dt: &NaiveDateTime, fmt: &str) -> String {
 /// Returns true if the program is running in Docker or Podman.
 pub fn is_running_in_docker() -> bool {
     Path::new("/.dockerenv").exists() || Path::new("/run/.containerenv").exists()
+}
+
+/// Simple check to determine on which docker base image vaultwarden is running.
+/// We build images based upon Debian or Alpine, so these we check here.
+pub fn docker_base_image() -> String {
+    if Path::new("/etc/debian_version").exists() {
+        "Debian".to_string()
+    } else if Path::new("/etc/alpine-release").exists() {
+        "Alpine".to_string()
+    } else {
+        "Unknown".to_string()
+    }
 }
 
 //
@@ -430,7 +479,7 @@ use serde_json::{self, Value};
 
 pub type JsonMap = serde_json::Map<String, Value>;
 
-#[derive(PartialEq, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct UpCase<T: DeserializeOwned> {
     #[serde(deserialize_with = "upcase_deserialize")]
     #[serde(flatten)]
@@ -505,6 +554,8 @@ fn upcase_value(value: Value) -> Value {
     }
 }
 
+// Inner function to handle some speciale case for the 'ssn' key.
+// This key is part of the Identity Cipher (Social Security Number)
 fn _process_key(key: &str) -> String {
     match key.to_lowercase().as_ref() {
         "ssn" => "SSN".into(),
@@ -537,8 +588,6 @@ where
         }
     }
 }
-
-use std::{thread::sleep, time::Duration};
 
 pub fn retry_db<F, T, E>(func: F, max_tries: u32) -> Result<T, E>
 where

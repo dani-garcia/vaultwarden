@@ -47,7 +47,8 @@
     "Type": 5,
     "Domains": [
       "wellsfargo.com",
-      "wf.com"
+      "wf.com",
+      "wellsfargoadvisors.com"
     ],
     "Excluded": false
   },
@@ -903,6 +904,22 @@
     "Domains": [
       "protonmail.com",
       "protonvpn.com"
+    ],
+    "Excluded": false
+  },
+  {
+    "Type": 86,
+    "Domains": [
+      "ubisoft.com",
+      "ubi.com"
+    ],
+    "Excluded": false
+  },
+  {
+    "Type": 87,
+    "Domains": [
+      "transferwise.com",
+      "wise.com"
     ],
     "Excluded": false
   }

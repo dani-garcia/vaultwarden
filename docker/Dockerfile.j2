@@ -1,16 +1,26 @@
+# syntax=docker/dockerfile:1
+
 # This file was generated using a Jinja2 template.
 # Please make your changes in `Dockerfile.j2` and then `make` the individual Dockerfiles.
 
-{% set build_stage_base_image = "rust:1.54" %}
+{% set build_stage_base_image = "rust:1.58-buster" %}
 {% if "alpine" in target_file %}
 {%   if "amd64" in target_file %}
-{%     set build_stage_base_image = "clux/muslrust:nightly-2021-08-22" %}
-{%     set runtime_stage_base_image = "alpine:3.14" %}
+{%     set build_stage_base_image = "blackdex/rust-musl:x86_64-musl-nightly-2022-01-23" %}
+{%     set runtime_stage_base_image = "alpine:3.15" %}
 {%     set package_arch_target = "x86_64-unknown-linux-musl" %}
 {%   elif "armv7" in target_file %}
-{%     set build_stage_base_image = "messense/rust-musl-cross:armv7-musleabihf" %}
-{%     set runtime_stage_base_image = "balenalib/armv7hf-alpine:3.14" %}
+{%     set build_stage_base_image = "blackdex/rust-musl:armv7-musleabihf-nightly-2022-01-23" %}
+{%     set runtime_stage_base_image = "balenalib/armv7hf-alpine:3.15" %}
 {%     set package_arch_target = "armv7-unknown-linux-musleabihf" %}
+{%   elif "armv6" in target_file %}
+{%     set build_stage_base_image = "blackdex/rust-musl:arm-musleabi-nightly-2022-01-23" %}
+{%     set runtime_stage_base_image = "balenalib/rpi-alpine:3.15" %}
+{%     set package_arch_target = "arm-unknown-linux-musleabi" %}
+{%   elif "arm64" in target_file %}
+{%     set build_stage_base_image = "blackdex/rust-musl:aarch64-musl-nightly-2022-01-23" %}
+{%     set runtime_stage_base_image = "balenalib/aarch64-alpine:3.15" %}
+{%     set package_arch_target = "aarch64-unknown-linux-musl" %}
 {%   endif %}
 {% elif "amd64" in target_file %}
 {%   set runtime_stage_base_image = "debian:buster-slim" %}
@@ -40,12 +50,17 @@
 {% else %}
 {%   set package_arch_target_param = "" %}
 {% endif %}
+{% if "buildx" in target_file %}
+{%   set mount_rust_cache = "--mount=type=cache,target=/root/.cargo/git --mount=type=cache,target=/root/.cargo/registry " %}
+{% else %}
+{%   set mount_rust_cache = "" %}
+{% endif %}
 # Using multistage build:
 # 	https://docs.docker.com/develop/develop-images/multistage-build/
 # 	https://whitfin.io/speeding-up-rust-docker-builds/
 ####################### VAULT BUILD IMAGE  #######################
-{% set vault_version = "2.21.1" %}
-{% set vault_image_digest = "sha256:29a4fa7bf3790fff9d908b02ac5a154913491f4bf30c95b87b06d8cf1c5516b5" %}
+{% set vault_version = "2.25.1b" %}
+{% set vault_image_digest = "sha256:9b82318d553d72f091e8755f5aff80eed495f90bbe5b0703522953480f5c2fba" %}
 # The web-vault digest specifies a particular web-vault build on Docker Hub.
 # Using the digest instead of the tag name provides better security,
 # as the digest of an image is immutable, whereas a tag name can later
@@ -68,66 +83,69 @@ FROM vaultwarden/web-vault@{{ vault_image_digest }} as vault
 ########################## BUILD IMAGE  ##########################
 FROM {{ build_stage_base_image }} as build
 
-{% if "alpine" in target_file %}
-{%   if "amd64" in target_file %}
-# Alpine-based AMD64 (musl) does not support mysql/mariadb during compile time.
-ARG DB=sqlite,postgresql
-{%     set features = "sqlite,postgresql" %}
-{%   else %}
-# Alpine-based ARM (musl) only supports sqlite during compile time.
-# We now also need to add vendored_openssl, because the current base image we use to build has OpenSSL removed.
-ARG DB=sqlite,vendored_openssl
-{%     set features = "sqlite" %}
-{%   endif %}
-{% else %}
-# Debian-based builds support multidb
-ARG DB=sqlite,mysql,postgresql
-{%   set features = "sqlite,mysql,postgresql" %}
-{% endif %}
+
 
 # Build time options to avoid dpkg warnings and help with reproducible builds.
-ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8 TZ=UTC TERM=xterm-256color
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8 \
+    TZ=UTC \
+    TERM=xterm-256color \
+    CARGO_HOME="/root/.cargo" \
+    USER="root"
 
-# Don't download rust docs
-RUN rustup set profile minimal
+{# {% if "alpine" not in target_file and "buildx" in target_file %}
+# Debian based Buildx builds can use some special apt caching to speedup building.
+# By default Debian based images have some rules to keep docker builds clean, we need to remove this.
+# See: https://hub.docker.com/r/docker/dockerfile
+RUN rm -f /etc/apt/apt.conf.d/docker-clean; echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache
+{% endif %} #}
+
+# Create CARGO_HOME folder and don't download rust docs
+RUN {{ mount_rust_cache -}} mkdir -pv "${CARGO_HOME}" \
+    && rustup set profile minimal
 
 {% if "alpine" in target_file %}
-ENV USER "root"
 ENV RUSTFLAGS='-C link-arg=-s'
 {%   if "armv7" in target_file %}
+{#- https://gcc.gnu.org/onlinedocs/gcc/ARM-Options.html -#}
 ENV CFLAGS_armv7_unknown_linux_musleabihf="-mfpu=vfpv3-d16"
 {%   endif %}
 {% elif "arm" in target_file %}
+#
 # Install required build libs for {{ package_arch_name }} architecture.
-# To compile both mysql and postgresql we need some extra packages for both host arch and target arch
-RUN sed 's/^deb/deb-src/' /etc/apt/sources.list > \
-        /etc/apt/sources.list.d/deb-src.list \
-    && dpkg --add-architecture {{ package_arch_name }} \
+# hadolint ignore=DL3059
+RUN dpkg --add-architecture {{ package_arch_name }} \
     && apt-get update \
     && apt-get install -y \
         --no-install-recommends \
         libssl-dev{{ package_arch_prefix }} \
         libc6-dev{{ package_arch_prefix }} \
         libpq5{{ package_arch_prefix }} \
-        libpq-dev \
+        libpq-dev{{ package_arch_prefix }} \
+        libmariadb3{{ package_arch_prefix }} \
         libmariadb-dev{{ package_arch_prefix }} \
         libmariadb-dev-compat{{ package_arch_prefix }} \
         gcc-{{ package_cross_compiler }} \
-    && mkdir -p ~/.cargo \
-    && echo '[target.{{ package_arch_target }}]' >> ~/.cargo/config \
-    && echo 'linker = "{{ package_cross_compiler }}-gcc"' >> ~/.cargo/config \
-    && echo 'rustflags = ["-L/usr/lib/{{ package_cross_compiler }}"]' >> ~/.cargo/config
+    #
+    # Make sure cargo has the right target config
+    && echo '[target.{{ package_arch_target }}]' >> "${CARGO_HOME}/config" \
+    && echo 'linker = "{{ package_cross_compiler }}-gcc"' >> "${CARGO_HOME}/config" \
+    && echo 'rustflags = ["-L/usr/lib/{{ package_cross_compiler }}"]' >> "${CARGO_HOME}/config"
 
-ENV CARGO_HOME "/root/.cargo"
-ENV USER "root"
-{% endif -%}
+# Set arm specific environment values
+ENV CC_{{ package_arch_target | replace("-", "_") }}="/usr/bin/{{ package_cross_compiler }}-gcc" \
+    CROSS_COMPILE="1" \
+    OPENSSL_INCLUDE_DIR="/usr/include/{{ package_cross_compiler }}" \
+    OPENSSL_LIB_DIR="/usr/lib/{{ package_cross_compiler }}"
 
-{% if "amd64" in target_file and "alpine" not in target_file %}
+{% elif "amd64" in target_file %}
 # Install DB packages
-RUN apt-get update && apt-get install -y \
-    --no-install-recommends \
-    libmariadb-dev{{ package_arch_prefix }} \
-    libpq-dev{{ package_arch_prefix }} \
+RUN apt-get update \
+    && apt-get install -y \
+        --no-install-recommends \
+        libmariadb-dev{{ package_arch_prefix }} \
+        libpq-dev{{ package_arch_prefix }} \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 {% endif %}
 
@@ -140,37 +158,17 @@ COPY ./Cargo.* ./
 COPY ./rust-toolchain ./rust-toolchain
 COPY ./build.rs ./build.rs
 
-{% if "alpine" not in target_file %}
-{%   if "arm" in target_file %}
-# NOTE: This should be the last apt-get/dpkg for this stage, since after this it will fail because of broken dependencies.
-# For Diesel-RS migrations_macros to compile with MySQL/MariaDB we need to do some magic.
-# We at least need libmariadb3:amd64 installed for the x86_64 version of libmariadb.so (client)
-# We also need the libmariadb-dev-compat:amd64 but it can not be installed together with the {{ package_arch_prefix }} version.
-# What we can do is a force install, because nothing important is overlapping each other.
-RUN apt-get install -y --no-install-recommends libmariadb3:amd64 \
-    && apt-get download libmariadb-dev-compat:amd64 \
-    && dpkg --force-all -i ./libmariadb-dev-compat*.deb \
-    && rm -rvf ./libmariadb-dev-compat*.deb \
-    # For Diesel-RS migrations_macros to compile with PostgreSQL we need to do some magic.
-    # The libpq5{{ package_arch_prefix }} package seems to not provide a symlink to libpq.so.5 with the name libpq.so.
-    # This is only provided by the libpq-dev package which can't be installed for both arch at the same time.
-    # Without this specific file the ld command will fail and compilation fails with it.
-    && ln -sfnr /usr/lib/{{ package_cross_compiler }}/libpq.so.5 /usr/lib/{{ package_cross_compiler }}/libpq.so
-
-ENV CC_{{ package_arch_target | replace("-", "_") }}="/usr/bin/{{ package_cross_compiler }}-gcc"
-ENV CROSS_COMPILE="1"
-ENV OPENSSL_INCLUDE_DIR="/usr/include/{{ package_cross_compiler }}"
-ENV OPENSSL_LIB_DIR="/usr/lib/{{ package_cross_compiler }}"
-{%   endif -%}
-{% endif %}
 {% if package_arch_target is defined %}
-RUN rustup target add {{ package_arch_target }}
+RUN {{ mount_rust_cache -}} rustup target add {{ package_arch_target }}
 {% endif %}
+
+# Configure the DB ARG as late as possible to not invalidate the cached layers above
+ARG DB=sqlite,mysql,postgresql
 
 # Builds your dependencies and removes the
 # dummy project, except the target folder
 # This folder contains the compiled dependencies
-RUN cargo build --features ${DB} --release{{ package_arch_target_param }} \
+RUN {{ mount_rust_cache -}} cargo build --features ${DB} --release{{ package_arch_target_param }} \
     && find . -not -path "./target*" -delete
 
 # Copies the complete project
@@ -182,7 +180,8 @@ RUN touch src/main.rs
 
 # Builds again, this time it'll just be
 # your actual source files being built
-RUN cargo build --features ${DB} --release{{ package_arch_target_param }}
+# hadolint ignore=DL3059
+RUN {{ mount_rust_cache -}} cargo build --features ${DB} --release{{ package_arch_target_param }}
 {% if "alpine" in target_file %}
 {%   if "armv7" in target_file %}
 # hadolint ignore=DL3059
@@ -195,12 +194,13 @@ RUN musl-strip target/{{ package_arch_target }}/release/vaultwarden
 # because we already have a binary built
 FROM {{ runtime_stage_base_image }}
 
-ENV ROCKET_ENV "staging"
-ENV ROCKET_PORT=80
-ENV ROCKET_WORKERS=10
-{% if "alpine" in runtime_stage_base_image %}
-ENV SSL_CERT_DIR=/etc/ssl/certs
+ENV ROCKET_ENV="staging" \
+    ROCKET_PORT=80 \
+    ROCKET_WORKERS=10
+{%- if "alpine" in runtime_stage_base_image %} \
+    SSL_CERT_DIR=/etc/ssl/certs
 {% endif %}
+
 
 {% if "amd64" not in target_file %}
 # hadolint ignore=DL3059
@@ -215,12 +215,6 @@ RUN mkdir /data \
         tzdata \
         curl \
         dumb-init \
-{%   if "mysql" in features %}
-        mariadb-connector-c \
-{%   endif %}
-{%   if "postgresql" in features %}
-        postgresql-libs \
-{%   endif %}
         ca-certificates
 {% else %}
     && apt-get update && apt-get install -y \
@@ -231,6 +225,7 @@ RUN mkdir /data \
     dumb-init \
     libmariadb-dev-compat \
     libpq5 \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 {% endif %}
 

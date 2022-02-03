@@ -44,8 +44,9 @@ db_object! {
 
         pub client_kdf_type: i32,
         pub client_kdf_iter: i32,
-    }
 
+        pub api_key: Option<String>,
+    }
 
     #[derive(Identifiable, Queryable, Insertable)]
     #[table_name = "invitations"]
@@ -73,9 +74,9 @@ impl User {
     pub const CLIENT_KDF_TYPE_DEFAULT: i32 = 0; // PBKDF2: 0
     pub const CLIENT_KDF_ITER_DEFAULT: i32 = 100_000;
 
-    pub fn new(mail: String) -> Self {
+    pub fn new(email: String) -> Self {
         let now = Utc::now().naive_utc();
-        let email = mail.to_lowercase();
+        let email = email.to_lowercase();
 
         Self {
             uuid: crate::util::get_uuid(),
@@ -110,6 +111,8 @@ impl User {
 
             client_kdf_type: Self::CLIENT_KDF_TYPE_DEFAULT,
             client_kdf_iter: Self::CLIENT_KDF_ITER_DEFAULT,
+
+            api_key: None,
         }
     }
 
@@ -128,6 +131,10 @@ impl User {
         } else {
             false
         }
+    }
+
+    pub fn check_valid_api_key(&self, key: &str) -> bool {
+        matches!(self.api_key, Some(ref api_key) if crate::crypto::ct_eq(api_key, key))
     }
 
     /// Set the password hash generated
@@ -176,7 +183,10 @@ impl User {
     }
 }
 
-use super::{Cipher, Device, Favorite, Folder, Send, TwoFactor, UserOrgType, UserOrganization};
+use super::{
+    Cipher, Device, EmergencyAccess, Favorite, Folder, Send, TwoFactor, TwoFactorIncomplete, UserOrgType,
+    UserOrganization,
+};
 use crate::db::DbConn;
 
 use crate::api::EmptyResult;
@@ -185,7 +195,7 @@ use crate::error::MapResult;
 /// Database methods
 impl User {
     pub fn to_json(&self, conn: &DbConn) -> Value {
-        let orgs = UserOrganization::find_by_user(&self.uuid, conn);
+        let orgs = UserOrganization::find_confirmed_by_user(&self.uuid, conn);
         let orgs_json: Vec<Value> = orgs.iter().map(|c| c.to_json(conn)).collect();
         let twofactor_enabled = !TwoFactor::find_by_user(&self.uuid, conn).is_empty();
 
@@ -256,7 +266,7 @@ impl User {
     }
 
     pub fn delete(self, conn: &DbConn) -> EmptyResult {
-        for user_org in UserOrganization::find_by_user(&self.uuid, conn) {
+        for user_org in UserOrganization::find_confirmed_by_user(&self.uuid, conn) {
             if user_org.atype == UserOrgType::Owner {
                 let owner_type = UserOrgType::Owner as i32;
                 if UserOrganization::find_by_org_and_type(&user_org.org_uuid, owner_type, conn).len() <= 1 {
@@ -266,12 +276,14 @@ impl User {
         }
 
         Send::delete_all_by_user(&self.uuid, conn)?;
+        EmergencyAccess::delete_all_by_user(&self.uuid, conn)?;
         UserOrganization::delete_all_by_user(&self.uuid, conn)?;
         Cipher::delete_all_by_user(&self.uuid, conn)?;
         Favorite::delete_all_by_user(&self.uuid, conn)?;
         Folder::delete_all_by_user(&self.uuid, conn)?;
         Device::delete_all_by_user(&self.uuid, conn)?;
         TwoFactor::delete_all_by_user(&self.uuid, conn)?;
+        TwoFactorIncomplete::delete_all_by_user(&self.uuid, conn)?;
         Invitation::take(&self.email, conn); // Delete invitation if any
 
         db_run! {conn: {
@@ -349,7 +361,8 @@ impl User {
 }
 
 impl Invitation {
-    pub const fn new(email: String) -> Self {
+    pub fn new(email: String) -> Self {
+        let email = email.to_lowercase();
         Self {
             email,
         }

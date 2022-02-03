@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1
+
 # This file was generated using a Jinja2 template.
 # Please make your changes in `Dockerfile.j2` and then `make` the individual Dockerfiles.
 
@@ -14,50 +16,61 @@
 # - From https://hub.docker.com/r/vaultwarden/web-vault/tags,
 #   click the tag name to view the digest of the image it currently points to.
 # - From the command line:
-#     $ docker pull vaultwarden/web-vault:v2.21.1
-#     $ docker image inspect --format "{{.RepoDigests}}" vaultwarden/web-vault:v2.21.1
-#     [vaultwarden/web-vault@sha256:29a4fa7bf3790fff9d908b02ac5a154913491f4bf30c95b87b06d8cf1c5516b5]
+#     $ docker pull vaultwarden/web-vault:v2.25.1b
+#     $ docker image inspect --format "{{.RepoDigests}}" vaultwarden/web-vault:v2.25.1b
+#     [vaultwarden/web-vault@sha256:9b82318d553d72f091e8755f5aff80eed495f90bbe5b0703522953480f5c2fba]
 #
 # - Conversely, to get the tag name from the digest:
-#     $ docker image inspect --format "{{.RepoTags}}" vaultwarden/web-vault@sha256:29a4fa7bf3790fff9d908b02ac5a154913491f4bf30c95b87b06d8cf1c5516b5
-#     [vaultwarden/web-vault:v2.21.1]
+#     $ docker image inspect --format "{{.RepoTags}}" vaultwarden/web-vault@sha256:9b82318d553d72f091e8755f5aff80eed495f90bbe5b0703522953480f5c2fba
+#     [vaultwarden/web-vault:v2.25.1b]
 #
-FROM vaultwarden/web-vault@sha256:29a4fa7bf3790fff9d908b02ac5a154913491f4bf30c95b87b06d8cf1c5516b5 as vault
+FROM vaultwarden/web-vault@sha256:9b82318d553d72f091e8755f5aff80eed495f90bbe5b0703522953480f5c2fba as vault
 
 ########################## BUILD IMAGE  ##########################
-FROM rust:1.54 as build
+FROM rust:1.58-buster as build
 
-# Debian-based builds support multidb
-ARG DB=sqlite,mysql,postgresql
+
 
 # Build time options to avoid dpkg warnings and help with reproducible builds.
-ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8 TZ=UTC TERM=xterm-256color
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8 \
+    TZ=UTC \
+    TERM=xterm-256color \
+    CARGO_HOME="/root/.cargo" \
+    USER="root"
 
-# Don't download rust docs
-RUN rustup set profile minimal
 
+# Create CARGO_HOME folder and don't download rust docs
+RUN mkdir -pv "${CARGO_HOME}" \
+    && rustup set profile minimal
+
+#
 # Install required build libs for armel architecture.
-# To compile both mysql and postgresql we need some extra packages for both host arch and target arch
-RUN sed 's/^deb/deb-src/' /etc/apt/sources.list > \
-        /etc/apt/sources.list.d/deb-src.list \
-    && dpkg --add-architecture armel \
+# hadolint ignore=DL3059
+RUN dpkg --add-architecture armel \
     && apt-get update \
     && apt-get install -y \
         --no-install-recommends \
         libssl-dev:armel \
         libc6-dev:armel \
         libpq5:armel \
-        libpq-dev \
+        libpq-dev:armel \
+        libmariadb3:armel \
         libmariadb-dev:armel \
         libmariadb-dev-compat:armel \
         gcc-arm-linux-gnueabi \
-    && mkdir -p ~/.cargo \
-    && echo '[target.arm-unknown-linux-gnueabi]' >> ~/.cargo/config \
-    && echo 'linker = "arm-linux-gnueabi-gcc"' >> ~/.cargo/config \
-    && echo 'rustflags = ["-L/usr/lib/arm-linux-gnueabi"]' >> ~/.cargo/config
+    #
+    # Make sure cargo has the right target config
+    && echo '[target.arm-unknown-linux-gnueabi]' >> "${CARGO_HOME}/config" \
+    && echo 'linker = "arm-linux-gnueabi-gcc"' >> "${CARGO_HOME}/config" \
+    && echo 'rustflags = ["-L/usr/lib/arm-linux-gnueabi"]' >> "${CARGO_HOME}/config"
 
-ENV CARGO_HOME "/root/.cargo"
-ENV USER "root"
+# Set arm specific environment values
+ENV CC_arm_unknown_linux_gnueabi="/usr/bin/arm-linux-gnueabi-gcc" \
+    CROSS_COMPILE="1" \
+    OPENSSL_INCLUDE_DIR="/usr/include/arm-linux-gnueabi" \
+    OPENSSL_LIB_DIR="/usr/lib/arm-linux-gnueabi"
+
 
 # Creates a dummy project used to grab dependencies
 RUN USER=root cargo new --bin /app
@@ -68,26 +81,10 @@ COPY ./Cargo.* ./
 COPY ./rust-toolchain ./rust-toolchain
 COPY ./build.rs ./build.rs
 
-# NOTE: This should be the last apt-get/dpkg for this stage, since after this it will fail because of broken dependencies.
-# For Diesel-RS migrations_macros to compile with MySQL/MariaDB we need to do some magic.
-# We at least need libmariadb3:amd64 installed for the x86_64 version of libmariadb.so (client)
-# We also need the libmariadb-dev-compat:amd64 but it can not be installed together with the :armel version.
-# What we can do is a force install, because nothing important is overlapping each other.
-RUN apt-get install -y --no-install-recommends libmariadb3:amd64 \
-    && apt-get download libmariadb-dev-compat:amd64 \
-    && dpkg --force-all -i ./libmariadb-dev-compat*.deb \
-    && rm -rvf ./libmariadb-dev-compat*.deb \
-    # For Diesel-RS migrations_macros to compile with PostgreSQL we need to do some magic.
-    # The libpq5:armel package seems to not provide a symlink to libpq.so.5 with the name libpq.so.
-    # This is only provided by the libpq-dev package which can't be installed for both arch at the same time.
-    # Without this specific file the ld command will fail and compilation fails with it.
-    && ln -sfnr /usr/lib/arm-linux-gnueabi/libpq.so.5 /usr/lib/arm-linux-gnueabi/libpq.so
-
-ENV CC_arm_unknown_linux_gnueabi="/usr/bin/arm-linux-gnueabi-gcc"
-ENV CROSS_COMPILE="1"
-ENV OPENSSL_INCLUDE_DIR="/usr/include/arm-linux-gnueabi"
-ENV OPENSSL_LIB_DIR="/usr/lib/arm-linux-gnueabi"
 RUN rustup target add arm-unknown-linux-gnueabi
+
+# Configure the DB ARG as late as possible to not invalidate the cached layers above
+ARG DB=sqlite,mysql,postgresql
 
 # Builds your dependencies and removes the
 # dummy project, except the target folder
@@ -104,6 +101,7 @@ RUN touch src/main.rs
 
 # Builds again, this time it'll just be
 # your actual source files being built
+# hadolint ignore=DL3059
 RUN cargo build --features ${DB} --release --target=arm-unknown-linux-gnueabi
 
 ######################## RUNTIME IMAGE  ########################
@@ -111,9 +109,9 @@ RUN cargo build --features ${DB} --release --target=arm-unknown-linux-gnueabi
 # because we already have a binary built
 FROM balenalib/rpi-debian:buster
 
-ENV ROCKET_ENV "staging"
-ENV ROCKET_PORT=80
-ENV ROCKET_WORKERS=10
+ENV ROCKET_ENV="staging" \
+    ROCKET_PORT=80 \
+    ROCKET_WORKERS=10
 
 # hadolint ignore=DL3059
 RUN [ "cross-build-start" ]
@@ -128,6 +126,7 @@ RUN mkdir /data \
     dumb-init \
     libmariadb-dev-compat \
     libpq5 \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 # hadolint ignore=DL3059

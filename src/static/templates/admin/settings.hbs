@@ -12,9 +12,7 @@
                 {{#each config}}
                 {{#if groupdoc}}
                 <div class="card bg-light mb-3">
-                    <div class="card-header" role="button" data-bs-toggle="collapse" data-bs-target="#g_{{group}}">
-                        <button type="button" class="btn btn-link text-decoration-none collapsed" data-bs-toggle="collapse" data-bs-target="#g_{{group}}">{{groupdoc}}</button>
-                    </div>
+                    <button id="b_{{group}}" type="button" class="card-header text-start btn btn-link text-decoration-none" aria-expanded="false" aria-controls="g_{{group}}" data-bs-toggle="collapse" data-bs-target="#g_{{group}}">{{groupdoc}}</button>
                     <div id="g_{{group}}" class="card-body collapse">
                         {{#each elements}}
                         {{#if editable}}
@@ -61,10 +59,8 @@
                 {{/each}}
 
                 <div class="card bg-light mb-3">
-                    <div class="card-header" role="button" data-bs-toggle="collapse" data-bs-target="#g_readonly">
-                        <button type="button" class="btn btn-link text-decoration-none collapsed" data-bs-toggle="collapse" data-bs-target="#g_readonly">Read-Only Config</button>
-                    </div>
-
+                    <button id="b_readonly" type="button" class="card-header text-start btn btn-link text-decoration-none" aria-expanded="false" aria-controls="g_readonly"
+                            data-bs-toggle="collapse" data-bs-target="#g_readonly">Read-Only Config</button>
                     <div id="g_readonly" class="card-body collapse">
                         <div class="small mb-3">
                             NOTE: These options can't be modified in the editor because they would require the server
@@ -109,9 +105,8 @@
 
                 {{#if can_backup}}
                 <div class="card bg-light mb-3">
-                    <div class="card-header" role="button" data-bs-toggle="collapse" data-bs-target="#g_database">
-                        <button type="button" class="btn btn-link text-decoration-none collapsed" data-bs-toggle="collapse" data-bs-target="#g_database">Backup Database</button>
-                    </div>
+                    <button id="b_database" type="button" class="card-header text-start btn btn-link text-decoration-none" aria-expanded="false" aria-controls="g_database"
+                            data-bs-toggle="collapse" data-bs-target="#g_database">Backup Database</button>
                     <div id="g_database" class="card-body collapse">
                         <div class="small mb-3">
                             WARNING: This function only creates a backup copy of the SQLite database.
@@ -224,11 +219,10 @@
         onChange(); // Trigger the event initially
         checkbox.addEventListener("change", onChange);
     }
-    // These are formatted because otherwise the
-    // VSCode formatter breaks But they still work
-    // {{#each config}} {{#if grouptoggle}}
+
+    {{#each config}} {{#if grouptoggle}}
     masterCheck("input_{{grouptoggle}}", "#g_{{group}} input");
-    // {{/if}} {{/each}}
+    {{/if}} {{/each}}
 
     // Two functions to help check if there were changes to the form fields
     // Useful for example during the smtp test to prevent people from clicking save before testing there new settings

@@ -155,6 +155,16 @@ table! {
 }
 
 table! {
+    twofactor_incomplete (user_uuid, device_uuid) {
+        user_uuid -> Text,
+        device_uuid -> Text,
+        device_name -> Text,
+        login_time -> Timestamp,
+        ip_address -> Text,
+    }
+}
+
+table! {
     users (uuid) {
         uuid -> Text,
         enabled -> Bool,
@@ -182,6 +192,7 @@ table! {
         excluded_globals -> Text,
         client_kdf_type -> Integer,
         client_kdf_iter -> Integer,
+        api_key -> Nullable<Text>,
     }
 }
 
@@ -214,6 +225,23 @@ table! {
     }
 }
 
+table! {
+    emergency_access (uuid) {
+        uuid -> Text,
+        grantor_uuid -> Text,
+        grantee_uuid -> Nullable<Text>,
+        email -> Nullable<Text>,
+        key_encrypted -> Nullable<Text>,
+        atype -> Integer,
+        status -> Integer,
+        wait_time_days -> Integer,
+        recovery_initiated_at -> Nullable<Timestamp>,
+        last_notification_at -> Nullable<Timestamp>,
+        updated_at -> Timestamp,
+        created_at -> Timestamp,
+    }
+}
+
 joinable!(attachments -> ciphers (cipher_uuid));
 joinable!(ciphers -> organizations (organization_uuid));
 joinable!(ciphers -> users (user_uuid));
@@ -233,6 +261,7 @@ joinable!(users_collections -> users (user_uuid));
 joinable!(users_organizations -> organizations (org_uuid));
 joinable!(users_organizations -> users (user_uuid));
 joinable!(sso_nonce -> organizations (org_uuid));
+joinable!(emergency_access -> users (grantor_uuid));
 
 allow_tables_to_appear_in_same_query!(
     attachments,
@@ -250,4 +279,5 @@ allow_tables_to_appear_in_same_query!(
     users,
     users_collections,
     users_organizations,
+    emergency_access,
 );

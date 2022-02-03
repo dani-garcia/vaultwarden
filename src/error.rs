@@ -73,7 +73,7 @@ make_error! {
     Serde(SerdeErr): _has_source, _api_error,
     JWt(JwtErr):     _has_source, _api_error,
     Handlebars(HbErr): _has_source, _api_error,
-    //WsError(ws::Error): _has_source, _api_error,
+
     Io(IoErr):       _has_source, _api_error,
     Time(TimeErr):   _has_source, _api_error,
     Req(ReqErr):     _has_source, _api_error,
@@ -119,11 +119,13 @@ impl Error {
         Empty {}.into()
     }
 
+    #[must_use]
     pub fn with_msg<M: Into<String>>(mut self, msg: M) -> Self {
         self.message = msg.into();
         self
     }
 
+    #[must_use]
     pub const fn with_code(mut self, code: u16) -> Self {
         self.error_code = code;
         self
@@ -216,6 +218,15 @@ macro_rules! err {
     }};
     ($usr_msg:expr, $log_value:expr) => {{
         error!("{}. {}", $usr_msg, $log_value);
+        return Err(crate::error::Error::new($usr_msg, $log_value));
+    }};
+}
+
+macro_rules! err_silent {
+    ($msg:expr) => {{
+        return Err(crate::error::Error::new($msg, $msg));
+    }};
+    ($usr_msg:expr, $log_value:expr) => {{
         return Err(crate::error::Error::new($usr_msg, $log_value));
     }};
 }
