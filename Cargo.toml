@@ -47,14 +47,14 @@ multipart = { version = "0.18.0", features = ["server"], default-features = fals
 ws = { version = "0.11.0", package = "parity-ws" }
 
 # MessagePack library
-rmpv = "0.4.7"
+rmpv = "1.0.0"
 
 # Concurrent hashmap implementation
 chashmap = "2.2.2"
 
 # A generic serialization/deserialization framework
-serde = { version = "1.0.126", features = ["derive"] }
-serde_json = "1.0.64"
+serde = { version = "1.0.128", features = ["derive"] }
+serde_json = "1.0.66"
 
 # Logging
 log = "0.4.14"
@@ -83,7 +83,7 @@ time = "0.2.27"
 job_scheduler = "1.2.1"
 
 # TOTP library
-oath = "0.10.2"
+totp-lite = "1.0.3"
 
 # Data encoding library
 data-encoding = "2.3.2"
@@ -93,7 +93,7 @@ jsonwebtoken = "7.2.0"
 
 # U2F library
 u2f = "0.2.0"
-webauthn-rs = "=0.3.0-alpha.9"
+webauthn-rs = "=0.3.0-alpha.10"
 
 # Yubico Library
 yubico = { version = "0.10.0", features = ["online-tokio"], default-features = false }
@@ -113,7 +113,7 @@ tracing = { version = "0.1.26", features = ["log"] } # Needed to have lettre tra
 lettre = { version = "0.10.0-rc.3", features = ["smtp-transport", "builder", "serde", "native-tls", "hostname", "tracing"], default-features = false }
 
 # Template library
-handlebars = { version = "4.1.0", features = ["dir_source"] }
+handlebars = { version = "4.1.2", features = ["dir_source"] }
 
 # For favicon extraction from main website
 html5ever = "0.25.1"
@@ -122,7 +122,7 @@ regex = { version = "1.5.4", features = ["std", "perf"], default-features = fals
 data-url = "0.1.0"
 
 # Used by U2F, JWT and Postgres
-openssl = "0.10.35"
+openssl = "0.10.36"
 
 # URL encoding library
 percent-encoding = "2.1.0"
@@ -133,7 +133,7 @@ idna = "0.2.3"
 pico-args = "0.4.2"
 
 # Logging panics to logfile instead stderr only
-backtrace = "0.3.60"
+backtrace = "0.3.61"
 
 # Macro ident concatenation
 paste = "1.0.5"

@@ -300,6 +300,8 @@ impl UserOrganization {
             // For now they still have that code also in the web-vault, but they will remove it at some point.
             // https://github.com/bitwarden/server/tree/master/bitwarden_license/src/
             "UseBusinessPortal": false, // Disable BusinessPortal Button
+            "ProviderId": null,
+            "ProviderName": null,
 
             // TODO: Add support for Custom User Roles
             // See: https://bitwarden.com/help/article/user-types-access-control/#custom-role
