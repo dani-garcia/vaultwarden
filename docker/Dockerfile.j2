@@ -6,19 +6,19 @@
 {% set build_stage_base_image = "rust:1.58-buster" %}
 {% if "alpine" in target_file %}
 {%   if "amd64" in target_file %}
-{%     set build_stage_base_image = "blackdex/rust-musl:x86_64-musl-nightly-2022-01-23" %}
+{%     set build_stage_base_image = "blackdex/rust-musl:x86_64-musl-stable" %}
 {%     set runtime_stage_base_image = "alpine:3.15" %}
 {%     set package_arch_target = "x86_64-unknown-linux-musl" %}
 {%   elif "armv7" in target_file %}
-{%     set build_stage_base_image = "blackdex/rust-musl:armv7-musleabihf-nightly-2022-01-23" %}
+{%     set build_stage_base_image = "blackdex/rust-musl:armv7-musleabihf-stable" %}
 {%     set runtime_stage_base_image = "balenalib/armv7hf-alpine:3.15" %}
 {%     set package_arch_target = "armv7-unknown-linux-musleabihf" %}
 {%   elif "armv6" in target_file %}
-{%     set build_stage_base_image = "blackdex/rust-musl:arm-musleabi-nightly-2022-01-23" %}
+{%     set build_stage_base_image = "blackdex/rust-musl:arm-musleabi-stable" %}
 {%     set runtime_stage_base_image = "balenalib/rpi-alpine:3.15" %}
 {%     set package_arch_target = "arm-unknown-linux-musleabi" %}
 {%   elif "arm64" in target_file %}
-{%     set build_stage_base_image = "blackdex/rust-musl:aarch64-musl-nightly-2022-01-23" %}
+{%     set build_stage_base_image = "blackdex/rust-musl:aarch64-musl-stable" %}
 {%     set runtime_stage_base_image = "balenalib/aarch64-alpine:3.15" %}
 {%     set package_arch_target = "aarch64-unknown-linux-musl" %}
 {%   endif %}
@@ -194,9 +194,9 @@ RUN musl-strip target/{{ package_arch_target }}/release/vaultwarden
 # because we already have a binary built
 FROM {{ runtime_stage_base_image }}
 
-ENV ROCKET_ENV="staging" \
-    ROCKET_PORT=80 \
-    ROCKET_WORKERS=10
+ENV ROCKET_PROFILE="release" \
+    ROCKET_ADDRESS=0.0.0.0 \
+    ROCKET_PORT=80
 {%- if "alpine" in runtime_stage_base_image %} \
     SSL_CERT_DIR=/etc/ssl/certs
 {% endif %}

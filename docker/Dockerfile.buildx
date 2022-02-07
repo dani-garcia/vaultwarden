@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # The cross-built images have the build arch (`amd64`) embedded in the image
 # manifest, rather than the target arch. For example:
 #

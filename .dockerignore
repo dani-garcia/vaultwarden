@@ -3,13 +3,18 @@ target
 
 # Data folder
 data
+
+# Misc
 .env
 .env.template
 .gitattributes
+.gitignore
+rustfmt.toml
 
 # IDE files
 .vscode
 .idea
+.editorconfig
 *.iml
 
 # Documentation
@@ -19,9 +24,17 @@ data
 *.yml
 *.yaml
 
-# Docker folders
+# Docker
 hooks
 tools
+Dockerfile
+.dockerignore
+docker/**
+!docker/healthcheck.sh
+!docker/start.sh
 
 # Web vault
 web-vault
+
+# Vaultwarden Resources
+resources

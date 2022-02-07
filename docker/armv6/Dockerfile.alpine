@@ -27,7 +27,7 @@
 FROM vaultwarden/web-vault@sha256:9b82318d553d72f091e8755f5aff80eed495f90bbe5b0703522953480f5c2fba as vault
 
 ########################## BUILD IMAGE  ##########################
-FROM blackdex/rust-musl:arm-musleabi-nightly-2022-01-23 as build
+FROM blackdex/rust-musl:arm-musleabi-stable as build
 
 
 
@@ -83,9 +83,9 @@ RUN cargo build --features ${DB} --release --target=arm-unknown-linux-musleabi
 # because we already have a binary built
 FROM balenalib/rpi-alpine:3.15
 
-ENV ROCKET_ENV="staging" \
+ENV ROCKET_PROFILE="release" \
+    ROCKET_ADDRESS=0.0.0.0 \
     ROCKET_PORT=80 \
-    ROCKET_WORKERS=10 \
     SSL_CERT_DIR=/etc/ssl/certs
 
 
