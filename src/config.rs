@@ -56,7 +56,7 @@ macro_rules! make_config {
         impl ConfigBuilder {
             #[allow(clippy::field_reassign_with_default)]
             fn from_env() -> Self {
-                match dotenv::from_path(".env") {
+                match dotenv::from_path(get_env("ENV_FILE").unwrap_or_else(|| String::from(".env"))) {
                     Ok(_) => (),
                     Err(e) => match e {
                         dotenv::Error::LineParse(msg, pos) => {
