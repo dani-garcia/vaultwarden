@@ -30,7 +30,7 @@ fn mailer() -> SmtpTransport {
         .timeout(Some(Duration::from_secs(CONFIG.smtp_timeout())));
 
     // Determine security
-    let smtp_client = if CONFIG.smtp_ssl() || CONFIG.smtp_explicit_tls() {
+    let smtp_client = if CONFIG.smtp_security() != *"off" {
         let mut tls_parameters = TlsParameters::builder(host);
         if CONFIG.smtp_accept_invalid_hostnames() {
             tls_parameters = tls_parameters.dangerous_accept_invalid_hostnames(true);
@@ -40,7 +40,7 @@ fn mailer() -> SmtpTransport {
         }
         let tls_parameters = tls_parameters.build().unwrap();
 
-        if CONFIG.smtp_explicit_tls() {
+        if CONFIG.smtp_security() == *"force_tls" {
             smtp_client.tls(Tls::Wrapper(tls_parameters))
         } else {
             smtp_client.tls(Tls::Required(tls_parameters))

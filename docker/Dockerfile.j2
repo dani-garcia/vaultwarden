@@ -182,12 +182,6 @@ RUN touch src/main.rs
 # your actual source files being built
 # hadolint ignore=DL3059
 RUN {{ mount_rust_cache -}} cargo build --features ${DB} --release{{ package_arch_target_param }}
-{% if "alpine" in target_file %}
-{%   if "armv7" in target_file %}
-# hadolint ignore=DL3059
-RUN musl-strip target/{{ package_arch_target }}/release/vaultwarden
-{%   endif %}
-{% endif %}
 
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image

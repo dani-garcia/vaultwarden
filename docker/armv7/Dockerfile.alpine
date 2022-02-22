@@ -78,8 +78,6 @@ RUN touch src/main.rs
 # your actual source files being built
 # hadolint ignore=DL3059
 RUN cargo build --features ${DB} --release --target=armv7-unknown-linux-musleabihf
-# hadolint ignore=DL3059
-RUN musl-strip target/armv7-unknown-linux-musleabihf/release/vaultwarden
 
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image

@@ -301,7 +301,7 @@ fn test_smtp(data: Json<InviteData>, _token: AdminToken) -> EmptyResult {
 
 #[get("/logout")]
 fn logout(cookies: &CookieJar<'_>, referer: Referer) -> Redirect {
-    cookies.remove(Cookie::named(COOKIE_NAME));
+    cookies.remove(Cookie::build(COOKIE_NAME, "").path(admin_path()).finish());
     Redirect::to(admin_url(referer))
 }
 
@@ -638,7 +638,7 @@ impl<'r> FromRequest<'r> for AdminToken {
 
             if decode_admin(access_token).is_err() {
                 // Remove admin cookie
-                cookies.remove(Cookie::named(COOKIE_NAME));
+                cookies.remove(Cookie::build(COOKIE_NAME, "").path(admin_path()).finish());
                 error!("Invalid or expired admin JWT. IP: {}.", ip);
                 return Outcome::Forward(());
             }

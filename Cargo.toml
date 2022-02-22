@@ -3,7 +3,7 @@ name = "vaultwarden"
 version = "1.0.0"
 authors = ["Daniel García <dani-garcia@users.noreply.github.com>"]
 edition = "2021"
-rust-version = "1.58.1"
+rust-version = "1.59"
 resolver = "2"
 
 repository = "https://github.com/dani-garcia/vaultwarden"
@@ -116,11 +116,11 @@ handlebars = { version = "4.2.1", features = ["dir_source"] }
 reqwest = { version = "0.11.9", features = ["stream", "json", "gzip", "brotli", "socks", "cookies", "trust-dns"] }
 
 # For favicon extraction from main website
-html5ever = "0.25.1"
-markup5ever_rcdom = "0.1.0"
+html5gum = "0.4.0"
 regex = { version = "1.5.4", features = ["std", "perf", "unicode-perl"], default-features = false }
 data-url = "0.1.1"
 bytes = "1.1.0"
+cached = "0.30.0"
 
 # Used for custom short lived cookie jar during favicon extraction
 cookie = "0.15.1"
@@ -140,7 +140,7 @@ governor = "0.4.2"
 ctrlc = { version = "3.2.1", features = ["termination"] }
 
 [patch.crates-io]
-rocket = { git = 'https://github.com/SergioBenitez/Rocket', rev = '66d18bf66517e2765494d082629e9b9748ff8ad6' }
+rocket = { git = 'https://github.com/SergioBenitez/Rocket', rev = '91e3b4397a1637d0f55f23db712cf7bda0c7f891' }
 
 # The maintainer of the `job_scheduler` crate doesn't seem to have responded
 # to any issues or PRs for almost a year (as of April 2021). This hopefully
@@ -148,3 +148,9 @@ rocket = { git = 'https://github.com/SergioBenitez/Rocket', rev = '66d18bf66517e
 # In particular, `cron` has since implemented parsing of some common syntax
 # that wasn't previously supported (https://github.com/zslayton/cron/pull/64).
 job_scheduler = { git = 'https://github.com/jjlin/job_scheduler', rev = 'ee023418dbba2bfe1e30a5fd7d937f9e33739806' }
+
+# Strip debuginfo from the release builds
+# Also enable thin LTO for some optimizations
+[profile.release]
+strip = "debuginfo"
+lto = "thin"

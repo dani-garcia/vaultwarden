@@ -4,20 +4,20 @@
  *
  * To rebuild or modify this file with the latest versions of the included
  * software please visit:
- *   https://datatables.net/download/#bs5/dt-1.11.3
+ *   https://datatables.net/download/#bs5/dt-1.11.4
  *
  * Included libraries:
- *   DataTables 1.11.3
+ *   DataTables 1.11.4
  */
 
-/*! DataTables 1.11.3
+/*! DataTables 1.11.4
  * ©2008-2021 SpryMedia Ltd - datatables.net/license
  */
 
 /**
  * @summary     DataTables
  * @description Paginate, search and order HTML tables
- * @version     1.11.3
+ * @version     1.11.4
  * @file        jquery.dataTables.js
  * @author      SpryMedia Ltd
  * @contact     www.datatables.net
@@ -3462,6 +3462,9 @@
 	 */
 	function _fnDraw( oSettings, ajaxComplete )
 	{
+		// Allow for state saving and a custom start position
+		_fnStart( oSettings );
+	
 		/* Provide a pre-callback function which can be used to cancel the draw is false is returned */
 		var aPreDraw = _fnCallbackFire( oSettings, 'aoPreDrawCallback', 'preDraw', [oSettings] );
 		if ( $.inArray( false, aPreDraw ) !== -1 )
@@ -3470,33 +3473,17 @@
 			return;
 		}
 	
-		var i, iLen, n;
 		var anRows = [];
 		var iRowCount = 0;
 		var asStripeClasses = oSettings.asStripeClasses;
 		var iStripes = asStripeClasses.length;
-		var iOpenRows = oSettings.aoOpenRows.length;
 		var oLang = oSettings.oLanguage;
-		var iInitDisplayStart = oSettings.iInitDisplayStart;
 		var bServerSide = _fnDataSource( oSettings ) == 'ssp';
 		var aiDisplay = oSettings.aiDisplay;
-	
-		oSettings.bDrawing = true;
-	
-		/* Check and see if we have an initial draw position from state saving */
-		if ( iInitDisplayStart !== undefined && iInitDisplayStart !== -1 )
-		{
-			oSettings._iDisplayStart = bServerSide ?
-				iInitDisplayStart :
-				iInitDisplayStart >= oSettings.fnRecordsDisplay() ?
-					0 :
-					iInitDisplayStart;
-	
-			oSettings.iInitDisplayStart = -1;
-		}
-	
 		var iDisplayStart = oSettings._iDisplayStart;
 		var iDisplayEnd = oSettings.fnDisplayEnd();
+	
+		oSettings.bDrawing = true;
 	
 		/* Server-side processing draw intercept */
 		if ( oSettings.bDeferLoading )
@@ -3900,6 +3887,28 @@
 	}
 	
 	/**
+	 * Set the start position for draw
+	 *  @param {object} oSettings dataTables settings object
+	 */
+	function _fnStart( oSettings )
+	{
+		var bServerSide = _fnDataSource( oSettings ) == 'ssp';
+		var iInitDisplayStart = oSettings.iInitDisplayStart;
+	
+		// Check and see if we have an initial draw position from state saving
+		if ( iInitDisplayStart !== undefined && iInitDisplayStart !== -1 )
+		{
+			oSettings._iDisplayStart = bServerSide ?
+				iInitDisplayStart :
+				iInitDisplayStart >= oSettings.fnRecordsDisplay() ?
+					0 :
+					iInitDisplayStart;
+	
+			oSettings.iInitDisplayStart = -1;
+		}
+	}
+	
+	/**
 	 * Create an Ajax call based on the table's settings, taking into account that
 	 * parameters can have multiple forms, and backwards compatibility.
 	 *
@@ -3942,8 +3951,8 @@
 		var ajax = oSettings.ajax;
 		var instance = oSettings.oInstance;
 		var callback = function ( json ) {
-			var status = oSettings.jqXhr
-				? oSettings.jqXhr.status
+			var status = oSettings.jqXHR
+				? oSettings.jqXHR.status
 				: null;
 	
 			if ( json === null || (typeof status === 'number' && status == 204 ) ) {
@@ -5487,7 +5496,7 @@
 	
 		// Sanity check that the table is of a sensible width. If not then we are going to get
 		// misalignment - try to prevent this by not allowing the table to shrink below its min width
-		if ( table.outerWidth() < sanityWidth )
+		if ( Math.round(table.outerWidth()) < Math.round(sanityWidth) )
 		{
 			// The min width depends upon if we have a vertical scrollbar visible or not */
 			correction = ((divBodyEl.scrollHeight > divBodyEl.offsetHeight ||
@@ -6496,9 +6505,13 @@
 		// Restore key features - todo - for 1.11 this needs to be done by
 		// subscribed events
 		if ( s.start !== undefined ) {
-			settings._iDisplayStart    = s.start;
 			if(api === null) {
+				settings._iDisplayStart    = s.start;
 				settings.iInitDisplayStart = s.start;
+			}
+			else {
+				_fnPageChange(settings, s.start/s.length);
+	
 			}
 		}
 		if ( s.length !== undefined ) {
@@ -9644,7 +9657,7 @@
 	 *  @type string
 	 *  @default Version number
 	 */
-	DataTable.version = "1.11.3";
+	DataTable.version = "1.11.4";
 
 	/**
 	 * Private data store, containing all of the settings objects that are
@@ -14069,7 +14082,7 @@
 		 *
 		 *  @type string
 		 */
-		build:"bs5/dt-1.11.3",
+		build:"bs5/dt-1.11.4",
 	
 	
 		/**

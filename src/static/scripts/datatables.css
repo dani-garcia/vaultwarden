@@ -4,22 +4,13 @@
  *
  * To rebuild or modify this file with the latest versions of the included
  * software please visit:
- *   https://datatables.net/download/#bs5/dt-1.11.3
+ *   https://datatables.net/download/#bs5/dt-1.11.4
  *
  * Included libraries:
- *   DataTables 1.11.3
+ *   DataTables 1.11.4
  */
 
 @charset "UTF-8";
-td.dt-control {
-  background: url("https://www.datatables.net/examples/resources/details_open.png") no-repeat center center;
-  cursor: pointer;
-}
-
-tr.dt-hasChild td.dt-control {
-  background: url("https://www.datatables.net/examples/resources/details_close.png") no-repeat center center;
-}
-
 table.dataTable th.dt-left,
 table.dataTable td.dt-left {
   text-align: left;
@@ -90,6 +81,31 @@ table.dataTable tbody td.dt-body-justify {
 table.dataTable tbody th.dt-body-nowrap,
 table.dataTable tbody td.dt-body-nowrap {
   white-space: nowrap;
+}
+table.dataTable td.dt-control {
+  text-align: center;
+  cursor: pointer;
+}
+table.dataTable td.dt-control:before {
+  height: 1em;
+  width: 1em;
+  margin-top: -9px;
+  display: inline-block;
+  color: white;
+  border: 0.15em solid white;
+  border-radius: 1em;
+  box-shadow: 0 0 0.2em #444;
+  box-sizing: content-box;
+  text-align: center;
+  text-indent: 0 !important;
+  font-family: "Courier New", Courier, monospace;
+  line-height: 1em;
+  content: "+";
+  background-color: #31b131;
+}
+table.dataTable tr.dt-hasChild td.dt-control:before {
+  content: "-";
+  background-color: #d33333;
 }
 
 /*! Bootstrap 5 integration for DataTables
