@@ -632,29 +632,35 @@ fn _check_is_some<T>(value: &Option<T>, msg: &str) -> EmptyResult {
 #[allow(unreachable_code)]
 fn prevalidate(domainHint: String, conn: DbConn) -> JsonResult {
     let empty_result = json!({});
-    let organization = Organization::find_by_identifier(&domainHint, &conn).unwrap();
-    let sso_config = SsoConfig::find_by_org(&organization.uuid, &conn);
-    match sso_config {
-        Some(sso_config) => {
-            if !sso_config.use_sso {
-                return err_code!("SSO Not allowed for organization", Status::BadRequest.code);
+    match Organization::find_by_identifier(&domainHint, &conn) {
+        Some(organization) => {
+            let sso_config = SsoConfig::find_by_org(&organization.uuid, &conn);
+            match sso_config {
+                Some(sso_config) => {
+                    if !sso_config.use_sso {
+                        return err_code!("SSO Not allowed for organization", Status::BadRequest.code);
+                    }
+                    if sso_config.authority.is_none()
+                        || sso_config.client_id.is_none()
+                        || sso_config.client_secret.is_none() {
+                        return err_code!("Organization is incorrectly configured for SSO", Status::BadRequest.code);
+                    }
+                },
+                None => {
+                    return err_code!("Unable to find sso config", Status::BadRequest.code);
+                },
             }
-            if sso_config.authority.is_none()
-                || sso_config.client_id.is_none()
-                || sso_config.client_secret.is_none() {
-                return err_code!("Organization is incorrectly configured for SSO", Status::BadRequest.code);
+
+            if domainHint == "" {
+                return err_code!("No Organization Identifier Provided", Status::BadRequest.code);
             }
+
+            Ok(Json(empty_result))
         },
         None => {
-            return err_code!("Unable to find sso config", Status::BadRequest.code);
-        },
+            return err_code!("No matching organization found", Status::BadRequest.code);
+        }
     }
-
-    if domainHint == "" {
-        return err_code!("No Organization Identifier Provided", Status::BadRequest.code);
-    }
-
-    Ok(Json(empty_result))
 }
 
 use openidconnect::core::{
