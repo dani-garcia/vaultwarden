@@ -569,12 +569,14 @@ make_config! {
         _enable_smtp:                  bool,   true,   def,     true;
         /// Host
         smtp_host:                     String, true,   option;
-        /// Enable Secure SMTP |> (Explicit) - Enabling this by default would use STARTTLS (Standard ports 587 or 25)
-        smtp_ssl:                      bool,   true,   def,     true;
-        /// Force TLS |> (Implicit) - Enabling this would force the use of an SSL/TLS connection, instead of upgrading an insecure one with STARTTLS (Standard port 465)
-        smtp_explicit_tls:             bool,   true,   def,     false;
+        /// DEPRECATED smtp_ssl |> DEPRECATED - Please use SMTP_SECURITY
+        smtp_ssl:                      bool,   false,  option;
+        /// DEPRECATED smtp_explicit_tls |> DEPRECATED - Please use SMTP_SECURITY
+        smtp_explicit_tls:             bool,   false,  option;
+        /// Secure SMTP |> ("starttls", "force_tls", "off") Enable a secure connection. Default is "starttls" (Explicit - ports 587 or 25), "force_tls" (Implicit - port 465) or "off", no encryption
+        smtp_security:                 String, true,   auto,    |c| smtp_convert_deprecated_ssl_options(c.smtp_ssl, c.smtp_explicit_tls); // TODO: After deprecation make it `def, "starttls".to_string()`
         /// Port
-        smtp_port:                     u16,    true,   auto,    |c| if c.smtp_explicit_tls {465} else if c.smtp_ssl {587} else {25};
+        smtp_port:                     u16,    true,   auto,    |c| if c.smtp_security == *"force_tls" {465} else if c.smtp_security == *"starttls" {587} else {25};
         /// From Address
         smtp_from:                     String, true,   def,     String::new();
         /// From Name
@@ -657,6 +659,13 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
     }
 
     if cfg._enable_smtp {
+        match cfg.smtp_security.as_str() {
+            "off" | "starttls" | "force_tls" => (),
+            _ => err!(
+                "`SMTP_SECURITY` is invalid. It needs to be one of the following options: starttls, force_tls or off"
+            ),
+        }
+
         if cfg.smtp_host.is_some() == cfg.smtp_from.is_empty() {
             err!("Both `SMTP_HOST` and `SMTP_FROM` need to be set for email support")
         }
@@ -733,6 +742,20 @@ fn extract_url_path(url: &str) -> String {
             String::new()
         }
     }
+}
+
+/// Convert the old SMTP_SSL and SMTP_EXPLICIT_TLS options
+fn smtp_convert_deprecated_ssl_options(smtp_ssl: Option<bool>, smtp_explicit_tls: Option<bool>) -> String {
+    if smtp_explicit_tls.is_some() || smtp_ssl.is_some() {
+        println!("[DEPRECATED]: `SMTP_SSL` or `SMTP_EXPLICIT_TLS` is set. Please use `SMTP_SECURITY` instead.");
+    }
+    if smtp_explicit_tls.is_some() && smtp_explicit_tls.unwrap() {
+        return "force_tls".to_string();
+    } else if smtp_ssl.is_some() && !smtp_ssl.unwrap() {
+        return "off".to_string();
+    }
+    // Return the default `starttls` in all other cases
+    "starttls".to_string()
 }
 
 impl Config {

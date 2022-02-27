@@ -109,9 +109,9 @@ RUN cargo build --features ${DB} --release --target=armv7-unknown-linux-gnueabih
 # because we already have a binary built
 FROM balenalib/armv7hf-debian:buster
 
-ENV ROCKET_ENV="staging" \
-    ROCKET_PORT=80 \
-    ROCKET_WORKERS=10
+ENV ROCKET_PROFILE="release" \
+    ROCKET_ADDRESS=0.0.0.0 \
+    ROCKET_PORT=80
 
 # hadolint ignore=DL3059
 RUN [ "cross-build-start" ]

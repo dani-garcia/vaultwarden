@@ -109,9 +109,9 @@ RUN cargo build --features ${DB} --release --target=aarch64-unknown-linux-gnu
 # because we already have a binary built
 FROM balenalib/aarch64-debian:buster
 
-ENV ROCKET_ENV="staging" \
-    ROCKET_PORT=80 \
-    ROCKET_WORKERS=10
+ENV ROCKET_PROFILE="release" \
+    ROCKET_ADDRESS=0.0.0.0 \
+    ROCKET_PORT=80
 
 # hadolint ignore=DL3059
 RUN [ "cross-build-start" ]

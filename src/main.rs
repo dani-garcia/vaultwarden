@@ -329,7 +329,6 @@ async fn launch_rocket(pool: db::DbPool, extra_debug: bool) -> Result<(), Error>
     let basepath = &CONFIG.domain_path();
 
     let mut config = rocket::Config::from(rocket::Config::figment());
-    config.address = std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED); // TODO: Allow this to be changed, keep ROCKET_ADDRESS for compat
     config.temp_dir = canonicalize(CONFIG.tmp_folder()).unwrap().into();
     config.limits = Limits::new() //
         .limit("json", 10.megabytes())

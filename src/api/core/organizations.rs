@@ -1182,9 +1182,7 @@ async fn post_org_import(
     let ciphers = stream::iter(data.Ciphers)
         .then(|cipher_data| async {
             let mut cipher = Cipher::new(cipher_data.Type, cipher_data.Name.clone());
-            update_cipher_from_data(&mut cipher, cipher_data, &headers, false, &conn, &nt, UpdateType::CipherCreate)
-                .await
-                .ok();
+            update_cipher_from_data(&mut cipher, cipher_data, &headers, false, &conn, &nt, UpdateType::None).await.ok();
             cipher
         })
         .collect::<Vec<Cipher>>()
