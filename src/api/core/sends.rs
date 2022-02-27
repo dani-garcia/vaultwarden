@@ -8,7 +8,7 @@ use serde_json::Value;
 
 use crate::{
     api::{ApiResult, EmptyResult, JsonResult, JsonUpcase, Notify, NumberOrString, UpdateType},
-    auth::{Headers, Host},
+    auth::{ClientIp, Headers, Host},
     db::{models::*, DbConn, DbPool},
     util::SafeString,
     CONFIG,
@@ -268,7 +268,7 @@ pub struct SendAccessData {
 }
 
 #[post("/sends/access/<access_id>", data = "<data>")]
-fn post_access(access_id: String, data: JsonUpcase<SendAccessData>, conn: DbConn) -> JsonResult {
+fn post_access(access_id: String, data: JsonUpcase<SendAccessData>, conn: DbConn, ip: ClientIp) -> JsonResult {
     let mut send = match Send::find_by_access_id(&access_id, &conn) {
         Some(s) => s,
         None => err_code!(SEND_INACCESSIBLE_MSG, 404),
@@ -297,8 +297,8 @@ fn post_access(access_id: String, data: JsonUpcase<SendAccessData>, conn: DbConn
     if send.password_hash.is_some() {
         match data.into_inner().data.Password {
             Some(ref p) if send.check_password(p) => { /* Nothing to do here */ }
-            Some(_) => err!("Invalid password."),
-            None => err_code!("Password not provided", 401),
+            Some(_) => err!("Invalid password", format!("IP: {}.", ip.ip)),
+            None => err_code!("Password not provided", format!("IP: {}.", ip.ip), 401),
         }
     }
 
