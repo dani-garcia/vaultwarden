@@ -30,14 +30,14 @@ jobs:
       fail-fast: false
       matrix:
         channel:
-          - nightly
+          - stable
         target-triple:
           - x86_64-unknown-linux-gnu
         include:
           - target-triple: x86_64-unknown-linux-gnu
             host-triple: x86_64-unknown-linux-gnu
             features: [sqlite,mysql,postgresql] # Remember to update the `cargo test` to match the amount of features
-            channel: nightly
+            channel: stable
             os: ubuntu-20.04
             ext: ""
 
@@ -46,7 +46,7 @@ jobs:
     steps:
       # Checkout the repo
       - name: Checkout
-        uses: actions/checkout@5a4ac9002d0be2fb38bd78e4b4dbde5606d7042f # v2.3.4
+        uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579 # v2.4.0
       # End Checkout the repo
 
 
@@ -82,28 +82,28 @@ jobs:
       # Run cargo tests (In release mode to speed up future builds)
       # First test all features together, afterwards test them separately.
       - name: "`cargo test --release --features ${{ join(matrix.features, ',') }} --target ${{ matrix.target-triple }}`"
-        uses: actions-rs/cargo@ae10961054e4aa8b4aa7dffede299aaf087aa33b # v1.0.1
+        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505 # v1.0.3
         with:
           command: test
           args: --release --features ${{ join(matrix.features, ',') }} --target ${{ matrix.target-triple }}
       # Test single features
       # 0: sqlite
       - name: "`cargo test --release --features ${{ matrix.features[0] }} --target ${{ matrix.target-triple }}`"
-        uses: actions-rs/cargo@ae10961054e4aa8b4aa7dffede299aaf087aa33b # v1.0.1
+        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505 # v1.0.3
         with:
           command: test
           args: --release --features ${{ matrix.features[0] }} --target ${{ matrix.target-triple }}
         if: ${{ matrix.features[0] != '' }}
       # 1: mysql
       - name: "`cargo test --release --features ${{ matrix.features[1] }} --target ${{ matrix.target-triple }}`"
-        uses: actions-rs/cargo@ae10961054e4aa8b4aa7dffede299aaf087aa33b # v1.0.1
+        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505 # v1.0.3
         with:
           command: test
           args: --release --features ${{ matrix.features[1] }} --target ${{ matrix.target-triple }}
         if: ${{ matrix.features[1] != '' }}
       # 2: postgresql
       - name: "`cargo test --release --features ${{ matrix.features[2] }} --target ${{ matrix.target-triple }}`"
-        uses: actions-rs/cargo@ae10961054e4aa8b4aa7dffede299aaf087aa33b # v1.0.1
+        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505 # v1.0.3
         with:
           command: test
           args: --release --features ${{ matrix.features[2] }} --target ${{ matrix.target-triple }}
@@ -113,7 +113,7 @@ jobs:
 
       # Run cargo clippy, and fail on warnings (In release mode to speed up future builds)
       - name: "`cargo clippy --release --features ${{ join(matrix.features, ',') }} --target ${{ matrix.target-triple }}`"
-        uses: actions-rs/cargo@ae10961054e4aa8b4aa7dffede299aaf087aa33b # v1.0.1
+        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505 # v1.0.3
         with:
           command: clippy
           args: --release --features ${{ join(matrix.features, ',') }} --target ${{ matrix.target-triple }} -- -D warnings
@@ -122,7 +122,7 @@ jobs:
 
       # Run cargo fmt
       - name: '`cargo fmt`'
-        uses: actions-rs/cargo@ae10961054e4aa8b4aa7dffede299aaf087aa33b # v1.0.1
+        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505 # v1.0.3
         with:
           command: fmt
           args: --all -- --check
@@ -131,7 +131,7 @@ jobs:
 
       # Build the binary
       - name: "`cargo build --release --features ${{ join(matrix.features, ',') }} --target ${{ matrix.target-triple }}`"
-        uses: actions-rs/cargo@ae10961054e4aa8b4aa7dffede299aaf087aa33b # v1.0.1
+        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505 # v1.0.3
         with:
           command: build
           args: --release --features ${{ join(matrix.features, ',') }} --target ${{ matrix.target-triple }}
@@ -140,7 +140,7 @@ jobs:
 
       # Upload artifact to Github Actions
       - name: Upload artifact
-        uses: actions/upload-artifact@27121b0bdffd731efa15d66772be8dc71245d074 # v2.2.4
+        uses: actions/upload-artifact@82c141cc518b40d92cc801eee768e7aafc9c2fa2 # v2.3.1
         with:
           name: vaultwarden-${{ matrix.target-triple }}${{ matrix.ext }}
           path: target/${{ matrix.target-triple }}/release/vaultwarden${{ matrix.ext }}
