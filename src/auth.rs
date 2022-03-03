@@ -38,7 +38,7 @@ static PRIVATE_RSA_KEY: Lazy<EncodingKey> = Lazy::new(|| {
 static PUBLIC_RSA_KEY_VEC: Lazy<Vec<u8>> = Lazy::new(|| {
     read_file(&CONFIG.public_rsa_key()).unwrap_or_else(|e| panic!("Error loading public RSA Key.\n{}", e))
 });
-static PUBLIC_RSA_KEY: Lazy<DecodingKey<'_>> = Lazy::new(|| {
+static PUBLIC_RSA_KEY: Lazy<DecodingKey> = Lazy::new(|| {
     DecodingKey::from_rsa_pem(&PUBLIC_RSA_KEY_VEC).unwrap_or_else(|e| panic!("Error decoding public RSA Key.\n{}", e))
 });
 
@@ -55,15 +55,11 @@ pub fn encode_jwt<T: Serialize>(claims: &T) -> String {
 }
 
 fn decode_jwt<T: DeserializeOwned>(token: &str, issuer: String) -> Result<T, Error> {
-    let validation = jsonwebtoken::Validation {
-        leeway: 30, // 30 seconds
-        validate_exp: true,
-        validate_nbf: true,
-        aud: None,
-        iss: Some(issuer),
-        sub: None,
-        algorithms: vec![JWT_ALGORITHM],
-    };
+    let mut validation = jsonwebtoken::Validation::new(JWT_ALGORITHM);
+    validation.leeway = 30; // 30 seconds
+    validation.validate_exp = true;
+    validation.validate_nbf = true;
+    validation.set_issuer(&[issuer]);
 
     let token = token.replace(char::is_whitespace, "");
     jsonwebtoken::decode(&token, &PUBLIC_RSA_KEY, &validation).map(|d| d.claims).map_res("Error decoding JWT")
@@ -350,7 +346,7 @@ impl<'r> FromRequest<'r> for Headers {
             _ => err_handler!("Error getting DB"),
         };
 
-        let device = match Device::find_by_uuid(&device_uuid, &conn).await {
+        let device = match Device::find_by_uuid_and_user(&device_uuid, &user_uuid, &conn).await {
             Some(device) => device,
             None => err_handler!("Invalid device id"),
         };

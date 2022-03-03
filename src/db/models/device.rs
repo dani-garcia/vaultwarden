@@ -8,7 +8,7 @@ db_object! {
     #[table_name = "devices"]
     #[changeset_options(treat_none_as_null="true")]
     #[belongs_to(User, foreign_key = "user_uuid")]
-    #[primary_key(uuid)]
+    #[primary_key(uuid, user_uuid)]
     pub struct Device {
         pub uuid: String,
         pub created_at: NaiveDateTime,
@@ -131,32 +131,26 @@ impl Device {
             postgresql {
                 let value = DeviceDb::to_db(self);
                 crate::util::retry(
-                    || diesel::insert_into(devices::table).values(&value).on_conflict(devices::uuid).do_update().set(&value).execute(conn),
+                    || diesel::insert_into(devices::table).values(&value).on_conflict((devices::uuid, devices::user_uuid)).do_update().set(&value).execute(conn),
                     10,
                 ).map_res("Error saving device")
             }
         }
     }
 
-    pub async fn delete(self, conn: &DbConn) -> EmptyResult {
+    pub async fn delete_all_by_user(user_uuid: &str, conn: &DbConn) -> EmptyResult {
         db_run! { conn: {
-            diesel::delete(devices::table.filter(devices::uuid.eq(self.uuid)))
+            diesel::delete(devices::table.filter(devices::user_uuid.eq(user_uuid)))
                 .execute(conn)
-                .map_res("Error removing device")
+                .map_res("Error removing devices for user")
         }}
     }
 
-    pub async fn delete_all_by_user(user_uuid: &str, conn: &DbConn) -> EmptyResult {
-        for device in Self::find_by_user(user_uuid, conn).await {
-            device.delete(conn).await?;
-        }
-        Ok(())
-    }
-
-    pub async fn find_by_uuid(uuid: &str, conn: &DbConn) -> Option<Self> {
+    pub async fn find_by_uuid_and_user(uuid: &str, user_uuid: &str, conn: &DbConn) -> Option<Self> {
         db_run! { conn: {
             devices::table
                 .filter(devices::uuid.eq(uuid))
+                .filter(devices::user_uuid.eq(user_uuid))
                 .first::<DeviceDb>(conn)
                 .ok()
                 .from_db()
@@ -169,16 +163,6 @@ impl Device {
                 .filter(devices::refresh_token.eq(refresh_token))
                 .first::<DeviceDb>(conn)
                 .ok()
-                .from_db()
-        }}
-    }
-
-    pub async fn find_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
-        db_run! { conn: {
-            devices::table
-                .filter(devices::user_uuid.eq(user_uuid))
-                .load::<DeviceDb>(conn)
-                .expect("Error loading devices")
                 .from_db()
         }}
     }

@@ -98,7 +98,7 @@ async fn _password_login(data: ConnectData, conn: DbConn, ip: &ClientIp) -> Json
     crate::ratelimit::check_limit_login(&ip.ip)?;
 
     // Get the user
-    let username = data.username.as_ref().unwrap();
+    let username = data.username.as_ref().unwrap().trim();
     let user = match User::find_by_mail(username, &conn).await {
         Some(user) => user,
         None => err!("Username or password is incorrect. Try again", format!("IP: {}. Username: {}.", ip.ip, username)),
@@ -266,17 +266,8 @@ async fn get_device(data: &ConnectData, conn: &DbConn, user: &User) -> (Device, 
 
     let mut new_device = false;
     // Find device or create new
-    let device = match Device::find_by_uuid(&device_id, conn).await {
-        Some(device) => {
-            // Check if owned device, and recreate if not
-            if device.user_uuid != user.uuid {
-                info!("Device exists but is owned by another user. The old device will be discarded");
-                new_device = true;
-                Device::new(device_id, user.uuid.clone(), device_name, device_type)
-            } else {
-                device
-            }
-        }
+    let device = match Device::find_by_uuid_and_user(&device_id, &user.uuid, conn).await {
+        Some(device) => device,
         None => {
             new_device = true;
             Device::new(device_id, user.uuid.clone(), device_name, device_type)
@@ -328,7 +319,7 @@ async fn twofactor_auth(
         }
         Some(TwoFactorType::YubiKey) => _tf::yubikey::validate_yubikey_login(twofactor_code, &selected_data?)?,
         Some(TwoFactorType::Duo) => {
-            _tf::duo::validate_duo_login(data.username.as_ref().unwrap(), twofactor_code, conn).await?
+            _tf::duo::validate_duo_login(data.username.as_ref().unwrap().trim(), twofactor_code, conn).await?
         }
         Some(TwoFactorType::Email) => {
             _tf::email::validate_email_code_str(user_uuid, twofactor_code, &selected_data?, conn).await?
