@@ -34,14 +34,14 @@ syslog = "4.0.1" # Needs to be v4 until fern is updated
 # Logging
 log = "0.4.14"
 fern = { version = "0.6.0", features = ["syslog-4"] }
-tracing = { version = "0.1.31", features = ["log"] } # Needed to have lettre and webauthn-rs trace logging to work
+tracing = { version = "0.1.32", features = ["log"] } # Needed to have lettre and webauthn-rs trace logging to work
 backtrace = "0.3.64" # Logging panics to logfile instead stderr only
 
 # A `dotenv` implementation for Rust
 dotenv = { version = "0.15.0", default-features = false }
 
 # Lazy initialization
-once_cell = "1.9.0"
+once_cell = "1.10.0"
 
 # Numerical libraries
 num-traits = "0.2.14"
@@ -89,7 +89,7 @@ job_scheduler = "1.2.1"
 data-encoding = "2.3.2"
 
 # JWT library
-jsonwebtoken = "7.2.0"
+jsonwebtoken = "8.0.1"
 
 # TOTP library
 totp-lite = "1.0.3"
@@ -110,17 +110,17 @@ idna = "0.2.3" # Punycode conversion
 percent-encoding = "2.1.0" # URL encoding library used for URL's in the emails
 
 # Template library
-handlebars = { version = "4.2.1", features = ["dir_source"] }
+handlebars = { version = "4.2.2", features = ["dir_source"] }
 
 # HTTP client
 reqwest = { version = "0.11.9", features = ["stream", "json", "gzip", "brotli", "socks", "cookies", "trust-dns"] }
 
 # For favicon extraction from main website
 html5gum = "0.4.0"
-regex = { version = "1.5.4", features = ["std", "perf", "unicode-perl"], default-features = false }
+regex = { version = "1.5.5", features = ["std", "perf", "unicode-perl"], default-features = false }
 data-url = "0.1.1"
 bytes = "1.1.0"
-cached = "0.30.0"
+cached = "0.34.0"
 
 # Used for custom short lived cookie jar during favicon extraction
 cookie = "0.15.1"
@@ -140,7 +140,7 @@ governor = "0.4.2"
 ctrlc = { version = "3.2.1", features = ["termination"] }
 
 [patch.crates-io]
-rocket = { git = 'https://github.com/SergioBenitez/Rocket', rev = '91e3b4397a1637d0f55f23db712cf7bda0c7f891' }
+rocket = { git = 'https://github.com/SergioBenitez/Rocket', rev = 'ae0ccf43f11be5c00bb9cd49996c8bb06a7e1651' }
 
 # The maintainer of the `job_scheduler` crate doesn't seem to have responded
 # to any issues or PRs for almost a year (as of April 2021). This hopefully
