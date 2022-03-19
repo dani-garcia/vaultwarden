@@ -45,6 +45,42 @@ This can be configured in [vaultwarden directly](https://github.com/dani-garcia/
 
 If you have an available domain name, you can get HTTPS certificates with [Let's Encrypt](https://letsencrypt.org/), or you can generate self-signed certificates with utilities like [mkcert](https://github.com/FiloSottile/mkcert). Some proxies automatically do this step, like Caddy (see examples linked above).
 
+### Install with Helm
+
+Vaultwarden can also be installed using Helm.
+
+Clone the project:
+
+```bash
+git clone https://github.com/guerzon/vaultwarden.git vaultwarden-helm
+cd vaultwarden-helm
+```
+
+Create a `values.yaml` file to define a simple deployment to AWS:
+
+```bash
+export DOMAIN=vaultwarden.company.com
+export ADMINTOKEN=$(openssl rand -base64 48)
+export ACMCERT=arn:aws:acm:eu-central-1:ACCOUNT:certificate/LONGID
+echo $ADMINTOKEN
+
+cat <<EOF > values-demo.yaml
+domain: "https://$DOMAIN"
+
+ingress:
+  enabled: true
+  hostname: $DOMAIN
+  class: "alb"
+  additionalAnnotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/certificate-arn: "${ACMCERT}"
+
+adminToken: "${ADMINTOKEN}"
+EOF
+```
+
+For more deployment options, refer to [this](https://github.com/guerzon/vaultwarden) project documentation.
+
 ## Usage
 See the [vaultwarden wiki](https://github.com/dani-garcia/vaultwarden/wiki) for more information on how to configure and run the vaultwarden server.
 
