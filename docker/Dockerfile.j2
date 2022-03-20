@@ -3,7 +3,7 @@
 # This file was generated using a Jinja2 template.
 # Please make your changes in `Dockerfile.j2` and then `make` the individual Dockerfiles.
 
-{% set build_stage_base_image = "rust:1.58-buster" %}
+{% set build_stage_base_image = "rust:1.59-bullseye" %}
 {% if "alpine" in target_file %}
 {%   if "amd64" in target_file %}
 {%     set build_stage_base_image = "blackdex/rust-musl:x86_64-musl-stable" %}
@@ -23,19 +23,19 @@
 {%     set package_arch_target = "aarch64-unknown-linux-musl" %}
 {%   endif %}
 {% elif "amd64" in target_file %}
-{%   set runtime_stage_base_image = "debian:buster-slim" %}
+{%   set runtime_stage_base_image = "debian:bullseye-slim" %}
 {% elif "arm64" in target_file %}
-{%   set runtime_stage_base_image = "balenalib/aarch64-debian:buster" %}
+{%   set runtime_stage_base_image = "balenalib/aarch64-debian:bullseye" %}
 {%   set package_arch_name = "arm64" %}
 {%   set package_arch_target = "aarch64-unknown-linux-gnu" %}
 {%   set package_cross_compiler = "aarch64-linux-gnu" %}
 {% elif "armv6" in target_file %}
-{%   set runtime_stage_base_image = "balenalib/rpi-debian:buster" %}
+{%   set runtime_stage_base_image = "balenalib/rpi-debian:bullseye" %}
 {%   set package_arch_name = "armel" %}
 {%   set package_arch_target = "arm-unknown-linux-gnueabi" %}
 {%   set package_cross_compiler = "arm-linux-gnueabi" %}
 {% elif "armv7" in target_file %}
-{%   set runtime_stage_base_image = "balenalib/armv7hf-debian:buster" %}
+{%   set runtime_stage_base_image = "balenalib/armv7hf-debian:bullseye" %}
 {%   set package_arch_name = "armhf" %}
 {%   set package_arch_target = "armv7-unknown-linux-gnueabihf" %}
 {%   set package_cross_compiler = "arm-linux-gnueabihf" %}
@@ -163,7 +163,12 @@ RUN {{ mount_rust_cache -}} rustup target add {{ package_arch_target }}
 {% endif %}
 
 # Configure the DB ARG as late as possible to not invalidate the cached layers above
+{% if "alpine" in target_file %}
+# Enable MiMalloc to improve performance on Alpine builds
+ARG DB=sqlite,mysql,postgresql,enable_mimalloc
+{% else %}
 ARG DB=sqlite,mysql,postgresql
+{% endif %}
 
 # Builds your dependencies and removes the
 # dummy project, except the target folder

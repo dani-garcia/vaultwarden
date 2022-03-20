@@ -9,8 +9,9 @@ use serde_json::Value;
 
 use crate::{
     api::{
+        core::accounts::{PreloginData, _prelogin},
         core::two_factor::{duo, email, email::EmailTokenData, yubikey},
-        ApiResult, EmptyResult, JsonResult,
+        ApiResult, EmptyResult, JsonResult, JsonUpcase,
     },
     auth::ClientIp,
     db::{models::*, DbConn},
@@ -19,7 +20,7 @@ use crate::{
 };
 
 pub fn routes() -> Vec<Route> {
-    routes![login]
+    routes![login, prelogin]
 }
 
 #[post("/connect/token", data = "<data>")]
@@ -447,6 +448,11 @@ async fn _json_err_twofactor(providers: &[i32], user_uuid: &str, conn: &DbConn) 
     }
 
     Ok(result)
+}
+
+#[post("/accounts/prelogin", data = "<data>")]
+async fn prelogin(data: JsonUpcase<PreloginData>, conn: DbConn) -> Json<Value> {
+    _prelogin(data, conn).await
 }
 
 // https://github.com/bitwarden/jslib/blob/master/common/src/models/request/tokenRequest.ts

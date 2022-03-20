@@ -59,13 +59,13 @@ macro_rules! make_config {
         impl ConfigBuilder {
             #[allow(clippy::field_reassign_with_default)]
             fn from_env() -> Self {
-                match dotenv::from_path(get_env("ENV_FILE").unwrap_or_else(|| String::from(".env"))) {
+                match dotenvy::from_path(get_env("ENV_FILE").unwrap_or_else(|| String::from(".env"))) {
                     Ok(_) => (),
                     Err(e) => match e {
-                        dotenv::Error::LineParse(msg, pos) => {
+                        dotenvy::Error::LineParse(msg, pos) => {
                             panic!("Error loading the .env file:\nNear {:?} on position {}\nPlease fix and restart!\n", msg, pos);
                         },
-                        dotenv::Error::Io(ioerr) => match ioerr.kind() {
+                        dotenvy::Error::Io(ioerr) => match ioerr.kind() {
                             std::io::ErrorKind::NotFound => {
                                 println!("[INFO] No .env file found.\n");
                             },
@@ -955,7 +955,8 @@ impl Config {
                 handle.shutdown().ok();
             }
             // Wait a bit before stopping the web server
-            std::thread::sleep(std::time::Duration::from_secs(1));
+            tokio::runtime::Handle::current()
+                .block_on(async move { tokio::time::sleep(tokio::time::Duration::from_secs(1)).await });
             if let Some(handle) = c.rocket_shutdown_handle.clone() {
                 handle.notify();
             }

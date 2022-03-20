@@ -599,12 +599,11 @@ async fn password_hint(data: JsonUpcase<PasswordHintData>, conn: DbConn) -> Empt
                 // There is still a timing side channel here in that the code
                 // paths that send mail take noticeably longer than ones that
                 // don't. Add a randomized sleep to mitigate this somewhat.
-                use rand::{thread_rng, Rng};
-                let mut rng = thread_rng();
-                let base = 1000;
+                use rand::{rngs::SmallRng, Rng, SeedableRng};
+                let mut rng = SmallRng::from_entropy();
                 let delta: i32 = 100;
-                let sleep_ms = (base + rng.gen_range(-delta..=delta)) as u64;
-                std::thread::sleep(std::time::Duration::from_millis(sleep_ms));
+                let sleep_ms = (1_000 + rng.gen_range(-delta..=delta)) as u64;
+                tokio::time::sleep(tokio::time::Duration::from_millis(sleep_ms)).await;
                 Ok(())
             } else {
                 err!(NO_HINT);
@@ -626,12 +625,16 @@ async fn password_hint(data: JsonUpcase<PasswordHintData>, conn: DbConn) -> Empt
 
 #[derive(Deserialize)]
 #[allow(non_snake_case)]
-struct PreloginData {
+pub struct PreloginData {
     Email: String,
 }
 
 #[post("/accounts/prelogin", data = "<data>")]
 async fn prelogin(data: JsonUpcase<PreloginData>, conn: DbConn) -> Json<Value> {
+    _prelogin(data, conn).await
+}
+
+pub async fn _prelogin(data: JsonUpcase<PreloginData>, conn: DbConn) -> Json<Value> {
     let data: PreloginData = data.into_inner().data;
 
     let (kdf_type, kdf_iter) = match User::find_by_mail(&data.Email, &conn).await {
