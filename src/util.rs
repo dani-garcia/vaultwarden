@@ -32,7 +32,8 @@ impl Fairing for AppHeaders {
         res.set_raw_header("Referrer-Policy", "same-origin");
         res.set_raw_header("X-Frame-Options", "SAMEORIGIN");
         res.set_raw_header("X-Content-Type-Options", "nosniff");
-        res.set_raw_header("X-XSS-Protection", "1; mode=block");
+        // Obsolete in modern browsers, unsafe (XS-Leak), and largely replaced by CSP
+        res.set_raw_header("X-XSS-Protection", "0");
         let csp = format!(
             // Chrome Web Store: https://chrome.google.com/webstore/detail/bitwarden-free-password-m/nngceckbapebfimnlniiiahkandclblb
             // Edge Add-ons: https://microsoftedge.microsoft.com/addons/detail/bitwarden-free-password/jbkfoedolllekgbhcbcoahefnbanhhlh?hl=en-US
