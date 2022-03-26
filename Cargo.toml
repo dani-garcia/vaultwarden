@@ -35,7 +35,7 @@ syslog = "4.0.1" # Needs to be v4 until fern is updated
 
 [dependencies]
 # Logging
-log = "0.4.14"
+log = "0.4.16"
 fern = { version = "0.6.0", features = ["syslog-4"] }
 tracing = { version = "0.1.32", features = ["log"] } # Needed to have lettre and webauthn-rs trace logging to work
 backtrace = "0.3.64" # Logging panics to logfile instead stderr only
