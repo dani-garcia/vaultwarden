@@ -36,7 +36,7 @@ jobs:
         include:
           - target-triple: x86_64-unknown-linux-gnu
             host-triple: x86_64-unknown-linux-gnu
-            features: [sqlite,mysql,postgresql] # Remember to update the `cargo test` to match the amount of features
+            features: [sqlite,mysql,postgresql,enable_mimalloc] # Remember to update the `cargo test` to match the amount of features
             channel: stable
             os: ubuntu-20.04
             ext: ""

@@ -8,6 +8,13 @@
 // If you go above 128 it will cause rust-analyzer to fail,
 #![recursion_limit = "87"]
 
+// When enabled use MiMalloc as malloc instead of the default malloc
+#[cfg(feature = "enable_mimalloc")]
+use mimalloc::MiMalloc;
+#[cfg(feature = "enable_mimalloc")]
+#[cfg_attr(feature = "enable_mimalloc", global_allocator)]
+static GLOBAL: MiMalloc = MiMalloc;
+
 #[macro_use]
 extern crate rocket;
 #[macro_use]
@@ -28,7 +35,6 @@ use std::{
     process::exit,
     str::FromStr,
     thread,
-    time::Duration,
 };
 
 #[macro_use]
@@ -71,7 +77,7 @@ async fn main() -> Result<(), Error> {
     create_dir(&CONFIG.sends_folder(), "sends folder");
     create_dir(&CONFIG.attachments_folder(), "attachments folder");
 
-    let pool = create_db_pool();
+    let pool = create_db_pool().await;
     schedule_jobs(pool.clone()).await;
     crate::db::models::TwoFactor::migrate_u2f_to_webauthn(&pool.get().await.unwrap()).await.unwrap();
 
@@ -315,8 +321,8 @@ fn check_web_vault() {
     }
 }
 
-fn create_db_pool() -> db::DbPool {
-    match util::retry_db(db::DbPool::from_config, CONFIG.db_connection_retries()) {
+async fn create_db_pool() -> db::DbPool {
+    match util::retry_db(db::DbPool::from_config, CONFIG.db_connection_retries()).await {
         Ok(p) => p,
         Err(e) => {
             error!("Error creating database pool: {:?}", e);
@@ -430,7 +436,9 @@ async fn schedule_jobs(pool: db::DbPool) {
             // tick, the one that was added earlier will run first.
             loop {
                 sched.tick();
-                thread::sleep(Duration::from_millis(CONFIG.job_poll_interval_ms()));
+                runtime.block_on(async move {
+                    tokio::time::sleep(tokio::time::Duration::from_millis(CONFIG.job_poll_interval_ms())).await
+                });
             }
         })
         .expect("Error spawning job scheduler thread");

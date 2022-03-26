@@ -11,8 +11,10 @@ use rocket::{
     Data, Orbit, Request, Response, Rocket,
 };
 
-use std::thread::sleep;
-use std::time::Duration;
+use tokio::{
+    runtime::Handle,
+    time::{sleep, Duration},
+};
 
 use crate::CONFIG;
 
@@ -581,14 +583,13 @@ where
                 if tries >= max_tries {
                     return err;
                 }
-
-                sleep(Duration::from_millis(500));
+                Handle::current().block_on(async move { sleep(Duration::from_millis(500)).await });
             }
         }
     }
 }
 
-pub fn retry_db<F, T, E>(func: F, max_tries: u32) -> Result<T, E>
+pub async fn retry_db<F, T, E>(func: F, max_tries: u32) -> Result<T, E>
 where
     F: Fn() -> Result<T, E>,
     E: std::error::Error,
@@ -607,7 +608,7 @@ where
 
                 warn!("Can't connect to database, retrying: {:?}", e);
 
-                sleep(Duration::from_millis(1_000));
+                sleep(Duration::from_millis(1_000)).await;
             }
         }
     }

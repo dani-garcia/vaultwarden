@@ -58,7 +58,8 @@ COPY ./build.rs ./build.rs
 RUN rustup target add x86_64-unknown-linux-musl
 
 # Configure the DB ARG as late as possible to not invalidate the cached layers above
-ARG DB=sqlite,mysql,postgresql
+# Enable MiMalloc to improve performance on Alpine builds
+ARG DB=sqlite,mysql,postgresql,enable_mimalloc
 
 # Builds your dependencies and removes the
 # dummy project, except the target folder

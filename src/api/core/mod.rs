@@ -1,4 +1,4 @@
-mod accounts;
+pub mod accounts;
 mod ciphers;
 mod emergency_access;
 mod folders;

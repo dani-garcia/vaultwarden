@@ -27,7 +27,7 @@
 FROM vaultwarden/web-vault@sha256:4412f0790fc1b8c7c86fc07f7761cd37c554802738629e80c7aa35d8bf754f9f as vault
 
 ########################## BUILD IMAGE  ##########################
-FROM rust:1.58-buster as build
+FROM rust:1.59-bullseye as build
 
 
 
@@ -107,7 +107,7 @@ RUN cargo build --features ${DB} --release --target=aarch64-unknown-linux-gnu
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image
 # because we already have a binary built
-FROM balenalib/aarch64-debian:buster
+FROM balenalib/aarch64-debian:bullseye
 
 ENV ROCKET_PROFILE="release" \
     ROCKET_ADDRESS=0.0.0.0 \
