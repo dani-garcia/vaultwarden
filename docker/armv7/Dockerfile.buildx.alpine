@@ -59,8 +59,7 @@ COPY ./build.rs ./build.rs
 RUN --mount=type=cache,target=/root/.cargo/git --mount=type=cache,target=/root/.cargo/registry rustup target add armv7-unknown-linux-musleabihf
 
 # Configure the DB ARG as late as possible to not invalidate the cached layers above
-# Enable MiMalloc to improve performance on Alpine builds
-ARG DB=sqlite,mysql,postgresql,enable_mimalloc
+ARG DB=sqlite,mysql,postgresql
 
 # Builds your dependencies and removes the
 # dummy project, except the target folder

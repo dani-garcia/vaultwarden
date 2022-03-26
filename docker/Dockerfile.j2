@@ -163,7 +163,7 @@ RUN {{ mount_rust_cache -}} rustup target add {{ package_arch_target }}
 {% endif %}
 
 # Configure the DB ARG as late as possible to not invalidate the cached layers above
-{% if "alpine" in target_file %}
+{% if "alpine" in target_file and "amd64" in target_file %}
 # Enable MiMalloc to improve performance on Alpine builds
 ARG DB=sqlite,mysql,postgresql,enable_mimalloc
 {% else %}
