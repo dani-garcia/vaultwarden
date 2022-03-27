@@ -105,10 +105,9 @@ RUN {{ mount_rust_cache -}} mkdir -pv "${CARGO_HOME}" \
     && rustup set profile minimal
 
 {% if "alpine" in target_file %}
-ENV RUSTFLAGS='-C link-arg=-s'
-{%   if "armv7" in target_file %}
-{#- https://gcc.gnu.org/onlinedocs/gcc/ARM-Options.html -#}
-ENV CFLAGS_armv7_unknown_linux_musleabihf="-mfpu=vfpv3-d16"
+{%   if "armv6" in target_file %}
+# To be able to build the armv6 image with mimalloc we need to specifically specify the libatomic.a file location
+ENV RUSTFLAGS='-Clink-arg=/usr/local/musl/{{ package_arch_target }}/lib/libatomic.a'
 {%   endif %}
 {% elif "arm" in target_file %}
 #
@@ -163,7 +162,7 @@ RUN {{ mount_rust_cache -}} rustup target add {{ package_arch_target }}
 {% endif %}
 
 # Configure the DB ARG as late as possible to not invalidate the cached layers above
-{% if "alpine" in target_file and "amd64" in target_file %}
+{% if "alpine" in target_file %}
 # Enable MiMalloc to improve performance on Alpine builds
 ARG DB=sqlite,mysql,postgresql,enable_mimalloc
 {% else %}
