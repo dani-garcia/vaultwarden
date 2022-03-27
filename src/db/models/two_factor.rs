@@ -157,7 +157,7 @@ impl TwoFactor {
                 .from_db()
         }};
 
-        use crate::api::core::two_factor::u2f::U2FRegistration;
+        use crate::api::core::two_factor::webauthn::U2FRegistration;
         use crate::api::core::two_factor::webauthn::{get_webauthn_registrations, WebauthnRegistration};
         use webauthn_rs::proto::*;
 
