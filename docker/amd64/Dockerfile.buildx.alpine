@@ -44,7 +44,6 @@ ENV DEBIAN_FRONTEND=noninteractive \
 RUN --mount=type=cache,target=/root/.cargo/git --mount=type=cache,target=/root/.cargo/registry mkdir -pv "${CARGO_HOME}" \
     && rustup set profile minimal
 
-ENV RUSTFLAGS='-C link-arg=-s'
 
 # Creates a dummy project used to grab dependencies
 RUN USER=root cargo new --bin /app
