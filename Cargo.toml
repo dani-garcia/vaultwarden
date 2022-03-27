@@ -100,8 +100,7 @@ totp-lite = "1.0.3"
 # Yubico Library
 yubico = { version = "0.10.0", features = ["online-tokio"], default-features = false }
 
-# U2F libraries
-u2f = "0.2.0"
+# WebAuthn libraries
 webauthn-rs = "0.3.2"
 
 # Handling of URL's for WebAuthn

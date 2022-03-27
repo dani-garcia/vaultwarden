@@ -21,6 +21,28 @@ pub fn routes() -> Vec<Route> {
     routes![get_webauthn, generate_webauthn_challenge, activate_webauthn, activate_webauthn_put, delete_webauthn,]
 }
 
+// Some old u2f structs still needed for migrating from u2f to WebAuthn
+// Both `struct Registration` and `struct U2FRegistration` can be removed if we remove the u2f to WebAuthn migration
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Registration {
+    pub key_handle: Vec<u8>,
+    pub pub_key: Vec<u8>,
+    pub attestation_cert: Option<Vec<u8>>,
+    pub device_name: Option<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct U2FRegistration {
+    pub id: i32,
+    pub name: String,
+    #[serde(with = "Registration")]
+    pub reg: Registration,
+    pub counter: u32,
+    compromised: bool,
+    pub migrated: Option<bool>,
+}
+
 struct WebauthnConfig {
     url: String,
     origin: Url,
@@ -306,7 +328,6 @@ async fn delete_webauthn(data: JsonUpcase<DeleteU2FData>, headers: Headers, conn
     // If entry is migrated from u2f, delete the u2f entry as well
     if let Some(mut u2f) = TwoFactor::find_by_user_and_type(&headers.user.uuid, TwoFactorType::U2f as i32, &conn).await
     {
-        use crate::api::core::two_factor::u2f::U2FRegistration;
         let mut data: Vec<U2FRegistration> = match serde_json::from_str(&u2f.data) {
             Ok(d) => d,
             Err(_) => err!("Error parsing U2F data"),

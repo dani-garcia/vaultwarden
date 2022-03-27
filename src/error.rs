@@ -49,7 +49,6 @@ use rocket::error::Error as RocketErr;
 use serde_json::{Error as SerdeErr, Value};
 use std::io::Error as IoErr;
 use std::time::SystemTimeError as TimeErr;
-use u2f::u2ferror::U2fError as U2fErr;
 use webauthn_rs::error::WebauthnError as WebauthnErr;
 use yubico::yubicoerror::YubicoError as YubiErr;
 
@@ -70,7 +69,6 @@ make_error! {
     Json(Value):     _no_source,  _serialize,
     Db(DieselErr):   _has_source, _api_error,
     R2d2(R2d2Err):   _has_source, _api_error,
-    U2f(U2fErr):     _has_source, _api_error,
     Serde(SerdeErr): _has_source, _api_error,
     JWt(JwtErr):     _has_source, _api_error,
     Handlebars(HbErr): _has_source, _api_error,

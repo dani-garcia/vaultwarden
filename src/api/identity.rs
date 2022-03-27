@@ -314,7 +314,6 @@ async fn twofactor_auth(
         Some(TwoFactorType::Authenticator) => {
             _tf::authenticator::validate_totp_code_str(user_uuid, twofactor_code, &selected_data?, ip, conn).await?
         }
-        Some(TwoFactorType::U2f) => _tf::u2f::validate_u2f_login(user_uuid, twofactor_code, conn).await?,
         Some(TwoFactorType::Webauthn) => {
             _tf::webauthn::validate_webauthn_login(user_uuid, twofactor_code, conn).await?
         }
@@ -371,26 +370,6 @@ async fn _json_err_twofactor(providers: &[i32], user_uuid: &str, conn: &DbConn) 
 
         match TwoFactorType::from_i32(*provider) {
             Some(TwoFactorType::Authenticator) => { /* Nothing to do for TOTP */ }
-
-            Some(TwoFactorType::U2f) if CONFIG.domain_set() => {
-                let request = two_factor::u2f::generate_u2f_login(user_uuid, conn).await?;
-                let mut challenge_list = Vec::new();
-
-                for key in request.registered_keys {
-                    challenge_list.push(json!({
-                        "appId": request.app_id,
-                        "challenge": request.challenge,
-                        "version": key.version,
-                        "keyHandle": key.key_handle,
-                    }));
-                }
-
-                let challenge_list_str = serde_json::to_string(&challenge_list).unwrap();
-
-                result["TwoFactorProviders2"][provider.to_string()] = json!({
-                    "Challenges": challenge_list_str,
-                });
-            }
 
             Some(TwoFactorType::Webauthn) if CONFIG.domain_set() => {
                 let request = two_factor::webauthn::generate_webauthn_login(user_uuid, conn).await?;
