@@ -31,14 +31,14 @@ unstable = []
 
 [target."cfg(not(windows))".dependencies]
 # Logging
-syslog = "4.0.1" # Needs to be v4 until fern is updated
+syslog = "6.0.1" # Needs to be v4 until fern is updated
 
 [dependencies]
 # Logging
 log = "0.4.16"
-fern = { version = "0.6.0", features = ["syslog-4"] }
-tracing = { version = "0.1.32", features = ["log"] } # Needed to have lettre and webauthn-rs trace logging to work
-backtrace = "0.3.64" # Logging panics to logfile instead stderr only
+fern = { version = "0.6.1", features = ["syslog-6"] }
+tracing = { version = "0.1.34", features = ["log"] } # Needed to have lettre and webauthn-rs trace logging to work
+backtrace = "0.3.65" # Logging panics to logfile instead stderr only
 
 # A `dotenv` implementation for Rust
 dotenvy = { version = "0.15.1", default-features = false }
@@ -83,7 +83,7 @@ uuid = { version = "0.8.2", features = ["v4"] }
 # Date and time libraries
 chrono = { version = "0.4.19", features = ["clock", "serde"], default-features = false }
 chrono-tz = "0.6.1"
-time = "0.2.27"
+time = "0.3.9"
 
 # Job scheduler
 job_scheduler = "1.2.1"
@@ -92,7 +92,7 @@ job_scheduler = "1.2.1"
 data-encoding = "2.3.2"
 
 # JWT library
-jsonwebtoken = "8.0.1"
+jsonwebtoken = "8.1.0"
 
 # TOTP library
 totp-lite = "1.0.3"
@@ -107,7 +107,7 @@ webauthn-rs = "0.3.2"
 url = "2.2.2"
 
 # Email libraries
-lettre = { version = "0.10.0-rc.4", features = ["smtp-transport", "builder", "serde", "native-tls", "hostname", "tracing"], default-features = false }
+lettre = { version = "0.10.0-rc.5", features = ["smtp-transport", "builder", "serde", "native-tls", "hostname", "tracing"], default-features = false }
 idna = "0.2.3" # Punycode conversion
 percent-encoding = "2.1.0" # URL encoding library used for URL's in the emails
 
@@ -125,8 +125,8 @@ bytes = "1.1.0"
 cached = "0.34.0"
 
 # Used for custom short lived cookie jar during favicon extraction
-cookie = "0.15.1"
-cookie_store = "0.15.1"
+cookie = "0.16.0"
+cookie_store = "0.16.0"
 
 # Used by U2F, JWT and Postgres
 openssl = "0.10.38"
@@ -135,7 +135,7 @@ openssl = "0.10.38"
 pico-args = "0.4.2"
 
 # Macro ident concatenation
-paste = "1.0.6"
+paste = "1.0.7"
 governor = "0.4.2"
 
 # Capture CTRL+C
@@ -146,7 +146,7 @@ ctrlc = { version = "3.2.1", features = ["termination"] }
 mimalloc = { version = "0.1.28", features = ["secure"], default-features = false, optional = true }
 
 [patch.crates-io]
-rocket = { git = 'https://github.com/SergioBenitez/Rocket', rev = 'ae0ccf43f11be5c00bb9cd49996c8bb06a7e1651' }
+rocket = { git = 'https://github.com/SergioBenitez/Rocket', rev = '6bdd2f818642683b3aadbda51d7573abefe045ab' }
 
 # The maintainer of the `job_scheduler` crate doesn't seem to have responded
 # to any issues or PRs for almost a year (as of April 2021). This hopefully
