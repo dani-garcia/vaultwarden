@@ -5,6 +5,7 @@ use rocket::{fs::NamedFile, http::ContentType, Route};
 use serde_json::Value;
 
 use crate::{
+    api::core::now,
     error::Error,
     util::{Cached, SafeString},
     CONFIG,
@@ -71,10 +72,7 @@ async fn attachments(uuid: SafeString, file_id: SafeString) -> Option<NamedFile>
 use crate::db::DbConn;
 #[get("/alive")]
 fn alive(_conn: DbConn) -> Json<String> {
-    use crate::util::format_date;
-    use chrono::Utc;
-
-    Json(format_date(&Utc::now().naive_utc()))
+    now()
 }
 
 #[get("/vw_static/<filename>")]
