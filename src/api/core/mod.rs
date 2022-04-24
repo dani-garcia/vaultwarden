@@ -12,8 +12,10 @@ pub use sends::purge_sends;
 pub use two_factor::send_incomplete_2fa_notifications;
 
 pub fn routes() -> Vec<Route> {
-    let mut mod_routes =
-        routes![clear_device_token, put_device_token, get_eq_domains, post_eq_domains, put_eq_domains, hibp_breach,];
+    let mut device_token_routes = routes![clear_device_token, put_device_token];
+    let mut eq_domains_routes = routes![get_eq_domains, post_eq_domains, put_eq_domains];
+    let mut hibp_routes = routes![hibp_breach];
+    let mut meta_routes = routes![alive, now, version];
 
     let mut routes = Vec::new();
     routes.append(&mut accounts::routes());
@@ -23,7 +25,10 @@ pub fn routes() -> Vec<Route> {
     routes.append(&mut organizations::routes());
     routes.append(&mut two_factor::routes());
     routes.append(&mut sends::routes());
-    routes.append(&mut mod_routes);
+    routes.append(&mut device_token_routes);
+    routes.append(&mut eq_domains_routes);
+    routes.append(&mut hibp_routes);
+    routes.append(&mut meta_routes);
 
     routes
 }
@@ -177,4 +182,20 @@ async fn hibp_breach(username: String) -> JsonResult {
             ]
         }])))
     }
+}
+
+// We use DbConn here to let the alive healthcheck also verify the database connection.
+#[get("/alive")]
+fn alive(_conn: DbConn) -> Json<String> {
+    now()
+}
+
+#[get("/now")]
+pub fn now() -> Json<String> {
+    Json(crate::util::format_date(&chrono::Utc::now().naive_utc()))
+}
+
+#[get("/version")]
+fn version() -> Json<&'static str> {
+    Json(crate::VERSION.unwrap_or_default())
 }
