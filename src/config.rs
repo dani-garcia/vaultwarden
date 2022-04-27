@@ -521,7 +521,7 @@ make_config! {
         database_max_conns:     u32,    false,  def,    10;
 
         /// SQLite connection init |> Statements to run when creating a new SQLite connection
-        sqlite_conn_init:       String, false,  def,    "".to_string();
+        sqlite_conn_init:       String, false,  def,    "PRAGMA busy_timeout = 5000; PRAGMA synchronous = NORMAL;".to_string();
 
         /// MySQL connection init |> Statements to run when creating a new MySQL connection
         mysql_conn_init:        String, false,  def,    "".to_string();
