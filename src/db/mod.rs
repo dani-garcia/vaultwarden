@@ -140,7 +140,7 @@ macro_rules! generate_connections {
                                 .max_size(CONFIG.database_max_conns())
                                 .connection_timeout(Duration::from_secs(CONFIG.database_timeout()))
                                 .connection_customizer(Box::new(DbConnOptions{
-                                    init_stmts: paste::paste!{ CONFIG. [< $name _conn_init >] () }
+                                    init_stmts: conn_type.get_init_stmts()
                                 }))
                                 .build(manager)
                                 .map_res("Failed to create pool")?;
@@ -213,6 +213,23 @@ impl DbConnType {
 
             #[cfg(not(sqlite))]
             err!("`DATABASE_URL` looks like a SQLite URL, but 'sqlite' feature is not enabled")
+        }
+    }
+
+    pub fn get_init_stmts(&self) -> String {
+        let init_stmts = CONFIG.database_conn_init();
+        if !init_stmts.is_empty() {
+            init_stmts
+        } else {
+            self.default_init_stmts()
+        }
+    }
+
+    pub fn default_init_stmts(&self) -> String {
+        match self {
+            Self::sqlite => "PRAGMA busy_timeout = 5000; PRAGMA synchronous = NORMAL;".to_string(),
+            Self::mysql => "".to_string(),
+            Self::postgresql => "".to_string(),
         }
     }
 }
