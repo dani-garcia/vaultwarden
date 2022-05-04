@@ -2,12 +2,9 @@ use chrono::{NaiveDateTime, Utc};
 
 use crate::{api::EmptyResult, auth::ClientIp, db::DbConn, error::MapResult, CONFIG};
 
-use super::User;
-
 db_object! {
-    #[derive(Identifiable, Queryable, Insertable, Associations, AsChangeset)]
+    #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
     #[table_name = "twofactor_incomplete"]
-    #[belongs_to(User, foreign_key = "user_uuid")]
     #[primary_key(user_uuid, device_uuid)]
     pub struct TwoFactorIncomplete {
         pub user_uuid: String,

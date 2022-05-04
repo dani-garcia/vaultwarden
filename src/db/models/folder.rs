@@ -1,12 +1,11 @@
 use chrono::{NaiveDateTime, Utc};
 use serde_json::Value;
 
-use super::{Cipher, User};
+use super::User;
 
 db_object! {
-    #[derive(Identifiable, Queryable, Insertable, Associations, AsChangeset)]
+    #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
     #[table_name = "folders"]
-    #[belongs_to(User, foreign_key = "user_uuid")]
     #[primary_key(uuid)]
     pub struct Folder {
         pub uuid: String,
@@ -16,10 +15,8 @@ db_object! {
         pub name: String,
     }
 
-    #[derive(Identifiable, Queryable, Insertable, Associations)]
+    #[derive(Identifiable, Queryable, Insertable)]
     #[table_name = "folders_ciphers"]
-    #[belongs_to(Cipher, foreign_key = "cipher_uuid")]
-    #[belongs_to(Folder, foreign_key = "folder_uuid")]
     #[primary_key(cipher_uuid, folder_uuid)]
     pub struct FolderCipher {
         pub cipher_uuid: String,
@@ -213,6 +210,19 @@ impl FolderCipher {
                 .load::<FolderCipherDb>(conn)
                 .expect("Error loading folders")
                 .from_db()
+        }}
+    }
+
+    /// Return a vec with (cipher_uuid, folder_uuid)
+    /// This is used during a full sync so we only need one query for all folder matches.
+    pub async fn find_by_user(user_uuid: &str, conn: &DbConn) -> Vec<(String, String)> {
+        db_run! { conn: {
+            folders_ciphers::table
+                .inner_join(folders::table)
+                .filter(folders::user_uuid.eq(user_uuid))
+                .select(folders_ciphers::all_columns)
+                .load::<(String, String)>(conn)
+                .unwrap_or_default()
         }}
     }
 }

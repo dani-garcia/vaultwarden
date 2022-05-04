@@ -206,16 +206,16 @@ macro_rules! db_run {
     // Different code for each db
     ( $conn:ident: $( $($db:ident),+ $body:block )+ ) => {{
         #[allow(unused)] use diesel::prelude::*;
-        #[allow(unused)] use crate::db::FromDb;
+        #[allow(unused)] use $crate::db::FromDb;
 
         let conn = $conn.conn.clone();
         let mut conn = conn.lock_owned().await;
         match conn.as_mut().expect("internal invariant broken: self.connection is Some") {
                 $($(
                 #[cfg($db)]
-                crate::db::DbConnInner::$db($conn) => {
+                $crate::db::DbConnInner::$db($conn) => {
                     paste::paste! {
-                        #[allow(unused)] use crate::db::[<__ $db _schema>]::{self as schema, *};
+                        #[allow(unused)] use $crate::db::[<__ $db _schema>]::{self as schema, *};
                         #[allow(unused)] use [<__ $db _model>]::*;
                     }
 
@@ -227,16 +227,16 @@ macro_rules! db_run {
 
     ( @raw $conn:ident: $( $($db:ident),+ $body:block )+ ) => {{
         #[allow(unused)] use diesel::prelude::*;
-        #[allow(unused)] use crate::db::FromDb;
+        #[allow(unused)] use $crate::db::FromDb;
 
         let conn = $conn.conn.clone();
         let mut conn = conn.lock_owned().await;
         match conn.as_mut().expect("internal invariant broken: self.connection is Some") {
                 $($(
                 #[cfg($db)]
-                crate::db::DbConnInner::$db($conn) => {
+                $crate::db::DbConnInner::$db($conn) => {
                     paste::paste! {
-                        #[allow(unused)] use crate::db::[<__ $db _schema>]::{self as schema, *};
+                        #[allow(unused)] use $crate::db::[<__ $db _schema>]::{self as schema, *};
                         // @ RAW: #[allow(unused)] use [<__ $db _model>]::*;
                     }
 
@@ -297,7 +297,7 @@ macro_rules! db_object {
         paste::paste! {
             #[allow(unused)] use super::*;
             #[allow(unused)] use diesel::prelude::*;
-            #[allow(unused)] use crate::db::[<__ $db _schema>]::*;
+            #[allow(unused)] use $crate::db::[<__ $db _schema>]::*;
 
             $( #[$attr] )*
             pub struct [<$name Db>] { $(
@@ -309,7 +309,7 @@ macro_rules! db_object {
                 #[inline(always)] pub fn to_db(x: &super::$name) -> Self { Self { $( $field: x.$field.clone(), )+ } }
             }
 
-            impl crate::db::FromDb for [<$name Db>] {
+            impl $crate::db::FromDb for [<$name Db>] {
                 type Output = super::$name;
                 #[allow(clippy::wrong_self_convention)]
                 #[inline(always)] fn from_db(self) -> Self::Output { super::$name { $( $field: self.$field, )+ } }

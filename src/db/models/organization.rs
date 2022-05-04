@@ -547,6 +547,15 @@ impl UserOrganization {
         }}
     }
 
+    pub async fn find_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
+        db_run! { conn: {
+            users_organizations::table
+                .filter(users_organizations::user_uuid.eq(user_uuid))
+                .load::<UserOrganizationDb>(conn)
+                .expect("Error loading user organizations").from_db()
+        }}
+    }
+
     pub async fn find_by_user_and_policy(user_uuid: &str, policy_type: OrgPolicyType, conn: &DbConn) -> Vec<Self> {
         db_run! { conn: {
             users_organizations::table

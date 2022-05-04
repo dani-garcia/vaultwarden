@@ -101,30 +101,36 @@ struct SyncData {
 async fn sync(data: SyncData, headers: Headers, conn: DbConn) -> Json<Value> {
     let user_json = headers.user.to_json(&conn).await;
 
-    let folders = Folder::find_by_user(&headers.user.uuid, &conn).await;
-    let folders_json: Vec<Value> = folders.iter().map(Folder::to_json).collect();
+    // Get all ciphers which are visible by the user
+    let ciphers = Cipher::find_by_user_visible(&headers.user.uuid, &conn).await;
 
-    let collections_json = stream::iter(Collection::find_by_user_uuid(&headers.user.uuid, &conn).await)
+    let cipher_sync_data = CipherSyncData::new(&headers.user.uuid, &ciphers, &conn).await;
+
+    // Lets generate the ciphers_json using all the gathered info
+    let ciphers_json: Vec<Value> = stream::iter(ciphers)
         .then(|c| async {
             let c = c; // Move out this single variable
-            c.to_json_details(&headers.user.uuid, &conn).await
+            c.to_json(&headers.host, &headers.user.uuid, Some(&cipher_sync_data), &conn).await
         })
-        .collect::<Vec<Value>>()
+        .collect()
         .await;
 
-    let policies = OrgPolicy::find_confirmed_by_user(&headers.user.uuid, &conn);
-    let policies_json: Vec<Value> = policies.await.iter().map(OrgPolicy::to_json).collect();
-
-    let ciphers_json = stream::iter(Cipher::find_by_user_visible(&headers.user.uuid, &conn).await)
+    let collections_json: Vec<Value> = stream::iter(Collection::find_by_user_uuid(&headers.user.uuid, &conn).await)
         .then(|c| async {
             let c = c; // Move out this single variable
-            c.to_json(&headers.host, &headers.user.uuid, &conn).await
+            c.to_json_details(&headers.user.uuid, Some(&cipher_sync_data), &conn).await
         })
-        .collect::<Vec<Value>>()
+        .collect()
         .await;
 
-    let sends = Send::find_by_user(&headers.user.uuid, &conn);
-    let sends_json: Vec<Value> = sends.await.iter().map(|s| s.to_json()).collect();
+    let folders_json: Vec<Value> =
+        Folder::find_by_user(&headers.user.uuid, &conn).await.iter().map(Folder::to_json).collect();
+
+    let sends_json: Vec<Value> =
+        Send::find_by_user(&headers.user.uuid, &conn).await.iter().map(Send::to_json).collect();
+
+    let policies_json: Vec<Value> =
+        OrgPolicy::find_confirmed_by_user(&headers.user.uuid, &conn).await.iter().map(OrgPolicy::to_json).collect();
 
     let domains_json = if data.exclude_domains {
         Value::Null
@@ -147,10 +153,13 @@ async fn sync(data: SyncData, headers: Headers, conn: DbConn) -> Json<Value> {
 
 #[get("/ciphers")]
 async fn get_ciphers(headers: Headers, conn: DbConn) -> Json<Value> {
-    let ciphers_json = stream::iter(Cipher::find_by_user_visible(&headers.user.uuid, &conn).await)
+    let ciphers = Cipher::find_by_user_visible(&headers.user.uuid, &conn).await;
+    let cipher_sync_data = CipherSyncData::new(&headers.user.uuid, &ciphers, &conn).await;
+
+    let ciphers_json = stream::iter(ciphers)
         .then(|c| async {
             let c = c; // Move out this single variable
-            c.to_json(&headers.host, &headers.user.uuid, &conn).await
+            c.to_json(&headers.host, &headers.user.uuid, Some(&cipher_sync_data), &conn).await
         })
         .collect::<Vec<Value>>()
         .await;
@@ -173,7 +182,7 @@ async fn get_cipher(uuid: String, headers: Headers, conn: DbConn) -> JsonResult 
         err!("Cipher is not owned by user")
     }
 
-    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, &conn).await))
+    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, &conn).await))
 }
 
 #[get("/ciphers/<uuid>/admin")]
@@ -303,7 +312,7 @@ async fn post_ciphers(data: JsonUpcase<CipherData>, headers: Headers, conn: DbCo
     let mut cipher = Cipher::new(data.Type, data.Name.clone());
     update_cipher_from_data(&mut cipher, data, &headers, false, &conn, &nt, UpdateType::CipherCreate).await?;
 
-    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, &conn).await))
+    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, &conn).await))
 }
 
 /// Enforces the personal ownership policy on user-owned ciphers, if applicable.
@@ -582,7 +591,7 @@ async fn put_cipher(
 
     update_cipher_from_data(&mut cipher, data, &headers, false, &conn, &nt, UpdateType::CipherUpdate).await?;
 
-    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, &conn).await))
+    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, &conn).await))
 }
 
 #[derive(Deserialize)]
@@ -797,7 +806,7 @@ async fn share_cipher_by_uuid(
     )
     .await?;
 
-    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, conn).await))
+    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, conn).await))
 }
 
 /// v2 API for downloading an attachment. This just redirects the client to
@@ -866,7 +875,7 @@ async fn post_attachment_v2(
         "AttachmentId": attachment_id,
         "Url": url,
         "FileUploadType": FileUploadType::Direct as i32,
-        response_key: cipher.to_json(&headers.host, &headers.user.uuid, &conn).await,
+        response_key: cipher.to_json(&headers.host, &headers.user.uuid, None, &conn).await,
     })))
 }
 
@@ -1035,7 +1044,7 @@ async fn post_attachment(
 
     let (cipher, conn) = save_attachment(attachment, uuid, data, &headers, conn, nt).await?;
 
-    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, &conn).await))
+    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, &conn).await))
 }
 
 #[post("/ciphers/<uuid>/attachment-admin", format = "multipart/form-data", data = "<data>")]
@@ -1399,7 +1408,7 @@ async fn _restore_cipher_by_uuid(uuid: &str, headers: &Headers, conn: &DbConn, n
     cipher.save(conn).await?;
 
     nt.send_cipher_update(UpdateType::CipherUpdate, &cipher, &cipher.update_users_revision(conn).await);
-    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, conn).await))
+    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, conn).await))
 }
 
 async fn _restore_multiple_ciphers(
@@ -1462,4 +1471,67 @@ async fn _delete_cipher_attachment_by_id(
     attachment.delete(conn).await?;
     nt.send_cipher_update(UpdateType::CipherUpdate, &cipher, &cipher.update_users_revision(conn).await);
     Ok(())
+}
+
+/// This will hold all the necessary data to improve a full sync of all the ciphers
+/// It can be used during the `Cipher::to_json()` call.
+/// It will prevent the so called N+1 SQL issue by running just a few queries which will hold all the data needed.
+/// This will not improve the speed of a single cipher.to_json() call that much, so better not to use it for those calls.
+pub struct CipherSyncData {
+    pub cipher_attachments: HashMap<String, Vec<Attachment>>,
+    pub cipher_folders: HashMap<String, String>,
+    pub cipher_favorites: HashSet<String>,
+    pub cipher_collections: HashMap<String, Vec<String>>,
+    pub user_organizations: HashMap<String, UserOrganization>,
+    pub user_collections: HashMap<String, CollectionUser>,
+}
+
+impl CipherSyncData {
+    pub async fn new(user_uuid: &str, ciphers: &Vec<Cipher>, conn: &DbConn) -> Self {
+        // Generate a list of Cipher UUID's to be used during a query filter with an eq_any.
+        let cipher_uuids = stream::iter(ciphers).map(|c| c.uuid.to_string()).collect::<Vec<String>>().await;
+
+        // Generate a list of Cipher UUID's containing a Vec with one or more Attachment records
+        let mut cipher_attachments: HashMap<String, Vec<Attachment>> = HashMap::new();
+        for attachment in Attachment::find_all_by_ciphers(&cipher_uuids, conn).await {
+            cipher_attachments.entry(attachment.cipher_uuid.to_string()).or_default().push(attachment);
+        }
+
+        // Generate a HashMap with the Cipher UUID as key and the Folder UUID as value
+        let cipher_folders: HashMap<String, String> =
+            stream::iter(FolderCipher::find_by_user(user_uuid, conn).await).collect().await;
+
+        // Generate a HashSet of all the Cipher UUID's which are marked as favorite
+        let cipher_favorites: HashSet<String> =
+            stream::iter(Favorite::get_all_cipher_uuid_by_user(user_uuid, conn).await).collect().await;
+
+        // Generate a HashMap with the Cipher UUID as key and one or more Collection UUID's
+        let mut cipher_collections: HashMap<String, Vec<String>> = HashMap::new();
+        for (cipher, collection) in Cipher::get_collections_with_cipher_by_user(user_uuid, conn).await {
+            cipher_collections.entry(cipher).or_default().push(collection);
+        }
+
+        // Generate a HashMap with the Organization UUID as key and the UserOrganization record
+        let user_organizations: HashMap<String, UserOrganization> =
+            stream::iter(UserOrganization::find_by_user(user_uuid, conn).await)
+                .map(|uo| (uo.org_uuid.to_string(), uo))
+                .collect()
+                .await;
+
+        // Generate a HashMap with the User_Collections UUID as key and the CollectionUser record
+        let user_collections: HashMap<String, CollectionUser> =
+            stream::iter(CollectionUser::find_by_user(user_uuid, conn).await)
+                .map(|uc| (uc.collection_uuid.to_string(), uc))
+                .collect()
+                .await;
+
+        Self {
+            cipher_attachments,
+            cipher_folders,
+            cipher_favorites,
+            cipher_collections,
+            user_organizations,
+            user_collections,
+        }
+    }
 }

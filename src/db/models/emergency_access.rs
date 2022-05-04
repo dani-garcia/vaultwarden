@@ -4,10 +4,9 @@ use serde_json::Value;
 use super::User;
 
 db_object! {
-    #[derive(Debug, Identifiable, Queryable, Insertable, Associations, AsChangeset)]
+    #[derive(Debug, Identifiable, Queryable, Insertable, AsChangeset)]
     #[table_name = "emergency_access"]
     #[changeset_options(treat_none_as_null="true")]
-    #[belongs_to(User, foreign_key = "grantor_uuid")]
     #[primary_key(uuid)]
     pub struct EmergencyAccess {
         pub uuid: String,

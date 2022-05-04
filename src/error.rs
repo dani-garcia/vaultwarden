@@ -214,20 +214,20 @@ impl<'r> Responder<'r, 'static> for Error {
 macro_rules! err {
     ($msg:expr) => {{
         error!("{}", $msg);
-        return Err(crate::error::Error::new($msg, $msg));
+        return Err($crate::error::Error::new($msg, $msg));
     }};
     ($usr_msg:expr, $log_value:expr) => {{
         error!("{}. {}", $usr_msg, $log_value);
-        return Err(crate::error::Error::new($usr_msg, $log_value));
+        return Err($crate::error::Error::new($usr_msg, $log_value));
     }};
 }
 
 macro_rules! err_silent {
     ($msg:expr) => {{
-        return Err(crate::error::Error::new($msg, $msg));
+        return Err($crate::error::Error::new($msg, $msg));
     }};
     ($usr_msg:expr, $log_value:expr) => {{
-        return Err(crate::error::Error::new($usr_msg, $log_value));
+        return Err($crate::error::Error::new($usr_msg, $log_value));
     }};
 }
 
@@ -235,11 +235,11 @@ macro_rules! err_silent {
 macro_rules! err_code {
     ($msg:expr, $err_code: expr) => {{
         error!("{}", $msg);
-        return Err(crate::error::Error::new($msg, $msg).with_code($err_code));
+        return Err($crate::error::Error::new($msg, $msg).with_code($err_code));
     }};
     ($usr_msg:expr, $log_value:expr, $err_code: expr) => {{
         error!("{}. {}", $usr_msg, $log_value);
-        return Err(crate::error::Error::new($usr_msg, $log_value).with_code($err_code));
+        return Err($crate::error::Error::new($usr_msg, $log_value).with_code($err_code));
     }};
 }
 
@@ -247,11 +247,11 @@ macro_rules! err_code {
 macro_rules! err_discard {
     ($msg:expr, $data:expr) => {{
         std::io::copy(&mut $data.open(), &mut std::io::sink()).ok();
-        return Err(crate::error::Error::new($msg, $msg));
+        return Err($crate::error::Error::new($msg, $msg));
     }};
     ($usr_msg:expr, $log_value:expr, $data:expr) => {{
         std::io::copy(&mut $data.open(), &mut std::io::sink()).ok();
-        return Err(crate::error::Error::new($usr_msg, $log_value));
+        return Err($crate::error::Error::new($usr_msg, $log_value));
     }};
 }
 

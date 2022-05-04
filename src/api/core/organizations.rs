@@ -4,7 +4,10 @@ use rocket::Route;
 use serde_json::Value;
 
 use crate::{
-    api::{EmptyResult, JsonResult, JsonUpcase, JsonUpcaseVec, Notify, NumberOrString, PasswordData, UpdateType},
+    api::{
+        core::CipherSyncData, EmptyResult, JsonResult, JsonUpcase, JsonUpcaseVec, Notify, NumberOrString, PasswordData,
+        UpdateType,
+    },
     auth::{decode_invite, AdminHeaders, Headers, ManagerHeaders, ManagerHeadersLoose, OwnerHeaders},
     db::{models::*, DbConn},
     mail, CONFIG,
@@ -483,10 +486,13 @@ struct OrgIdData {
 
 #[get("/ciphers/organization-details?<data..>")]
 async fn get_org_details(data: OrgIdData, headers: Headers, conn: DbConn) -> Json<Value> {
-    let ciphers_json = stream::iter(Cipher::find_by_org(&data.organization_id, &conn).await)
+    let ciphers = Cipher::find_by_org(&data.organization_id, &conn).await;
+    let cipher_sync_data = CipherSyncData::new(&headers.user.uuid, &ciphers, &conn).await;
+
+    let ciphers_json = stream::iter(ciphers)
         .then(|c| async {
             let c = c; // Move out this single variable
-            c.to_json(&headers.host, &headers.user.uuid, &conn).await
+            c.to_json(&headers.host, &headers.user.uuid, Some(&cipher_sync_data), &conn).await
         })
         .collect::<Vec<Value>>()
         .await;

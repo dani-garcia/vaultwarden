@@ -6,12 +6,11 @@ use crate::db::DbConn;
 use crate::error::MapResult;
 use crate::util::UpCase;
 
-use super::{Organization, UserOrgStatus, UserOrgType, UserOrganization};
+use super::{UserOrgStatus, UserOrgType, UserOrganization};
 
 db_object! {
-    #[derive(Identifiable, Queryable, Insertable, Associations, AsChangeset)]
+    #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
     #[table_name = "org_policies"]
-    #[belongs_to(Organization, foreign_key = "org_uuid")]
     #[primary_key(uuid)]
     pub struct OrgPolicy {
         pub uuid: String,
