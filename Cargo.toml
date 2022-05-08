@@ -107,7 +107,7 @@ webauthn-rs = "0.3.2"
 url = "2.2.2"
 
 # Email libraries
-lettre = { version = "0.10.0-rc.5", features = ["smtp-transport", "builder", "serde", "native-tls", "hostname", "tracing"], default-features = false }
+lettre = { version = "0.10.0-rc.6", features = ["smtp-transport", "builder", "serde", "native-tls", "hostname", "tracing"], default-features = false }
 idna = "0.2.3" # Punycode conversion
 percent-encoding = "2.1.0" # URL encoding library used for URL's in the emails
 
