@@ -515,10 +515,13 @@ make_config! {
         db_connection_retries:  u32,    false,  def,    15;
 
         /// Timeout when aquiring database connection
-        database_timeout:     u64,    false,  def,    30;
+        database_timeout:       u64,    false,  def,    30;
 
         /// Database connection pool size
         database_max_conns:     u32,    false,  def,    10;
+
+        /// Database connection init |> SQL statements to run when creating a new database connection, mainly useful for connection-scoped pragmas. If empty, a database-specific default is used.
+        database_conn_init:     String, false,  def,    "".to_string();
 
         /// Bypass admin page security (Know the risks!) |> Disables the Admin Token for the admin page so you may use your own auth in-front
         disable_admin_token:    bool,   true,   def,    false;
