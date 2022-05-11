@@ -1,10 +1,8 @@
-use super::{Cipher, User};
+use super::User;
 
 db_object! {
-    #[derive(Identifiable, Queryable, Insertable, Associations)]
+    #[derive(Identifiable, Queryable, Insertable)]
     #[table_name = "favorites"]
-    #[belongs_to(User, foreign_key = "user_uuid")]
-    #[belongs_to(Cipher, foreign_key = "cipher_uuid")]
     #[primary_key(user_uuid, cipher_uuid)]
     pub struct Favorite {
         pub user_uuid: String,
@@ -78,6 +76,18 @@ impl Favorite {
             diesel::delete(favorites::table.filter(favorites::user_uuid.eq(user_uuid)))
                 .execute(conn)
                 .map_res("Error removing favorites by user")
+        }}
+    }
+
+    /// Return a vec with (cipher_uuid) this will only contain favorite flagged ciphers
+    /// This is used during a full sync so we only need one query for all favorite cipher matches.
+    pub async fn get_all_cipher_uuid_by_user(user_uuid: &str, conn: &DbConn) -> Vec<String> {
+        db_run! { conn: {
+            favorites::table
+                .filter(favorites::user_uuid.eq(user_uuid))
+                .select(favorites::cipher_uuid)
+                .load::<String>(conn)
+                .unwrap_or_default()
         }}
     }
 }

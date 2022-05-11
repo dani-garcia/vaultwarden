@@ -1,13 +1,11 @@
 use chrono::{NaiveDateTime, Utc};
 
-use super::User;
 use crate::CONFIG;
 
 db_object! {
-    #[derive(Identifiable, Queryable, Insertable, Associations, AsChangeset)]
+    #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
     #[table_name = "devices"]
     #[changeset_options(treat_none_as_null="true")]
-    #[belongs_to(User, foreign_key = "user_uuid")]
     #[primary_key(uuid, user_uuid)]
     pub struct Device {
         pub uuid: String,

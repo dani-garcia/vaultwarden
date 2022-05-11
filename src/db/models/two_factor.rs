@@ -2,12 +2,9 @@ use serde_json::Value;
 
 use crate::{api::EmptyResult, db::DbConn, error::MapResult};
 
-use super::User;
-
 db_object! {
-    #[derive(Identifiable, Queryable, Insertable, Associations, AsChangeset)]
+    #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
     #[table_name = "twofactor"]
-    #[belongs_to(User, foreign_key = "user_uuid")]
     #[primary_key(uuid)]
     pub struct TwoFactor {
         pub uuid: String,

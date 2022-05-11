@@ -1,11 +1,10 @@
 use serde_json::Value;
 
-use super::{Cipher, Organization, User, UserOrgStatus, UserOrgType, UserOrganization};
+use super::{User, UserOrgStatus, UserOrgType, UserOrganization};
 
 db_object! {
-    #[derive(Identifiable, Queryable, Insertable, Associations, AsChangeset)]
+    #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
     #[table_name = "collections"]
-    #[belongs_to(Organization, foreign_key = "org_uuid")]
     #[primary_key(uuid)]
     pub struct Collection {
         pub uuid: String,
@@ -13,10 +12,8 @@ db_object! {
         pub name: String,
     }
 
-    #[derive(Identifiable, Queryable, Insertable, Associations)]
+    #[derive(Identifiable, Queryable, Insertable)]
     #[table_name = "users_collections"]
-    #[belongs_to(User, foreign_key = "user_uuid")]
-    #[belongs_to(Collection, foreign_key = "collection_uuid")]
     #[primary_key(user_uuid, collection_uuid)]
     pub struct CollectionUser {
         pub user_uuid: String,
@@ -25,10 +22,8 @@ db_object! {
         pub hide_passwords: bool,
     }
 
-    #[derive(Identifiable, Queryable, Insertable, Associations)]
+    #[derive(Identifiable, Queryable, Insertable)]
     #[table_name = "ciphers_collections"]
-    #[belongs_to(Cipher, foreign_key = "cipher_uuid")]
-    #[belongs_to(Collection, foreign_key = "collection_uuid")]
     #[primary_key(cipher_uuid, collection_uuid)]
     pub struct CollectionCipher {
         pub cipher_uuid: String,
@@ -57,11 +52,32 @@ impl Collection {
         })
     }
 
-    pub async fn to_json_details(&self, user_uuid: &str, conn: &DbConn) -> Value {
+    pub async fn to_json_details(
+        &self,
+        user_uuid: &str,
+        cipher_sync_data: Option<&crate::api::core::CipherSyncData>,
+        conn: &DbConn,
+    ) -> Value {
+        let (read_only, hide_passwords) = if let Some(cipher_sync_data) = cipher_sync_data {
+            match cipher_sync_data.user_organizations.get(&self.org_uuid) {
+                Some(uo) if uo.has_full_access() => (false, false),
+                Some(_) => {
+                    if let Some(uc) = cipher_sync_data.user_collections.get(&self.uuid) {
+                        (uc.read_only, uc.hide_passwords)
+                    } else {
+                        (false, false)
+                    }
+                }
+                _ => (true, true),
+            }
+        } else {
+            (!self.is_writable_by_user(user_uuid, conn).await, self.hide_passwords_for_user(user_uuid, conn).await)
+        };
+
         let mut json_object = self.to_json();
         json_object["Object"] = json!("collectionDetails");
-        json_object["ReadOnly"] = json!(!self.is_writable_by_user(user_uuid, conn).await);
-        json_object["HidePasswords"] = json!(self.hide_passwords_for_user(user_uuid, conn).await);
+        json_object["ReadOnly"] = json!(read_only);
+        json_object["HidePasswords"] = json!(hide_passwords);
         json_object
     }
 }
@@ -370,6 +386,17 @@ impl CollectionUser {
                 .select(users_collections::all_columns)
                 .first::<CollectionUserDb>(conn)
                 .ok()
+                .from_db()
+        }}
+    }
+
+    pub async fn find_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
+        db_run! { conn: {
+            users_collections::table
+                .filter(users_collections::user_uuid.eq(user_uuid))
+                .select(users_collections::all_columns)
+                .load::<CollectionUserDb>(conn)
+                .expect("Error loading users_collections")
                 .from_db()
         }}
     }

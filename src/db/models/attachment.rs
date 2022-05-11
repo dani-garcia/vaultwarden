@@ -2,14 +2,12 @@ use std::io::ErrorKind;
 
 use serde_json::Value;
 
-use super::Cipher;
 use crate::CONFIG;
 
 db_object! {
-    #[derive(Identifiable, Queryable, Insertable, Associations, AsChangeset)]
+    #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
     #[table_name = "attachments"]
     #[changeset_options(treat_none_as_null="true")]
-    #[belongs_to(super::Cipher, foreign_key = "cipher_uuid")]
     #[primary_key(id)]
     pub struct Attachment {
         pub id: String,
@@ -186,6 +184,17 @@ impl Attachment {
                 .count()
                 .first(conn)
                 .unwrap_or(0)
+        }}
+    }
+
+    pub async fn find_all_by_ciphers(cipher_uuids: &Vec<String>, conn: &DbConn) -> Vec<Self> {
+        db_run! { conn: {
+            attachments::table
+                .filter(attachments::cipher_uuid.eq_any(cipher_uuids))
+                .select(attachments::all_columns)
+                .load::<AttachmentDb>(conn)
+                .expect("Error loading attachments")
+                .from_db()
         }}
     }
 }

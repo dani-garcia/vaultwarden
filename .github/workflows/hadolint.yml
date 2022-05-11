@@ -16,18 +16,18 @@ jobs:
     steps:
       # Checkout the repo
       - name: Checkout
-        uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579 # v2.4.0
+        uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b # v3.0.2
       # End Checkout the repo
 
 
-      # Download hadolint
+      # Download hadolint - https://github.com/hadolint/hadolint/releases
       - name: Download hadolint
         shell: bash
         run: |
           sudo curl -L https://github.com/hadolint/hadolint/releases/download/v${HADOLINT_VERSION}/hadolint-$(uname -s)-$(uname -m) -o /usr/local/bin/hadolint && \
           sudo chmod +x /usr/local/bin/hadolint
         env:
-          HADOLINT_VERSION: 2.8.0
+          HADOLINT_VERSION: 2.10.0
       # End Download hadolint
 
       # Test Dockerfiles

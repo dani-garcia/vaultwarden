@@ -1,5 +1,5 @@
 /*!
-  * Native JavaScript for Bootstrap v4.1.0 (https://thednp.github.io/bootstrap.native/)
+  * Native JavaScript for Bootstrap v4.1.2 (https://thednp.github.io/bootstrap.native/)
   * Copyright 2015-2022 © dnp_theme
   * Licensed under MIT (https://github.com/thednp/bootstrap.native/blob/master/LICENSE)
   */
@@ -545,7 +545,7 @@
     return normalOps;
   }
 
-  var version = "4.1.0";
+  var version = "4.1.2";
 
   const Version = version;
 
@@ -2814,6 +2814,29 @@
     }
   }
 
+  /**
+   * This is a shortie for `document.createElement` method
+   * which allows you to create a new `HTMLElement` for a given `tagName`
+   * or based on an object with specific non-readonly attributes:
+   * `id`, `className`, `textContent`, `style`, etc.
+   * @see https://developer.mozilla.org/en-US/docs/Web/API/Document/createElement
+   *
+   * @param {Record<string, string> | string} param `tagName` or object
+   * @return {HTMLElement | Element} a new `HTMLElement` or `Element`
+   */
+  function createElement(param) {
+    if (typeof param === 'string') {
+      return getDocument().createElement(param);
+    }
+
+    const { tagName } = param;
+    const attr = { ...param };
+    const newElement = createElement(tagName);
+    delete attr.tagName;
+    ObjectAssign(newElement, attr);
+    return newElement;
+  }
+
   /** @type {string} */
   const offcanvasString = 'offcanvas';
 
@@ -2824,7 +2847,7 @@
   const offcanvasActiveSelector = `.${offcanvasString}.${showClass}`;
 
   // any document would suffice
-  const overlay = getDocument().createElement('div');
+  const overlay = createElement('div');
 
   /**
    * Returns the current active modal / offcancas element.
@@ -2863,8 +2886,10 @@
    * Shows the overlay to the user.
    */
   function showOverlay() {
-    addClass(overlay, showClass);
-    reflow(overlay);
+    if (!hasClass(overlay, showClass)) {
+      addClass(overlay, showClass);
+      reflow(overlay);
+    }
   }
 
   /**
@@ -2949,7 +2974,7 @@
 
     if (!modalOverflow && scrollbarWidth) {
       const pad = isRTL(element) ? 'paddingLeft' : 'paddingRight';
-      // @ts-ignore
+      // @ts-ignore -- cannot use `setElementStyle`
       element.style[pad] = `${scrollbarWidth}px`;
     }
     setScrollbar(element, (modalOverflow || clientHeight !== scrollHeight));
@@ -2989,15 +3014,16 @@
    * @param {Modal} self the `Modal` instance
    */
   function afterModalHide(self) {
-    const { triggers, element } = self;
+    const { triggers, element, relatedTarget } = self;
     removeOverlay(element);
-    // @ts-ignore
-    element.style.paddingRight = '';
+    setElementStyle(element, { paddingRight: '' });
+    toggleModalDismiss(self);
 
-    if (triggers.length) {
-      const visibleTrigger = triggers.find((x) => isVisible(x));
-      if (visibleTrigger) focus(visibleTrigger);
-    }
+    const focusElement = showModalEvent.relatedTarget || triggers.find(isVisible);
+    if (focusElement) focus(focusElement);
+
+    hiddenModalEvent.relatedTarget = relatedTarget;
+    dispatchEvent(element, hiddenModalEvent);
   }
 
   /**
@@ -3019,12 +3045,11 @@
    */
   function beforeModalShow(self) {
     const { element, hasFade } = self;
-    // @ts-ignore
-    element.style.display = 'block';
+    setElementStyle(element, { display: 'block' });
 
     setModalScrollbar(self);
     if (!getCurrentOpen(element)) {
-      getDocumentBody(element).style.overflow = 'hidden';
+      setElementStyle(getDocumentBody(element), { overflow: 'hidden' });
     }
 
     addClass(element, showClass);
@@ -3042,11 +3067,10 @@
    */
   function beforeModalHide(self, force) {
     const {
-      element, options, relatedTarget, hasFade,
+      element, options, hasFade,
     } = self;
 
-    // @ts-ignore
-    element.style.display = '';
+    setElementStyle(element, { display: '' });
 
     // force can also be the transitionEvent object, we wanna make sure it's not
     // call is not forced and overlay is visible
@@ -3057,11 +3081,6 @@
     } else {
       afterModalHide(self);
     }
-
-    toggleModalDismiss(self);
-
-    hiddenModalEvent.relatedTarget = relatedTarget;
-    dispatchEvent(element, hiddenModalEvent);
   }
 
   // MODAL EVENT HANDLERS
@@ -3243,14 +3262,15 @@
       }
 
       if (backdrop) {
-        if (!currentOpen && !hasClass(overlay, showClass)) {
+        if (!container.contains(overlay)) {
           appendOverlay(container, hasFade, true);
         } else {
           toggleOverlayType(true);
         }
+
         overlayDelay = getElementTransitionDuration(overlay);
 
-        if (!hasClass(overlay, showClass)) showOverlay();
+        showOverlay();
         setTimeout(() => beforeModalShow(self), overlayDelay);
       } else {
         beforeModalShow(self);
@@ -3398,13 +3418,12 @@
 
     if (!options.scroll) {
       setOffCanvasScrollbar(self);
-      getDocumentBody(element).style.overflow = 'hidden';
+      setElementStyle(getDocumentBody(element), { overflow: 'hidden' });
     }
 
     addClass(element, offcanvasTogglingClass);
     addClass(element, showClass);
-    // @ts-ignore
-    element.style.visibility = 'visible';
+    setElementStyle(element, { visibility: 'visible' });
 
     emulateTransitionEnd(element, () => showOffcanvasComplete(self));
   }
@@ -3509,16 +3528,12 @@
    * @param {Offcanvas} self the `Offcanvas` instance
    */
   function showOffcanvasComplete(self) {
-    const { element, triggers } = self;
+    const { element } = self;
     removeClass(element, offcanvasTogglingClass);
 
     removeAttribute(element, ariaHidden);
     setAttribute(element, ariaModal, 'true');
     setAttribute(element, 'role', 'dialog');
-
-    if (triggers.length) {
-      triggers.forEach((btn) => setAttribute(btn, ariaExpanded, 'true'));
-    }
 
     dispatchEvent(element, shownOffcanvasEvent);
 
@@ -3537,14 +3552,10 @@
     setAttribute(element, ariaHidden, 'true');
     removeAttribute(element, ariaModal);
     removeAttribute(element, 'role');
-    // @ts-ignore
-    element.style.visibility = '';
+    setElementStyle(element, { visibility: '' });
 
-    if (triggers.length) {
-      triggers.forEach((btn) => setAttribute(btn, ariaExpanded, 'false'));
-      const visibleTrigger = triggers.find((x) => isVisible(x));
-      if (visibleTrigger) focus(visibleTrigger);
-    }
+    const visibleTrigger = showOffcanvasEvent.relatedTarget || triggers.find((x) => isVisible(x));
+    if (visibleTrigger) focus(visibleTrigger);
 
     removeOverlay(element);
 
@@ -3634,13 +3645,14 @@
       }
 
       if (options.backdrop) {
-        if (!currentOpen) {
+        if (!container.contains(overlay)) {
           appendOverlay(container, true);
         } else {
           toggleOverlayType();
         }
+
         overlayDelay = getElementTransitionDuration(overlay);
-        if (!hasClass(overlay, showClass)) showOverlay();
+        showOverlay();
 
         setTimeout(() => beforeOffcanvasShow(self), overlayDelay);
       } else {
@@ -4055,7 +4067,8 @@
    */
   const mousehoverEvent = 'hover';
 
-  let elementUID = 1;
+  let elementUID = 0;
+  let elementMapUID = 0;
   const elementIDMap = new Map();
 
   /**
@@ -4066,27 +4079,25 @@
    * @returns {number} an existing or new unique ID
    */
   function getUID(element, key) {
-    elementUID += 1;
-    let elMap = elementIDMap.get(element);
-    let result = elementUID;
+    let result = key ? elementUID : elementMapUID;
 
-    if (key && key.length) {
-      if (elMap) {
-        const elMapId = elMap.get(key);
-        if (!Number.isNaN(elMapId)) {
-          result = elMapId;
-        } else {
-          elMap.set(key, result);
-        }
-      } else {
-        elementIDMap.set(element, new Map());
-        elMap = elementIDMap.get(element);
-        elMap.set(key, result);
+    if (key) {
+      const elID = getUID(element);
+      const elMap = elementIDMap.get(elID) || new Map();
+      if (!elementIDMap.has(elID)) {
+        elementIDMap.set(elID, elMap);
       }
-    } else if (!Number.isNaN(elMap)) {
-      result = elMap;
+      if (!elMap.has(key)) {
+        elMap.set(key, result);
+        elementUID += 1;
+      } else result = elMap.get(key);
     } else {
-      elementIDMap.set(element, result);
+      const elkey = element.id || element;
+
+      if (!elementIDMap.has(elkey)) {
+        elementIDMap.set(elkey, result);
+        elementMapUID += 1;
+      } else result = elementIDMap.get(elkey);
     }
     return result;
   }
@@ -5098,6 +5109,8 @@
   const hiddenTabEvent = OriginalEvent(`hidden.bs.${tabString}`);
 
   /**
+   * Stores the current active tab and its content
+   * for a given `.nav` element.
    * @type {Map<(HTMLElement | Element), any>}
    */
   const tabPrivate = new Map();
@@ -5111,7 +5124,7 @@
   function triggerTabEnd(self) {
     const { tabContent, nav } = self;
 
-    if (tabContent) {
+    if (tabContent && hasClass(tabContent, collapsingClass)) {
       // @ts-ignore
       tabContent.style.height = '';
       removeClass(tabContent, collapsingClass);
@@ -5125,11 +5138,13 @@
    * @param {Tab} self the `Tab` instance
    */
   function triggerTabShow(self) {
-    const { element, tabContent, nav } = self;
-    const { currentHeight, nextHeight } = tabPrivate.get(element);
+    const {
+      element, tabContent, content: nextContent, nav,
+    } = self;
     const { tab } = nav && tabPrivate.get(nav);
 
-    if (tabContent) { // height animation
+    if (tabContent && hasClass(nextContent, fadeClass)) { // height animation
+      const { currentHeight, nextHeight } = tabPrivate.get(element);
       if (currentHeight === nextHeight) {
         triggerTabEnd(self);
       } else {
@@ -5141,6 +5156,7 @@
         }, 50);
       }
     } else if (nav) Timer.clear(nav);
+
     shownTabEvent.relatedTarget = tab;
     dispatchEvent(element, shownTabEvent);
   }
@@ -5156,9 +5172,11 @@
     const { tab, content } = nav && tabPrivate.get(nav);
     let currentHeight = 0;
 
-    if (tabContent) {
-      [content, nextContent].forEach((c) => addClass(c, 'overflow-hidden'));
-      currentHeight = content.scrollHeight;
+    if (tabContent && hasClass(nextContent, fadeClass)) {
+      [content, nextContent].forEach((c) => {
+        addClass(c, 'overflow-hidden');
+      });
+      currentHeight = content.scrollHeight || 0;
     }
 
     // update relatedTarget and dispatch event
@@ -5170,7 +5188,7 @@
     addClass(nextContent, activeClass);
     removeClass(content, activeClass);
 
-    if (tabContent) {
+    if (tabContent && hasClass(nextContent, fadeClass)) {
       const nextHeight = nextContent.scrollHeight;
       tabPrivate.set(element, { currentHeight, nextHeight });
 
@@ -5178,7 +5196,9 @@
       // @ts-ignore -- height animation
       tabContent.style.height = `${currentHeight}px`;
       reflow(tabContent);
-      [content, nextContent].forEach((c) => removeClass(c, 'overflow-hidden'));
+      [content, nextContent].forEach((c) => {
+        removeClass(c, 'overflow-hidden');
+      });
     }
 
     if (nextContent && hasClass(nextContent, fadeClass)) {
@@ -5187,8 +5207,11 @@
         emulateTransitionEnd(nextContent, () => {
           triggerTabShow(self);
         });
-      }, 17);
-    } else { triggerTabShow(self); }
+      }, 1);
+    } else {
+      addClass(nextContent, showClass);
+      triggerTabShow(self);
+    }
 
     dispatchEvent(tab, hiddenTabEvent);
   }
@@ -5215,6 +5238,16 @@
     const content = tab ? getTargetElement(tab) : null;
     // @ts-ignore
     return { tab, content };
+  }
+
+  /**
+   * Returns a parent dropdown.
+   * @param {HTMLElement | Element} element the `Tab` element
+   * @returns {(HTMLElement | Element)?} the parent dropdown
+   */
+  function getParentDropdown(element) {
+    const dropdown = closest(element, `.${dropdownMenuClasses.join(',.')}`);
+    return dropdown ? querySelector(`.${dropdownMenuClasses[0]}-toggle`, dropdown) : null;
   }
 
   /**
@@ -5273,7 +5306,22 @@
 
       // event targets
       /** @type {(HTMLElement | Element)?} */
-      self.dropdown = nav && querySelector(`.${dropdownMenuClasses[0]}-toggle`, nav);
+      self.dropdown = getParentDropdown(element);
+
+      // show first Tab instance of none is shown
+      // suggested on #432
+      const { tab } = getActiveTab(self);
+      if (nav && !tab) {
+        const firstTab = querySelector(tabSelector, nav);
+        const firstTabContent = firstTab && getTargetElement(firstTab);
+
+        if (firstTabContent) {
+          addClass(firstTab, activeClass);
+          addClass(firstTabContent, showClass);
+          addClass(firstTabContent, activeClass);
+          setAttribute(element, ariaSelected, 'true');
+        }
+      }
 
       // add event listener
       toggleTabHandler(self, true);
@@ -5301,20 +5349,24 @@
 
         // update relatedTarget and dispatch
         hideTabEvent.relatedTarget = element;
+
         dispatchEvent(tab, hideTabEvent);
         if (hideTabEvent.defaultPrevented) return;
 
-        if (nav) Timer.set(nav, () => {}, 17);
-        removeClass(tab, activeClass);
-        setAttribute(tab, ariaSelected, 'false');
         addClass(element, activeClass);
         setAttribute(element, ariaSelected, 'true');
 
-        if (dropdown) {
-          // @ts-ignore
-          if (!hasClass(element.parentNode, dropdownMenuClass)) {
-            if (hasClass(dropdown, activeClass)) removeClass(dropdown, activeClass);
-          } else if (!hasClass(dropdown, activeClass)) addClass(dropdown, activeClass);
+        const activeDropdown = getParentDropdown(tab);
+        if (activeDropdown && hasClass(activeDropdown, activeClass)) {
+          removeClass(activeDropdown, activeClass);
+        }
+
+        if (nav) {
+          Timer.set(nav, () => {
+            removeClass(tab, activeClass);
+            setAttribute(tab, ariaSelected, 'false');
+            if (dropdown && !hasClass(dropdown, activeClass)) addClass(dropdown, activeClass);
+          }, 1);
         }
 
         if (hasClass(content, fadeClass)) {

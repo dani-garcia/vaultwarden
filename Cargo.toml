@@ -3,7 +3,7 @@ name = "vaultwarden"
 version = "1.0.0"
 authors = ["Daniel García <dani-garcia@users.noreply.github.com>"]
 edition = "2021"
-rust-version = "1.59"
+rust-version = "1.60"
 resolver = "2"
 
 repository = "https://github.com/dani-garcia/vaultwarden"
@@ -35,9 +35,10 @@ syslog = "6.0.1" # Needs to be v4 until fern is updated
 
 [dependencies]
 # Logging
-log = "0.4.16"
+log = "0.4.17"
 fern = { version = "0.6.1", features = ["syslog-6"] }
 tracing = { version = "0.1.34", features = ["log"] } # Needed to have lettre and webauthn-rs trace logging to work
+
 backtrace = "0.3.65" # Logging panics to logfile instead stderr only
 
 # A `dotenv` implementation for Rust
@@ -47,7 +48,7 @@ dotenvy = { version = "0.15.1", default-features = false }
 once_cell = "1.10.0"
 
 # Numerical libraries
-num-traits = "0.2.14"
+num-traits = "0.2.15"
 num-derive = "0.3.3"
 
 # Web framework
@@ -60,14 +61,14 @@ chashmap = "2.2.2" # Concurrent hashmap implementation
 
 # Async futures
 futures = "0.3.21"
-tokio = { version = "1.17.0", features = ["rt-multi-thread", "fs", "io-util", "parking_lot"] }
+tokio = { version = "1.18.1", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time"] }
 
 # A generic serialization/deserialization framework
-serde = { version = "1.0.136", features = ["derive"] }
-serde_json = "1.0.79"
+serde = { version = "1.0.137", features = ["derive"] }
+serde_json = "1.0.81"
 
 # A safe, extensible ORM and Query builder
-diesel = { version = "1.4.8", features = [ "chrono", "r2d2"] }
+diesel = { version = "1.4.8", features = ["chrono", "r2d2"] }
 diesel_migrations = "1.4.0"
 
 # Bundled SQLite
@@ -78,7 +79,7 @@ rand = "0.8.5"
 ring = "0.16.20"
 
 # UUID generation
-uuid = { version = "0.8.2", features = ["v4"] }
+uuid = { version = "1.0.0", features = ["v4"] }
 
 # Date and time libraries
 chrono = { version = "0.4.19", features = ["clock", "serde"], default-features = false }
@@ -107,8 +108,8 @@ webauthn-rs = "0.3.2"
 url = "2.2.2"
 
 # Email libraries
-lettre = { version = "0.10.0-rc.5", features = ["smtp-transport", "builder", "serde", "native-tls", "hostname", "tracing"], default-features = false }
 idna = "0.2.3" # Punycode conversion
+lettre = { version = "0.10.0-rc.6", features = ["smtp-transport", "builder", "serde", "native-tls", "hostname", "tracing"], default-features = false }
 percent-encoding = "2.1.0" # URL encoding library used for URL's in the emails
 
 # Template library
@@ -129,7 +130,7 @@ cookie = "0.16.0"
 cookie_store = "0.16.0"
 
 # Used by U2F, JWT and Postgres
-openssl = "0.10.38"
+openssl = "0.10.40"
 
 # CLI argument parsing
 pico-args = "0.4.2"
@@ -139,21 +140,22 @@ paste = "1.0.7"
 governor = "0.4.2"
 
 # Capture CTRL+C
-ctrlc = { version = "3.2.1", features = ["termination"] }
+ctrlc = { version = "3.2.2", features = ["termination"] }
 
 # Allow overriding the default memory allocator
 # Mainly used for the musl builds, since the default musl malloc is very slow
-mimalloc = { version = "0.1.28", features = ["secure"], default-features = false, optional = true }
+mimalloc = { version = "0.1.29", features = ["secure"], default-features = false, optional = true }
 
 [patch.crates-io]
-rocket = { git = 'https://github.com/SergioBenitez/Rocket', rev = '6bdd2f818642683b3aadbda51d7573abefe045ab' }
+rocket = { git = 'https://github.com/SergioBenitez/Rocket', rev = '761ffb009ea9d35c32d3c8eecd948ec4434cd0a3' }
 
 # The maintainer of the `job_scheduler` crate doesn't seem to have responded
 # to any issues or PRs for almost a year (as of April 2021). This hopefully
 # temporary fork updates Cargo.toml to use more up-to-date dependencies.
 # In particular, `cron` has since implemented parsing of some common syntax
 # that wasn't previously supported (https://github.com/zslayton/cron/pull/64).
-job_scheduler = { git = 'https://github.com/jjlin/job_scheduler', rev = 'ee023418dbba2bfe1e30a5fd7d937f9e33739806' }
+# 2022-05-04: Forked/Updated the job_scheduler again use the latest dependencies and some fixes.
+job_scheduler = { git = 'https://github.com/BlackDex/job_scheduler', rev = '9100fc596a083fd9c0b560f8f11f108e0a19d07e' }
 
 # Strip debuginfo from the release builds
 # Also enable thin LTO for some optimizations

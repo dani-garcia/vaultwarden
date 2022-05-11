@@ -5,7 +5,7 @@ use serde_json::Value;
 use std::borrow::Borrow;
 
 use crate::{
-    api::{EmptyResult, JsonResult, JsonUpcase, NumberOrString},
+    api::{core::CipherSyncData, EmptyResult, JsonResult, JsonUpcase, NumberOrString},
     auth::{decode_emergency_access_invite, Headers},
     db::{models::*, DbConn, DbPool},
     mail, CONFIG,
@@ -595,10 +595,13 @@ async fn view_emergency_access(emer_id: String, headers: Headers, conn: DbConn) 
         err!("Emergency access not valid.")
     }
 
-    let ciphers_json = stream::iter(Cipher::find_owned_by_user(&emergency_access.grantor_uuid, &conn).await)
+    let ciphers = Cipher::find_owned_by_user(&emergency_access.grantor_uuid, &conn).await;
+    let cipher_sync_data = CipherSyncData::new(&emergency_access.grantor_uuid, &ciphers, &conn).await;
+
+    let ciphers_json = stream::iter(ciphers)
         .then(|c| async {
             let c = c; // Move out this single variable
-            c.to_json(&host, &emergency_access.grantor_uuid, &conn).await
+            c.to_json(&host, &emergency_access.grantor_uuid, Some(&cipher_sync_data), &conn).await
         })
         .collect::<Vec<Value>>()
         .await;

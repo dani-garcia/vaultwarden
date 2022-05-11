@@ -377,12 +377,13 @@ async fn schedule_jobs(pool: db::DbPool) {
         return;
     }
 
-    let runtime = tokio::runtime::Handle::current();
+    let runtime = tokio::runtime::Runtime::new().unwrap();
 
     thread::Builder::new()
         .name("job-scheduler".to_string())
         .spawn(move || {
             use job_scheduler::{Job, JobScheduler};
+            let _runtime_guard = runtime.enter();
 
             let mut sched = JobScheduler::new();
 

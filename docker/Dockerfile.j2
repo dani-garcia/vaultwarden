@@ -3,7 +3,7 @@
 # This file was generated using a Jinja2 template.
 # Please make your changes in `Dockerfile.j2` and then `make` the individual Dockerfiles.
 
-{% set build_stage_base_image = "rust:1.59-bullseye" %}
+{% set build_stage_base_image = "rust:1.60-bullseye" %}
 {% if "alpine" in target_file %}
 {%   if "amd64" in target_file %}
 {%     set build_stage_base_image = "blackdex/rust-musl:x86_64-musl-stable" %}

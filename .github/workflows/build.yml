@@ -46,7 +46,7 @@ jobs:
     steps:
       # Checkout the repo
       - name: Checkout
-        uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579 # v2.4.0
+        uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b # v3.0.2
       # End Checkout the repo
 
 
@@ -140,7 +140,7 @@ jobs:
 
       # Upload artifact to Github Actions
       - name: Upload artifact
-        uses: actions/upload-artifact@82c141cc518b40d92cc801eee768e7aafc9c2fa2 # v2.3.1
+        uses: actions/upload-artifact@6673cd052c4cd6fcf4b4e6e60ea986c889389535 # v3.0.0
         with:
           name: vaultwarden-${{ matrix.target-triple }}${{ matrix.ext }}
           path: target/${{ matrix.target-triple }}/release/vaultwarden${{ matrix.ext }}

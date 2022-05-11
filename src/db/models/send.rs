@@ -1,14 +1,12 @@
 use chrono::{NaiveDateTime, Utc};
 use serde_json::Value;
 
-use super::{Organization, User};
+use super::User;
 
 db_object! {
-    #[derive(Identifiable, Queryable, Insertable, Associations, AsChangeset)]
+    #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
     #[table_name = "sends"]
     #[changeset_options(treat_none_as_null="true")]
-    #[belongs_to(User, foreign_key = "user_uuid")]
-    #[belongs_to(Organization, foreign_key = "organization_uuid")]
     #[primary_key(uuid)]
     pub struct Send {
         pub uuid: String,

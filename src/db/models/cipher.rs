@@ -1,19 +1,17 @@
+use crate::CONFIG;
 use chrono::{Duration, NaiveDateTime, Utc};
 use serde_json::Value;
 
-use crate::CONFIG;
+use super::{Attachment, CollectionCipher, Favorite, FolderCipher, User, UserOrgStatus, UserOrgType, UserOrganization};
 
-use super::{
-    Attachment, CollectionCipher, Favorite, FolderCipher, Organization, User, UserOrgStatus, UserOrgType,
-    UserOrganization,
-};
+use crate::api::core::CipherSyncData;
+
+use std::borrow::Cow;
 
 db_object! {
-    #[derive(Identifiable, Queryable, Insertable, Associations, AsChangeset)]
+    #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
     #[table_name = "ciphers"]
     #[changeset_options(treat_none_as_null="true")]
-    #[belongs_to(User, foreign_key = "user_uuid")]
-    #[belongs_to(Organization, foreign_key = "organization_uuid")]
     #[primary_key(uuid)]
     pub struct Cipher {
         pub uuid: String,
@@ -82,22 +80,32 @@ use crate::error::MapResult;
 
 /// Database methods
 impl Cipher {
-    pub async fn to_json(&self, host: &str, user_uuid: &str, conn: &DbConn) -> Value {
+    pub async fn to_json(
+        &self,
+        host: &str,
+        user_uuid: &str,
+        cipher_sync_data: Option<&CipherSyncData>,
+        conn: &DbConn,
+    ) -> Value {
         use crate::util::format_date;
 
-        let attachments = Attachment::find_by_cipher(&self.uuid, conn).await;
-        // When there are no attachments use null instead of an empty array
-        let attachments_json = if attachments.is_empty() {
-            Value::Null
+        let mut attachments_json: Value = Value::Null;
+        if let Some(cipher_sync_data) = cipher_sync_data {
+            if let Some(attachments) = cipher_sync_data.cipher_attachments.get(&self.uuid) {
+                attachments_json = attachments.iter().map(|c| c.to_json(host)).collect();
+            }
         } else {
-            attachments.iter().map(|c| c.to_json(host)).collect()
-        };
+            let attachments = Attachment::find_by_cipher(&self.uuid, conn).await;
+            if !attachments.is_empty() {
+                attachments_json = attachments.iter().map(|c| c.to_json(host)).collect()
+            }
+        }
 
         let fields_json = self.fields.as_ref().and_then(|s| serde_json::from_str(s).ok()).unwrap_or(Value::Null);
         let password_history_json =
             self.password_history.as_ref().and_then(|s| serde_json::from_str(s).ok()).unwrap_or(Value::Null);
 
-        let (read_only, hide_passwords) = match self.get_access_restrictions(user_uuid, conn).await {
+        let (read_only, hide_passwords) = match self.get_access_restrictions(user_uuid, cipher_sync_data, conn).await {
             Some((ro, hp)) => (ro, hp),
             None => {
                 error!("Cipher ownership assertion failure");
@@ -109,7 +117,7 @@ impl Cipher {
         // If not passing an empty object, mobile clients will crash.
         let mut type_data_json: Value = serde_json::from_str(&self.data).unwrap_or_else(|_| json!({}));
 
-        // NOTE: This was marked as *Backwards Compatibilty Code*, but as of January 2021 this is still being used by upstream
+        // NOTE: This was marked as *Backwards Compatibility Code*, but as of January 2021 this is still being used by upstream
         // Set the first element of the Uris array as Uri, this is needed several (mobile) clients.
         if self.atype == 1 {
             if type_data_json["Uris"].is_array() {
@@ -124,12 +132,22 @@ impl Cipher {
         // Clone the type_data and add some default value.
         let mut data_json = type_data_json.clone();
 
-        // NOTE: This was marked as *Backwards Compatibilty Code*, but as of January 2021 this is still being used by upstream
+        // NOTE: This was marked as *Backwards Compatibility Code*, but as of January 2021 this is still being used by upstream
         // data_json should always contain the following keys with every atype
         data_json["Fields"] = json!(fields_json);
         data_json["Name"] = json!(self.name);
         data_json["Notes"] = json!(self.notes);
         data_json["PasswordHistory"] = json!(password_history_json);
+
+        let collection_ids = if let Some(cipher_sync_data) = cipher_sync_data {
+            if let Some(cipher_collections) = cipher_sync_data.cipher_collections.get(&self.uuid) {
+                Cow::from(cipher_collections)
+            } else {
+                Cow::from(Vec::with_capacity(0))
+            }
+        } else {
+            Cow::from(self.get_collections(user_uuid, conn).await)
+        };
 
         // There are three types of cipher response models in upstream
         // Bitwarden: "cipherMini", "cipher", and "cipherDetails" (in order
@@ -144,8 +162,8 @@ impl Cipher {
             "Type": self.atype,
             "RevisionDate": format_date(&self.updated_at),
             "DeletedDate": self.deleted_at.map_or(Value::Null, |d| Value::String(format_date(&d))),
-            "FolderId": self.get_folder_uuid(user_uuid, conn).await,
-            "Favorite": self.is_favorite(user_uuid, conn).await,
+            "FolderId": if let Some(cipher_sync_data) = cipher_sync_data { cipher_sync_data.cipher_folders.get(&self.uuid).map(|c| c.to_string() ) } else { self.get_folder_uuid(user_uuid, conn).await },
+            "Favorite": if let Some(cipher_sync_data) = cipher_sync_data { cipher_sync_data.cipher_favorites.contains(&self.uuid) } else { self.is_favorite(user_uuid, conn).await },
             "Reprompt": self.reprompt.unwrap_or(RepromptType::None as i32),
             "OrganizationId": self.organization_uuid,
             "Attachments": attachments_json,
@@ -154,7 +172,7 @@ impl Cipher {
             "OrganizationUseTotp": true,
 
             // This field is specific to the cipherDetails type.
-            "CollectionIds": self.get_collections(user_uuid, conn).await,
+            "CollectionIds": collection_ids,
 
             "Name": self.name,
             "Notes": self.notes,
@@ -318,13 +336,21 @@ impl Cipher {
     }
 
     /// Returns whether this cipher is owned by an org in which the user has full access.
-    pub async fn is_in_full_access_org(&self, user_uuid: &str, conn: &DbConn) -> bool {
+    pub async fn is_in_full_access_org(
+        &self,
+        user_uuid: &str,
+        cipher_sync_data: Option<&CipherSyncData>,
+        conn: &DbConn,
+    ) -> bool {
         if let Some(ref org_uuid) = self.organization_uuid {
-            if let Some(user_org) = UserOrganization::find_by_user_and_org(user_uuid, org_uuid, conn).await {
+            if let Some(cipher_sync_data) = cipher_sync_data {
+                if let Some(cached_user_org) = cipher_sync_data.user_organizations.get(org_uuid) {
+                    return cached_user_org.has_full_access();
+                }
+            } else if let Some(user_org) = UserOrganization::find_by_user_and_org(user_uuid, org_uuid, conn).await {
                 return user_org.has_full_access();
             }
         }
-
         false
     }
 
@@ -333,18 +359,62 @@ impl Cipher {
     /// not in any collection the user has access to. Otherwise, the user has
     /// access to this cipher, and Some(read_only, hide_passwords) represents
     /// the access restrictions.
-    pub async fn get_access_restrictions(&self, user_uuid: &str, conn: &DbConn) -> Option<(bool, bool)> {
+    pub async fn get_access_restrictions(
+        &self,
+        user_uuid: &str,
+        cipher_sync_data: Option<&CipherSyncData>,
+        conn: &DbConn,
+    ) -> Option<(bool, bool)> {
         // Check whether this cipher is directly owned by the user, or is in
         // a collection that the user has full access to. If so, there are no
         // access restrictions.
-        if self.is_owned_by_user(user_uuid) || self.is_in_full_access_org(user_uuid, conn).await {
+        if self.is_owned_by_user(user_uuid) || self.is_in_full_access_org(user_uuid, cipher_sync_data, conn).await {
             return Some((false, false));
         }
 
+        let rows = if let Some(cipher_sync_data) = cipher_sync_data {
+            let mut rows: Vec<(bool, bool)> = Vec::new();
+            if let Some(collections) = cipher_sync_data.cipher_collections.get(&self.uuid) {
+                for collection in collections {
+                    if let Some(uc) = cipher_sync_data.user_collections.get(collection) {
+                        rows.push((uc.read_only, uc.hide_passwords));
+                    }
+                }
+            }
+            rows
+        } else {
+            self.get_collections_access_flags(user_uuid, conn).await
+        };
+
+        if rows.is_empty() {
+            // This cipher isn't in any collections accessible to the user.
+            return None;
+        }
+
+        // A cipher can be in multiple collections with inconsistent access flags.
+        // For example, a cipher could be in one collection where the user has
+        // read-only access, but also in another collection where the user has
+        // read/write access. For a flag to be in effect for a cipher, upstream
+        // requires all collections the cipher is in to have that flag set.
+        // Therefore, we do a boolean AND of all values in each of the `read_only`
+        // and `hide_passwords` columns. This could ideally be done as part of the
+        // query, but Diesel doesn't support a min() or bool_and() function on
+        // booleans and this behavior isn't portable anyway.
+        let mut read_only = true;
+        let mut hide_passwords = true;
+        for (ro, hp) in rows.iter() {
+            read_only &= ro;
+            hide_passwords &= hp;
+        }
+
+        Some((read_only, hide_passwords))
+    }
+
+    pub async fn get_collections_access_flags(&self, user_uuid: &str, conn: &DbConn) -> Vec<(bool, bool)> {
         db_run! {conn: {
             // Check whether this cipher is in any collections accessible to the
             // user. If so, retrieve the access flags for each collection.
-            let rows = ciphers::table
+            ciphers::table
                 .filter(ciphers::uuid.eq(&self.uuid))
                 .inner_join(ciphers_collections::table.on(
                     ciphers::uuid.eq(ciphers_collections::cipher_uuid)))
@@ -353,42 +423,19 @@ impl Cipher {
                         .and(users_collections::user_uuid.eq(user_uuid))))
                 .select((users_collections::read_only, users_collections::hide_passwords))
                 .load::<(bool, bool)>(conn)
-                .expect("Error getting access restrictions");
-
-            if rows.is_empty() {
-                // This cipher isn't in any collections accessible to the user.
-                return None;
-            }
-
-            // A cipher can be in multiple collections with inconsistent access flags.
-            // For example, a cipher could be in one collection where the user has
-            // read-only access, but also in another collection where the user has
-            // read/write access. For a flag to be in effect for a cipher, upstream
-            // requires all collections the cipher is in to have that flag set.
-            // Therefore, we do a boolean AND of all values in each of the `read_only`
-            // and `hide_passwords` columns. This could ideally be done as part of the
-            // query, but Diesel doesn't support a min() or bool_and() function on
-            // booleans and this behavior isn't portable anyway.
-            let mut read_only = true;
-            let mut hide_passwords = true;
-            for (ro, hp) in rows.iter() {
-                read_only &= ro;
-                hide_passwords &= hp;
-            }
-
-            Some((read_only, hide_passwords))
+                .expect("Error getting access restrictions")
         }}
     }
 
     pub async fn is_write_accessible_to_user(&self, user_uuid: &str, conn: &DbConn) -> bool {
-        match self.get_access_restrictions(user_uuid, conn).await {
+        match self.get_access_restrictions(user_uuid, None, conn).await {
             Some((read_only, _hide_passwords)) => !read_only,
             None => false,
         }
     }
 
     pub async fn is_accessible_to_user(&self, user_uuid: &str, conn: &DbConn) -> bool {
-        self.get_access_restrictions(user_uuid, conn).await.is_some()
+        self.get_access_restrictions(user_uuid, None, conn).await.is_some()
     }
 
     // Returns whether this cipher is a favorite of the specified user.
@@ -561,6 +608,34 @@ impl Cipher {
             ))
             .select(ciphers_collections::collection_uuid)
             .load::<String>(conn).unwrap_or_default()
+        }}
+    }
+
+    /// Return a Vec with (cipher_uuid, collection_uuid)
+    /// This is used during a full sync so we only need one query for all collections accessible.
+    pub async fn get_collections_with_cipher_by_user(user_id: &str, conn: &DbConn) -> Vec<(String, String)> {
+        db_run! {conn: {
+            ciphers_collections::table
+            .inner_join(collections::table.on(
+                collections::uuid.eq(ciphers_collections::collection_uuid)
+            ))
+            .inner_join(users_organizations::table.on(
+                users_organizations::org_uuid.eq(collections::org_uuid).and(
+                    users_organizations::user_uuid.eq(user_id)
+                )
+            ))
+            .left_join(users_collections::table.on(
+                users_collections::collection_uuid.eq(ciphers_collections::collection_uuid).and(
+                    users_collections::user_uuid.eq(user_id)
+                )
+            ))
+            .filter(users_collections::user_uuid.eq(user_id).or( // User has access to collection
+                users_organizations::access_all.eq(true).or( // User has access all
+                    users_organizations::atype.le(UserOrgType::Admin as i32) // User is admin or owner
+                )
+            ))
+            .select(ciphers_collections::all_columns)
+            .load::<(String, String)>(conn).unwrap_or_default()
         }}
     }
 }
