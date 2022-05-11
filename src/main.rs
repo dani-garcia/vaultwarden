@@ -365,7 +365,7 @@ async fn launch_rocket(pool: db::DbPool, extra_debug: bool) -> Result<(), Error>
     })
     .expect("Error setting Ctrl-C handler");
 
-    instance.launch().await?;
+    let _ = instance.launch().await?;
 
     info!("Vaultwarden process exited!");
     Ok(())

@@ -52,7 +52,7 @@ num-traits = "0.2.15"
 num-derive = "0.3.3"
 
 # Web framework
-rocket = { version = "0.5.0-rc.1", features = ["tls", "json"], default-features = false }
+rocket = { version = "0.5.0-rc.2", features = ["tls", "json"], default-features = false }
 
 # WebSockets libraries
 ws = { version = "0.11.1", package = "parity-ws" }
@@ -61,7 +61,7 @@ chashmap = "2.2.2" # Concurrent hashmap implementation
 
 # Async futures
 futures = "0.3.21"
-tokio = { version = "1.18.1", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time"] }
+tokio = { version = "1.18.2", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time"] }
 
 # A generic serialization/deserialization framework
 serde = { version = "1.0.137", features = ["derive"] }
@@ -99,7 +99,7 @@ jsonwebtoken = "8.1.0"
 totp-lite = "1.0.3"
 
 # Yubico Library
-yubico = { version = "0.10.0", features = ["online-tokio"], default-features = false }
+yubico = { version = "0.11.0", features = ["online-tokio"], default-features = false }
 
 # WebAuthn libraries
 webauthn-rs = "0.3.2"
@@ -147,8 +147,6 @@ ctrlc = { version = "3.2.2", features = ["termination"] }
 mimalloc = { version = "0.1.29", features = ["secure"], default-features = false, optional = true }
 
 [patch.crates-io]
-rocket = { git = 'https://github.com/SergioBenitez/Rocket', rev = '761ffb009ea9d35c32d3c8eecd948ec4434cd0a3' }
-
 # The maintainer of the `job_scheduler` crate doesn't seem to have responded
 # to any issues or PRs for almost a year (as of April 2021). This hopefully
 # temporary fork updates Cargo.toml to use more up-to-date dependencies.
