@@ -6,8 +6,8 @@ use super::{CollectionUser, GroupUser, OrgPolicy, OrgPolicyType, User};
 
 db_object! {
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
-    #[table_name = "organizations"]
-    #[primary_key(uuid)]
+    #[diesel(table_name = organizations)]
+    #[diesel(primary_key(uuid))]
     pub struct Organization {
         pub uuid: String,
         pub name: String,
@@ -17,8 +17,8 @@ db_object! {
     }
 
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
-    #[table_name = "users_organizations"]
-    #[primary_key(uuid)]
+    #[diesel(table_name = users_organizations)]
+    #[diesel(primary_key(uuid))]
     pub struct UserOrganization {
         pub uuid: String,
         pub user_uuid: String,
@@ -216,7 +216,7 @@ use crate::error::MapResult;
 
 /// Database methods
 impl Organization {
-    pub async fn save(&self, conn: &DbConn) -> EmptyResult {
+    pub async fn save(&self, conn: &mut DbConn) -> EmptyResult {
         for user_org in UserOrganization::find_by_org(&self.uuid, conn).await.iter() {
             User::update_uuid_revision(&user_org.user_uuid, conn).await;
         }
@@ -253,7 +253,7 @@ impl Organization {
         }
     }
 
-    pub async fn delete(self, conn: &DbConn) -> EmptyResult {
+    pub async fn delete(self, conn: &mut DbConn) -> EmptyResult {
         use super::{Cipher, Collection};
 
         Cipher::delete_all_by_organization(&self.uuid, conn).await?;
@@ -268,7 +268,7 @@ impl Organization {
         }}
     }
 
-    pub async fn find_by_uuid(uuid: &str, conn: &DbConn) -> Option<Self> {
+    pub async fn find_by_uuid(uuid: &str, conn: &mut DbConn) -> Option<Self> {
         db_run! { conn: {
             organizations::table
                 .filter(organizations::uuid.eq(uuid))
@@ -277,7 +277,7 @@ impl Organization {
         }}
     }
 
-    pub async fn get_all(conn: &DbConn) -> Vec<Self> {
+    pub async fn get_all(conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             organizations::table.load::<OrganizationDb>(conn).expect("Error loading organizations").from_db()
         }}
@@ -285,7 +285,7 @@ impl Organization {
 }
 
 impl UserOrganization {
-    pub async fn to_json(&self, conn: &DbConn) -> Value {
+    pub async fn to_json(&self, conn: &mut DbConn) -> Value {
         let org = Organization::find_by_uuid(&self.org_uuid, conn).await.unwrap();
 
         // https://github.com/bitwarden/server/blob/13d1e74d6960cf0d042620b72d85bf583a4236f7/src/Api/Models/Response/ProfileOrganizationResponseModel.cs
@@ -350,7 +350,7 @@ impl UserOrganization {
         })
     }
 
-    pub async fn to_json_user_details(&self, conn: &DbConn) -> Value {
+    pub async fn to_json_user_details(&self, conn: &mut DbConn) -> Value {
         let user = User::find_by_uuid(&self.user_uuid, conn).await.unwrap();
 
         // Because BitWarden want the status to be -1 for revoked users we need to catch that here.
@@ -383,7 +383,7 @@ impl UserOrganization {
         })
     }
 
-    pub async fn to_json_details(&self, conn: &DbConn) -> Value {
+    pub async fn to_json_details(&self, conn: &mut DbConn) -> Value {
         let coll_uuids = if self.access_all {
             vec![] // If we have complete access, no need to fill the array
         } else {
@@ -421,7 +421,7 @@ impl UserOrganization {
             "Object": "organizationUserDetails",
         })
     }
-    pub async fn save(&self, conn: &DbConn) -> EmptyResult {
+    pub async fn save(&self, conn: &mut DbConn) -> EmptyResult {
         User::update_uuid_revision(&self.user_uuid, conn).await;
 
         db_run! { conn:
@@ -455,7 +455,7 @@ impl UserOrganization {
         }
     }
 
-    pub async fn delete(self, conn: &DbConn) -> EmptyResult {
+    pub async fn delete(self, conn: &mut DbConn) -> EmptyResult {
         User::update_uuid_revision(&self.user_uuid, conn).await;
 
         CollectionUser::delete_all_by_user_and_org(&self.user_uuid, &self.org_uuid, conn).await?;
@@ -468,21 +468,21 @@ impl UserOrganization {
         }}
     }
 
-    pub async fn delete_all_by_organization(org_uuid: &str, conn: &DbConn) -> EmptyResult {
+    pub async fn delete_all_by_organization(org_uuid: &str, conn: &mut DbConn) -> EmptyResult {
         for user_org in Self::find_by_org(org_uuid, conn).await {
             user_org.delete(conn).await?;
         }
         Ok(())
     }
 
-    pub async fn delete_all_by_user(user_uuid: &str, conn: &DbConn) -> EmptyResult {
+    pub async fn delete_all_by_user(user_uuid: &str, conn: &mut DbConn) -> EmptyResult {
         for user_org in Self::find_any_state_by_user(user_uuid, conn).await {
             user_org.delete(conn).await?;
         }
         Ok(())
     }
 
-    pub async fn find_by_email_and_org(email: &str, org_id: &str, conn: &DbConn) -> Option<UserOrganization> {
+    pub async fn find_by_email_and_org(email: &str, org_id: &str, conn: &mut DbConn) -> Option<UserOrganization> {
         if let Some(user) = super::User::find_by_mail(email, conn).await {
             if let Some(user_org) = UserOrganization::find_by_user_and_org(&user.uuid, org_id, conn).await {
                 return Some(user_org);
@@ -504,7 +504,7 @@ impl UserOrganization {
         (self.access_all || self.atype >= UserOrgType::Admin) && self.has_status(UserOrgStatus::Confirmed)
     }
 
-    pub async fn find_by_uuid(uuid: &str, conn: &DbConn) -> Option<Self> {
+    pub async fn find_by_uuid(uuid: &str, conn: &mut DbConn) -> Option<Self> {
         db_run! { conn: {
             users_organizations::table
                 .filter(users_organizations::uuid.eq(uuid))
@@ -513,7 +513,7 @@ impl UserOrganization {
         }}
     }
 
-    pub async fn find_by_uuid_and_org(uuid: &str, org_uuid: &str, conn: &DbConn) -> Option<Self> {
+    pub async fn find_by_uuid_and_org(uuid: &str, org_uuid: &str, conn: &mut DbConn) -> Option<Self> {
         db_run! { conn: {
             users_organizations::table
                 .filter(users_organizations::uuid.eq(uuid))
@@ -523,7 +523,7 @@ impl UserOrganization {
         }}
     }
 
-    pub async fn find_confirmed_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
+    pub async fn find_confirmed_by_user(user_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             users_organizations::table
                 .filter(users_organizations::user_uuid.eq(user_uuid))
@@ -533,7 +533,7 @@ impl UserOrganization {
         }}
     }
 
-    pub async fn find_invited_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
+    pub async fn find_invited_by_user(user_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             users_organizations::table
                 .filter(users_organizations::user_uuid.eq(user_uuid))
@@ -543,7 +543,7 @@ impl UserOrganization {
         }}
     }
 
-    pub async fn find_any_state_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
+    pub async fn find_any_state_by_user(user_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             users_organizations::table
                 .filter(users_organizations::user_uuid.eq(user_uuid))
@@ -552,7 +552,7 @@ impl UserOrganization {
         }}
     }
 
-    pub async fn count_accepted_and_confirmed_by_user(user_uuid: &str, conn: &DbConn) -> i64 {
+    pub async fn count_accepted_and_confirmed_by_user(user_uuid: &str, conn: &mut DbConn) -> i64 {
         db_run! { conn: {
             users_organizations::table
                 .filter(users_organizations::user_uuid.eq(user_uuid))
@@ -564,7 +564,7 @@ impl UserOrganization {
         }}
     }
 
-    pub async fn find_by_org(org_uuid: &str, conn: &DbConn) -> Vec<Self> {
+    pub async fn find_by_org(org_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             users_organizations::table
                 .filter(users_organizations::org_uuid.eq(org_uuid))
@@ -573,7 +573,7 @@ impl UserOrganization {
         }}
     }
 
-    pub async fn count_by_org(org_uuid: &str, conn: &DbConn) -> i64 {
+    pub async fn count_by_org(org_uuid: &str, conn: &mut DbConn) -> i64 {
         db_run! { conn: {
             users_organizations::table
                 .filter(users_organizations::org_uuid.eq(org_uuid))
@@ -584,7 +584,7 @@ impl UserOrganization {
         }}
     }
 
-    pub async fn find_by_org_and_type(org_uuid: &str, atype: UserOrgType, conn: &DbConn) -> Vec<Self> {
+    pub async fn find_by_org_and_type(org_uuid: &str, atype: UserOrgType, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             users_organizations::table
                 .filter(users_organizations::org_uuid.eq(org_uuid))
@@ -594,7 +594,7 @@ impl UserOrganization {
         }}
     }
 
-    pub async fn count_confirmed_by_org_and_type(org_uuid: &str, atype: UserOrgType, conn: &DbConn) -> i64 {
+    pub async fn count_confirmed_by_org_and_type(org_uuid: &str, atype: UserOrgType, conn: &mut DbConn) -> i64 {
         db_run! { conn: {
             users_organizations::table
                 .filter(users_organizations::org_uuid.eq(org_uuid))
@@ -606,7 +606,7 @@ impl UserOrganization {
         }}
     }
 
-    pub async fn find_by_user_and_org(user_uuid: &str, org_uuid: &str, conn: &DbConn) -> Option<Self> {
+    pub async fn find_by_user_and_org(user_uuid: &str, org_uuid: &str, conn: &mut DbConn) -> Option<Self> {
         db_run! { conn: {
             users_organizations::table
                 .filter(users_organizations::user_uuid.eq(user_uuid))
@@ -616,7 +616,7 @@ impl UserOrganization {
         }}
     }
 
-    pub async fn find_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
+    pub async fn find_by_user(user_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             users_organizations::table
                 .filter(users_organizations::user_uuid.eq(user_uuid))
@@ -625,7 +625,7 @@ impl UserOrganization {
         }}
     }
 
-    pub async fn find_by_user_and_policy(user_uuid: &str, policy_type: OrgPolicyType, conn: &DbConn) -> Vec<Self> {
+    pub async fn find_by_user_and_policy(user_uuid: &str, policy_type: OrgPolicyType, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             users_organizations::table
                 .inner_join(
@@ -644,7 +644,7 @@ impl UserOrganization {
         }}
     }
 
-    pub async fn find_by_cipher_and_org(cipher_uuid: &str, org_uuid: &str, conn: &DbConn) -> Vec<Self> {
+    pub async fn find_by_cipher_and_org(cipher_uuid: &str, org_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             users_organizations::table
             .filter(users_organizations::org_uuid.eq(org_uuid))
@@ -666,7 +666,7 @@ impl UserOrganization {
         }}
     }
 
-    pub async fn find_by_collection_and_org(collection_uuid: &str, org_uuid: &str, conn: &DbConn) -> Vec<Self> {
+    pub async fn find_by_collection_and_org(collection_uuid: &str, org_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             users_organizations::table
             .filter(users_organizations::org_uuid.eq(org_uuid))

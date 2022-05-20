@@ -12,8 +12,8 @@ pub fn routes() -> Vec<rocket::Route> {
 }
 
 #[get("/folders")]
-async fn get_folders(headers: Headers, conn: DbConn) -> Json<Value> {
-    let folders = Folder::find_by_user(&headers.user.uuid, &conn).await;
+async fn get_folders(headers: Headers, mut conn: DbConn) -> Json<Value> {
+    let folders = Folder::find_by_user(&headers.user.uuid, &mut conn).await;
     let folders_json: Vec<Value> = folders.iter().map(Folder::to_json).collect();
 
     Json(json!({
@@ -24,8 +24,8 @@ async fn get_folders(headers: Headers, conn: DbConn) -> Json<Value> {
 }
 
 #[get("/folders/<uuid>")]
-async fn get_folder(uuid: String, headers: Headers, conn: DbConn) -> JsonResult {
-    let folder = match Folder::find_by_uuid(&uuid, &conn).await {
+async fn get_folder(uuid: String, headers: Headers, mut conn: DbConn) -> JsonResult {
+    let folder = match Folder::find_by_uuid(&uuid, &mut conn).await {
         Some(folder) => folder,
         _ => err!("Invalid folder"),
     };
@@ -44,12 +44,12 @@ pub struct FolderData {
 }
 
 #[post("/folders", data = "<data>")]
-async fn post_folders(data: JsonUpcase<FolderData>, headers: Headers, conn: DbConn, nt: Notify<'_>) -> JsonResult {
+async fn post_folders(data: JsonUpcase<FolderData>, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> JsonResult {
     let data: FolderData = data.into_inner().data;
 
     let mut folder = Folder::new(headers.user.uuid, data.Name);
 
-    folder.save(&conn).await?;
+    folder.save(&mut conn).await?;
     nt.send_folder_update(UpdateType::FolderCreate, &folder).await;
 
     Ok(Json(folder.to_json()))
@@ -71,12 +71,12 @@ async fn put_folder(
     uuid: String,
     data: JsonUpcase<FolderData>,
     headers: Headers,
-    conn: DbConn,
+    mut conn: DbConn,
     nt: Notify<'_>,
 ) -> JsonResult {
     let data: FolderData = data.into_inner().data;
 
-    let mut folder = match Folder::find_by_uuid(&uuid, &conn).await {
+    let mut folder = match Folder::find_by_uuid(&uuid, &mut conn).await {
         Some(folder) => folder,
         _ => err!("Invalid folder"),
     };
@@ -87,7 +87,7 @@ async fn put_folder(
 
     folder.name = data.Name;
 
-    folder.save(&conn).await?;
+    folder.save(&mut conn).await?;
     nt.send_folder_update(UpdateType::FolderUpdate, &folder).await;
 
     Ok(Json(folder.to_json()))
@@ -99,8 +99,8 @@ async fn delete_folder_post(uuid: String, headers: Headers, conn: DbConn, nt: No
 }
 
 #[delete("/folders/<uuid>")]
-async fn delete_folder(uuid: String, headers: Headers, conn: DbConn, nt: Notify<'_>) -> EmptyResult {
-    let folder = match Folder::find_by_uuid(&uuid, &conn).await {
+async fn delete_folder(uuid: String, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> EmptyResult {
+    let folder = match Folder::find_by_uuid(&uuid, &mut conn).await {
         Some(folder) => folder,
         _ => err!("Invalid folder"),
     };
@@ -110,7 +110,7 @@ async fn delete_folder(uuid: String, headers: Headers, conn: DbConn, nt: Notify<
     }
 
     // Delete the actual folder entry
-    folder.delete(&conn).await?;
+    folder.delete(&mut conn).await?;
 
     nt.send_folder_update(UpdateType::FolderDelete, &folder).await;
     Ok(())

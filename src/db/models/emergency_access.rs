@@ -5,9 +5,9 @@ use super::User;
 
 db_object! {
     #[derive(Debug, Identifiable, Queryable, Insertable, AsChangeset)]
-    #[table_name = "emergency_access"]
-    #[changeset_options(treat_none_as_null="true")]
-    #[primary_key(uuid)]
+    #[diesel(table_name = emergency_access)]
+    #[diesel(treat_none_as_null = true)]
+    #[diesel(primary_key(uuid))]
     pub struct EmergencyAccess {
         pub uuid: String,
         pub grantor_uuid: String,
@@ -72,7 +72,7 @@ impl EmergencyAccess {
         })
     }
 
-    pub async fn to_json_grantor_details(&self, conn: &DbConn) -> Value {
+    pub async fn to_json_grantor_details(&self, conn: &mut DbConn) -> Value {
         let grantor_user = User::find_by_uuid(&self.grantor_uuid, conn).await.expect("Grantor user not found.");
 
         json!({
@@ -88,7 +88,7 @@ impl EmergencyAccess {
     }
 
     #[allow(clippy::manual_map)]
-    pub async fn to_json_grantee_details(&self, conn: &DbConn) -> Value {
+    pub async fn to_json_grantee_details(&self, conn: &mut DbConn) -> Value {
         let grantee_user = if let Some(grantee_uuid) = self.grantee_uuid.as_deref() {
             Some(User::find_by_uuid(grantee_uuid, conn).await.expect("Grantee user not found."))
         } else if let Some(email) = self.email.as_deref() {
@@ -154,7 +154,7 @@ use crate::api::EmptyResult;
 use crate::error::MapResult;
 
 impl EmergencyAccess {
-    pub async fn save(&mut self, conn: &DbConn) -> EmptyResult {
+    pub async fn save(&mut self, conn: &mut DbConn) -> EmptyResult {
         User::update_uuid_revision(&self.grantor_uuid, conn).await;
         self.updated_at = Utc::now().naive_utc();
 
@@ -189,7 +189,7 @@ impl EmergencyAccess {
         }
     }
 
-    pub async fn delete_all_by_user(user_uuid: &str, conn: &DbConn) -> EmptyResult {
+    pub async fn delete_all_by_user(user_uuid: &str, conn: &mut DbConn) -> EmptyResult {
         for ea in Self::find_all_by_grantor_uuid(user_uuid, conn).await {
             ea.delete(conn).await?;
         }
@@ -199,7 +199,7 @@ impl EmergencyAccess {
         Ok(())
     }
 
-    pub async fn delete(self, conn: &DbConn) -> EmptyResult {
+    pub async fn delete(self, conn: &mut DbConn) -> EmptyResult {
         User::update_uuid_revision(&self.grantor_uuid, conn).await;
 
         db_run! { conn: {
@@ -209,7 +209,7 @@ impl EmergencyAccess {
         }}
     }
 
-    pub async fn find_by_uuid(uuid: &str, conn: &DbConn) -> Option<Self> {
+    pub async fn find_by_uuid(uuid: &str, conn: &mut DbConn) -> Option<Self> {
         db_run! { conn: {
             emergency_access::table
                 .filter(emergency_access::uuid.eq(uuid))
@@ -222,7 +222,7 @@ impl EmergencyAccess {
         grantor_uuid: &str,
         grantee_uuid: &str,
         email: &str,
-        conn: &DbConn,
+        conn: &mut DbConn,
     ) -> Option<Self> {
         db_run! { conn: {
             emergency_access::table
@@ -233,7 +233,7 @@ impl EmergencyAccess {
         }}
     }
 
-    pub async fn find_all_recoveries(conn: &DbConn) -> Vec<Self> {
+    pub async fn find_all_recoveries(conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             emergency_access::table
                 .filter(emergency_access::status.eq(EmergencyAccessStatus::RecoveryInitiated as i32))
@@ -241,7 +241,7 @@ impl EmergencyAccess {
         }}
     }
 
-    pub async fn find_by_uuid_and_grantor_uuid(uuid: &str, grantor_uuid: &str, conn: &DbConn) -> Option<Self> {
+    pub async fn find_by_uuid_and_grantor_uuid(uuid: &str, grantor_uuid: &str, conn: &mut DbConn) -> Option<Self> {
         db_run! { conn: {
             emergency_access::table
                 .filter(emergency_access::uuid.eq(uuid))
@@ -251,7 +251,7 @@ impl EmergencyAccess {
         }}
     }
 
-    pub async fn find_all_by_grantee_uuid(grantee_uuid: &str, conn: &DbConn) -> Vec<Self> {
+    pub async fn find_all_by_grantee_uuid(grantee_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             emergency_access::table
                 .filter(emergency_access::grantee_uuid.eq(grantee_uuid))
@@ -259,7 +259,7 @@ impl EmergencyAccess {
         }}
     }
 
-    pub async fn find_invited_by_grantee_email(grantee_email: &str, conn: &DbConn) -> Option<Self> {
+    pub async fn find_invited_by_grantee_email(grantee_email: &str, conn: &mut DbConn) -> Option<Self> {
         db_run! { conn: {
             emergency_access::table
                 .filter(emergency_access::email.eq(grantee_email))
@@ -269,7 +269,7 @@ impl EmergencyAccess {
         }}
     }
 
-    pub async fn find_all_by_grantor_uuid(grantor_uuid: &str, conn: &DbConn) -> Vec<Self> {
+    pub async fn find_all_by_grantor_uuid(grantor_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             emergency_access::table
                 .filter(emergency_access::grantor_uuid.eq(grantor_uuid))

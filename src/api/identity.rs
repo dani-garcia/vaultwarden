@@ -55,21 +55,21 @@ async fn login(data: Form<ConnectData>, conn: DbConn, ip: ClientIp) -> JsonResul
     }
 }
 
-async fn _refresh_login(data: ConnectData, conn: DbConn) -> JsonResult {
+async fn _refresh_login(data: ConnectData, mut conn: DbConn) -> JsonResult {
     // Extract token
     let token = data.refresh_token.unwrap();
 
     // Get device by refresh token
-    let mut device = Device::find_by_refresh_token(&token, &conn).await.map_res("Invalid refresh token")?;
+    let mut device = Device::find_by_refresh_token(&token, &mut conn).await.map_res("Invalid refresh token")?;
 
     let scope = "api offline_access";
     let scope_vec = vec!["api".into(), "offline_access".into()];
 
     // Common
-    let user = User::find_by_uuid(&device.user_uuid, &conn).await.unwrap();
-    let orgs = UserOrganization::find_confirmed_by_user(&user.uuid, &conn).await;
+    let user = User::find_by_uuid(&device.user_uuid, &mut conn).await.unwrap();
+    let orgs = UserOrganization::find_confirmed_by_user(&user.uuid, &mut conn).await;
     let (access_token, expires_in) = device.refresh_tokens(&user, orgs, scope_vec);
-    device.save(&conn).await?;
+    device.save(&mut conn).await?;
 
     Ok(Json(json!({
         "access_token": access_token,
@@ -87,7 +87,7 @@ async fn _refresh_login(data: ConnectData, conn: DbConn) -> JsonResult {
     })))
 }
 
-async fn _password_login(data: ConnectData, conn: DbConn, ip: &ClientIp) -> JsonResult {
+async fn _password_login(data: ConnectData, mut conn: DbConn, ip: &ClientIp) -> JsonResult {
     // Validate scope
     let scope = data.scope.as_ref().unwrap();
     if scope != "api offline_access" {
@@ -100,7 +100,7 @@ async fn _password_login(data: ConnectData, conn: DbConn, ip: &ClientIp) -> Json
 
     // Get the user
     let username = data.username.as_ref().unwrap().trim();
-    let user = match User::find_by_mail(username, &conn).await {
+    let user = match User::find_by_mail(username, &mut conn).await {
         Some(user) => user,
         None => err!("Username or password is incorrect. Try again", format!("IP: {}. Username: {}.", ip.ip, username)),
     };
@@ -131,7 +131,7 @@ async fn _password_login(data: ConnectData, conn: DbConn, ip: &ClientIp) -> Json
                 user.last_verifying_at = Some(now);
                 user.login_verify_count += 1;
 
-                if let Err(e) = user.save(&conn).await {
+                if let Err(e) = user.save(&mut conn).await {
                     error!("Error updating user: {:#?}", e);
                 }
 
@@ -145,9 +145,9 @@ async fn _password_login(data: ConnectData, conn: DbConn, ip: &ClientIp) -> Json
         err!("Please verify your email before trying again.", format!("IP: {}. Username: {}.", ip.ip, username))
     }
 
-    let (mut device, new_device) = get_device(&data, &conn, &user).await;
+    let (mut device, new_device) = get_device(&data, &mut conn, &user).await;
 
-    let twofactor_token = twofactor_auth(&user.uuid, &data, &mut device, ip, &conn).await?;
+    let twofactor_token = twofactor_auth(&user.uuid, &data, &mut device, ip, &mut conn).await?;
 
     if CONFIG.mail_enabled() && new_device {
         if let Err(e) = mail::send_new_device_logged_in(&user.email, &ip.ip.to_string(), &now, &device.name).await {
@@ -160,9 +160,9 @@ async fn _password_login(data: ConnectData, conn: DbConn, ip: &ClientIp) -> Json
     }
 
     // Common
-    let orgs = UserOrganization::find_confirmed_by_user(&user.uuid, &conn).await;
+    let orgs = UserOrganization::find_confirmed_by_user(&user.uuid, &mut conn).await;
     let (access_token, expires_in) = device.refresh_tokens(&user, orgs, scope_vec);
-    device.save(&conn).await?;
+    device.save(&mut conn).await?;
 
     let mut result = json!({
         "access_token": access_token,
@@ -188,7 +188,7 @@ async fn _password_login(data: ConnectData, conn: DbConn, ip: &ClientIp) -> Json
     Ok(Json(result))
 }
 
-async fn _api_key_login(data: ConnectData, conn: DbConn, ip: &ClientIp) -> JsonResult {
+async fn _api_key_login(data: ConnectData, mut conn: DbConn, ip: &ClientIp) -> JsonResult {
     // Validate scope
     let scope = data.scope.as_ref().unwrap();
     if scope != "api" {
@@ -205,7 +205,7 @@ async fn _api_key_login(data: ConnectData, conn: DbConn, ip: &ClientIp) -> JsonR
         Some(uuid) => uuid,
         None => err!("Malformed client_id", format!("IP: {}.", ip.ip)),
     };
-    let user = match User::find_by_uuid(user_uuid, &conn).await {
+    let user = match User::find_by_uuid(user_uuid, &mut conn).await {
         Some(user) => user,
         None => err!("Invalid client_id", format!("IP: {}.", ip.ip)),
     };
@@ -221,7 +221,7 @@ async fn _api_key_login(data: ConnectData, conn: DbConn, ip: &ClientIp) -> JsonR
         err!("Incorrect client_secret", format!("IP: {}. Username: {}.", ip.ip, user.email))
     }
 
-    let (mut device, new_device) = get_device(&data, &conn, &user).await;
+    let (mut device, new_device) = get_device(&data, &mut conn, &user).await;
 
     if CONFIG.mail_enabled() && new_device {
         let now = Utc::now().naive_utc();
@@ -235,9 +235,9 @@ async fn _api_key_login(data: ConnectData, conn: DbConn, ip: &ClientIp) -> JsonR
     }
 
     // Common
-    let orgs = UserOrganization::find_confirmed_by_user(&user.uuid, &conn).await;
+    let orgs = UserOrganization::find_confirmed_by_user(&user.uuid, &mut conn).await;
     let (access_token, expires_in) = device.refresh_tokens(&user, orgs, scope_vec);
-    device.save(&conn).await?;
+    device.save(&mut conn).await?;
 
     info!("User {} logged in successfully via API key. IP: {}", user.email, ip.ip);
 
@@ -259,7 +259,7 @@ async fn _api_key_login(data: ConnectData, conn: DbConn, ip: &ClientIp) -> JsonR
 }
 
 /// Retrieves an existing device or creates a new device from ConnectData and the User
-async fn get_device(data: &ConnectData, conn: &DbConn, user: &User) -> (Device, bool) {
+async fn get_device(data: &ConnectData, conn: &mut DbConn, user: &User) -> (Device, bool) {
     // On iOS, device_type sends "iOS", on others it sends a number
     let device_type = util::try_parse_string(data.device_type.as_ref()).unwrap_or(0);
     let device_id = data.device_identifier.clone().expect("No device id provided");
@@ -283,7 +283,7 @@ async fn twofactor_auth(
     data: &ConnectData,
     device: &mut Device,
     ip: &ClientIp,
-    conn: &DbConn,
+    conn: &mut DbConn,
 ) -> ApiResult<Option<String>> {
     let twofactors = TwoFactor::find_by_user(user_uuid, conn).await;
 
@@ -355,7 +355,7 @@ fn _selected_data(tf: Option<TwoFactor>) -> ApiResult<String> {
     tf.map(|t| t.data).map_res("Two factor doesn't exist")
 }
 
-async fn _json_err_twofactor(providers: &[i32], user_uuid: &str, conn: &DbConn) -> ApiResult<Value> {
+async fn _json_err_twofactor(providers: &[i32], user_uuid: &str, conn: &mut DbConn) -> ApiResult<Value> {
     use crate::api::core::two_factor;
 
     let mut result = json!({

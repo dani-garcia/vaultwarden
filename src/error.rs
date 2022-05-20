@@ -36,7 +36,6 @@ macro_rules! make_error {
 use diesel::r2d2::PoolError as R2d2Err;
 use diesel::result::Error as DieselErr;
 use diesel::ConnectionError as DieselConErr;
-use diesel_migrations::RunMigrationsError as DieselMigErr;
 use handlebars::RenderError as HbErr;
 use jsonwebtoken::errors::Error as JwtErr;
 use lettre::address::AddressError as AddrErr;
@@ -87,7 +86,6 @@ make_error! {
     Rocket(RocketErr): _has_source, _api_error,
 
     DieselCon(DieselConErr): _has_source, _api_error,
-    DieselMig(DieselMigErr): _has_source, _api_error,
     Webauthn(WebauthnErr):   _has_source, _api_error,
     WebSocket(TungstError):  _has_source, _api_error,
 }

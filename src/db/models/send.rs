@@ -5,9 +5,9 @@ use super::User;
 
 db_object! {
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
-    #[table_name = "sends"]
-    #[changeset_options(treat_none_as_null="true")]
-    #[primary_key(uuid)]
+    #[diesel(table_name = sends)]
+    #[diesel(treat_none_as_null = true)]
+    #[diesel(primary_key(uuid))]
     pub struct Send {
         pub uuid: String,
 
@@ -101,7 +101,7 @@ impl Send {
         }
     }
 
-    pub async fn creator_identifier(&self, conn: &DbConn) -> Option<String> {
+    pub async fn creator_identifier(&self, conn: &mut DbConn) -> Option<String> {
         if let Some(hide_email) = self.hide_email {
             if hide_email {
                 return None;
@@ -148,7 +148,7 @@ impl Send {
         })
     }
 
-    pub async fn to_json_access(&self, conn: &DbConn) -> Value {
+    pub async fn to_json_access(&self, conn: &mut DbConn) -> Value {
         use crate::util::format_date;
 
         let data: Value = serde_json::from_str(&self.data).unwrap_or_default();
@@ -174,7 +174,7 @@ use crate::api::EmptyResult;
 use crate::error::MapResult;
 
 impl Send {
-    pub async fn save(&mut self, conn: &DbConn) -> EmptyResult {
+    pub async fn save(&mut self, conn: &mut DbConn) -> EmptyResult {
         self.update_users_revision(conn).await;
         self.revision_date = Utc::now().naive_utc();
 
@@ -209,7 +209,7 @@ impl Send {
         }
     }
 
-    pub async fn delete(&self, conn: &DbConn) -> EmptyResult {
+    pub async fn delete(&self, conn: &mut DbConn) -> EmptyResult {
         self.update_users_revision(conn).await;
 
         if self.atype == SendType::File as i32 {
@@ -224,13 +224,13 @@ impl Send {
     }
 
     /// Purge all sends that are past their deletion date.
-    pub async fn purge(conn: &DbConn) {
+    pub async fn purge(conn: &mut DbConn) {
         for send in Self::find_by_past_deletion_date(conn).await {
             send.delete(conn).await.ok();
         }
     }
 
-    pub async fn update_users_revision(&self, conn: &DbConn) -> Vec<String> {
+    pub async fn update_users_revision(&self, conn: &mut DbConn) -> Vec<String> {
         let mut user_uuids = Vec::new();
         match &self.user_uuid {
             Some(user_uuid) => {
@@ -244,14 +244,14 @@ impl Send {
         user_uuids
     }
 
-    pub async fn delete_all_by_user(user_uuid: &str, conn: &DbConn) -> EmptyResult {
+    pub async fn delete_all_by_user(user_uuid: &str, conn: &mut DbConn) -> EmptyResult {
         for send in Self::find_by_user(user_uuid, conn).await {
             send.delete(conn).await?;
         }
         Ok(())
     }
 
-    pub async fn find_by_access_id(access_id: &str, conn: &DbConn) -> Option<Self> {
+    pub async fn find_by_access_id(access_id: &str, conn: &mut DbConn) -> Option<Self> {
         use data_encoding::BASE64URL_NOPAD;
         use uuid::Uuid;
 
@@ -268,7 +268,7 @@ impl Send {
         Self::find_by_uuid(&uuid, conn).await
     }
 
-    pub async fn find_by_uuid(uuid: &str, conn: &DbConn) -> Option<Self> {
+    pub async fn find_by_uuid(uuid: &str, conn: &mut DbConn) -> Option<Self> {
         db_run! {conn: {
             sends::table
                 .filter(sends::uuid.eq(uuid))
@@ -278,7 +278,7 @@ impl Send {
         }}
     }
 
-    pub async fn find_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
+    pub async fn find_by_user(user_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
         db_run! {conn: {
             sends::table
                 .filter(sends::user_uuid.eq(user_uuid))
@@ -286,7 +286,7 @@ impl Send {
         }}
     }
 
-    pub async fn find_by_org(org_uuid: &str, conn: &DbConn) -> Vec<Self> {
+    pub async fn find_by_org(org_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
         db_run! {conn: {
             sends::table
                 .filter(sends::organization_uuid.eq(org_uuid))
@@ -294,7 +294,7 @@ impl Send {
         }}
     }
 
-    pub async fn find_by_past_deletion_date(conn: &DbConn) -> Vec<Self> {
+    pub async fn find_by_past_deletion_date(conn: &mut DbConn) -> Vec<Self> {
         let now = Utc::now().naive_utc();
         db_run! {conn: {
             sends::table

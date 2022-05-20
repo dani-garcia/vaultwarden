@@ -38,8 +38,8 @@ pub fn routes() -> Vec<Route> {
 }
 
 #[get("/two-factor")]
-async fn get_twofactor(headers: Headers, conn: DbConn) -> Json<Value> {
-    let twofactors = TwoFactor::find_by_user(&headers.user.uuid, &conn).await;
+async fn get_twofactor(headers: Headers, mut conn: DbConn) -> Json<Value> {
+    let twofactors = TwoFactor::find_by_user(&headers.user.uuid, &mut conn).await;
     let twofactors_json: Vec<Value> = twofactors.iter().map(TwoFactor::to_json_provider).collect();
 
     Json(json!({
@@ -73,13 +73,13 @@ struct RecoverTwoFactor {
 }
 
 #[post("/two-factor/recover", data = "<data>")]
-async fn recover(data: JsonUpcase<RecoverTwoFactor>, conn: DbConn) -> JsonResult {
+async fn recover(data: JsonUpcase<RecoverTwoFactor>, mut conn: DbConn) -> JsonResult {
     let data: RecoverTwoFactor = data.into_inner().data;
 
     use crate::db::models::User;
 
     // Get the user
-    let mut user = match User::find_by_mail(&data.Email, &conn).await {
+    let mut user = match User::find_by_mail(&data.Email, &mut conn).await {
         Some(user) => user,
         None => err!("Username or password is incorrect. Try again."),
     };
@@ -95,15 +95,15 @@ async fn recover(data: JsonUpcase<RecoverTwoFactor>, conn: DbConn) -> JsonResult
     }
 
     // Remove all twofactors from the user
-    TwoFactor::delete_all_by_user(&user.uuid, &conn).await?;
+    TwoFactor::delete_all_by_user(&user.uuid, &mut conn).await?;
 
     // Remove the recovery code, not needed without twofactors
     user.totp_recover = None;
-    user.save(&conn).await?;
+    user.save(&mut conn).await?;
     Ok(Json(json!({})))
 }
 
-async fn _generate_recover_code(user: &mut User, conn: &DbConn) {
+async fn _generate_recover_code(user: &mut User, conn: &mut DbConn) {
     if user.totp_recover.is_none() {
         let totp_recover = BASE32.encode(&crypto::get_random(vec![0u8; 20]));
         user.totp_recover = Some(totp_recover);
@@ -119,7 +119,7 @@ struct DisableTwoFactorData {
 }
 
 #[post("/two-factor/disable", data = "<data>")]
-async fn disable_twofactor(data: JsonUpcase<DisableTwoFactorData>, headers: Headers, conn: DbConn) -> JsonResult {
+async fn disable_twofactor(data: JsonUpcase<DisableTwoFactorData>, headers: Headers, mut conn: DbConn) -> JsonResult {
     let data: DisableTwoFactorData = data.into_inner().data;
     let password_hash = data.MasterPasswordHash;
     let user = headers.user;
@@ -130,24 +130,24 @@ async fn disable_twofactor(data: JsonUpcase<DisableTwoFactorData>, headers: Head
 
     let type_ = data.Type.into_i32()?;
 
-    if let Some(twofactor) = TwoFactor::find_by_user_and_type(&user.uuid, type_, &conn).await {
-        twofactor.delete(&conn).await?;
+    if let Some(twofactor) = TwoFactor::find_by_user_and_type(&user.uuid, type_, &mut conn).await {
+        twofactor.delete(&mut conn).await?;
     }
 
-    let twofactor_disabled = TwoFactor::find_by_user(&user.uuid, &conn).await.is_empty();
+    let twofactor_disabled = TwoFactor::find_by_user(&user.uuid, &mut conn).await.is_empty();
 
     if twofactor_disabled {
         for user_org in
-            UserOrganization::find_by_user_and_policy(&user.uuid, OrgPolicyType::TwoFactorAuthentication, &conn)
+            UserOrganization::find_by_user_and_policy(&user.uuid, OrgPolicyType::TwoFactorAuthentication, &mut conn)
                 .await
                 .into_iter()
         {
             if user_org.atype < UserOrgType::Admin {
                 if CONFIG.mail_enabled() {
-                    let org = Organization::find_by_uuid(&user_org.org_uuid, &conn).await.unwrap();
+                    let org = Organization::find_by_uuid(&user_org.org_uuid, &mut conn).await.unwrap();
                     mail::send_2fa_removed_from_org(&user.email, &org.name).await?;
                 }
-                user_org.delete(&conn).await?;
+                user_org.delete(&mut conn).await?;
             }
         }
     }
@@ -171,7 +171,7 @@ pub async fn send_incomplete_2fa_notifications(pool: DbPool) {
         return;
     }
 
-    let conn = match pool.get().await {
+    let mut conn = match pool.get().await {
         Ok(conn) => conn,
         _ => {
             error!("Failed to get DB connection in send_incomplete_2fa_notifications()");
@@ -182,9 +182,9 @@ pub async fn send_incomplete_2fa_notifications(pool: DbPool) {
     let now = Utc::now().naive_utc();
     let time_limit = Duration::minutes(CONFIG.incomplete_2fa_time_limit());
     let time_before = now - time_limit;
-    let incomplete_logins = TwoFactorIncomplete::find_logins_before(&time_before, &conn).await;
+    let incomplete_logins = TwoFactorIncomplete::find_logins_before(&time_before, &mut conn).await;
     for login in incomplete_logins {
-        let user = User::find_by_uuid(&login.user_uuid, &conn).await.expect("User not found");
+        let user = User::find_by_uuid(&login.user_uuid, &mut conn).await.expect("User not found");
         info!(
             "User {} did not complete a 2FA login within the configured time limit. IP: {}",
             user.email, login.ip_address
@@ -192,7 +192,7 @@ pub async fn send_incomplete_2fa_notifications(pool: DbPool) {
         mail::send_incomplete_2fa_login(&user.email, &login.ip_address, &login.login_time, &login.device_name)
             .await
             .expect("Error sending incomplete 2FA email");
-        login.delete(&conn).await.expect("Error deleting incomplete 2FA record");
+        login.delete(&mut conn).await.expect("Error deleting incomplete 2FA record");
     }
 }
 
