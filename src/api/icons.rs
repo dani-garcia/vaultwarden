@@ -1,5 +1,4 @@
 use std::{
-    collections::HashMap,
     net::IpAddr,
     sync::Arc,
     time::{Duration, SystemTime},
@@ -18,7 +17,6 @@ use tokio::{
     fs::{create_dir_all, remove_file, symlink_metadata, File},
     io::{AsyncReadExt, AsyncWriteExt},
     net::lookup_host,
-    sync::RwLock,
 };
 
 use html5gum::{Emitter, EndTag, InfallibleTokenizer, Readable, StartTag, StringReader, Tokenizer};
@@ -76,7 +74,7 @@ static CLIENT: Lazy<Client> = Lazy::new(|| {
 static ICON_SIZE_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?x)(\d+)\D*(\d+)").unwrap());
 
 // Special HashMap which holds the user defined Regex to speedup matching the regex.
-static ICON_BLACKLIST_REGEX: Lazy<RwLock<HashMap<String, Regex>>> = Lazy::new(|| RwLock::new(HashMap::new()));
+static ICON_BLACKLIST_REGEX: Lazy<dashmap::DashMap<String, Regex>> = Lazy::new(dashmap::DashMap::new);
 
 async fn icon_redirect(domain: &str, template: &str) -> Option<Redirect> {
     if !is_valid_domain(domain).await {
@@ -293,32 +291,25 @@ async fn is_domain_blacklisted(domain: &str) -> bool {
     }
 
     if let Some(blacklist) = CONFIG.icon_blacklist_regex() {
-        let mut regex_hashmap = ICON_BLACKLIST_REGEX.read().await;
-
         // Use the pre-generate Regex stored in a Lazy HashMap if there's one, else generate it.
-        let regex = if let Some(regex) = regex_hashmap.get(&blacklist) {
-            regex
+        let is_match = if let Some(regex) = ICON_BLACKLIST_REGEX.get(&blacklist) {
+            regex.is_match(domain)
         } else {
-            drop(regex_hashmap);
-
-            let mut regex_hashmap_write = ICON_BLACKLIST_REGEX.write().await;
             // Clear the current list if the previous key doesn't exists.
             // To prevent growing of the HashMap after someone has changed it via the admin interface.
-            if regex_hashmap_write.len() >= 1 {
-                regex_hashmap_write.clear();
+            if ICON_BLACKLIST_REGEX.len() >= 1 {
+                ICON_BLACKLIST_REGEX.clear();
             }
 
             // Generate the regex to store in too the Lazy Static HashMap.
-            let blacklist_regex = Regex::new(&blacklist);
-            regex_hashmap_write.insert(blacklist.to_string(), blacklist_regex.unwrap());
-            drop(regex_hashmap_write);
+            let blacklist_regex = Regex::new(&blacklist).unwrap();
+            let is_match = blacklist_regex.is_match(domain);
+            ICON_BLACKLIST_REGEX.insert(blacklist.to_string(), blacklist_regex);
 
-            regex_hashmap = ICON_BLACKLIST_REGEX.read().await;
-            regex_hashmap.get(&blacklist).unwrap()
+            is_match
         };
 
-        // Use the pre-generate Regex stored in a Lazy HashMap.
-        if regex.is_match(domain) {
+        if is_match {
             debug!("Blacklisted domain: {} matched ICON_BLACKLIST_REGEX", domain);
             return true;
         }
