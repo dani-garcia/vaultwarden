@@ -45,7 +45,7 @@ backtrace = "0.3.65" # Logging panics to logfile instead stderr only
 dotenvy = { version = "0.15.1", default-features = false }
 
 # Lazy initialization
-once_cell = "1.10.0"
+once_cell = "1.11.0"
 
 # Numerical libraries
 num-traits = "0.2.15"
@@ -55,9 +55,9 @@ num-derive = "0.3.3"
 rocket = { version = "0.5.0-rc.2", features = ["tls", "json"], default-features = false }
 
 # WebSockets libraries
-ws = { version = "0.11.1", package = "parity-ws" }
+tokio-tungstenite = "0.17.1"
 rmpv = "1.0.0" # MessagePack library
-chashmap = "2.2.2" # Concurrent hashmap implementation
+dashmap = "5.3.3" # Concurrent hashmap implementation
 
 # Async futures
 futures = "0.3.21"
@@ -96,7 +96,7 @@ data-encoding = "2.3.2"
 jsonwebtoken = "8.1.0"
 
 # TOTP library
-totp-lite = "1.0.3"
+totp-lite = "2.0.0"
 
 # Yubico Library
 yubico = { version = "0.11.0", features = ["online-tokio"], default-features = false }
@@ -113,14 +113,14 @@ lettre = { version = "0.10.0-rc.6", features = ["smtp-transport", "builder", "se
 percent-encoding = "2.1.0" # URL encoding library used for URL's in the emails
 
 # Template library
-handlebars = { version = "4.2.2", features = ["dir_source"] }
+handlebars = { version = "4.3.0", features = ["dir_source"] }
 
 # HTTP client
 reqwest = { version = "0.11.10", features = ["stream", "json", "gzip", "brotli", "socks", "cookies", "trust-dns"] }
 
 # For favicon extraction from main website
 html5gum = "0.4.0"
-regex = { version = "1.5.5", features = ["std", "perf", "unicode-perl"], default-features = false }
+regex = { version = "1.5.6", features = ["std", "perf", "unicode-perl"], default-features = false }
 data-url = "0.1.1"
 bytes = "1.1.0"
 cached = "0.34.0"

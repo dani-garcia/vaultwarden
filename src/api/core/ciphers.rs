@@ -464,7 +464,7 @@ pub async fn update_cipher_from_data(
     cipher.set_favorite(data.Favorite, &headers.user.uuid, conn).await?;
 
     if ut != UpdateType::None {
-        nt.send_cipher_update(ut, cipher, &cipher.update_users_revision(conn).await);
+        nt.send_cipher_update(ut, cipher, &cipher.update_users_revision(conn).await).await;
     }
 
     Ok(())
@@ -527,7 +527,7 @@ async fn post_ciphers_import(
 
     let mut user = headers.user;
     user.update_revision(&conn).await?;
-    nt.send_user_update(UpdateType::Vault, &user);
+    nt.send_user_update(UpdateType::Vault, &user).await;
     Ok(())
 }
 
@@ -1000,7 +1000,7 @@ async fn save_attachment(
 
     data.data.persist_to(file_path).await?;
 
-    nt.send_cipher_update(UpdateType::CipherUpdate, &cipher, &cipher.update_users_revision(&conn).await);
+    nt.send_cipher_update(UpdateType::CipherUpdate, &cipher, &cipher.update_users_revision(&conn).await).await;
 
     Ok((cipher, conn))
 }
@@ -1266,7 +1266,7 @@ async fn move_cipher_selected(
         // Move cipher
         cipher.move_to_folder(data.FolderId.clone(), &user_uuid, &conn).await?;
 
-        nt.send_cipher_update(UpdateType::CipherUpdate, &cipher, &[user_uuid.clone()]);
+        nt.send_cipher_update(UpdateType::CipherUpdate, &cipher, &[user_uuid.clone()]).await;
     }
 
     Ok(())
@@ -1313,7 +1313,7 @@ async fn delete_all(
                 Some(user_org) => {
                     if user_org.atype == UserOrgType::Owner {
                         Cipher::delete_all_by_organization(&org_data.org_id, &conn).await?;
-                        nt.send_user_update(UpdateType::Vault, &user);
+                        nt.send_user_update(UpdateType::Vault, &user).await;
                         Ok(())
                     } else {
                         err!("You don't have permission to purge the organization vault");
@@ -1334,7 +1334,7 @@ async fn delete_all(
             }
 
             user.update_revision(&conn).await?;
-            nt.send_user_update(UpdateType::Vault, &user);
+            nt.send_user_update(UpdateType::Vault, &user).await;
             Ok(())
         }
     }
@@ -1359,10 +1359,10 @@ async fn _delete_cipher_by_uuid(
     if soft_delete {
         cipher.deleted_at = Some(Utc::now().naive_utc());
         cipher.save(conn).await?;
-        nt.send_cipher_update(UpdateType::CipherUpdate, &cipher, &cipher.update_users_revision(conn).await);
+        nt.send_cipher_update(UpdateType::CipherUpdate, &cipher, &cipher.update_users_revision(conn).await).await;
     } else {
         cipher.delete(conn).await?;
-        nt.send_cipher_update(UpdateType::CipherDelete, &cipher, &cipher.update_users_revision(conn).await);
+        nt.send_cipher_update(UpdateType::CipherDelete, &cipher, &cipher.update_users_revision(conn).await).await;
     }
 
     Ok(())
@@ -1407,7 +1407,7 @@ async fn _restore_cipher_by_uuid(uuid: &str, headers: &Headers, conn: &DbConn, n
     cipher.deleted_at = None;
     cipher.save(conn).await?;
 
-    nt.send_cipher_update(UpdateType::CipherUpdate, &cipher, &cipher.update_users_revision(conn).await);
+    nt.send_cipher_update(UpdateType::CipherUpdate, &cipher, &cipher.update_users_revision(conn).await).await;
     Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, conn).await))
 }
 
@@ -1469,7 +1469,7 @@ async fn _delete_cipher_attachment_by_id(
 
     // Delete attachment
     attachment.delete(conn).await?;
-    nt.send_cipher_update(UpdateType::CipherUpdate, &cipher, &cipher.update_users_revision(conn).await);
+    nt.send_cipher_update(UpdateType::CipherUpdate, &cipher, &cipher.update_users_revision(conn).await).await;
     Ok(())
 }
 
