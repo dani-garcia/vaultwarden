@@ -173,7 +173,7 @@ async fn post_send(data: JsonUpcase<SendData>, headers: Headers, conn: DbConn, n
 
     let mut send = create_send(data, headers.user.uuid).await?;
     send.save(&conn).await?;
-    nt.send_send_update(UpdateType::SyncSendCreate, &send, &send.update_users_revision(&conn).await);
+    nt.send_send_update(UpdateType::SyncSendCreate, &send, &send.update_users_revision(&conn).await).await;
 
     Ok(Json(send.to_json()))
 }
@@ -237,7 +237,7 @@ async fn post_send_file(data: Form<UploadData<'_>>, headers: Headers, conn: DbCo
 
     // Save the changes in the database
     send.save(&conn).await?;
-    nt.send_send_update(UpdateType::SyncSendUpdate, &send, &send.update_users_revision(&conn).await);
+    nt.send_send_update(UpdateType::SyncSendUpdate, &send, &send.update_users_revision(&conn).await).await;
 
     Ok(Json(send.to_json()))
 }
@@ -418,7 +418,7 @@ async fn put_send(
     }
 
     send.save(&conn).await?;
-    nt.send_send_update(UpdateType::SyncSendUpdate, &send, &send.update_users_revision(&conn).await);
+    nt.send_send_update(UpdateType::SyncSendUpdate, &send, &send.update_users_revision(&conn).await).await;
 
     Ok(Json(send.to_json()))
 }
@@ -435,7 +435,7 @@ async fn delete_send(id: String, headers: Headers, conn: DbConn, nt: Notify<'_>)
     }
 
     send.delete(&conn).await?;
-    nt.send_send_update(UpdateType::SyncSendDelete, &send, &send.update_users_revision(&conn).await);
+    nt.send_send_update(UpdateType::SyncSendDelete, &send, &send.update_users_revision(&conn).await).await;
 
     Ok(())
 }
@@ -455,7 +455,7 @@ async fn put_remove_password(id: String, headers: Headers, conn: DbConn, nt: Not
 
     send.set_password(None);
     send.save(&conn).await?;
-    nt.send_send_update(UpdateType::SyncSendUpdate, &send, &send.update_users_revision(&conn).await);
+    nt.send_send_update(UpdateType::SyncSendUpdate, &send, &send.update_users_revision(&conn).await).await;
 
     Ok(Json(send.to_json()))
 }

@@ -37,7 +37,7 @@ macro_rules! make_config {
 
         struct Inner {
             rocket_shutdown_handle: Option<rocket::Shutdown>,
-            ws_shutdown_handle: Option<ws::Sender>,
+            ws_shutdown_handle: Option<tokio::sync::oneshot::Sender<()>>,
 
             templates: Handlebars<'static>,
             config: ConfigItems,
@@ -948,19 +948,17 @@ impl Config {
         self.inner.write().unwrap().rocket_shutdown_handle = Some(handle);
     }
 
-    pub fn set_ws_shutdown_handle(&self, handle: ws::Sender) {
+    pub fn set_ws_shutdown_handle(&self, handle: tokio::sync::oneshot::Sender<()>) {
         self.inner.write().unwrap().ws_shutdown_handle = Some(handle);
     }
 
     pub fn shutdown(&self) {
-        if let Ok(c) = self.inner.read() {
-            if let Some(handle) = c.ws_shutdown_handle.clone() {
-                handle.shutdown().ok();
+        if let Ok(mut c) = self.inner.write() {
+            if let Some(handle) = c.ws_shutdown_handle.take() {
+                handle.send(()).ok();
             }
-            // Wait a bit before stopping the web server
-            tokio::runtime::Handle::current()
-                .block_on(async move { tokio::time::sleep(tokio::time::Duration::from_secs(1)).await });
-            if let Some(handle) = c.rocket_shutdown_handle.clone() {
+
+            if let Some(handle) = c.rocket_shutdown_handle.take() {
                 handle.notify();
             }
         }

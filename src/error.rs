@@ -49,6 +49,7 @@ use rocket::error::Error as RocketErr;
 use serde_json::{Error as SerdeErr, Value};
 use std::io::Error as IoErr;
 use std::time::SystemTimeError as TimeErr;
+use tokio_tungstenite::tungstenite::Error as TungstError;
 use webauthn_rs::error::WebauthnError as WebauthnErr;
 use yubico::yubicoerror::YubicoError as YubiErr;
 
@@ -88,6 +89,7 @@ make_error! {
     DieselCon(DieselConErr): _has_source, _api_error,
     DieselMig(DieselMigErr): _has_source, _api_error,
     Webauthn(WebauthnErr):   _has_source, _api_error,
+    WebSocket(TungstError):  _has_source, _api_error,
 }
 
 impl std::fmt::Debug for Error {
