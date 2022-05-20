@@ -397,7 +397,7 @@ async fn schedule_jobs(pool: db::DbPool) {
     thread::Builder::new()
         .name("job-scheduler".to_string())
         .spawn(move || {
-            use job_scheduler::{Job, JobScheduler};
+            use job_scheduler_ng::{Job, JobScheduler};
             let _runtime_guard = runtime.enter();
 
             let mut sched = JobScheduler::new();

@@ -87,7 +87,7 @@ chrono-tz = "0.6.1"
 time = "0.3.9"
 
 # Job scheduler
-job_scheduler = "1.2.1"
+job_scheduler_ng = "2.0.0"
 
 # Data encoding library Hex/Base32/Base64
 data-encoding = "2.3.2"
@@ -145,15 +145,6 @@ ctrlc = { version = "3.2.2", features = ["termination"] }
 # Allow overriding the default memory allocator
 # Mainly used for the musl builds, since the default musl malloc is very slow
 mimalloc = { version = "0.1.29", features = ["secure"], default-features = false, optional = true }
-
-[patch.crates-io]
-# The maintainer of the `job_scheduler` crate doesn't seem to have responded
-# to any issues or PRs for almost a year (as of April 2021). This hopefully
-# temporary fork updates Cargo.toml to use more up-to-date dependencies.
-# In particular, `cron` has since implemented parsing of some common syntax
-# that wasn't previously supported (https://github.com/zslayton/cron/pull/64).
-# 2022-05-04: Forked/Updated the job_scheduler again use the latest dependencies and some fixes.
-job_scheduler = { git = 'https://github.com/BlackDex/job_scheduler', rev = '9100fc596a083fd9c0b560f8f11f108e0a19d07e' }
 
 # Strip debuginfo from the release builds
 # Also enable thin LTO for some optimizations

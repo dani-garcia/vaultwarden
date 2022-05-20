@@ -1273,9 +1273,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "492895b76e8c1a78a419f2977a38e42032077ca67d101d26b435ee705119e373"
 
 [[package]]
-name = "job_scheduler"
-version = "1.2.1"
-source = "git+https://github.com/BlackDex/job_scheduler?rev=9100fc596a083fd9c0b560f8f11f108e0a19d07e#9100fc596a083fd9c0b560f8f11f108e0a19d07e"
+name = "job_scheduler_ng"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bc933da2dd33e6fe37f970e789e76725971e4a9b7a452c52bd5577be45a9ca4a"
 dependencies = [
  "chrono",
  "cron",
@@ -3361,7 +3362,7 @@ dependencies = [
  "handlebars",
  "html5gum",
  "idna 0.2.3",
- "job_scheduler",
+ "job_scheduler_ng",
  "jsonwebtoken",
  "lettre",
  "libsqlite3-sys",
