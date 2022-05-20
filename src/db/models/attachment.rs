@@ -6,9 +6,9 @@ use crate::CONFIG;
 
 db_object! {
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
-    #[table_name = "attachments"]
-    #[changeset_options(treat_none_as_null="true")]
-    #[primary_key(id)]
+    #[diesel(table_name = attachments)]
+    #[diesel(treat_none_as_null = true)]
+    #[diesel(primary_key(id))]
     pub struct Attachment {
         pub id: String,
         pub cipher_uuid: String,
@@ -58,7 +58,7 @@ use crate::error::MapResult;
 
 /// Database methods
 impl Attachment {
-    pub async fn save(&self, conn: &DbConn) -> EmptyResult {
+    pub async fn save(&self, conn: &mut DbConn) -> EmptyResult {
         db_run! { conn:
             sqlite, mysql {
                 match diesel::replace_into(attachments::table)
@@ -90,7 +90,7 @@ impl Attachment {
         }
     }
 
-    pub async fn delete(&self, conn: &DbConn) -> EmptyResult {
+    pub async fn delete(&self, conn: &mut DbConn) -> EmptyResult {
         db_run! { conn: {
             crate::util::retry(
                 || diesel::delete(attachments::table.filter(attachments::id.eq(&self.id))).execute(conn),
@@ -114,14 +114,14 @@ impl Attachment {
         }}
     }
 
-    pub async fn delete_all_by_cipher(cipher_uuid: &str, conn: &DbConn) -> EmptyResult {
+    pub async fn delete_all_by_cipher(cipher_uuid: &str, conn: &mut DbConn) -> EmptyResult {
         for attachment in Attachment::find_by_cipher(cipher_uuid, conn).await {
             attachment.delete(conn).await?;
         }
         Ok(())
     }
 
-    pub async fn find_by_id(id: &str, conn: &DbConn) -> Option<Self> {
+    pub async fn find_by_id(id: &str, conn: &mut DbConn) -> Option<Self> {
         db_run! { conn: {
             attachments::table
                 .filter(attachments::id.eq(id.to_lowercase()))
@@ -131,7 +131,7 @@ impl Attachment {
         }}
     }
 
-    pub async fn find_by_cipher(cipher_uuid: &str, conn: &DbConn) -> Vec<Self> {
+    pub async fn find_by_cipher(cipher_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             attachments::table
                 .filter(attachments::cipher_uuid.eq(cipher_uuid))
@@ -141,7 +141,7 @@ impl Attachment {
         }}
     }
 
-    pub async fn size_by_user(user_uuid: &str, conn: &DbConn) -> i64 {
+    pub async fn size_by_user(user_uuid: &str, conn: &mut DbConn) -> i64 {
         db_run! { conn: {
             let result: Option<i64> = attachments::table
                 .left_join(ciphers::table.on(ciphers::uuid.eq(attachments::cipher_uuid)))
@@ -153,7 +153,7 @@ impl Attachment {
         }}
     }
 
-    pub async fn count_by_user(user_uuid: &str, conn: &DbConn) -> i64 {
+    pub async fn count_by_user(user_uuid: &str, conn: &mut DbConn) -> i64 {
         db_run! { conn: {
             attachments::table
                 .left_join(ciphers::table.on(ciphers::uuid.eq(attachments::cipher_uuid)))
@@ -164,7 +164,7 @@ impl Attachment {
         }}
     }
 
-    pub async fn size_by_org(org_uuid: &str, conn: &DbConn) -> i64 {
+    pub async fn size_by_org(org_uuid: &str, conn: &mut DbConn) -> i64 {
         db_run! { conn: {
             let result: Option<i64> = attachments::table
                 .left_join(ciphers::table.on(ciphers::uuid.eq(attachments::cipher_uuid)))
@@ -176,7 +176,7 @@ impl Attachment {
         }}
     }
 
-    pub async fn count_by_org(org_uuid: &str, conn: &DbConn) -> i64 {
+    pub async fn count_by_org(org_uuid: &str, conn: &mut DbConn) -> i64 {
         db_run! { conn: {
             attachments::table
                 .left_join(ciphers::table.on(ciphers::uuid.eq(attachments::cipher_uuid)))
@@ -187,7 +187,7 @@ impl Attachment {
         }}
     }
 
-    pub async fn find_all_by_ciphers(cipher_uuids: &Vec<String>, conn: &DbConn) -> Vec<Self> {
+    pub async fn find_all_by_ciphers(cipher_uuids: &Vec<String>, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             attachments::table
                 .filter(attachments::cipher_uuid.eq_any(cipher_uuids))

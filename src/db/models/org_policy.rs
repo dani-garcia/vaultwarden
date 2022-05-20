@@ -10,8 +10,8 @@ use super::{TwoFactor, UserOrgStatus, UserOrgType, UserOrganization};
 
 db_object! {
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
-    #[table_name = "org_policies"]
-    #[primary_key(uuid)]
+    #[diesel(table_name = org_policies)]
+    #[diesel(primary_key(uuid))]
     pub struct OrgPolicy {
         pub uuid: String,
         pub org_uuid: String,
@@ -83,7 +83,7 @@ impl OrgPolicy {
 
 /// Database methods
 impl OrgPolicy {
-    pub async fn save(&self, conn: &DbConn) -> EmptyResult {
+    pub async fn save(&self, conn: &mut DbConn) -> EmptyResult {
         db_run! { conn:
             sqlite, mysql {
                 match diesel::replace_into(org_policies::table)
@@ -126,7 +126,7 @@ impl OrgPolicy {
         }
     }
 
-    pub async fn delete(self, conn: &DbConn) -> EmptyResult {
+    pub async fn delete(self, conn: &mut DbConn) -> EmptyResult {
         db_run! { conn: {
             diesel::delete(org_policies::table.filter(org_policies::uuid.eq(self.uuid)))
                 .execute(conn)
@@ -134,7 +134,7 @@ impl OrgPolicy {
         }}
     }
 
-    pub async fn find_by_uuid(uuid: &str, conn: &DbConn) -> Option<Self> {
+    pub async fn find_by_uuid(uuid: &str, conn: &mut DbConn) -> Option<Self> {
         db_run! { conn: {
             org_policies::table
                 .filter(org_policies::uuid.eq(uuid))
@@ -144,7 +144,7 @@ impl OrgPolicy {
         }}
     }
 
-    pub async fn find_by_org(org_uuid: &str, conn: &DbConn) -> Vec<Self> {
+    pub async fn find_by_org(org_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             org_policies::table
                 .filter(org_policies::org_uuid.eq(org_uuid))
@@ -154,7 +154,7 @@ impl OrgPolicy {
         }}
     }
 
-    pub async fn find_confirmed_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
+    pub async fn find_confirmed_by_user(user_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             org_policies::table
                 .inner_join(
@@ -172,7 +172,7 @@ impl OrgPolicy {
         }}
     }
 
-    pub async fn find_by_org_and_type(org_uuid: &str, policy_type: OrgPolicyType, conn: &DbConn) -> Option<Self> {
+    pub async fn find_by_org_and_type(org_uuid: &str, policy_type: OrgPolicyType, conn: &mut DbConn) -> Option<Self> {
         db_run! { conn: {
             org_policies::table
                 .filter(org_policies::org_uuid.eq(org_uuid))
@@ -183,7 +183,7 @@ impl OrgPolicy {
         }}
     }
 
-    pub async fn delete_all_by_organization(org_uuid: &str, conn: &DbConn) -> EmptyResult {
+    pub async fn delete_all_by_organization(org_uuid: &str, conn: &mut DbConn) -> EmptyResult {
         db_run! { conn: {
             diesel::delete(org_policies::table.filter(org_policies::org_uuid.eq(org_uuid)))
                 .execute(conn)
@@ -194,7 +194,7 @@ impl OrgPolicy {
     pub async fn find_accepted_and_confirmed_by_user_and_active_policy(
         user_uuid: &str,
         policy_type: OrgPolicyType,
-        conn: &DbConn,
+        conn: &mut DbConn,
     ) -> Vec<Self> {
         db_run! { conn: {
             org_policies::table
@@ -221,7 +221,7 @@ impl OrgPolicy {
     pub async fn find_confirmed_by_user_and_active_policy(
         user_uuid: &str,
         policy_type: OrgPolicyType,
-        conn: &DbConn,
+        conn: &mut DbConn,
     ) -> Vec<Self> {
         db_run! { conn: {
             org_policies::table
@@ -249,7 +249,7 @@ impl OrgPolicy {
         user_uuid: &str,
         policy_type: OrgPolicyType,
         exclude_org_uuid: Option<&str>,
-        conn: &DbConn,
+        conn: &mut DbConn,
     ) -> bool {
         for policy in
             OrgPolicy::find_accepted_and_confirmed_by_user_and_active_policy(user_uuid, policy_type, conn).await
@@ -272,7 +272,7 @@ impl OrgPolicy {
         user_uuid: &str,
         org_uuid: &str,
         exclude_current_org: bool,
-        conn: &DbConn,
+        conn: &mut DbConn,
     ) -> OrgPolicyResult {
         // Enforce TwoFactor/TwoStep login
         if TwoFactor::find_by_user(user_uuid, conn).await.is_empty() {
@@ -300,7 +300,7 @@ impl OrgPolicy {
 
     /// Returns true if the user belongs to an org that has enabled the `DisableHideEmail`
     /// option of the `Send Options` policy, and the user is not an owner or admin of that org.
-    pub async fn is_hide_email_disabled(user_uuid: &str, conn: &DbConn) -> bool {
+    pub async fn is_hide_email_disabled(user_uuid: &str, conn: &mut DbConn) -> bool {
         for policy in
             OrgPolicy::find_confirmed_by_user_and_active_policy(user_uuid, OrgPolicyType::SendOptions, conn).await
         {

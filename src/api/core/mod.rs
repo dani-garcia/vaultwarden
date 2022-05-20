@@ -127,7 +127,7 @@ struct EquivDomainData {
 }
 
 #[post("/settings/domains", data = "<data>")]
-async fn post_eq_domains(data: JsonUpcase<EquivDomainData>, headers: Headers, conn: DbConn) -> JsonResult {
+async fn post_eq_domains(data: JsonUpcase<EquivDomainData>, headers: Headers, mut conn: DbConn) -> JsonResult {
     let data: EquivDomainData = data.into_inner().data;
 
     let excluded_globals = data.ExcludedGlobalEquivalentDomains.unwrap_or_default();
@@ -139,7 +139,7 @@ async fn post_eq_domains(data: JsonUpcase<EquivDomainData>, headers: Headers, co
     user.excluded_globals = to_string(&excluded_globals).unwrap_or_else(|_| "[]".to_string());
     user.equivalent_domains = to_string(&equivalent_domains).unwrap_or_else(|_| "[]".to_string());
 
-    user.save(&conn).await?;
+    user.save(&mut conn).await?;
 
     Ok(Json(json!({})))
 }
