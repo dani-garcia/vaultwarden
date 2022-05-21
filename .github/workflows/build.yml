@@ -140,7 +140,7 @@ jobs:
 
       # Upload artifact to Github Actions
       - name: Upload artifact
-        uses: actions/upload-artifact@6673cd052c4cd6fcf4b4e6e60ea986c889389535 # v3.0.0
+        uses: actions/upload-artifact@3cea5372237819ed00197afe530f5a7ea3e805c8 # v3.1.0
         with:
           name: vaultwarden-${{ matrix.target-triple }}${{ matrix.ext }}
           path: target/${{ matrix.target-triple }}/release/vaultwarden${{ matrix.ext }}
