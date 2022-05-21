@@ -27,7 +27,7 @@
 FROM vaultwarden/web-vault@sha256:df7f12b1e22bf0dfc1b6b6f46921b4e9e649561931ba65357c1eb1963514b3b5 as vault
 
 ########################## BUILD IMAGE  ##########################
-FROM rust:1.60-bullseye as build
+FROM rust:1.61-bullseye as build
 
 
 
