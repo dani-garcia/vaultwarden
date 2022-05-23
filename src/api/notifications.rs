@@ -258,7 +258,7 @@ fn create_ping() -> Vec<u8> {
 }
 
 #[allow(dead_code)]
-#[derive(PartialEq)]
+#[derive(Eq, PartialEq)]
 pub enum UpdateType {
     CipherUpdate = 0,
     CipherCreate = 1,
@@ -349,8 +349,6 @@ async fn handle_connection(stream: TcpStream, users: WebSocketUsers, addr: Socke
             res = stream.next() =>  {
                 match res {
                     Some(Ok(message)) => {
-                        //info!("RECEIVED {message:?}");
-
                         // Respond to any pings
                         if let Message::Ping(ping) = message {
                             if stream.send(Message::Pong(ping)).await.is_err() {
