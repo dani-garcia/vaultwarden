@@ -82,6 +82,13 @@ macro_rules! make_config {
                     }
                 };
 
+                // Delete some old Rocket env variables which could cause issues and have no use for Vaultwarden.
+                std::env::remove_var("ROCKET_CLI_COLORS"); // This is disabled by default and could cause issues when set
+                std::env::remove_var("ROCKET_ENV"); // Vaultwarden configures sane defaults for this already
+                std::env::remove_var("ROCKET_PROFILE"); // Vaultwarden configures sane defaults for this already
+                std::env::remove_var("ROCKET_LOG"); // The log level is determined by Vaultwarden via LOG_LEVEL
+                std::env::remove_var("ROCKET_LOG_LEVEL"); // The log level is determined by Vaultwarden via LOG_LEVEL
+
                 let mut builder = ConfigBuilder::default();
                 $($(
                     builder.$name = make_config! { @getenv &stringify!($name).to_uppercase(), $ty };
