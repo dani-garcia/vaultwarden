@@ -129,6 +129,11 @@ RUN mkdir /data \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
+# In the Balena Bullseye images for armv6/rpi-debian there is a missing symlink.
+# This symlink was there in the buster images, and for some reason this is needed.
+# hadolint ignore=DL3059
+RUN ln -v -s /lib/ld-linux-armhf.so.3 /lib/ld-linux.so.3
+
 # hadolint ignore=DL3059
 RUN [ "cross-build-end" ]
 

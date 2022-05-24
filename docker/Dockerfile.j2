@@ -93,12 +93,6 @@ ENV DEBIAN_FRONTEND=noninteractive \
     CARGO_HOME="/root/.cargo" \
     USER="root"
 
-{# {% if "alpine" not in target_file and "buildx" in target_file %}
-# Debian based Buildx builds can use some special apt caching to speedup building.
-# By default Debian based images have some rules to keep docker builds clean, we need to remove this.
-# See: https://hub.docker.com/r/docker/dockerfile
-RUN rm -f /etc/apt/apt.conf.d/docker-clean; echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache
-{% endif %} #}
 
 # Create CARGO_HOME folder and don't download rust docs
 RUN {{ mount_rust_cache -}} mkdir -pv "${CARGO_HOME}" \
@@ -226,6 +220,14 @@ RUN mkdir /data \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 {% endif %}
+
+{% if "armv6" in target_file and "alpine" not in target_file %}
+# In the Balena Bullseye images for armv6/rpi-debian there is a missing symlink.
+# This symlink was there in the buster images, and for some reason this is needed.
+# hadolint ignore=DL3059
+RUN ln -v -s /lib/ld-linux-armhf.so.3 /lib/ld-linux.so.3
+
+{% endif -%}
 
 {% if "amd64" not in target_file %}
 # hadolint ignore=DL3059
