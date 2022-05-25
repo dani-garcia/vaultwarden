@@ -136,6 +136,12 @@ VOLUME /data
 EXPOSE 80
 EXPOSE 3012
 
+# Create a special empty file which we check within the application.
+# If this file exists, then we exit Vaultwarden to prevent data loss when someone forgets to use volumes.
+# If you really really want to use volatile storage you can set the env `I_REALLY_WANT_VOLATILE_STORAGE=true`
+# This file should disappear if a volume is mounted on-top of this using a docker volume.
+RUN touch /data/vaultwarden_docker_persistent_volume_check
+
 # Copies the files from the context (Rocket.toml file and web-vault)
 # and the binary from the "build" stage to the current stage
 WORKDIR /
