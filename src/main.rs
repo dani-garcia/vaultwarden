@@ -276,6 +276,20 @@ fn check_data_folder() {
         }
         exit(1);
     }
+
+    let persistent_volume_check_file = format!("{data_folder}/vaultwarden_docker_persistent_volume_check");
+    let check_file = Path::new(&persistent_volume_check_file);
+    if check_file.exists() && std::env::var("I_REALLY_WANT_VOLATILE_STORAGE").is_err() {
+        error!(
+            "No persistent volume!\n\
+            ########################################################################################\n\
+            # It looks like you did not configure a persistent volume!                             #\n\
+            # This will result in permanent data loss when the container is removed or updated!    #\n\
+            # If you really want to use volatile storage set `I_REALLY_WANT_VOLATILE_STORAGE=true` #\n\
+            ########################################################################################\n"
+        );
+        exit(1);
+    }
 }
 
 fn check_rsa_keys() -> Result<(), crate::error::Error> {
