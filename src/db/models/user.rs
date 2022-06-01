@@ -2,6 +2,7 @@ use chrono::{Duration, NaiveDateTime, Utc};
 use serde_json::Value;
 
 use crate::crypto;
+use crate::util::format_naive_datetime_local;
 use crate::CONFIG;
 
 db_object! {
@@ -213,7 +214,7 @@ impl User {
         } else {
             UserStatus::Enabled
         };
-
+        const DT_FMT: &str = "%Y-%m-%d %H:%M:%S %Z";
         json!({
             "_Status": status as i32,
             "Id": self.uuid,
@@ -232,6 +233,7 @@ impl User {
             "ProviderOrganizations": [],
             "ForcePasswordReset": false,
             "Object": "profile",
+            "CreatedAt": format_naive_datetime_local(&self.created_at, DT_FMT),
         })
     }
 
