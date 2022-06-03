@@ -328,6 +328,7 @@
     "Type": 33,
     "Domains": [
       "healthcare.gov",
+      "cuidadodesalud.gov",
       "cms.gov"
     ],
     "Excluded": false
