@@ -4,7 +4,7 @@ use chrono::NaiveDateTime;
 use percent_encoding::{percent_encode, NON_ALPHANUMERIC};
 
 use lettre::{
-    message::{header, Mailbox, Message, MultiPart, SinglePart},
+    message::{Mailbox, Message, MultiPart},
     transport::smtp::authentication::{Credentials, Mechanism as SmtpAuthMechanism},
     transport::smtp::client::{Tls, TlsParameters},
     transport::smtp::extension::ClientId,
@@ -479,25 +479,13 @@ fn send_email(address: &str, subject: &str, body_html: String, body_text: String
 
     let address = format!("{}@{}", address_split[1], domain_puny);
 
-    let html = SinglePart::builder()
-        // We force Base64 encoding because in the past we had issues with different encodings.
-        .header(header::ContentTransferEncoding::Base64)
-        .header(header::ContentType::TEXT_HTML)
-        .body(body_html);
-
-    let text = SinglePart::builder()
-        // We force Base64 encoding because in the past we had issues with different encodings.
-        .header(header::ContentTransferEncoding::Base64)
-        .header(header::ContentType::TEXT_PLAIN)
-        .body(body_text);
-
     let smtp_from = &CONFIG.smtp_from();
     let email = Message::builder()
         .message_id(Some(format!("<{}@{}>", crate::util::get_uuid(), smtp_from.split('@').collect::<Vec<&str>>()[1])))
         .to(Mailbox::new(None, Address::from_str(&address)?))
         .from(Mailbox::new(Some(CONFIG.smtp_from_name()), Address::from_str(smtp_from)?))
         .subject(subject)
-        .multipart(MultiPart::alternative().singlepart(text).singlepart(html))?;
+        .multipart(MultiPart::alternative_plain_html(body_text, body_html))?;
 
     match mailer().send(&email) {
         Ok(_) => Ok(()),
