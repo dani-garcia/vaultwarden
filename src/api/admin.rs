@@ -79,6 +79,7 @@ fn admin_disabled() -> &'static str {
 
 const COOKIE_NAME: &str = "VW_ADMIN";
 const ADMIN_PATH: &str = "/admin";
+const DT_FMT: &str = "%Y-%m-%d %H:%M:%S %Z";
 
 const BASE_TEMPLATE: &str = "admin/base";
 
@@ -310,7 +311,10 @@ async fn get_users_json(_token: AdminToken, conn: DbConn) -> Json<Value> {
     let users_json = stream::iter(User::get_all(&conn).await)
         .then(|u| async {
             let u = u; // Move out this single variable
-            u.to_json(&conn).await
+            let mut usr = u.to_json(&conn).await;
+            usr["UserEnabled"] = json!(u.enabled);
+            usr["CreatedAt"] = json!(format_naive_datetime_local(&u.created_at, DT_FMT));
+            usr
         })
         .collect::<Vec<Value>>()
         .await;
@@ -320,8 +324,6 @@ async fn get_users_json(_token: AdminToken, conn: DbConn) -> Json<Value> {
 
 #[get("/users/overview")]
 async fn users_overview(_token: AdminToken, conn: DbConn) -> ApiResult<Html<String>> {
-    const DT_FMT: &str = "%Y-%m-%d %H:%M:%S %Z";
-
     let users_json = stream::iter(User::get_all(&conn).await)
         .then(|u| async {
             let u = u; // Move out this single variable
@@ -346,9 +348,11 @@ async fn users_overview(_token: AdminToken, conn: DbConn) -> ApiResult<Html<Stri
 
 #[get("/users/<uuid>")]
 async fn get_user_json(uuid: String, _token: AdminToken, conn: DbConn) -> JsonResult {
-    let user = get_user_or_404(&uuid, &conn).await?;
-
-    Ok(Json(user.to_json(&conn).await))
+    let u = get_user_or_404(&uuid, &conn).await?;
+    let mut usr = u.to_json(&conn).await;
+    usr["UserEnabled"] = json!(u.enabled);
+    usr["CreatedAt"] = json!(format_naive_datetime_local(&u.created_at, DT_FMT));
+    Ok(Json(usr))
 }
 
 #[post("/users/<uuid>/delete")]
