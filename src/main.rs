@@ -152,8 +152,6 @@ fn init_logging(level: log::LevelFilter) -> Result<(), fern::InitError> {
         .level_for("rocket::server", log::LevelFilter::Warn)
         .level_for("rocket::fairing::fairings", log::LevelFilter::Warn)
         .level_for("rocket::shield::shield", log::LevelFilter::Warn)
-        // Never show html5ever and hyper::proto logs, too noisy
-        .level_for("html5ever", log::LevelFilter::Off)
         .level_for("hyper::proto", log::LevelFilter::Off)
         .level_for("hyper::client", log::LevelFilter::Off)
         // Prevent cookie_store logs
