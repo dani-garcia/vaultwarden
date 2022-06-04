@@ -467,22 +467,10 @@ pub fn send_test(address: &str) -> EmptyResult {
 }
 
 fn send_email(address: &str, subject: &str, body_html: String, body_text: String) -> EmptyResult {
-    let address_split: Vec<&str> = address.rsplitn(2, '@').collect();
-    if address_split.len() != 2 {
-        err!("Invalid email address (no @)");
-    }
-
-    let domain_puny = match idna::domain_to_ascii_strict(address_split[0]) {
-        Ok(d) => d,
-        Err(_) => err!("Can't convert email domain to ASCII representation"),
-    };
-
-    let address = format!("{}@{}", address_split[1], domain_puny);
-
     let smtp_from = &CONFIG.smtp_from();
     let email = Message::builder()
         .message_id(Some(format!("<{}@{}>", crate::util::get_uuid(), smtp_from.split('@').collect::<Vec<&str>>()[1])))
-        .to(Mailbox::new(None, Address::from_str(&address)?))
+        .to(Mailbox::new(None, Address::from_str(address)?))
         .from(Mailbox::new(Some(CONFIG.smtp_from_name()), Address::from_str(smtp_from)?))
         .subject(subject)
         .multipart(MultiPart::alternative_plain_html(body_text, body_html))?;
