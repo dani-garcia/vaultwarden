@@ -132,7 +132,7 @@ cookie_store = "0.16.1"
 openssl = "0.10.40"
 
 # CLI argument parsing
-pico-args = "0.4.2"
+pico-args = "0.5.0"
 
 # Macro ident concatenation
 paste = "1.0.7"
