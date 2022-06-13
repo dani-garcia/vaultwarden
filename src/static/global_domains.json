@@ -902,6 +902,7 @@
   {
     "Type": 85,
     "Domains": [
+      "proton.me",
       "protonmail.com",
       "protonvpn.com"
     ],
