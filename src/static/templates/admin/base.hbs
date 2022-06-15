@@ -20,8 +20,15 @@
             width: auto;
             margin: -5px 0 0 0;
         }
+        /* Special alert-row class to use Bootstrap v5.2+ variable colors */
+        .alert-row {
+            --bs-alert-border: 1px solid var(--bs-alert-border-color);
+            color: var(--bs-alert-color);
+            background-color: var(--bs-alert-bg);
+            border: var(--bs-alert-border);
+        }
     </style>
-    <script src="{{urlpath}}/vw_static/identicon.js"></script>
+    <script defer="defer" src="{{urlpath}}/vw_static/identicon.js"></script>
     <script>
         'use strict';
 
@@ -135,6 +142,6 @@
             }
         })();
     </script>
-    <script src="{{urlpath}}/vw_static/bootstrap-native.js"></script>
+    <script defer="defer" src="{{urlpath}}/vw_static/bootstrap-native.js"></script>
 </body>
 </html>

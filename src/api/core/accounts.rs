@@ -67,6 +67,14 @@ async fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> EmptyResult {
     let data: RegisterData = data.into_inner().data;
     let email = data.Email.to_lowercase();
 
+    // Check if the length of the username exceeds 50 characters (Same is Upstream Bitwarden)
+    // This also prevents issues with very long usernames causing to large JWT's. See #2419
+    if let Some(ref name) = data.Name {
+        if name.len() > 50 {
+            err!("The field Name must be a string with a maximum length of 50.");
+        }
+    }
+
     let mut user = match User::find_by_mail(&email, &conn).await {
         Some(user) => {
             if !user.password_hash.is_empty() {
@@ -175,6 +183,12 @@ async fn put_profile(data: JsonUpcase<ProfileData>, headers: Headers, conn: DbCo
 #[post("/accounts/profile", data = "<data>")]
 async fn post_profile(data: JsonUpcase<ProfileData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: ProfileData = data.into_inner().data;
+
+    // Check if the length of the username exceeds 50 characters (Same is Upstream Bitwarden)
+    // This also prevents issues with very long usernames causing to large JWT's. See #2419
+    if data.Name.len() > 50 {
+        err!("The field Name must be a string with a maximum length of 50.");
+    }
 
     let mut user = headers.user;
 

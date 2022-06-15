@@ -491,41 +491,14 @@ async fn has_http_access() -> bool {
     }
 }
 
-#[get("/diagnostics")]
-async fn diagnostics(_token: AdminToken, ip_header: IpHeader, conn: DbConn) -> ApiResult<Html<String>> {
-    use crate::util::read_file_string;
-    use chrono::prelude::*;
-    use std::net::ToSocketAddrs;
-
-    // Get current running versions
-    let web_vault_version: WebVaultVersion =
-        match read_file_string(&format!("{}/{}", CONFIG.web_vault_folder(), "vw-version.json")) {
-            Ok(s) => serde_json::from_str(&s)?,
-            _ => match read_file_string(&format!("{}/{}", CONFIG.web_vault_folder(), "version.json")) {
-                Ok(s) => serde_json::from_str(&s)?,
-                _ => WebVaultVersion {
-                    version: String::from("Version file missing"),
-                },
-            },
-        };
-
-    // Execute some environment checks
-    let running_within_docker = is_running_in_docker();
-    let has_http_access = has_http_access().await;
-    let uses_proxy = env::var_os("HTTP_PROXY").is_some()
-        || env::var_os("http_proxy").is_some()
-        || env::var_os("HTTPS_PROXY").is_some()
-        || env::var_os("https_proxy").is_some();
-
-    // Check if we are able to resolve DNS entries
-    let dns_resolved = match ("github.com", 0).to_socket_addrs().map(|mut i| i.next()) {
-        Ok(Some(a)) => a.ip().to_string(),
-        _ => "Could not resolve domain name.".to_string(),
-    };
-
+use cached::proc_macro::cached;
+/// Cache this function to prevent API call rate limit. Github only allows 60 requests per hour, and we use 3 here already.
+/// It will cache this function for 300 seconds (5 minutes) which should prevent the exhaustion of the rate limit.
+#[cached(time = 300, sync_writes = true)]
+async fn get_release_info(has_http_access: bool, running_within_docker: bool) -> (String, String, String) {
     // If the HTTP Check failed, do not even attempt to check for new versions since we were not able to connect with github.com anyway.
-    // TODO: Maybe we need to cache this using a LazyStatic or something. Github only allows 60 requests per hour, and we use 3 here already.
-    let (latest_release, latest_commit, latest_web_build) = if has_http_access {
+    if has_http_access {
+        info!("Running get_release_info!!");
         (
             match get_github_api::<GitRelease>("https://api.github.com/repos/dani-garcia/vaultwarden/releases/latest")
                 .await
@@ -558,7 +531,43 @@ async fn diagnostics(_token: AdminToken, ip_header: IpHeader, conn: DbConn) -> A
         )
     } else {
         ("-".to_string(), "-".to_string(), "-".to_string())
+    }
+}
+
+#[get("/diagnostics")]
+async fn diagnostics(_token: AdminToken, ip_header: IpHeader, conn: DbConn) -> ApiResult<Html<String>> {
+    use crate::util::read_file_string;
+    use chrono::prelude::*;
+    use std::net::ToSocketAddrs;
+
+    // Get current running versions
+    let web_vault_version: WebVaultVersion =
+        match read_file_string(&format!("{}/{}", CONFIG.web_vault_folder(), "vw-version.json")) {
+            Ok(s) => serde_json::from_str(&s)?,
+            _ => match read_file_string(&format!("{}/{}", CONFIG.web_vault_folder(), "version.json")) {
+                Ok(s) => serde_json::from_str(&s)?,
+                _ => WebVaultVersion {
+                    version: String::from("Version file missing"),
+                },
+            },
+        };
+
+    // Execute some environment checks
+    let running_within_docker = is_running_in_docker();
+    let has_http_access = has_http_access().await;
+    let uses_proxy = env::var_os("HTTP_PROXY").is_some()
+        || env::var_os("http_proxy").is_some()
+        || env::var_os("HTTPS_PROXY").is_some()
+        || env::var_os("https_proxy").is_some();
+
+    // Check if we are able to resolve DNS entries
+    let dns_resolved = match ("github.com", 0).to_socket_addrs().map(|mut i| i.next()) {
+        Ok(Some(a)) => a.ip().to_string(),
+        _ => "Could not resolve domain name.".to_string(),
     };
+
+    let (latest_release, latest_commit, latest_web_build) =
+        get_release_info(has_http_access, running_within_docker).await;
 
     let ip_header_name = match &ip_header.0 {
         Some(h) => h,

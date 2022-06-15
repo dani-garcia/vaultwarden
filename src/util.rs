@@ -29,21 +29,48 @@ impl Fairing for AppHeaders {
         }
     }
 
-    async fn on_response<'r>(&self, _req: &'r Request<'_>, res: &mut Response<'r>) {
-        res.set_raw_header("Permissions-Policy", "accelerometer=(), ambient-light-sensor=(), autoplay=(), camera=(), encrypted-media=(), fullscreen=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), midi=(), payment=(), picture-in-picture=(), sync-xhr=(self \"https://haveibeenpwned.com\" \"https://2fa.directory\"), usb=(), vr=()");
+    async fn on_response<'r>(&self, req: &'r Request<'_>, res: &mut Response<'r>) {
+        res.set_raw_header("Permissions-Policy", "accelerometer=(), ambient-light-sensor=(), autoplay=(), battery=(), camera=(), display-capture=(), document-domain=(), encrypted-media=(), execution-while-not-rendered=(), execution-while-out-of-viewport=(), fullscreen=(), geolocation=(), gyroscope=(), keyboard-map=(), magnetometer=(), microphone=(), midi=(), payment=(), picture-in-picture=(), screen-wake-lock=(), sync-xhr=(), usb=(), web-share=(), xr-spatial-tracking=()");
         res.set_raw_header("Referrer-Policy", "same-origin");
-        res.set_raw_header("X-Frame-Options", "SAMEORIGIN");
         res.set_raw_header("X-Content-Type-Options", "nosniff");
         // Obsolete in modern browsers, unsafe (XS-Leak), and largely replaced by CSP
         res.set_raw_header("X-XSS-Protection", "0");
-        let csp = format!(
-            // Chrome Web Store: https://chrome.google.com/webstore/detail/bitwarden-free-password-m/nngceckbapebfimnlniiiahkandclblb
-            // Edge Add-ons: https://microsoftedge.microsoft.com/addons/detail/bitwarden-free-password/jbkfoedolllekgbhcbcoahefnbanhhlh?hl=en-US
-            // Firefox Browser Add-ons: https://addons.mozilla.org/en-US/firefox/addon/bitwarden-password-manager/
-            "frame-ancestors 'self' chrome-extension://nngceckbapebfimnlniiiahkandclblb chrome-extension://jbkfoedolllekgbhcbcoahefnbanhhlh moz-extension://* {};",
-            CONFIG.allowed_iframe_ancestors()
-        );
-        res.set_raw_header("Content-Security-Policy", csp);
+
+        let req_uri_path = req.uri().path();
+
+        // Check if we are requesting an admin page, if so, allow unsafe-inline for scripts.
+        // TODO: In the future maybe we need to see if we can generate a sha256 hash or have no scripts inline at all.
+        let admin_path = format!("{}/admin", CONFIG.domain_path());
+        let mut script_src = "";
+        if req_uri_path.starts_with(admin_path.as_str()) {
+            script_src = " 'unsafe-inline'";
+        }
+
+        // Do not send the Content-Security-Policy (CSP) Header and X-Frame-Options for the *-connector.html files.
+        // This can cause issues when some MFA requests needs to open a popup or page within the clients like WebAuthn, or Duo.
+        // This is the same behaviour as upstream Bitwarden.
+        if !req_uri_path.ends_with("connector.html") {
+            let csp = format!(
+                // Chrome Web Store: https://chrome.google.com/webstore/detail/bitwarden-free-password-m/nngceckbapebfimnlniiiahkandclblb
+                // Edge Add-ons: https://microsoftedge.microsoft.com/addons/detail/bitwarden-free-password/jbkfoedolllekgbhcbcoahefnbanhhlh?hl=en-US
+                // Firefox Browser Add-ons: https://addons.mozilla.org/en-US/firefox/addon/bitwarden-password-manager/
+                "default-src 'self'; \
+                script-src 'self'{script_src}; \
+                style-src 'self' 'unsafe-inline'; \
+                img-src 'self' data: https://haveibeenpwned.com/ https://www.gravatar.com; \
+                child-src 'self' https://*.duosecurity.com https://*.duofederal.com; \
+                frame-src 'self' https://*.duosecurity.com https://*.duofederal.com; \
+                connect-src 'self' https://api.pwnedpasswords.com/range/ https://2fa.directory/api/ https://app.simplelogin.io/api/ https://app.anonaddy.com/api/; \
+                object-src 'self' blob:; \
+                frame-ancestors 'self' chrome-extension://nngceckbapebfimnlniiiahkandclblb chrome-extension://jbkfoedolllekgbhcbcoahefnbanhhlh moz-extension://* {};",
+                CONFIG.allowed_iframe_ancestors()
+            );
+            res.set_raw_header("Content-Security-Policy", csp);
+            res.set_raw_header("X-Frame-Options", "SAMEORIGIN");
+        } else {
+            // It looks like this header get's set somewhere else also, make sure this is not sent for these files, it will cause MFA issues.
+            res.remove_header("X-Frame-Options");
+        }
 
         // Disable cache unless otherwise specified
         if !res.headers().contains("cache-control") {
