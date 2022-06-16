@@ -23,7 +23,7 @@ LABELS=(
     # https://github.com/opencontainers/image-spec/blob/master/annotations.md
     org.opencontainers.image.created="$(date --utc --iso-8601=seconds)"
     org.opencontainers.image.documentation="https://github.com/dani-garcia/vaultwarden/wiki"
-    org.opencontainers.image.licenses="GPL-3.0-only"
+    org.opencontainers.image.licenses="AGPL-3.0-only"
     org.opencontainers.image.revision="${SOURCE_COMMIT}"
     org.opencontainers.image.source="${SOURCE_REPOSITORY_URL}"
     org.opencontainers.image.url="https://hub.docker.com/r/${DOCKER_REPO#*/}"
