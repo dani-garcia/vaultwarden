@@ -26,8 +26,8 @@ repos:
       entry: cargo test
       language: system
       args: ["--features", "sqlite,mysql,postgresql,enable_mimalloc", "--"]
-      types_or: [file, rust]
-      files: (Cargo.toml|Cargo.lock)
+      types_or: [rust, file]
+      files: (Cargo.toml|Cargo.lock|.*\.rs$)
       pass_filenames: false
     - id: cargo-clippy
       name: cargo clippy
@@ -35,6 +35,6 @@ repos:
       entry: cargo clippy
       language: system
       args: ["--features", "sqlite,mysql,postgresql,enable_mimalloc", "--", "-D", "warnings"]
-      types_or: [file, rust]
-      files: (Cargo.toml|Cargo.lock)
+      types_or: [rust, file]
+      files: (Cargo.toml|Cargo.lock|.*\.rs$)
       pass_filenames: false

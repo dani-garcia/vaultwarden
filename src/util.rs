@@ -50,17 +50,25 @@ impl Fairing for AppHeaders {
         // This can cause issues when some MFA requests needs to open a popup or page within the clients like WebAuthn, or Duo.
         // This is the same behaviour as upstream Bitwarden.
         if !req_uri_path.ends_with("connector.html") {
+            // # Frame Ancestors:
+            // Chrome Web Store: https://chrome.google.com/webstore/detail/bitwarden-free-password-m/nngceckbapebfimnlniiiahkandclblb
+            // Edge Add-ons: https://microsoftedge.microsoft.com/addons/detail/bitwarden-free-password/jbkfoedolllekgbhcbcoahefnbanhhlh?hl=en-US
+            // Firefox Browser Add-ons: https://addons.mozilla.org/en-US/firefox/addon/bitwarden-password-manager/
+            // # img/child/frame src:
+            // Have I Been Pwned and Gravator to allow those calls to work.
+            // # Connect src:
+            // Leaked Passwords check: api.pwnedpasswords.com
+            // 2FA/MFA Site check: 2fa.directory
+            // # Mail Relay: https://bitwarden.com/blog/add-privacy-and-security-using-email-aliases-with-bitwarden/
+            // app.simplelogin.io, app.anonaddy.com, relay.firefox.com
             let csp = format!(
-                // Chrome Web Store: https://chrome.google.com/webstore/detail/bitwarden-free-password-m/nngceckbapebfimnlniiiahkandclblb
-                // Edge Add-ons: https://microsoftedge.microsoft.com/addons/detail/bitwarden-free-password/jbkfoedolllekgbhcbcoahefnbanhhlh?hl=en-US
-                // Firefox Browser Add-ons: https://addons.mozilla.org/en-US/firefox/addon/bitwarden-password-manager/
                 "default-src 'self'; \
                 script-src 'self'{script_src}; \
                 style-src 'self' 'unsafe-inline'; \
                 img-src 'self' data: https://haveibeenpwned.com/ https://www.gravatar.com; \
                 child-src 'self' https://*.duosecurity.com https://*.duofederal.com; \
                 frame-src 'self' https://*.duosecurity.com https://*.duofederal.com; \
-                connect-src 'self' https://api.pwnedpasswords.com/range/ https://2fa.directory/api/ https://app.simplelogin.io/api/ https://app.anonaddy.com/api/; \
+                connect-src 'self' https://api.pwnedpasswords.com/range/ https://2fa.directory/api/ https://app.simplelogin.io/api/ https://app.anonaddy.com/api/ https://relay.firefox.com/api/; \
                 object-src 'self' blob:; \
                 frame-ancestors 'self' chrome-extension://nngceckbapebfimnlniiiahkandclblb chrome-extension://jbkfoedolllekgbhcbcoahefnbanhhlh moz-extension://* {};",
                 CONFIG.allowed_iframe_ancestors()
