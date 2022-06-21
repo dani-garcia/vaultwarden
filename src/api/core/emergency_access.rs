@@ -5,7 +5,10 @@ use serde_json::Value;
 use std::borrow::Borrow;
 
 use crate::{
-    api::{core::CipherSyncData, EmptyResult, JsonResult, JsonUpcase, NumberOrString},
+    api::{
+        core::{CipherSyncData, CipherSyncType},
+        EmptyResult, JsonResult, JsonUpcase, NumberOrString,
+    },
     auth::{decode_emergency_access_invite, Headers},
     db::{models::*, DbConn, DbPool},
     mail, CONFIG,
@@ -596,7 +599,8 @@ async fn view_emergency_access(emer_id: String, headers: Headers, conn: DbConn) 
     }
 
     let ciphers = Cipher::find_owned_by_user(&emergency_access.grantor_uuid, &conn).await;
-    let cipher_sync_data = CipherSyncData::new(&emergency_access.grantor_uuid, &ciphers, &conn).await;
+    let cipher_sync_data =
+        CipherSyncData::new(&emergency_access.grantor_uuid, &ciphers, CipherSyncType::User, &conn).await;
 
     let ciphers_json = stream::iter(ciphers)
         .then(|c| async {
