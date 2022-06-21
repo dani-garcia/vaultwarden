@@ -84,7 +84,7 @@ uuid = { version = "1.1.2", features = ["v4"] }
 # Date and time libraries
 chrono = { version = "0.4.19", features = ["clock", "serde"], default-features = false }
 chrono-tz = "0.6.1"
-time = "0.3.9"
+time = "0.3.11"
 
 # Job scheduler
 job_scheduler_ng = "2.0.1"
@@ -93,7 +93,7 @@ job_scheduler_ng = "2.0.1"
 data-encoding = "2.3.2"
 
 # JWT library
-jsonwebtoken = "8.1.0"
+jsonwebtoken = "8.1.1"
 
 # TOTP library
 totp-lite = "2.0.0"
@@ -118,7 +118,7 @@ handlebars = { version = "4.3.1", features = ["dir_source"] }
 reqwest = { version = "0.11.11", features = ["stream", "json", "gzip", "brotli", "socks", "cookies", "trust-dns"] }
 
 # For favicon extraction from main website
-html5gum = "0.4.0"
+html5gum = "0.5.2"
 regex = { version = "1.5.6", features = ["std", "perf", "unicode-perl"], default-features = false }
 data-url = "0.1.1"
 bytes = "1.1.0"
