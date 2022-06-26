@@ -8,7 +8,6 @@ on:
       - "migrations/**"
       - "Cargo.*"
       - "build.rs"
-      - "diesel.toml"
       - "rust-toolchain"
   pull_request:
     paths:
@@ -17,7 +16,6 @@ on:
       - "migrations/**"
       - "Cargo.*"
       - "build.rs"
-      - "diesel.toml"
       - "rust-toolchain"
 
 jobs:

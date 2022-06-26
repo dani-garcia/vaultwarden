@@ -1,7 +1,7 @@
 ---
 repos:
 -   repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.2.0
+    rev: v4.3.0
     hooks:
     - id: check-yaml
     - id: check-json
@@ -26,7 +26,8 @@ repos:
       entry: cargo test
       language: system
       args: ["--features", "sqlite,mysql,postgresql,enable_mimalloc", "--"]
-      types: [rust]
+      types_or: [rust, file]
+      files: (Cargo.toml|Cargo.lock|.*\.rs$)
       pass_filenames: false
     - id: cargo-clippy
       name: cargo clippy
@@ -34,5 +35,6 @@ repos:
       entry: cargo clippy
       language: system
       args: ["--features", "sqlite,mysql,postgresql,enable_mimalloc", "--", "-D", "warnings"]
-      types: [rust]
+      types_or: [rust, file]
+      files: (Cargo.toml|Cargo.lock|.*\.rs$)
       pass_filenames: false

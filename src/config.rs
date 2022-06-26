@@ -1058,12 +1058,11 @@ fn js_escape_helper<'reg, 'rc>(
     _rc: &mut RenderContext<'reg, 'rc>,
     out: &mut dyn Output,
 ) -> HelperResult {
-    let param = h.param(0).ok_or_else(|| RenderError::new("Param not found for helper \"js_escape\""))?;
+    let param = h.param(0).ok_or_else(|| RenderError::new("Param not found for helper \"jsesc\""))?;
 
     let no_quote = h.param(1).is_some();
 
-    let value =
-        param.value().as_str().ok_or_else(|| RenderError::new("Param for helper \"js_escape\" is not a String"))?;
+    let value = param.value().as_str().ok_or_else(|| RenderError::new("Param for helper \"jsesc\" is not a String"))?;
 
     let mut escaped_value = value.replace('\\', "").replace('\'', "\\x22").replace('\"', "\\x27");
     if !no_quote {
