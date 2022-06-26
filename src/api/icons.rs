@@ -19,7 +19,7 @@ use tokio::{
     net::lookup_host,
 };
 
-use html5gum::{Emitter, EndTag, InfallibleTokenizer, Readable, StartTag, StringReader, Tokenizer};
+use html5gum::{Emitter, EndTag, HtmlString, InfallibleTokenizer, Readable, StartTag, StringReader, Tokenizer};
 
 use crate::{
     error::Error,
@@ -433,7 +433,7 @@ async fn get_favicons_node(
     for token in dom {
         match token {
             FaviconToken::StartTag(tag) => {
-                if tag.name == TAG_LINK
+                if *tag.name == TAG_LINK
                     && tag.attributes.contains_key(ATTR_REL)
                     && tag.attributes.contains_key(ATTR_HREF)
                 {
@@ -443,7 +443,7 @@ async fn get_favicons_node(
                     if rel_value.contains("icon") && !rel_value.contains("mask-icon") {
                         icon_tags.push(tag);
                     }
-                } else if tag.name == TAG_BASE && tag.attributes.contains_key(ATTR_HREF) {
+                } else if *tag.name == TAG_BASE && tag.attributes.contains_key(ATTR_HREF) {
                     let href = std::str::from_utf8(tag.attributes.get(ATTR_HREF).unwrap()).unwrap_or_default();
                     debug!("Found base href: {href}");
                     base_url = match base_url.join(href) {
@@ -453,7 +453,7 @@ async fn get_favicons_node(
                 }
             }
             FaviconToken::EndTag(tag) => {
-                if tag.name == TAG_HEAD {
+                if *tag.name == TAG_HEAD {
                     break;
                 }
             }
@@ -830,17 +830,18 @@ impl reqwest::cookie::CookieStore for Jar {
 /// Therefor parsing the HTML content is faster.
 use std::collections::{BTreeSet, VecDeque};
 
+#[derive(Debug)]
 enum FaviconToken {
     StartTag(StartTag),
     EndTag(EndTag),
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 struct FaviconEmitter {
     current_token: Option<FaviconToken>,
-    last_start_tag: Vec<u8>,
-    current_attribute: Option<(Vec<u8>, Vec<u8>)>,
-    seen_attributes: BTreeSet<Vec<u8>>,
+    last_start_tag: HtmlString,
+    current_attribute: Option<(HtmlString, HtmlString)>,
+    seen_attributes: BTreeSet<HtmlString>,
     emitted_tokens: VecDeque<FaviconToken>,
 }
 
@@ -887,18 +888,38 @@ impl Emitter for FaviconEmitter {
         self.seen_attributes.clear();
     }
 
-    fn emit_current_tag(&mut self) {
+    fn emit_current_tag(&mut self) -> Option<html5gum::State> {
         self.flush_current_attribute();
         let mut token = self.current_token.take().unwrap();
+        let mut emit = false;
         match token {
-            FaviconToken::EndTag(_) => {
+            FaviconToken::EndTag(ref mut tag) => {
+                // Always clean seen attributes
                 self.seen_attributes.clear();
+
+                // Only trigger an emit for the </head> tag.
+                // This is matched, and will break the for-loop.
+                if *tag.name == b"head" {
+                    emit = true;
+                }
             }
             FaviconToken::StartTag(ref mut tag) => {
-                self.set_last_start_tag(Some(&tag.name));
+                // Only trriger an emit for <link> and <base> tags.
+                // These are the only tags we want to parse.
+                if *tag.name == b"link" || *tag.name == b"base" {
+                    self.set_last_start_tag(Some(&tag.name));
+                    emit = true;
+                } else {
+                    self.set_last_start_tag(None);
+                }
             }
         }
-        self.emit_token(token);
+
+        // Only emit the tags we want to parse.
+        if emit {
+            self.emit_token(token);
+        }
+        None
     }
 
     fn push_tag_name(&mut self, s: &[u8]) {
@@ -921,7 +942,7 @@ impl Emitter for FaviconEmitter {
 
     fn init_attribute(&mut self) {
         self.flush_current_attribute();
-        self.current_attribute = Some((Vec::new(), Vec::new()));
+        self.current_attribute = Some(Default::default());
     }
 
     fn push_attribute_name(&mut self, s: &[u8]) {
