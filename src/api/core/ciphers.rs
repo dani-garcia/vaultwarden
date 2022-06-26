@@ -104,7 +104,7 @@ async fn sync(data: SyncData, headers: Headers, conn: DbConn) -> Json<Value> {
     // Get all ciphers which are visible by the user
     let ciphers = Cipher::find_by_user_visible(&headers.user.uuid, &conn).await;
 
-    let cipher_sync_data = CipherSyncData::new(&headers.user.uuid, &ciphers, &conn).await;
+    let cipher_sync_data = CipherSyncData::new(&headers.user.uuid, &ciphers, CipherSyncType::User, &conn).await;
 
     // Lets generate the ciphers_json using all the gathered info
     let ciphers_json: Vec<Value> = stream::iter(ciphers)
@@ -154,7 +154,7 @@ async fn sync(data: SyncData, headers: Headers, conn: DbConn) -> Json<Value> {
 #[get("/ciphers")]
 async fn get_ciphers(headers: Headers, conn: DbConn) -> Json<Value> {
     let ciphers = Cipher::find_by_user_visible(&headers.user.uuid, &conn).await;
-    let cipher_sync_data = CipherSyncData::new(&headers.user.uuid, &ciphers, &conn).await;
+    let cipher_sync_data = CipherSyncData::new(&headers.user.uuid, &ciphers, CipherSyncType::User, &conn).await;
 
     let ciphers_json = stream::iter(ciphers)
         .then(|c| async {
@@ -1486,24 +1486,38 @@ pub struct CipherSyncData {
     pub user_collections: HashMap<String, CollectionUser>,
 }
 
+pub enum CipherSyncType {
+    User,
+    Organization,
+}
+
 impl CipherSyncData {
-    pub async fn new(user_uuid: &str, ciphers: &Vec<Cipher>, conn: &DbConn) -> Self {
+    pub async fn new(user_uuid: &str, ciphers: &Vec<Cipher>, sync_type: CipherSyncType, conn: &DbConn) -> Self {
         // Generate a list of Cipher UUID's to be used during a query filter with an eq_any.
         let cipher_uuids = stream::iter(ciphers).map(|c| c.uuid.to_string()).collect::<Vec<String>>().await;
+
+        let mut cipher_folders: HashMap<String, String> = HashMap::new();
+        let mut cipher_favorites: HashSet<String> = HashSet::new();
+        match sync_type {
+            // User Sync supports Folders and Favorits
+            CipherSyncType::User => {
+                // Generate a HashMap with the Cipher UUID as key and the Folder UUID as value
+                cipher_folders = stream::iter(FolderCipher::find_by_user(user_uuid, conn).await).collect().await;
+
+                // Generate a HashSet of all the Cipher UUID's which are marked as favorite
+                cipher_favorites =
+                    stream::iter(Favorite::get_all_cipher_uuid_by_user(user_uuid, conn).await).collect().await;
+            }
+            // Organization Sync does not support Folders and Favorits.
+            // If these are set, it will cause issues in the web-vault.
+            CipherSyncType::Organization => {}
+        }
 
         // Generate a list of Cipher UUID's containing a Vec with one or more Attachment records
         let mut cipher_attachments: HashMap<String, Vec<Attachment>> = HashMap::new();
         for attachment in Attachment::find_all_by_ciphers(&cipher_uuids, conn).await {
             cipher_attachments.entry(attachment.cipher_uuid.to_string()).or_default().push(attachment);
         }
-
-        // Generate a HashMap with the Cipher UUID as key and the Folder UUID as value
-        let cipher_folders: HashMap<String, String> =
-            stream::iter(FolderCipher::find_by_user(user_uuid, conn).await).collect().await;
-
-        // Generate a HashSet of all the Cipher UUID's which are marked as favorite
-        let cipher_favorites: HashSet<String> =
-            stream::iter(Favorite::get_all_cipher_uuid_by_user(user_uuid, conn).await).collect().await;
 
         // Generate a HashMap with the Cipher UUID as key and one or more Collection UUID's
         let mut cipher_collections: HashMap<String, Vec<String>> = HashMap::new();
