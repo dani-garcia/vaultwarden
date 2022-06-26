@@ -5,8 +5,8 @@ use serde_json::Value;
 
 use crate::{
     api::{
-        core::CipherSyncData, EmptyResult, JsonResult, JsonUpcase, JsonUpcaseVec, Notify, NumberOrString, PasswordData,
-        UpdateType,
+        core::{CipherSyncData, CipherSyncType},
+        EmptyResult, JsonResult, JsonUpcase, JsonUpcaseVec, Notify, NumberOrString, PasswordData, UpdateType,
     },
     auth::{decode_invite, AdminHeaders, Headers, ManagerHeaders, ManagerHeadersLoose, OwnerHeaders},
     db::{models::*, DbConn},
@@ -487,7 +487,7 @@ struct OrgIdData {
 #[get("/ciphers/organization-details?<data..>")]
 async fn get_org_details(data: OrgIdData, headers: Headers, conn: DbConn) -> Json<Value> {
     let ciphers = Cipher::find_by_org(&data.organization_id, &conn).await;
-    let cipher_sync_data = CipherSyncData::new(&headers.user.uuid, &ciphers, &conn).await;
+    let cipher_sync_data = CipherSyncData::new(&headers.user.uuid, &ciphers, CipherSyncType::Organization, &conn).await;
 
     let ciphers_json = stream::iter(ciphers)
         .then(|c| async {
