@@ -145,7 +145,7 @@ fn init_logging(level: log::LevelFilter) -> Result<(), fern::InitError> {
         // Hide failed to close stream messages
         .level_for("hyper::server", log::LevelFilter::Warn)
         // Silence rocket logs
-        .level_for("_", log::LevelFilter::Off)
+        .level_for("_", log::LevelFilter::Warn)
         .level_for("rocket::launch", log::LevelFilter::Error)
         .level_for("rocket::launch_", log::LevelFilter::Error)
         .level_for("rocket::rocket", log::LevelFilter::Warn)
