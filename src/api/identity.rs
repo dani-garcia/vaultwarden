@@ -135,7 +135,7 @@ async fn _password_login(data: ConnectData, conn: DbConn, ip: &ClientIp) -> Json
                     error!("Error updating user: {:#?}", e);
                 }
 
-                if let Err(e) = mail::send_verify_email(&user.email, &user.uuid) {
+                if let Err(e) = mail::send_verify_email(&user.email, &user.uuid).await {
                     error!("Error auto-sending email verification email: {:#?}", e);
                 }
             }
@@ -150,7 +150,7 @@ async fn _password_login(data: ConnectData, conn: DbConn, ip: &ClientIp) -> Json
     let twofactor_token = twofactor_auth(&user.uuid, &data, &mut device, ip, &conn).await?;
 
     if CONFIG.mail_enabled() && new_device {
-        if let Err(e) = mail::send_new_device_logged_in(&user.email, &ip.ip.to_string(), &now, &device.name) {
+        if let Err(e) = mail::send_new_device_logged_in(&user.email, &ip.ip.to_string(), &now, &device.name).await {
             error!("Error sending new device email: {:#?}", e);
 
             if CONFIG.require_device_email() {
@@ -225,7 +225,7 @@ async fn _api_key_login(data: ConnectData, conn: DbConn, ip: &ClientIp) -> JsonR
 
     if CONFIG.mail_enabled() && new_device {
         let now = Utc::now().naive_utc();
-        if let Err(e) = mail::send_new_device_logged_in(&user.email, &ip.ip.to_string(), &now, &device.name) {
+        if let Err(e) = mail::send_new_device_logged_in(&user.email, &ip.ip.to_string(), &now, &device.name).await {
             error!("Error sending new device email: {:#?}", e);
 
             if CONFIG.require_device_email() {

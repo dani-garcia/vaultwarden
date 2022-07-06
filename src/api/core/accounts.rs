@@ -168,12 +168,12 @@ async fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> EmptyResult {
 
     if CONFIG.mail_enabled() {
         if CONFIG.signups_verify() {
-            if let Err(e) = mail::send_welcome_must_verify(&user.email, &user.uuid) {
+            if let Err(e) = mail::send_welcome_must_verify(&user.email, &user.uuid).await {
                 error!("Error sending welcome email: {:#?}", e);
             }
 
             user.last_verifying_at = Some(user.created_at);
-        } else if let Err(e) = mail::send_welcome(&user.email) {
+        } else if let Err(e) = mail::send_welcome(&user.email).await {
             error!("Error sending welcome email: {:#?}", e);
         }
     }
@@ -416,7 +416,7 @@ async fn post_email_token(data: JsonUpcase<EmailTokenData>, headers: Headers, co
     let token = crypto::generate_email_token(6);
 
     if CONFIG.mail_enabled() {
-        if let Err(e) = mail::send_change_email(&data.NewEmail, &token) {
+        if let Err(e) = mail::send_change_email(&data.NewEmail, &token).await {
             error!("Error sending change-email email: {:#?}", e);
         }
     }
@@ -485,14 +485,14 @@ async fn post_email(data: JsonUpcase<ChangeEmailData>, headers: Headers, conn: D
 }
 
 #[post("/accounts/verify-email")]
-fn post_verify_email(headers: Headers) -> EmptyResult {
+async fn post_verify_email(headers: Headers) -> EmptyResult {
     let user = headers.user;
 
     if !CONFIG.mail_enabled() {
         err!("Cannot verify email address");
     }
 
-    if let Err(e) = mail::send_verify_email(&user.email, &user.uuid) {
+    if let Err(e) = mail::send_verify_email(&user.email, &user.uuid).await {
         error!("Error sending verify_email email: {:#?}", e);
     }
 
@@ -544,7 +544,7 @@ async fn post_delete_recover(data: JsonUpcase<DeleteRecoverData>, conn: DbConn) 
 
     if CONFIG.mail_enabled() {
         if let Some(user) = User::find_by_mail(&data.Email, &conn).await {
-            if let Err(e) = mail::send_delete_account(&user.email, &user.uuid) {
+            if let Err(e) = mail::send_delete_account(&user.email, &user.uuid).await {
                 error!("Error sending delete account email: {:#?}", e);
             }
         }
@@ -644,7 +644,7 @@ async fn password_hint(data: JsonUpcase<PasswordHintData>, conn: DbConn) -> Empt
         Some(user) => {
             let hint: Option<String> = user.password_hint;
             if CONFIG.mail_enabled() {
-                mail::send_password_hint(email, hint)?;
+                mail::send_password_hint(email, hint).await?;
                 Ok(())
             } else if let Some(hint) = hint {
                 err!(format!("Your password hint is: {}", hint));

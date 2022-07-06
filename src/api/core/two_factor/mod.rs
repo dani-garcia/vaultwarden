@@ -138,7 +138,7 @@ async fn disable_twofactor(data: JsonUpcase<DisableTwoFactorData>, headers: Head
             if user_org.atype < UserOrgType::Admin {
                 if CONFIG.mail_enabled() {
                     let org = Organization::find_by_uuid(&user_org.org_uuid, &conn).await.unwrap();
-                    mail::send_2fa_removed_from_org(&user.email, &org.name)?;
+                    mail::send_2fa_removed_from_org(&user.email, &org.name).await?;
                 }
                 user_org.delete(&conn).await?;
             }
@@ -183,6 +183,7 @@ pub async fn send_incomplete_2fa_notifications(pool: DbPool) {
             user.email, login.ip_address
         );
         mail::send_incomplete_2fa_login(&user.email, &login.ip_address, &login.login_time, &login.device_name)
+            .await
             .expect("Error sending incomplete 2FA email");
         login.delete(&conn).await.expect("Error deleting incomplete 2FA record");
     }

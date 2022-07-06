@@ -66,7 +66,7 @@ pub async fn send_token(user_uuid: &str, conn: &DbConn) -> EmptyResult {
     twofactor.data = twofactor_data.to_json();
     twofactor.save(conn).await?;
 
-    mail::send_token(&twofactor_data.email, &twofactor_data.last_token.map_res("Token is empty")?)?;
+    mail::send_token(&twofactor_data.email, &twofactor_data.last_token.map_res("Token is empty")?).await?;
 
     Ok(())
 }
@@ -132,7 +132,7 @@ async fn send_email(data: JsonUpcase<SendEmailData>, headers: Headers, conn: DbC
     let twofactor = TwoFactor::new(user.uuid, TwoFactorType::EmailVerificationChallenge, twofactor_data.to_json());
     twofactor.save(&conn).await?;
 
-    mail::send_token(&twofactor_data.email, &twofactor_data.last_token.map_res("Token is empty")?)?;
+    mail::send_token(&twofactor_data.email, &twofactor_data.last_token.map_res("Token is empty")?).await?;
 
     Ok(())
 }

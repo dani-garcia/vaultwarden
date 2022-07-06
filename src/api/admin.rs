@@ -276,7 +276,7 @@ async fn invite_user(data: Json<InviteData>, _token: AdminToken, conn: DbConn) -
 
     async fn _generate_invite(user: &User, conn: &DbConn) -> EmptyResult {
         if CONFIG.mail_enabled() {
-            mail::send_invite(&user.email, &user.uuid, None, None, &CONFIG.invitation_org_name(), None)
+            mail::send_invite(&user.email, &user.uuid, None, None, &CONFIG.invitation_org_name(), None).await
         } else {
             let invitation = Invitation::new(user.email.clone());
             invitation.save(conn).await
@@ -290,11 +290,11 @@ async fn invite_user(data: Json<InviteData>, _token: AdminToken, conn: DbConn) -
 }
 
 #[post("/test/smtp", data = "<data>")]
-fn test_smtp(data: Json<InviteData>, _token: AdminToken) -> EmptyResult {
+async fn test_smtp(data: Json<InviteData>, _token: AdminToken) -> EmptyResult {
     let data: InviteData = data.into_inner();
 
     if CONFIG.mail_enabled() {
-        mail::send_test(&data.email)
+        mail::send_test(&data.email).await
     } else {
         err!("Mail is not enabled")
     }

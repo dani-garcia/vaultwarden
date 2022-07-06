@@ -652,7 +652,8 @@ async fn send_invite(org_id: String, data: JsonUpcase<InviteData>, headers: Admi
                 Some(new_user.uuid),
                 &org_name,
                 Some(headers.user.email.clone()),
-            )?;
+            )
+            .await?;
         }
     }
 
@@ -732,7 +733,8 @@ async fn _reinvite_user(org_id: &str, user_org: &str, invited_by_email: &str, co
             Some(user_org.uuid),
             &org_name,
             Some(invited_by_email.to_string()),
-        )?;
+        )
+        .await?;
     } else {
         let invitation = Invitation::new(user.email);
         invitation.save(conn).await?;
@@ -830,10 +832,10 @@ async fn accept_invite(
         };
         if let Some(invited_by_email) = &claims.invited_by_email {
             // User was invited to an organization, so they must be confirmed manually after acceptance
-            mail::send_invite_accepted(&claims.email, invited_by_email, &org_name)?;
+            mail::send_invite_accepted(&claims.email, invited_by_email, &org_name).await?;
         } else {
             // User was invited from /admin, so they are automatically confirmed
-            mail::send_invite_confirmed(&claims.email, &org_name)?;
+            mail::send_invite_confirmed(&claims.email, &org_name).await?;
         }
     }
 
@@ -928,7 +930,7 @@ async fn _confirm_invite(
             Some(user) => user.email,
             None => err!("Error looking up user."),
         };
-        mail::send_invite_confirmed(&address, &org_name)?;
+        mail::send_invite_confirmed(&address, &org_name).await?;
     }
 
     user_to_confirm.save(conn).await
@@ -1298,7 +1300,7 @@ async fn put_policy(
                     let org = Organization::find_by_uuid(&member.org_uuid, &conn).await.unwrap();
                     let user = User::find_by_uuid(&member.user_uuid, &conn).await.unwrap();
 
-                    mail::send_2fa_removed_from_org(&user.email, &org.name)?;
+                    mail::send_2fa_removed_from_org(&user.email, &org.name).await?;
                 }
                 member.delete(&conn).await?;
             }
@@ -1323,7 +1325,7 @@ async fn put_policy(
                         let org = Organization::find_by_uuid(&member.org_uuid, &conn).await.unwrap();
                         let user = User::find_by_uuid(&member.user_uuid, &conn).await.unwrap();
 
-                        mail::send_single_org_removed_from_org(&user.email, &org.name)?;
+                        mail::send_single_org_removed_from_org(&user.email, &org.name).await?;
                     }
                     member.delete(&conn).await?;
                 }
@@ -1462,7 +1464,8 @@ async fn import(org_id: String, data: JsonUpcase<OrgImportData>, headers: Header
                         Some(new_org_user.uuid),
                         &org_name,
                         Some(headers.user.email.clone()),
-                    )?;
+                    )
+                    .await?;
                 }
             }
         }
