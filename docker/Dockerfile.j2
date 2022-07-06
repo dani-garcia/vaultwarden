@@ -70,13 +70,13 @@
 # - From https://hub.docker.com/r/vaultwarden/web-vault/tags,
 #   click the tag name to view the digest of the image it currently points to.
 # - From the command line:
-#     $ docker pull vaultwarden/web-vault:v{{ vault_version }}
-#     $ docker image inspect --format "{{ '{{' }}.RepoDigests}}" vaultwarden/web-vault:v{{ vault_version }}
+#     $ docker pull vaultwarden/web-vault:{{ vault_version }}
+#     $ docker image inspect --format "{{ '{{' }}.RepoDigests}}" vaultwarden/web-vault:{{ vault_version }}
 #     [vaultwarden/web-vault@{{ vault_image_digest }}]
 #
 # - Conversely, to get the tag name from the digest:
 #     $ docker image inspect --format "{{ '{{' }}.RepoTags}}" vaultwarden/web-vault@{{ vault_image_digest }}
-#     [vaultwarden/web-vault:v{{ vault_version }}]
+#     [vaultwarden/web-vault:{{ vault_version }}]
 #
 FROM vaultwarden/web-vault@{{ vault_image_digest }} as vault
 
