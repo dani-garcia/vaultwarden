@@ -22,7 +22,7 @@
 #
 # - Conversely, to get the tag name from the digest:
 #     $ docker image inspect --format "{{.RepoTags}}" vaultwarden/web-vault@sha256:9b8b05dfcc14ebc6b2b488f54042d2a38a69b9e80e21b1ca0e4bf45470dd33ef
-#     [vaultwarden/web-vault:vv2022.5.2]
+#     [vaultwarden/web-vault:v2022.5.2]
 #
 FROM vaultwarden/web-vault@sha256:9b8b05dfcc14ebc6b2b488f54042d2a38a69b9e80e21b1ca0e4bf45470dd33ef as vault
 
