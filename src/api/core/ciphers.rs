@@ -998,7 +998,11 @@ async fn save_attachment(
         attachment.save(&conn).await.expect("Error saving attachment");
     }
 
-    data.data.persist_to(file_path).await?;
+    if CONFIG.uploads_use_copy() {
+        data.data.move_copy_to(file_path).await?;
+    } else {
+        data.data.persist_to(file_path).await?;
+    }
 
     nt.send_cipher_update(UpdateType::CipherUpdate, &cipher, &cipher.update_users_revision(&conn).await).await;
 
