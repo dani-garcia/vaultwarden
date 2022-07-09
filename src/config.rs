@@ -343,8 +343,6 @@ make_config! {
         rsa_key_filename:       String, false,  auto,   |c| format!("{}/{}", c.data_folder, "rsa_key");
         /// Web vault folder
         web_vault_folder:       String, false,  def,    "web-vault/".to_string();
-        /// Uploading files uses move_copy_to instead of persist_to to support cross-device scenarios where having tmp_folder on the same drive is undesirable. i.e. fuse-mounted S3.
-        uploads_use_copy:       bool,   false,  def,     false;
     },
     ws {
         /// Enable websocket notifications

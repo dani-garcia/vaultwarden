@@ -17,7 +17,7 @@ use crate::{
     CONFIG,
 };
 
-use futures::{stream, stream::StreamExt};
+use futures::{stream, stream::StreamExt, TryFutureExt};
 
 pub fn routes() -> Vec<Route> {
     // Note that many routes have an `admin` variant; this seems to be
@@ -998,11 +998,9 @@ async fn save_attachment(
         attachment.save(&conn).await.expect("Error saving attachment");
     }
 
-    if CONFIG.uploads_use_copy() {
-        data.data.move_copy_to(file_path).await?;
-    } else {
-        data.data.persist_to(file_path).await?;
-    }
+    data.data.persist_to(&file_path)
+        .unwrap_or_else(data.data.move_copy_to(&file_path))
+        .await?;
 
     nt.send_cipher_update(UpdateType::CipherUpdate, &cipher, &cipher.update_users_revision(&conn).await).await;
 
