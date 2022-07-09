@@ -2,20 +2,20 @@ use std::collections::{HashMap, HashSet};
 
 use chrono::{NaiveDateTime, Utc};
 use futures::{stream, stream::StreamExt};
+use rocket::fs::TempFile;
+use rocket::serde::json::Json;
 use rocket::{
     form::{Form, FromForm},
     Route,
 };
-use rocket::fs::TempFile;
-use rocket::serde::json::Json;
 use serde_json::Value;
 
 use crate::{
     api::{self, EmptyResult, JsonResult, JsonUpcase, Notify, PasswordData, UpdateType},
     auth::Headers,
-    CONFIG,
     crypto,
-    db::{DbConn, DbPool, models::*},
+    db::{models::*, DbConn, DbPool},
+    CONFIG,
 };
 
 use super::folders::FolderData;
@@ -805,7 +805,7 @@ async fn share_cipher_by_uuid(
         nt,
         UpdateType::CipherUpdate,
     )
-        .await?;
+    .await?;
 
     Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, conn).await))
 }
@@ -1001,7 +1001,7 @@ async fn save_attachment(
 
     match data.data.persist_to(&file_path).await {
         Ok(_result) => {}
-        Err(_error) => data.data.move_copy_to(&file_path).await?
+        Err(_error) => data.data.move_copy_to(&file_path).await?,
     }
 
     nt.send_cipher_update(UpdateType::CipherUpdate, &cipher, &cipher.update_users_revision(&conn).await).await;
