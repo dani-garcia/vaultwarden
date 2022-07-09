@@ -1,7 +1,6 @@
 use std::path::Path;
 
 use chrono::{DateTime, Duration, Utc};
-use futures::TryFutureExt;
 use rocket::form::Form;
 use rocket::fs::NamedFile;
 use rocket::fs::TempFile;
@@ -11,9 +10,9 @@ use serde_json::Value;
 use crate::{
     api::{ApiResult, EmptyResult, JsonResult, JsonUpcase, Notify, NumberOrString, UpdateType},
     auth::{ClientIp, Headers, Host},
-    db::{models::*, DbConn, DbPool},
-    util::SafeString,
     CONFIG,
+    db::{DbConn, DbPool, models::*},
+    util::SafeString,
 };
 
 const SEND_INACCESSIBLE_MSG: &str = "Send does not exist or is no longer available";
@@ -227,9 +226,11 @@ async fn post_send_file(data: Form<UploadData<'_>>, headers: Headers, conn: DbCo
     let file_path = folder_path.join(&file_id);
     tokio::fs::create_dir_all(&folder_path).await?;
 
-    data.persist_to(&file_path)
-        .unwrap_or_else(data.move_copy_to(&file_path))
-        .await?;
+
+    match data.persist_to(&file_path).await {
+        Ok(_result) => {}
+        Err(_error) => data.move_copy_to(&file_path).await?
+    }
 
     let mut data_value: Value = serde_json::from_str(&send.data)?;
     if let Some(o) = data_value.as_object_mut() {
