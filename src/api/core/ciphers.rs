@@ -999,9 +999,8 @@ async fn save_attachment(
         attachment.save(&conn).await.expect("Error saving attachment");
     }
 
-    match data.data.persist_to(&file_path).await {
-        Ok(_result) => {}
-        Err(_error) => data.data.move_copy_to(&file_path).await?,
+    if let Err(_err) = data.data.persist_to(&file_path).await {
+        data.data.move_copy_to(file_path).await?
     }
 
     nt.send_cipher_update(UpdateType::CipherUpdate, &cipher, &cipher.update_users_revision(&conn).await).await;

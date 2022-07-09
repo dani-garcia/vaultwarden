@@ -226,9 +226,8 @@ async fn post_send_file(data: Form<UploadData<'_>>, headers: Headers, conn: DbCo
     let file_path = folder_path.join(&file_id);
     tokio::fs::create_dir_all(&folder_path).await?;
 
-    match data.persist_to(&file_path).await {
-        Ok(_result) => {}
-        Err(_error) => data.move_copy_to(&file_path).await?,
+    if let Err(_err) = data.persist_to(&file_path).await {
+        data.move_copy_to(file_path).await?
     }
 
     let mut data_value: Value = serde_json::from_str(&send.data)?;
