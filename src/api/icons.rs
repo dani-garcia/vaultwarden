@@ -51,7 +51,7 @@ static CLIENT: Lazy<Client> = Lazy::new(|| {
 
     // Reuse the client between requests
     let client = get_reqwest_client_builder()
-        .cookie_provider(cookie_store.clone())
+        .cookie_provider(Arc::clone(&cookie_store))
         .timeout(Duration::from_secs(CONFIG.icon_download_timeout()))
         .default_headers(default_headers.clone());
 
@@ -77,7 +77,7 @@ static ICON_SIZE_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?x)(\d+)\D*(\d+
 static ICON_BLACKLIST_REGEX: Lazy<dashmap::DashMap<String, Regex>> = Lazy::new(dashmap::DashMap::new);
 
 async fn icon_redirect(domain: &str, template: &str) -> Option<Redirect> {
-    if !is_valid_domain(domain).await {
+    if !is_valid_domain(domain) {
         warn!("Invalid domain: {}", domain);
         return None;
     }
@@ -123,7 +123,7 @@ async fn icon_google(domain: String) -> Option<Redirect> {
 async fn icon_internal(domain: String) -> Cached<(ContentType, Vec<u8>)> {
     const FALLBACK_ICON: &[u8] = include_bytes!("../static/images/fallback-icon.png");
 
-    if !is_valid_domain(&domain).await {
+    if !is_valid_domain(&domain) {
         warn!("Invalid domain: {}", domain);
         return Cached::ttl(
             (ContentType::new("image", "png"), FALLBACK_ICON.to_vec()),
@@ -144,7 +144,7 @@ async fn icon_internal(domain: String) -> Cached<(ContentType, Vec<u8>)> {
 ///
 /// This does some manual checks and makes use of Url to do some basic checking.
 /// domains can't be larger then 63 characters (not counting multiple subdomains) according to the RFC's, but we limit the total size to 255.
-async fn is_valid_domain(domain: &str) -> bool {
+fn is_valid_domain(domain: &str) -> bool {
     const ALLOWED_CHARS: &str = "_-.";
 
     // If parsing the domain fails using Url, it will not work with reqwest.
@@ -278,6 +278,7 @@ mod tests {
 
 use cached::proc_macro::cached;
 #[cached(key = "String", convert = r#"{ domain.to_string() }"#, size = 16, time = 60)]
+#[allow(clippy::unused_async)] // This is needed because cached causes a false-positive here.
 async fn is_domain_blacklisted(domain: &str) -> bool {
     if CONFIG.icon_blacklist_non_global_ips() {
         if let Ok(s) = lookup_host((domain, 0)).await {
@@ -304,7 +305,7 @@ async fn is_domain_blacklisted(domain: &str) -> bool {
             // Generate the regex to store in too the Lazy Static HashMap.
             let blacklist_regex = Regex::new(&blacklist).unwrap();
             let is_match = blacklist_regex.is_match(domain);
-            ICON_BLACKLIST_REGEX.insert(blacklist.to_string(), blacklist_regex);
+            ICON_BLACKLIST_REGEX.insert(blacklist.clone(), blacklist_regex);
 
             is_match
         };
@@ -326,7 +327,7 @@ async fn get_icon(domain: &str) -> Option<(Vec<u8>, String)> {
     }
 
     if let Some(icon) = get_cached_icon(&path).await {
-        let icon_type = match get_icon_type(&icon).await {
+        let icon_type = match get_icon_type(&icon) {
             Some(x) => x,
             _ => "x-icon",
         };
@@ -416,7 +417,7 @@ impl Icon {
     }
 }
 
-async fn get_favicons_node(
+fn get_favicons_node(
     dom: InfallibleTokenizer<StringReader<'_>, FaviconEmitter>,
     icons: &mut Vec<Icon>,
     url: &url::Url,
@@ -468,7 +469,7 @@ async fn get_favicons_node(
                 } else {
                     ""
                 };
-                let priority = get_icon_priority(full_href.as_str(), sizes).await;
+                let priority = get_icon_priority(full_href.as_str(), sizes);
                 icons.push(Icon::new(priority, full_href.to_string()));
             }
         };
@@ -512,7 +513,7 @@ async fn get_icon_url(domain: &str) -> Result<IconUrlResult, Error> {
                     tld = domain_parts.next_back().unwrap(),
                     base = domain_parts.next_back().unwrap()
                 );
-                if is_valid_domain(&base_domain).await {
+                if is_valid_domain(&base_domain) {
                     let sslbase = format!("https://{base_domain}");
                     let httpbase = format!("http://{base_domain}");
                     debug!("[get_icon_url]: Trying without subdomains '{base_domain}'");
@@ -523,7 +524,7 @@ async fn get_icon_url(domain: &str) -> Result<IconUrlResult, Error> {
             // When the domain is not an IP, and has less then 2 dots, try to add www. infront of it.
             } else if is_ip.is_err() && domain.matches('.').count() < 2 {
                 let www_domain = format!("www.{domain}");
-                if is_valid_domain(&www_domain).await {
+                if is_valid_domain(&www_domain) {
                     let sslwww = format!("https://{www_domain}");
                     let httpwww = format!("http://{www_domain}");
                     debug!("[get_icon_url]: Trying with www. prefix '{www_domain}'");
@@ -555,7 +556,7 @@ async fn get_icon_url(domain: &str) -> Result<IconUrlResult, Error> {
         let limited_reader = stream_to_bytes_limit(content, 384 * 1024).await?.to_vec();
 
         let dom = Tokenizer::new_with_emitter(limited_reader.to_reader(), FaviconEmitter::default()).infallible();
-        get_favicons_node(dom, &mut iconlist, &url).await;
+        get_favicons_node(dom, &mut iconlist, &url);
     } else {
         // Add the default favicon.ico to the list with just the given domain
         iconlist.push(Icon::new(35, format!("{ssldomain}/favicon.ico")));
@@ -603,12 +604,12 @@ async fn get_page_with_referer(url: &str, referer: &str) -> Result<Response, Err
 ///
 /// # Example
 /// ```
-/// priority1 = get_icon_priority("http://example.com/path/to/a/favicon.png", "32x32").await;
-/// priority2 = get_icon_priority("https://example.com/path/to/a/favicon.ico", "").await;
+/// priority1 = get_icon_priority("http://example.com/path/to/a/favicon.png", "32x32");
+/// priority2 = get_icon_priority("https://example.com/path/to/a/favicon.ico", "");
 /// ```
-async fn get_icon_priority(href: &str, sizes: &str) -> u8 {
+fn get_icon_priority(href: &str, sizes: &str) -> u8 {
     // Check if there is a dimension set
-    let (width, height) = parse_sizes(sizes).await;
+    let (width, height) = parse_sizes(sizes);
 
     // Check if there is a size given
     if width != 0 && height != 0 {
@@ -650,11 +651,11 @@ async fn get_icon_priority(href: &str, sizes: &str) -> u8 {
 ///
 /// # Example
 /// ```
-/// let (width, height) = parse_sizes("64x64").await; // (64, 64)
-/// let (width, height) = parse_sizes("x128x128").await; // (128, 128)
-/// let (width, height) = parse_sizes("32").await; // (0, 0)
+/// let (width, height) = parse_sizes("64x64"); // (64, 64)
+/// let (width, height) = parse_sizes("x128x128"); // (128, 128)
+/// let (width, height) = parse_sizes("32"); // (0, 0)
 /// ```
-async fn parse_sizes(sizes: &str) -> (u16, u16) {
+fn parse_sizes(sizes: &str) -> (u16, u16) {
     let mut width: u16 = 0;
     let mut height: u16 = 0;
 
@@ -698,7 +699,7 @@ async fn download_icon(domain: &str) -> Result<(Bytes, Option<&str>), Error> {
                     // Also check if the size is atleast 67 bytes, which seems to be the smallest png i could create
                     if body.len() >= 67 {
                         // Check if the icon type is allowed, else try an icon from the list.
-                        icon_type = get_icon_type(&body).await;
+                        icon_type = get_icon_type(&body);
                         if icon_type.is_none() {
                             debug!("Icon from {} data:image uri, is not a valid image type", domain);
                             continue;
@@ -716,7 +717,7 @@ async fn download_icon(domain: &str) -> Result<(Bytes, Option<&str>), Error> {
                     buffer = stream_to_bytes_limit(res, 5120 * 1024).await?; // 5120KB/5MB for each icon max (Same as icons.bitwarden.net)
 
                     // Check if the icon type is allowed, else try an icon from the list.
-                    icon_type = get_icon_type(&buffer).await;
+                    icon_type = get_icon_type(&buffer);
                     if icon_type.is_none() {
                         buffer.clear();
                         debug!("Icon from {}, is not a valid image type", icon.href);
@@ -751,7 +752,7 @@ async fn save_icon(path: &str, icon: &[u8]) {
     }
 }
 
-async fn get_icon_type(bytes: &[u8]) -> Option<&'static str> {
+fn get_icon_type(bytes: &[u8]) -> Option<&'static str> {
     match bytes {
         [137, 80, 78, 71, ..] => Some("png"),
         [0, 0, 1, 0, ..] => Some("x-icon"),

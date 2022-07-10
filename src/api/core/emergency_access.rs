@@ -761,7 +761,7 @@ pub async fn emergency_request_timeout_job(pool: DbPool) {
         for mut emer in emergency_access_list {
             if emer.recovery_initiated_at.is_some()
                 && Utc::now().naive_utc()
-                    >= emer.recovery_initiated_at.unwrap() + Duration::days(emer.wait_time_days as i64)
+                    >= emer.recovery_initiated_at.unwrap() + Duration::days(i64::from(emer.wait_time_days))
             {
                 emer.status = EmergencyAccessStatus::RecoveryApproved as i32;
                 emer.save(&conn).await.expect("Cannot save emergency access on job");
@@ -812,7 +812,7 @@ pub async fn emergency_notification_reminder_job(pool: DbPool) {
         for mut emer in emergency_access_list {
             if (emer.recovery_initiated_at.is_some()
                 && Utc::now().naive_utc()
-                    >= emer.recovery_initiated_at.unwrap() + Duration::days((emer.wait_time_days as i64) - 1))
+                    >= emer.recovery_initiated_at.unwrap() + Duration::days((i64::from(emer.wait_time_days)) - 1))
                 && (emer.last_notification_at.is_none()
                     || (emer.last_notification_at.is_some()
                         && Utc::now().naive_utc() >= emer.last_notification_at.unwrap() + Duration::days(1)))

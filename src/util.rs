@@ -300,7 +300,7 @@ impl Fairing for BetterLogging {
 //
 use std::{
     fs::{self, File},
-    io::{Read, Result as IOResult},
+    io::Result as IOResult,
     path::Path,
 };
 
@@ -309,11 +309,7 @@ pub fn file_exists(path: &str) -> bool {
 }
 
 pub fn read_file(path: &str) -> IOResult<Vec<u8>> {
-    let mut contents: Vec<u8> = Vec::new();
-
-    let mut file = File::open(Path::new(path))?;
-    file.read_to_end(&mut contents)?;
-
+    let contents = fs::read(Path::new(path))?;
     Ok(contents)
 }
 
@@ -326,11 +322,7 @@ pub fn write_file(path: &str, content: &[u8]) -> Result<(), crate::error::Error>
 }
 
 pub fn read_file_string(path: &str) -> IOResult<String> {
-    let mut contents = String::new();
-
-    let mut file = File::open(Path::new(path))?;
-    file.read_to_string(&mut contents)?;
-
+    let contents = fs::read_to_string(Path::new(path))?;
     Ok(contents)
 }
 

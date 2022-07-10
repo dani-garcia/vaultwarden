@@ -45,7 +45,7 @@ pub enum SendType {
 }
 
 impl Send {
-    pub async fn new(atype: i32, name: String, data: String, akey: String, deletion_date: NaiveDateTime) -> Self {
+    pub fn new(atype: i32, name: String, data: String, akey: String, deletion_date: NaiveDateTime) -> Self {
         let now = Utc::now().naive_utc();
 
         Self {
