@@ -1,6 +1,30 @@
-#![forbid(unsafe_code)]
-#![warn(rust_2018_idioms)]
-#![warn(rust_2021_compatibility)]
+#![forbid(unsafe_code, non_ascii_idents)]
+#![deny(
+    rust_2018_idioms,
+    rust_2021_compatibility,
+    noop_method_call,
+    pointer_structural_match,
+    trivial_casts,
+    trivial_numeric_casts,
+    unused_import_braces,
+    clippy::cast_lossless,
+    clippy::clone_on_ref_ptr,
+    clippy::equatable_if_let,
+    clippy::float_cmp_const,
+    clippy::inefficient_to_string,
+    clippy::linkedlist,
+    clippy::macro_use_imports,
+    clippy::manual_assert,
+    clippy::match_wildcard_for_single_variants,
+    clippy::mem_forget,
+    clippy::string_add_assign,
+    clippy::string_to_string,
+    clippy::unnecessary_join,
+    clippy::unnecessary_self_imports,
+    clippy::unused_async,
+    clippy::verbose_file_reads,
+    clippy::zero_sized_map_values
+)]
 #![cfg_attr(feature = "unstable", feature(ip))]
 // The recursion_limit is mainly triggered by the json!() macro.
 // The more key/value pairs there are the more recursion occurs.

@@ -171,7 +171,7 @@ impl User {
     pub fn set_stamp_exception(&mut self, route_exception: Vec<String>) {
         let stamp_exception = UserStampException {
             routes: route_exception,
-            security_stamp: self.security_stamp.to_string(),
+            security_stamp: self.security_stamp.clone(),
             expire: (Utc::now().naive_utc() + Duration::minutes(2)).timestamp(),
         };
         self.stamp_exception = Some(serde_json::to_string(&stamp_exception).unwrap_or_default());
