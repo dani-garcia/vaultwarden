@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use chrono::{NaiveDateTime, Utc};
+use futures::{stream, stream::StreamExt};
 use rocket::fs::TempFile;
 use rocket::serde::json::Json;
 use rocket::{
@@ -17,7 +18,7 @@ use crate::{
     CONFIG,
 };
 
-use futures::{stream, stream::StreamExt};
+use super::folders::FolderData;
 
 pub fn routes() -> Vec<Route> {
     // Note that many routes have an `admin` variant; this seems to be
@@ -212,7 +213,8 @@ pub struct CipherData {
     Card = 3,
     Identity = 4
     */
-    pub Type: i32, // TODO: Change this to NumberOrString
+    pub Type: i32,
+    // TODO: Change this to NumberOrString
     pub Name: String,
     Notes: Option<String>,
     Fields: Option<Value>,
@@ -230,7 +232,8 @@ pub struct CipherData {
 
     // These are used during key rotation
     #[serde(rename = "Attachments")]
-    _Attachments: Option<Value>, // Unused, contains map of {id: filename}
+    _Attachments: Option<Value>,
+    // Unused, contains map of {id: filename}
     Attachments2: Option<HashMap<String, Attachments2Data>>,
 
     // The revision datetime (in ISO 8601 format) of the client's local copy
@@ -469,8 +472,6 @@ pub async fn update_cipher_from_data(
 
     Ok(())
 }
-
-use super::folders::FolderData;
 
 #[derive(Deserialize)]
 #[allow(non_snake_case)]
@@ -998,7 +999,9 @@ async fn save_attachment(
         attachment.save(&conn).await.expect("Error saving attachment");
     }
 
-    data.data.persist_to(file_path).await?;
+    if let Err(_err) = data.data.persist_to(&file_path).await {
+        data.data.move_copy_to(file_path).await?
+    }
 
     nt.send_cipher_update(UpdateType::CipherUpdate, &cipher, &cipher.update_users_revision(&conn).await).await;
 
