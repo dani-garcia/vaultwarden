@@ -214,7 +214,6 @@ pub struct CipherData {
     Identity = 4
     */
     pub Type: i32,
-    // TODO: Change this to NumberOrString
     pub Name: String,
     Notes: Option<String>,
     Fields: Option<Value>,
@@ -231,9 +230,9 @@ pub struct CipherData {
     PasswordHistory: Option<Value>,
 
     // These are used during key rotation
+    // 'Attachments' is unused, contains map of {id: filename}
     #[serde(rename = "Attachments")]
     _Attachments: Option<Value>,
-    // Unused, contains map of {id: filename}
     Attachments2: Option<HashMap<String, Attachments2Data>>,
 
     // The revision datetime (in ISO 8601 format) of the client's local copy
