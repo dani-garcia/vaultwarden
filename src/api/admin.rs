@@ -427,7 +427,7 @@ async fn update_user_org_type(data: Json<UserOrgTypeData>, _token: AdminToken, c
         }
     }
 
-    user_to_edit.atype = new_type as i32;
+    user_to_edit.atype = new_type;
     user_to_edit.save(&conn).await
 }
 

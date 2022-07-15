@@ -147,7 +147,7 @@ async fn activate_yubikey(data: JsonUpcase<EnableYubikeyData>, headers: Headers,
         verify_yubikey_otp(yubikey.to_owned()).map_res("Invalid Yubikey OTP provided")?;
     }
 
-    let yubikey_ids: Vec<String> = yubikeys.into_iter().map(|x| (&x[..12]).to_owned()).collect();
+    let yubikey_ids: Vec<String> = yubikeys.into_iter().map(|x| (x[..12]).to_owned()).collect();
 
     let yubikey_metadata = YubikeyMetadata {
         Keys: yubikey_ids,

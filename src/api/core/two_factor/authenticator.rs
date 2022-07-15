@@ -139,7 +139,7 @@ pub async fn validate_totp_code(
     // The amount of steps back and forward in time
     // Also check if we need to disable time drifted TOTP codes.
     // If that is the case, we set the steps to 0 so only the current TOTP is valid.
-    let steps = !CONFIG.authenticator_disable_time_drift() as i64;
+    let steps = i64::from(!CONFIG.authenticator_disable_time_drift());
 
     // Get the current system time in UNIX Epoch (UTC)
     let current_time = chrono::Utc::now();
@@ -154,7 +154,7 @@ pub async fn validate_totp_code(
         let generated = totp_custom::<Sha1>(30, 6, &decoded_secret, time);
 
         // Check the the given code equals the generated and if the time_step is larger then the one last used.
-        if generated == totp_code && time_step > twofactor.last_used as i64 {
+        if generated == totp_code && time_step > i64::from(twofactor.last_used) {
             // If the step does not equals 0 the time is drifted either server or client side.
             if step != 0 {
                 warn!("TOTP Time drift detected. The step offset is {}", step);
@@ -165,7 +165,7 @@ pub async fn validate_totp_code(
             twofactor.last_used = time_step as i32;
             twofactor.save(conn).await?;
             return Ok(());
-        } else if generated == totp_code && time_step <= twofactor.last_used as i64 {
+        } else if generated == totp_code && time_step <= i64::from(twofactor.last_used) {
             warn!("This TOTP or a TOTP code within {} steps back or forward has already been used!", steps);
             err!(format!("Invalid TOTP code! Server time: {} IP: {}", current_time.format("%F %T UTC"), ip.ip));
         }

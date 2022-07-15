@@ -913,8 +913,8 @@ async fn save_attachment(
     // In the v2 API, the attachment record has already been created,
     // so the size limit needs to be adjusted to account for that.
     let size_adjust = match &attachment {
-        None => 0,                     // Legacy API
-        Some(a) => a.file_size as i64, // v2 API
+        None => 0,                         // Legacy API
+        Some(a) => i64::from(a.file_size), // v2 API
     };
 
     let size_limit = if let Some(ref user_uuid) = cipher.user_uuid {
@@ -1496,7 +1496,7 @@ pub enum CipherSyncType {
 impl CipherSyncData {
     pub async fn new(user_uuid: &str, ciphers: &Vec<Cipher>, sync_type: CipherSyncType, conn: &DbConn) -> Self {
         // Generate a list of Cipher UUID's to be used during a query filter with an eq_any.
-        let cipher_uuids = stream::iter(ciphers).map(|c| c.uuid.to_string()).collect::<Vec<String>>().await;
+        let cipher_uuids = stream::iter(ciphers).map(|c| c.uuid.clone()).collect::<Vec<String>>().await;
 
         let mut cipher_folders: HashMap<String, String> = HashMap::new();
         let mut cipher_favorites: HashSet<String> = HashSet::new();
@@ -1518,7 +1518,7 @@ impl CipherSyncData {
         // Generate a list of Cipher UUID's containing a Vec with one or more Attachment records
         let mut cipher_attachments: HashMap<String, Vec<Attachment>> = HashMap::new();
         for attachment in Attachment::find_all_by_ciphers(&cipher_uuids, conn).await {
-            cipher_attachments.entry(attachment.cipher_uuid.to_string()).or_default().push(attachment);
+            cipher_attachments.entry(attachment.cipher_uuid.clone()).or_default().push(attachment);
         }
 
         // Generate a HashMap with the Cipher UUID as key and one or more Collection UUID's
@@ -1530,14 +1530,14 @@ impl CipherSyncData {
         // Generate a HashMap with the Organization UUID as key and the UserOrganization record
         let user_organizations: HashMap<String, UserOrganization> =
             stream::iter(UserOrganization::find_by_user(user_uuid, conn).await)
-                .map(|uo| (uo.org_uuid.to_string(), uo))
+                .map(|uo| (uo.org_uuid.clone(), uo))
                 .collect()
                 .await;
 
         // Generate a HashMap with the User_Collections UUID as key and the CollectionUser record
         let user_collections: HashMap<String, CollectionUser> =
             stream::iter(CollectionUser::find_by_user(user_uuid, conn).await)
-                .map(|uc| (uc.collection_uuid.to_string(), uc))
+                .map(|uc| (uc.collection_uuid.clone(), uc))
                 .collect()
                 .await;
 

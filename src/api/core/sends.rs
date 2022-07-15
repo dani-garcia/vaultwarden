@@ -95,7 +95,7 @@ async fn enforce_disable_hide_email_policy(data: &SendData, headers: &Headers, c
     Ok(())
 }
 
-async fn create_send(data: SendData, user_uuid: String) -> ApiResult<Send> {
+fn create_send(data: SendData, user_uuid: String) -> ApiResult<Send> {
     let data_val = if data.Type == SendType::Text as i32 {
         data.Text
     } else if data.Type == SendType::File as i32 {
@@ -117,7 +117,7 @@ async fn create_send(data: SendData, user_uuid: String) -> ApiResult<Send> {
         );
     }
 
-    let mut send = Send::new(data.Type, data.Name, data_str, data.Key, data.DeletionDate.naive_utc()).await;
+    let mut send = Send::new(data.Type, data.Name, data_str, data.Key, data.DeletionDate.naive_utc());
     send.user_uuid = Some(user_uuid);
     send.notes = data.Notes;
     send.max_access_count = match data.MaxAccessCount {
@@ -171,7 +171,7 @@ async fn post_send(data: JsonUpcase<SendData>, headers: Headers, conn: DbConn, n
         err!("File sends should use /api/sends/file")
     }
 
-    let mut send = create_send(data, headers.user.uuid).await?;
+    let mut send = create_send(data, headers.user.uuid)?;
     send.save(&conn).await?;
     nt.send_send_update(UpdateType::SyncSendCreate, &send, &send.update_users_revision(&conn).await).await;
 
@@ -211,7 +211,7 @@ async fn post_send_file(data: Form<UploadData<'_>>, headers: Headers, conn: DbCo
         None => SIZE_525_MB,
     };
 
-    let mut send = create_send(model, headers.user.uuid).await?;
+    let mut send = create_send(model, headers.user.uuid)?;
     if send.atype != SendType::File as i32 {
         err!("Send content is not a file");
     }
