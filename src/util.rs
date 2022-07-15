@@ -308,22 +308,12 @@ pub fn file_exists(path: &str) -> bool {
     Path::new(path).exists()
 }
 
-pub fn read_file(path: &str) -> IOResult<Vec<u8>> {
-    let contents = fs::read(Path::new(path))?;
-    Ok(contents)
-}
-
 pub fn write_file(path: &str, content: &[u8]) -> Result<(), crate::error::Error> {
     use std::io::Write;
     let mut f = File::create(path)?;
     f.write_all(content)?;
     f.flush()?;
     Ok(())
-}
-
-pub fn read_file_string(path: &str) -> IOResult<String> {
-    let contents = fs::read_to_string(Path::new(path))?;
-    Ok(contents)
 }
 
 pub fn delete_file(path: &str) -> IOResult<()> {

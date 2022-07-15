@@ -536,15 +536,14 @@ async fn get_release_info(has_http_access: bool, running_within_docker: bool) ->
 
 #[get("/diagnostics")]
 async fn diagnostics(_token: AdminToken, ip_header: IpHeader, conn: DbConn) -> ApiResult<Html<String>> {
-    use crate::util::read_file_string;
     use chrono::prelude::*;
     use std::net::ToSocketAddrs;
 
     // Get current running versions
     let web_vault_version: WebVaultVersion =
-        match read_file_string(&format!("{}/{}", CONFIG.web_vault_folder(), "vw-version.json")) {
+        match std::fs::read_to_string(&format!("{}/{}", CONFIG.web_vault_folder(), "vw-version.json")) {
             Ok(s) => serde_json::from_str(&s)?,
-            _ => match read_file_string(&format!("{}/{}", CONFIG.web_vault_folder(), "version.json")) {
+            _ => match std::fs::read_to_string(&format!("{}/{}", CONFIG.web_vault_folder(), "version.json")) {
                 Ok(s) => serde_json::from_str(&s)?,
                 _ => WebVaultVersion {
                     version: String::from("Version file missing"),

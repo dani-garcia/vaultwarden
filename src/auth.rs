@@ -11,7 +11,6 @@ use serde::ser::Serialize;
 
 use crate::{
     error::{Error, MapResult},
-    util::read_file,
     CONFIG,
 };
 
@@ -30,13 +29,13 @@ static JWT_ADMIN_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|admin", CONFIG.
 static JWT_SEND_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|send", CONFIG.domain_origin()));
 
 static PRIVATE_RSA_KEY_VEC: Lazy<Vec<u8>> = Lazy::new(|| {
-    read_file(&CONFIG.private_rsa_key()).unwrap_or_else(|e| panic!("Error loading private RSA Key.\n{}", e))
+    std::fs::read(&CONFIG.private_rsa_key()).unwrap_or_else(|e| panic!("Error loading private RSA Key.\n{}", e))
 });
 static PRIVATE_RSA_KEY: Lazy<EncodingKey> = Lazy::new(|| {
     EncodingKey::from_rsa_pem(&PRIVATE_RSA_KEY_VEC).unwrap_or_else(|e| panic!("Error decoding private RSA Key.\n{}", e))
 });
 static PUBLIC_RSA_KEY_VEC: Lazy<Vec<u8>> = Lazy::new(|| {
-    read_file(&CONFIG.public_rsa_key()).unwrap_or_else(|e| panic!("Error loading public RSA Key.\n{}", e))
+    std::fs::read(&CONFIG.public_rsa_key()).unwrap_or_else(|e| panic!("Error loading public RSA Key.\n{}", e))
 });
 static PUBLIC_RSA_KEY: Lazy<DecodingKey> = Lazy::new(|| {
     DecodingKey::from_rsa_pem(&PUBLIC_RSA_KEY_VEC).unwrap_or_else(|e| panic!("Error decoding public RSA Key.\n{}", e))

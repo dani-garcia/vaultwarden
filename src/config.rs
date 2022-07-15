@@ -91,8 +91,7 @@ macro_rules! make_config {
             }
 
             fn from_file(path: &str) -> Result<Self, Error> {
-                use crate::util::read_file_string;
-                let config_str = read_file_string(path)?;
+                let config_str = std::fs::read_to_string(path)?;
                 serde_json::from_str(&config_str).map_err(Into::into)
             }
 

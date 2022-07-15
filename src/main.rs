@@ -328,7 +328,7 @@ fn check_rsa_keys() -> Result<(), crate::error::Error> {
     }
 
     if !util::file_exists(&pub_path) {
-        let rsa_key = openssl::rsa::Rsa::private_key_from_pem(&util::read_file(&priv_path)?)?;
+        let rsa_key = openssl::rsa::Rsa::private_key_from_pem(&std::fs::read(&priv_path)?)?;
 
         let pub_key = rsa_key.public_key_to_pem()?;
         crate::util::write_file(&pub_path, &pub_key)?;
