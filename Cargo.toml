@@ -3,7 +3,7 @@ name = "vaultwarden"
 version = "1.0.0"
 authors = ["Daniel García <dani-garcia@users.noreply.github.com>"]
 edition = "2021"
-rust-version = "1.60"
+rust-version = "1.59"
 resolver = "2"
 
 repository = "https://github.com/dani-garcia/vaultwarden"
@@ -39,7 +39,7 @@ log = "0.4.17"
 fern = { version = "0.6.1", features = ["syslog-6"] }
 tracing = { version = "0.1.35", features = ["log"] } # Needed to have lettre and webauthn-rs trace logging to work
 
-backtrace = "0.3.65" # Logging panics to logfile instead stderr only
+backtrace = "0.3.66" # Logging panics to logfile instead stderr only
 
 # A `dotenv` implementation for Rust
 dotenvy = { version = "0.15.1", default-features = false }
@@ -55,16 +55,16 @@ num-derive = "0.3.3"
 rocket = { version = "0.5.0-rc.2", features = ["tls", "json"], default-features = false }
 
 # WebSockets libraries
-tokio-tungstenite = "0.17.1"
+tokio-tungstenite = "0.17.2"
 rmpv = "1.0.0" # MessagePack library
 dashmap = "5.3.4" # Concurrent hashmap implementation
 
 # Async futures
 futures = "0.3.21"
-tokio = { version = "1.19.2", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time"] }
+tokio = { version = "1.20.0", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time"] }
 
 # A generic serialization/deserialization framework
-serde = { version = "1.0.138", features = ["derive"] }
+serde = { version = "1.0.139", features = ["derive"] }
 serde_json = "1.0.82"
 
 # A safe, extensible ORM and Query builder
@@ -112,7 +112,7 @@ lettre = { version = "0.10.0", features = ["smtp-transport", "builder", "serde",
 percent-encoding = "2.1.0" # URL encoding library used for URL's in the emails
 
 # Template library
-handlebars = { version = "4.3.1", features = ["dir_source"] }
+handlebars = { version = "4.3.2", features = ["dir_source"] }
 
 # HTTP client
 reqwest = { version = "0.11.11", features = ["stream", "json", "gzip", "brotli", "socks", "cookies", "trust-dns"] }
@@ -129,7 +129,7 @@ cookie = "0.16.0"
 cookie_store = "0.16.1"
 
 # Used by U2F, JWT and Postgres
-openssl = "0.10.40"
+openssl = "0.10.41"
 
 # CLI argument parsing
 pico-args = "0.5.0"
