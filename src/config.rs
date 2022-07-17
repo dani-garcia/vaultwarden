@@ -463,6 +463,10 @@ make_config! {
         /// service is set, an icon request to Vaultwarden will return an HTTP redirect to the
         /// corresponding icon at the external service.
         icon_service:           String, false,  def,    "internal".to_string();
+        /// Internal
+        _icon_service_url:      String, false,  gen,    |c| generate_icon_service_url(&c.icon_service);
+        /// Internal
+        _icon_service_csp:      String, false,  gen,    |c| generate_icon_service_csp(&c.icon_service, &c._icon_service_url);
         /// Icon redirect code |> The HTTP status code to use for redirects to an external icon service.
         /// The supported codes are 301 (legacy permanent), 302 (legacy temporary), 307 (temporary), and 308 (permanent).
         /// Temporary redirects are useful while testing different icon services, but once a service
@@ -745,6 +749,34 @@ fn extract_url_path(url: &str) -> String {
             // We already print it in the method above, no need to do it again
             String::new()
         }
+    }
+}
+
+/// Generate the correct URL for the icon service.
+/// This will be used within icons.rs to call the external icon service.
+fn generate_icon_service_url(icon_service: &str) -> String {
+    match icon_service {
+        "internal" => "".to_string(),
+        "bitwarden" => "https://icons.bitwarden.net/{}/icon.png".to_string(),
+        "duckduckgo" => "https://icons.duckduckgo.com/ip3/{}.ico".to_string(),
+        "google" => "https://www.google.com/s2/favicons?domain={}&sz=32".to_string(),
+        _ => icon_service.to_string(),
+    }
+}
+
+/// Generate the CSP string needed to allow redirected icon fetching
+fn generate_icon_service_csp(icon_service: &str, icon_service_url: &str) -> String {
+    // We split on the first '{', since that is the variable delimiter for an icon service URL.
+    // Everything up until the first '{' should be fixed and can be used as an CSP string.
+    let csp_string = match icon_service_url.split_once('{') {
+        Some((c, _)) => c.to_string(),
+        None => "".to_string(),
+    };
+
+    // Because Google does a second redirect to there gstatic.com domain, we need to add an extra csp string.
+    match icon_service {
+        "google" => csp_string + " https://*.gstatic.com/favicon",
+        _ => csp_string,
     }
 }
 
