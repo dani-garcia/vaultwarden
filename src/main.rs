@@ -61,6 +61,11 @@ use std::{
     thread,
 };
 
+use tokio::{
+    fs::File,
+    io::{AsyncBufReadExt, BufReader},
+};
+
 #[macro_use]
 mod error;
 mod api;
@@ -89,7 +94,7 @@ async fn main() -> Result<(), Error> {
 
     let extra_debug = matches!(level, LF::Trace | LF::Debug);
 
-    check_data_folder();
+    check_data_folder().await;
     check_rsa_keys().unwrap_or_else(|_| {
         error!("Error creating keys, exiting...");
         exit(1);
@@ -286,7 +291,7 @@ fn create_dir(path: &str, description: &str) {
     create_dir_all(path).expect(&err_msg);
 }
 
-fn check_data_folder() {
+async fn check_data_folder() {
     let data_folder = &CONFIG.data_folder();
     let path = Path::new(data_folder);
     if !path.exists() {
@@ -299,9 +304,10 @@ fn check_data_folder() {
         exit(1);
     }
 
-    let persistent_volume_check_file = format!("{data_folder}/vaultwarden_docker_persistent_volume_check");
-    let check_file = Path::new(&persistent_volume_check_file);
-    if check_file.exists() && std::env::var("I_REALLY_WANT_VOLATILE_STORAGE").is_err() {
+    if is_running_in_docker()
+        && std::env::var("I_REALLY_WANT_VOLATILE_STORAGE").is_err()
+        && !docker_data_folder_is_persistent(data_folder).await
+    {
         error!(
             "No persistent volume!\n\
             ########################################################################################\n\
@@ -312,6 +318,38 @@ fn check_data_folder() {
         );
         exit(1);
     }
+}
+
+/// Detect when using Docker or Podman the DATA_FOLDER is either a bind-mount or a volume created manually.
+/// If not created manually, then the data will not be persistent.
+/// A none persistent volume in either Docker or Podman is represented by a 64 alphanumerical string.
+/// If we detect this string, we will alert about not having a persistent self defined volume.
+/// This probably means that someone forgot to add `-v /path/to/vaultwarden_data/:/data`
+async fn docker_data_folder_is_persistent(data_folder: &str) -> bool {
+    if let Ok(mountinfo) = File::open("/proc/self/mountinfo").await {
+        // Since there can only be one mountpoint to the DATA_FOLDER
+        // We do a basic check for this mountpoint surrounded by a space.
+        let data_folder_match = if data_folder.starts_with('/') {
+            format!(" {data_folder} ")
+        } else {
+            format!(" /{data_folder} ")
+        };
+        let mut lines = BufReader::new(mountinfo).lines();
+        while let Some(line) = lines.next_line().await.unwrap_or_default() {
+            // Only execute a regex check if we find the base match
+            if line.contains(&data_folder_match) {
+                let re = regex::Regex::new(r"/volumes/[a-z0-9]{64}/_data /").unwrap();
+                if re.is_match(&line) {
+                    return false;
+                }
+                // If we did found a match for the mountpoint, but not the regex, then still stop searching.
+                break;
+            }
+        }
+    }
+    // In all other cases, just assume a true.
+    // This is just an informative check to try and prevent data loss.
+    true
 }
 
 fn check_rsa_keys() -> Result<(), crate::error::Error> {
