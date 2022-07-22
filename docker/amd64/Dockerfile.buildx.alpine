@@ -78,14 +78,6 @@ RUN touch src/main.rs
 # hadolint ignore=DL3059
 RUN --mount=type=cache,target=/root/.cargo/git --mount=type=cache,target=/root/.cargo/registry cargo build --features ${DB} --release --target=x86_64-unknown-linux-musl
 
-# Create a special empty file which we check within the application.
-# If this file exists, then we exit Vaultwarden to prevent data loss when someone forgets to use volumes.
-# If you really really want to use volatile storage you can set the env `I_REALLY_WANT_VOLATILE_STORAGE=true`
-# This file should disappear if a volume is mounted on-top of this using a docker volume.
-# We run this in the build image and copy it over, because the runtime image could be missing some executables.
-# hadolint ignore=DL3059
-RUN touch /vaultwarden_docker_persistent_volume_check
-
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image
 # because we already have a binary built
@@ -116,7 +108,6 @@ EXPOSE 3012
 # and the binary from the "build" stage to the current stage
 WORKDIR /
 COPY --from=vault /web-vault ./web-vault
-COPY --from=build /vaultwarden_docker_persistent_volume_check /data/vaultwarden_docker_persistent_volume_check
 COPY --from=build /app/target/x86_64-unknown-linux-musl/release/vaultwarden .
 
 COPY docker/healthcheck.sh /healthcheck.sh

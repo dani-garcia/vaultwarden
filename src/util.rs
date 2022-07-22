@@ -38,18 +38,18 @@ impl Fairing for AppHeaders {
 
         let req_uri_path = req.uri().path();
 
-        // Check if we are requesting an admin page, if so, allow unsafe-inline for scripts.
-        // TODO: In the future maybe we need to see if we can generate a sha256 hash or have no scripts inline at all.
-        let admin_path = format!("{}/admin", CONFIG.domain_path());
-        let mut script_src = "";
-        if req_uri_path.starts_with(admin_path.as_str()) {
-            script_src = " 'unsafe-inline'";
-        }
-
         // Do not send the Content-Security-Policy (CSP) Header and X-Frame-Options for the *-connector.html files.
         // This can cause issues when some MFA requests needs to open a popup or page within the clients like WebAuthn, or Duo.
         // This is the same behaviour as upstream Bitwarden.
         if !req_uri_path.ends_with("connector.html") {
+            // Check if we are requesting an admin page, if so, allow unsafe-inline for scripts.
+            // TODO: In the future maybe we need to see if we can generate a sha256 hash or have no scripts inline at all.
+            let admin_path = format!("{}/admin", CONFIG.domain_path());
+            let mut script_src = "";
+            if req_uri_path.starts_with(admin_path.as_str()) {
+                script_src = " 'unsafe-inline'";
+            }
+
             // # Frame Ancestors:
             // Chrome Web Store: https://chrome.google.com/webstore/detail/bitwarden-free-password-m/nngceckbapebfimnlniiiahkandclblb
             // Edge Add-ons: https://microsoftedge.microsoft.com/addons/detail/bitwarden-free-password/jbkfoedolllekgbhcbcoahefnbanhhlh?hl=en-US
@@ -65,13 +65,14 @@ impl Fairing for AppHeaders {
                 "default-src 'self'; \
                 script-src 'self'{script_src}; \
                 style-src 'self' 'unsafe-inline'; \
-                img-src 'self' data: https://haveibeenpwned.com/ https://www.gravatar.com; \
+                img-src 'self' data: https://haveibeenpwned.com/ https://www.gravatar.com {icon_service_csp}; \
                 child-src 'self' https://*.duosecurity.com https://*.duofederal.com; \
                 frame-src 'self' https://*.duosecurity.com https://*.duofederal.com; \
                 connect-src 'self' https://api.pwnedpasswords.com/range/ https://2fa.directory/api/ https://app.simplelogin.io/api/ https://app.anonaddy.com/api/ https://relay.firefox.com/api/; \
                 object-src 'self' blob:; \
-                frame-ancestors 'self' chrome-extension://nngceckbapebfimnlniiiahkandclblb chrome-extension://jbkfoedolllekgbhcbcoahefnbanhhlh moz-extension://* {};",
-                CONFIG.allowed_iframe_ancestors()
+                frame-ancestors 'self' chrome-extension://nngceckbapebfimnlniiiahkandclblb chrome-extension://jbkfoedolllekgbhcbcoahefnbanhhlh moz-extension://* {allowed_iframe_ancestors};",
+                icon_service_csp=CONFIG._icon_service_csp(),
+                allowed_iframe_ancestors=CONFIG.allowed_iframe_ancestors()
             );
             res.set_raw_header("Content-Security-Policy", csp);
             res.set_raw_header("X-Frame-Options", "SAMEORIGIN");

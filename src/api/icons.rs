@@ -30,10 +30,7 @@ use crate::{
 pub fn routes() -> Vec<Route> {
     match CONFIG.icon_service().as_str() {
         "internal" => routes![icon_internal],
-        "bitwarden" => routes![icon_bitwarden],
-        "duckduckgo" => routes![icon_duckduckgo],
-        "google" => routes![icon_google],
-        _ => routes![icon_custom],
+        _ => routes![icon_external],
     }
 }
 
@@ -100,23 +97,8 @@ async fn icon_redirect(domain: &str, template: &str) -> Option<Redirect> {
 }
 
 #[get("/<domain>/icon.png")]
-async fn icon_custom(domain: String) -> Option<Redirect> {
-    icon_redirect(&domain, &CONFIG.icon_service()).await
-}
-
-#[get("/<domain>/icon.png")]
-async fn icon_bitwarden(domain: String) -> Option<Redirect> {
-    icon_redirect(&domain, "https://icons.bitwarden.net/{}/icon.png").await
-}
-
-#[get("/<domain>/icon.png")]
-async fn icon_duckduckgo(domain: String) -> Option<Redirect> {
-    icon_redirect(&domain, "https://icons.duckduckgo.com/ip3/{}.ico").await
-}
-
-#[get("/<domain>/icon.png")]
-async fn icon_google(domain: String) -> Option<Redirect> {
-    icon_redirect(&domain, "https://www.google.com/s2/favicons?domain={}&sz=32").await
+async fn icon_external(domain: String) -> Option<Redirect> {
+    icon_redirect(&domain, &CONFIG._icon_service_url()).await
 }
 
 #[get("/<domain>/icon.png")]
