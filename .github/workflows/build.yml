@@ -20,6 +20,7 @@ on:
 
 jobs:
   build:
+    runs-on: ubuntu-20.04
     # Make warnings errors, this is to prevent warnings slipping through.
     # This is done globally to prevent rebuilds when the RUSTFLAGS env variable changes.
     env:
@@ -28,118 +29,169 @@ jobs:
       fail-fast: false
       matrix:
         channel:
-          - stable
-        target-triple:
-          - x86_64-unknown-linux-gnu
-        include:
-          - target-triple: x86_64-unknown-linux-gnu
-            host-triple: x86_64-unknown-linux-gnu
-            features: [sqlite,mysql,postgresql,enable_mimalloc] # Remember to update the `cargo test` to match the amount of features
-            channel: stable
-            os: ubuntu-20.04
-            ext: ""
+          - "rust-toolchain" # The version defined in rust-toolchain
+          - "1.59.0" # The supported MSRV
 
-    name: Building ${{ matrix.channel }}-${{ matrix.target-triple }}
-    runs-on: ${{ matrix.os }}
+    name: Build and Test ${{ matrix.channel }}
+
     steps:
       # Checkout the repo
-      - name: Checkout
+      - name: "Checkout"
         uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b # v3.0.2
       # End Checkout the repo
 
-
-      # Install musl-tools when needed
-      - name: Install musl tools
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends musl-dev musl-tools cmake
-        if: matrix.target-triple == 'x86_64-unknown-linux-musl'
-      # End Install musl-tools when needed
-
-
       # Install dependencies
-      - name: Install dependencies Ubuntu
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends openssl sqlite build-essential libmariadb-dev-compat libpq-dev libssl-dev pkgconf
-        if: startsWith( matrix.os, 'ubuntu' )
+      - name: "Install dependencies Ubuntu"
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends openssl sqlite build-essential libmariadb-dev-compat libpq-dev libssl-dev pkg-config
       # End Install dependencies
 
 
-      # Enable Rust Caching
-      - uses: Swatinem/rust-cache@842ef286fff290e445b90b4002cc9807c3669641 # v1.3.0
-      # End Enable Rust Caching
-
-
       # Uses the rust-toolchain file to determine version
-      - name: 'Install ${{ matrix.channel }}-${{ matrix.host-triple }} for target: ${{ matrix.target-triple }}'
+      - name: "Install rust-toolchain version"
         uses: actions-rs/toolchain@b2417cde72dcf67f306c0ae8e0828a81bf0b189f # v1.0.6
+        if: ${{ matrix.channel == 'rust-toolchain' }}
         with:
           profile: minimal
-          target: ${{ matrix.target-triple }}
           components: clippy, rustfmt
       # End Uses the rust-toolchain file to determine version
 
 
+      # Install the MSRV channel to be used
+      - name: "Install MSRV version"
+        uses: actions-rs/toolchain@b2417cde72dcf67f306c0ae8e0828a81bf0b189f # v1.0.6
+        if: ${{ matrix.channel != 'rust-toolchain' }}
+        with:
+          profile: minimal
+          override: true
+          toolchain: ${{ matrix.channel }}
+      # End Install the MSRV channel to be used
+
+
+      # Enable Rust Caching
+      - uses: Swatinem/rust-cache@6720f05bc48b77f96918929a9019fb2203ff71f8 # v2.0.0
+      # End Enable Rust Caching
+
+
+      # Show environment
+      - name: "Show environment"
+        run: |
+          rustc -vV
+          cargo -vV
+      # End Show environment
+
+
       # Run cargo tests (In release mode to speed up future builds)
       # First test all features together, afterwards test them separately.
-      - name: "`cargo test --release --features ${{ join(matrix.features, ',') }} --target ${{ matrix.target-triple }}`"
+      - name: "test features: sqlite,mysql,postgresql,enable_mimalloc"
+        id: test_sqlite_mysql_postgresql_mimalloc
         uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505 # v1.0.3
+        if: $${{ always() }}
         with:
           command: test
-          args: --release --features ${{ join(matrix.features, ',') }} --target ${{ matrix.target-triple }}
-      # Test single features
-      # 0: sqlite
-      - name: "`cargo test --release --features ${{ matrix.features[0] }} --target ${{ matrix.target-triple }}`"
+          args: --release --features sqlite,mysql,postgresql,enable_mimalloc
+
+      - name: "test features: sqlite,mysql,postgresql"
+        id: test_sqlite_mysql_postgresql
         uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505 # v1.0.3
+        if: $${{ always() }}
         with:
           command: test
-          args: --release --features ${{ matrix.features[0] }} --target ${{ matrix.target-triple }}
-        if: ${{ matrix.features[0] != '' }}
-      # 1: mysql
-      - name: "`cargo test --release --features ${{ matrix.features[1] }} --target ${{ matrix.target-triple }}`"
+          args: --release --features sqlite,mysql,postgresql
+
+      - name: "test features: sqlite"
+        id: test_sqlite
         uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505 # v1.0.3
+        if: $${{ always() }}
         with:
           command: test
-          args: --release --features ${{ matrix.features[1] }} --target ${{ matrix.target-triple }}
-        if: ${{ matrix.features[1] != '' }}
-      # 2: postgresql
-      - name: "`cargo test --release --features ${{ matrix.features[2] }} --target ${{ matrix.target-triple }}`"
+          args: --release --features sqlite
+
+      - name: "test features: mysql"
+        id: test_mysql
         uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505 # v1.0.3
+        if: $${{ always() }}
         with:
           command: test
-          args: --release --features ${{ matrix.features[2] }} --target ${{ matrix.target-triple }}
-        if: ${{ matrix.features[2] != '' }}
+          args: --release --features mysql
+
+      - name: "test features: postgresql"
+        id: test_postgresql
+        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505 # v1.0.3
+        if: $${{ always() }}
+        with:
+          command: test
+          args: --release --features postgresql
       # End Run cargo tests
 
 
       # Run cargo clippy, and fail on warnings (In release mode to speed up future builds)
-      - name: "`cargo clippy --release --features ${{ join(matrix.features, ',') }} --target ${{ matrix.target-triple }}`"
+      - name: "clippy features: sqlite,mysql,postgresql,enable_mimalloc"
+        id: clippy
         uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505 # v1.0.3
+        if: ${{ always() && matrix.channel == 'rust-toolchain' }}
         with:
           command: clippy
-          args: --release --features ${{ join(matrix.features, ',') }} --target ${{ matrix.target-triple }} -- -D warnings
+          args: --release --features sqlite,mysql,postgresql,enable_mimalloc -- -D warnings
       # End Run cargo clippy
 
 
-      # Run cargo fmt
-      - name: '`cargo fmt`'
+      # Run cargo fmt (Only run on rust-toolchain defined version)
+      - name: "check formatting"
+        id: formatting
         uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505 # v1.0.3
+        if: ${{ always() && matrix.channel == 'rust-toolchain' }}
         with:
           command: fmt
           args: --all -- --check
       # End Run cargo fmt
 
 
-      # Build the binary
-      - name: "`cargo build --release --features ${{ join(matrix.features, ',') }} --target ${{ matrix.target-triple }}`"
+      # Check for any previous failures, if there are stop, else continue.
+      # This is useful so all test/clippy/fmt actions are done, and they can all be addressed
+      - name: "Some checks failed"
+        if: ${{ failure() }}
+        run: |
+          echo "### :x: Checks Failed!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "|Job|Status|" >> $GITHUB_STEP_SUMMARY
+          echo "|---|------|" >> $GITHUB_STEP_SUMMARY
+          echo "|test (sqlite,mysql,postgresql,enable_mimalloc)|${{ steps.test_sqlite_mysql_postgresql_mimalloc.outcome }}|" >> $GITHUB_STEP_SUMMARY
+          echo "|test (sqlite,mysql,postgresql)|${{ steps.test_sqlite_mysql_postgresql.outcome }}|" >> $GITHUB_STEP_SUMMARY
+          echo "|test (sqlite)|${{ steps.test_sqlite.outcome }}|" >> $GITHUB_STEP_SUMMARY
+          echo "|test (mysql)|${{ steps.test_mysql.outcome }}|" >> $GITHUB_STEP_SUMMARY
+          echo "|test (postgresql)|${{ steps.test_postgresql.outcome }}|" >> $GITHUB_STEP_SUMMARY
+          echo "|clippy (sqlite,mysql,postgresql,enable_mimalloc)|${{ steps.clippy.outcome }}|" >> $GITHUB_STEP_SUMMARY
+          echo "|fmt|${{ steps.formatting.outcome }}|" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Please check the failed jobs and fix where needed." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          exit 1
+
+
+      # Check for any previous failures, if there are stop, else continue.
+      # This is useful so all test/clippy/fmt actions are done, and they can all be addressed
+      - name: "All checks passed"
+        if: ${{ success() }}
+        run: |
+          echo "### :tada: Checks Passed!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+
+      # Build the binary to upload to the artifacts
+      - name: "build features: sqlite,mysql,postgresql"
         uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505 # v1.0.3
+        if: ${{ matrix.channel == 'rust-toolchain' }}
         with:
           command: build
-          args: --release --features ${{ join(matrix.features, ',') }} --target ${{ matrix.target-triple }}
+          args: --release --features sqlite,mysql,postgresql
       # End Build the binary
 
 
       # Upload artifact to Github Actions
-      - name: Upload artifact
+      - name: "Upload artifact"
         uses: actions/upload-artifact@3cea5372237819ed00197afe530f5a7ea3e805c8 # v3.1.0
+        if: ${{ matrix.channel == 'rust-toolchain' }}
         with:
-          name: vaultwarden-${{ matrix.target-triple }}${{ matrix.ext }}
-          path: target/${{ matrix.target-triple }}/release/vaultwarden${{ matrix.ext }}
+          name: vaultwarden
+          path: target/${{ matrix.target-triple }}/release/vaultwarden
       # End Upload artifact to Github Actions
