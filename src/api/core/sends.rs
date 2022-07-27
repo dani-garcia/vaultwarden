@@ -216,6 +216,17 @@ async fn post_send_file(data: Form<UploadData<'_>>, headers: Headers, conn: DbCo
         err!("Send content is not a file");
     }
 
+    // There seems to be a bug somewhere regarding uploading attachments using the Android Client (Maybe iOS too?)
+    // See: https://github.com/dani-garcia/vaultwarden/issues/2644
+    // Since all other clients seem to match TempFile::File and not TempFile::Buffered lets catch this and return an error for now.
+    // We need to figure out how to solve this, but for now it's better to not accept these attachments since they will be broken.
+    if let TempFile::Buffered {
+        content: _,
+    } = &data
+    {
+        err!("Error reading send file data. Please try an other client.");
+    }
+
     let size = data.len();
     if size > size_limit {
         err!("Attachment storage limit exceeded with this file");

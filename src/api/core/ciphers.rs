@@ -947,6 +947,17 @@ async fn save_attachment(
 
     let mut data = data.into_inner();
 
+    // There seems to be a bug somewhere regarding uploading attachments using the Android Client (Maybe iOS too?)
+    // See: https://github.com/dani-garcia/vaultwarden/issues/2644
+    // Since all other clients seem to match TempFile::File and not TempFile::Buffered lets catch this and return an error for now.
+    // We need to figure out how to solve this, but for now it's better to not accept these attachments since they will be broken.
+    if let TempFile::Buffered {
+        content: _,
+    } = &data.data
+    {
+        err!("Error reading attachment data. Please try an other client.");
+    }
+
     if let Some(size_limit) = size_limit {
         if data.data.len() > size_limit {
             err!("Attachment storage limit exceeded with this file");
