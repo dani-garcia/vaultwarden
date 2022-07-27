@@ -145,7 +145,7 @@ impl Organization {
             "Use2fa": true,
             "UseDirectory": false, // Is supported, but this value isn't checked anywhere (yet)
             "UseEvents": false, // not supported by us
-            "UseGroups": false, // not supported by us
+            "UseGroups": true, 
             "UseTotp": true,
             "UsePolicies": true,
             "UseSso": false, // We do not support SSO
@@ -276,7 +276,7 @@ impl UserOrganization {
             "Use2fa": true,
             "UseDirectory": false, // Is supported, but this value isn't checked anywhere (yet)
             "UseEvents": false, // not supported by us
-            "UseGroups": false, // not supported by us
+            "UseGroups": true, 
             "UseTotp": true,
             "UsePolicies": true,
             "UseApi": false, // not supported by us
