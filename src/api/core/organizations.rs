@@ -6,7 +6,7 @@ use serde_json::Value;
 use crate::{
     api::{
         core::{CipherSyncData, CipherSyncType},
-        EmptyResult, JsonResult, JsonUpcase, JsonUpcaseVec, Notify, NumberOrString, PasswordData, UpdateType,
+        EmptyResult, JsonResult, JsonUpcase, JsonUpcaseVec, JsonVec, Notify, NumberOrString, PasswordData, UpdateType,
     },
     auth::{decode_invite, AdminHeaders, Headers, ManagerHeaders, ManagerHeadersLoose, OwnerHeaders},
     db::{models::*, DbConn},
@@ -61,6 +61,21 @@ pub fn routes() -> Vec<Route> {
         import,
         post_org_keys,
         bulk_public_keys,
+        get_groups,
+        post_groups,
+        get_group,
+        put_group,
+        post_group,
+        get_group_details,
+        delete_group,
+        post_delete_group,
+        get_group_users,
+        put_group_users,
+        get_user_groups,
+        post_user_groups,
+        put_user_groups,
+        delete_group_user,
+        post_delete_group_user,
     ]
 }
 
@@ -1483,4 +1498,283 @@ async fn import(org_id: String, data: JsonUpcase<OrgImportData>, headers: Header
     }
 
     Ok(())
+}
+
+#[get("/organizations/<org_id>/groups")]
+async fn get_groups(org_id: String, _headers: AdminHeaders, conn: DbConn) -> JsonResult {    
+    let groups = Group::find_by_organization(&org_id, &conn).await
+        .iter()
+        .map(Group::to_json)
+        .collect::<Value>();
+    
+    Ok(Json(json!({
+        "Data": groups,
+        "Object": "list",
+        "ContinuationToken": null,
+    })))
+}
+
+#[derive(Deserialize)]
+#[allow(non_snake_case)]
+struct GroupRequest {
+    Name: String,
+    AccessAll: Option<bool>,
+    ExternalId: String,
+    Collections: Vec<SelectionReadOnly>
+}
+
+impl GroupRequest {
+    pub fn to_group(&self, organizations_uuid: &str) -> Result<Group, String> {
+        let access_all_value = match self.AccessAll {
+            Some(value) => value,
+            _ => return Err(String::from("Could not convert GroupRequest to Group, because AccessAll has no value!"))
+        };
+
+        Ok(Group::new(
+            organizations_uuid.to_owned(),
+            self.Name.clone(),
+            access_all_value,
+            self.ExternalId.clone()
+        ))
+    }
+
+    pub fn update_group(&self, mut group: Group) -> Result<Group, String> {
+        let access_all_value = match self.AccessAll {
+            Some(value) => value,
+            _ => return Err(String::from("Could not update group, because AccessAll has no value!"))
+        };
+
+        group.name = self.Name.clone();
+        group.access_all = access_all_value;
+        group.external_id = self.ExternalId.clone();
+
+        Ok(group)
+    }
+}
+
+#[derive(Deserialize, Serialize)]
+#[allow(non_snake_case)]
+struct SelectionReadOnly {
+    Id: String,
+    ReadOnly: bool,
+    HidePasswords: bool
+}
+
+impl SelectionReadOnly {
+    pub fn to_collection_group (&self, groups_uuid: String) -> CollectionGroup {
+        CollectionGroup::new (
+            self.Id.clone(),
+            groups_uuid.clone(),
+            self.ReadOnly,
+            self.HidePasswords
+        )
+    }
+
+    pub fn to_selection_read_only (collection_group: &CollectionGroup) -> SelectionReadOnly {
+        SelectionReadOnly {
+            Id: collection_group.collections_uuid.clone(),
+            ReadOnly: collection_group.read_only,
+            HidePasswords: collection_group.hide_passwords
+        }
+    }
+
+    pub fn to_json (&self) -> Value {
+        json!(self)
+    }
+}
+
+#[post("/organizations/<_org_id>/groups/<group_id>", data = "<data>")]
+async fn post_group(_org_id: String, group_id: String, data: JsonUpcase<GroupRequest>, _headers: AdminHeaders, conn: DbConn) -> JsonResult {
+    put_group(_org_id, group_id, data, _headers, conn).await
+}
+
+#[post("/organizations/<org_id>/groups", data = "<data>")]
+async fn post_groups(org_id: String, _headers: AdminHeaders, data: JsonUpcase<GroupRequest>, conn: DbConn) -> JsonResult {    
+    let group_request = data.into_inner().data;
+    let group = match group_request.to_group(&org_id) {
+        Ok(group) => group,
+        Err(err) => err!(&err)
+    };
+
+    add_update_group(group, group_request.Collections, &conn).await
+}
+
+#[put("/organizations/<_org_id>/groups/<group_id>", data = "<data>")]
+async fn put_group(_org_id: String, group_id: String, data: JsonUpcase<GroupRequest>, _headers: AdminHeaders, conn: DbConn) -> JsonResult {
+    let group = match Group::find_by_uuid(&group_id, &conn).await {
+        Some(group) => group,
+        None => err!("Group not found")
+    };
+
+    let group_request = data.into_inner().data;
+    let updated_group = match group_request.update_group(group) {
+        Ok(group) => group,
+        Err(err) => err!(&err)
+    };
+
+    CollectionGroup::delete_all_by_group(&group_id, &conn).await?;
+
+    add_update_group(updated_group, group_request.Collections, &conn).await
+}
+
+async fn add_update_group(mut group: Group, collections: Vec<SelectionReadOnly>, conn: &DbConn) -> JsonResult {
+    group.save(&conn).await?;
+
+    for selection_read_only_request in collections {        
+        let mut collection_group = selection_read_only_request.to_collection_group(group.uuid.clone());
+        
+        collection_group.save(&conn).await?;
+    }
+
+    Ok(Json(json!({
+        "Id": group.uuid,
+        "OrganizationId": group.organizations_uuid,
+        "Name": group.name,
+        "AccessAll": group.access_all,
+        "ExternalId": group.external_id
+    })))
+}
+
+#[get("/organizations/<_org_id>/groups/<group_id>/details")]
+async fn get_group_details(_org_id: String, group_id: String, _headers: AdminHeaders, conn: DbConn) -> JsonResult {        
+    let group = match Group::find_by_uuid(&group_id, &conn).await {
+        Some(group) => group,
+        _ => err!("Group could not be found!")
+    };
+
+    let collection_groups = CollectionGroup::find_by_group(&group_id, &conn).await
+        .iter()
+        .map(|entry| SelectionReadOnly::to_selection_read_only(entry).to_json())
+        .collect::<Value>();
+    
+    Ok(Json(json!({
+        "Id": group.uuid,
+        "OrganizationId": group.organizations_uuid,
+        "Name": group.name,
+        "AccessAll": group.access_all,
+        "ExternalId": group.external_id,
+        "Collections": collection_groups
+    })))
+}
+
+#[post("/organizations/<org_id>/groups/<group_id>/delete")]
+async fn post_delete_group(org_id: String, group_id: String, _headers: AdminHeaders, conn: DbConn) -> EmptyResult {
+    delete_group(org_id, group_id, _headers, conn).await
+}
+
+#[delete("/organizations/<_org_id>/groups/<group_id>")]
+async fn delete_group(_org_id: String, group_id: String, _headers: AdminHeaders, conn: DbConn) -> EmptyResult {    
+    let group = match Group::find_by_uuid(&group_id, &conn).await {
+        Some(group) => group,
+        _ => err!("Group not found")
+    };
+
+    group.delete(&conn).await
+}
+
+#[get("/organizations/<_org_id>/groups/<group_id>")]
+async fn get_group(_org_id: String, group_id: String, _headers: AdminHeaders, conn: DbConn) -> JsonResult {    
+    let group = match Group::find_by_uuid(&group_id, &conn).await {
+        Some(group) => group,
+        _ => err!("Group not found")
+    };
+
+    Ok(Json(group.to_json()))
+}
+
+#[get("/organizations/<_org_id>/groups/<group_id>/users")]
+async fn get_group_users(_org_id: String, group_id: String, _headers: AdminHeaders, conn: DbConn) -> JsonResult {        
+    match Group::find_by_uuid(&group_id, &conn).await {
+        Some(_) => { /* Do nothing */ },
+        _ => err!("Group could not be found!")
+    };
+
+    let group_users: Vec<String> = GroupUser::find_by_group(&group_id, &conn).await
+        .iter()
+        .map(|entry| entry.users_organizations_uuid.clone())
+        .collect();
+    
+    Ok(Json(json!(group_users)))
+}
+
+#[put("/organizations/<_org_id>/groups/<group_id>/users", data = "<data>")]
+async fn put_group_users(_org_id: String, group_id: String, _headers: AdminHeaders, data: JsonVec<String>, conn: DbConn) -> EmptyResult {        
+    match Group::find_by_uuid(&group_id, &conn).await {
+        Some(_) => { /* Do nothing */ },
+        _ => err!("Group could not be found!")
+    };
+
+    GroupUser::delete_all_by_group(&group_id, &conn).await?;
+
+    let assigned_user_ids = data.into_inner();
+    for assigned_user_id in assigned_user_ids {
+        let mut user_entry = GroupUser::new(group_id.clone(), assigned_user_id);
+        user_entry.save(&conn).await?;
+    }
+
+    Ok(())
+}
+
+#[get("/organizations/<_org_id>/users/<user_id>/groups")]
+async fn get_user_groups(_org_id: String, user_id: String, _headers: AdminHeaders, conn: DbConn) -> JsonResult {        
+    match UserOrganization::find_by_uuid(&user_id, &conn).await {
+        Some(_) => { /* Do nothing */ },
+        _ => err!("User could not be found!")
+    };
+
+    let user_groups: Vec<String> = GroupUser::find_by_user(&user_id, &conn).await
+        .iter()
+        .map(|entry| entry.groups_uuid.clone())
+        .collect();
+    
+    Ok(Json(json!(user_groups)))
+}
+
+#[derive(Deserialize)]
+#[allow(non_snake_case)]
+struct OrganizationUserUpdateGroupsRequest {
+    GroupIds: Vec<String>
+}
+
+#[post("/organizations/<_org_id>/users/<user_id>/groups", data ="<data>")]
+async fn post_user_groups(_org_id: String, user_id: String, data: JsonUpcase<OrganizationUserUpdateGroupsRequest>, _headers: AdminHeaders, conn: DbConn) -> EmptyResult {        
+    put_user_groups(_org_id, user_id, data, _headers, conn).await
+}
+
+#[put("/organizations/<_org_id>/users/<user_id>/groups", data ="<data>")]
+async fn put_user_groups(_org_id: String, user_id: String, data: JsonUpcase<OrganizationUserUpdateGroupsRequest>, _headers: AdminHeaders, conn: DbConn) -> EmptyResult {        
+    match UserOrganization::find_by_uuid(&user_id, &conn).await {
+        Some(_) => { /* Do nothing */ },
+        _ => err!("User could not be found!")
+    };
+
+    GroupUser::delete_all_by_user(&user_id, &conn).await?;
+
+    let assigned_group_ids = data.into_inner().data;
+    for assigned_group_id in assigned_group_ids.GroupIds {
+        let mut group_user = GroupUser::new(assigned_group_id.clone(), user_id.clone());
+        group_user.save(&conn).await?;
+    }
+    
+    Ok(())
+}
+
+#[post("/organizations/<org_id>/groups/<group_id>/delete-user/<user_id>")]
+async fn post_delete_group_user(org_id: String, group_id: String, user_id: String, headers: AdminHeaders, conn: DbConn) -> EmptyResult {        
+    delete_group_user(org_id, group_id, user_id, headers, conn).await
+}
+
+#[delete("/organizations/<_org_id>/groups/<group_id>/users/<user_id>")]
+async fn delete_group_user(_org_id: String, group_id: String, user_id: String, _headers: AdminHeaders, conn: DbConn) -> EmptyResult {        
+    match UserOrganization::find_by_uuid(&user_id, &conn).await {
+        Some(_) => { /* Do nothing */ },
+        _ => err!("User could not be found!")
+    };
+
+    match Group::find_by_uuid(&group_id, &conn).await {
+        Some(_) => { /* Do nothing */ },
+        _ => err!("Group could not be found!")
+    };
+    
+    GroupUser::delete_by_group_id_and_user_id(&group_id, &user_id, &conn).await
 }

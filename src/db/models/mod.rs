@@ -11,6 +11,7 @@ mod send;
 mod two_factor;
 mod two_factor_incomplete;
 mod user;
+mod group;
 
 pub use self::attachment::Attachment;
 pub use self::cipher::Cipher;
@@ -25,3 +26,4 @@ pub use self::send::{Send, SendType};
 pub use self::two_factor::{TwoFactor, TwoFactorType};
 pub use self::two_factor_incomplete::TwoFactorIncomplete;
 pub use self::user::{Invitation, User, UserStampException};
+pub use self::group::{Group, CollectionGroup, GroupUser};

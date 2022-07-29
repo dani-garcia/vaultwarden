@@ -2,7 +2,7 @@ use num_traits::FromPrimitive;
 use serde_json::Value;
 use std::cmp::Ordering;
 
-use super::{CollectionUser, OrgPolicy, OrgPolicyType, User};
+use super::{CollectionUser, OrgPolicy, OrgPolicyType, User, GroupUser};
 
 db_object! {
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -415,6 +415,7 @@ impl UserOrganization {
         User::update_uuid_revision(&self.user_uuid, conn).await;
 
         CollectionUser::delete_all_by_user_and_org(&self.user_uuid, &self.org_uuid, conn).await?;
+        GroupUser::delete_all_by_user(&self.uuid, conn).await?;
 
         db_run! { conn: {
             diesel::delete(users_organizations::table.filter(users_organizations::uuid.eq(self.uuid)))
