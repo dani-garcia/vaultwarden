@@ -171,13 +171,21 @@ impl Collection {
                     users_organizations::user_uuid.eq(user_uuid)
                 )
             ))
+            .left_join(collection_groups::table.on(
+                collections::uuid.eq(collection_groups::collections_uuid)
+            ))
+            .left_join(groups_users::table.on(
+                groups_users::groups_uuid.eq(collection_groups::groups_uuid)
+            ))
             .filter(
                 users_organizations::status.eq(UserOrgStatus::Confirmed as i32)
             )
             .filter(
-                users_collections::user_uuid.eq(user_uuid).or( // Directly accessed collection
+                users_collections::user_uuid.eq(user_uuid).or( // Directly accessed collection 
                     users_organizations::access_all.eq(true) // access_all in Organization
-                )
+                ).or(                                
+                    groups_users::users_organizations_uuid.eq(users_organizations::uuid) // access via groups
+                ) 
             ).select(collections::all_columns)
             .load::<CollectionDb>(conn).expect("Error loading collections").from_db()
         }}
