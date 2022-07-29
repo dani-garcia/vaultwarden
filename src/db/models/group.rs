@@ -90,6 +90,8 @@ use crate::db::DbConn;
 use crate::api::EmptyResult;
 use crate::error::MapResult;
 
+use super::{UserOrganization, User};
+
 /// Database methods
 impl Group {
     pub async fn save(&mut self, conn: &DbConn) -> EmptyResult {
@@ -177,7 +179,10 @@ impl Group {
 
 impl CollectionGroup {
     pub async fn save(&mut self, conn: &DbConn) -> EmptyResult {
-        Group::update_revision(&self.groups_uuid, &conn).await;
+        let group_users = GroupUser::find_by_group(&self.groups_uuid, conn).await;
+        for group_user in group_users {
+            group_user.update_user_revision(conn).await;
+        }
         
         db_run! { conn:
             sqlite, mysql {
@@ -238,7 +243,12 @@ impl CollectionGroup {
         }}
     }
 
-    pub async fn delete(&self, conn: &DbConn) -> EmptyResult {
+    pub async fn delete(&self, conn: &DbConn) -> EmptyResult {        
+        let group_users = GroupUser::find_by_group(&self.groups_uuid, conn).await;
+        for group_user in group_users {
+            group_user.update_user_revision(conn).await;
+        }
+        
         db_run! { conn: {
             diesel::delete(collection_groups::table)
                 .filter(collection_groups::collections_uuid.eq(&self.collections_uuid))
@@ -249,6 +259,11 @@ impl CollectionGroup {
     }
 
     pub async fn delete_all_by_group(group_uuid: &str, conn: &DbConn) -> EmptyResult {
+        let group_users = GroupUser::find_by_group(group_uuid, conn).await;
+        for group_user in group_users {
+            group_user.update_user_revision(conn).await;
+        }
+        
         db_run! { conn: {
             diesel::delete(collection_groups::table)
                 .filter(collection_groups::groups_uuid.eq(group_uuid))
@@ -259,8 +274,8 @@ impl CollectionGroup {
 }
 
 impl GroupUser {
-    pub async fn save(&mut self, conn: &DbConn) -> EmptyResult {
-        Group::update_revision(&self.groups_uuid, &conn).await;
+    pub async fn save(&mut self, conn: &DbConn) -> EmptyResult {        
+        self.update_user_revision(conn).await;
         
         db_run! { conn:
             sqlite, mysql {
@@ -325,7 +340,19 @@ impl GroupUser {
         }}
     }
 
-    pub async fn delete_by_group_id_and_user_id(group_uuid: &str, user_uuid: &str, conn: &DbConn) -> EmptyResult {
+    pub async fn update_user_revision(&self, conn: &DbConn) {
+        match UserOrganization::find_by_uuid(&self.users_organizations_uuid, conn).await {
+            Some(user) => User::update_uuid_revision(&user.user_uuid, conn).await,
+            None => warn!("User could not be found!")
+        }
+    }
+
+    pub async fn delete_by_group_id_and_user_id(group_uuid: &str, user_uuid: &str, conn: &DbConn) -> EmptyResult {        
+        match UserOrganization::find_by_uuid(user_uuid, conn).await {
+            Some(user) => User::update_uuid_revision(&user.user_uuid, conn).await,
+            None => warn!("User could not be found!")
+        };
+        
         db_run! { conn: {
             diesel::delete(groups_users::table)
                 .filter(groups_users::groups_uuid.eq(group_uuid))
@@ -336,6 +363,11 @@ impl GroupUser {
     }
 
     pub async fn delete_all_by_group(group_uuid: &str, conn: &DbConn) -> EmptyResult {
+        let group_users = GroupUser::find_by_group(group_uuid, conn).await;
+        for group_user in group_users {
+            group_user.update_user_revision(conn).await;
+        }
+        
         db_run! { conn: {
             diesel::delete(groups_users::table)
                 .filter(groups_users::groups_uuid.eq(group_uuid))
@@ -345,6 +377,11 @@ impl GroupUser {
     }
 
     pub async fn delete_all_by_user(users_organizations_uuid: &str, conn: &DbConn) -> EmptyResult {
+        match UserOrganization::find_by_uuid(users_organizations_uuid, conn).await {
+            Some(user) => User::update_uuid_revision(&user.user_uuid, conn).await,
+            None => warn!("User could not be found!")
+        }
+        
         db_run! { conn: {
             diesel::delete(groups_users::table)
                 .filter(groups_users::users_organizations_uuid.eq(users_organizations_uuid))
