@@ -30,7 +30,7 @@ jobs:
       matrix:
         channel:
           - "rust-toolchain" # The version defined in rust-toolchain
-          - "1.59.0" # The supported MSRV
+          - "1.60.0" # The supported MSRV
 
     name: Build and Test ${{ matrix.channel }}
 

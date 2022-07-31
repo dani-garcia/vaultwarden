@@ -122,9 +122,9 @@ dependencies = [
 
 [[package]]
 name = "async-trait"
-version = "0.1.56"
+version = "0.1.57"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "96cf8829f67d2eab0b2dfa42c5d0ef737e0724e4a82b01b3e292456202b19716"
+checksum = "76464446b8bc32758d7e88ee1a804d9914cd9b1cb264c029899680b0be29826f"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -352,7 +352,7 @@ dependencies = [
  "rand",
  "sha2",
  "subtle",
- "time 0.3.11",
+ "time 0.3.12",
  "version_check",
 ]
 
@@ -368,7 +368,7 @@ dependencies = [
  "publicsuffix",
  "serde",
  "serde_json",
- "time 0.3.11",
+ "time 0.3.12",
  "url 2.2.2",
 ]
 
@@ -2186,7 +2186,7 @@ dependencies = [
  "serde_json",
  "state",
  "tempfile",
- "time 0.3.11",
+ "time 0.3.12",
  "tokio",
  "tokio-stream",
  "tokio-util",
@@ -2235,7 +2235,7 @@ dependencies = [
  "smallvec",
  "stable-pattern",
  "state",
- "time 0.3.11",
+ "time 0.3.12",
  "tokio",
  "tokio-rustls",
  "uncased",
@@ -2466,7 +2466,7 @@ dependencies = [
  "num-bigint",
  "num-traits",
  "thiserror",
- "time 0.3.11",
+ "time 0.3.12",
 ]
 
 [[package]]
@@ -2563,7 +2563,7 @@ dependencies = [
  "hostname",
  "libc",
  "log",
- "time 0.3.11",
+ "time 0.3.12",
 ]
 
 [[package]]
@@ -2630,11 +2630,12 @@ dependencies = [
 
 [[package]]
 name = "time"
-version = "0.3.11"
+version = "0.3.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "72c91f41dcb2f096c05f0873d667dceec1087ce5bcf984ec8ffb19acddbb3217"
+checksum = "74b7cc93fc23ba97fde84f7eea56c55d1ba183f495c6715defdfc7b9cb8c870f"
 dependencies = [
  "itoa",
+ "js-sys",
  "libc",
  "num_threads",
  "time-macros",
@@ -3087,7 +3088,7 @@ dependencies = [
  "serde",
  "serde_json",
  "syslog",
- "time 0.3.11",
+ "time 0.3.12",
  "tokio",
  "tokio-tungstenite",
  "totp-lite",
