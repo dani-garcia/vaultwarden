@@ -2,7 +2,7 @@ use crate::CONFIG;
 use chrono::{Duration, NaiveDateTime, Utc};
 use serde_json::Value;
 
-use super::{Attachment, CollectionCipher, Favorite, FolderCipher, User, UserOrgStatus, UserOrgType, UserOrganization};
+use super::{Attachment, CollectionCipher, Favorite, FolderCipher, User, UserOrgStatus, UserOrgType, UserOrganization, Group};
 
 use crate::api::core::CipherSyncData;
 
@@ -368,7 +368,7 @@ impl Cipher {
         // Check whether this cipher is directly owned by the user, or is in
         // a collection that the user has full access to. If so, there are no
         // access restrictions.
-        if self.is_owned_by_user(user_uuid) || self.is_in_full_access_org(user_uuid, cipher_sync_data, conn).await {
+        if self.is_owned_by_user(user_uuid) || self.is_in_full_access_org(user_uuid, cipher_sync_data, conn).await || Group::is_in_full_access_group(user_uuid, conn).await {
             return Some((false, false));
         }
 
@@ -376,14 +376,30 @@ impl Cipher {
             let mut rows: Vec<(bool, bool)> = Vec::new();
             if let Some(collections) = cipher_sync_data.cipher_collections.get(&self.uuid) {
                 for collection in collections {
+                    //User permissions                    
                     if let Some(uc) = cipher_sync_data.user_collections.get(collection) {
                         rows.push((uc.read_only, uc.hide_passwords));
+                    }
+
+                    //Group permissions
+                    if let Some(gc) = cipher_sync_data.user_collections_groups
+                        .iter()
+                        .find(|collection_group| collection_group.collections_uuid == collection.clone()) {
+                        rows.push((gc.read_only, gc.hide_passwords));
                     }
                 }
             }
             rows
         } else {
-            self.get_collections_access_flags(user_uuid, conn).await
+            let mut user_collections_access_flags = self.get_user_collections_access_flags(user_uuid, conn).await;
+            let mut group_collections_access_flags = self.get_group_collections_access_flags(user_uuid, conn).await;
+
+            let mut result = Vec::new();
+            
+            result.append(&mut user_collections_access_flags);
+            result.append(&mut group_collections_access_flags);
+
+            result
         };
 
         if rows.is_empty() {
@@ -410,7 +426,7 @@ impl Cipher {
         Some((read_only, hide_passwords))
     }
 
-    pub async fn get_collections_access_flags(&self, user_uuid: &str, conn: &DbConn) -> Vec<(bool, bool)> {
+    async fn get_user_collections_access_flags(&self, user_uuid: &str, conn: &DbConn) -> Vec<(bool, bool)> {
         db_run! {conn: {
             // Check whether this cipher is in any collections accessible to the
             // user. If so, retrieve the access flags for each collection.
@@ -423,7 +439,30 @@ impl Cipher {
                         .and(users_collections::user_uuid.eq(user_uuid))))
                 .select((users_collections::read_only, users_collections::hide_passwords))
                 .load::<(bool, bool)>(conn)
-                .expect("Error getting access restrictions")
+                .expect("Error getting user access restrictions")
+        }}
+    }
+
+    async fn get_group_collections_access_flags(&self, user_uuid: &str, conn: &DbConn) -> Vec<(bool, bool)> {
+        db_run! {conn: {
+            ciphers::table
+                .filter(ciphers::uuid.eq(&self.uuid))
+                .inner_join(ciphers_collections::table.on(
+                    ciphers::uuid.eq(ciphers_collections::cipher_uuid)
+                ))
+                .inner_join(collection_groups::table.on(
+                    collection_groups::collections_uuid.eq(ciphers_collections::collection_uuid)
+                ))
+                .inner_join(groups_users::table.on(
+                    groups_users::groups_uuid.eq(collection_groups::groups_uuid)
+                ))
+                .inner_join(users_organizations::table.on(
+                    users_organizations::uuid.eq(groups_users::users_organizations_uuid)
+                ))
+                .filter(users_organizations::user_uuid.eq(user_uuid))
+                .select((collection_groups::read_only, collection_groups::hide_passwords))
+                .load::<(bool, bool)>(conn)
+                .expect("Error getting group access restrictions")
         }}
     }
 
@@ -476,10 +515,10 @@ impl Cipher {
     // Find all ciphers accessible or visible to the specified user.
     //
     // "Accessible" means the user has read access to the cipher, either via
-    // direct ownership or via collection access.
+    // direct ownership, collection or via group access.
     //
     // "Visible" usually means the same as accessible, except when an org
-    // owner/admin sets their account to have access to only selected
+    // owner/admin sets their account or group to have access to only selected
     // collections in the org (presumably because they aren't interested in
     // the other collections in the org). In this case, if `visible_only` is
     // true, then the non-interesting ciphers will not be returned. As a
@@ -501,9 +540,20 @@ impl Cipher {
                         // Ensure that users_collections::user_uuid is NULL for unconfirmed users.
                         .and(users_organizations::user_uuid.eq(users_collections::user_uuid))
                 ))
+                .left_join(groups_users::table.on(
+                    groups_users::users_organizations_uuid.eq(users_organizations::uuid)
+                ))
+                .left_join(groups::table.on(
+                    groups::uuid.eq(groups_users::groups_uuid)
+                ))
+                .left_join(collection_groups::table.on(
+                    collection_groups::collections_uuid.eq(ciphers_collections::collection_uuid)
+                ))
                 .filter(ciphers::user_uuid.eq(user_uuid)) // Cipher owner
                 .or_filter(users_organizations::access_all.eq(true)) // access_all in org
                 .or_filter(users_collections::user_uuid.eq(user_uuid)) // Access to collection
+                .or_filter(groups::access_all.eq(true)) // Access via groups
+                .or_filter(collection_groups::collections_uuid.is_not_null()) // Access via groups
                 .into_boxed();
 
             if !visible_only {
@@ -629,11 +679,20 @@ impl Cipher {
                     users_collections::user_uuid.eq(user_id)
                 )
             ))
-            .filter(users_collections::user_uuid.eq(user_id).or( // User has access to collection
-                users_organizations::access_all.eq(true).or( // User has access all
-                    users_organizations::atype.le(UserOrgType::Admin as i32) // User is admin or owner
-                )
+            .left_join(groups_users::table.on(
+                groups_users::users_organizations_uuid.eq(users_organizations::uuid)
             ))
+            .left_join(groups::table.on(
+                groups::uuid.eq(groups_users::groups_uuid)
+            ))
+            .left_join(collection_groups::table.on(
+                collection_groups::collections_uuid.eq(ciphers_collections::collection_uuid)
+            ))
+            .or_filter(users_collections::user_uuid.eq(user_id)) // User has access to collection
+            .or_filter(users_organizations::access_all.eq(true)) // User has access all
+            .or_filter(users_organizations::atype.le(UserOrgType::Admin as i32)) // User is admin or owner
+            .or_filter(groups::access_all.eq(true)) //Access via group
+            .or_filter(collection_groups::collections_uuid.is_not_null()) //Access via group
             .select(ciphers_collections::all_columns)
             .load::<(String, String)>(conn).unwrap_or_default()
         }}

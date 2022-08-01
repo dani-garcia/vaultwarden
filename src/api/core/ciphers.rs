@@ -1497,6 +1497,8 @@ pub struct CipherSyncData {
     pub cipher_collections: HashMap<String, Vec<String>>,
     pub user_organizations: HashMap<String, UserOrganization>,
     pub user_collections: HashMap<String, CollectionUser>,
+    pub user_collections_groups: Vec<CollectionGroup>,
+    pub user_groups: Vec<Group>,
 }
 
 pub enum CipherSyncType {
@@ -1552,6 +1554,9 @@ impl CipherSyncData {
                 .collect()
                 .await;
 
+        let user_collections_groups = CollectionGroup::find_by_user(user_uuid, conn).await;
+        let user_groups = Group::find_by_user(user_uuid, conn).await;
+
         Self {
             cipher_attachments,
             cipher_folders,
@@ -1559,6 +1564,8 @@ impl CipherSyncData {
             cipher_collections,
             user_organizations,
             user_collections,
+            user_collections_groups,
+            user_groups
         }
     }
 }

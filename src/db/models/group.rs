@@ -148,6 +148,40 @@ impl Group {
         }}
     }
 
+    pub async fn find_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
+        db_run! { conn: {
+            groups::table
+                .inner_join(groups_users::table.on(
+                    groups_users::groups_uuid.eq(groups::uuid)
+                ))
+                .inner_join(users_organizations::table.on(
+                    users_organizations::uuid.eq(groups_users::users_organizations_uuid)
+                ))
+                .filter(users_organizations::user_uuid.eq(user_uuid))
+                .select(groups::all_columns)
+                .load::<GroupDb>(conn)
+                .expect("Error loading user groups")
+                .from_db()
+        }}
+    }
+
+    pub async fn is_in_full_access_group(user_uuid: &str, conn: &DbConn) -> bool {
+        db_run! { conn: {
+            groups::table
+                .inner_join(groups_users::table.on(
+                    groups_users::groups_uuid.eq(groups::uuid)
+                ))
+                .inner_join(users_organizations::table.on(
+                    users_organizations::uuid.eq(groups_users::users_organizations_uuid)
+                ))
+                .filter(users_organizations::user_uuid.eq(user_uuid))
+                .filter(groups::access_all.eq(true))
+                .select(groups::access_all)
+                .first::<bool>(conn)
+                .unwrap_or_default()
+        }}
+    }
+
     pub async fn delete(&self, conn: &DbConn) -> EmptyResult {
         CollectionGroup::delete_all_by_group(&self.uuid, &conn).await?;
         GroupUser::delete_all_by_group(&self.uuid, &conn).await?;
@@ -239,6 +273,23 @@ impl CollectionGroup {
                 .filter(collection_groups::groups_uuid.eq(group_uuid))
                 .load::<CollectionGroupDb>(conn)
                 .expect("Error loading collection groups")
+                .from_db()
+        }}
+    }
+
+    pub async fn find_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
+        db_run! { conn: {
+            collection_groups::table
+                .inner_join(groups_users::table.on(
+                    groups_users::groups_uuid.eq(collection_groups::groups_uuid)
+                ))
+                .inner_join(users_organizations::table.on(
+                    users_organizations::uuid.eq(groups_users::users_organizations_uuid)
+                ))
+                .filter(users_organizations::user_uuid.eq(user_uuid))
+                .select(collection_groups::all_columns)
+                .load::<CollectionGroupDb>(conn)
+                .expect("Error loading user collection groups")
                 .from_db()
         }}
     }
