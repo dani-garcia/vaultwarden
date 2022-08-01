@@ -228,14 +228,14 @@ table! {
         access_all -> Bool,
         external_id -> Text,
         creation_date -> Timestamp,
-        revision_date -> Timestamp
+        revision_date -> Timestamp,
     }
 }
 
 table! {
     groups_users (groups_uuid, users_organizations_uuid) {
         groups_uuid -> Text,
-        users_organizations_uuid -> Text
+        users_organizations_uuid -> Text,
     }
 }
 
@@ -244,7 +244,7 @@ table! {
         collections_uuid -> Text,
         groups_uuid -> Text,
         read_only -> Bool,
-        hide_passwords -> Bool
+        hide_passwords -> Bool,
     }
 }
 

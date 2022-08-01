@@ -11,7 +11,7 @@ CREATE TABLE groups (
 CREATE TABLE groups_users (
   groups_uuid                        TEXT NOT NULL REFERENCES groups (uuid),
   users_organizations_uuid          TEXT NOT NULL REFERENCES users_organizations (uuid),  
-  UNIQUE (group_uuid, users_organizations_uuid)
+  UNIQUE (groups_uuid, users_organizations_uuid)
 );
 
 CREATE TABLE collection_groups (
