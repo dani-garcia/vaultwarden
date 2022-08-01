@@ -3,7 +3,7 @@ name = "vaultwarden"
 version = "1.0.0"
 authors = ["Daniel García <dani-garcia@users.noreply.github.com>"]
 edition = "2021"
-rust-version = "1.59"
+rust-version = "1.60.0"
 resolver = "2"
 
 repository = "https://github.com/dani-garcia/vaultwarden"
@@ -37,7 +37,7 @@ syslog = "6.0.1" # Needs to be v4 until fern is updated
 # Logging
 log = "0.4.17"
 fern = { version = "0.6.1", features = ["syslog-6"] }
-tracing = { version = "0.1.35", features = ["log"] } # Needed to have lettre and webauthn-rs trace logging to work
+tracing = { version = "0.1.36", features = ["log"] } # Needed to have lettre and webauthn-rs trace logging to work
 
 backtrace = "0.3.66" # Logging panics to logfile instead stderr only
 
@@ -61,10 +61,10 @@ dashmap = "5.3.4" # Concurrent hashmap implementation
 
 # Async futures
 futures = "0.3.21"
-tokio = { version = "1.20.0", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time"] }
+tokio = { version = "1.20.1", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time"] }
 
 # A generic serialization/deserialization framework
-serde = { version = "1.0.139", features = ["derive"] }
+serde = { version = "1.0.140", features = ["derive"] }
 serde_json = "1.0.82"
 
 # A safe, extensible ORM and Query builder
@@ -83,7 +83,7 @@ uuid = { version = "1.1.2", features = ["v4"] }
 
 # Date and time libraries
 chrono = { version = "0.4.19", features = ["clock", "serde"], default-features = false }
-chrono-tz = "0.6.1"
+chrono-tz = "0.6.3"
 time = "0.3.11"
 
 # Job scheduler
@@ -108,11 +108,11 @@ webauthn-rs = "0.3.2"
 url = "2.2.2"
 
 # Email librariese-Base, Update crates and small change.
-lettre = { version = "0.10.0", features = ["smtp-transport", "builder", "serde", "tokio1-native-tls", "hostname", "tracing", "tokio1"], default-features = false }
+lettre = { version = "0.10.1", features = ["smtp-transport", "builder", "serde", "tokio1-native-tls", "hostname", "tracing", "tokio1"], default-features = false }
 percent-encoding = "2.1.0" # URL encoding library used for URL's in the emails
 
 # Template library
-handlebars = { version = "4.3.2", features = ["dir_source"] }
+handlebars = { version = "4.3.3", features = ["dir_source"] }
 
 # HTTP client
 reqwest = { version = "0.11.11", features = ["stream", "json", "gzip", "brotli", "socks", "cookies", "trust-dns"] }
@@ -121,8 +121,8 @@ reqwest = { version = "0.11.11", features = ["stream", "json", "gzip", "brotli",
 html5gum = "0.5.2"
 regex = { version = "1.6.0", features = ["std", "perf", "unicode-perl"], default-features = false }
 data-url = "0.1.1"
-bytes = "1.1.0"
-cached = "0.36.0"
+bytes = "1.2.1"
+cached = "0.37.0"
 
 # Used for custom short lived cookie jar during favicon extraction
 cookie = "0.16.0"

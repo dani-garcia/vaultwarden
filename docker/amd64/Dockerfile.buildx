@@ -101,7 +101,6 @@ RUN mkdir /data \
     openssl \
     ca-certificates \
     curl \
-    dumb-init \
     libmariadb-dev-compat \
     libpq5 \
     && apt-get clean \
@@ -123,10 +122,4 @@ COPY docker/start.sh /start.sh
 
 HEALTHCHECK --interval=60s --timeout=10s CMD ["/healthcheck.sh"]
 
-# Configures the startup!
-# We should be able to remove the dumb-init now with Rocket 0.5
-# But the balenalib images have some issues with there entry.sh
-# See: https://github.com/balena-io-library/base-images/issues/735
-# Lets keep using dumb-init for now, since that is working fine.
-ENTRYPOINT ["/usr/bin/dumb-init", "--"]
 CMD ["/start.sh"]
