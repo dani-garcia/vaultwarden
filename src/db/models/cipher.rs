@@ -336,7 +336,7 @@ impl Cipher {
     }
 
     /// Returns whether this cipher is owned by an org in which the user has full access.
-    pub async fn is_in_full_access_org(
+    async fn is_in_full_access_org(
         &self,
         user_uuid: &str,
         cipher_sync_data: Option<&CipherSyncData>,
@@ -354,6 +354,23 @@ impl Cipher {
         false
     }
 
+    /// Returns whether this cipher is owned by an group in which the user has full access.
+    async fn is_in_full_access_group(
+        &self,
+        user_uuid: &str,
+        cipher_sync_data: Option<&CipherSyncData>,
+        conn: &DbConn,
+    ) -> bool {
+        match cipher_sync_data {
+            Some(cipher_sync_data) => {
+                cipher_sync_data.user_groups.iter().any(|group| group.access_all)
+            },
+            None => {
+                Group::is_in_full_access_group(user_uuid, conn).await
+            }
+        }
+    }
+
     /// Returns the user's access restrictions to this cipher. A return value
     /// of None means that this cipher does not belong to the user, and is
     /// not in any collection the user has access to. Otherwise, the user has
@@ -368,7 +385,7 @@ impl Cipher {
         // Check whether this cipher is directly owned by the user, or is in
         // a collection that the user has full access to. If so, there are no
         // access restrictions.
-        if self.is_owned_by_user(user_uuid) || self.is_in_full_access_org(user_uuid, cipher_sync_data, conn).await || Group::is_in_full_access_group(user_uuid, conn).await {
+        if self.is_owned_by_user(user_uuid) || self.is_in_full_access_org(user_uuid, cipher_sync_data, conn).await || self.is_in_full_access_group(user_uuid, cipher_sync_data, conn).await {
             return Some((false, false));
         }
 
