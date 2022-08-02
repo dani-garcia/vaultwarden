@@ -240,7 +240,7 @@ table! {
 }
 
 table! {
-    collection_groups (collections_uuid, groups_uuid) {
+    collections_groups (collections_uuid, groups_uuid) {
         collections_uuid -> Text,
         groups_uuid -> Text,
         read_only -> Bool,
@@ -270,8 +270,8 @@ joinable!(emergency_access -> users (grantor_uuid));
 joinable!(groups -> organizations (organizations_uuid));
 joinable!(groups_users -> users_organizations (users_organizations_uuid));
 joinable!(groups_users -> groups (groups_uuid));
-joinable!(collection_groups -> collections (collections_uuid));
-joinable!(collection_groups -> groups (groups_uuid));
+joinable!(collections_groups -> collections (collections_uuid));
+joinable!(collections_groups -> groups (groups_uuid));
 
 allow_tables_to_appear_in_same_query!(
     attachments,
@@ -292,5 +292,5 @@ allow_tables_to_appear_in_same_query!(
     emergency_access,
     groups,
     groups_users,
-    collection_groups,
+    collections_groups,
 );

@@ -467,17 +467,17 @@ impl Cipher {
                 .inner_join(ciphers_collections::table.on(
                     ciphers::uuid.eq(ciphers_collections::cipher_uuid)
                 ))
-                .inner_join(collection_groups::table.on(
-                    collection_groups::collections_uuid.eq(ciphers_collections::collection_uuid)
+                .inner_join(collections_groups::table.on(
+                    collections_groups::collections_uuid.eq(ciphers_collections::collection_uuid)
                 ))
                 .inner_join(groups_users::table.on(
-                    groups_users::groups_uuid.eq(collection_groups::groups_uuid)
+                    groups_users::groups_uuid.eq(collections_groups::groups_uuid)
                 ))
                 .inner_join(users_organizations::table.on(
                     users_organizations::uuid.eq(groups_users::users_organizations_uuid)
                 ))
                 .filter(users_organizations::user_uuid.eq(user_uuid))
-                .select((collection_groups::read_only, collection_groups::hide_passwords))
+                .select((collections_groups::read_only, collections_groups::hide_passwords))
                 .load::<(bool, bool)>(conn)
                 .expect("Error getting group access restrictions")
         }}
@@ -563,14 +563,14 @@ impl Cipher {
                 .left_join(groups::table.on(
                     groups::uuid.eq(groups_users::groups_uuid)
                 ))
-                .left_join(collection_groups::table.on(
-                    collection_groups::collections_uuid.eq(ciphers_collections::collection_uuid)
+                .left_join(collections_groups::table.on(
+                    collections_groups::collections_uuid.eq(ciphers_collections::collection_uuid)
                 ))
                 .filter(ciphers::user_uuid.eq(user_uuid)) // Cipher owner
                 .or_filter(users_organizations::access_all.eq(true)) // access_all in org
                 .or_filter(users_collections::user_uuid.eq(user_uuid)) // Access to collection
                 .or_filter(groups::access_all.eq(true)) // Access via groups
-                .or_filter(collection_groups::collections_uuid.is_not_null()) // Access via groups
+                .or_filter(collections_groups::collections_uuid.is_not_null()) // Access via groups
                 .into_boxed();
 
             if !visible_only {
@@ -702,14 +702,14 @@ impl Cipher {
             .left_join(groups::table.on(
                 groups::uuid.eq(groups_users::groups_uuid)
             ))
-            .left_join(collection_groups::table.on(
-                collection_groups::collections_uuid.eq(ciphers_collections::collection_uuid)
+            .left_join(collections_groups::table.on(
+                collections_groups::collections_uuid.eq(ciphers_collections::collection_uuid)
             ))
             .or_filter(users_collections::user_uuid.eq(user_id)) // User has access to collection
             .or_filter(users_organizations::access_all.eq(true)) // User has access all
             .or_filter(users_organizations::atype.le(UserOrgType::Admin as i32)) // User is admin or owner
             .or_filter(groups::access_all.eq(true)) //Access via group
-            .or_filter(collection_groups::collections_uuid.is_not_null()) //Access via group
+            .or_filter(collections_groups::collections_uuid.is_not_null()) //Access via group
             .select(ciphers_collections::all_columns)
             .load::<(String, String)>(conn).unwrap_or_default()
         }}

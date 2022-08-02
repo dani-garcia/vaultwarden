@@ -9,12 +9,12 @@ CREATE TABLE groups (
 );
 
 CREATE TABLE groups_users (
-  groups_uuid                        CHAR(36) NOT NULL REFERENCES groups (uuid),
+  groups_uuid                       CHAR(36) NOT NULL REFERENCES groups (uuid),
   users_organizations_uuid          VARCHAR(36) NOT NULL REFERENCES users_organizations (uuid),  
   PRIMARY KEY (group_uuid, users_organizations_uuid)
 );
 
-CREATE TABLE collection_groups (
+CREATE TABLE collections_groups (
   collections_uuid                  VARCHAR(40) NOT NULL REFERENCES collections (uuid),
   groups_uuid                       CHAR(36) NOT NULL REFERENCES groups (uuid),  
   read_only                         BOOLEAN NOT NULL,

@@ -16,7 +16,7 @@ db_object! {
     }
 
     #[derive(Identifiable, Queryable, Insertable)]
-    #[table_name = "collection_groups"]
+    #[table_name = "collections_groups"]
     #[primary_key(collections_uuid, groups_uuid)]
     pub struct CollectionGroup {
         pub collections_uuid: String,
@@ -220,26 +220,26 @@ impl CollectionGroup {
         
         db_run! { conn:
             sqlite, mysql {
-                match diesel::replace_into(collection_groups::table)
+                match diesel::replace_into(collections_groups::table)
                     .values((
-                        collection_groups::collections_uuid.eq(&self.collections_uuid),
-                        collection_groups::groups_uuid.eq(&self.groups_uuid),
-                        collection_groups::read_only.eq(&self.read_only),
-                        collection_groups::hide_passwords.eq(&self.hide_passwords),
+                        collections_groups::collections_uuid.eq(&self.collections_uuid),
+                        collections_groups::groups_uuid.eq(&self.groups_uuid),
+                        collections_groups::read_only.eq(&self.read_only),
+                        collections_groups::hide_passwords.eq(&self.hide_passwords),
                     ))
                     .execute(conn)
                 {
                     Ok(_) => Ok(()),
                     // Record already exists and causes a Foreign Key Violation because replace_into() wants to delete the record first.
                     Err(diesel::result::Error::DatabaseError(diesel::result::DatabaseErrorKind::ForeignKeyViolation, _)) => {
-                        diesel::update(collection_groups::table)
-                            .filter(collection_groups::collections_uuid.eq(&self.collections_uuid))
-                            .filter(collection_groups::groups_uuid.eq(&self.groups_uuid))
+                        diesel::update(collections_groups::table)
+                            .filter(collections_groups::collections_uuid.eq(&self.collections_uuid))
+                            .filter(collections_groups::groups_uuid.eq(&self.groups_uuid))
                             .set((
-                                collection_groups::collections_uuid.eq(&self.collections_uuid),
-                                collection_groups::groups_uuid.eq(&self.groups_uuid),
-                                collection_groups::read_only.eq(&self.read_only),
-                                collection_groups::hide_passwords.eq(&self.hide_passwords),
+                                collections_groups::collections_uuid.eq(&self.collections_uuid),
+                                collections_groups::groups_uuid.eq(&self.groups_uuid),
+                                collections_groups::read_only.eq(&self.read_only),
+                                collections_groups::hide_passwords.eq(&self.hide_passwords),
                             ))
                             .execute(conn)
                             .map_res("Error adding group to collection")
@@ -248,18 +248,18 @@ impl CollectionGroup {
                 }.map_res("Error adding group to collection")
             }
             postgresql {
-                diesel::insert_into(collection_groups::table)
+                diesel::insert_into(collections_groups::table)
                     .values((
-                        collection_groups::collections_uuid.eq(&self.collections_uuid),
-                        collection_groups::groups_uuid.eq(&self.groups_uuid),
-                        collection_groups::read_only.eq(self.read_only),
-                        collection_groups::hide_passwords.eq(self.hide_passwords),
+                        collections_groups::collections_uuid.eq(&self.collections_uuid),
+                        collections_groups::groups_uuid.eq(&self.groups_uuid),
+                        collections_groups::read_only.eq(self.read_only),
+                        collections_groups::hide_passwords.eq(self.hide_passwords),
                     ))
-                    .on_conflict((collection_groups::collections_uuid, collection_groups::groups_uuid))
+                    .on_conflict((collections_groups::collections_uuid, collections_groups::groups_uuid))
                     .do_update()
                     .set((
-                        collection_groups::read_only.eq(self.read_only),
-                        collection_groups::hide_passwords.eq(self.hide_passwords),
+                        collections_groups::read_only.eq(self.read_only),
+                        collections_groups::hide_passwords.eq(self.hide_passwords),
                     ))
                     .execute(conn)
                     .map_res("Error adding group to collection")
@@ -269,8 +269,8 @@ impl CollectionGroup {
 
     pub async fn find_by_group (group_uuid: &str, conn: &DbConn) -> Vec<Self> {
         db_run! { conn: {
-            collection_groups::table
-                .filter(collection_groups::groups_uuid.eq(group_uuid))
+            collections_groups::table
+                .filter(collections_groups::groups_uuid.eq(group_uuid))
                 .load::<CollectionGroupDb>(conn)
                 .expect("Error loading collection groups")
                 .from_db()
@@ -279,15 +279,15 @@ impl CollectionGroup {
 
     pub async fn find_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
         db_run! { conn: {
-            collection_groups::table
+            collections_groups::table
                 .inner_join(groups_users::table.on(
-                    groups_users::groups_uuid.eq(collection_groups::groups_uuid)
+                    groups_users::groups_uuid.eq(collections_groups::groups_uuid)
                 ))
                 .inner_join(users_organizations::table.on(
                     users_organizations::uuid.eq(groups_users::users_organizations_uuid)
                 ))
                 .filter(users_organizations::user_uuid.eq(user_uuid))
-                .select(collection_groups::all_columns)
+                .select(collections_groups::all_columns)
                 .load::<CollectionGroupDb>(conn)
                 .expect("Error loading user collection groups")
                 .from_db()
@@ -296,9 +296,9 @@ impl CollectionGroup {
 
     pub async fn find_by_collection(collection_uuid: &str, conn: &DbConn) -> Vec<Self> {
         db_run! { conn: {
-            collection_groups::table
-                .filter(collection_groups::collections_uuid.eq(collection_uuid))
-                .select(collection_groups::all_columns)
+            collections_groups::table
+                .filter(collections_groups::collections_uuid.eq(collection_uuid))
+                .select(collections_groups::all_columns)
                 .load::<CollectionGroupDb>(conn)
                 .expect("Error loading collection groups")
                 .from_db()
@@ -312,9 +312,9 @@ impl CollectionGroup {
         }
         
         db_run! { conn: {
-            diesel::delete(collection_groups::table)
-                .filter(collection_groups::collections_uuid.eq(&self.collections_uuid))
-                .filter(collection_groups::groups_uuid.eq(&self.groups_uuid))
+            diesel::delete(collections_groups::table)
+                .filter(collections_groups::collections_uuid.eq(&self.collections_uuid))
+                .filter(collections_groups::groups_uuid.eq(&self.groups_uuid))
                 .execute(conn)
                 .map_res("Error deleting collection group")
         }}
@@ -327,8 +327,8 @@ impl CollectionGroup {
         }
         
         db_run! { conn: {
-            diesel::delete(collection_groups::table)
-                .filter(collection_groups::groups_uuid.eq(group_uuid))
+            diesel::delete(collections_groups::table)
+                .filter(collections_groups::groups_uuid.eq(group_uuid))
                 .execute(conn)
                 .map_res("Error deleting collection group")
         }}
@@ -344,8 +344,8 @@ impl CollectionGroup {
         }
         
         db_run! { conn: {
-            diesel::delete(collection_groups::table)
-                .filter(collection_groups::collections_uuid.eq(collection_uuid))
+            diesel::delete(collections_groups::table)
+                .filter(collections_groups::collections_uuid.eq(collection_uuid))
                 .execute(conn)
                 .map_res("Error deleting collection group")
         }}
@@ -426,8 +426,8 @@ impl GroupUser {
         }
     }
 
-    pub async fn delete_by_group_id_and_user_id(group_uuid: &str, user_uuid: &str, conn: &DbConn) -> EmptyResult {        
-        match UserOrganization::find_by_uuid(user_uuid, conn).await {
+    pub async fn delete_by_group_id_and_user_id(group_uuid: &str, users_organizations_uuid: &str, conn: &DbConn) -> EmptyResult {        
+        match UserOrganization::find_by_uuid(users_organizations_uuid, conn).await {
             Some(user) => User::update_uuid_revision(&user.user_uuid, conn).await,
             None => warn!("User could not be found!")
         };
@@ -435,7 +435,7 @@ impl GroupUser {
         db_run! { conn: {
             diesel::delete(groups_users::table)
                 .filter(groups_users::groups_uuid.eq(group_uuid))
-                .filter(groups_users::users_organizations_uuid.eq(user_uuid))
+                .filter(groups_users::users_organizations_uuid.eq(users_organizations_uuid))
                 .execute(conn)
                 .map_res("Error deleting group users")
         }}

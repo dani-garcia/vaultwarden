@@ -177,9 +177,9 @@ impl Collection {
             .left_join(groups::table.on(
                 groups::uuid.eq(groups_users::groups_uuid)
             ))
-            .left_join(collection_groups::table.on(
-                collection_groups::groups_uuid.eq(groups_users::groups_uuid).and(
-                    collection_groups::collections_uuid.eq(collections::uuid)
+            .left_join(collections_groups::table.on(
+                collections_groups::groups_uuid.eq(groups_users::groups_uuid).and(
+                    collections_groups::collections_uuid.eq(collections::uuid)
                 )
             ))
             .filter(
@@ -192,7 +192,7 @@ impl Collection {
                     groups::access_all.eq(true) // access_all in groups
                 ).or( // access via groups
                     groups_users::users_organizations_uuid.eq(users_organizations::uuid).and(
-                        collection_groups::collections_uuid.is_not_null()
+                        collections_groups::collections_uuid.is_not_null()
                     )
                 )
             )

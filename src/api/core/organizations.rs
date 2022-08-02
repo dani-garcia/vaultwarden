@@ -1675,7 +1675,7 @@ async fn get_group_details(_org_id: String, group_id: String, _headers: AdminHea
         _ => err!("Group could not be found!")
     };
 
-    let collection_groups = CollectionGroup::find_by_group(&group_id, &conn).await
+    let collections_groups = CollectionGroup::find_by_group(&group_id, &conn).await
         .iter()
         .map(|entry| SelectionReadOnly::to_group_details_read_only(entry).to_json())
         .collect::<Value>();
@@ -1686,7 +1686,7 @@ async fn get_group_details(_org_id: String, group_id: String, _headers: AdminHea
         "Name": group.name,
         "AccessAll": group.access_all,
         "ExternalId": group.external_id,
-        "Collections": collection_groups
+        "Collections": collections_groups
     })))
 }
 
