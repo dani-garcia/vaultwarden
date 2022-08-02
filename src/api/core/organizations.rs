@@ -299,6 +299,11 @@ async fn post_organization_collections(
     let collection = Collection::new(org.uuid, data.Name);
     collection.save(&conn).await?;
 
+    for group in data.Groups {
+        CollectionGroup::new(collection.uuid.clone(), group.Id, group.ReadOnly, group.HidePasswords)
+            .save(&conn).await?;
+    }
+
     // If the user doesn't have access to all collections, only in case of a Manger,
     // then we need to save the creating user uuid (Manager) to the users_collection table.
     // Else the user will not have access to his own created collection.

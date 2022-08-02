@@ -1,6 +1,6 @@
 use serde_json::Value;
 
-use super::{User, UserOrgStatus, UserOrgType, UserOrganization};
+use super::{User, UserOrgStatus, UserOrgType, UserOrganization, CollectionGroup};
 
 db_object! {
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -127,6 +127,7 @@ impl Collection {
         self.update_users_revision(conn).await;
         CollectionCipher::delete_all_by_collection(&self.uuid, conn).await?;
         CollectionUser::delete_all_by_collection(&self.uuid, conn).await?;
+        CollectionGroup::delete_all_by_collection(&self.uuid, &conn).await?;
 
         db_run! { conn: {
             diesel::delete(collections::table.filter(collections::uuid.eq(self.uuid)))
