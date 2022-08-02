@@ -98,10 +98,19 @@ struct OrganizationUpdateData {
     Name: String,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize)]
 #[allow(non_snake_case)]
 struct NewCollectionData {
     Name: String,
+    Groups: Vec<NewCollectionGroupData>,
+}
+
+#[derive(Deserialize)]
+#[allow(non_snake_case)]
+struct NewCollectionGroupData {
+    HidePasswords: bool,
+    Id: String,
+    ReadOnly: bool,
 }
 
 #[derive(Deserialize)]
@@ -338,6 +347,13 @@ async fn post_organization_collection_update(
     collection.name = data.Name;
     collection.save(&conn).await?;
 
+    CollectionGroup::delete_all_by_collection(&col_id, &conn).await?;
+
+    for group in data.Groups {
+        CollectionGroup::new(col_id.clone(), group.Id, group.ReadOnly, group.HidePasswords)
+            .save(&conn).await?;
+    }
+
     Ok(Json(collection.to_json()))
 }
 
@@ -433,7 +449,16 @@ async fn get_org_collection_detail(
                 err!("Collection is not owned by organization")
             }
 
-            Ok(Json(collection.to_json()))
+            let groups: Vec<Value> = CollectionGroup::find_by_collection(&collection.uuid, &conn).await
+                .iter()
+                .map(|collection_group| SelectionReadOnly::to_collection_group_details_read_only(collection_group).to_json())
+                .collect();
+
+            let mut json_object = collection.to_json();
+            json_object["Groups"] = json!(groups);
+            json_object["Object"] = json!("collectionGroupDetails");
+
+            Ok(Json(json_object))
         }
     }
 }
@@ -1570,9 +1595,17 @@ impl SelectionReadOnly {
         )
     }
 
-    pub fn to_selection_read_only (collection_group: &CollectionGroup) -> SelectionReadOnly {
+    pub fn to_group_details_read_only (collection_group: &CollectionGroup) -> SelectionReadOnly {
         SelectionReadOnly {
             Id: collection_group.collections_uuid.clone(),
+            ReadOnly: collection_group.read_only,
+            HidePasswords: collection_group.hide_passwords
+        }
+    }
+
+    pub fn to_collection_group_details_read_only (collection_group: &CollectionGroup) -> SelectionReadOnly {
+        SelectionReadOnly {
+            Id: collection_group.groups_uuid.clone(),
             ReadOnly: collection_group.read_only,
             HidePasswords: collection_group.hide_passwords
         }
@@ -1644,7 +1677,7 @@ async fn get_group_details(_org_id: String, group_id: String, _headers: AdminHea
 
     let collection_groups = CollectionGroup::find_by_group(&group_id, &conn).await
         .iter()
-        .map(|entry| SelectionReadOnly::to_selection_read_only(entry).to_json())
+        .map(|entry| SelectionReadOnly::to_group_details_read_only(entry).to_json())
         .collect::<Value>();
     
     Ok(Json(json!({

@@ -294,6 +294,17 @@ impl CollectionGroup {
         }}
     }
 
+    pub async fn find_by_collection(collection_uuid: &str, conn: &DbConn) -> Vec<Self> {
+        db_run! { conn: {
+            collection_groups::table
+                .filter(collection_groups::collections_uuid.eq(collection_uuid))
+                .select(collection_groups::all_columns)
+                .load::<CollectionGroupDb>(conn)
+                .expect("Error loading collection groups")
+                .from_db()
+        }}
+    }
+
     pub async fn delete(&self, conn: &DbConn) -> EmptyResult {        
         let group_users = GroupUser::find_by_group(&self.groups_uuid, conn).await;
         for group_user in group_users {
@@ -318,6 +329,23 @@ impl CollectionGroup {
         db_run! { conn: {
             diesel::delete(collection_groups::table)
                 .filter(collection_groups::groups_uuid.eq(group_uuid))
+                .execute(conn)
+                .map_res("Error deleting collection group")
+        }}
+    }
+
+    pub async fn delete_all_by_collection(collection_uuid: &str, conn: &DbConn) -> EmptyResult {
+        let collection_assigned_to_groups = CollectionGroup::find_by_collection(collection_uuid, conn).await;
+        for collection_assigned_to_group in collection_assigned_to_groups {
+            let group_users = GroupUser::find_by_group(&collection_assigned_to_group.groups_uuid, conn).await;
+            for group_user in group_users {
+                group_user.update_user_revision(conn).await;
+            }
+        }
+        
+        db_run! { conn: {
+            diesel::delete(collection_groups::table)
+                .filter(collection_groups::collections_uuid.eq(collection_uuid))
                 .execute(conn)
                 .map_res("Error deleting collection group")
         }}
