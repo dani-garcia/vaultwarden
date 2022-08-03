@@ -1565,7 +1565,7 @@ impl CipherSyncData {
             user_organizations,
             user_collections,
             user_collections_groups,
-            user_groups
+            user_groups,
         }
     }
 }

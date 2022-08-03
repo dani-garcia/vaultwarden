@@ -1,5 +1,5 @@
-use serde_json::Value;
 use chrono::{NaiveDateTime, Utc};
+use serde_json::Value;
 
 db_object! {
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -46,7 +46,7 @@ impl Group {
             access_all,
             external_id,
             creation_date: now,
-            revision_date: now
+            revision_date: now,
         }
     }
 
@@ -71,16 +71,16 @@ impl CollectionGroup {
             collections_uuid,
             groups_uuid,
             read_only,
-            hide_passwords
+            hide_passwords,
         }
     }
 }
 
 impl GroupUser {
-    pub fn new (groups_uuid: String, users_organizations_uuid: String) -> Self {
+    pub fn new(groups_uuid: String, users_organizations_uuid: String) -> Self {
         Self {
             groups_uuid,
-            users_organizations_uuid
+            users_organizations_uuid,
         }
     }
 }
@@ -90,7 +90,7 @@ use crate::db::DbConn;
 use crate::api::EmptyResult;
 use crate::error::MapResult;
 
-use super::{UserOrganization, User};
+use super::{User, UserOrganization};
 
 /// Database methods
 impl Group {
@@ -128,7 +128,7 @@ impl Group {
         }
     }
 
-    pub async fn find_by_organization (organizations_uuid: &str, conn: &DbConn) -> Vec<Self> {
+    pub async fn find_by_organization(organizations_uuid: &str, conn: &DbConn) -> Vec<Self> {
         db_run! { conn: {
             groups::table
                 .filter(groups::organizations_uuid.eq(organizations_uuid))
@@ -138,7 +138,7 @@ impl Group {
         }}
     }
 
-    pub async fn find_by_uuid (uuid: &str, conn: &DbConn) -> Option<Self> {
+    pub async fn find_by_uuid(uuid: &str, conn: &DbConn) -> Option<Self> {
         db_run! { conn: {
             groups::table
                 .filter(groups::uuid.eq(uuid))
@@ -185,7 +185,7 @@ impl Group {
     pub async fn delete(&self, conn: &DbConn) -> EmptyResult {
         CollectionGroup::delete_all_by_group(&self.uuid, conn).await?;
         GroupUser::delete_all_by_group(&self.uuid, conn).await?;
-        
+
         db_run! { conn: {
             diesel::delete(groups::table.filter(groups::uuid.eq(&self.uuid)))
                 .execute(conn)
@@ -217,7 +217,7 @@ impl CollectionGroup {
         for group_user in group_users {
             group_user.update_user_revision(conn).await;
         }
-        
+
         db_run! { conn:
             sqlite, mysql {
                 match diesel::replace_into(collections_groups::table)
@@ -267,7 +267,7 @@ impl CollectionGroup {
         }
     }
 
-    pub async fn find_by_group (group_uuid: &str, conn: &DbConn) -> Vec<Self> {
+    pub async fn find_by_group(group_uuid: &str, conn: &DbConn) -> Vec<Self> {
         db_run! { conn: {
             collections_groups::table
                 .filter(collections_groups::groups_uuid.eq(group_uuid))
@@ -305,12 +305,12 @@ impl CollectionGroup {
         }}
     }
 
-    pub async fn delete(&self, conn: &DbConn) -> EmptyResult {        
+    pub async fn delete(&self, conn: &DbConn) -> EmptyResult {
         let group_users = GroupUser::find_by_group(&self.groups_uuid, conn).await;
         for group_user in group_users {
             group_user.update_user_revision(conn).await;
         }
-        
+
         db_run! { conn: {
             diesel::delete(collections_groups::table)
                 .filter(collections_groups::collections_uuid.eq(&self.collections_uuid))
@@ -325,7 +325,7 @@ impl CollectionGroup {
         for group_user in group_users {
             group_user.update_user_revision(conn).await;
         }
-        
+
         db_run! { conn: {
             diesel::delete(collections_groups::table)
                 .filter(collections_groups::groups_uuid.eq(group_uuid))
@@ -342,7 +342,7 @@ impl CollectionGroup {
                 group_user.update_user_revision(conn).await;
             }
         }
-        
+
         db_run! { conn: {
             diesel::delete(collections_groups::table)
                 .filter(collections_groups::collections_uuid.eq(collection_uuid))
@@ -353,9 +353,9 @@ impl CollectionGroup {
 }
 
 impl GroupUser {
-    pub async fn save(&mut self, conn: &DbConn) -> EmptyResult {        
+    pub async fn save(&mut self, conn: &DbConn) -> EmptyResult {
         self.update_user_revision(conn).await;
-        
+
         db_run! { conn:
             sqlite, mysql {
                 match diesel::replace_into(groups_users::table)
@@ -422,16 +422,20 @@ impl GroupUser {
     pub async fn update_user_revision(&self, conn: &DbConn) {
         match UserOrganization::find_by_uuid(&self.users_organizations_uuid, conn).await {
             Some(user) => User::update_uuid_revision(&user.user_uuid, conn).await,
-            None => warn!("User could not be found!")
+            None => warn!("User could not be found!"),
         }
     }
 
-    pub async fn delete_by_group_id_and_user_id(group_uuid: &str, users_organizations_uuid: &str, conn: &DbConn) -> EmptyResult {        
+    pub async fn delete_by_group_id_and_user_id(
+        group_uuid: &str,
+        users_organizations_uuid: &str,
+        conn: &DbConn,
+    ) -> EmptyResult {
         match UserOrganization::find_by_uuid(users_organizations_uuid, conn).await {
             Some(user) => User::update_uuid_revision(&user.user_uuid, conn).await,
-            None => warn!("User could not be found!")
+            None => warn!("User could not be found!"),
         };
-        
+
         db_run! { conn: {
             diesel::delete(groups_users::table)
                 .filter(groups_users::groups_uuid.eq(group_uuid))
@@ -446,7 +450,7 @@ impl GroupUser {
         for group_user in group_users {
             group_user.update_user_revision(conn).await;
         }
-        
+
         db_run! { conn: {
             diesel::delete(groups_users::table)
                 .filter(groups_users::groups_uuid.eq(group_uuid))
@@ -458,9 +462,9 @@ impl GroupUser {
     pub async fn delete_all_by_user(users_organizations_uuid: &str, conn: &DbConn) -> EmptyResult {
         match UserOrganization::find_by_uuid(users_organizations_uuid, conn).await {
             Some(user) => User::update_uuid_revision(&user.user_uuid, conn).await,
-            None => warn!("User could not be found!")
+            None => warn!("User could not be found!"),
         }
-        
+
         db_run! { conn: {
             diesel::delete(groups_users::table)
                 .filter(groups_users::users_organizations_uuid.eq(users_organizations_uuid))

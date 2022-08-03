@@ -2,7 +2,9 @@ use crate::CONFIG;
 use chrono::{Duration, NaiveDateTime, Utc};
 use serde_json::Value;
 
-use super::{Attachment, CollectionCipher, Favorite, FolderCipher, User, UserOrgStatus, UserOrgType, UserOrganization, Group};
+use super::{
+    Attachment, CollectionCipher, Favorite, FolderCipher, Group, User, UserOrgStatus, UserOrgType, UserOrganization,
+};
 
 use crate::api::core::CipherSyncData;
 
@@ -362,12 +364,8 @@ impl Cipher {
         conn: &DbConn,
     ) -> bool {
         match cipher_sync_data {
-            Some(cipher_sync_data) => {
-                cipher_sync_data.user_groups.iter().any(|group| group.access_all)
-            },
-            None => {
-                Group::is_in_full_access_group(user_uuid, conn).await
-            }
+            Some(cipher_sync_data) => cipher_sync_data.user_groups.iter().any(|group| group.access_all),
+            None => Group::is_in_full_access_group(user_uuid, conn).await,
         }
     }
 
@@ -385,7 +383,10 @@ impl Cipher {
         // Check whether this cipher is directly owned by the user, or is in
         // a collection that the user has full access to. If so, there are no
         // access restrictions.
-        if self.is_owned_by_user(user_uuid) || self.is_in_full_access_org(user_uuid, cipher_sync_data, conn).await || self.is_in_full_access_group(user_uuid, cipher_sync_data, conn).await {
+        if self.is_owned_by_user(user_uuid)
+            || self.is_in_full_access_org(user_uuid, cipher_sync_data, conn).await
+            || self.is_in_full_access_group(user_uuid, cipher_sync_data, conn).await
+        {
             return Some((false, false));
         }
 
@@ -393,15 +394,17 @@ impl Cipher {
             let mut rows: Vec<(bool, bool)> = Vec::new();
             if let Some(collections) = cipher_sync_data.cipher_collections.get(&self.uuid) {
                 for collection in collections {
-                    //User permissions                    
+                    //User permissions
                     if let Some(uc) = cipher_sync_data.user_collections.get(collection) {
                         rows.push((uc.read_only, uc.hide_passwords));
                     }
 
                     //Group permissions
-                    if let Some(gc) = cipher_sync_data.user_collections_groups
+                    if let Some(gc) = cipher_sync_data
+                        .user_collections_groups
                         .iter()
-                        .find(|collection_group| collection_group.collections_uuid == collection.clone()) {
+                        .find(|collection_group| collection_group.collections_uuid == collection.clone())
+                    {
                         rows.push((gc.read_only, gc.hide_passwords));
                     }
                 }
@@ -412,7 +415,7 @@ impl Cipher {
             let mut group_collections_access_flags = self.get_group_collections_access_flags(user_uuid, conn).await;
 
             let mut result = Vec::new();
-            
+
             result.append(&mut user_collections_access_flags);
             result.append(&mut group_collections_access_flags);
 

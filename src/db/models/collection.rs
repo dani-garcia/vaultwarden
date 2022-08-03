@@ -1,6 +1,6 @@
 use serde_json::Value;
 
-use super::{User, UserOrgStatus, UserOrgType, UserOrganization, CollectionGroup};
+use super::{CollectionGroup, User, UserOrgStatus, UserOrgType, UserOrganization};
 
 db_object! {
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -186,7 +186,7 @@ impl Collection {
             .filter(
                 users_organizations::status.eq(UserOrgStatus::Confirmed as i32)
             )
-            .filter( 
+            .filter(
                 users_collections::user_uuid.eq(user_uuid).or( // Directly accessed collection
                     users_organizations::access_all.eq(true) // access_all in Organization
                 ).or(
