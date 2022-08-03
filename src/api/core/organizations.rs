@@ -1594,7 +1594,7 @@ impl SelectionReadOnly {
     pub fn to_collection_group (&self, groups_uuid: String) -> CollectionGroup {
         CollectionGroup::new (
             self.Id.clone(),
-            groups_uuid.clone(),
+            groups_uuid,
             self.ReadOnly,
             self.HidePasswords
         )
@@ -1656,12 +1656,12 @@ async fn put_group(_org_id: String, group_id: String, data: JsonUpcase<GroupRequ
 }
 
 async fn add_update_group(mut group: Group, collections: Vec<SelectionReadOnly>, conn: &DbConn) -> JsonResult {
-    group.save(&conn).await?;
+    group.save(conn).await?;
 
     for selection_read_only_request in collections {        
         let mut collection_group = selection_read_only_request.to_collection_group(group.uuid.clone());
         
-        collection_group.save(&conn).await?;
+        collection_group.save(conn).await?;
     }
 
     Ok(Json(json!({

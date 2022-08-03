@@ -41,10 +41,10 @@ impl Group {
 
         Self {
             uuid: crate::util::get_uuid(),
-            organizations_uuid: organizations_uuid,
-            name: name,
-            access_all: access_all,
-            external_id: external_id,
+            organizations_uuid,
+            name,
+            access_all,
+            external_id,
             creation_date: now,
             revision_date: now
         }
@@ -79,8 +79,8 @@ impl CollectionGroup {
 impl GroupUser {
     pub fn new (groups_uuid: String, users_organizations_uuid: String) -> Self {
         Self {
-            groups_uuid: groups_uuid,
-            users_organizations_uuid: users_organizations_uuid
+            groups_uuid,
+            users_organizations_uuid
         }
     }
 }
@@ -183,8 +183,8 @@ impl Group {
     }
 
     pub async fn delete(&self, conn: &DbConn) -> EmptyResult {
-        CollectionGroup::delete_all_by_group(&self.uuid, &conn).await?;
-        GroupUser::delete_all_by_group(&self.uuid, &conn).await?;
+        CollectionGroup::delete_all_by_group(&self.uuid, conn).await?;
+        GroupUser::delete_all_by_group(&self.uuid, conn).await?;
         
         db_run! { conn: {
             diesel::delete(groups::table.filter(groups::uuid.eq(&self.uuid)))
