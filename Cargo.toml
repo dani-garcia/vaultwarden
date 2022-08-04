@@ -64,8 +64,8 @@ futures = "0.3.21"
 tokio = { version = "1.20.1", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time"] }
 
 # A generic serialization/deserialization framework
-serde = { version = "1.0.140", features = ["derive"] }
-serde_json = "1.0.82"
+serde = { version = "1.0.142", features = ["derive"] }
+serde_json = "1.0.83"
 
 # A safe, extensible ORM and Query builder
 diesel = { version = "1.4.8", features = ["chrono", "r2d2"] }
@@ -82,9 +82,9 @@ ring = "0.16.20"
 uuid = { version = "1.1.2", features = ["v4"] }
 
 # Date and time libraries
-chrono = { version = "0.4.19", features = ["clock", "serde"], default-features = false }
+chrono = { version = "0.4.20", features = ["clock", "serde"], default-features = false }
 chrono-tz = "0.6.3"
-time = "0.3.11"
+time = "0.3.12"
 
 # Job scheduler
 job_scheduler_ng = "2.0.1"
@@ -122,7 +122,7 @@ html5gum = "0.5.2"
 regex = { version = "1.6.0", features = ["std", "perf", "unicode-perl"], default-features = false }
 data-url = "0.1.1"
 bytes = "1.2.1"
-cached = "0.37.0"
+cached = "0.38.0"
 
 # Used for custom short lived cookie jar during favicon extraction
 cookie = "0.16.0"
@@ -135,7 +135,7 @@ openssl = "0.10.41"
 pico-args = "0.5.0"
 
 # Macro ident concatenation
-paste = "1.0.7"
+paste = "1.0.8"
 governor = "0.4.2"
 
 # Capture CTRL+C
@@ -144,6 +144,12 @@ ctrlc = { version = "3.2.2", features = ["termination"] }
 # Allow overriding the default memory allocator
 # Mainly used for the musl builds, since the default musl malloc is very slow
 mimalloc = { version = "0.1.29", features = ["secure"], default-features = false, optional = true }
+
+[patch.crates-io]
+# Using a patched version of multer-rs (Used by Rocket) to fix attachment/send file uploads
+# Issue: https://github.com/dani-garcia/vaultwarden/issues/2644
+# Patch: https://github.com/BlackDex/multer-rs/commit/73e83fa5eb183646cc56606e5d902acb30a45b3d
+multer = { git = "https://github.com/BlackDex/multer-rs", rev = "73e83fa5eb183646cc56606e5d902acb30a45b3d" }
 
 # Strip debuginfo from the release builds
 # Also enable thin LTO for some optimizations
