@@ -1497,8 +1497,8 @@ pub struct CipherSyncData {
     pub cipher_collections: HashMap<String, Vec<String>>,
     pub user_organizations: HashMap<String, UserOrganization>,
     pub user_collections: HashMap<String, CollectionUser>,
-    pub user_collections_groups: Vec<CollectionGroup>,
-    pub user_groups: Vec<Group>,
+    pub user_collections_groups: HashMap<String, CollectionGroup>,
+    pub user_groups: HashMap<String, Group>,
 }
 
 pub enum CipherSyncType {
@@ -1554,8 +1554,17 @@ impl CipherSyncData {
                 .collect()
                 .await;
 
-        let user_collections_groups = CollectionGroup::find_by_user(user_uuid, conn).await;
-        let user_groups = Group::find_by_user(user_uuid, conn).await;
+        // Generate a HashMap with the collections_uuid as key and the CollectionGroup record
+        let user_collections_groups = stream::iter(CollectionGroup::find_by_user(user_uuid, conn).await)
+            .map(|collection_group| (collection_group.collections_uuid.clone(), collection_group))
+            .collect()
+            .await;
+
+        // Generate a HashMap with the group.uuid as key and the Group record
+        let user_groups = stream::iter(Group::find_by_user(user_uuid, conn).await)
+            .map(|group| (group.uuid.clone(), group))
+            .collect()
+            .await;
 
         Self {
             cipher_attachments,

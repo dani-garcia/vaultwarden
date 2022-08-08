@@ -364,7 +364,9 @@ impl Cipher {
         conn: &DbConn,
     ) -> bool {
         match cipher_sync_data {
-            Some(cipher_sync_data) => cipher_sync_data.user_groups.iter().any(|group| group.access_all),
+            Some(cipher_sync_data) => {
+                cipher_sync_data.user_groups.iter().any(|hash_map_entry| hash_map_entry.1.access_all)
+            }
             None => Group::is_in_full_access_group(user_uuid, conn).await,
         }
     }
@@ -400,12 +402,8 @@ impl Cipher {
                     }
 
                     //Group permissions
-                    if let Some(gc) = cipher_sync_data
-                        .user_collections_groups
-                        .iter()
-                        .find(|collection_group| collection_group.collections_uuid == collection.clone())
-                    {
-                        rows.push((gc.read_only, gc.hide_passwords));
+                    if let Some(cg) = cipher_sync_data.user_collections_groups.get(collection) {
+                        rows.push((cg.read_only, cg.hide_passwords));
                     }
                 }
             }
