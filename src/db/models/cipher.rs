@@ -565,7 +565,9 @@ impl Cipher {
                     groups::uuid.eq(groups_users::groups_uuid)
                 ))
                 .left_join(collections_groups::table.on(
-                    collections_groups::collections_uuid.eq(ciphers_collections::collection_uuid)
+                    collections_groups::collections_uuid.eq(ciphers_collections::collection_uuid).and(
+                        collections_groups::groups_uuid.eq(groups::uuid)
+                    )
                 ))
                 .filter(ciphers::user_uuid.eq(user_uuid)) // Cipher owner
                 .or_filter(users_organizations::access_all.eq(true)) // access_all in org
@@ -704,7 +706,9 @@ impl Cipher {
                 groups::uuid.eq(groups_users::groups_uuid)
             ))
             .left_join(collections_groups::table.on(
-                collections_groups::collections_uuid.eq(ciphers_collections::collection_uuid)
+                collections_groups::collections_uuid.eq(ciphers_collections::collection_uuid).and(
+                    collections_groups::groups_uuid.eq(groups::uuid)
+                )
             ))
             .or_filter(users_collections::user_uuid.eq(user_id)) // User has access to collection
             .or_filter(users_organizations::access_all.eq(true)) // User has access all
