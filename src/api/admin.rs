@@ -418,12 +418,23 @@ async fn update_user_org_type(data: Json<UserOrgTypeData>, _token: AdminToken, c
     };
 
     if user_to_edit.atype == UserOrgType::Owner && new_type != UserOrgType::Owner {
-        // Removing owner permmission, check that there are at least another owner
-        let num_owners =
-            UserOrganization::find_by_org_and_type(&data.org_uuid, UserOrgType::Owner as i32, &conn).await.len();
-
-        if num_owners <= 1 {
+        // Removing owner permmission, check that there is at least one other confirmed owner
+        if UserOrganization::count_confirmed_by_org_and_type(&data.org_uuid, UserOrgType::Owner, &conn).await <= 1 {
             err!("Can't change the type of the last owner")
+        }
+    }
+
+    // This check is also done at api::organizations::{accept_invite(), _confirm_invite, _activate_user(), edit_user()}, update_user_org_type
+    // It returns different error messages per function.
+    if new_type < UserOrgType::Admin {
+        match OrgPolicy::is_user_allowed(&user_to_edit.user_uuid, &user_to_edit.org_uuid, true, &conn).await {
+            Ok(_) => {}
+            Err(OrgPolicyErr::TwoFactorMissing) => {
+                err!("You cannot modify this user to this type because it has no two-step login method activated");
+            }
+            Err(OrgPolicyErr::SingleOrgEnforced) => {
+                err!("You cannot modify this user to this type because it is a member of an organization which forbids it");
+            }
         }
     }
 
