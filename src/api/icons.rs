@@ -1,20 +1,25 @@
 use std::{
-    collections::HashMap,
-    fs::{create_dir_all, remove_file, symlink_metadata, File},
-    io::prelude::*,
-    net::{IpAddr, ToSocketAddrs},
-    sync::{Arc, RwLock},
+    net::IpAddr,
+    sync::Arc,
     time::{Duration, SystemTime},
 };
 
+use bytes::{Bytes, BytesMut};
+use futures::{stream::StreamExt, TryFutureExt};
 use once_cell::sync::Lazy;
 use regex::Regex;
-use reqwest::{blocking::Client, blocking::Response, header};
-use rocket::{
-    http::ContentType,
-    response::{Content, Redirect},
-    Route,
+use reqwest::{
+    header::{self, HeaderMap, HeaderValue},
+    Client, Response,
 };
+use rocket::{http::ContentType, response::Redirect, Route};
+use tokio::{
+    fs::{create_dir_all, remove_file, symlink_metadata, File},
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::lookup_host,
+};
+
+use html5gum::{Emitter, EndTag, HtmlString, InfallibleTokenizer, Readable, StartTag, StringReader, Tokenizer};
 
 use crate::{
     error::Error,
@@ -25,48 +30,56 @@ use crate::{
 pub fn routes() -> Vec<Route> {
     match CONFIG.icon_service().as_str() {
         "internal" => routes![icon_internal],
-        "bitwarden" => routes![icon_bitwarden],
-        "duckduckgo" => routes![icon_duckduckgo],
-        "google" => routes![icon_google],
-        _ => routes![icon_custom],
+        _ => routes![icon_external],
     }
 }
 
 static CLIENT: Lazy<Client> = Lazy::new(|| {
     // Generate the default headers
-    let mut default_headers = header::HeaderMap::new();
-    default_headers
-        .insert(header::USER_AGENT, header::HeaderValue::from_static("Links (2.22; Linux X86_64; GNU C; text)"));
-    default_headers
-        .insert(header::ACCEPT, header::HeaderValue::from_static("text/html, text/*;q=0.5, image/*, */*;q=0.1"));
-    default_headers.insert(header::ACCEPT_LANGUAGE, header::HeaderValue::from_static("en,*;q=0.1"));
-    default_headers.insert(header::CACHE_CONTROL, header::HeaderValue::from_static("no-cache"));
-    default_headers.insert(header::PRAGMA, header::HeaderValue::from_static("no-cache"));
+    let mut default_headers = HeaderMap::new();
+    default_headers.insert(header::USER_AGENT, HeaderValue::from_static("Links (2.22; Linux X86_64; GNU C; text)"));
+    default_headers.insert(header::ACCEPT, HeaderValue::from_static("text/html, text/*;q=0.5, image/*, */*;q=0.1"));
+    default_headers.insert(header::ACCEPT_LANGUAGE, HeaderValue::from_static("en,*;q=0.1"));
+    default_headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"));
+    default_headers.insert(header::PRAGMA, HeaderValue::from_static("no-cache"));
+
+    // Generate the cookie store
+    let cookie_store = Arc::new(Jar::default());
 
     // Reuse the client between requests
-    get_reqwest_client_builder()
-        .cookie_provider(Arc::new(Jar::default()))
+    let client = get_reqwest_client_builder()
+        .cookie_provider(Arc::clone(&cookie_store))
         .timeout(Duration::from_secs(CONFIG.icon_download_timeout()))
-        .default_headers(default_headers)
-        .build()
-        .expect("Failed to build icon client")
+        .default_headers(default_headers.clone());
+
+    match client.build() {
+        Ok(client) => client,
+        Err(e) => {
+            error!("Possible trust-dns error, trying with trust-dns disabled: '{e}'");
+            get_reqwest_client_builder()
+                .cookie_provider(cookie_store)
+                .timeout(Duration::from_secs(CONFIG.icon_download_timeout()))
+                .default_headers(default_headers)
+                .trust_dns(false)
+                .build()
+                .expect("Failed to build client")
+        }
+    }
 });
 
 // Build Regex only once since this takes a lot of time.
-static ICON_REL_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)icon$|apple.*icon").unwrap());
-static ICON_REL_BLACKLIST: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)mask-icon").unwrap());
 static ICON_SIZE_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?x)(\d+)\D*(\d+)").unwrap());
 
 // Special HashMap which holds the user defined Regex to speedup matching the regex.
-static ICON_BLACKLIST_REGEX: Lazy<RwLock<HashMap<String, Regex>>> = Lazy::new(|| RwLock::new(HashMap::new()));
+static ICON_BLACKLIST_REGEX: Lazy<dashmap::DashMap<String, Regex>> = Lazy::new(dashmap::DashMap::new);
 
-fn icon_redirect(domain: &str, template: &str) -> Option<Redirect> {
+async fn icon_redirect(domain: &str, template: &str) -> Option<Redirect> {
     if !is_valid_domain(domain) {
         warn!("Invalid domain: {}", domain);
         return None;
     }
 
-    if is_domain_blacklisted(domain) {
+    if is_domain_blacklisted(domain).await {
         return None;
     }
 
@@ -84,47 +97,28 @@ fn icon_redirect(domain: &str, template: &str) -> Option<Redirect> {
 }
 
 #[get("/<domain>/icon.png")]
-fn icon_custom(domain: String) -> Option<Redirect> {
-    icon_redirect(&domain, &CONFIG.icon_service())
+async fn icon_external(domain: String) -> Option<Redirect> {
+    icon_redirect(&domain, &CONFIG._icon_service_url()).await
 }
 
 #[get("/<domain>/icon.png")]
-fn icon_bitwarden(domain: String) -> Option<Redirect> {
-    icon_redirect(&domain, "https://icons.bitwarden.net/{}/icon.png")
-}
-
-#[get("/<domain>/icon.png")]
-fn icon_duckduckgo(domain: String) -> Option<Redirect> {
-    icon_redirect(&domain, "https://icons.duckduckgo.com/ip3/{}.ico")
-}
-
-#[get("/<domain>/icon.png")]
-fn icon_google(domain: String) -> Option<Redirect> {
-    icon_redirect(&domain, "https://www.google.com/s2/favicons?domain={}&sz=32")
-}
-
-#[get("/<domain>/icon.png")]
-fn icon_internal(domain: String) -> Cached<Content<Vec<u8>>> {
+async fn icon_internal(domain: String) -> Cached<(ContentType, Vec<u8>)> {
     const FALLBACK_ICON: &[u8] = include_bytes!("../static/images/fallback-icon.png");
 
     if !is_valid_domain(&domain) {
         warn!("Invalid domain: {}", domain);
         return Cached::ttl(
-            Content(ContentType::new("image", "png"), FALLBACK_ICON.to_vec()),
+            (ContentType::new("image", "png"), FALLBACK_ICON.to_vec()),
             CONFIG.icon_cache_negttl(),
             true,
         );
     }
 
-    match get_icon(&domain) {
+    match get_icon(&domain).await {
         Some((icon, icon_type)) => {
-            Cached::ttl(Content(ContentType::new("image", icon_type), icon), CONFIG.icon_cache_ttl(), true)
+            Cached::ttl((ContentType::new("image", icon_type), icon), CONFIG.icon_cache_ttl(), true)
         }
-        _ => Cached::ttl(
-            Content(ContentType::new("image", "png"), FALLBACK_ICON.to_vec()),
-            CONFIG.icon_cache_negttl(),
-            true,
-        ),
+        _ => Cached::ttl((ContentType::new("image", "png"), FALLBACK_ICON.to_vec()), CONFIG.icon_cache_negttl(), true),
     }
 }
 
@@ -264,68 +258,57 @@ mod tests {
     }
 }
 
-fn is_domain_blacklisted(domain: &str) -> bool {
-    let mut is_blacklisted = CONFIG.icon_blacklist_non_global_ips()
-        && (domain, 0)
-            .to_socket_addrs()
-            .map(|x| {
-                for ip_port in x {
-                    if !is_global(ip_port.ip()) {
-                        warn!("IP {} for domain '{}' is not a global IP!", ip_port.ip(), domain);
-                        return true;
-                    }
+use cached::proc_macro::cached;
+#[cached(key = "String", convert = r#"{ domain.to_string() }"#, size = 16, time = 60)]
+#[allow(clippy::unused_async)] // This is needed because cached causes a false-positive here.
+async fn is_domain_blacklisted(domain: &str) -> bool {
+    if CONFIG.icon_blacklist_non_global_ips() {
+        if let Ok(s) = lookup_host((domain, 0)).await {
+            for addr in s {
+                if !is_global(addr.ip()) {
+                    debug!("IP {} for domain '{}' is not a global IP!", addr.ip(), domain);
+                    return true;
                 }
-                false
-            })
-            .unwrap_or(false);
-
-    // Skip the regex check if the previous one is true already
-    if !is_blacklisted {
-        if let Some(blacklist) = CONFIG.icon_blacklist_regex() {
-            let mut regex_hashmap = ICON_BLACKLIST_REGEX.read().unwrap();
-
-            // Use the pre-generate Regex stored in a Lazy HashMap if there's one, else generate it.
-            let regex = if let Some(regex) = regex_hashmap.get(&blacklist) {
-                regex
-            } else {
-                drop(regex_hashmap);
-
-                let mut regex_hashmap_write = ICON_BLACKLIST_REGEX.write().unwrap();
-                // Clear the current list if the previous key doesn't exists.
-                // To prevent growing of the HashMap after someone has changed it via the admin interface.
-                if regex_hashmap_write.len() >= 1 {
-                    regex_hashmap_write.clear();
-                }
-
-                // Generate the regex to store in too the Lazy Static HashMap.
-                let blacklist_regex = Regex::new(&blacklist).unwrap();
-                regex_hashmap_write.insert(blacklist.to_string(), blacklist_regex);
-                drop(regex_hashmap_write);
-
-                regex_hashmap = ICON_BLACKLIST_REGEX.read().unwrap();
-                regex_hashmap.get(&blacklist).unwrap()
-            };
-
-            // Use the pre-generate Regex stored in a Lazy HashMap.
-            if regex.is_match(domain) {
-                debug!("Blacklisted domain: {} matched ICON_BLACKLIST_REGEX", domain);
-                is_blacklisted = true;
             }
         }
     }
 
-    is_blacklisted
+    if let Some(blacklist) = CONFIG.icon_blacklist_regex() {
+        // Use the pre-generate Regex stored in a Lazy HashMap if there's one, else generate it.
+        let is_match = if let Some(regex) = ICON_BLACKLIST_REGEX.get(&blacklist) {
+            regex.is_match(domain)
+        } else {
+            // Clear the current list if the previous key doesn't exists.
+            // To prevent growing of the HashMap after someone has changed it via the admin interface.
+            if ICON_BLACKLIST_REGEX.len() >= 1 {
+                ICON_BLACKLIST_REGEX.clear();
+            }
+
+            // Generate the regex to store in too the Lazy Static HashMap.
+            let blacklist_regex = Regex::new(&blacklist).unwrap();
+            let is_match = blacklist_regex.is_match(domain);
+            ICON_BLACKLIST_REGEX.insert(blacklist.clone(), blacklist_regex);
+
+            is_match
+        };
+
+        if is_match {
+            debug!("Blacklisted domain: {} matched ICON_BLACKLIST_REGEX", domain);
+            return true;
+        }
+    }
+    false
 }
 
-fn get_icon(domain: &str) -> Option<(Vec<u8>, String)> {
+async fn get_icon(domain: &str) -> Option<(Vec<u8>, String)> {
     let path = format!("{}/{}.png", CONFIG.icon_cache_folder(), domain);
 
     // Check for expiration of negatively cached copy
-    if icon_is_negcached(&path) {
+    if icon_is_negcached(&path).await {
         return None;
     }
 
-    if let Some(icon) = get_cached_icon(&path) {
+    if let Some(icon) = get_cached_icon(&path).await {
         let icon_type = match get_icon_type(&icon) {
             Some(x) => x,
             _ => "x-icon",
@@ -338,31 +321,31 @@ fn get_icon(domain: &str) -> Option<(Vec<u8>, String)> {
     }
 
     // Get the icon, or None in case of error
-    match download_icon(domain) {
+    match download_icon(domain).await {
         Ok((icon, icon_type)) => {
-            save_icon(&path, &icon);
-            Some((icon, icon_type.unwrap_or("x-icon").to_string()))
+            save_icon(&path, &icon).await;
+            Some((icon.to_vec(), icon_type.unwrap_or("x-icon").to_string()))
         }
         Err(e) => {
             warn!("Unable to download icon: {:?}", e);
             let miss_indicator = path + ".miss";
-            save_icon(&miss_indicator, &[]);
+            save_icon(&miss_indicator, &[]).await;
             None
         }
     }
 }
 
-fn get_cached_icon(path: &str) -> Option<Vec<u8>> {
+async fn get_cached_icon(path: &str) -> Option<Vec<u8>> {
     // Check for expiration of successfully cached copy
-    if icon_is_expired(path) {
+    if icon_is_expired(path).await {
         return None;
     }
 
     // Try to read the cached icon, and return it if it exists
-    if let Ok(mut f) = File::open(path) {
+    if let Ok(mut f) = File::open(path).await {
         let mut buffer = Vec::new();
 
-        if f.read_to_end(&mut buffer).is_ok() {
+        if f.read_to_end(&mut buffer).await.is_ok() {
             return Some(buffer);
         }
     }
@@ -370,22 +353,22 @@ fn get_cached_icon(path: &str) -> Option<Vec<u8>> {
     None
 }
 
-fn file_is_expired(path: &str, ttl: u64) -> Result<bool, Error> {
-    let meta = symlink_metadata(path)?;
+async fn file_is_expired(path: &str, ttl: u64) -> Result<bool, Error> {
+    let meta = symlink_metadata(path).await?;
     let modified = meta.modified()?;
     let age = SystemTime::now().duration_since(modified)?;
 
     Ok(ttl > 0 && ttl <= age.as_secs())
 }
 
-fn icon_is_negcached(path: &str) -> bool {
+async fn icon_is_negcached(path: &str) -> bool {
     let miss_indicator = path.to_owned() + ".miss";
-    let expired = file_is_expired(&miss_indicator, CONFIG.icon_cache_negttl());
+    let expired = file_is_expired(&miss_indicator, CONFIG.icon_cache_negttl()).await;
 
     match expired {
         // No longer negatively cached, drop the marker
         Ok(true) => {
-            if let Err(e) = remove_file(&miss_indicator) {
+            if let Err(e) = remove_file(&miss_indicator).await {
                 error!("Could not remove negative cache indicator for icon {:?}: {:?}", path, e);
             }
             false
@@ -397,8 +380,8 @@ fn icon_is_negcached(path: &str) -> bool {
     }
 }
 
-fn icon_is_expired(path: &str) -> bool {
-    let expired = file_is_expired(path, CONFIG.icon_cache_ttl());
+async fn icon_is_expired(path: &str) -> bool {
+    let expired = file_is_expired(path, CONFIG.icon_cache_ttl()).await;
     expired.unwrap_or(true)
 }
 
@@ -416,91 +399,62 @@ impl Icon {
     }
 }
 
-/// Iterates over the HTML document to find <base href="http://domain.tld">
-/// When found it will stop the iteration and the found base href will be shared deref via `base_href`.
-///
-/// # Arguments
-/// * `node` - A Parsed HTML document via html5ever::parse_document()
-/// * `base_href` - a mutable url::Url which will be overwritten when a base href tag has been found.
-///
-fn get_base_href(node: &std::rc::Rc<markup5ever_rcdom::Node>, base_href: &mut url::Url) -> bool {
-    if let markup5ever_rcdom::NodeData::Element {
-        name,
-        attrs,
-        ..
-    } = &node.data
-    {
-        if name.local.as_ref() == "base" {
-            let attrs = attrs.borrow();
-            for attr in attrs.iter() {
-                let attr_name = attr.name.local.as_ref();
-                let attr_value = attr.value.as_ref();
+fn get_favicons_node(
+    dom: InfallibleTokenizer<StringReader<'_>, FaviconEmitter>,
+    icons: &mut Vec<Icon>,
+    url: &url::Url,
+) {
+    const TAG_LINK: &[u8] = b"link";
+    const TAG_BASE: &[u8] = b"base";
+    const TAG_HEAD: &[u8] = b"head";
+    const ATTR_REL: &[u8] = b"rel";
+    const ATTR_HREF: &[u8] = b"href";
+    const ATTR_SIZES: &[u8] = b"sizes";
 
-                if attr_name == "href" {
-                    debug!("Found base href: {}", attr_value);
-                    *base_href = match base_href.join(attr_value) {
-                        Ok(href) => href,
-                        _ => base_href.clone(),
-                    };
-                    return true;
-                }
-            }
-            return true;
-        }
-    }
-
-    // TODO: Might want to limit the recursion depth?
-    for child in node.children.borrow().iter() {
-        // Check if we got a true back and stop the iter.
-        // This means we found a <base> tag and can stop processing the html.
-        if get_base_href(child, base_href) {
-            return true;
-        }
-    }
-    false
-}
-
-fn get_favicons_node(node: &std::rc::Rc<markup5ever_rcdom::Node>, icons: &mut Vec<Icon>, url: &url::Url) {
-    if let markup5ever_rcdom::NodeData::Element {
-        name,
-        attrs,
-        ..
-    } = &node.data
-    {
-        if name.local.as_ref() == "link" {
-            let mut has_rel = false;
-            let mut href = None;
-            let mut sizes = None;
-
-            let attrs = attrs.borrow();
-            for attr in attrs.iter() {
-                let attr_name = attr.name.local.as_ref();
-                let attr_value = attr.value.as_ref();
-
-                if attr_name == "rel" && ICON_REL_REGEX.is_match(attr_value) && !ICON_REL_BLACKLIST.is_match(attr_value)
+    let mut base_url = url.clone();
+    let mut icon_tags: Vec<StartTag> = Vec::new();
+    for token in dom {
+        match token {
+            FaviconToken::StartTag(tag) => {
+                if *tag.name == TAG_LINK
+                    && tag.attributes.contains_key(ATTR_REL)
+                    && tag.attributes.contains_key(ATTR_HREF)
                 {
-                    has_rel = true;
-                } else if attr_name == "href" {
-                    href = Some(attr_value);
-                } else if attr_name == "sizes" {
-                    sizes = Some(attr_value);
+                    let rel_value = std::str::from_utf8(tag.attributes.get(ATTR_REL).unwrap())
+                        .unwrap_or_default()
+                        .to_ascii_lowercase();
+                    if rel_value.contains("icon") && !rel_value.contains("mask-icon") {
+                        icon_tags.push(tag);
+                    }
+                } else if *tag.name == TAG_BASE && tag.attributes.contains_key(ATTR_HREF) {
+                    let href = std::str::from_utf8(tag.attributes.get(ATTR_HREF).unwrap()).unwrap_or_default();
+                    debug!("Found base href: {href}");
+                    base_url = match base_url.join(href) {
+                        Ok(inner_url) => inner_url,
+                        _ => url.clone(),
+                    };
                 }
             }
-
-            if has_rel {
-                if let Some(inner_href) = href {
-                    if let Ok(full_href) = url.join(inner_href).map(String::from) {
-                        let priority = get_icon_priority(&full_href, sizes);
-                        icons.push(Icon::new(priority, full_href));
-                    }
+            FaviconToken::EndTag(tag) => {
+                if *tag.name == TAG_HEAD {
+                    break;
                 }
             }
         }
     }
 
-    // TODO: Might want to limit the recursion depth?
-    for child in node.children.borrow().iter() {
-        get_favicons_node(child, icons, url);
+    for icon_tag in icon_tags {
+        if let Some(icon_href) = icon_tag.attributes.get(ATTR_HREF) {
+            if let Ok(full_href) = base_url.join(std::str::from_utf8(icon_href).unwrap_or_default()) {
+                let sizes = if let Some(v) = icon_tag.attributes.get(ATTR_SIZES) {
+                    std::str::from_utf8(v).unwrap_or_default()
+                } else {
+                    ""
+                };
+                let priority = get_icon_priority(full_href.as_str(), sizes);
+                icons.push(Icon::new(priority, full_href.to_string()));
+            }
+        };
     }
 }
 
@@ -518,16 +472,16 @@ struct IconUrlResult {
 ///
 /// # Example
 /// ```
-/// let icon_result = get_icon_url("github.com")?;
-/// let icon_result = get_icon_url("vaultwarden.discourse.group")?;
+/// let icon_result = get_icon_url("github.com").await?;
+/// let icon_result = get_icon_url("vaultwarden.discourse.group").await?;
 /// ```
-fn get_icon_url(domain: &str) -> Result<IconUrlResult, Error> {
+async fn get_icon_url(domain: &str) -> Result<IconUrlResult, Error> {
     // Default URL with secure and insecure schemes
-    let ssldomain = format!("https://{}", domain);
-    let httpdomain = format!("http://{}", domain);
+    let ssldomain = format!("https://{domain}");
+    let httpdomain = format!("http://{domain}");
 
     // First check the domain as given during the request for both HTTPS and HTTP.
-    let resp = match get_page(&ssldomain).or_else(|_| get_page(&httpdomain)) {
+    let resp = match get_page(&ssldomain).or_else(|_| get_page(&httpdomain)).await {
         Ok(c) => Ok(c),
         Err(e) => {
             let mut sub_resp = Err(e);
@@ -542,25 +496,24 @@ fn get_icon_url(domain: &str) -> Result<IconUrlResult, Error> {
                     base = domain_parts.next_back().unwrap()
                 );
                 if is_valid_domain(&base_domain) {
-                    let sslbase = format!("https://{}", base_domain);
-                    let httpbase = format!("http://{}", base_domain);
-                    debug!("[get_icon_url]: Trying without subdomains '{}'", base_domain);
+                    let sslbase = format!("https://{base_domain}");
+                    let httpbase = format!("http://{base_domain}");
+                    debug!("[get_icon_url]: Trying without subdomains '{base_domain}'");
 
-                    sub_resp = get_page(&sslbase).or_else(|_| get_page(&httpbase));
+                    sub_resp = get_page(&sslbase).or_else(|_| get_page(&httpbase)).await;
                 }
 
             // When the domain is not an IP, and has less then 2 dots, try to add www. infront of it.
             } else if is_ip.is_err() && domain.matches('.').count() < 2 {
-                let www_domain = format!("www.{}", domain);
+                let www_domain = format!("www.{domain}");
                 if is_valid_domain(&www_domain) {
-                    let sslwww = format!("https://{}", www_domain);
-                    let httpwww = format!("http://{}", www_domain);
-                    debug!("[get_icon_url]: Trying with www. prefix '{}'", www_domain);
+                    let sslwww = format!("https://{www_domain}");
+                    let httpwww = format!("http://{www_domain}");
+                    debug!("[get_icon_url]: Trying with www. prefix '{www_domain}'");
 
-                    sub_resp = get_page(&sslwww).or_else(|_| get_page(&httpwww));
+                    sub_resp = get_page(&sslwww).or_else(|_| get_page(&httpwww)).await;
                 }
             }
-
             sub_resp
         }
     };
@@ -575,26 +528,23 @@ fn get_icon_url(domain: &str) -> Result<IconUrlResult, Error> {
 
         // Set the referer to be used on the final request, some sites check this.
         // Mostly used to prevent direct linking and other security resons.
-        referer = url.as_str().to_string();
+        referer = url.to_string();
 
-        // Add the default favicon.ico to the list with the domain the content responded from.
+        // Add the fallback favicon.ico and apple-touch-icon.png to the list with the domain the content responded from.
         iconlist.push(Icon::new(35, String::from(url.join("/favicon.ico").unwrap())));
+        iconlist.push(Icon::new(40, String::from(url.join("/apple-touch-icon.png").unwrap())));
 
         // 384KB should be more than enough for the HTML, though as we only really need the HTML header.
-        let mut limited_reader = content.take(384 * 1024);
+        let limited_reader = stream_to_bytes_limit(content, 384 * 1024).await?.to_vec();
 
-        use html5ever::tendril::TendrilSink;
-        let dom = html5ever::parse_document(markup5ever_rcdom::RcDom::default(), Default::default())
-            .from_utf8()
-            .read_from(&mut limited_reader)?;
-
-        let mut base_url: url::Url = url;
-        get_base_href(&dom.document, &mut base_url);
-        get_favicons_node(&dom.document, &mut iconlist, &base_url);
+        let dom = Tokenizer::new_with_emitter(limited_reader.to_reader(), FaviconEmitter::default()).infallible();
+        get_favicons_node(dom, &mut iconlist, &url);
     } else {
         // Add the default favicon.ico to the list with just the given domain
-        iconlist.push(Icon::new(35, format!("{}/favicon.ico", ssldomain)));
-        iconlist.push(Icon::new(35, format!("{}/favicon.ico", httpdomain)));
+        iconlist.push(Icon::new(35, format!("{ssldomain}/favicon.ico")));
+        iconlist.push(Icon::new(40, format!("{ssldomain}/apple-touch-icon.png")));
+        iconlist.push(Icon::new(35, format!("{httpdomain}/favicon.ico")));
+        iconlist.push(Icon::new(40, format!("{httpdomain}/apple-touch-icon.png")));
     }
 
     // Sort the iconlist by priority
@@ -607,12 +557,12 @@ fn get_icon_url(domain: &str) -> Result<IconUrlResult, Error> {
     })
 }
 
-fn get_page(url: &str) -> Result<Response, Error> {
-    get_page_with_referer(url, "")
+async fn get_page(url: &str) -> Result<Response, Error> {
+    get_page_with_referer(url, "").await
 }
 
-fn get_page_with_referer(url: &str, referer: &str) -> Result<Response, Error> {
-    if is_domain_blacklisted(url::Url::parse(url).unwrap().host_str().unwrap_or_default()) {
+async fn get_page_with_referer(url: &str, referer: &str) -> Result<Response, Error> {
+    if is_domain_blacklisted(url::Url::parse(url).unwrap().host_str().unwrap_or_default()).await {
         warn!("Favicon '{}' resolves to a blacklisted domain or IP!", url);
     }
 
@@ -621,7 +571,7 @@ fn get_page_with_referer(url: &str, referer: &str) -> Result<Response, Error> {
         client = client.header("Referer", referer)
     }
 
-    match client.send() {
+    match client.send().await {
         Ok(c) => c.error_for_status().map_err(Into::into),
         Err(e) => err_silent!(format!("{}", e)),
     }
@@ -639,7 +589,7 @@ fn get_page_with_referer(url: &str, referer: &str) -> Result<Response, Error> {
 /// priority1 = get_icon_priority("http://example.com/path/to/a/favicon.png", "32x32");
 /// priority2 = get_icon_priority("https://example.com/path/to/a/favicon.ico", "");
 /// ```
-fn get_icon_priority(href: &str, sizes: Option<&str>) -> u8 {
+fn get_icon_priority(href: &str, sizes: &str) -> u8 {
     // Check if there is a dimension set
     let (width, height) = parse_sizes(sizes);
 
@@ -687,11 +637,11 @@ fn get_icon_priority(href: &str, sizes: Option<&str>) -> u8 {
 /// let (width, height) = parse_sizes("x128x128"); // (128, 128)
 /// let (width, height) = parse_sizes("32"); // (0, 0)
 /// ```
-fn parse_sizes(sizes: Option<&str>) -> (u16, u16) {
+fn parse_sizes(sizes: &str) -> (u16, u16) {
     let mut width: u16 = 0;
     let mut height: u16 = 0;
 
-    if let Some(sizes) = sizes {
+    if !sizes.is_empty() {
         match ICON_SIZE_REGEX.captures(sizes.trim()) {
             None => {}
             Some(dimensions) => {
@@ -706,14 +656,14 @@ fn parse_sizes(sizes: Option<&str>) -> (u16, u16) {
     (width, height)
 }
 
-fn download_icon(domain: &str) -> Result<(Vec<u8>, Option<&str>), Error> {
-    if is_domain_blacklisted(domain) {
+async fn download_icon(domain: &str) -> Result<(Bytes, Option<&str>), Error> {
+    if is_domain_blacklisted(domain).await {
         err_silent!("Domain is blacklisted", domain)
     }
 
-    let icon_result = get_icon_url(domain)?;
+    let icon_result = get_icon_url(domain).await?;
 
-    let mut buffer = Vec::new();
+    let mut buffer = Bytes::new();
     let mut icon_type: Option<&str> = None;
 
     use data_url::DataUrl;
@@ -722,8 +672,12 @@ fn download_icon(domain: &str) -> Result<(Vec<u8>, Option<&str>), Error> {
         if icon.href.starts_with("data:image") {
             let datauri = DataUrl::process(&icon.href).unwrap();
             // Check if we are able to decode the data uri
-            match datauri.decode_to_vec() {
-                Ok((body, _fragment)) => {
+            let mut body = BytesMut::new();
+            match datauri.decode::<_, ()>(|bytes| {
+                body.extend_from_slice(bytes);
+                Ok(())
+            }) {
+                Ok(_) => {
                     // Also check if the size is atleast 67 bytes, which seems to be the smallest png i could create
                     if body.len() >= 67 {
                         // Check if the icon type is allowed, else try an icon from the list.
@@ -733,16 +687,17 @@ fn download_icon(domain: &str) -> Result<(Vec<u8>, Option<&str>), Error> {
                             continue;
                         }
                         info!("Extracted icon from data:image uri for {}", domain);
-                        buffer = body;
+                        buffer = body.freeze();
                         break;
                     }
                 }
                 _ => debug!("Extracted icon from data:image uri is invalid"),
             };
         } else {
-            match get_page_with_referer(&icon.href, &icon_result.referer) {
-                Ok(mut res) => {
-                    res.copy_to(&mut buffer)?;
+            match get_page_with_referer(&icon.href, &icon_result.referer).await {
+                Ok(res) => {
+                    buffer = stream_to_bytes_limit(res, 5120 * 1024).await?; // 5120KB/5MB for each icon max (Same as icons.bitwarden.net)
+
                     // Check if the icon type is allowed, else try an icon from the list.
                     icon_type = get_icon_type(&buffer);
                     if icon_type.is_none() {
@@ -765,13 +720,13 @@ fn download_icon(domain: &str) -> Result<(Vec<u8>, Option<&str>), Error> {
     Ok((buffer, icon_type))
 }
 
-fn save_icon(path: &str, icon: &[u8]) {
-    match File::create(path) {
+async fn save_icon(path: &str, icon: &[u8]) {
+    match File::create(path).await {
         Ok(mut f) => {
-            f.write_all(icon).expect("Error writing icon file");
+            f.write_all(icon).await.expect("Error writing icon file");
         }
         Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => {
-            create_dir_all(&CONFIG.icon_cache_folder()).expect("Error creating icon cache folder");
+            create_dir_all(&CONFIG.icon_cache_folder()).await.expect("Error creating icon cache folder");
         }
         Err(e) => {
             warn!("Unable to save icon: {:?}", e);
@@ -791,13 +746,30 @@ fn get_icon_type(bytes: &[u8]) -> Option<&'static str> {
     }
 }
 
+/// Minimize the amount of bytes to be parsed from a reqwest result.
+/// This prevents very long parsing and memory usage.
+async fn stream_to_bytes_limit(res: Response, max_size: usize) -> Result<Bytes, reqwest::Error> {
+    let mut stream = res.bytes_stream().take(max_size);
+    let mut buf = BytesMut::new();
+    let mut size = 0;
+    while let Some(chunk) = stream.next().await {
+        let chunk = &chunk?;
+        size += chunk.len();
+        buf.extend(chunk);
+        if size >= max_size {
+            break;
+        }
+    }
+    Ok(buf.freeze())
+}
+
 /// This is an implementation of the default Cookie Jar from Reqwest and reqwest_cookie_store build by pfernie.
 /// The default cookie jar used by Reqwest keeps all the cookies based upon the Max-Age or Expires which could be a long time.
 /// That could be used for tracking, to prevent this we force the lifespan of the cookies to always be max two minutes.
 /// A Cookie Jar is needed because some sites force a redirect with cookies to verify if a request uses cookies or not.
 use cookie_store::CookieStore;
 #[derive(Default)]
-pub struct Jar(RwLock<CookieStore>);
+pub struct Jar(std::sync::RwLock<CookieStore>);
 
 impl reqwest::cookie::CookieStore for Jar {
     fn set_cookies(&self, cookie_headers: &mut dyn Iterator<Item = &header::HeaderValue>, url: &url::Url) {
@@ -820,8 +792,6 @@ impl reqwest::cookie::CookieStore for Jar {
     }
 
     fn cookies(&self, url: &url::Url) -> Option<header::HeaderValue> {
-        use bytes::Bytes;
-
         let cookie_store = self.0.read().unwrap();
         let s = cookie_store
             .get_request_values(url)
@@ -835,4 +805,159 @@ impl reqwest::cookie::CookieStore for Jar {
 
         header::HeaderValue::from_maybe_shared(Bytes::from(s)).ok()
     }
+}
+
+/// Custom FaviconEmitter for the html5gum parser.
+/// The FaviconEmitter is using an almost 1:1 copy of the DefaultEmitter with some small changes.
+/// This prevents emitting tags like comments, doctype and also strings between the tags.
+/// Therefor parsing the HTML content is faster.
+use std::collections::{BTreeSet, VecDeque};
+
+#[derive(Debug)]
+enum FaviconToken {
+    StartTag(StartTag),
+    EndTag(EndTag),
+}
+
+#[derive(Default, Debug)]
+struct FaviconEmitter {
+    current_token: Option<FaviconToken>,
+    last_start_tag: HtmlString,
+    current_attribute: Option<(HtmlString, HtmlString)>,
+    seen_attributes: BTreeSet<HtmlString>,
+    emitted_tokens: VecDeque<FaviconToken>,
+}
+
+impl FaviconEmitter {
+    fn emit_token(&mut self, token: FaviconToken) {
+        self.emitted_tokens.push_front(token);
+    }
+
+    fn flush_current_attribute(&mut self) {
+        if let Some((k, v)) = self.current_attribute.take() {
+            match self.current_token {
+                Some(FaviconToken::StartTag(ref mut tag)) => {
+                    tag.attributes.entry(k).and_modify(|_| {}).or_insert(v);
+                }
+                Some(FaviconToken::EndTag(_)) => {
+                    self.seen_attributes.insert(k);
+                }
+                _ => {
+                    debug_assert!(false);
+                }
+            }
+        }
+    }
+}
+
+impl Emitter for FaviconEmitter {
+    type Token = FaviconToken;
+
+    fn set_last_start_tag(&mut self, last_start_tag: Option<&[u8]>) {
+        self.last_start_tag.clear();
+        self.last_start_tag.extend(last_start_tag.unwrap_or_default());
+    }
+
+    fn pop_token(&mut self) -> Option<Self::Token> {
+        self.emitted_tokens.pop_back()
+    }
+
+    fn init_start_tag(&mut self) {
+        self.current_token = Some(FaviconToken::StartTag(StartTag::default()));
+    }
+
+    fn init_end_tag(&mut self) {
+        self.current_token = Some(FaviconToken::EndTag(EndTag::default()));
+        self.seen_attributes.clear();
+    }
+
+    fn emit_current_tag(&mut self) -> Option<html5gum::State> {
+        self.flush_current_attribute();
+        let mut token = self.current_token.take().unwrap();
+        let mut emit = false;
+        match token {
+            FaviconToken::EndTag(ref mut tag) => {
+                // Always clean seen attributes
+                self.seen_attributes.clear();
+
+                // Only trigger an emit for the </head> tag.
+                // This is matched, and will break the for-loop.
+                if *tag.name == b"head" {
+                    emit = true;
+                }
+            }
+            FaviconToken::StartTag(ref mut tag) => {
+                // Only trriger an emit for <link> and <base> tags.
+                // These are the only tags we want to parse.
+                if *tag.name == b"link" || *tag.name == b"base" {
+                    self.set_last_start_tag(Some(&tag.name));
+                    emit = true;
+                } else {
+                    self.set_last_start_tag(None);
+                }
+            }
+        }
+
+        // Only emit the tags we want to parse.
+        if emit {
+            self.emit_token(token);
+        }
+        None
+    }
+
+    fn push_tag_name(&mut self, s: &[u8]) {
+        match self.current_token {
+            Some(
+                FaviconToken::StartTag(StartTag {
+                    ref mut name,
+                    ..
+                })
+                | FaviconToken::EndTag(EndTag {
+                    ref mut name,
+                    ..
+                }),
+            ) => {
+                name.extend(s);
+            }
+            _ => debug_assert!(false),
+        }
+    }
+
+    fn init_attribute(&mut self) {
+        self.flush_current_attribute();
+        self.current_attribute = Some(Default::default());
+    }
+
+    fn push_attribute_name(&mut self, s: &[u8]) {
+        self.current_attribute.as_mut().unwrap().0.extend(s);
+    }
+
+    fn push_attribute_value(&mut self, s: &[u8]) {
+        self.current_attribute.as_mut().unwrap().1.extend(s);
+    }
+
+    fn current_is_appropriate_end_tag_token(&mut self) -> bool {
+        match self.current_token {
+            Some(FaviconToken::EndTag(ref tag)) => !self.last_start_tag.is_empty() && self.last_start_tag == tag.name,
+            _ => false,
+        }
+    }
+
+    // We do not want and need these parts of the HTML document
+    // These will be skipped and ignored during the tokenization and iteration.
+    fn emit_current_comment(&mut self) {}
+    fn emit_current_doctype(&mut self) {}
+    fn emit_eof(&mut self) {}
+    fn emit_error(&mut self, _: html5gum::Error) {}
+    fn emit_string(&mut self, _: &[u8]) {}
+    fn init_comment(&mut self) {}
+    fn init_doctype(&mut self) {}
+    fn push_comment(&mut self, _: &[u8]) {}
+    fn push_doctype_name(&mut self, _: &[u8]) {}
+    fn push_doctype_public_identifier(&mut self, _: &[u8]) {}
+    fn push_doctype_system_identifier(&mut self, _: &[u8]) {}
+    fn set_doctype_public_identifier(&mut self, _: &[u8]) {}
+    fn set_doctype_system_identifier(&mut self, _: &[u8]) {}
+    fn set_force_quirks(&mut self) {}
+    fn set_self_closing(&mut self) {}
 }

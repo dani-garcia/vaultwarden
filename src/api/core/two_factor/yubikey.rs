@@ -1,5 +1,5 @@
+use rocket::serde::json::Json;
 use rocket::Route;
-use rocket_contrib::json::Json;
 use serde_json::Value;
 use yubico::{config::Config, verify};
 
@@ -78,7 +78,7 @@ fn verify_yubikey_otp(otp: String) -> EmptyResult {
 }
 
 #[post("/two-factor/get-yubikey", data = "<data>")]
-fn generate_yubikey(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn) -> JsonResult {
+async fn generate_yubikey(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn) -> JsonResult {
     // Make sure the credentials are set
     get_yubico_credentials()?;
 
@@ -92,7 +92,7 @@ fn generate_yubikey(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbCo
     let user_uuid = &user.uuid;
     let yubikey_type = TwoFactorType::YubiKey as i32;
 
-    let r = TwoFactor::find_by_user_and_type(user_uuid, yubikey_type, &conn);
+    let r = TwoFactor::find_by_user_and_type(user_uuid, yubikey_type, &conn).await;
 
     if let Some(r) = r {
         let yubikey_metadata: YubikeyMetadata = serde_json::from_str(&r.data)?;
@@ -113,7 +113,7 @@ fn generate_yubikey(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbCo
 }
 
 #[post("/two-factor/yubikey", data = "<data>")]
-fn activate_yubikey(data: JsonUpcase<EnableYubikeyData>, headers: Headers, conn: DbConn) -> JsonResult {
+async fn activate_yubikey(data: JsonUpcase<EnableYubikeyData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: EnableYubikeyData = data.into_inner().data;
     let mut user = headers.user;
 
@@ -122,10 +122,11 @@ fn activate_yubikey(data: JsonUpcase<EnableYubikeyData>, headers: Headers, conn:
     }
 
     // Check if we already have some data
-    let mut yubikey_data = match TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::YubiKey as i32, &conn) {
-        Some(data) => data,
-        None => TwoFactor::new(user.uuid.clone(), TwoFactorType::YubiKey, String::new()),
-    };
+    let mut yubikey_data =
+        match TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::YubiKey as i32, &conn).await {
+            Some(data) => data,
+            None => TwoFactor::new(user.uuid.clone(), TwoFactorType::YubiKey, String::new()),
+        };
 
     let yubikeys = parse_yubikeys(&data);
 
@@ -146,7 +147,7 @@ fn activate_yubikey(data: JsonUpcase<EnableYubikeyData>, headers: Headers, conn:
         verify_yubikey_otp(yubikey.to_owned()).map_res("Invalid Yubikey OTP provided")?;
     }
 
-    let yubikey_ids: Vec<String> = yubikeys.into_iter().map(|x| (&x[..12]).to_owned()).collect();
+    let yubikey_ids: Vec<String> = yubikeys.into_iter().map(|x| (x[..12]).to_owned()).collect();
 
     let yubikey_metadata = YubikeyMetadata {
         Keys: yubikey_ids,
@@ -154,9 +155,9 @@ fn activate_yubikey(data: JsonUpcase<EnableYubikeyData>, headers: Headers, conn:
     };
 
     yubikey_data.data = serde_json::to_string(&yubikey_metadata).unwrap();
-    yubikey_data.save(&conn)?;
+    yubikey_data.save(&conn).await?;
 
-    _generate_recover_code(&mut user, &conn);
+    _generate_recover_code(&mut user, &conn).await;
 
     let mut result = jsonify_yubikeys(yubikey_metadata.Keys);
 
@@ -168,8 +169,8 @@ fn activate_yubikey(data: JsonUpcase<EnableYubikeyData>, headers: Headers, conn:
 }
 
 #[put("/two-factor/yubikey", data = "<data>")]
-fn activate_yubikey_put(data: JsonUpcase<EnableYubikeyData>, headers: Headers, conn: DbConn) -> JsonResult {
-    activate_yubikey(data, headers, conn)
+async fn activate_yubikey_put(data: JsonUpcase<EnableYubikeyData>, headers: Headers, conn: DbConn) -> JsonResult {
+    activate_yubikey(data, headers, conn).await
 }
 
 pub fn validate_yubikey_login(response: &str, twofactor_data: &str) -> EmptyResult {

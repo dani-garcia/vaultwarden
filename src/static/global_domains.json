@@ -328,6 +328,7 @@
     "Type": 33,
     "Domains": [
       "healthcare.gov",
+      "cuidadodesalud.gov",
       "cms.gov"
     ],
     "Excluded": false
@@ -902,6 +903,7 @@
   {
     "Type": 85,
     "Domains": [
+      "proton.me",
       "protonmail.com",
       "protonvpn.com"
     ],
@@ -920,6 +922,21 @@
     "Domains": [
       "transferwise.com",
       "wise.com"
+    ],
+    "Excluded": false
+  },
+  {
+    "Type": 88,
+    "Domains": [
+      "takeaway.com",
+      "just-eat.dk",
+      "just-eat.no",
+      "just-eat.fr",
+      "just-eat.ch",
+      "lieferando.de",
+      "lieferando.at",
+      "thuisbezorgd.nl",
+      "pyszne.pl"
     ],
     "Excluded": false
   }

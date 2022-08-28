@@ -2,14 +2,12 @@ use std::io::ErrorKind;
 
 use serde_json::Value;
 
-use super::Cipher;
 use crate::CONFIG;
 
 db_object! {
-    #[derive(Identifiable, Queryable, Insertable, Associations, AsChangeset)]
+    #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
     #[table_name = "attachments"]
     #[changeset_options(treat_none_as_null="true")]
-    #[belongs_to(super::Cipher, foreign_key = "cipher_uuid")]
     #[primary_key(id)]
     pub struct Attachment {
         pub id: String,
@@ -60,7 +58,7 @@ use crate::error::MapResult;
 
 /// Database methods
 impl Attachment {
-    pub fn save(&self, conn: &DbConn) -> EmptyResult {
+    pub async fn save(&self, conn: &DbConn) -> EmptyResult {
         db_run! { conn:
             sqlite, mysql {
                 match diesel::replace_into(attachments::table)
@@ -92,7 +90,7 @@ impl Attachment {
         }
     }
 
-    pub fn delete(&self, conn: &DbConn) -> EmptyResult {
+    pub async fn delete(&self, conn: &DbConn) -> EmptyResult {
         db_run! { conn: {
             crate::util::retry(
                 || diesel::delete(attachments::table.filter(attachments::id.eq(&self.id))).execute(conn),
@@ -116,14 +114,14 @@ impl Attachment {
         }}
     }
 
-    pub fn delete_all_by_cipher(cipher_uuid: &str, conn: &DbConn) -> EmptyResult {
-        for attachment in Attachment::find_by_cipher(cipher_uuid, conn) {
-            attachment.delete(conn)?;
+    pub async fn delete_all_by_cipher(cipher_uuid: &str, conn: &DbConn) -> EmptyResult {
+        for attachment in Attachment::find_by_cipher(cipher_uuid, conn).await {
+            attachment.delete(conn).await?;
         }
         Ok(())
     }
 
-    pub fn find_by_id(id: &str, conn: &DbConn) -> Option<Self> {
+    pub async fn find_by_id(id: &str, conn: &DbConn) -> Option<Self> {
         db_run! { conn: {
             attachments::table
                 .filter(attachments::id.eq(id.to_lowercase()))
@@ -133,7 +131,7 @@ impl Attachment {
         }}
     }
 
-    pub fn find_by_cipher(cipher_uuid: &str, conn: &DbConn) -> Vec<Self> {
+    pub async fn find_by_cipher(cipher_uuid: &str, conn: &DbConn) -> Vec<Self> {
         db_run! { conn: {
             attachments::table
                 .filter(attachments::cipher_uuid.eq(cipher_uuid))
@@ -143,7 +141,7 @@ impl Attachment {
         }}
     }
 
-    pub fn size_by_user(user_uuid: &str, conn: &DbConn) -> i64 {
+    pub async fn size_by_user(user_uuid: &str, conn: &DbConn) -> i64 {
         db_run! { conn: {
             let result: Option<i64> = attachments::table
                 .left_join(ciphers::table.on(ciphers::uuid.eq(attachments::cipher_uuid)))
@@ -155,7 +153,7 @@ impl Attachment {
         }}
     }
 
-    pub fn count_by_user(user_uuid: &str, conn: &DbConn) -> i64 {
+    pub async fn count_by_user(user_uuid: &str, conn: &DbConn) -> i64 {
         db_run! { conn: {
             attachments::table
                 .left_join(ciphers::table.on(ciphers::uuid.eq(attachments::cipher_uuid)))
@@ -166,7 +164,7 @@ impl Attachment {
         }}
     }
 
-    pub fn size_by_org(org_uuid: &str, conn: &DbConn) -> i64 {
+    pub async fn size_by_org(org_uuid: &str, conn: &DbConn) -> i64 {
         db_run! { conn: {
             let result: Option<i64> = attachments::table
                 .left_join(ciphers::table.on(ciphers::uuid.eq(attachments::cipher_uuid)))
@@ -178,7 +176,7 @@ impl Attachment {
         }}
     }
 
-    pub fn count_by_org(org_uuid: &str, conn: &DbConn) -> i64 {
+    pub async fn count_by_org(org_uuid: &str, conn: &DbConn) -> i64 {
         db_run! { conn: {
             attachments::table
                 .left_join(ciphers::table.on(ciphers::uuid.eq(attachments::cipher_uuid)))
@@ -186,6 +184,17 @@ impl Attachment {
                 .count()
                 .first(conn)
                 .unwrap_or(0)
+        }}
+    }
+
+    pub async fn find_all_by_ciphers(cipher_uuids: &Vec<String>, conn: &DbConn) -> Vec<Self> {
+        db_run! { conn: {
+            attachments::table
+                .filter(attachments::cipher_uuid.eq_any(cipher_uuids))
+                .select(attachments::all_columns)
+                .load::<AttachmentDb>(conn)
+                .expect("Error loading attachments")
+                .from_db()
         }}
     }
 }

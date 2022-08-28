@@ -1,7 +1,7 @@
 use chrono::Utc;
 use data_encoding::BASE64;
+use rocket::serde::json::Json;
 use rocket::Route;
-use rocket_contrib::json::Json;
 
 use crate::{
     api::{core::two_factor::_generate_recover_code, ApiResult, EmptyResult, JsonResult, JsonUpcase, PasswordData},
@@ -89,14 +89,14 @@ impl DuoStatus {
 const DISABLED_MESSAGE_DEFAULT: &str = "<To use the global Duo keys, please leave these fields untouched>";
 
 #[post("/two-factor/get-duo", data = "<data>")]
-fn get_duo(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn) -> JsonResult {
+async fn get_duo(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: PasswordData = data.into_inner().data;
 
     if !headers.user.check_valid_password(&data.MasterPasswordHash) {
         err!("Invalid password");
     }
 
-    let data = get_user_duo_data(&headers.user.uuid, &conn);
+    let data = get_user_duo_data(&headers.user.uuid, &conn).await;
 
     let (enabled, data) = match data {
         DuoStatus::Global(_) => (true, Some(DuoData::secret())),
@@ -152,7 +152,7 @@ fn check_duo_fields_custom(data: &EnableDuoData) -> bool {
 }
 
 #[post("/two-factor/duo", data = "<data>")]
-fn activate_duo(data: JsonUpcase<EnableDuoData>, headers: Headers, conn: DbConn) -> JsonResult {
+async fn activate_duo(data: JsonUpcase<EnableDuoData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: EnableDuoData = data.into_inner().data;
     let mut user = headers.user;
 
@@ -163,7 +163,7 @@ fn activate_duo(data: JsonUpcase<EnableDuoData>, headers: Headers, conn: DbConn)
     let (data, data_str) = if check_duo_fields_custom(&data) {
         let data_req: DuoData = data.into();
         let data_str = serde_json::to_string(&data_req)?;
-        duo_api_request("GET", "/auth/v2/check", "", &data_req).map_res("Failed to validate Duo credentials")?;
+        duo_api_request("GET", "/auth/v2/check", "", &data_req).await.map_res("Failed to validate Duo credentials")?;
         (data_req.obscure(), data_str)
     } else {
         (DuoData::secret(), String::new())
@@ -171,9 +171,9 @@ fn activate_duo(data: JsonUpcase<EnableDuoData>, headers: Headers, conn: DbConn)
 
     let type_ = TwoFactorType::Duo;
     let twofactor = TwoFactor::new(user.uuid.clone(), type_, data_str);
-    twofactor.save(&conn)?;
+    twofactor.save(&conn).await?;
 
-    _generate_recover_code(&mut user, &conn);
+    _generate_recover_code(&mut user, &conn).await;
 
     Ok(Json(json!({
         "Enabled": true,
@@ -185,11 +185,11 @@ fn activate_duo(data: JsonUpcase<EnableDuoData>, headers: Headers, conn: DbConn)
 }
 
 #[put("/two-factor/duo", data = "<data>")]
-fn activate_duo_put(data: JsonUpcase<EnableDuoData>, headers: Headers, conn: DbConn) -> JsonResult {
-    activate_duo(data, headers, conn)
+async fn activate_duo_put(data: JsonUpcase<EnableDuoData>, headers: Headers, conn: DbConn) -> JsonResult {
+    activate_duo(data, headers, conn).await
 }
 
-fn duo_api_request(method: &str, path: &str, params: &str, data: &DuoData) -> EmptyResult {
+async fn duo_api_request(method: &str, path: &str, params: &str, data: &DuoData) -> EmptyResult {
     use reqwest::{header, Method};
     use std::str::FromStr;
 
@@ -209,7 +209,8 @@ fn duo_api_request(method: &str, path: &str, params: &str, data: &DuoData) -> Em
         .basic_auth(username, Some(password))
         .header(header::USER_AGENT, "vaultwarden:Duo/1.0 (Rust)")
         .header(header::DATE, date)
-        .send()?
+        .send()
+        .await?
         .error_for_status()?;
 
     Ok(())
@@ -222,11 +223,11 @@ const AUTH_PREFIX: &str = "AUTH";
 const DUO_PREFIX: &str = "TX";
 const APP_PREFIX: &str = "APP";
 
-fn get_user_duo_data(uuid: &str, conn: &DbConn) -> DuoStatus {
+async fn get_user_duo_data(uuid: &str, conn: &DbConn) -> DuoStatus {
     let type_ = TwoFactorType::Duo as i32;
 
     // If the user doesn't have an entry, disabled
-    let twofactor = match TwoFactor::find_by_user_and_type(uuid, type_, conn) {
+    let twofactor = match TwoFactor::find_by_user_and_type(uuid, type_, conn).await {
         Some(t) => t,
         None => return DuoStatus::Disabled(DuoData::global().is_some()),
     };
@@ -246,19 +247,20 @@ fn get_user_duo_data(uuid: &str, conn: &DbConn) -> DuoStatus {
 }
 
 // let (ik, sk, ak, host) = get_duo_keys();
-fn get_duo_keys_email(email: &str, conn: &DbConn) -> ApiResult<(String, String, String, String)> {
-    let data = User::find_by_mail(email, conn)
-        .and_then(|u| get_user_duo_data(&u.uuid, conn).data())
-        .or_else(DuoData::global)
-        .map_res("Can't fetch Duo keys")?;
+async fn get_duo_keys_email(email: &str, conn: &DbConn) -> ApiResult<(String, String, String, String)> {
+    let data = match User::find_by_mail(email, conn).await {
+        Some(u) => get_user_duo_data(&u.uuid, conn).await.data(),
+        _ => DuoData::global(),
+    }
+    .map_res("Can't fetch Duo Keys")?;
 
     Ok((data.ik, data.sk, CONFIG.get_duo_akey(), data.host))
 }
 
-pub fn generate_duo_signature(email: &str, conn: &DbConn) -> ApiResult<(String, String)> {
+pub async fn generate_duo_signature(email: &str, conn: &DbConn) -> ApiResult<(String, String)> {
     let now = Utc::now().timestamp();
 
-    let (ik, sk, ak, host) = get_duo_keys_email(email, conn)?;
+    let (ik, sk, ak, host) = get_duo_keys_email(email, conn).await?;
 
     let duo_sign = sign_duo_values(&sk, email, &ik, DUO_PREFIX, now + DUO_EXPIRE);
     let app_sign = sign_duo_values(&ak, email, &ik, APP_PREFIX, now + APP_EXPIRE);
@@ -273,7 +275,7 @@ fn sign_duo_values(key: &str, email: &str, ikey: &str, prefix: &str, expire: i64
     format!("{}|{}", cookie, crypto::hmac_sign(key, &cookie))
 }
 
-pub fn validate_duo_login(email: &str, response: &str, conn: &DbConn) -> EmptyResult {
+pub async fn validate_duo_login(email: &str, response: &str, conn: &DbConn) -> EmptyResult {
     // email is as entered by the user, so it needs to be normalized before
     // comparison with auth_user below.
     let email = &email.to_lowercase();
@@ -288,7 +290,7 @@ pub fn validate_duo_login(email: &str, response: &str, conn: &DbConn) -> EmptyRe
 
     let now = Utc::now().timestamp();
 
-    let (ik, sk, ak, _host) = get_duo_keys_email(email, conn)?;
+    let (ik, sk, ak, _host) = get_duo_keys_email(email, conn).await?;
 
     let auth_user = parse_duo_values(&sk, auth_sig, &ik, AUTH_PREFIX, now)?;
     let app_user = parse_duo_values(&ak, app_sig, &ik, APP_PREFIX, now)?;

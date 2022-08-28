@@ -16,18 +16,18 @@
 # - From https://hub.docker.com/r/vaultwarden/web-vault/tags,
 #   click the tag name to view the digest of the image it currently points to.
 # - From the command line:
-#     $ docker pull vaultwarden/web-vault:v2.25.1
-#     $ docker image inspect --format "{{.RepoDigests}}" vaultwarden/web-vault:v2.25.1
-#     [vaultwarden/web-vault@sha256:4f9b7a6b0eaceb511cca8c6a5ed5aa92f527960b1b33d86fbbfd4e5795943965]
+#     $ docker pull vaultwarden/web-vault:v2022.6.2
+#     $ docker image inspect --format "{{.RepoDigests}}" vaultwarden/web-vault:v2022.6.2
+#     [vaultwarden/web-vault@sha256:1dfda41cbddeac5bc59540261fff8defcac37170b5ba02d29c12fa1215498f70]
 #
 # - Conversely, to get the tag name from the digest:
-#     $ docker image inspect --format "{{.RepoTags}}" vaultwarden/web-vault@sha256:4f9b7a6b0eaceb511cca8c6a5ed5aa92f527960b1b33d86fbbfd4e5795943965
-#     [vaultwarden/web-vault:v2.25.1]
+#     $ docker image inspect --format "{{.RepoTags}}" vaultwarden/web-vault@sha256:1dfda41cbddeac5bc59540261fff8defcac37170b5ba02d29c12fa1215498f70
+#     [vaultwarden/web-vault:v2022.6.2]
 #
-FROM vaultwarden/web-vault@sha256:4f9b7a6b0eaceb511cca8c6a5ed5aa92f527960b1b33d86fbbfd4e5795943965 as vault
+FROM vaultwarden/web-vault@sha256:1dfda41cbddeac5bc59540261fff8defcac37170b5ba02d29c12fa1215498f70 as vault
 
 ########################## BUILD IMAGE  ##########################
-FROM rust:1.58-buster as build
+FROM rust:1.61-bullseye as build
 
 
 
@@ -87,11 +87,11 @@ RUN cargo build --features ${DB} --release
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image
 # because we already have a binary built
-FROM debian:buster-slim
+FROM debian:bullseye-slim
 
-ENV ROCKET_ENV="staging" \
-    ROCKET_PORT=80 \
-    ROCKET_WORKERS=10
+ENV ROCKET_PROFILE="release" \
+    ROCKET_ADDRESS=0.0.0.0 \
+    ROCKET_PORT=80
 
 
 # Create data folder and Install needed libraries
@@ -101,7 +101,6 @@ RUN mkdir /data \
     openssl \
     ca-certificates \
     curl \
-    dumb-init \
     libmariadb-dev-compat \
     libpq5 \
     && apt-get clean \
@@ -115,7 +114,6 @@ EXPOSE 3012
 # Copies the files from the context (Rocket.toml file and web-vault)
 # and the binary from the "build" stage to the current stage
 WORKDIR /
-COPY Rocket.toml .
 COPY --from=vault /web-vault ./web-vault
 COPY --from=build /app/target/release/vaultwarden .
 
@@ -124,6 +122,4 @@ COPY docker/start.sh /start.sh
 
 HEALTHCHECK --interval=60s --timeout=10s CMD ["/healthcheck.sh"]
 
-# Configures the startup!
-ENTRYPOINT ["/usr/bin/dumb-init", "--"]
 CMD ["/start.sh"]

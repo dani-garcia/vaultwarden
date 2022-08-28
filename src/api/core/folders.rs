@@ -1,4 +1,4 @@
-use rocket_contrib::json::Json;
+use rocket::serde::json::Json;
 use serde_json::Value;
 
 use crate::{
@@ -12,9 +12,8 @@ pub fn routes() -> Vec<rocket::Route> {
 }
 
 #[get("/folders")]
-fn get_folders(headers: Headers, conn: DbConn) -> Json<Value> {
-    let folders = Folder::find_by_user(&headers.user.uuid, &conn);
-
+async fn get_folders(headers: Headers, conn: DbConn) -> Json<Value> {
+    let folders = Folder::find_by_user(&headers.user.uuid, &conn).await;
     let folders_json: Vec<Value> = folders.iter().map(Folder::to_json).collect();
 
     Json(json!({
@@ -25,8 +24,8 @@ fn get_folders(headers: Headers, conn: DbConn) -> Json<Value> {
 }
 
 #[get("/folders/<uuid>")]
-fn get_folder(uuid: String, headers: Headers, conn: DbConn) -> JsonResult {
-    let folder = match Folder::find_by_uuid(&uuid, &conn) {
+async fn get_folder(uuid: String, headers: Headers, conn: DbConn) -> JsonResult {
+    let folder = match Folder::find_by_uuid(&uuid, &conn).await {
         Some(folder) => folder,
         _ => err!("Invalid folder"),
     };
@@ -45,27 +44,39 @@ pub struct FolderData {
 }
 
 #[post("/folders", data = "<data>")]
-fn post_folders(data: JsonUpcase<FolderData>, headers: Headers, conn: DbConn, nt: Notify) -> JsonResult {
+async fn post_folders(data: JsonUpcase<FolderData>, headers: Headers, conn: DbConn, nt: Notify<'_>) -> JsonResult {
     let data: FolderData = data.into_inner().data;
 
     let mut folder = Folder::new(headers.user.uuid, data.Name);
 
-    folder.save(&conn)?;
-    nt.send_folder_update(UpdateType::FolderCreate, &folder);
+    folder.save(&conn).await?;
+    nt.send_folder_update(UpdateType::FolderCreate, &folder).await;
 
     Ok(Json(folder.to_json()))
 }
 
 #[post("/folders/<uuid>", data = "<data>")]
-fn post_folder(uuid: String, data: JsonUpcase<FolderData>, headers: Headers, conn: DbConn, nt: Notify) -> JsonResult {
-    put_folder(uuid, data, headers, conn, nt)
+async fn post_folder(
+    uuid: String,
+    data: JsonUpcase<FolderData>,
+    headers: Headers,
+    conn: DbConn,
+    nt: Notify<'_>,
+) -> JsonResult {
+    put_folder(uuid, data, headers, conn, nt).await
 }
 
 #[put("/folders/<uuid>", data = "<data>")]
-fn put_folder(uuid: String, data: JsonUpcase<FolderData>, headers: Headers, conn: DbConn, nt: Notify) -> JsonResult {
+async fn put_folder(
+    uuid: String,
+    data: JsonUpcase<FolderData>,
+    headers: Headers,
+    conn: DbConn,
+    nt: Notify<'_>,
+) -> JsonResult {
     let data: FolderData = data.into_inner().data;
 
-    let mut folder = match Folder::find_by_uuid(&uuid, &conn) {
+    let mut folder = match Folder::find_by_uuid(&uuid, &conn).await {
         Some(folder) => folder,
         _ => err!("Invalid folder"),
     };
@@ -76,20 +87,20 @@ fn put_folder(uuid: String, data: JsonUpcase<FolderData>, headers: Headers, conn
 
     folder.name = data.Name;
 
-    folder.save(&conn)?;
-    nt.send_folder_update(UpdateType::FolderUpdate, &folder);
+    folder.save(&conn).await?;
+    nt.send_folder_update(UpdateType::FolderUpdate, &folder).await;
 
     Ok(Json(folder.to_json()))
 }
 
 #[post("/folders/<uuid>/delete")]
-fn delete_folder_post(uuid: String, headers: Headers, conn: DbConn, nt: Notify) -> EmptyResult {
-    delete_folder(uuid, headers, conn, nt)
+async fn delete_folder_post(uuid: String, headers: Headers, conn: DbConn, nt: Notify<'_>) -> EmptyResult {
+    delete_folder(uuid, headers, conn, nt).await
 }
 
 #[delete("/folders/<uuid>")]
-fn delete_folder(uuid: String, headers: Headers, conn: DbConn, nt: Notify) -> EmptyResult {
-    let folder = match Folder::find_by_uuid(&uuid, &conn) {
+async fn delete_folder(uuid: String, headers: Headers, conn: DbConn, nt: Notify<'_>) -> EmptyResult {
+    let folder = match Folder::find_by_uuid(&uuid, &conn).await {
         Some(folder) => folder,
         _ => err!("Invalid folder"),
     };
@@ -99,8 +110,8 @@ fn delete_folder(uuid: String, headers: Headers, conn: DbConn, nt: Notify) -> Em
     }
 
     // Delete the actual folder entry
-    folder.delete(&conn)?;
+    folder.delete(&conn).await?;
 
-    nt.send_folder_update(UpdateType::FolderDelete, &folder);
+    nt.send_folder_update(UpdateType::FolderDelete, &folder).await;
     Ok(())
 }

@@ -1,4 +1,30 @@
-#![forbid(unsafe_code)]
+#![forbid(unsafe_code, non_ascii_idents)]
+#![deny(
+    rust_2018_idioms,
+    rust_2021_compatibility,
+    noop_method_call,
+    pointer_structural_match,
+    trivial_casts,
+    trivial_numeric_casts,
+    unused_import_braces,
+    clippy::cast_lossless,
+    clippy::clone_on_ref_ptr,
+    clippy::equatable_if_let,
+    clippy::float_cmp_const,
+    clippy::inefficient_to_string,
+    clippy::linkedlist,
+    clippy::macro_use_imports,
+    clippy::manual_assert,
+    clippy::match_wildcard_for_single_variants,
+    clippy::mem_forget,
+    clippy::string_add_assign,
+    clippy::string_to_string,
+    clippy::unnecessary_join,
+    clippy::unnecessary_self_imports,
+    clippy::unused_async,
+    clippy::verbose_file_reads,
+    clippy::zero_sized_map_values
+)]
 #![cfg_attr(feature = "unstable", feature(ip))]
 // The recursion_limit is mainly triggered by the json!() macro.
 // The more key/value pairs there are the more recursion occurs.
@@ -6,7 +32,13 @@
 // If you go above 128 it will cause rust-analyzer to fail,
 #![recursion_limit = "87"]
 
-extern crate openssl;
+// When enabled use MiMalloc as malloc instead of the default malloc
+#[cfg(feature = "enable_mimalloc")]
+use mimalloc::MiMalloc;
+#[cfg(feature = "enable_mimalloc")]
+#[cfg_attr(feature = "enable_mimalloc", global_allocator)]
+static GLOBAL: MiMalloc = MiMalloc;
+
 #[macro_use]
 extern crate rocket;
 #[macro_use]
@@ -20,8 +52,19 @@ extern crate diesel;
 #[macro_use]
 extern crate diesel_migrations;
 
-use job_scheduler::{Job, JobScheduler};
-use std::{fs::create_dir_all, panic, path::Path, process::exit, str::FromStr, thread, time::Duration};
+use std::{
+    fs::{canonicalize, create_dir_all},
+    panic,
+    path::Path,
+    process::exit,
+    str::FromStr,
+    thread,
+};
+
+use tokio::{
+    fs::File,
+    io::{AsyncBufReadExt, BufReader},
+};
 
 #[macro_use]
 mod error;
@@ -37,9 +80,11 @@ mod util;
 
 pub use config::CONFIG;
 pub use error::{Error, MapResult};
+use rocket::data::{Limits, ToByteUnit};
 pub use util::is_running_in_docker;
 
-fn main() {
+#[rocket::main]
+async fn main() -> Result<(), Error> {
     parse_args();
     launch_info();
 
@@ -49,20 +94,23 @@ fn main() {
 
     let extra_debug = matches!(level, LF::Trace | LF::Debug);
 
-    check_data_folder();
+    check_data_folder().await;
     check_rsa_keys().unwrap_or_else(|_| {
         error!("Error creating keys, exiting...");
         exit(1);
     });
     check_web_vault();
 
-    create_icon_cache_folder();
+    create_dir(&CONFIG.icon_cache_folder(), "icon cache");
+    create_dir(&CONFIG.tmp_folder(), "tmp folder");
+    create_dir(&CONFIG.sends_folder(), "sends folder");
+    create_dir(&CONFIG.attachments_folder(), "attachments folder");
 
-    let pool = create_db_pool();
-    schedule_jobs(pool.clone());
-    crate::db::models::TwoFactor::migrate_u2f_to_webauthn(&pool.get().unwrap()).unwrap();
+    let pool = create_db_pool().await;
+    schedule_jobs(pool.clone()).await;
+    crate::db::models::TwoFactor::migrate_u2f_to_webauthn(&pool.get().await.unwrap()).await.unwrap();
 
-    launch_rocket(pool, extra_debug); // Blocks until program termination.
+    launch_rocket(pool, extra_debug).await // Blocks until program termination.
 }
 
 const HELP: &str = "\
@@ -126,13 +174,13 @@ fn init_logging(level: log::LevelFilter) -> Result<(), fern::InitError> {
         // Hide failed to close stream messages
         .level_for("hyper::server", log::LevelFilter::Warn)
         // Silence rocket logs
-        .level_for("_", log::LevelFilter::Off)
-        .level_for("launch", log::LevelFilter::Off)
-        .level_for("launch_", log::LevelFilter::Off)
-        .level_for("rocket::rocket", log::LevelFilter::Off)
-        .level_for("rocket::fairing", log::LevelFilter::Off)
-        // Never show html5ever and hyper::proto logs, too noisy
-        .level_for("html5ever", log::LevelFilter::Off)
+        .level_for("_", log::LevelFilter::Warn)
+        .level_for("rocket::launch", log::LevelFilter::Error)
+        .level_for("rocket::launch_", log::LevelFilter::Error)
+        .level_for("rocket::rocket", log::LevelFilter::Warn)
+        .level_for("rocket::server", log::LevelFilter::Warn)
+        .level_for("rocket::fairing::fairings", log::LevelFilter::Warn)
+        .level_for("rocket::shield::shield", log::LevelFilter::Warn)
         .level_for("hyper::proto", log::LevelFilter::Off)
         .level_for("hyper::client", log::LevelFilter::Off)
         // Prevent cookie_store logs
@@ -243,11 +291,7 @@ fn create_dir(path: &str, description: &str) {
     create_dir_all(path).expect(&err_msg);
 }
 
-fn create_icon_cache_folder() {
-    create_dir(&CONFIG.icon_cache_folder(), "icon cache");
-}
-
-fn check_data_folder() {
+async fn check_data_folder() {
     let data_folder = &CONFIG.data_folder();
     let path = Path::new(data_folder);
     if !path.exists() {
@@ -259,6 +303,53 @@ fn check_data_folder() {
         }
         exit(1);
     }
+
+    if is_running_in_docker()
+        && std::env::var("I_REALLY_WANT_VOLATILE_STORAGE").is_err()
+        && !docker_data_folder_is_persistent(data_folder).await
+    {
+        error!(
+            "No persistent volume!\n\
+            ########################################################################################\n\
+            # It looks like you did not configure a persistent volume!                             #\n\
+            # This will result in permanent data loss when the container is removed or updated!    #\n\
+            # If you really want to use volatile storage set `I_REALLY_WANT_VOLATILE_STORAGE=true` #\n\
+            ########################################################################################\n"
+        );
+        exit(1);
+    }
+}
+
+/// Detect when using Docker or Podman the DATA_FOLDER is either a bind-mount or a volume created manually.
+/// If not created manually, then the data will not be persistent.
+/// A none persistent volume in either Docker or Podman is represented by a 64 alphanumerical string.
+/// If we detect this string, we will alert about not having a persistent self defined volume.
+/// This probably means that someone forgot to add `-v /path/to/vaultwarden_data/:/data`
+async fn docker_data_folder_is_persistent(data_folder: &str) -> bool {
+    if let Ok(mountinfo) = File::open("/proc/self/mountinfo").await {
+        // Since there can only be one mountpoint to the DATA_FOLDER
+        // We do a basic check for this mountpoint surrounded by a space.
+        let data_folder_match = if data_folder.starts_with('/') {
+            format!(" {data_folder} ")
+        } else {
+            format!(" /{data_folder} ")
+        };
+        let mut lines = BufReader::new(mountinfo).lines();
+        while let Some(line) = lines.next_line().await.unwrap_or_default() {
+            // Only execute a regex check if we find the base match
+            if line.contains(&data_folder_match) {
+                let re = regex::Regex::new(r"/volumes/[a-z0-9]{64}/_data /").unwrap();
+                if re.is_match(&line) {
+                    return false;
+                }
+                // If we did found a match for the mountpoint, but not the regex, then still stop searching.
+                break;
+            }
+        }
+    }
+    // In all other cases, just assume a true.
+    // This is just an informative check to try and prevent data loss.
+    true
 }
 
 fn check_rsa_keys() -> Result<(), crate::error::Error> {
@@ -275,7 +366,7 @@ fn check_rsa_keys() -> Result<(), crate::error::Error> {
     }
 
     if !util::file_exists(&pub_path) {
-        let rsa_key = openssl::rsa::Rsa::private_key_from_pem(&util::read_file(&priv_path)?)?;
+        let rsa_key = openssl::rsa::Rsa::private_key_from_pem(&std::fs::read(&priv_path)?)?;
 
         let pub_key = rsa_key.public_key_to_pem()?;
         crate::util::write_file(&pub_path, &pub_key)?;
@@ -304,8 +395,8 @@ fn check_web_vault() {
     }
 }
 
-fn create_db_pool() -> db::DbPool {
-    match util::retry_db(db::DbPool::from_config, CONFIG.db_connection_retries()) {
+async fn create_db_pool() -> db::DbPool {
+    match util::retry_db(db::DbPool::from_config, CONFIG.db_connection_retries()).await {
         Ok(p) => p,
         Err(e) => {
             error!("Error creating database pool: {:?}", e);
@@ -314,51 +405,74 @@ fn create_db_pool() -> db::DbPool {
     }
 }
 
-fn launch_rocket(pool: db::DbPool, extra_debug: bool) {
+async fn launch_rocket(pool: db::DbPool, extra_debug: bool) -> Result<(), Error> {
     let basepath = &CONFIG.domain_path();
+
+    let mut config = rocket::Config::from(rocket::Config::figment());
+    config.temp_dir = canonicalize(CONFIG.tmp_folder()).unwrap().into();
+    config.cli_colors = false; // Make sure Rocket does not color any values for logging.
+    config.limits = Limits::new()
+        .limit("json", 20.megabytes()) // 20MB should be enough for very large imports, something like 5000+ vault entries
+        .limit("data-form", 525.megabytes()) // This needs to match the maximum allowed file size for Send
+        .limit("file", 525.megabytes()); // This needs to match the maximum allowed file size for attachments
 
     // If adding more paths here, consider also adding them to
     // crate::utils::LOGGED_ROUTES to make sure they appear in the log
-    let result = rocket::ignite()
-        .mount(&[basepath, "/"].concat(), api::web_routes())
-        .mount(&[basepath, "/api"].concat(), api::core_routes())
-        .mount(&[basepath, "/admin"].concat(), api::admin_routes())
-        .mount(&[basepath, "/identity"].concat(), api::identity_routes())
-        .mount(&[basepath, "/icons"].concat(), api::icons_routes())
-        .mount(&[basepath, "/notifications"].concat(), api::notifications_routes())
+    let instance = rocket::custom(config)
+        .mount([basepath, "/"].concat(), api::web_routes())
+        .mount([basepath, "/api"].concat(), api::core_routes())
+        .mount([basepath, "/admin"].concat(), api::admin_routes())
+        .mount([basepath, "/identity"].concat(), api::identity_routes())
+        .mount([basepath, "/icons"].concat(), api::icons_routes())
+        .mount([basepath, "/notifications"].concat(), api::notifications_routes())
         .manage(pool)
         .manage(api::start_notification_server())
         .attach(util::AppHeaders())
         .attach(util::Cors())
         .attach(util::BetterLogging(extra_debug))
-        .launch();
+        .ignite()
+        .await?;
 
-    // Launch and print error if there is one
-    // The launch will restore the original logging level
-    error!("Launch error {:#?}", result);
+    CONFIG.set_rocket_shutdown_handle(instance.shutdown());
+    ctrlc::set_handler(move || {
+        info!("Exiting vaultwarden!");
+        CONFIG.shutdown();
+    })
+    .expect("Error setting Ctrl-C handler");
+
+    let _ = instance.launch().await?;
+
+    info!("Vaultwarden process exited!");
+    Ok(())
 }
 
-fn schedule_jobs(pool: db::DbPool) {
+async fn schedule_jobs(pool: db::DbPool) {
     if CONFIG.job_poll_interval_ms() == 0 {
         info!("Job scheduler disabled.");
         return;
     }
+
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+
     thread::Builder::new()
         .name("job-scheduler".to_string())
         .spawn(move || {
+            use job_scheduler_ng::{Job, JobScheduler};
+            let _runtime_guard = runtime.enter();
+
             let mut sched = JobScheduler::new();
 
             // Purge sends that are past their deletion date.
             if !CONFIG.send_purge_schedule().is_empty() {
                 sched.add(Job::new(CONFIG.send_purge_schedule().parse().unwrap(), || {
-                    api::purge_sends(pool.clone());
+                    runtime.spawn(api::purge_sends(pool.clone()));
                 }));
             }
 
             // Purge trashed items that are old enough to be auto-deleted.
             if !CONFIG.trash_purge_schedule().is_empty() {
                 sched.add(Job::new(CONFIG.trash_purge_schedule().parse().unwrap(), || {
-                    api::purge_trashed_ciphers(pool.clone());
+                    runtime.spawn(api::purge_trashed_ciphers(pool.clone()));
                 }));
             }
 
@@ -366,7 +480,7 @@ fn schedule_jobs(pool: db::DbPool) {
             // indicates that a user's master password has been compromised.
             if !CONFIG.incomplete_2fa_schedule().is_empty() {
                 sched.add(Job::new(CONFIG.incomplete_2fa_schedule().parse().unwrap(), || {
-                    api::send_incomplete_2fa_notifications(pool.clone());
+                    runtime.spawn(api::send_incomplete_2fa_notifications(pool.clone()));
                 }));
             }
 
@@ -375,7 +489,7 @@ fn schedule_jobs(pool: db::DbPool) {
             // sending reminders for requests that are about to be granted anyway.
             if !CONFIG.emergency_request_timeout_schedule().is_empty() {
                 sched.add(Job::new(CONFIG.emergency_request_timeout_schedule().parse().unwrap(), || {
-                    api::emergency_request_timeout_job(pool.clone());
+                    runtime.spawn(api::emergency_request_timeout_job(pool.clone()));
                 }));
             }
 
@@ -383,7 +497,7 @@ fn schedule_jobs(pool: db::DbPool) {
             // emergency access requests.
             if !CONFIG.emergency_notification_reminder_schedule().is_empty() {
                 sched.add(Job::new(CONFIG.emergency_notification_reminder_schedule().parse().unwrap(), || {
-                    api::emergency_notification_reminder_job(pool.clone());
+                    runtime.spawn(api::emergency_notification_reminder_job(pool.clone()));
                 }));
             }
 
@@ -398,7 +512,9 @@ fn schedule_jobs(pool: db::DbPool) {
             // tick, the one that was added earlier will run first.
             loop {
                 sched.tick();
-                thread::sleep(Duration::from_millis(CONFIG.job_poll_interval_ms()));
+                runtime.block_on(async move {
+                    tokio::time::sleep(tokio::time::Duration::from_millis(CONFIG.job_poll_interval_ms())).await
+                });
             }
         })
         .expect("Error spawning job scheduler thread");

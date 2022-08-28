@@ -1,12 +1,11 @@
 use chrono::{NaiveDateTime, Utc};
 use serde_json::Value;
 
-use super::{Cipher, User};
+use super::User;
 
 db_object! {
-    #[derive(Identifiable, Queryable, Insertable, Associations, AsChangeset)]
+    #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
     #[table_name = "folders"]
-    #[belongs_to(User, foreign_key = "user_uuid")]
     #[primary_key(uuid)]
     pub struct Folder {
         pub uuid: String,
@@ -16,10 +15,8 @@ db_object! {
         pub name: String,
     }
 
-    #[derive(Identifiable, Queryable, Insertable, Associations)]
+    #[derive(Identifiable, Queryable, Insertable)]
     #[table_name = "folders_ciphers"]
-    #[belongs_to(Cipher, foreign_key = "cipher_uuid")]
-    #[belongs_to(Folder, foreign_key = "folder_uuid")]
     #[primary_key(cipher_uuid, folder_uuid)]
     pub struct FolderCipher {
         pub cipher_uuid: String,
@@ -70,8 +67,8 @@ use crate::error::MapResult;
 
 /// Database methods
 impl Folder {
-    pub fn save(&mut self, conn: &DbConn) -> EmptyResult {
-        User::update_uuid_revision(&self.user_uuid, conn);
+    pub async fn save(&mut self, conn: &DbConn) -> EmptyResult {
+        User::update_uuid_revision(&self.user_uuid, conn).await;
         self.updated_at = Utc::now().naive_utc();
 
         db_run! { conn:
@@ -105,9 +102,9 @@ impl Folder {
         }
     }
 
-    pub fn delete(&self, conn: &DbConn) -> EmptyResult {
-        User::update_uuid_revision(&self.user_uuid, conn);
-        FolderCipher::delete_all_by_folder(&self.uuid, conn)?;
+    pub async fn delete(&self, conn: &DbConn) -> EmptyResult {
+        User::update_uuid_revision(&self.user_uuid, conn).await;
+        FolderCipher::delete_all_by_folder(&self.uuid, conn).await?;
 
         db_run! { conn: {
             diesel::delete(folders::table.filter(folders::uuid.eq(&self.uuid)))
@@ -116,14 +113,14 @@ impl Folder {
         }}
     }
 
-    pub fn delete_all_by_user(user_uuid: &str, conn: &DbConn) -> EmptyResult {
-        for folder in Self::find_by_user(user_uuid, conn) {
-            folder.delete(conn)?;
+    pub async fn delete_all_by_user(user_uuid: &str, conn: &DbConn) -> EmptyResult {
+        for folder in Self::find_by_user(user_uuid, conn).await {
+            folder.delete(conn).await?;
         }
         Ok(())
     }
 
-    pub fn find_by_uuid(uuid: &str, conn: &DbConn) -> Option<Self> {
+    pub async fn find_by_uuid(uuid: &str, conn: &DbConn) -> Option<Self> {
         db_run! { conn: {
             folders::table
                 .filter(folders::uuid.eq(uuid))
@@ -133,7 +130,7 @@ impl Folder {
         }}
     }
 
-    pub fn find_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
+    pub async fn find_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
         db_run! { conn: {
             folders::table
                 .filter(folders::user_uuid.eq(user_uuid))
@@ -145,7 +142,7 @@ impl Folder {
 }
 
 impl FolderCipher {
-    pub fn save(&self, conn: &DbConn) -> EmptyResult {
+    pub async fn save(&self, conn: &DbConn) -> EmptyResult {
         db_run! { conn:
             sqlite, mysql {
                 // Not checking for ForeignKey Constraints here.
@@ -167,7 +164,7 @@ impl FolderCipher {
         }
     }
 
-    pub fn delete(self, conn: &DbConn) -> EmptyResult {
+    pub async fn delete(self, conn: &DbConn) -> EmptyResult {
         db_run! { conn: {
             diesel::delete(
                 folders_ciphers::table
@@ -179,7 +176,7 @@ impl FolderCipher {
         }}
     }
 
-    pub fn delete_all_by_cipher(cipher_uuid: &str, conn: &DbConn) -> EmptyResult {
+    pub async fn delete_all_by_cipher(cipher_uuid: &str, conn: &DbConn) -> EmptyResult {
         db_run! { conn: {
             diesel::delete(folders_ciphers::table.filter(folders_ciphers::cipher_uuid.eq(cipher_uuid)))
                 .execute(conn)
@@ -187,7 +184,7 @@ impl FolderCipher {
         }}
     }
 
-    pub fn delete_all_by_folder(folder_uuid: &str, conn: &DbConn) -> EmptyResult {
+    pub async fn delete_all_by_folder(folder_uuid: &str, conn: &DbConn) -> EmptyResult {
         db_run! { conn: {
             diesel::delete(folders_ciphers::table.filter(folders_ciphers::folder_uuid.eq(folder_uuid)))
                 .execute(conn)
@@ -195,7 +192,7 @@ impl FolderCipher {
         }}
     }
 
-    pub fn find_by_folder_and_cipher(folder_uuid: &str, cipher_uuid: &str, conn: &DbConn) -> Option<Self> {
+    pub async fn find_by_folder_and_cipher(folder_uuid: &str, cipher_uuid: &str, conn: &DbConn) -> Option<Self> {
         db_run! { conn: {
             folders_ciphers::table
                 .filter(folders_ciphers::folder_uuid.eq(folder_uuid))
@@ -206,13 +203,26 @@ impl FolderCipher {
         }}
     }
 
-    pub fn find_by_folder(folder_uuid: &str, conn: &DbConn) -> Vec<Self> {
+    pub async fn find_by_folder(folder_uuid: &str, conn: &DbConn) -> Vec<Self> {
         db_run! { conn: {
             folders_ciphers::table
                 .filter(folders_ciphers::folder_uuid.eq(folder_uuid))
                 .load::<FolderCipherDb>(conn)
                 .expect("Error loading folders")
                 .from_db()
+        }}
+    }
+
+    /// Return a vec with (cipher_uuid, folder_uuid)
+    /// This is used during a full sync so we only need one query for all folder matches.
+    pub async fn find_by_user(user_uuid: &str, conn: &DbConn) -> Vec<(String, String)> {
+        db_run! { conn: {
+            folders_ciphers::table
+                .inner_join(folders::table)
+                .filter(folders::user_uuid.eq(user_uuid))
+                .select(folders_ciphers::all_columns)
+                .load::<(String, String)>(conn)
+                .unwrap_or_default()
         }}
     }
 }

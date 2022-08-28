@@ -1,8 +1,20 @@
-use diesel::r2d2::{ConnectionManager, Pool, PooledConnection};
+use std::{sync::Arc, time::Duration};
+
+use diesel::{
+    connection::SimpleConnection,
+    r2d2::{ConnectionManager, CustomizeConnection, Pool, PooledConnection},
+};
+
 use rocket::{
     http::Status,
+    outcome::IntoOutcome,
     request::{FromRequest, Outcome},
-    Request, State,
+    Request,
+};
+
+use tokio::{
+    sync::{Mutex, OwnedSemaphorePermit, Semaphore},
+    time::timeout,
 };
 
 use crate::{
@@ -22,6 +34,23 @@ pub mod __mysql_schema;
 #[path = "schemas/postgresql/schema.rs"]
 pub mod __postgresql_schema;
 
+// These changes are based on Rocket 0.5-rc wrapper of Diesel: https://github.com/SergioBenitez/Rocket/blob/v0.5-rc/contrib/sync_db_pools
+
+// A wrapper around spawn_blocking that propagates panics to the calling code.
+pub async fn run_blocking<F, R>(job: F) -> R
+where
+    F: FnOnce() -> R + Send + 'static,
+    R: Send + 'static,
+{
+    match tokio::task::spawn_blocking(job).await {
+        Ok(ret) => ret,
+        Err(e) => match e.try_into_panic() {
+            Ok(panic) => std::panic::resume_unwind(panic),
+            Err(_) => unreachable!("spawn_blocking tasks are never cancelled"),
+        },
+    }
+}
+
 // This is used to generate the main DbConn and DbPool enums, which contain one variant for each database supported
 macro_rules! generate_connections {
     ( $( $name:ident: $ty:ty ),+ ) => {
@@ -29,15 +58,74 @@ macro_rules! generate_connections {
         #[derive(Eq, PartialEq)]
         pub enum DbConnType { $( $name, )+ }
 
+        pub struct DbConn {
+            conn: Arc<Mutex<Option<DbConnInner>>>,
+            permit: Option<OwnedSemaphorePermit>,
+        }
+
         #[allow(non_camel_case_types)]
-        pub enum DbConn { $( #[cfg($name)] $name(PooledConnection<ConnectionManager< $ty >>), )+ }
+        pub enum DbConnInner { $( #[cfg($name)] $name(PooledConnection<ConnectionManager< $ty >>), )+ }
+
+        #[derive(Debug)]
+        pub struct DbConnOptions {
+            pub init_stmts: String,
+        }
+
+        $( // Based on <https://stackoverflow.com/a/57717533>.
+        #[cfg($name)]
+        impl CustomizeConnection<$ty, diesel::r2d2::Error> for DbConnOptions {
+            fn on_acquire(&self, conn: &mut $ty) -> Result<(), diesel::r2d2::Error> {
+                (|| {
+                    if !self.init_stmts.is_empty() {
+                        conn.batch_execute(&self.init_stmts)?;
+                    }
+                    Ok(())
+                })().map_err(diesel::r2d2::Error::QueryError)
+            }
+        })+
+
+        #[derive(Clone)]
+        pub struct DbPool {
+            // This is an 'Option' so that we can drop the pool in a 'spawn_blocking'.
+            pool: Option<DbPoolInner>,
+            semaphore: Arc<Semaphore>
+        }
 
         #[allow(non_camel_case_types)]
         #[derive(Clone)]
-        pub enum DbPool { $( #[cfg($name)] $name(Pool<ConnectionManager< $ty >>), )+ }
+        pub enum DbPoolInner { $( #[cfg($name)] $name(Pool<ConnectionManager< $ty >>), )+ }
+
+        impl Drop for DbConn {
+            fn drop(&mut self) {
+                let conn = self.conn.clone();
+                let permit = self.permit.take();
+
+                // Since connection can't be on the stack in an async fn during an
+                // await, we have to spawn a new blocking-safe thread...
+                tokio::task::spawn_blocking(move || {
+                    // And then re-enter the runtime to wait on the async mutex, but in a blocking fashion.
+                    let mut conn = tokio::runtime::Handle::current().block_on(conn.lock_owned());
+
+                    if let Some(conn) = conn.take() {
+                        drop(conn);
+                    }
+
+                    // Drop permit after the connection is dropped
+                    drop(permit);
+                });
+            }
+        }
+
+        impl Drop for DbPool {
+            fn drop(&mut self) {
+                let pool = self.pool.take();
+                tokio::task::spawn_blocking(move || drop(pool));
+            }
+        }
 
         impl DbPool {
-            // For the given database URL, guess it's type, run migrations create pool and return it
+            // For the given database URL, guess its type, run migrations, create pool, and return it
+            #[allow(clippy::diverging_sub_expression)]
             pub fn from_config() -> Result<Self, Error> {
                 let url = CONFIG.database_url();
                 let conn_type = DbConnType::from_url(&url)?;
@@ -50,9 +138,16 @@ macro_rules! generate_connections {
                             let manager = ConnectionManager::new(&url);
                             let pool = Pool::builder()
                                 .max_size(CONFIG.database_max_conns())
+                                .connection_timeout(Duration::from_secs(CONFIG.database_timeout()))
+                                .connection_customizer(Box::new(DbConnOptions{
+                                    init_stmts: conn_type.get_init_stmts()
+                                }))
                                 .build(manager)
                                 .map_res("Failed to create pool")?;
-                            return Ok(Self::$name(pool));
+                            return Ok(DbPool {
+                                pool: Some(DbPoolInner::$name(pool)),
+                                semaphore: Arc::new(Semaphore::new(CONFIG.database_max_conns() as usize)),
+                            });
                         }
                         #[cfg(not($name))]
                         #[allow(unreachable_code)]
@@ -61,10 +156,26 @@ macro_rules! generate_connections {
                 )+ }
             }
             // Get a connection from the pool
-            pub fn get(&self) -> Result<DbConn, Error> {
-                match self {  $(
+            pub async fn get(&self) -> Result<DbConn, Error> {
+                let duration = Duration::from_secs(CONFIG.database_timeout());
+                let permit = match timeout(duration, self.semaphore.clone().acquire_owned()).await {
+                    Ok(p) => p.expect("Semaphore should be open"),
+                    Err(_) => {
+                        err!("Timeout waiting for database connection");
+                    }
+                };
+
+                match self.pool.as_ref().expect("DbPool.pool should always be Some()") {  $(
                     #[cfg($name)]
-                    Self::$name(p) => Ok(DbConn::$name(p.get().map_res("Error retrieving connection from pool")?)),
+                    DbPoolInner::$name(p) => {
+                        let pool = p.clone();
+                        let c = run_blocking(move || pool.get_timeout(duration)).await.map_res("Error retrieving connection from pool")?;
+
+                        return Ok(DbConn {
+                            conn: Arc::new(Mutex::new(Some(DbConnInner::$name(c)))),
+                            permit: Some(permit)
+                        });
+                    },
                 )+ }
             }
         }
@@ -104,6 +215,23 @@ impl DbConnType {
             err!("`DATABASE_URL` looks like a SQLite URL, but 'sqlite' feature is not enabled")
         }
     }
+
+    pub fn get_init_stmts(&self) -> String {
+        let init_stmts = CONFIG.database_conn_init();
+        if !init_stmts.is_empty() {
+            init_stmts
+        } else {
+            self.default_init_stmts()
+        }
+    }
+
+    pub fn default_init_stmts(&self) -> String {
+        match self {
+            Self::sqlite => "PRAGMA busy_timeout = 5000; PRAGMA synchronous = NORMAL;".to_string(),
+            Self::mysql => "".to_string(),
+            Self::postgresql => "".to_string(),
+        }
+    }
 }
 
 #[macro_export]
@@ -113,42 +241,52 @@ macro_rules! db_run {
         db_run! { $conn: sqlite, mysql, postgresql $body }
     };
 
-    // Different code for each db
-    ( $conn:ident: $( $($db:ident),+ $body:block )+ ) => {{
-        #[allow(unused)] use diesel::prelude::*;
-        match $conn {
-            $($(
-                #[cfg($db)]
-                crate::db::DbConn::$db(ref $conn) => {
-                    paste::paste! {
-                        #[allow(unused)] use crate::db::[<__ $db _schema>]::{self as schema, *};
-                        #[allow(unused)] use [<__ $db _model>]::*;
-                        #[allow(unused)] use crate::db::FromDb;
-                    }
-                    $body
-                },
-            )+)+
-        }}
-    };
-
-    // Same for all dbs
     ( @raw $conn:ident: $body:block ) => {
         db_run! { @raw $conn: sqlite, mysql, postgresql $body }
     };
 
     // Different code for each db
-    ( @raw $conn:ident: $( $($db:ident),+ $body:block )+ ) => {
+    ( $conn:ident: $( $($db:ident),+ $body:block )+ ) => {{
         #[allow(unused)] use diesel::prelude::*;
-        #[allow(unused_variables)]
-        match $conn {
-            $($(
+        #[allow(unused)] use $crate::db::FromDb;
+
+        let conn = $conn.conn.clone();
+        let mut conn = conn.lock_owned().await;
+        match conn.as_mut().expect("internal invariant broken: self.connection is Some") {
+                $($(
                 #[cfg($db)]
-                crate::db::DbConn::$db(ref $conn) => {
-                    $body
+                $crate::db::DbConnInner::$db($conn) => {
+                    paste::paste! {
+                        #[allow(unused)] use $crate::db::[<__ $db _schema>]::{self as schema, *};
+                        #[allow(unused)] use [<__ $db _model>]::*;
+                    }
+
+                    tokio::task::block_in_place(move || { $body }) // Run blocking can't be used due to the 'static limitation, use block_in_place instead
                 },
             )+)+
         }
-    };
+    }};
+
+    ( @raw $conn:ident: $( $($db:ident),+ $body:block )+ ) => {{
+        #[allow(unused)] use diesel::prelude::*;
+        #[allow(unused)] use $crate::db::FromDb;
+
+        let conn = $conn.conn.clone();
+        let mut conn = conn.lock_owned().await;
+        match conn.as_mut().expect("internal invariant broken: self.connection is Some") {
+                $($(
+                #[cfg($db)]
+                $crate::db::DbConnInner::$db($conn) => {
+                    paste::paste! {
+                        #[allow(unused)] use $crate::db::[<__ $db _schema>]::{self as schema, *};
+                        // @ RAW: #[allow(unused)] use [<__ $db _model>]::*;
+                    }
+
+                    tokio::task::block_in_place(move || { $body }) // Run blocking can't be used due to the 'static limitation, use block_in_place instead
+                },
+            )+)+
+        }
+    }};
 }
 
 pub trait FromDb {
@@ -201,7 +339,7 @@ macro_rules! db_object {
         paste::paste! {
             #[allow(unused)] use super::*;
             #[allow(unused)] use diesel::prelude::*;
-            #[allow(unused)] use crate::db::[<__ $db _schema>]::*;
+            #[allow(unused)] use $crate::db::[<__ $db _schema>]::*;
 
             $( #[$attr] )*
             pub struct [<$name Db>] { $(
@@ -213,7 +351,7 @@ macro_rules! db_object {
                 #[inline(always)] pub fn to_db(x: &super::$name) -> Self { Self { $( $field: x.$field.clone(), )+ } }
             }
 
-            impl crate::db::FromDb for [<$name Db>] {
+            impl $crate::db::FromDb for [<$name Db>] {
                 type Output = super::$name;
                 #[allow(clippy::wrong_self_convention)]
                 #[inline(always)] fn from_db(self) -> Self::Output { super::$name { $( $field: self.$field, )+ } }
@@ -227,9 +365,10 @@ pub mod models;
 
 /// Creates a back-up of the sqlite database
 /// MySQL/MariaDB and PostgreSQL are not supported.
-pub fn backup_database(conn: &DbConn) -> Result<(), Error> {
+pub async fn backup_database(conn: &DbConn) -> Result<(), Error> {
     db_run! {@raw conn:
         postgresql, mysql {
+            let _ = conn;
             err!("PostgreSQL and MySQL/MariaDB do not support this backup feature");
         }
         sqlite {
@@ -244,7 +383,7 @@ pub fn backup_database(conn: &DbConn) -> Result<(), Error> {
 }
 
 /// Get the SQL Server version
-pub fn get_sql_server_version(conn: &DbConn) -> String {
+pub async fn get_sql_server_version(conn: &DbConn) -> String {
     db_run! {@raw conn:
         postgresql, mysql {
             no_arg_sql_function!(version, diesel::sql_types::Text);
@@ -260,15 +399,14 @@ pub fn get_sql_server_version(conn: &DbConn) -> String {
 /// Attempts to retrieve a single connection from the managed database pool. If
 /// no pool is currently managed, fails with an `InternalServerError` status. If
 /// no connections are available, fails with a `ServiceUnavailable` status.
-impl<'a, 'r> FromRequest<'a, 'r> for DbConn {
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for DbConn {
     type Error = ();
 
-    fn from_request(request: &'a Request<'r>) -> Outcome<DbConn, ()> {
-        // https://github.com/SergioBenitez/Rocket/commit/e3c1a4ad3ab9b840482ec6de4200d30df43e357c
-        let pool = try_outcome!(request.guard::<State<DbPool>>());
-        match pool.get() {
-            Ok(conn) => Outcome::Success(conn),
-            Err(_) => Outcome::Failure((Status::ServiceUnavailable, ())),
+    async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+        match request.rocket().state::<DbPool>() {
+            Some(p) => p.get().await.map_err(|_| ()).into_outcome(Status::ServiceUnavailable),
+            None => Outcome::Failure((Status::InternalServerError, ())),
         }
     }
 }

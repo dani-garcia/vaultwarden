@@ -24,7 +24,7 @@ macro_rules! make_error {
             }
         }
         impl std::fmt::Display for Error {
-            fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 match &self.error {$(
                    ErrorKind::$name(e) => f.write_str(&$usr_msg_fun(e, &self.message)),
                 )+}
@@ -45,10 +45,11 @@ use lettre::transport::smtp::Error as SmtpErr;
 use openssl::error::ErrorStack as SSLErr;
 use regex::Error as RegexErr;
 use reqwest::Error as ReqErr;
+use rocket::error::Error as RocketErr;
 use serde_json::{Error as SerdeErr, Value};
 use std::io::Error as IoErr;
 use std::time::SystemTimeError as TimeErr;
-use u2f::u2ferror::U2fError as U2fErr;
+use tokio_tungstenite::tungstenite::Error as TungstError;
 use webauthn_rs::error::WebauthnError as WebauthnErr;
 use yubico::yubicoerror::YubicoError as YubiErr;
 
@@ -69,7 +70,6 @@ make_error! {
     Json(Value):     _no_source,  _serialize,
     Db(DieselErr):   _has_source, _api_error,
     R2d2(R2d2Err):   _has_source, _api_error,
-    U2f(U2fErr):     _has_source, _api_error,
     Serde(SerdeErr): _has_source, _api_error,
     JWt(JwtErr):     _has_source, _api_error,
     Handlebars(HbErr): _has_source, _api_error,
@@ -84,14 +84,16 @@ make_error! {
     Address(AddrErr):  _has_source, _api_error,
     Smtp(SmtpErr):     _has_source, _api_error,
     OpenSSL(SSLErr):   _has_source, _api_error,
+    Rocket(RocketErr): _has_source, _api_error,
 
     DieselCon(DieselConErr): _has_source, _api_error,
     DieselMig(DieselMigErr): _has_source, _api_error,
     Webauthn(WebauthnErr):   _has_source, _api_error,
+    WebSocket(TungstError):  _has_source, _api_error,
 }
 
 impl std::fmt::Debug for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.source() {
             Some(e) => write!(f, "{}.\n[CAUSE] {:#?}", self.message, e),
             None => match self.error {
@@ -193,8 +195,8 @@ use rocket::http::{ContentType, Status};
 use rocket::request::Request;
 use rocket::response::{self, Responder, Response};
 
-impl<'r> Responder<'r> for Error {
-    fn respond_to(self, _: &Request) -> response::Result<'r> {
+impl<'r> Responder<'r, 'static> for Error {
+    fn respond_to(self, _: &Request<'_>) -> response::Result<'static> {
         match self.error {
             ErrorKind::Empty(_) => {}  // Don't print the error in this situation
             ErrorKind::Simple(_) => {} // Don't print the error in this situation
@@ -202,8 +204,8 @@ impl<'r> Responder<'r> for Error {
         };
 
         let code = Status::from_code(self.error_code).unwrap_or(Status::BadRequest);
-
-        Response::build().status(code).header(ContentType::JSON).sized_body(Cursor::new(format!("{}", self))).ok()
+        let body = self.to_string();
+        Response::build().status(code).header(ContentType::JSON).sized_body(Some(body.len()), Cursor::new(body)).ok()
     }
 }
 
@@ -214,20 +216,20 @@ impl<'r> Responder<'r> for Error {
 macro_rules! err {
     ($msg:expr) => {{
         error!("{}", $msg);
-        return Err(crate::error::Error::new($msg, $msg));
+        return Err($crate::error::Error::new($msg, $msg));
     }};
     ($usr_msg:expr, $log_value:expr) => {{
         error!("{}. {}", $usr_msg, $log_value);
-        return Err(crate::error::Error::new($usr_msg, $log_value));
+        return Err($crate::error::Error::new($usr_msg, $log_value));
     }};
 }
 
 macro_rules! err_silent {
     ($msg:expr) => {{
-        return Err(crate::error::Error::new($msg, $msg));
+        return Err($crate::error::Error::new($msg, $msg));
     }};
     ($usr_msg:expr, $log_value:expr) => {{
-        return Err(crate::error::Error::new($usr_msg, $log_value));
+        return Err($crate::error::Error::new($usr_msg, $log_value));
     }};
 }
 
@@ -235,11 +237,11 @@ macro_rules! err_silent {
 macro_rules! err_code {
     ($msg:expr, $err_code: expr) => {{
         error!("{}", $msg);
-        return Err(crate::error::Error::new($msg, $msg).with_code($err_code));
+        return Err($crate::error::Error::new($msg, $msg).with_code($err_code));
     }};
     ($usr_msg:expr, $log_value:expr, $err_code: expr) => {{
         error!("{}. {}", $usr_msg, $log_value);
-        return Err(crate::error::Error::new($usr_msg, $log_value).with_code($err_code));
+        return Err($crate::error::Error::new($usr_msg, $log_value).with_code($err_code));
     }};
 }
 
@@ -247,11 +249,11 @@ macro_rules! err_code {
 macro_rules! err_discard {
     ($msg:expr, $data:expr) => {{
         std::io::copy(&mut $data.open(), &mut std::io::sink()).ok();
-        return Err(crate::error::Error::new($msg, $msg));
+        return Err($crate::error::Error::new($msg, $msg));
     }};
     ($usr_msg:expr, $log_value:expr, $data:expr) => {{
         std::io::copy(&mut $data.open(), &mut std::io::sink()).ok();
-        return Err(crate::error::Error::new($usr_msg, $log_value));
+        return Err($crate::error::Error::new($usr_msg, $log_value));
     }};
 }
 

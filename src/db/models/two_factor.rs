@@ -2,12 +2,9 @@ use serde_json::Value;
 
 use crate::{api::EmptyResult, db::DbConn, error::MapResult};
 
-use super::User;
-
 db_object! {
-    #[derive(Identifiable, Queryable, Insertable, Associations, AsChangeset)]
+    #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
     #[table_name = "twofactor"]
-    #[belongs_to(User, foreign_key = "user_uuid")]
     #[primary_key(uuid)]
     pub struct TwoFactor {
         pub uuid: String,
@@ -71,7 +68,7 @@ impl TwoFactor {
 
 /// Database methods
 impl TwoFactor {
-    pub fn save(&self, conn: &DbConn) -> EmptyResult {
+    pub async fn save(&self, conn: &DbConn) -> EmptyResult {
         db_run! { conn:
             sqlite, mysql {
                 match diesel::replace_into(twofactor::table)
@@ -110,7 +107,7 @@ impl TwoFactor {
         }
     }
 
-    pub fn delete(self, conn: &DbConn) -> EmptyResult {
+    pub async fn delete(self, conn: &DbConn) -> EmptyResult {
         db_run! { conn: {
             diesel::delete(twofactor::table.filter(twofactor::uuid.eq(self.uuid)))
                 .execute(conn)
@@ -118,7 +115,7 @@ impl TwoFactor {
         }}
     }
 
-    pub fn find_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
+    pub async fn find_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
         db_run! { conn: {
             twofactor::table
                 .filter(twofactor::user_uuid.eq(user_uuid))
@@ -129,7 +126,7 @@ impl TwoFactor {
         }}
     }
 
-    pub fn find_by_user_and_type(user_uuid: &str, atype: i32, conn: &DbConn) -> Option<Self> {
+    pub async fn find_by_user_and_type(user_uuid: &str, atype: i32, conn: &DbConn) -> Option<Self> {
         db_run! { conn: {
             twofactor::table
                 .filter(twofactor::user_uuid.eq(user_uuid))
@@ -140,7 +137,7 @@ impl TwoFactor {
         }}
     }
 
-    pub fn delete_all_by_user(user_uuid: &str, conn: &DbConn) -> EmptyResult {
+    pub async fn delete_all_by_user(user_uuid: &str, conn: &DbConn) -> EmptyResult {
         db_run! { conn: {
             diesel::delete(twofactor::table.filter(twofactor::user_uuid.eq(user_uuid)))
                 .execute(conn)
@@ -148,7 +145,7 @@ impl TwoFactor {
         }}
     }
 
-    pub fn migrate_u2f_to_webauthn(conn: &DbConn) -> EmptyResult {
+    pub async fn migrate_u2f_to_webauthn(conn: &DbConn) -> EmptyResult {
         let u2f_factors = db_run! { conn: {
             twofactor::table
                 .filter(twofactor::atype.eq(TwoFactorType::U2f as i32))
@@ -157,7 +154,7 @@ impl TwoFactor {
                 .from_db()
         }};
 
-        use crate::api::core::two_factor::u2f::U2FRegistration;
+        use crate::api::core::two_factor::webauthn::U2FRegistration;
         use crate::api::core::two_factor::webauthn::{get_webauthn_registrations, WebauthnRegistration};
         use webauthn_rs::proto::*;
 
@@ -168,7 +165,7 @@ impl TwoFactor {
                 continue;
             }
 
-            let (_, mut webauthn_regs) = get_webauthn_registrations(&u2f.user_uuid, conn)?;
+            let (_, mut webauthn_regs) = get_webauthn_registrations(&u2f.user_uuid, conn).await?;
 
             // If the user already has webauthn registrations saved, don't overwrite them
             if !webauthn_regs.is_empty() {
@@ -207,10 +204,11 @@ impl TwoFactor {
             }
 
             u2f.data = serde_json::to_string(&regs)?;
-            u2f.save(conn)?;
+            u2f.save(conn).await?;
 
             TwoFactor::new(u2f.user_uuid.clone(), TwoFactorType::Webauthn, serde_json::to_string(&webauthn_regs)?)
-                .save(conn)?;
+                .save(conn)
+                .await?;
         }
 
         Ok(())

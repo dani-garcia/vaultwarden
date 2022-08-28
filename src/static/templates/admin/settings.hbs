@@ -5,7 +5,7 @@
             <div class="small text-white mb-3">
                 <span class="font-weight-bolder">NOTE:</span> The settings here override the environment variables. Once saved, it's recommended to stop setting them to avoid confusion.<br>
                 This does not apply to the read-only section, which can only be set via environment variables.<br>
-                Settings which are overridden are shown with <span class="is-overridden-true">double underscores</span>.
+                Settings which are overridden are shown with <span class="is-overridden-true alert-row px-1">a yellow colored background</span>.
             </div>
 
             <form class="form needs-validation" id="config-form" onsubmit="saveConfig(); return false;" novalidate>
@@ -16,7 +16,7 @@
                     <div id="g_{{group}}" class="card-body collapse">
                         {{#each elements}}
                         {{#if editable}}
-                        <div class="row my-2 align-items-center is-overridden-{{overridden}}" title="[{{name}}] {{doc.description}}">
+                        <div class="row my-2 align-items-center is-overridden-{{overridden}} alert-row" title="[{{name}}] {{doc.description}}">
                             {{#case type "text" "number" "password"}}
                             <label for="input_{{name}}" class="col-sm-3 col-form-label">{{doc.name}}</label>
                             <div class="col-sm-8">
@@ -71,16 +71,25 @@
                         {{#each config}}
                         {{#each elements}}
                         {{#unless editable}}
-                        <div class="row my-2 align-items-center" title="[{{name}}] {{doc.description}}">
+                        <div class="row my-2 align-items-center alert-row" title="[{{name}}] {{doc.description}}">
                             {{#case type "text" "number" "password"}}
                             <label for="input_{{name}}" class="col-sm-3 col-form-label">{{doc.name}}</label>
                             <div class="col-sm-8">
                                 <div class="input-group">
-                                <input readonly class="form-control" id="input_{{name}}" type="{{type}}"
-                                    value="{{value}}" {{#if default}} placeholder="Default: {{default}}" {{/if}}>
-                                {{#case type "password"}}
+                                {{!--
+                                      Also set the database_url input as password here.
+                                      If we would set it to password in config.rs it will not be character masked for the support string.
+                                      And sometimes this is more useful for providing support than just 3 asterisk.
+                                --}}
+                                {{#if (eq name "database_url")}}
+                                    <input readonly class="form-control" id="input_{{name}}" type="password" value="{{value}}" {{#if default}} placeholder="Default: {{default}}" {{/if}}>
                                     <button class="btn btn-outline-secondary" type="button" onclick="toggleVis('input_{{name}}');">Show/hide</button>
-                                {{/case}}
+                                {{else}}
+                                    <input readonly class="form-control" id="input_{{name}}" type="{{type}}" value="{{value}}" {{#if default}} placeholder="Default: {{default}}" {{/if}}>
+                                    {{#case type "password"}}
+                                    <button class="btn btn-outline-secondary" type="button" onclick="toggleVis('input_{{name}}');">Show/hide</button>
+                                    {{/case}}
+                                {{/if}}
                                 </div>
                             </div>
                             {{/case}}
@@ -134,7 +143,9 @@
     }
 
     .is-overridden-true {
-        text-decoration: underline double;
+        --bs-alert-color: #664d03;
+        --bs-alert-bg: #fff3cd;
+        --bs-alert-border-color: #ffecb5;
     }
 </style>
 
@@ -238,19 +249,45 @@
         return Array.from(form).some(el => 'origValue' in el.dataset && ( el.dataset.origValue !== el.value));
     }
 
-    // Trigger Form Change Detection
+    // This function will prevent submitting a from when someone presses enter.
+    function preventFormSubmitOnEnter(form) {
+        form.onkeypress = function(e) {
+            let key = e.charCode || e.keyCode || 0;
+            if (key == 13) {
+                e.preventDefault();
+            }
+        }
+    }
+
+    // Initialize Form Change Detection
     const config_form = document.getElementById('config-form');
     initChangeDetection(config_form);
+    // Prevent enter to submitting the form and save the config.
+    // Users need to really click on save, this also to prevent accidental submits.
+    preventFormSubmitOnEnter(config_form);
+
+    // This function will hook into the smtp-test-email input field and will call the smtpTest() function when enter is pressed.
+    function submitTestEmailOnEnter() {
+        const smtp_test_email_input = document.getElementById('smtp-test-email');
+        smtp_test_email_input.onkeypress = function(e) {
+            let key = e.charCode || e.keyCode || 0;
+            if (key == 13) {
+                e.preventDefault();
+                smtpTest();
+            }
+        }
+    }
+    submitTestEmailOnEnter();
 
     // Colorize some settings which are high risk
-    const risk_items = document.getElementsByClassName('col-form-label');
-    function colorRiskSettings(risk_el) {
-        Array.from(risk_el).forEach((el) => {
+    function colorRiskSettings() {
+        const risk_items = document.getElementsByClassName('col-form-label');
+        Array.from(risk_items).forEach((el) => {
             if (el.innerText.toLowerCase().includes('risks') ) {
                 el.parentElement.className += ' alert-danger'
             }
         });
     }
-    colorRiskSettings(risk_items);
+    colorRiskSettings();
 
 </script>

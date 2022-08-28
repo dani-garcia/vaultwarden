@@ -42,7 +42,7 @@ table! {
 }
 
 table! {
-    devices (uuid) {
+    devices (uuid, user_uuid) {
         uuid -> Text,
         created_at -> Timestamp,
         updated_at -> Timestamp,

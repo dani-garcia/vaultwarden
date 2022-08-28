@@ -3,7 +3,7 @@ name = "vaultwarden"
 version = "1.0.0"
 authors = ["Daniel García <dani-garcia@users.noreply.github.com>"]
 edition = "2021"
-rust-version = "1.60"
+rust-version = "1.60.0"
 resolver = "2"
 
 repository = "https://github.com/dani-garcia/vaultwarden"
@@ -13,6 +13,7 @@ publish = false
 build = "build.rs"
 
 [features]
+# default = ["sqlite"]
 # Empty to keep compatibility, prefer to set USE_SYSLOG=true
 enable_syslog = []
 mysql = ["diesel/mysql", "diesel_migrations/mysql"]
@@ -20,135 +21,138 @@ postgresql = ["diesel/postgres", "diesel_migrations/postgres"]
 sqlite = ["diesel/sqlite", "diesel_migrations/sqlite", "libsqlite3-sys"]
 # Enable to use a vendored and statically linked openssl
 vendored_openssl = ["openssl/vendored"]
+# Enable MiMalloc memory allocator to replace the default malloc
+# This can improve performance for Alpine builds
+enable_mimalloc = ["mimalloc"]
 
 # Enable unstable features, requires nightly
 # Currently only used to enable rusts official ip support
 unstable = []
 
 [target."cfg(not(windows))".dependencies]
-syslog = "4.0.1"
+# Logging
+syslog = "6.0.1" # Needs to be v4 until fern is updated
 
 [dependencies]
-# Web framework for nightly with a focus on ease-of-use, expressibility, and speed.
-rocket = { version = "=0.5.0-dev", features = ["tls"], default-features = false }
-rocket_contrib = "=0.5.0-dev"
+# Logging
+log = "0.4.17"
+fern = { version = "0.6.1", features = ["syslog-6"] }
+tracing = { version = "0.1.36", features = ["log"] } # Needed to have lettre and webauthn-rs trace logging to work
 
-# HTTP client
-reqwest = { version = "0.11.8", features = ["blocking", "json", "gzip", "brotli", "socks", "cookies", "trust-dns"] }
+backtrace = "0.3.66" # Logging panics to logfile instead stderr only
 
-# Used for custom short lived cookie jar
-cookie = "0.15.1"
-cookie_store = "0.15.1"
-bytes = "1.1.0"
-url = "2.2.2"
+# A `dotenv` implementation for Rust
+dotenvy = { version = "0.15.1", default-features = false }
 
-# multipart/form-data support
-multipart = { version = "0.18.0", features = ["server"], default-features = false }
+# Lazy initialization
+once_cell = "1.13.0"
 
-# WebSockets library
-ws = { version = "0.11.1", package = "parity-ws" }
+# Numerical libraries
+num-traits = "0.2.15"
+num-derive = "0.3.3"
 
-# MessagePack library
-rmpv = "1.0.0"
+# Web framework
+rocket = { version = "0.5.0-rc.2", features = ["tls", "json"], default-features = false }
 
-# Concurrent hashmap implementation
-chashmap = "2.2.2"
+# WebSockets libraries
+tokio-tungstenite = "0.17.2"
+rmpv = "1.0.0" # MessagePack library
+dashmap = "5.3.4" # Concurrent hashmap implementation
+
+# Async futures
+futures = "0.3.21"
+tokio = { version = "1.20.1", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time"] }
 
 # A generic serialization/deserialization framework
-serde = { version = "1.0.132", features = ["derive"] }
-serde_json = "1.0.73"
-
-# Logging
-log = "0.4.14"
-fern = { version = "0.6.0", features = ["syslog-4"] }
+serde = { version = "1.0.142", features = ["derive"] }
+serde_json = "1.0.83"
 
 # A safe, extensible ORM and Query builder
-diesel = { version = "1.4.8", features = [ "chrono", "r2d2"] }
+diesel = { version = "1.4.8", features = ["chrono", "r2d2"] }
 diesel_migrations = "1.4.0"
 
 # Bundled SQLite
 libsqlite3-sys = { version = "0.22.2", features = ["bundled"], optional = true }
 
 # Crypto-related libraries
-rand = "0.8.4"
+rand = { version = "0.8.5", features = ["small_rng"] }
 ring = "0.16.20"
 
 # UUID generation
-uuid = { version = "0.8.2", features = ["v4"] }
+uuid = { version = "1.1.2", features = ["v4"] }
 
 # Date and time libraries
-chrono = { version = "0.4.19", features = ["serde"] }
-chrono-tz = "0.6.1"
-time = "0.2.27"
+chrono = { version = "0.4.20", features = ["clock", "serde"], default-features = false }
+chrono-tz = "0.6.3"
+time = "0.3.12"
 
 # Job scheduler
-job_scheduler = "1.2.1"
+job_scheduler_ng = "2.0.1"
 
-# TOTP library
-totp-lite = "1.0.3"
-
-# Data encoding library
+# Data encoding library Hex/Base32/Base64
 data-encoding = "2.3.2"
 
 # JWT library
-jsonwebtoken = "7.2.0"
+jsonwebtoken = "8.1.1"
 
-# U2F library
-u2f = "0.2.0"
-webauthn-rs = "0.3.1"
+# TOTP library
+totp-lite = "2.0.0"
 
 # Yubico Library
-yubico = { version = "0.10.0", features = ["online-tokio"], default-features = false }
+yubico = { version = "0.11.0", features = ["online-tokio"], default-features = false }
 
-# A `dotenv` implementation for Rust
-dotenv = { version = "0.15.0", default-features = false }
+# WebAuthn libraries
+webauthn-rs = "0.3.2"
 
-# Lazy initialization
-once_cell = "1.9.0"
+# Handling of URL's for WebAuthn
+url = "2.2.2"
 
-# Numerical libraries
-num-traits = "0.2.14"
-num-derive = "0.3.3"
-
-# Email libraries
-tracing = { version = "0.1.29", features = ["log"] } # Needed to have lettre trace logging used when SMTP_DEBUG is enabled.
-lettre = { version = "0.10.0-rc.4", features = ["smtp-transport", "builder", "serde", "native-tls", "hostname", "tracing"], default-features = false }
+# Email librariese-Base, Update crates and small change.
+lettre = { version = "0.10.1", features = ["smtp-transport", "builder", "serde", "tokio1-native-tls", "hostname", "tracing", "tokio1"], default-features = false }
+percent-encoding = "2.1.0" # URL encoding library used for URL's in the emails
 
 # Template library
-handlebars = { version = "4.1.6", features = ["dir_source"] }
+handlebars = { version = "4.3.3", features = ["dir_source"] }
+
+# HTTP client
+reqwest = { version = "0.11.11", features = ["stream", "json", "gzip", "brotli", "socks", "cookies", "trust-dns"] }
 
 # For favicon extraction from main website
-html5ever = "0.25.1"
-markup5ever_rcdom = "0.1.0"
-regex = { version = "1.5.4", features = ["std", "perf", "unicode-perl"], default-features = false }
+html5gum = "0.5.2"
+regex = { version = "1.6.0", features = ["std", "perf", "unicode-perl"], default-features = false }
 data-url = "0.1.1"
+bytes = "1.2.1"
+cached = "0.38.0"
+
+# Used for custom short lived cookie jar during favicon extraction
+cookie = "0.16.0"
+cookie_store = "0.16.1"
 
 # Used by U2F, JWT and Postgres
-openssl = "0.10.38"
-
-# URL encoding library
-percent-encoding = "2.1.0"
-# Punycode conversion
-idna = "0.2.3"
+openssl = "0.10.41"
 
 # CLI argument parsing
-pico-args = "0.4.2"
-
-# Logging panics to logfile instead stderr only
-backtrace = "0.3.63"
+pico-args = "0.5.0"
 
 # Macro ident concatenation
-paste = "1.0.6"
-governor = "0.3.2"
+paste = "1.0.8"
+governor = "0.4.2"
+
+# Capture CTRL+C
+ctrlc = { version = "3.2.2", features = ["termination"] }
+
+# Allow overriding the default memory allocator
+# Mainly used for the musl builds, since the default musl malloc is very slow
+mimalloc = { version = "0.1.29", features = ["secure"], default-features = false, optional = true }
 
 [patch.crates-io]
-# Use newest ring
-rocket = { git = 'https://github.com/SergioBenitez/Rocket', rev = '263e39b5b429de1913ce7e3036575a7b4d88b6d7' }
-rocket_contrib = { git = 'https://github.com/SergioBenitez/Rocket', rev = '263e39b5b429de1913ce7e3036575a7b4d88b6d7' }
+# Using a patched version of multer-rs (Used by Rocket) to fix attachment/send file uploads
+# Issue: https://github.com/dani-garcia/vaultwarden/issues/2644
+# Patch: https://github.com/BlackDex/multer-rs/commit/73e83fa5eb183646cc56606e5d902acb30a45b3d
+multer = { git = "https://github.com/BlackDex/multer-rs", rev = "73e83fa5eb183646cc56606e5d902acb30a45b3d" }
 
-# The maintainer of the `job_scheduler` crate doesn't seem to have responded
-# to any issues or PRs for almost a year (as of April 2021). This hopefully
-# temporary fork updates Cargo.toml to use more up-to-date dependencies.
-# In particular, `cron` has since implemented parsing of some common syntax
-# that wasn't previously supported (https://github.com/zslayton/cron/pull/64).
-job_scheduler = { git = 'https://github.com/jjlin/job_scheduler', rev = 'ee023418dbba2bfe1e30a5fd7d937f9e33739806' }
+# Strip debuginfo from the release builds
+# Also enable thin LTO for some optimizations
+[profile.release]
+strip = "debuginfo"
+lto = "thin"

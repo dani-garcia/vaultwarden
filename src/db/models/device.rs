@@ -1,14 +1,12 @@
 use chrono::{NaiveDateTime, Utc};
 
-use super::User;
 use crate::CONFIG;
 
 db_object! {
-    #[derive(Identifiable, Queryable, Insertable, Associations, AsChangeset)]
+    #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
     #[table_name = "devices"]
     #[changeset_options(treat_none_as_null="true")]
-    #[belongs_to(User, foreign_key = "user_uuid")]
-    #[primary_key(uuid)]
+    #[primary_key(uuid, user_uuid)]
     pub struct Device {
         pub uuid: String,
         pub created_at: NaiveDateTime,
@@ -89,11 +87,11 @@ impl Device {
             nbf: time_now.timestamp(),
             exp: (time_now + *DEFAULT_VALIDITY).timestamp(),
             iss: JWT_LOGIN_ISSUER.to_string(),
-            sub: user.uuid.to_string(),
+            sub: user.uuid.clone(),
 
             premium: true,
-            name: user.name.to_string(),
-            email: user.email.to_string(),
+            name: user.name.clone(),
+            email: user.email.clone(),
             email_verified: !CONFIG.mail_enabled() || user.verified_at.is_some(),
 
             orgowner,
@@ -101,8 +99,8 @@ impl Device {
             orguser,
             orgmanager,
 
-            sstamp: user.security_stamp.to_string(),
-            device: self.uuid.to_string(),
+            sstamp: user.security_stamp.clone(),
+            device: self.uuid.clone(),
             scope,
             amr: vec!["Application".into()],
         };
@@ -118,7 +116,7 @@ use crate::error::MapResult;
 
 /// Database methods
 impl Device {
-    pub fn save(&mut self, conn: &DbConn) -> EmptyResult {
+    pub async fn save(&mut self, conn: &DbConn) -> EmptyResult {
         self.updated_at = Utc::now().naive_utc();
 
         db_run! { conn:
@@ -131,39 +129,33 @@ impl Device {
             postgresql {
                 let value = DeviceDb::to_db(self);
                 crate::util::retry(
-                    || diesel::insert_into(devices::table).values(&value).on_conflict(devices::uuid).do_update().set(&value).execute(conn),
+                    || diesel::insert_into(devices::table).values(&value).on_conflict((devices::uuid, devices::user_uuid)).do_update().set(&value).execute(conn),
                     10,
                 ).map_res("Error saving device")
             }
         }
     }
 
-    pub fn delete(self, conn: &DbConn) -> EmptyResult {
+    pub async fn delete_all_by_user(user_uuid: &str, conn: &DbConn) -> EmptyResult {
         db_run! { conn: {
-            diesel::delete(devices::table.filter(devices::uuid.eq(self.uuid)))
+            diesel::delete(devices::table.filter(devices::user_uuid.eq(user_uuid)))
                 .execute(conn)
-                .map_res("Error removing device")
+                .map_res("Error removing devices for user")
         }}
     }
 
-    pub fn delete_all_by_user(user_uuid: &str, conn: &DbConn) -> EmptyResult {
-        for device in Self::find_by_user(user_uuid, conn) {
-            device.delete(conn)?;
-        }
-        Ok(())
-    }
-
-    pub fn find_by_uuid(uuid: &str, conn: &DbConn) -> Option<Self> {
+    pub async fn find_by_uuid_and_user(uuid: &str, user_uuid: &str, conn: &DbConn) -> Option<Self> {
         db_run! { conn: {
             devices::table
                 .filter(devices::uuid.eq(uuid))
+                .filter(devices::user_uuid.eq(user_uuid))
                 .first::<DeviceDb>(conn)
                 .ok()
                 .from_db()
         }}
     }
 
-    pub fn find_by_refresh_token(refresh_token: &str, conn: &DbConn) -> Option<Self> {
+    pub async fn find_by_refresh_token(refresh_token: &str, conn: &DbConn) -> Option<Self> {
         db_run! { conn: {
             devices::table
                 .filter(devices::refresh_token.eq(refresh_token))
@@ -173,17 +165,7 @@ impl Device {
         }}
     }
 
-    pub fn find_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
-        db_run! { conn: {
-            devices::table
-                .filter(devices::user_uuid.eq(user_uuid))
-                .load::<DeviceDb>(conn)
-                .expect("Error loading devices")
-                .from_db()
-        }}
-    }
-
-    pub fn find_latest_active_by_user(user_uuid: &str, conn: &DbConn) -> Option<Self> {
+    pub async fn find_latest_active_by_user(user_uuid: &str, conn: &DbConn) -> Option<Self> {
         db_run! { conn: {
             devices::table
                 .filter(devices::user_uuid.eq(user_uuid))
