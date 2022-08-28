@@ -135,9 +135,9 @@
     </div>
 </main>
 
-<link rel="stylesheet" href="{{urlpath}}/vw_static/datatables.css" />
-<script src="{{urlpath}}/vw_static/jquery-3.6.0.slim.js"></script>
-<script src="{{urlpath}}/vw_static/datatables.js"></script>
+<link rel="stylesheet" href="..les.css" />
+<script src="..3.6.0.slim.js"></script>
+<script src="../vw_static/datatables.js"></script>
 <script>
     'use strict';
 
@@ -145,7 +145,7 @@
         var input_mail = prompt("To delete user '" + mail + "', please type the email below")
         if (input_mail != null) {
             if (input_mail == mail) {
-                _post("{{urlpath}}/admin/users/" + id + "/delete",
+                _post("../admin/users/" + id + "/delete",
                     "User deleted correctly",
                     "Error deleting user");
             } else {
@@ -155,13 +155,13 @@
         return false;
     }
     function remove2fa(id) {
-        _post("{{urlpath}}/admin/users/" + id + "/remove-2fa",
+        _post("..ers/" + id + "/remove-2fa",
             "2FA removed correctly",
             "Error removing 2FA");
         return false;
     }
     function deauthUser(id) {
-        _post("{{urlpath}}/admin/users/" + id + "/deauth",
+        _post("..ers/" + id + "/deauth",
             "Sessions deauthorized correctly",
             "Error deauthorizing sessions");
         return false;
@@ -169,7 +169,7 @@
     function disableUser(id, mail) {
         var confirmed = confirm("Are you sure you want to disable user '" + mail + "'? This will also deauthorize their sessions.")
         if (confirmed) {
-            _post("{{urlpath}}/admin/users/" + id + "/disable",
+            _post("../admin/users/" + id + "/disable",
                 "User disabled successfully",
                 "Error disabling user");
         }
@@ -178,14 +178,14 @@
     function enableUser(id, mail) {
         var confirmed = confirm("Are you sure you want to enable user '" + mail + "'?")
         if (confirmed) {
-            _post("{{urlpath}}/admin/users/" + id + "/enable",
+            _post("..ers/" + id + "/enable",
                 "User enabled successfully",
                 "Error enabling user");
         }
         return false;
     }
     function updateRevisions() {
-        _post("{{urlpath}}/admin/users/update_revision",
+        _post("../admin/users/update_revision",
             "Success, clients will sync next time they connect",
             "Error forcing clients to sync");
         return false;
@@ -194,7 +194,7 @@
         const inv = document.getElementById("email-invite");
         const data = JSON.stringify({ "email": inv.value });
         inv.value = "";
-        _post("{{urlpath}}/admin/invite/", "User invited correctly",
+        _post("../admin/invite/", "User invited correctly",
             "Error inviting user", data);
         return false;
     }
@@ -285,7 +285,7 @@
         let orgForm = document.getElementById("userOrgTypeForm");
         const data = JSON.stringify(Object.fromEntries(new FormData(orgForm).entries()));
 
-        _post("{{urlpath}}/admin/users/org_type",
+        _post("../admin/users/org_type",
             "Updated organization type of the user successfully",
             "Error updating organization type of the user", data);
         return false;

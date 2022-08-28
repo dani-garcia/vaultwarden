@@ -48,9 +48,9 @@
     </div>
 </main>
 
-<link rel="stylesheet" href="{{urlpath}}/vw_static/datatables.css" />
-<script src="{{urlpath}}/vw_static/jquery-3.6.0.slim.js"></script>
-<script src="{{urlpath}}/vw_static/datatables.js"></script>
+<link rel="stylesheet" href="../vw_static/datatables.css" />
+<script src="../vw_static/jquery-3.6.0.slim.js"></script>
+<script src="../vw_static/datatables.js"></script>
 <script>
     'use strict';
 
@@ -61,7 +61,7 @@
             var input_org_uuid = prompt("To delete the organization '" + name + " (" + billing_email +")', please type the organization uuid below.")
             if (input_org_uuid != null) {
                 if (input_org_uuid == id) {
-                    _post("{{urlpath}}/admin/organizations/" + id + "/delete",
+                    _post("../admin/organizations/" + id + "/delete",
                         "Organization deleted correctly",
                         "Error deleting organization");
                 } else {
