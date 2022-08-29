@@ -172,13 +172,13 @@ fn post_admin_login(
     let data = data.into_inner();
 
     if crate::ratelimit::check_limit_admin(&ip.ip).is_err() {
-        return Err(Flash::error(Redirect::to(admin_url(referer)), "Too many requests, try again later."));
+        return Err(Flash::error(Redirect::temporary(admin_url(referer)), "Too many requests, try again later."));
     }
 
     // If the token is invalid, redirect to login page
     if !_validate_token(&data.token) {
         error!("Invalid admin token. IP: {}", ip.ip);
-        Err(Flash::error(Redirect::to(admin_url(referer)), "Invalid admin token, please try again."))
+        Err(Flash::error(Redirect::temporary(admin_url(referer)), "Invalid admin token, please try again."))
     } else {
         // If the token received is valid, generate JWT and save it as a cookie
         let claims = generate_admin_claims();
@@ -192,7 +192,7 @@ fn post_admin_login(
             .finish();
 
         cookies.add(cookie);
-        Ok(Redirect::to(admin_url(referer)))
+        Ok(Redirect::temporary(admin_url(referer)))
     }
 }
 
@@ -303,7 +303,7 @@ async fn test_smtp(data: Json<InviteData>, _token: AdminToken) -> EmptyResult {
 #[get("/logout")]
 fn logout(cookies: &CookieJar<'_>, referer: Referer) -> Redirect {
     cookies.remove(Cookie::build(COOKIE_NAME, "").path(admin_path()).finish());
-    Redirect::to(admin_url(referer))
+    Redirect::temporary(admin_url(referer))
 }
 
 #[get("/users")]
