@@ -258,7 +258,7 @@ async fn send_invite(data: JsonUpcase<EmergencyAccessInviteData>, headers: Heade
         match User::find_by_mail(&email, &conn).await {
             Some(user) => {
                 match accept_invite_process(user.uuid, new_emergency_access.uuid, Some(email), conn.borrow()).await {
-                    Ok(v) => (v),
+                    Ok(v) => v,
                     Err(e) => err!(e.to_string()),
                 }
             }
@@ -317,7 +317,7 @@ async fn resend_invite(emer_id: String, headers: Headers, conn: DbConn) -> Empty
         match accept_invite_process(grantee_user.uuid, emergency_access.uuid, emergency_access.email, conn.borrow())
             .await
         {
-            Ok(v) => (v),
+            Ok(v) => v,
             Err(e) => err!(e.to_string()),
         }
     }
@@ -363,7 +363,7 @@ async fn accept_invite(emer_id: String, data: JsonUpcase<AcceptData>, conn: DbCo
         && (claims.grantor_email.is_some() && grantor_user.email == claims.grantor_email.unwrap())
     {
         match accept_invite_process(grantee_user.uuid.clone(), emer_id, Some(grantee_user.email.clone()), &conn).await {
-            Ok(v) => (v),
+            Ok(v) => v,
             Err(e) => err!(e.to_string()),
         }
 
