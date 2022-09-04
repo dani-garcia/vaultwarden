@@ -19,7 +19,7 @@ pub use self::device::Device;
 pub use self::emergency_access::{EmergencyAccess, EmergencyAccessStatus, EmergencyAccessType};
 pub use self::favorite::Favorite;
 pub use self::folder::{Folder, FolderCipher};
-pub use self::org_policy::{OrgPolicy, OrgPolicyType};
+pub use self::org_policy::{OrgPolicy, OrgPolicyErr, OrgPolicyType};
 pub use self::organization::{Organization, UserOrgStatus, UserOrgType, UserOrganization};
 pub use self::send::{Send, SendType};
 pub use self::two_factor::{TwoFactor, TwoFactorType};

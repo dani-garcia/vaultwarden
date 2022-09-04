@@ -70,8 +70,9 @@ struct SendData {
 /// controls this policy globally.
 async fn enforce_disable_send_policy(headers: &Headers, conn: &DbConn) -> EmptyResult {
     let user_uuid = &headers.user.uuid;
-    let policy_type = OrgPolicyType::DisableSend;
-    if !CONFIG.sends_allowed() || OrgPolicy::is_applicable_to_user(user_uuid, policy_type, conn).await {
+    if !CONFIG.sends_allowed()
+        || OrgPolicy::is_applicable_to_user(user_uuid, OrgPolicyType::DisableSend, None, conn).await
+    {
         err!("Due to an Enterprise Policy, you are only able to delete an existing Send.")
     }
     Ok(())
