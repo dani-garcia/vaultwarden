@@ -60,7 +60,7 @@ impl Fairing for AppHeaders {
             // Leaked Passwords check: api.pwnedpasswords.com
             // 2FA/MFA Site check: 2fa.directory
             // # Mail Relay: https://bitwarden.com/blog/add-privacy-and-security-using-email-aliases-with-bitwarden/
-            // app.simplelogin.io, app.anonaddy.com, relay.firefox.com
+            // app.simplelogin.io, app.anonaddy.com, api.fastmail.com
             let csp = format!(
                 "default-src 'self'; \
                 script-src 'self'{script_src}; \
@@ -68,7 +68,7 @@ impl Fairing for AppHeaders {
                 img-src 'self' data: https://haveibeenpwned.com/ https://www.gravatar.com {icon_service_csp}; \
                 child-src 'self' https://*.duosecurity.com https://*.duofederal.com; \
                 frame-src 'self' https://*.duosecurity.com https://*.duofederal.com; \
-                connect-src 'self' https://api.pwnedpasswords.com/range/ https://2fa.directory/api/ https://app.simplelogin.io/api/ https://app.anonaddy.com/api/ https://relay.firefox.com/api/; \
+                connect-src 'self' https://api.pwnedpasswords.com/range/ https://2fa.directory/api/ https://app.simplelogin.io/api/ https://app.anonaddy.com/api/ https://api.fastmail.com/; \
                 object-src 'self' blob:; \
                 frame-ancestors 'self' chrome-extension://nngceckbapebfimnlniiiahkandclblb chrome-extension://jbkfoedolllekgbhcbcoahefnbanhhlh moz-extension://* {allowed_iframe_ancestors};",
                 icon_service_csp=CONFIG._icon_service_csp(),

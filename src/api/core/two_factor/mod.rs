@@ -19,7 +19,14 @@ pub mod webauthn;
 pub mod yubikey;
 
 pub fn routes() -> Vec<Route> {
-    let mut routes = routes![get_twofactor, get_recover, recover, disable_twofactor, disable_twofactor_put,];
+    let mut routes = routes![
+        get_twofactor,
+        get_recover,
+        recover,
+        disable_twofactor,
+        disable_twofactor_put,
+        get_device_verification_settings,
+    ];
 
     routes.append(&mut authenticator::routes());
     routes.append(&mut duo::routes());
@@ -187,4 +194,22 @@ pub async fn send_incomplete_2fa_notifications(pool: DbPool) {
             .expect("Error sending incomplete 2FA email");
         login.delete(&conn).await.expect("Error deleting incomplete 2FA record");
     }
+}
+
+// This function currently is just a dummy and the actual part is not implemented yet.
+// This also prevents 404 errors.
+//
+// See the following Bitwarden PR's regarding this feature.
+// https://github.com/bitwarden/clients/pull/2843
+// https://github.com/bitwarden/clients/pull/2839
+// https://github.com/bitwarden/server/pull/2016
+//
+// The HTML part is hidden via the CSS patches done via the bw_web_build repo
+#[get("/two-factor/get-device-verification-settings")]
+fn get_device_verification_settings(_headers: Headers, _conn: DbConn) -> Json<Value> {
+    Json(json!({
+        "isDeviceVerificationSectionEnabled":false,
+        "unknownDeviceVerificationEnabled":false,
+        "object":"deviceVerificationSettings"
+    }))
 }
