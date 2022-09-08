@@ -206,7 +206,7 @@ fn config() -> Json<Value> {
     let domain = crate::CONFIG.domain();
     Json(json!({
         "version": crate::VERSION,
-        "gitHash": env!("GIT_REV"),
+        "gitHash": option_env!("GIT_REV"),
         "server": {
           "name": "Vaultwarden",
           "url": "https://github.com/dani-garcia/vaultwarden"
