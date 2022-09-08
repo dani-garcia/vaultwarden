@@ -7,8 +7,8 @@ use rocket::serde::json::Json;
 use rocket::{
     form::Form,
     http::{Cookie, CookieJar, SameSite, Status},
-    request::{self, FlashMessage, FromRequest, Outcome, Request},
-    response::{content::RawHtml as Html, Flash, Redirect},
+    request::{self, FromRequest, Outcome, Request},
+    response::{content::RawHtml as Html, Redirect},
     Route,
 };
 
@@ -141,10 +141,24 @@ fn admin_url(referer: Referer) -> String {
     }
 }
 
+#[derive(Responder)]
+enum AdminResponse {
+    #[response(status = 200)]
+    Ok(ApiResult<Html<String>>),
+    #[response(status = 401)]
+    Unauthorized(ApiResult<Html<String>>),
+    #[response(status = 429)]
+    TooManyRequests(ApiResult<Html<String>>),
+}
+
 #[get("/", rank = 2)]
-fn admin_login(flash: Option<FlashMessage<'_>>) -> ApiResult<Html<String>> {
+fn admin_login() -> ApiResult<Html<String>> {
+    render_admin_login(None)
+}
+
+fn render_admin_login(msg: Option<&str>) -> ApiResult<Html<String>> {
     // If there is an error, show it
-    let msg = flash.map(|msg| format!("{}: {}", msg.kind(), msg.message()));
+    let msg = msg.map(|msg| format!("Error: {msg}"));
     let json = json!({
         "page_content": "admin/login",
         "version": VERSION,
@@ -163,22 +177,17 @@ struct LoginForm {
 }
 
 #[post("/", data = "<data>")]
-fn post_admin_login(
-    data: Form<LoginForm>,
-    cookies: &CookieJar<'_>,
-    ip: ClientIp,
-    referer: Referer,
-) -> Result<Redirect, Flash<Redirect>> {
+fn post_admin_login(data: Form<LoginForm>, cookies: &CookieJar<'_>, ip: ClientIp) -> AdminResponse {
     let data = data.into_inner();
 
     if crate::ratelimit::check_limit_admin(&ip.ip).is_err() {
-        return Err(Flash::error(Redirect::to(admin_url(referer)), "Too many requests, try again later."));
+        return AdminResponse::TooManyRequests(render_admin_login(Some("Too many requests, try again later.")));
     }
 
     // If the token is invalid, redirect to login page
     if !_validate_token(&data.token) {
         error!("Invalid admin token. IP: {}", ip.ip);
-        Err(Flash::error(Redirect::to(admin_url(referer)), "Invalid admin token, please try again."))
+        AdminResponse::Unauthorized(render_admin_login(Some("Invalid admin token, please try again.")))
     } else {
         // If the token received is valid, generate JWT and save it as a cookie
         let claims = generate_admin_claims();
@@ -192,7 +201,7 @@ fn post_admin_login(
             .finish();
 
         cookies.add(cookie);
-        Ok(Redirect::to(admin_url(referer)))
+        AdminResponse::Ok(render_admin_page())
     }
 }
 
@@ -244,10 +253,14 @@ impl AdminTemplateData {
     }
 }
 
-#[get("/", rank = 1)]
-fn admin_page(_token: AdminToken) -> ApiResult<Html<String>> {
+fn render_admin_page() -> ApiResult<Html<String>> {
     let text = AdminTemplateData::new().render()?;
     Ok(Html(text))
+}
+
+#[get("/", rank = 1)]
+fn admin_page(_token: AdminToken) -> ApiResult<Html<String>> {
+    render_admin_page()
 }
 
 #[derive(Deserialize, Debug)]
@@ -303,7 +316,7 @@ async fn test_smtp(data: Json<InviteData>, _token: AdminToken) -> EmptyResult {
 #[get("/logout")]
 fn logout(cookies: &CookieJar<'_>, referer: Referer) -> Redirect {
     cookies.remove(Cookie::build(COOKIE_NAME, "").path(admin_path()).finish());
-    Redirect::to(admin_url(referer))
+    Redirect::temporary(admin_url(referer))
 }
 
 #[get("/users")]
@@ -509,7 +522,6 @@ use cached::proc_macro::cached;
 async fn get_release_info(has_http_access: bool, running_within_docker: bool) -> (String, String, String) {
     // If the HTTP Check failed, do not even attempt to check for new versions since we were not able to connect with github.com anyway.
     if has_http_access {
-        info!("Running get_release_info!!");
         (
             match get_github_api::<GitRelease>("https://api.github.com/repos/dani-garcia/vaultwarden/releases/latest")
                 .await

@@ -88,8 +88,8 @@ fn static_files(filename: String) -> Result<(ContentType, &'static [u8]), Error>
         "identicon.js" => Ok((ContentType::JavaScript, include_bytes!("../static/scripts/identicon.js"))),
         "datatables.js" => Ok((ContentType::JavaScript, include_bytes!("../static/scripts/datatables.js"))),
         "datatables.css" => Ok((ContentType::CSS, include_bytes!("../static/scripts/datatables.css"))),
-        "jquery-3.6.0.slim.js" => {
-            Ok((ContentType::JavaScript, include_bytes!("../static/scripts/jquery-3.6.0.slim.js")))
+        "jquery-3.6.1.slim.js" => {
+            Ok((ContentType::JavaScript, include_bytes!("../static/scripts/jquery-3.6.1.slim.js")))
         }
         _ => err!(format!("Static file not found: {}", filename)),
     }
