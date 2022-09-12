@@ -1351,7 +1351,7 @@ fn get_organization_tax(org_id: String, _headers: Headers) -> Json<Value> {
 }
 
 #[get("/plans")]
-fn get_plans(_headers: Headers) -> Json<Value> {
+fn get_plans() -> Json<Value> {
     // Respond with a minimal json just enough to allow the creation of an new organization.
     Json(json!({
         "Object": "list",
