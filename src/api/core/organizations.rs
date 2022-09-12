@@ -63,8 +63,12 @@ pub fn routes() -> Vec<Route> {
         bulk_public_keys,
         deactivate_organization_user,
         bulk_deactivate_organization_user,
+        revoke_organization_user,
+        bulk_revoke_organization_user,
         activate_organization_user,
-        bulk_activate_organization_user
+        bulk_activate_organization_user,
+        restore_organization_user,
+        bulk_restore_organization_user
     ]
 }
 
@@ -1480,6 +1484,7 @@ async fn import(org_id: String, data: JsonUpcase<OrgImportData>, headers: Header
     Ok(())
 }
 
+// Pre web-vault v2022.9.x endpoint
 #[put("/organizations/<org_id>/users/<org_user_id>/deactivate")]
 async fn deactivate_organization_user(
     org_id: String,
@@ -1487,11 +1492,32 @@ async fn deactivate_organization_user(
     headers: AdminHeaders,
     conn: DbConn,
 ) -> EmptyResult {
-    _deactivate_organization_user(&org_id, &org_user_id, &headers, &conn).await
+    _revoke_organization_user(&org_id, &org_user_id, &headers, &conn).await
 }
 
+// Pre web-vault v2022.9.x endpoint
 #[put("/organizations/<org_id>/users/deactivate", data = "<data>")]
 async fn bulk_deactivate_organization_user(
+    org_id: String,
+    data: JsonUpcase<Value>,
+    headers: AdminHeaders,
+    conn: DbConn,
+) -> Json<Value> {
+    bulk_revoke_organization_user(org_id, data, headers, conn).await
+}
+
+#[put("/organizations/<org_id>/users/<org_user_id>/revoke")]
+async fn revoke_organization_user(
+    org_id: String,
+    org_user_id: String,
+    headers: AdminHeaders,
+    conn: DbConn,
+) -> EmptyResult {
+    _revoke_organization_user(&org_id, &org_user_id, &headers, &conn).await
+}
+
+#[put("/organizations/<org_id>/users/revoke", data = "<data>")]
+async fn bulk_revoke_organization_user(
     org_id: String,
     data: JsonUpcase<Value>,
     headers: AdminHeaders,
@@ -1504,7 +1530,7 @@ async fn bulk_deactivate_organization_user(
         Some(org_users) => {
             for org_user_id in org_users {
                 let org_user_id = org_user_id.as_str().unwrap_or_default();
-                let err_msg = match _deactivate_organization_user(&org_id, org_user_id, &headers, &conn).await {
+                let err_msg = match _revoke_organization_user(&org_id, org_user_id, &headers, &conn).await {
                     Ok(_) => String::from(""),
                     Err(e) => format!("{:?}", e),
                 };
@@ -1528,7 +1554,7 @@ async fn bulk_deactivate_organization_user(
     }))
 }
 
-async fn _deactivate_organization_user(
+async fn _revoke_organization_user(
     org_id: &str,
     org_user_id: &str,
     headers: &AdminHeaders,
@@ -1557,6 +1583,7 @@ async fn _deactivate_organization_user(
     Ok(())
 }
 
+// Pre web-vault v2022.9.x endpoint
 #[put("/organizations/<org_id>/users/<org_user_id>/activate")]
 async fn activate_organization_user(
     org_id: String,
@@ -1564,11 +1591,32 @@ async fn activate_organization_user(
     headers: AdminHeaders,
     conn: DbConn,
 ) -> EmptyResult {
-    _activate_organization_user(&org_id, &org_user_id, &headers, &conn).await
+    _restore_organization_user(&org_id, &org_user_id, &headers, &conn).await
 }
 
+// Pre web-vault v2022.9.x endpoint
 #[put("/organizations/<org_id>/users/activate", data = "<data>")]
 async fn bulk_activate_organization_user(
+    org_id: String,
+    data: JsonUpcase<Value>,
+    headers: AdminHeaders,
+    conn: DbConn,
+) -> Json<Value> {
+    bulk_restore_organization_user(org_id, data, headers, conn).await
+}
+
+#[put("/organizations/<org_id>/users/<org_user_id>/restore")]
+async fn restore_organization_user(
+    org_id: String,
+    org_user_id: String,
+    headers: AdminHeaders,
+    conn: DbConn,
+) -> EmptyResult {
+    _restore_organization_user(&org_id, &org_user_id, &headers, &conn).await
+}
+
+#[put("/organizations/<org_id>/users/restore", data = "<data>")]
+async fn bulk_restore_organization_user(
     org_id: String,
     data: JsonUpcase<Value>,
     headers: AdminHeaders,
@@ -1581,7 +1629,7 @@ async fn bulk_activate_organization_user(
         Some(org_users) => {
             for org_user_id in org_users {
                 let org_user_id = org_user_id.as_str().unwrap_or_default();
-                let err_msg = match _activate_organization_user(&org_id, org_user_id, &headers, &conn).await {
+                let err_msg = match _restore_organization_user(&org_id, org_user_id, &headers, &conn).await {
                     Ok(_) => String::from(""),
                     Err(e) => format!("{:?}", e),
                 };
@@ -1605,7 +1653,7 @@ async fn bulk_activate_organization_user(
     }))
 }
 
-async fn _activate_organization_user(
+async fn _restore_organization_user(
     org_id: &str,
     org_user_id: &str,
     headers: &AdminHeaders,
@@ -1634,7 +1682,7 @@ async fn _activate_organization_user(
                 }
             }
 
-            user_org.activate();
+            user_org.restore();
             user_org.save(conn).await?;
         }
         Some(_) => err!("User is already active"),
