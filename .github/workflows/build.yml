@@ -30,7 +30,10 @@ jobs:
       matrix:
         channel:
           - "rust-toolchain" # The version defined in rust-toolchain
-          - "1.60.0" # The supported MSRV
+          - "msrv" # The supported MSRV
+        include:
+          - channel: "msrv"
+            version: "1.60.0"
 
     name: Build and Test ${{ matrix.channel }}
 
@@ -63,7 +66,7 @@ jobs:
         with:
           profile: minimal
           override: true
-          toolchain: ${{ matrix.channel }}
+          toolchain: ${{ matrix.version }}
       # End Install the MSRV channel to be used
 
 
@@ -193,5 +196,5 @@ jobs:
         if: ${{ matrix.channel == 'rust-toolchain' }}
         with:
           name: vaultwarden
-          path: target/${{ matrix.target-triple }}/release/vaultwarden
+          path: target/release/vaultwarden
       # End Upload artifact to Github Actions
