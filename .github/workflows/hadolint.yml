@@ -1,13 +1,9 @@
 name: Hadolint
 
-on:
-  push:
-    paths:
-      - "docker/**"
-
-  pull_request:
-    paths:
-      - "docker/**"
+on: [
+      push,
+      pull_request
+    ]
 
 jobs:
   hadolint:
