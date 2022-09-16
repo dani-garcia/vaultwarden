@@ -1763,7 +1763,7 @@ impl GroupRequest {
     pub fn to_group(&self, organizations_uuid: &str) -> Result<Group, String> {
         let access_all_value = match self.AccessAll {
             Some(value) => value,
-            _ => return Err(String::from("Could not convert GroupRequest to Group, because AccessAll has no value!")),
+            _ => err!("Could not convert GroupRequest to Group, because AccessAll has no value!"),
         };
 
         Ok(Group::new(organizations_uuid.to_owned(), self.Name.clone(), access_all_value, self.ExternalId.clone()))
