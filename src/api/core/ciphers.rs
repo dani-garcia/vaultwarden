@@ -328,7 +328,7 @@ async fn enforce_personal_ownership_policy(data: Option<&CipherData>, headers: &
     if data.is_none() || data.unwrap().OrganizationId.is_none() {
         let user_uuid = &headers.user.uuid;
         let policy_type = OrgPolicyType::PersonalOwnership;
-        if OrgPolicy::is_applicable_to_user(user_uuid, policy_type, conn).await {
+        if OrgPolicy::is_applicable_to_user(user_uuid, policy_type, None, conn).await {
             err!("Due to an Enterprise Policy, you are restricted from saving items to your personal vault.")
         }
     }

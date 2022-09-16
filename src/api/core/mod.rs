@@ -16,7 +16,7 @@ pub fn routes() -> Vec<Route> {
     let mut device_token_routes = routes![clear_device_token, put_device_token];
     let mut eq_domains_routes = routes![get_eq_domains, post_eq_domains, put_eq_domains];
     let mut hibp_routes = routes![hibp_breach];
-    let mut meta_routes = routes![alive, now, version];
+    let mut meta_routes = routes![alive, now, version, config];
 
     let mut routes = Vec::new();
     routes.append(&mut accounts::routes());
@@ -199,4 +199,25 @@ pub fn now() -> Json<String> {
 #[get("/version")]
 fn version() -> Json<&'static str> {
     Json(crate::VERSION.unwrap_or_default())
+}
+
+#[get("/config")]
+fn config() -> Json<Value> {
+    let domain = crate::CONFIG.domain();
+    Json(json!({
+        "version": crate::VERSION,
+        "gitHash": option_env!("GIT_REV"),
+        "server": {
+          "name": "Vaultwarden",
+          "url": "https://github.com/dani-garcia/vaultwarden"
+        },
+        "environment": {
+          "vault": domain,
+          "api": format!("{domain}/api"),
+          "identity": format!("{domain}/identity"),
+          "admin": format!("{domain}/admin"),
+          "notifications": format!("{domain}/notifications"),
+          "sso": "",
+        },
+    }))
 }
