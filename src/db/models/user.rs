@@ -17,6 +17,7 @@ db_object! {
         pub verified_at: Option<NaiveDateTime>,
         pub last_verifying_at: Option<NaiveDateTime>,
         pub login_verify_count: i32,
+        pub invalid_login_count: i32,
 
         pub email: String,
         pub email_new: Option<String>,
@@ -86,6 +87,8 @@ impl User {
             verified_at: None,
             last_verifying_at: None,
             login_verify_count: 0,
+            invalid_login_count: 0,
+
             name: email.clone(),
             email,
             akey: String::new(),

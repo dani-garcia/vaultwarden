@@ -543,6 +543,9 @@ make_config! {
         admin_ratelimit_seconds:       u64, false, def, 300;
         /// Max burst size for login requests |> Allow a burst of requests of up to this size, while maintaining the average indicated by `admin_ratelimit_seconds`
         admin_ratelimit_max_burst:     u32, false, def, 3;
+
+        /// Max number of login retries before user being disabled |> Limit the number of login attempts before the user is disabled automatically. 0 means no login attempts limits. Greater equal 1 means that user can retry 1 or more time before the account being locked.
+        login_max_retry:     i32, false, def, 0;
     },
 
     /// Yubikey settings

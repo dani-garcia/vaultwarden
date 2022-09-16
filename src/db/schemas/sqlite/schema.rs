@@ -159,6 +159,7 @@ table! {
         verified_at -> Nullable<Timestamp>,
         last_verifying_at -> Nullable<Timestamp>,
         login_verify_count -> Integer,
+        invalid_login_count -> Integer,
         email -> Text,
         email_new -> Nullable<Text>,
         email_new_token -> Nullable<Text>,

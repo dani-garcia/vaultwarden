@@ -105,15 +105,36 @@ async fn _password_login(data: ConnectData, conn: DbConn, ip: &ClientIp) -> Json
         None => err!("Username or password is incorrect. Try again", format!("IP: {}. Username: {}.", ip.ip, username)),
     };
 
-    // Check password
-    let password = data.password.as_ref().unwrap();
-    if !user.check_valid_password(password) {
-        err!("Username or password is incorrect. Try again", format!("IP: {}. Username: {}.", ip.ip, username))
-    }
-
     // Check if the user is disabled
     if !user.enabled {
         err!("This user has been disabled", format!("IP: {}. Username: {}.", ip.ip, username))
+    }
+
+    // Check password
+    let password = data.password.as_ref().unwrap();
+    if !user.check_valid_password(password) {
+        // When the configuration limits the number of attempts
+        if CONFIG.login_max_retry() > 0 {
+            let mut user = user;
+            let invalid_count = user.invalid_login_count;
+            //It is already the nth attempts, disable the user !
+            if user.invalid_login_count >= CONFIG.login_max_retry() {
+                user.enabled = false;
+                user.invalid_login_count = 0;
+            } else {
+                user.invalid_login_count += 1;
+            }
+
+            if let Err(e) = user.save(&conn).await {
+                error!("Error updating user: {:#?}", e);
+            }
+
+            if !user.enabled {
+                err!("Too many failed login attempts. User has been disabled", format!("IP: {}. Username: {}. Invalid logins: {}.", ip.ip, username, invalid_count))
+            }
+        }
+
+        err!("Username or password is incorrect. Try again", format!("IP: {}. Username: {}.", ip.ip, username))
     }
 
     let now = Utc::now().naive_utc();
@@ -121,7 +142,7 @@ async fn _password_login(data: ConnectData, conn: DbConn, ip: &ClientIp) -> Json
     if user.verified_at.is_none() && CONFIG.mail_enabled() && CONFIG.signups_verify() {
         if user.last_verifying_at.is_none()
             || now.signed_duration_since(user.last_verifying_at.unwrap()).num_seconds()
-                > CONFIG.signups_verify_resend_time() as i64
+            > CONFIG.signups_verify_resend_time() as i64
         {
             let resend_limit = CONFIG.signups_verify_resend_limit() as i32;
             if resend_limit == 0 || user.login_verify_count < resend_limit {
@@ -182,6 +203,13 @@ async fn _password_login(data: ConnectData, conn: DbConn, ip: &ClientIp) -> Json
 
     if let Some(token) = twofactor_token {
         result["TwoFactorToken"] = Value::String(token);
+    }
+
+    // Reset the number of attempts on success logins
+    let mut user = user;
+    user.invalid_login_count = 0;
+    if let Err(e) = user.save(&conn).await {
+        error!("Error updating user: {:#?}", e);
     }
 
     info!("User {} logged in successfully. IP: {}", username, ip.ip);

@@ -1,0 +1,1 @@
+ALTER TABLE users ADD COLUMN invalid_login_count INTEGER NOT NULL DEFAULT 0;
