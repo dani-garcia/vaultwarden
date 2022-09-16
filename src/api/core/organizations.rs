@@ -68,7 +68,7 @@ pub fn routes() -> Vec<Route> {
         activate_organization_user,
         bulk_activate_organization_user,
         restore_organization_user,
-        bulk_restore_organization_user
+        bulk_restore_organization_user,
         get_groups,
         post_groups,
         get_group,
@@ -83,7 +83,7 @@ pub fn routes() -> Vec<Route> {
         post_user_groups,
         put_user_groups,
         delete_group_user,
-        post_delete_group_user,
+        post_delete_group_user
     ]
 }
 
@@ -1737,6 +1737,7 @@ async fn _restore_organization_user(
         None => err!("User not found in organization"),
     }
     Ok(())
+}
 
 #[get("/organizations/<org_id>/groups")]
 async fn get_groups(org_id: String, _headers: AdminHeaders, conn: DbConn) -> JsonResult {
