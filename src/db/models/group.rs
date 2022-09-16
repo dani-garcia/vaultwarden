@@ -10,7 +10,7 @@ db_object! {
         pub organizations_uuid: String,
         pub name: String,
         pub access_all: bool,
-        pub external_id: String,
+        external_id: Option<String>,
         pub creation_date: NaiveDateTime,
         pub revision_date: NaiveDateTime,
     }
@@ -36,18 +36,22 @@ db_object! {
 
 /// Local methods
 impl Group {
-    pub fn new(organizations_uuid: String, name: String, access_all: bool, external_id: String) -> Self {
+    pub fn new(organizations_uuid: String, name: String, access_all: bool, external_id: Option<String>) -> Self {
         let now = Utc::now().naive_utc();
 
-        Self {
+        let mut new_model = Self {
             uuid: crate::util::get_uuid(),
             organizations_uuid,
             name,
             access_all,
-            external_id,
+            external_id: None,
             creation_date: now,
             revision_date: now,
-        }
+        };
+
+        new_model.set_external_id(external_id);
+
+        new_model
     }
 
     pub fn to_json(&self) -> Value {
@@ -62,6 +66,25 @@ impl Group {
             "CreationDate": format_date(&self.creation_date),
             "RevisionDate": format_date(&self.revision_date)
         })
+    }
+
+    pub fn set_external_id(&mut self, external_id: Option<String>) {
+        //Check if external id is empty. We don't want to have
+        //empty strings in the database
+        match external_id {
+            Some(external_id) => {
+                if external_id.is_empty() {
+                    self.external_id = None;
+                } else {
+                    self.external_id = Some(external_id)
+                }
+            },
+            None => self.external_id = None
+        }
+    }
+
+    pub fn get_external_id(&self) -> Option<String> {
+        self.external_id.clone()
     }
 }
 

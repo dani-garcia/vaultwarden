@@ -1755,7 +1755,7 @@ async fn get_groups(org_id: String, _headers: AdminHeaders, conn: DbConn) -> Jso
 struct GroupRequest {
     Name: String,
     AccessAll: Option<bool>,
-    ExternalId: String,
+    ExternalId: Option<String>,
     Collections: Vec<SelectionReadOnly>,
 }
 
@@ -1777,7 +1777,7 @@ impl GroupRequest {
 
         group.name = self.Name.clone();
         group.access_all = access_all_value;
-        group.external_id = self.ExternalId.clone();
+        group.set_external_id(self.ExternalId.clone());
 
         Ok(group)
     }
@@ -1882,7 +1882,7 @@ async fn add_update_group(mut group: Group, collections: Vec<SelectionReadOnly>,
         "OrganizationId": group.organizations_uuid,
         "Name": group.name,
         "AccessAll": group.access_all,
-        "ExternalId": group.external_id
+        "ExternalId": group.get_external_id()
     })))
 }
 
@@ -1904,7 +1904,7 @@ async fn get_group_details(_org_id: String, group_id: String, _headers: AdminHea
         "OrganizationId": group.organizations_uuid,
         "Name": group.name,
         "AccessAll": group.access_all,
-        "ExternalId": group.external_id,
+        "ExternalId": group.get_external_id(),
         "Collections": collections_groups
     })))
 }

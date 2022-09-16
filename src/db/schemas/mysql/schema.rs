@@ -226,7 +226,7 @@ table! {
         organizations_uuid -> Text,
         name -> Text,
         access_all -> Bool,
-        external_id -> Text,
+        external_id -> Nullable<Text>,
         creation_date -> Timestamp,
         revision_date -> Timestamp,
     }
