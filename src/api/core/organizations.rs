@@ -6,7 +6,8 @@ use serde_json::Value;
 use crate::{
     api::{
         core::{CipherSyncData, CipherSyncType},
-        EmptyResult, JsonResult, JsonUpcase, JsonUpcaseVec, JsonVec, Notify, NumberOrString, PasswordData, UpdateType,
+        ApiResult, EmptyResult, JsonResult, JsonUpcase, JsonUpcaseVec, JsonVec, Notify, NumberOrString, PasswordData,
+        UpdateType,
     },
     auth::{decode_invite, AdminHeaders, Headers, ManagerHeaders, ManagerHeadersLoose, OwnerHeaders},
     db::{models::*, DbConn},
@@ -1760,26 +1761,29 @@ struct GroupRequest {
 }
 
 impl GroupRequest {
-    pub fn to_group(&self, organizations_uuid: &str) -> Result<Group, String> {
-        let access_all_value = match self.AccessAll {
-            Some(value) => value,
+    pub fn to_group(&self, organizations_uuid: &str) -> ApiResult<Group> {
+        match self.AccessAll {
+            Some(access_all_value) => Ok(Group::new(
+                organizations_uuid.to_owned(),
+                self.Name.clone(),
+                access_all_value,
+                self.ExternalId.clone(),
+            )),
             _ => err!("Could not convert GroupRequest to Group, because AccessAll has no value!"),
-        };
-
-        Ok(Group::new(organizations_uuid.to_owned(), self.Name.clone(), access_all_value, self.ExternalId.clone()))
+        }
     }
 
-    pub fn update_group(&self, mut group: Group) -> Result<Group, String> {
-        let access_all_value = match self.AccessAll {
-            Some(value) => value,
-            _ => return Err(String::from("Could not update group, because AccessAll has no value!")),
-        };
+    pub fn update_group(&self, mut group: Group) -> ApiResult<Group> {
+        match self.AccessAll {
+            Some(access_all_value) => {
+                group.name = self.Name.clone();
+                group.access_all = access_all_value;
+                group.set_external_id(self.ExternalId.clone());
 
-        group.name = self.Name.clone();
-        group.access_all = access_all_value;
-        group.set_external_id(self.ExternalId.clone());
-
-        Ok(group)
+                Ok(group)
+            }
+            _ => err!("Could not update group, because AccessAll has no value!"),
+        }
     }
 }
 
@@ -1836,10 +1840,7 @@ async fn post_groups(
     conn: DbConn,
 ) -> JsonResult {
     let group_request = data.into_inner().data;
-    let group = match group_request.to_group(&org_id) {
-        Ok(group) => group,
-        Err(err) => err!(&err),
-    };
+    let group = group_request.to_group(&org_id)?;
 
     add_update_group(group, group_request.Collections, &conn).await
 }
@@ -1858,10 +1859,7 @@ async fn put_group(
     };
 
     let group_request = data.into_inner().data;
-    let updated_group = match group_request.update_group(group) {
-        Ok(group) => group,
-        Err(err) => err!(&err),
-    };
+    let updated_group = group_request.update_group(group)?;
 
     CollectionGroup::delete_all_by_group(&group_id, &conn).await?;
 

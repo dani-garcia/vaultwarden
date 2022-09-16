@@ -78,8 +78,8 @@ impl Group {
                 } else {
                     self.external_id = Some(external_id)
                 }
-            },
-            None => self.external_id = None
+            }
+            None => self.external_id = None,
         }
     }
 
