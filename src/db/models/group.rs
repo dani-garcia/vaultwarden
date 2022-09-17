@@ -171,24 +171,26 @@ impl Group {
         }}
     }
 
-    pub async fn find_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
+    //Returns all organizations the user has full access to
+    pub async fn gather_user_organizations_full_access(user_uuid: &str, conn: &DbConn) -> Vec<String> {
         db_run! { conn: {
-            groups::table
-                .inner_join(groups_users::table.on(
-                    groups_users::groups_uuid.eq(groups::uuid)
-                ))
+            groups_users::table
                 .inner_join(users_organizations::table.on(
                     users_organizations::uuid.eq(groups_users::users_organizations_uuid)
                 ))
+                .inner_join(groups::table.on(
+                    groups::uuid.eq(groups_users::groups_uuid)
+                ))
                 .filter(users_organizations::user_uuid.eq(user_uuid))
-                .select(groups::all_columns)
-                .load::<GroupDb>(conn)
-                .expect("Error loading user groups")
-                .from_db()
+                .filter(groups::access_all.eq(true))
+                .select(groups::organizations_uuid)
+                .distinct()
+                .load::<String>(conn)
+                .expect("Error loading organization group full access information for user")
         }}
     }
 
-    pub async fn is_in_full_access_group(user_uuid: &str, conn: &DbConn) -> bool {
+    pub async fn is_in_full_access_group(user_uuid: &str, org_uuid: &str, conn: &DbConn) -> bool {
         db_run! { conn: {
             groups::table
                 .inner_join(groups_users::table.on(
@@ -198,6 +200,7 @@ impl Group {
                     users_organizations::uuid.eq(groups_users::users_organizations_uuid)
                 ))
                 .filter(users_organizations::user_uuid.eq(user_uuid))
+                .filter(groups::organizations_uuid.eq(org_uuid))
                 .filter(groups::access_all.eq(true))
                 .select(groups::access_all)
                 .first::<bool>(conn)

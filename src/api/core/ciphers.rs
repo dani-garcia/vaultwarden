@@ -1498,7 +1498,7 @@ pub struct CipherSyncData {
     pub user_organizations: HashMap<String, UserOrganization>,
     pub user_collections: HashMap<String, CollectionUser>,
     pub user_collections_groups: HashMap<String, CollectionGroup>,
-    pub user_groups: HashMap<String, Group>,
+    pub user_group_full_access_for_organizations: HashSet<String>,
 }
 
 pub enum CipherSyncType {
@@ -1560,11 +1560,9 @@ impl CipherSyncData {
             .collect()
             .await;
 
-        // Generate a HashMap with the group.uuid as key and the Group record
-        let user_groups = stream::iter(Group::find_by_user(user_uuid, conn).await)
-            .map(|group| (group.uuid.clone(), group))
-            .collect()
-            .await;
+        // Get all organizations that the user has full access to via group assignement
+        let user_group_full_access_for_organizations =
+            stream::iter(Group::gather_user_organizations_full_access(user_uuid, conn).await).collect().await;
 
         Self {
             cipher_attachments,
@@ -1574,7 +1572,7 @@ impl CipherSyncData {
             user_organizations,
             user_collections,
             user_collections_groups,
-            user_groups,
+            user_group_full_access_for_organizations,
         }
     }
 }
