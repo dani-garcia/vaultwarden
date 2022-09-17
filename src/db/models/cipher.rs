@@ -411,15 +411,9 @@ impl Cipher {
             }
             rows
         } else {
-            let mut user_collections_access_flags = self.get_user_collections_access_flags(user_uuid, conn).await;
-            let mut group_collections_access_flags = self.get_group_collections_access_flags(user_uuid, conn).await;
-
-            let mut result = Vec::new();
-
-            result.append(&mut user_collections_access_flags);
-            result.append(&mut group_collections_access_flags);
-
-            result
+            let mut access_flags = self.get_user_collections_access_flags(user_uuid, conn).await;
+            access_flags.append(&mut self.get_group_collections_access_flags(user_uuid, conn).await);
+            access_flags
         };
 
         if rows.is_empty() {
