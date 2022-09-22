@@ -17,6 +17,9 @@ use crate::{
 
 const SEND_INACCESSIBLE_MSG: &str = "Send does not exist or is no longer available";
 
+// The max file size allowed by Bitwarden clients and add an extra 5% to avoid issues
+const SIZE_525_MB: u64 = 550_502_400;
+
 pub fn routes() -> Vec<rocket::Route> {
     routes![
         get_sends,
@@ -28,7 +31,9 @@ pub fn routes() -> Vec<rocket::Route> {
         put_send,
         delete_send,
         put_remove_password,
-        download_send
+        download_send,
+        post_send_file_v2,
+        post_send_file_v2_data
     ]
 }
 
@@ -58,6 +63,7 @@ struct SendData {
     Notes: Option<String>,
     Text: Option<Value>,
     File: Option<Value>,
+    FileLength: Option<NumberOrString>,
 }
 
 /// Enforces the `Disable Send` policy. A non-owner/admin user belonging to
@@ -185,6 +191,14 @@ struct UploadData<'f> {
     data: TempFile<'f>,
 }
 
+#[derive(FromForm)]
+struct UploadDataV2<'f> {
+    data: TempFile<'f>,
+}
+
+// @deprecated Mar 25 2021: This method has been deprecated in favor of direct uploads (v2).
+// This method still exists to support older clients, probably need to remove it sometime.
+// Upstream: https://github.com/bitwarden/server/blob/d0c793c95181dfb1b447eb450f85ba0bfd7ef643/src/Api/Controllers/SendsController.cs#L164-L167
 #[post("/sends/file", format = "multipart/form-data", data = "<data>")]
 async fn post_send_file(data: Form<UploadData<'_>>, headers: Headers, conn: DbConn, nt: Notify<'_>) -> JsonResult {
     enforce_disable_send_policy(&headers, &conn).await?;
@@ -196,9 +210,6 @@ async fn post_send_file(data: Form<UploadData<'_>>, headers: Headers, conn: DbCo
     let model = model.into_inner().data;
 
     enforce_disable_hide_email_policy(&model, &headers, &conn).await?;
-
-    // Get the file length and add an extra 5% to avoid issues
-    const SIZE_525_MB: u64 = 550_502_400;
 
     let size_limit = match CONFIG.user_attachment_limit() {
         Some(0) => err!("File uploads are disabled"),
@@ -217,10 +228,12 @@ async fn post_send_file(data: Form<UploadData<'_>>, headers: Headers, conn: DbCo
         err!("Send content is not a file");
     }
 
-    // There seems to be a bug somewhere regarding uploading attachments using the Android Client (Maybe iOS too?)
-    // See: https://github.com/dani-garcia/vaultwarden/issues/2644
-    // Since all other clients seem to match TempFile::File and not TempFile::Buffered lets catch this and return an error for now.
-    // We need to figure out how to solve this, but for now it's better to not accept these attachments since they will be broken.
+    // There is a bug regarding uploading attachments/sends using the Mobile clients
+    // See: https://github.com/dani-garcia/vaultwarden/issues/2644 && https://github.com/bitwarden/mobile/issues/2018
+    // This has been fixed via a PR: https://github.com/bitwarden/mobile/pull/2031, but hasn't landed in a new release yet.
+    // On the vaultwarden side this is temporarily fixed by using a custom multer library
+    // See: https://github.com/dani-garcia/vaultwarden/pull/2675
+    // In any case we will match TempFile::File and not TempFile::Buffered, since Buffered will alter the contents.
     if let TempFile::Buffered {
         content: _,
     } = &data
@@ -252,9 +265,108 @@ async fn post_send_file(data: Form<UploadData<'_>>, headers: Headers, conn: DbCo
 
     // Save the changes in the database
     send.save(&conn).await?;
-    nt.send_send_update(UpdateType::SyncSendUpdate, &send, &send.update_users_revision(&conn).await).await;
+    nt.send_send_update(UpdateType::SyncSendCreate, &send, &send.update_users_revision(&conn).await).await;
 
     Ok(Json(send.to_json()))
+}
+
+// Upstream: https://github.com/bitwarden/server/blob/d0c793c95181dfb1b447eb450f85ba0bfd7ef643/src/Api/Controllers/SendsController.cs#L190
+#[post("/sends/file/v2", data = "<data>")]
+async fn post_send_file_v2(data: JsonUpcase<SendData>, headers: Headers, conn: DbConn) -> JsonResult {
+    enforce_disable_send_policy(&headers, &conn).await?;
+
+    let data = data.into_inner().data;
+
+    if data.Type != SendType::File as i32 {
+        err!("Send content is not a file");
+    }
+
+    enforce_disable_hide_email_policy(&data, &headers, &conn).await?;
+
+    let file_length = match &data.FileLength {
+        Some(m) => Some(m.into_i32()?),
+        _ => None,
+    };
+
+    let size_limit = match CONFIG.user_attachment_limit() {
+        Some(0) => err!("File uploads are disabled"),
+        Some(limit_kb) => {
+            let left = (limit_kb * 1024) - Attachment::size_by_user(&headers.user.uuid, &conn).await;
+            if left <= 0 {
+                err!("Attachment storage limit reached! Delete some attachments to free up space")
+            }
+            std::cmp::Ord::max(left as u64, SIZE_525_MB)
+        }
+        None => SIZE_525_MB,
+    };
+
+    if file_length.is_some() && file_length.unwrap() as u64 > size_limit {
+        err!("Attachment storage limit exceeded with this file");
+    }
+
+    let mut send = create_send(data, headers.user.uuid)?;
+
+    let file_id = crate::crypto::generate_send_id();
+
+    let mut data_value: Value = serde_json::from_str(&send.data)?;
+    if let Some(o) = data_value.as_object_mut() {
+        o.insert(String::from("Id"), Value::String(file_id.clone()));
+        o.insert(String::from("Size"), Value::Number(file_length.unwrap().into()));
+        o.insert(String::from("SizeName"), Value::String(crate::util::get_display_size(file_length.unwrap())));
+    }
+    send.data = serde_json::to_string(&data_value)?;
+    send.save(&conn).await?;
+
+    Ok(Json(json!({
+        "fileUploadType": 0, // 0 == Direct | 1 == Azure
+        "object": "send-fileUpload",
+        "url": format!("/sends/{}/file/{}", send.uuid, file_id),
+        "sendResponse": send.to_json()
+    })))
+}
+
+// https://github.com/bitwarden/server/blob/d0c793c95181dfb1b447eb450f85ba0bfd7ef643/src/Api/Controllers/SendsController.cs#L243
+#[post("/sends/<send_uuid>/file/<file_id>", format = "multipart/form-data", data = "<data>")]
+async fn post_send_file_v2_data(
+    send_uuid: String,
+    file_id: String,
+    data: Form<UploadDataV2<'_>>,
+    headers: Headers,
+    conn: DbConn,
+    nt: Notify<'_>,
+) -> EmptyResult {
+    enforce_disable_send_policy(&headers, &conn).await?;
+
+    let mut data = data.into_inner();
+
+    // There is a bug regarding uploading attachments/sends using the Mobile clients
+    // See: https://github.com/dani-garcia/vaultwarden/issues/2644 && https://github.com/bitwarden/mobile/issues/2018
+    // This has been fixed via a PR: https://github.com/bitwarden/mobile/pull/2031, but hasn't landed in a new release yet.
+    // On the vaultwarden side this is temporarily fixed by using a custom multer library
+    // See: https://github.com/dani-garcia/vaultwarden/pull/2675
+    // In any case we will match TempFile::File and not TempFile::Buffered, since Buffered will alter the contents.
+    if let TempFile::Buffered {
+        content: _,
+    } = &data.data
+    {
+        err!("Error reading attachment data. Please try an other client.");
+    }
+
+    if let Some(send) = Send::find_by_uuid(&send_uuid, &conn).await {
+        let folder_path = tokio::fs::canonicalize(&CONFIG.sends_folder()).await?.join(&send_uuid);
+        let file_path = folder_path.join(&file_id);
+        tokio::fs::create_dir_all(&folder_path).await?;
+
+        if let Err(_err) = data.data.persist_to(&file_path).await {
+            data.data.move_copy_to(file_path).await?
+        }
+
+        nt.send_send_update(UpdateType::SyncSendCreate, &send, &send.update_users_revision(&conn).await).await;
+    } else {
+        err!("Send not found. Unable to save the file.");
+    }
+
+    Ok(())
 }
 
 #[derive(Deserialize)]
