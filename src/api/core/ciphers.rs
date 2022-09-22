@@ -947,10 +947,12 @@ async fn save_attachment(
 
     let mut data = data.into_inner();
 
-    // There seems to be a bug somewhere regarding uploading attachments using the Android Client (Maybe iOS too?)
-    // See: https://github.com/dani-garcia/vaultwarden/issues/2644
-    // Since all other clients seem to match TempFile::File and not TempFile::Buffered lets catch this and return an error for now.
-    // We need to figure out how to solve this, but for now it's better to not accept these attachments since they will be broken.
+    // There is a bug regarding uploading attachments/sends using the Mobile clients
+    // See: https://github.com/dani-garcia/vaultwarden/issues/2644 && https://github.com/bitwarden/mobile/issues/2018
+    // This has been fixed via a PR: https://github.com/bitwarden/mobile/pull/2031, but hasn't landed in a new release yet.
+    // On the vaultwarden side this is temporarily fixed by using a custom multer library
+    // See: https://github.com/dani-garcia/vaultwarden/pull/2675
+    // In any case we will match TempFile::File and not TempFile::Buffered, since Buffered will alter the contents.
     if let TempFile::Buffered {
         content: _,
     } = &data.data
