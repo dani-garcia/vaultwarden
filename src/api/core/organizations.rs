@@ -10,7 +10,9 @@ use crate::{
     },
     auth::{decode_invite, AdminHeaders, Headers, ManagerHeaders, ManagerHeadersLoose, OwnerHeaders},
     db::{models::*, DbConn},
-    mail, CONFIG,
+    mail,
+    util::convert_json_key_lcase_first,
+    CONFIG,
 };
 
 use futures::{stream, stream::StreamExt};
@@ -68,7 +70,8 @@ pub fn routes() -> Vec<Route> {
         activate_organization_user,
         bulk_activate_organization_user,
         restore_organization_user,
-        bulk_restore_organization_user
+        bulk_restore_organization_user,
+        get_org_export
     ]
 }
 
@@ -246,15 +249,19 @@ async fn get_user_collections(headers: Headers, conn: DbConn) -> Json<Value> {
 
 #[get("/organizations/<org_id>/collections")]
 async fn get_org_collections(org_id: String, _headers: ManagerHeadersLoose, conn: DbConn) -> Json<Value> {
-    Json(json!({
+    Json(_get_org_collections(&org_id, &conn).await)
+}
+
+async fn _get_org_collections(org_id: &str, conn: &DbConn) -> Value {
+    json!({
         "Data":
-            Collection::find_by_organization(&org_id, &conn).await
+            Collection::find_by_organization(org_id, conn).await
             .iter()
             .map(Collection::to_json)
             .collect::<Value>(),
         "Object": "list",
         "ContinuationToken": null,
-    }))
+    })
 }
 
 #[post("/organizations/<org_id>/collections", data = "<data>")]
@@ -491,22 +498,26 @@ struct OrgIdData {
 
 #[get("/ciphers/organization-details?<data..>")]
 async fn get_org_details(data: OrgIdData, headers: Headers, conn: DbConn) -> Json<Value> {
-    let ciphers = Cipher::find_by_org(&data.organization_id, &conn).await;
-    let cipher_sync_data = CipherSyncData::new(&headers.user.uuid, &ciphers, CipherSyncType::Organization, &conn).await;
+    Json(_get_org_details(&data.organization_id, &headers.host, &headers.user.uuid, &conn).await)
+}
+
+async fn _get_org_details(org_id: &str, host: &str, user_uuid: &str, conn: &DbConn) -> Value {
+    let ciphers = Cipher::find_by_org(org_id, conn).await;
+    let cipher_sync_data = CipherSyncData::new(user_uuid, &ciphers, CipherSyncType::Organization, conn).await;
 
     let ciphers_json = stream::iter(ciphers)
         .then(|c| async {
             let c = c; // Move out this single variable
-            c.to_json(&headers.host, &headers.user.uuid, Some(&cipher_sync_data), &conn).await
+            c.to_json(host, user_uuid, Some(&cipher_sync_data), conn).await
         })
         .collect::<Vec<Value>>()
         .await;
 
-    Json(json!({
+    json!({
       "Data": ciphers_json,
       "Object": "list",
       "ContinuationToken": null,
-    }))
+    })
 }
 
 #[get("/organizations/<org_id>/users")]
@@ -1689,4 +1700,20 @@ async fn _restore_organization_user(
         None => err!("User not found in organization"),
     }
     Ok(())
+}
+
+// This is a new function active since the v2022.9.x clients.
+// It combines the previous two calls done before.
+// We call those two functions here and combine them our selfs.
+//
+// NOTE: It seems clients can't handle uppercase-first keys!!
+//       We need to convert all keys so they have the first character to be a lowercase.
+//       Else the export will be just an empty JSON file.
+#[get("/organizations/<org_id>/export")]
+async fn get_org_export(org_id: String, headers: AdminHeaders, conn: DbConn) -> Json<Value> {
+    // Also both main keys here need to be lowercase, else the export will fail.
+    Json(json!({
+        "collections": convert_json_key_lcase_first(_get_org_collections(&org_id, &conn).await),
+        "ciphers": convert_json_key_lcase_first(_get_org_details(&org_id, &headers.host, &headers.user.uuid, &conn).await),
+    }))
 }
