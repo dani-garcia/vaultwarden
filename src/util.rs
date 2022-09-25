@@ -357,11 +357,21 @@ pub fn get_uuid() -> String {
 
 use std::str::FromStr;
 
+#[inline]
 pub fn upcase_first(s: &str) -> String {
     let mut c = s.chars();
     match c.next() {
         None => String::new(),
         Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+    }
+}
+
+#[inline]
+pub fn lcase_first(s: &str) -> String {
+    let mut c = s.chars();
+    match c.next() {
+        None => String::new(),
+        Some(f) => f.to_lowercase().collect::<String>() + c.as_str(),
     }
 }
 
@@ -649,4 +659,47 @@ pub fn get_reqwest_client_builder() -> ClientBuilder {
     let mut headers = header::HeaderMap::new();
     headers.insert(header::USER_AGENT, header::HeaderValue::from_static("Vaultwarden"));
     Client::builder().default_headers(headers).timeout(Duration::from_secs(10))
+}
+
+pub fn convert_json_key_lcase_first(src_json: Value) -> Value {
+    match src_json {
+        Value::Array(elm) => {
+            let mut new_array: Vec<Value> = Vec::with_capacity(elm.len());
+
+            for obj in elm {
+                new_array.push(convert_json_key_lcase_first(obj));
+            }
+            Value::Array(new_array)
+        }
+
+        Value::Object(obj) => {
+            let mut json_map = JsonMap::new();
+            for (key, value) in obj.iter() {
+                match (key, value) {
+                    (key, Value::Object(elm)) => {
+                        let inner_value = convert_json_key_lcase_first(Value::Object(elm.clone()));
+                        json_map.insert(lcase_first(key), inner_value);
+                    }
+
+                    (key, Value::Array(elm)) => {
+                        let mut inner_array: Vec<Value> = Vec::with_capacity(elm.len());
+
+                        for inner_obj in elm {
+                            inner_array.push(convert_json_key_lcase_first(inner_obj.clone()));
+                        }
+
+                        json_map.insert(lcase_first(key), Value::Array(inner_array));
+                    }
+
+                    (key, value) => {
+                        json_map.insert(lcase_first(key), value.clone());
+                    }
+                }
+            }
+
+            Value::Object(json_map)
+        }
+
+        value => value,
+    }
 }
