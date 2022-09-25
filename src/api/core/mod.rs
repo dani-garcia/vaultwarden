@@ -216,7 +216,6 @@ fn config() -> Json<Value> {
           "vault": domain,
           "api": format!("{domain}/api"),
           "identity": format!("{domain}/identity"),
-          "admin": format!("{domain}/admin"),
           "notifications": format!("{domain}/notifications"),
           "sso": "",
         },
