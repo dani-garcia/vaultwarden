@@ -140,8 +140,8 @@
                         <span><b>Server:</b> {{page_data.server_time_local}}</span>
                     </dd>
                     <dt class="col-sm-5">Date & Time (UTC)
-                        <span class="badge bg-success d-none" id="time-success" title="Time offsets seem to be correct.">Ok</span>
-                        <span class="badge bg-danger d-none" id="time-warning" title="Time offsets are too mouch at drift.">Error</span>
+                        <span class="badge bg-success d-none" id="time-success" title="Server and browser times are within 30 seconds of each other.">Ok</span>
+                        <span class="badge bg-danger d-none" id="time-warning" title="Server and browser times are more than 30 seconds apart.">Error</span>
                     </dt>
                     <dd class="col-sm-7">
                         <span id="time-server" class="d-block"><b>Server:</b> <span id="time-server-string">{{page_data.server_time}}</span></span>
@@ -151,7 +151,7 @@
                     <dt class="col-sm-5">Domain configuration
                         <span class="badge bg-success d-none" id="domain-success" title="The domain variable matches the browser location and seems to be configured correctly.">Match</span>
                         <span class="badge bg-danger d-none" id="domain-warning" title="The domain variable does not match the browser location.&#013;&#010;The domain variable does not seem to be configured correctly.&#013;&#010;Some features may not work as expected!">No Match</span>
-                        <span class="badge bg-success d-none" id="https-success" title="Configurued to use HTTPS">HTTPS</span>
+                        <span class="badge bg-success d-none" id="https-success" title="Configured to use HTTPS">HTTPS</span>
                         <span class="badge bg-danger d-none" id="https-warning" title="Not configured to use HTTPS.&#013;&#010;Some features may not work as expected!">No HTTPS</span>
                     </dt>
                     <dd class="col-sm-7">
