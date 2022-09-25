@@ -38,6 +38,7 @@ pub fn routes() -> Vec<Route> {
 // Move this somewhere else
 //
 use rocket::serde::json::Json;
+use rocket::Catcher;
 use rocket::Route;
 use serde_json::Value;
 
@@ -219,5 +220,20 @@ fn config() -> Json<Value> {
           "notifications": format!("{domain}/notifications"),
           "sso": "",
         },
+    }))
+}
+
+pub fn catchers() -> Vec<Catcher> {
+    catchers![api_not_found]
+}
+
+#[catch(404)]
+fn api_not_found() -> Json<Value> {
+    Json(json!({
+        "error": {
+            "code": 404,
+            "reason": "Not Found",
+            "description": "The requested resource could not be found."
+        }
     }))
 }
