@@ -426,6 +426,7 @@ async fn launch_rocket(pool: db::DbPool, extra_debug: bool) -> Result<(), Error>
         .mount([basepath, "/icons"].concat(), api::icons_routes())
         .mount([basepath, "/notifications"].concat(), api::notifications_routes())
         .register([basepath, "/"].concat(), api::web_catchers())
+        .register([basepath, "/api"].concat(), api::core_catchers())
         .manage(pool)
         .manage(api::start_notification_server())
         .attach(util::AppHeaders())
