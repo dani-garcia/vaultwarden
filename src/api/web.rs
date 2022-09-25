@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use rocket::serde::json::Json;
-use rocket::{fs::NamedFile, http::ContentType, Route};
+use rocket::{fs::NamedFile, http::ContentType, Catcher, Route};
 use serde_json::Value;
 
 use crate::{
@@ -19,6 +19,19 @@ pub fn routes() -> Vec<Route> {
     } else {
         routes![attachments, alive, static_files]
     }
+}
+
+pub fn catchers() -> Vec<Catcher> {
+    if CONFIG.web_vault_enabled() {
+        catchers![not_found]
+    } else {
+        catchers![]
+    }
+}
+
+#[catch(404)]
+async fn not_found() -> Cached<Option<NamedFile>> {
+    Cached::short(NamedFile::open(Path::new(&CONFIG.web_vault_folder()).join("404.html")).await.ok(), false)
 }
 
 #[get("/")]
