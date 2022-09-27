@@ -999,8 +999,11 @@ async fn edit_user(
         err!("Only Owners can edit Owner users")
     }
 
-    if user_to_edit.atype == UserOrgType::Owner && new_type != UserOrgType::Owner {
-        // Removing owner permmission, check that there is at least one other confirmed owner
+    if user_to_edit.atype == UserOrgType::Owner
+        && new_type != UserOrgType::Owner
+        && user_to_edit.status == UserOrgStatus::Confirmed as i32
+    {
+        // Removing owner permission, check that there is at least one other confirmed owner
         if UserOrganization::count_confirmed_by_org_and_type(&org_id, UserOrgType::Owner, &conn).await <= 1 {
             err!("Can't delete the last owner")
         }
@@ -1097,7 +1100,7 @@ async fn _delete_user(org_id: &str, org_user_id: &str, headers: &AdminHeaders, c
         err!("Only Owners can delete Admins or Owners")
     }
 
-    if user_to_delete.atype == UserOrgType::Owner {
+    if user_to_delete.atype == UserOrgType::Owner && user_to_delete.status == UserOrgStatus::Confirmed as i32 {
         // Removing owner, check that there is at least one other confirmed owner
         if UserOrganization::count_confirmed_by_org_and_type(org_id, UserOrgType::Owner, conn).await <= 1 {
             err!("Can't delete the last owner")
