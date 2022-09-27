@@ -600,11 +600,7 @@ async fn send_invite(org_id: String, data: JsonUpcase<InviteData>, headers: Admi
 
     for email in data.Emails.iter() {
         let email = email.to_lowercase();
-        let mut user_org_status = if CONFIG.mail_enabled() {
-            UserOrgStatus::Invited as i32
-        } else {
-            UserOrgStatus::Accepted as i32 // Automatically mark user as accepted if no email invites
-        };
+        let mut user_org_status = UserOrgStatus::Invited as i32;
         let user = match User::find_by_mail(&email, &conn).await {
             None => {
                 if !CONFIG.invitations_allowed() {
@@ -622,13 +618,16 @@ async fn send_invite(org_id: String, data: JsonUpcase<InviteData>, headers: Admi
 
                 let mut user = User::new(email.clone());
                 user.save(&conn).await?;
-                user_org_status = UserOrgStatus::Invited as i32;
                 user
             }
             Some(user) => {
                 if UserOrganization::find_by_user_and_org(&user.uuid, &org_id, &conn).await.is_some() {
                     err!(format!("User already in organization: {}", email))
                 } else {
+                    // automatically accept existing users if mail is disabled
+                    if !CONFIG.mail_enabled() && !user.password_hash.is_empty() {
+                        user_org_status = UserOrgStatus::Accepted as i32;
+                    }
                     user
                 }
             }
