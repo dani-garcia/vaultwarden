@@ -31,6 +31,8 @@ pub fn routes() -> Vec<Route> {
         put_collection_users,
         put_organization,
         post_organization,
+        get_organization_sso,
+        put_organization_sso,
         post_organization_collections,
         delete_organization_collection_user,
         post_organization_collection_delete_user,
@@ -92,12 +94,103 @@ struct OrgData {
 struct OrganizationUpdateData {
     BillingEmail: String,
     Name: String,
+    Identifier: Option<String>,
+}
+
+#[derive(Deserialize, Debug)]
+#[allow(non_snake_case)]
+struct OrganizationSsoUpdateData {
+    Enabled: Option<bool>,
+    Data: Option<SsoOrganizationData>,
 }
 
 #[derive(Deserialize, Debug)]
 #[allow(non_snake_case)]
 struct NewCollectionData {
     Name: String,
+}
+
+/*
+ From Bitwarden Entreprise
+
+
+
+
+{
+  "enabled": false,
+  "data": {
+    "acrValues": "requested authentication context class",
+    "additionalEmailClaimTypes": "additinaional email",
+    "additionalNameClaimTypes": "additioonal name claim tyeps",
+    "additionalScopes": "additonal scopes",
+    "additionalUserIdClaimTypes": "additoal userid",
+    "authority": "authority",
+    "clientId": "clientid",
+    "clientSecret": "clientsecrte",
+    "configType": 1,
+    "expectedReturnAcrValue": "expectde acr",
+    "getClaimsFromUserInfoEndpoint": true,
+    "idpAllowUnsolicitedAuthnResponse": false,
+    "idpArtifactResolutionServiceUrl": null,
+    "idpBindingType": 1,
+    "idpDisableOutboundLogoutRequests": false,
+    "idpEntityId": null,
+    "idpOutboundSigningAlgorithm": "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256",
+    "idpSingleLogoutServiceUrl": null,
+    "idpSingleSignOnServiceUrl": null,
+    "idpWantAuthnRequestsSigned": false
+    "idpX509PublicCert": null,
+    "keyConnectorEnabled": false,
+    "keyConnectorUrl": null,
+    "metadataAddress": "metadata adress",
+    "redirectBehavior": 1,
+    "spMinIncomingSigningAlgorithm": "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256",
+    "spNameIdFormat": 7,
+    "spOutboundSigningAlgorithm": "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256",
+    "spSigningBehavior": 0,
+    "spValidateCertificates": false,
+    "spWantAssertionsSigned": false,
+  }
+}
+*/
+
+#[derive(Deserialize, Debug)]
+#[allow(non_snake_case)]
+struct SsoOrganizationData {
+    // authority: Option<String>,
+    // clientId: Option<String>,
+    // clientSecret: Option<String>,
+    AcrValues: Option<String>,
+    AdditionalEmailClaimTypes: Option<String>,
+    AdditionalNameClaimTypes: Option<String>,
+    AdditionalScopes: Option<String>,
+    AdditionalUserIdClaimTypes: Option<String>,
+    Authority: Option<String>,
+    ClientId: Option<String>,
+    ClientSecret: Option<String>,
+    ConfigType: Option<String>,
+    ExpectedReturnAcrValue: Option<String>,
+    GetClaimsFromUserInfoEndpoint: Option<bool>,
+    IdpAllowUnsolicitedAuthnResponse: Option<bool>,
+    IdpArtifactResolutionServiceUrl: Option<String>,
+    IdpBindingType: Option<u8>,
+    IdpDisableOutboundLogoutRequests: Option<bool>,
+    IdpEntityId: Option<String>,
+    IdpOutboundSigningAlgorithm: Option<String>,
+    IdpSingleLogoutServiceUrl: Option<String>,
+    IdpSingleSignOnServiceUrl: Option<String>,
+    IdpWantAuthnRequestsSigned: Option<bool>,
+    IdpX509PublicCert: Option<String>,
+    KeyConnectorUrlY: Option<String>,
+    KeyConnectorEnabled: Option<bool>,
+    MetadataAddress: Option<String>,
+    RedirectBehavior: Option<String>,
+    SpMinIncomingSigningAlgorithm: Option<String>,
+    SpNameIdFormat: Option<u8>,
+    SpOutboundSigningAlgorithm: Option<String>,
+    SpSigningBehavior: Option<u8>,
+    SpValidateCertificates: Option<bool>,
+    SpWantAssertionsSigned: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -134,6 +227,7 @@ async fn create_organization(headers: Headers, data: JsonUpcase<OrgData>, conn: 
 
     let org = Organization::new(data.Name, data.BillingEmail, private_key, public_key);
     let mut user_org = UserOrganization::new(headers.user.uuid, org.uuid.clone());
+    let sso_config = SsoConfig::new(org.uuid.clone());
     let collection = Collection::new(org.uuid.clone(), data.CollectionName);
 
     user_org.akey = data.Key;
@@ -143,6 +237,7 @@ async fn create_organization(headers: Headers, data: JsonUpcase<OrgData>, conn: 
 
     org.save(&conn).await?;
     user_org.save(&conn).await?;
+    sso_config.save(&conn).await?;
     collection.save(&conn).await?;
 
     Ok(Json(org.to_json()))
@@ -228,9 +323,121 @@ async fn post_organization(
 
     org.name = data.Name;
     org.billing_email = data.BillingEmail;
+    org.identifier = data.Identifier;
 
     org.save(&conn).await?;
     Ok(Json(org.to_json()))
+}
+
+#[get("/organizations/<org_id>/sso")]
+async fn get_organization_sso(org_id: String, _headers: OwnerHeaders, conn: DbConn) -> JsonResult {
+    match SsoConfig::find_by_org(&org_id, &conn).await {
+        Some(sso_config) => {
+            let config_json = Json(sso_config.to_json());
+            Ok(config_json)
+        }
+        None => err!("Can't find organization sso config"),
+    }
+}
+
+#[post("/organizations/<org_id>/sso", data = "<data>")]
+async fn put_organization_sso(
+    org_id: String,
+    _headers: OwnerHeaders,
+    data: JsonUpcase<OrganizationSsoUpdateData>,
+    conn: DbConn,
+) -> JsonResult {
+    let p: OrganizationSsoUpdateData = data.into_inner().data;
+    let d: SsoOrganizationData = p.Data.unwrap();
+
+    // TODO remove after debugging
+    println!(
+        "
+    p.Enabled: {:?},
+    d.AcrValues: {:?},
+    d.AdditionalEmailClaimTypes: {:?},
+    d.AdditionalNameClaimTypes: {:?},
+    d.AdditionalScopes: {:?},
+    d.AdditionalUserIdClaimTypes: {:?},
+    d.Authority: {:?},
+    d.ClientId: {:?},
+    d.ClientSecret: {:?},
+    d.ConfigType: {:?},
+    d.ExpectedReturnAcrValue: {:?},
+    d.GetClaimsFromUserInfoEndpoint: {:?},
+    d.IdpAllowUnsolicitedAuthnResponse: {:?},
+    d.IdpArtifactResolutionServiceUrl: {:?},
+    d.IdpBindingType: {:?},
+    d.IdpDisableOutboundLogoutRequests: {:?},
+    d.IdpEntityId: {:?},
+    d.IdpOutboundSigningAlgorithm: {:?},
+    d.IdpSingleLogoutServiceUrl: {:?},
+    d.IdpSingleSignOnServiceUrl: {:?},
+    d.IdpWantAuthnRequestsSigned: {:?},
+    d.IdpX509PublicCert: {:?},
+    d.KeyConnectorUrlY: {:?},
+    d.KeyConnectorEnabled: {:?},
+    d.MetadataAddress: {:?},
+    d.RedirectBehavior: {:?},
+    d.SpMinIncomingSigningAlgorithm: {:?},
+    d.SpNameIdFormat: {:?},
+    d.SpOutboundSigningAlgorithm: {:?},
+    d.SpSigningBehavior: {:?},
+    d.SpValidateCertificates: {:?},
+    d.SpWantAssertionsSigned: {:?}",
+        p.Enabled.unwrap_or_default(),
+        d.AcrValues,
+        d.AdditionalEmailClaimTypes,
+        d.AdditionalNameClaimTypes,
+        d.AdditionalScopes,
+        d.AdditionalUserIdClaimTypes,
+        d.Authority,
+        d.ClientId,
+        d.ClientSecret,
+        d.ConfigType,
+        d.ExpectedReturnAcrValue,
+        d.GetClaimsFromUserInfoEndpoint,
+        d.IdpAllowUnsolicitedAuthnResponse,
+        d.IdpArtifactResolutionServiceUrl,
+        d.IdpBindingType,
+        d.IdpDisableOutboundLogoutRequests,
+        d.IdpEntityId,
+        d.IdpOutboundSigningAlgorithm,
+        d.IdpSingleLogoutServiceUrl,
+        d.IdpSingleSignOnServiceUrl,
+        d.IdpWantAuthnRequestsSigned,
+        d.IdpX509PublicCert,
+        d.KeyConnectorUrlY,
+        d.KeyConnectorEnabled,
+        d.MetadataAddress,
+        d.RedirectBehavior,
+        d.SpMinIncomingSigningAlgorithm,
+        d.SpNameIdFormat,
+        d.SpOutboundSigningAlgorithm,
+        d.SpSigningBehavior,
+        d.SpValidateCertificates,
+        d.SpWantAssertionsSigned
+    );
+
+    let mut sso_config = match SsoConfig::find_by_org(&org_id, &conn).await {
+        Some(sso_config) => sso_config,
+        None => SsoConfig::new(org_id),
+    };
+
+    sso_config.use_sso = p.Enabled.unwrap_or_default();
+
+    // let sso_config_data = data.Data.unwrap();
+
+    // TODO use real values
+    sso_config.callback_path = "http://localhost:8000/#/sso".to_string(); //data.CallbackPath;
+    sso_config.signed_out_callback_path = "http://localhost:8000/#/sso".to_string(); //data2.Data.unwrap().call
+
+    sso_config.authority = d.Authority;
+    sso_config.client_id = d.ClientId;
+    sso_config.client_secret = d.ClientSecret;
+
+    sso_config.save(&conn).await?;
+    Ok(Json(sso_config.to_json()))
 }
 
 // GET /api/collections?writeOnly=false

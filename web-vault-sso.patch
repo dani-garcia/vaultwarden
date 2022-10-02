@@ -1,0 +1,686 @@
+Submodule jslib contains modified content
+diff --git a/jslib/angular/src/components/register.component.ts b/jslib/angular/src/components/register.component.ts
+index 53ec3c8..7b49db1 100644
+--- a/jslib/angular/src/components/register.component.ts
++++ b/jslib/angular/src/components/register.component.ts
+@@ -24,7 +24,7 @@ export class RegisterComponent {
+     formPromise: Promise<any>;
+     masterPasswordScore: number;
+     referenceData: ReferenceEventRequest;
+-    showTerms = true;
++    showTerms = false;
+     acceptPolicies: boolean = false;
+ 
+     protected successRoute = 'login';
+@@ -35,7 +35,7 @@ export class RegisterComponent {
+         protected apiService: ApiService, protected stateService: StateService,
+         protected platformUtilsService: PlatformUtilsService,
+         protected passwordGenerationService: PasswordGenerationService) {
+-        this.showTerms = !platformUtilsService.isSelfHost();
++        this.showTerms = false;
+     }
+ 
+     get masterPasswordScoreWidth() {
+@@ -69,6 +69,12 @@ export class RegisterComponent {
+     }
+ 
+     async submit() {
++        if (typeof crypto.subtle === 'undefined') {
++            this.platformUtilsService.showToast('error', "This browser requires HTTPS to use the web vault",
++                "Check the Vaultwarden wiki for details on how to enable it");
++            return;
++        }
++
+         if (!this.acceptPolicies && this.showTerms) {
+             this.platformUtilsService.showToast('error', this.i18nService.t('errorOccurred'),
+                 this.i18nService.t('acceptPoliciesError'));
+diff --git a/jslib/angular/src/components/sso.component.ts b/jslib/angular/src/components/sso.component.ts
+index d4512a1..ad57f69 100644
+--- a/jslib/angular/src/components/sso.component.ts
++++ b/jslib/angular/src/components/sso.component.ts
+@@ -19,6 +19,8 @@ import { Utils } from 'jslib-common/misc/utils';
+ 
+ import { AuthResult } from 'jslib-common/models/domain/authResult';
+ 
++import { switchMap } from 'rxjs/operators';
++
+ @Directive()
+ export class SsoComponent {
+     identifier: string;
+@@ -48,13 +50,19 @@ export class SsoComponent {
+ 
+     async ngOnInit() {
+         const queryParamsSub = this.route.queryParams.subscribe(async qParams => {
+-            if (qParams.code != null && qParams.state != null) {
++            // I have no idea why the qParams is empty here - I've hacked in an alternative very messily, but it works.
++            const workingParams = (new URL(window.location.href)).searchParams;
++            const workingSwap = {
++                code: workingParams.get('code'),
++                state: workingParams.get('state'),
++            };
++            if (workingSwap.code != null && workingSwap.state != null) {
+                 const codeVerifier = await this.storageService.get<string>(ConstantsService.ssoCodeVerifierKey);
+                 const state = await this.storageService.get<string>(ConstantsService.ssoStateKey);
+                 await this.storageService.remove(ConstantsService.ssoCodeVerifierKey);
+                 await this.storageService.remove(ConstantsService.ssoStateKey);
+-                if (qParams.code != null && codeVerifier != null && state != null && this.checkState(state, qParams.state)) {
+-                    await this.logIn(qParams.code, codeVerifier, this.getOrgIdentiferFromState(qParams.state));
++                if (workingSwap.code != null && codeVerifier != null && state != null && this.checkState(state, workingSwap.state)) {
++                    await this.logIn(workingSwap.code, codeVerifier, this.getOrgIdentiferFromState(workingSwap.state));
+                 }
+             } else if (qParams.clientId != null && qParams.redirectUri != null && qParams.state != null &&
+                 qParams.codeChallenge != null) {
+@@ -122,7 +130,7 @@ export class SsoComponent {
+         let authorizeUrl = this.apiService.identityBaseUrl + '/connect/authorize?' +
+             'client_id=' + this.clientId + '&redirect_uri=' + encodeURIComponent(this.redirectUri) + '&' +
+             'response_type=code&scope=api offline_access&' +
+-            'state=' + state + '&code_challenge=' + codeChallenge + '&' +
++            'state=' + encodeURIComponent(state) + '&code_challenge=' + codeChallenge + '&' +
+             'code_challenge_method=S256&response_mode=query&' +
+             'domain_hint=' + encodeURIComponent(this.identifier);
+ 
+@@ -137,7 +145,7 @@ export class SsoComponent {
+     private async logIn(code: string, codeVerifier: string, orgIdFromState: string) {
+         this.loggingIn = true;
+         try {
+-            this.formPromise = this.authService.logInSso(code, codeVerifier, this.redirectUri);
++            this.formPromise = this.authService.logInSso(code, codeVerifier, this.redirectUri, orgIdFromState);
+             const response = await this.formPromise;
+             if (response.twoFactor) {
+                 if (this.onSuccessfulLoginTwoFactorNavigate != null) {
+diff --git a/jslib/common/src/abstractions/api.service.ts b/jslib/common/src/abstractions/api.service.ts
+index 67131df..ce498ff 100644
+--- a/jslib/common/src/abstractions/api.service.ts
++++ b/jslib/common/src/abstractions/api.service.ts
+@@ -33,6 +33,7 @@ import { KeysRequest } from '../models/request/keysRequest';
+ import { OrganizationCreateRequest } from '../models/request/organizationCreateRequest';
+ import { OrganizationImportRequest } from '../models/request/organizationImportRequest';
+ import { OrganizationKeysRequest } from '../models/request/organizationKeysRequest';
++import { OrganizationSsoUpdateRequest } from '../models/request/organizationSsoUpdateRequest';
+ import { OrganizationTaxInfoUpdateRequest } from '../models/request/organizationTaxInfoUpdateRequest';
+ import { OrganizationUpdateRequest } from '../models/request/organizationUpdateRequest';
+ import { OrganizationUpgradeRequest } from '../models/request/organizationUpgradeRequest';
+@@ -122,6 +123,7 @@ import { SendAccessResponse } from '../models/response/sendAccessResponse';
+ import { SendFileDownloadDataResponse } from '../models/response/sendFileDownloadDataResponse';
+ import { SendFileUploadDataResponse } from '../models/response/sendFileUploadDataResponse';
+ import { SendResponse } from '../models/response/sendResponse';
++import { SsoConfigResponse } from '../models/response/ssoConfigResponse';
+ import { SubscriptionResponse } from '../models/response/subscriptionResponse';
+ import { SyncResponse } from '../models/response/syncResponse';
+ import { TaxInfoResponse } from '../models/response/taxInfoResponse';
+@@ -360,6 +362,8 @@ export abstract class ApiService {
+     getOrganizationTaxInfo: (id: string) => Promise<TaxInfoResponse>;
+     postOrganization: (request: OrganizationCreateRequest) => Promise<OrganizationResponse>;
+     putOrganization: (id: string, request: OrganizationUpdateRequest) => Promise<OrganizationResponse>;
++    getSsoConfig: (id: string) => Promise<SsoConfigResponse>;
++    putOrganizationSso: (id: string, request: OrganizationSsoUpdateRequest) => Promise<SsoConfigResponse>;
+     putOrganizationTaxInfo: (id: string, request: OrganizationTaxInfoUpdateRequest) => Promise<any>;
+     postLeaveOrganization: (id: string) => Promise<any>;
+     postOrganizationLicense: (data: FormData) => Promise<OrganizationResponse>;
+diff --git a/jslib/common/src/abstractions/auth.service.ts b/jslib/common/src/abstractions/auth.service.ts
+index ac7ef04..5b1b774 100644
+--- a/jslib/common/src/abstractions/auth.service.ts
++++ b/jslib/common/src/abstractions/auth.service.ts
+@@ -15,7 +15,7 @@ export abstract class AuthService {
+     selectedTwoFactorProviderType: TwoFactorProviderType;
+ 
+     logIn: (email: string, masterPassword: string) => Promise<AuthResult>;
+-    logInSso: (code: string, codeVerifier: string, redirectUrl: string) => Promise<AuthResult>;
++    logInSso: (code: string, codeVerifier: string, redirectUrl: string, orgIdentifier: string) => Promise<AuthResult>;
+     logInApiKey: (clientId: string, clientSecret: string) => Promise<AuthResult>;
+     logInTwoFactor: (twoFactorProvider: TwoFactorProviderType, twoFactorToken: string,
+         remember?: boolean) => Promise<AuthResult>;
+diff --git a/jslib/common/src/models/request/organizationSsoUpdateRequest.ts b/jslib/common/src/models/request/organizationSsoUpdateRequest.ts
+new file mode 100644
+index 0000000..7075aec
+--- /dev/null
++++ b/jslib/common/src/models/request/organizationSsoUpdateRequest.ts
+@@ -0,0 +1,8 @@
++export class OrganizationSsoUpdateRequest {
++    useSso: boolean;
++    callbackPath: string;
++    signedOutCallbackPath: string;
++    authority: string;
++    clientId: string;
++    clientSecret: string;
++}
+diff --git a/jslib/common/src/models/request/tokenRequest.ts b/jslib/common/src/models/request/tokenRequest.ts
+index 7578012..964364f 100644
+--- a/jslib/common/src/models/request/tokenRequest.ts
++++ b/jslib/common/src/models/request/tokenRequest.ts
+@@ -14,9 +14,10 @@ export class TokenRequest {
+     provider: TwoFactorProviderType;
+     remember: boolean;
+     device?: DeviceRequest;
++    orgIdentifier?: string;
+ 
+     constructor(credentials: string[], codes: string[], clientIdClientSecret: string[], provider: TwoFactorProviderType,
+-        token: string, remember: boolean, device?: DeviceRequest) {
++        token: string, remember: boolean, device?: DeviceRequest, orgIdentifier?: string) {
+         if (credentials != null && credentials.length > 1) {
+             this.email = credentials[0];
+             this.masterPasswordHash = credentials[1];
+@@ -28,6 +29,9 @@ export class TokenRequest {
+             this.clientId = clientIdClientSecret[0];
+             this.clientSecret = clientIdClientSecret[1];
+         }
++        if (orgIdentifier && orgIdentifier !== '') {
++            this.orgIdentifier = orgIdentifier;
++        }
+         this.token = token;
+         this.provider = provider;
+         this.remember = remember;
+@@ -53,6 +57,7 @@ export class TokenRequest {
+             obj.code = this.code;
+             obj.code_verifier = this.codeVerifier;
+             obj.redirect_uri = this.redirectUri;
++            obj.org_identifier = this.orgIdentifier;
+         } else {
+             throw new Error('must provide credentials or codes');
+         }
+diff --git a/jslib/common/src/services/api.service.ts b/jslib/common/src/services/api.service.ts
+index 51c1c14..b615672 100644
+--- a/jslib/common/src/services/api.service.ts
++++ b/jslib/common/src/services/api.service.ts
+@@ -37,6 +37,7 @@ import { KeysRequest } from '../models/request/keysRequest';
+ import { OrganizationCreateRequest } from '../models/request/organizationCreateRequest';
+ import { OrganizationImportRequest } from '../models/request/organizationImportRequest';
+ import { OrganizationKeysRequest } from '../models/request/organizationKeysRequest';
++import { OrganizationSsoUpdateRequest } from '../models/request/organizationSsoUpdateRequest';
+ import { OrganizationTaxInfoUpdateRequest } from '../models/request/organizationTaxInfoUpdateRequest';
+ import { OrganizationUpdateRequest } from '../models/request/organizationUpdateRequest';
+ import { OrganizationUpgradeRequest } from '../models/request/organizationUpgradeRequest';
+@@ -128,6 +129,7 @@ import { SendAccessResponse } from '../models/response/sendAccessResponse';
+ import { SendFileDownloadDataResponse } from '../models/response/sendFileDownloadDataResponse';
+ import { SendFileUploadDataResponse } from '../models/response/sendFileUploadDataResponse';
+ import { SendResponse } from '../models/response/sendResponse';
++import { SsoConfigResponse } from '../models/response/ssoConfigResponse';
+ import { SubscriptionResponse } from '../models/response/subscriptionResponse';
+ import { SyncResponse } from '../models/response/syncResponse';
+ import { TaxInfoResponse } from '../models/response/taxInfoResponse';
+@@ -1158,6 +1160,16 @@ export class ApiService implements ApiServiceAbstraction {
+         return new OrganizationResponse(r);
+     }
+ 
++    async getSsoConfig(id: string): Promise<SsoConfigResponse> {
++        const r = await this.send('GET', '/organizations/' + id + '/sso', null, true, true);
++        return new SsoConfigResponse(r);
++    }
++
++    async putOrganizationSso(id: string, request: OrganizationSsoUpdateRequest): Promise<SsoConfigResponse> {
++        const r = await this.send('PUT', '/organizations/' + id + '/sso', request, true, false);
++        return new SsoConfigResponse(r);
++    }
++
+     async putOrganizationTaxInfo(id: string, request: OrganizationTaxInfoUpdateRequest): Promise<any> {
+         return this.send('PUT', '/organizations/' + id + '/tax', request, true, false);
+     }
+diff --git a/jslib/common/src/services/auth.service.ts b/jslib/common/src/services/auth.service.ts
+index 6536a94..6f4899c 100644
+--- a/jslib/common/src/services/auth.service.ts
++++ b/jslib/common/src/services/auth.service.ts
+@@ -130,10 +130,10 @@ export class AuthService implements AuthServiceAbstraction {
+             key, null, null, null);
+     }
+ 
+-    async logInSso(code: string, codeVerifier: string, redirectUrl: string): Promise<AuthResult> {
++    async logInSso(code: string, codeVerifier: string, redirectUrl: string, orgIdentifier: string): Promise<AuthResult> {
+         this.selectedTwoFactorProviderType = null;
+         return await this.logInHelper(null, null, null, code, codeVerifier, redirectUrl, null, null,
+-            null, null, null, null);
++            null, null, null, null, orgIdentifier);
+     }
+ 
+     async logInApiKey(clientId: string, clientSecret: string): Promise<AuthResult> {
+@@ -272,7 +272,7 @@ export class AuthService implements AuthServiceAbstraction {
+ 
+     private async logInHelper(email: string, hashedPassword: string, localHashedPassword: string, code: string,
+         codeVerifier: string, redirectUrl: string, clientId: string, clientSecret: string, key: SymmetricCryptoKey,
+-        twoFactorProvider?: TwoFactorProviderType, twoFactorToken?: string, remember?: boolean): Promise<AuthResult> {
++        twoFactorProvider?: TwoFactorProviderType, twoFactorToken?: string, remember?: boolean, orgIdentifier?: string): Promise<AuthResult> {
+         const storedTwoFactorToken = await this.tokenService.getTwoFactorToken(email);
+         const appId = await this.appIdService.getAppId();
+         const deviceRequest = new DeviceRequest(appId, this.platformUtilsService);
+@@ -300,13 +300,13 @@ export class AuthService implements AuthServiceAbstraction {
+         let request: TokenRequest;
+         if (twoFactorToken != null && twoFactorProvider != null) {
+             request = new TokenRequest(emailPassword, codeCodeVerifier, clientIdClientSecret, twoFactorProvider,
+-                twoFactorToken, remember, deviceRequest);
++                twoFactorToken, remember, deviceRequest, orgIdentifier);
+         } else if (storedTwoFactorToken != null) {
+             request = new TokenRequest(emailPassword, codeCodeVerifier, clientIdClientSecret, TwoFactorProviderType.Remember,
+-                storedTwoFactorToken, false, deviceRequest);
++                storedTwoFactorToken, false, deviceRequest, orgIdentifier);
+         } else {
+             request = new TokenRequest(emailPassword, codeCodeVerifier, clientIdClientSecret, null,
+-                null, false, deviceRequest);
++                null, false, deviceRequest, orgIdentifier);
+         }
+ 
+         const response = await this.apiService.postIdentityToken(request);
+diff --git a/src/404.html b/src/404.html
+index eba36375..cb8883ec 100644
+--- a/src/404.html
++++ b/src/404.html
+@@ -41,10 +41,10 @@
+                 </a>
+             </p>
+             <p>You can <a href="/">return to the web vault</a>, check our <a href="https://status.bitwarden.com/">status page</a>
+-                or <a href="https://bitwarden.com/contact/">contact us</a>.</p>
++                or <a href="https://github.com/dani-garcia/vaultwarden">contact us</a>.</p>
+         </div>
+         <div class="container footer text-muted content">
+-            © Copyright 2021 Bitwarden, Inc.
++            © Copyright 2021 Bitwarden, Inc. (Powered by Vaultwarden)
+         </div>
+     </body>
+ </html>
+diff --git a/src/app/app-routing.module.ts b/src/app/app-routing.module.ts
+index bee8416f..dad32467 100644
+--- a/src/app/app-routing.module.ts
++++ b/src/app/app-routing.module.ts
+@@ -33,6 +33,7 @@ import { AccountComponent as OrgAccountComponent } from './organizations/setting
+ import { OrganizationBillingComponent } from './organizations/settings/organization-billing.component';
+ import { OrganizationSubscriptionComponent } from './organizations/settings/organization-subscription.component';
+ import { SettingsComponent as OrgSettingsComponent } from './organizations/settings/settings.component';
++import { SsoComponent as OrgSsoComponent } from './organizations/settings/sso.component';
+ import {
+     TwoFactorSetupComponent as OrgTwoFactorSetupComponent,
+ } from './organizations/settings/two-factor-setup.component';
+@@ -412,6 +413,7 @@ const routes: Routes = [
+                 children: [
+                     { path: '', pathMatch: 'full', redirectTo: 'account' },
+                     { path: 'account', component: OrgAccountComponent, data: { titleId: 'myOrganization' } },
++                    { path: 'sso', component: OrgSsoComponent, data: { titleId: 'sso' } },
+                     { path: 'two-factor', component: OrgTwoFactorSetupComponent, data: { titleId: 'twoStepLogin' } },
+                     {
+                         path: 'billing',
+diff --git a/src/app/app.component.ts b/src/app/app.component.ts
+index 2922cf09..8f2be1ad 100644
+--- a/src/app/app.component.ts
++++ b/src/app/app.component.ts
+@@ -146,6 +146,10 @@ export class AppComponent implements OnDestroy, OnInit {
+                         }
+                         break;
+                     case 'showToast':
++                        if (typeof message.text === "string" && typeof crypto.subtle === 'undefined') {
++                            message.title="This browser requires HTTPS to use the web vault";
++                            message.text="Check the Vaultwarden wiki for details on how to enable it";
++                        }
+                         this.showToast(message);
+                         break;
+                     case 'setFullWidth':
+diff --git a/src/app/app.module.ts b/src/app/app.module.ts
+index bafc22a0..938db7ee 100644
+--- a/src/app/app.module.ts
++++ b/src/app/app.module.ts
+@@ -67,6 +67,7 @@ import { DownloadLicenseComponent } from './organizations/settings/download-lice
+ import { OrganizationBillingComponent } from './organizations/settings/organization-billing.component';
+ import { OrganizationSubscriptionComponent } from './organizations/settings/organization-subscription.component';
+ import { SettingsComponent as OrgSettingComponent } from './organizations/settings/settings.component';
++import { SsoComponent as OrgSsoComponent } from './organizations/settings/sso.component';
+ import {
+     TwoFactorSetupComponent as OrgTwoFactorSetupComponent,
+ } from './organizations/settings/two-factor-setup.component';
+@@ -347,6 +348,7 @@ registerLocaleData(localeZhTw, 'zh-TW');
+         NavbarComponent,
+         OptionsComponent,
+         OrgAccountComponent,
++        OrgSsoComponent,
+         OrgAddEditComponent,
+         OrganizationBillingComponent,
+         OrganizationPlansComponent,
+diff --git a/src/app/layouts/footer.component.html b/src/app/layouts/footer.component.html
+index b001b9e3..c1bd2ac8 100644
+--- a/src/app/layouts/footer.component.html
++++ b/src/app/layouts/footer.component.html
+@@ -1,7 +1,7 @@
+ <div class="container footer text-muted">
+     <div class="row">
+         <div class="col">
+-            &copy; {{year}}, Bitwarden Inc.
++            &copy; {{year}}, Bitwarden Inc. (Powered by Vaultwarden)
+         </div>
+         <div class="col text-center"></div>
+         <div class="col text-right">
+diff --git a/src/app/layouts/frontend-layout.component.html b/src/app/layouts/frontend-layout.component.html
+index 4c2c4ca1..dc990b22 100644
+--- a/src/app/layouts/frontend-layout.component.html
++++ b/src/app/layouts/frontend-layout.component.html
+@@ -1,5 +1,5 @@
+ <router-outlet></router-outlet>
+ <div class="container my-5 text-muted text-center">
+-    &copy; {{year}}, Bitwarden Inc.
++    &copy; {{year}}, Bitwarden Inc. (Powered by Vaultwarden)
+     <br> {{'versionNumber' | i18n : version}}
+ </div>
+diff --git a/src/app/layouts/navbar.component.html b/src/app/layouts/navbar.component.html
+index b28897c9..524764c6 100644
+--- a/src/app/layouts/navbar.component.html
++++ b/src/app/layouts/navbar.component.html
+@@ -38,7 +38,7 @@
+                         <i class="fa fa-fw fa-user" aria-hidden="true"></i>
+                         {{'myAccount' | i18n}}
+                     </a>
+-                    <a class="dropdown-item" href="https://help.bitwarden.com" target="_blank" rel="noopener">
++                    <a class="dropdown-item" href="https://github.com/dani-garcia/vaultwarden" target="_blank" rel="noopener">
+                         <i class="fa fa-fw fa-question-circle" aria-hidden="true"></i>
+                         {{'getHelp' | i18n}}
+                     </a>
+diff --git a/src/app/organizations/settings/organization-subscription.component.ts b/src/app/organizations/settings/organization-subscription.component.ts
+index 5ac864b3..a405ea37 100644
+--- a/src/app/organizations/settings/organization-subscription.component.ts
++++ b/src/app/organizations/settings/organization-subscription.component.ts
+@@ -105,7 +105,7 @@ export class OrganizationSubscriptionComponent implements OnInit {
+         const contactSupport = await this.platformUtilsService.showDialog(this.i18nService.t('changeBillingPlanDesc'),
+             this.i18nService.t('changeBillingPlan'), this.i18nService.t('contactSupport'), this.i18nService.t('close'));
+         if (contactSupport) {
+-            this.platformUtilsService.launchUri('https://bitwarden.com/contact');
++            this.platformUtilsService.launchUri('https://github.com/dani-garcia/vaultwarden');
+         }
+     }
+ 
+diff --git a/src/app/organizations/settings/settings.component.html b/src/app/organizations/settings/settings.component.html
+index 2dac5ac1..21ce9848 100644
+--- a/src/app/organizations/settings/settings.component.html
++++ b/src/app/organizations/settings/settings.component.html
+@@ -7,6 +7,9 @@
+                     <a routerLink="account" class="list-group-item" routerLinkActive="active">
+                         {{'myOrganization' | i18n}}
+                     </a>
++                    <a routerLink="sso" class="list-group-item" routerLinkActive="active">
++                        {{'singleSignOn' | i18n}}
++                    </a>
+                     <a routerLink="subscription" class="list-group-item" routerLinkActive="active">
+                         {{'subscription' | i18n}}
+                     </a>
+diff --git a/src/app/organizations/settings/sso.component.html b/src/app/organizations/settings/sso.component.html
+index 41d0e89e..c1f2ccf5 100644
+--- a/src/app/organizations/settings/sso.component.html
++++ b/src/app/organizations/settings/sso.component.html
+@@ -5,38 +5,38 @@
+     <i class="fa fa-spinner fa-spin text-muted" title="{{'loading' | i18n}}" aria-hidden="true"></i>
+     <span class="sr-only">{{'loading' | i18n}}</span>
+ </div>
+-<form *ngIf="org && !loading" #form (ngSubmit)="submit()" [appApiAction]="formPromise" ngNativeValidate>
++<form *ngIf="ssoConfig && !loading" #form (ngSubmit)="submit()" [appApiAction]="formPromise" ngNativeValidate>
+     <div class="row">
+         <div class="col-12">
+             <div class="form-group">
+                 <label for="enabled">{{'enabled' | i18n}}</label>
+-                <input id="enabled" class="form-control" type="checkbox" name="Enabled" [(ngModel)]="org.useSso" [disabled]="selfHosted">
++                <input id="enabled" class="form-control" type="checkbox" name="Enabled" [(ngModel)]="ssoConfig.useSso" [disabled]="selfHosted">
+             </div>
+             <h2>OpenId Connect Configuration</h2>
+             <div class="form-group">
+                 <label for="callbackPath">{{'callbackPath' | i18n}}</label>
+-                <input id="callbackPath" class="form-control" type="text" name="Callback Path" [(ngModel)]="org.callbackPath"
++                <input id="callbackPath" class="form-control" type="text" name="Callback Path" [(ngModel)]="ssoConfig.callbackPath"
+                     [disabled]="selfHosted">
+             </div>
+             <div class="form-group">
+                 <label for="signedOutCallbackPath">{{'signedOutCallbackPath' | i18n}}</label>
+                 <input id="signedOutCallbackPath" class="form-control" type="text" name="Signed Out Callback Path"
+-                    [(ngModel)]="org.signedOutCallbackPath" [disabled]="selfHosted">
++                    [(ngModel)]="ssoConfig.signedOutCallbackPath" [disabled]="selfHosted">
+             </div>
+             <div class="form-group">
+                 <label for="authority">{{'authority' | i18n}}</label>
+                 <input id="authority" class="form-control" type="text" name="Authority"
+-                    [(ngModel)]="org.authority" [disabled]="selfHosted">
++                    [(ngModel)]="ssoConfig.authority" [disabled]="selfHosted">
+             </div>
+             <div class="form-group">
+                 <label for="clientId">{{'clientId' | i18n}}</label>
+                 <input id="authority" class="form-control" type="text" name="Client ID"
+-                    [(ngModel)]="org.clientId" [disabled]="selfHosted">
++                    [(ngModel)]="ssoConfig.clientId" [disabled]="selfHosted">
+             </div>
+             <div class="form-group">
+                 <label for="clientSecret">{{'clientSecret' | i18n}}</label>
+                 <input id="clientSecret" class="form-control" type="password" name="Client Secret"
+-                    [(ngModel)]="org.clientSecret" [disabled]="selfHosted">
++                    [(ngModel)]="ssoConfig.clientSecret" [disabled]="selfHosted">
+             </div>
+         </div>
+     </div>
+@@ -45,7 +45,7 @@
+         <span>{{'save' | i18n}}</span>
+     </button>
+ </form>
+-<div *ngIf="!org || loading">
++<div *ngIf="!ssoConfig || loading">
+     <i class="fa fa-spinner fa-spin text-muted" title="{{'loading' | i18n}}" aria-hidden="true"></i>
+     <span class="sr-only">{{'loading' | i18n}}</span>
+ </div>
+diff --git a/src/app/organizations/settings/sso.component.ts b/src/app/organizations/settings/sso.component.ts
+index f40a54f2..5eeef132 100644
+--- a/src/app/organizations/settings/sso.component.ts
++++ b/src/app/organizations/settings/sso.component.ts
+@@ -17,7 +17,7 @@ import { SyncService } from 'jslib-common/abstractions/sync.service';
+ 
+ import { OrganizationSsoUpdateRequest } from 'jslib-common/models/request/organizationSsoUpdateRequest';
+ 
+-import { OrganizationResponse } from 'jslib-common/models/response/organizationResponse';
++import { SsoConfigResponse } from 'jslib-common/models/response/ssoConfigResponse';
+ 
+ import { ModalComponent } from '../../modal.component';
+ 
+@@ -28,7 +28,7 @@ import { ModalComponent } from '../../modal.component';
+ export class SsoComponent {
+     selfHosted = false;
+     loading = true;
+-    org: OrganizationResponse;
++    ssoConfig: SsoConfigResponse;
+     formPromise: Promise<any>;
+ 
+     private organizationId: string;
+@@ -45,7 +45,7 @@ export class SsoComponent {
+         this.route.parent.parent.params.subscribe(async params => {
+             this.organizationId = params.organizationId;
+             try {
+-                this.org = await this.apiService.getOrganization(this.organizationId);
++                this.ssoConfig = await this.apiService.getSsoConfig(this.organizationId);
+             } catch { }
+         });
+         this.loading = false;
+@@ -54,12 +54,12 @@ export class SsoComponent {
+     async submit() {
+         try {
+             const request = new OrganizationSsoUpdateRequest();
+-            request.useSso = this.org.useSso;
+-            request.callbackPath = this.org.callbackPath;
+-            request.signedOutCallbackPath = this.org.signedOutCallbackPath;
+-            request.authority = this.org.authority;
+-            request.clientId = this.org.clientId;
+-            request.clientSecret = this.org.clientSecret;
++            request.useSso = this.ssoConfig.useSso;
++            request.callbackPath = this.ssoConfig.callbackPath;
++            request.signedOutCallbackPath = this.ssoConfig.signedOutCallbackPath;
++            request.authority = this.ssoConfig.authority;
++            request.clientId = this.ssoConfig.clientId;
++            request.clientSecret = this.ssoConfig.clientSecret;
+ 
+             this.formPromise = this.apiService.putOrganizationSso(this.organizationId, request).then(() => {
+                 return this.syncService.fullSync(true);
+diff --git a/src/app/send/access.component.html b/src/app/send/access.component.html
+index 84944a2b..b736bbe4 100644
+--- a/src/app/send/access.component.html
++++ b/src/app/send/access.component.html
+@@ -82,10 +82,7 @@
+         <div class="col-12 text-center mt-5 text-muted">
+             <p class="mb-0">{{'sendAccessTaglineProductDesc' | i18n}}<br>
+                 {{'sendAccessTaglineLearnMore' | i18n}} <a
+-                    href="https://www.bitwarden.com/products/send?source=web-vault" target="_blank">Bitwarden Send</a>
+-                {{'sendAccessTaglineOr' | i18n}} <a
+-                    href="https://vault.bitwarden.com/#/register" target="_blank">{{'sendAccessTaglineSignUp' | i18n}}</a>
+-                {{'sendAccessTaglineTryToday' | i18n}}
++                    href="https://www.bitwarden.com/products/send/" target="_blank">Bitwarden Send</a>.
+             </p>
+         </div>
+     </div>
+diff --git a/src/app/services/services.module.ts b/src/app/services/services.module.ts
+index 231edc51..2fb39433 100644
+--- a/src/app/services/services.module.ts
++++ b/src/app/services/services.module.ts
+@@ -142,18 +142,25 @@ const passwordRepromptService = new PasswordRepromptService(i18nService, cryptoS
+ containerService.attachToWindow(window);
+ 
+ export function initFactory(): Function {
++    function getBaseUrl() {
++        // If the base URL is `https://bitwarden.example.com/base/path/`,
++        // `window.location.href` should have one of the following forms:
++        //
++        // - `https://bitwarden.example.com/base/path/`
++        // - `https://bitwarden.example.com/base/path/#/some/route[?queryParam=...]`
++        //
++        // We want to get to just `https://bitwarden.example.com/base/path`.
++        let baseUrl = window.location.origin;
++        baseUrl = baseUrl.replace(/#.*/, '');  // Strip off `#` and everything after.
++        baseUrl = baseUrl.replace(/\/+$/, ''); // Trim any trailing `/` chars.
++        return baseUrl;
++    }
+     return async () => {
+         await (storageService as HtmlStorageService).init();
+ 
+-        if (process.env.ENV !== 'production' || platformUtilsService.isSelfHost()) {
+-            environmentService.baseUrl = window.location.origin;
+-        } else {
+-            environmentService.notificationsUrl = 'https://notifications.bitwarden.com';
+-            environmentService.enterpriseUrl = 'https://portal.bitwarden.com';
+-        }
+-
++        environmentService.baseUrl = getBaseUrl();
+         apiService.setUrls({
+-            base: window.location.origin,
++            base: environmentService.baseUrl,
+             api: null,
+             identity: null,
+             events: null,
+diff --git a/src/app/vault/vault.component.ts b/src/app/vault/vault.component.ts
+index 41216ead..70dec887 100644
+--- a/src/app/vault/vault.component.ts
++++ b/src/app/vault/vault.component.ts
+@@ -80,9 +80,7 @@ export class VaultComponent implements OnInit, OnDestroy {
+     async ngOnInit() {
+         this.showVerifyEmail = !(await this.tokenService.getEmailVerified());
+         this.showBrowserOutdated = window.navigator.userAgent.indexOf('MSIE') !== -1;
+-        this.trashCleanupWarning = this.i18nService.t(
+-            this.platformUtilsService.isSelfHost() ? 'trashCleanupWarningSelfHosted' : 'trashCleanupWarning'
+-        );
++        this.trashCleanupWarning = this.i18nService.t('trashCleanupWarningSelfHosted');
+ 
+         const queryParamsSub = this.route.queryParams.subscribe(async params => {
+             await this.syncService.fullSync(false);
+diff --git a/src/locales/en/messages.json b/src/locales/en/messages.json
+index e680001c..f16bd676 100644
+--- a/src/locales/en/messages.json
++++ b/src/locales/en/messages.json
+@@ -3277,6 +3277,9 @@
+   "enterpriseSingleSignOn": {
+     "message": "Enterprise Single Sign-On"
+   },
++  "singleSignOn": {
++    "message": "Single Sign-On"
++  },
+   "ssoHandOff": {
+     "message": "You may now close this tab and continue in the extension."
+   },
+@@ -3998,5 +4001,20 @@
+   },
+   "resetPasswordManageUsers": {
+     "message": "Manage Users must also be enabled with the Manage Password Reset permission"
++  },
++  "callbackPath": {
++    "message": "Callback Path"
++  },
++  "signedOutCallbackPath": {
++    "message": "Signed Out Callback Path"
++  },
++  "authority": {
++    "message": "Authority"
++  },
++  "clientId": {
++    "message": "Client Id"
++  },
++  "clientSecret": {
++    "message": "Client Secret"
+   }
+ }
+diff --git a/src/scss/styles.scss b/src/scss/styles.scss
+index 598fea83..0b702064 100644
+--- a/src/scss/styles.scss
++++ b/src/scss/styles.scss
+@@ -1,5 +1,53 @@
+ @import "../css/webfonts.css";
+ 
++/**** START Bitwarden_RS CHANGES ****/
++/* This combines all selectors extending it into one */
++%bwrs-hide { display: none !important; }
++
++/* This allows searching for the combined style in the browsers dev-tools (look into the head tag) */
++#bwrs-hide, head { @extend %bwrs-hide; }
++
++/* Hide any link pointing to billing */
++a[href$="/settings/billing"] { @extend %bwrs-hide; }
++
++/* Hide any link pointing to subscriptions */
++a[href$="/settings/subscription"] { @extend %bwrs-hide; }
++
++/* Hide any link pointing to emergency access */
++a[href$="/settings/emergency-access"] { @extend %bwrs-hide; }
++
++/* Hide the info box that advertises Bitwarden Send */
++app-send-info.d-block { @extend %bwrs-hide; }
++
++/* Hide Two-Factor menu in Organization settings */
++app-org-settings a[href$="/settings/two-factor"] { @extend %bwrs-hide; }
++
++/* Hide organization plans */
++app-organization-plans > form > div.form-check { @extend %bwrs-hide; }
++app-organization-plans > form > h2.mt-5 { @extend %bwrs-hide; }
++
++/* Hide the `API Key` section under `My Account` */
++app-account > div:nth-child(9),
++app-account > p,
++app-account > button:nth-child(11),
++app-account > button:nth-child(12) {
++    @extend %bwrs-hide;
++}
++
++/* Hide the radio button and label for the `Custom` org user type */
++#userTypeCustom, label[for^=userTypeCustom] {
++    @extend %bwrs-hide;
++}
++
++/* Hide the warning that policy config is moving to Business Portal */
++app-org-policies > app-callout { @extend %bwrs-hide; }
++
++/* Hide Tax Info and Form in Organization settings */
++app-org-account > div.secondary-header:nth-child(3) { @extend %bwrs-hide; }
++app-org-account > div.secondary-header:nth-child(3) + p { @extend %bwrs-hide; }
++app-org-account > div.secondary-header:nth-child(3) + p + form { @extend %bwrs-hide; }
++/**** END Bitwarden_RS CHANGES ****/
++
+ $primary: #175DDC;
+ $primary-accent: #1252A3;
+ $secondary: #ced4da;
+diff --git a/src/services/webPlatformUtils.service.ts b/src/services/webPlatformUtils.service.ts
+index e3aeea39..6e7ed1e0 100644
+--- a/src/services/webPlatformUtils.service.ts
++++ b/src/services/webPlatformUtils.service.ts
+@@ -249,11 +249,12 @@ export class WebPlatformUtilsService implements PlatformUtilsService {
+     }
+ 
+     isDev(): boolean {
+-        return process.env.ENV === 'development';
++        return false;
+     }
+ 
++    // Even though Vaultwarden is self-hosted, returning true ends up enabling various license checks.
+     isSelfHost(): boolean {
+-        return process.env.SELF_HOST.toString() === 'true';
++        return false;
+     }
+ 
+     copyToClipboard(text: string, options?: any): void | boolean {
