@@ -138,6 +138,10 @@ pico-args = "0.5.0"
 paste = "1.0.9"
 governor = "0.5.0"
 
+# OIDC SSo
+openidconnect = "2.3.2"
+
+
 # Capture CTRL+C
 ctrlc = { version = "3.2.3", features = ["termination"] }
 

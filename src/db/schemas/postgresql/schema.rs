@@ -100,8 +100,22 @@ table! {
         uuid -> Text,
         name -> Text,
         billing_email -> Text,
+        identifier -> Nullable<Text>,
         private_key -> Nullable<Text>,
         public_key -> Nullable<Text>,
+    }
+}
+
+table! {
+    sso_config (uuid) {
+        uuid -> Text,
+        org_uuid -> Text,
+        use_sso -> Bool,
+        callback_path -> Text,
+        signed_out_callback_path -> Text,
+        authority -> Nullable<Text>,
+        client_id -> Nullable<Text>,
+        client_secret -> Nullable<Text>,
     }
 }
 
@@ -204,6 +218,14 @@ table! {
 }
 
 table! {
+    sso_nonce (uuid) {
+        uuid -> Text,
+        org_uuid -> Text,
+        nonce -> Text,
+    }
+}
+
+table! {
     emergency_access (uuid) {
         uuid -> Text,
         grantor_uuid -> Text,
@@ -239,6 +261,7 @@ joinable!(users_collections -> users (user_uuid));
 joinable!(users_organizations -> organizations (org_uuid));
 joinable!(users_organizations -> users (user_uuid));
 joinable!(emergency_access -> users (grantor_uuid));
+joinable!(sso_nonce -> organizations (org_uuid));
 
 allow_tables_to_appear_in_same_query!(
     attachments,
