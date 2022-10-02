@@ -709,7 +709,7 @@ async fn authorize(domain_hint: String, state: String, conn: DbConn) -> ApiResul
                 if key == "state" {
                     return format!("{}={}", key, state);
                 }
-                format!("{}={}", key, value);
+                format!("{}={}", key, value)
             });
             let full_query = Vec::from_iter(new_pairs).join("&");
             authorize_url.set_query(Some(full_query.as_str()));
