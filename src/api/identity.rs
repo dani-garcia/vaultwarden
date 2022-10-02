@@ -660,7 +660,7 @@ use openidconnect::{
 };
 
 async fn get_client_from_sso_config(sso_config: &SsoConfig) -> Result<CoreClient, &'static str> {
-    let redirect = sso_config.callback_path.to_string();
+    let redirect = sso_config.callback_path.clone();
     let client_id = ClientId::new(sso_config.client_id.as_ref().unwrap().to_string());
     let client_secret = ClientSecret::new(sso_config.client_secret.as_ref().unwrap().to_string());
     let issuer_url =
@@ -709,7 +709,7 @@ async fn authorize(domain_hint: String, state: String, conn: DbConn) -> ApiResul
                 if key == "state" {
                     return format!("{}={}", key, state);
                 }
-                return format!("{}={}", key, value);
+                format!("{}={}", key, value);
             });
             let full_query = Vec::from_iter(new_pairs).join("&");
             authorize_url.set_query(Some(full_query.as_str()));
