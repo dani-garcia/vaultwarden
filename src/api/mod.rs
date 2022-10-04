@@ -12,6 +12,7 @@ pub use crate::api::{
     admin::routes as admin_routes,
     core::catchers as core_catchers,
     core::purge_sends,
+    core::purge_stale_invitations,
     core::purge_trashed_ciphers,
     core::routes as core_routes,
     core::two_factor::send_incomplete_2fa_notifications,

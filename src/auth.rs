@@ -69,7 +69,20 @@ pub fn decode_login(token: &str) -> Result<LoginJwtClaims, Error> {
 }
 
 pub fn decode_invite(token: &str) -> Result<InviteJwtClaims, Error> {
-    decode_jwt(token, JWT_INVITE_ISSUER.to_string())
+    let mut validation = jsonwebtoken::Validation::new(JWT_ALGORITHM);
+    let issuer = JWT_INVITE_ISSUER.to_string();
+    validation.leeway = 30; // 30 seconds
+                            // Invitations should be valid forever if disabled
+    if CONFIG.invitation_expiration_hours() == 0 {
+        validation.validate_exp = false;
+    } else {
+        validation.validate_exp = true;
+    }
+    validation.validate_nbf = true;
+    validation.set_issuer(&[issuer]);
+
+    let token = token.replace(char::is_whitespace, "");
+    jsonwebtoken::decode(&token, &PUBLIC_RSA_KEY, &validation).map(|d| d.claims).map_res("Error decoding JWT")
 }
 
 pub fn decode_emergency_access_invite(token: &str) -> Result<EmergencyAccessInviteJwtClaims, Error> {
@@ -148,9 +161,10 @@ pub fn generate_invite_claims(
     invited_by_email: Option<String>,
 ) -> InviteJwtClaims {
     let time_now = Utc::now().naive_utc();
+    let expire_hours = i64::from(CONFIG.invitation_expiration_hours());
     InviteJwtClaims {
         nbf: time_now.timestamp(),
-        exp: (time_now + Duration::days(5)).timestamp(),
+        exp: (time_now + Duration::hours(expire_hours)).timestamp(),
         iss: JWT_INVITE_ISSUER.to_string(),
         sub: uuid,
         email,

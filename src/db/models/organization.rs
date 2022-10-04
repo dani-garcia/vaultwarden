@@ -481,6 +481,15 @@ impl UserOrganization {
         Ok(())
     }
 
+    pub async fn delete_invites_for_user(user_uuid: &str, conn: &DbConn) -> EmptyResult {
+        for membership in Self::find_by_user(user_uuid, conn).await {
+            if membership.status == super::UserOrgStatus::Invited as i32 {
+                membership.delete(conn).await?;
+            }
+        }
+        Ok(())
+    }
+
     pub async fn find_by_email_and_org(email: &str, org_id: &str, conn: &DbConn) -> Option<UserOrganization> {
         if let Some(user) = super::User::find_by_mail(email, conn).await {
             if let Some(user_org) = UserOrganization::find_by_user_and_org(&user.uuid, org_id, conn).await {

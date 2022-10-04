@@ -6,7 +6,7 @@ use crate::{
     api::{EmptyResult, JsonResult, JsonUpcase, Notify, NumberOrString, PasswordData, UpdateType},
     auth::{decode_delete, decode_invite, decode_verify_email, Headers},
     crypto,
-    db::{models::*, DbConn},
+    db::{models::*, DbConn, DbPool},
     mail, CONFIG,
 };
 
@@ -731,4 +731,13 @@ async fn api_key(data: JsonUpcase<SecretVerificationRequest>, headers: Headers, 
 #[post("/accounts/rotate-api-key", data = "<data>")]
 async fn rotate_api_key(data: JsonUpcase<SecretVerificationRequest>, headers: Headers, conn: DbConn) -> JsonResult {
     _api_key(data, true, headers, conn).await
+}
+
+pub async fn purge_stale_invitations(pool: DbPool) {
+    debug!("Purging stale invitations");
+    if let Ok(conn) = pool.get().await {
+        User::purge_stale_invitations(&conn).await;
+    } else {
+        error!("Failed to get DB connection while purging stale invitations")
+    }
 }

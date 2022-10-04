@@ -6,6 +6,7 @@ mod organizations;
 mod sends;
 pub mod two_factor;
 
+pub use accounts::purge_stale_invitations;
 pub use ciphers::purge_trashed_ciphers;
 pub use ciphers::{CipherSyncData, CipherSyncType};
 pub use emergency_access::{emergency_notification_reminder_job, emergency_request_timeout_job};

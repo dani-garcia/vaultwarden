@@ -366,6 +366,39 @@ impl User {
             None => None,
         }
     }
+
+    pub async fn find_old_invites(dt: &NaiveDateTime, conn: &DbConn) -> Vec<Self> {
+        db_run! {conn: {
+            users::table
+                .filter(users::public_key.is_null())
+                .filter(users::updated_at.lt(dt))
+                .load::<UserDb>(conn).expect("Error loading invited Users").from_db()
+        }}
+    }
+
+    pub async fn purge_stale_invitations(conn: &DbConn) {
+        // never delete invitations when mail is disabled
+        if !CONFIG.mail_enabled() {
+            return;
+        }
+        let expire_hours = i64::from(CONFIG.invitation_expiration_hours());
+        if expire_hours == 0 {
+            return;
+        }
+
+        let now = Utc::now().naive_utc();
+        let dt = now - Duration::hours(expire_hours);
+
+        // for each invite check get user
+        for user in Self::find_old_invites(&dt, conn).await {
+            // check UserOrgStatus for open invitations of a given user
+            UserOrganization::delete_invites_for_user(&user.uuid, conn).await.ok();
+
+            info!("Purge stale invite for {} which expired after {} hours", &user.email, expire_hours);
+            // remove corresponding User
+            user.delete(conn).await.ok();
+        }
+    }
 }
 
 impl Invitation {

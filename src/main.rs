@@ -478,6 +478,13 @@ async fn schedule_jobs(pool: db::DbPool) {
                 }));
             }
 
+            // Purge stale invitations
+            if !CONFIG.invitation_purge_schedule().is_empty() {
+                sched.add(Job::new(CONFIG.invitation_purge_schedule().parse().unwrap(), || {
+                    runtime.spawn(api::purge_stale_invitations(pool.clone()));
+                }));
+            }
+
             // Send email notifications about incomplete 2FA logins, which potentially
             // indicates that a user's master password has been compromised.
             if !CONFIG.incomplete_2fa_schedule().is_empty() {

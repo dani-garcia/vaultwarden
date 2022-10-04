@@ -361,6 +361,9 @@ make_config! {
         /// Trash purge schedule |> Cron schedule of the job that checks for trashed items to delete permanently.
         /// Defaults to daily. Set blank to disable this job.
         trash_purge_schedule:   String, false,  def,    "0 5 0 * * *".to_string();
+        /// Purge stale invidations |> Cron schedule of the job that checks for stale invitations
+        /// Defaults to hourly. Set blank to disable this job.
+        invitation_purge_schedule: String, false, def, "0 3 * * * *".to_string();
         /// Incomplete 2FA login schedule |> Cron schedule of the job that checks for incomplete 2FA logins.
         /// Defaults to once every minute. Set blank to disable this job.
         incomplete_2fa_schedule: String, false,  def,   "30 * * * * *".to_string();
@@ -430,6 +433,8 @@ make_config! {
         org_creation_users:     String, true,   def,    "".to_string();
         /// Allow invitations |> Controls whether users can be invited by organization admins, even when signups are otherwise disabled
         invitations_allowed:    bool,   true,   def,    true;
+        /// Invitation auto-expiration time (hours) |> Specify the number of hours after which an Organization Invite will expire (0 means never)
+        invitation_expiration_hours: u32, false, def, 120;
         /// Allow emergency access |> Controls whether users can enable emergency access to their accounts. This setting applies globally to all users.
         emergency_access_allowed:    bool,   true,   def,    true;
         /// Password iterations |> Number of server-side passwords hashing iterations.
