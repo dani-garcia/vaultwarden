@@ -496,11 +496,11 @@ pub async fn send_test(address: &str) -> EmptyResult {
 }
 
 async fn send_email(address: &str, subject: &str, body_html: String, body_text: String) -> EmptyResult {
-    let logo_gray_body = Body::new(include_bytes!("static/images/logo-gray.png").to_vec());
-    let mail_github_body = Body::new(include_bytes!("static/images/mail-github.png").to_vec());
     let smtp_from = &CONFIG.smtp_from();
 
     let body = if CONFIG.smtp_embed_images() {
+        let logo_gray_body = Body::new(crate::api::static_files("logo-gray.png".to_string()).unwrap().1.to_vec());
+        let mail_github_body = Body::new(crate::api::static_files("mail-github.png".to_string()).unwrap().1.to_vec());
         MultiPart::alternative().singlepart(SinglePart::plain(body_text)).multipart(
             MultiPart::related()
                 .singlepart(SinglePart::html(body_html))

@@ -89,7 +89,7 @@ fn alive(_conn: DbConn) -> Json<String> {
 }
 
 #[get("/vw_static/<filename>")]
-fn static_files(filename: String) -> Result<(ContentType, &'static [u8]), Error> {
+pub fn static_files(filename: String) -> Result<(ContentType, &'static [u8]), Error> {
     match filename.as_ref() {
         "mail-github.png" => Ok((ContentType::PNG, include_bytes!("../static/images/mail-github.png"))),
         "logo-gray.png" => Ok((ContentType::PNG, include_bytes!("../static/images/logo-gray.png"))),
