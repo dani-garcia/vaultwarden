@@ -22,6 +22,7 @@ pub use crate::api::{
     notifications::{start_notification_server, Notify, UpdateType},
     web::catchers as web_catchers,
     web::routes as web_routes,
+    web::static_files,
 };
 use crate::util;
 

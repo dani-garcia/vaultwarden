@@ -767,7 +767,7 @@ fn generate_smtp_img_src(embed_images: bool, domain: &str) -> String {
     if embed_images {
         "cid:".to_string()
     } else {
-        format!("{}/vw_static/", domain)
+        format!("{domain}/vw_static/")
     }
 }
 
