@@ -98,8 +98,10 @@ async fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> JsonResult {
     let password_hint = clean_password_hint(&data.MasterPasswordHint);
     enforce_password_hint_setting(&password_hint)?;
 
+    let mut verified_by_invite = false;
+
     let mut user = match User::find_by_mail(&email, &conn).await {
-        Some(user) => {
+        Some(mut user) => {
             if !user.password_hash.is_empty() {
                 err!("Registration not allowed or user already exists")
             }
@@ -107,6 +109,9 @@ async fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> JsonResult {
             if let Some(token) = data.Token {
                 let claims = decode_invite(&token)?;
                 if claims.email == email {
+                    // Verify the email address when signing up via a valid invite token
+                    verified_by_invite = true;
+                    user.verified_at = Some(Utc::now().naive_utc());
                     user
                 } else {
                     err!("Registration email does not match invite email")
@@ -163,7 +168,7 @@ async fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> JsonResult {
     }
 
     if CONFIG.mail_enabled() {
-        if CONFIG.signups_verify() {
+        if CONFIG.signups_verify() && !verified_by_invite {
             if let Err(e) = mail::send_welcome_must_verify(&user.email, &user.uuid).await {
                 error!("Error sending welcome email: {:#?}", e);
             }
