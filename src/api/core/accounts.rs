@@ -180,7 +180,7 @@ async fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> JsonResult {
 
     user.save(&conn).await?;
     Ok(Json(json!({
-      "object": "register",
+      "Object": "register",
       "CaptchaBypassToken": "",
     })))
 }
