@@ -730,7 +730,7 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
     }
 
     if cfg.invitation_expiration_hours < 1 {
-        err!("`INVITATION_EXPIRATION_HOURS` has a minimum size of 1")
+        err!("`INVITATION_EXPIRATION_HOURS` has a minimum duration of 1 hour")
     }
 
     Ok(())
