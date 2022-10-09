@@ -430,6 +430,9 @@ make_config! {
         org_creation_users:     String, true,   def,    "".to_string();
         /// Allow invitations |> Controls whether users can be invited by organization admins, even when signups are otherwise disabled
         invitations_allowed:    bool,   true,   def,    true;
+        /// Invitation token expiration time (in hours) |> The number of hours after which an organization invite token, emergency access invite token,
+        /// email verification token and deletion request token will expire (must be at least 1)
+        invitation_expiration_hours: u32, false, def, 120;
         /// Allow emergency access |> Controls whether users can enable emergency access to their accounts. This setting applies globally to all users.
         emergency_access_allowed:    bool,   true,   def,    true;
         /// Password iterations |> Number of server-side passwords hashing iterations.
@@ -724,6 +727,10 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
     match cfg.icon_redirect_code {
         301 | 302 | 307 | 308 => (),
         _ => err!("Only HTTP 301/302 and 307/308 redirects are supported"),
+    }
+
+    if cfg.invitation_expiration_hours < 1 {
+        err!("`INVITATION_EXPIRATION_HOURS` has a minimum duration of 1 hour")
     }
 
     Ok(())

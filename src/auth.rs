@@ -148,9 +148,10 @@ pub fn generate_invite_claims(
     invited_by_email: Option<String>,
 ) -> InviteJwtClaims {
     let time_now = Utc::now().naive_utc();
+    let expire_hours = i64::from(CONFIG.invitation_expiration_hours());
     InviteJwtClaims {
         nbf: time_now.timestamp(),
-        exp: (time_now + Duration::days(5)).timestamp(),
+        exp: (time_now + Duration::hours(expire_hours)).timestamp(),
         iss: JWT_INVITE_ISSUER.to_string(),
         sub: uuid,
         email,
@@ -185,9 +186,10 @@ pub fn generate_emergency_access_invite_claims(
     grantor_email: Option<String>,
 ) -> EmergencyAccessInviteJwtClaims {
     let time_now = Utc::now().naive_utc();
+    let expire_hours = i64::from(CONFIG.invitation_expiration_hours());
     EmergencyAccessInviteJwtClaims {
         nbf: time_now.timestamp(),
-        exp: (time_now + Duration::days(5)).timestamp(),
+        exp: (time_now + Duration::hours(expire_hours)).timestamp(),
         iss: JWT_EMERGENCY_ACCESS_INVITE_ISSUER.to_string(),
         sub: uuid,
         email,
@@ -211,9 +213,10 @@ pub struct BasicJwtClaims {
 
 pub fn generate_delete_claims(uuid: String) -> BasicJwtClaims {
     let time_now = Utc::now().naive_utc();
+    let expire_hours = i64::from(CONFIG.invitation_expiration_hours());
     BasicJwtClaims {
         nbf: time_now.timestamp(),
-        exp: (time_now + Duration::days(5)).timestamp(),
+        exp: (time_now + Duration::hours(expire_hours)).timestamp(),
         iss: JWT_DELETE_ISSUER.to_string(),
         sub: uuid,
     }
@@ -221,9 +224,10 @@ pub fn generate_delete_claims(uuid: String) -> BasicJwtClaims {
 
 pub fn generate_verify_email_claims(uuid: String) -> BasicJwtClaims {
     let time_now = Utc::now().naive_utc();
+    let expire_hours = i64::from(CONFIG.invitation_expiration_hours());
     BasicJwtClaims {
         nbf: time_now.timestamp(),
-        exp: (time_now + Duration::days(5)).timestamp(),
+        exp: (time_now + Duration::hours(expire_hours)).timestamp(),
         iss: JWT_VERIFYEMAIL_ISSUER.to_string(),
         sub: uuid,
     }
