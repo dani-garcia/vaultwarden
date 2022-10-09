@@ -37,7 +37,7 @@ syslog = "6.0.1" # Needs to be v4 until fern is updated
 # Logging
 log = "0.4.17"
 fern = { version = "0.6.1", features = ["syslog-6"] }
-tracing = { version = "0.1.36", features = ["log"] } # Needed to have lettre and webauthn-rs trace logging to work
+tracing = { version = "0.1.37", features = ["log"] } # Needed to have lettre and webauthn-rs trace logging to work
 
 backtrace = "0.3.66" # Logging panics to logfile instead stderr only
 
@@ -61,7 +61,7 @@ dashmap = "5.4.0"
 
 # Async futures
 futures = "0.3.24"
-tokio = { version = "1.21.1", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time"] }
+tokio = { version = "1.21.2", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time"] }
 
 # A generic serialization/deserialization framework
 serde = { version = "1.0.145", features = ["derive"] }
@@ -79,15 +79,15 @@ rand = { version = "0.8.5", features = ["small_rng"] }
 ring = "0.16.20"
 
 # UUID generation
-uuid = { version = "1.1.2", features = ["v4"] }
+uuid = { version = "1.2.1", features = ["v4"] }
 
 # Date and time libraries
 chrono = { version = "0.4.22", features = ["clock", "serde"], default-features = false }
 chrono-tz = "0.6.3"
-time = "0.3.14"
+time = "0.3.15"
 
 # Job scheduler
-job_scheduler_ng = "2.0.1"
+job_scheduler_ng = "2.0.2"
 
 # Data encoding library Hex/Base32/Base64
 data-encoding = "2.3.2"
@@ -112,7 +112,7 @@ lettre = { version = "0.10.1", features = ["smtp-transport", "builder", "serde",
 percent-encoding = "2.2.0" # URL encoding library used for URL's in the emails
 
 # Template library
-handlebars = { version = "4.3.4", features = ["dir_source"] }
+handlebars = { version = "4.3.5", features = ["dir_source"] }
 
 # HTTP client
 reqwest = { version = "0.11.12", features = ["stream", "json", "gzip", "brotli", "socks", "cookies", "trust-dns"] }
@@ -125,11 +125,11 @@ bytes = "1.2.1"
 cached = "0.39.0"
 
 # Used for custom short lived cookie jar during favicon extraction
-cookie = "0.16.0"
+cookie = "0.16.1"
 cookie_store = "0.17.0"
 
 # Used by U2F, JWT and Postgres
-openssl = "0.10.41"
+openssl = "0.10.42"
 
 # CLI argument parsing
 pico-args = "0.5.0"
