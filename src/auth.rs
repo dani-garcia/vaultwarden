@@ -1,18 +1,14 @@
-//
 // JWT Handling
 //
 use chrono::{Duration, Utc};
 use num_traits::FromPrimitive;
 use once_cell::sync::Lazy;
 
-use jsonwebtoken::{self, Algorithm, DecodingKey, EncodingKey, Header};
+use jsonwebtoken::{self, errors::ErrorKind, Algorithm, DecodingKey, EncodingKey, Header};
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
 
-use crate::{
-    error::{Error, MapResult},
-    CONFIG,
-};
+use crate::{error::Error, CONFIG};
 
 const JWT_ALGORITHM: Algorithm = Algorithm::RS256;
 
@@ -61,7 +57,15 @@ fn decode_jwt<T: DeserializeOwned>(token: &str, issuer: String) -> Result<T, Err
     validation.set_issuer(&[issuer]);
 
     let token = token.replace(char::is_whitespace, "");
-    jsonwebtoken::decode(&token, &PUBLIC_RSA_KEY, &validation).map(|d| d.claims).map_res("Error decoding JWT")
+    match jsonwebtoken::decode(&token, &PUBLIC_RSA_KEY, &validation) {
+        Ok(d) => Ok(d.claims),
+        Err(err) => match *err.kind() {
+            ErrorKind::InvalidToken => err!("Token is invalid"),
+            ErrorKind::InvalidIssuer => err!("Issuer is invalid"),
+            ErrorKind::ExpiredSignature => err!("Token has expired"),
+            _ => err!("Error decoding JWT"),
+        },
+    }
 }
 
 pub fn decode_login(token: &str) -> Result<LoginJwtClaims, Error> {
