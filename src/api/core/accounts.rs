@@ -81,7 +81,7 @@ fn enforce_password_hint_setting(password_hint: &Option<String>) -> EmptyResult 
 }
 
 #[post("/accounts/register", data = "<data>")]
-async fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> EmptyResult {
+async fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> JsonResult {
     let data: RegisterData = data.into_inner().data;
     let email = data.Email.to_lowercase();
 
@@ -178,7 +178,11 @@ async fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> EmptyResult {
         }
     }
 
-    user.save(&conn).await
+    user.save(&conn).await?;
+    Ok(Json(json!({
+      "Object": "register",
+      "CaptchaBypassToken": "",
+    })))
 }
 
 #[get("/accounts/profile")]

@@ -1,18 +1,14 @@
-//
 // JWT Handling
 //
 use chrono::{Duration, Utc};
 use num_traits::FromPrimitive;
 use once_cell::sync::Lazy;
 
-use jsonwebtoken::{self, Algorithm, DecodingKey, EncodingKey, Header};
+use jsonwebtoken::{self, errors::ErrorKind, Algorithm, DecodingKey, EncodingKey, Header};
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
 
-use crate::{
-    error::{Error, MapResult},
-    CONFIG,
-};
+use crate::{error::Error, CONFIG};
 
 const JWT_ALGORITHM: Algorithm = Algorithm::RS256;
 
@@ -61,7 +57,15 @@ fn decode_jwt<T: DeserializeOwned>(token: &str, issuer: String) -> Result<T, Err
     validation.set_issuer(&[issuer]);
 
     let token = token.replace(char::is_whitespace, "");
-    jsonwebtoken::decode(&token, &PUBLIC_RSA_KEY, &validation).map(|d| d.claims).map_res("Error decoding JWT")
+    match jsonwebtoken::decode(&token, &PUBLIC_RSA_KEY, &validation) {
+        Ok(d) => Ok(d.claims),
+        Err(err) => match *err.kind() {
+            ErrorKind::InvalidToken => err!("Token is invalid"),
+            ErrorKind::InvalidIssuer => err!("Issuer is invalid"),
+            ErrorKind::ExpiredSignature => err!("Token has expired"),
+            _ => err!("Error decoding JWT"),
+        },
+    }
 }
 
 pub fn decode_login(token: &str) -> Result<LoginJwtClaims, Error> {
@@ -148,9 +152,10 @@ pub fn generate_invite_claims(
     invited_by_email: Option<String>,
 ) -> InviteJwtClaims {
     let time_now = Utc::now().naive_utc();
+    let expire_hours = i64::from(CONFIG.invitation_expiration_hours());
     InviteJwtClaims {
         nbf: time_now.timestamp(),
-        exp: (time_now + Duration::days(5)).timestamp(),
+        exp: (time_now + Duration::hours(expire_hours)).timestamp(),
         iss: JWT_INVITE_ISSUER.to_string(),
         sub: uuid,
         email,
@@ -185,9 +190,10 @@ pub fn generate_emergency_access_invite_claims(
     grantor_email: Option<String>,
 ) -> EmergencyAccessInviteJwtClaims {
     let time_now = Utc::now().naive_utc();
+    let expire_hours = i64::from(CONFIG.invitation_expiration_hours());
     EmergencyAccessInviteJwtClaims {
         nbf: time_now.timestamp(),
-        exp: (time_now + Duration::days(5)).timestamp(),
+        exp: (time_now + Duration::hours(expire_hours)).timestamp(),
         iss: JWT_EMERGENCY_ACCESS_INVITE_ISSUER.to_string(),
         sub: uuid,
         email,
@@ -211,9 +217,10 @@ pub struct BasicJwtClaims {
 
 pub fn generate_delete_claims(uuid: String) -> BasicJwtClaims {
     let time_now = Utc::now().naive_utc();
+    let expire_hours = i64::from(CONFIG.invitation_expiration_hours());
     BasicJwtClaims {
         nbf: time_now.timestamp(),
-        exp: (time_now + Duration::days(5)).timestamp(),
+        exp: (time_now + Duration::hours(expire_hours)).timestamp(),
         iss: JWT_DELETE_ISSUER.to_string(),
         sub: uuid,
     }
@@ -221,9 +228,10 @@ pub fn generate_delete_claims(uuid: String) -> BasicJwtClaims {
 
 pub fn generate_verify_email_claims(uuid: String) -> BasicJwtClaims {
     let time_now = Utc::now().naive_utc();
+    let expire_hours = i64::from(CONFIG.invitation_expiration_hours());
     BasicJwtClaims {
         nbf: time_now.timestamp(),
-        exp: (time_now + Duration::days(5)).timestamp(),
+        exp: (time_now + Duration::hours(expire_hours)).timestamp(),
         iss: JWT_VERIFYEMAIL_ISSUER.to_string(),
         sub: uuid,
     }

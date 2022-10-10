@@ -12,7 +12,7 @@
 
 Image is based on [Rust implementation of Bitwarden API](https://github.com/dani-garcia/vaultwarden).
 
-**This project is not associated with the [Bitwarden](https://bitwarden.com/) project nor 8bit Solutions LLC.**
+**This project is not associated with the [Bitwarden](https://bitwarden.com/) project nor Bitwarden, Inc.**
 
 #### ⚠️**IMPORTANT**⚠️: When using this server, please report any bugs or suggestions to us directly (look at the bottom of this page for ways to get in touch), regardless of whatever clients you are using (mobile, desktop, browser...). DO NOT use the official support channels.
 
