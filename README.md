@@ -31,8 +31,16 @@ Basically full implementation of Bitwarden API is provided including:
  * YubiKey and Duo support
 
 ## Installation
+Create a local directory where to map container persistent storage
+```sh
+mkdir /vw-data
+```
+Optional SELinux configuration
+```sh
+semanage fcontext -a -t svirt_sandbox_file_t '/vw-data(/.*)?'
+restorecon -Rv /vw-data
+```
 Pull the docker image and mount a volume from the host for persistent storage:
-
 ```sh
 docker pull vaultwarden/server:latest
 docker run -d --name vaultwarden -v /vw-data/:/data/ -p 80:80 vaultwarden/server:latest
