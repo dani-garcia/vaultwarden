@@ -303,6 +303,10 @@ async fn check_data_folder() {
         }
         exit(1);
     }
+    if !path.is_dir() {
+        error!("Data folder '{}' is not a directory.", data_folder);
+        exit(1);
+    }
 
     if is_running_in_docker()
         && std::env::var("I_REALLY_WANT_VOLATILE_STORAGE").is_err()
