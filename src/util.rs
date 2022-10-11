@@ -1,7 +1,7 @@
 //
 // Web Headers and caching
 //
-use std::io::Cursor;
+use std::io::{Cursor, ErrorKind};
 
 use rocket::{
     fairing::{Fairing, Info, Kind},
@@ -311,7 +311,16 @@ pub fn file_exists(path: &str) -> bool {
 
 pub fn write_file(path: &str, content: &[u8]) -> Result<(), crate::error::Error> {
     use std::io::Write;
-    let mut f = File::create(path)?;
+    let mut f = match File::create(path) {
+        Ok(file) => file,
+        Err(e) => {
+            if e.kind() == ErrorKind::PermissionDenied {
+                error!("Can't create '{}': Permission denied", path);
+            }
+            return Err(From::from(e));
+        }
+    };
+
     f.write_all(content)?;
     f.flush()?;
     Ok(())
