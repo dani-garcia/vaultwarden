@@ -60,7 +60,7 @@ impl Fairing for AppHeaders {
             // Leaked Passwords check: api.pwnedpasswords.com
             // 2FA/MFA Site check: 2fa.directory
             // # Mail Relay: https://bitwarden.com/blog/add-privacy-and-security-using-email-aliases-with-bitwarden/
-            // app.simplelogin.io, app.anonaddy.com, api.fastmail.com
+            // app.simplelogin.io, app.anonaddy.com, api.fastmail.com, quack.duckduckgo.com
             let csp = format!(
                 "default-src 'self'; \
                 object-src 'self' blob:; \
@@ -83,6 +83,7 @@ impl Fairing for AppHeaders {
                   https://app.simplelogin.io/api/ \
                   https://app.anonaddy.com/api/ \
                   https://api.fastmail.com/ \
+                  https://quack.duckduckgo.com/api/email/ \
                   ;\
                 ",
                 icon_service_csp = CONFIG._icon_service_csp(),
