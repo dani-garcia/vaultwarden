@@ -160,6 +160,7 @@ impl Cipher {
             "Object": "cipherDetails",
             "Id": self.uuid,
             "Type": self.atype,
+            "CreationDate": format_date(&self.created_at),
             "RevisionDate": format_date(&self.updated_at),
             "DeletedDate": self.deleted_at.map_or(Value::Null, |d| Value::String(format_date(&d))),
             "FolderId": if let Some(cipher_sync_data) = cipher_sync_data { cipher_sync_data.cipher_folders.get(&self.uuid).map(|c| c.to_string() ) } else { self.get_folder_uuid(user_uuid, conn).await },
