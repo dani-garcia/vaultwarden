@@ -193,9 +193,8 @@ async fn profile(headers: Headers, conn: DbConn) -> Json<Value> {
 #[derive(Deserialize, Debug)]
 #[allow(non_snake_case)]
 struct ProfileData {
-    #[serde(rename = "Culture")]
-    _Culture: String, // Ignored, always use en-US
-    MasterPasswordHint: Option<String>,
+    // Culture: String, // Ignored, always use en-US
+    // MasterPasswordHint: Option<String>, // Ignored, has been moved to ChangePassData
     Name: String,
 }
 
@@ -216,8 +215,6 @@ async fn post_profile(data: JsonUpcase<ProfileData>, headers: Headers, conn: DbC
 
     let mut user = headers.user;
     user.name = data.Name;
-    user.password_hint = clean_password_hint(&data.MasterPasswordHint);
-    enforce_password_hint_setting(&user.password_hint)?;
 
     user.save(&conn).await?;
     Ok(Json(user.to_json(&conn).await))
@@ -260,6 +257,7 @@ async fn post_keys(data: JsonUpcase<KeysData>, headers: Headers, conn: DbConn) -
 struct ChangePassData {
     MasterPasswordHash: String,
     NewMasterPasswordHash: String,
+    MasterPasswordHint: Option<String>,
     Key: String,
 }
 
@@ -271,6 +269,9 @@ async fn post_password(data: JsonUpcase<ChangePassData>, headers: Headers, conn:
     if !user.check_valid_password(&data.MasterPasswordHash) {
         err!("Invalid password")
     }
+
+    user.password_hint = clean_password_hint(&data.MasterPasswordHint);
+    enforce_password_hint_setting(&user.password_hint)?;
 
     user.set_password(
         &data.NewMasterPasswordHash,
