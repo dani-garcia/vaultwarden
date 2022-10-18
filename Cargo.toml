@@ -65,7 +65,7 @@ tokio = { version = "1.21.2", features = ["rt-multi-thread", "fs", "io-util", "p
 
 # A generic serialization/deserialization framework
 serde = { version = "1.0.145", features = ["derive"] }
-serde_json = "1.0.85"
+serde_json = "1.0.86"
 
 # A safe, extensible ORM and Query builder
 diesel = { version = "1.4.8", features = ["chrono", "r2d2"] }
@@ -143,7 +143,7 @@ ctrlc = { version = "3.2.3", features = ["termination"] }
 
 # Allow overriding the default memory allocator
 # Mainly used for the musl builds, since the default musl malloc is very slow
-mimalloc = { version = "0.1.29", features = ["secure"], default-features = false, optional = true }
+mimalloc = { version = "0.1.30", features = ["secure"], default-features = false, optional = true }
 
 [patch.crates-io]
 # Using a patched version of multer-rs (Used by Rocket) to fix attachment/send file uploads
