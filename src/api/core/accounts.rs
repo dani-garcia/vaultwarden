@@ -101,11 +101,7 @@ async fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> JsonResult {
     let mut user = match User::find_by_mail(&email, &conn).await {
         Some(user) => {
             if !user.password_hash.is_empty() {
-                if CONFIG.is_signup_allowed(&email) {
-                    err!("User already exists")
-                } else {
-                    err!("Registration not allowed or user already exists")
-                }
+                err!("Registration not allowed or user already exists")
             }
 
             if let Some(token) = data.Token {
@@ -121,10 +117,10 @@ async fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> JsonResult {
                     user_org.save(&conn).await?;
                 }
                 user
-            } else if EmergencyAccess::find_invited_by_grantee_email(&email, &conn).await.is_some() {
+            } else if CONFIG.is_signup_allowed(&email)
+                || EmergencyAccess::find_invited_by_grantee_email(&email, &conn).await.is_some()
+            {
                 user
-            } else if CONFIG.is_signup_allowed(&email) {
-                err!("Account with this email already exists")
             } else {
                 err!("Registration not allowed or user already exists")
             }
