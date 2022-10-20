@@ -98,19 +98,20 @@ async fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> JsonResult {
     let password_hint = clean_password_hint(&data.MasterPasswordHint);
     enforce_password_hint_setting(&password_hint)?;
 
+    let mut verified_by_invite = false;
+
     let mut user = match User::find_by_mail(&email, &conn).await {
-        Some(user) => {
+        Some(mut user) => {
             if !user.password_hash.is_empty() {
-                if CONFIG.is_signup_allowed(&email) {
-                    err!("User already exists")
-                } else {
-                    err!("Registration not allowed or user already exists")
-                }
+                err!("Registration not allowed or user already exists")
             }
 
             if let Some(token) = data.Token {
                 let claims = decode_invite(&token)?;
                 if claims.email == email {
+                    // Verify the email address when signing up via a valid invite token
+                    verified_by_invite = true;
+                    user.verified_at = Some(Utc::now().naive_utc());
                     user
                 } else {
                     err!("Registration email does not match invite email")
@@ -121,10 +122,10 @@ async fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> JsonResult {
                     user_org.save(&conn).await?;
                 }
                 user
-            } else if EmergencyAccess::find_invited_by_grantee_email(&email, &conn).await.is_some() {
+            } else if CONFIG.is_signup_allowed(&email)
+                || EmergencyAccess::find_invited_by_grantee_email(&email, &conn).await.is_some()
+            {
                 user
-            } else if CONFIG.is_signup_allowed(&email) {
-                err!("Account with this email already exists")
             } else {
                 err!("Registration not allowed or user already exists")
             }
@@ -167,7 +168,7 @@ async fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> JsonResult {
     }
 
     if CONFIG.mail_enabled() {
-        if CONFIG.signups_verify() {
+        if CONFIG.signups_verify() && !verified_by_invite {
             if let Err(e) = mail::send_welcome_must_verify(&user.email, &user.uuid).await {
                 error!("Error sending welcome email: {:#?}", e);
             }
@@ -193,9 +194,8 @@ async fn profile(headers: Headers, conn: DbConn) -> Json<Value> {
 #[derive(Deserialize, Debug)]
 #[allow(non_snake_case)]
 struct ProfileData {
-    #[serde(rename = "Culture")]
-    _Culture: String, // Ignored, always use en-US
-    MasterPasswordHint: Option<String>,
+    // Culture: String, // Ignored, always use en-US
+    // MasterPasswordHint: Option<String>, // Ignored, has been moved to ChangePassData
     Name: String,
 }
 
@@ -216,8 +216,6 @@ async fn post_profile(data: JsonUpcase<ProfileData>, headers: Headers, conn: DbC
 
     let mut user = headers.user;
     user.name = data.Name;
-    user.password_hint = clean_password_hint(&data.MasterPasswordHint);
-    enforce_password_hint_setting(&user.password_hint)?;
 
     user.save(&conn).await?;
     Ok(Json(user.to_json(&conn).await))
@@ -260,6 +258,7 @@ async fn post_keys(data: JsonUpcase<KeysData>, headers: Headers, conn: DbConn) -
 struct ChangePassData {
     MasterPasswordHash: String,
     NewMasterPasswordHash: String,
+    MasterPasswordHint: Option<String>,
     Key: String,
 }
 
@@ -271,6 +270,9 @@ async fn post_password(data: JsonUpcase<ChangePassData>, headers: Headers, conn:
     if !user.check_valid_password(&data.MasterPasswordHash) {
         err!("Invalid password")
     }
+
+    user.password_hint = clean_password_hint(&data.MasterPasswordHint);
+    enforce_password_hint_setting(&user.password_hint)?;
 
     user.set_password(
         &data.NewMasterPasswordHash,

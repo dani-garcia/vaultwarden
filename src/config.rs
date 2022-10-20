@@ -602,6 +602,10 @@ make_config! {
         smtp_timeout:                  u64,    true,   def,     15;
         /// Server name sent during HELO |> By default this value should be is on the machine's hostname, but might need to be changed in case it trips some anti-spam filters
         helo_name:                     String, true,   option;
+        /// Embed images as email attachments.
+        smtp_embed_images:             bool, true, def, true;
+        /// Internal
+        _smtp_img_src:                 String, false, gen, |c| generate_smtp_img_src(c.smtp_embed_images, &c.domain);
         /// Enable SMTP debugging (Know the risks!) |> DANGEROUS: Enabling this will output very detailed SMTP messages. This could contain sensitive information like passwords and usernames! Only enable this during troubleshooting!
         smtp_debug:                    bool,   false,  def,     false;
         /// Accept Invalid Certs (Know the risks!) |> DANGEROUS: Allow invalid certificates. This option introduces significant vulnerabilities to man-in-the-middle attacks!
@@ -756,6 +760,14 @@ fn extract_url_path(url: &str) -> String {
             // We already print it in the method above, no need to do it again
             String::new()
         }
+    }
+}
+
+fn generate_smtp_img_src(embed_images: bool, domain: &str) -> String {
+    if embed_images {
+        "cid:".to_string()
+    } else {
+        format!("{domain}/vw_static/")
     }
 }
 
