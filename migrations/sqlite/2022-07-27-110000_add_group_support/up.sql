@@ -10,13 +10,13 @@ CREATE TABLE groups (
 
 CREATE TABLE groups_users (
   groups_uuid                       TEXT NOT NULL REFERENCES groups (uuid),
-  users_organizations_uuid          TEXT NOT NULL REFERENCES users_organizations (uuid),  
+  users_organizations_uuid          TEXT NOT NULL REFERENCES users_organizations (uuid),
   UNIQUE (groups_uuid, users_organizations_uuid)
 );
 
 CREATE TABLE collections_groups (
   collections_uuid                  TEXT NOT NULL REFERENCES collections (uuid),
-  groups_uuid                       TEXT NOT NULL REFERENCES groups (uuid),  
+  groups_uuid                       TEXT NOT NULL REFERENCES groups (uuid),
   read_only                         BOOLEAN NOT NULL,
   hide_passwords                    BOOLEAN NOT NULL,
   UNIQUE (collections_uuid, groups_uuid)
