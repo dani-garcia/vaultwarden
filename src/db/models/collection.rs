@@ -1,6 +1,6 @@
 use serde_json::Value;
 
-use super::{User, UserOrgStatus, UserOrgType, UserOrganization};
+use super::{CollectionGroup, User, UserOrgStatus, UserOrgType, UserOrganization};
 
 db_object! {
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -127,6 +127,7 @@ impl Collection {
         self.update_users_revision(conn).await;
         CollectionCipher::delete_all_by_collection(&self.uuid, conn).await?;
         CollectionUser::delete_all_by_collection(&self.uuid, conn).await?;
+        CollectionGroup::delete_all_by_collection(&self.uuid, conn).await?;
 
         db_run! { conn: {
             diesel::delete(collections::table.filter(collections::uuid.eq(self.uuid)))
@@ -171,14 +172,33 @@ impl Collection {
                     users_organizations::user_uuid.eq(user_uuid)
                 )
             ))
+            .left_join(groups_users::table.on(
+                groups_users::users_organizations_uuid.eq(users_organizations::uuid)
+            ))
+            .left_join(groups::table.on(
+                groups::uuid.eq(groups_users::groups_uuid)
+            ))
+            .left_join(collections_groups::table.on(
+                collections_groups::groups_uuid.eq(groups_users::groups_uuid).and(
+                    collections_groups::collections_uuid.eq(collections::uuid)
+                )
+            ))
             .filter(
                 users_organizations::status.eq(UserOrgStatus::Confirmed as i32)
             )
             .filter(
                 users_collections::user_uuid.eq(user_uuid).or( // Directly accessed collection
                     users_organizations::access_all.eq(true) // access_all in Organization
+                ).or(
+                    groups::access_all.eq(true) // access_all in groups
+                ).or( // access via groups
+                    groups_users::users_organizations_uuid.eq(users_organizations::uuid).and(
+                        collections_groups::collections_uuid.is_not_null()
+                    )
                 )
-            ).select(collections::all_columns)
+            )
+            .select(collections::all_columns)
+            .distinct()
             .load::<CollectionDb>(conn).expect("Error loading collections").from_db()
         }}
     }

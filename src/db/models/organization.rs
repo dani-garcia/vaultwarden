@@ -2,7 +2,7 @@ use num_traits::FromPrimitive;
 use serde_json::Value;
 use std::cmp::Ordering;
 
-use super::{CollectionUser, OrgPolicy, OrgPolicyType, User};
+use super::{CollectionUser, GroupUser, OrgPolicy, OrgPolicyType, User};
 
 db_object! {
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -148,7 +148,7 @@ impl Organization {
             "Use2fa": true,
             "UseDirectory": false, // Is supported, but this value isn't checked anywhere (yet)
             "UseEvents": false, // Not supported
-            "UseGroups": false, // Not supported
+            "UseGroups": true,
             "UseTotp": true,
             "UsePolicies": true,
             // "UseScim": false, // Not supported (Not AGPLv3 Licensed)
@@ -300,7 +300,7 @@ impl UserOrganization {
             "Use2fa": true,
             "UseDirectory": false, // Is supported, but this value isn't checked anywhere (yet)
             "UseEvents": false, // Not supported
-            "UseGroups": false, // Not supported
+            "UseGroups": true,
             "UseTotp": true,
             // "UseScim": false, // Not supported (Not AGPLv3 Licensed)
             "UsePolicies": true,
@@ -459,6 +459,7 @@ impl UserOrganization {
         User::update_uuid_revision(&self.user_uuid, conn).await;
 
         CollectionUser::delete_all_by_user_and_org(&self.user_uuid, &self.org_uuid, conn).await?;
+        GroupUser::delete_all_by_user(&self.uuid, conn).await?;
 
         db_run! { conn: {
             diesel::delete(users_organizations::table.filter(users_organizations::uuid.eq(self.uuid)))
