@@ -40,7 +40,7 @@ jobs:
     steps:
       # Checkout the repo
       - name: "Checkout"
-        uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b # v3.0.2
+        uses: actions/checkout@93ea575cb5d8a053eaa0ac8fa3b40d7e05a33cc8 # v3.1.0
       # End Checkout the repo
 
       # Install dependencies
@@ -71,7 +71,7 @@ jobs:
 
 
       # Enable Rust Caching
-      - uses: Swatinem/rust-cache@6720f05bc48b77f96918929a9019fb2203ff71f8 # v2.0.0
+      - uses: Swatinem/rust-cache@22c9328bcba27aa81a32b1bef27c7e3c78052531 # v2.0.1
       # End Enable Rust Caching
 
 
