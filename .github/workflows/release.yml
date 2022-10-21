@@ -24,21 +24,21 @@ jobs:
   # Some checks to determine if we need to continue with building a new docker.
   # We will skip this check if we are creating a tag, because that has the same hash as a previous run already.
   skip_check:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     if: ${{ github.repository == 'dani-garcia/vaultwarden' }}
     outputs:
       should_skip: ${{ steps.skip_check.outputs.should_skip }}
     steps:
       - name: Skip Duplicates Actions
         id: skip_check
-        uses: fkirc/skip-duplicate-actions@9d116fa7e55f295019cfab7e3ab72b478bcf7fdd # v4.0.0
+        uses: fkirc/skip-duplicate-actions@f11521568414503656a5af807dc3018c012552c4 # v5.2.0
         with:
           cancel_others: 'true'
         # Only run this when not creating a tag
         if: ${{ startsWith(github.ref, 'refs/heads/') }}
 
   docker-build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     needs: skip_check
     # Start a local docker registry to be used to generate multi-arch images.
     services:
@@ -60,13 +60,13 @@ jobs:
     steps:
       # Checkout the repo
       - name: Checkout
-        uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b # v3.0.2
+        uses: actions/checkout@93ea575cb5d8a053eaa0ac8fa3b40d7e05a33cc8 # v3.1.0
         with:
           fetch-depth: 0
 
       # Login to Docker Hub
       - name: Login to Docker Hub
-        uses: docker/login-action@49ed152c8eca782a232dede0303416e8f356c37b # v2.0.0
+        uses: docker/login-action@f4ef78c080cd8ba55a85445d5b36e214a81df20a # v2.1.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
