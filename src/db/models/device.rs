@@ -4,9 +4,9 @@ use crate::CONFIG;
 
 db_object! {
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
-    #[table_name = "devices"]
-    #[changeset_options(treat_none_as_null="true")]
-    #[primary_key(uuid, user_uuid)]
+    #[diesel(table_name = devices)]
+    #[diesel(treat_none_as_null = true)]
+    #[diesel(primary_key(uuid, user_uuid))]
     pub struct Device {
         pub uuid: String,
         pub created_at: NaiveDateTime,
@@ -116,7 +116,7 @@ use crate::error::MapResult;
 
 /// Database methods
 impl Device {
-    pub async fn save(&mut self, conn: &DbConn) -> EmptyResult {
+    pub async fn save(&mut self, conn: &mut DbConn) -> EmptyResult {
         self.updated_at = Utc::now().naive_utc();
 
         db_run! { conn:
@@ -136,7 +136,7 @@ impl Device {
         }
     }
 
-    pub async fn delete_all_by_user(user_uuid: &str, conn: &DbConn) -> EmptyResult {
+    pub async fn delete_all_by_user(user_uuid: &str, conn: &mut DbConn) -> EmptyResult {
         db_run! { conn: {
             diesel::delete(devices::table.filter(devices::user_uuid.eq(user_uuid)))
                 .execute(conn)
@@ -144,7 +144,7 @@ impl Device {
         }}
     }
 
-    pub async fn find_by_uuid_and_user(uuid: &str, user_uuid: &str, conn: &DbConn) -> Option<Self> {
+    pub async fn find_by_uuid_and_user(uuid: &str, user_uuid: &str, conn: &mut DbConn) -> Option<Self> {
         db_run! { conn: {
             devices::table
                 .filter(devices::uuid.eq(uuid))
@@ -155,7 +155,7 @@ impl Device {
         }}
     }
 
-    pub async fn find_by_refresh_token(refresh_token: &str, conn: &DbConn) -> Option<Self> {
+    pub async fn find_by_refresh_token(refresh_token: &str, conn: &mut DbConn) -> Option<Self> {
         db_run! { conn: {
             devices::table
                 .filter(devices::refresh_token.eq(refresh_token))
@@ -165,7 +165,7 @@ impl Device {
         }}
     }
 
-    pub async fn find_latest_active_by_user(user_uuid: &str, conn: &DbConn) -> Option<Self> {
+    pub async fn find_latest_active_by_user(user_uuid: &str, conn: &mut DbConn) -> Option<Self> {
         db_run! { conn: {
             devices::table
                 .filter(devices::user_uuid.eq(user_uuid))

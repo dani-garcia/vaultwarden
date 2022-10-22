@@ -4,8 +4,8 @@ use crate::{api::EmptyResult, db::DbConn, error::MapResult};
 
 db_object! {
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
-    #[table_name = "twofactor"]
-    #[primary_key(uuid)]
+    #[diesel(table_name = twofactor)]
+    #[diesel(primary_key(uuid))]
     pub struct TwoFactor {
         pub uuid: String,
         pub user_uuid: String,
@@ -68,7 +68,7 @@ impl TwoFactor {
 
 /// Database methods
 impl TwoFactor {
-    pub async fn save(&self, conn: &DbConn) -> EmptyResult {
+    pub async fn save(&self, conn: &mut DbConn) -> EmptyResult {
         db_run! { conn:
             sqlite, mysql {
                 match diesel::replace_into(twofactor::table)
@@ -107,7 +107,7 @@ impl TwoFactor {
         }
     }
 
-    pub async fn delete(self, conn: &DbConn) -> EmptyResult {
+    pub async fn delete(self, conn: &mut DbConn) -> EmptyResult {
         db_run! { conn: {
             diesel::delete(twofactor::table.filter(twofactor::uuid.eq(self.uuid)))
                 .execute(conn)
@@ -115,7 +115,7 @@ impl TwoFactor {
         }}
     }
 
-    pub async fn find_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
+    pub async fn find_by_user(user_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             twofactor::table
                 .filter(twofactor::user_uuid.eq(user_uuid))
@@ -126,7 +126,7 @@ impl TwoFactor {
         }}
     }
 
-    pub async fn find_by_user_and_type(user_uuid: &str, atype: i32, conn: &DbConn) -> Option<Self> {
+    pub async fn find_by_user_and_type(user_uuid: &str, atype: i32, conn: &mut DbConn) -> Option<Self> {
         db_run! { conn: {
             twofactor::table
                 .filter(twofactor::user_uuid.eq(user_uuid))
@@ -137,7 +137,7 @@ impl TwoFactor {
         }}
     }
 
-    pub async fn delete_all_by_user(user_uuid: &str, conn: &DbConn) -> EmptyResult {
+    pub async fn delete_all_by_user(user_uuid: &str, conn: &mut DbConn) -> EmptyResult {
         db_run! { conn: {
             diesel::delete(twofactor::table.filter(twofactor::user_uuid.eq(user_uuid)))
                 .execute(conn)
@@ -145,7 +145,7 @@ impl TwoFactor {
         }}
     }
 
-    pub async fn migrate_u2f_to_webauthn(conn: &DbConn) -> EmptyResult {
+    pub async fn migrate_u2f_to_webauthn(conn: &mut DbConn) -> EmptyResult {
         let u2f_factors = db_run! { conn: {
             twofactor::table
                 .filter(twofactor::atype.eq(TwoFactorType::U2f as i32))

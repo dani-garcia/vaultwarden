@@ -365,7 +365,7 @@ pub mod models;
 
 /// Creates a back-up of the sqlite database
 /// MySQL/MariaDB and PostgreSQL are not supported.
-pub async fn backup_database(conn: &DbConn) -> Result<(), Error> {
+pub async fn backup_database(conn: &mut DbConn) -> Result<(), Error> {
     db_run! {@raw conn:
         postgresql, mysql {
             let _ = conn;
@@ -383,15 +383,19 @@ pub async fn backup_database(conn: &DbConn) -> Result<(), Error> {
 }
 
 /// Get the SQL Server version
-pub async fn get_sql_server_version(conn: &DbConn) -> String {
+pub async fn get_sql_server_version(conn: &mut DbConn) -> String {
     db_run! {@raw conn:
         postgresql, mysql {
-            no_arg_sql_function!(version, diesel::sql_types::Text);
-            diesel::select(version).get_result::<String>(conn).unwrap_or_else(|_| "Unknown".to_string())
+            sql_function!{
+                fn version() -> diesel::sql_types::Text;
+            }
+            diesel::select(version()).get_result::<String>(conn).unwrap_or_else(|_| "Unknown".to_string())
         }
         sqlite {
-            no_arg_sql_function!(sqlite_version, diesel::sql_types::Text);
-            diesel::select(sqlite_version).get_result::<String>(conn).unwrap_or_else(|_| "Unknown".to_string())
+            sql_function!{
+                fn sqlite_version() -> diesel::sql_types::Text;
+            }
+            diesel::select(sqlite_version()).get_result::<String>(conn).unwrap_or_else(|_| "Unknown".to_string())
         }
     }
 }
@@ -416,7 +420,8 @@ impl<'r> FromRequest<'r> for DbConn {
 // https://docs.rs/diesel_migrations/*/diesel_migrations/macro.embed_migrations.html
 #[cfg(sqlite)]
 mod sqlite_migrations {
-    embed_migrations!("migrations/sqlite");
+    use diesel_migrations::{EmbeddedMigrations, MigrationHarness};
+    pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations/sqlite");
 
     pub fn run_migrations() -> Result<(), super::Error> {
         // Make sure the directory exists
@@ -432,52 +437,54 @@ mod sqlite_migrations {
 
         use diesel::{Connection, RunQueryDsl};
         // Make sure the database is up to date (create if it doesn't exist, or run the migrations)
-        let connection = diesel::sqlite::SqliteConnection::establish(&crate::CONFIG.database_url())?;
+        let mut connection = diesel::sqlite::SqliteConnection::establish(&crate::CONFIG.database_url())?;
         // Disable Foreign Key Checks during migration
 
         // Scoped to a connection.
         diesel::sql_query("PRAGMA foreign_keys = OFF")
-            .execute(&connection)
+            .execute(&mut connection)
             .expect("Failed to disable Foreign Key Checks during migrations");
 
         // Turn on WAL in SQLite
         if crate::CONFIG.enable_db_wal() {
-            diesel::sql_query("PRAGMA journal_mode=wal").execute(&connection).expect("Failed to turn on WAL");
+            diesel::sql_query("PRAGMA journal_mode=wal").execute(&mut connection).expect("Failed to turn on WAL");
         }
 
-        embedded_migrations::run_with_output(&connection, &mut std::io::stdout())?;
+        connection.run_pending_migrations(MIGRATIONS).expect("Error running migrations");
         Ok(())
     }
 }
 
 #[cfg(mysql)]
 mod mysql_migrations {
-    embed_migrations!("migrations/mysql");
+    use diesel_migrations::{EmbeddedMigrations, MigrationHarness};
+    pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations/mysql");
 
     pub fn run_migrations() -> Result<(), super::Error> {
         use diesel::{Connection, RunQueryDsl};
         // Make sure the database is up to date (create if it doesn't exist, or run the migrations)
-        let connection = diesel::mysql::MysqlConnection::establish(&crate::CONFIG.database_url())?;
+        let mut connection = diesel::mysql::MysqlConnection::establish(&crate::CONFIG.database_url())?;
         // Disable Foreign Key Checks during migration
 
         // Scoped to a connection/session.
         diesel::sql_query("SET FOREIGN_KEY_CHECKS = 0")
-            .execute(&connection)
+            .execute(&mut connection)
             .expect("Failed to disable Foreign Key Checks during migrations");
 
-        embedded_migrations::run_with_output(&connection, &mut std::io::stdout())?;
+        connection.run_pending_migrations(MIGRATIONS).expect("Error running migrations");
         Ok(())
     }
 }
 
 #[cfg(postgresql)]
 mod postgresql_migrations {
-    embed_migrations!("migrations/postgresql");
+    use diesel_migrations::{EmbeddedMigrations, MigrationHarness};
+    pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations/postgresql");
 
     pub fn run_migrations() -> Result<(), super::Error> {
         use diesel::{Connection, RunQueryDsl};
         // Make sure the database is up to date (create if it doesn't exist, or run the migrations)
-        let connection = diesel::pg::PgConnection::establish(&crate::CONFIG.database_url())?;
+        let mut connection = diesel::pg::PgConnection::establish(&crate::CONFIG.database_url())?;
         // Disable Foreign Key Checks during migration
 
         // FIXME: Per https://www.postgresql.org/docs/12/sql-set-constraints.html,
@@ -487,10 +494,10 @@ mod postgresql_migrations {
         // Migrations that need to disable foreign key checks should run this
         // from within the migration script itself.
         diesel::sql_query("SET CONSTRAINTS ALL DEFERRED")
-            .execute(&connection)
+            .execute(&mut connection)
             .expect("Failed to disable Foreign Key Checks during migrations");
 
-        embedded_migrations::run_with_output(&connection, &mut std::io::stdout())?;
+        connection.run_pending_migrations(MIGRATIONS).expect("Error running migrations");
         Ok(())
     }
 }

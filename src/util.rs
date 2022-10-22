@@ -621,9 +621,9 @@ fn _process_key(key: &str) -> String {
 // Retry methods
 //
 
-pub fn retry<F, T, E>(func: F, max_tries: u32) -> Result<T, E>
+pub fn retry<F, T, E>(mut func: F, max_tries: u32) -> Result<T, E>
 where
-    F: Fn() -> Result<T, E>,
+    F: FnMut() -> Result<T, E>,
 {
     let mut tries = 0;
 
@@ -642,9 +642,9 @@ where
     }
 }
 
-pub async fn retry_db<F, T, E>(func: F, max_tries: u32) -> Result<T, E>
+pub async fn retry_db<F, T, E>(mut func: F, max_tries: u32) -> Result<T, E>
 where
-    F: Fn() -> Result<T, E>,
+    F: FnMut() -> Result<T, E>,
     E: std::error::Error,
 {
     let mut tries = 0;
