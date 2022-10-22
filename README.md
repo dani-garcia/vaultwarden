@@ -58,32 +58,34 @@ If you prefer to chat, we're usually hanging around at [#vaultwarden:matrix.org]
 ### Sponsors
 Thanks for your contribution to the project!
 
+<!--
 <table>
   <tr>
     <td align="center">
-      <a href="https://github.com/netdadaltd">
-        <img src="https://avatars.githubusercontent.com/u/77323954?s=75&v=4" width="75px;" alt="netdadaltd"/>
+      <a href="https://github.com/username">
+        <img src="https://avatars.githubusercontent.com/u/725423?s=75&v=4" width="75px;" alt="username"/>
         <br />
-        <sub><b>netDada Ltd.</b></sub>
+        <sub><b>username</b></sub>
       </a>
   </td>
   </tr>
 </table>
 
 <br/>
+-->
 
 <table>
   <tr>
     <td align="center">
-      <a href="https://github.com/Gyarbij" style="width: 75px">
-        <sub><b>Chono N</b></sub>
+       <a href="https://github.com/themightychris" style="width: 75px">
+        <sub><b>Chris Alfano</b></sub>
       </a>
     </td>
   </tr>
   <tr>
     <td align="center">
-       <a href="https://github.com/themightychris">
-        <sub><b>Chris Alfano</b></sub>
+      <a href="https://github.com/numberly" style="width: 75px">
+        <sub><b>Numberly</b></sub>
       </a>
     </td>
   </tr>
