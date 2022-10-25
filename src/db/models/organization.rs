@@ -217,6 +217,10 @@ use crate::error::MapResult;
 /// Database methods
 impl Organization {
     pub async fn save(&self, conn: &mut DbConn) -> EmptyResult {
+        if !email_address::EmailAddress::is_valid(self.billing_email.trim()) {
+            err!(format!("BillingEmail {} is not a valid email address", self.billing_email.trim()))
+        }
+
         for user_org in UserOrganization::find_by_org(&self.uuid, conn).await.iter() {
             User::update_uuid_revision(&user_org.user_uuid, conn).await;
         }
