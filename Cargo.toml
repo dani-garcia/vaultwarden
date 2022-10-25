@@ -110,6 +110,7 @@ url = "2.3.1"
 # Email librariese-Base, Update crates and small change.
 lettre = { version = "0.10.1", features = ["smtp-transport", "builder", "serde", "tokio1-native-tls", "hostname", "tracing", "tokio1"], default-features = false }
 percent-encoding = "2.2.0" # URL encoding library used for URL's in the emails
+email_address = "0.2.3"
 
 # Template library
 handlebars = { version = "4.3.5", features = ["dir_source"] }
