@@ -1,6 +1,7 @@
 use std::process::exit;
 use std::sync::RwLock;
 
+use job_scheduler_ng::Schedule;
 use once_cell::sync::Lazy;
 use reqwest::Url;
 
@@ -735,6 +736,26 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
 
     if cfg.invitation_expiration_hours < 1 {
         err!("`INVITATION_EXPIRATION_HOURS` has a minimum duration of 1 hour")
+    }
+
+    if !cfg.send_purge_schedule.is_empty() && cfg.send_purge_schedule.parse::<Schedule>().is_err() {
+        err!("`SEND_PURGE_SCHEDULE` is not a valid cron expression")
+    }
+    if !cfg.trash_purge_schedule.is_empty() && cfg.trash_purge_schedule.parse::<Schedule>().is_err() {
+        err!("`TRASH_PURGE_SCHEDULE` is not a valid cron expression")
+    }
+    if !cfg.incomplete_2fa_schedule.is_empty() && cfg.incomplete_2fa_schedule.parse::<Schedule>().is_err() {
+        err!("`INCOMPLETE_2FA_SCHEDULE` is not a valid cron expression")
+    }
+    if !cfg.emergency_notification_reminder_schedule.is_empty()
+        && cfg.emergency_notification_reminder_schedule.parse::<Schedule>().is_err()
+    {
+        err!("`EMERGENCY_NOTIFICATION_REMINDER_SCHEDULE` is not a valid cron expression")
+    }
+    if !cfg.emergency_request_timeout_schedule.is_empty()
+        && cfg.emergency_request_timeout_schedule.parse::<Schedule>().is_err()
+    {
+        err!("`EMERGENCY_REQUEST_TIMEOUT_SCHEDULE` is not a valid cron expression")
     }
 
     Ok(())
