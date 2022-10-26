@@ -940,5 +940,17 @@
       "pyszne.pl"
     ],
     "Excluded": false
+  },
+  {
+    "Type": 89,
+    "Domains": [
+      "atlassian.com",
+      "bitbucket.org",
+      "trello.com",
+      "statuspage.io",
+      "atlassian.net",
+      "jira.com"
+    ],
+    "Excluded": false
   }
 ]
