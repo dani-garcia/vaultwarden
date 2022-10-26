@@ -64,7 +64,7 @@ futures = "0.3.25"
 tokio = { version = "1.21.2", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time"] }
 
 # A generic serialization/deserialization framework
-serde = { version = "1.0.145", features = ["derive"] }
+serde = { version = "1.0.147", features = ["derive"] }
 serde_json = "1.0.87"
 
 # A safe, extensible ORM and Query builder
@@ -84,7 +84,7 @@ uuid = { version = "1.2.1", features = ["v4"] }
 # Date and time libraries
 chrono = { version = "0.4.22", features = ["clock", "serde"], default-features = false }
 chrono-tz = "0.7.0"
-time = "0.3.15"
+time = "0.3.16"
 
 # Job scheduler
 job_scheduler_ng = "2.0.2"
@@ -123,11 +123,11 @@ html5gum = "0.5.2"
 regex = { version = "1.6.0", features = ["std", "perf", "unicode-perl"], default-features = false }
 data-url = "0.2.0"
 bytes = "1.2.1"
-cached = "0.39.0"
+cached = "0.40.0"
 
 # Used for custom short lived cookie jar during favicon extraction
 cookie = "0.16.1"
-cookie_store = "0.17.0"
+cookie_store = "0.18.0"
 
 # Used by U2F, JWT and Postgres
 openssl = "0.10.42"
