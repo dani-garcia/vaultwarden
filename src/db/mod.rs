@@ -190,23 +190,30 @@ generate_connections! {
 
 impl DbConnType {
     pub fn from_url(url: &str) -> Result<DbConnType, Error> {
-        // Mysql
-        if url.starts_with("mysql:") {
-            #[cfg(mysql)]
-            return Ok(DbConnType::mysql);
+        if url.contains(':')
+            && !(url.len() >= 2
+                && url.chars().next().unwrap().is_ascii_alphabetic()
+                && url.chars().nth(1).unwrap() == ':')
+        {
+            // MySQL
+            if url.starts_with("mysql:") {
+                #[cfg(mysql)]
+                return Ok(DbConnType::mysql);
 
-            #[cfg(not(mysql))]
-            err!("`DATABASE_URL` is a MySQL URL, but the 'mysql' feature is not enabled")
+                #[cfg(not(mysql))]
+                err!("`DATABASE_URL` is a MySQL URL, but the 'mysql' feature is not enabled")
+                // Postgres
+            } else if url.starts_with("postgresql:") || url.starts_with("postgres:") {
+                #[cfg(postgresql)]
+                return Ok(DbConnType::postgresql);
 
-        // Postgres
-        } else if url.starts_with("postgresql:") || url.starts_with("postgres:") {
-            #[cfg(postgresql)]
-            return Ok(DbConnType::postgresql);
-
-            #[cfg(not(postgresql))]
-            err!("`DATABASE_URL` is a PostgreSQL URL, but the 'postgresql' feature is not enabled")
-
-        //Sqlite
+                #[cfg(not(postgresql))]
+                err!("`DATABASE_URL` is a PostgreSQL URL, but the 'postgresql' feature is not enabled")
+                // Failed to parse
+            } else {
+                err!("`DATABASE_URL` looks like a URI but it could not be parsed, make sure it is valid. Note that ':' in filepaths are disallowed and DATABASE_URL only accepts 'postgresql://', 'postgres://' and 'mysql://' as valid URIs")
+            }
+        // SQLite
         } else {
             #[cfg(sqlite)]
             return Ok(DbConnType::sqlite);
