@@ -229,19 +229,6 @@ macro_rules! make_config {
                     inner.config.clone()
                 };
 
-                /// We map over the string and remove all alphanumeric, _ and - characters.
-                /// This is the fastest way (within micro-seconds) instead of using a regex (which takes mili-seconds)
-                fn _privacy_mask(value: &str) -> String {
-                    value.chars().map(|c|
-                        match c {
-                            c if c.is_alphanumeric() => '*',
-                            '_' => '*',
-                            '-' => '*',
-                            _ => c
-                        }
-                    ).collect::<String>()
-                }
-
                 serde_json::Value::Object({
                     let mut json = serde_json::Map::new();
                     $($(
@@ -266,7 +253,7 @@ macro_rules! make_config {
     ( @supportstr $name:ident, $value:expr, Pass, $none_action:ident ) => { "***".into() }; // Required pass, we return "***"
     ( @supportstr $name:ident, $value:expr, String, option ) => { // Optional other value, we return as is or convert to string to apply the privacy config
         if PRIVACY_CONFIG.contains(&stringify!($name)) {
-            serde_json::to_value($value.as_ref().map(|x| _privacy_mask(x) )).unwrap()
+            serde_json::to_value($value.as_ref().map(|_| String::from("***"))).unwrap()
         } else {
             serde_json::to_value($value).unwrap()
         }
