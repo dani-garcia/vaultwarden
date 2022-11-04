@@ -78,11 +78,9 @@ jobs:
         run: |
           # Check which main tag we are going to build determined by github.ref
           if [[ "${{ github.ref }}" == refs/tags/* ]]; then
-            echo "set-output name=DOCKER_TAG::${GITHUB_REF#refs/*/}"
-            echo "::set-output name=DOCKER_TAG::${GITHUB_REF#refs/*/}"
+            echo "DOCKER_TAG=${GITHUB_REF#refs/*/}" | tee -a "${GITHUB_OUTPUT}"
           elif [[ "${{ github.ref }}" == refs/heads/* ]]; then
-            echo "set-output name=DOCKER_TAG::testing"
-            echo "::set-output name=DOCKER_TAG::testing"
+            echo "DOCKER_TAG=testing" | tee -a "${GITHUB_OUTPUT}"
           fi
       # End Determine Docker Tag
 
