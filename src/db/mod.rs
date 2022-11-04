@@ -228,8 +228,8 @@ impl DbConnType {
     pub fn default_init_stmts(&self) -> String {
         match self {
             Self::sqlite => "PRAGMA busy_timeout = 5000; PRAGMA synchronous = NORMAL;".to_string(),
-            Self::mysql => "".to_string(),
-            Self::postgresql => "".to_string(),
+            Self::mysql => String::new(),
+            Self::postgresql => String::new(),
         }
     }
 }

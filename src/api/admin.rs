@@ -554,9 +554,9 @@ async fn diagnostics(_token: AdminToken, ip_header: IpHeader, mut conn: DbConn) 
 
     // Get current running versions
     let web_vault_version: WebVaultVersion =
-        match std::fs::read_to_string(&format!("{}/{}", CONFIG.web_vault_folder(), "vw-version.json")) {
+        match std::fs::read_to_string(format!("{}/{}", CONFIG.web_vault_folder(), "vw-version.json")) {
             Ok(s) => serde_json::from_str(&s)?,
-            _ => match std::fs::read_to_string(&format!("{}/{}", CONFIG.web_vault_folder(), "version.json")) {
+            _ => match std::fs::read_to_string(format!("{}/{}", CONFIG.web_vault_folder(), "version.json")) {
                 Ok(s) => serde_json::from_str(&s)?,
                 _ => WebVaultVersion {
                     version: String::from("Version file missing"),
