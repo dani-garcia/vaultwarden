@@ -109,7 +109,7 @@ impl Cors {
     fn get_header(headers: &HeaderMap<'_>, name: &str) -> String {
         match headers.get_one(name) {
             Some(h) => h.to_string(),
-            _ => "".to_string(),
+            _ => String::new(),
         }
     }
 

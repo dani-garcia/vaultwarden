@@ -425,10 +425,10 @@ make_config! {
         /// If signups require email verification, limit how many emails are automatically sent when login is attempted (0 means no limit)
         signups_verify_resend_limit: u32, true, def,    6;
         /// Email domain whitelist |> Allow signups only from this list of comma-separated domains, even when signups are otherwise disabled
-        signups_domains_whitelist: String, true, def,   "".to_string();
+        signups_domains_whitelist: String, true, def,   String::new();
         /// Org creation users |> Allow org creation only by this list of comma-separated user emails.
         /// Blank or 'all' means all users can create orgs; 'none' means no users can create orgs.
-        org_creation_users:     String, true,   def,    "".to_string();
+        org_creation_users:     String, true,   def,    String::new();
         /// Allow invitations |> Controls whether users can be invited by organization admins, even when signups are otherwise disabled
         invitations_allowed:    bool,   true,   def,    true;
         /// Invitation token expiration time (in hours) |> The number of hours after which an organization invite token, emergency access invite token,
@@ -530,7 +530,7 @@ make_config! {
         database_max_conns:     u32,    false,  def,    10;
 
         /// Database connection init |> SQL statements to run when creating a new database connection, mainly useful for connection-scoped pragmas. If empty, a database-specific default is used.
-        database_conn_init:     String, false,  def,    "".to_string();
+        database_conn_init:     String, false,  def,    String::new();
 
         /// Bypass admin page security (Know the risks!) |> Disables the Admin Token for the admin page so you may use your own auth in-front
         disable_admin_token:    bool,   true,   def,    false;
@@ -796,7 +796,7 @@ fn generate_smtp_img_src(embed_images: bool, domain: &str) -> String {
 /// This will be used within icons.rs to call the external icon service.
 fn generate_icon_service_url(icon_service: &str) -> String {
     match icon_service {
-        "internal" => "".to_string(),
+        "internal" => String::new(),
         "bitwarden" => "https://icons.bitwarden.net/{}/icon.png".to_string(),
         "duckduckgo" => "https://icons.duckduckgo.com/ip3/{}.ico".to_string(),
         "google" => "https://www.google.com/s2/favicons?domain={}&sz=32".to_string(),
@@ -810,7 +810,7 @@ fn generate_icon_service_csp(icon_service: &str, icon_service_url: &str) -> Stri
     // Everything up until the first '{' should be fixed and can be used as an CSP string.
     let csp_string = match icon_service_url.split_once('{') {
         Some((c, _)) => c.to_string(),
-        None => "".to_string(),
+        None => String::new(),
     };
 
     // Because Google does a second redirect to there gstatic.com domain, we need to add an extra csp string.
