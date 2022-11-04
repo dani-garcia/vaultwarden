@@ -27,7 +27,7 @@
 FROM vaultwarden/web-vault@sha256:85f5e0eaea73dfa14cfbdc64676ebbdd7aba5483ee5c1735e5eb82bd55b105f8 as vault
 
 ########################## BUILD IMAGE  ##########################
-FROM blackdex/rust-musl:arm-musleabi-stable-1.64.0 as build
+FROM blackdex/rust-musl:arm-musleabi-stable-1.65.0 as build
 
 
 
