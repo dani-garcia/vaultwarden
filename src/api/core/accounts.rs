@@ -36,6 +36,7 @@ pub fn routes() -> Vec<rocket::Route> {
         verify_password,
         api_key,
         rotate_api_key,
+        get_known_device,
     ]
 }
 
@@ -738,4 +739,17 @@ async fn api_key(data: JsonUpcase<SecretVerificationRequest>, headers: Headers, 
 #[post("/accounts/rotate-api-key", data = "<data>")]
 async fn rotate_api_key(data: JsonUpcase<SecretVerificationRequest>, headers: Headers, conn: DbConn) -> JsonResult {
     _api_key(data, true, headers, conn).await
+}
+
+#[get("/devices/knowndevice/<email>/<uuid>")]
+async fn get_known_device(email: String, uuid: String, mut conn: DbConn) -> String {
+    // This endpoint doesn't have auth header
+    if let Some(user) = User::find_by_mail(&email, &mut conn).await {
+        match Device::find_by_uuid_and_user(&uuid, &user.uuid, &mut conn).await {
+            Some(_) => String::from("true"),
+            _ => String::from("false"),
+        }
+    } else {
+        String::from("false")
+    }
 }
