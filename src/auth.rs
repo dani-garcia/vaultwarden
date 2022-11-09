@@ -481,6 +481,7 @@ pub struct AdminHeaders {
     pub device: Device,
     pub user: User,
     pub org_user_type: UserOrgType,
+    pub client_version: Option<String>,
 }
 
 #[rocket::async_trait]
@@ -489,12 +490,14 @@ impl<'r> FromRequest<'r> for AdminHeaders {
 
     async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         let headers = try_outcome!(OrgHeaders::from_request(request).await);
+        let client_version = request.headers().get_one("Bitwarden-Client-Version").map(String::from);
         if headers.org_user_type >= UserOrgType::Admin {
             Outcome::Success(Self {
                 host: headers.host,
                 device: headers.device,
                 user: headers.user,
                 org_user_type: headers.org_user_type,
+                client_version,
             })
         } else {
             err_handler!("You need to be Admin or Owner to call this endpoint")

@@ -142,6 +142,9 @@ governor = "0.5.0"
 # Capture CTRL+C
 ctrlc = { version = "3.2.3", features = ["termination"] }
 
+# Check client versions for specific features.
+semver = "1.0.14"
+
 # Allow overriding the default memory allocator
 # Mainly used for the musl builds, since the default musl malloc is very slow
 mimalloc = { version = "0.1.31", features = ["secure"], default-features = false, optional = true }

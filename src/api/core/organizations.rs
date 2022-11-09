@@ -273,19 +273,15 @@ async fn get_user_collections(headers: Headers, mut conn: DbConn) -> Json<Value>
 
 #[get("/organizations/<org_id>/collections")]
 async fn get_org_collections(org_id: String, _headers: ManagerHeadersLoose, mut conn: DbConn) -> Json<Value> {
-    Json(_get_org_collections(&org_id, &mut conn).await)
+    Json(json!({
+        "Data": _get_org_collections(&org_id, &mut conn).await,
+        "Object": "list",
+        "ContinuationToken": null,
+    }))
 }
 
 async fn _get_org_collections(org_id: &str, conn: &mut DbConn) -> Value {
-    json!({
-        "Data":
-            Collection::find_by_organization(org_id, conn).await
-            .iter()
-            .map(Collection::to_json)
-            .collect::<Value>(),
-        "Object": "list",
-        "ContinuationToken": null,
-    })
+    Collection::find_by_organization(org_id, conn).await.iter().map(Collection::to_json).collect::<Value>()
 }
 
 #[post("/organizations/<org_id>/collections", data = "<data>")]
@@ -550,7 +546,11 @@ struct OrgIdData {
 
 #[get("/ciphers/organization-details?<data..>")]
 async fn get_org_details(data: OrgIdData, headers: Headers, mut conn: DbConn) -> Json<Value> {
-    Json(_get_org_details(&data.organization_id, &headers.host, &headers.user.uuid, &mut conn).await)
+    Json(json!({
+        "Data": _get_org_details(&data.organization_id, &headers.host, &headers.user.uuid, &mut conn).await,
+        "Object": "list",
+        "ContinuationToken": null,
+    }))
 }
 
 async fn _get_org_details(org_id: &str, host: &str, user_uuid: &str, conn: &mut DbConn) -> Value {
@@ -561,12 +561,7 @@ async fn _get_org_details(org_id: &str, host: &str, user_uuid: &str, conn: &mut 
     for c in ciphers {
         ciphers_json.push(c.to_json(host, user_uuid, Some(&cipher_sync_data), conn).await);
     }
-
-    json!({
-      "Data": ciphers_json,
-      "Object": "list",
-      "ContinuationToken": null,
-    })
+    json!(ciphers_json)
 }
 
 #[get("/organizations/<org_id>/users")]
@@ -2079,9 +2074,41 @@ async fn delete_group_user(
 //       Else the export will be just an empty JSON file.
 #[get("/organizations/<org_id>/export")]
 async fn get_org_export(org_id: String, headers: AdminHeaders, mut conn: DbConn) -> Json<Value> {
+    use semver::{Version, VersionReq};
+
+    // Since version v2022.11.0 the format of the export is different.
+    // Also, this endpoint was created since v2022.9.0.
+    // Therefore, we will check for any version smaller then 2022.11.0 and return a different response.
+    // If we can't determine the version, we will use the latest default v2022.11.0 and higher.
+    // https://github.com/bitwarden/server/blob/8a6f780d55cf0768e1869f1f097452328791983e/src/Api/Controllers/OrganizationExportController.cs#L44-L45
+    let use_list_response_model = if let Some(client_version) = headers.client_version {
+        let ver_match = VersionReq::parse("<2022.11.0").unwrap();
+        let client_version = Version::parse(&client_version).unwrap();
+        ver_match.matches(&client_version)
+    } else {
+        false
+    };
+
     // Also both main keys here need to be lowercase, else the export will fail.
-    Json(json!({
-        "collections": convert_json_key_lcase_first(_get_org_collections(&org_id, &mut conn).await),
-        "ciphers": convert_json_key_lcase_first(_get_org_details(&org_id, &headers.host, &headers.user.uuid, &mut conn).await),
-    }))
+    if use_list_response_model {
+        // Backwards compatible pre v2022.11.0 response
+        Json(json!({
+            "collections": {
+                "data": convert_json_key_lcase_first(_get_org_collections(&org_id, &mut conn).await),
+                "object": "list",
+                "continuationToken": null,
+            },
+            "ciphers": {
+                "data": convert_json_key_lcase_first(_get_org_details(&org_id, &headers.host, &headers.user.uuid, &mut conn).await),
+                "object": "list",
+                "continuationToken": null,
+            }
+        }))
+    } else {
+        // v2022.11.0 and newer response
+        Json(json!({
+            "collections": convert_json_key_lcase_first(_get_org_collections(&org_id, &mut conn).await),
+            "ciphers": convert_json_key_lcase_first(_get_org_details(&org_id, &headers.host, &headers.user.uuid, &mut conn).await),
+        }))
+    }
 }
