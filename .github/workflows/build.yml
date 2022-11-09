@@ -48,30 +48,37 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends openssl sqlite build-essential libmariadb-dev-compat libpq-dev libssl-dev pkg-config
       # End Install dependencies
 
+      # Determine rust-toolchain version
+      - name: Init Variables
+        id: toolchain
+        shell: bash
+        if: ${{ matrix.channel == 'rust-toolchain' }}
+        run: |
+          RUST_TOOLCHAIN="$(cat rust-toolchain)"
+          echo "RUST_TOOLCHAIN=${RUST_TOOLCHAIN}" | tee -a "${GITHUB_OUTPUT}"
+      # End Determine rust-toolchain version
 
       # Uses the rust-toolchain file to determine version
       - name: "Install rust-toolchain version"
-        uses: actions-rs/toolchain@b2417cde72dcf67f306c0ae8e0828a81bf0b189f # v1.0.6
+        uses: dtolnay/rust-toolchain@55c7845fad90d0ae8b2e83715cb900e5e861e8cb # master @ 2022-10-25 - 21:40 GMT+2
         if: ${{ matrix.channel == 'rust-toolchain' }}
         with:
-          profile: minimal
+          toolchain: "${{steps.toolchain.outputs.RUST_TOOLCHAIN}}"
           components: clippy, rustfmt
       # End Uses the rust-toolchain file to determine version
 
 
       # Install the MSRV channel to be used
       - name: "Install MSRV version"
-        uses: actions-rs/toolchain@b2417cde72dcf67f306c0ae8e0828a81bf0b189f # v1.0.6
+        uses: dtolnay/rust-toolchain@55c7845fad90d0ae8b2e83715cb900e5e861e8cb # master @ 2022-10-25 - 21:40 GMT+2
         if: ${{ matrix.channel != 'rust-toolchain' }}
         with:
-          profile: minimal
-          override: true
           toolchain: ${{ matrix.version }}
       # End Install the MSRV channel to be used
 
 
       # Enable Rust Caching
-      - uses: Swatinem/rust-cache@22c9328bcba27aa81a32b1bef27c7e3c78052531 # v2.0.1
+      - uses: Swatinem/rust-cache@b5ec9edd911d3bf82c74038b0a28791e0aa24d6f # v2.0.2
       # End Enable Rust Caching
 
 
@@ -87,65 +94,51 @@ jobs:
       # First test all features together, afterwards test them separately.
       - name: "test features: sqlite,mysql,postgresql,enable_mimalloc"
         id: test_sqlite_mysql_postgresql_mimalloc
-        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505 # v1.0.3
         if: $${{ always() }}
-        with:
-          command: test
-          args: --release --features sqlite,mysql,postgresql,enable_mimalloc
+        run: |
+          cargo test --release --features sqlite,mysql,postgresql,enable_mimalloc
 
       - name: "test features: sqlite,mysql,postgresql"
         id: test_sqlite_mysql_postgresql
-        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505 # v1.0.3
         if: $${{ always() }}
-        with:
-          command: test
-          args: --release --features sqlite,mysql,postgresql
+        run: |
+          cargo test --release --features sqlite,mysql,postgresql
 
       - name: "test features: sqlite"
         id: test_sqlite
-        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505 # v1.0.3
         if: $${{ always() }}
-        with:
-          command: test
-          args: --release --features sqlite
+        run: |
+          cargo test --release --features sqlite
 
       - name: "test features: mysql"
         id: test_mysql
-        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505 # v1.0.3
         if: $${{ always() }}
-        with:
-          command: test
-          args: --release --features mysql
+        run: |
+          cargo test --release --features mysql
 
       - name: "test features: postgresql"
         id: test_postgresql
-        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505 # v1.0.3
         if: $${{ always() }}
-        with:
-          command: test
-          args: --release --features postgresql
+        run: |
+          cargo test --release --features postgresql
       # End Run cargo tests
 
 
       # Run cargo clippy, and fail on warnings (In release mode to speed up future builds)
       - name: "clippy features: sqlite,mysql,postgresql,enable_mimalloc"
         id: clippy
-        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505 # v1.0.3
         if: ${{ always() && matrix.channel == 'rust-toolchain' }}
-        with:
-          command: clippy
-          args: --release --features sqlite,mysql,postgresql,enable_mimalloc -- -D warnings
+        run: |
+          cargo clippy --release --features sqlite,mysql,postgresql,enable_mimalloc -- -D warnings
       # End Run cargo clippy
 
 
       # Run cargo fmt (Only run on rust-toolchain defined version)
       - name: "check formatting"
         id: formatting
-        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505 # v1.0.3
         if: ${{ always() && matrix.channel == 'rust-toolchain' }}
-        with:
-          command: fmt
-          args: --all -- --check
+        run: |
+          cargo fmt --all -- --check
       # End Run cargo fmt
 
 
@@ -182,17 +175,15 @@ jobs:
 
       # Build the binary to upload to the artifacts
       - name: "build features: sqlite,mysql,postgresql"
-        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505 # v1.0.3
         if: ${{ matrix.channel == 'rust-toolchain' }}
-        with:
-          command: build
-          args: --release --features sqlite,mysql,postgresql
+        run: |
+          cargo build --release --features sqlite,mysql,postgresql
       # End Build the binary
 
 
       # Upload artifact to Github Actions
       - name: "Upload artifact"
-        uses: actions/upload-artifact@3cea5372237819ed00197afe530f5a7ea3e805c8 # v3.1.0
+        uses: actions/upload-artifact@83fd05a356d7e2593de66fc9913b3002723633cb # v3.1.1
         if: ${{ matrix.channel == 'rust-toolchain' }}
         with:
           name: vaultwarden

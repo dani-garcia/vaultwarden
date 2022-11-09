@@ -520,7 +520,7 @@ async fn get_icon_url(domain: &str) -> Result<IconUrlResult, Error> {
 
     // Create the iconlist
     let mut iconlist: Vec<Icon> = Vec::new();
-    let mut referer = String::from("");
+    let mut referer = String::new();
 
     if let Ok(content) = resp {
         // Extract the URL from the respose in case redirects occured (like @ gitlab.com)
