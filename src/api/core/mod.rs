@@ -5,6 +5,7 @@ mod folders;
 mod organizations;
 mod sends;
 pub mod two_factor;
+mod public;
 
 pub use ciphers::purge_trashed_ciphers;
 pub use ciphers::{CipherSyncData, CipherSyncType};
@@ -26,6 +27,7 @@ pub fn routes() -> Vec<Route> {
     routes.append(&mut organizations::routes());
     routes.append(&mut two_factor::routes());
     routes.append(&mut sends::routes());
+    routes.append(&mut public::routes());
     routes.append(&mut device_token_routes);
     routes.append(&mut eq_domains_routes);
     routes.append(&mut hibp_routes);
