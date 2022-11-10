@@ -3,9 +3,9 @@ mod ciphers;
 mod emergency_access;
 mod folders;
 mod organizations;
+mod public;
 mod sends;
 pub mod two_factor;
-mod public;
 
 pub use ciphers::purge_trashed_ciphers;
 pub use ciphers::{CipherSyncData, CipherSyncType};

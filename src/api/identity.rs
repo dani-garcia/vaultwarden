@@ -13,7 +13,7 @@ use crate::{
         core::two_factor::{duo, email, email::EmailTokenData, yubikey},
         ApiResult, EmptyResult, JsonResult, JsonUpcase,
     },
-    auth::{generate_organization_api_key_login_claims, ClientIp},
+    auth::{self, ClientIp},
     db::{models::*, DbConn},
     error::MapResult,
     mail, util, CONFIG,
@@ -279,7 +279,7 @@ async fn _organization_api_key_login(data: ConnectData, conn: DbConn, ip: &Clien
         err!("Incorrect client_secret", format!("IP: {}. Organization: {}.", ip.ip, org_api_key.org_uuid))
     }
 
-    let claim = generate_organization_api_key_login_claims(org_api_key.uuid, org_api_key.org_uuid);
+    let claim = auth::generate_organization_api_key_login_claims(org_api_key.uuid, org_api_key.org_uuid);
     let access_token = crate::auth::encode_jwt(&claim);
 
     //dbg!(&access_token);
