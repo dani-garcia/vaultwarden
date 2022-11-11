@@ -34,7 +34,7 @@ async fn generate_authenticator(data: JsonUpcase<PasswordData>, headers: Headers
 
     let (enabled, key) = match twofactor {
         Some(tf) => (true, tf.data),
-        _ => (false, BASE32.encode(&crypto::get_random(vec![0u8; 20]))),
+        _ => (false, crypto::encode_random_bytes::<20>(BASE32)),
     };
 
     Ok(Json(json!({

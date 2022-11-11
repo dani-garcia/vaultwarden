@@ -56,7 +56,7 @@ fn negotiate(_headers: Headers) -> Json<JsonValue> {
     use crate::crypto;
     use data_encoding::BASE64URL;
 
-    let conn_id = BASE64URL.encode(&crypto::get_random(vec![0u8; 16]));
+    let conn_id = crypto::encode_random_bytes::<16>(BASE64URL);
     let mut available_transports: Vec<JsonValue> = Vec::new();
 
     if CONFIG.websocket_enabled() {
