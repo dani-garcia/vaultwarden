@@ -981,8 +981,7 @@ impl Config {
         if let Some(akey) = self._duo_akey() {
             akey
         } else {
-            let akey = crate::crypto::get_random_64();
-            let akey_s = data_encoding::BASE64.encode(&akey);
+            let akey_s = crate::crypto::encode_random_bytes::<64>(data_encoding::BASE64);
 
             // Save the new value
             let builder = ConfigBuilder {

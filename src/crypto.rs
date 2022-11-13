@@ -37,10 +37,6 @@ pub fn hmac_sign(key: &str, data: &str) -> String {
 // Random values
 //
 
-pub fn get_random_64() -> Vec<u8> {
-    get_random_bytes::<64>().to_vec()
-}
-
 /// Return an array holding `N` random bytes.
 pub fn get_random_bytes<const N: usize>() -> [u8; N] {
     use ring::rand::{SecureRandom, SystemRandom};

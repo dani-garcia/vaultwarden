@@ -81,7 +81,7 @@ impl Send {
 
         if let Some(password) = password {
             self.password_iter = Some(PASSWORD_ITER);
-            let salt = crate::crypto::get_random_64();
+            let salt = crate::crypto::get_random_bytes::<64>().to_vec();
             let hash = crate::crypto::hash_password(password.as_bytes(), &salt, PASSWORD_ITER as u32);
             self.password_salt = Some(salt);
             self.password_hash = Some(hash);
