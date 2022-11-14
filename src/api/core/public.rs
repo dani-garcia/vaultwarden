@@ -116,15 +116,14 @@ async fn ldap_import(data: JsonUpcase<OrgImportData>, token: PublicToken, mut co
 
     for group_data in &data.Groups {
         let group_uuid = match Group::find_by_external_id(&group_data.ExternalId, &mut conn).await {
-            Some(group) => group,
+            Some(group) => group.uuid,
             None => {
                 let mut group =
                     Group::new(org_id.clone(), group_data.Name.clone(), false, Some(group_data.ExternalId.clone()));
                 group.save(&mut conn).await?;
-                group
+                group.uuid
             }
-        }
-        .uuid;
+        };
 
         GroupUser::delete_all_by_group(&group_uuid, &mut conn).await?;
 
