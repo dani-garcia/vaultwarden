@@ -729,7 +729,8 @@ impl OrganizationApiKey {
                     // Record already exists and causes a Foreign Key Violation because replace_into() wants to delete the record first.
                     Err(diesel::result::Error::DatabaseError(diesel::result::DatabaseErrorKind::ForeignKeyViolation, _)) => {
                         diesel::update(organization_api_key::table)
-                            .filter(organization_api_key::uuid.eq(&self.uuid))
+                        .filter(organization_api_key::uuid.eq(&self.uuid))
+                        .filter(organization_api_key::org_uuid.eq(&self.org_uuid))
                             .set(OrganizationApiKeyDb::to_db(self))
                             .execute(conn)
                             .map_res("Error saving organization")
@@ -742,7 +743,7 @@ impl OrganizationApiKey {
                 let value = OrganizationApiKeyDb::to_db(self);
                 diesel::insert_into(organization_api_key::table)
                     .values(&value)
-                    .on_conflict(organization_api_key::uuid)
+                    .on_conflict((organization_api_key::uuid, organization_api_key::org_uuid))
                     .do_update()
                     .set(&value)
                     .execute(conn)
