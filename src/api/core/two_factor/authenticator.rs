@@ -4,12 +4,13 @@ use rocket::Route;
 
 use crate::{
     api::{
-        core::two_factor::_generate_recover_code, EmptyResult, JsonResult, JsonUpcase, NumberOrString, PasswordData,
+        core::log_user_event, core::two_factor::_generate_recover_code, EmptyResult, JsonResult, JsonUpcase,
+        NumberOrString, PasswordData,
     },
     auth::{ClientIp, Headers},
     crypto,
     db::{
-        models::{TwoFactor, TwoFactorType},
+        models::{EventType, TwoFactor, TwoFactorType},
         DbConn,
     },
 };
@@ -84,6 +85,8 @@ async fn activate_authenticator(
     validate_totp_code(&user.uuid, &token, &key.to_uppercase(), &ip, &mut conn).await?;
 
     _generate_recover_code(&mut user, &mut conn).await;
+
+    log_user_event(EventType::UserUpdated2fa as i32, &user.uuid, headers.device.atype, &ip.ip, &mut conn).await;
 
     Ok(Json(json!({
         "Enabled": true,
@@ -167,10 +170,20 @@ pub async fn validate_totp_code(
             return Ok(());
         } else if generated == totp_code && time_step <= i64::from(twofactor.last_used) {
             warn!("This TOTP or a TOTP code within {} steps back or forward has already been used!", steps);
-            err!(format!("Invalid TOTP code! Server time: {} IP: {}", current_time.format("%F %T UTC"), ip.ip));
+            err!(
+                format!("Invalid TOTP code! Server time: {} IP: {}", current_time.format("%F %T UTC"), ip.ip),
+                ErrorEvent {
+                    event: EventType::UserFailedLogIn2fa
+                }
+            );
         }
     }
 
     // Else no valide code received, deny access
-    err!(format!("Invalid TOTP code! Server time: {} IP: {}", current_time.format("%F %T UTC"), ip.ip));
+    err!(
+        format!("Invalid TOTP code! Server time: {} IP: {}", current_time.format("%F %T UTC"), ip.ip),
+        ErrorEvent {
+            event: EventType::UserFailedLogIn2fa
+        }
+    );
 }

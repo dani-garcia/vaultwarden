@@ -6,11 +6,12 @@ use webauthn_rs::{base64_data::Base64UrlSafeData, proto::*, AuthenticationState,
 
 use crate::{
     api::{
-        core::two_factor::_generate_recover_code, EmptyResult, JsonResult, JsonUpcase, NumberOrString, PasswordData,
+        core::{log_user_event, two_factor::_generate_recover_code},
+        EmptyResult, JsonResult, JsonUpcase, NumberOrString, PasswordData,
     },
-    auth::Headers,
+    auth::{ClientIp, Headers},
     db::{
-        models::{TwoFactor, TwoFactorType},
+        models::{EventType, TwoFactor, TwoFactorType},
         DbConn,
     },
     error::Error,
@@ -241,7 +242,12 @@ impl From<PublicKeyCredentialCopy> for PublicKeyCredential {
 }
 
 #[post("/two-factor/webauthn", data = "<data>")]
-async fn activate_webauthn(data: JsonUpcase<EnableWebauthnData>, headers: Headers, mut conn: DbConn) -> JsonResult {
+async fn activate_webauthn(
+    data: JsonUpcase<EnableWebauthnData>,
+    headers: Headers,
+    mut conn: DbConn,
+    ip: ClientIp,
+) -> JsonResult {
     let data: EnableWebauthnData = data.into_inner().data;
     let mut user = headers.user;
 
@@ -280,6 +286,8 @@ async fn activate_webauthn(data: JsonUpcase<EnableWebauthnData>, headers: Header
         .await?;
     _generate_recover_code(&mut user, &mut conn).await;
 
+    log_user_event(EventType::UserUpdated2fa as i32, &user.uuid, headers.device.atype, &ip.ip, &mut conn).await;
+
     let keys_json: Vec<Value> = registrations.iter().map(WebauthnRegistration::to_json).collect();
     Ok(Json(json!({
         "Enabled": true,
@@ -289,8 +297,13 @@ async fn activate_webauthn(data: JsonUpcase<EnableWebauthnData>, headers: Header
 }
 
 #[put("/two-factor/webauthn", data = "<data>")]
-async fn activate_webauthn_put(data: JsonUpcase<EnableWebauthnData>, headers: Headers, conn: DbConn) -> JsonResult {
-    activate_webauthn(data, headers, conn).await
+async fn activate_webauthn_put(
+    data: JsonUpcase<EnableWebauthnData>,
+    headers: Headers,
+    conn: DbConn,
+    ip: ClientIp,
+) -> JsonResult {
+    activate_webauthn(data, headers, conn, ip).await
 }
 
 #[derive(Deserialize, Debug)]
@@ -391,7 +404,12 @@ pub async fn validate_webauthn_login(user_uuid: &str, response: &str, conn: &mut
             tf.delete(conn).await?;
             state
         }
-        None => err!("Can't recover login challenge"),
+        None => err!(
+            "Can't recover login challenge",
+            ErrorEvent {
+                event: EventType::UserFailedLogIn2fa
+            }
+        ),
     };
 
     let rsp: crate::util::UpCase<PublicKeyCredentialCopy> = serde_json::from_str(response)?;
@@ -414,5 +432,10 @@ pub async fn validate_webauthn_login(user_uuid: &str, response: &str, conn: &mut
         }
     }
 
-    err!("Credential not present")
+    err!(
+        "Credential not present",
+        ErrorEvent {
+            event: EventType::UserFailedLogIn2fa
+        }
+    )
 }
