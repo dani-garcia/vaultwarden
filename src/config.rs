@@ -371,6 +371,9 @@ make_config! {
         /// Emergency request timeout schedule |> Cron schedule of the job that grants emergency access requests that have met the required wait time.
         /// Defaults to hourly. Set blank to disable this job.
         emergency_request_timeout_schedule:   String, false,  def,    "0 5 * * * *".to_string();
+        /// Event cleanup schedule |> Cron schedule of the job that cleans old events from the event table.
+        /// Defaults to daily. Set blank to disable this job.
+        event_cleanup_schedule:   String, false,  def,    "0 10 0 * * *".to_string();
     },
 
     /// General settings
@@ -426,6 +429,8 @@ make_config! {
         signups_verify_resend_limit: u32, true, def,    6;
         /// Email domain whitelist |> Allow signups only from this list of comma-separated domains, even when signups are otherwise disabled
         signups_domains_whitelist: String, true, def,   String::new();
+        /// Enable event logging |> Enables event logging for organizations.
+        org_events_enabled:     bool,   false,  def,    false;
         /// Org creation users |> Allow org creation only by this list of comma-separated user emails.
         /// Blank or 'all' means all users can create orgs; 'none' means no users can create orgs.
         org_creation_users:     String, true,   def,    String::new();
@@ -451,6 +456,9 @@ make_config! {
 
         /// Invitation organization name |> Name shown in the invitation emails that don't come from a specific organization
         invitation_org_name:    String, true,   def,    "Vaultwarden".to_string();
+
+        /// Events days retain |> Number of days to retain events stored in the database. If unset, events are kept indefently.
+        events_days_retain:     i64,    false,   option;
     },
 
     /// Advanced settings
@@ -746,24 +754,33 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         err!("`INVITATION_EXPIRATION_HOURS` has a minimum duration of 1 hour")
     }
 
+    // Validate schedule crontab format
     if !cfg.send_purge_schedule.is_empty() && cfg.send_purge_schedule.parse::<Schedule>().is_err() {
         err!("`SEND_PURGE_SCHEDULE` is not a valid cron expression")
     }
+
     if !cfg.trash_purge_schedule.is_empty() && cfg.trash_purge_schedule.parse::<Schedule>().is_err() {
         err!("`TRASH_PURGE_SCHEDULE` is not a valid cron expression")
     }
+
     if !cfg.incomplete_2fa_schedule.is_empty() && cfg.incomplete_2fa_schedule.parse::<Schedule>().is_err() {
         err!("`INCOMPLETE_2FA_SCHEDULE` is not a valid cron expression")
     }
+
     if !cfg.emergency_notification_reminder_schedule.is_empty()
         && cfg.emergency_notification_reminder_schedule.parse::<Schedule>().is_err()
     {
         err!("`EMERGENCY_NOTIFICATION_REMINDER_SCHEDULE` is not a valid cron expression")
     }
+
     if !cfg.emergency_request_timeout_schedule.is_empty()
         && cfg.emergency_request_timeout_schedule.parse::<Schedule>().is_err()
     {
         err!("`EMERGENCY_REQUEST_TIMEOUT_SCHEDULE` is not a valid cron expression")
+    }
+
+    if !cfg.event_cleanup_schedule.is_empty() && cfg.event_cleanup_schedule.parse::<Schedule>().is_err() {
+        err!("`EVENT_CLEANUP_SCHEDULE` is not a valid cron expression")
     }
 
     Ok(())
@@ -1125,7 +1142,7 @@ fn case_helper<'reg, 'rc>(
     let value = param.value().clone();
 
     if h.params().iter().skip(1).any(|x| x.value() == &value) {
-        h.template().map(|t| t.render(r, ctx, rc, out)).unwrap_or(Ok(()))
+        h.template().map(|t| t.render(r, ctx, rc, out)).unwrap_or_else(|| Ok(()))
     } else {
         Ok(())
     }

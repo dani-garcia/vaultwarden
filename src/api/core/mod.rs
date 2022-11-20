@@ -1,6 +1,7 @@
 pub mod accounts;
 mod ciphers;
 mod emergency_access;
+mod events;
 mod folders;
 mod organizations;
 mod sends;
@@ -9,6 +10,7 @@ pub mod two_factor;
 pub use ciphers::purge_trashed_ciphers;
 pub use ciphers::{CipherSyncData, CipherSyncType};
 pub use emergency_access::{emergency_notification_reminder_job, emergency_request_timeout_job};
+pub use events::{event_cleanup_job, log_event, log_user_event};
 pub use sends::purge_sends;
 pub use two_factor::send_incomplete_2fa_notifications;
 
@@ -22,6 +24,7 @@ pub fn routes() -> Vec<Route> {
     routes.append(&mut accounts::routes());
     routes.append(&mut ciphers::routes());
     routes.append(&mut emergency_access::routes());
+    routes.append(&mut events::routes());
     routes.append(&mut folders::routes());
     routes.append(&mut organizations::routes());
     routes.append(&mut two_factor::routes());
@@ -30,6 +33,13 @@ pub fn routes() -> Vec<Route> {
     routes.append(&mut eq_domains_routes);
     routes.append(&mut hibp_routes);
     routes.append(&mut meta_routes);
+
+    routes
+}
+
+pub fn events_routes() -> Vec<Route> {
+    let mut routes = Vec::new();
+    routes.append(&mut events::main_routes());
 
     routes
 }

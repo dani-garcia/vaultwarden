@@ -5,11 +5,11 @@ use serde_json::Value;
 
 use crate::{
     api::{
-        core::{CipherSyncData, CipherSyncType},
+        core::{log_event, CipherSyncData, CipherSyncType},
         ApiResult, EmptyResult, JsonResult, JsonUpcase, JsonUpcaseVec, JsonVec, Notify, NumberOrString, PasswordData,
         UpdateType,
     },
-    auth::{decode_invite, AdminHeaders, Headers, ManagerHeaders, ManagerHeadersLoose, OwnerHeaders},
+    auth::{decode_invite, AdminHeaders, ClientIp, Headers, ManagerHeaders, ManagerHeadersLoose, OwnerHeaders},
     db::{models::*, DbConn},
     error::Error,
     mail,
@@ -203,7 +203,7 @@ async fn post_delete_organization(
 }
 
 #[post("/organizations/<org_id>/leave")]
-async fn leave_organization(org_id: String, headers: Headers, mut conn: DbConn) -> EmptyResult {
+async fn leave_organization(org_id: String, headers: Headers, mut conn: DbConn, ip: ClientIp) -> EmptyResult {
     match UserOrganization::find_by_user_and_org(&headers.user.uuid, &org_id, &mut conn).await {
         None => err!("User not part of organization"),
         Some(user_org) => {
@@ -212,6 +212,17 @@ async fn leave_organization(org_id: String, headers: Headers, mut conn: DbConn) 
             {
                 err!("The last owner can't leave")
             }
+
+            log_event(
+                EventType::OrganizationUserRemoved as i32,
+                &user_org.uuid,
+                org_id,
+                headers.user.uuid.clone(),
+                headers.device.atype,
+                &ip.ip,
+                &mut conn,
+            )
+            .await;
 
             user_org.delete(&mut conn).await
         }
@@ -232,16 +243,18 @@ async fn put_organization(
     headers: OwnerHeaders,
     data: JsonUpcase<OrganizationUpdateData>,
     conn: DbConn,
+    ip: ClientIp,
 ) -> JsonResult {
-    post_organization(org_id, headers, data, conn).await
+    post_organization(org_id, headers, data, conn, ip).await
 }
 
 #[post("/organizations/<org_id>", data = "<data>")]
 async fn post_organization(
     org_id: String,
-    _headers: OwnerHeaders,
+    headers: OwnerHeaders,
     data: JsonUpcase<OrganizationUpdateData>,
     mut conn: DbConn,
+    ip: ClientIp,
 ) -> JsonResult {
     let data: OrganizationUpdateData = data.into_inner().data;
 
@@ -254,6 +267,18 @@ async fn post_organization(
     org.billing_email = data.BillingEmail;
 
     org.save(&mut conn).await?;
+
+    log_event(
+        EventType::OrganizationUpdated as i32,
+        &org_id,
+        org_id.clone(),
+        headers.user.uuid.clone(),
+        headers.device.atype,
+        &ip.ip,
+        &mut conn,
+    )
+    .await;
+
     Ok(Json(org.to_json()))
 }
 
@@ -290,6 +315,7 @@ async fn post_organization_collections(
     headers: ManagerHeadersLoose,
     data: JsonUpcase<NewCollectionData>,
     mut conn: DbConn,
+    ip: ClientIp,
 ) -> JsonResult {
     let data: NewCollectionData = data.into_inner().data;
 
@@ -306,6 +332,17 @@ async fn post_organization_collections(
 
     let collection = Collection::new(org.uuid, data.Name);
     collection.save(&mut conn).await?;
+
+    log_event(
+        EventType::CollectionCreated as i32,
+        &collection.uuid,
+        org_id,
+        headers.user.uuid.clone(),
+        headers.device.atype,
+        &ip.ip,
+        &mut conn,
+    )
+    .await;
 
     for group in data.Groups {
         CollectionGroup::new(collection.uuid.clone(), group.Id, group.ReadOnly, group.HidePasswords)
@@ -330,17 +367,19 @@ async fn put_organization_collection_update(
     headers: ManagerHeaders,
     data: JsonUpcase<NewCollectionData>,
     conn: DbConn,
+    ip: ClientIp,
 ) -> JsonResult {
-    post_organization_collection_update(org_id, col_id, headers, data, conn).await
+    post_organization_collection_update(org_id, col_id, headers, data, conn, ip).await
 }
 
 #[post("/organizations/<org_id>/collections/<col_id>", data = "<data>")]
 async fn post_organization_collection_update(
     org_id: String,
     col_id: String,
-    _headers: ManagerHeaders,
+    headers: ManagerHeaders,
     data: JsonUpcase<NewCollectionData>,
     mut conn: DbConn,
+    ip: ClientIp,
 ) -> JsonResult {
     let data: NewCollectionData = data.into_inner().data;
 
@@ -360,6 +399,17 @@ async fn post_organization_collection_update(
 
     collection.name = data.Name;
     collection.save(&mut conn).await?;
+
+    log_event(
+        EventType::CollectionUpdated as i32,
+        &collection.uuid,
+        org_id,
+        headers.user.uuid.clone(),
+        headers.device.atype,
+        &ip.ip,
+        &mut conn,
+    )
+    .await;
 
     CollectionGroup::delete_all_by_collection(&col_id, &mut conn).await?;
 
@@ -415,13 +465,24 @@ async fn post_organization_collection_delete_user(
 async fn delete_organization_collection(
     org_id: String,
     col_id: String,
-    _headers: ManagerHeaders,
+    headers: ManagerHeaders,
     mut conn: DbConn,
+    ip: ClientIp,
 ) -> EmptyResult {
     match Collection::find_by_uuid(&col_id, &mut conn).await {
         None => err!("Collection not found"),
         Some(collection) => {
             if collection.org_uuid == org_id {
+                log_event(
+                    EventType::CollectionDeleted as i32,
+                    &collection.uuid,
+                    org_id,
+                    headers.user.uuid.clone(),
+                    headers.device.atype,
+                    &ip.ip,
+                    &mut conn,
+                )
+                .await;
                 collection.delete(&mut conn).await
             } else {
                 err!("Collection and Organization id do not match")
@@ -444,8 +505,9 @@ async fn post_organization_collection_delete(
     headers: ManagerHeaders,
     _data: JsonUpcase<DeleteCollectionData>,
     conn: DbConn,
+    ip: ClientIp,
 ) -> EmptyResult {
-    delete_organization_collection(org_id, col_id, headers, conn).await
+    delete_organization_collection(org_id, col_id, headers, conn, ip).await
 }
 
 #[get("/organizations/<org_id>/collections/<coll_id>/details")]
@@ -632,6 +694,7 @@ async fn send_invite(
     data: JsonUpcase<InviteData>,
     headers: AdminHeaders,
     mut conn: DbConn,
+    ip: ClientIp,
 ) -> EmptyResult {
     let data: InviteData = data.into_inner().data;
 
@@ -699,6 +762,17 @@ async fn send_invite(
         }
 
         new_user.save(&mut conn).await?;
+
+        log_event(
+            EventType::OrganizationUserInvited as i32,
+            &new_user.uuid,
+            org_id.clone(),
+            headers.user.uuid.clone(),
+            headers.device.atype,
+            &ip.ip,
+            &mut conn,
+        )
+        .await;
 
         if CONFIG.mail_enabled() {
             let org_name = match Organization::find_by_uuid(&org_id, &mut conn).await {
@@ -882,6 +956,7 @@ async fn bulk_confirm_invite(
     data: JsonUpcase<Value>,
     headers: AdminHeaders,
     mut conn: DbConn,
+    ip: ClientIp,
 ) -> Json<Value> {
     let data = data.into_inner().data;
 
@@ -891,7 +966,7 @@ async fn bulk_confirm_invite(
             for invite in keys {
                 let org_user_id = invite["Id"].as_str().unwrap_or_default();
                 let user_key = invite["Key"].as_str().unwrap_or_default();
-                let err_msg = match _confirm_invite(&org_id, org_user_id, user_key, &headers, &mut conn).await {
+                let err_msg = match _confirm_invite(&org_id, org_user_id, user_key, &headers, &mut conn, &ip).await {
                     Ok(_) => String::new(),
                     Err(e) => format!("{:?}", e),
                 };
@@ -922,10 +997,11 @@ async fn confirm_invite(
     data: JsonUpcase<Value>,
     headers: AdminHeaders,
     mut conn: DbConn,
+    ip: ClientIp,
 ) -> EmptyResult {
     let data = data.into_inner().data;
     let user_key = data["Key"].as_str().unwrap_or_default();
-    _confirm_invite(&org_id, &org_user_id, user_key, &headers, &mut conn).await
+    _confirm_invite(&org_id, &org_user_id, user_key, &headers, &mut conn, &ip).await
 }
 
 async fn _confirm_invite(
@@ -934,6 +1010,7 @@ async fn _confirm_invite(
     key: &str,
     headers: &AdminHeaders,
     conn: &mut DbConn,
+    ip: &ClientIp,
 ) -> EmptyResult {
     if key.is_empty() || org_user_id.is_empty() {
         err!("Key or UserId is not set, unable to process request");
@@ -968,6 +1045,17 @@ async fn _confirm_invite(
 
     user_to_confirm.status = UserOrgStatus::Confirmed as i32;
     user_to_confirm.akey = key.to_string();
+
+    log_event(
+        EventType::OrganizationUserConfirmed as i32,
+        &user_to_confirm.uuid,
+        String::from(org_id),
+        headers.user.uuid.clone(),
+        headers.device.atype,
+        &ip.ip,
+        conn,
+    )
+    .await;
 
     if CONFIG.mail_enabled() {
         let org_name = match Organization::find_by_uuid(org_id, conn).await {
@@ -1009,8 +1097,9 @@ async fn put_organization_user(
     data: JsonUpcase<EditUserData>,
     headers: AdminHeaders,
     conn: DbConn,
+    ip: ClientIp,
 ) -> EmptyResult {
-    edit_user(org_id, org_user_id, data, headers, conn).await
+    edit_user(org_id, org_user_id, data, headers, conn, ip).await
 }
 
 #[post("/organizations/<org_id>/users/<org_user_id>", data = "<data>", rank = 1)]
@@ -1020,6 +1109,7 @@ async fn edit_user(
     data: JsonUpcase<EditUserData>,
     headers: AdminHeaders,
     mut conn: DbConn,
+    ip: ClientIp,
 ) -> EmptyResult {
     let data: EditUserData = data.into_inner().data;
 
@@ -1095,6 +1185,17 @@ async fn edit_user(
         }
     }
 
+    log_event(
+        EventType::OrganizationUserUpdated as i32,
+        &user_to_edit.uuid,
+        org_id.clone(),
+        headers.user.uuid.clone(),
+        headers.device.atype,
+        &ip.ip,
+        &mut conn,
+    )
+    .await;
+
     user_to_edit.save(&mut conn).await
 }
 
@@ -1104,12 +1205,13 @@ async fn bulk_delete_user(
     data: JsonUpcase<OrgBulkIds>,
     headers: AdminHeaders,
     mut conn: DbConn,
+    ip: ClientIp,
 ) -> Json<Value> {
     let data: OrgBulkIds = data.into_inner().data;
 
     let mut bulk_response = Vec::new();
     for org_user_id in data.Ids {
-        let err_msg = match _delete_user(&org_id, &org_user_id, &headers, &mut conn).await {
+        let err_msg = match _delete_user(&org_id, &org_user_id, &headers, &mut conn, &ip).await {
             Ok(_) => String::new(),
             Err(e) => format!("{:?}", e),
         };
@@ -1131,11 +1233,34 @@ async fn bulk_delete_user(
 }
 
 #[delete("/organizations/<org_id>/users/<org_user_id>")]
-async fn delete_user(org_id: String, org_user_id: String, headers: AdminHeaders, mut conn: DbConn) -> EmptyResult {
-    _delete_user(&org_id, &org_user_id, &headers, &mut conn).await
+async fn delete_user(
+    org_id: String,
+    org_user_id: String,
+    headers: AdminHeaders,
+    mut conn: DbConn,
+    ip: ClientIp,
+) -> EmptyResult {
+    _delete_user(&org_id, &org_user_id, &headers, &mut conn, &ip).await
 }
 
-async fn _delete_user(org_id: &str, org_user_id: &str, headers: &AdminHeaders, conn: &mut DbConn) -> EmptyResult {
+#[post("/organizations/<org_id>/users/<org_user_id>/delete")]
+async fn post_delete_user(
+    org_id: String,
+    org_user_id: String,
+    headers: AdminHeaders,
+    mut conn: DbConn,
+    ip: ClientIp,
+) -> EmptyResult {
+    _delete_user(&org_id, &org_user_id, &headers, &mut conn, &ip).await
+}
+
+async fn _delete_user(
+    org_id: &str,
+    org_user_id: &str,
+    headers: &AdminHeaders,
+    conn: &mut DbConn,
+    ip: &ClientIp,
+) -> EmptyResult {
     let user_to_delete = match UserOrganization::find_by_uuid_and_org(org_user_id, org_id, conn).await {
         Some(user) => user,
         None => err!("User to delete isn't member of the organization"),
@@ -1152,12 +1277,18 @@ async fn _delete_user(org_id: &str, org_user_id: &str, headers: &AdminHeaders, c
         }
     }
 
-    user_to_delete.delete(conn).await
-}
+    log_event(
+        EventType::OrganizationUserRemoved as i32,
+        &user_to_delete.uuid,
+        String::from(org_id),
+        headers.user.uuid.clone(),
+        headers.device.atype,
+        &ip.ip,
+        conn,
+    )
+    .await;
 
-#[post("/organizations/<org_id>/users/<org_user_id>/delete")]
-async fn post_delete_user(org_id: String, org_user_id: String, headers: AdminHeaders, conn: DbConn) -> EmptyResult {
-    delete_user(org_id, org_user_id, headers, conn).await
+    user_to_delete.delete(conn).await
 }
 
 #[post("/organizations/<org_id>/users/public-keys", data = "<data>")]
@@ -1223,6 +1354,7 @@ async fn post_org_import(
     data: JsonUpcase<ImportData>,
     headers: AdminHeaders,
     mut conn: DbConn,
+    ip: ClientIp,
     nt: Notify<'_>,
 ) -> EmptyResult {
     let data: ImportData = data.into_inner().data;
@@ -1249,7 +1381,9 @@ async fn post_org_import(
     let mut ciphers = Vec::new();
     for cipher_data in data.Ciphers {
         let mut cipher = Cipher::new(cipher_data.Type, cipher_data.Name.clone());
-        update_cipher_from_data(&mut cipher, cipher_data, &headers, false, &mut conn, &nt, UpdateType::None).await.ok();
+        update_cipher_from_data(&mut cipher, cipher_data, &headers, false, &mut conn, &ip, &nt, UpdateType::None)
+            .await
+            .ok();
         ciphers.push(cipher);
     }
 
@@ -1333,8 +1467,9 @@ async fn put_policy(
     org_id: String,
     pol_type: i32,
     data: Json<PolicyData>,
-    _headers: AdminHeaders,
+    headers: AdminHeaders,
     mut conn: DbConn,
+    ip: ClientIp,
 ) -> JsonResult {
     let data: PolicyData = data.into_inner();
 
@@ -1360,6 +1495,18 @@ async fn put_policy(
 
                     mail::send_2fa_removed_from_org(&user.email, &org.name).await?;
                 }
+
+                log_event(
+                    EventType::OrganizationUserRemoved as i32,
+                    &member.uuid,
+                    org_id.clone(),
+                    headers.user.uuid.clone(),
+                    headers.device.atype,
+                    &ip.ip,
+                    &mut conn,
+                )
+                .await;
+
                 member.delete(&mut conn).await?;
             }
         }
@@ -1382,6 +1529,18 @@ async fn put_policy(
 
                     mail::send_single_org_removed_from_org(&user.email, &org.name).await?;
                 }
+
+                log_event(
+                    EventType::OrganizationUserRemoved as i32,
+                    &member.uuid,
+                    org_id.clone(),
+                    headers.user.uuid.clone(),
+                    headers.device.atype,
+                    &ip.ip,
+                    &mut conn,
+                )
+                .await;
+
                 member.delete(&mut conn).await?;
             }
         }
@@ -1389,12 +1548,23 @@ async fn put_policy(
 
     let mut policy = match OrgPolicy::find_by_org_and_type(&org_id, pol_type_enum, &mut conn).await {
         Some(p) => p,
-        None => OrgPolicy::new(org_id, pol_type_enum, "{}".to_string()),
+        None => OrgPolicy::new(org_id.clone(), pol_type_enum, "{}".to_string()),
     };
 
     policy.enabled = data.enabled;
     policy.data = serde_json::to_string(&data.data)?;
     policy.save(&mut conn).await?;
+
+    log_event(
+        EventType::PolicyUpdated as i32,
+        &policy.uuid,
+        org_id,
+        headers.user.uuid.clone(),
+        headers.device.atype,
+        &ip.ip,
+        &mut conn,
+    )
+    .await;
 
     Ok(Json(policy.to_json()))
 }
@@ -1467,7 +1637,13 @@ struct OrgImportData {
 }
 
 #[post("/organizations/<org_id>/import", data = "<data>")]
-async fn import(org_id: String, data: JsonUpcase<OrgImportData>, headers: Headers, mut conn: DbConn) -> EmptyResult {
+async fn import(
+    org_id: String,
+    data: JsonUpcase<OrgImportData>,
+    headers: Headers,
+    mut conn: DbConn,
+    ip: ClientIp,
+) -> EmptyResult {
     let data = data.into_inner().data;
 
     // TODO: Currently we aren't storing the externalId's anywhere, so we also don't have a way
@@ -1487,6 +1663,17 @@ async fn import(org_id: String, data: JsonUpcase<OrgImportData>, headers: Header
             // If user is marked for deletion and it exists, delete it
             if let Some(user_org) = UserOrganization::find_by_email_and_org(&user_data.Email, &org_id, &mut conn).await
             {
+                log_event(
+                    EventType::OrganizationUserRemoved as i32,
+                    &user_org.uuid,
+                    org_id.clone(),
+                    headers.user.uuid.clone(),
+                    headers.device.atype,
+                    &ip.ip,
+                    &mut conn,
+                )
+                .await;
+
                 user_org.delete(&mut conn).await?;
             }
 
@@ -1505,6 +1692,17 @@ async fn import(org_id: String, data: JsonUpcase<OrgImportData>, headers: Header
                 new_org_user.status = user_org_status;
 
                 new_org_user.save(&mut conn).await?;
+
+                log_event(
+                    EventType::OrganizationUserInvited as i32,
+                    &new_org_user.uuid,
+                    org_id.clone(),
+                    headers.user.uuid.clone(),
+                    headers.device.atype,
+                    &ip.ip,
+                    &mut conn,
+                )
+                .await;
 
                 if CONFIG.mail_enabled() {
                     let org_name = match Organization::find_by_uuid(&org_id, &mut conn).await {
@@ -1531,6 +1729,17 @@ async fn import(org_id: String, data: JsonUpcase<OrgImportData>, headers: Header
         for user_org in UserOrganization::find_by_org_and_type(&org_id, UserOrgType::User, &mut conn).await {
             if let Some(user_email) = User::find_by_uuid(&user_org.user_uuid, &mut conn).await.map(|u| u.email) {
                 if !data.Users.iter().any(|u| u.Email == user_email) {
+                    log_event(
+                        EventType::OrganizationUserRemoved as i32,
+                        &user_org.uuid,
+                        org_id.clone(),
+                        headers.user.uuid.clone(),
+                        headers.device.atype,
+                        &ip.ip,
+                        &mut conn,
+                    )
+                    .await;
+
                     user_org.delete(&mut conn).await?;
                 }
             }
@@ -1547,8 +1756,9 @@ async fn deactivate_organization_user(
     org_user_id: String,
     headers: AdminHeaders,
     mut conn: DbConn,
+    ip: ClientIp,
 ) -> EmptyResult {
-    _revoke_organization_user(&org_id, &org_user_id, &headers, &mut conn).await
+    _revoke_organization_user(&org_id, &org_user_id, &headers, &mut conn, &ip).await
 }
 
 // Pre web-vault v2022.9.x endpoint
@@ -1558,8 +1768,9 @@ async fn bulk_deactivate_organization_user(
     data: JsonUpcase<Value>,
     headers: AdminHeaders,
     conn: DbConn,
+    ip: ClientIp,
 ) -> Json<Value> {
-    bulk_revoke_organization_user(org_id, data, headers, conn).await
+    bulk_revoke_organization_user(org_id, data, headers, conn, ip).await
 }
 
 #[put("/organizations/<org_id>/users/<org_user_id>/revoke")]
@@ -1568,8 +1779,9 @@ async fn revoke_organization_user(
     org_user_id: String,
     headers: AdminHeaders,
     mut conn: DbConn,
+    ip: ClientIp,
 ) -> EmptyResult {
-    _revoke_organization_user(&org_id, &org_user_id, &headers, &mut conn).await
+    _revoke_organization_user(&org_id, &org_user_id, &headers, &mut conn, &ip).await
 }
 
 #[put("/organizations/<org_id>/users/revoke", data = "<data>")]
@@ -1578,6 +1790,7 @@ async fn bulk_revoke_organization_user(
     data: JsonUpcase<Value>,
     headers: AdminHeaders,
     mut conn: DbConn,
+    ip: ClientIp,
 ) -> Json<Value> {
     let data = data.into_inner().data;
 
@@ -1586,7 +1799,7 @@ async fn bulk_revoke_organization_user(
         Some(org_users) => {
             for org_user_id in org_users {
                 let org_user_id = org_user_id.as_str().unwrap_or_default();
-                let err_msg = match _revoke_organization_user(&org_id, org_user_id, &headers, &mut conn).await {
+                let err_msg = match _revoke_organization_user(&org_id, org_user_id, &headers, &mut conn, &ip).await {
                     Ok(_) => String::new(),
                     Err(e) => format!("{:?}", e),
                 };
@@ -1615,6 +1828,7 @@ async fn _revoke_organization_user(
     org_user_id: &str,
     headers: &AdminHeaders,
     conn: &mut DbConn,
+    ip: &ClientIp,
 ) -> EmptyResult {
     match UserOrganization::find_by_uuid_and_org(org_user_id, org_id, conn).await {
         Some(mut user_org) if user_org.status > UserOrgStatus::Revoked as i32 => {
@@ -1632,6 +1846,17 @@ async fn _revoke_organization_user(
 
             user_org.revoke();
             user_org.save(conn).await?;
+
+            log_event(
+                EventType::OrganizationUserRevoked as i32,
+                &user_org.uuid,
+                org_id.to_string(),
+                headers.user.uuid.clone(),
+                headers.device.atype,
+                &ip.ip,
+                conn,
+            )
+            .await;
         }
         Some(_) => err!("User is already revoked"),
         None => err!("User not found in organization"),
@@ -1646,8 +1871,9 @@ async fn activate_organization_user(
     org_user_id: String,
     headers: AdminHeaders,
     mut conn: DbConn,
+    ip: ClientIp,
 ) -> EmptyResult {
-    _restore_organization_user(&org_id, &org_user_id, &headers, &mut conn).await
+    _restore_organization_user(&org_id, &org_user_id, &headers, &mut conn, &ip).await
 }
 
 // Pre web-vault v2022.9.x endpoint
@@ -1657,8 +1883,9 @@ async fn bulk_activate_organization_user(
     data: JsonUpcase<Value>,
     headers: AdminHeaders,
     conn: DbConn,
+    ip: ClientIp,
 ) -> Json<Value> {
-    bulk_restore_organization_user(org_id, data, headers, conn).await
+    bulk_restore_organization_user(org_id, data, headers, conn, ip).await
 }
 
 #[put("/organizations/<org_id>/users/<org_user_id>/restore")]
@@ -1667,8 +1894,9 @@ async fn restore_organization_user(
     org_user_id: String,
     headers: AdminHeaders,
     mut conn: DbConn,
+    ip: ClientIp,
 ) -> EmptyResult {
-    _restore_organization_user(&org_id, &org_user_id, &headers, &mut conn).await
+    _restore_organization_user(&org_id, &org_user_id, &headers, &mut conn, &ip).await
 }
 
 #[put("/organizations/<org_id>/users/restore", data = "<data>")]
@@ -1677,6 +1905,7 @@ async fn bulk_restore_organization_user(
     data: JsonUpcase<Value>,
     headers: AdminHeaders,
     mut conn: DbConn,
+    ip: ClientIp,
 ) -> Json<Value> {
     let data = data.into_inner().data;
 
@@ -1685,7 +1914,7 @@ async fn bulk_restore_organization_user(
         Some(org_users) => {
             for org_user_id in org_users {
                 let org_user_id = org_user_id.as_str().unwrap_or_default();
-                let err_msg = match _restore_organization_user(&org_id, org_user_id, &headers, &mut conn).await {
+                let err_msg = match _restore_organization_user(&org_id, org_user_id, &headers, &mut conn, &ip).await {
                     Ok(_) => String::new(),
                     Err(e) => format!("{:?}", e),
                 };
@@ -1714,6 +1943,7 @@ async fn _restore_organization_user(
     org_user_id: &str,
     headers: &AdminHeaders,
     conn: &mut DbConn,
+    ip: &ClientIp,
 ) -> EmptyResult {
     match UserOrganization::find_by_uuid_and_org(org_user_id, org_id, conn).await {
         Some(mut user_org) if user_org.status < UserOrgStatus::Accepted as i32 => {
@@ -1740,6 +1970,17 @@ async fn _restore_organization_user(
 
             user_org.restore();
             user_org.save(conn).await?;
+
+            log_event(
+                EventType::OrganizationUserRestored as i32,
+                &user_org.uuid,
+                org_id.to_string(),
+                headers.user.uuid.clone(),
+                headers.device.atype,
+                &ip.ip,
+                conn,
+            )
+            .await;
         }
         Some(_) => err!("User is already active"),
         None => err!("User not found in organization"),
@@ -1828,37 +2069,51 @@ impl SelectionReadOnly {
     }
 }
 
-#[post("/organizations/<_org_id>/groups/<group_id>", data = "<data>")]
+#[post("/organizations/<org_id>/groups/<group_id>", data = "<data>")]
 async fn post_group(
-    _org_id: String,
+    org_id: String,
     group_id: String,
     data: JsonUpcase<GroupRequest>,
-    _headers: AdminHeaders,
+    headers: AdminHeaders,
     conn: DbConn,
+    ip: ClientIp,
 ) -> JsonResult {
-    put_group(_org_id, group_id, data, _headers, conn).await
+    put_group(org_id, group_id, data, headers, conn, ip).await
 }
 
 #[post("/organizations/<org_id>/groups", data = "<data>")]
 async fn post_groups(
     org_id: String,
-    _headers: AdminHeaders,
+    headers: AdminHeaders,
     data: JsonUpcase<GroupRequest>,
     mut conn: DbConn,
+    ip: ClientIp,
 ) -> JsonResult {
     let group_request = data.into_inner().data;
     let group = group_request.to_group(&org_id)?;
 
+    log_event(
+        EventType::GroupCreated as i32,
+        &group.uuid,
+        org_id,
+        headers.user.uuid.clone(),
+        headers.device.atype,
+        &ip.ip,
+        &mut conn,
+    )
+    .await;
+
     add_update_group(group, group_request.Collections, &mut conn).await
 }
 
-#[put("/organizations/<_org_id>/groups/<group_id>", data = "<data>")]
+#[put("/organizations/<org_id>/groups/<group_id>", data = "<data>")]
 async fn put_group(
-    _org_id: String,
+    org_id: String,
     group_id: String,
     data: JsonUpcase<GroupRequest>,
-    _headers: AdminHeaders,
+    headers: AdminHeaders,
     mut conn: DbConn,
+    ip: ClientIp,
 ) -> JsonResult {
     let group = match Group::find_by_uuid(&group_id, &mut conn).await {
         Some(group) => group,
@@ -1869,6 +2124,17 @@ async fn put_group(
     let updated_group = group_request.update_group(group)?;
 
     CollectionGroup::delete_all_by_group(&group_id, &mut conn).await?;
+
+    log_event(
+        EventType::GroupUpdated as i32,
+        &updated_group.uuid,
+        org_id,
+        headers.user.uuid.clone(),
+        headers.device.atype,
+        &ip.ip,
+        &mut conn,
+    )
+    .await;
 
     add_update_group(updated_group, group_request.Collections, &mut conn).await
 }
@@ -1915,16 +2181,39 @@ async fn get_group_details(_org_id: String, group_id: String, _headers: AdminHea
 }
 
 #[post("/organizations/<org_id>/groups/<group_id>/delete")]
-async fn post_delete_group(org_id: String, group_id: String, _headers: AdminHeaders, conn: DbConn) -> EmptyResult {
-    delete_group(org_id, group_id, _headers, conn).await
+async fn post_delete_group(
+    org_id: String,
+    group_id: String,
+    headers: AdminHeaders,
+    conn: DbConn,
+    ip: ClientIp,
+) -> EmptyResult {
+    delete_group(org_id, group_id, headers, conn, ip).await
 }
 
-#[delete("/organizations/<_org_id>/groups/<group_id>")]
-async fn delete_group(_org_id: String, group_id: String, _headers: AdminHeaders, mut conn: DbConn) -> EmptyResult {
+#[delete("/organizations/<org_id>/groups/<group_id>")]
+async fn delete_group(
+    org_id: String,
+    group_id: String,
+    headers: AdminHeaders,
+    mut conn: DbConn,
+    ip: ClientIp,
+) -> EmptyResult {
     let group = match Group::find_by_uuid(&group_id, &mut conn).await {
         Some(group) => group,
         _ => err!("Group not found"),
     };
+
+    log_event(
+        EventType::GroupDeleted as i32,
+        &group.uuid,
+        org_id,
+        headers.user.uuid.clone(),
+        headers.device.atype,
+        &ip.ip,
+        &mut conn,
+    )
+    .await;
 
     group.delete(&mut conn).await
 }
@@ -1955,13 +2244,14 @@ async fn get_group_users(_org_id: String, group_id: String, _headers: AdminHeade
     Ok(Json(json!(group_users)))
 }
 
-#[put("/organizations/<_org_id>/groups/<group_id>/users", data = "<data>")]
+#[put("/organizations/<org_id>/groups/<group_id>/users", data = "<data>")]
 async fn put_group_users(
-    _org_id: String,
+    org_id: String,
     group_id: String,
-    _headers: AdminHeaders,
+    headers: AdminHeaders,
     data: JsonVec<String>,
     mut conn: DbConn,
+    ip: ClientIp,
 ) -> EmptyResult {
     match Group::find_by_uuid(&group_id, &mut conn).await {
         Some(_) => { /* Do nothing */ }
@@ -1972,8 +2262,19 @@ async fn put_group_users(
 
     let assigned_user_ids = data.into_inner();
     for assigned_user_id in assigned_user_ids {
-        let mut user_entry = GroupUser::new(group_id.clone(), assigned_user_id);
+        let mut user_entry = GroupUser::new(group_id.clone(), assigned_user_id.clone());
         user_entry.save(&mut conn).await?;
+
+        log_event(
+            EventType::OrganizationUserUpdatedGroups as i32,
+            &assigned_user_id,
+            org_id.clone(),
+            headers.user.uuid.clone(),
+            headers.device.atype,
+            &ip.ip,
+            &mut conn,
+        )
+        .await;
     }
 
     Ok(())
@@ -1998,61 +2299,76 @@ struct OrganizationUserUpdateGroupsRequest {
     GroupIds: Vec<String>,
 }
 
-#[post("/organizations/<_org_id>/users/<user_id>/groups", data = "<data>")]
+#[post("/organizations/<org_id>/users/<org_user_id>/groups", data = "<data>")]
 async fn post_user_groups(
-    _org_id: String,
-    user_id: String,
+    org_id: String,
+    org_user_id: String,
     data: JsonUpcase<OrganizationUserUpdateGroupsRequest>,
-    _headers: AdminHeaders,
+    headers: AdminHeaders,
     conn: DbConn,
+    ip: ClientIp,
 ) -> EmptyResult {
-    put_user_groups(_org_id, user_id, data, _headers, conn).await
+    put_user_groups(org_id, org_user_id, data, headers, conn, ip).await
 }
 
-#[put("/organizations/<_org_id>/users/<user_id>/groups", data = "<data>")]
+#[put("/organizations/<org_id>/users/<org_user_id>/groups", data = "<data>")]
 async fn put_user_groups(
-    _org_id: String,
-    user_id: String,
+    org_id: String,
+    org_user_id: String,
     data: JsonUpcase<OrganizationUserUpdateGroupsRequest>,
-    _headers: AdminHeaders,
+    headers: AdminHeaders,
     mut conn: DbConn,
+    ip: ClientIp,
 ) -> EmptyResult {
-    match UserOrganization::find_by_uuid(&user_id, &mut conn).await {
+    match UserOrganization::find_by_uuid(&org_user_id, &mut conn).await {
         Some(_) => { /* Do nothing */ }
         _ => err!("User could not be found!"),
     };
 
-    GroupUser::delete_all_by_user(&user_id, &mut conn).await?;
+    GroupUser::delete_all_by_user(&org_user_id, &mut conn).await?;
 
     let assigned_group_ids = data.into_inner().data;
     for assigned_group_id in assigned_group_ids.GroupIds {
-        let mut group_user = GroupUser::new(assigned_group_id.clone(), user_id.clone());
+        let mut group_user = GroupUser::new(assigned_group_id.clone(), org_user_id.clone());
         group_user.save(&mut conn).await?;
     }
+
+    log_event(
+        EventType::OrganizationUserUpdatedGroups as i32,
+        &org_user_id,
+        org_id,
+        headers.user.uuid.clone(),
+        headers.device.atype,
+        &ip.ip,
+        &mut conn,
+    )
+    .await;
 
     Ok(())
 }
 
-#[post("/organizations/<org_id>/groups/<group_id>/delete-user/<user_id>")]
+#[post("/organizations/<org_id>/groups/<group_id>/delete-user/<org_user_id>")]
 async fn post_delete_group_user(
     org_id: String,
     group_id: String,
-    user_id: String,
+    org_user_id: String,
     headers: AdminHeaders,
     conn: DbConn,
+    ip: ClientIp,
 ) -> EmptyResult {
-    delete_group_user(org_id, group_id, user_id, headers, conn).await
+    delete_group_user(org_id, group_id, org_user_id, headers, conn, ip).await
 }
 
-#[delete("/organizations/<_org_id>/groups/<group_id>/users/<user_id>")]
+#[delete("/organizations/<org_id>/groups/<group_id>/users/<org_user_id>")]
 async fn delete_group_user(
-    _org_id: String,
+    org_id: String,
     group_id: String,
-    user_id: String,
-    _headers: AdminHeaders,
+    org_user_id: String,
+    headers: AdminHeaders,
     mut conn: DbConn,
+    ip: ClientIp,
 ) -> EmptyResult {
-    match UserOrganization::find_by_uuid(&user_id, &mut conn).await {
+    match UserOrganization::find_by_uuid(&org_user_id, &mut conn).await {
         Some(_) => { /* Do nothing */ }
         _ => err!("User could not be found!"),
     };
@@ -2062,7 +2378,18 @@ async fn delete_group_user(
         _ => err!("Group could not be found!"),
     };
 
-    GroupUser::delete_by_group_id_and_user_id(&group_id, &user_id, &mut conn).await
+    log_event(
+        EventType::OrganizationUserUpdatedGroups as i32,
+        &org_user_id,
+        org_id,
+        headers.user.uuid.clone(),
+        headers.device.atype,
+        &ip.ip,
+        &mut conn,
+    )
+    .await;
+
+    GroupUser::delete_by_group_id_and_user_id(&group_id, &org_user_id, &mut conn).await
 }
 
 // This is a new function active since the v2022.9.x clients.

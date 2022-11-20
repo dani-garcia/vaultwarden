@@ -3,11 +3,14 @@ use rocket::serde::json::Json;
 use rocket::Route;
 
 use crate::{
-    api::{core::two_factor::_generate_recover_code, EmptyResult, JsonResult, JsonUpcase, PasswordData},
-    auth::Headers,
+    api::{
+        core::{log_user_event, two_factor::_generate_recover_code},
+        EmptyResult, JsonResult, JsonUpcase, PasswordData,
+    },
+    auth::{ClientIp, Headers},
     crypto,
     db::{
-        models::{TwoFactor, TwoFactorType},
+        models::{EventType, TwoFactor, TwoFactorType},
         DbConn,
     },
     error::{Error, MapResult},
@@ -147,7 +150,7 @@ struct EmailData {
 
 /// Verify email belongs to user and can be used for 2FA email codes.
 #[put("/two-factor/email", data = "<data>")]
-async fn email(data: JsonUpcase<EmailData>, headers: Headers, mut conn: DbConn) -> JsonResult {
+async fn email(data: JsonUpcase<EmailData>, headers: Headers, mut conn: DbConn, ip: ClientIp) -> JsonResult {
     let data: EmailData = data.into_inner().data;
     let mut user = headers.user;
 
@@ -177,6 +180,8 @@ async fn email(data: JsonUpcase<EmailData>, headers: Headers, mut conn: DbConn) 
 
     _generate_recover_code(&mut user, &mut conn).await;
 
+    log_user_event(EventType::UserUpdated2fa as i32, &user.uuid, headers.device.atype, &ip.ip, &mut conn).await;
+
     Ok(Json(json!({
         "Email": email_data.email,
         "Enabled": "true",
@@ -192,7 +197,12 @@ pub async fn validate_email_code_str(user_uuid: &str, token: &str, data: &str, c
         .map_res("Two factor not found")?;
     let issued_token = match &email_data.last_token {
         Some(t) => t,
-        _ => err!("No token available"),
+        _ => err!(
+            "No token available",
+            ErrorEvent {
+                event: EventType::UserFailedLogIn2fa
+            }
+        ),
     };
 
     if !crypto::ct_eq(issued_token, token) {
@@ -203,21 +213,32 @@ pub async fn validate_email_code_str(user_uuid: &str, token: &str, data: &str, c
         twofactor.data = email_data.to_json();
         twofactor.save(conn).await?;
 
-        err!("Token is invalid")
+        err!(
+            "Token is invalid",
+            ErrorEvent {
+                event: EventType::UserFailedLogIn2fa
+            }
+        )
     }
 
     email_data.reset_token();
     twofactor.data = email_data.to_json();
     twofactor.save(conn).await?;
 
-    let date = NaiveDateTime::from_timestamp(email_data.token_sent, 0);
+    let date = NaiveDateTime::from_timestamp_opt(email_data.token_sent, 0).expect("Email token timestamp invalid.");
     let max_time = CONFIG.email_expiration_time() as i64;
     if date + Duration::seconds(max_time) < Utc::now().naive_utc() {
-        err!("Token has expired")
+        err!(
+            "Token has expired",
+            ErrorEvent {
+                event: EventType::UserFailedLogIn2fa
+            }
+        )
     }
 
     Ok(())
 }
+
 /// Data stored in the TwoFactor table in the db
 #[derive(Serialize, Deserialize)]
 pub struct EmailTokenData {

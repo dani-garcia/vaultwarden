@@ -56,6 +56,27 @@ table! {
 }
 
 table! {
+    event (uuid) {
+        uuid -> Text,
+        event_type -> Integer,
+        user_uuid -> Nullable<Text>,
+        org_uuid -> Nullable<Text>,
+        cipher_uuid -> Nullable<Text>,
+        collection_uuid -> Nullable<Text>,
+        group_uuid -> Nullable<Text>,
+        org_user_uuid -> Nullable<Text>,
+        act_user_uuid -> Nullable<Text>,
+        device_type -> Nullable<Integer>,
+        ip_address -> Nullable<Text>,
+        event_date -> Timestamp,
+        policy_uuid -> Nullable<Text>,
+        provider_uuid -> Nullable<Text>,
+        provider_user_uuid -> Nullable<Text>,
+        provider_org_uuid -> Nullable<Text>,
+    }
+}
+
+table! {
     favorites (user_uuid, cipher_uuid) {
         user_uuid -> Text,
         cipher_uuid -> Text,
@@ -272,6 +293,7 @@ joinable!(groups_users -> users_organizations (users_organizations_uuid));
 joinable!(groups_users -> groups (groups_uuid));
 joinable!(collections_groups -> collections (collections_uuid));
 joinable!(collections_groups -> groups (groups_uuid));
+joinable!(event -> users_organizations (uuid));
 
 allow_tables_to_appear_in_same_query!(
     attachments,
@@ -293,4 +315,5 @@ allow_tables_to_appear_in_same_query!(
     groups,
     groups_users,
     collections_groups,
+    event,
 );
