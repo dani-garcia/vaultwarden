@@ -13,7 +13,7 @@ use rocket::{
 };
 
 use crate::{
-    api::{ApiResult, EmptyResult, JsonResult, NumberOrString},
+    api::{core::log_event, ApiResult, EmptyResult, JsonResult, NumberOrString},
     auth::{decode_admin, encode_jwt, generate_admin_claims, ClientIp},
     config::ConfigBuilder,
     db::{backup_database, get_sql_server_version, models::*, DbConn, DbConnType},
@@ -87,6 +87,8 @@ const ADMIN_PATH: &str = "/admin";
 const DT_FMT: &str = "%Y-%m-%d %H:%M:%S %Z";
 
 const BASE_TEMPLATE: &str = "admin/base";
+
+const ACTING_ADMIN_USER: &str = "vaultwarden-admin-00000-000000000000";
 
 fn admin_path() -> String {
     format!("{}{}", CONFIG.domain_path(), ADMIN_PATH)
@@ -354,9 +356,27 @@ async fn get_user_json(uuid: String, _token: AdminToken, mut conn: DbConn) -> Js
 }
 
 #[post("/users/<uuid>/delete")]
-async fn delete_user(uuid: String, _token: AdminToken, mut conn: DbConn) -> EmptyResult {
+async fn delete_user(uuid: String, _token: AdminToken, mut conn: DbConn, ip: ClientIp) -> EmptyResult {
     let user = get_user_or_404(&uuid, &mut conn).await?;
-    user.delete(&mut conn).await
+
+    // Get the user_org records before deleting the actual user
+    let user_orgs = UserOrganization::find_any_state_by_user(&uuid, &mut conn).await;
+    let res = user.delete(&mut conn).await;
+
+    for user_org in user_orgs {
+        log_event(
+            EventType::OrganizationUserRemoved as i32,
+            &user_org.uuid,
+            user_org.org_uuid,
+            String::from(ACTING_ADMIN_USER),
+            14, // Use UnknownBrowser type
+            &ip.ip,
+            &mut conn,
+        )
+        .await;
+    }
+
+    res
 }
 
 #[post("/users/<uuid>/deauth")]
@@ -402,7 +422,12 @@ struct UserOrgTypeData {
 }
 
 #[post("/users/org_type", data = "<data>")]
-async fn update_user_org_type(data: Json<UserOrgTypeData>, _token: AdminToken, mut conn: DbConn) -> EmptyResult {
+async fn update_user_org_type(
+    data: Json<UserOrgTypeData>,
+    _token: AdminToken,
+    mut conn: DbConn,
+    ip: ClientIp,
+) -> EmptyResult {
     let data: UserOrgTypeData = data.into_inner();
 
     let mut user_to_edit =
@@ -436,6 +461,17 @@ async fn update_user_org_type(data: Json<UserOrgTypeData>, _token: AdminToken, m
             }
         }
     }
+
+    log_event(
+        EventType::OrganizationUserUpdated as i32,
+        &user_to_edit.uuid,
+        data.org_uuid,
+        String::from(ACTING_ADMIN_USER),
+        14, // Use UnknownBrowser type
+        &ip.ip,
+        &mut conn,
+    )
+    .await;
 
     user_to_edit.atype = new_type;
     user_to_edit.save(&mut conn).await
