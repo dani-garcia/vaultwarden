@@ -233,6 +233,9 @@ macro_rules! make_config {
                     let mut masked: String = String::new();
                     let mut n = 0;
                     for c in value.chars() {
+                        if c == ',' {
+                            masked += &c.to_string();
+                        }
                         if n <= 12 && [':', '/'].contains(&c) {
                             masked += &c.to_string();
                         } else {
