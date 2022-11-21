@@ -229,17 +229,18 @@ macro_rules! make_config {
                     inner.config.clone()
                 };
 
-                /// We map over the string and remove all alphanumeric, _ and - characters.
-                /// This is the fastest way (within micro-seconds) instead of using a regex (which takes mili-seconds)
                 fn _privacy_mask(value: &str) -> String {
-                    value.chars().map(|c|
-                        match c {
-                            c if c.is_alphanumeric() => '*',
-                            '_' => '*',
-                            '-' => '*',
-                            _ => c
+                    let mut masked: String = String::new();
+                    let mut n = 0;
+                    for c in value.chars() {
+                        if n <= 12 && [':', '/'].contains(&c) {
+                            masked += &c.to_string();
+                        } else {
+                            masked += &'*'.to_string();
                         }
-                    ).collect::<String>()
+                        n += 1;
+                    }
+                    masked
                 }
 
                 serde_json::Value::Object({
