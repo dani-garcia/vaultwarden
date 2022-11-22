@@ -630,7 +630,15 @@ make_config! {
 
 fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
     // Validate connection URL is valid and DB feature is enabled
-    DbConnType::from_url(&cfg.database_url)?;
+    let url = &cfg.database_url;
+    if DbConnType::from_url(url)? == DbConnType::sqlite {
+        let path = std::path::Path::new(&url);
+        if let Some(parent) = path.parent() {
+            if !parent.exists() {
+                err!(format!("SQLite database directory `{}` does not exist", parent.display()));
+            }
+        }
+    }
 
     let limit = 256;
     if cfg.database_max_conns < 1 || cfg.database_max_conns > limit {
