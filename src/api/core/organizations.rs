@@ -721,7 +721,7 @@ async fn send_invite(
                 }
 
                 if !CONFIG.mail_enabled() {
-                    let invitation = Invitation::new(email.clone());
+                    let invitation = Invitation::new(&email);
                     invitation.save(&mut conn).await?;
                 }
 
@@ -871,7 +871,7 @@ async fn _reinvite_user(org_id: &str, user_org: &str, invited_by_email: &str, co
         )
         .await?;
     } else {
-        let invitation = Invitation::new(user.email);
+        let invitation = Invitation::new(&user.email);
         invitation.save(conn).await?;
     }
 

@@ -366,11 +366,11 @@ make_config! {
         /// Defaults to once every minute. Set blank to disable this job.
         incomplete_2fa_schedule: String, false,  def,   "30 * * * * *".to_string();
         /// Emergency notification reminder schedule |> Cron schedule of the job that sends expiration reminders to emergency access grantors.
-        /// Defaults to hourly. Set blank to disable this job.
-        emergency_notification_reminder_schedule:   String, false,  def,    "0 5 * * * *".to_string();
+        /// Defaults to hourly. (3 minutes after the hour) Set blank to disable this job.
+        emergency_notification_reminder_schedule:   String, false,  def,    "0 3 * * * *".to_string();
         /// Emergency request timeout schedule |> Cron schedule of the job that grants emergency access requests that have met the required wait time.
-        /// Defaults to hourly. Set blank to disable this job.
-        emergency_request_timeout_schedule:   String, false,  def,    "0 5 * * * *".to_string();
+        /// Defaults to hourly. (7 minutes after the hour) Set blank to disable this job.
+        emergency_request_timeout_schedule:   String, false,  def,    "0 7 * * * *".to_string();
         /// Event cleanup schedule |> Cron schedule of the job that cleans old events from the event table.
         /// Defaults to daily. Set blank to disable this job.
         event_cleanup_schedule:   String, false,  def,    "0 10 0 * * *".to_string();
