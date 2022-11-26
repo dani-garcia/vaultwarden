@@ -284,7 +284,7 @@ async fn invite_user(data: Json<InviteData>, _token: AdminToken, mut conn: DbCon
         if CONFIG.mail_enabled() {
             mail::send_invite(&user.email, &user.uuid, None, None, &CONFIG.invitation_org_name(), None).await
         } else {
-            let invitation = Invitation::new(user.email.clone());
+            let invitation = Invitation::new(&user.email);
             invitation.save(conn).await
         }
     }

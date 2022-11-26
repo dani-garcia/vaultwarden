@@ -260,7 +260,6 @@ mod tests {
 
 use cached::proc_macro::cached;
 #[cached(key = "String", convert = r#"{ domain.to_string() }"#, size = 16, time = 60)]
-#[allow(clippy::unused_async)] // This is needed because cached causes a false-positive here.
 async fn is_domain_blacklisted(domain: &str) -> bool {
     // First check the blacklist regex if there is a match.
     // This prevents the blocked domain(s) from being leaked via a DNS lookup.
