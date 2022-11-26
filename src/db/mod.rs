@@ -125,7 +125,6 @@ macro_rules! generate_connections {
 
         impl DbPool {
             // For the given database URL, guess its type, run migrations, create pool, and return it
-            #[allow(clippy::diverging_sub_expression)]
             pub fn from_config() -> Result<Self, Error> {
                 let url = CONFIG.database_url();
                 let conn_type = DbConnType::from_url(&url)?;
