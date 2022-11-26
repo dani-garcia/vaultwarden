@@ -1,6 +1,5 @@
 use chrono::{Duration, Utc};
-use rocket::serde::json::Json;
-use rocket::Route;
+use rocket::{serde::json::Json, Route};
 use serde_json::Value;
 
 use crate::{
@@ -41,9 +40,10 @@ pub fn routes() -> Vec<Route> {
 async fn get_contacts(headers: Headers, mut conn: DbConn) -> JsonResult {
     check_emergency_access_allowed()?;
 
-    let mut emergency_access_list_json = Vec::new();
-    for e in EmergencyAccess::find_all_by_grantor_uuid(&headers.user.uuid, &mut conn).await {
-        emergency_access_list_json.push(e.to_json_grantee_details(&mut conn).await);
+    let emergency_access_list = EmergencyAccess::find_all_by_grantor_uuid(&headers.user.uuid, &mut conn).await;
+    let mut emergency_access_list_json = Vec::with_capacity(emergency_access_list.len());
+    for ea in emergency_access_list {
+        emergency_access_list_json.push(ea.to_json_grantee_details(&mut conn).await);
     }
 
     Ok(Json(json!({
@@ -57,9 +57,10 @@ async fn get_contacts(headers: Headers, mut conn: DbConn) -> JsonResult {
 async fn get_grantees(headers: Headers, mut conn: DbConn) -> JsonResult {
     check_emergency_access_allowed()?;
 
-    let mut emergency_access_list_json = Vec::new();
-    for e in EmergencyAccess::find_all_by_grantee_uuid(&headers.user.uuid, &mut conn).await {
-        emergency_access_list_json.push(e.to_json_grantor_details(&mut conn).await);
+    let emergency_access_list = EmergencyAccess::find_all_by_grantee_uuid(&headers.user.uuid, &mut conn).await;
+    let mut emergency_access_list_json = Vec::with_capacity(emergency_access_list.len());
+    for ea in emergency_access_list {
+        emergency_access_list_json.push(ea.to_json_grantor_details(&mut conn).await);
     }
 
     Ok(Json(json!({
@@ -83,7 +84,7 @@ async fn get_emergency_access(emer_id: String, mut conn: DbConn) -> JsonResult {
 
 // region put/post
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize)]
 #[allow(non_snake_case)]
 struct EmergencyAccessUpdateData {
     Type: NumberOrString,
@@ -160,7 +161,7 @@ async fn post_delete_emergency_access(emer_id: String, headers: Headers, conn: D
 
 // region invite
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize)]
 #[allow(non_snake_case)]
 struct EmergencyAccessInviteData {
     Email: String,
@@ -193,7 +194,7 @@ async fn send_invite(data: JsonUpcase<EmergencyAccessInviteData>, headers: Heade
     let grantee_user = match User::find_by_mail(&email, &mut conn).await {
         None => {
             if !CONFIG.invitations_allowed() {
-                err!(format!("Grantee user does not exist: {}", email))
+                err!(format!("Grantee user does not exist: {}", &email))
             }
 
             if !CONFIG.is_email_domain_allowed(&email) {
@@ -201,7 +202,7 @@ async fn send_invite(data: JsonUpcase<EmergencyAccessInviteData>, headers: Heade
             }
 
             if !CONFIG.mail_enabled() {
-                let invitation = Invitation::new(email.clone());
+                let invitation = Invitation::new(&email);
                 invitation.save(&mut conn).await?;
             }
 
@@ -221,36 +222,29 @@ async fn send_invite(data: JsonUpcase<EmergencyAccessInviteData>, headers: Heade
     .await
     .is_some()
     {
-        err!(format!("Grantee user already invited: {}", email))
+        err!(format!("Grantee user already invited: {}", &grantee_user.email))
     }
 
-    let mut new_emergency_access = EmergencyAccess::new(
-        grantor_user.uuid.clone(),
-        Some(grantee_user.email.clone()),
-        emergency_access_status,
-        new_type,
-        wait_time_days,
-    );
+    let mut new_emergency_access =
+        EmergencyAccess::new(grantor_user.uuid, grantee_user.email, emergency_access_status, new_type, wait_time_days);
     new_emergency_access.save(&mut conn).await?;
 
     if CONFIG.mail_enabled() {
         mail::send_emergency_access_invite(
-            &grantee_user.email,
+            &new_emergency_access.email.expect("Grantee email does not exists"),
             &grantee_user.uuid,
-            Some(new_emergency_access.uuid),
-            Some(grantor_user.name.clone()),
-            Some(grantor_user.email),
+            &new_emergency_access.uuid,
+            &grantor_user.name,
+            &grantor_user.email,
         )
         .await?;
     } else {
         // Automatically mark user as accepted if no email invites
         match User::find_by_mail(&email, &mut conn).await {
-            Some(user) => {
-                match accept_invite_process(user.uuid, new_emergency_access.uuid, Some(email), &mut conn).await {
-                    Ok(v) => v,
-                    Err(e) => err!(e.to_string()),
-                }
-            }
+            Some(user) => match accept_invite_process(user.uuid, &mut new_emergency_access, &email, &mut conn).await {
+                Ok(v) => v,
+                Err(e) => err!(e.to_string()),
+            },
             None => err!("Grantee user not found."),
         }
     }
@@ -262,7 +256,7 @@ async fn send_invite(data: JsonUpcase<EmergencyAccessInviteData>, headers: Heade
 async fn resend_invite(emer_id: String, headers: Headers, mut conn: DbConn) -> EmptyResult {
     check_emergency_access_allowed()?;
 
-    let emergency_access = match EmergencyAccess::find_by_uuid(&emer_id, &mut conn).await {
+    let mut emergency_access = match EmergencyAccess::find_by_uuid(&emer_id, &mut conn).await {
         Some(emer) => emer,
         None => err!("Emergency access not valid."),
     };
@@ -291,19 +285,19 @@ async fn resend_invite(emer_id: String, headers: Headers, mut conn: DbConn) -> E
         mail::send_emergency_access_invite(
             &email,
             &grantor_user.uuid,
-            Some(emergency_access.uuid),
-            Some(grantor_user.name.clone()),
-            Some(grantor_user.email),
+            &emergency_access.uuid,
+            &grantor_user.name,
+            &grantor_user.email,
         )
         .await?;
     } else {
         if Invitation::find_by_mail(&email, &mut conn).await.is_none() {
-            let invitation = Invitation::new(email);
+            let invitation = Invitation::new(&email);
             invitation.save(&mut conn).await?;
         }
 
         // Automatically mark user as accepted if no email invites
-        match accept_invite_process(grantee_user.uuid, emergency_access.uuid, emergency_access.email, &mut conn).await {
+        match accept_invite_process(grantee_user.uuid, &mut emergency_access, &email, &mut conn).await {
             Ok(v) => v,
             Err(e) => err!(e.to_string()),
         }
@@ -319,12 +313,23 @@ struct AcceptData {
 }
 
 #[post("/emergency-access/<emer_id>/accept", data = "<data>")]
-async fn accept_invite(emer_id: String, data: JsonUpcase<AcceptData>, mut conn: DbConn) -> EmptyResult {
+async fn accept_invite(
+    emer_id: String,
+    data: JsonUpcase<AcceptData>,
+    headers: Headers,
+    mut conn: DbConn,
+) -> EmptyResult {
     check_emergency_access_allowed()?;
 
     let data: AcceptData = data.into_inner().data;
     let token = &data.Token;
     let claims = decode_emergency_access_invite(token)?;
+
+    // This can happen if the user who received the invite used a different email to signup.
+    // Since we do not know if this is intented, we error out here and do nothing with the invite.
+    if claims.email != headers.user.email {
+        err!("Claim email does not match current users email")
+    }
 
     let grantee_user = match User::find_by_mail(&claims.email, &mut conn).await {
         Some(user) => {
@@ -334,7 +339,7 @@ async fn accept_invite(emer_id: String, data: JsonUpcase<AcceptData>, mut conn: 
         None => err!("Invited user not found"),
     };
 
-    let emergency_access = match EmergencyAccess::find_by_uuid(&emer_id, &mut conn).await {
+    let mut emergency_access = match EmergencyAccess::find_by_uuid(&emer_id, &mut conn).await {
         Some(emer) => emer,
         None => err!("Emergency access not valid."),
     };
@@ -345,13 +350,11 @@ async fn accept_invite(emer_id: String, data: JsonUpcase<AcceptData>, mut conn: 
         None => err!("Grantor user not found."),
     };
 
-    if (claims.emer_id.is_some() && emer_id == claims.emer_id.unwrap())
-        && (claims.grantor_name.is_some() && grantor_user.name == claims.grantor_name.unwrap())
-        && (claims.grantor_email.is_some() && grantor_user.email == claims.grantor_email.unwrap())
+    if emer_id == claims.emer_id
+        && grantor_user.name == claims.grantor_name
+        && grantor_user.email == claims.grantor_email
     {
-        match accept_invite_process(grantee_user.uuid.clone(), emer_id, Some(grantee_user.email.clone()), &mut conn)
-            .await
-        {
+        match accept_invite_process(grantee_user.uuid, &mut emergency_access, &grantee_user.email, &mut conn).await {
             Ok(v) => v,
             Err(e) => err!(e.to_string()),
         }
@@ -368,17 +371,11 @@ async fn accept_invite(emer_id: String, data: JsonUpcase<AcceptData>, mut conn: 
 
 async fn accept_invite_process(
     grantee_uuid: String,
-    emer_id: String,
-    email: Option<String>,
+    emergency_access: &mut EmergencyAccess,
+    grantee_email: &str,
     conn: &mut DbConn,
 ) -> EmptyResult {
-    let mut emergency_access = match EmergencyAccess::find_by_uuid(&emer_id, conn).await {
-        Some(emer) => emer,
-        None => err!("Emergency access not valid."),
-    };
-
-    let emer_email = emergency_access.email;
-    if emer_email.is_none() || emer_email != email {
+    if emergency_access.email.is_none() || emergency_access.email.as_ref().unwrap() != grantee_email {
         err!("User email does not match invite.");
     }
 
@@ -463,7 +460,7 @@ async fn initiate_emergency_access(emer_id: String, headers: Headers, mut conn: 
     };
 
     if emergency_access.status != EmergencyAccessStatus::Confirmed as i32
-        || emergency_access.grantee_uuid != Some(initiating_user.uuid.clone())
+        || emergency_access.grantee_uuid != Some(initiating_user.uuid)
     {
         err!("Emergency access not valid.")
     }
@@ -485,7 +482,7 @@ async fn initiate_emergency_access(emer_id: String, headers: Headers, mut conn: 
             &grantor_user.email,
             &initiating_user.name,
             emergency_access.get_type_as_str(),
-            &emergency_access.wait_time_days.clone().to_string(),
+            &emergency_access.wait_time_days,
         )
         .await?;
     }
@@ -496,19 +493,18 @@ async fn initiate_emergency_access(emer_id: String, headers: Headers, mut conn: 
 async fn approve_emergency_access(emer_id: String, headers: Headers, mut conn: DbConn) -> JsonResult {
     check_emergency_access_allowed()?;
 
-    let approving_user = headers.user;
     let mut emergency_access = match EmergencyAccess::find_by_uuid(&emer_id, &mut conn).await {
         Some(emer) => emer,
         None => err!("Emergency access not valid."),
     };
 
     if emergency_access.status != EmergencyAccessStatus::RecoveryInitiated as i32
-        || emergency_access.grantor_uuid != approving_user.uuid
+        || emergency_access.grantor_uuid != headers.user.uuid
     {
         err!("Emergency access not valid.")
     }
 
-    let grantor_user = match User::find_by_uuid(&approving_user.uuid, &mut conn).await {
+    let grantor_user = match User::find_by_uuid(&headers.user.uuid, &mut conn).await {
         Some(user) => user,
         None => err!("Grantor user not found."),
     };
@@ -535,7 +531,6 @@ async fn approve_emergency_access(emer_id: String, headers: Headers, mut conn: D
 async fn reject_emergency_access(emer_id: String, headers: Headers, mut conn: DbConn) -> JsonResult {
     check_emergency_access_allowed()?;
 
-    let rejecting_user = headers.user;
     let mut emergency_access = match EmergencyAccess::find_by_uuid(&emer_id, &mut conn).await {
         Some(emer) => emer,
         None => err!("Emergency access not valid."),
@@ -543,12 +538,12 @@ async fn reject_emergency_access(emer_id: String, headers: Headers, mut conn: Db
 
     if (emergency_access.status != EmergencyAccessStatus::RecoveryInitiated as i32
         && emergency_access.status != EmergencyAccessStatus::RecoveryApproved as i32)
-        || emergency_access.grantor_uuid != rejecting_user.uuid
+        || emergency_access.grantor_uuid != headers.user.uuid
     {
         err!("Emergency access not valid.")
     }
 
-    let grantor_user = match User::find_by_uuid(&rejecting_user.uuid, &mut conn).await {
+    let grantor_user = match User::find_by_uuid(&headers.user.uuid, &mut conn).await {
         Some(user) => user,
         None => err!("Grantor user not found."),
     };
@@ -579,14 +574,12 @@ async fn reject_emergency_access(emer_id: String, headers: Headers, mut conn: Db
 async fn view_emergency_access(emer_id: String, headers: Headers, mut conn: DbConn) -> JsonResult {
     check_emergency_access_allowed()?;
 
-    let requesting_user = headers.user;
-    let host = headers.host;
     let emergency_access = match EmergencyAccess::find_by_uuid(&emer_id, &mut conn).await {
         Some(emer) => emer,
         None => err!("Emergency access not valid."),
     };
 
-    if !is_valid_request(&emergency_access, requesting_user.uuid, EmergencyAccessType::View) {
+    if !is_valid_request(&emergency_access, headers.user.uuid, EmergencyAccessType::View) {
         err!("Emergency access not valid.")
     }
 
@@ -596,7 +589,8 @@ async fn view_emergency_access(emer_id: String, headers: Headers, mut conn: DbCo
 
     let mut ciphers_json = Vec::new();
     for c in ciphers {
-        ciphers_json.push(c.to_json(&host, &emergency_access.grantor_uuid, Some(&cipher_sync_data), &mut conn).await);
+        ciphers_json
+            .push(c.to_json(&headers.host, &emergency_access.grantor_uuid, Some(&cipher_sync_data), &mut conn).await);
     }
 
     Ok(Json(json!({
@@ -633,7 +627,7 @@ async fn takeover_emergency_access(emer_id: String, headers: Headers, mut conn: 
     })))
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize)]
 #[allow(non_snake_case)]
 struct EmergencyAccessPasswordData {
     NewMasterPasswordHash: String,
@@ -738,40 +732,44 @@ pub async fn emergency_request_timeout_job(pool: DbPool) {
     }
 
     if let Ok(mut conn) = pool.get().await {
-        let emergency_access_list = EmergencyAccess::find_all_recoveries(&mut conn).await;
+        let emergency_access_list = EmergencyAccess::find_all_recoveries_initiated(&mut conn).await;
 
         if emergency_access_list.is_empty() {
             debug!("No emergency request timeout to approve");
         }
 
+        let now = Utc::now().naive_utc();
         for mut emer in emergency_access_list {
-            if emer.recovery_initiated_at.is_some()
-                && Utc::now().naive_utc()
-                    >= emer.recovery_initiated_at.unwrap() + Duration::days(i64::from(emer.wait_time_days))
-            {
-                emer.status = EmergencyAccessStatus::RecoveryApproved as i32;
-                emer.save(&mut conn).await.expect("Cannot save emergency access on job");
+            // The find_all_recoveries_initiated already checks if the recovery_initiated_at is not null (None)
+            let recovery_allowed_at =
+                emer.recovery_initiated_at.unwrap() + Duration::days(i64::from(emer.wait_time_days));
+            if recovery_allowed_at.le(&now) {
+                // Only update the access status
+                // Updating the whole record could cause issues when the emergency_notification_reminder_job is also active
+                emer.update_access_status_and_save(EmergencyAccessStatus::RecoveryApproved as i32, &now, &mut conn)
+                    .await
+                    .expect("Unable to update emergency access status");
 
                 if CONFIG.mail_enabled() {
                     // get grantor user to send Accepted email
                     let grantor_user =
-                        User::find_by_uuid(&emer.grantor_uuid, &mut conn).await.expect("Grantor user not found.");
+                        User::find_by_uuid(&emer.grantor_uuid, &mut conn).await.expect("Grantor user not found");
 
                     // get grantee user to send Accepted email
                     let grantee_user =
-                        User::find_by_uuid(&emer.grantee_uuid.clone().expect("Grantee user invalid."), &mut conn)
+                        User::find_by_uuid(&emer.grantee_uuid.clone().expect("Grantee user invalid"), &mut conn)
                             .await
-                            .expect("Grantee user not found.");
+                            .expect("Grantee user not found");
 
                     mail::send_emergency_access_recovery_timed_out(
                         &grantor_user.email,
-                        &grantee_user.name.clone(),
+                        &grantee_user.name,
                         emer.get_type_as_str(),
                     )
                     .await
                     .expect("Error on sending email");
 
-                    mail::send_emergency_access_recovery_approved(&grantee_user.email, &grantor_user.name.clone())
+                    mail::send_emergency_access_recovery_approved(&grantee_user.email, &grantor_user.name)
                         .await
                         .expect("Error on sending email");
                 }
@@ -789,38 +787,47 @@ pub async fn emergency_notification_reminder_job(pool: DbPool) {
     }
 
     if let Ok(mut conn) = pool.get().await {
-        let emergency_access_list = EmergencyAccess::find_all_recoveries(&mut conn).await;
+        let emergency_access_list = EmergencyAccess::find_all_recoveries_initiated(&mut conn).await;
 
         if emergency_access_list.is_empty() {
             debug!("No emergency request reminder notification to send");
         }
 
+        let now = Utc::now().naive_utc();
         for mut emer in emergency_access_list {
-            if (emer.recovery_initiated_at.is_some()
-                && Utc::now().naive_utc()
-                    >= emer.recovery_initiated_at.unwrap() + Duration::days((i64::from(emer.wait_time_days)) - 1))
-                && (emer.last_notification_at.is_none()
-                    || (emer.last_notification_at.is_some()
-                        && Utc::now().naive_utc() >= emer.last_notification_at.unwrap() + Duration::days(1)))
-            {
-                emer.save(&mut conn).await.expect("Cannot save emergency access on job");
+            // The find_all_recoveries_initiated already checks if the recovery_initiated_at is not null (None)
+            // Calculate the day before the recovery will become active
+            let final_recovery_reminder_at =
+                emer.recovery_initiated_at.unwrap() + Duration::days(i64::from(emer.wait_time_days - 1));
+            // Calculate if a day has passed since the previous notification, else no notification has been sent before
+            let next_recovery_reminder_at = if let Some(last_notification_at) = emer.last_notification_at {
+                last_notification_at + Duration::days(1)
+            } else {
+                now
+            };
+            if final_recovery_reminder_at.le(&now) && next_recovery_reminder_at.le(&now) {
+                // Only update the last notification date
+                // Updating the whole record could cause issues when the emergency_request_timeout_job is also active
+                emer.update_last_notification_date_and_save(&now, &mut conn)
+                    .await
+                    .expect("Unable to update emergency access notification date");
 
                 if CONFIG.mail_enabled() {
                     // get grantor user to send Accepted email
                     let grantor_user =
-                        User::find_by_uuid(&emer.grantor_uuid, &mut conn).await.expect("Grantor user not found.");
+                        User::find_by_uuid(&emer.grantor_uuid, &mut conn).await.expect("Grantor user not found");
 
                     // get grantee user to send Accepted email
                     let grantee_user =
-                        User::find_by_uuid(&emer.grantee_uuid.clone().expect("Grantee user invalid."), &mut conn)
+                        User::find_by_uuid(&emer.grantee_uuid.clone().expect("Grantee user invalid"), &mut conn)
                             .await
-                            .expect("Grantee user not found.");
+                            .expect("Grantee user not found");
 
                     mail::send_emergency_access_recovery_reminder(
                         &grantor_user.email,
-                        &grantee_user.name.clone(),
+                        &grantee_user.name,
                         emer.get_type_as_str(),
-                        &emer.wait_time_days.to_string(), // TODO(jjlin): This should be the number of days left.
+                        "1", // This notification is only triggered one day before the activation
                     )
                     .await
                     .expect("Error on sending email");
