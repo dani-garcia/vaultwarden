@@ -6,10 +6,10 @@ use std::env;
 use rocket::serde::json::Json;
 use rocket::{
     form::Form,
-    http::{Cookie, CookieJar, SameSite, Status},
-    request::{self, FromRequest, Outcome, Request},
+    http::{Cookie, CookieJar, MediaType, SameSite, Status},
+    request::{FromRequest, Outcome, Request},
     response::{content::RawHtml as Html, Redirect},
-    Route,
+    Catcher, Route,
 };
 
 use crate::{
@@ -57,6 +57,23 @@ pub fn routes() -> Vec<Route> {
     ]
 }
 
+pub fn catchers() -> Vec<Catcher> {
+    if !CONFIG.disable_admin_token() && !CONFIG.is_admin_token_set() {
+        catchers![]
+    } else {
+        catchers![unauthorized]
+    }
+}
+
+#[catch(401)]
+fn unauthorized(request: &Request<'_>) -> Result<Redirect, Error> {
+    if request.format() == Some(&MediaType::JSON) {
+        err_code!("Authorization failed.", Status::Unauthorized.code);
+    }
+    let redirect = request.segments::<std::path::PathBuf>(0..).unwrap_or_default().display().to_string();
+    Ok(Redirect::to(admin_redirect_url(&redirect)))
+}
+
 static DB_TYPE: Lazy<&str> = Lazy::new(|| {
     DbConnType::from_url(&CONFIG.database_url())
         .map(|t| match t {
@@ -85,15 +102,8 @@ fn admin_path() -> String {
     format!("{}{}", CONFIG.domain_path(), ADMIN_PATH)
 }
 
-struct Referer(Option<String>);
-
-#[rocket::async_trait]
-impl<'r> FromRequest<'r> for Referer {
-    type Error = ();
-
-    async fn from_request(request: &'r Request<'_>) -> request::Outcome<Self, Self::Error> {
-        Outcome::Success(Referer(request.headers().get_one("Referer").map(str::to_string)))
-    }
+fn admin_redirect_url(redirect: &str) -> String {
+    format!("{}/?redirect=/{}", admin_path(), redirect)
 }
 
 #[derive(Debug)]
@@ -118,39 +128,20 @@ impl<'r> FromRequest<'r> for IpHeader {
     }
 }
 
-/// Used for `Location` response headers, which must specify an absolute URI
-/// (see https://tools.ietf.org/html/rfc2616#section-14.30).
-fn admin_url(referer: Referer) -> String {
-    // If we get a referer use that to make it work when, DOMAIN is not set
-    if let Some(mut referer) = referer.0 {
-        if let Some(start_index) = referer.find(ADMIN_PATH) {
-            referer.truncate(start_index + ADMIN_PATH.len());
-            return referer;
-        }
-    }
-
-    if CONFIG.domain_set() {
-        // Don't use CONFIG.domain() directly, since the user may want to keep a
-        // trailing slash there, particularly when running under a subpath.
-        format!("{}{}{}", CONFIG.domain_origin(), CONFIG.domain_path(), ADMIN_PATH)
-    } else {
-        // Last case, when no referer or domain set, technically invalid but better than nothing
-        ADMIN_PATH.to_string()
-    }
+fn admin_url() -> String {
+    format!("{}{}", CONFIG.domain_origin(), admin_path())
 }
 
 #[derive(Responder)]
 enum AdminResponse {
-    #[response(status = 200)]
-    Ok(ApiResult<Html<String>>),
     #[response(status = 401)]
     Unauthorized(ApiResult<Html<String>>),
     #[response(status = 429)]
     TooManyRequests(ApiResult<Html<String>>),
 }
 
-#[get("/", rank = 2)]
-fn admin_login() -> ApiResult<Html<String>> {
+#[get("/?<_redirect..>")]
+fn admin_login(_redirect: &str) -> ApiResult<Html<String>> {
     render_admin_login(None)
 }
 
@@ -174,18 +165,23 @@ struct LoginForm {
     token: String,
 }
 
-#[post("/", data = "<data>")]
-fn post_admin_login(data: Form<LoginForm>, cookies: &CookieJar<'_>, ip: ClientIp) -> AdminResponse {
+#[post("/?<redirect>", data = "<data>")]
+fn post_admin_login(
+    data: Form<LoginForm>,
+    redirect: &str,
+    cookies: &CookieJar<'_>,
+    ip: ClientIp,
+) -> Result<Redirect, AdminResponse> {
     let data = data.into_inner();
 
     if crate::ratelimit::check_limit_admin(&ip.ip).is_err() {
-        return AdminResponse::TooManyRequests(render_admin_login(Some("Too many requests, try again later.")));
+        return Err(AdminResponse::TooManyRequests(render_admin_login(Some("Too many requests, try again later."))));
     }
 
     // If the token is invalid, redirect to login page
     if !_validate_token(&data.token) {
         error!("Invalid admin token. IP: {}", ip.ip);
-        AdminResponse::Unauthorized(render_admin_login(Some("Invalid admin token, please try again.")))
+        Err(AdminResponse::Unauthorized(render_admin_login(Some("Invalid admin token, please try again."))))
     } else {
         // If the token received is valid, generate JWT and save it as a cookie
         let claims = generate_admin_claims();
@@ -199,7 +195,7 @@ fn post_admin_login(data: Form<LoginForm>, cookies: &CookieJar<'_>, ip: ClientIp
             .finish();
 
         cookies.add(cookie);
-        AdminResponse::Ok(render_admin_page())
+        Ok(Redirect::to(format!("{}{}", admin_path(), redirect)))
     }
 }
 
@@ -251,14 +247,10 @@ impl AdminTemplateData {
     }
 }
 
-fn render_admin_page() -> ApiResult<Html<String>> {
+#[get("/")]
+fn admin_page(_token: AdminToken) -> ApiResult<Html<String>> {
     let text = AdminTemplateData::new().render()?;
     Ok(Html(text))
-}
-
-#[get("/", rank = 1)]
-fn admin_page(_token: AdminToken) -> ApiResult<Html<String>> {
-    render_admin_page()
 }
 
 #[derive(Deserialize, Debug)]
@@ -312,9 +304,9 @@ async fn test_smtp(data: Json<InviteData>, _token: AdminToken) -> EmptyResult {
 }
 
 #[get("/logout")]
-fn logout(cookies: &CookieJar<'_>, referer: Referer) -> Redirect {
+fn logout(cookies: &CookieJar<'_>) -> Redirect {
     cookies.remove(Cookie::build(COOKIE_NAME, "").path(admin_path()).finish());
-    Redirect::temporary(admin_url(referer))
+    Redirect::to(admin_path())
 }
 
 #[get("/users")]
@@ -603,7 +595,7 @@ async fn diagnostics(_token: AdminToken, ip_header: IpHeader, mut conn: DbConn) 
         "uses_proxy": uses_proxy,
         "db_type": *DB_TYPE,
         "db_version": get_sql_server_version(&mut conn).await,
-        "admin_url": format!("{}/diagnostics", admin_url(Referer(None))),
+        "admin_url": format!("{}/diagnostics", admin_url()),
         "overrides": &CONFIG.get_overrides().join(", "),
         "server_time_local": Local::now().format("%Y-%m-%d %H:%M:%S %Z").to_string(),
         "server_time": Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string(), // Run the date/time check as the last item to minimize the difference
@@ -645,15 +637,15 @@ pub struct AdminToken {}
 impl<'r> FromRequest<'r> for AdminToken {
     type Error = &'static str;
 
-    async fn from_request(request: &'r Request<'_>) -> request::Outcome<Self, Self::Error> {
+    async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         if CONFIG.disable_admin_token() {
-            Outcome::Success(AdminToken {})
+            Outcome::Success(Self {})
         } else {
             let cookies = request.cookies();
 
             let access_token = match cookies.get(COOKIE_NAME) {
                 Some(cookie) => cookie.value(),
-                None => return Outcome::Forward(()), // If there is no cookie, redirect to login
+                None => return Outcome::Failure((Status::Unauthorized, "Unauthorized")),
             };
 
             let ip = match ClientIp::from_request(request).await {
@@ -665,10 +657,10 @@ impl<'r> FromRequest<'r> for AdminToken {
                 // Remove admin cookie
                 cookies.remove(Cookie::build(COOKIE_NAME, "").path(admin_path()).finish());
                 error!("Invalid or expired admin JWT. IP: {}.", ip);
-                return Outcome::Forward(());
+                return Outcome::Failure((Status::Unauthorized, "Session expired"));
             }
 
-            Outcome::Success(AdminToken {})
+            Outcome::Success(Self {})
         }
     }
 }

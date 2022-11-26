@@ -352,7 +352,13 @@
         supportString += "* Reverse proxy and version: \n";
         supportString += "* Other relevant information: \n";
 
-        let jsonResponse = await fetch('{{urlpath}}/admin/diagnostics/config');
+        let jsonResponse = await fetch('{{urlpath}}/admin/diagnostics/config', {
+                'headers': { 'Accept': 'application/json' }
+        });
+        if (!jsonResponse.ok) {
+                alert("Generation failed: " + jsonResponse.statusText);
+                throw new Error(jsonResponse);
+        }
         const configJson = await jsonResponse.json();
         supportString += "\n### Config (Generated via diagnostics page)\n<details><summary>Show Running Config</summary>\n"
         supportString += "\n**Environment settings which are overridden:** {{page_data.overrides}}\n"
