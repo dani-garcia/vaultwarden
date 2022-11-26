@@ -177,17 +177,17 @@ pub struct EmergencyAccessInviteJwtClaims {
     pub sub: String,
 
     pub email: String,
-    pub emer_id: Option<String>,
-    pub grantor_name: Option<String>,
-    pub grantor_email: Option<String>,
+    pub emer_id: String,
+    pub grantor_name: String,
+    pub grantor_email: String,
 }
 
 pub fn generate_emergency_access_invite_claims(
     uuid: String,
     email: String,
-    emer_id: Option<String>,
-    grantor_name: Option<String>,
-    grantor_email: Option<String>,
+    emer_id: String,
+    grantor_name: String,
+    grantor_email: String,
 ) -> EmergencyAccessInviteJwtClaims {
     let time_now = Utc::now().naive_utc();
     let expire_hours = i64::from(CONFIG.invitation_expiration_hours());
