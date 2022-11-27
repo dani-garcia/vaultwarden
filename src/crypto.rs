@@ -3,7 +3,7 @@
 //
 use std::num::NonZeroU32;
 
-use data_encoding::HEXLOWER;
+use data_encoding::{Encoding, HEXLOWER};
 use ring::{digest, hmac, pbkdf2};
 
 static DIGEST_ALG: pbkdf2::Algorithm = pbkdf2::PBKDF2_HMAC_SHA256;
@@ -37,16 +37,19 @@ pub fn hmac_sign(key: &str, data: &str) -> String {
 // Random values
 //
 
-pub fn get_random_64() -> Vec<u8> {
-    get_random(vec![0u8; 64])
-}
-
-pub fn get_random(mut array: Vec<u8>) -> Vec<u8> {
+/// Return an array holding `N` random bytes.
+pub fn get_random_bytes<const N: usize>() -> [u8; N] {
     use ring::rand::{SecureRandom, SystemRandom};
 
+    let mut array = [0; N];
     SystemRandom::new().fill(&mut array).expect("Error generating random values");
 
     array
+}
+
+/// Encode random bytes using the provided function.
+pub fn encode_random_bytes<const N: usize>(e: Encoding) -> String {
+    e.encode(&get_random_bytes::<N>())
 }
 
 /// Generates a random string over a specified alphabet.
@@ -77,18 +80,18 @@ pub fn get_random_string_alphanum(num_chars: usize) -> String {
     get_random_string(ALPHABET, num_chars)
 }
 
-pub fn generate_id(num_bytes: usize) -> String {
-    HEXLOWER.encode(&get_random(vec![0; num_bytes]))
+pub fn generate_id<const N: usize>() -> String {
+    encode_random_bytes::<N>(HEXLOWER)
 }
 
 pub fn generate_send_id() -> String {
     // Send IDs are globally scoped, so make them longer to avoid collisions.
-    generate_id(32) // 256 bits
+    generate_id::<32>() // 256 bits
 }
 
 pub fn generate_attachment_id() -> String {
     // Attachment IDs are scoped to a cipher, so they can be smaller.
-    generate_id(10) // 80 bits
+    generate_id::<10>() // 80 bits
 }
 
 /// Generates a numeric token for email-based verifications.

@@ -48,7 +48,7 @@ impl Device {
         use crate::crypto;
         use data_encoding::BASE64;
 
-        let twofactor_remember = BASE64.encode(&crypto::get_random(vec![0u8; 180]));
+        let twofactor_remember = crypto::encode_random_bytes::<180>(BASE64);
         self.twofactor_remember = Some(twofactor_remember.clone());
 
         twofactor_remember
@@ -69,7 +69,7 @@ impl Device {
             use crate::crypto;
             use data_encoding::BASE64URL;
 
-            self.refresh_token = BASE64URL.encode(&crypto::get_random_64());
+            self.refresh_token = crypto::encode_random_bytes::<64>(BASE64URL);
         }
 
         // Update the expiration of the device and the last update date

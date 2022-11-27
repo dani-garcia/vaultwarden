@@ -105,7 +105,7 @@ async fn recover(data: JsonUpcase<RecoverTwoFactor>, mut conn: DbConn) -> JsonRe
 
 async fn _generate_recover_code(user: &mut User, conn: &mut DbConn) {
     if user.totp_recover.is_none() {
-        let totp_recover = BASE32.encode(&crypto::get_random(vec![0u8; 20]));
+        let totp_recover = crypto::encode_random_bytes::<20>(BASE32);
         user.totp_recover = Some(totp_recover);
         user.save(conn).await.ok();
     }
