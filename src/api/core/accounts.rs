@@ -42,7 +42,7 @@ pub fn routes() -> Vec<rocket::Route> {
 
 #[derive(Deserialize, Debug)]
 #[allow(non_snake_case)]
-struct RegisterData {
+pub struct RegisterData {
     Email: String,
     Kdf: Option<i32>,
     KdfIterations: Option<i32>,
@@ -82,7 +82,11 @@ fn enforce_password_hint_setting(password_hint: &Option<String>) -> EmptyResult 
 }
 
 #[post("/accounts/register", data = "<data>")]
-async fn register(data: JsonUpcase<RegisterData>, mut conn: DbConn) -> JsonResult {
+async fn register(data: JsonUpcase<RegisterData>, conn: DbConn) -> JsonResult {
+    _register(data, conn).await
+}
+
+pub async fn _register(data: JsonUpcase<RegisterData>, mut conn: DbConn) -> JsonResult {
     let data: RegisterData = data.into_inner().data;
     let email = data.Email.to_lowercase();
 
