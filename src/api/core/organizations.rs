@@ -1748,7 +1748,7 @@ async fn _restore_organization_user(
 }
 
 #[get("/organizations/<org_id>/groups")]
-async fn get_groups(org_id: String, _headers: AdminHeaders, mut conn: DbConn) -> JsonResult {
+async fn get_groups(org_id: String, _headers: ManagerHeadersLoose, mut conn: DbConn) -> JsonResult {
     let groups = Group::find_by_organization(&org_id, &mut conn).await.iter().map(Group::to_json).collect::<Value>();
 
     Ok(Json(json!({
