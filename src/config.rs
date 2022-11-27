@@ -533,7 +533,7 @@ make_config! {
         database_conn_init:     String, false,  def,    String::new();
 
         /// Bypass admin page security (Know the risks!) |> Disables the Admin Token for the admin page so you may use your own auth in-front
-        disable_admin_token:    bool,   true,   def,    false;
+        disable_admin_token:    bool,   false,  def,    false;
 
         /// Allowed iframe ancestors (Know the risks!) |> Allows other domains to embed the web vault into an iframe, useful for embedding into secure intranets
         allowed_iframe_ancestors: String, true, def,    String::new();
