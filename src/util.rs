@@ -83,7 +83,6 @@ impl Fairing for AppHeaders {
                   https://app.simplelogin.io/api/ \
                   https://app.anonaddy.com/api/ \
                   https://api.fastmail.com/ \
-                  https://quack.duckduckgo.com/api/email/ \
                   ;\
                 ",
                 icon_service_csp = CONFIG._icon_service_csp(),
