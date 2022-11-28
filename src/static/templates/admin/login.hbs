@@ -12,8 +12,11 @@
             <h6 class="mb-0 text-white">Authentication key needed to continue</h6>
             <small>Please provide it below:</small>
 
-            <form class="form-inline" method="post">
+            <form class="form-inline" method="post" action="{{urlpath}}/admin">
                 <input type="password" class="form-control w-50 mr-2" name="token" placeholder="Enter admin token" autofocus="autofocus">
+                {{#if redirect}}
+                <input type="hidden" id="redirect" name="redirect" value="/{{redirect}}">
+                {{/if}}
                 <button type="submit" class="btn btn-primary">Enter</button>
             </form>
         </div>

@@ -31,7 +31,6 @@ pub fn routes() -> Vec<Route> {
     }
 
     routes![
-        admin_login,
         get_users_json,
         get_user_json,
         post_admin_login,
@@ -61,17 +60,8 @@ pub fn catchers() -> Vec<Catcher> {
     if !CONFIG.disable_admin_token() && !CONFIG.is_admin_token_set() {
         catchers![]
     } else {
-        catchers![unauthorized]
+        catchers![admin_login]
     }
-}
-
-#[catch(401)]
-fn unauthorized(request: &Request<'_>) -> Result<Redirect, Error> {
-    if request.format() == Some(&MediaType::JSON) {
-        err_code!("Authorization failed.", Status::Unauthorized.code);
-    }
-    let redirect = request.segments::<std::path::PathBuf>(0..).unwrap_or_default().display().to_string();
-    Ok(Redirect::to(admin_redirect_url(&redirect)))
 }
 
 static DB_TYPE: Lazy<&str> = Lazy::new(|| {
@@ -102,10 +92,6 @@ fn admin_path() -> String {
     format!("{}{}", CONFIG.domain_path(), ADMIN_PATH)
 }
 
-fn admin_redirect_url(redirect: &str) -> String {
-    format!("{}/?redirect=/{}", admin_path(), redirect)
-}
-
 #[derive(Debug)]
 struct IpHeader(Option<String>);
 
@@ -134,24 +120,31 @@ fn admin_url() -> String {
 
 #[derive(Responder)]
 enum AdminResponse {
+    #[response(status = 200)]
+    Ok(ApiResult<Html<String>>),
     #[response(status = 401)]
     Unauthorized(ApiResult<Html<String>>),
     #[response(status = 429)]
     TooManyRequests(ApiResult<Html<String>>),
 }
 
-#[get("/?<_redirect..>")]
-fn admin_login(_redirect: &str) -> ApiResult<Html<String>> {
-    render_admin_login(None)
+#[catch(401)]
+fn admin_login(request: &Request<'_>) -> ApiResult<Html<String>> {
+    if request.format() == Some(&MediaType::JSON) {
+        err_code!("Authorization failed.", Status::Unauthorized.code);
+    }
+    let redirect = request.segments::<std::path::PathBuf>(0..).unwrap_or_default().display().to_string();
+    render_admin_login(None, Some(redirect))
 }
 
-fn render_admin_login(msg: Option<&str>) -> ApiResult<Html<String>> {
+fn render_admin_login(msg: Option<&str>, redirect: Option<String>) -> ApiResult<Html<String>> {
     // If there is an error, show it
     let msg = msg.map(|msg| format!("Error: {msg}"));
     let json = json!({
         "page_content": "admin/login",
         "version": VERSION,
         "error": msg,
+        "redirect": redirect,
         "urlpath": CONFIG.domain_path()
     });
 
@@ -163,25 +156,25 @@ fn render_admin_login(msg: Option<&str>) -> ApiResult<Html<String>> {
 #[derive(FromForm)]
 struct LoginForm {
     token: String,
+    redirect: Option<String>,
 }
 
-#[post("/?<redirect>", data = "<data>")]
-fn post_admin_login(
-    data: Form<LoginForm>,
-    redirect: &str,
-    cookies: &CookieJar<'_>,
-    ip: ClientIp,
-) -> Result<Redirect, AdminResponse> {
+#[post("/", data = "<data>")]
+fn post_admin_login(data: Form<LoginForm>, cookies: &CookieJar<'_>, ip: ClientIp) -> Result<Redirect, AdminResponse> {
     let data = data.into_inner();
+    let redirect = data.redirect;
 
     if crate::ratelimit::check_limit_admin(&ip.ip).is_err() {
-        return Err(AdminResponse::TooManyRequests(render_admin_login(Some("Too many requests, try again later."))));
+        return Err(AdminResponse::TooManyRequests(render_admin_login(
+            Some("Too many requests, try again later."),
+            redirect,
+        )));
     }
 
     // If the token is invalid, redirect to login page
     if !_validate_token(&data.token) {
         error!("Invalid admin token. IP: {}", ip.ip);
-        Err(AdminResponse::Unauthorized(render_admin_login(Some("Invalid admin token, please try again."))))
+        Err(AdminResponse::Unauthorized(render_admin_login(Some("Invalid admin token, please try again."), redirect)))
     } else {
         // If the token received is valid, generate JWT and save it as a cookie
         let claims = generate_admin_claims();
@@ -195,7 +188,11 @@ fn post_admin_login(
             .finish();
 
         cookies.add(cookie);
-        Ok(Redirect::to(format!("{}{}", admin_path(), redirect)))
+        if let Some(redirect) = redirect {
+            Ok(Redirect::to(format!("{}{}", admin_path(), redirect)))
+        } else {
+            Err(AdminResponse::Ok(render_admin_page()))
+        }
     }
 }
 
@@ -247,10 +244,14 @@ impl AdminTemplateData {
     }
 }
 
-#[get("/")]
-fn admin_page(_token: AdminToken) -> ApiResult<Html<String>> {
+fn render_admin_page() -> ApiResult<Html<String>> {
     let text = AdminTemplateData::new().render()?;
     Ok(Html(text))
+}
+
+#[get("/")]
+fn admin_page(_token: AdminToken) -> ApiResult<Html<String>> {
+    render_admin_page()
 }
 
 #[derive(Deserialize, Debug)]
