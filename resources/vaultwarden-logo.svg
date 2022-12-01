@@ -1,151 +1,88 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<svg
-   version="1.1"
-   id="Capa_1"
-   x="0px"
-   y="0px"
-   viewBox="0 0 1365.8255 280.48944"
-   xml:space="preserve"
-   sodipodi:docname="vaultwarden-logo.svg"
-   inkscape:version="1.1 (c4e8f9ed74, 2021-05-24)"
-   width="1365.8256"
-   height="280.48944"
-   inkscape:export-filename="vaultwarden-logo.png"
-   inkscape:export-xdpi="144"
-   inkscape:export-ydpi="144"
-   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
-   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
-   xmlns="http://www.w3.org/2000/svg"
-   xmlns:svg="http://www.w3.org/2000/svg"
-   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
-   xmlns:cc="http://creativecommons.org/ns#"
-   xmlns:dc="http://purl.org/dc/elements/1.1/"><title
-   id="title29">Vaultwarden Logo</title><metadata
-   id="metadata45"><rdf:RDF><cc:Work
-       rdf:about=""><dc:format>image/svg+xml</dc:format><dc:type
-         rdf:resource="http://purl.org/dc/dcmitype/StillImage" /><dc:title>Vaultwarden Logo</dc:title><dc:creator><cc:Agent><dc:title>Mathijs van Veluw</dc:title></cc:Agent></dc:creator><dc:relation>Rust Logo</dc:relation></cc:Work></rdf:RDF></metadata><defs
-   id="defs43" /><sodipodi:namedview
-   pagecolor="#ffffff"
-   bordercolor="#666666"
-   borderopacity="1"
-   objecttolerance="10"
-   gridtolerance="10"
-   guidetolerance="10"
-   inkscape:pageopacity="0"
-   inkscape:pageshadow="2"
-   inkscape:window-width="1920"
-   inkscape:window-height="1049"
-   id="namedview41"
-   showgrid="false"
-   inkscape:zoom="0.50733735"
-   inkscape:cx="99.539291"
-   inkscape:cy="136.98972"
-   inkscape:window-x="1920"
-   inkscape:window-y="0"
-   inkscape:window-maximized="1"
-   inkscape:current-layer="g8"
-   inkscape:document-rotation="0"
-   fit-margin-top="0"
-   fit-margin-left="0"
-   fit-margin-right="0"
-   fit-margin-bottom="0"
-   showguides="true"
-   inkscape:pagecheckerboard="0" />
-<g
-   id="g8"
-   transform="translate(-10.708266,-9.2965379)">
-
-
-
-<text
-   xml:space="preserve"
-   style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:200px;line-height:1.25;font-family:'Open Sans';-inkscape-font-specification:'Open Sans';fill:#000000;fill-opacity:1;stroke:none"
-   x="286.59244"
-   y="223.43649"
-   id="text129"><tspan
-     sodipodi:role="line"
-     id="tspan127"
-     x="286.59244"
-     y="223.43649"
-     style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:200px;font-family:'Open Sans';-inkscape-font-specification:'Open Sans'"><tspan
-   style="font-style:normal;font-variant:normal;font-weight:bold;font-stretch:normal;font-size:200px;font-family:'Open Sans';-inkscape-font-specification:'Open Sans Bold'"
-   id="tspan30">ault</tspan>warden</tspan></text><g
-   id="g49"
-   transform="matrix(1.6845401,0,0,1.6845401,494.51937,-86.453367)"><path
-     d="m -121.83937,138.05241 -6.98995,-4.32717 c -0.059,-0.67929 -0.12536,-1.35792 -0.19902,-2.03579 l 6.00718,-5.60327 c 0.61086,-0.56747 0.88299,-1.41152 0.7187,-2.22896 -0.16043,-0.81796 -0.73431,-1.49379 -1.51545,-1.78472 l -7.67938,-2.87156 c -0.19288,-0.66309 -0.39344,-1.32396 -0.60164,-1.98244 l 4.79027,-6.65304 c 1.04651,-1.45048 0.20002,-3.49518 -1.56553,-3.78148 l -8.0976,-1.31708 c -0.3148,-0.61399 -0.64261,-1.21887 -0.97302,-1.81855 l 3.4023,-7.468656 c 0.34833,-0.757849 0.27736,-1.642349 -0.18731,-2.334963 -0.46103,-0.694895 -1.25061,-1.099512 -2.08393,-1.067976 l -8.21857,0.286187 c -0.42446,-0.531648 -0.85724,-1.056598 -1.29822,-1.574649 l 1.88879,-8.005242 c 0.19212,-0.81184 -0.0507,-1.665186 -0.6413,-2.254309 -0.58913,-0.589746 -1.44163,-0.832402 -2.25301,-0.641314 l -8.0033,1.886847 c -0.51953,-0.4405 -1.04553,-0.873315 -1.57789,-1.298218 l 0.28748,-8.217927 c 0.0312,-0.833106 -0.37268,-1.622579 -1.06668,-2.084574 -0.69281,-0.463867 -1.57665,-0.53527 -2.33496,-0.188609 l -7.46671,3.40425 c -0.60228,-0.332412 -1.20852,-0.657629 -1.81853,-0.975633 l -1.32034,-8.09889 c -0.28816,-1.76333 -2.32963,-2.608798 -3.78018,-1.565537 l -6.6576,4.790259 c -0.65496,-0.208119 -1.31382,-0.409101 -1.97854,-0.599674 l -2.87156,-7.680673 c -0.29045,-0.782461 -0.96657,-1.357799 -1.78537,-1.519368 -0.81672,-0.160726 -1.65861,0.111226 -2.22701,0.719365 l -5.60328,6.011731 c -0.67759,-0.07595 -1.35629,-0.142297 -2.03578,-0.199033 l -4.32716,-6.9919 c -0.94024,-1.519281 -3.1502,-1.519281 -4.09044,0 l -4.32716,6.9919 c -0.68014,0.05667 -1.3595,0.123017 -2.03774,0.199033 l -5.60459,-6.011731 c -1.2184,-1.309662 -3.3894,-0.87683 -4.01237,0.800003 l -2.8709,7.680673 c -0.66538,0.190573 -1.32359,0.392845 -1.9805,0.599674 l -6.6563,-4.790259 c -0.67616,-0.488791 -1.55773,-0.591006 -2.32781,-0.269916 -0.76917,0.319483 -1.3189,1.013531 -1.45366,1.835453 l -1.32034,8.09889 c -0.61138,0.316759 -1.21562,0.642619 -1.81854,0.975633 l -7.46735,-3.404903 c -0.75792,-0.346886 -1.64156,-0.275192 -2.33367,0.189262 -0.69451,0.461668 -1.099,1.251207 -1.06798,2.084574 l 0.28618,8.217927 c -0.53169,0.425714 -1.0577,0.858479 -1.5779,1.298218 l -8.00328,-1.886194 c -0.81164,-0.19019 -1.66401,0.05203 -2.25433,0.640661 -0.59063,0.589123 -0.83342,1.442469 -0.6413,2.254309 l 1.88555,8.005242 c -0.43773,0.518378 -0.87025,1.043255 -1.29497,1.574649 l -8.21858,-0.286187 c -0.83193,-0.02623 -1.61905,0.376856 -2.0839,1.067317 -0.46373,0.692824 -0.53536,1.576466 -0.18927,2.334984 l 3.40423,7.469294 c -0.33105,0.59968 -0.6582,1.20456 -0.97561,1.81855 l -8.09694,1.31708 c -1.76444,0.2877 -2.6103,2.33081 -1.56554,3.78148 l 4.79027,6.65368 c -0.20813,0.65693 -0.41041,1.31643 -0.60163,1.9818 l -7.68004,2.87156 c -1.67214,0.62818 -2.10219,2.7944 -0.79676,4.01368 l 6.00784,5.60261 c -0.0747,0.67644 -0.14113,1.35742 -0.19837,2.03645 l -6.99126,4.32717 c -0.70829,0.4385 -1.13899,1.2125 -1.13821,2.04553 0,0.83513 0.43122,1.60847 1.13887,2.04423 l 6.9906,4.32719 c 0.0573,0.68097 0.12357,1.36066 0.19837,2.03643 l -6.00848,5.60458 c -1.30817,1.21808 -0.87715,3.387 0.7974,4.01237 l 7.68004,2.87156 c 0.19122,0.66472 0.3935,1.32488 0.60163,1.98181 l -4.79027,6.65433 c -1.04696,1.45074 -0.19891,3.49602 1.56749,3.78018 l 8.09565,1.31708 c 0.31675,0.61398 0.6413,1.21886 0.97561,1.82114 l -3.40489,7.46671 c -0.34673,0.75837 -0.27507,1.64234 0.18927,2.33497 0.46169,0.69405 1.25093,1.09828 2.0839,1.06732 l 8.21468,-0.28748 c 0.42862,0.53398 0.85984,1.05756 1.29887,1.57789 l -1.88555,8.00654 c -0.19197,0.81042 0.0509,1.66238 0.6413,2.24977 0.58882,0.59119 1.44282,0.83337 2.25433,0.63935 l 8.00328,-1.88488 c 0.52034,0.44228 1.04717,0.87155 1.57856,1.29431 l -0.28619,8.22052 c -0.0643,1.78662 1.77543,3.01531 3.401,2.27124 l 7.46735,-3.4023 c 0.60126,0.33409 1.20748,0.65913 1.81854,0.97497 l 1.32034,8.09435 c 0.13262,0.82335 0.68292,1.51889 1.45366,1.83741 0.77022,0.31902 1.65055,0.21743 2.32781,-0.26862 l 6.65304,-4.79353 c 0.65692,0.20813 1.31708,0.41172 1.9818,0.60294 l 2.87156,7.67743 c 0.29073,0.78141 0.96664,1.35551 1.78472,1.5161 0.81718,0.16487 1.66121,-0.1077 2.22766,-0.71935 l 5.60458,-6.00848 c 0.67642,0.0781 1.35675,0.14309 2.03773,0.20357 l 4.32717,6.99061 c 0.43889,0.70725 1.21192,1.13762 2.04425,1.13821 0.83277,-3.4e-4 1.60631,-0.43068 2.04553,-1.13821 l 4.32717,-6.99061 c 0.68098,-0.0605 1.36066,-0.12552 2.03644,-0.20357 l 5.60328,6.00848 c 0.5665,0.6111 1.41008,0.88358 2.227,0.71935 0.81783,-0.16115 1.49347,-0.73509 1.78472,-1.5161 l 2.87156,-7.67743 c 0.66472,-0.19122 1.32553,-0.39481 1.98245,-0.60294 l 6.65434,4.79353 c 1.45159,1.04351 3.494,0.19593 3.78018,-1.56879 l 1.32032,-8.09435 c 0.61074,-0.31675 1.21498,-0.64586 1.81789,-0.97561 l 7.46737,3.40294 c 1.62589,0.74654 3.46791,-0.48334 3.40163,-2.27124 l -0.28617,-8.21987 c 0.53214,-0.42329 1.0575,-0.85503 1.57594,-1.29496 l 8.00394,1.88488 c 0.81302,0.19123 1.66505,-0.0455 2.25237,-0.63935 0.59042,-0.5874 0.83331,-1.43935 0.64131,-2.24977 l -1.8849,-8.00654 c 0.43903,-0.52033 0.87155,-1.04391 1.29432,-1.57789 l 8.21858,0.28748 c 0.83297,0.0315 1.62231,-0.37259 2.0839,-1.06667 0.46514,-0.69295 0.53634,-1.57789 0.18797,-2.33628 l -3.40294,-7.46539 c 0.33236,-0.60294 0.65887,-1.20782 0.97367,-1.82116 l 8.09759,-1.31772 c 0.82329,-0.13219 1.51852,-0.68305 1.83546,-1.45431 0.31921,-0.76971 0.21708,-1.64977 -0.26992,-2.32587 l -4.79026,-6.6537 c 0.20683,-0.65756 0.4091,-1.31772 0.60162,-1.98244 l 7.67874,-2.87156 c 0.78166,-0.29074 1.35584,-0.96697 1.5161,-1.78537 0.16462,-0.81698 -0.10792,-1.66069 -0.71935,-2.227 l -6.00653,-5.60458 c 0.0728,-0.67643 0.13983,-1.35675 0.19837,-2.03578 l 6.99061,-4.32784 c 0.70862,-0.43763 1.13964,-1.21137 1.13887,-2.04423 0,-0.83317 -0.42927,-1.60781 -1.13758,-2.04553 z m -46.78525,57.98791 c -2.66929,-0.57561 -4.36685,-3.20652 -3.79384,-5.88425 0.57106,-2.67449 3.20002,-4.37661 5.86864,-3.801 2.66929,0.57171 4.36945,3.20718 3.79709,5.87971 -0.57236,2.67317 -3.20391,4.37725 -5.87189,3.80554 z m -85.20366,-67.75316 c 2.27683,-1.01282 3.30259,-3.67866 2.29205,-5.95646 0,0 -4.7154,-10.47937 -4.57381,-11.59289 0.9898,-7.7854 6.88718,-15.019243 13.36396,-20.688869 6.66345,-5.833 18.89505,-8.222474 26.68826,-10.333706 0.54928,-0.148782 8.42735,8.001345 8.42735,8.001345 1.71813,1.803314 4.57395,1.869198 6.37337,0.146991 l 8.51906,-8.148336 c 17.85049,3.323592 32.96406,14.435192 41.67369,29.680135 l -5.83221,13.17273 c -1.00685,2.2797 0.0208,4.94572 2.29398,5.95581 l 11.22868,4.98735 c 0.19381,1.99351 0.29593,4.00716 0.29593,6.0488 1.5619,14.92169 -5.31066,30.62323 -17.46088,42.66296 l -10.4599,-2.24782 h -5.1e-4 c -2.43617,-0.52245 -4.83397,1.03104 -5.35287,3.46799 l -2.48197,11.58184 c -7.65856,3.47579 -16.16266,5.40686 -25.11946,5.40686 -9.16167,0 -17.85115,-2.02668 -25.64565,-5.65076 l -2.48064,-11.5812 c -0.52164,-2.43708 -2.91775,-3.98961 -5.35158,-3.46669 l -10.22443,2.19579 c -10.18477,-11.48557 -16.9061,-29.32695 -17.17146,-42.36897 0,-2.21009 0.11901,-4.39417 0.34796,-6.54053 v 0 l 10.65111,-4.73302 m 14.02218,67.51249 c -2.66994,0.57626 -5.29824,-1.12586 -5.87255,-3.80035 -0.57105,-2.67903 1.12651,-5.30864 3.79579,-5.88425 2.66994,-0.57106 5.29954,1.13106 5.8719,3.8049 0.57105,2.67318 -1.12781,5.30733 -3.7958,5.8797 z M -258.679,119.27181 c 1.10764,2.49887 -0.0195,5.42767 -2.51513,6.53337 -2.49564,1.10894 -5.41662,-0.0195 -6.52362,-2.52033 -1.10764,-2.50083 0.0189,-5.42442 2.51513,-6.53337 2.49719,-1.10758 5.41928,0.0211 6.52362,2.5197 z m 51.05194,-46.335823 c 1.9727,-1.889433 5.10182,-1.814638 6.9906,0.160653 1.88489,1.981149 1.81334,5.113514 -0.16389,7.001671 -1.9727,1.890086 -5.10182,1.816585 -6.99061,-0.162619 -1.88437,-1.979444 -1.81107,-5.110655 0.1639,-6.999705 z m 57.87539,46.575823 c 1.10375,-2.49856 4.02585,-3.6268 6.52231,-2.51838 2.49627,1.107 3.62279,4.03449 2.51514,6.53337 -1.1033,2.49972 -4.0263,3.62903 -6.52361,2.52033 -2.49301,-1.10765 -3.61953,-4.03253 -2.51384,-6.53532 z"
-     color="#000000"
-     color-rendering="auto"
-     dominant-baseline="auto"
-     image-rendering="auto"
-     shape-rendering="auto"
-     solid-color="#000000"
-     stop-color="#000000"
-     style="font-variant-ligatures:normal;font-variant-position:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-alternates:normal;font-variant-east-asian:normal;font-feature-settings:normal;font-variation-settings:normal;text-indent:0;text-decoration:none;text-decoration-line:none;text-decoration-style:solid;text-decoration-color:#000000;text-transform:none;text-orientation:mixed;white-space:normal;shape-padding:0;shape-margin:0;inline-size:0;isolation:auto;mix-blend-mode:normal;stroke-width:0.65041"
-     id="path2-6" /><g
-     aria-label="V"
-     id="g6"
-     transform="matrix(0.65040957,0,0,0.65040957,-287.20599,56.842282)"><path
-       d="m 40.368,56.262 35.459,-17.039 51.802,139.85 47.083,-133.45 40.067,10.639 -61.629,166.39 h -51.153 z"
-       stroke-width="0.21397"
-       id="path4-7" /></g></g></g>
-<g
-   id="g10"
-   transform="translate(-10.708266,-9.2965379)">
-</g>
-<g
-   id="g12"
-   transform="translate(-10.708266,-9.2965379)">
-</g>
-<g
-   id="g14"
-   transform="translate(-10.708266,-9.2965379)">
-</g>
-<g
-   id="g16"
-   transform="translate(-10.708266,-9.2965379)">
-</g>
-<g
-   id="g18"
-   transform="translate(-10.708266,-9.2965379)">
-</g>
-<g
-   id="g20"
-   transform="translate(-10.708266,-9.2965379)">
-</g>
-<g
-   id="g22"
-   transform="translate(-10.708266,-9.2965379)">
-</g>
-<g
-   id="g24"
-   transform="translate(-10.708266,-9.2965379)">
-</g>
-<g
-   id="g26"
-   transform="translate(-10.708266,-9.2965379)">
-</g>
-<g
-   id="g28"
-   transform="translate(-10.708266,-9.2965379)">
-</g>
-<g
-   id="g30"
-   transform="translate(-10.708266,-9.2965379)">
-</g>
-<g
-   id="g32"
-   transform="translate(-10.708266,-9.2965379)">
-</g>
-<g
-   id="g34"
-   transform="translate(-10.708266,-9.2965379)">
-</g>
-<g
-   id="g36"
-   transform="translate(-10.708266,-9.2965379)">
-</g>
-<g
-   id="g38"
-   transform="translate(-10.708266,-9.2965379)">
-</g>
+<svg width="1365.8256" height="280.48944" version="1.1" viewBox="0 0 1365.8255 280.48944" id="svg3412" sodipodi:docname="vaultwarden-logo.svg" inkscape:version="1.2.1 (9c6d41e410, 2022-07-14, custom)" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns="http://www.w3.org/2000/svg" xmlns:svg="http://www.w3.org/2000/svg" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:cc="http://creativecommons.org/ns#" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <sodipodi:namedview id="namedview3414" pagecolor="#ffffff" bordercolor="#666666" borderopacity="1.0" inkscape:showpageshadow="2" inkscape:pageopacity="0.0" inkscape:pagecheckerboard="0" inkscape:deskcolor="#d1d1d1" showgrid="false" inkscape:zoom="0.95107314" inkscape:cx="683.4385" inkscape:cy="139.84203" inkscape:window-width="1874" inkscape:window-height="1056" inkscape:window-x="46" inkscape:window-y="24" inkscape:window-maximized="1" inkscape:current-layer="svg3412" />
+  <title id="title3292">Vaultwarden Logo</title>
+  <defs id="defs3308">
+    <mask id="holes">
+      <rect x="-60" y="-60" width="120" height="120" fill="#fff" id="rect3296" />
+      <circle id="hole" cy="-40" r="3" />
+      <use transform="rotate(72)" xlink:href="#hole" id="use3299" />
+      <use transform="rotate(144)" xlink:href="#hole" id="use3301" />
+      <use transform="rotate(216)" xlink:href="#hole" id="use3303" />
+      <use transform="rotate(-72)" xlink:href="#hole" id="use3305" />
+    </mask>
+  </defs>
+  <text transform="translate(-10.708266,-9.2965379)" x="286.59244" y="223.43649" fill="#000000" font-family="'Open Sans'" font-size="200px" style="line-height:1.25" xml:space="preserve" id="text3314"><tspan x="286.59244" y="223.43649" font-family="'Open Sans'" font-size="200px" id="tspan3312"><tspan font-family="'Open Sans'" font-size="200px" font-weight="bold" id="tspan3310">ault</tspan>warden</tspan></text>
+  <g transform="translate(-10.708266,-9.2965379)" id="g3410">
+    <g id="logo" transform="matrix(2.6712834,0,0,2.6712834,150.95027,149.53854)">
+      <g id="gear" mask="url(#holes)">
+        <path d="m-31.1718-33.813208 26.496029 74.188883h9.3515399l26.49603-74.188883h-9.767164l-16.728866 47.588948q-1.662496 4.571864-2.805462 8.624198-1.142966 3.948427-1.870308 7.585137-.72734199-3.63671-1.8703079-7.689043-1.142966-4.052334-2.805462-8.728104l-16.624959-47.381136z" stroke="#000" stroke-width="4.51171" id="path3316" />
+        <circle transform="scale(-1,1)" r="43" fill="none" stroke="#000" stroke-width="9" id="circle3318" />
+        <g id="cogs" transform="scale(-1,1)">
+          <polygon id="cog" points="46 -3 46 3 51 0" stroke="#000" stroke-linejoin="round" stroke-width="3" />
+          <use transform="rotate(11.25)" xlink:href="#cog" id="use3321" />
+          <use transform="rotate(22.5)" xlink:href="#cog" id="use3323" />
+          <use transform="rotate(33.75)" xlink:href="#cog" id="use3325" />
+          <use transform="rotate(45)" xlink:href="#cog" id="use3327" />
+          <use transform="rotate(56.25)" xlink:href="#cog" id="use3329" />
+          <use transform="rotate(67.5)" xlink:href="#cog" id="use3331" />
+          <use transform="rotate(78.75)" xlink:href="#cog" id="use3333" />
+          <use transform="rotate(90)" xlink:href="#cog" id="use3335" />
+          <use transform="rotate(101.25)" xlink:href="#cog" id="use3337" />
+          <use transform="rotate(112.5)" xlink:href="#cog" id="use3339" />
+          <use transform="rotate(123.75)" xlink:href="#cog" id="use3341" />
+          <use transform="rotate(135)" xlink:href="#cog" id="use3343" />
+          <use transform="rotate(146.25)" xlink:href="#cog" id="use3345" />
+          <use transform="rotate(157.5)" xlink:href="#cog" id="use3347" />
+          <use transform="rotate(168.75)" xlink:href="#cog" id="use3349" />
+          <use transform="scale(-1)" xlink:href="#cog" id="use3351" />
+          <use transform="rotate(191.25)" xlink:href="#cog" id="use3353" />
+          <use transform="rotate(202.5)" xlink:href="#cog" id="use3355" />
+          <use transform="rotate(213.75)" xlink:href="#cog" id="use3357" />
+          <use transform="rotate(225)" xlink:href="#cog" id="use3359" />
+          <use transform="rotate(236.25)" xlink:href="#cog" id="use3361" />
+          <use transform="rotate(247.5)" xlink:href="#cog" id="use3363" />
+          <use transform="rotate(258.75)" xlink:href="#cog" id="use3365" />
+          <use transform="rotate(-90)" xlink:href="#cog" id="use3367" />
+          <use transform="rotate(-78.75)" xlink:href="#cog" id="use3369" />
+          <use transform="rotate(-67.5)" xlink:href="#cog" id="use3371" />
+          <use transform="rotate(-56.25)" xlink:href="#cog" id="use3373" />
+          <use transform="rotate(-45)" xlink:href="#cog" id="use3375" />
+          <use transform="rotate(-33.75)" xlink:href="#cog" id="use3377" />
+          <use transform="rotate(-22.5)" xlink:href="#cog" id="use3379" />
+          <use transform="rotate(-11.25)" xlink:href="#cog" id="use3381" />
+        </g>
+        <g id="mounts" transform="scale(-1,1)">
+          <polygon id="mount" points="7 -42 -7 -42 0 -35" stroke="#000" stroke-linejoin="round" stroke-width="6" />
+          <use transform="rotate(72)" xlink:href="#mount" id="use3385" />
+          <use transform="rotate(144)" xlink:href="#mount" id="use3387" />
+          <use transform="rotate(216)" xlink:href="#mount" id="use3389" />
+          <use transform="rotate(-72)" xlink:href="#mount" id="use3391" />
+        </g>
+      </g>
+      <mask id="mask3407">
+        <rect x="-60" y="-60" width="120" height="120" fill="#fff" id="rect3395" />
+        <circle cy="-40" r="3" id="circle3397" />
+        <use transform="rotate(72)" xlink:href="#hole" id="use3399" />
+        <use transform="rotate(144)" xlink:href="#hole" id="use3401" />
+        <use transform="rotate(216)" xlink:href="#hole" id="use3403" />
+        <use transform="rotate(-72)" xlink:href="#hole" id="use3405" />
+      </mask>
+    </g>
+  </g>
+  <metadata id="metadata3294">
+    <rdf:RDF>
+      <cc:Work rdf:about="">
+        <dc:format>image/svg+xml</dc:format>
+        <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
+        <dc:title>Vaultwarden Logo</dc:title>
+        <dc:creator>
+          <cc:Agent>
+            <dc:title>Mathijs van Veluw</dc:title>
+          </cc:Agent>
+        </dc:creator>
+        <dc:relation>Rust Logo</dc:relation>
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
 </svg>
