@@ -424,22 +424,15 @@ mod sqlite_migrations {
     pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations/sqlite");
 
     pub fn run_migrations() -> Result<(), super::Error> {
-        // Make sure the directory exists
-        let url = crate::CONFIG.database_url();
-        let path = std::path::Path::new(&url);
-
-        if let Some(parent) = path.parent() {
-            if std::fs::create_dir_all(parent).is_err() {
-                error!("Error creating database directory");
-                std::process::exit(1);
-            }
-        }
-
         use diesel::{Connection, RunQueryDsl};
-        // Make sure the database is up to date (create if it doesn't exist, or run the migrations)
-        let mut connection = diesel::sqlite::SqliteConnection::establish(&crate::CONFIG.database_url())?;
-        // Disable Foreign Key Checks during migration
+        let url = crate::CONFIG.database_url();
 
+        // Establish a connection to the sqlite database (this will create a new one, if it does
+        // not exist, and exit if there is an error).
+        let mut connection = diesel::sqlite::SqliteConnection::establish(&url)?;
+
+        // Run the migrations after successfully establishing a connection
+        // Disable Foreign Key Checks during migration
         // Scoped to a connection.
         diesel::sql_query("PRAGMA foreign_keys = OFF")
             .execute(&mut connection)
