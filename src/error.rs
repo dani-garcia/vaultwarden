@@ -1,6 +1,7 @@
 //
 // Error generator macro
 //
+use crate::db::models::EventType;
 use std::error::Error as StdError;
 
 macro_rules! make_error {
@@ -8,14 +9,17 @@ macro_rules! make_error {
         const BAD_REQUEST: u16 = 400;
 
         pub enum ErrorKind { $($name( $ty )),+ }
-        pub struct Error { message: String, error: ErrorKind, error_code: u16 }
+
+        #[derive(Debug)]
+        pub struct ErrorEvent { pub event: EventType }
+        pub struct Error { message: String, error: ErrorKind, error_code: u16, event: Option<ErrorEvent> }
 
         $(impl From<$ty> for Error {
             fn from(err: $ty) -> Self { Error::from((stringify!($name), err)) }
         })+
         $(impl<S: Into<String>> From<(S, $ty)> for Error {
             fn from(val: (S, $ty)) -> Self {
-                Error { message: val.0.into(), error: ErrorKind::$name(val.1), error_code: BAD_REQUEST }
+                Error { message: val.0.into(), error: ErrorKind::$name(val.1), error_code: BAD_REQUEST, event: None }
             }
         })+
         impl StdError for Error {
@@ -130,6 +134,16 @@ impl Error {
         self.error_code = code;
         self
     }
+
+    #[must_use]
+    pub fn with_event(mut self, event: ErrorEvent) -> Self {
+        self.event = Some(event);
+        self
+    }
+
+    pub fn get_event(&self) -> &Option<ErrorEvent> {
+        &self.event
+    }
 }
 
 pub trait MapResult<S> {
@@ -216,12 +230,21 @@ macro_rules! err {
         error!("{}", $msg);
         return Err($crate::error::Error::new($msg, $msg));
     }};
+    ($msg:expr, ErrorEvent $err_event:tt) => {{
+        error!("{}", $msg);
+        return Err($crate::error::Error::new($msg, $msg).with_event($crate::error::ErrorEvent $err_event));
+    }};
     ($usr_msg:expr, $log_value:expr) => {{
         error!("{}. {}", $usr_msg, $log_value);
         return Err($crate::error::Error::new($usr_msg, $log_value));
     }};
+    ($usr_msg:expr, $log_value:expr, ErrorEvent $err_event:tt) => {{
+        error!("{}. {}", $usr_msg, $log_value);
+        return Err($crate::error::Error::new($usr_msg, $log_value).with_event($crate::error::ErrorEvent $err_event));
+    }};
 }
 
+#[macro_export]
 macro_rules! err_silent {
     ($msg:expr) => {{
         return Err($crate::error::Error::new($msg, $msg));
@@ -233,11 +256,11 @@ macro_rules! err_silent {
 
 #[macro_export]
 macro_rules! err_code {
-    ($msg:expr, $err_code: expr) => {{
+    ($msg:expr, $err_code:expr) => {{
         error!("{}", $msg);
         return Err($crate::error::Error::new($msg, $msg).with_code($err_code));
     }};
-    ($usr_msg:expr, $log_value:expr, $err_code: expr) => {{
+    ($usr_msg:expr, $log_value:expr, $err_code:expr) => {{
         error!("{}. {}", $usr_msg, $log_value);
         return Err($crate::error::Error::new($usr_msg, $log_value).with_code($err_code));
     }};
@@ -259,6 +282,9 @@ macro_rules! err_discard {
 macro_rules! err_json {
     ($expr:expr, $log_value:expr) => {{
         return Err(($log_value, $expr).into());
+    }};
+    ($expr:expr, $log_value:expr, $err_event:expr, ErrorEvent) => {{
+        return Err(($log_value, $expr).into().with_event($err_event));
     }};
 }
 

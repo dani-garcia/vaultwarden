@@ -430,6 +430,7 @@ async fn launch_rocket(pool: db::DbPool, extra_debug: bool) -> Result<(), Error>
         .mount([basepath, "/"].concat(), api::web_routes())
         .mount([basepath, "/api"].concat(), api::core_routes())
         .mount([basepath, "/admin"].concat(), api::admin_routes())
+        .mount([basepath, "/events"].concat(), api::core_events_routes())
         .mount([basepath, "/identity"].concat(), api::identity_routes())
         .mount([basepath, "/icons"].concat(), api::icons_routes())
         .mount([basepath, "/notifications"].concat(), api::notifications_routes())
@@ -508,6 +509,16 @@ async fn schedule_jobs(pool: db::DbPool) {
             if !CONFIG.emergency_notification_reminder_schedule().is_empty() {
                 sched.add(Job::new(CONFIG.emergency_notification_reminder_schedule().parse().unwrap(), || {
                     runtime.spawn(api::emergency_notification_reminder_job(pool.clone()));
+                }));
+            }
+
+            // Cleanup the event table of records x days old.
+            if CONFIG.org_events_enabled()
+                && !CONFIG.event_cleanup_schedule().is_empty()
+                && CONFIG.events_days_retain().is_some()
+            {
+                sched.add(Job::new(CONFIG.event_cleanup_schedule().parse().unwrap(), || {
+                    runtime.spawn(api::event_cleanup_job(pool.clone()));
                 }));
             }
 

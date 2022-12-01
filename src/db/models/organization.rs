@@ -3,6 +3,7 @@ use serde_json::Value;
 use std::cmp::Ordering;
 
 use super::{CollectionUser, GroupUser, OrgPolicy, OrgPolicyType, User};
+use crate::CONFIG;
 
 db_object! {
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -147,7 +148,7 @@ impl Organization {
             "MaxStorageGb": 10, // The value doesn't matter, we don't check server-side
             "Use2fa": true,
             "UseDirectory": false, // Is supported, but this value isn't checked anywhere (yet)
-            "UseEvents": false, // Not supported
+            "UseEvents": CONFIG.org_events_enabled(),
             "UseGroups": true,
             "UseTotp": true,
             "UsePolicies": true,
@@ -300,10 +301,9 @@ impl UserOrganization {
             "Seats": 10, // The value doesn't matter, we don't check server-side
             "MaxCollections": 10, // The value doesn't matter, we don't check server-side
             "UsersGetPremium": true,
-
             "Use2fa": true,
             "UseDirectory": false, // Is supported, but this value isn't checked anywhere (yet)
-            "UseEvents": false, // Not supported
+            "UseEvents": CONFIG.org_events_enabled(),
             "UseGroups": true,
             "UseTotp": true,
             // "UseScim": false, // Not supported (Not AGPLv3 Licensed)
@@ -629,6 +629,16 @@ impl UserOrganization {
         }}
     }
 
+    pub async fn get_org_uuid_by_user(user_uuid: &str, conn: &mut DbConn) -> Vec<String> {
+        db_run! { conn: {
+            users_organizations::table
+                .filter(users_organizations::user_uuid.eq(user_uuid))
+                .select(users_organizations::org_uuid)
+                .load::<String>(conn)
+                .unwrap_or_default()
+        }}
+    }
+
     pub async fn find_by_user_and_policy(user_uuid: &str, policy_type: OrgPolicyType, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             users_organizations::table
@@ -667,6 +677,18 @@ impl UserOrganization {
             )
             .select(users_organizations::all_columns)
             .load::<UserOrganizationDb>(conn).expect("Error loading user organizations").from_db()
+        }}
+    }
+
+    pub async fn user_has_ge_admin_access_to_cipher(user_uuid: &str, cipher_uuid: &str, conn: &mut DbConn) -> bool {
+        db_run! { conn: {
+            users_organizations::table
+            .inner_join(ciphers::table.on(ciphers::uuid.eq(cipher_uuid).and(ciphers::organization_uuid.eq(users_organizations::org_uuid.nullable()))))
+            .filter(users_organizations::user_uuid.eq(user_uuid))
+            .filter(users_organizations::atype.eq_any(vec![UserOrgType::Owner as i32, UserOrgType::Admin as i32]))
+            .count()
+            .first::<i64>(conn)
+            .ok().unwrap_or(0) != 0
         }}
     }
 

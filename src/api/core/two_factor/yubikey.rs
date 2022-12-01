@@ -4,10 +4,13 @@ use serde_json::Value;
 use yubico::{config::Config, verify};
 
 use crate::{
-    api::{core::two_factor::_generate_recover_code, EmptyResult, JsonResult, JsonUpcase, PasswordData},
-    auth::Headers,
+    api::{
+        core::{log_user_event, two_factor::_generate_recover_code},
+        EmptyResult, JsonResult, JsonUpcase, PasswordData,
+    },
+    auth::{ClientIp, Headers},
     db::{
-        models::{TwoFactor, TwoFactorType},
+        models::{EventType, TwoFactor, TwoFactorType},
         DbConn,
     },
     error::{Error, MapResult},
@@ -113,7 +116,12 @@ async fn generate_yubikey(data: JsonUpcase<PasswordData>, headers: Headers, mut 
 }
 
 #[post("/two-factor/yubikey", data = "<data>")]
-async fn activate_yubikey(data: JsonUpcase<EnableYubikeyData>, headers: Headers, mut conn: DbConn) -> JsonResult {
+async fn activate_yubikey(
+    data: JsonUpcase<EnableYubikeyData>,
+    headers: Headers,
+    mut conn: DbConn,
+    ip: ClientIp,
+) -> JsonResult {
     let data: EnableYubikeyData = data.into_inner().data;
     let mut user = headers.user;
 
@@ -159,6 +167,8 @@ async fn activate_yubikey(data: JsonUpcase<EnableYubikeyData>, headers: Headers,
 
     _generate_recover_code(&mut user, &mut conn).await;
 
+    log_user_event(EventType::UserUpdated2fa as i32, &user.uuid, headers.device.atype, &ip.ip, &mut conn).await;
+
     let mut result = jsonify_yubikeys(yubikey_metadata.Keys);
 
     result["Enabled"] = Value::Bool(true);
@@ -169,8 +179,13 @@ async fn activate_yubikey(data: JsonUpcase<EnableYubikeyData>, headers: Headers,
 }
 
 #[put("/two-factor/yubikey", data = "<data>")]
-async fn activate_yubikey_put(data: JsonUpcase<EnableYubikeyData>, headers: Headers, conn: DbConn) -> JsonResult {
-    activate_yubikey(data, headers, conn).await
+async fn activate_yubikey_put(
+    data: JsonUpcase<EnableYubikeyData>,
+    headers: Headers,
+    conn: DbConn,
+    ip: ClientIp,
+) -> JsonResult {
+    activate_yubikey(data, headers, conn, ip).await
 }
 
 pub fn validate_yubikey_login(response: &str, twofactor_data: &str) -> EmptyResult {

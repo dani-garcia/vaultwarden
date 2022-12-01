@@ -4,11 +4,14 @@ use rocket::serde::json::Json;
 use rocket::Route;
 
 use crate::{
-    api::{core::two_factor::_generate_recover_code, ApiResult, EmptyResult, JsonResult, JsonUpcase, PasswordData},
-    auth::Headers,
+    api::{
+        core::log_user_event, core::two_factor::_generate_recover_code, ApiResult, EmptyResult, JsonResult, JsonUpcase,
+        PasswordData,
+    },
+    auth::{ClientIp, Headers},
     crypto,
     db::{
-        models::{TwoFactor, TwoFactorType, User},
+        models::{EventType, TwoFactor, TwoFactorType, User},
         DbConn,
     },
     error::MapResult,
@@ -152,7 +155,7 @@ fn check_duo_fields_custom(data: &EnableDuoData) -> bool {
 }
 
 #[post("/two-factor/duo", data = "<data>")]
-async fn activate_duo(data: JsonUpcase<EnableDuoData>, headers: Headers, mut conn: DbConn) -> JsonResult {
+async fn activate_duo(data: JsonUpcase<EnableDuoData>, headers: Headers, mut conn: DbConn, ip: ClientIp) -> JsonResult {
     let data: EnableDuoData = data.into_inner().data;
     let mut user = headers.user;
 
@@ -175,6 +178,8 @@ async fn activate_duo(data: JsonUpcase<EnableDuoData>, headers: Headers, mut con
 
     _generate_recover_code(&mut user, &mut conn).await;
 
+    log_user_event(EventType::UserUpdated2fa as i32, &user.uuid, headers.device.atype, &ip.ip, &mut conn).await;
+
     Ok(Json(json!({
         "Enabled": true,
         "Host": data.host,
@@ -185,8 +190,8 @@ async fn activate_duo(data: JsonUpcase<EnableDuoData>, headers: Headers, mut con
 }
 
 #[put("/two-factor/duo", data = "<data>")]
-async fn activate_duo_put(data: JsonUpcase<EnableDuoData>, headers: Headers, conn: DbConn) -> JsonResult {
-    activate_duo(data, headers, conn).await
+async fn activate_duo_put(data: JsonUpcase<EnableDuoData>, headers: Headers, conn: DbConn, ip: ClientIp) -> JsonResult {
+    activate_duo(data, headers, conn, ip).await
 }
 
 async fn duo_api_request(method: &str, path: &str, params: &str, data: &DuoData) -> EmptyResult {
@@ -282,7 +287,12 @@ pub async fn validate_duo_login(email: &str, response: &str, conn: &mut DbConn) 
 
     let split: Vec<&str> = response.split(':').collect();
     if split.len() != 2 {
-        err!("Invalid response length");
+        err!(
+            "Invalid response length",
+            ErrorEvent {
+                event: EventType::UserFailedLogIn2fa
+            }
+        );
     }
 
     let auth_sig = split[0];
@@ -296,7 +306,12 @@ pub async fn validate_duo_login(email: &str, response: &str, conn: &mut DbConn) 
     let app_user = parse_duo_values(&ak, app_sig, &ik, APP_PREFIX, now)?;
 
     if !crypto::ct_eq(&auth_user, app_user) || !crypto::ct_eq(&auth_user, email) {
-        err!("Error validating duo authentication")
+        err!(
+            "Error validating duo authentication",
+            ErrorEvent {
+                event: EventType::UserFailedLogIn2fa
+            }
+        )
     }
 
     Ok(())
