@@ -19,7 +19,7 @@
                     {{#each page_data}}
                     <tr>
                         <td>
-                            <img class="float-start me-2 rounded identicon" data-src="{{Email}}">
+                            <svg width="48" height="48" class="float-start me-2 rounded" data-jdenticon-value="{{Email}}">
                             <div class="float-start">
                                 <strong>{{Name}}</strong>
                                 <span class="d-block">{{Email}}</span>
@@ -205,12 +205,6 @@
         "2": { "name": "User", "color": "blue" },
         "3": { "name": "Manager", "color": "green" },
     };
-
-    (async () => {
-        for (let e of document.querySelectorAll("img.identicon")) {
-            e.src = await identicon(e.dataset.src);
-        }
-    })();
 
     document.querySelectorAll("[data-orgtype]").forEach(function (e) {
         let orgtype = OrgTypes[e.dataset.orgtype];
