@@ -4,20 +4,20 @@
  *
  * To rebuild or modify this file with the latest versions of the included
  * software please visit:
- *   https://datatables.net/download/#bs5/dt-1.12.1
+ *   https://datatables.net/download/#bs5/dt-1.13.1
  *
  * Included libraries:
- *   DataTables 1.12.1
+ *   DataTables 1.13.1
  */
 
-/*! DataTables 1.12.1
+/*! DataTables 1.13.1
  * ©2008-2022 SpryMedia Ltd - datatables.net/license
  */
 
 /**
  * @summary     DataTables
  * @description Paginate, search and order HTML tables
- * @version     1.12.1
+ * @version     1.13.1
  * @author      SpryMedia Ltd
  * @contact     www.datatables.net
  * @copyright   SpryMedia Ltd.
@@ -1161,6 +1161,10 @@
 			
 				$( rowOne[0] ).children('th, td').each( function (i, cell) {
 					var col = oSettings.aoColumns[i];
+			
+					if (! col) {
+						_fnLog( oSettings, 0, 'Incorrect column count', 18 );
+					}
 			
 					if ( col.mData === i ) {
 						var sort = a( cell, 'sort' ) || a( cell, 'order' );
@@ -3166,6 +3170,11 @@
 				create = nTrIn ? false : true;
 	
 				nTd = create ? document.createElement( oCol.sCellType ) : anTds[i];
+	
+				if (! nTd) {
+					_fnLog( oSettings, 0, 'Incorrect column count', 18 );
+				}
+	
 				nTd._DT_CellIndex = {
 					row: iRow,
 					column: i
@@ -3316,10 +3325,16 @@
 	
 			for ( i=0, ien=cells.length ; i<ien ; i++ ) {
 				column = columns[i];
-				column.nTf = cells[i].cell;
 	
-				if ( column.sClass ) {
-					$(column.nTf).addClass( column.sClass );
+				if (column) {
+					column.nTf = cells[i].cell;
+		
+					if ( column.sClass ) {
+						$(column.nTf).addClass( column.sClass );
+					}
+				}
+				else {
+					_fnLog( oSettings, 0, 'Incorrect column count', 18 );
 				}
 			}
 		}
@@ -5078,6 +5093,10 @@
 			if ( redraw ) {
 				_fnDraw( settings );
 			}
+		}
+		else {
+			// No change event - paging was called, but no change
+			_fnCallbackFire( settings, null, 'page-nc', [settings] );
 		}
 	
 		return changed;
@@ -8334,8 +8353,12 @@
 	
 	$(document).on('plugin-init.dt', function (e, context) {
 		var api = new _Api( context );
+		
+		const namespace = 'on-plugin-init';
+		const stateSaveParamsEvent = `stateSaveParams.${namespace}`;
+		const destroyEvent = `destroy.${namespace}`;
 	
-		api.on( 'stateSaveParams', function ( e, settings, d ) {
+		api.on( stateSaveParamsEvent, function ( e, settings, d ) {
 			// This could be more compact with the API, but it is a lot faster as a simple
 			// internal loop
 			var idFn = settings.rowIdFn;
@@ -8349,7 +8372,11 @@
 			}
 	
 			d.childRows = ids;
-		})
+		});
+	
+		api.on( destroyEvent, function () {
+			api.off(`${stateSaveParamsEvent} ${destroyEvent}`);
+		});
 	
 		var loaded = api.state.loaded();
 	
@@ -9670,7 +9697,7 @@
 	 *  @type string
 	 *  @default Version number
 	 */
-	DataTable.version = "1.12.1";
+	DataTable.version = "1.13.1";
 	
 	/**
 	 * Private data store, containing all of the settings objects that are
@@ -14094,7 +14121,7 @@
 		 *
 		 *  @type string
 		 */
-		build:"bs5/dt-1.12.1",
+		build:"bs5/dt-1.13.1",
 	
 	
 		/**
@@ -14732,7 +14759,7 @@
 				var classes = settings.oClasses;
 				var lang = settings.oLanguage.oPaginate;
 				var aria = settings.oLanguage.oAria.paginate || {};
-				var btnDisplay, btnClass, counter=0;
+				var btnDisplay, btnClass;
 	
 				var attach = function( container, buttons ) {
 					var i, ien, node, button, tabIndex;
@@ -14807,7 +14834,7 @@
 										'class': classes.sPageButton+' '+btnClass,
 										'aria-controls': settings.sTableId,
 										'aria-label': aria[ button ],
-										'data-dt-idx': counter,
+										'data-dt-idx': button,
 										'tabindex': tabIndex,
 										'id': idx === 0 && typeof button === 'string' ?
 											settings.sTableId +'_'+ button :
@@ -14819,8 +14846,6 @@
 								_fnBindAction(
 									node, {action: button}, clickHandler
 								);
-	
-								counter++;
 							}
 						}
 					}
@@ -15165,7 +15190,7 @@
 			}
 		}
 		else if (window.luxon) {
-			dt = format
+			dt = format && typeof d === 'string'
 				? window.luxon.DateTime.fromFormat( d, format )
 				: window.luxon.DateTime.fromISO( d );
 	
@@ -15587,7 +15612,7 @@
 	$.each( DataTable, function ( prop, val ) {
 		$.fn.DataTable[ prop ] = val;
 	} );
-	
+
 	return DataTable;
 }));
 
@@ -15596,14 +15621,6 @@
  * 2020 SpryMedia Ltd - datatables.net/license
  */
 
-/**
- * DataTables integration for Bootstrap 4. This requires Bootstrap 5 and
- * DataTables 1.10 or newer.
- *
- * This file sets the defaults and adds options to DataTables to style its
- * controls using Bootstrap. See http://datatables.net/manual/styling/bootstrap
- * for further information.
- */
 (function( factory ){
 	if ( typeof define === 'function' && define.amd ) {
 		// AMD
@@ -15615,15 +15632,21 @@
 		// CommonJS
 		module.exports = function (root, $) {
 			if ( ! root ) {
+				// CommonJS environments without a window global must pass a
+				// root. This will give an error otherwise
 				root = window;
 			}
 
-			if ( ! $ || ! $.fn.dataTable ) {
-				// Require DataTables, which attaches to jQuery, including
-				// jQuery if needed and have a $ property so we can access the
-				// jQuery object that is used
-				$ = require('datatables.net')(root, $).$;
+			if ( ! $ ) {
+				$ = typeof window !== 'undefined' ? // jQuery's factory checks for a global window
+					require('jquery') :
+					require('jquery')( root );
 			}
+
+			if ( ! $.fn.dataTable ) {
+				require('datatables.net')(root, $);
+			}
+
 
 			return factory( $, root, root.document );
 		};
@@ -15637,11 +15660,21 @@
 var DataTable = $.fn.dataTable;
 
 
+
+/**
+ * DataTables integration for Bootstrap 5. This requires Bootstrap 5 and
+ * DataTables 1.10 or newer.
+ *
+ * This file sets the defaults and adds options to DataTables to style its
+ * controls using Bootstrap. See http://datatables.net/manual/styling/bootstrap
+ * for further information.
+ */
+
 /* Set the defaults for DataTables initialisation */
 $.extend( true, DataTable.defaults, {
 	dom:
 		"<'row'<'col-sm-12 col-md-6'l><'col-sm-12 col-md-6'f>>" +
-		"<'row'<'col-sm-12'tr>>" +
+		"<'row dt-row'<'col-sm-12'tr>>" +
 		"<'row'<'col-sm-12 col-md-5'i><'col-sm-12 col-md-7'p>>",
 	renderer: 'bootstrap'
 } );
@@ -15663,7 +15696,7 @@ DataTable.ext.renderer.pageButton.bootstrap = function ( settings, host, idx, bu
 	var classes = settings.oClasses;
 	var lang    = settings.oLanguage.oPaginate;
 	var aria = settings.oLanguage.oAria.paginate || {};
-	var btnDisplay, btnClass, counter=0;
+	var btnDisplay, btnClass;
 
 	var attach = function( container, buttons ) {
 		var i, ien, node, button;
@@ -15732,7 +15765,7 @@ DataTable.ext.renderer.pageButton.bootstrap = function ( settings, host, idx, bu
 								'href': '#',
 								'aria-controls': settings.sTableId,
 								'aria-label': aria[ button ],
-								'data-dt-idx': counter,
+								'data-dt-idx': button,
 								'tabindex': settings.iTabIndex,
 								'class': 'page-link'
 							} )
@@ -15743,13 +15776,12 @@ DataTable.ext.renderer.pageButton.bootstrap = function ( settings, host, idx, bu
 					settings.oApi._fnBindAction(
 						node, {action: button}, clickHandler
 					);
-
-					counter++;
 				}
 			}
 		}
 	};
 
+	var hostEl = $(host);
 	// IE9 throws an 'unknown error' if document.activeElement is used
 	// inside an iframe or frame. 
 	var activeEl;
@@ -15759,17 +15791,26 @@ DataTable.ext.renderer.pageButton.bootstrap = function ( settings, host, idx, bu
 		// elements, focus is lost on the select button which is bad for
 		// accessibility. So we want to restore focus once the draw has
 		// completed
-		activeEl = $(host).find(document.activeElement).data('dt-idx');
+		activeEl = hostEl.find(document.activeElement).data('dt-idx');
 	}
 	catch (e) {}
 
+	var paginationEl = hostEl.children('ul.pagination');
+
+	if (paginationEl.length) {
+		paginationEl.empty();
+	}
+	else {
+		paginationEl = hostEl.html('<ul/>').children('ul').addClass('pagination');
+	}
+
 	attach(
-		$(host).empty().html('<ul class="pagination"/>').children('ul'),
+		paginationEl,
 		buttons
 	);
 
 	if ( activeEl !== undefined ) {
-		$(host).find( '[data-dt-idx='+activeEl+']' ).trigger('focus');
+		hostEl.find('[data-dt-idx='+activeEl+']').trigger('focus');
 	}
 };
 
