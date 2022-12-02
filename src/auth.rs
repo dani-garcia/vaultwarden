@@ -266,7 +266,7 @@ use rocket::{
 };
 
 use crate::db::{
-    models::{CollectionUser, Device, User, UserOrgStatus, UserOrgType, UserOrganization, UserStampException},
+    models::{Collection, Device, User, UserOrgStatus, UserOrgType, UserOrganization, UserStampException},
     DbConn,
 };
 
@@ -558,17 +558,15 @@ impl<'r> FromRequest<'r> for ManagerHeaders {
                         _ => err_handler!("Error getting DB"),
                     };
 
-                    if !headers.org_user.has_full_access() {
-                        match CollectionUser::find_by_collection_and_user(
+                    if !headers.org_user.has_full_access()
+                        && !Collection::has_access_by_collection_and_user_uuid(
                             &col_id,
                             &headers.org_user.user_uuid,
                             &mut conn,
                         )
                         .await
-                        {
-                            Some(_) => (),
-                            None => err_handler!("The current user isn't a manager for this collection"),
-                        }
+                    {
+                        err_handler!("The current user isn't a manager for this collection")
                     }
                 }
                 _ => err_handler!("Error getting the collection id"),
