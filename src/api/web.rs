@@ -1,11 +1,10 @@
 use std::path::{Path, PathBuf};
 
-use rocket::serde::json::Json;
-use rocket::{fs::NamedFile, http::ContentType, Catcher, Route};
+use rocket::{fs::NamedFile, http::ContentType, response::content::RawHtml as Html, serde::json::Json, Catcher, Route};
 use serde_json::Value;
 
 use crate::{
-    api::core::now,
+    api::{core::now, ApiResult},
     error::Error,
     util::{Cached, SafeString},
     CONFIG,
@@ -30,8 +29,13 @@ pub fn catchers() -> Vec<Catcher> {
 }
 
 #[catch(404)]
-async fn not_found() -> Cached<Option<NamedFile>> {
-    Cached::short(NamedFile::open(Path::new(&CONFIG.web_vault_folder()).join("404.html")).await.ok(), false)
+fn not_found() -> ApiResult<Html<String>> {
+    // Return the page
+    let json = json!({
+        "urlpath": CONFIG.domain_path()
+    });
+    let text = CONFIG.render_template("404", &json)?;
+    Ok(Html(text))
 }
 
 #[get("/")]
@@ -91,6 +95,7 @@ fn alive(_conn: DbConn) -> Json<String> {
 #[get("/vw_static/<filename>")]
 pub fn static_files(filename: String) -> Result<(ContentType, &'static [u8]), Error> {
     match filename.as_ref() {
+        "404.png" => Ok((ContentType::PNG, include_bytes!("../static/images/404.png"))),
         "mail-github.png" => Ok((ContentType::PNG, include_bytes!("../static/images/mail-github.png"))),
         "logo-gray.png" => Ok((ContentType::PNG, include_bytes!("../static/images/logo-gray.png"))),
         "error-x.svg" => Ok((ContentType::SVG, include_bytes!("../static/images/error-x.svg"))),
