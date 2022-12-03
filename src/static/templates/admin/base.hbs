@@ -32,7 +32,11 @@
     <script>
         'use strict';
 
-        function reload() { window.location.reload(); }
+        function reload() {
+            // Reload the page by setting the exact same href
+            // Using window.location.reload() could cause a repost.
+            window.location = window.location.href;
+        }
         function msg(text, reload_page = true) {
             text && alert(text);
             reload_page && reload();
