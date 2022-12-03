@@ -182,10 +182,18 @@ macro_rules! generate_connections {
     };
 }
 
+#[cfg(not(query_logger))]
 generate_connections! {
     sqlite: diesel::sqlite::SqliteConnection,
     mysql: diesel::mysql::MysqlConnection,
     postgresql: diesel::pg::PgConnection
+}
+
+#[cfg(query_logger)]
+generate_connections! {
+    sqlite: diesel_logger::LoggingConnection<diesel::sqlite::SqliteConnection>,
+    mysql: diesel_logger::LoggingConnection<diesel::mysql::MysqlConnection>,
+    postgresql: diesel_logger::LoggingConnection<diesel::pg::PgConnection>
 }
 
 impl DbConnType {

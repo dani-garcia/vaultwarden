@@ -171,6 +171,13 @@ fn init_logging(level: log::LevelFilter) -> Result<(), fern::InitError> {
         log::LevelFilter::Off
     };
 
+    let diesel_logger_level: log::LevelFilter =
+        if cfg!(feature = "query_logger") && std::env::var("QUERY_LOGGER").is_ok() {
+            log::LevelFilter::Debug
+        } else {
+            log::LevelFilter::Off
+        };
+
     let mut logger = fern::Dispatch::new()
         .level(level)
         // Hide unknown certificate errors if using self-signed
@@ -191,6 +198,7 @@ fn init_logging(level: log::LevelFilter) -> Result<(), fern::InitError> {
         .level_for("cookie_store", log::LevelFilter::Off)
         // Variable level for trust-dns used by reqwest
         .level_for("trust_dns_proto", trust_dns_level)
+        .level_for("diesel_logger", diesel_logger_level)
         .chain(std::io::stdout());
 
     // Enable smtp debug logging only specifically for smtp when need.
