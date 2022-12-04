@@ -24,6 +24,11 @@ vendored_openssl = ["openssl/vendored"]
 # Enable MiMalloc memory allocator to replace the default malloc
 # This can improve performance for Alpine builds
 enable_mimalloc = ["mimalloc"]
+# This is a development dependency, and should only be used during development!
+# It enables the usage of the diesel_logger crate, which is able to output the generated queries.
+# You also need to set an env variable `QUERY_LOGGER=1` to fully activate this so you do not have to re-compile
+# if you want to turn off the logging for a specific run.
+query_logger = ["diesel_logger"]
 
 # Enable unstable features, requires nightly
 # Currently only used to enable rusts official ip support
@@ -70,6 +75,7 @@ serde_json = "1.0.89"
 # A safe, extensible ORM and Query builder
 diesel = { version = "2.0.2", features = ["chrono", "r2d2"] }
 diesel_migrations = "2.0.0"
+diesel_logger = { version = "0.2.0", optional = true }
 
 # Bundled SQLite
 libsqlite3-sys = { version = "0.25.2", features = ["bundled"], optional = true }
