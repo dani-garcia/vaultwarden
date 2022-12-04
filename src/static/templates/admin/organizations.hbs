@@ -16,7 +16,7 @@
                     {{#each page_data}}
                     <tr>
                         <td>
-                            <img class="float-start me-2 rounded identicon" data-src="{{Id}}">
+                            <svg width="48" height="48" class="float-start me-2 rounded" data-jdenticon-value="{{Id}}">
                             <div class="float-start">
                                 <strong>{{Name}}</strong>
                                 <span class="me-2">({{BillingEmail}})</span>
@@ -72,12 +72,6 @@
 
         return false;
     }
-
-    (async () => {
-        for (let e of document.querySelectorAll("img.identicon")) {
-            e.src = await identicon(e.dataset.src);
-        }
-    })();
 
     document.addEventListener("DOMContentLoaded", function() {
         $('#orgs-table').DataTable({

@@ -4,10 +4,10 @@
  *
  * To rebuild or modify this file with the latest versions of the included
  * software please visit:
- *   https://datatables.net/download/#bs5/dt-1.12.1
+ *   https://datatables.net/download/#bs5/dt-1.13.1
  *
  * Included libraries:
- *   DataTables 1.12.1
+ *   DataTables 1.13.1
  */
 
 @charset "UTF-8";
@@ -63,7 +63,7 @@ table.dataTable thead > tr > td.sorting_desc_disabled:after {
   opacity: 0.125;
   right: 10px;
   line-height: 9px;
-  font-size: 0.9em;
+  font-size: 0.8em;
 }
 table.dataTable thead > tr > th.sorting:before, table.dataTable thead > tr > th.sorting_asc:before, table.dataTable thead > tr > th.sorting_desc:before, table.dataTable thead > tr > th.sorting_asc_disabled:before, table.dataTable thead > tr > th.sorting_desc_disabled:before,
 table.dataTable thead > tr > td.sorting:before,
@@ -72,7 +72,7 @@ table.dataTable thead > tr > td.sorting_desc:before,
 table.dataTable thead > tr > td.sorting_asc_disabled:before,
 table.dataTable thead > tr > td.sorting_desc_disabled:before {
   bottom: 50%;
-  content: "▴";
+  content: "▲";
 }
 table.dataTable thead > tr > th.sorting:after, table.dataTable thead > tr > th.sorting_asc:after, table.dataTable thead > tr > th.sorting_desc:after, table.dataTable thead > tr > th.sorting_asc_disabled:after, table.dataTable thead > tr > th.sorting_desc_disabled:after,
 table.dataTable thead > tr > td.sorting:after,
@@ -81,7 +81,7 @@ table.dataTable thead > tr > td.sorting_desc:after,
 table.dataTable thead > tr > td.sorting_asc_disabled:after,
 table.dataTable thead > tr > td.sorting_desc_disabled:after {
   top: 50%;
-  content: "▾";
+  content: "▼";
 }
 table.dataTable thead > tr > th.sorting_asc:before, table.dataTable thead > tr > th.sorting_desc:after,
 table.dataTable thead > tr > td.sorting_asc:before,
@@ -287,6 +287,9 @@ table.dataTable > tbody > tr.selected > * {
   box-shadow: inset 0 0 0 9999px rgba(13, 110, 253, 0.9);
   color: white;
 }
+table.dataTable > tbody > tr.selected a {
+  color: #090a0b;
+}
 table.dataTable.table-striped > tbody > tr.odd > * {
   box-shadow: inset 0 0 0 9999px rgba(0, 0, 0, 0.05);
 }
@@ -334,6 +337,9 @@ div.dataTables_wrapper div.dataTables_paginate ul.pagination {
   margin: 2px 0;
   white-space: nowrap;
   justify-content: flex-end;
+}
+div.dataTables_wrapper div.dt-row {
+  position: relative;
 }
 
 div.dataTables_scrollHead table.dataTable {
