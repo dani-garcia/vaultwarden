@@ -256,16 +256,16 @@ pub async fn send_invite(
 pub async fn send_emergency_access_invite(
     address: &str,
     uuid: &str,
-    emer_id: Option<String>,
-    grantor_name: Option<String>,
-    grantor_email: Option<String>,
+    emer_id: &str,
+    grantor_name: &str,
+    grantor_email: &str,
 ) -> EmptyResult {
     let claims = generate_emergency_access_invite_claims(
-        uuid.to_string(),
+        String::from(uuid),
         String::from(address),
-        emer_id.clone(),
-        grantor_name.clone(),
-        grantor_email,
+        String::from(emer_id),
+        String::from(grantor_name),
+        String::from(grantor_email),
     );
 
     let invite_token = encode_jwt(&claims);
@@ -275,7 +275,7 @@ pub async fn send_emergency_access_invite(
         json!({
             "url": CONFIG.domain(),
             "img_src": CONFIG._smtp_img_src(),
-            "emer_id": emer_id.unwrap_or_else(|| "_".to_string()),
+            "emer_id": emer_id,
             "email": percent_encode(address.as_bytes(), NON_ALPHANUMERIC).to_string(),
             "grantor_name": grantor_name,
             "token": invite_token,
@@ -328,7 +328,7 @@ pub async fn send_emergency_access_recovery_initiated(
     address: &str,
     grantee_name: &str,
     atype: &str,
-    wait_time_days: &str,
+    wait_time_days: &i32,
 ) -> EmptyResult {
     let (subject, body_html, body_text) = get_text(
         "email/emergency_access_recovery_initiated",
