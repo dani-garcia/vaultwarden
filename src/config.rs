@@ -1123,6 +1123,8 @@ where
     reg!("admin/organizations");
     reg!("admin/diagnostics");
 
+    reg!("404");
+
     // And then load user templates to overwrite the defaults
     // Use .hbs extension for the files
     // Templates get registered with their relative name
