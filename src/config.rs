@@ -232,14 +232,23 @@ macro_rules! make_config {
                 /// We map over the string and remove all alphanumeric, _ and - characters.
                 /// This is the fastest way (within micro-seconds) instead of using a regex (which takes mili-seconds)
                 fn _privacy_mask(value: &str) -> String {
-                    value.chars().map(|c|
-                        match c {
-                            c if c.is_alphanumeric() => '*',
-                            '_' => '*',
-                            '-' => '*',
-                            _ => c
-                        }
-                    ).collect::<String>()
+                    let mut n: u16 = 0;
+                    let mut colon_match = false;
+                    value
+                        .chars()
+                        .map(|c| {
+                            n += 1;
+                            match c {
+                                ':' if n <= 11 => {
+                                    colon_match = true;
+                                    c
+                                }
+                                '/' if n <= 13 && colon_match => c,
+                                ',' => c,
+                                _ => '*',
+                            }
+                        })
+                        .collect::<String>()
                 }
 
                 serde_json::Value::Object({
@@ -475,9 +484,9 @@ make_config! {
         /// service is set, an icon request to Vaultwarden will return an HTTP redirect to the
         /// corresponding icon at the external service.
         icon_service:           String, false,  def,    "internal".to_string();
-        /// Internal
+        /// _icon_service_url
         _icon_service_url:      String, false,  gen,    |c| generate_icon_service_url(&c.icon_service);
-        /// Internal
+        /// _icon_service_csp
         _icon_service_csp:      String, false,  gen,    |c| generate_icon_service_csp(&c.icon_service, &c._icon_service_url);
         /// Icon redirect code |> The HTTP status code to use for redirects to an external icon service.
         /// The supported codes are 301 (legacy permanent), 302 (legacy temporary), 307 (temporary), and 308 (permanent).
@@ -613,7 +622,7 @@ make_config! {
         helo_name:                     String, true,   option;
         /// Embed images as email attachments.
         smtp_embed_images:             bool, true, def, true;
-        /// Internal
+        /// _smtp_img_src
         _smtp_img_src:                 String, false, gen, |c| generate_smtp_img_src(c.smtp_embed_images, &c.domain);
         /// Enable SMTP debugging (Know the risks!) |> DANGEROUS: Enabling this will output very detailed SMTP messages. This could contain sensitive information like passwords and usernames! Only enable this during troubleshooting!
         smtp_debug:                    bool,   false,  def,     false;
