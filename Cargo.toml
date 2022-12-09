@@ -152,12 +152,6 @@ semver = "1.0.14"
 # Mainly used for the musl builds, since the default musl malloc is very slow
 mimalloc = { version = "0.1.32", features = ["secure"], default-features = false, optional = true }
 
-[patch.crates-io]
-# Using a patched version of multer-rs (Used by Rocket) to fix attachment/send file uploads
-# Issue: https://github.com/dani-garcia/vaultwarden/issues/2644
-# Patch: https://github.com/BlackDex/multer-rs/commit/477d16b7fa0f361b5c2a5ba18a5b28bec6d26a8a
-multer = { git = "https://github.com/BlackDex/multer-rs", rev = "477d16b7fa0f361b5c2a5ba18a5b28bec6d26a8a" }
-
 # Strip debuginfo from the release builds
 # Also enable thin LTO for some optimizations
 [profile.release]
