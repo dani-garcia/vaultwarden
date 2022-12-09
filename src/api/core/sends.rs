@@ -228,19 +228,6 @@ async fn post_send_file(data: Form<UploadData<'_>>, headers: Headers, mut conn: 
         err!("Send content is not a file");
     }
 
-    // There is a bug regarding uploading attachments/sends using the Mobile clients
-    // See: https://github.com/dani-garcia/vaultwarden/issues/2644 && https://github.com/bitwarden/mobile/issues/2018
-    // This has been fixed via a PR: https://github.com/bitwarden/mobile/pull/2031, but hasn't landed in a new release yet.
-    // On the vaultwarden side this is temporarily fixed by using a custom multer library
-    // See: https://github.com/dani-garcia/vaultwarden/pull/2675
-    // In any case we will match TempFile::File and not TempFile::Buffered, since Buffered will alter the contents.
-    if let TempFile::Buffered {
-        content: _,
-    } = &data
-    {
-        err!("Error reading send file data. Please try an other client.");
-    }
-
     let size = data.len();
     if size > size_limit {
         err!("Attachment storage limit exceeded with this file");
@@ -338,19 +325,6 @@ async fn post_send_file_v2_data(
     enforce_disable_send_policy(&headers, &mut conn).await?;
 
     let mut data = data.into_inner();
-
-    // There is a bug regarding uploading attachments/sends using the Mobile clients
-    // See: https://github.com/dani-garcia/vaultwarden/issues/2644 && https://github.com/bitwarden/mobile/issues/2018
-    // This has been fixed via a PR: https://github.com/bitwarden/mobile/pull/2031, but hasn't landed in a new release yet.
-    // On the vaultwarden side this is temporarily fixed by using a custom multer library
-    // See: https://github.com/dani-garcia/vaultwarden/pull/2675
-    // In any case we will match TempFile::File and not TempFile::Buffered, since Buffered will alter the contents.
-    if let TempFile::Buffered {
-        content: _,
-    } = &data.data
-    {
-        err!("Error reading attachment data. Please try an other client.");
-    }
 
     if let Some(send) = Send::find_by_uuid(&send_uuid, &mut conn).await {
         let folder_path = tokio::fs::canonicalize(&CONFIG.sends_folder()).await?.join(&send_uuid);
