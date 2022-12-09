@@ -1516,7 +1516,8 @@ dependencies = [
 [[package]]
 name = "multer"
 version = "2.0.4"
-source = "git+https://github.com/BlackDex/multer-rs?rev=477d16b7fa0f361b5c2a5ba18a5b28bec6d26a8a#477d16b7fa0f361b5c2a5ba18a5b28bec6d26a8a"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6ed4198ce7a4cbd2a57af78d28c6fbb57d81ac5f1d6ad79ac6c5587419cbdf22"
 dependencies = [
  "bytes",
  "encoding_rs",
