@@ -454,11 +454,12 @@ async fn launch_rocket(pool: db::DbPool, extra_debug: bool) -> Result<(), Error>
         .await?;
 
     CONFIG.set_rocket_shutdown_handle(instance.shutdown());
-    ctrlc::set_handler(move || {
+
+    tokio::spawn(async move {
+        tokio::signal::ctrl_c().await.expect("Error setting Ctrl-C handler");
         info!("Exiting vaultwarden!");
         CONFIG.shutdown();
-    })
-    .expect("Error setting Ctrl-C handler");
+    });
 
     let _ = instance.launch().await?;
 
