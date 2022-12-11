@@ -2403,13 +2403,13 @@ async fn delete_group_user(
 async fn get_org_export(org_id: String, headers: AdminHeaders, mut conn: DbConn) -> Json<Value> {
     use semver::{Version, VersionReq};
 
-    // Since version v2022.11.0 the format of the export is different.
+    // Since version v2023.1.0 the format of the export is different.
     // Also, this endpoint was created since v2022.9.0.
-    // Therefore, we will check for any version smaller then 2022.11.0 and return a different response.
-    // If we can't determine the version, we will use the latest default v2022.11.0 and higher.
-    // https://github.com/bitwarden/server/blob/8a6f780d55cf0768e1869f1f097452328791983e/src/Api/Controllers/OrganizationExportController.cs#L44-L45
+    // Therefore, we will check for any version smaller then v2023.1.0 and return a different response.
+    // If we can't determine the version, we will use the latest default v2023.1.0 and higher.
+    // https://github.com/bitwarden/server/blob/9ca93381ce416454734418c3a9f99ab49747f1b6/src/Api/Controllers/OrganizationExportController.cs#L44
     let use_list_response_model = if let Some(client_version) = headers.client_version {
-        let ver_match = VersionReq::parse("<2022.11.0").unwrap();
+        let ver_match = VersionReq::parse("<2023.1.0").unwrap();
         let client_version = Version::parse(&client_version).unwrap();
         ver_match.matches(&client_version)
     } else {
@@ -2418,7 +2418,7 @@ async fn get_org_export(org_id: String, headers: AdminHeaders, mut conn: DbConn)
 
     // Also both main keys here need to be lowercase, else the export will fail.
     if use_list_response_model {
-        // Backwards compatible pre v2022.11.0 response
+        // Backwards compatible pre v2023.1.0 response
         Json(json!({
             "collections": {
                 "data": convert_json_key_lcase_first(_get_org_collections(&org_id, &mut conn).await),
@@ -2432,7 +2432,7 @@ async fn get_org_export(org_id: String, headers: AdminHeaders, mut conn: DbConn)
             }
         }))
     } else {
-        // v2022.11.0 and newer response
+        // v2023.1.0 and newer response
         Json(json!({
             "collections": convert_json_key_lcase_first(_get_org_collections(&org_id, &mut conn).await),
             "ciphers": convert_json_key_lcase_first(_get_org_details(&org_id, &headers.host, &headers.user.uuid, &mut conn).await),
