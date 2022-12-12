@@ -167,15 +167,15 @@ impl Collection {
                     users_collections::user_uuid.eq(user_uuid.clone())
                 )
             ))
-            .inner_join(users_organizations::table.on(
+            .left_join(users_organizations::table.on(
                 collections::org_uuid.eq(users_organizations::org_uuid).and(
                     users_organizations::user_uuid.eq(user_uuid.clone())
                 )
             ))
-            .inner_join(groups_users::table.on(
+            .left_join(groups_users::table.on(
                 groups_users::users_organizations_uuid.eq(users_organizations::uuid)
             ))
-            .inner_join(groups::table.on(
+            .left_join(groups::table.on(
                 groups::uuid.eq(groups_users::groups_uuid)
             ))
             .left_join(collections_groups::table.on(
@@ -252,15 +252,15 @@ impl Collection {
                     users_collections::user_uuid.eq(user_uuid.clone())
                 )
             ))
-            .inner_join(users_organizations::table.on(
+            .left_join(users_organizations::table.on(
                 collections::org_uuid.eq(users_organizations::org_uuid).and(
                     users_organizations::user_uuid.eq(user_uuid)
                 )
             ))
-            .inner_join(groups_users::table.on(
+            .left_join(groups_users::table.on(
                 groups_users::users_organizations_uuid.eq(users_organizations::uuid)
             ))
-            .inner_join(groups::table.on(
+            .left_join(groups::table.on(
                 groups::uuid.eq(groups_users::groups_uuid)
             ))
             .left_join(collections_groups::table.on(
