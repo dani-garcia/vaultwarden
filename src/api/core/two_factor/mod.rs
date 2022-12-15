@@ -6,7 +6,7 @@ use serde_json::Value;
 
 use crate::{
     api::{core::log_user_event, JsonResult, JsonUpcase, NumberOrString, PasswordData},
-    auth::{ClientIp, Headers},
+    auth::{ClientHeaders, ClientIp, Headers},
     crypto,
     db::{models::*, DbConn, DbPool},
     mail, CONFIG,
@@ -73,7 +73,12 @@ struct RecoverTwoFactor {
 }
 
 #[post("/two-factor/recover", data = "<data>")]
-async fn recover(data: JsonUpcase<RecoverTwoFactor>, headers: Headers, mut conn: DbConn, ip: ClientIp) -> JsonResult {
+async fn recover(
+    data: JsonUpcase<RecoverTwoFactor>,
+    client_headers: ClientHeaders,
+    mut conn: DbConn,
+    ip: ClientIp,
+) -> JsonResult {
     let data: RecoverTwoFactor = data.into_inner().data;
 
     use crate::db::models::User;
@@ -97,7 +102,7 @@ async fn recover(data: JsonUpcase<RecoverTwoFactor>, headers: Headers, mut conn:
     // Remove all twofactors from the user
     TwoFactor::delete_all_by_user(&user.uuid, &mut conn).await?;
 
-    log_user_event(EventType::UserRecovered2fa as i32, &user.uuid, headers.device.atype, &ip.ip, &mut conn).await;
+    log_user_event(EventType::UserRecovered2fa as i32, &user.uuid, client_headers.device_type, &ip.ip, &mut conn).await;
 
     // Remove the recovery code, not needed without twofactors
     user.totp_recover = None;

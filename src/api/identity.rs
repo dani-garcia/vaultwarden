@@ -14,7 +14,7 @@ use crate::{
         core::two_factor::{duo, email, email::EmailTokenData, yubikey},
         ApiResult, EmptyResult, JsonResult, JsonUpcase,
     },
-    auth::ClientIp,
+    auth::{ClientHeaders, ClientIp},
     db::{models::*, DbConn},
     error::MapResult,
     mail, util, CONFIG,
@@ -25,11 +25,10 @@ pub fn routes() -> Vec<Route> {
 }
 
 #[post("/connect/token", data = "<data>")]
-async fn login(data: Form<ConnectData>, mut conn: DbConn, ip: ClientIp) -> JsonResult {
+async fn login(data: Form<ConnectData>, client_header: ClientHeaders, mut conn: DbConn, ip: ClientIp) -> JsonResult {
     let data: ConnectData = data.into_inner();
 
     let mut user_uuid: Option<String> = None;
-    let device_type = data.device_type.clone();
 
     let login_result = match data.grant_type.as_ref() {
         "refresh_token" => {
@@ -59,15 +58,20 @@ async fn login(data: Form<ConnectData>, mut conn: DbConn, ip: ClientIp) -> JsonR
     };
 
     if let Some(user_uuid) = user_uuid {
-        // When unknown or unable to parse, return 14, which is 'Unknown Browser'
-        let device_type = util::try_parse_string(device_type).unwrap_or(14);
         match &login_result {
             Ok(_) => {
-                log_user_event(EventType::UserLoggedIn as i32, &user_uuid, device_type, &ip.ip, &mut conn).await;
+                log_user_event(
+                    EventType::UserLoggedIn as i32,
+                    &user_uuid,
+                    client_header.device_type,
+                    &ip.ip,
+                    &mut conn,
+                )
+                .await;
             }
             Err(e) => {
                 if let Some(ev) = e.get_event() {
-                    log_user_event(ev.event as i32, &user_uuid, device_type, &ip.ip, &mut conn).await
+                    log_user_event(ev.event as i32, &user_uuid, client_header.device_type, &ip.ip, &mut conn).await
                 }
             }
         }
