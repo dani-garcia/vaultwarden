@@ -315,6 +315,28 @@ impl<'r> FromRequest<'r> for Host {
     }
 }
 
+pub struct ClientHeaders {
+    pub host: String,
+    pub device_type: i32,
+}
+
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for ClientHeaders {
+    type Error = &'static str;
+
+    async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+        let host = try_outcome!(Host::from_request(request).await).host;
+        // When unknown or unable to parse, return 14, which is 'Unknown Browser'
+        let device_type: i32 =
+            request.headers().get_one("device-type").map(|d| d.parse().unwrap_or(14)).unwrap_or_else(|| 14);
+
+        Outcome::Success(ClientHeaders {
+            host,
+            device_type,
+        })
+    }
+}
+
 pub struct Headers {
     pub host: String,
     pub device: Device,
