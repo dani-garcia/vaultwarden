@@ -44,7 +44,7 @@ log = "0.4.17"
 fern = { version = "0.6.1", features = ["syslog-6"] }
 tracing = { version = "0.1.37", features = ["log"] } # Needed to have lettre and webauthn-rs trace logging to work
 
-backtrace = "0.3.66" # Logging panics to logfile instead stderr only
+backtrace = "0.3.67" # Logging panics to logfile instead stderr only
 
 # A `dotenv` implementation for Rust
 dotenvy = { version = "0.15.6", default-features = false }
@@ -142,7 +142,7 @@ openssl = "0.10.44"
 pico-args = "0.5.0"
 
 # Macro ident concatenation
-paste = "1.0.9"
+paste = "1.0.10"
 governor = "0.5.1"
 
 # Check client versions for specific features.

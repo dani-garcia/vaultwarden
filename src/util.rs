@@ -63,6 +63,8 @@ impl Fairing for AppHeaders {
             // app.simplelogin.io, app.anonaddy.com, api.fastmail.com, quack.duckduckgo.com
             let csp = format!(
                 "default-src 'self'; \
+                base-uri 'self'; \
+                form-action 'self'; \
                 object-src 'self' blob:; \
                 script-src 'self'{script_src}; \
                 style-src 'self' 'unsafe-inline'; \
@@ -74,12 +76,12 @@ impl Fairing for AppHeaders {
                   moz-extension://* \
                   {allowed_iframe_ancestors}; \
                 img-src 'self' data: \
-                  https://haveibeenpwned.com/ \
+                  https://haveibeenpwned.com \
                   https://www.gravatar.com \
                   {icon_service_csp}; \
                 connect-src 'self' \
-                  https://api.pwnedpasswords.com/range/ \
-                  https://2fa.directory/api/ \
+                  https://api.pwnedpasswords.com \
+                  https://2fa.directory \
                   https://app.simplelogin.io/api/ \
                   https://app.anonaddy.com/api/ \
                   https://api.fastmail.com/ \
