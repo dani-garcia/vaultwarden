@@ -27,7 +27,7 @@
 FROM vaultwarden/web-vault@sha256:1f124e2d1a8e9678d7b9d17587b6340fba0db298e96995552698108a43f5c1c1 as vault
 
 ########################## BUILD IMAGE  ##########################
-FROM blackdex/rust-musl:x86_64-musl-stable-1.65.0 as build
+FROM blackdex/rust-musl:x86_64-musl-stable-1.66.0 as build
 
 
 
@@ -81,7 +81,7 @@ RUN --mount=type=cache,target=/root/.cargo/git --mount=type=cache,target=/root/.
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image
 # because we already have a binary built
-FROM alpine:3.16
+FROM alpine:3.17
 
 ENV ROCKET_PROFILE="release" \
     ROCKET_ADDRESS=0.0.0.0 \
