@@ -67,14 +67,16 @@ fn get_yubico_credentials() -> Result<(String, String), Error> {
     }
 }
 
-fn verify_yubikey_otp(otp: String) -> EmptyResult {
+async fn verify_yubikey_otp(otp: String) -> EmptyResult {
     let (yubico_id, yubico_secret) = get_yubico_credentials()?;
 
     let config = Config::default().set_client_id(yubico_id).set_key(yubico_secret);
 
     match CONFIG.yubico_server() {
-        Some(server) => verify(otp, config.set_api_hosts(vec![server])),
-        None => verify(otp, config),
+        Some(server) => {
+            tokio::task::spawn_blocking(move || verify(otp, config.set_api_hosts(vec![server]))).await.unwrap()
+        }
+        None => tokio::task::spawn_blocking(move || verify(otp, config)).await.unwrap(),
     }
     .map_res("Failed to verify OTP")
     .and(Ok(()))
@@ -152,7 +154,7 @@ async fn activate_yubikey(
             continue;
         }
 
-        verify_yubikey_otp(yubikey.to_owned()).map_res("Invalid Yubikey OTP provided")?;
+        verify_yubikey_otp(yubikey.to_owned()).await.map_res("Invalid Yubikey OTP provided")?;
     }
 
     let yubikey_ids: Vec<String> = yubikeys.into_iter().map(|x| (x[..12]).to_owned()).collect();
@@ -188,7 +190,7 @@ async fn activate_yubikey_put(
     activate_yubikey(data, headers, conn, ip).await
 }
 
-pub fn validate_yubikey_login(response: &str, twofactor_data: &str) -> EmptyResult {
+pub async fn validate_yubikey_login(response: &str, twofactor_data: &str) -> EmptyResult {
     if response.len() != 44 {
         err!("Invalid Yubikey OTP length");
     }
@@ -200,7 +202,7 @@ pub fn validate_yubikey_login(response: &str, twofactor_data: &str) -> EmptyResu
         err!("Given Yubikey is not registered");
     }
 
-    let result = verify_yubikey_otp(response.to_owned());
+    let result = verify_yubikey_otp(response.to_owned()).await;
 
     match result {
         Ok(_answer) => Ok(()),

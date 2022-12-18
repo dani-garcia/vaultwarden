@@ -395,7 +395,7 @@ async fn twofactor_auth(
         Some(TwoFactorType::Webauthn) => {
             _tf::webauthn::validate_webauthn_login(user_uuid, twofactor_code, conn).await?
         }
-        Some(TwoFactorType::YubiKey) => _tf::yubikey::validate_yubikey_login(twofactor_code, &selected_data?)?,
+        Some(TwoFactorType::YubiKey) => _tf::yubikey::validate_yubikey_login(twofactor_code, &selected_data?).await?,
         Some(TwoFactorType::Duo) => {
             _tf::duo::validate_duo_login(data.username.as_ref().unwrap().trim(), twofactor_code, conn).await?
         }
