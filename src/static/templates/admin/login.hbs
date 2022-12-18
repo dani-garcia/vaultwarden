@@ -13,7 +13,7 @@
             <small>Please provide it below:</small>
 
             <form class="form-inline" method="post" action="{{urlpath}}/admin">
-                <input type="password" class="form-control w-50 mr-2" name="token" placeholder="Enter admin token" autofocus="autofocus">
+                <input type="password" autocomplete="password" class="form-control w-50 mr-2" name="token" placeholder="Enter admin token" autofocus="autofocus">
                 {{#if redirect}}
                 <input type="hidden" id="redirect" name="redirect" value="/{{redirect}}">
                 {{/if}}

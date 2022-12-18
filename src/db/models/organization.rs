@@ -149,7 +149,7 @@ impl Organization {
             "Use2fa": true,
             "UseDirectory": false, // Is supported, but this value isn't checked anywhere (yet)
             "UseEvents": CONFIG.org_events_enabled(),
-            "UseGroups": true,
+            "UseGroups": CONFIG.org_groups_enabled(),
             "UseTotp": true,
             "UsePolicies": true,
             // "UseScim": false, // Not supported (Not AGPLv3 Licensed)
@@ -304,7 +304,7 @@ impl UserOrganization {
             "Use2fa": true,
             "UseDirectory": false, // Is supported, but this value isn't checked anywhere (yet)
             "UseEvents": CONFIG.org_events_enabled(),
-            "UseGroups": true,
+            "UseGroups": CONFIG.org_groups_enabled(),
             "UseTotp": true,
             // "UseScim": false, // Not supported (Not AGPLv3 Licensed)
             "UsePolicies": true,

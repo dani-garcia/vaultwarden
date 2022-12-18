@@ -1990,6 +1990,10 @@ async fn _restore_organization_user(
 
 #[get("/organizations/<org_id>/groups")]
 async fn get_groups(org_id: String, _headers: ManagerHeadersLoose, mut conn: DbConn) -> JsonResult {
+    if !CONFIG.org_groups_enabled() {
+        err!("Group support is disabled");
+    }
+
     let groups = Group::find_by_organization(&org_id, &mut conn).await.iter().map(Group::to_json).collect::<Value>();
 
     Ok(Json(json!({
@@ -2089,6 +2093,10 @@ async fn post_groups(
     mut conn: DbConn,
     ip: ClientIp,
 ) -> JsonResult {
+    if !CONFIG.org_groups_enabled() {
+        err!("Group support is disabled");
+    }
+
     let group_request = data.into_inner().data;
     let group = group_request.to_group(&org_id)?;
 
@@ -2115,6 +2123,10 @@ async fn put_group(
     mut conn: DbConn,
     ip: ClientIp,
 ) -> JsonResult {
+    if !CONFIG.org_groups_enabled() {
+        err!("Group support is disabled");
+    }
+
     let group = match Group::find_by_uuid(&group_id, &mut conn).await {
         Some(group) => group,
         None => err!("Group not found"),
@@ -2159,6 +2171,10 @@ async fn add_update_group(mut group: Group, collections: Vec<SelectionReadOnly>,
 
 #[get("/organizations/<_org_id>/groups/<group_id>/details")]
 async fn get_group_details(_org_id: String, group_id: String, _headers: AdminHeaders, mut conn: DbConn) -> JsonResult {
+    if !CONFIG.org_groups_enabled() {
+        err!("Group support is disabled");
+    }
+
     let group = match Group::find_by_uuid(&group_id, &mut conn).await {
         Some(group) => group,
         _ => err!("Group could not be found!"),
@@ -2199,6 +2215,10 @@ async fn delete_group(
     mut conn: DbConn,
     ip: ClientIp,
 ) -> EmptyResult {
+    if !CONFIG.org_groups_enabled() {
+        err!("Group support is disabled");
+    }
+
     let group = match Group::find_by_uuid(&group_id, &mut conn).await {
         Some(group) => group,
         _ => err!("Group not found"),
@@ -2220,6 +2240,10 @@ async fn delete_group(
 
 #[get("/organizations/<_org_id>/groups/<group_id>")]
 async fn get_group(_org_id: String, group_id: String, _headers: AdminHeaders, mut conn: DbConn) -> JsonResult {
+    if !CONFIG.org_groups_enabled() {
+        err!("Group support is disabled");
+    }
+
     let group = match Group::find_by_uuid(&group_id, &mut conn).await {
         Some(group) => group,
         _ => err!("Group not found"),
@@ -2230,6 +2254,10 @@ async fn get_group(_org_id: String, group_id: String, _headers: AdminHeaders, mu
 
 #[get("/organizations/<_org_id>/groups/<group_id>/users")]
 async fn get_group_users(_org_id: String, group_id: String, _headers: AdminHeaders, mut conn: DbConn) -> JsonResult {
+    if !CONFIG.org_groups_enabled() {
+        err!("Group support is disabled");
+    }
+
     match Group::find_by_uuid(&group_id, &mut conn).await {
         Some(_) => { /* Do nothing */ }
         _ => err!("Group could not be found!"),
@@ -2253,6 +2281,10 @@ async fn put_group_users(
     mut conn: DbConn,
     ip: ClientIp,
 ) -> EmptyResult {
+    if !CONFIG.org_groups_enabled() {
+        err!("Group support is disabled");
+    }
+
     match Group::find_by_uuid(&group_id, &mut conn).await {
         Some(_) => { /* Do nothing */ }
         _ => err!("Group could not be found!"),
@@ -2282,6 +2314,10 @@ async fn put_group_users(
 
 #[get("/organizations/<_org_id>/users/<user_id>/groups")]
 async fn get_user_groups(_org_id: String, user_id: String, _headers: AdminHeaders, mut conn: DbConn) -> JsonResult {
+    if !CONFIG.org_groups_enabled() {
+        err!("Group support is disabled");
+    }
+
     match UserOrganization::find_by_uuid(&user_id, &mut conn).await {
         Some(_) => { /* Do nothing */ }
         _ => err!("User could not be found!"),
@@ -2320,6 +2356,10 @@ async fn put_user_groups(
     mut conn: DbConn,
     ip: ClientIp,
 ) -> EmptyResult {
+    if !CONFIG.org_groups_enabled() {
+        err!("Group support is disabled");
+    }
+
     match UserOrganization::find_by_uuid(&org_user_id, &mut conn).await {
         Some(_) => { /* Do nothing */ }
         _ => err!("User could not be found!"),
@@ -2368,6 +2408,10 @@ async fn delete_group_user(
     mut conn: DbConn,
     ip: ClientIp,
 ) -> EmptyResult {
+    if !CONFIG.org_groups_enabled() {
+        err!("Group support is disabled");
+    }
+
     match UserOrganization::find_by_uuid(&org_user_id, &mut conn).await {
         Some(_) => { /* Do nothing */ }
         _ => err!("User could not be found!"),

@@ -85,7 +85,7 @@ macro_rules! make_config {
 
                 let mut builder = ConfigBuilder::default();
                 $($(
-                    builder.$name = make_config! { @getenv &stringify!($name).to_uppercase(), $ty };
+                    builder.$name = make_config! { @getenv paste::paste!(stringify!([<$name:upper>])), $ty };
                 )+)+
 
                 builder
@@ -105,7 +105,7 @@ macro_rules! make_config {
                         builder.$name = v.clone();
 
                         if self.$name.is_some() {
-                            overrides.push(stringify!($name).to_uppercase());
+                            overrides.push(paste::paste!(stringify!([<$name:upper>])).into());
                         }
                     }
                 )+)+
@@ -195,7 +195,7 @@ macro_rules! make_config {
                                 element.insert("default".into(), serde_json::to_value(def.$name).unwrap());
                                 element.insert("type".into(), (_get_form_type(stringify!($ty))).into());
                                 element.insert("doc".into(), (_get_doc(concat!($($doc),+))).into());
-                                element.insert("overridden".into(), (overriden.contains(&stringify!($name).to_uppercase())).into());
+                                element.insert("overridden".into(), (overriden.contains(&paste::paste!(stringify!([<$name:upper>])).into())).into());
                                 element
                             }),
                         )+
@@ -564,6 +564,9 @@ make_config! {
         admin_ratelimit_seconds:       u64, false, def, 300;
         /// Max burst size for admin login requests |> Allow a burst of requests of up to this size, while maintaining the average indicated by `admin_ratelimit_seconds`
         admin_ratelimit_max_burst:     u32, false, def, 3;
+
+        /// Enable groups (BETA!) (Know the risks!) |> Enables groups support for organizations (Currently contains known issues!).
+        org_groups_enabled:     bool,   false,  def,    false;
     },
 
     /// Yubikey settings

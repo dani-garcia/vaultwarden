@@ -31,7 +31,7 @@ jobs:
     steps:
       - name: Skip Duplicates Actions
         id: skip_check
-        uses: fkirc/skip-duplicate-actions@f11521568414503656a5af807dc3018c012552c4 # v5.2.0
+        uses: fkirc/skip-duplicate-actions@12aca0a884f6137d619d6a8a09fcc3406ced5281 # v5.3.0
         with:
           cancel_others: 'true'
         # Only run this when not creating a tag
@@ -39,6 +39,7 @@ jobs:
 
   docker-build:
     runs-on: ubuntu-20.04
+    timeout-minutes: 120
     needs: skip_check
     # Start a local docker registry to be used to generate multi-arch images.
     services:
@@ -60,7 +61,7 @@ jobs:
     steps:
       # Checkout the repo
       - name: Checkout
-        uses: actions/checkout@93ea575cb5d8a053eaa0ac8fa3b40d7e05a33cc8 # v3.1.0
+        uses: actions/checkout@755da8c3cf115ac066823e79a1e1788f8940201b # v3.2.0
         with:
           fetch-depth: 0
 
