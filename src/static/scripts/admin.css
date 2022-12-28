@@ -1,0 +1,45 @@
+body {
+    padding-top: 75px;
+}
+img {
+    width: 48px;
+    height: 48px;
+}
+.vaultwarden-icon {
+    height: 32px;
+    width: auto;
+    margin: -5px 0 0 0;
+}
+/* Special alert-row class to use Bootstrap v5.2+ variable colors */
+.alert-row {
+    --bs-alert-border: 1px solid var(--bs-alert-border-color);
+    color: var(--bs-alert-color);
+    background-color: var(--bs-alert-bg);
+    border: var(--bs-alert-border);
+}
+
+#users-table .vw-created-at, #users-table .vw-last-active {
+    width: 85px;
+    min-width: 70px;
+}
+#users-table .vw-items {
+    width: 35px;
+    min-width: 35px;
+}
+#users-table .vw-organizations {
+    min-width: 120px;
+}
+#users-table .vw-actions, #orgs-table .vw-actions {
+    width: 130px;
+    min-width: 130px;
+}
+#users-table .vw-org-cell {
+    max-height: 120px;
+}
+
+#support-string {
+    height: 16rem;
+}
+.vw-copy-toast {
+    width: 15rem;
+}
