@@ -1099,6 +1099,7 @@ where
     // Register helpers
     hb.register_helper("case", Box::new(case_helper));
     hb.register_helper("jsesc", Box::new(js_escape_helper));
+    hb.register_helper("to_json", Box::new(to_json));
 
     macro_rules! reg {
         ($name:expr) => {{
@@ -1194,5 +1195,19 @@ fn js_escape_helper<'reg, 'rc>(
     }
 
     out.write(&escaped_value)?;
+    Ok(())
+}
+
+fn to_json<'reg, 'rc>(
+    h: &Helper<'reg, 'rc>,
+    _r: &'reg Handlebars<'_>,
+    _ctx: &'rc Context,
+    _rc: &mut RenderContext<'reg, 'rc>,
+    out: &mut dyn Output,
+) -> HelperResult {
+    let param = h.param(0).ok_or_else(|| RenderError::new("Expected 1 parameter for \"to_json\""))?.value();
+    let json = serde_json::to_string(param)
+        .map_err(|e| RenderError::new(format!("Can't serialize parameter to JSON: {}", e)))?;
+    out.write(&json)?;
     Ok(())
 }
