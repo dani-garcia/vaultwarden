@@ -1,18 +1,17 @@
 <main class="container-xl">
     <div id="users-block" class="my-3 p-3 bg-white rounded shadow">
         <h6 class="border-bottom pb-2 mb-3">Registered Users</h6>
-
         <div class="table-responsive-xl small">
             <table id="users-table" class="table table-sm table-striped table-hover">
                 <thead>
                     <tr>
                         <th>User</th>
-                        <th style="width: 85px; min-width: 70px;">Created at</th>
-                        <th style="width: 85px; min-width: 70px;">Last Active</th>
-                        <th style="width: 35px; min-width: 35px;">Items</th>
-                        <th>Attachments</th>
-                        <th style="min-width: 120px;">Organizations</th>
-                        <th style="width: 130px; min-width: 130px;">Actions</th>
+                        <th class="vw-created-at">Created at</th>
+                        <th class="vw-last-active">Last Active</th>
+                        <th class="vw-items">Items</th>
+                        <th class="vw-attachments">Attachments</th>
+                        <th class="vw-organizations">Organizations</th>
+                        <th class="vw-actions">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -55,23 +54,25 @@
                             {{/if}}
                         </td>
                         <td>
-                            <div class="overflow-auto" style="max-height: 120px;">
+                            <div class="overflow-auto vw-org-cell" data-vw-user-email="{{jsesc Email no_quote}}" data-vw-user-uuid="{{jsesc Id no_quote}}">
                             {{#each Organizations}}
-                            <button class="badge" data-bs-toggle="modal" data-bs-target="#userOrgTypeDialog" data-orgtype="{{Type}}" data-orguuid="{{jsesc Id no_quote}}" data-orgname="{{jsesc Name no_quote}}" data-useremail="{{jsesc ../Email no_quote}}" data-useruuid="{{jsesc ../Id no_quote}}">{{Name}}</button>
+                            <button class="badge" data-bs-toggle="modal" data-bs-target="#userOrgTypeDialog" data-vw-org-type="{{Type}}" data-vw-org-uuid="{{jsesc Id no_quote}}" data-vw-org-name="{{jsesc Name no_quote}}">{{Name}}</button>
                             {{/each}}
                             </div>
                         </td>
                         <td class="text-end px-0 small">
-                            {{#if TwoFactorEnabled}}
-                            <button type="button" class="btn btn-sm btn-link p-0 border-0" onclick='remove2fa({{jsesc Id}})'>Remove all 2FA</button>
-                            {{/if}}
-                            <button type="button" class="btn btn-sm btn-link p-0 border-0" onclick='deauthUser({{jsesc Id}})'>Deauthorize sessions</button>
-                            <button type="button" class="btn btn-sm btn-link p-0 border-0" onclick='deleteUser({{jsesc Id}}, {{jsesc Email}})'>Delete User</button>
-                            {{#if user_enabled}}
-                            <button type="button" class="btn btn-sm btn-link p-0 border-0" onclick='disableUser({{jsesc Id}}, {{jsesc Email}})'>Disable User</button>
-                            {{else}}
-                            <button type="button" class="btn btn-sm btn-link p-0 border-0" onclick='enableUser({{jsesc Id}}, {{jsesc Email}})'>Enable User</button>
-                            {{/if}}
+                            <span data-vw-user-uuid="{{jsesc Id no_quote}}" data-vw-user-email="{{jsesc Email no_quote}}">
+                                {{#if TwoFactorEnabled}}
+                                <button type="button" class="btn btn-sm btn-link p-0 border-0" vw-remove2fa>Remove all 2FA</button>
+                                {{/if}}
+                                <button type="button" class="btn btn-sm btn-link p-0 border-0" vw-deauth-user>Deauthorize sessions</button>
+                                <button type="button" class="btn btn-sm btn-link p-0 border-0" vw-delete-user>Delete User</button>
+                                {{#if user_enabled}}
+                                <button type="button" class="btn btn-sm btn-link p-0 border-0" vw-disable-user>Disable User</button>
+                                {{else}}
+                                <button type="button" class="btn btn-sm btn-link p-0 border-0" vw-enable-user>Enable User</button>
+                                {{/if}}
+                            </span>
                         </td>
                     </tr>
                     {{/each}}
@@ -79,23 +80,23 @@
             </table>
         </div>
 
-        <div class="mt-3">
-            <button type="button" class="btn btn-sm btn-danger" onclick="updateRevisions();"
+        <div class="mt-3 clearfix">
+            <button type="button" class="btn btn-sm btn-danger" id="updateRevisions"
                 title="Force all clients to fetch new data next time they connect. Useful after restoring a backup to remove any stale data.">
                 Force clients to resync
             </button>
 
-            <button type="button" class="btn btn-sm btn-primary float-end" onclick="reload();">Reload users</button>
+            <button type="button" class="btn btn-sm btn-primary float-end" id="reload">Reload users</button>
         </div>
     </div>
 
-    <div id="invite-form-block" class="align-items-center p-3 mb-3 text-white-50 bg-secondary rounded shadow">
+    <div id="inviteUserFormBlock" class="align-items-center p-3 mb-3 text-white-50 bg-secondary rounded shadow">
         <div>
             <h6 class="mb-0 text-white">Invite User</h6>
             <small>Email:</small>
 
-            <form class="form-inline input-group w-50" id="invite-form" onsubmit="inviteUser(); return false;">
-                <input type="email" class="form-control me-2" id="email-invite" placeholder="Enter email" required>
+            <form class="form-inline input-group w-50" id="inviteUserForm">
+                <input type="email" class="form-control me-2" id="inviteEmail" placeholder="Enter email" required>
                 <button type="submit" class="btn btn-primary">Invite</button>
             </form>
         </div>
@@ -108,7 +109,7 @@
                     <h6 class="modal-title" id="userOrgTypeDialogTitle"></h6>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
-                <form class="form" id="userOrgTypeForm" onsubmit="updateUserOrgType(); return false;">
+                <form class="form" id="userOrgTypeForm">
                     <input type="hidden" name="user_uuid" id="userOrgTypeUserUuid" value="">
                     <input type="hidden" name="org_uuid" id="userOrgTypeOrgUuid" value="">
                     <div class="modal-body">
@@ -138,150 +139,5 @@
 <link rel="stylesheet" href="{{urlpath}}/vw_static/datatables.css" />
 <script src="{{urlpath}}/vw_static/jquery-3.6.2.slim.js"></script>
 <script src="{{urlpath}}/vw_static/datatables.js"></script>
-<script>
-    'use strict';
-
-    function deleteUser(id, mail) {
-        var input_mail = prompt("To delete user '" + mail + "', please type the email below")
-        if (input_mail != null) {
-            if (input_mail == mail) {
-                _post("{{urlpath}}/admin/users/" + id + "/delete",
-                    "User deleted correctly",
-                    "Error deleting user");
-            } else {
-                alert("Wrong email, please try again")
-            }
-        }
-        return false;
-    }
-    function remove2fa(id) {
-        _post("{{urlpath}}/admin/users/" + id + "/remove-2fa",
-            "2FA removed correctly",
-            "Error removing 2FA");
-        return false;
-    }
-    function deauthUser(id) {
-        _post("{{urlpath}}/admin/users/" + id + "/deauth",
-            "Sessions deauthorized correctly",
-            "Error deauthorizing sessions");
-        return false;
-    }
-    function disableUser(id, mail) {
-        var confirmed = confirm("Are you sure you want to disable user '" + mail + "'? This will also deauthorize their sessions.")
-        if (confirmed) {
-            _post("{{urlpath}}/admin/users/" + id + "/disable",
-                "User disabled successfully",
-                "Error disabling user");
-        }
-        return false;
-    }
-    function enableUser(id, mail) {
-        var confirmed = confirm("Are you sure you want to enable user '" + mail + "'?")
-        if (confirmed) {
-            _post("{{urlpath}}/admin/users/" + id + "/enable",
-                "User enabled successfully",
-                "Error enabling user");
-        }
-        return false;
-    }
-    function updateRevisions() {
-        _post("{{urlpath}}/admin/users/update_revision",
-            "Success, clients will sync next time they connect",
-            "Error forcing clients to sync");
-        return false;
-    }
-    function inviteUser() {
-        const inv = document.getElementById("email-invite");
-        const data = JSON.stringify({ "email": inv.value });
-        inv.value = "";
-        _post("{{urlpath}}/admin/invite/", "User invited correctly",
-            "Error inviting user", data);
-        return false;
-    }
-
-    let OrgTypes = {
-        "0": { "name": "Owner", "color": "orange" },
-        "1": { "name": "Admin", "color": "blueviolet" },
-        "2": { "name": "User", "color": "blue" },
-        "3": { "name": "Manager", "color": "green" },
-    };
-
-    document.querySelectorAll("[data-orgtype]").forEach(function (e) {
-        let orgtype = OrgTypes[e.dataset.orgtype];
-        e.style.backgroundColor = orgtype.color;
-        e.title = orgtype.name;
-    });
-
-    // Special sort function to sort dates in ISO format
-    jQuery.extend( jQuery.fn.dataTableExt.oSort, {
-        "date-iso-pre": function ( a ) {
-            let x;
-            let sortDate = a.replace(/(<([^>]+)>)/gi, "").trim();
-            if ( sortDate !== '' ) {
-                let dtParts = sortDate.split(' ');
-                var timeParts = (undefined != dtParts[1]) ? dtParts[1].split(':') : ['00','00','00'];
-                var dateParts = dtParts[0].split('-');
-                x = (dateParts[0] + dateParts[1] + dateParts[2] + timeParts[0] + timeParts[1] + ((undefined != timeParts[2]) ? timeParts[2] : 0)) * 1;
-                if ( isNaN(x) ) {
-                    x = 0;
-                }
-            } else {
-                x = Infinity;
-            }
-            return x;
-        },
-
-        "date-iso-asc": function ( a, b ) {
-            return a - b;
-        },
-
-        "date-iso-desc": function ( a, b ) {
-            return b - a;
-        }
-    });
-
-    document.addEventListener("DOMContentLoaded", function() {
-        $('#users-table').DataTable({
-            "responsive": true,
-            "lengthMenu": [ [-1, 5, 10, 25, 50], ["All", 5, 10, 25, 50] ],
-            "pageLength": -1, // Default show all
-            "columnDefs": [
-                { "targets": [1,2], "type": "date-iso" },
-                { "targets": 6, "searchable": false, "orderable": false }
-            ]
-        });
-    });
-
-    var userOrgTypeDialog = document.getElementById('userOrgTypeDialog');
-    // Fill the form and title
-    userOrgTypeDialog.addEventListener('show.bs.modal', function(event){
-        let userOrgType = event.relatedTarget.getAttribute("data-orgtype");
-        let userOrgTypeName = OrgTypes[userOrgType]["name"];
-        let orgName = event.relatedTarget.getAttribute("data-orgname");
-        let userEmail = event.relatedTarget.getAttribute("data-useremail");
-        let orgUuid = event.relatedTarget.getAttribute("data-orguuid");
-        let userUuid = event.relatedTarget.getAttribute("data-useruuid");
-
-        document.getElementById("userOrgTypeDialogTitle").innerHTML = "<b>Update User Type:</b><br><b>Organization:</b> " + orgName + "<br><b>User:</b> " + userEmail;
-        document.getElementById("userOrgTypeUserUuid").value = userUuid;
-        document.getElementById("userOrgTypeOrgUuid").value = orgUuid;
-        document.getElementById("userOrgType"+userOrgTypeName).checked = true;
-    }, false);
-
-    // Prevent accidental submission of the form with valid elements after the modal has been hidden.
-    userOrgTypeDialog.addEventListener('hide.bs.modal', function(){
-        document.getElementById("userOrgTypeDialogTitle").innerHTML = '';
-        document.getElementById("userOrgTypeUserUuid").value = '';
-        document.getElementById("userOrgTypeOrgUuid").value = '';
-    }, false);
-
-    function updateUserOrgType() {
-        let orgForm = document.getElementById("userOrgTypeForm");
-        const data = JSON.stringify(Object.fromEntries(new FormData(orgForm).entries()));
-
-        _post("{{urlpath}}/admin/users/org_type",
-            "Updated organization type of the user successfully",
-            "Error updating organization type of the user", data);
-        return false;
-    }
-</script>
+<script src="{{urlpath}}/vw_static/admin_users.js"></script>
+<script src="{{urlpath}}/vw_static/jdenticon.js"></script>
