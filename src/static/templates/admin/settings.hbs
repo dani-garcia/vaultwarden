@@ -8,8 +8,8 @@
                 Settings which are overridden are shown with <span class="is-overridden-true alert-row px-1">a yellow colored background</span>.
             </div>
 
-            <form class="form needs-validation" id="config-form" onsubmit="saveConfig(); return false;" novalidate>
-                {{#each config}}
+            <form class="form needs-validation" id="config-form" novalidate>
+                {{#each page_data.config}}
                 {{#if groupdoc}}
                 <div class="card bg-light mb-3">
                     <button id="b_{{group}}" type="button" class="card-header text-start btn btn-link text-decoration-none" aria-expanded="false" aria-controls="g_{{group}}" data-bs-toggle="collapse" data-bs-target="#g_{{group}}">{{groupdoc}}</button>
@@ -24,7 +24,7 @@
                                 <input class="form-control conf-{{type}}" id="input_{{name}}" type="{{type}}"
                                     name="{{name}}" value="{{value}}" {{#if default}} placeholder="Default: {{default}}"{{/if}}>
                                 {{#case type "password"}}
-                                    <button class="btn btn-outline-secondary input-group-text" type="button" onclick="toggleVis('input_{{name}}');">Show/hide</button>
+                                    <button class="btn btn-outline-secondary input-group-text" type="button" data-vw-pw-toggle="input_{{name}}">Show/hide</button>
                                 {{/case}}
                                 </div>
                             </div>
@@ -48,7 +48,7 @@
                                 <label for="smtp-test-email" class="col-sm-3 col-form-label">Test SMTP</label>
                                 <div class="col-sm-8 input-group">
                                     <input class="form-control" id="smtp-test-email" type="email" placeholder="Enter test email" required>
-                                    <button type="button" class="btn btn-outline-primary input-group-text" onclick="smtpTest(); return false;">Send test email</button>
+                                    <button type="button" class="btn btn-outline-primary input-group-text" id="smtpTest">Send test email</button>
                                     <div class="invalid-tooltip">Please provide a valid email address</div>
                                 </div>
                             </div>
@@ -68,7 +68,7 @@
                             launching the server. You can check the variable names in the tooltips of each option.
                         </div>
 
-                        {{#each config}}
+                        {{#each page_data.config}}
                         {{#each elements}}
                         {{#unless editable}}
                         <div class="row my-2 align-items-center alert-row" title="[{{name}}] {{doc.description}}">
@@ -83,11 +83,11 @@
                                 --}}
                                 {{#if (eq name "database_url")}}
                                     <input readonly class="form-control" id="input_{{name}}" type="password" value="{{value}}" {{#if default}} placeholder="Default: {{default}}" {{/if}}>
-                                    <button class="btn btn-outline-secondary" type="button" onclick="toggleVis('input_{{name}}');">Show/hide</button>
+                                    <button class="btn btn-outline-secondary" type="button" data-vw-pw-toggle="input_{{name}}">Show/hide</button>
                                 {{else}}
                                     <input readonly class="form-control" id="input_{{name}}" type="{{type}}" value="{{value}}" {{#if default}} placeholder="Default: {{default}}" {{/if}}>
                                     {{#case type "password"}}
-                                    <button class="btn btn-outline-secondary" type="button" onclick="toggleVis('input_{{name}}');">Show/hide</button>
+                                    <button class="btn btn-outline-secondary" type="button" data-vw-pw-toggle="input_{{name}}">Show/hide</button>
                                     {{/case}}
                                 {{/if}}
                                 </div>
@@ -112,7 +112,7 @@
                     </div>
                 </div>
 
-                {{#if can_backup}}
+                {{#if page_data.can_backup}}
                 <div class="card bg-light mb-3">
                     <button id="b_database" type="button" class="card-header text-start btn btn-link text-decoration-none" aria-expanded="false" aria-controls="g_database"
                             data-bs-toggle="collapse" data-bs-target="#g_database">Backup Database</button>
@@ -124,18 +124,17 @@
                             how to perform complete backups, refer to the wiki page on
                             <a href="https://github.com/dani-garcia/vaultwarden/wiki/Backing-up-your-vault" target="_blank" rel="noopener noreferrer">backups</a>.
                         </div>
-                        <button type="button" class="btn btn-primary" onclick="backupDatabase();">Backup Database</button>
+                        <button type="button" class="btn btn-primary" id="backupDatabase">Backup Database</button>
                     </div>
                 </div>
                 {{/if}}
 
                 <button type="submit" class="btn btn-primary">Save</button>
-                <button type="button" class="btn btn-danger float-end" onclick="deleteConf();">Reset defaults</button>
+                <button type="button" class="btn btn-danger float-end" id="deleteConf">Reset defaults</button>
             </form>
         </div>
     </div>
 </main>
-
 <style>
     #config-block ::placeholder {
         /* Most modern browsers support this now. */
@@ -148,146 +147,4 @@
         --bs-alert-border-color: #ffecb5;
     }
 </style>
-
-<script>
-    'use strict';
-
-    function smtpTest() {
-        if (formHasChanges(config_form)) {
-            event.preventDefault();
-            event.stopPropagation();
-            alert("Config has been changed but not yet saved.\nPlease save the changes first before sending a test email.");
-            return false;
-        }
-
-        let test_email = document.getElementById("smtp-test-email");
-
-        // Do a very very basic email address check.
-        if (test_email.value.match(/\S+@\S+/i) === null) {
-            test_email.parentElement.classList.add('was-validated');
-            event.preventDefault();
-            event.stopPropagation();
-            return false;
-        }
-
-        const data = JSON.stringify({ "email": test_email.value });
-        _post("{{urlpath}}/admin/test/smtp/",
-            "SMTP Test email sent correctly",
-            "Error sending SMTP test email", data, false);
-        return false;
-    }
-    function getFormData() {
-        let data = {};
-
-        document.querySelectorAll(".conf-checkbox").forEach(function (e) {
-            data[e.name] = e.checked;
-        });
-
-        document.querySelectorAll(".conf-number").forEach(function (e) {
-            data[e.name] = e.value ? +e.value : null;
-        });
-
-        document.querySelectorAll(".conf-text, .conf-password").forEach(function (e) {
-            data[e.name] = e.value || null;
-        });
-        return data;
-    }
-    function saveConfig() {
-        const data = JSON.stringify(getFormData());
-        _post("{{urlpath}}/admin/config/", "Config saved correctly",
-            "Error saving config", data);
-        return false;
-    }
-    function deleteConf() {
-        var input = prompt("This will remove all user configurations, and restore the defaults and the " +
-            "values set by the environment. This operation could be dangerous. Type 'DELETE' to proceed:");
-        if (input === "DELETE") {
-            _post("{{urlpath}}/admin/config/delete",
-                "Config deleted correctly",
-                "Error deleting config");
-        } else {
-            alert("Wrong input, please try again")
-        }
-
-        return false;
-    }
-    function backupDatabase() {
-        _post("{{urlpath}}/admin/config/backup_db",
-            "Backup created successfully",
-            "Error creating backup", null, false);
-        return false;
-    }
-    function masterCheck(check_id, inputs_query) {
-        function onChanged(checkbox, inputs_query) {
-            return function _fn() {
-                document.querySelectorAll(inputs_query).forEach(function (e) { e.disabled = !checkbox.checked; });
-                checkbox.disabled = false;
-            };
-        }
-
-        const checkbox = document.getElementById(check_id);
-        const onChange = onChanged(checkbox, inputs_query);
-        onChange(); // Trigger the event initially
-        checkbox.addEventListener("change", onChange);
-    }
-
-    {{#each config}} {{#if grouptoggle}}
-    masterCheck("input_{{grouptoggle}}", "#g_{{group}} input");
-    {{/if}} {{/each}}
-
-    // Two functions to help check if there were changes to the form fields
-    // Useful for example during the smtp test to prevent people from clicking save before testing there new settings
-    function initChangeDetection(form) {
-        const ignore_fields = ["smtp-test-email"];
-        Array.from(form).forEach((el) => {
-            if (! ignore_fields.includes(el.id)) {
-                el.dataset.origValue = el.value
-            }
-        });
-    }
-    function formHasChanges(form) {
-        return Array.from(form).some(el => 'origValue' in el.dataset && ( el.dataset.origValue !== el.value));
-    }
-
-    // This function will prevent submitting a from when someone presses enter.
-    function preventFormSubmitOnEnter(form) {
-        form.onkeypress = function(e) {
-            let key = e.charCode || e.keyCode || 0;
-            if (key == 13) {
-                e.preventDefault();
-            }
-        }
-    }
-
-    // Initialize Form Change Detection
-    const config_form = document.getElementById('config-form');
-    initChangeDetection(config_form);
-    // Prevent enter to submitting the form and save the config.
-    // Users need to really click on save, this also to prevent accidental submits.
-    preventFormSubmitOnEnter(config_form);
-
-    // This function will hook into the smtp-test-email input field and will call the smtpTest() function when enter is pressed.
-    function submitTestEmailOnEnter() {
-        const smtp_test_email_input = document.getElementById('smtp-test-email');
-        smtp_test_email_input.onkeypress = function(e) {
-            let key = e.charCode || e.keyCode || 0;
-            if (key == 13) {
-                e.preventDefault();
-                smtpTest();
-            }
-        }
-    }
-    submitTestEmailOnEnter();
-
-    // Colorize some settings which are high risk
-    function colorRiskSettings() {
-        const risk_items = document.getElementsByClassName('col-form-label');
-        Array.from(risk_items).forEach((el) => {
-            if (el.innerText.toLowerCase().includes('risks') ) {
-                el.parentElement.className += ' alert-danger'
-            }
-        });
-    }
-    colorRiskSettings();
-
-</script>
+<script src="{{urlpath}}/vw_static/admin_settings.js"></script>
