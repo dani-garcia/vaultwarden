@@ -102,6 +102,17 @@ pub fn static_files(filename: String) -> Result<(ContentType, &'static [u8]), Er
         "hibp.png" => Ok((ContentType::PNG, include_bytes!("../static/images/hibp.png"))),
         "vaultwarden-icon.png" => Ok((ContentType::PNG, include_bytes!("../static/images/vaultwarden-icon.png"))),
         "vaultwarden-favicon.png" => Ok((ContentType::PNG, include_bytes!("../static/images/vaultwarden-favicon.png"))),
+        "404.css" => Ok((ContentType::CSS, include_bytes!("../static/scripts/404.css"))),
+        "admin.css" => Ok((ContentType::CSS, include_bytes!("../static/scripts/admin.css"))),
+        "admin.js" => Ok((ContentType::JavaScript, include_bytes!("../static/scripts/admin.js"))),
+        "admin_settings.js" => Ok((ContentType::JavaScript, include_bytes!("../static/scripts/admin_settings.js"))),
+        "admin_users.js" => Ok((ContentType::JavaScript, include_bytes!("../static/scripts/admin_users.js"))),
+        "admin_organizations.js" => {
+            Ok((ContentType::JavaScript, include_bytes!("../static/scripts/admin_organizations.js")))
+        }
+        "admin_diagnostics.js" => {
+            Ok((ContentType::JavaScript, include_bytes!("../static/scripts/admin_diagnostics.js")))
+        }
         "bootstrap.css" => Ok((ContentType::CSS, include_bytes!("../static/scripts/bootstrap.css"))),
         "bootstrap-native.js" => Ok((ContentType::JavaScript, include_bytes!("../static/scripts/bootstrap-native.js"))),
         "jdenticon.js" => Ok((ContentType::JavaScript, include_bytes!("../static/scripts/jdenticon.js"))),

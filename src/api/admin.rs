@@ -144,7 +144,6 @@ fn render_admin_login(msg: Option<&str>, redirect: Option<String>) -> ApiResult<
     let msg = msg.map(|msg| format!("Error: {msg}"));
     let json = json!({
         "page_content": "admin/login",
-        "version": VERSION,
         "error": msg,
         "redirect": redirect,
         "urlpath": CONFIG.domain_path()
@@ -208,34 +207,16 @@ fn _validate_token(token: &str) -> bool {
 #[derive(Serialize)]
 struct AdminTemplateData {
     page_content: String,
-    version: Option<&'static str>,
     page_data: Option<Value>,
-    config: Value,
-    can_backup: bool,
     logged_in: bool,
     urlpath: String,
 }
 
 impl AdminTemplateData {
-    fn new() -> Self {
-        Self {
-            page_content: String::from("admin/settings"),
-            version: VERSION,
-            config: CONFIG.prepare_json(),
-            can_backup: *CAN_BACKUP,
-            logged_in: true,
-            urlpath: CONFIG.domain_path(),
-            page_data: None,
-        }
-    }
-
-    fn with_data(page_content: &str, page_data: Value) -> Self {
+    fn new(page_content: &str, page_data: Value) -> Self {
         Self {
             page_content: String::from(page_content),
-            version: VERSION,
             page_data: Some(page_data),
-            config: CONFIG.prepare_json(),
-            can_backup: *CAN_BACKUP,
             logged_in: true,
             urlpath: CONFIG.domain_path(),
         }
@@ -247,7 +228,11 @@ impl AdminTemplateData {
 }
 
 fn render_admin_page() -> ApiResult<Html<String>> {
-    let text = AdminTemplateData::new().render()?;
+    let settings_json = json!({
+        "config": CONFIG.prepare_json(),
+        "can_backup": *CAN_BACKUP,
+    });
+    let text = AdminTemplateData::new("admin/settings", settings_json).render()?;
     Ok(Html(text))
 }
 
@@ -342,7 +327,7 @@ async fn users_overview(_token: AdminToken, mut conn: DbConn) -> ApiResult<Html<
         users_json.push(usr);
     }
 
-    let text = AdminTemplateData::with_data("admin/users", json!(users_json)).render()?;
+    let text = AdminTemplateData::new("admin/users", json!(users_json)).render()?;
     Ok(Html(text))
 }
 
@@ -450,7 +435,7 @@ async fn update_user_org_type(
     };
 
     if user_to_edit.atype == UserOrgType::Owner && new_type != UserOrgType::Owner {
-        // Removing owner permmission, check that there is at least one other confirmed owner
+        // Removing owner permission, check that there is at least one other confirmed owner
         if UserOrganization::count_confirmed_by_org_and_type(&data.org_uuid, UserOrgType::Owner, &mut conn).await <= 1 {
             err!("Can't change the type of the last owner")
         }
@@ -502,7 +487,7 @@ async fn organizations_overview(_token: AdminToken, mut conn: DbConn) -> ApiResu
         organizations_json.push(org);
     }
 
-    let text = AdminTemplateData::with_data("admin/organizations", json!(organizations_json)).render()?;
+    let text = AdminTemplateData::new("admin/organizations", json!(organizations_json)).render()?;
     Ok(Html(text))
 }
 
@@ -625,13 +610,14 @@ async fn diagnostics(_token: AdminToken, ip_header: IpHeader, mut conn: DbConn) 
 
     let diagnostics_json = json!({
         "dns_resolved": dns_resolved,
+        "current_release": VERSION,
         "latest_release": latest_release,
         "latest_commit": latest_commit,
         "web_vault_enabled": &CONFIG.web_vault_enabled(),
         "web_vault_version": web_vault_version.version,
         "latest_web_build": latest_web_build,
         "running_within_docker": running_within_docker,
-        "docker_base_image": docker_base_image(),
+        "docker_base_image": if running_within_docker { docker_base_image() } else { "Not applicable" },
         "has_http_access": has_http_access,
         "ip_header_exists": &ip_header.0.is_some(),
         "ip_header_match": ip_header_name == CONFIG.ip_header(),
@@ -642,11 +628,13 @@ async fn diagnostics(_token: AdminToken, ip_header: IpHeader, mut conn: DbConn) 
         "db_version": get_sql_server_version(&mut conn).await,
         "admin_url": format!("{}/diagnostics", admin_url()),
         "overrides": &CONFIG.get_overrides().join(", "),
+        "host_arch": std::env::consts::ARCH,
+        "host_os":  std::env::consts::OS,
         "server_time_local": Local::now().format("%Y-%m-%d %H:%M:%S %Z").to_string(),
         "server_time": Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string(), // Run the date/time check as the last item to minimize the difference
     });
 
-    let text = AdminTemplateData::with_data("admin/diagnostics", diagnostics_json).render()?;
+    let text = AdminTemplateData::new("admin/diagnostics", diagnostics_json).render()?;
     Ok(Html(text))
 }
 
