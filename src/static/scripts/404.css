@@ -1,0 +1,26 @@
+body {
+    padding-top: 75px;
+}
+.vaultwarden-icon {
+    width: 48px;
+    height: 48px;
+    height: 32px;
+    width: auto;
+    margin: -5px 0 0 0;
+}
+.footer {
+    padding: 40px 0 40px 0;
+    border-top: 1px solid #dee2e6;
+}
+.container {
+    max-width: 980px;
+}
+.content {
+    padding-top: 20px;
+    padding-bottom: 20px;
+    padding-left: 15px;
+    padding-right: 15px;
+}
+.vw-404 {
+    max-width: 500px; width: 100%;
+}

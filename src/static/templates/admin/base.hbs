@@ -7,86 +7,9 @@
     <link rel="icon" type="image/png" href="{{urlpath}}/vw_static/vaultwarden-favicon.png">
     <title>Vaultwarden Admin Panel</title>
     <link rel="stylesheet" href="{{urlpath}}/vw_static/bootstrap.css" />
-    <style>
-        body {
-            padding-top: 75px;
-        }
-        img {
-            width: 48px;
-            height: 48px;
-        }
-        .vaultwarden-icon {
-            height: 32px;
-            width: auto;
-            margin: -5px 0 0 0;
-        }
-        /* Special alert-row class to use Bootstrap v5.2+ variable colors */
-        .alert-row {
-            --bs-alert-border: 1px solid var(--bs-alert-border-color);
-            color: var(--bs-alert-color);
-            background-color: var(--bs-alert-bg);
-            border: var(--bs-alert-border);
-        }
-    </style>
-    <script>
-        'use strict';
-
-        function reload() {
-            // Reload the page by setting the exact same href
-            // Using window.location.reload() could cause a repost.
-            window.location = window.location.href;
-        }
-        function msg(text, reload_page = true) {
-            text && alert(text);
-            reload_page && reload();
-        }
-        async function sha256(message) {
-            // https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/digest
-            const msgUint8 = new TextEncoder().encode(message);
-            const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
-            const hashArray = Array.from(new Uint8Array(hashBuffer));
-            const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-            return hashHex;
-        }
-        function toggleVis(input_id) {
-            const elem = document.getElementById(input_id);
-            const type = elem.getAttribute("type");
-            if (type === "text") {
-                elem.setAttribute("type", "password");
-            } else {
-                elem.setAttribute("type", "text");
-            }
-            return false;
-        }
-        function _post(url, successMsg, errMsg, body, reload_page = true) {
-            fetch(url, {
-                method: 'POST',
-                body: body,
-                mode: "same-origin",
-                credentials: "same-origin",
-                headers: { "Content-Type": "application/json" }
-            }).then( resp => {
-                if (resp.ok) { msg(successMsg, reload_page); return Promise.reject({error: false}); }
-                const respStatus = resp.status;
-                const respStatusText = resp.statusText;
-                return resp.text();
-            }).then( respText => {
-                try {
-                    const respJson = JSON.parse(respText);
-                    return respJson ? respJson.ErrorModel.Message : "Unknown error";
-                } catch (e) {
-                    return Promise.reject({body:respStatus + ' - ' + respStatusText, error: true});
-                }
-            }).then( apiMsg => {
-                msg(errMsg + "\n" + apiMsg, reload_page);
-            }).catch( e => {
-                if (e.error === false) { return true; }
-                else { msg(errMsg + "\n" + e.body, reload_page); }
-            });
-        }
-    </script>
+    <link rel="stylesheet" href="{{urlpath}}/vw_static/admin.css" />
+    <script src="{{urlpath}}/vw_static/admin.js"></script>
 </head>
-
 <body class="bg-light">
     <nav class="navbar navbar-expand-md navbar-dark bg-dark mb-4 shadow fixed-top">
         <div class="container-xl">
@@ -126,21 +49,6 @@
     {{> (lookup this "page_content") }}
 
     <!-- This script needs to be at the bottom, else it will fail! -->
-    <script>
-        'use strict';
-
-        // get current URL path and assign 'active' class to the correct nav-item
-        (() => {
-            const pathname = window.location.pathname;
-            if (pathname === "") return;
-            let navItem = document.querySelectorAll('.navbar-nav .nav-item a[href="'+pathname+'"]');
-            if (navItem.length === 1) {
-                navItem[0].className = navItem[0].className + ' active';
-                navItem[0].setAttribute('aria-current', 'page');
-            }
-        })();
-    </script>
-    <script src="{{urlpath}}/vw_static/jdenticon.js"></script>
     <script src="{{urlpath}}/vw_static/bootstrap-native.js"></script>
 </body>
 </html>
