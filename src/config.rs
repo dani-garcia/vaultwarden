@@ -711,8 +711,17 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         err!("All Duo options need to be set for global Duo support")
     }
 
-    if cfg._enable_yubico && cfg.yubico_client_id.is_some() != cfg.yubico_secret_key.is_some() {
-        err!("Both `YUBICO_CLIENT_ID` and `YUBICO_SECRET_KEY` need to be set for Yubikey OTP support")
+    if cfg._enable_yubico {
+        if cfg.yubico_client_id.is_some() != cfg.yubico_secret_key.is_some() {
+            err!("Both `YUBICO_CLIENT_ID` and `YUBICO_SECRET_KEY` must be set for Yubikey OTP support")
+        }
+
+        if let Some(yubico_server) = &cfg.yubico_server {
+            let yubico_server = yubico_server.to_lowercase();
+            if !yubico_server.starts_with("https://") {
+                err!("`YUBICO_SERVER` must be a valid URL and start with 'https://'. Either unset this variable or provide a valid URL.")
+            }
+        }
     }
 
     if cfg._enable_smtp {
