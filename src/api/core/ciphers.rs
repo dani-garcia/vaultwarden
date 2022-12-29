@@ -1049,7 +1049,7 @@ async fn save_attachment(
         } else {
             attachment.delete(&mut conn).await.ok();
 
-            err!(format!("Attachment size mismatch (expected within [{}, {}], got {})", min_size, max_size, size));
+            err!(format!("Attachment size mismatch (expected within [{min_size}, {max_size}], got {size})"));
         }
     } else {
         // Legacy API

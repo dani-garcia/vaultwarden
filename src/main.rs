@@ -135,11 +135,11 @@ fn parse_args() {
     let version = VERSION.unwrap_or("(Version info from Git not present)");
 
     if pargs.contains(["-h", "--help"]) {
-        println!("vaultwarden {}", version);
-        print!("{}", HELP);
+        println!("vaultwarden {version}");
+        print!("{HELP}");
         exit(0);
     } else if pargs.contains(["-v", "--version"]) {
-        println!("vaultwarden {}", version);
+        println!("vaultwarden {version}");
         exit(0);
     }
 }
@@ -149,7 +149,7 @@ fn launch_info() {
     println!("|                        Starting Vaultwarden                        |");
 
     if let Some(version) = VERSION {
-        println!("|{:^68}|", format!("Version {}", version));
+        println!("|{:^68}|", format!("Version {version}"));
     }
 
     println!("|--------------------------------------------------------------------|");
@@ -224,7 +224,7 @@ fn init_logging(level: log::LevelFilter) -> Result<(), fern::InitError> {
             ))
         });
     } else {
-        logger = logger.format(|out, message, _| out.finish(format_args!("{}", message)));
+        logger = logger.format(|out, message, _| out.finish(format_args!("{message}")));
     }
 
     if let Some(log_file) = CONFIG.log_file() {
@@ -299,7 +299,7 @@ fn chain_syslog(logger: fern::Dispatch) -> fern::Dispatch {
 
 fn create_dir(path: &str, description: &str) {
     // Try to create the specified dir, if it doesn't already exist.
-    let err_msg = format!("Error creating {} directory '{}'", description, path);
+    let err_msg = format!("Error creating {description} directory '{path}'");
     create_dir_all(path).expect(&err_msg);
 }
 

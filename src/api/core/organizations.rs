@@ -713,7 +713,7 @@ async fn send_invite(
         let user = match User::find_by_mail(&email, &mut conn).await {
             None => {
                 if !CONFIG.invitations_allowed() {
-                    err!(format!("User does not exist: {}", email))
+                    err!(format!("User does not exist: {email}"))
                 }
 
                 if !CONFIG.is_email_domain_allowed(&email) {
@@ -731,7 +731,7 @@ async fn send_invite(
             }
             Some(user) => {
                 if UserOrganization::find_by_user_and_org(&user.uuid, &org_id, &mut conn).await.is_some() {
-                    err!(format!("User already in organization: {}", email))
+                    err!(format!("User already in organization: {email}"))
                 } else {
                     // automatically accept existing users if mail is disabled
                     if !CONFIG.mail_enabled() && !user.password_hash.is_empty() {
@@ -808,7 +808,7 @@ async fn bulk_reinvite_user(
     for org_user_id in data.Ids {
         let err_msg = match _reinvite_user(&org_id, &org_user_id, &headers.user.email, &mut conn).await {
             Ok(_) => String::new(),
-            Err(e) => format!("{:?}", e),
+            Err(e) => format!("{e:?}"),
         };
 
         bulk_response.push(json!(
@@ -970,7 +970,7 @@ async fn bulk_confirm_invite(
                 let err_msg = match _confirm_invite(&org_id, org_user_id, user_key, &headers, &mut conn, &ip, &nt).await
                 {
                     Ok(_) => String::new(),
-                    Err(e) => format!("{:?}", e),
+                    Err(e) => format!("{e:?}"),
                 };
 
                 bulk_response.push(json!(
@@ -1224,7 +1224,7 @@ async fn bulk_delete_user(
     for org_user_id in data.Ids {
         let err_msg = match _delete_user(&org_id, &org_user_id, &headers, &mut conn, &ip, &nt).await {
             Ok(_) => String::new(),
-            Err(e) => format!("{:?}", e),
+            Err(e) => format!("{e:?}"),
         };
 
         bulk_response.push(json!(
@@ -1825,7 +1825,7 @@ async fn bulk_revoke_organization_user(
                 let org_user_id = org_user_id.as_str().unwrap_or_default();
                 let err_msg = match _revoke_organization_user(&org_id, org_user_id, &headers, &mut conn, &ip).await {
                     Ok(_) => String::new(),
-                    Err(e) => format!("{:?}", e),
+                    Err(e) => format!("{e:?}"),
                 };
 
                 bulk_response.push(json!(
@@ -1940,7 +1940,7 @@ async fn bulk_restore_organization_user(
                 let org_user_id = org_user_id.as_str().unwrap_or_default();
                 let err_msg = match _restore_organization_user(&org_id, org_user_id, &headers, &mut conn, &ip).await {
                     Ok(_) => String::new(),
-                    Err(e) => format!("{:?}", e),
+                    Err(e) => format!("{e:?}"),
                 };
 
                 bulk_response.push(json!(

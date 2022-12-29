@@ -270,11 +270,11 @@ pub async fn generate_duo_signature(email: &str, conn: &mut DbConn) -> ApiResult
     let duo_sign = sign_duo_values(&sk, email, &ik, DUO_PREFIX, now + DUO_EXPIRE);
     let app_sign = sign_duo_values(&ak, email, &ik, APP_PREFIX, now + APP_EXPIRE);
 
-    Ok((format!("{}:{}", duo_sign, app_sign), host))
+    Ok((format!("{duo_sign}:{app_sign}"), host))
 }
 
 fn sign_duo_values(key: &str, email: &str, ikey: &str, prefix: &str, expire: i64) -> String {
-    let val = format!("{}|{}|{}", email, ikey, expire);
+    let val = format!("{email}|{ikey}|{expire}");
     let cookie = format!("{}|{}", prefix, BASE64.encode(val.as_bytes()));
 
     format!("{}|{}", cookie, crypto::hmac_sign(key, &cookie))
@@ -327,7 +327,7 @@ fn parse_duo_values(key: &str, val: &str, ikey: &str, prefix: &str, time: i64) -
     let u_b64 = split[1];
     let u_sig = split[2];
 
-    let sig = crypto::hmac_sign(key, &format!("{}|{}", u_prefix, u_b64));
+    let sig = crypto::hmac_sign(key, &format!("{u_prefix}|{u_b64}"));
 
     if !crypto::ct_eq(crypto::hmac_sign(key, &sig), crypto::hmac_sign(key, u_sig)) {
         err!("Duo signatures don't match")

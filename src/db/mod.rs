@@ -383,7 +383,7 @@ pub async fn backup_database(conn: &mut DbConn) -> Result<(), Error> {
             let db_url = CONFIG.database_url();
             let db_path = Path::new(&db_url).parent().unwrap().to_string_lossy();
             let file_date = chrono::Utc::now().format("%Y%m%d_%H%M%S").to_string();
-            diesel::sql_query(format!("VACUUM INTO '{}/db_{}.sqlite3'", db_path, file_date)).execute(conn)?;
+            diesel::sql_query(format!("VACUUM INTO '{db_path}/db_{file_date}.sqlite3'")).execute(conn)?;
             Ok(())
         }
     }

@@ -130,7 +130,7 @@ fn is_valid_domain(domain: &str) -> bool {
     const ALLOWED_CHARS: &str = "_-.";
 
     // If parsing the domain fails using Url, it will not work with reqwest.
-    if let Err(parse_error) = url::Url::parse(format!("https://{}", domain).as_str()) {
+    if let Err(parse_error) = url::Url::parse(format!("https://{domain}").as_str()) {
         debug!("Domain parse error: '{}' - {:?}", domain, parse_error);
         return false;
     } else if domain.is_empty()
@@ -575,7 +575,7 @@ async fn get_page_with_referer(url: &str, referer: &str) -> Result<Response, Err
 
     match client.send().await {
         Ok(c) => c.error_for_status().map_err(Into::into),
-        Err(e) => err_silent!(format!("{}", e)),
+        Err(e) => err_silent!(format!("{e}")),
     }
 }
 
@@ -797,7 +797,7 @@ impl reqwest::cookie::CookieStore for Jar {
         let cookie_store = self.0.read().unwrap();
         let s = cookie_store
             .get_request_values(url)
-            .map(|(name, value)| format!("{}={}", name, value))
+            .map(|(name, value)| format!("{name}={value}"))
             .collect::<Vec<_>>()
             .join("; ");
 
