@@ -172,8 +172,7 @@ async fn put_eq_domains(
 #[get("/hibp/breach?<username>")]
 async fn hibp_breach(username: String) -> JsonResult {
     let url = format!(
-        "https://haveibeenpwned.com/api/v3/breachedaccount/{}?truncateResponse=false&includeUnverified=false",
-        username
+        "https://haveibeenpwned.com/api/v3/breachedaccount/{username}?truncateResponse=false&includeUnverified=false"
     );
 
     if let Some(api_key) = crate::CONFIG.hibp_api_key() {
@@ -195,7 +194,7 @@ async fn hibp_breach(username: String) -> JsonResult {
             "Domain": "haveibeenpwned.com",
             "BreachDate": "2019-08-18T00:00:00Z",
             "AddedDate": "2019-08-18T00:00:00Z",
-            "Description": format!("Go to: <a href=\"https://haveibeenpwned.com/account/{account}\" target=\"_blank\" rel=\"noreferrer\">https://haveibeenpwned.com/account/{account}</a> for a manual check.<br/><br/>HaveIBeenPwned API key not set!<br/>Go to <a href=\"https://haveibeenpwned.com/API/Key\" target=\"_blank\" rel=\"noreferrer\">https://haveibeenpwned.com/API/Key</a> to purchase an API key from HaveIBeenPwned.<br/><br/>", account=username),
+            "Description": format!("Go to: <a href=\"https://haveibeenpwned.com/account/{username}\" target=\"_blank\" rel=\"noreferrer\">https://haveibeenpwned.com/account/{username}</a> for a manual check.<br/><br/>HaveIBeenPwned API key not set!<br/>Go to <a href=\"https://haveibeenpwned.com/API/Key\" target=\"_blank\" rel=\"noreferrer\">https://haveibeenpwned.com/API/Key</a> to purchase an API key from HaveIBeenPwned.<br/><br/>"),
             "LogoPath": "vw_static/hibp.png",
             "PwnCount": 0,
             "DataClasses": [
