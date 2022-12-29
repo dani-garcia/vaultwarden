@@ -684,18 +684,6 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         }
     }
 
-    if let Some(log_file) = &cfg.log_file {
-        if std::fs::OpenOptions::new().append(true).create(true).open(log_file).is_err() {
-            err!("Unable to write to log file", log_file);
-        }
-    }
-
-    if let Some(log_file) = &cfg.log_file {
-        if std::fs::OpenOptions::new().append(true).create(true).open(log_file).is_err() {
-            err!("Unable to write to log file", log_file);
-        }
-    }
-
     let dom = cfg.domain.to_lowercase();
     if !dom.starts_with("http://") && !dom.starts_with("https://") {
         err!(
