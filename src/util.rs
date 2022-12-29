@@ -411,16 +411,16 @@ where
 use std::env;
 
 pub fn get_env_str_value(key: &str) -> Option<String> {
-    let key_file = format!("{}_FILE", key);
+    let key_file = format!("{key}_FILE");
     let value_from_env = env::var(key);
     let value_file = env::var(&key_file);
 
     match (value_from_env, value_file) {
-        (Ok(_), Ok(_)) => panic!("You should not define both {} and {}!", key, key_file),
+        (Ok(_), Ok(_)) => panic!("You should not define both {key} and {key_file}!"),
         (Ok(v_env), Err(_)) => Some(v_env),
         (Err(_), Ok(v_file)) => match fs::read_to_string(v_file) {
             Ok(content) => Some(content.trim().to_string()),
-            Err(e) => panic!("Failed to load {}: {:?}", key, e),
+            Err(e) => panic!("Failed to load {key}: {e:?}"),
         },
         _ => None,
     }
