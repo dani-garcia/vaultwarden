@@ -275,6 +275,7 @@ async fn post_password(
     headers: Headers,
     mut conn: DbConn,
     ip: ClientIp,
+    nt: Notify<'_>,
 ) -> EmptyResult {
     let data: ChangePassData = data.into_inner().data;
     let mut user = headers.user;
@@ -293,7 +294,11 @@ async fn post_password(
         Some(vec![String::from("post_rotatekey"), String::from("get_contacts"), String::from("get_public_keys")]),
     );
     user.akey = data.Key;
-    user.save(&mut conn).await
+    let save_result = user.save(&mut conn).await;
+
+    nt.send_user_update(UpdateType::LogOut, &user).await;
+
+    save_result
 }
 
 #[derive(Deserialize)]
@@ -308,7 +313,7 @@ struct ChangeKdfData {
 }
 
 #[post("/accounts/kdf", data = "<data>")]
-async fn post_kdf(data: JsonUpcase<ChangeKdfData>, headers: Headers, mut conn: DbConn) -> EmptyResult {
+async fn post_kdf(data: JsonUpcase<ChangeKdfData>, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> EmptyResult {
     let data: ChangeKdfData = data.into_inner().data;
     let mut user = headers.user;
 
@@ -320,7 +325,11 @@ async fn post_kdf(data: JsonUpcase<ChangeKdfData>, headers: Headers, mut conn: D
     user.client_kdf_type = data.Kdf;
     user.set_password(&data.NewMasterPasswordHash, None);
     user.akey = data.Key;
-    user.save(&mut conn).await
+    let save_result = user.save(&mut conn).await;
+
+    nt.send_user_update(UpdateType::LogOut, &user).await;
+
+    save_result
 }
 
 #[derive(Deserialize)]
@@ -388,6 +397,7 @@ async fn post_rotatekey(
 
         // Prevent triggering cipher updates via WebSockets by settings UpdateType::None
         // The user sessions are invalidated because all the ciphers were re-encrypted and thus triggering an update could cause issues.
+        // We force the users to logout after the user has been saved to try and prevent these issues.
         update_cipher_from_data(&mut saved_cipher, cipher_data, &headers, false, &mut conn, &ip, &nt, UpdateType::None)
             .await?
     }
@@ -399,11 +409,20 @@ async fn post_rotatekey(
     user.private_key = Some(data.PrivateKey);
     user.reset_security_stamp();
 
-    user.save(&mut conn).await
+    let save_result = user.save(&mut conn).await;
+
+    nt.send_user_update(UpdateType::LogOut, &user).await;
+
+    save_result
 }
 
 #[post("/accounts/security-stamp", data = "<data>")]
-async fn post_sstamp(data: JsonUpcase<PasswordData>, headers: Headers, mut conn: DbConn) -> EmptyResult {
+async fn post_sstamp(
+    data: JsonUpcase<PasswordData>,
+    headers: Headers,
+    mut conn: DbConn,
+    nt: Notify<'_>,
+) -> EmptyResult {
     let data: PasswordData = data.into_inner().data;
     let mut user = headers.user;
 
@@ -413,7 +432,11 @@ async fn post_sstamp(data: JsonUpcase<PasswordData>, headers: Headers, mut conn:
 
     Device::delete_all_by_user(&user.uuid, &mut conn).await?;
     user.reset_security_stamp();
-    user.save(&mut conn).await
+    let save_result = user.save(&mut conn).await;
+
+    nt.send_user_update(UpdateType::LogOut, &user).await;
+
+    save_result
 }
 
 #[derive(Deserialize)]
@@ -465,7 +488,12 @@ struct ChangeEmailData {
 }
 
 #[post("/accounts/email", data = "<data>")]
-async fn post_email(data: JsonUpcase<ChangeEmailData>, headers: Headers, mut conn: DbConn) -> EmptyResult {
+async fn post_email(
+    data: JsonUpcase<ChangeEmailData>,
+    headers: Headers,
+    mut conn: DbConn,
+    nt: Notify<'_>,
+) -> EmptyResult {
     let data: ChangeEmailData = data.into_inner().data;
     let mut user = headers.user;
 
@@ -507,8 +535,11 @@ async fn post_email(data: JsonUpcase<ChangeEmailData>, headers: Headers, mut con
 
     user.set_password(&data.NewMasterPasswordHash, None);
     user.akey = data.Key;
+    let save_result = user.save(&mut conn).await;
 
-    user.save(&mut conn).await
+    nt.send_user_update(UpdateType::LogOut, &user).await;
+
+    save_result
 }
 
 #[post("/accounts/verify-email")]
