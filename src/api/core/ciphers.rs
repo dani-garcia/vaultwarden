@@ -310,7 +310,8 @@ async fn post_ciphers(
     data.LastKnownRevisionDate = None;
 
     let mut cipher = Cipher::new(data.Type, data.Name.clone());
-    update_cipher_from_data(&mut cipher, data, &headers, false, &mut conn, &ip, &nt, UpdateType::CipherCreate).await?;
+    update_cipher_from_data(&mut cipher, data, &headers, false, &mut conn, &ip, &nt, UpdateType::SyncCipherCreate)
+        .await?;
 
     Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, &mut conn).await))
 }
@@ -415,7 +416,14 @@ pub async fn update_cipher_from_data(
         for (id, attachment) in attachments {
             let mut saved_att = match Attachment::find_by_id(&id, conn).await {
                 Some(att) => att,
-                None => err!("Attachment doesn't exist"),
+                None => {
+                    // Warn and continue here.
+                    // A missing attachment means it was removed via an other client.
+                    // Also the Desktop Client supports removing attachments and save an update afterwards.
+                    // Bitwarden it self ignores these mismatches server side.
+                    warn!("Attachment {id} doesn't exist");
+                    continue;
+                }
             };
 
             if saved_att.cipher_uuid != cipher.uuid {
@@ -482,8 +490,8 @@ pub async fn update_cipher_from_data(
         // Only log events for organizational ciphers
         if let Some(org_uuid) = &cipher.organization_uuid {
             let event_type = match (&ut, transfer_cipher) {
-                (UpdateType::CipherCreate, true) => EventType::CipherCreated,
-                (UpdateType::CipherUpdate, true) => EventType::CipherShared,
+                (UpdateType::SyncCipherCreate, true) => EventType::CipherCreated,
+                (UpdateType::SyncCipherUpdate, true) => EventType::CipherShared,
                 (_, _) => EventType::CipherUpdated,
             };
 
@@ -499,7 +507,7 @@ pub async fn update_cipher_from_data(
             .await;
         }
 
-        nt.send_cipher_update(ut, cipher, &cipher.update_users_revision(conn).await).await;
+        nt.send_cipher_update(ut, cipher, &cipher.update_users_revision(conn).await, &headers.device.uuid).await;
     }
 
     Ok(())
@@ -562,7 +570,7 @@ async fn post_ciphers_import(
 
     let mut user = headers.user;
     user.update_revision(&mut conn).await?;
-    nt.send_user_update(UpdateType::Vault, &user).await;
+    nt.send_user_update(UpdateType::SyncVault, &user).await;
     Ok(())
 }
 
@@ -628,7 +636,8 @@ async fn put_cipher(
         err!("Cipher is not write accessible")
     }
 
-    update_cipher_from_data(&mut cipher, data, &headers, false, &mut conn, &ip, &nt, UpdateType::CipherUpdate).await?;
+    update_cipher_from_data(&mut cipher, data, &headers, false, &mut conn, &ip, &nt, UpdateType::SyncCipherUpdate)
+        .await?;
 
     Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, &mut conn).await))
 }
@@ -850,9 +859,9 @@ async fn share_cipher_by_uuid(
 
     // When LastKnownRevisionDate is None, it is a new cipher, so send CipherCreate.
     let ut = if data.Cipher.LastKnownRevisionDate.is_some() {
-        UpdateType::CipherUpdate
+        UpdateType::SyncCipherUpdate
     } else {
-        UpdateType::CipherCreate
+        UpdateType::SyncCipherCreate
     };
 
     update_cipher_from_data(&mut cipher, data.Cipher, headers, shared_to_collection, conn, ip, nt, ut).await?;
@@ -1067,7 +1076,13 @@ async fn save_attachment(
         data.data.move_copy_to(file_path).await?
     }
 
-    nt.send_cipher_update(UpdateType::CipherUpdate, &cipher, &cipher.update_users_revision(&mut conn).await).await;
+    nt.send_cipher_update(
+        UpdateType::SyncCipherUpdate,
+        &cipher,
+        &cipher.update_users_revision(&mut conn).await,
+        &headers.device.uuid,
+    )
+    .await;
 
     if let Some(org_uuid) = &cipher.organization_uuid {
         log_event(
@@ -1403,7 +1418,7 @@ async fn move_cipher_selected(
         // Move cipher
         cipher.move_to_folder(data.FolderId.clone(), &user_uuid, &mut conn).await?;
 
-        nt.send_cipher_update(UpdateType::CipherUpdate, &cipher, &[user_uuid.clone()]).await;
+        nt.send_cipher_update(UpdateType::SyncCipherUpdate, &cipher, &[user_uuid.clone()], &headers.device.uuid).await;
     }
 
     Ok(())
@@ -1451,7 +1466,7 @@ async fn delete_all(
                 Some(user_org) => {
                     if user_org.atype == UserOrgType::Owner {
                         Cipher::delete_all_by_organization(&org_data.org_id, &mut conn).await?;
-                        nt.send_user_update(UpdateType::Vault, &user).await;
+                        nt.send_user_update(UpdateType::SyncVault, &user).await;
 
                         log_event(
                             EventType::OrganizationPurgedVault as i32,
@@ -1484,7 +1499,7 @@ async fn delete_all(
             }
 
             user.update_revision(&mut conn).await?;
-            nt.send_user_update(UpdateType::Vault, &user).await;
+            nt.send_user_update(UpdateType::SyncVault, &user).await;
             Ok(())
         }
     }
@@ -1510,10 +1525,22 @@ async fn _delete_cipher_by_uuid(
     if soft_delete {
         cipher.deleted_at = Some(Utc::now().naive_utc());
         cipher.save(conn).await?;
-        nt.send_cipher_update(UpdateType::CipherUpdate, &cipher, &cipher.update_users_revision(conn).await).await;
+        nt.send_cipher_update(
+            UpdateType::SyncCipherUpdate,
+            &cipher,
+            &cipher.update_users_revision(conn).await,
+            &headers.device.uuid,
+        )
+        .await;
     } else {
         cipher.delete(conn).await?;
-        nt.send_cipher_update(UpdateType::CipherDelete, &cipher, &cipher.update_users_revision(conn).await).await;
+        nt.send_cipher_update(
+            UpdateType::SyncCipherDelete,
+            &cipher,
+            &cipher.update_users_revision(conn).await,
+            &headers.device.uuid,
+        )
+        .await;
     }
 
     if let Some(org_uuid) = cipher.organization_uuid {
@@ -1575,7 +1602,13 @@ async fn _restore_cipher_by_uuid(
     cipher.deleted_at = None;
     cipher.save(conn).await?;
 
-    nt.send_cipher_update(UpdateType::CipherUpdate, &cipher, &cipher.update_users_revision(conn).await).await;
+    nt.send_cipher_update(
+        UpdateType::SyncCipherUpdate,
+        &cipher,
+        &cipher.update_users_revision(conn).await,
+        &headers.device.uuid,
+    )
+    .await;
     if let Some(org_uuid) = &cipher.organization_uuid {
         log_event(
             EventType::CipherRestored as i32,
@@ -1652,7 +1685,13 @@ async fn _delete_cipher_attachment_by_id(
 
     // Delete attachment
     attachment.delete(conn).await?;
-    nt.send_cipher_update(UpdateType::CipherUpdate, &cipher, &cipher.update_users_revision(conn).await).await;
+    nt.send_cipher_update(
+        UpdateType::SyncCipherUpdate,
+        &cipher,
+        &cipher.update_users_revision(conn).await,
+        &headers.device.uuid,
+    )
+    .await;
     if let Some(org_uuid) = cipher.organization_uuid {
         log_event(
             EventType::CipherAttachmentDeleted as i32,

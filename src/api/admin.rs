@@ -13,7 +13,7 @@ use rocket::{
 };
 
 use crate::{
-    api::{core::log_event, ApiResult, EmptyResult, JsonResult, NumberOrString},
+    api::{core::log_event, ApiResult, EmptyResult, JsonResult, Notify, NumberOrString, UpdateType},
     auth::{decode_admin, encode_jwt, generate_admin_claims, ClientIp},
     config::ConfigBuilder,
     db::{backup_database, get_sql_server_version, models::*, DbConn, DbConnType},
@@ -380,22 +380,30 @@ async fn delete_user(uuid: String, _token: AdminToken, mut conn: DbConn, ip: Cli
 }
 
 #[post("/users/<uuid>/deauth")]
-async fn deauth_user(uuid: String, _token: AdminToken, mut conn: DbConn) -> EmptyResult {
+async fn deauth_user(uuid: String, _token: AdminToken, mut conn: DbConn, nt: Notify<'_>) -> EmptyResult {
     let mut user = get_user_or_404(&uuid, &mut conn).await?;
     Device::delete_all_by_user(&user.uuid, &mut conn).await?;
     user.reset_security_stamp();
 
-    user.save(&mut conn).await
+    let save_result = user.save(&mut conn).await;
+
+    nt.send_user_update(UpdateType::LogOut, &user).await;
+
+    save_result
 }
 
 #[post("/users/<uuid>/disable")]
-async fn disable_user(uuid: String, _token: AdminToken, mut conn: DbConn) -> EmptyResult {
+async fn disable_user(uuid: String, _token: AdminToken, mut conn: DbConn, nt: Notify<'_>) -> EmptyResult {
     let mut user = get_user_or_404(&uuid, &mut conn).await?;
     Device::delete_all_by_user(&user.uuid, &mut conn).await?;
     user.reset_security_stamp();
     user.enabled = false;
 
-    user.save(&mut conn).await
+    let save_result = user.save(&mut conn).await;
+
+    nt.send_user_update(UpdateType::LogOut, &user).await;
+
+    save_result
 }
 
 #[post("/users/<uuid>/enable")]

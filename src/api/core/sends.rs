@@ -381,6 +381,7 @@ async fn post_access(
     data: JsonUpcase<SendAccessData>,
     mut conn: DbConn,
     ip: ClientIp,
+    nt: Notify<'_>,
 ) -> JsonResult {
     let mut send = match Send::find_by_access_id(&access_id, &mut conn).await {
         Some(s) => s,
@@ -422,6 +423,8 @@ async fn post_access(
 
     send.save(&mut conn).await?;
 
+    nt.send_send_update(UpdateType::SyncSendUpdate, &send, &send.update_users_revision(&mut conn).await).await;
+
     Ok(Json(send.to_json_access(&mut conn).await))
 }
 
@@ -432,6 +435,7 @@ async fn post_access_file(
     data: JsonUpcase<SendAccessData>,
     host: Host,
     mut conn: DbConn,
+    nt: Notify<'_>,
 ) -> JsonResult {
     let mut send = match Send::find_by_uuid(&send_id, &mut conn).await {
         Some(s) => s,
@@ -469,6 +473,8 @@ async fn post_access_file(
     send.access_count += 1;
 
     send.save(&mut conn).await?;
+
+    nt.send_send_update(UpdateType::SyncSendUpdate, &send, &send.update_users_revision(&mut conn).await).await;
 
     let token_claims = crate::auth::generate_send_claims(&send_id, &file_id);
     let token = crate::auth::encode_jwt(&token_claims);

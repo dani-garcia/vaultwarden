@@ -7,8 +7,7 @@ mod organizations;
 mod sends;
 pub mod two_factor;
 
-pub use ciphers::purge_trashed_ciphers;
-pub use ciphers::{CipherSyncData, CipherSyncType};
+pub use ciphers::{purge_trashed_ciphers, CipherSyncData, CipherSyncType};
 pub use emergency_access::{emergency_notification_reminder_job, emergency_request_timeout_job};
 pub use events::{event_cleanup_job, log_event, log_user_event};
 pub use sends::purge_sends;
@@ -47,13 +46,11 @@ pub fn events_routes() -> Vec<Route> {
 //
 // Move this somewhere else
 //
-use rocket::serde::json::Json;
-use rocket::Catcher;
-use rocket::Route;
+use rocket::{serde::json::Json, Catcher, Route};
 use serde_json::Value;
 
 use crate::{
-    api::{JsonResult, JsonUpcase},
+    api::{JsonResult, JsonUpcase, Notify, UpdateType},
     auth::Headers,
     db::DbConn,
     error::Error,
@@ -138,7 +135,12 @@ struct EquivDomainData {
 }
 
 #[post("/settings/domains", data = "<data>")]
-async fn post_eq_domains(data: JsonUpcase<EquivDomainData>, headers: Headers, mut conn: DbConn) -> JsonResult {
+async fn post_eq_domains(
+    data: JsonUpcase<EquivDomainData>,
+    headers: Headers,
+    mut conn: DbConn,
+    nt: Notify<'_>,
+) -> JsonResult {
     let data: EquivDomainData = data.into_inner().data;
 
     let excluded_globals = data.ExcludedGlobalEquivalentDomains.unwrap_or_default();
@@ -152,12 +154,19 @@ async fn post_eq_domains(data: JsonUpcase<EquivDomainData>, headers: Headers, mu
 
     user.save(&mut conn).await?;
 
+    nt.send_user_update(UpdateType::SyncSettings, &user).await;
+
     Ok(Json(json!({})))
 }
 
 #[put("/settings/domains", data = "<data>")]
-async fn put_eq_domains(data: JsonUpcase<EquivDomainData>, headers: Headers, conn: DbConn) -> JsonResult {
-    post_eq_domains(data, headers, conn).await
+async fn put_eq_domains(
+    data: JsonUpcase<EquivDomainData>,
+    headers: Headers,
+    conn: DbConn,
+    nt: Notify<'_>,
+) -> JsonResult {
+    post_eq_domains(data, headers, conn, nt).await
 }
 
 #[get("/hibp/breach?<username>")]
