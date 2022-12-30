@@ -164,12 +164,13 @@ impl WebSocketUsers {
         let data = create_update(
             vec![("UserId".into(), user.uuid.clone().into()), ("Date".into(), serialize_date(user.updated_at))],
             ut,
+            None,
         );
 
         self.send_update(&user.uuid, &data).await;
     }
 
-    pub async fn send_folder_update(&self, ut: UpdateType, folder: &Folder) {
+    pub async fn send_folder_update(&self, ut: UpdateType, folder: &Folder, acting_device_uuid: &String) {
         let data = create_update(
             vec![
                 ("Id".into(), folder.uuid.clone().into()),
@@ -177,12 +178,19 @@ impl WebSocketUsers {
                 ("RevisionDate".into(), serialize_date(folder.updated_at)),
             ],
             ut,
+            Some(acting_device_uuid.into()),
         );
 
         self.send_update(&folder.user_uuid, &data).await;
     }
 
-    pub async fn send_cipher_update(&self, ut: UpdateType, cipher: &Cipher, user_uuids: &[String]) {
+    pub async fn send_cipher_update(
+        &self,
+        ut: UpdateType,
+        cipher: &Cipher,
+        user_uuids: &[String],
+        acting_device_uuid: &String,
+    ) {
         let user_uuid = convert_option(cipher.user_uuid.clone());
         let org_uuid = convert_option(cipher.organization_uuid.clone());
 
@@ -195,6 +203,7 @@ impl WebSocketUsers {
                 ("RevisionDate".into(), serialize_date(cipher.updated_at)),
             ],
             ut,
+            Some(acting_device_uuid.into()),
         );
 
         for uuid in user_uuids {
@@ -212,6 +221,7 @@ impl WebSocketUsers {
                 ("RevisionDate".into(), serialize_date(send.revision_date)),
             ],
             ut,
+            None,
         );
 
         for uuid in user_uuids {
@@ -228,14 +238,14 @@ impl WebSocketUsers {
     "ReceiveMessage", // Target
     [ // Arguments
         {
-            "ContextId": "app_id",
+            "ContextId": acting_device_uuid || Nil,
             "Type": ut as i32,
             "Payload": {}
         }
     ]
 ]
 */
-fn create_update(payload: Vec<(Value, Value)>, ut: UpdateType) -> Vec<u8> {
+fn create_update(payload: Vec<(Value, Value)>, ut: UpdateType, acting_device_uuid: Option<String>) -> Vec<u8> {
     use rmpv::Value as V;
 
     let value = V::Array(vec![
@@ -244,7 +254,7 @@ fn create_update(payload: Vec<(Value, Value)>, ut: UpdateType) -> Vec<u8> {
         V::Nil,
         "ReceiveMessage".into(),
         V::Array(vec![V::Map(vec![
-            ("ContextId".into(), "app_id".into()),
+            ("ContextId".into(), acting_device_uuid.map(|v| v.into()).unwrap_or_else(|| V::Nil)),
             ("Type".into(), (ut as i32).into()),
             ("Payload".into(), payload.into()),
         ])]),
@@ -260,17 +270,17 @@ fn create_ping() -> Vec<u8> {
 #[allow(dead_code)]
 #[derive(Eq, PartialEq)]
 pub enum UpdateType {
-    CipherUpdate = 0,
-    CipherCreate = 1,
-    LoginDelete = 2,
-    FolderDelete = 3,
-    Ciphers = 4,
+    SyncCipherUpdate = 0,
+    SyncCipherCreate = 1,
+    SyncLoginDelete = 2,
+    SyncFolderDelete = 3,
+    SyncCiphers = 4,
 
-    Vault = 5,
-    OrgKeys = 6,
-    FolderCreate = 7,
-    FolderUpdate = 8,
-    CipherDelete = 9,
+    SyncVault = 5,
+    SyncOrgKeys = 6,
+    SyncFolderCreate = 7,
+    SyncFolderUpdate = 8,
+    SyncCipherDelete = 9,
     SyncSettings = 10,
 
     LogOut = 11,
@@ -278,6 +288,9 @@ pub enum UpdateType {
     SyncSendCreate = 12,
     SyncSendUpdate = 13,
     SyncSendDelete = 14,
+
+    AuthRequest = 15,
+    AuthRequestResponse = 16,
 
     None = 100,
 }
