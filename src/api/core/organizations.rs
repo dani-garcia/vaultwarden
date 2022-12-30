@@ -957,6 +957,7 @@ async fn bulk_confirm_invite(
     headers: AdminHeaders,
     mut conn: DbConn,
     ip: ClientIp,
+    nt: Notify<'_>,
 ) -> Json<Value> {
     let data = data.into_inner().data;
 
@@ -966,7 +967,8 @@ async fn bulk_confirm_invite(
             for invite in keys {
                 let org_user_id = invite["Id"].as_str().unwrap_or_default();
                 let user_key = invite["Key"].as_str().unwrap_or_default();
-                let err_msg = match _confirm_invite(&org_id, org_user_id, user_key, &headers, &mut conn, &ip).await {
+                let err_msg = match _confirm_invite(&org_id, org_user_id, user_key, &headers, &mut conn, &ip, &nt).await
+                {
                     Ok(_) => String::new(),
                     Err(e) => format!("{:?}", e),
                 };
@@ -998,10 +1000,11 @@ async fn confirm_invite(
     headers: AdminHeaders,
     mut conn: DbConn,
     ip: ClientIp,
+    nt: Notify<'_>,
 ) -> EmptyResult {
     let data = data.into_inner().data;
     let user_key = data["Key"].as_str().unwrap_or_default();
-    _confirm_invite(&org_id, &org_user_id, user_key, &headers, &mut conn, &ip).await
+    _confirm_invite(&org_id, &org_user_id, user_key, &headers, &mut conn, &ip, &nt).await
 }
 
 async fn _confirm_invite(
@@ -1011,6 +1014,7 @@ async fn _confirm_invite(
     headers: &AdminHeaders,
     conn: &mut DbConn,
     ip: &ClientIp,
+    nt: &Notify<'_>,
 ) -> EmptyResult {
     if key.is_empty() || org_user_id.is_empty() {
         err!("Key or UserId is not set, unable to process request");
@@ -1069,7 +1073,13 @@ async fn _confirm_invite(
         mail::send_invite_confirmed(&address, &org_name).await?;
     }
 
-    user_to_confirm.save(conn).await
+    let save_result = user_to_confirm.save(conn).await;
+
+    if let Some(user) = User::find_by_uuid(&user_to_confirm.user_uuid, conn).await {
+        nt.send_user_update(UpdateType::SyncOrgKeys, &user).await;
+    }
+
+    save_result
 }
 
 #[get("/organizations/<org_id>/users/<org_user_id>")]
@@ -1206,12 +1216,13 @@ async fn bulk_delete_user(
     headers: AdminHeaders,
     mut conn: DbConn,
     ip: ClientIp,
+    nt: Notify<'_>,
 ) -> Json<Value> {
     let data: OrgBulkIds = data.into_inner().data;
 
     let mut bulk_response = Vec::new();
     for org_user_id in data.Ids {
-        let err_msg = match _delete_user(&org_id, &org_user_id, &headers, &mut conn, &ip).await {
+        let err_msg = match _delete_user(&org_id, &org_user_id, &headers, &mut conn, &ip, &nt).await {
             Ok(_) => String::new(),
             Err(e) => format!("{:?}", e),
         };
@@ -1239,8 +1250,9 @@ async fn delete_user(
     headers: AdminHeaders,
     mut conn: DbConn,
     ip: ClientIp,
+    nt: Notify<'_>,
 ) -> EmptyResult {
-    _delete_user(&org_id, &org_user_id, &headers, &mut conn, &ip).await
+    _delete_user(&org_id, &org_user_id, &headers, &mut conn, &ip, &nt).await
 }
 
 #[post("/organizations/<org_id>/users/<org_user_id>/delete")]
@@ -1250,8 +1262,9 @@ async fn post_delete_user(
     headers: AdminHeaders,
     mut conn: DbConn,
     ip: ClientIp,
+    nt: Notify<'_>,
 ) -> EmptyResult {
-    _delete_user(&org_id, &org_user_id, &headers, &mut conn, &ip).await
+    _delete_user(&org_id, &org_user_id, &headers, &mut conn, &ip, &nt).await
 }
 
 async fn _delete_user(
@@ -1260,6 +1273,7 @@ async fn _delete_user(
     headers: &AdminHeaders,
     conn: &mut DbConn,
     ip: &ClientIp,
+    nt: &Notify<'_>,
 ) -> EmptyResult {
     let user_to_delete = match UserOrganization::find_by_uuid_and_org(org_user_id, org_id, conn).await {
         Some(user) => user,
@@ -1287,6 +1301,10 @@ async fn _delete_user(
         conn,
     )
     .await;
+
+    if let Some(user) = User::find_by_uuid(&user_to_delete.user_uuid, conn).await {
+        nt.send_user_update(UpdateType::SyncOrgKeys, &user).await;
+    }
 
     user_to_delete.delete(conn).await
 }
