@@ -6,7 +6,7 @@ use super::{
     Attachment, CollectionCipher, Favorite, FolderCipher, Group, User, UserOrgStatus, UserOrgType, UserOrganization,
 };
 
-use crate::api::core::CipherSyncData;
+use crate::api::core::{CipherData, CipherSyncData};
 
 use std::borrow::Cow;
 
@@ -71,6 +71,33 @@ impl Cipher {
             password_history: None,
             deleted_at: None,
             reprompt: None,
+        }
+    }
+
+    pub fn validate_notes(cipher_data: &[CipherData]) -> EmptyResult {
+        let mut validation_errors = serde_json::Map::new();
+        for (index, cipher) in cipher_data.iter().enumerate() {
+            if let Some(note) = &cipher.Notes {
+                if note.len() > 10_000 {
+                    validation_errors.insert(
+                        format!("Ciphers[{index}].Notes"),
+                        serde_json::to_value([
+                            "The field Notes exceeds the maximum encrypted value length of 10000 characters.",
+                        ])
+                        .unwrap(),
+                    );
+                }
+            }
+        }
+        if !validation_errors.is_empty() {
+            let err_json = json!({
+                "message": "The model state is invalid.",
+                "validationErrors" : validation_errors,
+                "object": "error"
+            });
+            err_json!(err_json, "Import validation errors")
+        } else {
+            Ok(())
         }
     }
 }
