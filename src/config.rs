@@ -60,25 +60,37 @@ macro_rules! make_config {
         impl ConfigBuilder {
             #[allow(clippy::field_reassign_with_default)]
             fn from_env() -> Self {
-                match dotenvy::from_path(get_env("ENV_FILE").unwrap_or_else(|| String::from(".env"))) {
-                    Ok(_) => (),
+                let env_file = get_env("ENV_FILE").unwrap_or_else(|| String::from(".env"));
+                match dotenvy::from_path(&env_file) {
+                    Ok(_) => {
+                        println!("[INFO] Using environment file `{env_file}` for configuration.\n");
+                    },
                     Err(e) => match e {
                         dotenvy::Error::LineParse(msg, pos) => {
-                            panic!("Error loading the .env file:\nNear {:?} on position {}\nPlease fix and restart!\n", msg, pos);
+                            println!("[ERROR] Failed parsing environment file: `{env_file}`\nNear {msg:?} on position {pos}\nPlease fix and restart!\n");
+                            exit(255);
                         },
                         dotenvy::Error::Io(ioerr) => match ioerr.kind() {
                             std::io::ErrorKind::NotFound => {
-                                println!("[INFO] No .env file found.\n");
+                                // Only exit if this environment variable is set, but the file was not found.
+                                // This prevents incorrectly configured environments.
+                                if let Some(env_file) = get_env::<String>("ENV_FILE") {
+                                    println!("[ERROR] The configured ENV_FILE `{env_file}` was not found!\n");
+                                    exit(255);
+                                }
                             },
                             std::io::ErrorKind::PermissionDenied => {
-                                println!("[WARNING] Permission Denied while trying to read the .env file!\n");
+                                println!("[ERROR] Permission denied while trying to read environment file `{env_file}`!\n");
+                                exit(255);
                             },
                             _ => {
-                                println!("[WARNING] Reading the .env file failed:\n{:?}\n", ioerr);
+                                println!("[ERROR] Reading environment file `{env_file}` failed:\n{ioerr:?}\n");
+                                exit(255);
                             }
                         },
                         _ => {
-                            println!("[WARNING] Reading the .env file failed:\n{:?}\n", e);
+                            println!("[ERROR] Reading environment file `{env_file}` failed:\n{e:?}\n");
+                            exit(255);
                         }
                     }
                 };
@@ -93,6 +105,7 @@ macro_rules! make_config {
 
             fn from_file(path: &str) -> Result<Self, Error> {
                 let config_str = std::fs::read_to_string(path)?;
+                println!("[INFO] Using saved config from `{path}` for configuration.\n");
                 serde_json::from_str(&config_str).map_err(Into::into)
             }
 
@@ -112,8 +125,8 @@ macro_rules! make_config {
 
                 if show_overrides && !overrides.is_empty() {
                     // We can't use warn! here because logging isn't setup yet.
-                    println!("[WARNING] The following environment variables are being overriden by the config file,");
-                    println!("[WARNING] please use the admin panel to make changes to them:");
+                    println!("[WARNING] The following environment variables are being overriden by the config.json file.");
+                    println!("[WARNING] Please use the admin panel to make changes to them:");
                     println!("[WARNING] {}\n", overrides.join(", "));
                 }
 
