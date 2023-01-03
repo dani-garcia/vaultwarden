@@ -245,6 +245,7 @@ pub async fn send_invite(
             "org_id": org_id.as_deref().unwrap_or("_"),
             "org_user_id": org_user_id.as_deref().unwrap_or("_"),
             "email": percent_encode(address.as_bytes(), NON_ALPHANUMERIC).to_string(),
+            "org_name_encoded": percent_encode(org_name.as_bytes(), NON_ALPHANUMERIC).to_string(),
             "org_name": org_name,
             "token": invite_token,
         }),
