@@ -66,7 +66,7 @@ dashmap = "5.4.0"
 
 # Async futures
 futures = "0.3.25"
-tokio = { version = "1.23.0", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal"] }
+tokio = { version = "1.23.1", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal"] }
 
 # A generic serialization/deserialization framework
 serde = { version = "1.0.150", features = ["derive"] }
