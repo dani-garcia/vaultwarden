@@ -660,9 +660,9 @@ async fn delete_account(data: JsonUpcase<PasswordData>, headers: Headers, mut co
 }
 
 #[get("/accounts/revision-date")]
-fn revision_date(headers: Headers) -> String {
+fn revision_date(headers: Headers) -> JsonResult {
     let revision_date = headers.user.updated_at.timestamp_millis();
-    revision_date.to_string()
+    Ok(Json(json!(revision_date)))
 }
 
 #[derive(Deserialize)]
@@ -792,14 +792,11 @@ async fn rotate_api_key(data: JsonUpcase<SecretVerificationRequest>, headers: He
 }
 
 #[get("/devices/knowndevice/<email>/<uuid>")]
-async fn get_known_device(email: String, uuid: String, mut conn: DbConn) -> String {
+async fn get_known_device(email: String, uuid: String, mut conn: DbConn) -> JsonResult {
     // This endpoint doesn't have auth header
+    let mut result = false;
     if let Some(user) = User::find_by_mail(&email, &mut conn).await {
-        match Device::find_by_uuid_and_user(&uuid, &user.uuid, &mut conn).await {
-            Some(_) => String::from("true"),
-            _ => String::from("false"),
-        }
-    } else {
-        String::from("false")
+        result = Device::find_by_uuid_and_user(&uuid, &user.uuid, &mut conn).await.is_some();
     }
+    Ok(Json(json!(result)))
 }
