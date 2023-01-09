@@ -121,6 +121,6 @@ pub fn static_files(filename: String) -> Result<(ContentType, &'static [u8]), Er
         "jquery-3.6.2.slim.js" => {
             Ok((ContentType::JavaScript, include_bytes!("../static/scripts/jquery-3.6.2.slim.js")))
         }
-        _ => err!(format!("Static file not found: {}", filename)),
+        _ => err!(format!("Static file not found: {filename}")),
     }
 }

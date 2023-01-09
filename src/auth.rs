@@ -25,16 +25,16 @@ static JWT_ADMIN_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|admin", CONFIG.
 static JWT_SEND_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|send", CONFIG.domain_origin()));
 
 static PRIVATE_RSA_KEY_VEC: Lazy<Vec<u8>> = Lazy::new(|| {
-    std::fs::read(CONFIG.private_rsa_key()).unwrap_or_else(|e| panic!("Error loading private RSA Key.\n{}", e))
+    std::fs::read(CONFIG.private_rsa_key()).unwrap_or_else(|e| panic!("Error loading private RSA Key.\n{e}"))
 });
 static PRIVATE_RSA_KEY: Lazy<EncodingKey> = Lazy::new(|| {
-    EncodingKey::from_rsa_pem(&PRIVATE_RSA_KEY_VEC).unwrap_or_else(|e| panic!("Error decoding private RSA Key.\n{}", e))
+    EncodingKey::from_rsa_pem(&PRIVATE_RSA_KEY_VEC).unwrap_or_else(|e| panic!("Error decoding private RSA Key.\n{e}"))
 });
 static PUBLIC_RSA_KEY_VEC: Lazy<Vec<u8>> = Lazy::new(|| {
-    std::fs::read(CONFIG.public_rsa_key()).unwrap_or_else(|e| panic!("Error loading public RSA Key.\n{}", e))
+    std::fs::read(CONFIG.public_rsa_key()).unwrap_or_else(|e| panic!("Error loading public RSA Key.\n{e}"))
 });
 static PUBLIC_RSA_KEY: Lazy<DecodingKey> = Lazy::new(|| {
-    DecodingKey::from_rsa_pem(&PUBLIC_RSA_KEY_VEC).unwrap_or_else(|e| panic!("Error decoding public RSA Key.\n{}", e))
+    DecodingKey::from_rsa_pem(&PUBLIC_RSA_KEY_VEC).unwrap_or_else(|e| panic!("Error decoding public RSA Key.\n{e}"))
 });
 
 pub fn load_keys() {
@@ -45,7 +45,7 @@ pub fn load_keys() {
 pub fn encode_jwt<T: Serialize>(claims: &T) -> String {
     match jsonwebtoken::encode(&JWT_HEADER, claims, &PRIVATE_RSA_KEY) {
         Ok(token) => token,
-        Err(e) => panic!("Error encoding jwt {}", e),
+        Err(e) => panic!("Error encoding jwt {e}"),
     }
 }
 
@@ -253,7 +253,7 @@ pub fn generate_send_claims(send_id: &str, file_id: &str) -> BasicJwtClaims {
         nbf: time_now.timestamp(),
         exp: (time_now + Duration::minutes(2)).timestamp(),
         iss: JWT_SEND_ISSUER.to_string(),
-        sub: format!("{}/{}", send_id, file_id),
+        sub: format!("{send_id}/{file_id}"),
     }
 }
 
@@ -306,7 +306,7 @@ impl<'r> FromRequest<'r> for Host {
                 ""
             };
 
-            format!("{}://{}", protocol, host)
+            format!("{protocol}://{host}")
         };
 
         Outcome::Success(Host {

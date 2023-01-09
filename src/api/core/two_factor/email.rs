@@ -304,7 +304,7 @@ pub fn obscure_email(email: &str) -> String {
         _ => {
             let stars = "*".repeat(name_size - 2);
             name.truncate(2);
-            format!("{}{}", name, stars)
+            format!("{name}{stars}")
         }
     };
 

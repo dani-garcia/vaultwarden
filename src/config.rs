@@ -13,12 +13,12 @@ use crate::{
 
 static CONFIG_FILE: Lazy<String> = Lazy::new(|| {
     let data_folder = get_env("DATA_FOLDER").unwrap_or_else(|| String::from("data"));
-    get_env("CONFIG_FILE").unwrap_or_else(|| format!("{}/config.json", data_folder))
+    get_env("CONFIG_FILE").unwrap_or_else(|| format!("{data_folder}/config.json"))
 });
 
 pub static CONFIG: Lazy<Config> = Lazy::new(|| {
     Config::load().unwrap_or_else(|e| {
-        println!("Error loading config:\n\t{:?}\n", e);
+        println!("Error loading config:\n\t{e:?}\n");
         exit(12)
     })
 });
@@ -675,7 +675,19 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
 
     let limit = 256;
     if cfg.database_max_conns < 1 || cfg.database_max_conns > limit {
-        err!(format!("`DATABASE_MAX_CONNS` contains an invalid value. Ensure it is between 1 and {}.", limit,));
+        err!(format!("`DATABASE_MAX_CONNS` contains an invalid value. Ensure it is between 1 and {limit}.",));
+    }
+
+    if let Some(log_file) = &cfg.log_file {
+        if std::fs::OpenOptions::new().append(true).create(true).open(log_file).is_err() {
+            err!("Unable to write to log file", log_file);
+        }
+    }
+
+    if let Some(log_file) = &cfg.log_file {
+        if std::fs::OpenOptions::new().append(true).create(true).open(log_file).is_err() {
+            err!("Unable to write to log file", log_file);
+        }
     }
 
     if let Some(log_file) = &cfg.log_file {
@@ -764,7 +776,7 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         let validate_regex = regex::Regex::new(r);
         match validate_regex {
             Ok(_) => (),
-            Err(e) => err!(format!("`ICON_BLACKLIST_REGEX` is invalid: {:#?}", e)),
+            Err(e) => err!(format!("`ICON_BLACKLIST_REGEX` is invalid: {e:#?}")),
         }
     }
 
@@ -774,12 +786,12 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         "internal" | "bitwarden" | "duckduckgo" | "google" => (),
         _ => {
             if !icon_service.starts_with("http") {
-                err!(format!("Icon service URL `{}` must start with \"http\"", icon_service))
+                err!(format!("Icon service URL `{icon_service}` must start with \"http\""))
             }
             match icon_service.matches("{}").count() {
                 1 => (), // nominal
-                0 => err!(format!("Icon service URL `{}` has no placeholder \"{{}}\"", icon_service)),
-                _ => err!(format!("Icon service URL `{}` has more than one placeholder \"{{}}\"", icon_service)),
+                0 => err!(format!("Icon service URL `{icon_service}` has no placeholder \"{{}}\"")),
+                _ => err!(format!("Icon service URL `{icon_service}` has more than one placeholder \"{{}}\"")),
             }
         }
     }
@@ -831,7 +843,7 @@ fn extract_url_origin(url: &str) -> String {
     match Url::parse(url) {
         Ok(u) => u.origin().ascii_serialization(),
         Err(e) => {
-            println!("Error validating domain: {}", e);
+            println!("Error validating domain: {e}");
             String::new()
         }
     }
@@ -1206,7 +1218,7 @@ fn js_escape_helper<'reg, 'rc>(
 
     let mut escaped_value = value.replace('\\', "").replace('\'', "\\x22").replace('\"', "\\x27");
     if !no_quote {
-        escaped_value = format!("&quot;{}&quot;", escaped_value);
+        escaped_value = format!("&quot;{escaped_value}&quot;");
     }
 
     out.write(&escaped_value)?;

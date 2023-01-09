@@ -705,7 +705,7 @@ async fn password_hint(data: JsonUpcase<PasswordHintData>, mut conn: DbConn) -> 
                 mail::send_password_hint(email, hint).await?;
                 Ok(())
             } else if let Some(hint) = hint {
-                err!(format!("Your password hint is: {}", hint));
+                err!(format!("Your password hint is: {hint}"));
             } else {
                 err!(NO_HINT);
             }

@@ -462,7 +462,7 @@ async fn post_access_file(
 #[get("/sends/<send_id>/<file_id>?<t>")]
 async fn download_send(send_id: SafeString, file_id: SafeString, t: String) -> Option<NamedFile> {
     if let Ok(claims) = crate::auth::decode_send(&t) {
-        if claims.sub == format!("{}/{}", send_id, file_id) {
+        if claims.sub == format!("{send_id}/{file_id}") {
             return NamedFile::open(Path::new(&CONFIG.sends_folder()).join(send_id).join(file_id)).await.ok();
         }
     }
