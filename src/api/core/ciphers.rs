@@ -205,7 +205,7 @@ pub struct CipherData {
     */
     pub Type: i32,
     pub Name: String,
-    Notes: Option<String>,
+    pub Notes: Option<String>,
     Fields: Option<Value>,
 
     // Only one of these should exist, depending on type
@@ -541,6 +541,12 @@ async fn post_ciphers_import(
     enforce_personal_ownership_policy(None, &headers, &mut conn).await?;
 
     let data: ImportData = data.into_inner().data;
+
+    // Validate the import before continuing
+    // Bitwarden does not process the import if there is one item invalid.
+    // Since we check for the size of the encrypted note length, we need to do that here to pre-validate it.
+    // TODO: See if we can optimize the whole cipher adding/importing and prevent duplicate code and checks.
+    Cipher::validate_notes(&data.Ciphers)?;
 
     // Read and create the folders
     let mut folders: Vec<_> = Vec::new();
