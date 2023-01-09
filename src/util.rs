@@ -42,14 +42,6 @@ impl Fairing for AppHeaders {
         // This can cause issues when some MFA requests needs to open a popup or page within the clients like WebAuthn, or Duo.
         // This is the same behaviour as upstream Bitwarden.
         if !req_uri_path.ends_with("connector.html") {
-            // Check if we are requesting an admin page, if so, allow unsafe-inline for scripts.
-            // TODO: In the future maybe we need to see if we can generate a sha256 hash or have no scripts inline at all.
-            let admin_path = format!("{}/admin", CONFIG.domain_path());
-            let mut script_src = "";
-            if req_uri_path.starts_with(admin_path.as_str()) {
-                script_src = " 'unsafe-inline'";
-            }
-
             // # Frame Ancestors:
             // Chrome Web Store: https://chrome.google.com/webstore/detail/bitwarden-free-password-m/nngceckbapebfimnlniiiahkandclblb
             // Edge Add-ons: https://microsoftedge.microsoft.com/addons/detail/bitwarden-free-password/jbkfoedolllekgbhcbcoahefnbanhhlh?hl=en-US
@@ -66,7 +58,7 @@ impl Fairing for AppHeaders {
                 base-uri 'self'; \
                 form-action 'self'; \
                 object-src 'self' blob:; \
-                script-src 'self'{script_src}; \
+                script-src 'self'; \
                 style-src 'self' 'unsafe-inline'; \
                 child-src 'self' https://*.duosecurity.com https://*.duofederal.com; \
                 frame-src 'self' https://*.duosecurity.com https://*.duofederal.com; \
@@ -520,13 +512,13 @@ pub fn is_running_in_docker() -> bool {
 
 /// Simple check to determine on which docker base image vaultwarden is running.
 /// We build images based upon Debian or Alpine, so these we check here.
-pub fn docker_base_image() -> String {
+pub fn docker_base_image() -> &'static str {
     if Path::new("/etc/debian_version").exists() {
-        "Debian".to_string()
+        "Debian"
     } else if Path::new("/etc/alpine-release").exists() {
-        "Alpine".to_string()
+        "Alpine"
     } else {
-        "Unknown".to_string()
+        "Unknown"
     }
 }
 

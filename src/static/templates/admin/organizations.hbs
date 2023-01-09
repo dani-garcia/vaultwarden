@@ -9,7 +9,7 @@
                         <th>Users</th>
                         <th>Items</th>
                         <th>Attachments</th>
-                        <th style="width: 130px; min-width: 130px;">Actions</th>
+                        <th class="vw-actions">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -21,7 +21,7 @@
                                 <strong>{{Name}}</strong>
                                 <span class="me-2">({{BillingEmail}})</span>
                                 <span class="d-block">
-                                    <span class="badge bg-success">{{Id}}</span>
+                                    <span class="badge bg-success font-monospace">{{Id}}</span>
                                 </span>
                             </div>
                         </td>
@@ -38,12 +38,16 @@
                             {{/if}}
                         </td>
                         <td class="text-end px-0 small">
-                            <button type="button" class="btn btn-sm btn-link p-0 border-0" onclick='deleteOrganization({{jsesc Id}}, {{jsesc Name}}, {{jsesc BillingEmail}})'>Delete Organization</button>
+                            <button type="button" class="btn btn-sm btn-link p-0 border-0" vw-delete-organization data-vw-org-uuid="{{jsesc Id no_quote}}" data-vw-org-name="{{jsesc Name no_quote}}" data-vw-billing-email="{{jsesc BillingEmail no_quote}}">Delete Organization</button>
                         </td>
                     </tr>
                     {{/each}}
                 </tbody>
             </table>
+        </div>
+
+        <div class="mt-3 clearfix">
+            <button type="button" class="btn btn-sm btn-primary float-end" id="reload">Reload organizations</button>
         </div>
     </div>
 </main>
@@ -51,36 +55,5 @@
 <link rel="stylesheet" href="{{urlpath}}/vw_static/datatables.css" />
 <script src="{{urlpath}}/vw_static/jquery-3.6.2.slim.js"></script>
 <script src="{{urlpath}}/vw_static/datatables.js"></script>
-<script>
-    'use strict';
-
-    function deleteOrganization(id, name, billing_email) {
-        // First make sure the user wants to delete this organization
-        var continueDelete = confirm("WARNING: All data of this organization ("+ name +") will be lost!\nMake sure you have a backup, this cannot be undone!");
-        if (continueDelete == true) {
-            var input_org_uuid = prompt("To delete the organization '" + name + " (" + billing_email +")', please type the organization uuid below.")
-            if (input_org_uuid != null) {
-                if (input_org_uuid == id) {
-                    _post("{{urlpath}}/admin/organizations/" + id + "/delete",
-                        "Organization deleted correctly",
-                        "Error deleting organization");
-                } else {
-                    alert("Wrong organization uuid, please try again")
-                }
-            }
-        }
-
-        return false;
-    }
-
-    document.addEventListener("DOMContentLoaded", function() {
-        $('#orgs-table').DataTable({
-            "responsive": true,
-            "lengthMenu": [ [-1, 5, 10, 25, 50], ["All", 5, 10, 25, 50] ],
-            "pageLength": -1, // Default show all
-            "columnDefs": [
-                { "targets": 4, "searchable": false, "orderable": false }
-            ]
-        });
-    });
-</script>
+<script src="{{urlpath}}/vw_static/admin_organizations.js"></script>
+<script src="{{urlpath}}/vw_static/jdenticon.js"></script>

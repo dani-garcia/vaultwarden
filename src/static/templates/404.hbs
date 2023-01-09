@@ -7,31 +7,7 @@
     <link rel="icon" type="image/png" href="{{urlpath}}/vw_static/vaultwarden-favicon.png">
     <title>Page not found!</title>
     <link rel="stylesheet" href="{{urlpath}}/vw_static/bootstrap.css" />
-    <style>
-        body {
-            padding-top: 75px;
-        }
-        .vaultwarden-icon {
-            width: 48px;
-            height: 48px;
-            height: 32px;
-            width: auto;
-            margin: -5px 0 0 0;
-        }
-        .footer {
-            padding: 40px 0 40px 0;
-            border-top: 1px solid #dee2e6;
-        }
-        .container {
-            max-width: 980px;
-        }
-        .content {
-            padding-top: 20px;
-            padding-bottom: 20px;
-            padding-left: 15px;
-            padding-right: 15px;
-        }
-    </style>
+    <link rel="stylesheet" href="{{urlpath}}/vw_static/404.css" />
 </head>
 
 <body class="bg-light">
@@ -53,7 +29,7 @@
         <h2>Page not found!</h2>
         <p class="lead">Sorry, but the page you were looking for could not be found.</p>
         <p class="display-6">
-            <a href="{{urlpath}}/"><img style="max-width: 500px; width: 100%;" src="{{urlpath}}/vw_static/404.png" alt="Return to the web vault?"></a></p>
+            <a href="{{urlpath}}/"><img class="vw-404" src="{{urlpath}}/vw_static/404.png" alt="Return to the web vault?"></a></p>
         <p>You can <a href="{{urlpath}}/">return to the web-vault</a>, or <a href="https://github.com/dani-garcia/vaultwarden">contact us</a>.</p>
     </main>
 
