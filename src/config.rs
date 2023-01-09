@@ -1222,7 +1222,7 @@ fn to_json<'reg, 'rc>(
 ) -> HelperResult {
     let param = h.param(0).ok_or_else(|| RenderError::new("Expected 1 parameter for \"to_json\""))?.value();
     let json = serde_json::to_string(param)
-        .map_err(|e| RenderError::new(format!("Can't serialize parameter to JSON: {}", e)))?;
+        .map_err(|e| RenderError::new(format!("Can't serialize parameter to JSON: {e}")))?;
     out.write(&json)?;
     Ok(())
 }
