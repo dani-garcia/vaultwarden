@@ -75,12 +75,10 @@ macro_rules! generate_connections {
         #[cfg($name)]
         impl CustomizeConnection<$ty, diesel::r2d2::Error> for DbConnOptions {
             fn on_acquire(&self, conn: &mut $ty) -> Result<(), diesel::r2d2::Error> {
-                (|| {
-                    if !self.init_stmts.is_empty() {
-                        conn.batch_execute(&self.init_stmts)?;
-                    }
-                    Ok(())
-                })().map_err(diesel::r2d2::Error::QueryError)
+                if !self.init_stmts.is_empty() {
+                    conn.batch_execute(&self.init_stmts).map_err(diesel::r2d2::Error::QueryError)?;
+                }
+                Ok(())
             }
         })+
 
@@ -97,7 +95,7 @@ macro_rules! generate_connections {
 
         impl Drop for DbConn {
             fn drop(&mut self) {
-                let conn = self.conn.clone();
+                let conn = Arc::clone(&self.conn);
                 let permit = self.permit.take();
 
                 // Since connection can't be on the stack in an async fn during an
@@ -143,21 +141,20 @@ macro_rules! generate_connections {
                                 }))
                                 .build(manager)
                                 .map_res("Failed to create pool")?;
-                            return Ok(DbPool {
+                            Ok(DbPool {
                                 pool: Some(DbPoolInner::$name(pool)),
                                 semaphore: Arc::new(Semaphore::new(CONFIG.database_max_conns() as usize)),
-                            });
+                            })
                         }
                         #[cfg(not($name))]
-                        #[allow(unreachable_code)]
-                        return unreachable!("Trying to use a DB backend when it's feature is disabled");
+                        unreachable!("Trying to use a DB backend when it's feature is disabled")
                     },
                 )+ }
             }
             // Get a connection from the pool
             pub async fn get(&self) -> Result<DbConn, Error> {
                 let duration = Duration::from_secs(CONFIG.database_timeout());
-                let permit = match timeout(duration, self.semaphore.clone().acquire_owned()).await {
+                let permit = match timeout(duration, Arc::clone(&self.semaphore).acquire_owned()).await {
                     Ok(p) => p.expect("Semaphore should be open"),
                     Err(_) => {
                         err!("Timeout waiting for database connection");
@@ -170,10 +167,10 @@ macro_rules! generate_connections {
                         let pool = p.clone();
                         let c = run_blocking(move || pool.get_timeout(duration)).await.map_res("Error retrieving connection from pool")?;
 
-                        return Ok(DbConn {
+                        Ok(DbConn {
                             conn: Arc::new(Mutex::new(Some(DbConnInner::$name(c)))),
                             permit: Some(permit)
-                        });
+                        })
                     },
                 )+ }
             }
