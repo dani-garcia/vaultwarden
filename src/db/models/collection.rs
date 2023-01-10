@@ -267,7 +267,7 @@ impl Collection {
                     return true;
                 }
 
-                db_run! { conn: {
+                let direct: bool = db_run! { conn: {
                     users_collections::table
                         .filter(users_collections::collection_uuid.eq(&self.uuid))
                         .filter(users_collections::user_uuid.eq(user_uuid))
@@ -276,7 +276,27 @@ impl Collection {
                         .first::<i64>(conn)
                         .ok()
                         .unwrap_or(0) != 0
-                }}
+                }};
+
+                let indirect: bool = db_run! { conn: {
+                    collections_groups::table
+                        .filter(collections_groups::collections_uuid.eq(&self.uuid))
+                        .filter(collections_groups::read_only.eq(false))
+                        .filter(collections_groups::groups_uuid.eq_any(
+                            groups_users::table
+                            .inner_join(users_organizations::table.on(
+                                users_organizations::uuid.eq(groups_users::users_organizations_uuid)
+                            ))
+                            .filter(users_organizations::user_uuid.eq(user_uuid))
+                            .select(groups_users::groups_uuid)
+                        ))
+                        .count()
+                        .first::<i64>(conn)
+                        .ok()
+                        .unwrap_or(0) != 0
+                }};
+
+                direct || indirect
             }
         }
     }
@@ -289,7 +309,7 @@ impl Collection {
                     return false;
                 }
 
-                db_run! { conn: {
+                let direct: bool = db_run! { conn: {
                     users_collections::table
                         .filter(users_collections::collection_uuid.eq(&self.uuid))
                         .filter(users_collections::user_uuid.eq(user_uuid))
@@ -298,7 +318,27 @@ impl Collection {
                         .first::<i64>(conn)
                         .ok()
                         .unwrap_or(0) != 0
-                }}
+                }};
+
+                let indirect: bool = db_run! { conn: {
+                    collections_groups::table
+                        .filter(collections_groups::collections_uuid.eq(&self.uuid))
+                        .filter(collections_groups::hide_passwords.eq(true))
+                        .filter(collections_groups::groups_uuid.eq_any(
+                            groups_users::table
+                            .inner_join(users_organizations::table.on(
+                                users_organizations::uuid.eq(groups_users::users_organizations_uuid)
+                            ))
+                            .filter(users_organizations::user_uuid.eq(user_uuid))
+                            .select(groups_users::groups_uuid)
+                        ))
+                        .count()
+                        .first::<i64>(conn)
+                        .ok()
+                        .unwrap_or(0) != 0
+                }};
+
+                direct || indirect
             }
         }
     }
