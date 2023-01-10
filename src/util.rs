@@ -50,7 +50,7 @@ impl Fairing for AppHeaders {
             // Have I Been Pwned and Gravator to allow those calls to work.
             // # Connect src:
             // Leaked Passwords check: api.pwnedpasswords.com
-            // 2FA/MFA Site check: 2fa.directory
+            // 2FA/MFA Site check: api.2fa.directory
             // # Mail Relay: https://bitwarden.com/blog/add-privacy-and-security-using-email-aliases-with-bitwarden/
             // app.simplelogin.io, app.anonaddy.com, api.fastmail.com, quack.duckduckgo.com
             let csp = format!(
@@ -73,7 +73,7 @@ impl Fairing for AppHeaders {
                   {icon_service_csp}; \
                 connect-src 'self' \
                   https://api.pwnedpasswords.com \
-                  https://2fa.directory \
+                  https://api.2fa.directory \
                   https://app.simplelogin.io/api/ \
                   https://app.anonaddy.com/api/ \
                   https://api.fastmail.com/ \
