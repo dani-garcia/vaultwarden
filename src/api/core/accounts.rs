@@ -39,6 +39,7 @@ pub fn routes() -> Vec<rocket::Route> {
         api_key,
         rotate_api_key,
         get_known_device,
+        put_avatar,
     ]
 }
 
@@ -223,6 +224,32 @@ async fn post_profile(data: JsonUpcase<ProfileData>, headers: Headers, mut conn:
 
     let mut user = headers.user;
     user.name = data.Name;
+
+    user.save(&mut conn).await?;
+    Ok(Json(user.to_json(&mut conn).await))
+}
+
+#[derive(Deserialize)]
+#[allow(non_snake_case)]
+struct AvatarData {
+    AvatarColor: Option<String>,
+}
+
+#[put("/accounts/avatar", data = "<data>")]
+async fn put_avatar(data: JsonUpcase<AvatarData>, headers: Headers, mut conn: DbConn) -> JsonResult {
+    let data: AvatarData = data.into_inner().data;
+
+    // It looks like it only supports the 6 hex color format.
+    // If you try to add the short value it will not show that color.
+    // Check and force 7 chars, including the #.
+    if let Some(color) = &data.AvatarColor {
+        if color.len() != 7 {
+            err!("The field AvatarColor must be a HTML/Hex color code with a length of 7 characters")
+        }
+    }
+
+    let mut user = headers.user;
+    user.avatar_color = data.AvatarColor;
 
     user.save(&mut conn).await?;
     Ok(Json(user.to_json(&mut conn).await))

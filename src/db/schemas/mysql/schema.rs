@@ -200,6 +200,7 @@ table! {
         client_kdf_type -> Integer,
         client_kdf_iter -> Integer,
         api_key -> Nullable<Text>,
+        avatar_color -> Nullable<Text>,
     }
 }
 
