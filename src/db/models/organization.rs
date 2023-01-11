@@ -2,7 +2,7 @@ use num_traits::FromPrimitive;
 use serde_json::Value;
 use std::cmp::Ordering;
 
-use super::{CollectionUser, GroupUser, OrgPolicy, OrgPolicyType, User};
+use super::{CollectionUser, GroupUser, OrgPolicy, OrgPolicyType, TwoFactor, User};
 use crate::CONFIG;
 
 db_object! {
@@ -365,6 +365,8 @@ impl UserOrganization {
             self.status
         };
 
+        let twofactor_enabled = !TwoFactor::find_by_user(&user.uuid, conn).await.is_empty();
+
         json!({
             "Id": self.uuid,
             "UserId": self.user_uuid,
@@ -374,6 +376,7 @@ impl UserOrganization {
             "Status": status,
             "Type": self.atype,
             "AccessAll": self.access_all,
+            "TwoFactorEnabled": twofactor_enabled,
 
             "Object": "organizationUserUserDetails",
         })
