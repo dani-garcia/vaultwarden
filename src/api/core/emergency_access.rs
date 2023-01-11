@@ -584,10 +584,9 @@ async fn view_emergency_access(emer_id: String, headers: Headers, mut conn: DbCo
     }
 
     let ciphers = Cipher::find_owned_by_user(&emergency_access.grantor_uuid, &mut conn).await;
-    let cipher_sync_data =
-        CipherSyncData::new(&emergency_access.grantor_uuid, &ciphers, CipherSyncType::User, &mut conn).await;
+    let cipher_sync_data = CipherSyncData::new(&emergency_access.grantor_uuid, CipherSyncType::User, &mut conn).await;
 
-    let mut ciphers_json = Vec::new();
+    let mut ciphers_json = Vec::with_capacity(ciphers.len());
     for c in ciphers {
         ciphers_json
             .push(c.to_json(&headers.host, &emergency_access.grantor_uuid, Some(&cipher_sync_data), &mut conn).await);

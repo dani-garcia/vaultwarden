@@ -187,10 +187,15 @@ impl Attachment {
         }}
     }
 
-    pub async fn find_all_by_ciphers(cipher_uuids: &Vec<String>, conn: &mut DbConn) -> Vec<Self> {
+    // This will return all attachments linked to the user or org
+    // There is no filtering done here if the user actually has access!
+    // It is used to speed up the sync process, and the matching is done in a different part.
+    pub async fn find_all_by_user_and_orgs(user_uuid: &str, org_uuids: &Vec<String>, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             attachments::table
-                .filter(attachments::cipher_uuid.eq_any(cipher_uuids))
+                .left_join(ciphers::table.on(ciphers::uuid.eq(attachments::cipher_uuid)))
+                .filter(ciphers::user_uuid.eq(user_uuid))
+                .or_filter(ciphers::organization_uuid.eq_any(org_uuids))
                 .select(attachments::all_columns)
                 .load::<AttachmentDb>(conn)
                 .expect("Error loading attachments")
