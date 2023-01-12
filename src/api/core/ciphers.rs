@@ -104,16 +104,17 @@ async fn sync(data: SyncData, headers: Headers, mut conn: DbConn) -> Json<Value>
     // Get all ciphers which are visible by the user
     let ciphers = Cipher::find_by_user_visible(&headers.user.uuid, &mut conn).await;
 
-    let cipher_sync_data = CipherSyncData::new(&headers.user.uuid, &ciphers, CipherSyncType::User, &mut conn).await;
+    let cipher_sync_data = CipherSyncData::new(&headers.user.uuid, CipherSyncType::User, &mut conn).await;
 
     // Lets generate the ciphers_json using all the gathered info
-    let mut ciphers_json = Vec::new();
+    let mut ciphers_json = Vec::with_capacity(ciphers.len());
     for c in ciphers {
         ciphers_json.push(c.to_json(&headers.host, &headers.user.uuid, Some(&cipher_sync_data), &mut conn).await);
     }
 
-    let mut collections_json = Vec::new();
-    for c in Collection::find_by_user_uuid(headers.user.uuid.clone(), &mut conn).await {
+    let collections = Collection::find_by_user_uuid(headers.user.uuid.clone(), &mut conn).await;
+    let mut collections_json = Vec::with_capacity(collections.len());
+    for c in collections {
         collections_json.push(c.to_json_details(&headers.user.uuid, Some(&cipher_sync_data), &mut conn).await);
     }
 
@@ -148,9 +149,9 @@ async fn sync(data: SyncData, headers: Headers, mut conn: DbConn) -> Json<Value>
 #[get("/ciphers")]
 async fn get_ciphers(headers: Headers, mut conn: DbConn) -> Json<Value> {
     let ciphers = Cipher::find_by_user_visible(&headers.user.uuid, &mut conn).await;
-    let cipher_sync_data = CipherSyncData::new(&headers.user.uuid, &ciphers, CipherSyncType::User, &mut conn).await;
+    let cipher_sync_data = CipherSyncData::new(&headers.user.uuid, CipherSyncType::User, &mut conn).await;
 
-    let mut ciphers_json = Vec::new();
+    let mut ciphers_json = Vec::with_capacity(ciphers.len());
     for c in ciphers {
         ciphers_json.push(c.to_json(&headers.host, &headers.user.uuid, Some(&cipher_sync_data), &mut conn).await);
     }
@@ -1721,12 +1722,9 @@ pub enum CipherSyncType {
 }
 
 impl CipherSyncData {
-    pub async fn new(user_uuid: &str, ciphers: &[Cipher], sync_type: CipherSyncType, conn: &mut DbConn) -> Self {
-        // Generate a list of Cipher UUID's to be used during a query filter with an eq_any.
-        let cipher_uuids = ciphers.iter().map(|c| c.uuid.clone()).collect();
-
-        let mut cipher_folders: HashMap<String, String> = HashMap::new();
-        let mut cipher_favorites: HashSet<String> = HashSet::new();
+    pub async fn new(user_uuid: &str, sync_type: CipherSyncType, conn: &mut DbConn) -> Self {
+        let cipher_folders: HashMap<String, String>;
+        let cipher_favorites: HashSet<String>;
         match sync_type {
             // User Sync supports Folders and Favorits
             CipherSyncType::User => {
@@ -1738,18 +1736,25 @@ impl CipherSyncData {
             }
             // Organization Sync does not support Folders and Favorits.
             // If these are set, it will cause issues in the web-vault.
-            CipherSyncType::Organization => {}
+            CipherSyncType::Organization => {
+                cipher_folders = HashMap::with_capacity(0);
+                cipher_favorites = HashSet::with_capacity(0);
+            }
         }
 
         // Generate a list of Cipher UUID's containing a Vec with one or more Attachment records
-        let mut cipher_attachments: HashMap<String, Vec<Attachment>> = HashMap::new();
-        for attachment in Attachment::find_all_by_ciphers(&cipher_uuids, conn).await {
+        let user_org_uuids = UserOrganization::get_org_uuid_by_user(user_uuid, conn).await;
+        let attachments = Attachment::find_all_by_user_and_orgs(user_uuid, &user_org_uuids, conn).await;
+        let mut cipher_attachments: HashMap<String, Vec<Attachment>> = HashMap::with_capacity(attachments.len());
+        for attachment in attachments {
             cipher_attachments.entry(attachment.cipher_uuid.clone()).or_default().push(attachment);
         }
 
         // Generate a HashMap with the Cipher UUID as key and one or more Collection UUID's
-        let mut cipher_collections: HashMap<String, Vec<String>> = HashMap::new();
-        for (cipher, collection) in Cipher::get_collections_with_cipher_by_user(user_uuid.to_string(), conn).await {
+        let user_cipher_collections = Cipher::get_collections_with_cipher_by_user(user_uuid.to_string(), conn).await;
+        let mut cipher_collections: HashMap<String, Vec<String>> =
+            HashMap::with_capacity(user_cipher_collections.len());
+        for (cipher, collection) in user_cipher_collections {
             cipher_collections.entry(cipher).or_default().push(collection);
         }
 
@@ -1768,14 +1773,14 @@ impl CipherSyncData {
             .collect();
 
         // Generate a HashMap with the collections_uuid as key and the CollectionGroup record
-        let user_collections_groups = CollectionGroup::find_by_user(user_uuid, conn)
+        let user_collections_groups: HashMap<String, CollectionGroup> = CollectionGroup::find_by_user(user_uuid, conn)
             .await
             .into_iter()
             .map(|collection_group| (collection_group.collections_uuid.clone(), collection_group))
             .collect();
 
         // Get all organizations that the user has full access to via group assignement
-        let user_group_full_access_for_organizations =
+        let user_group_full_access_for_organizations: HashSet<String> =
             Group::gather_user_organizations_full_access(user_uuid, conn).await.into_iter().collect();
 
         Self {
