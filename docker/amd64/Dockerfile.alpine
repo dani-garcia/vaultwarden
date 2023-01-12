@@ -27,7 +27,7 @@
 FROM vaultwarden/web-vault@sha256:068ac863d52a5626568ae3c7f93a509f87c76b1b15821b101f2707724df9da3e as vault
 
 ########################## BUILD IMAGE  ##########################
-FROM blackdex/rust-musl:x86_64-musl-stable-1.66.0 as build
+FROM blackdex/rust-musl:x86_64-musl-stable-1.66.1 as build
 
 
 
