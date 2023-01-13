@@ -160,8 +160,7 @@ pub async fn _register(data: JsonUpcase<RegisterData>, mut conn: DbConn) -> Json
         user.client_kdf_type = client_kdf_type;
     }
 
-    user.set_password(&data.MasterPasswordHash, None);
-    user.akey = data.Key;
+    user.set_password(&data.MasterPasswordHash, &data.Key, None);
     user.password_hint = password_hint;
 
     // Add extra fields if present
@@ -291,9 +290,10 @@ async fn post_password(
 
     user.set_password(
         &data.NewMasterPasswordHash,
+        &data.Key,
         Some(vec![String::from("post_rotatekey"), String::from("get_contacts"), String::from("get_public_keys")]),
     );
-    user.akey = data.Key;
+
     let save_result = user.save(&mut conn).await;
 
     nt.send_user_update(UpdateType::LogOut, &user).await;
@@ -323,8 +323,7 @@ async fn post_kdf(data: JsonUpcase<ChangeKdfData>, headers: Headers, mut conn: D
 
     user.client_kdf_iter = data.KdfIterations;
     user.client_kdf_type = data.Kdf;
-    user.set_password(&data.NewMasterPasswordHash, None);
-    user.akey = data.Key;
+    user.set_password(&data.NewMasterPasswordHash, &data.Key, None);
     let save_result = user.save(&mut conn).await;
 
     nt.send_user_update(UpdateType::LogOut, &user).await;
@@ -533,8 +532,8 @@ async fn post_email(
     user.email_new = None;
     user.email_new_token = None;
 
-    user.set_password(&data.NewMasterPasswordHash, None);
-    user.akey = data.Key;
+    user.set_password(&data.NewMasterPasswordHash, &data.Key, None);
+
     let save_result = user.save(&mut conn).await;
 
     nt.send_user_update(UpdateType::LogOut, &user).await;

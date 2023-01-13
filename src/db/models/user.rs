@@ -143,17 +143,18 @@ impl User {
     /// # Arguments
     ///
     /// * `password` - A str which contains a hashed version of the users master password.
+    /// * `new_key` - A String  which contains the new aKey value of the users master password.
     /// * `allow_next_route` - A Option<Vec<String>> with the function names of the next allowed (rocket) routes.
     ///                       These routes are able to use the previous stamp id for the next 2 minutes.
     ///                       After these 2 minutes this stamp will expire.
     ///
-    pub fn set_password(&mut self, password: &str, allow_next_route: Option<Vec<String>>) {
+    pub fn set_password(&mut self, password: &str, new_key: &str, allow_next_route: Option<Vec<String>>) {
         self.password_hash = crypto::hash_password(password.as_bytes(), &self.salt, self.password_iterations as u32);
 
         if let Some(route) = allow_next_route {
             self.set_stamp_exception(route);
         }
-
+        self.akey = String::from(new_key);
         self.reset_security_stamp()
     }
 

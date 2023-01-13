@@ -645,7 +645,7 @@ async fn password_emergency_access(
 
     let data: EmergencyAccessPasswordData = data.into_inner().data;
     let new_master_password_hash = &data.NewMasterPasswordHash;
-    let key = data.Key;
+    let key = &data.Key;
 
     let requesting_user = headers.user;
     let emergency_access = match EmergencyAccess::find_by_uuid(&emer_id, &mut conn).await {
@@ -663,8 +663,7 @@ async fn password_emergency_access(
     };
 
     // change grantor_user password
-    grantor_user.set_password(new_master_password_hash, None);
-    grantor_user.akey = key;
+    grantor_user.set_password(new_master_password_hash, key, None);
     grantor_user.save(&mut conn).await?;
 
     // Disable TwoFactor providers since they will otherwise block logins
