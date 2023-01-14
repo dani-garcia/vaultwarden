@@ -153,7 +153,7 @@ async fn _password_login(
     // Change the KDF Iterations
     if user.password_iterations != CONFIG.password_iterations() {
         user.password_iterations = CONFIG.password_iterations();
-        user.set_password(password, false, None);
+        user.set_password(password, None, false, None);
 
         if let Err(e) = user.save(conn).await {
             error!("Error updating user: {:#?}", e);
