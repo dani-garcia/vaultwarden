@@ -29,8 +29,6 @@ FROM vaultwarden/web-vault@sha256:d5f71fb05c4b87935bf51d84140db0f8716cabfe2974fb
 ########################## BUILD IMAGE  ##########################
 FROM blackdex/rust-musl:arm-musleabi-stable-1.66.1 as build
 
-
-
 # Build time options to avoid dpkg warnings and help with reproducible builds.
 ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
@@ -38,7 +36,6 @@ ENV DEBIAN_FRONTEND=noninteractive \
     TERM=xterm-256color \
     CARGO_HOME="/root/.cargo" \
     USER="root"
-
 
 # Create CARGO_HOME folder and don't download rust docs
 RUN mkdir -pv "${CARGO_HOME}" \
@@ -79,6 +76,7 @@ RUN touch src/main.rs
 # your actual source files being built
 RUN cargo build --features ${DB} --release --target=arm-unknown-linux-musleabi
 
+
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image
 # because we already have a binary built
@@ -95,10 +93,10 @@ RUN [ "cross-build-start" ]
 # Create data folder and Install needed libraries
 RUN mkdir /data \
     && apk add --no-cache \
-        openssl \
-        tzdata \
+        ca-certificates \
         curl \
-        ca-certificates
+        openssl \
+        tzdata
 
 RUN [ "cross-build-end" ]
 
