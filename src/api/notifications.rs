@@ -170,6 +170,16 @@ impl WebSocketUsers {
         self.send_update(&user.uuid, &data).await;
     }
 
+    pub async fn send_logout(&self, user: &User, acting_device_uuid: Option<String>) {
+        let data = create_update(
+            vec![("UserId".into(), user.uuid.clone().into()), ("Date".into(), serialize_date(user.updated_at))],
+            UpdateType::LogOut,
+            acting_device_uuid,
+        );
+
+        self.send_update(&user.uuid, &data).await;
+    }
+
     pub async fn send_folder_update(&self, ut: UpdateType, folder: &Folder, acting_device_uuid: &String) {
         let data = create_update(
             vec![
