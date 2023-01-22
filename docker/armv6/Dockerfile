@@ -46,7 +46,6 @@ RUN mkdir -pv "${CARGO_HOME}" \
 
 #
 # Install required build libs for armel architecture.
-# hadolint ignore=DL3059
 RUN dpkg --add-architecture armel \
     && apt-get update \
     && apt-get install -y \
@@ -101,7 +100,6 @@ RUN touch src/main.rs
 
 # Builds again, this time it'll just be
 # your actual source files being built
-# hadolint ignore=DL3059
 RUN cargo build --features ${DB} --release --target=arm-unknown-linux-gnueabi
 
 ######################## RUNTIME IMAGE  ########################
@@ -113,7 +111,6 @@ ENV ROCKET_PROFILE="release" \
     ROCKET_ADDRESS=0.0.0.0 \
     ROCKET_PORT=80
 
-# hadolint ignore=DL3059
 RUN [ "cross-build-start" ]
 
 # Create data folder and Install needed libraries
@@ -130,10 +127,8 @@ RUN mkdir /data \
 
 # In the Balena Bullseye images for armv6/rpi-debian there is a missing symlink.
 # This symlink was there in the buster images, and for some reason this is needed.
-# hadolint ignore=DL3059
 RUN ln -v -s /lib/ld-linux-armhf.so.3 /lib/ld-linux.so.3
 
-# hadolint ignore=DL3059
 RUN [ "cross-build-end" ]
 
 VOLUME /data

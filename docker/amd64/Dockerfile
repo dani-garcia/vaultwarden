@@ -81,7 +81,6 @@ RUN touch src/main.rs
 
 # Builds again, this time it'll just be
 # your actual source files being built
-# hadolint ignore=DL3059
 RUN cargo build --features ${DB} --release
 
 ######################## RUNTIME IMAGE  ########################

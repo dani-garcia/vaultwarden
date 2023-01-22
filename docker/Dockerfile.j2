@@ -106,7 +106,6 @@ ENV RUSTFLAGS='-Clink-arg=/usr/local/musl/{{ package_arch_target }}/lib/libatomi
 {% elif "arm" in target_file %}
 #
 # Install required build libs for {{ package_arch_name }} architecture.
-# hadolint ignore=DL3059
 RUN dpkg --add-architecture {{ package_arch_name }} \
     && apt-get update \
     && apt-get install -y \
@@ -178,7 +177,6 @@ RUN touch src/main.rs
 
 # Builds again, this time it'll just be
 # your actual source files being built
-# hadolint ignore=DL3059
 RUN {{ mount_rust_cache -}} cargo build --features ${DB} --release{{ package_arch_target_param }}
 
 ######################## RUNTIME IMAGE  ########################
@@ -195,7 +193,6 @@ ENV ROCKET_PROFILE="release" \
 
 
 {% if "amd64" not in target_file %}
-# hadolint ignore=DL3059
 RUN [ "cross-build-start" ]
 {% endif %}
 
@@ -222,13 +219,11 @@ RUN mkdir /data \
 {% if "armv6" in target_file and "alpine" not in target_file %}
 # In the Balena Bullseye images for armv6/rpi-debian there is a missing symlink.
 # This symlink was there in the buster images, and for some reason this is needed.
-# hadolint ignore=DL3059
 RUN ln -v -s /lib/ld-linux-armhf.so.3 /lib/ld-linux.so.3
 
 {% endif -%}
 
 {% if "amd64" not in target_file %}
-# hadolint ignore=DL3059
 RUN [ "cross-build-end" ]
 {% endif %}
 

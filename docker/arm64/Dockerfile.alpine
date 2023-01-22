@@ -75,7 +75,6 @@ RUN touch src/main.rs
 
 # Builds again, this time it'll just be
 # your actual source files being built
-# hadolint ignore=DL3059
 RUN cargo build --features ${DB} --release --target=aarch64-unknown-linux-musl
 
 ######################## RUNTIME IMAGE  ########################
@@ -89,7 +88,6 @@ ENV ROCKET_PROFILE="release" \
     SSL_CERT_DIR=/etc/ssl/certs
 
 
-# hadolint ignore=DL3059
 RUN [ "cross-build-start" ]
 
 # Create data folder and Install needed libraries
@@ -100,7 +98,6 @@ RUN mkdir /data \
         curl \
         ca-certificates
 
-# hadolint ignore=DL3059
 RUN [ "cross-build-end" ]
 
 VOLUME /data

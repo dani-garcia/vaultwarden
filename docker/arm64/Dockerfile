@@ -46,7 +46,6 @@ RUN mkdir -pv "${CARGO_HOME}" \
 
 #
 # Install required build libs for arm64 architecture.
-# hadolint ignore=DL3059
 RUN dpkg --add-architecture arm64 \
     && apt-get update \
     && apt-get install -y \
@@ -101,7 +100,6 @@ RUN touch src/main.rs
 
 # Builds again, this time it'll just be
 # your actual source files being built
-# hadolint ignore=DL3059
 RUN cargo build --features ${DB} --release --target=aarch64-unknown-linux-gnu
 
 ######################## RUNTIME IMAGE  ########################
@@ -113,7 +111,6 @@ ENV ROCKET_PROFILE="release" \
     ROCKET_ADDRESS=0.0.0.0 \
     ROCKET_PORT=80
 
-# hadolint ignore=DL3059
 RUN [ "cross-build-start" ]
 
 # Create data folder and Install needed libraries
@@ -128,7 +125,6 @@ RUN mkdir /data \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# hadolint ignore=DL3059
 RUN [ "cross-build-end" ]
 
 VOLUME /data
