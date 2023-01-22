@@ -50,7 +50,7 @@
 {% else %}
 {%   set package_arch_target_param = "" %}
 {% endif %}
-{% if "buildx" in target_file %}
+{% if "buildkit" in target_file %}
 {%   set mount_rust_cache = "--mount=type=cache,target=/root/.cargo/git --mount=type=cache,target=/root/.cargo/registry " %}
 {% else %}
 {%   set mount_rust_cache = "" %}

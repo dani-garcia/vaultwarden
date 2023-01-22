@@ -8,8 +8,8 @@ all: $(OBJECTS)
 %/Dockerfile.alpine: Dockerfile.j2 render_template
 	./render_template "$<" "{\"target_file\":\"$@\"}" > "$@"
 
-%/Dockerfile.buildx: Dockerfile.j2 render_template
+%/Dockerfile.buildkit: Dockerfile.j2 render_template
 	./render_template "$<" "{\"target_file\":\"$@\"}" > "$@"
 
-%/Dockerfile.buildx.alpine: Dockerfile.j2 render_template
+%/Dockerfile.buildkit.alpine: Dockerfile.j2 render_template
 	./render_template "$<" "{\"target_file\":\"$@\"}" > "$@"
