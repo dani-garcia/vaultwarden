@@ -1,6 +1,8 @@
 "use strict";
+/* eslint-env es2017, browser */
+/* global _post:readable, BASE_URL:readable */
 
-function smtpTest() {
+function smtpTest(event) {
     event.preventDefault();
     event.stopPropagation();
     if (formHasChanges(config_form)) {
@@ -41,7 +43,7 @@ function getFormData() {
     return data;
 }
 
-function saveConfig() {
+function saveConfig(event) {
     const data = JSON.stringify(getFormData());
     _post(`${BASE_URL}/admin/config/`,
         "Config saved correctly",
@@ -51,7 +53,7 @@ function saveConfig() {
     event.preventDefault();
 }
 
-function deleteConf() {
+function deleteConf(event) {
     event.preventDefault();
     event.stopPropagation();
     const input = prompt(
@@ -68,7 +70,7 @@ function deleteConf() {
     }
 }
 
-function backupDatabase() {
+function backupDatabase(event) {
     event.preventDefault();
     event.stopPropagation();
     _post(`${BASE_URL}/admin/config/backup_db`,
@@ -94,24 +96,26 @@ function formHasChanges(form) {
 
 // This function will prevent submitting a from when someone presses enter.
 function preventFormSubmitOnEnter(form) {
-    form.onkeypress = function(e) {
-        const key = e.charCode || e.keyCode || 0;
-        if (key == 13) {
-            e.preventDefault();
-        }
-    };
+    if (form) {
+        form.addEventListener("keypress", (event) => {
+            if (event.key == "Enter") {
+                event.preventDefault();
+            }
+        });
+    }
 }
 
 // This function will hook into the smtp-test-email input field and will call the smtpTest() function when enter is pressed.
 function submitTestEmailOnEnter() {
     const smtp_test_email_input = document.getElementById("smtp-test-email");
-    smtp_test_email_input.onkeypress = function(e) {
-        const key = e.charCode || e.keyCode || 0;
-        if (key == 13) {
-            e.preventDefault();
-            smtpTest();
-        }
-    };
+    if (smtp_test_email_input) {
+        smtp_test_email_input.addEventListener("keypress", (event) => {
+            if (event.key == "Enter") {
+                event.preventDefault();
+                smtpTest(event);
+            }
+        });
+    }
 }
 
 // Colorize some settings which are high risk
@@ -124,11 +128,11 @@ function colorRiskSettings() {
     });
 }
 
-function toggleVis(evt) {
+function toggleVis(event) {
     event.preventDefault();
     event.stopPropagation();
 
-    const elem = document.getElementById(evt.target.dataset.vwPwToggle);
+    const elem = document.getElementById(event.target.dataset.vwPwToggle);
     const type = elem.getAttribute("type");
     if (type === "text") {
         elem.setAttribute("type", "password");
@@ -146,9 +150,11 @@ function masterCheck(check_id, inputs_query) {
     }
 
     const checkbox = document.getElementById(check_id);
-    const onChange = onChanged(checkbox, inputs_query);
-    onChange(); // Trigger the event initially
-    checkbox.addEventListener("change", onChange);
+    if (checkbox) {
+        const onChange = onChanged(checkbox, inputs_query);
+        onChange(); // Trigger the event initially
+        checkbox.addEventListener("change", onChange);
+    }
 }
 
 const config_form = document.getElementById("config-form");
@@ -172,9 +178,18 @@ document.addEventListener("DOMContentLoaded", (/*event*/) => {
         password_toggle_btn.addEventListener("click", toggleVis);
     });
 
-    document.getElementById("backupDatabase").addEventListener("click", backupDatabase);
-    document.getElementById("deleteConf").addEventListener("click", deleteConf);
-    document.getElementById("smtpTest").addEventListener("click", smtpTest);
+    const btnBackupDatabase = document.getElementById("backupDatabase");
+    if (btnBackupDatabase) {
+        btnBackupDatabase.addEventListener("click", backupDatabase);
+    }
+    const btnDeleteConf = document.getElementById("deleteConf");
+    if (btnDeleteConf) {
+        btnDeleteConf.addEventListener("click", deleteConf);
+    }
+    const btnSmtpTest = document.getElementById("smtpTest");
+    if (btnSmtpTest) {
+        btnSmtpTest.addEventListener("click", smtpTest);
+    }
 
     config_form.addEventListener("submit", saveConfig);
 });

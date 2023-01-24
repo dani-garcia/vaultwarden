@@ -18,23 +18,30 @@ img {
     border: var(--bs-alert-border);
 }
 
+#users-table .vw-account-details {
+    min-width: 250px;
+}
 #users-table .vw-created-at, #users-table .vw-last-active {
-    width: 85px;
-    min-width: 70px;
+    min-width: 85px;
+    max-width: 85px;
 }
-#users-table .vw-items {
-    width: 35px;
+#users-table .vw-items, #orgs-table .vw-items, #orgs-table .vw-users {
     min-width: 35px;
+    max-width: 40px;
 }
-#users-table .vw-organizations {
-    min-width: 120px;
+#users-table .vw-attachments, #orgs-table .vw-attachments {
+    min-width: 100px;
+    max-width: 130px;
 }
 #users-table .vw-actions, #orgs-table .vw-actions {
-    width: 130px;
     min-width: 130px;
+    max-width: 130px;
 }
 #users-table .vw-org-cell {
     max-height: 120px;
+}
+#orgs-table .vw-org-details {
+    min-width: 285px;
 }
 
 #support-string {
