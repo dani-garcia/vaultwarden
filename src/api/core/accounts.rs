@@ -161,7 +161,7 @@ pub async fn _register(data: JsonUpcase<RegisterData>, mut conn: DbConn) -> Json
         user.client_kdf_type = client_kdf_type;
     }
 
-    user.set_password(&data.MasterPasswordHash, None);
+    user.set_password(&data.MasterPasswordHash, true, None);
     user.akey = data.Key;
     user.password_hint = password_hint;
 
@@ -318,6 +318,7 @@ async fn post_password(
 
     user.set_password(
         &data.NewMasterPasswordHash,
+        true,
         Some(vec![String::from("post_rotatekey"), String::from("get_contacts"), String::from("get_public_keys")]),
     );
     user.akey = data.Key;
@@ -348,9 +349,13 @@ async fn post_kdf(data: JsonUpcase<ChangeKdfData>, headers: Headers, mut conn: D
         err!("Invalid password")
     }
 
+    if data.KdfIterations < 100_000 {
+        err!("KDF iterations lower then 100000 are not allowed.")
+    }
+
     user.client_kdf_iter = data.KdfIterations;
     user.client_kdf_type = data.Kdf;
-    user.set_password(&data.NewMasterPasswordHash, None);
+    user.set_password(&data.NewMasterPasswordHash, true, None);
     user.akey = data.Key;
     let save_result = user.save(&mut conn).await;
 
@@ -560,7 +565,7 @@ async fn post_email(
     user.email_new = None;
     user.email_new_token = None;
 
-    user.set_password(&data.NewMasterPasswordHash, None);
+    user.set_password(&data.NewMasterPasswordHash, true, None);
     user.akey = data.Key;
     let save_result = user.save(&mut conn).await;
 

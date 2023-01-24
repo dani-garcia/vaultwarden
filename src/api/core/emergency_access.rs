@@ -662,7 +662,7 @@ async fn password_emergency_access(
     };
 
     // change grantor_user password
-    grantor_user.set_password(new_master_password_hash, None);
+    grantor_user.set_password(new_master_password_hash, true, None);
     grantor_user.akey = key;
     grantor_user.save(&mut conn).await?;
 
