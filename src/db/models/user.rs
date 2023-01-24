@@ -74,7 +74,7 @@ pub struct UserStampException {
 /// Local methods
 impl User {
     pub const CLIENT_KDF_TYPE_DEFAULT: i32 = 0; // PBKDF2: 0
-    pub const CLIENT_KDF_ITER_DEFAULT: i32 = 100_000;
+    pub const CLIENT_KDF_ITER_DEFAULT: i32 = 600_000;
 
     pub fn new(email: String) -> Self {
         let now = Utc::now().naive_utc();
@@ -152,14 +152,26 @@ impl User {
     ///                       These routes are able to use the previous stamp id for the next 2 minutes.
     ///                       After these 2 minutes this stamp will expire.
     ///
-    pub fn set_password(&mut self, password: &str, new_key: &str, allow_next_route: Option<Vec<String>>) {
+    pub fn set_password(
+        &mut self,
+        password: &str,
+        new_key: Option<String>,
+        reset_security_stamp: bool,
+        allow_next_route: Option<Vec<String>>,
+    ) {
         self.password_hash = crypto::hash_password(password.as_bytes(), &self.salt, self.password_iterations as u32);
 
         if let Some(route) = allow_next_route {
             self.set_stamp_exception(route);
         }
-        self.akey = String::from(new_key);
-        self.reset_security_stamp()
+
+        if let Some(new_key) = new_key {
+            self.akey = new_key;
+        }
+
+        if reset_security_stamp {
+            self.reset_security_stamp()
+        }
     }
 
     pub fn reset_security_stamp(&mut self) {

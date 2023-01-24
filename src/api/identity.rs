@@ -130,7 +130,7 @@ async fn _password_login(
 
     // Get the user
     let username = data.username.as_ref().unwrap().trim();
-    let user = match User::find_by_mail(username, conn).await {
+    let mut user = match User::find_by_mail(username, conn).await {
         Some(user) => user,
         None => err!("Username or password is incorrect. Try again", format!("IP: {}. Username: {}.", ip.ip, username)),
     };
@@ -148,6 +148,16 @@ async fn _password_login(
                 event: EventType::UserFailedLogIn,
             }
         )
+    }
+
+    // Change the KDF Iterations
+    if user.password_iterations != CONFIG.password_iterations() {
+        user.password_iterations = CONFIG.password_iterations();
+        user.set_password(password, None, false, None);
+
+        if let Err(e) = user.save(conn).await {
+            error!("Error updating user: {:#?}", e);
+        }
     }
 
     // Check if the user is disabled
@@ -172,7 +182,6 @@ async fn _password_login(
             if resend_limit == 0 || user.login_verify_count < resend_limit {
                 // We want to send another email verification if we require signups to verify
                 // their email address, and we haven't sent them a reminder in a while...
-                let mut user = user;
                 user.last_verifying_at = Some(now);
                 user.login_verify_count += 1;
 
