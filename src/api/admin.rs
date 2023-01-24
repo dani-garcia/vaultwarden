@@ -13,7 +13,7 @@ use rocket::{
 };
 
 use crate::{
-    api::{core::log_event, ApiResult, EmptyResult, JsonResult, Notify, NumberOrString, UpdateType},
+    api::{core::log_event, ApiResult, EmptyResult, JsonResult, Notify, NumberOrString},
     auth::{decode_admin, encode_jwt, generate_admin_claims, ClientIp},
     config::ConfigBuilder,
     db::{backup_database, get_sql_server_version, models::*, DbConn, DbConnType},
@@ -372,7 +372,7 @@ async fn deauth_user(uuid: String, _token: AdminToken, mut conn: DbConn, nt: Not
 
     let save_result = user.save(&mut conn).await;
 
-    nt.send_user_update(UpdateType::LogOut, &user).await;
+    nt.send_logout(&user, None).await;
 
     save_result
 }
@@ -386,7 +386,7 @@ async fn disable_user(uuid: String, _token: AdminToken, mut conn: DbConn, nt: No
 
     let save_result = user.save(&mut conn).await;
 
-    nt.send_user_update(UpdateType::LogOut, &user).await;
+    nt.send_logout(&user, None).await;
 
     save_result
 }

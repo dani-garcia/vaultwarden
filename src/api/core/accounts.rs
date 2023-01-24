@@ -323,7 +323,10 @@ async fn post_password(
 
     let save_result = user.save(&mut conn).await;
 
-    nt.send_user_update(UpdateType::LogOut, &user).await;
+    // Prevent loging out the client where the user requested this endpoint from.
+    // If you do logout the user it will causes issues at the client side.
+    // Adding the device uuid will prevent this.
+    nt.send_logout(&user, Some(headers.device.uuid)).await;
 
     save_result
 }
@@ -353,7 +356,7 @@ async fn post_kdf(data: JsonUpcase<ChangeKdfData>, headers: Headers, mut conn: D
     user.set_password(&data.NewMasterPasswordHash, &data.Key, None);
     let save_result = user.save(&mut conn).await;
 
-    nt.send_user_update(UpdateType::LogOut, &user).await;
+    nt.send_logout(&user, Some(headers.device.uuid)).await;
 
     save_result
 }
@@ -390,6 +393,12 @@ async fn post_rotatekey(
     if !headers.user.check_valid_password(&data.MasterPasswordHash) {
         err!("Invalid password")
     }
+
+    // Validate the import before continuing
+    // Bitwarden does not process the import if there is one item invalid.
+    // Since we check for the size of the encrypted note length, we need to do that here to pre-validate it.
+    // TODO: See if we can optimize the whole cipher adding/importing and prevent duplicate code and checks.
+    Cipher::validate_notes(&data.Ciphers)?;
 
     let user_uuid = &headers.user.uuid;
 
@@ -437,7 +446,10 @@ async fn post_rotatekey(
 
     let save_result = user.save(&mut conn).await;
 
-    nt.send_user_update(UpdateType::LogOut, &user).await;
+    // Prevent loging out the client where the user requested this endpoint from.
+    // If you do logout the user it will causes issues at the client side.
+    // Adding the device uuid will prevent this.
+    nt.send_logout(&user, Some(headers.device.uuid)).await;
 
     save_result
 }
@@ -460,7 +472,7 @@ async fn post_sstamp(
     user.reset_security_stamp();
     let save_result = user.save(&mut conn).await;
 
-    nt.send_user_update(UpdateType::LogOut, &user).await;
+    nt.send_logout(&user, None).await;
 
     save_result
 }
@@ -563,7 +575,7 @@ async fn post_email(
 
     let save_result = user.save(&mut conn).await;
 
-    nt.send_user_update(UpdateType::LogOut, &user).await;
+    nt.send_logout(&user, None).await;
 
     save_result
 }
