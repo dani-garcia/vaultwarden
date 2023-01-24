@@ -66,14 +66,14 @@ dashmap = "5.4.0"
 
 # Async futures
 futures = "0.3.25"
-tokio = { version = "1.24.1", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal"] }
+tokio = { version = "1.24.2", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal"] }
 
 # A generic serialization/deserialization framework
 serde = { version = "1.0.152", features = ["derive"] }
 serde_json = "1.0.91"
 
 # A safe, extensible ORM and Query builder
-diesel = { version = "2.0.2", features = ["chrono", "r2d2"] }
+diesel = { version = "2.0.3", features = ["chrono", "r2d2"] }
 diesel_migrations = "2.0.0"
 diesel_logger = { version = "0.2.0", optional = true }
 
@@ -122,7 +122,7 @@ email_address = "0.2.4"
 handlebars = { version = "4.3.6", features = ["dir_source"] }
 
 # HTTP client
-reqwest = { version = "0.11.13", features = ["stream", "json", "gzip", "brotli", "socks", "cookies", "trust-dns"] }
+reqwest = { version = "0.11.14", features = ["stream", "json", "gzip", "brotli", "socks", "cookies", "trust-dns"] }
 
 # For favicon extraction from main website
 html5gum = "0.5.2"
