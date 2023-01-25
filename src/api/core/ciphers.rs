@@ -380,8 +380,8 @@ pub async fn update_cipher_from_data(
     }
 
     if let Some(note) = &data.Notes {
-        if note.len() > 10_000 {
-            err!("The field Notes exceeds the maximum encrypted value length of 10000 characters.")
+        if note.len() > 50_000 {
+            err!("The field Notes exceeds the maximum encrypted value length of 50000 characters.")
         }
     }
 
