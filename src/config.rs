@@ -749,31 +749,34 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         }
 
         if cfg.use_sendmail {
-            if let Some(ref command) = cfg.sendmail_command {
-                let path = std::path::Path::new(&command);
+            let command = cfg.sendmail_command.as_deref().unwrap_or("sendmail");
 
-                if !path.is_absolute() {
-                    err!(format!("path to sendmail command `{path:?}` is not absolute"));
+            let mut path = std::path::PathBuf::from(command);
+
+            if !path.is_absolute() {
+                match which::which(command) {
+                    Ok(result) => path = result,
+                    Err(_) => err!(format!("sendmail command {command:?} not found in $PATH")),
                 }
+            }
 
-                match path.metadata() {
-                    Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-                        err!(format!("sendmail command not found at `{path:?}`"))
+            match path.metadata() {
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                    err!(format!("sendmail command not found at `{path:?}`"))
+                }
+                Err(err) => {
+                    err!(format!("failed to access sendmail command at `{path:?}`: {err}"))
+                }
+                Ok(metadata) => {
+                    if metadata.is_dir() {
+                        err!(format!("sendmail command at `{path:?}` isn't a directory"));
                     }
-                    Err(err) => {
-                        err!(format!("failed to access sendmail command at `{path:?}`: {err}"))
-                    }
-                    Ok(metadata) => {
-                        if metadata.is_dir() {
-                            err!(format!("sendmail command at `{path:?}` isn't a directory"));
-                        }
 
-                        #[cfg(unix)]
-                        {
-                            use std::os::unix::fs::PermissionsExt;
-                            if !metadata.permissions().mode() & 0o111 != 0 {
-                                err!(format!("sendmail command at `{path:?}` isn't executable"));
-                            }
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::PermissionsExt;
+                        if !metadata.permissions().mode() & 0o111 != 0 {
+                            err!(format!("sendmail command at `{path:?}` isn't executable"));
                         }
                     }
                 }

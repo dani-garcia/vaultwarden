@@ -151,6 +151,7 @@ semver = "1.0.16"
 # Allow overriding the default memory allocator
 # Mainly used for the musl builds, since the default musl malloc is very slow
 mimalloc = { version = "0.1.34", features = ["secure"], default-features = false, optional = true }
+which = "4.4.0"
 
 # Strip debuginfo from the release builds
 # Also enable thin LTO for some optimizations
