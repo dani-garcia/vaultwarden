@@ -178,27 +178,6 @@ impl User {
         self.security_stamp = crate::util::get_uuid();
     }
 
-    /// Set the password hash generated
-    /// And resets the security_stamp. Based upon the allow_next_route the security_stamp will be different.
-    ///
-    /// # Arguments
-    ///
-    /// * `new_password_hash` - A str which contains a hashed version of the users master password.
-    /// * `new_key` - A String  which contains the new aKey value of the users master password.
-    /// * `allow_next_route` - A Option<Vec<String>> with the function names of the next allowed (rocket) routes.
-    ///                       These routes are able to use the previous stamp id for the next 2 minutes.
-    ///                       After these 2 minutes this stamp will expire.
-    ///
-    pub fn set_password_and_key(
-        &mut self,
-        new_password_hash: &str,
-        new_key: &str,
-        allow_next_route: Option<Vec<String>>,
-    ) {
-        self.set_password(new_password_hash, allow_next_route);
-        self.akey = String::from(new_key);
-    }
-
     /// Set the stamp_exception to only allow a subsequent request matching a specific route using the current security-stamp.
     ///
     /// # Arguments

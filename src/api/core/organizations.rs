@@ -2583,7 +2583,7 @@ async fn put_reset_password(
 
     let reset_request = data.into_inner().data;
 
-    user.set_password_and_key(reset_request.NewMasterPasswordHash.as_str(), reset_request.Key.as_str(), None);
+    user.set_password(reset_request.NewMasterPasswordHash.as_str(), Some(reset_request.Key), true, None);
     user.save(&mut conn).await?;
 
     nt.send_user_update(UpdateType::LogOut, &user).await;
