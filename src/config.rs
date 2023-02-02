@@ -1,3 +1,4 @@
+use std::env::consts::EXE_SUFFIX;
 use std::process::exit;
 use std::sync::RwLock;
 
@@ -749,12 +750,12 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         }
 
         if cfg.use_sendmail {
-            let command = cfg.sendmail_command.as_deref().unwrap_or("sendmail");
+            let command = cfg.sendmail_command.clone().unwrap_or_else(|| format!("sendmail{EXE_SUFFIX}"));
 
-            let mut path = std::path::PathBuf::from(command);
+            let mut path = std::path::PathBuf::from(&command);
 
             if !path.is_absolute() {
-                match which::which(command) {
+                match which::which(&command) {
                     Ok(result) => path = result,
                     Err(_) => err!(format!("sendmail command {command:?} not found in $PATH")),
                 }
