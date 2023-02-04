@@ -711,10 +711,6 @@ async fn send_invite(
         err!("Only Owners can invite Managers, Admins or Owners")
     }
 
-    if !CONFIG.mail_enabled() && OrgPolicy::org_is_reset_password_auto_enroll(&org_id, &mut conn).await {
-        err!("With mailing disabled and auto-enrollment-feature of reset-password-policy enabled it's not possible to invite users");
-    }
-
     for email in data.Emails.iter() {
         let email = email.to_lowercase();
         let mut user_org_status = UserOrgStatus::Invited as i32;
@@ -729,10 +725,6 @@ async fn send_invite(
                 }
 
                 if !CONFIG.mail_enabled() {
-                    if OrgPolicy::org_is_reset_password_auto_enroll(&org_id, &mut conn).await {
-                        err!("With disabled mailing and enabled auto-enrollment-feature of reset-password-policy it's not possible to invite existing users");
-                    }
-
                     let invitation = Invitation::new(&email);
                     invitation.save(&mut conn).await?;
                 }
@@ -748,10 +740,6 @@ async fn send_invite(
                     // automatically accept existing users if mail is disabled
                     if !CONFIG.mail_enabled() && !user.password_hash.is_empty() {
                         user_org_status = UserOrgStatus::Accepted as i32;
-
-                        if OrgPolicy::org_is_reset_password_auto_enroll(&org_id, &mut conn).await {
-                            err!("With disabled mailing and enabled auto-enrollment-feature of reset-password-policy it's not possible to invite existing users");
-                        }
                     }
                     user
                 }
@@ -1597,17 +1585,8 @@ async fn put_policy(
         }
     }
 
-    // This check is required since invited users automatically get accepted if mailing is not enabled (this seems like a vaultwarden specific feature)
-    // As a result of this the necessary "/accepted"-endpoint doesn't get hit.
-    // But this endpoint is required for autoenrollment while invitation.
-    // Nevertheless reset password is fully fuctiontional in settings without mailing by manual enrollment
-
     if pol_type_enum == OrgPolicyType::ResetPassword && data.enabled && !CONFIG.mail_enabled() {
-        if let Some(policy_data) = &data.data {
-            if policy_data["autoEnrollEnabled"].as_bool().unwrap_or(false) {
-                err!("Autoenroll can't be used since it requires enabled emailing")
-            }
-        }
+        err!("Due to potential security flaws and/or misuse reset password policy is disabled on mail disabled instances")
     }
 
     let mut policy = match OrgPolicy::find_by_org_and_type(&org_id, pol_type_enum, &mut conn).await {
@@ -2542,55 +2521,37 @@ async fn put_reset_password(
         None => err!("Required organization not found"),
     };
 
-    let policy = match OrgPolicy::find_by_org_and_type(&org.uuid, OrgPolicyType::ResetPassword, &mut conn).await {
-        Some(p) => p,
-        None => err!("Policy not found"),
-    };
-
-    if !policy.enabled {
-        err!("Reset password policy not enabled");
-    }
-
     let org_user = match UserOrganization::find_by_uuid_and_org(&org_user_id, &org.uuid, &mut conn).await {
         Some(user) => user,
         None => err!("User to reset isn't member of required organization"),
     };
-
-    if org_user.reset_password_key.is_none() {
-        err!("Password reset not or not corretly enrolled");
-    }
-    if org_user.status != (UserOrgStatus::Confirmed as i32) {
-        err!("Organization user must be confirmed for password reset functionality");
-    }
-
-    //Resetting user must be higher/equal to user to reset
-    let mut reset_allowed = false;
-    if headers.org_user_type == UserOrgType::Owner {
-        reset_allowed = true;
-    }
-    if headers.org_user_type == UserOrgType::Admin {
-        reset_allowed = org_user.atype != (UserOrgType::Owner as i32);
-    }
-
-    if !reset_allowed {
-        err!("No permission to reset this user's password");
-    }
 
     let mut user = match User::find_by_uuid(&org_user.user_uuid, &mut conn).await {
         Some(user) => user,
         None => err!("User not found"),
     };
 
+    check_reset_password_applicable_and_permissions(&org_id, &org_user_id, &headers, &mut conn).await?;
+
+    if org_user.reset_password_key.is_none() {
+        err!("Password reset not or not correctly enrolled");
+    }
+    if org_user.status != (UserOrgStatus::Confirmed as i32) {
+        err!("Organization user must be confirmed for password reset functionality");
+    }
+
+    // Sending email before resetting password to ensure working email configuration and the resulting
+    // user notification. Also this might add some protection against security flaws and misuse
+    if let Err(e) = mail::send_admin_reset_password(&user.email.to_lowercase(), &user.name, &org.name).await {
+        error!("Error sending user reset password email: {:#?}", e);
+    }
+
     let reset_request = data.into_inner().data;
 
     user.set_password(reset_request.NewMasterPasswordHash.as_str(), Some(reset_request.Key), true, None);
     user.save(&mut conn).await?;
 
-    nt.send_user_update(UpdateType::LogOut, &user).await;
-
-    if CONFIG.mail_enabled() {
-        mail::send_admin_reset_password(&user.email.to_lowercase(), &user.name, &org.name).await?;
-    }
+    nt.send_logout(&user, None).await;
 
     log_event(
         EventType::OrganizationUserAdminResetPassword as i32,
@@ -2610,22 +2571,13 @@ async fn put_reset_password(
 async fn get_reset_password_details(
     org_id: String,
     org_user_id: String,
-    _headers: AdminHeaders,
+    headers: AdminHeaders,
     mut conn: DbConn,
 ) -> JsonResult {
     let org = match Organization::find_by_uuid(&org_id, &mut conn).await {
         Some(org) => org,
         None => err!("Required organization not found"),
     };
-
-    let policy = match OrgPolicy::find_by_org_and_type(&org_id, OrgPolicyType::ResetPassword, &mut conn).await {
-        Some(p) => p,
-        None => err!("Policy not found"),
-    };
-
-    if !policy.enabled {
-        err!("Reset password policy not enabled");
-    }
 
     let org_user = match UserOrganization::find_by_uuid_and_org(&org_user_id, &org_id, &mut conn).await {
         Some(user) => user,
@@ -2637,6 +2589,8 @@ async fn get_reset_password_details(
         None => err!("User not found"),
     };
 
+    check_reset_password_applicable_and_permissions(&org_id, &org_user_id, &headers, &mut conn).await?;
+
     Ok(Json(json!({
         "Object": "organizationUserResetPasswordDetails",
         "Kdf":user.client_kdf_type,
@@ -2645,6 +2599,52 @@ async fn get_reset_password_details(
         "EncryptedPrivateKey":org.private_key ,
 
     })))
+}
+
+async fn check_reset_password_applicable_and_permissions(
+    org_id: &str,
+    org_user_id: &str,
+    headers: &AdminHeaders,
+    conn: &mut DbConn,
+) -> EmptyResult {
+    check_reset_password_applicable(org_id, conn).await?;
+
+    let target_user = match UserOrganization::find_by_uuid_and_org(org_user_id, org_id, conn).await {
+        Some(user) => user,
+        None => err!("Reset target user not found"),
+    };
+
+    // Resetting user must be higher/equal to user to reset
+    let mut reset_allowed = false;
+    if headers.org_user_type == UserOrgType::Owner {
+        reset_allowed = true;
+    }
+    if headers.org_user_type == UserOrgType::Admin {
+        reset_allowed = target_user.atype != (UserOrgType::Owner as i32);
+    }
+
+    if !reset_allowed {
+        err!("No permission to reset this user's password");
+    }
+
+    Ok(())
+}
+
+async fn check_reset_password_applicable(org_id: &str, conn: &mut DbConn) -> EmptyResult {
+    if !CONFIG.mail_enabled() {
+        err!("Password reset is not supported on an email-disabled instance.");
+    }
+
+    let policy = match OrgPolicy::find_by_org_and_type(org_id, OrgPolicyType::ResetPassword, conn).await {
+        Some(p) => p,
+        None => err!("Policy not found"),
+    };
+
+    if !policy.enabled {
+        err!("Reset password policy not enabled");
+    }
+
+    Ok(())
 }
 
 #[put("/organizations/<org_id>/users/<org_user_id>/reset-password-enrollment", data = "<data>")]
@@ -2656,19 +2656,12 @@ async fn put_reset_password_enrollment(
     mut conn: DbConn,
     ip: ClientIp,
 ) -> EmptyResult {
-    let policy = match OrgPolicy::find_by_org_and_type(&org_id, OrgPolicyType::ResetPassword, &mut conn).await {
-        Some(p) => p,
-        None => err!("Policy not found"),
-    };
-
-    if !policy.enabled {
-        err!("Reset password policy not enabled");
-    }
-
     let mut org_user = match UserOrganization::find_by_user_and_org(&headers.user.uuid, &org_id, &mut conn).await {
         Some(u) => u,
         None => err!("User to enroll isn't member of required organization"),
     };
+
+    check_reset_password_applicable(&org_id, &mut conn).await?;
 
     let reset_request = data.into_inner().data;
 
