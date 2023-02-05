@@ -2542,7 +2542,7 @@ async fn put_reset_password(
 
     // Sending email before resetting password to ensure working email configuration and the resulting
     // user notification. Also this might add some protection against security flaws and misuse
-    if let Err(e) = mail::send_admin_reset_password(&user.email.to_lowercase(), &user.name, &org.name).await {
+    if let Err(e) = mail::send_admin_reset_password(&user.email, &user.name, &org.name).await {
         error!("Error sending user reset password email: {:#?}", e);
     }
 
@@ -2615,19 +2615,11 @@ async fn check_reset_password_applicable_and_permissions(
     };
 
     // Resetting user must be higher/equal to user to reset
-    let mut reset_allowed = false;
-    if headers.org_user_type == UserOrgType::Owner {
-        reset_allowed = true;
+    match headers.org_user_type {
+        UserOrgType::Owner => Ok(()),
+        UserOrgType::Admin if target_user.atype <= UserOrgType::Admin => Ok(()),
+        _ => err!("No permission to reset this user's password"),
     }
-    if headers.org_user_type == UserOrgType::Admin {
-        reset_allowed = target_user.atype != (UserOrgType::Owner as i32);
-    }
-
-    if !reset_allowed {
-        err!("No permission to reset this user's password");
-    }
-
-    Ok(())
 }
 
 async fn check_reset_password_applicable(org_id: &str, conn: &mut DbConn) -> EmptyResult {
