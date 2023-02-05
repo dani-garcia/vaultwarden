@@ -1585,10 +1585,6 @@ async fn put_policy(
         }
     }
 
-    if pol_type_enum == OrgPolicyType::ResetPassword && data.enabled && !CONFIG.mail_enabled() {
-        err!("Due to potential security flaws and/or misuse reset password policy is disabled on mail disabled instances")
-    }
-
     let mut policy = match OrgPolicy::find_by_org_and_type(&org_id, pol_type_enum, &mut conn).await {
         Some(p) => p,
         None => OrgPolicy::new(org_id.clone(), pol_type_enum, "{}".to_string()),

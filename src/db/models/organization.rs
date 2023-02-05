@@ -159,7 +159,7 @@ impl Organization {
             "SelfHost": true,
             "UseApi": false, // Not supported
             "HasPublicAndPrivateKeys": self.private_key.is_some() && self.public_key.is_some(),
-            "UseResetPassword": true,
+            "UseResetPassword": CONFIG.mail_enabled(),
 
             "BusinessName": null,
             "BusinessAddress1": null,
@@ -314,7 +314,7 @@ impl UserOrganization {
             "SelfHost": true,
             "HasPublicAndPrivateKeys": org.private_key.is_some() && org.public_key.is_some(),
             "ResetPasswordEnrolled": self.reset_password_key.is_some(),
-            "UseResetPassword": true,
+            "UseResetPassword": CONFIG.mail_enabled(),
             "SsoBound": false, // Not supported
             "UseSso": false, // Not supported
             "ProviderId": null,
