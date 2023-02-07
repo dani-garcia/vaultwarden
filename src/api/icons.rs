@@ -265,7 +265,7 @@ enum DomainBlacklistReason {
 }
 
 use cached::proc_macro::cached;
-#[cached(key = "String", convert = r#"{ domain.to_string() }"#, size = 16, time = 60, option = true)]
+#[cached(key = "String", convert = r#"{ domain.to_string() }"#, size = 16, time = 60)]
 async fn check_domain_blacklist_reason(domain: &str) -> Option<DomainBlacklistReason> {
     // First check the blacklist regex if there is a match.
     // This prevents the blocked domain(s) from being leaked via a DNS lookup.
