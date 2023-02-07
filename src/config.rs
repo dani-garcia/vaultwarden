@@ -141,13 +141,7 @@ macro_rules! make_config {
                 )+)+
                 config.domain_set = _domain_set;
 
-                if config.domain_set {
-                    if config.domain.ends_with('/') {
-                        println!("[WARNING] The configured domain ends with a trailing slash.");
-                        println!("[WARNING] The trailing slash is getting removed.");
-                        config.domain = config.domain.trim_end_matches('/').to_string();
-                    }
-                }
+                config.domain = config.domain.trim_end_matches('/').to_string();
 
                 config.signups_domains_whitelist = config.signups_domains_whitelist.trim().to_lowercase();
                 config.org_creation_users = config.org_creation_users.trim().to_lowercase();
