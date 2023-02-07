@@ -283,7 +283,8 @@ impl<'r> FromRequest<'r> for Host {
 
         // Get host
         let host = if CONFIG.domain_set() {
-            CONFIG.domain()
+            // Remove trailing slash if it exists since we're getting a host
+            CONFIG.domain().trim_end_matches('/').to_string()
         } else if let Some(referer) = headers.get_one("Referer") {
             referer.to_string()
         } else {
