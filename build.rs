@@ -57,8 +57,10 @@ fn version_from_git_info() -> Result<String, std::io::Error> {
 
     // The last available tag, equal to exact_tag when
     // the current commit is tagged
-    let last_tag = run(&["git", "describe", "--abbrev=0", "--tags"])?;
-    println!("cargo:rustc-env=GIT_LAST_TAG={last_tag}");
+    let last_tag_maybe = run(&["git", "describe", "--abbrev=0", "--tags"]).ok();
+    if let Some(ref last_tag) = last_tag_maybe {
+        println!("cargo:rustc-env=GIT_LAST_TAG={last_tag}");
+    }
 
     // The current branch name
     let branch = run(&["git", "rev-parse", "--abbrev-ref", "HEAD"])?;
@@ -69,12 +71,25 @@ fn version_from_git_info() -> Result<String, std::io::Error> {
     let rev_short = rev.get(..8).unwrap_or_default();
     println!("cargo:rustc-env=GIT_REV={rev_short}");
 
+    // The current git commit time
+    let commit_time = run(&["git", "log", "-1", "--format=%cd", "--date=format:%Y-%m-%d %H:%M:%S"])?;
+
     // Combined version
     if let Some(exact) = exact_tag {
         Ok(exact)
     } else if &branch != "main" && &branch != "master" {
-        Ok(format!("{last_tag}-{rev_short} ({branch})"))
+        if let Some(ref last_tag) = last_tag_maybe {
+            Ok(format!("{last_tag}-{rev_short} ({branch}) {commit_time}"))
+        }
+        else {
+            Ok(format!("{rev_short} ({branch}) {commit_time}"))
+        }
     } else {
-        Ok(format!("{last_tag}-{rev_short}"))
+        if let Some(ref last_tag) = last_tag_maybe {
+            Ok(format!("{last_tag}-{rev_short} {commit_time}"))
+        }
+        else {
+            Ok(format!("main-{rev_short} {commit_time}"))
+        }
     }
 }
