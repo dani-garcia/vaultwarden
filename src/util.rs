@@ -58,7 +58,7 @@ impl Fairing for AppHeaders {
                 base-uri 'self'; \
                 form-action 'self'; \
                 object-src 'self' blob:; \
-                script-src 'self'; \
+                script-src 'self' 'wasm-unsafe-eval'; \
                 style-src 'self' 'unsafe-inline'; \
                 child-src 'self' https://*.duosecurity.com https://*.duofederal.com; \
                 frame-src 'self' https://*.duosecurity.com https://*.duofederal.com; \

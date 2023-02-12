@@ -44,6 +44,8 @@ db_object! {
 
         pub client_kdf_type: i32,
         pub client_kdf_iter: i32,
+        pub client_kdf_memory: Option<i32>,
+        pub client_kdf_parallelism: Option<i32>,
 
         pub api_key: Option<String>,
 
@@ -56,6 +58,11 @@ db_object! {
     pub struct Invitation {
         pub email: String,
     }
+}
+
+pub enum UserKdfType {
+    Pbkdf2 = 0,
+    Argon2id = 1,
 }
 
 enum UserStatus {
@@ -73,7 +80,7 @@ pub struct UserStampException {
 
 /// Local methods
 impl User {
-    pub const CLIENT_KDF_TYPE_DEFAULT: i32 = 0; // PBKDF2: 0
+    pub const CLIENT_KDF_TYPE_DEFAULT: i32 = UserKdfType::Pbkdf2 as i32;
     pub const CLIENT_KDF_ITER_DEFAULT: i32 = 600_000;
 
     pub fn new(email: String) -> Self {
@@ -113,6 +120,8 @@ impl User {
 
             client_kdf_type: Self::CLIENT_KDF_TYPE_DEFAULT,
             client_kdf_iter: Self::CLIENT_KDF_ITER_DEFAULT,
+            client_kdf_memory: None,
+            client_kdf_parallelism: None,
 
             api_key: None,
 
