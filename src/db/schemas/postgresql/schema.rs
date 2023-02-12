@@ -199,6 +199,8 @@ table! {
         excluded_globals -> Text,
         client_kdf_type -> Integer,
         client_kdf_iter -> Integer,
+        client_kdf_memory -> Nullable<Integer>,
+        client_kdf_parallelism -> Nullable<Integer>,
         api_key -> Nullable<Text>,
         avatar_color -> Nullable<Text>,
     }

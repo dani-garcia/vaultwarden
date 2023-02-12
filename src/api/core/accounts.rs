@@ -49,6 +49,8 @@ pub struct RegisterData {
     Email: String,
     Kdf: Option<i32>,
     KdfIterations: Option<i32>,
+    KdfMemory: Option<i32>,
+    KdfParallelism: Option<i32>,
     Key: String,
     Keys: Option<KeysData>,
     MasterPasswordHash: String,
@@ -153,13 +155,16 @@ pub async fn _register(data: JsonUpcase<RegisterData>, mut conn: DbConn) -> Json
     // Make sure we don't leave a lingering invitation.
     Invitation::take(&email, &mut conn).await;
 
+    if let Some(client_kdf_type) = data.Kdf {
+        user.client_kdf_type = client_kdf_type;
+    }
+
     if let Some(client_kdf_iter) = data.KdfIterations {
         user.client_kdf_iter = client_kdf_iter;
     }
 
-    if let Some(client_kdf_type) = data.Kdf {
-        user.client_kdf_type = client_kdf_type;
-    }
+    user.client_kdf_parallelism = data.KdfMemory;
+    user.client_kdf_memory = data.KdfParallelism;
 
     user.set_password(&data.MasterPasswordHash, Some(data.Key), true, None);
     user.password_hint = password_hint;
@@ -337,6 +342,8 @@ async fn post_password(
 struct ChangeKdfData {
     Kdf: i32,
     KdfIterations: i32,
+    KdfMemory: Option<i32>,
+    KdfParallelism: Option<i32>,
 
     MasterPasswordHash: String,
     NewMasterPasswordHash: String,
@@ -352,10 +359,31 @@ async fn post_kdf(data: JsonUpcase<ChangeKdfData>, headers: Headers, mut conn: D
         err!("Invalid password")
     }
 
-    if data.KdfIterations < 100_000 {
-        err!("KDF iterations lower then 100000 are not allowed.")
+    if data.Kdf == UserKdfType::Pbkdf2 as i32 && data.KdfIterations < 100_000 {
+        err!("PBKDF2 KDF iterations must be at least 100000.")
     }
 
+    if data.Kdf == UserKdfType::Argon2id as i32 {
+        if data.KdfIterations < 1 {
+            err!("Argon2 KDF iterations must be at least 1.")
+        }
+        if let Some(m) = data.KdfMemory {
+            if !(15..=1024).contains(&m) {
+                err!("Argon2 memory must be between 15 MB and 1024 MB.")
+            }
+            user.client_kdf_memory = data.KdfMemory;
+        } else {
+            err!("Argon2 memory parameter is required.")
+        }
+        if let Some(p) = data.KdfParallelism {
+            if !(1..=16).contains(&p) {
+                err!("Argon2 parallelism must be between 1 and 16.")
+            }
+            user.client_kdf_parallelism = data.KdfParallelism;
+        } else {
+            err!("Argon2 parallelism parameter is required.")
+        }
+    }
     user.client_kdf_iter = data.KdfIterations;
     user.client_kdf_type = data.Kdf;
     user.set_password(&data.NewMasterPasswordHash, Some(data.Key), true, None);
@@ -770,15 +798,22 @@ async fn prelogin(data: JsonUpcase<PreloginData>, conn: DbConn) -> Json<Value> {
 pub async fn _prelogin(data: JsonUpcase<PreloginData>, mut conn: DbConn) -> Json<Value> {
     let data: PreloginData = data.into_inner().data;
 
-    let (kdf_type, kdf_iter) = match User::find_by_mail(&data.Email, &mut conn).await {
-        Some(user) => (user.client_kdf_type, user.client_kdf_iter),
-        None => (User::CLIENT_KDF_TYPE_DEFAULT, User::CLIENT_KDF_ITER_DEFAULT),
+    let (kdf_type, kdf_iter, kdf_mem, kdf_para) = match User::find_by_mail(&data.Email, &mut conn).await {
+        Some(user) => (user.client_kdf_type, user.client_kdf_iter, user.client_kdf_memory, user.client_kdf_parallelism),
+        None => (User::CLIENT_KDF_TYPE_DEFAULT, User::CLIENT_KDF_ITER_DEFAULT, None, None),
     };
 
-    Json(json!({
+    let mut result = json!({
         "Kdf": kdf_type,
-        "KdfIterations": kdf_iter
-    }))
+        "KdfIterations": kdf_iter,
+    });
+
+    if kdf_type == UserKdfType::Argon2id as i32 {
+        result["KdfMemory"] = Value::Number(kdf_mem.expect("Argon2 memory parameter is required.").into());
+        result["KdfParallelism"] = Value::Number(kdf_para.expect("Argon2 parallelism parameter is required.").into());
+    }
+
+    Json(result)
 }
 
 // https://github.com/bitwarden/server/blob/master/src/Api/Models/Request/Accounts/SecretVerificationRequestModel.cs

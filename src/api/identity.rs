@@ -96,7 +96,7 @@ async fn _refresh_login(data: ConnectData, conn: &mut DbConn) -> JsonResult {
     let (access_token, expires_in) = device.refresh_tokens(&user, orgs, scope_vec);
     device.save(conn).await?;
 
-    Ok(Json(json!({
+    let mut result = json!({
         "access_token": access_token,
         "expires_in": expires_in,
         "token_type": "Bearer",
@@ -109,7 +109,16 @@ async fn _refresh_login(data: ConnectData, conn: &mut DbConn) -> JsonResult {
         "ResetMasterPassword": false, // TODO: according to official server seems something like: user.password_hash.is_empty(), but would need testing
         "scope": scope,
         "unofficialServer": true,
-    })))
+    });
+
+    if user.client_kdf_type == UserKdfType::Argon2id as i32 {
+        result["KdfMemory"] =
+            Value::Number(user.client_kdf_memory.expect("Argon2 memory parameter is required.").into());
+        result["KdfParallelism"] =
+            Value::Number(user.client_kdf_parallelism.expect("Argon2 parallelism parameter is required.").into());
+    }
+
+    Ok(Json(result))
 }
 
 async fn _password_login(
@@ -249,6 +258,13 @@ async fn _password_login(
         result["TwoFactorToken"] = Value::String(token);
     }
 
+    if user.client_kdf_type == UserKdfType::Argon2id as i32 {
+        result["KdfMemory"] =
+            Value::Number(user.client_kdf_memory.expect("Argon2 memory parameter is required.").into());
+        result["KdfParallelism"] =
+            Value::Number(user.client_kdf_parallelism.expect("Argon2 parallelism parameter is required.").into());
+    }
+
     info!("User {} logged in successfully. IP: {}", username, ip.ip);
     Ok(Json(result))
 }
@@ -333,7 +349,7 @@ async fn _api_key_login(
 
     // Note: No refresh_token is returned. The CLI just repeats the
     // client_credentials login flow when the existing token expires.
-    Ok(Json(json!({
+    let mut result = json!({
         "access_token": access_token,
         "expires_in": expires_in,
         "token_type": "Bearer",
@@ -345,7 +361,16 @@ async fn _api_key_login(
         "ResetMasterPassword": false, // TODO: Same as above
         "scope": scope,
         "unofficialServer": true,
-    })))
+    });
+
+    if user.client_kdf_type == UserKdfType::Argon2id as i32 {
+        result["KdfMemory"] =
+            Value::Number(user.client_kdf_memory.expect("Argon2 memory parameter is required.").into());
+        result["KdfParallelism"] =
+            Value::Number(user.client_kdf_parallelism.expect("Argon2 parallelism parameter is required.").into());
+    }
+
+    Ok(Json(result))
 }
 
 /// Retrieves an existing device or creates a new device from ConnectData and the User
