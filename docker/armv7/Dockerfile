@@ -29,8 +29,6 @@ FROM vaultwarden/web-vault@sha256:d5f71fb05c4b87935bf51d84140db0f8716cabfe2974fb
 ########################## BUILD IMAGE  ##########################
 FROM rust:1.66-bullseye as build
 
-
-
 # Build time options to avoid dpkg warnings and help with reproducible builds.
 ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
@@ -39,26 +37,24 @@ ENV DEBIAN_FRONTEND=noninteractive \
     CARGO_HOME="/root/.cargo" \
     USER="root"
 
-
 # Create CARGO_HOME folder and don't download rust docs
 RUN mkdir -pv "${CARGO_HOME}" \
     && rustup set profile minimal
 
-#
-# Install required build libs for armhf architecture.
-# hadolint ignore=DL3059
+# Install build dependencies for the armhf architecture
 RUN dpkg --add-architecture armhf \
     && apt-get update \
     && apt-get install -y \
         --no-install-recommends \
-        libssl-dev:armhf \
+        gcc-arm-linux-gnueabihf \
         libc6-dev:armhf \
-        libpq5:armhf \
-        libpq-dev:armhf \
-        libmariadb3:armhf \
+        libcap2-bin \
         libmariadb-dev:armhf \
         libmariadb-dev-compat:armhf \
-        gcc-arm-linux-gnueabihf \
+        libmariadb3:armhf \
+        libpq-dev:armhf \
+        libpq5:armhf \
+        libssl-dev:armhf \
     #
     # Make sure cargo has the right target config
     && echo '[target.armv7-unknown-linux-gnueabihf]' >> "${CARGO_HOME}/config" \
@@ -70,7 +66,6 @@ ENV CC_armv7_unknown_linux_gnueabihf="/usr/bin/arm-linux-gnueabihf-gcc" \
     CROSS_COMPILE="1" \
     OPENSSL_INCLUDE_DIR="/usr/include/arm-linux-gnueabihf" \
     OPENSSL_LIB_DIR="/usr/lib/arm-linux-gnueabihf"
-
 
 # Creates a dummy project used to grab dependencies
 RUN USER=root cargo new --bin /app
@@ -101,8 +96,8 @@ RUN touch src/main.rs
 
 # Builds again, this time it'll just be
 # your actual source files being built
-# hadolint ignore=DL3059
 RUN cargo build --features ${DB} --release --target=armv7-unknown-linux-gnueabihf
+
 
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image
@@ -113,22 +108,20 @@ ENV ROCKET_PROFILE="release" \
     ROCKET_ADDRESS=0.0.0.0 \
     ROCKET_PORT=80
 
-# hadolint ignore=DL3059
 RUN [ "cross-build-start" ]
 
 # Create data folder and Install needed libraries
 RUN mkdir /data \
     && apt-get update && apt-get install -y \
     --no-install-recommends \
-    openssl \
     ca-certificates \
     curl \
     libmariadb-dev-compat \
     libpq5 \
+    openssl \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# hadolint ignore=DL3059
 RUN [ "cross-build-end" ]
 
 VOLUME /data

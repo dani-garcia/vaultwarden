@@ -141,6 +141,8 @@ macro_rules! make_config {
                 )+)+
                 config.domain_set = _domain_set;
 
+                config.domain = config.domain.trim_end_matches('/').to_string();
+
                 config.signups_domains_whitelist = config.signups_domains_whitelist.trim().to_lowercase();
                 config.org_creation_users = config.org_creation_users.trim().to_lowercase();
 
@@ -1136,6 +1138,7 @@ where
     reg!("email/email_footer");
     reg!("email/email_footer_text");
 
+    reg!("email/admin_reset_password", ".html");
     reg!("email/change_email", ".html");
     reg!("email/delete_account", ".html");
     reg!("email/emergency_access_invite_accepted", ".html");

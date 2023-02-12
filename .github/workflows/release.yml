@@ -48,7 +48,10 @@ jobs:
         ports:
           - 5000:5000
     env:
-      DOCKER_BUILDKIT: 1 # Disabled for now, but we should look at this because it will speedup building!
+      # Use BuildKit (https://docs.docker.com/build/buildkit/) for better
+      # build performance and the ability to copy extended file attributes
+      # (e.g., for executable capabilities) across build phases.
+      DOCKER_BUILDKIT: 1
       # DOCKER_REPO/secrets.DOCKERHUB_REPO needs to be 'index.docker.io/<user>/<repo>'
       DOCKER_REPO: ${{ secrets.DOCKERHUB_REPO }}
       SOURCE_COMMIT: ${{ github.sha }}

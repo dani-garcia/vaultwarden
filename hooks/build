@@ -23,7 +23,7 @@ LABELS=(
     # https://github.com/opencontainers/image-spec/blob/master/annotations.md
     org.opencontainers.image.created="$(date --utc --iso-8601=seconds)"
     org.opencontainers.image.documentation="https://github.com/dani-garcia/vaultwarden/wiki"
-    org.opencontainers.image.licenses="GPL-3.0-only"
+    org.opencontainers.image.licenses="AGPL-3.0-only"
     org.opencontainers.image.revision="${SOURCE_COMMIT}"
     org.opencontainers.image.source="${SOURCE_REPOSITORY_URL}"
     org.opencontainers.image.url="https://hub.docker.com/r/${DOCKER_REPO#*/}"
@@ -34,9 +34,9 @@ for label in "${LABELS[@]}"; do
     LABEL_ARGS+=(--label "${label}")
 done
 
-# Check if DOCKER_BUILDKIT is set, if so, use the Dockerfile.buildx as template
+# Check if DOCKER_BUILDKIT is set, if so, use the Dockerfile.buildkit as template
 if [[ -n "${DOCKER_BUILDKIT}" ]]; then
-    buildx_suffix=.buildx
+    buildkit_suffix=.buildkit
 fi
 
 set -ex
@@ -45,6 +45,6 @@ for arch in "${arches[@]}"; do
     docker build \
            "${LABEL_ARGS[@]}" \
            -t "${DOCKER_REPO}:${DOCKER_TAG}-${arch}" \
-           -f docker/${arch}/Dockerfile${buildx_suffix}${distro_suffix} \
+           -f docker/${arch}/Dockerfile${buildkit_suffix}${distro_suffix} \
            .
 done

@@ -8,7 +8,7 @@ resolver = "2"
 
 repository = "https://github.com/dani-garcia/vaultwarden"
 readme = "README.md"
-license = "GPL-3.0-only"
+license = "AGPL-3.0-only"
 publish = false
 build = "build.rs"
 
