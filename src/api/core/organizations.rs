@@ -62,6 +62,7 @@ pub fn routes() -> Vec<Route> {
         get_plans_tax_rates,
         import,
         post_org_keys,
+        get_organization_keys,
         bulk_public_keys,
         deactivate_organization_user,
         bulk_deactivate_organization_user,
@@ -86,6 +87,9 @@ pub fn routes() -> Vec<Route> {
         put_user_groups,
         delete_group_user,
         post_delete_group_user,
+        put_reset_password_enrollment,
+        get_reset_password_details,
+        put_reset_password,
         get_org_export
     ]
 }
@@ -882,6 +886,7 @@ async fn _reinvite_user(org_id: &str, user_org: &str, invited_by_email: &str, co
 #[allow(non_snake_case)]
 struct AcceptData {
     Token: String,
+    ResetPasswordKey: Option<String>,
 }
 
 #[post("/organizations/<org_id>/users/<_org_user_id>/accept", data = "<data>")]
@@ -909,6 +914,11 @@ async fn accept_invite(
                     err!("User already accepted the invitation")
                 }
 
+                let master_password_required = OrgPolicy::org_is_reset_password_auto_enroll(org, &mut conn).await;
+                if data.ResetPasswordKey.is_none() && master_password_required {
+                    err!("Reset password key is required, but not provided.");
+                }
+
                 // This check is also done at accept_invite(), _confirm_invite, _activate_user(), edit_user(), admin::update_user_org_type
                 // It returns different error messages per function.
                 if user_org.atype < UserOrgType::Admin {
@@ -924,6 +934,11 @@ async fn accept_invite(
                 }
 
                 user_org.status = UserOrgStatus::Accepted as i32;
+
+                if master_password_required {
+                    user_org.reset_password_key = data.ResetPasswordKey;
+                }
+
                 user_org.save(&mut conn).await?;
             }
         }
@@ -2458,6 +2473,204 @@ async fn delete_group_user(
     .await;
 
     GroupUser::delete_by_group_id_and_user_id(&group_id, &org_user_id, &mut conn).await
+}
+
+#[derive(Deserialize)]
+#[allow(non_snake_case)]
+struct OrganizationUserResetPasswordEnrollmentRequest {
+    ResetPasswordKey: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[allow(non_snake_case)]
+struct OrganizationUserResetPasswordRequest {
+    NewMasterPasswordHash: String,
+    Key: String,
+}
+
+#[get("/organizations/<org_id>/keys")]
+async fn get_organization_keys(org_id: String, mut conn: DbConn) -> JsonResult {
+    let org = match Organization::find_by_uuid(&org_id, &mut conn).await {
+        Some(organization) => organization,
+        None => err!("Organization not found"),
+    };
+
+    Ok(Json(json!({
+        "Object": "organizationKeys",
+        "PublicKey": org.public_key,
+        "PrivateKey": org.private_key,
+    })))
+}
+
+#[put("/organizations/<org_id>/users/<org_user_id>/reset-password", data = "<data>")]
+async fn put_reset_password(
+    org_id: String,
+    org_user_id: String,
+    headers: AdminHeaders,
+    data: JsonUpcase<OrganizationUserResetPasswordRequest>,
+    mut conn: DbConn,
+    ip: ClientIp,
+    nt: Notify<'_>,
+) -> EmptyResult {
+    let org = match Organization::find_by_uuid(&org_id, &mut conn).await {
+        Some(org) => org,
+        None => err!("Required organization not found"),
+    };
+
+    let org_user = match UserOrganization::find_by_uuid_and_org(&org_user_id, &org.uuid, &mut conn).await {
+        Some(user) => user,
+        None => err!("User to reset isn't member of required organization"),
+    };
+
+    let mut user = match User::find_by_uuid(&org_user.user_uuid, &mut conn).await {
+        Some(user) => user,
+        None => err!("User not found"),
+    };
+
+    check_reset_password_applicable_and_permissions(&org_id, &org_user_id, &headers, &mut conn).await?;
+
+    if org_user.reset_password_key.is_none() {
+        err!("Password reset not or not correctly enrolled");
+    }
+    if org_user.status != (UserOrgStatus::Confirmed as i32) {
+        err!("Organization user must be confirmed for password reset functionality");
+    }
+
+    // Sending email before resetting password to ensure working email configuration and the resulting
+    // user notification. Also this might add some protection against security flaws and misuse
+    if let Err(e) = mail::send_admin_reset_password(&user.email, &user.name, &org.name).await {
+        error!("Error sending user reset password email: {:#?}", e);
+    }
+
+    let reset_request = data.into_inner().data;
+
+    user.set_password(reset_request.NewMasterPasswordHash.as_str(), Some(reset_request.Key), true, None);
+    user.save(&mut conn).await?;
+
+    nt.send_logout(&user, None).await;
+
+    log_event(
+        EventType::OrganizationUserAdminResetPassword as i32,
+        &org_user_id,
+        org.uuid.clone(),
+        headers.user.uuid.clone(),
+        headers.device.atype,
+        &ip.ip,
+        &mut conn,
+    )
+    .await;
+
+    Ok(())
+}
+
+#[get("/organizations/<org_id>/users/<org_user_id>/reset-password-details")]
+async fn get_reset_password_details(
+    org_id: String,
+    org_user_id: String,
+    headers: AdminHeaders,
+    mut conn: DbConn,
+) -> JsonResult {
+    let org = match Organization::find_by_uuid(&org_id, &mut conn).await {
+        Some(org) => org,
+        None => err!("Required organization not found"),
+    };
+
+    let org_user = match UserOrganization::find_by_uuid_and_org(&org_user_id, &org_id, &mut conn).await {
+        Some(user) => user,
+        None => err!("User to reset isn't member of required organization"),
+    };
+
+    let user = match User::find_by_uuid(&org_user.user_uuid, &mut conn).await {
+        Some(user) => user,
+        None => err!("User not found"),
+    };
+
+    check_reset_password_applicable_and_permissions(&org_id, &org_user_id, &headers, &mut conn).await?;
+
+    Ok(Json(json!({
+        "Object": "organizationUserResetPasswordDetails",
+        "Kdf":user.client_kdf_type,
+        "KdfIterations":user.client_kdf_iter,
+        "ResetPasswordKey":org_user.reset_password_key,
+        "EncryptedPrivateKey":org.private_key ,
+
+    })))
+}
+
+async fn check_reset_password_applicable_and_permissions(
+    org_id: &str,
+    org_user_id: &str,
+    headers: &AdminHeaders,
+    conn: &mut DbConn,
+) -> EmptyResult {
+    check_reset_password_applicable(org_id, conn).await?;
+
+    let target_user = match UserOrganization::find_by_uuid_and_org(org_user_id, org_id, conn).await {
+        Some(user) => user,
+        None => err!("Reset target user not found"),
+    };
+
+    // Resetting user must be higher/equal to user to reset
+    match headers.org_user_type {
+        UserOrgType::Owner => Ok(()),
+        UserOrgType::Admin if target_user.atype <= UserOrgType::Admin => Ok(()),
+        _ => err!("No permission to reset this user's password"),
+    }
+}
+
+async fn check_reset_password_applicable(org_id: &str, conn: &mut DbConn) -> EmptyResult {
+    if !CONFIG.mail_enabled() {
+        err!("Password reset is not supported on an email-disabled instance.");
+    }
+
+    let policy = match OrgPolicy::find_by_org_and_type(org_id, OrgPolicyType::ResetPassword, conn).await {
+        Some(p) => p,
+        None => err!("Policy not found"),
+    };
+
+    if !policy.enabled {
+        err!("Reset password policy not enabled");
+    }
+
+    Ok(())
+}
+
+#[put("/organizations/<org_id>/users/<org_user_id>/reset-password-enrollment", data = "<data>")]
+async fn put_reset_password_enrollment(
+    org_id: String,
+    org_user_id: String,
+    headers: Headers,
+    data: JsonUpcase<OrganizationUserResetPasswordEnrollmentRequest>,
+    mut conn: DbConn,
+    ip: ClientIp,
+) -> EmptyResult {
+    let mut org_user = match UserOrganization::find_by_user_and_org(&headers.user.uuid, &org_id, &mut conn).await {
+        Some(u) => u,
+        None => err!("User to enroll isn't member of required organization"),
+    };
+
+    check_reset_password_applicable(&org_id, &mut conn).await?;
+
+    let reset_request = data.into_inner().data;
+
+    if reset_request.ResetPasswordKey.is_none()
+        && OrgPolicy::org_is_reset_password_auto_enroll(&org_id, &mut conn).await
+    {
+        err!("Reset password can't be withdrawed due to an enterprise policy");
+    }
+
+    org_user.reset_password_key = reset_request.ResetPasswordKey;
+    org_user.save(&mut conn).await?;
+
+    let log_id = if org_user.reset_password_key.is_some() {
+        EventType::OrganizationUserResetPasswordEnroll as i32
+    } else {
+        EventType::OrganizationUserResetPasswordWithdraw as i32
+    };
+
+    log_event(log_id, &org_user_id, org_id, headers.user.uuid.clone(), headers.device.atype, &ip.ip, &mut conn).await;
+
+    Ok(())
 }
 
 // This is a new function active since the v2022.9.x clients.
