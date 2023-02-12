@@ -8,7 +8,7 @@ use lettre::{
     transport::smtp::authentication::{Credentials, Mechanism as SmtpAuthMechanism},
     transport::smtp::client::{Tls, TlsParameters},
     transport::smtp::extension::ClientId,
-    Address, AsyncSmtpTransport, AsyncTransport, Tokio1Executor,
+    Address, AsyncSendmailTransport, AsyncSmtpTransport, AsyncTransport, Tokio1Executor,
 };
 
 use crate::{
@@ -21,7 +21,15 @@ use crate::{
     CONFIG,
 };
 
-fn mailer() -> AsyncSmtpTransport<Tokio1Executor> {
+fn sendmail_transport() -> AsyncSendmailTransport<Tokio1Executor> {
+    if let Some(command) = CONFIG.sendmail_command() {
+        AsyncSendmailTransport::new_with_command(command)
+    } else {
+        AsyncSendmailTransport::new()
+    }
+}
+
+fn smtp_transport() -> AsyncSmtpTransport<Tokio1Executor> {
     use std::time::Duration;
     let host = CONFIG.smtp_host().unwrap();
 
@@ -509,6 +517,58 @@ pub async fn send_admin_reset_password(address: &str, user_name: &str, org_name:
     send_email(address, &subject, body_html, body_text).await
 }
 
+async fn send_with_selected_transport(email: Message) -> EmptyResult {
+    if CONFIG.use_sendmail() {
+        match sendmail_transport().send(email).await {
+            Ok(_) => Ok(()),
+            // Match some common errors and make them more user friendly
+            Err(e) => {
+                if e.is_client() {
+                    debug!("Sendmail client error: {:#?}", e);
+                    err!(format!("Sendmail client error: {e}"));
+                } else if e.is_response() {
+                    debug!("Sendmail response error: {:#?}", e);
+                    err!(format!("Sendmail response error: {e}"));
+                } else {
+                    debug!("Sendmail error: {:#?}", e);
+                    err!(format!("Sendmail error: {e}"));
+                }
+            }
+        }
+    } else {
+        match smtp_transport().send(email).await {
+            Ok(_) => Ok(()),
+            // Match some common errors and make them more user friendly
+            Err(e) => {
+                if e.is_client() {
+                    debug!("SMTP client error: {:#?}", e);
+                    err!(format!("SMTP client error: {e}"));
+                } else if e.is_transient() {
+                    debug!("SMTP 4xx error: {:#?}", e);
+                    err!(format!("SMTP 4xx error: {e}"));
+                } else if e.is_permanent() {
+                    debug!("SMTP 5xx error: {:#?}", e);
+                    let mut msg = e.to_string();
+                    // Add a special check for 535 to add a more descriptive message
+                    if msg.contains("(535)") {
+                        msg = format!("{msg} - Authentication credentials invalid");
+                    }
+                    err!(format!("SMTP 5xx error: {msg}"));
+                } else if e.is_timeout() {
+                    debug!("SMTP timeout error: {:#?}", e);
+                    err!(format!("SMTP timeout error: {e}"));
+                } else if e.is_tls() {
+                    debug!("SMTP encryption error: {:#?}", e);
+                    err!(format!("SMTP encryption error: {e}"));
+                } else {
+                    debug!("SMTP error: {:#?}", e);
+                    err!(format!("SMTP error: {e}"));
+                }
+            }
+        }
+    }
+}
+
 async fn send_email(address: &str, subject: &str, body_html: String, body_text: String) -> EmptyResult {
     let smtp_from = &CONFIG.smtp_from();
 
@@ -538,34 +598,5 @@ async fn send_email(address: &str, subject: &str, body_html: String, body_text: 
         .subject(subject)
         .multipart(body)?;
 
-    match mailer().send(email).await {
-        Ok(_) => Ok(()),
-        // Match some common errors and make them more user friendly
-        Err(e) => {
-            if e.is_client() {
-                debug!("SMTP Client error: {:#?}", e);
-                err!(format!("SMTP Client error: {e}"));
-            } else if e.is_transient() {
-                debug!("SMTP 4xx error: {:#?}", e);
-                err!(format!("SMTP 4xx error: {e}"));
-            } else if e.is_permanent() {
-                debug!("SMTP 5xx error: {:#?}", e);
-                let mut msg = e.to_string();
-                // Add a special check for 535 to add a more descriptive message
-                if msg.contains("(535)") {
-                    msg = format!("{msg} - Authentication credentials invalid");
-                }
-                err!(format!("SMTP 5xx error: {msg}"));
-            } else if e.is_timeout() {
-                debug!("SMTP timeout error: {:#?}", e);
-                err!(format!("SMTP timeout error: {e}"));
-            } else if e.is_tls() {
-                debug!("SMTP Encryption error: {:#?}", e);
-                err!(format!("SMTP Encryption error: {e}"));
-            } else {
-                debug!("SMTP {:#?}", e);
-                err!(format!("SMTP {e}"));
-            }
-        }
-    }
+    send_with_selected_transport(email).await
 }
