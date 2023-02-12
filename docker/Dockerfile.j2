@@ -50,7 +50,7 @@
 {% else %}
 {%   set package_arch_target_param = "" %}
 {% endif %}
-{% if "buildx" in target_file %}
+{% if "buildkit" in target_file %}
 {%   set mount_rust_cache = "--mount=type=cache,target=/root/.cargo/git --mount=type=cache,target=/root/.cargo/registry " %}
 {% else %}
 {%   set mount_rust_cache = "" %}
@@ -83,8 +83,6 @@ FROM vaultwarden/web-vault@{{ vault_image_digest }} as vault
 ########################## BUILD IMAGE  ##########################
 FROM {{ build_stage_base_image }} as build
 
-
-
 # Build time options to avoid dpkg warnings and help with reproducible builds.
 ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
@@ -92,7 +90,6 @@ ENV DEBIAN_FRONTEND=noninteractive \
     TERM=xterm-256color \
     CARGO_HOME="/root/.cargo" \
     USER="root"
-
 
 # Create CARGO_HOME folder and don't download rust docs
 RUN {{ mount_rust_cache -}} mkdir -pv "${CARGO_HOME}" \
@@ -104,21 +101,20 @@ RUN {{ mount_rust_cache -}} mkdir -pv "${CARGO_HOME}" \
 ENV RUSTFLAGS='-Clink-arg=/usr/local/musl/{{ package_arch_target }}/lib/libatomic.a'
 {%   endif %}
 {% elif "arm" in target_file %}
-#
-# Install required build libs for {{ package_arch_name }} architecture.
-# hadolint ignore=DL3059
+# Install build dependencies for the {{ package_arch_name }} architecture
 RUN dpkg --add-architecture {{ package_arch_name }} \
     && apt-get update \
     && apt-get install -y \
         --no-install-recommends \
-        libssl-dev{{ package_arch_prefix }} \
+        gcc-{{ package_cross_compiler }} \
         libc6-dev{{ package_arch_prefix }} \
-        libpq5{{ package_arch_prefix }} \
-        libpq-dev{{ package_arch_prefix }} \
-        libmariadb3{{ package_arch_prefix }} \
+        libcap2-bin \
         libmariadb-dev{{ package_arch_prefix }} \
         libmariadb-dev-compat{{ package_arch_prefix }} \
-        gcc-{{ package_cross_compiler }} \
+        libmariadb3{{ package_arch_prefix }} \
+        libpq-dev{{ package_arch_prefix }} \
+        libpq5{{ package_arch_prefix }} \
+        libssl-dev{{ package_arch_prefix }} \
     #
     # Make sure cargo has the right target config
     && echo '[target.{{ package_arch_target }}]' >> "${CARGO_HOME}/config" \
@@ -130,16 +126,14 @@ ENV CC_{{ package_arch_target | replace("-", "_") }}="/usr/bin/{{ package_cross_
     CROSS_COMPILE="1" \
     OPENSSL_INCLUDE_DIR="/usr/include/{{ package_cross_compiler }}" \
     OPENSSL_LIB_DIR="/usr/lib/{{ package_cross_compiler }}"
-
 {% elif "amd64" in target_file %}
-# Install DB packages
+# Install build dependencies
 RUN apt-get update \
     && apt-get install -y \
         --no-install-recommends \
-        libmariadb-dev{{ package_arch_prefix }} \
-        libpq-dev{{ package_arch_prefix }} \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+        libcap2-bin \
+        libmariadb-dev \
+        libpq-dev
 {% endif %}
 
 # Creates a dummy project used to grab dependencies
@@ -178,8 +172,19 @@ RUN touch src/main.rs
 
 # Builds again, this time it'll just be
 # your actual source files being built
-# hadolint ignore=DL3059
 RUN {{ mount_rust_cache -}} cargo build --features ${DB} --release{{ package_arch_target_param }}
+
+{% if "buildkit" in target_file %}
+# Add the `cap_net_bind_service` capability to allow listening on
+# privileged (< 1024) ports even when running as a non-root user.
+# This is only done if building with BuildKit; with the legacy
+# builder, the `COPY` instruction doesn't carry over capabilities.
+{%   if package_arch_target is defined %}
+RUN setcap cap_net_bind_service=+ep target/{{ package_arch_target }}/release/vaultwarden
+{%   else %}
+RUN setcap cap_net_bind_service=+ep target/release/vaultwarden
+{%   endif %}
+{% endif %}
 
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image
@@ -195,7 +200,6 @@ ENV ROCKET_PROFILE="release" \
 
 
 {% if "amd64" not in target_file %}
-# hadolint ignore=DL3059
 RUN [ "cross-build-start" ]
 {% endif %}
 
@@ -203,18 +207,18 @@ RUN [ "cross-build-start" ]
 RUN mkdir /data \
 {% if "alpine" in runtime_stage_base_image %}
     && apk add --no-cache \
-        openssl \
-        tzdata \
+        ca-certificates \
         curl \
-        ca-certificates
+        openssl \
+        tzdata
 {% else %}
     && apt-get update && apt-get install -y \
     --no-install-recommends \
-    openssl \
     ca-certificates \
     curl \
     libmariadb-dev-compat \
     libpq5 \
+    openssl \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 {% endif %}
@@ -222,13 +226,11 @@ RUN mkdir /data \
 {% if "armv6" in target_file and "alpine" not in target_file %}
 # In the Balena Bullseye images for armv6/rpi-debian there is a missing symlink.
 # This symlink was there in the buster images, and for some reason this is needed.
-# hadolint ignore=DL3059
 RUN ln -v -s /lib/ld-linux-armhf.so.3 /lib/ld-linux.so.3
 
 {% endif -%}
 
 {% if "amd64" not in target_file %}
-# hadolint ignore=DL3059
 RUN [ "cross-build-end" ]
 {% endif %}
 

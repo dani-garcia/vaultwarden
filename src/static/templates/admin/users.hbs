@@ -5,7 +5,7 @@
             <table id="users-table" class="table table-sm table-striped table-hover">
                 <thead>
                     <tr>
-                        <th>User</th>
+                        <th class="vw-account-details">User</th>
                         <th class="vw-created-at">Created at</th>
                         <th class="vw-last-active">Last Active</th>
                         <th class="vw-items">Items</th>
@@ -63,14 +63,14 @@
                         <td class="text-end px-0 small">
                             <span data-vw-user-uuid="{{jsesc Id no_quote}}" data-vw-user-email="{{jsesc Email no_quote}}">
                                 {{#if TwoFactorEnabled}}
-                                <button type="button" class="btn btn-sm btn-link p-0 border-0" vw-remove2fa>Remove all 2FA</button>
+                                <button type="button" class="btn btn-sm btn-link p-0 border-0 float-right" vw-remove2fa>Remove all 2FA</button>
                                 {{/if}}
-                                <button type="button" class="btn btn-sm btn-link p-0 border-0" vw-deauth-user>Deauthorize sessions</button>
-                                <button type="button" class="btn btn-sm btn-link p-0 border-0" vw-delete-user>Delete User</button>
+                                <button type="button" class="btn btn-sm btn-link p-0 border-0 float-right" vw-deauth-user>Deauthorize sessions</button>
+                                <button type="button" class="btn btn-sm btn-link p-0 border-0 float-right" vw-delete-user>Delete User</button>
                                 {{#if user_enabled}}
-                                <button type="button" class="btn btn-sm btn-link p-0 border-0" vw-disable-user>Disable User</button>
+                                <button type="button" class="btn btn-sm btn-link p-0 border-0 float-right" vw-disable-user>Disable User</button>
                                 {{else}}
-                                <button type="button" class="btn btn-sm btn-link p-0 border-0" vw-enable-user>Enable User</button>
+                                <button type="button" class="btn btn-sm btn-link p-0 border-0 float-right" vw-enable-user>Enable User</button>
                                 {{/if}}
                             </span>
                         </td>
@@ -96,7 +96,7 @@
             <small>Email:</small>
 
             <form class="form-inline input-group w-50" id="inviteUserForm">
-                <input type="email" class="form-control me-2" id="inviteEmail" placeholder="Enter email" required>
+                <input type="email" class="form-control me-2" id="inviteEmail" placeholder="Enter email" required spellcheck="false">
                 <button type="submit" class="btn btn-primary">Invite</button>
             </form>
         </div>
@@ -137,7 +137,7 @@
 </main>
 
 <link rel="stylesheet" href="{{urlpath}}/vw_static/datatables.css" />
-<script src="{{urlpath}}/vw_static/jquery-3.6.2.slim.js"></script>
+<script src="{{urlpath}}/vw_static/jquery-3.6.3.slim.js"></script>
 <script src="{{urlpath}}/vw_static/datatables.js"></script>
 <script src="{{urlpath}}/vw_static/admin_users.js"></script>
 <script src="{{urlpath}}/vw_static/jdenticon.js"></script>

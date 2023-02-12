@@ -123,7 +123,9 @@ async fn post_emergency_access(
 
     emergency_access.atype = new_type;
     emergency_access.wait_time_days = data.WaitTimeDays;
-    emergency_access.key_encrypted = data.KeyEncrypted;
+    if data.KeyEncrypted.is_some() {
+        emergency_access.key_encrypted = data.KeyEncrypted;
+    }
 
     emergency_access.save(&mut conn).await?;
     Ok(Json(emergency_access.to_json()))

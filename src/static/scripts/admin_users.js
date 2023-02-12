@@ -1,6 +1,8 @@
 "use strict";
+/* eslint-env es2017, browser, jquery */
+/* global _post:readable, BASE_URL:readable, reload:readable, jdenticon:readable */
 
-function deleteUser() {
+function deleteUser(event) {
     event.preventDefault();
     event.stopPropagation();
     const id = event.target.parentNode.dataset.vwUserUuid;
@@ -22,7 +24,7 @@ function deleteUser() {
     }
 }
 
-function remove2fa() {
+function remove2fa(event) {
     event.preventDefault();
     event.stopPropagation();
     const id = event.target.parentNode.dataset.vwUserUuid;
@@ -36,7 +38,7 @@ function remove2fa() {
     );
 }
 
-function deauthUser() {
+function deauthUser(event) {
     event.preventDefault();
     event.stopPropagation();
     const id = event.target.parentNode.dataset.vwUserUuid;
@@ -50,7 +52,7 @@ function deauthUser() {
     );
 }
 
-function disableUser() {
+function disableUser(event) {
     event.preventDefault();
     event.stopPropagation();
     const id = event.target.parentNode.dataset.vwUserUuid;
@@ -68,7 +70,7 @@ function disableUser() {
     }
 }
 
-function enableUser() {
+function enableUser(event) {
     event.preventDefault();
     event.stopPropagation();
     const id = event.target.parentNode.dataset.vwUserUuid;
@@ -86,7 +88,7 @@ function enableUser() {
     }
 }
 
-function updateRevisions() {
+function updateRevisions(event) {
     event.preventDefault();
     event.stopPropagation();
     _post(`${BASE_URL}/admin/users/update_revision`,
@@ -95,7 +97,7 @@ function updateRevisions() {
     );
 }
 
-function inviteUser() {
+function inviteUser(event) {
     event.preventDefault();
     event.stopPropagation();
     const email = document.getElementById("inviteEmail");
@@ -182,7 +184,7 @@ userOrgTypeDialog.addEventListener("hide.bs.modal", function() {
     document.getElementById("userOrgTypeOrgUuid").value = "";
 }, false);
 
-function updateUserOrgType() {
+function updateUserOrgType(event) {
     event.preventDefault();
     event.stopPropagation();
 
@@ -195,26 +197,7 @@ function updateUserOrgType() {
     );
 }
 
-// onLoad events
-document.addEventListener("DOMContentLoaded", (/*event*/) => {
-    jQuery("#users-table").DataTable({
-        "stateSave": true,
-        "responsive": true,
-        "lengthMenu": [
-            [-1, 5, 10, 25, 50],
-            ["All", 5, 10, 25, 50]
-        ],
-        "pageLength": -1, // Default show all
-        "columnDefs": [{
-            "targets": [1, 2],
-            "type": "date-iso"
-        }, {
-            "targets": 6,
-            "searchable": false,
-            "orderable": false
-        }]
-    });
-
+function initUserTable() {
     // Color all the org buttons per type
     document.querySelectorAll("button[data-vw-org-type]").forEach(function(e) {
         const orgType = ORG_TYPES[e.dataset.vwOrgType];
@@ -222,7 +205,6 @@ document.addEventListener("DOMContentLoaded", (/*event*/) => {
         e.title = orgType.name;
     });
 
-    // Add click events for user actions
     document.querySelectorAll("button[vw-remove2fa]").forEach(btn => {
         btn.addEventListener("click", remove2fa);
     });
@@ -239,8 +221,51 @@ document.addEventListener("DOMContentLoaded", (/*event*/) => {
         btn.addEventListener("click", enableUser);
     });
 
-    document.getElementById("updateRevisions").addEventListener("click", updateRevisions);
-    document.getElementById("reload").addEventListener("click", reload);
-    document.getElementById("userOrgTypeForm").addEventListener("submit", updateUserOrgType);
-    document.getElementById("inviteUserForm").addEventListener("submit", inviteUser);
+    if (jdenticon) {
+        jdenticon();
+    }
+}
+
+// onLoad events
+document.addEventListener("DOMContentLoaded", (/*event*/) => {
+    jQuery("#users-table").DataTable({
+        "drawCallback": function() {
+            initUserTable();
+        },
+        "stateSave": true,
+        "responsive": true,
+        "lengthMenu": [
+            [-1, 2, 5, 10, 25, 50],
+            ["All", 2, 5, 10, 25, 50]
+        ],
+        "pageLength": 2, // Default show all
+        "columnDefs": [{
+            "targets": [1, 2],
+            "type": "date-iso"
+        }, {
+            "targets": 6,
+            "searchable": false,
+            "orderable": false
+        }]
+    });
+
+    // Add click events for user actions
+    initUserTable();
+
+    const btnUpdateRevisions = document.getElementById("updateRevisions");
+    if (btnUpdateRevisions) {
+        btnUpdateRevisions.addEventListener("click", updateRevisions);
+    }
+    const btnReload = document.getElementById("reload");
+    if (btnReload) {
+        btnReload.addEventListener("click", reload);
+    }
+    const btnUserOrgTypeForm = document.getElementById("userOrgTypeForm");
+    if (btnUserOrgTypeForm) {
+        btnUserOrgTypeForm.addEventListener("submit", updateUserOrgType);
+    }
+    const btnInviteUserForm = document.getElementById("inviteUserForm");
+    if (btnInviteUserForm) {
+        btnInviteUserForm.addEventListener("submit", inviteUser);
+    }
 });

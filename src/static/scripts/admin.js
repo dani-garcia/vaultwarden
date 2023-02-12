@@ -1,4 +1,6 @@
 "use strict";
+/* eslint-env es2017, browser */
+/* exported BASE_URL, _post */
 
 function getBaseUrl() {
     // If the base URL is `https://vaultwarden.example.com/base/path/`,
@@ -26,6 +28,8 @@ function msg(text, reload_page = true) {
 }
 
 function _post(url, successMsg, errMsg, body, reload_page = true) {
+    let respStatus;
+    let respStatusText;
     fetch(url, {
         method: "POST",
         body: body,
@@ -33,22 +37,30 @@ function _post(url, successMsg, errMsg, body, reload_page = true) {
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" }
     }).then( resp => {
-        if (resp.ok) { msg(successMsg, reload_page); return Promise.reject({error: false}); }
-        const respStatus = resp.status;
-        const respStatusText = resp.statusText;
+        if (resp.ok) {
+            msg(successMsg, reload_page);
+            // Abuse the catch handler by setting error to false and continue
+            return Promise.reject({error: false});
+        }
+        respStatus = resp.status;
+        respStatusText = resp.statusText;
         return resp.text();
     }).then( respText => {
         try {
             const respJson = JSON.parse(respText);
-            return respJson ? respJson.ErrorModel.Message : "Unknown error";
+            if (respJson.ErrorModel && respJson.ErrorModel.Message) {
+                return respJson.ErrorModel.Message;
+            } else {
+                return Promise.reject({body:`${respStatus} - ${respStatusText}\n\nUnknown error`, error: true});
+            }
         } catch (e) {
-            return Promise.reject({body:respStatus + " - " + respStatusText, error: true});
+            return Promise.reject({body:`${respStatus} - ${respStatusText}\n\n[Catch] ${e}`, error: true});
         }
     }).then( apiMsg => {
-        msg(errMsg + "\n" + apiMsg, reload_page);
+        msg(`${errMsg}\n${apiMsg}`, reload_page);
     }).catch( e => {
         if (e.error === false) { return true; }
-        else { msg(errMsg + "\n" + e.body, reload_page); }
+        else { msg(`${errMsg}\n${e.body}`, reload_page); }
     });
 }
 
