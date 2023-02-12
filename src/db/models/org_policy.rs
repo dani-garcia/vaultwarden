@@ -32,7 +32,7 @@ pub enum OrgPolicyType {
     PersonalOwnership = 5,
     DisableSend = 6,
     SendOptions = 7,
-    // ResetPassword = 8, // Not supported
+    ResetPassword = 8,
     // MaximumVaultTimeout = 9, // Not supported (Not AGPLv3 Licensed)
     // DisablePersonalVaultExport = 10, // Not supported (Not AGPLv3 Licensed)
 }
@@ -42,6 +42,13 @@ pub enum OrgPolicyType {
 #[allow(non_snake_case)]
 pub struct SendOptionsPolicyData {
     pub DisableHideEmail: bool,
+}
+
+// https://github.com/bitwarden/server/blob/5cbdee137921a19b1f722920f0fa3cd45af2ef0f/src/Core/Models/Data/Organizations/Policies/ResetPasswordDataModel.cs
+#[derive(Deserialize)]
+#[allow(non_snake_case)]
+pub struct ResetPasswordDataModel {
+    pub AutoEnrollEnabled: bool,
 }
 
 pub type OrgPolicyResult = Result<(), OrgPolicyErr>;
@@ -296,6 +303,20 @@ impl OrgPolicy {
         }
 
         Ok(())
+    }
+
+    pub async fn org_is_reset_password_auto_enroll(org_uuid: &str, conn: &mut DbConn) -> bool {
+        match OrgPolicy::find_by_org_and_type(org_uuid, OrgPolicyType::ResetPassword, conn).await {
+            Some(policy) => match serde_json::from_str::<UpCase<ResetPasswordDataModel>>(&policy.data) {
+                Ok(opts) => {
+                    return opts.data.AutoEnrollEnabled;
+                }
+                _ => error!("Failed to deserialize ResetPasswordDataModel: {}", policy.data),
+            },
+            None => return false,
+        }
+
+        false
     }
 
     /// Returns true if the user belongs to an org that has enabled the `DisableHideEmail`
