@@ -141,6 +141,8 @@ macro_rules! make_config {
                 )+)+
                 config.domain_set = _domain_set;
 
+                config.domain = config.domain.trim_end_matches('/').to_string();
+
                 config.signups_domains_whitelist = config.signups_domains_whitelist.trim().to_lowercase();
                 config.org_creation_users = config.org_creation_users.trim().to_lowercase();
 
