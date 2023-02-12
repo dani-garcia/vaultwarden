@@ -287,47 +287,95 @@ impl Collection {
     }
 
     pub async fn is_writable_by_user(&self, user_uuid: &str, conn: &mut DbConn) -> bool {
-        match UserOrganization::find_by_user_and_org(user_uuid, &self.org_uuid, conn).await {
-            None => false, // Not in Org
-            Some(user_org) => {
-                if user_org.has_full_access() {
-                    return true;
-                }
-
-                db_run! { conn: {
-                    users_collections::table
-                        .filter(users_collections::collection_uuid.eq(&self.uuid))
-                        .filter(users_collections::user_uuid.eq(user_uuid))
-                        .filter(users_collections::read_only.eq(false))
-                        .count()
-                        .first::<i64>(conn)
-                        .ok()
-                        .unwrap_or(0) != 0
-                }}
-            }
-        }
+        let user_uuid = user_uuid.to_string();
+        db_run! { conn: {
+            collections::table
+            .left_join(users_collections::table.on(
+                users_collections::collection_uuid.eq(collections::uuid).and(
+                    users_collections::user_uuid.eq(user_uuid.clone())
+                )
+            ))
+            .left_join(users_organizations::table.on(
+                collections::org_uuid.eq(users_organizations::org_uuid).and(
+                    users_organizations::user_uuid.eq(user_uuid)
+                )
+            ))
+            .left_join(groups_users::table.on(
+                groups_users::users_organizations_uuid.eq(users_organizations::uuid)
+            ))
+            .left_join(groups::table.on(
+                groups::uuid.eq(groups_users::groups_uuid)
+            ))
+            .left_join(collections_groups::table.on(
+                collections_groups::groups_uuid.eq(groups_users::groups_uuid).and(
+                    collections_groups::collections_uuid.eq(collections::uuid)
+                )
+            ))
+            .filter(collections::uuid.eq(&self.uuid))
+            .filter(
+                users_collections::collection_uuid.eq(&self.uuid).and(users_collections::read_only.eq(false)).or(// Directly accessed collection
+                    users_organizations::access_all.eq(true).or( // access_all in Organization
+                        users_organizations::atype.le(UserOrgType::Admin as i32) // Org admin or owner
+                )).or(
+                    groups::access_all.eq(true) // access_all in groups
+                ).or( // access via groups
+                    groups_users::users_organizations_uuid.eq(users_organizations::uuid).and(
+                        collections_groups::collections_uuid.is_not_null().and(
+                            collections_groups::read_only.eq(false))
+                    )
+                )
+            )
+            .count()
+            .first::<i64>(conn)
+            .ok()
+            .unwrap_or(0) != 0
+        }}
     }
 
     pub async fn hide_passwords_for_user(&self, user_uuid: &str, conn: &mut DbConn) -> bool {
-        match UserOrganization::find_by_user_and_org(user_uuid, &self.org_uuid, conn).await {
-            None => true, // Not in Org
-            Some(user_org) => {
-                if user_org.has_full_access() {
-                    return false;
-                }
-
-                db_run! { conn: {
-                    users_collections::table
-                        .filter(users_collections::collection_uuid.eq(&self.uuid))
-                        .filter(users_collections::user_uuid.eq(user_uuid))
-                        .filter(users_collections::hide_passwords.eq(true))
-                        .count()
-                        .first::<i64>(conn)
-                        .ok()
-                        .unwrap_or(0) != 0
-                }}
-            }
-        }
+        let user_uuid = user_uuid.to_string();
+        db_run! { conn: {
+            collections::table
+            .left_join(users_collections::table.on(
+                users_collections::collection_uuid.eq(collections::uuid).and(
+                    users_collections::user_uuid.eq(user_uuid.clone())
+                )
+            ))
+            .left_join(users_organizations::table.on(
+                collections::org_uuid.eq(users_organizations::org_uuid).and(
+                    users_organizations::user_uuid.eq(user_uuid)
+                )
+            ))
+            .left_join(groups_users::table.on(
+                groups_users::users_organizations_uuid.eq(users_organizations::uuid)
+            ))
+            .left_join(groups::table.on(
+                groups::uuid.eq(groups_users::groups_uuid)
+            ))
+            .left_join(collections_groups::table.on(
+                collections_groups::groups_uuid.eq(groups_users::groups_uuid).and(
+                    collections_groups::collections_uuid.eq(collections::uuid)
+                )
+            ))
+            .filter(collections::uuid.eq(&self.uuid))
+            .filter(
+                users_collections::collection_uuid.eq(&self.uuid).and(users_collections::hide_passwords.eq(true)).or(// Directly accessed collection
+                    users_organizations::access_all.eq(true).or( // access_all in Organization
+                        users_organizations::atype.le(UserOrgType::Admin as i32) // Org admin or owner
+                )).or(
+                    groups::access_all.eq(true) // access_all in groups
+                ).or( // access via groups
+                    groups_users::users_organizations_uuid.eq(users_organizations::uuid).and(
+                        collections_groups::collections_uuid.is_not_null().and(
+                            collections_groups::hide_passwords.eq(true))
+                    )
+                )
+            )
+            .count()
+            .first::<i64>(conn)
+            .ok()
+            .unwrap_or(0) != 0
+        }}
     }
 }
 

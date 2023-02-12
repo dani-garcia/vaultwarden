@@ -29,6 +29,7 @@ db_object! {
         pub akey: String,
         pub status: i32,
         pub atype: i32,
+        pub reset_password_key: Option<String>,
     }
 }
 
@@ -158,7 +159,7 @@ impl Organization {
             "SelfHost": true,
             "UseApi": false, // Not supported
             "HasPublicAndPrivateKeys": self.private_key.is_some() && self.public_key.is_some(),
-            "UseResetPassword": false, // Not supported
+            "UseResetPassword": CONFIG.mail_enabled(),
 
             "BusinessName": null,
             "BusinessAddress1": null,
@@ -194,6 +195,7 @@ impl UserOrganization {
             akey: String::new(),
             status: UserOrgStatus::Accepted as i32,
             atype: UserOrgType::User as i32,
+            reset_password_key: None,
         }
     }
 
@@ -311,7 +313,8 @@ impl UserOrganization {
             "UseApi": false, // Not supported
             "SelfHost": true,
             "HasPublicAndPrivateKeys": org.private_key.is_some() && org.public_key.is_some(),
-            "ResetPasswordEnrolled": false, // Not supported
+            "ResetPasswordEnrolled": self.reset_password_key.is_some(),
+            "UseResetPassword": CONFIG.mail_enabled(),
             "SsoBound": false, // Not supported
             "UseSso": false, // Not supported
             "ProviderId": null,
@@ -377,6 +380,7 @@ impl UserOrganization {
             "Type": self.atype,
             "AccessAll": self.access_all,
             "TwoFactorEnabled": twofactor_enabled,
+            "ResetPasswordEnrolled":self.reset_password_key.is_some(),
 
             "Object": "organizationUserUserDetails",
         })

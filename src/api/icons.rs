@@ -79,7 +79,7 @@ async fn icon_redirect(domain: &str, template: &str) -> Option<Redirect> {
         return None;
     }
 
-    if is_domain_blacklisted(domain).await {
+    if check_domain_blacklist_reason(domain).await.is_some() {
         return None;
     }
 
@@ -258,9 +258,15 @@ mod tests {
     }
 }
 
+#[derive(Debug, Clone)]
+enum DomainBlacklistReason {
+    Regex,
+    IP,
+}
+
 use cached::proc_macro::cached;
 #[cached(key = "String", convert = r#"{ domain.to_string() }"#, size = 16, time = 60)]
-async fn is_domain_blacklisted(domain: &str) -> bool {
+async fn check_domain_blacklist_reason(domain: &str) -> Option<DomainBlacklistReason> {
     // First check the blacklist regex if there is a match.
     // This prevents the blocked domain(s) from being leaked via a DNS lookup.
     if let Some(blacklist) = CONFIG.icon_blacklist_regex() {
@@ -284,7 +290,7 @@ async fn is_domain_blacklisted(domain: &str) -> bool {
 
         if is_match {
             debug!("Blacklisted domain: {} matched ICON_BLACKLIST_REGEX", domain);
-            return true;
+            return Some(DomainBlacklistReason::Regex);
         }
     }
 
@@ -293,13 +299,13 @@ async fn is_domain_blacklisted(domain: &str) -> bool {
             for addr in s {
                 if !is_global(addr.ip()) {
                     debug!("IP {} for domain '{}' is not a global IP!", addr.ip(), domain);
-                    return true;
+                    return Some(DomainBlacklistReason::IP);
                 }
             }
         }
     }
 
-    false
+    None
 }
 
 async fn get_icon(domain: &str) -> Option<(Vec<u8>, String)> {
@@ -564,8 +570,10 @@ async fn get_page(url: &str) -> Result<Response, Error> {
 }
 
 async fn get_page_with_referer(url: &str, referer: &str) -> Result<Response, Error> {
-    if is_domain_blacklisted(url::Url::parse(url).unwrap().host_str().unwrap_or_default()).await {
-        warn!("Favicon '{}' resolves to a blacklisted domain or IP!", url);
+    match check_domain_blacklist_reason(url::Url::parse(url).unwrap().host_str().unwrap_or_default()).await {
+        Some(DomainBlacklistReason::Regex) => warn!("Favicon '{}' is from a blacklisted domain!", url),
+        Some(DomainBlacklistReason::IP) => warn!("Favicon '{}' is hosted on a non-global IP!", url),
+        None => (),
     }
 
     let mut client = CLIENT.get(url);
@@ -659,8 +667,10 @@ fn parse_sizes(sizes: &str) -> (u16, u16) {
 }
 
 async fn download_icon(domain: &str) -> Result<(Bytes, Option<&str>), Error> {
-    if is_domain_blacklisted(domain).await {
-        err_silent!("Domain is blacklisted", domain)
+    match check_domain_blacklist_reason(domain).await {
+        Some(DomainBlacklistReason::Regex) => err_silent!("Domain is blacklisted", domain),
+        Some(DomainBlacklistReason::IP) => err_silent!("Host resolves to a non-global IP", domain),
+        None => (),
     }
 
     let icon_result = get_icon_url(domain).await?;

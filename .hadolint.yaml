@@ -3,5 +3,7 @@ ignored:
   - DL3008
   # disable explicit version for apk install
   - DL3018
+  # disable check for consecutive `RUN` instructions
+  - DL3059
 trustedRegistries:
   - docker.io
