@@ -614,6 +614,10 @@ make_config! {
     smtp: _enable_smtp {
         /// Enabled
         _enable_smtp:                  bool,   true,   def,     true;
+        /// Use Sendmail |> Whether to send mail via the `sendmail` command
+        use_sendmail:                  bool,   true,   def,     false;
+        /// Sendmail Command |> Which sendmail command to use. The one found in the $PATH is used if not specified.
+        sendmail_command:              String, true,   option;
         /// Host
         smtp_host:                     String, true,   option;
         /// DEPRECATED smtp_ssl |> DEPRECATED - Please use SMTP_SECURITY
@@ -653,7 +657,7 @@ make_config! {
     /// Email 2FA Settings
     email_2fa: _enable_email_2fa {
         /// Enabled |> Disabling will prevent users from setting up new email 2FA and using existing email 2FA configured
-        _enable_email_2fa:      bool,   true,   auto,    |c| c._enable_smtp && c.smtp_host.is_some();
+        _enable_email_2fa:      bool,   true,   auto,    |c| c._enable_smtp && (c.smtp_host.is_some() || c.use_sendmail);
         /// Email token size |> Number of digits in an email 2FA token (min: 6, max: 255). Note that the Bitwarden clients are hardcoded to mention 6 digit codes regardless of this setting.
         email_token_size:       u8,     true,   def,      6;
         /// Token expiration time |> Maximum time in seconds a token is valid. The time the user has to open email client and copy token.
@@ -744,25 +748,57 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
             ),
         }
 
-        if cfg.smtp_host.is_some() == cfg.smtp_from.is_empty() {
-            err!("Both `SMTP_HOST` and `SMTP_FROM` need to be set for email support")
+        if cfg.use_sendmail {
+            if let Some(ref command) = cfg.sendmail_command {
+                let path = std::path::Path::new(&command);
+
+                if !path.is_absolute() {
+                    err!(format!("path to sendmail command `{path:?}` is not absolute"));
+                }
+
+                match path.metadata() {
+                    Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                        err!(format!("sendmail command not found at `{path:?}`"))
+                    }
+                    Err(err) => {
+                        err!(format!("failed to access sendmail command at `{path:?}`: {err}"))
+                    }
+                    Ok(metadata) => {
+                        if metadata.is_dir() {
+                            err!(format!("sendmail command at `{path:?}` isn't a directory"));
+                        }
+
+                        #[cfg(unix)]
+                        {
+                            use std::os::unix::fs::PermissionsExt;
+                            if !metadata.permissions().mode() & 0o111 != 0 {
+                                err!(format!("sendmail command at `{path:?}` isn't executable"));
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            if cfg.smtp_host.is_some() == cfg.smtp_from.is_empty() {
+                err!("Both `SMTP_HOST` and `SMTP_FROM` need to be set for email support without `USE_SENDMAIL`")
+            }
+
+            if cfg.smtp_username.is_some() != cfg.smtp_password.is_some() {
+                err!("Both `SMTP_USERNAME` and `SMTP_PASSWORD` need to be set to enable email authentication without `USE_SENDMAIL`")
+            }
         }
 
-        if cfg.smtp_host.is_some() && !cfg.smtp_from.contains('@') {
+        if (cfg.smtp_host.is_some() || cfg.use_sendmail) && !cfg.smtp_from.contains('@') {
             err!("SMTP_FROM does not contain a mandatory @ sign")
-        }
-
-        if cfg.smtp_username.is_some() != cfg.smtp_password.is_some() {
-            err!("Both `SMTP_USERNAME` and `SMTP_PASSWORD` need to be set to enable email authentication")
-        }
-
-        if cfg._enable_email_2fa && (!cfg._enable_smtp || cfg.smtp_host.is_none()) {
-            err!("To enable email 2FA, SMTP must be configured")
         }
 
         if cfg._enable_email_2fa && cfg.email_token_size < 6 {
             err!("`EMAIL_TOKEN_SIZE` has a minimum size of 6")
         }
+    }
+
+    if cfg._enable_email_2fa && !(cfg.smtp_host.is_some() || cfg.use_sendmail) {
+        err!("To enable email 2FA, a mail transport must be configured")
     }
 
     // Check if the icon blacklist regex is valid
@@ -1045,7 +1081,7 @@ impl Config {
     }
     pub fn mail_enabled(&self) -> bool {
         let inner = &self.inner.read().unwrap().config;
-        inner._enable_smtp && inner.smtp_host.is_some()
+        inner._enable_smtp && (inner.smtp_host.is_some() || inner.use_sendmail)
     }
 
     pub fn get_duo_akey(&self) -> String {
