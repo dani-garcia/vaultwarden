@@ -29,8 +29,6 @@ FROM vaultwarden/web-vault@sha256:d5f71fb05c4b87935bf51d84140db0f8716cabfe2974fb
 ########################## BUILD IMAGE  ##########################
 FROM rust:1.66-bullseye as build
 
-
-
 # Build time options to avoid dpkg warnings and help with reproducible builds.
 ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
@@ -39,26 +37,24 @@ ENV DEBIAN_FRONTEND=noninteractive \
     CARGO_HOME="/root/.cargo" \
     USER="root"
 
-
 # Create CARGO_HOME folder and don't download rust docs
 RUN mkdir -pv "${CARGO_HOME}" \
     && rustup set profile minimal
 
-#
-# Install required build libs for armel architecture.
-# hadolint ignore=DL3059
+# Install build dependencies for the armel architecture
 RUN dpkg --add-architecture armel \
     && apt-get update \
     && apt-get install -y \
         --no-install-recommends \
-        libssl-dev:armel \
+        gcc-arm-linux-gnueabi \
         libc6-dev:armel \
-        libpq5:armel \
-        libpq-dev:armel \
-        libmariadb3:armel \
+        libcap2-bin \
         libmariadb-dev:armel \
         libmariadb-dev-compat:armel \
-        gcc-arm-linux-gnueabi \
+        libmariadb3:armel \
+        libpq-dev:armel \
+        libpq5:armel \
+        libssl-dev:armel \
     #
     # Make sure cargo has the right target config
     && echo '[target.arm-unknown-linux-gnueabi]' >> "${CARGO_HOME}/config" \
@@ -70,7 +66,6 @@ ENV CC_arm_unknown_linux_gnueabi="/usr/bin/arm-linux-gnueabi-gcc" \
     CROSS_COMPILE="1" \
     OPENSSL_INCLUDE_DIR="/usr/include/arm-linux-gnueabi" \
     OPENSSL_LIB_DIR="/usr/lib/arm-linux-gnueabi"
-
 
 # Creates a dummy project used to grab dependencies
 RUN USER=root cargo new --bin /app
@@ -101,8 +96,8 @@ RUN touch src/main.rs
 
 # Builds again, this time it'll just be
 # your actual source files being built
-# hadolint ignore=DL3059
 RUN cargo build --features ${DB} --release --target=arm-unknown-linux-gnueabi
+
 
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image
@@ -113,27 +108,24 @@ ENV ROCKET_PROFILE="release" \
     ROCKET_ADDRESS=0.0.0.0 \
     ROCKET_PORT=80
 
-# hadolint ignore=DL3059
 RUN [ "cross-build-start" ]
 
 # Create data folder and Install needed libraries
 RUN mkdir /data \
     && apt-get update && apt-get install -y \
     --no-install-recommends \
-    openssl \
     ca-certificates \
     curl \
     libmariadb-dev-compat \
     libpq5 \
+    openssl \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 # In the Balena Bullseye images for armv6/rpi-debian there is a missing symlink.
 # This symlink was there in the buster images, and for some reason this is needed.
-# hadolint ignore=DL3059
 RUN ln -v -s /lib/ld-linux-armhf.so.3 /lib/ld-linux.so.3
 
-# hadolint ignore=DL3059
 RUN [ "cross-build-end" ]
 
 VOLUME /data

@@ -47,7 +47,7 @@
                             <div class="row my-2 align-items-center pt-3 border-top" title="Send a test email to given email address">
                                 <label for="smtp-test-email" class="col-sm-3 col-form-label">Test SMTP</label>
                                 <div class="col-sm-8 input-group">
-                                    <input class="form-control" id="smtp-test-email" type="email" placeholder="Enter test email" required>
+                                    <input class="form-control" id="smtp-test-email" type="email" placeholder="Enter test email" required spellcheck="false">
                                     <button type="button" class="btn btn-outline-primary input-group-text" id="smtpTest">Send test email</button>
                                     <div class="invalid-tooltip">Please provide a valid email address</div>
                                 </div>
@@ -85,7 +85,7 @@
                                     <input readonly class="form-control" id="input_{{name}}" type="password" value="{{value}}" {{#if default}} placeholder="Default: {{default}}" {{/if}}>
                                     <button class="btn btn-outline-secondary" type="button" data-vw-pw-toggle="input_{{name}}">Show/hide</button>
                                 {{else}}
-                                    <input readonly class="form-control" id="input_{{name}}" type="{{type}}" value="{{value}}" {{#if default}} placeholder="Default: {{default}}" {{/if}}>
+                                    <input readonly class="form-control" id="input_{{name}}" type="{{type}}" value="{{value}}" {{#if default}} placeholder="Default: {{default}}" {{/if}} spellcheck="false">
                                     {{#case type "password"}}
                                     <button class="btn btn-outline-secondary" type="button" data-vw-pw-toggle="input_{{name}}">Show/hide</button>
                                     {{/case}}

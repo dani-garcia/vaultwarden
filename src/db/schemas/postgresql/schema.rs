@@ -222,6 +222,7 @@ table! {
         akey -> Text,
         status -> Integer,
         atype -> Integer,
+        reset_password_key -> Nullable<Text>,
     }
 }
 

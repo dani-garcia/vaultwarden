@@ -496,6 +496,19 @@ pub async fn send_test(address: &str) -> EmptyResult {
     send_email(address, &subject, body_html, body_text).await
 }
 
+pub async fn send_admin_reset_password(address: &str, user_name: &str, org_name: &str) -> EmptyResult {
+    let (subject, body_html, body_text) = get_text(
+        "email/admin_reset_password",
+        json!({
+            "url": CONFIG.domain(),
+            "img_src": CONFIG._smtp_img_src(),
+            "user_name": user_name,
+            "org_name": org_name,
+        }),
+    )?;
+    send_email(address, &subject, body_html, body_text).await
+}
+
 async fn send_email(address: &str, subject: &str, body_html: String, body_text: String) -> EmptyResult {
     let smtp_from = &CONFIG.smtp_from();
 
