@@ -27,9 +27,7 @@
 FROM vaultwarden/web-vault@sha256:d5f71fb05c4b87935bf51d84140db0f8716cabfe2974fbee6c0c5ee8cf7dab5a as vault
 
 ########################## BUILD IMAGE  ##########################
-FROM rust:1.66-bullseye as build
-
-
+FROM blackdex/rust-musl:aarch64-musl-stable-1.66.1 as build
 
 # Build time options to avoid dpkg warnings and help with reproducible builds.
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -39,37 +37,9 @@ ENV DEBIAN_FRONTEND=noninteractive \
     CARGO_HOME="/root/.cargo" \
     USER="root"
 
-
 # Create CARGO_HOME folder and don't download rust docs
 RUN --mount=type=cache,target=/root/.cargo/git --mount=type=cache,target=/root/.cargo/registry mkdir -pv "${CARGO_HOME}" \
     && rustup set profile minimal
-
-#
-# Install required build libs for armel architecture.
-# hadolint ignore=DL3059
-RUN dpkg --add-architecture armel \
-    && apt-get update \
-    && apt-get install -y \
-        --no-install-recommends \
-        libssl-dev:armel \
-        libc6-dev:armel \
-        libpq5:armel \
-        libpq-dev:armel \
-        libmariadb3:armel \
-        libmariadb-dev:armel \
-        libmariadb-dev-compat:armel \
-        gcc-arm-linux-gnueabi \
-    #
-    # Make sure cargo has the right target config
-    && echo '[target.arm-unknown-linux-gnueabi]' >> "${CARGO_HOME}/config" \
-    && echo 'linker = "arm-linux-gnueabi-gcc"' >> "${CARGO_HOME}/config" \
-    && echo 'rustflags = ["-L/usr/lib/arm-linux-gnueabi"]' >> "${CARGO_HOME}/config"
-
-# Set arm specific environment values
-ENV CC_arm_unknown_linux_gnueabi="/usr/bin/arm-linux-gnueabi-gcc" \
-    CROSS_COMPILE="1" \
-    OPENSSL_INCLUDE_DIR="/usr/include/arm-linux-gnueabi" \
-    OPENSSL_LIB_DIR="/usr/lib/arm-linux-gnueabi"
 
 
 # Creates a dummy project used to grab dependencies
@@ -81,15 +51,16 @@ COPY ./Cargo.* ./
 COPY ./rust-toolchain ./rust-toolchain
 COPY ./build.rs ./build.rs
 
-RUN --mount=type=cache,target=/root/.cargo/git --mount=type=cache,target=/root/.cargo/registry rustup target add arm-unknown-linux-gnueabi
+RUN --mount=type=cache,target=/root/.cargo/git --mount=type=cache,target=/root/.cargo/registry rustup target add aarch64-unknown-linux-musl
 
 # Configure the DB ARG as late as possible to not invalidate the cached layers above
-ARG DB=sqlite,mysql,postgresql
+# Enable MiMalloc to improve performance on Alpine builds
+ARG DB=sqlite,mysql,postgresql,enable_mimalloc
 
 # Builds your dependencies and removes the
 # dummy project, except the target folder
 # This folder contains the compiled dependencies
-RUN --mount=type=cache,target=/root/.cargo/git --mount=type=cache,target=/root/.cargo/registry cargo build --features ${DB} --release --target=arm-unknown-linux-gnueabi \
+RUN --mount=type=cache,target=/root/.cargo/git --mount=type=cache,target=/root/.cargo/registry cargo build --features ${DB} --release --target=aarch64-unknown-linux-musl \
     && find . -not -path "./target*" -delete
 
 # Copies the complete project
@@ -101,39 +72,35 @@ RUN touch src/main.rs
 
 # Builds again, this time it'll just be
 # your actual source files being built
-# hadolint ignore=DL3059
-RUN --mount=type=cache,target=/root/.cargo/git --mount=type=cache,target=/root/.cargo/registry cargo build --features ${DB} --release --target=arm-unknown-linux-gnueabi
+RUN --mount=type=cache,target=/root/.cargo/git --mount=type=cache,target=/root/.cargo/registry cargo build --features ${DB} --release --target=aarch64-unknown-linux-musl
+
+# Add the `cap_net_bind_service` capability to allow listening on
+# privileged (< 1024) ports even when running as a non-root user.
+# This is only done if building with BuildKit; with the legacy
+# builder, the `COPY` instruction doesn't carry over capabilities.
+RUN setcap cap_net_bind_service=+ep target/aarch64-unknown-linux-musl/release/vaultwarden
 
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image
 # because we already have a binary built
-FROM balenalib/rpi-debian:bullseye
+FROM balenalib/aarch64-alpine:3.17
 
 ENV ROCKET_PROFILE="release" \
     ROCKET_ADDRESS=0.0.0.0 \
-    ROCKET_PORT=80
+    ROCKET_PORT=80 \
+    SSL_CERT_DIR=/etc/ssl/certs
 
-# hadolint ignore=DL3059
+
 RUN [ "cross-build-start" ]
 
 # Create data folder and Install needed libraries
 RUN mkdir /data \
-    && apt-get update && apt-get install -y \
-    --no-install-recommends \
-    openssl \
-    ca-certificates \
-    curl \
-    libmariadb-dev-compat \
-    libpq5 \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+    && apk add --no-cache \
+        ca-certificates \
+        curl \
+        openssl \
+        tzdata
 
-# In the Balena Bullseye images for armv6/rpi-debian there is a missing symlink.
-# This symlink was there in the buster images, and for some reason this is needed.
-# hadolint ignore=DL3059
-RUN ln -v -s /lib/ld-linux-armhf.so.3 /lib/ld-linux.so.3
-
-# hadolint ignore=DL3059
 RUN [ "cross-build-end" ]
 
 VOLUME /data
@@ -144,7 +111,7 @@ EXPOSE 3012
 # and the binary from the "build" stage to the current stage
 WORKDIR /
 COPY --from=vault /web-vault ./web-vault
-COPY --from=build /app/target/arm-unknown-linux-gnueabi/release/vaultwarden .
+COPY --from=build /app/target/aarch64-unknown-linux-musl/release/vaultwarden .
 
 COPY docker/healthcheck.sh /healthcheck.sh
 COPY docker/start.sh /start.sh

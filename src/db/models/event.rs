@@ -87,9 +87,9 @@ pub enum EventType {
     OrganizationUserRemoved = 1503,
     OrganizationUserUpdatedGroups = 1504,
     // OrganizationUserUnlinkedSso = 1505, // Not supported
-    // OrganizationUserResetPasswordEnroll = 1506, // Not supported
-    // OrganizationUserResetPasswordWithdraw = 1507, // Not supported
-    // OrganizationUserAdminResetPassword = 1508, // Not supported
+    OrganizationUserResetPasswordEnroll = 1506,
+    OrganizationUserResetPasswordWithdraw = 1507,
+    OrganizationUserAdminResetPassword = 1508,
     // OrganizationUserResetSsoLink = 1509, // Not supported
     // OrganizationUserFirstSsoLogin = 1510, // Not supported
     OrganizationUserRevoked = 1511,
