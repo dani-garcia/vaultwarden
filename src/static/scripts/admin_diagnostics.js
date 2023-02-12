@@ -1,4 +1,6 @@
 "use strict";
+/* eslint-env es2017, browser */
+/* global BASE_URL:readable, BSN:readable */
 
 var dnsCheck = false;
 var timeCheck = false;
@@ -65,7 +67,7 @@ function checkVersions(platform, installed, latest, commit=null) {
 
 // ================================
 // Generate support string to be pasted on github or the forum
-async function generateSupportString(dj) {
+async function generateSupportString(event, dj) {
     event.preventDefault();
     event.stopPropagation();
 
@@ -114,7 +116,7 @@ async function generateSupportString(dj) {
     document.getElementById("copy-support").classList.remove("d-none");
 }
 
-function copyToClipboard() {
+function copyToClipboard(event) {
     event.preventDefault();
     event.stopPropagation();
 
@@ -208,12 +210,18 @@ function init(dj) {
 }
 
 // onLoad events
-document.addEventListener("DOMContentLoaded", (/*event*/) => {
+document.addEventListener("DOMContentLoaded", (event) => {
     const diag_json = JSON.parse(document.getElementById("diagnostics_json").innerText);
     init(diag_json);
 
-    document.getElementById("gen-support").addEventListener("click", () => {
-        generateSupportString(diag_json);
-    });
-    document.getElementById("copy-support").addEventListener("click", copyToClipboard);
+    const btnGenSupport = document.getElementById("gen-support");
+    if (btnGenSupport) {
+        btnGenSupport.addEventListener("click", () => {
+            generateSupportString(event, diag_json);
+        });
+    }
+    const btnCopySupport = document.getElementById("copy-support");
+    if (btnCopySupport) {
+        btnCopySupport.addEventListener("click", copyToClipboard);
+    }
 });

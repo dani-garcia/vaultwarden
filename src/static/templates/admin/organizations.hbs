@@ -5,10 +5,10 @@
             <table id="orgs-table" class="table table-sm table-striped table-hover">
                 <thead>
                     <tr>
-                        <th>Organization</th>
-                        <th>Users</th>
-                        <th>Items</th>
-                        <th>Attachments</th>
+                        <th class="vw-org-details">Organization</th>
+                        <th class="vw-users">Users</th>
+                        <th class="vw-items">Items</th>
+                        <th class="vw-attachments">Attachments</th>
                         <th class="vw-actions">Actions</th>
                     </tr>
                 </thead>
@@ -38,7 +38,7 @@
                             {{/if}}
                         </td>
                         <td class="text-end px-0 small">
-                            <button type="button" class="btn btn-sm btn-link p-0 border-0" vw-delete-organization data-vw-org-uuid="{{jsesc Id no_quote}}" data-vw-org-name="{{jsesc Name no_quote}}" data-vw-billing-email="{{jsesc BillingEmail no_quote}}">Delete Organization</button>
+                            <button type="button" class="btn btn-sm btn-link p-0 border-0 float-right" vw-delete-organization data-vw-org-uuid="{{jsesc Id no_quote}}" data-vw-org-name="{{jsesc Name no_quote}}" data-vw-billing-email="{{jsesc BillingEmail no_quote}}">Delete Organization</button>
                         </td>
                     </tr>
                     {{/each}}
@@ -53,7 +53,7 @@
 </main>
 
 <link rel="stylesheet" href="{{urlpath}}/vw_static/datatables.css" />
-<script src="{{urlpath}}/vw_static/jquery-3.6.2.slim.js"></script>
+<script src="{{urlpath}}/vw_static/jquery-3.6.3.slim.js"></script>
 <script src="{{urlpath}}/vw_static/datatables.js"></script>
 <script src="{{urlpath}}/vw_static/admin_organizations.js"></script>
 <script src="{{urlpath}}/vw_static/jdenticon.js"></script>
