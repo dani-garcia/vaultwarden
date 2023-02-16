@@ -2,7 +2,7 @@ use num_traits::FromPrimitive;
 use serde_json::Value;
 use std::cmp::Ordering;
 
-use super::{CollectionUser, GroupUser, OrgPolicy, OrgPolicyType, TwoFactor, User};
+use super::{CollectionUser, Group, GroupUser, OrgPolicy, OrgPolicyType, TwoFactor, User};
 use crate::CONFIG;
 
 db_object! {
@@ -267,6 +267,7 @@ impl Organization {
         Collection::delete_all_by_organization(&self.uuid, conn).await?;
         UserOrganization::delete_all_by_organization(&self.uuid, conn).await?;
         OrgPolicy::delete_all_by_organization(&self.uuid, conn).await?;
+        Group::delete_all_by_organization(&self.uuid, conn).await?;
 
         db_run! { conn: {
             diesel::delete(organizations::table.filter(organizations::uuid.eq(self.uuid)))
