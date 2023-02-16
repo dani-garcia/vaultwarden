@@ -52,6 +52,10 @@ async fn login(data: Form<ConnectData>, client_header: ClientHeaders, mut conn: 
             _check_is_some(&data.client_secret, "client_secret cannot be blank")?;
             _check_is_some(&data.scope, "scope cannot be blank")?;
 
+            _check_is_some(&data.device_identifier, "device_identifier cannot be blank")?;
+            _check_is_some(&data.device_name, "device_name cannot be blank")?;
+            _check_is_some(&data.device_type, "device_type cannot be blank")?;
+
             _api_key_login(data, &mut user_uuid, &mut conn, &ip).await
         }
         t => err!("Invalid type", t),
