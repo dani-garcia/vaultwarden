@@ -64,6 +64,8 @@ impl Collection {
                 Some(_) => {
                     if let Some(uc) = cipher_sync_data.user_collections.get(&self.uuid) {
                         (uc.read_only, uc.hide_passwords)
+                    } else if let Some(cg) = cipher_sync_data.user_collections_groups.get(&self.uuid) {
+                        (cg.read_only, cg.hide_passwords)
                     } else {
                         (false, false)
                     }
