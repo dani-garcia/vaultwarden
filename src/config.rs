@@ -581,6 +581,9 @@ make_config! {
         /// Max burst size for admin login requests |> Allow a burst of requests of up to this size, while maintaining the average indicated by `admin_ratelimit_seconds`
         admin_ratelimit_max_burst:     u32, false, def, 3;
 
+        /// Admin cookie lifetime |> Set the lifetime of the cookie that is used to authorize admin requests to this value (in minutes).
+        admin_cookie_lifetime:  i64,    true,   def,    20;
+
         /// Enable groups (BETA!) (Know the risks!) |> Enables groups support for organizations (Currently contains known issues!).
         org_groups_enabled:     bool,   false,  def,    false;
     },
