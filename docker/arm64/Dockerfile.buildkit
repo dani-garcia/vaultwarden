@@ -27,7 +27,7 @@
 FROM vaultwarden/web-vault@sha256:d5f71fb05c4b87935bf51d84140db0f8716cabfe2974fbee6c0c5ee8cf7dab5a as vault
 
 ########################## BUILD IMAGE  ##########################
-FROM rust:1.66-bullseye as build
+FROM rust:1.67-bullseye as build
 
 # Build time options to avoid dpkg warnings and help with reproducible builds.
 ENV DEBIAN_FRONTEND=noninteractive \

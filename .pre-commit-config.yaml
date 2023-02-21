@@ -1,16 +1,20 @@
 ---
 repos:
 -   repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.3.0
+    rev: v4.4.0
     hooks:
     - id: check-yaml
     - id: check-json
     - id: check-toml
+    - id: mixed-line-ending
+      args: ["--fix=no"]
     - id: end-of-file-fixer
       exclude: "(.*js$|.*css$)"
     - id: check-case-conflict
     - id: check-merge-conflict
     - id: detect-private-key
+    - id: check-symlinks
+    - id: forbid-submodules
 -   repo: local
     hooks:
     - id: fmt
@@ -36,5 +40,5 @@ repos:
       language: system
       args: ["--features", "sqlite,mysql,postgresql,enable_mimalloc", "--", "-D", "warnings"]
       types_or: [rust, file]
-      files: (Cargo.toml|Cargo.lock|rust-toolchain|.*\.rs$)
+      files: (Cargo.toml|Cargo.lock|rust-toolchain|clippy.toml|.*\.rs$)
       pass_filenames: false
