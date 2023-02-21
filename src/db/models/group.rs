@@ -151,6 +151,13 @@ impl Group {
         }
     }
 
+    pub async fn delete_all_by_organization(org_uuid: &str, conn: &mut DbConn) -> EmptyResult {
+        for group in Self::find_by_organization(org_uuid, conn).await {
+            group.delete(conn).await?;
+        }
+        Ok(())
+    }
+
     pub async fn find_by_organization(organizations_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             groups::table
