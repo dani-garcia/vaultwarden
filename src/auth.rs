@@ -241,7 +241,7 @@ pub fn generate_admin_claims() -> BasicJwtClaims {
     let time_now = Utc::now().naive_utc();
     BasicJwtClaims {
         nbf: time_now.timestamp(),
-        exp: (time_now + Duration::minutes(20)).timestamp(),
+        exp: (time_now + Duration::minutes(CONFIG.admin_session_lifetime())).timestamp(),
         iss: JWT_ADMIN_ISSUER.to_string(),
         sub: "admin_panel".to_string(),
     }

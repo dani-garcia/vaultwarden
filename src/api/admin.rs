@@ -183,7 +183,7 @@ fn post_admin_login(data: Form<LoginForm>, cookies: &CookieJar<'_>, ip: ClientIp
 
         let cookie = Cookie::build(COOKIE_NAME, jwt)
             .path(admin_path())
-            .max_age(rocket::time::Duration::minutes(20))
+            .max_age(rocket::time::Duration::minutes(CONFIG.admin_session_lifetime()))
             .same_site(SameSite::Strict)
             .http_only(true)
             .finish();
