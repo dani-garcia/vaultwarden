@@ -371,7 +371,7 @@ make_config! {
     },
     ws {
         /// Enable websocket notifications
-        websocket_enabled:      bool,   false,  def,    false;
+        websocket_enabled:      bool,   false,  def,    true;
         /// Websocket address
         websocket_address:      String, false,  def,    "0.0.0.0".to_string();
         /// Websocket port
