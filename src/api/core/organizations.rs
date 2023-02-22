@@ -2056,11 +2056,13 @@ async fn _restore_organization_user(
 
 #[get("/organizations/<org_id>/groups")]
 async fn get_groups(org_id: String, _headers: ManagerHeadersLoose, mut conn: DbConn) -> JsonResult {
-    if !CONFIG.org_groups_enabled() {
-        err!("Group support is disabled");
-    }
-
-    let groups = Group::find_by_organization(&org_id, &mut conn).await.iter().map(Group::to_json).collect::<Value>();
+    let groups = if CONFIG.org_groups_enabled() {
+        Group::find_by_organization(&org_id, &mut conn).await.iter().map(Group::to_json).collect::<Value>()
+    } else {
+        // The Bitwarden clients seem to call this API regardless of whether groups are enabled,
+        // so just act as if there are no groups.
+        Value::Array(Vec::new())
+    };
 
     Ok(Json(json!({
         "Data": groups,
