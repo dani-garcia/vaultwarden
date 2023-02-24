@@ -32,10 +32,13 @@ function remove2fa(event) {
         alert("Required parameters not found!");
         return false;
     }
-    _post(`${BASE_URL}/admin/users/${id}/remove-2fa`,
-        "2FA removed correctly",
-        "Error removing 2FA"
-    );
+    const confirmed = confirm(`Are you sure you want to remove 2FA for "${email}"?`);
+    if (confirmed) {
+        _post(`${BASE_URL}/admin/users/${id}/remove-2fa`,
+            "2FA removed correctly",
+            "Error removing 2FA"
+        );
+    }
 }
 
 function deauthUser(event) {
@@ -46,10 +49,13 @@ function deauthUser(event) {
         alert("Required parameters not found!");
         return false;
     }
-    _post(`${BASE_URL}/admin/users/${id}/deauth`,
-        "Sessions deauthorized correctly",
-        "Error deauthorizing sessions"
-    );
+    const confirmed = confirm(`Are you sure you want to deauthorize sessions for "${email}"?`);
+    if (confirmed) {
+        _post(`${BASE_URL}/admin/users/${id}/deauth`,
+            "Sessions deauthorized correctly",
+            "Error deauthorizing sessions"
+        );
+    }
 }
 
 function disableUser(event) {
