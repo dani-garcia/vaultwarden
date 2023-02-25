@@ -2078,6 +2078,7 @@ struct GroupRequest {
     AccessAll: Option<bool>,
     ExternalId: Option<String>,
     Collections: Vec<SelectionReadOnly>,
+    Users: Vec<String>,
 }
 
 impl GroupRequest {
@@ -2204,6 +2205,23 @@ async fn put_group(
     let updated_group = group_request.update_group(group)?;
 
     CollectionGroup::delete_all_by_group(&group_id, &mut conn).await?;
+    GroupUser::delete_all_by_group(&group_id, &mut conn).await?;
+
+    for assigned_user_id in group_request.Users {
+        let mut user_entry = GroupUser::new(group_id.clone(), assigned_user_id.clone());
+        user_entry.save(&mut conn).await?;
+
+        log_event(
+            EventType::OrganizationUserUpdatedGroups as i32,
+            &assigned_user_id,
+            org_id.clone(),
+            headers.user.uuid.clone(),
+            headers.device.atype,
+            &ip.ip,
+            &mut conn,
+        )
+        .await;
+    }
 
     log_event(
         EventType::GroupUpdated as i32,
