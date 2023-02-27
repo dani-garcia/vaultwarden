@@ -56,7 +56,9 @@ pub fn routes() -> Vec<Route> {
         put_cipher_share,
         put_cipher_share_selected,
         post_cipher,
+        post_cipher_partial,
         put_cipher,
+        put_cipher_partial,
         delete_cipher_post,
         delete_cipher_post_admin,
         delete_cipher_put,
@@ -109,7 +111,10 @@ async fn sync(data: SyncData, headers: Headers, mut conn: DbConn) -> Json<Value>
     // Lets generate the ciphers_json using all the gathered info
     let mut ciphers_json = Vec::with_capacity(ciphers.len());
     for c in ciphers {
-        ciphers_json.push(c.to_json(&headers.host, &headers.user.uuid, Some(&cipher_sync_data), &mut conn).await);
+        ciphers_json.push(
+            c.to_json(&headers.host, &headers.user.uuid, Some(&cipher_sync_data), CipherSyncType::User, &mut conn)
+                .await,
+        );
     }
 
     let collections = Collection::find_by_user_uuid(headers.user.uuid.clone(), &mut conn).await;
@@ -153,7 +158,10 @@ async fn get_ciphers(headers: Headers, mut conn: DbConn) -> Json<Value> {
 
     let mut ciphers_json = Vec::with_capacity(ciphers.len());
     for c in ciphers {
-        ciphers_json.push(c.to_json(&headers.host, &headers.user.uuid, Some(&cipher_sync_data), &mut conn).await);
+        ciphers_json.push(
+            c.to_json(&headers.host, &headers.user.uuid, Some(&cipher_sync_data), CipherSyncType::User, &mut conn)
+                .await,
+        );
     }
 
     Json(json!({
@@ -174,7 +182,7 @@ async fn get_cipher(uuid: String, headers: Headers, mut conn: DbConn) -> JsonRes
         err!("Cipher is not owned by user")
     }
 
-    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, &mut conn).await))
+    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, &mut conn).await))
 }
 
 #[get("/ciphers/<uuid>/admin")]
@@ -233,6 +241,13 @@ pub struct CipherData {
     // when using older client versions, or if the operation doesn't involve
     // updating an existing cipher.
     LastKnownRevisionDate: Option<String>,
+}
+
+#[derive(Deserialize, Debug)]
+#[allow(non_snake_case)]
+pub struct PartialCipherData {
+    FolderId: Option<String>,
+    Favorite: bool,
 }
 
 #[derive(Deserialize, Debug)]
@@ -314,7 +329,7 @@ async fn post_ciphers(
     update_cipher_from_data(&mut cipher, data, &headers, false, &mut conn, &ip, &nt, UpdateType::SyncCipherCreate)
         .await?;
 
-    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, &mut conn).await))
+    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, &mut conn).await))
 }
 
 /// Enforces the personal ownership policy on user-owned ciphers, if applicable.
@@ -646,7 +661,51 @@ async fn put_cipher(
     update_cipher_from_data(&mut cipher, data, &headers, false, &mut conn, &ip, &nt, UpdateType::SyncCipherUpdate)
         .await?;
 
-    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, &mut conn).await))
+    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, &mut conn).await))
+}
+
+#[post("/ciphers/<uuid>/partial", data = "<data>")]
+async fn post_cipher_partial(
+    uuid: String,
+    data: JsonUpcase<PartialCipherData>,
+    headers: Headers,
+    conn: DbConn,
+) -> JsonResult {
+    put_cipher_partial(uuid, data, headers, conn).await
+}
+
+// Only update the folder and favorite for the user, since this cipher is read-only
+#[put("/ciphers/<uuid>/partial", data = "<data>")]
+async fn put_cipher_partial(
+    uuid: String,
+    data: JsonUpcase<PartialCipherData>,
+    headers: Headers,
+    mut conn: DbConn,
+) -> JsonResult {
+    let data: PartialCipherData = data.into_inner().data;
+
+    let cipher = match Cipher::find_by_uuid(&uuid, &mut conn).await {
+        Some(cipher) => cipher,
+        None => err!("Cipher doesn't exist"),
+    };
+
+    if let Some(ref folder_id) = data.FolderId {
+        match Folder::find_by_uuid(folder_id, &mut conn).await {
+            Some(folder) => {
+                if folder.user_uuid != headers.user.uuid {
+                    err!("Folder is not owned by user")
+                }
+            }
+            None => err!("Folder doesn't exist"),
+        }
+    }
+
+    // Move cipher
+    cipher.move_to_folder(data.FolderId.clone(), &headers.user.uuid, &mut conn).await?;
+    // Update favorite
+    cipher.set_favorite(Some(data.Favorite), &headers.user.uuid, &mut conn).await?;
+
+    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, &mut conn).await))
 }
 
 #[derive(Deserialize)]
@@ -873,7 +932,7 @@ async fn share_cipher_by_uuid(
 
     update_cipher_from_data(&mut cipher, data.Cipher, headers, shared_to_collection, conn, ip, nt, ut).await?;
 
-    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, conn).await))
+    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, conn).await))
 }
 
 /// v2 API for downloading an attachment. This just redirects the client to
@@ -942,7 +1001,7 @@ async fn post_attachment_v2(
         "AttachmentId": attachment_id,
         "Url": url,
         "FileUploadType": FileUploadType::Direct as i32,
-        response_key: cipher.to_json(&headers.host, &headers.user.uuid, None, &mut conn).await,
+        response_key: cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, &mut conn).await,
     })))
 }
 
@@ -1135,7 +1194,7 @@ async fn post_attachment(
 
     let (cipher, mut conn) = save_attachment(attachment, uuid, data, &headers, conn, ip, nt).await?;
 
-    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, &mut conn).await))
+    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, &mut conn).await))
 }
 
 #[post("/ciphers/<uuid>/attachment-admin", format = "multipart/form-data", data = "<data>")]
@@ -1616,7 +1675,7 @@ async fn _restore_cipher_by_uuid(
         .await;
     }
 
-    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, conn).await))
+    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, conn).await))
 }
 
 async fn _restore_multiple_ciphers(
@@ -1716,6 +1775,7 @@ pub struct CipherSyncData {
     pub user_group_full_access_for_organizations: HashSet<String>,
 }
 
+#[derive(Eq, PartialEq)]
 pub enum CipherSyncType {
     User,
     Organization,

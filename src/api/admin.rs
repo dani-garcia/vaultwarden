@@ -627,7 +627,7 @@ async fn diagnostics(_token: AdminToken, ip_header: IpHeader, mut conn: DbConn) 
         "latest_release": latest_release,
         "latest_commit": latest_commit,
         "web_vault_enabled": &CONFIG.web_vault_enabled(),
-        "web_vault_version": web_vault_version.version,
+        "web_vault_version": web_vault_version.version.trim_start_matches('v'),
         "latest_web_build": latest_web_build,
         "running_within_docker": running_within_docker,
         "docker_base_image": if running_within_docker { docker_base_image() } else { "Not applicable" },

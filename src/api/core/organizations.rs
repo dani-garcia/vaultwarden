@@ -118,12 +118,13 @@ struct OrganizationUpdateData {
 #[allow(non_snake_case)]
 struct NewCollectionData {
     Name: String,
-    Groups: Vec<NewCollectionGroupData>,
+    Groups: Vec<NewCollectionObjectData>,
+    Users: Vec<NewCollectionObjectData>,
 }
 
 #[derive(Deserialize)]
 #[allow(non_snake_case)]
-struct NewCollectionGroupData {
+struct NewCollectionObjectData {
     HidePasswords: bool,
     Id: String,
     ReadOnly: bool,
@@ -311,29 +312,62 @@ async fn get_org_collections(org_id: String, _headers: ManagerHeadersLoose, mut 
 }
 
 #[get("/organizations/<org_id>/collections/details")]
-async fn get_org_collections_details(org_id: String, _headers: ManagerHeadersLoose, mut conn: DbConn) -> Json<Value> {
+async fn get_org_collections_details(org_id: String, headers: ManagerHeadersLoose, mut conn: DbConn) -> JsonResult {
     let mut data = Vec::new();
 
+    let user_org = match UserOrganization::find_by_user_and_org(&headers.user.uuid, &org_id, &mut conn).await {
+        Some(u) => u,
+        None => err!("User is not part of organization"),
+    };
+
+    let coll_users = CollectionUser::find_by_organization(&org_id, &mut conn).await;
+
     for col in Collection::find_by_organization(&org_id, &mut conn).await {
-        let groups: Vec<Value> = CollectionGroup::find_by_collection(&col.uuid, &mut conn)
-            .await
+        let groups: Vec<Value> = if CONFIG.org_groups_enabled() {
+            CollectionGroup::find_by_collection(&col.uuid, &mut conn)
+                .await
+                .iter()
+                .map(|collection_group| {
+                    SelectionReadOnly::to_collection_group_details_read_only(collection_group).to_json()
+                })
+                .collect()
+        } else {
+            // The Bitwarden clients seem to call this API regardless of whether groups are enabled,
+            // so just act as if there are no groups.
+            Vec::with_capacity(0)
+        };
+
+        let mut assigned = false;
+        let users: Vec<Value> = coll_users
             .iter()
-            .map(|collection_group| {
-                SelectionReadOnly::to_collection_group_details_read_only(collection_group).to_json()
+            .filter(|collection_user| collection_user.collection_uuid == col.uuid)
+            .map(|collection_user| {
+                // Remember `user_uuid` is swapped here with the `user_org.uuid` with a join during the `CollectionUser::find_by_organization` call.
+                // We check here if the current user is assigned to this collection or not.
+                if collection_user.user_uuid == user_org.uuid {
+                    assigned = true;
+                }
+                SelectionReadOnly::to_collection_user_details_read_only(collection_user).to_json()
             })
             .collect();
 
+        if user_org.access_all {
+            assigned = true;
+        }
+
         let mut json_object = col.to_json();
+        json_object["Assigned"] = json!(assigned);
+        json_object["Users"] = json!(users);
         json_object["Groups"] = json!(groups);
-        json_object["Object"] = json!("collectionGroupDetails");
+        json_object["Object"] = json!("collectionAccessDetails");
         data.push(json_object)
     }
 
-    Json(json!({
+    Ok(Json(json!({
         "Data": data,
         "Object": "list",
         "ContinuationToken": null,
-    }))
+    })))
 }
 
 async fn _get_org_collections(org_id: &str, conn: &mut DbConn) -> Value {
@@ -353,12 +387,6 @@ async fn post_organization_collections(
     let org = match Organization::find_by_uuid(&org_id, &mut conn).await {
         Some(organization) => organization,
         None => err!("Can't find organization details"),
-    };
-
-    // Get the user_organization record so that we can check if the user has access to all collections.
-    let user_org = match UserOrganization::find_by_user_and_org(&headers.user.uuid, &org_id, &mut conn).await {
-        Some(u) => u,
-        None => err!("User is not part of organization"),
     };
 
     let collection = Collection::new(org.uuid, data.Name);
@@ -381,11 +409,18 @@ async fn post_organization_collections(
             .await?;
     }
 
-    // If the user doesn't have access to all collections, only in case of a Manger,
-    // then we need to save the creating user uuid (Manager) to the users_collection table.
-    // Else the user will not have access to his own created collection.
-    if !user_org.access_all {
-        CollectionUser::save(&headers.user.uuid, &collection.uuid, false, false, &mut conn).await?;
+    for user in data.Users {
+        let org_user = match UserOrganization::find_by_uuid(&user.Id, &mut conn).await {
+            Some(u) => u,
+            None => err!("User is not part of organization"),
+        };
+
+        if org_user.access_all {
+            continue;
+        }
+
+        CollectionUser::save(&org_user.user_uuid, &collection.uuid, user.ReadOnly, user.HidePasswords, &mut conn)
+            .await?;
     }
 
     Ok(Json(collection.to_json()))
@@ -446,6 +481,21 @@ async fn post_organization_collection_update(
 
     for group in data.Groups {
         CollectionGroup::new(col_id.clone(), group.Id, group.ReadOnly, group.HidePasswords).save(&mut conn).await?;
+    }
+
+    CollectionUser::delete_all_by_collection(&col_id, &mut conn).await?;
+
+    for user in data.Users {
+        let org_user = match UserOrganization::find_by_uuid(&user.Id, &mut conn).await {
+            Some(u) => u,
+            None => err!("User is not part of organization"),
+        };
+
+        if org_user.access_all {
+            continue;
+        }
+
+        CollectionUser::save(&org_user.user_uuid, &col_id, user.ReadOnly, user.HidePasswords, &mut conn).await?;
     }
 
     Ok(Json(collection.to_json()))
@@ -555,17 +605,49 @@ async fn get_org_collection_detail(
                 err!("Collection is not owned by organization")
             }
 
-            let groups: Vec<Value> = CollectionGroup::find_by_collection(&collection.uuid, &mut conn)
-                .await
-                .iter()
-                .map(|collection_group| {
-                    SelectionReadOnly::to_collection_group_details_read_only(collection_group).to_json()
-                })
-                .collect();
+            let user_org = match UserOrganization::find_by_user_and_org(&headers.user.uuid, &org_id, &mut conn).await {
+                Some(u) => u,
+                None => err!("User is not part of organization"),
+            };
+
+            let groups: Vec<Value> = if CONFIG.org_groups_enabled() {
+                CollectionGroup::find_by_collection(&collection.uuid, &mut conn)
+                    .await
+                    .iter()
+                    .map(|collection_group| {
+                        SelectionReadOnly::to_collection_group_details_read_only(collection_group).to_json()
+                    })
+                    .collect()
+            } else {
+                // The Bitwarden clients seem to call this API regardless of whether groups are enabled,
+                // so just act as if there are no groups.
+                Vec::with_capacity(0)
+            };
+
+            let mut assigned = false;
+            let users: Vec<Value> =
+                CollectionUser::find_by_collection_swap_user_uuid_with_org_user_uuid(&collection.uuid, &mut conn)
+                    .await
+                    .iter()
+                    .map(|collection_user| {
+                        // Remember `user_uuid` is swapped here with the `user_org.uuid` with a join during the `find_by_collection_swap_user_uuid_with_org_user_uuid` call.
+                        // We check here if the current user is assigned to this collection or not.
+                        if collection_user.user_uuid == user_org.uuid {
+                            assigned = true;
+                        }
+                        SelectionReadOnly::to_collection_user_details_read_only(collection_user).to_json()
+                    })
+                    .collect();
+
+            if user_org.access_all {
+                assigned = true;
+            }
 
             let mut json_object = collection.to_json();
+            json_object["Assigned"] = json!(assigned);
+            json_object["Users"] = json!(users);
             json_object["Groups"] = json!(groups);
-            json_object["Object"] = json!("collectionGroupDetails");
+            json_object["Object"] = json!("collectionAccessDetails");
 
             Ok(Json(json_object))
         }
@@ -652,16 +734,39 @@ async fn _get_org_details(org_id: &str, host: &str, user_uuid: &str, conn: &mut 
 
     let mut ciphers_json = Vec::with_capacity(ciphers.len());
     for c in ciphers {
-        ciphers_json.push(c.to_json(host, user_uuid, Some(&cipher_sync_data), conn).await);
+        ciphers_json
+            .push(c.to_json(host, user_uuid, Some(&cipher_sync_data), CipherSyncType::Organization, conn).await);
     }
     json!(ciphers_json)
 }
 
-#[get("/organizations/<org_id>/users")]
-async fn get_org_users(org_id: String, _headers: ManagerHeadersLoose, mut conn: DbConn) -> Json<Value> {
+#[derive(FromForm)]
+struct GetOrgUserData {
+    #[field(name = "includeCollections")]
+    include_collections: Option<bool>,
+    #[field(name = "includeGroups")]
+    include_groups: Option<bool>,
+}
+
+// includeCollections
+// includeGroups
+#[get("/organizations/<org_id>/users?<data..>")]
+async fn get_org_users(
+    data: GetOrgUserData,
+    org_id: String,
+    _headers: ManagerHeadersLoose,
+    mut conn: DbConn,
+) -> Json<Value> {
     let mut users_json = Vec::new();
     for u in UserOrganization::find_by_org(&org_id, &mut conn).await {
-        users_json.push(u.to_json_user_details(&mut conn).await);
+        users_json.push(
+            u.to_json_user_details(
+                data.include_collections.unwrap_or(false),
+                data.include_groups.unwrap_or(false),
+                &mut conn,
+            )
+            .await,
+        );
     }
 
     Json(json!({
@@ -2056,12 +2161,18 @@ async fn _restore_organization_user(
 
 #[get("/organizations/<org_id>/groups")]
 async fn get_groups(org_id: String, _headers: ManagerHeadersLoose, mut conn: DbConn) -> JsonResult {
-    let groups = if CONFIG.org_groups_enabled() {
-        Group::find_by_organization(&org_id, &mut conn).await.iter().map(Group::to_json).collect::<Value>()
+    let groups: Vec<Value> = if CONFIG.org_groups_enabled() {
+        // Group::find_by_organization(&org_id, &mut conn).await.iter().map(Group::to_json).collect::<Value>()
+        let groups = Group::find_by_organization(&org_id, &mut conn).await;
+        let mut groups_json = Vec::with_capacity(groups.len());
+        for g in groups {
+            groups_json.push(g.to_json_details(&mut conn).await)
+        }
+        groups_json
     } else {
         // The Bitwarden clients seem to call this API regardless of whether groups are enabled,
         // so just act as if there are no groups.
-        Value::Array(Vec::new())
+        Vec::with_capacity(0)
     };
 
     Ok(Json(json!({
@@ -2078,6 +2189,7 @@ struct GroupRequest {
     AccessAll: Option<bool>,
     ExternalId: Option<String>,
     Collections: Vec<SelectionReadOnly>,
+    Users: Vec<String>,
 }
 
 impl GroupRequest {
@@ -2120,19 +2232,19 @@ impl SelectionReadOnly {
         CollectionGroup::new(self.Id.clone(), groups_uuid, self.ReadOnly, self.HidePasswords)
     }
 
-    pub fn to_group_details_read_only(collection_group: &CollectionGroup) -> SelectionReadOnly {
-        SelectionReadOnly {
-            Id: collection_group.collections_uuid.clone(),
-            ReadOnly: collection_group.read_only,
-            HidePasswords: collection_group.hide_passwords,
-        }
-    }
-
     pub fn to_collection_group_details_read_only(collection_group: &CollectionGroup) -> SelectionReadOnly {
         SelectionReadOnly {
             Id: collection_group.groups_uuid.clone(),
             ReadOnly: collection_group.read_only,
             HidePasswords: collection_group.hide_passwords,
+        }
+    }
+
+    pub fn to_collection_user_details_read_only(collection_user: &CollectionUser) -> SelectionReadOnly {
+        SelectionReadOnly {
+            Id: collection_user.user_uuid.clone(),
+            ReadOnly: collection_user.read_only,
+            HidePasswords: collection_user.hide_passwords,
         }
     }
 
@@ -2171,7 +2283,7 @@ async fn post_groups(
     log_event(
         EventType::GroupCreated as i32,
         &group.uuid,
-        org_id,
+        org_id.clone(),
         headers.user.uuid.clone(),
         headers.device.atype,
         &ip.ip,
@@ -2179,7 +2291,7 @@ async fn post_groups(
     )
     .await;
 
-    add_update_group(group, group_request.Collections, &mut conn).await
+    add_update_group(group, group_request.Collections, group_request.Users, &org_id, &headers, &ip, &mut conn).await
 }
 
 #[put("/organizations/<org_id>/groups/<group_id>", data = "<data>")]
@@ -2204,11 +2316,12 @@ async fn put_group(
     let updated_group = group_request.update_group(group)?;
 
     CollectionGroup::delete_all_by_group(&group_id, &mut conn).await?;
+    GroupUser::delete_all_by_group(&group_id, &mut conn).await?;
 
     log_event(
         EventType::GroupUpdated as i32,
         &updated_group.uuid,
-        org_id,
+        org_id.clone(),
         headers.user.uuid.clone(),
         headers.device.atype,
         &ip.ip,
@@ -2216,16 +2329,40 @@ async fn put_group(
     )
     .await;
 
-    add_update_group(updated_group, group_request.Collections, &mut conn).await
+    add_update_group(updated_group, group_request.Collections, group_request.Users, &org_id, &headers, &ip, &mut conn)
+        .await
 }
 
-async fn add_update_group(mut group: Group, collections: Vec<SelectionReadOnly>, conn: &mut DbConn) -> JsonResult {
+async fn add_update_group(
+    mut group: Group,
+    collections: Vec<SelectionReadOnly>,
+    users: Vec<String>,
+    org_id: &str,
+    headers: &AdminHeaders,
+    ip: &ClientIp,
+    conn: &mut DbConn,
+) -> JsonResult {
     group.save(conn).await?;
 
     for selection_read_only_request in collections {
         let mut collection_group = selection_read_only_request.to_collection_group(group.uuid.clone());
-
         collection_group.save(conn).await?;
+    }
+
+    for assigned_user_id in users {
+        let mut user_entry = GroupUser::new(group.uuid.clone(), assigned_user_id.clone());
+        user_entry.save(conn).await?;
+
+        log_event(
+            EventType::OrganizationUserUpdatedGroups as i32,
+            &assigned_user_id,
+            String::from(org_id),
+            headers.user.uuid.clone(),
+            headers.device.atype,
+            &ip.ip,
+            conn,
+        )
+        .await;
     }
 
     Ok(Json(json!({
@@ -2248,20 +2385,7 @@ async fn get_group_details(_org_id: String, group_id: String, _headers: AdminHea
         _ => err!("Group could not be found!"),
     };
 
-    let collections_groups = CollectionGroup::find_by_group(&group_id, &mut conn)
-        .await
-        .iter()
-        .map(|entry| SelectionReadOnly::to_group_details_read_only(entry).to_json())
-        .collect::<Value>();
-
-    Ok(Json(json!({
-        "Id": group.uuid,
-        "OrganizationId": group.organizations_uuid,
-        "Name": group.name,
-        "AccessAll": group.access_all,
-        "ExternalId": group.get_external_id(),
-        "Collections": collections_groups
-    })))
+    Ok(Json(group.to_json_details(&mut conn).await))
 }
 
 #[post("/organizations/<org_id>/groups/<group_id>/delete")]

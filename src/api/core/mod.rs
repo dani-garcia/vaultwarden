@@ -237,6 +237,7 @@ fn config() -> Json<Value> {
           "notifications": format!("{domain}/notifications"),
           "sso": "",
         },
+        "object": "config",
     }))
 }
 
