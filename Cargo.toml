@@ -157,8 +157,19 @@ semver = "1.0.16"
 mimalloc = { version = "0.1.34", features = ["secure"], default-features = false, optional = true }
 which = "4.4.0"
 
+# Argon2 library with support for the PHC format
+argon2 = "0.5.0-pre.0"
+
+# Reading a password from the cli for generating the Argon2id ADMIN_TOKEN
+rpassword = "7.2"
+
 # Strip debuginfo from the release builds
 # Also enable thin LTO for some optimizations
 [profile.release]
 strip = "debuginfo"
 lto = "thin"
+
+# Always build argon2 using opt-level 3
+# This is a huge speed improvement during testing
+[profile.dev.package.argon2]
+opt-level = 3

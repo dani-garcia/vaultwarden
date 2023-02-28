@@ -118,14 +118,22 @@ async fn main() -> Result<(), Error> {
 }
 
 const HELP: &str = "\
-        Alternative implementation of the Bitwarden server API written in Rust
+Alternative implementation of the Bitwarden server API written in Rust
 
-        USAGE:
-            vaultwarden
+USAGE:
+    vaultwarden [FLAGS|COMMAND]
 
-        FLAGS:
-            -h, --help       Prints help information
-            -v, --version    Prints the app version
+FLAGS:
+    -h, --help       Prints help information
+    -v, --version    Prints the app version
+
+COMMAND:
+    hash [--preset {bitwarden|owasp}]  Generate an Argon2id PHC ADMIN_TOKEN
+
+PRESETS:                  m=         t=          p=
+    bitwarden (default) 64MiB, 3 Iterations, 4 Threads
+    owasp               19MiB, 2 Iterations, 1 Thread
+
 ";
 
 pub const VERSION: Option<&str> = option_env!("VW_VERSION");
@@ -142,24 +150,88 @@ fn parse_args() {
         println!("vaultwarden {version}");
         exit(0);
     }
-}
 
+    if let Some(command) = pargs.subcommand().unwrap_or_default() {
+        if command == "hash" {
+            use argon2::{
+                password_hash::SaltString, Algorithm::Argon2id, Argon2, ParamsBuilder, PasswordHasher, Version::V0x13,
+            };
+
+            let mut argon2_params = ParamsBuilder::new();
+            let preset: Option<String> = pargs.opt_value_from_str(["-p", "--preset"]).unwrap_or_default();
+            let selected_preset;
+            match preset.as_deref() {
+                Some("owasp") => {
+                    selected_preset = "owasp";
+                    argon2_params.m_cost(19456);
+                    argon2_params.t_cost(2);
+                    argon2_params.p_cost(1);
+                }
+                _ => {
+                    // Bitwarden preset is the default
+                    selected_preset = "bitwarden";
+                    argon2_params.m_cost(65540);
+                    argon2_params.t_cost(3);
+                    argon2_params.p_cost(4);
+                }
+            }
+
+            println!("Generate an Argon2id PHC string using the '{selected_preset}' preset:\n");
+
+            let password = rpassword::prompt_password("Password: ").unwrap();
+            if password.len() < 8 {
+                println!("\nPassword must contain at least 8 characters");
+                exit(1);
+            }
+
+            let password_verify = rpassword::prompt_password("Confirm Password: ").unwrap();
+            if password != password_verify {
+                println!("\nPasswords do not match");
+                exit(1);
+            }
+
+            let argon2 = Argon2::new(Argon2id, V0x13, argon2_params.build().unwrap());
+            let salt = SaltString::b64_encode(&crate::crypto::get_random_bytes::<32>()).unwrap();
+
+            let argon2_timer = tokio::time::Instant::now();
+            if let Ok(password_hash) = argon2.hash_password(password.as_bytes(), &salt) {
+                println!(
+                    "\n\
+                    ADMIN_TOKEN='{password_hash}'\n\n\
+                    Generation of the Argon2id PHC string took: {:?}",
+                    argon2_timer.elapsed()
+                );
+            } else {
+                error!("Unable to generate Argon2id PHC hash.");
+                exit(1);
+            }
+        }
+        exit(0);
+    }
+}
 fn launch_info() {
-    println!("/--------------------------------------------------------------------\\");
-    println!("|                        Starting Vaultwarden                        |");
+    println!(
+        "\
+        /--------------------------------------------------------------------\\\n\
+        |                        Starting Vaultwarden                        |"
+    );
 
     if let Some(version) = VERSION {
         println!("|{:^68}|", format!("Version {version}"));
     }
 
-    println!("|--------------------------------------------------------------------|");
-    println!("| This is an *unofficial* Bitwarden implementation, DO NOT use the   |");
-    println!("| official channels to report bugs/features, regardless of client.   |");
-    println!("| Send usage/configuration questions or feature requests to:         |");
-    println!("|   https://vaultwarden.discourse.group/                             |");
-    println!("| Report suspected bugs/issues in the software itself at:            |");
-    println!("|   https://github.com/dani-garcia/vaultwarden/issues/new            |");
-    println!("\\--------------------------------------------------------------------/\n");
+    println!(
+        "\
+        |--------------------------------------------------------------------|\n\
+        | This is an *unofficial* Bitwarden implementation, DO NOT use the   |\n\
+        | official channels to report bugs/features, regardless of client.   |\n\
+        | Send usage/configuration questions or feature requests to:         |\n\
+        |   https://github.com/dani-garcia/vaultwarden/discussions or        |\n\
+        |   https://vaultwarden.discourse.group/                             |\n\
+        | Report suspected bugs/issues in the software itself at:            |\n\
+        |   https://github.com/dani-garcia/vaultwarden/issues/new            |\n\
+        \\--------------------------------------------------------------------/\n"
+    );
 }
 
 fn init_logging(level: log::LevelFilter) -> Result<(), fern::InitError> {

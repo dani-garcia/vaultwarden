@@ -19,7 +19,7 @@ static CONFIG_FILE: Lazy<String> = Lazy::new(|| {
 
 pub static CONFIG: Lazy<Config> = Lazy::new(|| {
     Config::load().unwrap_or_else(|e| {
-        println!("Error loading config:\n\t{e:?}\n");
+        println!("Error loading config:\n  {e:?}\n");
         exit(12)
     })
 });
@@ -872,6 +872,23 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         err!("`EVENT_CLEANUP_SCHEDULE` is not a valid cron expression")
     }
 
+    if !cfg.disable_admin_token {
+        match cfg.admin_token.as_ref() {
+            Some(t) if t.starts_with("$argon2") => {
+                if let Err(e) = argon2::password_hash::PasswordHash::new(t) {
+                    err!(format!("The configured Argon2 PHC in `ADMIN_TOKEN` is invalid: '{e}'"))
+                }
+            }
+            Some(_) => {
+                println!(
+                    "[NOTICE] You are using a plain text `ADMIN_TOKEN` which is insecure.\n\
+                Please generate a secure Argon2 PHC string by using `vaultwarden hash` or `argon2`.\n\
+                See: https://github.com/dani-garcia/vaultwarden/wiki/Enabling-admin-page#secure-the-admin_token\n"
+                );
+            }
+            _ => {}
+        }
+    }
     Ok(())
 }
 

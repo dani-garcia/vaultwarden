@@ -1,4 +1,10 @@
 <main class="container-xl">
+    <div id="admin_token_warning" class="alert alert-warning alert-dismissible fade show d-none">
+        <button type="button" class="btn-close" data-bs-target="admin_token_warning" data-bs-dismiss="alert" aria-label="Close"></button>
+        You are using a plain text `ADMIN_TOKEN` which is insecure.<br>
+        Please generate a secure Argon2 PHC string by using `vaultwarden hash` or `argon2`.<br>
+        See: <a href="https://github.com/dani-garcia/vaultwarden/wiki/Enabling-admin-page#secure-the-admin_token" target="_blank" rel="noopener noreferrer">Enabling admin page - Secure the `ADMIN_TOKEN`</a>
+    </div>
     <div id="config-block" class="align-items-center p-3 mb-3 bg-secondary rounded shadow">
         <div>
             <h6 class="text-white mb-3">Configuration</h6>
