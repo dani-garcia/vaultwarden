@@ -590,8 +590,16 @@ async fn view_emergency_access(emer_id: String, headers: Headers, mut conn: DbCo
 
     let mut ciphers_json = Vec::with_capacity(ciphers.len());
     for c in ciphers {
-        ciphers_json
-            .push(c.to_json(&headers.host, &emergency_access.grantor_uuid, Some(&cipher_sync_data), &mut conn).await);
+        ciphers_json.push(
+            c.to_json(
+                &headers.host,
+                &emergency_access.grantor_uuid,
+                Some(&cipher_sync_data),
+                CipherSyncType::User,
+                &mut conn,
+            )
+            .await,
+        );
     }
 
     Ok(Json(json!({
