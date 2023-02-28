@@ -4,20 +4,20 @@
  *
  * To rebuild or modify this file with the latest versions of the included
  * software please visit:
- *   https://datatables.net/download/#bs5/dt-1.13.1
+ *   https://datatables.net/download/#bs5/dt-1.13.2
  *
  * Included libraries:
- *   DataTables 1.13.1
+ *   DataTables 1.13.2
  */
 
-/*! DataTables 1.13.1
- * ©2008-2022 SpryMedia Ltd - datatables.net/license
+/*! DataTables 1.13.2
+ * ©2008-2023 SpryMedia Ltd - datatables.net/license
  */
 
 /**
  * @summary     DataTables
  * @description Paginate, search and order HTML tables
- * @version     1.13.1
+ * @version     1.13.2
  * @author      SpryMedia Ltd
  * @contact     www.datatables.net
  * @copyright   SpryMedia Ltd.
@@ -1382,7 +1382,12 @@
 	
 	
 	var _isNumber = function ( d, decimalPoint, formatted ) {
-		var strType = typeof d === 'string';
+		let type = typeof d;
+		var strType = type === 'string';
+	
+		if ( type === 'number' || type === 'bigint') {
+			return true;
+		}
 	
 		// If empty return immediately so there must be a number if it is a
 		// formatted string (this stops the string "k", or "kr", etc being detected
@@ -6789,8 +6794,15 @@
 	
 		if ( eventName !== null ) {
 			var e = $.Event( eventName+'.dt' );
+			var table = $(settings.nTable);
 	
-			$(settings.nTable).trigger( e, args );
+			table.trigger( e, args );
+	
+			// If not yet attached to the document, trigger the event
+			// on the body directly to sort of simulate the bubble
+			if (table.parents('body').length === 0) {
+				$('body').trigger( e, args );
+			}
 	
 			ret.push( e.result );
 		}
@@ -7256,7 +7268,7 @@
 	
 		pluck: function ( prop )
 		{
-			let fn = DataTable.util.get(prop);
+			var fn = DataTable.util.get(prop);
 	
 			return this.map( function ( el ) {
 				return fn(el);
@@ -8353,10 +8365,9 @@
 	
 	$(document).on('plugin-init.dt', function (e, context) {
 		var api = new _Api( context );
-		
-		const namespace = 'on-plugin-init';
-		const stateSaveParamsEvent = `stateSaveParams.${namespace}`;
-		const destroyEvent = `destroy.${namespace}`;
+		var namespace = 'on-plugin-init';
+		var stateSaveParamsEvent = 'stateSaveParams.' + namespace;
+		var destroyEvent = 'destroy. ' + namespace;
 	
 		api.on( stateSaveParamsEvent, function ( e, settings, d ) {
 			// This could be more compact with the API, but it is a lot faster as a simple
@@ -8375,7 +8386,7 @@
 		});
 	
 		api.on( destroyEvent, function () {
-			api.off(`${stateSaveParamsEvent} ${destroyEvent}`);
+			api.off(stateSaveParamsEvent + ' ' + destroyEvent);
 		});
 	
 		var loaded = api.state.loaded();
@@ -9697,7 +9708,7 @@
 	 *  @type string
 	 *  @default Version number
 	 */
-	DataTable.version = "1.13.1";
+	DataTable.version = "1.13.2";
 	
 	/**
 	 * Private data store, containing all of the settings objects that are
@@ -14121,7 +14132,7 @@
 		 *
 		 *  @type string
 		 */
-		build:"bs5/dt-1.13.1",
+		build:"bs5/dt-1.13.2",
 	
 	
 		/**
@@ -14830,10 +14841,17 @@
 							}
 	
 							if ( btnDisplay !== null ) {
-								node = $('<a>', {
+								var tag = settings.oInit.pagingTag || 'a';
+								var disabled = btnClass.indexOf(disabledClass) !== -1;
+			
+	
+								node = $('<'+tag+'>', {
 										'class': classes.sPageButton+' '+btnClass,
 										'aria-controls': settings.sTableId,
+										'aria-disabled': disabled ? 'true' : null,
 										'aria-label': aria[ button ],
+										'aria-role': 'link',
+										'aria-current': btnClass === classes.sPageButtonActive ? 'page' : null,
 										'data-dt-idx': button,
 										'tabindex': tabIndex,
 										'id': idx === 0 && typeof button === 'string' ?
@@ -14964,6 +14982,12 @@
 	var __numericReplace = function ( d, decimalPlace, re1, re2 ) {
 		if ( d !== 0 && (!d || d === '-') ) {
 			return -Infinity;
+		}
+		
+		let type = typeof d;
+	
+		if (type === 'number' || type === 'bigint') {
+			return d;
 		}
 	
 		// If a decimal place other than `.` is used, it needs to be given to the
@@ -15647,7 +15671,6 @@
 				require('datatables.net')(root, $);
 			}
 
-
 			return factory( $, root, root.document );
 		};
 	}
@@ -15755,6 +15778,8 @@ DataTable.ext.renderer.pageButton.bootstrap = function ( settings, host, idx, bu
 				}
 
 				if ( btnDisplay ) {
+					var disabled = btnClass.indexOf('disabled') !== -1;
+
 					node = $('<li>', {
 							'class': classes.sPageButton+' '+btnClass,
 							'id': idx === 0 && typeof button === 'string' ?
@@ -15762,9 +15787,12 @@ DataTable.ext.renderer.pageButton.bootstrap = function ( settings, host, idx, bu
 								null
 						} )
 						.append( $('<a>', {
-								'href': '#',
+								'href': disabled ? null : '#',
 								'aria-controls': settings.sTableId,
+								'aria-disabled': disabled ? 'true' : null,
 								'aria-label': aria[ button ],
+								'aria-role': 'link',
+								'aria-current': btnClass === 'active' ? 'page' : null,
 								'data-dt-idx': button,
 								'tabindex': settings.iTabIndex,
 								'class': 'page-link'

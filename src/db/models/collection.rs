@@ -234,6 +234,17 @@ impl Collection {
         }}
     }
 
+    pub async fn count_by_org(org_uuid: &str, conn: &mut DbConn) -> i64 {
+        db_run! { conn: {
+            collections::table
+                .filter(collections::org_uuid.eq(org_uuid))
+                .count()
+                .first::<i64>(conn)
+                .ok()
+                .unwrap_or(0)
+        }}
+    }
+
     pub async fn find_by_uuid_and_org(uuid: &str, org_uuid: &str, conn: &mut DbConn) -> Option<Self> {
         db_run! { conn: {
             collections::table

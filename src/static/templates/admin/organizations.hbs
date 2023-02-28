@@ -7,8 +7,9 @@
                     <tr>
                         <th class="vw-org-details">Organization</th>
                         <th class="vw-users">Users</th>
-                        <th class="vw-items">Items</th>
+                        <th class="vw-ciphers">Ciphers</th>
                         <th class="vw-attachments">Attachments</th>
+                        <th class="vw-misc">Misc</th>
                         <th class="vw-actions">Actions</th>
                     </tr>
                 </thead>
@@ -37,8 +38,13 @@
                             <span class="d-block"><strong>Size:</strong> {{attachment_size}}</span>
                             {{/if}}
                         </td>
+                        <td>
+                            <span class="d-block"><strong>Collections:</strong> {{collection_count}}</span>
+                            <span class="d-block"><strong>Groups:</strong> {{group_count}}</span>
+                            <span class="d-block"><strong>Events:</strong> {{event_count}}</span>
+                        </td>
                         <td class="text-end px-0 small">
-                            <button type="button" class="btn btn-sm btn-link p-0 border-0 float-right" vw-delete-organization data-vw-org-uuid="{{jsesc Id no_quote}}" data-vw-org-name="{{jsesc Name no_quote}}" data-vw-billing-email="{{jsesc BillingEmail no_quote}}">Delete Organization</button>
+                            <button type="button" class="btn btn-sm btn-link p-0 border-0 float-right" vw-delete-organization data-vw-org-uuid="{{jsesc Id no_quote}}" data-vw-org-name="{{jsesc Name no_quote}}" data-vw-billing-email="{{jsesc BillingEmail no_quote}}">Delete Organization</button><br>
                         </td>
                     </tr>
                     {{/each}}

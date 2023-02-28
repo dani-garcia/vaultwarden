@@ -54,7 +54,7 @@ document.addEventListener("DOMContentLoaded", (/*event*/) => {
         ],
         "pageLength": -1, // Default show all
         "columnDefs": [{
-            "targets": 4,
+            "targets": [4,5],
             "searchable": false,
             "orderable": false
         }]
