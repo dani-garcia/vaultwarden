@@ -263,6 +263,17 @@ impl Event {
         }}
     }
 
+    pub async fn count_by_org(org_uuid: &str, conn: &mut DbConn) -> i64 {
+        db_run! { conn: {
+            event::table
+                .filter(event::org_uuid.eq(org_uuid))
+                .count()
+                .first::<i64>(conn)
+                .ok()
+                .unwrap_or(0)
+        }}
+    }
+
     pub async fn find_by_org_and_user_org(
         org_uuid: &str,
         user_org_uuid: &str,

@@ -144,10 +144,15 @@
                         <span><b>Server:</b> {{page_data.server_time_local}}</span>
                     </dd>
                     <dt class="col-sm-5">Date & Time (UTC)
-                        <span class="badge bg-success d-none" id="time-success" title="Server and browser times are within 20 seconds of each other.">Ok</span>
-                        <span class="badge bg-danger d-none" id="time-warning" title="Server and browser times are more than 20 seconds apart.">Error</span>
+                        <span class="badge bg-success d-none" id="time-success" title="Server and browser times are within 15 seconds of each other.">Server/Browser Ok</span>
+                        <span class="badge bg-danger d-none" id="time-warning" title="Server and browser times are more than 15 seconds apart.">Server/Browser Error</span>
+                        <span class="badge bg-success d-none" id="ntp-server-success" title="Server and NTP times are within 15 seconds of each other.">Server NTP Ok</span>
+                        <span class="badge bg-danger d-none" id="ntp-server-warning" title="Server and NTP times are more than 15 seconds apart.">Server NTP Error</span>
+                        <span class="badge bg-success d-none" id="ntp-browser-success" title="Browser and NTP times are within 15 seconds of each other.">Browser NTP Ok</span>
+                        <span class="badge bg-danger d-none" id="ntp-browser-warning" title="Browser and NTP times are more than 15 seconds apart.">Browser NTP Error</span>
                     </dt>
                     <dd class="col-sm-7">
+                        <span id="ntp-time" class="d-block"><b>NTP:</b> <span id="ntp-server-string">{{page_data.ntp_time}}</span></span>
                         <span id="time-server" class="d-block"><b>Server:</b> <span id="time-server-string">{{page_data.server_time}}</span></span>
                         <span id="time-browser" class="d-block"><b>Browser:</b> <span id="time-browser-string"></span></span>
                     </dd>

@@ -300,8 +300,9 @@ fn logout(cookies: &CookieJar<'_>) -> Redirect {
 
 #[get("/users")]
 async fn get_users_json(_token: AdminToken, mut conn: DbConn) -> Json<Value> {
-    let mut users_json = Vec::new();
-    for u in User::get_all(&mut conn).await {
+    let users = User::get_all(&mut conn).await;
+    let mut users_json = Vec::with_capacity(users.len());
+    for u in users {
         let mut usr = u.to_json(&mut conn).await;
         usr["UserEnabled"] = json!(u.enabled);
         usr["CreatedAt"] = json!(format_naive_datetime_local(&u.created_at, DT_FMT));
@@ -313,8 +314,9 @@ async fn get_users_json(_token: AdminToken, mut conn: DbConn) -> Json<Value> {
 
 #[get("/users/overview")]
 async fn users_overview(_token: AdminToken, mut conn: DbConn) -> ApiResult<Html<String>> {
-    let mut users_json = Vec::new();
-    for u in User::get_all(&mut conn).await {
+    let users = User::get_all(&mut conn).await;
+    let mut users_json = Vec::with_capacity(users.len());
+    for u in users {
         let mut usr = u.to_json(&mut conn).await;
         usr["cipher_count"] = json!(Cipher::count_owned_by_user(&u.uuid, &mut conn).await);
         usr["attachment_count"] = json!(Attachment::count_by_user(&u.uuid, &mut conn).await);
@@ -490,11 +492,15 @@ async fn update_revision_users(_token: AdminToken, mut conn: DbConn) -> EmptyRes
 
 #[get("/organizations/overview")]
 async fn organizations_overview(_token: AdminToken, mut conn: DbConn) -> ApiResult<Html<String>> {
-    let mut organizations_json = Vec::new();
-    for o in Organization::get_all(&mut conn).await {
+    let organizations = Organization::get_all(&mut conn).await;
+    let mut organizations_json = Vec::with_capacity(organizations.len());
+    for o in organizations {
         let mut org = o.to_json();
         org["user_count"] = json!(UserOrganization::count_by_org(&o.uuid, &mut conn).await);
         org["cipher_count"] = json!(Cipher::count_by_org(&o.uuid, &mut conn).await);
+        org["collection_count"] = json!(Collection::count_by_org(&o.uuid, &mut conn).await);
+        org["group_count"] = json!(Group::count_by_org(&o.uuid, &mut conn).await);
+        org["event_count"] = json!(Event::count_by_org(&o.uuid, &mut conn).await);
         org["attachment_count"] = json!(Attachment::count_by_org(&o.uuid, &mut conn).await);
         org["attachment_size"] = json!(get_display_size(Attachment::size_by_org(&o.uuid, &mut conn).await as i32));
         organizations_json.push(org);
@@ -525,10 +531,20 @@ struct GitCommit {
     sha: String,
 }
 
-async fn get_github_api<T: DeserializeOwned>(url: &str) -> Result<T, Error> {
-    let github_api = get_reqwest_client();
+#[derive(Deserialize)]
+struct TimeApi {
+    year: u16,
+    month: u8,
+    day: u8,
+    hour: u8,
+    minute: u8,
+    seconds: u8,
+}
 
-    Ok(github_api.get(url).send().await?.error_for_status()?.json::<T>().await?)
+async fn get_json_api<T: DeserializeOwned>(url: &str) -> Result<T, Error> {
+    let json_api = get_reqwest_client();
+
+    Ok(json_api.get(url).send().await?.error_for_status()?.json::<T>().await?)
 }
 
 async fn has_http_access() -> bool {
@@ -548,14 +564,13 @@ async fn get_release_info(has_http_access: bool, running_within_docker: bool) ->
     // If the HTTP Check failed, do not even attempt to check for new versions since we were not able to connect with github.com anyway.
     if has_http_access {
         (
-            match get_github_api::<GitRelease>("https://api.github.com/repos/dani-garcia/vaultwarden/releases/latest")
+            match get_json_api::<GitRelease>("https://api.github.com/repos/dani-garcia/vaultwarden/releases/latest")
                 .await
             {
                 Ok(r) => r.tag_name,
                 _ => "-".to_string(),
             },
-            match get_github_api::<GitCommit>("https://api.github.com/repos/dani-garcia/vaultwarden/commits/main").await
-            {
+            match get_json_api::<GitCommit>("https://api.github.com/repos/dani-garcia/vaultwarden/commits/main").await {
                 Ok(mut c) => {
                     c.sha.truncate(8);
                     c.sha
@@ -567,7 +582,7 @@ async fn get_release_info(has_http_access: bool, running_within_docker: bool) ->
             if running_within_docker {
                 "-".to_string()
             } else {
-                match get_github_api::<GitRelease>(
+                match get_json_api::<GitRelease>(
                     "https://api.github.com/repos/dani-garcia/bw_web_builds/releases/latest",
                 )
                 .await
@@ -580,6 +595,24 @@ async fn get_release_info(has_http_access: bool, running_within_docker: bool) ->
     } else {
         ("-".to_string(), "-".to_string(), "-".to_string())
     }
+}
+
+async fn get_ntp_time(has_http_access: bool) -> String {
+    if has_http_access {
+        if let Ok(ntp_time) = get_json_api::<TimeApi>("https://www.timeapi.io/api/Time/current/zone?timeZone=UTC").await
+        {
+            return format!(
+                "{year}-{month:02}-{day:02} {hour:02}:{minute:02}:{seconds:02} UTC",
+                year = ntp_time.year,
+                month = ntp_time.month,
+                day = ntp_time.day,
+                hour = ntp_time.hour,
+                minute = ntp_time.minute,
+                seconds = ntp_time.seconds
+            );
+        }
+    }
+    String::from("Unable to fetch NTP time.")
 }
 
 #[get("/diagnostics")]
@@ -610,7 +643,7 @@ async fn diagnostics(_token: AdminToken, ip_header: IpHeader, mut conn: DbConn) 
     // Check if we are able to resolve DNS entries
     let dns_resolved = match ("github.com", 0).to_socket_addrs().map(|mut i| i.next()) {
         Ok(Some(a)) => a.ip().to_string(),
-        _ => "Could not resolve domain name.".to_string(),
+        _ => "Unable to resolve domain name.".to_string(),
     };
 
     let (latest_release, latest_commit, latest_web_build) =
@@ -644,7 +677,8 @@ async fn diagnostics(_token: AdminToken, ip_header: IpHeader, mut conn: DbConn) 
         "host_arch": std::env::consts::ARCH,
         "host_os":  std::env::consts::OS,
         "server_time_local": Local::now().format("%Y-%m-%d %H:%M:%S %Z").to_string(),
-        "server_time": Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string(), // Run the date/time check as the last item to minimize the difference
+        "server_time": Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string(), // Run the server date/time check as late as possible to minimize the time difference
+        "ntp_time": get_ntp_time(has_http_access).await, // Run the ntp check as late as possible to minimize the time difference
     });
 
     let text = AdminTemplateData::new("admin/diagnostics", diagnostics_json).render()?;

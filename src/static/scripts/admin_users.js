@@ -238,7 +238,7 @@ document.addEventListener("DOMContentLoaded", (/*event*/) => {
             [-1, 2, 5, 10, 25, 50],
             ["All", 2, 5, 10, 25, 50]
         ],
-        "pageLength": 2, // Default show all
+        "pageLength": -1, // Default show all
         "columnDefs": [{
             "targets": [1, 2],
             "type": "date-iso"

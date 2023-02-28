@@ -4,13 +4,19 @@
  *
  * To rebuild or modify this file with the latest versions of the included
  * software please visit:
- *   https://datatables.net/download/#bs5/dt-1.13.1
+ *   https://datatables.net/download/#bs5/dt-1.13.2
  *
  * Included libraries:
- *   DataTables 1.13.1
+ *   DataTables 1.13.2
  */
 
 @charset "UTF-8";
+:root {
+  --dt-row-selected: 13, 110, 253;
+  --dt-row-selected-text: 255, 255, 255;
+  --dt-row-selected-link: 9, 10, 11;
+}
+
 table.dataTable td.dt-control {
   text-align: center;
   cursor: pointer;
@@ -126,7 +132,7 @@ div.dataTables_processing > div:last-child > div {
   width: 13px;
   height: 13px;
   border-radius: 50%;
-  background: rgba(13, 110, 253, 0.9);
+  background: 13 110 253;
   animation-timing-function: cubic-bezier(0, 1, 1, 0);
 }
 div.dataTables_processing > div:last-child > div:nth-child(1) {
@@ -284,23 +290,28 @@ table.dataTable > tbody > tr {
   background-color: transparent;
 }
 table.dataTable > tbody > tr.selected > * {
-  box-shadow: inset 0 0 0 9999px rgba(13, 110, 253, 0.9);
-  color: white;
+  box-shadow: inset 0 0 0 9999px rgb(13, 110, 253);
+  box-shadow: inset 0 0 0 9999px rgb(var(--dt-row-selected));
+  color: rgb(255, 255, 255);
+  color: rgb(var(--dt-row-selected-text));
 }
 table.dataTable > tbody > tr.selected a {
-  color: #090a0b;
+  color: rgb(9, 10, 11);
+  color: rgb(var(--dt-row-selected-link));
 }
 table.dataTable.table-striped > tbody > tr.odd > * {
   box-shadow: inset 0 0 0 9999px rgba(0, 0, 0, 0.05);
 }
 table.dataTable.table-striped > tbody > tr.odd.selected > * {
   box-shadow: inset 0 0 0 9999px rgba(13, 110, 253, 0.95);
+  box-shadow: inset 0 0 0 9999px rgba(var(--dt-row-selected), 0.95);
 }
 table.dataTable.table-hover > tbody > tr:hover > * {
   box-shadow: inset 0 0 0 9999px rgba(0, 0, 0, 0.075);
 }
 table.dataTable.table-hover > tbody > tr.selected:hover > * {
   box-shadow: inset 0 0 0 9999px rgba(13, 110, 253, 0.975);
+  box-shadow: inset 0 0 0 9999px rgba(var(--dt-row-selected), 0.975);
 }
 
 div.dataTables_wrapper div.dataTables_length label {
@@ -374,9 +385,9 @@ div.dataTables_scrollFoot > .dataTables_scrollFootInner > table {
 
 @media screen and (max-width: 767px) {
   div.dataTables_wrapper div.dataTables_length,
-div.dataTables_wrapper div.dataTables_filter,
-div.dataTables_wrapper div.dataTables_info,
-div.dataTables_wrapper div.dataTables_paginate {
+  div.dataTables_wrapper div.dataTables_filter,
+  div.dataTables_wrapper div.dataTables_info,
+  div.dataTables_wrapper div.dataTables_paginate {
     text-align: center;
   }
   div.dataTables_wrapper div.dataTables_paginate ul.pagination {

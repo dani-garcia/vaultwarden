@@ -168,6 +168,17 @@ impl Group {
         }}
     }
 
+    pub async fn count_by_org(organizations_uuid: &str, conn: &mut DbConn) -> i64 {
+        db_run! { conn: {
+            groups::table
+                .filter(groups::organizations_uuid.eq(organizations_uuid))
+                .count()
+                .first::<i64>(conn)
+                .ok()
+                .unwrap_or(0)
+        }}
+    }
+
     pub async fn find_by_uuid(uuid: &str, conn: &mut DbConn) -> Option<Self> {
         db_run! { conn: {
             groups::table
