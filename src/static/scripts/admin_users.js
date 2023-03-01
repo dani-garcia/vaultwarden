@@ -28,7 +28,8 @@ function remove2fa(event) {
     event.preventDefault();
     event.stopPropagation();
     const id = event.target.parentNode.dataset.vwUserUuid;
-    if (!id) {
+    const email = event.target.parentNode.dataset.vwUserEmail;
+    if (!id || !email) {
         alert("Required parameters not found!");
         return false;
     }
@@ -45,7 +46,8 @@ function deauthUser(event) {
     event.preventDefault();
     event.stopPropagation();
     const id = event.target.parentNode.dataset.vwUserUuid;
-    if (!id) {
+    const email = event.target.parentNode.dataset.vwUserEmail;
+    if (!id || !email) {
         alert("Required parameters not found!");
         return false;
     }
