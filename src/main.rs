@@ -191,7 +191,7 @@ fn parse_args() {
             }
 
             let argon2 = Argon2::new(Argon2id, V0x13, argon2_params.build().unwrap());
-            let salt = SaltString::b64_encode(&crate::crypto::get_random_bytes::<32>()).unwrap();
+            let salt = SaltString::encode_b64(&crate::crypto::get_random_bytes::<32>()).unwrap();
 
             let argon2_timer = tokio::time::Instant::now();
             if let Ok(password_hash) = argon2.hash_password(password.as_bytes(), &salt) {
@@ -325,12 +325,12 @@ fn init_logging(level: log::LevelFilter) -> Result<(), fern::InitError> {
             },
         };
 
-        let backtrace = backtrace::Backtrace::new();
+        let backtrace = std::backtrace::Backtrace::force_capture();
 
         match info.location() {
             Some(location) => {
                 error!(
-                    target: "panic", "thread '{}' panicked at '{}': {}:{}\n{:?}",
+                    target: "panic", "thread '{}' panicked at '{}': {}:{}\n{:}",
                     thread,
                     msg,
                     location.file(),
@@ -340,7 +340,7 @@ fn init_logging(level: log::LevelFilter) -> Result<(), fern::InitError> {
             }
             None => error!(
                 target: "panic",
-                "thread '{}' panicked at '{}'\n{:?}",
+                "thread '{}' panicked at '{}'\n{:}",
                 thread,
                 msg,
                 backtrace

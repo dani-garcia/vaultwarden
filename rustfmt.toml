@@ -1,7 +1,4 @@
-# version = "Two"
 edition = "2021"
 max_width = 120
 newline_style = "Unix"
 use_small_heuristics = "Off"
-# struct_lit_single_line = false
-# overflow_delimited_expr = true

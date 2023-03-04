@@ -3,22 +3,22 @@
 # This file was generated using a Jinja2 template.
 # Please make your changes in `Dockerfile.j2` and then `make` the individual Dockerfiles.
 
-{% set build_stage_base_image = "rust:1.67-bullseye" %}
+{% set build_stage_base_image = "rust:1.67.1-bullseye" %}
 {% if "alpine" in target_file %}
 {%   if "amd64" in target_file %}
-{%     set build_stage_base_image = "blackdex/rust-musl:x86_64-musl-stable-1.67.0" %}
+{%     set build_stage_base_image = "blackdex/rust-musl:x86_64-musl-stable-1.67.1" %}
 {%     set runtime_stage_base_image = "alpine:3.17" %}
 {%     set package_arch_target = "x86_64-unknown-linux-musl" %}
 {%   elif "armv7" in target_file %}
-{%     set build_stage_base_image = "blackdex/rust-musl:armv7-musleabihf-stable-1.67.0" %}
+{%     set build_stage_base_image = "blackdex/rust-musl:armv7-musleabihf-stable-1.67.1" %}
 {%     set runtime_stage_base_image = "balenalib/armv7hf-alpine:3.17" %}
 {%     set package_arch_target = "armv7-unknown-linux-musleabihf" %}
 {%   elif "armv6" in target_file %}
-{%     set build_stage_base_image = "blackdex/rust-musl:arm-musleabi-stable-1.67.0" %}
+{%     set build_stage_base_image = "blackdex/rust-musl:arm-musleabi-stable-1.67.1" %}
 {%     set runtime_stage_base_image = "balenalib/rpi-alpine:3.17" %}
 {%     set package_arch_target = "arm-unknown-linux-musleabi" %}
 {%   elif "arm64" in target_file %}
-{%     set build_stage_base_image = "blackdex/rust-musl:aarch64-musl-stable-1.67.0" %}
+{%     set build_stage_base_image = "blackdex/rust-musl:aarch64-musl-stable-1.67.1" %}
 {%     set runtime_stage_base_image = "balenalib/aarch64-alpine:3.17" %}
 {%     set package_arch_target = "aarch64-unknown-linux-musl" %}
 {%   endif %}
