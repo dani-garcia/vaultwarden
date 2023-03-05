@@ -4,7 +4,7 @@ use rocket::{fs::NamedFile, http::ContentType, response::content::RawHtml as Htm
 use serde_json::Value;
 
 use crate::{
-    api::{core::now, ApiResult},
+    api::{core::now, ApiResult, EmptyResult},
     error::Error,
     util::{Cached, SafeString},
     CONFIG,
@@ -14,9 +14,9 @@ pub fn routes() -> Vec<Route> {
     // If addding more routes here, consider also adding them to
     // crate::utils::LOGGED_ROUTES to make sure they appear in the log
     if CONFIG.web_vault_enabled() {
-        routes![web_index, app_id, web_files, attachments, alive, static_files]
+        routes![web_index, web_index_head, app_id, web_files, attachments, alive, alive_head, static_files]
     } else {
-        routes![attachments, alive, static_files]
+        routes![attachments, alive, alive_head, static_files]
     }
 }
 
@@ -41,6 +41,17 @@ fn not_found() -> ApiResult<Html<String>> {
 #[get("/")]
 async fn web_index() -> Cached<Option<NamedFile>> {
     Cached::short(NamedFile::open(Path::new(&CONFIG.web_vault_folder()).join("index.html")).await.ok(), false)
+}
+
+#[head("/")]
+fn web_index_head() -> EmptyResult {
+    // Add an explicit HEAD route to prevent uptime monitoring services from
+    // generating "No matching routes for HEAD /" error messages.
+    //
+    // Rocket automatically implements a HEAD route when there's a matching GET
+    // route, but relying on this behavior also means a spurious error gets
+    // logged due to <https://github.com/SergioBenitez/Rocket/issues/1098>.
+    Ok(())
 }
 
 #[get("/app-id.json")]
@@ -90,6 +101,13 @@ use crate::db::DbConn;
 #[get("/alive")]
 fn alive(_conn: DbConn) -> Json<String> {
     now()
+}
+
+#[head("/alive")]
+fn alive_head(_conn: DbConn) -> EmptyResult {
+    // Avoid logging spurious "No matching routes for HEAD /alive" errors
+    // due to <https://github.com/SergioBenitez/Rocket/issues/1098>.
+    Ok(())
 }
 
 #[get("/vw_static/<filename>")]
