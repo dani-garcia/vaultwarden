@@ -201,6 +201,19 @@ fn post_admin_login(data: Form<LoginForm>, cookies: &CookieJar<'_>, ip: ClientIp
 fn _validate_token(token: &str) -> bool {
     match CONFIG.admin_token().as_ref() {
         None => false,
+        Some(t) if t.starts_with("$argon2") => {
+            use argon2::password_hash::PasswordVerifier;
+            match argon2::password_hash::PasswordHash::new(t) {
+                Ok(h) => {
+                    // NOTE: hash params from `ADMIN_TOKEN` are used instead of what is configured in the `Argon2` instance.
+                    argon2::Argon2::default().verify_password(token.trim().as_ref(), &h).is_ok()
+                }
+                Err(e) => {
+                    error!("The configured Argon2 PHC in `ADMIN_TOKEN` is invalid: {e}");
+                    false
+                }
+            }
+        }
         Some(t) => crate::crypto::ct_eq(t.trim(), token.trim()),
     }
 }

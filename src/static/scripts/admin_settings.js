@@ -157,6 +157,41 @@ function masterCheck(check_id, inputs_query) {
     }
 }
 
+// This will check if the ADMIN_TOKEN is not a Argon2 hashed value.
+// Else it will show a warning, unless someone has closed it.
+// Then it will not show this warning for 30 days.
+function checkAdminToken() {
+    const admin_token = document.getElementById("input_admin_token");
+    const disable_admin_token = document.getElementById("input_disable_admin_token");
+    if (!disable_admin_token.checked && !admin_token.value.startsWith("$argon2")) {
+        // Check if the warning has been closed before and 30 days have passed
+        const admin_token_warning_closed = localStorage.getItem("admin_token_warning_closed");
+        if (admin_token_warning_closed !== null) {
+            const closed_date = new Date(parseInt(admin_token_warning_closed));
+            const current_date = new Date();
+            const thirtyDays = 1000*60*60*24*30;
+            if (current_date - closed_date < thirtyDays) {
+                return;
+            }
+        }
+
+        // When closing the alert, store the current date/time in the browser
+        const admin_token_warning = document.getElementById("admin_token_warning");
+        admin_token_warning.addEventListener("closed.bs.alert", function() {
+            const d = new Date();
+            localStorage.setItem("admin_token_warning_closed", d.getTime());
+        });
+
+        // Display the warning
+        admin_token_warning.classList.remove("d-none");
+    }
+}
+
+// This will check for specific configured values, and when needed will show a warning div
+function showWarnings() {
+    checkAdminToken();
+}
+
 const config_form = document.getElementById("config-form");
 
 // onLoad events
@@ -192,4 +227,6 @@ document.addEventListener("DOMContentLoaded", (/*event*/) => {
     }
 
     config_form.addEventListener("submit", saveConfig);
+
+    showWarnings();
 });
