@@ -748,8 +748,6 @@ struct GetOrgUserData {
     include_groups: Option<bool>,
 }
 
-// includeCollections
-// includeGroups
 #[get("/organizations/<org_id>/users?<data..>")]
 async fn get_org_users(
     data: GetOrgUserData,
@@ -1229,14 +1227,25 @@ async fn _confirm_invite(
     save_result
 }
 
-#[get("/organizations/<org_id>/users/<org_user_id>")]
-async fn get_user(org_id: String, org_user_id: String, _headers: AdminHeaders, mut conn: DbConn) -> JsonResult {
+#[get("/organizations/<org_id>/users/<org_user_id>?<data..>")]
+async fn get_user(
+    org_id: String,
+    org_user_id: String,
+    data: GetOrgUserData,
+    _headers: AdminHeaders,
+    mut conn: DbConn,
+) -> JsonResult {
     let user = match UserOrganization::find_by_uuid_and_org(&org_user_id, &org_id, &mut conn).await {
         Some(user) => user,
         None => err!("The specified user isn't a member of the organization"),
     };
 
-    Ok(Json(user.to_json_details(&mut conn).await))
+    // In this case, when groups are requested we also need to include collections.
+    // Else these will not be shown in the interface, and could lead to missing collections when saved.
+    let include_groups = data.include_groups.unwrap_or(false);
+    Ok(Json(
+        user.to_json_user_details(data.include_collections.unwrap_or(include_groups), include_groups, &mut conn).await,
+    ))
 }
 
 #[derive(Deserialize)]
@@ -1244,6 +1253,7 @@ async fn get_user(org_id: String, org_user_id: String, _headers: AdminHeaders, m
 struct EditUserData {
     Type: NumberOrString,
     Collections: Option<Vec<CollectionData>>,
+    Groups: Option<Vec<String>>,
     AccessAll: bool,
 }
 
@@ -1340,6 +1350,13 @@ async fn edit_user(
                 }
             }
         }
+    }
+
+    GroupUser::delete_all_by_user(&user_to_edit.uuid, &mut conn).await?;
+
+    for group in data.Groups.iter().flatten() {
+        let mut group_entry = GroupUser::new(String::from(group), user_to_edit.uuid.clone());
+        group_entry.save(&mut conn).await?;
     }
 
     log_event(
