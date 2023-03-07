@@ -9,6 +9,8 @@ on:
       - "Cargo.*"
       - "build.rs"
       - "rust-toolchain"
+      - "rustfmt.toml"
+      - "diesel.toml"
   pull_request:
     paths:
       - ".github/workflows/build.yml"
@@ -17,6 +19,8 @@ on:
       - "Cargo.*"
       - "build.rs"
       - "rust-toolchain"
+      - "rustfmt.toml"
+      - "diesel.toml"
 
 jobs:
   build:
@@ -26,42 +30,48 @@ jobs:
     # This is done globally to prevent rebuilds when the RUSTFLAGS env variable changes.
     env:
       RUSTFLAGS: "-D warnings"
+      CARGO_REGISTRIES_CRATES_IO_PROTOCOL: git # Use the old git protocol until it is stable probably in 1.68 or 1.69. MSRV needs to be at this before removed.
     strategy:
       fail-fast: false
       matrix:
         channel:
           - "rust-toolchain" # The version defined in rust-toolchain
           - "msrv" # The supported MSRV
-        include:
-          - channel: "msrv"
-            version: "1.61.0"
 
     name: Build and Test ${{ matrix.channel }}
 
     steps:
       # Checkout the repo
       - name: "Checkout"
-        uses: actions/checkout@755da8c3cf115ac066823e79a1e1788f8940201b # v3.2.0
+        uses: actions/checkout@ac593985615ec2ede58e132d2e21d2b1cbd6127c # v3.3.0
       # End Checkout the repo
+
 
       # Install dependencies
       - name: "Install dependencies Ubuntu"
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends openssl sqlite build-essential libmariadb-dev-compat libpq-dev libssl-dev pkg-config
       # End Install dependencies
 
+
       # Determine rust-toolchain version
       - name: Init Variables
         id: toolchain
         shell: bash
-        if: ${{ matrix.channel == 'rust-toolchain' }}
         run: |
-          RUST_TOOLCHAIN="$(cat rust-toolchain)"
+          if [[ "${{ matrix.channel }}" == 'rust-toolchain' ]]; then
+            RUST_TOOLCHAIN="$(cat rust-toolchain)"
+          elif [[ "${{ matrix.channel }}" == 'msrv' ]]; then
+            RUST_TOOLCHAIN="$(grep -oP 'rust-version.*"(\K.*?)(?=")' Cargo.toml)"
+          else
+            RUST_TOOLCHAIN="${{ matrix.channel }}"
+          fi
           echo "RUST_TOOLCHAIN=${RUST_TOOLCHAIN}" | tee -a "${GITHUB_OUTPUT}"
       # End Determine rust-toolchain version
 
-      # Uses the rust-toolchain file to determine version
+
+      # Only install the clippy and rustfmt components on the default rust-toolchain
       - name: "Install rust-toolchain version"
-        uses: dtolnay/rust-toolchain@55c7845fad90d0ae8b2e83715cb900e5e861e8cb # master @ 2022-10-25 - 21:40 GMT+2
+        uses: dtolnay/rust-toolchain@e12eda571dc9a5ee5d58eecf4738ec291c66f295 # master @ 2023-02-19 - 02:23 GMT+1
         if: ${{ matrix.channel == 'rust-toolchain' }}
         with:
           toolchain: "${{steps.toolchain.outputs.RUST_TOOLCHAIN}}"
@@ -69,17 +79,17 @@ jobs:
       # End Uses the rust-toolchain file to determine version
 
 
-      # Install the MSRV channel to be used
+      # Install the any other channel to be used for which we do not execute clippy and rustfmt
       - name: "Install MSRV version"
-        uses: dtolnay/rust-toolchain@55c7845fad90d0ae8b2e83715cb900e5e861e8cb # master @ 2022-10-25 - 21:40 GMT+2
+        uses: dtolnay/rust-toolchain@e12eda571dc9a5ee5d58eecf4738ec291c66f295 # master @ 2023-02-19 - 02:23 GMT+1
         if: ${{ matrix.channel != 'rust-toolchain' }}
         with:
-          toolchain: ${{ matrix.version }}
+          toolchain: "${{steps.toolchain.outputs.RUST_TOOLCHAIN}}"
       # End Install the MSRV channel to be used
 
 
       # Enable Rust Caching
-      - uses: Swatinem/rust-cache@359a70e43a0bb8a13953b04a90f76428b4959bb6 # v2.2.0
+      - uses: Swatinem/rust-cache@6fd3edff6979b79f87531400ad694fb7f2c84b1f # v2.2.1
       # End Enable Rust Caching
 
 
@@ -184,7 +194,7 @@ jobs:
 
       # Upload artifact to Github Actions
       - name: "Upload artifact"
-        uses: actions/upload-artifact@83fd05a356d7e2593de66fc9913b3002723633cb # v3.1.1
+        uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce # v3.1.2
         if: ${{ matrix.channel == 'rust-toolchain' }}
         with:
           name: vaultwarden
