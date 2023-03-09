@@ -250,6 +250,14 @@ fn init_logging(level: log::LevelFilter) -> Result<(), fern::InitError> {
             log::LevelFilter::Off
         };
 
+    // Only show rocket underscore `_` logs when the level is Debug or higher
+    // Else this will bloat the log output with useless messages.
+    let rocket_underscore_level = if level >= log::LevelFilter::Debug {
+        log::LevelFilter::Warn
+    } else {
+        log::LevelFilter::Off
+    };
+
     let mut logger = fern::Dispatch::new()
         .level(level)
         // Hide unknown certificate errors if using self-signed
@@ -257,7 +265,7 @@ fn init_logging(level: log::LevelFilter) -> Result<(), fern::InitError> {
         // Hide failed to close stream messages
         .level_for("hyper::server", log::LevelFilter::Warn)
         // Silence rocket logs
-        .level_for("_", log::LevelFilter::Warn)
+        .level_for("_", rocket_underscore_level)
         .level_for("rocket::launch", log::LevelFilter::Error)
         .level_for("rocket::launch_", log::LevelFilter::Error)
         .level_for("rocket::rocket", log::LevelFilter::Warn)
@@ -269,7 +277,8 @@ fn init_logging(level: log::LevelFilter) -> Result<(), fern::InitError> {
         // Prevent cookie_store logs
         .level_for("cookie_store", log::LevelFilter::Off)
         // Variable level for trust-dns used by reqwest
-        .level_for("trust_dns_proto", trust_dns_level)
+        .level_for("trust_dns_resolver::name_server::name_server", trust_dns_level)
+        .level_for("trust_dns_proto::xfer", trust_dns_level)
         .level_for("diesel_logger", diesel_logger_level)
         .chain(std::io::stdout());
 
@@ -277,9 +286,9 @@ fn init_logging(level: log::LevelFilter) -> Result<(), fern::InitError> {
     // This can contain sensitive information we do not want in the default debug/trace logging.
     if CONFIG.smtp_debug() {
         println!(
-            "[WARNING] SMTP Debugging is enabled (SMTP_DEBUG=true). Sensitive information could be disclosed via logs!"
+            "[WARNING] SMTP Debugging is enabled (SMTP_DEBUG=true). Sensitive information could be disclosed via logs!\n\
+             [WARNING] Only enable SMTP_DEBUG during troubleshooting!\n"
         );
-        println!("[WARNING] Only enable SMTP_DEBUG during troubleshooting!\n");
         logger = logger.level_for("lettre::transport::smtp", log::LevelFilter::Debug)
     } else {
         logger = logger.level_for("lettre::transport::smtp", log::LevelFilter::Off)

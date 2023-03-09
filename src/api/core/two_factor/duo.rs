@@ -8,7 +8,7 @@ use crate::{
         core::log_user_event, core::two_factor::_generate_recover_code, ApiResult, EmptyResult, JsonResult, JsonUpcase,
         PasswordData,
     },
-    auth::{ClientIp, Headers},
+    auth::Headers,
     crypto,
     db::{
         models::{EventType, TwoFactor, TwoFactorType, User},
@@ -155,7 +155,7 @@ fn check_duo_fields_custom(data: &EnableDuoData) -> bool {
 }
 
 #[post("/two-factor/duo", data = "<data>")]
-async fn activate_duo(data: JsonUpcase<EnableDuoData>, headers: Headers, mut conn: DbConn, ip: ClientIp) -> JsonResult {
+async fn activate_duo(data: JsonUpcase<EnableDuoData>, headers: Headers, mut conn: DbConn) -> JsonResult {
     let data: EnableDuoData = data.into_inner().data;
     let mut user = headers.user;
 
@@ -178,7 +178,7 @@ async fn activate_duo(data: JsonUpcase<EnableDuoData>, headers: Headers, mut con
 
     _generate_recover_code(&mut user, &mut conn).await;
 
-    log_user_event(EventType::UserUpdated2fa as i32, &user.uuid, headers.device.atype, &ip.ip, &mut conn).await;
+    log_user_event(EventType::UserUpdated2fa as i32, &user.uuid, headers.device.atype, &headers.ip.ip, &mut conn).await;
 
     Ok(Json(json!({
         "Enabled": true,
@@ -190,8 +190,8 @@ async fn activate_duo(data: JsonUpcase<EnableDuoData>, headers: Headers, mut con
 }
 
 #[put("/two-factor/duo", data = "<data>")]
-async fn activate_duo_put(data: JsonUpcase<EnableDuoData>, headers: Headers, conn: DbConn, ip: ClientIp) -> JsonResult {
-    activate_duo(data, headers, conn, ip).await
+async fn activate_duo_put(data: JsonUpcase<EnableDuoData>, headers: Headers, conn: DbConn) -> JsonResult {
+    activate_duo(data, headers, conn).await
 }
 
 async fn duo_api_request(method: &str, path: &str, params: &str, data: &DuoData) -> EmptyResult {

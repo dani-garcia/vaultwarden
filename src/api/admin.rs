@@ -369,7 +369,7 @@ async fn get_user_json(uuid: String, _token: AdminToken, mut conn: DbConn) -> Js
 }
 
 #[post("/users/<uuid>/delete")]
-async fn delete_user(uuid: String, _token: AdminToken, mut conn: DbConn, ip: ClientIp) -> EmptyResult {
+async fn delete_user(uuid: String, token: AdminToken, mut conn: DbConn) -> EmptyResult {
     let user = get_user_or_404(&uuid, &mut conn).await?;
 
     // Get the user_org records before deleting the actual user
@@ -383,7 +383,7 @@ async fn delete_user(uuid: String, _token: AdminToken, mut conn: DbConn, ip: Cli
             user_org.org_uuid,
             String::from(ACTING_ADMIN_USER),
             14, // Use UnknownBrowser type
-            &ip.ip,
+            &token.ip.ip,
             &mut conn,
         )
         .await;
@@ -443,12 +443,7 @@ struct UserOrgTypeData {
 }
 
 #[post("/users/org_type", data = "<data>")]
-async fn update_user_org_type(
-    data: Json<UserOrgTypeData>,
-    _token: AdminToken,
-    mut conn: DbConn,
-    ip: ClientIp,
-) -> EmptyResult {
+async fn update_user_org_type(data: Json<UserOrgTypeData>, token: AdminToken, mut conn: DbConn) -> EmptyResult {
     let data: UserOrgTypeData = data.into_inner();
 
     let mut user_to_edit =
@@ -489,7 +484,7 @@ async fn update_user_org_type(
         data.org_uuid,
         String::from(ACTING_ADMIN_USER),
         14, // Use UnknownBrowser type
-        &ip.ip,
+        &token.ip.ip,
         &mut conn,
     )
     .await;
@@ -724,15 +719,24 @@ async fn backup_db(_token: AdminToken, mut conn: DbConn) -> EmptyResult {
     }
 }
 
-pub struct AdminToken {}
+pub struct AdminToken {
+    ip: ClientIp,
+}
 
 #[rocket::async_trait]
 impl<'r> FromRequest<'r> for AdminToken {
     type Error = &'static str;
 
     async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+        let ip = match ClientIp::from_request(request).await {
+            Outcome::Success(ip) => ip,
+            _ => err_handler!("Error getting Client IP"),
+        };
+
         if CONFIG.disable_admin_token() {
-            Outcome::Success(Self {})
+            Outcome::Success(Self {
+                ip,
+            })
         } else {
             let cookies = request.cookies();
 
@@ -741,19 +745,16 @@ impl<'r> FromRequest<'r> for AdminToken {
                 None => return Outcome::Failure((Status::Unauthorized, "Unauthorized")),
             };
 
-            let ip = match ClientIp::from_request(request).await {
-                Outcome::Success(ip) => ip.ip,
-                _ => err_handler!("Error getting Client IP"),
-            };
-
             if decode_admin(access_token).is_err() {
                 // Remove admin cookie
                 cookies.remove(Cookie::build(COOKIE_NAME, "").path(admin_path()).finish());
-                error!("Invalid or expired admin JWT. IP: {}.", ip);
+                error!("Invalid or expired admin JWT. IP: {}.", &ip.ip);
                 return Outcome::Failure((Status::Unauthorized, "Session expired"));
             }
 
-            Outcome::Success(Self {})
+            Outcome::Success(Self {
+                ip,
+            })
         }
     }
 }

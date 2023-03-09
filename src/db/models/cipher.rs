@@ -151,7 +151,8 @@ impl Cipher {
 
         // Get the type_data or a default to an empty json object '{}'.
         // If not passing an empty object, mobile clients will crash.
-        let mut type_data_json: Value = serde_json::from_str(&self.data).unwrap_or_else(|_| json!({}));
+        let mut type_data_json: Value =
+            serde_json::from_str(&self.data).unwrap_or_else(|_| Value::Object(serde_json::Map::new()));
 
         // NOTE: This was marked as *Backwards Compatibility Code*, but as of January 2021 this is still being used by upstream
         // Set the first element of the Uris array as Uri, this is needed several (mobile) clients.
@@ -170,10 +171,10 @@ impl Cipher {
 
         // NOTE: This was marked as *Backwards Compatibility Code*, but as of January 2021 this is still being used by upstream
         // data_json should always contain the following keys with every atype
-        data_json["Fields"] = json!(fields_json);
+        data_json["Fields"] = fields_json.clone();
         data_json["Name"] = json!(self.name);
         data_json["Notes"] = json!(self.notes);
-        data_json["PasswordHistory"] = json!(password_history_json);
+        data_json["PasswordHistory"] = password_history_json.clone();
 
         let collection_ids = if let Some(cipher_sync_data) = cipher_sync_data {
             if let Some(cipher_collections) = cipher_sync_data.cipher_collections.get(&self.uuid) {

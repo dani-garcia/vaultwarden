@@ -8,7 +8,7 @@ use crate::{
         core::{log_user_event, two_factor::_generate_recover_code},
         EmptyResult, JsonResult, JsonUpcase, PasswordData,
     },
-    auth::{ClientIp, Headers},
+    auth::Headers,
     db::{
         models::{EventType, TwoFactor, TwoFactorType},
         DbConn,
@@ -47,7 +47,7 @@ fn parse_yubikeys(data: &EnableYubikeyData) -> Vec<String> {
 }
 
 fn jsonify_yubikeys(yubikeys: Vec<String>) -> serde_json::Value {
-    let mut result = json!({});
+    let mut result = Value::Object(serde_json::Map::new());
 
     for (i, key) in yubikeys.into_iter().enumerate() {
         result[format!("Key{}", i + 1)] = Value::String(key);
@@ -118,12 +118,7 @@ async fn generate_yubikey(data: JsonUpcase<PasswordData>, headers: Headers, mut 
 }
 
 #[post("/two-factor/yubikey", data = "<data>")]
-async fn activate_yubikey(
-    data: JsonUpcase<EnableYubikeyData>,
-    headers: Headers,
-    mut conn: DbConn,
-    ip: ClientIp,
-) -> JsonResult {
+async fn activate_yubikey(data: JsonUpcase<EnableYubikeyData>, headers: Headers, mut conn: DbConn) -> JsonResult {
     let data: EnableYubikeyData = data.into_inner().data;
     let mut user = headers.user;
 
@@ -169,7 +164,7 @@ async fn activate_yubikey(
 
     _generate_recover_code(&mut user, &mut conn).await;
 
-    log_user_event(EventType::UserUpdated2fa as i32, &user.uuid, headers.device.atype, &ip.ip, &mut conn).await;
+    log_user_event(EventType::UserUpdated2fa as i32, &user.uuid, headers.device.atype, &headers.ip.ip, &mut conn).await;
 
     let mut result = jsonify_yubikeys(yubikey_metadata.Keys);
 
@@ -181,13 +176,8 @@ async fn activate_yubikey(
 }
 
 #[put("/two-factor/yubikey", data = "<data>")]
-async fn activate_yubikey_put(
-    data: JsonUpcase<EnableYubikeyData>,
-    headers: Headers,
-    conn: DbConn,
-    ip: ClientIp,
-) -> JsonResult {
-    activate_yubikey(data, headers, conn, ip).await
+async fn activate_yubikey_put(data: JsonUpcase<EnableYubikeyData>, headers: Headers, conn: DbConn) -> JsonResult {
+    activate_yubikey(data, headers, conn).await
 }
 
 pub async fn validate_yubikey_login(response: &str, twofactor_data: &str) -> EmptyResult {

@@ -25,7 +25,7 @@ pub fn routes() -> Vec<Route> {
 }
 
 #[post("/connect/token", data = "<data>")]
-async fn login(data: Form<ConnectData>, client_header: ClientHeaders, mut conn: DbConn, ip: ClientIp) -> JsonResult {
+async fn login(data: Form<ConnectData>, client_header: ClientHeaders, mut conn: DbConn) -> JsonResult {
     let data: ConnectData = data.into_inner();
 
     let mut user_uuid: Option<String> = None;
@@ -45,7 +45,7 @@ async fn login(data: Form<ConnectData>, client_header: ClientHeaders, mut conn: 
             _check_is_some(&data.device_name, "device_name cannot be blank")?;
             _check_is_some(&data.device_type, "device_type cannot be blank")?;
 
-            _password_login(data, &mut user_uuid, &mut conn, &ip).await
+            _password_login(data, &mut user_uuid, &mut conn, &client_header.ip).await
         }
         "client_credentials" => {
             _check_is_some(&data.client_id, "client_id cannot be blank")?;
@@ -56,7 +56,7 @@ async fn login(data: Form<ConnectData>, client_header: ClientHeaders, mut conn: 
             _check_is_some(&data.device_name, "device_name cannot be blank")?;
             _check_is_some(&data.device_type, "device_type cannot be blank")?;
 
-            _api_key_login(data, &mut user_uuid, &mut conn, &ip).await
+            _api_key_login(data, &mut user_uuid, &mut conn, &client_header.ip).await
         }
         t => err!("Invalid type", t),
     };
@@ -68,14 +68,21 @@ async fn login(data: Form<ConnectData>, client_header: ClientHeaders, mut conn: 
                     EventType::UserLoggedIn as i32,
                     &user_uuid,
                     client_header.device_type,
-                    &ip.ip,
+                    &client_header.ip.ip,
                     &mut conn,
                 )
                 .await;
             }
             Err(e) => {
                 if let Some(ev) = e.get_event() {
-                    log_user_event(ev.event as i32, &user_uuid, client_header.device_type, &ip.ip, &mut conn).await
+                    log_user_event(
+                        ev.event as i32,
+                        &user_uuid,
+                        client_header.device_type,
+                        &client_header.ip.ip,
+                        &mut conn,
+                    )
+                    .await
                 }
             }
         }

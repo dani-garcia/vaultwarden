@@ -6,7 +6,7 @@ use serde_json::Value;
 
 use crate::{
     api::{EmptyResult, JsonResult, JsonUpcaseVec},
-    auth::{AdminHeaders, ClientIp, Headers},
+    auth::{AdminHeaders, Headers},
     db::{
         models::{Cipher, Event, UserOrganization},
         DbConn, DbPool,
@@ -161,12 +161,7 @@ struct EventCollection {
 // https://github.com/bitwarden/server/blob/8a22c0479e987e756ce7412c48a732f9002f0a2d/src/Events/Controllers/CollectController.cs
 // https://github.com/bitwarden/server/blob/8a22c0479e987e756ce7412c48a732f9002f0a2d/src/Core/Services/Implementations/EventService.cs
 #[post("/collect", format = "application/json", data = "<data>")]
-async fn post_events_collect(
-    data: JsonUpcaseVec<EventCollection>,
-    headers: Headers,
-    mut conn: DbConn,
-    ip: ClientIp,
-) -> EmptyResult {
+async fn post_events_collect(data: JsonUpcaseVec<EventCollection>, headers: Headers, mut conn: DbConn) -> EmptyResult {
     if !CONFIG.org_events_enabled() {
         return Ok(());
     }
@@ -180,7 +175,7 @@ async fn post_events_collect(
                     &headers.user.uuid,
                     headers.device.atype,
                     Some(event_date),
-                    &ip.ip,
+                    &headers.ip.ip,
                     &mut conn,
                 )
                 .await;
@@ -194,7 +189,7 @@ async fn post_events_collect(
                         &headers.user.uuid,
                         headers.device.atype,
                         Some(event_date),
-                        &ip.ip,
+                        &headers.ip.ip,
                         &mut conn,
                     )
                     .await;
@@ -211,7 +206,7 @@ async fn post_events_collect(
                                 &headers.user.uuid,
                                 headers.device.atype,
                                 Some(event_date),
-                                &ip.ip,
+                                &headers.ip.ip,
                                 &mut conn,
                             )
                             .await;

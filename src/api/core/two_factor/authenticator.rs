@@ -57,7 +57,6 @@ struct EnableAuthenticatorData {
 async fn activate_authenticator(
     data: JsonUpcase<EnableAuthenticatorData>,
     headers: Headers,
-    ip: ClientIp,
     mut conn: DbConn,
 ) -> JsonResult {
     let data: EnableAuthenticatorData = data.into_inner().data;
@@ -82,11 +81,11 @@ async fn activate_authenticator(
     }
 
     // Validate the token provided with the key, and save new twofactor
-    validate_totp_code(&user.uuid, &token, &key.to_uppercase(), &ip, &mut conn).await?;
+    validate_totp_code(&user.uuid, &token, &key.to_uppercase(), &headers.ip, &mut conn).await?;
 
     _generate_recover_code(&mut user, &mut conn).await;
 
-    log_user_event(EventType::UserUpdated2fa as i32, &user.uuid, headers.device.atype, &ip.ip, &mut conn).await;
+    log_user_event(EventType::UserUpdated2fa as i32, &user.uuid, headers.device.atype, &headers.ip.ip, &mut conn).await;
 
     Ok(Json(json!({
         "Enabled": true,
@@ -99,10 +98,9 @@ async fn activate_authenticator(
 async fn activate_authenticator_put(
     data: JsonUpcase<EnableAuthenticatorData>,
     headers: Headers,
-    ip: ClientIp,
     conn: DbConn,
 ) -> JsonResult {
-    activate_authenticator(data, headers, ip, conn).await
+    activate_authenticator(data, headers, conn).await
 }
 
 pub async fn validate_totp_code_str(
