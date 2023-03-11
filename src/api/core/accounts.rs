@@ -12,6 +12,11 @@ use crate::{
     mail, CONFIG,
 };
 
+use rocket::{
+    http::Status,
+    request::{FromRequest, Outcome, Request},
+};
+
 pub fn routes() -> Vec<rocket::Route> {
     routes![
         register,
@@ -39,6 +44,7 @@ pub fn routes() -> Vec<rocket::Route> {
         api_key,
         rotate_api_key,
         get_known_device,
+        get_known_device_from_path,
         put_avatar,
     ]
 }
@@ -872,12 +878,61 @@ async fn rotate_api_key(data: JsonUpcase<SecretVerificationRequest>, headers: He
     _api_key(data, true, headers, conn).await
 }
 
+// This variant is deprecated: https://github.com/bitwarden/server/pull/2682
 #[get("/devices/knowndevice/<email>/<uuid>")]
-async fn get_known_device(email: String, uuid: String, mut conn: DbConn) -> JsonResult {
+async fn get_known_device_from_path(email: String, uuid: String, mut conn: DbConn) -> JsonResult {
     // This endpoint doesn't have auth header
     let mut result = false;
     if let Some(user) = User::find_by_mail(&email, &mut conn).await {
         result = Device::find_by_uuid_and_user(&uuid, &user.uuid, &mut conn).await.is_some();
     }
     Ok(Json(json!(result)))
+}
+
+#[get("/devices/knowndevice")]
+async fn get_known_device(device: KnownDevice, conn: DbConn) -> JsonResult {
+    get_known_device_from_path(device.email, device.uuid, conn).await
+}
+
+struct KnownDevice {
+    email: String,
+    uuid: String,
+}
+
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for KnownDevice {
+    type Error = &'static str;
+
+    async fn from_request(req: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+        let email = if let Some(email_b64) = req.headers().get_one("X-Request-Email") {
+            let email_bytes = match data_encoding::BASE64URL.decode(email_b64.as_bytes()) {
+                Ok(bytes) => bytes,
+                Err(_) => {
+                    return Outcome::Failure((
+                        Status::BadRequest,
+                        "X-Request-Email value failed to decode as base64url",
+                    ));
+                }
+            };
+            match String::from_utf8(email_bytes) {
+                Ok(email) => email,
+                Err(_) => {
+                    return Outcome::Failure((Status::BadRequest, "X-Request-Email value failed to decode as UTF-8"));
+                }
+            }
+        } else {
+            return Outcome::Failure((Status::BadRequest, "X-Request-Email value is required"));
+        };
+
+        let uuid = if let Some(uuid) = req.headers().get_one("X-Device-Identifier") {
+            uuid.to_string()
+        } else {
+            return Outcome::Failure((Status::BadRequest, "X-Device-Identifier value is required"));
+        };
+
+        Outcome::Success(KnownDevice {
+            email,
+            uuid,
+        })
+    }
 }
