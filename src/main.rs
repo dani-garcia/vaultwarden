@@ -91,7 +91,11 @@ pub use util::is_running_in_docker;
 async fn main() -> Result<(), Error> {
     parse_args();
     launch_info();
-
+    let _guard = sentry::init(("https://15f5e878cf2349ecb0fbbb378fe381d5@o4504843859329024.ingest.sentry.io/4504843860836352", sentry::ClientOptions {
+        release: sentry::release_name!(),
+        ..Default::default()
+    }));
+    panic!("Everything is on fire!");
     use log::LevelFilter as LF;
     let level = LF::from_str(&CONFIG.log_level()).expect("Valid log level");
     init_logging(level).ok();
