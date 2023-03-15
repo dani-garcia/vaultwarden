@@ -9,7 +9,7 @@ use crate::{
         ApiResult, EmptyResult, JsonResult, JsonUpcase, JsonUpcaseVec, JsonVec, Notify, NumberOrString, PasswordData,
         UpdateType,
     },
-    auth::{decode_invite, AdminHeaders, ClientIp, Headers, ManagerHeaders, ManagerHeadersLoose, OwnerHeaders},
+    auth::{decode_invite, AdminHeaders, Headers, ManagerHeaders, ManagerHeadersLoose, OwnerHeaders},
     db::{models::*, DbConn},
     error::Error,
     mail,
@@ -209,7 +209,7 @@ async fn post_delete_organization(
 }
 
 #[post("/organizations/<org_id>/leave")]
-async fn leave_organization(org_id: String, headers: Headers, mut conn: DbConn, ip: ClientIp) -> EmptyResult {
+async fn leave_organization(org_id: String, headers: Headers, mut conn: DbConn) -> EmptyResult {
     match UserOrganization::find_by_user_and_org(&headers.user.uuid, &org_id, &mut conn).await {
         None => err!("User not part of organization"),
         Some(user_org) => {
@@ -225,7 +225,7 @@ async fn leave_organization(org_id: String, headers: Headers, mut conn: DbConn, 
                 org_id,
                 headers.user.uuid.clone(),
                 headers.device.atype,
-                &ip.ip,
+                &headers.ip.ip,
                 &mut conn,
             )
             .await;
@@ -249,9 +249,8 @@ async fn put_organization(
     headers: OwnerHeaders,
     data: JsonUpcase<OrganizationUpdateData>,
     conn: DbConn,
-    ip: ClientIp,
 ) -> JsonResult {
-    post_organization(org_id, headers, data, conn, ip).await
+    post_organization(org_id, headers, data, conn).await
 }
 
 #[post("/organizations/<org_id>", data = "<data>")]
@@ -260,7 +259,6 @@ async fn post_organization(
     headers: OwnerHeaders,
     data: JsonUpcase<OrganizationUpdateData>,
     mut conn: DbConn,
-    ip: ClientIp,
 ) -> JsonResult {
     let data: OrganizationUpdateData = data.into_inner().data;
 
@@ -280,7 +278,7 @@ async fn post_organization(
         org_id.clone(),
         headers.user.uuid.clone(),
         headers.device.atype,
-        &ip.ip,
+        &headers.ip.ip,
         &mut conn,
     )
     .await;
@@ -380,7 +378,6 @@ async fn post_organization_collections(
     headers: ManagerHeadersLoose,
     data: JsonUpcase<NewCollectionData>,
     mut conn: DbConn,
-    ip: ClientIp,
 ) -> JsonResult {
     let data: NewCollectionData = data.into_inner().data;
 
@@ -398,7 +395,7 @@ async fn post_organization_collections(
         org_id,
         headers.user.uuid.clone(),
         headers.device.atype,
-        &ip.ip,
+        &headers.ip.ip,
         &mut conn,
     )
     .await;
@@ -433,9 +430,8 @@ async fn put_organization_collection_update(
     headers: ManagerHeaders,
     data: JsonUpcase<NewCollectionData>,
     conn: DbConn,
-    ip: ClientIp,
 ) -> JsonResult {
-    post_organization_collection_update(org_id, col_id, headers, data, conn, ip).await
+    post_organization_collection_update(org_id, col_id, headers, data, conn).await
 }
 
 #[post("/organizations/<org_id>/collections/<col_id>", data = "<data>")]
@@ -445,7 +441,6 @@ async fn post_organization_collection_update(
     headers: ManagerHeaders,
     data: JsonUpcase<NewCollectionData>,
     mut conn: DbConn,
-    ip: ClientIp,
 ) -> JsonResult {
     let data: NewCollectionData = data.into_inner().data;
 
@@ -472,7 +467,7 @@ async fn post_organization_collection_update(
         org_id,
         headers.user.uuid.clone(),
         headers.device.atype,
-        &ip.ip,
+        &headers.ip.ip,
         &mut conn,
     )
     .await;
@@ -548,7 +543,6 @@ async fn delete_organization_collection(
     col_id: String,
     headers: ManagerHeaders,
     mut conn: DbConn,
-    ip: ClientIp,
 ) -> EmptyResult {
     match Collection::find_by_uuid(&col_id, &mut conn).await {
         None => err!("Collection not found"),
@@ -560,7 +554,7 @@ async fn delete_organization_collection(
                     org_id,
                     headers.user.uuid.clone(),
                     headers.device.atype,
-                    &ip.ip,
+                    &headers.ip.ip,
                     &mut conn,
                 )
                 .await;
@@ -586,9 +580,8 @@ async fn post_organization_collection_delete(
     headers: ManagerHeaders,
     _data: JsonUpcase<DeleteCollectionData>,
     conn: DbConn,
-    ip: ClientIp,
 ) -> EmptyResult {
-    delete_organization_collection(org_id, col_id, headers, conn, ip).await
+    delete_organization_collection(org_id, col_id, headers, conn).await
 }
 
 #[get("/organizations/<org_id>/collections/<coll_id>/details")]
@@ -828,7 +821,6 @@ async fn send_invite(
     data: JsonUpcase<InviteData>,
     headers: AdminHeaders,
     mut conn: DbConn,
-    ip: ClientIp,
 ) -> EmptyResult {
     let data: InviteData = data.into_inner().data;
 
@@ -903,7 +895,7 @@ async fn send_invite(
             org_id.clone(),
             headers.user.uuid.clone(),
             headers.device.atype,
-            &ip.ip,
+            &headers.ip.ip,
             &mut conn,
         )
         .await;
@@ -1101,7 +1093,6 @@ async fn bulk_confirm_invite(
     data: JsonUpcase<Value>,
     headers: AdminHeaders,
     mut conn: DbConn,
-    ip: ClientIp,
     nt: Notify<'_>,
 ) -> Json<Value> {
     let data = data.into_inner().data;
@@ -1112,8 +1103,7 @@ async fn bulk_confirm_invite(
             for invite in keys {
                 let org_user_id = invite["Id"].as_str().unwrap_or_default();
                 let user_key = invite["Key"].as_str().unwrap_or_default();
-                let err_msg = match _confirm_invite(&org_id, org_user_id, user_key, &headers, &mut conn, &ip, &nt).await
-                {
+                let err_msg = match _confirm_invite(&org_id, org_user_id, user_key, &headers, &mut conn, &nt).await {
                     Ok(_) => String::new(),
                     Err(e) => format!("{e:?}"),
                 };
@@ -1144,12 +1134,11 @@ async fn confirm_invite(
     data: JsonUpcase<Value>,
     headers: AdminHeaders,
     mut conn: DbConn,
-    ip: ClientIp,
     nt: Notify<'_>,
 ) -> EmptyResult {
     let data = data.into_inner().data;
     let user_key = data["Key"].as_str().unwrap_or_default();
-    _confirm_invite(&org_id, &org_user_id, user_key, &headers, &mut conn, &ip, &nt).await
+    _confirm_invite(&org_id, &org_user_id, user_key, &headers, &mut conn, &nt).await
 }
 
 async fn _confirm_invite(
@@ -1158,7 +1147,6 @@ async fn _confirm_invite(
     key: &str,
     headers: &AdminHeaders,
     conn: &mut DbConn,
-    ip: &ClientIp,
     nt: &Notify<'_>,
 ) -> EmptyResult {
     if key.is_empty() || org_user_id.is_empty() {
@@ -1201,7 +1189,7 @@ async fn _confirm_invite(
         String::from(org_id),
         headers.user.uuid.clone(),
         headers.device.atype,
-        &ip.ip,
+        &headers.ip.ip,
         conn,
     )
     .await;
@@ -1264,9 +1252,8 @@ async fn put_organization_user(
     data: JsonUpcase<EditUserData>,
     headers: AdminHeaders,
     conn: DbConn,
-    ip: ClientIp,
 ) -> EmptyResult {
-    edit_user(org_id, org_user_id, data, headers, conn, ip).await
+    edit_user(org_id, org_user_id, data, headers, conn).await
 }
 
 #[post("/organizations/<org_id>/users/<org_user_id>", data = "<data>", rank = 1)]
@@ -1276,7 +1263,6 @@ async fn edit_user(
     data: JsonUpcase<EditUserData>,
     headers: AdminHeaders,
     mut conn: DbConn,
-    ip: ClientIp,
 ) -> EmptyResult {
     let data: EditUserData = data.into_inner().data;
 
@@ -1365,7 +1351,7 @@ async fn edit_user(
         org_id.clone(),
         headers.user.uuid.clone(),
         headers.device.atype,
-        &ip.ip,
+        &headers.ip.ip,
         &mut conn,
     )
     .await;
@@ -1379,14 +1365,13 @@ async fn bulk_delete_user(
     data: JsonUpcase<OrgBulkIds>,
     headers: AdminHeaders,
     mut conn: DbConn,
-    ip: ClientIp,
     nt: Notify<'_>,
 ) -> Json<Value> {
     let data: OrgBulkIds = data.into_inner().data;
 
     let mut bulk_response = Vec::new();
     for org_user_id in data.Ids {
-        let err_msg = match _delete_user(&org_id, &org_user_id, &headers, &mut conn, &ip, &nt).await {
+        let err_msg = match _delete_user(&org_id, &org_user_id, &headers, &mut conn, &nt).await {
             Ok(_) => String::new(),
             Err(e) => format!("{e:?}"),
         };
@@ -1413,10 +1398,9 @@ async fn delete_user(
     org_user_id: String,
     headers: AdminHeaders,
     mut conn: DbConn,
-    ip: ClientIp,
     nt: Notify<'_>,
 ) -> EmptyResult {
-    _delete_user(&org_id, &org_user_id, &headers, &mut conn, &ip, &nt).await
+    _delete_user(&org_id, &org_user_id, &headers, &mut conn, &nt).await
 }
 
 #[post("/organizations/<org_id>/users/<org_user_id>/delete")]
@@ -1425,10 +1409,9 @@ async fn post_delete_user(
     org_user_id: String,
     headers: AdminHeaders,
     mut conn: DbConn,
-    ip: ClientIp,
     nt: Notify<'_>,
 ) -> EmptyResult {
-    _delete_user(&org_id, &org_user_id, &headers, &mut conn, &ip, &nt).await
+    _delete_user(&org_id, &org_user_id, &headers, &mut conn, &nt).await
 }
 
 async fn _delete_user(
@@ -1436,7 +1419,6 @@ async fn _delete_user(
     org_user_id: &str,
     headers: &AdminHeaders,
     conn: &mut DbConn,
-    ip: &ClientIp,
     nt: &Notify<'_>,
 ) -> EmptyResult {
     let user_to_delete = match UserOrganization::find_by_uuid_and_org(org_user_id, org_id, conn).await {
@@ -1461,7 +1443,7 @@ async fn _delete_user(
         String::from(org_id),
         headers.user.uuid.clone(),
         headers.device.atype,
-        &ip.ip,
+        &headers.ip.ip,
         conn,
     )
     .await;
@@ -1536,7 +1518,6 @@ async fn post_org_import(
     data: JsonUpcase<ImportData>,
     headers: AdminHeaders,
     mut conn: DbConn,
-    ip: ClientIp,
     nt: Notify<'_>,
 ) -> EmptyResult {
     let data: ImportData = data.into_inner().data;
@@ -1569,9 +1550,7 @@ async fn post_org_import(
     let mut ciphers = Vec::new();
     for cipher_data in data.Ciphers {
         let mut cipher = Cipher::new(cipher_data.Type, cipher_data.Name.clone());
-        update_cipher_from_data(&mut cipher, cipher_data, &headers, false, &mut conn, &ip, &nt, UpdateType::None)
-            .await
-            .ok();
+        update_cipher_from_data(&mut cipher, cipher_data, &headers, false, &mut conn, &nt, UpdateType::None).await.ok();
         ciphers.push(cipher);
     }
 
@@ -1657,7 +1636,6 @@ async fn put_policy(
     data: Json<PolicyData>,
     headers: AdminHeaders,
     mut conn: DbConn,
-    ip: ClientIp,
 ) -> JsonResult {
     let data: PolicyData = data.into_inner();
 
@@ -1690,7 +1668,7 @@ async fn put_policy(
                     org_id.clone(),
                     headers.user.uuid.clone(),
                     headers.device.atype,
-                    &ip.ip,
+                    &headers.ip.ip,
                     &mut conn,
                 )
                 .await;
@@ -1724,7 +1702,7 @@ async fn put_policy(
                     org_id.clone(),
                     headers.user.uuid.clone(),
                     headers.device.atype,
-                    &ip.ip,
+                    &headers.ip.ip,
                     &mut conn,
                 )
                 .await;
@@ -1749,7 +1727,7 @@ async fn put_policy(
         org_id,
         headers.user.uuid.clone(),
         headers.device.atype,
-        &ip.ip,
+        &headers.ip.ip,
         &mut conn,
     )
     .await;
@@ -1825,13 +1803,7 @@ struct OrgImportData {
 }
 
 #[post("/organizations/<org_id>/import", data = "<data>")]
-async fn import(
-    org_id: String,
-    data: JsonUpcase<OrgImportData>,
-    headers: Headers,
-    mut conn: DbConn,
-    ip: ClientIp,
-) -> EmptyResult {
+async fn import(org_id: String, data: JsonUpcase<OrgImportData>, headers: Headers, mut conn: DbConn) -> EmptyResult {
     let data = data.into_inner().data;
 
     // TODO: Currently we aren't storing the externalId's anywhere, so we also don't have a way
@@ -1857,7 +1829,7 @@ async fn import(
                     org_id.clone(),
                     headers.user.uuid.clone(),
                     headers.device.atype,
-                    &ip.ip,
+                    &headers.ip.ip,
                     &mut conn,
                 )
                 .await;
@@ -1887,7 +1859,7 @@ async fn import(
                     org_id.clone(),
                     headers.user.uuid.clone(),
                     headers.device.atype,
-                    &ip.ip,
+                    &headers.ip.ip,
                     &mut conn,
                 )
                 .await;
@@ -1923,7 +1895,7 @@ async fn import(
                         org_id.clone(),
                         headers.user.uuid.clone(),
                         headers.device.atype,
-                        &ip.ip,
+                        &headers.ip.ip,
                         &mut conn,
                     )
                     .await;
@@ -1944,9 +1916,8 @@ async fn deactivate_organization_user(
     org_user_id: String,
     headers: AdminHeaders,
     mut conn: DbConn,
-    ip: ClientIp,
 ) -> EmptyResult {
-    _revoke_organization_user(&org_id, &org_user_id, &headers, &mut conn, &ip).await
+    _revoke_organization_user(&org_id, &org_user_id, &headers, &mut conn).await
 }
 
 // Pre web-vault v2022.9.x endpoint
@@ -1956,9 +1927,8 @@ async fn bulk_deactivate_organization_user(
     data: JsonUpcase<Value>,
     headers: AdminHeaders,
     conn: DbConn,
-    ip: ClientIp,
 ) -> Json<Value> {
-    bulk_revoke_organization_user(org_id, data, headers, conn, ip).await
+    bulk_revoke_organization_user(org_id, data, headers, conn).await
 }
 
 #[put("/organizations/<org_id>/users/<org_user_id>/revoke")]
@@ -1967,9 +1937,8 @@ async fn revoke_organization_user(
     org_user_id: String,
     headers: AdminHeaders,
     mut conn: DbConn,
-    ip: ClientIp,
 ) -> EmptyResult {
-    _revoke_organization_user(&org_id, &org_user_id, &headers, &mut conn, &ip).await
+    _revoke_organization_user(&org_id, &org_user_id, &headers, &mut conn).await
 }
 
 #[put("/organizations/<org_id>/users/revoke", data = "<data>")]
@@ -1978,7 +1947,6 @@ async fn bulk_revoke_organization_user(
     data: JsonUpcase<Value>,
     headers: AdminHeaders,
     mut conn: DbConn,
-    ip: ClientIp,
 ) -> Json<Value> {
     let data = data.into_inner().data;
 
@@ -1987,7 +1955,7 @@ async fn bulk_revoke_organization_user(
         Some(org_users) => {
             for org_user_id in org_users {
                 let org_user_id = org_user_id.as_str().unwrap_or_default();
-                let err_msg = match _revoke_organization_user(&org_id, org_user_id, &headers, &mut conn, &ip).await {
+                let err_msg = match _revoke_organization_user(&org_id, org_user_id, &headers, &mut conn).await {
                     Ok(_) => String::new(),
                     Err(e) => format!("{e:?}"),
                 };
@@ -2016,7 +1984,6 @@ async fn _revoke_organization_user(
     org_user_id: &str,
     headers: &AdminHeaders,
     conn: &mut DbConn,
-    ip: &ClientIp,
 ) -> EmptyResult {
     match UserOrganization::find_by_uuid_and_org(org_user_id, org_id, conn).await {
         Some(mut user_org) if user_org.status > UserOrgStatus::Revoked as i32 => {
@@ -2041,7 +2008,7 @@ async fn _revoke_organization_user(
                 org_id.to_string(),
                 headers.user.uuid.clone(),
                 headers.device.atype,
-                &ip.ip,
+                &headers.ip.ip,
                 conn,
             )
             .await;
@@ -2059,9 +2026,8 @@ async fn activate_organization_user(
     org_user_id: String,
     headers: AdminHeaders,
     mut conn: DbConn,
-    ip: ClientIp,
 ) -> EmptyResult {
-    _restore_organization_user(&org_id, &org_user_id, &headers, &mut conn, &ip).await
+    _restore_organization_user(&org_id, &org_user_id, &headers, &mut conn).await
 }
 
 // Pre web-vault v2022.9.x endpoint
@@ -2071,9 +2037,8 @@ async fn bulk_activate_organization_user(
     data: JsonUpcase<Value>,
     headers: AdminHeaders,
     conn: DbConn,
-    ip: ClientIp,
 ) -> Json<Value> {
-    bulk_restore_organization_user(org_id, data, headers, conn, ip).await
+    bulk_restore_organization_user(org_id, data, headers, conn).await
 }
 
 #[put("/organizations/<org_id>/users/<org_user_id>/restore")]
@@ -2082,9 +2047,8 @@ async fn restore_organization_user(
     org_user_id: String,
     headers: AdminHeaders,
     mut conn: DbConn,
-    ip: ClientIp,
 ) -> EmptyResult {
-    _restore_organization_user(&org_id, &org_user_id, &headers, &mut conn, &ip).await
+    _restore_organization_user(&org_id, &org_user_id, &headers, &mut conn).await
 }
 
 #[put("/organizations/<org_id>/users/restore", data = "<data>")]
@@ -2093,7 +2057,6 @@ async fn bulk_restore_organization_user(
     data: JsonUpcase<Value>,
     headers: AdminHeaders,
     mut conn: DbConn,
-    ip: ClientIp,
 ) -> Json<Value> {
     let data = data.into_inner().data;
 
@@ -2102,7 +2065,7 @@ async fn bulk_restore_organization_user(
         Some(org_users) => {
             for org_user_id in org_users {
                 let org_user_id = org_user_id.as_str().unwrap_or_default();
-                let err_msg = match _restore_organization_user(&org_id, org_user_id, &headers, &mut conn, &ip).await {
+                let err_msg = match _restore_organization_user(&org_id, org_user_id, &headers, &mut conn).await {
                     Ok(_) => String::new(),
                     Err(e) => format!("{e:?}"),
                 };
@@ -2131,7 +2094,6 @@ async fn _restore_organization_user(
     org_user_id: &str,
     headers: &AdminHeaders,
     conn: &mut DbConn,
-    ip: &ClientIp,
 ) -> EmptyResult {
     match UserOrganization::find_by_uuid_and_org(org_user_id, org_id, conn).await {
         Some(mut user_org) if user_org.status < UserOrgStatus::Accepted as i32 => {
@@ -2165,7 +2127,7 @@ async fn _restore_organization_user(
                 org_id.to_string(),
                 headers.user.uuid.clone(),
                 headers.device.atype,
-                &ip.ip,
+                &headers.ip.ip,
                 conn,
             )
             .await;
@@ -2277,9 +2239,8 @@ async fn post_group(
     data: JsonUpcase<GroupRequest>,
     headers: AdminHeaders,
     conn: DbConn,
-    ip: ClientIp,
 ) -> JsonResult {
-    put_group(org_id, group_id, data, headers, conn, ip).await
+    put_group(org_id, group_id, data, headers, conn).await
 }
 
 #[post("/organizations/<org_id>/groups", data = "<data>")]
@@ -2288,7 +2249,6 @@ async fn post_groups(
     headers: AdminHeaders,
     data: JsonUpcase<GroupRequest>,
     mut conn: DbConn,
-    ip: ClientIp,
 ) -> JsonResult {
     if !CONFIG.org_groups_enabled() {
         err!("Group support is disabled");
@@ -2303,12 +2263,12 @@ async fn post_groups(
         org_id.clone(),
         headers.user.uuid.clone(),
         headers.device.atype,
-        &ip.ip,
+        &headers.ip.ip,
         &mut conn,
     )
     .await;
 
-    add_update_group(group, group_request.Collections, group_request.Users, &org_id, &headers, &ip, &mut conn).await
+    add_update_group(group, group_request.Collections, group_request.Users, &org_id, &headers, &mut conn).await
 }
 
 #[put("/organizations/<org_id>/groups/<group_id>", data = "<data>")]
@@ -2318,7 +2278,6 @@ async fn put_group(
     data: JsonUpcase<GroupRequest>,
     headers: AdminHeaders,
     mut conn: DbConn,
-    ip: ClientIp,
 ) -> JsonResult {
     if !CONFIG.org_groups_enabled() {
         err!("Group support is disabled");
@@ -2341,13 +2300,12 @@ async fn put_group(
         org_id.clone(),
         headers.user.uuid.clone(),
         headers.device.atype,
-        &ip.ip,
+        &headers.ip.ip,
         &mut conn,
     )
     .await;
 
-    add_update_group(updated_group, group_request.Collections, group_request.Users, &org_id, &headers, &ip, &mut conn)
-        .await
+    add_update_group(updated_group, group_request.Collections, group_request.Users, &org_id, &headers, &mut conn).await
 }
 
 async fn add_update_group(
@@ -2356,7 +2314,6 @@ async fn add_update_group(
     users: Vec<String>,
     org_id: &str,
     headers: &AdminHeaders,
-    ip: &ClientIp,
     conn: &mut DbConn,
 ) -> JsonResult {
     group.save(conn).await?;
@@ -2376,7 +2333,7 @@ async fn add_update_group(
             String::from(org_id),
             headers.user.uuid.clone(),
             headers.device.atype,
-            &ip.ip,
+            &headers.ip.ip,
             conn,
         )
         .await;
@@ -2406,24 +2363,12 @@ async fn get_group_details(_org_id: String, group_id: String, _headers: AdminHea
 }
 
 #[post("/organizations/<org_id>/groups/<group_id>/delete")]
-async fn post_delete_group(
-    org_id: String,
-    group_id: String,
-    headers: AdminHeaders,
-    conn: DbConn,
-    ip: ClientIp,
-) -> EmptyResult {
-    delete_group(org_id, group_id, headers, conn, ip).await
+async fn post_delete_group(org_id: String, group_id: String, headers: AdminHeaders, conn: DbConn) -> EmptyResult {
+    delete_group(org_id, group_id, headers, conn).await
 }
 
 #[delete("/organizations/<org_id>/groups/<group_id>")]
-async fn delete_group(
-    org_id: String,
-    group_id: String,
-    headers: AdminHeaders,
-    mut conn: DbConn,
-    ip: ClientIp,
-) -> EmptyResult {
+async fn delete_group(org_id: String, group_id: String, headers: AdminHeaders, mut conn: DbConn) -> EmptyResult {
     if !CONFIG.org_groups_enabled() {
         err!("Group support is disabled");
     }
@@ -2439,7 +2384,7 @@ async fn delete_group(
         org_id,
         headers.user.uuid.clone(),
         headers.device.atype,
-        &ip.ip,
+        &headers.ip.ip,
         &mut conn,
     )
     .await;
@@ -2488,7 +2433,6 @@ async fn put_group_users(
     headers: AdminHeaders,
     data: JsonVec<String>,
     mut conn: DbConn,
-    ip: ClientIp,
 ) -> EmptyResult {
     if !CONFIG.org_groups_enabled() {
         err!("Group support is disabled");
@@ -2512,7 +2456,7 @@ async fn put_group_users(
             org_id.clone(),
             headers.user.uuid.clone(),
             headers.device.atype,
-            &ip.ip,
+            &headers.ip.ip,
             &mut conn,
         )
         .await;
@@ -2551,9 +2495,8 @@ async fn post_user_groups(
     data: JsonUpcase<OrganizationUserUpdateGroupsRequest>,
     headers: AdminHeaders,
     conn: DbConn,
-    ip: ClientIp,
 ) -> EmptyResult {
-    put_user_groups(org_id, org_user_id, data, headers, conn, ip).await
+    put_user_groups(org_id, org_user_id, data, headers, conn).await
 }
 
 #[put("/organizations/<org_id>/users/<org_user_id>/groups", data = "<data>")]
@@ -2563,7 +2506,6 @@ async fn put_user_groups(
     data: JsonUpcase<OrganizationUserUpdateGroupsRequest>,
     headers: AdminHeaders,
     mut conn: DbConn,
-    ip: ClientIp,
 ) -> EmptyResult {
     if !CONFIG.org_groups_enabled() {
         err!("Group support is disabled");
@@ -2588,7 +2530,7 @@ async fn put_user_groups(
         org_id,
         headers.user.uuid.clone(),
         headers.device.atype,
-        &ip.ip,
+        &headers.ip.ip,
         &mut conn,
     )
     .await;
@@ -2603,9 +2545,8 @@ async fn post_delete_group_user(
     org_user_id: String,
     headers: AdminHeaders,
     conn: DbConn,
-    ip: ClientIp,
 ) -> EmptyResult {
-    delete_group_user(org_id, group_id, org_user_id, headers, conn, ip).await
+    delete_group_user(org_id, group_id, org_user_id, headers, conn).await
 }
 
 #[delete("/organizations/<org_id>/groups/<group_id>/users/<org_user_id>")]
@@ -2615,7 +2556,6 @@ async fn delete_group_user(
     org_user_id: String,
     headers: AdminHeaders,
     mut conn: DbConn,
-    ip: ClientIp,
 ) -> EmptyResult {
     if !CONFIG.org_groups_enabled() {
         err!("Group support is disabled");
@@ -2637,7 +2577,7 @@ async fn delete_group_user(
         org_id,
         headers.user.uuid.clone(),
         headers.device.atype,
-        &ip.ip,
+        &headers.ip.ip,
         &mut conn,
     )
     .await;
@@ -2679,7 +2619,6 @@ async fn put_reset_password(
     headers: AdminHeaders,
     data: JsonUpcase<OrganizationUserResetPasswordRequest>,
     mut conn: DbConn,
-    ip: ClientIp,
     nt: Notify<'_>,
 ) -> EmptyResult {
     let org = match Organization::find_by_uuid(&org_id, &mut conn).await {
@@ -2725,7 +2664,7 @@ async fn put_reset_password(
         org.uuid.clone(),
         headers.user.uuid.clone(),
         headers.device.atype,
-        &ip.ip,
+        &headers.ip.ip,
         &mut conn,
     )
     .await;
@@ -2812,7 +2751,6 @@ async fn put_reset_password_enrollment(
     headers: Headers,
     data: JsonUpcase<OrganizationUserResetPasswordEnrollmentRequest>,
     mut conn: DbConn,
-    ip: ClientIp,
 ) -> EmptyResult {
     let mut org_user = match UserOrganization::find_by_user_and_org(&headers.user.uuid, &org_id, &mut conn).await {
         Some(u) => u,
@@ -2838,7 +2776,8 @@ async fn put_reset_password_enrollment(
         EventType::OrganizationUserResetPasswordWithdraw as i32
     };
 
-    log_event(log_id, &org_user_id, org_id, headers.user.uuid.clone(), headers.device.atype, &ip.ip, &mut conn).await;
+    log_event(log_id, &org_user_id, org_id, headers.user.uuid.clone(), headers.device.atype, &headers.ip.ip, &mut conn)
+        .await;
 
     Ok(())
 }

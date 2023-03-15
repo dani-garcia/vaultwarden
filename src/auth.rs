@@ -318,6 +318,7 @@ impl<'r> FromRequest<'r> for Host {
 pub struct ClientHeaders {
     pub host: String,
     pub device_type: i32,
+    pub ip: ClientIp,
 }
 
 #[rocket::async_trait]
@@ -326,6 +327,10 @@ impl<'r> FromRequest<'r> for ClientHeaders {
 
     async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         let host = try_outcome!(Host::from_request(request).await).host;
+        let ip = match ClientIp::from_request(request).await {
+            Outcome::Success(ip) => ip,
+            _ => err_handler!("Error getting Client IP"),
+        };
         // When unknown or unable to parse, return 14, which is 'Unknown Browser'
         let device_type: i32 =
             request.headers().get_one("device-type").map(|d| d.parse().unwrap_or(14)).unwrap_or_else(|| 14);
@@ -333,6 +338,7 @@ impl<'r> FromRequest<'r> for ClientHeaders {
         Outcome::Success(ClientHeaders {
             host,
             device_type,
+            ip,
         })
     }
 }
@@ -341,6 +347,7 @@ pub struct Headers {
     pub host: String,
     pub device: Device,
     pub user: User,
+    pub ip: ClientIp,
 }
 
 #[rocket::async_trait]
@@ -351,6 +358,10 @@ impl<'r> FromRequest<'r> for Headers {
         let headers = request.headers();
 
         let host = try_outcome!(Host::from_request(request).await).host;
+        let ip = match ClientIp::from_request(request).await {
+            Outcome::Success(ip) => ip,
+            _ => err_handler!("Error getting Client IP"),
+        };
 
         // Get access_token
         let access_token: &str = match headers.get_one("Authorization") {
@@ -420,6 +431,7 @@ impl<'r> FromRequest<'r> for Headers {
             host,
             device,
             user,
+            ip,
         })
     }
 }
@@ -431,6 +443,7 @@ pub struct OrgHeaders {
     pub org_user_type: UserOrgType,
     pub org_user: UserOrganization,
     pub org_id: String,
+    pub ip: ClientIp,
 }
 
 // org_id is usually the second path param ("/organizations/<org_id>"),
@@ -491,6 +504,7 @@ impl<'r> FromRequest<'r> for OrgHeaders {
                     },
                     org_user,
                     org_id,
+                    ip: headers.ip,
                 })
             }
             _ => err_handler!("Error getting the organization id"),
@@ -504,6 +518,7 @@ pub struct AdminHeaders {
     pub user: User,
     pub org_user_type: UserOrgType,
     pub client_version: Option<String>,
+    pub ip: ClientIp,
 }
 
 #[rocket::async_trait]
@@ -520,6 +535,7 @@ impl<'r> FromRequest<'r> for AdminHeaders {
                 user: headers.user,
                 org_user_type: headers.org_user_type,
                 client_version,
+                ip: headers.ip,
             })
         } else {
             err_handler!("You need to be Admin or Owner to call this endpoint")
@@ -533,6 +549,7 @@ impl From<AdminHeaders> for Headers {
             host: h.host,
             device: h.device,
             user: h.user,
+            ip: h.ip,
         }
     }
 }
@@ -564,6 +581,7 @@ pub struct ManagerHeaders {
     pub device: Device,
     pub user: User,
     pub org_user_type: UserOrgType,
+    pub ip: ClientIp,
 }
 
 #[rocket::async_trait]
@@ -599,6 +617,7 @@ impl<'r> FromRequest<'r> for ManagerHeaders {
                 device: headers.device,
                 user: headers.user,
                 org_user_type: headers.org_user_type,
+                ip: headers.ip,
             })
         } else {
             err_handler!("You need to be a Manager, Admin or Owner to call this endpoint")
@@ -612,6 +631,7 @@ impl From<ManagerHeaders> for Headers {
             host: h.host,
             device: h.device,
             user: h.user,
+            ip: h.ip,
         }
     }
 }
@@ -623,6 +643,7 @@ pub struct ManagerHeadersLoose {
     pub device: Device,
     pub user: User,
     pub org_user_type: UserOrgType,
+    pub ip: ClientIp,
 }
 
 #[rocket::async_trait]
@@ -637,6 +658,7 @@ impl<'r> FromRequest<'r> for ManagerHeadersLoose {
                 device: headers.device,
                 user: headers.user,
                 org_user_type: headers.org_user_type,
+                ip: headers.ip,
             })
         } else {
             err_handler!("You need to be a Manager, Admin or Owner to call this endpoint")
@@ -650,6 +672,7 @@ impl From<ManagerHeadersLoose> for Headers {
             host: h.host,
             device: h.device,
             user: h.user,
+            ip: h.ip,
         }
     }
 }
@@ -658,6 +681,7 @@ pub struct OwnerHeaders {
     pub host: String,
     pub device: Device,
     pub user: User,
+    pub ip: ClientIp,
 }
 
 #[rocket::async_trait]
@@ -671,6 +695,7 @@ impl<'r> FromRequest<'r> for OwnerHeaders {
                 host: headers.host,
                 device: headers.device,
                 user: headers.user,
+                ip: headers.ip,
             })
         } else {
             err_handler!("You need to be Owner to call this endpoint")

@@ -231,8 +231,7 @@ impl<'r> FromParam<'r> for SafeString {
 
 // Log all the routes from the main paths list, and the attachments endpoint
 // Effectively ignores, any static file route, and the alive endpoint
-const LOGGED_ROUTES: [&str; 6] =
-    ["/api", "/admin", "/identity", "/icons", "/notifications/hub/negotiate", "/attachments"];
+const LOGGED_ROUTES: [&str; 5] = ["/api", "/admin", "/identity", "/icons", "/attachments"];
 
 // Boolean is extra debug, when true, we ignore the whitelist above and also print the mounts
 pub struct BetterLogging(pub bool);
@@ -588,7 +587,7 @@ impl<'de> Visitor<'de> for UpCaseVisitor {
 
 fn upcase_value(value: Value) -> Value {
     if let Value::Object(map) = value {
-        let mut new_value = json!({});
+        let mut new_value = Value::Object(serde_json::Map::new());
 
         for (key, val) in map.into_iter() {
             let processed_key = _process_key(&key);
@@ -597,7 +596,7 @@ fn upcase_value(value: Value) -> Value {
         new_value
     } else if let Value::Array(array) = value {
         // Initialize array with null values
-        let mut new_value = json!(vec![Value::Null; array.len()]);
+        let mut new_value = Value::Array(vec![Value::Null; array.len()]);
 
         for (index, val) in array.into_iter().enumerate() {
             new_value[index] = upcase_value(val);

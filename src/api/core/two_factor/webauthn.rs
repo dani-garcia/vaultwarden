@@ -9,7 +9,7 @@ use crate::{
         core::{log_user_event, two_factor::_generate_recover_code},
         EmptyResult, JsonResult, JsonUpcase, NumberOrString, PasswordData,
     },
-    auth::{ClientIp, Headers},
+    auth::Headers,
     db::{
         models::{EventType, TwoFactor, TwoFactorType},
         DbConn,
@@ -242,12 +242,7 @@ impl From<PublicKeyCredentialCopy> for PublicKeyCredential {
 }
 
 #[post("/two-factor/webauthn", data = "<data>")]
-async fn activate_webauthn(
-    data: JsonUpcase<EnableWebauthnData>,
-    headers: Headers,
-    mut conn: DbConn,
-    ip: ClientIp,
-) -> JsonResult {
+async fn activate_webauthn(data: JsonUpcase<EnableWebauthnData>, headers: Headers, mut conn: DbConn) -> JsonResult {
     let data: EnableWebauthnData = data.into_inner().data;
     let mut user = headers.user;
 
@@ -286,7 +281,7 @@ async fn activate_webauthn(
         .await?;
     _generate_recover_code(&mut user, &mut conn).await;
 
-    log_user_event(EventType::UserUpdated2fa as i32, &user.uuid, headers.device.atype, &ip.ip, &mut conn).await;
+    log_user_event(EventType::UserUpdated2fa as i32, &user.uuid, headers.device.atype, &headers.ip.ip, &mut conn).await;
 
     let keys_json: Vec<Value> = registrations.iter().map(WebauthnRegistration::to_json).collect();
     Ok(Json(json!({
@@ -297,13 +292,8 @@ async fn activate_webauthn(
 }
 
 #[put("/two-factor/webauthn", data = "<data>")]
-async fn activate_webauthn_put(
-    data: JsonUpcase<EnableWebauthnData>,
-    headers: Headers,
-    conn: DbConn,
-    ip: ClientIp,
-) -> JsonResult {
-    activate_webauthn(data, headers, conn, ip).await
+async fn activate_webauthn_put(data: JsonUpcase<EnableWebauthnData>, headers: Headers, conn: DbConn) -> JsonResult {
+    activate_webauthn(data, headers, conn).await
 }
 
 #[derive(Deserialize, Debug)]

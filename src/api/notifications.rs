@@ -10,8 +10,7 @@ use std::{
 use chrono::NaiveDateTime;
 use futures::{SinkExt, StreamExt};
 use rmpv::Value;
-use rocket::{serde::json::Json, Route};
-use serde_json::Value as JsonValue;
+use rocket::Route;
 use tokio::{
     net::{TcpListener, TcpStream},
     sync::mpsc::Sender,
@@ -23,13 +22,12 @@ use tokio_tungstenite::{
 
 use crate::{
     api::EmptyResult,
-    auth::Headers,
     db::models::{Cipher, Folder, Send, User},
     Error, CONFIG,
 };
 
 pub fn routes() -> Vec<Route> {
-    routes![negotiate, websockets_err]
+    routes![websockets_err]
 }
 
 #[get("/hub")]
@@ -49,29 +47,6 @@ fn websockets_err() -> EmptyResult {
     } else {
         Err(Error::empty())
     }
-}
-
-#[post("/hub/negotiate")]
-fn negotiate(_headers: Headers) -> Json<JsonValue> {
-    use crate::crypto;
-    use data_encoding::BASE64URL;
-
-    let conn_id = crypto::encode_random_bytes::<16>(BASE64URL);
-    let mut available_transports: Vec<JsonValue> = Vec::new();
-
-    if CONFIG.websocket_enabled() {
-        available_transports.push(json!({"transport":"WebSockets", "transferFormats":["Text","Binary"]}));
-    }
-
-    // TODO: Implement transports
-    // Rocket WS support: https://github.com/SergioBenitez/Rocket/issues/90
-    // Rocket SSE support: https://github.com/SergioBenitez/Rocket/issues/33
-    // {"transport":"ServerSentEvents", "transferFormats":["Text"]},
-    // {"transport":"LongPolling", "transferFormats":["Text","Binary"]}
-    Json(json!({
-        "connectionId": conn_id,
-        "availableTransports": available_transports
-    }))
 }
 
 //

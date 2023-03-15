@@ -7,7 +7,7 @@ use crate::{
         core::{log_user_event, two_factor::_generate_recover_code},
         EmptyResult, JsonResult, JsonUpcase, PasswordData,
     },
-    auth::{ClientIp, Headers},
+    auth::Headers,
     crypto,
     db::{
         models::{EventType, TwoFactor, TwoFactorType},
@@ -90,7 +90,7 @@ async fn get_email(data: JsonUpcase<PasswordData>, headers: Headers, mut conn: D
                 let twofactor_data = EmailTokenData::from_json(&x.data)?;
                 (true, json!(twofactor_data.email))
             }
-            _ => (false, json!(null)),
+            _ => (false, serde_json::value::Value::Null),
         };
 
     Ok(Json(json!({
@@ -150,7 +150,7 @@ struct EmailData {
 
 /// Verify email belongs to user and can be used for 2FA email codes.
 #[put("/two-factor/email", data = "<data>")]
-async fn email(data: JsonUpcase<EmailData>, headers: Headers, mut conn: DbConn, ip: ClientIp) -> JsonResult {
+async fn email(data: JsonUpcase<EmailData>, headers: Headers, mut conn: DbConn) -> JsonResult {
     let data: EmailData = data.into_inner().data;
     let mut user = headers.user;
 
@@ -180,7 +180,7 @@ async fn email(data: JsonUpcase<EmailData>, headers: Headers, mut conn: DbConn, 
 
     _generate_recover_code(&mut user, &mut conn).await;
 
-    log_user_event(EventType::UserUpdated2fa as i32, &user.uuid, headers.device.atype, &ip.ip, &mut conn).await;
+    log_user_event(EventType::UserUpdated2fa as i32, &user.uuid, headers.device.atype, &headers.ip.ip, &mut conn).await;
 
     Ok(Json(json!({
         "Email": email_data.email,

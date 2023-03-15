@@ -6,7 +6,7 @@ use crate::{
     api::{
         core::log_user_event, EmptyResult, JsonResult, JsonUpcase, Notify, NumberOrString, PasswordData, UpdateType,
     },
-    auth::{decode_delete, decode_invite, decode_verify_email, ClientIp, Headers},
+    auth::{decode_delete, decode_invite, decode_verify_email, Headers},
     crypto,
     db::{models::*, DbConn},
     mail, CONFIG,
@@ -311,7 +311,6 @@ async fn post_password(
     data: JsonUpcase<ChangePassData>,
     headers: Headers,
     mut conn: DbConn,
-    ip: ClientIp,
     nt: Notify<'_>,
 ) -> EmptyResult {
     let data: ChangePassData = data.into_inner().data;
@@ -324,7 +323,8 @@ async fn post_password(
     user.password_hint = clean_password_hint(&data.MasterPasswordHint);
     enforce_password_hint_setting(&user.password_hint)?;
 
-    log_user_event(EventType::UserChangedPassword as i32, &user.uuid, headers.device.atype, &ip.ip, &mut conn).await;
+    log_user_event(EventType::UserChangedPassword as i32, &user.uuid, headers.device.atype, &headers.ip.ip, &mut conn)
+        .await;
 
     user.set_password(
         &data.NewMasterPasswordHash,
@@ -420,13 +420,7 @@ struct KeyData {
 }
 
 #[post("/accounts/key", data = "<data>")]
-async fn post_rotatekey(
-    data: JsonUpcase<KeyData>,
-    headers: Headers,
-    mut conn: DbConn,
-    ip: ClientIp,
-    nt: Notify<'_>,
-) -> EmptyResult {
+async fn post_rotatekey(data: JsonUpcase<KeyData>, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> EmptyResult {
     let data: KeyData = data.into_inner().data;
 
     if !headers.user.check_valid_password(&data.MasterPasswordHash) {
@@ -472,7 +466,7 @@ async fn post_rotatekey(
         // Prevent triggering cipher updates via WebSockets by settings UpdateType::None
         // The user sessions are invalidated because all the ciphers were re-encrypted and thus triggering an update could cause issues.
         // We force the users to logout after the user has been saved to try and prevent these issues.
-        update_cipher_from_data(&mut saved_cipher, cipher_data, &headers, false, &mut conn, &ip, &nt, UpdateType::None)
+        update_cipher_from_data(&mut saved_cipher, cipher_data, &headers, false, &mut conn, &nt, UpdateType::None)
             .await?
     }
 
