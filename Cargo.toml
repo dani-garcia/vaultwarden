@@ -3,7 +3,7 @@ name = "vaultwarden"
 version = "1.0.0"
 authors = ["Daniel García <dani-garcia@users.noreply.github.com>"]
 edition = "2021"
-rust-version = "1.65.0"
+rust-version = "1.66.1"
 resolver = "2"
 
 repository = "https://github.com/dani-garcia/vaultwarden"
@@ -65,11 +65,11 @@ rmpv = "1.0.0" # MessagePack library
 dashmap = "5.4.0"
 
 # Async futures
-futures = "0.3.26"
+futures = "0.3.27"
 tokio = { version = "1.26.0", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal"] }
 
 # A generic serialization/deserialization framework
-serde = { version = "1.0.152", features = ["derive"] }
+serde = { version = "1.0.156", features = ["derive"] }
 serde_json = "1.0.94"
 
 # A safe, extensible ORM and Query builder
@@ -88,7 +88,7 @@ ring = "0.16.20"
 uuid = { version = "1.3.0", features = ["v4"] }
 
 # Date and time libraries
-chrono = { version = "0.4.23", features = ["clock", "serde"], default-features = false }
+chrono = { version = "0.4.24", features = ["clock", "serde"], default-features = false }
 chrono-tz = "0.8.1"
 time = "0.3.20"
 
@@ -99,7 +99,7 @@ job_scheduler_ng = "2.0.4"
 data-encoding = "2.3.3"
 
 # JWT library
-jsonwebtoken = "8.2.0"
+jsonwebtoken = "8.3.0"
 
 # TOTP library
 totp-lite = "2.0.0"
@@ -138,7 +138,7 @@ cookie = "0.16.2"
 cookie_store = "0.19.0"
 
 # Used by U2F, JWT and PostgreSQL
-openssl = "0.10.45"
+openssl = "0.10.46"
 
 # CLI argument parsing
 pico-args = "0.5.0"
@@ -148,7 +148,7 @@ paste = "1.0.12"
 governor = "0.5.1"
 
 # Check client versions for specific features.
-semver = "1.0.16"
+semver = "1.0.17"
 
 # Allow overriding the default memory allocator
 # Mainly used for the musl builds, since the default musl malloc is very slow
