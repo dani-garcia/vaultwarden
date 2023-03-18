@@ -39,6 +39,7 @@ pub fn routes() -> Vec<Route> {
         put_organization_collection_update,
         delete_organization_collection,
         post_organization_collection_delete,
+        bulk_delete_organization_collections,
         get_org_details,
         get_org_users,
         send_invite,
@@ -538,6 +539,34 @@ async fn post_organization_collection_delete_user(
     delete_organization_collection_user(org_id, col_id, org_user_id, headers, conn).await
 }
 
+async fn _delete_organization_collection(
+    org_id: &str,
+    col_id: &str,
+    headers: &ManagerHeaders,
+    conn: &mut DbConn,
+) -> EmptyResult {
+    match Collection::find_by_uuid(col_id, conn).await {
+        None => err!("Collection not found"),
+        Some(collection) => {
+            if collection.org_uuid == org_id {
+                log_event(
+                    EventType::CollectionDeleted as i32,
+                    &collection.uuid,
+                    org_id.to_string(),
+                    headers.user.uuid.clone(),
+                    headers.device.atype,
+                    &headers.ip.ip,
+                    conn,
+                )
+                .await;
+                collection.delete(conn).await
+            } else {
+                err!("Collection and Organization id do not match")
+            }
+        }
+    }
+}
+
 #[delete("/organizations/<org_id>/collections/<col_id>")]
 async fn delete_organization_collection(
     org_id: String,
@@ -545,26 +574,7 @@ async fn delete_organization_collection(
     headers: ManagerHeaders,
     mut conn: DbConn,
 ) -> EmptyResult {
-    match Collection::find_by_uuid(&col_id, &mut conn).await {
-        None => err!("Collection not found"),
-        Some(collection) => {
-            if collection.org_uuid == org_id {
-                log_event(
-                    EventType::CollectionDeleted as i32,
-                    &collection.uuid,
-                    org_id,
-                    headers.user.uuid.clone(),
-                    headers.device.atype,
-                    &headers.ip.ip,
-                    &mut conn,
-                )
-                .await;
-                collection.delete(&mut conn).await
-            } else {
-                err!("Collection and Organization id do not match")
-            }
-        }
-    }
+    _delete_organization_collection(&org_id, &col_id, &headers, &mut conn).await
 }
 
 #[derive(Deserialize, Debug)]
@@ -580,9 +590,36 @@ async fn post_organization_collection_delete(
     col_id: String,
     headers: ManagerHeaders,
     _data: JsonUpcase<DeleteCollectionData>,
-    conn: DbConn,
+    mut conn: DbConn,
 ) -> EmptyResult {
-    delete_organization_collection(org_id, col_id, headers, conn).await
+    _delete_organization_collection(&org_id, &col_id, &headers, &mut conn).await
+}
+
+#[derive(Deserialize, Debug)]
+#[allow(non_snake_case)]
+struct BulkCollectionIds {
+    Ids: Vec<String>,
+    OrganizationId: String,
+}
+
+#[delete("/organizations/<org_id>/collections", data = "<data>")]
+async fn bulk_delete_organization_collections(
+    org_id: &str,
+    headers: ManagerHeadersLoose,
+    data: JsonUpcase<BulkCollectionIds>,
+    mut conn: DbConn,
+) -> EmptyResult {
+    let data: BulkCollectionIds = data.into_inner().data;
+    assert!(org_id == data.OrganizationId);
+
+    let collections = data.Ids;
+
+    let headers = ManagerHeaders::from_loose(headers, &collections, &mut conn).await?;
+
+    for col_id in collections {
+        _delete_organization_collection(org_id, &col_id, &headers, &mut conn).await?
+    }
+    Ok(())
 }
 
 #[get("/organizations/<org_id>/collections/<coll_id>/details")]
