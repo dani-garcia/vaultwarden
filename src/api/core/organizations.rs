@@ -81,6 +81,7 @@ pub fn routes() -> Vec<Route> {
         get_group_details,
         delete_group,
         post_delete_group,
+        bulk_delete_groups,
         get_group_users,
         put_group_users,
         get_user_groups,
@@ -2363,17 +2364,21 @@ async fn get_group_details(_org_id: String, group_id: String, _headers: AdminHea
 }
 
 #[post("/organizations/<org_id>/groups/<group_id>/delete")]
-async fn post_delete_group(org_id: String, group_id: String, headers: AdminHeaders, conn: DbConn) -> EmptyResult {
-    delete_group(org_id, group_id, headers, conn).await
+async fn post_delete_group(org_id: String, group_id: String, headers: AdminHeaders, mut conn: DbConn) -> EmptyResult {
+    _delete_group(org_id, group_id, &headers, &mut conn).await
 }
 
 #[delete("/organizations/<org_id>/groups/<group_id>")]
 async fn delete_group(org_id: String, group_id: String, headers: AdminHeaders, mut conn: DbConn) -> EmptyResult {
+    _delete_group(org_id, group_id, &headers, &mut conn).await
+}
+
+async fn _delete_group(org_id: String, group_id: String, headers: &AdminHeaders, conn: &mut DbConn) -> EmptyResult {
     if !CONFIG.org_groups_enabled() {
         err!("Group support is disabled");
     }
 
-    let group = match Group::find_by_uuid(&group_id, &mut conn).await {
+    let group = match Group::find_by_uuid(&group_id, conn).await {
         Some(group) => group,
         _ => err!("Group not found"),
     };
@@ -2385,11 +2390,30 @@ async fn delete_group(org_id: String, group_id: String, headers: AdminHeaders, m
         headers.user.uuid.clone(),
         headers.device.atype,
         &headers.ip.ip,
-        &mut conn,
+        conn,
     )
     .await;
 
-    group.delete(&mut conn).await
+    group.delete(conn).await
+}
+
+#[delete("/organizations/<org_id>/groups", data = "<data>")]
+async fn bulk_delete_groups(
+    org_id: String,
+    data: JsonUpcase<OrgBulkIds>,
+    headers: AdminHeaders,
+    mut conn: DbConn,
+) -> EmptyResult {
+    if !CONFIG.org_groups_enabled() {
+        err!("Group support is disabled");
+    }
+
+    let data: OrgBulkIds = data.into_inner().data;
+
+    for group_id in data.Ids {
+        _delete_group(org_id.clone(), group_id, &headers, &mut conn).await?
+    }
+    Ok(())
 }
 
 #[get("/organizations/<_org_id>/groups/<group_id>")]
