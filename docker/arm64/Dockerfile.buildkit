@@ -16,15 +16,15 @@
 # - From https://hub.docker.com/r/vaultwarden/web-vault/tags,
 #   click the tag name to view the digest of the image it currently points to.
 # - From the command line:
-#     $ docker pull vaultwarden/web-vault:v2023.2.0
-#     $ docker image inspect --format "{{.RepoDigests}}" vaultwarden/web-vault:v2023.2.0
-#     [vaultwarden/web-vault@sha256:92896085c7ba4f81e210b70d0b978b100cadd4207c2b2531116f8575b85b3345]
+#     $ docker pull vaultwarden/web-vault:v2023.3.0
+#     $ docker image inspect --format "{{.RepoDigests}}" vaultwarden/web-vault:v2023.3.0
+#     [vaultwarden/web-vault@sha256:8b658e46339dde404b6370b381422e3522a133560264266e285acdd9adf807fe]
 #
 # - Conversely, to get the tag name from the digest:
-#     $ docker image inspect --format "{{.RepoTags}}" vaultwarden/web-vault@sha256:92896085c7ba4f81e210b70d0b978b100cadd4207c2b2531116f8575b85b3345
-#     [vaultwarden/web-vault:v2023.2.0]
+#     $ docker image inspect --format "{{.RepoTags}}" vaultwarden/web-vault@sha256:8b658e46339dde404b6370b381422e3522a133560264266e285acdd9adf807fe
+#     [vaultwarden/web-vault:v2023.3.0]
 #
-FROM vaultwarden/web-vault@sha256:92896085c7ba4f81e210b70d0b978b100cadd4207c2b2531116f8575b85b3345 as vault
+FROM vaultwarden/web-vault@sha256:8b658e46339dde404b6370b381422e3522a133560264266e285acdd9adf807fe as vault
 
 ########################## BUILD IMAGE  ##########################
 FROM rust:1.67.1-bullseye as build
