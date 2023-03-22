@@ -610,7 +610,9 @@ async fn bulk_delete_organization_collections(
     mut conn: DbConn,
 ) -> EmptyResult {
     let data: BulkCollectionIds = data.into_inner().data;
-    assert!(org_id == data.OrganizationId);
+    if org_id != data.OrganizationId {
+        err!("OrganizationId mismatch");
+    }
 
     let collections = data.Ids;
 
