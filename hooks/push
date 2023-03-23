@@ -1,5 +1,6 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
+# shellcheck source=arches.sh
 source ./hooks/arches.sh
 
 export DOCKER_CLI_EXPERIMENTAL=enabled
@@ -41,7 +42,7 @@ LOCAL_REPO="${LOCAL_REGISTRY}/${REPO}"
 
 echo ">>> Pushing images to local registry..."
 
-for arch in ${arches[@]}; do
+for arch in "${arches[@]}"; do
     docker_image="${DOCKER_REPO}:${DOCKER_TAG}-${arch}"
     local_image="${LOCAL_REPO}:${DOCKER_TAG}-${arch}"
     docker tag "${docker_image}" "${local_image}"
@@ -71,9 +72,9 @@ tags=("${DOCKER_REPO}:${DOCKER_TAG}")
 # to make it easier for users to track the latest release.
 if [[ "${DOCKER_TAG}" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
     if [[ "${DOCKER_TAG}" == *alpine ]]; then
-        tags+=(${DOCKER_REPO}:alpine)
+        tags+=("${DOCKER_REPO}:alpine")
     else
-        tags+=(${DOCKER_REPO}:latest)
+        tags+=("${DOCKER_REPO}:latest")
     fi
 fi
 
@@ -91,10 +92,10 @@ declare -A arch_to_platform=(
     [arm64]="linux/arm64"
 )
 platforms=()
-for arch in ${arches[@]}; do
+for arch in "${arches[@]}"; do
     platforms+=("${arch_to_platform[$arch]}")
 done
-platforms="$(join "," "${platforms[@]}")"
+platform="$(join "," "${platforms[@]}")"
 
 # Run the build, pushing the resulting images and multi-arch manifest list to
 # Docker Hub. The Dockerfile is read from stdin to avoid sending any build
@@ -104,7 +105,7 @@ docker buildx build \
        --network host \
        --build-arg LOCAL_REPO="${LOCAL_REPO}" \
        --build-arg DOCKER_TAG="${DOCKER_TAG}" \
-       --platform "${platforms}" \
+       --platform "${platform}" \
        "${tag_args[@]}" \
        --push \
        - < ./docker/Dockerfile.buildx
