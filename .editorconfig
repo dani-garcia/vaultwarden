@@ -6,18 +6,20 @@ root = true
 [*]
 end_of_line = lf
 charset = utf-8
+insert_final_newline = true
 
 [*.{rs,py}]
 indent_style = space
 indent_size = 4
 trim_trailing_whitespace = true
-insert_final_newline = true
 
 [*.{yml,yaml}]
 indent_style = space
 indent_size = 2
 trim_trailing_whitespace = true
-insert_final_newline = true
+
+[*.min.js]
+insert_final_newline = false
 
 [Makefile]
 indent_style = tab
