@@ -59,4 +59,3 @@ CREATE TABLE folders (
   user_uuid  TEXT     NOT NULL REFERENCES users (uuid),
   name       TEXT     NOT NULL
 );
-  
