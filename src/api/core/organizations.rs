@@ -39,6 +39,7 @@ pub fn routes() -> Vec<Route> {
         put_organization_collection_update,
         delete_organization_collection,
         post_organization_collection_delete,
+        bulk_delete_organization_collections,
         get_org_details,
         get_org_users,
         send_invite,
@@ -81,6 +82,7 @@ pub fn routes() -> Vec<Route> {
         get_group_details,
         delete_group,
         post_delete_group,
+        bulk_delete_groups,
         get_group_users,
         put_group_users,
         get_user_groups,
@@ -537,6 +539,34 @@ async fn post_organization_collection_delete_user(
     delete_organization_collection_user(org_id, col_id, org_user_id, headers, conn).await
 }
 
+async fn _delete_organization_collection(
+    org_id: &str,
+    col_id: &str,
+    headers: &ManagerHeaders,
+    conn: &mut DbConn,
+) -> EmptyResult {
+    match Collection::find_by_uuid(col_id, conn).await {
+        None => err!("Collection not found"),
+        Some(collection) => {
+            if collection.org_uuid == org_id {
+                log_event(
+                    EventType::CollectionDeleted as i32,
+                    &collection.uuid,
+                    org_id.to_string(),
+                    headers.user.uuid.clone(),
+                    headers.device.atype,
+                    &headers.ip.ip,
+                    conn,
+                )
+                .await;
+                collection.delete(conn).await
+            } else {
+                err!("Collection and Organization id do not match")
+            }
+        }
+    }
+}
+
 #[delete("/organizations/<org_id>/collections/<col_id>")]
 async fn delete_organization_collection(
     org_id: String,
@@ -544,26 +574,7 @@ async fn delete_organization_collection(
     headers: ManagerHeaders,
     mut conn: DbConn,
 ) -> EmptyResult {
-    match Collection::find_by_uuid(&col_id, &mut conn).await {
-        None => err!("Collection not found"),
-        Some(collection) => {
-            if collection.org_uuid == org_id {
-                log_event(
-                    EventType::CollectionDeleted as i32,
-                    &collection.uuid,
-                    org_id,
-                    headers.user.uuid.clone(),
-                    headers.device.atype,
-                    &headers.ip.ip,
-                    &mut conn,
-                )
-                .await;
-                collection.delete(&mut conn).await
-            } else {
-                err!("Collection and Organization id do not match")
-            }
-        }
-    }
+    _delete_organization_collection(&org_id, &col_id, &headers, &mut conn).await
 }
 
 #[derive(Deserialize, Debug)]
@@ -579,9 +590,38 @@ async fn post_organization_collection_delete(
     col_id: String,
     headers: ManagerHeaders,
     _data: JsonUpcase<DeleteCollectionData>,
-    conn: DbConn,
+    mut conn: DbConn,
 ) -> EmptyResult {
-    delete_organization_collection(org_id, col_id, headers, conn).await
+    _delete_organization_collection(&org_id, &col_id, &headers, &mut conn).await
+}
+
+#[derive(Deserialize, Debug)]
+#[allow(non_snake_case)]
+struct BulkCollectionIds {
+    Ids: Vec<String>,
+    OrganizationId: String,
+}
+
+#[delete("/organizations/<org_id>/collections", data = "<data>")]
+async fn bulk_delete_organization_collections(
+    org_id: &str,
+    headers: ManagerHeadersLoose,
+    data: JsonUpcase<BulkCollectionIds>,
+    mut conn: DbConn,
+) -> EmptyResult {
+    let data: BulkCollectionIds = data.into_inner().data;
+    if org_id != data.OrganizationId {
+        err!("OrganizationId mismatch");
+    }
+
+    let collections = data.Ids;
+
+    let headers = ManagerHeaders::from_loose(headers, &collections, &mut conn).await?;
+
+    for col_id in collections {
+        _delete_organization_collection(org_id, &col_id, &headers, &mut conn).await?
+    }
+    Ok(())
 }
 
 #[get("/organizations/<org_id>/collections/<coll_id>/details")]
@@ -2363,17 +2403,21 @@ async fn get_group_details(_org_id: String, group_id: String, _headers: AdminHea
 }
 
 #[post("/organizations/<org_id>/groups/<group_id>/delete")]
-async fn post_delete_group(org_id: String, group_id: String, headers: AdminHeaders, conn: DbConn) -> EmptyResult {
-    delete_group(org_id, group_id, headers, conn).await
+async fn post_delete_group(org_id: String, group_id: String, headers: AdminHeaders, mut conn: DbConn) -> EmptyResult {
+    _delete_group(org_id, group_id, &headers, &mut conn).await
 }
 
 #[delete("/organizations/<org_id>/groups/<group_id>")]
 async fn delete_group(org_id: String, group_id: String, headers: AdminHeaders, mut conn: DbConn) -> EmptyResult {
+    _delete_group(org_id, group_id, &headers, &mut conn).await
+}
+
+async fn _delete_group(org_id: String, group_id: String, headers: &AdminHeaders, conn: &mut DbConn) -> EmptyResult {
     if !CONFIG.org_groups_enabled() {
         err!("Group support is disabled");
     }
 
-    let group = match Group::find_by_uuid(&group_id, &mut conn).await {
+    let group = match Group::find_by_uuid(&group_id, conn).await {
         Some(group) => group,
         _ => err!("Group not found"),
     };
@@ -2385,11 +2429,30 @@ async fn delete_group(org_id: String, group_id: String, headers: AdminHeaders, m
         headers.user.uuid.clone(),
         headers.device.atype,
         &headers.ip.ip,
-        &mut conn,
+        conn,
     )
     .await;
 
-    group.delete(&mut conn).await
+    group.delete(conn).await
+}
+
+#[delete("/organizations/<org_id>/groups", data = "<data>")]
+async fn bulk_delete_groups(
+    org_id: String,
+    data: JsonUpcase<OrgBulkIds>,
+    headers: AdminHeaders,
+    mut conn: DbConn,
+) -> EmptyResult {
+    if !CONFIG.org_groups_enabled() {
+        err!("Group support is disabled");
+    }
+
+    let data: OrgBulkIds = data.into_inner().data;
+
+    for group_id in data.Ids {
+        _delete_group(org_id.clone(), group_id, &headers, &mut conn).await?
+    }
+    Ok(())
 }
 
 #[get("/organizations/<_org_id>/groups/<group_id>")]

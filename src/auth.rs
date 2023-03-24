@@ -598,14 +598,7 @@ impl<'r> FromRequest<'r> for ManagerHeaders {
                         _ => err_handler!("Error getting DB"),
                     };
 
-                    if !headers.org_user.has_full_access()
-                        && !Collection::has_access_by_collection_and_user_uuid(
-                            &col_id,
-                            &headers.org_user.user_uuid,
-                            &mut conn,
-                        )
-                        .await
-                    {
+                    if !can_access_collection(&headers.org_user, &col_id, &mut conn).await {
                         err_handler!("The current user isn't a manager for this collection")
                     }
                 }
@@ -642,6 +635,7 @@ pub struct ManagerHeadersLoose {
     pub host: String,
     pub device: Device,
     pub user: User,
+    pub org_user: UserOrganization,
     pub org_user_type: UserOrgType,
     pub ip: ClientIp,
 }
@@ -657,6 +651,7 @@ impl<'r> FromRequest<'r> for ManagerHeadersLoose {
                 host: headers.host,
                 device: headers.device,
                 user: headers.user,
+                org_user: headers.org_user,
                 org_user_type: headers.org_user_type,
                 ip: headers.ip,
             })
@@ -674,6 +669,35 @@ impl From<ManagerHeadersLoose> for Headers {
             user: h.user,
             ip: h.ip,
         }
+    }
+}
+async fn can_access_collection(org_user: &UserOrganization, col_id: &str, conn: &mut DbConn) -> bool {
+    org_user.has_full_access()
+        || Collection::has_access_by_collection_and_user_uuid(col_id, &org_user.user_uuid, conn).await
+}
+
+impl ManagerHeaders {
+    pub async fn from_loose(
+        h: ManagerHeadersLoose,
+        collections: &Vec<String>,
+        conn: &mut DbConn,
+    ) -> Result<ManagerHeaders, Error> {
+        for col_id in collections {
+            if uuid::Uuid::parse_str(col_id).is_err() {
+                err!("Collection Id is malformed!");
+            }
+            if !can_access_collection(&h.org_user, col_id, conn).await {
+                err!("You don't have access to all collections!");
+            }
+        }
+
+        Ok(ManagerHeaders {
+            host: h.host,
+            device: h.device,
+            user: h.user,
+            org_user_type: h.org_user_type,
+            ip: h.ip,
+        })
     }
 }
 
