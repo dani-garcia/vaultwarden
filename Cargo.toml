@@ -138,7 +138,7 @@ cookie = "0.16.2"
 cookie_store = "0.19.0"
 
 # Used by U2F, JWT and PostgreSQL
-openssl = "0.10.47"
+openssl = "0.10.48"
 
 # CLI argument parsing
 pico-args = "0.5.0"
