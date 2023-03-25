@@ -635,7 +635,7 @@ where
                 if tries >= max_tries {
                     return err;
                 }
-                Handle::current().block_on(async move { sleep(Duration::from_millis(500)).await });
+                Handle::current().block_on(sleep(Duration::from_millis(500)));
             }
         }
     }

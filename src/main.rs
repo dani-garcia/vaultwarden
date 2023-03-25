@@ -111,7 +111,7 @@ async fn main() -> Result<(), Error> {
     create_dir(&CONFIG.attachments_folder(), "attachments folder");
 
     let pool = create_db_pool().await;
-    schedule_jobs(pool.clone()).await;
+    schedule_jobs(pool.clone());
     crate::db::models::TwoFactor::migrate_u2f_to_webauthn(&mut pool.get().await.unwrap()).await.unwrap();
 
     launch_rocket(pool, extra_debug).await // Blocks until program termination.
@@ -548,7 +548,7 @@ async fn launch_rocket(pool: db::DbPool, extra_debug: bool) -> Result<(), Error>
     Ok(())
 }
 
-async fn schedule_jobs(pool: db::DbPool) {
+fn schedule_jobs(pool: db::DbPool) {
     if CONFIG.job_poll_interval_ms() == 0 {
         info!("Job scheduler disabled.");
         return;
@@ -624,9 +624,7 @@ async fn schedule_jobs(pool: db::DbPool) {
             // tick, the one that was added earlier will run first.
             loop {
                 sched.tick();
-                runtime.block_on(async move {
-                    tokio::time::sleep(tokio::time::Duration::from_millis(CONFIG.job_poll_interval_ms())).await
-                });
+                runtime.block_on(tokio::time::sleep(tokio::time::Duration::from_millis(CONFIG.job_poll_interval_ms())));
             }
         })
         .expect("Error spawning job scheduler thread");
