@@ -899,7 +899,7 @@ impl<'r> FromRequest<'r> for KnownDevice {
 
     async fn from_request(req: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         let email = if let Some(email_b64) = req.headers().get_one("X-Request-Email") {
-            let email_bytes = match data_encoding::BASE64URL.decode(email_b64.as_bytes()) {
+            let email_bytes = match data_encoding::BASE64URL_NOPAD.decode(email_b64.as_bytes()) {
                 Ok(bytes) => bytes,
                 Err(_) => {
                     return Outcome::Failure((
