@@ -2694,7 +2694,7 @@ async fn put_reset_password(
         None => err!("User to reset isn't member of required organization"),
     };
 
-    let mut user = match User::find_by_uuid(&org_user.user_uuid, &mut conn).await {
+    let user = match User::find_by_uuid(&org_user.user_uuid, &mut conn).await {
         Some(user) => user,
         None => err!("User not found"),
     };
@@ -2711,11 +2711,12 @@ async fn put_reset_password(
     // Sending email before resetting password to ensure working email configuration and the resulting
     // user notification. Also this might add some protection against security flaws and misuse
     if let Err(e) = mail::send_admin_reset_password(&user.email, &user.name, &org.name).await {
-        error!("Error sending user reset password email: {:#?}", e);
+        err!(format!("Error sending user reset password email: {e:#?}"));
     }
 
     let reset_request = data.into_inner().data;
 
+    let mut user = user;
     user.set_password(reset_request.NewMasterPasswordHash.as_str(), Some(reset_request.Key), true, None);
     user.save(&mut conn).await?;
 
@@ -2759,12 +2760,15 @@ async fn get_reset_password_details(
 
     check_reset_password_applicable_and_permissions(&org_id, &org_user_id, &headers, &mut conn).await?;
 
+    // https://github.com/bitwarden/server/blob/3b50ccb9f804efaacdc46bed5b60e5b28eddefcf/src/Api/Models/Response/Organizations/OrganizationUserResponseModel.cs#L111
     Ok(Json(json!({
         "Object": "organizationUserResetPasswordDetails",
         "Kdf":user.client_kdf_type,
         "KdfIterations":user.client_kdf_iter,
+        "KdfMemory":user.client_kdf_memory,
+        "KdfParallelism":user.client_kdf_parallelism,
         "ResetPasswordKey":org_user.reset_password_key,
-        "EncryptedPrivateKey":org.private_key ,
+        "EncryptedPrivateKey":org.private_key,
 
     })))
 }
