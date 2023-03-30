@@ -803,15 +803,12 @@ pub async fn _prelogin(data: JsonUpcase<PreloginData>, mut conn: DbConn) -> Json
         None => (User::CLIENT_KDF_TYPE_DEFAULT, User::CLIENT_KDF_ITER_DEFAULT, None, None),
     };
 
-    let mut result = json!({
+    let result = json!({
         "Kdf": kdf_type,
         "KdfIterations": kdf_iter,
+        "KdfMemory": kdf_mem,
+        "KdfParallelism": kdf_para,
     });
-
-    if kdf_type == UserKdfType::Argon2id as i32 {
-        result["KdfMemory"] = Value::Number(kdf_mem.expect("Argon2 memory parameter is required.").into());
-        result["KdfParallelism"] = Value::Number(kdf_para.expect("Argon2 parallelism parameter is required.").into());
-    }
 
     Json(result)
 }
