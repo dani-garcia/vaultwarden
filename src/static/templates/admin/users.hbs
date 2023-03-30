@@ -72,6 +72,9 @@
                                 {{else}}
                                 <button type="button" class="btn btn-sm btn-link p-0 border-0 float-right" vw-enable-user>Enable User</button><br>
                                 {{/if}}
+                                {{#case _Status 1}}
+                                <button type="button" class="btn btn-sm btn-link p-0 border-0 float-right" vw-resend-user-invite>Resend invite</button><br>
+                                {{/case}}
                             </span>
                         </td>
                     </tr>
