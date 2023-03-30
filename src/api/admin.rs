@@ -438,7 +438,7 @@ async fn remove_2fa(uuid: String, _token: AdminToken, mut conn: DbConn) -> Empty
 
 #[post("/users/<uuid>/invite/resend")]
 async fn resend_user_invite(uuid: String, _token: AdminToken, mut conn: DbConn) -> EmptyResult {
-    if let Some(user) = User::find_by_uuid(&uuid,&mut conn).await {
+    if let Some(user) = User::find_by_uuid(&uuid, &mut conn).await {
         if CONFIG.mail_enabled() {
             mail::send_invite(&user.email, &user.uuid, None, None, &CONFIG.invitation_org_name(), None).await
         } else {
