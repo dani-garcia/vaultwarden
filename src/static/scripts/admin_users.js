@@ -125,7 +125,7 @@ function resendUserInvite (event) {
     event.stopPropagation();
     const id = event.target.parentNode.dataset.vwUserUuid;
     const email = event.target.parentNode.dataset.vwUserEmail;
-    if (!id) {
+    if (!id || !email) {
         alert("Required parameters not found!");
         return false;
     }
