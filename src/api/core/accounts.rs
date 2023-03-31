@@ -169,8 +169,8 @@ pub async fn _register(data: JsonUpcase<RegisterData>, mut conn: DbConn) -> Json
         user.client_kdf_iter = client_kdf_iter;
     }
 
-    user.client_kdf_parallelism = data.KdfMemory;
-    user.client_kdf_memory = data.KdfParallelism;
+    user.client_kdf_memory = data.KdfMemory;
+    user.client_kdf_parallelism = data.KdfParallelism;
 
     user.set_password(&data.MasterPasswordHash, Some(data.Key), true, None);
     user.password_hint = password_hint;
@@ -389,6 +389,9 @@ async fn post_kdf(data: JsonUpcase<ChangeKdfData>, headers: Headers, mut conn: D
         } else {
             err!("Argon2 parallelism parameter is required.")
         }
+    } else {
+        user.client_kdf_memory = None;
+        user.client_kdf_parallelism = None;
     }
     user.client_kdf_iter = data.KdfIterations;
     user.client_kdf_type = data.Kdf;
