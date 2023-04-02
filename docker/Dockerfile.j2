@@ -2,40 +2,42 @@
 
 # This file was generated using a Jinja2 template.
 # Please make your changes in `Dockerfile.j2` and then `make` the individual Dockerfiles.
-
-{% set build_stage_base_image = "rust:1.68.1-bullseye" %}
+{% set rust_version = "1.68.2" %}
+{% set debian_version = "bullseye" %}
+{% set alpine_version = "3.17" %}
+{% set build_stage_base_image = "rust:%s-%s" % (rust_version, debian_version) %}
 {% if "alpine" in target_file %}
 {%   if "amd64" in target_file %}
-{%     set build_stage_base_image = "blackdex/rust-musl:x86_64-musl-stable-1.68.1" %}
-{%     set runtime_stage_base_image = "alpine:3.17" %}
+{%     set build_stage_base_image = "blackdex/rust-musl:x86_64-musl-stable-%s" % rust_version %}
+{%     set runtime_stage_base_image = "alpine:%s" % alpine_version %}
 {%     set package_arch_target = "x86_64-unknown-linux-musl" %}
 {%   elif "armv7" in target_file %}
-{%     set build_stage_base_image = "blackdex/rust-musl:armv7-musleabihf-stable-1.68.1" %}
-{%     set runtime_stage_base_image = "balenalib/armv7hf-alpine:3.17" %}
+{%     set build_stage_base_image = "blackdex/rust-musl:armv7-musleabihf-stable-%s" % rust_version %}
+{%     set runtime_stage_base_image = "balenalib/armv7hf-alpine:%s" % alpine_version %}
 {%     set package_arch_target = "armv7-unknown-linux-musleabihf" %}
 {%   elif "armv6" in target_file %}
-{%     set build_stage_base_image = "blackdex/rust-musl:arm-musleabi-stable-1.68.1" %}
-{%     set runtime_stage_base_image = "balenalib/rpi-alpine:3.17" %}
+{%     set build_stage_base_image = "blackdex/rust-musl:arm-musleabi-stable-%s" % rust_version %}
+{%     set runtime_stage_base_image = "balenalib/rpi-alpine:%s" % alpine_version %}
 {%     set package_arch_target = "arm-unknown-linux-musleabi" %}
 {%   elif "arm64" in target_file %}
-{%     set build_stage_base_image = "blackdex/rust-musl:aarch64-musl-stable-1.68.1" %}
-{%     set runtime_stage_base_image = "balenalib/aarch64-alpine:3.17" %}
+{%     set build_stage_base_image = "blackdex/rust-musl:aarch64-musl-stable-%s" % rust_version %}
+{%     set runtime_stage_base_image = "balenalib/aarch64-alpine:%s" % alpine_version %}
 {%     set package_arch_target = "aarch64-unknown-linux-musl" %}
 {%   endif %}
 {% elif "amd64" in target_file %}
-{%   set runtime_stage_base_image = "debian:bullseye-slim" %}
+{%   set runtime_stage_base_image = "debian:%s-slim" % debian_version %}
 {% elif "arm64" in target_file %}
-{%   set runtime_stage_base_image = "balenalib/aarch64-debian:bullseye" %}
+{%   set runtime_stage_base_image = "balenalib/aarch64-debian:%s" % debian_version %}
 {%   set package_arch_name = "arm64" %}
 {%   set package_arch_target = "aarch64-unknown-linux-gnu" %}
 {%   set package_cross_compiler = "aarch64-linux-gnu" %}
 {% elif "armv6" in target_file %}
-{%   set runtime_stage_base_image = "balenalib/rpi-debian:bullseye" %}
+{%   set runtime_stage_base_image = "balenalib/rpi-debian:%s" % debian_version %}
 {%   set package_arch_name = "armel" %}
 {%   set package_arch_target = "arm-unknown-linux-gnueabi" %}
 {%   set package_cross_compiler = "arm-linux-gnueabi" %}
 {% elif "armv7" in target_file %}
-{%   set runtime_stage_base_image = "balenalib/armv7hf-debian:bullseye" %}
+{%   set runtime_stage_base_image = "balenalib/armv7hf-debian:%s" % debian_version %}
 {%   set package_arch_name = "armhf" %}
 {%   set package_arch_target = "armv7-unknown-linux-gnueabihf" %}
 {%   set package_cross_compiler = "arm-linux-gnueabihf" %}
@@ -108,7 +110,6 @@ RUN dpkg --add-architecture {{ package_arch_name }} \
         --no-install-recommends \
         gcc-{{ package_cross_compiler }} \
         libc6-dev{{ package_arch_prefix }} \
-        libcap2-bin \
         libmariadb-dev{{ package_arch_prefix }} \
         libmariadb-dev-compat{{ package_arch_prefix }} \
         libmariadb3{{ package_arch_prefix }} \
@@ -131,7 +132,6 @@ ENV CC_{{ package_arch_target | replace("-", "_") }}="/usr/bin/{{ package_cross_
 RUN apt-get update \
     && apt-get install -y \
         --no-install-recommends \
-        libcap2-bin \
         libmariadb-dev \
         libpq-dev
 {% endif %}
@@ -173,18 +173,6 @@ RUN touch src/main.rs
 # Builds again, this time it'll just be
 # your actual source files being built
 RUN {{ mount_rust_cache -}} cargo build --features ${DB} --release{{ package_arch_target_param }}
-
-{% if "buildkit" in target_file %}
-# Add the `cap_net_bind_service` capability to allow listening on
-# privileged (< 1024) ports even when running as a non-root user.
-# This is only done if building with BuildKit; with the legacy
-# builder, the `COPY` instruction doesn't carry over capabilities.
-{%   if package_arch_target is defined %}
-RUN setcap cap_net_bind_service=+ep target/{{ package_arch_target }}/release/vaultwarden
-{%   else %}
-RUN setcap cap_net_bind_service=+ep target/release/vaultwarden
-{%   endif %}
-{% endif %}
 
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image

@@ -7,3 +7,5 @@ ignored:
   - DL3059
 trustedRegistries:
   - docker.io
+  - ghcr.io
+  - quay.io

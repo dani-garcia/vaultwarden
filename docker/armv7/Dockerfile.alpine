@@ -2,7 +2,6 @@
 
 # This file was generated using a Jinja2 template.
 # Please make your changes in `Dockerfile.j2` and then `make` the individual Dockerfiles.
-
 # Using multistage build:
 # 	https://docs.docker.com/develop/develop-images/multistage-build/
 # 	https://whitfin.io/speeding-up-rust-docker-builds/
@@ -27,7 +26,7 @@
 FROM vaultwarden/web-vault@sha256:aa6ba791911a815ea570ec2ddc59992481c6ba8fbb65eed4f7074b463430d3ee as vault
 
 ########################## BUILD IMAGE  ##########################
-FROM blackdex/rust-musl:armv7-musleabihf-stable-1.68.1 as build
+FROM blackdex/rust-musl:armv7-musleabihf-stable-1.68.2 as build
 
 # Build time options to avoid dpkg warnings and help with reproducible builds.
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -73,7 +72,6 @@ RUN touch src/main.rs
 # Builds again, this time it'll just be
 # your actual source files being built
 RUN cargo build --features ${DB} --release --target=armv7-unknown-linux-musleabihf
-
 
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image
