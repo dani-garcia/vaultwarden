@@ -53,7 +53,8 @@ pub fn routes() -> Vec<Route> {
         organizations_overview,
         delete_organization,
         diagnostics,
-        get_diagnostics_config
+        get_diagnostics_config,
+        resend_user_invite,
     ]
 }
 
@@ -433,6 +434,24 @@ async fn remove_2fa(uuid: String, _token: AdminToken, mut conn: DbConn) -> Empty
     TwoFactor::delete_all_by_user(&user.uuid, &mut conn).await?;
     user.totp_recover = None;
     user.save(&mut conn).await
+}
+
+#[post("/users/<uuid>/invite/resend")]
+async fn resend_user_invite(uuid: String, _token: AdminToken, mut conn: DbConn) -> EmptyResult {
+    if let Some(user) = User::find_by_uuid(&uuid, &mut conn).await {
+        //TODO: replace this with user.status check when it will be available (PR#3397)
+        if !user.password_hash.is_empty() {
+            err_code!("User already accepted invitation", Status::BadRequest.code);
+        }
+
+        if CONFIG.mail_enabled() {
+            mail::send_invite(&user.email, &user.uuid, None, None, &CONFIG.invitation_org_name(), None).await
+        } else {
+            Ok(())
+        }
+    } else {
+        err_code!("User doesn't exist", Status::NotFound.code);
+    }
 }
 
 #[derive(Deserialize, Debug)]

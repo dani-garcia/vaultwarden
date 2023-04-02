@@ -120,6 +120,24 @@ function inviteUser(event) {
     );
 }
 
+function resendUserInvite (event) {
+    event.preventDefault();
+    event.stopPropagation();
+    const id = event.target.parentNode.dataset.vwUserUuid;
+    const email = event.target.parentNode.dataset.vwUserEmail;
+    if (!id || !email) {
+        alert("Required parameters not found!");
+        return false;
+    }
+    const confirmed = confirm(`Are you sure you want to resend invitation for "${email}"?`);
+    if (confirmed) {
+        _post(`${BASE_URL}/admin/users/${id}/invite/resend`,
+            "Invite sent successfully",
+            "Error resend invite"
+        );
+    }
+}
+
 const ORG_TYPES = {
     "0": {
         "name": "Owner",
@@ -227,6 +245,9 @@ function initUserTable() {
     });
     document.querySelectorAll("button[vw-enable-user]").forEach(btn => {
         btn.addEventListener("click", enableUser);
+    });
+    document.querySelectorAll("button[vw-resend-user-invite]").forEach(btn => {
+        btn.addEventListener("click", resendUserInvite);
     });
 
     if (jdenticon) {
