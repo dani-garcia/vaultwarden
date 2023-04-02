@@ -628,20 +628,14 @@ async fn takeover_emergency_access(emer_id: String, headers: Headers, mut conn: 
         None => err!("Grantor user not found."),
     };
 
-    let mut result = json!({
+    let result = json!({
         "Kdf": grantor_user.client_kdf_type,
         "KdfIterations": grantor_user.client_kdf_iter,
+        "KdfMemory": grantor_user.client_kdf_memory,
+        "KdfParallelism": grantor_user.client_kdf_parallelism,
         "KeyEncrypted": &emergency_access.key_encrypted,
         "Object": "emergencyAccessTakeover",
     });
-
-    if grantor_user.client_kdf_type == UserKdfType::Argon2id as i32 {
-        result["KdfMemory"] =
-            Value::Number(grantor_user.client_kdf_memory.expect("Argon2 memory parameter is required.").into());
-        result["KdfParallelism"] = Value::Number(
-            grantor_user.client_kdf_parallelism.expect("Argon2 parallelism parameter is required.").into(),
-        );
-    }
 
     Ok(Json(result))
 }

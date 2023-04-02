@@ -169,8 +169,8 @@ pub async fn _register(data: JsonUpcase<RegisterData>, mut conn: DbConn) -> Json
         user.client_kdf_iter = client_kdf_iter;
     }
 
-    user.client_kdf_parallelism = data.KdfMemory;
-    user.client_kdf_memory = data.KdfParallelism;
+    user.client_kdf_memory = data.KdfMemory;
+    user.client_kdf_parallelism = data.KdfParallelism;
 
     user.set_password(&data.MasterPasswordHash, Some(data.Key), true, None);
     user.password_hint = password_hint;
@@ -389,6 +389,9 @@ async fn post_kdf(data: JsonUpcase<ChangeKdfData>, headers: Headers, mut conn: D
         } else {
             err!("Argon2 parallelism parameter is required.")
         }
+    } else {
+        user.client_kdf_memory = None;
+        user.client_kdf_parallelism = None;
     }
     user.client_kdf_iter = data.KdfIterations;
     user.client_kdf_type = data.Kdf;
@@ -803,15 +806,12 @@ pub async fn _prelogin(data: JsonUpcase<PreloginData>, mut conn: DbConn) -> Json
         None => (User::CLIENT_KDF_TYPE_DEFAULT, User::CLIENT_KDF_ITER_DEFAULT, None, None),
     };
 
-    let mut result = json!({
+    let result = json!({
         "Kdf": kdf_type,
         "KdfIterations": kdf_iter,
+        "KdfMemory": kdf_mem,
+        "KdfParallelism": kdf_para,
     });
-
-    if kdf_type == UserKdfType::Argon2id as i32 {
-        result["KdfMemory"] = Value::Number(kdf_mem.expect("Argon2 memory parameter is required.").into());
-        result["KdfParallelism"] = Value::Number(kdf_para.expect("Argon2 parallelism parameter is required.").into());
-    }
 
     Json(result)
 }
