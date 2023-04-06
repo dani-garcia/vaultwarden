@@ -309,7 +309,7 @@ impl OrgPolicy {
         match OrgPolicy::find_by_org_and_type(org_uuid, OrgPolicyType::ResetPassword, conn).await {
             Some(policy) => match serde_json::from_str::<UpCase<ResetPasswordDataModel>>(&policy.data) {
                 Ok(opts) => {
-                    return opts.data.AutoEnrollEnabled;
+                    return policy.enabled && opts.data.AutoEnrollEnabled;
                 }
                 _ => error!("Failed to deserialize ResetPasswordDataModel: {}", policy.data),
             },
