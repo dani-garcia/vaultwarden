@@ -26,7 +26,7 @@
 FROM vaultwarden/web-vault@sha256:aa6ba791911a815ea570ec2ddc59992481c6ba8fbb65eed4f7074b463430d3ee as vault
 
 ########################## BUILD IMAGE  ##########################
-FROM rust:1.68.2-bullseye as build
+FROM rust:1.68.2-bookworm as build
 
 # Build time options to avoid dpkg warnings and help with reproducible builds.
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -99,7 +99,7 @@ RUN cargo build --features ${DB} --release --target=aarch64-unknown-linux-gnu
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image
 # because we already have a binary built
-FROM balenalib/aarch64-debian:bullseye
+FROM balenalib/aarch64-debian:bookworm
 
 ENV ROCKET_PROFILE="release" \
     ROCKET_ADDRESS=0.0.0.0 \
