@@ -476,7 +476,7 @@ make_config! {
         /// provides unauthenticated access to potentially sensitive data.
         show_password_hint:     bool,   true,   def,    false;
 
-        /// Admin page token |> The token used to authenticate in this very same page. Changing it here won't deauthorize the current session
+        /// Admin token/Argon2 PHC |> The plain text token or Argon2 PHC string used to authenticate in this very same page. Changing it here will not deauthorize the current session!
         admin_token:            Pass,   true,   option;
 
         /// Invitation organization name |> Name shown in the invitation emails that don't come from a specific organization
@@ -603,7 +603,7 @@ make_config! {
     /// Global Duo settings (Note that users can override them)
     duo: _enable_duo {
         /// Enabled
-        _enable_duo:            bool,   true,   def,     false;
+        _enable_duo:            bool,   true,   def,     true;
         /// Integration Key
         duo_ikey:               String, true,   option;
         /// Secret Key

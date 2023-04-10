@@ -3,16 +3,17 @@
 /* exported BASE_URL, _post */
 
 function getBaseUrl() {
-    // If the base URL is `https://vaultwarden.example.com/base/path/`,
+    // If the base URL is `https://vaultwarden.example.com/base/path/admin/`,
     // `window.location.href` should have one of the following forms:
     //
-    // - `https://vaultwarden.example.com/base/path/`
-    // - `https://vaultwarden.example.com/base/path/#/some/route[?queryParam=...]`
+    // - `https://vaultwarden.example.com/base/path/admin`
+    // - `https://vaultwarden.example.com/base/path/admin/#/some/route[?queryParam=...]`
     //
     // We want to get to just `https://vaultwarden.example.com/base/path`.
-    const baseUrl = window.location.href;
-    const adminPos = baseUrl.indexOf("/admin");
-    return baseUrl.substring(0, adminPos != -1 ? adminPos : baseUrl.length);
+    const pathname = window.location.pathname;
+    const adminPos = pathname.indexOf("/admin");
+    const newPathname = pathname.substring(0, adminPos != -1 ? adminPos : pathname.length);
+    return `${window.location.origin}${newPathname}`;
 }
 const BASE_URL = getBaseUrl();
 
