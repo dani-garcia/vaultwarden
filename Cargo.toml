@@ -71,7 +71,7 @@ futures = "0.3.28"
 tokio = { version = "1.27.0", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal"] }
 
 # A generic serialization/deserialization framework
-serde = { version = "1.0.159", features = ["derive"] }
+serde = { version = "1.0.160", features = ["derive"] }
 serde_json = "1.0.95"
 
 # A safe, extensible ORM and Query builder
@@ -133,7 +133,7 @@ data-url = "0.2.0"
 bytes = "1.4.0"
 
 # Cache function results (Used for version check and favicon fetching)
-cached = "0.42.0"
+cached = "0.43.0"
 
 # Used for custom short lived cookie jar during favicon extraction
 cookie = "0.16.2"
