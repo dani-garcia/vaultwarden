@@ -2,7 +2,7 @@
 
 # This file was generated using a Jinja2 template.
 # Please make your changes in `Dockerfile.j2` and then `make` the individual Dockerfiles.
-{% set rust_version = "1.68.2" %}
+{% set rust_version = "1.69.0" %}
 {% set debian_version = "bullseye" %}
 {% set alpine_version = "3.17" %}
 {% set build_stage_base_image = "rust:%s-%s" % (rust_version, debian_version) %}

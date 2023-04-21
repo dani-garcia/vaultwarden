@@ -3,7 +3,7 @@ name = "vaultwarden"
 version = "1.0.0"
 authors = ["Daniel García <dani-garcia@users.noreply.github.com>"]
 edition = "2021"
-rust-version = "1.66.1"
+rust-version = "1.67.1"
 resolver = "2"
 
 repository = "https://github.com/dani-garcia/vaultwarden"
@@ -36,7 +36,7 @@ unstable = []
 
 [target."cfg(not(windows))".dependencies]
 # Logging
-syslog = "6.0.1" # Needs to be v4 until fern is updated
+syslog = "6.0.1"
 
 [dependencies]
 # Logging
@@ -72,15 +72,15 @@ tokio = { version = "1.27.0", features = ["rt-multi-thread", "fs", "io-util", "p
 
 # A generic serialization/deserialization framework
 serde = { version = "1.0.160", features = ["derive"] }
-serde_json = "1.0.95"
+serde_json = "1.0.96"
 
 # A safe, extensible ORM and Query builder
-diesel = { version = "2.0.3", features = ["chrono", "r2d2"] }
+diesel = { version = "2.0.4", features = ["chrono", "r2d2"] }
 diesel_migrations = "2.0.0"
 diesel_logger = { version = "0.2.0", optional = true }
 
 # Bundled/Static SQLite
-libsqlite3-sys = { version = "0.25.2", features = ["bundled"], optional = true }
+libsqlite3-sys = { version = "0.26.0", features = ["bundled"], optional = true }
 
 # Crypto-related libraries
 rand = { version = "0.8.5", features = ["small_rng"] }
@@ -128,7 +128,7 @@ reqwest = { version = "0.11.16", features = ["stream", "json", "gzip", "brotli",
 
 # Favicon extraction libraries
 html5gum = "0.5.2"
-regex = { version = "1.7.3", features = ["std", "perf", "unicode-perl"], default-features = false }
+regex = { version = "1.8.1", features = ["std", "perf", "unicode-perl"], default-features = false }
 data-url = "0.2.0"
 bytes = "1.4.0"
 
@@ -140,7 +140,7 @@ cookie = "0.16.2"
 cookie_store = "0.19.0"
 
 # Used by U2F, JWT and PostgreSQL
-openssl = "0.10.50"
+openssl = "0.10.51"
 
 # CLI argument parsing
 pico-args = "0.5.0"
