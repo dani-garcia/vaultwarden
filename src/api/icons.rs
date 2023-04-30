@@ -97,15 +97,15 @@ async fn icon_redirect(domain: &str, template: &str) -> Option<Redirect> {
 }
 
 #[get("/<domain>/icon.png")]
-async fn icon_external(domain: String) -> Option<Redirect> {
-    icon_redirect(&domain, &CONFIG._icon_service_url()).await
+async fn icon_external(domain: &str) -> Option<Redirect> {
+    icon_redirect(domain, &CONFIG._icon_service_url()).await
 }
 
 #[get("/<domain>/icon.png")]
-async fn icon_internal(domain: String) -> Cached<(ContentType, Vec<u8>)> {
+async fn icon_internal(domain: &str) -> Cached<(ContentType, Vec<u8>)> {
     const FALLBACK_ICON: &[u8] = include_bytes!("../static/images/fallback-icon.png");
 
-    if !is_valid_domain(&domain) {
+    if !is_valid_domain(domain) {
         warn!("Invalid domain: {}", domain);
         return Cached::ttl(
             (ContentType::new("image", "png"), FALLBACK_ICON.to_vec()),
@@ -114,7 +114,7 @@ async fn icon_internal(domain: String) -> Cached<(ContentType, Vec<u8>)> {
         );
     }
 
-    match get_icon(&domain).await {
+    match get_icon(domain).await {
         Some((icon, icon_type)) => {
             Cached::ttl((ContentType::new("image", icon_type), icon), CONFIG.icon_cache_ttl(), true)
         }

@@ -71,10 +71,10 @@ async fn get_grantees(headers: Headers, mut conn: DbConn) -> JsonResult {
 }
 
 #[get("/emergency-access/<emer_id>")]
-async fn get_emergency_access(emer_id: String, mut conn: DbConn) -> JsonResult {
+async fn get_emergency_access(emer_id: &str, mut conn: DbConn) -> JsonResult {
     check_emergency_access_allowed()?;
 
-    match EmergencyAccess::find_by_uuid(&emer_id, &mut conn).await {
+    match EmergencyAccess::find_by_uuid(emer_id, &mut conn).await {
         Some(emergency_access) => Ok(Json(emergency_access.to_json_grantee_details(&mut conn).await)),
         None => err!("Emergency access not valid."),
     }
@@ -93,17 +93,13 @@ struct EmergencyAccessUpdateData {
 }
 
 #[put("/emergency-access/<emer_id>", data = "<data>")]
-async fn put_emergency_access(
-    emer_id: String,
-    data: JsonUpcase<EmergencyAccessUpdateData>,
-    conn: DbConn,
-) -> JsonResult {
+async fn put_emergency_access(emer_id: &str, data: JsonUpcase<EmergencyAccessUpdateData>, conn: DbConn) -> JsonResult {
     post_emergency_access(emer_id, data, conn).await
 }
 
 #[post("/emergency-access/<emer_id>", data = "<data>")]
 async fn post_emergency_access(
-    emer_id: String,
+    emer_id: &str,
     data: JsonUpcase<EmergencyAccessUpdateData>,
     mut conn: DbConn,
 ) -> JsonResult {
@@ -111,7 +107,7 @@ async fn post_emergency_access(
 
     let data: EmergencyAccessUpdateData = data.into_inner().data;
 
-    let mut emergency_access = match EmergencyAccess::find_by_uuid(&emer_id, &mut conn).await {
+    let mut emergency_access = match EmergencyAccess::find_by_uuid(emer_id, &mut conn).await {
         Some(emergency_access) => emergency_access,
         None => err!("Emergency access not valid."),
     };
@@ -136,12 +132,12 @@ async fn post_emergency_access(
 // region delete
 
 #[delete("/emergency-access/<emer_id>")]
-async fn delete_emergency_access(emer_id: String, headers: Headers, mut conn: DbConn) -> EmptyResult {
+async fn delete_emergency_access(emer_id: &str, headers: Headers, mut conn: DbConn) -> EmptyResult {
     check_emergency_access_allowed()?;
 
     let grantor_user = headers.user;
 
-    let emergency_access = match EmergencyAccess::find_by_uuid(&emer_id, &mut conn).await {
+    let emergency_access = match EmergencyAccess::find_by_uuid(emer_id, &mut conn).await {
         Some(emer) => {
             if emer.grantor_uuid != grantor_user.uuid && emer.grantee_uuid != Some(grantor_user.uuid) {
                 err!("Emergency access not valid.")
@@ -155,7 +151,7 @@ async fn delete_emergency_access(emer_id: String, headers: Headers, mut conn: Db
 }
 
 #[post("/emergency-access/<emer_id>/delete")]
-async fn post_delete_emergency_access(emer_id: String, headers: Headers, conn: DbConn) -> EmptyResult {
+async fn post_delete_emergency_access(emer_id: &str, headers: Headers, conn: DbConn) -> EmptyResult {
     delete_emergency_access(emer_id, headers, conn).await
 }
 
@@ -243,7 +239,7 @@ async fn send_invite(data: JsonUpcase<EmergencyAccessInviteData>, headers: Heade
     } else {
         // Automatically mark user as accepted if no email invites
         match User::find_by_mail(&email, &mut conn).await {
-            Some(user) => match accept_invite_process(user.uuid, &mut new_emergency_access, &email, &mut conn).await {
+            Some(user) => match accept_invite_process(&user.uuid, &mut new_emergency_access, &email, &mut conn).await {
                 Ok(v) => v,
                 Err(e) => err!(e.to_string()),
             },
@@ -255,10 +251,10 @@ async fn send_invite(data: JsonUpcase<EmergencyAccessInviteData>, headers: Heade
 }
 
 #[post("/emergency-access/<emer_id>/reinvite")]
-async fn resend_invite(emer_id: String, headers: Headers, mut conn: DbConn) -> EmptyResult {
+async fn resend_invite(emer_id: &str, headers: Headers, mut conn: DbConn) -> EmptyResult {
     check_emergency_access_allowed()?;
 
-    let mut emergency_access = match EmergencyAccess::find_by_uuid(&emer_id, &mut conn).await {
+    let mut emergency_access = match EmergencyAccess::find_by_uuid(emer_id, &mut conn).await {
         Some(emer) => emer,
         None => err!("Emergency access not valid."),
     };
@@ -299,7 +295,7 @@ async fn resend_invite(emer_id: String, headers: Headers, mut conn: DbConn) -> E
         }
 
         // Automatically mark user as accepted if no email invites
-        match accept_invite_process(grantee_user.uuid, &mut emergency_access, &email, &mut conn).await {
+        match accept_invite_process(&grantee_user.uuid, &mut emergency_access, &email, &mut conn).await {
             Ok(v) => v,
             Err(e) => err!(e.to_string()),
         }
@@ -315,12 +311,7 @@ struct AcceptData {
 }
 
 #[post("/emergency-access/<emer_id>/accept", data = "<data>")]
-async fn accept_invite(
-    emer_id: String,
-    data: JsonUpcase<AcceptData>,
-    headers: Headers,
-    mut conn: DbConn,
-) -> EmptyResult {
+async fn accept_invite(emer_id: &str, data: JsonUpcase<AcceptData>, headers: Headers, mut conn: DbConn) -> EmptyResult {
     check_emergency_access_allowed()?;
 
     let data: AcceptData = data.into_inner().data;
@@ -341,7 +332,7 @@ async fn accept_invite(
         None => err!("Invited user not found"),
     };
 
-    let mut emergency_access = match EmergencyAccess::find_by_uuid(&emer_id, &mut conn).await {
+    let mut emergency_access = match EmergencyAccess::find_by_uuid(emer_id, &mut conn).await {
         Some(emer) => emer,
         None => err!("Emergency access not valid."),
     };
@@ -356,7 +347,7 @@ async fn accept_invite(
         && grantor_user.name == claims.grantor_name
         && grantor_user.email == claims.grantor_email
     {
-        match accept_invite_process(grantee_user.uuid, &mut emergency_access, &grantee_user.email, &mut conn).await {
+        match accept_invite_process(&grantee_user.uuid, &mut emergency_access, &grantee_user.email, &mut conn).await {
             Ok(v) => v,
             Err(e) => err!(e.to_string()),
         }
@@ -372,7 +363,7 @@ async fn accept_invite(
 }
 
 async fn accept_invite_process(
-    grantee_uuid: String,
+    grantee_uuid: &str,
     emergency_access: &mut EmergencyAccess,
     grantee_email: &str,
     conn: &mut DbConn,
@@ -386,7 +377,7 @@ async fn accept_invite_process(
     }
 
     emergency_access.status = EmergencyAccessStatus::Accepted as i32;
-    emergency_access.grantee_uuid = Some(grantee_uuid);
+    emergency_access.grantee_uuid = Some(String::from(grantee_uuid));
     emergency_access.email = None;
     emergency_access.save(conn).await
 }
@@ -399,7 +390,7 @@ struct ConfirmData {
 
 #[post("/emergency-access/<emer_id>/confirm", data = "<data>")]
 async fn confirm_emergency_access(
-    emer_id: String,
+    emer_id: &str,
     data: JsonUpcase<ConfirmData>,
     headers: Headers,
     mut conn: DbConn,
@@ -410,7 +401,7 @@ async fn confirm_emergency_access(
     let data: ConfirmData = data.into_inner().data;
     let key = data.Key;
 
-    let mut emergency_access = match EmergencyAccess::find_by_uuid(&emer_id, &mut conn).await {
+    let mut emergency_access = match EmergencyAccess::find_by_uuid(emer_id, &mut conn).await {
         Some(emer) => emer,
         None => err!("Emergency access not valid."),
     };
@@ -452,11 +443,11 @@ async fn confirm_emergency_access(
 // region access emergency access
 
 #[post("/emergency-access/<emer_id>/initiate")]
-async fn initiate_emergency_access(emer_id: String, headers: Headers, mut conn: DbConn) -> JsonResult {
+async fn initiate_emergency_access(emer_id: &str, headers: Headers, mut conn: DbConn) -> JsonResult {
     check_emergency_access_allowed()?;
 
     let initiating_user = headers.user;
-    let mut emergency_access = match EmergencyAccess::find_by_uuid(&emer_id, &mut conn).await {
+    let mut emergency_access = match EmergencyAccess::find_by_uuid(emer_id, &mut conn).await {
         Some(emer) => emer,
         None => err!("Emergency access not valid."),
     };
@@ -492,10 +483,10 @@ async fn initiate_emergency_access(emer_id: String, headers: Headers, mut conn: 
 }
 
 #[post("/emergency-access/<emer_id>/approve")]
-async fn approve_emergency_access(emer_id: String, headers: Headers, mut conn: DbConn) -> JsonResult {
+async fn approve_emergency_access(emer_id: &str, headers: Headers, mut conn: DbConn) -> JsonResult {
     check_emergency_access_allowed()?;
 
-    let mut emergency_access = match EmergencyAccess::find_by_uuid(&emer_id, &mut conn).await {
+    let mut emergency_access = match EmergencyAccess::find_by_uuid(emer_id, &mut conn).await {
         Some(emer) => emer,
         None => err!("Emergency access not valid."),
     };
@@ -530,10 +521,10 @@ async fn approve_emergency_access(emer_id: String, headers: Headers, mut conn: D
 }
 
 #[post("/emergency-access/<emer_id>/reject")]
-async fn reject_emergency_access(emer_id: String, headers: Headers, mut conn: DbConn) -> JsonResult {
+async fn reject_emergency_access(emer_id: &str, headers: Headers, mut conn: DbConn) -> JsonResult {
     check_emergency_access_allowed()?;
 
-    let mut emergency_access = match EmergencyAccess::find_by_uuid(&emer_id, &mut conn).await {
+    let mut emergency_access = match EmergencyAccess::find_by_uuid(emer_id, &mut conn).await {
         Some(emer) => emer,
         None => err!("Emergency access not valid."),
     };
@@ -573,15 +564,15 @@ async fn reject_emergency_access(emer_id: String, headers: Headers, mut conn: Db
 // region action
 
 #[post("/emergency-access/<emer_id>/view")]
-async fn view_emergency_access(emer_id: String, headers: Headers, mut conn: DbConn) -> JsonResult {
+async fn view_emergency_access(emer_id: &str, headers: Headers, mut conn: DbConn) -> JsonResult {
     check_emergency_access_allowed()?;
 
-    let emergency_access = match EmergencyAccess::find_by_uuid(&emer_id, &mut conn).await {
+    let emergency_access = match EmergencyAccess::find_by_uuid(emer_id, &mut conn).await {
         Some(emer) => emer,
         None => err!("Emergency access not valid."),
     };
 
-    if !is_valid_request(&emergency_access, headers.user.uuid, EmergencyAccessType::View) {
+    if !is_valid_request(&emergency_access, &headers.user.uuid, EmergencyAccessType::View) {
         err!("Emergency access not valid.")
     }
 
@@ -610,16 +601,16 @@ async fn view_emergency_access(emer_id: String, headers: Headers, mut conn: DbCo
 }
 
 #[post("/emergency-access/<emer_id>/takeover")]
-async fn takeover_emergency_access(emer_id: String, headers: Headers, mut conn: DbConn) -> JsonResult {
+async fn takeover_emergency_access(emer_id: &str, headers: Headers, mut conn: DbConn) -> JsonResult {
     check_emergency_access_allowed()?;
 
     let requesting_user = headers.user;
-    let emergency_access = match EmergencyAccess::find_by_uuid(&emer_id, &mut conn).await {
+    let emergency_access = match EmergencyAccess::find_by_uuid(emer_id, &mut conn).await {
         Some(emer) => emer,
         None => err!("Emergency access not valid."),
     };
 
-    if !is_valid_request(&emergency_access, requesting_user.uuid, EmergencyAccessType::Takeover) {
+    if !is_valid_request(&emergency_access, &requesting_user.uuid, EmergencyAccessType::Takeover) {
         err!("Emergency access not valid.")
     }
 
@@ -649,7 +640,7 @@ struct EmergencyAccessPasswordData {
 
 #[post("/emergency-access/<emer_id>/password", data = "<data>")]
 async fn password_emergency_access(
-    emer_id: String,
+    emer_id: &str,
     data: JsonUpcase<EmergencyAccessPasswordData>,
     headers: Headers,
     mut conn: DbConn,
@@ -661,12 +652,12 @@ async fn password_emergency_access(
     //let key = &data.Key;
 
     let requesting_user = headers.user;
-    let emergency_access = match EmergencyAccess::find_by_uuid(&emer_id, &mut conn).await {
+    let emergency_access = match EmergencyAccess::find_by_uuid(emer_id, &mut conn).await {
         Some(emer) => emer,
         None => err!("Emergency access not valid."),
     };
 
-    if !is_valid_request(&emergency_access, requesting_user.uuid, EmergencyAccessType::Takeover) {
+    if !is_valid_request(&emergency_access, &requesting_user.uuid, EmergencyAccessType::Takeover) {
         err!("Emergency access not valid.")
     }
 
@@ -694,14 +685,14 @@ async fn password_emergency_access(
 // endregion
 
 #[get("/emergency-access/<emer_id>/policies")]
-async fn policies_emergency_access(emer_id: String, headers: Headers, mut conn: DbConn) -> JsonResult {
+async fn policies_emergency_access(emer_id: &str, headers: Headers, mut conn: DbConn) -> JsonResult {
     let requesting_user = headers.user;
-    let emergency_access = match EmergencyAccess::find_by_uuid(&emer_id, &mut conn).await {
+    let emergency_access = match EmergencyAccess::find_by_uuid(emer_id, &mut conn).await {
         Some(emer) => emer,
         None => err!("Emergency access not valid."),
     };
 
-    if !is_valid_request(&emergency_access, requesting_user.uuid, EmergencyAccessType::Takeover) {
+    if !is_valid_request(&emergency_access, &requesting_user.uuid, EmergencyAccessType::Takeover) {
         err!("Emergency access not valid.")
     }
 
@@ -722,10 +713,11 @@ async fn policies_emergency_access(emer_id: String, headers: Headers, mut conn: 
 
 fn is_valid_request(
     emergency_access: &EmergencyAccess,
-    requesting_user_uuid: String,
+    requesting_user_uuid: &str,
     requested_access_type: EmergencyAccessType,
 ) -> bool {
-    emergency_access.grantee_uuid == Some(requesting_user_uuid)
+    emergency_access.grantee_uuid.is_some()
+        && emergency_access.grantee_uuid.as_ref().unwrap() == requesting_user_uuid
         && emergency_access.status == EmergencyAccessStatus::RecoveryApproved as i32
         && emergency_access.atype == requested_access_type as i32
 }

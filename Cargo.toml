@@ -36,7 +36,7 @@ unstable = []
 
 [target."cfg(not(windows))".dependencies]
 # Logging
-syslog = "6.0.1"
+syslog = "6.1.0"
 
 [dependencies]
 # Logging
@@ -57,7 +57,7 @@ num-derive = "0.3.3"
 # Web framework
 rocket = { version = "0.5.0-rc.3", features = ["tls", "json"], default-features = false }
 # rocket_ws = { version ="0.1.0-rc.3" }
-rocket_ws = { git = 'https://github.com/SergioBenitez/Rocket', rev = "a82508b403420bd941c32ddec3ee3e4875f2b8a5" }
+rocket_ws = { git = 'https://github.com/SergioBenitez/Rocket', rev = "9b0564ed27f90686b333337d9f6ed76484a84b27" }
 
 # WebSockets libraries
 tokio-tungstenite = "0.18.0"
@@ -68,7 +68,7 @@ dashmap = "5.4.0"
 
 # Async futures
 futures = "0.3.28"
-tokio = { version = "1.27.0", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal"] }
+tokio = { version = "1.28.0", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal"] }
 
 # A generic serialization/deserialization framework
 serde = { version = "1.0.160", features = ["derive"] }
@@ -87,7 +87,7 @@ rand = { version = "0.8.5", features = ["small_rng"] }
 ring = "0.16.20"
 
 # UUID generation
-uuid = { version = "1.3.1", features = ["v4"] }
+uuid = { version = "1.3.2", features = ["v4"] }
 
 # Date and time libraries
 chrono = { version = "0.4.24", features = ["clock", "serde"], default-features = false }
@@ -124,7 +124,7 @@ email_address = "0.2.4"
 handlebars = { version = "4.3.6", features = ["dir_source"] }
 
 # HTTP client (Used for favicons, version check, DUO and HIBP API)
-reqwest = { version = "0.11.16", features = ["stream", "json", "gzip", "brotli", "socks", "cookies", "trust-dns"] }
+reqwest = { version = "0.11.17", features = ["stream", "json", "gzip", "brotli", "socks", "cookies", "trust-dns"] }
 
 # Favicon extraction libraries
 html5gum = "0.5.2"
@@ -140,7 +140,7 @@ cookie = "0.16.2"
 cookie_store = "0.19.0"
 
 # Used by U2F, JWT and PostgreSQL
-openssl = "0.10.51"
+openssl = "0.10.52"
 
 # CLI argument parsing
 pico-args = "0.5.0"
@@ -154,7 +154,7 @@ semver = "1.0.17"
 
 # Allow overriding the default memory allocator
 # Mainly used for the musl builds, since the default musl malloc is very slow
-mimalloc = { version = "0.1.36", features = ["secure"], default-features = false, optional = true }
+mimalloc = { version = "0.1.37", features = ["secure"], default-features = false, optional = true }
 which = "4.4.0"
 
 # Argon2 library with support for the PHC format
@@ -164,8 +164,8 @@ argon2 = "0.5.0"
 rpassword = "7.2.0"
 
 [patch.crates-io]
-rocket = { git = 'https://github.com/SergioBenitez/Rocket', rev = 'a82508b403420bd941c32ddec3ee3e4875f2b8a5' }
-# rocket_ws = { git = 'https://github.com/SergioBenitez/Rocket', rev = 'a82508b403420bd941c32ddec3ee3e4875f2b8a5' }
+rocket = { git = 'https://github.com/SergioBenitez/Rocket', rev = '9b0564ed27f90686b333337d9f6ed76484a84b27' }
+# rocket_ws = { git = 'https://github.com/SergioBenitez/Rocket', rev = '9b0564ed27f90686b333337d9f6ed76484a84b27' }
 
 # Strip debuginfo from the release builds
 # Also enable thin LTO for some optimizations

@@ -349,8 +349,8 @@ async fn users_overview(_token: AdminToken, mut conn: DbConn) -> ApiResult<Html<
 }
 
 #[get("/users/by-mail/<mail>")]
-async fn get_user_by_mail_json(mail: String, _token: AdminToken, mut conn: DbConn) -> JsonResult {
-    if let Some(u) = User::find_by_mail(&mail, &mut conn).await {
+async fn get_user_by_mail_json(mail: &str, _token: AdminToken, mut conn: DbConn) -> JsonResult {
+    if let Some(u) = User::find_by_mail(mail, &mut conn).await {
         let mut usr = u.to_json(&mut conn).await;
         usr["UserEnabled"] = json!(u.enabled);
         usr["CreatedAt"] = json!(format_naive_datetime_local(&u.created_at, DT_FMT));
@@ -361,8 +361,8 @@ async fn get_user_by_mail_json(mail: String, _token: AdminToken, mut conn: DbCon
 }
 
 #[get("/users/<uuid>")]
-async fn get_user_json(uuid: String, _token: AdminToken, mut conn: DbConn) -> JsonResult {
-    let u = get_user_or_404(&uuid, &mut conn).await?;
+async fn get_user_json(uuid: &str, _token: AdminToken, mut conn: DbConn) -> JsonResult {
+    let u = get_user_or_404(uuid, &mut conn).await?;
     let mut usr = u.to_json(&mut conn).await;
     usr["UserEnabled"] = json!(u.enabled);
     usr["CreatedAt"] = json!(format_naive_datetime_local(&u.created_at, DT_FMT));
@@ -370,18 +370,18 @@ async fn get_user_json(uuid: String, _token: AdminToken, mut conn: DbConn) -> Js
 }
 
 #[post("/users/<uuid>/delete")]
-async fn delete_user(uuid: String, token: AdminToken, mut conn: DbConn) -> EmptyResult {
-    let user = get_user_or_404(&uuid, &mut conn).await?;
+async fn delete_user(uuid: &str, token: AdminToken, mut conn: DbConn) -> EmptyResult {
+    let user = get_user_or_404(uuid, &mut conn).await?;
 
     // Get the user_org records before deleting the actual user
-    let user_orgs = UserOrganization::find_any_state_by_user(&uuid, &mut conn).await;
+    let user_orgs = UserOrganization::find_any_state_by_user(uuid, &mut conn).await;
     let res = user.delete(&mut conn).await;
 
     for user_org in user_orgs {
         log_event(
             EventType::OrganizationUserRemoved as i32,
             &user_org.uuid,
-            user_org.org_uuid,
+            &user_org.org_uuid,
             String::from(ACTING_ADMIN_USER),
             14, // Use UnknownBrowser type
             &token.ip.ip,
@@ -394,8 +394,8 @@ async fn delete_user(uuid: String, token: AdminToken, mut conn: DbConn) -> Empty
 }
 
 #[post("/users/<uuid>/deauth")]
-async fn deauth_user(uuid: String, _token: AdminToken, mut conn: DbConn, nt: Notify<'_>) -> EmptyResult {
-    let mut user = get_user_or_404(&uuid, &mut conn).await?;
+async fn deauth_user(uuid: &str, _token: AdminToken, mut conn: DbConn, nt: Notify<'_>) -> EmptyResult {
+    let mut user = get_user_or_404(uuid, &mut conn).await?;
     Device::delete_all_by_user(&user.uuid, &mut conn).await?;
     user.reset_security_stamp();
 
@@ -407,8 +407,8 @@ async fn deauth_user(uuid: String, _token: AdminToken, mut conn: DbConn, nt: Not
 }
 
 #[post("/users/<uuid>/disable")]
-async fn disable_user(uuid: String, _token: AdminToken, mut conn: DbConn, nt: Notify<'_>) -> EmptyResult {
-    let mut user = get_user_or_404(&uuid, &mut conn).await?;
+async fn disable_user(uuid: &str, _token: AdminToken, mut conn: DbConn, nt: Notify<'_>) -> EmptyResult {
+    let mut user = get_user_or_404(uuid, &mut conn).await?;
     Device::delete_all_by_user(&user.uuid, &mut conn).await?;
     user.reset_security_stamp();
     user.enabled = false;
@@ -421,24 +421,24 @@ async fn disable_user(uuid: String, _token: AdminToken, mut conn: DbConn, nt: No
 }
 
 #[post("/users/<uuid>/enable")]
-async fn enable_user(uuid: String, _token: AdminToken, mut conn: DbConn) -> EmptyResult {
-    let mut user = get_user_or_404(&uuid, &mut conn).await?;
+async fn enable_user(uuid: &str, _token: AdminToken, mut conn: DbConn) -> EmptyResult {
+    let mut user = get_user_or_404(uuid, &mut conn).await?;
     user.enabled = true;
 
     user.save(&mut conn).await
 }
 
 #[post("/users/<uuid>/remove-2fa")]
-async fn remove_2fa(uuid: String, _token: AdminToken, mut conn: DbConn) -> EmptyResult {
-    let mut user = get_user_or_404(&uuid, &mut conn).await?;
+async fn remove_2fa(uuid: &str, _token: AdminToken, mut conn: DbConn) -> EmptyResult {
+    let mut user = get_user_or_404(uuid, &mut conn).await?;
     TwoFactor::delete_all_by_user(&user.uuid, &mut conn).await?;
     user.totp_recover = None;
     user.save(&mut conn).await
 }
 
 #[post("/users/<uuid>/invite/resend")]
-async fn resend_user_invite(uuid: String, _token: AdminToken, mut conn: DbConn) -> EmptyResult {
-    if let Some(user) = User::find_by_uuid(&uuid, &mut conn).await {
+async fn resend_user_invite(uuid: &str, _token: AdminToken, mut conn: DbConn) -> EmptyResult {
+    if let Some(user) = User::find_by_uuid(uuid, &mut conn).await {
         //TODO: replace this with user.status check when it will be available (PR#3397)
         if !user.password_hash.is_empty() {
             err_code!("User already accepted invitation", Status::BadRequest.code);
@@ -500,7 +500,7 @@ async fn update_user_org_type(data: Json<UserOrgTypeData>, token: AdminToken, mu
     log_event(
         EventType::OrganizationUserUpdated as i32,
         &user_to_edit.uuid,
-        data.org_uuid,
+        &data.org_uuid,
         String::from(ACTING_ADMIN_USER),
         14, // Use UnknownBrowser type
         &token.ip.ip,
@@ -538,8 +538,8 @@ async fn organizations_overview(_token: AdminToken, mut conn: DbConn) -> ApiResu
 }
 
 #[post("/organizations/<uuid>/delete")]
-async fn delete_organization(uuid: String, _token: AdminToken, mut conn: DbConn) -> EmptyResult {
-    let org = Organization::find_by_uuid(&uuid, &mut conn).await.map_res("Organization doesn't exist")?;
+async fn delete_organization(uuid: &str, _token: AdminToken, mut conn: DbConn) -> EmptyResult {
+    let org = Organization::find_by_uuid(uuid, &mut conn).await.map_res("Organization doesn't exist")?;
     org.delete(&mut conn).await
 }
 

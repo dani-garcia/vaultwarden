@@ -133,7 +133,7 @@ pub async fn _register(data: JsonUpcase<RegisterData>, mut conn: DbConn) -> Json
                     err!("Registration email does not match invite email")
                 }
             } else if Invitation::take(&email, &mut conn).await {
-                for mut user_org in UserOrganization::find_invited_by_user(&user.uuid, &mut conn).await.iter_mut() {
+                for user_org in UserOrganization::find_invited_by_user(&user.uuid, &mut conn).await.iter_mut() {
                     user_org.status = UserOrgStatus::Accepted as i32;
                     user_org.save(&mut conn).await?;
                 }
@@ -266,8 +266,8 @@ async fn put_avatar(data: JsonUpcase<AvatarData>, headers: Headers, mut conn: Db
 }
 
 #[get("/users/<uuid>/public-key")]
-async fn get_public_keys(uuid: String, _headers: Headers, mut conn: DbConn) -> JsonResult {
-    let user = match User::find_by_uuid(&uuid, &mut conn).await {
+async fn get_public_keys(uuid: &str, _headers: Headers, mut conn: DbConn) -> JsonResult {
+    let user = match User::find_by_uuid(uuid, &mut conn).await {
         Some(user) => user,
         None => err!("User doesn't exist"),
     };
@@ -874,18 +874,18 @@ async fn rotate_api_key(data: JsonUpcase<SecretVerificationRequest>, headers: He
 
 // This variant is deprecated: https://github.com/bitwarden/server/pull/2682
 #[get("/devices/knowndevice/<email>/<uuid>")]
-async fn get_known_device_from_path(email: String, uuid: String, mut conn: DbConn) -> JsonResult {
+async fn get_known_device_from_path(email: &str, uuid: &str, mut conn: DbConn) -> JsonResult {
     // This endpoint doesn't have auth header
     let mut result = false;
-    if let Some(user) = User::find_by_mail(&email, &mut conn).await {
-        result = Device::find_by_uuid_and_user(&uuid, &user.uuid, &mut conn).await.is_some();
+    if let Some(user) = User::find_by_mail(email, &mut conn).await {
+        result = Device::find_by_uuid_and_user(uuid, &user.uuid, &mut conn).await.is_some();
     }
     Ok(Json(json!(result)))
 }
 
 #[get("/devices/knowndevice")]
 async fn get_known_device(device: KnownDevice, conn: DbConn) -> JsonResult {
-    get_known_device_from_path(device.email, device.uuid, conn).await
+    get_known_device_from_path(&device.email, &device.uuid, conn).await
 }
 
 struct KnownDevice {
