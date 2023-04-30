@@ -250,7 +250,7 @@ fn init_logging(level: log::LevelFilter) -> Result<(), fern::InitError> {
             log::LevelFilter::Off
         };
 
-    // Only show rocket underscore `_` logs when the level is Debug or higher
+    // Only show Rocket underscore `_` logs when the level is Debug or higher
     // Else this will bloat the log output with useless messages.
     let rocket_underscore_level = if level >= log::LevelFilter::Debug {
         log::LevelFilter::Warn
@@ -264,8 +264,13 @@ fn init_logging(level: log::LevelFilter) -> Result<(), fern::InitError> {
         .level_for("rustls::session", log::LevelFilter::Off)
         // Hide failed to close stream messages
         .level_for("hyper::server", log::LevelFilter::Warn)
-        // Silence rocket logs
+        // Silence Rocket `_` logs
         .level_for("_", rocket_underscore_level)
+        .level_for("rocket::response::responder::_", rocket_underscore_level)
+        .level_for("rocket::server::_", rocket_underscore_level)
+        .level_for("vaultwarden::api::admin::_", rocket_underscore_level)
+        .level_for("vaultwarden::api::notifications::_", rocket_underscore_level)
+        // Silence Rocket logs
         .level_for("rocket::launch", log::LevelFilter::Error)
         .level_for("rocket::launch_", log::LevelFilter::Error)
         .level_for("rocket::rocket", log::LevelFilter::Warn)
