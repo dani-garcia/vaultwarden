@@ -443,32 +443,34 @@ pub struct OrgHeaders {
     pub ip: ClientIp,
 }
 
-// org_id is usually the second path param ("/organizations/<org_id>"),
-// but there are cases where it is a query value.
-// First check the path, if this is not a valid uuid, try the query values.
-fn get_org_id(request: &Request<'_>) -> Option<String> {
-    if let Some(Ok(org_id)) = request.param::<String>(1) {
-        if uuid::Uuid::parse_str(&org_id).is_ok() {
-            return Some(org_id);
-        }
-    }
-
-    if let Some(Ok(org_id)) = request.query_value::<String>("organizationId") {
-        if uuid::Uuid::parse_str(&org_id).is_ok() {
-            return Some(org_id);
-        }
-    }
-
-    None
-}
-
 #[rocket::async_trait]
 impl<'r> FromRequest<'r> for OrgHeaders {
     type Error = &'static str;
 
     async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         let headers = try_outcome!(Headers::from_request(request).await);
-        match get_org_id(request) {
+
+        // org_id is usually the second path param ("/organizations/<org_id>"),
+        // but there are cases where it is a query value.
+        // First check the path, if this is not a valid uuid, try the query values.
+        let url_org_id: Option<&str> = {
+            let mut url_org_id = None;
+            if let Some(Ok(org_id)) = request.param::<&str>(1) {
+                if uuid::Uuid::parse_str(org_id).is_ok() {
+                    url_org_id = Some(org_id);
+                }
+            }
+
+            if let Some(Ok(org_id)) = request.query_value::<&str>("organizationId") {
+                if uuid::Uuid::parse_str(org_id).is_ok() {
+                    url_org_id = Some(org_id);
+                }
+            }
+
+            url_org_id
+        };
+
+        match url_org_id {
             Some(org_id) => {
                 let mut conn = match DbConn::from_request(request).await {
                     Outcome::Success(conn) => conn,
@@ -476,7 +478,7 @@ impl<'r> FromRequest<'r> for OrgHeaders {
                 };
 
                 let user = headers.user;
-                let org_user = match UserOrganization::find_by_user_and_org(&user.uuid, &org_id, &mut conn).await {
+                let org_user = match UserOrganization::find_by_user_and_org(&user.uuid, org_id, &mut conn).await {
                     Some(user) => {
                         if user.status == UserOrgStatus::Confirmed as i32 {
                             user
@@ -500,7 +502,7 @@ impl<'r> FromRequest<'r> for OrgHeaders {
                         }
                     },
                     org_user,
-                    org_id,
+                    org_id: String::from(org_id),
                     ip: headers.ip,
                 })
             }

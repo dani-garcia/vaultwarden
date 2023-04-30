@@ -24,8 +24,8 @@ async fn get_folders(headers: Headers, mut conn: DbConn) -> Json<Value> {
 }
 
 #[get("/folders/<uuid>")]
-async fn get_folder(uuid: String, headers: Headers, mut conn: DbConn) -> JsonResult {
-    let folder = match Folder::find_by_uuid(&uuid, &mut conn).await {
+async fn get_folder(uuid: &str, headers: Headers, mut conn: DbConn) -> JsonResult {
+    let folder = match Folder::find_by_uuid(uuid, &mut conn).await {
         Some(folder) => folder,
         _ => err!("Invalid folder"),
     };
@@ -57,7 +57,7 @@ async fn post_folders(data: JsonUpcase<FolderData>, headers: Headers, mut conn: 
 
 #[post("/folders/<uuid>", data = "<data>")]
 async fn post_folder(
-    uuid: String,
+    uuid: &str,
     data: JsonUpcase<FolderData>,
     headers: Headers,
     conn: DbConn,
@@ -68,7 +68,7 @@ async fn post_folder(
 
 #[put("/folders/<uuid>", data = "<data>")]
 async fn put_folder(
-    uuid: String,
+    uuid: &str,
     data: JsonUpcase<FolderData>,
     headers: Headers,
     mut conn: DbConn,
@@ -76,7 +76,7 @@ async fn put_folder(
 ) -> JsonResult {
     let data: FolderData = data.into_inner().data;
 
-    let mut folder = match Folder::find_by_uuid(&uuid, &mut conn).await {
+    let mut folder = match Folder::find_by_uuid(uuid, &mut conn).await {
         Some(folder) => folder,
         _ => err!("Invalid folder"),
     };
@@ -94,13 +94,13 @@ async fn put_folder(
 }
 
 #[post("/folders/<uuid>/delete")]
-async fn delete_folder_post(uuid: String, headers: Headers, conn: DbConn, nt: Notify<'_>) -> EmptyResult {
+async fn delete_folder_post(uuid: &str, headers: Headers, conn: DbConn, nt: Notify<'_>) -> EmptyResult {
     delete_folder(uuid, headers, conn, nt).await
 }
 
 #[delete("/folders/<uuid>")]
-async fn delete_folder(uuid: String, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> EmptyResult {
-    let folder = match Folder::find_by_uuid(&uuid, &mut conn).await {
+async fn delete_folder(uuid: &str, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> EmptyResult {
+    let folder = match Folder::find_by_uuid(uuid, &mut conn).await {
         Some(folder) => folder,
         _ => err!("Invalid folder"),
     };

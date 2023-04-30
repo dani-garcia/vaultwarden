@@ -231,7 +231,7 @@ impl<'r> FromParam<'r> for SafeString {
 
 // Log all the routes from the main paths list, and the attachments endpoint
 // Effectively ignores, any static file route, and the alive endpoint
-const LOGGED_ROUTES: [&str; 5] = ["/api", "/admin", "/identity", "/icons", "/attachments"];
+const LOGGED_ROUTES: [&str; 7] = ["/api", "/admin", "/identity", "/icons", "/attachments", "/events", "/notifications"];
 
 // Boolean is extra debug, when true, we ignore the whitelist above and also print the mounts
 pub struct BetterLogging(pub bool);
@@ -248,7 +248,7 @@ impl Fairing for BetterLogging {
         if self.0 {
             info!(target: "routes", "Routes loaded:");
             let mut routes: Vec<_> = rocket.routes().collect();
-            routes.sort_by_key(|r| r.uri.path());
+            routes.sort_by_key(|r| r.uri.path().as_str());
             for route in routes {
                 if route.rank < 0 {
                     info!(target: "routes", "{:<6} {}", route.method, route.uri);

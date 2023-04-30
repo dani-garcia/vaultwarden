@@ -58,7 +58,7 @@ use crate::{
 };
 
 #[put("/devices/identifier/<uuid>/clear-token")]
-fn clear_device_token(uuid: String) -> &'static str {
+fn clear_device_token(uuid: &str) -> &'static str {
     // This endpoint doesn't have auth header
 
     let _ = uuid;
@@ -71,7 +71,7 @@ fn clear_device_token(uuid: String) -> &'static str {
 }
 
 #[put("/devices/identifier/<uuid>/token", data = "<data>")]
-fn put_device_token(uuid: String, data: JsonUpcase<Value>, headers: Headers) -> Json<Value> {
+fn put_device_token(uuid: &str, data: JsonUpcase<Value>, headers: Headers) -> Json<Value> {
     let _data: Value = data.into_inner().data;
     // Data has a single string value "PushToken"
     let _ = uuid;
@@ -170,7 +170,7 @@ async fn put_eq_domains(
 }
 
 #[get("/hibp/breach?<username>")]
-async fn hibp_breach(username: String) -> JsonResult {
+async fn hibp_breach(username: &str) -> JsonResult {
     let url = format!(
         "https://haveibeenpwned.com/api/v3/breachedaccount/{username}?truncateResponse=false&includeUnverified=false"
     );

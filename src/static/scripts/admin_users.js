@@ -113,7 +113,7 @@ function inviteUser(event) {
         "email": email.value
     });
     email.value = "";
-    _post(`${BASE_URL}/admin/invite/`,
+    _post(`${BASE_URL}/admin/invite`,
         "User invited correctly",
         "Error inviting user",
         data

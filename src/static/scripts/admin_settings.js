@@ -19,7 +19,7 @@ function smtpTest(event) {
     }
 
     const data = JSON.stringify({ "email": test_email.value });
-    _post(`${BASE_URL}/admin/test/smtp/`,
+    _post(`${BASE_URL}/admin/test/smtp`,
         "SMTP Test email sent correctly",
         "Error sending SMTP test email",
         data, false
@@ -45,7 +45,7 @@ function getFormData() {
 
 function saveConfig(event) {
     const data = JSON.stringify(getFormData());
-    _post(`${BASE_URL}/admin/config/`,
+    _post(`${BASE_URL}/admin/config`,
         "Config saved correctly",
         "Error saving config",
         data

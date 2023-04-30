@@ -111,8 +111,8 @@ fn alive_head(_conn: DbConn) -> EmptyResult {
 }
 
 #[get("/vw_static/<filename>")]
-pub fn static_files(filename: String) -> Result<(ContentType, &'static [u8]), Error> {
-    match filename.as_ref() {
+pub fn static_files(filename: &str) -> Result<(ContentType, &'static [u8]), Error> {
+    match filename {
         "404.png" => Ok((ContentType::PNG, include_bytes!("../static/images/404.png"))),
         "mail-github.png" => Ok((ContentType::PNG, include_bytes!("../static/images/mail-github.png"))),
         "logo-gray.png" => Ok((ContentType::PNG, include_bytes!("../static/images/logo-gray.png"))),
