@@ -248,7 +248,7 @@ impl Fairing for BetterLogging {
         if self.0 {
             info!(target: "routes", "Routes loaded:");
             let mut routes: Vec<_> = rocket.routes().collect();
-            routes.sort_by_key(|r| r.uri.path().as_str());
+            routes.sort_by_key(|r| r.uri.path());
             for route in routes {
                 if route.rank < 0 {
                     info!(target: "routes", "{:<6} {}", route.method, route.uri);
