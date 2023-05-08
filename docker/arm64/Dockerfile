@@ -15,18 +15,18 @@
 # - From https://hub.docker.com/r/vaultwarden/web-vault/tags,
 #   click the tag name to view the digest of the image it currently points to.
 # - From the command line:
-#     $ docker pull vaultwarden/web-vault:v2023.4.0
-#     $ docker image inspect --format "{{.RepoDigests}}" vaultwarden/web-vault:v2023.4.0
-#     [vaultwarden/web-vault@sha256:325db8d4476aab866edac799c149c556e4da256bf0beaa8443bc4d1668a009fd]
+#     $ docker pull docker.io/vaultwarden/web-vault:v2023.4.0
+#     $ docker image inspect --format "{{.RepoDigests}}" docker.io/vaultwarden/web-vault:v2023.4.0
+#     [docker.io/vaultwarden/web-vault@sha256:325db8d4476aab866edac799c149c556e4da256bf0beaa8443bc4d1668a009fd]
 #
 # - Conversely, to get the tag name from the digest:
-#     $ docker image inspect --format "{{.RepoTags}}" vaultwarden/web-vault@sha256:325db8d4476aab866edac799c149c556e4da256bf0beaa8443bc4d1668a009fd
-#     [vaultwarden/web-vault:v2023.4.0]
+#     $ docker image inspect --format "{{.RepoTags}}" docker.io/vaultwarden/web-vault@sha256:325db8d4476aab866edac799c149c556e4da256bf0beaa8443bc4d1668a009fd
+#     [docker.io/vaultwarden/web-vault:v2023.4.0]
 #
-FROM vaultwarden/web-vault@sha256:325db8d4476aab866edac799c149c556e4da256bf0beaa8443bc4d1668a009fd as vault
+FROM docker.io/vaultwarden/web-vault@sha256:325db8d4476aab866edac799c149c556e4da256bf0beaa8443bc4d1668a009fd as vault
 
 ########################## BUILD IMAGE  ##########################
-FROM rust:1.69.0-bullseye as build
+FROM docker.io/library/rust:1.69.0-bullseye as build
 
 # Build time options to avoid dpkg warnings and help with reproducible builds.
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -99,7 +99,7 @@ RUN cargo build --features ${DB} --release --target=aarch64-unknown-linux-gnu
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image
 # because we already have a binary built
-FROM balenalib/aarch64-debian:bullseye
+FROM docker.io/balenalib/aarch64-debian:bullseye
 
 ENV ROCKET_PROFILE="release" \
     ROCKET_ADDRESS=0.0.0.0 \
