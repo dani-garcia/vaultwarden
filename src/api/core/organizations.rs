@@ -1652,7 +1652,7 @@ async fn get_policy(org_id: &str, pol_type: i32, _headers: AdminHeaders, mut con
 
     let policy = match OrgPolicy::find_by_org_and_type(org_id, pol_type_enum, &mut conn).await {
         Some(p) => p,
-        None => OrgPolicy::new(String::from(org_id), pol_type_enum, "{}".to_string()),
+        None => OrgPolicy::new(String::from(org_id), pol_type_enum, "null".to_string()),
     };
 
     Ok(Json(policy.to_json()))
