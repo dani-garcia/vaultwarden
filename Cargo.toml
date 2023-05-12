@@ -68,10 +68,10 @@ dashmap = "5.4.0"
 
 # Async futures
 futures = "0.3.28"
-tokio = { version = "1.28.0", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal"] }
+tokio = { version = "1.28.1", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal"] }
 
 # A generic serialization/deserialization framework
-serde = { version = "1.0.162", features = ["derive"] }
+serde = { version = "1.0.163", features = ["derive"] }
 serde_json = "1.0.96"
 
 # A safe, extensible ORM and Query builder
@@ -121,7 +121,7 @@ percent-encoding = "2.2.0" # URL encoding library used for URL's in the emails
 email_address = "0.2.4"
 
 # HTML Template library
-handlebars = { version = "4.3.6", features = ["dir_source"] }
+handlebars = { version = "4.3.7", features = ["dir_source"] }
 
 # HTTP client (Used for favicons, version check, DUO and HIBP API)
 reqwest = { version = "0.11.17", features = ["stream", "json", "gzip", "brotli", "socks", "cookies", "trust-dns"] }
