@@ -952,5 +952,24 @@
       "jira.com"
     ],
     "Excluded": false
+  },
+  {
+    "Type": 90,
+    "Domains": [
+      "pinterest.com",
+      "pinterest.com.au",
+      "pinterest.cl",
+      "pinterest.de",
+      "pinterest.dk",
+      "pinterest.es",
+      "pinterest.fr",
+      "pinterest.co.uk",
+      "pinterest.jp",
+      "pinterest.co.kr",
+      "pinterest.nz",
+      "pinterest.pt",
+      "pinterest.se"
+    ],
+    "Excluded": false
   }
 ]
