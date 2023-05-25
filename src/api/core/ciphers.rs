@@ -512,7 +512,7 @@ pub async fn update_cipher_from_data(
             .await;
         }
 
-        nt.send_cipher_update(ut, cipher, &cipher.update_users_revision(conn).await, &headers.device.uuid).await;
+        nt.send_cipher_update(ut, cipher, &cipher.update_users_revision(conn).await, &headers.device.uuid, None).await;
     }
 
     Ok(())
@@ -702,8 +702,9 @@ async fn put_collections_update(
     data: JsonUpcase<CollectionsAdminData>,
     headers: Headers,
     conn: DbConn,
+    nt: Notify<'_>,
 ) -> EmptyResult {
-    post_collections_admin(uuid, data, headers, conn).await
+    post_collections_admin(uuid, data, headers, conn, nt).await
 }
 
 #[post("/ciphers/<uuid>/collections", data = "<data>")]
@@ -712,8 +713,9 @@ async fn post_collections_update(
     data: JsonUpcase<CollectionsAdminData>,
     headers: Headers,
     conn: DbConn,
+    nt: Notify<'_>,
 ) -> EmptyResult {
-    post_collections_admin(uuid, data, headers, conn).await
+    post_collections_admin(uuid, data, headers, conn, nt).await
 }
 
 #[put("/ciphers/<uuid>/collections-admin", data = "<data>")]
@@ -722,8 +724,9 @@ async fn put_collections_admin(
     data: JsonUpcase<CollectionsAdminData>,
     headers: Headers,
     conn: DbConn,
+    nt: Notify<'_>,
 ) -> EmptyResult {
-    post_collections_admin(uuid, data, headers, conn).await
+    post_collections_admin(uuid, data, headers, conn, nt).await
 }
 
 #[post("/ciphers/<uuid>/collections-admin", data = "<data>")]
@@ -732,6 +735,7 @@ async fn post_collections_admin(
     data: JsonUpcase<CollectionsAdminData>,
     headers: Headers,
     mut conn: DbConn,
+    nt: Notify<'_>,
 ) -> EmptyResult {
     let data: CollectionsAdminData = data.into_inner().data;
 
@@ -766,6 +770,15 @@ async fn post_collections_admin(
             }
         }
     }
+
+    nt.send_cipher_update(
+        UpdateType::SyncCipherUpdate,
+        &cipher,
+        &cipher.update_users_revision(&mut conn).await,
+        &headers.device.uuid,
+        Some(Vec::from_iter(posted_collections)),
+    )
+    .await;
 
     log_event(
         EventType::CipherUpdatedCollections as i32,
@@ -1108,6 +1121,7 @@ async fn save_attachment(
         &cipher,
         &cipher.update_users_revision(&mut conn).await,
         &headers.device.uuid,
+        None,
     )
     .await;
 
@@ -1393,7 +1407,8 @@ async fn move_cipher_selected(
         // Move cipher
         cipher.move_to_folder(data.FolderId.clone(), &user_uuid, &mut conn).await?;
 
-        nt.send_cipher_update(UpdateType::SyncCipherUpdate, &cipher, &[user_uuid.clone()], &headers.device.uuid).await;
+        nt.send_cipher_update(UpdateType::SyncCipherUpdate, &cipher, &[user_uuid.clone()], &headers.device.uuid, None)
+            .await;
     }
 
     Ok(())
@@ -1503,6 +1518,7 @@ async fn _delete_cipher_by_uuid(
             &cipher,
             &cipher.update_users_revision(conn).await,
             &headers.device.uuid,
+            None,
         )
         .await;
     } else {
@@ -1512,6 +1528,7 @@ async fn _delete_cipher_by_uuid(
             &cipher,
             &cipher.update_users_revision(conn).await,
             &headers.device.uuid,
+            None,
         )
         .await;
     }
@@ -1581,6 +1598,7 @@ async fn _restore_cipher_by_uuid(uuid: &str, headers: &Headers, conn: &mut DbCon
         &cipher,
         &cipher.update_users_revision(conn).await,
         &headers.device.uuid,
+        None,
     )
     .await;
     if let Some(org_uuid) = &cipher.organization_uuid {
@@ -1662,6 +1680,7 @@ async fn _delete_cipher_attachment_by_id(
         &cipher,
         &cipher.update_users_revision(conn).await,
         &headers.device.uuid,
+        None,
     )
     .await;
     if let Some(org_uuid) = cipher.organization_uuid {
