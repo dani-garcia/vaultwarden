@@ -4,7 +4,7 @@ use std::{
     time::Duration,
 };
 
-use chrono::NaiveDateTime;
+use chrono::{NaiveDateTime, Utc};
 use rmpv::Value;
 use rocket::{
     futures::{SinkExt, StreamExt},
@@ -265,17 +265,28 @@ impl WebSocketUsers {
         cipher: &Cipher,
         user_uuids: &[String],
         acting_device_uuid: &String,
+        collection_uuids: Option<Vec<String>>,
     ) {
-        let user_uuid = convert_option(cipher.user_uuid.clone());
         let org_uuid = convert_option(cipher.organization_uuid.clone());
+        // Depending if there are collections provided or not, we need to have different values for the following variables.
+        // The user_uuid should be `null`, and the revision date should be set to now, else the clients won't sync the collection change.
+        let (user_uuid, collection_uuids, revision_date) = if let Some(collection_uuids) = collection_uuids {
+            (
+                Value::Nil,
+                Value::Array(collection_uuids.into_iter().map(|v| v.into()).collect::<Vec<rmpv::Value>>()),
+                serialize_date(Utc::now().naive_utc()),
+            )
+        } else {
+            (convert_option(cipher.user_uuid.clone()), Value::Nil, serialize_date(cipher.updated_at))
+        };
 
         let data = create_update(
             vec![
                 ("Id".into(), cipher.uuid.clone().into()),
                 ("UserId".into(), user_uuid),
                 ("OrganizationId".into(), org_uuid),
-                ("CollectionIds".into(), Value::Nil),
-                ("RevisionDate".into(), serialize_date(cipher.updated_at)),
+                ("CollectionIds".into(), collection_uuids),
+                ("RevisionDate".into(), revision_date),
             ],
             ut,
             Some(acting_device_uuid.into()),
