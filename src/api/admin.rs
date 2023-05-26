@@ -36,6 +36,7 @@ pub fn routes() -> Vec<Route> {
         get_user_by_mail_json,
         post_admin_login,
         admin_page,
+        admin_page_login,
         invite_user,
         logout,
         delete_user,
@@ -254,6 +255,11 @@ fn render_admin_page() -> ApiResult<Html<String>> {
 #[get("/")]
 fn admin_page(_token: AdminToken) -> ApiResult<Html<String>> {
     render_admin_page()
+}
+
+#[get("/", rank = 2)]
+fn admin_page_login() -> ApiResult<Html<String>> {
+    render_admin_login(None, None)
 }
 
 #[derive(Deserialize, Debug)]
@@ -761,7 +767,17 @@ impl<'r> FromRequest<'r> for AdminToken {
 
             let access_token = match cookies.get(COOKIE_NAME) {
                 Some(cookie) => cookie.value(),
-                None => return Outcome::Failure((Status::Unauthorized, "Unauthorized")),
+                None => {
+                    let requested_page =
+                        request.segments::<std::path::PathBuf>(0..).unwrap_or_default().display().to_string();
+                    // When the requested page is empty, it is `/admin`, in that case, Forward, so it will render the login page
+                    // Else, return a 401 failure, which will be caught
+                    if requested_page.is_empty() {
+                        return Outcome::Forward(Status::Unauthorized);
+                    } else {
+                        return Outcome::Failure((Status::Unauthorized, "Unauthorized"));
+                    }
+                }
             };
 
             if decode_admin(access_token).is_err() {
