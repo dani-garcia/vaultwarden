@@ -14,7 +14,7 @@ use crate::{
         core::two_factor::{duo, email, email::EmailTokenData, yubikey},
         ApiResult, EmptyResult, JsonResult, JsonUpcase,
     },
-    auth::{ClientHeaders, ClientIp},
+    auth::{generate_organization_api_key_login_claims, ClientHeaders, ClientIp},
     db::{models::*, DbConn},
     error::MapResult,
     mail, util, CONFIG,
@@ -276,16 +276,23 @@ async fn _api_key_login(
     conn: &mut DbConn,
     ip: &ClientIp,
 ) -> JsonResult {
-    // Validate scope
-    let scope = data.scope.as_ref().unwrap();
-    if scope != "api" {
-        err!("Scope not supported")
-    }
-    let scope_vec = vec!["api".into()];
-
     // Ratelimit the login
     crate::ratelimit::check_limit_login(&ip.ip)?;
 
+    // Validate scope
+    match data.scope.as_ref().unwrap().as_ref() {
+        "api" => _user_api_key_login(data, user_uuid, conn, ip).await,
+        "api.organization" => _organization_api_key_login(data, conn, ip).await,
+        _ => err!("Scope not supported"),
+    }
+}
+
+async fn _user_api_key_login(
+    data: ConnectData,
+    user_uuid: &mut Option<String>,
+    conn: &mut DbConn,
+    ip: &ClientIp,
+) -> JsonResult {
     // Get the user via the client_id
     let client_id = data.client_id.as_ref().unwrap();
     let client_user_uuid = match client_id.strip_prefix("user.") {
@@ -342,6 +349,7 @@ async fn _api_key_login(
     }
 
     // Common
+    let scope_vec = vec!["api".into()];
     let orgs = UserOrganization::find_confirmed_by_user(&user.uuid, conn).await;
     let (access_token, expires_in) = device.refresh_tokens(&user, orgs, scope_vec);
     device.save(conn).await?;
@@ -362,11 +370,41 @@ async fn _api_key_login(
         "KdfMemory": user.client_kdf_memory,
         "KdfParallelism": user.client_kdf_parallelism,
         "ResetMasterPassword": false, // TODO: Same as above
-        "scope": scope,
+        "scope": "api",
         "unofficialServer": true,
     });
 
     Ok(Json(result))
+}
+
+async fn _organization_api_key_login(data: ConnectData, conn: &mut DbConn, ip: &ClientIp) -> JsonResult {
+    // Get the org via the client_id
+    let client_id = data.client_id.as_ref().unwrap();
+    let org_uuid = match client_id.strip_prefix("organization.") {
+        Some(uuid) => uuid,
+        None => err!("Malformed client_id", format!("IP: {}.", ip.ip)),
+    };
+    let org_api_key = match OrganizationApiKey::find_by_org_uuid(org_uuid, conn).await {
+        Some(org_api_key) => org_api_key,
+        None => err!("Invalid client_id", format!("IP: {}.", ip.ip)),
+    };
+
+    // Check API key.
+    let client_secret = data.client_secret.as_ref().unwrap();
+    if !org_api_key.check_valid_api_key(client_secret) {
+        err!("Incorrect client_secret", format!("IP: {}. Organization: {}.", ip.ip, org_api_key.org_uuid))
+    }
+
+    let claim = generate_organization_api_key_login_claims(org_api_key.uuid, org_api_key.org_uuid);
+    let access_token = crate::auth::encode_jwt(&claim);
+
+    Ok(Json(json!({
+        "access_token": access_token,
+        "expires_in": 3600,
+        "token_type": "Bearer",
+        "scope": "api.organization",
+        "unofficialServer": true,
+    })))
 }
 
 /// Retrieves an existing device or creates a new device from ConnectData and the User

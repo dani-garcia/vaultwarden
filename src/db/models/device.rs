@@ -1,6 +1,6 @@
 use chrono::{NaiveDateTime, Utc};
 
-use crate::CONFIG;
+use crate::{crypto, CONFIG};
 
 db_object! {
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -47,9 +47,7 @@ impl Device {
     }
 
     pub fn refresh_twofactor_remember(&mut self) -> String {
-        use crate::crypto;
         use data_encoding::BASE64;
-
         let twofactor_remember = crypto::encode_random_bytes::<180>(BASE64);
         self.twofactor_remember = Some(twofactor_remember.clone());
 
@@ -68,9 +66,7 @@ impl Device {
     ) -> (String, i64) {
         // If there is no refresh token, we create one
         if self.refresh_token.is_empty() {
-            use crate::crypto;
             use data_encoding::BASE64URL;
-
             self.refresh_token = crypto::encode_random_bytes::<64>(BASE64URL);
         }
 
