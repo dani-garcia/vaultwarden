@@ -2382,7 +2382,7 @@ async fn add_update_group(
         "OrganizationId": group.organizations_uuid,
         "Name": group.name,
         "AccessAll": group.access_all,
-        "ExternalId": group.get_external_id()
+        "ExternalId": group.external_id
     })))
 }
 

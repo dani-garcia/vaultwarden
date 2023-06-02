@@ -50,6 +50,8 @@ db_object! {
         pub api_key: Option<String>,
 
         pub avatar_color: Option<String>,
+
+        pub external_id: Option<String>,
     }
 
     #[derive(Identifiable, Queryable, Insertable)]
@@ -126,6 +128,8 @@ impl User {
             api_key: None,
 
             avatar_color: None,
+
+            external_id: None,
         }
     }
 
@@ -148,6 +152,21 @@ impl User {
 
     pub fn check_valid_api_key(&self, key: &str) -> bool {
         matches!(self.api_key, Some(ref api_key) if crate::crypto::ct_eq(api_key, key))
+    }
+
+    pub fn set_external_id(&mut self, external_id: Option<String>) {
+        //Check if external id is empty. We don't want to have
+        //empty strings in the database
+        match external_id {
+            Some(external_id) => {
+                if external_id.is_empty() {
+                    self.external_id = None;
+                } else {
+                    self.external_id = Some(external_id)
+                }
+            }
+            None => self.external_id = None,
+        }
     }
 
     /// Set the password hash generated
@@ -376,6 +395,11 @@ impl User {
         }}
     }
 
+    pub async fn find_by_external_id(id: &str, conn: &mut DbConn) -> Option<Self> {
+        db_run! {conn: {
+            users::table.filter(users::external_id.eq(id)).first::<UserDb>(conn).ok().from_db()
+        }}
+    }
     pub async fn get_all(conn: &mut DbConn) -> Vec<Self> {
         db_run! {conn: {
             users::table.load::<UserDb>(conn).expect("Error loading users").from_db()

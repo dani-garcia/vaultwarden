@@ -204,6 +204,7 @@ table! {
         client_kdf_parallelism -> Nullable<Integer>,
         api_key -> Nullable<Text>,
         avatar_color -> Nullable<Text>,
+        external_id -> Nullable<Text>,
     }
 }
 

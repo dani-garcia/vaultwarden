@@ -7,3 +7,5 @@ CREATE TABLE organization_api_key (
 	PRIMARY KEY(uuid, org_uuid),
 	FOREIGN KEY(org_uuid) REFERENCES organizations(uuid)
 );
+
+ALTER TABLE users ADD COLUMN external_id TEXT;

@@ -510,7 +510,7 @@ impl UserOrganization {
                             .set(UserOrganizationDb::to_db(self))
                             .execute(conn)
                             .map_res("Error adding user to organization")
-                    }
+                    },
                     Err(e) => Err(e.into()),
                 }.map_res("Error adding user to organization")
             }

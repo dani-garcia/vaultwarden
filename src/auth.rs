@@ -94,6 +94,10 @@ pub fn decode_send(token: &str) -> Result<BasicJwtClaims, Error> {
     decode_jwt(token, JWT_SEND_ISSUER.to_string())
 }
 
+pub fn decode_api_org(token: &str) -> Result<OrgApiKeyLoginJwtClaims, Error> {
+    decode_jwt(token, JWT_ORG_API_KEY_ISSUER.to_string())
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct LoginJwtClaims {
     // Not before
