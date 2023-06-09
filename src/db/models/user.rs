@@ -157,16 +157,13 @@ impl User {
     pub fn set_external_id(&mut self, external_id: Option<String>) {
         //Check if external id is empty. We don't want to have
         //empty strings in the database
-        match external_id {
-            Some(external_id) => {
-                if external_id.is_empty() {
-                    self.external_id = None;
-                } else {
-                    self.external_id = Some(external_id)
-                }
+        let mut ext_id: Option<String> = None;
+        if let Some(external_id) = external_id {
+            if !external_id.is_empty() {
+                ext_id = Some(external_id);
             }
-            None => self.external_id = None,
         }
+        self.external_id = ext_id;
     }
 
     /// Set the password hash generated
@@ -400,6 +397,7 @@ impl User {
             users::table.filter(users::external_id.eq(id)).first::<UserDb>(conn).ok().from_db()
         }}
     }
+
     pub async fn get_all(conn: &mut DbConn) -> Vec<Self> {
         db_run! {conn: {
             users::table.load::<UserDb>(conn).expect("Error loading users").from_db()

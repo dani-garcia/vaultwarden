@@ -4,6 +4,8 @@ use rocket::{
     Request, Route,
 };
 
+use std::collections::HashSet;
+
 use crate::{
     api::{EmptyResult, JsonUpcase},
     auth,
@@ -15,7 +17,7 @@ pub fn routes() -> Vec<Route> {
     routes![ldap_import]
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize)]
 #[allow(non_snake_case)]
 struct OrgImportGroupData {
     Name: String,
@@ -23,7 +25,7 @@ struct OrgImportGroupData {
     MemberExternalIds: Vec<String>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize)]
 #[allow(non_snake_case)]
 struct OrgImportUserData {
     Email: String,
@@ -31,19 +33,20 @@ struct OrgImportUserData {
     Deleted: bool,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize)]
 #[allow(non_snake_case)]
 struct OrgImportData {
     Groups: Vec<OrgImportGroupData>,
     Members: Vec<OrgImportUserData>,
     OverwriteExisting: bool,
-    #[allow(dead_code)]
-    LargeImport: bool,
+    // LargeImport: bool, // For now this will not be used, upstream uses this to prevent syncs of more then 2000 users or groups without the flag set.
 }
 
 #[post("/public/organization/import", data = "<data>")]
 async fn ldap_import(data: JsonUpcase<OrgImportData>, token: PublicToken, mut conn: DbConn) -> EmptyResult {
-    let _ = &conn;
+    // Most of the logic for this function can be found here
+    // https://github.com/bitwarden/server/blob/fd892b2ff4547648a276734fb2b14a8abae2c6f5/src/Core/Services/Implementations/OrganizationService.cs#L1797
+
     let org_id = token.0;
     let data = data.into_inner().data;
 
@@ -114,38 +117,43 @@ async fn ldap_import(data: JsonUpcase<OrgImportData>, token: PublicToken, mut co
         }
     }
 
-    for group_data in &data.Groups {
-        let group_uuid = match Group::find_by_external_id(&group_data.ExternalId, &mut conn).await {
-            Some(group) => group.uuid,
-            None => {
-                let mut group =
-                    Group::new(org_id.clone(), group_data.Name.clone(), false, Some(group_data.ExternalId.clone()));
-                group.save(&mut conn).await?;
-                group.uuid
-            }
-        };
+    if CONFIG.org_groups_enabled() {
+        for group_data in &data.Groups {
+            let group_uuid = match Group::find_by_external_id(&group_data.ExternalId, &mut conn).await {
+                Some(group) => group.uuid,
+                None => {
+                    let mut group =
+                        Group::new(org_id.clone(), group_data.Name.clone(), false, Some(group_data.ExternalId.clone()));
+                    group.save(&mut conn).await?;
+                    group.uuid
+                }
+            };
 
-        GroupUser::delete_all_by_group(&group_uuid, &mut conn).await?;
+            GroupUser::delete_all_by_group(&group_uuid, &mut conn).await?;
 
-        for ext_id in &group_data.MemberExternalIds {
-            if let Some(user) = User::find_by_external_id(ext_id, &mut conn).await {
-                if let Some(user_org) = UserOrganization::find_by_user_and_org(&user.uuid, &org_id, &mut conn).await {
-                    let mut group_user = GroupUser::new(group_uuid.clone(), user_org.uuid.clone());
-                    group_user.save(&mut conn).await?;
+            for ext_id in &group_data.MemberExternalIds {
+                if let Some(user) = User::find_by_external_id(ext_id, &mut conn).await {
+                    if let Some(user_org) = UserOrganization::find_by_user_and_org(&user.uuid, &org_id, &mut conn).await
+                    {
+                        let mut group_user = GroupUser::new(group_uuid.clone(), user_org.uuid.clone());
+                        group_user.save(&mut conn).await?;
+                    }
                 }
             }
         }
+    } else {
+        warn!("Group support is disabled, groups will not be imported!");
     }
 
     // If this flag is enabled, any user that isn't provided in the Users list will be removed (by default they will be kept unless they have Deleted == true)
     if data.OverwriteExisting {
+        // Generate a HashSet to quickly verify if a member is listed or not.
+        let sync_members: HashSet<String> = data.Members.into_iter().map(|m| m.ExternalId).collect();
         for user_org in UserOrganization::find_by_org(&org_id, &mut conn).await {
             if let Some(user_external_id) =
                 User::find_by_uuid(&user_org.user_uuid, &mut conn).await.map(|u| u.external_id)
             {
-                if user_external_id.is_some()
-                    && !data.Members.iter().any(|u| u.ExternalId == *user_external_id.as_ref().unwrap())
-                {
+                if user_external_id.is_some() && !sync_members.contains(&user_external_id.unwrap()) {
                     if user_org.atype == UserOrgType::Owner && user_org.status == UserOrgStatus::Confirmed as i32 {
                         // Removing owner, check that there is at least one other confirmed owner
                         if UserOrganization::count_confirmed_by_org_and_type(&org_id, UserOrgType::Owner, &mut conn)
@@ -165,7 +173,6 @@ async fn ldap_import(data: JsonUpcase<OrgImportData>, token: PublicToken, mut co
     Ok(())
 }
 
-#[derive(Debug)]
 pub struct PublicToken(String);
 
 #[rocket::async_trait]

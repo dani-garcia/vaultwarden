@@ -2895,7 +2895,7 @@ async fn get_org_export(org_id: &str, headers: AdminHeaders, mut conn: DbConn) -
 }
 
 async fn _api_key(
-    org_id: String,
+    org_id: &str,
     data: JsonUpcase<PasswordData>,
     rotate: bool,
     headers: AdminHeaders,
@@ -2909,7 +2909,7 @@ async fn _api_key(
         err!("Invalid password")
     }
 
-    let org_api_key = match OrganizationApiKey::find_by_org_uuid(&org_id, &conn).await {
+    let org_api_key = match OrganizationApiKey::find_by_org_uuid(org_id, &conn).await {
         Some(mut org_api_key) => {
             if rotate {
                 org_api_key.api_key = crate::crypto::generate_api_key();
@@ -2920,7 +2920,7 @@ async fn _api_key(
         }
         None => {
             let api_key = crate::crypto::generate_api_key();
-            let new_org_api_key = OrganizationApiKey::new(org_id, api_key);
+            let new_org_api_key = OrganizationApiKey::new(String::from(org_id), api_key);
             new_org_api_key.save(&conn).await.expect("Error creating organization API Key");
             new_org_api_key
         }
@@ -2934,13 +2934,13 @@ async fn _api_key(
 }
 
 #[post("/organizations/<org_id>/api-key", data = "<data>")]
-async fn api_key(org_id: String, data: JsonUpcase<PasswordData>, headers: AdminHeaders, conn: DbConn) -> JsonResult {
+async fn api_key(org_id: &str, data: JsonUpcase<PasswordData>, headers: AdminHeaders, conn: DbConn) -> JsonResult {
     _api_key(org_id, data, false, headers, conn).await
 }
 
 #[post("/organizations/<org_id>/rotate-api-key", data = "<data>")]
 async fn rotate_api_key(
-    org_id: String,
+    org_id: &str,
     data: JsonUpcase<PasswordData>,
     headers: AdminHeaders,
     conn: DbConn,
