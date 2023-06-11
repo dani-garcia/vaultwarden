@@ -511,10 +511,9 @@ pub async fn update_cipher_from_data(
             )
             .await;
         }
-
-        nt.send_cipher_update(ut, cipher, &cipher.update_users_revision(conn).await, &headers.device.uuid, None).await;
+        nt.send_cipher_update(ut, cipher, &cipher.update_users_revision(conn).await, &headers.device.uuid, None, conn)
+            .await;
     }
-
     Ok(())
 }
 
@@ -580,6 +579,7 @@ async fn post_ciphers_import(
     let mut user = headers.user;
     user.update_revision(&mut conn).await?;
     nt.send_user_update(UpdateType::SyncVault, &user).await;
+
     Ok(())
 }
 
@@ -777,6 +777,7 @@ async fn post_collections_admin(
         &cipher.update_users_revision(&mut conn).await,
         &headers.device.uuid,
         Some(Vec::from_iter(posted_collections)),
+        &mut conn,
     )
     .await;
 
@@ -1122,6 +1123,7 @@ async fn save_attachment(
         &cipher.update_users_revision(&mut conn).await,
         &headers.device.uuid,
         None,
+        &mut conn,
     )
     .await;
 
@@ -1407,8 +1409,15 @@ async fn move_cipher_selected(
         // Move cipher
         cipher.move_to_folder(data.FolderId.clone(), &user_uuid, &mut conn).await?;
 
-        nt.send_cipher_update(UpdateType::SyncCipherUpdate, &cipher, &[user_uuid.clone()], &headers.device.uuid, None)
-            .await;
+        nt.send_cipher_update(
+            UpdateType::SyncCipherUpdate,
+            &cipher,
+            &[user_uuid.clone()],
+            &headers.device.uuid,
+            None,
+            &mut conn,
+        )
+        .await;
     }
 
     Ok(())
@@ -1489,6 +1498,7 @@ async fn delete_all(
 
             user.update_revision(&mut conn).await?;
             nt.send_user_update(UpdateType::SyncVault, &user).await;
+
             Ok(())
         }
     }
@@ -1519,6 +1529,7 @@ async fn _delete_cipher_by_uuid(
             &cipher.update_users_revision(conn).await,
             &headers.device.uuid,
             None,
+            conn,
         )
         .await;
     } else {
@@ -1529,6 +1540,7 @@ async fn _delete_cipher_by_uuid(
             &cipher.update_users_revision(conn).await,
             &headers.device.uuid,
             None,
+            conn,
         )
         .await;
     }
@@ -1599,8 +1611,10 @@ async fn _restore_cipher_by_uuid(uuid: &str, headers: &Headers, conn: &mut DbCon
         &cipher.update_users_revision(conn).await,
         &headers.device.uuid,
         None,
+        conn,
     )
     .await;
+
     if let Some(org_uuid) = &cipher.organization_uuid {
         log_event(
             EventType::CipherRestored as i32,
@@ -1681,8 +1695,10 @@ async fn _delete_cipher_attachment_by_id(
         &cipher.update_users_revision(conn).await,
         &headers.device.uuid,
         None,
+        conn,
     )
     .await;
+
     if let Some(org_uuid) = cipher.organization_uuid {
         log_event(
             EventType::CipherAttachmentDeleted as i32,

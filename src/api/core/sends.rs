@@ -180,7 +180,8 @@ async fn post_send(data: JsonUpcase<SendData>, headers: Headers, mut conn: DbCon
 
     let mut send = create_send(data, headers.user.uuid)?;
     send.save(&mut conn).await?;
-    nt.send_send_update(UpdateType::SyncSendCreate, &send, &send.update_users_revision(&mut conn).await).await;
+    nt.send_send_update(UpdateType::SyncSendCreate, &send, &send.update_users_revision(&mut conn).await, &mut conn)
+        .await;
 
     Ok(Json(send.to_json()))
 }
@@ -252,7 +253,8 @@ async fn post_send_file(data: Form<UploadData<'_>>, headers: Headers, mut conn: 
 
     // Save the changes in the database
     send.save(&mut conn).await?;
-    nt.send_send_update(UpdateType::SyncSendCreate, &send, &send.update_users_revision(&mut conn).await).await;
+    nt.send_send_update(UpdateType::SyncSendCreate, &send, &send.update_users_revision(&mut conn).await, &mut conn)
+        .await;
 
     Ok(Json(send.to_json()))
 }
@@ -335,7 +337,8 @@ async fn post_send_file_v2_data(
             data.data.move_copy_to(file_path).await?
         }
 
-        nt.send_send_update(UpdateType::SyncSendCreate, &send, &send.update_users_revision(&mut conn).await).await;
+        nt.send_send_update(UpdateType::SyncSendCreate, &send, &send.update_users_revision(&mut conn).await, &mut conn)
+            .await;
     } else {
         err!("Send not found. Unable to save the file.");
     }
@@ -397,7 +400,8 @@ async fn post_access(
 
     send.save(&mut conn).await?;
 
-    nt.send_send_update(UpdateType::SyncSendUpdate, &send, &send.update_users_revision(&mut conn).await).await;
+    nt.send_send_update(UpdateType::SyncSendUpdate, &send, &send.update_users_revision(&mut conn).await, &mut conn)
+        .await;
 
     Ok(Json(send.to_json_access(&mut conn).await))
 }
@@ -448,7 +452,8 @@ async fn post_access_file(
 
     send.save(&mut conn).await?;
 
-    nt.send_send_update(UpdateType::SyncSendUpdate, &send, &send.update_users_revision(&mut conn).await).await;
+    nt.send_send_update(UpdateType::SyncSendUpdate, &send, &send.update_users_revision(&mut conn).await, &mut conn)
+        .await;
 
     let token_claims = crate::auth::generate_send_claims(send_id, file_id);
     let token = crate::auth::encode_jwt(&token_claims);
@@ -530,7 +535,8 @@ async fn put_send(
     }
 
     send.save(&mut conn).await?;
-    nt.send_send_update(UpdateType::SyncSendUpdate, &send, &send.update_users_revision(&mut conn).await).await;
+    nt.send_send_update(UpdateType::SyncSendUpdate, &send, &send.update_users_revision(&mut conn).await, &mut conn)
+        .await;
 
     Ok(Json(send.to_json()))
 }
@@ -547,7 +553,8 @@ async fn delete_send(id: &str, headers: Headers, mut conn: DbConn, nt: Notify<'_
     }
 
     send.delete(&mut conn).await?;
-    nt.send_send_update(UpdateType::SyncSendDelete, &send, &send.update_users_revision(&mut conn).await).await;
+    nt.send_send_update(UpdateType::SyncSendDelete, &send, &send.update_users_revision(&mut conn).await, &mut conn)
+        .await;
 
     Ok(())
 }
@@ -567,7 +574,8 @@ async fn put_remove_password(id: &str, headers: Headers, mut conn: DbConn, nt: N
 
     send.set_password(None);
     send.save(&mut conn).await?;
-    nt.send_send_update(UpdateType::SyncSendUpdate, &send, &send.update_users_revision(&mut conn).await).await;
+    nt.send_send_update(UpdateType::SyncSendUpdate, &send, &send.update_users_revision(&mut conn).await, &mut conn)
+        .await;
 
     Ok(Json(send.to_json()))
 }

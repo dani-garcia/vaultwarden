@@ -15,7 +15,8 @@ db_object! {
         pub user_uuid: String,
 
         pub name: String,
-        pub atype: i32, // https://github.com/bitwarden/server/blob/master/src/Core/Enums/DeviceType.cs
+        pub atype: i32,         // https://github.com/bitwarden/server/blob/master/src/Core/Enums/DeviceType.cs
+        pub push_uuid: Option<String>,
         pub push_token: Option<String>,
 
         pub refresh_token: String,
@@ -38,6 +39,7 @@ impl Device {
             name,
             atype,
 
+            push_uuid: None,
             push_token: None,
             refresh_token: String::new(),
             twofactor_remember: None,
@@ -155,6 +157,35 @@ impl Device {
         }}
     }
 
+    pub async fn find_by_user(user_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+        db_run! { conn: {
+            devices::table
+                .filter(devices::user_uuid.eq(user_uuid))
+                .load::<DeviceDb>(conn)
+                .expect("Error loading devices")
+                .from_db()
+        }}
+    }
+
+    pub async fn find_by_uuid(uuid: &str, conn: &mut DbConn) -> Option<Self> {
+        db_run! { conn: {
+            devices::table
+                .filter(devices::uuid.eq(uuid))
+                .first::<DeviceDb>(conn)
+                .ok()
+                .from_db()
+        }}
+    }
+
+    pub async fn clear_push_token_by_uuid(uuid: &str, conn: &mut DbConn) -> EmptyResult {
+        db_run! { conn: {
+            diesel::update(devices::table)
+                .filter(devices::uuid.eq(uuid))
+                .set(devices::push_token.eq::<Option<String>>(None))
+                .execute(conn)
+                .map_res("Error removing push token")
+        }}
+    }
     pub async fn find_by_refresh_token(refresh_token: &str, conn: &mut DbConn) -> Option<Self> {
         db_run! { conn: {
             devices::table
@@ -172,6 +203,16 @@ impl Device {
                 .order(devices::updated_at.desc())
                 .first::<DeviceDb>(conn)
                 .ok()
+                .from_db()
+        }}
+    }
+    pub async fn find_push_device_by_user(user_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+        db_run! { conn: {
+            devices::table
+                .filter(devices::user_uuid.eq(user_uuid))
+                .filter(devices::push_token.is_not_null())
+                .load::<DeviceDb>(conn)
+                .expect("Error loading push devices")
                 .from_db()
         }}
     }
