@@ -26,7 +26,7 @@
 FROM docker.io/vaultwarden/web-vault@sha256:e5b5e99d132d50dc73176afb65f41cf3b834fb06bfa1d621ac16c705c3f10085 as vault
 
 ########################## BUILD IMAGE  ##########################
-FROM docker.io/library/rust:1.70.0-bullseye as build
+FROM docker.io/library/rust:1.71.0-bookworm as build
 
 # Build time options to avoid dpkg warnings and help with reproducible builds.
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -34,6 +34,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     TZ=UTC \
     TERM=xterm-256color \
     CARGO_HOME="/root/.cargo" \
+    REGISTRIES_CRATES_IO_PROTOCOL=sparse \
     USER="root"
 
 # Create CARGO_HOME folder and don't download rust docs
@@ -80,7 +81,7 @@ RUN cargo build --features ${DB} --release
 ######################## RUNTIME IMAGE  ########################
 # Create a new stage with a minimal image
 # because we already have a binary built
-FROM docker.io/library/debian:bullseye-slim
+FROM docker.io/library/debian:bookworm-slim
 
 ENV ROCKET_PROFILE="release" \
     ROCKET_ADDRESS=0.0.0.0 \

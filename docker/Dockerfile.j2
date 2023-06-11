@@ -2,25 +2,25 @@
 
 # This file was generated using a Jinja2 template.
 # Please make your changes in `Dockerfile.j2` and then `make` the individual Dockerfiles.
-{% set rust_version = "1.70.0" %}
-{% set debian_version = "bullseye" %}
+{% set rust_version = "1.71.0" %}
+{% set debian_version = "bookworm" %}
 {% set alpine_version = "3.17" %}
 {% set build_stage_base_image = "docker.io/library/rust:%s-%s" % (rust_version, debian_version) %}
 {% if "alpine" in target_file %}
 {%   if "amd64" in target_file %}
-{%     set build_stage_base_image = "docker.io/blackdex/rust-musl:x86_64-musl-stable-%s" % rust_version %}
+{%     set build_stage_base_image = "docker.io/blackdex/rust-musl:x86_64-musl-stable-%s-openssl3" % rust_version %}
 {%     set runtime_stage_base_image = "docker.io/library/alpine:%s" % alpine_version %}
 {%     set package_arch_target = "x86_64-unknown-linux-musl" %}
 {%   elif "armv7" in target_file %}
-{%     set build_stage_base_image = "docker.io/blackdex/rust-musl:armv7-musleabihf-stable-%s" % rust_version %}
+{%     set build_stage_base_image = "docker.io/blackdex/rust-musl:armv7-musleabihf-stable-%s-openssl3" % rust_version %}
 {%     set runtime_stage_base_image = "docker.io/balenalib/armv7hf-alpine:%s" % alpine_version %}
 {%     set package_arch_target = "armv7-unknown-linux-musleabihf" %}
 {%   elif "armv6" in target_file %}
-{%     set build_stage_base_image = "docker.io/blackdex/rust-musl:arm-musleabi-stable-%s" % rust_version %}
+{%     set build_stage_base_image = "docker.io/blackdex/rust-musl:arm-musleabi-stable-%s-openssl3" % rust_version %}
 {%     set runtime_stage_base_image = "docker.io/balenalib/rpi-alpine:%s" % alpine_version %}
 {%     set package_arch_target = "arm-unknown-linux-musleabi" %}
 {%   elif "arm64" in target_file %}
-{%     set build_stage_base_image = "docker.io/blackdex/rust-musl:aarch64-musl-stable-%s" % rust_version %}
+{%     set build_stage_base_image = "docker.io/blackdex/rust-musl:aarch64-musl-stable-%s-openssl3" % rust_version %}
 {%     set runtime_stage_base_image = "docker.io/balenalib/aarch64-alpine:%s" % alpine_version %}
 {%     set package_arch_target = "aarch64-unknown-linux-musl" %}
 {%   endif %}
@@ -91,6 +91,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     TZ=UTC \
     TERM=xterm-256color \
     CARGO_HOME="/root/.cargo" \
+    REGISTRIES_CRATES_IO_PROTOCOL=sparse \
     USER="root"
 
 # Create CARGO_HOME folder and don't download rust docs
@@ -98,13 +99,16 @@ RUN {{ mount_rust_cache -}} mkdir -pv "${CARGO_HOME}" \
     && rustup set profile minimal
 
 {% if "alpine" in target_file %}
+# Use PostgreSQL v15 during Alpine/MUSL builds instead of the default v11
+# Debian Bookworm already contains libpq v15
+ENV PQ_LIB_DIR="/usr/local/musl/pq15/lib"
 {%   if "armv6" in target_file %}
-# To be able to build the armv6 image with mimalloc we need to specifically specify the libatomic.a file location
-ENV RUSTFLAGS='-Clink-arg=/usr/local/musl/{{ package_arch_target }}/lib/libatomic.a'
+# To be able to build the armv6 image with mimalloc we need to tell the linker to also look for libatomic
+ENV RUSTFLAGS='-Clink-arg=-latomic'
 {%   endif %}
 {% elif "arm" in target_file %}
 # Install build dependencies for the {{ package_arch_name }} architecture
-RUN dpkg --add-architecture {{ package_arch_name }} \
+RUN {{ mount_rust_cache -}} dpkg --add-architecture {{ package_arch_name }} \
     && apt-get update \
     && apt-get install -y \
         --no-install-recommends \
@@ -210,13 +214,6 @@ RUN mkdir /data \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 {% endif %}
-
-{% if "armv6" in target_file and "alpine" not in target_file %}
-# In the Balena Bullseye images for armv6/rpi-debian there is a missing symlink.
-# This symlink was there in the buster images, and for some reason this is needed.
-RUN ln -v -s /lib/ld-linux-armhf.so.3 /lib/ld-linux.so.3
-
-{% endif -%}
 
 {% if "amd64" not in target_file %}
 RUN [ "cross-build-end" ]
