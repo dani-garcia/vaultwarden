@@ -3,6 +3,7 @@ pub mod core;
 mod icons;
 mod identity;
 mod notifications;
+mod push;
 mod web;
 
 use rocket::serde::json::Json;
@@ -22,6 +23,10 @@ pub use crate::api::{
     identity::routes as identity_routes,
     notifications::routes as notifications_routes,
     notifications::{start_notification_server, Notify, UpdateType},
+    push::{
+        push_cipher_update, push_folder_update, push_logout, push_send_update, push_user_update, register_push_device,
+        unregister_push_device,
+    },
     web::catchers as web_catchers,
     web::routes as web_routes,
     web::static_files,

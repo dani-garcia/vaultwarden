@@ -49,6 +49,7 @@ table! {
         user_uuid -> Text,
         name -> Text,
         atype -> Integer,
+        push_uuid -> Nullable<Text>,
         push_token -> Nullable<Text>,
         refresh_token -> Text,
         twofactor_remember -> Nullable<Text>,

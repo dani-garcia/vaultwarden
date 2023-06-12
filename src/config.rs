@@ -377,6 +377,16 @@ make_config! {
         /// Websocket port
         websocket_port:         u16,    false,  def,    3012;
     },
+    push {
+        /// Enable push notifications
+        push_enabled:           bool,   false,  def,    false;
+        /// Push relay base uri
+        push_relay_uri:         String, false,  def,    "https://push.bitwarden.com".to_string();
+        /// Installation id |> The installation id from https://bitwarden.com/host
+        push_installation_id:   Pass,   false,  def,    String::new();
+        /// Installation key |> The installation key from https://bitwarden.com/host
+        push_installation_key:  Pass,   false,  def,    String::new();
+    },
     jobs {
         /// Job scheduler poll interval |> How often the job scheduler thread checks for jobs to run.
         /// Set to 0 to globally disable scheduled jobs.
@@ -722,6 +732,17 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
             println!("[WARNING] `ADMIN_TOKEN` is enabled but has an empty value, so the admin page will be disabled.");
             println!("[WARNING] To enable the admin page without a token, use `DISABLE_ADMIN_TOKEN`.");
         }
+    }
+
+    if cfg.push_enabled && (cfg.push_installation_id == String::new() || cfg.push_installation_key == String::new()) {
+        err!(
+            "Misconfigured Push Notification service\n\
+            ########################################################################################\n\
+            # It looks like you enabled Push Notification feature, but didn't configure it         #\n\
+            # properly. Make sure the installation id and key from https://bitwarden.com/host are  #\n\
+            # added to your configuration.                                                         #\n\
+            ########################################################################################\n"
+        )
     }
 
     if cfg._enable_duo

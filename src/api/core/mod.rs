@@ -14,7 +14,6 @@ pub use sends::purge_sends;
 pub use two_factor::send_incomplete_2fa_notifications;
 
 pub fn routes() -> Vec<Route> {
-    let mut device_token_routes = routes![clear_device_token, put_device_token];
     let mut eq_domains_routes = routes![get_eq_domains, post_eq_domains, put_eq_domains];
     let mut hibp_routes = routes![hibp_breach];
     let mut meta_routes = routes![alive, now, version, config];
@@ -28,7 +27,6 @@ pub fn routes() -> Vec<Route> {
     routes.append(&mut organizations::routes());
     routes.append(&mut two_factor::routes());
     routes.append(&mut sends::routes());
-    routes.append(&mut device_token_routes);
     routes.append(&mut eq_domains_routes);
     routes.append(&mut hibp_routes);
     routes.append(&mut meta_routes);
@@ -56,37 +54,6 @@ use crate::{
     error::Error,
     util::get_reqwest_client,
 };
-
-#[put("/devices/identifier/<uuid>/clear-token")]
-fn clear_device_token(uuid: &str) -> &'static str {
-    // This endpoint doesn't have auth header
-
-    let _ = uuid;
-    // uuid is not related to deviceId
-
-    // This only clears push token
-    // https://github.com/bitwarden/core/blob/master/src/Api/Controllers/DevicesController.cs#L109
-    // https://github.com/bitwarden/core/blob/master/src/Core/Services/Implementations/DeviceService.cs#L37
-    ""
-}
-
-#[put("/devices/identifier/<uuid>/token", data = "<data>")]
-fn put_device_token(uuid: &str, data: JsonUpcase<Value>, headers: Headers) -> Json<Value> {
-    let _data: Value = data.into_inner().data;
-    // Data has a single string value "PushToken"
-    let _ = uuid;
-    // uuid is not related to deviceId
-
-    // TODO: This should save the push token, but we don't have push functionality
-
-    Json(json!({
-        "Id": headers.device.uuid,
-        "Name": headers.device.name,
-        "Type": headers.device.atype,
-        "Identifier": headers.device.uuid,
-        "CreationDate": crate::util::format_date(&headers.device.created_at),
-    }))
-}
 
 #[derive(Serialize, Deserialize, Debug)]
 #[allow(non_snake_case)]
