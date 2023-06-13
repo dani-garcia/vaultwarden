@@ -1,3 +1,4 @@
+use chrono::{NaiveDateTime, Utc};
 use num_traits::FromPrimitive;
 use serde_json::Value;
 use std::cmp::Ordering;
@@ -30,6 +31,17 @@ db_object! {
         pub status: i32,
         pub atype: i32,
         pub reset_password_key: Option<String>,
+    }
+
+    #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
+    #[diesel(table_name = organization_api_key)]
+    #[diesel(primary_key(uuid, org_uuid))]
+    pub struct OrganizationApiKey {
+        pub uuid: String,
+        pub org_uuid: String,
+        pub atype: i32,
+        pub api_key: String,
+        pub revision_date: NaiveDateTime,
     }
 }
 
@@ -157,7 +169,7 @@ impl Organization {
             "UseSso": false, // Not supported
             // "UseKeyConnector": false, // Not supported
             "SelfHost": true,
-            "UseApi": false, // Not supported
+            "UseApi": true,
             "HasPublicAndPrivateKeys": self.private_key.is_some() && self.public_key.is_some(),
             "UseResetPassword": CONFIG.mail_enabled(),
 
@@ -209,6 +221,23 @@ impl UserOrganization {
         if self.status > UserOrgStatus::Revoked as i32 {
             self.status -= ACTIVATE_REVOKE_DIFF;
         }
+    }
+}
+
+impl OrganizationApiKey {
+    pub fn new(org_uuid: String, api_key: String) -> Self {
+        Self {
+            uuid: crate::util::get_uuid(),
+
+            org_uuid,
+            atype: 0, // Type 0 is the default and only type we support currently
+            api_key,
+            revision_date: Utc::now().naive_utc(),
+        }
+    }
+
+    pub fn check_valid_api_key(&self, api_key: &str) -> bool {
+        crate::crypto::ct_eq(&self.api_key, api_key)
     }
 }
 
@@ -311,7 +340,7 @@ impl UserOrganization {
             "UseTotp": true,
             // "UseScim": false, // Not supported (Not AGPLv3 Licensed)
             "UsePolicies": true,
-            "UseApi": false, // Not supported
+            "UseApi": true,
             "SelfHost": true,
             "HasPublicAndPrivateKeys": org.private_key.is_some() && org.public_key.is_some(),
             "ResetPasswordEnrolled": self.reset_password_key.is_some(),
@@ -481,7 +510,7 @@ impl UserOrganization {
                             .set(UserOrganizationDb::to_db(self))
                             .execute(conn)
                             .map_res("Error adding user to organization")
-                    }
+                    },
                     Err(e) => Err(e.into()),
                 }.map_res("Error adding user to organization")
             }
@@ -746,6 +775,50 @@ impl UserOrganization {
             )
             .select(users_organizations::all_columns)
             .load::<UserOrganizationDb>(conn).expect("Error loading user organizations").from_db()
+        }}
+    }
+}
+
+impl OrganizationApiKey {
+    pub async fn save(&self, conn: &DbConn) -> EmptyResult {
+        db_run! { conn:
+            sqlite, mysql {
+                match diesel::replace_into(organization_api_key::table)
+                    .values(OrganizationApiKeyDb::to_db(self))
+                    .execute(conn)
+                {
+                    Ok(_) => Ok(()),
+                    // Record already exists and causes a Foreign Key Violation because replace_into() wants to delete the record first.
+                    Err(diesel::result::Error::DatabaseError(diesel::result::DatabaseErrorKind::ForeignKeyViolation, _)) => {
+                        diesel::update(organization_api_key::table)
+                            .filter(organization_api_key::uuid.eq(&self.uuid))
+                            .set(OrganizationApiKeyDb::to_db(self))
+                            .execute(conn)
+                            .map_res("Error saving organization")
+                    }
+                    Err(e) => Err(e.into()),
+                }.map_res("Error saving organization")
+
+            }
+            postgresql {
+                let value = OrganizationApiKeyDb::to_db(self);
+                diesel::insert_into(organization_api_key::table)
+                    .values(&value)
+                    .on_conflict(organization_api_key::uuid)
+                    .do_update()
+                    .set(&value)
+                    .execute(conn)
+                    .map_res("Error saving organization")
+            }
+        }
+    }
+
+    pub async fn find_by_org_uuid(org_uuid: &str, conn: &DbConn) -> Option<Self> {
+        db_run! { conn: {
+            organization_api_key::table
+                .filter(organization_api_key::org_uuid.eq(org_uuid))
+                .first::<OrganizationApiKeyDb>(conn)
+                .ok().from_db()
         }}
     }
 }

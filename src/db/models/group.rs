@@ -10,7 +10,7 @@ db_object! {
         pub organizations_uuid: String,
         pub name: String,
         pub access_all: bool,
-        external_id: Option<String>,
+        pub external_id: Option<String>,
         pub creation_date: NaiveDateTime,
         pub revision_date: NaiveDateTime,
     }
@@ -106,10 +106,6 @@ impl Group {
             }
             None => self.external_id = None,
         }
-    }
-
-    pub fn get_external_id(&self) -> Option<String> {
-        self.external_id.clone()
     }
 }
 
@@ -214,6 +210,15 @@ impl Group {
         }}
     }
 
+    pub async fn find_by_external_id(id: &str, conn: &mut DbConn) -> Option<Self> {
+        db_run! { conn: {
+            groups::table
+                .filter(groups::external_id.eq(id))
+                .first::<GroupDb>(conn)
+                .ok()
+                .from_db()
+        }}
+    }
     //Returns all organizations the user has full access to
     pub async fn gather_user_organizations_full_access(user_uuid: &str, conn: &mut DbConn) -> Vec<String> {
         db_run! { conn: {

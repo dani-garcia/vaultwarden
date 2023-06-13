@@ -93,7 +93,9 @@ pub fn routes() -> Vec<Route> {
         put_reset_password_enrollment,
         get_reset_password_details,
         put_reset_password,
-        get_org_export
+        get_org_export,
+        api_key,
+        rotate_api_key,
     ]
 }
 
@@ -2380,7 +2382,7 @@ async fn add_update_group(
         "OrganizationId": group.organizations_uuid,
         "Name": group.name,
         "AccessAll": group.access_all,
-        "ExternalId": group.get_external_id()
+        "ExternalId": group.external_id
     })))
 }
 
@@ -2890,4 +2892,58 @@ async fn get_org_export(org_id: &str, headers: AdminHeaders, mut conn: DbConn) -
             "ciphers": convert_json_key_lcase_first(_get_org_details(org_id, &headers.host, &headers.user.uuid, &mut conn).await),
         }))
     }
+}
+
+async fn _api_key(
+    org_id: &str,
+    data: JsonUpcase<PasswordData>,
+    rotate: bool,
+    headers: AdminHeaders,
+    conn: DbConn,
+) -> JsonResult {
+    let data: PasswordData = data.into_inner().data;
+    let user = headers.user;
+
+    // Validate the admin users password
+    if !user.check_valid_password(&data.MasterPasswordHash) {
+        err!("Invalid password")
+    }
+
+    let org_api_key = match OrganizationApiKey::find_by_org_uuid(org_id, &conn).await {
+        Some(mut org_api_key) => {
+            if rotate {
+                org_api_key.api_key = crate::crypto::generate_api_key();
+                org_api_key.revision_date = chrono::Utc::now().naive_utc();
+                org_api_key.save(&conn).await.expect("Error rotating organization API Key");
+            }
+            org_api_key
+        }
+        None => {
+            let api_key = crate::crypto::generate_api_key();
+            let new_org_api_key = OrganizationApiKey::new(String::from(org_id), api_key);
+            new_org_api_key.save(&conn).await.expect("Error creating organization API Key");
+            new_org_api_key
+        }
+    };
+
+    Ok(Json(json!({
+      "ApiKey": org_api_key.api_key,
+      "RevisionDate": crate::util::format_date(&org_api_key.revision_date),
+      "Object": "apiKey",
+    })))
+}
+
+#[post("/organizations/<org_id>/api-key", data = "<data>")]
+async fn api_key(org_id: &str, data: JsonUpcase<PasswordData>, headers: AdminHeaders, conn: DbConn) -> JsonResult {
+    _api_key(org_id, data, false, headers, conn).await
+}
+
+#[post("/organizations/<org_id>/rotate-api-key", data = "<data>")]
+async fn rotate_api_key(
+    org_id: &str,
+    data: JsonUpcase<PasswordData>,
+    headers: AdminHeaders,
+    conn: DbConn,
+) -> JsonResult {
+    _api_key(org_id, data, true, headers, conn).await
 }

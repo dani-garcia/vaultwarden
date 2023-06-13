@@ -23,6 +23,7 @@ static JWT_DELETE_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|delete", CONFI
 static JWT_VERIFYEMAIL_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|verifyemail", CONFIG.domain_origin()));
 static JWT_ADMIN_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|admin", CONFIG.domain_origin()));
 static JWT_SEND_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|send", CONFIG.domain_origin()));
+static JWT_ORG_API_KEY_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|api.organization", CONFIG.domain_origin()));
 
 static PRIVATE_RSA_KEY: Lazy<EncodingKey> = Lazy::new(|| {
     let key =
@@ -91,6 +92,10 @@ pub fn decode_admin(token: &str) -> Result<BasicJwtClaims, Error> {
 
 pub fn decode_send(token: &str) -> Result<BasicJwtClaims, Error> {
     decode_jwt(token, JWT_SEND_ISSUER.to_string())
+}
+
+pub fn decode_api_org(token: &str) -> Result<OrgApiKeyLoginJwtClaims, Error> {
+    decode_jwt(token, JWT_ORG_API_KEY_ISSUER.to_string())
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -197,6 +202,35 @@ pub fn generate_emergency_access_invite_claims(
         emer_id,
         grantor_name,
         grantor_email,
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct OrgApiKeyLoginJwtClaims {
+    // Not before
+    pub nbf: i64,
+    // Expiration time
+    pub exp: i64,
+    // Issuer
+    pub iss: String,
+    // Subject
+    pub sub: String,
+
+    pub client_id: String,
+    pub client_sub: String,
+    pub scope: Vec<String>,
+}
+
+pub fn generate_organization_api_key_login_claims(uuid: String, org_id: String) -> OrgApiKeyLoginJwtClaims {
+    let time_now = Utc::now().naive_utc();
+    OrgApiKeyLoginJwtClaims {
+        nbf: time_now.timestamp(),
+        exp: (time_now + Duration::hours(1)).timestamp(),
+        iss: JWT_ORG_API_KEY_ISSUER.to_string(),
+        sub: uuid,
+        client_id: format!("organization.{org_id}"),
+        client_sub: org_id,
+        scope: vec!["api.organization".into()],
     }
 }
 
