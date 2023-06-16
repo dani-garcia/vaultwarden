@@ -240,11 +240,11 @@ impl WebSocketUsers {
         self.send_update(&user.uuid, &data).await;
 
         if CONFIG.push_enabled() {
-            push_user_update(ut, user).await;
+            push_user_update(ut, user);
         }
     }
 
-    pub async fn send_logout(&self, user: &User, acting_device_uuid: Option<String>, conn: &mut DbConn) {
+    pub async fn send_logout(&self, user: &User, acting_device_uuid: Option<String>) {
         let data = create_update(
             vec![("UserId".into(), user.uuid.clone().into()), ("Date".into(), serialize_date(user.updated_at))],
             UpdateType::LogOut,
@@ -254,7 +254,7 @@ impl WebSocketUsers {
         self.send_update(&user.uuid, &data).await;
 
         if CONFIG.push_enabled() {
-            push_logout(user, acting_device_uuid, conn).await;
+            push_logout(user, acting_device_uuid);
         }
     }
 
@@ -325,7 +325,14 @@ impl WebSocketUsers {
         }
     }
 
-    pub async fn send_send_update(&self, ut: UpdateType, send: &DbSend, user_uuids: &[String], conn: &mut DbConn) {
+    pub async fn send_send_update(
+        &self,
+        ut: UpdateType,
+        send: &DbSend,
+        user_uuids: &[String],
+        acting_device_uuid: &String,
+        conn: &mut DbConn,
+    ) {
         let user_uuid = convert_option(send.user_uuid.clone());
 
         let data = create_update(
@@ -342,7 +349,7 @@ impl WebSocketUsers {
             self.send_update(uuid, &data).await;
         }
         if CONFIG.push_enabled() && user_uuids.len() == 1 {
-            push_send_update(ut, send, conn).await;
+            push_send_update(ut, send, acting_device_uuid, conn).await;
         }
     }
 }

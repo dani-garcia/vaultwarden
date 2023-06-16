@@ -139,71 +139,52 @@ pub async fn push_cipher_update(
         }
     };
 
-    for device in Device::find_by_user(user_uuid, conn).await {
-        let data = json!({
+    if Device::check_user_has_push_device(user_uuid, conn).await {
+        send_to_push_relay(json!({
             "userId": user_uuid,
             "organizationId": (),
-            "deviceId": device.push_uuid,
+            "deviceId": acting_device_uuid,
             "identifier": acting_device_uuid,
             "type": ut as i32,
             "payload": {
-                "Id": cipher.uuid,
-                "UserId": cipher.user_uuid,
-                "OrganizationId": (),
-                "RevisionDate": cipher.updated_at
-            }
-        });
-
-        send_to_push_relay(data).await;
-    }
-}
-
-pub async fn push_logout(user: &User, acting_device_uuid: Option<String>, conn: &mut crate::db::DbConn) {
-    if let Some(d) = acting_device_uuid {
-        for device in Device::find_by_user(&user.uuid, conn).await {
-            let data = json!({
-                "userId": user.uuid,
+                "id": cipher.uuid,
+                "userId": cipher.user_uuid,
                 "organizationId": (),
-                "deviceId": device.push_uuid,
-                "identifier": d,
-                "type": UpdateType::LogOut as i32,
-                "payload": {
-                    "UserId": user.uuid,
-                    "Date": user.updated_at
-                }
-            });
-            send_to_push_relay(data).await;
-        }
-    } else {
-        let data = json!({
-            "userId": user.uuid,
-            "organizationId": (),
-            "deviceId": (),
-            "identifier": (),
-            "type": UpdateType::LogOut as i32,
-            "payload": {
-                "UserId": user.uuid,
-                "Date": user.updated_at
+                "revisionDate": cipher.updated_at
             }
-        });
-        send_to_push_relay(data).await;
+        }))
+        .await;
     }
 }
 
-pub async fn push_user_update(ut: UpdateType, user: &User) {
-    let data = json!({
+pub fn push_logout(user: &User, acting_device_uuid: Option<String>) {
+    let acting_device_uuid: Value = acting_device_uuid.map(|v| v.into()).unwrap_or_else(|| Value::Null);
+
+    tokio::task::spawn(send_to_push_relay(json!({
+        "userId": user.uuid,
+        "organizationId": (),
+        "deviceId": acting_device_uuid,
+        "identifier": acting_device_uuid,
+        "type": UpdateType::LogOut as i32,
+        "payload": {
+            "userId": user.uuid,
+            "date": user.updated_at
+        }
+    })));
+}
+
+pub fn push_user_update(ut: UpdateType, user: &User) {
+    tokio::task::spawn(send_to_push_relay(json!({
         "userId": user.uuid,
         "organizationId": (),
         "deviceId": (),
         "identifier": (),
         "type": ut as i32,
         "payload": {
-            "UserId": user.uuid,
-            "Date": user.updated_at
+            "userId": user.uuid,
+            "date": user.updated_at
         }
-    });
-
-    send_to_push_relay(data).await;
+    })));
 }
 
 pub async fn push_folder_update(
@@ -212,46 +193,42 @@ pub async fn push_folder_update(
     acting_device_uuid: &String,
     conn: &mut crate::db::DbConn,
 ) {
-    for device in Device::find_by_user(&folder.user_uuid, conn).await {
-        let data = json!({
+    if Device::check_user_has_push_device(&folder.user_uuid, conn).await {
+        tokio::task::spawn(send_to_push_relay(json!({
             "userId": folder.user_uuid,
             "organizationId": (),
-            "deviceId": device.push_uuid,
+            "deviceId": acting_device_uuid,
             "identifier": acting_device_uuid,
             "type": ut as i32,
             "payload": {
-                "Id": folder.uuid,
-                "UserId": folder.user_uuid,
-                "RevisionDate": folder.updated_at
+                "id": folder.uuid,
+                "userId": folder.user_uuid,
+                "revisionDate": folder.updated_at
             }
-        });
-
-        send_to_push_relay(data).await;
+        })));
     }
 }
 
-pub async fn push_send_update(ut: UpdateType, send: &Send, conn: &mut crate::db::DbConn) {
+pub async fn push_send_update(ut: UpdateType, send: &Send, acting_device_uuid: &String, conn: &mut crate::db::DbConn) {
     if let Some(s) = &send.user_uuid {
-        for device in Device::find_by_user(s, conn).await {
-            let data = json!({
+        if Device::check_user_has_push_device(s, conn).await {
+            tokio::task::spawn(send_to_push_relay(json!({
                 "userId": send.user_uuid,
                 "organizationId": (),
-                "deviceId": device.push_uuid,
-                "identifier": (),
+                "deviceId": acting_device_uuid,
+                "identifier": acting_device_uuid,
                 "type": ut as i32,
                 "payload": {
-                    "Id": send.uuid,
-                    "UserId": send.user_uuid,
-                    "RevisionDate": send.revision_date
+                    "id": send.uuid,
+                    "userId": send.user_uuid,
+                    "revisionDate": send.revision_date
                 }
-            });
-
-            send_to_push_relay(data).await;
+            })));
         }
     }
 }
 
-async fn send_to_push_relay(data: Value) {
+async fn send_to_push_relay(notification_data: Value) {
     if !CONFIG.push_enabled() {
         return;
     }
@@ -270,8 +247,8 @@ async fn send_to_push_relay(data: Value) {
         .post(CONFIG.push_relay_uri() + "/push/send")
         .header(ACCEPT, "application/json")
         .header(CONTENT_TYPE, "application/json")
-        .header(AUTHORIZATION, auth_header)
-        .json(&data)
+        .header(AUTHORIZATION, &auth_header)
+        .json(&notification_data)
         .send()
         .await
     {

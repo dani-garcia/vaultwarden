@@ -2718,7 +2718,7 @@ async fn put_reset_password(
     user.set_password(reset_request.NewMasterPasswordHash.as_str(), Some(reset_request.Key), true, None);
     user.save(&mut conn).await?;
 
-    nt.send_logout(&user, None, &mut conn).await;
+    nt.send_logout(&user, None).await;
 
     log_event(
         EventType::OrganizationUserAdminResetPassword as i32,

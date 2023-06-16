@@ -343,7 +343,7 @@ async fn post_password(
     // Prevent loging out the client where the user requested this endpoint from.
     // If you do logout the user it will causes issues at the client side.
     // Adding the device uuid will prevent this.
-    nt.send_logout(&user, Some(headers.device.uuid), &mut conn).await;
+    nt.send_logout(&user, Some(headers.device.uuid)).await;
 
     save_result
 }
@@ -403,7 +403,7 @@ async fn post_kdf(data: JsonUpcase<ChangeKdfData>, headers: Headers, mut conn: D
     user.set_password(&data.NewMasterPasswordHash, Some(data.Key), true, None);
     let save_result = user.save(&mut conn).await;
 
-    nt.send_logout(&user, Some(headers.device.uuid), &mut conn).await;
+    nt.send_logout(&user, Some(headers.device.uuid)).await;
 
     save_result
 }
@@ -490,7 +490,7 @@ async fn post_rotatekey(data: JsonUpcase<KeyData>, headers: Headers, mut conn: D
     // Prevent loging out the client where the user requested this endpoint from.
     // If you do logout the user it will causes issues at the client side.
     // Adding the device uuid will prevent this.
-    nt.send_logout(&user, Some(headers.device.uuid), &mut conn).await;
+    nt.send_logout(&user, Some(headers.device.uuid)).await;
 
     save_result
 }
@@ -513,7 +513,7 @@ async fn post_sstamp(
     user.reset_security_stamp();
     let save_result = user.save(&mut conn).await;
 
-    nt.send_logout(&user, None, &mut conn).await;
+    nt.send_logout(&user, None).await;
 
     save_result
 }
@@ -616,7 +616,7 @@ async fn post_email(
 
     let save_result = user.save(&mut conn).await;
 
-    nt.send_logout(&user, None, &mut conn).await;
+    nt.send_logout(&user, None).await;
 
     save_result
 }
