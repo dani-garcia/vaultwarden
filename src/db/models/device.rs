@@ -202,7 +202,7 @@ impl Device {
                 .from_db()
         }}
     }
-    pub async fn find_push_device_by_user(user_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_push_devices_by_user(user_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             devices::table
                 .filter(devices::user_uuid.eq(user_uuid))
@@ -210,6 +210,18 @@ impl Device {
                 .load::<DeviceDb>(conn)
                 .expect("Error loading push devices")
                 .from_db()
+        }}
+    }
+
+    pub async fn check_user_has_push_device(user_uuid: &str, conn: &mut DbConn) -> bool {
+        db_run! { conn: {
+            devices::table
+            .filter(devices::user_uuid.eq(user_uuid))
+            .filter(devices::push_token.is_not_null())
+            .count()
+            .first::<i64>(conn)
+            .ok()
+            .unwrap_or(0) != 0
         }}
     }
 }
