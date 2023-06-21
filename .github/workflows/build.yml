@@ -30,7 +30,7 @@ jobs:
     # This is done globally to prevent rebuilds when the RUSTFLAGS env variable changes.
     env:
       RUSTFLAGS: "-D warnings"
-      CARGO_REGISTRIES_CRATES_IO_PROTOCOL: git # Use the old git protocol until it is stable probably in 1.68 or 1.69. MSRV needs to be at this before removed.
+      CARGO_REGISTRIES_CRATES_IO_PROTOCOL: sparse
     strategy:
       fail-fast: false
       matrix:
@@ -43,7 +43,7 @@ jobs:
     steps:
       # Checkout the repo
       - name: "Checkout"
-        uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab # v3.5.2
+        uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
       # End Checkout the repo
 
 
@@ -89,7 +89,7 @@ jobs:
 
 
       # Enable Rust Caching
-      - uses: Swatinem/rust-cache@988c164c3d0e93c4dbab36aaf5bbeb77425b2894 # v2.4.0
+      - uses: Swatinem/rust-cache@2656b87321093db1cb55fbd73183d195214fdfd1 # v2.5.0
       # End Enable Rust Caching
 
 

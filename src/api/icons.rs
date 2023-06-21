@@ -891,6 +891,7 @@ impl Emitter for FaviconEmitter {
             FaviconToken::EndTag(ref mut tag) => {
                 // Always clean seen attributes
                 self.seen_attributes.clear();
+                self.set_last_start_tag(None);
 
                 // Only trigger an emit for the </head> tag.
                 // This is matched, and will break the for-loop.
