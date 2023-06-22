@@ -849,6 +849,7 @@ struct CollectionData {
 #[allow(non_snake_case)]
 struct InviteData {
     Emails: Vec<String>,
+    Groups: Vec<String>,
     Type: NumberOrString,
     Collections: Option<Vec<CollectionData>>,
     AccessAll: Option<bool>,
@@ -927,6 +928,11 @@ async fn send_invite(
         }
 
         new_user.save(&mut conn).await?;
+
+        for group in data.Groups.iter() {
+            let mut group_entry = GroupUser::new(String::from(group), user.uuid.clone());
+            group_entry.save(&mut conn).await?;
+        }
 
         log_event(
             EventType::OrganizationUserInvited as i32,
