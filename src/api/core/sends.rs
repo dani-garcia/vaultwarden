@@ -374,7 +374,6 @@ pub struct SendAccessData {
 async fn post_access(
     access_id: &str,
     data: JsonUpcase<SendAccessData>,
-    headers: Headers,
     mut conn: DbConn,
     ip: ClientIp,
     nt: Notify<'_>,
@@ -423,7 +422,7 @@ async fn post_access(
         UpdateType::SyncSendUpdate,
         &send,
         &send.update_users_revision(&mut conn).await,
-        &headers.device.uuid,
+        &String::from("00000000-0000-0000-0000-000000000000"),
         &mut conn,
     )
     .await;
@@ -437,7 +436,6 @@ async fn post_access_file(
     file_id: &str,
     data: JsonUpcase<SendAccessData>,
     host: Host,
-    headers: Headers,
     mut conn: DbConn,
     nt: Notify<'_>,
 ) -> JsonResult {
@@ -482,7 +480,7 @@ async fn post_access_file(
         UpdateType::SyncSendUpdate,
         &send,
         &send.update_users_revision(&mut conn).await,
-        &headers.device.uuid,
+        &String::from("00000000-0000-0000-0000-000000000000"),
         &mut conn,
     )
     .await;
