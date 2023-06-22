@@ -210,7 +210,8 @@ pub struct CipherData {
     Login = 1,
     SecureNote = 2,
     Card = 3,
-    Identity = 4
+    Identity = 4,
+    Fido2Key = 5
     */
     pub Type: i32,
     pub Name: String,
@@ -222,6 +223,7 @@ pub struct CipherData {
     SecureNote: Option<Value>,
     Card: Option<Value>,
     Identity: Option<Value>,
+    Fido2Key: Option<Value>,
 
     Favorite: Option<bool>,
     Reprompt: Option<i32>,
@@ -464,6 +466,7 @@ pub async fn update_cipher_from_data(
         2 => data.SecureNote,
         3 => data.Card,
         4 => data.Identity,
+        5 => data.Fido2Key,
         _ => err!("Invalid type"),
     };
 
