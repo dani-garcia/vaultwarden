@@ -424,6 +424,10 @@ async fn post_organization_collections(
             .await?;
     }
 
+    if headers.org_user.atype == UserOrgType::Manager && !headers.org_user.access_all {
+        CollectionUser::save(&headers.org_user.user_uuid, &collection.uuid, false, false, &mut conn).await?;
+    }
+
     Ok(Json(collection.to_json()))
 }
 
