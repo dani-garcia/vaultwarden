@@ -38,6 +38,7 @@ table! {
         uuid -> Text,
         org_uuid -> Text,
         name -> Text,
+        external_id -> Nullable<Text>,
     }
 }
 
