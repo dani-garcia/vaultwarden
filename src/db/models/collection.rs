@@ -41,7 +41,7 @@ impl Collection {
             name,
             external_id: None,
         };
-        
+
         new_model.set_external_id(external_id);
         new_model
     }
