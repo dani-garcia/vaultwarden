@@ -528,6 +528,7 @@ async fn launch_rocket(pool: db::DbPool, extra_debug: bool) -> Result<(), Error>
         .mount([basepath, "/identity"].concat(), api::identity_routes())
         .mount([basepath, "/icons"].concat(), api::icons_routes())
         .mount([basepath, "/notifications"].concat(), api::notifications_routes())
+        .mount([basepath, "/metrics"].concat(), api::metrics_routes())
         .register([basepath, "/"].concat(), api::web_catchers())
         .register([basepath, "/api"].concat(), api::core_catchers())
         .register([basepath, "/admin"].concat(), api::admin_catchers())
@@ -535,7 +536,7 @@ async fn launch_rocket(pool: db::DbPool, extra_debug: bool) -> Result<(), Error>
         .manage(api::start_notification_server())
         .attach(util::AppHeaders())
         .attach(util::Cors())
-        .attach(util::BetterLogging(extra_debug))
+        .attach(util::BetterLogging::new(extra_debug))
         .ignite()
         .await?;
 

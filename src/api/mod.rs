@@ -2,6 +2,7 @@ mod admin;
 pub mod core;
 mod icons;
 mod identity;
+mod metrics;
 mod notifications;
 mod push;
 mod web;
@@ -21,6 +22,7 @@ pub use crate::api::{
     core::{event_cleanup_job, events_routes as core_events_routes},
     icons::routes as icons_routes,
     identity::routes as identity_routes,
+    metrics::routes as metrics_routes,
     notifications::routes as notifications_routes,
     notifications::{start_notification_server, Notify, UpdateType},
     push::{

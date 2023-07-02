@@ -17,6 +17,7 @@ use tokio::{
 };
 
 use crate::CONFIG;
+use prometheus::{register_histogram_vec, HistogramVec};
 
 pub struct AppHeaders();
 
@@ -231,10 +232,27 @@ impl<'r> FromParam<'r> for SafeString {
 
 // Log all the routes from the main paths list, and the attachments endpoint
 // Effectively ignores, any static file route, and the alive endpoint
-const LOGGED_ROUTES: [&str; 7] = ["/api", "/admin", "/identity", "/icons", "/attachments", "/events", "/notifications"];
+const LOGGED_ROUTES: [&str; 8] =
+    ["/api", "/admin", "/identity", "/icons", "/attachments", "/events", "/notifications", "/metrics"];
 
-// Boolean is extra debug, when true, we ignore the whitelist above and also print the mounts
-pub struct BetterLogging(pub bool);
+const PROMETHEUS_LABELS: [&str; 3] = ["endpoint", "method", "status"];
+pub struct BetterLogging {
+    extra_debug: bool,
+    request: HistogramVec,
+    prometheus_enabled: bool,
+}
+
+impl BetterLogging {
+    pub fn new(extra_debug: bool) -> Self {
+        Self {
+            extra_debug,
+            request: register_histogram_vec!("http_request_duration_seconds", "Request durations", &PROMETHEUS_LABELS)
+                .unwrap(),
+            prometheus_enabled: CONFIG.prometheus_enabled(),
+        }
+    }
+}
+
 #[rocket::async_trait]
 impl Fairing for BetterLogging {
     fn info(&self) -> Info {
@@ -245,7 +263,7 @@ impl Fairing for BetterLogging {
     }
 
     async fn on_liftoff(&self, rocket: &Rocket<Orbit>) {
-        if self.0 {
+        if self.extra_debug {
             info!(target: "routes", "Routes loaded:");
             let mut routes: Vec<_> = rocket.routes().collect();
             routes.sort_by_key(|r| r.uri.path());
@@ -269,15 +287,18 @@ impl Fairing for BetterLogging {
     }
 
     async fn on_request(&self, request: &mut Request<'_>, _data: &mut Data<'_>) {
+        if self.prometheus_enabled {
+            request.local_cache(|| Some(time::Instant::now()));
+        }
         let method = request.method();
-        if !self.0 && method == Method::Options {
+        if !self.extra_debug && method == Method::Options {
             return;
         }
         let uri = request.uri();
         let uri_path = uri.path();
         let uri_path_str = uri_path.url_decode_lossy();
         let uri_subpath = uri_path_str.strip_prefix(&CONFIG.domain_path()).unwrap_or(&uri_path_str);
-        if self.0 || LOGGED_ROUTES.iter().any(|r| uri_subpath.starts_with(r)) {
+        if self.extra_debug || LOGGED_ROUTES.iter().any(|r| uri_subpath.starts_with(r)) {
             match uri.query() {
                 Some(q) => info!(target: "request", "{} {}?{}", method, uri_path_str, &q[..q.len().min(30)]),
                 None => info!(target: "request", "{} {}", method, uri_path_str),
@@ -286,19 +307,29 @@ impl Fairing for BetterLogging {
     }
 
     async fn on_response<'r>(&self, request: &'r Request<'_>, response: &mut Response<'r>) {
-        if !self.0 && request.method() == Method::Options {
+        if !self.extra_debug && request.method() == Method::Options {
             return;
         }
         let uri_path = request.uri().path();
         let uri_path_str = uri_path.url_decode_lossy();
         let uri_subpath = uri_path_str.strip_prefix(&CONFIG.domain_path()).unwrap_or(&uri_path_str);
-        if self.0 || LOGGED_ROUTES.iter().any(|r| uri_subpath.starts_with(r)) {
+        if self.extra_debug || LOGGED_ROUTES.iter().any(|r| uri_subpath.starts_with(r)) {
             let status = response.status();
             if let Some(ref route) = request.route() {
                 info!(target: "response", "{} => {}", route, status)
             } else {
                 info!(target: "response", "{}", status)
             }
+        }
+
+        if !self.prometheus_enabled {
+            return;
+        }
+        if let Some(start_time) = request.local_cache(|| None::<time::Instant>) {
+            let duration = start_time.elapsed();
+            self.request
+                .with_label_values(&[uri_subpath, request.method().as_str(), &response.status().to_string()])
+                .observe(duration.as_seconds_f64());
         }
     }
 }

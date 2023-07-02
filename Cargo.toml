@@ -162,6 +162,11 @@ argon2 = "0.5.0"
 
 # Reading a password from the cli for generating the Argon2id ADMIN_TOKEN
 rpassword = "7.2.0"
+prometheus = { version = "0.13.3", features = [
+  "process",
+], default-features = false }
+prometheus-static-metric = "0.5.1"
+lazy_static = "1.4.0"
 
 [patch.crates-io]
 rocket = { git = 'https://github.com/SergioBenitez/Rocket', rev = 'ce441b5f46fdf5cd99cb32b8b8638835e4c2a5fa' } # v0.5 branch

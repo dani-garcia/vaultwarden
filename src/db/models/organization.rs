@@ -319,6 +319,12 @@ impl Organization {
             organizations::table.load::<OrganizationDb>(conn).expect("Error loading organizations").from_db()
         }}
     }
+
+    pub async fn count(conn: &mut DbConn) -> i64 {
+        db_run! {conn: {
+            organizations::table.count().get_result(conn).expect("Error counting organziations")
+        }}
+    }
 }
 
 impl UserOrganization {

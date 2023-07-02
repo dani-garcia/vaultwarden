@@ -596,6 +596,9 @@ make_config! {
 
         /// Enable groups (BETA!) (Know the risks!) |> Enables groups support for organizations (Currently contains known issues!).
         org_groups_enabled:     bool,   false,  def,    false;
+
+        /// Enable Prometheus metrics |> Enables Prometheus metrics on /metrics
+        prometheus_enabled: bool, false,  def,    false;
     },
 
     /// Yubikey settings
