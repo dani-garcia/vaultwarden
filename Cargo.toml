@@ -168,10 +168,14 @@ rocket = { git = 'https://github.com/SergioBenitez/Rocket', rev = 'ce441b5f46fdf
 # rocket_ws = { git = 'https://github.com/SergioBenitez/Rocket', rev = 'ce441b5f46fdf5cd99cb32b8b8638835e4c2a5fa' } # v0.5 branch
 
 # Strip debuginfo from the release builds
-# Also enable thin LTO for some optimizations
+# Also enable fat LTO, opt-level 3, codegen-units 1 for best optimization
 [profile.release]
-strip = "debuginfo"
-lto = "thin"
+opt-level = 3
+debug = false
+panic = "unwind"
+lto = true
+codegen-units = 1
+strip = true
 
 # Always build argon2 using opt-level 3
 # This is a huge speed improvement during testing
