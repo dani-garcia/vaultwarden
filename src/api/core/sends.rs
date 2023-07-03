@@ -340,26 +340,29 @@ async fn post_send_file_v2_data(
 
     let mut data = data.into_inner();
 
-    if let Some(send) = Send::find_by_uuid(send_uuid, &mut conn).await {
-        let folder_path = tokio::fs::canonicalize(&CONFIG.sends_folder()).await?.join(send_uuid);
-        let file_path = folder_path.join(file_id);
-        tokio::fs::create_dir_all(&folder_path).await?;
+    let Some(send) = Send::find_by_uuid(send_uuid, &mut conn).await else { err!("Send not found. Unable to save the file.") };
 
-        if let Err(_err) = data.data.persist_to(&file_path).await {
-            data.data.move_copy_to(file_path).await?
-        }
-
-        nt.send_send_update(
-            UpdateType::SyncSendCreate,
-            &send,
-            &send.update_users_revision(&mut conn).await,
-            &headers.device.uuid,
-            &mut conn,
-        )
-        .await;
-    } else {
-        err!("Send not found. Unable to save the file.");
+    let Some(send_user_id) = &send.user_uuid else {err!("Sends are only supported for users at the moment")};
+    if send_user_id != &headers.user.uuid {
+        err!("Send doesn't belong to user");
     }
+
+    let folder_path = tokio::fs::canonicalize(&CONFIG.sends_folder()).await?.join(send_uuid);
+    let file_path = folder_path.join(file_id);
+    tokio::fs::create_dir_all(&folder_path).await?;
+
+    if let Err(_err) = data.data.persist_to(&file_path).await {
+        data.data.move_copy_to(file_path).await?
+    }
+
+    nt.send_send_update(
+        UpdateType::SyncSendCreate,
+        &send,
+        &send.update_users_revision(&mut conn).await,
+        &headers.device.uuid,
+        &mut conn,
+    )
+    .await;
 
     Ok(())
 }

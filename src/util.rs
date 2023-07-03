@@ -1,7 +1,10 @@
 //
 // Web Headers and caching
 //
-use std::io::{Cursor, ErrorKind};
+use std::{
+    io::{Cursor, ErrorKind},
+    ops::Deref,
+};
 
 use rocket::{
     fairing::{Fairing, Info, Kind},
@@ -206,6 +209,14 @@ pub struct SafeString(String);
 impl std::fmt::Display for SafeString {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
+    }
+}
+
+impl Deref for SafeString {
+    type Target = String;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 

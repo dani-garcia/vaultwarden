@@ -24,6 +24,7 @@ static JWT_VERIFYEMAIL_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|verifyema
 static JWT_ADMIN_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|admin", CONFIG.domain_origin()));
 static JWT_SEND_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|send", CONFIG.domain_origin()));
 static JWT_ORG_API_KEY_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|api.organization", CONFIG.domain_origin()));
+static JWT_FILE_DOWNLOAD_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|file_download", CONFIG.domain_origin()));
 
 static PRIVATE_RSA_KEY: Lazy<EncodingKey> = Lazy::new(|| {
     let key =
@@ -96,6 +97,10 @@ pub fn decode_send(token: &str) -> Result<BasicJwtClaims, Error> {
 
 pub fn decode_api_org(token: &str) -> Result<OrgApiKeyLoginJwtClaims, Error> {
     decode_jwt(token, JWT_ORG_API_KEY_ISSUER.to_string())
+}
+
+pub fn decode_file_download(token: &str) -> Result<FileDownloadClaims, Error> {
+    decode_jwt(token, JWT_FILE_DOWNLOAD_ISSUER.to_string())
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -231,6 +236,31 @@ pub fn generate_organization_api_key_login_claims(uuid: String, org_id: String) 
         client_id: format!("organization.{org_id}"),
         client_sub: org_id,
         scope: vec!["api.organization".into()],
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FileDownloadClaims {
+    // Not before
+    pub nbf: i64,
+    // Expiration time
+    pub exp: i64,
+    // Issuer
+    pub iss: String,
+    // Subject
+    pub sub: String,
+
+    pub file_id: String,
+}
+
+pub fn generate_file_download_claims(uuid: String, file_id: String) -> FileDownloadClaims {
+    let time_now = Utc::now().naive_utc();
+    FileDownloadClaims {
+        nbf: time_now.timestamp(),
+        exp: (time_now + Duration::minutes(5)).timestamp(),
+        iss: JWT_FILE_DOWNLOAD_ISSUER.to_string(),
+        sub: uuid,
+        file_id,
     }
 }
 

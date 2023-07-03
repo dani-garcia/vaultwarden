@@ -2578,10 +2578,14 @@ async fn put_user_groups(
         err!("Group support is disabled");
     }
 
-    match UserOrganization::find_by_uuid(org_user_id, &mut conn).await {
-        Some(_) => { /* Do nothing */ }
+    let user_org = match UserOrganization::find_by_uuid(org_user_id, &mut conn).await {
+        Some(uo) => uo,
         _ => err!("User could not be found!"),
     };
+
+    if user_org.org_uuid != org_id {
+        err!("Group doesn't belong to organization");
+    }
 
     GroupUser::delete_all_by_user(org_user_id, &mut conn).await?;
 
@@ -2628,15 +2632,23 @@ async fn delete_group_user(
         err!("Group support is disabled");
     }
 
-    match UserOrganization::find_by_uuid(org_user_id, &mut conn).await {
-        Some(_) => { /* Do nothing */ }
+    let user_org = match UserOrganization::find_by_uuid(org_user_id, &mut conn).await {
+        Some(uo) => uo,
         _ => err!("User could not be found!"),
     };
 
-    match Group::find_by_uuid(group_id, &mut conn).await {
-        Some(_) => { /* Do nothing */ }
+    if user_org.org_uuid != org_id {
+        err!("User doesn't belong to organization");
+    }
+
+    let group = match Group::find_by_uuid(group_id, &mut conn).await {
+        Some(g) => g,
         _ => err!("Group could not be found!"),
     };
+
+    if group.organizations_uuid != org_id {
+        err!("Group doesn't belong to organization");
+    }
 
     log_event(
         EventType::OrganizationUserUpdatedGroups as i32,

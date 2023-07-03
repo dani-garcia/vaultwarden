@@ -5,6 +5,7 @@ use serde_json::Value;
 
 use crate::{
     api::{core::now, ApiResult, EmptyResult},
+    auth::decode_file_download,
     error::Error,
     util::{Cached, SafeString},
     CONFIG,
@@ -91,8 +92,13 @@ async fn web_files(p: PathBuf) -> Cached<Option<NamedFile>> {
     Cached::long(NamedFile::open(Path::new(&CONFIG.web_vault_folder()).join(p)).await.ok(), true)
 }
 
-#[get("/attachments/<uuid>/<file_id>")]
-async fn attachments(uuid: SafeString, file_id: SafeString) -> Option<NamedFile> {
+#[get("/attachments/<uuid>/<file_id>?<token>")]
+async fn attachments(uuid: SafeString, file_id: SafeString, token: String) -> Option<NamedFile> {
+    let Ok(claims) = dbg!(decode_file_download(&token)) else { return None };
+    if claims.sub != *uuid || claims.file_id != *file_id {
+        return None;
+    }
+
     NamedFile::open(Path::new(&CONFIG.attachments_folder()).join(uuid).join(file_id)).await.ok()
 }
 

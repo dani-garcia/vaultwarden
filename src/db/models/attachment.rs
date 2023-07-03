@@ -35,7 +35,8 @@ impl Attachment {
     }
 
     pub fn get_url(&self, host: &str) -> String {
-        format!("{}/attachments/{}/{}", host, self.cipher_uuid, self.id)
+        let token = encode_jwt(&generate_file_download_claims(self.cipher_uuid.clone(), self.id.clone()));
+        format!("{}/attachments/{}/{}?token={}", host, self.cipher_uuid, self.id, token)
     }
 
     pub fn to_json(&self, host: &str) -> Value {
@@ -51,6 +52,7 @@ impl Attachment {
     }
 }
 
+use crate::auth::{encode_jwt, generate_file_download_claims};
 use crate::db::DbConn;
 
 use crate::api::EmptyResult;

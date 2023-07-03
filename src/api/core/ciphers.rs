@@ -934,6 +934,15 @@ async fn share_cipher_by_uuid(
 /// redirects to the same location as before the v2 API.
 #[get("/ciphers/<uuid>/attachment/<attachment_id>")]
 async fn get_attachment(uuid: &str, attachment_id: &str, headers: Headers, mut conn: DbConn) -> JsonResult {
+    let cipher = match Cipher::find_by_uuid(uuid, &mut conn).await {
+        Some(cipher) => cipher,
+        None => err!("Cipher doesn't exist"),
+    };
+
+    if !cipher.is_accessible_to_user(&headers.user.uuid, &mut conn).await {
+        err!("Cipher is not accessible")
+    }
+
     match Attachment::find_by_id(attachment_id, &mut conn).await {
         Some(attachment) if uuid == attachment.cipher_uuid => Ok(Json(attachment.to_json(&headers.host))),
         Some(_) => err!("Attachment doesn't belong to cipher"),
