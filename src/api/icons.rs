@@ -682,7 +682,7 @@ async fn download_icon(domain: &str) -> Result<(Bytes, Option<&str>), Error> {
 
     for icon in icon_result.iconlist.iter().take(5) {
         if icon.href.starts_with("data:image") {
-            let datauri = DataUrl::process(&icon.href).unwrap();
+            let Ok(datauri) = DataUrl::process(&icon.href) else {continue};
             // Check if we are able to decode the data uri
             let mut body = BytesMut::new();
             match datauri.decode::<_, ()>(|bytes| {
