@@ -2675,6 +2675,7 @@ async fn delete_group_user(
 #[allow(non_snake_case)]
 struct OrganizationUserResetPasswordEnrollmentRequest {
     ResetPasswordKey: Option<String>,
+    MasterPasswordHash: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -2854,6 +2855,17 @@ async fn put_reset_password_enrollment(
     if reset_request.ResetPasswordKey.is_none() && OrgPolicy::org_is_reset_password_auto_enroll(org_id, &mut conn).await
     {
         err!("Reset password can't be withdrawed due to an enterprise policy");
+    }
+
+    if reset_request.ResetPasswordKey.is_some() {
+        match reset_request.MasterPasswordHash {
+            Some(password) => {
+                if !headers.user.check_valid_password(&password) {
+                    err!("Invalid or wrong password")
+                }
+            }
+            None => err!("No password provided"),
+        };
     }
 
     org_user.reset_password_key = reset_request.ResetPasswordKey;
