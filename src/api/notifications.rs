@@ -75,7 +75,7 @@ impl Drop for WSEntryMapGuard {
 }
 
 #[get("/hub?<data..>")]
-async fn websockets_hub<'r>(
+fn websockets_hub<'r>(
     ws: rocket_ws::WebSocket,
     data: WsAccessToken,
     ip: ClientIp,
