@@ -2850,12 +2850,10 @@ async fn put_reset_password_enrollment(
         err!("Reset password can't be withdrawed due to an enterprise policy");
     }
 
-    let user = headers.user;
-
     if reset_request.ResetPasswordKey.is_some() {
         match reset_request.MasterPasswordHash {
             Some(password) => {
-                if !user.check_valid_password(&password) {
+                if !headers.user.check_valid_password(&password) {
                     err!("Invalid or wrong password")
                 }
             }
@@ -2872,7 +2870,8 @@ async fn put_reset_password_enrollment(
         EventType::OrganizationUserResetPasswordWithdraw as i32
     };
 
-    log_event(log_id, org_user_id, org_id, user.uuid.clone(), headers.device.atype, &headers.ip.ip, &mut conn).await;
+    log_event(log_id, org_user_id, org_id, headers.user.uuid.clone(), headers.device.atype, &headers.ip.ip, &mut conn)
+        .await;
 
     Ok(())
 }
