@@ -106,6 +106,7 @@ struct OrgData {
     CollectionName: String,
     Key: String,
     Name: String,
+    ExternalId: String,
     Keys: Option<OrgKeyData>,
     #[serde(rename = "PlanType")]
     _PlanType: NumberOrString, // Ignored, always use the same plan
@@ -124,6 +125,7 @@ struct NewCollectionData {
     Name: String,
     Groups: Vec<NewCollectionObjectData>,
     Users: Vec<NewCollectionObjectData>,
+    ExternalId: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -168,7 +170,7 @@ async fn create_organization(headers: Headers, data: JsonUpcase<OrgData>, mut co
 
     let org = Organization::new(data.Name, data.BillingEmail, private_key, public_key);
     let mut user_org = UserOrganization::new(headers.user.uuid, org.uuid.clone());
-    let collection = Collection::new(org.uuid.clone(), data.CollectionName);
+    let collection = Collection::new(org.uuid.clone(), data.CollectionName, Some(data.ExternalId));
 
     user_org.akey = data.Key;
     user_org.access_all = true;
@@ -390,7 +392,7 @@ async fn post_organization_collections(
         None => err!("Can't find organization details"),
     };
 
-    let collection = Collection::new(org.uuid, data.Name);
+    let collection = Collection::new(org.uuid, data.Name, data.ExternalId);
     collection.save(&mut conn).await?;
 
     log_event(
@@ -467,6 +469,7 @@ async fn post_organization_collection_update(
     }
 
     collection.name = data.Name;
+    collection.external_id = data.ExternalId;
     collection.save(&mut conn).await?;
 
     log_event(
@@ -1580,7 +1583,7 @@ async fn post_org_import(
 
     let mut collections = Vec::new();
     for coll in data.Collections {
-        let collection = Collection::new(org_id.clone(), coll.Name);
+        let collection = Collection::new(org_id.clone(), coll.Name, coll.ExternalId);
         if collection.save(&mut conn).await.is_err() {
             collections.push(Err(Error::new("Failed to create Collection", "Failed to create Collection")));
         } else {

@@ -10,6 +10,7 @@ db_object! {
         pub uuid: String,
         pub org_uuid: String,
         pub name: String,
+        pub external_id: Option<String>,
     }
 
     #[derive(Identifiable, Queryable, Insertable)]
@@ -33,23 +34,41 @@ db_object! {
 
 /// Local methods
 impl Collection {
-    pub fn new(org_uuid: String, name: String) -> Self {
-        Self {
+    pub fn new(org_uuid: String, name: String, external_id: Option<String>) -> Self {
+        let mut new_model = Self {
             uuid: crate::util::get_uuid(),
-
             org_uuid,
             name,
-        }
+            external_id: None,
+        };
+
+        new_model.set_external_id(external_id);
+        new_model
     }
 
     pub fn to_json(&self) -> Value {
         json!({
-            "ExternalId": null, // Not support by us
+            "ExternalId": self.external_id,
             "Id": self.uuid,
             "OrganizationId": self.org_uuid,
             "Name": self.name,
             "Object": "collection",
         })
+    }
+
+    pub fn set_external_id(&mut self, external_id: Option<String>) {
+        //Check if external id is empty. We don't want to have
+        //empty strings in the database
+        match external_id {
+            Some(external_id) => {
+                if external_id.is_empty() {
+                    self.external_id = None;
+                } else {
+                    self.external_id = Some(external_id)
+                }
+            }
+            None => self.external_id = None,
+        }
     }
 
     pub async fn to_json_details(
