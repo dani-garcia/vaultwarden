@@ -38,7 +38,7 @@ Pull the docker image and mount a volume from the host for persistent storage:
 
 ```sh
 docker pull vaultwarden/server:latest
-docker run -d --name vaultwarden -v /vw-data/:/data/ -p 80:80 vaultwarden/server:latest
+docker run -d --name vaultwarden -v /vw-data/:/data/ --restart unless-stopped -p 80:80 vaultwarden/server:latest
 ```
 This will preserve any persistent data under /vw-data/, you can adapt the path to whatever suits you.
 
