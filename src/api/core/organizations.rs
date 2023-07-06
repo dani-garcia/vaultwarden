@@ -106,7 +106,6 @@ struct OrgData {
     CollectionName: String,
     Key: String,
     Name: String,
-    ExternalId: String,
     Keys: Option<OrgKeyData>,
     #[serde(rename = "PlanType")]
     _PlanType: NumberOrString, // Ignored, always use the same plan
@@ -170,7 +169,7 @@ async fn create_organization(headers: Headers, data: JsonUpcase<OrgData>, mut co
 
     let org = Organization::new(data.Name, data.BillingEmail, private_key, public_key);
     let mut user_org = UserOrganization::new(headers.user.uuid, org.uuid.clone());
-    let collection = Collection::new(org.uuid.clone(), data.CollectionName, Some(data.ExternalId));
+    let collection = Collection::new(org.uuid.clone(), data.CollectionName, None);
 
     user_org.akey = data.Key;
     user_org.access_all = true;
