@@ -434,6 +434,7 @@ impl UserOrganization {
             "UserId": self.user_uuid,
             "Name": user.name,
             "Email": user.email,
+            "ExternalId": user.external_id,
             "Groups": groups,
             "Collections": collections,
 
@@ -441,7 +442,7 @@ impl UserOrganization {
             "Type": self.atype,
             "AccessAll": self.access_all,
             "TwoFactorEnabled": twofactor_enabled,
-            "ResetPasswordEnrolled":self.reset_password_key.is_some(),
+            "ResetPasswordEnrolled": self.reset_password_key.is_some(),
 
             "Object": "organizationUserUserDetails",
         })

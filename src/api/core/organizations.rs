@@ -6,8 +6,7 @@ use serde_json::Value;
 use crate::{
     api::{
         core::{log_event, CipherSyncData, CipherSyncType},
-        ApiResult, EmptyResult, JsonResult, JsonUpcase, JsonUpcaseVec, JsonVec, Notify, NumberOrString, PasswordData,
-        UpdateType,
+        EmptyResult, JsonResult, JsonUpcase, JsonUpcaseVec, JsonVec, Notify, NumberOrString, PasswordData, UpdateType,
     },
     auth::{decode_invite, AdminHeaders, Headers, ManagerHeaders, ManagerHeadersLoose, OwnerHeaders},
     db::{models::*, DbConn},
@@ -468,7 +467,11 @@ async fn post_organization_collection_update(
     }
 
     collection.name = data.Name;
-    collection.external_id = data.ExternalId;
+    collection.external_id = match data.ExternalId {
+        Some(external_id) if !external_id.trim().is_empty() => Some(external_id),
+        _ => None,
+    };
+
     collection.save(&mut conn).await?;
 
     log_event(
@@ -2222,29 +2225,22 @@ struct GroupRequest {
 }
 
 impl GroupRequest {
-    pub fn to_group(&self, organizations_uuid: &str) -> ApiResult<Group> {
-        match self.AccessAll {
-            Some(access_all_value) => Ok(Group::new(
-                organizations_uuid.to_owned(),
-                self.Name.clone(),
-                access_all_value,
-                self.ExternalId.clone(),
-            )),
-            _ => err!("Could not convert GroupRequest to Group, because AccessAll has no value!"),
-        }
+    pub fn to_group(&self, organizations_uuid: &str) -> Group {
+        Group::new(
+            String::from(organizations_uuid),
+            self.Name.clone(),
+            self.AccessAll.unwrap_or(false),
+            self.ExternalId.clone(),
+        )
     }
 
-    pub fn update_group(&self, mut group: Group) -> ApiResult<Group> {
-        match self.AccessAll {
-            Some(access_all_value) => {
-                group.name = self.Name.clone();
-                group.access_all = access_all_value;
-                group.set_external_id(self.ExternalId.clone());
+    pub fn update_group(&self, mut group: Group) -> Group {
+        group.name = self.Name.clone();
+        group.access_all = self.AccessAll.unwrap_or(false);
+        // Group Updates do not support changing the external_id
+        // These input fields are in a disabled state, and can only be updated/added via ldap_import
 
-                Ok(group)
-            }
-            _ => err!("Could not update group, because AccessAll has no value!"),
-        }
+        group
     }
 }
 
@@ -2305,7 +2301,7 @@ async fn post_groups(
     }
 
     let group_request = data.into_inner().data;
-    let group = group_request.to_group(org_id)?;
+    let group = group_request.to_group(org_id);
 
     log_event(
         EventType::GroupCreated as i32,
@@ -2339,7 +2335,7 @@ async fn put_group(
     };
 
     let group_request = data.into_inner().data;
-    let updated_group = group_request.update_group(group)?;
+    let updated_group = group_request.update_group(group);
 
     CollectionGroup::delete_all_by_group(group_id, &mut conn).await?;
     GroupUser::delete_all_by_group(group_id, &mut conn).await?;

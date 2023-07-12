@@ -94,18 +94,11 @@ impl Group {
     }
 
     pub fn set_external_id(&mut self, external_id: Option<String>) {
-        //Check if external id is empty. We don't want to have
-        //empty strings in the database
-        match external_id {
-            Some(external_id) => {
-                if external_id.is_empty() {
-                    self.external_id = None;
-                } else {
-                    self.external_id = Some(external_id)
-                }
-            }
-            None => self.external_id = None,
-        }
+        // Check if external_id is empty. We do not want to have empty strings in the database
+        self.external_id = match external_id {
+            Some(external_id) if !external_id.trim().is_empty() => Some(external_id),
+            _ => None,
+        };
     }
 }
 
