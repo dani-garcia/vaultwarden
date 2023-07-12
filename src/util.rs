@@ -80,6 +80,7 @@ impl Fairing for AppHeaders {
                   https://app.simplelogin.io/api/ \
                   https://app.anonaddy.com/api/ \
                   https://api.fastmail.com/ \
+                  https://api.forwardemail.net \
                   ;\
                 ",
                 icon_service_csp = CONFIG._icon_service_csp(),
