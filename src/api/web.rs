@@ -94,7 +94,7 @@ async fn web_files(p: PathBuf) -> Cached<Option<NamedFile>> {
 
 #[get("/attachments/<uuid>/<file_id>?<token>")]
 async fn attachments(uuid: SafeString, file_id: SafeString, token: String) -> Option<NamedFile> {
-    let Ok(claims) = dbg!(decode_file_download(&token)) else { return None };
+    let Ok(claims) = decode_file_download(&token) else { return None };
     if claims.sub != *uuid || claims.file_id != *file_id {
         return None;
     }
