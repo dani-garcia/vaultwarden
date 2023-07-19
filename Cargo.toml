@@ -3,7 +3,7 @@ name = "vaultwarden"
 version = "1.0.0"
 authors = ["Daniel García <dani-garcia@users.noreply.github.com>"]
 edition = "2021"
-rust-version = "1.68.2"
+rust-version = "1.69.0"
 resolver = "2"
 
 repository = "https://github.com/dani-garcia/vaultwarden"
@@ -64,15 +64,15 @@ tokio-tungstenite = "0.19.0"
 rmpv = "1.0.0" # MessagePack library
 
 # Concurrent HashMap used for WebSocket messaging and favicons
-dashmap = "5.4.0"
+dashmap = "5.5.0"
 
 # Async futures
 futures = "0.3.28"
 tokio = { version = "1.29.1", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal"] }
 
 # A generic serialization/deserialization framework
-serde = { version = "1.0.166", features = ["derive"] }
-serde_json = "1.0.99"
+serde = { version = "1.0.171", features = ["derive"] }
+serde_json = "1.0.103"
 
 # A safe, extensible ORM and Query builder
 diesel = { version = "2.1.0", features = ["chrono", "r2d2"] }
@@ -87,12 +87,12 @@ rand = { version = "0.8.5", features = ["small_rng"] }
 ring = "0.16.20"
 
 # UUID generation
-uuid = { version = "1.4.0", features = ["v4"] }
+uuid = { version = "1.4.1", features = ["v4"] }
 
 # Date and time libraries
 chrono = { version = "0.4.26", features = ["clock", "serde"], default-features = false }
 chrono-tz = "0.8.3"
-time = "0.3.22"
+time = "0.3.23"
 
 # Job scheduler
 job_scheduler_ng = "2.0.4"
@@ -127,8 +127,8 @@ handlebars = { version = "4.3.7", features = ["dir_source"] }
 reqwest = { version = "0.11.18", features = ["stream", "json", "gzip", "brotli", "socks", "cookies", "trust-dns"] }
 
 # Favicon extraction libraries
-html5gum = "0.5.3"
-regex = { version = "1.8.4", features = ["std", "perf", "unicode-perl"], default-features = false }
+html5gum = "0.5.4"
+regex = { version = "1.9.1", features = ["std", "perf", "unicode-perl"], default-features = false }
 data-url = "0.3.0"
 bytes = "1.4.0"
 
@@ -146,11 +146,11 @@ openssl = "0.10.55"
 pico-args = "0.5.0"
 
 # Macro ident concatenation
-paste = "1.0.13"
+paste = "1.0.14"
 governor = "0.5.1"
 
 # Check client versions for specific features.
-semver = "1.0.17"
+semver = "1.0.18"
 
 # Allow overriding the default memory allocator
 # Mainly used for the musl builds, since the default musl malloc is very slow
@@ -158,7 +158,7 @@ mimalloc = { version = "0.1.37", features = ["secure"], default-features = false
 which = "4.4.0"
 
 # Argon2 library with support for the PHC format
-argon2 = "0.5.0"
+argon2 = "0.5.1"
 
 # Reading a password from the cli for generating the Argon2id ADMIN_TOKEN
 rpassword = "7.2.0"

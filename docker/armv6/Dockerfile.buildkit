@@ -26,7 +26,7 @@
 FROM docker.io/vaultwarden/web-vault@sha256:e5b5e99d132d50dc73176afb65f41cf3b834fb06bfa1d621ac16c705c3f10085 as vault
 
 ########################## BUILD IMAGE  ##########################
-FROM docker.io/library/rust:1.70.0-bullseye as build
+FROM docker.io/library/rust:1.71.0-bullseye as build
 
 # Build time options to avoid dpkg warnings and help with reproducible builds.
 ENV DEBIAN_FRONTEND=noninteractive \
