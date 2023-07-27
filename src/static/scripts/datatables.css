@@ -4,10 +4,10 @@
  *
  * To rebuild or modify this file with the latest versions of the included
  * software please visit:
- *   https://datatables.net/download/#bs5/dt-1.13.4
+ *   https://datatables.net/download/#bs5/dt-1.13.6
  *
  * Included libraries:
- *   DataTables 1.13.4
+ *   DataTables 1.13.6
  */
 
 @charset "UTF-8";
@@ -15,6 +15,13 @@
   --dt-row-selected: 13, 110, 253;
   --dt-row-selected-text: 255, 255, 255;
   --dt-row-selected-link: 9, 10, 11;
+  --dt-row-stripe: 0, 0, 0;
+  --dt-row-hover: 0, 0, 0;
+  --dt-column-ordering: 0, 0, 0;
+  --dt-html-background: white;
+}
+:root.dark {
+  --dt-html-background: rgb(33, 37, 41);
 }
 
 table.dataTable td.dt-control {
@@ -22,25 +29,19 @@ table.dataTable td.dt-control {
   cursor: pointer;
 }
 table.dataTable td.dt-control:before {
-  height: 1em;
-  width: 1em;
-  margin-top: -9px;
   display: inline-block;
-  color: white;
-  border: 0.15em solid white;
-  border-radius: 1em;
-  box-shadow: 0 0 0.2em #444;
-  box-sizing: content-box;
-  text-align: center;
-  text-indent: 0 !important;
-  font-family: "Courier New", Courier, monospace;
-  line-height: 1em;
-  content: "+";
-  background-color: #31b131;
+  color: rgba(0, 0, 0, 0.5);
+  content: "►";
 }
 table.dataTable tr.dt-hasChild td.dt-control:before {
-  content: "-";
-  background-color: #d33333;
+  content: "▼";
+}
+
+html.dark table.dataTable td.dt-control:before {
+  color: rgba(255, 255, 255, 0.5);
+}
+html.dark table.dataTable tr.dt-hasChild td.dt-control:before {
+  color: rgba(255, 255, 255, 0.5);
 }
 
 table.dataTable thead > tr > th.sorting, table.dataTable thead > tr > th.sorting_asc, table.dataTable thead > tr > th.sorting_desc, table.dataTable thead > tr > th.sorting_asc_disabled, table.dataTable thead > tr > th.sorting_desc_disabled,
@@ -303,14 +304,14 @@ table.dataTable > tbody > tr.selected a {
   color: rgb(var(--dt-row-selected-link));
 }
 table.dataTable.table-striped > tbody > tr.odd > * {
-  box-shadow: inset 0 0 0 9999px rgba(0, 0, 0, 0.05);
+  box-shadow: inset 0 0 0 9999px rgba(var(--dt-row-stripe), 0.05);
 }
 table.dataTable.table-striped > tbody > tr.odd.selected > * {
   box-shadow: inset 0 0 0 9999px rgba(13, 110, 253, 0.95);
   box-shadow: inset 0 0 0 9999px rgba(var(--dt-row-selected), 0.95);
 }
 table.dataTable.table-hover > tbody > tr:hover > * {
-  box-shadow: inset 0 0 0 9999px rgba(0, 0, 0, 0.075);
+  box-shadow: inset 0 0 0 9999px rgba(var(--dt-row-hover), 0.075);
 }
 table.dataTable.table-hover > tbody > tr.selected:hover > * {
   box-shadow: inset 0 0 0 9999px rgba(13, 110, 253, 0.975);
@@ -439,6 +440,12 @@ div.table-responsive > div.dataTables_wrapper > div.row > div[class^=col-]:first
 }
 div.table-responsive > div.dataTables_wrapper > div.row > div[class^=col-]:last-child {
   padding-right: 0;
+}
+
+:root[data-bs-theme=dark] {
+  --dt-row-hover: 255, 255, 255;
+  --dt-row-stripe: 255, 255, 255;
+  --dt-column-ordering: 255, 255, 255;
 }
 
 

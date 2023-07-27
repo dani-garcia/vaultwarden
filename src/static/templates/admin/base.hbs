@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-bs-theme="auto">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -10,17 +10,17 @@
     <link rel="stylesheet" href="{{urlpath}}/vw_static/admin.css" />
     <script src="{{urlpath}}/vw_static/admin.js"></script>
 </head>
-<body class="bg-light">
+<body>
     <nav class="navbar navbar-expand-md navbar-dark bg-dark mb-4 shadow fixed-top">
         <div class="container-xl">
             <a class="navbar-brand" href="{{urlpath}}/admin"><img class="vaultwarden-icon" src="{{urlpath}}/vw_static/vaultwarden-icon.png" alt="V">aultwarden Admin</a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse"
-                    aria-controls="navbarCollapse" aria-expanded="false" aria-label="Toggle navigation">
+                aria-controls="navbarCollapse" aria-expanded="false" aria-label="Toggle navigation">
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="collapse navbar-collapse" id="navbarCollapse">
                 <ul class="navbar-nav me-auto">
-                {{#if logged_in}}
+                    {{#if logged_in}}
                     <li class="nav-item">
                         <a class="nav-link" href="{{urlpath}}/admin">Settings</a>
                     </li>
@@ -33,15 +33,59 @@
                     <li class="nav-item">
                         <a class="nav-link" href="{{urlpath}}/admin/diagnostics">Diagnostics</a>
                     </li>
-                {{/if}}
+                    {{/if}}
                     <li class="nav-item">
                         <a class="nav-link" href="{{urlpath}}/" target="_blank" rel="noreferrer">Vault</a>
                     </li>
                 </ul>
 
+                <ul class="navbar-nav">
+                    <li class="nav-item dropdown">
+                        <button
+                            class="btn btn-link nav-link py-0 px-0 px-md-2 dropdown-toggle d-flex align-items-center"
+                            id="bd-theme" type="button" aria-expanded="false" data-bs-toggle="dropdown"
+                            data-bs-display="static" aria-label="Toggle theme (auto)">
+                            <span class="my-1 fs-4 theme-icon-active">
+                                <use>&#9775;</use>
+                            </span>
+                            <span class="d-md-none ms-2" id="bd-theme-text">Toggle theme</span>
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="bd-theme-text">
+                            <li>
+                                <button type="button" class="dropdown-item d-flex align-items-center"
+                                    data-bs-theme-value="light" aria-pressed="false">
+                                    <span class="me-2 fs-4 theme-icon">
+                                        <use>&#9728;</use>
+                                    </span>
+                                    Light
+                                </button>
+                            </li>
+                            <li>
+                                <button type="button" class="dropdown-item d-flex align-items-center"
+                                    data-bs-theme-value="dark" aria-pressed="false">
+                                    <span class="me-2 fs-4 theme-icon">
+                                        <use>&starf;</use>
+                                    </span>
+                                    Dark
+                                </button>
+                            </li>
+                            <li>
+                                <button type="button" class="dropdown-item d-flex align-items-center active"
+                                    data-bs-theme-value="auto" aria-pressed="true">
+                                    <span class="me-2 fs-4 theme-icon">
+                                        <use>&#9775;</use>
+                                    </span>
+                                    Auto
+                                </button>
+                            </li>
+                        </ul>
+                    </li>
+                </ul>
+
                 {{#if logged_in}}
-                    <a class="btn btn-sm btn-secondary" href="{{urlpath}}/admin/logout">Log Out</a>
+                <a class="btn btn-sm btn-secondary" href="{{urlpath}}/admin/logout">Log Out</a>
                 {{/if}}
+
             </div>
         </div>
     </nav>
@@ -49,6 +93,6 @@
     {{> (lookup this "page_content") }}
 
     <!-- This script needs to be at the bottom, else it will fail! -->
-    <script src="{{urlpath}}/vw_static/bootstrap-native.js"></script>
+    <script src="{{urlpath}}/vw_static/bootstrap.bundle.js"></script>
 </body>
 </html>

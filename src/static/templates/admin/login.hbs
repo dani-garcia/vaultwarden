@@ -1,15 +1,15 @@
 <main class="container-xl">
     {{#if error}}
-    <div class="align-items-center p-3 mb-3 text-white-50 bg-warning rounded shadow">
+    <div class="align-items-center p-3 mb-3 text-opacity-50 text-dark bg-warning rounded shadow">
         <div>
-            <h6 class="mb-0 text-white">{{error}}</h6>
+            <h6 class="mb-0 text-dark">{{error}}</h6>
         </div>
     </div>
     {{/if}}
 
-    <div class="align-items-center p-3 mb-3 text-white-50 bg-danger rounded shadow">
+    <div class="align-items-center p-3 mb-3 text-opacity-75 text-light bg-danger rounded shadow">
         <div>
-            <h6 class="mb-0 text-white">Authentication key needed to continue</h6>
+            <h6 class="mb-0 text-light">Authentication key needed to continue</h6>
             <small>Please provide it below:</small>
 
             <form class="form-inline" method="post" action="{{urlpath}}/admin">
@@ -17,7 +17,7 @@
                 {{#if redirect}}
                 <input type="hidden" id="redirect" name="redirect" value="/{{redirect}}">
                 {{/if}}
-                <button type="submit" class="btn btn-primary">Enter</button>
+                <button type="submit" class="btn btn-primary mt-2">Enter</button>
             </form>
         </div>
     </div>
