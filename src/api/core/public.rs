@@ -85,7 +85,7 @@ async fn ldap_import(data: JsonUpcase<OrgImportData>, token: PublicToken, mut co
                     new_user
                 }
             };
-            let user_org_status = if CONFIG.mail_enabled() {
+            let user_org_status = if CONFIG.mail_enabled() || user.password_hash.is_empty() {
                 UserOrgStatus::Invited as i32
             } else {
                 UserOrgStatus::Accepted as i32 // Automatically mark user as accepted if no email invites
