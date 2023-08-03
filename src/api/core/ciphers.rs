@@ -456,6 +456,10 @@ pub async fn update_cipher_from_data(
         if json_data.is_array() {
             json_data.as_array_mut().unwrap().iter_mut().for_each(|ref mut f| {
                 f.as_object_mut().unwrap().remove("Response");
+                // When user leaves the default "URI matching" and admin has it overridden
+                if CONFIG.override_default_uri_matching() >= 0 && f["Match"].is_null() {
+                    f.as_object_mut().unwrap()["Match"] = Value::Number(CONFIG.override_default_uri_matching().into());
+                }
             });
         };
         json_data

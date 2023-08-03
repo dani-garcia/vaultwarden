@@ -494,6 +494,16 @@ make_config! {
 
         /// Events days retain |> Number of days to retain events stored in the database. If unset, events are kept indefently.
         events_days_retain:     i64,    false,   option;
+
+        /// Override default URI matching for all ciphers |> When users leave the default URI matching for a cipher, replace it by the given value.
+        /// -1: user default,
+        /// 0: base domain,
+        /// 1: host,
+        /// 2: begins with,
+        /// 3: regular expression,
+        /// 4: exact match,
+        /// 5: never match.
+        override_default_uri_matching:  i8, true,   def,    -1;
     },
 
     /// Advanced settings
