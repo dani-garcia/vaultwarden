@@ -380,25 +380,25 @@ make_config! {
     push {
         /// Enable push notifications
         push_enabled:           bool,   false,  def,    false;
-        /// Push relay region |> The data region from https://bitwarden.com/host
+        /// Push relay region
         push_relay_region:      String, false,  def,    "us".to_string();
         /// Push relay uri
         push_relay_uri:         String, false,  auto,   |c| {
-            let relay_region = match c.push_relay_region.as_str() {
-                "us" => "com",
-                "eu" => "eu",
-                _ => "com", // Default to US if the region is not recognized
+            let push_relay_uri = match c.push_relay_region.as_str() {
+                "us" => "https://push.bitwarden.com".to_string(),
+                "eu" => "https://push.bitwarden.eu".to_string(),
+                _ => "https://push.bitwarden.com".to_string(), // Default to "us" region
             };
-            format!("https://push.bitwarden.{}", relay_region)
+            return push_relay_uri;
         };
-        /// Identity uri
-        identity_uri:           String, false,  auto,   |c| {
-            let relay_region = match c.push_relay_region.as_str() {
-                "us" => "com",
-                "eu" => "eu",
-                _ => "com", // Default to US if the region is not recognized
+        /// Push identity uri
+        push_identity_uri:      String, false,  auto,   |c| {
+            let push_identity_uri = match c.push_relay_region.as_str() {
+                "us" => "https://identity.bitwarden.com".to_string(),
+                "eu" => "https://identity.bitwarden.eu".to_string(),
+                _ => "https://identity.bitwarden.com".to_string(), // Default to "us" region
             };
-            format!("https://identity.bitwarden.{}", relay_region)
+            return push_identity_uri;
         };
         /// Installation id |> The installation id from https://bitwarden.com/host
         push_installation_id:   Pass,   false,  def,    String::new();
@@ -767,6 +767,26 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
             # added to your configuration.                                                         #\n\
             ########################################################################################\n"
         )
+    }
+
+    if cfg.push_enabled {
+        let push_relay_uri = cfg.push_relay_uri.to_lowercase();
+        if !push_relay_uri.starts_with("https://") {
+            err!("`PUSH_RELAY_URI` must start with 'https://'.")
+        }
+
+        if let Err(_) = Url::parse(&push_relay_uri) {
+            err!("Invalid URL format for `PUSH_RELAY_URI`.");
+        }
+
+        let push_identity_uri = cfg.push_identity_uri.to_lowercase();
+        if !push_identity_uri.starts_with("https://") {
+            err!("`PUSH_IDENTITY_URI` must start with 'https://'.")
+        }
+
+        if let Err(_) = Url::parse(&push_identity_uri) {
+            err!("Invalid URL format for `PUSH_IDENTITY_URI`.");
+        }
     }
 
     if cfg._enable_duo
