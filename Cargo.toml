@@ -124,7 +124,7 @@ email_address = "0.2.4"
 handlebars = { version = "4.3.7", features = ["dir_source"] }
 
 # HTTP client (Used for favicons, version check, DUO and HIBP API)
-reqwest = { version = "0.11.18", features = ["stream", "json", "gzip", "brotli", "socks", "cookies", "trust-dns"] }
+reqwest = { version = "0.11.18", features = ["stream", "json", "deflate", "gzip", "brotli", "socks", "cookies", "trust-dns", "native-tls-alpn"] }
 
 # Favicon extraction libraries
 html5gum = "0.5.7"
