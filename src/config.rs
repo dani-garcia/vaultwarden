@@ -389,7 +389,7 @@ make_config! {
                 "eu" => "https://push.bitwarden.eu".to_string(),
                 _ => "https://push.bitwarden.com".to_string(), // Default to "us" region
             };
-            return push_relay_uri;
+            push_relay_uri
         };
         /// Push identity uri
         push_identity_uri:      String, false,  auto,   |c| {
@@ -398,7 +398,7 @@ make_config! {
                 "eu" => "https://identity.bitwarden.eu".to_string(),
                 _ => "https://identity.bitwarden.com".to_string(), // Default to "us" region
             };
-            return push_identity_uri;
+            push_identity_uri
         };
         /// Installation id |> The installation id from https://bitwarden.com/host
         push_installation_id:   Pass,   false,  def,    String::new();
@@ -775,7 +775,7 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
             err!("`PUSH_RELAY_URI` must start with 'https://'.")
         }
 
-        if let Err(_) = Url::parse(&push_relay_uri) {
+        if Url::parse(&push_relay_uri).is_err() {
             err!("Invalid URL format for `PUSH_RELAY_URI`.");
         }
 
@@ -784,7 +784,7 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
             err!("`PUSH_IDENTITY_URI` must start with 'https://'.")
         }
 
-        if let Err(_) = Url::parse(&push_identity_uri) {
+        if Url::parse(&push_identity_uri).is_err() {
             err!("Invalid URL format for `PUSH_IDENTITY_URI`.");
         }
     }
