@@ -409,6 +409,10 @@ make_config! {
         /// Event cleanup schedule |> Cron schedule of the job that cleans old events from the event table.
         /// Defaults to daily. Set blank to disable this job.
         event_cleanup_schedule:   String, false,  def,    "0 10 0 * * *".to_string();
+        /// Auth Request cleanup schedule |> Cron schedule of the job that cleans old auth requests from the auth request.
+        /// Defaults to every minute. Set blank to disable this job.
+        auth_request_purge_schedule:   String, false,  def,    "30 * * * * *".to_string();
+
     },
 
     /// General settings
@@ -891,6 +895,10 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
 
     if !cfg.event_cleanup_schedule.is_empty() && cfg.event_cleanup_schedule.parse::<Schedule>().is_err() {
         err!("`EVENT_CLEANUP_SCHEDULE` is not a valid cron expression")
+    }
+
+    if !cfg.auth_request_purge_schedule.is_empty() && cfg.auth_request_purge_schedule.parse::<Schedule>().is_err() {
+        err!("`AUTH_REQUEST_PURGE_SCHEDULE` is not a valid cron expression")
     }
 
     if !cfg.disable_admin_token {

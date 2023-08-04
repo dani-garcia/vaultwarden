@@ -1,4 +1,5 @@
 mod attachment;
+mod auth_request;
 mod cipher;
 mod collection;
 mod device;
@@ -15,9 +16,10 @@ mod two_factor_incomplete;
 mod user;
 
 pub use self::attachment::Attachment;
+pub use self::auth_request::AuthRequest;
 pub use self::cipher::Cipher;
 pub use self::collection::{Collection, CollectionCipher, CollectionUser};
-pub use self::device::Device;
+pub use self::device::{Device, DeviceType};
 pub use self::emergency_access::{EmergencyAccess, EmergencyAccessStatus, EmergencyAccessType};
 pub use self::event::{Event, EventType};
 pub use self::favorite::Favorite;

@@ -1,6 +1,7 @@
 use chrono::{NaiveDateTime, Utc};
 
 use crate::{crypto, CONFIG};
+use core::fmt;
 
 db_object! {
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -223,5 +224,92 @@ impl Device {
             .ok()
             .unwrap_or(0) != 0
         }}
+    }
+}
+
+pub enum DeviceType {
+    Android = 0,
+    Ios = 1,
+    ChromeExtension = 2,
+    FirefoxExtension = 3,
+    OperaExtension = 4,
+    EdgeExtension = 5,
+    WindowsDesktop = 6,
+    MacOsDesktop = 7,
+    LinuxDesktop = 8,
+    ChromeBrowser = 9,
+    FirefoxBrowser = 10,
+    OperaBrowser = 11,
+    EdgeBrowser = 12,
+    IEBrowser = 13,
+    UnknownBrowser = 14,
+    AndroidAmazon = 15,
+    Uwp = 16,
+    SafariBrowser = 17,
+    VivaldiBrowser = 18,
+    VivaldiExtension = 19,
+    SafariExtension = 20,
+    Sdk = 21,
+    Server = 22,
+}
+
+impl fmt::Display for DeviceType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            DeviceType::Android => write!(f, "Android"),
+            DeviceType::Ios => write!(f, "iOS"),
+            DeviceType::ChromeExtension => write!(f, "Chrome Extension"),
+            DeviceType::FirefoxExtension => write!(f, "Firefox Extension"),
+            DeviceType::OperaExtension => write!(f, "Opera Extension"),
+            DeviceType::EdgeExtension => write!(f, "Edge Extension"),
+            DeviceType::WindowsDesktop => write!(f, "Windows Desktop"),
+            DeviceType::MacOsDesktop => write!(f, "MacOS Desktop"),
+            DeviceType::LinuxDesktop => write!(f, "Linux Desktop"),
+            DeviceType::ChromeBrowser => write!(f, "Chrome Browser"),
+            DeviceType::FirefoxBrowser => write!(f, "Firefox Browser"),
+            DeviceType::OperaBrowser => write!(f, "Opera Browser"),
+            DeviceType::EdgeBrowser => write!(f, "Edge Browser"),
+            DeviceType::IEBrowser => write!(f, "Internet Explorer"),
+            DeviceType::UnknownBrowser => write!(f, "Unknown Browser"),
+            DeviceType::AndroidAmazon => write!(f, "Android Amazon"),
+            DeviceType::Uwp => write!(f, "UWP"),
+            DeviceType::SafariBrowser => write!(f, "Safari Browser"),
+            DeviceType::VivaldiBrowser => write!(f, "Vivaldi Browser"),
+            DeviceType::VivaldiExtension => write!(f, "Vivaldi Extension"),
+            DeviceType::SafariExtension => write!(f, "Safari Extension"),
+            DeviceType::Sdk => write!(f, "SDK"),
+            DeviceType::Server => write!(f, "Server"),
+        }
+    }
+}
+
+impl DeviceType {
+    pub fn from_i32(value: i32) -> DeviceType {
+        match value {
+            0 => DeviceType::Android,
+            1 => DeviceType::Ios,
+            2 => DeviceType::ChromeExtension,
+            3 => DeviceType::FirefoxExtension,
+            4 => DeviceType::OperaExtension,
+            5 => DeviceType::EdgeExtension,
+            6 => DeviceType::WindowsDesktop,
+            7 => DeviceType::MacOsDesktop,
+            8 => DeviceType::LinuxDesktop,
+            9 => DeviceType::ChromeBrowser,
+            10 => DeviceType::FirefoxBrowser,
+            11 => DeviceType::OperaBrowser,
+            12 => DeviceType::EdgeBrowser,
+            13 => DeviceType::IEBrowser,
+            14 => DeviceType::UnknownBrowser,
+            15 => DeviceType::AndroidAmazon,
+            16 => DeviceType::Uwp,
+            17 => DeviceType::SafariBrowser,
+            18 => DeviceType::VivaldiBrowser,
+            19 => DeviceType::VivaldiExtension,
+            20 => DeviceType::SafariExtension,
+            21 => DeviceType::Sdk,
+            22 => DeviceType::Server,
+            _ => DeviceType::UnknownBrowser,
+        }
     }
 }

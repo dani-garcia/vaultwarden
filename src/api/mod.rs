@@ -13,6 +13,7 @@ pub use crate::api::{
     admin::catchers as admin_catchers,
     admin::routes as admin_routes,
     core::catchers as core_catchers,
+    core::purge_auth_requests,
     core::purge_sends,
     core::purge_trashed_ciphers,
     core::routes as core_routes,
@@ -22,7 +23,7 @@ pub use crate::api::{
     icons::routes as icons_routes,
     identity::routes as identity_routes,
     notifications::routes as notifications_routes,
-    notifications::{start_notification_server, Notify, UpdateType},
+    notifications::{start_notification_server, AnonymousNotify, Notify, UpdateType, WS_ANONYMOUS_SUBSCRIPTIONS},
     push::{
         push_cipher_update, push_folder_update, push_logout, push_send_update, push_user_update, register_push_device,
         unregister_push_device,
