@@ -337,6 +337,9 @@ async fn get_org_collections_details(org_id: &str, headers: ManagerHeadersLoose,
             Vec::with_capacity(0)
         };
 
+        // uuids of users belonging to a group of this collection
+        let group_users = GroupUser::get_collection_group_users_uuid(&col.uuid, &mut conn).await;
+
         let mut assigned = false;
         let users: Vec<Value> = coll_users
             .iter()
@@ -350,6 +353,11 @@ async fn get_org_collections_details(org_id: &str, headers: ManagerHeadersLoose,
                 SelectionReadOnly::to_collection_user_details_read_only(collection_user).to_json()
             })
             .collect();
+
+        // if current user is in any collection-assigned group
+        if group_users.contains(&user_org.uuid) {
+            assigned = true;
+        }
 
         if user_org.access_all {
             assigned = true;

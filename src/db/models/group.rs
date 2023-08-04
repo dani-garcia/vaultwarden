@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use chrono::{NaiveDateTime, Utc};
 use serde_json::Value;
 
@@ -484,6 +486,29 @@ impl GroupUser {
                 .expect("Error loading groups for user")
                 .from_db()
         }}
+    }
+
+    pub async fn find_by_collection(collection_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+        db_run! { conn: {
+            groups_users::table
+                .inner_join(collections_groups::table.on(
+                    collections_groups::groups_uuid.eq(groups_users::groups_uuid)
+                ))
+                .filter(collections_groups::collections_uuid.eq(collection_uuid))
+                .select(groups_users::all_columns)
+                .load::<GroupUserDb>(conn)
+                .expect("Error loading group users for collection")
+                .from_db()
+        }}
+    }
+
+    /// returns uuid of members of collection groups
+    pub async fn get_collection_group_users_uuid(collection_uuid: &str, conn: &mut DbConn) -> HashSet<String> {
+        GroupUser::find_by_collection(collection_uuid, conn)
+            .await
+            .iter()
+            .map(|u| u.users_organizations_uuid.clone())
+            .collect()
     }
 
     pub async fn update_user_revision(&self, conn: &mut DbConn) {
