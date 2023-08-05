@@ -321,6 +321,8 @@ async fn get_org_collections_details(org_id: &str, headers: ManagerHeadersLoose,
     };
 
     let coll_users = CollectionUser::find_by_organization(org_id, &mut conn).await;
+    // uuids of users in groups having access to all collections
+    let all_access_group_uuids = GroupUser::get_all_access_group_users_uuid(org_id, &mut conn).await;
 
     for col in Collection::find_by_organization(org_id, &mut conn).await {
         let groups: Vec<Value> = if CONFIG.org_groups_enabled() {
@@ -354,8 +356,8 @@ async fn get_org_collections_details(org_id: &str, headers: ManagerHeadersLoose,
             })
             .collect();
 
-        // if current user is in any collection-assigned group
-        if group_users.contains(&user_org.uuid) {
+        // if current user is in any collection-assigned group or in a group having access to all collections
+        if group_users.contains(&user_org.uuid) || all_access_group_uuids.contains(&user_org.uuid) {
             assigned = true;
         }
 

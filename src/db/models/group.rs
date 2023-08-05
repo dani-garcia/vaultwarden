@@ -503,6 +503,22 @@ impl GroupUser {
         .collect()
     }
 
+    pub async fn get_all_access_group_users_uuid(org_uuid: &str, conn: &mut DbConn) -> HashSet<String> {
+        db_run! { conn: {
+            groups_users::table
+                .inner_join(groups::table.on(
+                    groups::uuid.eq(groups_users::groups_uuid)
+                ))
+                .filter(groups::organizations_uuid.eq(org_uuid))
+                .filter(groups::access_all.eq(true))
+                .select(groups_users::users_organizations_uuid)
+                .load::<String>(conn)
+                .expect("Error loading all access group users for organization")
+        }}
+        .into_iter()
+        .collect()
+    }
+
     pub async fn update_user_revision(&self, conn: &mut DbConn) {
         match UserOrganization::find_by_uuid(&self.users_organizations_uuid, conn).await {
             Some(user) => User::update_uuid_revision(&user.user_uuid, conn).await,
