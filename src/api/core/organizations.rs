@@ -356,12 +356,13 @@ async fn get_org_collections_details(org_id: &str, headers: ManagerHeadersLoose,
             })
             .collect();
 
-        // if current user is in any collection-assigned group or in a group having access to all collections
-        if group_users.contains(&user_org.uuid) || all_access_group_uuids.contains(&user_org.uuid) {
-            assigned = true;
-        }
-
-        if user_org.access_all {
+        // if current user is in any collection-assigned group
+        // or in a group having access to all collections
+        // or itself has access to all collections
+        if group_users.contains(&user_org.uuid)
+            || all_access_group_uuids.contains(&user_org.uuid)
+            || user_org.access_all
+        {
             assigned = true;
         }
 
