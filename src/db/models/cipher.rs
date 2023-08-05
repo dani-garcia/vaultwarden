@@ -275,7 +275,13 @@ impl Cipher {
                 if let Some(ref org_uuid) = self.organization_uuid {
                     for user_org in UserOrganization::find_by_cipher_and_org(&self.uuid, org_uuid, conn).await.iter() {
                         User::update_uuid_revision(&user_org.user_uuid, conn).await;
-                        user_uuids.push(user_org.user_uuid.clone())
+                        user_uuids.push(user_org.user_uuid.clone());
+                    }
+                    for user_org in
+                        UserOrganization::find_by_cipher_and_org_with_group(&self.uuid, org_uuid, conn).await.iter()
+                    {
+                        User::update_uuid_revision(&user_org.user_uuid, conn).await;
+                        user_uuids.push(user_org.user_uuid.clone());
                     }
                 }
             }
