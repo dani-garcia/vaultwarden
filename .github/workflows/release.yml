@@ -24,7 +24,7 @@ jobs:
   # Some checks to determine if we need to continue with building a new docker.
   # We will skip this check if we are creating a tag, because that has the same hash as a previous run already.
   skip_check:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     if: ${{ github.repository == 'dani-garcia/vaultwarden' }}
     outputs:
       should_skip: ${{ steps.skip_check.outputs.should_skip }}
@@ -38,7 +38,7 @@ jobs:
         if: ${{ startsWith(github.ref, 'refs/heads/') }}
 
   docker-build:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     timeout-minutes: 120
     needs: skip_check
     # Start a local docker registry to be used to generate multi-arch images.

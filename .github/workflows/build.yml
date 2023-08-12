@@ -24,7 +24,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     timeout-minutes: 120
     # Make warnings errors, this is to prevent warnings slipping through.
     # This is done globally to prevent rebuilds when the RUSTFLAGS env variable changes.
@@ -49,7 +49,7 @@ jobs:
 
       # Install dependencies
       - name: "Install dependencies Ubuntu"
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends openssl sqlite build-essential libmariadb-dev-compat libpq-dev libssl-dev pkg-config
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends openssl build-essential libmariadb-dev-compat libpq-dev libssl-dev pkg-config
       # End Install dependencies
 
 
@@ -89,7 +89,12 @@ jobs:
 
 
       # Enable Rust Caching
-      - uses: Swatinem/rust-cache@2656b87321093db1cb55fbd73183d195214fdfd1 # v2.5.0
+      - uses: Swatinem/rust-cache@dd05243424bd5c0e585e4b55eb2d7615cdd32f1f # v2.5.1
+        with:
+          # Use a custom prefix-key to force a fresh start. This is sometimes needed with bigger changes.
+          # Like changing the build host from Ubuntu 20.04 to 22.04 for example.
+          # Only update when really needed! Use a <year>.<month>[.<inc>] format.
+          prefix-key: "v2023.07-rust"
       # End Enable Rust Caching
 
 
