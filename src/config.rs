@@ -492,7 +492,7 @@ make_config! {
         /// Invitation organization name |> Name shown in the invitation emails that don't come from a specific organization
         invitation_org_name:    String, true,   def,    "Vaultwarden".to_string();
 
-        /// Events days retain |> Number of days to retain events stored in the database. If unset, events are kept indefently.
+        /// Events days retain |> Number of days to retain events stored in the database. If unset, events are kept indefinitely.
         events_days_retain:     i64,    false,   option;
     },
 
@@ -520,7 +520,7 @@ make_config! {
         /// has been decided on, consider using permanent redirects for cacheability. The legacy codes
         /// are currently better supported by the Bitwarden clients.
         icon_redirect_code:     u32,    true,   def,    302;
-        /// Positive icon cache expiry |> Number of seconds to consider that an already cached icon is fresh. After this period, the icon will be redownloaded
+        /// Positive icon cache expiry |> Number of seconds to consider that an already cached icon is fresh. After this period, the icon will be refreshed
         icon_cache_ttl:         u64,    true,   def,    2_592_000;
         /// Negative icon cache expiry |> Number of seconds before trying to download an icon that failed again.
         icon_cache_negttl:      u64,    true,   def,    259_200;
@@ -530,7 +530,7 @@ make_config! {
         /// Useful to hide other servers in the local network. Check the WIKI for more details
         icon_blacklist_regex:   String, true,   option;
         /// Icon blacklist non global IPs |> Any IP which is not defined as a global IP will be blacklisted.
-        /// Usefull to secure your internal environment: See https://en.wikipedia.org/wiki/Reserved_IP_addresses for a list of IPs which it will block
+        /// Useful to secure your internal environment: See https://en.wikipedia.org/wiki/Reserved_IP_addresses for a list of IPs which it will block
         icon_blacklist_non_global_ips:  bool,   true,   def,    true;
 
         /// Disable Two-Factor remember |> Enabling this would force the users to use a second factor to login every time.
@@ -566,7 +566,7 @@ make_config! {
         /// Max database connection retries |> Number of times to retry the database connection during startup, with 1 second between each retry, set to 0 to retry indefinitely
         db_connection_retries:  u32,    false,  def,    15;
 
-        /// Timeout when aquiring database connection
+        /// Timeout when acquiring database connection
         database_timeout:       u64,    false,  def,    30;
 
         /// Database connection pool size
