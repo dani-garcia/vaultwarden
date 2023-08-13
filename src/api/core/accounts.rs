@@ -1,13 +1,14 @@
+use crate::db::DbPool;
 use chrono::Utc;
 use rocket::serde::json::Json;
 use serde_json::Value;
 
 use crate::{
     api::{
-        core::log_user_event, register_push_device, unregister_push_device, EmptyResult, JsonResult, JsonUpcase,
-        Notify, NumberOrString, PasswordData, UpdateType,
+        core::log_user_event, register_push_device, unregister_push_device, AnonymousNotify, EmptyResult, JsonResult,
+        JsonUpcase, Notify, NumberOrString, PasswordData, UpdateType,
     },
-    auth::{decode_delete, decode_invite, decode_verify_email, Headers},
+    auth::{decode_delete, decode_invite, decode_verify_email, ClientHeaders, Headers},
     crypto,
     db::{models::*, DbConn},
     mail, CONFIG,
@@ -51,6 +52,11 @@ pub fn routes() -> Vec<rocket::Route> {
         put_device_token,
         put_clear_device_token,
         post_clear_device_token,
+        post_auth_request,
+        get_auth_request,
+        put_auth_request,
+        get_auth_request_response,
+        get_auth_requests,
     ]
 }
 
@@ -995,4 +1001,212 @@ async fn put_clear_device_token(uuid: &str, mut conn: DbConn) -> EmptyResult {
 #[post("/devices/identifier/<uuid>/clear-token")]
 async fn post_clear_device_token(uuid: &str, conn: DbConn) -> EmptyResult {
     put_clear_device_token(uuid, conn).await
+}
+
+#[derive(Debug, Deserialize)]
+#[allow(non_snake_case)]
+struct AuthRequestRequest {
+    accessCode: String,
+    deviceIdentifier: String,
+    email: String,
+    publicKey: String,
+    #[serde(alias = "type")]
+    _type: i32,
+}
+
+#[post("/auth-requests", data = "<data>")]
+async fn post_auth_request(
+    data: Json<AuthRequestRequest>,
+    headers: ClientHeaders,
+    mut conn: DbConn,
+    nt: Notify<'_>,
+) -> JsonResult {
+    let data = data.into_inner();
+
+    let user = match User::find_by_mail(&data.email, &mut conn).await {
+        Some(user) => user,
+        None => {
+            err!("AuthRequest doesn't exist")
+        }
+    };
+
+    let mut auth_request = AuthRequest::new(
+        user.uuid.clone(),
+        data.deviceIdentifier.clone(),
+        headers.device_type,
+        headers.ip.ip.to_string(),
+        data.accessCode,
+        data.publicKey,
+    );
+    auth_request.save(&mut conn).await?;
+
+    nt.send_auth_request(&user.uuid, &auth_request.uuid, &data.deviceIdentifier, &mut conn).await;
+
+    Ok(Json(json!({
+        "id": auth_request.uuid,
+        "publicKey": auth_request.public_key,
+        "requestDeviceType": DeviceType::from_i32(auth_request.device_type).to_string(),
+        "requestIpAddress": auth_request.request_ip,
+        "key": null,
+        "masterPasswordHash": null,
+        "creationDate": auth_request.creation_date.and_utc(),
+        "responseDate": null,
+        "requestApproved": false,
+        "origin": CONFIG.domain_origin(),
+        "object": "auth-request"
+    })))
+}
+
+#[get("/auth-requests/<uuid>")]
+async fn get_auth_request(uuid: &str, mut conn: DbConn) -> JsonResult {
+    let auth_request = match AuthRequest::find_by_uuid(uuid, &mut conn).await {
+        Some(auth_request) => auth_request,
+        None => {
+            err!("AuthRequest doesn't exist")
+        }
+    };
+
+    let response_date_utc = auth_request.response_date.map(|response_date| response_date.and_utc());
+
+    Ok(Json(json!(
+        {
+            "id": uuid,
+            "publicKey": auth_request.public_key,
+            "requestDeviceType": DeviceType::from_i32(auth_request.device_type).to_string(),
+            "requestIpAddress": auth_request.request_ip,
+            "key": auth_request.enc_key,
+            "masterPasswordHash": auth_request.master_password_hash,
+            "creationDate": auth_request.creation_date.and_utc(),
+            "responseDate": response_date_utc,
+            "requestApproved": auth_request.approved,
+            "origin": CONFIG.domain_origin(),
+            "object":"auth-request"
+        }
+    )))
+}
+
+#[derive(Debug, Deserialize)]
+#[allow(non_snake_case)]
+struct AuthResponseRequest {
+    deviceIdentifier: String,
+    key: String,
+    masterPasswordHash: String,
+    requestApproved: bool,
+}
+
+#[put("/auth-requests/<uuid>", data = "<data>")]
+async fn put_auth_request(
+    uuid: &str,
+    data: Json<AuthResponseRequest>,
+    mut conn: DbConn,
+    ant: AnonymousNotify<'_>,
+    nt: Notify<'_>,
+) -> JsonResult {
+    let data = data.into_inner();
+    let mut auth_request: AuthRequest = match AuthRequest::find_by_uuid(uuid, &mut conn).await {
+        Some(auth_request) => auth_request,
+        None => {
+            err!("AuthRequest doesn't exist")
+        }
+    };
+
+    auth_request.approved = Some(data.requestApproved);
+    auth_request.enc_key = data.key;
+    auth_request.master_password_hash = data.masterPasswordHash;
+    auth_request.response_device_id = Some(data.deviceIdentifier.clone());
+    auth_request.save(&mut conn).await?;
+
+    if auth_request.approved.unwrap_or(false) {
+        ant.send_auth_response(&auth_request.user_uuid, &auth_request.uuid).await;
+        nt.send_auth_response(&auth_request.user_uuid, &auth_request.uuid, data.deviceIdentifier, &mut conn).await;
+    }
+
+    let response_date_utc = auth_request.response_date.map(|response_date| response_date.and_utc());
+
+    Ok(Json(json!(
+        {
+            "id": uuid,
+            "publicKey": auth_request.public_key,
+            "requestDeviceType": DeviceType::from_i32(auth_request.device_type).to_string(),
+            "requestIpAddress": auth_request.request_ip,
+            "key": auth_request.enc_key,
+            "masterPasswordHash": auth_request.master_password_hash,
+            "creationDate": auth_request.creation_date.and_utc(),
+            "responseDate": response_date_utc,
+            "requestApproved": auth_request.approved,
+            "origin": CONFIG.domain_origin(),
+            "object":"auth-request"
+        }
+    )))
+}
+
+#[get("/auth-requests/<uuid>/response?<code>")]
+async fn get_auth_request_response(uuid: &str, code: &str, mut conn: DbConn) -> JsonResult {
+    let auth_request = match AuthRequest::find_by_uuid(uuid, &mut conn).await {
+        Some(auth_request) => auth_request,
+        None => {
+            err!("AuthRequest doesn't exist")
+        }
+    };
+
+    if !auth_request.check_access_code(code) {
+        err!("Access code invalid doesn't exist")
+    }
+
+    let response_date_utc = auth_request.response_date.map(|response_date| response_date.and_utc());
+
+    Ok(Json(json!(
+        {
+            "id": uuid,
+            "publicKey": auth_request.public_key,
+            "requestDeviceType": DeviceType::from_i32(auth_request.device_type).to_string(),
+            "requestIpAddress": auth_request.request_ip,
+            "key": auth_request.enc_key,
+            "masterPasswordHash": auth_request.master_password_hash,
+            "creationDate": auth_request.creation_date.and_utc(),
+            "responseDate": response_date_utc,
+            "requestApproved": auth_request.approved,
+            "origin": CONFIG.domain_origin(),
+            "object":"auth-request"
+        }
+    )))
+}
+
+#[get("/auth-requests")]
+async fn get_auth_requests(headers: Headers, mut conn: DbConn) -> JsonResult {
+    let auth_requests = AuthRequest::find_by_user(&headers.user.uuid, &mut conn).await;
+
+    Ok(Json(json!({
+        "data": auth_requests
+            .iter()
+            .filter(|request| request.approved.is_none())
+            .map(|request| {
+            let response_date_utc = request.response_date.map(|response_date| response_date.and_utc());
+
+            json!({
+                "id": request.uuid,
+                "publicKey": request.public_key,
+                "requestDeviceType": DeviceType::from_i32(request.device_type).to_string(),
+                "requestIpAddress": request.request_ip,
+                "key": request.enc_key,
+                "masterPasswordHash": request.master_password_hash,
+                "creationDate": request.creation_date.and_utc(),
+                "responseDate": response_date_utc,
+                "requestApproved": request.approved,
+                "origin": CONFIG.domain_origin(),
+                "object":"auth-request"
+            })
+        }).collect::<Vec<Value>>(),
+        "continuationToken": null,
+        "object": "list"
+    })))
+}
+
+pub async fn purge_auth_requests(pool: DbPool) {
+    debug!("Purging auth requests");
+    if let Ok(mut conn) = pool.get().await {
+        AuthRequest::purge_expired_auth_requests(&mut conn).await;
+    } else {
+        error!("Failed to get DB connection while purging trashed ciphers")
+    }
 }

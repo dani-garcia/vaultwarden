@@ -286,6 +286,26 @@ table! {
     }
 }
 
+table! {
+    auth_requests  (uuid) {
+        uuid -> Text,
+        user_uuid -> Text,
+        organization_uuid -> Nullable<Text>,
+        request_device_identifier -> Text,
+        device_type -> Integer,
+        request_ip -> Text,
+        response_device_id -> Nullable<Text>,
+        access_code -> Text,
+        public_key -> Text,
+        enc_key -> Text,
+        master_password_hash -> Text,
+        approved -> Nullable<Bool>,
+        creation_date -> Timestamp,
+        response_date -> Nullable<Timestamp>,
+        authentication_date -> Nullable<Timestamp>,
+    }
+}
+
 joinable!(attachments -> ciphers (cipher_uuid));
 joinable!(ciphers -> organizations (organization_uuid));
 joinable!(ciphers -> users (user_uuid));
@@ -313,6 +333,7 @@ joinable!(groups_users -> groups (groups_uuid));
 joinable!(collections_groups -> collections (collections_uuid));
 joinable!(collections_groups -> groups (groups_uuid));
 joinable!(event -> users_organizations (uuid));
+joinable!(auth_requests -> users (user_uuid));
 
 allow_tables_to_appear_in_same_query!(
     attachments,
@@ -336,4 +357,5 @@ allow_tables_to_appear_in_same_query!(
     groups_users,
     collections_groups,
     event,
+    auth_requests,
 );
