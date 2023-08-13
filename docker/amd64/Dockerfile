@@ -26,7 +26,7 @@
 FROM docker.io/vaultwarden/web-vault@sha256:b306f38fe0d54fa3d79059a737f8e1803da44ddc5f273c2aecdd6a4886211b0f as vault
 
 ########################## BUILD IMAGE  ##########################
-FROM docker.io/library/rust:1.71.0-bookworm as build
+FROM docker.io/library/rust:1.71.1-bookworm as build
 
 # Build time options to avoid dpkg warnings and help with reproducible builds.
 ENV DEBIAN_FRONTEND=noninteractive \
