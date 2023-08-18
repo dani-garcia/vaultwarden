@@ -952,26 +952,33 @@ async fn post_device_token(uuid: &str, data: JsonUpcase<PushToken>, headers: Hea
 
 #[put("/devices/identifier/<uuid>/token", data = "<data>")]
 async fn put_device_token(uuid: &str, data: JsonUpcase<PushToken>, headers: Headers, mut conn: DbConn) -> EmptyResult {
-    if !CONFIG.push_enabled() {
-        return Ok(());
-    }
-
     let data = data.into_inner().data;
     let token = data.PushToken;
+
     let mut device = match Device::find_by_uuid_and_user(&headers.device.uuid, &headers.user.uuid, &mut conn).await {
         Some(device) => device,
         None => err!(format!("Error: device {uuid} should be present before a token can be assigned")),
     };
-    device.push_token = Some(token);
-    if device.push_uuid.is_none() {
-        device.push_uuid = Some(uuid::Uuid::new_v4().to_string());
+
+    // if the device already has been registered
+    if device.is_registered() {
+        // check if the new token is the same as the registered token
+        if device.push_token.is_some() && device.push_token.unwrap() == token.clone() {
+            debug!("Device {} is already registered and token is the same", uuid);
+            return Ok(());
+        } else {
+            // Try to unregister already registered device
+            let _ = unregister_push_device(device.push_uuid).await;
+        }
+        // clear the push_uuid
+        device.push_uuid = None;
     }
+    device.push_token = Some(token);
     if let Err(e) = device.save(&mut conn).await {
         err!(format!("An error occurred while trying to save the device push token: {e}"));
     }
-    if let Err(e) = register_push_device(headers.user.uuid, device).await {
-        err!(format!("An error occurred while proceeding registration of a device: {e}"));
-    }
+
+    register_push_device(&mut device, &mut conn).await?;
 
     Ok(())
 }
@@ -988,7 +995,7 @@ async fn put_clear_device_token(uuid: &str, mut conn: DbConn) -> EmptyResult {
 
     if let Some(device) = Device::find_by_uuid(uuid, &mut conn).await {
         Device::clear_push_token_by_uuid(uuid, &mut conn).await?;
-        unregister_push_device(device.uuid).await?;
+        unregister_push_device(device.push_uuid).await?;
     }
 
     Ok(())

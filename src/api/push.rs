@@ -76,24 +76,35 @@ async fn get_auth_push_token() -> ApiResult<String> {
     Ok(push_token.access_token.clone())
 }
 
-pub async fn register_push_device(user_uuid: String, device: Device) -> EmptyResult {
-    if !CONFIG.push_enabled() {
+pub async fn register_push_device(device: &mut Device, conn: &mut crate::db::DbConn) -> EmptyResult {
+    if !CONFIG.push_enabled() || !device.is_push_device() || device.is_registered() {
         return Ok(());
     }
-    let auth_push_token = get_auth_push_token().await?;
+
+    if device.push_token.is_none() {
+        warn!("Skipping the registration of the device {} because the push_token field is empty.", device.uuid);
+        warn!("To get rid of this message you need to clear the app data and reconnect the device.");
+        return Ok(());
+    }
+
+    debug!("Registering Device {}", device.uuid);
+
+    // generate a random push_uuid so we know the device is registered
+    device.push_uuid = Some(uuid::Uuid::new_v4().to_string());
 
     //Needed to register a device for push to bitwarden :
     let data = json!({
-        "userId": user_uuid,
+        "userId": device.user_uuid,
         "deviceId": device.push_uuid,
         "identifier": device.uuid,
         "type": device.atype,
         "pushToken": device.push_token
     });
 
+    let auth_push_token = get_auth_push_token().await?;
     let auth_header = format!("Bearer {}", &auth_push_token);
 
-    get_reqwest_client()
+    if let Err(e) = get_reqwest_client()
         .post(CONFIG.push_relay_uri() + "/push/register")
         .header(CONTENT_TYPE, "application/json")
         .header(ACCEPT, "application/json")
@@ -101,12 +112,20 @@ pub async fn register_push_device(user_uuid: String, device: Device) -> EmptyRes
         .json(&data)
         .send()
         .await?
-        .error_for_status()?;
+        .error_for_status()
+    {
+        err!(format!("An error occured while proceeding registration of a device: {e}"));
+    }
+
+    if let Err(e) = device.save(conn).await {
+        err!(format!("An error occured while trying to save the (registered) device push uuid: {e}"));
+    }
+
     Ok(())
 }
 
-pub async fn unregister_push_device(uuid: String) -> EmptyResult {
-    if !CONFIG.push_enabled() {
+pub async fn unregister_push_device(push_uuid: Option<String>) -> EmptyResult {
+    if !CONFIG.push_enabled() || push_uuid.is_none() {
         return Ok(());
     }
     let auth_push_token = get_auth_push_token().await?;
@@ -114,7 +133,7 @@ pub async fn unregister_push_device(uuid: String) -> EmptyResult {
     let auth_header = format!("Bearer {}", &auth_push_token);
 
     match get_reqwest_client()
-        .delete(CONFIG.push_relay_uri() + "/push/" + &uuid)
+        .delete(CONFIG.push_relay_uri() + "/push/" + &push_uuid.unwrap())
         .header(AUTHORIZATION, auth_header)
         .send()
         .await
