@@ -46,7 +46,7 @@ if [ -r "${CONFIG_FILE}" ]; then
 fi
 
 addr="${ROCKET_ADDRESS}"
-if [ -z "${addr}" ] || [ "${addr}" = '0.0.0.0' ] || [ "${addr}" = '::' ]; then
+if [ -z "${addr}" ] || [ "${addr}" = '0.0.0.0' ] || [ "${addr}" = '::0' ]; then
     addr='localhost'
 fi
 base_path="$(get_base_path "${DOMAIN}")"
