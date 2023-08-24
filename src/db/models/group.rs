@@ -1,37 +1,36 @@
+use crate::db::schema::{collections_groups, groups, groups_users};
 use chrono::{NaiveDateTime, Utc};
 use serde_json::Value;
 
-db_object! {
-    #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
-    #[diesel(table_name = groups)]
-    #[diesel(primary_key(uuid))]
-    pub struct Group {
-        pub uuid: String,
-        pub organizations_uuid: String,
-        pub name: String,
-        pub access_all: bool,
-        pub external_id: Option<String>,
-        pub creation_date: NaiveDateTime,
-        pub revision_date: NaiveDateTime,
-    }
+#[derive(Identifiable, Queryable, Insertable, AsChangeset)]
+#[diesel(table_name = groups)]
+#[diesel(primary_key(uuid))]
+pub struct Group {
+    pub uuid: String,
+    pub organizations_uuid: String,
+    pub name: String,
+    pub access_all: bool,
+    pub external_id: Option<String>,
+    pub creation_date: NaiveDateTime,
+    pub revision_date: NaiveDateTime,
+}
 
-    #[derive(Identifiable, Queryable, Insertable)]
-    #[diesel(table_name = collections_groups)]
-    #[diesel(primary_key(collections_uuid, groups_uuid))]
-    pub struct CollectionGroup {
-        pub collections_uuid: String,
-        pub groups_uuid: String,
-        pub read_only: bool,
-        pub hide_passwords: bool,
-    }
+#[derive(Identifiable, Queryable, Insertable)]
+#[diesel(table_name = collections_groups)]
+#[diesel(primary_key(collections_uuid, groups_uuid))]
+pub struct CollectionGroup {
+    pub collections_uuid: String,
+    pub groups_uuid: String,
+    pub read_only: bool,
+    pub hide_passwords: bool,
+}
 
-    #[derive(Identifiable, Queryable, Insertable)]
-    #[diesel(table_name = groups_users)]
-    #[diesel(primary_key(groups_uuid, users_organizations_uuid))]
-    pub struct GroupUser {
-        pub groups_uuid: String,
-        pub users_organizations_uuid: String
-    }
+#[derive(Identifiable, Queryable, Insertable)]
+#[diesel(table_name = groups_users)]
+#[diesel(primary_key(groups_uuid, users_organizations_uuid))]
+pub struct GroupUser {
+    pub groups_uuid: String,
+    pub users_organizations_uuid: String,
 }
 
 /// Local methods
@@ -69,7 +68,7 @@ impl Group {
         })
     }
 
-    pub async fn to_json_details(&self, conn: &mut DbConn) -> Value {
+    pub async fn to_json_details(&self, conn: &DbConn) -> Value {
         let collections_groups: Vec<Value> = CollectionGroup::find_by_group(&self.uuid, conn)
             .await
             .iter()
@@ -131,13 +130,13 @@ use super::{User, UserOrganization};
 
 /// Database methods
 impl Group {
-    pub async fn save(&mut self, conn: &mut DbConn) -> EmptyResult {
+    pub async fn save(&mut self, conn: &DbConn) -> EmptyResult {
         self.revision_date = Utc::now().naive_utc();
 
         db_run! { conn:
             sqlite, mysql {
                 match diesel::replace_into(groups::table)
-                    .values(GroupDb::to_db(self))
+                    .values(&*self)
                     .execute(conn)
                 {
                     Ok(_) => Ok(()),
@@ -145,7 +144,7 @@ impl Group {
                     Err(diesel::result::Error::DatabaseError(diesel::result::DatabaseErrorKind::ForeignKeyViolation, _)) => {
                         diesel::update(groups::table)
                             .filter(groups::uuid.eq(&self.uuid))
-                            .set(GroupDb::to_db(self))
+                            .set(&*self)
                             .execute(conn)
                             .map_res("Error saving group")
                     }
@@ -153,36 +152,34 @@ impl Group {
                 }.map_res("Error saving group")
             }
             postgresql {
-                let value = GroupDb::to_db(self);
                 diesel::insert_into(groups::table)
-                    .values(&value)
+                    .values(&*self)
                     .on_conflict(groups::uuid)
                     .do_update()
-                    .set(&value)
+                    .set(&*self)
                     .execute(conn)
                     .map_res("Error saving group")
             }
         }
     }
 
-    pub async fn delete_all_by_organization(org_uuid: &str, conn: &mut DbConn) -> EmptyResult {
+    pub async fn delete_all_by_organization(org_uuid: &str, conn: &DbConn) -> EmptyResult {
         for group in Self::find_by_organization(org_uuid, conn).await {
             group.delete(conn).await?;
         }
         Ok(())
     }
 
-    pub async fn find_by_organization(organizations_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_organization(organizations_uuid: &str, conn: &DbConn) -> Vec<Self> {
         db_run! { conn: {
             groups::table
                 .filter(groups::organizations_uuid.eq(organizations_uuid))
-                .load::<GroupDb>(conn)
+                .load::<Self>(conn)
                 .expect("Error loading groups")
-                .from_db()
         }}
     }
 
-    pub async fn count_by_org(organizations_uuid: &str, conn: &mut DbConn) -> i64 {
+    pub async fn count_by_org(organizations_uuid: &str, conn: &DbConn) -> i64 {
         db_run! { conn: {
             groups::table
                 .filter(groups::organizations_uuid.eq(organizations_uuid))
@@ -193,27 +190,25 @@ impl Group {
         }}
     }
 
-    pub async fn find_by_uuid(uuid: &str, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_uuid(uuid: &str, conn: &DbConn) -> Option<Self> {
         db_run! { conn: {
             groups::table
                 .filter(groups::uuid.eq(uuid))
-                .first::<GroupDb>(conn)
+                .first::<Self>(conn)
                 .ok()
-                .from_db()
         }}
     }
 
-    pub async fn find_by_external_id(id: &str, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_external_id(id: &str, conn: &DbConn) -> Option<Self> {
         db_run! { conn: {
             groups::table
                 .filter(groups::external_id.eq(id))
-                .first::<GroupDb>(conn)
+                .first::<Self>(conn)
                 .ok()
-                .from_db()
         }}
     }
     //Returns all organizations the user has full access to
-    pub async fn gather_user_organizations_full_access(user_uuid: &str, conn: &mut DbConn) -> Vec<String> {
+    pub async fn gather_user_organizations_full_access(user_uuid: &str, conn: &DbConn) -> Vec<String> {
         db_run! { conn: {
             groups_users::table
                 .inner_join(users_organizations::table.on(
@@ -231,7 +226,7 @@ impl Group {
         }}
     }
 
-    pub async fn is_in_full_access_group(user_uuid: &str, org_uuid: &str, conn: &mut DbConn) -> bool {
+    pub async fn is_in_full_access_group(user_uuid: &str, org_uuid: &str, conn: &DbConn) -> bool {
         db_run! { conn: {
             groups::table
                 .inner_join(groups_users::table.on(
@@ -249,7 +244,7 @@ impl Group {
         }}
     }
 
-    pub async fn delete(&self, conn: &mut DbConn) -> EmptyResult {
+    pub async fn delete(&self, conn: &DbConn) -> EmptyResult {
         CollectionGroup::delete_all_by_group(&self.uuid, conn).await?;
         GroupUser::delete_all_by_group(&self.uuid, conn).await?;
 
@@ -260,13 +255,13 @@ impl Group {
         }}
     }
 
-    pub async fn update_revision(uuid: &str, conn: &mut DbConn) {
+    pub async fn update_revision(uuid: &str, conn: &DbConn) {
         if let Err(e) = Self::_update_revision(uuid, &Utc::now().naive_utc(), conn).await {
             warn!("Failed to update revision for {}: {:#?}", uuid, e);
         }
     }
 
-    async fn _update_revision(uuid: &str, date: &NaiveDateTime, conn: &mut DbConn) -> EmptyResult {
+    async fn _update_revision(uuid: &str, date: &NaiveDateTime, conn: &DbConn) -> EmptyResult {
         db_run! {conn: {
             crate::util::retry(|| {
                 diesel::update(groups::table.filter(groups::uuid.eq(uuid)))
@@ -279,7 +274,7 @@ impl Group {
 }
 
 impl CollectionGroup {
-    pub async fn save(&mut self, conn: &mut DbConn) -> EmptyResult {
+    pub async fn save(&mut self, conn: &DbConn) -> EmptyResult {
         let group_users = GroupUser::find_by_group(&self.groups_uuid, conn).await;
         for group_user in group_users {
             group_user.update_user_revision(conn).await;
@@ -334,17 +329,16 @@ impl CollectionGroup {
         }
     }
 
-    pub async fn find_by_group(group_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_group(group_uuid: &str, conn: &DbConn) -> Vec<Self> {
         db_run! { conn: {
             collections_groups::table
                 .filter(collections_groups::groups_uuid.eq(group_uuid))
-                .load::<CollectionGroupDb>(conn)
+                .load::<Self>(conn)
                 .expect("Error loading collection groups")
-                .from_db()
         }}
     }
 
-    pub async fn find_by_user(user_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
         db_run! { conn: {
             collections_groups::table
                 .inner_join(groups_users::table.on(
@@ -355,24 +349,22 @@ impl CollectionGroup {
                 ))
                 .filter(users_organizations::user_uuid.eq(user_uuid))
                 .select(collections_groups::all_columns)
-                .load::<CollectionGroupDb>(conn)
+                .load::<Self>(conn)
                 .expect("Error loading user collection groups")
-                .from_db()
         }}
     }
 
-    pub async fn find_by_collection(collection_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_collection(collection_uuid: &str, conn: &DbConn) -> Vec<Self> {
         db_run! { conn: {
             collections_groups::table
                 .filter(collections_groups::collections_uuid.eq(collection_uuid))
                 .select(collections_groups::all_columns)
-                .load::<CollectionGroupDb>(conn)
+                .load::<Self>(conn)
                 .expect("Error loading collection groups")
-                .from_db()
         }}
     }
 
-    pub async fn delete(&self, conn: &mut DbConn) -> EmptyResult {
+    pub async fn delete(&self, conn: &DbConn) -> EmptyResult {
         let group_users = GroupUser::find_by_group(&self.groups_uuid, conn).await;
         for group_user in group_users {
             group_user.update_user_revision(conn).await;
@@ -387,7 +379,7 @@ impl CollectionGroup {
         }}
     }
 
-    pub async fn delete_all_by_group(group_uuid: &str, conn: &mut DbConn) -> EmptyResult {
+    pub async fn delete_all_by_group(group_uuid: &str, conn: &DbConn) -> EmptyResult {
         let group_users = GroupUser::find_by_group(group_uuid, conn).await;
         for group_user in group_users {
             group_user.update_user_revision(conn).await;
@@ -401,7 +393,7 @@ impl CollectionGroup {
         }}
     }
 
-    pub async fn delete_all_by_collection(collection_uuid: &str, conn: &mut DbConn) -> EmptyResult {
+    pub async fn delete_all_by_collection(collection_uuid: &str, conn: &DbConn) -> EmptyResult {
         let collection_assigned_to_groups = CollectionGroup::find_by_collection(collection_uuid, conn).await;
         for collection_assigned_to_group in collection_assigned_to_groups {
             let group_users = GroupUser::find_by_group(&collection_assigned_to_group.groups_uuid, conn).await;
@@ -420,7 +412,7 @@ impl CollectionGroup {
 }
 
 impl GroupUser {
-    pub async fn save(&mut self, conn: &mut DbConn) -> EmptyResult {
+    pub async fn save(&mut self, conn: &DbConn) -> EmptyResult {
         self.update_user_revision(conn).await;
 
         db_run! { conn:
@@ -466,27 +458,25 @@ impl GroupUser {
         }
     }
 
-    pub async fn find_by_group(group_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_group(group_uuid: &str, conn: &DbConn) -> Vec<Self> {
         db_run! { conn: {
             groups_users::table
                 .filter(groups_users::groups_uuid.eq(group_uuid))
-                .load::<GroupUserDb>(conn)
+                .load::<Self>(conn)
                 .expect("Error loading group users")
-                .from_db()
         }}
     }
 
-    pub async fn find_by_user(users_organizations_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_user(users_organizations_uuid: &str, conn: &DbConn) -> Vec<Self> {
         db_run! { conn: {
             groups_users::table
                 .filter(groups_users::users_organizations_uuid.eq(users_organizations_uuid))
-                .load::<GroupUserDb>(conn)
+                .load::<Self>(conn)
                 .expect("Error loading groups for user")
-                .from_db()
         }}
     }
 
-    pub async fn update_user_revision(&self, conn: &mut DbConn) {
+    pub async fn update_user_revision(&self, conn: &DbConn) {
         match UserOrganization::find_by_uuid(&self.users_organizations_uuid, conn).await {
             Some(user) => User::update_uuid_revision(&user.user_uuid, conn).await,
             None => warn!("User could not be found!"),
@@ -496,7 +486,7 @@ impl GroupUser {
     pub async fn delete_by_group_id_and_user_id(
         group_uuid: &str,
         users_organizations_uuid: &str,
-        conn: &mut DbConn,
+        conn: &DbConn,
     ) -> EmptyResult {
         match UserOrganization::find_by_uuid(users_organizations_uuid, conn).await {
             Some(user) => User::update_uuid_revision(&user.user_uuid, conn).await,
@@ -512,7 +502,7 @@ impl GroupUser {
         }}
     }
 
-    pub async fn delete_all_by_group(group_uuid: &str, conn: &mut DbConn) -> EmptyResult {
+    pub async fn delete_all_by_group(group_uuid: &str, conn: &DbConn) -> EmptyResult {
         let group_users = GroupUser::find_by_group(group_uuid, conn).await;
         for group_user in group_users {
             group_user.update_user_revision(conn).await;
@@ -526,7 +516,7 @@ impl GroupUser {
         }}
     }
 
-    pub async fn delete_all_by_user(users_organizations_uuid: &str, conn: &mut DbConn) -> EmptyResult {
+    pub async fn delete_all_by_user(users_organizations_uuid: &str, conn: &DbConn) -> EmptyResult {
         match UserOrganization::find_by_uuid(users_organizations_uuid, conn).await {
             Some(user) => User::update_uuid_revision(&user.user_uuid, conn).await,
             None => warn!("User could not be found!"),

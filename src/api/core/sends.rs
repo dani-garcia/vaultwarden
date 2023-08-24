@@ -39,8 +39,8 @@ pub fn routes() -> Vec<rocket::Route> {
 
 pub async fn purge_sends(pool: DbPool) {
     debug!("Purging sends");
-    if let Ok(mut conn) = pool.get().await {
-        Send::purge(&mut conn).await;
+    if let Ok(conn) = pool.get().await {
+        Send::purge(&conn).await;
     } else {
         error!("Failed to get DB connection while purging sends")
     }
@@ -74,7 +74,7 @@ struct SendData {
 ///
 /// There is also a Vaultwarden-specific `sends_allowed` config setting that
 /// controls this policy globally.
-async fn enforce_disable_send_policy(headers: &Headers, conn: &mut DbConn) -> EmptyResult {
+async fn enforce_disable_send_policy(headers: &Headers, conn: &DbConn) -> EmptyResult {
     let user_uuid = &headers.user.uuid;
     if !CONFIG.sends_allowed()
         || OrgPolicy::is_applicable_to_user(user_uuid, OrgPolicyType::DisableSend, None, conn).await
@@ -90,7 +90,7 @@ async fn enforce_disable_send_policy(headers: &Headers, conn: &mut DbConn) -> Em
 /// but is allowed to remove this option from an existing Send.
 ///
 /// Ref: https://bitwarden.com/help/article/policies/#send-options
-async fn enforce_disable_hide_email_policy(data: &SendData, headers: &Headers, conn: &mut DbConn) -> EmptyResult {
+async fn enforce_disable_hide_email_policy(data: &SendData, headers: &Headers, conn: &DbConn) -> EmptyResult {
     let user_uuid = &headers.user.uuid;
     let hide_email = data.HideEmail.unwrap_or(false);
     if hide_email && OrgPolicy::is_hide_email_disabled(user_uuid, conn).await {
@@ -142,8 +142,8 @@ fn create_send(data: SendData, user_uuid: String) -> ApiResult<Send> {
 }
 
 #[get("/sends")]
-async fn get_sends(headers: Headers, mut conn: DbConn) -> Json<Value> {
-    let sends = Send::find_by_user(&headers.user.uuid, &mut conn);
+async fn get_sends(headers: Headers, conn: DbConn) -> Json<Value> {
+    let sends = Send::find_by_user(&headers.user.uuid, &conn);
     let sends_json: Vec<Value> = sends.await.iter().map(|s| s.to_json()).collect();
 
     Json(json!({
@@ -154,8 +154,8 @@ async fn get_sends(headers: Headers, mut conn: DbConn) -> Json<Value> {
 }
 
 #[get("/sends/<uuid>")]
-async fn get_send(uuid: &str, headers: Headers, mut conn: DbConn) -> JsonResult {
-    let send = match Send::find_by_uuid(uuid, &mut conn).await {
+async fn get_send(uuid: &str, headers: Headers, conn: DbConn) -> JsonResult {
+    let send = match Send::find_by_uuid(uuid, &conn).await {
         Some(send) => send,
         None => err!("Send not found"),
     };
@@ -168,24 +168,24 @@ async fn get_send(uuid: &str, headers: Headers, mut conn: DbConn) -> JsonResult 
 }
 
 #[post("/sends", data = "<data>")]
-async fn post_send(data: JsonUpcase<SendData>, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> JsonResult {
-    enforce_disable_send_policy(&headers, &mut conn).await?;
+async fn post_send(data: JsonUpcase<SendData>, headers: Headers, conn: DbConn, nt: Notify<'_>) -> JsonResult {
+    enforce_disable_send_policy(&headers, &conn).await?;
 
     let data: SendData = data.into_inner().data;
-    enforce_disable_hide_email_policy(&data, &headers, &mut conn).await?;
+    enforce_disable_hide_email_policy(&data, &headers, &conn).await?;
 
     if data.Type == SendType::File as i32 {
         err!("File sends should use /api/sends/file")
     }
 
     let mut send = create_send(data, headers.user.uuid)?;
-    send.save(&mut conn).await?;
+    send.save(&conn).await?;
     nt.send_send_update(
         UpdateType::SyncSendCreate,
         &send,
-        &send.update_users_revision(&mut conn).await,
+        &send.update_users_revision(&conn).await,
         &headers.device.uuid,
-        &mut conn,
+        &conn,
     )
     .await;
 
@@ -207,8 +207,8 @@ struct UploadDataV2<'f> {
 // This method still exists to support older clients, probably need to remove it sometime.
 // Upstream: https://github.com/bitwarden/server/blob/d0c793c95181dfb1b447eb450f85ba0bfd7ef643/src/Api/Controllers/SendsController.cs#L164-L167
 #[post("/sends/file", format = "multipart/form-data", data = "<data>")]
-async fn post_send_file(data: Form<UploadData<'_>>, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> JsonResult {
-    enforce_disable_send_policy(&headers, &mut conn).await?;
+async fn post_send_file(data: Form<UploadData<'_>>, headers: Headers, conn: DbConn, nt: Notify<'_>) -> JsonResult {
+    enforce_disable_send_policy(&headers, &conn).await?;
 
     let UploadData {
         model,
@@ -216,12 +216,12 @@ async fn post_send_file(data: Form<UploadData<'_>>, headers: Headers, mut conn: 
     } = data.into_inner();
     let model = model.into_inner().data;
 
-    enforce_disable_hide_email_policy(&model, &headers, &mut conn).await?;
+    enforce_disable_hide_email_policy(&model, &headers, &conn).await?;
 
     let size_limit = match CONFIG.user_attachment_limit() {
         Some(0) => err!("File uploads are disabled"),
         Some(limit_kb) => {
-            let left = (limit_kb * 1024) - Attachment::size_by_user(&headers.user.uuid, &mut conn).await;
+            let left = (limit_kb * 1024) - Attachment::size_by_user(&headers.user.uuid, &conn).await;
             if left <= 0 {
                 err!("Attachment storage limit reached! Delete some attachments to free up space")
             }
@@ -258,13 +258,13 @@ async fn post_send_file(data: Form<UploadData<'_>>, headers: Headers, mut conn: 
     send.data = serde_json::to_string(&data_value)?;
 
     // Save the changes in the database
-    send.save(&mut conn).await?;
+    send.save(&conn).await?;
     nt.send_send_update(
         UpdateType::SyncSendCreate,
         &send,
-        &send.update_users_revision(&mut conn).await,
+        &send.update_users_revision(&conn).await,
         &headers.device.uuid,
-        &mut conn,
+        &conn,
     )
     .await;
 
@@ -273,8 +273,8 @@ async fn post_send_file(data: Form<UploadData<'_>>, headers: Headers, mut conn: 
 
 // Upstream: https://github.com/bitwarden/server/blob/d0c793c95181dfb1b447eb450f85ba0bfd7ef643/src/Api/Controllers/SendsController.cs#L190
 #[post("/sends/file/v2", data = "<data>")]
-async fn post_send_file_v2(data: JsonUpcase<SendData>, headers: Headers, mut conn: DbConn) -> JsonResult {
-    enforce_disable_send_policy(&headers, &mut conn).await?;
+async fn post_send_file_v2(data: JsonUpcase<SendData>, headers: Headers, conn: DbConn) -> JsonResult {
+    enforce_disable_send_policy(&headers, &conn).await?;
 
     let data = data.into_inner().data;
 
@@ -282,7 +282,7 @@ async fn post_send_file_v2(data: JsonUpcase<SendData>, headers: Headers, mut con
         err!("Send content is not a file");
     }
 
-    enforce_disable_hide_email_policy(&data, &headers, &mut conn).await?;
+    enforce_disable_hide_email_policy(&data, &headers, &conn).await?;
 
     let file_length = match &data.FileLength {
         Some(m) => Some(m.into_i32()?),
@@ -292,7 +292,7 @@ async fn post_send_file_v2(data: JsonUpcase<SendData>, headers: Headers, mut con
     let size_limit = match CONFIG.user_attachment_limit() {
         Some(0) => err!("File uploads are disabled"),
         Some(limit_kb) => {
-            let left = (limit_kb * 1024) - Attachment::size_by_user(&headers.user.uuid, &mut conn).await;
+            let left = (limit_kb * 1024) - Attachment::size_by_user(&headers.user.uuid, &conn).await;
             if left <= 0 {
                 err!("Attachment storage limit reached! Delete some attachments to free up space")
             }
@@ -316,7 +316,7 @@ async fn post_send_file_v2(data: JsonUpcase<SendData>, headers: Headers, mut con
         o.insert(String::from("SizeName"), Value::String(crate::util::get_display_size(file_length.unwrap())));
     }
     send.data = serde_json::to_string(&data_value)?;
-    send.save(&mut conn).await?;
+    send.save(&conn).await?;
 
     Ok(Json(json!({
         "fileUploadType": 0, // 0 == Direct | 1 == Azure
@@ -333,14 +333,14 @@ async fn post_send_file_v2_data(
     file_id: &str,
     data: Form<UploadDataV2<'_>>,
     headers: Headers,
-    mut conn: DbConn,
+    conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
-    enforce_disable_send_policy(&headers, &mut conn).await?;
+    enforce_disable_send_policy(&headers, &conn).await?;
 
     let mut data = data.into_inner();
 
-    let Some(send) = Send::find_by_uuid(send_uuid, &mut conn).await else {
+    let Some(send) = Send::find_by_uuid(send_uuid, &conn).await else {
         err!("Send not found. Unable to save the file.")
     };
 
@@ -362,9 +362,9 @@ async fn post_send_file_v2_data(
     nt.send_send_update(
         UpdateType::SyncSendCreate,
         &send,
-        &send.update_users_revision(&mut conn).await,
+        &send.update_users_revision(&conn).await,
         &headers.device.uuid,
-        &mut conn,
+        &conn,
     )
     .await;
 
@@ -381,11 +381,11 @@ pub struct SendAccessData {
 async fn post_access(
     access_id: &str,
     data: JsonUpcase<SendAccessData>,
-    mut conn: DbConn,
+    conn: DbConn,
     ip: ClientIp,
     nt: Notify<'_>,
 ) -> JsonResult {
-    let mut send = match Send::find_by_access_id(access_id, &mut conn).await {
+    let mut send = match Send::find_by_access_id(access_id, &conn).await {
         Some(s) => s,
         None => err_code!(SEND_INACCESSIBLE_MSG, 404),
     };
@@ -423,18 +423,18 @@ async fn post_access(
         send.access_count += 1;
     }
 
-    send.save(&mut conn).await?;
+    send.save(&conn).await?;
 
     nt.send_send_update(
         UpdateType::SyncSendUpdate,
         &send,
-        &send.update_users_revision(&mut conn).await,
+        &send.update_users_revision(&conn).await,
         &String::from("00000000-0000-0000-0000-000000000000"),
-        &mut conn,
+        &conn,
     )
     .await;
 
-    Ok(Json(send.to_json_access(&mut conn).await))
+    Ok(Json(send.to_json_access(&conn).await))
 }
 
 #[post("/sends/<send_id>/access/file/<file_id>", data = "<data>")]
@@ -443,10 +443,10 @@ async fn post_access_file(
     file_id: &str,
     data: JsonUpcase<SendAccessData>,
     host: Host,
-    mut conn: DbConn,
+    conn: DbConn,
     nt: Notify<'_>,
 ) -> JsonResult {
-    let mut send = match Send::find_by_uuid(send_id, &mut conn).await {
+    let mut send = match Send::find_by_uuid(send_id, &conn).await {
         Some(s) => s,
         None => err_code!(SEND_INACCESSIBLE_MSG, 404),
     };
@@ -481,14 +481,14 @@ async fn post_access_file(
 
     send.access_count += 1;
 
-    send.save(&mut conn).await?;
+    send.save(&conn).await?;
 
     nt.send_send_update(
         UpdateType::SyncSendUpdate,
         &send,
-        &send.update_users_revision(&mut conn).await,
+        &send.update_users_revision(&conn).await,
         &String::from("00000000-0000-0000-0000-000000000000"),
-        &mut conn,
+        &conn,
     )
     .await;
 
@@ -512,19 +512,13 @@ async fn download_send(send_id: SafeString, file_id: SafeString, t: &str) -> Opt
 }
 
 #[put("/sends/<id>", data = "<data>")]
-async fn put_send(
-    id: &str,
-    data: JsonUpcase<SendData>,
-    headers: Headers,
-    mut conn: DbConn,
-    nt: Notify<'_>,
-) -> JsonResult {
-    enforce_disable_send_policy(&headers, &mut conn).await?;
+async fn put_send(id: &str, data: JsonUpcase<SendData>, headers: Headers, conn: DbConn, nt: Notify<'_>) -> JsonResult {
+    enforce_disable_send_policy(&headers, &conn).await?;
 
     let data: SendData = data.into_inner().data;
-    enforce_disable_hide_email_policy(&data, &headers, &mut conn).await?;
+    enforce_disable_hide_email_policy(&data, &headers, &conn).await?;
 
-    let mut send = match Send::find_by_uuid(id, &mut conn).await {
+    let mut send = match Send::find_by_uuid(id, &conn).await {
         Some(s) => s,
         None => err!("Send not found"),
     };
@@ -571,13 +565,13 @@ async fn put_send(
         send.set_password(Some(&password));
     }
 
-    send.save(&mut conn).await?;
+    send.save(&conn).await?;
     nt.send_send_update(
         UpdateType::SyncSendUpdate,
         &send,
-        &send.update_users_revision(&mut conn).await,
+        &send.update_users_revision(&conn).await,
         &headers.device.uuid,
-        &mut conn,
+        &conn,
     )
     .await;
 
@@ -585,8 +579,8 @@ async fn put_send(
 }
 
 #[delete("/sends/<id>")]
-async fn delete_send(id: &str, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> EmptyResult {
-    let send = match Send::find_by_uuid(id, &mut conn).await {
+async fn delete_send(id: &str, headers: Headers, conn: DbConn, nt: Notify<'_>) -> EmptyResult {
+    let send = match Send::find_by_uuid(id, &conn).await {
         Some(s) => s,
         None => err!("Send not found"),
     };
@@ -595,13 +589,13 @@ async fn delete_send(id: &str, headers: Headers, mut conn: DbConn, nt: Notify<'_
         err!("Send is not owned by user")
     }
 
-    send.delete(&mut conn).await?;
+    send.delete(&conn).await?;
     nt.send_send_update(
         UpdateType::SyncSendDelete,
         &send,
-        &send.update_users_revision(&mut conn).await,
+        &send.update_users_revision(&conn).await,
         &headers.device.uuid,
-        &mut conn,
+        &conn,
     )
     .await;
 
@@ -609,10 +603,10 @@ async fn delete_send(id: &str, headers: Headers, mut conn: DbConn, nt: Notify<'_
 }
 
 #[put("/sends/<id>/remove-password")]
-async fn put_remove_password(id: &str, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> JsonResult {
-    enforce_disable_send_policy(&headers, &mut conn).await?;
+async fn put_remove_password(id: &str, headers: Headers, conn: DbConn, nt: Notify<'_>) -> JsonResult {
+    enforce_disable_send_policy(&headers, &conn).await?;
 
-    let mut send = match Send::find_by_uuid(id, &mut conn).await {
+    let mut send = match Send::find_by_uuid(id, &conn).await {
         Some(s) => s,
         None => err!("Send not found"),
     };
@@ -622,13 +616,13 @@ async fn put_remove_password(id: &str, headers: Headers, mut conn: DbConn, nt: N
     }
 
     send.set_password(None);
-    send.save(&mut conn).await?;
+    send.save(&conn).await?;
     nt.send_send_update(
         UpdateType::SyncSendUpdate,
         &send,
-        &send.update_users_revision(&mut conn).await,
+        &send.update_users_revision(&conn).await,
         &headers.device.uuid,
-        &mut conn,
+        &conn,
     )
     .await;
 

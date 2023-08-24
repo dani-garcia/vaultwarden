@@ -6,33 +6,32 @@ use crate::{api::EmptyResult, error::MapResult, CONFIG};
 use chrono::{Duration, NaiveDateTime, Utc};
 
 // https://bitwarden.com/help/event-logs/
+use crate::db::schema::event;
 
-db_object! {
-    // Upstream: https://github.com/bitwarden/server/blob/8a22c0479e987e756ce7412c48a732f9002f0a2d/src/Core/Services/Implementations/EventService.cs
-    // Upstream: https://github.com/bitwarden/server/blob/8a22c0479e987e756ce7412c48a732f9002f0a2d/src/Api/Models/Public/Response/EventResponseModel.cs
-    // Upstream SQL: https://github.com/bitwarden/server/blob/8a22c0479e987e756ce7412c48a732f9002f0a2d/src/Sql/dbo/Tables/Event.sql
-    #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
-    #[diesel(table_name = event)]
-    #[diesel(primary_key(uuid))]
-    pub struct Event {
-        pub uuid: String,
-        pub event_type: i32, // EventType
-        pub user_uuid: Option<String>,
-        pub org_uuid: Option<String>,
-        pub cipher_uuid: Option<String>,
-        pub collection_uuid: Option<String>,
-        pub group_uuid: Option<String>,
-        pub org_user_uuid: Option<String>,
-        pub act_user_uuid: Option<String>,
-        // Upstream enum: https://github.com/bitwarden/server/blob/8a22c0479e987e756ce7412c48a732f9002f0a2d/src/Core/Enums/DeviceType.cs
-        pub device_type: Option<i32>,
-        pub ip_address: Option<String>,
-        pub event_date: NaiveDateTime,
-        pub policy_uuid: Option<String>,
-        pub provider_uuid: Option<String>,
-        pub provider_user_uuid: Option<String>,
-        pub provider_org_uuid: Option<String>,
-    }
+// Upstream: https://github.com/bitwarden/server/blob/8a22c0479e987e756ce7412c48a732f9002f0a2d/src/Core/Services/Implementations/EventService.cs
+// Upstream: https://github.com/bitwarden/server/blob/8a22c0479e987e756ce7412c48a732f9002f0a2d/src/Api/Models/Public/Response/EventResponseModel.cs
+// Upstream SQL: https://github.com/bitwarden/server/blob/8a22c0479e987e756ce7412c48a732f9002f0a2d/src/Sql/dbo/Tables/Event.sql
+#[derive(Identifiable, Queryable, Insertable, AsChangeset)]
+#[diesel(table_name = event)]
+#[diesel(primary_key(uuid))]
+pub struct Event {
+    pub uuid: String,
+    pub event_type: i32, // EventType
+    pub user_uuid: Option<String>,
+    pub org_uuid: Option<String>,
+    pub cipher_uuid: Option<String>,
+    pub collection_uuid: Option<String>,
+    pub group_uuid: Option<String>,
+    pub org_user_uuid: Option<String>,
+    pub act_user_uuid: Option<String>,
+    // Upstream enum: https://github.com/bitwarden/server/blob/8a22c0479e987e756ce7412c48a732f9002f0a2d/src/Core/Enums/DeviceType.cs
+    pub device_type: Option<i32>,
+    pub ip_address: Option<String>,
+    pub event_date: NaiveDateTime,
+    pub policy_uuid: Option<String>,
+    pub provider_uuid: Option<String>,
+    pub provider_user_uuid: Option<String>,
+    pub provider_org_uuid: Option<String>,
 }
 
 // Upstream enum: https://github.com/bitwarden/server/blob/8a22c0479e987e756ce7412c48a732f9002f0a2d/src/Core/Enums/EventType.cs
@@ -178,27 +177,27 @@ impl Event {
 
     /// #############
     /// Basic Queries
-    pub async fn save(&self, conn: &mut DbConn) -> EmptyResult {
+    pub async fn save(&self, conn: &DbConn) -> EmptyResult {
         db_run! { conn:
             sqlite, mysql {
-                diesel::replace_into(event::table)
-                .values(EventDb::to_db(self))
+                diesel::replace_into(schema::event::table)
+                .values(self)
                 .execute(conn)
                 .map_res("Error saving event")
             }
             postgresql {
-                diesel::insert_into(event::table)
-                .values(EventDb::to_db(self))
-                .on_conflict(event::uuid)
+                diesel::insert_into(schema::event::table)
+                .values(self)
+                .on_conflict(schema::event::uuid)
                 .do_update()
-                .set(EventDb::to_db(self))
+                .set(self)
                 .execute(conn)
                 .map_res("Error saving event")
             }
         }
     }
 
-    pub async fn save_user_event(events: Vec<Event>, conn: &mut DbConn) -> EmptyResult {
+    pub async fn save_user_event(events: Vec<Event>, conn: &DbConn) -> EmptyResult {
         // Special save function which is able to handle multiple events.
         // SQLite doesn't support the DEFAULT argument, and does not support inserting multiple values at the same time.
         // MySQL and PostgreSQL do.
@@ -208,24 +207,22 @@ impl Event {
             // We loop through the events here and insert them one at a time.
             sqlite {
                 for event in events {
-                    diesel::insert_or_ignore_into(event::table)
-                    .values(EventDb::to_db(&event))
+                    diesel::insert_or_ignore_into(schema::event::table)
+                    .values(&event)
                     .execute(conn)
                     .unwrap_or_default();
                 }
                 Ok(())
             }
             mysql {
-                let events: Vec<EventDb> = events.iter().map(EventDb::to_db).collect();
-                diesel::insert_or_ignore_into(event::table)
+                diesel::insert_or_ignore_into(schema::event::table)
                 .values(&events)
                 .execute(conn)
                 .unwrap_or_default();
                 Ok(())
             }
             postgresql {
-                let events: Vec<EventDb> = events.iter().map(EventDb::to_db).collect();
-                diesel::insert_into(event::table)
+                diesel::insert_into(schema::event::table)
                 .values(&events)
                 .on_conflict_do_nothing()
                 .execute(conn)
@@ -235,9 +232,9 @@ impl Event {
         }
     }
 
-    pub async fn delete(self, conn: &mut DbConn) -> EmptyResult {
+    pub async fn delete(self, conn: &DbConn) -> EmptyResult {
         db_run! { conn: {
-            diesel::delete(event::table.filter(event::uuid.eq(self.uuid)))
+            diesel::delete(schema::event::table.filter(schema::event::uuid.eq(self.uuid)))
                 .execute(conn)
                 .map_res("Error deleting event")
         }}
@@ -249,24 +246,23 @@ impl Event {
         org_uuid: &str,
         start: &NaiveDateTime,
         end: &NaiveDateTime,
-        conn: &mut DbConn,
+        conn: &DbConn,
     ) -> Vec<Self> {
         db_run! { conn: {
-            event::table
-                .filter(event::org_uuid.eq(org_uuid))
-                .filter(event::event_date.between(start, end))
-                .order_by(event::event_date.desc())
+            schema::event::table
+                .filter(schema::event::org_uuid.eq(org_uuid))
+                .filter(schema::event::event_date.between(start, end))
+                .order_by(schema::event::event_date.desc())
                 .limit(Self::PAGE_SIZE)
-                .load::<EventDb>(conn)
+                .load::<Self>(conn)
                 .expect("Error filtering events")
-                .from_db()
         }}
     }
 
-    pub async fn count_by_org(org_uuid: &str, conn: &mut DbConn) -> i64 {
+    pub async fn count_by_org(org_uuid: &str, conn: &DbConn) -> i64 {
         db_run! { conn: {
-            event::table
-                .filter(event::org_uuid.eq(org_uuid))
+            schema::event::table
+                .filter(schema::event::org_uuid.eq(org_uuid))
                 .count()
                 .first::<i64>(conn)
                 .ok()
@@ -279,20 +275,19 @@ impl Event {
         user_org_uuid: &str,
         start: &NaiveDateTime,
         end: &NaiveDateTime,
-        conn: &mut DbConn,
+        conn: &DbConn,
     ) -> Vec<Self> {
         db_run! { conn: {
-            event::table
+            schema::event::table
                 .inner_join(users_organizations::table.on(users_organizations::uuid.eq(user_org_uuid)))
-                .filter(event::org_uuid.eq(org_uuid))
-                .filter(event::event_date.between(start, end))
-                .filter(event::user_uuid.eq(users_organizations::user_uuid.nullable()).or(event::act_user_uuid.eq(users_organizations::user_uuid.nullable())))
-                .select(event::all_columns)
-                .order_by(event::event_date.desc())
+                .filter(schema::event::org_uuid.eq(org_uuid))
+                .filter(schema::event::event_date.between(start, end))
+                .filter(schema::event::user_uuid.eq(users_organizations::user_uuid.nullable()).or(schema::event::act_user_uuid.eq(users_organizations::user_uuid.nullable())))
+                .select(schema::event::all_columns)
+                .order_by(schema::event::event_date.desc())
                 .limit(Self::PAGE_SIZE)
-                .load::<EventDb>(conn)
+                .load::<Self>(conn)
                 .expect("Error filtering events")
-                .from_db()
         }}
     }
 
@@ -300,25 +295,24 @@ impl Event {
         cipher_uuid: &str,
         start: &NaiveDateTime,
         end: &NaiveDateTime,
-        conn: &mut DbConn,
+        conn: &DbConn,
     ) -> Vec<Self> {
         db_run! { conn: {
-            event::table
-                .filter(event::cipher_uuid.eq(cipher_uuid))
-                .filter(event::event_date.between(start, end))
-                .order_by(event::event_date.desc())
+            schema::event::table
+                .filter(schema::event::cipher_uuid.eq(cipher_uuid))
+                .filter(schema::event::event_date.between(start, end))
+                .order_by(schema::event::event_date.desc())
                 .limit(Self::PAGE_SIZE)
-                .load::<EventDb>(conn)
+                .load::<Self>(conn)
                 .expect("Error filtering events")
-                .from_db()
         }}
     }
 
-    pub async fn clean_events(conn: &mut DbConn) -> EmptyResult {
+    pub async fn clean_events(conn: &DbConn) -> EmptyResult {
         if let Some(days_to_retain) = CONFIG.events_days_retain() {
             let dt = Utc::now().naive_utc() - Duration::days(days_to_retain);
             db_run! { conn: {
-                diesel::delete(event::table.filter(event::event_date.lt(dt)))
+                diesel::delete(schema::event::table.filter(schema::event::event_date.lt(dt)))
                 .execute(conn)
                 .map_res("Error cleaning old events")
             }}

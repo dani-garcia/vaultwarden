@@ -2,45 +2,42 @@ use crate::CONFIG;
 use chrono::{Duration, NaiveDateTime, Utc};
 use serde_json::Value;
 
-use super::{
-    Attachment, CollectionCipher, Favorite, FolderCipher, Group, User, UserOrgStatus, UserOrgType, UserOrganization,
-};
+use super::{Attachment, CollectionCipher, Favorite, FolderCipher, Group, User, UserOrganization};
 
 use crate::api::core::{CipherData, CipherSyncData, CipherSyncType};
 
+use crate::db::schema::ciphers;
 use std::borrow::Cow;
 
-db_object! {
-    #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
-    #[diesel(table_name = ciphers)]
-    #[diesel(treat_none_as_null = true)]
-    #[diesel(primary_key(uuid))]
-    pub struct Cipher {
-        pub uuid: String,
-        pub created_at: NaiveDateTime,
-        pub updated_at: NaiveDateTime,
+#[derive(Identifiable, Queryable, Insertable, AsChangeset)]
+#[diesel(table_name = ciphers)]
+#[diesel(treat_none_as_null = true)]
+#[diesel(primary_key(uuid))]
+pub struct Cipher {
+    pub uuid: String,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
 
-        pub user_uuid: Option<String>,
-        pub organization_uuid: Option<String>,
+    pub user_uuid: Option<String>,
+    pub organization_uuid: Option<String>,
 
-        /*
-        Login = 1,
-        SecureNote = 2,
-        Card = 3,
-        Identity = 4,
-        Fido2key = 5
-        */
-        pub atype: i32,
-        pub name: String,
-        pub notes: Option<String>,
-        pub fields: Option<String>,
+    /*
+    Login = 1,
+    SecureNote = 2,
+    Card = 3,
+    Identity = 4,
+    Fido2key = 5
+    */
+    pub atype: i32,
+    pub name: String,
+    pub notes: Option<String>,
+    pub fields: Option<String>,
 
-        pub data: String,
+    pub data: String,
 
-        pub password_history: Option<String>,
-        pub deleted_at: Option<NaiveDateTime>,
-        pub reprompt: Option<i32>,
-    }
+    pub password_history: Option<String>,
+    pub deleted_at: Option<NaiveDateTime>,
+    pub reprompt: Option<i32>,
 }
 
 #[allow(dead_code)]
@@ -116,7 +113,7 @@ impl Cipher {
         user_uuid: &str,
         cipher_sync_data: Option<&CipherSyncData>,
         sync_type: CipherSyncType,
-        conn: &mut DbConn,
+        conn: &DbConn,
     ) -> Value {
         use crate::util::format_date;
 
@@ -261,7 +258,7 @@ impl Cipher {
         json_object
     }
 
-    pub async fn update_users_revision(&self, conn: &mut DbConn) -> Vec<String> {
+    pub async fn update_users_revision(&self, conn: &DbConn) -> Vec<String> {
         let mut user_uuids = Vec::new();
         match self.user_uuid {
             Some(ref user_uuid) => {
@@ -281,14 +278,14 @@ impl Cipher {
         user_uuids
     }
 
-    pub async fn save(&mut self, conn: &mut DbConn) -> EmptyResult {
+    pub async fn save(&mut self, conn: &DbConn) -> EmptyResult {
         self.update_users_revision(conn).await;
         self.updated_at = Utc::now().naive_utc();
 
         db_run! { conn:
             sqlite, mysql {
                 match diesel::replace_into(ciphers::table)
-                    .values(CipherDb::to_db(self))
+                    .values(&*self)
                     .execute(conn)
                 {
                     Ok(_) => Ok(()),
@@ -296,7 +293,7 @@ impl Cipher {
                     Err(diesel::result::Error::DatabaseError(diesel::result::DatabaseErrorKind::ForeignKeyViolation, _)) => {
                         diesel::update(ciphers::table)
                             .filter(ciphers::uuid.eq(&self.uuid))
-                            .set(CipherDb::to_db(self))
+                            .set(&*self)
                             .execute(conn)
                             .map_res("Error saving cipher")
                     }
@@ -304,19 +301,18 @@ impl Cipher {
                 }.map_res("Error saving cipher")
             }
             postgresql {
-                let value = CipherDb::to_db(self);
                 diesel::insert_into(ciphers::table)
-                    .values(&value)
+                    .values(&*self)
                     .on_conflict(ciphers::uuid)
                     .do_update()
-                    .set(&value)
+                    .set(&*self)
                     .execute(conn)
                     .map_res("Error saving cipher")
             }
         }
     }
 
-    pub async fn delete(&self, conn: &mut DbConn) -> EmptyResult {
+    pub async fn delete(&self, conn: &DbConn) -> EmptyResult {
         self.update_users_revision(conn).await;
 
         FolderCipher::delete_all_by_cipher(&self.uuid, conn).await?;
@@ -331,7 +327,7 @@ impl Cipher {
         }}
     }
 
-    pub async fn delete_all_by_organization(org_uuid: &str, conn: &mut DbConn) -> EmptyResult {
+    pub async fn delete_all_by_organization(org_uuid: &str, conn: &DbConn) -> EmptyResult {
         // TODO: Optimize this by executing a DELETE directly on the database, instead of first fetching.
         for cipher in Self::find_by_org(org_uuid, conn).await {
             cipher.delete(conn).await?;
@@ -339,7 +335,7 @@ impl Cipher {
         Ok(())
     }
 
-    pub async fn delete_all_by_user(user_uuid: &str, conn: &mut DbConn) -> EmptyResult {
+    pub async fn delete_all_by_user(user_uuid: &str, conn: &DbConn) -> EmptyResult {
         for cipher in Self::find_owned_by_user(user_uuid, conn).await {
             cipher.delete(conn).await?;
         }
@@ -347,7 +343,7 @@ impl Cipher {
     }
 
     /// Purge all ciphers that are old enough to be auto-deleted.
-    pub async fn purge_trash(conn: &mut DbConn) {
+    pub async fn purge_trash(conn: &DbConn) {
         if let Some(auto_delete_days) = CONFIG.trash_auto_delete_days() {
             let now = Utc::now().naive_utc();
             let dt = now - Duration::days(auto_delete_days);
@@ -357,7 +353,7 @@ impl Cipher {
         }
     }
 
-    pub async fn move_to_folder(&self, folder_uuid: Option<String>, user_uuid: &str, conn: &mut DbConn) -> EmptyResult {
+    pub async fn move_to_folder(&self, folder_uuid: Option<String>, user_uuid: &str, conn: &DbConn) -> EmptyResult {
         User::update_uuid_revision(user_uuid, conn).await;
 
         match (self.get_folder_uuid(user_uuid, conn).await, folder_uuid) {
@@ -394,7 +390,7 @@ impl Cipher {
         &self,
         user_uuid: &str,
         cipher_sync_data: Option<&CipherSyncData>,
-        conn: &mut DbConn,
+        conn: &DbConn,
     ) -> bool {
         if let Some(ref org_uuid) = self.organization_uuid {
             if let Some(cipher_sync_data) = cipher_sync_data {
@@ -413,7 +409,7 @@ impl Cipher {
         &self,
         user_uuid: &str,
         cipher_sync_data: Option<&CipherSyncData>,
-        conn: &mut DbConn,
+        conn: &DbConn,
     ) -> bool {
         if let Some(ref org_uuid) = self.organization_uuid {
             if let Some(cipher_sync_data) = cipher_sync_data {
@@ -434,7 +430,7 @@ impl Cipher {
         &self,
         user_uuid: &str,
         cipher_sync_data: Option<&CipherSyncData>,
-        conn: &mut DbConn,
+        conn: &DbConn,
     ) -> Option<(bool, bool)> {
         // Check whether this cipher is directly owned by the user, or is in
         // a collection that the user has full access to. If so, there are no
@@ -492,7 +488,7 @@ impl Cipher {
         Some((read_only, hide_passwords))
     }
 
-    async fn get_user_collections_access_flags(&self, user_uuid: &str, conn: &mut DbConn) -> Vec<(bool, bool)> {
+    async fn get_user_collections_access_flags(&self, user_uuid: &str, conn: &DbConn) -> Vec<(bool, bool)> {
         db_run! {conn: {
             // Check whether this cipher is in any collections accessible to the
             // user. If so, retrieve the access flags for each collection.
@@ -509,7 +505,7 @@ impl Cipher {
         }}
     }
 
-    async fn get_group_collections_access_flags(&self, user_uuid: &str, conn: &mut DbConn) -> Vec<(bool, bool)> {
+    async fn get_group_collections_access_flags(&self, user_uuid: &str, conn: &DbConn) -> Vec<(bool, bool)> {
         db_run! {conn: {
             ciphers::table
                 .filter(ciphers::uuid.eq(&self.uuid))
@@ -532,31 +528,31 @@ impl Cipher {
         }}
     }
 
-    pub async fn is_write_accessible_to_user(&self, user_uuid: &str, conn: &mut DbConn) -> bool {
+    pub async fn is_write_accessible_to_user(&self, user_uuid: &str, conn: &DbConn) -> bool {
         match self.get_access_restrictions(user_uuid, None, conn).await {
             Some((read_only, _hide_passwords)) => !read_only,
             None => false,
         }
     }
 
-    pub async fn is_accessible_to_user(&self, user_uuid: &str, conn: &mut DbConn) -> bool {
+    pub async fn is_accessible_to_user(&self, user_uuid: &str, conn: &DbConn) -> bool {
         self.get_access_restrictions(user_uuid, None, conn).await.is_some()
     }
 
     // Returns whether this cipher is a favorite of the specified user.
-    pub async fn is_favorite(&self, user_uuid: &str, conn: &mut DbConn) -> bool {
+    pub async fn is_favorite(&self, user_uuid: &str, conn: &DbConn) -> bool {
         Favorite::is_favorite(&self.uuid, user_uuid, conn).await
     }
 
     // Sets whether this cipher is a favorite of the specified user.
-    pub async fn set_favorite(&self, favorite: Option<bool>, user_uuid: &str, conn: &mut DbConn) -> EmptyResult {
+    pub async fn set_favorite(&self, favorite: Option<bool>, user_uuid: &str, conn: &DbConn) -> EmptyResult {
         match favorite {
             None => Ok(()), // No change requested.
             Some(status) => Favorite::set_favorite(status, &self.uuid, user_uuid, conn).await,
         }
     }
 
-    pub async fn get_folder_uuid(&self, user_uuid: &str, conn: &mut DbConn) -> Option<String> {
+    pub async fn get_folder_uuid(&self, user_uuid: &str, conn: &DbConn) -> Option<String> {
         db_run! {conn: {
             folders_ciphers::table
                 .inner_join(folders::table)
@@ -568,13 +564,12 @@ impl Cipher {
         }}
     }
 
-    pub async fn find_by_uuid(uuid: &str, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_uuid(uuid: &str, conn: &DbConn) -> Option<Self> {
         db_run! {conn: {
             ciphers::table
                 .filter(ciphers::uuid.eq(uuid))
-                .first::<CipherDb>(conn)
+                .first::<Self>(conn)
                 .ok()
-                .from_db()
         }}
     }
 
@@ -590,7 +585,7 @@ impl Cipher {
     // true, then the non-interesting ciphers will not be returned. As a
     // result, those ciphers will not appear in "My Vault" for the org
     // owner/admin, but they can still be accessed via the org vault view.
-    pub async fn find_by_user(user_uuid: &str, visible_only: bool, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_user(user_uuid: &str, visible_only: bool, conn: &DbConn) -> Vec<Self> {
         db_run! {conn: {
             let mut query = ciphers::table
                 .left_join(ciphers_collections::table.on(
@@ -633,28 +628,28 @@ impl Cipher {
             query
                 .select(ciphers::all_columns)
                 .distinct()
-                .load::<CipherDb>(conn).expect("Error loading ciphers").from_db()
+                .load::<Self>(conn).expect("Error loading ciphers")
         }}
     }
 
     // Find all ciphers visible to the specified user.
-    pub async fn find_by_user_visible(user_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_user_visible(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
         Self::find_by_user(user_uuid, true, conn).await
     }
 
     // Find all ciphers directly owned by the specified user.
-    pub async fn find_owned_by_user(user_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_owned_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
         db_run! {conn: {
             ciphers::table
                 .filter(
                     ciphers::user_uuid.eq(user_uuid)
                     .and(ciphers::organization_uuid.is_null())
                 )
-                .load::<CipherDb>(conn).expect("Error loading ciphers").from_db()
+                .load::<Self>(conn).expect("Error loading ciphers")
         }}
     }
 
-    pub async fn count_owned_by_user(user_uuid: &str, conn: &mut DbConn) -> i64 {
+    pub async fn count_owned_by_user(user_uuid: &str, conn: &DbConn) -> i64 {
         db_run! {conn: {
             ciphers::table
                 .filter(ciphers::user_uuid.eq(user_uuid))
@@ -665,15 +660,15 @@ impl Cipher {
         }}
     }
 
-    pub async fn find_by_org(org_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_org(org_uuid: &str, conn: &DbConn) -> Vec<Self> {
         db_run! {conn: {
             ciphers::table
                 .filter(ciphers::organization_uuid.eq(org_uuid))
-                .load::<CipherDb>(conn).expect("Error loading ciphers").from_db()
+                .load::<Self>(conn).expect("Error loading ciphers")
         }}
     }
 
-    pub async fn count_by_org(org_uuid: &str, conn: &mut DbConn) -> i64 {
+    pub async fn count_by_org(org_uuid: &str, conn: &DbConn) -> i64 {
         db_run! {conn: {
             ciphers::table
                 .filter(ciphers::organization_uuid.eq(org_uuid))
@@ -684,25 +679,25 @@ impl Cipher {
         }}
     }
 
-    pub async fn find_by_folder(folder_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_folder(folder_uuid: &str, conn: &DbConn) -> Vec<Self> {
         db_run! {conn: {
             folders_ciphers::table.inner_join(ciphers::table)
                 .filter(folders_ciphers::folder_uuid.eq(folder_uuid))
                 .select(ciphers::all_columns)
-                .load::<CipherDb>(conn).expect("Error loading ciphers").from_db()
+                .load::<Self>(conn).expect("Error loading ciphers")
         }}
     }
 
     /// Find all ciphers that were deleted before the specified datetime.
-    pub async fn find_deleted_before(dt: &NaiveDateTime, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_deleted_before(dt: &NaiveDateTime, conn: &DbConn) -> Vec<Self> {
         db_run! {conn: {
             ciphers::table
                 .filter(ciphers::deleted_at.lt(dt))
-                .load::<CipherDb>(conn).expect("Error loading ciphers").from_db()
+                .load::<Self>(conn).expect("Error loading ciphers")
         }}
     }
 
-    pub async fn get_collections(&self, user_id: String, conn: &mut DbConn) -> Vec<String> {
+    pub async fn get_collections(&self, user_id: String, conn: &DbConn) -> Vec<String> {
         db_run! {conn: {
             ciphers_collections::table
             .inner_join(collections::table.on(
@@ -731,7 +726,7 @@ impl Cipher {
 
     /// Return a Vec with (cipher_uuid, collection_uuid)
     /// This is used during a full sync so we only need one query for all collections accessible.
-    pub async fn get_collections_with_cipher_by_user(user_id: String, conn: &mut DbConn) -> Vec<(String, String)> {
+    pub async fn get_collections_with_cipher_by_user(user_id: String, conn: &DbConn) -> Vec<(String, String)> {
         db_run! {conn: {
             ciphers_collections::table
             .inner_join(collections::table.on(

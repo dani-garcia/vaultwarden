@@ -4,7 +4,10 @@ use tokio::sync::RwLock;
 
 use crate::{
     api::{ApiResult, EmptyResult, UpdateType},
-    db::models::{Cipher, Device, Folder, Send, User},
+    db::{
+        models::{Cipher, Device, Folder, Send, User},
+        DbConn,
+    },
     util::get_reqwest_client,
     CONFIG,
 };
@@ -121,12 +124,7 @@ pub async fn unregister_push_device(uuid: String) -> EmptyResult {
     Ok(())
 }
 
-pub async fn push_cipher_update(
-    ut: UpdateType,
-    cipher: &Cipher,
-    acting_device_uuid: &String,
-    conn: &mut crate::db::DbConn,
-) {
+pub async fn push_cipher_update(ut: UpdateType, cipher: &Cipher, acting_device_uuid: &String, conn: &DbConn) {
     // We shouldn't send a push notification on cipher update if the cipher belongs to an organization, this isn't implemented in the upstream server too.
     if cipher.organization_uuid.is_some() {
         return;
@@ -187,12 +185,7 @@ pub fn push_user_update(ut: UpdateType, user: &User) {
     })));
 }
 
-pub async fn push_folder_update(
-    ut: UpdateType,
-    folder: &Folder,
-    acting_device_uuid: &String,
-    conn: &mut crate::db::DbConn,
-) {
+pub async fn push_folder_update(ut: UpdateType, folder: &Folder, acting_device_uuid: &String, conn: &DbConn) {
     if Device::check_user_has_push_device(&folder.user_uuid, conn).await {
         tokio::task::spawn(send_to_push_relay(json!({
             "userId": folder.user_uuid,
@@ -209,7 +202,7 @@ pub async fn push_folder_update(
     }
 }
 
-pub async fn push_send_update(ut: UpdateType, send: &Send, acting_device_uuid: &String, conn: &mut crate::db::DbConn) {
+pub async fn push_send_update(ut: UpdateType, send: &Send, acting_device_uuid: &String, conn: &DbConn) {
     if let Some(s) = &send.user_uuid {
         if Device::check_user_has_push_device(s, conn).await {
             tokio::task::spawn(send_to_push_relay(json!({
@@ -256,7 +249,7 @@ async fn send_to_push_relay(notification_data: Value) {
     };
 }
 
-pub async fn push_auth_request(user_uuid: String, auth_request_uuid: String, conn: &mut crate::db::DbConn) {
+pub async fn push_auth_request(user_uuid: String, auth_request_uuid: String, conn: &DbConn) {
     if Device::check_user_has_push_device(user_uuid.as_str(), conn).await {
         tokio::task::spawn(send_to_push_relay(json!({
             "userId": user_uuid,
@@ -276,7 +269,7 @@ pub async fn push_auth_response(
     user_uuid: String,
     auth_request_uuid: String,
     approving_device_uuid: String,
-    conn: &mut crate::db::DbConn,
+    conn: &DbConn,
 ) {
     if Device::check_user_has_push_device(user_uuid.as_str(), conn).await {
         tokio::task::spawn(send_to_push_relay(json!({

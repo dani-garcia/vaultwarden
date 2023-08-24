@@ -442,17 +442,17 @@ impl<'r> FromRequest<'r> for Headers {
         let device_uuid = claims.device;
         let user_uuid = claims.sub;
 
-        let mut conn = match DbConn::from_request(request).await {
+        let conn = match DbConn::from_request(request).await {
             Outcome::Success(conn) => conn,
             _ => err_handler!("Error getting DB"),
         };
 
-        let device = match Device::find_by_uuid_and_user(&device_uuid, &user_uuid, &mut conn).await {
+        let device = match Device::find_by_uuid_and_user(&device_uuid, &user_uuid, &conn).await {
             Some(device) => device,
             None => err_handler!("Invalid device id"),
         };
 
-        let user = match User::find_by_uuid(&user_uuid, &mut conn).await {
+        let user = match User::find_by_uuid(&user_uuid, &conn).await {
             Some(user) => user,
             None => err_handler!("Device has no user associated"),
         };
@@ -474,7 +474,7 @@ impl<'r> FromRequest<'r> for Headers {
                     // This prevents checking this stamp exception for new requests.
                     let mut user = user;
                     user.reset_stamp_exception();
-                    if let Err(e) = user.save(&mut conn).await {
+                    if let Err(e) = user.save(&conn).await {
                         error!("Error updating user: {:#?}", e);
                     }
                     err_handler!("Stamp exception is expired")
@@ -536,13 +536,13 @@ impl<'r> FromRequest<'r> for OrgHeaders {
 
         match url_org_id {
             Some(org_id) => {
-                let mut conn = match DbConn::from_request(request).await {
+                let conn = match DbConn::from_request(request).await {
                     Outcome::Success(conn) => conn,
                     _ => err_handler!("Error getting DB"),
                 };
 
                 let user = headers.user;
-                let org_user = match UserOrganization::find_by_user_and_org(&user.uuid, org_id, &mut conn).await {
+                let org_user = match UserOrganization::find_by_user_and_org(&user.uuid, org_id, &conn).await {
                     Some(user) => {
                         if user.status == UserOrgStatus::Confirmed as i32 {
                             user
@@ -656,12 +656,12 @@ impl<'r> FromRequest<'r> for ManagerHeaders {
         if headers.org_user_type >= UserOrgType::Manager {
             match get_col_id(request) {
                 Some(col_id) => {
-                    let mut conn = match DbConn::from_request(request).await {
+                    let conn = match DbConn::from_request(request).await {
                         Outcome::Success(conn) => conn,
                         _ => err_handler!("Error getting DB"),
                     };
 
-                    if !can_access_collection(&headers.org_user, &col_id, &mut conn).await {
+                    if !can_access_collection(&headers.org_user, &col_id, &conn).await {
                         err_handler!("The current user isn't a manager for this collection")
                     }
                 }
@@ -734,7 +734,7 @@ impl From<ManagerHeadersLoose> for Headers {
         }
     }
 }
-async fn can_access_collection(org_user: &UserOrganization, col_id: &str, conn: &mut DbConn) -> bool {
+async fn can_access_collection(org_user: &UserOrganization, col_id: &str, conn: &DbConn) -> bool {
     org_user.has_full_access()
         || Collection::has_access_by_collection_and_user_uuid(col_id, &org_user.user_uuid, conn).await
 }
@@ -743,7 +743,7 @@ impl ManagerHeaders {
     pub async fn from_loose(
         h: ManagerHeadersLoose,
         collections: &Vec<String>,
-        conn: &mut DbConn,
+        conn: &DbConn,
     ) -> Result<ManagerHeaders, Error> {
         for col_id in collections {
             if uuid::Uuid::parse_str(col_id).is_err() {

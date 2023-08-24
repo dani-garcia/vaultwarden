@@ -92,14 +92,14 @@ impl DuoStatus {
 const DISABLED_MESSAGE_DEFAULT: &str = "<To use the global Duo keys, please leave these fields untouched>";
 
 #[post("/two-factor/get-duo", data = "<data>")]
-async fn get_duo(data: JsonUpcase<PasswordData>, headers: Headers, mut conn: DbConn) -> JsonResult {
+async fn get_duo(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: PasswordData = data.into_inner().data;
 
     if !headers.user.check_valid_password(&data.MasterPasswordHash) {
         err!("Invalid password");
     }
 
-    let data = get_user_duo_data(&headers.user.uuid, &mut conn).await;
+    let data = get_user_duo_data(&headers.user.uuid, &conn).await;
 
     let (enabled, data) = match data {
         DuoStatus::Global(_) => (true, Some(DuoData::secret())),
@@ -155,7 +155,7 @@ fn check_duo_fields_custom(data: &EnableDuoData) -> bool {
 }
 
 #[post("/two-factor/duo", data = "<data>")]
-async fn activate_duo(data: JsonUpcase<EnableDuoData>, headers: Headers, mut conn: DbConn) -> JsonResult {
+async fn activate_duo(data: JsonUpcase<EnableDuoData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: EnableDuoData = data.into_inner().data;
     let mut user = headers.user;
 
@@ -174,11 +174,11 @@ async fn activate_duo(data: JsonUpcase<EnableDuoData>, headers: Headers, mut con
 
     let type_ = TwoFactorType::Duo;
     let twofactor = TwoFactor::new(user.uuid.clone(), type_, data_str);
-    twofactor.save(&mut conn).await?;
+    twofactor.save(&conn).await?;
 
-    _generate_recover_code(&mut user, &mut conn).await;
+    _generate_recover_code(&mut user, &conn).await;
 
-    log_user_event(EventType::UserUpdated2fa as i32, &user.uuid, headers.device.atype, &headers.ip.ip, &mut conn).await;
+    log_user_event(EventType::UserUpdated2fa as i32, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await;
 
     Ok(Json(json!({
         "Enabled": true,
@@ -228,7 +228,7 @@ const AUTH_PREFIX: &str = "AUTH";
 const DUO_PREFIX: &str = "TX";
 const APP_PREFIX: &str = "APP";
 
-async fn get_user_duo_data(uuid: &str, conn: &mut DbConn) -> DuoStatus {
+async fn get_user_duo_data(uuid: &str, conn: &DbConn) -> DuoStatus {
     let type_ = TwoFactorType::Duo as i32;
 
     // If the user doesn't have an entry, disabled
@@ -252,7 +252,7 @@ async fn get_user_duo_data(uuid: &str, conn: &mut DbConn) -> DuoStatus {
 }
 
 // let (ik, sk, ak, host) = get_duo_keys();
-async fn get_duo_keys_email(email: &str, conn: &mut DbConn) -> ApiResult<(String, String, String, String)> {
+async fn get_duo_keys_email(email: &str, conn: &DbConn) -> ApiResult<(String, String, String, String)> {
     let data = match User::find_by_mail(email, conn).await {
         Some(u) => get_user_duo_data(&u.uuid, conn).await.data(),
         _ => DuoData::global(),
@@ -262,7 +262,7 @@ async fn get_duo_keys_email(email: &str, conn: &mut DbConn) -> ApiResult<(String
     Ok((data.ik, data.sk, CONFIG.get_duo_akey(), data.host))
 }
 
-pub async fn generate_duo_signature(email: &str, conn: &mut DbConn) -> ApiResult<(String, String)> {
+pub async fn generate_duo_signature(email: &str, conn: &DbConn) -> ApiResult<(String, String)> {
     let now = Utc::now().timestamp();
 
     let (ik, sk, ak, host) = get_duo_keys_email(email, conn).await?;
@@ -280,7 +280,7 @@ fn sign_duo_values(key: &str, email: &str, ikey: &str, prefix: &str, expire: i64
     format!("{}|{}", cookie, crypto::hmac_sign(key, &cookie))
 }
 
-pub async fn validate_duo_login(email: &str, response: &str, conn: &mut DbConn) -> EmptyResult {
+pub async fn validate_duo_login(email: &str, response: &str, conn: &DbConn) -> EmptyResult {
     // email is as entered by the user, so it needs to be normalized before
     // comparison with auth_user below.
     let email = &email.to_lowercase();

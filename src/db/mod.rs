@@ -22,20 +22,7 @@ use crate::{
     CONFIG,
 };
 
-#[cfg(sqlite)]
-#[path = "schemas/sqlite/schema.rs"]
-pub mod __sqlite_schema;
-
-#[cfg(mysql)]
-#[path = "schemas/mysql/schema.rs"]
-pub mod __mysql_schema;
-
-#[cfg(postgresql)]
-#[path = "schemas/postgresql/schema.rs"]
-pub mod __postgresql_schema;
-
 // These changes are based on Rocket 0.5-rc wrapper of Diesel: https://github.com/SergioBenitez/Rocket/blob/v0.5-rc/contrib/sync_db_pools
-
 // A wrapper around spawn_blocking that propagates panics to the calling code.
 pub async fn run_blocking<F, R>(job: F) -> R
 where
@@ -51,171 +38,166 @@ where
     }
 }
 
-// This is used to generate the main DbConn and DbPool enums, which contain one variant for each database supported
-macro_rules! generate_connections {
-    ( $( $name:ident: $ty:ty ),+ ) => {
-        #[allow(non_camel_case_types, dead_code)]
-        #[derive(Eq, PartialEq)]
-        pub enum DbConnType { $( $name, )+ }
+#[derive(diesel::MultiConnection)]
+pub enum DbConnInner {
+    #[cfg(sqlite)]
+    Sqlite(diesel::sqlite::SqliteConnection),
+    #[cfg(mysql)]
+    Mysql(diesel::mysql::MysqlConnection),
+    #[cfg(postgresql)]
+    Postgresql(diesel::pg::PgConnection),
+}
 
-        pub struct DbConn {
-            conn: Arc<Mutex<Option<DbConnInner>>>,
-            permit: Option<OwnedSemaphorePermit>,
+#[derive(Eq, PartialEq)]
+pub enum DbConnType {
+    #[cfg(sqlite)]
+    Sqlite,
+    #[cfg(mysql)]
+    Mysql,
+    #[cfg(postgresql)]
+    Postgresql,
+}
+
+pub struct DbConn {
+    conn: Arc<Mutex<Option<PooledConnection<ConnectionManager<DbConnInner>>>>>,
+    permit: Option<OwnedSemaphorePermit>,
+}
+
+#[derive(Debug)]
+pub struct DbConnOptions {
+    pub init_stmts: String,
+}
+
+impl CustomizeConnection<DbConnInner, diesel::r2d2::Error> for DbConnOptions {
+    fn on_acquire(&self, conn: &mut DbConnInner) -> Result<(), diesel::r2d2::Error> {
+        if !self.init_stmts.is_empty() {
+            conn.batch_execute(&self.init_stmts).map_err(diesel::r2d2::Error::QueryError)?;
         }
+        Ok(())
+    }
+}
 
-        #[allow(non_camel_case_types)]
-        pub enum DbConnInner { $( #[cfg($name)] $name(PooledConnection<ConnectionManager< $ty >>), )+ }
+#[derive(Clone)]
+pub struct DbPool {
+    pool: Option<Pool<ConnectionManager<DbConnInner>>>,
+    semaphore: Arc<Semaphore>,
+}
 
-        #[derive(Debug)]
-        pub struct DbConnOptions {
-            pub init_stmts: String,
+impl Drop for DbConn {
+    fn drop(&mut self) {
+        let conn = Arc::clone(&self.conn);
+        let permit = self.permit.take();
+        tokio::task::spawn_blocking(move || {
+            let mut conn = tokio::runtime::Handle::current().block_on(conn.lock_owned());
+            if let Some(conn) = conn.take() {
+                drop(conn);
+            }
+            drop(permit);
+        });
+    }
+}
+
+impl Drop for DbPool {
+    fn drop(&mut self) {
+        let pool = self.pool.take();
+        // Only use spawn_blocking if the Tokio runtime is still available
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            handle.spawn_blocking(move || drop(pool));
         }
+        // Otherwise the pool will be dropped on the current thread
+    }
+}
 
-        $( // Based on <https://stackoverflow.com/a/57717533>.
-        #[cfg($name)]
-        impl CustomizeConnection<$ty, diesel::r2d2::Error> for DbConnOptions {
-            fn on_acquire(&self, conn: &mut $ty) -> Result<(), diesel::r2d2::Error> {
-                if !self.init_stmts.is_empty() {
-                    conn.batch_execute(&self.init_stmts).map_err(diesel::r2d2::Error::QueryError)?;
+impl DbPool {
+    pub fn from_config() -> Result<Self, Error> {
+        let url = CONFIG.database_url();
+        let conn_type = DbConnType::from_url(&url)?;
+        match conn_type {
+            #[cfg(sqlite)]
+            DbConnType::Sqlite => {
+                #[cfg(feature = "sqlite")]
+                {
+                    sqlite_migrations::run_migrations(&url)?;
                 }
-                Ok(())
             }
-        })+
-
-        #[derive(Clone)]
-        pub struct DbPool {
-            // This is an 'Option' so that we can drop the pool in a 'spawn_blocking'.
-            pool: Option<DbPoolInner>,
-            semaphore: Arc<Semaphore>
-        }
-
-        #[allow(non_camel_case_types)]
-        #[derive(Clone)]
-        pub enum DbPoolInner { $( #[cfg($name)] $name(Pool<ConnectionManager< $ty >>), )+ }
-
-        impl Drop for DbConn {
-            fn drop(&mut self) {
-                let conn = Arc::clone(&self.conn);
-                let permit = self.permit.take();
-
-                // Since connection can't be on the stack in an async fn during an
-                // await, we have to spawn a new blocking-safe thread...
-                tokio::task::spawn_blocking(move || {
-                    // And then re-enter the runtime to wait on the async mutex, but in a blocking fashion.
-                    let mut conn = tokio::runtime::Handle::current().block_on(conn.lock_owned());
-
-                    if let Some(conn) = conn.take() {
-                        drop(conn);
-                    }
-
-                    // Drop permit after the connection is dropped
-                    drop(permit);
-                });
+            #[cfg(mysql)]
+            DbConnType::Mysql => {
+                #[cfg(feature = "mysql")]
+                {
+                    mysql_migrations::run_migrations(&url)?;
+                }
+            }
+            #[cfg(postgresql)]
+            DbConnType::Postgresql => {
+                #[cfg(feature = "postgresql")]
+                {
+                    postgresql_migrations::run_migrations(&url)?;
+                }
             }
         }
 
-        impl Drop for DbPool {
-            fn drop(&mut self) {
-                let pool = self.pool.take();
-                tokio::task::spawn_blocking(move || drop(pool));
+        let max_conns = CONFIG.database_max_conns();
+        let manager = ConnectionManager::<DbConnInner>::new(&url);
+        let pool = Pool::builder()
+            .max_size(max_conns)
+            .connection_timeout(Duration::from_secs(CONFIG.database_timeout()))
+            .connection_customizer(Box::new(DbConnOptions {
+                init_stmts: conn_type.get_init_stmts(),
+            }))
+            .build(manager)
+            .map_res("Failed to create pool")?;
+
+        Ok(DbPool {
+            pool: Some(pool),
+            semaphore: Arc::new(Semaphore::new(max_conns as usize)),
+        })
+    }
+
+    pub async fn get(&self) -> Result<DbConn, Error> {
+        let duration = Duration::from_secs(CONFIG.database_timeout());
+        let permit = match timeout(duration, Arc::clone(&self.semaphore).acquire_owned()).await {
+            Ok(p) => p.expect("Semaphore should be open"),
+            Err(_) => {
+                err!("Timeout waiting for database connection");
             }
-        }
+        };
 
-        impl DbPool {
-            // For the given database URL, guess its type, run migrations, create pool, and return it
-            pub fn from_config() -> Result<Self, Error> {
-                let url = CONFIG.database_url();
-                let conn_type = DbConnType::from_url(&url)?;
-
-                match conn_type { $(
-                    DbConnType::$name => {
-                        #[cfg($name)]
-                        {
-                            paste::paste!{ [< $name _migrations >]::run_migrations()?; }
-                            let manager = ConnectionManager::new(&url);
-                            let pool = Pool::builder()
-                                .max_size(CONFIG.database_max_conns())
-                                .connection_timeout(Duration::from_secs(CONFIG.database_timeout()))
-                                .connection_customizer(Box::new(DbConnOptions{
-                                    init_stmts: conn_type.get_init_stmts()
-                                }))
-                                .build(manager)
-                                .map_res("Failed to create pool")?;
-                            Ok(DbPool {
-                                pool: Some(DbPoolInner::$name(pool)),
-                                semaphore: Arc::new(Semaphore::new(CONFIG.database_max_conns() as usize)),
-                            })
-                        }
-                        #[cfg(not($name))]
-                        unreachable!("Trying to use a DB backend when it's feature is disabled")
-                    },
-                )+ }
-            }
-            // Get a connection from the pool
-            pub async fn get(&self) -> Result<DbConn, Error> {
-                let duration = Duration::from_secs(CONFIG.database_timeout());
-                let permit = match timeout(duration, Arc::clone(&self.semaphore).acquire_owned()).await {
-                    Ok(p) => p.expect("Semaphore should be open"),
-                    Err(_) => {
-                        err!("Timeout waiting for database connection");
-                    }
-                };
-
-                match self.pool.as_ref().expect("DbPool.pool should always be Some()") {  $(
-                    #[cfg($name)]
-                    DbPoolInner::$name(p) => {
-                        let pool = p.clone();
-                        let c = run_blocking(move || pool.get_timeout(duration)).await.map_res("Error retrieving connection from pool")?;
-
-                        Ok(DbConn {
-                            conn: Arc::new(Mutex::new(Some(DbConnInner::$name(c)))),
-                            permit: Some(permit)
-                        })
-                    },
-                )+ }
-            }
-        }
-    };
-}
-
-#[cfg(not(query_logger))]
-generate_connections! {
-    sqlite: diesel::sqlite::SqliteConnection,
-    mysql: diesel::mysql::MysqlConnection,
-    postgresql: diesel::pg::PgConnection
-}
-
-#[cfg(query_logger)]
-generate_connections! {
-    sqlite: diesel_logger::LoggingConnection<diesel::sqlite::SqliteConnection>,
-    mysql: diesel_logger::LoggingConnection<diesel::mysql::MysqlConnection>,
-    postgresql: diesel_logger::LoggingConnection<diesel::pg::PgConnection>
+        let p = self.pool.as_ref().expect("DbPool.pool should always be Some()");
+        let pool = p.clone();
+        let c =
+            run_blocking(move || pool.get_timeout(duration)).await.map_res("Error retrieving connection from pool")?;
+        Ok(DbConn {
+            conn: Arc::new(Mutex::new(Some(c))),
+            permit: Some(permit),
+        })
+    }
 }
 
 impl DbConnType {
-    pub fn from_url(url: &str) -> Result<DbConnType, Error> {
+    // pub enum Backend
+    pub fn from_url(url: &str) -> Result<Self, Error> {
         // Mysql
-        if url.starts_with("mysql:") {
-            #[cfg(mysql)]
-            return Ok(DbConnType::mysql);
+        if url.len() > 6 && &url[..6] == "mysql:" {
+            #[cfg(feature = "mysql")]
+            return Ok(DbConnType::Mysql);
 
-            #[cfg(not(mysql))]
+            #[cfg(not(feature = "mysql"))]
             err!("`DATABASE_URL` is a MySQL URL, but the 'mysql' feature is not enabled")
 
-        // Postgres
-        } else if url.starts_with("postgresql:") || url.starts_with("postgres:") {
-            #[cfg(postgresql)]
-            return Ok(DbConnType::postgresql);
+        // Postgresql
+        } else if url.len() > 11 && (&url[..11] == "postgresql:" || &url[..9] == "postgres:") {
+            #[cfg(feature = "postgresql")]
+            return Ok(DbConnType::Postgresql);
 
-            #[cfg(not(postgresql))]
+            #[cfg(not(feature = "postgresql"))]
             err!("`DATABASE_URL` is a PostgreSQL URL, but the 'postgresql' feature is not enabled")
 
         //Sqlite
         } else {
-            #[cfg(sqlite)]
-            return Ok(DbConnType::sqlite);
+            #[cfg(feature = "sqlite")]
+            return Ok(DbConnType::Sqlite);
 
-            #[cfg(not(sqlite))]
+            #[cfg(not(feature = "sqlite"))]
             err!("`DATABASE_URL` looks like a SQLite URL, but 'sqlite' feature is not enabled")
         }
     }
@@ -231,148 +213,61 @@ impl DbConnType {
 
     pub fn default_init_stmts(&self) -> String {
         match self {
-            Self::sqlite => "PRAGMA busy_timeout = 5000; PRAGMA synchronous = NORMAL;".to_string(),
-            Self::mysql => String::new(),
-            Self::postgresql => String::new(),
+            #[cfg(sqlite)]
+            Self::Sqlite => "PRAGMA busy_timeout = 5000; PRAGMA synchronous = NORMAL;".to_string(),
+            #[cfg(mysql)]
+            Self::Mysql => String::new(),
+            #[cfg(postgresql)]
+            Self::Postgresql => String::new(),
         }
     }
+}
+
+// Shared base code for the db_run macro.
+macro_rules! db_run_base {
+    ( $conn:ident ) => {
+        #[allow(unused)]
+        use diesel::prelude::*;
+        #[allow(unused)]
+        use $crate::db::models::{self, *};
+        #[allow(unused)]
+        use $crate::db::schema::{self, *};
+
+        let conn = $conn.conn.clone();
+        let mut conn = conn.lock_owned().await;
+        let $conn = conn.as_mut().expect("internal invariant broken: self.conn is Some");
+    };
 }
 
 #[macro_export]
 macro_rules! db_run {
-    // Same for all dbs
-    ( $conn:ident: $body:block ) => {
-        db_run! { $conn: sqlite, mysql, postgresql $body }
-    };
+    ( $conn:ident: $body:block ) => {{
+        db_run_base!($conn);
+        tokio::task::block_in_place(move || $body ) // Run blocking can't be used due to the 'static limitation, use block_in_place instead
+    }};
 
-    ( @raw $conn:ident: $body:block ) => {
-        db_run! { @raw $conn: sqlite, mysql, postgresql $body }
-    };
-
-    // Different code for each db
     ( $conn:ident: $( $($db:ident),+ $body:block )+ ) => {{
-        #[allow(unused)] use diesel::prelude::*;
-        #[allow(unused)] use $crate::db::FromDb;
-
-        let conn = $conn.conn.clone();
-        let mut conn = conn.lock_owned().await;
-        match conn.as_mut().expect("internal invariant broken: self.connection is Some") {
-                $($(
-                #[cfg($db)]
-                $crate::db::DbConnInner::$db($conn) => {
-                    paste::paste! {
-                        #[allow(unused)] use $crate::db::[<__ $db _schema>]::{self as schema, *};
-                        #[allow(unused)] use [<__ $db _model>]::*;
-                    }
-
-                    tokio::task::block_in_place(move || { $body }) // Run blocking can't be used due to the 'static limitation, use block_in_place instead
-                },
-            )+)+
-        }
-    }};
-
-    ( @raw $conn:ident: $( $($db:ident),+ $body:block )+ ) => {{
-        #[allow(unused)] use diesel::prelude::*;
-        #[allow(unused)] use $crate::db::FromDb;
-
-        let conn = $conn.conn.clone();
-        let mut conn = conn.lock_owned().await;
-        match conn.as_mut().expect("internal invariant broken: self.connection is Some") {
-                $($(
-                #[cfg($db)]
-                $crate::db::DbConnInner::$db($conn) => {
-                    paste::paste! {
-                        #[allow(unused)] use $crate::db::[<__ $db _schema>]::{self as schema, *};
-                        // @ RAW: #[allow(unused)] use [<__ $db _model>]::*;
-                    }
-
-                    tokio::task::block_in_place(move || { $body }) // Run blocking can't be used due to the 'static limitation, use block_in_place instead
-                },
-            )+)+
-        }
+        db_run_base!($conn);
+        match std::ops::DerefMut::deref_mut($conn) {
+            $($(
+            #[cfg($db)]
+            paste::paste!($crate::db::DbConnInner::[<$db:camel>](ref mut $conn)) => {
+                tokio::task::block_in_place(move || $body ) // Run blocking can't be used due to the 'static limitation, use block_in_place instead
+            },
+        )+)+}
     }};
 }
 
-pub trait FromDb {
-    type Output;
-    #[allow(clippy::wrong_self_convention)]
-    fn from_db(self) -> Self::Output;
-}
-
-impl<T: FromDb> FromDb for Vec<T> {
-    type Output = Vec<T::Output>;
-    #[allow(clippy::wrong_self_convention)]
-    #[inline(always)]
-    fn from_db(self) -> Self::Output {
-        self.into_iter().map(crate::db::FromDb::from_db).collect()
-    }
-}
-
-impl<T: FromDb> FromDb for Option<T> {
-    type Output = Option<T::Output>;
-    #[allow(clippy::wrong_self_convention)]
-    #[inline(always)]
-    fn from_db(self) -> Self::Output {
-        self.map(crate::db::FromDb::from_db)
-    }
-}
-
-// For each struct eg. Cipher, we create a CipherDb inside a module named __$db_model (where $db is sqlite, mysql or postgresql),
-// to implement the Diesel traits. We also provide methods to convert between them and the basic structs. Later, that module will be auto imported when using db_run!
-#[macro_export]
-macro_rules! db_object {
-    ( $(
-        $( #[$attr:meta] )*
-        pub struct $name:ident {
-            $( $( #[$field_attr:meta] )* $vis:vis $field:ident : $typ:ty ),+
-            $(,)?
-        }
-    )+ ) => {
-        // Create the normal struct, without attributes
-        $( pub struct $name { $( /*$( #[$field_attr] )**/ $vis $field : $typ, )+ } )+
-
-        #[cfg(sqlite)]
-        pub mod __sqlite_model     { $( db_object! { @db sqlite     |  $( #[$attr] )* | $name |  $( $( #[$field_attr] )* $field : $typ ),+ } )+ }
-        #[cfg(mysql)]
-        pub mod __mysql_model      { $( db_object! { @db mysql      |  $( #[$attr] )* | $name |  $( $( #[$field_attr] )* $field : $typ ),+ } )+ }
-        #[cfg(postgresql)]
-        pub mod __postgresql_model { $( db_object! { @db postgresql |  $( #[$attr] )* | $name |  $( $( #[$field_attr] )* $field : $typ ),+ } )+ }
-    };
-
-    ( @db $db:ident | $( #[$attr:meta] )* | $name:ident | $( $( #[$field_attr:meta] )* $vis:vis $field:ident : $typ:ty),+) => {
-        paste::paste! {
-            #[allow(unused)] use super::*;
-            #[allow(unused)] use diesel::prelude::*;
-            #[allow(unused)] use $crate::db::[<__ $db _schema>]::*;
-
-            $( #[$attr] )*
-            pub struct [<$name Db>] { $(
-                $( #[$field_attr] )* $vis $field : $typ,
-            )+ }
-
-            impl [<$name Db>] {
-                #[allow(clippy::wrong_self_convention)]
-                #[inline(always)] pub fn to_db(x: &super::$name) -> Self { Self { $( $field: x.$field.clone(), )+ } }
-            }
-
-            impl $crate::db::FromDb for [<$name Db>] {
-                type Output = super::$name;
-                #[allow(clippy::wrong_self_convention)]
-                #[inline(always)] fn from_db(self) -> Self::Output { super::$name { $( $field: self.$field, )+ } }
-            }
-        }
-    };
-}
+#[path = "schemas/schema.rs"]
+pub mod schema;
 
 // Reexport the models, needs to be after the macros are defined so it can access them
 pub mod models;
 
-/// Creates a back-up of the sqlite database
-/// MySQL/MariaDB and PostgreSQL are not supported.
-pub async fn backup_database(conn: &mut DbConn) -> Result<(), Error> {
-    db_run! {@raw conn:
+#[allow(unused_variables)] // Since we do not use `conn` in PostgreSQL and MySQL
+pub async fn backup_database(conn: &DbConn) -> Result<(), Error> {
+    db_run! {conn:
         postgresql, mysql {
-            let _ = conn;
             err!("PostgreSQL and MySQL/MariaDB do not support this backup feature");
         }
         sqlite {
@@ -387,8 +282,8 @@ pub async fn backup_database(conn: &mut DbConn) -> Result<(), Error> {
 }
 
 /// Get the SQL Server version
-pub async fn get_sql_server_version(conn: &mut DbConn) -> String {
-    db_run! {@raw conn:
+pub async fn get_sql_server_version(conn: &DbConn) -> String {
+    db_run! {conn:
         postgresql, mysql {
             sql_function!{
                 fn version() -> diesel::sql_types::Text;
@@ -427,13 +322,11 @@ mod sqlite_migrations {
     use diesel_migrations::{EmbeddedMigrations, MigrationHarness};
     pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations/sqlite");
 
-    pub fn run_migrations() -> Result<(), super::Error> {
+    pub fn run_migrations(url: &str) -> Result<(), super::Error> {
         use diesel::{Connection, RunQueryDsl};
-        let url = crate::CONFIG.database_url();
-
         // Establish a connection to the sqlite database (this will create a new one, if it does
         // not exist, and exit if there is an error).
-        let mut connection = diesel::sqlite::SqliteConnection::establish(&url)?;
+        let mut connection = diesel::sqlite::SqliteConnection::establish(url)?;
 
         // Run the migrations after successfully establishing a connection
         // Disable Foreign Key Checks during migration
@@ -457,10 +350,10 @@ mod mysql_migrations {
     use diesel_migrations::{EmbeddedMigrations, MigrationHarness};
     pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations/mysql");
 
-    pub fn run_migrations() -> Result<(), super::Error> {
+    pub fn run_migrations(url: &str) -> Result<(), super::Error> {
         use diesel::{Connection, RunQueryDsl};
         // Make sure the database is up to date (create if it doesn't exist, or run the migrations)
-        let mut connection = diesel::mysql::MysqlConnection::establish(&crate::CONFIG.database_url())?;
+        let mut connection = diesel::mysql::MysqlConnection::establish(url)?;
         // Disable Foreign Key Checks during migration
 
         // Scoped to a connection/session.
@@ -478,10 +371,10 @@ mod postgresql_migrations {
     use diesel_migrations::{EmbeddedMigrations, MigrationHarness};
     pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations/postgresql");
 
-    pub fn run_migrations() -> Result<(), super::Error> {
+    pub fn run_migrations(url: &str) -> Result<(), super::Error> {
         use diesel::Connection;
         // Make sure the database is up to date (create if it doesn't exist, or run the migrations)
-        let mut connection = diesel::pg::PgConnection::establish(&crate::CONFIG.database_url())?;
+        let mut connection = diesel::pg::PgConnection::establish(url)?;
         connection.run_pending_migrations(MIGRATIONS).expect("Error running migrations");
         Ok(())
     }

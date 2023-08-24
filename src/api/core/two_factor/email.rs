@@ -31,13 +31,13 @@ struct SendEmailLoginData {
 /// User is trying to login and wants to use email 2FA.
 /// Does not require Bearer token
 #[post("/two-factor/send-email-login", data = "<data>")] // JsonResult
-async fn send_email_login(data: JsonUpcase<SendEmailLoginData>, mut conn: DbConn) -> EmptyResult {
+async fn send_email_login(data: JsonUpcase<SendEmailLoginData>, conn: DbConn) -> EmptyResult {
     let data: SendEmailLoginData = data.into_inner().data;
 
     use crate::db::models::User;
 
     // Get the user
-    let user = match User::find_by_mail(&data.Email, &mut conn).await {
+    let user = match User::find_by_mail(&data.Email, &conn).await {
         Some(user) => user,
         None => err!("Username or password is incorrect. Try again."),
     };
@@ -51,13 +51,13 @@ async fn send_email_login(data: JsonUpcase<SendEmailLoginData>, mut conn: DbConn
         err!("Email 2FA is disabled")
     }
 
-    send_token(&user.uuid, &mut conn).await?;
+    send_token(&user.uuid, &conn).await?;
 
     Ok(())
 }
 
 /// Generate the token, save the data for later verification and send email to user
-pub async fn send_token(user_uuid: &str, conn: &mut DbConn) -> EmptyResult {
+pub async fn send_token(user_uuid: &str, conn: &DbConn) -> EmptyResult {
     let type_ = TwoFactorType::Email as i32;
     let mut twofactor =
         TwoFactor::find_by_user_and_type(user_uuid, type_, conn).await.map_res("Two factor not found")?;
@@ -76,7 +76,7 @@ pub async fn send_token(user_uuid: &str, conn: &mut DbConn) -> EmptyResult {
 
 /// When user clicks on Manage email 2FA show the user the related information
 #[post("/two-factor/get-email", data = "<data>")]
-async fn get_email(data: JsonUpcase<PasswordData>, headers: Headers, mut conn: DbConn) -> JsonResult {
+async fn get_email(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: PasswordData = data.into_inner().data;
     let user = headers.user;
 
@@ -85,7 +85,7 @@ async fn get_email(data: JsonUpcase<PasswordData>, headers: Headers, mut conn: D
     }
 
     let (enabled, mfa_email) =
-        match TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::Email as i32, &mut conn).await {
+        match TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::Email as i32, &conn).await {
             Some(x) => {
                 let twofactor_data = EmailTokenData::from_json(&x.data)?;
                 (true, json!(twofactor_data.email))
@@ -110,7 +110,7 @@ struct SendEmailData {
 
 /// Send a verification email to the specified email address to check whether it exists/belongs to user.
 #[post("/two-factor/send-email", data = "<data>")]
-async fn send_email(data: JsonUpcase<SendEmailData>, headers: Headers, mut conn: DbConn) -> EmptyResult {
+async fn send_email(data: JsonUpcase<SendEmailData>, headers: Headers, conn: DbConn) -> EmptyResult {
     let data: SendEmailData = data.into_inner().data;
     let user = headers.user;
 
@@ -124,8 +124,8 @@ async fn send_email(data: JsonUpcase<SendEmailData>, headers: Headers, mut conn:
 
     let type_ = TwoFactorType::Email as i32;
 
-    if let Some(tf) = TwoFactor::find_by_user_and_type(&user.uuid, type_, &mut conn).await {
-        tf.delete(&mut conn).await?;
+    if let Some(tf) = TwoFactor::find_by_user_and_type(&user.uuid, type_, &conn).await {
+        tf.delete(&conn).await?;
     }
 
     let generated_token = crypto::generate_email_token(CONFIG.email_token_size());
@@ -133,7 +133,7 @@ async fn send_email(data: JsonUpcase<SendEmailData>, headers: Headers, mut conn:
 
     // Uses EmailVerificationChallenge as type to show that it's not verified yet.
     let twofactor = TwoFactor::new(user.uuid, TwoFactorType::EmailVerificationChallenge, twofactor_data.to_json());
-    twofactor.save(&mut conn).await?;
+    twofactor.save(&conn).await?;
 
     mail::send_token(&twofactor_data.email, &twofactor_data.last_token.map_res("Token is empty")?).await?;
 
@@ -150,7 +150,7 @@ struct EmailData {
 
 /// Verify email belongs to user and can be used for 2FA email codes.
 #[put("/two-factor/email", data = "<data>")]
-async fn email(data: JsonUpcase<EmailData>, headers: Headers, mut conn: DbConn) -> JsonResult {
+async fn email(data: JsonUpcase<EmailData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: EmailData = data.into_inner().data;
     let mut user = headers.user;
 
@@ -160,7 +160,7 @@ async fn email(data: JsonUpcase<EmailData>, headers: Headers, mut conn: DbConn) 
 
     let type_ = TwoFactorType::EmailVerificationChallenge as i32;
     let mut twofactor =
-        TwoFactor::find_by_user_and_type(&user.uuid, type_, &mut conn).await.map_res("Two factor not found")?;
+        TwoFactor::find_by_user_and_type(&user.uuid, type_, &conn).await.map_res("Two factor not found")?;
 
     let mut email_data = EmailTokenData::from_json(&twofactor.data)?;
 
@@ -176,11 +176,11 @@ async fn email(data: JsonUpcase<EmailData>, headers: Headers, mut conn: DbConn) 
     email_data.reset_token();
     twofactor.atype = TwoFactorType::Email as i32;
     twofactor.data = email_data.to_json();
-    twofactor.save(&mut conn).await?;
+    twofactor.save(&conn).await?;
 
-    _generate_recover_code(&mut user, &mut conn).await;
+    _generate_recover_code(&mut user, &conn).await;
 
-    log_user_event(EventType::UserUpdated2fa as i32, &user.uuid, headers.device.atype, &headers.ip.ip, &mut conn).await;
+    log_user_event(EventType::UserUpdated2fa as i32, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await;
 
     Ok(Json(json!({
         "Email": email_data.email,
@@ -190,7 +190,7 @@ async fn email(data: JsonUpcase<EmailData>, headers: Headers, mut conn: DbConn) 
 }
 
 /// Validate the email code when used as TwoFactor token mechanism
-pub async fn validate_email_code_str(user_uuid: &str, token: &str, data: &str, conn: &mut DbConn) -> EmptyResult {
+pub async fn validate_email_code_str(user_uuid: &str, token: &str, data: &str, conn: &DbConn) -> EmptyResult {
     let mut email_data = EmailTokenData::from_json(data)?;
     let mut twofactor = TwoFactor::find_by_user_and_type(user_uuid, TwoFactorType::Email as i32, conn)
         .await

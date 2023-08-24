@@ -371,7 +371,7 @@ impl WebSocketUsers {
         ut: UpdateType,
         folder: &Folder,
         acting_device_uuid: &String,
-        conn: &mut DbConn,
+        conn: &DbConn,
     ) {
         let data = create_update(
             vec![
@@ -397,7 +397,7 @@ impl WebSocketUsers {
         user_uuids: &[String],
         acting_device_uuid: &String,
         collection_uuids: Option<Vec<String>>,
-        conn: &mut DbConn,
+        conn: &DbConn,
     ) {
         let org_uuid = convert_option(cipher.organization_uuid.clone());
         // Depending if there are collections provided or not, we need to have different values for the following variables.
@@ -439,7 +439,7 @@ impl WebSocketUsers {
         send: &DbSend,
         user_uuids: &[String],
         acting_device_uuid: &String,
-        conn: &mut DbConn,
+        conn: &DbConn,
     ) {
         let user_uuid = convert_option(send.user_uuid.clone());
 
@@ -466,7 +466,7 @@ impl WebSocketUsers {
         user_uuid: &String,
         auth_request_uuid: &String,
         acting_device_uuid: &String,
-        conn: &mut DbConn,
+        conn: &DbConn,
     ) {
         let data = create_update(
             vec![("Id".into(), auth_request_uuid.clone().into()), ("UserId".into(), user_uuid.clone().into())],
@@ -485,7 +485,7 @@ impl WebSocketUsers {
         user_uuid: &String,
         auth_response_uuid: &str,
         approving_device_uuid: String,
-        conn: &mut DbConn,
+        conn: &DbConn,
     ) {
         let data = create_update(
             vec![("Id".into(), auth_response_uuid.to_owned().into()), ("UserId".into(), user_uuid.clone().into())],

@@ -108,7 +108,7 @@ struct EquivDomainData {
 async fn post_eq_domains(
     data: JsonUpcase<EquivDomainData>,
     headers: Headers,
-    mut conn: DbConn,
+    conn: DbConn,
     nt: Notify<'_>,
 ) -> JsonResult {
     let data: EquivDomainData = data.into_inner().data;
@@ -122,7 +122,7 @@ async fn post_eq_domains(
     user.excluded_globals = to_string(&excluded_globals).unwrap_or_else(|_| "[]".to_string());
     user.equivalent_domains = to_string(&equivalent_domains).unwrap_or_else(|_| "[]".to_string());
 
-    user.save(&mut conn).await?;
+    user.save(&conn).await?;
 
     nt.send_user_update(UpdateType::SyncSettings, &user).await;
 

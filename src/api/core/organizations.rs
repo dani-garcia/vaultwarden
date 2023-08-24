@@ -149,11 +149,11 @@ struct OrgBulkIds {
 }
 
 #[post("/organizations", data = "<data>")]
-async fn create_organization(headers: Headers, data: JsonUpcase<OrgData>, mut conn: DbConn) -> JsonResult {
+async fn create_organization(headers: Headers, data: JsonUpcase<OrgData>, conn: DbConn) -> JsonResult {
     if !CONFIG.is_org_creation_allowed(&headers.user.email) {
         err!("User not allowed to create organizations")
     }
-    if OrgPolicy::is_applicable_to_user(&headers.user.uuid, OrgPolicyType::SingleOrg, None, &mut conn).await {
+    if OrgPolicy::is_applicable_to_user(&headers.user.uuid, OrgPolicyType::SingleOrg, None, &conn).await {
         err!(
             "You may not create an organization. You belong to an organization which has a policy that prohibits you from being a member of any other organization."
         )
@@ -176,9 +176,9 @@ async fn create_organization(headers: Headers, data: JsonUpcase<OrgData>, mut co
     user_org.atype = UserOrgType::Owner as i32;
     user_org.status = UserOrgStatus::Confirmed as i32;
 
-    org.save(&mut conn).await?;
-    user_org.save(&mut conn).await?;
-    collection.save(&mut conn).await?;
+    org.save(&conn).await?;
+    user_org.save(&conn).await?;
+    collection.save(&conn).await?;
 
     Ok(Json(org.to_json()))
 }
@@ -188,7 +188,7 @@ async fn delete_organization(
     org_id: &str,
     data: JsonUpcase<PasswordData>,
     headers: OwnerHeaders,
-    mut conn: DbConn,
+    conn: DbConn,
 ) -> EmptyResult {
     let data: PasswordData = data.into_inner().data;
     let password_hash = data.MasterPasswordHash;
@@ -197,9 +197,9 @@ async fn delete_organization(
         err!("Invalid password")
     }
 
-    match Organization::find_by_uuid(org_id, &mut conn).await {
+    match Organization::find_by_uuid(org_id, &conn).await {
         None => err!("Organization not found"),
-        Some(org) => org.delete(&mut conn).await,
+        Some(org) => org.delete(&conn).await,
     }
 }
 
@@ -214,12 +214,12 @@ async fn post_delete_organization(
 }
 
 #[post("/organizations/<org_id>/leave")]
-async fn leave_organization(org_id: &str, headers: Headers, mut conn: DbConn) -> EmptyResult {
-    match UserOrganization::find_by_user_and_org(&headers.user.uuid, org_id, &mut conn).await {
+async fn leave_organization(org_id: &str, headers: Headers, conn: DbConn) -> EmptyResult {
+    match UserOrganization::find_by_user_and_org(&headers.user.uuid, org_id, &conn).await {
         None => err!("User not part of organization"),
         Some(user_org) => {
             if user_org.atype == UserOrgType::Owner
-                && UserOrganization::count_confirmed_by_org_and_type(org_id, UserOrgType::Owner, &mut conn).await <= 1
+                && UserOrganization::count_confirmed_by_org_and_type(org_id, UserOrgType::Owner, &conn).await <= 1
             {
                 err!("The last owner can't leave")
             }
@@ -231,18 +231,18 @@ async fn leave_organization(org_id: &str, headers: Headers, mut conn: DbConn) ->
                 headers.user.uuid.clone(),
                 headers.device.atype,
                 &headers.ip.ip,
-                &mut conn,
+                &conn,
             )
             .await;
 
-            user_org.delete(&mut conn).await
+            user_org.delete(&conn).await
         }
     }
 }
 
 #[get("/organizations/<org_id>")]
-async fn get_organization(org_id: &str, _headers: OwnerHeaders, mut conn: DbConn) -> JsonResult {
-    match Organization::find_by_uuid(org_id, &mut conn).await {
+async fn get_organization(org_id: &str, _headers: OwnerHeaders, conn: DbConn) -> JsonResult {
+    match Organization::find_by_uuid(org_id, &conn).await {
         Some(organization) => Ok(Json(organization.to_json())),
         None => err!("Can't find organization details"),
     }
@@ -263,11 +263,11 @@ async fn post_organization(
     org_id: &str,
     headers: OwnerHeaders,
     data: JsonUpcase<OrganizationUpdateData>,
-    mut conn: DbConn,
+    conn: DbConn,
 ) -> JsonResult {
     let data: OrganizationUpdateData = data.into_inner().data;
 
-    let mut org = match Organization::find_by_uuid(org_id, &mut conn).await {
+    let mut org = match Organization::find_by_uuid(org_id, &conn).await {
         Some(organization) => organization,
         None => err!("Can't find organization details"),
     };
@@ -275,7 +275,7 @@ async fn post_organization(
     org.name = data.Name;
     org.billing_email = data.BillingEmail;
 
-    org.save(&mut conn).await?;
+    org.save(&conn).await?;
 
     log_event(
         EventType::OrganizationUpdated as i32,
@@ -284,7 +284,7 @@ async fn post_organization(
         headers.user.uuid.clone(),
         headers.device.atype,
         &headers.ip.ip,
-        &mut conn,
+        &conn,
     )
     .await;
 
@@ -293,10 +293,10 @@ async fn post_organization(
 
 // GET /api/collections?writeOnly=false
 #[get("/collections")]
-async fn get_user_collections(headers: Headers, mut conn: DbConn) -> Json<Value> {
+async fn get_user_collections(headers: Headers, conn: DbConn) -> Json<Value> {
     Json(json!({
         "Data":
-            Collection::find_by_user_uuid(headers.user.uuid.clone(), &mut conn).await
+            Collection::find_by_user_uuid(headers.user.uuid.clone(), &conn).await
             .iter()
             .map(Collection::to_json)
             .collect::<Value>(),
@@ -306,28 +306,28 @@ async fn get_user_collections(headers: Headers, mut conn: DbConn) -> Json<Value>
 }
 
 #[get("/organizations/<org_id>/collections")]
-async fn get_org_collections(org_id: &str, _headers: ManagerHeadersLoose, mut conn: DbConn) -> Json<Value> {
+async fn get_org_collections(org_id: &str, _headers: ManagerHeadersLoose, conn: DbConn) -> Json<Value> {
     Json(json!({
-        "Data": _get_org_collections(org_id, &mut conn).await,
+        "Data": _get_org_collections(org_id, &conn).await,
         "Object": "list",
         "ContinuationToken": null,
     }))
 }
 
 #[get("/organizations/<org_id>/collections/details")]
-async fn get_org_collections_details(org_id: &str, headers: ManagerHeadersLoose, mut conn: DbConn) -> JsonResult {
+async fn get_org_collections_details(org_id: &str, headers: ManagerHeadersLoose, conn: DbConn) -> JsonResult {
     let mut data = Vec::new();
 
-    let user_org = match UserOrganization::find_by_user_and_org(&headers.user.uuid, org_id, &mut conn).await {
+    let user_org = match UserOrganization::find_by_user_and_org(&headers.user.uuid, org_id, &conn).await {
         Some(u) => u,
         None => err!("User is not part of organization"),
     };
 
-    let coll_users = CollectionUser::find_by_organization(org_id, &mut conn).await;
+    let coll_users = CollectionUser::find_by_organization(org_id, &conn).await;
 
-    for col in Collection::find_by_organization(org_id, &mut conn).await {
+    for col in Collection::find_by_organization(org_id, &conn).await {
         let groups: Vec<Value> = if CONFIG.org_groups_enabled() {
-            CollectionGroup::find_by_collection(&col.uuid, &mut conn)
+            CollectionGroup::find_by_collection(&col.uuid, &conn)
                 .await
                 .iter()
                 .map(|collection_group| {
@@ -373,7 +373,7 @@ async fn get_org_collections_details(org_id: &str, headers: ManagerHeadersLoose,
     })))
 }
 
-async fn _get_org_collections(org_id: &str, conn: &mut DbConn) -> Value {
+async fn _get_org_collections(org_id: &str, conn: &DbConn) -> Value {
     Collection::find_by_organization(org_id, conn).await.iter().map(Collection::to_json).collect::<Value>()
 }
 
@@ -382,17 +382,17 @@ async fn post_organization_collections(
     org_id: &str,
     headers: ManagerHeadersLoose,
     data: JsonUpcase<NewCollectionData>,
-    mut conn: DbConn,
+    conn: DbConn,
 ) -> JsonResult {
     let data: NewCollectionData = data.into_inner().data;
 
-    let org = match Organization::find_by_uuid(org_id, &mut conn).await {
+    let org = match Organization::find_by_uuid(org_id, &conn).await {
         Some(organization) => organization,
         None => err!("Can't find organization details"),
     };
 
     let collection = Collection::new(org.uuid, data.Name, data.ExternalId);
-    collection.save(&mut conn).await?;
+    collection.save(&conn).await?;
 
     log_event(
         EventType::CollectionCreated as i32,
@@ -401,18 +401,18 @@ async fn post_organization_collections(
         headers.user.uuid.clone(),
         headers.device.atype,
         &headers.ip.ip,
-        &mut conn,
+        &conn,
     )
     .await;
 
     for group in data.Groups {
         CollectionGroup::new(collection.uuid.clone(), group.Id, group.ReadOnly, group.HidePasswords)
-            .save(&mut conn)
+            .save(&conn)
             .await?;
     }
 
     for user in data.Users {
-        let org_user = match UserOrganization::find_by_uuid(&user.Id, &mut conn).await {
+        let org_user = match UserOrganization::find_by_uuid(&user.Id, &conn).await {
             Some(u) => u,
             None => err!("User is not part of organization"),
         };
@@ -421,12 +421,11 @@ async fn post_organization_collections(
             continue;
         }
 
-        CollectionUser::save(&org_user.user_uuid, &collection.uuid, user.ReadOnly, user.HidePasswords, &mut conn)
-            .await?;
+        CollectionUser::save(&org_user.user_uuid, &collection.uuid, user.ReadOnly, user.HidePasswords, &conn).await?;
     }
 
     if headers.org_user.atype == UserOrgType::Manager && !headers.org_user.access_all {
-        CollectionUser::save(&headers.org_user.user_uuid, &collection.uuid, false, false, &mut conn).await?;
+        CollectionUser::save(&headers.org_user.user_uuid, &collection.uuid, false, false, &conn).await?;
     }
 
     Ok(Json(collection.to_json()))
@@ -449,16 +448,16 @@ async fn post_organization_collection_update(
     col_id: &str,
     headers: ManagerHeaders,
     data: JsonUpcase<NewCollectionData>,
-    mut conn: DbConn,
+    conn: DbConn,
 ) -> JsonResult {
     let data: NewCollectionData = data.into_inner().data;
 
-    let org = match Organization::find_by_uuid(org_id, &mut conn).await {
+    let org = match Organization::find_by_uuid(org_id, &conn).await {
         Some(organization) => organization,
         None => err!("Can't find organization details"),
     };
 
-    let mut collection = match Collection::find_by_uuid(col_id, &mut conn).await {
+    let mut collection = match Collection::find_by_uuid(col_id, &conn).await {
         Some(collection) => collection,
         None => err!("Collection not found"),
     };
@@ -473,7 +472,7 @@ async fn post_organization_collection_update(
         _ => None,
     };
 
-    collection.save(&mut conn).await?;
+    collection.save(&conn).await?;
 
     log_event(
         EventType::CollectionUpdated as i32,
@@ -482,22 +481,20 @@ async fn post_organization_collection_update(
         headers.user.uuid.clone(),
         headers.device.atype,
         &headers.ip.ip,
-        &mut conn,
+        &conn,
     )
     .await;
 
-    CollectionGroup::delete_all_by_collection(col_id, &mut conn).await?;
+    CollectionGroup::delete_all_by_collection(col_id, &conn).await?;
 
     for group in data.Groups {
-        CollectionGroup::new(String::from(col_id), group.Id, group.ReadOnly, group.HidePasswords)
-            .save(&mut conn)
-            .await?;
+        CollectionGroup::new(String::from(col_id), group.Id, group.ReadOnly, group.HidePasswords).save(&conn).await?;
     }
 
-    CollectionUser::delete_all_by_collection(col_id, &mut conn).await?;
+    CollectionUser::delete_all_by_collection(col_id, &conn).await?;
 
     for user in data.Users {
-        let org_user = match UserOrganization::find_by_uuid(&user.Id, &mut conn).await {
+        let org_user = match UserOrganization::find_by_uuid(&user.Id, &conn).await {
             Some(u) => u,
             None => err!("User is not part of organization"),
         };
@@ -506,7 +503,7 @@ async fn post_organization_collection_update(
             continue;
         }
 
-        CollectionUser::save(&org_user.user_uuid, col_id, user.ReadOnly, user.HidePasswords, &mut conn).await?;
+        CollectionUser::save(&org_user.user_uuid, col_id, user.ReadOnly, user.HidePasswords, &conn).await?;
     }
 
     Ok(Json(collection.to_json()))
@@ -518,9 +515,9 @@ async fn delete_organization_collection_user(
     col_id: &str,
     org_user_id: &str,
     _headers: AdminHeaders,
-    mut conn: DbConn,
+    conn: DbConn,
 ) -> EmptyResult {
-    let collection = match Collection::find_by_uuid(col_id, &mut conn).await {
+    let collection = match Collection::find_by_uuid(col_id, &conn).await {
         None => err!("Collection not found"),
         Some(collection) => {
             if collection.org_uuid == org_id {
@@ -531,12 +528,12 @@ async fn delete_organization_collection_user(
         }
     };
 
-    match UserOrganization::find_by_uuid_and_org(org_user_id, org_id, &mut conn).await {
+    match UserOrganization::find_by_uuid_and_org(org_user_id, org_id, &conn).await {
         None => err!("User not found in organization"),
         Some(user_org) => {
-            match CollectionUser::find_by_collection_and_user(&collection.uuid, &user_org.user_uuid, &mut conn).await {
+            match CollectionUser::find_by_collection_and_user(&collection.uuid, &user_org.user_uuid, &conn).await {
                 None => err!("User not assigned to collection"),
-                Some(col_user) => col_user.delete(&mut conn).await,
+                Some(col_user) => col_user.delete(&conn).await,
             }
         }
     }
@@ -557,7 +554,7 @@ async fn _delete_organization_collection(
     org_id: &str,
     col_id: &str,
     headers: &ManagerHeaders,
-    conn: &mut DbConn,
+    conn: &DbConn,
 ) -> EmptyResult {
     match Collection::find_by_uuid(col_id, conn).await {
         None => err!("Collection not found"),
@@ -586,9 +583,9 @@ async fn delete_organization_collection(
     org_id: &str,
     col_id: &str,
     headers: ManagerHeaders,
-    mut conn: DbConn,
+    conn: DbConn,
 ) -> EmptyResult {
-    _delete_organization_collection(org_id, col_id, &headers, &mut conn).await
+    _delete_organization_collection(org_id, col_id, &headers, &conn).await
 }
 
 #[derive(Deserialize, Debug)]
@@ -604,9 +601,9 @@ async fn post_organization_collection_delete(
     col_id: &str,
     headers: ManagerHeaders,
     _data: JsonUpcase<DeleteCollectionData>,
-    mut conn: DbConn,
+    conn: DbConn,
 ) -> EmptyResult {
-    _delete_organization_collection(org_id, col_id, &headers, &mut conn).await
+    _delete_organization_collection(org_id, col_id, &headers, &conn).await
 }
 
 #[derive(Deserialize, Debug)]
@@ -621,7 +618,7 @@ async fn bulk_delete_organization_collections(
     org_id: &str,
     headers: ManagerHeadersLoose,
     data: JsonUpcase<BulkCollectionIds>,
-    mut conn: DbConn,
+    conn: DbConn,
 ) -> EmptyResult {
     let data: BulkCollectionIds = data.into_inner().data;
     if org_id != data.OrganizationId {
@@ -630,35 +627,30 @@ async fn bulk_delete_organization_collections(
 
     let collections = data.Ids;
 
-    let headers = ManagerHeaders::from_loose(headers, &collections, &mut conn).await?;
+    let headers = ManagerHeaders::from_loose(headers, &collections, &conn).await?;
 
     for col_id in collections {
-        _delete_organization_collection(org_id, &col_id, &headers, &mut conn).await?
+        _delete_organization_collection(org_id, &col_id, &headers, &conn).await?
     }
     Ok(())
 }
 
 #[get("/organizations/<org_id>/collections/<coll_id>/details")]
-async fn get_org_collection_detail(
-    org_id: &str,
-    coll_id: &str,
-    headers: ManagerHeaders,
-    mut conn: DbConn,
-) -> JsonResult {
-    match Collection::find_by_uuid_and_user(coll_id, headers.user.uuid.clone(), &mut conn).await {
+async fn get_org_collection_detail(org_id: &str, coll_id: &str, headers: ManagerHeaders, conn: DbConn) -> JsonResult {
+    match Collection::find_by_uuid_and_user(coll_id, headers.user.uuid.clone(), &conn).await {
         None => err!("Collection not found"),
         Some(collection) => {
             if collection.org_uuid != org_id {
                 err!("Collection is not owned by organization")
             }
 
-            let user_org = match UserOrganization::find_by_user_and_org(&headers.user.uuid, org_id, &mut conn).await {
+            let user_org = match UserOrganization::find_by_user_and_org(&headers.user.uuid, org_id, &conn).await {
                 Some(u) => u,
                 None => err!("User is not part of organization"),
             };
 
             let groups: Vec<Value> = if CONFIG.org_groups_enabled() {
-                CollectionGroup::find_by_collection(&collection.uuid, &mut conn)
+                CollectionGroup::find_by_collection(&collection.uuid, &conn)
                     .await
                     .iter()
                     .map(|collection_group| {
@@ -673,7 +665,7 @@ async fn get_org_collection_detail(
 
             let mut assigned = false;
             let users: Vec<Value> =
-                CollectionUser::find_by_collection_swap_user_uuid_with_org_user_uuid(&collection.uuid, &mut conn)
+                CollectionUser::find_by_collection_swap_user_uuid_with_org_user_uuid(&collection.uuid, &conn)
                     .await
                     .iter()
                     .map(|collection_user| {
@@ -702,17 +694,17 @@ async fn get_org_collection_detail(
 }
 
 #[get("/organizations/<org_id>/collections/<coll_id>/users")]
-async fn get_collection_users(org_id: &str, coll_id: &str, _headers: ManagerHeaders, mut conn: DbConn) -> JsonResult {
+async fn get_collection_users(org_id: &str, coll_id: &str, _headers: ManagerHeaders, conn: DbConn) -> JsonResult {
     // Get org and collection, check that collection is from org
-    let collection = match Collection::find_by_uuid_and_org(coll_id, org_id, &mut conn).await {
+    let collection = match Collection::find_by_uuid_and_org(coll_id, org_id, &conn).await {
         None => err!("Collection not found in Organization"),
         Some(collection) => collection,
     };
 
     let mut user_list = Vec::new();
-    for col_user in CollectionUser::find_by_collection(&collection.uuid, &mut conn).await {
+    for col_user in CollectionUser::find_by_collection(&collection.uuid, &conn).await {
         user_list.push(
-            UserOrganization::find_by_user_and_org(&col_user.user_uuid, org_id, &mut conn)
+            UserOrganization::find_by_user_and_org(&col_user.user_uuid, org_id, &conn)
                 .await
                 .unwrap()
                 .to_json_user_access_restrictions(&col_user),
@@ -728,19 +720,19 @@ async fn put_collection_users(
     coll_id: &str,
     data: JsonUpcaseVec<CollectionData>,
     _headers: ManagerHeaders,
-    mut conn: DbConn,
+    conn: DbConn,
 ) -> EmptyResult {
     // Get org and collection, check that collection is from org
-    if Collection::find_by_uuid_and_org(coll_id, org_id, &mut conn).await.is_none() {
+    if Collection::find_by_uuid_and_org(coll_id, org_id, &conn).await.is_none() {
         err!("Collection not found in Organization")
     }
 
     // Delete all the user-collections
-    CollectionUser::delete_all_by_collection(coll_id, &mut conn).await?;
+    CollectionUser::delete_all_by_collection(coll_id, &conn).await?;
 
     // And then add all the received ones (except if the user has access_all)
     for d in data.iter().map(|d| &d.data) {
-        let user = match UserOrganization::find_by_uuid(&d.Id, &mut conn).await {
+        let user = match UserOrganization::find_by_uuid(&d.Id, &conn).await {
             Some(u) => u,
             None => err!("User is not part of organization"),
         };
@@ -749,7 +741,7 @@ async fn put_collection_users(
             continue;
         }
 
-        CollectionUser::save(&user.user_uuid, coll_id, d.ReadOnly, d.HidePasswords, &mut conn).await?;
+        CollectionUser::save(&user.user_uuid, coll_id, d.ReadOnly, d.HidePasswords, &conn).await?;
     }
 
     Ok(())
@@ -762,15 +754,15 @@ struct OrgIdData {
 }
 
 #[get("/ciphers/organization-details?<data..>")]
-async fn get_org_details(data: OrgIdData, headers: Headers, mut conn: DbConn) -> Json<Value> {
+async fn get_org_details(data: OrgIdData, headers: Headers, conn: DbConn) -> Json<Value> {
     Json(json!({
-        "Data": _get_org_details(&data.organization_id, &headers.host, &headers.user.uuid, &mut conn).await,
+        "Data": _get_org_details(&data.organization_id, &headers.host, &headers.user.uuid, &conn).await,
         "Object": "list",
         "ContinuationToken": null,
     }))
 }
 
-async fn _get_org_details(org_id: &str, host: &str, user_uuid: &str, conn: &mut DbConn) -> Value {
+async fn _get_org_details(org_id: &str, host: &str, user_uuid: &str, conn: &DbConn) -> Value {
     let ciphers = Cipher::find_by_org(org_id, conn).await;
     let cipher_sync_data = CipherSyncData::new(user_uuid, CipherSyncType::Organization, conn).await;
 
@@ -791,19 +783,14 @@ struct GetOrgUserData {
 }
 
 #[get("/organizations/<org_id>/users?<data..>")]
-async fn get_org_users(
-    data: GetOrgUserData,
-    org_id: &str,
-    _headers: ManagerHeadersLoose,
-    mut conn: DbConn,
-) -> Json<Value> {
+async fn get_org_users(data: GetOrgUserData, org_id: &str, _headers: ManagerHeadersLoose, conn: DbConn) -> Json<Value> {
     let mut users_json = Vec::new();
-    for u in UserOrganization::find_by_org(org_id, &mut conn).await {
+    for u in UserOrganization::find_by_org(org_id, &conn).await {
         users_json.push(
             u.to_json_user_details(
                 data.include_collections.unwrap_or(false),
                 data.include_groups.unwrap_or(false),
-                &mut conn,
+                &conn,
             )
             .await,
         );
@@ -817,15 +804,10 @@ async fn get_org_users(
 }
 
 #[post("/organizations/<org_id>/keys", data = "<data>")]
-async fn post_org_keys(
-    org_id: &str,
-    data: JsonUpcase<OrgKeyData>,
-    _headers: AdminHeaders,
-    mut conn: DbConn,
-) -> JsonResult {
+async fn post_org_keys(org_id: &str, data: JsonUpcase<OrgKeyData>, _headers: AdminHeaders, conn: DbConn) -> JsonResult {
     let data: OrgKeyData = data.into_inner().data;
 
-    let mut org = match Organization::find_by_uuid(org_id, &mut conn).await {
+    let mut org = match Organization::find_by_uuid(org_id, &conn).await {
         Some(organization) => {
             if organization.private_key.is_some() && organization.public_key.is_some() {
                 err!("Organization Keys already exist")
@@ -838,7 +820,7 @@ async fn post_org_keys(
     org.private_key = Some(data.EncryptedPrivateKey);
     org.public_key = Some(data.PublicKey);
 
-    org.save(&mut conn).await?;
+    org.save(&conn).await?;
 
     Ok(Json(json!({
         "Object": "organizationKeys",
@@ -866,12 +848,7 @@ struct InviteData {
 }
 
 #[post("/organizations/<org_id>/users/invite", data = "<data>")]
-async fn send_invite(
-    org_id: &str,
-    data: JsonUpcase<InviteData>,
-    headers: AdminHeaders,
-    mut conn: DbConn,
-) -> EmptyResult {
+async fn send_invite(org_id: &str, data: JsonUpcase<InviteData>, headers: AdminHeaders, conn: DbConn) -> EmptyResult {
     let data: InviteData = data.into_inner().data;
 
     let new_type = match UserOrgType::from_str(&data.Type.into_string()) {
@@ -886,7 +863,7 @@ async fn send_invite(
     for email in data.Emails.iter() {
         let email = email.to_lowercase();
         let mut user_org_status = UserOrgStatus::Invited as i32;
-        let user = match User::find_by_mail(&email, &mut conn).await {
+        let user = match User::find_by_mail(&email, &conn).await {
             None => {
                 if !CONFIG.invitations_allowed() {
                     err!(format!("User does not exist: {email}"))
@@ -898,15 +875,15 @@ async fn send_invite(
 
                 if !CONFIG.mail_enabled() {
                     let invitation = Invitation::new(&email);
-                    invitation.save(&mut conn).await?;
+                    invitation.save(&conn).await?;
                 }
 
                 let mut user = User::new(email.clone());
-                user.save(&mut conn).await?;
+                user.save(&conn).await?;
                 user
             }
             Some(user) => {
-                if UserOrganization::find_by_user_and_org(&user.uuid, org_id, &mut conn).await.is_some() {
+                if UserOrganization::find_by_user_and_org(&user.uuid, org_id, &conn).await.is_some() {
                     err!(format!("User already in organization: {email}"))
                 } else {
                     // automatically accept existing users if mail is disabled
@@ -927,21 +904,21 @@ async fn send_invite(
         // If no accessAll, add the collections received
         if !access_all {
             for col in data.Collections.iter().flatten() {
-                match Collection::find_by_uuid_and_org(&col.Id, org_id, &mut conn).await {
+                match Collection::find_by_uuid_and_org(&col.Id, org_id, &conn).await {
                     None => err!("Collection not found in Organization"),
                     Some(collection) => {
-                        CollectionUser::save(&user.uuid, &collection.uuid, col.ReadOnly, col.HidePasswords, &mut conn)
+                        CollectionUser::save(&user.uuid, &collection.uuid, col.ReadOnly, col.HidePasswords, &conn)
                             .await?;
                     }
                 }
             }
         }
 
-        new_user.save(&mut conn).await?;
+        new_user.save(&conn).await?;
 
         for group in data.Groups.iter() {
             let mut group_entry = GroupUser::new(String::from(group), user.uuid.clone());
-            group_entry.save(&mut conn).await?;
+            group_entry.save(&conn).await?;
         }
 
         log_event(
@@ -951,12 +928,12 @@ async fn send_invite(
             headers.user.uuid.clone(),
             headers.device.atype,
             &headers.ip.ip,
-            &mut conn,
+            &conn,
         )
         .await;
 
         if CONFIG.mail_enabled() {
-            let org_name = match Organization::find_by_uuid(org_id, &mut conn).await {
+            let org_name = match Organization::find_by_uuid(org_id, &conn).await {
                 Some(org) => org.name,
                 None => err!("Error looking up organization"),
             };
@@ -981,13 +958,13 @@ async fn bulk_reinvite_user(
     org_id: &str,
     data: JsonUpcase<OrgBulkIds>,
     headers: AdminHeaders,
-    mut conn: DbConn,
+    conn: DbConn,
 ) -> Json<Value> {
     let data: OrgBulkIds = data.into_inner().data;
 
     let mut bulk_response = Vec::new();
     for org_user_id in data.Ids {
-        let err_msg = match _reinvite_user(org_id, &org_user_id, &headers.user.email, &mut conn).await {
+        let err_msg = match _reinvite_user(org_id, &org_user_id, &headers.user.email, &conn).await {
             Ok(_) => String::new(),
             Err(e) => format!("{e:?}"),
         };
@@ -1009,11 +986,11 @@ async fn bulk_reinvite_user(
 }
 
 #[post("/organizations/<org_id>/users/<user_org>/reinvite")]
-async fn reinvite_user(org_id: &str, user_org: &str, headers: AdminHeaders, mut conn: DbConn) -> EmptyResult {
-    _reinvite_user(org_id, user_org, &headers.user.email, &mut conn).await
+async fn reinvite_user(org_id: &str, user_org: &str, headers: AdminHeaders, conn: DbConn) -> EmptyResult {
+    _reinvite_user(org_id, user_org, &headers.user.email, &conn).await
 }
 
-async fn _reinvite_user(org_id: &str, user_org: &str, invited_by_email: &str, conn: &mut DbConn) -> EmptyResult {
+async fn _reinvite_user(org_id: &str, user_org: &str, invited_by_email: &str, conn: &DbConn) -> EmptyResult {
     if !CONFIG.invitations_allowed() {
         err!("Invitations are not allowed.")
     }
@@ -1067,22 +1044,17 @@ struct AcceptData {
 }
 
 #[post("/organizations/<org_id>/users/<_org_user_id>/accept", data = "<data>")]
-async fn accept_invite(
-    org_id: &str,
-    _org_user_id: &str,
-    data: JsonUpcase<AcceptData>,
-    mut conn: DbConn,
-) -> EmptyResult {
+async fn accept_invite(org_id: &str, _org_user_id: &str, data: JsonUpcase<AcceptData>, conn: DbConn) -> EmptyResult {
     // The web-vault passes org_id and org_user_id in the URL, but we are just reading them from the JWT instead
     let data: AcceptData = data.into_inner().data;
     let claims = decode_invite(&data.Token)?;
 
-    match User::find_by_mail(&claims.email, &mut conn).await {
+    match User::find_by_mail(&claims.email, &conn).await {
         Some(_) => {
-            Invitation::take(&claims.email, &mut conn).await;
+            Invitation::take(&claims.email, &conn).await;
 
             if let (Some(user_org), Some(org)) = (&claims.user_org_id, &claims.org_id) {
-                let mut user_org = match UserOrganization::find_by_uuid_and_org(user_org, org, &mut conn).await {
+                let mut user_org = match UserOrganization::find_by_uuid_and_org(user_org, org, &conn).await {
                     Some(user_org) => user_org,
                     None => err!("Error accepting the invitation"),
                 };
@@ -1091,7 +1063,7 @@ async fn accept_invite(
                     err!("User already accepted the invitation")
                 }
 
-                let master_password_required = OrgPolicy::org_is_reset_password_auto_enroll(org, &mut conn).await;
+                let master_password_required = OrgPolicy::org_is_reset_password_auto_enroll(org, &conn).await;
                 if data.ResetPasswordKey.is_none() && master_password_required {
                     err!("Reset password key is required, but not provided.");
                 }
@@ -1099,7 +1071,7 @@ async fn accept_invite(
                 // This check is also done at accept_invite(), _confirm_invite, _activate_user(), edit_user(), admin::update_user_org_type
                 // It returns different error messages per function.
                 if user_org.atype < UserOrgType::Admin {
-                    match OrgPolicy::is_user_allowed(&user_org.user_uuid, org_id, false, &mut conn).await {
+                    match OrgPolicy::is_user_allowed(&user_org.user_uuid, org_id, false, &conn).await {
                         Ok(_) => {}
                         Err(OrgPolicyErr::TwoFactorMissing) => {
                             err!("You cannot join this organization until you enable two-step login on your user account");
@@ -1116,7 +1088,7 @@ async fn accept_invite(
                     user_org.reset_password_key = data.ResetPasswordKey;
                 }
 
-                user_org.save(&mut conn).await?;
+                user_org.save(&conn).await?;
             }
         }
         None => err!("Invited user not found"),
@@ -1125,7 +1097,7 @@ async fn accept_invite(
     if CONFIG.mail_enabled() {
         let mut org_name = CONFIG.invitation_org_name();
         if let Some(org_id) = &claims.org_id {
-            org_name = match Organization::find_by_uuid(org_id, &mut conn).await {
+            org_name = match Organization::find_by_uuid(org_id, &conn).await {
                 Some(org) => org.name,
                 None => err!("Organization not found."),
             };
@@ -1147,7 +1119,7 @@ async fn bulk_confirm_invite(
     org_id: &str,
     data: JsonUpcase<Value>,
     headers: AdminHeaders,
-    mut conn: DbConn,
+    conn: DbConn,
     nt: Notify<'_>,
 ) -> Json<Value> {
     let data = data.into_inner().data;
@@ -1158,7 +1130,7 @@ async fn bulk_confirm_invite(
             for invite in keys {
                 let org_user_id = invite["Id"].as_str().unwrap_or_default();
                 let user_key = invite["Key"].as_str().unwrap_or_default();
-                let err_msg = match _confirm_invite(org_id, org_user_id, user_key, &headers, &mut conn, &nt).await {
+                let err_msg = match _confirm_invite(org_id, org_user_id, user_key, &headers, &conn, &nt).await {
                     Ok(_) => String::new(),
                     Err(e) => format!("{e:?}"),
                 };
@@ -1188,12 +1160,12 @@ async fn confirm_invite(
     org_user_id: &str,
     data: JsonUpcase<Value>,
     headers: AdminHeaders,
-    mut conn: DbConn,
+    conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
     let data = data.into_inner().data;
     let user_key = data["Key"].as_str().unwrap_or_default();
-    _confirm_invite(org_id, org_user_id, user_key, &headers, &mut conn, &nt).await
+    _confirm_invite(org_id, org_user_id, user_key, &headers, &conn, &nt).await
 }
 
 async fn _confirm_invite(
@@ -1201,7 +1173,7 @@ async fn _confirm_invite(
     org_user_id: &str,
     key: &str,
     headers: &AdminHeaders,
-    conn: &mut DbConn,
+    conn: &DbConn,
     nt: &Notify<'_>,
 ) -> EmptyResult {
     if key.is_empty() || org_user_id.is_empty() {
@@ -1276,9 +1248,9 @@ async fn get_user(
     org_user_id: &str,
     data: GetOrgUserData,
     _headers: AdminHeaders,
-    mut conn: DbConn,
+    conn: DbConn,
 ) -> JsonResult {
-    let user = match UserOrganization::find_by_uuid_and_org(org_user_id, org_id, &mut conn).await {
+    let user = match UserOrganization::find_by_uuid_and_org(org_user_id, org_id, &conn).await {
         Some(user) => user,
         None => err!("The specified user isn't a member of the organization"),
     };
@@ -1286,9 +1258,7 @@ async fn get_user(
     // In this case, when groups are requested we also need to include collections.
     // Else these will not be shown in the interface, and could lead to missing collections when saved.
     let include_groups = data.include_groups.unwrap_or(false);
-    Ok(Json(
-        user.to_json_user_details(data.include_collections.unwrap_or(include_groups), include_groups, &mut conn).await,
-    ))
+    Ok(Json(user.to_json_user_details(data.include_collections.unwrap_or(include_groups), include_groups, &conn).await))
 }
 
 #[derive(Deserialize)]
@@ -1317,7 +1287,7 @@ async fn edit_user(
     org_user_id: &str,
     data: JsonUpcase<EditUserData>,
     headers: AdminHeaders,
-    mut conn: DbConn,
+    conn: DbConn,
 ) -> EmptyResult {
     let data: EditUserData = data.into_inner().data;
 
@@ -1326,7 +1296,7 @@ async fn edit_user(
         None => err!("Invalid type"),
     };
 
-    let mut user_to_edit = match UserOrganization::find_by_uuid_and_org(org_user_id, org_id, &mut conn).await {
+    let mut user_to_edit = match UserOrganization::find_by_uuid_and_org(org_user_id, org_id, &conn).await {
         Some(user) => user,
         None => err!("The specified user isn't member of the organization"),
     };
@@ -1347,7 +1317,7 @@ async fn edit_user(
         && user_to_edit.status == UserOrgStatus::Confirmed as i32
     {
         // Removing owner permission, check that there is at least one other confirmed owner
-        if UserOrganization::count_confirmed_by_org_and_type(org_id, UserOrgType::Owner, &mut conn).await <= 1 {
+        if UserOrganization::count_confirmed_by_org_and_type(org_id, UserOrgType::Owner, &conn).await <= 1 {
             err!("Can't delete the last owner")
         }
     }
@@ -1355,7 +1325,7 @@ async fn edit_user(
     // This check is also done at accept_invite(), _confirm_invite, _activate_user(), edit_user(), admin::update_user_org_type
     // It returns different error messages per function.
     if new_type < UserOrgType::Admin {
-        match OrgPolicy::is_user_allowed(&user_to_edit.user_uuid, org_id, true, &mut conn).await {
+        match OrgPolicy::is_user_allowed(&user_to_edit.user_uuid, org_id, true, &conn).await {
             Ok(_) => {}
             Err(OrgPolicyErr::TwoFactorMissing) => {
                 err!("You cannot modify this user to this type because it has no two-step login method activated");
@@ -1370,14 +1340,14 @@ async fn edit_user(
     user_to_edit.atype = new_type as i32;
 
     // Delete all the odd collections
-    for c in CollectionUser::find_by_organization_and_user_uuid(org_id, &user_to_edit.user_uuid, &mut conn).await {
-        c.delete(&mut conn).await?;
+    for c in CollectionUser::find_by_organization_and_user_uuid(org_id, &user_to_edit.user_uuid, &conn).await {
+        c.delete(&conn).await?;
     }
 
     // If no accessAll, add the collections received
     if !data.AccessAll {
         for col in data.Collections.iter().flatten() {
-            match Collection::find_by_uuid_and_org(&col.Id, org_id, &mut conn).await {
+            match Collection::find_by_uuid_and_org(&col.Id, org_id, &conn).await {
                 None => err!("Collection not found in Organization"),
                 Some(collection) => {
                     CollectionUser::save(
@@ -1385,7 +1355,7 @@ async fn edit_user(
                         &collection.uuid,
                         col.ReadOnly,
                         col.HidePasswords,
-                        &mut conn,
+                        &conn,
                     )
                     .await?;
                 }
@@ -1393,11 +1363,11 @@ async fn edit_user(
         }
     }
 
-    GroupUser::delete_all_by_user(&user_to_edit.uuid, &mut conn).await?;
+    GroupUser::delete_all_by_user(&user_to_edit.uuid, &conn).await?;
 
     for group in data.Groups.iter().flatten() {
         let mut group_entry = GroupUser::new(String::from(group), user_to_edit.uuid.clone());
-        group_entry.save(&mut conn).await?;
+        group_entry.save(&conn).await?;
     }
 
     log_event(
@@ -1407,11 +1377,11 @@ async fn edit_user(
         headers.user.uuid.clone(),
         headers.device.atype,
         &headers.ip.ip,
-        &mut conn,
+        &conn,
     )
     .await;
 
-    user_to_edit.save(&mut conn).await
+    user_to_edit.save(&conn).await
 }
 
 #[delete("/organizations/<org_id>/users", data = "<data>")]
@@ -1419,14 +1389,14 @@ async fn bulk_delete_user(
     org_id: &str,
     data: JsonUpcase<OrgBulkIds>,
     headers: AdminHeaders,
-    mut conn: DbConn,
+    conn: DbConn,
     nt: Notify<'_>,
 ) -> Json<Value> {
     let data: OrgBulkIds = data.into_inner().data;
 
     let mut bulk_response = Vec::new();
     for org_user_id in data.Ids {
-        let err_msg = match _delete_user(org_id, &org_user_id, &headers, &mut conn, &nt).await {
+        let err_msg = match _delete_user(org_id, &org_user_id, &headers, &conn, &nt).await {
             Ok(_) => String::new(),
             Err(e) => format!("{e:?}"),
         };
@@ -1452,10 +1422,10 @@ async fn delete_user(
     org_id: &str,
     org_user_id: &str,
     headers: AdminHeaders,
-    mut conn: DbConn,
+    conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
-    _delete_user(org_id, org_user_id, &headers, &mut conn, &nt).await
+    _delete_user(org_id, org_user_id, &headers, &conn, &nt).await
 }
 
 #[post("/organizations/<org_id>/users/<org_user_id>/delete")]
@@ -1463,17 +1433,17 @@ async fn post_delete_user(
     org_id: &str,
     org_user_id: &str,
     headers: AdminHeaders,
-    mut conn: DbConn,
+    conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
-    _delete_user(org_id, org_user_id, &headers, &mut conn, &nt).await
+    _delete_user(org_id, org_user_id, &headers, &conn, &nt).await
 }
 
 async fn _delete_user(
     org_id: &str,
     org_user_id: &str,
     headers: &AdminHeaders,
-    conn: &mut DbConn,
+    conn: &DbConn,
     nt: &Notify<'_>,
 ) -> EmptyResult {
     let user_to_delete = match UserOrganization::find_by_uuid_and_org(org_user_id, org_id, conn).await {
@@ -1515,7 +1485,7 @@ async fn bulk_public_keys(
     org_id: &str,
     data: JsonUpcase<OrgBulkIds>,
     _headers: AdminHeaders,
-    mut conn: DbConn,
+    conn: DbConn,
 ) -> Json<Value> {
     let data: OrgBulkIds = data.into_inner().data;
 
@@ -1524,8 +1494,8 @@ async fn bulk_public_keys(
     // If the user does not exists, just ignore it, and do not return any information regarding that UserOrg UUID.
     // The web-vault will then ignore that user for the following steps.
     for user_org_id in data.Ids {
-        match UserOrganization::find_by_uuid_and_org(&user_org_id, org_id, &mut conn).await {
-            Some(user_org) => match User::find_by_uuid(&user_org.user_uuid, &mut conn).await {
+        match UserOrganization::find_by_uuid_and_org(&user_org_id, org_id, &conn).await {
+            Some(user_org) => match User::find_by_uuid(&user_org.user_uuid, &conn).await {
                 Some(user) => bulk_response.push(json!(
                     {
                         "Object": "organizationUserPublicKeyResponseModel",
@@ -1572,7 +1542,7 @@ async fn post_org_import(
     query: OrgIdData,
     data: JsonUpcase<ImportData>,
     headers: AdminHeaders,
-    mut conn: DbConn,
+    conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
     let data: ImportData = data.into_inner().data;
@@ -1587,7 +1557,7 @@ async fn post_org_import(
     let mut collections = Vec::new();
     for coll in data.Collections {
         let collection = Collection::new(org_id.clone(), coll.Name, coll.ExternalId);
-        if collection.save(&mut conn).await.is_err() {
+        if collection.save(&conn).await.is_err() {
             collections.push(Err(Error::new("Failed to create Collection", "Failed to create Collection")));
         } else {
             collections.push(Ok(collection));
@@ -1605,7 +1575,7 @@ async fn post_org_import(
     let mut ciphers = Vec::new();
     for cipher_data in data.Ciphers {
         let mut cipher = Cipher::new(cipher_data.Type, cipher_data.Name.clone());
-        update_cipher_from_data(&mut cipher, cipher_data, &headers, false, &mut conn, &nt, UpdateType::None).await.ok();
+        update_cipher_from_data(&mut cipher, cipher_data, &headers, false, &conn, &nt, UpdateType::None).await.ok();
         ciphers.push(cipher);
     }
 
@@ -1618,16 +1588,16 @@ async fn post_org_import(
             Err(_) => err!("Failed to assign to collection"),
         };
 
-        CollectionCipher::save(cipher_id, coll_id, &mut conn).await?;
+        CollectionCipher::save(cipher_id, coll_id, &conn).await?;
     }
 
     let mut user = headers.user;
-    user.update_revision(&mut conn).await
+    user.update_revision(&conn).await
 }
 
 #[get("/organizations/<org_id>/policies")]
-async fn list_policies(org_id: &str, _headers: AdminHeaders, mut conn: DbConn) -> Json<Value> {
-    let policies = OrgPolicy::find_by_org(org_id, &mut conn).await;
+async fn list_policies(org_id: &str, _headers: AdminHeaders, conn: DbConn) -> Json<Value> {
+    let policies = OrgPolicy::find_by_org(org_id, &conn).await;
     let policies_json: Vec<Value> = policies.iter().map(OrgPolicy::to_json).collect();
 
     Json(json!({
@@ -1638,7 +1608,7 @@ async fn list_policies(org_id: &str, _headers: AdminHeaders, mut conn: DbConn) -
 }
 
 #[get("/organizations/<org_id>/policies/token?<token>")]
-async fn list_policies_token(org_id: &str, token: &str, mut conn: DbConn) -> JsonResult {
+async fn list_policies_token(org_id: &str, token: &str, conn: DbConn) -> JsonResult {
     let invite = crate::auth::decode_invite(token)?;
 
     let invite_org_id = match invite.org_id {
@@ -1651,7 +1621,7 @@ async fn list_policies_token(org_id: &str, token: &str, mut conn: DbConn) -> Jso
     }
 
     // TODO: We receive the invite token as ?token=<>, validate it contains the org id
-    let policies = OrgPolicy::find_by_org(org_id, &mut conn).await;
+    let policies = OrgPolicy::find_by_org(org_id, &conn).await;
     let policies_json: Vec<Value> = policies.iter().map(OrgPolicy::to_json).collect();
 
     Ok(Json(json!({
@@ -1662,13 +1632,13 @@ async fn list_policies_token(org_id: &str, token: &str, mut conn: DbConn) -> Jso
 }
 
 #[get("/organizations/<org_id>/policies/<pol_type>")]
-async fn get_policy(org_id: &str, pol_type: i32, _headers: AdminHeaders, mut conn: DbConn) -> JsonResult {
+async fn get_policy(org_id: &str, pol_type: i32, _headers: AdminHeaders, conn: DbConn) -> JsonResult {
     let pol_type_enum = match OrgPolicyType::from_i32(pol_type) {
         Some(pt) => pt,
         None => err!("Invalid or unsupported policy type"),
     };
 
-    let policy = match OrgPolicy::find_by_org_and_type(org_id, pol_type_enum, &mut conn).await {
+    let policy = match OrgPolicy::find_by_org_and_type(org_id, pol_type_enum, &conn).await {
         Some(p) => p,
         None => OrgPolicy::new(String::from(org_id), pol_type_enum, "null".to_string()),
     };
@@ -1690,7 +1660,7 @@ async fn put_policy(
     pol_type: i32,
     data: Json<PolicyData>,
     headers: AdminHeaders,
-    mut conn: DbConn,
+    conn: DbConn,
 ) -> JsonResult {
     let data: PolicyData = data.into_inner();
 
@@ -1701,8 +1671,8 @@ async fn put_policy(
 
     // When enabling the TwoFactorAuthentication policy, remove this org's members that do have 2FA
     if pol_type_enum == OrgPolicyType::TwoFactorAuthentication && data.enabled {
-        for member in UserOrganization::find_by_org(org_id, &mut conn).await.into_iter() {
-            let user_twofactor_disabled = TwoFactor::find_by_user(&member.user_uuid, &mut conn).await.is_empty();
+        for member in UserOrganization::find_by_org(org_id, &conn).await.into_iter() {
+            let user_twofactor_disabled = TwoFactor::find_by_user(&member.user_uuid, &conn).await.is_empty();
 
             // Policy only applies to non-Owner/non-Admin members who have accepted joining the org
             // Invited users still need to accept the invite and will get an error when they try to accept the invite.
@@ -1711,8 +1681,8 @@ async fn put_policy(
                 && member.status != UserOrgStatus::Invited as i32
             {
                 if CONFIG.mail_enabled() {
-                    let org = Organization::find_by_uuid(&member.org_uuid, &mut conn).await.unwrap();
-                    let user = User::find_by_uuid(&member.user_uuid, &mut conn).await.unwrap();
+                    let org = Organization::find_by_uuid(&member.org_uuid, &conn).await.unwrap();
+                    let user = User::find_by_uuid(&member.user_uuid, &conn).await.unwrap();
 
                     mail::send_2fa_removed_from_org(&user.email, &org.name).await?;
                 }
@@ -1724,29 +1694,29 @@ async fn put_policy(
                     headers.user.uuid.clone(),
                     headers.device.atype,
                     &headers.ip.ip,
-                    &mut conn,
+                    &conn,
                 )
                 .await;
 
-                member.delete(&mut conn).await?;
+                member.delete(&conn).await?;
             }
         }
     }
 
     // When enabling the SingleOrg policy, remove this org's members that are members of other orgs
     if pol_type_enum == OrgPolicyType::SingleOrg && data.enabled {
-        for member in UserOrganization::find_by_org(org_id, &mut conn).await.into_iter() {
+        for member in UserOrganization::find_by_org(org_id, &conn).await.into_iter() {
             // Policy only applies to non-Owner/non-Admin members who have accepted joining the org
             // Exclude invited and revoked users when checking for this policy.
             // Those users will not be allowed to accept or be activated because of the policy checks done there.
             // We check if the count is larger then 1, because it includes this organization also.
             if member.atype < UserOrgType::Admin
                 && member.status != UserOrgStatus::Invited as i32
-                && UserOrganization::count_accepted_and_confirmed_by_user(&member.user_uuid, &mut conn).await > 1
+                && UserOrganization::count_accepted_and_confirmed_by_user(&member.user_uuid, &conn).await > 1
             {
                 if CONFIG.mail_enabled() {
-                    let org = Organization::find_by_uuid(&member.org_uuid, &mut conn).await.unwrap();
-                    let user = User::find_by_uuid(&member.user_uuid, &mut conn).await.unwrap();
+                    let org = Organization::find_by_uuid(&member.org_uuid, &conn).await.unwrap();
+                    let user = User::find_by_uuid(&member.user_uuid, &conn).await.unwrap();
 
                     mail::send_single_org_removed_from_org(&user.email, &org.name).await?;
                 }
@@ -1758,23 +1728,23 @@ async fn put_policy(
                     headers.user.uuid.clone(),
                     headers.device.atype,
                     &headers.ip.ip,
-                    &mut conn,
+                    &conn,
                 )
                 .await;
 
-                member.delete(&mut conn).await?;
+                member.delete(&conn).await?;
             }
         }
     }
 
-    let mut policy = match OrgPolicy::find_by_org_and_type(org_id, pol_type_enum, &mut conn).await {
+    let mut policy = match OrgPolicy::find_by_org_and_type(org_id, pol_type_enum, &conn).await {
         Some(p) => p,
         None => OrgPolicy::new(String::from(org_id), pol_type_enum, "{}".to_string()),
     };
 
     policy.enabled = data.enabled;
     policy.data = serde_json::to_string(&data.data)?;
-    policy.save(&mut conn).await?;
+    policy.save(&conn).await?;
 
     log_event(
         EventType::PolicyUpdated as i32,
@@ -1783,7 +1753,7 @@ async fn put_policy(
         headers.user.uuid.clone(),
         headers.device.atype,
         &headers.ip.ip,
-        &mut conn,
+        &conn,
     )
     .await;
 
@@ -1874,7 +1844,7 @@ struct OrgImportData {
 }
 
 #[post("/organizations/<org_id>/import", data = "<data>")]
-async fn import(org_id: &str, data: JsonUpcase<OrgImportData>, headers: Headers, mut conn: DbConn) -> EmptyResult {
+async fn import(org_id: &str, data: JsonUpcase<OrgImportData>, headers: Headers, conn: DbConn) -> EmptyResult {
     let data = data.into_inner().data;
 
     // TODO: Currently we aren't storing the externalId's anywhere, so we also don't have a way
@@ -1883,7 +1853,7 @@ async fn import(org_id: &str, data: JsonUpcase<OrgImportData>, headers: Headers,
     // as opposed to upstream which only removes auto-imported users.
 
     // User needs to be admin or owner to use the Directory Connector
-    match UserOrganization::find_by_user_and_org(&headers.user.uuid, org_id, &mut conn).await {
+    match UserOrganization::find_by_user_and_org(&headers.user.uuid, org_id, &conn).await {
         Some(user_org) if user_org.atype >= UserOrgType::Admin => { /* Okay, nothing to do */ }
         Some(_) => err!("User has insufficient permissions to use Directory Connector"),
         None => err!("User not part of organization"),
@@ -1892,7 +1862,7 @@ async fn import(org_id: &str, data: JsonUpcase<OrgImportData>, headers: Headers,
     for user_data in &data.Users {
         if user_data.Deleted {
             // If user is marked for deletion and it exists, delete it
-            if let Some(user_org) = UserOrganization::find_by_email_and_org(&user_data.Email, org_id, &mut conn).await {
+            if let Some(user_org) = UserOrganization::find_by_email_and_org(&user_data.Email, org_id, &conn).await {
                 log_event(
                     EventType::OrganizationUserRemoved as i32,
                     &user_org.uuid,
@@ -1900,16 +1870,16 @@ async fn import(org_id: &str, data: JsonUpcase<OrgImportData>, headers: Headers,
                     headers.user.uuid.clone(),
                     headers.device.atype,
                     &headers.ip.ip,
-                    &mut conn,
+                    &conn,
                 )
                 .await;
 
-                user_org.delete(&mut conn).await?;
+                user_org.delete(&conn).await?;
             }
 
         // If user is not part of the organization, but it exists
-        } else if UserOrganization::find_by_email_and_org(&user_data.Email, org_id, &mut conn).await.is_none() {
-            if let Some(user) = User::find_by_mail(&user_data.Email, &mut conn).await {
+        } else if UserOrganization::find_by_email_and_org(&user_data.Email, org_id, &conn).await.is_none() {
+            if let Some(user) = User::find_by_mail(&user_data.Email, &conn).await {
                 let user_org_status = if CONFIG.mail_enabled() {
                     UserOrgStatus::Invited as i32
                 } else {
@@ -1921,7 +1891,7 @@ async fn import(org_id: &str, data: JsonUpcase<OrgImportData>, headers: Headers,
                 new_org_user.atype = UserOrgType::User as i32;
                 new_org_user.status = user_org_status;
 
-                new_org_user.save(&mut conn).await?;
+                new_org_user.save(&conn).await?;
 
                 log_event(
                     EventType::OrganizationUserInvited as i32,
@@ -1930,12 +1900,12 @@ async fn import(org_id: &str, data: JsonUpcase<OrgImportData>, headers: Headers,
                     headers.user.uuid.clone(),
                     headers.device.atype,
                     &headers.ip.ip,
-                    &mut conn,
+                    &conn,
                 )
                 .await;
 
                 if CONFIG.mail_enabled() {
-                    let org_name = match Organization::find_by_uuid(org_id, &mut conn).await {
+                    let org_name = match Organization::find_by_uuid(org_id, &conn).await {
                         Some(org) => org.name,
                         None => err!("Error looking up organization"),
                     };
@@ -1956,8 +1926,8 @@ async fn import(org_id: &str, data: JsonUpcase<OrgImportData>, headers: Headers,
 
     // If this flag is enabled, any user that isn't provided in the Users list will be removed (by default they will be kept unless they have Deleted == true)
     if data.OverwriteExisting {
-        for user_org in UserOrganization::find_by_org_and_type(org_id, UserOrgType::User, &mut conn).await {
-            if let Some(user_email) = User::find_by_uuid(&user_org.user_uuid, &mut conn).await.map(|u| u.email) {
+        for user_org in UserOrganization::find_by_org_and_type(org_id, UserOrgType::User, &conn).await {
+            if let Some(user_email) = User::find_by_uuid(&user_org.user_uuid, &conn).await.map(|u| u.email) {
                 if !data.Users.iter().any(|u| u.Email == user_email) {
                     log_event(
                         EventType::OrganizationUserRemoved as i32,
@@ -1966,11 +1936,11 @@ async fn import(org_id: &str, data: JsonUpcase<OrgImportData>, headers: Headers,
                         headers.user.uuid.clone(),
                         headers.device.atype,
                         &headers.ip.ip,
-                        &mut conn,
+                        &conn,
                     )
                     .await;
 
-                    user_org.delete(&mut conn).await?;
+                    user_org.delete(&conn).await?;
                 }
             }
         }
@@ -1985,9 +1955,9 @@ async fn deactivate_organization_user(
     org_id: &str,
     org_user_id: &str,
     headers: AdminHeaders,
-    mut conn: DbConn,
+    conn: DbConn,
 ) -> EmptyResult {
-    _revoke_organization_user(org_id, org_user_id, &headers, &mut conn).await
+    _revoke_organization_user(org_id, org_user_id, &headers, &conn).await
 }
 
 // Pre web-vault v2022.9.x endpoint
@@ -2002,13 +1972,8 @@ async fn bulk_deactivate_organization_user(
 }
 
 #[put("/organizations/<org_id>/users/<org_user_id>/revoke")]
-async fn revoke_organization_user(
-    org_id: &str,
-    org_user_id: &str,
-    headers: AdminHeaders,
-    mut conn: DbConn,
-) -> EmptyResult {
-    _revoke_organization_user(org_id, org_user_id, &headers, &mut conn).await
+async fn revoke_organization_user(org_id: &str, org_user_id: &str, headers: AdminHeaders, conn: DbConn) -> EmptyResult {
+    _revoke_organization_user(org_id, org_user_id, &headers, &conn).await
 }
 
 #[put("/organizations/<org_id>/users/revoke", data = "<data>")]
@@ -2016,7 +1981,7 @@ async fn bulk_revoke_organization_user(
     org_id: &str,
     data: JsonUpcase<Value>,
     headers: AdminHeaders,
-    mut conn: DbConn,
+    conn: DbConn,
 ) -> Json<Value> {
     let data = data.into_inner().data;
 
@@ -2025,7 +1990,7 @@ async fn bulk_revoke_organization_user(
         Some(org_users) => {
             for org_user_id in org_users {
                 let org_user_id = org_user_id.as_str().unwrap_or_default();
-                let err_msg = match _revoke_organization_user(org_id, org_user_id, &headers, &mut conn).await {
+                let err_msg = match _revoke_organization_user(org_id, org_user_id, &headers, &conn).await {
                     Ok(_) => String::new(),
                     Err(e) => format!("{e:?}"),
                 };
@@ -2053,7 +2018,7 @@ async fn _revoke_organization_user(
     org_id: &str,
     org_user_id: &str,
     headers: &AdminHeaders,
-    conn: &mut DbConn,
+    conn: &DbConn,
 ) -> EmptyResult {
     match UserOrganization::find_by_uuid_and_org(org_user_id, org_id, conn).await {
         Some(mut user_org) if user_org.status > UserOrgStatus::Revoked as i32 => {
@@ -2095,9 +2060,9 @@ async fn activate_organization_user(
     org_id: &str,
     org_user_id: &str,
     headers: AdminHeaders,
-    mut conn: DbConn,
+    conn: DbConn,
 ) -> EmptyResult {
-    _restore_organization_user(org_id, org_user_id, &headers, &mut conn).await
+    _restore_organization_user(org_id, org_user_id, &headers, &conn).await
 }
 
 // Pre web-vault v2022.9.x endpoint
@@ -2116,9 +2081,9 @@ async fn restore_organization_user(
     org_id: &str,
     org_user_id: &str,
     headers: AdminHeaders,
-    mut conn: DbConn,
+    conn: DbConn,
 ) -> EmptyResult {
-    _restore_organization_user(org_id, org_user_id, &headers, &mut conn).await
+    _restore_organization_user(org_id, org_user_id, &headers, &conn).await
 }
 
 #[put("/organizations/<org_id>/users/restore", data = "<data>")]
@@ -2126,7 +2091,7 @@ async fn bulk_restore_organization_user(
     org_id: &str,
     data: JsonUpcase<Value>,
     headers: AdminHeaders,
-    mut conn: DbConn,
+    conn: DbConn,
 ) -> Json<Value> {
     let data = data.into_inner().data;
 
@@ -2135,7 +2100,7 @@ async fn bulk_restore_organization_user(
         Some(org_users) => {
             for org_user_id in org_users {
                 let org_user_id = org_user_id.as_str().unwrap_or_default();
-                let err_msg = match _restore_organization_user(org_id, org_user_id, &headers, &mut conn).await {
+                let err_msg = match _restore_organization_user(org_id, org_user_id, &headers, &conn).await {
                     Ok(_) => String::new(),
                     Err(e) => format!("{e:?}"),
                 };
@@ -2163,7 +2128,7 @@ async fn _restore_organization_user(
     org_id: &str,
     org_user_id: &str,
     headers: &AdminHeaders,
-    conn: &mut DbConn,
+    conn: &DbConn,
 ) -> EmptyResult {
     match UserOrganization::find_by_uuid_and_org(org_user_id, org_id, conn).await {
         Some(mut user_org) if user_org.status < UserOrgStatus::Accepted as i32 => {
@@ -2209,13 +2174,13 @@ async fn _restore_organization_user(
 }
 
 #[get("/organizations/<org_id>/groups")]
-async fn get_groups(org_id: &str, _headers: ManagerHeadersLoose, mut conn: DbConn) -> JsonResult {
+async fn get_groups(org_id: &str, _headers: ManagerHeadersLoose, conn: DbConn) -> JsonResult {
     let groups: Vec<Value> = if CONFIG.org_groups_enabled() {
-        // Group::find_by_organization(&org_id, &mut conn).await.iter().map(Group::to_json).collect::<Value>()
-        let groups = Group::find_by_organization(org_id, &mut conn).await;
+        // Group::find_by_organization(&org_id, &conn).await.iter().map(Group::to_json).collect::<Value>()
+        let groups = Group::find_by_organization(org_id, &conn).await;
         let mut groups_json = Vec::with_capacity(groups.len());
         for g in groups {
-            groups_json.push(g.to_json_details(&mut conn).await)
+            groups_json.push(g.to_json_details(&conn).await)
         }
         groups_json
     } else {
@@ -2307,12 +2272,7 @@ async fn post_group(
 }
 
 #[post("/organizations/<org_id>/groups", data = "<data>")]
-async fn post_groups(
-    org_id: &str,
-    headers: AdminHeaders,
-    data: JsonUpcase<GroupRequest>,
-    mut conn: DbConn,
-) -> JsonResult {
+async fn post_groups(org_id: &str, headers: AdminHeaders, data: JsonUpcase<GroupRequest>, conn: DbConn) -> JsonResult {
     if !CONFIG.org_groups_enabled() {
         err!("Group support is disabled");
     }
@@ -2327,11 +2287,11 @@ async fn post_groups(
         headers.user.uuid.clone(),
         headers.device.atype,
         &headers.ip.ip,
-        &mut conn,
+        &conn,
     )
     .await;
 
-    add_update_group(group, group_request.Collections, group_request.Users, org_id, &headers, &mut conn).await
+    add_update_group(group, group_request.Collections, group_request.Users, org_id, &headers, &conn).await
 }
 
 #[put("/organizations/<org_id>/groups/<group_id>", data = "<data>")]
@@ -2340,13 +2300,13 @@ async fn put_group(
     group_id: &str,
     data: JsonUpcase<GroupRequest>,
     headers: AdminHeaders,
-    mut conn: DbConn,
+    conn: DbConn,
 ) -> JsonResult {
     if !CONFIG.org_groups_enabled() {
         err!("Group support is disabled");
     }
 
-    let group = match Group::find_by_uuid(group_id, &mut conn).await {
+    let group = match Group::find_by_uuid(group_id, &conn).await {
         Some(group) => group,
         None => err!("Group not found"),
     };
@@ -2354,8 +2314,8 @@ async fn put_group(
     let group_request = data.into_inner().data;
     let updated_group = group_request.update_group(group);
 
-    CollectionGroup::delete_all_by_group(group_id, &mut conn).await?;
-    GroupUser::delete_all_by_group(group_id, &mut conn).await?;
+    CollectionGroup::delete_all_by_group(group_id, &conn).await?;
+    GroupUser::delete_all_by_group(group_id, &conn).await?;
 
     log_event(
         EventType::GroupUpdated as i32,
@@ -2364,11 +2324,11 @@ async fn put_group(
         headers.user.uuid.clone(),
         headers.device.atype,
         &headers.ip.ip,
-        &mut conn,
+        &conn,
     )
     .await;
 
-    add_update_group(updated_group, group_request.Collections, group_request.Users, org_id, &headers, &mut conn).await
+    add_update_group(updated_group, group_request.Collections, group_request.Users, org_id, &headers, &conn).await
 }
 
 async fn add_update_group(
@@ -2377,7 +2337,7 @@ async fn add_update_group(
     users: Vec<String>,
     org_id: &str,
     headers: &AdminHeaders,
-    conn: &mut DbConn,
+    conn: &DbConn,
 ) -> JsonResult {
     group.save(conn).await?;
 
@@ -2412,30 +2372,30 @@ async fn add_update_group(
 }
 
 #[get("/organizations/<_org_id>/groups/<group_id>/details")]
-async fn get_group_details(_org_id: &str, group_id: &str, _headers: AdminHeaders, mut conn: DbConn) -> JsonResult {
+async fn get_group_details(_org_id: &str, group_id: &str, _headers: AdminHeaders, conn: DbConn) -> JsonResult {
     if !CONFIG.org_groups_enabled() {
         err!("Group support is disabled");
     }
 
-    let group = match Group::find_by_uuid(group_id, &mut conn).await {
+    let group = match Group::find_by_uuid(group_id, &conn).await {
         Some(group) => group,
         _ => err!("Group could not be found!"),
     };
 
-    Ok(Json(group.to_json_details(&mut conn).await))
+    Ok(Json(group.to_json_details(&conn).await))
 }
 
 #[post("/organizations/<org_id>/groups/<group_id>/delete")]
-async fn post_delete_group(org_id: &str, group_id: &str, headers: AdminHeaders, mut conn: DbConn) -> EmptyResult {
-    _delete_group(org_id, group_id, &headers, &mut conn).await
+async fn post_delete_group(org_id: &str, group_id: &str, headers: AdminHeaders, conn: DbConn) -> EmptyResult {
+    _delete_group(org_id, group_id, &headers, &conn).await
 }
 
 #[delete("/organizations/<org_id>/groups/<group_id>")]
-async fn delete_group(org_id: &str, group_id: &str, headers: AdminHeaders, mut conn: DbConn) -> EmptyResult {
-    _delete_group(org_id, group_id, &headers, &mut conn).await
+async fn delete_group(org_id: &str, group_id: &str, headers: AdminHeaders, conn: DbConn) -> EmptyResult {
+    _delete_group(org_id, group_id, &headers, &conn).await
 }
 
-async fn _delete_group(org_id: &str, group_id: &str, headers: &AdminHeaders, conn: &mut DbConn) -> EmptyResult {
+async fn _delete_group(org_id: &str, group_id: &str, headers: &AdminHeaders, conn: &DbConn) -> EmptyResult {
     if !CONFIG.org_groups_enabled() {
         err!("Group support is disabled");
     }
@@ -2464,7 +2424,7 @@ async fn bulk_delete_groups(
     org_id: &str,
     data: JsonUpcase<OrgBulkIds>,
     headers: AdminHeaders,
-    mut conn: DbConn,
+    conn: DbConn,
 ) -> EmptyResult {
     if !CONFIG.org_groups_enabled() {
         err!("Group support is disabled");
@@ -2473,18 +2433,18 @@ async fn bulk_delete_groups(
     let data: OrgBulkIds = data.into_inner().data;
 
     for group_id in data.Ids {
-        _delete_group(org_id, &group_id, &headers, &mut conn).await?
+        _delete_group(org_id, &group_id, &headers, &conn).await?
     }
     Ok(())
 }
 
 #[get("/organizations/<_org_id>/groups/<group_id>")]
-async fn get_group(_org_id: &str, group_id: &str, _headers: AdminHeaders, mut conn: DbConn) -> JsonResult {
+async fn get_group(_org_id: &str, group_id: &str, _headers: AdminHeaders, conn: DbConn) -> JsonResult {
     if !CONFIG.org_groups_enabled() {
         err!("Group support is disabled");
     }
 
-    let group = match Group::find_by_uuid(group_id, &mut conn).await {
+    let group = match Group::find_by_uuid(group_id, &conn).await {
         Some(group) => group,
         _ => err!("Group not found"),
     };
@@ -2493,17 +2453,17 @@ async fn get_group(_org_id: &str, group_id: &str, _headers: AdminHeaders, mut co
 }
 
 #[get("/organizations/<_org_id>/groups/<group_id>/users")]
-async fn get_group_users(_org_id: &str, group_id: &str, _headers: AdminHeaders, mut conn: DbConn) -> JsonResult {
+async fn get_group_users(_org_id: &str, group_id: &str, _headers: AdminHeaders, conn: DbConn) -> JsonResult {
     if !CONFIG.org_groups_enabled() {
         err!("Group support is disabled");
     }
 
-    match Group::find_by_uuid(group_id, &mut conn).await {
+    match Group::find_by_uuid(group_id, &conn).await {
         Some(_) => { /* Do nothing */ }
         _ => err!("Group could not be found!"),
     };
 
-    let group_users: Vec<String> = GroupUser::find_by_group(group_id, &mut conn)
+    let group_users: Vec<String> = GroupUser::find_by_group(group_id, &conn)
         .await
         .iter()
         .map(|entry| entry.users_organizations_uuid.clone())
@@ -2518,23 +2478,23 @@ async fn put_group_users(
     group_id: &str,
     headers: AdminHeaders,
     data: JsonVec<String>,
-    mut conn: DbConn,
+    conn: DbConn,
 ) -> EmptyResult {
     if !CONFIG.org_groups_enabled() {
         err!("Group support is disabled");
     }
 
-    match Group::find_by_uuid(group_id, &mut conn).await {
+    match Group::find_by_uuid(group_id, &conn).await {
         Some(_) => { /* Do nothing */ }
         _ => err!("Group could not be found!"),
     };
 
-    GroupUser::delete_all_by_group(group_id, &mut conn).await?;
+    GroupUser::delete_all_by_group(group_id, &conn).await?;
 
     let assigned_user_ids = data.into_inner();
     for assigned_user_id in assigned_user_ids {
         let mut user_entry = GroupUser::new(String::from(group_id), assigned_user_id.clone());
-        user_entry.save(&mut conn).await?;
+        user_entry.save(&conn).await?;
 
         log_event(
             EventType::OrganizationUserUpdatedGroups as i32,
@@ -2543,7 +2503,7 @@ async fn put_group_users(
             headers.user.uuid.clone(),
             headers.device.atype,
             &headers.ip.ip,
-            &mut conn,
+            &conn,
         )
         .await;
     }
@@ -2552,18 +2512,18 @@ async fn put_group_users(
 }
 
 #[get("/organizations/<_org_id>/users/<user_id>/groups")]
-async fn get_user_groups(_org_id: &str, user_id: &str, _headers: AdminHeaders, mut conn: DbConn) -> JsonResult {
+async fn get_user_groups(_org_id: &str, user_id: &str, _headers: AdminHeaders, conn: DbConn) -> JsonResult {
     if !CONFIG.org_groups_enabled() {
         err!("Group support is disabled");
     }
 
-    match UserOrganization::find_by_uuid(user_id, &mut conn).await {
+    match UserOrganization::find_by_uuid(user_id, &conn).await {
         Some(_) => { /* Do nothing */ }
         _ => err!("User could not be found!"),
     };
 
     let user_groups: Vec<String> =
-        GroupUser::find_by_user(user_id, &mut conn).await.iter().map(|entry| entry.groups_uuid.clone()).collect();
+        GroupUser::find_by_user(user_id, &conn).await.iter().map(|entry| entry.groups_uuid.clone()).collect();
 
     Ok(Json(json!(user_groups)))
 }
@@ -2591,13 +2551,13 @@ async fn put_user_groups(
     org_user_id: &str,
     data: JsonUpcase<OrganizationUserUpdateGroupsRequest>,
     headers: AdminHeaders,
-    mut conn: DbConn,
+    conn: DbConn,
 ) -> EmptyResult {
     if !CONFIG.org_groups_enabled() {
         err!("Group support is disabled");
     }
 
-    let user_org = match UserOrganization::find_by_uuid(org_user_id, &mut conn).await {
+    let user_org = match UserOrganization::find_by_uuid(org_user_id, &conn).await {
         Some(uo) => uo,
         _ => err!("User could not be found!"),
     };
@@ -2606,12 +2566,12 @@ async fn put_user_groups(
         err!("Group doesn't belong to organization");
     }
 
-    GroupUser::delete_all_by_user(org_user_id, &mut conn).await?;
+    GroupUser::delete_all_by_user(org_user_id, &conn).await?;
 
     let assigned_group_ids = data.into_inner().data;
     for assigned_group_id in assigned_group_ids.GroupIds {
         let mut group_user = GroupUser::new(assigned_group_id.clone(), String::from(org_user_id));
-        group_user.save(&mut conn).await?;
+        group_user.save(&conn).await?;
     }
 
     log_event(
@@ -2621,7 +2581,7 @@ async fn put_user_groups(
         headers.user.uuid.clone(),
         headers.device.atype,
         &headers.ip.ip,
-        &mut conn,
+        &conn,
     )
     .await;
 
@@ -2645,13 +2605,13 @@ async fn delete_group_user(
     group_id: &str,
     org_user_id: &str,
     headers: AdminHeaders,
-    mut conn: DbConn,
+    conn: DbConn,
 ) -> EmptyResult {
     if !CONFIG.org_groups_enabled() {
         err!("Group support is disabled");
     }
 
-    let user_org = match UserOrganization::find_by_uuid(org_user_id, &mut conn).await {
+    let user_org = match UserOrganization::find_by_uuid(org_user_id, &conn).await {
         Some(uo) => uo,
         _ => err!("User could not be found!"),
     };
@@ -2660,7 +2620,7 @@ async fn delete_group_user(
         err!("User doesn't belong to organization");
     }
 
-    let group = match Group::find_by_uuid(group_id, &mut conn).await {
+    let group = match Group::find_by_uuid(group_id, &conn).await {
         Some(g) => g,
         _ => err!("Group could not be found!"),
     };
@@ -2676,11 +2636,11 @@ async fn delete_group_user(
         headers.user.uuid.clone(),
         headers.device.atype,
         &headers.ip.ip,
-        &mut conn,
+        &conn,
     )
     .await;
 
-    GroupUser::delete_by_group_id_and_user_id(group_id, org_user_id, &mut conn).await
+    GroupUser::delete_by_group_id_and_user_id(group_id, org_user_id, &conn).await
 }
 
 #[derive(Deserialize)]
@@ -2698,8 +2658,8 @@ struct OrganizationUserResetPasswordRequest {
 }
 
 #[get("/organizations/<org_id>/keys")]
-async fn get_organization_keys(org_id: &str, mut conn: DbConn) -> JsonResult {
-    let org = match Organization::find_by_uuid(org_id, &mut conn).await {
+async fn get_organization_keys(org_id: &str, conn: DbConn) -> JsonResult {
+    let org = match Organization::find_by_uuid(org_id, &conn).await {
         Some(organization) => organization,
         None => err!("Organization not found"),
     };
@@ -2717,25 +2677,25 @@ async fn put_reset_password(
     org_user_id: &str,
     headers: AdminHeaders,
     data: JsonUpcase<OrganizationUserResetPasswordRequest>,
-    mut conn: DbConn,
+    conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
-    let org = match Organization::find_by_uuid(org_id, &mut conn).await {
+    let org = match Organization::find_by_uuid(org_id, &conn).await {
         Some(org) => org,
         None => err!("Required organization not found"),
     };
 
-    let org_user = match UserOrganization::find_by_uuid_and_org(org_user_id, &org.uuid, &mut conn).await {
+    let org_user = match UserOrganization::find_by_uuid_and_org(org_user_id, &org.uuid, &conn).await {
         Some(user) => user,
         None => err!("User to reset isn't member of required organization"),
     };
 
-    let user = match User::find_by_uuid(&org_user.user_uuid, &mut conn).await {
+    let user = match User::find_by_uuid(&org_user.user_uuid, &conn).await {
         Some(user) => user,
         None => err!("User not found"),
     };
 
-    check_reset_password_applicable_and_permissions(org_id, org_user_id, &headers, &mut conn).await?;
+    check_reset_password_applicable_and_permissions(org_id, org_user_id, &headers, &conn).await?;
 
     if org_user.reset_password_key.is_none() {
         err!("Password reset not or not correctly enrolled");
@@ -2754,7 +2714,7 @@ async fn put_reset_password(
 
     let mut user = user;
     user.set_password(reset_request.NewMasterPasswordHash.as_str(), Some(reset_request.Key), true, None);
-    user.save(&mut conn).await?;
+    user.save(&conn).await?;
 
     nt.send_logout(&user, None).await;
 
@@ -2765,7 +2725,7 @@ async fn put_reset_password(
         headers.user.uuid.clone(),
         headers.device.atype,
         &headers.ip.ip,
-        &mut conn,
+        &conn,
     )
     .await;
 
@@ -2777,24 +2737,24 @@ async fn get_reset_password_details(
     org_id: &str,
     org_user_id: &str,
     headers: AdminHeaders,
-    mut conn: DbConn,
+    conn: DbConn,
 ) -> JsonResult {
-    let org = match Organization::find_by_uuid(org_id, &mut conn).await {
+    let org = match Organization::find_by_uuid(org_id, &conn).await {
         Some(org) => org,
         None => err!("Required organization not found"),
     };
 
-    let org_user = match UserOrganization::find_by_uuid_and_org(org_user_id, org_id, &mut conn).await {
+    let org_user = match UserOrganization::find_by_uuid_and_org(org_user_id, org_id, &conn).await {
         Some(user) => user,
         None => err!("User to reset isn't member of required organization"),
     };
 
-    let user = match User::find_by_uuid(&org_user.user_uuid, &mut conn).await {
+    let user = match User::find_by_uuid(&org_user.user_uuid, &conn).await {
         Some(user) => user,
         None => err!("User not found"),
     };
 
-    check_reset_password_applicable_and_permissions(org_id, org_user_id, &headers, &mut conn).await?;
+    check_reset_password_applicable_and_permissions(org_id, org_user_id, &headers, &conn).await?;
 
     // https://github.com/bitwarden/server/blob/3b50ccb9f804efaacdc46bed5b60e5b28eddefcf/src/Api/Models/Response/Organizations/OrganizationUserResponseModel.cs#L111
     Ok(Json(json!({
@@ -2813,7 +2773,7 @@ async fn check_reset_password_applicable_and_permissions(
     org_id: &str,
     org_user_id: &str,
     headers: &AdminHeaders,
-    conn: &mut DbConn,
+    conn: &DbConn,
 ) -> EmptyResult {
     check_reset_password_applicable(org_id, conn).await?;
 
@@ -2830,7 +2790,7 @@ async fn check_reset_password_applicable_and_permissions(
     }
 }
 
-async fn check_reset_password_applicable(org_id: &str, conn: &mut DbConn) -> EmptyResult {
+async fn check_reset_password_applicable(org_id: &str, conn: &DbConn) -> EmptyResult {
     if !CONFIG.mail_enabled() {
         err!("Password reset is not supported on an email-disabled instance.");
     }
@@ -2853,19 +2813,18 @@ async fn put_reset_password_enrollment(
     org_user_id: &str,
     headers: Headers,
     data: JsonUpcase<OrganizationUserResetPasswordEnrollmentRequest>,
-    mut conn: DbConn,
+    conn: DbConn,
 ) -> EmptyResult {
-    let mut org_user = match UserOrganization::find_by_user_and_org(&headers.user.uuid, org_id, &mut conn).await {
+    let mut org_user = match UserOrganization::find_by_user_and_org(&headers.user.uuid, org_id, &conn).await {
         Some(u) => u,
         None => err!("User to enroll isn't member of required organization"),
     };
 
-    check_reset_password_applicable(org_id, &mut conn).await?;
+    check_reset_password_applicable(org_id, &conn).await?;
 
     let reset_request = data.into_inner().data;
 
-    if reset_request.ResetPasswordKey.is_none() && OrgPolicy::org_is_reset_password_auto_enroll(org_id, &mut conn).await
-    {
+    if reset_request.ResetPasswordKey.is_none() && OrgPolicy::org_is_reset_password_auto_enroll(org_id, &conn).await {
         err!("Reset password can't be withdrawed due to an enterprise policy");
     }
 
@@ -2881,7 +2840,7 @@ async fn put_reset_password_enrollment(
     }
 
     org_user.reset_password_key = reset_request.ResetPasswordKey;
-    org_user.save(&mut conn).await?;
+    org_user.save(&conn).await?;
 
     let log_id = if org_user.reset_password_key.is_some() {
         EventType::OrganizationUserResetPasswordEnroll as i32
@@ -2889,7 +2848,7 @@ async fn put_reset_password_enrollment(
         EventType::OrganizationUserResetPasswordWithdraw as i32
     };
 
-    log_event(log_id, org_user_id, org_id, headers.user.uuid.clone(), headers.device.atype, &headers.ip.ip, &mut conn)
+    log_event(log_id, org_user_id, org_id, headers.user.uuid.clone(), headers.device.atype, &headers.ip.ip, &conn)
         .await;
 
     Ok(())
@@ -2903,7 +2862,7 @@ async fn put_reset_password_enrollment(
 //       We need to convert all keys so they have the first character to be a lowercase.
 //       Else the export will be just an empty JSON file.
 #[get("/organizations/<org_id>/export")]
-async fn get_org_export(org_id: &str, headers: AdminHeaders, mut conn: DbConn) -> Json<Value> {
+async fn get_org_export(org_id: &str, headers: AdminHeaders, conn: DbConn) -> Json<Value> {
     use semver::{Version, VersionReq};
 
     // Since version v2023.1.0 the format of the export is different.
@@ -2924,12 +2883,12 @@ async fn get_org_export(org_id: &str, headers: AdminHeaders, mut conn: DbConn) -
         // Backwards compatible pre v2023.1.0 response
         Json(json!({
             "collections": {
-                "data": convert_json_key_lcase_first(_get_org_collections(org_id, &mut conn).await),
+                "data": convert_json_key_lcase_first(_get_org_collections(org_id, &conn).await),
                 "object": "list",
                 "continuationToken": null,
             },
             "ciphers": {
-                "data": convert_json_key_lcase_first(_get_org_details(org_id, &headers.host, &headers.user.uuid, &mut conn).await),
+                "data": convert_json_key_lcase_first(_get_org_details(org_id, &headers.host, &headers.user.uuid, &conn).await),
                 "object": "list",
                 "continuationToken": null,
             }
@@ -2937,8 +2896,8 @@ async fn get_org_export(org_id: &str, headers: AdminHeaders, mut conn: DbConn) -
     } else {
         // v2023.1.0 and newer response
         Json(json!({
-            "collections": convert_json_key_lcase_first(_get_org_collections(org_id, &mut conn).await),
-            "ciphers": convert_json_key_lcase_first(_get_org_details(org_id, &headers.host, &headers.user.uuid, &mut conn).await),
+            "collections": convert_json_key_lcase_first(_get_org_collections(org_id, &conn).await),
+            "ciphers": convert_json_key_lcase_first(_get_org_details(org_id, &headers.host, &headers.user.uuid, &conn).await),
         }))
     }
 }

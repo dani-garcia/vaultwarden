@@ -13,7 +13,11 @@ publish = false
 build = "build.rs"
 
 [features]
-# default = ["sqlite"]
+default = [
+    # "sqlite",
+    # "postgresql",
+    # "mysql",
+]
 # Empty to keep compatibility, prefer to set USE_SYSLOG=true
 enable_syslog = []
 mysql = ["diesel/mysql", "diesel_migrations/mysql"]
@@ -28,7 +32,7 @@ enable_mimalloc = ["mimalloc"]
 # It enables the usage of the diesel_logger crate, which is able to output the generated queries.
 # You also need to set an env variable `QUERY_LOGGER=1` to fully activate this so you do not have to re-compile
 # if you want to turn off the logging for a specific run.
-query_logger = ["diesel_logger"]
+# query_logger = ["diesel_logger"] # Currently not able to be used with MultiConnection.
 
 # Enable unstable features, requires nightly
 # Currently only used to enable rusts official ip support
@@ -77,7 +81,7 @@ serde_json = "1.0.105"
 # A safe, extensible ORM and Query builder
 diesel = { version = "2.1.1", features = ["chrono", "r2d2"] }
 diesel_migrations = "2.1.0"
-diesel_logger = { version = "0.3.0", optional = true }
+# diesel_logger = { version = "0.3.0", optional = true } # Currently not able to be used with MultiConnection.
 
 # Bundled/Static SQLite
 libsqlite3-sys = { version = "0.26.0", features = ["bundled"], optional = true }

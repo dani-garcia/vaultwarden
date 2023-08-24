@@ -1,34 +1,33 @@
 use crate::crypto::ct_eq;
+use crate::db::schema::auth_requests;
 use chrono::{NaiveDateTime, Utc};
 
-db_object! {
-    #[derive(Debug, Identifiable, Queryable, Insertable, AsChangeset, Deserialize, Serialize)]
-    #[diesel(table_name = auth_requests)]
-    #[diesel(treat_none_as_null = true)]
-    #[diesel(primary_key(uuid))]
-    pub struct AuthRequest {
-        pub uuid: String,
-        pub user_uuid: String,
-        pub organization_uuid: Option<String>,
+#[derive(Debug, Identifiable, Queryable, Insertable, AsChangeset, Deserialize, Serialize)]
+#[diesel(table_name = auth_requests)]
+#[diesel(treat_none_as_null = true)]
+#[diesel(primary_key(uuid))]
+pub struct AuthRequest {
+    pub uuid: String,
+    pub user_uuid: String,
+    pub organization_uuid: Option<String>,
 
-        pub request_device_identifier: String,
-        pub device_type: i32,  // https://github.com/bitwarden/server/blob/master/src/Core/Enums/DeviceType.cs
+    pub request_device_identifier: String,
+    pub device_type: i32, // https://github.com/bitwarden/server/blob/master/src/Core/Enums/DeviceType.cs
 
-        pub request_ip: String,
-        pub response_device_id: Option<String>,
+    pub request_ip: String,
+    pub response_device_id: Option<String>,
 
-        pub access_code: String,
-        pub public_key: String,
+    pub access_code: String,
+    pub public_key: String,
 
-        pub enc_key: Option<String>,
+    pub enc_key: Option<String>,
 
-        pub master_password_hash: Option<String>,
-        pub approved: Option<bool>,
-        pub creation_date: NaiveDateTime,
-        pub response_date: Option<NaiveDateTime>,
+    pub master_password_hash: Option<String>,
+    pub approved: Option<bool>,
+    pub creation_date: NaiveDateTime,
+    pub response_date: Option<NaiveDateTime>,
 
-        pub authentication_date: Option<NaiveDateTime>,
-    }
+    pub authentication_date: Option<NaiveDateTime>,
 }
 
 impl AuthRequest {
@@ -69,11 +68,11 @@ use crate::api::EmptyResult;
 use crate::error::MapResult;
 
 impl AuthRequest {
-    pub async fn save(&mut self, conn: &mut DbConn) -> EmptyResult {
+    pub async fn save(&mut self, conn: &DbConn) -> EmptyResult {
         db_run! { conn:
             sqlite, mysql {
                 match diesel::replace_into(auth_requests::table)
-                    .values(AuthRequestDb::to_db(self))
+                    .values(&*self)
                     .execute(conn)
                 {
                     Ok(_) => Ok(()),
@@ -81,7 +80,7 @@ impl AuthRequest {
                     Err(diesel::result::Error::DatabaseError(diesel::result::DatabaseErrorKind::ForeignKeyViolation, _)) => {
                         diesel::update(auth_requests::table)
                             .filter(auth_requests::uuid.eq(&self.uuid))
-                            .set(AuthRequestDb::to_db(self))
+                            .set(&*self)
                             .execute(conn)
                             .map_res("Error auth_request")
                     }
@@ -89,45 +88,43 @@ impl AuthRequest {
                 }.map_res("Error auth_request")
             }
             postgresql {
-                let value = AuthRequestDb::to_db(self);
                 diesel::insert_into(auth_requests::table)
-                    .values(&value)
+                    .values(&*self)
                     .on_conflict(auth_requests::uuid)
                     .do_update()
-                    .set(&value)
+                    .set(&*self)
                     .execute(conn)
                     .map_res("Error saving auth_request")
             }
         }
     }
 
-    pub async fn find_by_uuid(uuid: &str, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_uuid(uuid: &str, conn: &DbConn) -> Option<Self> {
         db_run! {conn: {
             auth_requests::table
                 .filter(auth_requests::uuid.eq(uuid))
-                .first::<AuthRequestDb>(conn)
+                .first::<Self>(conn)
                 .ok()
-                .from_db()
         }}
     }
 
-    pub async fn find_by_user(user_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_user(user_uuid: &str, conn: &DbConn) -> Vec<Self> {
         db_run! {conn: {
             auth_requests::table
                 .filter(auth_requests::user_uuid.eq(user_uuid))
-                .load::<AuthRequestDb>(conn).expect("Error loading auth_requests").from_db()
+                .load::<Self>(conn).expect("Error loading auth_requests")
         }}
     }
 
-    pub async fn find_created_before(dt: &NaiveDateTime, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_created_before(dt: &NaiveDateTime, conn: &DbConn) -> Vec<Self> {
         db_run! {conn: {
             auth_requests::table
                 .filter(auth_requests::creation_date.lt(dt))
-                .load::<AuthRequestDb>(conn).expect("Error loading auth_requests").from_db()
+                .load::<Self>(conn).expect("Error loading auth_requests")
         }}
     }
 
-    pub async fn delete(&self, conn: &mut DbConn) -> EmptyResult {
+    pub async fn delete(&self, conn: &DbConn) -> EmptyResult {
         db_run! { conn: {
             diesel::delete(auth_requests::table.filter(auth_requests::uuid.eq(&self.uuid)))
                 .execute(conn)
@@ -139,7 +136,7 @@ impl AuthRequest {
         ct_eq(&self.access_code, access_code)
     }
 
-    pub async fn purge_expired_auth_requests(conn: &mut DbConn) {
+    pub async fn purge_expired_auth_requests(conn: &DbConn) {
         let expiry_time = Utc::now().naive_utc() - chrono::Duration::minutes(5); //after 5 minutes, clients reject the request
         for auth_request in Self::find_created_before(&expiry_time, conn).await {
             auth_request.delete(conn).await.ok();

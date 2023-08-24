@@ -723,16 +723,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "diesel_logger"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "23010b507517129dc9b11fb35f36d76fd2d3dd4c85232733697622e345375f2f"
-dependencies = [
- "diesel",
- "log",
-]
-
-[[package]]
 name = "diesel_migrations"
 version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3469,7 +3459,6 @@ dependencies = [
  "data-encoding",
  "data-url",
  "diesel",
- "diesel_logger",
  "diesel_migrations",
  "dotenvy",
  "email_address",

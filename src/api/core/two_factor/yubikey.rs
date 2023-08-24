@@ -83,7 +83,7 @@ async fn verify_yubikey_otp(otp: String) -> EmptyResult {
 }
 
 #[post("/two-factor/get-yubikey", data = "<data>")]
-async fn generate_yubikey(data: JsonUpcase<PasswordData>, headers: Headers, mut conn: DbConn) -> JsonResult {
+async fn generate_yubikey(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn) -> JsonResult {
     // Make sure the credentials are set
     get_yubico_credentials()?;
 
@@ -97,7 +97,7 @@ async fn generate_yubikey(data: JsonUpcase<PasswordData>, headers: Headers, mut 
     let user_uuid = &user.uuid;
     let yubikey_type = TwoFactorType::YubiKey as i32;
 
-    let r = TwoFactor::find_by_user_and_type(user_uuid, yubikey_type, &mut conn).await;
+    let r = TwoFactor::find_by_user_and_type(user_uuid, yubikey_type, &conn).await;
 
     if let Some(r) = r {
         let yubikey_metadata: YubikeyMetadata = serde_json::from_str(&r.data)?;
@@ -118,7 +118,7 @@ async fn generate_yubikey(data: JsonUpcase<PasswordData>, headers: Headers, mut 
 }
 
 #[post("/two-factor/yubikey", data = "<data>")]
-async fn activate_yubikey(data: JsonUpcase<EnableYubikeyData>, headers: Headers, mut conn: DbConn) -> JsonResult {
+async fn activate_yubikey(data: JsonUpcase<EnableYubikeyData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: EnableYubikeyData = data.into_inner().data;
     let mut user = headers.user;
 
@@ -128,7 +128,7 @@ async fn activate_yubikey(data: JsonUpcase<EnableYubikeyData>, headers: Headers,
 
     // Check if we already have some data
     let mut yubikey_data =
-        match TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::YubiKey as i32, &mut conn).await {
+        match TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::YubiKey as i32, &conn).await {
             Some(data) => data,
             None => TwoFactor::new(user.uuid.clone(), TwoFactorType::YubiKey, String::new()),
         };
@@ -160,11 +160,11 @@ async fn activate_yubikey(data: JsonUpcase<EnableYubikeyData>, headers: Headers,
     };
 
     yubikey_data.data = serde_json::to_string(&yubikey_metadata).unwrap();
-    yubikey_data.save(&mut conn).await?;
+    yubikey_data.save(&conn).await?;
 
-    _generate_recover_code(&mut user, &mut conn).await;
+    _generate_recover_code(&mut user, &conn).await;
 
-    log_user_event(EventType::UserUpdated2fa as i32, &user.uuid, headers.device.atype, &headers.ip.ip, &mut conn).await;
+    log_user_event(EventType::UserUpdated2fa as i32, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await;
 
     let mut result = jsonify_yubikeys(yubikey_metadata.Keys);
 

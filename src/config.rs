@@ -7,7 +7,6 @@ use once_cell::sync::Lazy;
 use reqwest::Url;
 
 use crate::{
-    db::DbConnType,
     error::Error,
     util::{get_env, get_env_bool},
 };
@@ -689,12 +688,18 @@ make_config! {
 
 fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
     // Validate connection URL is valid and DB feature is enabled
-    let url = &cfg.database_url;
-    if DbConnType::from_url(url)? == DbConnType::sqlite && url.contains('/') {
-        let path = std::path::Path::new(&url);
-        if let Some(parent) = path.parent() {
-            if !parent.is_dir() {
-                err!(format!("SQLite database directory `{}` does not exist or is not a directory", parent.display()));
+    #[cfg(sqlite)]
+    {
+        let url = &cfg.database_url;
+        if crate::db::DbConnType::from_url(url)? == crate::db::DbConnType::Sqlite && url.contains('/') {
+            let path = std::path::Path::new(&url);
+            if let Some(parent) = path.parent() {
+                if !parent.is_dir() {
+                    err!(format!(
+                        "SQLite database directory `{}` does not exist or is not a directory",
+                        parent.display()
+                    ));
+                }
             }
         }
     }

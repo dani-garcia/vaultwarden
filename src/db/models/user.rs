@@ -4,62 +4,62 @@ use serde_json::Value;
 use crate::crypto;
 use crate::CONFIG;
 
-db_object! {
-    #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
-    #[diesel(table_name = users)]
-    #[diesel(treat_none_as_null = true)]
-    #[diesel(primary_key(uuid))]
-    pub struct User {
-        pub uuid: String,
-        pub enabled: bool,
-        pub created_at: NaiveDateTime,
-        pub updated_at: NaiveDateTime,
-        pub verified_at: Option<NaiveDateTime>,
-        pub last_verifying_at: Option<NaiveDateTime>,
-        pub login_verify_count: i32,
+use crate::db::schema::{invitations, users};
 
-        pub email: String,
-        pub email_new: Option<String>,
-        pub email_new_token: Option<String>,
-        pub name: String,
+#[derive(Identifiable, Queryable, Insertable, AsChangeset)]
+#[diesel(table_name = users)]
+#[diesel(treat_none_as_null = true)]
+#[diesel(primary_key(uuid))]
+pub struct User {
+    pub uuid: String,
+    pub enabled: bool,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
+    pub verified_at: Option<NaiveDateTime>,
+    pub last_verifying_at: Option<NaiveDateTime>,
+    pub login_verify_count: i32,
 
-        pub password_hash: Vec<u8>,
-        pub salt: Vec<u8>,
-        pub password_iterations: i32,
-        pub password_hint: Option<String>,
+    pub email: String,
+    pub email_new: Option<String>,
+    pub email_new_token: Option<String>,
+    pub name: String,
 
-        pub akey: String,
-        pub private_key: Option<String>,
-        pub public_key: Option<String>,
+    pub password_hash: Vec<u8>,
+    pub salt: Vec<u8>,
+    pub password_iterations: i32,
+    pub password_hint: Option<String>,
 
-        #[diesel(column_name = "totp_secret")] // Note, this is only added to the UserDb structs, not to User
-        _totp_secret: Option<String>,
-        pub totp_recover: Option<String>,
+    pub akey: String,
+    pub private_key: Option<String>,
+    pub public_key: Option<String>,
 
-        pub security_stamp: String,
-        pub stamp_exception: Option<String>,
+    #[diesel(column_name = "totp_secret")] // Note, this is only added to the UserDb structs, not to User
+    _totp_secret: Option<String>,
+    pub totp_recover: Option<String>,
 
-        pub equivalent_domains: String,
-        pub excluded_globals: String,
+    pub security_stamp: String,
+    pub stamp_exception: Option<String>,
 
-        pub client_kdf_type: i32,
-        pub client_kdf_iter: i32,
-        pub client_kdf_memory: Option<i32>,
-        pub client_kdf_parallelism: Option<i32>,
+    pub equivalent_domains: String,
+    pub excluded_globals: String,
 
-        pub api_key: Option<String>,
+    pub client_kdf_type: i32,
+    pub client_kdf_iter: i32,
+    pub client_kdf_memory: Option<i32>,
+    pub client_kdf_parallelism: Option<i32>,
 
-        pub avatar_color: Option<String>,
+    pub api_key: Option<String>,
 
-        pub external_id: Option<String>, // Todo: Needs to be removed in the future, this is not used anymore.
-    }
+    pub avatar_color: Option<String>,
 
-    #[derive(Identifiable, Queryable, Insertable)]
-    #[diesel(table_name = invitations)]
-    #[diesel(primary_key(email))]
-    pub struct Invitation {
-        pub email: String,
-    }
+    pub external_id: Option<String>, // Todo: Needs to be removed in the future, this is not used anymore.
+}
+
+#[derive(Identifiable, Queryable, Insertable)]
+#[diesel(table_name = invitations)]
+#[diesel(primary_key(email))]
+pub struct Invitation {
+    pub email: String,
 }
 
 pub enum UserKdfType {
@@ -224,7 +224,7 @@ use crate::error::MapResult;
 
 /// Database methods
 impl User {
-    pub async fn to_json(&self, conn: &mut DbConn) -> Value {
+    pub async fn to_json(&self, conn: &DbConn) -> Value {
         let mut orgs_json = Vec::new();
         for c in UserOrganization::find_confirmed_by_user(&self.uuid, conn).await {
             orgs_json.push(c.to_json(conn).await);
@@ -261,7 +261,7 @@ impl User {
         })
     }
 
-    pub async fn save(&mut self, conn: &mut DbConn) -> EmptyResult {
+    pub async fn save(&mut self, conn: &DbConn) -> EmptyResult {
         if self.email.trim().is_empty() {
             err!("User email can't be empty")
         }
@@ -271,7 +271,7 @@ impl User {
         db_run! {conn:
             sqlite, mysql {
                 match diesel::replace_into(users::table)
-                    .values(UserDb::to_db(self))
+                    .values(&*self)
                     .execute(conn)
                 {
                     Ok(_) => Ok(()),
@@ -279,7 +279,7 @@ impl User {
                     Err(diesel::result::Error::DatabaseError(diesel::result::DatabaseErrorKind::ForeignKeyViolation, _)) => {
                         diesel::update(users::table)
                             .filter(users::uuid.eq(&self.uuid))
-                            .set(UserDb::to_db(self))
+                            .set(&*self)
                             .execute(conn)
                             .map_res("Error saving user")
                     }
@@ -287,19 +287,18 @@ impl User {
                 }.map_res("Error saving user")
             }
             postgresql {
-                let value = UserDb::to_db(self);
                 diesel::insert_into(users::table) // Insert or update
-                    .values(&value)
+                    .values(&*self)
                     .on_conflict(users::uuid)
                     .do_update()
-                    .set(&value)
+                    .set(&*self)
                     .execute(conn)
                     .map_res("Error saving user")
             }
         }
     }
 
-    pub async fn delete(self, conn: &mut DbConn) -> EmptyResult {
+    pub async fn delete(self, conn: &DbConn) -> EmptyResult {
         for user_org in UserOrganization::find_confirmed_by_user(&self.uuid, conn).await {
             if user_org.atype == UserOrgType::Owner
                 && UserOrganization::count_confirmed_by_org_and_type(&user_org.org_uuid, UserOrgType::Owner, conn).await
@@ -327,13 +326,13 @@ impl User {
         }}
     }
 
-    pub async fn update_uuid_revision(uuid: &str, conn: &mut DbConn) {
+    pub async fn update_uuid_revision(uuid: &str, conn: &DbConn) {
         if let Err(e) = Self::_update_revision(uuid, &Utc::now().naive_utc(), conn).await {
             warn!("Failed to update revision for {}: {:#?}", uuid, e);
         }
     }
 
-    pub async fn update_all_revisions(conn: &mut DbConn) -> EmptyResult {
+    pub async fn update_all_revisions(conn: &DbConn) -> EmptyResult {
         let updated_at = Utc::now().naive_utc();
 
         db_run! {conn: {
@@ -346,13 +345,13 @@ impl User {
         }}
     }
 
-    pub async fn update_revision(&mut self, conn: &mut DbConn) -> EmptyResult {
+    pub async fn update_revision(&mut self, conn: &DbConn) -> EmptyResult {
         self.updated_at = Utc::now().naive_utc();
 
         Self::_update_revision(&self.uuid, &self.updated_at, conn).await
     }
 
-    async fn _update_revision(uuid: &str, date: &NaiveDateTime, conn: &mut DbConn) -> EmptyResult {
+    async fn _update_revision(uuid: &str, date: &NaiveDateTime, conn: &DbConn) -> EmptyResult {
         db_run! {conn: {
             crate::util::retry(|| {
                 diesel::update(users::table.filter(users::uuid.eq(uuid)))
@@ -363,30 +362,30 @@ impl User {
         }}
     }
 
-    pub async fn find_by_mail(mail: &str, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_mail(mail: &str, conn: &DbConn) -> Option<Self> {
         let lower_mail = mail.to_lowercase();
         db_run! {conn: {
             users::table
                 .filter(users::email.eq(lower_mail))
-                .first::<UserDb>(conn)
+                .first::<Self>(conn)
                 .ok()
-                .from_db()
+
         }}
     }
 
-    pub async fn find_by_uuid(uuid: &str, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_uuid(uuid: &str, conn: &DbConn) -> Option<Self> {
         db_run! {conn: {
-            users::table.filter(users::uuid.eq(uuid)).first::<UserDb>(conn).ok().from_db()
+            users::table.filter(users::uuid.eq(uuid)).first::<Self>(conn).ok()
         }}
     }
 
-    pub async fn get_all(conn: &mut DbConn) -> Vec<Self> {
+    pub async fn get_all(conn: &DbConn) -> Vec<Self> {
         db_run! {conn: {
-            users::table.load::<UserDb>(conn).expect("Error loading users").from_db()
+            users::table.load::<Self>(conn).expect("Error loading users")
         }}
     }
 
-    pub async fn last_active(&self, conn: &mut DbConn) -> Option<NaiveDateTime> {
+    pub async fn last_active(&self, conn: &DbConn) -> Option<NaiveDateTime> {
         match Device::find_latest_active_by_user(&self.uuid, conn).await {
             Some(device) => Some(device.updated_at),
             None => None,
@@ -402,7 +401,7 @@ impl Invitation {
         }
     }
 
-    pub async fn save(&self, conn: &mut DbConn) -> EmptyResult {
+    pub async fn save(&self, conn: &DbConn) -> EmptyResult {
         if self.email.trim().is_empty() {
             err!("Invitation email can't be empty")
         }
@@ -412,13 +411,13 @@ impl Invitation {
                 // Not checking for ForeignKey Constraints here
                 // Table invitations does not have any ForeignKey Constraints.
                 diesel::replace_into(invitations::table)
-                    .values(InvitationDb::to_db(self))
+                    .values(self)
                     .execute(conn)
                     .map_res("Error saving invitation")
             }
             postgresql {
                 diesel::insert_into(invitations::table)
-                    .values(InvitationDb::to_db(self))
+                    .values(self)
                     .on_conflict(invitations::email)
                     .do_nothing()
                     .execute(conn)
@@ -427,7 +426,7 @@ impl Invitation {
         }
     }
 
-    pub async fn delete(self, conn: &mut DbConn) -> EmptyResult {
+    pub async fn delete(self, conn: &DbConn) -> EmptyResult {
         db_run! {conn: {
             diesel::delete(invitations::table.filter(invitations::email.eq(self.email)))
                 .execute(conn)
@@ -435,18 +434,18 @@ impl Invitation {
         }}
     }
 
-    pub async fn find_by_mail(mail: &str, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_mail(mail: &str, conn: &DbConn) -> Option<Self> {
         let lower_mail = mail.to_lowercase();
         db_run! {conn: {
             invitations::table
                 .filter(invitations::email.eq(lower_mail))
-                .first::<InvitationDb>(conn)
+                .first::<Self>(conn)
                 .ok()
-                .from_db()
+
         }}
     }
 
-    pub async fn take(mail: &str, conn: &mut DbConn) -> bool {
+    pub async fn take(mail: &str, conn: &DbConn) -> bool {
         match Self::find_by_mail(mail, conn).await {
             Some(invitation) => invitation.delete(conn).await.is_ok(),
             None => false,

@@ -25,7 +25,7 @@ pub fn routes() -> Vec<Route> {
 }
 
 #[post("/connect/token", data = "<data>")]
-async fn login(data: Form<ConnectData>, client_header: ClientHeaders, mut conn: DbConn) -> JsonResult {
+async fn login(data: Form<ConnectData>, client_header: ClientHeaders, conn: DbConn) -> JsonResult {
     let data: ConnectData = data.into_inner();
 
     let mut user_uuid: Option<String> = None;
@@ -33,7 +33,7 @@ async fn login(data: Form<ConnectData>, client_header: ClientHeaders, mut conn: 
     let login_result = match data.grant_type.as_ref() {
         "refresh_token" => {
             _check_is_some(&data.refresh_token, "refresh_token cannot be blank")?;
-            _refresh_login(data, &mut conn).await
+            _refresh_login(data, &conn).await
         }
         "password" => {
             _check_is_some(&data.client_id, "client_id cannot be blank")?;
@@ -45,7 +45,7 @@ async fn login(data: Form<ConnectData>, client_header: ClientHeaders, mut conn: 
             _check_is_some(&data.device_name, "device_name cannot be blank")?;
             _check_is_some(&data.device_type, "device_type cannot be blank")?;
 
-            _password_login(data, &mut user_uuid, &mut conn, &client_header.ip).await
+            _password_login(data, &mut user_uuid, &conn, &client_header.ip).await
         }
         "client_credentials" => {
             _check_is_some(&data.client_id, "client_id cannot be blank")?;
@@ -56,7 +56,7 @@ async fn login(data: Form<ConnectData>, client_header: ClientHeaders, mut conn: 
             _check_is_some(&data.device_name, "device_name cannot be blank")?;
             _check_is_some(&data.device_type, "device_type cannot be blank")?;
 
-            _api_key_login(data, &mut user_uuid, &mut conn, &client_header.ip).await
+            _api_key_login(data, &mut user_uuid, &conn, &client_header.ip).await
         }
         t => err!("Invalid type", t),
     };
@@ -69,20 +69,14 @@ async fn login(data: Form<ConnectData>, client_header: ClientHeaders, mut conn: 
                     &user_uuid,
                     client_header.device_type,
                     &client_header.ip.ip,
-                    &mut conn,
+                    &conn,
                 )
                 .await;
             }
             Err(e) => {
                 if let Some(ev) = e.get_event() {
-                    log_user_event(
-                        ev.event as i32,
-                        &user_uuid,
-                        client_header.device_type,
-                        &client_header.ip.ip,
-                        &mut conn,
-                    )
-                    .await
+                    log_user_event(ev.event as i32, &user_uuid, client_header.device_type, &client_header.ip.ip, &conn)
+                        .await
                 }
             }
         }
@@ -91,7 +85,7 @@ async fn login(data: Form<ConnectData>, client_header: ClientHeaders, mut conn: 
     login_result
 }
 
-async fn _refresh_login(data: ConnectData, conn: &mut DbConn) -> JsonResult {
+async fn _refresh_login(data: ConnectData, conn: &DbConn) -> JsonResult {
     // Extract token
     let token = data.refresh_token.unwrap();
 
@@ -130,7 +124,7 @@ async fn _refresh_login(data: ConnectData, conn: &mut DbConn) -> JsonResult {
 async fn _password_login(
     data: ConnectData,
     user_uuid: &mut Option<String>,
-    conn: &mut DbConn,
+    conn: &DbConn,
     ip: &ClientIp,
 ) -> JsonResult {
     // Validate scope
@@ -294,12 +288,7 @@ async fn _password_login(
     Ok(Json(result))
 }
 
-async fn _api_key_login(
-    data: ConnectData,
-    user_uuid: &mut Option<String>,
-    conn: &mut DbConn,
-    ip: &ClientIp,
-) -> JsonResult {
+async fn _api_key_login(data: ConnectData, user_uuid: &mut Option<String>, conn: &DbConn, ip: &ClientIp) -> JsonResult {
     // Ratelimit the login
     crate::ratelimit::check_limit_login(&ip.ip)?;
 
@@ -314,7 +303,7 @@ async fn _api_key_login(
 async fn _user_api_key_login(
     data: ConnectData,
     user_uuid: &mut Option<String>,
-    conn: &mut DbConn,
+    conn: &DbConn,
     ip: &ClientIp,
 ) -> JsonResult {
     // Get the user via the client_id
@@ -401,7 +390,7 @@ async fn _user_api_key_login(
     Ok(Json(result))
 }
 
-async fn _organization_api_key_login(data: ConnectData, conn: &mut DbConn, ip: &ClientIp) -> JsonResult {
+async fn _organization_api_key_login(data: ConnectData, conn: &DbConn, ip: &ClientIp) -> JsonResult {
     // Get the org via the client_id
     let client_id = data.client_id.as_ref().unwrap();
     let org_uuid = match client_id.strip_prefix("organization.") {
@@ -432,7 +421,7 @@ async fn _organization_api_key_login(data: ConnectData, conn: &mut DbConn, ip: &
 }
 
 /// Retrieves an existing device or creates a new device from ConnectData and the User
-async fn get_device(data: &ConnectData, conn: &mut DbConn, user: &User) -> (Device, bool) {
+async fn get_device(data: &ConnectData, conn: &DbConn, user: &User) -> (Device, bool) {
     // On iOS, device_type sends "iOS", on others it sends a number
     // When unknown or unable to parse, return 14, which is 'Unknown Browser'
     let device_type = util::try_parse_string(data.device_type.as_ref()).unwrap_or(14);
@@ -457,7 +446,7 @@ async fn twofactor_auth(
     data: &ConnectData,
     device: &mut Device,
     ip: &ClientIp,
-    conn: &mut DbConn,
+    conn: &DbConn,
 ) -> ApiResult<Option<String>> {
     let twofactors = TwoFactor::find_by_user(user_uuid, conn).await;
 
@@ -534,7 +523,7 @@ fn _selected_data(tf: Option<TwoFactor>) -> ApiResult<String> {
     tf.map(|t| t.data).map_res("Two factor doesn't exist")
 }
 
-async fn _json_err_twofactor(providers: &[i32], user_uuid: &str, conn: &mut DbConn) -> ApiResult<Value> {
+async fn _json_err_twofactor(providers: &[i32], user_uuid: &str, conn: &DbConn) -> ApiResult<Value> {
     use crate::api::core::two_factor;
 
     let mut result = json!({
