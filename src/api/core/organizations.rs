@@ -60,6 +60,7 @@ pub fn routes() -> Vec<Route> {
         put_policy,
         get_organization_tax,
         get_plans,
+        get_plans_all,
         get_plans_tax_rates,
         import,
         post_org_keys,
@@ -1810,10 +1811,26 @@ fn get_plans() -> Json<Value> {
             "Product": 0,
             "Name": "Free",
             "NameLocalizationKey": "planNameFree",
+            "BitwardenProduct": 0,
+            "MaxUsers": 0,
+            "DescriptionLocalizationKey": "planDescFree"
+        },{
+            "Object": "plan",
+            "Type": 0,
+            "Product": 1,
+            "Name": "Free",
+            "NameLocalizationKey": "planNameFree",
+            "BitwardenProduct": 1,
+            "MaxUsers": 0,
             "DescriptionLocalizationKey": "planDescFree"
         }],
         "ContinuationToken": null
     }))
+}
+
+#[get("/plans/all")]
+fn get_plans_all() -> Json<Value> {
+    get_plans()
 }
 
 #[get("/plans/sales-tax-rates")]
