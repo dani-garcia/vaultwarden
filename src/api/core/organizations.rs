@@ -5,7 +5,7 @@ use serde_json::Value;
 
 use crate::{
     api::{
-        core::{log_event, CipherSyncData, CipherSyncType},
+        core::{log_event, two_factor, CipherSyncData, CipherSyncType},
         EmptyResult, JsonResult, JsonUpcase, JsonUpcaseVec, JsonVec, Notify, NumberOrString, PasswordOrOtpData,
         UpdateType,
     },
@@ -1697,38 +1697,16 @@ async fn put_policy(
         None => err!("Invalid or unsupported policy type"),
     };
 
-    // When enabling the TwoFactorAuthentication policy, remove this org's members that do have 2FA
+    // When enabling the TwoFactorAuthentication policy, revoke all members that do not have 2FA
     if pol_type_enum == OrgPolicyType::TwoFactorAuthentication && data.enabled {
-        for member in UserOrganization::find_by_org(org_id, &mut conn).await.into_iter() {
-            let user_twofactor_disabled = TwoFactor::find_by_user(&member.user_uuid, &mut conn).await.is_empty();
-
-            // Policy only applies to non-Owner/non-Admin members who have accepted joining the org
-            // Invited users still need to accept the invite and will get an error when they try to accept the invite.
-            if user_twofactor_disabled
-                && member.atype < UserOrgType::Admin
-                && member.status != UserOrgStatus::Invited as i32
-            {
-                if CONFIG.mail_enabled() {
-                    let org = Organization::find_by_uuid(&member.org_uuid, &mut conn).await.unwrap();
-                    let user = User::find_by_uuid(&member.user_uuid, &mut conn).await.unwrap();
-
-                    mail::send_2fa_removed_from_org(&user.email, &org.name).await?;
-                }
-
-                log_event(
-                    EventType::OrganizationUserRemoved as i32,
-                    &member.uuid,
-                    org_id,
-                    headers.user.uuid.clone(),
-                    headers.device.atype,
-                    &headers.ip.ip,
-                    &mut conn,
-                )
-                .await;
-
-                member.delete(&mut conn).await?;
-            }
-        }
+        two_factor::enforce_2fa_policy_for_org(
+            org_id,
+            headers.user.uuid.clone(),
+            headers.device.atype,
+            &headers.ip.ip,
+            &mut conn,
+        )
+        .await?;
     }
 
     // When enabling the SingleOrg policy, remove this org's members that are members of other orgs
