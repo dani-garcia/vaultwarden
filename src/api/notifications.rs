@@ -20,7 +20,7 @@ use tokio_tungstenite::{
 };
 
 use crate::{
-    auth::ClientIp,
+    auth::{ClientIp, WsAccessTokenHeader},
     db::{
         models::{Cipher, Folder, Send as DbSend, User},
         DbConn,
@@ -111,11 +111,19 @@ fn websockets_hub<'r>(
     ws: rocket_ws::WebSocket,
     data: WsAccessToken,
     ip: ClientIp,
+    header_token: WsAccessTokenHeader,
 ) -> Result<rocket_ws::Stream!['r], Error> {
     let addr = ip.ip;
     info!("Accepting Rocket WS connection from {addr}");
 
-    let Some(token) = data.access_token else { err_code!("Invalid claim", 401) };
+    let token = if let Some(token) = data.access_token {
+        token
+    } else if let Some(token) = header_token.access_token {
+        token
+    } else {
+        err_code!("Invalid claim", 401)
+    };
+
     let Ok(claims) = crate::auth::decode_login(&token) else { err_code!("Invalid token", 401) };
 
     let (mut rx, guard) = {
