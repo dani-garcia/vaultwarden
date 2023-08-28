@@ -8,9 +8,10 @@ on:
       - "migrations/**"
       - "Cargo.*"
       - "build.rs"
-      - "rust-toolchain"
+      - "rust-toolchain.toml"
       - "rustfmt.toml"
       - "diesel.toml"
+      - "docker/Dockerfile.j2"
   pull_request:
     paths:
       - ".github/workflows/build.yml"
@@ -18,9 +19,10 @@ on:
       - "migrations/**"
       - "Cargo.*"
       - "build.rs"
-      - "rust-toolchain"
+      - "rust-toolchain.toml"
       - "rustfmt.toml"
       - "diesel.toml"
+      - "docker/Dockerfile.j2"
 
 jobs:
   build:
@@ -43,7 +45,7 @@ jobs:
     steps:
       # Checkout the repo
       - name: "Checkout"
-        uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
+        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
       # End Checkout the repo
 
 
@@ -59,7 +61,7 @@ jobs:
         shell: bash
         run: |
           if [[ "${{ matrix.channel }}" == 'rust-toolchain' ]]; then
-            RUST_TOOLCHAIN="$(cat rust-toolchain)"
+            RUST_TOOLCHAIN="$(grep -oP 'channel.*"(\K.*?)(?=")' rust-toolchain.toml)"
           elif [[ "${{ matrix.channel }}" == 'msrv' ]]; then
             RUST_TOOLCHAIN="$(grep -oP 'rust-version.*"(\K.*?)(?=")' Cargo.toml)"
           else
@@ -71,7 +73,7 @@ jobs:
 
       # Only install the clippy and rustfmt components on the default rust-toolchain
       - name: "Install rust-toolchain version"
-        uses: dtolnay/rust-toolchain@b44cb146d03e8d870c57ab64b80f04586349ca5d # master @ 2023-03-28 - 06:32 GMT+2
+        uses: dtolnay/rust-toolchain@f361669954a8ecfc00a3443f35f9ac8e610ffc06 # master @ 2023-08-04 - 01:14 AM GMT+2
         if: ${{ matrix.channel == 'rust-toolchain' }}
         with:
           toolchain: "${{steps.toolchain.outputs.RUST_TOOLCHAIN}}"
@@ -81,7 +83,7 @@ jobs:
 
       # Install the any other channel to be used for which we do not execute clippy and rustfmt
       - name: "Install MSRV version"
-        uses: dtolnay/rust-toolchain@b44cb146d03e8d870c57ab64b80f04586349ca5d # master @ 2023-03-28 - 06:32 GMT+2
+        uses: dtolnay/rust-toolchain@f361669954a8ecfc00a3443f35f9ac8e610ffc06 # master @ 2023-08-04 - 01:14 AM GMT+2
         if: ${{ matrix.channel != 'rust-toolchain' }}
         with:
           toolchain: "${{steps.toolchain.outputs.RUST_TOOLCHAIN}}"
@@ -89,7 +91,7 @@ jobs:
 
 
       # Enable Rust Caching
-      - uses: Swatinem/rust-cache@dd05243424bd5c0e585e4b55eb2d7615cdd32f1f # v2.5.1
+      - uses: Swatinem/rust-cache@e207df5d269b42b69c8bc5101da26f7d31feddb4 # v2.6.2
         with:
           # Use a custom prefix-key to force a fresh start. This is sometimes needed with bigger changes.
           # Like changing the build host from Ubuntu 20.04 to 22.04 for example.
