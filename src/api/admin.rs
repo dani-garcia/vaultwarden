@@ -393,7 +393,7 @@ async fn delete_user(uuid: &str, token: AdminToken, mut conn: DbConn) -> EmptyRe
             EventType::OrganizationUserRemoved as i32,
             &user_org.uuid,
             &user_org.org_uuid,
-            String::from(ACTING_ADMIN_USER),
+            ACTING_ADMIN_USER,
             14, // Use UnknownBrowser type
             &token.ip.ip,
             &mut conn,
@@ -451,7 +451,7 @@ async fn enable_user(uuid: &str, _token: AdminToken, mut conn: DbConn) -> EmptyR
 async fn remove_2fa(uuid: &str, token: AdminToken, mut conn: DbConn) -> EmptyResult {
     let mut user = get_user_or_404(uuid, &mut conn).await?;
     TwoFactor::delete_all_by_user(&user.uuid, &mut conn).await?;
-    two_factor::enforce_2fa_policy(&user, String::from(ACTING_ADMIN_USER), 14, &token.ip.ip, &mut conn).await?;
+    two_factor::enforce_2fa_policy(&user, ACTING_ADMIN_USER, 14, &token.ip.ip, &mut conn).await?;
     user.totp_recover = None;
     user.save(&mut conn).await
 }
@@ -521,7 +521,7 @@ async fn update_user_org_type(data: Json<UserOrgTypeData>, token: AdminToken, mu
         EventType::OrganizationUserUpdated as i32,
         &user_to_edit.uuid,
         &data.org_uuid,
-        String::from(ACTING_ADMIN_USER),
+        ACTING_ADMIN_USER,
         14, // Use UnknownBrowser type
         &token.ip.ip,
         &mut conn,

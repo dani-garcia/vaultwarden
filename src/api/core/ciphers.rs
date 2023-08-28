@@ -510,7 +510,7 @@ pub async fn update_cipher_from_data(
                 event_type as i32,
                 &cipher.uuid,
                 org_uuid,
-                headers.user.uuid.clone(),
+                &headers.user.uuid,
                 headers.device.atype,
                 &headers.ip.ip,
                 conn,
@@ -791,7 +791,7 @@ async fn post_collections_admin(
         EventType::CipherUpdatedCollections as i32,
         &cipher.uuid,
         &cipher.organization_uuid.unwrap(),
-        headers.user.uuid.clone(),
+        &headers.user.uuid,
         headers.device.atype,
         &headers.ip.ip,
         &mut conn,
@@ -1145,7 +1145,7 @@ async fn save_attachment(
             EventType::CipherAttachmentCreated as i32,
             &cipher.uuid,
             org_uuid,
-            headers.user.uuid.clone(),
+            &headers.user.uuid,
             headers.device.atype,
             &headers.ip.ip,
             &mut conn,
@@ -1479,7 +1479,7 @@ async fn delete_all(
                             EventType::OrganizationPurgedVault as i32,
                             &org_data.org_id,
                             &org_data.org_id,
-                            user.uuid,
+                            &user.uuid,
                             headers.device.atype,
                             &headers.ip.ip,
                             &mut conn,
@@ -1560,16 +1560,8 @@ async fn _delete_cipher_by_uuid(
             false => EventType::CipherDeleted as i32,
         };
 
-        log_event(
-            event_type,
-            &cipher.uuid,
-            &org_uuid,
-            headers.user.uuid.clone(),
-            headers.device.atype,
-            &headers.ip.ip,
-            conn,
-        )
-        .await;
+        log_event(event_type, &cipher.uuid, &org_uuid, &headers.user.uuid, headers.device.atype, &headers.ip.ip, conn)
+            .await;
     }
 
     Ok(())
@@ -1629,7 +1621,7 @@ async fn _restore_cipher_by_uuid(uuid: &str, headers: &Headers, conn: &mut DbCon
             EventType::CipherRestored as i32,
             &cipher.uuid.clone(),
             org_uuid,
-            headers.user.uuid.clone(),
+            &headers.user.uuid,
             headers.device.atype,
             &headers.ip.ip,
             conn,
@@ -1713,7 +1705,7 @@ async fn _delete_cipher_attachment_by_id(
             EventType::CipherAttachmentDeleted as i32,
             &cipher.uuid,
             &org_uuid,
-            headers.user.uuid.clone(),
+            &headers.user.uuid,
             headers.device.atype,
             &headers.ip.ip,
             conn,

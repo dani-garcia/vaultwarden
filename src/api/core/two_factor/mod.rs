@@ -99,7 +99,7 @@ async fn recover(data: JsonUpcase<RecoverTwoFactor>, client_headers: ClientHeade
 
     // Remove all twofactors from the user
     TwoFactor::delete_all_by_user(&user.uuid, &mut conn).await?;
-    enforce_2fa_policy(&user, user.uuid.clone(), client_headers.device_type, &client_headers.ip.ip, &mut conn).await?;
+    enforce_2fa_policy(&user, &user.uuid, client_headers.device_type, &client_headers.ip.ip, &mut conn).await?;
 
     log_user_event(
         EventType::UserRecovered2fa as i32,
@@ -154,7 +154,7 @@ async fn disable_twofactor(data: JsonUpcase<DisableTwoFactorData>, headers: Head
     }
 
     if TwoFactor::find_by_user(&user.uuid, &mut conn).await.is_empty() {
-        enforce_2fa_policy(&user, user.uuid.clone(), headers.device.atype, &headers.ip.ip, &mut conn).await?;
+        enforce_2fa_policy(&user, &user.uuid, headers.device.atype, &headers.ip.ip, &mut conn).await?;
     }
 
     Ok(Json(json!({
@@ -171,7 +171,7 @@ async fn disable_twofactor_put(data: JsonUpcase<DisableTwoFactorData>, headers: 
 
 pub async fn enforce_2fa_policy(
     user: &User,
-    act_uuid: String,
+    act_uuid: &str,
     device_type: i32,
     ip: &std::net::IpAddr,
     conn: &mut DbConn,
@@ -194,7 +194,7 @@ pub async fn enforce_2fa_policy(
                 EventType::OrganizationUserRevoked as i32,
                 &member.uuid,
                 &member.org_uuid,
-                act_uuid.clone(),
+                act_uuid,
                 device_type,
                 ip,
                 conn,
@@ -208,7 +208,7 @@ pub async fn enforce_2fa_policy(
 
 pub async fn enforce_2fa_policy_for_org(
     org_uuid: &str,
-    act_uuid: String,
+    act_uuid: &str,
     device_type: i32,
     ip: &std::net::IpAddr,
     conn: &mut DbConn,
@@ -229,7 +229,7 @@ pub async fn enforce_2fa_policy_for_org(
                 EventType::OrganizationUserRevoked as i32,
                 &member.uuid,
                 org_uuid,
-                act_uuid.clone(),
+                act_uuid,
                 device_type,
                 ip,
                 conn,
