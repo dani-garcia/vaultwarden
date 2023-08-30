@@ -90,9 +90,7 @@ async fn generate_yubikey(data: JsonUpcase<PasswordData>, headers: Headers, mut 
     let data: PasswordData = data.into_inner().data;
     let user = headers.user;
 
-    if !user.check_valid_password(&data.MasterPasswordHash) {
-        err!("Invalid password");
-    }
+    crate::api::core::two_factor::authenticator_activation_check(&user, &data.MasterPasswordHash)?;
 
     let user_uuid = &user.uuid;
     let yubikey_type = TwoFactorType::YubiKey as i32;
@@ -122,9 +120,7 @@ async fn activate_yubikey(data: JsonUpcase<EnableYubikeyData>, headers: Headers,
     let data: EnableYubikeyData = data.into_inner().data;
     let mut user = headers.user;
 
-    if !user.check_valid_password(&data.MasterPasswordHash) {
-        err!("Invalid password");
-    }
+    crate::api::core::two_factor::authenticator_activation_check(&user, &data.MasterPasswordHash)?;
 
     // Check if we already have some data
     let mut yubikey_data =

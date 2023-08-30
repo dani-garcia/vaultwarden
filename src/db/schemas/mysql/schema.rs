@@ -242,6 +242,12 @@ table! {
 }
 
 table! {
+    sso_nonce (nonce) {
+        nonce -> Text,
+    }
+}
+
+table! {
     emergency_access (uuid) {
         uuid -> Text,
         grantor_uuid -> Text,

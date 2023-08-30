@@ -26,9 +26,7 @@ async fn generate_authenticator(data: JsonUpcase<PasswordData>, headers: Headers
     let data: PasswordData = data.into_inner().data;
     let user = headers.user;
 
-    if !user.check_valid_password(&data.MasterPasswordHash) {
-        err!("Invalid password");
-    }
+    crate::api::core::two_factor::authenticator_activation_check(&user, &data.MasterPasswordHash)?;
 
     let type_ = TwoFactorType::Authenticator as i32;
     let twofactor = TwoFactor::find_by_user_and_type(&user.uuid, type_, &mut conn).await;
@@ -60,15 +58,12 @@ async fn activate_authenticator(
     mut conn: DbConn,
 ) -> JsonResult {
     let data: EnableAuthenticatorData = data.into_inner().data;
-    let password_hash = data.MasterPasswordHash;
     let key = data.Key;
     let token = data.Token.into_string();
 
     let mut user = headers.user;
 
-    if !user.check_valid_password(&password_hash) {
-        err!("Invalid password");
-    }
+    crate::api::core::two_factor::authenticator_activation_check(&user, &data.MasterPasswordHash)?;
 
     // Validate key as base32 and 20 bytes length
     let decoded_key: Vec<u8> = match BASE32.decode(key.as_bytes()) {

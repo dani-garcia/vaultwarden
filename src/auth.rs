@@ -19,6 +19,7 @@ pub static JWT_LOGIN_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|login", CON
 static JWT_INVITE_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|invite", CONFIG.domain_origin()));
 static JWT_EMERGENCY_ACCESS_INVITE_ISSUER: Lazy<String> =
     Lazy::new(|| format!("{}|emergencyaccessinvite", CONFIG.domain_origin()));
+static JWT_SSOTOKEN_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|ssotoken", CONFIG.domain_origin()));
 static JWT_DELETE_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|delete", CONFIG.domain_origin()));
 static JWT_VERIFYEMAIL_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|verifyemail", CONFIG.domain_origin()));
 static JWT_ADMIN_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|admin", CONFIG.domain_origin()));
@@ -284,6 +285,28 @@ pub fn generate_delete_claims(uuid: String) -> BasicJwtClaims {
         exp: (time_now + Duration::hours(expire_hours)).timestamp(),
         iss: JWT_DELETE_ISSUER.to_string(),
         sub: uuid,
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SsoTokenJwtClaims {
+    // Not before
+    pub nbf: i64,
+    // Expiration time
+    pub exp: i64,
+    // Issuer
+    pub iss: String,
+    // Subject
+    pub sub: String,
+}
+
+pub fn generate_ssotoken_claims() -> SsoTokenJwtClaims {
+    let time_now = Utc::now().naive_utc();
+    SsoTokenJwtClaims {
+        nbf: time_now.timestamp(),
+        exp: (time_now + Duration::minutes(2)).timestamp(),
+        iss: JWT_SSOTOKEN_ISSUER.to_string(),
+        sub: "vaultwarden".to_string(),
     }
 }
 

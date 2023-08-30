@@ -28,7 +28,7 @@ pub enum OrgPolicyType {
     MasterPassword = 1,
     PasswordGenerator = 2,
     SingleOrg = 3,
-    // RequireSso = 4, // Not supported
+    RequireSso = 4,
     PersonalOwnership = 5,
     DisableSend = 6,
     SendOptions = 7,

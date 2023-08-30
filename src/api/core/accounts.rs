@@ -28,6 +28,7 @@ pub fn routes() -> Vec<rocket::Route> {
         get_public_keys,
         post_keys,
         post_password,
+        post_set_password,
         post_kdf,
         post_rotatekey,
         post_sstamp,
@@ -80,9 +81,31 @@ pub struct RegisterData {
 
 #[derive(Deserialize, Debug)]
 #[allow(non_snake_case)]
+pub struct SetPasswordData {
+    Kdf: Option<i32>,
+    KdfIterations: Option<i32>,
+    KdfMemory: Option<i32>,
+    KdfParallelism: Option<i32>,
+    Key: String,
+    Keys: Option<KeysData>,
+    MasterPasswordHash: String,
+    MasterPasswordHint: Option<String>,
+    #[allow(dead_code)]
+    orgIdentifier: Option<String>,
+}
+
+#[derive(Deserialize, Debug)]
+#[allow(non_snake_case)]
 struct KeysData {
     EncryptedPrivateKey: String,
     PublicKey: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct TokenPayload {
+    exp: i64,
+    email: String,
+    nonce: String,
 }
 
 /// Trims whitespace from password hints, and converts blank password hints to `None`.
@@ -211,6 +234,50 @@ pub async fn _register(data: JsonUpcase<RegisterData>, mut conn: DbConn) -> Json
     user.save(&mut conn).await?;
     Ok(Json(json!({
       "Object": "register",
+      "CaptchaBypassToken": "",
+    })))
+}
+
+#[post("/accounts/set-password", data = "<data>")]
+async fn post_set_password(data: JsonUpcase<SetPasswordData>, headers: Headers, mut conn: DbConn) -> JsonResult {
+    let data: SetPasswordData = data.into_inner().data;
+    let mut user = headers.user;
+
+    // Check against the password hint setting here so if it fails, the user
+    // can retry without losing their invitation below.
+    let password_hint = clean_password_hint(&data.MasterPasswordHint);
+    enforce_password_hint_setting(&password_hint)?;
+
+    if let Some(client_kdf_iter) = data.KdfIterations {
+        user.client_kdf_iter = client_kdf_iter;
+    }
+
+    if let Some(client_kdf_type) = data.Kdf {
+        user.client_kdf_type = client_kdf_type;
+    }
+
+    // We need to allow revision-date to use the old security_timestamp
+    let routes = vec!["revision_date"];
+    let routes: Option<Vec<String>> = Some(routes.iter().map(ToString::to_string).collect());
+
+    user.client_kdf_memory = data.KdfMemory;
+    user.client_kdf_parallelism = data.KdfParallelism;
+
+    user.set_password(&data.MasterPasswordHash, Some(data.Key), false, routes);
+    user.password_hint = password_hint;
+
+    if let Some(keys) = data.Keys {
+        user.private_key = Some(keys.EncryptedPrivateKey);
+        user.public_key = Some(keys.PublicKey);
+    }
+
+    if CONFIG.mail_enabled() {
+        mail::send_set_password(&user.email.to_lowercase(), &user.name).await?;
+    }
+
+    user.save(&mut conn).await?;
+    Ok(Json(json!({
+      "Object": "set-password",
       "CaptchaBypassToken": "",
     })))
 }
@@ -835,7 +902,7 @@ struct SecretVerificationRequest {
 }
 
 #[post("/accounts/verify-password", data = "<data>")]
-fn verify_password(data: JsonUpcase<SecretVerificationRequest>, headers: Headers) -> EmptyResult {
+fn verify_password(data: JsonUpcase<SecretVerificationRequest>, headers: Headers) -> JsonResult {
     let data: SecretVerificationRequest = data.into_inner().data;
     let user = headers.user;
 
@@ -843,7 +910,9 @@ fn verify_password(data: JsonUpcase<SecretVerificationRequest>, headers: Headers
         err!("Invalid password")
     }
 
-    Ok(())
+    Ok(Json(json!({
+      "MasterPasswordPolicy": {}, // Required for SSO login with mobile apps
+    })))
 }
 
 async fn _api_key(

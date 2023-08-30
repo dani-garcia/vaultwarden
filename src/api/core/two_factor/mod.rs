@@ -5,7 +5,7 @@ use rocket::Route;
 use serde_json::Value;
 
 use crate::{
-    api::{core::log_user_event, JsonResult, JsonUpcase, NumberOrString, PasswordData},
+    api::{core::log_user_event, EmptyResult, JsonResult, JsonUpcase, NumberOrString, PasswordData},
     auth::{ClientHeaders, Headers},
     crypto,
     db::{models::*, DbConn, DbPool},
@@ -54,9 +54,7 @@ fn get_recover(data: JsonUpcase<PasswordData>, headers: Headers) -> JsonResult {
     let data: PasswordData = data.into_inner().data;
     let user = headers.user;
 
-    if !user.check_valid_password(&data.MasterPasswordHash) {
-        err!("Invalid password");
-    }
+    crate::api::core::two_factor::authenticator_activation_check(&user, &data.MasterPasswordHash)?;
 
     Ok(Json(json!({
         "Code": user.totp_recover,
@@ -84,10 +82,7 @@ async fn recover(data: JsonUpcase<RecoverTwoFactor>, client_headers: ClientHeade
         None => err!("Username or password is incorrect. Try again."),
     };
 
-    // Check password
-    if !user.check_valid_password(&data.MasterPasswordHash) {
-        err!("Username or password is incorrect. Try again.")
-    }
+    crate::api::core::two_factor::authenticator_activation_check(&user, &data.MasterPasswordHash)?;
 
     // Check if recovery code is correct
     if !user.check_valid_recovery_code(&data.RecoveryCode) {
@@ -223,4 +218,17 @@ fn get_device_verification_settings(_headers: Headers, _conn: DbConn) -> Json<Va
         "unknownDeviceVerificationEnabled":false,
         "object":"deviceVerificationSettings"
     }))
+}
+
+// 2FA is broken with SSO, prevent activation if password login is disabled
+fn authenticator_activation_check(user: &User, password_hash: &str) -> EmptyResult {
+    if !user.check_valid_password(password_hash) {
+        err!("Invalid password");
+    }
+
+    if CONFIG.sso_enabled() && CONFIG.sso_only() {
+        err!("Cannot activate 2FA when SSO is the only login option");
+    }
+
+    Ok(())
 }
