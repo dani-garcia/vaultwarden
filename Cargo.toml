@@ -149,6 +149,9 @@ pico-args = "0.5.0"
 paste = "1.0.15"
 governor = "0.6.3"
 
+# OIDC for SSO
+openidconnect = "3.4.0"
+
 # Check client versions for specific features.
 semver = "1.0.23"
 
