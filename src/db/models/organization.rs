@@ -172,7 +172,7 @@ impl Organization {
             "useTotp": true,
             "usePolicies": true,
             "useScim": false, // Not supported (Not AGPLv3 Licensed)
-            "useSso": false, // Not supported
+            "useSso": CONFIG.sso_enabled(),
             "useKeyConnector": false, // Not supported
             "usePasswordManager": true,
             "useSecretsManager": false, // Not supported (Not AGPLv3 Licensed)
@@ -424,7 +424,7 @@ impl UserOrganization {
             "resetPasswordEnrolled": self.reset_password_key.is_some(),
             "useResetPassword": CONFIG.mail_enabled(),
             "ssoBound": false, // Not supported
-            "useSso": false, // Not supported
+            "useSso": CONFIG.sso_enabled(),
             "useKeyConnector": false,
             "useSecretsManager": false, // Not supported (Not AGPLv3 Licensed)
             "usePasswordManager": true,
