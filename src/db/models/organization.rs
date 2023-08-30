@@ -166,9 +166,9 @@ impl Organization {
             "useGroups": CONFIG.org_groups_enabled(),
             "useTotp": true,
             "usePolicies": true,
-            // "useScim": false, // Not supported (Not AGPLv3 Licensed)
-            "useSso": false, // Not supported
-            // "useKeyConnector": false, // Not supported
+            // "UseScim": false, // Not supported (Not AGPLv3 Licensed)
+            "useSso": CONFIG.sso_enabled(),
+            // "UseKeyConnector": false, // Not supported
             "selfHost": true,
             "useApi": true,
             "hasPublicAndPrivateKeys": self.private_key.is_some() && self.public_key.is_some(),
@@ -385,7 +385,7 @@ impl UserOrganization {
             "resetPasswordEnrolled": self.reset_password_key.is_some(),
             "useResetPassword": CONFIG.mail_enabled(),
             "ssoBound": false, // Not supported
-            "useSso": false, // Not supported
+            "useSso": CONFIG.sso_enabled(),
             "useKeyConnector": false,
             "useSecretsManager": false,
             "usePasswordManager": true,

@@ -606,6 +606,24 @@ make_config! {
         org_groups_enabled:     bool,   false,  def,    false;
     },
 
+    /// OpenID Connect SSO settings
+    sso {
+        /// Enabled
+        sso_enabled:            bool,   true,   def,    false;
+        /// Force SSO login
+        sso_only:               bool,   true,   def,    false;
+        /// Client ID
+        sso_client_id:          String, true,   def,    String::new();
+        /// Client Key
+        sso_client_secret:      Pass,   true,   def,    String::new();
+        /// Authority Server
+        sso_authority:          String, true,   def,    String::new();
+        /// CallBack Path
+        sso_callback_path:      String, false,  gen,    |c| generate_sso_callback_path(&c.domain);
+        /// Allow workaround so SSO logins accept all invites
+        sso_acceptall_invites: bool, true,   def,     false;
+    },
+
     /// Yubikey settings
     yubico: _enable_yubico {
         /// Enabled
@@ -815,6 +833,12 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         err!("All Duo options need to be set for global Duo support")
     }
 
+    if cfg.sso_enabled
+        && (cfg.sso_client_id.is_empty() || cfg.sso_client_secret.is_empty() || cfg.sso_authority.is_empty())
+    {
+        err!("`SSO_CLIENT_ID`, `SSO_CLIENT_SECRET` and `SSO_AUTHORITY` must be set for SSO support")
+    }
+
     if cfg._enable_yubico {
         if cfg.yubico_client_id.is_some() != cfg.yubico_secret_key.is_some() {
             err!("Both `YUBICO_CLIENT_ID` and `YUBICO_SECRET_KEY` must be set for Yubikey OTP support")
@@ -1016,6 +1040,10 @@ fn generate_smtp_img_src(embed_images: bool, domain: &str) -> String {
     } else {
         format!("{domain}/vw_static/")
     }
+}
+
+fn generate_sso_callback_path(domain: &str) -> String {
+    format!("{domain}/identity/connect/oidc-signin")
 }
 
 /// Generate the correct URL for the icon service.
@@ -1305,6 +1333,7 @@ where
     reg!("email/send_emergency_access_invite", ".html");
     reg!("email/send_org_invite", ".html");
     reg!("email/send_single_org_removed_from_org", ".html");
+    reg!("email/set_password", ".html");
     reg!("email/smtp_test", ".html");
     reg!("email/twofactor_email", ".html");
     reg!("email/verify_email", ".html");

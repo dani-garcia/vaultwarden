@@ -40,6 +40,7 @@ pub fn routes() -> Vec<Route> {
         post_organization_collection_delete,
         bulk_delete_organization_collections,
         get_org_details,
+        get_org_domain_sso_details,
         get_org_users,
         send_invite,
         reinvite_user,
@@ -56,6 +57,7 @@ pub fn routes() -> Vec<Route> {
         post_org_import,
         list_policies,
         list_policies_token,
+        list_policies_invited_user,
         get_policy,
         put_policy,
         get_organization_tax,
@@ -96,6 +98,7 @@ pub fn routes() -> Vec<Route> {
         get_org_export,
         api_key,
         rotate_api_key,
+        get_auto_enroll_status,
     ]
 }
 
@@ -300,6 +303,13 @@ async fn get_user_collections(headers: Headers, mut conn: DbConn) -> Json<Value>
         "object": "list",
         "continuationToken": null,
     }))
+}
+
+#[get("/organizations/<_identifier>/auto-enroll-status")]
+fn get_auto_enroll_status(_identifier: String) -> JsonResult {
+    Ok(Json(json!({
+        "ResetPasswordEnabled": false, // Not implemented
+    })))
 }
 
 #[get("/organizations/<org_id>/collections")]
@@ -767,6 +777,14 @@ async fn _get_org_details(org_id: &str, host: &str, user_uuid: &str, conn: &mut 
             .push(c.to_json(host, user_uuid, Some(&cipher_sync_data), CipherSyncType::Organization, conn).await);
     }
     json!(ciphers_json)
+}
+
+#[post("/organizations/domain/sso/details")]
+fn get_org_domain_sso_details() -> JsonResult {
+    Ok(Json(json!({
+        "organizationIdentifier": "vaultwarden",
+        "ssoAvailable": CONFIG.sso_enabled()
+    })))
 }
 
 #[derive(FromForm)]
@@ -1661,6 +1679,25 @@ async fn list_policies_token(org_id: &str, token: &str, mut conn: DbConn) -> Jso
         "data": policies_json,
         "object": "list",
         "continuationToken": null
+    })))
+}
+
+#[allow(non_snake_case)]
+#[get("/organizations/<org_id>/policies/invited-user?<userId>")]
+async fn list_policies_invited_user(org_id: String, userId: String, mut conn: DbConn) -> JsonResult {
+    // We should confirm the user is part of the organization, but unique domain_hints must be supported first.
+
+    if userId.is_empty() {
+        err!("userId must not be empty");
+    }
+
+    let policies = OrgPolicy::find_by_org(&org_id, &mut conn).await;
+    let policies_json: Vec<Value> = policies.iter().map(OrgPolicy::to_json).collect();
+
+    Ok(Json(json!({
+        "Data": policies_json,
+        "Object": "list",
+        "ContinuationToken": null
     })))
 }
 
