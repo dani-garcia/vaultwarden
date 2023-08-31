@@ -37,36 +37,107 @@ function _post(url, successMsg, errMsg, body, reload_page = true) {
         mode: "same-origin",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" }
-    }).then( resp => {
+    }).then(resp => {
         if (resp.ok) {
             msg(successMsg, reload_page);
             // Abuse the catch handler by setting error to false and continue
-            return Promise.reject({error: false});
+            return Promise.reject({ error: false });
         }
         respStatus = resp.status;
         respStatusText = resp.statusText;
         return resp.text();
-    }).then( respText => {
+    }).then(respText => {
         try {
             const respJson = JSON.parse(respText);
             if (respJson.ErrorModel && respJson.ErrorModel.Message) {
                 return respJson.ErrorModel.Message;
             } else {
-                return Promise.reject({body:`${respStatus} - ${respStatusText}\n\nUnknown error`, error: true});
+                return Promise.reject({ body: `${respStatus} - ${respStatusText}\n\nUnknown error`, error: true });
             }
         } catch (e) {
-            return Promise.reject({body:`${respStatus} - ${respStatusText}\n\n[Catch] ${e}`, error: true});
+            return Promise.reject({ body: `${respStatus} - ${respStatusText}\n\n[Catch] ${e}`, error: true });
         }
-    }).then( apiMsg => {
+    }).then(apiMsg => {
         msg(`${errMsg}\n${apiMsg}`, reload_page);
-    }).catch( e => {
+    }).catch(e => {
         if (e.error === false) { return true; }
         else { msg(`${errMsg}\n${e.body}`, reload_page); }
     });
 }
 
+// Bootstrap Theme Selector
+const getStoredTheme = () => localStorage.getItem("theme");
+const setStoredTheme = theme => localStorage.setItem("theme", theme);
+
+const getPreferredTheme = () => {
+    const storedTheme = getStoredTheme();
+    if (storedTheme) {
+        return storedTheme;
+    }
+
+    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+};
+
+const setTheme = theme => {
+    if (theme === "auto" && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+        document.documentElement.setAttribute("data-bs-theme", "dark");
+    } else {
+        document.documentElement.setAttribute("data-bs-theme", theme);
+    }
+};
+
+setTheme(getPreferredTheme());
+
+const showActiveTheme = (theme, focus = false) => {
+    const themeSwitcher = document.querySelector("#bd-theme");
+
+    if (!themeSwitcher) {
+        return;
+    }
+
+    const themeSwitcherText = document.querySelector("#bd-theme-text");
+    const activeThemeIcon = document.querySelector(".theme-icon-active use");
+    const btnToActive = document.querySelector(`[data-bs-theme-value="${theme}"]`);
+    const svgOfActiveBtn = btnToActive.querySelector("span use").innerText;
+
+    document.querySelectorAll("[data-bs-theme-value]").forEach(element => {
+        element.classList.remove("active");
+        element.setAttribute("aria-pressed", "false");
+    });
+
+    btnToActive.classList.add("active");
+    btnToActive.setAttribute("aria-pressed", "true");
+    activeThemeIcon.innerText = svgOfActiveBtn;
+    const themeSwitcherLabel = `${themeSwitcherText.textContent} (${btnToActive.dataset.bsThemeValue})`;
+    themeSwitcher.setAttribute("aria-label", themeSwitcherLabel);
+
+    if (focus) {
+        themeSwitcher.focus();
+    }
+};
+
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+    const storedTheme = getStoredTheme();
+    if (storedTheme !== "light" && storedTheme !== "dark") {
+        setTheme(getPreferredTheme());
+    }
+});
+
+
 // onLoad events
 document.addEventListener("DOMContentLoaded", (/*event*/) => {
+    showActiveTheme(getPreferredTheme());
+
+    document.querySelectorAll("[data-bs-theme-value]")
+        .forEach(toggle => {
+            toggle.addEventListener("click", () => {
+                const theme = toggle.getAttribute("data-bs-theme-value");
+                setStoredTheme(theme);
+                setTheme(theme);
+                showActiveTheme(theme, true);
+            });
+        });
+
     // get current URL path and assign "active" class to the correct nav-item
     const pathname = window.location.pathname;
     if (pathname === "") return;

@@ -17,7 +17,7 @@
             <form class="form needs-validation" id="config-form" novalidate>
                 {{#each page_data.config}}
                 {{#if groupdoc}}
-                <div class="card bg-light mb-3">
+                <div class="card mb-3">
                     <button id="b_{{group}}" type="button" class="card-header text-start btn btn-link text-decoration-none" aria-expanded="false" aria-controls="g_{{group}}" data-bs-toggle="collapse" data-bs-target="#g_{{group}}">{{groupdoc}}</button>
                     <div id="g_{{group}}" class="card-body collapse">
                         {{#each elements}}
@@ -64,7 +64,7 @@
                 {{/if}}
                 {{/each}}
 
-                <div class="card bg-light mb-3">
+                <div class="card mb-3">
                     <button id="b_readonly" type="button" class="card-header text-start btn btn-link text-decoration-none" aria-expanded="false" aria-controls="g_readonly"
                             data-bs-toggle="collapse" data-bs-target="#g_readonly">Read-Only Config</button>
                     <div id="g_readonly" class="card-body collapse">
@@ -119,7 +119,7 @@
                 </div>
 
                 {{#if page_data.can_backup}}
-                <div class="card bg-light mb-3">
+                <div class="card mb-3">
                     <button id="b_database" type="button" class="card-header text-start btn btn-link text-decoration-none" aria-expanded="false" aria-controls="g_database"
                             data-bs-toggle="collapse" data-bs-target="#g_database">Backup Database</button>
                     <div id="g_database" class="card-body collapse">

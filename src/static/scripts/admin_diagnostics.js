@@ -1,6 +1,6 @@
 "use strict";
 /* eslint-env es2017, browser */
-/* global BASE_URL:readable, BSN:readable */
+/* global BASE_URL:readable, bootstrap:readable */
 
 var dnsCheck = false;
 var timeCheck = false;
@@ -135,7 +135,7 @@ function copyToClipboard(event) {
     document.execCommand("copy");
     tmpCopyEl.remove();
 
-    new BSN.Toast("#toastClipboardCopy").show();
+    new bootstrap.Toast("#toastClipboardCopy").show();
 }
 
 function checkTimeDrift(utcTimeA, utcTimeB, statusPrefix) {

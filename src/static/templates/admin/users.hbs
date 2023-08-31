@@ -1,5 +1,5 @@
 <main class="container-xl">
-    <div id="users-block" class="my-3 p-3 bg-white rounded shadow">
+    <div id="users-block" class="my-3 p-3 rounded shadow">
         <h6 class="border-bottom pb-2 mb-3">Registered Users</h6>
         <div class="table-responsive-xl small">
             <table id="users-table" class="table table-sm table-striped table-hover">
@@ -30,7 +30,7 @@
                                         <span class="badge bg-success me-2" title="2FA is enabled">2FA</span>
                                     {{/if}}
                                     {{#case _Status 1}}
-                                        <span class="badge bg-warning me-2" title="User is invited">Invited</span>
+                                        <span class="badge bg-warning text-dark me-2" title="User is invited">Invited</span>
                                     {{/case}}
                                     {{#if EmailVerified}}
                                         <span class="badge bg-success me-2" title="Email has been verified">Verified</span>
@@ -140,7 +140,7 @@
 </main>
 
 <link rel="stylesheet" href="{{urlpath}}/vw_static/datatables.css" />
-<script src="{{urlpath}}/vw_static/jquery-3.6.4.slim.js"></script>
+<script src="{{urlpath}}/vw_static/jquery-3.7.0.slim.js"></script>
 <script src="{{urlpath}}/vw_static/datatables.js"></script>
 <script src="{{urlpath}}/vw_static/admin_users.js"></script>
 <script src="{{urlpath}}/vw_static/jdenticon.js"></script>

@@ -141,19 +141,20 @@ function resendUserInvite (event) {
 const ORG_TYPES = {
     "0": {
         "name": "Owner",
-        "color": "orange"
+        "bg": "orange",
+        "font": "black"
     },
     "1": {
         "name": "Admin",
-        "color": "blueviolet"
+        "bg": "blueviolet"
     },
     "2": {
         "name": "User",
-        "color": "blue"
+        "bg": "blue"
     },
     "3": {
         "name": "Manager",
-        "color": "green"
+        "bg": "green"
     },
 };
 
@@ -227,7 +228,10 @@ function initUserTable() {
     // Color all the org buttons per type
     document.querySelectorAll("button[data-vw-org-type]").forEach(function(e) {
         const orgType = ORG_TYPES[e.dataset.vwOrgType];
-        e.style.backgroundColor = orgType.color;
+        e.style.backgroundColor = orgType.bg;
+        if (orgType.font !== undefined) {
+            e.style.color = orgType.font;
+        }
         e.title = orgType.name;
     });
 

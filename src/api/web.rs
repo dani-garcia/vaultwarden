@@ -14,11 +14,17 @@ use crate::{
 pub fn routes() -> Vec<Route> {
     // If addding more routes here, consider also adding them to
     // crate::utils::LOGGED_ROUTES to make sure they appear in the log
+    let mut routes = routes![attachments, alive, alive_head, static_files];
     if CONFIG.web_vault_enabled() {
-        routes![web_index, web_index_head, app_id, web_files, attachments, alive, alive_head, static_files]
-    } else {
-        routes![attachments, alive, alive_head, static_files]
+        routes.append(&mut routes![web_index, web_index_head, app_id, web_files]);
     }
+
+    #[cfg(debug_assertions)]
+    if CONFIG.reload_templates() {
+        routes.append(&mut routes![_static_files_dev]);
+    }
+
+    routes
 }
 
 pub fn catchers() -> Vec<Catcher> {
@@ -116,7 +122,30 @@ fn alive_head(_conn: DbConn) -> EmptyResult {
     Ok(())
 }
 
-#[get("/vw_static/<filename>")]
+// This endpoint/function is used during development and development only.
+// It allows to easily develop the admin interface by always loading the files from disk instead from a slice of bytes
+// This will only be active during a debug build and only when `RELOAD_TEMPLATES` is set to `true`
+// NOTE: Do not forget to add any new files added to the `static_files` function below!
+#[cfg(debug_assertions)]
+#[get("/vw_static/<filename>", rank = 1)]
+pub async fn _static_files_dev(filename: PathBuf) -> Option<NamedFile> {
+    warn!("LOADING STATIC FILES FROM DISK");
+    let file = filename.to_str().unwrap_or_default();
+    let ext = filename.extension().unwrap_or_default();
+
+    let path = if ext == "png" || ext == "svg" {
+        tokio::fs::canonicalize(Path::new(file!()).parent().unwrap().join("../static/images/").join(file)).await
+    } else {
+        tokio::fs::canonicalize(Path::new(file!()).parent().unwrap().join("../static/scripts/").join(file)).await
+    };
+
+    if let Ok(path) = path {
+        return NamedFile::open(path).await.ok();
+    };
+    None
+}
+
+#[get("/vw_static/<filename>", rank = 2)]
 pub fn static_files(filename: &str) -> Result<(ContentType, &'static [u8]), Error> {
     match filename {
         "404.png" => Ok((ContentType::PNG, include_bytes!("../static/images/404.png"))),
@@ -138,12 +167,12 @@ pub fn static_files(filename: &str) -> Result<(ContentType, &'static [u8]), Erro
             Ok((ContentType::JavaScript, include_bytes!("../static/scripts/admin_diagnostics.js")))
         }
         "bootstrap.css" => Ok((ContentType::CSS, include_bytes!("../static/scripts/bootstrap.css"))),
-        "bootstrap-native.js" => Ok((ContentType::JavaScript, include_bytes!("../static/scripts/bootstrap-native.js"))),
+        "bootstrap.bundle.js" => Ok((ContentType::JavaScript, include_bytes!("../static/scripts/bootstrap.bundle.js"))),
         "jdenticon.js" => Ok((ContentType::JavaScript, include_bytes!("../static/scripts/jdenticon.js"))),
         "datatables.js" => Ok((ContentType::JavaScript, include_bytes!("../static/scripts/datatables.js"))),
         "datatables.css" => Ok((ContentType::CSS, include_bytes!("../static/scripts/datatables.css"))),
-        "jquery-3.6.4.slim.js" => {
-            Ok((ContentType::JavaScript, include_bytes!("../static/scripts/jquery-3.6.4.slim.js")))
+        "jquery-3.7.0.slim.js" => {
+            Ok((ContentType::JavaScript, include_bytes!("../static/scripts/jquery-3.7.0.slim.js")))
         }
         _ => err!(format!("Static file not found: {filename}")),
     }

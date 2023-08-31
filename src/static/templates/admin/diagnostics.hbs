@@ -1,5 +1,5 @@
 <main class="container-xl">
-    <div id="diagnostics-block" class="my-3 p-3 bg-white rounded shadow">
+    <div id="diagnostics-block" class="my-3 p-3 rounded shadow">
         <h6 class="border-bottom pb-2 mb-2">Diagnostics</h6>
 
         <h3>Versions</h3>
@@ -8,8 +8,8 @@
                 <dl class="row">
                     <dt class="col-sm-5">Server Installed
                         <span class="badge bg-success d-none" id="server-success" title="Latest version is installed.">Ok</span>
-                        <span class="badge bg-warning d-none" id="server-warning" title="There seems to be an update available.">Update</span>
-                        <span class="badge bg-info d-none" id="server-branch" title="This is a branched version.">Branched</span>
+                        <span class="badge bg-warning text-dark d-none" id="server-warning" title="There seems to be an update available.">Update</span>
+                        <span class="badge bg-info text-dark d-none" id="server-branch" title="This is a branched version.">Branched</span>
                     </dt>
                     <dd class="col-sm-7">
                         <span id="server-installed">{{page_data.current_release}}</span>
