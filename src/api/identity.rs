@@ -280,6 +280,10 @@ async fn _password_login(
         "ResetMasterPassword": false,// TODO: Same as above
         "scope": scope,
         "unofficialServer": true,
+        "UserDecryptionOptions": {
+            "HasMasterPassword": !user.password_hash.is_empty(),
+            "Object": "userDecryptionOptions"
+        },
     });
 
     if let Some(token) = twofactor_token {
