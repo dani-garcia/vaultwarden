@@ -72,7 +72,7 @@ WORKDIR /app
 
 # Copies over *only* your manifests and build files
 COPY ./Cargo.* ./
-COPY ./rust-toolchain ./rust-toolchain
+COPY ./rust-toolchain.toml ./rust-toolchain.toml
 COPY ./build.rs ./build.rs
 
 RUN rustup target add aarch64-unknown-linux-gnu

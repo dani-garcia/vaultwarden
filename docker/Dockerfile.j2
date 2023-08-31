@@ -146,7 +146,7 @@ WORKDIR /app
 
 # Copies over *only* your manifests and build files
 COPY ./Cargo.* ./
-COPY ./rust-toolchain ./rust-toolchain
+COPY ./rust-toolchain.toml ./rust-toolchain.toml
 COPY ./build.rs ./build.rs
 
 {% if package_arch_target is defined %}
