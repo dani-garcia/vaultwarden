@@ -124,7 +124,9 @@ fn websockets_hub<'r>(
         err_code!("Invalid claim", 401)
     };
 
-    let Ok(claims) = crate::auth::decode_login(&token) else { err_code!("Invalid token", 401) };
+    let Ok(claims) = crate::auth::decode_login(&token) else {
+        err_code!("Invalid token", 401)
+    };
 
     let (mut rx, guard) = {
         let users = Arc::clone(&WS_USERS);

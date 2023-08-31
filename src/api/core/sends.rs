@@ -340,9 +340,13 @@ async fn post_send_file_v2_data(
 
     let mut data = data.into_inner();
 
-    let Some(send) = Send::find_by_uuid(send_uuid, &mut conn).await else { err!("Send not found. Unable to save the file.") };
+    let Some(send) = Send::find_by_uuid(send_uuid, &mut conn).await else {
+        err!("Send not found. Unable to save the file.")
+    };
 
-    let Some(send_user_id) = &send.user_uuid else {err!("Sends are only supported for users at the moment")};
+    let Some(send_user_id) = &send.user_uuid else {
+        err!("Sends are only supported for users at the moment")
+    };
     if send_user_id != &headers.user.uuid {
         err!("Send doesn't belong to user");
     }

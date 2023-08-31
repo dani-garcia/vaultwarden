@@ -3,7 +3,7 @@ name = "vaultwarden"
 version = "1.0.0"
 authors = ["Daniel García <dani-garcia@users.noreply.github.com>"]
 edition = "2021"
-rust-version = "1.69.0"
+rust-version = "1.70.0"
 resolver = "2"
 
 repository = "https://github.com/dani-garcia/vaultwarden"
@@ -40,7 +40,7 @@ syslog = "6.1.0"
 
 [dependencies]
 # Logging
-log = "0.4.19"
+log = "0.4.20"
 fern = { version = "0.6.2", features = ["syslog-6"] }
 tracing = { version = "0.1.37", features = ["log"] } # Needed to have lettre and webauthn-rs trace logging to work
 
@@ -64,18 +64,18 @@ tokio-tungstenite = "0.19.0"
 rmpv = "1.0.1" # MessagePack library
 
 # Concurrent HashMap used for WebSocket messaging and favicons
-dashmap = "5.5.0"
+dashmap = "5.5.3"
 
 # Async futures
 futures = "0.3.28"
-tokio = { version = "1.30.0", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal"] }
+tokio = { version = "1.32.0", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal"] }
 
 # A generic serialization/deserialization framework
-serde = { version = "1.0.183", features = ["derive"] }
-serde_json = "1.0.104"
+serde = { version = "1.0.188", features = ["derive"] }
+serde_json = "1.0.105"
 
 # A safe, extensible ORM and Query builder
-diesel = { version = "2.1.0", features = ["chrono", "r2d2"] }
+diesel = { version = "2.1.1", features = ["chrono", "r2d2"] }
 diesel_migrations = "2.1.0"
 diesel_logger = { version = "0.3.0", optional = true }
 
@@ -90,9 +90,9 @@ ring = "0.16.20"
 uuid = { version = "1.4.1", features = ["v4"] }
 
 # Date and time libraries
-chrono = { version = "0.4.26", features = ["clock", "serde"], default-features = false }
+chrono = { version = "0.4.28", features = ["clock", "serde"], default-features = false }
 chrono-tz = "0.8.3"
-time = "0.3.25"
+time = "0.3.28"
 
 # Job scheduler
 job_scheduler_ng = "2.0.4"
@@ -113,7 +113,7 @@ yubico = { version = "0.11.0", features = ["online-tokio"], default-features = f
 webauthn-rs = "0.3.2"
 
 # Handling of URL's for WebAuthn and favicons
-url = "2.4.0"
+url = "2.4.1"
 
 # Email libraries
 lettre = { version = "0.10.4", features = ["smtp-transport", "sendmail-transport", "builder", "serde", "tokio1-native-tls", "hostname", "tracing", "tokio1"], default-features = false }
@@ -124,11 +124,11 @@ email_address = "0.2.4"
 handlebars = { version = "4.3.7", features = ["dir_source"] }
 
 # HTTP client (Used for favicons, version check, DUO and HIBP API)
-reqwest = { version = "0.11.18", features = ["stream", "json", "deflate", "gzip", "brotli", "socks", "cookies", "trust-dns", "native-tls-alpn"] }
+reqwest = { version = "0.11.20", features = ["stream", "json", "deflate", "gzip", "brotli", "socks", "cookies", "trust-dns", "native-tls-alpn"] }
 
 # Favicon extraction libraries
 html5gum = "0.5.7"
-regex = { version = "1.9.3", features = ["std", "perf", "unicode-perl"], default-features = false }
+regex = { version = "1.9.4", features = ["std", "perf", "unicode-perl"], default-features = false }
 data-url = "0.3.0"
 bytes = "1.4.0"
 
@@ -140,7 +140,7 @@ cookie = "0.16.2"
 cookie_store = "0.19.1"
 
 # Used by U2F, JWT and PostgreSQL
-openssl = "0.10.56"
+openssl = "0.10.57"
 
 # CLI argument parsing
 pico-args = "0.5.0"
@@ -154,7 +154,7 @@ semver = "1.0.18"
 
 # Allow overriding the default memory allocator
 # Mainly used for the musl builds, since the default musl malloc is very slow
-mimalloc = { version = "0.1.37", features = ["secure"], default-features = false, optional = true }
+mimalloc = { version = "0.1.38", features = ["secure"], default-features = false, optional = true }
 which = "4.4.0"
 
 # Argon2 library with support for the PHC format
