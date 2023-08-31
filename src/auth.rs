@@ -825,3 +825,26 @@ impl<'r> FromRequest<'r> for ClientIp {
         })
     }
 }
+
+pub struct WsAccessTokenHeader {
+    pub access_token: Option<String>,
+}
+
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for WsAccessTokenHeader {
+    type Error = ();
+
+    async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+        let headers = request.headers();
+
+        // Get access_token
+        let access_token = match headers.get_one("Authorization") {
+            Some(a) => a.rsplit("Bearer ").next().map(String::from),
+            None => None,
+        };
+
+        Outcome::Success(Self {
+            access_token,
+        })
+    }
+}
