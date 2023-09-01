@@ -37,6 +37,20 @@ npx playwright test --project postgres
 npx playwright test --project mysql
 ```
 
+### SSO
+
+To run the SSO tests:
+
+```bash
+npx playwright test --project sso-sqllite
+```
+
+Additionnaly if you want you can keep the Keycloak `docker-compose` runnning with (its state is not impacted by the tests):
+
+```bash
+KC_KEEP_RUNNNING=true npx playwright test --project sso-sqllite
+```
+
 ### Running specific tests
 
 To run a whole file you can :

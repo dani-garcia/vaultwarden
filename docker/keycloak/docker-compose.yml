@@ -1,0 +1,33 @@
+services:
+  keycloak:
+    container_name: keycloak-${ENV:-dev}
+    image: quay.io/keycloak/keycloak
+    network_mode: "host"
+    command:
+      - start-dev
+    env_file: ${ENV}.env
+    volumes:
+      - ./keycloak_setup.sh:/opt/script/keycloak_setup.sh
+  keycloakSetup:
+    container_name: keycloakSetup-${ENV:-dev}
+    image: quay.io/keycloak/keycloak
+    network_mode: "host"
+    depends_on:
+      - keycloak
+    restart: "no"
+    env_file: ${ENV}.env
+    entrypoint: [ "bash", "-c", "/opt/script/keycloak_setup.sh"]
+    volumes:
+      - ${KC_SETUP_PATH:-.}/keycloak_setup.sh:/opt/script/keycloak_setup.sh
+  VaultWarden:
+    image: vaultwarden
+    profiles: ["VaultWarden"]
+    network_mode: "host"
+    build:
+      context: ../../..
+      dockerfile: Dockerfile
+    depends_on:
+      - keycloak
+    env_file: ${ENV}.env
+    volumes:
+      - ./vaultwarden.sh:/etc/vaultwarden.sh

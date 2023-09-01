@@ -25,6 +25,7 @@ db_object! {
         pub uuid: String,
         pub user_uuid: String,
         pub org_uuid: String,
+        pub invited_by_email: Option<String>,
 
         pub access_all: bool,
         pub akey: String,
@@ -167,7 +168,7 @@ impl Organization {
             "useTotp": true,
             "usePolicies": true,
             // "UseScim": false, // Not supported (Not AGPLv3 Licensed)
-            "useSso": CONFIG.sso_enabled(),
+            "useSso": false, // Not supported
             // "UseKeyConnector": false, // Not supported
             "selfHost": true,
             "useApi": true,
@@ -197,12 +198,13 @@ impl Organization {
 static ACTIVATE_REVOKE_DIFF: i32 = 128;
 
 impl UserOrganization {
-    pub fn new(user_uuid: String, org_uuid: String) -> Self {
+    pub fn new(user_uuid: String, org_uuid: String, invited_by_email: Option<String>) -> Self {
         Self {
             uuid: crate::util::get_uuid(),
 
             user_uuid,
             org_uuid,
+            invited_by_email,
 
             access_all: false,
             akey: String::new(),
@@ -385,7 +387,7 @@ impl UserOrganization {
             "resetPasswordEnrolled": self.reset_password_key.is_some(),
             "useResetPassword": CONFIG.mail_enabled(),
             "ssoBound": false, // Not supported
-            "useSso": CONFIG.sso_enabled(),
+            "useSso": false, // Not supported
             "useKeyConnector": false,
             "useSecretsManager": false,
             "usePasswordManager": true,
@@ -649,6 +651,17 @@ impl UserOrganization {
                 .filter(users_organizations::status.eq(UserOrgStatus::Invited as i32))
                 .load::<UserOrganizationDb>(conn)
                 .unwrap_or_default().from_db()
+        }}
+    }
+
+    pub async fn confirm_user_invitations(user_uuid: &str, conn: &mut DbConn) -> EmptyResult {
+        db_run! { conn: {
+            diesel::update(users_organizations::table)
+                .filter(users_organizations::user_uuid.eq(user_uuid))
+                .filter(users_organizations::status.eq(UserOrgStatus::Invited as i32))
+                .set(users_organizations::status.eq(UserOrgStatus::Accepted as i32))
+                .execute(conn)
+                .map_res("Error confirming invitations")
         }}
     }
 

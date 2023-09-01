@@ -1,5 +1,5 @@
-import { firefox, type FullConfig } from '@playwright/test';
-import { exec, execSync } from 'node:child_process';
+import { type FullConfig } from '@playwright/test';
+import { execSync } from 'node:child_process';
 import fs from 'fs';
 import yaml from 'js-yaml';
 
@@ -48,6 +48,9 @@ function retrieveFrontend(){
             fs.rmSync("./temp/web-vault", { recursive: true, force: true });
 
             execSync(`cd temp && wget -c https://github.com/dani-garcia/bw_web_builds/releases/download/${vv}/bw_web_${vv}.tar.gz -O - | tar xz`, { stdio: "inherit" });
+
+            // Make the SSO button visible
+            execSync(`bash -c "sed -i 's#a.routerlink=./sso..,##' temp/web-vault/app/main.*.css"`, { stdio: "inherit" });
 
             console.log(`Retrieved bw_web_builds-${vv}`);
         } else {

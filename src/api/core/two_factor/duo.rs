@@ -284,10 +284,6 @@ fn sign_duo_values(key: &str, email: &str, ikey: &str, prefix: &str, expire: i64
 }
 
 pub async fn validate_duo_login(email: &str, response: &str, conn: &mut DbConn) -> EmptyResult {
-    // email is as entered by the user, so it needs to be normalized before
-    // comparison with auth_user below.
-    let email = &email.to_lowercase();
-
     let split: Vec<&str> = response.split(':').collect();
     if split.len() != 2 {
         err!(

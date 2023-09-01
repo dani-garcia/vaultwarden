@@ -9,7 +9,7 @@ utils.loadEnv();
  * See https://playwright.dev/docs/test-configuration.
  */
 export default defineConfig({
-    testDir: 'tests',
+    testDir: './.',
     /* Run tests in files in parallel */
     fullyParallel: false,
 
@@ -38,15 +38,60 @@ export default defineConfig({
     projects: [
         {
             name: 'sqllite',
+            testMatch: 'tests/*.spec.ts',
+            testIgnore: 'tests/sso_*.spec.ts',
             use: { ...devices['Desktop Firefox'] },
         },
         {
             name: 'postgres',
+            testMatch: 'tests/*.spec.ts',
+            testIgnore: 'tests/sso_*.spec.ts',
+            use: { ...devices['Desktop Firefox'] },
+        },
+        {
+            name: 'mariadb',
+            testMatch: 'tests/*.spec.ts',
+            testIgnore: 'tests/sso_*.spec.ts',
             use: { ...devices['Desktop Firefox'] },
         },
         {
             name: 'mysql',
+            testMatch: 'tests/*.spec.ts',
+            testIgnore: 'tests/sso_*.spec.ts',
             use: { ...devices['Desktop Firefox'] },
+        },
+        {
+            name: 'sso-setup',
+            testMatch: 'sso-setup.ts',
+            teardown: 'sso-teardown',
+        },
+        {
+            name: 'sso-sqllite',
+            testMatch: 'tests/sso_*.spec.ts',
+            dependencies: ['sso-setup'],
+            teardown: 'sso-teardown',
+        },
+        {
+            name: 'sso-postgres',
+            testMatch: 'tests/sso_*.spec.ts',
+            dependencies: ['sso-setup'],
+            teardown: 'sso-teardown',
+        },
+        {
+            name: 'sso-mariadb',
+            testMatch: 'tests/sso_*.spec.ts',
+            dependencies: ['sso-setup'],
+            teardown: 'sso-teardown',
+        },
+        {
+            name: 'sso-mysql',
+            testMatch: 'tests/sso_*.spec.ts',
+            dependencies: ['sso-setup'],
+            teardown: 'sso-teardown',
+        },
+        {
+            name: 'sso-teardown',
+            testMatch: 'sso-teardown.ts',
         },
     ],
 

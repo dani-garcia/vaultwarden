@@ -492,6 +492,18 @@ pub async fn send_change_email(address: &str, token: &str) -> EmptyResult {
     send_email(address, &subject, body_html, body_text).await
 }
 
+pub async fn send_sso_change_email(address: &str) -> EmptyResult {
+    let (subject, body_html, body_text) = get_text(
+        "email/sso_change_email",
+        json!({
+            "url": format!("{}/#/settings/account", CONFIG.domain()),
+            "img_src": CONFIG._smtp_img_src(),
+        }),
+    )?;
+
+    send_email(address, &subject, body_html, body_text).await
+}
+
 pub async fn send_set_password(address: &str, user_name: &str) -> EmptyResult {
     let (subject, body_html, body_text) = get_text(
         "email/set_password",

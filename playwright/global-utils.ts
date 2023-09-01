@@ -1,4 +1,4 @@
-import { type Browser, type TestInfo } from '@playwright/test';
+import { test, type Browser, type TestInfo, type Page } from '@playwright/test';
 import { execSync } from 'node:child_process';
 import dotenv from 'dotenv';
 import dotenvExpand from 'dotenv-expand';
@@ -50,10 +50,26 @@ function startMariaDB() {
     );
 }
 
-
 function stopMariaDB() {
     console.log("Stopping MariaDB (ensure DB is wiped)");
     execSync(`docker stop ${process.env.MARIADB_CONTAINER}  || true`);
+}
+
+function startMysqlDB() {
+    console.log(`Starting Mysql`);
+    execSync(`docker run --rm --name ${process.env.MYSQL_CONTAINER} \
+        -e MYSQL_ROOT_PASSWORD=${process.env.MYSQL_PWD} \
+        -e MYSQL_USER=${process.env.MYSQL_USER} \
+        -e MYSQL_PASSWORD=${process.env.MYSQL_PWD} \
+        -e MYSQL_DATABASE=${process.env.MYSQL_DB} \
+        -p ${process.env.MYSQL_PORT}:3306 \
+        -d mysql:8.3.0`
+    );
+}
+
+function stopMysqlDB() {
+    console.log("Stopping Mysql (ensure DB is wiped)");
+    execSync(`docker stop ${process.env.MYSQL_CONTAINER}  || true`);
 }
 
 function startPostgres() {
@@ -73,30 +89,37 @@ function stopPostgres() {
 }
 
 function dbConfig(testInfo: TestInfo){
-    switch(testInfo.project.name) {
-        case "postgres": return {
+    if( testInfo.project.name.includes("postgres") ){
+        return {
             DATABASE_URL: `postgresql://${process.env.POSTGRES_USER}:${process.env.POSTGRES_PWD}@127.0.0.1:${process.env.POSTGRES_PORT}/${process.env.POSTGRES_DB}`
-        }
-        case "mysql": return {
+        };
+    } else if( testInfo.project.name.includes("mariadb") ){
+        return {
             DATABASE_URL: `mysql://${process.env.MARIADB_USER}:${process.env.MARIADB_PWD}@127.0.0.1:${process.env.MARIADB_PORT}/${process.env.MARIADB_DB}`
-        }
-        default: return { I_REALLY_WANT_VOLATILE_STORAGE: true }
+        };
+    } else if( testInfo.project.name.includes("mysql") ){
+        return {
+            DATABASE_URL: `mysql://${process.env.MYSQL_USER}:${process.env.MYSQL_PWD}@127.0.0.1:${process.env.MYSQL_PORT}/${process.env.MYSQL_DB}`
+        };
+    } else {
+        return { I_REALLY_WANT_VOLATILE_STORAGE: true };
     }
 }
 
 async function startVaultwarden(browser: Browser, testInfo: TestInfo, env = {}, resetDB: Boolean = true) {
     if( resetDB ){
-        switch(testInfo.project.name) {
-            case "postgres":
-                stopPostgres();
-                startPostgres()
-                break;
-            case "mysql":
-                stopMariaDB();
-                startMariaDB();
-                break;
-            default:
-                startStopSqlite();
+        test.setTimeout(20000);
+        if( testInfo.project.name.includes("postgres") ){
+            stopPostgres();
+            startPostgres()
+        } else if( testInfo.project.name.includes("mariadb") ){
+            stopMariaDB();
+            startMariaDB();
+        } else if( testInfo.project.name.includes("mysql") ){
+            stopMysqlDB();
+            startMysqlDB();
+        } else {
+            startStopSqlite();
         }
     }
 
@@ -118,15 +141,14 @@ async function stopVaultwarden(proc, testInfo: TestInfo, resetDB: Boolean = true
     proc.kill();
 
     if( resetDB ){
-        switch(testInfo.project.name) {
-            case "postgres":
-                stopPostgres();
-                break;
-            case "mysql":
-                stopMariaDB();
-                break;
-            default:
-                startStopSqlite();
+        if( testInfo.project.name.includes("postgres") ){
+            stopPostgres();
+        } else if( testInfo.project.name.includes("mariadb") ){
+            stopMariaDB();
+        } else if( testInfo.project.name.includes("mysql") ){
+            stopMysqlDB();
+        } else {
+            startStopSqlite();
         }
     }
 }

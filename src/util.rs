@@ -7,7 +7,7 @@ use num_traits::ToPrimitive;
 use once_cell::sync::Lazy;
 use rocket::{
     fairing::{Fairing, Info, Kind},
-    http::{ContentType, Cookie, CookieJar, Header, HeaderMap, Method, SameSite, Status},
+    http::{ContentType, Header, HeaderMap, Method, Status},
     request::FromParam,
     response::{self, Responder},
     Data, Orbit, Request, Response, Rocket,
@@ -130,10 +130,12 @@ impl Cors {
     // If a match exists, return it. Otherwise, return None.
     fn get_allowed_origin(headers: &HeaderMap<'_>) -> Option<String> {
         let origin = Cors::get_header(headers, "Origin");
-        let domain_origin = CONFIG.domain_origin();
-        let sso_origin = CONFIG.sso_authority();
         let safari_extension_origin = "file://";
-        if origin == domain_origin || origin == safari_extension_origin || origin == sso_origin {
+
+        if origin == CONFIG.domain_origin()
+            || origin == safari_extension_origin
+            || (CONFIG.sso_enabled() && origin == CONFIG.sso_authority())
+        {
             Some(origin)
         } else {
             None
@@ -255,33 +257,6 @@ impl<'r> FromParam<'r> for SafeString {
         } else {
             Err(())
         }
-    }
-}
-
-pub struct CustomRedirect {
-    pub url: String,
-    pub headers: Vec<(String, String)>,
-}
-
-impl<'r> rocket::response::Responder<'r, 'static> for CustomRedirect {
-    fn respond_to(self, _: &rocket::request::Request<'_>) -> rocket::response::Result<'static> {
-        let mut response = Response::build()
-            .status(rocket::http::Status {
-                code: 307,
-            })
-            .raw_header("Location", self.url)
-            .header(ContentType::HTML)
-            .finalize();
-
-        // Normal headers
-        response.set_raw_header("Referrer-Policy", "same-origin");
-        response.set_raw_header("X-XSS-Protection", "0");
-
-        for header in &self.headers {
-            response.set_raw_header(header.0.clone(), header.1.clone());
-        }
-
-        Ok(response)
     }
 }
 
@@ -1020,31 +995,5 @@ mod tests {
                 });
             }
         });
-    }
-}
-
-pub struct CookieManager<'a> {
-    jar: &'a CookieJar<'a>,
-}
-
-impl<'a> CookieManager<'a> {
-    pub fn new(jar: &'a CookieJar<'a>) -> Self {
-        Self {
-            jar,
-        }
-    }
-
-    pub fn set_cookie(&self, name: String, value: String) {
-        let cookie = Cookie::build((name, value)).same_site(SameSite::Lax);
-
-        self.jar.add(cookie)
-    }
-
-    pub fn get_cookie(&self, name: String) -> Option<String> {
-        self.jar.get(&name).map(|c| c.value().to_string())
-    }
-
-    pub fn delete_cookie(&self, name: String) {
-        self.jar.remove(Cookie::from(name));
     }
 }
