@@ -9,11 +9,11 @@ utils.loadEnv();
 async function globalSetup(config: FullConfig) {
     // Are we running in docker and the project is mounted ?
     const path = (fs.existsSync("/project/playwright/playwright.config.ts") ? "/project/playwright" : ".");
-    execSync(`docker-compose --project-directory ${path} --env-file test.env build VaultwardenPrebuild`, {
+    execSync(`docker-compose --project-directory ${path} --profile playwright --env-file test.env build VaultwardenPrebuild`, {
         env: { ...process.env },
         stdio: "inherit"
     });
-    execSync(`docker-compose --project-directory ${path} --env-file test.env build Vaultwarden`, {
+    execSync(`docker-compose --project-directory ${path} --profile playwright --env-file test.env build Vaultwarden`, {
         env: { ...process.env },
         stdio: "inherit"
     });

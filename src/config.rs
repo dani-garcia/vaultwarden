@@ -418,6 +418,9 @@ make_config! {
         /// Duo Auth context cleanup schedule |> Cron schedule of the job that cleans expired Duo contexts from the database. Does nothing if Duo MFA is disabled or set to use the legacy iframe prompt.
         /// Defaults to once every minute. Set blank to disable this job.
         duo_context_purge_schedule:   String, false,  def,    "30 * * * * *".to_string();
+        /// Purge incomplete sso nonce.
+        /// Defaults to daily. Set blank to disable this job.
+        purge_incomplete_sso_nonce: String, false,  def,   "0 20 0 * * *".to_string();
     },
 
     /// General settings
@@ -630,19 +633,33 @@ make_config! {
     /// OpenID Connect SSO settings
     sso {
         /// Enabled
-        sso_enabled:            bool,   true,   def,    false;
-        /// Force SSO login
-        sso_only:               bool,   true,   def,    false;
+        sso_enabled:                    bool,   true,   def,    false;
+        /// Disable Email+Master Password login
+        sso_only:                       bool,   true,   def,    false;
+        /// Associate existing user based on email
+        sso_signups_match_email:        bool,   true,   def,    true;
         /// Client ID
-        sso_client_id:          String, true,   def,    String::new();
+        sso_client_id:                  String, false,   def,    String::new();
         /// Client Key
-        sso_client_secret:      Pass,   true,   def,    String::new();
+        sso_client_secret:              Pass,   false,   def,    String::new();
         /// Authority Server
-        sso_authority:          String, true,   def,    String::new();
+        sso_authority:                  String, false,   def,    String::new();
+        /// Scopes required for authorize
+        sso_scopes:                     String, false,  def,   "email profile".to_string();
+        /// Additionnal authorization url parameters
+        sso_authorize_extra_params:     String, false,  def,    String::new();
+        /// Use PKCE during Auth Code flow
+        sso_pkce:                       bool,   false,   def,    false;
+        /// Regex for additionnal trusted Id token audience
+        sso_audience_trusted:           String, false,  option;
         /// CallBack Path
-        sso_callback_path:      String, false,  gen,    |c| generate_sso_callback_path(&c.domain);
-        /// Allow workaround so SSO logins accept all invites
-        sso_acceptall_invites: bool, true,   def,     false;
+        sso_callback_path:              String, false,  gen,    |c| generate_sso_callback_path(&c.domain);
+        /// Optional sso master password policy
+        sso_master_password_policy:     String, true,  option;
+        /// Use sso only for auth not the session lifecycle
+        sso_auth_only_not_session:      bool,   true,   def,    false;
+        /// Log all tokens, LOG_LEVEL=debug is required
+        sso_debug_tokens:               bool,   true,   def,    false;
     },
 
     /// Yubikey settings
@@ -670,7 +687,7 @@ make_config! {
         /// Host
         duo_host:               String, true,   option;
         /// Application Key (generated automatically)
-        _duo_akey:              Pass,   false,  option;
+        _duo_akey:              Pass,   true,  option;
     },
 
     /// SMTP Email Settings
@@ -856,10 +873,14 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         err!("All Duo options need to be set for global Duo support")
     }
 
-    if cfg.sso_enabled
-        && (cfg.sso_client_id.is_empty() || cfg.sso_client_secret.is_empty() || cfg.sso_authority.is_empty())
-    {
-        err!("`SSO_CLIENT_ID`, `SSO_CLIENT_SECRET` and `SSO_AUTHORITY` must be set for SSO support")
+    if cfg.sso_enabled {
+        if cfg.sso_client_id.is_empty() || cfg.sso_client_secret.is_empty() || cfg.sso_authority.is_empty() {
+            err!("`SSO_CLIENT_ID`, `SSO_CLIENT_SECRET` and `SSO_AUTHORITY` must be set for SSO support")
+        }
+
+        internal_sso_issuer_url(&cfg.sso_authority)?;
+        internal_sso_redirect_url(&cfg.sso_callback_path)?;
+        check_master_password_policy(&cfg.sso_master_password_policy)?;
     }
 
     if cfg._enable_yubico {
@@ -1039,6 +1060,28 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
     Ok(())
 }
 
+fn internal_sso_issuer_url(sso_authority: &String) -> Result<openidconnect::IssuerUrl, Error> {
+    match openidconnect::IssuerUrl::new(sso_authority.clone()) {
+        Err(err) => err!(format!("Invalid sso_authority UR ({sso_authority}): {err}")),
+        Ok(issuer_url) => Ok(issuer_url),
+    }
+}
+
+fn internal_sso_redirect_url(sso_callback_path: &String) -> Result<openidconnect::RedirectUrl, Error> {
+    match openidconnect::RedirectUrl::new(sso_callback_path.clone()) {
+        Err(err) => err!(format!("Invalid sso_callback_path ({sso_callback_path} built using `domain`) URL: {err}")),
+        Ok(redirect_url) => Ok(redirect_url),
+    }
+}
+
+fn check_master_password_policy(sso_master_password_policy: &Option<String>) -> Result<(), Error> {
+    let policy = sso_master_password_policy.as_ref().map(|mpp| serde_json::from_str::<serde_json::Value>(mpp));
+    if let Some(Err(error)) = policy {
+        err!(format!("Invalid sso_master_password_policy ({error}), Ensure that it's correctly escaped with ''"))
+    }
+    Ok(())
+}
+
 /// Extracts an RFC 6454 web origin from a URL.
 fn extract_url_origin(url: &str) -> String {
     match Url::parse(url) {
@@ -1114,6 +1157,26 @@ fn smtp_convert_deprecated_ssl_options(smtp_ssl: Option<bool>, smtp_explicit_tls
     }
     // Return the default `starttls` in all other cases
     "starttls".to_string()
+}
+
+/// Allow to parse a multiline list of Key/Values (`key=value`)
+/// Will ignore comment lines (starting with `//`)
+fn parse_param_list(config: String) -> Vec<(String, String)> {
+    config
+        .lines()
+        .map(|l| l.trim())
+        .filter(|l| !l.is_empty() && !l.starts_with("//"))
+        .filter_map(|l| {
+            let split = l.split('=').collect::<Vec<&str>>();
+            match &split[..] {
+                [key, value] => Some(((*key).to_string(), (*value).to_string())),
+                _ => {
+                    println!("[WARNING] Failed to parse ({l}). Expected key=value");
+                    None
+                }
+            }
+        })
+        .collect()
 }
 
 impl Config {
@@ -1305,6 +1368,22 @@ impl Config {
             }
         }
     }
+
+    pub fn sso_issuer_url(&self) -> Result<openidconnect::IssuerUrl, Error> {
+        internal_sso_issuer_url(&self.sso_authority())
+    }
+
+    pub fn sso_redirect_url(&self) -> Result<openidconnect::RedirectUrl, Error> {
+        internal_sso_redirect_url(&self.sso_callback_path())
+    }
+
+    pub fn sso_scopes_vec(&self) -> Vec<String> {
+        self.sso_scopes().split_whitespace().map(str::to_string).collect()
+    }
+
+    pub fn sso_authorize_extra_params_vec(&self) -> Vec<(String, String)> {
+        parse_param_list(self.sso_authorize_extra_params())
+    }
 }
 
 use handlebars::{
@@ -1362,6 +1441,7 @@ where
     reg!("email/send_single_org_removed_from_org", ".html");
     reg!("email/set_password", ".html");
     reg!("email/smtp_test", ".html");
+    reg!("email/sso_change_email", ".html");
     reg!("email/twofactor_email", ".html");
     reg!("email/verify_email", ".html");
     reg!("email/welcome_must_verify", ".html");

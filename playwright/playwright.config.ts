@@ -9,7 +9,7 @@ utils.loadEnv();
  * See https://playwright.dev/docs/test-configuration.
  */
 export default defineConfig({
-    testDir: 'tests',
+    testDir: './.',
     /* Run tests in files in parallel */
     fullyParallel: false,
 
@@ -54,25 +54,55 @@ export default defineConfig({
             use: { serviceName: "Postgres" },
             teardown: 'postgres-teardown',
         },
+        {
+            name: 'sso-setup',
+            testMatch: 'tests/setups/sso-setup.ts',
+            teardown: 'sso-teardown',
+        },
 
         {
             name: 'mariadb',
-            testIgnore: 'tests/setups',
+            testMatch: 'tests/*.spec.ts',
+            testIgnore: 'tests/sso_*.spec.ts',
             dependencies: ['mariadb-setup'],
         },
         {
             name: 'mysql',
-            testIgnore: 'tests/setups',
+            testMatch: 'tests/*.spec.ts',
+            testIgnore: 'tests/sso_*.spec.ts',
             dependencies: ['mysql-setup'],
         },
         {
             name: 'postgres',
-            testIgnore: 'tests/setups',
+            testMatch: 'tests/*.spec.ts',
+            testIgnore: 'tests/sso_*.spec.ts',
             dependencies: ['postgres-setup'],
         },
         {
             name: 'sqlite',
-            testIgnore: 'tests/setups',
+            testMatch: 'tests/*.spec.ts',
+            testIgnore: 'tests/sso_*.spec.ts',
+        },
+
+        {
+            name: 'sso-mariadb',
+            testMatch: 'tests/sso_*.spec.ts',
+            dependencies: ['sso-setup', 'mariadb-setup'],
+        },
+        {
+            name: 'sso-mysql',
+            testMatch: 'tests/sso_*.spec.ts',
+            dependencies: ['sso-setup', 'mysql-setup'],
+        },
+        {
+            name: 'sso-postgres',
+            testMatch: 'tests/sso_*.spec.ts',
+            dependencies: ['sso-setup', 'postgres-setup'],
+        },
+        {
+            name: 'sso-sqlite',
+            testMatch: 'tests/sso_*.spec.ts',
+            dependencies: ['sso-setup'],
         },
 
         {
@@ -89,6 +119,10 @@ export default defineConfig({
             name: 'postgres-teardown',
             testMatch: 'tests/setups/db-teardown.ts',
             use: { serviceName: "Postgres" },
+        },
+        {
+            name: 'sso-teardown',
+            testMatch: 'tests/setups/sso-teardown.ts',
         },
     ],
 

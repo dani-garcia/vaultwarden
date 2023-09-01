@@ -1,4 +1,4 @@
-FROM playwright_vaultwarden_prebuilt AS vaultwarden
+FROM playwright_oidc_vaultwarden_prebuilt AS vaultwarden
 
 FROM node:18-bookworm AS build
 

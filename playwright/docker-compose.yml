@@ -2,8 +2,9 @@ version: '3.8'
 
 services:
   VaultwardenPrebuild:
-    container_name: playwright_vaultwarden_prebuilt
-    image: playwright_vaultwarden_prebuilt
+    profiles: ["playwright", "vaultWarden"]
+    container_name: playwright_oidc_vaultwarden_prebuilt
+    image: playwright_oidc_vaultwarden_prebuilt
     build:
       context: ..
       dockerfile: Dockerfile
@@ -11,8 +12,9 @@ services:
     restart: "no"
 
   Vaultwarden:
-    container_name: playwright_vaultwarden-${ENV:-dev}
-    image: playwright_vaultwarden-${ENV:-dev}
+    profiles: ["playwright", "vaultWarden"]
+    container_name: playwright_oidc_vaultwarden-${ENV:-dev}
+    image: playwright_oidc_vaultwarden-${ENV:-dev}
     network_mode: "host"
     build:
       context: compose/vaultwarden
@@ -27,11 +29,15 @@ services:
       - SMTP_HOST
       - SMTP_FROM
       - SMTP_DEBUG
+      - SSO_FRONTEND
+      - SSO_ENABLED=
+      - SSO_ONLY
     restart: "no"
 
   Playwright:
-    container_name: playwright_playwright
-    image: playwright_playwright
+    profiles: ["playwright"]
+    container_name: playwright_oidc_playwright
+    image: playwright_oidc_playwright
     network_mode: "host"
     build:
       context: .
@@ -45,6 +51,7 @@ services:
       - ..:/project
 
   Mariadb:
+    profiles: ["playwright"]
     container_name: playwright_mariadb
     image: mariadb:11.2.4
     env_file: test.env
@@ -56,6 +63,7 @@ services:
       - ${MARIADB_PORT}:3306
 
   Mysql:
+    profiles: ["playwright"]
     container_name: playwright_mysql
     image: mysql:8.4.1
     env_file: test.env
@@ -67,6 +75,7 @@ services:
       - ${MYSQL_PORT}:3306
 
   Postgres:
+    profiles: ["playwright"]
     container_name: playwright_postgres
     image: postgres:16.3
     env_file: test.env
@@ -76,3 +85,25 @@ services:
       interval: 30s
     ports:
       - ${POSTGRES_PORT}:5432
+
+  Keycloak:
+    profiles: ["keycloak", "vaultWarden"]
+    container_name: keycloak-${ENV:-dev}
+    image: quay.io/keycloak/keycloak:25.0.1
+    network_mode: "host"
+    command:
+      - start-dev
+    env_file: ${ENV}.env
+
+  KeycloakSetup:
+    profiles: ["keycloak", "vaultWarden"]
+    container_name: keycloakSetup-${ENV:-dev}
+    image: keycloak_setup-${ENV:-dev}
+    build:
+      context: compose
+      dockerfile: keycloak_setup.dockerfile
+    network_mode: "host"
+    depends_on:
+      - Keycloak
+    restart: "no"
+    env_file: ${ENV}.env
