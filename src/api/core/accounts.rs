@@ -1090,7 +1090,7 @@ async fn get_auth_request(uuid: &str, mut conn: DbConn) -> JsonResult {
 struct AuthResponseRequest {
     deviceIdentifier: String,
     key: String,
-    masterPasswordHash: String,
+    masterPasswordHash: Option<String>,
     requestApproved: bool,
 }
 
@@ -1111,7 +1111,7 @@ async fn put_auth_request(
     };
 
     auth_request.approved = Some(data.requestApproved);
-    auth_request.enc_key = data.key;
+    auth_request.enc_key = Some(data.key);
     auth_request.master_password_hash = data.masterPasswordHash;
     auth_request.response_device_id = Some(data.deviceIdentifier.clone());
     auth_request.save(&mut conn).await?;

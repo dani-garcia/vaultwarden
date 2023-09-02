@@ -20,9 +20,9 @@ db_object! {
         pub access_code: String,
         pub public_key: String,
 
-        pub enc_key: String,
+        pub enc_key: Option<String>,
 
-        pub master_password_hash: String,
+        pub master_password_hash: Option<String>,
         pub approved: Option<bool>,
         pub creation_date: NaiveDateTime,
         pub response_date: Option<NaiveDateTime>,
@@ -53,8 +53,8 @@ impl AuthRequest {
             response_device_id: None,
             access_code,
             public_key,
-            enc_key: String::new(),
-            master_password_hash: String::new(),
+            enc_key: None,
+            master_password_hash: None,
             approved: None,
             creation_date: now,
             response_date: None,
