@@ -31,6 +31,7 @@ db_object! {
         pub status: i32,
         pub atype: i32,
         pub reset_password_key: Option<String>,
+        pub external_id: Option<String>,
     }
 
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -208,19 +209,37 @@ impl UserOrganization {
             status: UserOrgStatus::Accepted as i32,
             atype: UserOrgType::User as i32,
             reset_password_key: None,
+            external_id: None,
         }
     }
 
-    pub fn restore(&mut self) {
+    pub fn restore(&mut self) -> bool {
         if self.status < UserOrgStatus::Accepted as i32 {
             self.status += ACTIVATE_REVOKE_DIFF;
+            return true;
         }
+        false
     }
 
-    pub fn revoke(&mut self) {
+    pub fn revoke(&mut self) -> bool {
         if self.status > UserOrgStatus::Revoked as i32 {
             self.status -= ACTIVATE_REVOKE_DIFF;
+            return true;
         }
+        false
+    }
+
+    pub fn set_external_id(&mut self, external_id: Option<String>) -> bool {
+        //Check if external id is empty. We don't want to have
+        //empty strings in the database
+        if self.external_id != external_id {
+            self.external_id = match external_id {
+                Some(external_id) if !external_id.is_empty() => Some(external_id),
+                _ => None,
+            };
+            return true;
+        }
+        false
     }
 }
 
@@ -434,7 +453,7 @@ impl UserOrganization {
             "UserId": self.user_uuid,
             "Name": user.name,
             "Email": user.email,
-            "ExternalId": user.external_id,
+            "ExternalId": self.external_id,
             "Groups": groups,
             "Collections": collections,
 
@@ -776,6 +795,17 @@ impl UserOrganization {
             )
             .select(users_organizations::all_columns)
             .load::<UserOrganizationDb>(conn).expect("Error loading user organizations").from_db()
+        }}
+    }
+
+    pub async fn find_by_external_id_and_org(ext_id: &str, org_uuid: &str, conn: &mut DbConn) -> Option<Self> {
+        db_run! {conn: {
+            users_organizations::table
+            .filter(
+                users_organizations::external_id.eq(ext_id)
+                .and(users_organizations::org_uuid.eq(org_uuid))
+            )
+            .first::<UserOrganizationDb>(conn).ok().from_db()
         }}
     }
 }
