@@ -17,7 +17,7 @@ use tokio::{
     time::{sleep, Duration},
 };
 
-use crate::CONFIG;
+use crate::{CONFIG, config::extract_url_host};
 
 pub struct AppHeaders();
 
@@ -129,9 +129,19 @@ impl Cors {
     // If a match exists, return it. Otherwise, return None.
     fn get_allowed_origin(headers: &HeaderMap<'_>) -> Option<String> {
         let origin = Cors::get_header(headers, "Origin");
-        let domain_origin = CONFIG.domain_origin();
+
+        let domain_origin_opt = CONFIG.domain_origin(&extract_url_host(&origin));
         let safari_extension_origin = "file://";
-        if origin == domain_origin || origin == safari_extension_origin {
+
+        let found_origin = {
+            if let Some(domain_origin) = domain_origin_opt {
+                origin == domain_origin
+            } else {
+                false
+            }
+        };
+
+        if found_origin || origin == safari_extension_origin {
             Some(origin)
         } else {
             None
