@@ -6,7 +6,6 @@ use serde_json::Value;
 use crate::{
     api::{core::now, ApiResult, EmptyResult},
     auth::{decode_file_download, HostInfo},
-    config::extract_url_host,
     error::Error,
     util::{Cached, SafeString},
     CONFIG,

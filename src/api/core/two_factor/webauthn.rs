@@ -54,9 +54,9 @@ struct WebauthnConfig {
 impl WebauthnConfig {
     fn load(domain: &str, domain_origin: &str) -> Webauthn<Self> {
         Webauthn::new(Self {
-            rpid: Url::parse(&domain).map(|u| u.domain().map(str::to_owned)).ok().flatten().unwrap_or_default(),
+            rpid: Url::parse(domain).map(|u| u.domain().map(str::to_owned)).ok().flatten().unwrap_or_default(),
             url: domain.to_string(),
-            origin: Url::parse(&domain_origin).unwrap(),
+            origin: Url::parse(domain_origin).unwrap(),
         })
     }
 }

@@ -99,7 +99,7 @@ const BASE_TEMPLATE: &str = "admin/base";
 const ACTING_ADMIN_USER: &str = "vaultwarden-admin-00000-000000000000";
 
 fn admin_path() -> String {
-    format!("{}", ADMIN_PATH)
+    ADMIN_PATH.to_string()
 }
 
 #[derive(Debug)]

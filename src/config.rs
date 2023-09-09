@@ -436,7 +436,7 @@ make_config! {
         domain_set:             bool,   false,  def,    false;
         /// Domain path |> Domain URL path (in https://example.com:8443/path, /path is the path)
         /// MUST be the same for all domains.
-        domain_path:            String, false,  auto,   |c| extract_url_path(&c.domain_change_back.split(',').nth(0).expect("Missing domain"));
+        domain_path:            String, false,  auto,   |c| extract_url_path(c.domain_change_back.split(',').next().expect("Missing domain"));
         /// Enable web vault
         web_vault_enabled:      bool,   false,  def,    true;
 
@@ -1301,7 +1301,7 @@ impl Config {
                     (extract_url_host(d), extract_url_origin(d))
                 })
                 .collect()
-        }).get(host).map(|h| h.clone())
+        }).get(host).cloned()
     }
 
     pub fn host_to_domain(&self, host: &str) -> Option<String> {
@@ -1314,7 +1314,7 @@ impl Config {
                     (extract_url_host(d), extract_url_path(d))
                 })
                 .collect()
-        }).get(host).map(|h| h.clone())
+        }).get(host).cloned()
     }
 
     // Yes this is a base_url
