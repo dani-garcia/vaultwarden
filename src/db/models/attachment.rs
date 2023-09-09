@@ -35,17 +35,15 @@ impl Attachment {
         format!("{}/{}/{}", CONFIG.attachments_folder(), self.cipher_uuid, self.id)
     }
 
-    // TODO: Change back
-    pub fn get_url(&self, base_url: &str, _parameter_to_break_existing_uses: ()) -> String {
+    pub fn get_url(&self, base_url: &str) -> String {
         let token = encode_jwt(&generate_file_download_claims(self.cipher_uuid.clone(), self.id.clone()));
         format!("{}/attachments/{}/{}?token={}", base_url, self.cipher_uuid, self.id, token)
     }
 
-    // TODO: Change back
-    pub fn to_json(&self, base_url: &str, _parameter_to_break_existing_uses: ()) -> Value {
+    pub fn to_json(&self, base_url: &str) -> Value {
         json!({
             "Id": self.id,
-            "Url": self.get_url(base_url, ()),
+            "Url": self.get_url(base_url),
             "FileName": self.file_name,
             "Size": self.file_size.to_string(),
             "SizeName": crate::util::get_display_size(self.file_size),

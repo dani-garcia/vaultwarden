@@ -65,8 +65,7 @@ fn web_index_head() -> EmptyResult {
 fn app_id(host_info: HostInfo) -> Cached<(ContentType, Json<Value>)> {
     let content_type = ContentType::new("application", "fido.trusted-apps+json");
 
-    // TODO_MAYBE: add an extractor for getting the origin, so we only have to do 1 lookup.
-    // Also I'm not sure if we shouldn't return all origins.
+    // TODO Maybe return all available origins.
     let origin = host_info.origin;
 
     Cached::long(
