@@ -5,7 +5,8 @@ use serde_json::Value;
 
 use crate::{
     api::{core::now, ApiResult, EmptyResult},
-    auth::decode_file_download,
+    auth::{decode_file_download, BaseURL},
+    config::extract_url_host,
     error::Error,
     util::{Cached, SafeString},
     CONFIG,
@@ -62,8 +63,14 @@ fn web_index_head() -> EmptyResult {
 }
 
 #[get("/app-id.json")]
-fn app_id() -> Cached<(ContentType, Json<Value>)> {
+fn app_id(base_url: BaseURL) -> Cached<(ContentType, Json<Value>)> {
     let content_type = ContentType::new("application", "fido.trusted-apps+json");
+
+    // TODO_MAYBE: add an extractor for getting the origin, so we only have to do 1 lookup.
+    let origin = CONFIG.domain_origin(&extract_url_host(&base_url.base_url))
+        // This should never fail, because every host with a domain entry
+        // should have a origin entry.
+        .expect("Configured domain has no origin entry");
 
     Cached::long(
         (
@@ -83,7 +90,7 @@ fn app_id() -> Cached<(ContentType, Json<Value>)> {
                     // This leaves it unclear as to whether the path must be empty,
                     // or whether it can be non-empty and will be ignored. To be on
                     // the safe side, use a proper web origin (with empty path).
-                    &CONFIG.domain_origin(),
+                    &origin,
                     "ios:bundle-id:com.8bit.bitwarden",
                     "android:apk-key-hash:dUGFzUzf3lmHSLBDBIv+WaFyZMI" ]
                 }]
