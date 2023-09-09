@@ -124,8 +124,12 @@ impl<'r> FromRequest<'r> for IpHeader {
     }
 }
 
-fn admin_url(base_url: &str) -> String {
-    format!("{}{}", base_url, ADMIN_PATH)
+fn admin_path() -> String {
+    format!("{}{}", CONFIG.domain_path(), ADMIN_PATH)
+}
+
+fn admin_url(origin: &str) -> String {
+    format!("{}{}", origin, admin_path())
 }
 
 
@@ -198,7 +202,7 @@ fn post_admin_login(data: Form<LoginForm>, cookies: &CookieJar<'_>, ip: ClientIp
 
         cookies.add(cookie);
         if let Some(redirect) = redirect {
-            Ok(Redirect::to(format!("{}{}", ADMIN_PATH, redirect)))
+            Ok(Redirect::to(format!("{}{}", admin_path(), redirect)))
         } else {
             Err(AdminResponse::Ok(render_admin_page()))
         }
@@ -731,7 +735,7 @@ async fn diagnostics(
         "uses_proxy": uses_proxy,
         "db_type": *DB_TYPE,
         "db_version": get_sql_server_version(&mut conn).await,
-        "admin_url": format!("{}/diagnostics", admin_url(&host_info.base_url)),
+        "admin_url": format!("{}/diagnostics", admin_url(&host_info.origin)),
         "overrides": &CONFIG.get_overrides().join(", "),
         "host_arch": std::env::consts::ARCH,
         "host_os":  std::env::consts::OS,
