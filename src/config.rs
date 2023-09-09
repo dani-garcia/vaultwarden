@@ -1003,7 +1003,7 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
 }
 
 /// Extracts an RFC 6454 web origin from a URL.
-fn extract_url_origin(url: &str) -> String {
+pub fn extract_url_origin(url: &str) -> String {
     match Url::parse(url) {
         Ok(u) => u.origin().ascii_serialization(),
         Err(e) => {
