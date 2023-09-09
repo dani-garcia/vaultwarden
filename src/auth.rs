@@ -403,11 +403,10 @@ impl<'r> FromRequest<'r> for HostInfo {
                 get_main_host().into()
             };
 
-            let host_info = get_host_info(host.as_ref())
-                .unwrap_or_else(|| {
-                    log::debug!("Falling back to default domain, because {host} was not in domains.");
-                    get_host_info(&get_main_host()).expect("Main domain doesn't have entry!")
-                });
+            let host_info = get_host_info(host.as_ref()).unwrap_or_else(|| {
+                log::debug!("Falling back to default domain, because {host} was not in domains.");
+                get_host_info(&get_main_host()).expect("Main domain doesn't have entry!")
+            });
 
             host_info
         } else if let Some(referer) = headers.get_one("Referer") {
