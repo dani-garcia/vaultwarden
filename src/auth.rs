@@ -9,7 +9,7 @@ use openssl::rsa::Rsa;
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
 
-use crate::config::{extract_url_origin, extract_url_host};
+use crate::config::{extract_url_host, extract_url_origin};
 use crate::{error::Error, CONFIG};
 
 const JWT_ALGORITHM: Algorithm = Algorithm::RS256;
@@ -372,10 +372,12 @@ pub struct HostInfo {
 }
 
 fn get_host_info(host: &str) -> Option<HostInfo> {
-    CONFIG
-        .host_to_domain(host)
-        .and_then(|base_url| Some((base_url, CONFIG.domain_origin(host)?)))
-        .and_then(|(base_url, origin)| Some(HostInfo { base_url, origin }))
+    CONFIG.host_to_domain(host).and_then(|base_url| Some((base_url, CONFIG.domain_origin(host)?))).map(
+        |(base_url, origin)| HostInfo {
+            base_url,
+            origin,
+        },
+    )
 }
 
 fn get_main_host() -> String {
@@ -399,11 +401,9 @@ impl<'r> FromRequest<'r> for HostInfo {
             } else {
                 get_main_host().into()
             };
-            
+
             let host_info = get_host_info(host.as_ref())
-                .unwrap_or_else(|| {
-                    get_host_info(&get_main_host()).expect("Main domain doesn't have entry!")
-                });
+                .unwrap_or_else(|| get_host_info(&get_main_host()).expect("Main domain doesn't have entry!"));
 
             return Outcome::Success(host_info);
         } else if let Some(referer) = headers.get_one("Referer") {
