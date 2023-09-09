@@ -365,7 +365,7 @@ use crate::db::{
     DbConn,
 };
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct HostInfo {
     pub base_url: String,
     pub origin: String,
@@ -393,7 +393,8 @@ impl<'r> FromRequest<'r> for HostInfo {
 
         // Get host
         // TODO: UPDATE THIS SECTION
-        if CONFIG.domain_set() {
+        let host_info = if CONFIG.domain_set() {
+            log::debug!("Using configured host info");
             let host: Cow<'_, str> = if let Some(host) = headers.get_one("X-Forwarded-Host") {
                 host.into()
             } else if let Some(host) = headers.get_one("Host") {
@@ -403,15 +404,20 @@ impl<'r> FromRequest<'r> for HostInfo {
             };
 
             let host_info = get_host_info(host.as_ref())
-                .unwrap_or_else(|| get_host_info(&get_main_host()).expect("Main domain doesn't have entry!"));
+                .unwrap_or_else(|| {
+                    log::debug!("Falling back to default domain, because {host} was not in domains.");
+                    get_host_info(&get_main_host()).expect("Main domain doesn't have entry!")
+                });
 
-            return Outcome::Success(host_info);
+            host_info
         } else if let Some(referer) = headers.get_one("Referer") {
-            return Outcome::Success(HostInfo {
+            log::debug!("Using referer host info");
+            HostInfo {
                 base_url: referer.to_string(),
                 origin: extract_url_origin(referer),
-            });
+            }
         } else {
+            log::debug!("Guessing host info with headers");
             // Try to guess from the headers
             use std::env;
 
@@ -433,11 +439,15 @@ impl<'r> FromRequest<'r> for HostInfo {
 
             let base_url_origin = format!("{protocol}://{host}");
 
-            return Outcome::Success(HostInfo {
+            HostInfo {
                 base_url: base_url_origin.clone(),
                 origin: base_url_origin,
-            });
-        }
+            }
+        };
+
+        log::debug!("Using host_info: {:?}", host_info);
+
+        Outcome::Success(host_info)
     }
 }
 

@@ -1058,6 +1058,7 @@ pub fn extract_url_host(url: &str) -> String {
             };
 
             if let Some(port) = u.port().map(|p| p.to_string()) {
+                host.push(':');
                 host.push_str(&port);
             }
 
