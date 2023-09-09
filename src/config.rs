@@ -1019,8 +1019,9 @@ pub fn extract_url_origin(url: &str) -> String {
 }
 
 // urls should be comma-seperated
-fn extract_origins(urls: &str) -> String { 
-    let mut origins = urls.split(',')
+fn extract_origins(urls: &str) -> String {
+    let mut origins = urls
+        .split(',')
         .map(extract_url_origin)
         // TODO add itertools as dependency maybe
         .fold(String::new(), |mut acc, origin| {
@@ -1028,10 +1029,10 @@ fn extract_origins(urls: &str) -> String {
             acc.push(',');
             acc
         });
-    
+
     // Pop trailing comma
     origins.pop();
-    
+
     origins
 }
 
