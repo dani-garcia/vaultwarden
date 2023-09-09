@@ -5,7 +5,7 @@ use serde_json::Value;
 
 use crate::{
     api::{core::now, ApiResult, EmptyResult},
-    auth::{decode_file_download, BaseURL},
+    auth::{decode_file_download, HostInfo},
     config::extract_url_host,
     error::Error,
     util::{Cached, SafeString},
@@ -63,14 +63,12 @@ fn web_index_head() -> EmptyResult {
 }
 
 #[get("/app-id.json")]
-fn app_id(base_url: BaseURL) -> Cached<(ContentType, Json<Value>)> {
+fn app_id(host_info: HostInfo) -> Cached<(ContentType, Json<Value>)> {
     let content_type = ContentType::new("application", "fido.trusted-apps+json");
 
     // TODO_MAYBE: add an extractor for getting the origin, so we only have to do 1 lookup.
-    let origin = CONFIG.domain_origin(&extract_url_host(&base_url.base_url))
-        // This should never fail, because every host with a domain entry
-        // should have a origin entry.
-        .expect("Configured domain has no origin entry");
+    // Also I'm not sure if we shouldn't return all origins.
+    let origin = host_info.origin;
 
     Cached::long(
         (
