@@ -249,7 +249,12 @@ impl From<PublicKeyCredentialCopy> for PublicKeyCredential {
 }
 
 #[post("/two-factor/webauthn", data = "<data>")]
-async fn activate_webauthn(data: JsonUpcase<EnableWebauthnData>, headers: Headers, host_info: HostInfo, mut conn: DbConn) -> JsonResult {
+async fn activate_webauthn(
+    data: JsonUpcase<EnableWebauthnData>,
+    headers: Headers,
+    host_info: HostInfo,
+    mut conn: DbConn,
+) -> JsonResult {
     let data: EnableWebauthnData = data.into_inner().data;
     let mut user = headers.user;
 
@@ -272,8 +277,11 @@ async fn activate_webauthn(data: JsonUpcase<EnableWebauthnData>, headers: Header
     };
 
     // Verify the credentials with the saved state
-    let (credential, _data) =
-        WebauthnConfig::load(&host_info.base_url, &host_info.origin).register_credential(&data.DeviceResponse.into(), &state, |_| Ok(false))?;
+    let (credential, _data) = WebauthnConfig::load(&host_info.base_url, &host_info.origin).register_credential(
+        &data.DeviceResponse.into(),
+        &state,
+        |_| Ok(false),
+    )?;
 
     let mut registrations: Vec<_> = get_webauthn_registrations(&user.uuid, &mut conn).await?.1;
     // TODO: Check for repeated ID's
@@ -302,7 +310,12 @@ async fn activate_webauthn(data: JsonUpcase<EnableWebauthnData>, headers: Header
 }
 
 #[put("/two-factor/webauthn", data = "<data>")]
-async fn activate_webauthn_put(data: JsonUpcase<EnableWebauthnData>, headers: Headers, host_info: HostInfo, conn: DbConn) -> JsonResult {
+async fn activate_webauthn_put(
+    data: JsonUpcase<EnableWebauthnData>,
+    headers: Headers,
+    host_info: HostInfo,
+    conn: DbConn,
+) -> JsonResult {
     activate_webauthn(data, headers, host_info, conn).await
 }
 
@@ -385,7 +398,8 @@ pub async fn generate_webauthn_login(user_uuid: &str, base_url: &str, origin: &s
 
     // Generate a challenge based on the credentials
     let ext = RequestAuthenticationExtensions::builder().appid(format!("{}/app-id.json", base_url)).build();
-    let (response, state) = WebauthnConfig::load(base_url, origin).generate_challenge_authenticate_options(creds, Some(ext))?;
+    let (response, state) =
+        WebauthnConfig::load(base_url, origin).generate_challenge_authenticate_options(creds, Some(ext))?;
 
     // Save the challenge state for later validation
     TwoFactor::new(user_uuid.into(), TwoFactorType::WebauthnLoginChallenge, serde_json::to_string(&state)?)
@@ -396,7 +410,13 @@ pub async fn generate_webauthn_login(user_uuid: &str, base_url: &str, origin: &s
     Ok(Json(serde_json::to_value(response.public_key)?))
 }
 
-pub async fn validate_webauthn_login(user_uuid: &str, response: &str, base_url: &str, origin: &str, conn: &mut DbConn) -> EmptyResult {
+pub async fn validate_webauthn_login(
+    user_uuid: &str,
+    response: &str,
+    base_url: &str,
+    origin: &str,
+    conn: &mut DbConn,
+) -> EmptyResult {
     let type_ = TwoFactorType::WebauthnLoginChallenge as i32;
     let state = match TwoFactor::find_by_user_and_type(user_uuid, type_, conn).await {
         Some(tf) => {

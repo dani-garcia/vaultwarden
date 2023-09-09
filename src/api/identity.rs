@@ -28,7 +28,12 @@ pub fn routes() -> Vec<Route> {
 }
 
 #[post("/connect/token", data = "<data>")]
-async fn login(data: Form<ConnectData>, client_header: ClientHeaders, host_info: HostInfo, mut conn: DbConn) -> JsonResult {
+async fn login(
+    data: Form<ConnectData>,
+    client_header: ClientHeaders,
+    host_info: HostInfo,
+    mut conn: DbConn,
+) -> JsonResult {
     let data: ConnectData = data.into_inner();
 
     let mut user_uuid: Option<String> = None;
@@ -48,7 +53,8 @@ async fn login(data: Form<ConnectData>, client_header: ClientHeaders, host_info:
             _check_is_some(&data.device_name, "device_name cannot be blank")?;
             _check_is_some(&data.device_type, "device_type cannot be blank")?;
 
-            _password_login(data, &mut user_uuid, &mut conn, &client_header.ip, &host_info.base_url, &host_info.origin).await
+            _password_login(data, &mut user_uuid, &mut conn, &client_header.ip, &host_info.base_url, &host_info.origin)
+                .await
         }
         "client_credentials" => {
             _check_is_some(&data.client_id, "client_id cannot be blank")?;
@@ -501,7 +507,10 @@ async fn twofactor_auth(
 
     let twofactor_code = match data.two_factor_token {
         Some(ref code) => code,
-        None => err_json!(_json_err_twofactor(&twofactor_ids, &user.uuid, base_url, origin, conn).await?, "2FA token not provided"),
+        None => err_json!(
+            _json_err_twofactor(&twofactor_ids, &user.uuid, base_url, origin, conn).await?,
+            "2FA token not provided"
+        ),
     };
 
     let selected_twofactor = twofactors.into_iter().find(|tf| tf.atype == selected_id && tf.enabled);
@@ -559,7 +568,13 @@ fn _selected_data(tf: Option<TwoFactor>) -> ApiResult<String> {
     tf.map(|t| t.data).map_res("Two factor doesn't exist")
 }
 
-async fn _json_err_twofactor(providers: &[i32], user_uuid: &str, base_url: &str, origin: &str, conn: &mut DbConn) -> ApiResult<Value> {
+async fn _json_err_twofactor(
+    providers: &[i32],
+    user_uuid: &str,
+    base_url: &str,
+    origin: &str,
+    conn: &mut DbConn,
+) -> ApiResult<Value> {
     let mut result = json!({
         "error" : "invalid_grant",
         "error_description" : "Two factor required.",

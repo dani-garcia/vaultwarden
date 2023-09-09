@@ -1,7 +1,7 @@
-use std::{env::consts::EXE_SUFFIX, collections::HashMap};
 use std::process::exit;
-use std::sync::RwLock;
 use std::sync::OnceLock;
+use std::sync::RwLock;
+use std::{collections::HashMap, env::consts::EXE_SUFFIX};
 
 use job_scheduler_ng::Schedule;
 use once_cell::sync::Lazy;
@@ -1050,7 +1050,7 @@ fn generate_smtp_img_src(embed_images: bool, domains: &str) -> String {
     if embed_images {
         "cid:".to_string()
     } else {
-        let domain = domains.split(',').nth(0).expect("Domain missing");
+        let domain = domains.split(',').next().expect("Domain missing");
         format!("{domain}/vw_static/")
     }
 }
@@ -1288,33 +1288,37 @@ impl Config {
         }
     }
 
-
     fn get_domain_hostmap(&self, host: &str) -> Option<HostInfo> {
         // This is done to prevent deadlock, when read-locking an rwlock twice
         let domains = self.domain_change_back();
 
-        self.inner.read().unwrap().domain_hostmap.get_or_init(|| {
-            domains.split(',')
-                .map(|d| {
-                    let host_info = HostInfo {
-                        base_url: d.to_string(),
-                        origin: extract_url_origin(d),
-                    };
+        self.inner
+            .read()
+            .unwrap()
+            .domain_hostmap
+            .get_or_init(|| {
+                domains
+                    .split(',')
+                    .map(|d| {
+                        let host_info = HostInfo {
+                            base_url: d.to_string(),
+                            origin: extract_url_origin(d),
+                        };
 
-                    (extract_url_host(d), host_info)
-                })
-                .collect()
-        }).get(host).cloned()
+                        (extract_url_host(d), host_info)
+                    })
+                    .collect()
+            })
+            .get(host)
+            .cloned()
     }
 
     pub fn domain_origin(&self, host: &str) -> Option<String> {
-        self.get_domain_hostmap(host)
-            .map(|v| v.origin)
+        self.get_domain_hostmap(host).map(|v| v.origin)
     }
 
     pub fn host_to_domain(&self, host: &str) -> Option<String> {
-        self.get_domain_hostmap(host)
-            .map(|v| v.base_url)
+        self.get_domain_hostmap(host).map(|v| v.base_url)
     }
 
     // Yes this is a base_url

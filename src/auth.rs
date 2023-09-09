@@ -9,8 +9,8 @@ use openssl::rsa::Rsa;
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
 
-use crate::{error::Error, CONFIG};
 use crate::config::extract_url_origin;
+use crate::{error::Error, CONFIG};
 
 const JWT_ALGORITHM: Algorithm = Algorithm::RS256;
 
@@ -394,11 +394,15 @@ impl<'r> FromRequest<'r> for HostInfo {
 
             // TODO fix error handling
             // This is probably a 421 misdirected request
-            let (base_url, origin) = CONFIG.host_to_domain(host).and_then(|base_url| {
-                Some((base_url, CONFIG.domain_origin(host)?))
-            }).expect("This should not be merged like this!!!");
-            
-            return Outcome::Success(HostInfo { base_url, origin });
+            let (base_url, origin) = CONFIG
+                .host_to_domain(host)
+                .and_then(|base_url| Some((base_url, CONFIG.domain_origin(host)?)))
+                .expect("This should not be merged like this!!!");
+
+            return Outcome::Success(HostInfo {
+                base_url,
+                origin,
+            });
         } else if let Some(referer) = headers.get_one("Referer") {
             return Outcome::Success(HostInfo {
                 base_url: referer.to_string(),

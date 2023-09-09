@@ -777,8 +777,9 @@ async fn _get_org_details(org_id: &str, base_url: &str, user_uuid: &str, conn: &
 
     let mut ciphers_json = Vec::with_capacity(ciphers.len());
     for c in ciphers {
-        ciphers_json
-            .push(c.to_json(base_url, user_uuid, Some(&cipher_sync_data), CipherSyncType::Organization, conn, ()).await);
+        ciphers_json.push(
+            c.to_json(base_url, user_uuid, Some(&cipher_sync_data), CipherSyncType::Organization, conn, ()).await,
+        );
     }
     json!(ciphers_json)
 }

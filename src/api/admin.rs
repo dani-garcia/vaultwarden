@@ -669,7 +669,12 @@ async fn get_ntp_time(has_http_access: bool) -> String {
 }
 
 #[get("/diagnostics")]
-async fn diagnostics(_token: AdminToken, ip_header: IpHeader, host_info: HostInfo, mut conn: DbConn) -> ApiResult<Html<String>> {
+async fn diagnostics(
+    _token: AdminToken,
+    ip_header: IpHeader,
+    host_info: HostInfo,
+    mut conn: DbConn,
+) -> ApiResult<Html<String>> {
     use chrono::prelude::*;
     use std::net::ToSocketAddrs;
 

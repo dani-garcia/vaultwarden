@@ -113,8 +113,15 @@ async fn sync(data: SyncData, headers: Headers, mut conn: DbConn) -> Json<Value>
     let mut ciphers_json = Vec::with_capacity(ciphers.len());
     for c in ciphers {
         ciphers_json.push(
-            c.to_json(&headers.base_url, &headers.user.uuid, Some(&cipher_sync_data), CipherSyncType::User, &mut conn, ())
-                .await,
+            c.to_json(
+                &headers.base_url,
+                &headers.user.uuid,
+                Some(&cipher_sync_data),
+                CipherSyncType::User,
+                &mut conn,
+                (),
+            )
+            .await,
         );
     }
 
@@ -160,8 +167,15 @@ async fn get_ciphers(headers: Headers, mut conn: DbConn) -> Json<Value> {
     let mut ciphers_json = Vec::with_capacity(ciphers.len());
     for c in ciphers {
         ciphers_json.push(
-            c.to_json(&headers.base_url, &headers.user.uuid, Some(&cipher_sync_data), CipherSyncType::User, &mut conn, ())
-                .await,
+            c.to_json(
+                &headers.base_url,
+                &headers.user.uuid,
+                Some(&cipher_sync_data),
+                CipherSyncType::User,
+                &mut conn,
+                (),
+            )
+            .await,
         );
     }
 

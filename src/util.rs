@@ -17,7 +17,7 @@ use tokio::{
     time::{sleep, Duration},
 };
 
-use crate::{CONFIG, config::extract_url_host};
+use crate::{config::extract_url_host, CONFIG};
 
 pub struct AppHeaders();
 
