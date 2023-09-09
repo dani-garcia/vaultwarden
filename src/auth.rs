@@ -365,6 +365,7 @@ use crate::db::{
     DbConn,
 };
 
+#[derive(Clone)]
 pub struct HostInfo {
     pub base_url: String,
     pub origin: String,

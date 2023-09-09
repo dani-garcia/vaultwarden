@@ -8,6 +8,7 @@ use once_cell::sync::Lazy;
 use reqwest::Url;
 
 use crate::{
+    auth::HostInfo,
     db::DbConnType,
     error::Error,
     util::{get_env, get_env_bool, parse_experimental_client_feature_flags},
@@ -49,8 +50,7 @@ macro_rules! make_config {
 
             _overrides: Vec<String>,
 
-            domain_hostmap: OnceLock<HostHashMap>,
-            domain_origins: OnceLock<HostHashMap>,
+            domain_hostmap: OnceLock<HashMap<String, HostInfo>>,
         }
 
         #[derive(Clone, Default, Deserialize, Serialize)]
@@ -346,8 +346,6 @@ macro_rules! make_config {
     ( @getenv $name:expr, $ty:ident ) => { get_env($name) };
 
 }
-
-type HostHashMap = HashMap<String, String>;
 
 //STRUCTURE:
 // /// Short description (without this they won't appear on the list)
@@ -1121,7 +1119,6 @@ impl Config {
                 _env,
                 _usr,
                 _overrides,
-                domain_origins: OnceLock::new(),
                 domain_hostmap: OnceLock::new(),
             }),
         })
@@ -1291,30 +1288,33 @@ impl Config {
         }
     }
 
-    pub fn domain_origin(&self, host: &str) -> Option<String> {
-        // This is done to prevent deadlock, when read-locking an rwlock twice
-        let domains = self.domain_change_back();
 
-        self.inner.read().unwrap().domain_origins.get_or_init(|| {
-            domains.split(',')
-                .map(|d| {
-                    (extract_url_host(d), extract_url_origin(d))
-                })
-                .collect()
-        }).get(host).cloned()
-    }
-
-    pub fn host_to_domain(&self, host: &str) -> Option<String> {
+    fn get_domain_hostmap(&self, host: &str) -> Option<HostInfo> {
         // This is done to prevent deadlock, when read-locking an rwlock twice
         let domains = self.domain_change_back();
 
         self.inner.read().unwrap().domain_hostmap.get_or_init(|| {
             domains.split(',')
                 .map(|d| {
-                    (extract_url_host(d), extract_url_path(d))
+                    let host_info = HostInfo {
+                        base_url: d.to_string(),
+                        origin: extract_url_origin(d),
+                    };
+
+                    (extract_url_host(d), host_info)
                 })
                 .collect()
         }).get(host).cloned()
+    }
+
+    pub fn domain_origin(&self, host: &str) -> Option<String> {
+        self.get_domain_hostmap(host)
+            .map(|v| v.origin)
+    }
+
+    pub fn host_to_domain(&self, host: &str) -> Option<String> {
+        self.get_domain_hostmap(host)
+            .map(|v| v.base_url)
     }
 
     // Yes this is a base_url
