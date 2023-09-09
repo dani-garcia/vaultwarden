@@ -733,11 +733,13 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         }
     }
 
-    let dom = cfg.domain.to_lowercase();
-    if !dom.starts_with("http://") && !dom.starts_with("https://") {
-        err!(
-            "DOMAIN variable needs to contain the protocol (http, https). Use 'http[s]://bw.example.com' instead of 'bw.example.com'"
-        );
+    let domains = cfg.domain_change_back.split(',').map(|d| d.to_string().to_lowercase());
+    for dom in domains {
+        if !dom.starts_with("http://") && !dom.starts_with("https://") {
+            err!(
+                "DOMAIN variable needs to contain the protocol (http, https). Use 'http[s]://bw.example.com' instead of 'bw.example.com'"
+            );
+        }
     }
 
     let whitelist = &cfg.signups_domains_whitelist;
@@ -1314,6 +1316,8 @@ impl Config {
         }).get(host).map(|h| h.clone())
     }
 
+    // Yes this is a base_url
+    // But the configuration precedent says, that we call this a domain.
     pub fn main_domain(&self) -> String {
         self.domain_change_back().split(',').nth(0).expect("Missing domain").to_string()
     }
