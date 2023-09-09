@@ -372,7 +372,7 @@ pub struct HostInfo {
 }
 
 fn get_host_info(host: &str) -> Option<HostInfo> {
-    CONFIG.host_to_domain(host).and_then(|base_url| Some((base_url, CONFIG.domain_origin(host)?))).map(
+    CONFIG.host_to_domain(host).and_then(|base_url| Some((base_url, CONFIG.host_to_origin(host)?))).map(
         |(base_url, origin)| HostInfo {
             base_url,
             origin,

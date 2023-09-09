@@ -432,6 +432,9 @@ make_config! {
         domain_change_back:                 String, true,   def,    "http://localhost".to_string();
         /// Domain Set |> Indicates if the domain is set by the admin. Otherwise the default will be used.
         domain_set:             bool,   false,  def,    false;
+        /// Comma seperated list of domain origins |> Domain URL origin (in https://example.com:8443/path, https://example.com:8443 is the origin)
+        /// If specified manually, one entry needs to exist for every url in domain.
+        domain_origin:          String, false,  auto,   |c| extract_origins(&c.domain_change_back);
         /// Domain path |> Domain URL path (in https://example.com:8443/path, /path is the path)
         /// MUST be the same for all domains.
         domain_path:            String, false,  auto,   |c| extract_url_path(c.domain_change_back.split(',').next().expect("Missing domain"));
@@ -741,6 +744,10 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         }
     }
 
+    if cfg.domain_change_back.split(',').count() != cfg.domain_origin.split(',').count() {
+        err!("Each DOMAIN_ORIGIN entry corresponds to exactly one entry in DOMAIN.");
+    }
+
     let whitelist = &cfg.signups_domains_whitelist;
     if !whitelist.is_empty() && whitelist.split(',').any(|d| d.trim().is_empty()) {
         err!("`SIGNUPS_DOMAINS_WHITELIST` contains empty tokens");
@@ -1010,6 +1017,23 @@ pub fn extract_url_origin(url: &str) -> String {
             String::new()
         }
     }
+}
+
+// urls should be comma-seperated
+fn extract_origins(urls: &str) -> String { 
+    let mut origins = urls.split(',')
+        .map(extract_url_origin)
+        // TODO add itertools as dependency maybe
+        .fold(String::new(), |mut acc, origin| {
+            acc.push_str(&origin);
+            acc.push(',');
+            acc
+        });
+    
+    // Pop trailing comma
+    origins.pop();
+    
+    origins
 }
 
 /// Extracts the path from a URL.
@@ -1313,7 +1337,7 @@ impl Config {
             .cloned()
     }
 
-    pub fn domain_origin(&self, host: &str) -> Option<String> {
+    pub fn host_to_origin(&self, host: &str) -> Option<String> {
         self.get_domain_hostmap(host).map(|v| v.origin)
     }
 

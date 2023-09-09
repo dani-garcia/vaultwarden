@@ -130,7 +130,7 @@ impl Cors {
     fn get_allowed_origin(headers: &HeaderMap<'_>) -> Option<String> {
         let origin = Cors::get_header(headers, "Origin");
 
-        let domain_origin_opt = CONFIG.domain_origin(&extract_url_host(&origin));
+        let domain_origin_opt = CONFIG.host_to_origin(&extract_url_host(&origin));
         let safari_extension_origin = "file://";
 
         let found_origin = {
