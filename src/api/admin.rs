@@ -12,7 +12,7 @@ use rocket::{
     Catcher, Route,
 };
 
-use crate::auth::BaseURL;
+use crate::auth::HostInfo;
 use crate::{
     api::{
         core::{log_event, two_factor},
@@ -669,7 +669,7 @@ async fn get_ntp_time(has_http_access: bool) -> String {
 }
 
 #[get("/diagnostics")]
-async fn diagnostics(_token: AdminToken, ip_header: IpHeader, mut conn: DbConn, base_url: BaseURL) -> ApiResult<Html<String>> {
+async fn diagnostics(_token: AdminToken, ip_header: IpHeader, host_info: HostInfo, mut conn: DbConn) -> ApiResult<Html<String>> {
     use chrono::prelude::*;
     use std::net::ToSocketAddrs;
 
@@ -725,7 +725,7 @@ async fn diagnostics(_token: AdminToken, ip_header: IpHeader, mut conn: DbConn, 
         "uses_proxy": uses_proxy,
         "db_type": *DB_TYPE,
         "db_version": get_sql_server_version(&mut conn).await,
-        "admin_url": format!("{}/diagnostics", admin_url(&base_url.base_url)),
+        "admin_url": format!("{}/diagnostics", admin_url(&host_info.base_url)),
         "overrides": &CONFIG.get_overrides().join(", "),
         "host_arch": std::env::consts::ARCH,
         "host_os":  std::env::consts::OS,
