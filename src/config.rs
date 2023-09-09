@@ -139,21 +139,21 @@ macro_rules! make_config {
 
             fn build(&self) -> ConfigItems {
                 let mut config = ConfigItems::default();
-                let _domain_set = self.domain_change_back.is_some();
+                let _domain_set = self.domain.is_some();
                 $($(
                     config.$name = make_config!{ @build self.$name.clone(), &config, $none_action, $($default)? };
                 )+)+
                 config.domain_set = _domain_set;
 
                 // Remove slash from every domain
-                config.domain_change_back = config.domain_change_back.split(',').map(|d| d.trim_end_matches('/')).fold(String::new(), |mut acc, d| {
+                config.domain = config.domain.split(',').map(|d| d.trim_end_matches('/')).fold(String::new(), |mut acc, d| {
                     acc.push_str(d);
                     acc.push(',');
                     acc
                 });
 
                 // Remove trailing comma
-                config.domain_change_back.pop();
+                config.domain.pop();
 
                 config.signups_domains_whitelist = config.signups_domains_whitelist.trim().to_lowercase();
                 config.org_creation_users = config.org_creation_users.trim().to_lowercase();
@@ -428,16 +428,15 @@ make_config! {
     settings {
         /// Comma seperated list of Domain URLs |> This needs to be set to the URL used to access the server, including
         /// 'http[s]://' and port, if it's different than the default. Some server functions don't work correctly without this value
-        // TODO: Change back, this is only done to break existing references
-        domain_change_back:                 String, true,   def,    "http://localhost".to_string();
+        domain:                 String, true,   def,    "http://localhost".to_string();
         /// Domain Set |> Indicates if the domain is set by the admin. Otherwise the default will be used.
         domain_set:             bool,   false,  def,    false;
         /// Comma seperated list of domain origins |> Domain URL origin (in https://example.com:8443/path, https://example.com:8443 is the origin)
         /// If specified manually, one entry needs to exist for every url in domain.
-        domain_origin:          String, false,  auto,   |c| extract_origins(&c.domain_change_back);
+        domain_origin:          String, false,  auto,   |c| extract_origins(&c.domain);
         /// Domain path |> Domain URL path (in https://example.com:8443/path, /path is the path)
         /// MUST be the same for all domains.
-        domain_path:            String, false,  auto,   |c| extract_url_path(c.domain_change_back.split(',').next().expect("Missing domain"));
+        domain_path:            String, false,  auto,   |c| extract_url_path(c.domain.split(',').next().expect("Missing domain"));
         /// Enable web vault
         web_vault_enabled:      bool,   false,  def,    true;
 
@@ -682,7 +681,7 @@ make_config! {
         /// Embed images as email attachments.
         smtp_embed_images:             bool, true, def, true;
         /// _smtp_img_src
-        _smtp_img_src:                 String, false, gen, |c| generate_smtp_img_src(c.smtp_embed_images, &c.domain_change_back);
+        _smtp_img_src:                 String, false, gen, |c| generate_smtp_img_src(c.smtp_embed_images, &c.domain);
         /// Enable SMTP debugging (Know the risks!) |> DANGEROUS: Enabling this will output very detailed SMTP messages. This could contain sensitive information like passwords and usernames! Only enable this during troubleshooting!
         smtp_debug:                    bool,   false,  def,     false;
         /// Accept Invalid Certs (Know the risks!) |> DANGEROUS: Allow invalid certificates. This option introduces significant vulnerabilities to man-in-the-middle attacks!
@@ -735,7 +734,7 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         }
     }
 
-    let domains = cfg.domain_change_back.split(',').map(|d| d.to_string().to_lowercase());
+    let domains = cfg.domain.split(',').map(|d| d.to_string().to_lowercase());
     for dom in domains {
         if !dom.starts_with("http://") && !dom.starts_with("https://") {
             err!(
@@ -744,7 +743,7 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         }
     }
 
-    if cfg.domain_change_back.split(',').count() != cfg.domain_origin.split(',').count() {
+    if cfg.domain.split(',').count() != cfg.domain_origin.split(',').count() {
         err!("Each DOMAIN_ORIGIN entry corresponds to exactly one entry in DOMAIN.");
     }
 
@@ -1314,7 +1313,7 @@ impl Config {
 
     fn get_domain_hostmap(&self, host: &str) -> Option<HostInfo> {
         // This is done to prevent deadlock, when read-locking an rwlock twice
-        let domains = self.domain_change_back();
+        let domains = self.domain();
 
         self.inner
             .read()
@@ -1348,7 +1347,7 @@ impl Config {
     // Yes this is a base_url
     // But the configuration precedent says, that we call this a domain.
     pub fn main_domain(&self) -> String {
-        self.domain_change_back().split(',').nth(0).expect("Missing domain").to_string()
+        self.domain().split(',').nth(0).expect("Missing domain").to_string()
     }
 }
 
