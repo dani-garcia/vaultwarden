@@ -190,7 +190,8 @@ fn version() -> Json<&'static str> {
 
 #[get("/config")]
 fn config() -> Json<Value> {
-    let domain = crate::CONFIG.domain();
+    // TODO: maybe this should be extracted from the current request params
+    let domain = crate::CONFIG.main_domain();
     let feature_states = parse_experimental_client_feature_flags(&crate::CONFIG.experimental_client_feature_flags());
     Json(json!({
         // Note: The clients use this version to handle backwards compatibility concerns
