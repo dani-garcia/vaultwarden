@@ -360,12 +360,12 @@ use crate::db::{
     DbConn,
 };
 
-pub struct Domain {
-    pub domain: String,
+pub struct BaseURL {
+    pub base_url: String,
 }
 
 #[rocket::async_trait]
-impl<'r> FromRequest<'r> for Domain {
+impl<'r> FromRequest<'r> for BaseURL {
     type Error = &'static str;
 
     async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
@@ -373,7 +373,7 @@ impl<'r> FromRequest<'r> for Domain {
 
         // Get host
         // TODO: UPDATE THIS SECTION
-        let domain = if CONFIG.domain_set() {
+        let base_url = if CONFIG.domain_set() {
             let host = if let Some(host) = headers.get_one("X-Forwarded-Host") {
                 host
             } else if let Some(host) = headers.get_one("Host") {
@@ -385,13 +385,13 @@ impl<'r> FromRequest<'r> for Domain {
                 todo!()
             };
 
-            let Some(domain) = CONFIG.host_to_domain(host) else {
+            let Some(base_url) = CONFIG.host_to_base_url(host) else {
                 // TODO fix error handling
                 // This is probably a 421 misdirected request.
                 todo!()
             };
 
-            domain
+            base_url
         } else if let Some(referer) = headers.get_one("Referer") {
             referer.to_string()
         } else {
@@ -417,14 +417,14 @@ impl<'r> FromRequest<'r> for Domain {
             format!("{protocol}://{host}")
         };
 
-        Outcome::Success(Domain {
-            domain,
+        Outcome::Success(BaseURL {
+            base_url,
         })
     }
 }
 
 pub struct ClientHeaders {
-    pub domain: String,
+    pub base_url: String,
     pub device_type: i32,
     pub ip: ClientIp,
 }
@@ -434,7 +434,7 @@ impl<'r> FromRequest<'r> for ClientHeaders {
     type Error = &'static str;
 
     async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
-        let domain = try_outcome!(Domain::from_request(request).await).domain;
+        let base_url = try_outcome!(Domain::from_request(request).await).base_url;
         let ip = match ClientIp::from_request(request).await {
             Outcome::Success(ip) => ip,
             _ => err_handler!("Error getting Client IP"),
@@ -444,7 +444,7 @@ impl<'r> FromRequest<'r> for ClientHeaders {
             request.headers().get_one("device-type").map(|d| d.parse().unwrap_or(14)).unwrap_or_else(|| 14);
 
         Outcome::Success(ClientHeaders {
-            domain,
+            base_url,
             device_type,
             ip,
         })
@@ -452,7 +452,7 @@ impl<'r> FromRequest<'r> for ClientHeaders {
 }
 
 pub struct Headers {
-    pub domain: String,
+    pub base_url: String,
     pub device: Device,
     pub user: User,
     pub ip: ClientIp,
@@ -465,7 +465,7 @@ impl<'r> FromRequest<'r> for Headers {
     async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         let headers = request.headers();
 
-        let domain = try_outcome!(Domain::from_request(request).await).domain;
+        let base_url = try_outcome!(BaseURL::from_request(request).await).base_url;
         let ip = match ClientIp::from_request(request).await {
             Outcome::Success(ip) => ip,
             _ => err_handler!("Error getting Client IP"),
@@ -536,7 +536,7 @@ impl<'r> FromRequest<'r> for Headers {
         }
 
         Outcome::Success(Headers {
-            domain,
+            base_url,
             device,
             user,
             ip,
@@ -545,7 +545,7 @@ impl<'r> FromRequest<'r> for Headers {
 }
 
 pub struct OrgHeaders {
-    pub domain: String,
+    pub base_url: String,
     pub device: Device,
     pub user: User,
     pub org_user_type: UserOrgType,
@@ -601,7 +601,7 @@ impl<'r> FromRequest<'r> for OrgHeaders {
                 };
 
                 Outcome::Success(Self {
-                    domain: headers.domain,
+                    base_url: headers.base_url,
                     device: headers.device,
                     user,
                     org_user_type: {
@@ -623,7 +623,7 @@ impl<'r> FromRequest<'r> for OrgHeaders {
 }
 
 pub struct AdminHeaders {
-    pub domain: String,
+    pub base_url: String,
     pub device: Device,
     pub user: User,
     pub org_user_type: UserOrgType,
@@ -640,7 +640,7 @@ impl<'r> FromRequest<'r> for AdminHeaders {
         let client_version = request.headers().get_one("Bitwarden-Client-Version").map(String::from);
         if headers.org_user_type >= UserOrgType::Admin {
             Outcome::Success(Self {
-                domain: headers.domain,
+                base_url: headers.base_url,
                 device: headers.device,
                 user: headers.user,
                 org_user_type: headers.org_user_type,
@@ -656,7 +656,7 @@ impl<'r> FromRequest<'r> for AdminHeaders {
 impl From<AdminHeaders> for Headers {
     fn from(h: AdminHeaders) -> Headers {
         Headers {
-            domain: h.domain,
+            base_url: h.base_url,
             device: h.device,
             user: h.user,
             ip: h.ip,
@@ -687,7 +687,7 @@ fn get_col_id(request: &Request<'_>) -> Option<String> {
 /// and have access to the specific collection provided via the <col_id>/collections/collectionId.
 /// This does strict checking on the collection_id, ManagerHeadersLoose does not.
 pub struct ManagerHeaders {
-    pub domain: String,
+    pub base_url: String,
     pub device: Device,
     pub user: User,
     pub org_user_type: UserOrgType,
@@ -716,7 +716,7 @@ impl<'r> FromRequest<'r> for ManagerHeaders {
             }
 
             Outcome::Success(Self {
-                domain: headers.domain,
+                base_url: headers.base_url,
                 device: headers.device,
                 user: headers.user,
                 org_user_type: headers.org_user_type,
@@ -731,7 +731,7 @@ impl<'r> FromRequest<'r> for ManagerHeaders {
 impl From<ManagerHeaders> for Headers {
     fn from(h: ManagerHeaders) -> Headers {
         Headers {
-            domain: h.domain,
+            base_url: h.base_url,
             device: h.device,
             user: h.user,
             ip: h.ip,
@@ -742,7 +742,7 @@ impl From<ManagerHeaders> for Headers {
 /// The ManagerHeadersLoose is used when you at least need to be a Manager,
 /// but there is no collection_id sent with the request (either in the path or as form data).
 pub struct ManagerHeadersLoose {
-    pub domain: String,
+    pub base_url: String,
     pub device: Device,
     pub user: User,
     pub org_user: UserOrganization,
@@ -758,7 +758,7 @@ impl<'r> FromRequest<'r> for ManagerHeadersLoose {
         let headers = try_outcome!(OrgHeaders::from_request(request).await);
         if headers.org_user_type >= UserOrgType::Manager {
             Outcome::Success(Self {
-                domain: headers.domain,
+                base_url: headers.base_url,
                 device: headers.device,
                 user: headers.user,
                 org_user: headers.org_user,
@@ -774,7 +774,7 @@ impl<'r> FromRequest<'r> for ManagerHeadersLoose {
 impl From<ManagerHeadersLoose> for Headers {
     fn from(h: ManagerHeadersLoose) -> Headers {
         Headers {
-            domain: h.domain,
+            base_url: h.base_url,
             device: h.device,
             user: h.user,
             ip: h.ip,
@@ -802,7 +802,7 @@ impl ManagerHeaders {
         }
 
         Ok(ManagerHeaders {
-            domain: h.domain,
+            base_url: h.base_url,
             device: h.device,
             user: h.user,
             org_user_type: h.org_user_type,
@@ -812,7 +812,7 @@ impl ManagerHeaders {
 }
 
 pub struct OwnerHeaders {
-    pub host: String,
+    pub base_url: String,
     pub device: Device,
     pub user: User,
     pub ip: ClientIp,
@@ -826,7 +826,7 @@ impl<'r> FromRequest<'r> for OwnerHeaders {
         let headers = try_outcome!(OrgHeaders::from_request(request).await);
         if headers.org_user_type == UserOrgType::Owner {
             Outcome::Success(Self {
-                host: headers.host,
+                base_url: headers.base_url,
                 device: headers.device,
                 user: headers.user,
                 ip: headers.ip,
