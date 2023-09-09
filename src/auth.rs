@@ -17,16 +17,20 @@ const JWT_ALGORITHM: Algorithm = Algorithm::RS256;
 pub static DEFAULT_VALIDITY: Lazy<Duration> = Lazy::new(|| Duration::hours(2));
 static JWT_HEADER: Lazy<Header> = Lazy::new(|| Header::new(JWT_ALGORITHM));
 
-pub static JWT_LOGIN_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|login", CONFIG.domain_origin()));
-static JWT_INVITE_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|invite", CONFIG.domain_origin()));
+fn jwt_origin() -> String {
+    extract_url_origin(&CONFIG.main_domain())
+}
+
+pub static JWT_LOGIN_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|login", jwt_origin()));
+static JWT_INVITE_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|invite", jwt_origin()));
 static JWT_EMERGENCY_ACCESS_INVITE_ISSUER: Lazy<String> =
-    Lazy::new(|| format!("{}|emergencyaccessinvite", CONFIG.domain_origin()));
-static JWT_DELETE_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|delete", CONFIG.domain_origin()));
-static JWT_VERIFYEMAIL_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|verifyemail", CONFIG.domain_origin()));
-static JWT_ADMIN_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|admin", CONFIG.domain_origin()));
-static JWT_SEND_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|send", CONFIG.domain_origin()));
-static JWT_ORG_API_KEY_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|api.organization", CONFIG.domain_origin()));
-static JWT_FILE_DOWNLOAD_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|file_download", CONFIG.domain_origin()));
+    Lazy::new(|| format!("{}|emergencyaccessinvite", jwt_origin()));
+static JWT_DELETE_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|delete", jwt_origin()));
+static JWT_VERIFYEMAIL_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|verifyemail", jwt_origin()));
+static JWT_ADMIN_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|admin", jwt_origin()));
+static JWT_SEND_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|send", jwt_origin()));
+static JWT_ORG_API_KEY_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|api.organization", jwt_origin()));
+static JWT_FILE_DOWNLOAD_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|file_download", jwt_origin()));
 
 static PRIVATE_RSA_KEY: OnceCell<EncodingKey> = OnceCell::new();
 static PUBLIC_RSA_KEY: OnceCell<DecodingKey> = OnceCell::new();
@@ -422,7 +426,7 @@ impl<'r> FromRequest<'r> for HostInfo {
             let base_url_origin = format!("{protocol}://{host}");
 
             return Outcome::Success(HostInfo {
-                base_url: base_url_origin,
+                base_url: base_url_origin.clone(),
                 origin: base_url_origin,
             });
         }
@@ -440,7 +444,7 @@ impl<'r> FromRequest<'r> for ClientHeaders {
     type Error = &'static str;
 
     async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
-        let base_url = try_outcome!(Domain::from_request(request).await).base_url;
+        let base_url = try_outcome!(HostInfo::from_request(request).await).base_url;
         let ip = match ClientIp::from_request(request).await {
             Outcome::Success(ip) => ip,
             _ => err_handler!("Error getting Client IP"),
