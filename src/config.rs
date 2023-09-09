@@ -145,7 +145,8 @@ macro_rules! make_config {
                 )+)+
                 config.domain_set = _domain_set;
 
-                config.domain_change_back = config.domain_change_back.split(',').map(|d| d.trim_end_matches('/')).fold(String::new(), |acc, d| {
+                // Remove slash from every domain
+                config.domain_change_back = config.domain_change_back.split(',').map(|d| d.trim_end_matches('/')).fold(String::new(), |mut acc, d| {
                     acc.push_str(d);
                     acc.push(',');
                     acc
