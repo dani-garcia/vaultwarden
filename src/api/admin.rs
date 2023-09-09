@@ -98,7 +98,7 @@ const BASE_TEMPLATE: &str = "admin/base";
 
 const ACTING_ADMIN_USER: &str = "vaultwarden-admin-00000-000000000000";
 
-fn admin_path() -> String {
+fn admin_path() -> String  {
     ADMIN_PATH.to_string()
 }
 
@@ -125,8 +125,9 @@ impl<'r> FromRequest<'r> for IpHeader {
 }
 
 fn admin_url(base_url: &str) -> String {
-    format!("{}{}", base_url, admin_path())
+    format!("{}{}", base_url, ADMIN_PATH)
 }
+
 
 #[derive(Responder)]
 enum AdminResponse {
@@ -197,7 +198,7 @@ fn post_admin_login(data: Form<LoginForm>, cookies: &CookieJar<'_>, ip: ClientIp
 
         cookies.add(cookie);
         if let Some(redirect) = redirect {
-            Ok(Redirect::to(format!("{}{}", admin_path(), redirect)))
+            Ok(Redirect::to(format!("{}{}", ADMIN_PATH, redirect)))
         } else {
             Err(AdminResponse::Ok(render_admin_page()))
         }
