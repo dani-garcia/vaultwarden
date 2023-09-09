@@ -471,7 +471,7 @@ impl<'r> FromRequest<'r> for Headers {
     async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         let headers = request.headers();
 
-        let base_url = try_outcome!(BaseURL::from_request(request).await).base_url;
+        let base_url = try_outcome!(HostInfo::from_request(request).await).base_url;
         let ip = match ClientIp::from_request(request).await {
             Outcome::Success(ip) => ip,
             _ => err_handler!("Error getting Client IP"),
