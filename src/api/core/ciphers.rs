@@ -113,7 +113,7 @@ async fn sync(data: SyncData, headers: Headers, mut conn: DbConn) -> Json<Value>
     let mut ciphers_json = Vec::with_capacity(ciphers.len());
     for c in ciphers {
         ciphers_json.push(
-            c.to_json(&headers.host, &headers.user.uuid, Some(&cipher_sync_data), CipherSyncType::User, &mut conn)
+            c.to_json(&headers.base_url, &headers.user.uuid, Some(&cipher_sync_data), CipherSyncType::User, &mut conn, ())
                 .await,
         );
     }
@@ -160,7 +160,7 @@ async fn get_ciphers(headers: Headers, mut conn: DbConn) -> Json<Value> {
     let mut ciphers_json = Vec::with_capacity(ciphers.len());
     for c in ciphers {
         ciphers_json.push(
-            c.to_json(&headers.host, &headers.user.uuid, Some(&cipher_sync_data), CipherSyncType::User, &mut conn)
+            c.to_json(&headers.base_url, &headers.user.uuid, Some(&cipher_sync_data), CipherSyncType::User, &mut conn, ())
                 .await,
         );
     }
@@ -183,7 +183,7 @@ async fn get_cipher(uuid: &str, headers: Headers, mut conn: DbConn) -> JsonResul
         err!("Cipher is not owned by user")
     }
 
-    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, &mut conn).await))
+    Ok(Json(cipher.to_json(&headers.base_url, &headers.user.uuid, None, CipherSyncType::User, &mut conn, ()).await))
 }
 
 #[get("/ciphers/<uuid>/admin")]
@@ -323,7 +323,7 @@ async fn post_ciphers(data: JsonUpcase<CipherData>, headers: Headers, mut conn: 
     let mut cipher = Cipher::new(data.Type, data.Name.clone());
     update_cipher_from_data(&mut cipher, data, &headers, false, &mut conn, &nt, UpdateType::SyncCipherCreate).await?;
 
-    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, &mut conn).await))
+    Ok(Json(cipher.to_json(&headers.base_url, &headers.user.uuid, None, CipherSyncType::User, &mut conn, ()).await))
 }
 
 /// Enforces the personal ownership policy on user-owned ciphers, if applicable.
@@ -650,7 +650,7 @@ async fn put_cipher(
 
     update_cipher_from_data(&mut cipher, data, &headers, false, &mut conn, &nt, UpdateType::SyncCipherUpdate).await?;
 
-    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, &mut conn).await))
+    Ok(Json(cipher.to_json(&headers.base_url, &headers.user.uuid, None, CipherSyncType::User, &mut conn, ()).await))
 }
 
 #[post("/ciphers/<uuid>/partial", data = "<data>")]
@@ -694,7 +694,7 @@ async fn put_cipher_partial(
     // Update favorite
     cipher.set_favorite(Some(data.Favorite), &headers.user.uuid, &mut conn).await?;
 
-    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, &mut conn).await))
+    Ok(Json(cipher.to_json(&headers.base_url, &headers.user.uuid, None, CipherSyncType::User, &mut conn, ()).await))
 }
 
 #[derive(Deserialize)]
@@ -925,7 +925,7 @@ async fn share_cipher_by_uuid(
 
     update_cipher_from_data(&mut cipher, data.Cipher, headers, shared_to_collection, conn, nt, ut).await?;
 
-    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, conn).await))
+    Ok(Json(cipher.to_json(&headers.base_url, &headers.user.uuid, None, CipherSyncType::User, conn, ()).await))
 }
 
 /// v2 API for downloading an attachment. This just redirects the client to
@@ -946,7 +946,7 @@ async fn get_attachment(uuid: &str, attachment_id: &str, headers: Headers, mut c
     }
 
     match Attachment::find_by_id(attachment_id, &mut conn).await {
-        Some(attachment) if uuid == attachment.cipher_uuid => Ok(Json(attachment.to_json(&headers.host))),
+        Some(attachment) if uuid == attachment.cipher_uuid => Ok(Json(attachment.to_json(&headers.base_url, ()))),
         Some(_) => err!("Attachment doesn't belong to cipher"),
         None => err!("Attachment doesn't exist"),
     }
@@ -1006,7 +1006,7 @@ async fn post_attachment_v2(
         "AttachmentId": attachment_id,
         "Url": url,
         "FileUploadType": FileUploadType::Direct as i32,
-        response_key: cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, &mut conn).await,
+        response_key: cipher.to_json(&headers.base_url, &headers.user.uuid, None, CipherSyncType::User, &mut conn, ()).await,
     })))
 }
 
@@ -1233,7 +1233,7 @@ async fn post_attachment(
 
     let (cipher, mut conn) = save_attachment(attachment, uuid, data, &headers, conn, nt).await?;
 
-    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, &mut conn).await))
+    Ok(Json(cipher.to_json(&headers.base_url, &headers.user.uuid, None, CipherSyncType::User, &mut conn, ()).await))
 }
 
 #[post("/ciphers/<uuid>/attachment-admin", format = "multipart/form-data", data = "<data>")]
@@ -1667,7 +1667,7 @@ async fn _restore_cipher_by_uuid(uuid: &str, headers: &Headers, conn: &mut DbCon
         .await;
     }
 
-    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, conn).await))
+    Ok(Json(cipher.to_json(&headers.base_url, &headers.user.uuid, None, CipherSyncType::User, conn, ()).await))
 }
 
 async fn _restore_multiple_ciphers(
