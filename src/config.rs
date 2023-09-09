@@ -51,7 +51,6 @@ macro_rules! make_config {
 
             domain_hostmap: OnceLock<HostHashMap>,
             domain_origins: OnceLock<HostHashMap>,
-            domain_paths: OnceLock<HostHashMap>,
         }
 
         #[derive(Clone, Default, Deserialize, Serialize)]
@@ -1120,7 +1119,6 @@ impl Config {
                 _usr,
                 _overrides,
                 domain_origins: OnceLock::new(),
-                domain_paths: OnceLock::new(),
                 domain_hostmap: OnceLock::new(),
             }),
         })
