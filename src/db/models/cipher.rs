@@ -113,25 +113,27 @@ use crate::error::MapResult;
 
 /// Database methods
 impl Cipher {
+    // TODO: Change back
     pub async fn to_json(
         &self,
-        host: &str,
+        base_url: &str,
         user_uuid: &str,
         cipher_sync_data: Option<&CipherSyncData>,
         sync_type: CipherSyncType,
         conn: &mut DbConn,
+        _parameter_to_break_existing_uses: (),
     ) -> Value {
         use crate::util::format_date;
 
         let mut attachments_json: Value = Value::Null;
         if let Some(cipher_sync_data) = cipher_sync_data {
             if let Some(attachments) = cipher_sync_data.cipher_attachments.get(&self.uuid) {
-                attachments_json = attachments.iter().map(|c| c.to_json(host)).collect();
+                attachments_json = attachments.iter().map(|c| c.to_json(base_url, ())).collect();
             }
         } else {
             let attachments = Attachment::find_by_cipher(&self.uuid, conn).await;
             if !attachments.is_empty() {
-                attachments_json = attachments.iter().map(|c| c.to_json(host)).collect()
+                attachments_json = attachments.iter().map(|c| c.to_json(base_url, ())).collect()
             }
         }
 
