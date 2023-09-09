@@ -359,6 +359,7 @@ use rocket::{
     outcome::try_outcome,
     request::{FromRequest, Outcome, Request},
 };
+use std::borrow::Cow;
 
 use crate::db::{
     models::{Collection, Device, User, UserOrgStatus, UserOrgType, UserOrganization, UserStampException},
@@ -392,7 +393,6 @@ impl<'r> FromRequest<'r> for HostInfo {
         let headers = request.headers();
 
         // Get host
-        // TODO: UPDATE THIS SECTION
         let host_info = if CONFIG.domain_set() {
             log::debug!("Using configured host info");
             let host: Cow<'_, str> = if let Some(host) = headers.get_one("X-Forwarded-Host") {
@@ -864,7 +864,6 @@ impl<'r> FromRequest<'r> for OwnerHeaders {
     }
 }
 
-use std::borrow::Cow;
 //
 // Client IP address detection
 //

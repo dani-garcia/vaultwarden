@@ -113,7 +113,6 @@ use crate::error::MapResult;
 
 /// Database methods
 impl Cipher {
-    // TODO: Change back
     pub async fn to_json(
         &self,
         base_url: &str,
