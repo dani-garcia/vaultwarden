@@ -1,6 +1,7 @@
-use std::env::consts::EXE_SUFFIX;
+use std::{env::consts::EXE_SUFFIX, collections::HashMap};
 use std::process::exit;
 use std::sync::RwLock;
+use std::sync::OnceLock;
 
 use job_scheduler_ng::Schedule;
 use once_cell::sync::Lazy;
@@ -47,6 +48,10 @@ macro_rules! make_config {
             _usr: ConfigBuilder,
 
             _overrides: Vec<String>,
+
+            domain_hostmap: OnceLock<HostHashMap>,
+            domain_origins: OnceLock<HostHashMap>,
+            domain_paths: OnceLock<HostHashMap>,
         }
 
         #[derive(Clone, Default, Deserialize, Serialize)]
@@ -135,13 +140,20 @@ macro_rules! make_config {
 
             fn build(&self) -> ConfigItems {
                 let mut config = ConfigItems::default();
-                let _domain_set = self.domain.is_some();
+                let _domain_set = self.domain_change_back.is_some();
                 $($(
                     config.$name = make_config!{ @build self.$name.clone(), &config, $none_action, $($default)? };
                 )+)+
                 config.domain_set = _domain_set;
 
-                config.domain = config.domain.trim_end_matches('/').to_string();
+                config.domain_change_back = config.domain_change_back.split(',').map(|d| d.trim_end_matches('/')).fold(String::new(), |acc, d| {
+                    acc.push_str(d);
+                    acc.push(',');
+                    acc
+                });
+
+                // Remove trailing comma
+                config.domain_change_back.pop();
 
                 config.signups_domains_whitelist = config.signups_domains_whitelist.trim().to_lowercase();
                 config.org_creation_users = config.org_creation_users.trim().to_lowercase();
@@ -335,6 +347,8 @@ macro_rules! make_config {
 
 }
 
+type HostHashMap = HashMap<String, String>;
+
 //STRUCTURE:
 // /// Short description (without this they won't appear on the list)
 // group {
@@ -414,15 +428,15 @@ make_config! {
 
     /// General settings
     settings {
-        /// Domain URL |> This needs to be set to the URL used to access the server, including 'http[s]://'
-        /// and port, if it's different than the default. Some server functions don't work correctly without this value
-        domain:                 String, true,   def,    "http://localhost".to_string();
+        /// Comma seperated list of Domain URLs |> This needs to be set to the URL used to access the server, including
+        /// 'http[s]://' and port, if it's different than the default. Some server functions don't work correctly without this value
+        // TODO: Change back, this is only done to break existing references
+        domain_change_back:                 String, true,   def,    "http://localhost".to_string();
         /// Domain Set |> Indicates if the domain is set by the admin. Otherwise the default will be used.
         domain_set:             bool,   false,  def,    false;
-        /// Domain origin |> Domain URL origin (in https://example.com:8443/path, https://example.com:8443 is the origin)
-        domain_origin:          String, false,  auto,   |c| extract_url_origin(&c.domain);
         /// Domain path |> Domain URL path (in https://example.com:8443/path, /path is the path)
-        domain_path:            String, false,  auto,   |c| extract_url_path(&c.domain);
+        /// MUST be the same for all domains.
+        domain_path:            String, false,  auto,   |c| extract_url_path(&c.domain_change_back.split(',').nth(0).expect("Missing domain"));
         /// Enable web vault
         web_vault_enabled:      bool,   false,  def,    true;
 
@@ -667,7 +681,7 @@ make_config! {
         /// Embed images as email attachments.
         smtp_embed_images:             bool, true, def, true;
         /// _smtp_img_src
-        _smtp_img_src:                 String, false, gen, |c| generate_smtp_img_src(c.smtp_embed_images, &c.domain);
+        _smtp_img_src:                 String, false, gen, |c| generate_smtp_img_src(c.smtp_embed_images, &c.domain_change_back);
         /// Enable SMTP debugging (Know the risks!) |> DANGEROUS: Enabling this will output very detailed SMTP messages. This could contain sensitive information like passwords and usernames! Only enable this during troubleshooting!
         smtp_debug:                    bool,   false,  def,     false;
         /// Accept Invalid Certs (Know the risks!) |> DANGEROUS: Allow invalid certificates. This option introduces significant vulnerabilities to man-in-the-middle attacks!
@@ -1010,10 +1024,33 @@ fn extract_url_path(url: &str) -> String {
     }
 }
 
-fn generate_smtp_img_src(embed_images: bool, domain: &str) -> String {
+/// Extracts host part from a URL.
+pub fn extract_url_host(url: &str) -> String {
+    match Url::parse(url) {
+        Ok(u) => {
+            let Some(mut host) = u.host_str().map(|s| s.to_string()) else {
+                println!("Domain does not contain host!");
+                return String::new();
+            };
+
+            if let Some(port) = u.port().map(|p| p.to_string()) {
+                host.push_str(&port);
+            }
+
+            host
+        }
+        Err(_) => {
+            // we already print it in the method above, no need to do it again
+            String::new()
+        }
+    }
+}
+
+fn generate_smtp_img_src(embed_images: bool, domains: &str) -> String {
     if embed_images {
         "cid:".to_string()
     } else {
+        let domain = domains.split(',').nth(0).expect("Domain missing");
         format!("{domain}/vw_static/")
     }
 }
@@ -1082,6 +1119,9 @@ impl Config {
                 _env,
                 _usr,
                 _overrides,
+                domain_origins: OnceLock::new(),
+                domain_paths: OnceLock::new(),
+                domain_hostmap: OnceLock::new(),
             }),
         })
     }
@@ -1248,6 +1288,36 @@ impl Config {
                 handle.notify();
             }
         }
+    }
+
+    pub fn domain_origin(&self, host: &str) -> Option<String> {
+        // This is done to prevent deadlock, when read-locking an rwlock twice
+        let domains = self.domain_change_back();
+
+        self.inner.read().unwrap().domain_origins.get_or_init(|| {
+            domains.split(',')
+                .map(|d| {
+                    (extract_url_host(d), extract_url_origin(d))
+                })
+                .collect()
+        }).get(host).map(|h| h.clone())
+    }
+
+    pub fn host_to_domain(&self, host: &str) -> Option<String> {
+        // This is done to prevent deadlock, when read-locking an rwlock twice
+        let domains = self.domain_change_back();
+
+        self.inner.read().unwrap().domain_hostmap.get_or_init(|| {
+            domains.split(',')
+                .map(|d| {
+                    (extract_url_host(d), extract_url_path(d))
+                })
+                .collect()
+        }).get(host).map(|h| h.clone())
+    }
+
+    pub fn main_domain(&self) -> String {
+        self.domain_change_back().split(',').nth(0).expect("Missing domain").to_string()
     }
 }
 
