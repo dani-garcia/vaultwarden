@@ -48,6 +48,7 @@ RUN dpkg --add-architecture armel \
         --no-install-recommends \
         gcc-arm-linux-gnueabi \
         libc6-dev:armel \
+        linux-libc-dev:armel \
         libmariadb-dev:armel \
         libmariadb-dev-compat:armel \
         libmariadb3:armel \

@@ -114,6 +114,7 @@ RUN {{ mount_rust_cache -}} dpkg --add-architecture {{ package_arch_name }} \
         --no-install-recommends \
         gcc-{{ package_cross_compiler }} \
         libc6-dev{{ package_arch_prefix }} \
+        linux-libc-dev{{ package_arch_prefix }} \
         libmariadb-dev{{ package_arch_prefix }} \
         libmariadb-dev-compat{{ package_arch_prefix }} \
         libmariadb3{{ package_arch_prefix }} \

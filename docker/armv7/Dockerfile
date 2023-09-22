@@ -48,6 +48,7 @@ RUN dpkg --add-architecture armhf \
         --no-install-recommends \
         gcc-arm-linux-gnueabihf \
         libc6-dev:armhf \
+        linux-libc-dev:armhf \
         libmariadb-dev:armhf \
         libmariadb-dev-compat:armhf \
         libmariadb3:armhf \

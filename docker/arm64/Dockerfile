@@ -48,6 +48,7 @@ RUN dpkg --add-architecture arm64 \
         --no-install-recommends \
         gcc-aarch64-linux-gnu \
         libc6-dev:arm64 \
+        linux-libc-dev:arm64 \
         libmariadb-dev:arm64 \
         libmariadb-dev-compat:arm64 \
         libmariadb3:arm64 \
