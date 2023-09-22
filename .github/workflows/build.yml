@@ -45,7 +45,7 @@ jobs:
     steps:
       # Checkout the repo
       - name: "Checkout"
-        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
+        uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608 # v4.1.0
       # End Checkout the repo
 
 
@@ -73,7 +73,7 @@ jobs:
 
       # Only install the clippy and rustfmt components on the default rust-toolchain
       - name: "Install rust-toolchain version"
-        uses: dtolnay/rust-toolchain@f361669954a8ecfc00a3443f35f9ac8e610ffc06 # master @ 2023-08-04 - 01:14 AM GMT+2
+        uses: dtolnay/rust-toolchain@439cf607258077187679211f12aa6f19af4a0af7 # master @ 2023-09-19 - 05:31 PM GMT+2
         if: ${{ matrix.channel == 'rust-toolchain' }}
         with:
           toolchain: "${{steps.toolchain.outputs.RUST_TOOLCHAIN}}"
@@ -83,22 +83,19 @@ jobs:
 
       # Install the any other channel to be used for which we do not execute clippy and rustfmt
       - name: "Install MSRV version"
-        uses: dtolnay/rust-toolchain@f361669954a8ecfc00a3443f35f9ac8e610ffc06 # master @ 2023-08-04 - 01:14 AM GMT+2
+        uses: dtolnay/rust-toolchain@439cf607258077187679211f12aa6f19af4a0af7 # master @ 2023-09-19 - 05:31 PM GMT+2
         if: ${{ matrix.channel != 'rust-toolchain' }}
         with:
           toolchain: "${{steps.toolchain.outputs.RUST_TOOLCHAIN}}"
       # End Install the MSRV channel to be used
 
-
-      # Enable Rust Caching
-      - uses: Swatinem/rust-cache@e207df5d269b42b69c8bc5101da26f7d31feddb4 # v2.6.2
-        with:
-          # Use a custom prefix-key to force a fresh start. This is sometimes needed with bigger changes.
-          # Like changing the build host from Ubuntu 20.04 to 22.04 for example.
-          # Only update when really needed! Use a <year>.<month>[.<inc>] format.
-          prefix-key: "v2023.07-rust"
-      # End Enable Rust Caching
-
+      # Set the current matrix toolchain version as default
+      - name: "Set toolchain ${{steps.toolchain.outputs.RUST_TOOLCHAIN}} as default"
+        run: |
+          # Remove the rust-toolchain.toml
+          rm rust-toolchain.toml
+          # Set the default
+          rustup default ${{steps.toolchain.outputs.RUST_TOOLCHAIN}}
 
       # Show environment
       - name: "Show environment"
@@ -107,6 +104,14 @@ jobs:
           cargo -vV
       # End Show environment
 
+      # Enable Rust Caching
+      - uses: Swatinem/rust-cache@a95ba195448af2da9b00fb742d14ffaaf3c21f43 # v2.7.0
+        with:
+          # Use a custom prefix-key to force a fresh start. This is sometimes needed with bigger changes.
+          # Like changing the build host from Ubuntu 20.04 to 22.04 for example.
+          # Only update when really needed! Use a <year>.<month>[.<inc>] format.
+          prefix-key: "v2023.07-rust"
+      # End Enable Rust Caching
 
       # Run cargo tests (In release mode to speed up future builds)
       # First test all features together, afterwards test them separately.
@@ -201,7 +206,7 @@ jobs:
 
       # Upload artifact to Github Actions
       - name: "Upload artifact"
-        uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce # v3.1.2
+        uses: actions/upload-artifact@a8a3f3ad30e3422c9c7b888a15615d19a852ae32 # v3.1.3
         if: ${{ matrix.channel == 'rust-toolchain' }}
         with:
           name: vaultwarden
