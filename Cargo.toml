@@ -37,11 +37,12 @@ unstable = []
 [target."cfg(not(windows))".dependencies]
 # Logging
 syslog = "6.1.0"
+reopen = "1.0.3"
 
 [dependencies]
 # Logging
 log = "0.4.20"
-fern = { version = "0.6.2", features = ["syslog-6"] }
+fern = { version = "0.6.2", features = ["syslog-6", "reopen-1"] }
 tracing = { version = "0.1.37", features = ["log"] } # Needed to have lettre and webauthn-rs trace logging to work
 
 # A `dotenv` implementation for Rust
