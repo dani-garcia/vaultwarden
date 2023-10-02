@@ -326,6 +326,10 @@ async fn get_users_json(_token: AdminToken, mut conn: DbConn) -> Json<Value> {
         let mut usr = u.to_json(&mut conn).await;
         usr["UserEnabled"] = json!(u.enabled);
         usr["CreatedAt"] = json!(format_naive_datetime_local(&u.created_at, DT_FMT));
+        usr["LastActive"] = match u.last_active(&mut conn).await {
+            Some(dt) => json!(format_naive_datetime_local(&dt, DT_FMT)),
+            None => json!("Never"),
+        };
         users_json.push(usr);
     }
 
