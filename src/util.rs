@@ -55,7 +55,7 @@ impl Fairing for AppHeaders {
             // Leaked Passwords check: api.pwnedpasswords.com
             // 2FA/MFA Site check: api.2fa.directory
             // # Mail Relay: https://bitwarden.com/blog/add-privacy-and-security-using-email-aliases-with-bitwarden/
-            // app.simplelogin.io, app.anonaddy.com, api.fastmail.com, quack.duckduckgo.com
+            // app.simplelogin.io, app.addy.io, api.fastmail.com, quack.duckduckgo.com
             let csp = format!(
                 "default-src 'self'; \
                 base-uri 'self'; \
@@ -78,7 +78,7 @@ impl Fairing for AppHeaders {
                   https://api.pwnedpasswords.com \
                   https://api.2fa.directory \
                   https://app.simplelogin.io/api/ \
-                  https://app.anonaddy.com/api/ \
+                  https://app.addy.io/api/ \
                   https://api.fastmail.com/ \
                   https://api.forwardemail.net \
                   ;\
