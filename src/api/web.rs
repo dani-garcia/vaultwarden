@@ -12,7 +12,7 @@ use crate::{
 };
 
 pub fn routes() -> Vec<Route> {
-    // If addding more routes here, consider also adding them to
+    // If adding more routes here, consider also adding them to
     // crate::utils::LOGGED_ROUTES to make sure they appear in the log
     let mut routes = routes![attachments, alive, alive_head, static_files];
     if CONFIG.web_vault_enabled() {

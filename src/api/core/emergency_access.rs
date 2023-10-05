@@ -319,7 +319,7 @@ async fn accept_invite(emer_id: &str, data: JsonUpcase<AcceptData>, headers: Hea
     let claims = decode_emergency_access_invite(token)?;
 
     // This can happen if the user who received the invite used a different email to signup.
-    // Since we do not know if this is intented, we error out here and do nothing with the invite.
+    // Since we do not know if this is intended, we error out here and do nothing with the invite.
     if claims.email != headers.user.email {
         err!("Claim email does not match current users email")
     }

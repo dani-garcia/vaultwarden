@@ -177,7 +177,7 @@ pub async fn validate_totp_code(
         }
     }
 
-    // Else no valide code received, deny access
+    // Else no valid code received, deny access
     err!(
         format!("Invalid TOTP code! Server time: {} IP: {}", current_time.format("%F %T UTC"), ip.ip),
         ErrorEvent {
