@@ -72,10 +72,10 @@ tokio = { version = "1.32.0", features = ["rt-multi-thread", "fs", "io-util", "p
 
 # A generic serialization/deserialization framework
 serde = { version = "1.0.188", features = ["derive"] }
-serde_json = "1.0.105"
+serde_json = "1.0.107"
 
 # A safe, extensible ORM and Query builder
-diesel = { version = "2.1.1", features = ["chrono", "r2d2"] }
+diesel = { version = "2.1.2", features = ["chrono", "r2d2"] }
 diesel_migrations = "2.1.0"
 diesel_logger = { version = "0.3.0", optional = true }
 
@@ -90,9 +90,9 @@ ring = "0.16.20"
 uuid = { version = "1.4.1", features = ["v4"] }
 
 # Date and time libraries
-chrono = { version = "0.4.28", features = ["clock", "serde"], default-features = false }
+chrono = { version = "0.4.31", features = ["clock", "serde"], default-features = false }
 chrono-tz = "0.8.3"
-time = "0.3.28"
+time = "0.3.29"
 
 # Job scheduler
 job_scheduler_ng = "2.0.4"
@@ -121,19 +121,19 @@ percent-encoding = "2.3.0" # URL encoding library used for URL's in the emails
 email_address = "0.2.4"
 
 # HTML Template library
-handlebars = { version = "4.3.7", features = ["dir_source"] }
+handlebars = { version = "4.4.0", features = ["dir_source"] }
 
 # HTTP client (Used for favicons, version check, DUO and HIBP API)
-reqwest = { version = "0.11.20", features = ["stream", "json", "deflate", "gzip", "brotli", "socks", "cookies", "trust-dns", "native-tls-alpn"] }
+reqwest = { version = "0.11.22", features = ["stream", "json", "deflate", "gzip", "brotli", "socks", "cookies", "trust-dns", "native-tls-alpn"] }
 
 # Favicon extraction libraries
 html5gum = "0.5.7"
-regex = { version = "1.9.4", features = ["std", "perf", "unicode-perl"], default-features = false }
+regex = { version = "1.9.6", features = ["std", "perf", "unicode-perl"], default-features = false }
 data-url = "0.3.0"
-bytes = "1.4.0"
+bytes = "1.5.0"
 
 # Cache function results (Used for version check and favicon fetching)
-cached = "0.44.0"
+cached = { version = "0.46.0", features = ["async"] }
 
 # Used for custom short lived cookie jar during favicon extraction
 cookie = "0.16.2"
@@ -150,22 +150,28 @@ paste = "1.0.14"
 governor = "0.6.0"
 
 # Check client versions for specific features.
-semver = "1.0.18"
+semver = "1.0.19"
 
 # Allow overriding the default memory allocator
 # Mainly used for the musl builds, since the default musl malloc is very slow
-mimalloc = { version = "0.1.38", features = ["secure"], default-features = false, optional = true }
-which = "4.4.0"
+mimalloc = { version = "0.1.39", features = ["secure"], default-features = false, optional = true }
+which = "4.4.2"
 
 # Argon2 library with support for the PHC format
-argon2 = "0.5.1"
+argon2 = "0.5.2"
 
 # Reading a password from the cli for generating the Argon2id ADMIN_TOKEN
 rpassword = "7.2.0"
 
+# Set openssl-sys fixed to v0.9.92 to prevent building issues with musl, arm and 32bit pointer width
+# It will force add a dynamically linked library which prevents the build from being static
+openssl-sys = "=0.9.92"
+
+
 [patch.crates-io]
 rocket = { git = 'https://github.com/SergioBenitez/Rocket', rev = 'ce441b5f46fdf5cd99cb32b8b8638835e4c2a5fa' } # v0.5 branch
 # rocket_ws = { git = 'https://github.com/SergioBenitez/Rocket', rev = 'ce441b5f46fdf5cd99cb32b8b8638835e4c2a5fa' } # v0.5 branch
+
 
 # Strip debuginfo from the release builds
 # Also enable thin LTO for some optimizations
@@ -173,11 +179,12 @@ rocket = { git = 'https://github.com/SergioBenitez/Rocket', rev = 'ce441b5f46fdf
 strip = "debuginfo"
 lto = "thin"
 
-# Always build argon2 using opt-level 3
-# This is a huge speed improvement during testing
-[profile.dev.package.argon2]
-opt-level = 3
 
 # A little bit of a speedup
 [profile.dev]
 split-debuginfo = "unpacked"
+
+# Always build argon2 using opt-level 3
+# This is a huge speed improvement during testing
+[profile.dev.package.argon2]
+opt-level = 3

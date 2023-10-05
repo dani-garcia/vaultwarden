@@ -1,17 +1,31 @@
 #!/usr/bin/env python3
 
-import os, argparse, json
-
+import os
+import argparse
+import json
+import yaml
 import jinja2
+
+# Load settings file
+with open("DockerSettings.yaml", 'r') as yaml_file:
+	yaml_data = yaml.safe_load(yaml_file)
+
+settings_env = jinja2.Environment(
+	loader=jinja2.FileSystemLoader(os.getcwd()),
+)
+settings_yaml = yaml.safe_load(settings_env.get_template("DockerSettings.yaml").render(yaml_data))
 
 args_parser = argparse.ArgumentParser()
 args_parser.add_argument('template_file', help='Jinja2 template file to render.')
 args_parser.add_argument('render_vars', help='JSON-encoded data to pass to the templating engine.')
 cli_args = args_parser.parse_args()
 
+# Merge the default config yaml with the json arguments given.
 render_vars = json.loads(cli_args.render_vars)
+settings_yaml.update(render_vars)
+
 environment = jinja2.Environment(
 	loader=jinja2.FileSystemLoader(os.getcwd()),
 	trim_blocks=True,
 )
-print(environment.get_template(cli_args.template_file).render(render_vars))
+print(environment.get_template(cli_args.template_file).render(settings_yaml))

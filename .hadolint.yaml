@@ -1,10 +1,12 @@
 ignored:
+  # To prevent issues and make clear some images only work on linux/amd64, we ignore this
+  - DL3029
   # disable explicit version for apt install
   - DL3008
   # disable explicit version for apk install
   - DL3018
-  # disable check for consecutive `RUN` instructions
-  - DL3059
+  # Ignore shellcheck info message
+  - SC1091
 trustedRegistries:
   - docker.io
   - ghcr.io

@@ -1,3 +1,7 @@
-The arch-specific directory names follow the arch identifiers used by the Docker official images:
+# Vaultwarden Container Building
 
-https://github.com/docker-library/official-images/blob/master/README.md#architectures-other-than-amd64
+## Local container building
+
+```bash
+docker buildx create --name multiarch --use --driver-opt network=host
+```

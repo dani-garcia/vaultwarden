@@ -12,6 +12,7 @@ on:
       - "rustfmt.toml"
       - "diesel.toml"
       - "docker/Dockerfile.j2"
+      - "docker/DockerSettings.yaml"
   pull_request:
     paths:
       - ".github/workflows/build.yml"
@@ -23,6 +24,7 @@ on:
       - "rustfmt.toml"
       - "diesel.toml"
       - "docker/Dockerfile.j2"
+      - "docker/DockerSettings.yaml"
 
 jobs:
   build:
