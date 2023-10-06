@@ -51,22 +51,28 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 # Install clang to get `xx-cargo` working
 # Install pkg-config to allow amd64 builds to find all libraries
+# Install the libc cross packages based upon the debian-arch
 RUN apt-get update && \
     apt-get install -y \
         --no-install-recommends \
-        clang pkg-config
+        clang pkg-config \
+        "libc6-$(xx-info debian-arch)-cross" \
+        "libc6-dev-$(xx-info debian-arch)-cross" \
+        "linux-libc-dev-$(xx-info debian-arch)-cross" && \
+    # Run xx-cargo early, since it sometimes seems to break when run at a later stage
+    echo "export CARGO_TARGET=$(xx-cargo --print-target-triple)" >> /env-cargo
 
 RUN xx-apt-get install -y \
         --no-install-recommends \
         gcc \
-        libc6-dev \
-        linux-libc-dev \
-        libmariadb-dev \
-        libmariadb-dev-compat \
         libmariadb3 \
         libpq-dev \
         libpq5 \
-        libssl-dev
+        libssl-dev && \
+    # Force install arch dependend mariadb dev packages
+    # Installing them the normal way breaks several other packages (again)
+    apt-get download "libmariadb-dev-compat:$(xx-info debian-arch)" "libmariadb-dev:$(xx-info debian-arch)" && \
+    dpkg --force-all -i ./libmariadb-dev*.deb
 
 # Create CARGO_HOME folder and don't download rust docs
 RUN mkdir -pv "${CARGO_HOME}" \
@@ -82,17 +88,19 @@ COPY ./rust-toolchain.toml ./rust-toolchain.toml
 COPY ./build.rs ./build.rs
 
 # Environment variables for cargo across Debian and Alpine
-RUN echo "export CARGO_TARGET=$(xx-cargo --print-target-triple)" >> /env-cargo && \
+RUN source /env-cargo && \
     if xx-info is-cross ; then \
         # We can't use xx-cargo since that uses clang, which doesn't work for our libraries.
         # Because of this we generate the needed environment variables here which we can load in the needed steps.
-        echo "export CC_$(xx-cargo --print-target-triple | tr '[:upper:]' '[:lower:]' | tr - _)=/usr/bin/$(xx-info)-gcc" >> /env-cargo && \
-        echo "export CARGO_TARGET_$(xx-cargo --print-target-triple | tr '[:lower:]' '[:upper:]' | tr - _)_LINKER=/usr/bin/$(xx-info)-gcc" >> /env-cargo && \
+        echo "export CC_$(echo "${CARGO_TARGET}" | tr '[:upper:]' '[:lower:]' | tr - _)=/usr/bin/$(xx-info)-gcc" >> /env-cargo && \
+        echo "export CARGO_TARGET_$(echo "${CARGO_TARGET}" | tr '[:lower:]' '[:upper:]' | tr - _)_LINKER=/usr/bin/$(xx-info)-gcc" >> /env-cargo && \
         echo "export PKG_CONFIG=/usr/bin/$(xx-info)-pkg-config" >> /env-cargo && \
         echo "export CROSS_COMPILE=1" >> /env-cargo && \
         echo "export OPENSSL_INCLUDE_DIR=/usr/include/$(xx-info)" >> /env-cargo && \
         echo "export OPENSSL_LIB_DIR=/usr/lib/$(xx-info)" >> /env-cargo ; \
-    fi
+    fi && \
+    # Output the current contents of the file
+    cat /env-cargo
 
 # Configure the DB ARG as late as possible to not invalidate the cached layers above
 ARG DB=sqlite,mysql,postgresql

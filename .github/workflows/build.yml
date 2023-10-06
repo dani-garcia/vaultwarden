@@ -34,7 +34,6 @@ jobs:
     # This is done globally to prevent rebuilds when the RUSTFLAGS env variable changes.
     env:
       RUSTFLAGS: "-D warnings"
-      CARGO_REGISTRIES_CRATES_IO_PROTOCOL: sparse
     strategy:
       fail-fast: false
       matrix:
@@ -205,12 +204,12 @@ jobs:
           cargo build --release --features sqlite,mysql,postgresql
       # End Build the binary
 
-
-      # Upload artifact to Github Actions
-      - name: "Upload artifact"
-        uses: actions/upload-artifact@a8a3f3ad30e3422c9c7b888a15615d19a852ae32 # v3.1.3
-        if: ${{ matrix.channel == 'rust-toolchain' }}
-        with:
-          name: vaultwarden
-          path: target/release/vaultwarden
-      # End Upload artifact to Github Actions
+      # TODO: We should not upload these. We should extract Alpine build binaries from the containers and upload them
+      # # Upload artifact to Github Actions
+      # - name: "Upload artifact"
+      #   uses: actions/upload-artifact@a8a3f3ad30e3422c9c7b888a15615d19a852ae32 # v3.1.3
+      #   if: ${{ matrix.channel == 'rust-toolchain' }}
+      #   with:
+      #     name: vaultwarden
+      #     path: target/release/vaultwarden
+      # # End Upload artifact to Github Actions

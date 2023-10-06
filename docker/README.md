@@ -112,10 +112,10 @@ docker/bake.sh
 ## Variables supported
 | Variable              | default | description |
 | --------------------- | ------------------ | ----------- |
-| CARGO_PROFILE         | null               | Which cargo profile to use. `null` means what is defined in the Dockerfile                         |
-| DB                    | null               | Which `features` to build. `null` means what is defined in the Dockerfile                          |
-| SOURCE_REPOSITORY_URL | null               | The source repository form where this build is triggered                                           |
-| SOURCE_COMMIT         | null               | The commit hash of the current commit for this build                                               |
-| SOURCE_VERSION        | null               | The current exact tag of this commit, else the last tag and the first 8 chars of the source commit |
-| BASE_TAGS             | testing            | Tags to be used. Can be a comma separated value like "latest,1.29.2"                               |
+| CARGO_PROFILE         | null               | Which cargo profile to use. `null` means what is defined in the Dockerfile                                         |
+| DB                    | null               | Which `features` to build. `null` means what is defined in the Dockerfile                                          |
+| SOURCE_REPOSITORY_URL | null               | The source repository form where this build is triggered                                                           |
+| SOURCE_COMMIT         | null               | The commit hash of the current commit for this build                                                               |
+| SOURCE_VERSION        | null               | The current exact tag of this commit, else the last tag and the first 8 chars of the source commit                 |
+| BASE_TAGS             | testing            | Tags to be used. Can be a comma separated value like "latest,1.29.2"                                               |
 | CONTAINER_REGISTRIES  | vaultwarden/server | Comma separated value of container registries. Like `ghcr.io/dani-garcia/vaultwarden,docker.io/vaultwarden/server` |

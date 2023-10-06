@@ -73,7 +73,9 @@ COPY ./build.rs ./build.rs
 # Shared variables across Debian and Alpine
 RUN echo "export CARGO_TARGET=${RUST_MUSL_CROSS_TARGET}" >> /env-cargo && \
     # To be able to build the armv6 image with mimalloc we need to tell the linker to also look for libatomic
-    if [[ "${TARGETARCH}${TARGETVARIANT}" == "armv6" ]] ; then echo "export RUSTFLAGS='-Clink-arg=-latomic'" >> /env-cargo ; fi
+    if [[ "${TARGETARCH}${TARGETVARIANT}" == "armv6" ]] ; then echo "export RUSTFLAGS='-Clink-arg=-latomic'" >> /env-cargo ; fi && \
+    # Output the current contents of the file
+    cat /env-cargo
 
 # Enable MiMalloc to improve performance on Alpine builds
 ARG DB=sqlite,mysql,postgresql,enable_mimalloc
