@@ -3,7 +3,7 @@ name = "vaultwarden"
 version = "1.0.0"
 authors = ["Daniel García <dani-garcia@users.noreply.github.com>"]
 edition = "2021"
-rust-version = "1.70.0"
+rust-version = "1.71.1"
 resolver = "2"
 
 repository = "https://github.com/dani-garcia/vaultwarden"
@@ -75,7 +75,7 @@ serde = { version = "1.0.188", features = ["derive"] }
 serde_json = "1.0.107"
 
 # A safe, extensible ORM and Query builder
-diesel = { version = "2.1.2", features = ["chrono", "r2d2"] }
+diesel = { version = "2.1.3", features = ["chrono", "r2d2"] }
 diesel_migrations = "2.1.0"
 diesel_logger = { version = "0.3.0", optional = true }
 
@@ -141,6 +141,9 @@ cookie_store = "0.19.1"
 
 # Used by U2F, JWT and PostgreSQL
 openssl = "0.10.57"
+# Set openssl-sys fixed to v0.9.92 to prevent building issues with musl, arm and 32bit pointer width
+# It will force add a dynamically linked library which prevents the build from being static
+openssl-sys = "=0.9.92"
 
 # CLI argument parsing
 pico-args = "0.5.0"
@@ -162,10 +165,6 @@ argon2 = "0.5.2"
 
 # Reading a password from the cli for generating the Argon2id ADMIN_TOKEN
 rpassword = "7.2.0"
-
-# Set openssl-sys fixed to v0.9.92 to prevent building issues with musl, arm and 32bit pointer width
-# It will force add a dynamically linked library which prevents the build from being static
-openssl-sys = "=0.9.92"
 
 
 [patch.crates-io]

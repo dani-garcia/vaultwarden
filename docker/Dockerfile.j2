@@ -129,8 +129,7 @@ ARG DB=sqlite,mysql,postgresql,enable_mimalloc
 RUN source /env-cargo && \
     rustup target add "${CARGO_TARGET}"
 
-# ARG CARGO_PROFILE=release
-ARG CARGO_PROFILE=dev
+ARG CARGO_PROFILE=release
 
 # Builds your dependencies and removes the
 # dummy project, except the target folder

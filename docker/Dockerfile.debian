@@ -33,7 +33,7 @@ FROM --platform=$BUILDPLATFORM docker.io/tonistiigi/xx:master AS xx
 
 ########################## BUILD IMAGE ##########################
 # hadolint ignore=DL3006
-FROM --platform=$BUILDPLATFORM docker.io/library/rust:1.72.1-slim-bookworm as build
+FROM --platform=$BUILDPLATFORM docker.io/library/rust:1.73.0-slim-bookworm as build
 COPY --from=xx / /
 ARG TARGETARCH
 ARG TARGETVARIANT
@@ -100,8 +100,7 @@ ARG DB=sqlite,mysql,postgresql
 RUN source /env-cargo && \
     rustup target add "${CARGO_TARGET}"
 
-# ARG CARGO_PROFILE=release
-ARG CARGO_PROFILE=dev
+ARG CARGO_PROFILE=release
 
 # Builds your dependencies and removes the
 # dummy project, except the target folder

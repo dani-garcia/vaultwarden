@@ -1,6 +1,6 @@
 // ==== Baking Variables ====
 
-// Set which cargo provile to use, dev or release for example
+// Set which cargo profile to use, dev or release for example
 // Use the value provided in the Dockerfile as default
 variable "CARGO_PROFILE" {
   default = null
@@ -71,6 +71,7 @@ target "_default_attributes" {
 
 // ==== Debian Baking ====
 
+// Default Debian target, will build a container using the hosts platform architecture
 target "debian" {
   inherits = ["_default_attributes"]
   dockerfile = "docker/Dockerfile.debian"
@@ -78,16 +79,49 @@ target "debian" {
   tags = generate_tags("", platform_tag())
 }
 
-target "debian-all" {
+// Multi Platform target, will build one tagged manifest with all supported architectures
+// This is mainly used by GitHub Actions to build and push new containers
+target "debian-multi" {
   inherits = ["debian"]
   platforms = ["linux/amd64", "linux/arm64", "linux/arm/v7", "linux/arm/v6"]
   tags = generate_tags("", "")
   output = ["type=registry"]
 }
 
+// Per platform targets, to individually test building per platform locally
+target "debian-amd64" {
+  inherits = ["debian"]
+  platforms = ["linux/amd64"]
+  tags = generate_tags("", "-amd64")
+}
+
+target "debian-arm64" {
+  inherits = ["debian"]
+  platforms = ["linux/arm64"]
+  tags = generate_tags("", "-arm64")
+}
+
+target "debian-armv7" {
+  inherits = ["debian"]
+  platforms = ["linux/arm/v7"]
+  tags = generate_tags("", "-armv7")
+}
+
+target "debian-armv6" {
+  inherits = ["debian"]
+  platforms = ["linux/arm/v6"]
+  tags = generate_tags("", "-armv6")
+}
+
+// A Group to build all platforms individually for local testing
+group "debian-all" {
+  targets = ["debian-amd64", "debian-arm64", "debian-armv7", "debian-armv6"]
+}
+
 
 // ==== Alpine Baking ====
 
+// Default Alpine target, will build a container using the hosts platform architecture
 target "alpine" {
   inherits = ["_default_attributes"]
   dockerfile = "docker/Dockerfile.alpine"
@@ -95,11 +129,50 @@ target "alpine" {
   tags = generate_tags("-alpine", platform_tag())
 }
 
-target "alpine-all" {
+// Multi Platform target, will build one tagged manifest with all supported architectures
+// This is mainly used by GitHub Actions to build and push new containers
+target "alpine-multi" {
   inherits = ["alpine"]
   platforms = ["linux/amd64", "linux/arm64", "linux/arm/v7", "linux/arm/v6"]
   tags = generate_tags("-alpine", "")
   output = ["type=registry"]
+}
+
+// Per platform targets, to individually test building per platform locally
+target "alpine-amd64" {
+  inherits = ["alpine"]
+  platforms = ["linux/amd64"]
+  tags = generate_tags("-alpine", "-amd64")
+}
+
+target "alpine-arm64" {
+  inherits = ["alpine"]
+  platforms = ["linux/arm64"]
+  tags = generate_tags("-alpine", "-arm64")
+}
+
+target "alpine-armv7" {
+  inherits = ["alpine"]
+  platforms = ["linux/arm/v7"]
+  tags = generate_tags("-alpine", "-armv7")
+}
+
+target "alpine-armv6" {
+  inherits = ["alpine"]
+  platforms = ["linux/arm/v6"]
+  tags = generate_tags("-alpine", "-armv6")
+}
+
+// A Group to build all platforms individually for local testing
+group "alpine-all" {
+  targets = ["alpine-amd64", "alpine-arm64", "alpine-armv7", "alpine-armv6"]
+}
+
+
+// ==== Bake everything locally ====
+
+group "all" {
+  targets = ["debian-all", "alpine-all"]
 }
 
 

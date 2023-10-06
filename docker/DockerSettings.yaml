@@ -1,7 +1,7 @@
 ---
 vault_version: "v2023.8.2"
-vault_image_digest: "sha256:b361e79309ef2c4368f880f350166daade41eb0927a9adf376c76e3713027252" # v2023.8.2
-rust_version: 1.72.1 # Rust version to be used
+vault_image_digest: "sha256:b361e79309ef2c4368f880f350166daade41eb0927a9adf376c76e3713027252"
+rust_version: 1.73.0 # Rust version to be used
 debian_version: bookworm # Debian release name to be used
 alpine_version: 3.18 # Alpine version to be used
 # For which platforms/architectures will we try to build images
