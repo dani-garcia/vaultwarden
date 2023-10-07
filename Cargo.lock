@@ -3493,7 +3493,6 @@ dependencies = [
  "pico-args",
  "rand",
  "regex",
- "reopen",
  "reqwest",
  "ring",
  "rmpv",

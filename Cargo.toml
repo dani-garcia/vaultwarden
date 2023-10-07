@@ -37,7 +37,6 @@ unstable = []
 [target."cfg(not(windows))".dependencies]
 # Logging
 syslog = "6.1.0"
-reopen = "1.0.3"
 
 [dependencies]
 # Logging
