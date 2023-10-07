@@ -332,7 +332,7 @@ fn init_logging(level: log::LevelFilter) -> Result<(), fern::InitError> {
         }
         #[cfg(not(windows))]
         {
-            const SIGHUP: i32 = 1;
+            const SIGHUP: i32 = tokio::signal::unix::SignalKind::hangup().as_raw_value();
             let path = Path::new(&log_file);
             logger = logger.chain(fern::log_reopen1(path, [SIGHUP])?);
         }
