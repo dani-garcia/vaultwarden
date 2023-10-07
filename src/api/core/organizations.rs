@@ -2897,7 +2897,7 @@ async fn put_reset_password_enrollment(
 
 // This is a new function active since the v2022.9.x clients.
 // It combines the previous two calls done before.
-// We call those two functions here and combine them our selves.
+// We call those two functions here and combine them ourselves.
 //
 // NOTE: It seems clients can't handle uppercase-first keys!!
 //       We need to convert all keys so they have the first character to be a lowercase.
