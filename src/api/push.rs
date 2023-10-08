@@ -116,7 +116,7 @@ pub async fn unregister_push_device(uuid: String) -> EmptyResult {
         .await
     {
         Ok(r) => r,
-        Err(e) => err!(format!("An error occured during device unregistration: {e}")),
+        Err(e) => err!(format!("An error occurred during device unregistration: {e}")),
     };
     Ok(())
 }
@@ -252,7 +252,7 @@ async fn send_to_push_relay(notification_data: Value) {
         .send()
         .await
     {
-        error!("An error occured while sending a send update to the push relay: {}", e);
+        error!("An error occurred while sending a send update to the push relay: {}", e);
     };
 }
 

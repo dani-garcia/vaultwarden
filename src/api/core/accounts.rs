@@ -346,7 +346,7 @@ async fn post_password(
 
     let save_result = user.save(&mut conn).await;
 
-    // Prevent loging out the client where the user requested this endpoint from.
+    // Prevent logging out the client where the user requested this endpoint from.
     // If you do logout the user it will causes issues at the client side.
     // Adding the device uuid will prevent this.
     nt.send_logout(&user, Some(headers.device.uuid)).await;
@@ -493,7 +493,7 @@ async fn post_rotatekey(data: JsonUpcase<KeyData>, headers: Headers, mut conn: D
 
     let save_result = user.save(&mut conn).await;
 
-    // Prevent loging out the client where the user requested this endpoint from.
+    // Prevent logging out the client where the user requested this endpoint from.
     // If you do logout the user it will causes issues at the client side.
     // Adding the device uuid will prevent this.
     nt.send_logout(&user, Some(headers.device.uuid)).await;
@@ -970,10 +970,10 @@ async fn put_device_token(uuid: &str, data: JsonUpcase<PushToken>, headers: Head
         device.push_uuid = Some(uuid::Uuid::new_v4().to_string());
     }
     if let Err(e) = device.save(&mut conn).await {
-        err!(format!("An error occured while trying to save the device push token: {e}"));
+        err!(format!("An error occurred while trying to save the device push token: {e}"));
     }
     if let Err(e) = register_push_device(headers.user.uuid, device).await {
-        err!(format!("An error occured while proceeding registration of a device: {e}"));
+        err!(format!("An error occurred while proceeding registration of a device: {e}"));
     }
 
     Ok(())

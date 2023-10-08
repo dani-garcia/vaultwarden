@@ -396,7 +396,7 @@ impl UserOrganization {
         let user = User::find_by_uuid(&self.user_uuid, conn).await.unwrap();
 
         // Because BitWarden want the status to be -1 for revoked users we need to catch that here.
-        // We subtract/add a number so we can restore/activate the user to it's previouse state again.
+        // We subtract/add a number so we can restore/activate the user to it's previous state again.
         let status = if self.status < UserOrgStatus::Revoked as i32 {
             UserOrgStatus::Revoked as i32
         } else {
@@ -475,7 +475,7 @@ impl UserOrganization {
         };
 
         // Because BitWarden want the status to be -1 for revoked users we need to catch that here.
-        // We subtract/add a number so we can restore/activate the user to it's previouse state again.
+        // We subtract/add a number so we can restore/activate the user to it's previous state again.
         let status = if self.status < UserOrgStatus::Revoked as i32 {
             UserOrgStatus::Revoked as i32
         } else {

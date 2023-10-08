@@ -1520,9 +1520,9 @@ async fn bulk_public_keys(
     let data: OrgBulkIds = data.into_inner().data;
 
     let mut bulk_response = Vec::new();
-    // Check all received UserOrg UUID's and find the matching User to retreive the public-key.
+    // Check all received UserOrg UUID's and find the matching User to retrieve the public-key.
     // If the user does not exists, just ignore it, and do not return any information regarding that UserOrg UUID.
-    // The web-vault will then ignore that user for the folowing steps.
+    // The web-vault will then ignore that user for the following steps.
     for user_org_id in data.Ids {
         match UserOrganization::find_by_uuid_and_org(&user_org_id, org_id, &mut conn).await {
             Some(user_org) => match User::find_by_uuid(&user_org.user_uuid, &mut conn).await {
@@ -1882,7 +1882,7 @@ async fn import(org_id: &str, data: JsonUpcase<OrgImportData>, headers: Headers,
     // This means that this endpoint can end up removing users that were added manually by an admin,
     // as opposed to upstream which only removes auto-imported users.
 
-    // User needs to be admin or owner to use the Directry Connector
+    // User needs to be admin or owner to use the Directory Connector
     match UserOrganization::find_by_user_and_org(&headers.user.uuid, org_id, &mut conn).await {
         Some(user_org) if user_org.atype >= UserOrgType::Admin => { /* Okay, nothing to do */ }
         Some(_) => err!("User has insufficient permissions to use Directory Connector"),
@@ -2897,7 +2897,7 @@ async fn put_reset_password_enrollment(
 
 // This is a new function active since the v2022.9.x clients.
 // It combines the previous two calls done before.
-// We call those two functions here and combine them our selfs.
+// We call those two functions here and combine them ourselves.
 //
 // NOTE: It seems clients can't handle uppercase-first keys!!
 //       We need to convert all keys so they have the first character to be a lowercase.

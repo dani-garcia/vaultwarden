@@ -1752,7 +1752,7 @@ impl CipherSyncData {
         let cipher_folders: HashMap<String, String>;
         let cipher_favorites: HashSet<String>;
         match sync_type {
-            // User Sync supports Folders and Favorits
+            // User Sync supports Folders and Favorites
             CipherSyncType::User => {
                 // Generate a HashMap with the Cipher UUID as key and the Folder UUID as value
                 cipher_folders = FolderCipher::find_by_user(user_uuid, conn).await.into_iter().collect();
@@ -1760,7 +1760,7 @@ impl CipherSyncData {
                 // Generate a HashSet of all the Cipher UUID's which are marked as favorite
                 cipher_favorites = Favorite::get_all_cipher_uuid_by_user(user_uuid, conn).await.into_iter().collect();
             }
-            // Organization Sync does not support Folders and Favorits.
+            // Organization Sync does not support Folders and Favorites.
             // If these are set, it will cause issues in the web-vault.
             CipherSyncType::Organization => {
                 cipher_folders = HashMap::with_capacity(0);
@@ -1805,7 +1805,7 @@ impl CipherSyncData {
             .map(|collection_group| (collection_group.collections_uuid.clone(), collection_group))
             .collect();
 
-        // Get all organizations that the user has full access to via group assignement
+        // Get all organizations that the user has full access to via group assignment
         let user_group_full_access_for_organizations: HashSet<String> =
             Group::gather_user_organizations_full_access(user_uuid, conn).await.into_iter().collect();
 
