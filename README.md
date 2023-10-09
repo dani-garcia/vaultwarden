@@ -42,7 +42,7 @@ docker run -d --name vaultwarden -v /vw-data/:/data/ --restart unless-stopped -p
 ```
 This will preserve any persistent data under /vw-data/, you can adapt the path to whatever suits you.
 
-**IMPORTANT**: Most modern web browsers, disallow the use of Web Crypto APIs in insecure contexts. In this case, you might get an error like `Cannot read property 'importKey'`. To solve this problem, you need to access the web vault via HTTPS or localhost.
+**IMPORTANT**: Most modern web browsers disallow the use of Web Crypto APIs in insecure contexts. In this case, you might get an error like `Cannot read property 'importKey'`. To solve this problem, you need to access the web vault via HTTPS or localhost.
 
 This can be configured in [vaultwarden directly](https://github.com/dani-garcia/vaultwarden/wiki/Enabling-HTTPS) or using a third-party reverse proxy ([some examples](https://github.com/dani-garcia/vaultwarden/wiki/Proxy-examples)).
 
