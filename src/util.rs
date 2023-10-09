@@ -33,24 +33,41 @@ impl Fairing for AppHeaders {
     }
 
     async fn on_response<'r>(&self, req: &'r Request<'_>, res: &mut Response<'r>) {
+        let req_uri_path = req.uri().path();
+        let req_headers = req.headers();
+
+        // Check if this connection is an Upgrade/WebSocket connection and return early
+        // We do not want add any extra headers, this could cause issues with reverse proxies or CloudFlare
+        if req_uri_path.ends_with("notifications/hub") || req_uri_path.ends_with("notifications/anonymous-hub") {
+            match (req_headers.get_one("connection"), req_headers.get_one("upgrade")) {
+                (Some(c), Some(u))
+                    if c.to_lowercase().contains("upgrade") && u.to_lowercase().contains("websocket") =>
+                {
+                    // Remove headers which could cause websocket connection issues
+                    res.remove_header("X-Frame-Options");
+                    res.remove_header("X-Content-Type-Options");
+                    return;
+                }
+                (_, _) => (),
+            }
+        }
+
         res.set_raw_header("Permissions-Policy", "accelerometer=(), ambient-light-sensor=(), autoplay=(), battery=(), camera=(), display-capture=(), document-domain=(), encrypted-media=(), execution-while-not-rendered=(), execution-while-out-of-viewport=(), fullscreen=(), geolocation=(), gyroscope=(), keyboard-map=(), magnetometer=(), microphone=(), midi=(), payment=(), picture-in-picture=(), screen-wake-lock=(), sync-xhr=(), usb=(), web-share=(), xr-spatial-tracking=()");
         res.set_raw_header("Referrer-Policy", "same-origin");
         res.set_raw_header("X-Content-Type-Options", "nosniff");
         // Obsolete in modern browsers, unsafe (XS-Leak), and largely replaced by CSP
         res.set_raw_header("X-XSS-Protection", "0");
 
-        let req_uri_path = req.uri().path();
-
         // Do not send the Content-Security-Policy (CSP) Header and X-Frame-Options for the *-connector.html files.
         // This can cause issues when some MFA requests needs to open a popup or page within the clients like WebAuthn, or Duo.
-        // This is the same behaviour as upstream Bitwarden.
+        // This is the same behavior as upstream Bitwarden.
         if !req_uri_path.ends_with("connector.html") {
             // # Frame Ancestors:
             // Chrome Web Store: https://chrome.google.com/webstore/detail/bitwarden-free-password-m/nngceckbapebfimnlniiiahkandclblb
             // Edge Add-ons: https://microsoftedge.microsoft.com/addons/detail/bitwarden-free-password/jbkfoedolllekgbhcbcoahefnbanhhlh?hl=en-US
             // Firefox Browser Add-ons: https://addons.mozilla.org/en-US/firefox/addon/bitwarden-password-manager/
             // # img/child/frame src:
-            // Have I Been Pwned and Gravator to allow those calls to work.
+            // Have I Been Pwned to allow those calls to work.
             // # Connect src:
             // Leaked Passwords check: api.pwnedpasswords.com
             // 2FA/MFA Site check: api.2fa.directory
@@ -72,7 +89,6 @@ impl Fairing for AppHeaders {
                   {allowed_iframe_ancestors}; \
                 img-src 'self' data: \
                   https://haveibeenpwned.com \
-                  https://www.gravatar.com \
                   {icon_service_csp}; \
                 connect-src 'self' \
                   https://api.pwnedpasswords.com \
@@ -619,7 +635,7 @@ fn upcase_value(value: Value) -> Value {
     }
 }
 
-// Inner function to handle some speciale case for the 'ssn' key.
+// Inner function to handle a special case for the 'ssn' key.
 // This key is part of the Identity Cipher (Social Security Number)
 fn _process_key(key: &str) -> String {
     match key.to_lowercase().as_ref() {
