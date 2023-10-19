@@ -1,1 +1,1 @@
-docker/amd64/Dockerfile
+docker/Dockerfile.debian

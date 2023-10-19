@@ -10,7 +10,7 @@ CONFIG_FILE="${DATA_FOLDER}"/config.json
 # Given a config key, return the corresponding config value from the
 # config file. If the key doesn't exist, return an empty string.
 get_config_val() {
-    local key="$1"
+    key="$1"
     # Extract a line of the form:
     #   "domain": "https://bw.example.com/path",
     grep "\"${key}\":" "${CONFIG_FILE}" |

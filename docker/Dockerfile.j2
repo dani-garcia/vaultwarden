@@ -30,7 +30,9 @@ FROM --platform=linux/amd64 docker.io/vaultwarden/web-vault@{{ vault_image_diges
 
 {% if base == "debian" %}
 ########################## Cross Compile Docker Helper Scripts ##########################
-FROM --platform=$BUILDPLATFORM docker.io/tonistiigi/xx:master AS xx
+## We use the linux/amd64 no matter which Build Platform, since these are all bash scripts
+## And these bash scripts do not have any significant difference if at all
+FROM --platform=linux/amd64 docker.io/tonistiigi/xx@{{ xx_image_digest }} AS xx
 {% elif base == "alpine" %}
 ########################## ALPINE BUILD IMAGES ##########################
 ## NOTE: The Alpine Base Images do not support other platforms then linux/amd64
@@ -69,11 +71,14 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 # Install clang to get `xx-cargo` working
 # Install pkg-config to allow amd64 builds to find all libraries
+# Install git so build.rs can determine the correct version
 # Install the libc cross packages based upon the debian-arch
 RUN apt-get update && \
     apt-get install -y \
         --no-install-recommends \
-        clang pkg-config \
+        clang \
+        pkg-config \
+        git \
         "libc6-$(xx-info debian-arch)-cross" \
         "libc6-dev-$(xx-info debian-arch)-cross" \
         "linux-libc-dev-$(xx-info debian-arch)-cross" && \
@@ -101,19 +106,14 @@ RUN mkdir -pv "${CARGO_HOME}" \
 RUN USER=root cargo new --bin /app
 WORKDIR /app
 
-# Copies over *only* your manifests and build files
-COPY ./Cargo.* ./
-COPY ./rust-toolchain.toml ./rust-toolchain.toml
-COPY ./build.rs ./build.rs
-
 {% if base == "debian" %}
 # Environment variables for cargo across Debian and Alpine
 RUN source /env-cargo && \
     if xx-info is-cross ; then \
         # We can't use xx-cargo since that uses clang, which doesn't work for our libraries.
         # Because of this we generate the needed environment variables here which we can load in the needed steps.
-        echo "export CC_$(echo ${CARGO_TARGET} | tr '[:upper:]' '[:lower:]' | tr - _)=/usr/bin/$(xx-info)-gcc" >> /env-cargo && \
-        echo "export CARGO_TARGET_$(echo ${CARGO_TARGET} | tr '[:lower:]' '[:upper:]' | tr - _)_LINKER=/usr/bin/$(xx-info)-gcc" >> /env-cargo && \
+        echo "export CC_$(echo "${CARGO_TARGET}" | tr '[:upper:]' '[:lower:]' | tr - _)=/usr/bin/$(xx-info)-gcc" >> /env-cargo && \
+        echo "export CARGO_TARGET_$(echo "${CARGO_TARGET}" | tr '[:lower:]' '[:upper:]' | tr - _)_LINKER=/usr/bin/$(xx-info)-gcc" >> /env-cargo && \
         echo "export PKG_CONFIG=/usr/bin/$(xx-info)-pkg-config" >> /env-cargo && \
         echo "export CROSS_COMPILE=1" >> /env-cargo && \
         echo "export OPENSSL_INCLUDE_DIR=/usr/include/$(xx-info)" >> /env-cargo && \
@@ -140,6 +140,12 @@ RUN source /env-cargo && \
     rustup target add "${CARGO_TARGET}"
 
 ARG CARGO_PROFILE=release
+ARG VW_VERSION
+
+# Copies over *only* your manifests and build files
+COPY ./Cargo.* ./
+COPY ./rust-toolchain.toml ./rust-toolchain.toml
+COPY ./build.rs ./build.rs
 
 # Builds your dependencies and removes the
 # dummy project, except the target folder
@@ -169,7 +175,7 @@ RUN source /env-cargo && \
 # Create a new stage with a minimal image
 # because we already have a binary built
 #
-# For these images to be able to built you need to have qemu binfmt support.
+# To build these images you need to have qemu binfmt support.
 # See the following pages to help install these tools locally
 # Ubuntu/Debian: https://wiki.debian.org/QemuUserEmulation
 # Arch Linux: https://wiki.archlinux.org/title/QEMU#Chrooting_into_arm/arm64_environment_from_x86_64
@@ -179,7 +185,9 @@ RUN source /env-cargo && \
 # See: https://github.com/tonistiigi/binfmt
 # Usage: docker run --privileged --rm tonistiigi/binfmt --install arm64,arm
 # To uninstall: docker run --privileged --rm tonistiigi/binfmt --uninstall 'qemu-*'
-FROM {{ runtime_stage_image[base] }}
+#
+# We need to add `--platform` here, because of a podman bug: https://github.com/containers/buildah/issues/4742
+FROM --platform=$TARGETPLATFORM {{ runtime_stage_image[base] }}
 
 ENV ROCKET_PROFILE="release" \
     ROCKET_ADDRESS=0.0.0.0 \
@@ -200,14 +208,14 @@ RUN mkdir /data && \
         libmariadb-dev-compat \
         libpq5 \
         openssl && \
-        apt-get clean && \
-        rm -rf /var/lib/apt/lists/*
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 {% elif base == "alpine" %}
     apk --no-cache add \
-          ca-certificates \
-          curl \
-          openssl \
-          tzdata
+        ca-certificates \
+        curl \
+        openssl \
+        tzdata
 {% endif %}
 
 VOLUME /data

@@ -18,18 +18,20 @@
 # - From https://hub.docker.com/r/vaultwarden/web-vault/tags,
 #   click the tag name to view the digest of the image it currently points to.
 # - From the command line:
-#     $ docker pull docker.io/vaultwarden/web-vault:v2023.8.2
-#     $ docker image inspect --format "{{.RepoDigests}}" docker.io/vaultwarden/web-vault:v2023.8.2
-#     [docker.io/vaultwarden/web-vault@sha256:b361e79309ef2c4368f880f350166daade41eb0927a9adf376c76e3713027252]
+#     $ docker pull docker.io/vaultwarden/web-vault:v2023.9.1
+#     $ docker image inspect --format "{{.RepoDigests}}" docker.io/vaultwarden/web-vault:v2023.9.1
+#     [docker.io/vaultwarden/web-vault@sha256:ccf76db7406378b36cb937c1a3ca884448e32e7f82effd4d97b335cd725c75fd]
 #
 # - Conversely, to get the tag name from the digest:
-#     $ docker image inspect --format "{{.RepoTags}}" docker.io/vaultwarden/web-vault@sha256:b361e79309ef2c4368f880f350166daade41eb0927a9adf376c76e3713027252
-#     [docker.io/vaultwarden/web-vault:v2023.8.2]
+#     $ docker image inspect --format "{{.RepoTags}}" docker.io/vaultwarden/web-vault@sha256:ccf76db7406378b36cb937c1a3ca884448e32e7f82effd4d97b335cd725c75fd
+#     [docker.io/vaultwarden/web-vault:v2023.9.1]
 #
-FROM --platform=linux/amd64 docker.io/vaultwarden/web-vault@sha256:b361e79309ef2c4368f880f350166daade41eb0927a9adf376c76e3713027252 as vault
+FROM --platform=linux/amd64 docker.io/vaultwarden/web-vault@sha256:ccf76db7406378b36cb937c1a3ca884448e32e7f82effd4d97b335cd725c75fd as vault
 
 ########################## Cross Compile Docker Helper Scripts ##########################
-FROM --platform=$BUILDPLATFORM docker.io/tonistiigi/xx:master AS xx
+## We use the linux/amd64 no matter which Build Platform, since these are all bash scripts
+## And these bash scripts do not have any significant difference if at all
+FROM --platform=linux/amd64 docker.io/tonistiigi/xx@sha256:c9609ace652bbe51dd4ce90e0af9d48a4590f1214246da5bc70e46f6dd586edc AS xx
 
 ########################## BUILD IMAGE ##########################
 # hadolint ignore=DL3006
@@ -51,11 +53,14 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 # Install clang to get `xx-cargo` working
 # Install pkg-config to allow amd64 builds to find all libraries
+# Install git so build.rs can determine the correct version
 # Install the libc cross packages based upon the debian-arch
 RUN apt-get update && \
     apt-get install -y \
         --no-install-recommends \
-        clang pkg-config \
+        clang \
+        pkg-config \
+        git \
         "libc6-$(xx-info debian-arch)-cross" \
         "libc6-dev-$(xx-info debian-arch)-cross" \
         "linux-libc-dev-$(xx-info debian-arch)-cross" && \
@@ -82,11 +87,6 @@ RUN mkdir -pv "${CARGO_HOME}" \
 RUN USER=root cargo new --bin /app
 WORKDIR /app
 
-# Copies over *only* your manifests and build files
-COPY ./Cargo.* ./
-COPY ./rust-toolchain.toml ./rust-toolchain.toml
-COPY ./build.rs ./build.rs
-
 # Environment variables for cargo across Debian and Alpine
 RUN source /env-cargo && \
     if xx-info is-cross ; then \
@@ -109,6 +109,12 @@ RUN source /env-cargo && \
     rustup target add "${CARGO_TARGET}"
 
 ARG CARGO_PROFILE=release
+ARG VW_VERSION
+
+# Copies over *only* your manifests and build files
+COPY ./Cargo.* ./
+COPY ./rust-toolchain.toml ./rust-toolchain.toml
+COPY ./build.rs ./build.rs
 
 # Builds your dependencies and removes the
 # dummy project, except the target folder
@@ -138,7 +144,7 @@ RUN source /env-cargo && \
 # Create a new stage with a minimal image
 # because we already have a binary built
 #
-# For these images to be able to built you need to have qemu binfmt support.
+# To build these images you need to have qemu binfmt support.
 # See the following pages to help install these tools locally
 # Ubuntu/Debian: https://wiki.debian.org/QemuUserEmulation
 # Arch Linux: https://wiki.archlinux.org/title/QEMU#Chrooting_into_arm/arm64_environment_from_x86_64
@@ -148,7 +154,9 @@ RUN source /env-cargo && \
 # See: https://github.com/tonistiigi/binfmt
 # Usage: docker run --privileged --rm tonistiigi/binfmt --install arm64,arm
 # To uninstall: docker run --privileged --rm tonistiigi/binfmt --uninstall 'qemu-*'
-FROM docker.io/library/debian:bookworm-slim
+#
+# We need to add `--platform` here, because of a podman bug: https://github.com/containers/buildah/issues/4742
+FROM --platform=$TARGETPLATFORM docker.io/library/debian:bookworm-slim
 
 ENV ROCKET_PROFILE="release" \
     ROCKET_ADDRESS=0.0.0.0 \
@@ -164,8 +172,8 @@ RUN mkdir /data && \
         libmariadb-dev-compat \
         libpq5 \
         openssl && \
-        apt-get clean && \
-        rm -rf /var/lib/apt/lists/*
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
 VOLUME /data
 EXPOSE 80

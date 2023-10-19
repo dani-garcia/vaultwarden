@@ -29,6 +29,12 @@ variable "SOURCE_VERSION" {
   default = null
 }
 
+// This can be used to overwrite SOURCE_VERSION
+// It will be used during the build.rs building stage
+variable "VW_VERSION" {
+  default = null
+}
+
 // The base tag(s) to use
 // This can be a comma separated value like "testing,1.29.2"
 variable "BASE_TAGS" {
@@ -51,9 +57,10 @@ group "default" {
 
 
 // ==== Shared Baking ====
-
-target "_default_attributes" {
-  labels = {
+function "labels" {
+  params = []
+  result = {
+    "org.opencontainers.image.description" = "Unofficial Bitwarden compatible server written in Rust - ${SOURCE_VERSION}"
     "org.opencontainers.image.licenses" = "AGPL-3.0-only"
     "org.opencontainers.image.documentation" = "https://github.com/dani-garcia/vaultwarden/wiki"
     "org.opencontainers.image.url" = "https://github.com/dani-garcia/vaultwarden"
@@ -62,9 +69,14 @@ target "_default_attributes" {
     "org.opencontainers.image.revision" = "${SOURCE_COMMIT}"
     "org.opencontainers.image.version" = "${SOURCE_VERSION}"
   }
+}
+
+target "_default_attributes" {
+  labels = labels()
   args = {
     DB = "${DB}"
     CARGO_PROFILE = "${CARGO_PROFILE}"
+    VW_VERSION = "${VW_VERSION}"
   }
 }
 
@@ -75,8 +87,8 @@ target "_default_attributes" {
 target "debian" {
   inherits = ["_default_attributes"]
   dockerfile = "docker/Dockerfile.debian"
-  output = ["type=docker"]
   tags = generate_tags("", platform_tag())
+  output = [join(",", flatten([["type=docker"], image_index_annotations()]))]
 }
 
 // Multi Platform target, will build one tagged manifest with all supported architectures
@@ -85,7 +97,7 @@ target "debian-multi" {
   inherits = ["debian"]
   platforms = ["linux/amd64", "linux/arm64", "linux/arm/v7", "linux/arm/v6"]
   tags = generate_tags("", "")
-  output = ["type=registry"]
+  output = [join(",", flatten([["type=registry"], image_index_annotations()]))]
 }
 
 // Per platform targets, to individually test building per platform locally
@@ -125,8 +137,8 @@ group "debian-all" {
 target "alpine" {
   inherits = ["_default_attributes"]
   dockerfile = "docker/Dockerfile.alpine"
-  output = ["type=docker"]
   tags = generate_tags("-alpine", platform_tag())
+  output = [join(",", flatten([["type=docker"], image_index_annotations()]))]
 }
 
 // Multi Platform target, will build one tagged manifest with all supported architectures
@@ -135,7 +147,7 @@ target "alpine-multi" {
   inherits = ["alpine"]
   platforms = ["linux/amd64", "linux/arm64", "linux/arm/v7", "linux/arm/v6"]
   tags = generate_tags("-alpine", "")
-  output = ["type=registry"]
+  output = [join(",", flatten([["type=registry"], image_index_annotations()]))]
 }
 
 // Per platform targets, to individually test building per platform locally
@@ -205,5 +217,13 @@ function "generate_tags" {
     for registry in get_container_registries() :
       [for base_tag in get_base_tags() :
         concat(["${registry}:${base_tag}${suffix}${platform}"])]
+  ])
+}
+
+function "image_index_annotations" {
+  params = []
+  result = flatten([
+    for key, value in labels() :
+      value != null ? formatlist("annotation-index.%s=%s", "${key}", "${value}") : []
   ])
 }
