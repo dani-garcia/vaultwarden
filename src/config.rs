@@ -480,6 +480,8 @@ make_config! {
         invitation_expiration_hours: u32, false, def, 120;
         /// Allow emergency access |> Controls whether users can enable emergency access to their accounts. This setting applies globally to all users.
         emergency_access_allowed:    bool,   true,   def,    true;
+        /// Allow email change |> Controls whether users can change their email. This setting applies globally to all users.
+        email_change_allowed:    bool,   true,   def,    true;
         /// Password iterations |> Number of server-side passwords hashing iterations for the password hash.
         /// The default for new users. If changed, it will be updated during login for existing users.
         password_iterations:    i32,    true,   def,    600_000;
