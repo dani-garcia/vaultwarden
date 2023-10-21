@@ -206,6 +206,8 @@ pub struct CipherData {
     // TODO: Some of these might appear all the time, no need for Option
     OrganizationId: Option<String>,
 
+    Key: Option<String>,
+
     /*
     Login = 1,
     SecureNote = 2,
@@ -483,6 +485,7 @@ pub async fn update_cipher_from_data(
         None => err!("Data missing"),
     };
 
+    cipher.key = data.Key;
     cipher.name = data.Name;
     cipher.notes = data.Notes;
     cipher.fields = data.Fields.map(|f| _clean_cipher_data(f).to_string());

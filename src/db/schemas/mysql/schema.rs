@@ -15,6 +15,7 @@ table! {
         updated_at -> Datetime,
         user_uuid -> Nullable<Text>,
         organization_uuid -> Nullable<Text>,
+        key -> Nullable<Text>,
         atype -> Integer,
         name -> Text,
         notes -> Nullable<Text>,
