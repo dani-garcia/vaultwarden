@@ -878,7 +878,9 @@ version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d9f0c14694cbd524c8720dd69b0e3179344f04ebb5f90f2e4a440c6ea3b2f1ee"
 dependencies = [
+ "libc",
  "log",
+ "reopen",
  "syslog",
 ]
 
@@ -2347,6 +2349,17 @@ name = "regex-syntax"
 version = "0.7.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dbb5fb1acd8a1a18b3dd5be62d25485eb770e05afb408a9627d14d451bae12da"
+
+[[package]]
+name = "reopen"
+version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ff42cec3acf85845f5b18b3cbb7fec619ccbd4a349f6ecbe1c62ab46d4d98293"
+dependencies = [
+ "autocfg",
+ "libc",
+ "signal-hook",
+]
 
 [[package]]
 name = "reqwest"

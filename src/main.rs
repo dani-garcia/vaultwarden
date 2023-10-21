@@ -326,7 +326,16 @@ fn init_logging(level: log::LevelFilter) -> Result<(), fern::InitError> {
     }
 
     if let Some(log_file) = CONFIG.log_file() {
-        logger = logger.chain(fern::log_file(log_file)?);
+        #[cfg(windows)]
+        {
+            logger = logger.chain(fern::log_file(log_file)?);
+        }
+        #[cfg(not(windows))]
+        {
+            const SIGHUP: i32 = tokio::signal::unix::SignalKind::hangup().as_raw_value();
+            let path = Path::new(&log_file);
+            logger = logger.chain(fern::log_reopen1(path, [SIGHUP])?);
+        }
     }
 
     #[cfg(not(windows))]
