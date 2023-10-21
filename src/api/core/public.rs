@@ -56,16 +56,34 @@ async fn ldap_import(data: JsonUpcase<OrgImportData>, token: PublicToken, mut co
             if let Some(mut user_org) =
                 UserOrganization::find_by_email_and_org(&user_data.Email, &org_id, &mut conn).await
             {
-                user_org.revoke();
-                user_org.save(&mut conn).await?;
-            }
+                // Only revoke a user if it is not the last confirmed owner
+                let revoked = if user_org.atype == UserOrgType::Owner
+                    && user_org.status == UserOrgStatus::Confirmed as i32
+                {
+                    if UserOrganization::count_confirmed_by_org_and_type(&org_id, UserOrgType::Owner, &mut conn).await
+                        <= 1
+                    {
+                        warn!("Can't revoke the last owner");
+                        false
+                    } else {
+                        user_org.revoke()
+                    }
+                } else {
+                    user_org.revoke()
+                };
 
+                let ext_modified = user_org.set_external_id(Some(user_data.ExternalId.clone()));
+                if revoked || ext_modified {
+                    user_org.save(&mut conn).await?;
+                }
+            }
         // If user is part of the organization, restore it
         } else if let Some(mut user_org) =
             UserOrganization::find_by_email_and_org(&user_data.Email, &org_id, &mut conn).await
         {
-            if user_org.status < UserOrgStatus::Revoked as i32 {
-                user_org.restore();
+            let restored = user_org.restore();
+            let ext_modified = user_org.set_external_id(Some(user_data.ExternalId.clone()));
+            if restored || ext_modified {
                 user_org.save(&mut conn).await?;
             }
         } else {
@@ -73,9 +91,8 @@ async fn ldap_import(data: JsonUpcase<OrgImportData>, token: PublicToken, mut co
             let user = match User::find_by_mail(&user_data.Email, &mut conn).await {
                 Some(user) => user, // exists in vaultwarden
                 None => {
-                    // doesn't exist in vaultwarden
+                    // User does not exist yet
                     let mut new_user = User::new(user_data.Email.clone());
-                    new_user.set_external_id(Some(user_data.ExternalId.clone()));
                     new_user.save(&mut conn).await?;
 
                     if !CONFIG.mail_enabled() {
@@ -92,6 +109,7 @@ async fn ldap_import(data: JsonUpcase<OrgImportData>, token: PublicToken, mut co
             };
 
             let mut new_org_user = UserOrganization::new(user.uuid.clone(), org_id.clone());
+            new_org_user.set_external_id(Some(user_data.ExternalId.clone()));
             new_org_user.access_all = false;
             new_org_user.atype = UserOrgType::User as i32;
             new_org_user.status = user_org_status;
@@ -132,12 +150,10 @@ async fn ldap_import(data: JsonUpcase<OrgImportData>, token: PublicToken, mut co
             GroupUser::delete_all_by_group(&group_uuid, &mut conn).await?;
 
             for ext_id in &group_data.MemberExternalIds {
-                if let Some(user) = User::find_by_external_id(ext_id, &mut conn).await {
-                    if let Some(user_org) = UserOrganization::find_by_user_and_org(&user.uuid, &org_id, &mut conn).await
-                    {
-                        let mut group_user = GroupUser::new(group_uuid.clone(), user_org.uuid.clone());
-                        group_user.save(&mut conn).await?;
-                    }
+                if let Some(user_org) = UserOrganization::find_by_external_id_and_org(ext_id, &org_id, &mut conn).await
+                {
+                    let mut group_user = GroupUser::new(group_uuid.clone(), user_org.uuid.clone());
+                    group_user.save(&mut conn).await?;
                 }
             }
         }
@@ -150,10 +166,8 @@ async fn ldap_import(data: JsonUpcase<OrgImportData>, token: PublicToken, mut co
         // Generate a HashSet to quickly verify if a member is listed or not.
         let sync_members: HashSet<String> = data.Members.into_iter().map(|m| m.ExternalId).collect();
         for user_org in UserOrganization::find_by_org(&org_id, &mut conn).await {
-            if let Some(user_external_id) =
-                User::find_by_uuid(&user_org.user_uuid, &mut conn).await.map(|u| u.external_id)
-            {
-                if user_external_id.is_some() && !sync_members.contains(&user_external_id.unwrap()) {
+            if let Some(ref user_external_id) = user_org.external_id {
+                if !sync_members.contains(user_external_id) {
                     if user_org.atype == UserOrgType::Owner && user_org.status == UserOrgStatus::Confirmed as i32 {
                         // Removing owner, check that there is at least one other confirmed owner
                         if UserOrganization::count_confirmed_by_org_and_type(&org_id, UserOrgType::Owner, &mut conn)

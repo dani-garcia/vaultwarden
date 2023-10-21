@@ -228,6 +228,7 @@ table! {
         status -> Integer,
         atype -> Integer,
         reset_password_key -> Nullable<Text>,
+        external_id -> Nullable<Text>,
     }
 }
 
