@@ -533,6 +533,10 @@ struct EmailTokenData {
 
 #[post("/accounts/email-token", data = "<data>")]
 async fn post_email_token(data: JsonUpcase<EmailTokenData>, headers: Headers, mut conn: DbConn) -> EmptyResult {
+    if !CONFIG.email_change_allowed() {
+        err!("Email change is not allowed.");
+    }
+
     let data: EmailTokenData = data.into_inner().data;
     let mut user = headers.user;
 
@@ -579,6 +583,10 @@ async fn post_email(
     mut conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
+    if !CONFIG.email_change_allowed() {
+        err!("Email change is not allowed.");
+    }
+
     let data: ChangeEmailData = data.into_inner().data;
     let mut user = headers.user;
 
