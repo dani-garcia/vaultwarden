@@ -23,6 +23,8 @@ db_object! {
         pub user_uuid: Option<String>,
         pub organization_uuid: Option<String>,
 
+        pub key: Option<String>,
+
         /*
         Login = 1,
         SecureNote = 2,
@@ -61,6 +63,8 @@ impl Cipher {
 
             user_uuid: None,
             organization_uuid: None,
+
+            key: None,
 
             atype,
             name,
@@ -203,6 +207,7 @@ impl Cipher {
             "DeletedDate": self.deleted_at.map_or(Value::Null, |d| Value::String(format_date(&d))),
             "Reprompt": self.reprompt.unwrap_or(RepromptType::None as i32),
             "OrganizationId": self.organization_uuid,
+            "Key": self.key,
             "Attachments": attachments_json,
             // We have UseTotp set to true by default within the Organization model.
             // This variable together with UsersGetPremium is used to show or hide the TOTP counter.
