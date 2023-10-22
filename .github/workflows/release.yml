@@ -6,7 +6,6 @@ on:
       - ".github/workflows/release.yml"
       - "src/**"
       - "migrations/**"
-      - "hooks/**"
       - "docker/**"
       - "Cargo.*"
       - "build.rs"
@@ -15,6 +14,7 @@ on:
 
     branches: # Only on paths above
       - main
+      - release-build-revision
 
     tags: # Always, regardless of paths above
       - '*'
@@ -35,23 +35,20 @@ jobs:
         with:
           cancel_others: 'true'
         # Only run this when not creating a tag
-        if: ${{ startsWith(github.ref, 'refs/heads/') }}
+        if: ${{ github.ref_type == 'branch' }}
 
   docker-build:
     runs-on: ubuntu-22.04
     timeout-minutes: 120
     needs: skip_check
-    # Start a local docker registry to be used to generate multi-arch images.
-    services:
-      registry:
-        image: registry:2
-        ports:
-          - 5000:5000
+    if: ${{ needs.skip_check.outputs.should_skip != 'true' && github.repository == 'dani-garcia/vaultwarden' }}
+    # TODO: Start a local docker registry to be used to extract the final Alpine static build images
+    # services:
+    #   registry:
+    #     image: registry:2
+    #     ports:
+    #       - 5000:5000
     env:
-      # Use BuildKit (https://docs.docker.com/build/buildkit/) for better
-      # build performance and the ability to copy extended file attributes
-      # (e.g., for executable capabilities) across build phases.
-      DOCKER_BUILDKIT: 1
       SOURCE_COMMIT: ${{ github.sha }}
       SOURCE_REPOSITORY_URL: "https://github.com/${{ github.repository }}"
       # The *_REPO variables need to be configured as repository variables
@@ -65,7 +62,6 @@ jobs:
       # QUAY_REPO needs to be 'quay.io/<user>/<repo>'
       # Check for Quay.io credentials in secrets
       HAVE_QUAY_LOGIN: ${{ vars.QUAY_REPO != '' && secrets.QUAY_USERNAME != '' && secrets.QUAY_TOKEN != '' }}
-    if: ${{ needs.skip_check.outputs.should_skip != 'true' && github.repository == 'dani-garcia/vaultwarden' }}
     strategy:
       matrix:
         base_image: ["debian","alpine"]
@@ -77,18 +73,43 @@ jobs:
         with:
           fetch-depth: 0
 
-      # Determine Docker Tag
-      - name: Init Variables
-        id: vars
+      - name: Initialize QEMU binfmt support
+        uses: docker/setup-qemu-action@68827325e0b33c7199eb31dd4e31fbe9023e06e3 # v3.0.0
+        with:
+          platforms: "arm64,arm"
+
+      # Start Docker Buildx
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@f95db51fddba0c2d1ec667646a06c2ce06100226 # v3.0.0
+        # https://github.com/moby/buildkit/issues/3969
+        # Also set max parallelism to 2, the default of 4 breaks GitHub Actions
+        with:
+          config-inline: |
+            [worker.oci]
+              max-parallelism = 2
+          driver-opts: |
+            network=host
+
+      # Determine Base Tags and Source Version
+      - name: Determine Base Tags and Source Version
         shell: bash
         run: |
-          # Check which main tag we are going to build determined by github.ref
-          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
-            echo "DOCKER_TAG=${GITHUB_REF#refs/*/}" | tee -a "${GITHUB_OUTPUT}"
-          elif [[ "${{ github.ref }}" == refs/heads/* ]]; then
-            echo "DOCKER_TAG=testing" | tee -a "${GITHUB_OUTPUT}"
+          # Check which main tag we are going to build determined by github.ref_type
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            echo "BASE_TAGS=latest,${GITHUB_REF#refs/*/}" | tee -a "${GITHUB_ENV}"
+          elif [[ "${{ github.ref_type }}" == "branch" ]]; then
+            echo "BASE_TAGS=testing" | tee -a "${GITHUB_ENV}"
           fi
-      # End Determine Docker Tag
+
+          # Get the Source Version for this release
+          GIT_EXACT_TAG="$(git describe --tags --abbrev=0 --exact-match 2>/dev/null || true)"
+          if [[ -n "${GIT_EXACT_TAG}" ]]; then
+              echo "SOURCE_VERSION=${GIT_EXACT_TAG}" | tee -a "${GITHUB_ENV}"
+          else
+              GIT_LAST_TAG="$(git describe --tags --abbrev=0)"
+              echo "SOURCE_VERSION=${GIT_LAST_TAG}-${SOURCE_COMMIT:0:8}" | tee -a "${GITHUB_ENV}"
+          fi
+      # End Determine Base Tags
 
       # Login to Docker Hub
       - name: Login to Docker Hub
@@ -97,6 +118,12 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
         if: ${{ env.HAVE_DOCKERHUB_LOGIN == 'true' }}
+
+      - name: Add registry for DockerHub
+        if: ${{ env.HAVE_DOCKERHUB_LOGIN == 'true' }}
+        shell: bash
+        run: |
+          echo "CONTAINER_REGISTRIES=${{ vars.DOCKERHUB_REPO }}" | tee -a "${GITHUB_ENV}"
 
       # Login to GitHub Container Registry
       - name: Login to GitHub Container Registry
@@ -107,6 +134,12 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
         if: ${{ env.HAVE_GHCR_LOGIN == 'true' }}
 
+      - name: Add registry for ghcr.io
+        if: ${{ env.HAVE_GHCR_LOGIN == 'true' }}
+        shell: bash
+        run: |
+          echo "CONTAINER_REGISTRIES=${CONTAINER_REGISTRIES:+${CONTAINER_REGISTRIES},}${{ vars.GHCR_REPO }}" | tee -a "${GITHUB_ENV}"
+
       # Login to Quay.io
       - name: Login to Quay.io
         uses: docker/login-action@343f7c4344506bcbf9b4de18042ae17996df046d # v3.0.0
@@ -116,120 +149,22 @@ jobs:
           password: ${{ secrets.QUAY_TOKEN }}
         if: ${{ env.HAVE_QUAY_LOGIN == 'true' }}
 
-      # Debian
-
-      # Docker Hub
-      - name: Build Debian based images (docker.io)
+      - name: Add registry for Quay.io
+        if: ${{ env.HAVE_QUAY_LOGIN == 'true' }}
         shell: bash
-        env:
-          DOCKER_REPO: "${{ vars.DOCKERHUB_REPO }}"
-          DOCKER_TAG: "${{steps.vars.outputs.DOCKER_TAG}}"
         run: |
-          ./hooks/build
-        if: ${{ matrix.base_image == 'debian' && env.HAVE_DOCKERHUB_LOGIN == 'true' }}
+          echo "CONTAINER_REGISTRIES=${CONTAINER_REGISTRIES:+${CONTAINER_REGISTRIES},}${{ vars.QUAY_REPO }}" | tee -a "${GITHUB_ENV}"
 
-      - name: Push Debian based images (docker.io)
-        shell: bash
+      - name: Bake ${{ matrix.base_image }} containers
+        uses: docker/bake-action@511fde2517761e303af548ec9e0ea74a8a100112 # v4.0.0
         env:
-          DOCKER_REPO: "${{ vars.DOCKERHUB_REPO }}"
-          DOCKER_TAG: "${{steps.vars.outputs.DOCKER_TAG}}"
-        run: |
-          ./hooks/push
-        if: ${{ matrix.base_image == 'debian' && env.HAVE_DOCKERHUB_LOGIN == 'true' }}
-
-      # GitHub Container Registry
-      - name: Build Debian based images (ghcr.io)
-        shell: bash
-        env:
-          DOCKER_REPO: "${{ vars.GHCR_REPO }}"
-          DOCKER_TAG: "${{steps.vars.outputs.DOCKER_TAG}}"
-        run: |
-          ./hooks/build
-        if: ${{ matrix.base_image == 'debian' && env.HAVE_GHCR_LOGIN == 'true' }}
-
-      - name: Push Debian based images (ghcr.io)
-        shell: bash
-        env:
-          DOCKER_REPO: "${{ vars.GHCR_REPO }}"
-          DOCKER_TAG: "${{steps.vars.outputs.DOCKER_TAG}}"
-        run: |
-          ./hooks/push
-        if: ${{ matrix.base_image == 'debian' && env.HAVE_GHCR_LOGIN == 'true' }}
-
-      # Quay.io
-      - name: Build Debian based images (quay.io)
-        shell: bash
-        env:
-          DOCKER_REPO: "${{ vars.QUAY_REPO }}"
-          DOCKER_TAG: "${{steps.vars.outputs.DOCKER_TAG}}"
-        run: |
-          ./hooks/build
-        if: ${{ matrix.base_image == 'debian' && env.HAVE_QUAY_LOGIN == 'true' }}
-
-      - name: Push Debian based images (quay.io)
-        shell: bash
-        env:
-          DOCKER_REPO: "${{ vars.QUAY_REPO }}"
-          DOCKER_TAG: "${{steps.vars.outputs.DOCKER_TAG}}"
-        run: |
-          ./hooks/push
-        if: ${{ matrix.base_image == 'debian' && env.HAVE_QUAY_LOGIN == 'true' }}
-
-      # Alpine
-
-      # Docker Hub
-      - name: Build Alpine based images (docker.io)
-        shell: bash
-        env:
-          DOCKER_REPO: "${{ vars.DOCKERHUB_REPO }}"
-          DOCKER_TAG: "${{steps.vars.outputs.DOCKER_TAG}}-alpine"
-        run: |
-          ./hooks/build
-        if: ${{ matrix.base_image == 'alpine' && env.HAVE_DOCKERHUB_LOGIN == 'true' }}
-
-      - name: Push Alpine based images (docker.io)
-        shell: bash
-        env:
-          DOCKER_REPO: "${{ vars.DOCKERHUB_REPO }}"
-          DOCKER_TAG: "${{steps.vars.outputs.DOCKER_TAG}}-alpine"
-        run: |
-          ./hooks/push
-        if: ${{ matrix.base_image == 'alpine' && env.HAVE_DOCKERHUB_LOGIN == 'true' }}
-
-      # GitHub Container Registry
-      - name: Build Alpine based images (ghcr.io)
-        shell: bash
-        env:
-          DOCKER_REPO: "${{ vars.GHCR_REPO }}"
-          DOCKER_TAG: "${{steps.vars.outputs.DOCKER_TAG}}-alpine"
-        run: |
-          ./hooks/build
-        if: ${{ matrix.base_image == 'alpine' && env.HAVE_GHCR_LOGIN == 'true' }}
-
-      - name: Push Alpine based images (ghcr.io)
-        shell: bash
-        env:
-          DOCKER_REPO: "${{ vars.GHCR_REPO }}"
-          DOCKER_TAG: "${{steps.vars.outputs.DOCKER_TAG}}-alpine"
-        run: |
-          ./hooks/push
-        if: ${{ matrix.base_image == 'alpine' && env.HAVE_GHCR_LOGIN == 'true' }}
-
-      # Quay.io
-      - name: Build Alpine based images (quay.io)
-        shell: bash
-        env:
-          DOCKER_REPO: "${{ vars.QUAY_REPO }}"
-          DOCKER_TAG: "${{steps.vars.outputs.DOCKER_TAG}}-alpine"
-        run: |
-          ./hooks/build
-        if: ${{ matrix.base_image == 'alpine' && env.HAVE_QUAY_LOGIN == 'true' }}
-
-      - name: Push Alpine based images (quay.io)
-        shell: bash
-        env:
-          DOCKER_REPO: "${{ vars.QUAY_REPO }}"
-          DOCKER_TAG: "${{steps.vars.outputs.DOCKER_TAG}}-alpine"
-        run: |
-          ./hooks/push
-        if: ${{ matrix.base_image == 'alpine' && env.HAVE_QUAY_LOGIN == 'true' }}
+          BASE_TAGS: "${{ env.BASE_TAGS }}"
+          SOURCE_COMMIT: "${{ env.SOURCE_COMMIT }}"
+          SOURCE_VERSION: "${{ env.SOURCE_VERSION }}"
+          SOURCE_REPOSITORY_URL: "${{ env.SOURCE_REPOSITORY_URL }}"
+          CONTAINER_REGISTRIES: "${{ env.CONTAINER_REGISTRIES }}"
+        with:
+          pull: true
+          push: true
+          files: docker/docker-bake.hcl
+          targets: "${{ matrix.base_image }}-multi"

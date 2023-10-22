@@ -1,0 +1,28 @@
+---
+vault_version: "v2023.9.1"
+vault_image_digest: "sha256:ccf76db7406378b36cb937c1a3ca884448e32e7f82effd4d97b335cd725c75fd"
+# Cross Compile Docker Helper Scripts v1.3.0
+# We use the linux/amd64 platform shell scripts since there is no difference between the different platform scripts
+xx_image_digest: "sha256:c9609ace652bbe51dd4ce90e0af9d48a4590f1214246da5bc70e46f6dd586edc"
+rust_version: 1.73.0 # Rust version to be used
+debian_version: bookworm # Debian release name to be used
+alpine_version: 3.18 # Alpine version to be used
+# For which platforms/architectures will we try to build images
+platforms: ["linux/amd64", "linux/arm64", "linux/arm/v7", "linux/arm/v6"]
+# Determine the build images per OS/Arch
+build_stage_image:
+  debian:
+    image: "docker.io/library/rust:{{rust_version}}-slim-{{debian_version}}"
+    platform: "$BUILDPLATFORM"
+  alpine:
+    image: "build_${TARGETARCH}${TARGETVARIANT}"
+    platform: "linux/amd64" # The Alpine build images only have linux/amd64 images
+    arch_image:
+      amd64: "ghcr.io/blackdex/rust-musl:x86_64-musl-stable-{{rust_version}}"
+      arm64: "ghcr.io/blackdex/rust-musl:aarch64-musl-stable-{{rust_version}}"
+      armv7: "ghcr.io/blackdex/rust-musl:armv7-musleabihf-stable-{{rust_version}}"
+      armv6: "ghcr.io/blackdex/rust-musl:arm-musleabi-stable-{{rust_version}}"
+# The final image which will be used to distribute the container images
+runtime_stage_image:
+  debian: "docker.io/library/debian:{{debian_version}}-slim"
+  alpine: "docker.io/library/alpine:{{alpine_version}}"

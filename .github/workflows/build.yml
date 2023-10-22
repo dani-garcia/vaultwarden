@@ -12,6 +12,7 @@ on:
       - "rustfmt.toml"
       - "diesel.toml"
       - "docker/Dockerfile.j2"
+      - "docker/DockerSettings.yaml"
   pull_request:
     paths:
       - ".github/workflows/build.yml"
@@ -23,6 +24,7 @@ on:
       - "rustfmt.toml"
       - "diesel.toml"
       - "docker/Dockerfile.j2"
+      - "docker/DockerSettings.yaml"
 
 jobs:
   build:
@@ -32,7 +34,6 @@ jobs:
     # This is done globally to prevent rebuilds when the RUSTFLAGS env variable changes.
     env:
       RUSTFLAGS: "-D warnings"
-      CARGO_REGISTRIES_CRATES_IO_PROTOCOL: sparse
     strategy:
       fail-fast: false
       matrix:
@@ -113,46 +114,46 @@ jobs:
           prefix-key: "v2023.07-rust"
       # End Enable Rust Caching
 
-      # Run cargo tests (In release mode to speed up future builds)
+      # Run cargo tests
       # First test all features together, afterwards test them separately.
       - name: "test features: sqlite,mysql,postgresql,enable_mimalloc"
         id: test_sqlite_mysql_postgresql_mimalloc
         if: $${{ always() }}
         run: |
-          cargo test --release --features sqlite,mysql,postgresql,enable_mimalloc
+          cargo test --features sqlite,mysql,postgresql,enable_mimalloc
 
       - name: "test features: sqlite,mysql,postgresql"
         id: test_sqlite_mysql_postgresql
         if: $${{ always() }}
         run: |
-          cargo test --release --features sqlite,mysql,postgresql
+          cargo test --features sqlite,mysql,postgresql
 
       - name: "test features: sqlite"
         id: test_sqlite
         if: $${{ always() }}
         run: |
-          cargo test --release --features sqlite
+          cargo test --features sqlite
 
       - name: "test features: mysql"
         id: test_mysql
         if: $${{ always() }}
         run: |
-          cargo test --release --features mysql
+          cargo test --features mysql
 
       - name: "test features: postgresql"
         id: test_postgresql
         if: $${{ always() }}
         run: |
-          cargo test --release --features postgresql
+          cargo test --features postgresql
       # End Run cargo tests
 
 
-      # Run cargo clippy, and fail on warnings (In release mode to speed up future builds)
+      # Run cargo clippy, and fail on warnings
       - name: "clippy features: sqlite,mysql,postgresql,enable_mimalloc"
         id: clippy
         if: ${{ always() && matrix.channel == 'rust-toolchain' }}
         run: |
-          cargo clippy --release --features sqlite,mysql,postgresql,enable_mimalloc -- -D warnings
+          cargo clippy --features sqlite,mysql,postgresql,enable_mimalloc -- -D warnings
       # End Run cargo clippy
 
 
@@ -194,21 +195,3 @@ jobs:
         run: |
           echo "### :tada: Checks Passed!" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-
-
-      # Build the binary to upload to the artifacts
-      - name: "build features: sqlite,mysql,postgresql"
-        if: ${{ matrix.channel == 'rust-toolchain' }}
-        run: |
-          cargo build --release --features sqlite,mysql,postgresql
-      # End Build the binary
-
-
-      # Upload artifact to Github Actions
-      - name: "Upload artifact"
-        uses: actions/upload-artifact@a8a3f3ad30e3422c9c7b888a15615d19a852ae32 # v3.1.3
-        if: ${{ matrix.channel == 'rust-toolchain' }}
-        with:
-          name: vaultwarden
-          path: target/release/vaultwarden
-      # End Upload artifact to Github Actions

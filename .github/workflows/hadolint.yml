@@ -16,7 +16,6 @@ jobs:
         uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608 # v4.1.0
       # End Checkout the repo
 
-
       # Download hadolint - https://github.com/hadolint/hadolint/releases
       - name: Download hadolint
         shell: bash
@@ -30,5 +29,5 @@ jobs:
       # Test Dockerfiles
       - name: Run hadolint
         shell: bash
-        run:  git ls-files --exclude='docker/*/Dockerfile*' --ignored --cached | xargs hadolint
+        run: hadolint docker/Dockerfile.{debian,alpine}
       # End Test Dockerfiles

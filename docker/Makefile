@@ -1,15 +1,4 @@
-OBJECTS := $(shell find ./ -mindepth 2 -name 'Dockerfile*')
-
-all: $(OBJECTS)
-
-%/Dockerfile: Dockerfile.j2 render_template
-	./render_template "$<" "{\"target_file\":\"$@\"}" > "$@"
-
-%/Dockerfile.alpine: Dockerfile.j2 render_template
-	./render_template "$<" "{\"target_file\":\"$@\"}" > "$@"
-
-%/Dockerfile.buildkit: Dockerfile.j2 render_template
-	./render_template "$<" "{\"target_file\":\"$@\"}" > "$@"
-
-%/Dockerfile.buildkit.alpine: Dockerfile.j2 render_template
-	./render_template "$<" "{\"target_file\":\"$@\"}" > "$@"
+all:
+	./render_template Dockerfile.j2 '{"base": "debian"}' > Dockerfile.debian
+	./render_template Dockerfile.j2 '{"base": "alpine"}' > Dockerfile.alpine
+.PHONY: all
