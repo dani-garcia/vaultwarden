@@ -1,2 +1,2 @@
-ALTER TABLE ciphers 
-ADD COLUMN "key" TEXT;
+ALTER TABLE ciphers
+ADD COLUMN `key` TEXT;
