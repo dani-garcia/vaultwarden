@@ -60,7 +60,6 @@ rocket = { version = "0.5.0", features = ["tls", "json"], default-features = fal
 rocket_ws = { version ="0.1.0" }
 
 # WebSockets libraries
-tokio-tungstenite = "0.20.1"
 rmpv = "1.0.1" # MessagePack library
 
 # Concurrent HashMap used for WebSocket messaging and favicons
