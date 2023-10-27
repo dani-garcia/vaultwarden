@@ -369,8 +369,8 @@ make_config! {
         web_vault_folder:       String, false,  def,    "web-vault/".to_string();
     },
     ws {
-        /// Disable websocket notifications
-        websocket_disabled:     bool,   false,  def,    false;
+        /// Enable websocket notifications
+        enable_websocket:       bool,   false,  def,    true;
     },
     push {
         /// Enable push notifications

@@ -35,12 +35,14 @@ use super::{
     push_send_update, push_user_update,
 };
 
+static NOTIFICATIONS_DISABLED: Lazy<bool> = Lazy::new(|| !CONFIG.enable_websocket() && !CONFIG.push_enabled());
+
 pub fn routes() -> Vec<Route> {
-    if CONFIG.websocket_disabled() {
+    if CONFIG.enable_websocket() {
+        routes![websockets_hub, anonymous_websockets_hub]
+    } else {
         info!("WebSocket are disabled, realtime sync functionality will not work!");
         routes![]
-    } else {
-        routes![websockets_hub, anonymous_websockets_hub]
     }
 }
 
@@ -339,7 +341,7 @@ impl WebSocketUsers {
     // NOTE: The last modified date needs to be updated before calling these methods
     pub async fn send_user_update(&self, ut: UpdateType, user: &User) {
         // Skip any processing if both WebSockets and Push are not active
-        if CONFIG.websocket_disabled() && !CONFIG.push_enabled() {
+        if *NOTIFICATIONS_DISABLED {
             return;
         }
         let data = create_update(
@@ -348,7 +350,7 @@ impl WebSocketUsers {
             None,
         );
 
-        if !CONFIG.websocket_disabled() {
+        if CONFIG.enable_websocket() {
             self.send_update(&user.uuid, &data).await;
         }
 
@@ -359,7 +361,7 @@ impl WebSocketUsers {
 
     pub async fn send_logout(&self, user: &User, acting_device_uuid: Option<String>) {
         // Skip any processing if both WebSockets and Push are not active
-        if CONFIG.websocket_disabled() && !CONFIG.push_enabled() {
+        if *NOTIFICATIONS_DISABLED {
             return;
         }
         let data = create_update(
@@ -368,7 +370,7 @@ impl WebSocketUsers {
             acting_device_uuid.clone(),
         );
 
-        if !CONFIG.websocket_disabled() {
+        if CONFIG.enable_websocket() {
             self.send_update(&user.uuid, &data).await;
         }
 
@@ -385,7 +387,7 @@ impl WebSocketUsers {
         conn: &mut DbConn,
     ) {
         // Skip any processing if both WebSockets and Push are not active
-        if CONFIG.websocket_disabled() && !CONFIG.push_enabled() {
+        if *NOTIFICATIONS_DISABLED {
             return;
         }
         let data = create_update(
@@ -398,7 +400,7 @@ impl WebSocketUsers {
             Some(acting_device_uuid.into()),
         );
 
-        if !CONFIG.websocket_disabled() {
+        if CONFIG.enable_websocket() {
             self.send_update(&folder.user_uuid, &data).await;
         }
 
@@ -417,7 +419,7 @@ impl WebSocketUsers {
         conn: &mut DbConn,
     ) {
         // Skip any processing if both WebSockets and Push are not active
-        if CONFIG.websocket_disabled() && !CONFIG.push_enabled() {
+        if *NOTIFICATIONS_DISABLED {
             return;
         }
         let org_uuid = convert_option(cipher.organization_uuid.clone());
@@ -445,7 +447,7 @@ impl WebSocketUsers {
             Some(acting_device_uuid.into()),
         );
 
-        if !CONFIG.websocket_disabled() {
+        if CONFIG.enable_websocket() {
             for uuid in user_uuids {
                 self.send_update(uuid, &data).await;
             }
@@ -465,7 +467,7 @@ impl WebSocketUsers {
         conn: &mut DbConn,
     ) {
         // Skip any processing if both WebSockets and Push are not active
-        if CONFIG.websocket_disabled() && !CONFIG.push_enabled() {
+        if *NOTIFICATIONS_DISABLED {
             return;
         }
         let user_uuid = convert_option(send.user_uuid.clone());
@@ -480,7 +482,7 @@ impl WebSocketUsers {
             None,
         );
 
-        if !CONFIG.websocket_disabled() {
+        if CONFIG.enable_websocket() {
             for uuid in user_uuids {
                 self.send_update(uuid, &data).await;
             }
@@ -498,7 +500,7 @@ impl WebSocketUsers {
         conn: &mut DbConn,
     ) {
         // Skip any processing if both WebSockets and Push are not active
-        if CONFIG.websocket_disabled() && !CONFIG.push_enabled() {
+        if *NOTIFICATIONS_DISABLED {
             return;
         }
         let data = create_update(
@@ -506,7 +508,7 @@ impl WebSocketUsers {
             UpdateType::AuthRequest,
             Some(acting_device_uuid.to_string()),
         );
-        if !CONFIG.websocket_disabled() {
+        if CONFIG.enable_websocket() {
             self.send_update(user_uuid, &data).await;
         }
 
@@ -523,7 +525,7 @@ impl WebSocketUsers {
         conn: &mut DbConn,
     ) {
         // Skip any processing if both WebSockets and Push are not active
-        if CONFIG.websocket_disabled() && !CONFIG.push_enabled() {
+        if *NOTIFICATIONS_DISABLED {
             return;
         }
         let data = create_update(
@@ -531,7 +533,7 @@ impl WebSocketUsers {
             UpdateType::AuthRequestResponse,
             approving_device_uuid.clone().into(),
         );
-        if !CONFIG.websocket_disabled() {
+        if CONFIG.enable_websocket() {
             self.send_update(auth_response_uuid, &data).await;
         }
 
@@ -557,14 +559,15 @@ impl AnonymousWebSocketSubscriptions {
     }
 
     pub async fn send_auth_response(&self, user_uuid: &String, auth_response_uuid: &str) {
+        if !CONFIG.enable_websocket() {
+            return;
+        }
         let data = create_anonymous_update(
             vec![("Id".into(), auth_response_uuid.to_owned().into()), ("UserId".into(), user_uuid.clone().into())],
             UpdateType::AuthRequestResponse,
             user_uuid.to_string(),
         );
-        if !CONFIG.websocket_disabled() {
-            self.send_update(auth_response_uuid, &data).await;
-        }
+        self.send_update(auth_response_uuid, &data).await;
     }
 }
 
