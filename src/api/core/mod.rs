@@ -216,7 +216,8 @@ fn config() -> Json<Value> {
           // Any feature flags that we want the clients to use
           // Can check the enabled ones at:
           // https://vault.bitwarden.com/api/config
-          "autofill-v2": true
+          "autofill-v2": true,
+          "fido2-vault-credentials": true
         },
         "object": "config",
     }))
