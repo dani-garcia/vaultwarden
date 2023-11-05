@@ -1,0 +1,43 @@
+name: trivy
+
+on:
+  push:
+    branches:
+      - main
+      - release-build-revision
+    tags:
+      - '*'
+  pull_request:
+    branches: [ "main" ]
+  schedule:
+    - cron: '00 12 * * *'
+
+permissions:
+  contents: read
+
+jobs:
+  trivy-scan:
+    name: Check
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 #v4.1.1
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@f78e9ecf42a1271402d4f484518b9313235990e1 # v0.13.1
+        with:
+          scan-type: repo
+          ignore-unfixed: true
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@bad341350a2f5616f9e048e51360cedc49181ce8 # v2.22.4
+        with:
+          sarif_file: 'trivy-results.sarif'
