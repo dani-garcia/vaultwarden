@@ -216,7 +216,13 @@ function "generate_tags" {
   result = flatten([
     for registry in get_container_registries() :
       [for base_tag in get_base_tags() :
-        concat(["${registry}:${base_tag}${suffix}${platform}"])]
+        concat(
+          # If the base_tag contains latest, and the suffix contains `-alpine` add a `:alpine` tag too
+          base_tag == "latest" ? suffix == "-alpine" ? ["${registry}:alpine${platform}"] : [] : [],
+          # The default tagging strategy
+          ["${registry}:${base_tag}${suffix}${platform}"]
+        )
+      ]
   ])
 }
 
