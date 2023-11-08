@@ -203,7 +203,8 @@ fn config() -> Json<Value> {
         "gitHash": option_env!("GIT_REV"),
         "server": {
           "name": "Vaultwarden",
-          "url": "https://github.com/dani-garcia/vaultwarden"
+          "url": "https://github.com/dani-garcia/vaultwarden",
+          "version": crate::VERSION
         },
         "environment": {
           "vault": domain,
@@ -216,8 +217,8 @@ fn config() -> Json<Value> {
           // Any feature flags that we want the clients to use
           // Can check the enabled ones at:
           // https://vault.bitwarden.com/api/config
-          "autofill-v2": true,
-          "fido2-vault-credentials": true
+          "fido2-vault-credentials": true,  // Passkey support
+          "autofill-v2": false,             // Disabled because it is causing issues https://github.com/dani-garcia/vaultwarden/discussions/4052
         },
         "object": "config",
     }))
