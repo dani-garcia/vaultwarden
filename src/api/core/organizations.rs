@@ -6,7 +6,8 @@ use serde_json::Value;
 use crate::{
     api::{
         core::{log_event, CipherSyncData, CipherSyncType},
-        EmptyResult, JsonResult, JsonUpcase, JsonUpcaseVec, JsonVec, Notify, NumberOrString, PasswordData, UpdateType,
+        EmptyResult, JsonResult, JsonUpcase, JsonUpcaseVec, JsonVec, Notify, NumberOrString, PasswordOrOtpData,
+        UpdateType,
     },
     auth::{decode_invite, AdminHeaders, Headers, ManagerHeaders, ManagerHeadersLoose, OwnerHeaders},
     db::{models::*, DbConn},
@@ -186,16 +187,13 @@ async fn create_organization(headers: Headers, data: JsonUpcase<OrgData>, mut co
 #[delete("/organizations/<org_id>", data = "<data>")]
 async fn delete_organization(
     org_id: &str,
-    data: JsonUpcase<PasswordData>,
+    data: JsonUpcase<PasswordOrOtpData>,
     headers: OwnerHeaders,
     mut conn: DbConn,
 ) -> EmptyResult {
-    let data: PasswordData = data.into_inner().data;
-    let password_hash = data.MasterPasswordHash;
+    let data: PasswordOrOtpData = data.into_inner().data;
 
-    if !headers.user.check_valid_password(&password_hash) {
-        err!("Invalid password")
-    }
+    data.validate(&headers.user, true, &mut conn).await?;
 
     match Organization::find_by_uuid(org_id, &mut conn).await {
         None => err!("Organization not found"),
@@ -206,7 +204,7 @@ async fn delete_organization(
 #[post("/organizations/<org_id>/delete", data = "<data>")]
 async fn post_delete_organization(
     org_id: &str,
-    data: JsonUpcase<PasswordData>,
+    data: JsonUpcase<PasswordOrOtpData>,
     headers: OwnerHeaders,
     conn: DbConn,
 ) -> EmptyResult {
@@ -2945,18 +2943,16 @@ async fn get_org_export(org_id: &str, headers: AdminHeaders, mut conn: DbConn) -
 
 async fn _api_key(
     org_id: &str,
-    data: JsonUpcase<PasswordData>,
+    data: JsonUpcase<PasswordOrOtpData>,
     rotate: bool,
     headers: AdminHeaders,
-    conn: DbConn,
+    mut conn: DbConn,
 ) -> JsonResult {
-    let data: PasswordData = data.into_inner().data;
+    let data: PasswordOrOtpData = data.into_inner().data;
     let user = headers.user;
 
-    // Validate the admin users password
-    if !user.check_valid_password(&data.MasterPasswordHash) {
-        err!("Invalid password")
-    }
+    // Validate the admin users password/otp
+    data.validate(&user, true, &mut conn).await?;
 
     let org_api_key = match OrganizationApiKey::find_by_org_uuid(org_id, &conn).await {
         Some(mut org_api_key) => {
@@ -2983,14 +2979,14 @@ async fn _api_key(
 }
 
 #[post("/organizations/<org_id>/api-key", data = "<data>")]
-async fn api_key(org_id: &str, data: JsonUpcase<PasswordData>, headers: AdminHeaders, conn: DbConn) -> JsonResult {
+async fn api_key(org_id: &str, data: JsonUpcase<PasswordOrOtpData>, headers: AdminHeaders, conn: DbConn) -> JsonResult {
     _api_key(org_id, data, false, headers, conn).await
 }
 
 #[post("/organizations/<org_id>/rotate-api-key", data = "<data>")]
 async fn rotate_api_key(
     org_id: &str,
-    data: JsonUpcase<PasswordData>,
+    data: JsonUpcase<PasswordOrOtpData>,
     headers: AdminHeaders,
     conn: DbConn,
 ) -> JsonResult {

@@ -6,7 +6,7 @@ use serde_json::Value;
 use crate::{
     api::{
         core::log_user_event, register_push_device, unregister_push_device, AnonymousNotify, EmptyResult, JsonResult,
-        JsonUpcase, Notify, NumberOrString, PasswordData, UpdateType,
+        JsonUpcase, Notify, NumberOrString, PasswordOrOtpData, UpdateType,
     },
     auth::{decode_delete, decode_invite, decode_verify_email, ClientHeaders, Headers},
     crypto,
@@ -503,17 +503,15 @@ async fn post_rotatekey(data: JsonUpcase<KeyData>, headers: Headers, mut conn: D
 
 #[post("/accounts/security-stamp", data = "<data>")]
 async fn post_sstamp(
-    data: JsonUpcase<PasswordData>,
+    data: JsonUpcase<PasswordOrOtpData>,
     headers: Headers,
     mut conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
-    let data: PasswordData = data.into_inner().data;
+    let data: PasswordOrOtpData = data.into_inner().data;
     let mut user = headers.user;
 
-    if !user.check_valid_password(&data.MasterPasswordHash) {
-        err!("Invalid password")
-    }
+    data.validate(&user, true, &mut conn).await?;
 
     Device::delete_all_by_user(&user.uuid, &mut conn).await?;
     user.reset_security_stamp();
@@ -736,18 +734,16 @@ async fn post_delete_recover_token(data: JsonUpcase<DeleteRecoverTokenData>, mut
 }
 
 #[post("/accounts/delete", data = "<data>")]
-async fn post_delete_account(data: JsonUpcase<PasswordData>, headers: Headers, conn: DbConn) -> EmptyResult {
+async fn post_delete_account(data: JsonUpcase<PasswordOrOtpData>, headers: Headers, conn: DbConn) -> EmptyResult {
     delete_account(data, headers, conn).await
 }
 
 #[delete("/accounts", data = "<data>")]
-async fn delete_account(data: JsonUpcase<PasswordData>, headers: Headers, mut conn: DbConn) -> EmptyResult {
-    let data: PasswordData = data.into_inner().data;
+async fn delete_account(data: JsonUpcase<PasswordOrOtpData>, headers: Headers, mut conn: DbConn) -> EmptyResult {
+    let data: PasswordOrOtpData = data.into_inner().data;
     let user = headers.user;
 
-    if !user.check_valid_password(&data.MasterPasswordHash) {
-        err!("Invalid password")
-    }
+    data.validate(&user, true, &mut conn).await?;
 
     user.delete(&mut conn).await
 }
@@ -854,20 +850,13 @@ fn verify_password(data: JsonUpcase<SecretVerificationRequest>, headers: Headers
     Ok(())
 }
 
-async fn _api_key(
-    data: JsonUpcase<SecretVerificationRequest>,
-    rotate: bool,
-    headers: Headers,
-    mut conn: DbConn,
-) -> JsonResult {
+async fn _api_key(data: JsonUpcase<PasswordOrOtpData>, rotate: bool, headers: Headers, mut conn: DbConn) -> JsonResult {
     use crate::util::format_date;
 
-    let data: SecretVerificationRequest = data.into_inner().data;
+    let data: PasswordOrOtpData = data.into_inner().data;
     let mut user = headers.user;
 
-    if !user.check_valid_password(&data.MasterPasswordHash) {
-        err!("Invalid password")
-    }
+    data.validate(&user, true, &mut conn).await?;
 
     if rotate || user.api_key.is_none() {
         user.api_key = Some(crypto::generate_api_key());
@@ -882,12 +871,12 @@ async fn _api_key(
 }
 
 #[post("/accounts/api-key", data = "<data>")]
-async fn api_key(data: JsonUpcase<SecretVerificationRequest>, headers: Headers, conn: DbConn) -> JsonResult {
+async fn api_key(data: JsonUpcase<PasswordOrOtpData>, headers: Headers, conn: DbConn) -> JsonResult {
     _api_key(data, false, headers, conn).await
 }
 
 #[post("/accounts/rotate-api-key", data = "<data>")]
-async fn rotate_api_key(data: JsonUpcase<SecretVerificationRequest>, headers: Headers, conn: DbConn) -> JsonResult {
+async fn rotate_api_key(data: JsonUpcase<PasswordOrOtpData>, headers: Headers, conn: DbConn) -> JsonResult {
     _api_key(data, true, headers, conn).await
 }
 

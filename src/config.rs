@@ -1243,17 +1243,18 @@ where
     reg!("email/invite_accepted", ".html");
     reg!("email/invite_confirmed", ".html");
     reg!("email/new_device_logged_in", ".html");
+    reg!("email/protected_action", ".html");
     reg!("email/pw_hint_none", ".html");
     reg!("email/pw_hint_some", ".html");
     reg!("email/send_2fa_removed_from_org", ".html");
-    reg!("email/send_single_org_removed_from_org", ".html");
-    reg!("email/send_org_invite", ".html");
     reg!("email/send_emergency_access_invite", ".html");
+    reg!("email/send_org_invite", ".html");
+    reg!("email/send_single_org_removed_from_org", ".html");
+    reg!("email/smtp_test", ".html");
     reg!("email/twofactor_email", ".html");
     reg!("email/verify_email", ".html");
-    reg!("email/welcome", ".html");
     reg!("email/welcome_must_verify", ".html");
-    reg!("email/smtp_test", ".html");
+    reg!("email/welcome", ".html");
 
     reg!("admin/base");
     reg!("admin/login");

@@ -10,7 +10,7 @@ use rocket::{
 use serde_json::Value;
 
 use crate::{
-    api::{self, core::log_event, EmptyResult, JsonResult, JsonUpcase, Notify, PasswordData, UpdateType},
+    api::{self, core::log_event, EmptyResult, JsonResult, JsonUpcase, Notify, PasswordOrOtpData, UpdateType},
     auth::Headers,
     crypto,
     db::{models::*, DbConn, DbPool},
@@ -1457,19 +1457,15 @@ struct OrganizationId {
 #[post("/ciphers/purge?<organization..>", data = "<data>")]
 async fn delete_all(
     organization: Option<OrganizationId>,
-    data: JsonUpcase<PasswordData>,
+    data: JsonUpcase<PasswordOrOtpData>,
     headers: Headers,
     mut conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
-    let data: PasswordData = data.into_inner().data;
-    let password_hash = data.MasterPasswordHash;
-
+    let data: PasswordOrOtpData = data.into_inner().data;
     let mut user = headers.user;
 
-    if !user.check_valid_password(&password_hash) {
-        err!("Invalid password")
-    }
+    data.validate(&user, true, &mut conn).await?;
 
     match organization {
         Some(org_data) => {

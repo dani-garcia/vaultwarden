@@ -5,7 +5,7 @@ use rocket::Route;
 use serde_json::Value;
 
 use crate::{
-    api::{core::log_user_event, JsonResult, JsonUpcase, NumberOrString, PasswordData},
+    api::{core::log_user_event, JsonResult, JsonUpcase, NumberOrString, PasswordOrOtpData},
     auth::{ClientHeaders, Headers},
     crypto,
     db::{models::*, DbConn, DbPool},
@@ -15,6 +15,7 @@ use crate::{
 pub mod authenticator;
 pub mod duo;
 pub mod email;
+pub mod protected_actions;
 pub mod webauthn;
 pub mod yubikey;
 
@@ -33,6 +34,7 @@ pub fn routes() -> Vec<Route> {
     routes.append(&mut email::routes());
     routes.append(&mut webauthn::routes());
     routes.append(&mut yubikey::routes());
+    routes.append(&mut protected_actions::routes());
 
     routes
 }
@@ -50,13 +52,11 @@ async fn get_twofactor(headers: Headers, mut conn: DbConn) -> Json<Value> {
 }
 
 #[post("/two-factor/get-recover", data = "<data>")]
-fn get_recover(data: JsonUpcase<PasswordData>, headers: Headers) -> JsonResult {
-    let data: PasswordData = data.into_inner().data;
+async fn get_recover(data: JsonUpcase<PasswordOrOtpData>, headers: Headers, mut conn: DbConn) -> JsonResult {
+    let data: PasswordOrOtpData = data.into_inner().data;
     let user = headers.user;
 
-    if !user.check_valid_password(&data.MasterPasswordHash) {
-        err!("Invalid password");
-    }
+    data.validate(&user, true, &mut conn).await?;
 
     Ok(Json(json!({
         "Code": user.totp_recover,
@@ -123,19 +123,23 @@ async fn _generate_recover_code(user: &mut User, conn: &mut DbConn) {
 #[derive(Deserialize)]
 #[allow(non_snake_case)]
 struct DisableTwoFactorData {
-    MasterPasswordHash: String,
+    MasterPasswordHash: Option<String>,
+    Otp: Option<String>,
     Type: NumberOrString,
 }
 
 #[post("/two-factor/disable", data = "<data>")]
 async fn disable_twofactor(data: JsonUpcase<DisableTwoFactorData>, headers: Headers, mut conn: DbConn) -> JsonResult {
     let data: DisableTwoFactorData = data.into_inner().data;
-    let password_hash = data.MasterPasswordHash;
     let user = headers.user;
 
-    if !user.check_valid_password(&password_hash) {
-        err!("Invalid password");
+    // Delete directly after a valid token has been provided
+    PasswordOrOtpData {
+        MasterPasswordHash: data.MasterPasswordHash,
+        Otp: data.Otp,
     }
+    .validate(&user, true, &mut conn)
+    .await?;
 
     let type_ = data.Type.into_i32()?;
 
