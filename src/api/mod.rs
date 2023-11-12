@@ -32,6 +32,7 @@ pub use crate::api::{
     web::routes as web_routes,
     web::static_files,
 };
+use crate::db::{models::User, DbConn};
 use crate::util;
 
 // Type aliases for API methods results
@@ -46,8 +47,31 @@ type JsonVec<T> = Json<Vec<T>>;
 // Common structs representing JSON data received
 #[derive(Deserialize)]
 #[allow(non_snake_case)]
-struct PasswordData {
-    MasterPasswordHash: String,
+struct PasswordOrOtpData {
+    MasterPasswordHash: Option<String>,
+    Otp: Option<String>,
+}
+
+impl PasswordOrOtpData {
+    /// Tokens used via this struct can be used multiple times during the process
+    /// First for the validation to continue, after that to enable or validate the following actions
+    /// This is different per caller, so it can be adjusted to delete the token or not
+    pub async fn validate(&self, user: &User, delete_if_valid: bool, conn: &mut DbConn) -> EmptyResult {
+        use crate::api::core::two_factor::protected_actions::validate_protected_action_otp;
+
+        match (self.MasterPasswordHash.as_deref(), self.Otp.as_deref()) {
+            (Some(pw_hash), None) => {
+                if !user.check_valid_password(pw_hash) {
+                    err!("Invalid password");
+                }
+            }
+            (None, Some(otp)) => {
+                validate_protected_action_otp(otp, &user.uuid, delete_if_valid, conn).await?;
+            }
+            _ => err!("No validation provided"),
+        }
+        Ok(())
+    }
 }
 
 #[derive(Deserialize, Debug, Clone)]

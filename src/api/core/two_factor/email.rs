@@ -5,7 +5,7 @@ use rocket::Route;
 use crate::{
     api::{
         core::{log_user_event, two_factor::_generate_recover_code},
-        EmptyResult, JsonResult, JsonUpcase, PasswordData,
+        EmptyResult, JsonResult, JsonUpcase, PasswordOrOtpData,
     },
     auth::Headers,
     crypto,
@@ -76,13 +76,11 @@ pub async fn send_token(user_uuid: &str, conn: &mut DbConn) -> EmptyResult {
 
 /// When user clicks on Manage email 2FA show the user the related information
 #[post("/two-factor/get-email", data = "<data>")]
-async fn get_email(data: JsonUpcase<PasswordData>, headers: Headers, mut conn: DbConn) -> JsonResult {
-    let data: PasswordData = data.into_inner().data;
+async fn get_email(data: JsonUpcase<PasswordOrOtpData>, headers: Headers, mut conn: DbConn) -> JsonResult {
+    let data: PasswordOrOtpData = data.into_inner().data;
     let user = headers.user;
 
-    if !user.check_valid_password(&data.MasterPasswordHash) {
-        err!("Invalid password");
-    }
+    data.validate(&user, false, &mut conn).await?;
 
     let (enabled, mfa_email) =
         match TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::Email as i32, &mut conn).await {
@@ -105,7 +103,8 @@ async fn get_email(data: JsonUpcase<PasswordData>, headers: Headers, mut conn: D
 struct SendEmailData {
     /// Email where 2FA codes will be sent to, can be different than user email account.
     Email: String,
-    MasterPasswordHash: String,
+    MasterPasswordHash: Option<String>,
+    Otp: Option<String>,
 }
 
 /// Send a verification email to the specified email address to check whether it exists/belongs to user.
@@ -114,9 +113,12 @@ async fn send_email(data: JsonUpcase<SendEmailData>, headers: Headers, mut conn:
     let data: SendEmailData = data.into_inner().data;
     let user = headers.user;
 
-    if !user.check_valid_password(&data.MasterPasswordHash) {
-        err!("Invalid password");
+    PasswordOrOtpData {
+        MasterPasswordHash: data.MasterPasswordHash,
+        Otp: data.Otp,
     }
+    .validate(&user, false, &mut conn)
+    .await?;
 
     if !CONFIG._enable_email_2fa() {
         err!("Email 2FA is disabled")
@@ -144,8 +146,9 @@ async fn send_email(data: JsonUpcase<SendEmailData>, headers: Headers, mut conn:
 #[allow(non_snake_case)]
 struct EmailData {
     Email: String,
-    MasterPasswordHash: String,
     Token: String,
+    MasterPasswordHash: Option<String>,
+    Otp: Option<String>,
 }
 
 /// Verify email belongs to user and can be used for 2FA email codes.
@@ -154,9 +157,13 @@ async fn email(data: JsonUpcase<EmailData>, headers: Headers, mut conn: DbConn) 
     let data: EmailData = data.into_inner().data;
     let mut user = headers.user;
 
-    if !user.check_valid_password(&data.MasterPasswordHash) {
-        err!("Invalid password");
+    // This is the last step in the verification process, delete the otp directly afterwards
+    PasswordOrOtpData {
+        MasterPasswordHash: data.MasterPasswordHash,
+        Otp: data.Otp,
     }
+    .validate(&user, true, &mut conn)
+    .await?;
 
     let type_ = TwoFactorType::EmailVerificationChallenge as i32;
     let mut twofactor =

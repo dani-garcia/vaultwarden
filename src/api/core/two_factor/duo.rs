@@ -6,7 +6,7 @@ use rocket::Route;
 use crate::{
     api::{
         core::log_user_event, core::two_factor::_generate_recover_code, ApiResult, EmptyResult, JsonResult, JsonUpcase,
-        PasswordData,
+        PasswordOrOtpData,
     },
     auth::Headers,
     crypto,
@@ -92,14 +92,13 @@ impl DuoStatus {
 const DISABLED_MESSAGE_DEFAULT: &str = "<To use the global Duo keys, please leave these fields untouched>";
 
 #[post("/two-factor/get-duo", data = "<data>")]
-async fn get_duo(data: JsonUpcase<PasswordData>, headers: Headers, mut conn: DbConn) -> JsonResult {
-    let data: PasswordData = data.into_inner().data;
+async fn get_duo(data: JsonUpcase<PasswordOrOtpData>, headers: Headers, mut conn: DbConn) -> JsonResult {
+    let data: PasswordOrOtpData = data.into_inner().data;
+    let user = headers.user;
 
-    if !headers.user.check_valid_password(&data.MasterPasswordHash) {
-        err!("Invalid password");
-    }
+    data.validate(&user, false, &mut conn).await?;
 
-    let data = get_user_duo_data(&headers.user.uuid, &mut conn).await;
+    let data = get_user_duo_data(&user.uuid, &mut conn).await;
 
     let (enabled, data) = match data {
         DuoStatus::Global(_) => (true, Some(DuoData::secret())),
@@ -129,10 +128,11 @@ async fn get_duo(data: JsonUpcase<PasswordData>, headers: Headers, mut conn: DbC
 #[derive(Deserialize)]
 #[allow(non_snake_case, dead_code)]
 struct EnableDuoData {
-    MasterPasswordHash: String,
     Host: String,
     SecretKey: String,
     IntegrationKey: String,
+    MasterPasswordHash: Option<String>,
+    Otp: Option<String>,
 }
 
 impl From<EnableDuoData> for DuoData {
@@ -159,9 +159,12 @@ async fn activate_duo(data: JsonUpcase<EnableDuoData>, headers: Headers, mut con
     let data: EnableDuoData = data.into_inner().data;
     let mut user = headers.user;
 
-    if !user.check_valid_password(&data.MasterPasswordHash) {
-        err!("Invalid password");
+    PasswordOrOtpData {
+        MasterPasswordHash: data.MasterPasswordHash.clone(),
+        Otp: data.Otp.clone(),
     }
+    .validate(&user, true, &mut conn)
+    .await?;
 
     let (data, data_str) = if check_duo_fields_custom(&data) {
         let data_req: DuoData = data.into();

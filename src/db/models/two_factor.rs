@@ -34,6 +34,9 @@ pub enum TwoFactorType {
     EmailVerificationChallenge = 1002,
     WebauthnRegisterChallenge = 1003,
     WebauthnLoginChallenge = 1004,
+
+    // Special type for Protected Actions verification via email
+    ProtectedActions = 2000,
 }
 
 /// Local methods
