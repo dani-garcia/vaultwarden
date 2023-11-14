@@ -291,10 +291,10 @@ macro_rules! err_json {
 macro_rules! err_handler {
     ($expr:expr) => {{
         error!(target: "auth", "Unauthorized Error: {}", $expr);
-        return ::rocket::request::Outcome::Failure((rocket::http::Status::Unauthorized, $expr));
+        return ::rocket::request::Outcome::Error((rocket::http::Status::Unauthorized, $expr));
     }};
     ($usr_msg:expr, $log_value:expr) => {{
         error!(target: "auth", "Unauthorized Error: {}. {}", $usr_msg, $log_value);
-        return ::rocket::request::Outcome::Failure((rocket::http::Status::Unauthorized, $usr_msg));
+        return ::rocket::request::Outcome::Error((rocket::http::Status::Unauthorized, $usr_msg));
     }};
 }
