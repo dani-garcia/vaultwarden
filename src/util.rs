@@ -46,6 +46,7 @@ impl Fairing for AppHeaders {
                     // Remove headers which could cause websocket connection issues
                     res.remove_header("X-Frame-Options");
                     res.remove_header("X-Content-Type-Options");
+                    res.remove_header("Permissions-Policy");
                     return;
                 }
                 (_, _) => (),
