@@ -88,7 +88,7 @@ target "debian" {
   inherits = ["_default_attributes"]
   dockerfile = "docker/Dockerfile.debian"
   tags = generate_tags("", platform_tag())
-  output = [join(",", flatten([["type=docker"], image_index_annotations()]))]
+  output = ["type=docker"]
 }
 
 // Multi Platform target, will build one tagged manifest with all supported architectures
@@ -138,7 +138,7 @@ target "alpine" {
   inherits = ["_default_attributes"]
   dockerfile = "docker/Dockerfile.alpine"
   tags = generate_tags("-alpine", platform_tag())
-  output = [join(",", flatten([["type=docker"], image_index_annotations()]))]
+  output = ["type=docker"]
 }
 
 // Multi Platform target, will build one tagged manifest with all supported architectures

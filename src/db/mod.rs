@@ -7,7 +7,6 @@ use diesel::{
 
 use rocket::{
     http::Status,
-    outcome::IntoOutcome,
     request::{FromRequest, Outcome},
     Request,
 };
@@ -413,8 +412,11 @@ impl<'r> FromRequest<'r> for DbConn {
 
     async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         match request.rocket().state::<DbPool>() {
-            Some(p) => p.get().await.map_err(|_| ()).into_outcome(Status::ServiceUnavailable),
-            None => Outcome::Failure((Status::InternalServerError, ())),
+            Some(p) => match p.get().await {
+                Ok(dbconn) => Outcome::Success(dbconn),
+                _ => Outcome::Error((Status::ServiceUnavailable, ())),
+            },
+            None => Outcome::Error((Status::InternalServerError, ())),
         }
     }
 }

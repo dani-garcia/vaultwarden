@@ -910,26 +910,23 @@ impl<'r> FromRequest<'r> for KnownDevice {
             let email_bytes = match data_encoding::BASE64URL_NOPAD.decode(email_b64.as_bytes()) {
                 Ok(bytes) => bytes,
                 Err(_) => {
-                    return Outcome::Failure((
-                        Status::BadRequest,
-                        "X-Request-Email value failed to decode as base64url",
-                    ));
+                    return Outcome::Error((Status::BadRequest, "X-Request-Email value failed to decode as base64url"));
                 }
             };
             match String::from_utf8(email_bytes) {
                 Ok(email) => email,
                 Err(_) => {
-                    return Outcome::Failure((Status::BadRequest, "X-Request-Email value failed to decode as UTF-8"));
+                    return Outcome::Error((Status::BadRequest, "X-Request-Email value failed to decode as UTF-8"));
                 }
             }
         } else {
-            return Outcome::Failure((Status::BadRequest, "X-Request-Email value is required"));
+            return Outcome::Error((Status::BadRequest, "X-Request-Email value is required"));
         };
 
         let uuid = if let Some(uuid) = req.headers().get_one("X-Device-Identifier") {
             uuid.to_string()
         } else {
-            return Outcome::Failure((Status::BadRequest, "X-Device-Identifier value is required"));
+            return Outcome::Error((Status::BadRequest, "X-Device-Identifier value is required"));
         };
 
         Outcome::Success(KnownDevice {
