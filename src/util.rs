@@ -1,11 +1,7 @@
 //
 // Web Headers and caching
 //
-use std::{
-    collections::HashMap,
-    io::{Cursor, ErrorKind},
-    ops::Deref,
-};
+use std::{collections::HashMap, io::Cursor, ops::Deref, path::Path};
 
 use num_traits::ToPrimitive;
 use rocket::{
@@ -334,40 +330,6 @@ impl Fairing for BetterLogging {
     }
 }
 
-//
-// File handling
-//
-use std::{
-    fs::{self, File},
-    io::Result as IOResult,
-    path::Path,
-};
-
-pub fn file_exists(path: &str) -> bool {
-    Path::new(path).exists()
-}
-
-pub fn write_file(path: &str, content: &[u8]) -> Result<(), crate::error::Error> {
-    use std::io::Write;
-    let mut f = match File::create(path) {
-        Ok(file) => file,
-        Err(e) => {
-            if e.kind() == ErrorKind::PermissionDenied {
-                error!("Can't create '{}': Permission denied", path);
-            }
-            return Err(From::from(e));
-        }
-    };
-
-    f.write_all(content)?;
-    f.flush()?;
-    Ok(())
-}
-
-pub fn delete_file(path: &str) -> IOResult<()> {
-    fs::remove_file(path)
-}
-
 pub fn get_display_size(size: i64) -> String {
     const UNITS: [&str; 6] = ["bytes", "KB", "MB", "GB", "TB", "PB"];
 
@@ -444,7 +406,7 @@ pub fn get_env_str_value(key: &str) -> Option<String> {
     match (value_from_env, value_file) {
         (Ok(_), Ok(_)) => panic!("You should not define both {key} and {key_file}!"),
         (Ok(v_env), Err(_)) => Some(v_env),
-        (Err(_), Ok(v_file)) => match fs::read_to_string(v_file) {
+        (Err(_), Ok(v_file)) => match std::fs::read_to_string(v_file) {
             Ok(content) => Some(content.trim().to_string()),
             Err(e) => panic!("Failed to load {key}: {e:?}"),
         },
