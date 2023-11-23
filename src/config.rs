@@ -380,26 +380,10 @@ make_config! {
     push {
         /// Enable push notifications
         push_enabled:           bool,   false,  def,    false;
-        /// Push relay region
-        push_relay_region:      String, false,  def,    "us".to_string();
         /// Push relay uri
-        push_relay_uri:         String, false,  auto,   |c| {
-            let push_relay_uri = match c.push_relay_region.as_str() {
-                "us" => "https://push.bitwarden.com".to_string(),
-                "eu" => "https://push.bitwarden.eu".to_string(),
-                _ => "https://push.bitwarden.com".to_string(), // Default to "us" region
-            };
-            push_relay_uri
-        };
+        push_relay_uri:         String, false,  def,    "https://push.bitwarden.com".to_string();
         /// Push identity uri
-        push_identity_uri:      String, false,  auto,   |c| {
-            let push_identity_uri = match c.push_relay_region.as_str() {
-                "us" => "https://identity.bitwarden.com".to_string(),
-                "eu" => "https://identity.bitwarden.eu".to_string(),
-                _ => "https://identity.bitwarden.com".to_string(), // Default to "us" region
-            };
-            push_identity_uri
-        };
+        push_identity_uri:      String, false,  def,    "https://identity.bitwarden.com".to_string();
         /// Installation id |> The installation id from https://bitwarden.com/host
         push_installation_id:   Pass,   false,  def,    String::new();
         /// Installation key |> The installation key from https://bitwarden.com/host
