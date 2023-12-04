@@ -3,7 +3,7 @@ name = "vaultwarden"
 version = "1.0.0"
 authors = ["Daniel García <dani-garcia@users.noreply.github.com>"]
 edition = "2021"
-rust-version = "1.71.1"
+rust-version = "1.72.1"
 resolver = "2"
 
 repository = "https://github.com/dani-garcia/vaultwarden"
@@ -55,8 +55,8 @@ num-traits = "0.2.17"
 num-derive = "0.4.1"
 
 # Web framework
-rocket = { version = "0.5.0-rc.4", features = ["tls", "json"], default-features = false }
-rocket_ws = { version ="0.1.0-rc.4" }
+rocket = { version = "0.5.0", features = ["tls", "json"], default-features = false }
+rocket_ws = { version ="0.1.0" }
 
 # WebSockets libraries
 tokio-tungstenite = "0.20.1"
@@ -70,7 +70,7 @@ futures = "0.3.29"
 tokio = { version = "1.34.0", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal"] }
 
 # A generic serialization/deserialization framework
-serde = { version = "1.0.192", features = ["derive"] }
+serde = { version = "1.0.193", features = ["derive"] }
 serde_json = "1.0.108"
 
 # A safe, extensible ORM and Query builder
@@ -83,10 +83,10 @@ libsqlite3-sys = { version = "0.27.0", features = ["bundled"], optional = true }
 
 # Crypto-related libraries
 rand = { version = "0.8.5", features = ["small_rng"] }
-ring = "0.17.5"
+ring = "0.17.6"
 
 # UUID generation
-uuid = { version = "1.5.0", features = ["v4"] }
+uuid = { version = "1.6.1", features = ["v4"] }
 
 # Date and time libraries
 chrono = { version = "0.4.31", features = ["clock", "serde"], default-features = false }
@@ -97,10 +97,10 @@ time = "0.3.30"
 job_scheduler_ng = "2.0.4"
 
 # Data encoding library Hex/Base32/Base64
-data-encoding = "2.4.0"
+data-encoding = "2.5.0"
 
 # JWT library
-jsonwebtoken = "9.1.0"
+jsonwebtoken = "9.2.0"
 
 # TOTP library
 totp-lite = "2.0.1"
@@ -112,11 +112,11 @@ yubico = { version = "0.11.0", features = ["online-tokio"], default-features = f
 webauthn-rs = "0.3.2"
 
 # Handling of URL's for WebAuthn and favicons
-url = "2.4.1"
+url = "2.5.0"
 
 # Email libraries
-lettre = { version = "0.11.1", features = ["smtp-transport", "sendmail-transport", "builder", "serde", "tokio1-native-tls", "hostname", "tracing", "tokio1"], default-features = false }
-percent-encoding = "2.3.0" # URL encoding library used for URL's in the emails
+lettre = { version = "0.11.2", features = ["smtp-transport", "sendmail-transport", "builder", "serde", "tokio1-native-tls", "hostname", "tracing", "tokio1"], default-features = false }
+percent-encoding = "2.3.1" # URL encoding library used for URL's in the emails
 email_address = "0.2.4"
 
 # HTML Template library
@@ -128,7 +128,7 @@ reqwest = { version = "0.11.22", features = ["stream", "json", "deflate", "gzip"
 # Favicon extraction libraries
 html5gum = "0.5.7"
 regex = { version = "1.10.2", features = ["std", "perf", "unicode-perl"], default-features = false }
-data-url = "0.3.0"
+data-url = "0.3.1"
 bytes = "1.5.0"
 
 # Cache function results (Used for version check and favicon fetching)
@@ -167,10 +167,12 @@ rpassword = "7.3.1"
 
 
 # Strip debuginfo from the release builds
-# Also enable thin LTO for some optimizations
+# The symbols are the provide better panic traces
+# Also enable fat LTO and use 1 codegen unit for optimizations
 [profile.release]
 strip = "debuginfo"
-lto = "thin"
+lto = "fat"
+codegen-units = 1
 
 
 # A little bit of a speedup
