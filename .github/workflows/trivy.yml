@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - release-build-revision
     tags:
       - '*'
   pull_request:
@@ -29,7 +28,7 @@ jobs:
         uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 #v4.1.1
 
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@f78e9ecf42a1271402d4f484518b9313235990e1 # v0.13.1
+        uses: aquasecurity/trivy-action@2b6a709cf9c4025c5438138008beaddbb02086f0 # v0.14.0
         with:
           scan-type: repo
           ignore-unfixed: true

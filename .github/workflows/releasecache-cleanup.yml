@@ -1,0 +1,25 @@
+on:
+  workflow_dispatch:
+    inputs:
+      manual_trigger:
+        description: "Manual trigger buildcache cleanup"
+        required: false
+        default: ""
+
+  schedule:
+    - cron: '0 1 * * FRI'
+
+name: Cleanup
+jobs:
+  releasecache-cleanup:
+    name: Releasecache Cleanup
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - name: Delete vaultwarden-buildcache containers
+        uses: actions/delete-package-versions@0d39a63126868f5eefaa47169615edd3c0f61e20 # v4.1.1
+        with:
+          package-name: 'vaultwarden-buildcache'
+          package-type: 'container'
+          min-versions-to-keep: 0
+          delete-only-untagged-versions: 'false'
