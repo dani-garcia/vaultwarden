@@ -164,6 +164,11 @@ fn websockets_hub<'r>(
                                             continue;
                                         }
                                     }
+
+                                    // Prevent sending anything back when a `Close` Message is received.
+                                    // Just break the loop
+                                    Message::Close(_) => break,
+
                                     // Just echo anything else the client sends
                                     _ => yield message,
                                 }
@@ -230,6 +235,11 @@ fn anonymous_websockets_hub<'r>(
                                             continue;
                                         }
                                     }
+
+                                    // Prevent sending anything back when a `Close` Message is received.
+                                    // Just break the loop
+                                    Message::Close(_) => break,
+
                                     // Just echo anything else the client sends
                                     _ => yield message,
                                 }
