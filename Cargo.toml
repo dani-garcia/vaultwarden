@@ -48,7 +48,7 @@ tracing = { version = "0.1.40", features = ["log"] } # Needed to have lettre and
 dotenvy = { version = "0.15.7", default-features = false }
 
 # Lazy initialization
-once_cell = "1.18.0"
+once_cell = "1.19.0"
 
 # Numerical libraries
 num-traits = "0.2.17"
@@ -67,7 +67,7 @@ dashmap = "5.5.3"
 
 # Async futures
 futures = "0.3.29"
-tokio = { version = "1.34.0", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal"] }
+tokio = { version = "1.35.0", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal"] }
 
 # A generic serialization/deserialization framework
 serde = { version = "1.0.193", features = ["derive"] }
