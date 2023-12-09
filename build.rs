@@ -48,6 +48,11 @@ fn run(args: &[&str]) -> Result<String, std::io::Error> {
 ///    - env!("GIT_REV")
 ///    - env!("VW_VERSION")
 fn version_from_git_info() -> Result<String, std::io::Error> {
+    // Rerun when these paths are changed.
+    // Someone could have checked-out a tag or specific commit, but no other files changed.
+    println!("cargo:rerun-if-changed=.git/HEAD");
+    println!("cargo:rerun-if-changed=.git/refs/tags/");
+
     // The exact tag for the current commit, can be empty when
     // the current commit doesn't have an associated tag
     let exact_tag = run(&["git", "describe", "--abbrev=0", "--tags", "--exact-match"]).ok();

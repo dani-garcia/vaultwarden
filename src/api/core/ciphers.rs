@@ -849,7 +849,6 @@ async fn put_cipher_share_selected(
     nt: Notify<'_>,
 ) -> EmptyResult {
     let mut data: ShareSelectedCipherData = data.into_inner().data;
-    let mut cipher_ids: Vec<String> = Vec::new();
 
     if data.Ciphers.is_empty() {
         err!("You must select at least one cipher.")
@@ -860,10 +859,9 @@ async fn put_cipher_share_selected(
     }
 
     for cipher in data.Ciphers.iter() {
-        match cipher.Id {
-            Some(ref id) => cipher_ids.push(id.to_string()),
-            None => err!("Request missing ids field"),
-        };
+        if cipher.Id.is_none() {
+            err!("Request missing ids field")
+        }
     }
 
     while let Some(cipher) = data.Ciphers.pop() {

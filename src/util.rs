@@ -363,15 +363,7 @@ pub fn write_file(path: &str, content: &[u8]) -> Result<(), crate::error::Error>
 }
 
 pub fn delete_file(path: &str) -> IOResult<()> {
-    let res = fs::remove_file(path);
-
-    if let Some(parent) = Path::new(path).parent() {
-        // If the directory isn't empty, this returns an error, which we ignore
-        // We only want to delete the folder if it's empty
-        fs::remove_dir(parent).ok();
-    }
-
-    res
+    fs::remove_file(path)
 }
 
 pub fn get_display_size(size: i32) -> String {

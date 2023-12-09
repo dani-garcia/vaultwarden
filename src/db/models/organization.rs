@@ -214,7 +214,7 @@ impl UserOrganization {
     }
 
     pub fn restore(&mut self) -> bool {
-        if self.status < UserOrgStatus::Accepted as i32 {
+        if self.status < UserOrgStatus::Invited as i32 {
             self.status += ACTIVATE_REVOKE_DIFF;
             return true;
         }

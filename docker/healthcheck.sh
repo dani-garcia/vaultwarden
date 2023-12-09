@@ -7,6 +7,16 @@
 
 CONFIG_FILE="${DATA_FOLDER}"/config.json
 
+# Check if there is a .env file configured
+# If that is the case, load it into the environment before running any check
+if [ -z "${ENV_FILE}" ]; then
+    ENV_FILE=".env"
+fi
+if [ -r "${ENV_FILE}" ]; then
+    # shellcheck disable=SC1090
+    . "${ENV_FILE}"
+fi
+
 # Given a config key, return the corresponding config value from the
 # config file. If the key doesn't exist, return an empty string.
 get_config_val() {

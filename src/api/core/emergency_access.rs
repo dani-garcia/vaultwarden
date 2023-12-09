@@ -18,6 +18,7 @@ pub fn routes() -> Vec<Route> {
         get_grantees,
         get_emergency_access,
         put_emergency_access,
+        post_emergency_access,
         delete_emergency_access,
         post_delete_emergency_access,
         send_invite,
