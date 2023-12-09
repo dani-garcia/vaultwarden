@@ -193,7 +193,10 @@ fn version() -> Json<&'static str> {
 #[get("/config")]
 fn config() -> Json<Value> {
     let domain = crate::CONFIG.domain();
-    Json(json!({
+    let feature_flags = crate::CONFIG.feature_flags().to_lowercase();
+    let features = feature_flags.split(',').map(|f| f.trim()).collect::<Vec<_>>();
+    let mut feature_states = json!({});
+    let mut config = json!({
         // Note: The clients use this version to handle backwards compatibility concerns
         // This means they expect a version that closely matches the Bitwarden server version
         // We should make sure that we keep this updated when we support the new server features
@@ -213,15 +216,15 @@ fn config() -> Json<Value> {
           "notifications": format!("{domain}/notifications"),
           "sso": "",
         },
-        "featureStates": {
-          // Any feature flags that we want the clients to use
-          // Can check the enabled ones at:
-          // https://vault.bitwarden.com/api/config
-          "fido2-vault-credentials": true,  // Passkey support
-          "autofill-v2": false,             // Disabled because it is causing issues https://github.com/dani-garcia/vaultwarden/discussions/4052
-        },
         "object": "config",
-    }))
+    });
+    // Disabled because it is causing issues https://github.com/dani-garcia/vaultwarden/discussions/4052
+    feature_states["autofill-v2"] = serde_json::Value::Bool(false);
+    for feature in features {
+        feature_states[feature.to_string()] = serde_json::Value::Bool(true);
+    }
+    config["featureStates"] = feature_states;
+    Json(config)
 }
 
 pub fn catchers() -> Vec<Catcher> {

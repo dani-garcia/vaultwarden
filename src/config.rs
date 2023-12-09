@@ -547,6 +547,9 @@ make_config! {
         /// TOTP codes of the previous and next 30 seconds will be invalid.
         authenticator_disable_time_drift: bool, true, def, false;
 
+        /// Customize the enabled feature flags on the clients |> This is a comma separated list of feature flags to enable.
+        feature_flags: String, false, def, "fido2-vault-credentials".to_string();
+
         /// Require new device emails |> When a user logs in an email is required to be sent.
         /// If sending the email fails the login attempt will fail.
         require_device_email:   bool,   true,   def,     false;
@@ -749,6 +752,27 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
             # added to your configuration.                                                         #\n\
             ########################################################################################\n"
         )
+    }
+
+    let feature_flags = cfg.feature_flags.to_lowercase();
+    let features = feature_flags.split(',').map(|f| f.trim()).collect::<Vec<_>>();
+    let supported_flags = vec![
+        "display-kdf-iteration-warning",
+        "fido2-vault-credentials",
+        "trusted-device-encryption",
+        "passwordless-login",
+        "autofill-v2",
+        "autofill-overlay",
+        "browser-fileless-import",
+        "item-share",
+        "flexible-collections",
+        "flexible-collections-v-1",
+        "bulk-collection-access",
+    ];
+    for feature in features {
+        if !supported_flags.contains(&feature) {
+            err!(format!("Feature flag {feature:?} is not supported."));
+        }
     }
 
     if cfg._enable_duo
