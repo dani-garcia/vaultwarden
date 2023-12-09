@@ -91,7 +91,8 @@ RUN xx-apt-get install -y \
         libmariadb3 \
         libpq-dev \
         libpq5 \
-        libssl-dev && \
+        libssl-dev \
+        zlib1g-dev && \
     # Force install arch dependend mariadb dev packages
     # Installing them the normal way breaks several other packages (again)
     apt-get download "libmariadb-dev-compat:$(xx-info debian-arch)" "libmariadb-dev:$(xx-info debian-arch)" && \
@@ -161,7 +162,8 @@ COPY . .
 # Builds again, this time it will be the actual source files being build
 RUN source /env-cargo && \
     # Make sure that we actually build the project by updating the src/main.rs timestamp
-    touch src/main.rs && \
+    # Also do this for build.rs to ensure the version is rechecked
+    touch build.rs src/main.rs && \
     # Create a symlink to the binary target folder to easy copy the binary in the final stage
     cargo build --features ${DB} --profile "${CARGO_PROFILE}" --target="${CARGO_TARGET}" && \
     if [[ "${CARGO_PROFILE}" == "dev" ]] ; then \
