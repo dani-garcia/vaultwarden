@@ -59,12 +59,7 @@ impl Device {
         self.twofactor_remember = None;
     }
 
-    pub fn refresh_tokens(
-        &mut self,
-        user: &super::User,
-        orgs: Vec<super::UserOrganization>,
-        scope: Vec<String>,
-    ) -> (String, i64) {
+    pub fn refresh_tokens(&mut self, user: &super::User, scope: Vec<String>) -> (String, i64) {
         // If there is no refresh token, we create one
         if self.refresh_token.is_empty() {
             use data_encoding::BASE64URL;
@@ -75,10 +70,17 @@ impl Device {
         let time_now = Utc::now().naive_utc();
         self.updated_at = time_now;
 
-        let orgowner: Vec<_> = orgs.iter().filter(|o| o.atype == 0).map(|o| o.org_uuid.clone()).collect();
-        let orgadmin: Vec<_> = orgs.iter().filter(|o| o.atype == 1).map(|o| o.org_uuid.clone()).collect();
-        let orguser: Vec<_> = orgs.iter().filter(|o| o.atype == 2).map(|o| o.org_uuid.clone()).collect();
-        let orgmanager: Vec<_> = orgs.iter().filter(|o| o.atype == 3).map(|o| o.org_uuid.clone()).collect();
+        // ---
+        // Disabled these keys to be added to the JWT since they could cause the JWT to get too large
+        // Also These key/value pairs are not used anywhere by either Vaultwarden or Bitwarden Clients
+        // Because these might get used in the future, and they are added by the Bitwarden Server, lets keep it, but then commented out
+        // ---
+        // fn arg: orgs: Vec<super::UserOrganization>,
+        // ---
+        // let orgowner: Vec<_> = orgs.iter().filter(|o| o.atype == 0).map(|o| o.org_uuid.clone()).collect();
+        // let orgadmin: Vec<_> = orgs.iter().filter(|o| o.atype == 1).map(|o| o.org_uuid.clone()).collect();
+        // let orguser: Vec<_> = orgs.iter().filter(|o| o.atype == 2).map(|o| o.org_uuid.clone()).collect();
+        // let orgmanager: Vec<_> = orgs.iter().filter(|o| o.atype == 3).map(|o| o.org_uuid.clone()).collect();
 
         // Create the JWT claims struct, to send to the client
         use crate::auth::{encode_jwt, LoginJwtClaims, DEFAULT_VALIDITY, JWT_LOGIN_ISSUER};
@@ -93,11 +95,16 @@ impl Device {
             email: user.email.clone(),
             email_verified: !CONFIG.mail_enabled() || user.verified_at.is_some(),
 
-            orgowner,
-            orgadmin,
-            orguser,
-            orgmanager,
-
+            // ---
+            // Disabled these keys to be added to the JWT since they could cause the JWT to get too large
+            // Also These key/value pairs are not used anywhere by either Vaultwarden or Bitwarden Clients
+            // Because these might get used in the future, and they are added by the Bitwarden Server, lets keep it, but then commented out
+            // See: https://github.com/dani-garcia/vaultwarden/issues/4156
+            // ---
+            // orgowner,
+            // orgadmin,
+            // orguser,
+            // orgmanager,
             sstamp: user.security_stamp.clone(),
             device: self.uuid.clone(),
             scope,

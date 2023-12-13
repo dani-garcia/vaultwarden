@@ -119,10 +119,16 @@ pub struct LoginJwtClaims {
     pub email: String,
     pub email_verified: bool,
 
-    pub orgowner: Vec<String>,
-    pub orgadmin: Vec<String>,
-    pub orguser: Vec<String>,
-    pub orgmanager: Vec<String>,
+    // ---
+    // Disabled these keys to be added to the JWT since they could cause the JWT to get too large
+    // Also These key/value pairs are not used anywhere by either Vaultwarden or Bitwarden Clients
+    // Because these might get used in the future, and they are added by the Bitwarden Server, lets keep it, but then commented out
+    // See: https://github.com/dani-garcia/vaultwarden/issues/4156
+    // ---
+    // pub orgowner: Vec<String>,
+    // pub orgadmin: Vec<String>,
+    // pub orguser: Vec<String>,
+    // pub orgmanager: Vec<String>,
 
     // user security_stamp
     pub sstamp: String,
