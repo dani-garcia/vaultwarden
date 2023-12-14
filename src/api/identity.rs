@@ -103,8 +103,13 @@ async fn _refresh_login(data: ConnectData, conn: &mut DbConn) -> JsonResult {
 
     // Common
     let user = User::find_by_uuid(&device.user_uuid, conn).await.unwrap();
-    let orgs = UserOrganization::find_confirmed_by_user(&user.uuid, conn).await;
-    let (access_token, expires_in) = device.refresh_tokens(&user, orgs, scope_vec);
+    // ---
+    // Disabled this variable, it was used to generate the JWT
+    // Because this might get used in the future, and is add by the Bitwarden Server, lets keep it, but then commented out
+    // See: https://github.com/dani-garcia/vaultwarden/issues/4156
+    // ---
+    // let orgs = UserOrganization::find_confirmed_by_user(&user.uuid, conn).await;
+    let (access_token, expires_in) = device.refresh_tokens(&user, scope_vec);
     device.save(conn).await?;
 
     let result = json!({
@@ -260,8 +265,13 @@ async fn _password_login(
     }
 
     // Common
-    let orgs = UserOrganization::find_confirmed_by_user(&user.uuid, conn).await;
-    let (access_token, expires_in) = device.refresh_tokens(&user, orgs, scope_vec);
+    // ---
+    // Disabled this variable, it was used to generate the JWT
+    // Because this might get used in the future, and is add by the Bitwarden Server, lets keep it, but then commented out
+    // See: https://github.com/dani-garcia/vaultwarden/issues/4156
+    // ---
+    // let orgs = UserOrganization::find_confirmed_by_user(&user.uuid, conn).await;
+    let (access_token, expires_in) = device.refresh_tokens(&user, scope_vec);
     device.save(conn).await?;
 
     let mut result = json!({
@@ -374,8 +384,13 @@ async fn _user_api_key_login(
 
     // Common
     let scope_vec = vec!["api".into()];
-    let orgs = UserOrganization::find_confirmed_by_user(&user.uuid, conn).await;
-    let (access_token, expires_in) = device.refresh_tokens(&user, orgs, scope_vec);
+    // ---
+    // Disabled this variable, it was used to generate the JWT
+    // Because this might get used in the future, and is add by the Bitwarden Server, lets keep it, but then commented out
+    // See: https://github.com/dani-garcia/vaultwarden/issues/4156
+    // ---
+    // let orgs = UserOrganization::find_confirmed_by_user(&user.uuid, conn).await;
+    let (access_token, expires_in) = device.refresh_tokens(&user, scope_vec);
     device.save(conn).await?;
 
     info!("User {} logged in successfully via API key. IP: {}", user.email, ip.ip);
