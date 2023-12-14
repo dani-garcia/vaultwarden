@@ -9,7 +9,7 @@ use reqwest::Url;
 use crate::{
     db::DbConnType,
     error::Error,
-    util::{get_env, get_env_bool},
+    util::{get_env, get_env_bool, parse_feature_flags},
 };
 
 static CONFIG_FILE: Lazy<String> = Lazy::new(|| {
@@ -547,8 +547,10 @@ make_config! {
         /// TOTP codes of the previous and next 30 seconds will be invalid.
         authenticator_disable_time_drift: bool, true, def, false;
 
-        /// Customize the enabled feature flags on the clients |> This is a comma separated list of feature flags to enable.
-        feature_flags: String, false, def, "fido2-vault-credentials".to_string();
+        /// Customize the enabled feature flags on the clients |> This is a comma separated list of feature flags to en-/disable.
+        /// Features are enabled by default which can be overridden by prefixing the feature with a `!`.
+        /// Autofill v2 is disabled by default because it is causing issues https://github.com/dani-garcia/vaultwarden/discussions/4052
+        feature_flags: String, false, def, "!autofill-v2,fido2-vault-credentials".to_string();
 
         /// Require new device emails |> When a user logs in an email is required to be sent.
         /// If sending the email fails the login attempt will fail.
@@ -754,9 +756,7 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         )
     }
 
-    let feature_flags = cfg.feature_flags.to_lowercase();
-    let features = feature_flags.split(',').map(|f| f.trim()).collect::<Vec<_>>();
-    let supported_flags = vec![
+    const SUPPORTED_FLAGS: &[&str] = &[
         "display-kdf-iteration-warning",
         "fido2-vault-credentials",
         "trusted-device-encryption",
@@ -769,9 +769,9 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         "flexible-collections-v-1",
         "bulk-collection-access",
     ];
-    for feature in features {
-        if !supported_flags.contains(&feature) {
-            err!(format!("Feature flag {feature:?} is not supported."));
+    for flag in parse_feature_flags(&cfg.feature_flags).keys() {
+        if !SUPPORTED_FLAGS.contains(&flag.as_str()) {
+            err!(format!("Feature flag {flag:?} is not supported."));
         }
     }
 

@@ -47,15 +47,14 @@ pub fn events_routes() -> Vec<Route> {
 //
 // Move this somewhere else
 //
-use rocket::{serde::json::Json, Catcher, Route};
-use serde_json::Value;
+use rocket::{serde::json::Json, serde::json::Value, Catcher, Route};
 
 use crate::{
     api::{JsonResult, JsonUpcase, Notify, UpdateType},
     auth::Headers,
     db::DbConn,
     error::Error,
-    util::get_reqwest_client,
+    util::{get_reqwest_client, parse_feature_flags},
 };
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -193,9 +192,7 @@ fn version() -> Json<&'static str> {
 #[get("/config")]
 fn config() -> Json<Value> {
     let domain = crate::CONFIG.domain();
-    let feature_flags = crate::CONFIG.feature_flags().to_lowercase();
-    let features = feature_flags.split(',').map(|f| f.trim()).collect::<Vec<_>>();
-    let mut feature_states = json!({});
+    let feature_states = parse_feature_flags(&crate::CONFIG.feature_flags());
     let mut config = json!({
         // Note: The clients use this version to handle backwards compatibility concerns
         // This means they expect a version that closely matches the Bitwarden server version
@@ -218,12 +215,7 @@ fn config() -> Json<Value> {
         },
         "object": "config",
     });
-    // Disabled because it is causing issues https://github.com/dani-garcia/vaultwarden/discussions/4052
-    feature_states["autofill-v2"] = serde_json::Value::Bool(false);
-    for feature in features {
-        feature_states[feature.to_string()] = serde_json::Value::Bool(true);
-    }
-    config["featureStates"] = feature_states;
+    config["featureStates"] = serde_json::to_value(feature_states).unwrap();
     Json(config)
 }
 
