@@ -757,7 +757,11 @@ pub fn parse_feature_flags(feature_flags: &str) -> HashMap<String, bool> {
 
     for feature in features {
         let is_enabled = !feature.starts_with('!');
-        let flag = if is_enabled { feature } else { &feature[1..] };
+        let flag = if is_enabled {
+            feature
+        } else {
+            &feature[1..]
+        };
         feature_states.insert(flag.to_string(), is_enabled);
     }
 
