@@ -757,17 +757,11 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
     }
 
     const SUPPORTED_FLAGS: &[&str] = &[
+        "autofill-overlay",
+        "autofill-v2",
+        "browser-fileless-import",
         "display-kdf-iteration-warning",
         "fido2-vault-credentials",
-        "trusted-device-encryption",
-        "passwordless-login",
-        "autofill-v2",
-        "autofill-overlay",
-        "browser-fileless-import",
-        "item-share",
-        "flexible-collections",
-        "flexible-collections-v-1",
-        "bulk-collection-access",
     ];
     for flag in parse_feature_flags(&cfg.feature_flags).keys() {
         if !SUPPORTED_FLAGS.contains(&flag.as_str()) {
