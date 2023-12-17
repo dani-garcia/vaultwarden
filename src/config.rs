@@ -756,12 +756,8 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         )
     }
 
-    const KNOWN_FLAGS: &[&str] = &[
-        "autofill-overlay",
-        "autofill-v2",
-        "browser-fileless-import",
-        "fido2-vault-credentials",
-    ];
+    const KNOWN_FLAGS: &[&str] =
+        &["autofill-overlay", "autofill-v2", "browser-fileless-import", "fido2-vault-credentials"];
     for flag in parse_experimental_client_feature_flags(&cfg.experimental_client_feature_flags).keys() {
         if !KNOWN_FLAGS.contains(&flag.as_str()) {
             err!(format!("The experimental client feature flag {flag:?} is unrecognized. Please ensure the feature flag is spelled correctly, a caret (^) is used for disabling and that it is supported in this version."));
