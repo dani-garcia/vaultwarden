@@ -749,14 +749,14 @@ pub fn convert_json_key_lcase_first(src_json: Value) -> Value {
     }
 }
 
-/// Parses the feature flags string into a HashMap.
-pub fn parse_feature_flags(feature_flags: &str) -> HashMap<String, bool> {
-    let feature_flags_lowercase = feature_flags.to_lowercase();
-    let features = feature_flags_lowercase.split(',').map(|f| f.trim()).collect::<Vec<_>>();
+/// Parses the experimental client feature flags string into a HashMap.
+pub fn parse_experimental_client_feature_flags(experimental_client_feature_flags: &str) -> HashMap<String, bool> {
+    let experimental_client_feature_flags_lowercase = experimental_client_feature_flags.to_lowercase();
+    let features = experimental_client_feature_flags_lowercase.split(',').map(|f| f.trim()).collect::<Vec<_>>();
     let mut feature_states: HashMap<String, bool> = HashMap::new();
 
     for feature in features {
-        let is_enabled = !feature.starts_with('!');
+        let is_enabled = !feature.starts_with('^');
         let flag = if is_enabled {
             feature
         } else {

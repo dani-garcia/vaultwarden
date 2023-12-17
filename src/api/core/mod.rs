@@ -54,7 +54,7 @@ use crate::{
     auth::Headers,
     db::DbConn,
     error::Error,
-    util::{get_reqwest_client, parse_feature_flags},
+    util::{get_reqwest_client, parse_experimental_client_feature_flags},
 };
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -192,8 +192,8 @@ fn version() -> Json<&'static str> {
 #[get("/config")]
 fn config() -> Json<Value> {
     let domain = crate::CONFIG.domain();
-    let feature_states = parse_feature_flags(&crate::CONFIG.feature_flags());
-    let mut config = json!({
+    let feature_states = parse_experimental_client_feature_flags(&crate::CONFIG.experimental_client_feature_flags());
+    Json(json!({
         // Note: The clients use this version to handle backwards compatibility concerns
         // This means they expect a version that closely matches the Bitwarden server version
         // We should make sure that we keep this updated when we support the new server features
@@ -213,10 +213,9 @@ fn config() -> Json<Value> {
           "notifications": format!("{domain}/notifications"),
           "sso": "",
         },
+        "feature_states": feature_states,
         "object": "config",
-    });
-    config["featureStates"] = serde_json::to_value(feature_states).unwrap();
-    Json(config)
+    }))
 }
 
 pub fn catchers() -> Vec<Catcher> {

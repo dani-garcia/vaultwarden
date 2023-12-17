@@ -9,7 +9,7 @@ use reqwest::Url;
 use crate::{
     db::DbConnType,
     error::Error,
-    util::{get_env, get_env_bool, parse_feature_flags},
+    util::{get_env, get_env_bool, parse_experimental_client_feature_flags},
 };
 
 static CONFIG_FILE: Lazy<String> = Lazy::new(|| {
@@ -548,9 +548,9 @@ make_config! {
         authenticator_disable_time_drift: bool, true, def, false;
 
         /// Customize the enabled feature flags on the clients |> This is a comma separated list of feature flags to en-/disable.
-        /// Features are enabled by default which can be overridden by prefixing the feature with a `!`.
+        /// Features are enabled by default which can be overridden by prefixing the feature with a `^`.
         /// Autofill v2 is disabled by default because it is causing issues https://github.com/dani-garcia/vaultwarden/discussions/4052
-        feature_flags: String, false, def, "!autofill-v2,fido2-vault-credentials".to_string();
+        experimental_client_feature_flags: String, false, def, "^autofill-v2,fido2-vault-credentials".to_string();
 
         /// Require new device emails |> When a user logs in an email is required to be sent.
         /// If sending the email fails the login attempt will fail.
@@ -756,16 +756,15 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         )
     }
 
-    const SUPPORTED_FLAGS: &[&str] = &[
+    const KNOWN_FLAGS: &[&str] = &[
         "autofill-overlay",
         "autofill-v2",
         "browser-fileless-import",
-        "display-kdf-iteration-warning",
         "fido2-vault-credentials",
     ];
-    for flag in parse_feature_flags(&cfg.feature_flags).keys() {
-        if !SUPPORTED_FLAGS.contains(&flag.as_str()) {
-            err!(format!("Feature flag {flag:?} is not supported."));
+    for flag in parse_experimental_client_feature_flags(&cfg.experimental_client_feature_flags).keys() {
+        if !KNOWN_FLAGS.contains(&flag.as_str()) {
+            err!(format!("The experimental client feature flag {flag:?} is unrecognized. Please ensure the feature flag is spelled correctly, a caret (^) is used for disabling and that it is supported in this version."));
         }
     }
 
