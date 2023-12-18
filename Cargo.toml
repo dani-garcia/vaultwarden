@@ -180,3 +180,12 @@ split-debuginfo = "unpacked"
 # This is a huge speed improvement during testing
 [profile.dev.package.argon2]
 opt-level = 3
+
+# Optimize for size
+[profile.release-micro]
+inherits = "release"
+opt-level = "z"
+strip = "symbols"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
