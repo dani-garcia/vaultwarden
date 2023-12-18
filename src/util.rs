@@ -756,13 +756,7 @@ pub fn parse_experimental_client_feature_flags(experimental_client_feature_flags
     let mut feature_states: HashMap<String, bool> = HashMap::new();
 
     for feature in features {
-        let is_enabled = !feature.starts_with('^');
-        let flag = if is_enabled {
-            feature
-        } else {
-            &feature[1..]
-        };
-        feature_states.insert(flag.to_string(), is_enabled);
+        feature_states.insert(feature.to_string(), true);
     }
 
     feature_states
