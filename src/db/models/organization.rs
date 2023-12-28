@@ -648,8 +648,7 @@ impl UserOrganization {
         db_run! { conn: {
             users_organizations::table
                 .filter(users_organizations::user_uuid.eq(user_uuid))
-                .filter(users_organizations::status.eq(UserOrgStatus::Accepted as i32))
-                .or_filter(users_organizations::status.eq(UserOrgStatus::Confirmed as i32))
+                .filter(users_organizations::status.eq(UserOrgStatus::Accepted as i32).or(users_organizations::status.eq(UserOrgStatus::Confirmed as i32)))
                 .count()
                 .first::<i64>(conn)
                 .unwrap_or(0)
