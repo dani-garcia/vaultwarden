@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use chrono::{NaiveDateTime, Utc};
 use serde_json::Value;
 
@@ -488,7 +486,7 @@ impl GroupUser {
         }}
     }
 
-    pub async fn get_collection_group_users_uuid(collection_uuid: &str, conn: &mut DbConn) -> HashSet<String> {
+    pub async fn get_group_members_for_collection(collection_uuid: &str, conn: &mut DbConn) -> Vec<String> {
         db_run! { conn: {
             groups_users::table
                 .inner_join(collections_groups::table.on(
@@ -496,6 +494,7 @@ impl GroupUser {
                 ))
                 .filter(collections_groups::collections_uuid.eq(collection_uuid))
                 .select(groups_users::users_organizations_uuid)
+                .distinct()
                 .load::<String>(conn)
                 .expect("Error loading group users for collection")
         }}
@@ -503,7 +502,7 @@ impl GroupUser {
         .collect()
     }
 
-    pub async fn get_all_access_group_users_uuid(org_uuid: &str, conn: &mut DbConn) -> HashSet<String> {
+    pub async fn get_members_of_full_access_groups(org_uuid: &str, conn: &mut DbConn) -> Vec<String> {
         db_run! { conn: {
             groups_users::table
                 .inner_join(groups::table.on(
@@ -512,6 +511,7 @@ impl GroupUser {
                 .filter(groups::organizations_uuid.eq(org_uuid))
                 .filter(groups::access_all.eq(true))
                 .select(groups_users::users_organizations_uuid)
+                .distinct()
                 .load::<String>(conn)
                 .expect("Error loading all access group users for organization")
         }}

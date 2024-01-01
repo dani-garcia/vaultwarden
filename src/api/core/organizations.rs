@@ -322,7 +322,13 @@ async fn get_org_collections_details(org_id: &str, headers: ManagerHeadersLoose,
 
     let coll_users = CollectionUser::find_by_organization(org_id, &mut conn).await;
     // uuids of users in groups having access to all collections
-    let all_access_group_uuids = GroupUser::get_all_access_group_users_uuid(org_id, &mut conn).await;
+    let has_full_access_via_group = if CONFIG.org_groups_enabled() {
+        GroupUser::get_members_of_full_access_groups(org_id, &mut conn).await
+    } else {
+        vec![]
+    };
+
+    let has_full_access = user_org.access_all || has_full_access_via_group.contains(&user_org.uuid);
 
     for col in Collection::find_by_organization(org_id, &mut conn).await {
         let groups: Vec<Value> = if CONFIG.org_groups_enabled() {
@@ -340,9 +346,9 @@ async fn get_org_collections_details(org_id: &str, headers: ManagerHeadersLoose,
         };
 
         // uuids of users belonging to a group of this collection
-        let group_users = GroupUser::get_collection_group_users_uuid(&col.uuid, &mut conn).await;
+        let has_collection_access_via_group = GroupUser::get_group_members_for_collection(&col.uuid, &mut conn).await;
 
-        let mut assigned = false;
+        let mut assigned = has_full_access;
         let users: Vec<Value> = coll_users
             .iter()
             .filter(|collection_user| collection_user.collection_uuid == col.uuid)
@@ -359,12 +365,7 @@ async fn get_org_collections_details(org_id: &str, headers: ManagerHeadersLoose,
         // if current user is in any collection-assigned group
         // or in a group having access to all collections
         // or itself has access to all collections
-        if group_users.contains(&user_org.uuid)
-            || all_access_group_uuids.contains(&user_org.uuid)
-            || user_org.access_all
-        {
-            assigned = true;
-        }
+        assigned = !assigned && has_collection_access_via_group.contains(&user_org.uuid);
 
         let mut json_object = col.to_json();
         json_object["Assigned"] = json!(assigned);
