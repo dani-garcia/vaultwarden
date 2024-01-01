@@ -50,7 +50,11 @@ async fn get_auth_push_token() -> ApiResult<String> {
         ("client_secret", &client_secret),
     ];
 
-    let res = match get_reqwest_client().post("https://identity.bitwarden.com/connect/token").form(&params).send().await
+    let res = match get_reqwest_client()
+        .post(&format!("{}/connect/token", CONFIG.push_identity_uri()))
+        .form(&params)
+        .send()
+        .await
     {
         Ok(r) => r,
         Err(e) => err!(format!("Error getting push token from bitwarden server: {e}")),

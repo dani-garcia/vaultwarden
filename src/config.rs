@@ -380,8 +380,10 @@ make_config! {
     push {
         /// Enable push notifications
         push_enabled:           bool,   false,  def,    false;
-        /// Push relay base uri
+        /// Push relay uri
         push_relay_uri:         String, false,  def,    "https://push.bitwarden.com".to_string();
+        /// Push identity uri
+        push_identity_uri:      String, false,  def,    "https://identity.bitwarden.com".to_string();
         /// Installation id |> The installation id from https://bitwarden.com/host
         push_installation_id:   Pass,   false,  def,    String::new();
         /// Installation key |> The installation key from https://bitwarden.com/host
@@ -752,6 +754,26 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
             # added to your configuration.                                                         #\n\
             ########################################################################################\n"
         )
+    }
+
+    if cfg.push_enabled {
+        let push_relay_uri = cfg.push_relay_uri.to_lowercase();
+        if !push_relay_uri.starts_with("https://") {
+            err!("`PUSH_RELAY_URI` must start with 'https://'.")
+        }
+
+        if Url::parse(&push_relay_uri).is_err() {
+            err!("Invalid URL format for `PUSH_RELAY_URI`.");
+        }
+
+        let push_identity_uri = cfg.push_identity_uri.to_lowercase();
+        if !push_identity_uri.starts_with("https://") {
+            err!("`PUSH_IDENTITY_URI` must start with 'https://'.")
+        }
+
+        if Url::parse(&push_identity_uri).is_err() {
+            err!("Invalid URL format for `PUSH_IDENTITY_URI`.");
+        }
     }
 
     const KNOWN_FLAGS: &[&str] =
