@@ -5,7 +5,7 @@ use serde_json::Value;
 
 use crate::{
     api::{
-        core::{log_event, CipherSyncData, CipherSyncType},
+        core::{log_event, two_factor, CipherSyncData, CipherSyncType},
         EmptyResult, JsonResult, JsonUpcase, JsonUpcaseVec, JsonVec, Notify, NumberOrString, PasswordOrOtpData,
         UpdateType,
     },
@@ -226,7 +226,7 @@ async fn leave_organization(org_id: &str, headers: Headers, mut conn: DbConn) ->
                 EventType::OrganizationUserRemoved as i32,
                 &user_org.uuid,
                 org_id,
-                headers.user.uuid.clone(),
+                &headers.user.uuid,
                 headers.device.atype,
                 &headers.ip.ip,
                 &mut conn,
@@ -279,7 +279,7 @@ async fn post_organization(
         EventType::OrganizationUpdated as i32,
         org_id,
         org_id,
-        headers.user.uuid.clone(),
+        &headers.user.uuid,
         headers.device.atype,
         &headers.ip.ip,
         &mut conn,
@@ -396,7 +396,7 @@ async fn post_organization_collections(
         EventType::CollectionCreated as i32,
         &collection.uuid,
         org_id,
-        headers.user.uuid.clone(),
+        &headers.user.uuid,
         headers.device.atype,
         &headers.ip.ip,
         &mut conn,
@@ -477,7 +477,7 @@ async fn post_organization_collection_update(
         EventType::CollectionUpdated as i32,
         &collection.uuid,
         org_id,
-        headers.user.uuid.clone(),
+        &headers.user.uuid,
         headers.device.atype,
         &headers.ip.ip,
         &mut conn,
@@ -565,7 +565,7 @@ async fn _delete_organization_collection(
                     EventType::CollectionDeleted as i32,
                     &collection.uuid,
                     org_id,
-                    headers.user.uuid.clone(),
+                    &headers.user.uuid,
                     headers.device.atype,
                     &headers.ip.ip,
                     conn,
@@ -946,7 +946,7 @@ async fn send_invite(
             EventType::OrganizationUserInvited as i32,
             &new_user.uuid,
             org_id,
-            headers.user.uuid.clone(),
+            &headers.user.uuid,
             headers.device.atype,
             &headers.ip.ip,
             &mut conn,
@@ -1240,7 +1240,7 @@ async fn _confirm_invite(
         EventType::OrganizationUserConfirmed as i32,
         &user_to_confirm.uuid,
         org_id,
-        headers.user.uuid.clone(),
+        &headers.user.uuid,
         headers.device.atype,
         &headers.ip.ip,
         conn,
@@ -1402,7 +1402,7 @@ async fn edit_user(
         EventType::OrganizationUserUpdated as i32,
         &user_to_edit.uuid,
         org_id,
-        headers.user.uuid.clone(),
+        &headers.user.uuid,
         headers.device.atype,
         &headers.ip.ip,
         &mut conn,
@@ -1494,7 +1494,7 @@ async fn _delete_user(
         EventType::OrganizationUserRemoved as i32,
         &user_to_delete.uuid,
         org_id,
-        headers.user.uuid.clone(),
+        &headers.user.uuid,
         headers.device.atype,
         &headers.ip.ip,
         conn,
@@ -1697,38 +1697,16 @@ async fn put_policy(
         None => err!("Invalid or unsupported policy type"),
     };
 
-    // When enabling the TwoFactorAuthentication policy, remove this org's members that do have 2FA
+    // When enabling the TwoFactorAuthentication policy, revoke all members that do not have 2FA
     if pol_type_enum == OrgPolicyType::TwoFactorAuthentication && data.enabled {
-        for member in UserOrganization::find_by_org(org_id, &mut conn).await.into_iter() {
-            let user_twofactor_disabled = TwoFactor::find_by_user(&member.user_uuid, &mut conn).await.is_empty();
-
-            // Policy only applies to non-Owner/non-Admin members who have accepted joining the org
-            // Invited users still need to accept the invite and will get an error when they try to accept the invite.
-            if user_twofactor_disabled
-                && member.atype < UserOrgType::Admin
-                && member.status != UserOrgStatus::Invited as i32
-            {
-                if CONFIG.mail_enabled() {
-                    let org = Organization::find_by_uuid(&member.org_uuid, &mut conn).await.unwrap();
-                    let user = User::find_by_uuid(&member.user_uuid, &mut conn).await.unwrap();
-
-                    mail::send_2fa_removed_from_org(&user.email, &org.name).await?;
-                }
-
-                log_event(
-                    EventType::OrganizationUserRemoved as i32,
-                    &member.uuid,
-                    org_id,
-                    headers.user.uuid.clone(),
-                    headers.device.atype,
-                    &headers.ip.ip,
-                    &mut conn,
-                )
-                .await;
-
-                member.delete(&mut conn).await?;
-            }
-        }
+        two_factor::enforce_2fa_policy_for_org(
+            org_id,
+            &headers.user.uuid,
+            headers.device.atype,
+            &headers.ip.ip,
+            &mut conn,
+        )
+        .await?;
     }
 
     // When enabling the SingleOrg policy, remove this org's members that are members of other orgs
@@ -1753,7 +1731,7 @@ async fn put_policy(
                     EventType::OrganizationUserRemoved as i32,
                     &member.uuid,
                     org_id,
-                    headers.user.uuid.clone(),
+                    &headers.user.uuid,
                     headers.device.atype,
                     &headers.ip.ip,
                     &mut conn,
@@ -1778,7 +1756,7 @@ async fn put_policy(
         EventType::PolicyUpdated as i32,
         &policy.uuid,
         org_id,
-        headers.user.uuid.clone(),
+        &headers.user.uuid,
         headers.device.atype,
         &headers.ip.ip,
         &mut conn,
@@ -1895,7 +1873,7 @@ async fn import(org_id: &str, data: JsonUpcase<OrgImportData>, headers: Headers,
                     EventType::OrganizationUserRemoved as i32,
                     &user_org.uuid,
                     org_id,
-                    headers.user.uuid.clone(),
+                    &headers.user.uuid,
                     headers.device.atype,
                     &headers.ip.ip,
                     &mut conn,
@@ -1925,7 +1903,7 @@ async fn import(org_id: &str, data: JsonUpcase<OrgImportData>, headers: Headers,
                     EventType::OrganizationUserInvited as i32,
                     &new_org_user.uuid,
                     org_id,
-                    headers.user.uuid.clone(),
+                    &headers.user.uuid,
                     headers.device.atype,
                     &headers.ip.ip,
                     &mut conn,
@@ -1961,7 +1939,7 @@ async fn import(org_id: &str, data: JsonUpcase<OrgImportData>, headers: Headers,
                         EventType::OrganizationUserRemoved as i32,
                         &user_org.uuid,
                         org_id,
-                        headers.user.uuid.clone(),
+                        &headers.user.uuid,
                         headers.device.atype,
                         &headers.ip.ip,
                         &mut conn,
@@ -2074,7 +2052,7 @@ async fn _revoke_organization_user(
                 EventType::OrganizationUserRevoked as i32,
                 &user_org.uuid,
                 org_id,
-                headers.user.uuid.clone(),
+                &headers.user.uuid,
                 headers.device.atype,
                 &headers.ip.ip,
                 conn,
@@ -2193,7 +2171,7 @@ async fn _restore_organization_user(
                 EventType::OrganizationUserRestored as i32,
                 &user_org.uuid,
                 org_id,
-                headers.user.uuid.clone(),
+                &headers.user.uuid,
                 headers.device.atype,
                 &headers.ip.ip,
                 conn,
@@ -2322,7 +2300,7 @@ async fn post_groups(
         EventType::GroupCreated as i32,
         &group.uuid,
         org_id,
-        headers.user.uuid.clone(),
+        &headers.user.uuid,
         headers.device.atype,
         &headers.ip.ip,
         &mut conn,
@@ -2359,7 +2337,7 @@ async fn put_group(
         EventType::GroupUpdated as i32,
         &updated_group.uuid,
         org_id,
-        headers.user.uuid.clone(),
+        &headers.user.uuid,
         headers.device.atype,
         &headers.ip.ip,
         &mut conn,
@@ -2392,7 +2370,7 @@ async fn add_update_group(
             EventType::OrganizationUserUpdatedGroups as i32,
             &assigned_user_id,
             org_id,
-            headers.user.uuid.clone(),
+            &headers.user.uuid,
             headers.device.atype,
             &headers.ip.ip,
             conn,
@@ -2447,7 +2425,7 @@ async fn _delete_group(org_id: &str, group_id: &str, headers: &AdminHeaders, con
         EventType::GroupDeleted as i32,
         &group.uuid,
         org_id,
-        headers.user.uuid.clone(),
+        &headers.user.uuid,
         headers.device.atype,
         &headers.ip.ip,
         conn,
@@ -2538,7 +2516,7 @@ async fn put_group_users(
             EventType::OrganizationUserUpdatedGroups as i32,
             &assigned_user_id,
             org_id,
-            headers.user.uuid.clone(),
+            &headers.user.uuid,
             headers.device.atype,
             &headers.ip.ip,
             &mut conn,
@@ -2616,7 +2594,7 @@ async fn put_user_groups(
         EventType::OrganizationUserUpdatedGroups as i32,
         org_user_id,
         org_id,
-        headers.user.uuid.clone(),
+        &headers.user.uuid,
         headers.device.atype,
         &headers.ip.ip,
         &mut conn,
@@ -2671,7 +2649,7 @@ async fn delete_group_user(
         EventType::OrganizationUserUpdatedGroups as i32,
         org_user_id,
         org_id,
-        headers.user.uuid.clone(),
+        &headers.user.uuid,
         headers.device.atype,
         &headers.ip.ip,
         &mut conn,
@@ -2760,7 +2738,7 @@ async fn put_reset_password(
         EventType::OrganizationUserAdminResetPassword as i32,
         org_user_id,
         org_id,
-        headers.user.uuid.clone(),
+        &headers.user.uuid,
         headers.device.atype,
         &headers.ip.ip,
         &mut conn,
@@ -2887,8 +2865,7 @@ async fn put_reset_password_enrollment(
         EventType::OrganizationUserResetPasswordWithdraw as i32
     };
 
-    log_event(log_id, org_user_id, org_id, headers.user.uuid.clone(), headers.device.atype, &headers.ip.ip, &mut conn)
-        .await;
+    log_event(log_id, org_user_id, org_id, &headers.user.uuid, headers.device.atype, &headers.ip.ip, &mut conn).await;
 
     Ok(())
 }

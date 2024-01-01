@@ -13,7 +13,10 @@ use rocket::{
 };
 
 use crate::{
-    api::{core::log_event, unregister_push_device, ApiResult, EmptyResult, JsonResult, Notify, NumberOrString},
+    api::{
+        core::{log_event, two_factor},
+        unregister_push_device, ApiResult, EmptyResult, JsonResult, Notify, NumberOrString,
+    },
     auth::{decode_admin, encode_jwt, generate_admin_claims, ClientIp},
     config::ConfigBuilder,
     db::{backup_database, get_sql_server_version, models::*, DbConn, DbConnType},
@@ -390,7 +393,7 @@ async fn delete_user(uuid: &str, token: AdminToken, mut conn: DbConn) -> EmptyRe
             EventType::OrganizationUserRemoved as i32,
             &user_org.uuid,
             &user_org.org_uuid,
-            String::from(ACTING_ADMIN_USER),
+            ACTING_ADMIN_USER,
             14, // Use UnknownBrowser type
             &token.ip.ip,
             &mut conn,
@@ -445,9 +448,10 @@ async fn enable_user(uuid: &str, _token: AdminToken, mut conn: DbConn) -> EmptyR
 }
 
 #[post("/users/<uuid>/remove-2fa")]
-async fn remove_2fa(uuid: &str, _token: AdminToken, mut conn: DbConn) -> EmptyResult {
+async fn remove_2fa(uuid: &str, token: AdminToken, mut conn: DbConn) -> EmptyResult {
     let mut user = get_user_or_404(uuid, &mut conn).await?;
     TwoFactor::delete_all_by_user(&user.uuid, &mut conn).await?;
+    two_factor::enforce_2fa_policy(&user, ACTING_ADMIN_USER, 14, &token.ip.ip, &mut conn).await?;
     user.totp_recover = None;
     user.save(&mut conn).await
 }
@@ -517,7 +521,7 @@ async fn update_user_org_type(data: Json<UserOrgTypeData>, token: AdminToken, mu
         EventType::OrganizationUserUpdated as i32,
         &user_to_edit.uuid,
         &data.org_uuid,
-        String::from(ACTING_ADMIN_USER),
+        ACTING_ADMIN_USER,
         14, // Use UnknownBrowser type
         &token.ip.ip,
         &mut conn,

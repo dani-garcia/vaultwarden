@@ -263,7 +263,7 @@ pub async fn log_event(
     event_type: i32,
     source_uuid: &str,
     org_uuid: &str,
-    act_user_uuid: String,
+    act_user_uuid: &str,
     device_type: i32,
     ip: &IpAddr,
     conn: &mut DbConn,
@@ -271,7 +271,7 @@ pub async fn log_event(
     if !CONFIG.org_events_enabled() {
         return;
     }
-    _log_event(event_type, source_uuid, org_uuid, &act_user_uuid, device_type, None, ip, conn).await;
+    _log_event(event_type, source_uuid, org_uuid, act_user_uuid, device_type, None, ip, conn).await;
 }
 
 #[allow(clippy::too_many_arguments)]
