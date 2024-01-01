@@ -648,8 +648,7 @@ impl UserOrganization {
         db_run! { conn: {
             users_organizations::table
                 .filter(users_organizations::user_uuid.eq(user_uuid))
-                .filter(users_organizations::status.eq(UserOrgStatus::Accepted as i32))
-                .or_filter(users_organizations::status.eq(UserOrgStatus::Confirmed as i32))
+                .filter(users_organizations::status.eq(UserOrgStatus::Accepted as i32).or(users_organizations::status.eq(UserOrgStatus::Confirmed as i32)))
                 .count()
                 .first::<i64>(conn)
                 .unwrap_or(0)
@@ -766,6 +765,32 @@ impl UserOrganization {
             .select(users_organizations::all_columns)
             .distinct()
             .load::<UserOrganizationDb>(conn).expect("Error loading user organizations").from_db()
+        }}
+    }
+
+    pub async fn find_by_cipher_and_org_with_group(cipher_uuid: &str, org_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+        db_run! { conn: {
+            users_organizations::table
+            .filter(users_organizations::org_uuid.eq(org_uuid))
+            .inner_join(groups_users::table.on(
+                groups_users::users_organizations_uuid.eq(users_organizations::uuid)
+            ))
+            .left_join(collections_groups::table.on(
+                collections_groups::groups_uuid.eq(groups_users::groups_uuid)
+            ))
+            .left_join(groups::table.on(groups::uuid.eq(groups_users::groups_uuid)))
+            .left_join(ciphers_collections::table.on(
+                    ciphers_collections::collection_uuid.eq(collections_groups::collections_uuid).and(ciphers_collections::cipher_uuid.eq(&cipher_uuid))
+
+                ))
+            .filter(
+                    groups::access_all.eq(true).or( // AccessAll via groups
+                        ciphers_collections::cipher_uuid.eq(&cipher_uuid) // ..or access to collection via group
+                    )
+                )
+                .select(users_organizations::all_columns)
+                .distinct()
+            .load::<UserOrganizationDb>(conn).expect("Error loading user organizations with groups").from_db()
         }}
     }
 

@@ -2,6 +2,7 @@
 // Web Headers and caching
 //
 use std::{
+    collections::HashMap,
     io::{Cursor, ErrorKind},
     ops::Deref,
 };
@@ -746,4 +747,12 @@ pub fn convert_json_key_lcase_first(src_json: Value) -> Value {
 
         value => value,
     }
+}
+
+/// Parses the experimental client feature flags string into a HashMap.
+pub fn parse_experimental_client_feature_flags(experimental_client_feature_flags: &str) -> HashMap<String, bool> {
+    let feature_states =
+        experimental_client_feature_flags.to_lowercase().split(',').map(|f| (f.trim().to_owned(), true)).collect();
+
+    feature_states
 }
