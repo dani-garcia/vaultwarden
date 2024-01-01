@@ -775,7 +775,7 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
             err!("Invalid URL format for `PUSH_IDENTITY_URI`.");
         }
     }
-      
+
     const KNOWN_FLAGS: &[&str] =
         &["autofill-overlay", "autofill-v2", "browser-fileless-import", "fido2-vault-credentials"];
     for flag in parse_experimental_client_feature_flags(&cfg.experimental_client_feature_flags).keys() {
