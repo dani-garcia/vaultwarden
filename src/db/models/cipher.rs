@@ -273,7 +273,16 @@ impl Cipher {
             None => {
                 // Belongs to Organization, need to update affected users
                 if let Some(ref org_uuid) = self.organization_uuid {
-                    for user_org in UserOrganization::find_by_cipher_and_org(&self.uuid, org_uuid, conn).await.iter() {
+                    // users having access to the collection
+                    let mut collection_users =
+                        UserOrganization::find_by_cipher_and_org(&self.uuid, org_uuid, conn).await;
+                    if CONFIG.org_groups_enabled() {
+                        // members of a group having access to the collection
+                        let group_users =
+                            UserOrganization::find_by_cipher_and_org_with_group(&self.uuid, org_uuid, conn).await;
+                        collection_users.extend(group_users);
+                    }
+                    for user_org in collection_users {
                         User::update_uuid_revision(&user_org.user_uuid, conn).await;
                         user_uuids.push(user_org.user_uuid.clone())
                     }
