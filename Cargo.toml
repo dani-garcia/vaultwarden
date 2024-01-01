@@ -3,7 +3,7 @@ name = "vaultwarden"
 version = "1.0.0"
 authors = ["Daniel García <dani-garcia@users.noreply.github.com>"]
 edition = "2021"
-rust-version = "1.72.1"
+rust-version = "1.73.0"
 resolver = "2"
 
 repository = "https://github.com/dani-garcia/vaultwarden"
@@ -66,8 +66,8 @@ rmpv = "1.0.1" # MessagePack library
 dashmap = "5.5.3"
 
 # Async futures
-futures = "0.3.29"
-tokio = { version = "1.35.0", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal"] }
+futures = "0.3.30"
+tokio = { version = "1.35.1", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal"] }
 
 # A generic serialization/deserialization framework
 serde = { version = "1.0.193", features = ["derive"] }
@@ -90,8 +90,8 @@ uuid = { version = "1.6.1", features = ["v4"] }
 
 # Date and time libraries
 chrono = { version = "0.4.31", features = ["clock", "serde"], default-features = false }
-chrono-tz = "0.8.4"
-time = "0.3.30"
+chrono-tz = "0.8.5"
+time = "0.3.31"
 
 # Job scheduler
 job_scheduler_ng = "2.0.4"
@@ -123,7 +123,7 @@ email_address = "0.2.4"
 handlebars = { version = "4.5.0", features = ["dir_source"] }
 
 # HTTP client (Used for favicons, version check, DUO and HIBP API)
-reqwest = { version = "0.11.22", features = ["stream", "json", "deflate", "gzip", "brotli", "socks", "cookies", "trust-dns", "native-tls-alpn"] }
+reqwest = { version = "0.11.23", features = ["stream", "json", "deflate", "gzip", "brotli", "socks", "cookies", "trust-dns", "native-tls-alpn"] }
 
 # Favicon extraction libraries
 html5gum = "0.5.7"
@@ -139,7 +139,7 @@ cookie = "0.16.2"
 cookie_store = "0.19.1"
 
 # Used by U2F, JWT and PostgreSQL
-openssl = "0.10.61"
+openssl = "0.10.62"
 
 # CLI argument parsing
 pico-args = "0.5.0"

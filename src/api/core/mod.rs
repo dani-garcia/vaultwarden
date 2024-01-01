@@ -13,7 +13,6 @@ pub use ciphers::{purge_trashed_ciphers, CipherData, CipherSyncData, CipherSyncT
 pub use emergency_access::{emergency_notification_reminder_job, emergency_request_timeout_job};
 pub use events::{event_cleanup_job, log_event, log_user_event};
 pub use sends::purge_sends;
-pub use two_factor::send_incomplete_2fa_notifications;
 
 pub fn routes() -> Vec<Route> {
     let mut eq_domains_routes = routes![get_eq_domains, post_eq_domains, put_eq_domains];
