@@ -13,7 +13,7 @@ use crate::{
     api::EmptyResult,
     db::{DbConn, DbPool, schema::sso_auth},
     error::MapResult,
-    sso::{OIDCCode, OIDCCodeChallenge, OIDCIdentifier, OIDCState, SSO_AUTH_EXPIRATION},
+    sso::{OIDCCode, OIDCCodeChallenge, OIDCIdentifier, OIDCState, SSO_AUTH_EXPIRATION, UserRole},
 };
 
 #[derive(AsExpression, Clone, Debug, Serialize, Deserialize, FromSqlRow)]
@@ -35,6 +35,13 @@ pub struct OIDCAuthenticatedUser {
     pub email: String,
     pub email_verified: Option<bool>,
     pub user_name: Option<String>,
+    pub role: Option<UserRole>,
+}
+
+impl OIDCAuthenticatedUser {
+    pub fn is_admin(&self) -> bool {
+        self.role.as_ref().is_some_and(|x| x == &UserRole::Admin)
+    }
 }
 
 impl_FromToSqlText!(OIDCAuthenticatedUser);
