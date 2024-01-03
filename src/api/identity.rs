@@ -2,7 +2,7 @@ use chrono::{NaiveDateTime, Utc};
 use num_traits::FromPrimitive;
 use rocket::{
     form::{Form, FromForm},
-    http::Status,
+    http::{CookieJar, Status},
     response::Redirect,
     serde::json::Json,
     Route,
@@ -12,6 +12,7 @@ use serde_json::Value;
 use crate::api::core::two_factor::webauthn::Webauthn2FaConfig;
 use crate::{
     api::{
+        admin,
         core::{
             accounts::{PreloginData, RegisterData, _prelogin, _register, kdf_upgrade},
             log_user_event,
@@ -50,6 +51,7 @@ async fn login(
     client_header: ClientHeaders,
     client_version: Option<ClientVersion>,
     webauthn: Webauthn2FaConfig<'_>,
+    cookies: &CookieJar<'_>,
     mut conn: DbConn,
 ) -> JsonResult {
     let data: ConnectData = data.into_inner();
@@ -59,7 +61,7 @@ async fn login(
     let login_result = match data.grant_type.as_ref() {
         "refresh_token" => {
             _check_is_some(&data.refresh_token, "refresh_token cannot be blank")?;
-            _refresh_login(data, &mut conn, &client_header.ip).await
+            _refresh_login(data, &mut conn, cookies, &client_header.ip).await
         }
         "password" if CONFIG.sso_enabled() && CONFIG.sso_only() => err!("SSO sign-in is required"),
         "password" => {
@@ -93,7 +95,7 @@ async fn login(
             _check_is_some(&data.device_name, "device_name cannot be blank")?;
             _check_is_some(&data.device_type, "device_type cannot be blank")?;
 
-            _sso_login(data, &mut user_id, &mut conn, &client_header.ip, &client_version, webauthn).await
+            _sso_login(data, &mut user_id, &mut conn, cookies, &client_header.ip, &client_version, webauthn).await
         }
         "authorization_code" => err!("SSO sign-in is not available"),
         t => err!("Invalid type", t),
@@ -130,7 +132,7 @@ async fn login(
 }
 
 // Return Status::Unauthorized to trigger logout
-async fn _refresh_login(data: ConnectData, conn: &mut DbConn, ip: &ClientIp) -> JsonResult {
+async fn _refresh_login(data: ConnectData, conn: &mut DbConn, cookies: &CookieJar<'_>, ip: &ClientIp) -> JsonResult {
     // Extract token
     let refresh_token = match data.refresh_token {
         Some(token) => token,
@@ -147,9 +149,16 @@ async fn _refresh_login(data: ConnectData, conn: &mut DbConn, ip: &ClientIp) -> 
         Err(err) => {
             err_code!(format!("Unable to refresh login credentials: {}", err.message()), Status::Unauthorized.code)
         }
-        Ok((mut device, auth_tokens)) => {
+        Ok((user, mut device, auth_tokens)) => {
             // Save to update `device.updated_at` to track usage and toggle new status
             device.save(conn).await?;
+
+            if auth_tokens.is_admin {
+                debug!("Refreshed {} admin cookie", user.email);
+                admin::add_admin_cookie(cookies);
+            } else {
+                admin::remove_admin_cookie(cookies);
+            }
 
             let result = json!({
                 "refresh_token": auth_tokens.refresh_token(),
@@ -169,6 +178,7 @@ async fn _sso_login(
     data: ConnectData,
     user_id: &mut Option<UserId>,
     conn: &mut DbConn,
+    cookies: &CookieJar<'_>,
     ip: &ClientIp,
     client_version: &Option<ClientVersion>,
     webauthn: Webauthn2FaConfig<'_>,
@@ -294,27 +304,15 @@ async fn _sso_login(
     };
 
     // We passed 2FA get full user informations
-    let auth_user = sso::redeem(&user_infos.state, conn).await?;
-
-    if sso_user.is_none() {
-        let user_sso = SsoUser {
-            user_uuid: user.uuid.clone(),
-            identifier: user_infos.identifier,
-        };
-        user_sso.save(conn).await?;
-    }
+    let auth_tokens = sso::redeem(&user, &device, data.client_id, sso_user, &user_infos.state, conn).await?;
 
     // Set the user_uuid here to be passed back used for event logging.
     *user_id = Some(user.uuid.clone());
 
-    let auth_tokens = sso::create_auth_tokens(
-        &device,
-        &user,
-        data.client_id,
-        auth_user.refresh_token,
-        auth_user.access_token,
-        auth_user.expires_in,
-    )?;
+    if auth_tokens.is_admin {
+        info!("User {} logged with admin cookie", user.email);
+        admin::add_admin_cookie(cookies);
+    }
 
     authenticated_response(&user, &mut device, auth_tokens, twofactor_token, &now, conn, ip).await
 }
