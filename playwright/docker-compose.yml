@@ -34,6 +34,8 @@ services:
       - SSO_ENABLED
       - SSO_FRONTEND
       - SSO_ONLY
+      - SSO_ROLES_DEFAULT_TO_USER
+      - SSO_ROLES_ENABLED
       - SSO_SCOPES
     restart: "no"
     depends_on:

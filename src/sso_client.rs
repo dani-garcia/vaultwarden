@@ -3,6 +3,7 @@ use std::{borrow::Cow, sync::LazyLock, time::Duration};
 use mini_moka::sync::Cache;
 use openidconnect::{core::*, reqwest, *};
 use regex::Regex;
+use serde_json::Value;
 use url::Url;
 
 use crate::{
@@ -17,16 +18,61 @@ static CLIENT_CACHE: LazyLock<Cache<String, Client>> = LazyLock::new(|| {
     Cache::builder().max_capacity(1).time_to_live(Duration::from_secs(CONFIG.sso_client_cache_expiration())).build()
 });
 
-/// OpenID Connect Core client.
-pub type CustomClient = openidconnect::Client<
-    EmptyAdditionalClaims,
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
+pub struct AllAdditionalClaims {
+    #[serde(flatten)]
+    pub claims: Value,
+}
+
+impl AdditionalClaims for AllAdditionalClaims {}
+
+pub type MetadataClient = openidconnect::Client<
+    AllAdditionalClaims,
     CoreAuthDisplay,
     CoreGenderClaim,
     CoreJweContentEncryptionAlgorithm,
     CoreJsonWebKey,
     CoreAuthPrompt,
     StandardErrorResponse<CoreErrorResponseType>,
-    CoreTokenResponse,
+    StandardTokenResponse<
+        IdTokenFields<
+            AllAdditionalClaims,
+            EmptyExtraTokenFields,
+            CoreGenderClaim,
+            CoreJweContentEncryptionAlgorithm,
+            CoreJwsSigningAlgorithm,
+        >,
+        CoreTokenType,
+    >,
+    CoreTokenIntrospectionResponse,
+    CoreRevocableToken,
+    CoreRevocationErrorResponse,
+    EndpointSet,
+    EndpointNotSet,
+    EndpointNotSet,
+    EndpointNotSet,
+    EndpointMaybeSet,
+    EndpointMaybeSet,
+>;
+
+pub type CustomClient = openidconnect::Client<
+    AllAdditionalClaims,
+    CoreAuthDisplay,
+    CoreGenderClaim,
+    CoreJweContentEncryptionAlgorithm,
+    CoreJsonWebKey,
+    CoreAuthPrompt,
+    StandardErrorResponse<CoreErrorResponseType>,
+    StandardTokenResponse<
+        IdTokenFields<
+            AllAdditionalClaims,
+            EmptyExtraTokenFields,
+            CoreGenderClaim,
+            CoreJweContentEncryptionAlgorithm,
+            CoreJwsSigningAlgorithm,
+        >,
+        CoreTokenType,
+    >,
     CoreTokenIntrospectionResponse,
     CoreRevocableToken,
     CoreRevocationErrorResponse,
@@ -62,7 +108,7 @@ impl Client {
             Ok(metadata) => metadata,
         };
 
-        let base_client = CoreClient::from_provider_metadata(provider_metadata, client_id, Some(client_secret));
+        let base_client = MetadataClient::from_provider_metadata(provider_metadata, client_id, Some(client_secret));
 
         let token_uri = match base_client.token_uri() {
             Some(uri) => uri.clone(),
@@ -144,7 +190,7 @@ impl Client {
     ) -> ApiResult<(
         StandardTokenResponse<
             IdTokenFields<
-                EmptyAdditionalClaims,
+                AllAdditionalClaims,
                 EmptyExtraTokenFields,
                 CoreGenderClaim,
                 CoreJweContentEncryptionAlgorithm,
@@ -152,7 +198,7 @@ impl Client {
             >,
             CoreTokenType,
         >,
-        IdTokenClaims<EmptyAdditionalClaims, CoreGenderClaim>,
+        IdTokenClaims<AllAdditionalClaims, CoreGenderClaim>,
     )> {
         let oidc_code = AuthorizationCode::new(code.to_string());
 
@@ -199,7 +245,10 @@ impl Client {
         }
     }
 
-    pub async fn user_info(&self, access_token: AccessToken) -> ApiResult<CoreUserInfoClaims> {
+    pub async fn user_info(
+        &self,
+        access_token: AccessToken,
+    ) -> ApiResult<UserInfoClaims<AllAdditionalClaims, CoreGenderClaim>> {
         match self.core_client.user_info(access_token, None).request_async(&self.http_client).await {
             Err(err) => err!(format!("Request to user_info endpoint failed: {err}")),
             Ok(user_info) => Ok(user_info),
@@ -232,20 +281,19 @@ impl Client {
     }
 
     pub async fn exchange_refresh_token(
+        &self,
         refresh_token: String,
-    ) -> ApiResult<(Option<String>, String, Option<Duration>)> {
+    ) -> ApiResult<(Option<String>, AccessToken, Option<Duration>)> {
         let rt = RefreshToken::new(refresh_token);
 
-        let client = Client::cached().await?;
-        let token_response =
-            match client.core_client.exchange_refresh_token(&rt).request_async(&client.http_client).await {
-                Err(err) => err!(format!("Request to exchange_refresh_token endpoint failed: {:?}", err)),
-                Ok(token_response) => token_response,
-            };
+        let token_response = match self.core_client.exchange_refresh_token(&rt).request_async(&self.http_client).await {
+            Err(err) => err!(format!("Request to exchange_refresh_token endpoint failed: {:?}", err)),
+            Ok(token_response) => token_response,
+        };
 
         Ok((
             token_response.refresh_token().map(|token| token.secret().clone()),
-            token_response.access_token().secret().clone(),
+            token_response.access_token().clone(),
             token_response.expires_in(),
         ))
     }

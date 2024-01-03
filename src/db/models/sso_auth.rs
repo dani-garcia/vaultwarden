@@ -5,7 +5,7 @@ use crate::api::EmptyResult;
 use crate::db::schema::sso_auth;
 use crate::db::{DbConn, DbPool};
 use crate::error::MapResult;
-use crate::sso::{OIDCCode, OIDCCodeChallenge, OIDCIdentifier, OIDCState, SSO_AUTH_EXPIRATION};
+use crate::sso::{OIDCCode, OIDCCodeChallenge, OIDCIdentifier, OIDCState, UserRole, SSO_AUTH_EXPIRATION};
 
 use diesel::deserialize::FromSql;
 use diesel::expression::AsExpression;
@@ -37,6 +37,13 @@ pub struct OIDCAuthenticatedUser {
     pub email: String,
     pub email_verified: Option<bool>,
     pub user_name: Option<String>,
+    pub role: Option<UserRole>,
+}
+
+impl OIDCAuthenticatedUser {
+    pub fn is_admin(&self) -> bool {
+        self.role.as_ref().is_some_and(|x| x == &UserRole::Admin)
+    }
 }
 
 impl_FromToSqlText!(OIDCAuthenticatedUser);
