@@ -345,9 +345,6 @@ async fn get_org_collections_details(org_id: &str, headers: ManagerHeadersLoose,
             Vec::with_capacity(0)
         };
 
-        // uuids of users belonging to a group of this collection
-        let has_collection_access_via_group = GroupUser::get_group_members_for_collection(&col.uuid, &mut conn).await;
-
         let mut assigned = has_full_access;
         let users: Vec<Value> = coll_users
             .iter()
