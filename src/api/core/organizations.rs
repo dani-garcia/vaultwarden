@@ -362,10 +362,12 @@ async fn get_org_collections_details(org_id: &str, headers: ManagerHeadersLoose,
             })
             .collect();
 
-        // if current user is in any collection-assigned group
-        // or in a group having access to all collections
-        // or itself has access to all collections     
-        assigned = assigned || has_collection_access_via_group.contains(&user_org.uuid);
+        // if the current user is not assigned and groups are enabled,
+        // check if they have access to the given collection via a group
+        if !assigned && CONFIG.org_groups_enabled()
+        {
+            assigned = GroupUser::get_group_members_for_collection(&col.uuid, &mut conn).await.contains(&user_org.uuid);
+        }     
 
         let mut json_object = col.to_json();
         json_object["Assigned"] = json!(assigned);
