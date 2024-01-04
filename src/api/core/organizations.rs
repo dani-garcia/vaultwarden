@@ -364,8 +364,8 @@ async fn get_org_collections_details(org_id: &str, headers: ManagerHeadersLoose,
 
         // if current user is in any collection-assigned group
         // or in a group having access to all collections
-        // or itself has access to all collections
-        assigned = !assigned && has_collection_access_via_group.contains(&user_org.uuid);
+        // or itself has access to all collections     
+        assigned = assigned || has_collection_access_via_group.contains(&user_org.uuid);
 
         let mut json_object = col.to_json();
         json_object["Assigned"] = json!(assigned);
