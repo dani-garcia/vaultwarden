@@ -321,14 +321,10 @@ async fn get_org_collections_details(org_id: &str, headers: ManagerHeadersLoose,
     };
 
     let coll_users = CollectionUser::find_by_organization(org_id, &mut conn).await;
-    // uuids of users in groups having access to all collections
-    let has_full_access_via_group = if CONFIG.org_groups_enabled() {
-        GroupUser::get_members_of_full_access_groups(org_id, &mut conn).await
-    } else {
-        vec![]
-    };
 
-    let has_full_access = user_org.access_all || has_full_access_via_group.contains(&user_org.uuid);
+    let has_full_access_via_group =
+        CONFIG.org_groups_enabled() && GroupUser::has_full_access_by_member(org_id, &user_org.uuid, &mut conn).await;
+    let has_full_access = user_org.access_all || has_full_access_via_group;
 
     for col in Collection::find_by_organization(org_id, &mut conn).await {
         let groups: Vec<Value> = if CONFIG.org_groups_enabled() {
@@ -359,12 +355,10 @@ async fn get_org_collections_details(org_id: &str, headers: ManagerHeadersLoose,
             })
             .collect();
 
-        // if the current user is not assigned and groups are enabled,
-        // check if they have access to the given collection via a group
-        if !assigned && CONFIG.org_groups_enabled()
-        {
-            assigned = GroupUser::get_group_members_for_collection(&col.uuid, &mut conn).await.contains(&user_org.uuid);
-        }     
+        // check if the current user has access to the given collection via a group
+        if !assigned && CONFIG.org_groups_enabled() {
+            assigned = GroupUser::has_access_to_collection_by_member(&col.uuid, &user_org.uuid, &mut conn).await;
+        }
 
         let mut json_object = col.to_json();
         json_object["Assigned"] = json!(assigned);

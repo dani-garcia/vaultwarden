@@ -486,23 +486,25 @@ impl GroupUser {
         }}
     }
 
-    pub async fn get_group_members_for_collection(collection_uuid: &str, conn: &mut DbConn) -> Vec<String> {
+    pub async fn has_access_to_collection_by_member(
+        collection_uuid: &str,
+        member_uuid: &str,
+        conn: &mut DbConn,
+    ) -> bool {
         db_run! { conn: {
             groups_users::table
                 .inner_join(collections_groups::table.on(
                     collections_groups::groups_uuid.eq(groups_users::groups_uuid)
                 ))
                 .filter(collections_groups::collections_uuid.eq(collection_uuid))
-                .select(groups_users::users_organizations_uuid)
-                .distinct()
-                .load::<String>(conn)
-                .expect("Error loading group users for collection")
+                .filter(groups_users::users_organizations_uuid.eq(member_uuid))
+                .count()
+                .first::<i64>(conn)
+                .unwrap_or(0) != 0
         }}
-        .into_iter()
-        .collect()
     }
 
-    pub async fn get_members_of_full_access_groups(org_uuid: &str, conn: &mut DbConn) -> Vec<String> {
+    pub async fn has_full_access_by_member(org_uuid: &str, member_uuid: &str, conn: &mut DbConn) -> bool {
         db_run! { conn: {
             groups_users::table
                 .inner_join(groups::table.on(
@@ -510,13 +512,11 @@ impl GroupUser {
                 ))
                 .filter(groups::organizations_uuid.eq(org_uuid))
                 .filter(groups::access_all.eq(true))
-                .select(groups_users::users_organizations_uuid)
-                .distinct()
-                .load::<String>(conn)
-                .expect("Error loading all access group users for organization")
+                .filter(groups_users::users_organizations_uuid.eq(member_uuid))
+                .count()
+                .first::<i64>(conn)
+                .unwrap_or(0) != 0
         }}
-        .into_iter()
-        .collect()
     }
 
     pub async fn update_user_revision(&self, conn: &mut DbConn) {
