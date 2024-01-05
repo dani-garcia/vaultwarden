@@ -326,24 +326,11 @@ async fn get_org_collections_details(org_id: &str, headers: ManagerHeadersLoose,
     // check if current user has full access to the organization (either directly or via any group)
     let has_full_access_via_group =
         CONFIG.org_groups_enabled() && GroupUser::has_full_access_by_member(org_id, &user_org.uuid, &mut conn).await;
-    let has_full_access = user_org.access_all || has_full_access_via_group;
+    let has_full_access_to_org = user_org.access_all || has_full_access_via_group;
 
     for col in Collection::find_by_organization(org_id, &mut conn).await {
-        // get the group details for the given collection
-        let groups: Vec<Value> = if CONFIG.org_groups_enabled() {
-            CollectionGroup::find_by_collection(&col.uuid, &mut conn)
-                .await
-                .iter()
-                .map(|collection_group| {
-                    SelectionReadOnly::to_collection_group_details_read_only(collection_group).to_json()
-                })
-                .collect()
-        } else {
-            Vec::with_capacity(0)
-        };
-
         // assigned indicates whether the current user has access to the given collection
-        let mut assigned = has_full_access;
+        let mut assigned = has_full_access_to_org;
 
         // get the users assigned directly to the given collection
         let users: Vec<Value> = coll_users
@@ -362,6 +349,19 @@ async fn get_org_collections_details(org_id: &str, headers: ManagerHeadersLoose,
         if !assigned && CONFIG.org_groups_enabled() {
             assigned = GroupUser::has_access_to_collection_by_member(&col.uuid, &user_org.uuid, &mut conn).await;
         }
+
+        // get the group details for the given collection
+        let groups: Vec<Value> = if CONFIG.org_groups_enabled() {
+            CollectionGroup::find_by_collection(&col.uuid, &mut conn)
+                .await
+                .iter()
+                .map(|collection_group| {
+                    SelectionReadOnly::to_collection_group_details_read_only(collection_group).to_json()
+                })
+                .collect()
+        } else {
+            Vec::with_capacity(0)
+        };
 
         let mut json_object = col.to_json();
         json_object["Assigned"] = json!(assigned);
