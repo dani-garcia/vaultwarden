@@ -480,7 +480,7 @@ make_config! {
         /// Invitation token expiration time (in hours) |> The number of hours after which an organization invite token, emergency access invite token,
         /// email verification token and deletion request token will expire (must be at least 1)
         invitation_expiration_hours: u32, false, def, 120;
-        /// Allow emergency access |> Controls whether users can enable emergency access to their accounts. This setting applies globally to all users.
+        /// Enable emergency access |> Controls whether users can enable emergency access to their accounts. This setting applies globally to all users.
         emergency_access_allowed:    bool,   true,   def,    true;
         /// Allow email change |> Controls whether users can change their email. This setting applies globally to all users.
         email_change_allowed:    bool,   true,   def,    true;
