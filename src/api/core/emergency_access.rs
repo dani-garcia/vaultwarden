@@ -38,26 +38,39 @@ pub fn routes() -> Vec<Route> {
 // region get
 
 #[get("/emergency-access/trusted")]
-async fn get_contacts(headers: Headers, mut conn: DbConn) -> JsonResult {
-    let emergency_access_list = if CONFIG.emergency_access_allowed() {
-        EmergencyAccess::find_all_by_grantor_uuid(&headers.user.uuid, &mut conn).await
-    } else {
-        Vec::new()
-    };
+async fn get_contacts(headers: Headers, mut conn: DbConn) -> Json<Value> {
+    if !CONFIG.emergency_access_allowed() {
+        return Json(json!({
+            "Data": [{
+                "Id": "",
+                "Status": 2,
+                "Type": 0,
+                "WaitTimeDays": 0,
+                "GranteeId": "",
+                "Email": "",
+                "Name": "NOTE: Emergency Access is disabled!",
+                "Object": "emergencyAccessGranteeDetails",
+
+            }],
+            "Object": "list",
+            "ContinuationToken": null
+        }));
+    }
+    let emergency_access_list = EmergencyAccess::find_all_by_grantor_uuid(&headers.user.uuid, &mut conn).await;
     let mut emergency_access_list_json = Vec::with_capacity(emergency_access_list.len());
     for ea in emergency_access_list {
         emergency_access_list_json.push(ea.to_json_grantee_details(&mut conn).await);
     }
 
-    Ok(Json(json!({
+    Json(json!({
       "Data": emergency_access_list_json,
       "Object": "list",
       "ContinuationToken": null
-    })))
+    }))
 }
 
 #[get("/emergency-access/granted")]
-async fn get_grantees(headers: Headers, mut conn: DbConn) -> JsonResult {
+async fn get_grantees(headers: Headers, mut conn: DbConn) -> Json<Value> {
     let emergency_access_list = if CONFIG.emergency_access_allowed() {
         EmergencyAccess::find_all_by_grantee_uuid(&headers.user.uuid, &mut conn).await
     } else {
@@ -68,11 +81,11 @@ async fn get_grantees(headers: Headers, mut conn: DbConn) -> JsonResult {
         emergency_access_list_json.push(ea.to_json_grantor_details(&mut conn).await);
     }
 
-    Ok(Json(json!({
+    Json(json!({
       "Data": emergency_access_list_json,
       "Object": "list",
       "ContinuationToken": null
-    })))
+    }))
 }
 
 #[get("/emergency-access/<emer_id>")]
