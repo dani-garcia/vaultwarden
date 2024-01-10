@@ -38,42 +38,59 @@ pub fn routes() -> Vec<Route> {
 // region get
 
 #[get("/emergency-access/trusted")]
-async fn get_contacts(headers: Headers, mut conn: DbConn) -> JsonResult {
-    check_emergency_access_allowed()?;
+async fn get_contacts(headers: Headers, mut conn: DbConn) -> Json<Value> {
+    if !CONFIG.emergency_access_allowed() {
+        return Json(json!({
+            "Data": [{
+                "Id": "",
+                "Status": 2,
+                "Type": 0,
+                "WaitTimeDays": 0,
+                "GranteeId": "",
+                "Email": "",
+                "Name": "NOTE: Emergency Access is disabled!",
+                "Object": "emergencyAccessGranteeDetails",
 
+            }],
+            "Object": "list",
+            "ContinuationToken": null
+        }));
+    }
     let emergency_access_list = EmergencyAccess::find_all_by_grantor_uuid(&headers.user.uuid, &mut conn).await;
     let mut emergency_access_list_json = Vec::with_capacity(emergency_access_list.len());
     for ea in emergency_access_list {
         emergency_access_list_json.push(ea.to_json_grantee_details(&mut conn).await);
     }
 
-    Ok(Json(json!({
+    Json(json!({
       "Data": emergency_access_list_json,
       "Object": "list",
       "ContinuationToken": null
-    })))
+    }))
 }
 
 #[get("/emergency-access/granted")]
-async fn get_grantees(headers: Headers, mut conn: DbConn) -> JsonResult {
-    check_emergency_access_allowed()?;
-
-    let emergency_access_list = EmergencyAccess::find_all_by_grantee_uuid(&headers.user.uuid, &mut conn).await;
+async fn get_grantees(headers: Headers, mut conn: DbConn) -> Json<Value> {
+    let emergency_access_list = if CONFIG.emergency_access_allowed() {
+        EmergencyAccess::find_all_by_grantee_uuid(&headers.user.uuid, &mut conn).await
+    } else {
+        Vec::new()
+    };
     let mut emergency_access_list_json = Vec::with_capacity(emergency_access_list.len());
     for ea in emergency_access_list {
         emergency_access_list_json.push(ea.to_json_grantor_details(&mut conn).await);
     }
 
-    Ok(Json(json!({
+    Json(json!({
       "Data": emergency_access_list_json,
       "Object": "list",
       "ContinuationToken": null
-    })))
+    }))
 }
 
 #[get("/emergency-access/<emer_id>")]
 async fn get_emergency_access(emer_id: &str, mut conn: DbConn) -> JsonResult {
-    check_emergency_access_allowed()?;
+    check_emergency_access_enabled()?;
 
     match EmergencyAccess::find_by_uuid(emer_id, &mut conn).await {
         Some(emergency_access) => Ok(Json(emergency_access.to_json_grantee_details(&mut conn).await)),
@@ -104,7 +121,7 @@ async fn post_emergency_access(
     data: JsonUpcase<EmergencyAccessUpdateData>,
     mut conn: DbConn,
 ) -> JsonResult {
-    check_emergency_access_allowed()?;
+    check_emergency_access_enabled()?;
 
     let data: EmergencyAccessUpdateData = data.into_inner().data;
 
@@ -134,7 +151,7 @@ async fn post_emergency_access(
 
 #[delete("/emergency-access/<emer_id>")]
 async fn delete_emergency_access(emer_id: &str, headers: Headers, mut conn: DbConn) -> EmptyResult {
-    check_emergency_access_allowed()?;
+    check_emergency_access_enabled()?;
 
     let grantor_user = headers.user;
 
@@ -170,7 +187,7 @@ struct EmergencyAccessInviteData {
 
 #[post("/emergency-access/invite", data = "<data>")]
 async fn send_invite(data: JsonUpcase<EmergencyAccessInviteData>, headers: Headers, mut conn: DbConn) -> EmptyResult {
-    check_emergency_access_allowed()?;
+    check_emergency_access_enabled()?;
 
     let data: EmergencyAccessInviteData = data.into_inner().data;
     let email = data.Email.to_lowercase();
@@ -253,7 +270,7 @@ async fn send_invite(data: JsonUpcase<EmergencyAccessInviteData>, headers: Heade
 
 #[post("/emergency-access/<emer_id>/reinvite")]
 async fn resend_invite(emer_id: &str, headers: Headers, mut conn: DbConn) -> EmptyResult {
-    check_emergency_access_allowed()?;
+    check_emergency_access_enabled()?;
 
     let mut emergency_access = match EmergencyAccess::find_by_uuid(emer_id, &mut conn).await {
         Some(emer) => emer,
@@ -313,7 +330,7 @@ struct AcceptData {
 
 #[post("/emergency-access/<emer_id>/accept", data = "<data>")]
 async fn accept_invite(emer_id: &str, data: JsonUpcase<AcceptData>, headers: Headers, mut conn: DbConn) -> EmptyResult {
-    check_emergency_access_allowed()?;
+    check_emergency_access_enabled()?;
 
     let data: AcceptData = data.into_inner().data;
     let token = &data.Token;
@@ -396,7 +413,7 @@ async fn confirm_emergency_access(
     headers: Headers,
     mut conn: DbConn,
 ) -> JsonResult {
-    check_emergency_access_allowed()?;
+    check_emergency_access_enabled()?;
 
     let confirming_user = headers.user;
     let data: ConfirmData = data.into_inner().data;
@@ -445,7 +462,7 @@ async fn confirm_emergency_access(
 
 #[post("/emergency-access/<emer_id>/initiate")]
 async fn initiate_emergency_access(emer_id: &str, headers: Headers, mut conn: DbConn) -> JsonResult {
-    check_emergency_access_allowed()?;
+    check_emergency_access_enabled()?;
 
     let initiating_user = headers.user;
     let mut emergency_access = match EmergencyAccess::find_by_uuid(emer_id, &mut conn).await {
@@ -485,7 +502,7 @@ async fn initiate_emergency_access(emer_id: &str, headers: Headers, mut conn: Db
 
 #[post("/emergency-access/<emer_id>/approve")]
 async fn approve_emergency_access(emer_id: &str, headers: Headers, mut conn: DbConn) -> JsonResult {
-    check_emergency_access_allowed()?;
+    check_emergency_access_enabled()?;
 
     let mut emergency_access = match EmergencyAccess::find_by_uuid(emer_id, &mut conn).await {
         Some(emer) => emer,
@@ -523,7 +540,7 @@ async fn approve_emergency_access(emer_id: &str, headers: Headers, mut conn: DbC
 
 #[post("/emergency-access/<emer_id>/reject")]
 async fn reject_emergency_access(emer_id: &str, headers: Headers, mut conn: DbConn) -> JsonResult {
-    check_emergency_access_allowed()?;
+    check_emergency_access_enabled()?;
 
     let mut emergency_access = match EmergencyAccess::find_by_uuid(emer_id, &mut conn).await {
         Some(emer) => emer,
@@ -566,7 +583,7 @@ async fn reject_emergency_access(emer_id: &str, headers: Headers, mut conn: DbCo
 
 #[post("/emergency-access/<emer_id>/view")]
 async fn view_emergency_access(emer_id: &str, headers: Headers, mut conn: DbConn) -> JsonResult {
-    check_emergency_access_allowed()?;
+    check_emergency_access_enabled()?;
 
     let emergency_access = match EmergencyAccess::find_by_uuid(emer_id, &mut conn).await {
         Some(emer) => emer,
@@ -603,7 +620,7 @@ async fn view_emergency_access(emer_id: &str, headers: Headers, mut conn: DbConn
 
 #[post("/emergency-access/<emer_id>/takeover")]
 async fn takeover_emergency_access(emer_id: &str, headers: Headers, mut conn: DbConn) -> JsonResult {
-    check_emergency_access_allowed()?;
+    check_emergency_access_enabled()?;
 
     let requesting_user = headers.user;
     let emergency_access = match EmergencyAccess::find_by_uuid(emer_id, &mut conn).await {
@@ -646,7 +663,7 @@ async fn password_emergency_access(
     headers: Headers,
     mut conn: DbConn,
 ) -> EmptyResult {
-    check_emergency_access_allowed()?;
+    check_emergency_access_enabled()?;
 
     let data: EmergencyAccessPasswordData = data.into_inner().data;
     let new_master_password_hash = &data.NewMasterPasswordHash;
@@ -723,9 +740,9 @@ fn is_valid_request(
         && emergency_access.atype == requested_access_type as i32
 }
 
-fn check_emergency_access_allowed() -> EmptyResult {
+fn check_emergency_access_enabled() -> EmptyResult {
     if !CONFIG.emergency_access_allowed() {
-        err!("Emergency access is not allowed.")
+        err!("Emergency access is not enabled.")
     }
     Ok(())
 }
