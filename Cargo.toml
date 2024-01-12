@@ -70,8 +70,8 @@ futures = "0.3.30"
 tokio = { version = "1.35.1", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal"] }
 
 # A generic serialization/deserialization framework
-serde = { version = "1.0.193", features = ["derive"] }
-serde_json = "1.0.108"
+serde = { version = "1.0.195", features = ["derive"] }
+serde_json = "1.0.111"
 
 # A safe, extensible ORM and Query builder
 diesel = { version = "2.1.4", features = ["chrono", "r2d2"] }
@@ -115,15 +115,15 @@ webauthn-rs = "0.3.2"
 url = "2.5.0"
 
 # Email libraries
-lettre = { version = "0.11.2", features = ["smtp-transport", "sendmail-transport", "builder", "serde", "tokio1-native-tls", "hostname", "tracing", "tokio1"], default-features = false }
+lettre = { version = "0.11.3", features = ["smtp-transport", "sendmail-transport", "builder", "serde", "tokio1-native-tls", "hostname", "tracing", "tokio1"], default-features = false }
 percent-encoding = "2.3.1" # URL encoding library used for URL's in the emails
 email_address = "0.2.4"
 
 # HTML Template library
-handlebars = { version = "4.5.0", features = ["dir_source"] }
+handlebars = { version = "5.0.0", features = ["dir_source"] }
 
 # HTTP client (Used for favicons, version check, DUO and HIBP API)
-reqwest = { version = "0.11.23", features = ["stream", "json", "deflate", "gzip", "brotli", "socks", "cookies", "trust-dns", "native-tls-alpn"] }
+reqwest = { version = "0.11.23", features = ["stream", "json", "gzip", "brotli", "socks", "cookies", "trust-dns", "native-tls-alpn"] }
 
 # Favicon extraction libraries
 html5gum = "0.5.7"
@@ -132,7 +132,7 @@ data-url = "0.3.1"
 bytes = "1.5.0"
 
 # Cache function results (Used for version check and favicon fetching)
-cached = { version = "0.46.1", features = ["async"] }
+cached = { version = "0.47.0", features = ["async"] }
 
 # Used for custom short lived cookie jar during favicon extraction
 cookie = "0.16.2"
@@ -149,7 +149,7 @@ paste = "1.0.14"
 governor = "0.6.0"
 
 # Check client versions for specific features.
-semver = "1.0.20"
+semver = "1.0.21"
 
 # Allow overriding the default memory allocator
 # Mainly used for the musl builds, since the default musl malloc is very slow
