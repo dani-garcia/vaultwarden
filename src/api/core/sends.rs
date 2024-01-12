@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use chrono::{DateTime, Duration, Utc};
+use num_traits::ToPrimitive;
 use rocket::form::Form;
 use rocket::fs::NamedFile;
 use rocket::fs::TempFile;
@@ -8,17 +9,17 @@ use rocket::serde::json::Json;
 use serde_json::Value;
 
 use crate::{
-    api::{ApiResult, EmptyResult, JsonResult, JsonUpcase, Notify, NumberOrString, UpdateType},
+    api::{ApiResult, EmptyResult, JsonResult, JsonUpcase, Notify, UpdateType},
     auth::{ClientIp, Headers, Host},
     db::{models::*, DbConn, DbPool},
-    util::SafeString,
+    util::{NumberOrString, SafeString},
     CONFIG,
 };
 
 const SEND_INACCESSIBLE_MSG: &str = "Send does not exist or is no longer available";
 
 // The max file size allowed by Bitwarden clients and add an extra 5% to avoid issues
-const SIZE_525_MB: u64 = 550_502_400;
+const SIZE_525_MB: i64 = 550_502_400;
 
 pub fn routes() -> Vec<rocket::Route> {
     routes![
@@ -216,28 +217,38 @@ async fn post_send_file(data: Form<UploadData<'_>>, headers: Headers, mut conn: 
     } = data.into_inner();
     let model = model.into_inner().data;
 
+    let Some(size) = data.len().to_i64() else {
+        err!("Invalid send size");
+    };
+    if size < 0 {
+        err!("Send size can't be negative")
+    }
+
     enforce_disable_hide_email_policy(&model, &headers, &mut conn).await?;
 
-    let size_limit = match CONFIG.user_attachment_limit() {
+    let size_limit = match CONFIG.user_send_limit() {
         Some(0) => err!("File uploads are disabled"),
         Some(limit_kb) => {
-            let left = (limit_kb * 1024) - Attachment::size_by_user(&headers.user.uuid, &mut conn).await;
+            let already_used = Send::size_by_user(&headers.user.uuid, &mut conn).await;
+            let left = limit_kb.checked_mul(1024).and_then(|l| l.checked_sub(already_used));
+            let Some(left) = left else {
+                err!("Send size overflow");
+            };
             if left <= 0 {
-                err!("Attachment storage limit reached! Delete some attachments to free up space")
+                err!("Send storage limit reached! Delete some sends to free up space")
             }
-            std::cmp::Ord::max(left as u64, SIZE_525_MB)
+            i64::clamp(left, 0, SIZE_525_MB)
         }
         None => SIZE_525_MB,
     };
 
+    if size > size_limit {
+        err!("Send storage limit exceeded with this file");
+    }
+
     let mut send = create_send(model, headers.user.uuid)?;
     if send.atype != SendType::File as i32 {
         err!("Send content is not a file");
-    }
-
-    let size = data.len();
-    if size > size_limit {
-        err!("Attachment storage limit exceeded with this file");
     }
 
     let file_id = crate::crypto::generate_send_id();
@@ -253,7 +264,7 @@ async fn post_send_file(data: Form<UploadData<'_>>, headers: Headers, mut conn: 
     if let Some(o) = data_value.as_object_mut() {
         o.insert(String::from("Id"), Value::String(file_id));
         o.insert(String::from("Size"), Value::Number(size.into()));
-        o.insert(String::from("SizeName"), Value::String(crate::util::get_display_size(size as i32)));
+        o.insert(String::from("SizeName"), Value::String(crate::util::get_display_size(size)));
     }
     send.data = serde_json::to_string(&data_value)?;
 
@@ -285,24 +296,31 @@ async fn post_send_file_v2(data: JsonUpcase<SendData>, headers: Headers, mut con
     enforce_disable_hide_email_policy(&data, &headers, &mut conn).await?;
 
     let file_length = match &data.FileLength {
-        Some(m) => Some(m.into_i32()?),
-        _ => None,
+        Some(m) => m.into_i64()?,
+        _ => err!("Invalid send length"),
     };
+    if file_length < 0 {
+        err!("Send size can't be negative")
+    }
 
-    let size_limit = match CONFIG.user_attachment_limit() {
+    let size_limit = match CONFIG.user_send_limit() {
         Some(0) => err!("File uploads are disabled"),
         Some(limit_kb) => {
-            let left = (limit_kb * 1024) - Attachment::size_by_user(&headers.user.uuid, &mut conn).await;
+            let already_used = Send::size_by_user(&headers.user.uuid, &mut conn).await;
+            let left = limit_kb.checked_mul(1024).and_then(|l| l.checked_sub(already_used));
+            let Some(left) = left else {
+                err!("Send size overflow");
+            };
             if left <= 0 {
-                err!("Attachment storage limit reached! Delete some attachments to free up space")
+                err!("Send storage limit reached! Delete some sends to free up space")
             }
-            std::cmp::Ord::max(left as u64, SIZE_525_MB)
+            i64::clamp(left, 0, SIZE_525_MB)
         }
         None => SIZE_525_MB,
     };
 
-    if file_length.is_some() && file_length.unwrap() as u64 > size_limit {
-        err!("Attachment storage limit exceeded with this file");
+    if file_length > size_limit {
+        err!("Send storage limit exceeded with this file");
     }
 
     let mut send = create_send(data, headers.user.uuid)?;
@@ -312,8 +330,8 @@ async fn post_send_file_v2(data: JsonUpcase<SendData>, headers: Headers, mut con
     let mut data_value: Value = serde_json::from_str(&send.data)?;
     if let Some(o) = data_value.as_object_mut() {
         o.insert(String::from("Id"), Value::String(file_id.clone()));
-        o.insert(String::from("Size"), Value::Number(file_length.unwrap().into()));
-        o.insert(String::from("SizeName"), Value::String(crate::util::get_display_size(file_length.unwrap())));
+        o.insert(String::from("Size"), Value::Number(file_length.into()));
+        o.insert(String::from("SizeName"), Value::String(crate::util::get_display_size(file_length)));
     }
     send.data = serde_json::to_string(&data_value)?;
     send.save(&mut conn).await?;

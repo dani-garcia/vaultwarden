@@ -172,6 +172,7 @@ use crate::db::DbConn;
 
 use crate::api::EmptyResult;
 use crate::error::MapResult;
+use crate::util::NumberOrString;
 
 impl Send {
     pub async fn save(&mut self, conn: &mut DbConn) -> EmptyResult {
@@ -284,6 +285,36 @@ impl Send {
                 .filter(sends::user_uuid.eq(user_uuid))
                 .load::<SendDb>(conn).expect("Error loading sends").from_db()
         }}
+    }
+
+    pub async fn size_by_user(user_uuid: &str, conn: &mut DbConn) -> i64 {
+        let sends = Self::find_by_user(user_uuid, conn).await;
+
+        #[allow(non_snake_case)]
+        #[derive(serde::Deserialize, Default)]
+        struct FileData {
+            Size: Option<NumberOrString>,
+            size: Option<NumberOrString>,
+        }
+
+        let mut total: i64 = 0;
+        for send in sends {
+            if send.atype == SendType::File as i32 {
+                let data: FileData = serde_json::from_str(&send.data).unwrap_or_default();
+
+                let size = match (data.size, data.Size) {
+                    (Some(s), _) => s.into_i64(),
+                    (_, Some(s)) => s.into_i64(),
+                    (None, None) => continue,
+                };
+
+                if let Ok(size) = size {
+                    total = total.saturating_add(size);
+                };
+            }
+        }
+
+        total
     }
 
     pub async fn find_by_org(org_uuid: &str, conn: &mut DbConn) -> Vec<Self> {

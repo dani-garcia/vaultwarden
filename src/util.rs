@@ -7,6 +7,7 @@ use std::{
     ops::Deref,
 };
 
+use num_traits::ToPrimitive;
 use rocket::{
     fairing::{Fairing, Info, Kind},
     http::{ContentType, Header, HeaderMap, Method, Status},
@@ -367,10 +368,14 @@ pub fn delete_file(path: &str) -> IOResult<()> {
     fs::remove_file(path)
 }
 
-pub fn get_display_size(size: i32) -> String {
+pub fn get_display_size(size: i64) -> String {
     const UNITS: [&str; 6] = ["bytes", "KB", "MB", "GB", "TB", "PB"];
 
-    let mut size: f64 = size.into();
+    // If we're somehow too big for a f64, just return the size in bytes
+    let Some(mut size) = size.to_f64() else {
+        return format!("{size} bytes");
+    };
+
     let mut unit_counter = 0;
 
     loop {
@@ -635,6 +640,47 @@ fn _process_key(key: &str) -> String {
     match key.to_lowercase().as_ref() {
         "ssn" => "SSN".into(),
         _ => self::upcase_first(key),
+    }
+}
+
+#[derive(Deserialize, Debug, Clone)]
+#[serde(untagged)]
+pub enum NumberOrString {
+    Number(i64),
+    String(String),
+}
+
+impl NumberOrString {
+    pub fn into_string(self) -> String {
+        match self {
+            NumberOrString::Number(n) => n.to_string(),
+            NumberOrString::String(s) => s,
+        }
+    }
+
+    #[allow(clippy::wrong_self_convention)]
+    pub fn into_i32(&self) -> Result<i32, crate::Error> {
+        use std::num::ParseIntError as PIE;
+        match self {
+            NumberOrString::Number(n) => match n.to_i32() {
+                Some(n) => Ok(n),
+                None => err!("Number does not fit in i32"),
+            },
+            NumberOrString::String(s) => {
+                s.parse().map_err(|e: PIE| crate::Error::new("Can't convert to number", e.to_string()))
+            }
+        }
+    }
+
+    #[allow(clippy::wrong_self_convention)]
+    pub fn into_i64(&self) -> Result<i64, crate::Error> {
+        use std::num::ParseIntError as PIE;
+        match self {
+            NumberOrString::Number(n) => Ok(*n),
+            NumberOrString::String(s) => {
+                s.parse().map_err(|e: PIE| crate::Error::new("Can't convert to number", e.to_string()))
+            }
+        }
     }
 }
 

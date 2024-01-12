@@ -442,6 +442,8 @@ make_config! {
         user_attachment_limit:  i64,    true,   option;
         /// Per-organization attachment storage limit (KB) |> Max kilobytes of attachment storage allowed per org. When this limit is reached, org members will not be allowed to upload further attachments for ciphers owned by that org.
         org_attachment_limit:   i64,    true,   option;
+        /// Per-user send storage limit (KB) |> Max kilobytes of sends storage allowed per user. When this limit is reached, the user will not be allowed to upload further sends.
+        user_send_limit:   i64,    true,   option;
 
         /// Trash auto-delete days |> Number of days to wait before auto-deleting a trashed item.
         /// If unset, trashed items are not auto-deleted. This setting applies globally, so make
@@ -781,6 +783,26 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
     for flag in parse_experimental_client_feature_flags(&cfg.experimental_client_feature_flags).keys() {
         if !KNOWN_FLAGS.contains(&flag.as_str()) {
             warn!("The experimental client feature flag {flag:?} is unrecognized. Please ensure the feature flag is spelled correctly and that it is supported in this version.");
+        }
+    }
+
+    const MAX_FILESIZE_KB: i64 = i64::MAX >> 10;
+
+    if let Some(limit) = cfg.user_attachment_limit {
+        if !(0i64..=MAX_FILESIZE_KB).contains(&limit) {
+            err!("`USER_ATTACHMENT_LIMIT` is out of bounds");
+        }
+    }
+
+    if let Some(limit) = cfg.org_attachment_limit {
+        if !(0i64..=MAX_FILESIZE_KB).contains(&limit) {
+            err!("`ORG_ATTACHMENT_LIMIT` is out of bounds");
+        }
+    }
+
+    if let Some(limit) = cfg.user_send_limit {
+        if !(0i64..=MAX_FILESIZE_KB).contains(&limit) {
+            err!("`USER_SEND_LIMIT` is out of bounds");
         }
     }
 

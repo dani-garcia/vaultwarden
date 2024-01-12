@@ -6,14 +6,13 @@ use serde_json::Value;
 use crate::{
     api::{
         core::{log_event, two_factor, CipherSyncData, CipherSyncType},
-        EmptyResult, JsonResult, JsonUpcase, JsonUpcaseVec, JsonVec, Notify, NumberOrString, PasswordOrOtpData,
-        UpdateType,
+        EmptyResult, JsonResult, JsonUpcase, JsonUpcaseVec, JsonVec, Notify, PasswordOrOtpData, UpdateType,
     },
     auth::{decode_invite, AdminHeaders, Headers, ManagerHeaders, ManagerHeadersLoose, OwnerHeaders},
     db::{models::*, DbConn},
     error::Error,
     mail,
-    util::convert_json_key_lcase_first,
+    util::{convert_json_key_lcase_first, NumberOrString},
     CONFIG,
 };
 

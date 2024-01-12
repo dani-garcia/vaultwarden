@@ -73,30 +73,3 @@ impl PasswordOrOtpData {
         Ok(())
     }
 }
-
-#[derive(Deserialize, Debug, Clone)]
-#[serde(untagged)]
-enum NumberOrString {
-    Number(i32),
-    String(String),
-}
-
-impl NumberOrString {
-    fn into_string(self) -> String {
-        match self {
-            NumberOrString::Number(n) => n.to_string(),
-            NumberOrString::String(s) => s,
-        }
-    }
-
-    #[allow(clippy::wrong_self_convention)]
-    fn into_i32(&self) -> ApiResult<i32> {
-        use std::num::ParseIntError as PIE;
-        match self {
-            NumberOrString::Number(n) => Ok(*n),
-            NumberOrString::String(s) => {
-                s.parse().map_err(|e: PIE| crate::Error::new("Can't convert to number", e.to_string()))
-            }
-        }
-    }
-}

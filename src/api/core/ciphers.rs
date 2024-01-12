@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use chrono::{NaiveDateTime, Utc};
+use num_traits::ToPrimitive;
 use rocket::fs::TempFile;
 use rocket::serde::json::Json;
 use rocket::{
@@ -956,7 +957,7 @@ async fn get_attachment(uuid: &str, attachment_id: &str, headers: Headers, mut c
 struct AttachmentRequestData {
     Key: String,
     FileName: String,
-    FileSize: i32,
+    FileSize: i64,
     AdminRequest: Option<bool>, // true when attaching from an org vault view
 }
 
@@ -985,8 +986,11 @@ async fn post_attachment_v2(
         err!("Cipher is not write accessible")
     }
 
-    let attachment_id = crypto::generate_attachment_id();
     let data: AttachmentRequestData = data.into_inner().data;
+    if !data.FileSize < 0 {
+        err!("Attachment size can't be negative")
+    }
+    let attachment_id = crypto::generate_attachment_id();
     let attachment =
         Attachment::new(attachment_id.clone(), cipher.uuid.clone(), data.FileName, data.FileSize, Some(data.Key));
     attachment.save(&mut conn).await.expect("Error saving attachment");
@@ -1028,6 +1032,15 @@ async fn save_attachment(
     mut conn: DbConn,
     nt: Notify<'_>,
 ) -> Result<(Cipher, DbConn), crate::error::Error> {
+    let mut data = data.into_inner();
+
+    let Some(size) = data.data.len().to_i64() else {
+        err!("Attachment data size overflow");
+    };
+    if size < 0 {
+        err!("Attachment size can't be negative")
+    }
+
     let cipher = match Cipher::find_by_uuid(cipher_uuid, &mut conn).await {
         Some(cipher) => cipher,
         None => err!("Cipher doesn't exist"),
@@ -1040,19 +1053,29 @@ async fn save_attachment(
     // In the v2 API, the attachment record has already been created,
     // so the size limit needs to be adjusted to account for that.
     let size_adjust = match &attachment {
-        None => 0,                         // Legacy API
-        Some(a) => i64::from(a.file_size), // v2 API
+        None => 0,              // Legacy API
+        Some(a) => a.file_size, // v2 API
     };
 
     let size_limit = if let Some(ref user_uuid) = cipher.user_uuid {
         match CONFIG.user_attachment_limit() {
             Some(0) => err!("Attachments are disabled"),
             Some(limit_kb) => {
-                let left = (limit_kb * 1024) - Attachment::size_by_user(user_uuid, &mut conn).await + size_adjust;
+                let already_used = Attachment::size_by_user(user_uuid, &mut conn).await;
+                let left = limit_kb
+                    .checked_mul(1024)
+                    .and_then(|l| l.checked_sub(already_used))
+                    .and_then(|l| l.checked_add(size_adjust));
+
+                let Some(left) = left else {
+                    err!("Attachment size overflow");
+                };
+
                 if left <= 0 {
                     err!("Attachment storage limit reached! Delete some attachments to free up space")
                 }
-                Some(left as u64)
+
+                Some(left)
             }
             None => None,
         }
@@ -1060,11 +1083,21 @@ async fn save_attachment(
         match CONFIG.org_attachment_limit() {
             Some(0) => err!("Attachments are disabled"),
             Some(limit_kb) => {
-                let left = (limit_kb * 1024) - Attachment::size_by_org(org_uuid, &mut conn).await + size_adjust;
+                let already_used = Attachment::size_by_org(org_uuid, &mut conn).await;
+                let left = limit_kb
+                    .checked_mul(1024)
+                    .and_then(|l| l.checked_sub(already_used))
+                    .and_then(|l| l.checked_add(size_adjust));
+
+                let Some(left) = left else {
+                    err!("Attachment size overflow");
+                };
+
                 if left <= 0 {
                     err!("Attachment storage limit reached! Delete some attachments to free up space")
                 }
-                Some(left as u64)
+
+                Some(left)
             }
             None => None,
         }
@@ -1072,10 +1105,8 @@ async fn save_attachment(
         err!("Cipher is neither owned by a user nor an organization");
     };
 
-    let mut data = data.into_inner();
-
     if let Some(size_limit) = size_limit {
-        if data.data.len() > size_limit {
+        if size > size_limit {
             err!("Attachment storage limit exceeded with this file");
         }
     }
@@ -1085,18 +1116,13 @@ async fn save_attachment(
         None => crypto::generate_attachment_id(),  // Legacy API
     };
 
-    let folder_path = tokio::fs::canonicalize(&CONFIG.attachments_folder()).await?.join(cipher_uuid);
-    let file_path = folder_path.join(&file_id);
-    tokio::fs::create_dir_all(&folder_path).await?;
-
-    let size = data.data.len() as i32;
     if let Some(attachment) = &mut attachment {
         // v2 API
 
         // Check the actual size against the size initially provided by
         // the client. Upstream allows +/- 1 MiB deviation from this
         // size, but it's not clear when or why this is needed.
-        const LEEWAY: i32 = 1024 * 1024; // 1 MiB
+        const LEEWAY: i64 = 1024 * 1024; // 1 MiB
         let min_size = attachment.file_size - LEEWAY;
         let max_size = attachment.file_size + LEEWAY;
 
@@ -1113,6 +1139,10 @@ async fn save_attachment(
         }
     } else {
         // Legacy API
+
+        // SAFETY: This value is only stored in the database and is not used to access the file system.
+        // As a result, the conditions specified by Rocket [0] are met and this is safe to use.
+        // [0]: https://docs.rs/rocket/latest/rocket/fs/struct.FileName.html#-danger-
         let encrypted_filename = data.data.raw_name().map(|s| s.dangerous_unsafe_unsanitized_raw().to_string());
 
         if encrypted_filename.is_none() {
@@ -1122,9 +1152,13 @@ async fn save_attachment(
             err!("No attachment key provided")
         }
         let attachment =
-            Attachment::new(file_id, String::from(cipher_uuid), encrypted_filename.unwrap(), size, data.key);
+            Attachment::new(file_id.clone(), String::from(cipher_uuid), encrypted_filename.unwrap(), size, data.key);
         attachment.save(&mut conn).await.expect("Error saving attachment");
     }
+
+    let folder_path = tokio::fs::canonicalize(&CONFIG.attachments_folder()).await?.join(cipher_uuid);
+    let file_path = folder_path.join(&file_id);
+    tokio::fs::create_dir_all(&folder_path).await?;
 
     if let Err(_err) = data.data.persist_to(&file_path).await {
         data.data.move_copy_to(file_path).await?

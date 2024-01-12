@@ -7,7 +7,7 @@ use webauthn_rs::{base64_data::Base64UrlSafeData, proto::*, AuthenticationState,
 use crate::{
     api::{
         core::{log_user_event, two_factor::_generate_recover_code},
-        EmptyResult, JsonResult, JsonUpcase, NumberOrString, PasswordOrOtpData,
+        EmptyResult, JsonResult, JsonUpcase, PasswordOrOtpData,
     },
     auth::Headers,
     db::{
@@ -15,6 +15,7 @@ use crate::{
         DbConn,
     },
     error::Error,
+    util::NumberOrString,
     CONFIG,
 };
 

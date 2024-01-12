@@ -5,11 +5,13 @@ use serde_json::Value;
 use crate::{
     api::{
         core::{CipherSyncData, CipherSyncType},
-        EmptyResult, JsonResult, JsonUpcase, NumberOrString,
+        EmptyResult, JsonResult, JsonUpcase,
     },
     auth::{decode_emergency_access_invite, Headers},
     db::{models::*, DbConn, DbPool},
-    mail, CONFIG,
+    mail,
+    util::NumberOrString,
+    CONFIG,
 };
 
 pub fn routes() -> Vec<Route> {
