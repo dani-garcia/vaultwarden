@@ -987,7 +987,7 @@ async fn post_attachment_v2(
     }
 
     let data: AttachmentRequestData = data.into_inner().data;
-    if !data.FileSize < 0 {
+    if data.FileSize < 0 {
         err!("Attachment size can't be negative")
     }
     let attachment_id = crypto::generate_attachment_id();
