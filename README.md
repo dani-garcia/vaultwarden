@@ -35,12 +35,40 @@ Basically full implementation of Bitwarden API is provided including:
 
 ## Installation
 Pull the docker image and mount a volume from the host for persistent storage:
+### Using docker run
 
 ```sh
 docker pull vaultwarden/server:latest
 docker run -d --name vaultwarden -v /vw-data/:/data/ --restart unless-stopped -p 80:80 vaultwarden/server:latest
 ```
 This will preserve any persistent data under /vw-data/, you can adapt the path to whatever suits you.
+
+### Using docker compose
+```yaml
+services:
+  vaultwarden:
+    container_name: vaultwarden
+    image: vaultwarden/server:1.30.0
+    volumes:
+      - ./vw-data/:/data/
+    ports:
+      - 80:80
+    restart: unless-stopped
+```
+and `docker compose up` or `docker compose up -d` to pull and run conteiner.
+
+the left side of `volumes:` is where you can find vaultwarden data on your PC/server relative to the folder where you store the docker-compose.yml file 
+example: 
+```yaml
+vaultwarden-dir/
+    docker-compose.yml
+    vw-data/
+        <vaultwarden data from the /data folder inside the container>
+```
+
+the left side of `ports:` is the port your instance will run on (example: `http://127.0.0.1:80`)
+
+For other examples of using docker compose, see wiki page [Using Docker Compose](https://github.com/dani-garcia/vaultwarden/wiki/Using-Docker-Compose).
 
 **IMPORTANT**: Most modern web browsers disallow the use of Web Crypto APIs in insecure contexts. In this case, you might get an error like `Cannot read property 'importKey'`. To solve this problem, you need to access the web vault via HTTPS or localhost.
 
