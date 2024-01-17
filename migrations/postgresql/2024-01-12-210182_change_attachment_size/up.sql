@@ -1,1 +1,3 @@
-ALTER TABLE attachments MODIFY file_size BIGINT NOT NULL;
+ALTER TABLE attachments
+ALTER COLUMN file_size TYPE BIGINT,
+ALTER COLUMN file_size SET NOT NULL;
