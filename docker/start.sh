@@ -22,4 +22,9 @@ elif [ -d /etc/bitwarden_rs.d ]; then
     done
 fi
 
+# if you define this variable in the docker-compose.yml, it will overload the current DATABASE_URL variable
+if [ "$DATABASE_URL_PARAM_FILE" != "" ]; then
+    export DATABASE_URL=`cat $DATABASE_URL_PARAM_FILE`
+fi
+
 exec /vaultwarden "${@}"
