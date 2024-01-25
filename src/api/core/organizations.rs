@@ -294,7 +294,7 @@ async fn post_organization(
 async fn get_user_collections(headers: Headers, mut conn: DbConn) -> Json<Value> {
     Json(json!({
         "Data":
-            Collection::find_by_user_uuid(headers.user.uuid.clone(), &mut conn).await
+            Collection::find_by_user_uuid(headers.user.uuid, &mut conn).await
             .iter()
             .map(Collection::to_json)
             .collect::<Value>(),

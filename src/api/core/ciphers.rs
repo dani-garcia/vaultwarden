@@ -1788,15 +1788,22 @@ impl CipherSyncData {
             .collect();
 
         // Generate a HashMap with the collections_uuid as key and the CollectionGroup record
-        let user_collections_groups: HashMap<String, CollectionGroup> = CollectionGroup::find_by_user(user_uuid, conn)
-            .await
-            .into_iter()
-            .map(|collection_group| (collection_group.collections_uuid.clone(), collection_group))
-            .collect();
+        let user_collections_groups: HashMap<String, CollectionGroup> = if CONFIG.org_groups_enabled() {
+            CollectionGroup::find_by_user(user_uuid, conn)
+                .await
+                .into_iter()
+                .map(|collection_group| (collection_group.collections_uuid.clone(), collection_group))
+                .collect()
+        } else {
+            HashMap::new()
+        };
 
         // Get all organizations that the user has full access to via group assignment
-        let user_group_full_access_for_organizations: HashSet<String> =
-            Group::gather_user_organizations_full_access(user_uuid, conn).await.into_iter().collect();
+        let user_group_full_access_for_organizations: HashSet<String> = if CONFIG.org_groups_enabled() {
+            Group::gather_user_organizations_full_access(user_uuid, conn).await.into_iter().collect()
+        } else {
+            HashSet::new()
+        };
 
         Self {
             cipher_attachments,
