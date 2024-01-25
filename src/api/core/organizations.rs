@@ -611,7 +611,6 @@ async fn post_organization_collection_delete(
 #[allow(non_snake_case)]
 struct BulkCollectionIds {
     Ids: Vec<String>,
-    OrganizationId: String,
 }
 
 #[delete("/organizations/<org_id>/collections", data = "<data>")]
@@ -622,9 +621,6 @@ async fn bulk_delete_organization_collections(
     mut conn: DbConn,
 ) -> EmptyResult {
     let data: BulkCollectionIds = data.into_inner().data;
-    if org_id != data.OrganizationId {
-        err!("OrganizationId mismatch");
-    }
 
     let collections = data.Ids;
 
