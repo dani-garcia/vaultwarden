@@ -229,9 +229,10 @@ async fn post_send_file(data: Form<UploadData<'_>>, headers: Headers, mut conn: 
     let size_limit = match CONFIG.user_send_limit() {
         Some(0) => err!("File uploads are disabled"),
         Some(limit_kb) => {
-            let already_used = Send::size_by_user(&headers.user.uuid, &mut conn).await;
-            let left = limit_kb.checked_mul(1024).and_then(|l| l.checked_sub(already_used));
-            let Some(left) = left else {
+            let Some(already_used) = Send::size_by_user(&headers.user.uuid, &mut conn).await else {
+                err!("Existing sends overflow")
+            };
+            let Some(left) = limit_kb.checked_mul(1024).and_then(|l| l.checked_sub(already_used)) else {
                 err!("Send size overflow");
             };
             if left <= 0 {
@@ -306,9 +307,10 @@ async fn post_send_file_v2(data: JsonUpcase<SendData>, headers: Headers, mut con
     let size_limit = match CONFIG.user_send_limit() {
         Some(0) => err!("File uploads are disabled"),
         Some(limit_kb) => {
-            let already_used = Send::size_by_user(&headers.user.uuid, &mut conn).await;
-            let left = limit_kb.checked_mul(1024).and_then(|l| l.checked_sub(already_used));
-            let Some(left) = left else {
+            let Some(already_used) = Send::size_by_user(&headers.user.uuid, &mut conn).await else {
+                err!("Existing sends overflow")
+            };
+            let Some(left) = limit_kb.checked_mul(1024).and_then(|l| l.checked_sub(already_used)) else {
                 err!("Send size overflow");
             };
             if left <= 0 {

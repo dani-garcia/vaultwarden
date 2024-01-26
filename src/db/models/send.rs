@@ -287,7 +287,7 @@ impl Send {
         }}
     }
 
-    pub async fn size_by_user(user_uuid: &str, conn: &mut DbConn) -> i64 {
+    pub async fn size_by_user(user_uuid: &str, conn: &mut DbConn) -> Option<i64> {
         let sends = Self::find_by_user(user_uuid, conn).await;
 
         #[allow(non_snake_case)]
@@ -309,12 +309,12 @@ impl Send {
                 };
 
                 if let Ok(size) = size {
-                    total = total.saturating_add(size);
+                    total = total.checked_add(size)?;
                 };
             }
         }
 
-        total
+        Some(total)
     }
 
     pub async fn find_by_org(org_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
