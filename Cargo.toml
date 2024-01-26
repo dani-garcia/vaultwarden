@@ -86,10 +86,10 @@ rand = { version = "0.8.5", features = ["small_rng"] }
 ring = "0.17.7"
 
 # UUID generation
-uuid = { version = "1.6.1", features = ["v4"] }
+uuid = { version = "1.7.0", features = ["v4"] }
 
 # Date and time libraries
-chrono = { version = "0.4.31", features = ["clock", "serde"], default-features = false }
+chrono = { version = "0.4.33", features = ["clock", "serde"], default-features = false }
 chrono-tz = "0.8.5"
 time = "0.3.31"
 
@@ -120,26 +120,26 @@ percent-encoding = "2.3.1" # URL encoding library used for URL's in the emails
 email_address = "0.2.4"
 
 # HTML Template library
-handlebars = { version = "5.0.0", features = ["dir_source"] }
+handlebars = { version = "5.1.1", features = ["dir_source"] }
 
 # HTTP client (Used for favicons, version check, DUO and HIBP API)
 reqwest = { version = "0.11.23", features = ["stream", "json", "gzip", "brotli", "socks", "cookies", "trust-dns", "native-tls-alpn"] }
 
 # Favicon extraction libraries
 html5gum = "0.5.7"
-regex = { version = "1.10.2", features = ["std", "perf", "unicode-perl"], default-features = false }
+regex = { version = "1.10.3", features = ["std", "perf", "unicode-perl"], default-features = false }
 data-url = "0.3.1"
 bytes = "1.5.0"
 
 # Cache function results (Used for version check and favicon fetching)
-cached = { version = "0.47.0", features = ["async"] }
+cached = { version = "0.48.1", features = ["async"] }
 
 # Used for custom short lived cookie jar during favicon extraction
 cookie = "0.16.2"
 cookie_store = "0.19.1"
 
 # Used by U2F, JWT and PostgreSQL
-openssl = "0.10.62"
+openssl = "0.10.63"
 
 # CLI argument parsing
 pico-args = "0.5.0"
@@ -154,10 +154,10 @@ semver = "1.0.21"
 # Allow overriding the default memory allocator
 # Mainly used for the musl builds, since the default musl malloc is very slow
 mimalloc = { version = "0.1.39", features = ["secure"], default-features = false, optional = true }
-which = "5.0.0"
+which = "6.0.0"
 
 # Argon2 library with support for the PHC format
-argon2 = "0.5.2"
+argon2 = "0.5.3"
 
 # Reading a password from the cli for generating the Argon2id ADMIN_TOKEN
 rpassword = "7.3.1"
