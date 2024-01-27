@@ -15,7 +15,7 @@ use rocket::{
 use crate::{
     api::{
         core::{log_event, two_factor},
-        unregister_push_device, ApiResult, EmptyResult, JsonResult, Notify, NumberOrString,
+        unregister_push_device, ApiResult, EmptyResult, JsonResult, Notify,
     },
     auth::{decode_admin, encode_jwt, generate_admin_claims, ClientIp},
     config::ConfigBuilder,
@@ -24,6 +24,7 @@ use crate::{
     mail,
     util::{
         docker_base_image, format_naive_datetime_local, get_display_size, get_reqwest_client, is_running_in_docker,
+        NumberOrString,
     },
     CONFIG, VERSION,
 };
@@ -345,7 +346,7 @@ async fn users_overview(_token: AdminToken, mut conn: DbConn) -> ApiResult<Html<
         let mut usr = u.to_json(&mut conn).await;
         usr["cipher_count"] = json!(Cipher::count_owned_by_user(&u.uuid, &mut conn).await);
         usr["attachment_count"] = json!(Attachment::count_by_user(&u.uuid, &mut conn).await);
-        usr["attachment_size"] = json!(get_display_size(Attachment::size_by_user(&u.uuid, &mut conn).await as i32));
+        usr["attachment_size"] = json!(get_display_size(Attachment::size_by_user(&u.uuid, &mut conn).await));
         usr["user_enabled"] = json!(u.enabled);
         usr["created_at"] = json!(format_naive_datetime_local(&u.created_at, DT_FMT));
         usr["last_active"] = match u.last_active(&mut conn).await {
@@ -549,7 +550,7 @@ async fn organizations_overview(_token: AdminToken, mut conn: DbConn) -> ApiResu
         org["group_count"] = json!(Group::count_by_org(&o.uuid, &mut conn).await);
         org["event_count"] = json!(Event::count_by_org(&o.uuid, &mut conn).await);
         org["attachment_count"] = json!(Attachment::count_by_org(&o.uuid, &mut conn).await);
-        org["attachment_size"] = json!(get_display_size(Attachment::size_by_org(&o.uuid, &mut conn).await as i32));
+        org["attachment_size"] = json!(get_display_size(Attachment::size_by_org(&o.uuid, &mut conn).await));
         organizations_json.push(org);
     }
 

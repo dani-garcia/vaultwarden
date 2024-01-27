@@ -3,7 +3,7 @@ table! {
         id -> Text,
         cipher_uuid -> Text,
         file_name -> Text,
-        file_size -> Integer,
+        file_size -> BigInt,
         akey -> Nullable<Text>,
     }
 }

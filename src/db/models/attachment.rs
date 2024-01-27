@@ -1,5 +1,6 @@
 use std::io::ErrorKind;
 
+use bigdecimal::{BigDecimal, ToPrimitive};
 use serde_json::Value;
 
 use crate::CONFIG;
@@ -13,14 +14,14 @@ db_object! {
         pub id: String,
         pub cipher_uuid: String,
         pub file_name: String, // encrypted
-        pub file_size: i32,
+        pub file_size: i64,
         pub akey: Option<String>,
     }
 }
 
 /// Local methods
 impl Attachment {
-    pub const fn new(id: String, cipher_uuid: String, file_name: String, file_size: i32, akey: Option<String>) -> Self {
+    pub const fn new(id: String, cipher_uuid: String, file_name: String, file_size: i64, akey: Option<String>) -> Self {
         Self {
             id,
             cipher_uuid,
@@ -145,13 +146,18 @@ impl Attachment {
 
     pub async fn size_by_user(user_uuid: &str, conn: &mut DbConn) -> i64 {
         db_run! { conn: {
-            let result: Option<i64> = attachments::table
+            let result: Option<BigDecimal> = attachments::table
                 .left_join(ciphers::table.on(ciphers::uuid.eq(attachments::cipher_uuid)))
                 .filter(ciphers::user_uuid.eq(user_uuid))
                 .select(diesel::dsl::sum(attachments::file_size))
                 .first(conn)
                 .expect("Error loading user attachment total size");
-            result.unwrap_or(0)
+
+            match result.map(|r| r.to_i64()) {
+                Some(Some(r)) => r,
+                Some(None) => i64::MAX,
+                None => 0
+            }
         }}
     }
 
@@ -168,13 +174,18 @@ impl Attachment {
 
     pub async fn size_by_org(org_uuid: &str, conn: &mut DbConn) -> i64 {
         db_run! { conn: {
-            let result: Option<i64> = attachments::table
+            let result: Option<BigDecimal> = attachments::table
                 .left_join(ciphers::table.on(ciphers::uuid.eq(attachments::cipher_uuid)))
                 .filter(ciphers::organization_uuid.eq(org_uuid))
                 .select(diesel::dsl::sum(attachments::file_size))
                 .first(conn)
                 .expect("Error loading user attachment total size");
-            result.unwrap_or(0)
+
+            match result.map(|r| r.to_i64()) {
+                Some(Some(r)) => r,
+                Some(None) => i64::MAX,
+                None => 0
+            }
         }}
     }
 

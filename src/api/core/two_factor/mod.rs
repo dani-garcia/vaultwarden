@@ -7,12 +7,14 @@ use serde_json::Value;
 use crate::{
     api::{
         core::{log_event, log_user_event},
-        EmptyResult, JsonResult, JsonUpcase, NumberOrString, PasswordOrOtpData,
+        EmptyResult, JsonResult, JsonUpcase, PasswordOrOtpData,
     },
     auth::{ClientHeaders, Headers},
     crypto,
     db::{models::*, DbConn, DbPool},
-    mail, CONFIG,
+    mail,
+    util::NumberOrString,
+    CONFIG,
 };
 
 pub mod authenticator;

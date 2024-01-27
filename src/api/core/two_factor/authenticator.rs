@@ -5,7 +5,7 @@ use rocket::Route;
 use crate::{
     api::{
         core::log_user_event, core::two_factor::_generate_recover_code, EmptyResult, JsonResult, JsonUpcase,
-        NumberOrString, PasswordOrOtpData,
+        PasswordOrOtpData,
     },
     auth::{ClientIp, Headers},
     crypto,
@@ -13,6 +13,7 @@ use crate::{
         models::{EventType, TwoFactor, TwoFactorType},
         DbConn,
     },
+    util::NumberOrString,
 };
 
 pub use crate::config::CONFIG;
