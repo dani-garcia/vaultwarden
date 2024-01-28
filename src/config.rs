@@ -778,12 +778,15 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         }
     }
 
+    // TODO: deal with deprecated flags so they can be removed from this list, cf. #4263
     const KNOWN_FLAGS: &[&str] =
         &["autofill-overlay", "autofill-v2", "browser-fileless-import", "fido2-vault-credentials"];
-    for flag in parse_experimental_client_feature_flags(&cfg.experimental_client_feature_flags).keys() {
-        if !KNOWN_FLAGS.contains(&flag.as_str()) {
-            warn!("The experimental client feature flag {flag:?} is unrecognized. Please ensure the feature flag is spelled correctly and that it is supported in this version.");
-        }
+    let configured_flags = parse_experimental_client_feature_flags(&cfg.experimental_client_feature_flags);
+    let invalid_flags: Vec<_> = configured_flags.keys().filter(|flag| !KNOWN_FLAGS.contains(&flag.as_str())).collect();
+    if !invalid_flags.is_empty() {
+        err!(format!("Unrecognized experimental client feature flags: {invalid_flags:?}.\n\n\
+                     Please ensure all feature flags are spelled correctly and that they are supported in this version.\n\
+                     Supported flags: {KNOWN_FLAGS:?}"));
     }
 
     const MAX_FILESIZE_KB: i64 = i64::MAX >> 10;
