@@ -1123,11 +1123,11 @@ async fn save_attachment(
         // the client. Upstream allows +/- 1 MiB deviation from this
         // size, but it's not clear when or why this is needed.
         const LEEWAY: i64 = 1024 * 1024; // 1 MiB
-        let Some(min_size) = attachment.file_size.checked_add(LEEWAY) else {
-            err!("Invalid attachment size min")
-        };
-        let Some(max_size) = attachment.file_size.checked_sub(LEEWAY) else {
+        let Some(max_size) = attachment.file_size.checked_add(LEEWAY) else {
             err!("Invalid attachment size max")
+        };
+        let Some(min_size) = attachment.file_size.checked_sub(LEEWAY) else {
+            err!("Invalid attachment size min")
         };
 
         if min_size <= size && size <= max_size {
