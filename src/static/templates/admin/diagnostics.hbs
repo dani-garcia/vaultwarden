@@ -28,7 +28,7 @@
                     <dd class="col-sm-7">
                         <span id="web-installed">{{page_data.web_vault_version}}</span>
                     </dd>
-                    {{#unless page_data.running_within_docker}}
+                    {{#unless page_data.running_within_container}}
                     <dt class="col-sm-5">Web Latest
                         <span class="badge bg-secondary d-none" id="web-failed" title="Unable to determine latest version.">Unknown</span>
                     </dt>
@@ -59,12 +59,12 @@
                     <dd class="col-sm-7">
                         <span class="d-block"><b>{{ page_data.host_os }} / {{ page_data.host_arch }}</b></span>
                     </dd>
-                    <dt class="col-sm-5">Running within Docker</dt>
+                    <dt class="col-sm-5">Running within a container</dt>
                     <dd class="col-sm-7">
-                    {{#if page_data.running_within_docker}}
-                        <span class="d-block"><b>Yes (Base: {{ page_data.docker_base_image }})</b></span>
+                    {{#if page_data.running_within_container}}
+                        <span class="d-block"><b>Yes (Base: {{ page_data.container_base_image }})</b></span>
                     {{/if}}
-                    {{#unless page_data.running_within_docker}}
+                    {{#unless page_data.running_within_container}}
                         <span class="d-block"><b>No</b></span>
                     {{/unless}}
                     </dd>
