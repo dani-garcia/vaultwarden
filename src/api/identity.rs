@@ -14,6 +14,7 @@ use crate::{
             log_user_event,
             two_factor::{authenticator, duo, email, enforce_2fa_policy, webauthn, yubikey},
         },
+        push::register_push_device,
         ApiResult, EmptyResult, JsonResult, JsonUpcase,
     },
     auth::{generate_organization_api_key_login_claims, ClientHeaders, ClientIp},
@@ -265,6 +266,9 @@ async fn _password_login(
             }
         }
     }
+
+    // register push device
+    register_push_device(&mut device, conn).await?;
 
     // Common
     // ---

@@ -113,6 +113,14 @@ impl Device {
 
         (encode_jwt(&claims), DEFAULT_VALIDITY.num_seconds())
     }
+
+    pub fn is_push_device(&self) -> bool {
+        matches!(DeviceType::from_i32(self.atype), DeviceType::Android | DeviceType::Ios)
+    }
+
+    pub fn is_registered(&self) -> bool {
+        self.push_uuid.is_some()
+    }
 }
 
 use crate::db::DbConn;
@@ -210,6 +218,7 @@ impl Device {
                 .from_db()
         }}
     }
+
     pub async fn find_push_devices_by_user(user_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             devices::table
