@@ -268,7 +268,9 @@ async fn _password_login(
     }
 
     // register push device
-    register_push_device(&mut device, conn).await?;
+    if !new_device {
+        register_push_device(&mut device, conn).await?;
+    }
 
     // Common
     // ---
