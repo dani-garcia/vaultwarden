@@ -1,17 +1,15 @@
-#!/bin/sh
+#!/usr/bin/env sh
 
 # Use the value of the corresponding env var (if present),
 # or a default value otherwise.
-: "${DATA_FOLDER:="data"}"
+: "${DATA_FOLDER:="/data"}"
 : "${ROCKET_PORT:="80"}"
+: "${ENV_FILE:="/.env"}"
 
 CONFIG_FILE="${DATA_FOLDER}"/config.json
 
-# Check if there is a .env file configured
+# Check if the $ENV_FILE file exist and is readable
 # If that is the case, load it into the environment before running any check
-if [ -z "${ENV_FILE}" ]; then
-    ENV_FILE=".env"
-fi
 if [ -r "${ENV_FILE}" ]; then
     # shellcheck disable=SC1090
     . "${ENV_FILE}"
