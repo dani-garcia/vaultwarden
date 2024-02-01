@@ -284,6 +284,10 @@ fn init_logging(level: log::LevelFilter) -> Result<(), fern::InitError> {
         logger = logger.level_for("lettre::transport::smtp", log::LevelFilter::Off)
     }
 
+    for (path, level) in CONFIG.log_overrides() {
+        logger = logger.level_for(path, level);
+    }
+
     if CONFIG.extended_logging() {
         logger = logger.format(|out, message, record| {
             out.finish(format_args!(

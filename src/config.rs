@@ -1,8 +1,10 @@
 use std::env::consts::EXE_SUFFIX;
 use std::process::exit;
+use std::str::FromStr;
 use std::sync::RwLock;
 
 use job_scheduler_ng::Schedule;
+use log::LevelFilter;
 use once_cell::sync::Lazy;
 use reqwest::Url;
 
@@ -566,6 +568,8 @@ make_config! {
         log_file:               String, false,  option;
         /// Log level
         log_level:              String, false,  def,    "Info".to_string();
+        /// Override individual log level
+        log_level_override:     String, false,  def,    String::new();
 
         /// Enable DB WAL |> Turning this off might lead to worse performance, but might help if using vaultwarden on some exotic filesystems,
         /// that do not support WAL. Please make sure you read project wiki on the topic before changing this setting.
@@ -1060,6 +1064,26 @@ fn smtp_convert_deprecated_ssl_options(smtp_ssl: Option<bool>, smtp_explicit_tls
     "starttls".to_string()
 }
 
+/// Allow to parse a multiline list of Key/Values (`key=value`)
+/// Will ignore comment lines (starting with `//`)
+fn parse_param_list(config: String) -> Vec<(String, String)> {
+    config
+        .lines()
+        .map(|l| l.trim())
+        .filter(|l| !l.is_empty() && !l.starts_with("//"))
+        .filter_map(|l| {
+            let split = l.split('=').collect::<Vec<&str>>();
+            match &split[..] {
+                [key, value] => Some(((*key).to_string(), (*value).to_string())),
+                _ => {
+                    println!("[WARNING] Failed to parse ({l}). Expected key=value");
+                    None
+                }
+            }
+        })
+        .collect()
+}
+
 impl Config {
     pub fn load() -> Result<Self, Error> {
         // Loading from env and file
@@ -1248,6 +1272,19 @@ impl Config {
                 handle.notify();
             }
         }
+    }
+
+    pub fn log_overrides(&self) -> Vec<(String, LevelFilter)> {
+        parse_param_list(self.log_level_override())
+            .into_iter()
+            .filter_map(|(k, v)| match LevelFilter::from_str(&v) {
+                Ok(lv) => Some((k, lv)),
+                Err(_) => {
+                    println!("[WARNING] Invalid log level: {k}={v}");
+                    None
+                }
+            })
+            .collect()
     }
 }
 
