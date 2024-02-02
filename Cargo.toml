@@ -68,11 +68,11 @@ dashmap = "5.5.3"
 
 # Async futures
 futures = "0.3.30"
-tokio = { version = "1.35.1", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal"] }
+tokio = { version = "1.36.0", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal"] }
 
 # A generic serialization/deserialization framework
-serde = { version = "1.0.195", features = ["derive"] }
-serde_json = "1.0.111"
+serde = { version = "1.0.196", features = ["derive"] }
+serde_json = "1.0.113"
 
 # A safe, extensible ORM and Query builder
 diesel = { version = "2.1.4", features = ["chrono", "r2d2", "numeric"] }
@@ -92,7 +92,7 @@ uuid = { version = "1.7.0", features = ["v4"] }
 # Date and time libraries
 chrono = { version = "0.4.33", features = ["clock", "serde"], default-features = false }
 chrono-tz = "0.8.5"
-time = "0.3.31"
+time = "0.3.32"
 
 # Job scheduler
 job_scheduler_ng = "2.0.4"
@@ -116,15 +116,15 @@ webauthn-rs = "0.3.2"
 url = "2.5.0"
 
 # Email libraries
-lettre = { version = "0.11.3", features = ["smtp-transport", "sendmail-transport", "builder", "serde", "tokio1-native-tls", "hostname", "tracing", "tokio1"], default-features = false }
+lettre = { version = "0.11.4", features = ["smtp-transport", "sendmail-transport", "builder", "serde", "tokio1-native-tls", "hostname", "tracing", "tokio1"], default-features = false }
 percent-encoding = "2.3.1" # URL encoding library used for URL's in the emails
 email_address = "0.2.4"
 
 # HTML Template library
-handlebars = { version = "5.1.1", features = ["dir_source"] }
+handlebars = { version = "5.1.0", features = ["dir_source"] }
 
 # HTTP client (Used for favicons, version check, DUO and HIBP API)
-reqwest = { version = "0.11.23", features = ["stream", "json", "gzip", "brotli", "socks", "cookies", "trust-dns", "native-tls-alpn"] }
+reqwest = { version = "0.11.24", features = ["stream", "json", "gzip", "brotli", "socks", "cookies", "trust-dns", "native-tls-alpn"] }
 
 # Favicon extraction libraries
 html5gum = "0.5.7"
@@ -136,8 +136,8 @@ bytes = "1.5.0"
 cached = { version = "0.48.1", features = ["async"] }
 
 # Used for custom short lived cookie jar during favicon extraction
-cookie = "0.16.2"
-cookie_store = "0.19.1"
+cookie = "0.17.0"
+cookie_store = "0.20.0"
 
 # Used by U2F, JWT and PostgreSQL
 openssl = "0.10.63"
