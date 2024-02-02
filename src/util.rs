@@ -531,14 +531,17 @@ pub fn parse_date(date: &str) -> NaiveDateTime {
 // Deployment environment methods
 //
 
-/// Returns true if the program is running in Docker or Podman.
-pub fn is_running_in_docker() -> bool {
-    Path::new("/.dockerenv").exists() || Path::new("/run/.containerenv").exists()
+/// Returns true if the program is running in Docker, Podman or Kubernetes.
+pub fn is_running_in_container() -> bool {
+    Path::new("/.dockerenv").exists()
+        || Path::new("/run/.containerenv").exists()
+        || Path::new("/run/secrets/kubernetes.io").exists()
+        || Path::new("/var/run/secrets/kubernetes.io").exists()
 }
 
-/// Simple check to determine on which docker base image vaultwarden is running.
+/// Simple check to determine on which container base image vaultwarden is running.
 /// We build images based upon Debian or Alpine, so these we check here.
-pub fn docker_base_image() -> &'static str {
+pub fn container_base_image() -> &'static str {
     if Path::new("/etc/debian_version").exists() {
         "Debian"
     } else if Path::new("/etc/alpine-release").exists() {

@@ -77,7 +77,7 @@ async function generateSupportString(event, dj) {
     supportString += `* Vaultwarden version: v${dj.current_release}\n`;
     supportString += `* Web-vault version: v${dj.web_vault_version}\n`;
     supportString += `* OS/Arch: ${dj.host_os}/${dj.host_arch}\n`;
-    supportString += `* Running within Docker: ${dj.running_within_docker} (Base: ${dj.docker_base_image})\n`;
+    supportString += `* Running within a container: ${dj.running_within_container} (Base: ${dj.container_base_image})\n`;
     supportString += "* Environment settings overridden: ";
     if (dj.overrides != "") {
         supportString += "true\n";
@@ -179,7 +179,7 @@ function initVersionCheck(dj) {
     }
     checkVersions("server", serverInstalled, serverLatest, serverLatestCommit);
 
-    if (!dj.running_within_docker) {
+    if (!dj.running_within_container) {
         const webInstalled = dj.web_vault_version;
         const webLatest = dj.latest_web_build;
         checkVersions("web", webInstalled, webLatest);

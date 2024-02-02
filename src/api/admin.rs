@@ -23,8 +23,8 @@ use crate::{
     error::{Error, MapResult},
     mail,
     util::{
-        docker_base_image, format_naive_datetime_local, get_display_size, get_reqwest_client, is_running_in_docker,
-        NumberOrString,
+        container_base_image, format_naive_datetime_local, get_display_size, get_reqwest_client,
+        is_running_in_container, NumberOrString,
     },
     CONFIG, VERSION,
 };
@@ -608,7 +608,7 @@ use cached::proc_macro::cached;
 /// Cache this function to prevent API call rate limit. Github only allows 60 requests per hour, and we use 3 here already.
 /// It will cache this function for 300 seconds (5 minutes) which should prevent the exhaustion of the rate limit.
 #[cached(time = 300, sync_writes = true)]
-async fn get_release_info(has_http_access: bool, running_within_docker: bool) -> (String, String, String) {
+async fn get_release_info(has_http_access: bool, running_within_container: bool) -> (String, String, String) {
     // If the HTTP Check failed, do not even attempt to check for new versions since we were not able to connect with github.com anyway.
     if has_http_access {
         (
@@ -625,9 +625,9 @@ async fn get_release_info(has_http_access: bool, running_within_docker: bool) ->
                 }
                 _ => "-".to_string(),
             },
-            // Do not fetch the web-vault version when running within Docker.
+            // Do not fetch the web-vault version when running within a container.
             // The web-vault version is embedded within the container it self, and should not be updated manually
-            if running_within_docker {
+            if running_within_container {
                 "-".to_string()
             } else {
                 match get_json_api::<GitRelease>(
@@ -681,7 +681,7 @@ async fn diagnostics(_token: AdminToken, ip_header: IpHeader, mut conn: DbConn) 
         };
 
     // Execute some environment checks
-    let running_within_docker = is_running_in_docker();
+    let running_within_container = is_running_in_container();
     let has_http_access = has_http_access().await;
     let uses_proxy = env::var_os("HTTP_PROXY").is_some()
         || env::var_os("http_proxy").is_some()
@@ -695,7 +695,7 @@ async fn diagnostics(_token: AdminToken, ip_header: IpHeader, mut conn: DbConn) 
     };
 
     let (latest_release, latest_commit, latest_web_build) =
-        get_release_info(has_http_access, running_within_docker).await;
+        get_release_info(has_http_access, running_within_container).await;
 
     let ip_header_name = match &ip_header.0 {
         Some(h) => h,
@@ -710,8 +710,8 @@ async fn diagnostics(_token: AdminToken, ip_header: IpHeader, mut conn: DbConn) 
         "web_vault_enabled": &CONFIG.web_vault_enabled(),
         "web_vault_version": web_vault_version.version.trim_start_matches('v'),
         "latest_web_build": latest_web_build,
-        "running_within_docker": running_within_docker,
-        "docker_base_image": if running_within_docker { docker_base_image() } else { "Not applicable" },
+        "running_within_container": running_within_container,
+        "container_base_image": if running_within_container { container_base_image() } else { "Not applicable" },
         "has_http_access": has_http_access,
         "ip_header_exists": &ip_header.0.is_some(),
         "ip_header_match": ip_header_name == CONFIG.ip_header(),

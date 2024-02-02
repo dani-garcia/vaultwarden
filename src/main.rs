@@ -88,7 +88,7 @@ pub use config::CONFIG;
 pub use error::{Error, MapResult};
 use rocket::data::{Limits, ToByteUnit};
 use std::sync::Arc;
-pub use util::is_running_in_docker;
+pub use util::is_running_in_container;
 
 #[rocket::main]
 async fn main() -> Result<(), Error> {
@@ -415,7 +415,7 @@ async fn check_data_folder() {
     let path = Path::new(data_folder);
     if !path.exists() {
         error!("Data folder '{}' doesn't exist.", data_folder);
-        if is_running_in_docker() {
+        if is_running_in_container() {
             error!("Verify that your data volume is mounted at the correct location.");
         } else {
             error!("Create the data folder and try again.");
@@ -427,9 +427,9 @@ async fn check_data_folder() {
         exit(1);
     }
 
-    if is_running_in_docker()
+    if is_running_in_container()
         && std::env::var("I_REALLY_WANT_VOLATILE_STORAGE").is_err()
-        && !docker_data_folder_is_persistent(data_folder).await
+        && !container_data_folder_is_persistent(data_folder).await
     {
         error!(
             "No persistent volume!\n\
@@ -448,7 +448,7 @@ async fn check_data_folder() {
 /// A none persistent volume in either Docker or Podman is represented by a 64 alphanumerical string.
 /// If we detect this string, we will alert about not having a persistent self defined volume.
 /// This probably means that someone forgot to add `-v /path/to/vaultwarden_data/:/data`
-async fn docker_data_folder_is_persistent(data_folder: &str) -> bool {
+async fn container_data_folder_is_persistent(data_folder: &str) -> bool {
     if let Ok(mountinfo) = File::open("/proc/self/mountinfo").await {
         // Since there can only be one mountpoint to the DATA_FOLDER
         // We do a basic check for this mountpoint surrounded by a space.
