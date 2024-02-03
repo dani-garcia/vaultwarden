@@ -2,20 +2,10 @@ name: Release
 
 on:
   push:
-    paths:
-      - ".github/workflows/release.yml"
-      - "src/**"
-      - "migrations/**"
-      - "docker/**"
-      - "Cargo.*"
-      - "build.rs"
-      - "diesel.toml"
-      - "rust-toolchain.toml"
-
-    branches: # Only on paths above
+    branches:
       - main
 
-    tags: # Always, regardless of paths above
+    tags:
       - '*'
 
 jobs:
@@ -239,28 +229,28 @@ jobs:
 
       # Upload artifacts to Github Actions
       - name: "Upload amd64 artifact"
-        uses: actions/upload-artifact@a8a3f3ad30e3422c9c7b888a15615d19a852ae32 # v3.1.3
+        uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
         if: ${{ matrix.base_image == 'alpine' }}
         with:
           name: vaultwarden-${{ env.SOURCE_VERSION }}-linux-amd64
           path: vaultwarden-amd64
 
       - name: "Upload arm64 artifact"
-        uses: actions/upload-artifact@a8a3f3ad30e3422c9c7b888a15615d19a852ae32 # v3.1.3
+        uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
         if: ${{ matrix.base_image == 'alpine' }}
         with:
           name: vaultwarden-${{ env.SOURCE_VERSION }}-linux-arm64
           path: vaultwarden-arm64
 
       - name: "Upload armv7 artifact"
-        uses: actions/upload-artifact@a8a3f3ad30e3422c9c7b888a15615d19a852ae32 # v3.1.3
+        uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
         if: ${{ matrix.base_image == 'alpine' }}
         with:
           name: vaultwarden-${{ env.SOURCE_VERSION }}-linux-armv7
           path: vaultwarden-armv7
 
       - name: "Upload armv6 artifact"
-        uses: actions/upload-artifact@a8a3f3ad30e3422c9c7b888a15615d19a852ae32 # v3.1.3
+        uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
         if: ${{ matrix.base_image == 'alpine' }}
         with:
           name: vaultwarden-${{ env.SOURCE_VERSION }}-linux-armv6
