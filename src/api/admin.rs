@@ -510,7 +510,11 @@ async fn update_user_org_type(data: Json<UserOrgTypeData>, token: AdminToken, mu
         match OrgPolicy::is_user_allowed(&user_to_edit.user_uuid, &user_to_edit.org_uuid, true, &mut conn).await {
             Ok(_) => {}
             Err(OrgPolicyErr::TwoFactorMissing) => {
-                err!("You cannot modify this user to this type because it has no two-step login method activated");
+                if CONFIG.email_2fa_auto_fallback() {
+                    two_factor::email::find_and_activate_email_2fa(&user_to_edit.user_uuid, &mut conn).await?;
+                } else {
+                    err!("You cannot modify this user to this type because they have not setup 2FA");
+                }
             }
             Err(OrgPolicyErr::SingleOrgEnforced) => {
                 err!("You cannot modify this user to this type because it is a member of an organization which forbids it");

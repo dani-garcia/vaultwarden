@@ -340,4 +340,11 @@ impl OrgPolicy {
         }
         false
     }
+
+    pub async fn is_enabled_by_org(org_uuid: &str, policy_type: OrgPolicyType, conn: &mut DbConn) -> bool {
+        if let Some(policy) = OrgPolicy::find_by_org_and_type(org_uuid, policy_type, conn).await {
+            return policy.enabled;
+        }
+        false
+    }
 }
