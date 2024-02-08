@@ -49,11 +49,11 @@ fn run(args: &[&str]) -> Result<String, std::io::Error> {
 
 /// This method reads info from Git, namely tags, branch, and revision
 /// To access these values, use:
-///    - env!("GIT_EXACT_TAG")
-///    - env!("GIT_LAST_TAG")
-///    - env!("GIT_BRANCH")
-///    - env!("GIT_REV")
-///    - env!("VW_VERSION")
+///    - `env!("GIT_EXACT_TAG")`
+///    - `env!("GIT_LAST_TAG")`
+///    - `env!("GIT_BRANCH")`
+///    - `env!("GIT_REV")`
+///    - `env!("VW_VERSION")`
 fn version_from_git_info() -> Result<String, std::io::Error> {
     // The exact tag for the current commit, can be empty when
     // the current commit doesn't have an associated tag
