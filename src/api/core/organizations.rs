@@ -2659,6 +2659,7 @@ async fn delete_group_user(
 struct OrganizationUserResetPasswordEnrollmentRequest {
     ResetPasswordKey: Option<String>,
     MasterPasswordHash: Option<String>,
+    Otp: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -2841,14 +2842,12 @@ async fn put_reset_password_enrollment(
     }
 
     if reset_request.ResetPasswordKey.is_some() {
-        match reset_request.MasterPasswordHash {
-            Some(password) => {
-                if !headers.user.check_valid_password(&password) {
-                    err!("Invalid or wrong password")
-                }
-            }
-            None => err!("No password provided"),
-        };
+        PasswordOrOtpData {
+            MasterPasswordHash: reset_request.MasterPasswordHash,
+            Otp: reset_request.Otp,
+        }
+        .validate(&headers.user, true, &mut conn)
+        .await?;
     }
 
     org_user.reset_password_key = reset_request.ResetPasswordKey;
