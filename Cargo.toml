@@ -197,7 +197,7 @@ panic = "abort"
 inherits = "release"
 strip = "symbols"
 lto = "thin"
-codegen-units = 1
+codegen-units = 16
 
 # Linting config
 [lints.rust]
