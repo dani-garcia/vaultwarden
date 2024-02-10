@@ -285,12 +285,36 @@ impl EmergencyAccess {
         }}
     }
 
+    pub async fn find_all_invited_by_grantee_email(grantee_email: &str, conn: &mut DbConn) -> Vec<Self> {
+        db_run! { conn: {
+            emergency_access::table
+                .filter(emergency_access::email.eq(grantee_email))
+                .filter(emergency_access::status.eq(EmergencyAccessStatus::Invited as i32))
+                .load::<EmergencyAccessDb>(conn).expect("Error loading emergency_access").from_db()
+        }}
+    }
+
     pub async fn find_all_by_grantor_uuid(grantor_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             emergency_access::table
                 .filter(emergency_access::grantor_uuid.eq(grantor_uuid))
                 .load::<EmergencyAccessDb>(conn).expect("Error loading emergency_access").from_db()
         }}
+    }
+
+    pub async fn accept_invite(&mut self, grantee_uuid: &str, grantee_email: &str, conn: &mut DbConn) -> EmptyResult {
+        if self.email.is_none() || self.email.as_ref().unwrap() != grantee_email {
+            err!("User email does not match invite.");
+        }
+
+        if self.status == EmergencyAccessStatus::Accepted as i32 {
+            err!("Emergency contact already accepted.");
+        }
+
+        self.status = EmergencyAccessStatus::Accepted as i32;
+        self.grantee_uuid = Some(String::from(grantee_uuid));
+        self.email = None;
+        self.save(conn).await
     }
 }
 
