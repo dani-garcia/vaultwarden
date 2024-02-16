@@ -61,7 +61,9 @@ async fn get_contacts(headers: Headers, mut conn: DbConn) -> Json<Value> {
     let emergency_access_list = EmergencyAccess::find_all_by_grantor_uuid(&headers.user.uuid, &mut conn).await;
     let mut emergency_access_list_json = Vec::with_capacity(emergency_access_list.len());
     for ea in emergency_access_list {
-        emergency_access_list_json.push(ea.to_json_grantee_details(&mut conn).await);
+        if let Some(grantee) = ea.to_json_grantee_details(&mut conn).await {
+            emergency_access_list_json.push(grantee)
+        }
     }
 
     Json(json!({
@@ -95,7 +97,9 @@ async fn get_emergency_access(emer_id: &str, mut conn: DbConn) -> JsonResult {
     check_emergency_access_enabled()?;
 
     match EmergencyAccess::find_by_uuid(emer_id, &mut conn).await {
-        Some(emergency_access) => Ok(Json(emergency_access.to_json_grantee_details(&mut conn).await)),
+        Some(emergency_access) => Ok(Json(
+            emergency_access.to_json_grantee_details(&mut conn).await.expect("Grantee user should exist but does not!"),
+        )),
         None => err!("Emergency access not valid."),
     }
 }
