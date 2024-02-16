@@ -81,25 +81,32 @@ impl EmergencyAccess {
         })
     }
 
-    pub async fn to_json_grantee_details(&self, conn: &mut DbConn) -> Value {
+    pub async fn to_json_grantee_details(&self, conn: &mut DbConn) -> Option<Value> {
         let grantee_user = if let Some(grantee_uuid) = self.grantee_uuid.as_deref() {
-            Some(User::find_by_uuid(grantee_uuid, conn).await.expect("Grantee user not found."))
+            User::find_by_uuid(grantee_uuid, conn).await.expect("Grantee user not found.")
         } else if let Some(email) = self.email.as_deref() {
-            Some(User::find_by_mail(email, conn).await.expect("Grantee user not found."))
+            match User::find_by_mail(email, conn).await {
+                Some(user) => user,
+                None => {
+                    // remove outstanding invitations which should not exist
+                    let _ = Self::delete_all_by_grantee_email(email, conn).await;
+                    return None;
+                }
+            }
         } else {
-            None
+            return None;
         };
 
-        json!({
+        Some(json!({
             "Id": self.uuid,
             "Status": self.status,
             "Type": self.atype,
             "WaitTimeDays": self.wait_time_days,
-            "GranteeId": grantee_user.as_ref().map_or("", |u| &u.uuid),
-            "Email": grantee_user.as_ref().map_or("", |u| &u.email),
-            "Name": grantee_user.as_ref().map_or("", |u| &u.name),
+            "GranteeId": grantee_user.uuid,
+            "Email": grantee_user.email,
+            "Name": grantee_user.name,
             "Object": "emergencyAccessGranteeDetails",
-        })
+        }))
     }
 }
 
