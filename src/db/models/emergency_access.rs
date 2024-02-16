@@ -214,6 +214,13 @@ impl EmergencyAccess {
         Ok(())
     }
 
+    pub async fn delete_all_by_grantee_email(grantee_email: &str, conn: &mut DbConn) -> EmptyResult {
+        for ea in Self::find_all_invited_by_grantee_email(grantee_email, conn).await {
+            ea.delete(conn).await?;
+        }
+        Ok(())
+    }
+
     pub async fn delete(self, conn: &mut DbConn) -> EmptyResult {
         User::update_uuid_revision(&self.grantor_uuid, conn).await;
 
