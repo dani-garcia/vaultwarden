@@ -324,7 +324,9 @@ async fn get_org_collections_details(org_id: &str, headers: ManagerHeadersLoose,
     let coll_users = CollectionUser::find_by_organization(org_id, &mut conn).await;
 
     // check if current user has full access to the organization (either directly or via any group)
-    let has_full_access_to_org = user_org.access_all || (CONFIG.org_groups_enabled() && GroupUser::has_full_access_by_member(org_id, &user_org.uuid, &mut conn).await);
+    let has_full_access_to_org = user_org.access_all
+        || (CONFIG.org_groups_enabled()
+            && GroupUser::has_full_access_by_member(org_id, &user_org.uuid, &mut conn).await);
 
     for col in Collection::find_by_organization(org_id, &mut conn).await {
         // assigned indicates whether the current user has access to the given collection
