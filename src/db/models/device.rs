@@ -1,4 +1,5 @@
 use chrono::{NaiveDateTime, Utc};
+use data_encoding::BASE64URL;
 
 use crate::{crypto, CONFIG};
 use core::fmt;
@@ -60,11 +61,8 @@ impl Device {
     }
 
     pub fn refresh_tokens(&mut self, user: &super::User, scope: Vec<String>) -> (String, i64) {
-        // If there is no refresh token, we create one
-        if self.refresh_token.is_empty() {
-            use data_encoding::BASE64URL;
-            self.refresh_token = crypto::encode_random_bytes::<64>(BASE64URL);
-        }
+        // Roll the refresh_token to prevent reuse
+        self.refresh_token = crypto::encode_random_bytes::<64>(BASE64URL);
 
         // Update the expiration of the device and the last update date
         let time_now = Utc::now();
