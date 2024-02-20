@@ -63,7 +63,8 @@ RUN apt-get update && \
         git \
         "libc6-$(xx-info debian-arch)-cross" \
         "libc6-dev-$(xx-info debian-arch)-cross" \
-        "linux-libc-dev-$(xx-info debian-arch)-cross" && \
+        "linux-libc-dev-$(xx-info debian-arch)-cross" \
+        "cpp-i686-linux-gnu" && \
     # Run xx-cargo early, since it sometimes seems to break when run at a later stage
     echo "export CARGO_TARGET=$(xx-cargo --print-target-triple)" >> /env-cargo
 
@@ -93,12 +94,12 @@ RUN source /env-cargo && \
     if xx-info is-cross ; then \
         # We can't use xx-cargo since that uses clang, which doesn't work for our libraries.
         # Because of this we generate the needed environment variables here which we can load in the needed steps.
-        echo "export CC_$(echo "${CARGO_TARGET}" | tr '[:upper:]' '[:lower:]' | tr - _)=/usr/bin/$(xx-info)-gcc" >> /env-cargo && \
-        echo "export CARGO_TARGET_$(echo "${CARGO_TARGET}" | tr '[:lower:]' '[:upper:]' | tr - _)_LINKER=/usr/bin/$(xx-info)-gcc" >> /env-cargo && \
-        echo "export PKG_CONFIG=/usr/bin/$(xx-info)-pkg-config" >> /env-cargo && \
+        echo "export CC_$(echo "${CARGO_TARGET}" | tr '[:upper:]' '[:lower:]' | tr - _)=/usr/bin/i686-linux-gnu-gcc" >> /env-cargo && \
+        echo "export CARGO_TARGET_$(echo "${CARGO_TARGET}" | tr '[:lower:]' '[:upper:]' | tr - _)_LINKER=/usr/bin/i686-linux-gnu-gcc" >> /env-cargo && \
+        echo "export PKG_CONFIG=/usr/bin/i386-linux-gnu-pkg-config" >> /env-cargo && \
         echo "export CROSS_COMPILE=1" >> /env-cargo && \
-        echo "export OPENSSL_INCLUDE_DIR=/usr/include/$(xx-info)" >> /env-cargo && \
-        echo "export OPENSSL_LIB_DIR=/usr/lib/$(xx-info)" >> /env-cargo ; \
+        echo "export OPENSSL_INCLUDE_DIR=/usr/include/i386-linux-gnu" >> /env-cargo && \
+        echo "export OPENSSL_LIB_DIR=/usr/lib/i386-linux-gnu" >> /env-cargo ; \
     fi && \
     # Output the current contents of the file
     cat /env-cargo
@@ -193,4 +194,4 @@ COPY --from=build /app/target/final/vaultwarden .
 
 HEALTHCHECK --interval=60s --timeout=10s CMD ["/healthcheck.sh"]
 
-CMD ["/start.sh"]
+CMD ["sh", "/start.sh"]
