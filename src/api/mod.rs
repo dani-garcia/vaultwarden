@@ -36,7 +36,7 @@ use crate::db::{models::User, DbConn};
 use crate::util;
 
 // Type aliases for API methods results
-type ApiResult<T> = Result<T, crate::error::Error>;
+pub type ApiResult<T> = Result<T, crate::error::Error>;
 pub type JsonResult = ApiResult<Json<Value>>;
 pub type EmptyResult = ApiResult<()>;
 
