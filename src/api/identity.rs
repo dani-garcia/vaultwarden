@@ -3,6 +3,7 @@ use num_traits::FromPrimitive;
 use rocket::serde::json::Json;
 use rocket::{
     form::{Form, FromForm},
+    http::Status,
     Route,
 };
 use serde_json::Value;
@@ -17,7 +18,8 @@ use crate::{
         push::register_push_device,
         ApiResult, EmptyResult, JsonResult,
     },
-    auth::{generate_organization_api_key_login_claims, ClientHeaders, ClientIp},
+    auth,
+    auth::{generate_organization_api_key_login_claims, AuthMethod, AuthMethodScope, ClientHeaders, ClientIp},
     db::{models::*, DbConn},
     error::MapResult,
     mail, util, CONFIG,
@@ -96,43 +98,43 @@ async fn login(data: Form<ConnectData>, client_header: ClientHeaders, mut conn: 
 
 async fn _refresh_login(data: ConnectData, conn: &mut DbConn) -> JsonResult {
     // Extract token
-    let token = data.refresh_token.unwrap();
+    let refresh_token = match data.refresh_token {
+        Some(token) => token,
+        None => err_code!("Missing refresh_token", Status::Unauthorized.code),
+    };
 
-    // Get device by refresh token
-    let mut device = Device::find_by_refresh_token(&token, conn).await.map_res("Invalid refresh token")?;
-
-    let scope = "api offline_access";
-    let scope_vec = vec!["api".into(), "offline_access".into()];
-
-    // Common
-    let user = User::find_by_uuid(&device.user_uuid, conn).await.unwrap();
     // ---
     // Disabled this variable, it was used to generate the JWT
     // Because this might get used in the future, and is add by the Bitwarden Server, lets keep it, but then commented out
     // See: https://github.com/dani-garcia/vaultwarden/issues/4156
     // ---
     // let orgs = UserOrganization::find_confirmed_by_user(&user.uuid, conn).await;
-    let (access_token, expires_in) = device.refresh_tokens(&user, scope_vec);
-    device.save(conn).await?;
+    match auth::refresh_tokens(&refresh_token, conn).await {
+        Err(err) => err_code!(err.to_string(), Status::Unauthorized.code),
+        Ok((mut device, user, auth_tokens)) => {
+            // Save to update `device.updated_at` to track usage
+            device.save(conn).await?;
 
-    let result = json!({
-        "access_token": access_token,
-        "expires_in": expires_in,
-        "token_type": "Bearer",
-        "refresh_token": device.refresh_token,
-        "Key": user.akey,
-        "PrivateKey": user.private_key,
+            let result = json!({
+                "refresh_token": auth_tokens.refresh_token(),
+                "access_token": auth_tokens.access_token(),
+                "expires_in": auth_tokens.expires_in(),
+                "token_type": "Bearer",
+                "Key": user.akey,
+                "PrivateKey": user.private_key,
 
-        "Kdf": user.client_kdf_type,
-        "KdfIterations": user.client_kdf_iter,
-        "KdfMemory": user.client_kdf_memory,
-        "KdfParallelism": user.client_kdf_parallelism,
-        "ResetMasterPassword": false, // TODO: according to official server seems something like: user.password_hash.is_empty(), but would need testing
-        "scope": scope,
-        "unofficialServer": true,
-    });
+                "Kdf": user.client_kdf_type,
+                "KdfIterations": user.client_kdf_iter,
+                "KdfMemory": user.client_kdf_memory,
+                "KdfParallelism": user.client_kdf_parallelism,
+                "ResetMasterPassword": false, // TODO: according to official server seems something like: user.password_hash.is_empty(), but would need testing
+                "scope": auth_tokens.scope(),
+                "unofficialServer": true,
+            });
 
-    Ok(Json(result))
+            Ok(Json(result))
+        }
+    }
 }
 
 #[derive(Default, Deserialize, Serialize)]
@@ -154,11 +156,7 @@ async fn _password_login(
     ip: &ClientIp,
 ) -> JsonResult {
     // Validate scope
-    let scope = data.scope.as_ref().unwrap();
-    if scope != "api offline_access" {
-        err!("Scope not supported")
-    }
-    let scope_vec = vec!["api".into(), "offline_access".into()];
+    AuthMethod::Password.check_scope(data.scope.as_ref())?;
 
     // Ratelimit the login
     crate::ratelimit::check_limit_login(&ip.ip)?;
@@ -291,7 +289,7 @@ async fn _password_login(
     // See: https://github.com/dani-garcia/vaultwarden/issues/4156
     // ---
     // let orgs = UserOrganization::find_confirmed_by_user(&user.uuid, conn).await;
-    let (access_token, expires_in) = device.refresh_tokens(&user, scope_vec);
+    let auth_tokens = auth::AuthTokens::new(&device, &user, AuthMethod::Password);
     device.save(conn).await?;
 
     // Fetch all valid Master Password Policies and merge them into one with all true's and larges numbers as one policy
@@ -325,10 +323,10 @@ async fn _password_login(
     };
 
     let mut result = json!({
-        "access_token": access_token,
-        "expires_in": expires_in,
+        "access_token": auth_tokens.access_token(),
+        "expires_in": auth_tokens.expires_in(),
         "token_type": "Bearer",
-        "refresh_token": device.refresh_token,
+        "refresh_token": auth_tokens.refresh_token(),
         "Key": user.akey,
         "PrivateKey": user.private_key,
         //"TwoFactorToken": "11122233333444555666777888999"
@@ -341,7 +339,7 @@ async fn _password_login(
         "ForcePasswordReset": false,
         "MasterPasswordPolicy": master_password_policy,
 
-        "scope": scope,
+        "scope": auth_tokens.scope(),
         "unofficialServer": true,
         "UserDecryptionOptions": {
             "HasMasterPassword": !user.password_hash.is_empty(),
@@ -367,9 +365,9 @@ async fn _api_key_login(
     crate::ratelimit::check_limit_login(&ip.ip)?;
 
     // Validate scope
-    match data.scope.as_ref().unwrap().as_ref() {
-        "api" => _user_api_key_login(data, user_uuid, conn, ip).await,
-        "api.organization" => _organization_api_key_login(data, conn, ip).await,
+    match data.scope.as_ref() {
+        Some(scope) if scope == &AuthMethod::UserApiKey.scope() => _user_api_key_login(data, user_uuid, conn, ip).await,
+        Some(scope) if scope == &AuthMethod::OrgApiKey.scope() => _organization_api_key_login(data, conn, ip).await,
         _ => err!("Scope not supported"),
     }
 }
@@ -435,15 +433,15 @@ async fn _user_api_key_login(
         }
     }
 
-    // Common
-    let scope_vec = vec!["api".into()];
     // ---
     // Disabled this variable, it was used to generate the JWT
     // Because this might get used in the future, and is add by the Bitwarden Server, lets keep it, but then commented out
     // See: https://github.com/dani-garcia/vaultwarden/issues/4156
     // ---
     // let orgs = UserOrganization::find_confirmed_by_user(&user.uuid, conn).await;
-    let (access_token, expires_in) = device.refresh_tokens(&user, scope_vec);
+    let access_claims = auth::LoginJwtClaims::default(&device, &user, &auth::AuthMethod::UserApiKey);
+
+    // Save to update `device.updated_at` to track usage
     device.save(conn).await?;
 
     info!("User {} logged in successfully via API key. IP: {}", user.email, ip.ip);
@@ -451,8 +449,8 @@ async fn _user_api_key_login(
     // Note: No refresh_token is returned. The CLI just repeats the
     // client_credentials login flow when the existing token expires.
     let result = json!({
-        "access_token": access_token,
-        "expires_in": expires_in,
+        "access_token": access_claims.token(),
+        "expires_in": access_claims.expires_in(),
         "token_type": "Bearer",
         "Key": user.akey,
         "PrivateKey": user.private_key,
@@ -462,7 +460,7 @@ async fn _user_api_key_login(
         "KdfMemory": user.client_kdf_memory,
         "KdfParallelism": user.client_kdf_parallelism,
         "ResetMasterPassword": false, // TODO: Same as above
-        "scope": "api",
+        "scope": auth::AuthMethod::UserApiKey.scope(),
         "unofficialServer": true,
     });
 
@@ -494,7 +492,7 @@ async fn _organization_api_key_login(data: ConnectData, conn: &mut DbConn, ip: &
         "access_token": access_token,
         "expires_in": 3600,
         "token_type": "Bearer",
-        "scope": "api.organization",
+        "scope": auth::AuthMethod::OrgApiKey.scope(),
         "unofficialServer": true,
     })))
 }

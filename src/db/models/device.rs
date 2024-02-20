@@ -1,6 +1,7 @@
 use chrono::{NaiveDateTime, Utc};
+use data_encoding::{BASE64, BASE64URL};
 
-use crate::{crypto, CONFIG};
+use crate::crypto;
 use core::fmt;
 
 db_object! {
@@ -42,13 +43,12 @@ impl Device {
 
             push_uuid: None,
             push_token: None,
-            refresh_token: String::new(),
+            refresh_token: crypto::encode_random_bytes::<64>(BASE64URL),
             twofactor_remember: None,
         }
     }
 
     pub fn refresh_twofactor_remember(&mut self) -> String {
-        use data_encoding::BASE64;
         let twofactor_remember = crypto::encode_random_bytes::<180>(BASE64);
         self.twofactor_remember = Some(twofactor_remember.clone());
 
@@ -57,61 +57,6 @@ impl Device {
 
     pub fn delete_twofactor_remember(&mut self) {
         self.twofactor_remember = None;
-    }
-
-    pub fn refresh_tokens(&mut self, user: &super::User, scope: Vec<String>) -> (String, i64) {
-        // If there is no refresh token, we create one
-        if self.refresh_token.is_empty() {
-            use data_encoding::BASE64URL;
-            self.refresh_token = crypto::encode_random_bytes::<64>(BASE64URL);
-        }
-
-        // Update the expiration of the device and the last update date
-        let time_now = Utc::now();
-        self.updated_at = time_now.naive_utc();
-
-        // ---
-        // Disabled these keys to be added to the JWT since they could cause the JWT to get too large
-        // Also These key/value pairs are not used anywhere by either Vaultwarden or Bitwarden Clients
-        // Because these might get used in the future, and they are added by the Bitwarden Server, lets keep it, but then commented out
-        // ---
-        // fn arg: orgs: Vec<super::UserOrganization>,
-        // ---
-        // let orgowner: Vec<_> = orgs.iter().filter(|o| o.atype == 0).map(|o| o.org_uuid.clone()).collect();
-        // let orgadmin: Vec<_> = orgs.iter().filter(|o| o.atype == 1).map(|o| o.org_uuid.clone()).collect();
-        // let orguser: Vec<_> = orgs.iter().filter(|o| o.atype == 2).map(|o| o.org_uuid.clone()).collect();
-        // let orgmanager: Vec<_> = orgs.iter().filter(|o| o.atype == 3).map(|o| o.org_uuid.clone()).collect();
-
-        // Create the JWT claims struct, to send to the client
-        use crate::auth::{encode_jwt, LoginJwtClaims, DEFAULT_VALIDITY, JWT_LOGIN_ISSUER};
-        let claims = LoginJwtClaims {
-            nbf: time_now.timestamp(),
-            exp: (time_now + *DEFAULT_VALIDITY).timestamp(),
-            iss: JWT_LOGIN_ISSUER.to_string(),
-            sub: user.uuid.clone(),
-
-            premium: true,
-            name: user.name.clone(),
-            email: user.email.clone(),
-            email_verified: !CONFIG.mail_enabled() || user.verified_at.is_some(),
-
-            // ---
-            // Disabled these keys to be added to the JWT since they could cause the JWT to get too large
-            // Also These key/value pairs are not used anywhere by either Vaultwarden or Bitwarden Clients
-            // Because these might get used in the future, and they are added by the Bitwarden Server, lets keep it, but then commented out
-            // See: https://github.com/dani-garcia/vaultwarden/issues/4156
-            // ---
-            // orgowner,
-            // orgadmin,
-            // orguser,
-            // orgmanager,
-            sstamp: user.security_stamp.clone(),
-            device: self.uuid.clone(),
-            scope,
-            amr: vec!["Application".into()],
-        };
-
-        (encode_jwt(&claims), DEFAULT_VALIDITY.num_seconds())
     }
 
     pub fn is_push_device(&self) -> bool {
