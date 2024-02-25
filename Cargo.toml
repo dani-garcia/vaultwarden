@@ -71,8 +71,8 @@ futures = "0.3.30"
 tokio = { version = "1.36.0", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal"] }
 
 # A generic serialization/deserialization framework
-serde = { version = "1.0.196", features = ["derive"] }
-serde_json = "1.0.113"
+serde = { version = "1.0.197", features = ["derive"] }
+serde_json = "1.0.114"
 
 # A safe, extensible ORM and Query builder
 diesel = { version = "2.1.4", features = ["chrono", "r2d2", "numeric"] }
@@ -84,14 +84,14 @@ libsqlite3-sys = { version = "0.27.0", features = ["bundled"], optional = true }
 
 # Crypto-related libraries
 rand = { version = "0.8.5", features = ["small_rng"] }
-ring = "0.17.7"
+ring = "0.17.8"
 
 # UUID generation
 uuid = { version = "1.7.0", features = ["v4"] }
 
 # Date and time libraries
-chrono = { version = "0.4.33", features = ["clock", "serde"], default-features = false }
-chrono-tz = "0.8.5"
+chrono = { version = "0.4.34", features = ["clock", "serde"], default-features = false }
+chrono-tz = "0.8.6"
 time = "0.3.34"
 
 # Job scheduler
@@ -140,17 +140,17 @@ cookie = "0.17.0"
 cookie_store = "0.20.0"
 
 # Used by U2F, JWT and PostgreSQL
-openssl = "0.10.63"
+openssl = "0.10.64"
 
 # CLI argument parsing
 pico-args = "0.5.0"
 
 # Macro ident concatenation
 paste = "1.0.14"
-governor = "0.6.0"
+governor = "0.6.3"
 
 # Check client versions for specific features.
-semver = "1.0.21"
+semver = "1.0.22"
 
 # Allow overriding the default memory allocator
 # Mainly used for the musl builds, since the default musl malloc is very slow
