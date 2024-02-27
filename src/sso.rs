@@ -1,7 +1,6 @@
 use chrono::Utc;
 use regex::Regex;
 use std::borrow::Cow;
-use std::sync::RwLock;
 use std::time::Duration;
 use url::Url;
 
@@ -31,7 +30,10 @@ use crate::{
 static AC_CACHE: Lazy<Cache<String, AuthenticatedUser>> =
     Lazy::new(|| Cache::builder().max_capacity(1000).time_to_live(Duration::from_secs(10 * 60)).build());
 
-static CLIENT_CACHE: RwLock<Option<CoreClient>> = RwLock::new(None);
+static CLIENT_CACHE_KEY: Lazy<String> = Lazy::new(|| "sso-client".to_string());
+static CLIENT_CACHE: Lazy<Cache<String, CoreClient>> = Lazy::new(|| {
+    Cache::builder().max_capacity(1).time_to_live(Duration::from_secs(CONFIG.sso_client_cache_expiration())).build()
+});
 
 static SSO_JWT_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|sso", CONFIG.domain_origin()));
 
@@ -165,14 +167,17 @@ impl CoreClientExt for CoreClient {
 
     // Simple cache to prevent recalling the discovery endpoint each time
     async fn cached() -> ApiResult<CoreClient> {
-        let cc_client = CLIENT_CACHE.read().ok().and_then(|rw_lock| rw_lock.clone());
-        match cc_client {
-            Some(client) => Ok(client),
-            None => Self::_get_client().await.map(|client| {
-                let mut cached_client = CLIENT_CACHE.write().unwrap();
-                *cached_client = Some(client.clone());
-                client
-            }),
+        if CONFIG.sso_client_cache_expiration() > 0 {
+            match CLIENT_CACHE.get(&*CLIENT_CACHE_KEY) {
+                Some(client) => Ok(client),
+                None => Self::_get_client().await.map(|client| {
+                    debug!("Inserting new client in cache");
+                    CLIENT_CACHE.insert(CLIENT_CACHE_KEY.clone(), client.clone());
+                    client
+                }),
+            }
+        } else {
+            Self::_get_client().await
         }
     }
 
@@ -346,8 +351,13 @@ pub async fn exchange_code(wrapped_code: &str, conn: &mut DbConn) -> ApiResult<U
             }
 
             let id_claims = match id_token.claims(&client.vw_id_token_verifier(), &oidc_nonce) {
-                Err(err) => err!(format!("Could not read id_token claims, {err}")),
                 Ok(claims) => claims,
+                Err(err) => {
+                    if CONFIG.sso_client_cache_expiration() > 0 {
+                        CLIENT_CACHE.invalidate(&*CLIENT_CACHE_KEY);
+                    }
+                    err!(format!("Could not read id_token claims, {err}"));
+                }
             };
 
             let email = match id_claims.email() {
