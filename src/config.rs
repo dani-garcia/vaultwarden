@@ -679,6 +679,8 @@ make_config! {
         smtp_accept_invalid_certs:     bool,   true,   def,     false;
         /// Accept Invalid Hostnames (Know the risks!) |> DANGEROUS: Allow invalid hostnames. This option introduces significant vulnerabilities to man-in-the-middle attacks!
         smtp_accept_invalid_hostnames: bool,   true,   def,     false;
+        /// Accept additional root certs |> Paths to PEM files, separated by semicolons
+        smtp_additional_root_certs:    String, true,   option;
     },
 
     /// Email 2FA Settings
