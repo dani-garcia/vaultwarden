@@ -6,7 +6,7 @@ use percent_encoding::{percent_encode, NON_ALPHANUMERIC};
 use lettre::{
     message::{Attachment, Body, Mailbox, Message, MultiPart, SinglePart},
     transport::smtp::authentication::{Credentials, Mechanism as SmtpAuthMechanism},
-    transport::smtp::client::{Tls, TlsParameters},
+    transport::smtp::client::{CertificateStore, Tls, TlsParameters},
     transport::smtp::extension::ClientId,
     Address, AsyncSendmailTransport, AsyncSmtpTransport, AsyncTransport, Tokio1Executor,
 };
@@ -49,6 +49,9 @@ fn smtp_transport() -> AsyncSmtpTransport<Tokio1Executor> {
         }
         for cert in &*SMTP_ADDITIONAL_ROOT_CERTS.read().unwrap() {
             tls_parameters = tls_parameters.add_root_certificate(cert.clone());
+        }
+        if !CONFIG.smtp_use_system_root_certs() {
+            tls_parameters = tls_parameters.certificate_store(CertificateStore::None);
         }
         let tls_parameters = tls_parameters.build().unwrap();
 
