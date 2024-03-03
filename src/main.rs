@@ -66,11 +66,11 @@ async fn main() -> Result<(), Error> {
 
     use log::LevelFilter as LF;
     let level = LF::from_str(&CONFIG.log_level()).unwrap_or_else(|_| {
-        let mut valid_log_levels = "".to_string();
+        let mut valid_log_levels = String::new();
         LF::iter().fold(true, |first, elem| {
             let mut joinstr = ", ".to_string();
             if first {
-                joinstr = "".to_string();
+                joinstr = String::new();
             }
             valid_log_levels = format!("{}{}{}", valid_log_levels, joinstr, elem.as_str().to_lowercase());
             false
