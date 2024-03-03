@@ -75,7 +75,7 @@ async fn main() -> Result<(), Error> {
             valid_log_levels = format!("{}{}{}", valid_log_levels, joinstr, elem.as_str().to_lowercase());
             false
         });
-        println!("Log level must be oe of the following: {valid_log_levels}");
+        println!("Log level must be one of the following: {valid_log_levels}");
         exit(1);
     });
     init_logging(level).ok();
