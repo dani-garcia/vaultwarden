@@ -65,7 +65,19 @@ async fn main() -> Result<(), Error> {
     launch_info();
 
     use log::LevelFilter as LF;
-    let level = LF::from_str(&CONFIG.log_level()).expect("Valid log level");
+    let level = LF::from_str(&CONFIG.log_level()).unwrap_or_else(|_| {
+        let mut valid_log_levels = "".to_string();
+        LF::iter().fold(true, |first, elem| {
+            let mut joinstr = ", ".to_string();
+            if first {
+                joinstr = "".to_string();
+            }
+            valid_log_levels = format!("{}{}{}", valid_log_levels, joinstr, elem.as_str().to_lowercase());
+            false
+        });
+        println!("Log level must be oe of the following: {valid_log_levels}");
+        exit(1);
+    });
     init_logging(level).ok();
 
     let extra_debug = matches!(level, LF::Trace | LF::Debug);
