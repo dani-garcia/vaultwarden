@@ -66,15 +66,7 @@ async fn main() -> Result<(), Error> {
 
     use log::LevelFilter as LF;
     let level = LF::from_str(&CONFIG.log_level()).unwrap_or_else(|_| {
-        let mut valid_log_levels = String::new();
-        LF::iter().fold(true, |first, elem| {
-            let mut joinstr = ", ".to_string();
-            if first {
-                joinstr = String::new();
-            }
-            valid_log_levels = format!("{}{}{}", valid_log_levels, joinstr, elem.as_str().to_lowercase());
-            false
-        });
+        let valid_log_levels = LF::iter().map(|lvl| lvl.as_str().to_lowercase()).collect::<Vec<String>>().join(", ");
         println!("Log level must be one of the following: {valid_log_levels}");
         exit(1);
     });
