@@ -24,10 +24,8 @@ services:
     profiles: ["VaultWarden"]
     network_mode: "host"
     build:
-      context: ../../..
+      context: ../..
       dockerfile: Dockerfile
     depends_on:
       - keycloak
     env_file: ${ENV}.env
-    volumes:
-      - ./vaultwarden.sh:/etc/vaultwarden.sh
