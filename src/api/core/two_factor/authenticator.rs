@@ -157,7 +157,7 @@ pub async fn validate_totp_code(
         let generated = totp_custom::<Sha1>(30, 6, &decoded_secret, time);
 
         // Check the given code equals the generated and if the time_step is larger then the one last used.
-        if generated == totp_code && time_step > i64::from(twofactor.last_used) {
+        if generated == totp_code && time_step > twofactor.last_used {
             // If the step does not equals 0 the time is drifted either server or client side.
             if step != 0 {
                 warn!("TOTP Time drift detected. The step offset is {}", step);
@@ -165,10 +165,10 @@ pub async fn validate_totp_code(
 
             // Save the last used time step so only totp time steps higher then this one are allowed.
             // This will also save a newly created twofactor if the code is correct.
-            twofactor.last_used = time_step as i32;
+            twofactor.last_used = time_step;
             twofactor.save(conn).await?;
             return Ok(());
-        } else if generated == totp_code && time_step <= i64::from(twofactor.last_used) {
+        } else if generated == totp_code && time_step <= twofactor.last_used {
             warn!("This TOTP or a TOTP code within {} steps back or forward has already been used!", steps);
             err!(
                 format!("Invalid TOTP code! Server time: {} IP: {}", current_time.format("%F %T UTC"), ip.ip),

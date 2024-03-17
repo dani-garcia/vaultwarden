@@ -12,7 +12,7 @@ db_object! {
         pub atype: i32,
         pub enabled: bool,
         pub data: String,
-        pub last_used: i32,
+        pub last_used: i64,
     }
 }
 
