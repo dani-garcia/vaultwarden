@@ -23,7 +23,7 @@ pub use crate::api::{
     icons::routes as icons_routes,
     identity::routes as identity_routes,
     notifications::routes as notifications_routes,
-    notifications::{start_notification_server, AnonymousNotify, Notify, UpdateType, WS_ANONYMOUS_SUBSCRIPTIONS},
+    notifications::{AnonymousNotify, Notify, UpdateType, WS_ANONYMOUS_SUBSCRIPTIONS, WS_USERS},
     push::{
         push_cipher_update, push_folder_update, push_logout, push_send_update, push_user_update, register_push_device,
         unregister_push_device,

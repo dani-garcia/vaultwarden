@@ -559,6 +559,8 @@ async fn post_email_token(data: JsonUpcase<EmailTokenData>, headers: Headers, mu
         if let Err(e) = mail::send_change_email(&data.NewEmail, &token).await {
             error!("Error sending change-email email: {:#?}", e);
         }
+    } else {
+        debug!("Email change request for user ({}) to email ({}) with token ({})", user.uuid, data.NewEmail, token);
     }
 
     user.email_new = Some(data.NewEmail);

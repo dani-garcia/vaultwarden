@@ -103,7 +103,7 @@ impl Attachment {
 
             let file_path = &self.get_file_path();
 
-            match crate::util::delete_file(file_path) {
+            match std::fs::remove_file(file_path) {
                 // Ignore "file not found" errors. This can happen when the
                 // upstream caller has already cleaned up the file as part of
                 // its own error handling.
