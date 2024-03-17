@@ -686,6 +686,10 @@ make_config! {
         email_expiration_time:  u64,    true,   def,      600;
         /// Maximum attempts |> Maximum attempts before an email token is reset and a new email will need to be sent
         email_attempts_limit:   u64,    true,   def,      3;
+        /// Automatically enforce at login |> Setup email 2FA provider regardless of any organization policy
+        email_2fa_enforce_on_verified_invite: bool,   true,   def,      false;
+        /// Auto-enable 2FA (Know the risks!) |> Automatically setup email 2FA as fallback provider when needed
+        email_2fa_auto_fallback: bool,  true,   def,      false;
     },
 }
 
@@ -886,6 +890,13 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
 
     if cfg._enable_email_2fa && !(cfg.smtp_host.is_some() || cfg.use_sendmail) {
         err!("To enable email 2FA, a mail transport must be configured")
+    }
+
+    if !cfg._enable_email_2fa && cfg.email_2fa_enforce_on_verified_invite {
+        err!("To enforce email 2FA on verified invitations, email 2fa has to be enabled!");
+    }
+    if !cfg._enable_email_2fa && cfg.email_2fa_auto_fallback {
+        err!("To use email 2FA as automatic fallback, email 2fa has to be enabled!");
     }
 
     // Check if the icon blacklist regex is valid

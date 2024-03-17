@@ -1079,7 +1079,7 @@ async fn accept_invite(
     let claims = decode_invite(&data.Token)?;
 
     match User::find_by_mail(&claims.email, &mut conn).await {
-        Some(_) => {
+        Some(user) => {
             Invitation::take(&claims.email, &mut conn).await;
 
             if let (Some(user_org), Some(org)) = (&claims.user_org_id, &claims.org_id) {
@@ -1103,7 +1103,11 @@ async fn accept_invite(
                     match OrgPolicy::is_user_allowed(&user_org.user_uuid, org_id, false, &mut conn).await {
                         Ok(_) => {}
                         Err(OrgPolicyErr::TwoFactorMissing) => {
-                            err!("You cannot join this organization until you enable two-step login on your user account");
+                            if CONFIG.email_2fa_auto_fallback() {
+                                two_factor::email::activate_email_2fa(&user, &mut conn).await?;
+                            } else {
+                                err!("You cannot join this organization until you enable two-step login on your user account");
+                            }
                         }
                         Err(OrgPolicyErr::SingleOrgEnforced) => {
                             err!("You cannot join this organization because you are a member of an organization which forbids it");
@@ -1228,10 +1232,14 @@ async fn _confirm_invite(
         match OrgPolicy::is_user_allowed(&user_to_confirm.user_uuid, org_id, true, conn).await {
             Ok(_) => {}
             Err(OrgPolicyErr::TwoFactorMissing) => {
-                err!("You cannot confirm this user because it has no two-step login method activated");
+                if CONFIG.email_2fa_auto_fallback() {
+                    two_factor::email::find_and_activate_email_2fa(&user_to_confirm.user_uuid, conn).await?;
+                } else {
+                    err!("You cannot confirm this user because they have not setup 2FA");
+                }
             }
             Err(OrgPolicyErr::SingleOrgEnforced) => {
-                err!("You cannot confirm this user because it is a member of an organization which forbids it");
+                err!("You cannot confirm this user because they are a member of an organization which forbids it");
             }
         }
     }
@@ -1359,10 +1367,14 @@ async fn edit_user(
         match OrgPolicy::is_user_allowed(&user_to_edit.user_uuid, org_id, true, &mut conn).await {
             Ok(_) => {}
             Err(OrgPolicyErr::TwoFactorMissing) => {
-                err!("You cannot modify this user to this type because it has no two-step login method activated");
+                if CONFIG.email_2fa_auto_fallback() {
+                    two_factor::email::find_and_activate_email_2fa(&user_to_edit.user_uuid, &mut conn).await?;
+                } else {
+                    err!("You cannot modify this user to this type because they have not setup 2FA");
+                }
             }
             Err(OrgPolicyErr::SingleOrgEnforced) => {
-                err!("You cannot modify this user to this type because it is a member of an organization which forbids it");
+                err!("You cannot modify this user to this type because they are a member of an organization which forbids it");
             }
         }
     }
@@ -2159,10 +2171,14 @@ async fn _restore_organization_user(
                 match OrgPolicy::is_user_allowed(&user_org.user_uuid, org_id, false, conn).await {
                     Ok(_) => {}
                     Err(OrgPolicyErr::TwoFactorMissing) => {
-                        err!("You cannot restore this user because it has no two-step login method activated");
+                        if CONFIG.email_2fa_auto_fallback() {
+                            two_factor::email::find_and_activate_email_2fa(&user_org.user_uuid, conn).await?;
+                        } else {
+                            err!("You cannot restore this user because they have not setup 2FA");
+                        }
                     }
                     Err(OrgPolicyErr::SingleOrgEnforced) => {
-                        err!("You cannot restore this user because it is a member of an organization which forbids it");
+                        err!("You cannot restore this user because they are a member of an organization which forbids it");
                     }
                 }
             }
