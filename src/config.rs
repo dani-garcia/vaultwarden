@@ -39,7 +39,6 @@ macro_rules! make_config {
 
         struct Inner {
             rocket_shutdown_handle: Option<rocket::Shutdown>,
-            ws_shutdown_handle: Option<tokio::sync::oneshot::Sender<()>>,
 
             templates: Handlebars<'static>,
             config: ConfigItems,
@@ -361,7 +360,7 @@ make_config! {
         /// Sends folder
         sends_folder:           String, false,  auto,   |c| format!("{}/{}", c.data_folder, "sends");
         /// Temp folder |> Used for storing temporary file uploads
-        tmp_folder:           String, false,  auto,   |c| format!("{}/{}", c.data_folder, "tmp");
+        tmp_folder:             String, false,  auto,   |c| format!("{}/{}", c.data_folder, "tmp");
         /// Templates folder
         templates_folder:       String, false,  auto,   |c| format!("{}/{}", c.data_folder, "templates");
         /// Session JWT key
@@ -371,11 +370,7 @@ make_config! {
     },
     ws {
         /// Enable websocket notifications
-        websocket_enabled:      bool,   false,  def,    false;
-        /// Websocket address
-        websocket_address:      String, false,  def,    "0.0.0.0".to_string();
-        /// Websocket port
-        websocket_port:         u16,    false,  def,    3012;
+        enable_websocket:       bool,   false,  def,    true;
     },
     push {
         /// Enable push notifications
@@ -1071,7 +1066,6 @@ impl Config {
         Ok(Config {
             inner: RwLock::new(Inner {
                 rocket_shutdown_handle: None,
-                ws_shutdown_handle: None,
                 templates: load_templates(&config.templates_folder),
                 config,
                 _env,
@@ -1237,16 +1231,8 @@ impl Config {
         self.inner.write().unwrap().rocket_shutdown_handle = Some(handle);
     }
 
-    pub fn set_ws_shutdown_handle(&self, handle: tokio::sync::oneshot::Sender<()>) {
-        self.inner.write().unwrap().ws_shutdown_handle = Some(handle);
-    }
-
     pub fn shutdown(&self) {
         if let Ok(mut c) = self.inner.write() {
-            if let Some(handle) = c.ws_shutdown_handle.take() {
-                handle.send(()).ok();
-            }
-
             if let Some(handle) = c.rocket_shutdown_handle.take() {
                 handle.notify();
             }

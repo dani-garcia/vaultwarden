@@ -3784,7 +3784,6 @@ dependencies = [
  "syslog",
  "time",
  "tokio",
- "tokio-tungstenite",
  "totp-lite",
  "tracing",
  "url",
