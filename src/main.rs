@@ -65,7 +65,11 @@ async fn main() -> Result<(), Error> {
     launch_info();
 
     use log::LevelFilter as LF;
-    let level = LF::from_str(&CONFIG.log_level()).expect("Valid log level");
+    let level = LF::from_str(&CONFIG.log_level()).unwrap_or_else(|_| {
+        let valid_log_levels = LF::iter().map(|lvl| lvl.as_str().to_lowercase()).collect::<Vec<String>>().join(", ");
+        println!("Log level must be one of the following: {valid_log_levels}");
+        exit(1);
+    });
     init_logging(level).ok();
 
     let extra_debug = matches!(level, LF::Trace | LF::Debug);
