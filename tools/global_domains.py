@@ -10,19 +10,19 @@ import urllib.request
 
 from collections import OrderedDict
 
-if not (2 <= len(sys.argv) <= 3):
-    print("usage: %s <OUTPUT-FILE> [GIT-REF]" % sys.argv[0])
+if not 2 <= len(sys.argv) <= 3:
+    print(f"usage: {sys.argv[0]} <OUTPUT-FILE> [GIT-REF]")
     print()
     print("This script generates a global equivalent domains JSON file from")
     print("the upstream Bitwarden source repo.")
     sys.exit(1)
 
 OUTPUT_FILE = sys.argv[1]
-GIT_REF = 'master' if len(sys.argv) == 2 else sys.argv[2]
+GIT_REF = 'main' if len(sys.argv) == 2 else sys.argv[2]
 
-BASE_URL = 'https://github.com/bitwarden/server/raw/%s' % GIT_REF
-ENUMS_URL = '%s/src/Core/Enums/GlobalEquivalentDomainsType.cs' % BASE_URL
-DOMAIN_LISTS_URL = '%s/src/Core/Utilities/StaticStore.cs' % BASE_URL
+BASE_URL = f'https://github.com/bitwarden/server/raw/{GIT_REF}'
+ENUMS_URL = f'{BASE_URL}/src/Core/Enums/GlobalEquivalentDomainsType.cs'
+DOMAIN_LISTS_URL = f'{BASE_URL}/src/Core/Utilities/StaticStore.cs'
 
 # Enum lines look like:
 #
@@ -77,5 +77,5 @@ for name, domain_list in domain_lists.items():
     global_domains.append(entry)
 
 # Write out the global domains JSON file.
-with open(OUTPUT_FILE, 'w') as f:
+with open(file=OUTPUT_FILE, mode='w', encoding='utf-8') as f:
     json.dump(global_domains, f, indent=2)

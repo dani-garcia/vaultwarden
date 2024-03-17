@@ -156,7 +156,7 @@ pub async fn validate_totp_code(
         let time = (current_timestamp + step * 30i64) as u64;
         let generated = totp_custom::<Sha1>(30, 6, &decoded_secret, time);
 
-        // Check the the given code equals the generated and if the time_step is larger then the one last used.
+        // Check the given code equals the generated and if the time_step is larger then the one last used.
         if generated == totp_code && time_step > i64::from(twofactor.last_used) {
             // If the step does not equals 0 the time is drifted either server or client side.
             if step != 0 {
