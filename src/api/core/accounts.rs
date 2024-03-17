@@ -773,7 +773,7 @@ async fn delete_account(data: JsonUpcase<PasswordOrOtpData>, headers: Headers, m
 
 #[get("/accounts/revision-date")]
 fn revision_date(headers: Headers) -> JsonResult {
-    let revision_date = headers.user.updated_at.timestamp_millis();
+    let revision_date = headers.user.updated_at.and_utc().timestamp_millis();
     Ok(Json(json!(revision_date)))
 }
 

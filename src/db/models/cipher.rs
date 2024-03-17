@@ -1,5 +1,5 @@
 use crate::CONFIG;
-use chrono::{Duration, NaiveDateTime, Utc};
+use chrono::{NaiveDateTime, TimeDelta, Utc};
 use serde_json::Value;
 
 use super::{
@@ -361,7 +361,7 @@ impl Cipher {
     pub async fn purge_trash(conn: &mut DbConn) {
         if let Some(auto_delete_days) = CONFIG.trash_auto_delete_days() {
             let now = Utc::now().naive_utc();
-            let dt = now - Duration::days(auto_delete_days);
+            let dt = now - TimeDelta::try_days(auto_delete_days).unwrap();
             for cipher in Self::find_deleted_before(&dt, conn).await {
                 cipher.delete(conn).await.ok();
             }

@@ -214,7 +214,7 @@ impl<'r, R: 'r + Responder<'r, 'static> + Send> Responder<'r, 'static> for Cache
         res.set_raw_header("Cache-Control", cache_control_header);
 
         let time_now = chrono::Local::now();
-        let expiry_time = time_now + chrono::Duration::seconds(self.ttl.try_into().unwrap());
+        let expiry_time = time_now + chrono::TimeDelta::try_seconds(self.ttl.try_into().unwrap()).unwrap();
         res.set_raw_header("Expires", format_datetime_http(&expiry_time));
         Ok(res)
     }

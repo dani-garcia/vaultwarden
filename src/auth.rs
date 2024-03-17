@@ -1,6 +1,6 @@
 // JWT Handling
 //
-use chrono::{Duration, Utc};
+use chrono::{TimeDelta, Utc};
 use num_traits::FromPrimitive;
 use once_cell::sync::{Lazy, OnceCell};
 
@@ -13,7 +13,7 @@ use crate::{error::Error, CONFIG};
 
 const JWT_ALGORITHM: Algorithm = Algorithm::RS256;
 
-pub static DEFAULT_VALIDITY: Lazy<Duration> = Lazy::new(|| Duration::hours(2));
+pub static DEFAULT_VALIDITY: Lazy<TimeDelta> = Lazy::new(|| TimeDelta::try_hours(2).unwrap());
 static JWT_HEADER: Lazy<Header> = Lazy::new(|| Header::new(JWT_ALGORITHM));
 
 pub static JWT_LOGIN_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|login", CONFIG.domain_origin()));
@@ -187,11 +187,11 @@ pub fn generate_invite_claims(
     user_org_id: Option<String>,
     invited_by_email: Option<String>,
 ) -> InviteJwtClaims {
-    let time_now = Utc::now().naive_utc();
+    let time_now = Utc::now();
     let expire_hours = i64::from(CONFIG.invitation_expiration_hours());
     InviteJwtClaims {
         nbf: time_now.timestamp(),
-        exp: (time_now + Duration::hours(expire_hours)).timestamp(),
+        exp: (time_now + TimeDelta::try_hours(expire_hours).unwrap()).timestamp(),
         iss: JWT_INVITE_ISSUER.to_string(),
         sub: uuid,
         email,
@@ -225,11 +225,11 @@ pub fn generate_emergency_access_invite_claims(
     grantor_name: String,
     grantor_email: String,
 ) -> EmergencyAccessInviteJwtClaims {
-    let time_now = Utc::now().naive_utc();
+    let time_now = Utc::now();
     let expire_hours = i64::from(CONFIG.invitation_expiration_hours());
     EmergencyAccessInviteJwtClaims {
         nbf: time_now.timestamp(),
-        exp: (time_now + Duration::hours(expire_hours)).timestamp(),
+        exp: (time_now + TimeDelta::try_hours(expire_hours).unwrap()).timestamp(),
         iss: JWT_EMERGENCY_ACCESS_INVITE_ISSUER.to_string(),
         sub: uuid,
         email,
@@ -256,10 +256,10 @@ pub struct OrgApiKeyLoginJwtClaims {
 }
 
 pub fn generate_organization_api_key_login_claims(uuid: String, org_id: String) -> OrgApiKeyLoginJwtClaims {
-    let time_now = Utc::now().naive_utc();
+    let time_now = Utc::now();
     OrgApiKeyLoginJwtClaims {
         nbf: time_now.timestamp(),
-        exp: (time_now + Duration::hours(1)).timestamp(),
+        exp: (time_now + TimeDelta::try_hours(1).unwrap()).timestamp(),
         iss: JWT_ORG_API_KEY_ISSUER.to_string(),
         sub: uuid,
         client_id: format!("organization.{org_id}"),
@@ -283,10 +283,10 @@ pub struct FileDownloadClaims {
 }
 
 pub fn generate_file_download_claims(uuid: String, file_id: String) -> FileDownloadClaims {
-    let time_now = Utc::now().naive_utc();
+    let time_now = Utc::now();
     FileDownloadClaims {
         nbf: time_now.timestamp(),
-        exp: (time_now + Duration::minutes(5)).timestamp(),
+        exp: (time_now + TimeDelta::try_minutes(5).unwrap()).timestamp(),
         iss: JWT_FILE_DOWNLOAD_ISSUER.to_string(),
         sub: uuid,
         file_id,
@@ -306,42 +306,42 @@ pub struct BasicJwtClaims {
 }
 
 pub fn generate_delete_claims(uuid: String) -> BasicJwtClaims {
-    let time_now = Utc::now().naive_utc();
+    let time_now = Utc::now();
     let expire_hours = i64::from(CONFIG.invitation_expiration_hours());
     BasicJwtClaims {
         nbf: time_now.timestamp(),
-        exp: (time_now + Duration::hours(expire_hours)).timestamp(),
+        exp: (time_now + TimeDelta::try_hours(expire_hours).unwrap()).timestamp(),
         iss: JWT_DELETE_ISSUER.to_string(),
         sub: uuid,
     }
 }
 
 pub fn generate_verify_email_claims(uuid: String) -> BasicJwtClaims {
-    let time_now = Utc::now().naive_utc();
+    let time_now = Utc::now();
     let expire_hours = i64::from(CONFIG.invitation_expiration_hours());
     BasicJwtClaims {
         nbf: time_now.timestamp(),
-        exp: (time_now + Duration::hours(expire_hours)).timestamp(),
+        exp: (time_now + TimeDelta::try_hours(expire_hours).unwrap()).timestamp(),
         iss: JWT_VERIFYEMAIL_ISSUER.to_string(),
         sub: uuid,
     }
 }
 
 pub fn generate_admin_claims() -> BasicJwtClaims {
-    let time_now = Utc::now().naive_utc();
+    let time_now = Utc::now();
     BasicJwtClaims {
         nbf: time_now.timestamp(),
-        exp: (time_now + Duration::minutes(CONFIG.admin_session_lifetime())).timestamp(),
+        exp: (time_now + TimeDelta::try_minutes(CONFIG.admin_session_lifetime()).unwrap()).timestamp(),
         iss: JWT_ADMIN_ISSUER.to_string(),
         sub: "admin_panel".to_string(),
     }
 }
 
 pub fn generate_send_claims(send_id: &str, file_id: &str) -> BasicJwtClaims {
-    let time_now = Utc::now().naive_utc();
+    let time_now = Utc::now();
     BasicJwtClaims {
         nbf: time_now.timestamp(),
-        exp: (time_now + Duration::minutes(2)).timestamp(),
+        exp: (time_now + TimeDelta::try_minutes(2).unwrap()).timestamp(),
         iss: JWT_SEND_ISSUER.to_string(),
         sub: format!("{send_id}/{file_id}"),
     }
@@ -498,7 +498,7 @@ impl<'r> FromRequest<'r> for Headers {
                 // Check if the stamp exception has expired first.
                 // Then, check if the current route matches any of the allowed routes.
                 // After that check the stamp in exception matches the one in the claims.
-                if Utc::now().naive_utc().timestamp() > stamp_exception.expire {
+                if Utc::now().timestamp() > stamp_exception.expire {
                     // If the stamp exception has been expired remove it from the database.
                     // This prevents checking this stamp exception for new requests.
                     let mut user = user;
