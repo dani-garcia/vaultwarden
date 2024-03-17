@@ -289,7 +289,7 @@ async fn _log_event(
     let mut event = Event::new(event_type, event_date);
     match event_type {
         // 1000..=1099 Are user events, they need to be logged via log_user_event()
-        // Collection Events
+        // Cipher Events
         1100..=1199 => {
             event.cipher_uuid = Some(String::from(source_uuid));
         }
