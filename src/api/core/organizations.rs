@@ -329,26 +329,18 @@ async fn get_org_collections_details(org_id: &str, headers: ManagerHeadersLoose,
             && GroupUser::has_full_access_by_member(org_id, &user_org.uuid, &mut conn).await);
 
     for col in Collection::find_by_organization(org_id, &mut conn).await {
-        // assigned indicates whether the current user has access to the given collection
-        let mut assigned = has_full_access_to_org;
+        // check whether the current user has access to the given collection
+        let assigned = has_full_access_to_org
+            || CollectionUser::has_access_to_collection_by_user(&col.uuid, &user_org.user_uuid, &mut conn).await
+            || (CONFIG.org_groups_enabled()
+                && GroupUser::has_access_to_collection_by_member(&col.uuid, &user_org.uuid, &mut conn).await);
 
         // get the users assigned directly to the given collection
         let users: Vec<Value> = coll_users
             .iter()
             .filter(|collection_user| collection_user.collection_uuid == col.uuid)
-            .map(|collection_user| {
-                // check if the current user is assigned to this collection directly
-                if collection_user.user_uuid == user_org.uuid {
-                    assigned = true;
-                }
-                SelectionReadOnly::to_collection_user_details_read_only(collection_user).to_json()
-            })
+            .map(|collection_user| SelectionReadOnly::to_collection_user_details_read_only(collection_user).to_json())
             .collect();
-
-        // check if the current user has access to the given collection via a group
-        if !assigned && CONFIG.org_groups_enabled() {
-            assigned = GroupUser::has_access_to_collection_by_member(&col.uuid, &user_org.uuid, &mut conn).await;
-        }
 
         // get the group details for the given collection
         let groups: Vec<Value> = if CONFIG.org_groups_enabled() {

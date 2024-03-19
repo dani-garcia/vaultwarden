@@ -644,6 +644,10 @@ impl CollectionUser {
             Ok(())
         }}
     }
+
+    pub async fn has_access_to_collection_by_user(col_id: &str, user_uuid: &str, conn: &mut DbConn) -> bool {
+        Self::find_by_collection_and_user(col_id, user_uuid, conn).await.is_some()
+    }
 }
 
 /// Database methods
