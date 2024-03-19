@@ -114,11 +114,11 @@ pub async fn register_push_device(device: &mut Device, conn: &mut crate::db::DbC
         .await?
         .error_for_status()
     {
-        err!(format!("An error occured while proceeding registration of a device: {e}"));
+        err!(format!("An error occurred while proceeding registration of a device: {e}"));
     }
 
     if let Err(e) = device.save(conn).await {
-        err!(format!("An error occured while trying to save the (registered) device push uuid: {e}"));
+        err!(format!("An error occurred while trying to save the (registered) device push uuid: {e}"));
     }
 
     Ok(())
