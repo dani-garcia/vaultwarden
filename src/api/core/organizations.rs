@@ -664,24 +664,16 @@ async fn get_org_collection_detail(
                 Vec::with_capacity(0)
             };
 
-            let mut assigned = false;
             let users: Vec<Value> =
                 CollectionUser::find_by_collection_swap_user_uuid_with_org_user_uuid(&collection.uuid, &mut conn)
                     .await
                     .iter()
                     .map(|collection_user| {
-                        // Remember `user_uuid` is swapped here with the `user_org.uuid` with a join during the `find_by_collection_swap_user_uuid_with_org_user_uuid` call.
-                        // We check here if the current user is assigned to this collection or not.
-                        if collection_user.user_uuid == user_org.uuid {
-                            assigned = true;
-                        }
                         SelectionReadOnly::to_collection_user_details_read_only(collection_user).to_json()
                     })
                     .collect();
 
-            if user_org.access_all {
-                assigned = true;
-            }
+            let assigned = Collection::can_access_collection(&user_org, &collection.uuid, &mut conn).await;
 
             let mut json_object = collection.to_json();
             json_object["Assigned"] = json!(assigned);
