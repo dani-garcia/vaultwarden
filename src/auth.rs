@@ -691,7 +691,7 @@ impl<'r> FromRequest<'r> for ManagerHeaders {
                         _ => err_handler!("Error getting DB"),
                     };
 
-                    if !can_access_collection(&headers.org_user, &col_id, &mut conn).await {
+                    if !Collection::can_access_collection(&headers.org_user, &col_id, &mut conn).await {
                         err_handler!("The current user isn't a manager for this collection")
                     }
                 }
@@ -764,10 +764,6 @@ impl From<ManagerHeadersLoose> for Headers {
         }
     }
 }
-async fn can_access_collection(org_user: &UserOrganization, col_id: &str, conn: &mut DbConn) -> bool {
-    org_user.has_full_access()
-        || Collection::has_access_by_collection_and_user_uuid(col_id, &org_user.user_uuid, conn).await
-}
 
 impl ManagerHeaders {
     pub async fn from_loose(
@@ -779,7 +775,7 @@ impl ManagerHeaders {
             if uuid::Uuid::parse_str(col_id).is_err() {
                 err!("Collection Id is malformed!");
             }
-            if !can_access_collection(&h.org_user, col_id, conn).await {
+            if !Collection::can_access_collection(&h.org_user, col_id, conn).await {
                 err!("You don't have access to all collections!");
             }
         }
