@@ -209,7 +209,7 @@ impl<'r> FromRequest<'r> for PublicToken {
             Err(_) => err_handler!("Invalid claim"),
         };
         // Check if time is between claims.nbf and claims.exp
-        let time_now = Utc::now().naive_utc().timestamp();
+        let time_now = Utc::now().timestamp();
         if time_now < claims.nbf {
             err_handler!("Token issued in the future");
         }

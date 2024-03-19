@@ -1,4 +1,4 @@
-use chrono::{Duration, NaiveDateTime, Utc};
+use chrono::{NaiveDateTime, TimeDelta, Utc};
 use serde_json::Value;
 
 use crate::crypto;
@@ -202,7 +202,7 @@ impl User {
         let stamp_exception = UserStampException {
             routes: route_exception,
             security_stamp: self.security_stamp.clone(),
-            expire: (Utc::now().naive_utc() + Duration::minutes(2)).timestamp(),
+            expire: (Utc::now() + TimeDelta::try_minutes(2).unwrap()).timestamp(),
         };
         self.stamp_exception = Some(serde_json::to_string(&stamp_exception).unwrap_or_default());
     }

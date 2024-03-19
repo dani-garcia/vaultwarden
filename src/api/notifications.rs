@@ -288,7 +288,7 @@ fn serialize(val: Value) -> Vec<u8> {
 }
 
 fn serialize_date(date: NaiveDateTime) -> Value {
-    let seconds: i64 = date.timestamp();
+    let seconds: i64 = date.and_utc().timestamp();
     let nanos: i64 = date.timestamp_subsec_nanos().into();
     let timestamp = nanos << 34 | seconds;
 

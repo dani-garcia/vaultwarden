@@ -1,4 +1,4 @@
-use chrono::{Duration, Utc};
+use chrono::{TimeDelta, Utc};
 use rocket::{serde::json::Json, Route};
 use serde_json::Value;
 
@@ -766,7 +766,7 @@ pub async fn emergency_request_timeout_job(pool: DbPool) {
         for mut emer in emergency_access_list {
             // The find_all_recoveries_initiated already checks if the recovery_initiated_at is not null (None)
             let recovery_allowed_at =
-                emer.recovery_initiated_at.unwrap() + Duration::days(i64::from(emer.wait_time_days));
+                emer.recovery_initiated_at.unwrap() + TimeDelta::try_days(i64::from(emer.wait_time_days)).unwrap();
             if recovery_allowed_at.le(&now) {
                 // Only update the access status
                 // Updating the whole record could cause issues when the emergency_notification_reminder_job is also active
@@ -822,10 +822,10 @@ pub async fn emergency_notification_reminder_job(pool: DbPool) {
             // The find_all_recoveries_initiated already checks if the recovery_initiated_at is not null (None)
             // Calculate the day before the recovery will become active
             let final_recovery_reminder_at =
-                emer.recovery_initiated_at.unwrap() + Duration::days(i64::from(emer.wait_time_days - 1));
+                emer.recovery_initiated_at.unwrap() + TimeDelta::try_days(i64::from(emer.wait_time_days - 1)).unwrap();
             // Calculate if a day has passed since the previous notification, else no notification has been sent before
             let next_recovery_reminder_at = if let Some(last_notification_at) = emer.last_notification_at {
-                last_notification_at + Duration::days(1)
+                last_notification_at + TimeDelta::try_days(1).unwrap()
             } else {
                 now
             };

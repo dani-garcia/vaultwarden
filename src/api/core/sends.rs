@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, TimeDelta, Utc};
 use num_traits::ToPrimitive;
 use rocket::form::Form;
 use rocket::fs::NamedFile;
@@ -119,7 +119,7 @@ fn create_send(data: SendData, user_uuid: String) -> ApiResult<Send> {
         err!("Send data not provided");
     };
 
-    if data.DeletionDate > Utc::now() + Duration::days(31) {
+    if data.DeletionDate > Utc::now() + TimeDelta::try_days(31).unwrap() {
         err!(
             "You cannot have a Send with a deletion date that far into the future. Adjust the Deletion Date to a value less than 31 days from now and try again."
         );
@@ -569,7 +569,7 @@ async fn put_send(
         send.data = data_str;
     }
 
-    if data.DeletionDate > Utc::now() + Duration::days(31) {
+    if data.DeletionDate > Utc::now() + TimeDelta::try_days(31).unwrap() {
         err!(
             "You cannot have a Send with a deletion date that far into the future. Adjust the Deletion Date to a value less than 31 days from now and try again."
         );

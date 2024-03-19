@@ -79,7 +79,7 @@ diesel_migrations = "2.1.0"
 diesel_logger = { version = "0.3.0", optional = true }
 
 # Bundled/Static SQLite
-libsqlite3-sys = { version = "0.27.0", features = ["bundled"], optional = true }
+libsqlite3-sys = { version = "0.28.0", features = ["bundled"], optional = true }
 
 # Crypto-related libraries
 rand = { version = "0.8.5", features = ["small_rng"] }
@@ -89,7 +89,7 @@ ring = "0.17.8"
 uuid = { version = "1.7.0", features = ["v4"] }
 
 # Date and time libraries
-chrono = { version = "0.4.34", features = ["clock", "serde"], default-features = false }
+chrono = { version = "0.4.35", features = ["clock", "serde"], default-features = false }
 chrono-tz = "0.8.6"
 time = "0.3.34"
 
