@@ -141,14 +141,15 @@ async fn generate_webauthn_challenge(
         .map(|r| r.credential.cred_id) // We return the credentialIds to the clients to avoid double registering
         .collect();
 
-    let (challenge, state) = WebauthnConfig::load(&host_info.base_url, &host_info.origin).generate_challenge_register_options(
-        user.uuid.as_bytes().to_vec(),
-        user.email,
-        user.name,
-        Some(registrations),
-        None,
-        None,
-    )?;
+    let (challenge, state) = WebauthnConfig::load(&host_info.base_url, &host_info.origin)
+        .generate_challenge_register_options(
+            user.uuid.as_bytes().to_vec(),
+            user.email,
+            user.name,
+            Some(registrations),
+            None,
+            None,
+        )?;
 
     let type_ = TwoFactorType::WebauthnRegisterChallenge;
     TwoFactor::new(user.uuid, type_, serde_json::to_string(&state)?).save(&mut conn).await?;

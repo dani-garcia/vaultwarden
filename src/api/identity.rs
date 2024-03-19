@@ -524,7 +524,9 @@ async fn twofactor_auth(
         Some(TwoFactorType::Authenticator) => {
             authenticator::validate_totp_code_str(&user.uuid, twofactor_code, &selected_data?, ip, conn).await?
         }
-        Some(TwoFactorType::Webauthn) => webauthn::validate_webauthn_login(&user.uuid, twofactor_code, base_url, origin, conn).await?,
+        Some(TwoFactorType::Webauthn) => {
+            webauthn::validate_webauthn_login(&user.uuid, twofactor_code, base_url, origin, conn).await?
+        }
         Some(TwoFactorType::YubiKey) => yubikey::validate_yubikey_login(twofactor_code, &selected_data?).await?,
         Some(TwoFactorType::Duo) => {
             duo::validate_duo_login(data.username.as_ref().unwrap().trim(), twofactor_code, conn).await?

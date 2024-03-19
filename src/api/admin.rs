@@ -98,10 +98,6 @@ const BASE_TEMPLATE: &str = "admin/base";
 
 const ACTING_ADMIN_USER: &str = "vaultwarden-admin-00000-000000000000";
 
-fn admin_path() -> String  {
-    ADMIN_PATH.to_string()
-}
-
 #[derive(Debug)]
 struct IpHeader(Option<String>);
 
@@ -131,7 +127,6 @@ fn admin_path() -> String {
 fn admin_url(origin: &str) -> String {
     format!("{}{}", origin, admin_path())
 }
-
 
 #[derive(Responder)]
 enum AdminResponse {
