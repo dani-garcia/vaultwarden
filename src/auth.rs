@@ -34,7 +34,8 @@ pub fn initialize_keys() -> Result<(), crate::error::Error> {
     let mut priv_key_buffer = Vec::with_capacity(2048);
 
     let priv_key = {
-        let mut priv_key_file = File::options().create(true).read(true).write(true).open(CONFIG.private_rsa_key())?;
+        let mut priv_key_file =
+            File::options().create(true).truncate(false).read(true).write(true).open(CONFIG.private_rsa_key())?;
 
         #[allow(clippy::verbose_file_reads)]
         let bytes_read = priv_key_file.read_to_end(&mut priv_key_buffer)?;

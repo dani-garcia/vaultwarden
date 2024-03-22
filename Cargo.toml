@@ -3,7 +3,7 @@ name = "vaultwarden"
 version = "1.0.0"
 authors = ["Daniel García <dani-garcia@users.noreply.github.com>"]
 edition = "2021"
-rust-version = "1.74.0"
+rust-version = "1.75.0"
 resolver = "2"
 
 repository = "https://github.com/dani-garcia/vaultwarden"
@@ -86,7 +86,7 @@ rand = { version = "0.8.5", features = ["small_rng"] }
 ring = "0.17.8"
 
 # UUID generation
-uuid = { version = "1.7.0", features = ["v4"] }
+uuid = { version = "1.8.0", features = ["v4"] }
 
 # Date and time libraries
 chrono = { version = "0.4.35", features = ["clock", "serde"], default-features = false }
@@ -100,7 +100,7 @@ job_scheduler_ng = "2.0.4"
 data-encoding = "2.5.0"
 
 # JWT library
-jsonwebtoken = "9.2.0"
+jsonwebtoken = "9.3.0"
 
 # TOTP library
 totp-lite = "2.0.1"
@@ -123,7 +123,7 @@ email_address = "0.2.4"
 handlebars = { version = "5.1.0", features = ["dir_source"] }
 
 # HTTP client (Used for favicons, version check, DUO and HIBP API)
-reqwest = { version = "0.11.26", features = ["stream", "json", "gzip", "brotli", "socks", "cookies", "trust-dns", "native-tls-alpn"] }
+reqwest = { version = "0.11.27", features = ["default-tls", "native-tls-alpn", "stream", "json", "gzip", "brotli", "socks", "cookies", "hickory-dns"], default-features = false}
 
 # Favicon extraction libraries
 html5gum = "0.5.7"

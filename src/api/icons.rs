@@ -54,7 +54,7 @@ static CLIENT: Lazy<Client> = Lazy::new(|| {
         .timeout(icon_download_timeout)
         .pool_max_idle_per_host(5) // Configure the Hyper Pool to only have max 5 idle connections
         .pool_idle_timeout(pool_idle_timeout) // Configure the Hyper Pool to timeout after 10 seconds
-        .trust_dns(true)
+        .hickory_dns(true)
         .default_headers(default_headers.clone());
 
     match client.build() {
@@ -66,7 +66,7 @@ static CLIENT: Lazy<Client> = Lazy::new(|| {
                 .timeout(icon_download_timeout)
                 .pool_max_idle_per_host(5) // Configure the Hyper Pool to only have max 5 idle connections
                 .pool_idle_timeout(pool_idle_timeout) // Configure the Hyper Pool to timeout after 10 seconds
-                .trust_dns(false)
+                .hickory_dns(false)
                 .default_headers(default_headers)
                 .build()
                 .expect("Failed to build client")
