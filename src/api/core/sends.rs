@@ -49,7 +49,7 @@ pub async fn purge_sends(pool: DbPool) {
 
 #[derive(Deserialize)]
 #[allow(non_snake_case)]
-struct SendData {
+pub struct SendData {
     Type: i32,
     Key: String,
     Password: Option<String>,
@@ -65,6 +65,9 @@ struct SendData {
     Text: Option<Value>,
     File: Option<Value>,
     FileLength: Option<NumberOrString>,
+
+    // Used for key rotations
+    pub Id: Option<String>,
 }
 
 /// Enforces the `Disable Send` policy. A non-owner/admin user belonging to
@@ -549,12 +552,31 @@ async fn put_send(
         None => err!("Send not found"),
     };
 
+    update_send_from_data(&mut send, data, &headers, &mut conn, &nt, UpdateType::SyncSendUpdate).await?;
+
+    Ok(Json(send.to_json()))
+}
+
+pub async fn update_send_from_data(
+    send: &mut Send,
+    data: SendData,
+    headers: &Headers,
+    conn: &mut DbConn,
+    nt: &Notify<'_>,
+    ut: UpdateType,
+) -> EmptyResult {
     if send.user_uuid.as_ref() != Some(&headers.user.uuid) {
         err!("Send is not owned by user")
     }
 
     if send.atype != data.Type {
         err!("Sends can't change type")
+    }
+
+    if data.DeletionDate > Utc::now() + TimeDelta::try_days(31).unwrap() {
+        err!(
+            "You cannot have a Send with a deletion date that far into the future. Adjust the Deletion Date to a value less than 31 days from now and try again."
+        );
     }
 
     // When updating a file Send, we receive nulls in the File field, as it's immutable,
@@ -569,11 +591,6 @@ async fn put_send(
         send.data = data_str;
     }
 
-    if data.DeletionDate > Utc::now() + TimeDelta::try_days(31).unwrap() {
-        err!(
-            "You cannot have a Send with a deletion date that far into the future. Adjust the Deletion Date to a value less than 31 days from now and try again."
-        );
-    }
     send.name = data.Name;
     send.akey = data.Key;
     send.deletion_date = data.DeletionDate.naive_utc();
@@ -591,17 +608,11 @@ async fn put_send(
         send.set_password(Some(&password));
     }
 
-    send.save(&mut conn).await?;
-    nt.send_send_update(
-        UpdateType::SyncSendUpdate,
-        &send,
-        &send.update_users_revision(&mut conn).await,
-        &headers.device.uuid,
-        &mut conn,
-    )
-    .await;
-
-    Ok(Json(send.to_json()))
+    send.save(conn).await?;
+    if ut != UpdateType::None {
+        nt.send_send_update(ut, send, &send.update_users_revision(conn).await, &headers.device.uuid, conn).await;
+    }
+    Ok(())
 }
 
 #[delete("/sends/<id>")]
