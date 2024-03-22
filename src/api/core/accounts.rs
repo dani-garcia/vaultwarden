@@ -438,24 +438,46 @@ async fn post_kdf(data: JsonUpcase<ChangeKdfData>, headers: Headers, mut conn: D
 #[derive(Deserialize)]
 #[allow(non_snake_case)]
 struct UpdateFolderData {
-    Id: String,
+    // There is a bug in 2024.3.x which adds a `null` item.
+    // To bypass this we allow a Option here, but skip it during the updates
+    // See: https://github.com/bitwarden/clients/issues/8453
+    Id: Option<String>,
     Name: String,
 }
 
+#[derive(Deserialize)]
+#[allow(non_snake_case)]
+struct UpdateEmergencyAccessData {
+    Id: String,
+    KeyEncrypted: String,
+}
+
+#[derive(Deserialize)]
+#[allow(non_snake_case)]
+struct UpdateResetPasswordData {
+    OrganizationId: String,
+    ResetPasswordKey: String,
+}
+
 use super::ciphers::CipherData;
+use super::sends::{update_send_from_data, SendData};
 
 #[derive(Deserialize)]
 #[allow(non_snake_case)]
 struct KeyData {
     Ciphers: Vec<CipherData>,
     Folders: Vec<UpdateFolderData>,
+    Sends: Vec<SendData>,
+    EmergencyAccessKeys: Vec<UpdateEmergencyAccessData>,
+    ResetPasswordKeys: Vec<UpdateResetPasswordData>,
     Key: String,
-    PrivateKey: String,
     MasterPasswordHash: String,
+    PrivateKey: String,
 }
 
 #[post("/accounts/key", data = "<data>")]
 async fn post_rotatekey(data: JsonUpcase<KeyData>, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> EmptyResult {
+    // TODO: See if we can wrap everything within a SQL Transaction. If something fails it should revert everything.
     let data: KeyData = data.into_inner().data;
 
     if !headers.user.check_valid_password(&data.MasterPasswordHash) {
@@ -472,37 +494,83 @@ async fn post_rotatekey(data: JsonUpcase<KeyData>, headers: Headers, mut conn: D
 
     // Update folder data
     for folder_data in data.Folders {
-        let mut saved_folder = match Folder::find_by_uuid(&folder_data.Id, &mut conn).await {
-            Some(folder) => folder,
-            None => err!("Folder doesn't exist"),
+        // Skip `null` folder id entries.
+        // See: https://github.com/bitwarden/clients/issues/8453
+        if let Some(folder_id) = folder_data.Id {
+            let mut saved_folder = match Folder::find_by_uuid(&folder_id, &mut conn).await {
+                Some(folder) => folder,
+                None => err!("Folder doesn't exist"),
+            };
+
+            if &saved_folder.user_uuid != user_uuid {
+                err!("The folder is not owned by the user")
+            }
+
+            saved_folder.name = folder_data.Name;
+            saved_folder.save(&mut conn).await?
+        }
+    }
+
+    // Update emergency access data
+    for emergency_access_data in data.EmergencyAccessKeys {
+        let mut saved_emergency_access = match EmergencyAccess::find_by_uuid(&emergency_access_data.Id, &mut conn).await
+        {
+            Some(emergency_access) => emergency_access,
+            None => err!("Emergency access doesn't exist"),
         };
 
-        if &saved_folder.user_uuid != user_uuid {
-            err!("The folder is not owned by the user")
+        if &saved_emergency_access.grantor_uuid != user_uuid {
+            err!("The emergency access is not owned by the user")
         }
 
-        saved_folder.name = folder_data.Name;
-        saved_folder.save(&mut conn).await?
+        saved_emergency_access.key_encrypted = Some(emergency_access_data.KeyEncrypted);
+        saved_emergency_access.save(&mut conn).await?
+    }
+
+    // Update reset password data
+    for reset_password_data in data.ResetPasswordKeys {
+        let mut user_org =
+            match UserOrganization::find_by_user_and_org(user_uuid, &reset_password_data.OrganizationId, &mut conn)
+                .await
+            {
+                Some(reset_password) => reset_password,
+                None => err!("Reset password doesn't exist"),
+            };
+
+        user_org.reset_password_key = Some(reset_password_data.ResetPasswordKey);
+        user_org.save(&mut conn).await?
+    }
+
+    // Update send data
+    for send_data in data.Sends {
+        let mut send = match Send::find_by_uuid(send_data.Id.as_ref().unwrap(), &mut conn).await {
+            Some(send) => send,
+            None => err!("Send doesn't exist"),
+        };
+
+        update_send_from_data(&mut send, send_data, &headers, &mut conn, &nt, UpdateType::None).await?;
     }
 
     // Update cipher data
     use super::ciphers::update_cipher_from_data;
 
     for cipher_data in data.Ciphers {
-        let mut saved_cipher = match Cipher::find_by_uuid(cipher_data.Id.as_ref().unwrap(), &mut conn).await {
-            Some(cipher) => cipher,
-            None => err!("Cipher doesn't exist"),
-        };
+        if cipher_data.OrganizationId.is_none() {
+            let mut saved_cipher = match Cipher::find_by_uuid(cipher_data.Id.as_ref().unwrap(), &mut conn).await {
+                Some(cipher) => cipher,
+                None => err!("Cipher doesn't exist"),
+            };
 
-        if saved_cipher.user_uuid.as_ref().unwrap() != user_uuid {
-            err!("The cipher is not owned by the user")
+            if saved_cipher.user_uuid.as_ref().unwrap() != user_uuid {
+                err!("The cipher is not owned by the user")
+            }
+
+            // Prevent triggering cipher updates via WebSockets by settings UpdateType::None
+            // The user sessions are invalidated because all the ciphers were re-encrypted and thus triggering an update could cause issues.
+            // We force the users to logout after the user has been saved to try and prevent these issues.
+            update_cipher_from_data(&mut saved_cipher, cipher_data, &headers, false, &mut conn, &nt, UpdateType::None)
+                .await?
         }
-
-        // Prevent triggering cipher updates via WebSockets by settings UpdateType::None
-        // The user sessions are invalidated because all the ciphers were re-encrypted and thus triggering an update could cause issues.
-        // We force the users to logout after the user has been saved to try and prevent these issues.
-        update_cipher_from_data(&mut saved_cipher, cipher_data, &headers, false, &mut conn, &nt, UpdateType::None)
-            .await?
     }
 
     // Update user data

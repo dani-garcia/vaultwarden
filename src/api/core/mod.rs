@@ -191,14 +191,17 @@ fn version() -> Json<&'static str> {
 #[get("/config")]
 fn config() -> Json<Value> {
     let domain = crate::CONFIG.domain();
-    let feature_states = parse_experimental_client_feature_flags(&crate::CONFIG.experimental_client_feature_flags());
+    let mut feature_states =
+        parse_experimental_client_feature_flags(&crate::CONFIG.experimental_client_feature_flags());
+    // Force the new key rotation feature
+    feature_states.insert("key-rotation-improvements".to_string(), true);
     Json(json!({
         // Note: The clients use this version to handle backwards compatibility concerns
         // This means they expect a version that closely matches the Bitwarden server version
         // We should make sure that we keep this updated when we support the new server features
         // Version history:
         // - Individual cipher key encryption: 2023.9.1
-        "version": "2023.9.1",
+        "version": "2024.2.0",
         "gitHash": option_env!("GIT_REV"),
         "server": {
           "name": "Vaultwarden",
