@@ -265,8 +265,8 @@ fn admin_page_login() -> ApiResult<Html<String>> {
     render_admin_login(None, None)
 }
 
-#[derive(Deserialize, Debug)]
-#[allow(non_snake_case)]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct InviteData {
     email: String,
 }
@@ -475,7 +475,7 @@ async fn resend_user_invite(uuid: &str, _token: AdminToken, mut conn: DbConn) ->
     }
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Debug, Deserialize)]
 struct UserOrgTypeData {
     user_type: NumberOrString,
     user_uuid: String,

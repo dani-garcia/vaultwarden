@@ -179,18 +179,18 @@ fn _serialize(e: &impl serde::Serialize, _msg: &str) -> String {
 
 fn _api_error(_: &impl std::any::Any, msg: &str) -> String {
     let json = json!({
-        "Message": msg,
+        "message": msg,
         "error": "",
         "error_description": "",
-        "ValidationErrors": {"": [ msg ]},
-        "ErrorModel": {
-            "Message": msg,
-            "Object": "error"
+        "validationErrors": {"": [ msg ]},
+        "errorModel": {
+            "message": msg,
+            "object": "error"
         },
-        "ExceptionMessage": null,
-        "ExceptionStackTrace": null,
-        "InnerExceptionMessage": null,
-        "Object": "error"
+        "exceptionMessage": null,
+        "exceptionStackTrace": null,
+        "innerExceptionMessage": null,
+        "object": "error"
     });
     _serialize(&json, "")
 }

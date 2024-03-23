@@ -4,7 +4,6 @@ use serde_json::Value;
 use crate::api::EmptyResult;
 use crate::db::DbConn;
 use crate::error::MapResult;
-use crate::util::UpCase;
 
 use super::{TwoFactor, UserOrgStatus, UserOrgType, UserOrganization};
 
@@ -39,16 +38,18 @@ pub enum OrgPolicyType {
 
 // https://github.com/bitwarden/server/blob/5cbdee137921a19b1f722920f0fa3cd45af2ef0f/src/Core/Models/Data/Organizations/Policies/SendOptionsPolicyData.cs
 #[derive(Deserialize)]
-#[allow(non_snake_case)]
+#[serde(rename_all = "camelCase")]
 pub struct SendOptionsPolicyData {
-    pub DisableHideEmail: bool,
+    #[serde(rename = "disableHideEmail", alias = "DisableHideEmail")]
+    pub disable_hide_email: bool,
 }
 
 // https://github.com/bitwarden/server/blob/5cbdee137921a19b1f722920f0fa3cd45af2ef0f/src/Core/Models/Data/Organizations/Policies/ResetPasswordDataModel.cs
 #[derive(Deserialize)]
-#[allow(non_snake_case)]
+#[serde(rename_all = "camelCase")]
 pub struct ResetPasswordDataModel {
-    pub AutoEnrollEnabled: bool,
+    #[serde(rename = "autoEnrollEnabled", alias = "AutoEnrollEnabled")]
+    pub auto_enroll_enabled: bool,
 }
 
 pub type OrgPolicyResult = Result<(), OrgPolicyErr>;
@@ -78,12 +79,12 @@ impl OrgPolicy {
     pub fn to_json(&self) -> Value {
         let data_json: Value = serde_json::from_str(&self.data).unwrap_or(Value::Null);
         json!({
-            "Id": self.uuid,
-            "OrganizationId": self.org_uuid,
-            "Type": self.atype,
-            "Data": data_json,
-            "Enabled": self.enabled,
-            "Object": "policy",
+            "id": self.uuid,
+            "organizationId": self.org_uuid,
+            "type": self.atype,
+            "data": data_json,
+            "enabled": self.enabled,
+            "object": "policy",
         })
     }
 }
@@ -307,9 +308,9 @@ impl OrgPolicy {
 
     pub async fn org_is_reset_password_auto_enroll(org_uuid: &str, conn: &mut DbConn) -> bool {
         match OrgPolicy::find_by_org_and_type(org_uuid, OrgPolicyType::ResetPassword, conn).await {
-            Some(policy) => match serde_json::from_str::<UpCase<ResetPasswordDataModel>>(&policy.data) {
+            Some(policy) => match serde_json::from_str::<ResetPasswordDataModel>(&policy.data) {
                 Ok(opts) => {
-                    return policy.enabled && opts.data.AutoEnrollEnabled;
+                    return policy.enabled && opts.auto_enroll_enabled;
                 }
                 _ => error!("Failed to deserialize ResetPasswordDataModel: {}", policy.data),
             },
@@ -327,9 +328,9 @@ impl OrgPolicy {
         {
             if let Some(user) = UserOrganization::find_by_user_and_org(user_uuid, &policy.org_uuid, conn).await {
                 if user.atype < UserOrgType::Admin {
-                    match serde_json::from_str::<UpCase<SendOptionsPolicyData>>(&policy.data) {
+                    match serde_json::from_str::<SendOptionsPolicyData>(&policy.data) {
                         Ok(opts) => {
-                            if opts.data.DisableHideEmail {
+                            if opts.disable_hide_email {
                                 return true;
                             }
                         }

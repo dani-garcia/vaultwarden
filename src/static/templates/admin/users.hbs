@@ -29,7 +29,7 @@
                                     {{#if TwoFactorEnabled}}
                                         <span class="badge bg-success me-2" title="2FA is enabled">2FA</span>
                                     {{/if}}
-                                    {{#case _Status 1}}
+                                    {{#case _status 1}}
                                         <span class="badge bg-warning text-dark me-2" title="User is invited">Invited</span>
                                     {{/case}}
                                     {{#if EmailVerified}}
@@ -72,7 +72,7 @@
                                 {{else}}
                                 <button type="button" class="btn btn-sm btn-link p-0 border-0 float-right" vw-enable-user>Enable User</button><br>
                                 {{/if}}
-                                {{#case _Status 1}}
+                                {{#case _status 1}}
                                 <button type="button" class="btn btn-sm btn-link p-0 border-0 float-right" vw-resend-user-invite>Resend invite</button><br>
                                 {{/case}}
                             </span>

@@ -58,14 +58,14 @@ impl Group {
         use crate::util::format_date;
 
         json!({
-            "Id": self.uuid,
-            "OrganizationId": self.organizations_uuid,
-            "Name": self.name,
-            "AccessAll": self.access_all,
-            "ExternalId": self.external_id,
-            "CreationDate": format_date(&self.creation_date),
-            "RevisionDate": format_date(&self.revision_date),
-            "Object": "group"
+            "id": self.uuid,
+            "organizationId": self.organizations_uuid,
+            "name": self.name,
+            "accessAll": self.access_all,
+            "externalId": self.external_id,
+            "creationDate": format_date(&self.creation_date),
+            "revisionDate": format_date(&self.revision_date),
+            "object": "group"
         })
     }
 
@@ -75,21 +75,21 @@ impl Group {
             .iter()
             .map(|entry| {
                 json!({
-                    "Id": entry.collections_uuid,
-                    "ReadOnly": entry.read_only,
-                    "HidePasswords": entry.hide_passwords
+                    "id": entry.collections_uuid,
+                    "readOnly": entry.read_only,
+                    "hidePasswords": entry.hide_passwords
                 })
             })
             .collect();
 
         json!({
-            "Id": self.uuid,
-            "OrganizationId": self.organizations_uuid,
-            "Name": self.name,
-            "AccessAll": self.access_all,
-            "ExternalId": self.external_id,
-            "Collections": collections_groups,
-            "Object": "groupDetails"
+            "id": self.uuid,
+            "organizationId": self.organizations_uuid,
+            "name": self.name,
+            "accessAll": self.access_all,
+            "externalId": self.external_id,
+            "collections": collections_groups,
+            "object": "groupDetails"
         })
     }
 

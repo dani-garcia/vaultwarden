@@ -33,23 +33,18 @@ pub use crate::api::{
     web::static_files,
 };
 use crate::db::{models::User, DbConn};
-use crate::util;
 
 // Type aliases for API methods results
 type ApiResult<T> = Result<T, crate::error::Error>;
 pub type JsonResult = ApiResult<Json<Value>>;
 pub type EmptyResult = ApiResult<()>;
 
-type JsonUpcase<T> = Json<util::UpCase<T>>;
-type JsonUpcaseVec<T> = Json<Vec<util::UpCase<T>>>;
-type JsonVec<T> = Json<Vec<T>>;
-
 // Common structs representing JSON data received
 #[derive(Deserialize)]
-#[allow(non_snake_case)]
+#[serde(rename_all = "camelCase")]
 struct PasswordOrOtpData {
-    MasterPasswordHash: Option<String>,
-    Otp: Option<String>,
+    master_password_hash: Option<String>,
+    otp: Option<String>,
 }
 
 impl PasswordOrOtpData {
@@ -59,7 +54,7 @@ impl PasswordOrOtpData {
     pub async fn validate(&self, user: &User, delete_if_valid: bool, conn: &mut DbConn) -> EmptyResult {
         use crate::api::core::two_factor::protected_actions::validate_protected_action_otp;
 
-        match (self.MasterPasswordHash.as_deref(), self.Otp.as_deref()) {
+        match (self.master_password_hash.as_deref(), self.otp.as_deref()) {
             (Some(pw_hash), None) => {
                 if !user.check_valid_password(pw_hash) {
                     err!("Invalid password");

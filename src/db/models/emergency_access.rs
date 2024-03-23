@@ -58,11 +58,11 @@ impl EmergencyAccess {
 
     pub fn to_json(&self) -> Value {
         json!({
-            "Id": self.uuid,
-            "Status": self.status,
-            "Type": self.atype,
-            "WaitTimeDays": self.wait_time_days,
-            "Object": "emergencyAccess",
+            "id": self.uuid,
+            "status": self.status,
+            "type": self.atype,
+            "waitTimeDays": self.wait_time_days,
+            "object": "emergencyAccess",
         })
     }
 
@@ -70,14 +70,14 @@ impl EmergencyAccess {
         let grantor_user = User::find_by_uuid(&self.grantor_uuid, conn).await.expect("Grantor user not found.");
 
         json!({
-            "Id": self.uuid,
-            "Status": self.status,
-            "Type": self.atype,
-            "WaitTimeDays": self.wait_time_days,
-            "GrantorId": grantor_user.uuid,
-            "Email": grantor_user.email,
-            "Name": grantor_user.name,
-            "Object": "emergencyAccessGrantorDetails",
+            "id": self.uuid,
+            "status": self.status,
+            "type": self.atype,
+            "waitTimeDays": self.wait_time_days,
+            "grantorId": grantor_user.uuid,
+            "email": grantor_user.email,
+            "name": grantor_user.name,
+            "object": "emergencyAccessGrantorDetails",
         })
     }
 
@@ -91,14 +91,14 @@ impl EmergencyAccess {
         };
 
         json!({
-            "Id": self.uuid,
-            "Status": self.status,
-            "Type": self.atype,
-            "WaitTimeDays": self.wait_time_days,
-            "GranteeId": grantee_user.as_ref().map_or("", |u| &u.uuid),
-            "Email": grantee_user.as_ref().map_or("", |u| &u.email),
-            "Name": grantee_user.as_ref().map_or("", |u| &u.name),
-            "Object": "emergencyAccessGranteeDetails",
+            "id": self.uuid,
+            "status": self.status,
+            "type": self.atype,
+            "waitTimeDays": self.wait_time_days,
+            "granteeId": grantee_user.as_ref().map_or("", |u| &u.uuid),
+            "email": grantee_user.as_ref().map_or("", |u| &u.email),
+            "name": grantee_user.as_ref().map_or("", |u| &u.name),
+            "object": "emergencyAccessGranteeDetails",
         })
     }
 }

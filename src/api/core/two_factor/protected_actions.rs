@@ -1,8 +1,8 @@
 use chrono::{DateTime, TimeDelta, Utc};
-use rocket::Route;
+use rocket::{serde::json::Json, Route};
 
 use crate::{
-    api::{EmptyResult, JsonUpcase},
+    api::EmptyResult,
     auth::Headers,
     crypto,
     db::{
@@ -18,7 +18,7 @@ pub fn routes() -> Vec<Route> {
 }
 
 /// Data stored in the TwoFactor table in the db
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ProtectedActionData {
     /// Token issued to validate the protected action
     pub token: String,
@@ -82,23 +82,24 @@ async fn request_otp(headers: Headers, mut conn: DbConn) -> EmptyResult {
 }
 
 #[derive(Deserialize, Serialize, Debug)]
-#[allow(non_snake_case)]
+#[serde(rename_all = "camelCase")]
 struct ProtectedActionVerify {
-    OTP: String,
+    #[serde(rename = "OTP", alias = "otp")]
+    otp: String,
 }
 
 #[post("/accounts/verify-otp", data = "<data>")]
-async fn verify_otp(data: JsonUpcase<ProtectedActionVerify>, headers: Headers, mut conn: DbConn) -> EmptyResult {
+async fn verify_otp(data: Json<ProtectedActionVerify>, headers: Headers, mut conn: DbConn) -> EmptyResult {
     if !CONFIG.mail_enabled() {
         err!("Email is disabled for this server. Either enable email or login using your master password instead of login via device.");
     }
 
     let user = headers.user;
-    let data: ProtectedActionVerify = data.into_inner().data;
+    let data: ProtectedActionVerify = data.into_inner();
 
     // Delete the token after one validation attempt
     // This endpoint only gets called for the vault export, and doesn't need a second attempt
-    validate_protected_action_otp(&data.OTP, &user.uuid, true, &mut conn).await
+    validate_protected_action_otp(&data.otp, &user.uuid, true, &mut conn).await
 }
 
 pub async fn validate_protected_action_otp(

@@ -1,80 +1,80 @@
 [
   {
-    "Type": 2,
-    "Domains": [
+    "type": 2,
+    "domains": [
       "ameritrade.com",
       "tdameritrade.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 3,
-    "Domains": [
+    "type": 3,
+    "domains": [
       "bankofamerica.com",
       "bofa.com",
       "mbna.com",
       "usecfo.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 4,
-    "Domains": [
+    "type": 4,
+    "domains": [
       "sprint.com",
       "sprintpcs.com",
       "nextel.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 0,
-    "Domains": [
+    "type": 0,
+    "domains": [
       "youtube.com",
       "google.com",
       "gmail.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 1,
-    "Domains": [
+    "type": 1,
+    "domains": [
       "apple.com",
       "icloud.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 5,
-    "Domains": [
+    "type": 5,
+    "domains": [
       "wellsfargo.com",
       "wf.com",
       "wellsfargoadvisors.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 6,
-    "Domains": [
+    "type": 6,
+    "domains": [
       "mymerrill.com",
       "ml.com",
       "merrilledge.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 7,
-    "Domains": [
+    "type": 7,
+    "domains": [
       "accountonline.com",
       "citi.com",
       "citibank.com",
       "citicards.com",
       "citibankonline.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 8,
-    "Domains": [
+    "type": 8,
+    "domains": [
       "cnet.com",
       "cnettv.com",
       "com.com",
@@ -83,21 +83,21 @@
       "search.com",
       "upload.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 9,
-    "Domains": [
+    "type": 9,
+    "domains": [
       "bananarepublic.com",
       "gap.com",
       "oldnavy.com",
       "piperlime.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 10,
-    "Domains": [
+    "type": 10,
+    "domains": [
       "bing.com",
       "hotmail.com",
       "live.com",
@@ -113,53 +113,53 @@
       "azure.com",
       "windowsazure.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 11,
-    "Domains": [
+    "type": 11,
+    "domains": [
       "ua2go.com",
       "ual.com",
       "united.com",
       "unitedwifi.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 12,
-    "Domains": [
+    "type": 12,
+    "domains": [
       "overture.com",
       "yahoo.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 13,
-    "Domains": [
+    "type": 13,
+    "domains": [
       "zonealarm.com",
       "zonelabs.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 14,
-    "Domains": [
+    "type": 14,
+    "domains": [
       "paypal.com",
       "paypal-search.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 15,
-    "Domains": [
+    "type": 15,
+    "domains": [
       "avon.com",
       "youravon.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 16,
-    "Domains": [
+    "type": 16,
+    "domains": [
       "diapers.com",
       "soap.com",
       "wag.com",
@@ -172,19 +172,19 @@
       "look.com",
       "vinemarket.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 17,
-    "Domains": [
+    "type": 17,
+    "domains": [
       "1800contacts.com",
       "800contacts.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 18,
-    "Domains": [
+    "type": 18,
+    "domains": [
       "amazon.com",
       "amazon.com.be",
       "amazon.ae",
@@ -205,240 +205,240 @@
       "amazon.se",
       "amazon.sg"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 19,
-    "Domains": [
+    "type": 19,
+    "domains": [
       "cox.com",
       "cox.net",
       "coxbusiness.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 20,
-    "Domains": [
+    "type": 20,
+    "domains": [
       "mynortonaccount.com",
       "norton.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 21,
-    "Domains": [
+    "type": 21,
+    "domains": [
       "verizon.com",
       "verizon.net"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 22,
-    "Domains": [
+    "type": 22,
+    "domains": [
       "rakuten.com",
       "buy.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 23,
-    "Domains": [
+    "type": 23,
+    "domains": [
       "siriusxm.com",
       "sirius.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 24,
-    "Domains": [
+    "type": 24,
+    "domains": [
       "ea.com",
       "origin.com",
       "play4free.com",
       "tiberiumalliance.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 25,
-    "Domains": [
+    "type": 25,
+    "domains": [
       "37signals.com",
       "basecamp.com",
       "basecamphq.com",
       "highrisehq.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 26,
-    "Domains": [
+    "type": 26,
+    "domains": [
       "steampowered.com",
       "steamcommunity.com",
       "steamgames.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 27,
-    "Domains": [
+    "type": 27,
+    "domains": [
       "chart.io",
       "chartio.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 28,
-    "Domains": [
+    "type": 28,
+    "domains": [
       "gotomeeting.com",
       "citrixonline.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 29,
-    "Domains": [
+    "type": 29,
+    "domains": [
       "gogoair.com",
       "gogoinflight.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 30,
-    "Domains": [
+    "type": 30,
+    "domains": [
       "mysql.com",
       "oracle.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 31,
-    "Domains": [
+    "type": 31,
+    "domains": [
       "discover.com",
       "discovercard.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 32,
-    "Domains": [
+    "type": 32,
+    "domains": [
       "dcu.org",
       "dcu-online.org"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 33,
-    "Domains": [
+    "type": 33,
+    "domains": [
       "healthcare.gov",
       "cuidadodesalud.gov",
       "cms.gov"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 34,
-    "Domains": [
+    "type": 34,
+    "domains": [
       "pepco.com",
       "pepcoholdings.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 35,
-    "Domains": [
+    "type": 35,
+    "domains": [
       "century21.com",
       "21online.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 36,
-    "Domains": [
+    "type": 36,
+    "domains": [
       "comcast.com",
       "comcast.net",
       "xfinity.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 37,
-    "Domains": [
+    "type": 37,
+    "domains": [
       "cricketwireless.com",
       "aiowireless.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 38,
-    "Domains": [
+    "type": 38,
+    "domains": [
       "mandtbank.com",
       "mtb.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 39,
-    "Domains": [
+    "type": 39,
+    "domains": [
       "dropbox.com",
       "getdropbox.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 40,
-    "Domains": [
+    "type": 40,
+    "domains": [
       "snapfish.com",
       "snapfish.ca"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 41,
-    "Domains": [
+    "type": 41,
+    "domains": [
       "alibaba.com",
       "aliexpress.com",
       "aliyun.com",
       "net.cn"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 42,
-    "Domains": [
+    "type": 42,
+    "domains": [
       "playstation.com",
       "sonyentertainmentnetwork.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 43,
-    "Domains": [
+    "type": 43,
+    "domains": [
       "mercadolivre.com",
       "mercadolivre.com.br",
       "mercadolibre.com",
       "mercadolibre.com.ar",
       "mercadolibre.com.mx"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 44,
-    "Domains": [
+    "type": 44,
+    "domains": [
       "zendesk.com",
       "zopim.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 45,
-    "Domains": [
+    "type": 45,
+    "domains": [
       "autodesk.com",
       "tinkercad.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 46,
-    "Domains": [
+    "type": 46,
+    "domains": [
       "railnation.ru",
       "railnation.de",
       "rail-nation.com",
@@ -447,152 +447,152 @@
       "trucknation.de",
       "traviangames.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 47,
-    "Domains": [
+    "type": 47,
+    "domains": [
       "wpcu.coop",
       "wpcuonline.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 48,
-    "Domains": [
+    "type": 48,
+    "domains": [
       "mathletics.com",
       "mathletics.com.au",
       "mathletics.co.uk"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 49,
-    "Domains": [
+    "type": 49,
+    "domains": [
       "discountbank.co.il",
       "telebank.co.il"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 50,
-    "Domains": [
+    "type": 50,
+    "domains": [
       "mi.com",
       "xiaomi.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 52,
-    "Domains": [
+    "type": 52,
+    "domains": [
       "postepay.it",
       "poste.it"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 51,
-    "Domains": [
+    "type": 51,
+    "domains": [
       "facebook.com",
       "messenger.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 53,
-    "Domains": [
+    "type": 53,
+    "domains": [
       "skysports.com",
       "skybet.com",
       "skyvegas.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 54,
-    "Domains": [
+    "type": 54,
+    "domains": [
       "disneymoviesanywhere.com",
       "go.com",
       "disney.com",
       "dadt.com",
       "disneyplus.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 55,
-    "Domains": [
+    "type": 55,
+    "domains": [
       "pokemon-gl.com",
       "pokemon.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 56,
-    "Domains": [
+    "type": 56,
+    "domains": [
       "myuv.com",
       "uvvu.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 58,
-    "Domains": [
+    "type": 58,
+    "domains": [
       "mdsol.com",
       "imedidata.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 57,
-    "Domains": [
+    "type": 57,
+    "domains": [
       "bank-yahav.co.il",
       "bankhapoalim.co.il"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 59,
-    "Domains": [
+    "type": 59,
+    "domains": [
       "sears.com",
       "shld.net"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 60,
-    "Domains": [
+    "type": 60,
+    "domains": [
       "xiami.com",
       "alipay.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 61,
-    "Domains": [
+    "type": 61,
+    "domains": [
       "belkin.com",
       "seedonk.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 62,
-    "Domains": [
+    "type": 62,
+    "domains": [
       "turbotax.com",
       "intuit.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 63,
-    "Domains": [
+    "type": 63,
+    "domains": [
       "shopify.com",
       "myshopify.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 64,
-    "Domains": [
+    "type": 64,
+    "domains": [
       "ebay.com",
       "ebay.at",
       "ebay.be",
@@ -617,53 +617,53 @@
       "ebay.ph",
       "ebay.pl"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 65,
-    "Domains": [
+    "type": 65,
+    "domains": [
       "techdata.com",
       "techdata.ch"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 66,
-    "Domains": [
+    "type": 66,
+    "domains": [
       "schwab.com",
       "schwabplan.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 68,
-    "Domains": [
+    "type": 68,
+    "domains": [
       "tesla.com",
       "teslamotors.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 69,
-    "Domains": [
+    "type": 69,
+    "domains": [
       "morganstanley.com",
       "morganstanleyclientserv.com",
       "stockplanconnect.com",
       "ms.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 70,
-    "Domains": [
+    "type": 70,
+    "domains": [
       "taxact.com",
       "taxactonline.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 71,
-    "Domains": [
+    "type": 71,
+    "domains": [
       "mediawiki.org",
       "wikibooks.org",
       "wikidata.org",
@@ -676,11 +676,11 @@
       "wikivoyage.org",
       "wiktionary.org"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 72,
-    "Domains": [
+    "type": 72,
+    "domains": [
       "airbnb.at",
       "airbnb.be",
       "airbnb.ca",
@@ -735,11 +735,11 @@
       "airbnb.ru",
       "airbnb.se"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 73,
-    "Domains": [
+    "type": 73,
+    "domains": [
       "eventbrite.at",
       "eventbrite.be",
       "eventbrite.ca",
@@ -767,11 +767,11 @@
       "eventbrite.se",
       "eventbrite.sg"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 74,
-    "Domains": [
+    "type": 74,
+    "domains": [
       "stackexchange.com",
       "superuser.com",
       "stackoverflow.com",
@@ -780,19 +780,19 @@
       "askubuntu.com",
       "stackapps.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 75,
-    "Domains": [
+    "type": 75,
+    "domains": [
       "docusign.com",
       "docusign.net"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 76,
-    "Domains": [
+    "type": 76,
+    "domains": [
       "envato.com",
       "themeforest.net",
       "codecanyon.net",
@@ -802,28 +802,28 @@
       "photodune.net",
       "3docean.net"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 77,
-    "Domains": [
+    "type": 77,
+    "domains": [
       "x10hosting.com",
       "x10premium.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 78,
-    "Domains": [
+    "type": 78,
+    "domains": [
       "dnsomatic.com",
       "opendns.com",
       "umbrella.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 79,
-    "Domains": [
+    "type": 79,
+    "domains": [
       "cagreatamerica.com",
       "canadaswonderland.com",
       "carowinds.com",
@@ -838,36 +838,36 @@
       "visitkingsisland.com",
       "worldsoffun.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 80,
-    "Domains": [
+    "type": 80,
+    "domains": [
       "ubnt.com",
       "ui.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 81,
-    "Domains": [
+    "type": 81,
+    "domains": [
       "discordapp.com",
       "discord.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 82,
-    "Domains": [
+    "type": 82,
+    "domains": [
       "netcup.de",
       "netcup.eu",
       "customercontrolpanel.de"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 83,
-    "Domains": [
+    "type": 83,
+    "domains": [
       "yandex.com",
       "ya.ru",
       "yandex.az",
@@ -891,44 +891,44 @@
       "yandex.ua",
       "yandex.uz"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 84,
-    "Domains": [
+    "type": 84,
+    "domains": [
       "sonyentertainmentnetwork.com",
       "sony.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 85,
-    "Domains": [
+    "type": 85,
+    "domains": [
       "proton.me",
       "protonmail.com",
       "protonvpn.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 86,
-    "Domains": [
+    "type": 86,
+    "domains": [
       "ubisoft.com",
       "ubi.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 87,
-    "Domains": [
+    "type": 87,
+    "domains": [
       "transferwise.com",
       "wise.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 88,
-    "Domains": [
+    "type": 88,
+    "domains": [
       "takeaway.com",
       "just-eat.dk",
       "just-eat.no",
@@ -939,11 +939,11 @@
       "thuisbezorgd.nl",
       "pyszne.pl"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 89,
-    "Domains": [
+    "type": 89,
+    "domains": [
       "atlassian.com",
       "bitbucket.org",
       "trello.com",
@@ -951,11 +951,11 @@
       "atlassian.net",
       "jira.com"
     ],
-    "Excluded": false
+    "excluded": false
   },
   {
-    "Type": 90,
-    "Domains": [
+    "type": 90,
+    "domains": [
       "pinterest.com",
       "pinterest.com.au",
       "pinterest.cl",
@@ -970,6 +970,6 @@
       "pinterest.pt",
       "pinterest.se"
     ],
-    "Excluded": false
+    "excluded": false
   }
 ]

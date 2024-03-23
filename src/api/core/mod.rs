@@ -49,19 +49,19 @@ pub fn events_routes() -> Vec<Route> {
 use rocket::{serde::json::Json, serde::json::Value, Catcher, Route};
 
 use crate::{
-    api::{JsonResult, JsonUpcase, Notify, UpdateType},
+    api::{JsonResult, Notify, UpdateType},
     auth::Headers,
     db::DbConn,
     error::Error,
     util::{get_reqwest_client, parse_experimental_client_feature_flags},
 };
 
-#[derive(Serialize, Deserialize, Debug)]
-#[allow(non_snake_case)]
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct GlobalDomain {
-    Type: i32,
-    Domains: Vec<String>,
-    Excluded: bool,
+    r#type: i32,
+    domains: Vec<String>,
+    excluded: bool,
 }
 
 const GLOBAL_DOMAINS: &str = include_str!("../../static/global_domains.json");
@@ -81,38 +81,38 @@ fn _get_eq_domains(headers: Headers, no_excluded: bool) -> Json<Value> {
     let mut globals: Vec<GlobalDomain> = from_str(GLOBAL_DOMAINS).unwrap();
 
     for global in &mut globals {
-        global.Excluded = excluded_globals.contains(&global.Type);
+        global.excluded = excluded_globals.contains(&global.r#type);
     }
 
     if no_excluded {
-        globals.retain(|g| !g.Excluded);
+        globals.retain(|g| !g.excluded);
     }
 
     Json(json!({
-        "EquivalentDomains": equivalent_domains,
-        "GlobalEquivalentDomains": globals,
-        "Object": "domains",
+        "equivalentDomains": equivalent_domains,
+        "globalEquivalentDomains": globals,
+        "object": "domains",
     }))
 }
 
-#[derive(Deserialize, Debug)]
-#[allow(non_snake_case)]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct EquivDomainData {
-    ExcludedGlobalEquivalentDomains: Option<Vec<i32>>,
-    EquivalentDomains: Option<Vec<Vec<String>>>,
+    excluded_global_equivalent_domains: Option<Vec<i32>>,
+    equivalent_domains: Option<Vec<Vec<String>>>,
 }
 
 #[post("/settings/domains", data = "<data>")]
 async fn post_eq_domains(
-    data: JsonUpcase<EquivDomainData>,
+    data: Json<EquivDomainData>,
     headers: Headers,
     mut conn: DbConn,
     nt: Notify<'_>,
 ) -> JsonResult {
-    let data: EquivDomainData = data.into_inner().data;
+    let data: EquivDomainData = data.into_inner();
 
-    let excluded_globals = data.ExcludedGlobalEquivalentDomains.unwrap_or_default();
-    let equivalent_domains = data.EquivalentDomains.unwrap_or_default();
+    let excluded_globals = data.excluded_global_equivalent_domains.unwrap_or_default();
+    let equivalent_domains = data.equivalent_domains.unwrap_or_default();
 
     let mut user = headers.user;
     use serde_json::to_string;
@@ -128,12 +128,7 @@ async fn post_eq_domains(
 }
 
 #[put("/settings/domains", data = "<data>")]
-async fn put_eq_domains(
-    data: JsonUpcase<EquivDomainData>,
-    headers: Headers,
-    conn: DbConn,
-    nt: Notify<'_>,
-) -> JsonResult {
+async fn put_eq_domains(data: Json<EquivDomainData>, headers: Headers, conn: DbConn, nt: Notify<'_>) -> JsonResult {
     post_eq_domains(data, headers, conn, nt).await
 }
 
@@ -157,15 +152,15 @@ async fn hibp_breach(username: &str) -> JsonResult {
         Ok(Json(value))
     } else {
         Ok(Json(json!([{
-            "Name": "HaveIBeenPwned",
-            "Title": "Manual HIBP Check",
-            "Domain": "haveibeenpwned.com",
-            "BreachDate": "2019-08-18T00:00:00Z",
-            "AddedDate": "2019-08-18T00:00:00Z",
-            "Description": format!("Go to: <a href=\"https://haveibeenpwned.com/account/{username}\" target=\"_blank\" rel=\"noreferrer\">https://haveibeenpwned.com/account/{username}</a> for a manual check.<br/><br/>HaveIBeenPwned API key not set!<br/>Go to <a href=\"https://haveibeenpwned.com/API/Key\" target=\"_blank\" rel=\"noreferrer\">https://haveibeenpwned.com/API/Key</a> to purchase an API key from HaveIBeenPwned.<br/><br/>"),
-            "LogoPath": "vw_static/hibp.png",
-            "PwnCount": 0,
-            "DataClasses": [
+            "name": "HaveIBeenPwned",
+            "title": "Manual HIBP Check",
+            "domain": "haveibeenpwned.com",
+            "breachDate": "2019-08-18T00:00:00Z",
+            "addedDate": "2019-08-18T00:00:00Z",
+            "description": format!("Go to: <a href=\"https://haveibeenpwned.com/account/{username}\" target=\"_blank\" rel=\"noreferrer\">https://haveibeenpwned.com/account/{username}</a> for a manual check.<br/><br/>HaveIBeenPwned API key not set!<br/>Go to <a href=\"https://haveibeenpwned.com/API/Key\" target=\"_blank\" rel=\"noreferrer\">https://haveibeenpwned.com/API/Key</a> to purchase an API key from HaveIBeenPwned.<br/><br/>"),
+            "logoPath": "vw_static/hibp.png",
+            "pwnCount": 0,
+            "dataClasses": [
                 "Error - No API key set!"
             ]
         }])))

@@ -15,7 +15,7 @@ use crate::{
             two_factor::{authenticator, duo, email, enforce_2fa_policy, webauthn, yubikey},
         },
         push::register_push_device,
-        ApiResult, EmptyResult, JsonResult, JsonUpcase,
+        ApiResult, EmptyResult, JsonResult,
     },
     auth::{generate_organization_api_key_login_claims, ClientHeaders, ClientIp},
     db::{models::*, DbConn},
@@ -120,14 +120,14 @@ async fn _refresh_login(data: ConnectData, conn: &mut DbConn) -> JsonResult {
         "expires_in": expires_in,
         "token_type": "Bearer",
         "refresh_token": device.refresh_token,
-        "Key": user.akey,
-        "PrivateKey": user.private_key,
+        "key": user.akey,
+        "privateKey": user.private_key,
 
-        "Kdf": user.client_kdf_type,
-        "KdfIterations": user.client_kdf_iter,
-        "KdfMemory": user.client_kdf_memory,
-        "KdfParallelism": user.client_kdf_parallelism,
-        "ResetMasterPassword": false, // TODO: according to official server seems something like: user.password_hash.is_empty(), but would need testing
+        "kdf": user.client_kdf_type,
+        "kdfIterations": user.client_kdf_iter,
+        "kdfMemory": user.client_kdf_memory,
+        "kdfParallelism": user.client_kdf_parallelism,
+        "resetMasterPassword": false, // TODO: according to official server seems something like: user.password_hash.is_empty(), but would need testing
         "scope": scope,
         "unofficialServer": true,
     });
@@ -287,25 +287,25 @@ async fn _password_login(
         "expires_in": expires_in,
         "token_type": "Bearer",
         "refresh_token": device.refresh_token,
-        "Key": user.akey,
-        "PrivateKey": user.private_key,
-        //"TwoFactorToken": "11122233333444555666777888999"
+        "key": user.akey,
+        "privateKey": user.private_key,
+        //"twoFactorToken": "11122233333444555666777888999"
 
-        "Kdf": user.client_kdf_type,
-        "KdfIterations": user.client_kdf_iter,
-        "KdfMemory": user.client_kdf_memory,
-        "KdfParallelism": user.client_kdf_parallelism,
-        "ResetMasterPassword": false,// TODO: Same as above
+        "kdf": user.client_kdf_type,
+        "kdfIterations": user.client_kdf_iter,
+        "kdfMemory": user.client_kdf_memory,
+        "kdfParallelism": user.client_kdf_parallelism,
+        "resetMasterPassword": false,// TODO: Same as above
         "scope": scope,
         "unofficialServer": true,
-        "UserDecryptionOptions": {
-            "HasMasterPassword": !user.password_hash.is_empty(),
-            "Object": "userDecryptionOptions"
+        "userDecryptionOptions": {
+            "hasMasterPassword": !user.password_hash.is_empty(),
+            "object": "userDecryptionOptions"
         },
     });
 
     if let Some(token) = twofactor_token {
-        result["TwoFactorToken"] = Value::String(token);
+        result["twoFactorToken"] = Value::String(token);
     }
 
     info!("User {} logged in successfully. IP: {}", username, ip.ip);
@@ -409,14 +409,14 @@ async fn _user_api_key_login(
         "access_token": access_token,
         "expires_in": expires_in,
         "token_type": "Bearer",
-        "Key": user.akey,
-        "PrivateKey": user.private_key,
+        "key": user.akey,
+        "privateKey": user.private_key,
 
-        "Kdf": user.client_kdf_type,
-        "KdfIterations": user.client_kdf_iter,
-        "KdfMemory": user.client_kdf_memory,
-        "KdfParallelism": user.client_kdf_parallelism,
-        "ResetMasterPassword": false, // TODO: Same as above
+        "kdf": user.client_kdf_type,
+        "kdfIterations": user.client_kdf_iter,
+        "kdfMemory": user.client_kdf_memory,
+        "kdfParallelism": user.client_kdf_parallelism,
+        "resetMasterPassword": false, // TODO: Same as above
         "scope": "api",
         "unofficialServer": true,
     });
@@ -559,6 +559,7 @@ async fn _json_err_twofactor(providers: &[i32], user_uuid: &str, conn: &mut DbCo
     let mut result = json!({
         "error" : "invalid_grant",
         "error_description" : "Two factor required.",
+        // These two are intentionally left with PascalCase, as of 2024-02-27 the clients still use them like this
         "TwoFactorProviders" : providers,
         "TwoFactorProviders2" : {} // { "0" : null }
     });
@@ -583,8 +584,8 @@ async fn _json_err_twofactor(providers: &[i32], user_uuid: &str, conn: &mut DbCo
                 let (signature, host) = duo::generate_duo_signature(&email, conn).await?;
 
                 result["TwoFactorProviders2"][provider.to_string()] = json!({
-                    "Host": host,
-                    "Signature": signature,
+                    "host": host,
+                    "signature": signature,
                 });
             }
 
@@ -597,7 +598,7 @@ async fn _json_err_twofactor(providers: &[i32], user_uuid: &str, conn: &mut DbCo
                 let yubikey_metadata: yubikey::YubikeyMetadata = serde_json::from_str(&twofactor.data)?;
 
                 result["TwoFactorProviders2"][provider.to_string()] = json!({
-                    "Nfc": yubikey_metadata.Nfc,
+                    "nfc": yubikey_metadata.nfc,
                 })
             }
 
@@ -614,7 +615,7 @@ async fn _json_err_twofactor(providers: &[i32], user_uuid: &str, conn: &mut DbCo
 
                 let email_data = email::EmailTokenData::from_json(&twofactor.data)?;
                 result["TwoFactorProviders2"][provider.to_string()] = json!({
-                    "Email": email::obscure_email(&email_data.email),
+                    "email": email::obscure_email(&email_data.email),
                 })
             }
 
@@ -626,19 +627,18 @@ async fn _json_err_twofactor(providers: &[i32], user_uuid: &str, conn: &mut DbCo
 }
 
 #[post("/accounts/prelogin", data = "<data>")]
-async fn prelogin(data: JsonUpcase<PreloginData>, conn: DbConn) -> Json<Value> {
+async fn prelogin(data: Json<PreloginData>, conn: DbConn) -> Json<Value> {
     _prelogin(data, conn).await
 }
 
 #[post("/accounts/register", data = "<data>")]
-async fn identity_register(data: JsonUpcase<RegisterData>, conn: DbConn) -> JsonResult {
+async fn identity_register(data: Json<RegisterData>, conn: DbConn) -> JsonResult {
     _register(data, conn).await
 }
 
 // https://github.com/bitwarden/jslib/blob/master/common/src/models/request/tokenRequest.ts
 // https://github.com/bitwarden/mobile/blob/master/src/Core/Models/Request/TokenRequest.cs
 #[derive(Debug, Clone, Default, FromForm)]
-#[allow(non_snake_case)]
 struct ConnectData {
     #[field(name = uncased("grant_type"))]
     #[field(name = uncased("granttype"))]
