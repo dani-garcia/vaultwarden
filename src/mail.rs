@@ -1,12 +1,13 @@
 use std::str::FromStr;
 
 use chrono::NaiveDateTime;
+use once_cell::sync::Lazy;
 use percent_encoding::{percent_encode, NON_ALPHANUMERIC};
 
 use lettre::{
     message::{Attachment, Body, Mailbox, Message, MultiPart, SinglePart},
     transport::smtp::authentication::{Credentials, Mechanism as SmtpAuthMechanism},
-    transport::smtp::client::{Tls, TlsParameters},
+    transport::smtp::client::{Certificate, CertificateStore, Tls, TlsParameters},
     transport::smtp::extension::ClientId,
     Address, AsyncSendmailTransport, AsyncSmtpTransport, AsyncTransport, Tokio1Executor,
 };
@@ -29,6 +30,21 @@ fn sendmail_transport() -> AsyncSendmailTransport<Tokio1Executor> {
     }
 }
 
+static SMTP_ADDITIONAL_ROOT_CERTS: Lazy<Option<Vec<Certificate>>> = Lazy::new(|| {
+    Some(
+        CONFIG
+            .smtp_additional_root_certs()?
+            .split(';')
+            .filter(|path| !path.is_empty())
+            .map(|path| {
+                let cert = std::fs::read(path)
+                    .unwrap_or_else(|e| panic!("Error loading additional SMTP root certificate file {path}.\n{e}"));
+                Certificate::from_pem(&cert).unwrap_or_else(|e| panic!("Error decoding certificate file {path}.\n{e}"))
+            })
+            .collect(),
+    )
+});
+
 fn smtp_transport() -> AsyncSmtpTransport<Tokio1Executor> {
     use std::time::Duration;
     let host = CONFIG.smtp_host().unwrap();
@@ -45,6 +61,14 @@ fn smtp_transport() -> AsyncSmtpTransport<Tokio1Executor> {
         }
         if CONFIG.smtp_accept_invalid_certs() {
             tls_parameters = tls_parameters.dangerous_accept_invalid_certs(true);
+        }
+        if let Some(ref certs) = *SMTP_ADDITIONAL_ROOT_CERTS {
+            for cert in certs {
+                tls_parameters = tls_parameters.add_root_certificate(cert.clone());
+            }
+        }
+        if !CONFIG.smtp_use_system_root_certs() {
+            tls_parameters = tls_parameters.certificate_store(CertificateStore::None);
         }
         let tls_parameters = tls_parameters.build().unwrap();
 
