@@ -706,7 +706,7 @@ pub fn get_reqwest_client() -> Client {
         Ok(client) => client,
         Err(e) => {
             error!("Possible trust-dns error, trying with trust-dns disabled: '{e}'");
-            get_reqwest_client_builder().trust_dns(false).build().expect("Failed to build client")
+            get_reqwest_client_builder().hickory_dns(false).build().expect("Failed to build client")
         }
     }
 }

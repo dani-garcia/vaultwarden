@@ -3,7 +3,7 @@
 // The more key/value pairs there are the more recursion occurs.
 // We want to keep this as low as possible, but not higher then 128.
 // If you go above 128 it will cause rust-analyzer to fail,
-#![recursion_limit = "103"]
+#![recursion_limit = "87"]
 
 // When enabled use MiMalloc as malloc instead of the default malloc
 #[cfg(feature = "enable_mimalloc")]
@@ -213,7 +213,7 @@ fn launch_info() {
 fn init_logging(level: log::LevelFilter) -> Result<(), fern::InitError> {
     // Depending on the main log level we either want to disable or enable logging for trust-dns.
     // Else if there are timeouts it will clutter the logs since trust-dns uses warn for this.
-    let trust_dns_level = if level >= log::LevelFilter::Debug {
+    let hickory_level = if level >= log::LevelFilter::Debug {
         level
     } else {
         log::LevelFilter::Off
@@ -267,8 +267,8 @@ fn init_logging(level: log::LevelFilter) -> Result<(), fern::InitError> {
         // Prevent cookie_store logs
         .level_for("cookie_store", log::LevelFilter::Off)
         // Variable level for trust-dns used by reqwest
-        .level_for("trust_dns_resolver::name_server::name_server", trust_dns_level)
-        .level_for("trust_dns_proto::xfer", trust_dns_level)
+        .level_for("hickory_resolver::name_server::name_server", hickory_level)
+        .level_for("hickory_proto::xfer", hickory_level)
         .level_for("diesel_logger", diesel_logger_level)
         .chain(std::io::stdout());
 
