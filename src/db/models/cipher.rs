@@ -82,11 +82,11 @@ impl Cipher {
         let mut validation_errors = serde_json::Map::new();
         for (index, cipher) in cipher_data.iter().enumerate() {
             if let Some(note) = &cipher.Notes {
-                if note.len() > 10_000 {
+                if note.len() > 50_000 {
                     validation_errors.insert(
                         format!("Ciphers[{index}].Notes"),
                         serde_json::to_value([
-                            "The field Notes exceeds the maximum encrypted value length of 10000 characters.",
+                            "The field Notes exceeds the maximum encrypted value length of 50000 characters.",
                         ])
                         .unwrap(),
                     );
