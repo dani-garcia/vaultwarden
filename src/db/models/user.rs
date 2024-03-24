@@ -311,6 +311,7 @@ impl User {
 
         Send::delete_all_by_user(&self.uuid, conn).await?;
         EmergencyAccess::delete_all_by_user(&self.uuid, conn).await?;
+        EmergencyAccess::delete_all_by_grantee_email(&self.email, conn).await?;
         UserOrganization::delete_all_by_user(&self.uuid, conn).await?;
         Cipher::delete_all_by_user(&self.uuid, conn).await?;
         Favorite::delete_all_by_user(&self.uuid, conn).await?;
