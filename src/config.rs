@@ -1,12 +1,14 @@
-use std::env::consts::EXE_SUFFIX;
 use std::process::exit;
+use std::sync::OnceLock;
 use std::sync::RwLock;
+use std::{collections::HashMap, env::consts::EXE_SUFFIX};
 
 use job_scheduler_ng::Schedule;
 use once_cell::sync::Lazy;
 use reqwest::Url;
 
 use crate::{
+    auth::HostInfo,
     db::DbConnType,
     error::Error,
     util::{get_env, get_env_bool, parse_experimental_client_feature_flags},
@@ -47,6 +49,8 @@ macro_rules! make_config {
             _usr: ConfigBuilder,
 
             _overrides: Vec<String>,
+
+            domain_hostmap: OnceLock<HashMap<String, HostInfo>>,
         }
 
         #[derive(Clone, Default, Deserialize, Serialize)]
@@ -141,7 +145,15 @@ macro_rules! make_config {
                 )+)+
                 config.domain_set = _domain_set;
 
-                config.domain = config.domain.trim_end_matches('/').to_string();
+                // Remove slash from every domain
+                config.domain = config.domain.split(',').map(|d| d.trim_end_matches('/')).fold(String::new(), |mut acc, d| {
+                    acc.push_str(d);
+                    acc.push(',');
+                    acc
+                });
+
+                // Remove trailing comma
+                config.domain.pop();
 
                 config.signups_domains_whitelist = config.signups_domains_whitelist.trim().to_lowercase();
                 config.org_creation_users = config.org_creation_users.trim().to_lowercase();
@@ -414,15 +426,17 @@ make_config! {
 
     /// General settings
     settings {
-        /// Domain URL |> This needs to be set to the URL used to access the server, including 'http[s]://'
-        /// and port, if it's different than the default. Some server functions don't work correctly without this value
+        /// Comma seperated list of Domain URLs |> This needs to be set to the URL used to access the server, including
+        /// 'http[s]://' and port, if it's different than the default. Some server functions don't work correctly without this value
         domain:                 String, true,   def,    "http://localhost".to_string();
         /// Domain Set |> Indicates if the domain is set by the admin. Otherwise the default will be used.
         domain_set:             bool,   false,  def,    false;
-        /// Domain origin |> Domain URL origin (in https://example.com:8443/path, https://example.com:8443 is the origin)
-        domain_origin:          String, false,  auto,   |c| extract_url_origin(&c.domain);
+        /// Comma seperated list of domain origins |> Domain URL origin (in https://example.com:8443/path, https://example.com:8443 is the origin)
+        /// If specified manually, one entry needs to exist for every url in domain.
+        domain_origin:          String, false,  auto,   |c| extract_origins(&c.domain);
         /// Domain path |> Domain URL path (in https://example.com:8443/path, /path is the path)
-        domain_path:            String, false,  auto,   |c| extract_url_path(&c.domain);
+        /// MUST be the same for all domains.
+        domain_path:            String, false,  auto,   |c| extract_url_path(c.domain.split(',').next().expect("Missing domain"));
         /// Enable web vault
         web_vault_enabled:      bool,   false,  def,    true;
 
@@ -720,11 +734,17 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         }
     }
 
-    let dom = cfg.domain.to_lowercase();
-    if !dom.starts_with("http://") && !dom.starts_with("https://") {
-        err!(
-            "DOMAIN variable needs to contain the protocol (http, https). Use 'http[s]://bw.example.com' instead of 'bw.example.com'"
-        );
+    let domains = cfg.domain.split(',').map(|d| d.to_string().to_lowercase());
+    for dom in domains {
+        if !dom.starts_with("http://") && !dom.starts_with("https://") {
+            err!(
+                "DOMAIN variable needs to contain the protocol (http, https). Use 'http[s]://bw.example.com' instead of 'bw.example.com'"
+            );
+        }
+    }
+
+    if cfg.domain.split(',').count() != cfg.domain_origin.split(',').count() {
+        err!("Each DOMAIN_ORIGIN entry corresponds to exactly one entry in DOMAIN.");
     }
 
     let whitelist = &cfg.signups_domains_whitelist;
@@ -988,7 +1008,7 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
 }
 
 /// Extracts an RFC 6454 web origin from a URL.
-fn extract_url_origin(url: &str) -> String {
+pub fn extract_url_origin(url: &str) -> String {
     match Url::parse(url) {
         Ok(u) => u.origin().ascii_serialization(),
         Err(e) => {
@@ -996,6 +1016,24 @@ fn extract_url_origin(url: &str) -> String {
             String::new()
         }
     }
+}
+
+// urls should be comma-seperated
+fn extract_origins(urls: &str) -> String {
+    let mut origins = urls
+        .split(',')
+        .map(extract_url_origin)
+        // TODO add itertools as dependency maybe
+        .fold(String::new(), |mut acc, origin| {
+            acc.push_str(&origin);
+            acc.push(',');
+            acc
+        });
+
+    // Pop trailing comma
+    origins.pop();
+
+    origins
 }
 
 /// Extracts the path from a URL.
@@ -1010,10 +1048,34 @@ fn extract_url_path(url: &str) -> String {
     }
 }
 
-fn generate_smtp_img_src(embed_images: bool, domain: &str) -> String {
+/// Extracts host part from a URL.
+pub fn extract_url_host(url: &str) -> String {
+    match Url::parse(url) {
+        Ok(u) => {
+            let Some(mut host) = u.host_str().map(|s| s.to_string()) else {
+                println!("Domain does not contain host!");
+                return String::new();
+            };
+
+            if let Some(port) = u.port().map(|p| p.to_string()) {
+                host.push(':');
+                host.push_str(&port);
+            }
+
+            host
+        }
+        Err(_) => {
+            // we already print it in the method above, no need to do it again
+            String::new()
+        }
+    }
+}
+
+fn generate_smtp_img_src(embed_images: bool, domains: &str) -> String {
     if embed_images {
         "cid:".to_string()
     } else {
+        let domain = domains.split(',').next().expect("Domain missing");
         format!("{domain}/vw_static/")
     }
 }
@@ -1082,6 +1144,7 @@ impl Config {
                 _env,
                 _usr,
                 _overrides,
+                domain_hostmap: OnceLock::new(),
             }),
         })
     }
@@ -1248,6 +1311,45 @@ impl Config {
                 handle.notify();
             }
         }
+    }
+
+    fn get_domain_hostmap(&self, host: &str) -> Option<HostInfo> {
+        // This is done to prevent deadlock, when read-locking an rwlock twice
+        let domains = self.domain();
+
+        self.inner
+            .read()
+            .unwrap()
+            .domain_hostmap
+            .get_or_init(|| {
+                domains
+                    .split(',')
+                    .map(|d| {
+                        let host_info = HostInfo {
+                            base_url: d.to_string(),
+                            origin: extract_url_origin(d),
+                        };
+
+                        (extract_url_host(d), host_info)
+                    })
+                    .collect()
+            })
+            .get(host)
+            .cloned()
+    }
+
+    pub fn host_to_origin(&self, host: &str) -> Option<String> {
+        self.get_domain_hostmap(host).map(|v| v.origin)
+    }
+
+    pub fn host_to_domain(&self, host: &str) -> Option<String> {
+        self.get_domain_hostmap(host).map(|v| v.base_url)
+    }
+
+    // Yes this is a base_url
+    // But the configuration precedent says, that we call this a domain.
+    pub fn main_domain(&self) -> String {
+        self.domain().split(',').nth(0).expect("Missing domain").to_string()
     }
 }
 
