@@ -6,8 +6,8 @@ use serde_json::Value;
 use crate::{
     api::{
         core::{log_user_event, two_factor::email},
-        register_push_device, unregister_push_device, AnonymousNotify, EmptyResult, JsonResult, JsonUpcase, Notify,
-        PasswordOrOtpData, UpdateType,
+        register_push_device, unregister_push_device, AnonymousNotify, ApiResult, EmptyResult, JsonResult, JsonUpcase,
+        Notify, PasswordOrOtpData, UpdateType,
     },
     auth::{decode_delete, decode_invite, decode_verify_email, ClientHeaders, Headers},
     crypto,
@@ -31,6 +31,7 @@ pub fn routes() -> Vec<rocket::Route> {
         get_public_keys,
         post_keys,
         post_password,
+        post_set_password,
         post_kdf,
         post_rotatekey,
         post_sstamp,
@@ -79,6 +80,21 @@ pub struct RegisterData {
     Token: Option<String>,
     #[allow(dead_code)]
     OrganizationUserId: Option<String>,
+}
+
+#[derive(Deserialize, Debug)]
+#[allow(non_snake_case)]
+pub struct SetPasswordData {
+    Kdf: Option<i32>,
+    KdfIterations: Option<i32>,
+    KdfMemory: Option<i32>,
+    KdfParallelism: Option<i32>,
+    Key: String,
+    Keys: Option<KeysData>,
+    MasterPasswordHash: String,
+    MasterPasswordHint: Option<String>,
+    #[allow(dead_code)]
+    OrgIdentifier: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -160,10 +176,7 @@ pub async fn _register(data: JsonUpcase<RegisterData>, mut conn: DbConn) -> Json
                     err!("Registration email does not match invite email")
                 }
             } else if Invitation::take(&email, &mut conn).await {
-                for user_org in UserOrganization::find_invited_by_user(&user.uuid, &mut conn).await.iter_mut() {
-                    user_org.status = UserOrgStatus::Accepted as i32;
-                    user_org.save(&mut conn).await?;
-                }
+                UserOrganization::confirm_user_invitations(&user.uuid, &mut conn).await?;
                 user
             } else if CONFIG.is_signup_allowed(&email)
                 || EmergencyAccess::find_invited_by_grantee_email(&email, &mut conn).await.is_some()
@@ -178,7 +191,7 @@ pub async fn _register(data: JsonUpcase<RegisterData>, mut conn: DbConn) -> Json
             // because the vaultwarden admin can invite anyone, regardless
             // of other signup restrictions.
             if Invitation::take(&email, &mut conn).await || CONFIG.is_signup_allowed(&email) {
-                User::new(email.clone())
+                User::new(email.clone(), None)
             } else {
                 err!("Registration not allowed or user already exists")
             }
@@ -231,6 +244,50 @@ pub async fn _register(data: JsonUpcase<RegisterData>, mut conn: DbConn) -> Json
     user.save(&mut conn).await?;
     Ok(Json(json!({
       "Object": "register",
+      "CaptchaBypassToken": "",
+    })))
+}
+
+#[post("/accounts/set-password", data = "<data>")]
+async fn post_set_password(data: JsonUpcase<SetPasswordData>, headers: Headers, mut conn: DbConn) -> JsonResult {
+    let data: SetPasswordData = data.into_inner().data;
+    let mut user = headers.user;
+
+    // Check against the password hint setting here so if it fails, the user
+    // can retry without losing their invitation below.
+    let password_hint = clean_password_hint(&data.MasterPasswordHint);
+    enforce_password_hint_setting(&password_hint)?;
+
+    if let Some(client_kdf_iter) = data.KdfIterations {
+        user.client_kdf_iter = client_kdf_iter;
+    }
+
+    if let Some(client_kdf_type) = data.Kdf {
+        user.client_kdf_type = client_kdf_type;
+    }
+
+    // We need to allow revision-date to use the old security_timestamp
+    let routes = ["revision_date"];
+    let routes: Option<Vec<String>> = Some(routes.iter().map(ToString::to_string).collect());
+
+    user.client_kdf_memory = data.KdfMemory;
+    user.client_kdf_parallelism = data.KdfParallelism;
+
+    user.set_password(&data.MasterPasswordHash, Some(data.Key), false, routes);
+    user.password_hint = password_hint;
+
+    if let Some(keys) = data.Keys {
+        user.private_key = Some(keys.EncryptedPrivateKey);
+        user.public_key = Some(keys.PublicKey);
+    }
+
+    if CONFIG.mail_enabled() {
+        mail::send_set_password(&user.email.to_lowercase(), &user.name).await?;
+    }
+
+    user.save(&mut conn).await?;
+    Ok(Json(json!({
+      "Object": "set-password",
       "CaptchaBypassToken": "",
     })))
 }
@@ -861,16 +918,37 @@ struct SecretVerificationRequest {
     MasterPasswordHash: String,
 }
 
+// Change the KDF Iterations if necessary
+pub async fn kdf_upgrade(user: &mut User, pwd_hash: &str, conn: &mut DbConn) -> ApiResult<()> {
+    if user.password_iterations != CONFIG.password_iterations() {
+        user.password_iterations = CONFIG.password_iterations();
+        user.set_password(pwd_hash, None, false, None);
+
+        if let Err(e) = user.save(conn).await {
+            error!("Error updating user: {:#?}", e);
+        }
+    }
+    Ok(())
+}
+
 #[post("/accounts/verify-password", data = "<data>")]
-fn verify_password(data: JsonUpcase<SecretVerificationRequest>, headers: Headers) -> EmptyResult {
+async fn verify_password(
+    data: JsonUpcase<SecretVerificationRequest>,
+    headers: Headers,
+    mut conn: DbConn,
+) -> JsonResult {
     let data: SecretVerificationRequest = data.into_inner().data;
-    let user = headers.user;
+    let mut user = headers.user;
 
     if !user.check_valid_password(&data.MasterPasswordHash) {
         err!("Invalid password")
     }
 
-    Ok(())
+    kdf_upgrade(&mut user, &data.MasterPasswordHash, &mut conn).await?;
+
+    Ok(Json(json!({
+      "MasterPasswordPolicy": {}, // Required for SSO login with mobile apps
+    })))
 }
 
 async fn _api_key(data: JsonUpcase<PasswordOrOtpData>, rotate: bool, headers: Headers, mut conn: DbConn) -> JsonResult {

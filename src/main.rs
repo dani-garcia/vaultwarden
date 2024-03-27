@@ -49,6 +49,7 @@ mod crypto;
 mod db;
 mod mail;
 mod ratelimit;
+mod sso;
 mod util;
 
 use crate::api::purge_auth_requests;
@@ -591,6 +592,13 @@ fn schedule_jobs(pool: db::DbPool) {
             {
                 sched.add(Job::new(CONFIG.event_cleanup_schedule().parse().unwrap(), || {
                     runtime.spawn(api::event_cleanup_job(pool.clone()));
+                }));
+            }
+
+            // Purge sso nonce from incomplete flow (default to daily at 00h20).
+            if !CONFIG.purge_incomplete_sso_nonce().is_empty() {
+                sched.add(Job::new(CONFIG.purge_incomplete_sso_nonce().parse().unwrap(), || {
+                    runtime.spawn(db::models::SsoNonce::delete_expired(pool.clone()));
                 }));
             }
 
