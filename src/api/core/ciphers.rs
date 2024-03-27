@@ -205,7 +205,7 @@ pub struct CipherData {
     // Folder id is not included in import
     FolderId: Option<String>,
     // TODO: Some of these might appear all the time, no need for Option
-    OrganizationId: Option<String>,
+    pub OrganizationId: Option<String>,
 
     Key: Option<String>,
 
