@@ -1,7 +1,7 @@
 use rocket::serde::json::Json;
 use rocket::Route;
 use serde_json::Value;
-use yubico::{config::Config, verify};
+use yubico::{config::Config, verify_async};
 
 use crate::{
     api::{
@@ -74,13 +74,10 @@ async fn verify_yubikey_otp(otp: String) -> EmptyResult {
     let config = Config::default().set_client_id(yubico_id).set_key(yubico_secret);
 
     match CONFIG.yubico_server() {
-        Some(server) => {
-            tokio::task::spawn_blocking(move || verify(otp, config.set_api_hosts(vec![server]))).await.unwrap()
-        }
-        None => tokio::task::spawn_blocking(move || verify(otp, config)).await.unwrap(),
+        Some(server) => verify_async(otp, config.set_api_hosts(vec![server])).await,
+        None => verify_async(otp, config).await,
     }
     .map_res("Failed to verify OTP")
-    .and(Ok(()))
 }
 
 #[post("/two-factor/get-yubikey", data = "<data>")]
@@ -194,10 +191,6 @@ pub async fn validate_yubikey_login(response: &str, twofactor_data: &str) -> Emp
         err!("Given Yubikey is not registered");
     }
 
-    let result = verify_yubikey_otp(response.to_owned()).await;
-
-    match result {
-        Ok(_answer) => Ok(()),
-        Err(_e) => err!("Failed to verify Yubikey against OTP server"),
-    }
+    verify_yubikey_otp(response.to_owned()).await.map_res("Failed to verify Yubikey against OTP server")?;
+    Ok(())
 }
