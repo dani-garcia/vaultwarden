@@ -4,7 +4,7 @@ use chrono::{TimeDelta, Utc};
 use num_traits::FromPrimitive;
 use once_cell::sync::{Lazy, OnceCell};
 
-use jsonwebtoken::{self, errors::ErrorKind, Algorithm, DecodingKey, EncodingKey, Header};
+use jsonwebtoken::{errors::ErrorKind, Algorithm, DecodingKey, EncodingKey, Header};
 use openssl::rsa::Rsa;
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;

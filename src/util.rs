@@ -520,7 +520,7 @@ pub fn container_base_image() -> &'static str {
 use std::fmt;
 
 use serde::de::{self, DeserializeOwned, Deserializer, MapAccess, SeqAccess, Visitor};
-use serde_json::{self, Value};
+use serde_json::Value;
 
 pub type JsonMap = serde_json::Map<String, Value>;
 
