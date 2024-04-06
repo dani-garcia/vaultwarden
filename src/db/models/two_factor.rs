@@ -159,7 +159,7 @@ impl TwoFactor {
 
         use crate::api::core::two_factor::webauthn::U2FRegistration;
         use crate::api::core::two_factor::webauthn::{get_webauthn_registrations, WebauthnRegistration};
-        use webauthn_rs::proto::*;
+        use webauthn_rs_core::proto::*;
 
         for mut u2f in u2f_factors {
             let mut regs: Vec<U2FRegistration> = serde_json::from_str(&u2f.data)?;
@@ -183,22 +183,23 @@ impl TwoFactor {
                     type_: COSEAlgorithm::ES256,
                     key: COSEKeyType::EC_EC2(COSEEC2Key {
                         curve: ECDSACurve::SECP256R1,
-                        x,
-                        y,
+                        x: x.to_vec().into(),
+                        y: y.to_vec().into(),
                     }),
                 };
 
+                let credential = CredentialV3 {
+                    counter: reg.counter,
+                    verified: false,
+                    cred: key,
+                    cred_id: reg.reg.key_handle.clone().into(),
+                    registration_policy: UserVerificationPolicy::Discouraged_DO_NOT_USE,
+                };
                 let new_reg = WebauthnRegistration {
                     id: reg.id,
                     migrated: true,
                     name: reg.name.clone(),
-                    credential: Credential {
-                        counter: reg.counter,
-                        verified: false,
-                        cred: key,
-                        cred_id: reg.reg.key_handle.clone(),
-                        registration_policy: UserVerificationPolicy::Discouraged,
-                    },
+                    credential: credential.into(),
                 };
 
                 webauthn_regs.push(new_reg);
