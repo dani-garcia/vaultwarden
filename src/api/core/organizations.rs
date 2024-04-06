@@ -2247,7 +2247,7 @@ impl GroupRequest {
     }
 
     pub fn update_group(&self, mut group: Group) -> Group {
-        group.name = self.Name.clone();
+        group.name.clone_from(&self.Name);
         group.access_all = self.AccessAll.unwrap_or(false);
         // Group Updates do not support changing the external_id
         // These input fields are in a disabled state, and can only be updated/added via ldap_import

@@ -174,7 +174,7 @@ impl EmergencyAccess {
         // Update the grantee so that it will refresh it's status.
         User::update_uuid_revision(self.grantee_uuid.as_ref().expect("Error getting grantee"), conn).await;
         self.status = status;
-        self.updated_at = date.to_owned();
+        date.clone_into(&mut self.updated_at);
 
         db_run! {conn: {
             crate::util::retry(|| {
@@ -192,7 +192,7 @@ impl EmergencyAccess {
         conn: &mut DbConn,
     ) -> EmptyResult {
         self.last_notification_at = Some(date.to_owned());
-        self.updated_at = date.to_owned();
+        date.clone_into(&mut self.updated_at);
 
         db_run! {conn: {
             crate::util::retry(|| {

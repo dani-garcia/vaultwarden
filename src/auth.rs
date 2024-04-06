@@ -4,7 +4,7 @@ use chrono::{TimeDelta, Utc};
 use num_traits::FromPrimitive;
 use once_cell::sync::{Lazy, OnceCell};
 
-use jsonwebtoken::{self, errors::ErrorKind, Algorithm, DecodingKey, EncodingKey, Header};
+use jsonwebtoken::{errors::ErrorKind, Algorithm, DecodingKey, EncodingKey, Header};
 use openssl::rsa::Rsa;
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
@@ -391,10 +391,8 @@ impl<'r> FromRequest<'r> for Host {
 
             let host = if let Some(host) = headers.get_one("X-Forwarded-Host") {
                 host
-            } else if let Some(host) = headers.get_one("Host") {
-                host
             } else {
-                ""
+                headers.get_one("Host").unwrap_or_default()
             };
 
             format!("{protocol}://{host}")
