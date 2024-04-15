@@ -1062,8 +1062,7 @@ pub async fn refresh_tokens(refresh_token: &str, conn: &mut DbConn) -> ApiResult
         Some(device) => device,
     };
 
-    // Roll the Device.refresh_token this way it invalides old JWT refresh_token
-    device.roll_refresh_token();
+    // Save to update `updated_at`.
     device.save(conn).await?;
 
     let user = match User::find_by_uuid(&device.user_uuid, conn).await {
