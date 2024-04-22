@@ -4143,6 +4143,7 @@ dependencies = [
  "url",
  "uuid",
  "webauthn-rs",
+ "webauthn-rs-core",
  "which",
  "yubico",
 ]

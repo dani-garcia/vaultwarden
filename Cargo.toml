@@ -109,7 +109,8 @@ totp-lite = "2.0.1"
 yubico = { version = "0.11.0", features = ["online-tokio"], default-features = false }
 
 # WebAuthn libraries
-webauthn-rs = { version = "0.4.8", features = ["danger-allow-state-serialisation"] }
+webauthn-rs = { version = "0.4.8", features = ["danger-allow-state-serialisation", "danger-credential-internals", "resident-key-support"] }
+webauthn-rs-core = { version = "0.4.9" }
 
 # Handling of URL's for WebAuthn and favicons
 url = "2.5.0"

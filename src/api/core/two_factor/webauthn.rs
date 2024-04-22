@@ -22,6 +22,47 @@ pub fn routes() -> Vec<Route> {
     routes![get_webauthn, generate_webauthn_challenge, activate_webauthn, activate_webauthn_put, delete_webauthn,]
 }
 
+// Some old u2f structs still needed for migrating from u2f to WebAuthn
+// Both `struct Registration` and `struct U2FRegistration` can be removed if we remove the u2f to WebAuthn migration
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Registration {
+    pub key_handle: CredentialID,
+    pub pub_key: Vec<u8>,
+    pub attestation_cert: Option<Vec<u8>>,
+    pub device_name: Option<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct U2FRegistration {
+    pub id: i32,
+    pub name: String,
+    #[serde(with = "Registration")]
+    pub reg: Registration,
+    pub counter: u32,
+    compromised: bool,
+    pub migrated: Option<bool>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct WebauthnRegistration {
+    pub id: i32,
+    pub name: String,
+    pub migrated: bool,
+
+    pub security_key: SecurityKey,
+}
+
+impl WebauthnRegistration {
+    fn to_json(&self) -> Value {
+        json!({
+            "Id": self.id,
+            "Name": self.name,
+            "migrated": self.migrated,
+        })
+    }
+}
+
 #[post("/two-factor/get-webauthn", data = "<data>")]
 async fn get_webauthn(data: JsonUpcase<PasswordOrOtpData>, headers: Headers, mut conn: DbConn) -> JsonResult {
     if !CONFIG.domain_set() {
@@ -168,10 +209,26 @@ async fn delete_webauthn(data: JsonUpcase<DeleteU2FData>, headers: Headers, mut 
         None => err!("Webauthn entry not found"),
     };
 
-    let _removed_item = data.remove(item_pos);
+    let removed_item = data.remove(item_pos);
     tf.data = serde_json::to_string(&data)?;
     tf.save(&mut conn).await?;
     drop(tf);
+
+    // If entry is migrated from u2f, delete the u2f entry as well
+    if let Some(mut u2f) =
+        TwoFactor::find_by_user_and_type(&headers.user.uuid, TwoFactorType::U2f as i32, &mut conn).await
+    {
+        let mut data: Vec<U2FRegistration> = match serde_json::from_str(&u2f.data) {
+            Ok(d) => d,
+            Err(_) => err!("Error parsing U2F data"),
+        };
+
+        data.retain(|r| r.reg.key_handle != *removed_item.security_key.cred_id());
+        let new_data_str = serde_json::to_string(&data)?;
+
+        u2f.data = new_data_str;
+        u2f.save(&mut conn).await?;
+    }
 
     let keys_json: Vec<Value> = data.iter().map(WebauthnRegistration::to_json).collect();
 
@@ -182,26 +239,7 @@ async fn delete_webauthn(data: JsonUpcase<DeleteU2FData>, headers: Headers, mut 
     })))
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-struct WebauthnRegistration {
-    pub id: i32,
-    pub name: String,
-    pub migrated: bool,
-
-    pub security_key: SecurityKey,
-}
-
-impl WebauthnRegistration {
-    fn to_json(&self) -> Value {
-        json!({
-            "Id": self.id,
-            "Name": self.name,
-            "migrated": self.migrated,
-        })
-    }
-}
-
-async fn get_webauthn_registrations(
+pub async fn get_webauthn_registrations(
     user_uuid: &str,
     conn: &mut DbConn,
 ) -> Result<(bool, Vec<WebauthnRegistration>), Error> {
