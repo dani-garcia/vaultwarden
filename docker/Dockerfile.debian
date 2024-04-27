@@ -88,9 +88,17 @@ RUN mkdir -pv "${CARGO_HOME}" \
 RUN USER=root cargo new --bin /app
 WORKDIR /app
 
-# Environment variables for cargo across Debian and Alpine
+# Environment variables for Cargo on Debian based builds
+ARG ARCH_OPENSSL_LIB_DIR \
+    ARCH_OPENSSL_INCLUDE_DIR
+
 RUN source /env-cargo && \
     if xx-info is-cross ; then \
+        # Some special variables if needed to override some build paths
+        if [[ -n "${ARCH_OPENSSL_LIB_DIR}" && -n "${ARCH_OPENSSL_INCLUDE_DIR}" ]]; then \
+            echo "export $(echo "${CARGO_TARGET}" | tr '[:lower:]' '[:upper:]' | tr - _)_OPENSSL_LIB_DIR=${ARCH_OPENSSL_LIB_DIR}" >> /env-cargo && \
+            echo "export $(echo "${CARGO_TARGET}" | tr '[:lower:]' '[:upper:]' | tr - _)_OPENSSL_INCLUDE_DIR=${ARCH_OPENSSL_INCLUDE_DIR}" >> /env-cargo ; \
+        fi && \
         # We can't use xx-cargo since that uses clang, which doesn't work for our libraries.
         # Because of this we generate the needed environment variables here which we can load in the needed steps.
         echo "export CC_$(echo "${CARGO_TARGET}" | tr '[:upper:]' '[:lower:]' | tr - _)=/usr/bin/$(xx-info)-gcc" >> /env-cargo && \

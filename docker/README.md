@@ -11,6 +11,11 @@ With just these two files we can build both Debian and Alpine images for the fol
  - armv7 (linux/arm/v7)
  - armv6 (linux/arm/v6)
 
+Some unsupported platforms for Debian based images. These are not built and tested by default and are only provided to make it easier for users to build for these architectures.
+- 386     (linux/386)
+- ppc64le (linux/ppc64le)
+- s390x   (linux/s390x)
+
 To build these containers you need to enable QEMU binfmt support to be able to run/emulate architectures which are different then your host.<br>
 This ensures the container build process can run binaries from other architectures.<br>
 
