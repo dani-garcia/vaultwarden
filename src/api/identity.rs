@@ -295,7 +295,12 @@ async fn _password_login(
         "KdfIterations": user.client_kdf_iter,
         "KdfMemory": user.client_kdf_memory,
         "KdfParallelism": user.client_kdf_parallelism,
-        "ResetMasterPassword": false,// TODO: Same as above
+        "ResetMasterPassword": false, // TODO: Same as above
+        "ForcePasswordReset": false,
+        "MasterPasswordPolicy": {
+            "object": "masterPasswordPolicy",
+        },
+
         "scope": scope,
         "unofficialServer": true,
         "UserDecryptionOptions": {
