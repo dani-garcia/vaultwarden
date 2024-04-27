@@ -31,11 +31,11 @@ FROM --platform=linux/amd64 docker.io/vaultwarden/web-vault@sha256:689b1e706f29e
 ########################## Cross Compile Docker Helper Scripts ##########################
 ## We use the linux/amd64 no matter which Build Platform, since these are all bash scripts
 ## And these bash scripts do not have any significant difference if at all
-FROM --platform=linux/amd64 docker.io/tonistiigi/xx@sha256:c9609ace652bbe51dd4ce90e0af9d48a4590f1214246da5bc70e46f6dd586edc AS xx
+FROM --platform=linux/amd64 docker.io/tonistiigi/xx@sha256:0cd3f05c72d6c9b038eb135f91376ee1169ef3a330d34e418e65e2a5c2e9c0d4 AS xx
 
 ########################## BUILD IMAGE ##########################
 # hadolint ignore=DL3006
-FROM --platform=$BUILDPLATFORM docker.io/library/rust:1.77.0-slim-bookworm as build
+FROM --platform=$BUILDPLATFORM docker.io/library/rust:1.77.2-slim-bookworm as build
 COPY --from=xx / /
 ARG TARGETARCH
 ARG TARGETVARIANT

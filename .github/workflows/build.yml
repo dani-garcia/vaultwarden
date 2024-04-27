@@ -46,7 +46,7 @@ jobs:
     steps:
       # Checkout the repo
       - name: "Checkout"
-        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 #v4.1.1
+        uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b #v4.1.4
       # End Checkout the repo
 
 
@@ -74,7 +74,7 @@ jobs:
 
       # Only install the clippy and rustfmt components on the default rust-toolchain
       - name: "Install rust-toolchain version"
-        uses: dtolnay/rust-toolchain@be73d7920c329f220ce78e0234b8f96b7ae60248 # master @ 2023-12-07 - 10:22 PM GMT+1
+        uses: dtolnay/rust-toolchain@bb45937a053e097f8591208d8e74c90db1873d07 # master @ Apr 14, 2024, 9:02 PM GMT+2
         if: ${{ matrix.channel == 'rust-toolchain' }}
         with:
           toolchain: "${{steps.toolchain.outputs.RUST_TOOLCHAIN}}"
@@ -84,7 +84,7 @@ jobs:
 
       # Install the any other channel to be used for which we do not execute clippy and rustfmt
       - name: "Install MSRV version"
-        uses: dtolnay/rust-toolchain@be73d7920c329f220ce78e0234b8f96b7ae60248 # master @ 2023-12-07 - 10:22 PM GMT+1
+        uses: dtolnay/rust-toolchain@bb45937a053e097f8591208d8e74c90db1873d07 # master @ Apr 14, 2024, 9:02 PM GMT+2
         if: ${{ matrix.channel != 'rust-toolchain' }}
         with:
           toolchain: "${{steps.toolchain.outputs.RUST_TOOLCHAIN}}"
