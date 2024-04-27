@@ -67,7 +67,7 @@ dashmap = "5.5.3"
 
 # Async futures
 futures = "0.3.30"
-tokio = { version = "1.37.0", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal"] }
+tokio = { version = "1.37.0", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal", "net"] }
 
 # A generic serialization/deserialization framework
 serde = { version = "1.0.198", features = ["derive"] }
@@ -123,7 +123,8 @@ email_address = "0.2.4"
 handlebars = { version = "5.1.2", features = ["dir_source"] }
 
 # HTTP client (Used for favicons, version check, DUO and HIBP API)
-reqwest = { version = "0.12.4", features = ["native-tls-alpn", "stream", "json", "gzip", "brotli", "socks", "cookies", "hickory-dns"] }
+reqwest = { version = "0.12.4", features = ["native-tls-alpn", "stream", "json", "gzip", "brotli", "socks", "cookies"] }
+hickory-resolver = "0.24.1"
 
 # Favicon extraction libraries
 html5gum = "0.5.7"
