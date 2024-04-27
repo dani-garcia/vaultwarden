@@ -81,25 +81,32 @@ impl EmergencyAccess {
         })
     }
 
-    pub async fn to_json_grantee_details(&self, conn: &mut DbConn) -> Value {
+    pub async fn to_json_grantee_details(&self, conn: &mut DbConn) -> Option<Value> {
         let grantee_user = if let Some(grantee_uuid) = self.grantee_uuid.as_deref() {
-            Some(User::find_by_uuid(grantee_uuid, conn).await.expect("Grantee user not found."))
+            User::find_by_uuid(grantee_uuid, conn).await.expect("Grantee user not found.")
         } else if let Some(email) = self.email.as_deref() {
-            Some(User::find_by_mail(email, conn).await.expect("Grantee user not found."))
+            match User::find_by_mail(email, conn).await {
+                Some(user) => user,
+                None => {
+                    // remove outstanding invitations which should not exist
+                    let _ = Self::delete_all_by_grantee_email(email, conn).await;
+                    return None;
+                }
+            }
         } else {
-            None
+            return None;
         };
 
-        json!({
+        Some(json!({
             "Id": self.uuid,
             "Status": self.status,
             "Type": self.atype,
             "WaitTimeDays": self.wait_time_days,
-            "GranteeId": grantee_user.as_ref().map_or("", |u| &u.uuid),
-            "Email": grantee_user.as_ref().map_or("", |u| &u.email),
-            "Name": grantee_user.as_ref().map_or("", |u| &u.name),
+            "GranteeId": grantee_user.uuid,
+            "Email": grantee_user.email,
+            "Name": grantee_user.name,
             "Object": "emergencyAccessGranteeDetails",
-        })
+        }))
     }
 }
 
@@ -214,6 +221,13 @@ impl EmergencyAccess {
         Ok(())
     }
 
+    pub async fn delete_all_by_grantee_email(grantee_email: &str, conn: &mut DbConn) -> EmptyResult {
+        for ea in Self::find_all_invited_by_grantee_email(grantee_email, conn).await {
+            ea.delete(conn).await?;
+        }
+        Ok(())
+    }
+
     pub async fn delete(self, conn: &mut DbConn) -> EmptyResult {
         User::update_uuid_revision(&self.grantor_uuid, conn).await;
 
@@ -285,12 +299,36 @@ impl EmergencyAccess {
         }}
     }
 
+    pub async fn find_all_invited_by_grantee_email(grantee_email: &str, conn: &mut DbConn) -> Vec<Self> {
+        db_run! { conn: {
+            emergency_access::table
+                .filter(emergency_access::email.eq(grantee_email))
+                .filter(emergency_access::status.eq(EmergencyAccessStatus::Invited as i32))
+                .load::<EmergencyAccessDb>(conn).expect("Error loading emergency_access").from_db()
+        }}
+    }
+
     pub async fn find_all_by_grantor_uuid(grantor_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             emergency_access::table
                 .filter(emergency_access::grantor_uuid.eq(grantor_uuid))
                 .load::<EmergencyAccessDb>(conn).expect("Error loading emergency_access").from_db()
         }}
+    }
+
+    pub async fn accept_invite(&mut self, grantee_uuid: &str, grantee_email: &str, conn: &mut DbConn) -> EmptyResult {
+        if self.email.is_none() || self.email.as_ref().unwrap() != grantee_email {
+            err!("User email does not match invite.");
+        }
+
+        if self.status == EmergencyAccessStatus::Accepted as i32 {
+            err!("Emergency contact already accepted.");
+        }
+
+        self.status = EmergencyAccessStatus::Accepted as i32;
+        self.grantee_uuid = Some(String::from(grantee_uuid));
+        self.email = None;
+        self.save(conn).await
     }
 }
 

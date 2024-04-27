@@ -61,7 +61,9 @@ async fn get_contacts(headers: Headers, mut conn: DbConn) -> Json<Value> {
     let emergency_access_list = EmergencyAccess::find_all_by_grantor_uuid(&headers.user.uuid, &mut conn).await;
     let mut emergency_access_list_json = Vec::with_capacity(emergency_access_list.len());
     for ea in emergency_access_list {
-        emergency_access_list_json.push(ea.to_json_grantee_details(&mut conn).await);
+        if let Some(grantee) = ea.to_json_grantee_details(&mut conn).await {
+            emergency_access_list_json.push(grantee)
+        }
     }
 
     Json(json!({
@@ -95,7 +97,9 @@ async fn get_emergency_access(emer_id: &str, mut conn: DbConn) -> JsonResult {
     check_emergency_access_enabled()?;
 
     match EmergencyAccess::find_by_uuid(emer_id, &mut conn).await {
-        Some(emergency_access) => Ok(Json(emergency_access.to_json_grantee_details(&mut conn).await)),
+        Some(emergency_access) => Ok(Json(
+            emergency_access.to_json_grantee_details(&mut conn).await.expect("Grantee user should exist but does not!"),
+        )),
         None => err!("Emergency access not valid."),
     }
 }
@@ -209,7 +213,7 @@ async fn send_invite(data: JsonUpcase<EmergencyAccessInviteData>, headers: Heade
         err!("You can not set yourself as an emergency contact.")
     }
 
-    let grantee_user = match User::find_by_mail(&email, &mut conn).await {
+    let (grantee_user, new_user) = match User::find_by_mail(&email, &mut conn).await {
         None => {
             if !CONFIG.invitations_allowed() {
                 err!(format!("Grantee user does not exist: {}", &email))
@@ -226,9 +230,10 @@ async fn send_invite(data: JsonUpcase<EmergencyAccessInviteData>, headers: Heade
 
             let mut user = User::new(email.clone());
             user.save(&mut conn).await?;
-            user
+            (user, true)
         }
-        Some(user) => user,
+        Some(user) if user.password_hash.is_empty() => (user, true),
+        Some(user) => (user, false),
     };
 
     if EmergencyAccess::find_by_grantor_uuid_and_grantee_uuid_or_email(
@@ -256,15 +261,9 @@ async fn send_invite(data: JsonUpcase<EmergencyAccessInviteData>, headers: Heade
             &grantor_user.email,
         )
         .await?;
-    } else {
-        // Automatically mark user as accepted if no email invites
-        match User::find_by_mail(&email, &mut conn).await {
-            Some(user) => match accept_invite_process(&user.uuid, &mut new_emergency_access, &email, &mut conn).await {
-                Ok(v) => v,
-                Err(e) => err!(e.to_string()),
-            },
-            None => err!("Grantee user not found."),
-        }
+    } else if !new_user {
+        // if mail is not enabled immediately accept the invitation for existing users
+        new_emergency_access.accept_invite(&grantee_user.uuid, &email, &mut conn).await?;
     }
 
     Ok(())
@@ -308,17 +307,12 @@ async fn resend_invite(emer_id: &str, headers: Headers, mut conn: DbConn) -> Emp
             &grantor_user.email,
         )
         .await?;
-    } else {
-        if Invitation::find_by_mail(&email, &mut conn).await.is_none() {
-            let invitation = Invitation::new(&email);
-            invitation.save(&mut conn).await?;
-        }
-
-        // Automatically mark user as accepted if no email invites
-        match accept_invite_process(&grantee_user.uuid, &mut emergency_access, &email, &mut conn).await {
-            Ok(v) => v,
-            Err(e) => err!(e.to_string()),
-        }
+    } else if !grantee_user.password_hash.is_empty() {
+        // accept the invitation for existing user
+        emergency_access.accept_invite(&grantee_user.uuid, &email, &mut conn).await?;
+    } else if CONFIG.invitations_allowed() && Invitation::find_by_mail(&email, &mut conn).await.is_none() {
+        let invitation = Invitation::new(&email);
+        invitation.save(&mut conn).await?;
     }
 
     Ok(())
@@ -367,10 +361,7 @@ async fn accept_invite(emer_id: &str, data: JsonUpcase<AcceptData>, headers: Hea
         && grantor_user.name == claims.grantor_name
         && grantor_user.email == claims.grantor_email
     {
-        match accept_invite_process(&grantee_user.uuid, &mut emergency_access, &grantee_user.email, &mut conn).await {
-            Ok(v) => v,
-            Err(e) => err!(e.to_string()),
-        }
+        emergency_access.accept_invite(&grantee_user.uuid, &grantee_user.email, &mut conn).await?;
 
         if CONFIG.mail_enabled() {
             mail::send_emergency_access_invite_accepted(&grantor_user.email, &grantee_user.email).await?;
@@ -380,26 +371,6 @@ async fn accept_invite(emer_id: &str, data: JsonUpcase<AcceptData>, headers: Hea
     } else {
         err!("Emergency access invitation error.")
     }
-}
-
-async fn accept_invite_process(
-    grantee_uuid: &str,
-    emergency_access: &mut EmergencyAccess,
-    grantee_email: &str,
-    conn: &mut DbConn,
-) -> EmptyResult {
-    if emergency_access.email.is_none() || emergency_access.email.as_ref().unwrap() != grantee_email {
-        err!("User email does not match invite.");
-    }
-
-    if emergency_access.status == EmergencyAccessStatus::Accepted as i32 {
-        err!("Emergency contact already accepted.");
-    }
-
-    emergency_access.status = EmergencyAccessStatus::Accepted as i32;
-    emergency_access.grantee_uuid = Some(String::from(grantee_uuid));
-    emergency_access.email = None;
-    emergency_access.save(conn).await
 }
 
 #[derive(Deserialize)]

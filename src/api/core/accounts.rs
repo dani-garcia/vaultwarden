@@ -166,7 +166,8 @@ pub async fn _register(data: JsonUpcase<RegisterData>, mut conn: DbConn) -> Json
                 }
                 user
             } else if CONFIG.is_signup_allowed(&email)
-                || EmergencyAccess::find_invited_by_grantee_email(&email, &mut conn).await.is_some()
+                || (CONFIG.emergency_access_allowed()
+                    && EmergencyAccess::find_invited_by_grantee_email(&email, &mut conn).await.is_some())
             {
                 user
             } else {
@@ -217,7 +218,6 @@ pub async fn _register(data: JsonUpcase<RegisterData>, mut conn: DbConn) -> Json
             if let Err(e) = mail::send_welcome_must_verify(&user.email, &user.uuid).await {
                 error!("Error sending welcome email: {:#?}", e);
             }
-
             user.last_verifying_at = Some(user.created_at);
         } else if let Err(e) = mail::send_welcome(&user.email).await {
             error!("Error sending welcome email: {:#?}", e);
@@ -229,6 +229,14 @@ pub async fn _register(data: JsonUpcase<RegisterData>, mut conn: DbConn) -> Json
     }
 
     user.save(&mut conn).await?;
+
+    // accept any open emergency access invitations
+    if !CONFIG.mail_enabled() && CONFIG.emergency_access_allowed() {
+        for mut emergency_invite in EmergencyAccess::find_all_invited_by_grantee_email(&user.email, &mut conn).await {
+            let _ = emergency_invite.accept_invite(&user.uuid, &user.email, &mut conn).await;
+        }
+    }
+
     Ok(Json(json!({
       "Object": "register",
       "CaptchaBypassToken": "",
