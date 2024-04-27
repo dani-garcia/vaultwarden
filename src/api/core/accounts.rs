@@ -568,7 +568,7 @@ async fn post_rotatekey(data: JsonUpcase<KeyData>, headers: Headers, mut conn: D
             // Prevent triggering cipher updates via WebSockets by settings UpdateType::None
             // The user sessions are invalidated because all the ciphers were re-encrypted and thus triggering an update could cause issues.
             // We force the users to logout after the user has been saved to try and prevent these issues.
-            update_cipher_from_data(&mut saved_cipher, cipher_data, &headers, false, &mut conn, &nt, UpdateType::None)
+            update_cipher_from_data(&mut saved_cipher, cipher_data, &headers, None, &mut conn, &nt, UpdateType::None)
                 .await?
         }
     }

@@ -321,7 +321,7 @@ async fn post_ciphers(data: JsonUpcase<CipherData>, headers: Headers, mut conn: 
     data.LastKnownRevisionDate = None;
 
     let mut cipher = Cipher::new(data.Type, data.Name.clone());
-    update_cipher_from_data(&mut cipher, data, &headers, false, &mut conn, &nt, UpdateType::SyncCipherCreate).await?;
+    update_cipher_from_data(&mut cipher, data, &headers, None, &mut conn, &nt, UpdateType::SyncCipherCreate).await?;
 
     Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, &mut conn).await))
 }
@@ -352,7 +352,7 @@ pub async fn update_cipher_from_data(
     cipher: &mut Cipher,
     data: CipherData,
     headers: &Headers,
-    shared_to_collection: bool,
+    shared_to_collections: Option<Vec<String>>,
     conn: &mut DbConn,
     nt: &Notify<'_>,
     ut: UpdateType,
@@ -391,7 +391,7 @@ pub async fn update_cipher_from_data(
         match UserOrganization::find_by_user_and_org(&headers.user.uuid, &org_id, conn).await {
             None => err!("You don't have permission to add item to organization"),
             Some(org_user) => {
-                if shared_to_collection
+                if shared_to_collections.is_some()
                     || org_user.has_full_access()
                     || cipher.is_write_accessible_to_user(&headers.user.uuid, conn).await
                 {
@@ -518,8 +518,15 @@ pub async fn update_cipher_from_data(
             )
             .await;
         }
-        nt.send_cipher_update(ut, cipher, &cipher.update_users_revision(conn).await, &headers.device.uuid, None, conn)
-            .await;
+        nt.send_cipher_update(
+            ut,
+            cipher,
+            &cipher.update_users_revision(conn).await,
+            &headers.device.uuid,
+            shared_to_collections,
+            conn,
+        )
+        .await;
     }
     Ok(())
 }
@@ -580,7 +587,7 @@ async fn post_ciphers_import(
         cipher_data.FolderId = folder_uuid;
 
         let mut cipher = Cipher::new(cipher_data.Type, cipher_data.Name.clone());
-        update_cipher_from_data(&mut cipher, cipher_data, &headers, false, &mut conn, &nt, UpdateType::None).await?;
+        update_cipher_from_data(&mut cipher, cipher_data, &headers, None, &mut conn, &nt, UpdateType::None).await?;
     }
 
     let mut user = headers.user;
@@ -648,7 +655,7 @@ async fn put_cipher(
         err!("Cipher is not write accessible")
     }
 
-    update_cipher_from_data(&mut cipher, data, &headers, false, &mut conn, &nt, UpdateType::SyncCipherUpdate).await?;
+    update_cipher_from_data(&mut cipher, data, &headers, None, &mut conn, &nt, UpdateType::SyncCipherUpdate).await?;
 
     Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, &mut conn).await))
 }
@@ -898,7 +905,7 @@ async fn share_cipher_by_uuid(
         None => err!("Cipher doesn't exist"),
     };
 
-    let mut shared_to_collection = false;
+    let mut shared_to_collections = vec![];
 
     if let Some(organization_uuid) = &data.Cipher.OrganizationId {
         for uuid in &data.CollectionIds {
@@ -907,7 +914,7 @@ async fn share_cipher_by_uuid(
                 Some(collection) => {
                     if collection.is_writable_by_user(&headers.user.uuid, conn).await {
                         CollectionCipher::save(&cipher.uuid, &collection.uuid, conn).await?;
-                        shared_to_collection = true;
+                        shared_to_collections.push(collection.uuid);
                     } else {
                         err!("No rights to modify the collection")
                     }
@@ -923,7 +930,7 @@ async fn share_cipher_by_uuid(
         UpdateType::SyncCipherCreate
     };
 
-    update_cipher_from_data(&mut cipher, data.Cipher, headers, shared_to_collection, conn, nt, ut).await?;
+    update_cipher_from_data(&mut cipher, data.Cipher, headers, Some(shared_to_collections), conn, nt, ut).await?;
 
     Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, conn).await))
 }
