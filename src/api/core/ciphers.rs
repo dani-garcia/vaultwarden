@@ -10,6 +10,7 @@ use rocket::{
 };
 use serde_json::Value;
 
+use crate::util::NumberOrString;
 use crate::{
     api::{self, core::log_event, EmptyResult, JsonResult, JsonUpcase, Notify, PasswordOrOtpData, UpdateType},
     auth::Headers,
@@ -964,7 +965,7 @@ async fn get_attachment(uuid: &str, attachment_id: &str, headers: Headers, mut c
 struct AttachmentRequestData {
     Key: String,
     FileName: String,
-    FileSize: i64,
+    FileSize: NumberOrString,
     AdminRequest: Option<bool>, // true when attaching from an org vault view
 }
 
@@ -994,12 +995,14 @@ async fn post_attachment_v2(
     }
 
     let data: AttachmentRequestData = data.into_inner().data;
-    if data.FileSize < 0 {
+    let file_size = data.FileSize.into_i64()?;
+
+    if file_size < 0 {
         err!("Attachment size can't be negative")
     }
     let attachment_id = crypto::generate_attachment_id();
     let attachment =
-        Attachment::new(attachment_id.clone(), cipher.uuid.clone(), data.FileName, data.FileSize, Some(data.Key));
+        Attachment::new(attachment_id.clone(), cipher.uuid.clone(), data.FileName, file_size, Some(data.Key));
     attachment.save(&mut conn).await.expect("Error saving attachment");
 
     let url = format!("/ciphers/{}/attachment/{}", cipher.uuid, attachment_id);

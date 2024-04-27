@@ -246,6 +246,7 @@ impl User {
             "Email": self.email,
             "EmailVerified": !CONFIG.mail_enabled() || self.verified_at.is_some(),
             "Premium": true,
+            "PremiumFromOrganization": false,
             "MasterPasswordHint": self.password_hint,
             "Culture": "en-US",
             "TwoFactorEnabled": twofactor_enabled,
@@ -257,6 +258,7 @@ impl User {
             "ProviderOrganizations": [],
             "ForcePasswordReset": false,
             "AvatarColor": self.avatar_color,
+            "UsesKeyConnector": false,
             "Object": "profile",
         })
     }

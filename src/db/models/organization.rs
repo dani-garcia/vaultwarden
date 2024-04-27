@@ -344,6 +344,25 @@ impl UserOrganization {
     pub async fn to_json(&self, conn: &mut DbConn) -> Value {
         let org = Organization::find_by_uuid(&self.org_uuid, conn).await.unwrap();
 
+        let permissions = json!({
+                // TODO: Add support for Custom User Roles
+                // See: https://bitwarden.com/help/article/user-types-access-control/#custom-role
+                "accessEventLogs": false,
+                "accessImportExport": false,
+                "accessReports": false,
+                "createNewCollections": false,
+                "editAnyCollection": false,
+                "deleteAnyCollection": false,
+                "editAssignedCollections": false,
+                "deleteAssignedCollections": false,
+                "manageGroups": false,
+                "managePolicies": false,
+                "manageSso": false, // Not supported
+                "manageUsers": false,
+                "manageResetPassword": false,
+                "manageScim": false // Not supported (Not AGPLv3 Licensed)
+        });
+
         // https://github.com/bitwarden/server/blob/13d1e74d6960cf0d042620b72d85bf583a4236f7/src/Api/Models/Response/ProfileOrganizationResponseModel.cs
         json!({
             "Id": self.org_uuid,
@@ -371,27 +390,7 @@ impl UserOrganization {
             // "KeyConnectorEnabled": false,
             // "KeyConnectorUrl": null,
 
-            // TODO: Add support for Custom User Roles
-            // See: https://bitwarden.com/help/article/user-types-access-control/#custom-role
-            // "Permissions": {
-            //     "AccessEventLogs": false,
-            //     "AccessImportExport": false,
-            //     "AccessReports": false,
-            //     "ManageAllCollections": false,
-            //     "CreateNewCollections": false,
-            //     "EditAnyCollection": false,
-            //     "DeleteAnyCollection": false,
-            //     "ManageAssignedCollections": false,
-            //     "editAssignedCollections": false,
-            //     "deleteAssignedCollections": false,
-            //     "ManageCiphers": false,
-            //     "ManageGroups": false,
-            //     "ManagePolicies": false,
-            //     "ManageResetPassword": false,
-            //     "ManageSso": false, // Not supported
-            //     "ManageUsers": false,
-            //     "ManageScim": false, // Not supported (Not AGPLv3 Licensed)
-            // },
+            "permissions": permissions,
 
             "MaxStorageGb": 10, // The value doesn't matter, we don't check server-side
 
