@@ -95,7 +95,7 @@ async fn generate_webauthn_challenge(
 
     data.validate(&user, false, &mut conn).await?;
 
-    let registrations: Vec<Base64UrlSafeData> = get_webauthn_registrations(&user.uuid, &mut conn)
+    let registrations: Vec<CredentialID> = get_webauthn_registrations(&user.uuid, &mut conn)
         .await?
         .1
         .into_iter()
