@@ -53,7 +53,7 @@ mod util;
 
 use crate::api::purge_auth_requests;
 use crate::api::{WS_ANONYMOUS_SUBSCRIPTIONS, WS_USERS};
-pub use config::CONFIG;
+pub use config::{CONFIG, WEBAUTHN};
 pub use error::{Error, MapResult};
 use rocket::data::{Limits, ToByteUnit};
 use std::sync::Arc;

@@ -5,6 +5,7 @@ use std::sync::RwLock;
 use job_scheduler_ng::Schedule;
 use once_cell::sync::Lazy;
 use reqwest::Url;
+use webauthn_rs::{Webauthn, WebauthnBuilder};
 
 use crate::{
     db::DbConnType,
@@ -22,6 +23,23 @@ pub static CONFIG: Lazy<Config> = Lazy::new(|| {
         println!("Error loading config:\n  {e:?}\n");
         exit(12)
     })
+});
+
+pub static WEBAUTHN: Lazy<Webauthn> = Lazy::new(|| {
+    let domain = CONFIG.domain();
+    let domain_origin = CONFIG.domain_origin();
+    let android_app_url = Url::parse("android:apk-key-hash:dUGFzUzf3lmHSLBDBIv+WaFyZMI").unwrap();
+    let ios_app_url = Url::parse("ios:bundle-id:com.8bit.bitwarden").unwrap();
+
+    let rp_id = Url::parse(&domain).map(|u| u.domain().map(str::to_owned)).ok().flatten().unwrap_or_default();
+    let rp_name = domain;
+    let rp_origin = Url::parse(&domain_origin).unwrap();
+    let builder = WebauthnBuilder::new(&rp_id, &rp_origin)
+        .expect("Invalid configuration")
+        .rp_name(&rp_name)
+        .append_allowed_origin(&ios_app_url)
+        .append_allowed_origin(&android_app_url);
+    builder.build().expect("Invalid configuration")
 });
 
 pub type Pass = String;
