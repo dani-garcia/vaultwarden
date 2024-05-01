@@ -64,10 +64,7 @@ RUN apt-get update && \
         "libc6-$(xx-info debian-arch)-cross" \
         "libc6-dev-$(xx-info debian-arch)-cross" \
         "linux-libc-dev-$(xx-info debian-arch)-cross" && \
-    # Run xx-cargo early, since it sometimes seems to break when run at a later stage
-    echo "export CARGO_TARGET=$(xx-cargo --print-target-triple)" >> /env-cargo
-
-RUN xx-apt-get install -y \
+    xx-apt-get install -y \
         --no-install-recommends \
         gcc \
         libmariadb3 \
@@ -78,11 +75,13 @@ RUN xx-apt-get install -y \
     # Force install arch dependend mariadb dev packages
     # Installing them the normal way breaks several other packages (again)
     apt-get download "libmariadb-dev-compat:$(xx-info debian-arch)" "libmariadb-dev:$(xx-info debian-arch)" && \
-    dpkg --force-all -i ./libmariadb-dev*.deb
+    dpkg --force-all -i ./libmariadb-dev*.deb && \
+    # Run xx-cargo early, since it sometimes seems to break when run at a later stage
+    echo "export CARGO_TARGET=$(xx-cargo --print-target-triple)" >> /env-cargo
 
 # Create CARGO_HOME folder and don't download rust docs
-RUN mkdir -pv "${CARGO_HOME}" \
-    && rustup set profile minimal
+RUN mkdir -pv "${CARGO_HOME}" && \
+    rustup set profile minimal
 
 # Creates a dummy project used to grab dependencies
 RUN USER=root cargo new --bin /app
@@ -111,19 +110,16 @@ RUN source /env-cargo && \
     # Output the current contents of the file
     cat /env-cargo
 
-# Configure the DB ARG as late as possible to not invalidate the cached layers above
-ARG DB=sqlite,mysql,postgresql
-
 RUN source /env-cargo && \
     rustup target add "${CARGO_TARGET}"
 
-ARG CARGO_PROFILE=release
-ARG VW_VERSION
-
 # Copies over *only* your manifests and build files
-COPY ./Cargo.* ./
-COPY ./rust-toolchain.toml ./rust-toolchain.toml
-COPY ./build.rs ./build.rs
+COPY ./Cargo.* ./rust-toolchain.toml ./build.rs ./
+
+ARG CARGO_PROFILE=release
+
+# Configure the DB ARG as late as possible to not invalidate the cached layers above
+ARG DB=sqlite,mysql,postgresql
 
 # Builds your dependencies and removes the
 # dummy project, except the target folder
@@ -135,6 +131,8 @@ RUN source /env-cargo && \
 # Copies the complete project
 # To avoid copying unneeded files, use .dockerignore
 COPY . .
+
+ARG VW_VERSION
 
 # Builds again, this time it will be the actual source files being build
 RUN source /env-cargo && \
@@ -193,8 +191,7 @@ EXPOSE 3012
 # and the binary from the "build" stage to the current stage
 WORKDIR /
 
-COPY docker/healthcheck.sh /healthcheck.sh
-COPY docker/start.sh /start.sh
+COPY docker/healthcheck.sh docker/start.sh /
 
 COPY --from=vault /web-vault ./web-vault
 COPY --from=build /app/target/final/vaultwarden .
