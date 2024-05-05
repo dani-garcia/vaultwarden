@@ -90,8 +90,12 @@ fn icon_external(domain: &str) -> Option<Redirect> {
 async fn icon_internal(domain: &str) -> Cached<(ContentType, Vec<u8>)> {
     const FALLBACK_ICON: &[u8] = include_bytes!("../static/images/fallback-icon.png");
 
-    if !is_valid_domain(domain) {
-        warn!("Invalid domain: {}", domain);
+    let is_valid = is_valid_domain(domain);
+    if !is_valid || is_domain_blacklisted(domain) {
+        if !is_valid {
+            warn!("Invalid domain: {}", domain);
+        }
+
         return Cached::ttl(
             (ContentType::new("image", "png"), FALLBACK_ICON.to_vec()),
             CONFIG.icon_cache_negttl(),
