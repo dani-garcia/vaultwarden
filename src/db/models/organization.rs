@@ -316,6 +316,7 @@ impl Organization {
         UserOrganization::delete_all_by_organization(&self.uuid, conn).await?;
         OrgPolicy::delete_all_by_organization(&self.uuid, conn).await?;
         Group::delete_all_by_organization(&self.uuid, conn).await?;
+        OrganizationApiKey::delete_all_by_organization(&self.uuid, conn).await?;
 
         db_run! { conn: {
             diesel::delete(organizations::table.filter(organizations::uuid.eq(self.uuid)))
@@ -884,6 +885,14 @@ impl OrganizationApiKey {
                 .filter(organization_api_key::org_uuid.eq(org_uuid))
                 .first::<OrganizationApiKeyDb>(conn)
                 .ok().from_db()
+        }}
+    }
+
+    pub async fn delete_all_by_organization(org_uuid: &str, conn: &mut DbConn) -> EmptyResult {
+        db_run! { conn: {
+            diesel::delete(organization_api_key::table.filter(organization_api_key::org_uuid.eq(org_uuid)))
+                .execute(conn)
+                .map_res("Error removing organization api key from organization")
         }}
     }
 }
