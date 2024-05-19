@@ -108,9 +108,17 @@ RUN USER=root cargo new --bin /app
 WORKDIR /app
 
 {% if base == "debian" %}
-# Environment variables for cargo across Debian and Alpine
+# Environment variables for Cargo on Debian based builds
+ARG ARCH_OPENSSL_LIB_DIR \
+    ARCH_OPENSSL_INCLUDE_DIR
+
 RUN source /env-cargo && \
     if xx-info is-cross ; then \
+        # Some special variables if needed to override some build paths
+        if [[ -n "${ARCH_OPENSSL_LIB_DIR}" && -n "${ARCH_OPENSSL_INCLUDE_DIR}" ]]; then \
+            echo "export $(echo "${CARGO_TARGET}" | tr '[:lower:]' '[:upper:]' | tr - _)_OPENSSL_LIB_DIR=${ARCH_OPENSSL_LIB_DIR}" >> /env-cargo && \
+            echo "export $(echo "${CARGO_TARGET}" | tr '[:lower:]' '[:upper:]' | tr - _)_OPENSSL_INCLUDE_DIR=${ARCH_OPENSSL_INCLUDE_DIR}" >> /env-cargo ; \
+        fi && \
         # We can't use xx-cargo since that uses clang, which doesn't work for our libraries.
         # Because of this we generate the needed environment variables here which we can load in the needed steps.
         echo "export CC_$(echo "${CARGO_TARGET}" | tr '[:upper:]' '[:lower:]' | tr - _)=/usr/bin/$(xx-info)-gcc" >> /env-cargo && \
@@ -126,13 +134,14 @@ RUN source /env-cargo && \
 # Configure the DB ARG as late as possible to not invalidate the cached layers above
 ARG DB=sqlite,mysql,postgresql
 {% elif base == "alpine" %}
-# Shared variables across Debian and Alpine
+# Environment variables for Cargo on Alpine based builds
 RUN echo "export CARGO_TARGET=${RUST_MUSL_CROSS_TARGET}" >> /env-cargo && \
     # To be able to build the armv6 image with mimalloc we need to tell the linker to also look for libatomic
     if [[ "${TARGETARCH}${TARGETVARIANT}" == "armv6" ]] ; then echo "export RUSTFLAGS='-Clink-arg=-latomic'" >> /env-cargo ; fi && \
     # Output the current contents of the file
     cat /env-cargo
 
+# Configure the DB ARG as late as possible to not invalidate the cached layers above
 # Enable MiMalloc to improve performance on Alpine builds
 ARG DB=sqlite,mysql,postgresql,enable_mimalloc
 {% endif %}

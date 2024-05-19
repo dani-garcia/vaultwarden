@@ -1,4 +1,4 @@
-use chrono::{Duration, NaiveDateTime, Utc};
+use chrono::{NaiveDateTime, TimeDelta, Utc};
 use serde_json::Value;
 
 use crate::crypto;
@@ -202,7 +202,7 @@ impl User {
         let stamp_exception = UserStampException {
             routes: route_exception,
             security_stamp: self.security_stamp.clone(),
-            expire: (Utc::now().naive_utc() + Duration::minutes(2)).timestamp(),
+            expire: (Utc::now() + TimeDelta::try_minutes(2).unwrap()).timestamp(),
         };
         self.stamp_exception = Some(serde_json::to_string(&stamp_exception).unwrap_or_default());
     }
@@ -246,6 +246,7 @@ impl User {
             "Email": self.email,
             "EmailVerified": !CONFIG.mail_enabled() || self.verified_at.is_some(),
             "Premium": true,
+            "PremiumFromOrganization": false,
             "MasterPasswordHint": self.password_hint,
             "Culture": "en-US",
             "TwoFactorEnabled": twofactor_enabled,
@@ -257,6 +258,7 @@ impl User {
             "ProviderOrganizations": [],
             "ForcePasswordReset": false,
             "AvatarColor": self.avatar_color,
+            "UsesKeyConnector": false,
             "Object": "profile",
         })
     }
@@ -311,6 +313,7 @@ impl User {
 
         Send::delete_all_by_user(&self.uuid, conn).await?;
         EmergencyAccess::delete_all_by_user(&self.uuid, conn).await?;
+        EmergencyAccess::delete_all_by_grantee_email(&self.email, conn).await?;
         UserOrganization::delete_all_by_user(&self.uuid, conn).await?;
         Cipher::delete_all_by_user(&self.uuid, conn).await?;
         Favorite::delete_all_by_user(&self.uuid, conn).await?;

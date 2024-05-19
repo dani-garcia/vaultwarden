@@ -18,24 +18,24 @@
 # - From https://hub.docker.com/r/vaultwarden/web-vault/tags,
 #   click the tag name to view the digest of the image it currently points to.
 # - From the command line:
-#     $ docker pull docker.io/vaultwarden/web-vault:v2024.1.2b
-#     $ docker image inspect --format "{{.RepoDigests}}" docker.io/vaultwarden/web-vault:v2024.1.2b
-#     [docker.io/vaultwarden/web-vault@sha256:798c0c893b6d16728878ff280b49da08863334d1f8dd88895580dc3dba622f08]
+#     $ docker pull docker.io/vaultwarden/web-vault:v2024.3.1
+#     $ docker image inspect --format "{{.RepoDigests}}" docker.io/vaultwarden/web-vault:v2024.3.1
+#     [docker.io/vaultwarden/web-vault@sha256:689b1e706f29e1858a5c7e0ec82e40fac793322e5e0ac9102ab09c2620207cd5]
 #
 # - Conversely, to get the tag name from the digest:
-#     $ docker image inspect --format "{{.RepoTags}}" docker.io/vaultwarden/web-vault@sha256:798c0c893b6d16728878ff280b49da08863334d1f8dd88895580dc3dba622f08
-#     [docker.io/vaultwarden/web-vault:v2024.1.2b]
+#     $ docker image inspect --format "{{.RepoTags}}" docker.io/vaultwarden/web-vault@sha256:689b1e706f29e1858a5c7e0ec82e40fac793322e5e0ac9102ab09c2620207cd5
+#     [docker.io/vaultwarden/web-vault:v2024.3.1]
 #
-FROM --platform=linux/amd64 docker.io/vaultwarden/web-vault@sha256:798c0c893b6d16728878ff280b49da08863334d1f8dd88895580dc3dba622f08 as vault
+FROM --platform=linux/amd64 docker.io/vaultwarden/web-vault@sha256:689b1e706f29e1858a5c7e0ec82e40fac793322e5e0ac9102ab09c2620207cd5 as vault
 
 ########################## Cross Compile Docker Helper Scripts ##########################
 ## We use the linux/amd64 no matter which Build Platform, since these are all bash scripts
 ## And these bash scripts do not have any significant difference if at all
-FROM --platform=linux/amd64 docker.io/tonistiigi/xx@sha256:c9609ace652bbe51dd4ce90e0af9d48a4590f1214246da5bc70e46f6dd586edc AS xx
+FROM --platform=linux/amd64 docker.io/tonistiigi/xx@sha256:0cd3f05c72d6c9b038eb135f91376ee1169ef3a330d34e418e65e2a5c2e9c0d4 AS xx
 
 ########################## BUILD IMAGE ##########################
 # hadolint ignore=DL3006
-FROM --platform=$BUILDPLATFORM docker.io/library/rust:1.76.0-slim-bookworm as build
+FROM --platform=$BUILDPLATFORM docker.io/library/rust:1.77.2-slim-bookworm as build
 COPY --from=xx / /
 ARG TARGETARCH
 ARG TARGETVARIANT
@@ -88,9 +88,17 @@ RUN mkdir -pv "${CARGO_HOME}" \
 RUN USER=root cargo new --bin /app
 WORKDIR /app
 
-# Environment variables for cargo across Debian and Alpine
+# Environment variables for Cargo on Debian based builds
+ARG ARCH_OPENSSL_LIB_DIR \
+    ARCH_OPENSSL_INCLUDE_DIR
+
 RUN source /env-cargo && \
     if xx-info is-cross ; then \
+        # Some special variables if needed to override some build paths
+        if [[ -n "${ARCH_OPENSSL_LIB_DIR}" && -n "${ARCH_OPENSSL_INCLUDE_DIR}" ]]; then \
+            echo "export $(echo "${CARGO_TARGET}" | tr '[:lower:]' '[:upper:]' | tr - _)_OPENSSL_LIB_DIR=${ARCH_OPENSSL_LIB_DIR}" >> /env-cargo && \
+            echo "export $(echo "${CARGO_TARGET}" | tr '[:lower:]' '[:upper:]' | tr - _)_OPENSSL_INCLUDE_DIR=${ARCH_OPENSSL_INCLUDE_DIR}" >> /env-cargo ; \
+        fi && \
         # We can't use xx-cargo since that uses clang, which doesn't work for our libraries.
         # Because of this we generate the needed environment variables here which we can load in the needed steps.
         echo "export CC_$(echo "${CARGO_TARGET}" | tr '[:upper:]' '[:lower:]' | tr - _)=/usr/bin/$(xx-info)-gcc" >> /env-cargo && \

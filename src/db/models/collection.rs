@@ -1,6 +1,6 @@
 use serde_json::Value;
 
-use super::{CollectionGroup, User, UserOrgStatus, UserOrgType, UserOrganization};
+use super::{CollectionGroup, GroupUser, User, UserOrgStatus, UserOrgType, UserOrganization};
 use crate::CONFIG;
 
 db_object! {
@@ -101,6 +101,15 @@ impl Collection {
         json_object["ReadOnly"] = json!(read_only);
         json_object["HidePasswords"] = json!(hide_passwords);
         json_object
+    }
+
+    pub async fn can_access_collection(org_user: &UserOrganization, col_id: &str, conn: &mut DbConn) -> bool {
+        org_user.has_status(UserOrgStatus::Confirmed)
+            && (org_user.has_full_access()
+                || CollectionUser::has_access_to_collection_by_user(col_id, &org_user.user_uuid, conn).await
+                || (CONFIG.org_groups_enabled()
+                    && (GroupUser::has_full_access_by_member(&org_user.org_uuid, &org_user.uuid, conn).await
+                        || GroupUser::has_access_to_collection_by_member(col_id, &org_user.uuid, conn).await)))
     }
 }
 
@@ -250,17 +259,6 @@ impl Collection {
                 .load::<CollectionDb>(conn).expect("Error loading collections").from_db()
             }}
         }
-    }
-
-    // Check if a user has access to a specific collection
-    // FIXME: This needs to be reviewed. The query used by `find_by_user_uuid` could be adjusted to filter when needed.
-    //        For now this is a good solution without making to much changes.
-    pub async fn has_access_by_collection_and_user_uuid(
-        collection_uuid: &str,
-        user_uuid: &str,
-        conn: &mut DbConn,
-    ) -> bool {
-        Self::find_by_user_uuid(user_uuid.to_owned(), conn).await.into_iter().any(|c| c.uuid == collection_uuid)
     }
 
     pub async fn find_by_organization_and_user_uuid(org_uuid: &str, user_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
@@ -643,6 +641,10 @@ impl CollectionUser {
             }
             Ok(())
         }}
+    }
+
+    pub async fn has_access_to_collection_by_user(col_id: &str, user_uuid: &str, conn: &mut DbConn) -> bool {
+        Self::find_by_collection_and_user(col_id, user_uuid, conn).await.is_some()
     }
 }
 

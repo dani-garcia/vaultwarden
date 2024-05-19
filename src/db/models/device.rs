@@ -67,8 +67,8 @@ impl Device {
         }
 
         // Update the expiration of the device and the last update date
-        let time_now = Utc::now().naive_utc();
-        self.updated_at = time_now;
+        let time_now = Utc::now();
+        self.updated_at = time_now.naive_utc();
 
         // ---
         // Disabled these keys to be added to the JWT since they could cause the JWT to get too large

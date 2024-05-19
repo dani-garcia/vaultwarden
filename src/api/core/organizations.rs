@@ -329,26 +329,18 @@ async fn get_org_collections_details(org_id: &str, headers: ManagerHeadersLoose,
             && GroupUser::has_full_access_by_member(org_id, &user_org.uuid, &mut conn).await);
 
     for col in Collection::find_by_organization(org_id, &mut conn).await {
-        // assigned indicates whether the current user has access to the given collection
-        let mut assigned = has_full_access_to_org;
+        // check whether the current user has access to the given collection
+        let assigned = has_full_access_to_org
+            || CollectionUser::has_access_to_collection_by_user(&col.uuid, &user_org.user_uuid, &mut conn).await
+            || (CONFIG.org_groups_enabled()
+                && GroupUser::has_access_to_collection_by_member(&col.uuid, &user_org.uuid, &mut conn).await);
 
         // get the users assigned directly to the given collection
         let users: Vec<Value> = coll_users
             .iter()
             .filter(|collection_user| collection_user.collection_uuid == col.uuid)
-            .map(|collection_user| {
-                // check if the current user is assigned to this collection directly
-                if collection_user.user_uuid == user_org.uuid {
-                    assigned = true;
-                }
-                SelectionReadOnly::to_collection_user_details_read_only(collection_user).to_json()
-            })
+            .map(|collection_user| SelectionReadOnly::to_collection_user_details_read_only(collection_user).to_json())
             .collect();
-
-        // check if the current user has access to the given collection via a group
-        if !assigned && CONFIG.org_groups_enabled() {
-            assigned = GroupUser::has_access_to_collection_by_member(&col.uuid, &user_org.uuid, &mut conn).await;
-        }
 
         // get the group details for the given collection
         let groups: Vec<Value> = if CONFIG.org_groups_enabled() {
@@ -672,24 +664,16 @@ async fn get_org_collection_detail(
                 Vec::with_capacity(0)
             };
 
-            let mut assigned = false;
             let users: Vec<Value> =
                 CollectionUser::find_by_collection_swap_user_uuid_with_org_user_uuid(&collection.uuid, &mut conn)
                     .await
                     .iter()
                     .map(|collection_user| {
-                        // Remember `user_uuid` is swapped here with the `user_org.uuid` with a join during the `find_by_collection_swap_user_uuid_with_org_user_uuid` call.
-                        // We check here if the current user is assigned to this collection or not.
-                        if collection_user.user_uuid == user_org.uuid {
-                            assigned = true;
-                        }
                         SelectionReadOnly::to_collection_user_details_read_only(collection_user).to_json()
                     })
                     .collect();
 
-            if user_org.access_all {
-                assigned = true;
-            }
+            let assigned = Collection::can_access_collection(&user_org, &collection.uuid, &mut conn).await;
 
             let mut json_object = collection.to_json();
             json_object["Assigned"] = json!(assigned);
@@ -1618,7 +1602,7 @@ async fn post_org_import(
     let mut ciphers = Vec::new();
     for cipher_data in data.Ciphers {
         let mut cipher = Cipher::new(cipher_data.Type, cipher_data.Name.clone());
-        update_cipher_from_data(&mut cipher, cipher_data, &headers, false, &mut conn, &nt, UpdateType::None).await.ok();
+        update_cipher_from_data(&mut cipher, cipher_data, &headers, None, &mut conn, &nt, UpdateType::None).await.ok();
         ciphers.push(cipher);
     }
 
@@ -2247,7 +2231,7 @@ impl GroupRequest {
     }
 
     pub fn update_group(&self, mut group: Group) -> Group {
-        group.name = self.Name.clone();
+        group.name.clone_from(&self.Name);
         group.access_all = self.AccessAll.unwrap_or(false);
         // Group Updates do not support changing the external_id
         // These input fields are in a disabled state, and can only be updated/added via ldap_import

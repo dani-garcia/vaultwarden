@@ -3,7 +3,7 @@ name = "vaultwarden"
 version = "1.0.0"
 authors = ["Daniel García <dani-garcia@users.noreply.github.com>"]
 edition = "2021"
-rust-version = "1.74.0"
+rust-version = "1.75.0"
 resolver = "2"
 
 repository = "https://github.com/dani-garcia/vaultwarden"
@@ -36,7 +36,7 @@ unstable = []
 
 [target."cfg(not(windows))".dependencies]
 # Logging
-syslog = "6.1.0"
+syslog = "6.1.1"
 
 [dependencies]
 # Logging
@@ -60,47 +60,47 @@ rocket = { version = "0.5.0", features = ["tls", "json"], default-features = fal
 rocket_ws = { version ="0.1.0" }
 
 # WebSockets libraries
-rmpv = "1.0.1" # MessagePack library
+rmpv = "1.0.2" # MessagePack library
 
 # Concurrent HashMap used for WebSocket messaging and favicons
 dashmap = "5.5.3"
 
 # Async futures
 futures = "0.3.30"
-tokio = { version = "1.36.0", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal"] }
+tokio = { version = "1.37.0", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal", "net"] }
 
 # A generic serialization/deserialization framework
-serde = { version = "1.0.197", features = ["derive"] }
-serde_json = "1.0.114"
+serde = { version = "1.0.198", features = ["derive"] }
+serde_json = "1.0.116"
 
 # A safe, extensible ORM and Query builder
-diesel = { version = "2.1.5", features = ["chrono", "r2d2", "numeric"] }
+diesel = { version = "2.1.6", features = ["chrono", "r2d2", "numeric"] }
 diesel_migrations = "2.1.0"
 diesel_logger = { version = "0.3.0", optional = true }
 
 # Bundled/Static SQLite
-libsqlite3-sys = { version = "0.27.0", features = ["bundled"], optional = true }
+libsqlite3-sys = { version = "0.28.0", features = ["bundled"], optional = true }
 
 # Crypto-related libraries
 rand = { version = "0.8.5", features = ["small_rng"] }
 ring = "0.17.8"
 
 # UUID generation
-uuid = { version = "1.7.0", features = ["v4"] }
+uuid = { version = "1.8.0", features = ["v4"] }
 
 # Date and time libraries
-chrono = { version = "0.4.34", features = ["clock", "serde"], default-features = false }
-chrono-tz = "0.8.6"
-time = "0.3.34"
+chrono = { version = "0.4.38", features = ["clock", "serde"], default-features = false }
+chrono-tz = "0.9.0"
+time = "0.3.36"
 
 # Job scheduler
-job_scheduler_ng = "2.0.4"
+job_scheduler_ng = "2.0.5"
 
 # Data encoding library Hex/Base32/Base64
 data-encoding = "2.5.0"
 
 # JWT library
-jsonwebtoken = "9.2.0"
+jsonwebtoken = "9.3.0"
 
 # TOTP library
 totp-lite = "2.0.1"
@@ -115,27 +115,28 @@ webauthn-rs = "0.3.2"
 url = "2.5.0"
 
 # Email libraries
-lettre = { version = "0.11.4", features = ["smtp-transport", "sendmail-transport", "builder", "serde", "tokio1-native-tls", "hostname", "tracing", "tokio1"], default-features = false }
+lettre = { version = "0.11.7", features = ["smtp-transport", "sendmail-transport", "builder", "serde", "tokio1-native-tls", "hostname", "tracing", "tokio1"], default-features = false }
 percent-encoding = "2.3.1" # URL encoding library used for URL's in the emails
 email_address = "0.2.4"
 
 # HTML Template library
-handlebars = { version = "5.1.0", features = ["dir_source"] }
+handlebars = { version = "5.1.2", features = ["dir_source"] }
 
 # HTTP client (Used for favicons, version check, DUO and HIBP API)
-reqwest = { version = "0.11.26", features = ["stream", "json", "gzip", "brotli", "socks", "cookies", "trust-dns", "native-tls-alpn"] }
+reqwest = { version = "0.12.4", features = ["native-tls-alpn", "stream", "json", "gzip", "brotli", "socks", "cookies"] }
+hickory-resolver = "0.24.1"
 
 # Favicon extraction libraries
 html5gum = "0.5.7"
-regex = { version = "1.10.3", features = ["std", "perf", "unicode-perl"], default-features = false }
+regex = { version = "1.10.4", features = ["std", "perf", "unicode-perl"], default-features = false }
 data-url = "0.3.1"
-bytes = "1.5.0"
+bytes = "1.6.0"
 
 # Cache function results (Used for version check and favicon fetching)
-cached = { version = "0.49.2", features = ["async"] }
+cached = { version = "0.50.0", features = ["async"] }
 
 # Used for custom short lived cookie jar during favicon extraction
-cookie = "0.18.0"
+cookie = "0.18.1"
 cookie_store = "0.21.0"
 
 # Used by U2F, JWT and PostgreSQL
@@ -153,8 +154,8 @@ semver = "1.0.22"
 
 # Allow overriding the default memory allocator
 # Mainly used for the musl builds, since the default musl malloc is very slow
-mimalloc = { version = "0.1.39", features = ["secure"], default-features = false, optional = true }
-which = "6.0.0"
+mimalloc = { version = "0.1.41", features = ["secure"], default-features = false, optional = true }
+which = "6.0.1"
 
 # Argon2 library with support for the PHC format
 argon2 = "0.5.3"
@@ -205,14 +206,14 @@ unsafe_code = "forbid"
 non_ascii_idents = "forbid"
 
 # Deny
-future_incompatible = "deny"
+future_incompatible = { level = "deny", priority = -1 }
 noop_method_call = "deny"
 pointer_structural_match = "deny"
-rust_2018_idioms = "deny"
-rust_2021_compatibility = "deny"
+rust_2018_idioms = { level = "deny", priority = -1 }
+rust_2021_compatibility = { level = "deny", priority = -1 }
 trivial_casts = "deny"
 trivial_numeric_casts = "deny"
-unused = "deny"
+unused = { level = "deny", priority = -1 }
 unused_import_braces = "deny"
 unused_lifetimes = "deny"
 deprecated_in_future = "deny"

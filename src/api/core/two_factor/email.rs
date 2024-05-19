@@ -1,4 +1,4 @@
-use chrono::{Duration, NaiveDateTime, Utc};
+use chrono::{DateTime, TimeDelta, Utc};
 use rocket::serde::json::Json;
 use rocket::Route;
 
@@ -232,9 +232,9 @@ pub async fn validate_email_code_str(user_uuid: &str, token: &str, data: &str, c
     twofactor.data = email_data.to_json();
     twofactor.save(conn).await?;
 
-    let date = NaiveDateTime::from_timestamp_opt(email_data.token_sent, 0).expect("Email token timestamp invalid.");
+    let date = DateTime::from_timestamp(email_data.token_sent, 0).expect("Email token timestamp invalid.").naive_utc();
     let max_time = CONFIG.email_expiration_time() as i64;
-    if date + Duration::seconds(max_time) < Utc::now().naive_utc() {
+    if date + TimeDelta::try_seconds(max_time).unwrap() < Utc::now().naive_utc() {
         err!(
             "Token has expired",
             ErrorEvent {
@@ -265,14 +265,14 @@ impl EmailTokenData {
         EmailTokenData {
             email,
             last_token: Some(token),
-            token_sent: Utc::now().naive_utc().timestamp(),
+            token_sent: Utc::now().timestamp(),
             attempts: 0,
         }
     }
 
     pub fn set_token(&mut self, token: String) {
         self.last_token = Some(token);
-        self.token_sent = Utc::now().naive_utc().timestamp();
+        self.token_sent = Utc::now().timestamp();
     }
 
     pub fn reset_token(&mut self) {

@@ -1,4 +1,4 @@
-use chrono::{Duration, Utc};
+use chrono::{TimeDelta, Utc};
 use data_encoding::BASE32;
 use rocket::serde::json::Json;
 use rocket::Route;
@@ -259,7 +259,7 @@ pub async fn send_incomplete_2fa_notifications(pool: DbPool) {
     };
 
     let now = Utc::now().naive_utc();
-    let time_limit = Duration::minutes(CONFIG.incomplete_2fa_time_limit());
+    let time_limit = TimeDelta::try_minutes(CONFIG.incomplete_2fa_time_limit()).unwrap();
     let time_before = now - time_limit;
     let incomplete_logins = TwoFactorIncomplete::find_logins_before(&time_before, &mut conn).await;
     for login in incomplete_logins {

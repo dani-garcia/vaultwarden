@@ -1,10 +1,10 @@
 // JWT Handling
 //
-use chrono::{Duration, Utc};
+use chrono::{TimeDelta, Utc};
 use num_traits::FromPrimitive;
 use once_cell::sync::{Lazy, OnceCell};
 
-use jsonwebtoken::{self, errors::ErrorKind, Algorithm, DecodingKey, EncodingKey, Header};
+use jsonwebtoken::{errors::ErrorKind, Algorithm, DecodingKey, EncodingKey, Header};
 use openssl::rsa::Rsa;
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
@@ -14,7 +14,7 @@ use crate::{error::Error, CONFIG};
 
 const JWT_ALGORITHM: Algorithm = Algorithm::RS256;
 
-pub static DEFAULT_VALIDITY: Lazy<Duration> = Lazy::new(|| Duration::hours(2));
+pub static DEFAULT_VALIDITY: Lazy<TimeDelta> = Lazy::new(|| TimeDelta::try_hours(2).unwrap());
 static JWT_HEADER: Lazy<Header> = Lazy::new(|| Header::new(JWT_ALGORITHM));
 
 fn jwt_origin() -> String {
@@ -39,7 +39,8 @@ pub fn initialize_keys() -> Result<(), crate::error::Error> {
     let mut priv_key_buffer = Vec::with_capacity(2048);
 
     let priv_key = {
-        let mut priv_key_file = File::options().create(true).read(true).write(true).open(CONFIG.private_rsa_key())?;
+        let mut priv_key_file =
+            File::options().create(true).truncate(false).read(true).write(true).open(CONFIG.private_rsa_key())?;
 
         #[allow(clippy::verbose_file_reads)]
         let bytes_read = priv_key_file.read_to_end(&mut priv_key_buffer)?;
@@ -192,11 +193,11 @@ pub fn generate_invite_claims(
     user_org_id: Option<String>,
     invited_by_email: Option<String>,
 ) -> InviteJwtClaims {
-    let time_now = Utc::now().naive_utc();
+    let time_now = Utc::now();
     let expire_hours = i64::from(CONFIG.invitation_expiration_hours());
     InviteJwtClaims {
         nbf: time_now.timestamp(),
-        exp: (time_now + Duration::hours(expire_hours)).timestamp(),
+        exp: (time_now + TimeDelta::try_hours(expire_hours).unwrap()).timestamp(),
         iss: JWT_INVITE_ISSUER.to_string(),
         sub: uuid,
         email,
@@ -230,11 +231,11 @@ pub fn generate_emergency_access_invite_claims(
     grantor_name: String,
     grantor_email: String,
 ) -> EmergencyAccessInviteJwtClaims {
-    let time_now = Utc::now().naive_utc();
+    let time_now = Utc::now();
     let expire_hours = i64::from(CONFIG.invitation_expiration_hours());
     EmergencyAccessInviteJwtClaims {
         nbf: time_now.timestamp(),
-        exp: (time_now + Duration::hours(expire_hours)).timestamp(),
+        exp: (time_now + TimeDelta::try_hours(expire_hours).unwrap()).timestamp(),
         iss: JWT_EMERGENCY_ACCESS_INVITE_ISSUER.to_string(),
         sub: uuid,
         email,
@@ -261,10 +262,10 @@ pub struct OrgApiKeyLoginJwtClaims {
 }
 
 pub fn generate_organization_api_key_login_claims(uuid: String, org_id: String) -> OrgApiKeyLoginJwtClaims {
-    let time_now = Utc::now().naive_utc();
+    let time_now = Utc::now();
     OrgApiKeyLoginJwtClaims {
         nbf: time_now.timestamp(),
-        exp: (time_now + Duration::hours(1)).timestamp(),
+        exp: (time_now + TimeDelta::try_hours(1).unwrap()).timestamp(),
         iss: JWT_ORG_API_KEY_ISSUER.to_string(),
         sub: uuid,
         client_id: format!("organization.{org_id}"),
@@ -288,10 +289,10 @@ pub struct FileDownloadClaims {
 }
 
 pub fn generate_file_download_claims(uuid: String, file_id: String) -> FileDownloadClaims {
-    let time_now = Utc::now().naive_utc();
+    let time_now = Utc::now();
     FileDownloadClaims {
         nbf: time_now.timestamp(),
-        exp: (time_now + Duration::minutes(5)).timestamp(),
+        exp: (time_now + TimeDelta::try_minutes(5).unwrap()).timestamp(),
         iss: JWT_FILE_DOWNLOAD_ISSUER.to_string(),
         sub: uuid,
         file_id,
@@ -311,42 +312,42 @@ pub struct BasicJwtClaims {
 }
 
 pub fn generate_delete_claims(uuid: String) -> BasicJwtClaims {
-    let time_now = Utc::now().naive_utc();
+    let time_now = Utc::now();
     let expire_hours = i64::from(CONFIG.invitation_expiration_hours());
     BasicJwtClaims {
         nbf: time_now.timestamp(),
-        exp: (time_now + Duration::hours(expire_hours)).timestamp(),
+        exp: (time_now + TimeDelta::try_hours(expire_hours).unwrap()).timestamp(),
         iss: JWT_DELETE_ISSUER.to_string(),
         sub: uuid,
     }
 }
 
 pub fn generate_verify_email_claims(uuid: String) -> BasicJwtClaims {
-    let time_now = Utc::now().naive_utc();
+    let time_now = Utc::now();
     let expire_hours = i64::from(CONFIG.invitation_expiration_hours());
     BasicJwtClaims {
         nbf: time_now.timestamp(),
-        exp: (time_now + Duration::hours(expire_hours)).timestamp(),
+        exp: (time_now + TimeDelta::try_hours(expire_hours).unwrap()).timestamp(),
         iss: JWT_VERIFYEMAIL_ISSUER.to_string(),
         sub: uuid,
     }
 }
 
 pub fn generate_admin_claims() -> BasicJwtClaims {
-    let time_now = Utc::now().naive_utc();
+    let time_now = Utc::now();
     BasicJwtClaims {
         nbf: time_now.timestamp(),
-        exp: (time_now + Duration::minutes(CONFIG.admin_session_lifetime())).timestamp(),
+        exp: (time_now + TimeDelta::try_minutes(CONFIG.admin_session_lifetime()).unwrap()).timestamp(),
         iss: JWT_ADMIN_ISSUER.to_string(),
         sub: "admin_panel".to_string(),
     }
 }
 
 pub fn generate_send_claims(send_id: &str, file_id: &str) -> BasicJwtClaims {
-    let time_now = Utc::now().naive_utc();
+    let time_now = Utc::now();
     BasicJwtClaims {
         nbf: time_now.timestamp(),
-        exp: (time_now + Duration::minutes(2)).timestamp(),
+        exp: (time_now + TimeDelta::try_minutes(2).unwrap()).timestamp(),
         iss: JWT_SEND_ISSUER.to_string(),
         sub: format!("{send_id}/{file_id}"),
     }
@@ -430,10 +431,8 @@ impl<'r> FromRequest<'r> for HostInfo {
 
             let host = if let Some(host) = headers.get_one("X-Forwarded-Host") {
                 host
-            } else if let Some(host) = headers.get_one("Host") {
-                host
             } else {
-                ""
+                headers.get_one("Host").unwrap_or_default()
             };
 
             let base_url_origin = format!("{protocol}://{host}");
@@ -543,7 +542,7 @@ impl<'r> FromRequest<'r> for Headers {
                 // Check if the stamp exception has expired first.
                 // Then, check if the current route matches any of the allowed routes.
                 // After that check the stamp in exception matches the one in the claims.
-                if Utc::now().naive_utc().timestamp() > stamp_exception.expire {
+                if Utc::now().timestamp() > stamp_exception.expire {
                     // If the stamp exception has been expired remove it from the database.
                     // This prevents checking this stamp exception for new requests.
                     let mut user = user;
@@ -735,7 +734,7 @@ impl<'r> FromRequest<'r> for ManagerHeaders {
                         _ => err_handler!("Error getting DB"),
                     };
 
-                    if !can_access_collection(&headers.org_user, &col_id, &mut conn).await {
+                    if !Collection::can_access_collection(&headers.org_user, &col_id, &mut conn).await {
                         err_handler!("The current user isn't a manager for this collection")
                     }
                 }
@@ -808,10 +807,6 @@ impl From<ManagerHeadersLoose> for Headers {
         }
     }
 }
-async fn can_access_collection(org_user: &UserOrganization, col_id: &str, conn: &mut DbConn) -> bool {
-    org_user.has_full_access()
-        || Collection::has_access_by_collection_and_user_uuid(col_id, &org_user.user_uuid, conn).await
-}
 
 impl ManagerHeaders {
     pub async fn from_loose(
@@ -823,7 +818,7 @@ impl ManagerHeaders {
             if uuid::Uuid::parse_str(col_id).is_err() {
                 err!("Collection Id is malformed!");
             }
-            if !can_access_collection(&h.org_user, col_id, conn).await {
+            if !Collection::can_access_collection(&h.org_user, col_id, conn).await {
                 err!("You don't have access to all collections!");
             }
         }

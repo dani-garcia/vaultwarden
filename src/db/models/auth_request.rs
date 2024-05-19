@@ -140,7 +140,7 @@ impl AuthRequest {
     }
 
     pub async fn purge_expired_auth_requests(conn: &mut DbConn) {
-        let expiry_time = Utc::now().naive_utc() - chrono::Duration::minutes(5); //after 5 minutes, clients reject the request
+        let expiry_time = Utc::now().naive_utc() - chrono::TimeDelta::try_minutes(5).unwrap(); //after 5 minutes, clients reject the request
         for auth_request in Self::find_created_before(&expiry_time, conn).await {
             auth_request.delete(conn).await.ok();
         }
