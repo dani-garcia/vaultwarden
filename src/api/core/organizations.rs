@@ -749,20 +749,20 @@ struct OrgIdData {
 #[get("/ciphers/organization-details?<data..>")]
 async fn get_org_details(data: OrgIdData, headers: Headers, mut conn: DbConn) -> Json<Value> {
     Json(json!({
-        "Data": _get_org_details(&data.organization_id, &headers.host, &headers.user.uuid, &mut conn).await,
+        "Data": _get_org_details(&data.organization_id, &headers.base_url, &headers.user.uuid, &mut conn).await,
         "Object": "list",
         "ContinuationToken": null,
     }))
 }
 
-async fn _get_org_details(org_id: &str, host: &str, user_uuid: &str, conn: &mut DbConn) -> Value {
+async fn _get_org_details(org_id: &str, base_url: &str, user_uuid: &str, conn: &mut DbConn) -> Value {
     let ciphers = Cipher::find_by_org(org_id, conn).await;
     let cipher_sync_data = CipherSyncData::new(user_uuid, CipherSyncType::Organization, conn).await;
 
     let mut ciphers_json = Vec::with_capacity(ciphers.len());
     for c in ciphers {
         ciphers_json
-            .push(c.to_json(host, user_uuid, Some(&cipher_sync_data), CipherSyncType::Organization, conn).await);
+            .push(c.to_json(base_url, user_uuid, Some(&cipher_sync_data), CipherSyncType::Organization, conn).await);
     }
     json!(ciphers_json)
 }
@@ -2906,7 +2906,7 @@ async fn get_org_export(org_id: &str, headers: AdminHeaders, mut conn: DbConn) -
                 "continuationToken": null,
             },
             "ciphers": {
-                "data": convert_json_key_lcase_first(_get_org_details(org_id, &headers.host, &headers.user.uuid, &mut conn).await),
+                "data": convert_json_key_lcase_first(_get_org_details(org_id, &headers.base_url, &headers.user.uuid, &mut conn).await),
                 "object": "list",
                 "continuationToken": null,
             }
@@ -2915,7 +2915,7 @@ async fn get_org_export(org_id: &str, headers: AdminHeaders, mut conn: DbConn) -
         // v2023.1.0 and newer response
         Json(json!({
             "collections": convert_json_key_lcase_first(_get_org_collections(org_id, &mut conn).await),
-            "ciphers": convert_json_key_lcase_first(_get_org_details(org_id, &headers.host, &headers.user.uuid, &mut conn).await),
+            "ciphers": convert_json_key_lcase_first(_get_org_details(org_id, &headers.base_url, &headers.user.uuid, &mut conn).await),
         }))
     }
 }

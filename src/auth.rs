@@ -9,6 +9,7 @@ use openssl::rsa::Rsa;
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
 
+use crate::config::{extract_url_host, extract_url_origin};
 use crate::{error::Error, CONFIG};
 
 const JWT_ALGORITHM: Algorithm = Algorithm::RS256;
@@ -16,16 +17,20 @@ const JWT_ALGORITHM: Algorithm = Algorithm::RS256;
 pub static DEFAULT_VALIDITY: Lazy<TimeDelta> = Lazy::new(|| TimeDelta::try_hours(2).unwrap());
 static JWT_HEADER: Lazy<Header> = Lazy::new(|| Header::new(JWT_ALGORITHM));
 
-pub static JWT_LOGIN_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|login", CONFIG.domain_origin()));
-static JWT_INVITE_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|invite", CONFIG.domain_origin()));
+fn jwt_origin() -> String {
+    extract_url_origin(&CONFIG.main_domain())
+}
+
+pub static JWT_LOGIN_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|login", jwt_origin()));
+static JWT_INVITE_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|invite", jwt_origin()));
 static JWT_EMERGENCY_ACCESS_INVITE_ISSUER: Lazy<String> =
-    Lazy::new(|| format!("{}|emergencyaccessinvite", CONFIG.domain_origin()));
-static JWT_DELETE_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|delete", CONFIG.domain_origin()));
-static JWT_VERIFYEMAIL_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|verifyemail", CONFIG.domain_origin()));
-static JWT_ADMIN_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|admin", CONFIG.domain_origin()));
-static JWT_SEND_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|send", CONFIG.domain_origin()));
-static JWT_ORG_API_KEY_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|api.organization", CONFIG.domain_origin()));
-static JWT_FILE_DOWNLOAD_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|file_download", CONFIG.domain_origin()));
+    Lazy::new(|| format!("{}|emergencyaccessinvite", jwt_origin()));
+static JWT_DELETE_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|delete", jwt_origin()));
+static JWT_VERIFYEMAIL_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|verifyemail", jwt_origin()));
+static JWT_ADMIN_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|admin", jwt_origin()));
+static JWT_SEND_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|send", jwt_origin()));
+static JWT_ORG_API_KEY_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|api.organization", jwt_origin()));
+static JWT_FILE_DOWNLOAD_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|file_download", jwt_origin()));
 
 static PRIVATE_RSA_KEY: OnceCell<EncodingKey> = OnceCell::new();
 static PUBLIC_RSA_KEY: OnceCell<DecodingKey> = OnceCell::new();
@@ -355,29 +360,64 @@ use rocket::{
     outcome::try_outcome,
     request::{FromRequest, Outcome, Request},
 };
+use std::borrow::Cow;
 
 use crate::db::{
     models::{Collection, Device, User, UserOrgStatus, UserOrgType, UserOrganization, UserStampException},
     DbConn,
 };
 
-pub struct Host {
-    pub host: String,
+#[derive(Clone, Debug)]
+pub struct HostInfo {
+    pub base_url: String,
+    pub origin: String,
+}
+
+fn get_host_info(host: &str) -> Option<HostInfo> {
+    CONFIG.host_to_domain(host).and_then(|base_url| Some((base_url, CONFIG.host_to_origin(host)?))).map(
+        |(base_url, origin)| HostInfo {
+            base_url,
+            origin,
+        },
+    )
+}
+
+fn get_main_host() -> String {
+    extract_url_host(&CONFIG.main_domain())
 }
 
 #[rocket::async_trait]
-impl<'r> FromRequest<'r> for Host {
+impl<'r> FromRequest<'r> for HostInfo {
     type Error = &'static str;
 
     async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         let headers = request.headers();
 
         // Get host
-        let host = if CONFIG.domain_set() {
-            CONFIG.domain()
+        let host_info = if CONFIG.domain_set() {
+            log::debug!("Using configured host info");
+            let host: Cow<'_, str> = if let Some(host) = headers.get_one("X-Forwarded-Host") {
+                host.into()
+            } else if let Some(host) = headers.get_one("Host") {
+                host.into()
+            } else {
+                get_main_host().into()
+            };
+
+            let host_info = get_host_info(host.as_ref()).unwrap_or_else(|| {
+                log::debug!("Falling back to default domain, because {host} was not in domains.");
+                get_host_info(&get_main_host()).expect("Main domain doesn't have entry!")
+            });
+
+            host_info
         } else if let Some(referer) = headers.get_one("Referer") {
-            referer.to_string()
+            log::debug!("Using referer host info");
+            HostInfo {
+                base_url: referer.to_string(),
+                origin: extract_url_origin(referer),
+            }
         } else {
+            log::debug!("Guessing host info with headers");
             // Try to guess from the headers
             use std::env;
 
@@ -395,17 +435,22 @@ impl<'r> FromRequest<'r> for Host {
                 headers.get_one("Host").unwrap_or_default()
             };
 
-            format!("{protocol}://{host}")
+            let base_url_origin = format!("{protocol}://{host}");
+
+            HostInfo {
+                base_url: base_url_origin.clone(),
+                origin: base_url_origin,
+            }
         };
 
-        Outcome::Success(Host {
-            host,
-        })
+        log::debug!("Using host_info: {:?}", host_info);
+
+        Outcome::Success(host_info)
     }
 }
 
 pub struct ClientHeaders {
-    pub host: String,
+    pub base_url: String,
     pub device_type: i32,
     pub ip: ClientIp,
 }
@@ -415,7 +460,7 @@ impl<'r> FromRequest<'r> for ClientHeaders {
     type Error = &'static str;
 
     async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
-        let host = try_outcome!(Host::from_request(request).await).host;
+        let base_url = try_outcome!(HostInfo::from_request(request).await).base_url;
         let ip = match ClientIp::from_request(request).await {
             Outcome::Success(ip) => ip,
             _ => err_handler!("Error getting Client IP"),
@@ -425,7 +470,7 @@ impl<'r> FromRequest<'r> for ClientHeaders {
             request.headers().get_one("device-type").map(|d| d.parse().unwrap_or(14)).unwrap_or_else(|| 14);
 
         Outcome::Success(ClientHeaders {
-            host,
+            base_url,
             device_type,
             ip,
         })
@@ -433,7 +478,7 @@ impl<'r> FromRequest<'r> for ClientHeaders {
 }
 
 pub struct Headers {
-    pub host: String,
+    pub base_url: String,
     pub device: Device,
     pub user: User,
     pub ip: ClientIp,
@@ -446,7 +491,7 @@ impl<'r> FromRequest<'r> for Headers {
     async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         let headers = request.headers();
 
-        let host = try_outcome!(Host::from_request(request).await).host;
+        let base_url = try_outcome!(HostInfo::from_request(request).await).base_url;
         let ip = match ClientIp::from_request(request).await {
             Outcome::Success(ip) => ip,
             _ => err_handler!("Error getting Client IP"),
@@ -517,7 +562,7 @@ impl<'r> FromRequest<'r> for Headers {
         }
 
         Outcome::Success(Headers {
-            host,
+            base_url,
             device,
             user,
             ip,
@@ -526,7 +571,7 @@ impl<'r> FromRequest<'r> for Headers {
 }
 
 pub struct OrgHeaders {
-    pub host: String,
+    pub base_url: String,
     pub device: Device,
     pub user: User,
     pub org_user_type: UserOrgType,
@@ -582,7 +627,7 @@ impl<'r> FromRequest<'r> for OrgHeaders {
                 };
 
                 Outcome::Success(Self {
-                    host: headers.host,
+                    base_url: headers.base_url,
                     device: headers.device,
                     user,
                     org_user_type: {
@@ -604,7 +649,7 @@ impl<'r> FromRequest<'r> for OrgHeaders {
 }
 
 pub struct AdminHeaders {
-    pub host: String,
+    pub base_url: String,
     pub device: Device,
     pub user: User,
     pub org_user_type: UserOrgType,
@@ -621,7 +666,7 @@ impl<'r> FromRequest<'r> for AdminHeaders {
         let client_version = request.headers().get_one("Bitwarden-Client-Version").map(String::from);
         if headers.org_user_type >= UserOrgType::Admin {
             Outcome::Success(Self {
-                host: headers.host,
+                base_url: headers.base_url,
                 device: headers.device,
                 user: headers.user,
                 org_user_type: headers.org_user_type,
@@ -637,7 +682,7 @@ impl<'r> FromRequest<'r> for AdminHeaders {
 impl From<AdminHeaders> for Headers {
     fn from(h: AdminHeaders) -> Headers {
         Headers {
-            host: h.host,
+            base_url: h.base_url,
             device: h.device,
             user: h.user,
             ip: h.ip,
@@ -668,7 +713,7 @@ fn get_col_id(request: &Request<'_>) -> Option<String> {
 /// and have access to the specific collection provided via the <col_id>/collections/collectionId.
 /// This does strict checking on the collection_id, ManagerHeadersLoose does not.
 pub struct ManagerHeaders {
-    pub host: String,
+    pub base_url: String,
     pub device: Device,
     pub user: User,
     pub org_user_type: UserOrgType,
@@ -697,7 +742,7 @@ impl<'r> FromRequest<'r> for ManagerHeaders {
             }
 
             Outcome::Success(Self {
-                host: headers.host,
+                base_url: headers.base_url,
                 device: headers.device,
                 user: headers.user,
                 org_user_type: headers.org_user_type,
@@ -712,7 +757,7 @@ impl<'r> FromRequest<'r> for ManagerHeaders {
 impl From<ManagerHeaders> for Headers {
     fn from(h: ManagerHeaders) -> Headers {
         Headers {
-            host: h.host,
+            base_url: h.base_url,
             device: h.device,
             user: h.user,
             ip: h.ip,
@@ -723,7 +768,7 @@ impl From<ManagerHeaders> for Headers {
 /// The ManagerHeadersLoose is used when you at least need to be a Manager,
 /// but there is no collection_id sent with the request (either in the path or as form data).
 pub struct ManagerHeadersLoose {
-    pub host: String,
+    pub base_url: String,
     pub device: Device,
     pub user: User,
     pub org_user: UserOrganization,
@@ -739,7 +784,7 @@ impl<'r> FromRequest<'r> for ManagerHeadersLoose {
         let headers = try_outcome!(OrgHeaders::from_request(request).await);
         if headers.org_user_type >= UserOrgType::Manager {
             Outcome::Success(Self {
-                host: headers.host,
+                base_url: headers.base_url,
                 device: headers.device,
                 user: headers.user,
                 org_user: headers.org_user,
@@ -755,7 +800,7 @@ impl<'r> FromRequest<'r> for ManagerHeadersLoose {
 impl From<ManagerHeadersLoose> for Headers {
     fn from(h: ManagerHeadersLoose) -> Headers {
         Headers {
-            host: h.host,
+            base_url: h.base_url,
             device: h.device,
             user: h.user,
             ip: h.ip,
@@ -779,7 +824,7 @@ impl ManagerHeaders {
         }
 
         Ok(ManagerHeaders {
-            host: h.host,
+            base_url: h.base_url,
             device: h.device,
             user: h.user,
             org_user_type: h.org_user_type,
@@ -789,7 +834,7 @@ impl ManagerHeaders {
 }
 
 pub struct OwnerHeaders {
-    pub host: String,
+    pub base_url: String,
     pub device: Device,
     pub user: User,
     pub ip: ClientIp,
@@ -803,7 +848,7 @@ impl<'r> FromRequest<'r> for OwnerHeaders {
         let headers = try_outcome!(OrgHeaders::from_request(request).await);
         if headers.org_user_type == UserOrgType::Owner {
             Outcome::Success(Self {
-                host: headers.host,
+                base_url: headers.base_url,
                 device: headers.device,
                 user: headers.user,
                 ip: headers.ip,

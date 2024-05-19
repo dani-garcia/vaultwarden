@@ -10,7 +10,7 @@ use serde_json::Value;
 
 use crate::{
     api::{ApiResult, EmptyResult, JsonResult, JsonUpcase, Notify, UpdateType},
-    auth::{ClientIp, Headers, Host},
+    auth::{ClientIp, Headers, HostInfo},
     db::{models::*, DbConn, DbPool},
     util::{NumberOrString, SafeString},
     CONFIG,
@@ -465,7 +465,7 @@ async fn post_access_file(
     send_id: &str,
     file_id: &str,
     data: JsonUpcase<SendAccessData>,
-    host: Host,
+    host_info: HostInfo,
     mut conn: DbConn,
     nt: Notify<'_>,
 ) -> JsonResult {
@@ -520,7 +520,7 @@ async fn post_access_file(
     Ok(Json(json!({
         "Object": "send-fileDownload",
         "Id": file_id,
-        "Url": format!("{}/api/sends/{}/{}?t={}", &host.host, send_id, file_id, token)
+        "Url": format!("{}/api/sends/{}/{}?t={}", &host_info.base_url, send_id, file_id, token)
     })))
 }
 

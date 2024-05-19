@@ -217,11 +217,13 @@ impl<'r> FromRequest<'r> for PublicToken {
             err_handler!("Token expired");
         }
         // Check if claims.iss is host|claims.scope[0]
-        let host = match auth::Host::from_request(request).await {
-            Outcome::Success(host) => host,
+        let host_info = match auth::HostInfo::from_request(request).await {
+            Outcome::Success(host_info) => host_info,
             _ => err_handler!("Error getting Host"),
         };
-        let complete_host = format!("{}|{}", host.host, claims.scope[0]);
+        // TODO check if this is fine
+        // using origin, because that's what they're generated with in auth.rs
+        let complete_host = format!("{}|{}", host_info.origin, claims.scope[0]);
         if complete_host != claims.iss {
             err_handler!("Token not issued by this server");
         }

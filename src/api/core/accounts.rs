@@ -9,7 +9,7 @@ use crate::{
         register_push_device, unregister_push_device, AnonymousNotify, EmptyResult, JsonResult, JsonUpcase, Notify,
         PasswordOrOtpData, UpdateType,
     },
-    auth::{decode_delete, decode_invite, decode_verify_email, ClientHeaders, Headers},
+    auth::{decode_delete, decode_invite, decode_verify_email, ClientHeaders, Headers, HostInfo},
     crypto,
     db::{models::*, DbConn},
     mail,
@@ -1118,6 +1118,7 @@ struct AuthRequestRequest {
 async fn post_auth_request(
     data: Json<AuthRequestRequest>,
     headers: ClientHeaders,
+    host_info: HostInfo,
     mut conn: DbConn,
     nt: Notify<'_>,
 ) -> JsonResult {
@@ -1152,13 +1153,13 @@ async fn post_auth_request(
         "creationDate": auth_request.creation_date.and_utc(),
         "responseDate": null,
         "requestApproved": false,
-        "origin": CONFIG.domain_origin(),
+        "origin": host_info.origin,
         "object": "auth-request"
     })))
 }
 
 #[get("/auth-requests/<uuid>")]
-async fn get_auth_request(uuid: &str, mut conn: DbConn) -> JsonResult {
+async fn get_auth_request(uuid: &str, host_info: HostInfo, mut conn: DbConn) -> JsonResult {
     let auth_request = match AuthRequest::find_by_uuid(uuid, &mut conn).await {
         Some(auth_request) => auth_request,
         None => {
@@ -1179,7 +1180,7 @@ async fn get_auth_request(uuid: &str, mut conn: DbConn) -> JsonResult {
             "creationDate": auth_request.creation_date.and_utc(),
             "responseDate": response_date_utc,
             "requestApproved": auth_request.approved,
-            "origin": CONFIG.domain_origin(),
+            "origin": host_info.origin,
             "object":"auth-request"
         }
     )))
@@ -1198,6 +1199,7 @@ struct AuthResponseRequest {
 async fn put_auth_request(
     uuid: &str,
     data: Json<AuthResponseRequest>,
+    host_info: HostInfo,
     mut conn: DbConn,
     ant: AnonymousNotify<'_>,
     nt: Notify<'_>,
@@ -1234,14 +1236,14 @@ async fn put_auth_request(
             "creationDate": auth_request.creation_date.and_utc(),
             "responseDate": response_date_utc,
             "requestApproved": auth_request.approved,
-            "origin": CONFIG.domain_origin(),
+            "origin": host_info.origin,
             "object":"auth-request"
         }
     )))
 }
 
 #[get("/auth-requests/<uuid>/response?<code>")]
-async fn get_auth_request_response(uuid: &str, code: &str, mut conn: DbConn) -> JsonResult {
+async fn get_auth_request_response(uuid: &str, code: &str, host_info: HostInfo, mut conn: DbConn) -> JsonResult {
     let auth_request = match AuthRequest::find_by_uuid(uuid, &mut conn).await {
         Some(auth_request) => auth_request,
         None => {
@@ -1266,14 +1268,14 @@ async fn get_auth_request_response(uuid: &str, code: &str, mut conn: DbConn) -> 
             "creationDate": auth_request.creation_date.and_utc(),
             "responseDate": response_date_utc,
             "requestApproved": auth_request.approved,
-            "origin": CONFIG.domain_origin(),
+            "origin": host_info.origin,
             "object":"auth-request"
         }
     )))
 }
 
 #[get("/auth-requests")]
-async fn get_auth_requests(headers: Headers, mut conn: DbConn) -> JsonResult {
+async fn get_auth_requests(headers: Headers, host_info: HostInfo, mut conn: DbConn) -> JsonResult {
     let auth_requests = AuthRequest::find_by_user(&headers.user.uuid, &mut conn).await;
 
     Ok(Json(json!({
@@ -1293,7 +1295,7 @@ async fn get_auth_requests(headers: Headers, mut conn: DbConn) -> JsonResult {
                 "creationDate": request.creation_date.and_utc(),
                 "responseDate": response_date_utc,
                 "requestApproved": request.approved,
-                "origin": CONFIG.domain_origin(),
+                "origin": host_info.origin,
                 "object":"auth-request"
             })
         }).collect::<Vec<Value>>(),

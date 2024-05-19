@@ -12,6 +12,7 @@ use rocket::{
     Catcher, Route,
 };
 
+use crate::auth::HostInfo;
 use crate::{
     api::{
         core::{log_event, two_factor},
@@ -97,10 +98,6 @@ const BASE_TEMPLATE: &str = "admin/base";
 
 const ACTING_ADMIN_USER: &str = "vaultwarden-admin-00000-000000000000";
 
-fn admin_path() -> String {
-    format!("{}{}", CONFIG.domain_path(), ADMIN_PATH)
-}
-
 #[derive(Debug)]
 struct IpHeader(Option<String>);
 
@@ -123,8 +120,12 @@ impl<'r> FromRequest<'r> for IpHeader {
     }
 }
 
-fn admin_url() -> String {
-    format!("{}{}", CONFIG.domain_origin(), admin_path())
+fn admin_path() -> String {
+    format!("{}{}", CONFIG.domain_path(), ADMIN_PATH)
+}
+
+fn admin_url(origin: &str) -> String {
+    format!("{}{}", origin, admin_path())
 }
 
 #[derive(Responder)]
@@ -668,7 +669,12 @@ async fn get_ntp_time(has_http_access: bool) -> String {
 }
 
 #[get("/diagnostics")]
-async fn diagnostics(_token: AdminToken, ip_header: IpHeader, mut conn: DbConn) -> ApiResult<Html<String>> {
+async fn diagnostics(
+    _token: AdminToken,
+    ip_header: IpHeader,
+    host_info: HostInfo,
+    mut conn: DbConn,
+) -> ApiResult<Html<String>> {
     use chrono::prelude::*;
     use std::net::ToSocketAddrs;
 
@@ -721,7 +727,7 @@ async fn diagnostics(_token: AdminToken, ip_header: IpHeader, mut conn: DbConn) 
         "uses_proxy": uses_proxy,
         "db_type": *DB_TYPE,
         "db_version": get_sql_server_version(&mut conn).await,
-        "admin_url": format!("{}/diagnostics", admin_url()),
+        "admin_url": format!("{}/diagnostics", admin_url(&host_info.origin)),
         "overrides": &CONFIG.get_overrides().join(", "),
         "host_arch": std::env::consts::ARCH,
         "host_os":  std::env::consts::OS,

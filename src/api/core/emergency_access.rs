@@ -574,7 +574,7 @@ async fn view_emergency_access(emer_id: &str, headers: Headers, mut conn: DbConn
     for c in ciphers {
         ciphers_json.push(
             c.to_json(
-                &headers.host,
+                &headers.base_url,
                 &emergency_access.grantor_uuid,
                 Some(&cipher_sync_data),
                 CipherSyncType::User,
