@@ -26,6 +26,7 @@ extern crate diesel;
 extern crate diesel_migrations;
 
 use std::{
+    collections::HashMap,
     fs::{canonicalize, create_dir_all},
     panic,
     path::Path,
@@ -65,13 +66,7 @@ async fn main() -> Result<(), Error> {
     parse_args();
     launch_info();
 
-    use log::LevelFilter as LF;
-    let level = LF::from_str(&CONFIG.log_level()).unwrap_or_else(|_| {
-        let valid_log_levels = LF::iter().map(|lvl| lvl.as_str().to_lowercase()).collect::<Vec<String>>().join(", ");
-        println!("Log level must be one of the following: {valid_log_levels}");
-        exit(1);
-    });
-    init_logging(level).ok();
+    let level = init_logging()?;
 
     check_data_folder().await;
     auth::initialize_keys().unwrap_or_else(|e| {
@@ -89,7 +84,7 @@ async fn main() -> Result<(), Error> {
     schedule_jobs(pool.clone());
     crate::db::models::TwoFactor::migrate_u2f_to_webauthn(&mut pool.get().await.unwrap()).await.unwrap();
 
-    let extra_debug = matches!(level, LF::Trace | LF::Debug);
+    let extra_debug = matches!(level, log::LevelFilter::Trace | log::LevelFilter::Debug);
     launch_rocket(pool, extra_debug).await // Blocks until program termination.
 }
 
@@ -210,7 +205,38 @@ fn launch_info() {
     );
 }
 
-fn init_logging(level: log::LevelFilter) -> Result<(), fern::InitError> {
+fn init_logging() -> Result<log::LevelFilter, Error> {
+    let levels = log::LevelFilter::iter().map(|lvl| lvl.as_str().to_lowercase()).collect::<Vec<String>>().join("|");
+    let log_level_rgx_str = format!("^({levels})((,[^,=]+=({levels}))*)$");
+    let log_level_rgx = regex::Regex::new(&log_level_rgx_str)?;
+    let config_str = CONFIG.log_level().to_lowercase();
+
+    let (level, levels_override) = if let Some(caps) = log_level_rgx.captures(&config_str) {
+        let level = caps
+            .get(1)
+            .and_then(|m| log::LevelFilter::from_str(m.as_str()).ok())
+            .ok_or(Error::new("Failed to parse global log level".to_string(), ""))?;
+
+        let levels_override: Vec<(&str, log::LevelFilter)> = caps
+            .get(2)
+            .map(|m| {
+                m.as_str()
+                    .split(',')
+                    .collect::<Vec<&str>>()
+                    .into_iter()
+                    .flat_map(|s| match s.split('=').collect::<Vec<&str>>()[..] {
+                        [log, lvl_str] => log::LevelFilter::from_str(lvl_str).ok().map(|lvl| (log, lvl)),
+                        _ => None,
+                    })
+                    .collect()
+            })
+            .ok_or(Error::new("Failed to parse overrides".to_string(), ""))?;
+
+        (level, levels_override)
+    } else {
+        err!(format!("LOG_LEVEL should follow the format info,vaultwarden::api::icons=debug, invalid: {config_str}"))
+    };
+
     // Depending on the main log level we either want to disable or enable logging for hickory.
     // Else if there are timeouts it will clutter the logs since hickory uses warn for this.
     let hickory_level = if level >= log::LevelFilter::Debug {
@@ -241,47 +267,61 @@ fn init_logging(level: log::LevelFilter) -> Result<(), fern::InitError> {
         log::LevelFilter::Warn
     };
 
-    let mut logger = fern::Dispatch::new()
-        .level(level)
-        // Hide unknown certificate errors if using self-signed
-        .level_for("rustls::session", log::LevelFilter::Off)
-        // Hide failed to close stream messages
-        .level_for("hyper::server", log::LevelFilter::Warn)
-        // Silence Rocket `_` logs
-        .level_for("_", rocket_underscore_level)
-        .level_for("rocket::response::responder::_", rocket_underscore_level)
-        .level_for("rocket::server::_", rocket_underscore_level)
-        .level_for("vaultwarden::api::admin::_", rocket_underscore_level)
-        .level_for("vaultwarden::api::notifications::_", rocket_underscore_level)
-        // Silence Rocket logs
-        .level_for("rocket::launch", log::LevelFilter::Error)
-        .level_for("rocket::launch_", log::LevelFilter::Error)
-        .level_for("rocket::rocket", log::LevelFilter::Warn)
-        .level_for("rocket::server", log::LevelFilter::Warn)
-        .level_for("rocket::fairing::fairings", log::LevelFilter::Warn)
-        .level_for("rocket::shield::shield", log::LevelFilter::Warn)
-        .level_for("hyper::proto", log::LevelFilter::Off)
-        .level_for("hyper::client", log::LevelFilter::Off)
-        // Filter handlebars logs
-        .level_for("handlebars::render", handlebars_level)
-        // Prevent cookie_store logs
-        .level_for("cookie_store", log::LevelFilter::Off)
-        // Variable level for hickory used by reqwest
-        .level_for("hickory_resolver::name_server::name_server", hickory_level)
-        .level_for("hickory_proto::xfer", hickory_level)
-        .level_for("diesel_logger", diesel_logger_level)
-        .chain(std::io::stdout());
-
     // Enable smtp debug logging only specifically for smtp when need.
     // This can contain sensitive information we do not want in the default debug/trace logging.
-    if CONFIG.smtp_debug() {
+    let smtp_log_level = if CONFIG.smtp_debug() {
+        log::LevelFilter::Debug
+    } else {
+        log::LevelFilter::Off
+    };
+
+    let mut default_levels = HashMap::from([
+        // Hide unknown certificate errors if using self-signed
+        ("rustls::session", log::LevelFilter::Off),
+        // Hide failed to close stream messages
+        ("hyper::server", log::LevelFilter::Warn),
+        // Silence Rocket `_` logs
+        ("_", rocket_underscore_level),
+        ("rocket::response::responder::_", rocket_underscore_level),
+        ("rocket::server::_", rocket_underscore_level),
+        ("vaultwarden::api::admin::_", rocket_underscore_level),
+        ("vaultwarden::api::notifications::_", rocket_underscore_level),
+        // Silence Rocket logs
+        ("rocket::launch", log::LevelFilter::Error),
+        ("rocket::launch_", log::LevelFilter::Error),
+        ("rocket::rocket", log::LevelFilter::Warn),
+        ("rocket::server", log::LevelFilter::Warn),
+        ("rocket::fairing::fairings", log::LevelFilter::Warn),
+        ("rocket::shield::shield", log::LevelFilter::Warn),
+        ("hyper::proto", log::LevelFilter::Off),
+        ("hyper::client", log::LevelFilter::Off),
+        // Filter handlebars logs
+        ("handlebars::render", handlebars_level),
+        // Prevent cookie_store logs
+        ("cookie_store", log::LevelFilter::Off),
+        // Variable level for hickory used by reqwest
+        ("hickory_resolver::name_server::name_server", hickory_level),
+        ("hickory_proto::xfer", hickory_level),
+        ("diesel_logger", diesel_logger_level),
+        // SMTP
+        ("lettre::transport::smtp", smtp_log_level),
+    ]);
+
+    for (path, level) in levels_override.into_iter() {
+        let _ = default_levels.insert(path, level);
+    }
+
+    if Some(&log::LevelFilter::Debug) == default_levels.get("lettre::transport::smtp") {
         println!(
             "[WARNING] SMTP Debugging is enabled (SMTP_DEBUG=true). Sensitive information could be disclosed via logs!\n\
              [WARNING] Only enable SMTP_DEBUG during troubleshooting!\n"
         );
-        logger = logger.level_for("lettre::transport::smtp", log::LevelFilter::Debug)
-    } else {
-        logger = logger.level_for("lettre::transport::smtp", log::LevelFilter::Off)
+    }
+
+    let mut logger = fern::Dispatch::new().level(level).chain(std::io::stdout());
+
+    for (path, level) in default_levels {
+        logger = logger.level_for(path.to_string(), level);
     }
 
     if CONFIG.extended_logging() {
@@ -318,7 +358,9 @@ fn init_logging(level: log::LevelFilter) -> Result<(), fern::InitError> {
         }
     }
 
-    logger.apply()?;
+    if let Err(err) = logger.apply() {
+        err!(format!("Failed to activate logger: {err}"))
+    }
 
     // Catch panics and log them instead of default output to StdErr
     panic::set_hook(Box::new(|info| {
@@ -356,7 +398,7 @@ fn init_logging(level: log::LevelFilter) -> Result<(), fern::InitError> {
         }
     }));
 
-    Ok(())
+    Ok(level)
 }
 
 #[cfg(not(windows))]

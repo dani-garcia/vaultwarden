@@ -576,8 +576,9 @@ make_config! {
         use_syslog:             bool,   false,  def,    false;
         /// Log file path
         log_file:               String, false,  option;
-        /// Log level
-        log_level:              String, false,  def,    "Info".to_string();
+        /// Log level |> Valid values are "trace", "debug", "info", "warn", "error" and "off"
+        /// For a specific module append it as a comma separated value "info,path::to::module=debug"
+        log_level:              String, false,  def,    "info".to_string();
 
         /// Enable DB WAL |> Turning this off might lead to worse performance, but might help if using vaultwarden on some exotic filesystems,
         /// that do not support WAL. Please make sure you read project wiki on the topic before changing this setting.
