@@ -21,7 +21,11 @@ const browserUTC = `${year}-${month}-${day} ${hour}:${minute}:${seconds} UTC`;
 
 // ================================
 // Check if the output is a valid IP
-const isValidIp = value => (/^(?:(?:^|\.)(?:2(?:5[0-5]|[0-4]\d)|1?\d?\d)){4}$/.test(value) ? true : false);
+function isValidIp(ip) {
+    const ipv4Regex = /^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+    const ipv6Regex = /^(?:[a-fA-F0-9]{1,4}:){7}[a-fA-F0-9]{1,4}|((?:[a-fA-F0-9]{1,4}:){1,7}:|:(:[a-fA-F0-9]{1,4}){1,7}|[a-fA-F0-9]{1,4}:((:[a-fA-F0-9]{1,4}){1,6}))$/;
+    return ipv4Regex.test(ip) || ipv6Regex.test(ip);
+}
 
 function checkVersions(platform, installed, latest, commit=null) {
     if (installed === "-" || latest === "-") {
