@@ -6,7 +6,7 @@ vault_image_digest: "sha256:784838b15c775c81b29e8979aaac36dc5ef44ea18ff0adb7fc56
 xx_image_digest: "sha256:0cd3f05c72d6c9b038eb135f91376ee1169ef3a330d34e418e65e2a5c2e9c0d4"
 rust_version: 1.78.0 # Rust version to be used
 debian_version: bookworm # Debian release name to be used
-alpine_version: 3.19 # Alpine version to be used
+alpine_version: "3.20" # Alpine version to be used
 # For which platforms/architectures will we try to build images
 platforms: ["linux/amd64", "linux/arm64", "linux/arm/v7", "linux/arm/v6"]
 # Determine the build images per OS/Arch
