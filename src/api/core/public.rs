@@ -137,7 +137,8 @@ async fn ldap_import(data: JsonUpcase<OrgImportData>, token: PublicToken, mut co
 
     if CONFIG.org_groups_enabled() {
         for group_data in &data.Groups {
-            let group_uuid = match Group::find_by_external_id(&group_data.ExternalId, &mut conn).await {
+            let group_uuid = match Group::find_by_external_id_and_org(&group_data.ExternalId, &org_id, &mut conn).await
+            {
                 Some(group) => group.uuid,
                 None => {
                     let mut group =
