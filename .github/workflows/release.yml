@@ -150,20 +150,6 @@ jobs:
         run: |
           echo "CONTAINER_REGISTRIES=${CONTAINER_REGISTRIES:+${CONTAINER_REGISTRIES},}${{ vars.QUAY_REPO }}" | tee -a "${GITHUB_ENV}"
 
-      - name: Configure build cache from/to
-        shell: bash
-        run: |
-          #
-          # Check if there is a GitHub Container Registry Login and use it for caching
-          if [[ -n "${HAVE_GHCR_LOGIN}" ]]; then
-            echo "BAKE_CACHE_FROM=type=registry,ref=${{ vars.GHCR_REPO }}-buildcache:${{ matrix.base_image }}" | tee -a "${GITHUB_ENV}"
-            echo "BAKE_CACHE_TO=type=registry,ref=${{ vars.GHCR_REPO }}-buildcache:${{ matrix.base_image }},mode=max" | tee -a "${GITHUB_ENV}"
-          else
-            echo "BAKE_CACHE_FROM="
-            echo "BAKE_CACHE_TO="
-          fi
-          #
-
       - name: Add localhost registry
         if: ${{ matrix.base_image == 'alpine' }}
         shell: bash
@@ -184,8 +170,8 @@ jobs:
           files: docker/docker-bake.hcl
           targets: "${{ matrix.base_image }}-multi"
           set: |
-            *.cache-from=${{ env.BAKE_CACHE_FROM }}
-            *.cache-to=${{ env.BAKE_CACHE_TO }}
+            *.cache-from=type=gha,scope=${{ matrix.base_image }}
+            *.cache-to=type=gha,scope=${{ matrix.base_image }},mode=max
 
 
       # Extract the Alpine binaries from the containers
