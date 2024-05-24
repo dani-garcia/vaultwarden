@@ -56,8 +56,8 @@ num-derive = "0.4.2"
 bigdecimal = "0.4.3"
 
 # Web framework
-rocket = { version = "0.5.0", features = ["tls", "json"], default-features = false }
-rocket_ws = { version ="0.1.0" }
+rocket = { version = "0.5.1", features = ["tls", "json"], default-features = false }
+rocket_ws = { version ="0.1.1" }
 
 # WebSockets libraries
 rmpv = "1.3.0" # MessagePack library
@@ -154,7 +154,7 @@ semver = "1.0.23"
 
 # Allow overriding the default memory allocator
 # Mainly used for the musl builds, since the default musl malloc is very slow
-mimalloc = { version = "0.1.41", features = ["secure"], default-features = false, optional = true }
+mimalloc = { version = "0.1.42", features = ["secure"], default-features = false, optional = true }
 which = "6.0.1"
 
 # Argon2 library with support for the PHC format
