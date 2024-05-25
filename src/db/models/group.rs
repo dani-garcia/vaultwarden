@@ -203,10 +203,11 @@ impl Group {
         }}
     }
 
-    pub async fn find_by_external_id(id: &str, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_external_id_and_org(external_id: &str, org_uuid: &str, conn: &mut DbConn) -> Option<Self> {
         db_run! { conn: {
             groups::table
-                .filter(groups::external_id.eq(id))
+                .filter(groups::external_id.eq(external_id))
+                .filter(groups::organizations_uuid.eq(org_uuid))
                 .first::<GroupDb>(conn)
                 .ok()
                 .from_db()
