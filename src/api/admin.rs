@@ -606,7 +606,7 @@ async fn get_json_api<T: DeserializeOwned>(url: &str) -> Result<T, Error> {
 }
 
 async fn has_http_access() -> bool {
-    let Ok(req) = make_http_request(Method::HEAD, "https://github.com/dani-garcia/vaultwarden") else {
+    let Ok(req) = make_http_request(Method::HEAD, "https://github.com/vaultwarden/vaultwarden") else {
         return false;
     };
     match req.send().await {
@@ -623,13 +623,13 @@ async fn get_release_info(has_http_access: bool, running_within_container: bool)
     // If the HTTP Check failed, do not even attempt to check for new versions since we were not able to connect with github.com anyway.
     if has_http_access {
         (
-            match get_json_api::<GitRelease>("https://api.github.com/repos/dani-garcia/vaultwarden/releases/latest")
+            match get_json_api::<GitRelease>("https://api.github.com/repos/vaultwarden/vaultwarden/releases/latest")
                 .await
             {
                 Ok(r) => r.tag_name,
                 _ => "-".to_string(),
             },
-            match get_json_api::<GitCommit>("https://api.github.com/repos/dani-garcia/vaultwarden/commits/main").await {
+            match get_json_api::<GitCommit>("https://api.github.com/repos/vaultwarden/vaultwarden/commits/main").await {
                 Ok(mut c) => {
                     c.sha.truncate(8);
                     c.sha
@@ -642,7 +642,7 @@ async fn get_release_info(has_http_access: bool, running_within_container: bool)
                 "-".to_string()
             } else {
                 match get_json_api::<GitRelease>(
-                    "https://api.github.com/repos/dani-garcia/bw_web_builds/releases/latest",
+                    "https://api.github.com/repos/vaultwarden/bw_web_builds/releases/latest",
                 )
                 .await
                 {

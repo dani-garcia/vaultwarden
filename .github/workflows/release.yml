@@ -14,7 +14,7 @@ jobs:
   # We will skip this check if we are creating a tag, because that has the same hash as a previous run already.
   skip_check:
     runs-on: ubuntu-24.04
-    if: ${{ github.repository == 'dani-garcia/vaultwarden' }}
+    if: ${{ github.repository == 'vaultwarden/vaultwarden' }}
     outputs:
       should_skip: ${{ steps.skip_check.outputs.should_skip }}
     steps:
@@ -35,7 +35,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     needs: skip_check
-    if: ${{ needs.skip_check.outputs.should_skip != 'true' && github.repository == 'dani-garcia/vaultwarden' }}
+    if: ${{ needs.skip_check.outputs.should_skip != 'true' && github.repository == 'vaultwarden/vaultwarden' }}
     # Start a local docker registry to extract the compiled binaries to upload as artifacts and attest them
     services:
       registry:
