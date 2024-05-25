@@ -43,7 +43,7 @@ variable "BASE_TAGS" {
 
 // Which container registries should be used for the tagging
 // This can be a comma separated value
-// Use a full URI like `ghcr.io/dani-garcia/vaultwarden,docker.io/vaultwarden/server`
+// Use a full URI like `ghcr.io/vaultwarden/vaultwarden,docker.io/vaultwarden/server`
 variable "CONTAINER_REGISTRIES" {
   default = "vaultwarden/server"
 }
@@ -62,8 +62,8 @@ function "labels" {
   result = {
     "org.opencontainers.image.description" = "Unofficial Bitwarden compatible server written in Rust - ${SOURCE_VERSION}"
     "org.opencontainers.image.licenses" = "AGPL-3.0-only"
-    "org.opencontainers.image.documentation" = "https://github.com/dani-garcia/vaultwarden/wiki"
-    "org.opencontainers.image.url" = "https://github.com/dani-garcia/vaultwarden"
+    "org.opencontainers.image.documentation" = "https://github.com/vaultwarden/vaultwarden/wiki"
+    "org.opencontainers.image.url" = "https://github.com/vaultwarden/vaultwarden"
     "org.opencontainers.image.created" =  "${formatdate("YYYY-MM-DD'T'hh:mm:ssZZZZZ", timestamp())}"
     "org.opencontainers.image.source" = "${SOURCE_REPOSITORY_URL}"
     "org.opencontainers.image.revision" = "${SOURCE_COMMIT}"
