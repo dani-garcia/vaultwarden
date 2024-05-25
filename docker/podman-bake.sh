@@ -22,8 +22,8 @@ esac
 LABEL_ARGS=(
     --label org.opencontainers.image.description="Unofficial Bitwarden compatible server written in Rust"
     --label org.opencontainers.image.licenses="AGPL-3.0-only"
-    --label org.opencontainers.image.documentation="https://github.com/dani-garcia/vaultwarden/wiki"
-    --label org.opencontainers.image.url="https://github.com/dani-garcia/vaultwarden"
+    --label org.opencontainers.image.documentation="https://github.com/vaultwarden/vaultwarden/wiki"
+    --label org.opencontainers.image.url="https://github.com/vaultwarden/vaultwarden"
     --label org.opencontainers.image.created="$(date --utc --iso-8601=seconds)"
 )
 if [[ -n "${SOURCE_REPOSITORY_URL}" ]]; then
