@@ -747,9 +747,9 @@ async fn post_collections_admin(
         err!("Cipher is not write accessible")
     }
 
-    let posted_collections: HashSet<String> = data.collection_ids.iter().cloned().collect();
-    let current_collections: HashSet<String> =
-        cipher.get_collections(headers.user.uuid.clone(), &mut conn).await.iter().cloned().collect();
+    let posted_collections = HashSet::<String>::from_iter(data.collection_ids);
+    let current_collections =
+        HashSet::<String>::from_iter(cipher.get_collections(headers.user.uuid.clone(), &mut conn).await);
 
     for collection in posted_collections.symmetric_difference(&current_collections) {
         match Collection::find_by_uuid(collection, &mut conn).await {
