@@ -50,7 +50,6 @@ pub fn routes() -> Vec<rocket::Route> {
         api_key,
         rotate_api_key,
         get_known_device,
-        get_known_device_from_path,
         put_avatar,
         put_device_token,
         put_clear_device_token,
@@ -979,20 +978,13 @@ async fn rotate_api_key(data: JsonUpcase<PasswordOrOtpData>, headers: Headers, c
     _api_key(data, true, headers, conn).await
 }
 
-// This variant is deprecated: https://github.com/bitwarden/server/pull/2682
-#[get("/devices/knowndevice/<email>/<uuid>")]
-async fn get_known_device_from_path(email: &str, uuid: &str, mut conn: DbConn) -> JsonResult {
-    // This endpoint doesn't have auth header
+#[get("/devices/knowndevice")]
+async fn get_known_device(device: KnownDevice, mut conn: DbConn) -> JsonResult {
     let mut result = false;
-    if let Some(user) = User::find_by_mail(email, &mut conn).await {
-        result = Device::find_by_uuid_and_user(uuid, &user.uuid, &mut conn).await.is_some();
+    if let Some(user) = User::find_by_mail(&device.email, &mut conn).await {
+        result = Device::find_by_uuid_and_user(&device.uuid, &user.uuid, &mut conn).await.is_some();
     }
     Ok(Json(json!(result)))
-}
-
-#[get("/devices/knowndevice")]
-async fn get_known_device(device: KnownDevice, conn: DbConn) -> JsonResult {
-    get_known_device_from_path(&device.email, &device.uuid, conn).await
 }
 
 struct KnownDevice {
