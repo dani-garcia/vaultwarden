@@ -184,5 +184,5 @@ podman run --rm -it \
 | SOURCE_COMMIT         | null               | The commit hash of the current commit for this build                                                               |
 | SOURCE_VERSION        | null               | The current exact tag of this commit, else the last tag and the first 8 chars of the source commit                 |
 | BASE_TAGS             | testing            | Tags to be used. Can be a comma separated value like "latest,1.29.2"                                               |
-| CONTAINER_REGISTRIES  | vaultwarden/server | Comma separated value of container registries. Like `ghcr.io/dani-garcia/vaultwarden,docker.io/vaultwarden/server` |
+| CONTAINER_REGISTRIES  | vaultwarden/server | Comma separated value of container registries. Like `ghcr.io/vaultwarden/vaultwarden,docker.io/vaultwarden/server` |
 | VW_VERSION            | null               | To override the `SOURCE_VERSION` value. This is also used by the `build.rs` code for example                       |
