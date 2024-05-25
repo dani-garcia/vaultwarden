@@ -4,5 +4,5 @@ contact_links:
     url: https://vaultwarden.discourse.group/
     about: Use this forum to request features or get help with usage/configuration.
   - name: GitHub Discussions for vaultwarden
-    url: https://github.com/dani-garcia/vaultwarden/discussions
+    url: https://github.com/vaultwarden/vaultwarden/discussions
     about: An alternative to the Discourse forum, if this is easier for you.
