@@ -702,7 +702,7 @@ async fn put_collections_update(
     headers: Headers,
     conn: DbConn,
     nt: Notify<'_>,
-) -> EmptyResult {
+) -> JsonResult {
     post_collections_update(uuid, data, headers, conn, nt).await
 }
 
@@ -713,7 +713,7 @@ async fn post_collections_update(
     headers: Headers,
     mut conn: DbConn,
     nt: Notify<'_>,
-) -> EmptyResult {
+) -> JsonResult {
     let data: CollectionsAdminData = data.into_inner();
 
     let cipher = match Cipher::find_by_uuid(uuid, &mut conn).await {
@@ -761,7 +761,7 @@ async fn post_collections_update(
     log_event(
         EventType::CipherUpdatedCollections as i32,
         &cipher.uuid,
-        &cipher.organization_uuid.unwrap(),
+        &cipher.organization_uuid.clone().unwrap(),
         &headers.user.uuid,
         headers.device.atype,
         &headers.ip.ip,
@@ -769,7 +769,7 @@ async fn post_collections_update(
     )
     .await;
 
-    Ok(())
+    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, &mut conn).await))
 }
 
 #[put("/ciphers/<uuid>/collections-admin", data = "<data>")]
