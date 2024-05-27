@@ -703,7 +703,7 @@ async fn put_collections_update(
     conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
-    post_collections_admin(uuid, data, headers, conn, nt).await
+    post_collections_update(uuid, data, headers, conn, nt).await
 }
 
 #[post("/ciphers/<uuid>/collections", data = "<data>")]
@@ -711,10 +711,65 @@ async fn post_collections_update(
     uuid: &str,
     data: Json<CollectionsAdminData>,
     headers: Headers,
-    conn: DbConn,
+    mut conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
-    post_collections_admin(uuid, data, headers, conn, nt).await
+    let data: CollectionsAdminData = data.into_inner();
+
+    let cipher = match Cipher::find_by_uuid(uuid, &mut conn).await {
+        Some(cipher) => cipher,
+        None => err!("Cipher doesn't exist"),
+    };
+
+    if !cipher.is_write_accessible_to_user(&headers.user.uuid, &mut conn).await {
+        err!("Cipher is not write accessible")
+    }
+
+    let posted_collections = HashSet::<String>::from_iter(data.collection_ids);
+    let current_collections =
+        HashSet::<String>::from_iter(cipher.get_collections(headers.user.uuid.clone(), &mut conn).await);
+
+    for collection in posted_collections.symmetric_difference(&current_collections) {
+        match Collection::find_by_uuid(collection, &mut conn).await {
+            None => err!("Invalid collection ID provided"),
+            Some(collection) => {
+                if collection.is_writable_by_user(&headers.user.uuid, &mut conn).await {
+                    if posted_collections.contains(&collection.uuid) {
+                        // Add to collection
+                        CollectionCipher::save(&cipher.uuid, &collection.uuid, &mut conn).await?;
+                    } else {
+                        // Remove from collection
+                        CollectionCipher::delete(&cipher.uuid, &collection.uuid, &mut conn).await?;
+                    }
+                } else {
+                    err!("No rights to modify the collection")
+                }
+            }
+        }
+    }
+
+    nt.send_cipher_update(
+        UpdateType::SyncCipherUpdate,
+        &cipher,
+        &cipher.update_users_revision(&mut conn).await,
+        &headers.device.uuid,
+        Some(Vec::from_iter(posted_collections)),
+        &mut conn,
+    )
+    .await;
+
+    log_event(
+        EventType::CipherUpdatedCollections as i32,
+        &cipher.uuid,
+        &cipher.organization_uuid.unwrap(),
+        &headers.user.uuid,
+        headers.device.atype,
+        &headers.ip.ip,
+        &mut conn,
+    )
+    .await;
+
+    Ok(())
 }
 
 #[put("/ciphers/<uuid>/collections-admin", data = "<data>")]
@@ -749,7 +804,7 @@ async fn post_collections_admin(
 
     let posted_collections = HashSet::<String>::from_iter(data.collection_ids);
     let current_collections =
-        HashSet::<String>::from_iter(cipher.get_collections(headers.user.uuid.clone(), &mut conn).await);
+        HashSet::<String>::from_iter(cipher.get_admin_collections(headers.user.uuid.clone(), &mut conn).await);
 
     for collection in posted_collections.symmetric_difference(&current_collections) {
         match Collection::find_by_uuid(collection, &mut conn).await {
