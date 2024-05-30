@@ -416,9 +416,47 @@ impl<'r> FromRequest<'r> for Host {
     }
 }
 
+pub enum ClientType {
+    Unspecified = 0,
+    Web = 1,
+    Browser = 2,
+    Desktop = 3,
+    Mobile = 4,
+    Cli = 5,
+    DirectoryConnector = 6,
+}
+
+impl ClientType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ClientType::Unspecified => "",
+            ClientType::Web => "web",
+            ClientType::Browser => "browser",
+            ClientType::Desktop => "desktop",
+            ClientType::Mobile => "mobile",
+            ClientType::Cli => "cli",
+            ClientType::DirectoryConnector => "connector",
+        }
+    }
+
+    pub fn from_str(client_name: &str) -> ClientType {
+        match client_name {
+            "web" => ClientType::Web,
+            "browser" => ClientType::Browser,
+            "desktop" => ClientType::Desktop,
+            "mobile" => ClientType::Mobile,
+            "cli" => ClientType::Cli,
+            "connector" => ClientType::DirectoryConnector,
+            _ => ClientType::Unspecified,
+        }
+    }
+}
+
+
 pub struct ClientHeaders {
     pub device_type: i32,
     pub ip: ClientIp,
+    pub client_type: ClientType,
 }
 
 #[rocket::async_trait]
@@ -434,9 +472,13 @@ impl<'r> FromRequest<'r> for ClientHeaders {
         let device_type: i32 =
             request.headers().get_one("device-type").map(|d| d.parse().unwrap_or(14)).unwrap_or_else(|| 14);
 
+        let client_name = request.headers().get_one("Bitwarden-Client-Name").unwrap_or_else(|| "");
+        let client_type: ClientType = ClientType::from_str(client_name);
+
         Outcome::Success(ClientHeaders {
             device_type,
             ip,
+            client_type,
         })
     }
 }

@@ -23,6 +23,7 @@ pub mod email;
 pub mod protected_actions;
 pub mod webauthn;
 pub mod yubikey;
+pub mod duo_oidc;
 
 pub fn routes() -> Vec<Route> {
     let mut routes = routes![
