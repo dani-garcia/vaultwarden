@@ -51,7 +51,7 @@ macro_rules! TOKEN_ENDPOINT {
     };
 }
 
-// Default JWT validity time
+// Number of seconds that a JWT we generate for Duo should be valid for
 const JWT_VALIDITY_SECS: i64 = 300;
 
 // Stored Duo context validity duration
@@ -125,7 +125,6 @@ struct DuoClient {
     client_secret: String, // Duo Client Secret (DuoData.sk)
     api_host: String,      // Duo API hostname (DuoData.host)
     redirect_uri: String,  // URL in this application clients should call for MFA verification
-    jwt_exp_seconds: i64,  // Number of seconds that JWTs we create should be valid for
 }
 
 impl DuoClient {
@@ -137,8 +136,7 @@ impl DuoClient {
             client_secret,
             api_host,
             redirect_uri,
-            jwt_exp_seconds: JWT_VALIDITY_SECS,
-        };
+        }
     }
 
     // Generate a client assertion for health checks and authorization code exchange.
@@ -150,7 +148,7 @@ impl DuoClient {
             iss: self.client_id.clone(),
             sub: self.client_id.clone(),
             aud: url.clone(),
-            exp: now + self.jwt_exp_seconds,
+            exp: now + JWT_VALIDITY_SECS,
             jti: jwt_id,
             iat: now,
         }
@@ -227,7 +225,7 @@ impl DuoClient {
         let jwt_payload = AuthorizationRequest {
             response_type: String::from("code"),
             scope: String::from("openid"),
-            exp: now + self.jwt_exp_seconds,
+            exp: now + JWT_VALIDITY_SECS,
             client_id: self.client_id.clone(),
             redirect_uri: self.redirect_uri.clone(),
             state,
