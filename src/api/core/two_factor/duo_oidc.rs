@@ -8,7 +8,13 @@ use crate::{
     api::{core::two_factor::duo::get_duo_keys_email, EmptyResult},
     auth::ClientType,
     crypto,
-    db::{models::EventType, DbConn},
+    db::{models::{
+            EventType,
+            TwoFactorDuoContext,
+        },
+         DbConn,
+         DbPool,
+    },
     error::Error,
     util::get_reqwest_client,
     CONFIG,
@@ -58,6 +64,9 @@ macro_rules! TOKEN_ENDPOINT {
 // Default JWT validity time
 const JWT_VALIDITY_SECS: i64 = 300;
 
+// Stored Duo context validity duration
+const CTX_VALIDITY_SECS: i64 = 300;
+
 // Generate a new Duo WebSDKv4 state string with a given size.
 // This can also be used to generate the optional OpenID Connect nonce.
 // Size must be between 16 and 1024 (inclusive).
@@ -97,8 +106,7 @@ struct AuthUrlJwt {
     pub iss: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub aud: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub nonce: Option<String>,
+    pub nonce: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub use_duo_code_attribute: Option<bool>,
 }
@@ -140,8 +148,7 @@ struct IdTokenClaims {
     aud: String,
     iss: String,
     preferred_username: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    nonce: Option<String>,
+    nonce: String,
 }
 
 // Duo WebSDK 4 Client
@@ -244,7 +251,7 @@ impl DuoClient {
     // Constructs the URL for the authorization request endpoint on Duo's service.
     // Clients are sent here to continue authentication.
     // https://duo.com/docs/oauthapi#authorization-request
-    fn make_authz_req_url(&self, duo_username: &str, state: String, nonce: Option<String>) -> Result<String, Error> {
+    fn make_authz_req_url(&self, duo_username: &str, state: String, nonce: String) -> Result<String, Error> {
         let now = Utc::now();
 
         let jwt_payload = AuthUrlJwt {
@@ -287,7 +294,7 @@ impl DuoClient {
         &self,
         duo_code: &str,
         duo_username: &str,
-        nonce: Option<&str>,
+        nonce: &str,
     ) -> Result<(), Error> {
         if duo_code == "" {
             err!("Invalid Duo Code")
@@ -357,20 +364,61 @@ impl DuoClient {
             Err(e) => err!(format!("Failed to decode Duo token {}", e)),
         };
 
-        if !crypto::ct_eq(&duo_username, &token_data.claims.preferred_username) {
+        let matching_nonces = crypto::ct_eq(&nonce, &token_data.claims.nonce);
+        let matching_usernames = crypto::ct_eq(&duo_username, &token_data.claims.preferred_username);
+
+        if !(matching_nonces && matching_usernames) {
             err!(format!(
                 "Error validating Duo user, expected {}, got {}",
                 duo_username, token_data.claims.preferred_username
             ))
         };
 
-        match nonce {
-            Some(nonce) => {
-                _ = nonce; // FIXME: Add Nonce support
-                Ok(())
-            }
-            None => Ok(()),
-        }
+        Ok(())
+    }
+}
+
+struct DuoAuthContext {
+    pub state: String,
+    pub user_email: String,
+    pub nonce: String,
+    pub exp: i64,
+}
+
+// Given a state string, retrieve the associated Duo auth context and
+// delete the retrieved state from the database.
+async fn extract_context(state: &str, conn: &mut DbConn) -> Option<DuoAuthContext> {
+    let ctx: TwoFactorDuoContext = match TwoFactorDuoContext::find_by_state(state, conn).await {
+        Some(c) => c,
+        None => return None
+    };
+
+    if ctx.exp < Utc::now().timestamp() {
+        ctx.delete(conn).await.ok();
+        return None
+    }
+
+    // Copy the context data, so that we can delete the context from
+    // the database before returning.
+
+    let ret_ctx = DuoAuthContext {
+        state: ctx.state.clone(),
+        user_email: ctx.user_email.clone(),
+        nonce: ctx.nonce.clone(),
+        exp: ctx.exp,
+    };
+
+    ctx.delete(conn).await.ok();
+    return Some(ret_ctx)
+}
+
+// Task to clean up expired Duo authentication contexts that may have accumulated in the store.
+pub async fn purge_duo_contexts(pool: DbPool) {
+    debug!("Purging Duo authentication contexts");
+    if let Ok(mut conn) = pool.get().await {
+        TwoFactorDuoContext::purge_expired_duo_contexts(&mut conn).await;
+    } else {
+        error!("Failed to get DB connection while purging expired Duo authentications")
     }
 }
 
@@ -420,8 +468,12 @@ pub async fn get_duo_auth_url(email: &str, client_type: &ClientType, conn: &mut 
 
     // Generate a random Duo state and OIDC Nonce
     let state = generate_state_default();
+    let nonce = generate_state_default();
 
-    return client.make_authz_req_url(email, state, None);
+    match TwoFactorDuoContext::save(state.as_str(), email, nonce.as_str(), CTX_VALIDITY_SECS, conn).await {
+        Ok(()) => client.make_authz_req_url(email, state, nonce),
+        Err(e) => err!(format!("Error storing Duo authentication context: {}", e))
+    }
 }
 
 pub async fn validate_duo_login(
@@ -443,7 +495,7 @@ pub async fn validate_duo_login(
     }
 
     let code = split[0];
-    //let state = split[1];
+    let state = split[1];
 
     let (ik, sk, _, host) = get_duo_keys_email(email, conn).await?;
 
@@ -452,6 +504,36 @@ pub async fn validate_duo_login(
         Err(e) => err!(format!("{}", e)),
     };
 
+    // Get the context by the state reported by the client. If we don't have one,
+    // it means the context was either missing or expired.
+    let ctx = match extract_context(state, conn).await {
+        Some(c) => c,
+        None => {
+            err!(
+                "Error validating duo authentication",
+                ErrorEvent {
+                    event: EventType::UserFailedLogIn2fa
+                }
+            )
+        }
+    };
+
+    // Context validation
+    let matching_usernames = crypto::ct_eq(&email, &ctx.user_email);
+
+    // Probably redundant, but we're double-checking them anyway.
+    let matching_states = crypto::ct_eq(&state, &ctx.state);
+    let unexpired_context = ctx.exp > Utc::now().timestamp();
+
+    if !(matching_usernames && matching_states && unexpired_context) {
+        err!(
+            "Error validating duo authentication",
+            ErrorEvent {
+                event: EventType::UserFailedLogIn2fa
+            }
+        )
+    }
+
     let client = DuoClient::new(ik, sk, host, callback_url);
 
     match client.health_check().await {
@@ -459,9 +541,9 @@ pub async fn validate_duo_login(
         Err(e) => err!(format!("{}", e)),
     };
 
-    match client.exchange_authz_code_for_result(code, email, None).await {
-        Ok(_r) => Ok(()),
-        Err(_e) => {
+    match client.exchange_authz_code_for_result(code, email, ctx.nonce.as_str()).await {
+        Ok(_) => Ok(()),
+        Err(_) => {
             err!(
                 "Error validating duo authentication",
                 ErrorEvent {

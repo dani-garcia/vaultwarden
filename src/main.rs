@@ -59,6 +59,7 @@ pub use error::{Error, MapResult};
 use rocket::data::{Limits, ToByteUnit};
 use std::sync::Arc;
 pub use util::is_running_in_container;
+use crate::api::core::two_factor::duo_oidc::purge_duo_contexts;
 
 #[rocket::main]
 async fn main() -> Result<(), Error> {
@@ -581,6 +582,15 @@ fn schedule_jobs(pool: db::DbPool) {
             if !CONFIG.auth_request_purge_schedule().is_empty() {
                 sched.add(Job::new(CONFIG.auth_request_purge_schedule().parse().unwrap(), || {
                     runtime.spawn(purge_auth_requests(pool.clone()));
+                }));
+            }
+
+            // Clean unused, expired Duo authentication contexts.
+            if !CONFIG.duo_context_purge_schedule().is_empty()
+                && CONFIG._enable_duo()
+                && !CONFIG.duo_use_iframe() {
+                sched.add(Job::new(CONFIG.duo_context_purge_schedule().parse().unwrap(), || {
+                    runtime.spawn(purge_duo_contexts(pool.clone()));
                 }));
             }
 

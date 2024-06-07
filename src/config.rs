@@ -415,7 +415,9 @@ make_config! {
         /// Auth Request cleanup schedule |> Cron schedule of the job that cleans old auth requests from the auth request.
         /// Defaults to every minute. Set blank to disable this job.
         auth_request_purge_schedule:   String, false,  def,    "30 * * * * *".to_string();
-
+        /// Duo Auth context cleanup schedule |> Cron schedule of the job that cleans expired Duo contexts from the database. Does nothing if Duo MFA is disabled or set to use the legacy iframe prompt.
+        /// Defaults to once every minute. Set blank to disable this job.
+        duo_context_purge_schedule:   String, false,  def,    "30 * * * * *".to_string();
     },
 
     /// General settings
