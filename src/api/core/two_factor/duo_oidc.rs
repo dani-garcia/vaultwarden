@@ -6,21 +6,18 @@ use ring::digest::{digest, Digest, SHA512_256};
 use serde::Serialize;
 use std::collections::HashMap;
 
-use url::Url;
 use crate::{
     api::{core::two_factor::duo::get_duo_keys_email, EmptyResult},
     crypto,
-    db::{models::{
-            EventType,
-            TwoFactorDuoContext,
-        },
-         DbConn,
-         DbPool,
+    db::{
+        models::{EventType, TwoFactorDuoContext},
+        DbConn, DbPool,
     },
     error::Error,
     util::get_reqwest_client,
     CONFIG,
 };
+use url::Url;
 
 // State length must be at least 16 characters and at most 1024 characters.
 const STATE_LENGTH: usize = 64;
@@ -128,10 +125,9 @@ struct DuoClient {
 }
 
 impl DuoClient {
-
     // Construct a new DuoClient
     fn new(client_id: String, client_secret: String, api_host: String, redirect_uri: String) -> DuoClient {
-        return DuoClient {
+        DuoClient {
             client_id,
             client_secret,
             api_host,
@@ -254,7 +250,7 @@ impl DuoClient {
         }
 
         let final_auth_url = auth_url.to_string();
-        return Ok(final_auth_url);
+        Ok(final_auth_url)
     }
 
     // Exchange the authorization code obtained from an access token provided by the user
@@ -345,12 +341,12 @@ struct DuoAuthContext {
 async fn extract_context(state: &str, conn: &mut DbConn) -> Option<DuoAuthContext> {
     let ctx: TwoFactorDuoContext = match TwoFactorDuoContext::find_by_state(state, conn).await {
         Some(c) => c,
-        None => return None
+        None => return None,
     };
 
     if ctx.exp < Utc::now().timestamp() {
         ctx.delete(conn).await.ok();
-        return None
+        return None;
     }
 
     // Copy the context data, so that we can delete the context from
@@ -363,7 +359,7 @@ async fn extract_context(state: &str, conn: &mut DbConn) -> Option<DuoAuthContex
     };
 
     ctx.delete(conn).await.ok();
-    return Some(ret_ctx)
+    Some(ret_ctx)
 }
 
 // Task to clean up expired Duo authentication contexts that may have accumulated in the database.
@@ -400,15 +396,17 @@ fn make_callback_url(client_name: &str) -> Result<String, Error> {
         let mut query_params = callback.query_pairs_mut();
         query_params.append_pair("client", client_name);
     }
-    return Ok(callback.to_string());
+    Ok(callback.to_string())
 }
 
 // Pre-redirect first stage of the Duo WebSDKv4 authentication flow.
 // Returns the "AuthUrl" that should be returned to clients for MFA.
-pub async fn get_duo_auth_url(email: &str,
-                              client_id: &String,
-                              device_identifier: &String,
-                              conn: &mut DbConn) -> Result<String, Error> {
+pub async fn get_duo_auth_url(
+    email: &str,
+    client_id: &String,
+    device_identifier: &String,
+    conn: &mut DbConn,
+) -> Result<String, Error> {
     let (ik, sk, _, host) = get_duo_keys_email(email, conn).await?;
 
     let callback_url = match make_callback_url(client_id.as_str()) {
@@ -434,7 +432,7 @@ pub async fn get_duo_auth_url(email: &str,
 
     match TwoFactorDuoContext::save(state.as_str(), email, nonce.as_str(), CTX_VALIDITY_SECS, conn).await {
         Ok(()) => client.make_authz_req_url(email, state, hash),
-        Err(e) => err!(format!("Error saving Duo authentication context: {e:?}"))
+        Err(e) => err!(format!("Error saving Duo authentication context: {e:?}")),
     }
 }
 
