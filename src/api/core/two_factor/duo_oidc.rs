@@ -1,4 +1,4 @@
-use chrono::{TimeDelta, Utc};
+use chrono::Utc;
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation};
 use reqwest::{header, StatusCode};
 use serde::Serialize;
@@ -235,12 +235,12 @@ impl DuoClient {
     // Clients are sent here to continue authentication.
     // https://duo.com/docs/oauthapi#authorization-request
     fn make_authz_req_url(&self, duo_username: &str, state: String, nonce: String) -> Result<String, Error> {
-        let now = Utc::now();
+        let now = Utc::now().timestamp();
 
         let jwt_payload = AuthorizationRequest {
             response_type: String::from("code"),
             scope: String::from("openid"),
-            exp: (now + TimeDelta::try_seconds(self.jwt_exp_seconds).unwrap()).timestamp(),
+            exp: now,
             client_id: self.client_id.clone(),
             redirect_uri: self.redirect_uri.clone(),
             state,
