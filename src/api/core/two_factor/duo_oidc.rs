@@ -131,7 +131,8 @@ struct IdTokenClaims {
     nonce: String,
 }
 
-// Duo WebSDK 4 Client
+// Duo OIDC Authorization Client
+// See https://duo.com/docs/oauthapi
 struct DuoClient {
     client_id: String,     // Duo Client ID (DuoData.ik)
     client_secret: String, // Duo Client Secret (DuoData.sk)
@@ -140,7 +141,6 @@ struct DuoClient {
     jwt_exp_seconds: i64,  // Number of seconds that JWTs we create should be valid for
 }
 
-// See https://duo.com/docs/oauthapi
 impl DuoClient {
 
     // Construct a new DuoClient
@@ -240,7 +240,7 @@ impl DuoClient {
         let jwt_payload = AuthorizationRequest {
             response_type: String::from("code"),
             scope: String::from("openid"),
-            exp: now,
+            exp: now + self.jwt_exp_seconds,
             client_id: self.client_id.clone(),
             redirect_uri: self.redirect_uri.clone(),
             state,
@@ -303,7 +303,7 @@ impl DuoClient {
         post_body.insert("client_assertion", token);
 
         let res = match get_reqwest_client()
-            .post(token_url.clone())
+            .post(&token_url)
             .header(header::USER_AGENT, "vaultwarden:Duo/2.0 (Rust)")
             .form(&post_body)
             .send()

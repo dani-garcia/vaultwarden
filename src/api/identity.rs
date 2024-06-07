@@ -523,9 +523,11 @@ async fn twofactor_auth(
         Some(TwoFactorType::Duo | TwoFactorType::OrganizationDuo) => {
             match CONFIG.duo_use_iframe() {
                 true => {
+                    // Legacy iframe prompt flow
                     duo::validate_duo_login(data.username.as_ref().unwrap().trim(), twofactor_code, conn).await?
                 }
                 false => {
+                    // OIDC based flow
                     duo_oidc::validate_duo_login(data.username.as_ref().unwrap().trim(), twofactor_code, client_type, conn).await?
                 }
             }
@@ -597,9 +599,9 @@ async fn _json_err_twofactor(providers: &[i32], user_uuid: &str, client_type: &C
                     None => err!("User does not exist"),
                 };
 
-                // Should we try to use the legacy iframe prompt?
                 match CONFIG.duo_use_iframe() {
                     true => {
+                        // Legacy iframe prompt flow
                         let (signature, host) = duo::generate_duo_signature(&email, conn).await?;
                         result["TwoFactorProviders2"][provider.to_string()] = json!({
                             "Host": host,
@@ -607,6 +609,7 @@ async fn _json_err_twofactor(providers: &[i32], user_uuid: &str, client_type: &C
                         })
                     }
                     false => {
+                        // OIDC based flow
                         let auth_url = duo_oidc::get_duo_auth_url(&email, client_type, conn).await?;
 
                         result["TwoFactorProviders2"][provider.to_string()] = json!({
