@@ -27,17 +27,11 @@ impl TwoFactorDuoContext {
         }
     }
 
-    pub async fn save(
-        state: &str,
-        user_email: &str,
-        nonce: &str,
-        ttl: i64,
-        conn: &mut DbConn,
-    ) -> EmptyResult {
+    pub async fn save(state: &str, user_email: &str, nonce: &str, ttl: i64, conn: &mut DbConn) -> EmptyResult {
         // A saved context should never be changed, only created or deleted.
         let exists = Self::find_by_state(state, conn).await;
         if exists.is_some() {
-            return Ok(())
+            return Ok(());
         };
 
         let exp = Utc::now().timestamp() + ttl;

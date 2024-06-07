@@ -502,7 +502,9 @@ async fn twofactor_auth(
 
     let twofactor_code = match data.two_factor_token {
         Some(ref code) => code,
-        None => err_json!(_json_err_twofactor(&twofactor_ids, &user.uuid, &data, conn).await?, "2FA token not provided"),
+        None => {
+            err_json!(_json_err_twofactor(&twofactor_ids, &user.uuid, &data, conn).await?, "2FA token not provided")
+        }
     };
 
     let selected_twofactor = twofactors.into_iter().find(|tf| tf.atype == selected_id && tf.enabled);
@@ -526,11 +528,14 @@ async fn twofactor_auth(
                 }
                 false => {
                     // OIDC based flow
-                    duo_oidc::validate_duo_login(data.username.as_ref().unwrap().trim(),
-                                                 twofactor_code,
-                                                 data.client_id.as_ref().unwrap(),
-                                                 data.device_identifier.as_ref().unwrap(),
-                                                 conn).await?
+                    duo_oidc::validate_duo_login(
+                        data.username.as_ref().unwrap().trim(),
+                        twofactor_code,
+                        data.client_id.as_ref().unwrap(),
+                        data.device_identifier.as_ref().unwrap(),
+                        conn,
+                    )
+                    .await?
                 }
             }
         }
@@ -573,7 +578,12 @@ fn _selected_data(tf: Option<TwoFactor>) -> ApiResult<String> {
     tf.map(|t| t.data).map_res("Two factor doesn't exist")
 }
 
-async fn _json_err_twofactor(providers: &[i32], user_uuid: &str, data: &ConnectData, conn: &mut DbConn) -> ApiResult<Value> {
+async fn _json_err_twofactor(
+    providers: &[i32],
+    user_uuid: &str,
+    data: &ConnectData,
+    conn: &mut DbConn,
+) -> ApiResult<Value> {
     let mut result = json!({
         "error" : "invalid_grant",
         "error_description" : "Two factor required.",
@@ -612,10 +622,13 @@ async fn _json_err_twofactor(providers: &[i32], user_uuid: &str, data: &ConnectD
                     }
                     false => {
                         // OIDC based flow
-                        let auth_url = duo_oidc::get_duo_auth_url(&email,
-                                                                  data.client_id.as_ref().unwrap(),
-                                                                  data.device_identifier.as_ref().unwrap(),
-                                                                  conn).await?;
+                        let auth_url = duo_oidc::get_duo_auth_url(
+                            &email,
+                            data.client_id.as_ref().unwrap(),
+                            data.device_identifier.as_ref().unwrap(),
+                            conn,
+                        )
+                        .await?;
 
                         result["TwoFactorProviders2"][provider.to_string()] = json!({
                         "AuthUrl": auth_url,
