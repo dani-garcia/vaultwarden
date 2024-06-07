@@ -19,10 +19,7 @@ use crate::{
 };
 use url::Url;
 
-// State length must be at least 16 characters and at most 1024 characters.
-const STATE_LENGTH: usize = 64;
-
-// Client URL constants. Defined as macros, so they can be passed into format!()
+// Duo OIDC Auth API URL constants. Defined as macros, so they can be passed into format!()
 #[allow(non_snake_case)]
 macro_rules! HEALTH_ENDPOINT {
     () => {
@@ -48,10 +45,15 @@ macro_rules! TOKEN_ENDPOINT {
     };
 }
 
-// Number of seconds that a JWT we generate for Duo should be valid for
+// The location on this service that Duo should redirect users to. For us, this is a bridge
+// built in to the Bitwarden clients.
+// See: https://github.com/bitwarden/clients/blob/main/apps/web/src/connectors/duo-redirect.ts
+const DUO_REDIRECT_LOCATION: &str = "duo-redirect-connector.html";
+
+// Number of seconds that a JWT we generate for Duo should be valid for.
 const JWT_VALIDITY_SECS: i64 = 300;
 
-// Stored Duo context validity duration
+// Number of seconds that a Duo context stored in the database should be valid for.
 const CTX_VALIDITY_SECS: i64 = 300;
 
 // Expected algorithm used by Duo to sign JWTs.
@@ -59,6 +61,9 @@ const DUO_RESP_SIGNATURE_ALG: Algorithm = Algorithm::HS512;
 
 // Signature algorithm we're using to sign JWTs for Duo. Must be either HS512 or HS256.
 const JWT_SIGNATURE_ALG: Algorithm = Algorithm::HS512;
+
+// Size of random strings for state and nonce. Must be at least 16 characters and at most 1024 characters.
+const STATE_LENGTH: usize = 64;
 
 // client_assertion payload for health checks and obtaining MFA results.
 #[derive(Debug, Serialize, Deserialize)]
@@ -71,7 +76,7 @@ struct ClientAssertion {
     pub iat: i64,
 }
 
-// request payload sent with clients to Duo for MFA
+// authorization request payload sent with clients to Duo for MFA
 #[derive(Debug, Serialize, Deserialize)]
 struct AuthorizationRequest {
     pub response_type: String,
@@ -99,7 +104,7 @@ enum HealthCheckResponse {
     },
 }
 
-// Iuter structure of response when exchanging authz code for MFA results
+// Outer structure of response when exchanging authz code for MFA results
 #[derive(Debug, Serialize, Deserialize)]
 struct IdTokenResponse {
     id_token: String, // IdTokenClaims
@@ -278,7 +283,10 @@ impl DuoClient {
         let mut post_body = HashMap::new();
         post_body.insert("grant_type", String::from("authorization_code"));
         post_body.insert("code", String::from(duo_code));
+
+        // Must be the same URL that was supplied in the authorization request for the supplied duo_code
         post_body.insert("redirect_uri", self.redirect_uri.clone());
+
         post_body
             .insert("client_assertion_type", String::from("urn:ietf:params:oauth:client-assertion-type:jwt-bearer"));
         post_body.insert("client_assertion", token);
@@ -322,7 +330,7 @@ impl DuoClient {
         let matching_usernames = crypto::ct_eq(&duo_username, &token_data.claims.preferred_username);
 
         if !(matching_nonces && matching_usernames) {
-            err!(format!("Error validating Duo authorization, Matching nonces? {matching_nonces}, Matching usernames? {matching_usernames}"))
+            err!("Error validating Duo authorization, nonce or username mismatch.")
         };
 
         Ok(())
@@ -372,26 +380,22 @@ pub async fn purge_duo_contexts(pool: DbPool) {
     }
 }
 
-// The location Duo redirects to is a bridge built in to the clients.
-// See: /clients/apps/web/src/connectors/duo-redirect.ts
-const DUO_REDIRECT_LOCATION: &str = "duo-redirect-connector.html";
-
 // Construct the url that Duo should redirect users to.
 fn make_callback_url(client_name: &str) -> Result<String, Error> {
     // Get the location of this application as defined in the config.
     let base = match Url::parse(CONFIG.domain().as_str()) {
         Ok(url) => url,
-        Err(e) => err!(format!("Error parsing configured domain URL: {e:?} Check your domain configuration.")),
+        Err(e) => err!(format!("Error parsing configured domain URL (check your domain configuration): {e:?}")),
     };
 
     // Add the client redirect bridge location
     let mut callback = match base.join(DUO_REDIRECT_LOCATION) {
         Ok(url) => url,
-        Err(e) => err!(format!("Error constructing Duo redirect URL: {e:?} Check your domain configuration.")),
+        Err(e) => err!(format!("Error constructing Duo redirect URL (check your domain configuration): {e:?}")),
     };
 
-    // Add the 'client' string. This is sent by clients in the 'Bitwarden-Client-Name'
-    // HTTP header of the request to /identity/connect/token
+    // Add the 'client' string with the authenticating device type. The callback connector uses this
+    // information to figure out how it should handle certain clients.
     {
         let mut query_params = callback.query_pairs_mut();
         query_params.append_pair("client", client_name);
@@ -399,7 +403,7 @@ fn make_callback_url(client_name: &str) -> Result<String, Error> {
     Ok(callback.to_string())
 }
 
-// Pre-redirect first stage of the Duo WebSDKv4 authentication flow.
+// Pre-redirect first stage of the Duo OIDC authentication flow.
 // Returns the "AuthUrl" that should be returned to clients for MFA.
 pub async fn get_duo_auth_url(
     email: &str,
@@ -426,7 +430,7 @@ pub async fn get_duo_auth_url(
     let nonce: String = crypto::get_random_string_alphanum(STATE_LENGTH);
 
     // Bind the nonce to the device that's currently authing by hashing the nonce and device id
-    // and sending that as the OIDC nonce.
+    // and sending the result as the OIDC nonce.
     let d: Digest = digest(&SHA512_256, format!("{nonce}{device_identifier}").as_bytes());
     let hash: String = HEXLOWER.encode(d.as_ref());
 
@@ -436,7 +440,7 @@ pub async fn get_duo_auth_url(
     }
 }
 
-// Post-redirect second stage of the Duo WebSDKv4 authentication flow.
+// Post-redirect second stage of the Duo OIDC authentication flow.
 // Exchanges an authorization code for the MFA result with Duo's API and validates the result.
 pub async fn validate_duo_login(
     email: &str,
@@ -447,6 +451,7 @@ pub async fn validate_duo_login(
 ) -> EmptyResult {
     let email = &email.to_lowercase();
 
+    // Result supplied to us by clients in the form "<authz code>|<state>"
     let split: Vec<&str> = two_factor_token.split('|').collect();
     if split.len() != 2 {
         err!(
