@@ -13,6 +13,7 @@ mod organization;
 mod send;
 mod two_factor;
 mod two_factor_incomplete;
+mod two_factor_duo_context;
 mod user;
 
 pub use self::attachment::Attachment;
@@ -29,5 +30,6 @@ pub use self::org_policy::{OrgPolicy, OrgPolicyErr, OrgPolicyType};
 pub use self::organization::{Organization, OrganizationApiKey, UserOrgStatus, UserOrgType, UserOrganization};
 pub use self::send::{Send, SendType};
 pub use self::two_factor::{TwoFactor, TwoFactorType};
+pub use self::two_factor_duo_context::TwoFactorDuoContext;
 pub use self::two_factor_incomplete::TwoFactorIncomplete;
 pub use self::user::{Invitation, User, UserKdfType, UserStampException};

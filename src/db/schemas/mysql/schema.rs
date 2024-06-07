@@ -175,6 +175,15 @@ table! {
 }
 
 table! {
+    twofactor_duo_ctx (state) {
+        state -> Text,
+        user_email -> Text,
+        nonce -> Text,
+        exp -> BigInt,
+    }
+}
+
+table! {
     users (uuid) {
         uuid -> Text,
         enabled -> Bool,
