@@ -21,7 +21,7 @@ use crate::{
 };
 
 // State length must be at least 16 characters and at most 1024 characters.
-const STATE_LENGTH: usize = 36;
+const STATE_LENGTH: usize = 64;
 
 // Pool of characters for state and nonce generation
 // 0-9 -> 0x30-0x39
