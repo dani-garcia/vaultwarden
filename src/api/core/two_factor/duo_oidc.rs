@@ -1,12 +1,14 @@
 use chrono::Utc;
+use data_encoding::HEXLOWER;
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation};
 use reqwest::{header, StatusCode};
+use ring::digest::{digest, Digest, SHA512_256};
 use serde::Serialize;
 use std::collections::HashMap;
+
 use url::Url;
 use crate::{
     api::{core::two_factor::duo::get_duo_keys_email, EmptyResult},
-    auth::ClientType,
     crypto,
     db::{models::{
             EventType,
@@ -423,10 +425,13 @@ fn make_callback_url(client_name: &str) -> Result<String, Error> {
 
 // Pre-redirect first stage of the Duo WebSDKv4 authentication flow.
 // Returns the "AuthUrl" that should be returned to clients for MFA.
-pub async fn get_duo_auth_url(email: &str, client_type: &ClientType, conn: &mut DbConn) -> Result<String, Error> {
+pub async fn get_duo_auth_url(email: &str,
+                              client_id: &String,
+                              device_identifier: &String,
+                              conn: &mut DbConn) -> Result<String, Error> {
     let (ik, sk, _, host) = get_duo_keys_email(email, conn).await?;
 
-    let callback_url = match make_callback_url(client_type.as_str()) {
+    let callback_url = match make_callback_url(client_id.as_str()) {
         Ok(url) => url,
         Err(e) => err!(format!("{}", e)),
     };
@@ -439,11 +444,16 @@ pub async fn get_duo_auth_url(email: &str, client_type: &ClientType, conn: &mut 
     };
 
     // Generate random OAuth2 state and OIDC Nonce
-    let state = generate_state();
-    let nonce = generate_state();
+    let state: String = generate_state();
+    let nonce: String = generate_state();
+
+    // Bind the nonce to the device that's currently authing by hashing the nonce and device id
+    // and sending that as the OIDC nonce.
+    let d: Digest = digest(&SHA512_256, format!("{nonce}{device_identifier}").as_bytes());
+    let hash: String = HEXLOWER.encode(d.as_ref());
 
     match TwoFactorDuoContext::save(state.as_str(), email, nonce.as_str(), CTX_VALIDITY_SECS, conn).await {
-        Ok(()) => client.make_authz_req_url(email, state, nonce),
+        Ok(()) => client.make_authz_req_url(email, state, hash),
         Err(e) => err!(format!("Error storing Duo authentication context: {}", e))
     }
 }
@@ -453,12 +463,10 @@ pub async fn get_duo_auth_url(email: &str, client_type: &ClientType, conn: &mut 
 pub async fn validate_duo_login(
     email: &str,
     two_factor_token: &str,
-    client_type: &ClientType,
+    client_id: &String,
+    device_identifier: &String,
     conn: &mut DbConn,
 ) -> EmptyResult {
-    // TODO: The OIDC nonce should somehow be bound to a specific authentication attempt.
-    // e.g. hashed and in an httponly cookie.
-    // This may not be possible given the way that BW clients redirect users for final auth.
     let email = &email.to_lowercase();
 
     let split: Vec<&str> = two_factor_token.split('|').collect();
@@ -506,7 +514,7 @@ pub async fn validate_duo_login(
         )
     }
 
-    let callback_url = match make_callback_url(client_type.as_str()) {
+    let callback_url = match make_callback_url(client_id.as_str()) {
         Ok(url) => url,
         Err(e) => err!(format!("{}", e)),
     };
@@ -518,7 +526,10 @@ pub async fn validate_duo_login(
         Err(e) => err!(format!("{}", e)),
     };
 
-    match client.exchange_authz_code_for_result(code, email, ctx.nonce.as_str()).await {
+    let d: Digest = digest(&SHA512_256, format!("{}{}", ctx.nonce, device_identifier).as_bytes());
+    let hash: String = HEXLOWER.encode(d.as_ref());
+
+    match client.exchange_authz_code_for_result(code, email, hash.as_str()).await {
         Ok(_) => Ok(()),
         Err(_) => {
             err!(
