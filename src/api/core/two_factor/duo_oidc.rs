@@ -1,5 +1,5 @@
 use chrono::{TimeDelta, Utc};
-use jsonwebtoken::{decode_header, Algorithm, DecodingKey, EncodingKey, Header, Validation};
+use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation};
 use reqwest::{header, StatusCode};
 use serde::Serialize;
 use std::collections::HashMap;
@@ -20,6 +20,9 @@ use crate::{
     CONFIG,
 };
 
+// State length must be at least 16 characters and at most 1024 characters.
+const STATE_LENGTH: usize = 36;
+
 // Pool of characters for state and nonce generation
 // 0-9 -> 0x30-0x39
 // A-Z -> 0x41-0x5A
@@ -30,10 +33,10 @@ const STATE_CHAR_POOL: [u8; 62] = [
     0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6A, 0x6B, 0x6C, 0x6D, 0x6E, 0x6F, 0x70, 0x71, 0x72, 0x73, 0x74, 0x75,
     0x76, 0x77, 0x78, 0x79, 0x7A,
 ];
-
-const MIN_STATE_SIZE: usize = 16;
-const MAX_STATE_SIZE: usize = 1024;
-const STATE_LENGTH: usize = 36; // Default size of state for generate_state_default()
+// Generate a state/nonce string.
+pub fn generate_state() -> String {
+    return crypto::get_random_string(&STATE_CHAR_POOL, STATE_LENGTH);
+}
 
 // Client URL constants. Defined as macros, so they can be passed into format!()
 #[allow(non_snake_case)]
@@ -67,24 +70,15 @@ const JWT_VALIDITY_SECS: i64 = 300;
 // Stored Duo context validity duration
 const CTX_VALIDITY_SECS: i64 = 300;
 
-// Generate a new Duo WebSDKv4 state string with a given size.
-// This can also be used to generate the optional OpenID Connect nonce.
-// Size must be between 16 and 1024 (inclusive).
-pub fn generate_state_len(size: usize) -> String {
-    if (size < MIN_STATE_SIZE) || (MAX_STATE_SIZE < size) {
-        panic!("Illegal Duo state size: {size}. Size must be 15 < size < 1025")
-    }
+// Expected algorithm used by Duo to sign JWTs.
+const DUO_RESP_SIGNATURE_ALG: Algorithm = Algorithm::HS512;
 
-    return crypto::get_random_string(&STATE_CHAR_POOL, size);
-}
+// Signature algorithm we're using to sign JWTs for Duo. Must be either HS512 or HS256.
+const JWT_SIGNATURE_ALG: Algorithm = Algorithm::HS512;
 
-pub fn generate_state_default() -> String {
-    return generate_state_len(STATE_LENGTH);
-}
-
-// Structs for serializing calls to Duo
+// client_assertion payload for health checks and obtaining MFA results.
 #[derive(Debug, Serialize, Deserialize)]
-struct ClientAssertionJwt {
+struct ClientAssertion {
     pub iss: String,
     pub sub: String,
     pub aud: String,
@@ -93,8 +87,9 @@ struct ClientAssertionJwt {
     pub iat: i64,
 }
 
+// request payload sent with clients to Duo for MFA
 #[derive(Debug, Serialize, Deserialize)]
-struct AuthUrlJwt {
+struct AuthorizationRequest {
     pub response_type: String,
     pub scope: String,
     pub exp: i64,
@@ -102,51 +97,36 @@ struct AuthUrlJwt {
     pub redirect_uri: String,
     pub state: String,
     pub duo_uname: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub iss: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub aud: Option<String>,
+    pub iss: String,
+    pub aud: String,
     pub nonce: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub use_duo_code_attribute: Option<bool>,
 }
 
-/*
-Structs for deserializing responses from Duo's API
-*/
-#[derive(Debug, Serialize, Deserialize)]
-struct HealthOKTS {
-    timestamp: i64,
-}
-
+// Duo service health check responses
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(untagged)]
 enum HealthCheckResponse {
     HealthOK {
         stat: String,
-        response: HealthOKTS,
     },
     HealthFail {
-        stat: String,
-        code: i32,
-        timestamp: i64,
         message: String,
         message_detail: String,
     },
 }
 
+// Iuter structure of response when exchanging authz code for MFA results
 #[derive(Debug, Serialize, Deserialize)]
 struct IdTokenResponse {
-    id_token: String,
+    id_token: String, // IdTokenClaims
     access_token: String,
     expires_in: i64,
     token_type: String,
 }
 
+// Inner structure of IdTokenResponse.id_token
 #[derive(Debug, Serialize, Deserialize)]
 struct IdTokenClaims {
-    aud: String,
-    iss: String,
     preferred_username: String,
     nonce: String,
 }
@@ -159,10 +139,11 @@ struct DuoClient {
     redirect_uri: String,  // URL in this application clients should call for MFA verification
     jwt_exp_seconds: i64,  // Number of seconds that JWTs we create should be valid for
 }
-// TODO: Cert pinning for calls to Duo?
 
 // See https://duo.com/docs/oauthapi
 impl DuoClient {
+
+    // Construct a new DuoClient
     fn new(client_id: String, client_secret: String, api_host: String, redirect_uri: String) -> DuoClient {
         return DuoClient {
             client_id,
@@ -173,10 +154,25 @@ impl DuoClient {
         };
     }
 
+    // Generate a client assertion for health checks and authorization code exchange.
+    fn new_client_assertion(&self, url: &String) -> ClientAssertion {
+        let now = Utc::now().timestamp();
+        let jwt_id = generate_state();
+
+        ClientAssertion {
+            iss: self.client_id.clone(),
+            sub: self.client_id.clone(),
+            aud: url.clone(),
+            exp: now + self.jwt_exp_seconds,
+            jti: jwt_id,
+            iat: now,
+        }
+    }
+
     // Given a serde-serializable struct, attempt to encode it as a JWT
     fn encode_duo_jwt<T: Serialize>(&self, jwt_payload: T) -> Result<String, Error> {
         match jsonwebtoken::encode(
-            &Header::new(Algorithm::HS512),
+            &Header::new(JWT_SIGNATURE_ALG),
             &jwt_payload,
             &EncodingKey::from_secret(&self.client_secret.as_bytes()),
         ) {
@@ -191,16 +187,7 @@ impl DuoClient {
     async fn health_check(&self) -> Result<(), Error> {
         let health_check_url: String = format!(HEALTH_ENDPOINT!(), self.api_host);
 
-        let now = Utc::now();
-        let jwt_id = generate_state_default();
-        let jwt_payload = ClientAssertionJwt {
-            iss: self.client_id.clone(),
-            sub: self.client_id.clone(),
-            aud: health_check_url.clone(),
-            exp: (now + TimeDelta::try_seconds(self.jwt_exp_seconds).unwrap()).timestamp(),
-            jti: jwt_id,
-            iat: now.timestamp(),
-        };
+        let jwt_payload = self.new_client_assertion(&health_check_url);
 
         let token = match self.encode_duo_jwt(jwt_payload) {
             Ok(token) => token,
@@ -230,12 +217,8 @@ impl DuoClient {
         let health_stat: String = match response {
             HealthCheckResponse::HealthOK {
                 stat,
-                response: _,
             } => stat,
             HealthCheckResponse::HealthFail {
-                stat: _,
-                code: _,
-                timestamp: _,
                 message,
                 message_detail,
             } => err!(format!("Duo health check FAIL response msg: {}, detail: {}", message, message_detail)),
@@ -254,7 +237,7 @@ impl DuoClient {
     fn make_authz_req_url(&self, duo_username: &str, state: String, nonce: String) -> Result<String, Error> {
         let now = Utc::now();
 
-        let jwt_payload = AuthUrlJwt {
+        let jwt_payload = AuthorizationRequest {
             response_type: String::from("code"),
             scope: String::from("openid"),
             exp: (now + TimeDelta::try_seconds(self.jwt_exp_seconds).unwrap()).timestamp(),
@@ -262,10 +245,9 @@ impl DuoClient {
             redirect_uri: self.redirect_uri.clone(),
             state,
             duo_uname: String::from(duo_username),
-            iss: Some(self.client_id.clone()),
-            aud: Some(format!(API_HOST_FMT!(), self.api_host)),
+            iss: self.client_id.clone(),
+            aud: format!(API_HOST_FMT!(), self.api_host),
             nonce,
-            use_duo_code_attribute: Some(false),
         };
 
         let token = match self.encode_duo_jwt(jwt_payload) {
@@ -290,29 +272,22 @@ impl DuoClient {
         return Ok(final_auth_url);
     }
 
+    // Exchange the authorization code obtained from an access token provided by the user
+    // for the result of the MFA and validate.
+    // See: https://duo.com/docs/oauthapi#access-token (under Response Format)
     async fn exchange_authz_code_for_result(
         &self,
         duo_code: &str,
         duo_username: &str,
         nonce: &str,
     ) -> Result<(), Error> {
-        if duo_code == "" {
+        if duo_code.is_empty() {
             err!("Invalid Duo Code")
         }
 
-        let now = Utc::now();
-
         let token_url = format!(TOKEN_ENDPOINT!(), self.api_host);
-        let jwt_id = generate_state_default();
 
-        let jwt_payload = ClientAssertionJwt {
-            iss: self.client_id.clone(),
-            sub: self.client_id.clone(),
-            aud: token_url.clone(),
-            exp: (now + TimeDelta::try_seconds(self.jwt_exp_seconds).unwrap()).timestamp(),
-            jti: jwt_id,
-            iat: now.timestamp(),
-        };
+        let jwt_payload = self.new_client_assertion(&token_url);
 
         let token = match self.encode_duo_jwt(jwt_payload) {
             Ok(token) => token,
@@ -348,9 +323,7 @@ impl DuoClient {
             Err(e) => err!(format!("Error decoding ID token response: {}", e)),
         };
 
-        let header = decode_header(&response.id_token).unwrap();
-
-        let mut validation = Validation::new(header.alg);
+        let mut validation = Validation::new(DUO_RESP_SIGNATURE_ALG);
         validation.set_required_spec_claims(&["exp", "aud", "iss"]);
         validation.set_audience(&[&self.client_id]);
         validation.set_issuer(&[token_url.as_str()]);
@@ -400,7 +373,6 @@ async fn extract_context(state: &str, conn: &mut DbConn) -> Option<DuoAuthContex
 
     // Copy the context data, so that we can delete the context from
     // the database before returning.
-
     let ret_ctx = DuoAuthContext {
         state: ctx.state.clone(),
         user_email: ctx.user_email.clone(),
@@ -412,7 +384,7 @@ async fn extract_context(state: &str, conn: &mut DbConn) -> Option<DuoAuthContex
     return Some(ret_ctx)
 }
 
-// Task to clean up expired Duo authentication contexts that may have accumulated in the store.
+// Task to clean up expired Duo authentication contexts that may have accumulated in the database.
 pub async fn purge_duo_contexts(pool: DbPool) {
     debug!("Purging Duo authentication contexts");
     if let Ok(mut conn) = pool.get().await {
@@ -422,12 +394,12 @@ pub async fn purge_duo_contexts(pool: DbPool) {
     }
 }
 
-// Construct the url that Duo should redirect users to.
-// The actual location is a bridge built in to the clients.
+// The location Duo redirects to is a bridge built in to the clients.
 // See: /clients/apps/web/src/connectors/duo-redirect.ts
-fn make_callback_url(client_name: &str) -> Result<String, Error> {
-    const DUO_REDIRECT_LOCATION: &str = "duo-redirect-connector.html";
+const DUO_REDIRECT_LOCATION: &str = "duo-redirect-connector.html";
 
+// Construct the url that Duo should redirect users to.
+fn make_callback_url(client_name: &str) -> Result<String, Error> {
     // Get the location of this application as defined in the config.
     let base = match Url::parse(CONFIG.domain().as_str()) {
         Ok(url) => url,
@@ -449,8 +421,8 @@ fn make_callback_url(client_name: &str) -> Result<String, Error> {
     return Ok(callback.to_string());
 }
 
-// Initiates the first stage of the Duo WebSDKv4 authentication flow.
-// Returns the "AuthUrl" that should be passed to clients for MFA.
+// Pre-redirect first stage of the Duo WebSDKv4 authentication flow.
+// Returns the "AuthUrl" that should be returned to clients for MFA.
 pub async fn get_duo_auth_url(email: &str, client_type: &ClientType, conn: &mut DbConn) -> Result<String, Error> {
     let (ik, sk, _, host) = get_duo_keys_email(email, conn).await?;
 
@@ -466,9 +438,9 @@ pub async fn get_duo_auth_url(email: &str, client_type: &ClientType, conn: &mut 
         Err(e) => err!(format!("{}", e)),
     };
 
-    // Generate a random Duo state and OIDC Nonce
-    let state = generate_state_default();
-    let nonce = generate_state_default();
+    // Generate random OAuth2 state and OIDC Nonce
+    let state = generate_state();
+    let nonce = generate_state();
 
     match TwoFactorDuoContext::save(state.as_str(), email, nonce.as_str(), CTX_VALIDITY_SECS, conn).await {
         Ok(()) => client.make_authz_req_url(email, state, nonce),
@@ -476,12 +448,17 @@ pub async fn get_duo_auth_url(email: &str, client_type: &ClientType, conn: &mut 
     }
 }
 
+// Post-redirect second stage of the Duo WebSDKv4 authentication flow.
+// Exchanges an authorization code for the MFA result with Duo's API and validates the result.
 pub async fn validate_duo_login(
     email: &str,
     two_factor_token: &str,
     client_type: &ClientType,
     conn: &mut DbConn,
 ) -> EmptyResult {
+    // TODO: The OIDC nonce should somehow be bound to a specific authentication attempt.
+    // e.g. hashed and in an httponly cookie.
+    // This may not be possible given the way that BW clients redirect users for final auth.
     let email = &email.to_lowercase();
 
     let split: Vec<&str> = two_factor_token.split('|').collect();
@@ -499,13 +476,8 @@ pub async fn validate_duo_login(
 
     let (ik, sk, _, host) = get_duo_keys_email(email, conn).await?;
 
-    let callback_url = match make_callback_url(client_type.as_str()) {
-        Ok(url) => url,
-        Err(e) => err!(format!("{}", e)),
-    };
-
     // Get the context by the state reported by the client. If we don't have one,
-    // it means the context was either missing or expired.
+    // it means the context is either missing or expired.
     let ctx = match extract_context(state, conn).await {
         Some(c) => c,
         None => {
@@ -518,7 +490,7 @@ pub async fn validate_duo_login(
         }
     };
 
-    // Context validation
+    // Context validation steps
     let matching_usernames = crypto::ct_eq(&email, &ctx.user_email);
 
     // Probably redundant, but we're double-checking them anyway.
@@ -533,6 +505,11 @@ pub async fn validate_duo_login(
             }
         )
     }
+
+    let callback_url = match make_callback_url(client_type.as_str()) {
+        Ok(url) => url,
+        Err(e) => err!(format!("{}", e)),
+    };
 
     let client = DuoClient::new(ik, sk, host, callback_url);
 
