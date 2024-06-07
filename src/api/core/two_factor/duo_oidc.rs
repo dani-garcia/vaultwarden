@@ -25,21 +25,6 @@ use crate::{
 // State length must be at least 16 characters and at most 1024 characters.
 const STATE_LENGTH: usize = 64;
 
-// Pool of characters for state and nonce generation
-// 0-9 -> 0x30-0x39
-// A-Z -> 0x41-0x5A
-// a-z -> 0x61-0x7A
-const STATE_CHAR_POOL: [u8; 62] = [
-    0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49,
-    0x4A, 0x4B, 0x4C, 0x4D, 0x4E, 0x4F, 0x50, 0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5A, 0x61, 0x62,
-    0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6A, 0x6B, 0x6C, 0x6D, 0x6E, 0x6F, 0x70, 0x71, 0x72, 0x73, 0x74, 0x75,
-    0x76, 0x77, 0x78, 0x79, 0x7A,
-];
-// Generate a state/nonce string.
-pub fn generate_state() -> String {
-    return crypto::get_random_string(&STATE_CHAR_POOL, STATE_LENGTH);
-}
-
 // Client URL constants. Defined as macros, so they can be passed into format!()
 #[allow(non_snake_case)]
 macro_rules! HEALTH_ENDPOINT {
@@ -159,7 +144,7 @@ impl DuoClient {
     // Generate a client assertion for health checks and authorization code exchange.
     fn new_client_assertion(&self, url: &String) -> ClientAssertion {
         let now = Utc::now().timestamp();
-        let jwt_id = generate_state();
+        let jwt_id = crypto::get_random_string_alphanum(STATE_LENGTH);
 
         ClientAssertion {
             iss: self.client_id.clone(),
@@ -444,8 +429,8 @@ pub async fn get_duo_auth_url(email: &str,
     };
 
     // Generate random OAuth2 state and OIDC Nonce
-    let state: String = generate_state();
-    let nonce: String = generate_state();
+    let state: String = crypto::get_random_string_alphanum(STATE_LENGTH);
+    let nonce: String = crypto::get_random_string_alphanum(STATE_LENGTH);
 
     // Bind the nonce to the device that's currently authing by hashing the nonce and device id
     // and sending that as the OIDC nonce.
