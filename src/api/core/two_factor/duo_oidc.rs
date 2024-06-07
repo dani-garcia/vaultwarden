@@ -164,7 +164,7 @@ impl DuoClient {
             &EncodingKey::from_secret(&self.client_secret.as_bytes()),
         ) {
             Ok(token) => Ok(token),
-            Err(e) => err!(format!("{}", e)),
+            Err(e) => err!(format!("Error encoding Duo JWT: {e:?}")),
         }
     }
 
@@ -178,7 +178,7 @@ impl DuoClient {
 
         let token = match self.encode_duo_jwt(jwt_payload) {
             Ok(token) => token,
-            Err(e) => err!(format!("{}", e)),
+            Err(e) => return Err(e),
         };
 
         let mut post_body = HashMap::new();
@@ -193,12 +193,12 @@ impl DuoClient {
             .await
         {
             Ok(r) => r,
-            Err(e) => err!(format!("Error requesting Duo health check: {}", e)),
+            Err(e) => err!(format!("Error requesting Duo health check: {e:?}")),
         };
 
         let response: HealthCheckResponse = match res.json::<HealthCheckResponse>().await {
             Ok(r) => r,
-            Err(e) => err!(format!("Duo health check response decode error: {}", e)),
+            Err(e) => err!(format!("Duo health check response decode error: {e:?}")),
         };
 
         let health_stat: String = match response {
@@ -208,11 +208,11 @@ impl DuoClient {
             HealthCheckResponse::HealthFail {
                 message,
                 message_detail,
-            } => err!(format!("Duo health check FAIL response msg: {}, detail: {}", message, message_detail)),
+            } => err!(format!("Duo health check FAIL response, msg: {}, detail: {}", message, message_detail)),
         };
 
         if health_stat != "OK" {
-            err!("Duo health check returned OK-like body but did not contain an OK stat.");
+            err!(format!("Duo health check failed, got OK-like body with stat {health_stat}"));
         }
 
         Ok(())
@@ -239,13 +239,13 @@ impl DuoClient {
 
         let token = match self.encode_duo_jwt(jwt_payload) {
             Ok(token) => token,
-            Err(e) => err!(format!("{}", e)),
+            Err(e) => return Err(e),
         };
 
         let authz_endpoint = format!(AUTHZ_ENDPOINT!(), self.api_host);
         let mut auth_url = match Url::parse(authz_endpoint.as_str()) {
             Ok(url) => url,
-            Err(e) => err!(format!("{}", e)),
+            Err(e) => err!(format!("Error parsing Duo authorization URL: {e:?}")),
         };
 
         {
@@ -269,7 +269,7 @@ impl DuoClient {
         nonce: &str,
     ) -> Result<(), Error> {
         if duo_code.is_empty() {
-            err!("Invalid Duo Code")
+            err!("Empty Duo authorization code")
         }
 
         let token_url = format!(TOKEN_ENDPOINT!(), self.api_host);
@@ -278,7 +278,7 @@ impl DuoClient {
 
         let token = match self.encode_duo_jwt(jwt_payload) {
             Ok(token) => token,
-            Err(e) => err!(format!("{}", e)),
+            Err(e) => return Err(e),
         };
 
         let mut post_body = HashMap::new();
@@ -297,7 +297,7 @@ impl DuoClient {
             .await
         {
             Ok(r) => r,
-            Err(e) => err!(format!("Error exchanging Duo code: {}", e)),
+            Err(e) => err!(format!("Error exchanging Duo code: {e:?}")),
         };
 
         let status_code = res.status();
@@ -307,7 +307,7 @@ impl DuoClient {
 
         let response: IdTokenResponse = match res.json::<IdTokenResponse>().await {
             Ok(r) => r,
-            Err(e) => err!(format!("Error decoding ID token response: {}", e)),
+            Err(e) => err!(format!("Error decoding ID token response: {e:?}")),
         };
 
         let mut validation = Validation::new(DUO_RESP_SIGNATURE_ALG);
@@ -321,17 +321,14 @@ impl DuoClient {
             &validation,
         ) {
             Ok(c) => c,
-            Err(e) => err!(format!("Failed to decode Duo token {}", e)),
+            Err(e) => err!(format!("Failed to decode Duo token {e:?}")),
         };
 
         let matching_nonces = crypto::ct_eq(&nonce, &token_data.claims.nonce);
         let matching_usernames = crypto::ct_eq(&duo_username, &token_data.claims.preferred_username);
 
         if !(matching_nonces && matching_usernames) {
-            err!(format!(
-                "Error validating Duo user, expected {}, got {}",
-                duo_username, token_data.claims.preferred_username
-            ))
+            err!(format!("Error validating Duo authorization, Matching nonces? {matching_nonces}, Matching usernames? {matching_usernames}"))
         };
 
         Ok(())
@@ -390,13 +387,13 @@ fn make_callback_url(client_name: &str) -> Result<String, Error> {
     // Get the location of this application as defined in the config.
     let base = match Url::parse(CONFIG.domain().as_str()) {
         Ok(url) => url,
-        Err(e) => err!(format!("{}", e)),
+        Err(e) => err!(format!("Error parsing configured domain URL: {e:?} Check your domain configuration.")),
     };
 
     // Add the client redirect bridge location
     let mut callback = match base.join(DUO_REDIRECT_LOCATION) {
         Ok(url) => url,
-        Err(e) => err!(format!("{}", e)),
+        Err(e) => err!(format!("Error constructing Duo redirect URL: {e:?} Check your domain configuration.")),
     };
 
     // Add the 'client' string. This is sent by clients in the 'Bitwarden-Client-Name'
@@ -418,14 +415,14 @@ pub async fn get_duo_auth_url(email: &str,
 
     let callback_url = match make_callback_url(client_id.as_str()) {
         Ok(url) => url,
-        Err(e) => err!(format!("{}", e)),
+        Err(e) => return Err(e),
     };
 
     let client = DuoClient::new(ik, sk, host, callback_url);
 
     match client.health_check().await {
         Ok(()) => {}
-        Err(e) => err!(format!("{}", e)),
+        Err(e) => return Err(e),
     };
 
     // Generate random OAuth2 state and OIDC Nonce
@@ -439,7 +436,7 @@ pub async fn get_duo_auth_url(email: &str,
 
     match TwoFactorDuoContext::save(state.as_str(), email, nonce.as_str(), CTX_VALIDITY_SECS, conn).await {
         Ok(()) => client.make_authz_req_url(email, state, hash),
-        Err(e) => err!(format!("Error storing Duo authentication context: {}", e))
+        Err(e) => err!(format!("Error saving Duo authentication context: {e:?}"))
     }
 }
 
@@ -501,14 +498,14 @@ pub async fn validate_duo_login(
 
     let callback_url = match make_callback_url(client_id.as_str()) {
         Ok(url) => url,
-        Err(e) => err!(format!("{}", e)),
+        Err(e) => return Err(e),
     };
 
     let client = DuoClient::new(ik, sk, host, callback_url);
 
     match client.health_check().await {
         Ok(()) => {}
-        Err(e) => err!(format!("{}", e)),
+        Err(e) => return Err(e),
     };
 
     let d: Digest = digest(&SHA512_256, format!("{}{}", ctx.nonce, device_identifier).as_bytes());
