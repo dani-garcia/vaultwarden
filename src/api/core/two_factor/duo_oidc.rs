@@ -143,14 +143,14 @@ impl DuoClient {
     }
 
     // Generate a client assertion for health checks and authorization code exchange.
-    fn new_client_assertion(&self, url: &String) -> ClientAssertion {
+    fn new_client_assertion(&self, url: &str) -> ClientAssertion {
         let now = Utc::now().timestamp();
         let jwt_id = crypto::get_random_string_alphanum(STATE_LENGTH);
 
         ClientAssertion {
             iss: self.client_id.clone(),
             sub: self.client_id.clone(),
-            aud: url.clone(),
+            aud: url.to_string(),
             exp: now + JWT_VALIDITY_SECS,
             jti: jwt_id,
             iat: now,
@@ -162,7 +162,7 @@ impl DuoClient {
         match jsonwebtoken::encode(
             &Header::new(JWT_SIGNATURE_ALG),
             &jwt_payload,
-            &EncodingKey::from_secret(&self.client_secret.as_bytes()),
+            &EncodingKey::from_secret(self.client_secret.as_bytes()),
         ) {
             Ok(token) => Ok(token),
             Err(e) => err!(format!("Error encoding Duo JWT: {e:?}")),
@@ -328,8 +328,8 @@ impl DuoClient {
             Err(e) => err!(format!("Failed to decode Duo token {e:?}")),
         };
 
-        let matching_nonces = crypto::ct_eq(&nonce, &token_data.claims.nonce);
-        let matching_usernames = crypto::ct_eq(&duo_username, &token_data.claims.preferred_username);
+        let matching_nonces = crypto::ct_eq(nonce, &token_data.claims.nonce);
+        let matching_usernames = crypto::ct_eq(duo_username, &token_data.claims.preferred_username);
 
         if !(matching_nonces && matching_usernames) {
             err!("Error validating Duo authorization, nonce or username mismatch.")
@@ -409,13 +409,13 @@ fn make_callback_url(client_name: &str) -> Result<String, Error> {
 // Returns the "AuthUrl" that should be returned to clients for MFA.
 pub async fn get_duo_auth_url(
     email: &str,
-    client_id: &String,
+    client_id: &str,
     device_identifier: &String,
     conn: &mut DbConn,
 ) -> Result<String, Error> {
     let (ik, sk, _, host) = get_duo_keys_email(email, conn).await?;
 
-    let callback_url = match make_callback_url(client_id.as_str()) {
+    let callback_url = match make_callback_url(client_id) {
         Ok(url) => url,
         Err(e) => return Err(e),
     };
@@ -447,8 +447,8 @@ pub async fn get_duo_auth_url(
 pub async fn validate_duo_login(
     email: &str,
     two_factor_token: &str,
-    client_id: &String,
-    device_identifier: &String,
+    client_id: &str,
+    device_identifier: &str,
     conn: &mut DbConn,
 ) -> EmptyResult {
     let email = &email.to_lowercase();
@@ -484,10 +484,10 @@ pub async fn validate_duo_login(
     };
 
     // Context validation steps
-    let matching_usernames = crypto::ct_eq(&email, &ctx.user_email);
+    let matching_usernames = crypto::ct_eq(email, &ctx.user_email);
 
     // Probably redundant, but we're double-checking them anyway.
-    let matching_states = crypto::ct_eq(&state, &ctx.state);
+    let matching_states = crypto::ct_eq(state, &ctx.state);
     let unexpired_context = ctx.exp > Utc::now().timestamp();
 
     if !(matching_usernames && matching_states && unexpired_context) {
@@ -499,7 +499,7 @@ pub async fn validate_duo_login(
         )
     }
 
-    let callback_url = match make_callback_url(client_id.as_str()) {
+    let callback_url = match make_callback_url(client_id) {
         Ok(url) => url,
         Err(e) => return Err(e),
     };
