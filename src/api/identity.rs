@@ -503,7 +503,7 @@ async fn twofactor_auth(
     let twofactor_code = match data.two_factor_token {
         Some(ref code) => code,
         None => {
-            err_json!(_json_err_twofactor(&twofactor_ids, &user.uuid, &data, conn).await?, "2FA token not provided")
+            err_json!(_json_err_twofactor(&twofactor_ids, &user.uuid, data, conn).await?, "2FA token not provided")
         }
     };
 
@@ -550,7 +550,7 @@ async fn twofactor_auth(
                 }
                 _ => {
                     err_json!(
-                        _json_err_twofactor(&twofactor_ids, &user.uuid, &data, conn).await?,
+                        _json_err_twofactor(&twofactor_ids, &user.uuid, data, conn).await?,
                         "2FA Remember token not provided"
                     )
                 }
