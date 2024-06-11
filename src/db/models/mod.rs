@@ -12,8 +12,8 @@ mod org_policy;
 mod organization;
 mod send;
 mod two_factor;
-mod two_factor_incomplete;
 mod two_factor_duo_context;
+mod two_factor_incomplete;
 mod user;
 
 pub use self::attachment::Attachment;
