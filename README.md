@@ -34,6 +34,38 @@ Basically full implementation of Bitwarden API is provided including:
  * Emergency Access
 
 ## Installation
+
+## Docker compose
+This example assumes that you have [installed](https://docs.docker.com/compose/install/) Docker Compose. This configuration can be used either for local servers that are not open to the 'outside world', or as a template for a [reverse proxy](https://github.com/dani-garcia/vaultwarden/wiki/Proxy-examples).
+
+Start by creating a new directory at your preferred location and changing into it. Next, create the `compose.yml` (or `docker-compose.yml` for legacy versions)
+
+```yaml
+services:
+  vaultwarden:
+    image: vaultwarden/server:latest
+    container_name: vaultwarden
+    restart: always
+    environment:
+      # DOMAIN: "https://vaultwarden.example.com"  # required when using a reverse proxy; your domain; vaultwarden needs to know it's https to work properly with attachments
+      SIGNUPS_ALLOWED: "true" # Deactivate this with "false" after you have created your account so that no strangers can register
+    volumes:
+      - ./vw-data:/data # the path before the : can be changed
+    ports:
+      - 80:80 # you can replace the port before the : with your preferred port
+```
+
+to create and run the container, run:
+```bash
+docker compose up -d && docker compose logs -f
+```
+
+to update and run the container, run:
+```bash
+docker compose pull && docker compose up -d && docker compose logs -f
+```
+
+## Docker run
 Pull the docker image and mount a volume from the host for persistent storage:
 
 ```sh
