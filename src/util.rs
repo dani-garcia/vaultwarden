@@ -566,7 +566,7 @@ impl<'de> Visitor<'de> for LowerCaseVisitor {
         let mut result_map = JsonMap::new();
 
         while let Some((key, value)) = map.next_entry()? {
-            result_map.insert(lcase_first(key), lowercase_value(value));
+            result_map.insert(_process_key(key), convert_json_key_lcase_first(value));
         }
 
         Ok(Value::Object(result_map))
@@ -579,32 +579,10 @@ impl<'de> Visitor<'de> for LowerCaseVisitor {
         let mut result_seq = Vec::<Value>::new();
 
         while let Some(value) = seq.next_element()? {
-            result_seq.push(lowercase_value(value));
+            result_seq.push(convert_json_key_lcase_first(value));
         }
 
         Ok(Value::Array(result_seq))
-    }
-}
-
-fn lowercase_value(value: Value) -> Value {
-    if let Value::Object(map) = value {
-        let mut new_value = Value::Object(serde_json::Map::new());
-
-        for (key, val) in map.into_iter() {
-            let processed_key = _process_key(&key);
-            new_value[processed_key] = lowercase_value(val);
-        }
-        new_value
-    } else if let Value::Array(array) = value {
-        // Initialize array with null values
-        let mut new_value = Value::Array(vec![Value::Null; array.len()]);
-
-        for (index, val) in array.into_iter().enumerate() {
-            new_value[index] = lowercase_value(val);
-        }
-        new_value
-    } else {
-        value
     }
 }
 
@@ -734,25 +712,25 @@ pub fn convert_json_key_lcase_first(src_json: Value) -> Value {
 
         Value::Object(obj) => {
             let mut json_map = JsonMap::new();
-            for (key, value) in obj.iter() {
+            for (key, value) in obj.into_iter() {
                 match (key, value) {
                     (key, Value::Object(elm)) => {
-                        let inner_value = convert_json_key_lcase_first(Value::Object(elm.clone()));
-                        json_map.insert(lcase_first(key), inner_value);
+                        let inner_value = convert_json_key_lcase_first(Value::Object(elm));
+                        json_map.insert(_process_key(&key), inner_value);
                     }
 
                     (key, Value::Array(elm)) => {
                         let mut inner_array: Vec<Value> = Vec::with_capacity(elm.len());
 
                         for inner_obj in elm {
-                            inner_array.push(convert_json_key_lcase_first(inner_obj.clone()));
+                            inner_array.push(convert_json_key_lcase_first(inner_obj));
                         }
 
-                        json_map.insert(lcase_first(key), Value::Array(inner_array));
+                        json_map.insert(_process_key(&key), Value::Array(inner_array));
                     }
 
                     (key, value) => {
-                        json_map.insert(lcase_first(key), value.clone());
+                        json_map.insert(_process_key(&key), value);
                     }
                 }
             }
