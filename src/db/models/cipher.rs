@@ -150,18 +150,26 @@ impl Cipher {
             (false, false)
         };
 
-        let fields_json = self
+        let fields_json: Vec<_> = self
             .fields
             .as_ref()
-            .and_then(|s| serde_json::from_str::<LowerCase<Value>>(s).ok())
-            .unwrap_or_default()
-            .data;
-        let password_history_json = self
+            .and_then(|s| {
+                serde_json::from_str::<Vec<LowerCase<Value>>>(s)
+                    .inspect_err(|e| warn!("Error parsing fields {:?}", e))
+                    .ok()
+            })
+            .map(|d| d.into_iter().map(|d| d.data).collect())
+            .unwrap_or_default();
+        let password_history_json: Vec<_> = self
             .password_history
             .as_ref()
-            .and_then(|s| serde_json::from_str::<LowerCase<Value>>(s).ok())
-            .unwrap_or_default()
-            .data;
+            .and_then(|s| {
+                serde_json::from_str::<Vec<LowerCase<Value>>>(s)
+                    .inspect_err(|e| warn!("Error parsing password history {:?}", e))
+                    .ok()
+            })
+            .map(|d| d.into_iter().map(|d| d.data).collect())
+            .unwrap_or_default();
 
         // Get the type_data or a default to an empty json object '{}'.
         // If not passing an empty object, mobile clients will crash.
@@ -186,10 +194,10 @@ impl Cipher {
 
         // NOTE: This was marked as *Backwards Compatibility Code*, but as of January 2021 this is still being used by upstream
         // data_json should always contain the following keys with every atype
-        data_json["fields"] = fields_json.clone();
+        data_json["fields"] = Value::Array(fields_json.clone());
         data_json["name"] = json!(self.name);
         data_json["notes"] = json!(self.notes);
-        data_json["passwordHistory"] = password_history_json.clone();
+        data_json["passwordHistory"] = Value::Array(password_history_json.clone());
 
         let collection_ids = if let Some(cipher_sync_data) = cipher_sync_data {
             if let Some(cipher_collections) = cipher_sync_data.cipher_collections.get(&self.uuid) {
