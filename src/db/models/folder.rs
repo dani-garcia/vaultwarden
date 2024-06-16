@@ -43,10 +43,10 @@ impl Folder {
         use crate::util::format_date;
 
         json!({
-            "Id": self.uuid,
-            "RevisionDate": format_date(&self.updated_at),
-            "Name": self.name,
-            "Object": "folder",
+            "id": self.uuid,
+            "revisionDate": format_date(&self.updated_at),
+            "name": self.name,
+            "object": "folder",
         })
     }
 }

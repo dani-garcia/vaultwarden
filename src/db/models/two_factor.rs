@@ -54,17 +54,17 @@ impl TwoFactor {
 
     pub fn to_json(&self) -> Value {
         json!({
-            "Enabled": self.enabled,
-            "Key": "", // This key and value vary
-            "Object": "twoFactorAuthenticator" // This value varies
+            "enabled": self.enabled,
+            "key": "", // This key and value vary
+            "Oobject": "twoFactorAuthenticator" // This value varies
         })
     }
 
     pub fn to_json_provider(&self) -> Value {
         json!({
-            "Enabled": self.enabled,
-            "Type": self.atype,
-            "Object": "twoFactorProvider"
+            "enabled": self.enabled,
+            "type": self.atype,
+            "object": "twoFactorProvider"
         })
     }
 }

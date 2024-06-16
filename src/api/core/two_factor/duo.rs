@@ -5,7 +5,7 @@ use rocket::Route;
 
 use crate::{
     api::{
-        core::log_user_event, core::two_factor::_generate_recover_code, ApiResult, EmptyResult, JsonResult, JsonUpcase,
+        core::log_user_event, core::two_factor::_generate_recover_code, ApiResult, EmptyResult, JsonResult,
         PasswordOrOtpData,
     },
     auth::Headers,
@@ -92,8 +92,8 @@ impl DuoStatus {
 const DISABLED_MESSAGE_DEFAULT: &str = "<To use the global Duo keys, please leave these fields untouched>";
 
 #[post("/two-factor/get-duo", data = "<data>")]
-async fn get_duo(data: JsonUpcase<PasswordOrOtpData>, headers: Headers, mut conn: DbConn) -> JsonResult {
-    let data: PasswordOrOtpData = data.into_inner().data;
+async fn get_duo(data: Json<PasswordOrOtpData>, headers: Headers, mut conn: DbConn) -> JsonResult {
+    let data: PasswordOrOtpData = data.into_inner();
     let user = headers.user;
 
     data.validate(&user, false, &mut conn).await?;
@@ -109,16 +109,16 @@ async fn get_duo(data: JsonUpcase<PasswordOrOtpData>, headers: Headers, mut conn
 
     let json = if let Some(data) = data {
         json!({
-            "Enabled": enabled,
-            "Host": data.host,
-            "SecretKey": data.sk,
-            "IntegrationKey": data.ik,
-            "Object": "twoFactorDuo"
+            "enabled": enabled,
+            "host": data.host,
+            "secretKey": data.sk,
+            "integrationKey": data.ik,
+            "object": "twoFactorDuo"
         })
     } else {
         json!({
-            "Enabled": enabled,
-            "Object": "twoFactorDuo"
+            "enabled": enabled,
+            "object": "twoFactorDuo"
         })
     };
 
@@ -126,21 +126,21 @@ async fn get_duo(data: JsonUpcase<PasswordOrOtpData>, headers: Headers, mut conn
 }
 
 #[derive(Deserialize)]
-#[allow(non_snake_case, dead_code)]
+#[serde(rename_all = "camelCase")]
 struct EnableDuoData {
-    Host: String,
-    SecretKey: String,
-    IntegrationKey: String,
-    MasterPasswordHash: Option<String>,
-    Otp: Option<String>,
+    host: String,
+    secret_key: String,
+    integration_key: String,
+    master_password_hash: Option<String>,
+    otp: Option<String>,
 }
 
 impl From<EnableDuoData> for DuoData {
     fn from(d: EnableDuoData) -> Self {
         Self {
-            host: d.Host,
-            ik: d.IntegrationKey,
-            sk: d.SecretKey,
+            host: d.host,
+            ik: d.integration_key,
+            sk: d.secret_key,
         }
     }
 }
@@ -151,17 +151,17 @@ fn check_duo_fields_custom(data: &EnableDuoData) -> bool {
         st.is_empty() || s == DISABLED_MESSAGE_DEFAULT
     }
 
-    !empty_or_default(&data.Host) && !empty_or_default(&data.SecretKey) && !empty_or_default(&data.IntegrationKey)
+    !empty_or_default(&data.host) && !empty_or_default(&data.secret_key) && !empty_or_default(&data.integration_key)
 }
 
 #[post("/two-factor/duo", data = "<data>")]
-async fn activate_duo(data: JsonUpcase<EnableDuoData>, headers: Headers, mut conn: DbConn) -> JsonResult {
-    let data: EnableDuoData = data.into_inner().data;
+async fn activate_duo(data: Json<EnableDuoData>, headers: Headers, mut conn: DbConn) -> JsonResult {
+    let data: EnableDuoData = data.into_inner();
     let mut user = headers.user;
 
     PasswordOrOtpData {
-        MasterPasswordHash: data.MasterPasswordHash.clone(),
-        Otp: data.Otp.clone(),
+        master_password_hash: data.master_password_hash.clone(),
+        otp: data.otp.clone(),
     }
     .validate(&user, true, &mut conn)
     .await?;
@@ -184,16 +184,16 @@ async fn activate_duo(data: JsonUpcase<EnableDuoData>, headers: Headers, mut con
     log_user_event(EventType::UserUpdated2fa as i32, &user.uuid, headers.device.atype, &headers.ip.ip, &mut conn).await;
 
     Ok(Json(json!({
-        "Enabled": true,
-        "Host": data.host,
-        "SecretKey": data.sk,
-        "IntegrationKey": data.ik,
-        "Object": "twoFactorDuo"
+        "enabled": true,
+        "host": data.host,
+        "secretKey": data.sk,
+        "integrationKey": data.ik,
+        "object": "twoFactorDuo"
     })))
 }
 
 #[put("/two-factor/duo", data = "<data>")]
-async fn activate_duo_put(data: JsonUpcase<EnableDuoData>, headers: Headers, conn: DbConn) -> JsonResult {
+async fn activate_duo_put(data: Json<EnableDuoData>, headers: Headers, conn: DbConn) -> JsonResult {
     activate_duo(data, headers, conn).await
 }
 

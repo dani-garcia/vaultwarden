@@ -526,25 +526,33 @@ use serde_json::Value;
 pub type JsonMap = serde_json::Map<String, Value>;
 
 #[derive(Serialize, Deserialize)]
-pub struct UpCase<T: DeserializeOwned> {
-    #[serde(deserialize_with = "upcase_deserialize")]
+pub struct LowerCase<T: DeserializeOwned> {
+    #[serde(deserialize_with = "lowercase_deserialize")]
     #[serde(flatten)]
     pub data: T,
 }
 
+impl Default for LowerCase<Value> {
+    fn default() -> Self {
+        Self {
+            data: Value::Null,
+        }
+    }
+}
+
 // https://github.com/serde-rs/serde/issues/586
-pub fn upcase_deserialize<'de, T, D>(deserializer: D) -> Result<T, D::Error>
+pub fn lowercase_deserialize<'de, T, D>(deserializer: D) -> Result<T, D::Error>
 where
     T: DeserializeOwned,
     D: Deserializer<'de>,
 {
-    let d = deserializer.deserialize_any(UpCaseVisitor)?;
+    let d = deserializer.deserialize_any(LowerCaseVisitor)?;
     T::deserialize(d).map_err(de::Error::custom)
 }
 
-struct UpCaseVisitor;
+struct LowerCaseVisitor;
 
-impl<'de> Visitor<'de> for UpCaseVisitor {
+impl<'de> Visitor<'de> for LowerCaseVisitor {
     type Value = Value;
 
     fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -558,7 +566,7 @@ impl<'de> Visitor<'de> for UpCaseVisitor {
         let mut result_map = JsonMap::new();
 
         while let Some((key, value)) = map.next_entry()? {
-            result_map.insert(upcase_first(key), upcase_value(value));
+            result_map.insert(lcase_first(key), lowercase_value(value));
         }
 
         Ok(Value::Object(result_map))
@@ -571,20 +579,20 @@ impl<'de> Visitor<'de> for UpCaseVisitor {
         let mut result_seq = Vec::<Value>::new();
 
         while let Some(value) = seq.next_element()? {
-            result_seq.push(upcase_value(value));
+            result_seq.push(lowercase_value(value));
         }
 
         Ok(Value::Array(result_seq))
     }
 }
 
-fn upcase_value(value: Value) -> Value {
+fn lowercase_value(value: Value) -> Value {
     if let Value::Object(map) = value {
         let mut new_value = Value::Object(serde_json::Map::new());
 
         for (key, val) in map.into_iter() {
             let processed_key = _process_key(&key);
-            new_value[processed_key] = upcase_value(val);
+            new_value[processed_key] = lowercase_value(val);
         }
         new_value
     } else if let Value::Array(array) = value {
@@ -592,7 +600,7 @@ fn upcase_value(value: Value) -> Value {
         let mut new_value = Value::Array(vec![Value::Null; array.len()]);
 
         for (index, val) in array.into_iter().enumerate() {
-            new_value[index] = upcase_value(val);
+            new_value[index] = lowercase_value(val);
         }
         new_value
     } else {
@@ -604,12 +612,12 @@ fn upcase_value(value: Value) -> Value {
 // This key is part of the Identity Cipher (Social Security Number)
 fn _process_key(key: &str) -> String {
     match key.to_lowercase().as_ref() {
-        "ssn" => "SSN".into(),
-        _ => self::upcase_first(key),
+        "ssn" => "ssn".into(),
+        _ => self::lcase_first(key),
     }
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(untagged)]
 pub enum NumberOrString {
     Number(i64),
