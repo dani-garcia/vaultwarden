@@ -389,13 +389,13 @@ pub async fn backup_database(conn: &mut DbConn) -> Result<(), Error> {
 pub async fn get_sql_server_version(conn: &mut DbConn) -> String {
     db_run! {@raw conn:
         postgresql, mysql {
-            sql_function!{
+            define_sql_function!{
                 fn version() -> diesel::sql_types::Text;
             }
             diesel::select(version()).get_result::<String>(conn).unwrap_or_else(|_| "Unknown".to_string())
         }
         sqlite {
-            sql_function!{
+            define_sql_function!{
                 fn sqlite_version() -> diesel::sql_types::Text;
             }
             diesel::select(sqlite_version()).get_result::<String>(conn).unwrap_or_else(|_| "Unknown".to_string())
