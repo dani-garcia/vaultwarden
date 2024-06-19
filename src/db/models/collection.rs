@@ -632,7 +632,7 @@ impl CollectionUser {
 
         db_run! { conn: {
             for user in collectionusers {
-                diesel::delete(users_collections::table.filter(
+                let _: () = diesel::delete(users_collections::table.filter(
                     users_collections::user_uuid.eq(user_uuid)
                     .and(users_collections::collection_uuid.eq(user.collection_uuid))
                 ))
