@@ -1978,7 +1978,7 @@ async fn deactivate_organization_user(
 #[put("/organizations/<org_id>/users/deactivate", data = "<data>")]
 async fn bulk_deactivate_organization_user(
     org_id: &str,
-    data: Json<Value>,
+    data: Json<OrgBulkRevokeData>,
     headers: AdminHeaders,
     conn: DbConn,
 ) -> Json<Value> {
@@ -1995,21 +1995,26 @@ async fn revoke_organization_user(
     _revoke_organization_user(org_id, org_user_id, &headers, &mut conn).await
 }
 
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct OrgBulkRevokeData {
+    ids: Option<Vec<String>>,
+}
+
 #[put("/organizations/<org_id>/users/revoke", data = "<data>")]
 async fn bulk_revoke_organization_user(
     org_id: &str,
-    data: Json<Value>,
+    data: Json<OrgBulkRevokeData>,
     headers: AdminHeaders,
     mut conn: DbConn,
 ) -> Json<Value> {
     let data = data.into_inner();
 
     let mut bulk_response = Vec::new();
-    match data["Ids"].as_array() {
+    match data.ids {
         Some(org_users) => {
             for org_user_id in org_users {
-                let org_user_id = org_user_id.as_str().unwrap_or_default();
-                let err_msg = match _revoke_organization_user(org_id, org_user_id, &headers, &mut conn).await {
+                let err_msg = match _revoke_organization_user(org_id, &org_user_id, &headers, &mut conn).await {
                     Ok(_) => String::new(),
                     Err(e) => format!("{e:?}"),
                 };
