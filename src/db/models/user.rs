@@ -240,7 +240,7 @@ impl User {
         };
 
         json!({
-            "_Status": status as i32,
+            "_status": status as i32,
             "id": self.uuid,
             "name": self.name,
             "email": self.email,
