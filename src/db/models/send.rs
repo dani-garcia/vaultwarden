@@ -1,6 +1,8 @@
 use chrono::{NaiveDateTime, Utc};
 use serde_json::Value;
 
+use crate::util::LowerCase;
+
 use super::User;
 
 db_object! {
@@ -122,7 +124,7 @@ impl Send {
         use data_encoding::BASE64URL_NOPAD;
         use uuid::Uuid;
 
-        let data: Value = serde_json::from_str(&self.data).unwrap_or_default();
+        let data = serde_json::from_str::<LowerCase<Value>>(&self.data).map(|d| d.data).unwrap_or_default();
 
         json!({
             "id": self.uuid,
@@ -151,7 +153,7 @@ impl Send {
     pub async fn to_json_access(&self, conn: &mut DbConn) -> Value {
         use crate::util::format_date;
 
-        let data: Value = serde_json::from_str(&self.data).unwrap_or_default();
+        let data = serde_json::from_str::<LowerCase<Value>>(&self.data).map(|d| d.data).unwrap_or_default();
 
         json!({
             "id": self.uuid,
