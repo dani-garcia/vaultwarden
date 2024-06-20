@@ -124,7 +124,12 @@ impl Send {
         use data_encoding::BASE64URL_NOPAD;
         use uuid::Uuid;
 
-        let data = serde_json::from_str::<LowerCase<Value>>(&self.data).map(|d| d.data).unwrap_or_default();
+        let mut data = serde_json::from_str::<LowerCase<Value>>(&self.data).map(|d| d.data).unwrap_or_default();
+
+        // Mobile clients expect size to be a string instead of a number
+        if let Some(size) = data.get("size").and_then(|v| v.as_i64()) {
+            data["size"] = Value::String(size.to_string());
+        }
 
         json!({
             "id": self.uuid,
@@ -153,7 +158,12 @@ impl Send {
     pub async fn to_json_access(&self, conn: &mut DbConn) -> Value {
         use crate::util::format_date;
 
-        let data = serde_json::from_str::<LowerCase<Value>>(&self.data).map(|d| d.data).unwrap_or_default();
+        let mut data = serde_json::from_str::<LowerCase<Value>>(&self.data).map(|d| d.data).unwrap_or_default();
+
+        // Mobile clients expect size to be a string instead of a number
+        if let Some(size) = data.get("size").and_then(|v| v.as_i64()) {
+            data["size"] = Value::String(size.to_string());
+        }
 
         json!({
             "id": self.uuid,
