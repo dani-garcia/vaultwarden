@@ -211,7 +211,6 @@ non_ascii_idents = "forbid"
 # Deny
 future_incompatible = { level = "deny", priority = -1 }
 noop_method_call = "deny"
-pointer_structural_match = "deny"
 rust_2018_idioms = { level = "deny", priority = -1 }
 rust_2021_compatibility = { level = "deny", priority = -1 }
 trivial_casts = "deny"

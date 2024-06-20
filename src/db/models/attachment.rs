@@ -95,7 +95,7 @@ impl Attachment {
 
     pub async fn delete(&self, conn: &mut DbConn) -> EmptyResult {
         db_run! { conn: {
-            crate::util::retry(
+            let _: () = crate::util::retry(
                 || diesel::delete(attachments::table.filter(attachments::id.eq(&self.id))).execute(conn),
                 10,
             )
