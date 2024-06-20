@@ -114,7 +114,7 @@ impl OrgPolicy {
                 // We need to make sure we're not going to violate the unique constraint on org_uuid and atype.
                 // This happens automatically on other DBMS backends due to replace_into(). PostgreSQL does
                 // not support multiple constraints on ON CONFLICT clauses.
-                diesel::delete(
+                let _: () = diesel::delete(
                     org_policies::table
                         .filter(org_policies::org_uuid.eq(&self.org_uuid))
                         .filter(org_policies::atype.eq(&self.atype)),
