@@ -564,8 +564,11 @@ async fn _json_err_twofactor(providers: &[i32], user_uuid: &str, conn: &mut DbCo
     let mut result = json!({
         "error" : "invalid_grant",
         "error_description" : "Two factor required.",
-        "TwoFactorProviders" : providers,
-        "TwoFactorProviders2" : {} // { "0" : null }
+        "TwoFactorProviders" : providers.iter().map(ToString::to_string).collect::<Vec<String>>(),
+        "TwoFactorProviders2" : {}, // { "0" : null }
+        "MasterPasswordPolicy": {
+            "Object": "masterPasswordPolicy"
+        }
     });
 
     for provider in providers {
