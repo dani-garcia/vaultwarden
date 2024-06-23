@@ -153,39 +153,39 @@ impl Organization {
     // https://github.com/bitwarden/server/blob/13d1e74d6960cf0d042620b72d85bf583a4236f7/src/Api/Models/Response/Organizations/OrganizationResponseModel.cs
     pub fn to_json(&self) -> Value {
         json!({
-            "Id": self.uuid,
-            "Identifier": null, // not supported by us
-            "Name": self.name,
-            "Seats": 10, // The value doesn't matter, we don't check server-side
-            // "MaxAutoscaleSeats": null, // The value doesn't matter, we don't check server-side
-            "MaxCollections": 10, // The value doesn't matter, we don't check server-side
-            "MaxStorageGb": 10, // The value doesn't matter, we don't check server-side
-            "Use2fa": true,
-            "UseDirectory": false, // Is supported, but this value isn't checked anywhere (yet)
-            "UseEvents": CONFIG.org_events_enabled(),
-            "UseGroups": CONFIG.org_groups_enabled(),
-            "UseTotp": true,
-            "UsePolicies": true,
-            // "UseScim": false, // Not supported (Not AGPLv3 Licensed)
-            "UseSso": false, // Not supported
-            // "UseKeyConnector": false, // Not supported
-            "SelfHost": true,
-            "UseApi": true,
-            "HasPublicAndPrivateKeys": self.private_key.is_some() && self.public_key.is_some(),
-            "UseResetPassword": CONFIG.mail_enabled(),
+            "id": self.uuid,
+            "identifier": null, // not supported by us
+            "name": self.name,
+            "seats": 10, // The value doesn't matter, we don't check server-side
+            // "maxAutoscaleSeats": null, // The value doesn't matter, we don't check server-side
+            "maxCollections": 10, // The value doesn't matter, we don't check server-side
+            "maxStorageGb": 10, // The value doesn't matter, we don't check server-side
+            "use2fa": true,
+            "useDirectory": false, // Is supported, but this value isn't checked anywhere (yet)
+            "useEvents": CONFIG.org_events_enabled(),
+            "useGroups": CONFIG.org_groups_enabled(),
+            "useTotp": true,
+            "usePolicies": true,
+            // "useScim": false, // Not supported (Not AGPLv3 Licensed)
+            "useSso": false, // Not supported
+            // "useKeyConnector": false, // Not supported
+            "selfHost": true,
+            "useApi": true,
+            "hasPublicAndPrivateKeys": self.private_key.is_some() && self.public_key.is_some(),
+            "useResetPassword": CONFIG.mail_enabled(),
 
-            "BusinessName": null,
-            "BusinessAddress1": null,
-            "BusinessAddress2": null,
-            "BusinessAddress3": null,
-            "BusinessCountry": null,
-            "BusinessTaxNumber": null,
+            "businessName": null,
+            "businessAddress1": null,
+            "businessAddress2": null,
+            "businessAddress3": null,
+            "businessCountry": null,
+            "businessTaxNumber": null,
 
-            "BillingEmail": self.billing_email,
-            "Plan": "TeamsAnnually",
-            "PlanType": 5, // TeamsAnnually plan
-            "UsersGetPremium": true,
-            "Object": "organization",
+            "billingEmail": self.billing_email,
+            "plan": "TeamsAnnually",
+            "planType": 5, // TeamsAnnually plan
+            "usersGetPremium": true,
+            "object": "organization",
         })
     }
 }
@@ -366,43 +366,60 @@ impl UserOrganization {
 
         // https://github.com/bitwarden/server/blob/13d1e74d6960cf0d042620b72d85bf583a4236f7/src/Api/Models/Response/ProfileOrganizationResponseModel.cs
         json!({
-            "Id": self.org_uuid,
-            "Identifier": null, // Not supported
-            "Name": org.name,
-            "Seats": 10, // The value doesn't matter, we don't check server-side
-            "MaxCollections": 10, // The value doesn't matter, we don't check server-side
-            "UsersGetPremium": true,
-            "Use2fa": true,
-            "UseDirectory": false, // Is supported, but this value isn't checked anywhere (yet)
-            "UseEvents": CONFIG.org_events_enabled(),
-            "UseGroups": CONFIG.org_groups_enabled(),
-            "UseTotp": true,
-            // "UseScim": false, // Not supported (Not AGPLv3 Licensed)
-            "UsePolicies": true,
-            "UseApi": true,
-            "SelfHost": true,
-            "HasPublicAndPrivateKeys": org.private_key.is_some() && org.public_key.is_some(),
-            "ResetPasswordEnrolled": self.reset_password_key.is_some(),
-            "UseResetPassword": CONFIG.mail_enabled(),
-            "SsoBound": false, // Not supported
-            "UseSso": false, // Not supported
-            "ProviderId": null,
-            "ProviderName": null,
-            // "KeyConnectorEnabled": false,
-            // "KeyConnectorUrl": null,
+            "id": self.org_uuid,
+            "identifier": null, // Not supported
+            "name": org.name,
+            "seats": 10, // The value doesn't matter, we don't check server-side
+            "maxCollections": 10, // The value doesn't matter, we don't check server-side
+            "usersGetPremium": true,
+            "use2fa": true,
+            "useDirectory": false, // Is supported, but this value isn't checked anywhere (yet)
+            "useEvents": CONFIG.org_events_enabled(),
+            "useGroups": CONFIG.org_groups_enabled(),
+            "useTotp": true,
+            "useScim": false, // Not supported (Not AGPLv3 Licensed)
+            "usePolicies": true,
+            "useApi": true,
+            "selfHost": true,
+            "hasPublicAndPrivateKeys": org.private_key.is_some() && org.public_key.is_some(),
+            "resetPasswordEnrolled": self.reset_password_key.is_some(),
+            "useResetPassword": CONFIG.mail_enabled(),
+            "ssoBound": false, // Not supported
+            "useSso": false, // Not supported
+            "useKeyConnector": false,
+            "useSecretsManager": false,
+            "usePasswordManager": true,
+            "useCustomPermissions": false,
+            "useActivateAutofillPolicy": false,
+
+            "providerId": null,
+            "providerName": null,
+            "providerType": null,
+            "familySponsorshipFriendlyName": null,
+            "familySponsorshipAvailable": false,
+            "planProductType": 0,
+            "keyConnectorEnabled": false,
+            "keyConnectorUrl": null,
+            "familySponsorshipLastSyncDate": null,
+            "familySponsorshipValidUntil": null,
+            "familySponsorshipToDelete": null,
+            "accessSecretsManager": false,
+            "limitCollectionCreationDeletion": true,
+            "allowAdminAccessToAllCollectionItems": true,
+            "flexibleCollections": true,
 
             "permissions": permissions,
 
-            "MaxStorageGb": 10, // The value doesn't matter, we don't check server-side
+            "maxStorageGb": 10, // The value doesn't matter, we don't check server-side
 
             // These are per user
-            "UserId": self.user_uuid,
-            "Key": self.akey,
-            "Status": self.status,
-            "Type": self.atype,
-            "Enabled": true,
+            "userId": self.user_uuid,
+            "key": self.akey,
+            "status": self.status,
+            "type": self.atype,
+            "enabled": true,
 
-            "Object": "profileOrganization",
+            "object": "profileOrganization",
         })
     }
 
@@ -438,9 +455,9 @@ impl UserOrganization {
                 .iter()
                 .map(|cu| {
                     json!({
-                        "Id": cu.collection_uuid,
-                        "ReadOnly": cu.read_only,
-                        "HidePasswords": cu.hide_passwords,
+                        "id": cu.collection_uuid,
+                        "readOnly": cu.read_only,
+                        "hidePasswords": cu.hide_passwords,
                     })
                 })
                 .collect()
@@ -449,29 +466,29 @@ impl UserOrganization {
         };
 
         json!({
-            "Id": self.uuid,
-            "UserId": self.user_uuid,
-            "Name": user.name,
-            "Email": user.email,
-            "ExternalId": self.external_id,
-            "Groups": groups,
-            "Collections": collections,
+            "id": self.uuid,
+            "userId": self.user_uuid,
+            "name": user.name,
+            "email": user.email,
+            "externalId": self.external_id,
+            "groups": groups,
+            "collections": collections,
 
-            "Status": status,
-            "Type": self.atype,
-            "AccessAll": self.access_all,
-            "TwoFactorEnabled": twofactor_enabled,
-            "ResetPasswordEnrolled": self.reset_password_key.is_some(),
+            "status": status,
+            "type": self.atype,
+            "accessAll": self.access_all,
+            "twoFactorEnabled": twofactor_enabled,
+            "resetPasswordEnrolled": self.reset_password_key.is_some(),
 
-            "Object": "organizationUserUserDetails",
+            "object": "organizationUserUserDetails",
         })
     }
 
     pub fn to_json_user_access_restrictions(&self, col_user: &CollectionUser) -> Value {
         json!({
-            "Id": self.uuid,
-            "ReadOnly": col_user.read_only,
-            "HidePasswords": col_user.hide_passwords,
+            "id": self.uuid,
+            "readOnly": col_user.read_only,
+            "hidePasswords": col_user.hide_passwords,
         })
     }
 
@@ -485,9 +502,9 @@ impl UserOrganization {
                 .iter()
                 .map(|c| {
                     json!({
-                        "Id": c.collection_uuid,
-                        "ReadOnly": c.read_only,
-                        "HidePasswords": c.hide_passwords,
+                        "id": c.collection_uuid,
+                        "readOnly": c.read_only,
+                        "hidePasswords": c.hide_passwords,
                     })
                 })
                 .collect()
@@ -502,15 +519,15 @@ impl UserOrganization {
         };
 
         json!({
-            "Id": self.uuid,
-            "UserId": self.user_uuid,
+            "id": self.uuid,
+            "userId": self.user_uuid,
 
-            "Status": status,
-            "Type": self.atype,
-            "AccessAll": self.access_all,
-            "Collections": coll_uuids,
+            "status": status,
+            "type": self.atype,
+            "accessAll": self.access_all,
+            "collections": coll_uuids,
 
-            "Object": "organizationUserDetails",
+            "object": "organizationUserDetails",
         })
     }
     pub async fn save(&self, conn: &mut DbConn) -> EmptyResult {

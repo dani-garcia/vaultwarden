@@ -18,21 +18,21 @@
                     {{#each page_data}}
                     <tr>
                         <td>
-                            <svg width="48" height="48" class="float-start me-2 rounded" data-jdenticon-value="{{Email}}">
+                            <svg width="48" height="48" class="float-start me-2 rounded" data-jdenticon-value="{{email}}">
                             <div class="float-start">
-                                <strong>{{Name}}</strong>
-                                <span class="d-block">{{Email}}</span>
+                                <strong>{{name}}</strong>
+                                <span class="d-block">{{email}}</span>
                                 <span class="d-block">
                                     {{#unless user_enabled}}
                                         <span class="badge bg-danger me-2" title="User is disabled">Disabled</span>
                                     {{/unless}}
-                                    {{#if TwoFactorEnabled}}
+                                    {{#if twoFactorEnabled}}
                                         <span class="badge bg-success me-2" title="2FA is enabled">2FA</span>
                                     {{/if}}
-                                    {{#case _Status 1}}
+                                    {{#case _status 1}}
                                         <span class="badge bg-warning text-dark me-2" title="User is invited">Invited</span>
                                     {{/case}}
-                                    {{#if EmailVerified}}
+                                    {{#if emailVerified}}
                                         <span class="badge bg-success me-2" title="Email has been verified">Verified</span>
                                     {{/if}}
                                 </span>
@@ -54,15 +54,15 @@
                             {{/if}}
                         </td>
                         <td>
-                            <div class="overflow-auto vw-org-cell" data-vw-user-email="{{jsesc Email no_quote}}" data-vw-user-uuid="{{jsesc Id no_quote}}">
-                            {{#each Organizations}}
-                            <button class="badge" data-bs-toggle="modal" data-bs-target="#userOrgTypeDialog" data-vw-org-type="{{Type}}" data-vw-org-uuid="{{jsesc Id no_quote}}" data-vw-org-name="{{jsesc Name no_quote}}">{{Name}}</button>
+                            <div class="overflow-auto vw-org-cell" data-vw-user-email="{{jsesc email no_quote}}" data-vw-user-uuid="{{jsesc id no_quote}}">
+                            {{#each organizations}}
+                            <button class="badge" data-bs-toggle="modal" data-bs-target="#userOrgTypeDialog" data-vw-org-type="{{type}}" data-vw-org-uuid="{{jsesc id no_quote}}" data-vw-org-name="{{jsesc name no_quote}}">{{name}}</button>
                             {{/each}}
                             </div>
                         </td>
                         <td class="text-end px-0 small">
-                            <span data-vw-user-uuid="{{jsesc Id no_quote}}" data-vw-user-email="{{jsesc Email no_quote}}">
-                                {{#if TwoFactorEnabled}}
+                            <span data-vw-user-uuid="{{jsesc id no_quote}}" data-vw-user-email="{{jsesc email no_quote}}">
+                                {{#if twoFactorEnabled}}
                                 <button type="button" class="btn btn-sm btn-link p-0 border-0 float-right" vw-remove2fa>Remove all 2FA</button><br>
                                 {{/if}}
                                 <button type="button" class="btn btn-sm btn-link p-0 border-0 float-right" vw-deauth-user>Deauthorize sessions</button><br>
@@ -72,7 +72,7 @@
                                 {{else}}
                                 <button type="button" class="btn btn-sm btn-link p-0 border-0 float-right" vw-enable-user>Enable User</button><br>
                                 {{/if}}
-                                {{#case _Status 1}}
+                                {{#case _status 1}}
                                 <button type="button" class="btn btn-sm btn-link p-0 border-0 float-right" vw-resend-user-invite>Resend invite</button><br>
                                 {{/case}}
                             </span>

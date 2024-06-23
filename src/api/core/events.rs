@@ -5,7 +5,7 @@ use rocket::{form::FromForm, serde::json::Json, Route};
 use serde_json::Value;
 
 use crate::{
-    api::{EmptyResult, JsonResult, JsonUpcaseVec},
+    api::{EmptyResult, JsonResult},
     auth::{AdminHeaders, Headers},
     db::{
         models::{Cipher, Event, UserOrganization},
@@ -22,7 +22,6 @@ pub fn routes() -> Vec<Route> {
 }
 
 #[derive(FromForm)]
-#[allow(non_snake_case)]
 struct EventRange {
     start: String,
     end: String,
@@ -53,9 +52,9 @@ async fn get_org_events(org_id: &str, data: EventRange, _headers: AdminHeaders, 
     };
 
     Ok(Json(json!({
-        "Data": events_json,
-        "Object": "list",
-        "ContinuationToken": get_continuation_token(&events_json),
+        "data": events_json,
+        "object": "list",
+        "continuationToken": get_continuation_token(&events_json),
     })))
 }
 
@@ -85,9 +84,9 @@ async fn get_cipher_events(cipher_id: &str, data: EventRange, headers: Headers, 
     };
 
     Ok(Json(json!({
-        "Data": events_json,
-        "Object": "list",
-        "ContinuationToken": get_continuation_token(&events_json),
+        "data": events_json,
+        "object": "list",
+        "continuationToken": get_continuation_token(&events_json),
     })))
 }
 
@@ -119,9 +118,9 @@ async fn get_user_events(
     };
 
     Ok(Json(json!({
-        "Data": events_json,
-        "Object": "list",
-        "ContinuationToken": get_continuation_token(&events_json),
+        "data": events_json,
+        "object": "list",
+        "continuationToken": get_continuation_token(&events_json),
     })))
 }
 
@@ -145,33 +144,33 @@ pub fn main_routes() -> Vec<Route> {
     routes![post_events_collect,]
 }
 
-#[derive(Deserialize, Debug)]
-#[allow(non_snake_case)]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct EventCollection {
     // Mandatory
-    Type: i32,
-    Date: String,
+    r#type: i32,
+    date: String,
 
     // Optional
-    CipherId: Option<String>,
-    OrganizationId: Option<String>,
+    cipher_id: Option<String>,
+    organization_id: Option<String>,
 }
 
 // Upstream:
 // https://github.com/bitwarden/server/blob/8a22c0479e987e756ce7412c48a732f9002f0a2d/src/Events/Controllers/CollectController.cs
 // https://github.com/bitwarden/server/blob/8a22c0479e987e756ce7412c48a732f9002f0a2d/src/Core/Services/Implementations/EventService.cs
 #[post("/collect", format = "application/json", data = "<data>")]
-async fn post_events_collect(data: JsonUpcaseVec<EventCollection>, headers: Headers, mut conn: DbConn) -> EmptyResult {
+async fn post_events_collect(data: Json<Vec<EventCollection>>, headers: Headers, mut conn: DbConn) -> EmptyResult {
     if !CONFIG.org_events_enabled() {
         return Ok(());
     }
 
-    for event in data.iter().map(|d| &d.data) {
-        let event_date = parse_date(&event.Date);
-        match event.Type {
+    for event in data.iter() {
+        let event_date = parse_date(&event.date);
+        match event.r#type {
             1000..=1099 => {
                 _log_user_event(
-                    event.Type,
+                    event.r#type,
                     &headers.user.uuid,
                     headers.device.atype,
                     Some(event_date),
@@ -181,9 +180,9 @@ async fn post_events_collect(data: JsonUpcaseVec<EventCollection>, headers: Head
                 .await;
             }
             1600..=1699 => {
-                if let Some(org_uuid) = &event.OrganizationId {
+                if let Some(org_uuid) = &event.organization_id {
                     _log_event(
-                        event.Type,
+                        event.r#type,
                         org_uuid,
                         org_uuid,
                         &headers.user.uuid,
@@ -196,11 +195,11 @@ async fn post_events_collect(data: JsonUpcaseVec<EventCollection>, headers: Head
                 }
             }
             _ => {
-                if let Some(cipher_uuid) = &event.CipherId {
+                if let Some(cipher_uuid) = &event.cipher_id {
                     if let Some(cipher) = Cipher::find_by_uuid(cipher_uuid, &mut conn).await {
                         if let Some(org_uuid) = cipher.organization_uuid {
                             _log_event(
-                                event.Type,
+                                event.r#type,
                                 cipher_uuid,
                                 &org_uuid,
                                 &headers.user.uuid,

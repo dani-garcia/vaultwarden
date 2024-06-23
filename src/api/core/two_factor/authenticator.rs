@@ -3,10 +3,7 @@ use rocket::serde::json::Json;
 use rocket::Route;
 
 use crate::{
-    api::{
-        core::log_user_event, core::two_factor::_generate_recover_code, EmptyResult, JsonResult, JsonUpcase,
-        PasswordOrOtpData,
-    },
+    api::{core::log_user_event, core::two_factor::_generate_recover_code, EmptyResult, JsonResult, PasswordOrOtpData},
     auth::{ClientIp, Headers},
     crypto,
     db::{
@@ -23,8 +20,8 @@ pub fn routes() -> Vec<Route> {
 }
 
 #[post("/two-factor/get-authenticator", data = "<data>")]
-async fn generate_authenticator(data: JsonUpcase<PasswordOrOtpData>, headers: Headers, mut conn: DbConn) -> JsonResult {
-    let data: PasswordOrOtpData = data.into_inner().data;
+async fn generate_authenticator(data: Json<PasswordOrOtpData>, headers: Headers, mut conn: DbConn) -> JsonResult {
+    let data: PasswordOrOtpData = data.into_inner();
     let user = headers.user;
 
     data.validate(&user, false, &mut conn).await?;
@@ -38,36 +35,32 @@ async fn generate_authenticator(data: JsonUpcase<PasswordOrOtpData>, headers: He
     };
 
     Ok(Json(json!({
-        "Enabled": enabled,
-        "Key": key,
-        "Object": "twoFactorAuthenticator"
+        "enabled": enabled,
+        "key": key,
+        "object": "twoFactorAuthenticator"
     })))
 }
 
-#[derive(Deserialize, Debug)]
-#[allow(non_snake_case)]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct EnableAuthenticatorData {
-    Key: String,
-    Token: NumberOrString,
-    MasterPasswordHash: Option<String>,
-    Otp: Option<String>,
+    key: String,
+    token: NumberOrString,
+    master_password_hash: Option<String>,
+    otp: Option<String>,
 }
 
 #[post("/two-factor/authenticator", data = "<data>")]
-async fn activate_authenticator(
-    data: JsonUpcase<EnableAuthenticatorData>,
-    headers: Headers,
-    mut conn: DbConn,
-) -> JsonResult {
-    let data: EnableAuthenticatorData = data.into_inner().data;
-    let key = data.Key;
-    let token = data.Token.into_string();
+async fn activate_authenticator(data: Json<EnableAuthenticatorData>, headers: Headers, mut conn: DbConn) -> JsonResult {
+    let data: EnableAuthenticatorData = data.into_inner();
+    let key = data.key;
+    let token = data.token.into_string();
 
     let mut user = headers.user;
 
     PasswordOrOtpData {
-        MasterPasswordHash: data.MasterPasswordHash,
-        Otp: data.Otp,
+        master_password_hash: data.master_password_hash,
+        otp: data.otp,
     }
     .validate(&user, true, &mut conn)
     .await?;
@@ -90,18 +83,14 @@ async fn activate_authenticator(
     log_user_event(EventType::UserUpdated2fa as i32, &user.uuid, headers.device.atype, &headers.ip.ip, &mut conn).await;
 
     Ok(Json(json!({
-        "Enabled": true,
-        "Key": key,
-        "Object": "twoFactorAuthenticator"
+        "enabled": true,
+        "key": key,
+        "object": "twoFactorAuthenticator"
     })))
 }
 
 #[put("/two-factor/authenticator", data = "<data>")]
-async fn activate_authenticator_put(
-    data: JsonUpcase<EnableAuthenticatorData>,
-    headers: Headers,
-    conn: DbConn,
-) -> JsonResult {
+async fn activate_authenticator_put(data: Json<EnableAuthenticatorData>, headers: Headers, conn: DbConn) -> JsonResult {
     activate_authenticator(data, headers, conn).await
 }
 

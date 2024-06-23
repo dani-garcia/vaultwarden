@@ -1,3 +1,4 @@
+use crate::util::LowerCase;
 use crate::CONFIG;
 use chrono::{NaiveDateTime, TimeDelta, Utc};
 use serde_json::Value;
@@ -81,7 +82,7 @@ impl Cipher {
     pub fn validate_notes(cipher_data: &[CipherData]) -> EmptyResult {
         let mut validation_errors = serde_json::Map::new();
         for (index, cipher) in cipher_data.iter().enumerate() {
-            if let Some(note) = &cipher.Notes {
+            if let Some(note) = &cipher.notes {
                 if note.len() > 10_000 {
                     validation_errors.insert(
                         format!("Ciphers[{index}].Notes"),
@@ -135,10 +136,6 @@ impl Cipher {
             }
         }
 
-        let fields_json = self.fields.as_ref().and_then(|s| serde_json::from_str(s).ok()).unwrap_or(Value::Null);
-        let password_history_json =
-            self.password_history.as_ref().and_then(|s| serde_json::from_str(s).ok()).unwrap_or(Value::Null);
-
         // We don't need these values at all for Organizational syncs
         // Skip any other database calls if this is the case and just return false.
         let (read_only, hide_passwords) = if sync_type == CipherSyncType::User {
@@ -153,20 +150,42 @@ impl Cipher {
             (false, false)
         };
 
+        let fields_json: Vec<_> = self
+            .fields
+            .as_ref()
+            .and_then(|s| {
+                serde_json::from_str::<Vec<LowerCase<Value>>>(s)
+                    .inspect_err(|e| warn!("Error parsing fields {:?}", e))
+                    .ok()
+            })
+            .map(|d| d.into_iter().map(|d| d.data).collect())
+            .unwrap_or_default();
+        let password_history_json: Vec<_> = self
+            .password_history
+            .as_ref()
+            .and_then(|s| {
+                serde_json::from_str::<Vec<LowerCase<Value>>>(s)
+                    .inspect_err(|e| warn!("Error parsing password history {:?}", e))
+                    .ok()
+            })
+            .map(|d| d.into_iter().map(|d| d.data).collect())
+            .unwrap_or_default();
+
         // Get the type_data or a default to an empty json object '{}'.
         // If not passing an empty object, mobile clients will crash.
-        let mut type_data_json: Value =
-            serde_json::from_str(&self.data).unwrap_or_else(|_| Value::Object(serde_json::Map::new()));
+        let mut type_data_json = serde_json::from_str::<LowerCase<Value>>(&self.data)
+            .map(|d| d.data)
+            .unwrap_or_else(|_| Value::Object(serde_json::Map::new()));
 
         // NOTE: This was marked as *Backwards Compatibility Code*, but as of January 2021 this is still being used by upstream
         // Set the first element of the Uris array as Uri, this is needed several (mobile) clients.
         if self.atype == 1 {
-            if type_data_json["Uris"].is_array() {
-                let uri = type_data_json["Uris"][0]["Uri"].clone();
-                type_data_json["Uri"] = uri;
+            if type_data_json["uris"].is_array() {
+                let uri = type_data_json["uris"][0]["uri"].clone();
+                type_data_json["uri"] = uri;
             } else {
                 // Upstream always has an Uri key/value
-                type_data_json["Uri"] = Value::Null;
+                type_data_json["uri"] = Value::Null;
             }
         }
 
@@ -175,10 +194,10 @@ impl Cipher {
 
         // NOTE: This was marked as *Backwards Compatibility Code*, but as of January 2021 this is still being used by upstream
         // data_json should always contain the following keys with every atype
-        data_json["Fields"] = fields_json.clone();
-        data_json["Name"] = json!(self.name);
-        data_json["Notes"] = json!(self.notes);
-        data_json["PasswordHistory"] = password_history_json.clone();
+        data_json["fields"] = Value::Array(fields_json.clone());
+        data_json["name"] = json!(self.name);
+        data_json["notes"] = json!(self.notes);
+        data_json["passwordHistory"] = Value::Array(password_history_json.clone());
 
         let collection_ids = if let Some(cipher_sync_data) = cipher_sync_data {
             if let Some(cipher_collections) = cipher_sync_data.cipher_collections.get(&self.uuid) {
@@ -198,48 +217,48 @@ impl Cipher {
         //
         // Ref: https://github.com/bitwarden/server/blob/master/src/Core/Models/Api/Response/CipherResponseModel.cs
         let mut json_object = json!({
-            "Object": "cipherDetails",
-            "Id": self.uuid,
-            "Type": self.atype,
-            "CreationDate": format_date(&self.created_at),
-            "RevisionDate": format_date(&self.updated_at),
-            "DeletedDate": self.deleted_at.map_or(Value::Null, |d| Value::String(format_date(&d))),
-            "Reprompt": self.reprompt.unwrap_or(RepromptType::None as i32),
-            "OrganizationId": self.organization_uuid,
-            "Key": self.key,
-            "Attachments": attachments_json,
+            "object": "cipherDetails",
+            "id": self.uuid,
+            "type": self.atype,
+            "creationDate": format_date(&self.created_at),
+            "revisionDate": format_date(&self.updated_at),
+            "deletedDate": self.deleted_at.map_or(Value::Null, |d| Value::String(format_date(&d))),
+            "reprompt": self.reprompt.unwrap_or(RepromptType::None as i32),
+            "organizationId": self.organization_uuid,
+            "key": self.key,
+            "attachments": attachments_json,
             // We have UseTotp set to true by default within the Organization model.
             // This variable together with UsersGetPremium is used to show or hide the TOTP counter.
-            "OrganizationUseTotp": true,
+            "organizationUseTotp": true,
 
             // This field is specific to the cipherDetails type.
-            "CollectionIds": collection_ids,
+            "collectionIds": collection_ids,
 
-            "Name": self.name,
-            "Notes": self.notes,
-            "Fields": fields_json,
+            "name": self.name,
+            "notes": self.notes,
+            "fields": fields_json,
 
-            "Data": data_json,
+            "data": data_json,
 
-            "PasswordHistory": password_history_json,
+            "passwordHistory": password_history_json,
 
             // All Cipher types are included by default as null, but only the matching one will be populated
-            "Login": null,
-            "SecureNote": null,
-            "Card": null,
-            "Identity": null,
+            "login": null,
+            "secureNote": null,
+            "card": null,
+            "identity": null,
         });
 
         // These values are only needed for user/default syncs
         // Not during an organizational sync like `get_org_details`
         // Skip adding these fields in that case
         if sync_type == CipherSyncType::User {
-            json_object["FolderId"] = json!(if let Some(cipher_sync_data) = cipher_sync_data {
+            json_object["folderId"] = json!(if let Some(cipher_sync_data) = cipher_sync_data {
                 cipher_sync_data.cipher_folders.get(&self.uuid).map(|c| c.to_string())
             } else {
                 self.get_folder_uuid(user_uuid, conn).await
             });
-            json_object["Favorite"] = json!(if let Some(cipher_sync_data) = cipher_sync_data {
+            json_object["favorite"] = json!(if let Some(cipher_sync_data) = cipher_sync_data {
                 cipher_sync_data.cipher_favorites.contains(&self.uuid)
             } else {
                 self.is_favorite(user_uuid, conn).await
@@ -247,15 +266,15 @@ impl Cipher {
             // These values are true by default, but can be false if the
             // cipher belongs to a collection or group where the org owner has enabled
             // the "Read Only" or "Hide Passwords" restrictions for the user.
-            json_object["Edit"] = json!(!read_only);
-            json_object["ViewPassword"] = json!(!hide_passwords);
+            json_object["edit"] = json!(!read_only);
+            json_object["viewPassword"] = json!(!hide_passwords);
         }
 
         let key = match self.atype {
-            1 => "Login",
-            2 => "SecureNote",
-            3 => "Card",
-            4 => "Identity",
+            1 => "login",
+            2 => "secureNote",
+            3 => "card",
+            4 => "identity",
             _ => panic!("Wrong type"),
         };
 

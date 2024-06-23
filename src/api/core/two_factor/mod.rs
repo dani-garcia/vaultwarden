@@ -7,7 +7,7 @@ use serde_json::Value;
 use crate::{
     api::{
         core::{log_event, log_user_event},
-        EmptyResult, JsonResult, JsonUpcase, PasswordOrOtpData,
+        EmptyResult, JsonResult, PasswordOrOtpData,
     },
     auth::{ClientHeaders, Headers},
     crypto,
@@ -50,52 +50,52 @@ async fn get_twofactor(headers: Headers, mut conn: DbConn) -> Json<Value> {
     let twofactors_json: Vec<Value> = twofactors.iter().map(TwoFactor::to_json_provider).collect();
 
     Json(json!({
-        "Data": twofactors_json,
-        "Object": "list",
-        "ContinuationToken": null,
+        "data": twofactors_json,
+        "object": "list",
+        "continuationToken": null,
     }))
 }
 
 #[post("/two-factor/get-recover", data = "<data>")]
-async fn get_recover(data: JsonUpcase<PasswordOrOtpData>, headers: Headers, mut conn: DbConn) -> JsonResult {
-    let data: PasswordOrOtpData = data.into_inner().data;
+async fn get_recover(data: Json<PasswordOrOtpData>, headers: Headers, mut conn: DbConn) -> JsonResult {
+    let data: PasswordOrOtpData = data.into_inner();
     let user = headers.user;
 
     data.validate(&user, true, &mut conn).await?;
 
     Ok(Json(json!({
-        "Code": user.totp_recover,
-        "Object": "twoFactorRecover"
+        "code": user.totp_recover,
+        "object": "twoFactorRecover"
     })))
 }
 
 #[derive(Deserialize)]
-#[allow(non_snake_case)]
+#[serde(rename_all = "camelCase")]
 struct RecoverTwoFactor {
-    MasterPasswordHash: String,
-    Email: String,
-    RecoveryCode: String,
+    master_password_hash: String,
+    email: String,
+    recovery_code: String,
 }
 
 #[post("/two-factor/recover", data = "<data>")]
-async fn recover(data: JsonUpcase<RecoverTwoFactor>, client_headers: ClientHeaders, mut conn: DbConn) -> JsonResult {
-    let data: RecoverTwoFactor = data.into_inner().data;
+async fn recover(data: Json<RecoverTwoFactor>, client_headers: ClientHeaders, mut conn: DbConn) -> JsonResult {
+    let data: RecoverTwoFactor = data.into_inner();
 
     use crate::db::models::User;
 
     // Get the user
-    let mut user = match User::find_by_mail(&data.Email, &mut conn).await {
+    let mut user = match User::find_by_mail(&data.email, &mut conn).await {
         Some(user) => user,
         None => err!("Username or password is incorrect. Try again."),
     };
 
     // Check password
-    if !user.check_valid_password(&data.MasterPasswordHash) {
+    if !user.check_valid_password(&data.master_password_hash) {
         err!("Username or password is incorrect. Try again.")
     }
 
     // Check if recovery code is correct
-    if !user.check_valid_recovery_code(&data.RecoveryCode) {
+    if !user.check_valid_recovery_code(&data.recovery_code) {
         err!("Recovery code is incorrect. Try again.")
     }
 
@@ -127,27 +127,27 @@ async fn _generate_recover_code(user: &mut User, conn: &mut DbConn) {
 }
 
 #[derive(Deserialize)]
-#[allow(non_snake_case)]
+#[serde(rename_all = "camelCase")]
 struct DisableTwoFactorData {
-    MasterPasswordHash: Option<String>,
-    Otp: Option<String>,
-    Type: NumberOrString,
+    master_password_hash: Option<String>,
+    otp: Option<String>,
+    r#type: NumberOrString,
 }
 
 #[post("/two-factor/disable", data = "<data>")]
-async fn disable_twofactor(data: JsonUpcase<DisableTwoFactorData>, headers: Headers, mut conn: DbConn) -> JsonResult {
-    let data: DisableTwoFactorData = data.into_inner().data;
+async fn disable_twofactor(data: Json<DisableTwoFactorData>, headers: Headers, mut conn: DbConn) -> JsonResult {
+    let data: DisableTwoFactorData = data.into_inner();
     let user = headers.user;
 
     // Delete directly after a valid token has been provided
     PasswordOrOtpData {
-        MasterPasswordHash: data.MasterPasswordHash,
-        Otp: data.Otp,
+        master_password_hash: data.master_password_hash,
+        otp: data.otp,
     }
     .validate(&user, true, &mut conn)
     .await?;
 
-    let type_ = data.Type.into_i32()?;
+    let type_ = data.r#type.into_i32()?;
 
     if let Some(twofactor) = TwoFactor::find_by_user_and_type(&user.uuid, type_, &mut conn).await {
         twofactor.delete(&mut conn).await?;
@@ -160,14 +160,14 @@ async fn disable_twofactor(data: JsonUpcase<DisableTwoFactorData>, headers: Head
     }
 
     Ok(Json(json!({
-        "Enabled": false,
-        "Type": type_,
-        "Object": "twoFactorProvider"
+        "enabled": false,
+        "type": type_,
+        "object": "twoFactorProvider"
     })))
 }
 
 #[put("/two-factor/disable", data = "<data>")]
-async fn disable_twofactor_put(data: JsonUpcase<DisableTwoFactorData>, headers: Headers, conn: DbConn) -> JsonResult {
+async fn disable_twofactor_put(data: Json<DisableTwoFactorData>, headers: Headers, conn: DbConn) -> JsonResult {
     disable_twofactor(data, headers, conn).await
 }
 

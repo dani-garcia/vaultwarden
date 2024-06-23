@@ -265,8 +265,8 @@ fn admin_page_login() -> ApiResult<Html<String>> {
     render_admin_login(None, None)
 }
 
-#[derive(Deserialize, Debug)]
-#[allow(non_snake_case)]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct InviteData {
     email: String,
 }
@@ -326,9 +326,9 @@ async fn get_users_json(_token: AdminToken, mut conn: DbConn) -> Json<Value> {
     let mut users_json = Vec::with_capacity(users.len());
     for u in users {
         let mut usr = u.to_json(&mut conn).await;
-        usr["UserEnabled"] = json!(u.enabled);
-        usr["CreatedAt"] = json!(format_naive_datetime_local(&u.created_at, DT_FMT));
-        usr["LastActive"] = match u.last_active(&mut conn).await {
+        usr["userEnabled"] = json!(u.enabled);
+        usr["createdAt"] = json!(format_naive_datetime_local(&u.created_at, DT_FMT));
+        usr["lastActive"] = match u.last_active(&mut conn).await {
             Some(dt) => json!(format_naive_datetime_local(&dt, DT_FMT)),
             None => json!(None::<String>),
         };
@@ -475,7 +475,7 @@ async fn resend_user_invite(uuid: &str, _token: AdminToken, mut conn: DbConn) ->
     }
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Debug, Deserialize)]
 struct UserOrgTypeData {
     user_type: NumberOrString,
     user_uuid: String,
