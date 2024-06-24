@@ -797,7 +797,9 @@ async fn post_collections_admin(
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ShareCipherData {
+    #[serde(alias = "Cipher")]
     cipher: CipherData,
+    #[serde(alias = "CollectionIds")]
     collection_ids: Vec<String>,
 }
 
