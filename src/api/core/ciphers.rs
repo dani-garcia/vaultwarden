@@ -1336,23 +1336,38 @@ async fn delete_cipher_admin(uuid: &str, headers: Headers, mut conn: DbConn, nt:
 }
 
 #[delete("/ciphers", data = "<data>")]
-async fn delete_cipher_selected(data: Json<Value>, headers: Headers, conn: DbConn, nt: Notify<'_>) -> EmptyResult {
+async fn delete_cipher_selected(
+    data: Json<CipherIdsData>,
+    headers: Headers,
+    conn: DbConn,
+    nt: Notify<'_>,
+) -> EmptyResult {
     _delete_multiple_ciphers(data, headers, conn, false, nt).await // permanent delete
 }
 
 #[post("/ciphers/delete", data = "<data>")]
-async fn delete_cipher_selected_post(data: Json<Value>, headers: Headers, conn: DbConn, nt: Notify<'_>) -> EmptyResult {
+async fn delete_cipher_selected_post(
+    data: Json<CipherIdsData>,
+    headers: Headers,
+    conn: DbConn,
+    nt: Notify<'_>,
+) -> EmptyResult {
     _delete_multiple_ciphers(data, headers, conn, false, nt).await // permanent delete
 }
 
 #[put("/ciphers/delete", data = "<data>")]
-async fn delete_cipher_selected_put(data: Json<Value>, headers: Headers, conn: DbConn, nt: Notify<'_>) -> EmptyResult {
+async fn delete_cipher_selected_put(
+    data: Json<CipherIdsData>,
+    headers: Headers,
+    conn: DbConn,
+    nt: Notify<'_>,
+) -> EmptyResult {
     _delete_multiple_ciphers(data, headers, conn, true, nt).await // soft delete
 }
 
 #[delete("/ciphers/admin", data = "<data>")]
 async fn delete_cipher_selected_admin(
-    data: Json<Value>,
+    data: Json<CipherIdsData>,
     headers: Headers,
     conn: DbConn,
     nt: Notify<'_>,
@@ -1362,7 +1377,7 @@ async fn delete_cipher_selected_admin(
 
 #[post("/ciphers/delete-admin", data = "<data>")]
 async fn delete_cipher_selected_post_admin(
-    data: Json<Value>,
+    data: Json<CipherIdsData>,
     headers: Headers,
     conn: DbConn,
     nt: Notify<'_>,
@@ -1372,7 +1387,7 @@ async fn delete_cipher_selected_post_admin(
 
 #[put("/ciphers/delete-admin", data = "<data>")]
 async fn delete_cipher_selected_put_admin(
-    data: Json<Value>,
+    data: Json<CipherIdsData>,
     headers: Headers,
     conn: DbConn,
     nt: Notify<'_>,
@@ -1391,7 +1406,12 @@ async fn restore_cipher_put_admin(uuid: &str, headers: Headers, mut conn: DbConn
 }
 
 #[put("/ciphers/restore", data = "<data>")]
-async fn restore_cipher_selected(data: Json<Value>, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> JsonResult {
+async fn restore_cipher_selected(
+    data: Json<CipherIdsData>,
+    headers: Headers,
+    mut conn: DbConn,
+    nt: Notify<'_>,
+) -> JsonResult {
     _restore_multiple_ciphers(data, &headers, &mut conn, &nt).await
 }
 
@@ -1581,25 +1601,23 @@ async fn _delete_cipher_by_uuid(
     Ok(())
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CipherIdsData {
+    ids: Vec<String>,
+}
+
 async fn _delete_multiple_ciphers(
-    data: Json<Value>,
+    data: Json<CipherIdsData>,
     headers: Headers,
     mut conn: DbConn,
     soft_delete: bool,
     nt: Notify<'_>,
 ) -> EmptyResult {
-    let data: Value = data.into_inner();
+    let data = data.into_inner();
 
-    let uuids = match data.get("Ids") {
-        Some(ids) => match ids.as_array() {
-            Some(ids) => ids.iter().filter_map(Value::as_str),
-            None => err!("Posted ids field is not an array"),
-        },
-        None => err!("Request missing ids field"),
-    };
-
-    for uuid in uuids {
-        if let error @ Err(_) = _delete_cipher_by_uuid(uuid, &headers, &mut conn, soft_delete, &nt).await {
+    for uuid in data.ids {
+        if let error @ Err(_) = _delete_cipher_by_uuid(&uuid, &headers, &mut conn, soft_delete, &nt).await {
             return error;
         };
     }
@@ -1647,24 +1665,16 @@ async fn _restore_cipher_by_uuid(uuid: &str, headers: &Headers, conn: &mut DbCon
 }
 
 async fn _restore_multiple_ciphers(
-    data: Json<Value>,
+    data: Json<CipherIdsData>,
     headers: &Headers,
     conn: &mut DbConn,
     nt: &Notify<'_>,
 ) -> JsonResult {
-    let data: Value = data.into_inner();
-
-    let uuids = match data.get("Ids") {
-        Some(ids) => match ids.as_array() {
-            Some(ids) => ids.iter().filter_map(Value::as_str),
-            None => err!("Posted ids field is not an array"),
-        },
-        None => err!("Request missing ids field"),
-    };
+    let data = data.into_inner();
 
     let mut ciphers: Vec<Value> = Vec::new();
-    for uuid in uuids {
-        match _restore_cipher_by_uuid(uuid, headers, conn, nt).await {
+    for uuid in data.ids {
+        match _restore_cipher_by_uuid(&uuid, headers, conn, nt).await {
             Ok(json) => ciphers.push(json.into_inner()),
             err => return err,
         }

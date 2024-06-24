@@ -364,8 +364,8 @@ async fn users_overview(_token: AdminToken, mut conn: DbConn) -> ApiResult<Html<
 async fn get_user_by_mail_json(mail: &str, _token: AdminToken, mut conn: DbConn) -> JsonResult {
     if let Some(u) = User::find_by_mail(mail, &mut conn).await {
         let mut usr = u.to_json(&mut conn).await;
-        usr["UserEnabled"] = json!(u.enabled);
-        usr["CreatedAt"] = json!(format_naive_datetime_local(&u.created_at, DT_FMT));
+        usr["userEnabled"] = json!(u.enabled);
+        usr["createdAt"] = json!(format_naive_datetime_local(&u.created_at, DT_FMT));
         Ok(Json(usr))
     } else {
         err_code!("User doesn't exist", Status::NotFound.code);
@@ -376,8 +376,8 @@ async fn get_user_by_mail_json(mail: &str, _token: AdminToken, mut conn: DbConn)
 async fn get_user_json(uuid: &str, _token: AdminToken, mut conn: DbConn) -> JsonResult {
     let u = get_user_or_404(uuid, &mut conn).await?;
     let mut usr = u.to_json(&mut conn).await;
-    usr["UserEnabled"] = json!(u.enabled);
-    usr["CreatedAt"] = json!(format_naive_datetime_local(&u.created_at, DT_FMT));
+    usr["userEnabled"] = json!(u.enabled);
+    usr["createdAt"] = json!(format_naive_datetime_local(&u.created_at, DT_FMT));
     Ok(Json(usr))
 }
 
