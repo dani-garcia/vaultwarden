@@ -2093,7 +2093,7 @@ async fn activate_organization_user(
 #[put("/organizations/<org_id>/users/activate", data = "<data>")]
 async fn bulk_activate_organization_user(
     org_id: &str,
-    data: Json<Value>,
+    data: Json<OrgBulkIds>,
     headers: AdminHeaders,
     conn: DbConn,
 ) -> Json<Value> {
@@ -2113,32 +2113,26 @@ async fn restore_organization_user(
 #[put("/organizations/<org_id>/users/restore", data = "<data>")]
 async fn bulk_restore_organization_user(
     org_id: &str,
-    data: Json<Value>,
+    data: Json<OrgBulkIds>,
     headers: AdminHeaders,
     mut conn: DbConn,
 ) -> Json<Value> {
     let data = data.into_inner();
 
     let mut bulk_response = Vec::new();
-    match data["Ids"].as_array() {
-        Some(org_users) => {
-            for org_user_id in org_users {
-                let org_user_id = org_user_id.as_str().unwrap_or_default();
-                let err_msg = match _restore_organization_user(org_id, org_user_id, &headers, &mut conn).await {
-                    Ok(_) => String::new(),
-                    Err(e) => format!("{e:?}"),
-                };
+    for org_user_id in data.ids {
+        let err_msg = match _restore_organization_user(org_id, &org_user_id, &headers, &mut conn).await {
+            Ok(_) => String::new(),
+            Err(e) => format!("{e:?}"),
+        };
 
-                bulk_response.push(json!(
-                    {
-                        "object": "OrganizationUserBulkResponseModel",
-                        "id": org_user_id,
-                        "error": err_msg
-                    }
-                ));
+        bulk_response.push(json!(
+            {
+                "object": "OrganizationUserBulkResponseModel",
+                "id": org_user_id,
+                "error": err_msg
             }
-        }
-        None => error!("No users to restore"),
+        ));
     }
 
     Json(json!({
