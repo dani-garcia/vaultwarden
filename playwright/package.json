@@ -1,0 +1,18 @@
+{
+    "name": "scenarios",
+    "version": "1.0.0",
+    "description": "",
+    "main": "index.js",
+    "scripts": {},
+    "keywords": [],
+    "author": "",
+    "license": "ISC",
+    "devDependencies": {
+        "@playwright/test": "^1.41.2",
+        "@types/node": "^20.11.16",
+        "abort-controller": "3.0.0",
+        "dotenv": "^16.4.1",
+        "dotenv-expand": "^10.0.0",
+        "js-yaml": "4.1.0"
+    }
+}
