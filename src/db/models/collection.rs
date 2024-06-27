@@ -371,48 +371,64 @@ impl Collection {
 
     pub async fn is_writable_by_user(&self, user_uuid: &str, conn: &mut DbConn) -> bool {
         let user_uuid = user_uuid.to_string();
-        db_run! { conn: {
-            collections::table
-            .left_join(users_collections::table.on(
-                users_collections::collection_uuid.eq(collections::uuid).and(
-                    users_collections::user_uuid.eq(user_uuid.clone())
-                )
-            ))
-            .left_join(users_organizations::table.on(
-                collections::org_uuid.eq(users_organizations::org_uuid).and(
-                    users_organizations::user_uuid.eq(user_uuid)
-                )
-            ))
-            .left_join(groups_users::table.on(
-                groups_users::users_organizations_uuid.eq(users_organizations::uuid)
-            ))
-            .left_join(groups::table.on(
-                groups::uuid.eq(groups_users::groups_uuid)
-            ))
-            .left_join(collections_groups::table.on(
-                collections_groups::groups_uuid.eq(groups_users::groups_uuid).and(
-                    collections_groups::collections_uuid.eq(collections::uuid)
-                )
-            ))
-            .filter(collections::uuid.eq(&self.uuid))
-            .filter(
-                users_collections::collection_uuid.eq(&self.uuid).and(users_collections::read_only.eq(false)).or(// Directly accessed collection
-                    users_organizations::access_all.eq(true).or( // access_all in Organization
-                        users_organizations::atype.le(UserOrgType::Admin as i32) // Org admin or owner
-                )).or(
-                    groups::access_all.eq(true) // access_all in groups
-                ).or( // access via groups
-                    groups_users::users_organizations_uuid.eq(users_organizations::uuid).and(
-                        collections_groups::collections_uuid.is_not_null().and(
-                            collections_groups::read_only.eq(false))
+        if CONFIG.org_groups_enabled() {
+            db_run! { conn: {
+                collections::table
+                    .filter(collections::uuid.eq(&self.uuid))
+                    .inner_join(users_organizations::table.on(
+                        collections::org_uuid.eq(users_organizations::org_uuid)
+                        .and(users_organizations::user_uuid.eq(user_uuid.clone()))
+                    ))
+                    .left_join(users_collections::table.on(
+                        users_collections::collection_uuid.eq(collections::uuid)
+                        .and(users_collections::user_uuid.eq(user_uuid))
+                    ))
+                    .left_join(groups_users::table.on(
+                        groups_users::users_organizations_uuid.eq(users_organizations::uuid)
+                    ))
+                    .left_join(groups::table.on(
+                        groups::uuid.eq(groups_users::groups_uuid)
+                    ))
+                    .left_join(collections_groups::table.on(
+                        collections_groups::groups_uuid.eq(groups_users::groups_uuid)
+                        .and(collections_groups::collections_uuid.eq(collections::uuid))
+                    ))
+                    .filter(users_organizations::atype.le(UserOrgType::Admin as i32) // Org admin or owner
+                        .or(users_organizations::access_all.eq(true)) // access_all via membership
+                        .or(users_collections::collection_uuid.eq(&self.uuid) // write access given to collection
+                            .and(users_collections::read_only.eq(false)))
+                        .or(groups::access_all.eq(true)) // access_all via group
+                        .or(collections_groups::collections_uuid.is_not_null() // write access given via group
+                            .and(collections_groups::read_only.eq(false)))
                     )
-                )
-            )
-            .count()
-            .first::<i64>(conn)
-            .ok()
-            .unwrap_or(0) != 0
-        }}
+                    .count()
+                    .first::<i64>(conn)
+                    .ok()
+                    .unwrap_or(0) != 0
+            }}
+        } else {
+            db_run! { conn: {
+                collections::table
+                    .filter(collections::uuid.eq(&self.uuid))
+                    .inner_join(users_organizations::table.on(
+                        collections::org_uuid.eq(users_organizations::org_uuid)
+                        .and(users_organizations::user_uuid.eq(user_uuid.clone()))
+                    ))
+                    .left_join(users_collections::table.on(
+                        users_collections::collection_uuid.eq(collections::uuid)
+                        .and(users_collections::user_uuid.eq(user_uuid))
+                    ))
+                    .filter(users_organizations::atype.le(UserOrgType::Admin as i32) // Org admin or owner
+                        .or(users_organizations::access_all.eq(true)) // access_all via membership
+                        .or(users_collections::collection_uuid.eq(&self.uuid) // write access given to collection
+                            .and(users_collections::read_only.eq(false)))
+                    )
+                    .count()
+                    .first::<i64>(conn)
+                    .ok()
+                    .unwrap_or(0) != 0
+            }}
+        }
     }
 
     pub async fn hide_passwords_for_user(&self, user_uuid: &str, conn: &mut DbConn) -> bool {
