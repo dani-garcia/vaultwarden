@@ -1,5 +1,13 @@
 #!/usr/bin/env sh
 
+LAST_HEALTHY_FILE="/tmp/healthy"
+
+last_check="$(cat "$LAST_HEALTHY_FILE" 2>/dev/null || echo "0")"
+current_time="$(date +%s)"
+if [ $((current_time - last_check)) -le 60 ]; then
+    exit 0
+fi
+
 # Use the value of the corresponding env var (if present),
 # or a default value otherwise.
 : "${DATA_FOLDER:="/data"}"
@@ -62,4 +70,4 @@ if [ -n "${ROCKET_TLS}" ]; then
     s='s'
 fi
 curl --insecure --fail --silent --show-error \
-     "http${s}://${addr}:${ROCKET_PORT}${base_path}/alive" || exit 1
+     "http${s}://${addr}:${ROCKET_PORT}${base_path}/alive" && echo "$current_time" > "$LAST_HEALTHY_FILE" || exit 1
