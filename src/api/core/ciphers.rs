@@ -79,6 +79,8 @@ pub fn routes() -> Vec<Route> {
         delete_all,
         move_cipher_selected,
         move_cipher_selected_put,
+        put_collections2_update,
+        post_collections2_update,
         put_collections_update,
         post_collections_update,
         post_collections_admin,
@@ -693,6 +695,33 @@ async fn put_cipher_partial(
 #[serde(rename_all = "camelCase")]
 struct CollectionsAdminData {
     collection_ids: Vec<String>,
+}
+
+#[put("/ciphers/<uuid>/collections_v2", data = "<data>")]
+async fn put_collections2_update(
+    uuid: &str,
+    data: Json<CollectionsAdminData>,
+    headers: Headers,
+    conn: DbConn,
+    nt: Notify<'_>,
+) -> JsonResult {
+    post_collections2_update(uuid, data, headers, conn, nt).await
+}
+
+#[post("/ciphers/<uuid>/collections_v2", data = "<data>")]
+async fn post_collections2_update(
+    uuid: &str,
+    data: Json<CollectionsAdminData>,
+    headers: Headers,
+    conn: DbConn,
+    nt: Notify<'_>,
+) -> JsonResult {
+    let cipher_details = post_collections_update(uuid, data, headers, conn, nt).await?;
+    Ok(Json(json!({ // AttachmentUploadDataResponseModel
+        "object": "optionalCipherDetails",
+        "unavailable": false,
+        "cipher": *cipher_details
+    })))
 }
 
 #[put("/ciphers/<uuid>/collections", data = "<data>")]
