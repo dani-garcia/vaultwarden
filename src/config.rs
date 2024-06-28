@@ -564,7 +564,7 @@ make_config! {
         use_syslog:             bool,   false,  def,    false;
         /// Log file path
         log_file:               String, false,  option;
-        /// Log level
+        /// Log level: `info,path::to::module=warn`
         log_level:              String, false,  def,    "Info".to_string();
 
         /// Enable DB WAL |> Turning this off might lead to worse performance, but might help if using vaultwarden on some exotic filesystems,
