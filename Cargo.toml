@@ -221,11 +221,6 @@ unused_lifetimes = "deny"
 deprecated_in_future = "deny"
 
 [lints.clippy]
-# Allow
-# We need this since Rust v1.76+, since it has some bugs
-# https://github.com/rust-lang/rust-clippy/issues/12016
-blocks_in_conditions = "allow"
-
 # Deny
 cast_lossless = "deny"
 clone_on_ref_ptr = "deny"
