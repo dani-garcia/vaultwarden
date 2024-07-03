@@ -406,7 +406,7 @@ impl UserOrganization {
             "accessSecretsManager": false,
             "limitCollectionCreationDeletion": true,
             "allowAdminAccessToAllCollectionItems": true,
-            "flexibleCollections": true,
+            "flexibleCollections": false,
 
             "permissions": permissions,
 

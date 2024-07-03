@@ -189,6 +189,12 @@ impl Cipher {
             }
         }
 
+        // Fix secure note issues when data is `{}`
+        // This breaks at least the native mobile clients
+        if self.atype == 2 && (self.data.eq("{}") || self.data.to_ascii_lowercase().eq("{\"type\":null}")) {
+            type_data_json = json!({"type": 0});
+        }
+
         // Clone the type_data and add some default value.
         let mut data_json = type_data_json.clone();
 
