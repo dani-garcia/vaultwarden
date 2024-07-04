@@ -562,16 +562,23 @@ async fn post_ciphers_import(
     Cipher::validate_notes(&data.ciphers)?;
 
     // Read and create the folders
-    let mut folders: Vec<_> = Vec::new();
+    let existing_folders: Vec<String> =
+        Folder::find_by_user(&headers.user.uuid, &mut conn).await.into_iter().map(|f| f.uuid).collect();
+    let mut folders: Vec<String> = Vec::with_capacity(data.folders.len());
     for folder in data.folders.into_iter() {
-        let mut new_folder = Folder::new(headers.user.uuid.clone(), folder.name);
-        new_folder.save(&mut conn).await?;
+        let folder_uuid = if folder.id.is_some() && existing_folders.contains(folder.id.as_ref().unwrap()) {
+            folder.id.unwrap()
+        } else {
+            let mut new_folder = Folder::new(headers.user.uuid.clone(), folder.name);
+            new_folder.save(&mut conn).await?;
+            new_folder.uuid
+        };
 
-        folders.push(new_folder);
+        folders.push(folder_uuid);
     }
 
     // Read the relations between folders and ciphers
-    let mut relations_map = HashMap::new();
+    let mut relations_map = HashMap::with_capacity(data.folder_relationships.len());
 
     for relation in data.folder_relationships {
         relations_map.insert(relation.key, relation.value);
@@ -579,7 +586,7 @@ async fn post_ciphers_import(
 
     // Read and create the ciphers
     for (index, mut cipher_data) in data.ciphers.into_iter().enumerate() {
-        let folder_uuid = relations_map.get(&index).map(|i| folders[*i].uuid.clone());
+        let folder_uuid = relations_map.get(&index).map(|i| folders[*i].clone());
         cipher_data.folder_id = folder_uuid;
 
         let mut cipher = Cipher::new(cipher_data.r#type, cipher_data.name.clone());
