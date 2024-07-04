@@ -41,6 +41,7 @@ async fn get_folder(uuid: &str, headers: Headers, mut conn: DbConn) -> JsonResul
 #[serde(rename_all = "camelCase")]
 pub struct FolderData {
     pub name: String,
+    pub id: Option<String>,
 }
 
 #[post("/folders", data = "<data>")]
