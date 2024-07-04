@@ -129,12 +129,6 @@ jobs:
         run: |
           echo "CONTAINER_REGISTRIES=${CONTAINER_REGISTRIES:+${CONTAINER_REGISTRIES},}${{ vars.GHCR_REPO }}" | tee -a "${GITHUB_ENV}"
 
-      - name: Add registry for ghcr.io
-        if: ${{ env.HAVE_GHCR_LOGIN == 'true' }}
-        shell: bash
-        run: |
-          echo "CONTAINER_REGISTRIES=${CONTAINER_REGISTRIES:+${CONTAINER_REGISTRIES},}${{ vars.GHCR_REPO }}" | tee -a "${GITHUB_ENV}"
-
       # Login to Quay.io
       - name: Login to Quay.io
         uses: docker/login-action@0d4c9c5ea7693da7b068278f7b52bda2a190a446 # v3.2.0
