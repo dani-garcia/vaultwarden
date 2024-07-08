@@ -151,7 +151,7 @@ jobs:
           # Check if there is a GitHub Container Registry Login and use it for caching
           if [[ -n "${HAVE_GHCR_LOGIN}" ]]; then
             echo "BAKE_CACHE_FROM=type=registry,ref=${{ vars.GHCR_REPO }}-buildcache:${{ matrix.base_image }}" | tee -a "${GITHUB_ENV}"
-            echo "BAKE_CACHE_TO=type=registry,ref=${{ vars.GHCR_REPO }}-buildcache:${{ matrix.base_image }},mode=max" | tee -a "${GITHUB_ENV}"
+            echo "BAKE_CACHE_TO=type=registry,ref=${{ vars.GHCR_REPO }}-buildcache:${{ matrix.base_image }},compression=zstd,mode=max" | tee -a "${GITHUB_ENV}"
           else
             echo "BAKE_CACHE_FROM="
             echo "BAKE_CACHE_TO="
