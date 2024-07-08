@@ -238,15 +238,6 @@ impl EmergencyAccess {
         }}
     }
 
-    pub async fn find_by_uuid(uuid: &str, conn: &mut DbConn) -> Option<Self> {
-        db_run! { conn: {
-            emergency_access::table
-                .filter(emergency_access::uuid.eq(uuid))
-                .first::<EmergencyAccessDb>(conn)
-                .ok().from_db()
-        }}
-    }
-
     pub async fn find_by_grantor_uuid_and_grantee_uuid_or_email(
         grantor_uuid: &str,
         grantee_uuid: &str,
@@ -276,6 +267,26 @@ impl EmergencyAccess {
             emergency_access::table
                 .filter(emergency_access::uuid.eq(uuid))
                 .filter(emergency_access::grantor_uuid.eq(grantor_uuid))
+                .first::<EmergencyAccessDb>(conn)
+                .ok().from_db()
+        }}
+    }
+
+    pub async fn find_by_uuid_and_grantee_uuid(uuid: &str, grantee_uuid: &str, conn: &mut DbConn) -> Option<Self> {
+        db_run! { conn: {
+            emergency_access::table
+                .filter(emergency_access::uuid.eq(uuid))
+                .filter(emergency_access::grantee_uuid.eq(grantee_uuid))
+                .first::<EmergencyAccessDb>(conn)
+                .ok().from_db()
+        }}
+    }
+
+    pub async fn find_by_uuid_and_grantee_email(uuid: &str, grantee_email: &str, conn: &mut DbConn) -> Option<Self> {
+        db_run! { conn: {
+            emergency_access::table
+                .filter(emergency_access::uuid.eq(uuid))
+                .filter(emergency_access::email.eq(grantee_email))
                 .first::<EmergencyAccessDb>(conn)
                 .ok().from_db()
         }}

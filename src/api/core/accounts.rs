@@ -515,15 +515,12 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, mut conn: DbConn,
 
     // Update emergency access data
     for emergency_access_data in data.emergency_access_keys {
-        let mut saved_emergency_access = match EmergencyAccess::find_by_uuid(&emergency_access_data.id, &mut conn).await
-        {
-            Some(emergency_access) => emergency_access,
-            None => err!("Emergency access doesn't exist"),
-        };
-
-        if &saved_emergency_access.grantor_uuid != user_uuid {
-            err!("The emergency access is not owned by the user")
-        }
+        let mut saved_emergency_access =
+            match EmergencyAccess::find_by_uuid_and_grantor_uuid(&emergency_access_data.id, user_uuid, &mut conn).await
+            {
+                Some(emergency_access) => emergency_access,
+                None => err!("Emergency access doesn't exist or is not owned by the user"),
+            };
 
         saved_emergency_access.key_encrypted = Some(emergency_access_data.key_encrypted);
         saved_emergency_access.save(&mut conn).await?
