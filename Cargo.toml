@@ -40,7 +40,7 @@ syslog = "6.1.1"
 
 [dependencies]
 # Logging
-log = "0.4.21"
+log = "0.4.22"
 fern = { version = "0.6.2", features = ["syslog-6", "reopen-1"] }
 tracing = { version = "0.1.40", features = ["log"] } # Needed to have lettre and webauthn-rs trace logging to work
 
@@ -63,15 +63,15 @@ rocket_ws = { version ="0.1.1" }
 rmpv = "1.3.0" # MessagePack library
 
 # Concurrent HashMap used for WebSocket messaging and favicons
-dashmap = "6.0.0"
+dashmap = "6.0.1"
 
 # Async futures
 futures = "0.3.30"
 tokio = { version = "1.38.0", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal", "net"] }
 
 # A generic serialization/deserialization framework
-serde = { version = "1.0.203", features = ["derive"] }
-serde_json = "1.0.117"
+serde = { version = "1.0.204", features = ["derive"] }
+serde_json = "1.0.120"
 
 # A safe, extensible ORM and Query builder
 diesel = { version = "2.2.1", features = ["chrono", "r2d2", "numeric"] }
@@ -86,7 +86,7 @@ rand = { version = "0.8.5", features = ["small_rng"] }
 ring = "0.17.8"
 
 # UUID generation
-uuid = { version = "1.8.0", features = ["v4"] }
+uuid = { version = "1.9.1", features = ["v4"] }
 
 # Date and time libraries
 chrono = { version = "0.4.38", features = ["clock", "serde"], default-features = false }
@@ -117,7 +117,7 @@ url = "2.5.2"
 # Email libraries
 lettre = { version = "0.11.7", features = ["smtp-transport", "sendmail-transport", "builder", "serde", "tokio1-native-tls", "hostname", "tracing", "tokio1"], default-features = false }
 percent-encoding = "2.3.1" # URL encoding library used for URL's in the emails
-email_address = "0.2.4"
+email_address = "0.2.5"
 
 # HTML Template library
 handlebars = { version = "5.1.2", features = ["dir_source"] }
@@ -133,7 +133,7 @@ data-url = "0.3.1"
 bytes = "1.6.0"
 
 # Cache function results (Used for version check and favicon fetching)
-cached = { version = "0.51.4", features = ["async"] }
+cached = { version = "0.52.0", features = ["async"] }
 
 # Used for custom short lived cookie jar during favicon extraction
 cookie = "0.18.1"
@@ -154,7 +154,7 @@ semver = "1.0.23"
 
 # Allow overriding the default memory allocator
 # Mainly used for the musl builds, since the default musl malloc is very slow
-mimalloc = { version = "0.1.42", features = ["secure"], default-features = false, optional = true }
+mimalloc = { version = "0.1.43", features = ["secure"], default-features = false, optional = true }
 which = "6.0.1"
 
 # Argon2 library with support for the PHC format
@@ -163,10 +163,6 @@ argon2 = "0.5.3"
 # Reading a password from the cli for generating the Argon2id ADMIN_TOKEN
 rpassword = "7.3.1"
 
-# Patch mimalloc for now until a new version is released
-[patch.crates-io]
-mimalloc = { git = "https://github.com/purpleprotocol/mimalloc_rust.git", rev="992c9da4c5afba7fbf4c5815c43c8f0fbd2a8da6" }
-
 # Strip debuginfo from the release builds
 # The symbols are the provide better panic traces
 # Also enable fat LTO and use 1 codegen unit for optimizations
@@ -174,7 +170,6 @@ mimalloc = { git = "https://github.com/purpleprotocol/mimalloc_rust.git", rev="9
 strip = "debuginfo"
 lto = "fat"
 codegen-units = 1
-
 
 # A little bit of a speedup
 [profile.dev]
