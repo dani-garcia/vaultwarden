@@ -38,3 +38,6 @@ web-vault
 
 # Vaultwarden Resources
 resources
+
+# Playwright tests
+playwright
