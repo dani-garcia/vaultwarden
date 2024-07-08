@@ -1,0 +1,76 @@
+services:
+  VaultwardenPrebuild:
+    container_name: playwright_vaultwarden_prebuilt
+    image: playwright_vaultwarden_prebuilt
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    entrypoint: /bin/bash
+    restart: "no"
+
+  Vaultwarden:
+    container_name: playwright_vaultwarden-${ENV:-dev}
+    image: playwright_vaultwarden-${ENV:-dev}
+    network_mode: "host"
+    build:
+      context: compose/vaultwarden
+      dockerfile: Dockerfile
+      args:
+        REPO_URL: ${PW_WV_REPO_URL:-}
+        COMMIT_HASH: ${PW_WV_COMMIT_HASH:-}
+    env_file: ${ENV}.env
+    environment:
+      - DATABASE_URL
+      - I_REALLY_WANT_VOLATILE_STORAGE
+      - SMTP_HOST
+      - SMTP_FROM
+      - SMTP_DEBUG
+    restart: "no"
+
+  Playwright:
+    container_name: playwright_playwright
+    image: playwright_playwright
+    network_mode: "host"
+    build:
+      context: .
+      dockerfile: compose/playwright/Dockerfile
+    environment:
+      - PW_WV_REPO_URL
+      - PW_WV_COMMIT_HASH
+    restart: "no"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ..:/project
+
+  Mariadb:
+    container_name: playwright_mariadb
+    image: mariadb:11.2.4
+    env_file: test.env
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      start_period: 10s
+      interval: 10s
+    ports:
+      - ${MARIADB_PORT}:3306
+
+  Mysql:
+    container_name: playwright_mysql
+    image: mysql:8.4.1
+    env_file: test.env
+    healthcheck:
+      test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost"]
+      start_period: 10s
+      interval: 10s
+    ports:
+      - ${MYSQL_PORT}:3306
+
+  Postgres:
+    container_name: playwright_postgres
+    image: postgres:16.3
+    env_file: test.env
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}"]
+      start_period: 20s
+      interval: 30s
+    ports:
+      - ${POSTGRES_PORT}:5432
