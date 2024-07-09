@@ -10,11 +10,6 @@ On the machine that will receive the database, create an SSH connection using SS
 
 You need to configure a mail server on your receiving machine and install the "crontab" tool if it is not already installed.
 
-We obtain the following script:
-
-**The script**
-
-
 ## Explanation of the script
 
 ### Prerequisites:
