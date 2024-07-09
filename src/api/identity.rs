@@ -15,7 +15,7 @@ use crate::{
             two_factor::{authenticator, duo, email, enforce_2fa_policy, webauthn, yubikey},
         },
         push::register_push_device,
-        ApiResult, EmptyResult, JsonResult, JsonUpcase,
+        ApiResult, EmptyResult, JsonResult,
     },
     auth::{generate_organization_api_key_login_claims, ClientHeaders, ClientIp},
     db::{models::*, DbConn},
@@ -295,7 +295,12 @@ async fn _password_login(
         "KdfIterations": user.client_kdf_iter,
         "KdfMemory": user.client_kdf_memory,
         "KdfParallelism": user.client_kdf_parallelism,
-        "ResetMasterPassword": false,// TODO: Same as above
+        "ResetMasterPassword": false, // TODO: Same as above
+        "ForcePasswordReset": false,
+        "MasterPasswordPolicy": {
+            "object": "masterPasswordPolicy",
+        },
+
         "scope": scope,
         "unofficialServer": true,
         "UserDecryptionOptions": {
@@ -559,8 +564,11 @@ async fn _json_err_twofactor(providers: &[i32], user_uuid: &str, conn: &mut DbCo
     let mut result = json!({
         "error" : "invalid_grant",
         "error_description" : "Two factor required.",
-        "TwoFactorProviders" : providers,
-        "TwoFactorProviders2" : {} // { "0" : null }
+        "TwoFactorProviders" : providers.iter().map(ToString::to_string).collect::<Vec<String>>(),
+        "TwoFactorProviders2" : {}, // { "0" : null }
+        "MasterPasswordPolicy": {
+            "Object": "masterPasswordPolicy"
+        }
     });
 
     for provider in providers {
@@ -597,7 +605,7 @@ async fn _json_err_twofactor(providers: &[i32], user_uuid: &str, conn: &mut DbCo
                 let yubikey_metadata: yubikey::YubikeyMetadata = serde_json::from_str(&twofactor.data)?;
 
                 result["TwoFactorProviders2"][provider.to_string()] = json!({
-                    "Nfc": yubikey_metadata.Nfc,
+                    "Nfc": yubikey_metadata.nfc,
                 })
             }
 
@@ -626,19 +634,18 @@ async fn _json_err_twofactor(providers: &[i32], user_uuid: &str, conn: &mut DbCo
 }
 
 #[post("/accounts/prelogin", data = "<data>")]
-async fn prelogin(data: JsonUpcase<PreloginData>, conn: DbConn) -> Json<Value> {
+async fn prelogin(data: Json<PreloginData>, conn: DbConn) -> Json<Value> {
     _prelogin(data, conn).await
 }
 
 #[post("/accounts/register", data = "<data>")]
-async fn identity_register(data: JsonUpcase<RegisterData>, conn: DbConn) -> JsonResult {
+async fn identity_register(data: Json<RegisterData>, conn: DbConn) -> JsonResult {
     _register(data, conn).await
 }
 
 // https://github.com/bitwarden/jslib/blob/master/common/src/models/request/tokenRequest.ts
 // https://github.com/bitwarden/mobile/blob/master/src/Core/Models/Request/TokenRequest.cs
 #[derive(Debug, Clone, Default, FromForm)]
-#[allow(non_snake_case)]
 struct ConnectData {
     #[field(name = uncased("grant_type"))]
     #[field(name = uncased("granttype"))]

@@ -1,8 +1,8 @@
-use chrono::{Duration, NaiveDateTime, Utc};
-use rocket::Route;
+use chrono::{DateTime, TimeDelta, Utc};
+use rocket::{serde::json::Json, Route};
 
 use crate::{
-    api::{EmptyResult, JsonUpcase},
+    api::EmptyResult,
     auth::Headers,
     crypto,
     db::{
@@ -18,7 +18,7 @@ pub fn routes() -> Vec<Route> {
 }
 
 /// Data stored in the TwoFactor table in the db
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ProtectedActionData {
     /// Token issued to validate the protected action
     pub token: String,
@@ -32,7 +32,7 @@ impl ProtectedActionData {
     pub fn new(token: String) -> Self {
         Self {
             token,
-            token_sent: Utc::now().naive_utc().timestamp(),
+            token_sent: Utc::now().timestamp(),
             attempts: 0,
         }
     }
@@ -82,23 +82,24 @@ async fn request_otp(headers: Headers, mut conn: DbConn) -> EmptyResult {
 }
 
 #[derive(Deserialize, Serialize, Debug)]
-#[allow(non_snake_case)]
+#[serde(rename_all = "camelCase")]
 struct ProtectedActionVerify {
-    OTP: String,
+    #[serde(rename = "OTP", alias = "otp")]
+    otp: String,
 }
 
 #[post("/accounts/verify-otp", data = "<data>")]
-async fn verify_otp(data: JsonUpcase<ProtectedActionVerify>, headers: Headers, mut conn: DbConn) -> EmptyResult {
+async fn verify_otp(data: Json<ProtectedActionVerify>, headers: Headers, mut conn: DbConn) -> EmptyResult {
     if !CONFIG.mail_enabled() {
         err!("Email is disabled for this server. Either enable email or login using your master password instead of login via device.");
     }
 
     let user = headers.user;
-    let data: ProtectedActionVerify = data.into_inner().data;
+    let data: ProtectedActionVerify = data.into_inner();
 
     // Delete the token after one validation attempt
     // This endpoint only gets called for the vault export, and doesn't need a second attempt
-    validate_protected_action_otp(&data.OTP, &user.uuid, true, &mut conn).await
+    validate_protected_action_otp(&data.otp, &user.uuid, true, &mut conn).await
 }
 
 pub async fn validate_protected_action_otp(
@@ -122,9 +123,9 @@ pub async fn validate_protected_action_otp(
 
     // Check if the token has expired (Using the email 2fa expiration time)
     let date =
-        NaiveDateTime::from_timestamp_opt(pa_data.token_sent, 0).expect("Protected Action token timestamp invalid.");
+        DateTime::from_timestamp(pa_data.token_sent, 0).expect("Protected Action token timestamp invalid.").naive_utc();
     let max_time = CONFIG.email_expiration_time() as i64;
-    if date + Duration::seconds(max_time) < Utc::now().naive_utc() {
+    if date + TimeDelta::try_seconds(max_time).unwrap() < Utc::now().naive_utc() {
         pa.delete(conn).await?;
         err!("Token has expired")
     }

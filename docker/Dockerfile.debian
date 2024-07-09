@@ -18,24 +18,24 @@
 # - From https://hub.docker.com/r/vaultwarden/web-vault/tags,
 #   click the tag name to view the digest of the image it currently points to.
 # - From the command line:
-#     $ docker pull docker.io/vaultwarden/web-vault:v2024.1.2b
-#     $ docker image inspect --format "{{.RepoDigests}}" docker.io/vaultwarden/web-vault:v2024.1.2b
-#     [docker.io/vaultwarden/web-vault@sha256:798c0c893b6d16728878ff280b49da08863334d1f8dd88895580dc3dba622f08]
+#     $ docker pull docker.io/vaultwarden/web-vault:v2024.5.1b
+#     $ docker image inspect --format "{{.RepoDigests}}" docker.io/vaultwarden/web-vault:v2024.5.1b
+#     [docker.io/vaultwarden/web-vault@sha256:1a867b4b175e85fc8602314bd83bc263c76c49787031704f16a2915567725375]
 #
 # - Conversely, to get the tag name from the digest:
-#     $ docker image inspect --format "{{.RepoTags}}" docker.io/vaultwarden/web-vault@sha256:798c0c893b6d16728878ff280b49da08863334d1f8dd88895580dc3dba622f08
-#     [docker.io/vaultwarden/web-vault:v2024.1.2b]
+#     $ docker image inspect --format "{{.RepoTags}}" docker.io/vaultwarden/web-vault@sha256:1a867b4b175e85fc8602314bd83bc263c76c49787031704f16a2915567725375
+#     [docker.io/vaultwarden/web-vault:v2024.5.1b]
 #
-FROM --platform=linux/amd64 docker.io/vaultwarden/web-vault@sha256:798c0c893b6d16728878ff280b49da08863334d1f8dd88895580dc3dba622f08 as vault
+FROM --platform=linux/amd64 docker.io/vaultwarden/web-vault@sha256:1a867b4b175e85fc8602314bd83bc263c76c49787031704f16a2915567725375 as vault
 
 ########################## Cross Compile Docker Helper Scripts ##########################
 ## We use the linux/amd64 no matter which Build Platform, since these are all bash scripts
 ## And these bash scripts do not have any significant difference if at all
-FROM --platform=linux/amd64 docker.io/tonistiigi/xx@sha256:c9609ace652bbe51dd4ce90e0af9d48a4590f1214246da5bc70e46f6dd586edc AS xx
+FROM --platform=linux/amd64 docker.io/tonistiigi/xx@sha256:0cd3f05c72d6c9b038eb135f91376ee1169ef3a330d34e418e65e2a5c2e9c0d4 AS xx
 
 ########################## BUILD IMAGE ##########################
 # hadolint ignore=DL3006
-FROM --platform=$BUILDPLATFORM docker.io/library/rust:1.76.0-slim-bookworm as build
+FROM --platform=$BUILDPLATFORM docker.io/library/rust:1.79.0-slim-bookworm as build
 COPY --from=xx / /
 ARG TARGETARCH
 ARG TARGETVARIANT
@@ -64,10 +64,7 @@ RUN apt-get update && \
         "libc6-$(xx-info debian-arch)-cross" \
         "libc6-dev-$(xx-info debian-arch)-cross" \
         "linux-libc-dev-$(xx-info debian-arch)-cross" && \
-    # Run xx-cargo early, since it sometimes seems to break when run at a later stage
-    echo "export CARGO_TARGET=$(xx-cargo --print-target-triple)" >> /env-cargo
-
-RUN xx-apt-get install -y \
+    xx-apt-get install -y \
         --no-install-recommends \
         gcc \
         libmariadb3 \
@@ -78,19 +75,29 @@ RUN xx-apt-get install -y \
     # Force install arch dependend mariadb dev packages
     # Installing them the normal way breaks several other packages (again)
     apt-get download "libmariadb-dev-compat:$(xx-info debian-arch)" "libmariadb-dev:$(xx-info debian-arch)" && \
-    dpkg --force-all -i ./libmariadb-dev*.deb
+    dpkg --force-all -i ./libmariadb-dev*.deb && \
+    # Run xx-cargo early, since it sometimes seems to break when run at a later stage
+    echo "export CARGO_TARGET=$(xx-cargo --print-target-triple)" >> /env-cargo
 
 # Create CARGO_HOME folder and don't download rust docs
-RUN mkdir -pv "${CARGO_HOME}" \
-    && rustup set profile minimal
+RUN mkdir -pv "${CARGO_HOME}" && \
+    rustup set profile minimal
 
 # Creates a dummy project used to grab dependencies
 RUN USER=root cargo new --bin /app
 WORKDIR /app
 
-# Environment variables for cargo across Debian and Alpine
+# Environment variables for Cargo on Debian based builds
+ARG ARCH_OPENSSL_LIB_DIR \
+    ARCH_OPENSSL_INCLUDE_DIR
+
 RUN source /env-cargo && \
     if xx-info is-cross ; then \
+        # Some special variables if needed to override some build paths
+        if [[ -n "${ARCH_OPENSSL_LIB_DIR}" && -n "${ARCH_OPENSSL_INCLUDE_DIR}" ]]; then \
+            echo "export $(echo "${CARGO_TARGET}" | tr '[:lower:]' '[:upper:]' | tr - _)_OPENSSL_LIB_DIR=${ARCH_OPENSSL_LIB_DIR}" >> /env-cargo && \
+            echo "export $(echo "${CARGO_TARGET}" | tr '[:lower:]' '[:upper:]' | tr - _)_OPENSSL_INCLUDE_DIR=${ARCH_OPENSSL_INCLUDE_DIR}" >> /env-cargo ; \
+        fi && \
         # We can't use xx-cargo since that uses clang, which doesn't work for our libraries.
         # Because of this we generate the needed environment variables here which we can load in the needed steps.
         echo "export CC_$(echo "${CARGO_TARGET}" | tr '[:upper:]' '[:lower:]' | tr - _)=/usr/bin/$(xx-info)-gcc" >> /env-cargo && \
@@ -103,19 +110,16 @@ RUN source /env-cargo && \
     # Output the current contents of the file
     cat /env-cargo
 
-# Configure the DB ARG as late as possible to not invalidate the cached layers above
-ARG DB=sqlite,mysql,postgresql
-
 RUN source /env-cargo && \
     rustup target add "${CARGO_TARGET}"
 
-ARG CARGO_PROFILE=release
-ARG VW_VERSION
-
 # Copies over *only* your manifests and build files
-COPY ./Cargo.* ./
-COPY ./rust-toolchain.toml ./rust-toolchain.toml
-COPY ./build.rs ./build.rs
+COPY ./Cargo.* ./rust-toolchain.toml ./build.rs ./
+
+ARG CARGO_PROFILE=release
+
+# Configure the DB ARG as late as possible to not invalidate the cached layers above
+ARG DB=sqlite,mysql,postgresql
 
 # Builds your dependencies and removes the
 # dummy project, except the target folder
@@ -127,6 +131,8 @@ RUN source /env-cargo && \
 # Copies the complete project
 # To avoid copying unneeded files, use .dockerignore
 COPY . .
+
+ARG VW_VERSION
 
 # Builds again, this time it will be the actual source files being build
 RUN source /env-cargo && \
@@ -185,8 +191,7 @@ EXPOSE 3012
 # and the binary from the "build" stage to the current stage
 WORKDIR /
 
-COPY docker/healthcheck.sh /healthcheck.sh
-COPY docker/start.sh /start.sh
+COPY docker/healthcheck.sh docker/start.sh /
 
 COPY --from=vault /web-vault ./web-vault
 COPY --from=build /app/target/final/vaultwarden .

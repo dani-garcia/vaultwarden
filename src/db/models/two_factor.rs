@@ -12,7 +12,7 @@ db_object! {
         pub atype: i32,
         pub enabled: bool,
         pub data: String,
-        pub last_used: i32,
+        pub last_used: i64,
     }
 }
 
@@ -54,17 +54,17 @@ impl TwoFactor {
 
     pub fn to_json(&self) -> Value {
         json!({
-            "Enabled": self.enabled,
-            "Key": "", // This key and value vary
-            "Object": "twoFactorAuthenticator" // This value varies
+            "enabled": self.enabled,
+            "key": "", // This key and value vary
+            "Oobject": "twoFactorAuthenticator" // This value varies
         })
     }
 
     pub fn to_json_provider(&self) -> Value {
         json!({
-            "Enabled": self.enabled,
-            "Type": self.atype,
-            "Object": "twoFactorProvider"
+            "enabled": self.enabled,
+            "type": self.atype,
+            "object": "twoFactorProvider"
         })
     }
 }
@@ -95,7 +95,7 @@ impl TwoFactor {
                 // We need to make sure we're not going to violate the unique constraint on user_uuid and atype.
                 // This happens automatically on other DBMS backends due to replace_into(). PostgreSQL does
                 // not support multiple constraints on ON CONFLICT clauses.
-                diesel::delete(twofactor::table.filter(twofactor::user_uuid.eq(&self.user_uuid)).filter(twofactor::atype.eq(&self.atype)))
+                let _: () = diesel::delete(twofactor::table.filter(twofactor::user_uuid.eq(&self.user_uuid)).filter(twofactor::atype.eq(&self.atype)))
                     .execute(conn)
                     .map_res("Error deleting twofactor for insert")?;
 

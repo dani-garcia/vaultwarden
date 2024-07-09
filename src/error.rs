@@ -52,7 +52,6 @@ use rocket::error::Error as RocketErr;
 use serde_json::{Error as SerdeErr, Value};
 use std::io::Error as IoErr;
 use std::time::SystemTimeError as TimeErr;
-use tokio_tungstenite::tungstenite::Error as TungstError;
 use webauthn_rs::error::WebauthnError as WebauthnErr;
 use yubico::yubicoerror::YubicoError as YubiErr;
 
@@ -91,7 +90,6 @@ make_error! {
 
     DieselCon(DieselConErr): _has_source, _api_error,
     Webauthn(WebauthnErr):   _has_source, _api_error,
-    WebSocket(TungstError):  _has_source, _api_error,
 }
 
 impl std::fmt::Debug for Error {
@@ -181,18 +179,18 @@ fn _serialize(e: &impl serde::Serialize, _msg: &str) -> String {
 
 fn _api_error(_: &impl std::any::Any, msg: &str) -> String {
     let json = json!({
-        "Message": msg,
+        "message": msg,
         "error": "",
         "error_description": "",
-        "ValidationErrors": {"": [ msg ]},
-        "ErrorModel": {
-            "Message": msg,
-            "Object": "error"
+        "validationErrors": {"": [ msg ]},
+        "errorModel": {
+            "message": msg,
+            "object": "error"
         },
-        "ExceptionMessage": null,
-        "ExceptionStackTrace": null,
-        "InnerExceptionMessage": null,
-        "Object": "error"
+        "exceptionMessage": null,
+        "exceptionStackTrace": null,
+        "innerExceptionMessage": null,
+        "object": "error"
     });
     _serialize(&json, "")
 }

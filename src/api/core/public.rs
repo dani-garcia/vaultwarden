@@ -1,13 +1,14 @@
 use chrono::Utc;
 use rocket::{
     request::{self, FromRequest, Outcome},
+    serde::json::Json,
     Request, Route,
 };
 
 use std::collections::HashSet;
 
 use crate::{
-    api::{EmptyResult, JsonUpcase},
+    api::EmptyResult,
     auth,
     db::{models::*, DbConn},
     mail, CONFIG,
@@ -18,43 +19,43 @@ pub fn routes() -> Vec<Route> {
 }
 
 #[derive(Deserialize)]
-#[allow(non_snake_case)]
+#[serde(rename_all = "camelCase")]
 struct OrgImportGroupData {
-    Name: String,
-    ExternalId: String,
-    MemberExternalIds: Vec<String>,
+    name: String,
+    external_id: String,
+    member_external_ids: Vec<String>,
 }
 
 #[derive(Deserialize)]
-#[allow(non_snake_case)]
+#[serde(rename_all = "camelCase")]
 struct OrgImportUserData {
-    Email: String,
-    ExternalId: String,
-    Deleted: bool,
+    email: String,
+    external_id: String,
+    deleted: bool,
 }
 
 #[derive(Deserialize)]
-#[allow(non_snake_case)]
+#[serde(rename_all = "camelCase")]
 struct OrgImportData {
-    Groups: Vec<OrgImportGroupData>,
-    Members: Vec<OrgImportUserData>,
-    OverwriteExisting: bool,
-    // LargeImport: bool, // For now this will not be used, upstream uses this to prevent syncs of more then 2000 users or groups without the flag set.
+    groups: Vec<OrgImportGroupData>,
+    members: Vec<OrgImportUserData>,
+    overwrite_existing: bool,
+    // largeImport: bool, // For now this will not be used, upstream uses this to prevent syncs of more then 2000 users or groups without the flag set.
 }
 
 #[post("/public/organization/import", data = "<data>")]
-async fn ldap_import(data: JsonUpcase<OrgImportData>, token: PublicToken, mut conn: DbConn) -> EmptyResult {
+async fn ldap_import(data: Json<OrgImportData>, token: PublicToken, mut conn: DbConn) -> EmptyResult {
     // Most of the logic for this function can be found here
     // https://github.com/bitwarden/server/blob/fd892b2ff4547648a276734fb2b14a8abae2c6f5/src/Core/Services/Implementations/OrganizationService.cs#L1797
 
     let org_id = token.0;
-    let data = data.into_inner().data;
+    let data = data.into_inner();
 
-    for user_data in &data.Members {
-        if user_data.Deleted {
+    for user_data in &data.members {
+        if user_data.deleted {
             // If user is marked for deletion and it exists, revoke it
             if let Some(mut user_org) =
-                UserOrganization::find_by_email_and_org(&user_data.Email, &org_id, &mut conn).await
+                UserOrganization::find_by_email_and_org(&user_data.email, &org_id, &mut conn).await
             {
                 // Only revoke a user if it is not the last confirmed owner
                 let revoked = if user_org.atype == UserOrgType::Owner
@@ -72,27 +73,27 @@ async fn ldap_import(data: JsonUpcase<OrgImportData>, token: PublicToken, mut co
                     user_org.revoke()
                 };
 
-                let ext_modified = user_org.set_external_id(Some(user_data.ExternalId.clone()));
+                let ext_modified = user_org.set_external_id(Some(user_data.external_id.clone()));
                 if revoked || ext_modified {
                     user_org.save(&mut conn).await?;
                 }
             }
         // If user is part of the organization, restore it
         } else if let Some(mut user_org) =
-            UserOrganization::find_by_email_and_org(&user_data.Email, &org_id, &mut conn).await
+            UserOrganization::find_by_email_and_org(&user_data.email, &org_id, &mut conn).await
         {
             let restored = user_org.restore();
-            let ext_modified = user_org.set_external_id(Some(user_data.ExternalId.clone()));
+            let ext_modified = user_org.set_external_id(Some(user_data.external_id.clone()));
             if restored || ext_modified {
                 user_org.save(&mut conn).await?;
             }
         } else {
             // If user is not part of the organization
-            let user = match User::find_by_mail(&user_data.Email, &mut conn).await {
+            let user = match User::find_by_mail(&user_data.email, &mut conn).await {
                 Some(user) => user, // exists in vaultwarden
                 None => {
                     // User does not exist yet
-                    let mut new_user = User::new(user_data.Email.clone());
+                    let mut new_user = User::new(user_data.email.clone());
                     new_user.save(&mut conn).await?;
 
                     if !CONFIG.mail_enabled() {
@@ -109,7 +110,7 @@ async fn ldap_import(data: JsonUpcase<OrgImportData>, token: PublicToken, mut co
             };
 
             let mut new_org_user = UserOrganization::new(user.uuid.clone(), org_id.clone());
-            new_org_user.set_external_id(Some(user_data.ExternalId.clone()));
+            new_org_user.set_external_id(Some(user_data.external_id.clone()));
             new_org_user.access_all = false;
             new_org_user.atype = UserOrgType::User as i32;
             new_org_user.status = user_org_status;
@@ -123,7 +124,7 @@ async fn ldap_import(data: JsonUpcase<OrgImportData>, token: PublicToken, mut co
                 };
 
                 mail::send_invite(
-                    &user_data.Email,
+                    &user_data.email,
                     &user.uuid,
                     Some(org_id.clone()),
                     Some(new_org_user.uuid),
@@ -136,12 +137,17 @@ async fn ldap_import(data: JsonUpcase<OrgImportData>, token: PublicToken, mut co
     }
 
     if CONFIG.org_groups_enabled() {
-        for group_data in &data.Groups {
-            let group_uuid = match Group::find_by_external_id(&group_data.ExternalId, &mut conn).await {
+        for group_data in &data.groups {
+            let group_uuid = match Group::find_by_external_id_and_org(&group_data.external_id, &org_id, &mut conn).await
+            {
                 Some(group) => group.uuid,
                 None => {
-                    let mut group =
-                        Group::new(org_id.clone(), group_data.Name.clone(), false, Some(group_data.ExternalId.clone()));
+                    let mut group = Group::new(
+                        org_id.clone(),
+                        group_data.name.clone(),
+                        false,
+                        Some(group_data.external_id.clone()),
+                    );
                     group.save(&mut conn).await?;
                     group.uuid
                 }
@@ -149,7 +155,7 @@ async fn ldap_import(data: JsonUpcase<OrgImportData>, token: PublicToken, mut co
 
             GroupUser::delete_all_by_group(&group_uuid, &mut conn).await?;
 
-            for ext_id in &group_data.MemberExternalIds {
+            for ext_id in &group_data.member_external_ids {
                 if let Some(user_org) = UserOrganization::find_by_external_id_and_org(ext_id, &org_id, &mut conn).await
                 {
                     let mut group_user = GroupUser::new(group_uuid.clone(), user_org.uuid.clone());
@@ -162,9 +168,9 @@ async fn ldap_import(data: JsonUpcase<OrgImportData>, token: PublicToken, mut co
     }
 
     // If this flag is enabled, any user that isn't provided in the Users list will be removed (by default they will be kept unless they have Deleted == true)
-    if data.OverwriteExisting {
+    if data.overwrite_existing {
         // Generate a HashSet to quickly verify if a member is listed or not.
-        let sync_members: HashSet<String> = data.Members.into_iter().map(|m| m.ExternalId).collect();
+        let sync_members: HashSet<String> = data.members.into_iter().map(|m| m.external_id).collect();
         for user_org in UserOrganization::find_by_org(&org_id, &mut conn).await {
             if let Some(ref user_external_id) = user_org.external_id {
                 if !sync_members.contains(user_external_id) {
@@ -209,19 +215,15 @@ impl<'r> FromRequest<'r> for PublicToken {
             Err(_) => err_handler!("Invalid claim"),
         };
         // Check if time is between claims.nbf and claims.exp
-        let time_now = Utc::now().naive_utc().timestamp();
+        let time_now = Utc::now().timestamp();
         if time_now < claims.nbf {
             err_handler!("Token issued in the future");
         }
         if time_now > claims.exp {
             err_handler!("Token expired");
         }
-        // Check if claims.iss is host|claims.scope[0]
-        let host = match auth::Host::from_request(request).await {
-            Outcome::Success(host) => host,
-            _ => err_handler!("Error getting Host"),
-        };
-        let complete_host = format!("{}|{}", host.host, claims.scope[0]);
+        // Check if claims.iss is domain|claims.scope[0]
+        let complete_host = format!("{}|{}", CONFIG.domain_origin(), claims.scope[0]);
         if complete_host != claims.iss {
             err_handler!("Token not issued by this server");
         }

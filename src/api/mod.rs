@@ -20,10 +20,10 @@ pub use crate::api::{
     core::two_factor::send_incomplete_2fa_notifications,
     core::{emergency_notification_reminder_job, emergency_request_timeout_job},
     core::{event_cleanup_job, events_routes as core_events_routes},
-    icons::routes as icons_routes,
+    icons::{is_domain_blacklisted, routes as icons_routes},
     identity::routes as identity_routes,
     notifications::routes as notifications_routes,
-    notifications::{start_notification_server, AnonymousNotify, Notify, UpdateType, WS_ANONYMOUS_SUBSCRIPTIONS},
+    notifications::{AnonymousNotify, Notify, UpdateType, WS_ANONYMOUS_SUBSCRIPTIONS, WS_USERS},
     push::{
         push_cipher_update, push_folder_update, push_logout, push_send_update, push_user_update, register_push_device,
         unregister_push_device,
@@ -33,23 +33,18 @@ pub use crate::api::{
     web::static_files,
 };
 use crate::db::{models::User, DbConn};
-use crate::util;
 
 // Type aliases for API methods results
 type ApiResult<T> = Result<T, crate::error::Error>;
 pub type JsonResult = ApiResult<Json<Value>>;
 pub type EmptyResult = ApiResult<()>;
 
-type JsonUpcase<T> = Json<util::UpCase<T>>;
-type JsonUpcaseVec<T> = Json<Vec<util::UpCase<T>>>;
-type JsonVec<T> = Json<Vec<T>>;
-
 // Common structs representing JSON data received
 #[derive(Deserialize)]
-#[allow(non_snake_case)]
+#[serde(rename_all = "camelCase")]
 struct PasswordOrOtpData {
-    MasterPasswordHash: Option<String>,
-    Otp: Option<String>,
+    master_password_hash: Option<String>,
+    otp: Option<String>,
 }
 
 impl PasswordOrOtpData {
@@ -59,7 +54,7 @@ impl PasswordOrOtpData {
     pub async fn validate(&self, user: &User, delete_if_valid: bool, conn: &mut DbConn) -> EmptyResult {
         use crate::api::core::two_factor::protected_actions::validate_protected_action_otp;
 
-        match (self.MasterPasswordHash.as_deref(), self.Otp.as_deref()) {
+        match (self.master_password_hash.as_deref(), self.otp.as_deref()) {
             (Some(pw_hash), None) => {
                 if !user.check_valid_password(pw_hash) {
                     err!("Invalid password");

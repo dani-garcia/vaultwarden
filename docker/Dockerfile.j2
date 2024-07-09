@@ -82,10 +82,7 @@ RUN apt-get update && \
         "libc6-$(xx-info debian-arch)-cross" \
         "libc6-dev-$(xx-info debian-arch)-cross" \
         "linux-libc-dev-$(xx-info debian-arch)-cross" && \
-    # Run xx-cargo early, since it sometimes seems to break when run at a later stage
-    echo "export CARGO_TARGET=$(xx-cargo --print-target-triple)" >> /env-cargo
-
-RUN xx-apt-get install -y \
+    xx-apt-get install -y \
         --no-install-recommends \
         gcc \
         libmariadb3 \
@@ -96,21 +93,31 @@ RUN xx-apt-get install -y \
     # Force install arch dependend mariadb dev packages
     # Installing them the normal way breaks several other packages (again)
     apt-get download "libmariadb-dev-compat:$(xx-info debian-arch)" "libmariadb-dev:$(xx-info debian-arch)" && \
-    dpkg --force-all -i ./libmariadb-dev*.deb
+    dpkg --force-all -i ./libmariadb-dev*.deb && \
+    # Run xx-cargo early, since it sometimes seems to break when run at a later stage
+    echo "export CARGO_TARGET=$(xx-cargo --print-target-triple)" >> /env-cargo
 {% endif %}
 
 # Create CARGO_HOME folder and don't download rust docs
-RUN mkdir -pv "${CARGO_HOME}" \
-    && rustup set profile minimal
+RUN mkdir -pv "${CARGO_HOME}" && \
+    rustup set profile minimal
 
 # Creates a dummy project used to grab dependencies
 RUN USER=root cargo new --bin /app
 WORKDIR /app
 
 {% if base == "debian" %}
-# Environment variables for cargo across Debian and Alpine
+# Environment variables for Cargo on Debian based builds
+ARG ARCH_OPENSSL_LIB_DIR \
+    ARCH_OPENSSL_INCLUDE_DIR
+
 RUN source /env-cargo && \
     if xx-info is-cross ; then \
+        # Some special variables if needed to override some build paths
+        if [[ -n "${ARCH_OPENSSL_LIB_DIR}" && -n "${ARCH_OPENSSL_INCLUDE_DIR}" ]]; then \
+            echo "export $(echo "${CARGO_TARGET}" | tr '[:lower:]' '[:upper:]' | tr - _)_OPENSSL_LIB_DIR=${ARCH_OPENSSL_LIB_DIR}" >> /env-cargo && \
+            echo "export $(echo "${CARGO_TARGET}" | tr '[:lower:]' '[:upper:]' | tr - _)_OPENSSL_INCLUDE_DIR=${ARCH_OPENSSL_INCLUDE_DIR}" >> /env-cargo ; \
+        fi && \
         # We can't use xx-cargo since that uses clang, which doesn't work for our libraries.
         # Because of this we generate the needed environment variables here which we can load in the needed steps.
         echo "export CC_$(echo "${CARGO_TARGET}" | tr '[:upper:]' '[:lower:]' | tr - _)=/usr/bin/$(xx-info)-gcc" >> /env-cargo && \
@@ -123,30 +130,28 @@ RUN source /env-cargo && \
     # Output the current contents of the file
     cat /env-cargo
 
-# Configure the DB ARG as late as possible to not invalidate the cached layers above
-ARG DB=sqlite,mysql,postgresql
 {% elif base == "alpine" %}
-# Shared variables across Debian and Alpine
+# Environment variables for Cargo on Alpine based builds
 RUN echo "export CARGO_TARGET=${RUST_MUSL_CROSS_TARGET}" >> /env-cargo && \
-    # To be able to build the armv6 image with mimalloc we need to tell the linker to also look for libatomic
-    if [[ "${TARGETARCH}${TARGETVARIANT}" == "armv6" ]] ; then echo "export RUSTFLAGS='-Clink-arg=-latomic'" >> /env-cargo ; fi && \
     # Output the current contents of the file
     cat /env-cargo
 
-# Enable MiMalloc to improve performance on Alpine builds
-ARG DB=sqlite,mysql,postgresql,enable_mimalloc
 {% endif %}
-
 RUN source /env-cargo && \
     rustup target add "${CARGO_TARGET}"
 
-ARG CARGO_PROFILE=release
-ARG VW_VERSION
-
 # Copies over *only* your manifests and build files
-COPY ./Cargo.* ./
-COPY ./rust-toolchain.toml ./rust-toolchain.toml
-COPY ./build.rs ./build.rs
+COPY ./Cargo.* ./rust-toolchain.toml ./build.rs ./
+
+ARG CARGO_PROFILE=release
+
+# Configure the DB ARG as late as possible to not invalidate the cached layers above
+{% if base == "debian" %}
+ARG DB=sqlite,mysql,postgresql
+{% elif base == "alpine" %}
+# Enable MiMalloc to improve performance on Alpine builds
+ARG DB=sqlite,mysql,postgresql,enable_mimalloc
+{% endif %}
 
 # Builds your dependencies and removes the
 # dummy project, except the target folder
@@ -158,6 +163,8 @@ RUN source /env-cargo && \
 # Copies the complete project
 # To avoid copying unneeded files, use .dockerignore
 COPY . .
+
+ARG VW_VERSION
 
 # Builds again, this time it will be the actual source files being build
 RUN source /env-cargo && \
@@ -228,8 +235,7 @@ EXPOSE 3012
 # and the binary from the "build" stage to the current stage
 WORKDIR /
 
-COPY docker/healthcheck.sh /healthcheck.sh
-COPY docker/start.sh /start.sh
+COPY docker/healthcheck.sh docker/start.sh /
 
 COPY --from=vault /web-vault ./web-vault
 COPY --from=build /app/target/final/vaultwarden .

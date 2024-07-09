@@ -1,4 +1,4 @@
-use chrono::{Duration, NaiveDateTime, Utc};
+use chrono::{NaiveDateTime, TimeDelta, Utc};
 use serde_json::Value;
 
 use crate::crypto;
@@ -202,7 +202,7 @@ impl User {
         let stamp_exception = UserStampException {
             routes: route_exception,
             security_stamp: self.security_stamp.clone(),
-            expire: (Utc::now().naive_utc() + Duration::minutes(2)).timestamp(),
+            expire: (Utc::now() + TimeDelta::try_minutes(2).unwrap()).timestamp(),
         };
         self.stamp_exception = Some(serde_json::to_string(&stamp_exception).unwrap_or_default());
     }
@@ -240,24 +240,26 @@ impl User {
         };
 
         json!({
-            "_Status": status as i32,
-            "Id": self.uuid,
-            "Name": self.name,
-            "Email": self.email,
-            "EmailVerified": !CONFIG.mail_enabled() || self.verified_at.is_some(),
-            "Premium": true,
-            "MasterPasswordHint": self.password_hint,
-            "Culture": "en-US",
-            "TwoFactorEnabled": twofactor_enabled,
-            "Key": self.akey,
-            "PrivateKey": self.private_key,
-            "SecurityStamp": self.security_stamp,
-            "Organizations": orgs_json,
-            "Providers": [],
-            "ProviderOrganizations": [],
-            "ForcePasswordReset": false,
-            "AvatarColor": self.avatar_color,
-            "Object": "profile",
+            "_status": status as i32,
+            "id": self.uuid,
+            "name": self.name,
+            "email": self.email,
+            "emailVerified": !CONFIG.mail_enabled() || self.verified_at.is_some(),
+            "premium": true,
+            "premiumFromOrganization": false,
+            "masterPasswordHint": self.password_hint,
+            "culture": "en-US",
+            "twoFactorEnabled": twofactor_enabled,
+            "key": self.akey,
+            "privateKey": self.private_key,
+            "securityStamp": self.security_stamp,
+            "organizations": orgs_json,
+            "providers": [],
+            "providerOrganizations": [],
+            "forcePasswordReset": false,
+            "avatarColor": self.avatar_color,
+            "usesKeyConnector": false,
+            "object": "profile",
         })
     }
 
@@ -311,6 +313,7 @@ impl User {
 
         Send::delete_all_by_user(&self.uuid, conn).await?;
         EmergencyAccess::delete_all_by_user(&self.uuid, conn).await?;
+        EmergencyAccess::delete_all_by_grantee_email(&self.email, conn).await?;
         UserOrganization::delete_all_by_user(&self.uuid, conn).await?;
         Cipher::delete_all_by_user(&self.uuid, conn).await?;
         Favorite::delete_all_by_user(&self.uuid, conn).await?;

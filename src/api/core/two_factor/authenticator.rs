@@ -3,10 +3,7 @@ use rocket::serde::json::Json;
 use rocket::Route;
 
 use crate::{
-    api::{
-        core::log_user_event, core::two_factor::_generate_recover_code, EmptyResult, JsonResult, JsonUpcase,
-        PasswordOrOtpData,
-    },
+    api::{core::log_user_event, core::two_factor::_generate_recover_code, EmptyResult, JsonResult, PasswordOrOtpData},
     auth::{ClientIp, Headers},
     crypto,
     db::{
@@ -23,8 +20,8 @@ pub fn routes() -> Vec<Route> {
 }
 
 #[post("/two-factor/get-authenticator", data = "<data>")]
-async fn generate_authenticator(data: JsonUpcase<PasswordOrOtpData>, headers: Headers, mut conn: DbConn) -> JsonResult {
-    let data: PasswordOrOtpData = data.into_inner().data;
+async fn generate_authenticator(data: Json<PasswordOrOtpData>, headers: Headers, mut conn: DbConn) -> JsonResult {
+    let data: PasswordOrOtpData = data.into_inner();
     let user = headers.user;
 
     data.validate(&user, false, &mut conn).await?;
@@ -38,36 +35,32 @@ async fn generate_authenticator(data: JsonUpcase<PasswordOrOtpData>, headers: He
     };
 
     Ok(Json(json!({
-        "Enabled": enabled,
-        "Key": key,
-        "Object": "twoFactorAuthenticator"
+        "enabled": enabled,
+        "key": key,
+        "object": "twoFactorAuthenticator"
     })))
 }
 
-#[derive(Deserialize, Debug)]
-#[allow(non_snake_case)]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct EnableAuthenticatorData {
-    Key: String,
-    Token: NumberOrString,
-    MasterPasswordHash: Option<String>,
-    Otp: Option<String>,
+    key: String,
+    token: NumberOrString,
+    master_password_hash: Option<String>,
+    otp: Option<String>,
 }
 
 #[post("/two-factor/authenticator", data = "<data>")]
-async fn activate_authenticator(
-    data: JsonUpcase<EnableAuthenticatorData>,
-    headers: Headers,
-    mut conn: DbConn,
-) -> JsonResult {
-    let data: EnableAuthenticatorData = data.into_inner().data;
-    let key = data.Key;
-    let token = data.Token.into_string();
+async fn activate_authenticator(data: Json<EnableAuthenticatorData>, headers: Headers, mut conn: DbConn) -> JsonResult {
+    let data: EnableAuthenticatorData = data.into_inner();
+    let key = data.key;
+    let token = data.token.into_string();
 
     let mut user = headers.user;
 
     PasswordOrOtpData {
-        MasterPasswordHash: data.MasterPasswordHash,
-        Otp: data.Otp,
+        master_password_hash: data.master_password_hash,
+        otp: data.otp,
     }
     .validate(&user, true, &mut conn)
     .await?;
@@ -90,18 +83,14 @@ async fn activate_authenticator(
     log_user_event(EventType::UserUpdated2fa as i32, &user.uuid, headers.device.atype, &headers.ip.ip, &mut conn).await;
 
     Ok(Json(json!({
-        "Enabled": true,
-        "Key": key,
-        "Object": "twoFactorAuthenticator"
+        "enabled": true,
+        "key": key,
+        "object": "twoFactorAuthenticator"
     })))
 }
 
 #[put("/two-factor/authenticator", data = "<data>")]
-async fn activate_authenticator_put(
-    data: JsonUpcase<EnableAuthenticatorData>,
-    headers: Headers,
-    conn: DbConn,
-) -> JsonResult {
+async fn activate_authenticator_put(data: Json<EnableAuthenticatorData>, headers: Headers, conn: DbConn) -> JsonResult {
     activate_authenticator(data, headers, conn).await
 }
 
@@ -156,8 +145,8 @@ pub async fn validate_totp_code(
         let time = (current_timestamp + step * 30i64) as u64;
         let generated = totp_custom::<Sha1>(30, 6, &decoded_secret, time);
 
-        // Check the the given code equals the generated and if the time_step is larger then the one last used.
-        if generated == totp_code && time_step > i64::from(twofactor.last_used) {
+        // Check the given code equals the generated and if the time_step is larger then the one last used.
+        if generated == totp_code && time_step > twofactor.last_used {
             // If the step does not equals 0 the time is drifted either server or client side.
             if step != 0 {
                 warn!("TOTP Time drift detected. The step offset is {}", step);
@@ -165,10 +154,10 @@ pub async fn validate_totp_code(
 
             // Save the last used time step so only totp time steps higher then this one are allowed.
             // This will also save a newly created twofactor if the code is correct.
-            twofactor.last_used = time_step as i32;
+            twofactor.last_used = time_step;
             twofactor.save(conn).await?;
             return Ok(());
-        } else if generated == totp_code && time_step <= i64::from(twofactor.last_used) {
+        } else if generated == totp_code && time_step <= twofactor.last_used {
             warn!("This TOTP or a TOTP code within {} steps back or forward has already been used!", steps);
             err!(
                 format!("Invalid TOTP code! Server time: {} IP: {}", current_time.format("%F %T UTC"), ip.ip),

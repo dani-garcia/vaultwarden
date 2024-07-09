@@ -1,12 +1,12 @@
 ---
-vault_version: "v2024.1.2b"
-vault_image_digest: "sha256:798c0c893b6d16728878ff280b49da08863334d1f8dd88895580dc3dba622f08"
-# Cross Compile Docker Helper Scripts v1.3.0
+vault_version: "v2024.5.1b"
+vault_image_digest: "sha256:1a867b4b175e85fc8602314bd83bc263c76c49787031704f16a2915567725375"
+# Cross Compile Docker Helper Scripts v1.4.0
 # We use the linux/amd64 platform shell scripts since there is no difference between the different platform scripts
-xx_image_digest: "sha256:c9609ace652bbe51dd4ce90e0af9d48a4590f1214246da5bc70e46f6dd586edc"
-rust_version: 1.76.0 # Rust version to be used
+xx_image_digest: "sha256:0cd3f05c72d6c9b038eb135f91376ee1169ef3a330d34e418e65e2a5c2e9c0d4"
+rust_version: 1.79.0 # Rust version to be used
 debian_version: bookworm # Debian release name to be used
-alpine_version: 3.19 # Alpine version to be used
+alpine_version: "3.20" # Alpine version to be used
 # For which platforms/architectures will we try to build images
 platforms: ["linux/amd64", "linux/arm64", "linux/arm/v7", "linux/arm/v6"]
 # Determine the build images per OS/Arch

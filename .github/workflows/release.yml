@@ -58,7 +58,7 @@ jobs:
     steps:
       # Checkout the repo
       - name: Checkout
-        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
         with:
           fetch-depth: 0
 
@@ -69,13 +69,13 @@ jobs:
 
       # Start Docker Buildx
       - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@f95db51fddba0c2d1ec667646a06c2ce06100226 # v3.0.0
+        uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # v3.3.0
         # https://github.com/moby/buildkit/issues/3969
-        # Also set max parallelism to 2, the default of 4 breaks GitHub Actions
+        # Also set max parallelism to 3, the default of 4 breaks GitHub Actions and causes OOMKills
         with:
-          config-inline: |
+          buildkitd-config-inline: |
             [worker.oci]
-              max-parallelism = 2
+              max-parallelism = 3
           driver-opts: |
             network=host
 
@@ -102,7 +102,7 @@ jobs:
 
       # Login to Docker Hub
       - name: Login to Docker Hub
-        uses: docker/login-action@343f7c4344506bcbf9b4de18042ae17996df046d # v3.0.0
+        uses: docker/login-action@0d4c9c5ea7693da7b068278f7b52bda2a190a446 # v3.2.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -116,7 +116,7 @@ jobs:
 
       # Login to GitHub Container Registry
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@343f7c4344506bcbf9b4de18042ae17996df046d # v3.0.0
+        uses: docker/login-action@0d4c9c5ea7693da7b068278f7b52bda2a190a446 # v3.2.0
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
@@ -129,15 +129,9 @@ jobs:
         run: |
           echo "CONTAINER_REGISTRIES=${CONTAINER_REGISTRIES:+${CONTAINER_REGISTRIES},}${{ vars.GHCR_REPO }}" | tee -a "${GITHUB_ENV}"
 
-      - name: Add registry for ghcr.io
-        if: ${{ env.HAVE_GHCR_LOGIN == 'true' }}
-        shell: bash
-        run: |
-          echo "CONTAINER_REGISTRIES=${CONTAINER_REGISTRIES:+${CONTAINER_REGISTRIES},}${{ vars.GHCR_REPO }}" | tee -a "${GITHUB_ENV}"
-
       # Login to Quay.io
       - name: Login to Quay.io
-        uses: docker/login-action@343f7c4344506bcbf9b4de18042ae17996df046d # v3.0.0
+        uses: docker/login-action@0d4c9c5ea7693da7b068278f7b52bda2a190a446 # v3.2.0
         with:
           registry: quay.io
           username: ${{ secrets.QUAY_USERNAME }}
@@ -157,7 +151,7 @@ jobs:
           # Check if there is a GitHub Container Registry Login and use it for caching
           if [[ -n "${HAVE_GHCR_LOGIN}" ]]; then
             echo "BAKE_CACHE_FROM=type=registry,ref=${{ vars.GHCR_REPO }}-buildcache:${{ matrix.base_image }}" | tee -a "${GITHUB_ENV}"
-            echo "BAKE_CACHE_TO=type=registry,ref=${{ vars.GHCR_REPO }}-buildcache:${{ matrix.base_image }},mode=max" | tee -a "${GITHUB_ENV}"
+            echo "BAKE_CACHE_TO=type=registry,ref=${{ vars.GHCR_REPO }}-buildcache:${{ matrix.base_image }},compression=zstd,mode=max" | tee -a "${GITHUB_ENV}"
           else
             echo "BAKE_CACHE_FROM="
             echo "BAKE_CACHE_TO="
@@ -171,7 +165,7 @@ jobs:
           echo "CONTAINER_REGISTRIES=${CONTAINER_REGISTRIES:+${CONTAINER_REGISTRIES},}localhost:5000/vaultwarden/server" | tee -a "${GITHUB_ENV}"
 
       - name: Bake ${{ matrix.base_image }} containers
-        uses: docker/bake-action@849707117b03d39aba7924c50a10376a69e88d7d # v4.1.0
+        uses: docker/bake-action@1c5f18a523c4c68524cfbc5161494d8bb5b29d20 # v5.0.1
         env:
           BASE_TAGS: "${{ env.BASE_TAGS }}"
           SOURCE_COMMIT: "${{ env.SOURCE_COMMIT }}"
@@ -204,53 +198,53 @@ jobs:
           # This is needed because using different platforms doesn't trigger a new pull/download
 
           # Extract amd64 binary
-          docker create --name amd64 --platform=linux/amd64 "vaultwarden/server:${EXTRACT_TAG}-alpine"
+          docker create --name amd64 --platform=linux/amd64 "localhost:5000/vaultwarden/server:${EXTRACT_TAG}-alpine"
           docker cp amd64:/vaultwarden vaultwarden-amd64
           docker rm --force amd64
-          docker rmi --force "vaultwarden/server:${EXTRACT_TAG}-alpine"
+          docker rmi --force "localhost:5000/vaultwarden/server:${EXTRACT_TAG}-alpine"
 
           # Extract arm64 binary
-          docker create --name arm64 --platform=linux/arm64 "vaultwarden/server:${EXTRACT_TAG}-alpine"
+          docker create --name arm64 --platform=linux/arm64 "localhost:5000/vaultwarden/server:${EXTRACT_TAG}-alpine"
           docker cp arm64:/vaultwarden vaultwarden-arm64
           docker rm --force arm64
-          docker rmi --force "vaultwarden/server:${EXTRACT_TAG}-alpine"
+          docker rmi --force "localhost:5000/vaultwarden/server:${EXTRACT_TAG}-alpine"
 
           # Extract armv7 binary
-          docker create --name armv7 --platform=linux/arm/v7 "vaultwarden/server:${EXTRACT_TAG}-alpine"
+          docker create --name armv7 --platform=linux/arm/v7 "localhost:5000/vaultwarden/server:${EXTRACT_TAG}-alpine"
           docker cp armv7:/vaultwarden vaultwarden-armv7
           docker rm --force armv7
-          docker rmi --force "vaultwarden/server:${EXTRACT_TAG}-alpine"
+          docker rmi --force "localhost:5000/vaultwarden/server:${EXTRACT_TAG}-alpine"
 
           # Extract armv6 binary
-          docker create --name armv6 --platform=linux/arm/v6 "vaultwarden/server:${EXTRACT_TAG}-alpine"
+          docker create --name armv6 --platform=linux/arm/v6 "localhost:5000/vaultwarden/server:${EXTRACT_TAG}-alpine"
           docker cp armv6:/vaultwarden vaultwarden-armv6
           docker rm --force armv6
-          docker rmi --force "vaultwarden/server:${EXTRACT_TAG}-alpine"
+          docker rmi --force "localhost:5000/vaultwarden/server:${EXTRACT_TAG}-alpine"
 
       # Upload artifacts to Github Actions
       - name: "Upload amd64 artifact"
-        uses: actions/upload-artifact@5d5d22a31266ced268874388b861e4b58bb5c2f3 # v4.3.1
+        uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
         if: ${{ matrix.base_image == 'alpine' }}
         with:
           name: vaultwarden-${{ env.SOURCE_VERSION }}-linux-amd64
           path: vaultwarden-amd64
 
       - name: "Upload arm64 artifact"
-        uses: actions/upload-artifact@5d5d22a31266ced268874388b861e4b58bb5c2f3 # v4.3.1
+        uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
         if: ${{ matrix.base_image == 'alpine' }}
         with:
           name: vaultwarden-${{ env.SOURCE_VERSION }}-linux-arm64
           path: vaultwarden-arm64
 
       - name: "Upload armv7 artifact"
-        uses: actions/upload-artifact@5d5d22a31266ced268874388b861e4b58bb5c2f3 # v4.3.1
+        uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
         if: ${{ matrix.base_image == 'alpine' }}
         with:
           name: vaultwarden-${{ env.SOURCE_VERSION }}-linux-armv7
           path: vaultwarden-armv7
 
       - name: "Upload armv6 artifact"
-        uses: actions/upload-artifact@5d5d22a31266ced268874388b861e4b58bb5c2f3 # v4.3.1
+        uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
         if: ${{ matrix.base_image == 'alpine' }}
         with:
           name: vaultwarden-${{ env.SOURCE_VERSION }}-linux-armv6

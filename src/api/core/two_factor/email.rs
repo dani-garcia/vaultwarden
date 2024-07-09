@@ -1,16 +1,16 @@
-use chrono::{Duration, NaiveDateTime, Utc};
+use chrono::{DateTime, TimeDelta, Utc};
 use rocket::serde::json::Json;
 use rocket::Route;
 
 use crate::{
     api::{
         core::{log_user_event, two_factor::_generate_recover_code},
-        EmptyResult, JsonResult, JsonUpcase, PasswordOrOtpData,
+        EmptyResult, JsonResult, PasswordOrOtpData,
     },
     auth::Headers,
     crypto,
     db::{
-        models::{EventType, TwoFactor, TwoFactorType},
+        models::{EventType, TwoFactor, TwoFactorType, User},
         DbConn,
     },
     error::{Error, MapResult},
@@ -22,28 +22,28 @@ pub fn routes() -> Vec<Route> {
 }
 
 #[derive(Deserialize)]
-#[allow(non_snake_case)]
+#[serde(rename_all = "camelCase")]
 struct SendEmailLoginData {
-    Email: String,
-    MasterPasswordHash: String,
+    email: String,
+    master_password_hash: String,
 }
 
 /// User is trying to login and wants to use email 2FA.
 /// Does not require Bearer token
 #[post("/two-factor/send-email-login", data = "<data>")] // JsonResult
-async fn send_email_login(data: JsonUpcase<SendEmailLoginData>, mut conn: DbConn) -> EmptyResult {
-    let data: SendEmailLoginData = data.into_inner().data;
+async fn send_email_login(data: Json<SendEmailLoginData>, mut conn: DbConn) -> EmptyResult {
+    let data: SendEmailLoginData = data.into_inner();
 
     use crate::db::models::User;
 
     // Get the user
-    let user = match User::find_by_mail(&data.Email, &mut conn).await {
+    let user = match User::find_by_mail(&data.email, &mut conn).await {
         Some(user) => user,
         None => err!("Username or password is incorrect. Try again."),
     };
 
     // Check password
-    if !user.check_valid_password(&data.MasterPasswordHash) {
+    if !user.check_valid_password(&data.master_password_hash) {
         err!("Username or password is incorrect. Try again.")
     }
 
@@ -76,8 +76,8 @@ pub async fn send_token(user_uuid: &str, conn: &mut DbConn) -> EmptyResult {
 
 /// When user clicks on Manage email 2FA show the user the related information
 #[post("/two-factor/get-email", data = "<data>")]
-async fn get_email(data: JsonUpcase<PasswordOrOtpData>, headers: Headers, mut conn: DbConn) -> JsonResult {
-    let data: PasswordOrOtpData = data.into_inner().data;
+async fn get_email(data: Json<PasswordOrOtpData>, headers: Headers, mut conn: DbConn) -> JsonResult {
+    let data: PasswordOrOtpData = data.into_inner();
     let user = headers.user;
 
     data.validate(&user, false, &mut conn).await?;
@@ -92,30 +92,30 @@ async fn get_email(data: JsonUpcase<PasswordOrOtpData>, headers: Headers, mut co
         };
 
     Ok(Json(json!({
-        "Email": mfa_email,
-        "Enabled": enabled,
-        "Object": "twoFactorEmail"
+        "email": mfa_email,
+        "enabled": enabled,
+        "object": "twoFactorEmail"
     })))
 }
 
 #[derive(Deserialize)]
-#[allow(non_snake_case)]
+#[serde(rename_all = "camelCase")]
 struct SendEmailData {
     /// Email where 2FA codes will be sent to, can be different than user email account.
-    Email: String,
-    MasterPasswordHash: Option<String>,
-    Otp: Option<String>,
+    email: String,
+    master_password_hash: Option<String>,
+    otp: Option<String>,
 }
 
 /// Send a verification email to the specified email address to check whether it exists/belongs to user.
 #[post("/two-factor/send-email", data = "<data>")]
-async fn send_email(data: JsonUpcase<SendEmailData>, headers: Headers, mut conn: DbConn) -> EmptyResult {
-    let data: SendEmailData = data.into_inner().data;
+async fn send_email(data: Json<SendEmailData>, headers: Headers, mut conn: DbConn) -> EmptyResult {
+    let data: SendEmailData = data.into_inner();
     let user = headers.user;
 
     PasswordOrOtpData {
-        MasterPasswordHash: data.MasterPasswordHash,
-        Otp: data.Otp,
+        master_password_hash: data.master_password_hash,
+        otp: data.otp,
     }
     .validate(&user, false, &mut conn)
     .await?;
@@ -131,7 +131,7 @@ async fn send_email(data: JsonUpcase<SendEmailData>, headers: Headers, mut conn:
     }
 
     let generated_token = crypto::generate_email_token(CONFIG.email_token_size());
-    let twofactor_data = EmailTokenData::new(data.Email, generated_token);
+    let twofactor_data = EmailTokenData::new(data.email, generated_token);
 
     // Uses EmailVerificationChallenge as type to show that it's not verified yet.
     let twofactor = TwoFactor::new(user.uuid, TwoFactorType::EmailVerificationChallenge, twofactor_data.to_json());
@@ -143,24 +143,24 @@ async fn send_email(data: JsonUpcase<SendEmailData>, headers: Headers, mut conn:
 }
 
 #[derive(Deserialize, Serialize)]
-#[allow(non_snake_case)]
+#[serde(rename_all = "camelCase")]
 struct EmailData {
-    Email: String,
-    Token: String,
-    MasterPasswordHash: Option<String>,
-    Otp: Option<String>,
+    email: String,
+    token: String,
+    master_password_hash: Option<String>,
+    otp: Option<String>,
 }
 
 /// Verify email belongs to user and can be used for 2FA email codes.
 #[put("/two-factor/email", data = "<data>")]
-async fn email(data: JsonUpcase<EmailData>, headers: Headers, mut conn: DbConn) -> JsonResult {
-    let data: EmailData = data.into_inner().data;
+async fn email(data: Json<EmailData>, headers: Headers, mut conn: DbConn) -> JsonResult {
+    let data: EmailData = data.into_inner();
     let mut user = headers.user;
 
     // This is the last step in the verification process, delete the otp directly afterwards
     PasswordOrOtpData {
-        MasterPasswordHash: data.MasterPasswordHash,
-        Otp: data.Otp,
+        master_password_hash: data.master_password_hash,
+        otp: data.otp,
     }
     .validate(&user, true, &mut conn)
     .await?;
@@ -176,7 +176,7 @@ async fn email(data: JsonUpcase<EmailData>, headers: Headers, mut conn: DbConn) 
         _ => err!("No token available"),
     };
 
-    if !crypto::ct_eq(issued_token, data.Token) {
+    if !crypto::ct_eq(issued_token, data.token) {
         err!("Token is invalid")
     }
 
@@ -190,9 +190,9 @@ async fn email(data: JsonUpcase<EmailData>, headers: Headers, mut conn: DbConn) 
     log_user_event(EventType::UserUpdated2fa as i32, &user.uuid, headers.device.atype, &headers.ip.ip, &mut conn).await;
 
     Ok(Json(json!({
-        "Email": email_data.email,
-        "Enabled": "true",
-        "Object": "twoFactorEmail"
+        "email": email_data.email,
+        "enabled": "true",
+        "object": "twoFactorEmail"
     })))
 }
 
@@ -232,9 +232,9 @@ pub async fn validate_email_code_str(user_uuid: &str, token: &str, data: &str, c
     twofactor.data = email_data.to_json();
     twofactor.save(conn).await?;
 
-    let date = NaiveDateTime::from_timestamp_opt(email_data.token_sent, 0).expect("Email token timestamp invalid.");
+    let date = DateTime::from_timestamp(email_data.token_sent, 0).expect("Email token timestamp invalid.").naive_utc();
     let max_time = CONFIG.email_expiration_time() as i64;
-    if date + Duration::seconds(max_time) < Utc::now().naive_utc() {
+    if date + TimeDelta::try_seconds(max_time).unwrap() < Utc::now().naive_utc() {
         err!(
             "Token has expired",
             ErrorEvent {
@@ -265,14 +265,14 @@ impl EmailTokenData {
         EmailTokenData {
             email,
             last_token: Some(token),
-            token_sent: Utc::now().naive_utc().timestamp(),
+            token_sent: Utc::now().timestamp(),
             attempts: 0,
         }
     }
 
     pub fn set_token(&mut self, token: String) {
         self.last_token = Some(token);
-        self.token_sent = Utc::now().naive_utc().timestamp();
+        self.token_sent = Utc::now().timestamp();
     }
 
     pub fn reset_token(&mut self) {
@@ -297,6 +297,15 @@ impl EmailTokenData {
     }
 }
 
+pub async fn activate_email_2fa(user: &User, conn: &mut DbConn) -> EmptyResult {
+    if user.verified_at.is_none() {
+        err!("Auto-enabling of email 2FA failed because the users email address has not been verified!");
+    }
+    let twofactor_data = EmailTokenData::new(user.email.clone(), String::new());
+    let twofactor = TwoFactor::new(user.uuid.clone(), TwoFactorType::Email, twofactor_data.to_json());
+    twofactor.save(conn).await
+}
+
 /// Takes an email address and obscures it by replacing it with asterisks except two characters.
 pub fn obscure_email(email: &str) -> String {
     let split: Vec<&str> = email.rsplitn(2, '@').collect();
@@ -316,6 +325,14 @@ pub fn obscure_email(email: &str) -> String {
     };
 
     format!("{}@{}", new_name, &domain)
+}
+
+pub async fn find_and_activate_email_2fa(user_uuid: &str, conn: &mut DbConn) -> EmptyResult {
+    if let Some(user) = User::find_by_uuid(user_uuid, conn).await {
+        activate_email_2fa(&user, conn).await
+    } else {
+        err!("User not found!");
+    }
 }
 
 #[cfg(test)]

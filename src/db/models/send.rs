@@ -1,6 +1,8 @@
 use chrono::{NaiveDateTime, Utc};
 use serde_json::Value;
 
+use crate::util::LowerCase;
+
 use super::User;
 
 db_object! {
@@ -122,48 +124,58 @@ impl Send {
         use data_encoding::BASE64URL_NOPAD;
         use uuid::Uuid;
 
-        let data: Value = serde_json::from_str(&self.data).unwrap_or_default();
+        let mut data = serde_json::from_str::<LowerCase<Value>>(&self.data).map(|d| d.data).unwrap_or_default();
+
+        // Mobile clients expect size to be a string instead of a number
+        if let Some(size) = data.get("size").and_then(|v| v.as_i64()) {
+            data["size"] = Value::String(size.to_string());
+        }
 
         json!({
-            "Id": self.uuid,
-            "AccessId": BASE64URL_NOPAD.encode(Uuid::parse_str(&self.uuid).unwrap_or_default().as_bytes()),
-            "Type": self.atype,
+            "id": self.uuid,
+            "accessId": BASE64URL_NOPAD.encode(Uuid::parse_str(&self.uuid).unwrap_or_default().as_bytes()),
+            "type": self.atype,
 
-            "Name": self.name,
-            "Notes": self.notes,
-            "Text": if self.atype == SendType::Text as i32 { Some(&data) } else { None },
-            "File": if self.atype == SendType::File as i32 { Some(&data) } else { None },
+            "name": self.name,
+            "notes": self.notes,
+            "text": if self.atype == SendType::Text as i32 { Some(&data) } else { None },
+            "file": if self.atype == SendType::File as i32 { Some(&data) } else { None },
 
-            "Key": self.akey,
-            "MaxAccessCount": self.max_access_count,
-            "AccessCount": self.access_count,
-            "Password": self.password_hash.as_deref().map(|h| BASE64URL_NOPAD.encode(h)),
-            "Disabled": self.disabled,
-            "HideEmail": self.hide_email,
+            "key": self.akey,
+            "maxAccessCount": self.max_access_count,
+            "accessCount": self.access_count,
+            "password": self.password_hash.as_deref().map(|h| BASE64URL_NOPAD.encode(h)),
+            "disabled": self.disabled,
+            "hideEmail": self.hide_email,
 
-            "RevisionDate": format_date(&self.revision_date),
-            "ExpirationDate": self.expiration_date.as_ref().map(format_date),
-            "DeletionDate": format_date(&self.deletion_date),
-            "Object": "send",
+            "revisionDate": format_date(&self.revision_date),
+            "expirationDate": self.expiration_date.as_ref().map(format_date),
+            "deletionDate": format_date(&self.deletion_date),
+            "object": "send",
         })
     }
 
     pub async fn to_json_access(&self, conn: &mut DbConn) -> Value {
         use crate::util::format_date;
 
-        let data: Value = serde_json::from_str(&self.data).unwrap_or_default();
+        let mut data = serde_json::from_str::<LowerCase<Value>>(&self.data).map(|d| d.data).unwrap_or_default();
+
+        // Mobile clients expect size to be a string instead of a number
+        if let Some(size) = data.get("size").and_then(|v| v.as_i64()) {
+            data["size"] = Value::String(size.to_string());
+        }
 
         json!({
-            "Id": self.uuid,
-            "Type": self.atype,
+            "id": self.uuid,
+            "type": self.atype,
 
-            "Name": self.name,
-            "Text": if self.atype == SendType::Text as i32 { Some(&data) } else { None },
-            "File": if self.atype == SendType::File as i32 { Some(&data) } else { None },
+            "name": self.name,
+            "text": if self.atype == SendType::Text as i32 { Some(&data) } else { None },
+            "file": if self.atype == SendType::File as i32 { Some(&data) } else { None },
 
-            "ExpirationDate": self.expiration_date.as_ref().map(format_date),
-            "CreatorIdentifier": self.creator_identifier(conn).await,
-            "Object": "send-access",
+            "expirationDate": self.expiration_date.as_ref().map(format_date),
+            "creatorIdentifier": self.creator_identifier(conn).await,
+            "object": "send-access",
         })
     }
 }
@@ -290,25 +302,18 @@ impl Send {
     pub async fn size_by_user(user_uuid: &str, conn: &mut DbConn) -> Option<i64> {
         let sends = Self::find_by_user(user_uuid, conn).await;
 
-        #[allow(non_snake_case)]
-        #[derive(serde::Deserialize, Default)]
+        #[derive(serde::Deserialize)]
         struct FileData {
-            Size: Option<NumberOrString>,
-            size: Option<NumberOrString>,
+            #[serde(rename = "size", alias = "Size")]
+            size: NumberOrString,
         }
 
         let mut total: i64 = 0;
         for send in sends {
             if send.atype == SendType::File as i32 {
-                let data: FileData = serde_json::from_str(&send.data).unwrap_or_default();
-
-                let size = match (data.size, data.Size) {
-                    (Some(s), _) => s.into_i64(),
-                    (_, Some(s)) => s.into_i64(),
-                    (None, None) => continue,
-                };
-
-                if let Ok(size) = size {
+                if let Ok(size) =
+                    serde_json::from_str::<FileData>(&send.data).map_err(Into::into).and_then(|d| d.size.into_i64())
+                {
                     total = total.checked_add(size)?;
                 };
             }

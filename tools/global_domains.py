@@ -71,9 +71,9 @@ with urllib.request.urlopen(DOMAIN_LISTS_URL) as response:
 global_domains = []
 for name, domain_list in domain_lists.items():
     entry = OrderedDict()
-    entry["Type"] = enums[name]
-    entry["Domains"] = domain_list
-    entry["Excluded"] = False
+    entry["type"] = enums[name]
+    entry["domains"] = domain_list
+    entry["excluded"] = False
     global_domains.append(entry)
 
 # Write out the global domains JSON file.

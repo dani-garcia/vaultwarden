@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, TimeDelta, Utc};
 use num_traits::ToPrimitive;
 use rocket::form::Form;
 use rocket::fs::NamedFile;
@@ -9,7 +9,7 @@ use rocket::serde::json::Json;
 use serde_json::Value;
 
 use crate::{
-    api::{ApiResult, EmptyResult, JsonResult, JsonUpcase, Notify, UpdateType},
+    api::{ApiResult, EmptyResult, JsonResult, Notify, UpdateType},
     auth::{ClientIp, Headers, Host},
     db::{models::*, DbConn, DbPool},
     util::{NumberOrString, SafeString},
@@ -48,23 +48,26 @@ pub async fn purge_sends(pool: DbPool) {
 }
 
 #[derive(Deserialize)]
-#[allow(non_snake_case)]
-struct SendData {
-    Type: i32,
-    Key: String,
-    Password: Option<String>,
-    MaxAccessCount: Option<NumberOrString>,
-    ExpirationDate: Option<DateTime<Utc>>,
-    DeletionDate: DateTime<Utc>,
-    Disabled: bool,
-    HideEmail: Option<bool>,
+#[serde(rename_all = "camelCase")]
+pub struct SendData {
+    r#type: i32,
+    key: String,
+    password: Option<String>,
+    max_access_count: Option<NumberOrString>,
+    expiration_date: Option<DateTime<Utc>>,
+    deletion_date: DateTime<Utc>,
+    disabled: bool,
+    hide_email: Option<bool>,
 
     // Data field
-    Name: String,
-    Notes: Option<String>,
-    Text: Option<Value>,
-    File: Option<Value>,
-    FileLength: Option<NumberOrString>,
+    name: String,
+    notes: Option<String>,
+    text: Option<Value>,
+    file: Option<Value>,
+    file_length: Option<NumberOrString>,
+
+    // Used for key rotations
+    pub id: Option<String>,
 }
 
 /// Enforces the `Disable Send` policy. A non-owner/admin user belonging to
@@ -93,7 +96,7 @@ async fn enforce_disable_send_policy(headers: &Headers, conn: &mut DbConn) -> Em
 /// Ref: https://bitwarden.com/help/article/policies/#send-options
 async fn enforce_disable_hide_email_policy(data: &SendData, headers: &Headers, conn: &mut DbConn) -> EmptyResult {
     let user_uuid = &headers.user.uuid;
-    let hide_email = data.HideEmail.unwrap_or(false);
+    let hide_email = data.hide_email.unwrap_or(false);
     if hide_email && OrgPolicy::is_hide_email_disabled(user_uuid, conn).await {
         err!(
             "Due to an Enterprise Policy, you are not allowed to hide your email address \
@@ -104,40 +107,40 @@ async fn enforce_disable_hide_email_policy(data: &SendData, headers: &Headers, c
 }
 
 fn create_send(data: SendData, user_uuid: String) -> ApiResult<Send> {
-    let data_val = if data.Type == SendType::Text as i32 {
-        data.Text
-    } else if data.Type == SendType::File as i32 {
-        data.File
+    let data_val = if data.r#type == SendType::Text as i32 {
+        data.text
+    } else if data.r#type == SendType::File as i32 {
+        data.file
     } else {
         err!("Invalid Send type")
     };
 
     let data_str = if let Some(mut d) = data_val {
-        d.as_object_mut().and_then(|o| o.remove("Response"));
+        d.as_object_mut().and_then(|o| o.remove("response"));
         serde_json::to_string(&d)?
     } else {
         err!("Send data not provided");
     };
 
-    if data.DeletionDate > Utc::now() + Duration::days(31) {
+    if data.deletion_date > Utc::now() + TimeDelta::try_days(31).unwrap() {
         err!(
             "You cannot have a Send with a deletion date that far into the future. Adjust the Deletion Date to a value less than 31 days from now and try again."
         );
     }
 
-    let mut send = Send::new(data.Type, data.Name, data_str, data.Key, data.DeletionDate.naive_utc());
+    let mut send = Send::new(data.r#type, data.name, data_str, data.key, data.deletion_date.naive_utc());
     send.user_uuid = Some(user_uuid);
-    send.notes = data.Notes;
-    send.max_access_count = match data.MaxAccessCount {
+    send.notes = data.notes;
+    send.max_access_count = match data.max_access_count {
         Some(m) => Some(m.into_i32()?),
         _ => None,
     };
-    send.expiration_date = data.ExpirationDate.map(|d| d.naive_utc());
-    send.disabled = data.Disabled;
-    send.hide_email = data.HideEmail;
-    send.atype = data.Type;
+    send.expiration_date = data.expiration_date.map(|d| d.naive_utc());
+    send.disabled = data.disabled;
+    send.hide_email = data.hide_email;
+    send.atype = data.r#type;
 
-    send.set_password(data.Password.as_deref());
+    send.set_password(data.password.as_deref());
 
     Ok(send)
 }
@@ -148,9 +151,9 @@ async fn get_sends(headers: Headers, mut conn: DbConn) -> Json<Value> {
     let sends_json: Vec<Value> = sends.await.iter().map(|s| s.to_json()).collect();
 
     Json(json!({
-      "Data": sends_json,
-      "Object": "list",
-      "ContinuationToken": null
+      "data": sends_json,
+      "object": "list",
+      "continuationToken": null
     }))
 }
 
@@ -169,13 +172,13 @@ async fn get_send(uuid: &str, headers: Headers, mut conn: DbConn) -> JsonResult 
 }
 
 #[post("/sends", data = "<data>")]
-async fn post_send(data: JsonUpcase<SendData>, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> JsonResult {
+async fn post_send(data: Json<SendData>, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> JsonResult {
     enforce_disable_send_policy(&headers, &mut conn).await?;
 
-    let data: SendData = data.into_inner().data;
+    let data: SendData = data.into_inner();
     enforce_disable_hide_email_policy(&data, &headers, &mut conn).await?;
 
-    if data.Type == SendType::File as i32 {
+    if data.r#type == SendType::File as i32 {
         err!("File sends should use /api/sends/file")
     }
 
@@ -195,7 +198,7 @@ async fn post_send(data: JsonUpcase<SendData>, headers: Headers, mut conn: DbCon
 
 #[derive(FromForm)]
 struct UploadData<'f> {
-    model: Json<crate::util::UpCase<SendData>>,
+    model: Json<SendData>,
     data: TempFile<'f>,
 }
 
@@ -215,7 +218,7 @@ async fn post_send_file(data: Form<UploadData<'_>>, headers: Headers, mut conn: 
         model,
         mut data,
     } = data.into_inner();
-    let model = model.into_inner().data;
+    let model = model.into_inner();
 
     let Some(size) = data.len().to_i64() else {
         err!("Invalid send size");
@@ -263,9 +266,9 @@ async fn post_send_file(data: Form<UploadData<'_>>, headers: Headers, mut conn: 
 
     let mut data_value: Value = serde_json::from_str(&send.data)?;
     if let Some(o) = data_value.as_object_mut() {
-        o.insert(String::from("Id"), Value::String(file_id));
-        o.insert(String::from("Size"), Value::Number(size.into()));
-        o.insert(String::from("SizeName"), Value::String(crate::util::get_display_size(size)));
+        o.insert(String::from("id"), Value::String(file_id));
+        o.insert(String::from("size"), Value::Number(size.into()));
+        o.insert(String::from("sizeName"), Value::String(crate::util::get_display_size(size)));
     }
     send.data = serde_json::to_string(&data_value)?;
 
@@ -285,18 +288,18 @@ async fn post_send_file(data: Form<UploadData<'_>>, headers: Headers, mut conn: 
 
 // Upstream: https://github.com/bitwarden/server/blob/d0c793c95181dfb1b447eb450f85ba0bfd7ef643/src/Api/Controllers/SendsController.cs#L190
 #[post("/sends/file/v2", data = "<data>")]
-async fn post_send_file_v2(data: JsonUpcase<SendData>, headers: Headers, mut conn: DbConn) -> JsonResult {
+async fn post_send_file_v2(data: Json<SendData>, headers: Headers, mut conn: DbConn) -> JsonResult {
     enforce_disable_send_policy(&headers, &mut conn).await?;
 
-    let data = data.into_inner().data;
+    let data = data.into_inner();
 
-    if data.Type != SendType::File as i32 {
+    if data.r#type != SendType::File as i32 {
         err!("Send content is not a file");
     }
 
     enforce_disable_hide_email_policy(&data, &headers, &mut conn).await?;
 
-    let file_length = match &data.FileLength {
+    let file_length = match &data.file_length {
         Some(m) => m.into_i64()?,
         _ => err!("Invalid send length"),
     };
@@ -331,9 +334,9 @@ async fn post_send_file_v2(data: JsonUpcase<SendData>, headers: Headers, mut con
 
     let mut data_value: Value = serde_json::from_str(&send.data)?;
     if let Some(o) = data_value.as_object_mut() {
-        o.insert(String::from("Id"), Value::String(file_id.clone()));
-        o.insert(String::from("Size"), Value::Number(file_length.into()));
-        o.insert(String::from("SizeName"), Value::String(crate::util::get_display_size(file_length)));
+        o.insert(String::from("id"), Value::String(file_id.clone()));
+        o.insert(String::from("size"), Value::Number(file_length.into()));
+        o.insert(String::from("sizeName"), Value::String(crate::util::get_display_size(file_length)));
     }
     send.data = serde_json::to_string(&data_value)?;
     send.save(&mut conn).await?;
@@ -392,15 +395,15 @@ async fn post_send_file_v2_data(
 }
 
 #[derive(Deserialize)]
-#[allow(non_snake_case)]
+#[serde(rename_all = "camelCase")]
 pub struct SendAccessData {
-    pub Password: Option<String>,
+    pub password: Option<String>,
 }
 
 #[post("/sends/access/<access_id>", data = "<data>")]
 async fn post_access(
     access_id: &str,
-    data: JsonUpcase<SendAccessData>,
+    data: Json<SendAccessData>,
     mut conn: DbConn,
     ip: ClientIp,
     nt: Notify<'_>,
@@ -431,7 +434,7 @@ async fn post_access(
     }
 
     if send.password_hash.is_some() {
-        match data.into_inner().data.Password {
+        match data.into_inner().password {
             Some(ref p) if send.check_password(p) => { /* Nothing to do here */ }
             Some(_) => err!("Invalid password", format!("IP: {}.", ip.ip)),
             None => err_code!("Password not provided", format!("IP: {}.", ip.ip), 401),
@@ -461,7 +464,7 @@ async fn post_access(
 async fn post_access_file(
     send_id: &str,
     file_id: &str,
-    data: JsonUpcase<SendAccessData>,
+    data: Json<SendAccessData>,
     host: Host,
     mut conn: DbConn,
     nt: Notify<'_>,
@@ -492,7 +495,7 @@ async fn post_access_file(
     }
 
     if send.password_hash.is_some() {
-        match data.into_inner().data.Password {
+        match data.into_inner().password {
             Some(ref p) if send.check_password(p) => { /* Nothing to do here */ }
             Some(_) => err!("Invalid password."),
             None => err_code!("Password not provided", 401),
@@ -515,9 +518,9 @@ async fn post_access_file(
     let token_claims = crate::auth::generate_send_claims(send_id, file_id);
     let token = crate::auth::encode_jwt(&token_claims);
     Ok(Json(json!({
-        "Object": "send-fileDownload",
-        "Id": file_id,
-        "Url": format!("{}/api/sends/{}/{}?t={}", &host.host, send_id, file_id, token)
+        "object": "send-fileDownload",
+        "id": file_id,
+        "url": format!("{}/api/sends/{}/{}?t={}", &host.host, send_id, file_id, token)
     })))
 }
 
@@ -532,16 +535,10 @@ async fn download_send(send_id: SafeString, file_id: SafeString, t: &str) -> Opt
 }
 
 #[put("/sends/<id>", data = "<data>")]
-async fn put_send(
-    id: &str,
-    data: JsonUpcase<SendData>,
-    headers: Headers,
-    mut conn: DbConn,
-    nt: Notify<'_>,
-) -> JsonResult {
+async fn put_send(id: &str, data: Json<SendData>, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> JsonResult {
     enforce_disable_send_policy(&headers, &mut conn).await?;
 
-    let data: SendData = data.into_inner().data;
+    let data: SendData = data.into_inner();
     enforce_disable_hide_email_policy(&data, &headers, &mut conn).await?;
 
     let mut send = match Send::find_by_uuid(id, &mut conn).await {
@@ -549,19 +546,38 @@ async fn put_send(
         None => err!("Send not found"),
     };
 
+    update_send_from_data(&mut send, data, &headers, &mut conn, &nt, UpdateType::SyncSendUpdate).await?;
+
+    Ok(Json(send.to_json()))
+}
+
+pub async fn update_send_from_data(
+    send: &mut Send,
+    data: SendData,
+    headers: &Headers,
+    conn: &mut DbConn,
+    nt: &Notify<'_>,
+    ut: UpdateType,
+) -> EmptyResult {
     if send.user_uuid.as_ref() != Some(&headers.user.uuid) {
         err!("Send is not owned by user")
     }
 
-    if send.atype != data.Type {
+    if send.atype != data.r#type {
         err!("Sends can't change type")
+    }
+
+    if data.deletion_date > Utc::now() + TimeDelta::try_days(31).unwrap() {
+        err!(
+            "You cannot have a Send with a deletion date that far into the future. Adjust the Deletion Date to a value less than 31 days from now and try again."
+        );
     }
 
     // When updating a file Send, we receive nulls in the File field, as it's immutable,
     // so we only need to update the data field in the Text case
-    if data.Type == SendType::Text as i32 {
-        let data_str = if let Some(mut d) = data.Text {
-            d.as_object_mut().and_then(|d| d.remove("Response"));
+    if data.r#type == SendType::Text as i32 {
+        let data_str = if let Some(mut d) = data.text {
+            d.as_object_mut().and_then(|d| d.remove("response"));
             serde_json::to_string(&d)?
         } else {
             err!("Send data not provided");
@@ -569,39 +585,28 @@ async fn put_send(
         send.data = data_str;
     }
 
-    if data.DeletionDate > Utc::now() + Duration::days(31) {
-        err!(
-            "You cannot have a Send with a deletion date that far into the future. Adjust the Deletion Date to a value less than 31 days from now and try again."
-        );
-    }
-    send.name = data.Name;
-    send.akey = data.Key;
-    send.deletion_date = data.DeletionDate.naive_utc();
-    send.notes = data.Notes;
-    send.max_access_count = match data.MaxAccessCount {
+    send.name = data.name;
+    send.akey = data.key;
+    send.deletion_date = data.deletion_date.naive_utc();
+    send.notes = data.notes;
+    send.max_access_count = match data.max_access_count {
         Some(m) => Some(m.into_i32()?),
         _ => None,
     };
-    send.expiration_date = data.ExpirationDate.map(|d| d.naive_utc());
-    send.hide_email = data.HideEmail;
-    send.disabled = data.Disabled;
+    send.expiration_date = data.expiration_date.map(|d| d.naive_utc());
+    send.hide_email = data.hide_email;
+    send.disabled = data.disabled;
 
     // Only change the value if it's present
-    if let Some(password) = data.Password {
+    if let Some(password) = data.password {
         send.set_password(Some(&password));
     }
 
-    send.save(&mut conn).await?;
-    nt.send_send_update(
-        UpdateType::SyncSendUpdate,
-        &send,
-        &send.update_users_revision(&mut conn).await,
-        &headers.device.uuid,
-        &mut conn,
-    )
-    .await;
-
-    Ok(Json(send.to_json()))
+    send.save(conn).await?;
+    if ut != UpdateType::None {
+        nt.send_send_update(ut, send, &send.update_users_revision(conn).await, &headers.device.uuid, conn).await;
+    }
+    Ok(())
 }
 
 #[delete("/sends/<id>")]

@@ -58,14 +58,14 @@ impl Group {
         use crate::util::format_date;
 
         json!({
-            "Id": self.uuid,
-            "OrganizationId": self.organizations_uuid,
-            "Name": self.name,
-            "AccessAll": self.access_all,
-            "ExternalId": self.external_id,
-            "CreationDate": format_date(&self.creation_date),
-            "RevisionDate": format_date(&self.revision_date),
-            "Object": "group"
+            "id": self.uuid,
+            "organizationId": self.organizations_uuid,
+            "name": self.name,
+            "accessAll": self.access_all,
+            "externalId": self.external_id,
+            "creationDate": format_date(&self.creation_date),
+            "revisionDate": format_date(&self.revision_date),
+            "object": "group"
         })
     }
 
@@ -75,21 +75,21 @@ impl Group {
             .iter()
             .map(|entry| {
                 json!({
-                    "Id": entry.collections_uuid,
-                    "ReadOnly": entry.read_only,
-                    "HidePasswords": entry.hide_passwords
+                    "id": entry.collections_uuid,
+                    "readOnly": entry.read_only,
+                    "hidePasswords": entry.hide_passwords
                 })
             })
             .collect();
 
         json!({
-            "Id": self.uuid,
-            "OrganizationId": self.organizations_uuid,
-            "Name": self.name,
-            "AccessAll": self.access_all,
-            "ExternalId": self.external_id,
-            "Collections": collections_groups,
-            "Object": "groupDetails"
+            "id": self.uuid,
+            "organizationId": self.organizations_uuid,
+            "name": self.name,
+            "accessAll": self.access_all,
+            "externalId": self.external_id,
+            "collections": collections_groups,
+            "object": "groupDetails"
         })
     }
 
@@ -203,10 +203,11 @@ impl Group {
         }}
     }
 
-    pub async fn find_by_external_id(id: &str, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_external_id_and_org(external_id: &str, org_uuid: &str, conn: &mut DbConn) -> Option<Self> {
         db_run! { conn: {
             groups::table
-                .filter(groups::external_id.eq(id))
+                .filter(groups::external_id.eq(external_id))
+                .filter(groups::organizations_uuid.eq(org_uuid))
                 .first::<GroupDb>(conn)
                 .ok()
                 .from_db()
@@ -483,6 +484,39 @@ impl GroupUser {
                 .load::<GroupUserDb>(conn)
                 .expect("Error loading groups for user")
                 .from_db()
+        }}
+    }
+
+    pub async fn has_access_to_collection_by_member(
+        collection_uuid: &str,
+        member_uuid: &str,
+        conn: &mut DbConn,
+    ) -> bool {
+        db_run! { conn: {
+            groups_users::table
+                .inner_join(collections_groups::table.on(
+                    collections_groups::groups_uuid.eq(groups_users::groups_uuid)
+                ))
+                .filter(collections_groups::collections_uuid.eq(collection_uuid))
+                .filter(groups_users::users_organizations_uuid.eq(member_uuid))
+                .count()
+                .first::<i64>(conn)
+                .unwrap_or(0) != 0
+        }}
+    }
+
+    pub async fn has_full_access_by_member(org_uuid: &str, member_uuid: &str, conn: &mut DbConn) -> bool {
+        db_run! { conn: {
+            groups_users::table
+                .inner_join(groups::table.on(
+                    groups::uuid.eq(groups_users::groups_uuid)
+                ))
+                .filter(groups::organizations_uuid.eq(org_uuid))
+                .filter(groups::access_all.eq(true))
+                .filter(groups_users::users_organizations_uuid.eq(member_uuid))
+                .count()
+                .first::<i64>(conn)
+                .unwrap_or(0) != 0
         }}
     }
 

@@ -42,13 +42,13 @@ impl Attachment {
 
     pub fn to_json(&self, host: &str) -> Value {
         json!({
-            "Id": self.id,
-            "Url": self.get_url(host),
-            "FileName": self.file_name,
-            "Size": self.file_size.to_string(),
-            "SizeName": crate::util::get_display_size(self.file_size),
-            "Key": self.akey,
-            "Object": "attachment"
+            "id": self.id,
+            "url": self.get_url(host),
+            "fileName": self.file_name,
+            "size": self.file_size.to_string(),
+            "sizeName": crate::util::get_display_size(self.file_size),
+            "key": self.akey,
+            "object": "attachment"
         })
     }
 }
@@ -95,7 +95,7 @@ impl Attachment {
 
     pub async fn delete(&self, conn: &mut DbConn) -> EmptyResult {
         db_run! { conn: {
-            crate::util::retry(
+            let _: () = crate::util::retry(
                 || diesel::delete(attachments::table.filter(attachments::id.eq(&self.id))).execute(conn),
                 10,
             )
@@ -103,7 +103,7 @@ impl Attachment {
 
             let file_path = &self.get_file_path();
 
-            match crate::util::delete_file(file_path) {
+            match std::fs::remove_file(file_path) {
                 // Ignore "file not found" errors. This can happen when the
                 // upstream caller has already cleaned up the file as part of
                 // its own error handling.

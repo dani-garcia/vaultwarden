@@ -3,7 +3,7 @@ use serde_json::Value;
 
 use crate::{api::EmptyResult, error::MapResult, CONFIG};
 
-use chrono::{Duration, NaiveDateTime, Utc};
+use chrono::{NaiveDateTime, TimeDelta, Utc};
 
 // https://bitwarden.com/help/event-logs/
 
@@ -316,7 +316,7 @@ impl Event {
 
     pub async fn clean_events(conn: &mut DbConn) -> EmptyResult {
         if let Some(days_to_retain) = CONFIG.events_days_retain() {
-            let dt = Utc::now().naive_utc() - Duration::days(days_to_retain);
+            let dt = Utc::now().naive_utc() - TimeDelta::try_days(days_to_retain).unwrap();
             db_run! { conn: {
                 diesel::delete(event::table.filter(event::event_date.lt(dt)))
                 .execute(conn)

@@ -2,7 +2,7 @@ use rocket::serde::json::Json;
 use serde_json::Value;
 
 use crate::{
-    api::{EmptyResult, JsonResult, JsonUpcase, Notify, UpdateType},
+    api::{EmptyResult, JsonResult, Notify, UpdateType},
     auth::Headers,
     db::{models::*, DbConn},
 };
@@ -17,9 +17,9 @@ async fn get_folders(headers: Headers, mut conn: DbConn) -> Json<Value> {
     let folders_json: Vec<Value> = folders.iter().map(Folder::to_json).collect();
 
     Json(json!({
-      "Data": folders_json,
-      "Object": "list",
-      "ContinuationToken": null,
+      "data": folders_json,
+      "object": "list",
+      "continuationToken": null,
     }))
 }
 
@@ -38,16 +38,17 @@ async fn get_folder(uuid: &str, headers: Headers, mut conn: DbConn) -> JsonResul
 }
 
 #[derive(Deserialize)]
-#[allow(non_snake_case)]
+#[serde(rename_all = "camelCase")]
 pub struct FolderData {
-    pub Name: String,
+    pub name: String,
+    pub id: Option<String>,
 }
 
 #[post("/folders", data = "<data>")]
-async fn post_folders(data: JsonUpcase<FolderData>, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> JsonResult {
-    let data: FolderData = data.into_inner().data;
+async fn post_folders(data: Json<FolderData>, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> JsonResult {
+    let data: FolderData = data.into_inner();
 
-    let mut folder = Folder::new(headers.user.uuid, data.Name);
+    let mut folder = Folder::new(headers.user.uuid, data.name);
 
     folder.save(&mut conn).await?;
     nt.send_folder_update(UpdateType::SyncFolderCreate, &folder, &headers.device.uuid, &mut conn).await;
@@ -56,25 +57,19 @@ async fn post_folders(data: JsonUpcase<FolderData>, headers: Headers, mut conn: 
 }
 
 #[post("/folders/<uuid>", data = "<data>")]
-async fn post_folder(
-    uuid: &str,
-    data: JsonUpcase<FolderData>,
-    headers: Headers,
-    conn: DbConn,
-    nt: Notify<'_>,
-) -> JsonResult {
+async fn post_folder(uuid: &str, data: Json<FolderData>, headers: Headers, conn: DbConn, nt: Notify<'_>) -> JsonResult {
     put_folder(uuid, data, headers, conn, nt).await
 }
 
 #[put("/folders/<uuid>", data = "<data>")]
 async fn put_folder(
     uuid: &str,
-    data: JsonUpcase<FolderData>,
+    data: Json<FolderData>,
     headers: Headers,
     mut conn: DbConn,
     nt: Notify<'_>,
 ) -> JsonResult {
-    let data: FolderData = data.into_inner().data;
+    let data: FolderData = data.into_inner();
 
     let mut folder = match Folder::find_by_uuid(uuid, &mut conn).await {
         Some(folder) => folder,
@@ -85,7 +80,7 @@ async fn put_folder(
         err!("Folder belongs to another user")
     }
 
-    folder.name = data.Name;
+    folder.name = data.name;
 
     folder.save(&mut conn).await?;
     nt.send_folder_update(UpdateType::SyncFolderUpdate, &folder, &headers.device.uuid, &mut conn).await;

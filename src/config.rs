@@ -39,7 +39,6 @@ macro_rules! make_config {
 
         struct Inner {
             rocket_shutdown_handle: Option<rocket::Shutdown>,
-            ws_shutdown_handle: Option<tokio::sync::oneshot::Sender<()>>,
 
             templates: Handlebars<'static>,
             config: ConfigItems,
@@ -361,7 +360,7 @@ make_config! {
         /// Sends folder
         sends_folder:           String, false,  auto,   |c| format!("{}/{}", c.data_folder, "sends");
         /// Temp folder |> Used for storing temporary file uploads
-        tmp_folder:           String, false,  auto,   |c| format!("{}/{}", c.data_folder, "tmp");
+        tmp_folder:             String, false,  auto,   |c| format!("{}/{}", c.data_folder, "tmp");
         /// Templates folder
         templates_folder:       String, false,  auto,   |c| format!("{}/{}", c.data_folder, "templates");
         /// Session JWT key
@@ -371,11 +370,7 @@ make_config! {
     },
     ws {
         /// Enable websocket notifications
-        websocket_enabled:      bool,   false,  def,    false;
-        /// Websocket address
-        websocket_address:      String, false,  def,    "0.0.0.0".to_string();
-        /// Websocket port
-        websocket_port:         u16,    false,  def,    3012;
+        enable_websocket:       bool,   false,  def,    true;
     },
     push {
         /// Enable push notifications
@@ -691,6 +686,10 @@ make_config! {
         email_expiration_time:  u64,    true,   def,      600;
         /// Maximum attempts |> Maximum attempts before an email token is reset and a new email will need to be sent
         email_attempts_limit:   u64,    true,   def,      3;
+        /// Automatically enforce at login |> Setup email 2FA provider regardless of any organization policy
+        email_2fa_enforce_on_verified_invite: bool,   true,   def,      false;
+        /// Auto-enable 2FA (Know the risks!) |> Automatically setup email 2FA as fallback provider when needed
+        email_2fa_auto_fallback: bool,  true,   def,      false;
     },
 }
 
@@ -893,6 +892,13 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         err!("To enable email 2FA, a mail transport must be configured")
     }
 
+    if !cfg._enable_email_2fa && cfg.email_2fa_enforce_on_verified_invite {
+        err!("To enforce email 2FA on verified invitations, email 2fa has to be enabled!");
+    }
+    if !cfg._enable_email_2fa && cfg.email_2fa_auto_fallback {
+        err!("To use email 2FA as automatic fallback, email 2fa has to be enabled!");
+    }
+
     // Check if the icon blacklist regex is valid
     if let Some(ref r) = cfg.icon_blacklist_regex {
         let validate_regex = regex::Regex::new(r);
@@ -1071,7 +1077,6 @@ impl Config {
         Ok(Config {
             inner: RwLock::new(Inner {
                 rocket_shutdown_handle: None,
-                ws_shutdown_handle: None,
                 templates: load_templates(&config.templates_folder),
                 config,
                 _env,
@@ -1164,7 +1169,7 @@ impl Config {
     }
 
     pub fn delete_user_config(&self) -> Result<(), Error> {
-        crate::util::delete_file(&CONFIG_FILE)?;
+        std::fs::remove_file(&*CONFIG_FILE)?;
 
         // Empty user config
         let usr = ConfigBuilder::default();
@@ -1188,9 +1193,6 @@ impl Config {
 
     pub fn private_rsa_key(&self) -> String {
         format!("{}.pem", CONFIG.rsa_key_filename())
-    }
-    pub fn public_rsa_key(&self) -> String {
-        format!("{}.pub.pem", CONFIG.rsa_key_filename())
     }
     pub fn mail_enabled(&self) -> bool {
         let inner = &self.inner.read().unwrap().config;
@@ -1240,16 +1242,8 @@ impl Config {
         self.inner.write().unwrap().rocket_shutdown_handle = Some(handle);
     }
 
-    pub fn set_ws_shutdown_handle(&self, handle: tokio::sync::oneshot::Sender<()>) {
-        self.inner.write().unwrap().ws_shutdown_handle = Some(handle);
-    }
-
     pub fn shutdown(&self) {
         if let Ok(mut c) = self.inner.write() {
-            if let Some(handle) = c.ws_shutdown_handle.take() {
-                handle.send(()).ok();
-            }
-
             if let Some(handle) = c.rocket_shutdown_handle.take() {
                 handle.notify();
             }

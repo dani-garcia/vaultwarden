@@ -3,7 +3,7 @@
 // The more key/value pairs there are the more recursion occurs.
 // We want to keep this as low as possible, but not higher then 128.
 // If you go above 128 it will cause rust-analyzer to fail,
-#![recursion_limit = "103"]
+#![recursion_limit = "200"]
 
 // When enabled use MiMalloc as malloc instead of the default malloc
 #[cfg(feature = "enable_mimalloc")]
@@ -52,7 +52,7 @@ mod ratelimit;
 mod util;
 
 use crate::api::purge_auth_requests;
-use crate::api::WS_ANONYMOUS_SUBSCRIPTIONS;
+use crate::api::{WS_ANONYMOUS_SUBSCRIPTIONS, WS_USERS};
 pub use config::CONFIG;
 pub use error::{Error, MapResult};
 use rocket::data::{Limits, ToByteUnit};
@@ -65,13 +65,17 @@ async fn main() -> Result<(), Error> {
     launch_info();
 
     use log::LevelFilter as LF;
-    let level = LF::from_str(&CONFIG.log_level()).expect("Valid log level");
+    let level = LF::from_str(&CONFIG.log_level()).unwrap_or_else(|_| {
+        let valid_log_levels = LF::iter().map(|lvl| lvl.as_str().to_lowercase()).collect::<Vec<String>>().join(", ");
+        println!("Log level must be one of the following: {valid_log_levels}");
+        exit(1);
+    });
     init_logging(level).ok();
 
     let extra_debug = matches!(level, LF::Trace | LF::Debug);
 
     check_data_folder().await;
-    check_rsa_keys().unwrap_or_else(|_| {
+    auth::initialize_keys().unwrap_or_else(|_| {
         error!("Error creating keys, exiting...");
         exit(1);
     });
@@ -207,9 +211,9 @@ fn launch_info() {
 }
 
 fn init_logging(level: log::LevelFilter) -> Result<(), fern::InitError> {
-    // Depending on the main log level we either want to disable or enable logging for trust-dns.
-    // Else if there are timeouts it will clutter the logs since trust-dns uses warn for this.
-    let trust_dns_level = if level >= log::LevelFilter::Debug {
+    // Depending on the main log level we either want to disable or enable logging for hickory.
+    // Else if there are timeouts it will clutter the logs since hickory uses warn for this.
+    let hickory_level = if level >= log::LevelFilter::Debug {
         level
     } else {
         log::LevelFilter::Off
@@ -262,9 +266,9 @@ fn init_logging(level: log::LevelFilter) -> Result<(), fern::InitError> {
         .level_for("handlebars::render", handlebars_level)
         // Prevent cookie_store logs
         .level_for("cookie_store", log::LevelFilter::Off)
-        // Variable level for trust-dns used by reqwest
-        .level_for("trust_dns_resolver::name_server::name_server", trust_dns_level)
-        .level_for("trust_dns_proto::xfer", trust_dns_level)
+        // Variable level for hickory used by reqwest
+        .level_for("hickory_resolver::name_server::name_server", hickory_level)
+        .level_for("hickory_proto::xfer", hickory_level)
         .level_for("diesel_logger", diesel_logger_level)
         .chain(std::io::stdout());
 
@@ -444,31 +448,6 @@ async fn container_data_folder_is_persistent(data_folder: &str) -> bool {
     true
 }
 
-fn check_rsa_keys() -> Result<(), crate::error::Error> {
-    // If the RSA keys don't exist, try to create them
-    let priv_path = CONFIG.private_rsa_key();
-    let pub_path = CONFIG.public_rsa_key();
-
-    if !util::file_exists(&priv_path) {
-        let rsa_key = openssl::rsa::Rsa::generate(2048)?;
-
-        let priv_key = rsa_key.private_key_to_pem()?;
-        crate::util::write_file(&priv_path, &priv_key)?;
-        info!("Private key created correctly.");
-    }
-
-    if !util::file_exists(&pub_path) {
-        let rsa_key = openssl::rsa::Rsa::private_key_from_pem(&std::fs::read(&priv_path)?)?;
-
-        let pub_key = rsa_key.public_key_to_pem()?;
-        crate::util::write_file(&pub_path, &pub_key)?;
-        info!("Public key created correctly.");
-    }
-
-    auth::load_keys();
-    Ok(())
-}
-
 fn check_web_vault() {
     if !CONFIG.web_vault_enabled() {
         return;
@@ -522,7 +501,7 @@ async fn launch_rocket(pool: db::DbPool, extra_debug: bool) -> Result<(), Error>
         .register([basepath, "/api"].concat(), api::core_catchers())
         .register([basepath, "/admin"].concat(), api::admin_catchers())
         .manage(pool)
-        .manage(api::start_notification_server())
+        .manage(Arc::clone(&WS_USERS))
         .manage(Arc::clone(&WS_ANONYMOUS_SUBSCRIPTIONS))
         .attach(util::AppHeaders())
         .attach(util::Cors())

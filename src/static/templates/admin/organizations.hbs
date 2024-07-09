@@ -17,12 +17,12 @@
                     {{#each page_data}}
                     <tr>
                         <td>
-                            <svg width="48" height="48" class="float-start me-2 rounded" data-jdenticon-value="{{Id}}">
+                            <svg width="48" height="48" class="float-start me-2 rounded" data-jdenticon-value="{{id}}">
                             <div class="float-start">
-                                <strong>{{Name}}</strong>
-                                <span class="me-2">({{BillingEmail}})</span>
+                                <strong>{{name}}</strong>
+                                <span class="me-2">({{billingEmail}})</span>
                                 <span class="d-block">
-                                    <span class="badge bg-success font-monospace">{{Id}}</span>
+                                    <span class="badge bg-success font-monospace">{{id}}</span>
                                 </span>
                             </div>
                         </td>
@@ -44,7 +44,7 @@
                             <span class="d-block"><strong>Events:</strong> {{event_count}}</span>
                         </td>
                         <td class="text-end px-0 small">
-                            <button type="button" class="btn btn-sm btn-link p-0 border-0 float-right" vw-delete-organization data-vw-org-uuid="{{jsesc Id no_quote}}" data-vw-org-name="{{jsesc Name no_quote}}" data-vw-billing-email="{{jsesc BillingEmail no_quote}}">Delete Organization</button><br>
+                            <button type="button" class="btn btn-sm btn-link p-0 border-0 float-right" vw-delete-organization data-vw-org-uuid="{{jsesc id no_quote}}" data-vw-org-name="{{jsesc name no_quote}}" data-vw-billing-email="{{jsesc billingEmail no_quote}}">Delete Organization</button><br>
                         </td>
                     </tr>
                     {{/each}}
@@ -62,4 +62,4 @@
 <script src="{{urlpath}}/vw_static/jquery-3.7.1.slim.js"></script>
 <script src="{{urlpath}}/vw_static/datatables.js"></script>
 <script src="{{urlpath}}/vw_static/admin_organizations.js"></script>
-<script src="{{urlpath}}/vw_static/jdenticon.js"></script>
+<script src="{{urlpath}}/vw_static/jdenticon-3.3.0.js"></script>

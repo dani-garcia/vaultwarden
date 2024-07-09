@@ -3,7 +3,7 @@ name = "vaultwarden"
 version = "1.0.0"
 authors = ["Daniel García <dani-garcia@users.noreply.github.com>"]
 edition = "2021"
-rust-version = "1.74.0"
+rust-version = "1.78.0"
 resolver = "2"
 
 repository = "https://github.com/dani-garcia/vaultwarden"
@@ -36,11 +36,11 @@ unstable = []
 
 [target."cfg(not(windows))".dependencies]
 # Logging
-syslog = "6.1.0"
+syslog = "6.1.1"
 
 [dependencies]
 # Logging
-log = "0.4.20"
+log = "0.4.22"
 fern = { version = "0.6.2", features = ["syslog-6", "reopen-1"] }
 tracing = { version = "0.1.40", features = ["log"] } # Needed to have lettre and webauthn-rs trace logging to work
 
@@ -51,57 +51,56 @@ dotenvy = { version = "0.15.7", default-features = false }
 once_cell = "1.19.0"
 
 # Numerical libraries
-num-traits = "0.2.18"
+num-traits = "0.2.19"
 num-derive = "0.4.2"
-bigdecimal = "0.4.2"
+bigdecimal = "0.4.5"
 
 # Web framework
-rocket = { version = "0.5.0", features = ["tls", "json"], default-features = false }
-rocket_ws = { version ="0.1.0" }
+rocket = { version = "0.5.1", features = ["tls", "json"], default-features = false }
+rocket_ws = { version ="0.1.1" }
 
 # WebSockets libraries
-tokio-tungstenite = "0.20.1"
-rmpv = "1.0.1" # MessagePack library
+rmpv = "1.3.0" # MessagePack library
 
 # Concurrent HashMap used for WebSocket messaging and favicons
-dashmap = "5.5.3"
+dashmap = "6.0.1"
 
 # Async futures
 futures = "0.3.30"
-tokio = { version = "1.36.0", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal"] }
+tokio = { version = "1.38.0", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal", "net"] }
 
 # A generic serialization/deserialization framework
-serde = { version = "1.0.197", features = ["derive"] }
-serde_json = "1.0.114"
+serde = { version = "1.0.204", features = ["derive"] }
+serde_json = "1.0.120"
 
 # A safe, extensible ORM and Query builder
-diesel = { version = "2.1.4", features = ["chrono", "r2d2", "numeric"] }
-diesel_migrations = "2.1.0"
+diesel = { version = "2.2.1", features = ["chrono", "r2d2", "numeric"] }
+diesel_migrations = "2.2.0"
 diesel_logger = { version = "0.3.0", optional = true }
 
 # Bundled/Static SQLite
-libsqlite3-sys = { version = "0.27.0", features = ["bundled"], optional = true }
+libsqlite3-sys = { version = "0.28.0", features = ["bundled"], optional = true }
 
 # Crypto-related libraries
 rand = { version = "0.8.5", features = ["small_rng"] }
 ring = "0.17.8"
 
 # UUID generation
-uuid = { version = "1.7.0", features = ["v4"] }
+uuid = { version = "1.9.1", features = ["v4"] }
 
 # Date and time libraries
-chrono = { version = "0.4.34", features = ["clock", "serde"], default-features = false }
-chrono-tz = "0.8.6"
-time = "0.3.34"
+chrono = { version = "0.4.38", features = ["clock", "serde"], default-features = false }
+chrono-tz = "0.9.0"
+time = "0.3.36"
 
 # Job scheduler
-job_scheduler_ng = "2.0.4"
+job_scheduler_ng = "2.0.5"
 
 # Data encoding library Hex/Base32/Base64
-data-encoding = "2.5.0"
+data-encoding = "2.6.0"
 
 # JWT library
-jsonwebtoken = "9.2.0"
+jsonwebtoken = "9.3.0"
 
 # TOTP library
 totp-lite = "2.0.1"
@@ -113,31 +112,32 @@ yubico = { version = "0.11.0", features = ["online-tokio"], default-features = f
 webauthn-rs = "0.3.2"
 
 # Handling of URL's for WebAuthn and favicons
-url = "2.5.0"
+url = "2.5.2"
 
 # Email libraries
-lettre = { version = "0.11.4", features = ["smtp-transport", "sendmail-transport", "builder", "serde", "tokio1-native-tls", "hostname", "tracing", "tokio1"], default-features = false }
+lettre = { version = "0.11.7", features = ["smtp-transport", "sendmail-transport", "builder", "serde", "tokio1-native-tls", "hostname", "tracing", "tokio1"], default-features = false }
 percent-encoding = "2.3.1" # URL encoding library used for URL's in the emails
-email_address = "0.2.4"
+email_address = "0.2.5"
 
 # HTML Template library
-handlebars = { version = "5.1.0", features = ["dir_source"] }
+handlebars = { version = "5.1.2", features = ["dir_source"] }
 
 # HTTP client (Used for favicons, version check, DUO and HIBP API)
-reqwest = { version = "0.11.24", features = ["stream", "json", "gzip", "brotli", "socks", "cookies", "trust-dns", "native-tls-alpn"] }
+reqwest = { version = "0.12.5", features = ["native-tls-alpn", "stream", "json", "gzip", "brotli", "socks", "cookies"] }
+hickory-resolver = "0.24.1"
 
 # Favicon extraction libraries
 html5gum = "0.5.7"
-regex = { version = "1.10.3", features = ["std", "perf", "unicode-perl"], default-features = false }
+regex = { version = "1.10.5", features = ["std", "perf", "unicode-perl"], default-features = false }
 data-url = "0.3.1"
-bytes = "1.5.0"
+bytes = "1.6.0"
 
 # Cache function results (Used for version check and favicon fetching)
-cached = { version = "0.48.1", features = ["async"] }
+cached = { version = "0.52.0", features = ["async"] }
 
 # Used for custom short lived cookie jar during favicon extraction
-cookie = "0.17.0"
-cookie_store = "0.20.0"
+cookie = "0.18.1"
+cookie_store = "0.21.0"
 
 # Used by U2F, JWT and PostgreSQL
 openssl = "0.10.64"
@@ -146,23 +146,22 @@ openssl = "0.10.64"
 pico-args = "0.5.0"
 
 # Macro ident concatenation
-paste = "1.0.14"
+paste = "1.0.15"
 governor = "0.6.3"
 
 # Check client versions for specific features.
-semver = "1.0.22"
+semver = "1.0.23"
 
 # Allow overriding the default memory allocator
 # Mainly used for the musl builds, since the default musl malloc is very slow
-mimalloc = { version = "0.1.39", features = ["secure"], default-features = false, optional = true }
-which = "6.0.0"
+mimalloc = { version = "0.1.43", features = ["secure"], default-features = false, optional = true }
+which = "6.0.1"
 
 # Argon2 library with support for the PHC format
 argon2 = "0.5.3"
 
 # Reading a password from the cli for generating the Argon2id ADMIN_TOKEN
 rpassword = "7.3.1"
-
 
 # Strip debuginfo from the release builds
 # The symbols are the provide better panic traces
@@ -171,7 +170,6 @@ rpassword = "7.3.1"
 strip = "debuginfo"
 lto = "fat"
 codegen-units = 1
-
 
 # A little bit of a speedup
 [profile.dev]
@@ -206,14 +204,13 @@ unsafe_code = "forbid"
 non_ascii_idents = "forbid"
 
 # Deny
-future_incompatible = "deny"
+future_incompatible = { level = "deny", priority = -1 }
 noop_method_call = "deny"
-pointer_structural_match = "deny"
-rust_2018_idioms = "deny"
-rust_2021_compatibility = "deny"
+rust_2018_idioms = { level = "deny", priority = -1 }
+rust_2021_compatibility = { level = "deny", priority = -1 }
 trivial_casts = "deny"
 trivial_numeric_casts = "deny"
-unused = "deny"
+unused = { level = "deny", priority = -1 }
 unused_import_braces = "deny"
 unused_lifetimes = "deny"
 deprecated_in_future = "deny"
