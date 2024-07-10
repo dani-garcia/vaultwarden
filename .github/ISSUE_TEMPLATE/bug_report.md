@@ -11,8 +11,8 @@ assignees: ''
     NOTE: Please update to the latest version of vaultwarden before reporting an issue!
     This saves you and us a lot of time and troubleshooting.
     See:
-    * https://github.com/dani-garcia/vaultwarden/issues/1180
-    * https://github.com/dani-garcia/vaultwarden/wiki/Updating-the-vaultwarden-image
+    * https://github.com/vaultwarden/vaultwarden/issues/1180
+    * https://github.com/vaultwarden/vaultwarden/wiki/Updating-the-vaultwarden-image
     # ###
 -->
 
