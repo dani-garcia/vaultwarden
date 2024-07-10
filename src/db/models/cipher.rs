@@ -189,9 +189,11 @@ impl Cipher {
             }
         }
 
-        // Fix secure note issues when data is `{}`
+        // Fix secure note issues when data is invalid
         // This breaks at least the native mobile clients
-        if self.atype == 2 && (self.data.eq("{}") || self.data.to_ascii_lowercase().eq("{\"type\":null}")) {
+        if self.atype == 2
+            && (self.data.is_empty() || self.data.eq("{}") || self.data.to_ascii_lowercase().eq("{\"type\":null}"))
+        {
             type_data_json = json!({"type": 0});
         }
 
