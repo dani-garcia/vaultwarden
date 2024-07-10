@@ -156,11 +156,12 @@ impl Organization {
             "id": self.uuid,
             "identifier": null, // not supported by us
             "name": self.name,
-            "seats": 10, // The value doesn't matter, we don't check server-side
-            // "maxAutoscaleSeats": null, // The value doesn't matter, we don't check server-side
-            "maxCollections": 10, // The value doesn't matter, we don't check server-side
-            "maxStorageGb": 10, // The value doesn't matter, we don't check server-side
+            "seats": null,
+            "maxAutoscaleSeats": null,
+            "maxCollections": null,
+            "maxStorageGb": i16::MAX, // The value doesn't matter, we don't check server-side
             "use2fa": true,
+            "useCustomPermissions": false,
             "useDirectory": false, // Is supported, but this value isn't checked anywhere (yet)
             "useEvents": CONFIG.org_events_enabled(),
             "useGroups": CONFIG.org_groups_enabled(),
@@ -182,8 +183,7 @@ impl Organization {
             "businessTaxNumber": null,
 
             "billingEmail": self.billing_email,
-            "plan": "TeamsAnnually",
-            "planType": 5, // TeamsAnnually plan
+            "planType": 6, // Custom plan
             "usersGetPremium": true,
             "object": "organization",
         })
@@ -369,8 +369,9 @@ impl UserOrganization {
             "id": self.org_uuid,
             "identifier": null, // Not supported
             "name": org.name,
-            "seats": 10, // The value doesn't matter, we don't check server-side
-            "maxCollections": 10, // The value doesn't matter, we don't check server-side
+            "seats": null,
+            "maxAutoscaleSeats": null,
+            "maxCollections": null,
             "usersGetPremium": true,
             "use2fa": true,
             "useDirectory": false, // Is supported, but this value isn't checked anywhere (yet)
@@ -392,12 +393,14 @@ impl UserOrganization {
             "useCustomPermissions": false,
             "useActivateAutofillPolicy": false,
 
+            "organizationUserId": self.uuid,
             "providerId": null,
             "providerName": null,
             "providerType": null,
             "familySponsorshipFriendlyName": null,
             "familySponsorshipAvailable": false,
-            "planProductType": 0,
+            "planProductType": 3,
+            "productTierType": 3, // Enterprise tier
             "keyConnectorEnabled": false,
             "keyConnectorUrl": null,
             "familySponsorshipLastSyncDate": null,
@@ -410,7 +413,7 @@ impl UserOrganization {
 
             "permissions": permissions,
 
-            "maxStorageGb": 10, // The value doesn't matter, we don't check server-side
+            "maxStorageGb": i16::MAX, // The value doesn't matter, we don't check server-side
 
             // These are per user
             "userId": self.user_uuid,
