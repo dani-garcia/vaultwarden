@@ -159,7 +159,7 @@ impl Organization {
             "seats": null,
             "maxAutoscaleSeats": null,
             "maxCollections": null,
-            "maxStorageGb": 10, // The value doesn't matter, we don't check server-side
+            "maxStorageGb": i16::MAX, // The value doesn't matter, we don't check server-side
             "use2fa": true,
             "useCustomPermissions": false,
             "useDirectory": false, // Is supported, but this value isn't checked anywhere (yet)
@@ -413,7 +413,7 @@ impl UserOrganization {
 
             "permissions": permissions,
 
-            "maxStorageGb": 10, // The value doesn't matter, we don't check server-side
+            "maxStorageGb": i16::MAX, // The value doesn't matter, we don't check server-side
 
             // These are per user
             "userId": self.user_uuid,
