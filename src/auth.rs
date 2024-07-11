@@ -379,8 +379,6 @@ impl<'r> FromRequest<'r> for Host {
             referer.to_string()
         } else {
             // Try to guess from the headers
-            use std::env;
-
             let protocol = if let Some(proto) = headers.get_one("X-Forwarded-Proto") {
                 proto
             } else if env::var("ROCKET_TLS").is_ok() {
@@ -806,6 +804,7 @@ impl<'r> FromRequest<'r> for OwnerHeaders {
 // Client IP address detection
 //
 use std::{
+    env,
     fs::File,
     io::{Read, Write},
     net::IpAddr,
@@ -838,6 +837,35 @@ impl<'r> FromRequest<'r> for ClientIp {
 
         Outcome::Success(ClientIp {
             ip,
+        })
+    }
+}
+
+pub struct Secure {
+    pub https: bool,
+}
+
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for Secure {
+    type Error = ();
+
+    async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+        let headers = request.headers();
+
+        // Try to guess from the headers
+        let protocol = match headers.get_one("X-Forwarded-Proto") {
+            Some(proto) => proto,
+            None => {
+                if env::var("ROCKET_TLS").is_ok() {
+                    "https"
+                } else {
+                    "http"
+                }
+            }
+        };
+
+        Outcome::Success(Secure {
+            https: protocol == "https",
         })
     }
 }

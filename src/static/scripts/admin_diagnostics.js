@@ -117,7 +117,7 @@ async function generateSupportString(event, dj) {
     supportString += `\n**Environment settings which are overridden:** ${dj.overrides}\n`;
     supportString += "\n\n```json\n" + JSON.stringify(configJson, undefined, 2) + "\n```\n</details>\n";
 
-    document.getElementById("support-string").innerText = supportString;
+    document.getElementById("support-string").textContent = supportString;
     document.getElementById("support-string").classList.remove("d-none");
     document.getElementById("copy-support").classList.remove("d-none");
 }
@@ -126,7 +126,7 @@ function copyToClipboard(event) {
     event.preventDefault();
     event.stopPropagation();
 
-    const supportStr = document.getElementById("support-string").innerText;
+    const supportStr = document.getElementById("support-string").textContent;
     const tmpCopyEl = document.createElement("textarea");
 
     tmpCopyEl.setAttribute("id", "copy-support-string");
@@ -201,7 +201,7 @@ function checkDns(dns_resolved) {
 
 function init(dj) {
     // Time check
-    document.getElementById("time-browser-string").innerText = browserUTC;
+    document.getElementById("time-browser-string").textContent = browserUTC;
 
     // Check if we were able to fetch a valid NTP Time
     // If so, compare both browser and server with NTP
@@ -217,7 +217,7 @@ function init(dj) {
 
     // Domain check
     const browserURL = location.href.toLowerCase();
-    document.getElementById("domain-browser-string").innerText = browserURL;
+    document.getElementById("domain-browser-string").textContent = browserURL;
     checkDomain(browserURL, dj.admin_url.toLowerCase());
 
     // Version check
@@ -229,7 +229,7 @@ function init(dj) {
 
 // onLoad events
 document.addEventListener("DOMContentLoaded", (event) => {
-    const diag_json = JSON.parse(document.getElementById("diagnostics_json").innerText);
+    const diag_json = JSON.parse(document.getElementById("diagnostics_json").textContent);
     init(diag_json);
 
     const btnGenSupport = document.getElementById("gen-support");

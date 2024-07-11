@@ -18,7 +18,7 @@ use crate::{
         core::{log_event, two_factor},
         unregister_push_device, ApiResult, EmptyResult, JsonResult, Notify,
     },
-    auth::{decode_admin, encode_jwt, generate_admin_claims, ClientIp},
+    auth::{decode_admin, encode_jwt, generate_admin_claims, ClientIp, Secure},
     config::ConfigBuilder,
     db::{backup_database, get_sql_server_version, models::*, DbConn, DbConnType},
     error::{Error, MapResult},
@@ -169,7 +169,12 @@ struct LoginForm {
 }
 
 #[post("/", data = "<data>")]
-fn post_admin_login(data: Form<LoginForm>, cookies: &CookieJar<'_>, ip: ClientIp) -> Result<Redirect, AdminResponse> {
+fn post_admin_login(
+    data: Form<LoginForm>,
+    cookies: &CookieJar<'_>,
+    ip: ClientIp,
+    secure: Secure,
+) -> Result<Redirect, AdminResponse> {
     let data = data.into_inner();
     let redirect = data.redirect;
 
@@ -193,7 +198,8 @@ fn post_admin_login(data: Form<LoginForm>, cookies: &CookieJar<'_>, ip: ClientIp
             .path(admin_path())
             .max_age(rocket::time::Duration::minutes(CONFIG.admin_session_lifetime()))
             .same_site(SameSite::Strict)
-            .http_only(true);
+            .http_only(true)
+            .secure(secure.https);
 
         cookies.add(cookie);
         if let Some(redirect) = redirect {

@@ -122,7 +122,7 @@ function submitTestEmailOnEnter() {
 function colorRiskSettings() {
     const risk_items = document.getElementsByClassName("col-form-label");
     Array.from(risk_items).forEach((el) => {
-        if (el.innerText.toLowerCase().includes("risks") ) {
+        if (el.textContent.toLowerCase().includes("risks") ) {
             el.parentElement.className += " alert-danger";
         }
     });
