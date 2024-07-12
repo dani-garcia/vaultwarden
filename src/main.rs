@@ -47,6 +47,7 @@ mod config;
 mod crypto;
 #[macro_use]
 mod db;
+mod http_client;
 mod mail;
 mod ratelimit;
 mod util;

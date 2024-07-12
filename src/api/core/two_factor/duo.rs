@@ -15,7 +15,7 @@ use crate::{
         DbConn,
     },
     error::MapResult,
-    util::get_reqwest_client,
+    http_client::make_http_request,
     CONFIG,
 };
 
@@ -210,10 +210,7 @@ async fn duo_api_request(method: &str, path: &str, params: &str, data: &DuoData)
 
     let m = Method::from_str(method).unwrap_or_default();
 
-    let client = get_reqwest_client();
-
-    client
-        .request(m, &url)
+    make_http_request(m, &url)?
         .basic_auth(username, Some(password))
         .header(header::USER_AGENT, "vaultwarden:Duo/1.0 (Rust)")
         .header(header::DATE, date)

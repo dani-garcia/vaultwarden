@@ -2,6 +2,7 @@
 // Error generator macro
 //
 use crate::db::models::EventType;
+use crate::http_client::CustomHttpClientError;
 use std::error::Error as StdError;
 
 macro_rules! make_error {
@@ -68,6 +69,10 @@ make_error! {
     Empty(Empty):     _no_source, _serialize,
     // Used to represent err! calls
     Simple(String):  _no_source,  _api_error,
+
+    // Used in our custom http client to handle non-global IPs and blocked domains
+    CustomHttpClient(CustomHttpClientError): _has_source, _api_error,
+
     // Used for special return values, like 2FA errors
     Json(Value):     _no_source,  _serialize,
     Db(DieselErr):   _has_source, _api_error,

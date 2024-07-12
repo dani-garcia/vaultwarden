@@ -1,6 +1,6 @@
 use std::{
     net::IpAddr,
-    sync::{Arc, Mutex},
+    sync::Arc,
     time::{Duration, SystemTime},
 };
 
@@ -22,7 +22,8 @@ use html5gum::{Emitter, HtmlString, InfallibleTokenizer, Readable, StringReader,
 
 use crate::{
     error::Error,
-    util::{get_reqwest_client_builder, Cached, CustomDnsResolver, CustomResolverError},
+    http_client::{get_reqwest_client_builder, should_block_address, CustomHttpClientError},
+    util::Cached,
     CONFIG,
 };
 
@@ -53,7 +54,6 @@ static CLIENT: Lazy<Client> = Lazy::new(|| {
         .timeout(icon_download_timeout)
         .pool_max_idle_per_host(5) // Configure the Hyper Pool to only have max 5 idle connections
         .pool_idle_timeout(pool_idle_timeout) // Configure the Hyper Pool to timeout after 10 seconds
-        .dns_resolver(CustomDnsResolver::instance())
         .default_headers(default_headers.clone())
         .build()
         .expect("Failed to build client")
@@ -69,7 +69,8 @@ fn icon_external(domain: &str) -> Option<Redirect> {
         return None;
     }
 
-    if is_domain_blacklisted(domain) {
+    if should_block_address(domain) {
+        warn!("Blocked address: {}", domain);
         return None;
     }
 
@@ -92,6 +93,15 @@ async fn icon_internal(domain: &str) -> Cached<(ContentType, Vec<u8>)> {
 
     if !is_valid_domain(domain) {
         warn!("Invalid domain: {}", domain);
+        return Cached::ttl(
+            (ContentType::new("image", "png"), FALLBACK_ICON.to_vec()),
+            CONFIG.icon_cache_negttl(),
+            true,
+        );
+    }
+
+    if should_block_address(domain) {
+        warn!("Blocked address: {}", domain);
         return Cached::ttl(
             (ContentType::new("image", "png"), FALLBACK_ICON.to_vec()),
             CONFIG.icon_cache_negttl(),
@@ -144,30 +154,6 @@ fn is_valid_domain(domain: &str) -> bool {
     true
 }
 
-pub fn is_domain_blacklisted(domain: &str) -> bool {
-    let Some(config_blacklist) = CONFIG.icon_blacklist_regex() else {
-        return false;
-    };
-
-    // Compiled domain blacklist
-    static COMPILED_BLACKLIST: Mutex<Option<(String, Regex)>> = Mutex::new(None);
-    let mut guard = COMPILED_BLACKLIST.lock().unwrap();
-
-    // If the stored regex is up to date, use it
-    if let Some((value, regex)) = &*guard {
-        if value == &config_blacklist {
-            return regex.is_match(domain);
-        }
-    }
-
-    // If we don't have a regex stored, or it's not up to date, recreate it
-    let regex = Regex::new(&config_blacklist).unwrap();
-    let is_match = regex.is_match(domain);
-    *guard = Some((config_blacklist, regex));
-
-    is_match
-}
-
 async fn get_icon(domain: &str) -> Option<(Vec<u8>, String)> {
     let path = format!("{}/{}.png", CONFIG.icon_cache_folder(), domain);
 
@@ -195,9 +181,9 @@ async fn get_icon(domain: &str) -> Option<(Vec<u8>, String)> {
             Some((icon.to_vec(), icon_type.unwrap_or("x-icon").to_string()))
         }
         Err(e) => {
-            // If this error comes from the custom resolver, this means this is a blacklisted domain
+            // If this error comes from the custom resolver, this means this is a blocked domain
             // or non global IP, don't save the miss file in this case to avoid leaking it
-            if let Some(error) = CustomResolverError::downcast_ref(&e) {
+            if let Some(error) = CustomHttpClientError::downcast_ref(&e) {
                 warn!("{error}");
                 return None;
             }
@@ -353,7 +339,7 @@ async fn get_icon_url(domain: &str) -> Result<IconUrlResult, Error> {
 
     // First check the domain as given during the request for HTTPS.
     let resp = match get_page(&ssldomain).await {
-        Err(e) if CustomResolverError::downcast_ref(&e).is_none() => {
+        Err(e) if CustomHttpClientError::downcast_ref(&e).is_none() => {
             // If we get an error that is not caused by the blacklist, we retry with HTTP
             match get_page(&httpdomain).await {
                 mut sub_resp @ Err(_) => {
