@@ -1277,7 +1277,6 @@ where
     hb.set_strict_mode(true);
     // Register helpers
     hb.register_helper("case", Box::new(case_helper));
-    hb.register_helper("jsesc", Box::new(js_escape_helper));
     hb.register_helper("to_json", Box::new(to_json));
 
     macro_rules! reg {
@@ -1363,32 +1362,6 @@ fn case_helper<'reg, 'rc>(
     } else {
         Ok(())
     }
-}
-
-fn js_escape_helper<'reg, 'rc>(
-    h: &Helper<'rc>,
-    _r: &'reg Handlebars<'_>,
-    _ctx: &'rc Context,
-    _rc: &mut RenderContext<'reg, 'rc>,
-    out: &mut dyn Output,
-) -> HelperResult {
-    let param =
-        h.param(0).ok_or_else(|| RenderErrorReason::Other(String::from("Param not found for helper \"jsesc\"")))?;
-
-    let no_quote = h.param(1).is_some();
-
-    let value = param
-        .value()
-        .as_str()
-        .ok_or_else(|| RenderErrorReason::Other(String::from("Param for helper \"jsesc\" is not a String")))?;
-
-    let mut escaped_value = value.replace('\\', "").replace('\'', "\\x22").replace('\"', "\\x27");
-    if !no_quote {
-        escaped_value = format!("&quot;{escaped_value}&quot;");
-    }
-
-    out.write(&escaped_value)?;
-    Ok(())
 }
 
 fn to_json<'reg, 'rc>(

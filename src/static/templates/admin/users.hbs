@@ -54,14 +54,14 @@
                             {{/if}}
                         </td>
                         <td>
-                            <div class="overflow-auto vw-org-cell" data-vw-user-email="{{jsesc email no_quote}}" data-vw-user-uuid="{{jsesc id no_quote}}">
+                            <div class="overflow-auto vw-org-cell" data-vw-user-email="{{email}}" data-vw-user-uuid="{{id}}">
                             {{#each organizations}}
-                            <button class="badge" data-bs-toggle="modal" data-bs-target="#userOrgTypeDialog" data-vw-org-type="{{type}}" data-vw-org-uuid="{{jsesc id no_quote}}" data-vw-org-name="{{jsesc name no_quote}}">{{name}}</button>
+                            <button class="badge" data-bs-toggle="modal" data-bs-target="#userOrgTypeDialog" data-vw-org-type="{{type}}" data-vw-org-uuid="{{id}}" data-vw-org-name="{{name}}">{{name}}</button>
                             {{/each}}
                             </div>
                         </td>
                         <td class="text-end px-0 small">
-                            <span data-vw-user-uuid="{{jsesc id no_quote}}" data-vw-user-email="{{jsesc email no_quote}}">
+                            <span data-vw-user-uuid="{{id}}" data-vw-user-email="{{email}}">
                                 {{#if twoFactorEnabled}}
                                 <button type="button" class="btn btn-sm btn-link p-0 border-0 float-right" vw-remove2fa>Remove all 2FA</button><br>
                                 {{/if}}
@@ -109,7 +109,9 @@
         <div class="modal-dialog modal-dialog-centered modal-sm">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h6 class="modal-title" id="userOrgTypeDialogTitle"></h6>
+                    <h6 class="modal-title">
+                        <b>Update User Type:</b><br><b>Organization:</b> <span id="userOrgTypeDialogOrgName"></span><br><b>User:</b> <span id="userOrgTypeDialogUserEmail"></span>
+                    </h6>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <form class="form" id="userOrgTypeForm">
