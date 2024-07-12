@@ -4,7 +4,6 @@
 use std::{collections::HashMap, io::Cursor, ops::Deref, path::Path};
 
 use num_traits::ToPrimitive;
-use once_cell::sync::Lazy;
 use rocket::{
     fairing::{Fairing, Info, Kind},
     http::{ContentType, Header, HeaderMap, Method, Status},
@@ -686,19 +685,6 @@ where
     }
 }
 
-use reqwest::{header, Client, ClientBuilder};
-
-pub fn get_reqwest_client() -> &'static Client {
-    static INSTANCE: Lazy<Client> = Lazy::new(|| get_reqwest_client_builder().build().expect("Failed to build client"));
-    &INSTANCE
-}
-
-pub fn get_reqwest_client_builder() -> ClientBuilder {
-    let mut headers = header::HeaderMap::new();
-    headers.insert(header::USER_AGENT, header::HeaderValue::from_static("Vaultwarden"));
-    Client::builder().default_headers(headers).timeout(Duration::from_secs(10))
-}
-
 pub fn convert_json_key_lcase_first(src_json: Value) -> Value {
     match src_json {
         Value::Array(elm) => {
@@ -749,138 +735,6 @@ pub fn parse_experimental_client_feature_flags(experimental_client_feature_flags
 
     feature_states
 }
-
-mod dns_resolver {
-    use std::{
-        fmt,
-        net::{IpAddr, SocketAddr},
-        sync::Arc,
-    };
-
-    use hickory_resolver::{system_conf::read_system_conf, TokioAsyncResolver};
-    use once_cell::sync::Lazy;
-    use reqwest::dns::{Name, Resolve, Resolving};
-
-    use crate::{util::is_global, CONFIG};
-
-    #[derive(Debug, Clone)]
-    pub enum CustomResolverError {
-        Blacklist {
-            domain: String,
-        },
-        NonGlobalIp {
-            domain: String,
-            ip: IpAddr,
-        },
-    }
-
-    impl CustomResolverError {
-        pub fn downcast_ref(e: &dyn std::error::Error) -> Option<&Self> {
-            let mut source = e.source();
-
-            while let Some(err) = source {
-                source = err.source();
-                if let Some(err) = err.downcast_ref::<CustomResolverError>() {
-                    return Some(err);
-                }
-            }
-            None
-        }
-    }
-
-    impl fmt::Display for CustomResolverError {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            match self {
-                Self::Blacklist {
-                    domain,
-                } => write!(f, "Blacklisted domain: {domain} matched ICON_BLACKLIST_REGEX"),
-                Self::NonGlobalIp {
-                    domain,
-                    ip,
-                } => write!(f, "IP {ip} for domain '{domain}' is not a global IP!"),
-            }
-        }
-    }
-
-    impl std::error::Error for CustomResolverError {}
-
-    #[derive(Debug, Clone)]
-    pub enum CustomDnsResolver {
-        Default(),
-        Hickory(Arc<TokioAsyncResolver>),
-    }
-    type BoxError = Box<dyn std::error::Error + Send + Sync>;
-
-    impl CustomDnsResolver {
-        pub fn instance() -> Arc<Self> {
-            static INSTANCE: Lazy<Arc<CustomDnsResolver>> = Lazy::new(CustomDnsResolver::new);
-            Arc::clone(&*INSTANCE)
-        }
-
-        fn new() -> Arc<Self> {
-            match read_system_conf() {
-                Ok((config, opts)) => {
-                    let resolver = TokioAsyncResolver::tokio(config.clone(), opts.clone());
-                    Arc::new(Self::Hickory(Arc::new(resolver)))
-                }
-                Err(e) => {
-                    warn!("Error creating Hickory resolver, falling back to default: {e:?}");
-                    Arc::new(Self::Default())
-                }
-            }
-        }
-
-        // Note that we get an iterator of addresses, but we only grab the first one for convenience
-        async fn resolve_domain(&self, name: &str) -> Result<Option<SocketAddr>, BoxError> {
-            pre_resolve(name)?;
-
-            let result = match self {
-                Self::Default() => tokio::net::lookup_host(name).await?.next(),
-                Self::Hickory(r) => r.lookup_ip(name).await?.iter().next().map(|a| SocketAddr::new(a, 0)),
-            };
-
-            if let Some(addr) = &result {
-                post_resolve(name, addr.ip())?;
-            }
-
-            Ok(result)
-        }
-    }
-
-    fn pre_resolve(name: &str) -> Result<(), CustomResolverError> {
-        if crate::api::is_domain_blacklisted(name) {
-            return Err(CustomResolverError::Blacklist {
-                domain: name.to_string(),
-            });
-        }
-
-        Ok(())
-    }
-
-    fn post_resolve(name: &str, ip: IpAddr) -> Result<(), CustomResolverError> {
-        if CONFIG.icon_blacklist_non_global_ips() && !is_global(ip) {
-            Err(CustomResolverError::NonGlobalIp {
-                domain: name.to_string(),
-                ip,
-            })
-        } else {
-            Ok(())
-        }
-    }
-
-    impl Resolve for CustomDnsResolver {
-        fn resolve(&self, name: Name) -> Resolving {
-            let this = self.clone();
-            Box::pin(async move {
-                let name = name.as_str();
-                let result = this.resolve_domain(name).await?;
-                Ok::<reqwest::dns::Addrs, _>(Box::new(result.into_iter()))
-            })
-        }
-    }
-}
-
-pub use dns_resolver::{CustomDnsResolver, CustomResolverError};
 
 /// TODO: This is extracted from IpAddr::is_global, which is unstable:
 /// https://doc.rust-lang.org/nightly/std/net/enum.IpAddr.html#method.is_global

@@ -1,11 +1,14 @@
-use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE};
+use reqwest::{
+    header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE},
+    Method,
+};
 use serde_json::Value;
 use tokio::sync::RwLock;
 
 use crate::{
     api::{ApiResult, EmptyResult, UpdateType},
     db::models::{Cipher, Device, Folder, Send, User},
-    util::get_reqwest_client,
+    http_client::make_http_request,
     CONFIG,
 };
 
@@ -50,8 +53,7 @@ async fn get_auth_push_token() -> ApiResult<String> {
         ("client_secret", &client_secret),
     ];
 
-    let res = match get_reqwest_client()
-        .post(&format!("{}/connect/token", CONFIG.push_identity_uri()))
+    let res = match make_http_request(Method::POST, &format!("{}/connect/token", CONFIG.push_identity_uri()))?
         .form(&params)
         .send()
         .await
@@ -104,8 +106,7 @@ pub async fn register_push_device(device: &mut Device, conn: &mut crate::db::DbC
     let auth_push_token = get_auth_push_token().await?;
     let auth_header = format!("Bearer {}", &auth_push_token);
 
-    if let Err(e) = get_reqwest_client()
-        .post(CONFIG.push_relay_uri() + "/push/register")
+    if let Err(e) = make_http_request(Method::POST, &(CONFIG.push_relay_uri() + "/push/register"))?
         .header(CONTENT_TYPE, "application/json")
         .header(ACCEPT, "application/json")
         .header(AUTHORIZATION, auth_header)
@@ -132,8 +133,7 @@ pub async fn unregister_push_device(push_uuid: Option<String>) -> EmptyResult {
 
     let auth_header = format!("Bearer {}", &auth_push_token);
 
-    match get_reqwest_client()
-        .delete(CONFIG.push_relay_uri() + "/push/" + &push_uuid.unwrap())
+    match make_http_request(Method::DELETE, &(CONFIG.push_relay_uri() + "/push/" + &push_uuid.unwrap()))?
         .header(AUTHORIZATION, auth_header)
         .send()
         .await
@@ -266,8 +266,15 @@ async fn send_to_push_relay(notification_data: Value) {
 
     let auth_header = format!("Bearer {}", &auth_push_token);
 
-    if let Err(e) = get_reqwest_client()
-        .post(CONFIG.push_relay_uri() + "/push/send")
+    let req = match make_http_request(Method::POST, &(CONFIG.push_relay_uri() + "/push/send")) {
+        Ok(r) => r,
+        Err(e) => {
+            error!("An error occurred while sending a send update to the push relay: {}", e);
+            return;
+        }
+    };
+
+    if let Err(e) = req
         .header(ACCEPT, "application/json")
         .header(CONTENT_TYPE, "application/json")
         .header(AUTHORIZATION, &auth_header)

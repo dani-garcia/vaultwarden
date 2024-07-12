@@ -12,6 +12,7 @@ pub use accounts::purge_auth_requests;
 pub use ciphers::{purge_trashed_ciphers, CipherData, CipherSyncData, CipherSyncType};
 pub use emergency_access::{emergency_notification_reminder_job, emergency_request_timeout_job};
 pub use events::{event_cleanup_job, log_event, log_user_event};
+use reqwest::Method;
 pub use sends::purge_sends;
 
 pub fn routes() -> Vec<Route> {
@@ -53,7 +54,8 @@ use crate::{
     auth::Headers,
     db::DbConn,
     error::Error,
-    util::{get_reqwest_client, parse_experimental_client_feature_flags},
+    http_client::make_http_request,
+    util::parse_experimental_client_feature_flags,
 };
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -139,9 +141,7 @@ async fn hibp_breach(username: &str) -> JsonResult {
     );
 
     if let Some(api_key) = crate::CONFIG.hibp_api_key() {
-        let hibp_client = get_reqwest_client();
-
-        let res = hibp_client.get(&url).header("hibp-api-key", api_key).send().await?;
+        let res = make_http_request(Method::GET, &url)?.header("hibp-api-key", api_key).send().await?;
 
         // If we get a 404, return a 404, it means no breached accounts
         if res.status() == 404 {

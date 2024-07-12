@@ -1,4 +1,5 @@
 use once_cell::sync::Lazy;
+use reqwest::Method;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use std::env;
@@ -21,10 +22,10 @@ use crate::{
     config::ConfigBuilder,
     db::{backup_database, get_sql_server_version, models::*, DbConn, DbConnType},
     error::{Error, MapResult},
+    http_client::make_http_request,
     mail,
     util::{
-        container_base_image, format_naive_datetime_local, get_display_size, get_reqwest_client,
-        is_running_in_container, NumberOrString,
+        container_base_image, format_naive_datetime_local, get_display_size, is_running_in_container, NumberOrString,
     },
     CONFIG, VERSION,
 };
@@ -594,15 +595,15 @@ struct TimeApi {
 }
 
 async fn get_json_api<T: DeserializeOwned>(url: &str) -> Result<T, Error> {
-    let json_api = get_reqwest_client();
-
-    Ok(json_api.get(url).send().await?.error_for_status()?.json::<T>().await?)
+    Ok(make_http_request(Method::GET, url)?.send().await?.error_for_status()?.json::<T>().await?)
 }
 
 async fn has_http_access() -> bool {
-    let http_access = get_reqwest_client();
-
-    match http_access.head("https://github.com/dani-garcia/vaultwarden").send().await {
+    let req = match make_http_request(Method::HEAD, "https://github.com/dani-garcia/vaultwarden") {
+        Ok(r) => r,
+        Err(_) => return false,
+    };
+    match req.send().await {
         Ok(r) => r.status().is_success(),
         _ => false,
     }
