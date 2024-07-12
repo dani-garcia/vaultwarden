@@ -538,9 +538,9 @@ make_config! {
         /// Icon download timeout |> Number of seconds when to stop attempting to download an icon.
         icon_download_timeout:  u64,    true,   def,    10;
 
-        /// [Deprecated] Icon blacklist Regex |> Use `icon_blacklist_regex` instead
+        /// [Deprecated] Icon blacklist Regex |> Use `http_request_block_regex` instead
         icon_blacklist_regex:   String, false,   option;
-        /// [Deprecated] Icon blacklist non global IPs |> Use `http_request_blacklist_non_global_ips` instead
+        /// [Deprecated] Icon blacklist non global IPs |> Use `http_request_block_non_global_ips` instead
         icon_blacklist_non_global_ips:  bool,   false,   def, true;
 
         /// Block HTTP domains/IPs by Regex |> Any domains or IPs that match this regex won't be fetched by the internal HTTP client.
