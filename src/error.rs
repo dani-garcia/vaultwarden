@@ -70,7 +70,7 @@ make_error! {
     // Used to represent err! calls
     Simple(String):  _no_source,  _api_error,
 
-    // Used in our custom http client to handle non-global IPs and blacklisted domains
+    // Used in our custom http client to handle non-global IPs and blocked domains
     CustomHttpClient(CustomHttpClientError): _has_source, _api_error,
 
     // Used for special return values, like 2FA errors

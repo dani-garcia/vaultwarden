@@ -181,7 +181,7 @@ async fn get_icon(domain: &str) -> Option<(Vec<u8>, String)> {
             Some((icon.to_vec(), icon_type.unwrap_or("x-icon").to_string()))
         }
         Err(e) => {
-            // If this error comes from the custom resolver, this means this is a blacklisted domain
+            // If this error comes from the custom resolver, this means this is a blocked domain
             // or non global IP, don't save the miss file in this case to avoid leaking it
             if let Some(error) = CustomHttpClientError::downcast_ref(&e) {
                 warn!("{error}");

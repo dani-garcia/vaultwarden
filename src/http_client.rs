@@ -66,37 +66,36 @@ pub fn should_block_address(domain_or_ip: &str) -> bool {
         }
     }
 
-    should_block_address_blacklist(domain_or_ip)
+    should_block_address_regex(domain_or_ip)
 }
 
 fn should_block_ip(ip: IpAddr) -> bool {
-    if !CONFIG.http_request_blacklist_non_global_ips() {
+    if !CONFIG.http_request_block_non_global_ips() {
         return false;
     }
 
     !is_global(ip)
 }
 
-fn should_block_address_blacklist(domain_or_ip: &str) -> bool {
-    let Some(config_blacklist) = CONFIG.http_request_blacklist_regex() else {
+fn should_block_address_regex(domain_or_ip: &str) -> bool {
+    let Some(block_regex) = CONFIG.http_request_block_regex() else {
         return false;
     };
 
-    // Compiled domain blacklist
-    static COMPILED_BLACKLIST: Mutex<Option<(String, Regex)>> = Mutex::new(None);
-    let mut guard = COMPILED_BLACKLIST.lock().unwrap();
+    static COMPILED_REGEX: Mutex<Option<(String, Regex)>> = Mutex::new(None);
+    let mut guard = COMPILED_REGEX.lock().unwrap();
 
     // If the stored regex is up to date, use it
     if let Some((value, regex)) = &*guard {
-        if value == &config_blacklist {
+        if value == &block_regex {
             return regex.is_match(domain_or_ip);
         }
     }
 
     // If we don't have a regex stored, or it's not up to date, recreate it
-    let regex = Regex::new(&config_blacklist).unwrap();
+    let regex = Regex::new(&block_regex).unwrap();
     let is_match = regex.is_match(domain_or_ip);
-    *guard = Some((config_blacklist, regex));
+    *guard = Some((block_regex, regex));
 
     is_match
 }
@@ -117,8 +116,8 @@ fn should_block_host(host: Host<&str>) -> Result<(), CustomHttpClientError> {
         }
     }
 
-    if should_block_address_blacklist(&host_str) {
-        return Err(CustomHttpClientError::Blacklist {
+    if should_block_address_regex(&host_str) {
+        return Err(CustomHttpClientError::Blocked {
             domain: host_str,
         });
     }
@@ -128,7 +127,7 @@ fn should_block_host(host: Host<&str>) -> Result<(), CustomHttpClientError> {
 
 #[derive(Debug, Clone)]
 pub enum CustomHttpClientError {
-    Blacklist {
+    Blocked {
         domain: String,
     },
     NonGlobalIp {
@@ -154,9 +153,9 @@ impl CustomHttpClientError {
 impl fmt::Display for CustomHttpClientError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Blacklist {
+            Self::Blocked {
                 domain,
-            } => write!(f, "Blacklisted domain: {domain} matched HTTP_REQUEST_BLACKLIST_REGEX"),
+            } => write!(f, "Blocked domain: {domain} matched HTTP_REQUEST_BLOCK_REGEX"),
             Self::NonGlobalIp {
                 domain: Some(domain),
                 ip,
@@ -216,7 +215,7 @@ impl CustomDnsResolver {
 
 fn pre_resolve(name: &str) -> Result<(), CustomHttpClientError> {
     if should_block_address(name) {
-        return Err(CustomHttpClientError::Blacklist {
+        return Err(CustomHttpClientError::Blocked {
             domain: name.to_string(),
         });
     }

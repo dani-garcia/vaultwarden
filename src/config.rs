@@ -148,9 +148,8 @@ macro_rules! make_config {
 
 
                 // Copy the values from the deprecated flags to the new ones
-                if config.http_request_blacklist_regex.is_none() {
-                    config.http_request_blacklist_non_global_ips = config.icon_blacklist_non_global_ips;
-                    config.http_request_blacklist_regex = config.icon_blacklist_regex.clone();
+                if config.http_request_block_regex.is_none() {
+                    config.http_request_block_regex = config.icon_blacklist_regex.clone();
                 }
 
                 config
@@ -544,12 +543,12 @@ make_config! {
         /// [Deprecated] Icon blacklist non global IPs |> Use `http_request_blacklist_non_global_ips` instead
         icon_blacklist_non_global_ips:  bool,   false,   def, true;
 
-        /// HTTP blacklist Regex |> Any domains or IPs that match this regex won't be fetched by the internal HTTP client.
+        /// Block HTTP domains/IPs by Regex |> Any domains or IPs that match this regex won't be fetched by the internal HTTP client.
         /// Useful to hide other servers in the local network. Check the WIKI for more details
-        http_request_blacklist_regex:   String, true,   option;
-        /// Blacklist non global IPs |> Enabling this will cause the internal HTTP client to refuse to connect to any non global IP address.
+        http_request_block_regex:   String, true,   option;
+        /// Block non global IPs |> Enabling this will cause the internal HTTP client to refuse to connect to any non global IP address.
         /// Useful to secure your internal environment: See https://en.wikipedia.org/wiki/Reserved_IP_addresses for a list of IPs which it will block
-        http_request_blacklist_non_global_ips:  bool,   true,   def, true;
+        http_request_block_non_global_ips:  bool,   true,   auto, |c| c.icon_blacklist_non_global_ips;
 
         /// Disable Two-Factor remember |> Enabling this would force the users to use a second factor to login every time.
         /// Note that the checkbox would still be present, but ignored.
@@ -912,12 +911,12 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         err!("To use email 2FA as automatic fallback, email 2fa has to be enabled!");
     }
 
-    // Check if the icon blacklist regex is valid
-    if let Some(ref r) = cfg.http_request_blacklist_regex {
+    // Check if the HTTP request block regex is valid
+    if let Some(ref r) = cfg.http_request_block_regex {
         let validate_regex = regex::Regex::new(r);
         match validate_regex {
             Ok(_) => (),
-            Err(e) => err!(format!("`HTTP_REQUEST_BLACKLIST_REGEX` is invalid: {e:#?}")),
+            Err(e) => err!(format!("`HTTP_REQUEST_BLOCK_REGEX` is invalid: {e:#?}")),
         }
     }
 
