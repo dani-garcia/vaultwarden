@@ -77,7 +77,7 @@ async fn main() -> Result<(), Error> {
 
     check_data_folder().await;
     auth::initialize_keys().unwrap_or_else(|_| {
-        error!("Error creating keys, exiting...");
+        error!("Error creating private key '{}', exiting...", CONFIG.private_rsa_key());
         exit(1);
     });
     check_web_vault();

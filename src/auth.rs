@@ -1,13 +1,19 @@
 // JWT Handling
 //
 use chrono::{TimeDelta, Utc};
+use jsonwebtoken::{errors::ErrorKind, Algorithm, DecodingKey, EncodingKey, Header};
 use num_traits::FromPrimitive;
 use once_cell::sync::{Lazy, OnceCell};
-
-use jsonwebtoken::{errors::ErrorKind, Algorithm, DecodingKey, EncodingKey, Header};
 use openssl::rsa::Rsa;
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
+use std::{
+    env,
+    fs::File,
+    io::{Read, Write},
+    net::IpAddr,
+    path::Path,
+};
 
 use crate::{error::Error, CONFIG};
 
@@ -34,8 +40,13 @@ pub fn initialize_keys() -> Result<(), crate::error::Error> {
     let mut priv_key_buffer = Vec::with_capacity(2048);
 
     let priv_key = {
-        let mut priv_key_file =
-            File::options().create(true).truncate(false).read(true).write(true).open(CONFIG.private_rsa_key())?;
+        let mut priv_key_file = if !Path::new(&CONFIG.private_rsa_key()).exists()
+            || std::fs::metadata(CONFIG.private_rsa_key())?.len() == 0
+        {
+            File::options().create(true).truncate(false).read(true).write(true).open(CONFIG.private_rsa_key())?
+        } else {
+            File::options().read(true).open(CONFIG.private_rsa_key())?
+        };
 
         #[allow(clippy::verbose_file_reads)]
         let bytes_read = priv_key_file.read_to_end(&mut priv_key_buffer)?;
@@ -47,7 +58,7 @@ pub fn initialize_keys() -> Result<(), crate::error::Error> {
             let rsa_key = openssl::rsa::Rsa::generate(2048)?;
             priv_key_buffer = rsa_key.private_key_to_pem()?;
             priv_key_file.write_all(&priv_key_buffer)?;
-            info!("Private key created correctly.");
+            info!("Private key '{}' created correctly.", CONFIG.private_rsa_key());
             rsa_key
         }
     };
@@ -803,12 +814,6 @@ impl<'r> FromRequest<'r> for OwnerHeaders {
 //
 // Client IP address detection
 //
-use std::{
-    env,
-    fs::File,
-    io::{Read, Write},
-    net::IpAddr,
-};
 
 pub struct ClientIp {
     pub ip: IpAddr,
