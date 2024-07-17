@@ -12,7 +12,6 @@ use std::{
     fs::File,
     io::{Read, Write},
     net::IpAddr,
-    path::Path,
 };
 
 use crate::{error::Error, CONFIG};
@@ -37,32 +36,36 @@ static PRIVATE_RSA_KEY: OnceCell<EncodingKey> = OnceCell::new();
 static PUBLIC_RSA_KEY: OnceCell<DecodingKey> = OnceCell::new();
 
 pub fn initialize_keys() -> Result<(), crate::error::Error> {
-    let mut priv_key_buffer = Vec::with_capacity(2048);
+    fn read_key(creat_if_missing: bool) -> Result<(Rsa<openssl::pkey::Private>, Vec<u8>), crate::error::Error> {
+        let mut priv_key_buffer = Vec::with_capacity(2048);
 
-    let priv_key = {
-        let mut priv_key_file = if !Path::new(&CONFIG.private_rsa_key()).exists()
-            || std::fs::metadata(CONFIG.private_rsa_key())?.len() == 0
-        {
-            File::options().create(true).truncate(false).read(true).write(true).open(CONFIG.private_rsa_key())?
-        } else {
-            File::options().read(true).open(CONFIG.private_rsa_key())?
-        };
+        let mut priv_key_file = File::options()
+            .create(creat_if_missing)
+            .truncate(false)
+            .read(true)
+            .write(creat_if_missing)
+            .open(CONFIG.private_rsa_key())?;
 
         #[allow(clippy::verbose_file_reads)]
         let bytes_read = priv_key_file.read_to_end(&mut priv_key_buffer)?;
 
-        if bytes_read > 0 {
+        let rsa_key = if bytes_read > 0 {
             Rsa::private_key_from_pem(&priv_key_buffer[..bytes_read])?
-        } else {
+        } else if creat_if_missing {
             // Only create the key if the file doesn't exist or is empty
             let rsa_key = openssl::rsa::Rsa::generate(2048)?;
             priv_key_buffer = rsa_key.private_key_to_pem()?;
             priv_key_file.write_all(&priv_key_buffer)?;
-            info!("Private key '{}' created correctly.", CONFIG.private_rsa_key());
+            info!("Private key '{}' created correctly", CONFIG.private_rsa_key());
             rsa_key
-        }
-    };
+        } else {
+            err!("Private key does not exist or invalid format", CONFIG.private_rsa_key());
+        };
 
+        Ok((rsa_key, priv_key_buffer))
+    }
+
+    let (priv_key, priv_key_buffer) = read_key(true).or_else(|_| read_key(false))?;
     let pub_key_buffer = priv_key.public_key_to_pem()?;
 
     let enc = EncodingKey::from_rsa_pem(&priv_key_buffer)?;
