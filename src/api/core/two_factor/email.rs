@@ -24,7 +24,10 @@ pub fn routes() -> Vec<Route> {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SendEmailLoginData {
+    // DeviceIdentifier: String, // Currently not used
+    #[serde(alias = "Email")]
     email: String,
+    #[serde(alias = "MasterPasswordHash")]
     master_password_hash: String,
 }
 
