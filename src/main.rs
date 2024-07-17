@@ -73,11 +73,9 @@ async fn main() -> Result<(), Error> {
     });
     init_logging(level).ok();
 
-    let extra_debug = matches!(level, LF::Trace | LF::Debug);
-
     check_data_folder().await;
-    auth::initialize_keys().unwrap_or_else(|_| {
-        error!("Error creating keys, exiting...");
+    auth::initialize_keys().unwrap_or_else(|e| {
+        error!("Error creating private key '{}'\n{e:?}\nExiting Vaultwarden!", CONFIG.private_rsa_key());
         exit(1);
     });
     check_web_vault();
@@ -91,6 +89,7 @@ async fn main() -> Result<(), Error> {
     schedule_jobs(pool.clone());
     crate::db::models::TwoFactor::migrate_u2f_to_webauthn(&mut pool.get().await.unwrap()).await.unwrap();
 
+    let extra_debug = matches!(level, LF::Trace | LF::Debug);
     launch_rocket(pool, extra_debug).await // Blocks until program termination.
 }
 
@@ -514,7 +513,7 @@ async fn launch_rocket(pool: db::DbPool, extra_debug: bool) -> Result<(), Error>
 
     tokio::spawn(async move {
         tokio::signal::ctrl_c().await.expect("Error setting Ctrl-C handler");
-        info!("Exiting vaultwarden!");
+        info!("Exiting Vaultwarden!");
         CONFIG.shutdown();
     });
 
