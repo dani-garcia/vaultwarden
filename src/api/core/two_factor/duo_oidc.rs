@@ -14,7 +14,7 @@ use crate::{
         DbConn, DbPool,
     },
     error::Error,
-    util::get_reqwest_client,
+    http_client::make_http_request,
     CONFIG,
 };
 use url::Url;
@@ -186,8 +186,7 @@ impl DuoClient {
         post_body.insert("client_assertion", token);
         post_body.insert("client_id", self.client_id.clone());
 
-        let res = match get_reqwest_client()
-            .post(health_check_url)
+        let res = match make_http_request(reqwest::Method::POST, &health_check_url)?
             .header(header::USER_AGENT, "vaultwarden:Duo/2.0 (Rust)")
             .form(&post_body)
             .send()
@@ -293,8 +292,7 @@ impl DuoClient {
             .insert("client_assertion_type", String::from("urn:ietf:params:oauth:client-assertion-type:jwt-bearer"));
         post_body.insert("client_assertion", token);
 
-        let res = match get_reqwest_client()
-            .post(&token_url)
+        let res = match make_http_request(reqwest::Method::POST, &token_url)?
             .header(header::USER_AGENT, "vaultwarden:Duo/2.0 (Rust)")
             .form(&post_body)
             .send()
