@@ -520,7 +520,7 @@ async fn twofactor_auth(
         }
         Some(TwoFactorType::Webauthn) => webauthn::validate_webauthn_login(&user.uuid, twofactor_code, conn).await?,
         Some(TwoFactorType::YubiKey) => yubikey::validate_yubikey_login(twofactor_code, &selected_data?).await?,
-        Some(TwoFactorType::Duo | TwoFactorType::OrganizationDuo) => {
+        Some(TwoFactorType::Duo) => {
             match CONFIG.duo_use_iframe() {
                 true => {
                     // Legacy iframe prompt flow
@@ -605,7 +605,7 @@ async fn _json_err_twofactor(
                 result["TwoFactorProviders2"][provider.to_string()] = request.0;
             }
 
-            Some(TwoFactorType::Duo | TwoFactorType::OrganizationDuo) => {
+            Some(TwoFactorType::Duo) => {
                 let email = match User::find_by_uuid(user_uuid, conn).await {
                     Some(u) => u.email,
                     None => err!("User does not exist"),
