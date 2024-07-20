@@ -19,32 +19,6 @@ use crate::{
 };
 use url::Url;
 
-// Duo OIDC Auth API URL constants. Defined as macros, so they can be passed into format!()
-#[allow(non_snake_case)]
-macro_rules! HEALTH_ENDPOINT {
-    () => {
-        "https://{}/oauth/v1/health_check"
-    };
-}
-#[allow(non_snake_case)]
-macro_rules! AUTHZ_ENDPOINT {
-    () => {
-        "https://{}/oauth/v1/authorize"
-    };
-}
-#[allow(non_snake_case)]
-macro_rules! API_HOST_FMT {
-    () => {
-        "https://{}"
-    };
-}
-#[allow(non_snake_case)]
-macro_rules! TOKEN_ENDPOINT {
-    () => {
-        "https://{}/oauth/v1/token"
-    };
-}
-
 // The location on this service that Duo should redirect users to. For us, this is a bridge
 // built in to the Bitwarden clients.
 // See: https://github.com/bitwarden/clients/blob/main/apps/web/src/connectors/duo-redirect.ts
@@ -173,7 +147,7 @@ impl DuoClient {
     // are up.
     // https://duo.com/docs/oauthapi#health-check
     async fn health_check(&self) -> Result<(), Error> {
-        let health_check_url: String = format!(HEALTH_ENDPOINT!(), self.api_host);
+        let health_check_url: String = format!("https://{}/oauth/v1/health_check", self.api_host);
 
         let jwt_payload = self.new_client_assertion(&health_check_url);
 
@@ -233,7 +207,7 @@ impl DuoClient {
             state,
             duo_uname: String::from(duo_username),
             iss: self.client_id.clone(),
-            aud: format!(API_HOST_FMT!(), self.api_host),
+            aud: format!("https://{}", self.api_host),
             nonce,
         };
 
@@ -242,7 +216,7 @@ impl DuoClient {
             Err(e) => return Err(e),
         };
 
-        let authz_endpoint = format!(AUTHZ_ENDPOINT!(), self.api_host);
+        let authz_endpoint = format!("https://{}/oauth/v1/authorize", self.api_host);
         let mut auth_url = match Url::parse(authz_endpoint.as_str()) {
             Ok(url) => url,
             Err(e) => err!(format!("Error parsing Duo authorization URL: {e:?}")),
@@ -272,7 +246,7 @@ impl DuoClient {
             err!("Empty Duo authorization code")
         }
 
-        let token_url = format!(TOKEN_ENDPOINT!(), self.api_host);
+        let token_url = format!("https://{}/oauth/v1/token", self.api_host);
 
         let jwt_payload = self.new_client_assertion(&token_url);
 
