@@ -997,14 +997,6 @@ async fn reinvite_user(org_id: &str, user_org: &str, headers: AdminHeaders, mut 
 }
 
 async fn _reinvite_user(org_id: &str, user_org: &str, invited_by_email: &str, conn: &mut DbConn) -> EmptyResult {
-    if !CONFIG.invitations_allowed() {
-        err!("Invitations are not allowed.")
-    }
-
-    if !CONFIG.mail_enabled() {
-        err!("SMTP is not configured.")
-    }
-
     let user_org = match UserOrganization::find_by_uuid(user_org, conn).await {
         Some(user_org) => user_org,
         None => err!("The user hasn't been invited to the organization."),
@@ -1018,6 +1010,10 @@ async fn _reinvite_user(org_id: &str, user_org: &str, invited_by_email: &str, co
         Some(user) => user,
         None => err!("User not found."),
     };
+
+    if !CONFIG.invitations_allowed() && user.password_hash.is_empty() {
+        err!("Invitations are not allowed.")
+    }
 
     let org_name = match Organization::find_by_uuid(org_id, conn).await {
         Some(org) => org.name,
