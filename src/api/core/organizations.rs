@@ -1030,9 +1030,14 @@ async fn _reinvite_user(org_id: &str, user_org: &str, invited_by_email: &str, co
             Some(invited_by_email.to_string()),
         )
         .await?;
-    } else {
+    } else if user.password_hash.is_empty() {
         let invitation = Invitation::new(&user.email);
         invitation.save(conn).await?;
+    } else {
+        let _ = Invitation::take(&user.email, conn).await;
+        let mut user_org = user_org;
+        user_org.status = UserOrgStatus::Accepted as i32;
+        user_org.save(conn).await?;
     }
 
     Ok(())
