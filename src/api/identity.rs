@@ -631,7 +631,7 @@ async fn _json_err_twofactor(
                         .await?;
 
                         result["TwoFactorProviders2"][provider.to_string()] = json!({
-                        "AuthUrl": auth_url,
+                            "AuthUrl": auth_url,
                         })
                     }
                 }
