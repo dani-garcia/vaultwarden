@@ -1334,14 +1334,7 @@ where
     // And then load user templates to overwrite the defaults
     // Use .hbs extension for the files
     // Templates get registered with their relative name
-    hb.register_templates_directory(
-        path,
-        DirectorySourceOptions {
-            tpl_extension: ".hbs".to_owned(),
-            ..Default::default()
-        },
-    )
-    .unwrap();
+    hb.register_templates_directory(path, DirectorySourceOptions::default()).unwrap();
 
     hb
 }
