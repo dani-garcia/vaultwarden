@@ -78,9 +78,7 @@ impl TwoFactorDuoContext {
 
     pub async fn purge_expired_duo_contexts(conn: &mut DbConn) {
         for context in Self::find_expired(conn).await {
-            if context.exp < Utc::now().timestamp() {
-                context.delete(conn).await.ok();
-            }
+            context.delete(conn).await.ok();
         }
     }
 }
