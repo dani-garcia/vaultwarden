@@ -19,6 +19,7 @@ use crate::{
 
 pub mod authenticator;
 pub mod duo;
+pub mod duo_oidc;
 pub mod email;
 pub mod protected_actions;
 pub mod webauthn;
