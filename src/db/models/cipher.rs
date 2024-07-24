@@ -81,16 +81,14 @@ impl Cipher {
 
     pub fn validate_notes(cipher_data: &[CipherData]) -> EmptyResult {
         let mut validation_errors = serde_json::Map::new();
+        let max_note_size = CONFIG._max_note_size();
+        let max_note_size_msg =
+            format!("The field Notes exceeds the maximum encrypted value length of {} characters.", &max_note_size);
         for (index, cipher) in cipher_data.iter().enumerate() {
             if let Some(note) = &cipher.notes {
-                if note.len() > 10_000 {
-                    validation_errors.insert(
-                        format!("Ciphers[{index}].Notes"),
-                        serde_json::to_value([
-                            "The field Notes exceeds the maximum encrypted value length of 10000 characters.",
-                        ])
-                        .unwrap(),
-                    );
+                if note.len() > max_note_size {
+                    validation_errors
+                        .insert(format!("Ciphers[{index}].Notes"), serde_json::to_value([&max_note_size_msg]).unwrap());
                 }
             }
         }
