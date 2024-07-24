@@ -618,7 +618,13 @@ make_config! {
         admin_session_lifetime:        i64, true,  def, 20;
 
         /// Enable groups (BETA!) (Know the risks!) |> Enables groups support for organizations (Currently contains known issues!).
-        org_groups_enabled:     bool,   false,  def,    false;
+        org_groups_enabled:            bool, false, def, false;
+
+        /// Increase note size limit (Know the risks!) |> Sets the secure note size limit to 100_000 instead of the default 10_000.
+        /// WARNING: This could cause issues with clients. Also exports will not work on Bitwarden servers!
+        increase_note_size_limit:      bool,  true,  def, false;
+        /// Generated max_note_size value to prevent if..else matching during every check
+        _max_note_size:                usize, false, gen, |c| if c.increase_note_size_limit {100_000} else {10_000};
     },
 
     /// Yubikey settings
@@ -1000,6 +1006,11 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
             }
             _ => {}
         }
+    }
+
+    if cfg.increase_note_size_limit {
+        println!("[WARNING] Secure Note size limit is increased to 100_000!");
+        println!("[WARNING] This could cause issues with clients. Also exports will not work on Bitwarden servers!.");
     }
     Ok(())
 }
