@@ -1297,7 +1297,7 @@ struct EditUserData {
     r#type: NumberOrString,
     collections: Option<Vec<CollectionData>>,
     groups: Option<Vec<String>>,
-    access_all: bool,
+    access_all: Option<bool>,
 }
 
 #[put("/organizations/<org_id>/users/<org_user_id>", data = "<data>", rank = 1)]
@@ -1370,7 +1370,7 @@ async fn edit_user(
         }
     }
 
-    user_to_edit.access_all = data.access_all;
+    user_to_edit.access_all = data.access_all.unwrap_or(false);
     user_to_edit.atype = new_type as i32;
 
     // Delete all the odd collections
@@ -1379,7 +1379,7 @@ async fn edit_user(
     }
 
     // If no accessAll, add the collections received
-    if !data.access_all {
+    if !data.access_all.unwrap_or(false) {
         for col in data.collections.iter().flatten() {
             match Collection::find_by_uuid_and_org(&col.id, org_id, &mut conn).await {
                 None => err!("Collection not found in Organization"),
