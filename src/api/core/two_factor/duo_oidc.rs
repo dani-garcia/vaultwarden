@@ -423,8 +423,6 @@ pub async fn validate_duo_login(
     device_identifier: &str,
     conn: &mut DbConn,
 ) -> EmptyResult {
-    let email = &email.to_lowercase();
-
     // Result supplied to us by clients in the form "<authz code>|<state>"
     let split: Vec<&str> = two_factor_token.split('|').collect();
     if split.len() != 2 {
