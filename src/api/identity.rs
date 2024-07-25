@@ -524,12 +524,12 @@ async fn twofactor_auth(
             match CONFIG.duo_use_iframe() {
                 true => {
                     // Legacy iframe prompt flow
-                    duo::validate_duo_login(data.username.as_ref().unwrap().trim(), twofactor_code, conn).await?
+                    duo::validate_duo_login(&user.email, twofactor_code, conn).await?
                 }
                 false => {
                     // OIDC based flow
                     duo_oidc::validate_duo_login(
-                        data.username.as_ref().unwrap().trim(),
+                        &user.email,
                         twofactor_code,
                         data.client_id.as_ref().unwrap(),
                         data.device_identifier.as_ref().unwrap(),
