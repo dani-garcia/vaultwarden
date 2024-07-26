@@ -9,6 +9,7 @@ use crate::{
         PasswordOrOtpData,
     },
     auth::Headers,
+    config::not_readonly,
     crypto,
     db::{
         models::{EventType, TwoFactor, TwoFactorType, User},
@@ -156,6 +157,8 @@ fn check_duo_fields_custom(data: &EnableDuoData) -> bool {
 
 #[post("/two-factor/duo", data = "<data>")]
 async fn activate_duo(data: Json<EnableDuoData>, headers: Headers, mut conn: DbConn) -> JsonResult {
+    not_readonly()?;
+
     let data: EnableDuoData = data.into_inner();
     let mut user = headers.user;
 
@@ -194,6 +197,8 @@ async fn activate_duo(data: Json<EnableDuoData>, headers: Headers, mut conn: DbC
 
 #[put("/two-factor/duo", data = "<data>")]
 async fn activate_duo_put(data: Json<EnableDuoData>, headers: Headers, conn: DbConn) -> JsonResult {
+    not_readonly()?;
+
     activate_duo(data, headers, conn).await
 }
 

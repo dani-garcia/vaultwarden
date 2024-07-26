@@ -4,6 +4,7 @@ use serde_json::Value;
 use crate::{
     api::{EmptyResult, JsonResult, Notify, UpdateType},
     auth::Headers,
+    config::not_readonly,
     db::{models::*, DbConn},
 };
 
@@ -46,6 +47,8 @@ pub struct FolderData {
 
 #[post("/folders", data = "<data>")]
 async fn post_folders(data: Json<FolderData>, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> JsonResult {
+    not_readonly()?;
+
     let data: FolderData = data.into_inner();
 
     let mut folder = Folder::new(headers.user.uuid, data.name);
@@ -58,6 +61,8 @@ async fn post_folders(data: Json<FolderData>, headers: Headers, mut conn: DbConn
 
 #[post("/folders/<uuid>", data = "<data>")]
 async fn post_folder(uuid: &str, data: Json<FolderData>, headers: Headers, conn: DbConn, nt: Notify<'_>) -> JsonResult {
+    not_readonly()?;
+
     put_folder(uuid, data, headers, conn, nt).await
 }
 
@@ -69,6 +74,8 @@ async fn put_folder(
     mut conn: DbConn,
     nt: Notify<'_>,
 ) -> JsonResult {
+    not_readonly()?;
+
     let data: FolderData = data.into_inner();
 
     let mut folder = match Folder::find_by_uuid(uuid, &mut conn).await {
@@ -90,11 +97,15 @@ async fn put_folder(
 
 #[post("/folders/<uuid>/delete")]
 async fn delete_folder_post(uuid: &str, headers: Headers, conn: DbConn, nt: Notify<'_>) -> EmptyResult {
+    not_readonly()?;
+
     delete_folder(uuid, headers, conn, nt).await
 }
 
 #[delete("/folders/<uuid>")]
 async fn delete_folder(uuid: &str, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> EmptyResult {
+    not_readonly()?;
+
     let folder = match Folder::find_by_uuid(uuid, &mut conn).await {
         Some(folder) => folder,
         _ => err!("Invalid folder"),

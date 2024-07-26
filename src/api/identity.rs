@@ -18,6 +18,7 @@ use crate::{
         ApiResult, EmptyResult, JsonResult,
     },
     auth::{generate_organization_api_key_login_claims, ClientHeaders, ClientIp},
+    config::not_readonly,
     db::{models::*, DbConn},
     error::MapResult,
     mail, util, CONFIG,
@@ -681,6 +682,8 @@ async fn prelogin(data: Json<PreloginData>, conn: DbConn) -> Json<Value> {
 
 #[post("/accounts/register", data = "<data>")]
 async fn identity_register(data: Json<RegisterData>, conn: DbConn) -> JsonResult {
+    not_readonly()?;
+
     _register(data, conn).await
 }
 

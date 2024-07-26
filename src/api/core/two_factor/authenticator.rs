@@ -5,6 +5,7 @@ use rocket::Route;
 use crate::{
     api::{core::log_user_event, core::two_factor::_generate_recover_code, EmptyResult, JsonResult, PasswordOrOtpData},
     auth::{ClientIp, Headers},
+    config::not_readonly,
     crypto,
     db::{
         models::{EventType, TwoFactor, TwoFactorType},
@@ -52,6 +53,8 @@ struct EnableAuthenticatorData {
 
 #[post("/two-factor/authenticator", data = "<data>")]
 async fn activate_authenticator(data: Json<EnableAuthenticatorData>, headers: Headers, mut conn: DbConn) -> JsonResult {
+    not_readonly()?;
+
     let data: EnableAuthenticatorData = data.into_inner();
     let key = data.key;
     let token = data.token.into_string();
@@ -91,6 +94,8 @@ async fn activate_authenticator(data: Json<EnableAuthenticatorData>, headers: He
 
 #[put("/two-factor/authenticator", data = "<data>")]
 async fn activate_authenticator_put(data: Json<EnableAuthenticatorData>, headers: Headers, conn: DbConn) -> JsonResult {
+    not_readonly()?;
+
     activate_authenticator(data, headers, conn).await
 }
 

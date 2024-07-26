@@ -11,6 +11,7 @@ use serde_json::Value;
 use crate::{
     api::{ApiResult, EmptyResult, JsonResult, Notify, UpdateType},
     auth::{ClientIp, Headers, Host},
+    config::not_readonly,
     db::{models::*, DbConn, DbPool},
     util::{NumberOrString, SafeString},
     CONFIG,
@@ -173,6 +174,8 @@ async fn get_send(uuid: &str, headers: Headers, mut conn: DbConn) -> JsonResult 
 
 #[post("/sends", data = "<data>")]
 async fn post_send(data: Json<SendData>, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> JsonResult {
+    not_readonly()?;
+
     enforce_disable_send_policy(&headers, &mut conn).await?;
 
     let data: SendData = data.into_inner();
@@ -212,6 +215,8 @@ struct UploadDataV2<'f> {
 // Upstream: https://github.com/bitwarden/server/blob/d0c793c95181dfb1b447eb450f85ba0bfd7ef643/src/Api/Controllers/SendsController.cs#L164-L167
 #[post("/sends/file", format = "multipart/form-data", data = "<data>")]
 async fn post_send_file(data: Form<UploadData<'_>>, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> JsonResult {
+    not_readonly()?;
+
     enforce_disable_send_policy(&headers, &mut conn).await?;
 
     let UploadData {
@@ -289,6 +294,8 @@ async fn post_send_file(data: Form<UploadData<'_>>, headers: Headers, mut conn: 
 // Upstream: https://github.com/bitwarden/server/blob/d0c793c95181dfb1b447eb450f85ba0bfd7ef643/src/Api/Controllers/SendsController.cs#L190
 #[post("/sends/file/v2", data = "<data>")]
 async fn post_send_file_v2(data: Json<SendData>, headers: Headers, mut conn: DbConn) -> JsonResult {
+    not_readonly()?;
+
     enforce_disable_send_policy(&headers, &mut conn).await?;
 
     let data = data.into_inner();
@@ -359,6 +366,8 @@ async fn post_send_file_v2_data(
     mut conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
+    not_readonly()?;
+
     enforce_disable_send_policy(&headers, &mut conn).await?;
 
     let mut data = data.into_inner();
@@ -408,6 +417,8 @@ async fn post_access(
     ip: ClientIp,
     nt: Notify<'_>,
 ) -> JsonResult {
+    not_readonly()?;
+
     let mut send = match Send::find_by_access_id(access_id, &mut conn).await {
         Some(s) => s,
         None => err_code!(SEND_INACCESSIBLE_MSG, 404),
@@ -469,6 +480,8 @@ async fn post_access_file(
     mut conn: DbConn,
     nt: Notify<'_>,
 ) -> JsonResult {
+    not_readonly()?;
+
     let mut send = match Send::find_by_uuid(send_id, &mut conn).await {
         Some(s) => s,
         None => err_code!(SEND_INACCESSIBLE_MSG, 404),
@@ -536,6 +549,8 @@ async fn download_send(send_id: SafeString, file_id: SafeString, t: &str) -> Opt
 
 #[put("/sends/<id>", data = "<data>")]
 async fn put_send(id: &str, data: Json<SendData>, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> JsonResult {
+    not_readonly()?;
+
     enforce_disable_send_policy(&headers, &mut conn).await?;
 
     let data: SendData = data.into_inner();
@@ -611,6 +626,8 @@ pub async fn update_send_from_data(
 
 #[delete("/sends/<id>")]
 async fn delete_send(id: &str, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> EmptyResult {
+    not_readonly()?;
+
     let send = match Send::find_by_uuid(id, &mut conn).await {
         Some(s) => s,
         None => err!("Send not found"),
@@ -635,6 +652,8 @@ async fn delete_send(id: &str, headers: Headers, mut conn: DbConn, nt: Notify<'_
 
 #[put("/sends/<id>/remove-password")]
 async fn put_remove_password(id: &str, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> JsonResult {
+    not_readonly()?;
+
     enforce_disable_send_policy(&headers, &mut conn).await?;
 
     let mut send = match Send::find_by_uuid(id, &mut conn).await {

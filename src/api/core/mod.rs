@@ -15,6 +15,8 @@ pub use events::{event_cleanup_job, log_event, log_user_event};
 use reqwest::Method;
 pub use sends::purge_sends;
 
+use crate::config::not_readonly;
+
 pub fn routes() -> Vec<Route> {
     let mut eq_domains_routes = routes![get_eq_domains, post_eq_domains, put_eq_domains];
     let mut hibp_routes = routes![hibp_breach];
@@ -111,6 +113,8 @@ async fn post_eq_domains(
     mut conn: DbConn,
     nt: Notify<'_>,
 ) -> JsonResult {
+    not_readonly()?;
+
     let data: EquivDomainData = data.into_inner();
 
     let excluded_globals = data.excluded_global_equivalent_domains.unwrap_or_default();
@@ -131,6 +135,8 @@ async fn post_eq_domains(
 
 #[put("/settings/domains", data = "<data>")]
 async fn put_eq_domains(data: Json<EquivDomainData>, headers: Headers, conn: DbConn, nt: Notify<'_>) -> JsonResult {
+    not_readonly()?;
+
     post_eq_domains(data, headers, conn, nt).await
 }
 

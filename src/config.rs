@@ -507,6 +507,9 @@ make_config! {
 
         /// Events days retain |> Number of days to retain events stored in the database. If unset, events are kept indefinitely.
         events_days_retain:     i64,    false,   option;
+
+        /// Read-Only Mode |> Prevent writing of data but logins are still allowed.
+        readonly:     bool,    false,   def,  false;
     },
 
     /// Advanced settings
@@ -1008,6 +1011,10 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         }
     }
 
+    if cfg.readonly {
+        println!("[NOTICE] Read-Only Mode is enabled");
+    }
+
     if cfg.increase_note_size_limit {
         println!("[WARNING] Secure Note size limit is increased to 100_000!");
         println!("[WARNING] This could cause issues with clients. Also exports will not work on Bitwarden servers!.");
@@ -1275,6 +1282,16 @@ impl Config {
             if let Some(handle) = c.rocket_shutdown_handle.take() {
                 handle.notify();
             }
+        }
+    }
+}
+
+pub fn not_readonly() -> Result<(), Error> {
+    match CONFIG.readonly() {
+        false => Ok(()),
+        true => {
+            let msg = "The server is in read-only mode";
+            Err(Error::new(msg, msg))
         }
     }
 }

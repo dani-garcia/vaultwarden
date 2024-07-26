@@ -10,6 +10,7 @@ use std::collections::HashSet;
 use crate::{
     api::EmptyResult,
     auth,
+    config::not_readonly,
     db::{models::*, DbConn},
     mail, CONFIG,
 };
@@ -45,6 +46,8 @@ struct OrgImportData {
 
 #[post("/public/organization/import", data = "<data>")]
 async fn ldap_import(data: Json<OrgImportData>, token: PublicToken, mut conn: DbConn) -> EmptyResult {
+    not_readonly()?;
+
     // Most of the logic for this function can be found here
     // https://github.com/bitwarden/server/blob/fd892b2ff4547648a276734fb2b14a8abae2c6f5/src/Core/Services/Implementations/OrganizationService.cs#L1797
 

@@ -8,6 +8,7 @@ use crate::{
         EmptyResult, JsonResult,
     },
     auth::{decode_emergency_access_invite, Headers},
+    config::not_readonly,
     db::{models::*, DbConn, DbPool},
     mail,
     util::NumberOrString,
@@ -123,6 +124,8 @@ async fn put_emergency_access(
     headers: Headers,
     conn: DbConn,
 ) -> JsonResult {
+    not_readonly()?;
+
     post_emergency_access(emer_id, data, headers, conn).await
 }
 
@@ -133,6 +136,8 @@ async fn post_emergency_access(
     headers: Headers,
     mut conn: DbConn,
 ) -> JsonResult {
+    not_readonly()?;
+
     check_emergency_access_enabled()?;
 
     let data: EmergencyAccessUpdateData = data.into_inner();
@@ -164,6 +169,8 @@ async fn post_emergency_access(
 
 #[delete("/emergency-access/<emer_id>")]
 async fn delete_emergency_access(emer_id: &str, headers: Headers, mut conn: DbConn) -> EmptyResult {
+    not_readonly()?;
+
     check_emergency_access_enabled()?;
 
     let emergency_access = match (
@@ -187,6 +194,8 @@ async fn delete_emergency_access(emer_id: &str, headers: Headers, mut conn: DbCo
 
 #[post("/emergency-access/<emer_id>/delete")]
 async fn post_delete_emergency_access(emer_id: &str, headers: Headers, conn: DbConn) -> EmptyResult {
+    not_readonly()?;
+
     delete_emergency_access(emer_id, headers, conn).await
 }
 
@@ -204,6 +213,8 @@ struct EmergencyAccessInviteData {
 
 #[post("/emergency-access/invite", data = "<data>")]
 async fn send_invite(data: Json<EmergencyAccessInviteData>, headers: Headers, mut conn: DbConn) -> EmptyResult {
+    not_readonly()?;
+
     check_emergency_access_enabled()?;
 
     let data: EmergencyAccessInviteData = data.into_inner();
@@ -282,6 +293,8 @@ async fn send_invite(data: Json<EmergencyAccessInviteData>, headers: Headers, mu
 
 #[post("/emergency-access/<emer_id>/reinvite")]
 async fn resend_invite(emer_id: &str, headers: Headers, mut conn: DbConn) -> EmptyResult {
+    not_readonly()?;
+
     check_emergency_access_enabled()?;
 
     let mut emergency_access =
@@ -334,6 +347,8 @@ struct AcceptData {
 
 #[post("/emergency-access/<emer_id>/accept", data = "<data>")]
 async fn accept_invite(emer_id: &str, data: Json<AcceptData>, headers: Headers, mut conn: DbConn) -> EmptyResult {
+    not_readonly()?;
+
     check_emergency_access_enabled()?;
 
     let data: AcceptData = data.into_inner();
@@ -397,6 +412,8 @@ async fn confirm_emergency_access(
     headers: Headers,
     mut conn: DbConn,
 ) -> JsonResult {
+    not_readonly()?;
+
     check_emergency_access_enabled()?;
 
     let confirming_user = headers.user;
@@ -447,6 +464,8 @@ async fn confirm_emergency_access(
 
 #[post("/emergency-access/<emer_id>/initiate")]
 async fn initiate_emergency_access(emer_id: &str, headers: Headers, mut conn: DbConn) -> JsonResult {
+    not_readonly()?;
+
     check_emergency_access_enabled()?;
 
     let initiating_user = headers.user;
@@ -486,6 +505,8 @@ async fn initiate_emergency_access(emer_id: &str, headers: Headers, mut conn: Db
 
 #[post("/emergency-access/<emer_id>/approve")]
 async fn approve_emergency_access(emer_id: &str, headers: Headers, mut conn: DbConn) -> JsonResult {
+    not_readonly()?;
+
     check_emergency_access_enabled()?;
 
     let mut emergency_access =
@@ -523,6 +544,8 @@ async fn approve_emergency_access(emer_id: &str, headers: Headers, mut conn: DbC
 
 #[post("/emergency-access/<emer_id>/reject")]
 async fn reject_emergency_access(emer_id: &str, headers: Headers, mut conn: DbConn) -> JsonResult {
+    not_readonly()?;
+
     check_emergency_access_enabled()?;
 
     let mut emergency_access =
@@ -561,6 +584,8 @@ async fn reject_emergency_access(emer_id: &str, headers: Headers, mut conn: DbCo
 
 #[post("/emergency-access/<emer_id>/view")]
 async fn view_emergency_access(emer_id: &str, headers: Headers, mut conn: DbConn) -> JsonResult {
+    not_readonly()?;
+
     check_emergency_access_enabled()?;
 
     let emergency_access =
@@ -599,6 +624,8 @@ async fn view_emergency_access(emer_id: &str, headers: Headers, mut conn: DbConn
 
 #[post("/emergency-access/<emer_id>/takeover")]
 async fn takeover_emergency_access(emer_id: &str, headers: Headers, mut conn: DbConn) -> JsonResult {
+    not_readonly()?;
+
     check_emergency_access_enabled()?;
 
     let requesting_user = headers.user;
@@ -643,6 +670,8 @@ async fn password_emergency_access(
     headers: Headers,
     mut conn: DbConn,
 ) -> EmptyResult {
+    not_readonly()?;
+
     check_emergency_access_enabled()?;
 
     let data: EmergencyAccessPasswordData = data.into_inner();

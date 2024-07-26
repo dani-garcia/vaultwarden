@@ -1,4 +1,9 @@
 <main class="container-xl">
+    {{#if page_data.readonly}}
+    <div id="readonly_mode" class="alert alert-info fade show">
+        Read-Only Mode is enabled. This means no password changes, new accounts, or other modifications can be made.
+    </div>
+    {{/if}}
     <div id="users-block" class="my-3 p-3 rounded shadow">
         <h6 class="border-bottom pb-2 mb-3">Registered Users</h6>
         <div class="table-responsive-xl small">
@@ -15,7 +20,7 @@
                     </tr>
                 </thead>
                 <tbody>
-                    {{#each page_data}}
+                    {{#each page_data.users}}
                     <tr>
                         <td>
                             <svg width="48" height="48" class="float-start me-2 rounded" data-jdenticon-value="{{email}}">

@@ -9,6 +9,7 @@ use crate::{
         EmptyResult, JsonResult, Notify, PasswordOrOtpData, UpdateType,
     },
     auth::{decode_invite, AdminHeaders, Headers, ManagerHeaders, ManagerHeadersLoose, OwnerHeaders},
+    config::not_readonly,
     db::{models::*, DbConn},
     error::Error,
     mail,
@@ -150,6 +151,8 @@ struct OrgBulkIds {
 
 #[post("/organizations", data = "<data>")]
 async fn create_organization(headers: Headers, data: Json<OrgData>, mut conn: DbConn) -> JsonResult {
+    not_readonly()?;
+
     if !CONFIG.is_org_creation_allowed(&headers.user.email) {
         err!("User not allowed to create organizations")
     }
@@ -190,6 +193,8 @@ async fn delete_organization(
     headers: OwnerHeaders,
     mut conn: DbConn,
 ) -> EmptyResult {
+    not_readonly()?;
+
     let data: PasswordOrOtpData = data.into_inner();
 
     data.validate(&headers.user, true, &mut conn).await?;
@@ -207,11 +212,15 @@ async fn post_delete_organization(
     headers: OwnerHeaders,
     conn: DbConn,
 ) -> EmptyResult {
+    not_readonly()?;
+
     delete_organization(org_id, data, headers, conn).await
 }
 
 #[post("/organizations/<org_id>/leave")]
 async fn leave_organization(org_id: &str, headers: Headers, mut conn: DbConn) -> EmptyResult {
+    not_readonly()?;
+
     match UserOrganization::find_by_user_and_org(&headers.user.uuid, org_id, &mut conn).await {
         None => err!("User not part of organization"),
         Some(user_org) => {
@@ -252,6 +261,8 @@ async fn put_organization(
     data: Json<OrganizationUpdateData>,
     conn: DbConn,
 ) -> JsonResult {
+    not_readonly()?;
+
     post_organization(org_id, headers, data, conn).await
 }
 
@@ -262,6 +273,8 @@ async fn post_organization(
     data: Json<OrganizationUpdateData>,
     mut conn: DbConn,
 ) -> JsonResult {
+    not_readonly()?;
+
     let data: OrganizationUpdateData = data.into_inner();
 
     let mut org = match Organization::find_by_uuid(org_id, &mut conn).await {
@@ -381,6 +394,8 @@ async fn post_organization_collections(
     data: Json<NewCollectionData>,
     mut conn: DbConn,
 ) -> JsonResult {
+    not_readonly()?;
+
     let data: NewCollectionData = data.into_inner();
 
     let org = match Organization::find_by_uuid(org_id, &mut conn).await {
@@ -437,6 +452,8 @@ async fn put_organization_collection_update(
     data: Json<NewCollectionData>,
     conn: DbConn,
 ) -> JsonResult {
+    not_readonly()?;
+
     post_organization_collection_update(org_id, col_id, headers, data, conn).await
 }
 
@@ -448,6 +465,8 @@ async fn post_organization_collection_update(
     data: Json<NewCollectionData>,
     mut conn: DbConn,
 ) -> JsonResult {
+    not_readonly()?;
+
     let data: NewCollectionData = data.into_inner();
 
     let org = match Organization::find_by_uuid(org_id, &mut conn).await {
@@ -517,6 +536,8 @@ async fn delete_organization_collection_user(
     _headers: AdminHeaders,
     mut conn: DbConn,
 ) -> EmptyResult {
+    not_readonly()?;
+
     let collection = match Collection::find_by_uuid(col_id, &mut conn).await {
         None => err!("Collection not found"),
         Some(collection) => {
@@ -547,6 +568,8 @@ async fn post_organization_collection_delete_user(
     headers: AdminHeaders,
     conn: DbConn,
 ) -> EmptyResult {
+    not_readonly()?;
+
     delete_organization_collection_user(org_id, col_id, org_user_id, headers, conn).await
 }
 
@@ -585,6 +608,8 @@ async fn delete_organization_collection(
     headers: ManagerHeaders,
     mut conn: DbConn,
 ) -> EmptyResult {
+    not_readonly()?;
+
     _delete_organization_collection(org_id, col_id, &headers, &mut conn).await
 }
 
@@ -605,6 +630,8 @@ async fn post_organization_collection_delete(
     _data: Json<DeleteCollectionData>,
     mut conn: DbConn,
 ) -> EmptyResult {
+    not_readonly()?;
+
     _delete_organization_collection(org_id, col_id, &headers, &mut conn).await
 }
 
@@ -621,6 +648,8 @@ async fn bulk_delete_organization_collections(
     data: Json<BulkCollectionIds>,
     mut conn: DbConn,
 ) -> EmptyResult {
+    not_readonly()?;
+
     let data: BulkCollectionIds = data.into_inner();
 
     let collections = data.ids;
@@ -717,6 +746,8 @@ async fn put_collection_users(
     _headers: ManagerHeaders,
     mut conn: DbConn,
 ) -> EmptyResult {
+    not_readonly()?;
+
     // Get org and collection, check that collection is from org
     if Collection::find_by_uuid_and_org(coll_id, org_id, &mut conn).await.is_none() {
         err!("Collection not found in Organization")
@@ -805,6 +836,8 @@ async fn get_org_users(
 
 #[post("/organizations/<org_id>/keys", data = "<data>")]
 async fn post_org_keys(org_id: &str, data: Json<OrgKeyData>, _headers: AdminHeaders, mut conn: DbConn) -> JsonResult {
+    not_readonly()?;
+
     let data: OrgKeyData = data.into_inner();
 
     let mut org = match Organization::find_by_uuid(org_id, &mut conn).await {
@@ -849,6 +882,8 @@ struct InviteData {
 
 #[post("/organizations/<org_id>/users/invite", data = "<data>")]
 async fn send_invite(org_id: &str, data: Json<InviteData>, headers: AdminHeaders, mut conn: DbConn) -> EmptyResult {
+    not_readonly()?;
+
     let data: InviteData = data.into_inner();
 
     let new_type = match UserOrgType::from_str(&data.r#type.into_string()) {
@@ -965,7 +1000,9 @@ async fn bulk_reinvite_user(
     data: Json<OrgBulkIds>,
     headers: AdminHeaders,
     mut conn: DbConn,
-) -> Json<Value> {
+) -> JsonResult {
+    not_readonly()?;
+
     let data: OrgBulkIds = data.into_inner();
 
     let mut bulk_response = Vec::new();
@@ -984,15 +1021,17 @@ async fn bulk_reinvite_user(
         ))
     }
 
-    Json(json!({
+    Ok(Json(json!({
         "data": bulk_response,
         "object": "list",
         "continuationToken": null
-    }))
+    })))
 }
 
 #[post("/organizations/<org_id>/users/<user_org>/reinvite")]
 async fn reinvite_user(org_id: &str, user_org: &str, headers: AdminHeaders, mut conn: DbConn) -> EmptyResult {
+    not_readonly()?;
+
     _reinvite_user(org_id, user_org, &headers.user.email, &mut conn).await
 }
 
@@ -1052,6 +1091,8 @@ struct AcceptData {
 
 #[post("/organizations/<org_id>/users/<_org_user_id>/accept", data = "<data>")]
 async fn accept_invite(org_id: &str, _org_user_id: &str, data: Json<AcceptData>, mut conn: DbConn) -> EmptyResult {
+    not_readonly()?;
+
     // The web-vault passes org_id and org_user_id in the URL, but we are just reading them from the JWT instead
     let data: AcceptData = data.into_inner();
     let claims = decode_invite(&data.token)?;
@@ -1145,7 +1186,9 @@ async fn bulk_confirm_invite(
     headers: AdminHeaders,
     mut conn: DbConn,
     nt: Notify<'_>,
-) -> Json<Value> {
+) -> JsonResult {
+    not_readonly()?;
+
     let data = data.into_inner();
 
     let mut bulk_response = Vec::new();
@@ -1171,11 +1214,11 @@ async fn bulk_confirm_invite(
         None => error!("No keys to confirm"),
     }
 
-    Json(json!({
+    Ok(Json(json!({
         "data": bulk_response,
         "object": "list",
         "continuationToken": null
-    }))
+    })))
 }
 
 #[post("/organizations/<org_id>/users/<org_user_id>/confirm", data = "<data>")]
@@ -1187,6 +1230,8 @@ async fn confirm_invite(
     mut conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
+    not_readonly()?;
+
     let data = data.into_inner();
     let user_key = data.key.unwrap_or_default();
     _confirm_invite(org_id, org_user_id, &user_key, &headers, &mut conn, &nt).await
@@ -1308,6 +1353,8 @@ async fn put_organization_user(
     headers: AdminHeaders,
     conn: DbConn,
 ) -> EmptyResult {
+    not_readonly()?;
+
     edit_user(org_id, org_user_id, data, headers, conn).await
 }
 
@@ -1319,6 +1366,8 @@ async fn edit_user(
     headers: AdminHeaders,
     mut conn: DbConn,
 ) -> EmptyResult {
+    not_readonly()?;
+
     let data: EditUserData = data.into_inner();
 
     let new_type = match UserOrgType::from_str(&data.r#type.into_string()) {
@@ -1425,7 +1474,9 @@ async fn bulk_delete_user(
     headers: AdminHeaders,
     mut conn: DbConn,
     nt: Notify<'_>,
-) -> Json<Value> {
+) -> JsonResult {
+    not_readonly()?;
+
     let data: OrgBulkIds = data.into_inner();
 
     let mut bulk_response = Vec::new();
@@ -1444,11 +1495,11 @@ async fn bulk_delete_user(
         ))
     }
 
-    Json(json!({
+    Ok(Json(json!({
         "data": bulk_response,
         "object": "list",
         "continuationToken": null
-    }))
+    })))
 }
 
 #[delete("/organizations/<org_id>/users/<org_user_id>")]
@@ -1459,6 +1510,8 @@ async fn delete_user(
     mut conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
+    not_readonly()?;
+
     _delete_user(org_id, org_user_id, &headers, &mut conn, &nt).await
 }
 
@@ -1470,6 +1523,8 @@ async fn post_delete_user(
     mut conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
+    not_readonly()?;
+
     _delete_user(org_id, org_user_id, &headers, &mut conn, &nt).await
 }
 
@@ -1520,7 +1575,9 @@ async fn bulk_public_keys(
     data: Json<OrgBulkIds>,
     _headers: AdminHeaders,
     mut conn: DbConn,
-) -> Json<Value> {
+) -> JsonResult {
+    not_readonly()?;
+
     let data: OrgBulkIds = data.into_inner();
 
     let mut bulk_response = Vec::new();
@@ -1544,11 +1601,11 @@ async fn bulk_public_keys(
         }
     }
 
-    Json(json!({
+    Ok(Json(json!({
         "data": bulk_response,
         "object": "list",
         "continuationToken": null
-    }))
+    })))
 }
 
 use super::ciphers::update_cipher_from_data;
@@ -1579,6 +1636,8 @@ async fn post_org_import(
     mut conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
+    not_readonly()?;
+
     let data: ImportData = data.into_inner();
     let org_id = query.organization_id;
 
@@ -1696,6 +1755,8 @@ async fn put_policy(
     headers: AdminHeaders,
     mut conn: DbConn,
 ) -> JsonResult {
+    not_readonly()?;
+
     let data: PolicyData = data.into_inner();
 
     let pol_type_enum = match OrgPolicyType::from_i32(pol_type) {
@@ -1860,6 +1921,8 @@ struct OrgImportData {
 
 #[post("/organizations/<org_id>/import", data = "<data>")]
 async fn import(org_id: &str, data: Json<OrgImportData>, headers: Headers, mut conn: DbConn) -> EmptyResult {
+    not_readonly()?;
+
     let data = data.into_inner();
 
     // TODO: Currently we aren't storing the externalId's anywhere, so we also don't have a way
@@ -1972,6 +2035,8 @@ async fn deactivate_organization_user(
     headers: AdminHeaders,
     mut conn: DbConn,
 ) -> EmptyResult {
+    not_readonly()?;
+
     _revoke_organization_user(org_id, org_user_id, &headers, &mut conn).await
 }
 
@@ -1982,7 +2047,9 @@ async fn bulk_deactivate_organization_user(
     data: Json<OrgBulkRevokeData>,
     headers: AdminHeaders,
     conn: DbConn,
-) -> Json<Value> {
+) -> JsonResult {
+    not_readonly()?;
+
     bulk_revoke_organization_user(org_id, data, headers, conn).await
 }
 
@@ -1993,6 +2060,8 @@ async fn revoke_organization_user(
     headers: AdminHeaders,
     mut conn: DbConn,
 ) -> EmptyResult {
+    not_readonly()?;
+
     _revoke_organization_user(org_id, org_user_id, &headers, &mut conn).await
 }
 
@@ -2008,7 +2077,9 @@ async fn bulk_revoke_organization_user(
     data: Json<OrgBulkRevokeData>,
     headers: AdminHeaders,
     mut conn: DbConn,
-) -> Json<Value> {
+) -> JsonResult {
+    not_readonly()?;
+
     let data = data.into_inner();
 
     let mut bulk_response = Vec::new();
@@ -2032,11 +2103,11 @@ async fn bulk_revoke_organization_user(
         None => error!("No users to revoke"),
     }
 
-    Json(json!({
+    Ok(Json(json!({
         "data": bulk_response,
         "object": "list",
         "continuationToken": null
-    }))
+    })))
 }
 
 async fn _revoke_organization_user(
@@ -2087,6 +2158,8 @@ async fn activate_organization_user(
     headers: AdminHeaders,
     mut conn: DbConn,
 ) -> EmptyResult {
+    not_readonly()?;
+
     _restore_organization_user(org_id, org_user_id, &headers, &mut conn).await
 }
 
@@ -2097,7 +2170,9 @@ async fn bulk_activate_organization_user(
     data: Json<OrgBulkIds>,
     headers: AdminHeaders,
     conn: DbConn,
-) -> Json<Value> {
+) -> JsonResult {
+    not_readonly()?;
+
     bulk_restore_organization_user(org_id, data, headers, conn).await
 }
 
@@ -2108,6 +2183,8 @@ async fn restore_organization_user(
     headers: AdminHeaders,
     mut conn: DbConn,
 ) -> EmptyResult {
+    not_readonly()?;
+
     _restore_organization_user(org_id, org_user_id, &headers, &mut conn).await
 }
 
@@ -2117,7 +2194,9 @@ async fn bulk_restore_organization_user(
     data: Json<OrgBulkIds>,
     headers: AdminHeaders,
     mut conn: DbConn,
-) -> Json<Value> {
+) -> JsonResult {
+    not_readonly()?;
+
     let data = data.into_inner();
 
     let mut bulk_response = Vec::new();
@@ -2136,11 +2215,11 @@ async fn bulk_restore_organization_user(
         ));
     }
 
-    Json(json!({
+    Ok(Json(json!({
         "data": bulk_response,
         "object": "list",
         "continuationToken": null
-    }))
+    })))
 }
 
 async fn _restore_organization_user(
@@ -2291,11 +2370,15 @@ async fn post_group(
     headers: AdminHeaders,
     conn: DbConn,
 ) -> JsonResult {
+    not_readonly()?;
+
     put_group(org_id, group_id, data, headers, conn).await
 }
 
 #[post("/organizations/<org_id>/groups", data = "<data>")]
 async fn post_groups(org_id: &str, headers: AdminHeaders, data: Json<GroupRequest>, mut conn: DbConn) -> JsonResult {
+    not_readonly()?;
+
     if !CONFIG.org_groups_enabled() {
         err!("Group support is disabled");
     }
@@ -2325,6 +2408,8 @@ async fn put_group(
     headers: AdminHeaders,
     mut conn: DbConn,
 ) -> JsonResult {
+    not_readonly()?;
+
     if !CONFIG.org_groups_enabled() {
         err!("Group support is disabled");
     }
@@ -2410,11 +2495,15 @@ async fn get_group_details(_org_id: &str, group_id: &str, _headers: AdminHeaders
 
 #[post("/organizations/<org_id>/groups/<group_id>/delete")]
 async fn post_delete_group(org_id: &str, group_id: &str, headers: AdminHeaders, mut conn: DbConn) -> EmptyResult {
+    not_readonly()?;
+
     _delete_group(org_id, group_id, &headers, &mut conn).await
 }
 
 #[delete("/organizations/<org_id>/groups/<group_id>")]
 async fn delete_group(org_id: &str, group_id: &str, headers: AdminHeaders, mut conn: DbConn) -> EmptyResult {
+    not_readonly()?;
+
     _delete_group(org_id, group_id, &headers, &mut conn).await
 }
 
@@ -2449,6 +2538,8 @@ async fn bulk_delete_groups(
     headers: AdminHeaders,
     mut conn: DbConn,
 ) -> EmptyResult {
+    not_readonly()?;
+
     if !CONFIG.org_groups_enabled() {
         err!("Group support is disabled");
     }
@@ -2503,6 +2594,8 @@ async fn put_group_users(
     data: Json<Vec<String>>,
     mut conn: DbConn,
 ) -> EmptyResult {
+    not_readonly()?;
+
     if !CONFIG.org_groups_enabled() {
         err!("Group support is disabled");
     }
@@ -2565,6 +2658,8 @@ async fn post_user_groups(
     headers: AdminHeaders,
     conn: DbConn,
 ) -> EmptyResult {
+    not_readonly()?;
+
     put_user_groups(org_id, org_user_id, data, headers, conn).await
 }
 
@@ -2576,6 +2671,8 @@ async fn put_user_groups(
     headers: AdminHeaders,
     mut conn: DbConn,
 ) -> EmptyResult {
+    not_readonly()?;
+
     if !CONFIG.org_groups_enabled() {
         err!("Group support is disabled");
     }
@@ -2619,6 +2716,8 @@ async fn post_delete_group_user(
     headers: AdminHeaders,
     conn: DbConn,
 ) -> EmptyResult {
+    not_readonly()?;
+
     delete_group_user(org_id, group_id, org_user_id, headers, conn).await
 }
 
@@ -2630,6 +2729,8 @@ async fn delete_group_user(
     headers: AdminHeaders,
     mut conn: DbConn,
 ) -> EmptyResult {
+    not_readonly()?;
+
     if !CONFIG.org_groups_enabled() {
         err!("Group support is disabled");
     }
@@ -2704,6 +2805,8 @@ async fn put_reset_password(
     mut conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
+    not_readonly()?;
+
     let org = match Organization::find_by_uuid(org_id, &mut conn).await {
         Some(org) => org,
         None => err!("Required organization not found"),
@@ -2839,6 +2942,8 @@ async fn put_reset_password_enrollment(
     data: Json<OrganizationUserResetPasswordEnrollmentRequest>,
     mut conn: DbConn,
 ) -> EmptyResult {
+    not_readonly()?;
+
     let mut org_user = match UserOrganization::find_by_user_and_org(&headers.user.uuid, org_id, &mut conn).await {
         Some(u) => u,
         None => err!("User to enroll isn't member of required organization"),
@@ -2964,6 +3069,8 @@ async fn _api_key(
 
 #[post("/organizations/<org_id>/api-key", data = "<data>")]
 async fn api_key(org_id: &str, data: Json<PasswordOrOtpData>, headers: AdminHeaders, conn: DbConn) -> JsonResult {
+    not_readonly()?;
+
     _api_key(org_id, data, false, headers, conn).await
 }
 
@@ -2974,5 +3081,7 @@ async fn rotate_api_key(
     headers: AdminHeaders,
     conn: DbConn,
 ) -> JsonResult {
+    not_readonly()?;
+
     _api_key(org_id, data, true, headers, conn).await
 }

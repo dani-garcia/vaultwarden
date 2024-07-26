@@ -10,6 +10,7 @@ use crate::{
         EmptyResult, JsonResult, PasswordOrOtpData,
     },
     auth::{ClientHeaders, Headers},
+    config::not_readonly,
     crypto,
     db::{models::*, DbConn, DbPool},
     mail,
@@ -80,6 +81,8 @@ struct RecoverTwoFactor {
 
 #[post("/two-factor/recover", data = "<data>")]
 async fn recover(data: Json<RecoverTwoFactor>, client_headers: ClientHeaders, mut conn: DbConn) -> JsonResult {
+    not_readonly()?;
+
     let data: RecoverTwoFactor = data.into_inner();
 
     use crate::db::models::User;
@@ -137,6 +140,8 @@ struct DisableTwoFactorData {
 
 #[post("/two-factor/disable", data = "<data>")]
 async fn disable_twofactor(data: Json<DisableTwoFactorData>, headers: Headers, mut conn: DbConn) -> JsonResult {
+    not_readonly()?;
+
     let data: DisableTwoFactorData = data.into_inner();
     let user = headers.user;
 
@@ -169,6 +174,8 @@ async fn disable_twofactor(data: Json<DisableTwoFactorData>, headers: Headers, m
 
 #[put("/two-factor/disable", data = "<data>")]
 async fn disable_twofactor_put(data: Json<DisableTwoFactorData>, headers: Headers, conn: DbConn) -> JsonResult {
+    not_readonly()?;
+
     disable_twofactor(data, headers, conn).await
 }
 

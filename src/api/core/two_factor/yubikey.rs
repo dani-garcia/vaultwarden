@@ -9,6 +9,7 @@ use crate::{
         EmptyResult, JsonResult, PasswordOrOtpData,
     },
     auth::Headers,
+    config::not_readonly,
     db::{
         models::{EventType, TwoFactor, TwoFactorType},
         DbConn,
@@ -117,6 +118,8 @@ async fn generate_yubikey(data: Json<PasswordOrOtpData>, headers: Headers, mut c
 
 #[post("/two-factor/yubikey", data = "<data>")]
 async fn activate_yubikey(data: Json<EnableYubikeyData>, headers: Headers, mut conn: DbConn) -> JsonResult {
+    not_readonly()?;
+
     let data: EnableYubikeyData = data.into_inner();
     let mut user = headers.user;
 
@@ -178,6 +181,8 @@ async fn activate_yubikey(data: Json<EnableYubikeyData>, headers: Headers, mut c
 
 #[put("/two-factor/yubikey", data = "<data>")]
 async fn activate_yubikey_put(data: Json<EnableYubikeyData>, headers: Headers, conn: DbConn) -> JsonResult {
+    not_readonly()?;
+
     activate_yubikey(data, headers, conn).await
 }
 

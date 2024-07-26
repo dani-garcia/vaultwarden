@@ -14,6 +14,7 @@ use crate::util::NumberOrString;
 use crate::{
     api::{self, core::log_event, EmptyResult, JsonResult, Notify, PasswordOrOtpData, UpdateType},
     auth::Headers,
+    config::not_readonly,
     crypto,
     db::{models::*, DbConn, DbPool},
     CONFIG,
@@ -266,6 +267,8 @@ pub struct Attachments2Data {
 /// Called when an org admin clones an org cipher.
 #[post("/ciphers/admin", data = "<data>")]
 async fn post_ciphers_admin(data: Json<ShareCipherData>, headers: Headers, conn: DbConn, nt: Notify<'_>) -> JsonResult {
+    not_readonly()?;
+
     post_ciphers_create(data, headers, conn, nt).await
 }
 
@@ -279,6 +282,8 @@ async fn post_ciphers_create(
     mut conn: DbConn,
     nt: Notify<'_>,
 ) -> JsonResult {
+    not_readonly()?;
+
     let mut data: ShareCipherData = data.into_inner();
 
     // Check if there are one more more collections selected when this cipher is part of an organization.
@@ -310,6 +315,8 @@ async fn post_ciphers_create(
 /// Called when creating a new user-owned cipher.
 #[post("/ciphers", data = "<data>")]
 async fn post_ciphers(data: Json<CipherData>, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> JsonResult {
+    not_readonly()?;
+
     let mut data: CipherData = data.into_inner();
 
     // The web/browser clients set this field to null as expected, but the
@@ -554,6 +561,8 @@ async fn post_ciphers_import(
     mut conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
+    not_readonly()?;
+
     enforce_personal_ownership_policy(None, &headers, &mut conn).await?;
 
     let data: ImportData = data.into_inner();
@@ -612,6 +621,8 @@ async fn put_cipher_admin(
     conn: DbConn,
     nt: Notify<'_>,
 ) -> JsonResult {
+    not_readonly()?;
+
     put_cipher(uuid, data, headers, conn, nt).await
 }
 
@@ -623,11 +634,15 @@ async fn post_cipher_admin(
     conn: DbConn,
     nt: Notify<'_>,
 ) -> JsonResult {
+    not_readonly()?;
+
     post_cipher(uuid, data, headers, conn, nt).await
 }
 
 #[post("/ciphers/<uuid>", data = "<data>")]
 async fn post_cipher(uuid: &str, data: Json<CipherData>, headers: Headers, conn: DbConn, nt: Notify<'_>) -> JsonResult {
+    not_readonly()?;
+
     put_cipher(uuid, data, headers, conn, nt).await
 }
 
@@ -639,6 +654,8 @@ async fn put_cipher(
     mut conn: DbConn,
     nt: Notify<'_>,
 ) -> JsonResult {
+    not_readonly()?;
+
     let data: CipherData = data.into_inner();
 
     let mut cipher = match Cipher::find_by_uuid(uuid, &mut conn).await {
@@ -662,6 +679,8 @@ async fn put_cipher(
 
 #[post("/ciphers/<uuid>/partial", data = "<data>")]
 async fn post_cipher_partial(uuid: &str, data: Json<PartialCipherData>, headers: Headers, conn: DbConn) -> JsonResult {
+    not_readonly()?;
+
     put_cipher_partial(uuid, data, headers, conn).await
 }
 
@@ -673,6 +692,8 @@ async fn put_cipher_partial(
     headers: Headers,
     mut conn: DbConn,
 ) -> JsonResult {
+    not_readonly()?;
+
     let data: PartialCipherData = data.into_inner();
 
     let cipher = match Cipher::find_by_uuid(uuid, &mut conn).await {
@@ -713,6 +734,8 @@ async fn put_collections2_update(
     conn: DbConn,
     nt: Notify<'_>,
 ) -> JsonResult {
+    not_readonly()?;
+
     post_collections2_update(uuid, data, headers, conn, nt).await
 }
 
@@ -724,6 +747,8 @@ async fn post_collections2_update(
     conn: DbConn,
     nt: Notify<'_>,
 ) -> JsonResult {
+    not_readonly()?;
+
     let cipher_details = post_collections_update(uuid, data, headers, conn, nt).await?;
     Ok(Json(json!({ // AttachmentUploadDataResponseModel
         "object": "optionalCipherDetails",
@@ -740,6 +765,8 @@ async fn put_collections_update(
     conn: DbConn,
     nt: Notify<'_>,
 ) -> JsonResult {
+    not_readonly()?;
+
     post_collections_update(uuid, data, headers, conn, nt).await
 }
 
@@ -751,6 +778,8 @@ async fn post_collections_update(
     mut conn: DbConn,
     nt: Notify<'_>,
 ) -> JsonResult {
+    not_readonly()?;
+
     let data: CollectionsAdminData = data.into_inner();
 
     let cipher = match Cipher::find_by_uuid(uuid, &mut conn).await {
@@ -817,6 +846,8 @@ async fn put_collections_admin(
     conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
+    not_readonly()?;
+
     post_collections_admin(uuid, data, headers, conn, nt).await
 }
 
@@ -828,6 +859,8 @@ async fn post_collections_admin(
     mut conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
+    not_readonly()?;
+
     let data: CollectionsAdminData = data.into_inner();
 
     let cipher = match Cipher::find_by_uuid(uuid, &mut conn).await {
@@ -903,6 +936,8 @@ async fn post_cipher_share(
     mut conn: DbConn,
     nt: Notify<'_>,
 ) -> JsonResult {
+    not_readonly()?;
+
     let data: ShareCipherData = data.into_inner();
 
     share_cipher_by_uuid(uuid, data, &headers, &mut conn, &nt).await
@@ -916,6 +951,8 @@ async fn put_cipher_share(
     mut conn: DbConn,
     nt: Notify<'_>,
 ) -> JsonResult {
+    not_readonly()?;
+
     let data: ShareCipherData = data.into_inner();
 
     share_cipher_by_uuid(uuid, data, &headers, &mut conn, &nt).await
@@ -935,6 +972,8 @@ async fn put_cipher_share_selected(
     mut conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
+    not_readonly()?;
+
     let mut data: ShareSelectedCipherData = data.into_inner();
 
     if data.ciphers.is_empty() {
@@ -973,6 +1012,8 @@ async fn share_cipher_by_uuid(
     conn: &mut DbConn,
     nt: &Notify<'_>,
 ) -> JsonResult {
+    not_readonly()?;
+
     let mut cipher = match Cipher::find_by_uuid(uuid, conn).await {
         Some(cipher) => {
             if cipher.is_write_accessible_to_user(&headers.user.uuid, conn).await {
@@ -1063,6 +1104,8 @@ async fn post_attachment_v2(
     headers: Headers,
     mut conn: DbConn,
 ) -> JsonResult {
+    not_readonly()?;
+
     let cipher = match Cipher::find_by_uuid(uuid, &mut conn).await {
         Some(cipher) => cipher,
         None => err!("Cipher doesn't exist"),
@@ -1120,6 +1163,8 @@ async fn save_attachment(
     mut conn: DbConn,
     nt: Notify<'_>,
 ) -> Result<(Cipher, DbConn), crate::error::Error> {
+    not_readonly()?;
+
     let mut data = data.into_inner();
 
     let Some(size) = data.data.len().to_i64() else {
@@ -1295,6 +1340,8 @@ async fn post_attachment_v2_data(
     mut conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
+    not_readonly()?;
+
     let attachment = match Attachment::find_by_id(attachment_id, &mut conn).await {
         Some(attachment) if uuid == attachment.cipher_uuid => Some(attachment),
         Some(_) => err!("Attachment doesn't belong to cipher"),
@@ -1315,6 +1362,8 @@ async fn post_attachment(
     conn: DbConn,
     nt: Notify<'_>,
 ) -> JsonResult {
+    not_readonly()?;
+
     // Setting this as None signifies to save_attachment() that it should create
     // the attachment database record as well as saving the data to disk.
     let attachment = None;
@@ -1332,6 +1381,8 @@ async fn post_attachment_admin(
     conn: DbConn,
     nt: Notify<'_>,
 ) -> JsonResult {
+    not_readonly()?;
+
     post_attachment(uuid, data, headers, conn, nt).await
 }
 
@@ -1344,6 +1395,8 @@ async fn post_attachment_share(
     mut conn: DbConn,
     nt: Notify<'_>,
 ) -> JsonResult {
+    not_readonly()?;
+
     _delete_cipher_attachment_by_id(uuid, attachment_id, &headers, &mut conn, &nt).await?;
     post_attachment(uuid, data, headers, conn, nt).await
 }
@@ -1356,6 +1409,8 @@ async fn delete_attachment_post_admin(
     conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
+    not_readonly()?;
+
     delete_attachment(uuid, attachment_id, headers, conn, nt).await
 }
 
@@ -1367,6 +1422,8 @@ async fn delete_attachment_post(
     conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
+    not_readonly()?;
+
     delete_attachment(uuid, attachment_id, headers, conn, nt).await
 }
 
@@ -1378,6 +1435,8 @@ async fn delete_attachment(
     mut conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
+    not_readonly()?;
+
     _delete_cipher_attachment_by_id(uuid, attachment_id, &headers, &mut conn, &nt).await
 }
 
@@ -1389,40 +1448,54 @@ async fn delete_attachment_admin(
     mut conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
+    not_readonly()?;
+
     _delete_cipher_attachment_by_id(uuid, attachment_id, &headers, &mut conn, &nt).await
 }
 
 #[post("/ciphers/<uuid>/delete")]
 async fn delete_cipher_post(uuid: &str, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> EmptyResult {
+    not_readonly()?;
+
     _delete_cipher_by_uuid(uuid, &headers, &mut conn, false, &nt).await
     // permanent delete
 }
 
 #[post("/ciphers/<uuid>/delete-admin")]
 async fn delete_cipher_post_admin(uuid: &str, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> EmptyResult {
+    not_readonly()?;
+
     _delete_cipher_by_uuid(uuid, &headers, &mut conn, false, &nt).await
     // permanent delete
 }
 
 #[put("/ciphers/<uuid>/delete")]
 async fn delete_cipher_put(uuid: &str, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> EmptyResult {
+    not_readonly()?;
+
     _delete_cipher_by_uuid(uuid, &headers, &mut conn, true, &nt).await
     // soft delete
 }
 
 #[put("/ciphers/<uuid>/delete-admin")]
 async fn delete_cipher_put_admin(uuid: &str, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> EmptyResult {
+    not_readonly()?;
+
     _delete_cipher_by_uuid(uuid, &headers, &mut conn, true, &nt).await
 }
 
 #[delete("/ciphers/<uuid>")]
 async fn delete_cipher(uuid: &str, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> EmptyResult {
+    not_readonly()?;
+
     _delete_cipher_by_uuid(uuid, &headers, &mut conn, false, &nt).await
     // permanent delete
 }
 
 #[delete("/ciphers/<uuid>/admin")]
 async fn delete_cipher_admin(uuid: &str, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> EmptyResult {
+    not_readonly()?;
+
     _delete_cipher_by_uuid(uuid, &headers, &mut conn, false, &nt).await
     // permanent delete
 }
@@ -1434,6 +1507,8 @@ async fn delete_cipher_selected(
     conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
+    not_readonly()?;
+
     _delete_multiple_ciphers(data, headers, conn, false, nt).await // permanent delete
 }
 
@@ -1444,6 +1519,8 @@ async fn delete_cipher_selected_post(
     conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
+    not_readonly()?;
+
     _delete_multiple_ciphers(data, headers, conn, false, nt).await // permanent delete
 }
 
@@ -1454,6 +1531,8 @@ async fn delete_cipher_selected_put(
     conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
+    not_readonly()?;
+
     _delete_multiple_ciphers(data, headers, conn, true, nt).await // soft delete
 }
 
@@ -1464,6 +1543,8 @@ async fn delete_cipher_selected_admin(
     conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
+    not_readonly()?;
+
     _delete_multiple_ciphers(data, headers, conn, false, nt).await // permanent delete
 }
 
@@ -1474,6 +1555,8 @@ async fn delete_cipher_selected_post_admin(
     conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
+    not_readonly()?;
+
     _delete_multiple_ciphers(data, headers, conn, false, nt).await // permanent delete
 }
 
@@ -1484,16 +1567,22 @@ async fn delete_cipher_selected_put_admin(
     conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
+    not_readonly()?;
+
     _delete_multiple_ciphers(data, headers, conn, true, nt).await // soft delete
 }
 
 #[put("/ciphers/<uuid>/restore")]
 async fn restore_cipher_put(uuid: &str, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> JsonResult {
+    not_readonly()?;
+
     _restore_cipher_by_uuid(uuid, &headers, &mut conn, &nt).await
 }
 
 #[put("/ciphers/<uuid>/restore-admin")]
 async fn restore_cipher_put_admin(uuid: &str, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> JsonResult {
+    not_readonly()?;
+
     _restore_cipher_by_uuid(uuid, &headers, &mut conn, &nt).await
 }
 
@@ -1504,6 +1593,8 @@ async fn restore_cipher_selected(
     mut conn: DbConn,
     nt: Notify<'_>,
 ) -> JsonResult {
+    not_readonly()?;
+
     _restore_multiple_ciphers(data, &headers, &mut conn, &nt).await
 }
 
@@ -1521,6 +1612,8 @@ async fn move_cipher_selected(
     mut conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
+    not_readonly()?;
+
     let data = data.into_inner();
     let user_uuid = headers.user.uuid;
 
@@ -1569,6 +1662,8 @@ async fn move_cipher_selected_put(
     conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
+    not_readonly()?;
+
     move_cipher_selected(data, headers, conn, nt).await
 }
 
@@ -1586,6 +1681,8 @@ async fn delete_all(
     mut conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
+    not_readonly()?;
+
     let data: PasswordOrOtpData = data.into_inner();
     let mut user = headers.user;
 

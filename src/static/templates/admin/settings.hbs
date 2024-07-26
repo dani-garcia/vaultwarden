@@ -5,6 +5,11 @@
         Please generate a secure Argon2 PHC string by using `vaultwarden hash` or `argon2`.<br>
         See: <a href="https://github.com/dani-garcia/vaultwarden/wiki/Enabling-admin-page#secure-the-admin_token" target="_blank" rel="noopener noreferrer">Enabling admin page - Secure the `ADMIN_TOKEN`</a>
     </div>
+    {{#if page_data.readonly}}
+    <div id="readonly_mode" class="alert alert-info fade show">
+        Read-Only Mode is enabled. This means no password changes, new accounts, or other modifications can be made.
+    </div>
+    {{/if}}
     <div id="config-block" class="align-items-center p-3 mb-3 bg-secondary rounded shadow">
         <div>
             <h6 class="text-white mb-3">Configuration</h6>

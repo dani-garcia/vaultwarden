@@ -19,6 +19,7 @@ use crate::{
         unregister_push_device, ApiResult, EmptyResult, JsonResult, Notify,
     },
     auth::{decode_admin, encode_jwt, generate_admin_claims, ClientIp, Secure},
+    config::not_readonly,
     config::ConfigBuilder,
     db::{backup_database, get_sql_server_version, models::*, DbConn, DbConnType},
     error::{Error, MapResult},
@@ -257,6 +258,7 @@ fn render_admin_page() -> ApiResult<Html<String>> {
     let settings_json = json!({
         "config": CONFIG.prepare_json(),
         "can_backup": *CAN_BACKUP,
+        "readonly": CONFIG.readonly(),
     });
     let text = AdminTemplateData::new("admin/settings", settings_json).render()?;
     Ok(Html(text))
@@ -288,6 +290,8 @@ async fn get_user_or_404(uuid: &str, conn: &mut DbConn) -> ApiResult<User> {
 
 #[post("/invite", data = "<data>")]
 async fn invite_user(data: Json<InviteData>, _token: AdminToken, mut conn: DbConn) -> JsonResult {
+    not_readonly()?;
+
     let data: InviteData = data.into_inner();
     if User::find_by_mail(&data.email, &mut conn).await.is_some() {
         err_code!("User already exists", Status::Conflict.code)
@@ -363,7 +367,12 @@ async fn users_overview(_token: AdminToken, mut conn: DbConn) -> ApiResult<Html<
         users_json.push(usr);
     }
 
-    let text = AdminTemplateData::new("admin/users", json!(users_json)).render()?;
+    let users_json = json!({
+        "users": users_json,
+        "readonly": CONFIG.readonly(),
+    });
+
+    let text = AdminTemplateData::new("admin/users", users_json).render()?;
     Ok(Html(text))
 }
 
@@ -390,6 +399,8 @@ async fn get_user_json(uuid: &str, _token: AdminToken, mut conn: DbConn) -> Json
 
 #[post("/users/<uuid>/delete")]
 async fn delete_user(uuid: &str, token: AdminToken, mut conn: DbConn) -> EmptyResult {
+    not_readonly()?;
+
     let user = get_user_or_404(uuid, &mut conn).await?;
 
     // Get the user_org records before deleting the actual user
@@ -466,6 +477,8 @@ async fn remove_2fa(uuid: &str, token: AdminToken, mut conn: DbConn) -> EmptyRes
 
 #[post("/users/<uuid>/invite/resend")]
 async fn resend_user_invite(uuid: &str, _token: AdminToken, mut conn: DbConn) -> EmptyResult {
+    not_readonly()?;
+
     if let Some(user) = User::find_by_uuid(uuid, &mut conn).await {
         //TODO: replace this with user.status check when it will be available (PR#3397)
         if !user.password_hash.is_empty() {
@@ -491,6 +504,8 @@ struct UserOrgTypeData {
 
 #[post("/users/org_type", data = "<data>")]
 async fn update_user_org_type(data: Json<UserOrgTypeData>, token: AdminToken, mut conn: DbConn) -> EmptyResult {
+    not_readonly()?;
+
     let data: UserOrgTypeData = data.into_inner();
 
     let mut user_to_edit =
@@ -546,6 +561,8 @@ async fn update_user_org_type(data: Json<UserOrgTypeData>, token: AdminToken, mu
 
 #[post("/users/update_revision")]
 async fn update_revision_users(_token: AdminToken, mut conn: DbConn) -> EmptyResult {
+    not_readonly()?;
+
     User::update_all_revisions(&mut conn).await
 }
 
@@ -565,12 +582,19 @@ async fn organizations_overview(_token: AdminToken, mut conn: DbConn) -> ApiResu
         organizations_json.push(org);
     }
 
-    let text = AdminTemplateData::new("admin/organizations", json!(organizations_json)).render()?;
+    let organizations_json = json!({
+        "organizations": organizations_json,
+        "readonly": CONFIG.readonly(),
+    });
+
+    let text = AdminTemplateData::new("admin/organizations", organizations_json).render()?;
     Ok(Html(text))
 }
 
 #[post("/organizations/<uuid>/delete")]
 async fn delete_organization(uuid: &str, _token: AdminToken, mut conn: DbConn) -> EmptyResult {
+    not_readonly()?;
+
     let org = Organization::find_by_uuid(uuid, &mut conn).await.map_res("Organization doesn't exist")?;
     org.delete(&mut conn).await
 }
@@ -735,6 +759,7 @@ async fn diagnostics(_token: AdminToken, ip_header: IpHeader, mut conn: DbConn) 
         "server_time_local": Local::now().format("%Y-%m-%d %H:%M:%S %Z").to_string(),
         "server_time": Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string(), // Run the server date/time check as late as possible to minimize the time difference
         "ntp_time": get_ntp_time(has_http_access).await, // Run the ntp check as late as possible to minimize the time difference
+        "readonly": CONFIG.readonly(),
     });
 
     let text = AdminTemplateData::new("admin/diagnostics", diagnostics_json).render()?;

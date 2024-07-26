@@ -8,6 +8,7 @@ use crate::{
         EmptyResult, JsonResult, PasswordOrOtpData,
     },
     auth::Headers,
+    config::not_readonly,
     crypto,
     db::{
         models::{EventType, TwoFactor, TwoFactorType, User},
@@ -113,6 +114,8 @@ struct SendEmailData {
 /// Send a verification email to the specified email address to check whether it exists/belongs to user.
 #[post("/two-factor/send-email", data = "<data>")]
 async fn send_email(data: Json<SendEmailData>, headers: Headers, mut conn: DbConn) -> EmptyResult {
+    not_readonly()?;
+
     let data: SendEmailData = data.into_inner();
     let user = headers.user;
 
@@ -157,6 +160,8 @@ struct EmailData {
 /// Verify email belongs to user and can be used for 2FA email codes.
 #[put("/two-factor/email", data = "<data>")]
 async fn email(data: Json<EmailData>, headers: Headers, mut conn: DbConn) -> JsonResult {
+    not_readonly()?;
+
     let data: EmailData = data.into_inner();
     let mut user = headers.user;
 

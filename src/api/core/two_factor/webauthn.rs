@@ -10,6 +10,7 @@ use crate::{
         EmptyResult, JsonResult, PasswordOrOtpData,
     },
     auth::Headers,
+    config::not_readonly,
     db::{
         models::{EventType, TwoFactor, TwoFactorType},
         DbConn,
@@ -126,6 +127,8 @@ async fn get_webauthn(data: Json<PasswordOrOtpData>, headers: Headers, mut conn:
 
 #[post("/two-factor/get-webauthn-challenge", data = "<data>")]
 async fn generate_webauthn_challenge(data: Json<PasswordOrOtpData>, headers: Headers, mut conn: DbConn) -> JsonResult {
+    not_readonly()?;
+
     let data: PasswordOrOtpData = data.into_inner();
     let user = headers.user;
 
@@ -239,6 +242,8 @@ impl From<PublicKeyCredentialCopy> for PublicKeyCredential {
 
 #[post("/two-factor/webauthn", data = "<data>")]
 async fn activate_webauthn(data: Json<EnableWebauthnData>, headers: Headers, mut conn: DbConn) -> JsonResult {
+    not_readonly()?;
+
     let data: EnableWebauthnData = data.into_inner();
     let mut user = headers.user;
 
@@ -292,6 +297,8 @@ async fn activate_webauthn(data: Json<EnableWebauthnData>, headers: Headers, mut
 
 #[put("/two-factor/webauthn", data = "<data>")]
 async fn activate_webauthn_put(data: Json<EnableWebauthnData>, headers: Headers, conn: DbConn) -> JsonResult {
+    not_readonly()?;
+
     activate_webauthn(data, headers, conn).await
 }
 
@@ -304,6 +311,8 @@ struct DeleteU2FData {
 
 #[delete("/two-factor/webauthn", data = "<data>")]
 async fn delete_webauthn(data: Json<DeleteU2FData>, headers: Headers, mut conn: DbConn) -> JsonResult {
+    not_readonly()?;
+
     let id = data.id.into_i32()?;
     if !headers.user.check_valid_password(&data.master_password_hash) {
         err!("Invalid password");

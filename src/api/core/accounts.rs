@@ -10,6 +10,7 @@ use crate::{
         PasswordOrOtpData, UpdateType,
     },
     auth::{decode_delete, decode_invite, decode_verify_email, ClientHeaders, Headers},
+    config::not_readonly,
     crypto,
     db::{models::*, DbConn},
     mail,
@@ -120,6 +121,8 @@ async fn is_email_2fa_required(org_user_uuid: Option<String>, conn: &mut DbConn)
 
 #[post("/accounts/register", data = "<data>")]
 async fn register(data: Json<RegisterData>, conn: DbConn) -> JsonResult {
+    not_readonly()?;
+
     _register(data, conn).await
 }
 
@@ -257,11 +260,15 @@ struct ProfileData {
 
 #[put("/accounts/profile", data = "<data>")]
 async fn put_profile(data: Json<ProfileData>, headers: Headers, conn: DbConn) -> JsonResult {
+    not_readonly()?;
+
     post_profile(data, headers, conn).await
 }
 
 #[post("/accounts/profile", data = "<data>")]
 async fn post_profile(data: Json<ProfileData>, headers: Headers, mut conn: DbConn) -> JsonResult {
+    not_readonly()?;
+
     let data: ProfileData = data.into_inner();
 
     // Check if the length of the username exceeds 50 characters (Same is Upstream Bitwarden)
@@ -285,6 +292,8 @@ struct AvatarData {
 
 #[put("/accounts/avatar", data = "<data>")]
 async fn put_avatar(data: Json<AvatarData>, headers: Headers, mut conn: DbConn) -> JsonResult {
+    not_readonly()?;
+
     let data: AvatarData = data.into_inner();
 
     // It looks like it only supports the 6 hex color format.
@@ -320,6 +329,8 @@ async fn get_public_keys(uuid: &str, _headers: Headers, mut conn: DbConn) -> Jso
 
 #[post("/accounts/keys", data = "<data>")]
 async fn post_keys(data: Json<KeysData>, headers: Headers, mut conn: DbConn) -> JsonResult {
+    not_readonly()?;
+
     let data: KeysData = data.into_inner();
 
     let mut user = headers.user;
@@ -347,6 +358,8 @@ struct ChangePassData {
 
 #[post("/accounts/password", data = "<data>")]
 async fn post_password(data: Json<ChangePassData>, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> EmptyResult {
+    not_readonly()?;
+
     let data: ChangePassData = data.into_inner();
     let mut user = headers.user;
 
@@ -392,6 +405,8 @@ struct ChangeKdfData {
 
 #[post("/accounts/kdf", data = "<data>")]
 async fn post_kdf(data: Json<ChangeKdfData>, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> EmptyResult {
+    not_readonly()?;
+
     let data: ChangeKdfData = data.into_inner();
     let mut user = headers.user;
 
@@ -479,6 +494,8 @@ struct KeyData {
 
 #[post("/accounts/key", data = "<data>")]
 async fn post_rotatekey(data: Json<KeyData>, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> EmptyResult {
+    not_readonly()?;
+
     // TODO: See if we can wrap everything within a SQL Transaction. If something fails it should revert everything.
     let data: KeyData = data.into_inner();
 
@@ -614,6 +631,8 @@ struct EmailTokenData {
 
 #[post("/accounts/email-token", data = "<data>")]
 async fn post_email_token(data: Json<EmailTokenData>, headers: Headers, mut conn: DbConn) -> EmptyResult {
+    not_readonly()?;
+
     if !CONFIG.email_change_allowed() {
         err!("Email change is not allowed.");
     }
@@ -661,6 +680,8 @@ struct ChangeEmailData {
 
 #[post("/accounts/email", data = "<data>")]
 async fn post_email(data: Json<ChangeEmailData>, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> EmptyResult {
+    not_readonly()?;
+
     if !CONFIG.email_change_allowed() {
         err!("Email change is not allowed.");
     }
@@ -715,6 +736,8 @@ async fn post_email(data: Json<ChangeEmailData>, headers: Headers, mut conn: DbC
 
 #[post("/accounts/verify-email")]
 async fn post_verify_email(headers: Headers) -> EmptyResult {
+    not_readonly()?;
+
     let user = headers.user;
 
     if !CONFIG.mail_enabled() {
@@ -737,6 +760,8 @@ struct VerifyEmailTokenData {
 
 #[post("/accounts/verify-email-token", data = "<data>")]
 async fn post_verify_email_token(data: Json<VerifyEmailTokenData>, mut conn: DbConn) -> EmptyResult {
+    not_readonly()?;
+
     let data: VerifyEmailTokenData = data.into_inner();
 
     let mut user = match User::find_by_uuid(&data.user_id, &mut conn).await {
@@ -769,6 +794,8 @@ struct DeleteRecoverData {
 
 #[post("/accounts/delete-recover", data = "<data>")]
 async fn post_delete_recover(data: Json<DeleteRecoverData>, mut conn: DbConn) -> EmptyResult {
+    not_readonly()?;
+
     let data: DeleteRecoverData = data.into_inner();
 
     if CONFIG.mail_enabled() {
@@ -796,6 +823,8 @@ struct DeleteRecoverTokenData {
 
 #[post("/accounts/delete-recover-token", data = "<data>")]
 async fn post_delete_recover_token(data: Json<DeleteRecoverTokenData>, mut conn: DbConn) -> EmptyResult {
+    not_readonly()?;
+
     let data: DeleteRecoverTokenData = data.into_inner();
 
     let user = match User::find_by_uuid(&data.user_id, &mut conn).await {
@@ -815,11 +844,15 @@ async fn post_delete_recover_token(data: Json<DeleteRecoverTokenData>, mut conn:
 
 #[post("/accounts/delete", data = "<data>")]
 async fn post_delete_account(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbConn) -> EmptyResult {
+    not_readonly()?;
+
     delete_account(data, headers, conn).await
 }
 
 #[delete("/accounts", data = "<data>")]
 async fn delete_account(data: Json<PasswordOrOtpData>, headers: Headers, mut conn: DbConn) -> EmptyResult {
+    not_readonly()?;
+
     let data: PasswordOrOtpData = data.into_inner();
     let user = headers.user;
 
@@ -952,11 +985,17 @@ async fn _api_key(data: Json<PasswordOrOtpData>, rotate: bool, headers: Headers,
 
 #[post("/accounts/api-key", data = "<data>")]
 async fn api_key(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbConn) -> JsonResult {
+    if headers.user.api_key.is_none() {
+        not_readonly()?;
+    }
+
     _api_key(data, false, headers, conn).await
 }
 
 #[post("/accounts/rotate-api-key", data = "<data>")]
 async fn rotate_api_key(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbConn) -> JsonResult {
+    not_readonly()?;
+
     _api_key(data, true, headers, conn).await
 }
 
@@ -1017,11 +1056,15 @@ struct PushToken {
 
 #[post("/devices/identifier/<uuid>/token", data = "<data>")]
 async fn post_device_token(uuid: &str, data: Json<PushToken>, headers: Headers, conn: DbConn) -> EmptyResult {
+    not_readonly()?;
+
     put_device_token(uuid, data, headers, conn).await
 }
 
 #[put("/devices/identifier/<uuid>/token", data = "<data>")]
 async fn put_device_token(uuid: &str, data: Json<PushToken>, headers: Headers, mut conn: DbConn) -> EmptyResult {
+    not_readonly()?;
+
     let data = data.into_inner();
     let token = data.push_token;
 
@@ -1055,6 +1098,8 @@ async fn put_device_token(uuid: &str, data: Json<PushToken>, headers: Headers, m
 
 #[put("/devices/identifier/<uuid>/clear-token")]
 async fn put_clear_device_token(uuid: &str, mut conn: DbConn) -> EmptyResult {
+    not_readonly()?;
+
     // This only clears push token
     // https://github.com/bitwarden/core/blob/master/src/Api/Controllers/DevicesController.cs#L109
     // https://github.com/bitwarden/core/blob/master/src/Core/Services/Implementations/DeviceService.cs#L37
@@ -1074,6 +1119,8 @@ async fn put_clear_device_token(uuid: &str, mut conn: DbConn) -> EmptyResult {
 // On upstream server, both PUT and POST are declared. Implementing the POST method in case it would be useful somewhere
 #[post("/devices/identifier/<uuid>/clear-token")]
 async fn post_clear_device_token(uuid: &str, conn: DbConn) -> EmptyResult {
+    not_readonly()?;
+
     put_clear_device_token(uuid, conn).await
 }
 
@@ -1095,6 +1142,8 @@ async fn post_auth_request(
     mut conn: DbConn,
     nt: Notify<'_>,
 ) -> JsonResult {
+    not_readonly()?;
+
     let data = data.into_inner();
 
     let user = match User::find_by_mail(&data.email, &mut conn).await {
@@ -1176,6 +1225,8 @@ async fn put_auth_request(
     ant: AnonymousNotify<'_>,
     nt: Notify<'_>,
 ) -> JsonResult {
+    not_readonly()?;
+
     let data = data.into_inner();
     let mut auth_request: AuthRequest = match AuthRequest::find_by_uuid(uuid, &mut conn).await {
         Some(auth_request) => auth_request,
