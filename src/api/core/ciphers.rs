@@ -208,6 +208,7 @@ pub struct CipherData {
     // Folder id is not included in import
     folder_id: Option<String>,
     // TODO: Some of these might appear all the time, no need for Option
+    #[serde(alias = "organizationID")]
     pub organization_id: Option<String>,
 
     key: Option<String>,
@@ -285,6 +286,10 @@ async fn post_ciphers_create(
     // err if this is not the case before creating an empty cipher.
     if data.cipher.organization_id.is_some() && data.collection_ids.is_empty() {
         err!("You must select at least one collection.");
+    }
+    // reverse sanity check to prevent corruptions
+    if !data.collection_ids.is_empty() && data.cipher.organization_id.is_none() {
+        err!("The client has not provided an organization id!");
     }
 
     // This check is usually only needed in update_cipher_from_data(), but we
