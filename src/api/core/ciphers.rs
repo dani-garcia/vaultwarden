@@ -208,6 +208,7 @@ pub struct CipherData {
     // Folder id is not included in import
     folder_id: Option<String>,
     // TODO: Some of these might appear all the time, no need for Option
+    #[serde(alias = "organizationID")]
     pub organization_id: Option<String>,
 
     key: Option<String>,
