@@ -349,7 +349,15 @@ async fn post_send_file_v2(data: Json<SendData>, headers: Headers, mut conn: DbC
     })))
 }
 
-// https://github.com/bitwarden/server/blob/d0c793c95181dfb1b447eb450f85ba0bfd7ef643/src/Api/Controllers/SendsController.cs#L243
+#[derive(Deserialize)]
+#[allow(non_snake_case)]
+pub struct SendFileData {
+    id: String,
+    size: u64,
+    fileName: String,
+}
+
+// https://github.com/bitwarden/server/blob/66f95d1c443490b653e5a15d32977e2f5a3f9e32/src/Api/Tools/Controllers/SendsController.cs#L250
 #[post("/sends/<send_uuid>/file/<file_id>", format = "multipart/form-data", data = "<data>")]
 async fn post_send_file_v2_data(
     send_uuid: &str,
@@ -367,15 +375,55 @@ async fn post_send_file_v2_data(
         err!("Send not found. Unable to save the file.")
     };
 
+    if send.atype != SendType::File as i32 {
+        err!("Send is not a file type send.");
+    }
+
     let Some(send_user_id) = &send.user_uuid else {
-        err!("Sends are only supported for users at the moment")
+        err!("Sends are only supported for users at the moment.")
     };
+
     if send_user_id != &headers.user.uuid {
-        err!("Send doesn't belong to user");
+        err!("Send doesn't belong to user.");
+    }
+
+    let Ok(send_data) = serde_json::from_str::<SendFileData>(&send.data) else {
+        err!("Unable to decode send data as json.")
+    };
+
+    match data.data.raw_name() {
+        Some(raw_file_name) if raw_file_name.dangerous_unsafe_unsanitized_raw() == send_data.fileName => (),
+        Some(raw_file_name) => err!(
+            "Send file name does not match.",
+            format!(
+                "Expected file name '{}' got '{}'",
+                send_data.fileName,
+                raw_file_name.dangerous_unsafe_unsanitized_raw()
+            )
+        ),
+        _ => err!("Send file name does not match or is not provided."),
+    }
+
+    if file_id != send_data.id {
+        err!("Send file does not match send data.", format!("Expected id {} got {file_id}", send_data.id));
+    }
+
+    let Some(size) = data.data.len().to_u64() else {
+        err!("Send file size overflow.");
+    };
+
+    if size != send_data.size {
+        err!("Send file size does not match.", format!("Expected a file size of {} got {size}", send_data.size));
     }
 
     let folder_path = tokio::fs::canonicalize(&CONFIG.sends_folder()).await?.join(send_uuid);
     let file_path = folder_path.join(file_id);
+
+    // Check if the file already exists, if that is the case do not overwrite it
+    if tokio::fs::metadata(&file_path).await.is_ok() {
+        err!("Send file has already been uploaded.", format!("File {file_path:?} already exists"))
+    }
+
     tokio::fs::create_dir_all(&folder_path).await?;
 
     if let Err(_err) = data.data.persist_to(&file_path).await {
