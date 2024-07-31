@@ -190,6 +190,8 @@ fn config() -> Json<Value> {
         parse_experimental_client_feature_flags(&crate::CONFIG.experimental_client_feature_flags());
     // Force the new key rotation feature
     feature_states.insert("key-rotation-improvements".to_string(), true);
+    feature_states.insert("flexible-collections-v-1".to_string(), false);
+
     Json(json!({
         // Note: The clients use this version to handle backwards compatibility concerns
         // This means they expect a version that closely matches the Bitwarden server version

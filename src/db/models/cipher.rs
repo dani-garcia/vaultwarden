@@ -620,6 +620,17 @@ impl Cipher {
         }}
     }
 
+    pub async fn find_by_uuid_and_org(cipher_uuid: &str, org_uuid: &str, conn: &mut DbConn) -> Option<Self> {
+        db_run! {conn: {
+            ciphers::table
+                .filter(ciphers::uuid.eq(cipher_uuid))
+                .filter(ciphers::organization_uuid.eq(org_uuid))
+                .first::<CipherDb>(conn)
+                .ok()
+                .from_db()
+        }}
+    }
+
     // Find all ciphers accessible or visible to the specified user.
     //
     // "Accessible" means the user has read access to the cipher, either via
