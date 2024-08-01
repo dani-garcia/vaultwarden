@@ -844,7 +844,8 @@ struct InviteData {
     groups: Vec<String>,
     r#type: NumberOrString,
     collections: Option<Vec<CollectionData>>,
-    access_all: Option<bool>,
+    #[serde(default)]
+    access_all: bool,
 }
 
 #[post("/organizations/<org_id>/users/invite", data = "<data>")]
@@ -896,7 +897,7 @@ async fn send_invite(org_id: &str, data: Json<InviteData>, headers: AdminHeaders
         };
 
         let mut new_user = UserOrganization::new(user.uuid.clone(), String::from(org_id));
-        let access_all = data.access_all.unwrap_or(false);
+        let access_all = data.access_all;
         new_user.access_all = access_all;
         new_user.atype = new_type;
         new_user.status = user_org_status;
@@ -1297,7 +1298,8 @@ struct EditUserData {
     r#type: NumberOrString,
     collections: Option<Vec<CollectionData>>,
     groups: Option<Vec<String>>,
-    access_all: Option<bool>,
+    #[serde(default)]
+    access_all: bool,
 }
 
 #[put("/organizations/<org_id>/users/<org_user_id>", data = "<data>", rank = 1)]
@@ -1370,7 +1372,7 @@ async fn edit_user(
         }
     }
 
-    user_to_edit.access_all = data.access_all.unwrap_or(false);
+    user_to_edit.access_all = data.access_all;
     user_to_edit.atype = new_type as i32;
 
     // Delete all the odd collections
@@ -1379,7 +1381,7 @@ async fn edit_user(
     }
 
     // If no accessAll, add the collections received
-    if !data.access_all.unwrap_or(false) {
+    if !data.access_all {
         for col in data.collections.iter().flatten() {
             match Collection::find_by_uuid_and_org(&col.id, org_id, &mut conn).await {
                 None => err!("Collection not found in Organization"),
@@ -2223,7 +2225,8 @@ async fn get_groups(org_id: &str, _headers: ManagerHeadersLoose, mut conn: DbCon
 #[serde(rename_all = "camelCase")]
 struct GroupRequest {
     name: String,
-    access_all: Option<bool>,
+    #[serde(default)]
+    access_all: bool,
     external_id: Option<String>,
     collections: Vec<SelectionReadOnly>,
     users: Vec<String>,
@@ -2231,17 +2234,12 @@ struct GroupRequest {
 
 impl GroupRequest {
     pub fn to_group(&self, organizations_uuid: &str) -> Group {
-        Group::new(
-            String::from(organizations_uuid),
-            self.name.clone(),
-            self.access_all.unwrap_or(false),
-            self.external_id.clone(),
-        )
+        Group::new(String::from(organizations_uuid), self.name.clone(), self.access_all, self.external_id.clone())
     }
 
     pub fn update_group(&self, mut group: Group) -> Group {
         group.name.clone_from(&self.name);
-        group.access_all = self.access_all.unwrap_or(false);
+        group.access_all = self.access_all;
         // Group Updates do not support changing the external_id
         // These input fields are in a disabled state, and can only be updated/added via ldap_import
 
