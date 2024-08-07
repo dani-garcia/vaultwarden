@@ -2,6 +2,7 @@ use num_traits::FromPrimitive;
 use rocket::serde::json::Json;
 use rocket::Route;
 use serde_json::Value;
+use std::collections::{HashMap, HashSet};
 
 use crate::{
     api::{
@@ -39,6 +40,7 @@ pub fn routes() -> Vec<Route> {
         delete_organization_collection,
         post_organization_collection_delete,
         bulk_delete_organization_collections,
+        post_bulk_collections,
         get_org_details,
         get_org_users,
         send_invite,
@@ -1631,6 +1633,66 @@ async fn post_org_import(
     user.update_revision(&mut conn).await
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
+struct BulkCollectionsData {
+    organization_id: String,
+    cipher_ids: Vec<String>,
+    collection_ids: HashSet<String>,
+    remove_collections: bool,
+}
+
+// This endpoint is only reachable via the organization view, therefor this endpoint is located here
+// Also Bitwarden does not send out Notifications for these changes, it only does this for individual cipher collection updates
+#[post("/ciphers/bulk-collections", data = "<data>")]
+async fn post_bulk_collections(data: Json<BulkCollectionsData>, headers: Headers, mut conn: DbConn) -> EmptyResult {
+    let data: BulkCollectionsData = data.into_inner();
+
+    // This feature does not seem to be active on all the clients
+    // To prevent future issues, add a check to block a call when this is set to true
+    if data.remove_collections {
+        err!("Bulk removing of collections is not yet implemented")
+    }
+
+    // Get all the collection available to the user in one query
+    // Also filter based upon the provided collections
+    let user_collections: HashMap<String, Collection> =
+        Collection::find_by_organization_and_user_uuid(&data.organization_id, &headers.user.uuid, &mut conn)
+            .await
+            .into_iter()
+            .filter_map(|c| {
+                if data.collection_ids.contains(&c.uuid) {
+                    Some((c.uuid.clone(), c))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+    // Verify if all the collections requested exists and are writeable for the user, else abort
+    for collection_uuid in &data.collection_ids {
+        match user_collections.get(collection_uuid) {
+            Some(collection) if collection.is_writable_by_user(&headers.user.uuid, &mut conn).await => (),
+            _ => err_code!("Resource not found", "User does not have access to a collection", 404),
+        }
+    }
+
+    for cipher_id in data.cipher_ids.iter() {
+        // Only act on existing cipher uuid's
+        // Do not abort the operation just ignore it, it could be a cipher was just deleted for example
+        if let Some(cipher) = Cipher::find_by_uuid_and_org(cipher_id, &data.organization_id, &mut conn).await {
+            if cipher.is_write_accessible_to_user(&headers.user.uuid, &mut conn).await {
+                for collection in &data.collection_ids {
+                    CollectionCipher::save(&cipher.uuid, collection, &mut conn).await?;
+                }
+            }
+        };
+    }
+
+    Ok(())
+}
+
 #[get("/organizations/<org_id>/policies")]
 async fn list_policies(org_id: &str, _headers: AdminHeaders, mut conn: DbConn) -> Json<Value> {
     let policies = OrgPolicy::find_by_org(org_id, &mut conn).await;
@@ -1645,6 +1707,13 @@ async fn list_policies(org_id: &str, _headers: AdminHeaders, mut conn: DbConn) -
 
 #[get("/organizations/<org_id>/policies/token?<token>")]
 async fn list_policies_token(org_id: &str, token: &str, mut conn: DbConn) -> JsonResult {
+    // web-vault 2024.6.2 seems to send these values and cause logs to output errors
+    // Catch this and prevent errors in the logs
+    // TODO: CleanUp after 2024.6.x is not used anymore.
+    if org_id == "undefined" && token == "undefined" {
+        return Ok(Json(json!({})));
+    }
+
     let invite = crate::auth::decode_invite(token)?;
 
     let invite_org_id = match invite.org_id {

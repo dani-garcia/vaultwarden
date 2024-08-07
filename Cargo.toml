@@ -67,11 +67,11 @@ dashmap = "6.0.1"
 
 # Async futures
 futures = "0.3.30"
-tokio = { version = "1.39.1", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal", "net"] }
+tokio = { version = "1.39.2", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal", "net"] }
 
 # A generic serialization/deserialization framework
 serde = { version = "1.0.204", features = ["derive"] }
-serde_json = "1.0.120"
+serde_json = "1.0.122"
 
 # A safe, extensible ORM and Query builder
 diesel = { version = "2.2.2", features = ["chrono", "r2d2", "numeric"] }
@@ -117,7 +117,7 @@ url = "2.5.2"
 # Email libraries
 lettre = { version = "0.11.7", features = ["smtp-transport", "sendmail-transport", "builder", "serde", "tokio1-native-tls", "hostname", "tracing", "tokio1"], default-features = false }
 percent-encoding = "2.3.1" # URL encoding library used for URL's in the emails
-email_address = "0.2.7"
+email_address = "0.2.9"
 
 # HTML Template library
 handlebars = { version = "6.0.0", features = ["dir_source"] }
@@ -128,9 +128,9 @@ hickory-resolver = "0.24.1"
 
 # Favicon extraction libraries
 html5gum = "0.5.7"
-regex = { version = "1.10.5", features = ["std", "perf", "unicode-perl"], default-features = false }
+regex = { version = "1.10.6", features = ["std", "perf", "unicode-perl"], default-features = false }
 data-url = "0.3.1"
-bytes = "1.6.1"
+bytes = "1.7.1"
 
 # Cache function results (Used for version check and favicon fetching)
 cached = { version = "0.53.1", features = ["async"] }
@@ -155,7 +155,7 @@ semver = "1.0.23"
 # Allow overriding the default memory allocator
 # Mainly used for the musl builds, since the default musl malloc is very slow
 mimalloc = { version = "0.1.43", features = ["secure"], default-features = false, optional = true }
-which = "6.0.1"
+which = "6.0.2"
 
 # Argon2 library with support for the PHC format
 argon2 = "0.5.3"
