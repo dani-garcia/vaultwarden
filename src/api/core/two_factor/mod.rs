@@ -269,10 +269,18 @@ pub async fn send_incomplete_2fa_notifications(pool: DbPool) {
             "User {} did not complete a 2FA login within the configured time limit. IP: {}",
             user.email, login.ip_address
         );
-        mail::send_incomplete_2fa_login(&user.email, &login.ip_address, &login.login_time, &login.device_name)
+        match mail::send_incomplete_2fa_login(&user.email, &login.ip_address, &login.login_time, &login.device_name)
             .await
-            .expect("Error sending incomplete 2FA email");
-        login.delete(&mut conn).await.expect("Error deleting incomplete 2FA record");
+        {
+            Ok(_) => {
+                if let Err(e) = login.delete(&mut conn).await {
+                    error!("Error deleting incomplete 2FA record: {e:#?}");
+                }
+            }
+            Err(e) => {
+                error!("Error sending incomplete 2FA email: {e:#?}");
+            }
+        }
     }
 }
 
