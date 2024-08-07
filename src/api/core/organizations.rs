@@ -1640,7 +1640,7 @@ struct BulkCollectionsData {
     organization_id: String,
     cipher_ids: Vec<String>,
     collection_ids: HashSet<String>,
-    // remove_collections: Bool, // This is not used in v2024.6.3 a.t.m.
+    remove_collections: bool,
 }
 
 // This endpoint is only reachable via the organization view, therefor this endpoint is located here
@@ -1648,6 +1648,12 @@ struct BulkCollectionsData {
 #[post("/ciphers/bulk-collections", data = "<data>")]
 async fn post_bulk_collections(data: Json<BulkCollectionsData>, headers: Headers, mut conn: DbConn) -> EmptyResult {
     let data: BulkCollectionsData = data.into_inner();
+
+    // This feature does not seem to be active on all the clients
+    // To prevent future issues, add a check to block a call when this is set to true
+    if data.remove_collections {
+        err!("Bulk removing of collections is not yet implemented")
+    }
 
     // Get all the collection available to the user in one query
     // Also filter based upon the provided collections
