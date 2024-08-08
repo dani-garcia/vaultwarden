@@ -123,15 +123,8 @@ async fn ldap_import(data: Json<OrgImportData>, token: PublicToken, mut conn: Db
                     None => err!("Error looking up organization"),
                 };
 
-                mail::send_invite(
-                    &user_data.email,
-                    &user.uuid,
-                    Some(org_id.clone()),
-                    Some(new_org_user.uuid),
-                    &org_name,
-                    Some(org_email),
-                )
-                .await?;
+                mail::send_invite(&user, Some(org_id.clone()), Some(new_org_user.uuid), &org_name, Some(org_email))
+                    .await?;
             }
         }
     }

@@ -297,7 +297,7 @@ async fn invite_user(data: Json<InviteData>, _token: AdminToken, mut conn: DbCon
 
     async fn _generate_invite(user: &User, conn: &mut DbConn) -> EmptyResult {
         if CONFIG.mail_enabled() {
-            mail::send_invite(&user.email, &user.uuid, None, None, &CONFIG.invitation_org_name(), None).await
+            mail::send_invite(user, None, None, &CONFIG.invitation_org_name(), None).await
         } else {
             let invitation = Invitation::new(&user.email);
             invitation.save(conn).await
@@ -473,7 +473,7 @@ async fn resend_user_invite(uuid: &str, _token: AdminToken, mut conn: DbConn) ->
         }
 
         if CONFIG.mail_enabled() {
-            mail::send_invite(&user.email, &user.uuid, None, None, &CONFIG.invitation_org_name(), None).await
+            mail::send_invite(&user, None, None, &CONFIG.invitation_org_name(), None).await
         } else {
             Ok(())
         }
