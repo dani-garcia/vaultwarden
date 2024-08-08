@@ -1,6 +1,6 @@
 ---
-vault_version: "v2024.6.2"
-vault_image_digest: "sha256:ff03919023b4d7d8f198106a67e5f53f8bf9e4df4a70bb0d4a6af6fc3e9455cf"
+vault_version: "v2024.6.2b"
+vault_image_digest: "sha256:25a8b48792a3d2c16ddaea493eee93a0b6785648f2d8782c7537d198cb41be55"
 # Cross Compile Docker Helper Scripts v1.4.0
 # We use the linux/amd64 platform shell scripts since there is no difference between the different platform scripts
 xx_image_digest: "sha256:0cd3f05c72d6c9b038eb135f91376ee1169ef3a330d34e418e65e2a5c2e9c0d4"
