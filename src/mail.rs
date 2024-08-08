@@ -263,7 +263,11 @@ pub async fn send_invite(
         if let Some(id) = org_user_id {
             query_params.append_pair("organizationUserId", &id);
         };
-        if user.private_key.is_some() {
+
+        if CONFIG.sso_enabled() && CONFIG.sso_only() {
+            query_params.append_pair("orgUserHasExistingUser", "false");
+            query_params.append_pair("orgSsoIdentifier", org_name);
+        } else if user.private_key.is_some() {
             query_params.append_pair("orgUserHasExistingUser", "true");
         }
     }
