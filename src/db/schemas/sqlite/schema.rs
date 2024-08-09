@@ -233,6 +233,7 @@ table! {
         uuid -> Text,
         user_uuid -> Text,
         org_uuid -> Text,
+        invited_by_email -> Nullable<Text>,
         access_all -> Bool,
         akey -> Text,
         status -> Integer,
@@ -249,6 +250,23 @@ table! {
         atype -> Integer,
         api_key -> Text,
         revision_date -> Timestamp,
+    }
+}
+
+table! {
+    sso_nonce (state) {
+        state -> Text,
+        nonce -> Text,
+        verifier -> Nullable<Text>,
+        redirect_uri -> Text,
+        created_at -> Timestamp,
+    }
+}
+
+table! {
+    sso_users (user_uuid) {
+        user_uuid -> Text,
+        identifier -> Text,
     }
 }
 
@@ -345,6 +363,7 @@ joinable!(collections_groups -> collections (collections_uuid));
 joinable!(collections_groups -> groups (groups_uuid));
 joinable!(event -> users_organizations (uuid));
 joinable!(auth_requests -> users (user_uuid));
+joinable!(sso_users -> users (user_uuid));
 
 allow_tables_to_appear_in_same_query!(
     attachments,
@@ -358,6 +377,7 @@ allow_tables_to_appear_in_same_query!(
     org_policies,
     organizations,
     sends,
+    sso_users,
     twofactor,
     users,
     users_collections,
