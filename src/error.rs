@@ -53,7 +53,8 @@ use rocket::error::Error as RocketErr;
 use serde_json::{Error as SerdeErr, Value};
 use std::io::Error as IoErr;
 use std::time::SystemTimeError as TimeErr;
-use webauthn_rs::error::WebauthnError as WebauthnErr;
+use uuid::Error as UuidErr;
+use webauthn_rs::prelude::WebauthnError as WebauthnErr;
 use yubico::yubicoerror::YubicoError as YubiErr;
 
 #[derive(Serialize)]
@@ -92,6 +93,7 @@ make_error! {
     Smtp(SmtpErr):     _has_source, _api_error,
     OpenSSL(SSLErr):   _has_source, _api_error,
     Rocket(RocketErr): _has_source, _api_error,
+    Uuid(UuidErr): _has_source, _api_error,
 
     DieselCon(DieselConErr): _has_source, _api_error,
     Webauthn(WebauthnErr):   _has_source, _api_error,
