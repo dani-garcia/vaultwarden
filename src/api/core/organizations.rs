@@ -67,6 +67,7 @@ pub fn routes() -> Vec<Route> {
         import,
         post_org_keys,
         get_organization_keys,
+        get_organization_public_key,
         bulk_public_keys,
         deactivate_organization_user,
         bulk_deactivate_organization_user,
@@ -751,12 +752,19 @@ struct OrgIdData {
 }
 
 #[get("/ciphers/organization-details?<data..>")]
-async fn get_org_details(data: OrgIdData, headers: Headers, mut conn: DbConn) -> Json<Value> {
-    Json(json!({
+async fn get_org_details(data: OrgIdData, headers: Headers, mut conn: DbConn) -> JsonResult {
+    if UserOrganization::find_confirmed_by_user_and_org(&headers.user.uuid, &data.organization_id, &mut conn)
+        .await
+        .is_none()
+    {
+        err_code!("Resource not found.", rocket::http::Status::NotFound.code);
+    }
+
+    Ok(Json(json!({
         "data": _get_org_details(&data.organization_id, &headers.host, &headers.user.uuid, &mut conn).await,
         "object": "list",
         "continuationToken": null,
-    }))
+    })))
 }
 
 async fn _get_org_details(org_id: &str, host: &str, user_uuid: &str, conn: &mut DbConn) -> Value {
@@ -2748,18 +2756,27 @@ struct OrganizationUserResetPasswordRequest {
     key: String,
 }
 
-#[get("/organizations/<org_id>/keys")]
-async fn get_organization_keys(org_id: &str, mut conn: DbConn) -> JsonResult {
+// Upstrem reports this is the renamed endpoint instead of `/keys`
+// But the clients do not seem to use this at all
+// Just add it here in case they will
+#[get("/organizations/<org_id>/public-key")]
+async fn get_organization_public_key(org_id: &str, _headers: Headers, mut conn: DbConn) -> JsonResult {
     let org = match Organization::find_by_uuid(org_id, &mut conn).await {
         Some(organization) => organization,
         None => err!("Organization not found"),
     };
 
     Ok(Json(json!({
-        "object": "organizationKeys",
+        "object": "organizationPublicKey",
         "publicKey": org.public_key,
-        "privateKey": org.private_key,
     })))
+}
+
+// Obsolete - Renamed to public-key (2023.8), left for backwards compatibility with older clients
+// https://github.com/bitwarden/server/blob/25dc0c9178e3e3584074bbef0d4be827b7c89415/src/Api/AdminConsole/Controllers/OrganizationsController.cs#L463-L468
+#[get("/organizations/<org_id>/keys")]
+async fn get_organization_keys(org_id: &str, headers: Headers, conn: DbConn) -> JsonResult {
+    get_organization_public_key(org_id, headers, conn).await
 }
 
 #[put("/organizations/<org_id>/users/<org_user_id>/reset-password", data = "<data>")]
