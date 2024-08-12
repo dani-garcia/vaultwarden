@@ -139,7 +139,8 @@ RUN mkdir /data && \
         ca-certificates \
         curl \
         openssl \
-        tzdata
+        tzdata \
+        sqlite
 
 VOLUME /data
 EXPOSE 80
