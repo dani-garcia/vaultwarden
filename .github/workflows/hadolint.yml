@@ -8,13 +8,25 @@ on: [
 jobs:
   hadolint:
     name: Validate Dockerfile syntax
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       # Checkout the repo
       - name: Checkout
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
       # End Checkout the repo
+
+      # Start Docker Buildx
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@988b5a0280414f521da01fcc63a27aeeb4b104db # v3.6.1
+        # https://github.com/moby/buildkit/issues/3969
+        # Also set max parallelism to 2, the default of 4 breaks GitHub Actions and causes OOMKills
+        with:
+          buildkitd-config-inline: |
+            [worker.oci]
+              max-parallelism = 2
+          driver-opts: |
+            network=host
 
       # Download hadolint - https://github.com/hadolint/hadolint/releases
       - name: Download hadolint
@@ -26,8 +38,18 @@ jobs:
           HADOLINT_VERSION: 2.12.0
       # End Download hadolint
 
-      # Test Dockerfiles
+      # Test Dockerfiles with hadolint
       - name: Run hadolint
         shell: bash
         run: hadolint docker/Dockerfile.{debian,alpine}
-      # End Test Dockerfiles
+      # End Test Dockerfiles with hadolint
+
+      # Test Dockerfiles with docker build checks
+      - name: Run docker build check
+        shell: bash
+        run: |
+          echo "Checking docker/Dockerfile.debian"
+          docker build --check . -f docker/Dockerfile.debian
+          echo "Checking docker/Dockerfile.alpine"
+          docker build --check . -f docker/Dockerfile.alpine
+      # End Test Dockerfiles with docker build checks

@@ -28,6 +28,7 @@ on:
 
 jobs:
   build:
+    # We use Ubuntu 22.04 here because this matches the library versions used within the Debian docker containers
     runs-on: ubuntu-22.04
     timeout-minutes: 120
     # Make warnings errors, this is to prevent warnings slipping through.
@@ -74,7 +75,7 @@ jobs:
 
       # Only install the clippy and rustfmt components on the default rust-toolchain
       - name: "Install rust-toolchain version"
-        uses: dtolnay/rust-toolchain@21dc36fb71dd22e3317045c0c31a3f4249868b17 # master @ Jun 13, 2024, 6:20 PM GMT+2
+        uses: dtolnay/rust-toolchain@7b1c307e0dcbda6122208f10795a713336a9b35a # master @ Aug 8, 2024, 7:36 PM GMT+2
         if: ${{ matrix.channel == 'rust-toolchain' }}
         with:
           toolchain: "${{steps.toolchain.outputs.RUST_TOOLCHAIN}}"
@@ -84,7 +85,7 @@ jobs:
 
       # Install the any other channel to be used for which we do not execute clippy and rustfmt
       - name: "Install MSRV version"
-        uses: dtolnay/rust-toolchain@21dc36fb71dd22e3317045c0c31a3f4249868b17 # master @ Jun 13, 2024, 6:20 PM GMT+2
+        uses: dtolnay/rust-toolchain@7b1c307e0dcbda6122208f10795a713336a9b35a # master @ Aug 8, 2024, 7:36 PM GMT+2
         if: ${{ matrix.channel != 'rust-toolchain' }}
         with:
           toolchain: "${{steps.toolchain.outputs.RUST_TOOLCHAIN}}"
