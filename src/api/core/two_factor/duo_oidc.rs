@@ -357,7 +357,7 @@ pub async fn purge_duo_contexts(pool: DbPool) {
 // Construct the url that Duo should redirect users to.
 fn make_callback_url(client_name: &str) -> Result<String, Error> {
     // Get the location of this application as defined in the config.
-    let base = match Url::parse(CONFIG.domain().as_str()) {
+    let base = match Url::parse(&format!("{}/", CONFIG.domain())) {
         Ok(url) => url,
         Err(e) => err!(format!("Error parsing configured domain URL (check your domain configuration): {e:?}")),
     };
