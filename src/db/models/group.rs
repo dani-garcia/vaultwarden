@@ -1,3 +1,7 @@
+use super::{User, UserOrgType, UserOrganization};
+use crate::api::EmptyResult;
+use crate::db::DbConn;
+use crate::error::MapResult;
 use chrono::{NaiveDateTime, Utc};
 use serde_json::Value;
 
@@ -69,7 +73,7 @@ impl Group {
         })
     }
 
-    pub async fn to_json_details(&self, conn: &mut DbConn) -> Value {
+    pub async fn to_json_details(&self, user_org_type: &i32, conn: &mut DbConn) -> Value {
         let collections_groups: Vec<Value> = CollectionGroup::find_by_group(&self.uuid, conn)
             .await
             .iter()
@@ -77,7 +81,8 @@ impl Group {
                 json!({
                     "id": entry.collections_uuid,
                     "readOnly": entry.read_only,
-                    "hidePasswords": entry.hide_passwords
+                    "hidePasswords": entry.hide_passwords,
+                    "manage": *user_org_type == UserOrgType::Manager && !entry.read_only && !entry.hide_passwords
                 })
             })
             .collect();
@@ -121,13 +126,6 @@ impl GroupUser {
         }
     }
 }
-
-use crate::db::DbConn;
-
-use crate::api::EmptyResult;
-use crate::error::MapResult;
-
-use super::{User, UserOrganization};
 
 /// Database methods
 impl Group {

@@ -78,28 +78,46 @@ impl Collection {
         cipher_sync_data: Option<&crate::api::core::CipherSyncData>,
         conn: &mut DbConn,
     ) -> Value {
-        let (read_only, hide_passwords) = if let Some(cipher_sync_data) = cipher_sync_data {
+        let (read_only, hide_passwords, can_manage) = if let Some(cipher_sync_data) = cipher_sync_data {
             match cipher_sync_data.user_organizations.get(&self.org_uuid) {
-                Some(uo) if uo.has_full_access() => (false, false),
-                Some(_) => {
+                // Only for Manager types Bitwarden returns true for the can_manage option
+                // Owners and Admins always have false, but they can manage all collections anyway
+                Some(uo) if uo.has_full_access() => (false, false, uo.atype == UserOrgType::Manager),
+                Some(uo) => {
+                    // Only let a manager manage collections when the have full read/write access
+                    let is_manager = uo.atype == UserOrgType::Manager;
                     if let Some(uc) = cipher_sync_data.user_collections.get(&self.uuid) {
-                        (uc.read_only, uc.hide_passwords)
+                        (uc.read_only, uc.hide_passwords, is_manager && !uc.read_only && !uc.hide_passwords)
                     } else if let Some(cg) = cipher_sync_data.user_collections_groups.get(&self.uuid) {
-                        (cg.read_only, cg.hide_passwords)
+                        (cg.read_only, cg.hide_passwords, is_manager && !cg.read_only && !cg.hide_passwords)
                     } else {
-                        (false, false)
+                        (false, false, false)
                     }
                 }
-                _ => (true, true),
+                _ => (true, true, false),
             }
         } else {
-            (!self.is_writable_by_user(user_uuid, conn).await, self.hide_passwords_for_user(user_uuid, conn).await)
+            match UserOrganization::find_confirmed_by_user_and_org(user_uuid, &self.org_uuid, conn).await {
+                Some(ou) if ou.has_full_access() => (false, false, ou.atype == UserOrgType::Manager),
+                Some(ou) => {
+                    let is_manager = ou.atype == UserOrgType::Manager;
+                    let read_only = !self.is_writable_by_user(user_uuid, conn).await;
+                    let hide_passwords = self.hide_passwords_for_user(user_uuid, conn).await;
+                    (read_only, hide_passwords, is_manager && !read_only && !hide_passwords)
+                }
+                _ => (
+                    !self.is_writable_by_user(user_uuid, conn).await,
+                    self.hide_passwords_for_user(user_uuid, conn).await,
+                    false,
+                ),
+            }
         };
 
         let mut json_object = self.to_json();
         json_object["object"] = json!("collectionDetails");
         json_object["readOnly"] = json!(read_only);
         json_object["hidePasswords"] = json!(hide_passwords);
+        json_object["manage"] = json!(can_manage);
         json_object
     }
 
