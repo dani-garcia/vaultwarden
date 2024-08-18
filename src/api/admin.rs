@@ -750,12 +750,18 @@ fn get_diagnostics_config(_token: AdminToken) -> Json<Value> {
 #[post("/config", data = "<data>")]
 fn post_config(data: Json<ConfigBuilder>, _token: AdminToken) -> EmptyResult {
     let data: ConfigBuilder = data.into_inner();
-    CONFIG.update_config(data)
+    if let Err(e) = CONFIG.update_config(data) {
+        err!(format!("Unable to save config: {e:?}"))
+    }
+    Ok(())
 }
 
 #[post("/config/delete")]
 fn delete_config(_token: AdminToken) -> EmptyResult {
-    CONFIG.delete_user_config()
+    if let Err(e) = CONFIG.delete_user_config() {
+        err!(format!("Unable to delete config: {e:?}"))
+    }
+    Ok(())
 }
 
 #[post("/config/backup_db")]
