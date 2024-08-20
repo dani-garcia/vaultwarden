@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
-  - name: Discourse forum for vaultwarden
-    url: https://vaultwarden.discourse.group/
-    about: Use this forum to request features or get help with usage/configuration.
-  - name: GitHub Discussions for vaultwarden
+  - name: GitHub Discussions for Vaultwarden
     url: https://github.com/dani-garcia/vaultwarden/discussions
-    about: An alternative to the Discourse forum, if this is easier for you.
+    about: Use the discussions to request features or get help with usage/configuration.
+  - name: Discourse forum for Vaultwarden
+    url: https://vaultwarden.discourse.group/
+    about: An alternative to the GitHub Discussions, if this is easier for you.
