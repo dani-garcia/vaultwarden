@@ -1,40 +1,15 @@
-# Local build artifacts
-target
+// Ignore everything
+*
 
-# Data folder
-data
-
-# Misc
-.env
-.env.template
-.gitattributes
-.gitignore
-rustfmt.toml
-
-# IDE files
-.vscode
-.idea
-.editorconfig
-*.iml
-
-# Documentation
-.github
-*.md
-*.txt
-*.yml
-*.yaml
-
-# Docker
-hooks
-tools
-Dockerfile
-.dockerignore
-docker/**
+// Allow what is needed
+!.git
 !docker/healthcheck.sh
 !docker/start.sh
+!migrations
+!src
 
-# Web vault
-web-vault
-
-# Vaultwarden Resources
-resources
+!build.rs
+!Cargo.lock
+!Cargo.toml
+!rustfmt.toml
+!rust-toolchain.toml
