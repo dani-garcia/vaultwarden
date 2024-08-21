@@ -16,7 +16,7 @@ db_object! {
         pub user_uuid: String,
 
         pub name: String,
-        pub atype: i32,         // https://github.com/bitwarden/server/blob/master/src/Core/Enums/DeviceType.cs
+        pub atype: i32,         // https://github.com/bitwarden/server/blob/dcc199bcce4aa2d5621f6fab80f1b49d8b143418/src/Core/Enums/DeviceType.cs
         pub push_uuid: Option<String>,
         pub push_token: Option<String>,
 
@@ -267,6 +267,9 @@ pub enum DeviceType {
     SafariExtension = 20,
     Sdk = 21,
     Server = 22,
+    WindowsCLI = 23,
+    MacOsCLI = 24,
+    LinuxCLI = 25,
 }
 
 impl fmt::Display for DeviceType {
@@ -278,23 +281,26 @@ impl fmt::Display for DeviceType {
             DeviceType::FirefoxExtension => write!(f, "Firefox Extension"),
             DeviceType::OperaExtension => write!(f, "Opera Extension"),
             DeviceType::EdgeExtension => write!(f, "Edge Extension"),
-            DeviceType::WindowsDesktop => write!(f, "Windows Desktop"),
-            DeviceType::MacOsDesktop => write!(f, "MacOS Desktop"),
-            DeviceType::LinuxDesktop => write!(f, "Linux Desktop"),
-            DeviceType::ChromeBrowser => write!(f, "Chrome Browser"),
-            DeviceType::FirefoxBrowser => write!(f, "Firefox Browser"),
-            DeviceType::OperaBrowser => write!(f, "Opera Browser"),
-            DeviceType::EdgeBrowser => write!(f, "Edge Browser"),
+            DeviceType::WindowsDesktop => write!(f, "Windows"),
+            DeviceType::MacOsDesktop => write!(f, "macOS"),
+            DeviceType::LinuxDesktop => write!(f, "Linux"),
+            DeviceType::ChromeBrowser => write!(f, "Chrome"),
+            DeviceType::FirefoxBrowser => write!(f, "Firefox"),
+            DeviceType::OperaBrowser => write!(f, "Opera"),
+            DeviceType::EdgeBrowser => write!(f, "Edge"),
             DeviceType::IEBrowser => write!(f, "Internet Explorer"),
             DeviceType::UnknownBrowser => write!(f, "Unknown Browser"),
-            DeviceType::AndroidAmazon => write!(f, "Android Amazon"),
+            DeviceType::AndroidAmazon => write!(f, "Android"),
             DeviceType::Uwp => write!(f, "UWP"),
-            DeviceType::SafariBrowser => write!(f, "Safari Browser"),
-            DeviceType::VivaldiBrowser => write!(f, "Vivaldi Browser"),
+            DeviceType::SafariBrowser => write!(f, "Safari"),
+            DeviceType::VivaldiBrowser => write!(f, "Vivaldi"),
             DeviceType::VivaldiExtension => write!(f, "Vivaldi Extension"),
             DeviceType::SafariExtension => write!(f, "Safari Extension"),
             DeviceType::Sdk => write!(f, "SDK"),
             DeviceType::Server => write!(f, "Server"),
+            DeviceType::WindowsCLI => write!(f, "Windows CLI"),
+            DeviceType::MacOsCLI => write!(f, "macOS CLI"),
+            DeviceType::LinuxCLI => write!(f, "Linux CLI"),
         }
     }
 }
@@ -325,6 +331,9 @@ impl DeviceType {
             20 => DeviceType::SafariExtension,
             21 => DeviceType::Sdk,
             22 => DeviceType::Server,
+            23 => DeviceType::WindowsCLI,
+            24 => DeviceType::MacOsCLI,
+            25 => DeviceType::LinuxCLI,
             _ => DeviceType::UnknownBrowser,
         }
     }
