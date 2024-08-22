@@ -202,8 +202,7 @@ fn config() -> Json<Value> {
         "gitHash": option_env!("GIT_REV"),
         "server": {
           "name": "Vaultwarden",
-          "url": "https://github.com/dani-garcia/vaultwarden",
-          "version": crate::VERSION
+          "url": "https://github.com/dani-garcia/vaultwarden"
         },
         "environment": {
           "vault": domain,
