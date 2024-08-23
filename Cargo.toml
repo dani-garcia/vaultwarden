@@ -3,7 +3,7 @@ name = "vaultwarden"
 version = "1.0.0"
 authors = ["Daniel García <dani-garcia@users.noreply.github.com>"]
 edition = "2021"
-rust-version = "1.79.0"
+rust-version = "1.78.0"
 resolver = "2"
 
 repository = "https://github.com/dani-garcia/vaultwarden"
@@ -18,17 +18,17 @@ build = "build.rs"
 enable_syslog = []
 mysql = ["diesel/mysql", "diesel_migrations/mysql"]
 postgresql = ["diesel/postgres", "diesel_migrations/postgres"]
-sqlite = ["diesel/sqlite", "diesel_migrations/sqlite", "libsqlite3-sys"]
+sqlite = ["diesel/sqlite", "diesel_migrations/sqlite", "dep:libsqlite3-sys"]
 # Enable to use a vendored and statically linked openssl
 vendored_openssl = ["openssl/vendored"]
 # Enable MiMalloc memory allocator to replace the default malloc
 # This can improve performance for Alpine builds
-enable_mimalloc = ["mimalloc"]
+enable_mimalloc = ["dep:mimalloc"]
 # This is a development dependency, and should only be used during development!
 # It enables the usage of the diesel_logger crate, which is able to output the generated queries.
 # You also need to set an env variable `QUERY_LOGGER=1` to fully activate this so you do not have to re-compile
 # if you want to turn off the logging for a specific run.
-query_logger = ["diesel_logger"]
+query_logger = ["dep:diesel_logger"]
 
 # Enable unstable features, requires nightly
 # Currently only used to enable rusts official ip support
@@ -67,19 +67,19 @@ dashmap = "6.0.1"
 
 # Async futures
 futures = "0.3.30"
-tokio = { version = "1.39.2", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal", "net"] }
+tokio = { version = "1.39.3", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal", "net"] }
 
 # A generic serialization/deserialization framework
-serde = { version = "1.0.204", features = ["derive"] }
-serde_json = "1.0.122"
+serde = { version = "1.0.208", features = ["derive"] }
+serde_json = "1.0.125"
 
 # A safe, extensible ORM and Query builder
-diesel = { version = "2.2.2", features = ["chrono", "r2d2", "numeric"] }
+diesel = { version = "2.2.3", features = ["chrono", "r2d2", "numeric"] }
 diesel_migrations = "2.2.0"
 diesel_logger = { version = "0.3.0", optional = true }
 
 # Bundled/Static SQLite
-libsqlite3-sys = { version = "0.29.0", features = ["bundled"], optional = true }
+libsqlite3-sys = { version = "0.30.1", features = ["bundled"], optional = true }
 
 # Crypto-related libraries
 rand = { version = "0.8.5", features = ["small_rng"] }
@@ -123,7 +123,7 @@ email_address = "0.2.9"
 handlebars = { version = "6.0.0", features = ["dir_source"] }
 
 # HTTP client (Used for favicons, version check, DUO and HIBP API)
-reqwest = { version = "0.12.5", features = ["native-tls-alpn", "stream", "json", "gzip", "brotli", "socks", "cookies"] }
+reqwest = { version = "0.12.7", features = ["native-tls-alpn", "stream", "json", "gzip", "brotli", "socks", "cookies"] }
 hickory-resolver = "0.24.1"
 
 # Favicon extraction libraries
@@ -155,7 +155,7 @@ semver = "1.0.23"
 # Allow overriding the default memory allocator
 # Mainly used for the musl builds, since the default musl malloc is very slow
 mimalloc = { version = "0.1.43", features = ["secure"], default-features = false, optional = true }
-which = "6.0.2"
+which = "6.0.3"
 
 # Argon2 library with support for the PHC format
 argon2 = "0.5.3"
