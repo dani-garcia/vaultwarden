@@ -1,5 +1,9 @@
 #!/bin/sh
 
+if [ -n "${UMASK}" ]; then
+    umask "${UMASK}"
+fi
+
 if [ -r /etc/vaultwarden.sh ]; then
     . /etc/vaultwarden.sh
 elif [ -r /etc/bitwarden_rs.sh ]; then
