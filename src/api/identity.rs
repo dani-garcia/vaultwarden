@@ -307,18 +307,17 @@ async fn _password_login(
         .collect();
 
     let master_password_policy = if !master_password_policies.is_empty() {
-        let mut mpp_json =
-            json!(master_password_policies.into_iter().fold(MasterPasswordPolicy::default(), |acc, policy| {
-                MasterPasswordPolicy {
-                    min_complexity: acc.min_complexity.max(policy.min_complexity),
-                    min_length: acc.min_length.max(policy.min_length),
-                    require_lower: acc.require_lower || policy.require_lower,
-                    require_upper: acc.require_upper || policy.require_upper,
-                    require_numbers: acc.require_numbers || policy.require_numbers,
-                    require_special: acc.require_special || policy.require_special,
-                    enforce_on_login: acc.enforce_on_login || policy.enforce_on_login,
-                }
-            }));
+        let mut mpp_json = json!(master_password_policies.into_iter().reduce(|acc, policy| {
+            MasterPasswordPolicy {
+                min_complexity: acc.min_complexity.max(policy.min_complexity),
+                min_length: acc.min_length.max(policy.min_length),
+                require_lower: acc.require_lower || policy.require_lower,
+                require_upper: acc.require_upper || policy.require_upper,
+                require_numbers: acc.require_numbers || policy.require_numbers,
+                require_special: acc.require_special || policy.require_special,
+                enforce_on_login: acc.enforce_on_login || policy.enforce_on_login,
+            }
+        }));
         mpp_json["object"] = json!("masterPasswordPolicy");
         mpp_json
     } else {
