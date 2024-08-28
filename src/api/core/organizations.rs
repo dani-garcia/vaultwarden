@@ -1787,9 +1787,7 @@ async fn put_policy(
     // Now that groups are available we can enforce this option when wanted.
     // We put this behind a config option to prevent breaking current installation.
     // Maybe we want to enable this by default in the future, but currently it is disabled by default.
-    if CONFIG.enforce_single_org_with_reset_pw_policy()
-        && (pol_type_enum == OrgPolicyType::ResetPassword || pol_type_enum == OrgPolicyType::SingleOrg)
-    {
+    if CONFIG.enforce_single_org_with_reset_pw_policy() {
         if pol_type_enum == OrgPolicyType::ResetPassword && data.enabled {
             let single_org_policy_enabled =
                 match OrgPolicy::find_by_org_and_type(org_id, OrgPolicyType::SingleOrg, &mut conn).await {
