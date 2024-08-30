@@ -33,6 +33,7 @@ use std::{
     process::exit,
     str::FromStr,
     thread,
+    io::{self, IsTerminal},
 };
 
 use tokio::{
@@ -148,18 +149,30 @@ fn parse_args() {
                 }
             }
 
-            println!("Generate an Argon2id PHC string using the '{selected_preset}' preset:\n");
+            let stdin = io::stdin();
+            let interactive = stdin.is_terminal();
 
-            let password = rpassword::prompt_password("Password: ").unwrap();
-            if password.len() < 8 {
-                println!("\nPassword must contain at least 8 characters");
-                exit(1);
-            }
+            let password;
+            if interactive {
+                println!("Generate an Argon2id PHC string using the '{selected_preset}' preset:\n");
 
-            let password_verify = rpassword::prompt_password("Confirm Password: ").unwrap();
-            if password != password_verify {
-                println!("\nPasswords do not match");
-                exit(1);
+                password = rpassword::prompt_password("Password: ").unwrap();
+                if password.len() < 8 {
+                    println!("\nPassword must contain at least 8 characters");
+                    exit(1);
+                }
+    
+                let password_verify = rpassword::prompt_password("Confirm Password: ").unwrap();
+                if password != password_verify {
+                    println!("\nPasswords do not match");
+                    exit(1);
+                }
+            } else {
+                password = rpassword::read_password_from_bufread(&mut stdin.lock()).unwrap();
+                if password.len() < 8 {
+                    eprintln!("Password must contain at least 8 characters");
+                    exit(1);
+                }
             }
 
             let argon2 = Argon2::new(Argon2id, V0x13, argon2_params.build().unwrap());
@@ -167,14 +180,18 @@ fn parse_args() {
 
             let argon2_timer = tokio::time::Instant::now();
             if let Ok(password_hash) = argon2.hash_password(password.as_bytes(), &salt) {
-                println!(
-                    "\n\
-                    ADMIN_TOKEN='{password_hash}'\n\n\
-                    Generation of the Argon2id PHC string took: {:?}",
-                    argon2_timer.elapsed()
-                );
+                if interactive {
+                    println!(
+                        "\n\
+                        ADMIN_TOKEN='{password_hash}'\n\n\
+                        Generation of the Argon2id PHC string took: {:?}",
+                        argon2_timer.elapsed()
+                    );
+                } else {
+                    println!("{}", password_hash)
+                }
             } else {
-                error!("Unable to generate Argon2id PHC hash.");
+                eprintln!("Unable to generate Argon2id PHC hash.");
                 exit(1);
             }
         }
