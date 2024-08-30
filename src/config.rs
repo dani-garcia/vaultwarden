@@ -625,6 +625,11 @@ make_config! {
         increase_note_size_limit:      bool,  true,  def, false;
         /// Generated max_note_size value to prevent if..else matching during every check
         _max_note_size:                usize, false, gen, |c| if c.increase_note_size_limit {100_000} else {10_000};
+
+        /// Enforce Single Org with Reset Password Policy |> Enforce that the Single Org policy is enabled before setting the Reset Password policy
+        /// Bitwarden enforces this by default. In Vaultwarden we encouraged to use multiple organizations because groups were not available.
+        /// Setting this to true will enforce the Single Org Policy to be enabled before you can enable the Reset Password policy.
+        enforce_single_org_with_reset_pw_policy: bool, false, def, false;
     },
 
     /// Yubikey settings
