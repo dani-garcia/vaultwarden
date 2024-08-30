@@ -25,7 +25,8 @@ use crate::{
     http_client::make_http_request,
     mail,
     util::{
-        container_base_image, format_naive_datetime_local, get_display_size, is_running_in_container, NumberOrString,
+        container_base_image, format_naive_datetime_local, get_display_size, get_web_vault_version,
+        is_running_in_container, NumberOrString,
     },
     CONFIG, VERSION,
 };
@@ -576,11 +577,6 @@ async fn delete_organization(uuid: &str, _token: AdminToken, mut conn: DbConn) -
 }
 
 #[derive(Deserialize)]
-struct WebVaultVersion {
-    version: String,
-}
-
-#[derive(Deserialize)]
 struct GitRelease {
     tag_name: String,
 }
@@ -679,18 +675,6 @@ async fn diagnostics(_token: AdminToken, ip_header: IpHeader, mut conn: DbConn) 
     use chrono::prelude::*;
     use std::net::ToSocketAddrs;
 
-    // Get current running versions
-    let web_vault_version: WebVaultVersion =
-        match std::fs::read_to_string(format!("{}/{}", CONFIG.web_vault_folder(), "vw-version.json")) {
-            Ok(s) => serde_json::from_str(&s)?,
-            _ => match std::fs::read_to_string(format!("{}/{}", CONFIG.web_vault_folder(), "version.json")) {
-                Ok(s) => serde_json::from_str(&s)?,
-                _ => WebVaultVersion {
-                    version: String::from("Version file missing"),
-                },
-            },
-        };
-
     // Execute some environment checks
     let running_within_container = is_running_in_container();
     let has_http_access = has_http_access().await;
@@ -710,13 +694,16 @@ async fn diagnostics(_token: AdminToken, ip_header: IpHeader, mut conn: DbConn) 
 
     let ip_header_name = &ip_header.0.unwrap_or_default();
 
+    // Get current running versions
+    let web_vault_version = get_web_vault_version();
+
     let diagnostics_json = json!({
         "dns_resolved": dns_resolved,
         "current_release": VERSION,
         "latest_release": latest_release,
         "latest_commit": latest_commit,
         "web_vault_enabled": &CONFIG.web_vault_enabled(),
-        "web_vault_version": web_vault_version.version.trim_start_matches('v'),
+        "web_vault_version": web_vault_version,
         "latest_web_build": latest_web_build,
         "running_within_container": running_within_container,
         "container_base_image": if running_within_container { container_base_image() } else { "Not applicable" },
@@ -765,9 +752,12 @@ fn delete_config(_token: AdminToken) -> EmptyResult {
 }
 
 #[post("/config/backup_db")]
-async fn backup_db(_token: AdminToken, mut conn: DbConn) -> EmptyResult {
+async fn backup_db(_token: AdminToken, mut conn: DbConn) -> ApiResult<String> {
     if *CAN_BACKUP {
-        backup_database(&mut conn).await
+        match backup_database(&mut conn).await {
+            Ok(f) => Ok(format!("Backup to '{f}' was successful")),
+            Err(e) => err!(format!("Backup was unsuccessful {e}")),
+        }
     } else {
         err!("Can't back up current DB (Only SQLite supports this feature)");
     }

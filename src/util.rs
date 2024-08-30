@@ -513,6 +513,28 @@ pub fn container_base_image() -> &'static str {
     }
 }
 
+#[derive(Deserialize)]
+struct WebVaultVersion {
+    version: String,
+}
+
+pub fn get_web_vault_version() -> String {
+    let version_files = [
+        format!("{}/vw-version.json", CONFIG.web_vault_folder()),
+        format!("{}/version.json", CONFIG.web_vault_folder()),
+    ];
+
+    for version_file in version_files {
+        if let Ok(version_str) = std::fs::read_to_string(&version_file) {
+            if let Ok(version) = serde_json::from_str::<WebVaultVersion>(&version_str) {
+                return String::from(version.version.trim_start_matches('v'));
+            }
+        }
+    }
+
+    String::from("Version file missing")
+}
+
 //
 // Deserialization methods
 //
