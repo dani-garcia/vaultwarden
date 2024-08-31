@@ -165,7 +165,7 @@ jobs:
           echo "CONTAINER_REGISTRIES=${CONTAINER_REGISTRIES:+${CONTAINER_REGISTRIES},}localhost:5000/vaultwarden/server" | tee -a "${GITHUB_ENV}"
 
       - name: Bake ${{ matrix.base_image }} containers
-        uses: docker/bake-action@8cea75c238fa977d2ac1fa69d09604b3b740f809 # v5.6.1
+        uses: docker/bake-action@76cc8060bdff6d632a465001e4cf300684c5472c # v5.7.0
         env:
           BASE_TAGS: "${{ env.BASE_TAGS }}"
           SOURCE_COMMIT: "${{ env.SOURCE_COMMIT }}"
@@ -223,28 +223,28 @@ jobs:
 
       # Upload artifacts to Github Actions
       - name: "Upload amd64 artifact"
-        uses: actions/upload-artifact@834a144ee995460fba8ed112a2fc961b36a5ec5a # v4.3.6
+        uses: actions/upload-artifact@50769540e7f4bd5e21e526ee35c689e35e0d6874 # v4.4.0
         if: ${{ matrix.base_image == 'alpine' }}
         with:
           name: vaultwarden-${{ env.SOURCE_VERSION }}-linux-amd64
           path: vaultwarden-amd64
 
       - name: "Upload arm64 artifact"
-        uses: actions/upload-artifact@834a144ee995460fba8ed112a2fc961b36a5ec5a # v4.3.6
+        uses: actions/upload-artifact@50769540e7f4bd5e21e526ee35c689e35e0d6874 # v4.4.0
         if: ${{ matrix.base_image == 'alpine' }}
         with:
           name: vaultwarden-${{ env.SOURCE_VERSION }}-linux-arm64
           path: vaultwarden-arm64
 
       - name: "Upload armv7 artifact"
-        uses: actions/upload-artifact@834a144ee995460fba8ed112a2fc961b36a5ec5a # v4.3.6
+        uses: actions/upload-artifact@50769540e7f4bd5e21e526ee35c689e35e0d6874 # v4.4.0
         if: ${{ matrix.base_image == 'alpine' }}
         with:
           name: vaultwarden-${{ env.SOURCE_VERSION }}-linux-armv7
           path: vaultwarden-armv7
 
       - name: "Upload armv6 artifact"
-        uses: actions/upload-artifact@834a144ee995460fba8ed112a2fc961b36a5ec5a # v4.3.6
+        uses: actions/upload-artifact@50769540e7f4bd5e21e526ee35c689e35e0d6874 # v4.4.0
         if: ${{ matrix.base_image == 'alpine' }}
         with:
           name: vaultwarden-${{ env.SOURCE_VERSION }}-linux-armv6

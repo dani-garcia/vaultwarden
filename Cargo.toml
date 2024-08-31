@@ -67,11 +67,11 @@ dashmap = "6.0.1"
 
 # Async futures
 futures = "0.3.30"
-tokio = { version = "1.39.3", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal", "net"] }
+tokio = { version = "1.40.0", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal", "net"] }
 
 # A generic serialization/deserialization framework
-serde = { version = "1.0.208", features = ["derive"] }
-serde_json = "1.0.125"
+serde = { version = "1.0.209", features = ["derive"] }
+serde_json = "1.0.127"
 
 # A safe, extensible ORM and Query builder
 diesel = { version = "2.2.3", features = ["chrono", "r2d2", "numeric"] }
