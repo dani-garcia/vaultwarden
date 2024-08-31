@@ -604,7 +604,7 @@ async fn launch_rocket(pool: db::DbPool, extra_debug: bool) -> Result<(), Error>
         tokio::spawn(async move {
             let mut signal_user1 = tokio::signal::unix::signal(SignalKind::user_defined1()).unwrap();
             loop {
-                // If we need more singles to act upon, we might want to use select! here.
+                // If we need more signals to act upon, we might want to use select! here.
                 // With only one item to listen for this is enough.
                 let _ = signal_user1.recv().await;
                 match backup_sqlite() {
