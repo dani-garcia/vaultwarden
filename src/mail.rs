@@ -17,6 +17,7 @@ use crate::{
         encode_jwt, generate_delete_claims, generate_emergency_access_invite_claims, generate_invite_claims,
         generate_verify_email_claims,
     },
+    db::models::User,
     error::Error,
     CONFIG,
 };
@@ -229,37 +230,55 @@ pub async fn send_single_org_removed_from_org(address: &str, org_name: &str) -> 
 }
 
 pub async fn send_invite(
-    address: &str,
-    uuid: &str,
+    user: &User,
     org_id: Option<String>,
     org_user_id: Option<String>,
     org_name: &str,
     invited_by_email: Option<String>,
 ) -> EmptyResult {
     let claims = generate_invite_claims(
-        uuid.to_string(),
-        String::from(address),
+        user.uuid.clone(),
+        user.email.clone(),
         org_id.clone(),
         org_user_id.clone(),
         invited_by_email,
     );
     let invite_token = encode_jwt(&claims);
+    let mut query = url::Url::parse("https://query.builder").unwrap();
+    {
+        let mut query_params = query.query_pairs_mut();
+        query_params
+            .append_pair("email", &user.email)
+            .append_pair("organizationName", org_name)
+            .append_pair("token", &invite_token);
+        if let Some(id) = org_id {
+            query_params.append_pair("organizationId", &id);
+        };
+        if let Some(id) = org_user_id {
+            query_params.append_pair("organizationUserId", &id);
+        };
+        if user.private_key.is_some() {
+            query_params.append_pair("orgUserHasExistingUser", "true");
+        }
+    }
 
+    let query_string = match query.query() {
+        None => err!(format!("Failed to build invite URL query parameters")),
+        Some(query) => query,
+    };
+
+    // `url.Url` would place the anchor `#` after the query parameters
+    let url = format!("{}/#/accept-organization/?{}", CONFIG.domain(), query_string);
     let (subject, body_html, body_text) = get_text(
         "email/send_org_invite",
         json!({
-            "url": CONFIG.domain(),
+            "url": url,
             "img_src": CONFIG._smtp_img_src(),
-            "org_id": org_id.as_deref().unwrap_or("_"),
-            "org_user_id": org_user_id.as_deref().unwrap_or("_"),
-            "email": percent_encode(address.as_bytes(), NON_ALPHANUMERIC).to_string(),
-            "org_name_encoded": percent_encode(org_name.as_bytes(), NON_ALPHANUMERIC).to_string(),
             "org_name": org_name,
-            "token": invite_token,
         }),
     )?;
 
-    send_email(address, &subject, body_html, body_text).await
+    send_email(&user.email, &subject, body_html, body_text).await
 }
 
 pub async fn send_emergency_access_invite(

@@ -956,8 +956,7 @@ async fn send_invite(org_id: &str, data: Json<InviteData>, headers: AdminHeaders
             };
 
             mail::send_invite(
-                &email,
-                &user.uuid,
+                &user,
                 Some(String::from(org_id)),
                 Some(new_user.uuid),
                 &org_name,
@@ -1033,8 +1032,7 @@ async fn _reinvite_user(org_id: &str, user_org: &str, invited_by_email: &str, co
 
     if CONFIG.mail_enabled() {
         mail::send_invite(
-            &user.email,
-            &user.uuid,
+            &user,
             Some(org_id.to_string()),
             Some(user_org.uuid),
             &org_name,
@@ -2037,8 +2035,7 @@ async fn import(org_id: &str, data: Json<OrgImportData>, headers: Headers, mut c
                     };
 
                     mail::send_invite(
-                        &user_data.email,
-                        &user.uuid,
+                        &user,
                         Some(String::from(org_id)),
                         Some(new_org_user.uuid),
                         &org_name,
