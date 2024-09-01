@@ -38,6 +38,7 @@ use std::{
 use tokio::{
     fs::File,
     io::{AsyncBufReadExt, BufReader},
+    signal::unix::SignalKind,
 };
 
 #[macro_use]
@@ -97,10 +98,12 @@ USAGE:
 
 FLAGS:
     -h, --help       Prints help information
-    -v, --version    Prints the app version
+    -v, --version    Prints the app and web-vault version
 
 COMMAND:
     hash [--preset {bitwarden|owasp}]  Generate an Argon2id PHC ADMIN_TOKEN
+    backup                             Create a backup of the SQLite database
+                                       You can also send the USR1 signal to trigger a backup
 
 PRESETS:                  m=         t=          p=
     bitwarden (default) 64MiB, 3 Iterations, 4 Threads
@@ -115,11 +118,13 @@ fn parse_args() {
     let version = VERSION.unwrap_or("(Version info from Git not present)");
 
     if pargs.contains(["-h", "--help"]) {
-        println!("vaultwarden {version}");
+        println!("Vaultwarden {version}");
         print!("{HELP}");
         exit(0);
     } else if pargs.contains(["-v", "--version"]) {
-        println!("vaultwarden {version}");
+        let web_vault_version = util::get_web_vault_version();
+        println!("Vaultwarden {version}");
+        println!("Web-Vault {web_vault_version}");
         exit(0);
     }
 
@@ -174,13 +179,47 @@ fn parse_args() {
                     argon2_timer.elapsed()
                 );
             } else {
-                error!("Unable to generate Argon2id PHC hash.");
+                println!("Unable to generate Argon2id PHC hash.");
                 exit(1);
+            }
+        } else if command == "backup" {
+            match backup_sqlite() {
+                Ok(f) => {
+                    println!("Backup to '{f}' was successful");
+                    exit(0);
+                }
+                Err(e) => {
+                    println!("Backup failed. {e:?}");
+                    exit(1);
+                }
             }
         }
         exit(0);
     }
 }
+
+fn backup_sqlite() -> Result<String, Error> {
+    #[cfg(sqlite)]
+    {
+        use crate::db::{backup_sqlite_database, DbConnType};
+        if DbConnType::from_url(&CONFIG.database_url()).map(|t| t == DbConnType::sqlite).unwrap_or(false) {
+            use diesel::Connection;
+            let url = crate::CONFIG.database_url();
+
+            // Establish a connection to the sqlite database
+            let mut conn = diesel::sqlite::SqliteConnection::establish(&url)?;
+            let backup_file = backup_sqlite_database(&mut conn)?;
+            Ok(backup_file)
+        } else {
+            err_silent!("The database type is not SQLite. Backups only works for SQLite databases")
+        }
+    }
+    #[cfg(not(sqlite))]
+    {
+        err_silent!("The 'sqlite' feature is not enabled. Backups only works for SQLite databases")
+    }
+}
+
 fn launch_info() {
     println!(
         "\
@@ -346,7 +385,7 @@ fn init_logging() -> Result<log::LevelFilter, Error> {
         }
         #[cfg(not(windows))]
         {
-            const SIGHUP: i32 = tokio::signal::unix::SignalKind::hangup().as_raw_value();
+            const SIGHUP: i32 = SignalKind::hangup().as_raw_value();
             let path = Path::new(&log_file);
             logger = logger.chain(fern::log_reopen1(path, [SIGHUP])?);
         }
@@ -559,6 +598,22 @@ async fn launch_rocket(pool: db::DbPool, extra_debug: bool) -> Result<(), Error>
         info!("Exiting Vaultwarden!");
         CONFIG.shutdown();
     });
+
+    #[cfg(unix)]
+    {
+        tokio::spawn(async move {
+            let mut signal_user1 = tokio::signal::unix::signal(SignalKind::user_defined1()).unwrap();
+            loop {
+                // If we need more signals to act upon, we might want to use select! here.
+                // With only one item to listen for this is enough.
+                let _ = signal_user1.recv().await;
+                match backup_sqlite() {
+                    Ok(f) => info!("Backup to '{f}' was successful"),
+                    Err(e) => error!("Backup failed. {e:?}"),
+                }
+            }
+        });
+    }
 
     let _ = instance.launch().await?;
 
