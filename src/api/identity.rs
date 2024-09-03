@@ -110,7 +110,9 @@ async fn _refresh_login(data: ConnectData, conn: &mut DbConn) -> JsonResult {
     // ---
     // let orgs = UserOrganization::find_confirmed_by_user(&user.uuid, conn).await;
     match auth::refresh_tokens(&refresh_token, conn).await {
-        Err(err) => err_code!(err.to_string(), Status::Unauthorized.code),
+        Err(err) => {
+            err_code!(format!("Unable to refresh login credentials: {}", err.message()), Status::Unauthorized.code)
+        }
         Ok((mut device, user, auth_tokens)) => {
             // Save to update `device.updated_at` to track usage
             device.save(conn).await?;
