@@ -79,19 +79,39 @@ impl Cipher {
         }
     }
 
-    pub fn validate_notes(cipher_data: &[CipherData]) -> EmptyResult {
+    pub fn validate_cipher_data(cipher_data: &[CipherData]) -> EmptyResult {
         let mut validation_errors = serde_json::Map::new();
         let max_note_size = CONFIG._max_note_size();
         let max_note_size_msg =
             format!("The field Notes exceeds the maximum encrypted value length of {} characters.", &max_note_size);
         for (index, cipher) in cipher_data.iter().enumerate() {
+            // Validate the note size and if it is exceeded return a warning
             if let Some(note) = &cipher.notes {
                 if note.len() > max_note_size {
                     validation_errors
                         .insert(format!("Ciphers[{index}].Notes"), serde_json::to_value([&max_note_size_msg]).unwrap());
                 }
             }
+
+            // Validate the password history if it contains `null` values and if so, return a warning
+            if let Some(Value::Array(password_history)) = &cipher.password_history {
+                for pwh in password_history {
+                    if let Value::Object(pwo) = pwh {
+                        if pwo.get("password").is_some_and(|p| !p.is_string()) {
+                            validation_errors.insert(
+                                format!("Ciphers[{index}].Notes"),
+                                serde_json::to_value([
+                                    "The password history contains a `null` value. Only strings are allowed.",
+                                ])
+                                .unwrap(),
+                            );
+                            break;
+                        }
+                    }
+                }
+            }
         }
+
         if !validation_errors.is_empty() {
             let err_json = json!({
                 "message": "The model state is invalid.",
@@ -153,27 +173,39 @@ impl Cipher {
             .as_ref()
             .and_then(|s| {
                 serde_json::from_str::<Vec<LowerCase<Value>>>(s)
-                    .inspect_err(|e| warn!("Error parsing fields {:?}", e))
-                    .ok()
-            })
-            .map(|d| d.into_iter().map(|d| d.data).collect())
-            .unwrap_or_default();
-        let password_history_json: Vec<_> = self
-            .password_history
-            .as_ref()
-            .and_then(|s| {
-                serde_json::from_str::<Vec<LowerCase<Value>>>(s)
-                    .inspect_err(|e| warn!("Error parsing password history {:?}", e))
+                    .inspect_err(|e| warn!("Error parsing fields {e:?} for {}", self.uuid))
                     .ok()
             })
             .map(|d| d.into_iter().map(|d| d.data).collect())
             .unwrap_or_default();
 
+        let password_history_json: Vec<_> = self
+            .password_history
+            .as_ref()
+            .and_then(|s| {
+                serde_json::from_str::<Vec<LowerCase<Value>>>(s)
+                    .inspect_err(|e| warn!("Error parsing password history {e:?} for {}", self.uuid))
+                    .ok()
+            })
+            .map(|d| {
+                // Check every password history item if they are valid and return it.
+                // If a password field has the type `null` skip it, it breaks newer Bitwarden clients
+                d.into_iter()
+                    .filter_map(|d| match d.data.get("password") {
+                        Some(p) if p.is_string() => Some(d.data),
+                        _ => None,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
         // Get the type_data or a default to an empty json object '{}'.
         // If not passing an empty object, mobile clients will crash.
-        let mut type_data_json = serde_json::from_str::<LowerCase<Value>>(&self.data)
-            .map(|d| d.data)
-            .unwrap_or_else(|_| Value::Object(serde_json::Map::new()));
+        let mut type_data_json =
+            serde_json::from_str::<LowerCase<Value>>(&self.data).map(|d| d.data).unwrap_or_else(|_| {
+                warn!("Error parsing data field for {}", self.uuid);
+                Value::Object(serde_json::Map::new())
+            });
 
         // NOTE: This was marked as *Backwards Compatibility Code*, but as of January 2021 this is still being used by upstream
         // Set the first element of the Uris array as Uri, this is needed several (mobile) clients.
@@ -189,10 +221,13 @@ impl Cipher {
 
         // Fix secure note issues when data is invalid
         // This breaks at least the native mobile clients
-        if self.atype == 2
-            && (self.data.is_empty() || self.data.eq("{}") || self.data.to_ascii_lowercase().eq("{\"type\":null}"))
-        {
-            type_data_json = json!({"type": 0});
+        if self.atype == 2 {
+            match type_data_json {
+                Value::Object(ref t) if t.get("type").is_some_and(|t| t.is_number()) => {}
+                _ => {
+                    type_data_json = json!({"type": 0});
+                }
+            }
         }
 
         // Clone the type_data and add some default value.
