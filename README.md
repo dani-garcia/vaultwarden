@@ -48,6 +48,14 @@ This can be configured in [vaultwarden directly](https://github.com/dani-garcia/
 
 If you have an available domain name, you can get HTTPS certificates with [Let's Encrypt](https://letsencrypt.org/), or you can generate self-signed certificates with utilities like [mkcert](https://github.com/FiloSottile/mkcert). Some proxies automatically do this step, like Caddy (see examples linked above).
 
+## Self Hosting
+
+### Elestio
+
+You can deploy Vaultwarden on Elestio using one-click deployment.
+
+[![Deploy on Elestio](https://elest.io/images/logos/deploy-to-elestio-btn.png)](https://elest.io/open-source/vaultwarden)
+
 ## Usage
 See the [vaultwarden wiki](https://github.com/dani-garcia/vaultwarden/wiki) for more information on how to configure and run the vaultwarden server.
 
