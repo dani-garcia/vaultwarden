@@ -703,6 +703,7 @@ async fn put_cipher_partial(
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct CollectionsAdminData {
+    #[serde(alias = "CollectionIds")]
     collection_ids: Vec<String>,
 }
 
