@@ -17,6 +17,7 @@ use crate::{
         encode_jwt, generate_delete_claims, generate_emergency_access_invite_claims, generate_invite_claims,
         generate_verify_email_claims,
     },
+    config::SMTP_ADDITIONAL_ROOT_CERTS,
     error::Error,
     CONFIG,
 };
@@ -45,6 +46,9 @@ fn smtp_transport() -> AsyncSmtpTransport<Tokio1Executor> {
         }
         if CONFIG.smtp_accept_invalid_certs() {
             tls_parameters = tls_parameters.dangerous_accept_invalid_certs(true);
+        }
+        for cert in &*SMTP_ADDITIONAL_ROOT_CERTS.read().unwrap() {
+            tls_parameters = tls_parameters.add_root_certificate(cert.clone());
         }
         let tls_parameters = tls_parameters.build().unwrap();
 

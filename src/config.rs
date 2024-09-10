@@ -3,6 +3,7 @@ use std::process::exit;
 use std::sync::RwLock;
 
 use job_scheduler_ng::Schedule;
+use lettre::transport::smtp::client::Certificate;
 use once_cell::sync::Lazy;
 use reqwest::Url;
 
@@ -674,6 +675,8 @@ make_config! {
         smtp_accept_invalid_certs:     bool,   true,   def,     false;
         /// Accept Invalid Hostnames (Know the risks!) |> DANGEROUS: Allow invalid hostnames. This option introduces significant vulnerabilities to man-in-the-middle attacks!
         smtp_accept_invalid_hostnames: bool,   true,   def,     false;
+        /// Accept additional root certs |> Paths to PEM files, separated by semicolons
+        smtp_additional_root_certs:    String, true,   option;
     },
 
     /// Email 2FA Settings
@@ -886,6 +889,11 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         if cfg._enable_email_2fa && cfg.email_token_size < 6 {
             err!("`EMAIL_TOKEN_SIZE` has a minimum size of 6")
         }
+
+        if let Some(additional_root_cert_paths) = &cfg.smtp_additional_root_certs {
+            let certificates = load_certificates(additional_root_cert_paths.as_str())?;
+            *SMTP_ADDITIONAL_ROOT_CERTS.write().unwrap() = certificates;
+        }
     }
 
     if cfg._enable_email_2fa && !(cfg.smtp_host.is_some() || cfg.use_sendmail) {
@@ -1016,6 +1024,24 @@ fn generate_smtp_img_src(embed_images: bool, domain: &str) -> String {
     } else {
         format!("{domain}/vw_static/")
     }
+}
+
+pub static SMTP_ADDITIONAL_ROOT_CERTS: RwLock<Vec<Certificate>> = RwLock::new(Vec::new());
+
+fn load_certificates(smtp_additional_root_certs: &str) -> Result<Vec<Certificate>, Error> {
+    smtp_additional_root_certs
+        .split(';')
+        .filter(|path| !path.is_empty())
+        .map(|path| {
+            let cert = match std::fs::read(path) {
+                Ok(cert) => cert,
+                Err(e) => {
+                    err!(format!("Error loading additional SMTP root certificate file {path}.\n{e}"))
+                }
+            };
+            Certificate::from_pem(&cert).or_else(|e| err!(format!("Error decoding certificate file {path}.\n{e}")))
+        })
+        .collect()
 }
 
 /// Generate the correct URL for the icon service.
