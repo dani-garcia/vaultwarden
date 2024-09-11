@@ -1,6 +1,12 @@
 use std::path::{Path, PathBuf};
 
-use rocket::{fs::NamedFile, http::ContentType, response::content::RawHtml as Html, serde::json::Json, Catcher, Route};
+use rocket::{
+    fs::NamedFile,
+    http::ContentType,
+    response::{content::RawCss as Css, content::RawHtml as Html, Redirect},
+    serde::json::Json,
+    Catcher, Route,
+};
 use serde_json::Value;
 
 use crate::{
@@ -16,7 +22,7 @@ pub fn routes() -> Vec<Route> {
     // crate::utils::LOGGED_ROUTES to make sure they appear in the log
     let mut routes = routes![attachments, alive, alive_head, static_files];
     if CONFIG.web_vault_enabled() {
-        routes.append(&mut routes![web_index, web_index_head, app_id, web_files]);
+        routes.append(&mut routes![web_index, web_index_direct, web_index_head, app_id, web_files, vaultwarden_css]);
     }
 
     #[cfg(debug_assertions)]
@@ -45,9 +51,36 @@ fn not_found() -> ApiResult<Html<String>> {
     Ok(Html(text))
 }
 
+#[get("/css/vaultwarden.css")]
+fn vaultwarden_css() -> Cached<Css<String>> {
+    let css_options = json!({
+        "signup_disabled": !CONFIG.signups_allowed() && CONFIG.signups_domains_whitelist().is_empty(),
+        "mail_enabled": CONFIG.mail_enabled(),
+        "yubico_enabled": CONFIG._enable_yubico() && (CONFIG.yubico_client_id().is_some() == CONFIG.yubico_secret_key().is_some()),
+        "emergency_access_allowed": CONFIG.emergency_access_allowed(),
+        "sends_allowed": CONFIG.sends_allowed(),
+    });
+    let scss = CONFIG.render_template("scss/vaultwarden.scss", &css_options).expect("Rendered scss/vaultwarden.scss");
+    let css = grass_compiler::from_string(
+        scss,
+        &grass_compiler::Options::default().style(grass_compiler::OutputStyle::Compressed),
+    )
+    .expect("scss/vaultwarden.scss to compile");
+
+    // Cache for one day should be enough and not too much
+    Cached::ttl(Css(css), 86_400, false)
+}
+
 #[get("/")]
 async fn web_index() -> Cached<Option<NamedFile>> {
     Cached::short(NamedFile::open(Path::new(&CONFIG.web_vault_folder()).join("index.html")).await.ok(), false)
+}
+
+// Make sure that `/index.html` redirect to actual domain path.
+// If not, this might cause issues with the web-vault
+#[get("/index.html")]
+fn web_index_direct() -> Redirect {
+    Redirect::to(format!("{}/", CONFIG.domain_path()))
 }
 
 #[head("/")]
