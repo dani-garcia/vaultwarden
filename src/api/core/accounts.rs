@@ -8,7 +8,7 @@ use serde_json::Value;
 use crate::{
     api::{
         core::{log_user_event, two_factor::email},
-        register_push_device, unregister_push_device, AnonymousNotify, EmptyResult, JsonResult, Notify,
+        register_push_device, unregister_push_device, AnonymousNotify, ApiResult, EmptyResult, JsonResult, Notify,
         PasswordOrOtpData, UpdateType,
     },
     auth::{decode_delete, decode_invite, decode_verify_email, ClientHeaders, Headers},
@@ -94,8 +94,7 @@ pub struct SetPasswordData {
     keys: Option<KeysData>,
     master_password_hash: String,
     master_password_hint: Option<String>,
-    #[allow(dead_code)]
-    org_identifier: Option<String>,
+    // org_identifier: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -103,13 +102,6 @@ pub struct SetPasswordData {
 struct KeysData {
     encrypted_private_key: String,
     public_key: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct TokenPayload {
-    exp: i64,
-    email: String,
-    nonce: String,
 }
 
 /// Trims whitespace from password hints, and converts blank password hints to `None`.
@@ -184,10 +176,7 @@ pub async fn _register(data: Json<RegisterData>, mut conn: DbConn) -> JsonResult
                     err!("Registration email does not match invite email")
                 }
             } else if Invitation::take(&email, &mut conn).await {
-                for user_org in UserOrganization::find_invited_by_user(&user.uuid, &mut conn).await.iter_mut() {
-                    user_org.status = UserOrgStatus::Accepted as i32;
-                    user_org.save(&mut conn).await?;
-                }
+                UserOrganization::confirm_user_invitations(&user.uuid, &mut conn).await?;
                 user
             } else if CONFIG.is_signup_allowed(&email)
                 || (CONFIG.emergency_access_allowed()
@@ -203,7 +192,7 @@ pub async fn _register(data: Json<RegisterData>, mut conn: DbConn) -> JsonResult
             // because the vaultwarden admin can invite anyone, regardless
             // of other signup restrictions.
             if Invitation::take(&email, &mut conn).await || CONFIG.is_signup_allowed(&email) {
-                User::new(email.clone())
+                User::new(email.clone(), None)
             } else {
                 err!("Registration not allowed or user already exists")
             }
@@ -274,7 +263,7 @@ async fn post_set_password(data: Json<SetPasswordData>, headers: Headers, mut co
 
     // Check against the password hint setting here so if it fails, the user
     // can retry without losing their invitation below.
-    let password_hint = clean_password_hint(&data.master_password_hash);
+    let password_hint = clean_password_hint(&data.master_password_hint);
     enforce_password_hint_setting(&password_hint)?;
 
     if let Some(client_kdf_iter) = data.kdf_iterations {
@@ -1041,14 +1030,29 @@ struct SecretVerificationRequest {
     master_password_hash: String,
 }
 
+// Change the KDF Iterations if necessary
+pub async fn kdf_upgrade(user: &mut User, pwd_hash: &str, conn: &mut DbConn) -> ApiResult<()> {
+    if user.password_iterations != CONFIG.password_iterations() {
+        user.password_iterations = CONFIG.password_iterations();
+        user.set_password(pwd_hash, None, false, None);
+
+        if let Err(e) = user.save(conn).await {
+            error!("Error updating user: {:#?}", e);
+        }
+    }
+    Ok(())
+}
+
 #[post("/accounts/verify-password", data = "<data>")]
-fn verify_password(data: Json<SecretVerificationRequest>, headers: Headers) -> JsonResult {
+async fn verify_password(data: Json<SecretVerificationRequest>, headers: Headers, mut conn: DbConn) -> JsonResult {
     let data: SecretVerificationRequest = data.into_inner();
-    let user = headers.user;
+    let mut user = headers.user;
 
     if !user.check_valid_password(&data.master_password_hash) {
         err!("Invalid password")
     }
+
+    kdf_upgrade(&mut user, &data.master_password_hash, &mut conn).await?;
 
     Ok(Json(json!({
       "MasterPasswordPolicy": {}, // Required for SSO login with mobile apps
