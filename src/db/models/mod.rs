@@ -34,4 +34,4 @@ pub use self::sso_nonce::SsoNonce;
 pub use self::two_factor::{TwoFactor, TwoFactorType};
 pub use self::two_factor_duo_context::TwoFactorDuoContext;
 pub use self::two_factor_incomplete::TwoFactorIncomplete;
-pub use self::user::{Invitation, User, UserKdfType, UserStampException};
+pub use self::user::{Invitation, SsoUser, User, UserKdfType, UserStampException};

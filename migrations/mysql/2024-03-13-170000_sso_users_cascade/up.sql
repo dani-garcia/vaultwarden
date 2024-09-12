@@ -1,0 +1,2 @@
+ALTER TABLE sso_users DROP FOREIGN KEY `sso_users_ibfk_1`;
+ALTER TABLE sso_users ADD FOREIGN KEY(user_uuid) REFERENCES users(uuid) ON UPDATE CASCADE ON DELETE CASCADE;
