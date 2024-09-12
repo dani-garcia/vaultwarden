@@ -418,6 +418,9 @@ make_config! {
         /// Duo Auth context cleanup schedule |> Cron schedule of the job that cleans expired Duo contexts from the database. Does nothing if Duo MFA is disabled or set to use the legacy iframe prompt.
         /// Defaults to once every minute. Set blank to disable this job.
         duo_context_purge_schedule:   String, false,  def,    "30 * * * * *".to_string();
+        /// Purge incomplete sso nonce. |> Cron schedule of the job that cleans leftover nonce in db due to incomplete sso login.
+        /// Defaults to daily. Set blank to disable this job.
+        purge_incomplete_sso_nonce: String, false,  def,   "0 20 0 * * *".to_string();
     },
 
     /// General settings
@@ -635,19 +638,35 @@ make_config! {
     /// OpenID Connect SSO settings
     sso {
         /// Enabled
-        sso_enabled:            bool,   true,   def,    false;
-        /// Force SSO login
-        sso_only:               bool,   true,   def,    false;
+        sso_enabled:                    bool,   false,   def,    false;
+        /// Only sso login |> Disable Email+Master Password login
+        sso_only:                       bool,   true,   def,    false;
+        /// Allow email associtation |> Associate existing non-sso user based on email
+        sso_signups_match_email:        bool,   true,   def,    true;
         /// Client ID
-        sso_client_id:          String, true,   def,    String::new();
+        sso_client_id:                  String, false,   def,    String::new();
         /// Client Key
-        sso_client_secret:      Pass,   true,   def,    String::new();
-        /// Authority Server
-        sso_authority:          String, true,   def,    String::new();
-        /// CallBack Path
-        sso_callback_path:      String, false,  gen,    |c| generate_sso_callback_path(&c.domain);
-        /// Allow workaround so SSO logins accept all invites
-        sso_acceptall_invites: bool, true,   def,     false;
+        sso_client_secret:              Pass,   false,   def,    String::new();
+        /// Authority Server |> Base url of the OIDC provider discovery endpoint (without `/.well-known/openid-configuration`)
+        sso_authority:                  String, false,   def,    String::new();
+        /// Authorization request scopes |> List the of the needed scope (`openid` is implicit)
+        sso_scopes:                     String, false,  def,   "email profile".to_string();
+        /// Authorization request extra parameters
+        sso_authorize_extra_params:     String, false,  def,    String::new();
+        /// Use PKCE during Authorization flow
+        sso_pkce:                       bool,   false,   def,    false;
+        /// Regex for additionnal trusted Id token audience |> By default only the client_id is trsuted.
+        sso_audience_trusted:           String, false,  option;
+        /// CallBack Path |> Generated from Domain.
+        sso_callback_path:              String, false,  gen,    |c| generate_sso_callback_path(&c.domain);
+        /// Optional sso master password policy |> Ex format: '{"enforceOnLogin":false,"minComplexity":3,"minLength":12,"requireLower":false,"requireNumbers":false,"requireSpecial":false,"requireUpper":false}'
+        sso_master_password_policy:     String, true,  option;
+        /// Use sso only for auth not the session lifecycle |> Use default Vaultwarden session lifecycle (Idle refresh token valid for 30days)
+        sso_auth_only_not_session:      bool,   true,   def,    false;
+        /// Client cache for discovery endpoint. |> Duration in seconds (0 or less to disable). More details: https://github.com/dani-garcia/vaultwarden/blob/sso-support/SSO.md#client-cache
+        sso_client_cache_expiration:    u64,    true,   def,    0;
+        /// Log all tokens |> `LOG_LEVEL=debug` or `LOG_LEVEL=info,vaultwarden::sso=debug` is required
+        sso_debug_tokens:               bool,   true,   def,    false;
     },
 
     /// Yubikey settings
@@ -861,10 +880,15 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         err!("All Duo options need to be set for global Duo support")
     }
 
-    if cfg.sso_enabled
-        && (cfg.sso_client_id.is_empty() || cfg.sso_client_secret.is_empty() || cfg.sso_authority.is_empty())
-    {
-        err!("`SSO_CLIENT_ID`, `SSO_CLIENT_SECRET` and `SSO_AUTHORITY` must be set for SSO support")
+    if cfg.sso_enabled {
+        if cfg.sso_client_id.is_empty() || cfg.sso_client_secret.is_empty() || cfg.sso_authority.is_empty() {
+            err!("`SSO_CLIENT_ID`, `SSO_CLIENT_SECRET` and `SSO_AUTHORITY` must be set for SSO support")
+        }
+
+        internal_sso_issuer_url(&cfg.sso_authority)?;
+        internal_sso_redirect_url(&cfg.sso_callback_path)?;
+        check_master_password_policy(&cfg.sso_master_password_policy)?;
+        internal_sso_authorize_extra_params_vec(&cfg.sso_authorize_extra_params)?;
     }
 
     if cfg._enable_yubico {
@@ -1044,6 +1068,35 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
     Ok(())
 }
 
+fn internal_sso_issuer_url(sso_authority: &String) -> Result<openidconnect::IssuerUrl, Error> {
+    match openidconnect::IssuerUrl::new(sso_authority.clone()) {
+        Err(err) => err!(format!("Invalid sso_authority UR ({sso_authority}): {err}")),
+        Ok(issuer_url) => Ok(issuer_url),
+    }
+}
+
+fn internal_sso_redirect_url(sso_callback_path: &String) -> Result<openidconnect::RedirectUrl, Error> {
+    match openidconnect::RedirectUrl::new(sso_callback_path.clone()) {
+        Err(err) => err!(format!("Invalid sso_callback_path ({sso_callback_path} built using `domain`) URL: {err}")),
+        Ok(redirect_url) => Ok(redirect_url),
+    }
+}
+
+fn internal_sso_authorize_extra_params_vec(config: &str) -> Result<Vec<(String, String)>, Error> {
+    match parse_param_list(config.to_owned(), '&', '=') {
+        Err(e) => err!(format!("Invalid SSO_AUTHORIZE_EXTRA_PARAMS: {e}")),
+        Ok(params) => Ok(params),
+    }
+}
+
+fn check_master_password_policy(sso_master_password_policy: &Option<String>) -> Result<(), Error> {
+    let policy = sso_master_password_policy.as_ref().map(|mpp| serde_json::from_str::<serde_json::Value>(mpp));
+    if let Some(Err(error)) = policy {
+        err!(format!("Invalid sso_master_password_policy ({error}), Ensure that it's correctly escaped with ''"))
+    }
+    Ok(())
+}
+
 /// Extracts an RFC 6454 web origin from a URL.
 fn extract_url_origin(url: &str) -> String {
     match Url::parse(url) {
@@ -1119,6 +1172,26 @@ fn smtp_convert_deprecated_ssl_options(smtp_ssl: Option<bool>, smtp_explicit_tls
     }
     // Return the default `starttls` in all other cases
     "starttls".to_string()
+}
+
+/// Allow to parse a list of Key/Values (Ex: `key1=value&key2=value2`)
+/// - line break are handled as `separator`
+fn parse_param_list(config: String, separator: char, kv_separator: char) -> Result<Vec<(String, String)>, Error> {
+    config
+        .lines()
+        .flat_map(|l| l.split(separator))
+        .map(|l| l.trim())
+        .filter(|l| !l.is_empty())
+        .map(|l| {
+            let split = l.split(kv_separator).collect::<Vec<&str>>();
+            match &split[..] {
+                [key, value] => Ok(((*key).to_string(), (*value).to_string())),
+                _ => {
+                    err!(format!("Failed to parse ({l}). Expected key{kv_separator}value"))
+                }
+            }
+        })
+        .collect()
 }
 
 impl Config {
@@ -1310,6 +1383,22 @@ impl Config {
             }
         }
     }
+
+    pub fn sso_issuer_url(&self) -> Result<openidconnect::IssuerUrl, Error> {
+        internal_sso_issuer_url(&self.sso_authority())
+    }
+
+    pub fn sso_redirect_url(&self) -> Result<openidconnect::RedirectUrl, Error> {
+        internal_sso_redirect_url(&self.sso_callback_path())
+    }
+
+    pub fn sso_scopes_vec(&self) -> Vec<String> {
+        self.sso_scopes().split_whitespace().map(str::to_string).collect()
+    }
+
+    pub fn sso_authorize_extra_params_vec(&self) -> Result<Vec<(String, String)>, Error> {
+        internal_sso_authorize_extra_params_vec(&self.sso_authorize_extra_params())
+    }
 }
 
 use handlebars::{
@@ -1367,6 +1456,7 @@ where
     reg!("email/send_single_org_removed_from_org", ".html");
     reg!("email/set_password", ".html");
     reg!("email/smtp_test", ".html");
+    reg!("email/sso_change_email", ".html");
     reg!("email/twofactor_email", ".html");
     reg!("email/verify_email", ".html");
     reg!("email/welcome_must_verify", ".html");
@@ -1422,4 +1512,55 @@ fn to_json<'reg, 'rc>(
         .map_err(|e| RenderErrorReason::Other(format!("Can't serialize parameter to JSON: {e}")))?;
     out.write(&json)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_param_list() {
+        let config = "key1=value&key2=value2&".to_string();
+        let parsed = parse_param_list(config, '&', '=');
+
+        assert_eq!(
+            parsed.unwrap(),
+            vec![("key1".to_string(), "value".to_string()), ("key2".to_string(), "value2".to_string())]
+        );
+    }
+
+    #[test]
+    fn test_parse_param_list_lines() {
+        let config = r#"
+        key1=value
+        key2=value2
+        "#
+        .to_string();
+        let parsed = parse_param_list(config, '&', '=');
+
+        assert_eq!(
+            parsed.unwrap(),
+            vec![("key1".to_string(), "value".to_string()), ("key2".to_string(), "value2".to_string())]
+        );
+    }
+
+    #[test]
+    fn test_parse_param_list_mixed() {
+        let config = r#"key1=value&key2=value2&
+        &key3=value3&&
+        &key4=value4
+        "#
+        .to_string();
+        let parsed = parse_param_list(config, '&', '=');
+
+        assert_eq!(
+            parsed.unwrap(),
+            vec![
+                ("key1".to_string(), "value".to_string()),
+                ("key2".to_string(), "value2".to_string()),
+                ("key3".to_string(), "value3".to_string()),
+                ("key4".to_string(), "value4".to_string()),
+            ]
+        );
+    }
 }

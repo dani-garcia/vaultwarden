@@ -93,7 +93,7 @@ async fn ldap_import(data: Json<OrgImportData>, token: PublicToken, mut conn: Db
                 Some(user) => user, // exists in vaultwarden
                 None => {
                     // User does not exist yet
-                    let mut new_user = User::new(user_data.email.clone());
+                    let mut new_user = User::new(user_data.email.clone(), None);
                     new_user.save(&mut conn).await?;
 
                     if !CONFIG.mail_enabled() {
@@ -109,7 +109,12 @@ async fn ldap_import(data: Json<OrgImportData>, token: PublicToken, mut conn: Db
                 UserOrgStatus::Accepted as i32 // Automatically mark user as accepted if no email invites
             };
 
-            let mut new_org_user = UserOrganization::new(user.uuid.clone(), org_id.clone());
+            let (org_name, org_email) = match Organization::find_by_uuid(&org_id, &mut conn).await {
+                Some(org) => (org.name, org.billing_email),
+                None => err!("Error looking up organization"),
+            };
+
+            let mut new_org_user = UserOrganization::new(user.uuid.clone(), org_id.clone(), Some(org_email.clone()));
             new_org_user.set_external_id(Some(user_data.external_id.clone()));
             new_org_user.access_all = false;
             new_org_user.atype = UserOrgType::User as i32;
@@ -118,11 +123,6 @@ async fn ldap_import(data: Json<OrgImportData>, token: PublicToken, mut conn: Db
             new_org_user.save(&mut conn).await?;
 
             if CONFIG.mail_enabled() {
-                let (org_name, org_email) = match Organization::find_by_uuid(&org_id, &mut conn).await {
-                    Some(org) => (org.name, org.billing_email),
-                    None => err!("Error looking up organization"),
-                };
-
                 mail::send_invite(&user, Some(org_id.clone()), Some(new_org_user.uuid), &org_name, Some(org_email))
                     .await?;
             }
