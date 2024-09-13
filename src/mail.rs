@@ -250,13 +250,9 @@ pub async fn send_invite(
         query_params
             .append_pair("email", &user.email)
             .append_pair("organizationName", org_name)
+            .append_pair("organizationId", org_id.as_deref().unwrap_or("_"))
+            .append_pair("organizationUserId", org_user_id.as_deref().unwrap_or("_"))
             .append_pair("token", &invite_token);
-        if let Some(id) = org_id {
-            query_params.append_pair("organizationId", &id);
-        };
-        if let Some(id) = org_user_id {
-            query_params.append_pair("organizationUserId", &id);
-        };
         if user.private_key.is_some() {
             query_params.append_pair("orgUserHasExistingUser", "true");
         }
