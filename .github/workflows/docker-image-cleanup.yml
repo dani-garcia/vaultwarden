@@ -1,0 +1,37 @@
+name: Docker Image Cleanup
+
+on:
+  schedule:
+    - cron: "0 3 * * SAT"
+  workflow_dispatch:
+
+env:
+  ALI_BJ_REGISTER: registry.cn-beijing.aliyuncs.com
+  ALI_BJ_REPOSITORY: andrew-vaultwarden
+
+jobs:
+  manage-images:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Login to Docker Registry
+        uses: docker/login-action@master
+        with:
+          registry: ${{ env.ALI_BJ_REGISTER }}
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: List Images from Specific Repository
+        run: |
+          images=$(docker images ${{ env.ALI_BJ_REPOSITORY }} --format "{{.Created}}\t{{.ID}}" | sort)
+          echo "$images"
+          ids_to_delete=("${images[@]:3}")
+          if [ ${#ids_to_delete[@]} -ne 0 ]; then
+              for id in "${ids_to_delete[@]}"; do
+                echo "Del $id"
+                docker image rm $id
+              done
+          fi
+
+      - name: Logout
+        run: docker logout ${{ env.ALI_BJ_REGISTER }}

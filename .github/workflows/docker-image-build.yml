@@ -1,0 +1,78 @@
+name: Docker Image Build
+
+on:
+  push:
+    paths:
+      - "src/**"
+      - "migrations/**"
+      - "Cargo.*"
+      - "build.rs"
+      - "rust-toolchain.toml"
+      - "rustfmt.toml"
+      - "diesel.toml"
+      - "docker/Dockerfile.j2"
+      - "docker/DockerSettings.yaml"
+  workflow_dispatch:
+
+env:
+  ALI_REG: registry.cn-beijing.aliyuncs.com
+  ALI_PATH: registry.cn-beijing.aliyuncs.com/andrew-vaultwarden/vaultwarden
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    name: build
+    steps:
+      - name: Checkout
+        uses: actions/checkout@master
+        with:
+          fetch-depth: 0
+
+      - name: Get current time
+        uses: josStorer/get-current-time@master
+        id: time
+        with:
+          format: YYYY.MM.DD.HHmm
+          utcOffset: "+08:00"
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@master
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Login to Docker Aliyun registry
+        uses: docker/login-action@master
+        with:
+          registry: ${{ env.ALI_REG }}
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      # Start Docker Buildx
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        # https://github.com/moby/buildkit/issues/3969
+        # Also set max parallelism to 2, the default of 4 breaks GitHub Actions and causes OOMKills
+        with:
+          buildkitd-config-inline: |
+            [worker.oci]
+              max-parallelism = 2
+          driver-opts: network=host
+
+      - name: Build the Docker image
+        uses: docker/build-push-action@master
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: ${{ env.ALI_PATH }}:v${{ steps.time.outputs.formattedTime }}
+          build-args: DB=sqlite
+          cache-to: type=gha,mode=max
+          cache-from: type=gha
+
+      - name: Logout from Docker Registries
+        run: docker logout ${{ env.ALI_REG }}
+
+      - name: Logout from Docker Registries
+        run: docker logout ghcr.io
