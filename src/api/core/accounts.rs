@@ -112,7 +112,7 @@ async fn is_email_2fa_required(org_user_uuid: Option<String>, conn: &mut DbConn)
         return true;
     }
     if org_user_uuid.is_some() {
-        return OrgPolicy::is_enabled_by_org(&org_user_uuid.unwrap(), OrgPolicyType::TwoFactorAuthentication, conn)
+        return OrgPolicy::is_enabled_for_member(&org_user_uuid.unwrap(), OrgPolicyType::TwoFactorAuthentication, conn)
             .await;
     }
     false
