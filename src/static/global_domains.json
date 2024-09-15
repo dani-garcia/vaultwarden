@@ -971,5 +971,13 @@
       "pinterest.se"
     ],
     "excluded": false
+  },
+  {
+    "type": 91,
+    "domains": [
+      "twitter.com",
+      "x.com"
+    ],
+    "excluded": false
   }
 ]
