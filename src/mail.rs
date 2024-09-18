@@ -17,7 +17,7 @@ use crate::{
         encode_jwt, generate_delete_claims, generate_emergency_access_invite_claims, generate_invite_claims,
         generate_verify_email_claims,
     },
-    db::models::User,
+    db::models::{Device, DeviceType, User},
     error::Error,
     CONFIG,
 };
@@ -442,9 +442,8 @@ pub async fn send_invite_confirmed(address: &str, org_name: &str) -> EmptyResult
     send_email(address, &subject, body_html, body_text).await
 }
 
-pub async fn send_new_device_logged_in(address: &str, ip: &str, dt: &NaiveDateTime, device: &str) -> EmptyResult {
+pub async fn send_new_device_logged_in(address: &str, ip: &str, dt: &NaiveDateTime, device: &Device) -> EmptyResult {
     use crate::util::upcase_first;
-    let device = upcase_first(device);
 
     let fmt = "%A, %B %_d, %Y at %r %Z";
     let (subject, body_html, body_text) = get_text(
@@ -453,7 +452,8 @@ pub async fn send_new_device_logged_in(address: &str, ip: &str, dt: &NaiveDateTi
             "url": CONFIG.domain(),
             "img_src": CONFIG._smtp_img_src(),
             "ip": ip,
-            "device": device,
+            "device_name": upcase_first(&device.name),
+            "device_type": DeviceType::from_i32(device.atype).to_string(),
             "datetime": crate::util::format_naive_datetime_local(dt, fmt),
         }),
     )?;
@@ -461,9 +461,14 @@ pub async fn send_new_device_logged_in(address: &str, ip: &str, dt: &NaiveDateTi
     send_email(address, &subject, body_html, body_text).await
 }
 
-pub async fn send_incomplete_2fa_login(address: &str, ip: &str, dt: &NaiveDateTime, device: &str) -> EmptyResult {
+pub async fn send_incomplete_2fa_login(
+    address: &str,
+    ip: &str,
+    dt: &NaiveDateTime,
+    device_name: &str,
+    device_type: &str,
+) -> EmptyResult {
     use crate::util::upcase_first;
-    let device = upcase_first(device);
 
     let fmt = "%A, %B %_d, %Y at %r %Z";
     let (subject, body_html, body_text) = get_text(
@@ -472,7 +477,8 @@ pub async fn send_incomplete_2fa_login(address: &str, ip: &str, dt: &NaiveDateTi
             "url": CONFIG.domain(),
             "img_src": CONFIG._smtp_img_src(),
             "ip": ip,
-            "device": device,
+            "device_name": upcase_first(device_name),
+            "device_type": device_type,
             "datetime": crate::util::format_naive_datetime_local(dt, fmt),
             "time_limit": CONFIG.incomplete_2fa_time_limit(),
         }),

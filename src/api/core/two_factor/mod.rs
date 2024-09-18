@@ -269,8 +269,14 @@ pub async fn send_incomplete_2fa_notifications(pool: DbPool) {
             "User {} did not complete a 2FA login within the configured time limit. IP: {}",
             user.email, login.ip_address
         );
-        match mail::send_incomplete_2fa_login(&user.email, &login.ip_address, &login.login_time, &login.device_name)
-            .await
+        match mail::send_incomplete_2fa_login(
+            &user.email,
+            &login.ip_address,
+            &login.login_time,
+            &login.device_name,
+            &DeviceType::from_i32(login.device_type).to_string(),
+        )
+        .await
         {
             Ok(_) => {
                 if let Err(e) = login.delete(&mut conn).await {
