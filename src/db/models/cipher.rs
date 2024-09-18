@@ -190,10 +190,19 @@ impl Cipher {
             .map(|d| {
                 // Check every password history item if they are valid and return it.
                 // If a password field has the type `null` skip it, it breaks newer Bitwarden clients
+                // A second check is done to verify the lastUsedDate exists and is a string, if not the epoch start time will be used
                 d.into_iter()
                     .filter_map(|d| match d.data.get("password") {
                         Some(p) if p.is_string() => Some(d.data),
                         _ => None,
+                    })
+                    .map(|d| match d.get("lastUsedDate") {
+                        Some(l) if l.is_string() => d,
+                        _ => {
+                            let mut d = d;
+                            d["lastUsedDate"] = json!("1970-01-01T00:00:00.000Z");
+                            d
+                        }
                     })
                     .collect()
             })
