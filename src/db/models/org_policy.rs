@@ -342,9 +342,11 @@ impl OrgPolicy {
         false
     }
 
-    pub async fn is_enabled_by_org(org_uuid: &str, policy_type: OrgPolicyType, conn: &mut DbConn) -> bool {
-        if let Some(policy) = OrgPolicy::find_by_org_and_type(org_uuid, policy_type, conn).await {
-            return policy.enabled;
+    pub async fn is_enabled_for_member(org_user_uuid: &str, policy_type: OrgPolicyType, conn: &mut DbConn) -> bool {
+        if let Some(membership) = UserOrganization::find_by_uuid(org_user_uuid, conn).await {
+            if let Some(policy) = OrgPolicy::find_by_org_and_type(&membership.org_uuid, policy_type, conn).await {
+                return policy.enabled;
+            }
         }
         false
     }
