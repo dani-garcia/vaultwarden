@@ -204,6 +204,9 @@ fn config() -> Json<Value> {
           "name": "Vaultwarden",
           "url": "https://github.com/dani-garcia/vaultwarden"
         },
+        "settings": {
+            "disableUserRegistration": !CONFIG.signups_allowed() && CONFIG.signups_domains_whitelist().is_empty(),
+        },
         "environment": {
           "vault": domain,
           "api": format!("{domain}/api"),
