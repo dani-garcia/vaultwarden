@@ -1,6 +1,6 @@
 use crate::util::LowerCase;
 use crate::CONFIG;
-use chrono::{NaiveDateTime, TimeDelta, Utc};
+use chrono::{DateTime, NaiveDateTime, TimeDelta, Utc};
 use serde_json::Value;
 
 use super::{
@@ -190,14 +190,14 @@ impl Cipher {
             .map(|d| {
                 // Check every password history item if they are valid and return it.
                 // If a password field has the type `null` skip it, it breaks newer Bitwarden clients
-                // A second check is done to verify the lastUsedDate exists and is a string, if not the epoch start time will be used
+                // A second check is done to verify the lastUsedDate exists and is a valid DateTime string, if not the epoch start time will be used
                 d.into_iter()
                     .filter_map(|d| match d.data.get("password") {
                         Some(p) if p.is_string() => Some(d.data),
                         _ => None,
                     })
-                    .map(|d| match d.get("lastUsedDate") {
-                        Some(l) if l.is_string() => d,
+                    .map(|d| match d.get("lastUsedDate").and_then(|l| l.as_str()) {
+                        Some(l) if DateTime::parse_from_rfc3339(l).is_ok() => d,
                         _ => {
                             let mut d = d;
                             d["lastUsedDate"] = json!("1970-01-01T00:00:00.000Z");
