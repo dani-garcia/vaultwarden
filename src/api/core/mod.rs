@@ -204,6 +204,9 @@ fn config() -> Json<Value> {
           "name": "Vaultwarden",
           "url": "https://github.com/dani-garcia/vaultwarden"
         },
+        "settings": {
+            "disableUserRegistration": !crate::CONFIG.signups_allowed() && crate::CONFIG.signups_domains_whitelist().is_empty(),
+        },
         "environment": {
           "vault": domain,
           "api": format!("{domain}/api"),
