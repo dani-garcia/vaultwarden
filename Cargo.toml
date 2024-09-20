@@ -90,7 +90,7 @@ uuid = { version = "1.10.0", features = ["v4"] }
 
 # Date and time libraries
 chrono = { version = "0.4.38", features = ["clock", "serde"], default-features = false }
-chrono-tz = "0.9.0"
+chrono-tz = "0.10.0"
 time = "0.3.36"
 
 # Job scheduler
@@ -115,7 +115,7 @@ webauthn-rs = "0.3.2"
 url = "2.5.2"
 
 # Email libraries
-lettre = { version = "0.11.8", features = ["smtp-transport", "sendmail-transport", "builder", "serde", "tokio1-native-tls", "hostname", "tracing", "tokio1"], default-features = false }
+lettre = { version = "0.11.9", features = ["smtp-transport", "sendmail-transport", "builder", "serde", "tokio1-native-tls", "hostname", "tracing", "tokio1"], default-features = false }
 percent-encoding = "2.3.1" # URL encoding library used for URL's in the emails
 email_address = "0.2.9"
 
@@ -130,7 +130,7 @@ hickory-resolver = "0.24.1"
 html5gum = "0.5.7"
 regex = { version = "1.10.6", features = ["std", "perf", "unicode-perl"], default-features = false }
 data-url = "0.3.1"
-bytes = "1.7.1"
+bytes = "1.7.2"
 
 # Cache function results (Used for version check and favicon fetching)
 cached = { version = "0.53.1", features = ["async"] }
