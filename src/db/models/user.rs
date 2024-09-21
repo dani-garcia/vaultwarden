@@ -144,14 +144,14 @@ impl User {
 
     pub fn check_valid_recovery_code(&self, recovery_code: &str) -> bool {
         if let Some(ref totp_recover) = self.totp_recover {
-            crate::crypto::ct_eq(recovery_code, totp_recover.to_lowercase())
+            crypto::ct_eq(recovery_code, totp_recover.to_lowercase())
         } else {
             false
         }
     }
 
     pub fn check_valid_api_key(&self, key: &str) -> bool {
-        matches!(self.api_key, Some(ref api_key) if crate::crypto::ct_eq(api_key, key))
+        matches!(self.api_key, Some(ref api_key) if crypto::ct_eq(api_key, key))
     }
 
     /// Set the password hash generated

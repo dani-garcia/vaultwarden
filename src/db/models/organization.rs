@@ -116,7 +116,7 @@ impl PartialOrd<i32> for UserOrgType {
     }
 
     fn ge(&self, other: &i32) -> bool {
-        matches!(self.partial_cmp(other), Some(Ordering::Greater) | Some(Ordering::Equal))
+        matches!(self.partial_cmp(other), Some(Ordering::Greater | Ordering::Equal))
     }
 }
 
@@ -139,7 +139,7 @@ impl PartialOrd<UserOrgType> for i32 {
     }
 
     fn le(&self, other: &UserOrgType) -> bool {
-        matches!(self.partial_cmp(other), Some(Ordering::Less) | Some(Ordering::Equal) | None)
+        matches!(self.partial_cmp(other), Some(Ordering::Less | Ordering::Equal) | None)
     }
 }
 
@@ -632,7 +632,7 @@ impl UserOrganization {
     }
 
     pub async fn find_by_email_and_org(email: &str, org_id: &str, conn: &mut DbConn) -> Option<UserOrganization> {
-        if let Some(user) = super::User::find_by_mail(email, conn).await {
+        if let Some(user) = User::find_by_mail(email, conn).await {
             if let Some(user_org) = UserOrganization::find_by_user_and_org(&user.uuid, org_id, conn).await {
                 return Some(user_org);
             }

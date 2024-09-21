@@ -89,7 +89,7 @@ impl EmergencyAccess {
                 Some(user) => user,
                 None => {
                     // remove outstanding invitations which should not exist
-                    let _ = Self::delete_all_by_grantee_email(email, conn).await;
+                    drop(Self::delete_all_by_grantee_email(email, conn).await);
                     return None;
                 }
             }

@@ -623,7 +623,7 @@ use cookie_store::CookieStore;
 pub struct Jar(std::sync::RwLock<CookieStore>);
 
 impl reqwest::cookie::CookieStore for Jar {
-    fn set_cookies(&self, cookie_headers: &mut dyn Iterator<Item = &header::HeaderValue>, url: &url::Url) {
+    fn set_cookies(&self, cookie_headers: &mut dyn Iterator<Item = &HeaderValue>, url: &url::Url) {
         use cookie::{Cookie as RawCookie, ParseError as RawCookieParseError};
         use time::Duration;
 
@@ -642,7 +642,7 @@ impl reqwest::cookie::CookieStore for Jar {
         cookie_store.store_response_cookies(cookies, url);
     }
 
-    fn cookies(&self, url: &url::Url) -> Option<header::HeaderValue> {
+    fn cookies(&self, url: &url::Url) -> Option<HeaderValue> {
         let cookie_store = self.0.read().unwrap();
         let s = cookie_store
             .get_request_values(url)
@@ -654,7 +654,7 @@ impl reqwest::cookie::CookieStore for Jar {
             return None;
         }
 
-        header::HeaderValue::from_maybe_shared(Bytes::from(s)).ok()
+        HeaderValue::from_maybe_shared(Bytes::from(s)).ok()
     }
 }
 

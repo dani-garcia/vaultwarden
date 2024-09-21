@@ -292,7 +292,7 @@ impl EmailTokenData {
     }
 
     pub fn from_json(string: &str) -> Result<EmailTokenData, Error> {
-        let res: Result<EmailTokenData, crate::serde_json::Error> = serde_json::from_str(string);
+        let res: Result<EmailTokenData, serde_json::Error> = serde_json::from_str(string);
         match res {
             Ok(x) => Ok(x),
             Err(_) => err!("Could not decode EmailTokenData from string"),

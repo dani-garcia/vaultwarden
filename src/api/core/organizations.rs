@@ -1720,7 +1720,7 @@ async fn list_policies_token(org_id: &str, token: &str, mut conn: DbConn) -> Jso
         return Ok(Json(json!({})));
     }
 
-    let invite = crate::auth::decode_invite(token)?;
+    let invite = decode_invite(token)?;
 
     let invite_org_id = match invite.org_id {
         Some(invite_org_id) => invite_org_id,

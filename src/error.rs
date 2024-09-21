@@ -5,6 +5,7 @@ use crate::db::models::EventType;
 use crate::http_client::CustomHttpClientError;
 use std::error::Error as StdError;
 
+#[allow(edition_2024_expr_fragment_specifier)]
 macro_rules! make_error {
     ( $( $name:ident ( $ty:ty ): $src_fn:expr, $usr_msg_fun:expr ),+ $(,)? ) => {
         const BAD_REQUEST: u16 = 400;
@@ -209,7 +210,7 @@ use rocket::http::{ContentType, Status};
 use rocket::request::Request;
 use rocket::response::{self, Responder, Response};
 
-impl<'r> Responder<'r, 'static> for Error {
+impl Responder<'_, 'static> for Error {
     fn respond_to(self, _: &Request<'_>) -> response::Result<'static> {
         match self.error {
             ErrorKind::Empty(_) => {}  // Don't print the error in this situation
@@ -227,6 +228,7 @@ impl<'r> Responder<'r, 'static> for Error {
 // Error return macros
 //
 #[macro_export]
+#[allow(edition_2024_expr_fragment_specifier)]
 macro_rules! err {
     ($msg:expr) => {{
         error!("{}", $msg);
@@ -247,6 +249,7 @@ macro_rules! err {
 }
 
 #[macro_export]
+#[allow(edition_2024_expr_fragment_specifier)]
 macro_rules! err_silent {
     ($msg:expr) => {{
         return Err($crate::error::Error::new($msg, $msg));
@@ -257,6 +260,7 @@ macro_rules! err_silent {
 }
 
 #[macro_export]
+#[allow(edition_2024_expr_fragment_specifier)]
 macro_rules! err_code {
     ($msg:expr, $err_code:expr) => {{
         error!("{}", $msg);
@@ -269,6 +273,7 @@ macro_rules! err_code {
 }
 
 #[macro_export]
+#[allow(edition_2024_expr_fragment_specifier)]
 macro_rules! err_discard {
     ($msg:expr, $data:expr) => {{
         std::io::copy(&mut $data.open(), &mut std::io::sink()).ok();
@@ -281,6 +286,7 @@ macro_rules! err_discard {
 }
 
 #[macro_export]
+#[allow(edition_2024_expr_fragment_specifier)]
 macro_rules! err_json {
     ($expr:expr, $log_value:expr) => {{
         return Err(($log_value, $expr).into());
@@ -291,6 +297,7 @@ macro_rules! err_json {
 }
 
 #[macro_export]
+#[allow(edition_2024_expr_fragment_specifier)]
 macro_rules! err_handler {
     ($expr:expr) => {{
         error!(target: "auth", "Unauthorized Error: {}", $expr);
