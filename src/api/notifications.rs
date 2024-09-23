@@ -428,7 +428,7 @@ impl WebSocketUsers {
         let (user_uuid, collection_uuids, revision_date) = if let Some(collection_uuids) = collection_uuids {
             (
                 Value::Nil,
-                Value::Array(collection_uuids.into_iter().map(|v| v.into()).collect::<Vec<rmpv::Value>>()),
+                Value::Array(collection_uuids.into_iter().map(|v| v.into()).collect::<Vec<Value>>()),
                 serialize_date(Utc::now().naive_utc()),
             )
         } else {

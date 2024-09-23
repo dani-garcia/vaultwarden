@@ -42,7 +42,7 @@ impl ProtectedActionData {
     }
 
     pub fn from_json(string: &str) -> Result<Self, Error> {
-        let res: Result<Self, crate::serde_json::Error> = serde_json::from_str(string);
+        let res: Result<Self, serde_json::Error> = serde_json::from_str(string);
         match res {
             Ok(x) => Ok(x),
             Err(_) => err!("Could not decode ProtectedActionData from string"),

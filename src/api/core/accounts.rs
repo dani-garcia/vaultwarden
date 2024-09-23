@@ -223,7 +223,7 @@ pub async fn _register(data: Json<RegisterData>, mut conn: DbConn) -> JsonResult
         }
 
         if verified_by_invite && is_email_2fa_required(data.organization_user_id, &mut conn).await {
-            let _ = email::activate_email_2fa(&user, &mut conn).await;
+            email::activate_email_2fa(&user, &mut conn).await.ok();
         }
     }
 
@@ -232,7 +232,7 @@ pub async fn _register(data: Json<RegisterData>, mut conn: DbConn) -> JsonResult
     // accept any open emergency access invitations
     if !CONFIG.mail_enabled() && CONFIG.emergency_access_allowed() {
         for mut emergency_invite in EmergencyAccess::find_all_invited_by_grantee_email(&user.email, &mut conn).await {
-            let _ = emergency_invite.accept_invite(&user.uuid, &user.email, &mut conn).await;
+            emergency_invite.accept_invite(&user.uuid, &user.email, &mut conn).await.ok();
         }
     }
 
@@ -1038,7 +1038,7 @@ async fn put_device_token(uuid: &str, data: Json<PushToken>, headers: Headers, m
             return Ok(());
         } else {
             // Try to unregister already registered device
-            let _ = unregister_push_device(device.push_uuid).await;
+            unregister_push_device(device.push_uuid).await.ok();
         }
         // clear the push_uuid
         device.push_uuid = None;

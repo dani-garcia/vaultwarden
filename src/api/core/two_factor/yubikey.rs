@@ -49,7 +49,7 @@ fn parse_yubikeys(data: &EnableYubikeyData) -> Vec<String> {
     data_keys.iter().filter_map(|e| e.as_ref().cloned()).collect()
 }
 
-fn jsonify_yubikeys(yubikeys: Vec<String>) -> serde_json::Value {
+fn jsonify_yubikeys(yubikeys: Vec<String>) -> Value {
     let mut result = Value::Object(serde_json::Map::new());
 
     for (i, key) in yubikeys.into_iter().enumerate() {

@@ -1225,7 +1225,7 @@ impl Config {
     }
 
     pub fn private_rsa_key(&self) -> String {
-        format!("{}.pem", CONFIG.rsa_key_filename())
+        format!("{}.pem", self.rsa_key_filename())
     }
     pub fn mail_enabled(&self) -> bool {
         let inner = &self.inner.read().unwrap().config;
@@ -1256,12 +1256,8 @@ impl Config {
         token.is_some() && !token.unwrap().trim().is_empty()
     }
 
-    pub fn render_template<T: serde::ser::Serialize>(
-        &self,
-        name: &str,
-        data: &T,
-    ) -> Result<String, crate::error::Error> {
-        if CONFIG.reload_templates() {
+    pub fn render_template<T: serde::ser::Serialize>(&self, name: &str, data: &T) -> Result<String, Error> {
+        if self.reload_templates() {
             warn!("RELOADING TEMPLATES");
             let hb = load_templates(CONFIG.templates_folder());
             hb.render(name, data).map_err(Into::into)

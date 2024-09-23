@@ -102,9 +102,9 @@ fn should_block_address_regex(domain_or_ip: &str) -> bool {
 
 fn should_block_host(host: Host<&str>) -> Result<(), CustomHttpClientError> {
     let (ip, host_str): (Option<IpAddr>, String) = match host {
-        url::Host::Ipv4(ip) => (Some(ip.into()), ip.to_string()),
-        url::Host::Ipv6(ip) => (Some(ip.into()), ip.to_string()),
-        url::Host::Domain(d) => (None, d.to_string()),
+        Host::Ipv4(ip) => (Some(ip.into()), ip.to_string()),
+        Host::Ipv6(ip) => (Some(ip.into()), ip.to_string()),
+        Host::Domain(d) => (None, d.to_string()),
     };
 
     if let Some(ip) = ip {

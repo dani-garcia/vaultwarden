@@ -198,33 +198,46 @@ lto = "thin"
 codegen-units = 16
 
 # Linting config
+# https://doc.rust-lang.org/rustc/lints/groups.html
 [lints.rust]
 # Forbid
 unsafe_code = "forbid"
 non_ascii_idents = "forbid"
 
 # Deny
+deprecated_in_future = "deny"
 future_incompatible = { level = "deny", priority = -1 }
+keyword_idents = { level = "deny", priority = -1 }
+let_underscore = { level = "deny", priority = -1 }
 noop_method_call = "deny"
+refining_impl_trait = { level = "deny", priority = -1 }
 rust_2018_idioms = { level = "deny", priority = -1 }
 rust_2021_compatibility = { level = "deny", priority = -1 }
+# rust_2024_compatibility = { level = "deny", priority = -1 } # Enable once we are at MSRV 1.81.0
+single_use_lifetimes = "deny"
 trivial_casts = "deny"
 trivial_numeric_casts = "deny"
 unused = { level = "deny", priority = -1 }
 unused_import_braces = "deny"
 unused_lifetimes = "deny"
-deprecated_in_future = "deny"
+unused_qualifications = "deny"
+variant_size_differences = "deny"
+# The lints below are part of the rust_2024_compatibility group
+static-mut-refs = "deny"
+unsafe-op-in-unsafe-fn = "deny"
 
+# https://rust-lang.github.io/rust-clippy/stable/index.html
 [lints.clippy]
-# Allow
-# We need this since Rust v1.76+, since it has some bugs
-# https://github.com/rust-lang/rust-clippy/issues/12016
-blocks_in_conditions = "allow"
+# Warn
+dbg_macro = "warn"
+todo = "warn"
 
 # Deny
+case_sensitive_file_extension_comparisons = "deny"
 cast_lossless = "deny"
 clone_on_ref_ptr = "deny"
 equatable_if_let = "deny"
+filter_map_next = "deny"
 float_cmp_const = "deny"
 inefficient_to_string = "deny"
 iter_on_empty_collections = "deny"
@@ -234,13 +247,18 @@ macro_use_imports = "deny"
 manual_assert = "deny"
 manual_instant_elapsed = "deny"
 manual_string_new = "deny"
+match_on_vec_items = "deny"
 match_wildcard_for_single_variants = "deny"
 mem_forget = "deny"
+needless_continue = "deny"
 needless_lifetimes = "deny"
+option_option = "deny"
 string_add_assign = "deny"
 string_to_string = "deny"
 unnecessary_join = "deny"
 unnecessary_self_imports = "deny"
+unnested_or_patterns = "deny"
 unused_async = "deny"
+unused_self = "deny"
 verbose_file_reads = "deny"
 zero_sized_map_values = "deny"

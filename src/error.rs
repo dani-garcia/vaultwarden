@@ -209,7 +209,7 @@ use rocket::http::{ContentType, Status};
 use rocket::request::Request;
 use rocket::response::{self, Responder, Response};
 
-impl<'r> Responder<'r, 'static> for Error {
+impl Responder<'_, 'static> for Error {
     fn respond_to(self, _: &Request<'_>) -> response::Result<'static> {
         match self.error {
             ErrorKind::Empty(_) => {}  // Don't print the error in this situation

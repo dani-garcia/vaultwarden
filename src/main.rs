@@ -84,7 +84,7 @@ async fn main() -> Result<(), Error> {
 
     let pool = create_db_pool().await;
     schedule_jobs(pool.clone());
-    crate::db::models::TwoFactor::migrate_u2f_to_webauthn(&mut pool.get().await.unwrap()).await.unwrap();
+    db::models::TwoFactor::migrate_u2f_to_webauthn(&mut pool.get().await.unwrap()).await.unwrap();
 
     let extra_debug = matches!(level, log::LevelFilter::Trace | log::LevelFilter::Debug);
     launch_rocket(pool, extra_debug).await // Blocks until program termination.
@@ -168,7 +168,7 @@ fn parse_args() {
             }
 
             let argon2 = Argon2::new(Argon2id, V0x13, argon2_params.build().unwrap());
-            let salt = SaltString::encode_b64(&crate::crypto::get_random_bytes::<32>()).unwrap();
+            let salt = SaltString::encode_b64(&crypto::get_random_bytes::<32>()).unwrap();
 
             let argon2_timer = tokio::time::Instant::now();
             if let Ok(password_hash) = argon2.hash_password(password.as_bytes(), &salt) {
@@ -204,7 +204,7 @@ fn backup_sqlite() -> Result<String, Error> {
         use crate::db::{backup_sqlite_database, DbConnType};
         if DbConnType::from_url(&CONFIG.database_url()).map(|t| t == DbConnType::sqlite).unwrap_or(false) {
             use diesel::Connection;
-            let url = crate::CONFIG.database_url();
+            let url = CONFIG.database_url();
 
             // Establish a connection to the sqlite database
             let mut conn = diesel::sqlite::SqliteConnection::establish(&url)?;
@@ -615,7 +615,7 @@ async fn launch_rocket(pool: db::DbPool, extra_debug: bool) -> Result<(), Error>
         });
     }
 
-    let _ = instance.launch().await?;
+    instance.launch().await?;
 
     info!("Vaultwarden process exited!");
     Ok(())

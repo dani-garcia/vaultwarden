@@ -213,7 +213,7 @@ impl<'r, R: 'r + Responder<'r, 'static> + Send> Responder<'r, 'static> for Cache
         };
         res.set_raw_header("Cache-Control", cache_control_header);
 
-        let time_now = chrono::Local::now();
+        let time_now = Local::now();
         let expiry_time = time_now + chrono::TimeDelta::try_seconds(self.ttl.try_into().unwrap()).unwrap();
         res.set_raw_header("Expires", format_datetime_http(&expiry_time));
         Ok(res)
@@ -222,8 +222,8 @@ impl<'r, R: 'r + Responder<'r, 'static> + Send> Responder<'r, 'static> for Cache
 
 pub struct SafeString(String);
 
-impl std::fmt::Display for SafeString {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for SafeString {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
     }
 }
@@ -612,7 +612,7 @@ impl<'de> Visitor<'de> for LowerCaseVisitor {
 fn _process_key(key: &str) -> String {
     match key.to_lowercase().as_ref() {
         "ssn" => "ssn".into(),
-        _ => self::lcase_first(key),
+        _ => lcase_first(key),
     }
 }
 

@@ -35,8 +35,8 @@ static JWT_FILE_DOWNLOAD_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|file_do
 static PRIVATE_RSA_KEY: OnceCell<EncodingKey> = OnceCell::new();
 static PUBLIC_RSA_KEY: OnceCell<DecodingKey> = OnceCell::new();
 
-pub fn initialize_keys() -> Result<(), crate::error::Error> {
-    fn read_key(create_if_missing: bool) -> Result<(Rsa<openssl::pkey::Private>, Vec<u8>), crate::error::Error> {
+pub fn initialize_keys() -> Result<(), Error> {
+    fn read_key(create_if_missing: bool) -> Result<(Rsa<openssl::pkey::Private>, Vec<u8>), Error> {
         let mut priv_key_buffer = Vec::with_capacity(2048);
 
         let mut priv_key_file = File::options()
@@ -53,7 +53,7 @@ pub fn initialize_keys() -> Result<(), crate::error::Error> {
             Rsa::private_key_from_pem(&priv_key_buffer[..bytes_read])?
         } else if create_if_missing {
             // Only create the key if the file doesn't exist or is empty
-            let rsa_key = openssl::rsa::Rsa::generate(2048)?;
+            let rsa_key = Rsa::generate(2048)?;
             priv_key_buffer = rsa_key.private_key_to_pem()?;
             priv_key_file.write_all(&priv_key_buffer)?;
             info!("Private key '{}' created correctly", CONFIG.private_rsa_key());

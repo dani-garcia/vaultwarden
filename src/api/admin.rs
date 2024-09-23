@@ -197,7 +197,7 @@ fn post_admin_login(
 
         let cookie = Cookie::build((COOKIE_NAME, jwt))
             .path(admin_path())
-            .max_age(rocket::time::Duration::minutes(CONFIG.admin_session_lifetime()))
+            .max_age(time::Duration::minutes(CONFIG.admin_session_lifetime()))
             .same_site(SameSite::Strict)
             .http_only(true)
             .secure(secure.https);
@@ -717,8 +717,8 @@ async fn diagnostics(_token: AdminToken, ip_header: IpHeader, mut conn: DbConn) 
         "db_version": get_sql_server_version(&mut conn).await,
         "admin_url": format!("{}/diagnostics", admin_url()),
         "overrides": &CONFIG.get_overrides().join(", "),
-        "host_arch": std::env::consts::ARCH,
-        "host_os":  std::env::consts::OS,
+        "host_arch": env::consts::ARCH,
+        "host_os":  env::consts::OS,
         "server_time_local": Local::now().format("%Y-%m-%d %H:%M:%S %Z").to_string(),
         "server_time": Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string(), // Run the server date/time check as late as possible to minimize the time difference
         "ntp_time": get_ntp_time(has_http_access).await, // Run the ntp check as late as possible to minimize the time difference
