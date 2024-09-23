@@ -26,7 +26,6 @@ pub static CONFIG: Lazy<Config> = Lazy::new(|| {
 
 pub type Pass = String;
 
-#[allow(edition_2024_expr_fragment_specifier)]
 macro_rules! make_config {
     ($(
         $(#[doc = $groupdoc:literal])?
@@ -1297,7 +1296,6 @@ where
     hb.register_helper("case", Box::new(case_helper));
     hb.register_helper("to_json", Box::new(to_json));
 
-    #[allow(edition_2024_expr_fragment_specifier)]
     macro_rules! reg {
         ($name:expr) => {{
             let template = include_str!(concat!("static/templates/", $name, ".hbs"));

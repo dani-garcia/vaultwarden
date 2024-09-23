@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     net::IpAddr,
     sync::Arc,
     time::{Duration, SystemTime},
@@ -446,6 +447,9 @@ async fn get_page_with_referer(url: &str, referer: &str) -> Result<Response, Err
 /// priority2 = get_icon_priority("https://example.com/path/to/a/favicon.ico", "");
 /// ```
 fn get_icon_priority(href: &str, sizes: &str) -> u8 {
+    static PRIORITY_MAP: Lazy<HashMap<&'static str, u8>> =
+        Lazy::new(|| [(".png", 10), (".jpg", 20), (".jpeg", 20)].into_iter().collect());
+
     // Check if there is a dimension set
     let (width, height) = parse_sizes(sizes);
 
@@ -470,13 +474,9 @@ fn get_icon_priority(href: &str, sizes: &str) -> u8 {
             200
         }
     } else {
-        // Change priority by file extension
-        if href.ends_with(".png") {
-            10
-        } else if href.ends_with(".jpg") || href.ends_with(".jpeg") {
-            20
-        } else {
-            30
+        match href.rsplit_once('.') {
+            Some((_, extension)) => PRIORITY_MAP.get(&*extension.to_ascii_lowercase()).copied().unwrap_or(30),
+            None => 30,
         }
     }
 }
