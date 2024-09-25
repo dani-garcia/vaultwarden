@@ -1,0 +1,121 @@
+services:
+  VaultwardenPrebuild:
+    profiles: ["playwright", "vaultwarden"]
+    container_name: playwright_oidc_vaultwarden_prebuilt
+    image: playwright_oidc_vaultwarden_prebuilt
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    entrypoint: /bin/bash
+    restart: "no"
+
+  Vaultwarden:
+    profiles: ["playwright", "vaultwarden"]
+    container_name: playwright_oidc_vaultwarden-${ENV:-dev}
+    image: playwright_oidc_vaultwarden-${ENV:-dev}
+    network_mode: "host"
+    build:
+      context: compose/vaultwarden
+      dockerfile: Dockerfile
+      args:
+        REPO_URL: ${PW_WV_REPO_URL:-}
+        COMMIT_HASH: ${PW_WV_COMMIT_HASH:-}
+    env_file: ${DC_ENV_FILE:-.env}
+    environment:
+      - DATABASE_URL
+      - I_REALLY_WANT_VOLATILE_STORAGE
+      - SMTP_HOST
+      - SMTP_FROM
+      - SMTP_DEBUG
+      - SSO_FRONTEND
+      - SSO_ENABLED
+      - SSO_ONLY
+    restart: "no"
+    depends_on:
+      - VaultwardenPrebuild
+
+  Playwright:
+    profiles: ["playwright"]
+    container_name: playwright_oidc_playwright
+    image: playwright_oidc_playwright
+    network_mode: "host"
+    build:
+      context: .
+      dockerfile: compose/playwright/Dockerfile
+    environment:
+      - PW_WV_REPO_URL
+      - PW_WV_COMMIT_HASH
+    restart: "no"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ..:/project
+
+  Mariadb:
+    profiles: ["playwright"]
+    container_name: playwright_mariadb
+    image: mariadb:11.2.4
+    env_file: test.env
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      start_period: 10s
+      interval: 10s
+    ports:
+      - ${MARIADB_PORT}:3306
+
+  Mysql:
+    profiles: ["playwright"]
+    container_name: playwright_mysql
+    image: mysql:8.4.1
+    env_file: test.env
+    healthcheck:
+      test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost"]
+      start_period: 10s
+      interval: 10s
+    ports:
+      - ${MYSQL_PORT}:3306
+
+  Postgres:
+    profiles: ["playwright"]
+    container_name: playwright_postgres
+    image: postgres:16.3
+    env_file: test.env
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}"]
+      start_period: 20s
+      interval: 30s
+    ports:
+      - ${POSTGRES_PORT}:5432
+
+  Maildev:
+    profiles: ["vaultwarden", "maildev"]
+    container_name: maildev
+    image: timshel/maildev
+    ports:
+      - ${SMTP_PORT}:1025
+      - 1080:1080
+
+  Keycloak:
+    profiles: ["keycloak", "vaultwarden"]
+    container_name: keycloak-${ENV:-dev}
+    image: quay.io/keycloak/keycloak:25.0.4
+    network_mode: "host"
+    command:
+      - start-dev
+    env_file: ${DC_ENV_FILE:-.env}
+
+  KeycloakSetup:
+    profiles: ["keycloak", "vaultwarden"]
+    container_name: keycloakSetup-${ENV:-dev}
+    image: keycloak_setup-${ENV:-dev}
+    build:
+      context: compose/keycloak
+      dockerfile: Dockerfile
+      args:
+        KEYCLOAK_VERSION: 25.0.4
+        JAVA_URL: https://download.java.net/java/GA/jdk21.0.2/f2283984656d49d69e91c558476027ac/13/GPL/openjdk-21.0.2_linux-x64_bin.tar.gz
+        JAVA_VERSION: 21.0.2
+    network_mode: "host"
+    depends_on:
+      - Keycloak
+    restart: "no"
+    env_file: ${DC_ENV_FILE:-.env}

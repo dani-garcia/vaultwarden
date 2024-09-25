@@ -99,6 +99,13 @@ Server configuration, nothing specific just set:
 - `SSO_CLIENT_SECRET`
 - `SSO_PKCE=true`
 
+### Testing
+
+If you want to run a testing instance of Keycloak the Playwright [docker-compose](playwright/docker-compose.yml) can be used.
+\
+More details on how to use it in [README.md](playwright/README.md#openid-connect-test-setup).
+
+
 ## Auth0
 
 Not working due to the following issue https://github.com/ramosbugs/openidconnect-rs/issues/23 (they appear not to follow the spec).
