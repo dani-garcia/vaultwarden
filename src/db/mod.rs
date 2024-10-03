@@ -417,8 +417,8 @@ impl<'r> FromRequest<'r> for DbConn {
     type Error = ();
 
     async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
-        match request.rocket().state::<DbPool>() {
-            Some(p) => match p.get().await {
+        match request.rocket().state::<Arc<Mutex<DbPool>>>() {
+            Some(p) => match p.lock().await.get().await {
                 Ok(dbconn) => Outcome::Success(dbconn),
                 _ => Outcome::Error((Status::ServiceUnavailable, ())),
             },
