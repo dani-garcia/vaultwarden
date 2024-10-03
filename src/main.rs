@@ -84,11 +84,13 @@ async fn main() -> Result<(), Error> {
     create_dir(&CONFIG.attachments_folder(), "attachments folder");
 
     let pool = Arc::new(Mutex::new(create_db_pool().await));
-    schedule_jobs(pool.clone());
-    db::models::TwoFactor::migrate_u2f_to_webauthn(&mut pool.lock().await.get().await.unwrap()).await.unwrap();
+    schedule_jobs(Arc::clone(&pool));
+    {
+        db::models::TwoFactor::migrate_u2f_to_webauthn(&mut pool.lock().await.get().await.unwrap()).await.unwrap();
+    }
 
     let extra_debug = matches!(level, log::LevelFilter::Trace | log::LevelFilter::Debug);
-    launch_rocket(pool.clone(), extra_debug).await // Blocks until program termination.
+    launch_rocket(pool, extra_debug).await // Blocks until program termination.
 }
 
 const HELP: &str = "\
@@ -583,7 +585,7 @@ async fn launch_rocket(pool: Arc<Mutex<db::DbPool>>, extra_debug: bool) -> Resul
         .register([basepath, "/"].concat(), api::web_catchers())
         .register([basepath, "/api"].concat(), api::core_catchers())
         .register([basepath, "/admin"].concat(), api::admin_catchers())
-        .manage(pool.clone())
+        .manage(Arc::clone(&pool))
         .manage(Arc::clone(&WS_USERS))
         .manage(Arc::clone(&WS_ANONYMOUS_SUBSCRIPTIONS))
         .attach(util::AppHeaders())
@@ -641,14 +643,14 @@ fn schedule_jobs(pool: Arc<Mutex<db::DbPool>>) {
             // Purge sends that are past their deletion date.
             if !CONFIG.send_purge_schedule().is_empty() {
                 sched.add(Job::new(CONFIG.send_purge_schedule().parse().unwrap(), || {
-                    runtime.spawn(api::purge_sends(pool.clone()));
+                    runtime.spawn(api::purge_sends(Arc::clone(&pool)));
                 }));
             }
 
             // Purge trashed items that are old enough to be auto-deleted.
             if !CONFIG.trash_purge_schedule().is_empty() {
                 sched.add(Job::new(CONFIG.trash_purge_schedule().parse().unwrap(), || {
-                    runtime.spawn(api::purge_trashed_ciphers(pool.clone()));
+                    runtime.spawn(api::purge_trashed_ciphers(Arc::clone(&pool)));
                 }));
             }
 
@@ -656,7 +658,7 @@ fn schedule_jobs(pool: Arc<Mutex<db::DbPool>>) {
             // indicates that a user's master password has been compromised.
             if !CONFIG.incomplete_2fa_schedule().is_empty() {
                 sched.add(Job::new(CONFIG.incomplete_2fa_schedule().parse().unwrap(), || {
-                    runtime.spawn(api::send_incomplete_2fa_notifications(pool.clone()));
+                    runtime.spawn(api::send_incomplete_2fa_notifications(Arc::clone(&pool)));
                 }));
             }
 
@@ -665,7 +667,7 @@ fn schedule_jobs(pool: Arc<Mutex<db::DbPool>>) {
             // sending reminders for requests that are about to be granted anyway.
             if !CONFIG.emergency_request_timeout_schedule().is_empty() {
                 sched.add(Job::new(CONFIG.emergency_request_timeout_schedule().parse().unwrap(), || {
-                    runtime.spawn(api::emergency_request_timeout_job(pool.clone()));
+                    runtime.spawn(api::emergency_request_timeout_job(Arc::clone(&pool)));
                 }));
             }
 
@@ -673,7 +675,7 @@ fn schedule_jobs(pool: Arc<Mutex<db::DbPool>>) {
             // emergency access requests.
             if !CONFIG.emergency_notification_reminder_schedule().is_empty() {
                 sched.add(Job::new(CONFIG.emergency_notification_reminder_schedule().parse().unwrap(), || {
-                    runtime.spawn(api::emergency_notification_reminder_job(pool.clone()));
+                    runtime.spawn(api::emergency_notification_reminder_job(Arc::clone(&pool)));
                 }));
             }
 
@@ -686,7 +688,7 @@ fn schedule_jobs(pool: Arc<Mutex<db::DbPool>>) {
             // Clean unused, expired Duo authentication contexts.
             if !CONFIG.duo_context_purge_schedule().is_empty() && CONFIG._enable_duo() && !CONFIG.duo_use_iframe() {
                 sched.add(Job::new(CONFIG.duo_context_purge_schedule().parse().unwrap(), || {
-                    runtime.spawn(purge_duo_contexts(pool.clone()));
+                    runtime.spawn(purge_duo_contexts(Arc::clone(&pool)));
                 }));
             }
 
@@ -696,7 +698,7 @@ fn schedule_jobs(pool: Arc<Mutex<db::DbPool>>) {
                 && CONFIG.events_days_retain().is_some()
             {
                 sched.add(Job::new(CONFIG.event_cleanup_schedule().parse().unwrap(), || {
-                    runtime.spawn(api::event_cleanup_job(pool.clone()));
+                    runtime.spawn(api::event_cleanup_job(Arc::clone(&pool)));
                 }));
             }
 
