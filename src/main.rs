@@ -83,13 +83,12 @@ async fn main() -> Result<(), Error> {
     create_dir(&CONFIG.sends_folder(), "sends folder");
     create_dir(&CONFIG.attachments_folder(), "attachments folder");
 
-    let pool = create_db_pool().await;
-    let poolArc = Arc::new(Mutex::new(pool.clone()));
-    schedule_jobs(poolArc.clone());
-    db::models::TwoFactor::migrate_u2f_to_webauthn(&mut pool.get().await.unwrap()).await.unwrap();
+    let pool = Arc::new(Mutex::new(create_db_pool().await));
+    schedule_jobs(pool.clone());
+    db::models::TwoFactor::migrate_u2f_to_webauthn(&mut pool.lock().await.get().await.unwrap()).await.unwrap();
 
     let extra_debug = matches!(level, log::LevelFilter::Trace | log::LevelFilter::Debug);
-    launch_rocket(pool, extra_debug).await // Blocks until program termination.
+    launch_rocket(pool.clone(), extra_debug).await // Blocks until program termination.
 }
 
 const HELP: &str = "\
@@ -560,7 +559,7 @@ async fn create_db_pool() -> db::DbPool {
     }
 }
 
-async fn launch_rocket(pool: db::DbPool, extra_debug: bool) -> Result<(), Error> {
+async fn launch_rocket(pool: Arc<Mutex<db::DbPool>>, extra_debug: bool) -> Result<(), Error> {
     let basepath = &CONFIG.domain_path();
 
     let mut config = rocket::Config::from(rocket::Config::figment());
@@ -584,7 +583,7 @@ async fn launch_rocket(pool: db::DbPool, extra_debug: bool) -> Result<(), Error>
         .register([basepath, "/"].concat(), api::web_catchers())
         .register([basepath, "/api"].concat(), api::core_catchers())
         .register([basepath, "/admin"].concat(), api::admin_catchers())
-        .manage(pool)
+        .manage(pool.clone())
         .manage(Arc::clone(&WS_USERS))
         .manage(Arc::clone(&WS_ANONYMOUS_SUBSCRIPTIONS))
         .attach(util::AppHeaders())
@@ -680,7 +679,7 @@ fn schedule_jobs(pool: Arc<Mutex<db::DbPool>>) {
 
             if !CONFIG.auth_request_purge_schedule().is_empty() {
                 sched.add(Job::new(CONFIG.auth_request_purge_schedule().parse().unwrap(), || {
-                    runtime.spawn(purge_auth_requests(pool.clone()));
+                    runtime.spawn(purge_auth_requests(Arc::clone(&pool)));
                 }));
             }
 
