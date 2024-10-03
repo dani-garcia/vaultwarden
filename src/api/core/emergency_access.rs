@@ -1,6 +1,9 @@
+use std::sync::Arc;
+
 use chrono::{TimeDelta, Utc};
 use rocket::{serde::json::Json, Route};
 use serde_json::Value;
+use tokio::sync::Mutex;
 
 use crate::{
     api::{
@@ -729,13 +732,13 @@ fn check_emergency_access_enabled() -> EmptyResult {
     Ok(())
 }
 
-pub async fn emergency_request_timeout_job(pool: DbPool) {
+pub async fn emergency_request_timeout_job(pool: Arc<Mutex<DbPool>>) {
     debug!("Start emergency_request_timeout_job");
     if !CONFIG.emergency_access_allowed() {
         return;
     }
 
-    if let Ok(mut conn) = pool.get().await {
+    if let Ok(mut conn) = pool.lock().await.get().await {
         let emergency_access_list = EmergencyAccess::find_all_recoveries_initiated(&mut conn).await;
 
         if emergency_access_list.is_empty() {
@@ -784,13 +787,13 @@ pub async fn emergency_request_timeout_job(pool: DbPool) {
     }
 }
 
-pub async fn emergency_notification_reminder_job(pool: DbPool) {
+pub async fn emergency_notification_reminder_job(pool: Arc<Mutex<DbPool>>) {
     debug!("Start emergency_notification_reminder_job");
     if !CONFIG.emergency_access_allowed() {
         return;
     }
 
-    if let Ok(mut conn) = pool.get().await {
+    if let Ok(mut conn) = pool.lock().await.get().await {
         let emergency_access_list = EmergencyAccess::find_all_recoveries_initiated(&mut conn).await;
 
         if emergency_access_list.is_empty() {

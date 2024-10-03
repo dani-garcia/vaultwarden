@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use chrono::{NaiveDateTime, Utc};
 use num_traits::ToPrimitive;
@@ -9,6 +10,7 @@ use rocket::{
     Route,
 };
 use serde_json::Value;
+use tokio::sync::Mutex;
 
 use crate::util::NumberOrString;
 use crate::{
@@ -88,9 +90,9 @@ pub fn routes() -> Vec<Route> {
     ]
 }
 
-pub async fn purge_trashed_ciphers(pool: DbPool) {
+pub async fn purge_trashed_ciphers(pool: Arc<Mutex<DbPool>>) {
     debug!("Purging trashed ciphers");
-    if let Ok(mut conn) = pool.get().await {
+    if let Ok(mut conn) = pool.lock().await.get().await {
         Cipher::purge_trash(&mut conn).await;
     } else {
         error!("Failed to get DB connection while purging trashed ciphers")

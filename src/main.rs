@@ -39,6 +39,7 @@ use tokio::{
     fs::File,
     io::{AsyncBufReadExt, BufReader},
     signal::unix::SignalKind,
+    sync::Mutex,
 };
 
 #[macro_use]
@@ -83,7 +84,8 @@ async fn main() -> Result<(), Error> {
     create_dir(&CONFIG.attachments_folder(), "attachments folder");
 
     let pool = create_db_pool().await;
-    schedule_jobs(pool.clone());
+    let poolArc = Arc::new(Mutex::new(pool.clone()));
+    schedule_jobs(poolArc.clone());
     db::models::TwoFactor::migrate_u2f_to_webauthn(&mut pool.get().await.unwrap()).await.unwrap();
 
     let extra_debug = matches!(level, log::LevelFilter::Trace | log::LevelFilter::Debug);
@@ -621,7 +623,7 @@ async fn launch_rocket(pool: db::DbPool, extra_debug: bool) -> Result<(), Error>
     Ok(())
 }
 
-fn schedule_jobs(pool: db::DbPool) {
+fn schedule_jobs(pool: Arc<Mutex<db::DbPool>>) {
     if CONFIG.job_poll_interval_ms() == 0 {
         info!("Job scheduler disabled.");
         return;

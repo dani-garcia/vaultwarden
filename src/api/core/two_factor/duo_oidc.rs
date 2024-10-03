@@ -4,7 +4,8 @@ use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation};
 use reqwest::{header, StatusCode};
 use ring::digest::{digest, Digest, SHA512_256};
 use serde::Serialize;
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
+use tokio::sync::Mutex;
 
 use crate::{
     api::{core::two_factor::duo::get_duo_keys_email, EmptyResult},
@@ -345,9 +346,9 @@ async fn extract_context(state: &str, conn: &mut DbConn) -> Option<DuoAuthContex
 }
 
 // Task to clean up expired Duo authentication contexts that may have accumulated in the database.
-pub async fn purge_duo_contexts(pool: DbPool) {
+pub async fn purge_duo_contexts(pool: Arc<Mutex<DbPool>>) {
     debug!("Purging Duo authentication contexts");
-    if let Ok(mut conn) = pool.get().await {
+    if let Ok(mut conn) = pool.lock().await.get().await {
         TwoFactorDuoContext::purge_expired_duo_contexts(&mut conn).await;
     } else {
         error!("Failed to get DB connection while purging expired Duo authentications")

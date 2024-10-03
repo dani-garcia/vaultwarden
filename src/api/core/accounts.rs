@@ -1,7 +1,10 @@
+use std::sync::Arc;
+
 use crate::db::DbPool;
 use chrono::{SecondsFormat, Utc};
 use rocket::serde::json::Json;
 use serde_json::Value;
+use tokio::sync::Mutex;
 
 use crate::{
     api::{
@@ -1282,9 +1285,9 @@ async fn get_auth_requests(headers: Headers, mut conn: DbConn) -> JsonResult {
     })))
 }
 
-pub async fn purge_auth_requests(pool: DbPool) {
+pub async fn purge_auth_requests(pool: Arc<Mutex<DbPool>>) {
     debug!("Purging auth requests");
-    if let Ok(mut conn) = pool.get().await {
+    if let Ok(mut conn) = pool.lock().await.get().await {
         AuthRequest::purge_expired_auth_requests(&mut conn).await;
     } else {
         error!("Failed to get DB connection while purging trashed ciphers")
