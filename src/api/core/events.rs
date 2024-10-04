@@ -3,7 +3,7 @@ use std::{net::IpAddr, sync::Arc};
 use chrono::NaiveDateTime;
 use rocket::{form::FromForm, serde::json::Json, Route};
 use serde_json::Value;
-use tokio::sync::Mutex;
+use tokio::sync::RwLock;
 
 use crate::{
     api::{EmptyResult, JsonResult},
@@ -321,14 +321,14 @@ async fn _log_event(
     event.save(conn).await.unwrap_or(());
 }
 
-pub async fn event_cleanup_job(pool: Arc<Mutex<DbPool>>) {
+pub async fn event_cleanup_job(pool: Arc<RwLock<DbPool>>) {
     debug!("Start events cleanup job");
     if CONFIG.events_days_retain().is_none() {
         debug!("events_days_retain is not configured, abort");
         return;
     }
 
-    if let Ok(mut conn) = pool.lock().await.get().await {
+    if let Ok(mut conn) = pool.read().await.get().await {
         Event::clean_events(&mut conn).await.ok();
     } else {
         error!("Failed to get DB connection while trying to cleanup the events table")

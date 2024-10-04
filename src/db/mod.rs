@@ -12,7 +12,7 @@ use rocket::{
 };
 
 use tokio::{
-    sync::{Mutex, OwnedSemaphorePermit, Semaphore},
+    sync::{Mutex, OwnedSemaphorePermit, RwLock, Semaphore},
     time::timeout,
 };
 
@@ -417,8 +417,8 @@ impl<'r> FromRequest<'r> for DbConn {
     type Error = ();
 
     async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
-        match request.rocket().state::<Arc<Mutex<DbPool>>>() {
-            Some(p) => match p.lock().await.get().await {
+        match request.rocket().state::<Arc<RwLock<DbPool>>>() {
+            Some(p) => match p.read().await.get().await {
                 Ok(dbconn) => Outcome::Success(dbconn),
                 _ => Outcome::Error((Status::ServiceUnavailable, ())),
             },

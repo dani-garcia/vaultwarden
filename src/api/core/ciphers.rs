@@ -10,7 +10,7 @@ use rocket::{
     Route,
 };
 use serde_json::Value;
-use tokio::sync::Mutex;
+use tokio::sync::RwLock;
 
 use crate::util::NumberOrString;
 use crate::{
@@ -90,9 +90,9 @@ pub fn routes() -> Vec<Route> {
     ]
 }
 
-pub async fn purge_trashed_ciphers(pool: Arc<Mutex<DbPool>>) {
+pub async fn purge_trashed_ciphers(pool: Arc<RwLock<DbPool>>) {
     debug!("Purging trashed ciphers");
-    if let Ok(mut conn) = pool.lock().await.get().await {
+    if let Ok(mut conn) = pool.read().await.get().await {
         Cipher::purge_trash(&mut conn).await;
     } else {
         error!("Failed to get DB connection while purging trashed ciphers")

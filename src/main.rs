@@ -39,7 +39,7 @@ use tokio::{
     fs::File,
     io::{AsyncBufReadExt, BufReader},
     signal::unix::SignalKind,
-    sync::Mutex,
+    sync::RwLock,
 };
 
 #[macro_use]
@@ -83,10 +83,10 @@ async fn main() -> Result<(), Error> {
     create_dir(&CONFIG.sends_folder(), "sends folder");
     create_dir(&CONFIG.attachments_folder(), "attachments folder");
 
-    let pool = Arc::new(Mutex::new(create_db_pool().await));
+    let pool = Arc::new(RwLock::new(create_db_pool().await));
     schedule_jobs(Arc::clone(&pool));
     {
-        db::models::TwoFactor::migrate_u2f_to_webauthn(&mut pool.lock().await.get().await.unwrap()).await.unwrap();
+        db::models::TwoFactor::migrate_u2f_to_webauthn(&mut pool.read().await.get().await.unwrap()).await.unwrap();
     }
 
     let extra_debug = matches!(level, log::LevelFilter::Trace | log::LevelFilter::Debug);
@@ -561,7 +561,7 @@ async fn create_db_pool() -> db::DbPool {
     }
 }
 
-async fn launch_rocket(pool: Arc<Mutex<db::DbPool>>, extra_debug: bool) -> Result<(), Error> {
+async fn launch_rocket(pool: Arc<RwLock<db::DbPool>>, extra_debug: bool) -> Result<(), Error> {
     let basepath = &CONFIG.domain_path();
 
     let mut config = rocket::Config::from(rocket::Config::figment());
@@ -624,7 +624,7 @@ async fn launch_rocket(pool: Arc<Mutex<db::DbPool>>, extra_debug: bool) -> Resul
     Ok(())
 }
 
-fn schedule_jobs(pool: Arc<Mutex<db::DbPool>>) {
+fn schedule_jobs(pool: Arc<RwLock<db::DbPool>>) {
     if CONFIG.job_poll_interval_ms() == 0 {
         info!("Job scheduler disabled.");
         return;

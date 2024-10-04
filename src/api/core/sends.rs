@@ -8,7 +8,8 @@ use rocket::fs::NamedFile;
 use rocket::fs::TempFile;
 use rocket::serde::json::Json;
 use serde_json::Value;
-use tokio::sync::Mutex;
+// use tokio::sync::Mutex;
+use tokio::sync::RwLock;
 
 use crate::{
     api::{ApiResult, EmptyResult, JsonResult, Notify, UpdateType},
@@ -40,9 +41,9 @@ pub fn routes() -> Vec<rocket::Route> {
     ]
 }
 
-pub async fn purge_sends(pool: Arc<Mutex<DbPool>>) {
+pub async fn purge_sends(pool: Arc<RwLock<DbPool>>) {
     debug!("Purging sends");
-    if let Ok(mut conn) = pool.lock().await.get().await {
+    if let Ok(mut conn) = pool.read().await.get().await {
         Send::purge(&mut conn).await;
     } else {
         error!("Failed to get DB connection while purging sends")

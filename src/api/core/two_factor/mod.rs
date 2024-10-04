@@ -5,7 +5,7 @@ use data_encoding::BASE32;
 use rocket::serde::json::Json;
 use rocket::Route;
 use serde_json::Value;
-use tokio::sync::Mutex;
+use tokio::sync::RwLock;
 
 use crate::{
     api::{
@@ -247,14 +247,14 @@ pub async fn enforce_2fa_policy_for_org(
     Ok(())
 }
 
-pub async fn send_incomplete_2fa_notifications(pool: Arc<Mutex<DbPool>>) {
+pub async fn send_incomplete_2fa_notifications(pool: Arc<RwLock<DbPool>>) {
     debug!("Sending notifications for incomplete 2FA logins");
 
     if CONFIG.incomplete_2fa_time_limit() <= 0 || !CONFIG.mail_enabled() {
         return;
     }
 
-    let mut conn = match pool.lock().await.get().await {
+    let mut conn = match pool.read().await.get().await {
         Ok(conn) => conn,
         _ => {
             error!("Failed to get DB connection in send_incomplete_2fa_notifications()");
