@@ -1269,9 +1269,14 @@ impl Config {
             let hb = load_templates(CONFIG.templates_folder());
             hb.render(name, data).map_err(Into::into)
         } else {
-            let hb = &CONFIG.inner.read().unwrap().templates;
-            hb.render(name, data).map_err(Into::into)
+            self.render_inner_template(name, data)
         }
+    }
+
+    #[inline]
+    pub fn render_inner_template<T: serde::ser::Serialize>(&self, name: &str, data: &T) -> Result<String, Error> {
+        let hb = &self.inner.read().unwrap().templates;
+        hb.render(name, data).map_err(Into::into)
     }
 
     pub fn set_rocket_shutdown_handle(&self, handle: rocket::Shutdown) {
