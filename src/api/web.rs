@@ -1,3 +1,4 @@
+use once_cell::sync::Lazy;
 use std::path::{Path, PathBuf};
 
 use rocket::{
@@ -13,7 +14,7 @@ use crate::{
     api::{core::now, ApiResult, EmptyResult},
     auth::decode_file_download,
     error::Error,
-    util::{Cached, SafeString},
+    util::{get_web_vault_version, Cached, SafeString},
     CONFIG,
 };
 
@@ -53,19 +54,79 @@ fn not_found() -> ApiResult<Html<String>> {
 
 #[get("/css/vaultwarden.css")]
 fn vaultwarden_css() -> Cached<Css<String>> {
+    // Configure the web-vault version as an integer so it can be used as a comparison smaller or greater then.
+    // The default is based upon the version since this feature is added.
+    static WEB_VAULT_VERSION: Lazy<u32> = Lazy::new(|| {
+        let re = regex::Regex::new(r"(\d{4})\.(\d{1,2})\.(\d{1,2})").unwrap();
+        let vault_version = get_web_vault_version();
+
+        let (major, minor, patch) = match re.captures(&vault_version) {
+            Some(c) if c.len() == 4 => (
+                c.get(1).unwrap().as_str().parse().unwrap(),
+                c.get(2).unwrap().as_str().parse().unwrap(),
+                c.get(3).unwrap().as_str().parse().unwrap(),
+            ),
+            _ => (2024, 6, 2),
+        };
+        format!("{major}{minor:02}{patch:02}").parse::<u32>().unwrap()
+    });
+
+    // Configure the Vaultwarden version as an integer so it can be used as a comparison smaller or greater then.
+    // The default is based upon the version since this feature is added.
+    static VW_VERSION: Lazy<u32> = Lazy::new(|| {
+        let re = regex::Regex::new(r"(\d{1})\.(\d{1,2})\.(\d{1,2})").unwrap();
+        let vw_version = crate::VERSION.unwrap_or("1.32.1");
+
+        let (major, minor, patch) = match re.captures(vw_version) {
+            Some(c) if c.len() == 4 => (
+                c.get(1).unwrap().as_str().parse().unwrap(),
+                c.get(2).unwrap().as_str().parse().unwrap(),
+                c.get(3).unwrap().as_str().parse().unwrap(),
+            ),
+            _ => (1, 32, 1),
+        };
+        format!("{major}{minor:02}{patch:02}").parse::<u32>().unwrap()
+    });
+
     let css_options = json!({
+        "web_vault_version": *WEB_VAULT_VERSION,
+        "vw_version": *VW_VERSION,
         "signup_disabled": !CONFIG.signups_allowed() && CONFIG.signups_domains_whitelist().is_empty(),
         "mail_enabled": CONFIG.mail_enabled(),
         "yubico_enabled": CONFIG._enable_yubico() && (CONFIG.yubico_client_id().is_some() == CONFIG.yubico_secret_key().is_some()),
         "emergency_access_allowed": CONFIG.emergency_access_allowed(),
         "sends_allowed": CONFIG.sends_allowed(),
     });
-    let scss = CONFIG.render_template("scss/vaultwarden.scss", &css_options).expect("Rendered scss/vaultwarden.scss");
-    let css = grass_compiler::from_string(
+
+    let scss = match CONFIG.render_template("scss/vaultwarden.scss", &css_options) {
+        Ok(t) => t,
+        Err(e) => {
+            // Something went wrong loading the template. Fallback to the built-in templates
+            warn!("Loading scss/vaultwarden.scss.hbs or scss/user.vaultwarden.scss.hbs failed. {e}");
+            CONFIG
+                .render_inner_template("scss/vaultwarden.scss", &css_options)
+                .expect("Inner scss/vaultwarden.scss.hbs to render")
+        }
+    };
+
+    let css = match grass_compiler::from_string(
         scss,
         &grass_compiler::Options::default().style(grass_compiler::OutputStyle::Compressed),
-    )
-    .expect("scss/vaultwarden.scss to compile");
+    ) {
+        Ok(css) => css,
+        Err(e) => {
+            // Something went wrong compiling the scss. Fallback to the built-in tempaltes
+            warn!("Compiling the Vaultwarden SCSS styles failed. {e}");
+            let scss = CONFIG
+                .render_inner_template("scss/vaultwarden.scss", &css_options)
+                .expect("Inner scss/vaultwarden.scss.hbs to render");
+            grass_compiler::from_string(
+                scss,
+                &grass_compiler::Options::default().style(grass_compiler::OutputStyle::Compressed),
+            )
+            .expect("SCSS to compile")
+        }
+    };
 
     // Cache for one day should be enough and not too much
     Cached::ttl(Css(css), 86_400, false)
