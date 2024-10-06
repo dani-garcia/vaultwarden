@@ -26,7 +26,7 @@ db_object! {
     }
 }
 
-/// Local methods
+// Local methods
 
 impl EmergencyAccess {
     pub fn new(grantor_uuid: String, email: String, status: i32, atype: i32, wait_time_days: i32) -> Self {
