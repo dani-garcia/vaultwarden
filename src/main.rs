@@ -38,8 +38,10 @@ use std::{
 use tokio::{
     fs::File,
     io::{AsyncBufReadExt, BufReader},
-    signal::unix::SignalKind,
 };
+
+#[cfg(unix)]
+use tokio::signal::unix::SignalKind;
 
 #[macro_use]
 mod error;
@@ -383,7 +385,7 @@ fn init_logging() -> Result<log::LevelFilter, Error> {
         {
             logger = logger.chain(fern::log_file(log_file)?);
         }
-        #[cfg(not(windows))]
+        #[cfg(unix)]
         {
             const SIGHUP: i32 = SignalKind::hangup().as_raw_value();
             let path = Path::new(&log_file);
@@ -391,7 +393,7 @@ fn init_logging() -> Result<log::LevelFilter, Error> {
         }
     }
 
-    #[cfg(not(windows))]
+    #[cfg(unix)]
     {
         if cfg!(feature = "enable_syslog") || CONFIG.use_syslog() {
             logger = chain_syslog(logger);
@@ -441,7 +443,7 @@ fn init_logging() -> Result<log::LevelFilter, Error> {
     Ok(level)
 }
 
-#[cfg(not(windows))]
+#[cfg(unix)]
 fn chain_syslog(logger: fern::Dispatch) -> fern::Dispatch {
     let syslog_fmt = syslog::Formatter3164 {
         facility: syslog::Facility::LOG_USER,
