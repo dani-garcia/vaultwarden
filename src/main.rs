@@ -38,9 +38,11 @@ use std::{
 use tokio::{
     fs::File,
     io::{AsyncBufReadExt, BufReader},
-    signal::unix::SignalKind,
     sync::RwLock,
 };
+
+#[cfg(unix)]
+use tokio::signal::unix::SignalKind;
 
 #[macro_use]
 mod error;
@@ -85,9 +87,7 @@ async fn main() -> Result<(), Error> {
 
     let pool = Arc::new(RwLock::new(create_db_pool().await));
     schedule_jobs(Arc::clone(&pool));
-    {
-        db::models::TwoFactor::migrate_u2f_to_webauthn(&mut pool.read().await.get().await.unwrap()).await.unwrap();
-    }
+    db::models::TwoFactor::migrate_u2f_to_webauthn(&mut pool.read().await.get().await.unwrap()).await.unwrap();
 
     let extra_debug = matches!(level, log::LevelFilter::Trace | log::LevelFilter::Debug);
     launch_rocket(pool, extra_debug).await // Blocks until program termination.
@@ -386,7 +386,7 @@ fn init_logging() -> Result<log::LevelFilter, Error> {
         {
             logger = logger.chain(fern::log_file(log_file)?);
         }
-        #[cfg(not(windows))]
+        #[cfg(unix)]
         {
             const SIGHUP: i32 = SignalKind::hangup().as_raw_value();
             let path = Path::new(&log_file);
@@ -394,7 +394,7 @@ fn init_logging() -> Result<log::LevelFilter, Error> {
         }
     }
 
-    #[cfg(not(windows))]
+    #[cfg(unix)]
     {
         if cfg!(feature = "enable_syslog") || CONFIG.use_syslog() {
             logger = chain_syslog(logger);
@@ -444,7 +444,7 @@ fn init_logging() -> Result<log::LevelFilter, Error> {
     Ok(level)
 }
 
-#[cfg(not(windows))]
+#[cfg(unix)]
 fn chain_syslog(logger: fern::Dispatch) -> fern::Dispatch {
     let syslog_fmt = syslog::Formatter3164 {
         facility: syslog::Facility::LOG_USER,

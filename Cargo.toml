@@ -34,7 +34,7 @@ query_logger = ["dep:diesel_logger"]
 # Currently only used to enable rusts official ip support
 unstable = []
 
-[target."cfg(not(windows))".dependencies]
+[target."cfg(unix)".dependencies]
 # Logging
 syslog = "6.1.1"
 
