@@ -664,7 +664,7 @@ make_config! {
         /// Authorization request extra parameters
         sso_authorize_extra_params:     String, false,  def,    String::new();
         /// Use PKCE during Authorization flow
-        sso_pkce:                       bool,   false,   def,    false;
+        sso_pkce:                       bool,   false,   def,    true;
         /// Regex for additionnal trusted Id token audience |> By default only the client_id is trsuted.
         sso_audience_trusted:           String, false,  option;
         /// CallBack Path |> Generated from Domain.
