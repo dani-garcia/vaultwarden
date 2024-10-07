@@ -15,6 +15,7 @@ The following configurations are available
  - `SSO_ENABLED` : Activate the SSO
  - `SSO_ONLY` : disable email+Master password authentication
  - `SSO_SIGNUPS_MATCH_EMAIL`: On SSO Signup if a user with a matching email already exists make the association (default `true`)
+ - `SSO_ALLOW_UNKNOWN_EMAIL_VERIFICATION`: Allow unknown email verification status (default `false`). Allowing this with `SSO_SIGNUPS_MATCH_EMAIL` open potential account takeover.
  - `SSO_AUTHORITY` : the OpenID Connect Discovery endpoint of your SSO
  	- Should not include the `/.well-known/openid-configuration` part and no trailing `/`
  	- $SSO_AUTHORITY/.well-known/openid-configuration should return the a json document: https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderConfigurationResponse
@@ -56,6 +57,16 @@ To delete the association (this has no impact on the `Vaultwarden` user):
 ```sql
 TRUNCATE TABLE sso_users;
 ```
+
+### On `SSO_ALLOW_UNKNOWN_EMAIL_VERIFICATION`
+
+If your provider does not send the verification status of emails (`email_verified` [claim](https://openid.net/specs/openid-connect-core-1_0.html#StandardClaims)) you will need to activate this setting.
+
+If set with `SSO_SIGNUPS_MATCH_EMAIL=true` (the default), then a user can associate with an existing, non-SSO account, even if they do not control the email address.
+This allow a user to gain access to sensitive information but the master password is still required to read the passwords.
+
+As such when using `SSO_ALLOW_UNKNOWN_EMAIL_VERIFICATION` it is recommended to disable `SSO_SIGNUPS_MATCH_EMAIL`.
+If you need to associate non sso users try to keep both settings activated for the shortest time possible.
 
 ## Client Cache
 

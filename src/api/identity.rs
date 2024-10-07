@@ -193,8 +193,13 @@ async fn _sso_login(data: ConnectData, user_uuid: &mut Option<String>, conn: &mu
                 err!("Email domain not allowed");
             }
 
-            if !user_infos.email_verified.unwrap_or(true) {
-                err!("Email needs to be verified before you can use VaultWarden");
+            match user_infos.email_verified {
+                None if !CONFIG.sso_allow_unknown_email_verification() => err!(
+                    "Your provider does not send email verification status.\n\
+                    You will need to change the server configuration (check `SSO_ALLOW_UNKNOWN_EMAIL_VERIFICATION`) to log in."
+                ),
+                Some(false) => err!("You need to verify your email with your provider before you can log in"),
+                _ => (),
             }
 
             let mut user = User::new(user_infos.email, user_infos.user_name);

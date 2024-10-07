@@ -653,6 +653,8 @@ make_config! {
         sso_only:                       bool,   true,   def,    false;
         /// Allow email association |> Associate existing non-sso user based on email
         sso_signups_match_email:        bool,   true,   def,    true;
+        /// Allow unknown email verification status |> Allowing this with `SSO_SIGNUPS_MATCH_EMAIL=true` open potential account takeover.
+        sso_allow_unknown_email_verification: bool, false, def, false;
         /// Client ID
         sso_client_id:                  String, false,   def,    String::new();
         /// Client Key
