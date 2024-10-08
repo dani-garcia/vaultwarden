@@ -147,6 +147,10 @@ impl Error {
     pub fn get_event(&self) -> &Option<ErrorEvent> {
         &self.event
     }
+
+    pub fn message(&self) -> &str {
+        &self.message
+    }
 }
 
 pub trait MapResult<S> {

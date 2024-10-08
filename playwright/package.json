@@ -1,0 +1,21 @@
+{
+    "name": "scenarios",
+    "version": "1.0.0",
+    "description": "",
+    "main": "index.js",
+    "scripts": {},
+    "keywords": [],
+    "author": "",
+    "license": "ISC",
+    "devDependencies": {
+        "@playwright/test": "^1.45.1",
+        "dotenv": "^16.4.5",
+        "dotenv-expand": "^11.0.6",
+        "maildev": "github:timshel/maildev#3.0.0-rc1"
+    },
+    "dependencies": {
+        "mysql2": "^3.10.2",
+        "otpauth": "^9.3.2",
+        "pg": "^8.12.0"
+    }
+}
