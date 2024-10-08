@@ -38,6 +38,7 @@ use std::{
 use tokio::{
     fs::File,
     io::{AsyncBufReadExt, BufReader},
+    sync::RwLock,
 };
 
 #[cfg(unix)]
@@ -84,9 +85,9 @@ async fn main() -> Result<(), Error> {
     create_dir(&CONFIG.sends_folder(), "sends folder");
     create_dir(&CONFIG.attachments_folder(), "attachments folder");
 
-    let pool = create_db_pool().await;
-    schedule_jobs(pool.clone());
-    db::models::TwoFactor::migrate_u2f_to_webauthn(&mut pool.get().await.unwrap()).await.unwrap();
+    let pool = Arc::new(RwLock::new(create_db_pool().await));
+    schedule_jobs(Arc::clone(&pool));
+    db::models::TwoFactor::migrate_u2f_to_webauthn(&mut pool.read().await.get().await.unwrap()).await.unwrap();
 
     let extra_debug = matches!(level, log::LevelFilter::Trace | log::LevelFilter::Debug);
     launch_rocket(pool, extra_debug).await // Blocks until program termination.
@@ -560,7 +561,7 @@ async fn create_db_pool() -> db::DbPool {
     }
 }
 
-async fn launch_rocket(pool: db::DbPool, extra_debug: bool) -> Result<(), Error> {
+async fn launch_rocket(pool: Arc<RwLock<db::DbPool>>, extra_debug: bool) -> Result<(), Error> {
     let basepath = &CONFIG.domain_path();
 
     let mut config = rocket::Config::from(rocket::Config::figment());
@@ -584,7 +585,7 @@ async fn launch_rocket(pool: db::DbPool, extra_debug: bool) -> Result<(), Error>
         .register([basepath, "/"].concat(), api::web_catchers())
         .register([basepath, "/api"].concat(), api::core_catchers())
         .register([basepath, "/admin"].concat(), api::admin_catchers())
-        .manage(pool)
+        .manage(Arc::clone(&pool))
         .manage(Arc::clone(&WS_USERS))
         .manage(Arc::clone(&WS_ANONYMOUS_SUBSCRIPTIONS))
         .attach(util::AppHeaders())
@@ -623,7 +624,7 @@ async fn launch_rocket(pool: db::DbPool, extra_debug: bool) -> Result<(), Error>
     Ok(())
 }
 
-fn schedule_jobs(pool: db::DbPool) {
+fn schedule_jobs(pool: Arc<RwLock<db::DbPool>>) {
     if CONFIG.job_poll_interval_ms() == 0 {
         info!("Job scheduler disabled.");
         return;
@@ -642,14 +643,14 @@ fn schedule_jobs(pool: db::DbPool) {
             // Purge sends that are past their deletion date.
             if !CONFIG.send_purge_schedule().is_empty() {
                 sched.add(Job::new(CONFIG.send_purge_schedule().parse().unwrap(), || {
-                    runtime.spawn(api::purge_sends(pool.clone()));
+                    runtime.spawn(api::purge_sends(Arc::clone(&pool)));
                 }));
             }
 
             // Purge trashed items that are old enough to be auto-deleted.
             if !CONFIG.trash_purge_schedule().is_empty() {
                 sched.add(Job::new(CONFIG.trash_purge_schedule().parse().unwrap(), || {
-                    runtime.spawn(api::purge_trashed_ciphers(pool.clone()));
+                    runtime.spawn(api::purge_trashed_ciphers(Arc::clone(&pool)));
                 }));
             }
 
@@ -657,7 +658,7 @@ fn schedule_jobs(pool: db::DbPool) {
             // indicates that a user's master password has been compromised.
             if !CONFIG.incomplete_2fa_schedule().is_empty() {
                 sched.add(Job::new(CONFIG.incomplete_2fa_schedule().parse().unwrap(), || {
-                    runtime.spawn(api::send_incomplete_2fa_notifications(pool.clone()));
+                    runtime.spawn(api::send_incomplete_2fa_notifications(Arc::clone(&pool)));
                 }));
             }
 
@@ -666,7 +667,7 @@ fn schedule_jobs(pool: db::DbPool) {
             // sending reminders for requests that are about to be granted anyway.
             if !CONFIG.emergency_request_timeout_schedule().is_empty() {
                 sched.add(Job::new(CONFIG.emergency_request_timeout_schedule().parse().unwrap(), || {
-                    runtime.spawn(api::emergency_request_timeout_job(pool.clone()));
+                    runtime.spawn(api::emergency_request_timeout_job(Arc::clone(&pool)));
                 }));
             }
 
@@ -674,20 +675,20 @@ fn schedule_jobs(pool: db::DbPool) {
             // emergency access requests.
             if !CONFIG.emergency_notification_reminder_schedule().is_empty() {
                 sched.add(Job::new(CONFIG.emergency_notification_reminder_schedule().parse().unwrap(), || {
-                    runtime.spawn(api::emergency_notification_reminder_job(pool.clone()));
+                    runtime.spawn(api::emergency_notification_reminder_job(Arc::clone(&pool)));
                 }));
             }
 
             if !CONFIG.auth_request_purge_schedule().is_empty() {
                 sched.add(Job::new(CONFIG.auth_request_purge_schedule().parse().unwrap(), || {
-                    runtime.spawn(purge_auth_requests(pool.clone()));
+                    runtime.spawn(purge_auth_requests(Arc::clone(&pool)));
                 }));
             }
 
             // Clean unused, expired Duo authentication contexts.
             if !CONFIG.duo_context_purge_schedule().is_empty() && CONFIG._enable_duo() && !CONFIG.duo_use_iframe() {
                 sched.add(Job::new(CONFIG.duo_context_purge_schedule().parse().unwrap(), || {
-                    runtime.spawn(purge_duo_contexts(pool.clone()));
+                    runtime.spawn(purge_duo_contexts(Arc::clone(&pool)));
                 }));
             }
 
@@ -697,7 +698,7 @@ fn schedule_jobs(pool: db::DbPool) {
                 && CONFIG.events_days_retain().is_some()
             {
                 sched.add(Job::new(CONFIG.event_cleanup_schedule().parse().unwrap(), || {
-                    runtime.spawn(api::event_cleanup_job(pool.clone()));
+                    runtime.spawn(api::event_cleanup_job(Arc::clone(&pool)));
                 }));
             }
 
