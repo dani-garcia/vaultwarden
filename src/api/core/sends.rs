@@ -8,7 +8,6 @@ use rocket::fs::NamedFile;
 use rocket::fs::TempFile;
 use rocket::serde::json::Json;
 use serde_json::Value;
-// use tokio::sync::Mutex;
 use tokio::sync::RwLock;
 
 use crate::{
