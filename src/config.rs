@@ -20,7 +20,7 @@ static CONFIG_FILE: Lazy<String> = Lazy::new(|| {
     get_env("CONFIG_FILE").unwrap_or_else(|| format!("{data_folder}/config.json"))
 });
 
-pub static SKIP_CONFIG_VALIDATION: Lazy<AtomicBool> = Lazy::new(|| AtomicBool::new(false));
+pub static SKIP_CONFIG_VALIDATION: AtomicBool = AtomicBool::new(false);
 
 pub static CONFIG: Lazy<Config> = Lazy::new(|| {
     Config::load().unwrap_or_else(|e| {
@@ -1110,7 +1110,7 @@ impl Config {
 
         // Fill any missing with defaults
         let config = builder.build();
-        if !SKIP_CONFIG_VALIDATION.load(Ordering::SeqCst) {
+        if !SKIP_CONFIG_VALIDATION.load(Ordering::Relaxed) {
             validate_config(&config)?;
         }
 
