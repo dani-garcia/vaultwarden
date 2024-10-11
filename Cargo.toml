@@ -48,7 +48,7 @@ tracing = { version = "0.1.40", features = ["log"] } # Needed to have lettre and
 dotenvy = { version = "0.15.7", default-features = false }
 
 # Lazy initialization
-once_cell = "1.19.0"
+once_cell = "1.20.2"
 
 # Numerical libraries
 num-traits = "0.2.19"
@@ -66,7 +66,7 @@ rmpv = "1.3.0" # MessagePack library
 dashmap = "6.1.0"
 
 # Async futures
-futures = "0.3.30"
+futures = "0.3.31"
 tokio = { version = "1.40.0", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal", "net"] }
 
 # A generic serialization/deserialization framework
@@ -123,12 +123,12 @@ email_address = "0.2.9"
 handlebars = { version = "6.1.0", features = ["dir_source"] }
 
 # HTTP client (Used for favicons, version check, DUO and HIBP API)
-reqwest = { version = "0.12.7", features = ["native-tls-alpn", "stream", "json", "gzip", "brotli", "socks", "cookies"] }
+reqwest = { version = "0.12.8", features = ["native-tls-alpn", "stream", "json", "gzip", "brotli", "socks", "cookies"] }
 hickory-resolver = "0.24.1"
 
 # Favicon extraction libraries
 html5gum = "0.5.7"
-regex = { version = "1.10.6", features = ["std", "perf", "unicode-perl"], default-features = false }
+regex = { version = "1.11.0", features = ["std", "perf", "unicode-perl"], default-features = false }
 data-url = "0.3.1"
 bytes = "1.7.2"
 

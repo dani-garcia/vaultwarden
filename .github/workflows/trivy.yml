@@ -9,13 +9,16 @@ on:
   pull_request:
     branches: [ "main" ]
   schedule:
-    - cron: '00 12 * * *'
+    - cron: '08 11 * * *'
 
 permissions:
   contents: read
 
 jobs:
   trivy-scan:
+    # Only run this in the master repo and not on forks
+    # When all forks run this at the same time, it is causing `Too Many Requests` issues
+    if: ${{ github.repository == 'dani-garcia/vaultwarden' }}
     name: Check
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -25,10 +28,10 @@ jobs:
       actions: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 #v4.1.7
+        uses: actions/checkout@eef61447b9ff4aafe5dcd4e0bbf5d482be7e7871 #v4.2.1
 
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@6e7b7d1fd3e4fef0c5fa8cce1229c54b2c9bd0d8 # v0.24.0
+        uses: aquasecurity/trivy-action@5681af892cd0f4997658e2bacc62bd0a894cf564 # v0.27.0
         with:
           scan-type: repo
           ignore-unfixed: true
@@ -37,6 +40,6 @@ jobs:
           severity: CRITICAL,HIGH
 
       - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@2bbafcdd7fbf96243689e764c2f15d9735164f33 # v3.25.10
+        uses: github/codeql-action/upload-sarif@2bbafcdd7fbf96243689e764c2f15d9735164f33 # v3.26.6
         with:
           sarif_file: 'trivy-results.sarif'

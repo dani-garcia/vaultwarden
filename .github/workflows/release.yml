@@ -58,7 +58,7 @@ jobs:
     steps:
       # Checkout the repo
       - name: Checkout
-        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+        uses: actions/checkout@eef61447b9ff4aafe5dcd4e0bbf5d482be7e7871 #v4.2.1
         with:
           fetch-depth: 0
 
@@ -69,7 +69,7 @@ jobs:
 
       # Start Docker Buildx
       - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@988b5a0280414f521da01fcc63a27aeeb4b104db # v3.6.1
+        uses: docker/setup-buildx-action@c47758b77c9736f4b2ef4073d4d51994fabfe349 # v3.7.1
         # https://github.com/moby/buildkit/issues/3969
         # Also set max parallelism to 2, the default of 4 breaks GitHub Actions and causes OOMKills
         with:
@@ -165,7 +165,7 @@ jobs:
           echo "CONTAINER_REGISTRIES=${CONTAINER_REGISTRIES:+${CONTAINER_REGISTRIES},}localhost:5000/vaultwarden/server" | tee -a "${GITHUB_ENV}"
 
       - name: Bake ${{ matrix.base_image }} containers
-        uses: docker/bake-action@76cc8060bdff6d632a465001e4cf300684c5472c # v5.7.0
+        uses: docker/bake-action@2e3d19baedb14545e5d41222653874f25d5b4dfb # v5.10.0
         env:
           BASE_TAGS: "${{ env.BASE_TAGS }}"
           SOURCE_COMMIT: "${{ env.SOURCE_COMMIT }}"
@@ -223,28 +223,28 @@ jobs:
 
       # Upload artifacts to Github Actions
       - name: "Upload amd64 artifact"
-        uses: actions/upload-artifact@50769540e7f4bd5e21e526ee35c689e35e0d6874 # v4.4.0
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         if: ${{ matrix.base_image == 'alpine' }}
         with:
           name: vaultwarden-${{ env.SOURCE_VERSION }}-linux-amd64
           path: vaultwarden-amd64
 
       - name: "Upload arm64 artifact"
-        uses: actions/upload-artifact@50769540e7f4bd5e21e526ee35c689e35e0d6874 # v4.4.0
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         if: ${{ matrix.base_image == 'alpine' }}
         with:
           name: vaultwarden-${{ env.SOURCE_VERSION }}-linux-arm64
           path: vaultwarden-arm64
 
       - name: "Upload armv7 artifact"
-        uses: actions/upload-artifact@50769540e7f4bd5e21e526ee35c689e35e0d6874 # v4.4.0
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         if: ${{ matrix.base_image == 'alpine' }}
         with:
           name: vaultwarden-${{ env.SOURCE_VERSION }}-linux-armv7
           path: vaultwarden-armv7
 
       - name: "Upload armv6 artifact"
-        uses: actions/upload-artifact@50769540e7f4bd5e21e526ee35c689e35e0d6874 # v4.4.0
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         if: ${{ matrix.base_image == 'alpine' }}
         with:
           name: vaultwarden-${{ env.SOURCE_VERSION }}-linux-armv6
