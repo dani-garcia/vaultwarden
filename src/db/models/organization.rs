@@ -504,6 +504,25 @@ impl UserOrganization {
             Vec::with_capacity(0)
         };
 
+        let permissions = json!({
+            // TODO: Add support for Custom User Roles
+            // See: https://bitwarden.com/help/article/user-types-access-control/#custom-role
+            "accessEventLogs": false,
+            "accessImportExport": false,
+            "accessReports": false,
+            "createNewCollections": false,
+            "editAnyCollection": false,
+            "deleteAnyCollection": false,
+            "editAssignedCollections": false,
+            "deleteAssignedCollections": false,
+            "manageGroups": false,
+            "managePolicies": false,
+            "manageSso": false, // Not supported
+            "manageUsers": false,
+            "manageResetPassword": false,
+            "manageScim": false // Not supported (Not AGPLv3 Licensed)
+        });
+
         json!({
             "id": self.uuid,
             "userId": self.user_uuid,
@@ -519,6 +538,13 @@ impl UserOrganization {
             "accessAll": self.access_all,
             "twoFactorEnabled": twofactor_enabled,
             "resetPasswordEnrolled": self.reset_password_key.is_some(),
+            "hasMasterPassword": !user.password_hash.is_empty(),
+
+            "permissions": permissions,
+
+            "ssoBound": false, // Not supported
+            "usesKeyConnector": false, // Not supported
+            "accessSecretsManager": false, // Not supported (Not AGPLv3 Licensed)
 
             "object": "organizationUserUserDetails",
         })

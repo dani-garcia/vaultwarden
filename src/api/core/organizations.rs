@@ -358,7 +358,7 @@ async fn get_org_collections_details(org_id: &str, headers: ManagerHeadersLoose,
             Vec::with_capacity(0)
         };
 
-        let mut json_object = col.to_json();
+        let mut json_object = col.to_json_details(&headers.user.uuid, None, &mut conn).await;
         json_object["assigned"] = json!(assigned);
         json_object["users"] = json!(users);
         json_object["groups"] = json!(groups);
@@ -680,7 +680,7 @@ async fn get_org_collection_detail(
 
             let assigned = Collection::can_access_collection(&user_org, &collection.uuid, &mut conn).await;
 
-            let mut json_object = collection.to_json();
+            let mut json_object = collection.to_json_details(&headers.user.uuid, None, &mut conn).await;
             json_object["assigned"] = json!(assigned);
             json_object["users"] = json!(users);
             json_object["groups"] = json!(groups);
