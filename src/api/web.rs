@@ -96,16 +96,17 @@ fn vaultwarden_css() -> Cached<Css<String>> {
         "yubico_enabled": CONFIG._enable_yubico() && (CONFIG.yubico_client_id().is_some() == CONFIG.yubico_secret_key().is_some()),
         "emergency_access_allowed": CONFIG.emergency_access_allowed(),
         "sends_allowed": CONFIG.sends_allowed(),
+        "load_user_scss": true,
     });
 
     let scss = match CONFIG.render_template("scss/vaultwarden.scss", &css_options) {
         Ok(t) => t,
         Err(e) => {
-            // Something went wrong loading the template. Fallback to the built-in templates
+            // Something went wrong loading the template. Use the fallback
             warn!("Loading scss/vaultwarden.scss.hbs or scss/user.vaultwarden.scss.hbs failed. {e}");
             CONFIG
-                .render_inner_template("scss/vaultwarden.scss", &css_options)
-                .expect("Inner scss/vaultwarden.scss.hbs to render")
+                .render_fallback_template("scss/vaultwarden.scss", &css_options)
+                .expect("Fallback scss/vaultwarden.scss.hbs to render")
         }
     };
 
@@ -115,11 +116,13 @@ fn vaultwarden_css() -> Cached<Css<String>> {
     ) {
         Ok(css) => css,
         Err(e) => {
-            // Something went wrong compiling the scss. Fallback to the built-in tempaltes
+            // Something went wrong compiling the scss. Use the fallback
             warn!("Compiling the Vaultwarden SCSS styles failed. {e}");
+            let mut css_options = css_options;
+            css_options["load_user_scss"] = json!(false);
             let scss = CONFIG
-                .render_inner_template("scss/vaultwarden.scss", &css_options)
-                .expect("Inner scss/vaultwarden.scss.hbs to render");
+                .render_fallback_template("scss/vaultwarden.scss", &css_options)
+                .expect("Fallback scss/vaultwarden.scss.hbs to render");
             grass_compiler::from_string(
                 scss,
                 &grass_compiler::Options::default().style(grass_compiler::OutputStyle::Compressed),

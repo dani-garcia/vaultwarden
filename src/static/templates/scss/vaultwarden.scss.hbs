@@ -62,19 +62,7 @@ app-organization-plans > form > bit-section:nth-child(2) {
 app-security > app-two-factor-setup > form {
   @extend %vw-hide;
 }
-
-/* Replace the Bitwarden Shield at the top left with a Vaultwarden icon */
-.bwi-shield:before {
-  content: "" !important;
-  width: 32px !important;
-  height: 40px !important;
-  display: block !important;
-  background-image: url(../images/icon-white.png) !important;
-  background-repeat: no-repeat;
-  background-position-y: bottom;
-}
 /**** END Static Vaultwarden Changes ****/
-
 /**** START Dynamic Vaultwarden Changes ****/
 {{#if signup_disabled}}
 /* Hide the register link on the login screen */
@@ -111,6 +99,7 @@ bit-nav-item[route="sends"] {
 }
 {{/unless}}
 /**** End Dynamic Vaultwarden Changes ****/
-
 /**** Include a special user stylesheet for custom changes ****/
+{{#if load_user_scss}}
 {{> scss/user.vaultwarden.scss }}
+{{/if}}
