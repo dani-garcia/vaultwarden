@@ -1269,14 +1269,14 @@ impl Config {
             let hb = load_templates(CONFIG.templates_folder());
             hb.render(name, data).map_err(Into::into)
         } else {
-            self.render_inner_template(name, data)
+            let hb = &self.inner.read().unwrap().templates;
+            hb.render(name, data).map_err(Into::into)
         }
     }
 
-    #[inline]
-    pub fn render_inner_template<T: serde::ser::Serialize>(&self, name: &str, data: &T) -> Result<String, Error> {
+    pub fn render_fallback_template<T: serde::ser::Serialize>(&self, name: &str, data: &T) -> Result<String, Error> {
         let hb = &self.inner.read().unwrap().templates;
-        hb.render(name, data).map_err(Into::into)
+        hb.render(&format!("fallback_{name}"), data).map_err(Into::into)
     }
 
     pub fn set_rocket_shutdown_handle(&self, handle: rocket::Shutdown) {
@@ -1316,6 +1316,11 @@ where
         ($name:expr, $ext:expr) => {{
             reg!($name);
             reg!(concat!($name, $ext));
+        }};
+        (@withfallback $name:expr) => {{
+            let template = include_str!(concat!("static/templates/", $name, ".hbs"));
+            hb.register_template_string($name, template).unwrap();
+            hb.register_template_string(concat!("fallback_", $name), template).unwrap();
         }};
     }
 
@@ -1360,7 +1365,7 @@ where
 
     reg!("404");
 
-    reg!("scss/vaultwarden.scss");
+    reg!(@withfallback "scss/vaultwarden.scss");
     reg!("scss/user.vaultwarden.scss");
 
     // And then load user templates to overwrite the defaults
