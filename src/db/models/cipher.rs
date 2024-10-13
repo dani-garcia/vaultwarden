@@ -176,7 +176,27 @@ impl Cipher {
                     .inspect_err(|e| warn!("Error parsing fields {e:?} for {}", self.uuid))
                     .ok()
             })
-            .map(|d| d.into_iter().map(|d| d.data).collect())
+            .map(|d| {
+                d.into_iter()
+                    .map(|mut f| {
+                        // Check if the `type` key is a number, strings break some clients
+                        // The fallback type is the hidden type `1`. this should prevent accidental data disclosure
+                        // If not try to convert the string value to a number and fallback to `1`
+                        // If it is both not a number and not a string, fallback to `1`
+                        match f.data.get("type") {
+                            Some(t) if t.is_number() => {}
+                            Some(t) if t.is_string() => {
+                                let type_num = &t.as_str().unwrap_or("0").parse::<u8>().unwrap_or(1);
+                                f.data["type"] = json!(type_num);
+                            }
+                            _ => {
+                                f.data["type"] = json!(1);
+                            }
+                        }
+                        f.data
+                    })
+                    .collect()
+            })
             .unwrap_or_default();
 
         let password_history_json: Vec<_> = self
@@ -244,7 +264,7 @@ impl Cipher {
 
         // NOTE: This was marked as *Backwards Compatibility Code*, but as of January 2021 this is still being used by upstream
         // data_json should always contain the following keys with every atype
-        data_json["fields"] = Value::Array(fields_json.clone());
+        data_json["fields"] = json!([fields_json]);
         data_json["name"] = json!(self.name);
         data_json["notes"] = json!(self.notes);
         data_json["passwordHistory"] = Value::Array(password_history_json.clone());
