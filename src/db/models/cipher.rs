@@ -186,7 +186,7 @@ impl Cipher {
                         match f.data.get("type") {
                             Some(t) if t.is_number() => {}
                             Some(t) if t.is_string() => {
-                                let type_num = &t.as_str().unwrap_or("0").parse::<u8>().unwrap_or(1);
+                                let type_num = &t.as_str().unwrap_or("1").parse::<u8>().unwrap_or(1);
                                 f.data["type"] = json!(type_num);
                             }
                             _ => {
