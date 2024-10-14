@@ -42,6 +42,7 @@ pub fn routes() -> Vec<Route> {
         bulk_delete_organization_collections,
         post_bulk_collections,
         get_org_details,
+        get_org_domain_sso_details,
         get_org_users,
         send_invite,
         reinvite_user,
@@ -58,6 +59,8 @@ pub fn routes() -> Vec<Route> {
         post_org_import,
         list_policies,
         list_policies_token,
+        list_policies_invited_user,
+        get_policy_master_password,
         get_policy,
         put_policy,
         get_organization_tax,
@@ -99,6 +102,7 @@ pub fn routes() -> Vec<Route> {
         get_org_export,
         api_key,
         rotate_api_key,
+        get_auto_enroll_status,
     ]
 }
 
@@ -171,7 +175,7 @@ async fn create_organization(headers: Headers, data: Json<OrgData>, mut conn: Db
     };
 
     let org = Organization::new(data.name, data.billing_email, private_key, public_key);
-    let mut user_org = UserOrganization::new(headers.user.uuid, org.uuid.clone());
+    let mut user_org = UserOrganization::new(headers.user.uuid, org.uuid.clone(), None);
     let collection = Collection::new(org.uuid.clone(), data.collection_name, None);
 
     user_org.akey = data.key;
@@ -303,6 +307,17 @@ async fn get_user_collections(headers: Headers, mut conn: DbConn) -> Json<Value>
         "object": "list",
         "continuationToken": null,
     }))
+}
+
+// Called during the SSO enrollment
+// The `_identifier` should be the harcoded value returned by `get_org_domain_sso_details`
+// The returned `Id` will then be passed to `get_policy_master_password` which will mainly ignore it
+#[get("/organizations/<_identifier>/auto-enroll-status")]
+fn get_auto_enroll_status(_identifier: &str) -> JsonResult {
+    Ok(Json(json!({
+        "Id": "_",
+        "ResetPasswordEnabled": false, // Not implemented
+    })))
 }
 
 #[get("/organizations/<org_id>/collections")]
@@ -779,6 +794,17 @@ async fn _get_org_details(org_id: &str, host: &str, user_uuid: &str, conn: &mut 
     json!(ciphers_json)
 }
 
+// Endpoint called when the user select SSO login (body: `{ "email": "" }`).
+// Returning a Domain/Organization here allow to prefill it and prevent prompting the user
+// VaultWarden sso login is not linked to Org so we set a dummy value.
+#[post("/organizations/domain/sso/details")]
+fn get_org_domain_sso_details() -> JsonResult {
+    Ok(Json(json!({
+        "organizationIdentifier": "vaultwarden",
+        "ssoAvailable": CONFIG.sso_enabled()
+    })))
+}
+
 #[derive(FromForm)]
 struct GetOrgUserData {
     #[field(name = "includeCollections")]
@@ -889,7 +915,7 @@ async fn send_invite(org_id: &str, data: Json<InviteData>, headers: AdminHeaders
                     invitation.save(&mut conn).await?;
                 }
 
-                let mut user = User::new(email.clone());
+                let mut user = User::new(email.clone(), None);
                 user.save(&mut conn).await?;
                 user
             }
@@ -906,7 +932,8 @@ async fn send_invite(org_id: &str, data: Json<InviteData>, headers: AdminHeaders
             }
         };
 
-        let mut new_user = UserOrganization::new(user.uuid.clone(), String::from(org_id));
+        let mut new_user =
+            UserOrganization::new(user.uuid.clone(), String::from(org_id), Some(headers.user.email.clone()));
         let access_all = data.access_all;
         new_user.access_all = access_all;
         new_user.atype = new_type;
@@ -1742,7 +1769,50 @@ async fn list_policies_token(org_id: &str, token: &str, mut conn: DbConn) -> Jso
     })))
 }
 
-#[get("/organizations/<org_id>/policies/<pol_type>")]
+// Called during the SSO enrollment.
+// Since the VW SSO flow is not linked to an organization it will be called with a dummy or undefined `org_id`
+#[allow(non_snake_case)]
+#[get("/organizations/<org_id>/policies/invited-user?<userId>")]
+async fn list_policies_invited_user(org_id: &str, userId: &str, mut conn: DbConn) -> JsonResult {
+    if userId.is_empty() {
+        err!("userId must not be empty");
+    }
+
+    let user_orgs = UserOrganization::find_invited_by_user(userId, &mut conn).await;
+    let policies_json: Vec<Value> = if user_orgs.into_iter().any(|user_org| user_org.org_uuid == org_id) {
+        let policies = OrgPolicy::find_by_org(org_id, &mut conn).await;
+        policies.iter().map(OrgPolicy::to_json).collect()
+    } else {
+        Vec::with_capacity(0)
+    };
+
+    Ok(Json(json!({
+        "Data": policies_json,
+        "Object": "list",
+        "ContinuationToken": null
+    })))
+}
+
+// Called during the SSO enrollment.
+#[get("/organizations/<org_id>/policies/master-password", rank = 1)]
+fn get_policy_master_password(org_id: &str, _headers: Headers) -> JsonResult {
+    let data = match CONFIG.sso_master_password_policy() {
+        Some(policy) => policy,
+        None => "null".to_string(),
+    };
+
+    let policy = OrgPolicy {
+        uuid: String::from(org_id),
+        org_uuid: String::from(org_id),
+        atype: OrgPolicyType::MasterPassword as i32,
+        enabled: CONFIG.sso_master_password_policy().is_some(),
+        data,
+    };
+
+    Ok(Json(policy.to_json()))
+}
+
+#[get("/organizations/<org_id>/policies/<pol_type>", rank = 2)]
 async fn get_policy(org_id: &str, pol_type: i32, _headers: AdminHeaders, mut conn: DbConn) -> JsonResult {
     let pol_type_enum = match OrgPolicyType::from_i32(pol_type) {
         Some(pt) => pt,
@@ -2010,7 +2080,8 @@ async fn import(org_id: &str, data: Json<OrgImportData>, headers: Headers, mut c
                     UserOrgStatus::Accepted as i32 // Automatically mark user as accepted if no email invites
                 };
 
-                let mut new_org_user = UserOrganization::new(user.uuid.clone(), String::from(org_id));
+                let mut new_org_user =
+                    UserOrganization::new(user.uuid.clone(), String::from(org_id), Some(headers.user.email.clone()));
                 new_org_user.access_all = false;
                 new_org_user.atype = UserOrgType::User as i32;
                 new_org_user.status = user_org_status;
