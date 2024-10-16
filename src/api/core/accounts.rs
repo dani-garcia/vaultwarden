@@ -1,5 +1,5 @@
 use crate::db::DbPool;
-use chrono::Utc;
+use chrono::{SecondsFormat, Utc};
 use rocket::serde::json::Json;
 use serde_json::Value;
 
@@ -112,7 +112,7 @@ async fn is_email_2fa_required(org_user_uuid: Option<String>, conn: &mut DbConn)
         return true;
     }
     if org_user_uuid.is_some() {
-        return OrgPolicy::is_enabled_by_org(&org_user_uuid.unwrap(), OrgPolicyType::TwoFactorAuthentication, conn)
+        return OrgPolicy::is_enabled_for_member(&org_user_uuid.unwrap(), OrgPolicyType::TwoFactorAuthentication, conn)
             .await;
     }
     false
@@ -223,7 +223,7 @@ pub async fn _register(data: Json<RegisterData>, mut conn: DbConn) -> JsonResult
         }
 
         if verified_by_invite && is_email_2fa_required(data.organization_user_id, &mut conn).await {
-            let _ = email::activate_email_2fa(&user, &mut conn).await;
+            email::activate_email_2fa(&user, &mut conn).await.ok();
         }
     }
 
@@ -232,7 +232,7 @@ pub async fn _register(data: Json<RegisterData>, mut conn: DbConn) -> JsonResult
     // accept any open emergency access invitations
     if !CONFIG.mail_enabled() && CONFIG.emergency_access_allowed() {
         for mut emergency_invite in EmergencyAccess::find_all_invited_by_grantee_email(&user.email, &mut conn).await {
-            let _ = emergency_invite.accept_invite(&user.uuid, &user.email, &mut conn).await;
+            emergency_invite.accept_invite(&user.uuid, &user.email, &mut conn).await.ok();
         }
     }
 
@@ -490,7 +490,7 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, mut conn: DbConn,
     // Bitwarden does not process the import if there is one item invalid.
     // Since we check for the size of the encrypted note length, we need to do that here to pre-validate it.
     // TODO: See if we can optimize the whole cipher adding/importing and prevent duplicate code and checks.
-    Cipher::validate_notes(&data.ciphers)?;
+    Cipher::validate_cipher_data(&data.ciphers)?;
 
     let user_uuid = &headers.user.uuid;
 
@@ -1038,7 +1038,7 @@ async fn put_device_token(uuid: &str, data: Json<PushToken>, headers: Headers, m
             return Ok(());
         } else {
             // Try to unregister already registered device
-            let _ = unregister_push_device(device.push_uuid).await;
+            unregister_push_device(device.push_uuid).await.ok();
         }
         // clear the push_uuid
         device.push_uuid = None;
@@ -1123,7 +1123,7 @@ async fn post_auth_request(
         "requestIpAddress": auth_request.request_ip,
         "key": null,
         "masterPasswordHash": null,
-        "creationDate": auth_request.creation_date.and_utc(),
+        "creationDate": auth_request.creation_date.and_utc().to_rfc3339_opts(SecondsFormat::Micros, true),
         "responseDate": null,
         "requestApproved": false,
         "origin": CONFIG.domain_origin(),
@@ -1140,7 +1140,9 @@ async fn get_auth_request(uuid: &str, mut conn: DbConn) -> JsonResult {
         }
     };
 
-    let response_date_utc = auth_request.response_date.map(|response_date| response_date.and_utc());
+    let response_date_utc = auth_request
+        .response_date
+        .map(|response_date| response_date.and_utc().to_rfc3339_opts(SecondsFormat::Micros, true));
 
     Ok(Json(json!(
         {
@@ -1150,7 +1152,7 @@ async fn get_auth_request(uuid: &str, mut conn: DbConn) -> JsonResult {
             "requestIpAddress": auth_request.request_ip,
             "key": auth_request.enc_key,
             "masterPasswordHash": auth_request.master_password_hash,
-            "creationDate": auth_request.creation_date.and_utc(),
+            "creationDate": auth_request.creation_date.and_utc().to_rfc3339_opts(SecondsFormat::Micros, true),
             "responseDate": response_date_utc,
             "requestApproved": auth_request.approved,
             "origin": CONFIG.domain_origin(),
@@ -1195,7 +1197,9 @@ async fn put_auth_request(
         nt.send_auth_response(&auth_request.user_uuid, &auth_request.uuid, data.device_identifier, &mut conn).await;
     }
 
-    let response_date_utc = auth_request.response_date.map(|response_date| response_date.and_utc());
+    let response_date_utc = auth_request
+        .response_date
+        .map(|response_date| response_date.and_utc().to_rfc3339_opts(SecondsFormat::Micros, true));
 
     Ok(Json(json!(
         {
@@ -1205,7 +1209,7 @@ async fn put_auth_request(
             "requestIpAddress": auth_request.request_ip,
             "key": auth_request.enc_key,
             "masterPasswordHash": auth_request.master_password_hash,
-            "creationDate": auth_request.creation_date.and_utc(),
+            "creationDate": auth_request.creation_date.and_utc().to_rfc3339_opts(SecondsFormat::Micros, true),
             "responseDate": response_date_utc,
             "requestApproved": auth_request.approved,
             "origin": CONFIG.domain_origin(),
@@ -1227,7 +1231,9 @@ async fn get_auth_request_response(uuid: &str, code: &str, mut conn: DbConn) -> 
         err!("Access code invalid doesn't exist")
     }
 
-    let response_date_utc = auth_request.response_date.map(|response_date| response_date.and_utc());
+    let response_date_utc = auth_request
+        .response_date
+        .map(|response_date| response_date.and_utc().to_rfc3339_opts(SecondsFormat::Micros, true));
 
     Ok(Json(json!(
         {
@@ -1237,7 +1243,7 @@ async fn get_auth_request_response(uuid: &str, code: &str, mut conn: DbConn) -> 
             "requestIpAddress": auth_request.request_ip,
             "key": auth_request.enc_key,
             "masterPasswordHash": auth_request.master_password_hash,
-            "creationDate": auth_request.creation_date.and_utc(),
+            "creationDate": auth_request.creation_date.and_utc().to_rfc3339_opts(SecondsFormat::Micros, true),
             "responseDate": response_date_utc,
             "requestApproved": auth_request.approved,
             "origin": CONFIG.domain_origin(),
@@ -1255,7 +1261,7 @@ async fn get_auth_requests(headers: Headers, mut conn: DbConn) -> JsonResult {
             .iter()
             .filter(|request| request.approved.is_none())
             .map(|request| {
-            let response_date_utc = request.response_date.map(|response_date| response_date.and_utc());
+            let response_date_utc = request.response_date.map(|response_date| response_date.and_utc().to_rfc3339_opts(SecondsFormat::Micros, true));
 
             json!({
                 "id": request.uuid,
@@ -1264,7 +1270,7 @@ async fn get_auth_requests(headers: Headers, mut conn: DbConn) -> JsonResult {
                 "requestIpAddress": request.request_ip,
                 "key": request.enc_key,
                 "masterPasswordHash": request.master_password_hash,
-                "creationDate": request.creation_date.and_utc(),
+                "creationDate": request.creation_date.and_utc().to_rfc3339_opts(SecondsFormat::Micros, true),
                 "responseDate": response_date_utc,
                 "requestApproved": request.approved,
                 "origin": CONFIG.domain_origin(),

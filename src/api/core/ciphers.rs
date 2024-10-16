@@ -208,6 +208,7 @@ pub struct CipherData {
     // Folder id is not included in import
     folder_id: Option<String>,
     // TODO: Some of these might appear all the time, no need for Option
+    #[serde(alias = "organizationID")]
     pub organization_id: Option<String>,
 
     key: Option<String>,
@@ -232,7 +233,7 @@ pub struct CipherData {
     favorite: Option<bool>,
     reprompt: Option<i32>,
 
-    password_history: Option<Value>,
+    pub password_history: Option<Value>,
 
     // These are used during key rotation
     // 'Attachments' is unused, contains map of {id: filename}
@@ -377,8 +378,9 @@ pub async fn update_cipher_from_data(
     }
 
     if let Some(note) = &data.notes {
-        if note.len() > 10_000 {
-            err!("The field Notes exceeds the maximum encrypted value length of 10000 characters.")
+        let max_note_size = CONFIG._max_note_size();
+        if note.len() > max_note_size {
+            err!(format!("The field Notes exceeds the maximum encrypted value length of {max_note_size} characters."))
         }
     }
 
@@ -561,7 +563,7 @@ async fn post_ciphers_import(
     // Bitwarden does not process the import if there is one item invalid.
     // Since we check for the size of the encrypted note length, we need to do that here to pre-validate it.
     // TODO: See if we can optimize the whole cipher adding/importing and prevent duplicate code and checks.
-    Cipher::validate_notes(&data.ciphers)?;
+    Cipher::validate_cipher_data(&data.ciphers)?;
 
     // Read and create the folders
     let existing_folders: Vec<String> =
@@ -701,6 +703,7 @@ async fn put_cipher_partial(
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct CollectionsAdminData {
+    #[serde(alias = "CollectionIds")]
     collection_ids: Vec<String>,
 }
 

@@ -3,7 +3,7 @@ name = "vaultwarden"
 version = "1.0.0"
 authors = ["Daniel García <dani-garcia@users.noreply.github.com>"]
 edition = "2021"
-rust-version = "1.78.0"
+rust-version = "1.79.0"
 resolver = "2"
 
 repository = "https://github.com/dani-garcia/vaultwarden"
@@ -18,23 +18,23 @@ build = "build.rs"
 enable_syslog = []
 mysql = ["diesel/mysql", "diesel_migrations/mysql"]
 postgresql = ["diesel/postgres", "diesel_migrations/postgres"]
-sqlite = ["diesel/sqlite", "diesel_migrations/sqlite", "libsqlite3-sys"]
+sqlite = ["diesel/sqlite", "diesel_migrations/sqlite", "dep:libsqlite3-sys"]
 # Enable to use a vendored and statically linked openssl
 vendored_openssl = ["openssl/vendored"]
 # Enable MiMalloc memory allocator to replace the default malloc
 # This can improve performance for Alpine builds
-enable_mimalloc = ["mimalloc"]
+enable_mimalloc = ["dep:mimalloc"]
 # This is a development dependency, and should only be used during development!
 # It enables the usage of the diesel_logger crate, which is able to output the generated queries.
 # You also need to set an env variable `QUERY_LOGGER=1` to fully activate this so you do not have to re-compile
 # if you want to turn off the logging for a specific run.
-query_logger = ["diesel_logger"]
+query_logger = ["dep:diesel_logger"]
 
 # Enable unstable features, requires nightly
 # Currently only used to enable rusts official ip support
 unstable = []
 
-[target."cfg(not(windows))".dependencies]
+[target."cfg(unix)".dependencies]
 # Logging
 syslog = "6.1.1"
 
@@ -48,7 +48,7 @@ tracing = { version = "0.1.40", features = ["log"] } # Needed to have lettre and
 dotenvy = { version = "0.15.7", default-features = false }
 
 # Lazy initialization
-once_cell = "1.19.0"
+once_cell = "1.20.2"
 
 # Numerical libraries
 num-traits = "0.2.19"
@@ -63,34 +63,34 @@ rocket_ws = { version ="0.1.1" }
 rmpv = "1.3.0" # MessagePack library
 
 # Concurrent HashMap used for WebSocket messaging and favicons
-dashmap = "6.0.1"
+dashmap = "6.1.0"
 
 # Async futures
-futures = "0.3.30"
-tokio = { version = "1.38.0", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal", "net"] }
+futures = "0.3.31"
+tokio = { version = "1.40.0", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal", "net"] }
 
 # A generic serialization/deserialization framework
-serde = { version = "1.0.204", features = ["derive"] }
-serde_json = "1.0.120"
+serde = { version = "1.0.210", features = ["derive"] }
+serde_json = "1.0.128"
 
 # A safe, extensible ORM and Query builder
-diesel = { version = "2.2.1", features = ["chrono", "r2d2", "numeric"] }
+diesel = { version = "2.2.4", features = ["chrono", "r2d2", "numeric"] }
 diesel_migrations = "2.2.0"
 diesel_logger = { version = "0.3.0", optional = true }
 
 # Bundled/Static SQLite
-libsqlite3-sys = { version = "0.28.0", features = ["bundled"], optional = true }
+libsqlite3-sys = { version = "0.30.1", features = ["bundled"], optional = true }
 
 # Crypto-related libraries
 rand = { version = "0.8.5", features = ["small_rng"] }
 ring = "0.17.8"
 
 # UUID generation
-uuid = { version = "1.9.1", features = ["v4"] }
+uuid = { version = "1.10.0", features = ["v4"] }
 
 # Date and time libraries
 chrono = { version = "0.4.38", features = ["clock", "serde"], default-features = false }
-chrono-tz = "0.9.0"
+chrono-tz = "0.10.0"
 time = "0.3.36"
 
 # Job scheduler
@@ -115,32 +115,32 @@ webauthn-rs = "0.3.2"
 url = "2.5.2"
 
 # Email libraries
-lettre = { version = "0.11.7", features = ["smtp-transport", "sendmail-transport", "builder", "serde", "tokio1-native-tls", "hostname", "tracing", "tokio1"], default-features = false }
+lettre = { version = "0.11.9", features = ["smtp-transport", "sendmail-transport", "builder", "serde", "tokio1-native-tls", "hostname", "tracing", "tokio1"], default-features = false }
 percent-encoding = "2.3.1" # URL encoding library used for URL's in the emails
-email_address = "0.2.5"
+email_address = "0.2.9"
 
 # HTML Template library
-handlebars = { version = "5.1.2", features = ["dir_source"] }
+handlebars = { version = "6.1.0", features = ["dir_source"] }
 
 # HTTP client (Used for favicons, version check, DUO and HIBP API)
-reqwest = { version = "0.12.5", features = ["native-tls-alpn", "stream", "json", "gzip", "brotli", "socks", "cookies"] }
+reqwest = { version = "0.12.8", features = ["native-tls-alpn", "stream", "json", "gzip", "brotli", "socks", "cookies"] }
 hickory-resolver = "0.24.1"
 
 # Favicon extraction libraries
 html5gum = "0.5.7"
-regex = { version = "1.10.5", features = ["std", "perf", "unicode-perl"], default-features = false }
+regex = { version = "1.11.0", features = ["std", "perf", "unicode-perl"], default-features = false }
 data-url = "0.3.1"
-bytes = "1.6.0"
+bytes = "1.7.2"
 
 # Cache function results (Used for version check and favicon fetching)
-cached = { version = "0.52.0", features = ["async"] }
+cached = { version = "0.53.1", features = ["async"] }
 
 # Used for custom short lived cookie jar during favicon extraction
 cookie = "0.18.1"
 cookie_store = "0.21.0"
 
 # Used by U2F, JWT and PostgreSQL
-openssl = "0.10.64"
+openssl = "0.10.66"
 
 # CLI argument parsing
 pico-args = "0.5.0"
@@ -155,7 +155,7 @@ semver = "1.0.23"
 # Allow overriding the default memory allocator
 # Mainly used for the musl builds, since the default musl malloc is very slow
 mimalloc = { version = "0.1.43", features = ["secure"], default-features = false, optional = true }
-which = "6.0.1"
+which = "6.0.3"
 
 # Argon2 library with support for the PHC format
 argon2 = "0.5.3"
@@ -198,33 +198,46 @@ lto = "thin"
 codegen-units = 16
 
 # Linting config
+# https://doc.rust-lang.org/rustc/lints/groups.html
 [lints.rust]
 # Forbid
 unsafe_code = "forbid"
 non_ascii_idents = "forbid"
 
 # Deny
+deprecated_in_future = "deny"
 future_incompatible = { level = "deny", priority = -1 }
+keyword_idents = { level = "deny", priority = -1 }
+let_underscore = { level = "deny", priority = -1 }
 noop_method_call = "deny"
+refining_impl_trait = { level = "deny", priority = -1 }
 rust_2018_idioms = { level = "deny", priority = -1 }
 rust_2021_compatibility = { level = "deny", priority = -1 }
+# rust_2024_compatibility = { level = "deny", priority = -1 } # Enable once we are at MSRV 1.81.0
+single_use_lifetimes = "deny"
 trivial_casts = "deny"
 trivial_numeric_casts = "deny"
 unused = { level = "deny", priority = -1 }
 unused_import_braces = "deny"
 unused_lifetimes = "deny"
-deprecated_in_future = "deny"
+unused_qualifications = "deny"
+variant_size_differences = "deny"
+# The lints below are part of the rust_2024_compatibility group
+static-mut-refs = "deny"
+unsafe-op-in-unsafe-fn = "deny"
 
+# https://rust-lang.github.io/rust-clippy/stable/index.html
 [lints.clippy]
-# Allow
-# We need this since Rust v1.76+, since it has some bugs
-# https://github.com/rust-lang/rust-clippy/issues/12016
-blocks_in_conditions = "allow"
+# Warn
+dbg_macro = "warn"
+todo = "warn"
 
 # Deny
+case_sensitive_file_extension_comparisons = "deny"
 cast_lossless = "deny"
 clone_on_ref_ptr = "deny"
 equatable_if_let = "deny"
+filter_map_next = "deny"
 float_cmp_const = "deny"
 inefficient_to_string = "deny"
 iter_on_empty_collections = "deny"
@@ -234,13 +247,18 @@ macro_use_imports = "deny"
 manual_assert = "deny"
 manual_instant_elapsed = "deny"
 manual_string_new = "deny"
+match_on_vec_items = "deny"
 match_wildcard_for_single_variants = "deny"
 mem_forget = "deny"
+needless_continue = "deny"
 needless_lifetimes = "deny"
+option_option = "deny"
 string_add_assign = "deny"
 string_to_string = "deny"
 unnecessary_join = "deny"
 unnecessary_self_imports = "deny"
+unnested_or_patterns = "deny"
 unused_async = "deny"
+unused_self = "deny"
 verbose_file_reads = "deny"
 zero_sized_map_values = "deny"

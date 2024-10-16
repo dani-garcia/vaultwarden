@@ -12,7 +12,7 @@ use crate::{
         core::{
             accounts::{PreloginData, RegisterData, _prelogin, _register},
             log_user_event,
-            two_factor::{authenticator, duo, email, enforce_2fa_policy, webauthn, yubikey},
+            two_factor::{authenticator, duo, duo_oidc, email, enforce_2fa_policy, webauthn, yubikey},
         },
         push::register_push_device,
         ApiResult, EmptyResult, JsonResult,
@@ -135,6 +135,18 @@ async fn _refresh_login(data: ConnectData, conn: &mut DbConn) -> JsonResult {
     Ok(Json(result))
 }
 
+#[derive(Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MasterPasswordPolicy {
+    min_complexity: u8,
+    min_length: u32,
+    require_lower: bool,
+    require_upper: bool,
+    require_numbers: bool,
+    require_special: bool,
+    enforce_on_login: bool,
+}
+
 async fn _password_login(
     data: ConnectData,
     user_uuid: &mut Option<String>,
@@ -253,7 +265,7 @@ async fn _password_login(
     let twofactor_token = twofactor_auth(&user, &data, &mut device, ip, conn).await?;
 
     if CONFIG.mail_enabled() && new_device {
-        if let Err(e) = mail::send_new_device_logged_in(&user.email, &ip.ip.to_string(), &now, &device.name).await {
+        if let Err(e) = mail::send_new_device_logged_in(&user.email, &ip.ip.to_string(), &now, &device).await {
             error!("Error sending new device email: {:#?}", e);
 
             if CONFIG.require_device_email() {
@@ -282,6 +294,36 @@ async fn _password_login(
     let (access_token, expires_in) = device.refresh_tokens(&user, scope_vec);
     device.save(conn).await?;
 
+    // Fetch all valid Master Password Policies and merge them into one with all true's and larges numbers as one policy
+    let master_password_policies: Vec<MasterPasswordPolicy> =
+        OrgPolicy::find_accepted_and_confirmed_by_user_and_active_policy(
+            &user.uuid,
+            OrgPolicyType::MasterPassword,
+            conn,
+        )
+        .await
+        .into_iter()
+        .filter_map(|p| serde_json::from_str(&p.data).ok())
+        .collect();
+
+    let master_password_policy = if !master_password_policies.is_empty() {
+        let mut mpp_json = json!(master_password_policies.into_iter().reduce(|acc, policy| {
+            MasterPasswordPolicy {
+                min_complexity: acc.min_complexity.max(policy.min_complexity),
+                min_length: acc.min_length.max(policy.min_length),
+                require_lower: acc.require_lower || policy.require_lower,
+                require_upper: acc.require_upper || policy.require_upper,
+                require_numbers: acc.require_numbers || policy.require_numbers,
+                require_special: acc.require_special || policy.require_special,
+                enforce_on_login: acc.enforce_on_login || policy.enforce_on_login,
+            }
+        }));
+        mpp_json["object"] = json!("masterPasswordPolicy");
+        mpp_json
+    } else {
+        json!({"object": "masterPasswordPolicy"})
+    };
+
     let mut result = json!({
         "access_token": access_token,
         "expires_in": expires_in,
@@ -297,9 +339,7 @@ async fn _password_login(
         "KdfParallelism": user.client_kdf_parallelism,
         "ResetMasterPassword": false, // TODO: Same as above
         "ForcePasswordReset": false,
-        "MasterPasswordPolicy": {
-            "object": "masterPasswordPolicy",
-        },
+        "MasterPasswordPolicy": master_password_policy,
 
         "scope": scope,
         "unofficialServer": true,
@@ -381,7 +421,7 @@ async fn _user_api_key_login(
 
     if CONFIG.mail_enabled() && new_device {
         let now = Utc::now().naive_utc();
-        if let Err(e) = mail::send_new_device_logged_in(&user.email, &ip.ip.to_string(), &now, &device.name).await {
+        if let Err(e) = mail::send_new_device_logged_in(&user.email, &ip.ip.to_string(), &now, &device).await {
             error!("Error sending new device email: {:#?}", e);
 
             if CONFIG.require_device_email() {
@@ -495,14 +535,16 @@ async fn twofactor_auth(
         return Ok(None);
     }
 
-    TwoFactorIncomplete::mark_incomplete(&user.uuid, &device.uuid, &device.name, ip, conn).await?;
+    TwoFactorIncomplete::mark_incomplete(&user.uuid, &device.uuid, &device.name, device.atype, ip, conn).await?;
 
     let twofactor_ids: Vec<_> = twofactors.iter().map(|tf| tf.atype).collect();
     let selected_id = data.two_factor_provider.unwrap_or(twofactor_ids[0]); // If we aren't given a two factor provider, assume the first one
 
     let twofactor_code = match data.two_factor_token {
         Some(ref code) => code,
-        None => err_json!(_json_err_twofactor(&twofactor_ids, &user.uuid, conn).await?, "2FA token not provided"),
+        None => {
+            err_json!(_json_err_twofactor(&twofactor_ids, &user.uuid, data, conn).await?, "2FA token not provided")
+        }
     };
 
     let selected_twofactor = twofactors.into_iter().find(|tf| tf.atype == selected_id && tf.enabled);
@@ -519,7 +561,23 @@ async fn twofactor_auth(
         Some(TwoFactorType::Webauthn) => webauthn::validate_webauthn_login(&user.uuid, twofactor_code, conn).await?,
         Some(TwoFactorType::YubiKey) => yubikey::validate_yubikey_login(twofactor_code, &selected_data?).await?,
         Some(TwoFactorType::Duo) => {
-            duo::validate_duo_login(data.username.as_ref().unwrap().trim(), twofactor_code, conn).await?
+            match CONFIG.duo_use_iframe() {
+                true => {
+                    // Legacy iframe prompt flow
+                    duo::validate_duo_login(&user.email, twofactor_code, conn).await?
+                }
+                false => {
+                    // OIDC based flow
+                    duo_oidc::validate_duo_login(
+                        &user.email,
+                        twofactor_code,
+                        data.client_id.as_ref().unwrap(),
+                        data.device_identifier.as_ref().unwrap(),
+                        conn,
+                    )
+                    .await?
+                }
+            }
         }
         Some(TwoFactorType::Email) => {
             email::validate_email_code_str(&user.uuid, twofactor_code, &selected_data?, conn).await?
@@ -532,7 +590,7 @@ async fn twofactor_auth(
                 }
                 _ => {
                     err_json!(
-                        _json_err_twofactor(&twofactor_ids, &user.uuid, conn).await?,
+                        _json_err_twofactor(&twofactor_ids, &user.uuid, data, conn).await?,
                         "2FA Remember token not provided"
                     )
                 }
@@ -560,7 +618,12 @@ fn _selected_data(tf: Option<TwoFactor>) -> ApiResult<String> {
     tf.map(|t| t.data).map_res("Two factor doesn't exist")
 }
 
-async fn _json_err_twofactor(providers: &[i32], user_uuid: &str, conn: &mut DbConn) -> ApiResult<Value> {
+async fn _json_err_twofactor(
+    providers: &[i32],
+    user_uuid: &str,
+    data: &ConnectData,
+    conn: &mut DbConn,
+) -> ApiResult<Value> {
     let mut result = json!({
         "error" : "invalid_grant",
         "error_description" : "Two factor required.",
@@ -588,12 +651,30 @@ async fn _json_err_twofactor(providers: &[i32], user_uuid: &str, conn: &mut DbCo
                     None => err!("User does not exist"),
                 };
 
-                let (signature, host) = duo::generate_duo_signature(&email, conn).await?;
+                match CONFIG.duo_use_iframe() {
+                    true => {
+                        // Legacy iframe prompt flow
+                        let (signature, host) = duo::generate_duo_signature(&email, conn).await?;
+                        result["TwoFactorProviders2"][provider.to_string()] = json!({
+                            "Host": host,
+                            "Signature": signature,
+                        })
+                    }
+                    false => {
+                        // OIDC based flow
+                        let auth_url = duo_oidc::get_duo_auth_url(
+                            &email,
+                            data.client_id.as_ref().unwrap(),
+                            data.device_identifier.as_ref().unwrap(),
+                            conn,
+                        )
+                        .await?;
 
-                result["TwoFactorProviders2"][provider.to_string()] = json!({
-                    "Host": host,
-                    "Signature": signature,
-                });
+                        result["TwoFactorProviders2"][provider.to_string()] = json!({
+                            "AuthUrl": auth_url,
+                        })
+                    }
+                }
             }
 
             Some(tf_type @ TwoFactorType::YubiKey) => {

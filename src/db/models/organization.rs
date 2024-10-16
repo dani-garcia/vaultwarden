@@ -1,9 +1,13 @@
 use chrono::{NaiveDateTime, Utc};
 use num_traits::FromPrimitive;
 use serde_json::Value;
-use std::cmp::Ordering;
+use std::{
+    cmp::Ordering,
+    collections::{HashMap, HashSet},
+};
 
 use super::{CollectionUser, Group, GroupUser, OrgPolicy, OrgPolicyType, TwoFactor, User};
+use crate::db::models::{Collection, CollectionGroup};
 use crate::CONFIG;
 
 db_object! {
@@ -112,7 +116,7 @@ impl PartialOrd<i32> for UserOrgType {
     }
 
     fn ge(&self, other: &i32) -> bool {
-        matches!(self.partial_cmp(other), Some(Ordering::Greater) | Some(Ordering::Equal))
+        matches!(self.partial_cmp(other), Some(Ordering::Greater | Ordering::Equal))
     }
 }
 
@@ -135,7 +139,7 @@ impl PartialOrd<UserOrgType> for i32 {
     }
 
     fn le(&self, other: &UserOrgType) -> bool {
-        matches!(self.partial_cmp(other), Some(Ordering::Less) | Some(Ordering::Equal) | None)
+        matches!(self.partial_cmp(other), Some(Ordering::Less | Ordering::Equal) | None)
     }
 }
 
@@ -156,11 +160,12 @@ impl Organization {
             "id": self.uuid,
             "identifier": null, // not supported by us
             "name": self.name,
-            "seats": 10, // The value doesn't matter, we don't check server-side
-            // "maxAutoscaleSeats": null, // The value doesn't matter, we don't check server-side
-            "maxCollections": 10, // The value doesn't matter, we don't check server-side
-            "maxStorageGb": 10, // The value doesn't matter, we don't check server-side
+            "seats": null,
+            "maxAutoscaleSeats": null,
+            "maxCollections": null,
+            "maxStorageGb": i16::MAX, // The value doesn't matter, we don't check server-side
             "use2fa": true,
+            "useCustomPermissions": false,
             "useDirectory": false, // Is supported, but this value isn't checked anywhere (yet)
             "useEvents": CONFIG.org_events_enabled(),
             "useGroups": CONFIG.org_groups_enabled(),
@@ -182,8 +187,7 @@ impl Organization {
             "businessTaxNumber": null,
 
             "billingEmail": self.billing_email,
-            "plan": "TeamsAnnually",
-            "planType": 5, // TeamsAnnually plan
+            "planType": 6, // Custom plan
             "usersGetPremium": true,
             "object": "organization",
         })
@@ -369,8 +373,9 @@ impl UserOrganization {
             "id": self.org_uuid,
             "identifier": null, // Not supported
             "name": org.name,
-            "seats": 10, // The value doesn't matter, we don't check server-side
-            "maxCollections": 10, // The value doesn't matter, we don't check server-side
+            "seats": null,
+            "maxAutoscaleSeats": null,
+            "maxCollections": null,
             "usersGetPremium": true,
             "use2fa": true,
             "useDirectory": false, // Is supported, but this value isn't checked anywhere (yet)
@@ -392,12 +397,14 @@ impl UserOrganization {
             "useCustomPermissions": false,
             "useActivateAutofillPolicy": false,
 
+            "organizationUserId": self.uuid,
             "providerId": null,
             "providerName": null,
             "providerType": null,
             "familySponsorshipFriendlyName": null,
             "familySponsorshipAvailable": false,
-            "planProductType": 0,
+            "planProductType": 3,
+            "productTierType": 3, // Enterprise tier
             "keyConnectorEnabled": false,
             "keyConnectorUrl": null,
             "familySponsorshipLastSyncDate": null,
@@ -410,7 +417,7 @@ impl UserOrganization {
 
             "permissions": permissions,
 
-            "maxStorageGb": 10, // The value doesn't matter, we don't check server-side
+            "maxStorageGb": i16::MAX, // The value doesn't matter, we don't check server-side
 
             // These are per user
             "userId": self.user_uuid,
@@ -450,20 +457,71 @@ impl UserOrganization {
         };
 
         let collections: Vec<Value> = if include_collections {
-            CollectionUser::find_by_organization_and_user_uuid(&self.org_uuid, &self.user_uuid, conn)
+            // Get all collections for the user here already to prevent more queries
+            let cu: HashMap<String, CollectionUser> =
+                CollectionUser::find_by_organization_and_user_uuid(&self.org_uuid, &self.user_uuid, conn)
+                    .await
+                    .into_iter()
+                    .map(|cu| (cu.collection_uuid.clone(), cu))
+                    .collect();
+
+            // Get all collection groups for this user to prevent there inclusion
+            let cg: HashSet<String> = CollectionGroup::find_by_user(&self.user_uuid, conn)
                 .await
-                .iter()
-                .map(|cu| {
-                    json!({
-                        "id": cu.collection_uuid,
-                        "readOnly": cu.read_only,
-                        "hidePasswords": cu.hide_passwords,
-                    })
+                .into_iter()
+                .map(|cg| cg.collections_uuid)
+                .collect();
+
+            Collection::find_by_organization_and_user_uuid(&self.org_uuid, &self.user_uuid, conn)
+                .await
+                .into_iter()
+                .filter_map(|c| {
+                    let (read_only, hide_passwords, can_manage) = if self.has_full_access() {
+                        (false, false, self.atype == UserOrgType::Manager)
+                    } else if let Some(cu) = cu.get(&c.uuid) {
+                        (
+                            cu.read_only,
+                            cu.hide_passwords,
+                            self.atype == UserOrgType::Manager && !cu.read_only && !cu.hide_passwords,
+                        )
+                    // If previous checks failed it might be that this user has access via a group, but we should not return those elements here
+                    // Those are returned via a special group endpoint
+                    } else if cg.contains(&c.uuid) {
+                        return None;
+                    } else {
+                        (true, true, false)
+                    };
+
+                    Some(json!({
+                        "id": c.uuid,
+                        "readOnly": read_only,
+                        "hidePasswords": hide_passwords,
+                        "manage": can_manage,
+                    }))
                 })
                 .collect()
         } else {
             Vec::with_capacity(0)
         };
+
+        let permissions = json!({
+            // TODO: Add support for Custom User Roles
+            // See: https://bitwarden.com/help/article/user-types-access-control/#custom-role
+            "accessEventLogs": false,
+            "accessImportExport": false,
+            "accessReports": false,
+            "createNewCollections": false,
+            "editAnyCollection": false,
+            "deleteAnyCollection": false,
+            "editAssignedCollections": false,
+            "deleteAssignedCollections": false,
+            "manageGroups": false,
+            "managePolicies": false,
+            "manageSso": false, // Not supported
+            "manageUsers": false,
+            "manageResetPassword": false,
+            "manageScim": false // Not supported (Not AGPLv3 Licensed)
+        });
 
         json!({
             "id": self.uuid,
@@ -471,6 +529,7 @@ impl UserOrganization {
             "name": user.name,
             "email": user.email,
             "externalId": self.external_id,
+            "avatarColor": user.avatar_color,
             "groups": groups,
             "collections": collections,
 
@@ -479,6 +538,13 @@ impl UserOrganization {
             "accessAll": self.access_all,
             "twoFactorEnabled": twofactor_enabled,
             "resetPasswordEnrolled": self.reset_password_key.is_some(),
+            "hasMasterPassword": !user.password_hash.is_empty(),
+
+            "permissions": permissions,
+
+            "ssoBound": false, // Not supported
+            "usesKeyConnector": false, // Not supported
+            "accessSecretsManager": false, // Not supported (Not AGPLv3 Licensed)
 
             "object": "organizationUserUserDetails",
         })
@@ -592,7 +658,7 @@ impl UserOrganization {
     }
 
     pub async fn find_by_email_and_org(email: &str, org_id: &str, conn: &mut DbConn) -> Option<UserOrganization> {
-        if let Some(user) = super::User::find_by_mail(email, conn).await {
+        if let Some(user) = User::find_by_mail(email, conn).await {
             if let Some(user_org) = UserOrganization::find_by_user_and_org(&user.uuid, org_id, conn).await {
                 return Some(user_org);
             }
@@ -729,6 +795,19 @@ impl UserOrganization {
             users_organizations::table
                 .filter(users_organizations::user_uuid.eq(user_uuid))
                 .filter(users_organizations::org_uuid.eq(org_uuid))
+                .first::<UserOrganizationDb>(conn)
+                .ok().from_db()
+        }}
+    }
+
+    pub async fn find_confirmed_by_user_and_org(user_uuid: &str, org_uuid: &str, conn: &mut DbConn) -> Option<Self> {
+        db_run! { conn: {
+            users_organizations::table
+                .filter(users_organizations::user_uuid.eq(user_uuid))
+                .filter(users_organizations::org_uuid.eq(org_uuid))
+                .filter(
+                    users_organizations::status.eq(UserOrgStatus::Confirmed as i32)
+                )
                 .first::<UserOrganizationDb>(conn)
                 .ok().from_db()
         }}

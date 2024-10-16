@@ -4,20 +4,20 @@
  *
  * To rebuild or modify this file with the latest versions of the included
  * software please visit:
- *   https://datatables.net/download/#bs5/dt-2.0.7
+ *   https://datatables.net/download/#bs5/dt-2.0.8
  *
  * Included libraries:
- *   DataTables 2.0.7
+ *   DataTables 2.0.8
  */
 
-/*! DataTables 2.0.7
+/*! DataTables 2.0.8
  * © SpryMedia Ltd - datatables.net/license
  */
 
 /**
  * @summary     DataTables
  * @description Paginate, search and order HTML tables
- * @version     2.0.7
+ * @version     2.0.8
  * @author      SpryMedia Ltd
  * @contact     www.datatables.net
  * @copyright   SpryMedia Ltd.
@@ -563,7 +563,7 @@
 		 *
 		 *  @type string
 		 */
-		builder: "bs5/dt-2.0.7",
+		builder: "bs5/dt-2.0.8",
 	
 	
 		/**
@@ -7572,6 +7572,16 @@
 			order  = opts.order,   // applied, current, index (original - compatibility with 1.9)
 			page   = opts.page;    // all, current
 	
+		if ( _fnDataSource( settings ) == 'ssp' ) {
+			// In server-side processing mode, most options are irrelevant since
+			// rows not shown don't exist and the index order is the applied order
+			// Removed is a special case - for consistency just return an empty
+			// array
+			return search === 'removed' ?
+				[] :
+				_range( 0, displayMaster.length );
+		}
+	
 		if ( page == 'current' ) {
 			// Current page implies that order=current and filter=applied, since it is
 			// fairly senseless otherwise, regardless of what order and search actually
@@ -8243,7 +8253,7 @@
 	_api_register( _child_obj+'.isShown()', function () {
 		var ctx = this.context;
 	
-		if ( ctx.length && this.length ) {
+		if ( ctx.length && this.length && ctx[0].aoData[ this[0] ] ) {
 			// _detailsShown as false or undefined will fall through to return false
 			return ctx[0].aoData[ this[0] ]._detailsShow || false;
 		}
@@ -8266,7 +8276,7 @@
 	// can be an array of these items, comma separated list, or an array of comma
 	// separated lists
 	
-	var __re_column_selector = /^([^:]+):(name|title|visIdx|visible)$/;
+	var __re_column_selector = /^([^:]+)?:(name|title|visIdx|visible)$/;
 	
 	
 	// r1 and r2 are redundant - but it means that the parameters match for the
@@ -8338,17 +8348,24 @@
 				switch( match[2] ) {
 					case 'visIdx':
 					case 'visible':
-						var idx = parseInt( match[1], 10 );
-						// Visible index given, convert to column index
-						if ( idx < 0 ) {
-							// Counting from the right
-							var visColumns = columns.map( function (col,i) {
-								return col.bVisible ? i : null;
-							} );
-							return [ visColumns[ visColumns.length + idx ] ];
+						if (match[1]) {
+							var idx = parseInt( match[1], 10 );
+							// Visible index given, convert to column index
+							if ( idx < 0 ) {
+								// Counting from the right
+								var visColumns = columns.map( function (col,i) {
+									return col.bVisible ? i : null;
+								} );
+								return [ visColumns[ visColumns.length + idx ] ];
+							}
+							// Counting from the left
+							return [ _fnVisibleToColumnIndex( settings, idx ) ];
 						}
-						// Counting from the left
-						return [ _fnVisibleToColumnIndex( settings, idx ) ];
+						
+						// `:visible` on its own
+						return columns.map( function (col, i) {
+							return col.bVisible ? i : null;
+						} );
 	
 					case 'name':
 						// match by name. `names` is column index complete and in order
@@ -9623,7 +9640,7 @@
 	 *  @type string
 	 *  @default Version number
 	 */
-	DataTable.version = "2.0.7";
+	DataTable.version = "2.0.8";
 	
 	/**
 	 * Private data store, containing all of the settings objects that are

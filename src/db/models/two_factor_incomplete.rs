@@ -13,6 +13,7 @@ db_object! {
         // must complete 2FA login before being added into the devices table.
         pub device_uuid: String,
         pub device_name: String,
+        pub device_type: i32,
         pub login_time: NaiveDateTime,
         pub ip_address: String,
     }
@@ -23,6 +24,7 @@ impl TwoFactorIncomplete {
         user_uuid: &str,
         device_uuid: &str,
         device_name: &str,
+        device_type: i32,
         ip: &ClientIp,
         conn: &mut DbConn,
     ) -> EmptyResult {
@@ -44,6 +46,7 @@ impl TwoFactorIncomplete {
                     twofactor_incomplete::user_uuid.eq(user_uuid),
                     twofactor_incomplete::device_uuid.eq(device_uuid),
                     twofactor_incomplete::device_name.eq(device_name),
+                    twofactor_incomplete::device_type.eq(device_type),
                     twofactor_incomplete::login_time.eq(Utc::now().naive_utc()),
                     twofactor_incomplete::ip_address.eq(ip.ip.to_string()),
                 ))

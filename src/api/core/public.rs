@@ -1,6 +1,6 @@
 use chrono::Utc;
 use rocket::{
-    request::{self, FromRequest, Outcome},
+    request::{FromRequest, Outcome},
     serde::json::Json,
     Request, Route,
 };
@@ -123,15 +123,8 @@ async fn ldap_import(data: Json<OrgImportData>, token: PublicToken, mut conn: Db
                     None => err!("Error looking up organization"),
                 };
 
-                mail::send_invite(
-                    &user_data.email,
-                    &user.uuid,
-                    Some(org_id.clone()),
-                    Some(new_org_user.uuid),
-                    &org_name,
-                    Some(org_email),
-                )
-                .await?;
+                mail::send_invite(&user, Some(org_id.clone()), Some(new_org_user.uuid), &org_name, Some(org_email))
+                    .await?;
             }
         }
     }
@@ -199,7 +192,7 @@ pub struct PublicToken(String);
 impl<'r> FromRequest<'r> for PublicToken {
     type Error = &'static str;
 
-    async fn from_request(request: &'r Request<'_>) -> request::Outcome<Self, Self::Error> {
+    async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         let headers = request.headers();
         // Get access_token
         let access_token: &str = match headers.get_one("Authorization") {

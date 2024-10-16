@@ -49,8 +49,8 @@ function _post(url, successMsg, errMsg, body, reload_page = true) {
     }).then(respText => {
         try {
             const respJson = JSON.parse(respText);
-            if (respJson.ErrorModel && respJson.ErrorModel.Message) {
-                return respJson.ErrorModel.Message;
+            if (respJson.errorModel && respJson.errorModel.message) {
+                return respJson.errorModel.message;
             } else {
                 return Promise.reject({ body: `${respStatus} - ${respStatusText}\n\nUnknown error`, error: true });
             }
@@ -98,7 +98,7 @@ const showActiveTheme = (theme, focus = false) => {
     const themeSwitcherText = document.querySelector("#bd-theme-text");
     const activeThemeIcon = document.querySelector(".theme-icon-active use");
     const btnToActive = document.querySelector(`[data-bs-theme-value="${theme}"]`);
-    const svgOfActiveBtn = btnToActive.querySelector("span use").innerText;
+    const svgOfActiveBtn = btnToActive.querySelector("span use").textContent;
 
     document.querySelectorAll("[data-bs-theme-value]").forEach(element => {
         element.classList.remove("active");
@@ -107,7 +107,7 @@ const showActiveTheme = (theme, focus = false) => {
 
     btnToActive.classList.add("active");
     btnToActive.setAttribute("aria-pressed", "true");
-    activeThemeIcon.innerText = svgOfActiveBtn;
+    activeThemeIcon.textContent = svgOfActiveBtn;
     const themeSwitcherLabel = `${themeSwitcherText.textContent} (${btnToActive.dataset.bsThemeValue})`;
     themeSwitcher.setAttribute("aria-label", themeSwitcherLabel);
 

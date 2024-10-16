@@ -1,4 +1,5 @@
 use once_cell::sync::Lazy;
+use reqwest::Method;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use std::env;
@@ -17,13 +18,14 @@ use crate::{
         core::{log_event, two_factor},
         unregister_push_device, ApiResult, EmptyResult, JsonResult, Notify,
     },
-    auth::{decode_admin, encode_jwt, generate_admin_claims, ClientIp},
+    auth::{decode_admin, encode_jwt, generate_admin_claims, ClientIp, Secure},
     config::ConfigBuilder,
     db::{backup_database, get_sql_server_version, models::*, DbConn, DbConnType},
     error::{Error, MapResult},
+    http_client::make_http_request,
     mail,
     util::{
-        container_base_image, format_naive_datetime_local, get_display_size, get_reqwest_client,
+        container_base_image, format_naive_datetime_local, get_display_size, get_web_vault_version,
         is_running_in_container, NumberOrString,
     },
     CONFIG, VERSION,
@@ -168,7 +170,12 @@ struct LoginForm {
 }
 
 #[post("/", data = "<data>")]
-fn post_admin_login(data: Form<LoginForm>, cookies: &CookieJar<'_>, ip: ClientIp) -> Result<Redirect, AdminResponse> {
+fn post_admin_login(
+    data: Form<LoginForm>,
+    cookies: &CookieJar<'_>,
+    ip: ClientIp,
+    secure: Secure,
+) -> Result<Redirect, AdminResponse> {
     let data = data.into_inner();
     let redirect = data.redirect;
 
@@ -190,9 +197,10 @@ fn post_admin_login(data: Form<LoginForm>, cookies: &CookieJar<'_>, ip: ClientIp
 
         let cookie = Cookie::build((COOKIE_NAME, jwt))
             .path(admin_path())
-            .max_age(rocket::time::Duration::minutes(CONFIG.admin_session_lifetime()))
+            .max_age(time::Duration::minutes(CONFIG.admin_session_lifetime()))
             .same_site(SameSite::Strict)
-            .http_only(true);
+            .http_only(true)
+            .secure(secure.https);
 
         cookies.add(cookie);
         if let Some(redirect) = redirect {
@@ -290,7 +298,7 @@ async fn invite_user(data: Json<InviteData>, _token: AdminToken, mut conn: DbCon
 
     async fn _generate_invite(user: &User, conn: &mut DbConn) -> EmptyResult {
         if CONFIG.mail_enabled() {
-            mail::send_invite(&user.email, &user.uuid, None, None, &CONFIG.invitation_org_name(), None).await
+            mail::send_invite(user, None, None, &CONFIG.invitation_org_name(), None).await
         } else {
             let invitation = Invitation::new(&user.email);
             invitation.save(conn).await
@@ -466,7 +474,7 @@ async fn resend_user_invite(uuid: &str, _token: AdminToken, mut conn: DbConn) ->
         }
 
         if CONFIG.mail_enabled() {
-            mail::send_invite(&user.email, &user.uuid, None, None, &CONFIG.invitation_org_name(), None).await
+            mail::send_invite(&user, None, None, &CONFIG.invitation_org_name(), None).await
         } else {
             Ok(())
         }
@@ -569,11 +577,6 @@ async fn delete_organization(uuid: &str, _token: AdminToken, mut conn: DbConn) -
 }
 
 #[derive(Deserialize)]
-struct WebVaultVersion {
-    version: String,
-}
-
-#[derive(Deserialize)]
 struct GitRelease {
     tag_name: String,
 }
@@ -594,15 +597,15 @@ struct TimeApi {
 }
 
 async fn get_json_api<T: DeserializeOwned>(url: &str) -> Result<T, Error> {
-    let json_api = get_reqwest_client();
-
-    Ok(json_api.get(url).send().await?.error_for_status()?.json::<T>().await?)
+    Ok(make_http_request(Method::GET, url)?.send().await?.error_for_status()?.json::<T>().await?)
 }
 
 async fn has_http_access() -> bool {
-    let http_access = get_reqwest_client();
-
-    match http_access.head("https://github.com/dani-garcia/vaultwarden").send().await {
+    let req = match make_http_request(Method::HEAD, "https://github.com/dani-garcia/vaultwarden") {
+        Ok(r) => r,
+        Err(_) => return false,
+    };
+    match req.send().await {
         Ok(r) => r.status().is_success(),
         _ => false,
     }
@@ -672,18 +675,6 @@ async fn diagnostics(_token: AdminToken, ip_header: IpHeader, mut conn: DbConn) 
     use chrono::prelude::*;
     use std::net::ToSocketAddrs;
 
-    // Get current running versions
-    let web_vault_version: WebVaultVersion =
-        match std::fs::read_to_string(format!("{}/{}", CONFIG.web_vault_folder(), "vw-version.json")) {
-            Ok(s) => serde_json::from_str(&s)?,
-            _ => match std::fs::read_to_string(format!("{}/{}", CONFIG.web_vault_folder(), "version.json")) {
-                Ok(s) => serde_json::from_str(&s)?,
-                _ => WebVaultVersion {
-                    version: String::from("Version file missing"),
-                },
-            },
-        };
-
     // Execute some environment checks
     let running_within_container = is_running_in_container();
     let has_http_access = has_http_access().await;
@@ -703,13 +694,16 @@ async fn diagnostics(_token: AdminToken, ip_header: IpHeader, mut conn: DbConn) 
 
     let ip_header_name = &ip_header.0.unwrap_or_default();
 
+    // Get current running versions
+    let web_vault_version = get_web_vault_version();
+
     let diagnostics_json = json!({
         "dns_resolved": dns_resolved,
         "current_release": VERSION,
         "latest_release": latest_release,
         "latest_commit": latest_commit,
         "web_vault_enabled": &CONFIG.web_vault_enabled(),
-        "web_vault_version": web_vault_version.version.trim_start_matches('v'),
+        "web_vault_version": web_vault_version,
         "latest_web_build": latest_web_build,
         "running_within_container": running_within_container,
         "container_base_image": if running_within_container { container_base_image() } else { "Not applicable" },
@@ -723,8 +717,8 @@ async fn diagnostics(_token: AdminToken, ip_header: IpHeader, mut conn: DbConn) 
         "db_version": get_sql_server_version(&mut conn).await,
         "admin_url": format!("{}/diagnostics", admin_url()),
         "overrides": &CONFIG.get_overrides().join(", "),
-        "host_arch": std::env::consts::ARCH,
-        "host_os":  std::env::consts::OS,
+        "host_arch": env::consts::ARCH,
+        "host_os":  env::consts::OS,
         "server_time_local": Local::now().format("%Y-%m-%d %H:%M:%S %Z").to_string(),
         "server_time": Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string(), // Run the server date/time check as late as possible to minimize the time difference
         "ntp_time": get_ntp_time(has_http_access).await, // Run the ntp check as late as possible to minimize the time difference
@@ -743,18 +737,27 @@ fn get_diagnostics_config(_token: AdminToken) -> Json<Value> {
 #[post("/config", data = "<data>")]
 fn post_config(data: Json<ConfigBuilder>, _token: AdminToken) -> EmptyResult {
     let data: ConfigBuilder = data.into_inner();
-    CONFIG.update_config(data)
+    if let Err(e) = CONFIG.update_config(data) {
+        err!(format!("Unable to save config: {e:?}"))
+    }
+    Ok(())
 }
 
 #[post("/config/delete")]
 fn delete_config(_token: AdminToken) -> EmptyResult {
-    CONFIG.delete_user_config()
+    if let Err(e) = CONFIG.delete_user_config() {
+        err!(format!("Unable to delete config: {e:?}"))
+    }
+    Ok(())
 }
 
 #[post("/config/backup_db")]
-async fn backup_db(_token: AdminToken, mut conn: DbConn) -> EmptyResult {
+async fn backup_db(_token: AdminToken, mut conn: DbConn) -> ApiResult<String> {
     if *CAN_BACKUP {
-        backup_database(&mut conn).await
+        match backup_database(&mut conn).await {
+            Ok(f) => Ok(format!("Backup to '{f}' was successful")),
+            Err(e) => err!(format!("Backup was unsuccessful {e}")),
+        }
     } else {
         err!("Can't back up current DB (Only SQLite supports this feature)");
     }

@@ -12,6 +12,7 @@ pub use accounts::purge_auth_requests;
 pub use ciphers::{purge_trashed_ciphers, CipherData, CipherSyncData, CipherSyncType};
 pub use emergency_access::{emergency_notification_reminder_job, emergency_request_timeout_job};
 pub use events::{event_cleanup_job, log_event, log_user_event};
+use reqwest::Method;
 pub use sends::purge_sends;
 
 pub fn routes() -> Vec<Route> {
@@ -53,7 +54,8 @@ use crate::{
     auth::Headers,
     db::DbConn,
     error::Error,
-    util::{get_reqwest_client, parse_experimental_client_feature_flags},
+    http_client::make_http_request,
+    util::parse_experimental_client_feature_flags,
 };
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -139,9 +141,7 @@ async fn hibp_breach(username: &str) -> JsonResult {
     );
 
     if let Some(api_key) = crate::CONFIG.hibp_api_key() {
-        let hibp_client = get_reqwest_client();
-
-        let res = hibp_client.get(&url).header("hibp-api-key", api_key).send().await?;
+        let res = make_http_request(Method::GET, &url)?.header("hibp-api-key", api_key).send().await?;
 
         // If we get a 404, return a 404, it means no breached accounts
         if res.status() == 404 {
@@ -190,6 +190,8 @@ fn config() -> Json<Value> {
         parse_experimental_client_feature_flags(&crate::CONFIG.experimental_client_feature_flags());
     // Force the new key rotation feature
     feature_states.insert("key-rotation-improvements".to_string(), true);
+    feature_states.insert("flexible-collections-v-1".to_string(), false);
+
     Json(json!({
         // Note: The clients use this version to handle backwards compatibility concerns
         // This means they expect a version that closely matches the Bitwarden server version
@@ -200,8 +202,10 @@ fn config() -> Json<Value> {
         "gitHash": option_env!("GIT_REV"),
         "server": {
           "name": "Vaultwarden",
-          "url": "https://github.com/dani-garcia/vaultwarden",
-          "version": crate::VERSION
+          "url": "https://github.com/dani-garcia/vaultwarden"
+        },
+        "settings": {
+            "disableUserRegistration": !crate::CONFIG.signups_allowed() && crate::CONFIG.signups_domains_whitelist().is_empty(),
         },
         "environment": {
           "vault": domain,

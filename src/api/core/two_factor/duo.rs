@@ -15,7 +15,7 @@ use crate::{
         DbConn,
     },
     error::MapResult,
-    util::get_reqwest_client,
+    http_client::make_http_request,
     CONFIG,
 };
 
@@ -210,10 +210,7 @@ async fn duo_api_request(method: &str, path: &str, params: &str, data: &DuoData)
 
     let m = Method::from_str(method).unwrap_or_default();
 
-    let client = get_reqwest_client();
-
-    client
-        .request(m, &url)
+    make_http_request(m, &url)?
         .basic_auth(username, Some(password))
         .header(header::USER_AGENT, "vaultwarden:Duo/1.0 (Rust)")
         .header(header::DATE, date)
@@ -255,7 +252,7 @@ async fn get_user_duo_data(uuid: &str, conn: &mut DbConn) -> DuoStatus {
 }
 
 // let (ik, sk, ak, host) = get_duo_keys();
-async fn get_duo_keys_email(email: &str, conn: &mut DbConn) -> ApiResult<(String, String, String, String)> {
+pub(crate) async fn get_duo_keys_email(email: &str, conn: &mut DbConn) -> ApiResult<(String, String, String, String)> {
     let data = match User::find_by_mail(email, conn).await {
         Some(u) => get_user_duo_data(&u.uuid, conn).await.data(),
         _ => DuoData::global(),
@@ -284,10 +281,6 @@ fn sign_duo_values(key: &str, email: &str, ikey: &str, prefix: &str, expire: i64
 }
 
 pub async fn validate_duo_login(email: &str, response: &str, conn: &mut DbConn) -> EmptyResult {
-    // email is as entered by the user, so it needs to be normalized before
-    // comparison with auth_user below.
-    let email = &email.to_lowercase();
-
     let split: Vec<&str> = response.split(':').collect();
     if split.len() != 2 {
         err!(

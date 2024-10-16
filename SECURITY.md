@@ -39,7 +39,11 @@ Thank you for helping keep Vaultwarden and our users safe!
 
 # How to contact us
 
-- You can contact us on Matrix https://matrix.to/#/#vaultwarden:matrix.org (user: `@danig:matrix.org`)
-- You can send an ![security-contact](/.github/security-contact.gif) to report a security issue.
-  - If you want to send an encrypted email you can use the following GPG key:<br>
-    https://keyserver.ubuntu.com/pks/lookup?search=0xB9B7A108373276BF3C0406F9FC8A7D14C3CD543A&fingerprint=on&op=index
+- You can contact us on Matrix https://matrix.to/#/#vaultwarden:matrix.org (users: `@danig:matrix.org` and/or `@blackdex:matrix.org`)
+- You can send an ![security-contact](/.github/security-contact.gif) to report a security issue.<br>
+  If you want to send an encrypted email you can use the following GPG key: 13BB3A34C9E380258CE43D595CB150B31F6426BC<br>
+  It can be found on several public GPG key servers.<br>
+    * https://keys.openpgp.org/search?q=security%40vaultwarden.org
+    * https://keys.mailvelope.com/pks/lookup?op=get&search=security%40vaultwarden.org
+    * https://pgpkeys.eu/pks/lookup?search=security%40vaultwarden.org&fingerprint=on&op=index
+    * https://keyserver.ubuntu.com/pks/lookup?search=security%40vaultwarden.org&fingerprint=on&op=index

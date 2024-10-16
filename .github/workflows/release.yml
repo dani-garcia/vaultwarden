@@ -13,7 +13,7 @@ jobs:
   # Some checks to determine if we need to continue with building a new docker.
   # We will skip this check if we are creating a tag, because that has the same hash as a previous run already.
   skip_check:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     if: ${{ github.repository == 'dani-garcia/vaultwarden' }}
     outputs:
       should_skip: ${{ steps.skip_check.outputs.should_skip }}
@@ -27,7 +27,7 @@ jobs:
         if: ${{ github.ref_type == 'branch' }}
 
   docker-build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     needs: skip_check
     if: ${{ needs.skip_check.outputs.should_skip != 'true' && github.repository == 'dani-garcia/vaultwarden' }}
@@ -58,24 +58,24 @@ jobs:
     steps:
       # Checkout the repo
       - name: Checkout
-        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+        uses: actions/checkout@eef61447b9ff4aafe5dcd4e0bbf5d482be7e7871 #v4.2.1
         with:
           fetch-depth: 0
 
       - name: Initialize QEMU binfmt support
-        uses: docker/setup-qemu-action@68827325e0b33c7199eb31dd4e31fbe9023e06e3 # v3.0.0
+        uses: docker/setup-qemu-action@49b3bc8e6bdd4a60e6116a5414239cba5943d3cf # v3.2.0
         with:
           platforms: "arm64,arm"
 
       # Start Docker Buildx
       - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # v3.3.0
+        uses: docker/setup-buildx-action@c47758b77c9736f4b2ef4073d4d51994fabfe349 # v3.7.1
         # https://github.com/moby/buildkit/issues/3969
-        # Also set max parallelism to 3, the default of 4 breaks GitHub Actions and causes OOMKills
+        # Also set max parallelism to 2, the default of 4 breaks GitHub Actions and causes OOMKills
         with:
           buildkitd-config-inline: |
             [worker.oci]
-              max-parallelism = 3
+              max-parallelism = 2
           driver-opts: |
             network=host
 
@@ -102,7 +102,7 @@ jobs:
 
       # Login to Docker Hub
       - name: Login to Docker Hub
-        uses: docker/login-action@0d4c9c5ea7693da7b068278f7b52bda2a190a446 # v3.2.0
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -116,7 +116,7 @@ jobs:
 
       # Login to GitHub Container Registry
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@0d4c9c5ea7693da7b068278f7b52bda2a190a446 # v3.2.0
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
@@ -131,7 +131,7 @@ jobs:
 
       # Login to Quay.io
       - name: Login to Quay.io
-        uses: docker/login-action@0d4c9c5ea7693da7b068278f7b52bda2a190a446 # v3.2.0
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
         with:
           registry: quay.io
           username: ${{ secrets.QUAY_USERNAME }}
@@ -165,7 +165,7 @@ jobs:
           echo "CONTAINER_REGISTRIES=${CONTAINER_REGISTRIES:+${CONTAINER_REGISTRIES},}localhost:5000/vaultwarden/server" | tee -a "${GITHUB_ENV}"
 
       - name: Bake ${{ matrix.base_image }} containers
-        uses: docker/bake-action@1c5f18a523c4c68524cfbc5161494d8bb5b29d20 # v5.0.1
+        uses: docker/bake-action@2e3d19baedb14545e5d41222653874f25d5b4dfb # v5.10.0
         env:
           BASE_TAGS: "${{ env.BASE_TAGS }}"
           SOURCE_COMMIT: "${{ env.SOURCE_COMMIT }}"
@@ -223,28 +223,28 @@ jobs:
 
       # Upload artifacts to Github Actions
       - name: "Upload amd64 artifact"
-        uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         if: ${{ matrix.base_image == 'alpine' }}
         with:
           name: vaultwarden-${{ env.SOURCE_VERSION }}-linux-amd64
           path: vaultwarden-amd64
 
       - name: "Upload arm64 artifact"
-        uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         if: ${{ matrix.base_image == 'alpine' }}
         with:
           name: vaultwarden-${{ env.SOURCE_VERSION }}-linux-arm64
           path: vaultwarden-arm64
 
       - name: "Upload armv7 artifact"
-        uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         if: ${{ matrix.base_image == 'alpine' }}
         with:
           name: vaultwarden-${{ env.SOURCE_VERSION }}-linux-armv7
           path: vaultwarden-armv7
 
       - name: "Upload armv6 artifact"
-        uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         if: ${{ matrix.base_image == 'alpine' }}
         with:
           name: vaultwarden-${{ env.SOURCE_VERSION }}-linux-armv6

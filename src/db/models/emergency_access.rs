@@ -26,7 +26,7 @@ db_object! {
     }
 }
 
-/// Local methods
+// Local methods
 
 impl EmergencyAccess {
     pub fn new(grantor_uuid: String, email: String, status: i32, atype: i32, wait_time_days: i32) -> Self {
@@ -89,7 +89,7 @@ impl EmergencyAccess {
                 Some(user) => user,
                 None => {
                     // remove outstanding invitations which should not exist
-                    let _ = Self::delete_all_by_grantee_email(email, conn).await;
+                    Self::delete_all_by_grantee_email(email, conn).await.ok();
                     return None;
                 }
             }

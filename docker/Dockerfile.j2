@@ -1,4 +1,5 @@
 # syntax=docker/dockerfile:1
+# check=skip=FromPlatformFlagConstDisallowed,RedundantTargetPlatform
 
 # This file was generated using a Jinja2 template.
 # Please make your changes in `DockerSettings.yaml` or `Dockerfile.j2` and then `make`
@@ -26,7 +27,7 @@
 #     $ docker image inspect --format "{{ '{{' }}.RepoTags}}" docker.io/vaultwarden/web-vault@{{ vault_image_digest }}
 #     [docker.io/vaultwarden/web-vault:{{ vault_version }}]
 #
-FROM --platform=linux/amd64 docker.io/vaultwarden/web-vault@{{ vault_image_digest }} as vault
+FROM --platform=linux/amd64 docker.io/vaultwarden/web-vault@{{ vault_image_digest }} AS vault
 
 {% if base == "debian" %}
 ########################## Cross Compile Docker Helper Scripts ##########################
@@ -38,13 +39,13 @@ FROM --platform=linux/amd64 docker.io/tonistiigi/xx@{{ xx_image_digest }} AS xx
 ## NOTE: The Alpine Base Images do not support other platforms then linux/amd64
 ## And for Alpine we define all build images here, they will only be loaded when actually used
 {% for arch in build_stage_image[base].arch_image %}
-FROM --platform={{ build_stage_image[base].platform }} {{ build_stage_image[base].arch_image[arch] }} as build_{{ arch }}
+FROM --platform={{ build_stage_image[base].platform }} {{ build_stage_image[base].arch_image[arch] }} AS build_{{ arch }}
 {% endfor %}
 {% endif %}
 
 ########################## BUILD IMAGE ##########################
 # hadolint ignore=DL3006
-FROM --platform={{ build_stage_image[base].platform }} {{ build_stage_image[base].image }} as build
+FROM --platform={{ build_stage_image[base].platform }} {{ build_stage_image[base].image }} AS build
 {% if base == "debian" %}
 COPY --from=xx / /
 {% endif %}
@@ -229,7 +230,6 @@ RUN mkdir /data && \
 
 VOLUME /data
 EXPOSE 80
-EXPOSE 3012
 
 # Copies the files from the context (Rocket.toml file and web-vault)
 # and the binary from the "build" stage to the current stage
