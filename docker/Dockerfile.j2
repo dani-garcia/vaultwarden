@@ -201,7 +201,8 @@ FROM --platform=$TARGETPLATFORM {{ runtime_stage_image[base] }}
 
 ENV ROCKET_PROFILE="release" \
     ROCKET_ADDRESS=0.0.0.0 \
-    ROCKET_PORT=80
+    ROCKET_PORT=80 \
+    PATH="$PATH:/"
 {%- if base == "debian" %} \
     DEBIAN_FRONTEND=noninteractive
 {% elif base == "alpine" %} \
