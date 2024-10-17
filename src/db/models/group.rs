@@ -82,7 +82,7 @@ impl Group {
                     "id": entry.collections_uuid,
                     "readOnly": entry.read_only,
                     "hidePasswords": entry.hide_passwords,
-                    "manage": *user_org_type == UserOrgType::Manager && !entry.read_only && !entry.hide_passwords
+                    "manage": *user_org_type >= UserOrgType::Admin || (*user_org_type == UserOrgType::Manager && !entry.read_only && !entry.hide_passwords)
                 })
             })
             .collect();

@@ -161,7 +161,6 @@ impl Organization {
             "identifier": null, // not supported by us
             "name": self.name,
             "seats": null,
-            "maxAutoscaleSeats": null,
             "maxCollections": null,
             "maxStorageGb": i16::MAX, // The value doesn't matter, we don't check server-side
             "use2fa": true,
@@ -374,7 +373,6 @@ impl UserOrganization {
             "identifier": null, // Not supported
             "name": org.name,
             "seats": null,
-            "maxAutoscaleSeats": null,
             "maxCollections": null,
             "usersGetPremium": true,
             "use2fa": true,
@@ -411,7 +409,7 @@ impl UserOrganization {
             "familySponsorshipValidUntil": null,
             "familySponsorshipToDelete": null,
             "accessSecretsManager": false,
-            "limitCollectionCreationDeletion": true,
+            "limitCollectionCreationDeletion": false, // This should be set to true only when we can handle roles like createNewCollections
             "allowAdminAccessToAllCollectionItems": true,
             "flexibleCollections": false,
 
@@ -477,7 +475,7 @@ impl UserOrganization {
                 .into_iter()
                 .filter_map(|c| {
                     let (read_only, hide_passwords, can_manage) = if self.has_full_access() {
-                        (false, false, self.atype == UserOrgType::Manager)
+                        (false, false, self.atype >= UserOrgType::Manager)
                     } else if let Some(cu) = cu.get(&c.uuid) {
                         (
                             cu.read_only,
