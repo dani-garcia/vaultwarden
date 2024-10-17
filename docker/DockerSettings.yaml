@@ -5,7 +5,7 @@ vault_image_digest: "sha256:409ab328ca931439cb916b388a4bb784bd44220717aaf74cf716
 # We use the linux/amd64 platform shell scripts since there is no difference between the different platform scripts
 # https://github.com/tonistiigi/xx | https://hub.docker.com/r/tonistiigi/xx/tags
 xx_image_digest: "sha256:1978e7a58a1777cb0ef0dde76bad60b7914b21da57cfa88047875e4f364297aa"
-rust_version: 1.81.0 # Rust version to be used
+rust_version: 1.82.0 # Rust version to be used
 debian_version: bookworm # Debian release name to be used
 alpine_version: "3.20" # Alpine version to be used
 # For which platforms/architectures will we try to build images
