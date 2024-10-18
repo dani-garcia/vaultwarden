@@ -150,7 +150,6 @@ async fn sync(data: SyncData, headers: Headers, mut conn: DbConn) -> Json<Value>
         "ciphers": ciphers_json,
         "domains": domains_json,
         "sends": sends_json,
-        "unofficialServer": true,
         "object": "sync"
     }))
 }

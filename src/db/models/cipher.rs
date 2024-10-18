@@ -264,7 +264,7 @@ impl Cipher {
 
         // NOTE: This was marked as *Backwards Compatibility Code*, but as of January 2021 this is still being used by upstream
         // data_json should always contain the following keys with every atype
-        data_json["fields"] = json!([fields_json]);
+        data_json["fields"] = json!(fields_json);
         data_json["name"] = json!(self.name);
         data_json["notes"] = json!(self.notes);
         data_json["passwordHistory"] = Value::Array(password_history_json.clone());
