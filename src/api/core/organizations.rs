@@ -872,20 +872,19 @@ async fn send_invite(org_id: &str, data: Json<InviteData>, headers: AdminHeaders
     }
 
     for email in data.emails.iter() {
-        let email = email.to_lowercase();
         let mut user_org_status = UserOrgStatus::Invited as i32;
-        let user = match User::find_by_mail(&email, &mut conn).await {
+        let user = match User::find_by_mail(email, &mut conn).await {
             None => {
                 if !CONFIG.invitations_allowed() {
                     err!(format!("User does not exist: {email}"))
                 }
 
-                if !CONFIG.is_email_domain_allowed(&email) {
+                if !CONFIG.is_email_domain_allowed(email) {
                     err!("Email domain not eligible for invitations")
                 }
 
                 if !CONFIG.mail_enabled() {
-                    let invitation = Invitation::new(&email);
+                    let invitation = Invitation::new(email);
                     invitation.save(&mut conn).await?;
                 }
 
