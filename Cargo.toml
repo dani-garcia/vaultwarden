@@ -3,7 +3,7 @@ name = "vaultwarden"
 version = "1.0.0"
 authors = ["Daniel García <dani-garcia@users.noreply.github.com>"]
 edition = "2021"
-rust-version = "1.79.0"
+rust-version = "1.80.0"
 resolver = "2"
 
 repository = "https://github.com/dani-garcia/vaultwarden"
@@ -71,7 +71,7 @@ tokio = { version = "1.40.0", features = ["rt-multi-thread", "fs", "io-util", "p
 
 # A generic serialization/deserialization framework
 serde = { version = "1.0.210", features = ["derive"] }
-serde_json = "1.0.128"
+serde_json = "1.0.129"
 
 # A safe, extensible ORM and Query builder
 diesel = { version = "2.2.4", features = ["chrono", "r2d2", "numeric"] }
@@ -86,7 +86,7 @@ rand = { version = "0.8.5", features = ["small_rng"] }
 ring = "0.17.8"
 
 # UUID generation
-uuid = { version = "1.10.0", features = ["v4"] }
+uuid = { version = "1.11.0", features = ["v4"] }
 
 # Date and time libraries
 chrono = { version = "0.4.38", features = ["clock", "serde"], default-features = false }
@@ -140,7 +140,7 @@ cookie = "0.18.1"
 cookie_store = "0.21.0"
 
 # Used by U2F, JWT and PostgreSQL
-openssl = "0.10.66"
+openssl = "0.10.68"
 
 # CLI argument parsing
 pico-args = "0.5.0"
