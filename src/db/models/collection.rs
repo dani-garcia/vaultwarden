@@ -81,8 +81,8 @@ impl Collection {
         let (read_only, hide_passwords, can_manage) = if let Some(cipher_sync_data) = cipher_sync_data {
             match cipher_sync_data.user_organizations.get(&self.org_uuid) {
                 // Only for Manager types Bitwarden returns true for the can_manage option
-                // Owners and Admins always have false, but they can manage all collections anyway
-                Some(uo) if uo.has_full_access() => (false, false, uo.atype == UserOrgType::Manager),
+                // Owners and Admins always have true
+                Some(uo) if uo.has_full_access() => (false, false, uo.atype >= UserOrgType::Manager),
                 Some(uo) => {
                     // Only let a manager manage collections when the have full read/write access
                     let is_manager = uo.atype == UserOrgType::Manager;
@@ -98,7 +98,7 @@ impl Collection {
             }
         } else {
             match UserOrganization::find_confirmed_by_user_and_org(user_uuid, &self.org_uuid, conn).await {
-                Some(ou) if ou.has_full_access() => (false, false, ou.atype == UserOrgType::Manager),
+                Some(ou) if ou.has_full_access() => (false, false, ou.atype >= UserOrgType::Manager),
                 Some(ou) => {
                     let is_manager = ou.atype == UserOrgType::Manager;
                     let read_only = !self.is_writable_by_user(user_uuid, conn).await;

@@ -120,16 +120,8 @@ async fn _refresh_login(data: ConnectData, conn: &mut DbConn) -> JsonResult {
         "expires_in": expires_in,
         "token_type": "Bearer",
         "refresh_token": device.refresh_token,
-        "Key": user.akey,
-        "PrivateKey": user.private_key,
 
-        "Kdf": user.client_kdf_type,
-        "KdfIterations": user.client_kdf_iter,
-        "KdfMemory": user.client_kdf_memory,
-        "KdfParallelism": user.client_kdf_parallelism,
-        "ResetMasterPassword": false, // TODO: according to official server seems something like: user.password_hash.is_empty(), but would need testing
         "scope": scope,
-        "unofficialServer": true,
     });
 
     Ok(Json(result))
@@ -342,7 +334,6 @@ async fn _password_login(
         "MasterPasswordPolicy": master_password_policy,
 
         "scope": scope,
-        "unofficialServer": true,
         "UserDecryptionOptions": {
             "HasMasterPassword": !user.password_hash.is_empty(),
             "Object": "userDecryptionOptions"
@@ -461,9 +452,8 @@ async fn _user_api_key_login(
         "KdfIterations": user.client_kdf_iter,
         "KdfMemory": user.client_kdf_memory,
         "KdfParallelism": user.client_kdf_parallelism,
-        "ResetMasterPassword": false, // TODO: Same as above
+        "ResetMasterPassword": false, // TODO: according to official server seems something like: user.password_hash.is_empty(), but would need testing
         "scope": "api",
-        "unofficialServer": true,
     });
 
     Ok(Json(result))
@@ -495,7 +485,6 @@ async fn _organization_api_key_login(data: ConnectData, conn: &mut DbConn, ip: &
         "expires_in": 3600,
         "token_type": "Bearer",
         "scope": "api.organization",
-        "unofficialServer": true,
     })))
 }
 

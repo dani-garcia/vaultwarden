@@ -363,6 +363,7 @@ async fn get_org_collections_details(org_id: &str, headers: ManagerHeadersLoose,
         json_object["users"] = json!(users);
         json_object["groups"] = json!(groups);
         json_object["object"] = json!("collectionAccessDetails");
+        json_object["unmanaged"] = json!(false);
         data.push(json_object)
     }
 
