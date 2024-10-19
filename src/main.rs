@@ -516,10 +516,10 @@ async fn container_data_folder_is_persistent(data_folder: &str) -> bool {
             format!(" /{data_folder} ")
         };
         let mut lines = BufReader::new(mountinfo).lines();
+        let re = regex::Regex::new(r"/volumes/[a-z0-9]{64}/_data /").unwrap();
         while let Some(line) = lines.next_line().await.unwrap_or_default() {
             // Only execute a regex check if we find the base match
             if line.contains(&data_folder_match) {
-                let re = regex::Regex::new(r"/volumes/[a-z0-9]{64}/_data /").unwrap();
                 if re.is_match(&line) {
                     return false;
                 }
