@@ -232,6 +232,14 @@ impl UserOrganization {
         false
     }
 
+    /// Return the status of the user in an unrevoked state
+    pub fn get_unrevoked_status(&self) -> i32 {
+        if self.status <= UserOrgStatus::Revoked as i32 {
+            return self.status + ACTIVATE_REVOKE_DIFF;
+        }
+        self.status
+    }
+
     pub fn set_external_id(&mut self, external_id: Option<String>) -> bool {
         //Check if external id is empty. We don't want to have
         //empty strings in the database
@@ -524,7 +532,7 @@ impl UserOrganization {
         json!({
             "id": self.uuid,
             "userId": self.user_uuid,
-            "name": user.name,
+            "name": if self.get_unrevoked_status() >= UserOrgStatus::Accepted as i32 { Some(user.name) } else { None },
             "email": user.email,
             "externalId": self.external_id,
             "avatarColor": user.avatar_color,
