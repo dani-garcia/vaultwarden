@@ -131,6 +131,7 @@ FROM --platform=$TARGETPLATFORM docker.io/library/alpine:3.20
 ENV ROCKET_PROFILE="release" \
     ROCKET_ADDRESS=0.0.0.0 \
     ROCKET_PORT=80 \
+    PATH="$PATH:/" \
     SSL_CERT_DIR=/etc/ssl/certs
 
 # Create data folder and Install needed libraries
