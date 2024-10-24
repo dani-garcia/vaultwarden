@@ -1,0 +1,105 @@
+/**** START Static Vaultwarden changes ****/
+/* This combines all selectors extending it into one */
+%vw-hide {
+  display: none !important;
+}
+
+/* This allows searching for the combined style in the browsers dev-tools (look into the head tag) */
+.vw-hide,
+head {
+  @extend %vw-hide;
+}
+
+/* Hide the Subscription Page tab */
+bit-nav-item[route="settings/subscription"] {
+  @extend %vw-hide;
+}
+
+/* Hide any link pointing to Free Bitwarden Families */
+a[href$="/settings/sponsored-families"] {
+  @extend %vw-hide;
+}
+
+/* Hide the `Enterprise Single Sign-On` button on the login page */
+a[routerlink="/sso"] {
+  @extend %vw-hide;
+}
+
+/* Hide Two-Factor menu in Organization settings */
+bit-nav-item[route="settings/two-factor"],
+a[href$="/settings/two-factor"] {
+  @extend %vw-hide;
+}
+
+/* Hide Business Owned checkbox */
+app-org-info > form:nth-child(1) > div:nth-child(3) {
+  @extend %vw-hide;
+}
+
+/* Hide the `This account is owned by a business` checkbox and label */
+#ownedBusiness,
+label[for^="ownedBusiness"] {
+  @extend %vw-hide;
+}
+
+/* Hide the radio button and label for the `Custom` org user type */
+#userTypeCustom,
+label[for^="userTypeCustom"] {
+  @extend %vw-hide;
+}
+
+/* Hide Business Name */
+app-org-account form div bit-form-field.tw-block:nth-child(3) {
+  @extend %vw-hide;
+}
+
+/* Hide organization plans */
+app-organization-plans > form > bit-section:nth-child(2) {
+  @extend %vw-hide;
+}
+
+/* Hide Device Verification form at the Two Step Login screen */
+app-security > app-two-factor-setup > form {
+  @extend %vw-hide;
+}
+/**** END Static Vaultwarden Changes ****/
+/**** START Dynamic Vaultwarden Changes ****/
+{{#if signup_disabled}}
+/* Hide the register link on the login screen */
+app-frontend-layout > app-login > form > div > div > div > p {
+  @extend %vw-hide;
+}
+{{/if}}
+
+/* Hide `Email` 2FA if mail is not enabled */
+{{#unless mail_enabled}}
+app-two-factor-setup ul.list-group.list-group-2fa li.list-group-item:nth-child(5) {
+  @extend %vw-hide;
+}
+{{/unless}}
+
+/* Hide `YubiKey OTP security key` 2FA if it is not enabled */
+{{#unless yubico_enabled}}
+app-two-factor-setup ul.list-group.list-group-2fa li.list-group-item:nth-child(2) {
+  @extend %vw-hide;
+}
+{{/unless}}
+
+/* Hide Emergency Access if not allowed */
+{{#unless emergency_access_allowed}}
+bit-nav-item[route="settings/emergency-access"] {
+  @extend %vw-hide;
+}
+{{/unless}}
+
+/* Hide Sends if not allowed */
+{{#unless sends_allowed}}
+bit-nav-item[route="sends"] {
+  @extend %vw-hide;
+}
+{{/unless}}
+/**** End Dynamic Vaultwarden Changes ****/
+/**** Include a special user stylesheet for custom changes ****/
+{{#if load_user_scss}}
+{{> scss/user.vaultwarden.scss }}
+{{/if}}
