@@ -41,7 +41,7 @@ syslog = "6.1.1"
 [dependencies]
 # Logging
 log = "0.4.22"
-fern = { version = "0.6.2", features = ["syslog-6", "reopen-1"] }
+fern = { version = "0.7.0", features = ["syslog-6", "reopen-1"] }
 tracing = { version = "0.1.40", features = ["log"] } # Needed to have lettre and webauthn-rs trace logging to work
 
 # A `dotenv` implementation for Rust
@@ -67,11 +67,11 @@ dashmap = "6.1.0"
 
 # Async futures
 futures = "0.3.31"
-tokio = { version = "1.40.0", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal", "net"] }
+tokio = { version = "1.41.0", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal", "net"] }
 
 # A generic serialization/deserialization framework
-serde = { version = "1.0.210", features = ["derive"] }
-serde_json = "1.0.129"
+serde = { version = "1.0.213", features = ["derive"] }
+serde_json = "1.0.132"
 
 # A safe, extensible ORM and Query builder
 diesel = { version = "2.2.4", features = ["chrono", "r2d2", "numeric"] }
@@ -115,7 +115,7 @@ webauthn-rs = "0.3.2"
 url = "2.5.2"
 
 # Email libraries
-lettre = { version = "0.11.9", features = ["smtp-transport", "sendmail-transport", "builder", "serde", "tokio1-native-tls", "hostname", "tracing", "tokio1"], default-features = false }
+lettre = { version = "0.11.10", features = ["smtp-transport", "sendmail-transport", "builder", "serde", "tokio1-native-tls", "hostname", "tracing", "tokio1"], default-features = false }
 percent-encoding = "2.3.1" # URL encoding library used for URL's in the emails
 email_address = "0.2.9"
 
@@ -130,7 +130,7 @@ hickory-resolver = "0.24.1"
 html5gum = "0.5.7"
 regex = { version = "1.11.0", features = ["std", "perf", "unicode-perl"], default-features = false }
 data-url = "0.3.1"
-bytes = "1.7.2"
+bytes = "1.8.0"
 
 # Cache function results (Used for version check and favicon fetching)
 cached = { version = "0.53.1", features = ["async"] }
@@ -147,7 +147,7 @@ pico-args = "0.5.0"
 
 # Macro ident concatenation
 paste = "1.0.15"
-governor = "0.6.3"
+governor = "0.7.0"
 
 # Check client versions for specific features.
 semver = "1.0.23"
