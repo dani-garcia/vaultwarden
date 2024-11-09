@@ -438,13 +438,19 @@ pub fn get_env_bool(key: &str) -> Option<bool> {
 
 use chrono::{DateTime, Local, NaiveDateTime, TimeZone};
 
-// Format used by Bitwarden API
-const DATETIME_FORMAT: &str = "%Y-%m-%dT%H:%M:%S%.6fZ";
-
 /// Formats a UTC-offset `NaiveDateTime` in the format used by Bitwarden API
 /// responses with "date" fields (`CreationDate`, `RevisionDate`, etc.).
 pub fn format_date(dt: &NaiveDateTime) -> String {
-    dt.format(DATETIME_FORMAT).to_string()
+    dt.and_utc().to_rfc3339_opts(chrono::SecondsFormat::Micros, true)
+}
+
+/// Validates and formats a RFC3339 timestamp
+/// If parsing fails it will return the start of the unix datetime
+pub fn validate_and_format_date(dt: &str) -> String {
+    match DateTime::parse_from_rfc3339(dt) {
+        Ok(dt) => dt.to_rfc3339_opts(chrono::SecondsFormat::Micros, true),
+        _ => String::from("1970-01-01T00:00:00.000000Z"),
+    }
 }
 
 /// Formats a `DateTime<Local>` using the specified format string.
@@ -486,7 +492,7 @@ pub fn format_datetime_http(dt: &DateTime<Local>) -> String {
 }
 
 pub fn parse_date(date: &str) -> NaiveDateTime {
-    NaiveDateTime::parse_from_str(date, DATETIME_FORMAT).unwrap()
+    DateTime::parse_from_rfc3339(date).unwrap().naive_utc()
 }
 
 //

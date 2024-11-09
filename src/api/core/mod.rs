@@ -136,6 +136,7 @@ async fn put_eq_domains(data: Json<EquivDomainData>, headers: Headers, conn: DbC
 
 #[get("/hibp/breach?<username>")]
 async fn hibp_breach(username: &str) -> JsonResult {
+    let username: String = url::form_urlencoded::byte_serialize(username.as_bytes()).collect();
     let url = format!(
         "https://haveibeenpwned.com/api/v3/breachedaccount/{username}?truncateResponse=false&includeUnverified=false"
     );

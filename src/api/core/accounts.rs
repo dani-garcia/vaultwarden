@@ -1,5 +1,5 @@
 use crate::db::DbPool;
-use chrono::{SecondsFormat, Utc};
+use chrono::Utc;
 use rocket::serde::json::Json;
 use serde_json::Value;
 
@@ -13,7 +13,7 @@ use crate::{
     crypto,
     db::{models::*, DbConn},
     mail,
-    util::NumberOrString,
+    util::{format_date, NumberOrString},
     CONFIG,
 };
 
@@ -901,14 +901,12 @@ pub async fn _prelogin(data: Json<PreloginData>, mut conn: DbConn) -> Json<Value
         None => (User::CLIENT_KDF_TYPE_DEFAULT, User::CLIENT_KDF_ITER_DEFAULT, None, None),
     };
 
-    let result = json!({
+    Json(json!({
         "kdf": kdf_type,
         "kdfIterations": kdf_iter,
         "kdfMemory": kdf_mem,
         "kdfParallelism": kdf_para,
-    });
-
-    Json(result)
+    }))
 }
 
 // https://github.com/bitwarden/server/blob/master/src/Api/Models/Request/Accounts/SecretVerificationRequestModel.cs
@@ -1084,14 +1082,15 @@ struct AuthRequestRequest {
     device_identifier: String,
     email: String,
     public_key: String,
-    #[serde(alias = "type")]
-    _type: i32,
+    // Not used for now
+    // #[serde(alias = "type")]
+    // _type: i32,
 }
 
 #[post("/auth-requests", data = "<data>")]
 async fn post_auth_request(
     data: Json<AuthRequestRequest>,
-    headers: ClientHeaders,
+    client_headers: ClientHeaders,
     mut conn: DbConn,
     nt: Notify<'_>,
 ) -> JsonResult {
@@ -1099,16 +1098,20 @@ async fn post_auth_request(
 
     let user = match User::find_by_mail(&data.email, &mut conn).await {
         Some(user) => user,
-        None => {
-            err!("AuthRequest doesn't exist")
-        }
+        None => err!("AuthRequest doesn't exist", "User not found"),
     };
+
+    // Validate device uuid and type
+    match Device::find_by_uuid_and_user(&data.device_identifier, &user.uuid, &mut conn).await {
+        Some(device) if device.atype == client_headers.device_type => {}
+        _ => err!("AuthRequest doesn't exist", "Device verification failed"),
+    }
 
     let mut auth_request = AuthRequest::new(
         user.uuid.clone(),
         data.device_identifier.clone(),
-        headers.device_type,
-        headers.ip.ip.to_string(),
+        client_headers.device_type,
+        client_headers.ip.ip.to_string(),
         data.access_code,
         data.public_key,
     );
@@ -1123,7 +1126,7 @@ async fn post_auth_request(
         "requestIpAddress": auth_request.request_ip,
         "key": null,
         "masterPasswordHash": null,
-        "creationDate": auth_request.creation_date.and_utc().to_rfc3339_opts(SecondsFormat::Micros, true),
+        "creationDate": format_date(&auth_request.creation_date),
         "responseDate": null,
         "requestApproved": false,
         "origin": CONFIG.domain_origin(),
@@ -1132,33 +1135,31 @@ async fn post_auth_request(
 }
 
 #[get("/auth-requests/<uuid>")]
-async fn get_auth_request(uuid: &str, mut conn: DbConn) -> JsonResult {
+async fn get_auth_request(uuid: &str, headers: Headers, mut conn: DbConn) -> JsonResult {
+    if headers.user.uuid != uuid {
+        err!("AuthRequest doesn't exist", "User uuid's do not match")
+    }
+
     let auth_request = match AuthRequest::find_by_uuid(uuid, &mut conn).await {
         Some(auth_request) => auth_request,
-        None => {
-            err!("AuthRequest doesn't exist")
-        }
+        None => err!("AuthRequest doesn't exist", "Record not found"),
     };
 
-    let response_date_utc = auth_request
-        .response_date
-        .map(|response_date| response_date.and_utc().to_rfc3339_opts(SecondsFormat::Micros, true));
+    let response_date_utc = auth_request.response_date.map(|response_date| format_date(&response_date));
 
-    Ok(Json(json!(
-        {
-            "id": uuid,
-            "publicKey": auth_request.public_key,
-            "requestDeviceType": DeviceType::from_i32(auth_request.device_type).to_string(),
-            "requestIpAddress": auth_request.request_ip,
-            "key": auth_request.enc_key,
-            "masterPasswordHash": auth_request.master_password_hash,
-            "creationDate": auth_request.creation_date.and_utc().to_rfc3339_opts(SecondsFormat::Micros, true),
-            "responseDate": response_date_utc,
-            "requestApproved": auth_request.approved,
-            "origin": CONFIG.domain_origin(),
-            "object":"auth-request"
-        }
-    )))
+    Ok(Json(json!({
+        "id": uuid,
+        "publicKey": auth_request.public_key,
+        "requestDeviceType": DeviceType::from_i32(auth_request.device_type).to_string(),
+        "requestIpAddress": auth_request.request_ip,
+        "key": auth_request.enc_key,
+        "masterPasswordHash": auth_request.master_password_hash,
+        "creationDate": format_date(&auth_request.creation_date),
+        "responseDate": response_date_utc,
+        "requestApproved": auth_request.approved,
+        "origin": CONFIG.domain_origin(),
+        "object":"auth-request"
+    })))
 }
 
 #[derive(Debug, Deserialize)]
@@ -1174,6 +1175,7 @@ struct AuthResponseRequest {
 async fn put_auth_request(
     uuid: &str,
     data: Json<AuthResponseRequest>,
+    headers: Headers,
     mut conn: DbConn,
     ant: AnonymousNotify<'_>,
     nt: Notify<'_>,
@@ -1181,10 +1183,12 @@ async fn put_auth_request(
     let data = data.into_inner();
     let mut auth_request: AuthRequest = match AuthRequest::find_by_uuid(uuid, &mut conn).await {
         Some(auth_request) => auth_request,
-        None => {
-            err!("AuthRequest doesn't exist")
-        }
+        None => err!("AuthRequest doesn't exist", "Record not found"),
     };
+
+    if headers.user.uuid != auth_request.user_uuid {
+        err!("AuthRequest doesn't exist", "User uuid's do not match")
+    }
 
     auth_request.approved = Some(data.request_approved);
     auth_request.enc_key = Some(data.key);
@@ -1197,59 +1201,57 @@ async fn put_auth_request(
         nt.send_auth_response(&auth_request.user_uuid, &auth_request.uuid, data.device_identifier, &mut conn).await;
     }
 
-    let response_date_utc = auth_request
-        .response_date
-        .map(|response_date| response_date.and_utc().to_rfc3339_opts(SecondsFormat::Micros, true));
+    let response_date_utc = auth_request.response_date.map(|response_date| format_date(&response_date));
 
-    Ok(Json(json!(
-        {
-            "id": uuid,
-            "publicKey": auth_request.public_key,
-            "requestDeviceType": DeviceType::from_i32(auth_request.device_type).to_string(),
-            "requestIpAddress": auth_request.request_ip,
-            "key": auth_request.enc_key,
-            "masterPasswordHash": auth_request.master_password_hash,
-            "creationDate": auth_request.creation_date.and_utc().to_rfc3339_opts(SecondsFormat::Micros, true),
-            "responseDate": response_date_utc,
-            "requestApproved": auth_request.approved,
-            "origin": CONFIG.domain_origin(),
-            "object":"auth-request"
-        }
-    )))
+    Ok(Json(json!({
+        "id": uuid,
+        "publicKey": auth_request.public_key,
+        "requestDeviceType": DeviceType::from_i32(auth_request.device_type).to_string(),
+        "requestIpAddress": auth_request.request_ip,
+        "key": auth_request.enc_key,
+        "masterPasswordHash": auth_request.master_password_hash,
+        "creationDate": format_date(&auth_request.creation_date),
+        "responseDate": response_date_utc,
+        "requestApproved": auth_request.approved,
+        "origin": CONFIG.domain_origin(),
+        "object":"auth-request"
+    })))
 }
 
 #[get("/auth-requests/<uuid>/response?<code>")]
-async fn get_auth_request_response(uuid: &str, code: &str, mut conn: DbConn) -> JsonResult {
+async fn get_auth_request_response(
+    uuid: &str,
+    code: &str,
+    client_headers: ClientHeaders,
+    mut conn: DbConn,
+) -> JsonResult {
     let auth_request = match AuthRequest::find_by_uuid(uuid, &mut conn).await {
         Some(auth_request) => auth_request,
-        None => {
-            err!("AuthRequest doesn't exist")
-        }
+        None => err!("AuthRequest doesn't exist", "User not found"),
     };
 
-    if !auth_request.check_access_code(code) {
-        err!("Access code invalid doesn't exist")
+    if auth_request.device_type != client_headers.device_type
+        && auth_request.request_ip != client_headers.ip.ip.to_string()
+        && !auth_request.check_access_code(code)
+    {
+        err!("AuthRequest doesn't exist", "Invalid device, IP or code")
     }
 
-    let response_date_utc = auth_request
-        .response_date
-        .map(|response_date| response_date.and_utc().to_rfc3339_opts(SecondsFormat::Micros, true));
+    let response_date_utc = auth_request.response_date.map(|response_date| format_date(&response_date));
 
-    Ok(Json(json!(
-        {
-            "id": uuid,
-            "publicKey": auth_request.public_key,
-            "requestDeviceType": DeviceType::from_i32(auth_request.device_type).to_string(),
-            "requestIpAddress": auth_request.request_ip,
-            "key": auth_request.enc_key,
-            "masterPasswordHash": auth_request.master_password_hash,
-            "creationDate": auth_request.creation_date.and_utc().to_rfc3339_opts(SecondsFormat::Micros, true),
-            "responseDate": response_date_utc,
-            "requestApproved": auth_request.approved,
-            "origin": CONFIG.domain_origin(),
-            "object":"auth-request"
-        }
-    )))
+    Ok(Json(json!({
+        "id": uuid,
+        "publicKey": auth_request.public_key,
+        "requestDeviceType": DeviceType::from_i32(auth_request.device_type).to_string(),
+        "requestIpAddress": auth_request.request_ip,
+        "key": auth_request.enc_key,
+        "masterPasswordHash": auth_request.master_password_hash,
+        "creationDate": format_date(&auth_request.creation_date),
+        "responseDate": response_date_utc,
+        "requestApproved": auth_request.approved,
+        "origin": CONFIG.domain_origin(),
+        "object":"auth-request"
+    })))
 }
 
 #[get("/auth-requests")]
@@ -1261,7 +1263,7 @@ async fn get_auth_requests(headers: Headers, mut conn: DbConn) -> JsonResult {
             .iter()
             .filter(|request| request.approved.is_none())
             .map(|request| {
-            let response_date_utc = request.response_date.map(|response_date| response_date.and_utc().to_rfc3339_opts(SecondsFormat::Micros, true));
+            let response_date_utc = request.response_date.map(|response_date| format_date(&response_date));
 
             json!({
                 "id": request.uuid,
@@ -1270,7 +1272,7 @@ async fn get_auth_requests(headers: Headers, mut conn: DbConn) -> JsonResult {
                 "requestIpAddress": request.request_ip,
                 "key": request.enc_key,
                 "masterPasswordHash": request.master_password_hash,
-                "creationDate": request.creation_date.and_utc().to_rfc3339_opts(SecondsFormat::Micros, true),
+                "creationDate": format_date(&request.creation_date),
                 "responseDate": response_date_utc,
                 "requestApproved": request.approved,
                 "origin": CONFIG.domain_origin(),

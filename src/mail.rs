@@ -96,7 +96,31 @@ fn smtp_transport() -> AsyncSmtpTransport<Tokio1Executor> {
     smtp_client.build()
 }
 
+// This will sanitize the string values by stripping all the html tags to prevent XSS and HTML Injections
+fn sanitize_data(data: &mut serde_json::Value) {
+    use regex::Regex;
+    use std::sync::LazyLock;
+    static RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<[^>]+>").unwrap());
+
+    match data {
+        serde_json::Value::String(s) => *s = RE.replace_all(s, "").to_string(),
+        serde_json::Value::Object(obj) => {
+            for d in obj.values_mut() {
+                sanitize_data(d);
+            }
+        }
+        serde_json::Value::Array(arr) => {
+            for d in arr.iter_mut() {
+                sanitize_data(d);
+            }
+        }
+        _ => {}
+    }
+}
+
 fn get_text(template_name: &'static str, data: serde_json::Value) -> Result<(String, String, String), Error> {
+    let mut data = data;
+    sanitize_data(&mut data);
     let (subject_html, body_html) = get_template(&format!("{template_name}.html"), &data)?;
     let (_subject_text, body_text) = get_template(template_name, &data)?;
     Ok((subject_html, body_html, body_text))
@@ -115,6 +139,10 @@ fn get_template(template_name: &str, data: &serde_json::Value) -> Result<(String
         Some(s) => s.trim().to_string(),
         None => err!("Template doesn't contain body"),
     };
+
+    if text_split.next().is_some() {
+        err!("Template contains more than one body");
+    }
 
     Ok((subject, body))
 }
@@ -259,16 +287,15 @@ pub async fn send_invite(
     }
 
     let query_string = match query.query() {
-        None => err!(format!("Failed to build invite URL query parameters")),
+        None => err!("Failed to build invite URL query parameters"),
         Some(query) => query,
     };
 
-    // `url.Url` would place the anchor `#` after the query parameters
-    let url = format!("{}/#/accept-organization/?{}", CONFIG.domain(), query_string);
     let (subject, body_html, body_text) = get_text(
         "email/send_org_invite",
         json!({
-            "url": url,
+            // `url.Url` would place the anchor `#` after the query parameters
+            "url": format!("{}/#/accept-organization/?{}", CONFIG.domain(), query_string),
             "img_src": CONFIG._smtp_img_src(),
             "org_name": org_name,
         }),
@@ -292,17 +319,29 @@ pub async fn send_emergency_access_invite(
         String::from(grantor_email),
     );
 
-    let invite_token = encode_jwt(&claims);
+    // Build the query here to ensure proper escaping
+    let mut query = url::Url::parse("https://query.builder").unwrap();
+    {
+        let mut query_params = query.query_pairs_mut();
+        query_params
+            .append_pair("id", emer_id)
+            .append_pair("name", grantor_name)
+            .append_pair("email", address)
+            .append_pair("token", &encode_jwt(&claims));
+    }
+
+    let query_string = match query.query() {
+        None => err!("Failed to build emergency invite URL query parameters"),
+        Some(query) => query,
+    };
 
     let (subject, body_html, body_text) = get_text(
         "email/send_emergency_access_invite",
         json!({
-            "url": CONFIG.domain(),
+            // `url.Url` would place the anchor `#` after the query parameters
+            "url": format!("{}/#/accept-emergency/?{query_string}", CONFIG.domain()),
             "img_src": CONFIG._smtp_img_src(),
-            "emer_id": emer_id,
-            "email": percent_encode(address.as_bytes(), NON_ALPHANUMERIC).to_string(),
             "grantor_name": grantor_name,
-            "token": invite_token,
         }),
     )?;
 
