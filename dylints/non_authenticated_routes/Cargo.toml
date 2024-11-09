@@ -1,0 +1,20 @@
+[package]
+name = "non_authenticated_routes"
+version = "0.1.0"
+authors = ["authors go here"]
+description = "description goes here"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+clippy_utils = { git = "https://github.com/rust-lang/rust-clippy", rev = "4f0e46b74dbc8441daf084b6f141a7fe414672a2" }
+dylint_linting = "3.2.1"
+
+[dev-dependencies]
+dylint_testing = "3.2.1"
+
+[package.metadata.rust-analyzer]
+rustc_private = true
