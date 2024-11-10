@@ -135,13 +135,13 @@ async fn put_eq_domains(data: Json<EquivDomainData>, headers: Headers, conn: DbC
 }
 
 #[get("/hibp/breach?<username>")]
-async fn hibp_breach(username: &str) -> JsonResult {
-    let username: String = url::form_urlencoded::byte_serialize(username.as_bytes()).collect();
-    let url = format!(
-        "https://haveibeenpwned.com/api/v3/breachedaccount/{username}?truncateResponse=false&includeUnverified=false"
-    );
-
+async fn hibp_breach(username: &str, _headers: Headers) -> JsonResult {
     if let Some(api_key) = crate::CONFIG.hibp_api_key() {
+        let username: String = url::form_urlencoded::byte_serialize(username.as_bytes()).collect();
+        let url = format!(
+            "https://haveibeenpwned.com/api/v3/breachedaccount/{username}?truncateResponse=false&includeUnverified=false"
+        );
+
         let res = make_http_request(Method::GET, &url)?.header("hibp-api-key", api_key).send().await?;
 
         // If we get a 404, return a 404, it means no breached accounts
