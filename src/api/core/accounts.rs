@@ -1231,8 +1231,8 @@ async fn get_auth_request_response(
     };
 
     if auth_request.device_type != client_headers.device_type
-        && auth_request.request_ip != client_headers.ip.ip.to_string()
-        && !auth_request.check_access_code(code)
+        || auth_request.request_ip != client_headers.ip.ip.to_string()
+        || !auth_request.check_access_code(code)
     {
         err!("AuthRequest doesn't exist", "Invalid device, IP or code")
     }
