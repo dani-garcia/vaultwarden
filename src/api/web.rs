@@ -1,13 +1,20 @@
+use once_cell::sync::Lazy;
 use std::path::{Path, PathBuf};
 
-use rocket::{fs::NamedFile, http::ContentType, response::content::RawHtml as Html, serde::json::Json, Catcher, Route};
+use rocket::{
+    fs::NamedFile,
+    http::ContentType,
+    response::{content::RawCss as Css, content::RawHtml as Html, Redirect},
+    serde::json::Json,
+    Catcher, Route,
+};
 use serde_json::Value;
 
 use crate::{
     api::{core::now, ApiResult, EmptyResult},
     auth::decode_file_download,
     error::Error,
-    util::{Cached, SafeString},
+    util::{get_web_vault_version, Cached, SafeString},
     CONFIG,
 };
 
@@ -16,7 +23,7 @@ pub fn routes() -> Vec<Route> {
     // crate::utils::LOGGED_ROUTES to make sure they appear in the log
     let mut routes = routes![attachments, alive, alive_head, static_files];
     if CONFIG.web_vault_enabled() {
-        routes.append(&mut routes![web_index, web_index_head, app_id, web_files]);
+        routes.append(&mut routes![web_index, web_index_direct, web_index_head, app_id, web_files, vaultwarden_css]);
     }
 
     #[cfg(debug_assertions)]
@@ -45,9 +52,99 @@ fn not_found() -> ApiResult<Html<String>> {
     Ok(Html(text))
 }
 
+#[get("/css/vaultwarden.css")]
+fn vaultwarden_css() -> Cached<Css<String>> {
+    // Configure the web-vault version as an integer so it can be used as a comparison smaller or greater then.
+    // The default is based upon the version since this feature is added.
+    static WEB_VAULT_VERSION: Lazy<u32> = Lazy::new(|| {
+        let re = regex::Regex::new(r"(\d{4})\.(\d{1,2})\.(\d{1,2})").unwrap();
+        let vault_version = get_web_vault_version();
+
+        let (major, minor, patch) = match re.captures(&vault_version) {
+            Some(c) if c.len() == 4 => (
+                c.get(1).unwrap().as_str().parse().unwrap(),
+                c.get(2).unwrap().as_str().parse().unwrap(),
+                c.get(3).unwrap().as_str().parse().unwrap(),
+            ),
+            _ => (2024, 6, 2),
+        };
+        format!("{major}{minor:02}{patch:02}").parse::<u32>().unwrap()
+    });
+
+    // Configure the Vaultwarden version as an integer so it can be used as a comparison smaller or greater then.
+    // The default is based upon the version since this feature is added.
+    static VW_VERSION: Lazy<u32> = Lazy::new(|| {
+        let re = regex::Regex::new(r"(\d{1})\.(\d{1,2})\.(\d{1,2})").unwrap();
+        let vw_version = crate::VERSION.unwrap_or("1.32.1");
+
+        let (major, minor, patch) = match re.captures(vw_version) {
+            Some(c) if c.len() == 4 => (
+                c.get(1).unwrap().as_str().parse().unwrap(),
+                c.get(2).unwrap().as_str().parse().unwrap(),
+                c.get(3).unwrap().as_str().parse().unwrap(),
+            ),
+            _ => (1, 32, 1),
+        };
+        format!("{major}{minor:02}{patch:02}").parse::<u32>().unwrap()
+    });
+
+    let css_options = json!({
+        "web_vault_version": *WEB_VAULT_VERSION,
+        "vw_version": *VW_VERSION,
+        "signup_disabled": !CONFIG.signups_allowed() && CONFIG.signups_domains_whitelist().is_empty(),
+        "mail_enabled": CONFIG.mail_enabled(),
+        "yubico_enabled": CONFIG._enable_yubico() && (CONFIG.yubico_client_id().is_some() == CONFIG.yubico_secret_key().is_some()),
+        "emergency_access_allowed": CONFIG.emergency_access_allowed(),
+        "sends_allowed": CONFIG.sends_allowed(),
+        "load_user_scss": true,
+    });
+
+    let scss = match CONFIG.render_template("scss/vaultwarden.scss", &css_options) {
+        Ok(t) => t,
+        Err(e) => {
+            // Something went wrong loading the template. Use the fallback
+            warn!("Loading scss/vaultwarden.scss.hbs or scss/user.vaultwarden.scss.hbs failed. {e}");
+            CONFIG
+                .render_fallback_template("scss/vaultwarden.scss", &css_options)
+                .expect("Fallback scss/vaultwarden.scss.hbs to render")
+        }
+    };
+
+    let css = match grass_compiler::from_string(
+        scss,
+        &grass_compiler::Options::default().style(grass_compiler::OutputStyle::Compressed),
+    ) {
+        Ok(css) => css,
+        Err(e) => {
+            // Something went wrong compiling the scss. Use the fallback
+            warn!("Compiling the Vaultwarden SCSS styles failed. {e}");
+            let mut css_options = css_options;
+            css_options["load_user_scss"] = json!(false);
+            let scss = CONFIG
+                .render_fallback_template("scss/vaultwarden.scss", &css_options)
+                .expect("Fallback scss/vaultwarden.scss.hbs to render");
+            grass_compiler::from_string(
+                scss,
+                &grass_compiler::Options::default().style(grass_compiler::OutputStyle::Compressed),
+            )
+            .expect("SCSS to compile")
+        }
+    };
+
+    // Cache for one day should be enough and not too much
+    Cached::ttl(Css(css), 86_400, false)
+}
+
 #[get("/")]
 async fn web_index() -> Cached<Option<NamedFile>> {
     Cached::short(NamedFile::open(Path::new(&CONFIG.web_vault_folder()).join("index.html")).await.ok(), false)
+}
+
+// Make sure that `/index.html` redirect to actual domain path.
+// If not, this might cause issues with the web-vault
+#[get("/index.html")]
+fn web_index_direct() -> Redirect {
+    Redirect::to(format!("{}/", CONFIG.domain_path()))
 }
 
 #[head("/")]
