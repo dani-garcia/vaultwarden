@@ -1136,14 +1136,14 @@ async fn post_auth_request(
 
 #[get("/auth-requests/<uuid>")]
 async fn get_auth_request(uuid: &str, headers: Headers, mut conn: DbConn) -> JsonResult {
-    if headers.user.uuid != uuid {
-        err!("AuthRequest doesn't exist", "User uuid's do not match")
-    }
-
     let auth_request = match AuthRequest::find_by_uuid(uuid, &mut conn).await {
         Some(auth_request) => auth_request,
         None => err!("AuthRequest doesn't exist", "Record not found"),
     };
+
+    if headers.user.uuid != auth_request.user_uuid {
+        err!("AuthRequest doesn't exist", "User uuid does not match")
+    }
 
     let response_date_utc = auth_request.response_date.map(|response_date| format_date(&response_date));
 
