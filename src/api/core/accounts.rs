@@ -1136,14 +1136,14 @@ async fn post_auth_request(
 
 #[get("/auth-requests/<uuid>")]
 async fn get_auth_request(uuid: &str, headers: Headers, mut conn: DbConn) -> JsonResult {
-    if headers.user.uuid != uuid {
-        err!("AuthRequest doesn't exist", "User uuid's do not match")
-    }
-
     let auth_request = match AuthRequest::find_by_uuid(uuid, &mut conn).await {
         Some(auth_request) => auth_request,
         None => err!("AuthRequest doesn't exist", "Record not found"),
     };
+
+    if headers.user.uuid != auth_request.user_uuid {
+        err!("AuthRequest doesn't exist", "User uuid's do not match")
+    }
 
     let response_date_utc = auth_request.response_date.map(|response_date| format_date(&response_date));
 
@@ -1190,15 +1190,18 @@ async fn put_auth_request(
         err!("AuthRequest doesn't exist", "User uuid's do not match")
     }
 
-    auth_request.approved = Some(data.request_approved);
-    auth_request.enc_key = Some(data.key);
-    auth_request.master_password_hash = data.master_password_hash;
-    auth_request.response_device_id = Some(data.device_identifier.clone());
-    auth_request.save(&mut conn).await?;
+    if data.request_approved {
+        auth_request.approved = Some(data.request_approved);
+        auth_request.enc_key = Some(data.key);
+        auth_request.master_password_hash = data.master_password_hash;
+        auth_request.response_device_id = Some(data.device_identifier.clone());
+        auth_request.save(&mut conn).await?;
 
-    if auth_request.approved.unwrap_or(false) {
         ant.send_auth_response(&auth_request.user_uuid, &auth_request.uuid).await;
         nt.send_auth_response(&auth_request.user_uuid, &auth_request.uuid, data.device_identifier, &mut conn).await;
+    } else {
+        // If denied, there's no reason to keep the request
+        auth_request.delete(&mut conn).await?;
     }
 
     let response_date_utc = auth_request.response_date.map(|response_date| format_date(&response_date));
