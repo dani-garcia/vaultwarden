@@ -190,8 +190,12 @@ async fn _password_login(
             )
         };
 
+        let expiration_time = auth_request.creation_date + chrono::Duration::minutes(5);
+        let request_expired = Utc::now().naive_utc() >= expiration_time;
+
         if auth_request.user_uuid != user.uuid
             || !auth_request.approved.unwrap_or(false)
+            || request_expired
             || ip.ip.to_string() != auth_request.request_ip
             || !auth_request.check_access_code(password)
         {
