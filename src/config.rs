@@ -497,11 +497,11 @@ make_config! {
         /// Password iterations |> Number of server-side passwords hashing iterations for the password hash.
         /// The default for new users. If changed, it will be updated during login for existing users.
         password_iterations:    i32,    true,   def,    600_000;
-        /// Allow password hints |> Controls whether users can set password hints. This setting applies globally to all users.
+        /// Allow password hints |> Controls whether users can set or show password hints. This setting applies globally to all users.
         password_hints_allowed: bool,   true,   def,    true;
-        /// Show password hint |> Controls whether a password hint should be shown directly in the web page
-        /// if SMTP service is not configured. Not recommended for publicly-accessible instances as this
-        /// provides unauthenticated access to potentially sensitive data.
+        /// Show password hint (Know the risks!) |> Controls whether a password hint should be shown directly in the web page
+        /// if SMTP service is not configured and password hints are allowed. Not recommended for publicly-accessible instances
+        /// because this provides unauthenticated access to potentially sensitive data.
         show_password_hint:     bool,   true,   def,    false;
 
         /// Admin token/Argon2 PHC |> The plain text token or Argon2 PHC string used to authenticate in this very same page. Changing it here will not deauthorize the current session!
