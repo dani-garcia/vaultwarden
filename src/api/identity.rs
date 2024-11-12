@@ -190,9 +190,6 @@ async fn _password_login(
             )
         };
 
-        // Delete the request after we used it
-        auth_request.delete(conn).await?;
-
         if auth_request.user_uuid != user.uuid
             || !auth_request.approved.unwrap_or(false)
             || ip.ip.to_string() != auth_request.request_ip
