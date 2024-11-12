@@ -811,8 +811,15 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
     }
 
     // TODO: deal with deprecated flags so they can be removed from this list, cf. #4263
-    const KNOWN_FLAGS: &[&str] =
-        &["autofill-overlay", "autofill-v2", "browser-fileless-import", "extension-refresh", "fido2-vault-credentials"];
+    const KNOWN_FLAGS: &[&str] = &[
+        "autofill-overlay",
+        "autofill-v2",
+        "browser-fileless-import",
+        "extension-refresh",
+        "fido2-vault-credentials",
+        "ssh-key-vault-item",
+        "ssh-agent",
+    ];
     let configured_flags = parse_experimental_client_feature_flags(&cfg.experimental_client_feature_flags);
     let invalid_flags: Vec<_> = configured_flags.keys().filter(|flag| !KNOWN_FLAGS.contains(&flag.as_str())).collect();
     if !invalid_flags.is_empty() {

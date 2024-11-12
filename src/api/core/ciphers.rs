@@ -10,6 +10,7 @@ use rocket::{
 };
 use serde_json::Value;
 
+use crate::auth::ClientVersion;
 use crate::util::NumberOrString;
 use crate::{
     api::{self, core::log_event, EmptyResult, JsonResult, Notify, PasswordOrOtpData, UpdateType},
@@ -104,11 +105,27 @@ struct SyncData {
 }
 
 #[get("/sync?<data..>")]
-async fn sync(data: SyncData, headers: Headers, mut conn: DbConn) -> Json<Value> {
+async fn sync(
+    data: SyncData,
+    headers: Headers,
+    client_version: Option<ClientVersion>,
+    mut conn: DbConn,
+) -> Json<Value> {
     let user_json = headers.user.to_json(&mut conn).await;
 
     // Get all ciphers which are visible by the user
-    let ciphers = Cipher::find_by_user_visible(&headers.user.uuid, &mut conn).await;
+    let mut ciphers = Cipher::find_by_user_visible(&headers.user.uuid, &mut conn).await;
+
+    // Filter out SSH keys if the client version is less than 2024.12.0
+    let show_ssh_keys = if let Some(client_version) = client_version {
+        let ver_match = semver::VersionReq::parse(">=2024.12.0").unwrap();
+        ver_match.matches(&client_version.0)
+    } else {
+        false
+    };
+    if !show_ssh_keys {
+        ciphers.retain(|c| c.atype != 5);
+    }
 
     let cipher_sync_data = CipherSyncData::new(&headers.user.uuid, CipherSyncType::User, &mut conn).await;
 
@@ -216,7 +233,8 @@ pub struct CipherData {
     Login = 1,
     SecureNote = 2,
     Card = 3,
-    Identity = 4
+    Identity = 4,
+    SshKey = 5
     */
     pub r#type: i32,
     pub name: String,
@@ -228,6 +246,7 @@ pub struct CipherData {
     secure_note: Option<Value>,
     card: Option<Value>,
     identity: Option<Value>,
+    ssh_key: Option<Value>,
 
     favorite: Option<bool>,
     reprompt: Option<i32>,
@@ -469,6 +488,7 @@ pub async fn update_cipher_from_data(
         2 => data.secure_note,
         3 => data.card,
         4 => data.identity,
+        5 => data.ssh_key,
         _ => err!("Invalid type"),
     };
 

@@ -30,7 +30,8 @@ db_object! {
         Login = 1,
         SecureNote = 2,
         Card = 3,
-        Identity = 4
+        Identity = 4,
+        SshKey = 5
         */
         pub atype: i32,
         pub name: String,
@@ -319,6 +320,7 @@ impl Cipher {
             "secureNote": null,
             "card": null,
             "identity": null,
+            "sshKey": null,
         });
 
         // These values are only needed for user/default syncs
@@ -347,6 +349,7 @@ impl Cipher {
             2 => "secureNote",
             3 => "card",
             4 => "identity",
+            5 => "sshKey",
             _ => panic!("Wrong type"),
         };
 
