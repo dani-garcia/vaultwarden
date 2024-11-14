@@ -1,4 +1,4 @@
-use super::{User, UserOrgType, UserOrganization};
+use super::{User, UserOrganization};
 use crate::api::EmptyResult;
 use crate::db::DbConn;
 use crate::error::MapResult;
@@ -73,7 +73,7 @@ impl Group {
         })
     }
 
-    pub async fn to_json_details(&self, user_org_type: &i32, conn: &mut DbConn) -> Value {
+    pub async fn to_json_details(&self, conn: &mut DbConn) -> Value {
         let collections_groups: Vec<Value> = CollectionGroup::find_by_group(&self.uuid, conn)
             .await
             .iter()
@@ -82,7 +82,7 @@ impl Group {
                     "id": entry.collections_uuid,
                     "readOnly": entry.read_only,
                     "hidePasswords": entry.hide_passwords,
-                    "manage": *user_org_type >= UserOrgType::Admin || (*user_org_type == UserOrgType::Manager && !entry.read_only && !entry.hide_passwords)
+                    "manage": false
                 })
             })
             .collect();

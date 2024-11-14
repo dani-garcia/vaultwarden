@@ -2305,14 +2305,14 @@ async fn _restore_organization_user(
 }
 
 #[get("/organizations/<org_id>/groups")]
-async fn get_groups(org_id: &str, headers: ManagerHeadersLoose, mut conn: DbConn) -> JsonResult {
+async fn get_groups(org_id: &str, _headers: ManagerHeadersLoose, mut conn: DbConn) -> JsonResult {
     let groups: Vec<Value> = if CONFIG.org_groups_enabled() {
         // Group::find_by_organization(&org_id, &mut conn).await.iter().map(Group::to_json).collect::<Value>()
         let groups = Group::find_by_organization(org_id, &mut conn).await;
         let mut groups_json = Vec::with_capacity(groups.len());
 
         for g in groups {
-            groups_json.push(g.to_json_details(&headers.org_user.atype, &mut conn).await)
+            groups_json.push(g.to_json_details(&mut conn).await)
         }
         groups_json
     } else {
@@ -2500,7 +2500,7 @@ async fn add_update_group(
 }
 
 #[get("/organizations/<_org_id>/groups/<group_id>/details")]
-async fn get_group_details(_org_id: &str, group_id: &str, headers: AdminHeaders, mut conn: DbConn) -> JsonResult {
+async fn get_group_details(_org_id: &str, group_id: &str, _headers: AdminHeaders, mut conn: DbConn) -> JsonResult {
     if !CONFIG.org_groups_enabled() {
         err!("Group support is disabled");
     }
@@ -2510,7 +2510,7 @@ async fn get_group_details(_org_id: &str, group_id: &str, headers: AdminHeaders,
         _ => err!("Group could not be found!"),
     };
 
-    Ok(Json(group.to_json_details(&(headers.org_user_type as i32), &mut conn).await))
+    Ok(Json(group.to_json_details(&mut conn).await))
 }
 
 #[post("/organizations/<org_id>/groups/<group_id>/delete")]

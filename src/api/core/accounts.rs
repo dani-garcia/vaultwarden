@@ -842,7 +842,7 @@ struct PasswordHintData {
 
 #[post("/accounts/password-hint", data = "<data>")]
 async fn password_hint(data: Json<PasswordHintData>, mut conn: DbConn) -> EmptyResult {
-    if !CONFIG.mail_enabled() || !CONFIG.show_password_hint() {
+    if !CONFIG.password_hints_allowed() || (!CONFIG.mail_enabled() && !CONFIG.show_password_hint()) {
         err!("This server is not configured to provide password hints.");
     }
 
