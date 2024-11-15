@@ -1253,11 +1253,19 @@ async fn put_auth_request(
         err!("AuthRequest doesn't exist", "User uuid's do not match")
     }
 
+    if auth_request.approved.is_some() {
+        err!("An authentication request with the same device already exists")
+    }
+
+    let response_date = Utc::now().naive_utc();
+    let response_date_utc = format_date(&response_date);
+
     if data.request_approved {
         auth_request.approved = Some(data.request_approved);
         auth_request.enc_key = Some(data.key);
         auth_request.master_password_hash = data.master_password_hash;
         auth_request.response_device_id = Some(data.device_identifier.clone());
+        auth_request.response_date = Some(response_date);
         auth_request.save(&mut conn).await?;
 
         ant.send_auth_response(&auth_request.user_uuid, &auth_request.uuid).await;
@@ -1266,8 +1274,6 @@ async fn put_auth_request(
         // If denied, there's no reason to keep the request
         auth_request.delete(&mut conn).await?;
     }
-
-    let response_date_utc = auth_request.response_date.map(|response_date| format_date(&response_date));
 
     Ok(Json(json!({
         "id": uuid,
