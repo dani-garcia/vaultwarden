@@ -615,7 +615,6 @@ pub struct AdminHeaders {
     pub device: Device,
     pub user: User,
     pub org_user_type: UserOrgType,
-    pub client_version: Option<String>,
     pub ip: ClientIp,
 }
 
@@ -625,14 +624,12 @@ impl<'r> FromRequest<'r> for AdminHeaders {
 
     async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         let headers = try_outcome!(OrgHeaders::from_request(request).await);
-        let client_version = request.headers().get_one("Bitwarden-Client-Version").map(String::from);
         if headers.org_user_type >= UserOrgType::Admin {
             Outcome::Success(Self {
                 host: headers.host,
                 device: headers.device,
                 user: headers.user,
                 org_user_type: headers.org_user_type,
-                client_version,
                 ip: headers.ip,
             })
         } else {
@@ -898,5 +895,26 @@ impl<'r> FromRequest<'r> for WsAccessTokenHeader {
         Outcome::Success(Self {
             access_token,
         })
+    }
+}
+
+pub struct ClientVersion(pub semver::Version);
+
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for ClientVersion {
+    type Error = &'static str;
+
+    async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+        let headers = request.headers();
+
+        let Some(version) = headers.get_one("Bitwarden-Client-Version") else {
+            err_handler!("No Bitwarden-Client-Version header provided")
+        };
+
+        let Ok(version) = semver::Version::parse(version) else {
+            err_handler!("Invalid Bitwarden-Client-Version header provided")
+        };
+
+        Outcome::Success(ClientVersion(version))
     }
 }

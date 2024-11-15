@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use crate::db::DbPool;
 use chrono::Utc;
 use rocket::serde::json::Json;
@@ -477,6 +479,60 @@ struct KeyData {
     private_key: String,
 }
 
+fn validate_keydata(
+    data: &KeyData,
+    existing_ciphers: &[Cipher],
+    existing_folders: &[Folder],
+    existing_emergency_access: &[EmergencyAccess],
+    existing_user_orgs: &[UserOrganization],
+    existing_sends: &[Send],
+) -> EmptyResult {
+    // Check that we're correctly rotating all the user's ciphers
+    let existing_cipher_ids = existing_ciphers.iter().map(|c| c.uuid.as_str()).collect::<HashSet<_>>();
+    let provided_cipher_ids = data
+        .ciphers
+        .iter()
+        .filter(|c| c.organization_id.is_none())
+        .filter_map(|c| c.id.as_deref())
+        .collect::<HashSet<_>>();
+    if !provided_cipher_ids.is_superset(&existing_cipher_ids) {
+        err!("All existing ciphers must be included in the rotation")
+    }
+
+    // Check that we're correctly rotating all the user's folders
+    let existing_folder_ids = existing_folders.iter().map(|f| f.uuid.as_str()).collect::<HashSet<_>>();
+    let provided_folder_ids = data.folders.iter().filter_map(|f| f.id.as_deref()).collect::<HashSet<_>>();
+    if !provided_folder_ids.is_superset(&existing_folder_ids) {
+        err!("All existing folders must be included in the rotation")
+    }
+
+    // Check that we're correctly rotating all the user's emergency access keys
+    let existing_emergency_access_ids =
+        existing_emergency_access.iter().map(|ea| ea.uuid.as_str()).collect::<HashSet<_>>();
+    let provided_emergency_access_ids =
+        data.emergency_access_keys.iter().map(|ea| ea.id.as_str()).collect::<HashSet<_>>();
+    if !provided_emergency_access_ids.is_superset(&existing_emergency_access_ids) {
+        err!("All existing emergency access keys must be included in the rotation")
+    }
+
+    // Check that we're correctly rotating all the user's reset password keys
+    let existing_reset_password_ids = existing_user_orgs.iter().map(|uo| uo.org_uuid.as_str()).collect::<HashSet<_>>();
+    let provided_reset_password_ids =
+        data.reset_password_keys.iter().map(|rp| rp.organization_id.as_str()).collect::<HashSet<_>>();
+    if !provided_reset_password_ids.is_superset(&existing_reset_password_ids) {
+        err!("All existing reset password keys must be included in the rotation")
+    }
+
+    // Check that we're correctly rotating all the user's sends
+    let existing_send_ids = existing_sends.iter().map(|s| s.uuid.as_str()).collect::<HashSet<_>>();
+    let provided_send_ids = data.sends.iter().filter_map(|s| s.id.as_deref()).collect::<HashSet<_>>();
+    if !provided_send_ids.is_superset(&existing_send_ids) {
+        err!("All existing sends must be included in the rotation")
+    }
+
+    Ok(())
+}
+
 #[post("/accounts/key", data = "<data>")]
 async fn post_rotatekey(data: Json<KeyData>, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> EmptyResult {
     // TODO: See if we can wrap everything within a SQL Transaction. If something fails it should revert everything.
@@ -494,19 +550,34 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, mut conn: DbConn,
 
     let user_uuid = &headers.user.uuid;
 
+    // TODO: Ideally we'd do everything after this point in a single transaction.
+
+    let mut existing_ciphers = Cipher::find_owned_by_user(user_uuid, &mut conn).await;
+    let mut existing_folders = Folder::find_by_user(user_uuid, &mut conn).await;
+    let mut existing_emergency_access = EmergencyAccess::find_all_by_grantor_uuid(user_uuid, &mut conn).await;
+    let mut existing_user_orgs = UserOrganization::find_by_user(user_uuid, &mut conn).await;
+    // We only rotate the reset password key if it is set.
+    existing_user_orgs.retain(|uo| uo.reset_password_key.is_some());
+    let mut existing_sends = Send::find_by_user(user_uuid, &mut conn).await;
+
+    validate_keydata(
+        &data,
+        &existing_ciphers,
+        &existing_folders,
+        &existing_emergency_access,
+        &existing_user_orgs,
+        &existing_sends,
+    )?;
+
     // Update folder data
     for folder_data in data.folders {
         // Skip `null` folder id entries.
         // See: https://github.com/bitwarden/clients/issues/8453
         if let Some(folder_id) = folder_data.id {
-            let mut saved_folder = match Folder::find_by_uuid(&folder_id, &mut conn).await {
+            let saved_folder = match existing_folders.iter_mut().find(|f| f.uuid == folder_id) {
                 Some(folder) => folder,
                 None => err!("Folder doesn't exist"),
             };
-
-            if &saved_folder.user_uuid != user_uuid {
-                err!("The folder is not owned by the user")
-            }
 
             saved_folder.name = folder_data.name;
             saved_folder.save(&mut conn).await?
@@ -515,9 +586,8 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, mut conn: DbConn,
 
     // Update emergency access data
     for emergency_access_data in data.emergency_access_keys {
-        let mut saved_emergency_access =
-            match EmergencyAccess::find_by_uuid_and_grantor_uuid(&emergency_access_data.id, user_uuid, &mut conn).await
-            {
+        let saved_emergency_access =
+            match existing_emergency_access.iter_mut().find(|ea| ea.uuid == emergency_access_data.id) {
                 Some(emergency_access) => emergency_access,
                 None => err!("Emergency access doesn't exist or is not owned by the user"),
             };
@@ -528,13 +598,11 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, mut conn: DbConn,
 
     // Update reset password data
     for reset_password_data in data.reset_password_keys {
-        let mut user_org =
-            match UserOrganization::find_by_user_and_org(user_uuid, &reset_password_data.organization_id, &mut conn)
-                .await
-            {
-                Some(reset_password) => reset_password,
-                None => err!("Reset password doesn't exist"),
-            };
+        let user_org = match existing_user_orgs.iter_mut().find(|uo| uo.org_uuid == reset_password_data.organization_id)
+        {
+            Some(reset_password) => reset_password,
+            None => err!("Reset password doesn't exist"),
+        };
 
         user_org.reset_password_key = Some(reset_password_data.reset_password_key);
         user_org.save(&mut conn).await?
@@ -542,12 +610,12 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, mut conn: DbConn,
 
     // Update send data
     for send_data in data.sends {
-        let mut send = match Send::find_by_uuid(send_data.id.as_ref().unwrap(), &mut conn).await {
+        let send = match existing_sends.iter_mut().find(|s| &s.uuid == send_data.id.as_ref().unwrap()) {
             Some(send) => send,
             None => err!("Send doesn't exist"),
         };
 
-        update_send_from_data(&mut send, send_data, &headers, &mut conn, &nt, UpdateType::None).await?;
+        update_send_from_data(send, send_data, &headers, &mut conn, &nt, UpdateType::None).await?;
     }
 
     // Update cipher data
@@ -555,20 +623,15 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, mut conn: DbConn,
 
     for cipher_data in data.ciphers {
         if cipher_data.organization_id.is_none() {
-            let mut saved_cipher = match Cipher::find_by_uuid(cipher_data.id.as_ref().unwrap(), &mut conn).await {
+            let saved_cipher = match existing_ciphers.iter_mut().find(|c| &c.uuid == cipher_data.id.as_ref().unwrap()) {
                 Some(cipher) => cipher,
                 None => err!("Cipher doesn't exist"),
             };
 
-            if saved_cipher.user_uuid.as_ref().unwrap() != user_uuid {
-                err!("The cipher is not owned by the user")
-            }
-
             // Prevent triggering cipher updates via WebSockets by settings UpdateType::None
             // The user sessions are invalidated because all the ciphers were re-encrypted and thus triggering an update could cause issues.
             // We force the users to logout after the user has been saved to try and prevent these issues.
-            update_cipher_from_data(&mut saved_cipher, cipher_data, &headers, None, &mut conn, &nt, UpdateType::None)
-                .await?
+            update_cipher_from_data(saved_cipher, cipher_data, &headers, None, &mut conn, &nt, UpdateType::None).await?
         }
     }
 
