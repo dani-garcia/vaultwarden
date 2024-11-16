@@ -222,7 +222,7 @@ pub struct CipherData {
     // Id is optional as it is included only in bulk share
     pub id: Option<String>,
     // Folder id is not included in import
-    folder_id: Option<String>,
+    pub folder_id: Option<String>,
     // TODO: Some of these might appear all the time, no need for Option
     #[serde(alias = "organizationID")]
     pub organization_id: Option<String>,
@@ -585,11 +585,11 @@ async fn post_ciphers_import(
     Cipher::validate_cipher_data(&data.ciphers)?;
 
     // Read and create the folders
-    let existing_folders: Vec<String> =
-        Folder::find_by_user(&headers.user.uuid, &mut conn).await.into_iter().map(|f| f.uuid).collect();
+    let existing_folders: HashSet<Option<String>> =
+        Folder::find_by_user(&headers.user.uuid, &mut conn).await.into_iter().map(|f| Some(f.uuid)).collect();
     let mut folders: Vec<String> = Vec::with_capacity(data.folders.len());
     for folder in data.folders.into_iter() {
-        let folder_uuid = if folder.id.is_some() && existing_folders.contains(folder.id.as_ref().unwrap()) {
+        let folder_uuid = if existing_folders.contains(&folder.id) {
             folder.id.unwrap()
         } else {
             let mut new_folder = Folder::new(headers.user.uuid.clone(), folder.name);
@@ -601,8 +601,8 @@ async fn post_ciphers_import(
     }
 
     // Read the relations between folders and ciphers
+    // Ciphers can only be in one folder at the same time
     let mut relations_map = HashMap::with_capacity(data.folder_relationships.len());
-
     for relation in data.folder_relationships {
         relations_map.insert(relation.key, relation.value);
     }
