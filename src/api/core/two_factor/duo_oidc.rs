@@ -211,10 +211,7 @@ impl DuoClient {
             nonce,
         };
 
-        let token = match self.encode_duo_jwt(jwt_payload) {
-            Ok(token) => token,
-            Err(e) => return Err(e),
-        };
+        let token = self.encode_duo_jwt(jwt_payload)?;
 
         let authz_endpoint = format!("https://{}/oauth/v1/authorize", self.api_host);
         let mut auth_url = match Url::parse(authz_endpoint.as_str()) {
