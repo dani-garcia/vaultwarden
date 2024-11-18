@@ -20,11 +20,6 @@ a[href$="/settings/sponsored-families"] {
   @extend %vw-hide;
 }
 
-/* Hide the `Enterprise Single Sign-On` button on the login page */
-a[routerlink="/sso"] {
-  @extend %vw-hide;
-}
-
 /* Hide Two-Factor menu in Organization settings */
 bit-nav-item[route="settings/two-factor"],
 a[href$="/settings/two-factor"] {
@@ -67,6 +62,20 @@ app-security > app-two-factor-setup > form {
 {{#if signup_disabled}}
 /* Hide the register link on the login screen */
 app-frontend-layout > app-login > form > div > div > div > p {
+  @extend %vw-hide;
+}
+{{/if}}
+
+{{#if sso_only}}
+/* Hide Master password login */
+app-login form > div > div > div > div > div:has(button) {
+  @extend %vw-hide;
+}
+{{/if}}
+
+{{#if sso_disabled}}
+/* Hide the `Enterprise Single Sign-On` button on the login page */
+a[routerlink="/sso"] {
   @extend %vw-hide;
 }
 {{/if}}
