@@ -38,8 +38,7 @@ test('Non SSO login', async ({ page }) => {
     await expect(page).toHaveTitle(/Vaults/);
 });
 
-
-test('Non SSO login Failure', async ({ page, browser }, testInfo: TestInfo) => {
+test('Non SSO login impossible', async ({ page, browser }, testInfo: TestInfo) => {
     await utils.restartVaultwarden(page, testInfo, {
         SSO_ENABLED: true,
         SSO_ONLY: true
@@ -50,12 +49,8 @@ test('Non SSO login Failure', async ({ page, browser }, testInfo: TestInfo) => {
     await page.getByLabel(/Email address/).fill(users.user1.email);
     await page.getByRole('button', { name: 'Continue' }).click();
 
-    // Unlock page
-    await page.getByLabel('Master password').fill(users.user1.password);
-    await page.getByRole('button', { name: 'Log in with master password' }).click();
-
-    // An error should appear
-    await page.getByLabel('SSO sign-in is required')
+    // No Master password
+    await expect(page.getByLabel('Master password')).toBeHidden();
 });
 
 test('No SSO login', async ({ page }, testInfo: TestInfo) => {
