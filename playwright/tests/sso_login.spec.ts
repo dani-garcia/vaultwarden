@@ -38,8 +38,7 @@ test('Non SSO login', async ({ page }) => {
     await expect(page).toHaveTitle(/Vaultwarden Web/);
 });
 
-
-test('Non SSO login Failure', async ({ page, browser }, testInfo: TestInfo) => {
+test('Non SSO login impossible', async ({ page, browser }, testInfo: TestInfo) => {
     await utils.restartVaultwarden(page, testInfo, {
         SSO_ENABLED: true,
         SSO_ONLY: true
