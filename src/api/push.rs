@@ -9,6 +9,7 @@ use crate::{
     api::{ApiResult, EmptyResult, UpdateType},
     db::models::{Cipher, Device, Folder, Send, User},
     http_client::make_http_request,
+    util::format_date,
     CONFIG,
 };
 
@@ -170,10 +171,10 @@ pub async fn push_cipher_update(
             "identifier": acting_device_uuid,
             "type": ut as i32,
             "payload": {
-                "id": cipher.uuid,
-                "userId": cipher.user_uuid,
-                "organizationId": (),
-                "revisionDate": cipher.updated_at
+                "Id": cipher.uuid,
+                "UserId": cipher.user_uuid,
+                "OrganizationId": (),
+                "RevisionDate": format_date(&cipher.updated_at)
             }
         }))
         .await;
@@ -190,8 +191,8 @@ pub fn push_logout(user: &User, acting_device_uuid: Option<String>) {
         "identifier": acting_device_uuid,
         "type": UpdateType::LogOut as i32,
         "payload": {
-            "userId": user.uuid,
-            "date": user.updated_at
+            "UserId": user.uuid,
+            "Date": format_date(&user.updated_at)
         }
     })));
 }
@@ -204,8 +205,8 @@ pub fn push_user_update(ut: UpdateType, user: &User) {
         "identifier": (),
         "type": ut as i32,
         "payload": {
-            "userId": user.uuid,
-            "date": user.updated_at
+            "UserId": user.uuid,
+            "Date": format_date(&user.updated_at)
         }
     })));
 }
@@ -224,9 +225,9 @@ pub async fn push_folder_update(
             "identifier": acting_device_uuid,
             "type": ut as i32,
             "payload": {
-                "id": folder.uuid,
-                "userId": folder.user_uuid,
-                "revisionDate": folder.updated_at
+                "Id": folder.uuid,
+                "UserId": folder.user_uuid,
+                "RevisionDate": format_date(&folder.updated_at)
             }
         })));
     }
@@ -242,9 +243,9 @@ pub async fn push_send_update(ut: UpdateType, send: &Send, acting_device_uuid: &
                 "identifier": acting_device_uuid,
                 "type": ut as i32,
                 "payload": {
-                    "id": send.uuid,
-                    "userId": send.user_uuid,
-                    "revisionDate": send.revision_date
+                    "Id": send.uuid,
+                    "UserId": send.user_uuid,
+                    "RevisionDate": format_date(&send.revision_date)
                 }
             })));
         }
@@ -295,8 +296,8 @@ pub async fn push_auth_request(user_uuid: String, auth_request_uuid: String, con
             "identifier": null,
             "type": UpdateType::AuthRequest as i32,
             "payload": {
-                "id": auth_request_uuid,
-                "userId": user_uuid,
+                "Id": auth_request_uuid,
+                "UserId": user_uuid,
             }
         })));
     }
@@ -316,8 +317,8 @@ pub async fn push_auth_response(
             "identifier": approving_device_uuid,
             "type": UpdateType::AuthRequestResponse as i32,
             "payload": {
-                "id": auth_request_uuid,
-                "userId": user_uuid,
+                "Id": auth_request_uuid,
+                "UserId": user_uuid,
             }
         })));
     }
