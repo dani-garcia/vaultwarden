@@ -10,13 +10,13 @@ body:
 
         Please *do not* submit feature requests or ask for help on how to configure Vaultwarden here.
 
-        The [GitHub Discussions](https://github.com/dani-garcia/vaultwarden/discussions/) has sections for Questions and Ideas.
+        The [GitHub Discussions](https://github.com/vaultwarden/vaultwarden/discussions/) has sections for Questions and Ideas.
 
-        Also, make sure you are running [![GitHub Release](https://img.shields.io/github/release/dani-garcia/vaultwarden.svg)](https://github.com/dani-garcia/vaultwarden/releases/latest) of Vaultwarden!
+        Also, make sure you are running [![GitHub Release](https://img.shields.io/github/release/vaultwarden/vaultwarden.svg)](https://github.com/vaultwarden/vaultwarden/releases/latest) of Vaultwarden!
         And search for existing open or closed issues or discussions regarding your topic before posting.
 
         Be sure to check and validate the Vaultwarden Admin Diagnostics (`/admin/diagnostics`) page for any errors!
-        See here [how to enable the admin page](https://github.com/dani-garcia/vaultwarden/wiki/Enabling-admin-page).
+        See here [how to enable the admin page](https://github.com/vaultwarden/vaultwarden/wiki/Enabling-admin-page).
   #
   - id: support-string
     type: textarea
