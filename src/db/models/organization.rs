@@ -462,7 +462,13 @@ impl UserOrganization {
             Vec::with_capacity(0)
         };
 
-        let collections: Vec<Value> = if include_collections {
+        // Check if a user is in a group which has access to all collections
+        // If that is the case, we should not return individual collections!
+        let full_access_group =
+            CONFIG.org_groups_enabled() && Group::is_in_full_access_group(&self.user_uuid, &self.org_uuid, conn).await;
+
+        // If collections are to be included, only include them if the user does not have full access via a group or defined to the user it self
+        let collections: Vec<Value> = if include_collections && !(full_access_group || self.has_full_access()) {
             // Get all collections for the user here already to prevent more queries
             let cu: HashMap<String, CollectionUser> =
                 CollectionUser::find_by_organization_and_user_uuid(&self.org_uuid, &self.user_uuid, conn)
