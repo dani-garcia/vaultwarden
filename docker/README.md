@@ -46,7 +46,7 @@ There also is an option to use an other docker container to provide support for 
 ```bash
 # To install and activate
 docker run --privileged --rm tonistiigi/binfmt --install arm64,arm
-# To unistall
+# To uninstall
 docker run --privileged --rm tonistiigi/binfmt --uninstall 'qemu-*'
 ```
 

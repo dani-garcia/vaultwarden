@@ -662,7 +662,7 @@ impl reqwest::cookie::CookieStore for Jar {
 /// The FaviconEmitter is using an optimized version of the DefaultEmitter.
 /// This prevents emitting tags like comments, doctype and also strings between the tags.
 /// But it will also only emit the tags we need and only if they have the correct attributes
-/// Therefor parsing the HTML content is faster.
+/// Therefore parsing the HTML content is faster.
 use std::collections::BTreeMap;
 
 #[derive(Default)]

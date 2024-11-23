@@ -1652,7 +1652,7 @@ struct BulkCollectionsData {
     remove_collections: bool,
 }
 
-// This endpoint is only reachable via the organization view, therefor this endpoint is located here
+// This endpoint is only reachable via the organization view, therefore this endpoint is located here
 // Also Bitwarden does not send out Notifications for these changes, it only does this for individual cipher collection updates
 #[post("/ciphers/bulk-collections", data = "<data>")]
 async fn post_bulk_collections(data: Json<BulkCollectionsData>, headers: Headers, mut conn: DbConn) -> EmptyResult {
@@ -2789,7 +2789,7 @@ struct OrganizationUserResetPasswordRequest {
     key: String,
 }
 
-// Upstrem reports this is the renamed endpoint instead of `/keys`
+// Upstream reports this is the renamed endpoint instead of `/keys`
 // But the clients do not seem to use this at all
 // Just add it here in case they will
 #[get("/organizations/<org_id>/public-key")]
