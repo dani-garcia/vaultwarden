@@ -782,6 +782,34 @@ impl<'r> FromRequest<'r> for AdminToken {
                 ip,
             })
         } else {
+            let header_authorization = request.headers().get_one("authorization");
+            if let Some(access_token) = header_authorization {
+                if crate::ratelimit::check_limit_admin(&ip.ip).is_err() {
+                    return Outcome::Error((Status::Unauthorized, "Too many requests, try again later."));
+                }
+
+                let access_token = access_token.trim_start_matches("Bearer").trim();
+                let access_token = data_encoding::BASE64.decode(access_token.as_bytes());
+                let access_token = match access_token {
+                    Ok(a) => String::from_utf8(a),
+                    Err(_) => {
+                        return Outcome::Error((Status::Unauthorized, "Invalid admin token, please try again."));
+                    }
+                };
+                let access_token = match access_token {
+                    Ok(a) => a,
+                    Err(_) => {
+                        return Outcome::Error((Status::Unauthorized, "Invalid admin token, please try again."));
+                    }
+                };
+                if !_validate_token(&access_token) {
+                    error!("Invalid admin token. IP: {}", ip.ip);
+                    return Outcome::Error((Status::Unauthorized, "Invalid admin token, please try again."));
+                }
+                return Outcome::Success(Self {
+                    ip,
+                });
+            }
             let cookies = request.cookies();
 
             let access_token = match cookies.get(COOKIE_NAME) {
