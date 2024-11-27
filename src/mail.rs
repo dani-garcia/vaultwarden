@@ -118,7 +118,7 @@ fn sanitize_data(data: &mut serde_json::Value) {
     }
 }
 
-fn get_text(template_name: &'static str, data: serde_json::Value) -> Result<(String, String, String), Error> {
+fn get_text(template_name: &str, data: serde_json::Value) -> Result<(String, String, String), Error> {
     let mut data = data;
     sanitize_data(&mut data);
     let (subject_html, body_html) = get_template(&format!("{template_name}.html"), &data)?;
@@ -202,23 +202,29 @@ pub async fn send_verify_email(address: &str, uuid: &str) -> EmptyResult {
     send_email(address, &subject, body_html, body_text).await
 }
 
+async fn send_email_with_template(address: &str, template_name: &str, data: serde_json::Value) -> EmptyResult {
+    let (subject, body_html, body_text) = get_text(template_name, data)?;
+    send_email(address, &subject, body_html, body_text).await
+}
+
 pub async fn send_welcome(address: &str) -> EmptyResult {
-    let (subject, body_html, body_text) = get_text(
+    send_email_with_template(
+        address,
         "email/welcome",
         json!({
             "url": CONFIG.domain(),
             "img_src": CONFIG._smtp_img_src(),
         }),
-    )?;
-
-    send_email(address, &subject, body_html, body_text).await
+    )
+    .await
 }
 
 pub async fn send_welcome_must_verify(address: &str, uuid: &str) -> EmptyResult {
     let claims = generate_verify_email_claims(uuid.to_string());
     let verify_email_token = encode_jwt(&claims);
 
-    let (subject, body_html, body_text) = get_text(
+    send_email_with_template(
+        address,
         "email/welcome_must_verify",
         json!({
             "url": CONFIG.domain(),
@@ -226,35 +232,34 @@ pub async fn send_welcome_must_verify(address: &str, uuid: &str) -> EmptyResult 
             "user_id": uuid,
             "token": verify_email_token,
         }),
-    )?;
-
-    send_email(address, &subject, body_html, body_text).await
+    )
+    .await
 }
 
 pub async fn send_2fa_removed_from_org(address: &str, org_name: &str) -> EmptyResult {
-    let (subject, body_html, body_text) = get_text(
+    send_email_with_template(
+        address,
         "email/send_2fa_removed_from_org",
         json!({
             "url": CONFIG.domain(),
             "img_src": CONFIG._smtp_img_src(),
             "org_name": org_name,
         }),
-    )?;
-
-    send_email(address, &subject, body_html, body_text).await
+    )
+    .await
 }
 
 pub async fn send_single_org_removed_from_org(address: &str, org_name: &str) -> EmptyResult {
-    let (subject, body_html, body_text) = get_text(
+    send_email_with_template(
+        address,
         "email/send_single_org_removed_from_org",
         json!({
             "url": CONFIG.domain(),
             "img_src": CONFIG._smtp_img_src(),
             "org_name": org_name,
         }),
-    )?;
-
-    send_email(address, &subject, body_html, body_text).await
+    )
+    .await
 }
 
 pub async fn send_invite(
