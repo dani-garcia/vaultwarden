@@ -89,14 +89,16 @@ fn vaultwarden_css() -> Cached<Css<String>> {
     });
 
     let css_options = json!({
-        "web_vault_version": *WEB_VAULT_VERSION,
-        "vw_version": *VW_VERSION,
-        "signup_disabled": !CONFIG.signups_allowed() && CONFIG.signups_domains_whitelist().is_empty(),
-        "mail_enabled": CONFIG.mail_enabled(),
-        "yubico_enabled": CONFIG._enable_yubico() && (CONFIG.yubico_client_id().is_some() == CONFIG.yubico_secret_key().is_some()),
         "emergency_access_allowed": CONFIG.emergency_access_allowed(),
-        "sends_allowed": CONFIG.sends_allowed(),
         "load_user_scss": true,
+        "mail_enabled": CONFIG.mail_enabled(),
+        "sends_allowed": CONFIG.sends_allowed(),
+        "signup_disabled": !CONFIG.signups_allowed() && CONFIG.signups_domains_whitelist().is_empty(),
+        "sso_disabled": !CONFIG.sso_enabled(),
+        "sso_only": CONFIG.sso_enabled() && CONFIG.sso_only(),
+        "vw_version": *VW_VERSION,
+        "web_vault_version": *WEB_VAULT_VERSION,
+        "yubico_enabled": CONFIG._enable_yubico() && (CONFIG.yubico_client_id().is_some() == CONFIG.yubico_secret_key().is_some()),
     });
 
     let scss = match CONFIG.render_template("scss/vaultwarden.scss", &css_options) {
