@@ -81,8 +81,8 @@ pub fn encode_ssotoken_claims() -> String {
 #[derive(Debug, Serialize, Deserialize)]
 pub enum OIDCCodeWrapper {
     Ok {
-        code: String,
         state: String,
+        code: String,
     },
     Error {
         state: String,
@@ -209,9 +209,11 @@ impl CoreClientExt for CoreClient {
 }
 
 // The `nonce` allow to protect against replay attacks
+// The `state` is encoded using base64 to ensure no issue with providers (It contains the Organization identifier).
 // redirect_uri from: https://github.com/bitwarden/server/blob/main/src/Identity/IdentityServer/ApiClient.cs
 pub async fn authorize_url(state: String, client_id: &str, raw_redirect_uri: &str, mut conn: DbConn) -> ApiResult<Url> {
     let scopes = CONFIG.sso_scopes_vec().into_iter().map(Scope::new);
+    let base64_state = data_encoding::BASE64.encode(state.as_bytes());
 
     let redirect_uri = match client_id {
         "web" | "browser" => format!("{}/sso-connector.html", CONFIG.domain()),
@@ -230,7 +232,7 @@ pub async fn authorize_url(state: String, client_id: &str, raw_redirect_uri: &st
     let mut auth_req = client
         .authorize_url(
             AuthenticationFlow::<CoreResponseType>::AuthorizationCode,
-            || CsrfToken::new(state),
+            || CsrfToken::new(base64_state),
             Nonce::new_random,
         )
         .add_scopes(scopes)
@@ -244,9 +246,9 @@ pub async fn authorize_url(state: String, client_id: &str, raw_redirect_uri: &st
         None
     };
 
-    let (auth_url, csrf_state, nonce) = auth_req.url();
+    let (auth_url, _, nonce) = auth_req.url();
 
-    let sso_nonce = SsoNonce::new(csrf_state.secret().to_string(), nonce.secret().to_string(), verifier, redirect_uri);
+    let sso_nonce = SsoNonce::new(state, nonce.secret().to_string(), verifier, redirect_uri);
     sso_nonce.save(&mut conn).await?;
 
     Ok(auth_url)
@@ -276,8 +278,8 @@ async fn decode_code_claims(code: &str, conn: &mut DbConn) -> ApiResult<(String,
     match auth::decode_jwt::<OIDCCodeClaims>(code, SSO_JWT_ISSUER.to_string()) {
         Ok(code_claims) => match code_claims.code {
             OIDCCodeWrapper::Ok {
-                code,
                 state,
+                code,
             } => Ok((code, state)),
             OIDCCodeWrapper::Error {
                 state,

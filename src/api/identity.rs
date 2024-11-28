@@ -931,10 +931,10 @@ fn prevalidate() -> JsonResult {
 #[get("/connect/oidc-signin?<code>&<state>", rank = 1)]
 async fn oidcsignin(code: String, state: String, conn: DbConn) -> ApiResult<Redirect> {
     oidcsignin_redirect(
-        state.clone(),
-        sso::OIDCCodeWrapper::Ok {
+        state,
+        |decoded_state| sso::OIDCCodeWrapper::Ok {
+            state: decoded_state,
             code,
-            state,
         },
         &conn,
     )
@@ -951,9 +951,9 @@ async fn oidcsignin_error(
     conn: DbConn,
 ) -> ApiResult<Redirect> {
     oidcsignin_redirect(
-        state.clone(),
-        sso::OIDCCodeWrapper::Error {
-            state,
+        state,
+        |decoded_state| sso::OIDCCodeWrapper::Error {
+            state: decoded_state,
             error,
             error_description,
         },
@@ -962,9 +962,21 @@ async fn oidcsignin_error(
     .await
 }
 
+// The state was encoded using Base64 to ensure no issue with providers.
 // iss and scope parameters are needed for redirection to work on IOS.
-async fn oidcsignin_redirect(state: String, wrapper: sso::OIDCCodeWrapper, conn: &DbConn) -> ApiResult<Redirect> {
-    let code = sso::encode_code_claims(wrapper);
+async fn oidcsignin_redirect(
+    base64_state: String,
+    wrapper: impl FnOnce(String) -> sso::OIDCCodeWrapper,
+    conn: &DbConn,
+) -> ApiResult<Redirect> {
+    let state = match data_encoding::BASE64.decode(base64_state.as_bytes()) {
+        Ok(vec) => match String::from_utf8(vec) {
+            Ok(valid) => valid,
+            Err(_) => err!(format!("Invalid utf8 chars in {base64_state} after base64 decoding")),
+        },
+        Err(_) => err!(format!("Failed to decode {base64_state} using base64")),
+    };
+    let code = sso::encode_code_claims(wrapper(state.clone()));
 
     let nonce = match SsoNonce::find(&state, conn).await {
         Some(n) => n,
