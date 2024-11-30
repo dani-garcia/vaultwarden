@@ -117,6 +117,12 @@ jobs:
 
       # Run cargo tests
       # First test all features together, afterwards test them separately.
+      - name: "test features: sqlite,mysql,postgresql,enable_mimalloc,query_logger"
+        id: test_sqlite_mysql_postgresql_mimalloc_logger
+        if: $${{ always() }}
+        run: |
+          cargo test --features sqlite,mysql,postgresql,enable_mimalloc,query_logger
+
       - name: "test features: sqlite,mysql,postgresql,enable_mimalloc"
         id: test_sqlite_mysql_postgresql_mimalloc
         if: $${{ always() }}
@@ -176,6 +182,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "|Job|Status|" >> $GITHUB_STEP_SUMMARY
           echo "|---|------|" >> $GITHUB_STEP_SUMMARY
+          echo "|test (sqlite,mysql,postgresql,enable_mimalloc,query_logger)|${{ steps.test_sqlite_mysql_postgresql_mimalloc_logger.outcome }}|" >> $GITHUB_STEP_SUMMARY
           echo "|test (sqlite,mysql,postgresql,enable_mimalloc)|${{ steps.test_sqlite_mysql_postgresql_mimalloc.outcome }}|" >> $GITHUB_STEP_SUMMARY
           echo "|test (sqlite,mysql,postgresql)|${{ steps.test_sqlite_mysql_postgresql.outcome }}|" >> $GITHUB_STEP_SUMMARY
           echo "|test (sqlite)|${{ steps.test_sqlite.outcome }}|" >> $GITHUB_STEP_SUMMARY

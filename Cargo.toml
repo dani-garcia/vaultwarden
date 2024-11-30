@@ -36,12 +36,12 @@ unstable = []
 
 [target."cfg(unix)".dependencies]
 # Logging
-syslog = "6.1.1"
+syslog = "7.0.0"
 
 [dependencies]
 # Logging
 log = "0.4.22"
-fern = { version = "0.7.0", features = ["syslog-6", "reopen-1"] }
+fern = { version = "0.7.0", features = ["syslog-7", "reopen-1"] }
 tracing = { version = "0.1.41", features = ["log"] } # Needed to have lettre and webauthn-rs trace logging to work
 
 # A `dotenv` implementation for Rust
@@ -165,6 +165,10 @@ rpassword = "7.3.1"
 
 # Loading a dynamic CSS Stylesheet
 grass_compiler = { version = "0.13.4", default-features = false }
+
+[patch.crates-io]
+# Patch fern to support syslog v7
+fern = { git = "https://github.com/daboross/fern", rev = "3e775ccfafe7d24baee39826d38011981b2e55b5" }
 
 # Strip debuginfo from the release builds
 # The symbols are the provide better panic traces
