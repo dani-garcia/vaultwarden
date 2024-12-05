@@ -3,7 +3,7 @@ name = "vaultwarden"
 version = "1.0.0"
 authors = ["Daniel García <dani-garcia@users.noreply.github.com>"]
 edition = "2021"
-rust-version = "1.80.0"
+rust-version = "1.82.0"
 resolver = "2"
 
 repository = "https://github.com/dani-garcia/vaultwarden"
@@ -36,13 +36,13 @@ unstable = []
 
 [target."cfg(unix)".dependencies]
 # Logging
-syslog = "6.1.1"
+syslog = "7.0.0"
 
 [dependencies]
 # Logging
 log = "0.4.22"
-fern = { version = "0.7.0", features = ["syslog-6", "reopen-1"] }
-tracing = { version = "0.1.40", features = ["log"] } # Needed to have lettre and webauthn-rs trace logging to work
+fern = { version = "0.7.0", features = ["syslog-7", "reopen-1"] }
+tracing = { version = "0.1.41", features = ["log"] } # Needed to have lettre and webauthn-rs trace logging to work
 
 # A `dotenv` implementation for Rust
 dotenvy = { version = "0.15.7", default-features = false }
@@ -67,16 +67,16 @@ dashmap = "6.1.0"
 
 # Async futures
 futures = "0.3.31"
-tokio = { version = "1.41.1", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal", "net"] }
+tokio = { version = "1.42.0", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal", "net"] }
 
 # A generic serialization/deserialization framework
-serde = { version = "1.0.214", features = ["derive"] }
-serde_json = "1.0.132"
+serde = { version = "1.0.215", features = ["derive"] }
+serde_json = "1.0.133"
 
 # A safe, extensible ORM and Query builder
-diesel = { version = "2.2.4", features = ["chrono", "r2d2", "numeric"] }
+diesel = { version = "2.2.6", features = ["chrono", "r2d2", "numeric"] }
 diesel_migrations = "2.2.0"
-diesel_logger = { version = "0.3.0", optional = true }
+diesel_logger = { version = "0.4.0", optional = true }
 
 # Bundled/Static SQLite
 libsqlite3-sys = { version = "0.30.1", features = ["bundled"], optional = true }
@@ -91,7 +91,7 @@ uuid = { version = "1.11.0", features = ["v4"] }
 # Date and time libraries
 chrono = { version = "0.4.38", features = ["clock", "serde"], default-features = false }
 chrono-tz = "0.10.0"
-time = "0.3.36"
+time = "0.3.37"
 
 # Job scheduler
 job_scheduler_ng = "2.0.5"
@@ -106,13 +106,13 @@ jsonwebtoken = "9.3.0"
 totp-lite = "2.0.1"
 
 # Yubico Library
-yubico = { version = "0.11.0", features = ["online-tokio"], default-features = false }
+yubico = { version = "0.12.0", features = ["online-tokio"], default-features = false }
 
 # WebAuthn libraries
 webauthn-rs = "0.3.2"
 
 # Handling of URL's for WebAuthn and favicons
-url = "2.5.3"
+url = "2.5.4"
 
 # Email libraries
 lettre = { version = "0.11.10", features = ["smtp-transport", "sendmail-transport", "builder", "serde", "tokio1-native-tls", "hostname", "tracing", "tokio1"], default-features = false }
@@ -127,10 +127,10 @@ reqwest = { version = "0.12.9", features = ["native-tls-alpn", "stream", "json",
 hickory-resolver = "0.24.1"
 
 # Favicon extraction libraries
-html5gum = "0.6.1"
+html5gum = "0.7.0"
 regex = { version = "1.11.1", features = ["std", "perf", "unicode-perl"], default-features = false }
 data-url = "0.3.1"
-bytes = "1.8.0"
+bytes = "1.9.0"
 
 # Cache function results (Used for version check and favicon fetching)
 cached = { version = "0.54.0", features = ["async"] }
@@ -165,6 +165,12 @@ rpassword = "7.3.1"
 
 # Loading a dynamic CSS Stylesheet
 grass_compiler = { version = "0.13.4", default-features = false }
+
+[patch.crates-io]
+# Patch fern to support syslog v7
+fern = { git = "https://github.com/daboross/fern", rev = "3e775ccfafe7d24baee39826d38011981b2e55b5" }
+# Patch yubico to remove duplicate crates of older versions
+yubico = { git = "https://github.com/BlackDex/yubico-rs", rev = "00df14811f58155c0f02e3ab10f1570ed3e115c6" }
 
 # Strip debuginfo from the release builds
 # The symbols are the provide better panic traces
@@ -216,7 +222,8 @@ noop_method_call = "deny"
 refining_impl_trait = { level = "deny", priority = -1 }
 rust_2018_idioms = { level = "deny", priority = -1 }
 rust_2021_compatibility = { level = "deny", priority = -1 }
-# rust_2024_compatibility = { level = "deny", priority = -1 } # Enable once we are at MSRV 1.81.0
+rust_2024_compatibility = { level = "deny", priority = -1 }
+edition_2024_expr_fragment_specifier = "allow" # Once changed to Rust 2024 this should be removed and macro's should be validated again
 single_use_lifetimes = "deny"
 trivial_casts = "deny"
 trivial_numeric_casts = "deny"
@@ -225,9 +232,6 @@ unused_import_braces = "deny"
 unused_lifetimes = "deny"
 unused_qualifications = "deny"
 variant_size_differences = "deny"
-# The lints below are part of the rust_2024_compatibility group
-static-mut-refs = "deny"
-unsafe-op-in-unsafe-fn = "deny"
 
 # https://rust-lang.github.io/rust-clippy/stable/index.html
 [lints.clippy]

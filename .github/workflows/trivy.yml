@@ -28,10 +28,13 @@ jobs:
       actions: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@eef61447b9ff4aafe5dcd4e0bbf5d482be7e7871 #v4.2.1
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 #v4.2.2
 
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@5681af892cd0f4997658e2bacc62bd0a894cf564 # v0.27.0
+        uses: aquasecurity/trivy-action@18f2510ee396bbf400402947b394f2dd8c87dbb0 # v0.29.0
+        env:
+          TRIVY_DB_REPOSITORY: docker.io/aquasec/trivy-db:2,public.ecr.aws/aquasecurity/trivy-db:2,ghcr.io/aquasecurity/trivy-db:2
+          TRIVY_JAVA_DB_REPOSITORY: docker.io/aquasec/trivy-java-db:1,public.ecr.aws/aquasecurity/trivy-java-db:1,ghcr.io/aquasecurity/trivy-java-db:1
         with:
           scan-type: repo
           ignore-unfixed: true
@@ -40,6 +43,6 @@ jobs:
           severity: CRITICAL,HIGH
 
       - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@2bbafcdd7fbf96243689e764c2f15d9735164f33 # v3.26.6
+        uses: github/codeql-action/upload-sarif@86b04fb0e47484f7282357688f21d5d0e32175fe # v3.27.5
         with:
           sarif_file: 'trivy-results.sarif'

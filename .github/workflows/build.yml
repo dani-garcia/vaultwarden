@@ -47,7 +47,7 @@ jobs:
     steps:
       # Checkout the repo
       - name: "Checkout"
-        uses: actions/checkout@eef61447b9ff4aafe5dcd4e0bbf5d482be7e7871 #v4.2.1
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 #v4.2.2
       # End Checkout the repo
 
 
@@ -75,7 +75,7 @@ jobs:
 
       # Only install the clippy and rustfmt components on the default rust-toolchain
       - name: "Install rust-toolchain version"
-        uses: dtolnay/rust-toolchain@7b1c307e0dcbda6122208f10795a713336a9b35a # master @ Aug 8, 2024, 7:36 PM GMT+2
+        uses: dtolnay/rust-toolchain@315e265cd78dad1e1dcf3a5074f6d6c47029d5aa # master @ Nov 18, 2024, 5:36 AM GMT+1
         if: ${{ matrix.channel == 'rust-toolchain' }}
         with:
           toolchain: "${{steps.toolchain.outputs.RUST_TOOLCHAIN}}"
@@ -85,7 +85,7 @@ jobs:
 
       # Install the any other channel to be used for which we do not execute clippy and rustfmt
       - name: "Install MSRV version"
-        uses: dtolnay/rust-toolchain@7b1c307e0dcbda6122208f10795a713336a9b35a # master @ Aug 8, 2024, 7:36 PM GMT+2
+        uses: dtolnay/rust-toolchain@315e265cd78dad1e1dcf3a5074f6d6c47029d5aa # master @ Nov 18, 2024, 5:36 AM GMT+1
         if: ${{ matrix.channel != 'rust-toolchain' }}
         with:
           toolchain: "${{steps.toolchain.outputs.RUST_TOOLCHAIN}}"
@@ -107,7 +107,7 @@ jobs:
       # End Show environment
 
       # Enable Rust Caching
-      - uses: Swatinem/rust-cache@23bce251a8cd2ffc3c1075eaa2367cf899916d84 # v2.7.3
+      - uses: Swatinem/rust-cache@82a92a6e8fbeee089604da2575dc567ae9ddeaab # v2.7.5
         with:
           # Use a custom prefix-key to force a fresh start. This is sometimes needed with bigger changes.
           # Like changing the build host from Ubuntu 20.04 to 22.04 for example.
@@ -117,6 +117,12 @@ jobs:
 
       # Run cargo tests
       # First test all features together, afterwards test them separately.
+      - name: "test features: sqlite,mysql,postgresql,enable_mimalloc,query_logger"
+        id: test_sqlite_mysql_postgresql_mimalloc_logger
+        if: $${{ always() }}
+        run: |
+          cargo test --features sqlite,mysql,postgresql,enable_mimalloc,query_logger
+
       - name: "test features: sqlite,mysql,postgresql,enable_mimalloc"
         id: test_sqlite_mysql_postgresql_mimalloc
         if: $${{ always() }}
@@ -176,6 +182,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "|Job|Status|" >> $GITHUB_STEP_SUMMARY
           echo "|---|------|" >> $GITHUB_STEP_SUMMARY
+          echo "|test (sqlite,mysql,postgresql,enable_mimalloc,query_logger)|${{ steps.test_sqlite_mysql_postgresql_mimalloc_logger.outcome }}|" >> $GITHUB_STEP_SUMMARY
           echo "|test (sqlite,mysql,postgresql,enable_mimalloc)|${{ steps.test_sqlite_mysql_postgresql_mimalloc.outcome }}|" >> $GITHUB_STEP_SUMMARY
           echo "|test (sqlite,mysql,postgresql)|${{ steps.test_sqlite_mysql_postgresql.outcome }}|" >> $GITHUB_STEP_SUMMARY
           echo "|test (sqlite)|${{ steps.test_sqlite.outcome }}|" >> $GITHUB_STEP_SUMMARY

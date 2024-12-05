@@ -36,7 +36,7 @@ FROM --platform=linux/amd64 docker.io/tonistiigi/xx@sha256:1978e7a58a1777cb0ef0d
 
 ########################## BUILD IMAGE ##########################
 # hadolint ignore=DL3006
-FROM --platform=$BUILDPLATFORM docker.io/library/rust:1.82.0-slim-bookworm AS build
+FROM --platform=$BUILDPLATFORM docker.io/library/rust:1.83.0-slim-bookworm AS build
 COPY --from=xx / /
 ARG TARGETARCH
 ARG TARGETVARIANT

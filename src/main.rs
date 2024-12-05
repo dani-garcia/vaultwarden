@@ -67,7 +67,7 @@ pub use util::is_running_in_container;
 
 #[rocket::main]
 async fn main() -> Result<(), Error> {
-    parse_args();
+    parse_args().await;
     launch_info();
 
     let level = init_logging()?;
@@ -115,7 +115,7 @@ PRESETS:                  m=         t=          p=
 
 pub const VERSION: Option<&str> = option_env!("VW_VERSION");
 
-fn parse_args() {
+async fn parse_args() {
     let mut pargs = pico_args::Arguments::from_env();
     let version = VERSION.unwrap_or("(Version info from Git not present)");
 
@@ -186,7 +186,7 @@ fn parse_args() {
                 exit(1);
             }
         } else if command == "backup" {
-            match backup_sqlite() {
+            match backup_sqlite().await {
                 Ok(f) => {
                     println!("Backup to '{f}' was successful");
                     exit(0);
@@ -201,25 +201,20 @@ fn parse_args() {
     }
 }
 
-fn backup_sqlite() -> Result<String, Error> {
-    #[cfg(sqlite)]
-    {
-        use crate::db::{backup_sqlite_database, DbConnType};
-        if DbConnType::from_url(&CONFIG.database_url()).map(|t| t == DbConnType::sqlite).unwrap_or(false) {
-            use diesel::Connection;
-            let url = CONFIG.database_url();
+async fn backup_sqlite() -> Result<String, Error> {
+    use crate::db::{backup_database, DbConnType};
+    if DbConnType::from_url(&CONFIG.database_url()).map(|t| t == DbConnType::sqlite).unwrap_or(false) {
+        // Establish a connection to the sqlite database
+        let mut conn = db::DbPool::from_config()
+            .expect("SQLite database connection failed")
+            .get()
+            .await
+            .expect("Unable to get SQLite db pool");
 
-            // Establish a connection to the sqlite database
-            let mut conn = diesel::sqlite::SqliteConnection::establish(&url)?;
-            let backup_file = backup_sqlite_database(&mut conn)?;
-            Ok(backup_file)
-        } else {
-            err_silent!("The database type is not SQLite. Backups only works for SQLite databases")
-        }
-    }
-    #[cfg(not(sqlite))]
-    {
-        err_silent!("The 'sqlite' feature is not enabled. Backups only works for SQLite databases")
+        let backup_file = backup_database(&mut conn).await?;
+        Ok(backup_file)
+    } else {
+        err_silent!("The database type is not SQLite. Backups only works for SQLite databases")
     }
 }
 
@@ -610,7 +605,7 @@ async fn launch_rocket(pool: db::DbPool, extra_debug: bool) -> Result<(), Error>
                 // If we need more signals to act upon, we might want to use select! here.
                 // With only one item to listen for this is enough.
                 let _ = signal_user1.recv().await;
-                match backup_sqlite() {
+                match backup_sqlite().await {
                     Ok(f) => info!("Backup to '{f}' was successful"),
                     Err(e) => error!("Backup failed. {e:?}"),
                 }
