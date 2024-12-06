@@ -46,10 +46,9 @@ db_object! {
     }
 }
 
-#[allow(dead_code)]
 pub enum RepromptType {
     None = 0,
-    Password = 1, // not currently used in server
+    Password = 1,
 }
 
 /// Local methods
@@ -296,7 +295,7 @@ impl Cipher {
             "creationDate": format_date(&self.created_at),
             "revisionDate": format_date(&self.updated_at),
             "deletedDate": self.deleted_at.map_or(Value::Null, |d| Value::String(format_date(&d))),
-            "reprompt": self.reprompt.unwrap_or(RepromptType::None as i32),
+            "reprompt": self.reprompt.filter(|r| *r == RepromptType::None as i32 || *r == RepromptType::Password as i32).unwrap_or(RepromptType::None as i32),
             "organizationId": self.organization_uuid,
             "key": self.key,
             "attachments": attachments_json,

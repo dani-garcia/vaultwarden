@@ -511,7 +511,7 @@ pub async fn update_cipher_from_data(
     cipher.fields = data.fields.map(|f| _clean_cipher_data(f).to_string());
     cipher.data = type_data.to_string();
     cipher.password_history = data.password_history.map(|f| f.to_string());
-    cipher.reprompt = data.reprompt;
+    cipher.reprompt = data.reprompt.filter(|r| *r == RepromptType::None as i32 || *r == RepromptType::Password as i32);
 
     cipher.save(conn).await?;
     cipher.move_to_folder(data.folder_id, &headers.user.uuid, conn).await?;
