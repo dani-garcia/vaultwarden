@@ -68,6 +68,11 @@ bit-dialog div.tw-col-span-4:has(input[formcontrolname*="access"], input[formcon
   @extend %vw-hide;
 }
 
+/* Hide Log in with passkey */
+app-login div.tw-flex:nth-child(4) {
+  @extend %vw-hide;
+}
+
 /* Change collapsed menu icon to Vaultwarden */
 bit-nav-logo bit-nav-item a:before {
   content: "";
