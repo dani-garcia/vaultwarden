@@ -202,6 +202,28 @@ pub async fn send_verify_email(address: &str, uuid: &str) -> EmptyResult {
     send_email(address, &subject, body_html, body_text).await
 }
 
+pub async fn send_register_verify_email(email: &str, name: &str, token: &str) -> EmptyResult {
+    let mut query = url::Url::parse("https://query.builder").unwrap();
+    query.query_pairs_mut().append_pair("email", email).append_pair("token", token);
+    let query_string = match query.query() {
+        None => err!("Failed to build verify URL query parameters"),
+        Some(query) => query,
+    };
+
+    let (subject, body_html, body_text) = get_text(
+        "email/register_verify_email",
+        json!({
+            // `url.Url` would place the anchor `#` after the query parameters
+            "url": format!("{}/#/finish-signup/?{}", CONFIG.domain(), query_string),
+            "img_src": CONFIG._smtp_img_src(),
+            "name": name,
+            "email": email,
+        }),
+    )?;
+
+    send_email(email, &subject, body_html, body_text).await
+}
+
 pub async fn send_welcome(address: &str) -> EmptyResult {
     let (subject, body_html, body_text) = get_text(
         "email/welcome",
