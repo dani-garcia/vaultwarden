@@ -1,4 +1,3 @@
-use once_cell::sync::Lazy;
 use std::path::{Path, PathBuf};
 
 use rocket::{
@@ -14,7 +13,7 @@ use crate::{
     api::{core::now, ApiResult, EmptyResult},
     auth::decode_file_download,
     error::Error,
-    util::{get_web_vault_version, Cached, SafeString},
+    util::{Cached, SafeString},
     CONFIG,
 };
 
@@ -54,43 +53,7 @@ fn not_found() -> ApiResult<Html<String>> {
 
 #[get("/css/vaultwarden.css")]
 fn vaultwarden_css() -> Cached<Css<String>> {
-    // Configure the web-vault version as an integer so it can be used as a comparison smaller or greater then.
-    // The default is based upon the version since this feature is added.
-    static WEB_VAULT_VERSION: Lazy<u32> = Lazy::new(|| {
-        let re = regex::Regex::new(r"(\d{4})\.(\d{1,2})\.(\d{1,2})").unwrap();
-        let vault_version = get_web_vault_version();
-
-        let (major, minor, patch) = match re.captures(&vault_version) {
-            Some(c) if c.len() == 4 => (
-                c.get(1).unwrap().as_str().parse().unwrap(),
-                c.get(2).unwrap().as_str().parse().unwrap(),
-                c.get(3).unwrap().as_str().parse().unwrap(),
-            ),
-            _ => (2024, 6, 2),
-        };
-        format!("{major}{minor:02}{patch:02}").parse::<u32>().unwrap()
-    });
-
-    // Configure the Vaultwarden version as an integer so it can be used as a comparison smaller or greater then.
-    // The default is based upon the version since this feature is added.
-    static VW_VERSION: Lazy<u32> = Lazy::new(|| {
-        let re = regex::Regex::new(r"(\d{1})\.(\d{1,2})\.(\d{1,2})").unwrap();
-        let vw_version = crate::VERSION.unwrap_or("1.32.1");
-
-        let (major, minor, patch) = match re.captures(vw_version) {
-            Some(c) if c.len() == 4 => (
-                c.get(1).unwrap().as_str().parse().unwrap(),
-                c.get(2).unwrap().as_str().parse().unwrap(),
-                c.get(3).unwrap().as_str().parse().unwrap(),
-            ),
-            _ => (1, 32, 1),
-        };
-        format!("{major}{minor:02}{patch:02}").parse::<u32>().unwrap()
-    });
-
     let css_options = json!({
-        "web_vault_version": *WEB_VAULT_VERSION,
-        "vw_version": *VW_VERSION,
         "signup_disabled": !CONFIG.signups_allowed() && CONFIG.signups_domains_whitelist().is_empty(),
         "mail_enabled": CONFIG.mail_enabled(),
         "yubico_enabled": CONFIG._enable_yubico() && (CONFIG.yubico_client_id().is_some() == CONFIG.yubico_secret_key().is_some()),
