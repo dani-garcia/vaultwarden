@@ -38,8 +38,8 @@ img {
     max-width: 130px;
 }
 #users-table .vw-actions, #orgs-table .vw-actions {
-    min-width: 130px;
-    max-width: 130px;
+    min-width: 135px;
+    max-width: 140px;
 }
 #users-table .vw-org-cell {
     max-height: 120px;
