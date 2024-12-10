@@ -62,6 +62,7 @@ pub fn routes() -> Vec<Route> {
         diagnostics,
         get_diagnostics_config,
         resend_user_invite,
+        get_diagnostics_http,
     ]
 }
 
@@ -713,6 +714,7 @@ async fn diagnostics(_token: AdminToken, ip_header: IpHeader, mut conn: DbConn) 
         "ip_header_name": ip_header_name,
         "ip_header_config": &CONFIG.ip_header(),
         "uses_proxy": uses_proxy,
+        "enable_websocket": &CONFIG.enable_websocket(),
         "db_type": *DB_TYPE,
         "db_version": get_sql_server_version(&mut conn).await,
         "admin_url": format!("{}/diagnostics", admin_url()),
@@ -732,6 +734,11 @@ async fn diagnostics(_token: AdminToken, ip_header: IpHeader, mut conn: DbConn) 
 fn get_diagnostics_config(_token: AdminToken) -> Json<Value> {
     let support_json = CONFIG.get_support_json();
     Json(support_json)
+}
+
+#[get("/diagnostics/http?<code>")]
+fn get_diagnostics_http(code: u16, _token: AdminToken) -> EmptyResult {
+    err_code!(format!("Testing error {code} response"), code);
 }
 
 #[post("/config", data = "<data>")]
