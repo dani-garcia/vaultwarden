@@ -276,7 +276,7 @@ async function checkHttpResponse() {
     const [apiConfig, webauthnConnector, notFound, notFoundApi, badRequest, unauthorized, forbidden] = await Promise.all([
         fetchCheckUrl(`${BASE_URL}/api/config`),
         fetchCheckUrl(`${BASE_URL}/webauthn-connector.html`),
-        fetchCheckUrl(`${BASE_URL}/admin/does-not-exists`),
+        fetchCheckUrl(`${BASE_URL}/admin/does-not-exist`),
         fetchCheckUrl(`${BASE_URL}/admin/diagnostics/http?code=404`),
         fetchCheckUrl(`${BASE_URL}/admin/diagnostics/http?code=400`),
         fetchCheckUrl(`${BASE_URL}/admin/diagnostics/http?code=401`),
