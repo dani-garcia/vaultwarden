@@ -78,6 +78,7 @@ pub fn routes() -> Vec<Route> {
         restore_organization_user,
         bulk_restore_organization_user,
         get_groups,
+        get_groups_details,
         post_groups,
         get_group,
         put_group,
@@ -99,6 +100,7 @@ pub fn routes() -> Vec<Route> {
         get_org_export,
         api_key,
         rotate_api_key,
+        get_billing_metadata,
     ]
 }
 
@@ -1369,7 +1371,7 @@ async fn edit_user(
 ) -> EmptyResult {
     let mut data: EditUserData = data.into_inner();
 
-        // HACK: We need the raw user-type be be sure custom role is selected to determine the access_all permission
+    // HACK: We need the raw user-type be be sure custom role is selected to determine the access_all permission
     // The from_str() will convert the custom role type into a manager role type
     let raw_type = &data.r#type.into_string();
     // UserOrgType::from_str will convert custom (4) to manager (3)
@@ -1981,6 +1983,12 @@ fn get_plans_tax_rates(_headers: Headers) -> Json<Value> {
     Json(_empty_data_json())
 }
 
+#[get("/organizations/<_org_id>/billing/metadata")]
+fn get_billing_metadata(_org_id: &str, _headers: Headers) -> Json<Value> {
+    // Prevent a 404 error, which also causes Javascript errors.
+    Json(_empty_data_json())
+}
+
 fn _empty_data_json() -> Value {
     json!({
         "object": "list",
@@ -2379,6 +2387,11 @@ async fn get_groups(org_id: &str, _headers: ManagerHeadersLoose, mut conn: DbCon
     })))
 }
 
+#[get("/organizations/<org_id>/groups/details", rank = 1)]
+async fn get_groups_details(org_id: &str, headers: ManagerHeadersLoose, conn: DbConn) -> JsonResult {
+    get_groups(org_id, headers, conn).await
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct GroupRequest {
@@ -2628,7 +2641,7 @@ async fn bulk_delete_groups(
     Ok(())
 }
 
-#[get("/organizations/<org_id>/groups/<group_id>")]
+#[get("/organizations/<org_id>/groups/<group_id>", rank = 2)]
 async fn get_group(org_id: &str, group_id: &str, _headers: AdminHeaders, mut conn: DbConn) -> JsonResult {
     if !CONFIG.org_groups_enabled() {
         err!("Group support is disabled");

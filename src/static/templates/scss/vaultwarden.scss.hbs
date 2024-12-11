@@ -54,7 +54,12 @@ app-organization-plans > form > bit-section:nth-child(2) {
 
 /* Hide Collection Management Form */
 app-org-account form.ng-untouched:nth-child(6) {
-  display:none !important
+  @extend %vw-hide;
+}
+
+/* Hide 'Member Access' Report Card from Org Reports */
+app-org-reports-home > app-report-list > div.tw-inline-grid > div:nth-child(6) {
+  @extend %vw-hide;
 }
 
 /* Hide Device Verification form at the Two Step Login screen */
