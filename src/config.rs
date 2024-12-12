@@ -248,6 +248,7 @@ macro_rules! make_config {
                     "smtp_from",
                     "smtp_host",
                     "smtp_username",
+                    "_smtp_img_src",
                 ];
 
                 let cfg = {
