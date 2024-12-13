@@ -268,9 +268,8 @@ impl Send {
         use data_encoding::BASE64URL_NOPAD;
         use uuid::Uuid;
 
-        let uuid_vec = match BASE64URL_NOPAD.decode(access_id.as_bytes()) {
-            Ok(v) => v,
-            Err(_) => return None,
+        let Ok(uuid_vec) = BASE64URL_NOPAD.decode(access_id.as_bytes()) else {
+            return None;
         };
 
         let uuid = match Uuid::from_slice(&uuid_vec) {
@@ -285,6 +284,17 @@ impl Send {
         db_run! {conn: {
             sends::table
                 .filter(sends::uuid.eq(uuid))
+                .first::<SendDb>(conn)
+                .ok()
+                .from_db()
+        }}
+    }
+
+    pub async fn find_by_uuid_and_user(uuid: &str, user_uuid: &str, conn: &mut DbConn) -> Option<Self> {
+        db_run! {conn: {
+            sends::table
+                .filter(sends::uuid.eq(uuid))
+                .filter(sends::user_uuid.eq(user_uuid))
                 .first::<SendDb>(conn)
                 .ok()
                 .from_db()

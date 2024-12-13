@@ -142,16 +142,6 @@ impl OrgPolicy {
         }}
     }
 
-    pub async fn find_by_uuid(uuid: &str, conn: &mut DbConn) -> Option<Self> {
-        db_run! { conn: {
-            org_policies::table
-                .filter(org_policies::uuid.eq(uuid))
-                .first::<OrgPolicyDb>(conn)
-                .ok()
-                .from_db()
-        }}
-    }
-
     pub async fn find_by_org(org_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             org_policies::table

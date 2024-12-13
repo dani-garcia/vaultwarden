@@ -471,9 +471,8 @@ impl<'r> FromRequest<'r> for Headers {
         };
 
         // Check JWT token is valid and get device and user from it
-        let claims = match decode_login(access_token) {
-            Ok(claims) => claims,
-            Err(_) => err_handler!("Invalid claim"),
+        let Ok(claims) = decode_login(access_token) else {
+            err_handler!("Invalid claim")
         };
 
         let device_uuid = claims.device;
@@ -484,23 +483,20 @@ impl<'r> FromRequest<'r> for Headers {
             _ => err_handler!("Error getting DB"),
         };
 
-        let device = match Device::find_by_uuid_and_user(&device_uuid, &user_uuid, &mut conn).await {
-            Some(device) => device,
-            None => err_handler!("Invalid device id"),
+        let Some(device) = Device::find_by_uuid_and_user(&device_uuid, &user_uuid, &mut conn).await else {
+            err_handler!("Invalid device id")
         };
 
-        let user = match User::find_by_uuid(&user_uuid, &mut conn).await {
-            Some(user) => user,
-            None => err_handler!("Device has no user associated"),
+        let Some(user) = User::find_by_uuid(&user_uuid, &mut conn).await else {
+            err_handler!("Device has no user associated")
         };
 
         if user.security_stamp != claims.sstamp {
             if let Some(stamp_exception) =
                 user.stamp_exception.as_deref().and_then(|s| serde_json::from_str::<UserStampException>(s).ok())
             {
-                let current_route = match request.route().and_then(|r| r.name.as_deref()) {
-                    Some(name) => name,
-                    _ => err_handler!("Error getting current route for stamp exception"),
+                let Some(current_route) = request.route().and_then(|r| r.name.as_deref()) else {
+                    err_handler!("Error getting current route for stamp exception")
                 };
 
                 // Check if the stamp exception has expired first.

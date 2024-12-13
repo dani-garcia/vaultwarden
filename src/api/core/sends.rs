@@ -159,16 +159,10 @@ async fn get_sends(headers: Headers, mut conn: DbConn) -> Json<Value> {
 
 #[get("/sends/<uuid>")]
 async fn get_send(uuid: &str, headers: Headers, mut conn: DbConn) -> JsonResult {
-    let send = match Send::find_by_uuid(uuid, &mut conn).await {
-        Some(send) => send,
-        None => err!("Send not found"),
-    };
-
-    if send.user_uuid.as_ref() != Some(&headers.user.uuid) {
-        err!("Send is not owned by user")
+    match Send::find_by_uuid_and_user(uuid, &headers.user.uuid, &mut conn).await {
+        Some(send) => Ok(Json(send.to_json())),
+        None => err!("Send not found", "Invalid uuid or does not belong to user"),
     }
-
-    Ok(Json(send.to_json()))
 }
 
 #[post("/sends", data = "<data>")]
@@ -371,20 +365,12 @@ async fn post_send_file_v2_data(
 
     let mut data = data.into_inner();
 
-    let Some(send) = Send::find_by_uuid(send_uuid, &mut conn).await else {
-        err!("Send not found. Unable to save the file.")
+    let Some(send) = Send::find_by_uuid_and_user(send_uuid, &headers.user.uuid, &mut conn).await else {
+        err!("Send not found. Unable to save the file.", "Invalid uuid or does not belong to user.")
     };
 
     if send.atype != SendType::File as i32 {
         err!("Send is not a file type send.");
-    }
-
-    let Some(send_user_id) = &send.user_uuid else {
-        err!("Sends are only supported for users at the moment.")
-    };
-
-    if send_user_id != &headers.user.uuid {
-        err!("Send doesn't belong to user.");
     }
 
     let Ok(send_data) = serde_json::from_str::<SendFileData>(&send.data) else {
@@ -456,9 +442,8 @@ async fn post_access(
     ip: ClientIp,
     nt: Notify<'_>,
 ) -> JsonResult {
-    let mut send = match Send::find_by_access_id(access_id, &mut conn).await {
-        Some(s) => s,
-        None => err_code!(SEND_INACCESSIBLE_MSG, 404),
+    let Some(mut send) = Send::find_by_access_id(access_id, &mut conn).await else {
+        err_code!(SEND_INACCESSIBLE_MSG, 404)
     };
 
     if let Some(max_access_count) = send.max_access_count {
@@ -517,9 +502,8 @@ async fn post_access_file(
     mut conn: DbConn,
     nt: Notify<'_>,
 ) -> JsonResult {
-    let mut send = match Send::find_by_uuid(send_id, &mut conn).await {
-        Some(s) => s,
-        None => err_code!(SEND_INACCESSIBLE_MSG, 404),
+    let Some(mut send) = Send::find_by_uuid(send_id, &mut conn).await else {
+        err_code!(SEND_INACCESSIBLE_MSG, 404)
     };
 
     if let Some(max_access_count) = send.max_access_count {
@@ -582,16 +566,15 @@ async fn download_send(send_id: SafeString, file_id: SafeString, t: &str) -> Opt
     None
 }
 
-#[put("/sends/<id>", data = "<data>")]
-async fn put_send(id: &str, data: Json<SendData>, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> JsonResult {
+#[put("/sends/<uuid>", data = "<data>")]
+async fn put_send(uuid: &str, data: Json<SendData>, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> JsonResult {
     enforce_disable_send_policy(&headers, &mut conn).await?;
 
     let data: SendData = data.into_inner();
     enforce_disable_hide_email_policy(&data, &headers, &mut conn).await?;
 
-    let mut send = match Send::find_by_uuid(id, &mut conn).await {
-        Some(s) => s,
-        None => err!("Send not found"),
+    let Some(mut send) = Send::find_by_uuid_and_user(uuid, &headers.user.uuid, &mut conn).await else {
+        err!("Send not found", "Send uuid is invalid or does not belong to user")
     };
 
     update_send_from_data(&mut send, data, &headers, &mut conn, &nt, UpdateType::SyncSendUpdate).await?;
@@ -657,16 +640,11 @@ pub async fn update_send_from_data(
     Ok(())
 }
 
-#[delete("/sends/<id>")]
-async fn delete_send(id: &str, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> EmptyResult {
-    let send = match Send::find_by_uuid(id, &mut conn).await {
-        Some(s) => s,
-        None => err!("Send not found"),
+#[delete("/sends/<uuid>")]
+async fn delete_send(uuid: &str, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> EmptyResult {
+    let Some(send) = Send::find_by_uuid_and_user(uuid, &headers.user.uuid, &mut conn).await else {
+        err!("Send not found", "Invalid send uuid, or does not belong to user")
     };
-
-    if send.user_uuid.as_ref() != Some(&headers.user.uuid) {
-        err!("Send is not owned by user")
-    }
 
     send.delete(&mut conn).await?;
     nt.send_send_update(
@@ -681,18 +659,13 @@ async fn delete_send(id: &str, headers: Headers, mut conn: DbConn, nt: Notify<'_
     Ok(())
 }
 
-#[put("/sends/<id>/remove-password")]
-async fn put_remove_password(id: &str, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> JsonResult {
+#[put("/sends/<uuid>/remove-password")]
+async fn put_remove_password(uuid: &str, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> JsonResult {
     enforce_disable_send_policy(&headers, &mut conn).await?;
 
-    let mut send = match Send::find_by_uuid(id, &mut conn).await {
-        Some(s) => s,
-        None => err!("Send not found"),
+    let Some(mut send) = Send::find_by_uuid_and_user(uuid, &headers.user.uuid, &mut conn).await else {
+        err!("Send not found", "Invalid send uuid, or does not belong to user")
     };
-
-    if send.user_uuid.as_ref() != Some(&headers.user.uuid) {
-        err!("Send is not owned by user")
-    }
 
     send.set_password(None);
     send.save(&mut conn).await?;

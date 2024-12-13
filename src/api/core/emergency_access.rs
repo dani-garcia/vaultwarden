@@ -137,11 +137,11 @@ async fn post_emergency_access(
 
     let data: EmergencyAccessUpdateData = data.into_inner();
 
-    let mut emergency_access =
-        match EmergencyAccess::find_by_uuid_and_grantor_uuid(emer_id, &headers.user.uuid, &mut conn).await {
-            Some(emergency_access) => emergency_access,
-            None => err!("Emergency access not valid."),
-        };
+    let Some(mut emergency_access) =
+        EmergencyAccess::find_by_uuid_and_grantor_uuid(emer_id, &headers.user.uuid, &mut conn).await
+    else {
+        err!("Emergency access not valid.")
+    };
 
     let new_type = match EmergencyAccessType::from_str(&data.r#type.into_string()) {
         Some(new_type) => new_type as i32,
@@ -284,24 +284,22 @@ async fn send_invite(data: Json<EmergencyAccessInviteData>, headers: Headers, mu
 async fn resend_invite(emer_id: &str, headers: Headers, mut conn: DbConn) -> EmptyResult {
     check_emergency_access_enabled()?;
 
-    let mut emergency_access =
-        match EmergencyAccess::find_by_uuid_and_grantor_uuid(emer_id, &headers.user.uuid, &mut conn).await {
-            Some(emer) => emer,
-            None => err!("Emergency access not valid."),
-        };
+    let Some(mut emergency_access) =
+        EmergencyAccess::find_by_uuid_and_grantor_uuid(emer_id, &headers.user.uuid, &mut conn).await
+    else {
+        err!("Emergency access not valid.")
+    };
 
     if emergency_access.status != EmergencyAccessStatus::Invited as i32 {
         err!("The grantee user is already accepted or confirmed to the organization");
     }
 
-    let email = match emergency_access.email.clone() {
-        Some(email) => email,
-        None => err!("Email not valid."),
+    let Some(email) = emergency_access.email.clone() else {
+        err!("Email not valid.")
     };
 
-    let grantee_user = match User::find_by_mail(&email, &mut conn).await {
-        Some(user) => user,
-        None => err!("Grantee user not found."),
+    let Some(grantee_user) = User::find_by_mail(&email, &mut conn).await else {
+        err!("Grantee user not found.")
     };
 
     let grantor_user = headers.user;
@@ -356,16 +354,15 @@ async fn accept_invite(emer_id: &str, data: Json<AcceptData>, headers: Headers, 
 
     // We need to search for the uuid in combination with the email, since we do not yet store the uuid of the grantee in the database.
     // The uuid of the grantee gets stored once accepted.
-    let mut emergency_access =
-        match EmergencyAccess::find_by_uuid_and_grantee_email(emer_id, &headers.user.email, &mut conn).await {
-            Some(emer) => emer,
-            None => err!("Emergency access not valid."),
-        };
+    let Some(mut emergency_access) =
+        EmergencyAccess::find_by_uuid_and_grantee_email(emer_id, &headers.user.email, &mut conn).await
+    else {
+        err!("Emergency access not valid.")
+    };
 
     // get grantor user to send Accepted email
-    let grantor_user = match User::find_by_uuid(&emergency_access.grantor_uuid, &mut conn).await {
-        Some(user) => user,
-        None => err!("Grantor user not found."),
+    let Some(grantor_user) = User::find_by_uuid(&emergency_access.grantor_uuid, &mut conn).await else {
+        err!("Grantor user not found.")
     };
 
     if emer_id == claims.emer_id
@@ -403,11 +400,11 @@ async fn confirm_emergency_access(
     let data: ConfirmData = data.into_inner();
     let key = data.key;
 
-    let mut emergency_access =
-        match EmergencyAccess::find_by_uuid_and_grantor_uuid(emer_id, &confirming_user.uuid, &mut conn).await {
-            Some(emer) => emer,
-            None => err!("Emergency access not valid."),
-        };
+    let Some(mut emergency_access) =
+        EmergencyAccess::find_by_uuid_and_grantor_uuid(emer_id, &confirming_user.uuid, &mut conn).await
+    else {
+        err!("Emergency access not valid.")
+    };
 
     if emergency_access.status != EmergencyAccessStatus::Accepted as i32
         || emergency_access.grantor_uuid != confirming_user.uuid
@@ -415,15 +412,13 @@ async fn confirm_emergency_access(
         err!("Emergency access not valid.")
     }
 
-    let grantor_user = match User::find_by_uuid(&confirming_user.uuid, &mut conn).await {
-        Some(user) => user,
-        None => err!("Grantor user not found."),
+    let Some(grantor_user) = User::find_by_uuid(&confirming_user.uuid, &mut conn).await else {
+        err!("Grantor user not found.")
     };
 
     if let Some(grantee_uuid) = emergency_access.grantee_uuid.as_ref() {
-        let grantee_user = match User::find_by_uuid(grantee_uuid, &mut conn).await {
-            Some(user) => user,
-            None => err!("Grantee user not found."),
+        let Some(grantee_user) = User::find_by_uuid(grantee_uuid, &mut conn).await else {
+            err!("Grantee user not found.")
         };
 
         emergency_access.status = EmergencyAccessStatus::Confirmed as i32;
@@ -450,19 +445,18 @@ async fn initiate_emergency_access(emer_id: &str, headers: Headers, mut conn: Db
     check_emergency_access_enabled()?;
 
     let initiating_user = headers.user;
-    let mut emergency_access =
-        match EmergencyAccess::find_by_uuid_and_grantee_uuid(emer_id, &initiating_user.uuid, &mut conn).await {
-            Some(emer) => emer,
-            None => err!("Emergency access not valid."),
-        };
+    let Some(mut emergency_access) =
+        EmergencyAccess::find_by_uuid_and_grantee_uuid(emer_id, &initiating_user.uuid, &mut conn).await
+    else {
+        err!("Emergency access not valid.")
+    };
 
     if emergency_access.status != EmergencyAccessStatus::Confirmed as i32 {
         err!("Emergency access not valid.")
     }
 
-    let grantor_user = match User::find_by_uuid(&emergency_access.grantor_uuid, &mut conn).await {
-        Some(user) => user,
-        None => err!("Grantor user not found."),
+    let Some(grantor_user) = User::find_by_uuid(&emergency_access.grantor_uuid, &mut conn).await else {
+        err!("Grantor user not found.")
     };
 
     let now = Utc::now().naive_utc();
@@ -488,25 +482,23 @@ async fn initiate_emergency_access(emer_id: &str, headers: Headers, mut conn: Db
 async fn approve_emergency_access(emer_id: &str, headers: Headers, mut conn: DbConn) -> JsonResult {
     check_emergency_access_enabled()?;
 
-    let mut emergency_access =
-        match EmergencyAccess::find_by_uuid_and_grantor_uuid(emer_id, &headers.user.uuid, &mut conn).await {
-            Some(emer) => emer,
-            None => err!("Emergency access not valid."),
-        };
+    let Some(mut emergency_access) =
+        EmergencyAccess::find_by_uuid_and_grantor_uuid(emer_id, &headers.user.uuid, &mut conn).await
+    else {
+        err!("Emergency access not valid.")
+    };
 
     if emergency_access.status != EmergencyAccessStatus::RecoveryInitiated as i32 {
         err!("Emergency access not valid.")
     }
 
-    let grantor_user = match User::find_by_uuid(&headers.user.uuid, &mut conn).await {
-        Some(user) => user,
-        None => err!("Grantor user not found."),
+    let Some(grantor_user) = User::find_by_uuid(&headers.user.uuid, &mut conn).await else {
+        err!("Grantor user not found.")
     };
 
     if let Some(grantee_uuid) = emergency_access.grantee_uuid.as_ref() {
-        let grantee_user = match User::find_by_uuid(grantee_uuid, &mut conn).await {
-            Some(user) => user,
-            None => err!("Grantee user not found."),
+        let Some(grantee_user) = User::find_by_uuid(grantee_uuid, &mut conn).await else {
+            err!("Grantee user not found.")
         };
 
         emergency_access.status = EmergencyAccessStatus::RecoveryApproved as i32;
@@ -525,11 +517,11 @@ async fn approve_emergency_access(emer_id: &str, headers: Headers, mut conn: DbC
 async fn reject_emergency_access(emer_id: &str, headers: Headers, mut conn: DbConn) -> JsonResult {
     check_emergency_access_enabled()?;
 
-    let mut emergency_access =
-        match EmergencyAccess::find_by_uuid_and_grantor_uuid(emer_id, &headers.user.uuid, &mut conn).await {
-            Some(emer) => emer,
-            None => err!("Emergency access not valid."),
-        };
+    let Some(mut emergency_access) =
+        EmergencyAccess::find_by_uuid_and_grantor_uuid(emer_id, &headers.user.uuid, &mut conn).await
+    else {
+        err!("Emergency access not valid.")
+    };
 
     if emergency_access.status != EmergencyAccessStatus::RecoveryInitiated as i32
         && emergency_access.status != EmergencyAccessStatus::RecoveryApproved as i32
@@ -538,9 +530,8 @@ async fn reject_emergency_access(emer_id: &str, headers: Headers, mut conn: DbCo
     }
 
     if let Some(grantee_uuid) = emergency_access.grantee_uuid.as_ref() {
-        let grantee_user = match User::find_by_uuid(grantee_uuid, &mut conn).await {
-            Some(user) => user,
-            None => err!("Grantee user not found."),
+        let Some(grantee_user) = User::find_by_uuid(grantee_uuid, &mut conn).await else {
+            err!("Grantee user not found.")
         };
 
         emergency_access.status = EmergencyAccessStatus::Confirmed as i32;
@@ -563,11 +554,11 @@ async fn reject_emergency_access(emer_id: &str, headers: Headers, mut conn: DbCo
 async fn view_emergency_access(emer_id: &str, headers: Headers, mut conn: DbConn) -> JsonResult {
     check_emergency_access_enabled()?;
 
-    let emergency_access =
-        match EmergencyAccess::find_by_uuid_and_grantee_uuid(emer_id, &headers.user.uuid, &mut conn).await {
-            Some(emer) => emer,
-            None => err!("Emergency access not valid."),
-        };
+    let Some(emergency_access) =
+        EmergencyAccess::find_by_uuid_and_grantee_uuid(emer_id, &headers.user.uuid, &mut conn).await
+    else {
+        err!("Emergency access not valid.")
+    };
 
     if !is_valid_request(&emergency_access, &headers.user.uuid, EmergencyAccessType::View) {
         err!("Emergency access not valid.")
@@ -602,19 +593,18 @@ async fn takeover_emergency_access(emer_id: &str, headers: Headers, mut conn: Db
     check_emergency_access_enabled()?;
 
     let requesting_user = headers.user;
-    let emergency_access =
-        match EmergencyAccess::find_by_uuid_and_grantee_uuid(emer_id, &requesting_user.uuid, &mut conn).await {
-            Some(emer) => emer,
-            None => err!("Emergency access not valid."),
-        };
+    let Some(emergency_access) =
+        EmergencyAccess::find_by_uuid_and_grantee_uuid(emer_id, &requesting_user.uuid, &mut conn).await
+    else {
+        err!("Emergency access not valid.")
+    };
 
     if !is_valid_request(&emergency_access, &requesting_user.uuid, EmergencyAccessType::Takeover) {
         err!("Emergency access not valid.")
     }
 
-    let grantor_user = match User::find_by_uuid(&emergency_access.grantor_uuid, &mut conn).await {
-        Some(user) => user,
-        None => err!("Grantor user not found."),
+    let Some(grantor_user) = User::find_by_uuid(&emergency_access.grantor_uuid, &mut conn).await else {
+        err!("Grantor user not found.")
     };
 
     let result = json!({
@@ -650,19 +640,18 @@ async fn password_emergency_access(
     //let key = &data.Key;
 
     let requesting_user = headers.user;
-    let emergency_access =
-        match EmergencyAccess::find_by_uuid_and_grantee_uuid(emer_id, &requesting_user.uuid, &mut conn).await {
-            Some(emer) => emer,
-            None => err!("Emergency access not valid."),
-        };
+    let Some(emergency_access) =
+        EmergencyAccess::find_by_uuid_and_grantee_uuid(emer_id, &requesting_user.uuid, &mut conn).await
+    else {
+        err!("Emergency access not valid.")
+    };
 
     if !is_valid_request(&emergency_access, &requesting_user.uuid, EmergencyAccessType::Takeover) {
         err!("Emergency access not valid.")
     }
 
-    let mut grantor_user = match User::find_by_uuid(&emergency_access.grantor_uuid, &mut conn).await {
-        Some(user) => user,
-        None => err!("Grantor user not found."),
+    let Some(mut grantor_user) = User::find_by_uuid(&emergency_access.grantor_uuid, &mut conn).await else {
+        err!("Grantor user not found.")
     };
 
     // change grantor_user password
@@ -686,19 +675,18 @@ async fn password_emergency_access(
 #[get("/emergency-access/<emer_id>/policies")]
 async fn policies_emergency_access(emer_id: &str, headers: Headers, mut conn: DbConn) -> JsonResult {
     let requesting_user = headers.user;
-    let emergency_access =
-        match EmergencyAccess::find_by_uuid_and_grantee_uuid(emer_id, &requesting_user.uuid, &mut conn).await {
-            Some(emer) => emer,
-            None => err!("Emergency access not valid."),
-        };
+    let Some(emergency_access) =
+        EmergencyAccess::find_by_uuid_and_grantee_uuid(emer_id, &requesting_user.uuid, &mut conn).await
+    else {
+        err!("Emergency access not valid.")
+    };
 
     if !is_valid_request(&emergency_access, &requesting_user.uuid, EmergencyAccessType::Takeover) {
         err!("Emergency access not valid.")
     }
 
-    let grantor_user = match User::find_by_uuid(&emergency_access.grantor_uuid, &mut conn).await {
-        Some(user) => user,
-        None => err!("Grantor user not found."),
+    let Some(grantor_user) = User::find_by_uuid(&emergency_access.grantor_uuid, &mut conn).await else {
+        err!("Grantor user not found.")
     };
 
     let policies = OrgPolicy::find_confirmed_by_user(&grantor_user.uuid, &mut conn);

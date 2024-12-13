@@ -309,17 +309,16 @@ async fn delete_webauthn(data: Json<DeleteU2FData>, headers: Headers, mut conn: 
         err!("Invalid password");
     }
 
-    let mut tf =
-        match TwoFactor::find_by_user_and_type(&headers.user.uuid, TwoFactorType::Webauthn as i32, &mut conn).await {
-            Some(tf) => tf,
-            None => err!("Webauthn data not found!"),
-        };
+    let Some(mut tf) =
+        TwoFactor::find_by_user_and_type(&headers.user.uuid, TwoFactorType::Webauthn as i32, &mut conn).await
+    else {
+        err!("Webauthn data not found!")
+    };
 
     let mut data: Vec<WebauthnRegistration> = serde_json::from_str(&tf.data)?;
 
-    let item_pos = match data.iter().position(|r| r.id == id) {
-        Some(p) => p,
-        None => err!("Webauthn entry not found"),
+    let Some(item_pos) = data.iter().position(|r| r.id == id) else {
+        err!("Webauthn entry not found")
     };
 
     let removed_item = data.remove(item_pos);

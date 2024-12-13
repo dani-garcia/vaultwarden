@@ -191,10 +191,11 @@ impl Group {
         }}
     }
 
-    pub async fn find_by_uuid(uuid: &str, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_uuid_and_org(uuid: &str, org_uuid: &str, conn: &mut DbConn) -> Option<Self> {
         db_run! { conn: {
             groups::table
                 .filter(groups::uuid.eq(uuid))
+                .filter(groups::organizations_uuid.eq(org_uuid))
                 .first::<GroupDb>(conn)
                 .ok()
                 .from_db()
