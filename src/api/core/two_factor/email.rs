@@ -40,9 +40,8 @@ async fn send_email_login(data: Json<SendEmailLoginData>, mut conn: DbConn) -> E
     use crate::db::models::User;
 
     // Get the user
-    let user = match User::find_by_mail(&data.email, &mut conn).await {
-        Some(user) => user,
-        None => err!("Username or password is incorrect. Try again."),
+    let Some(user) = User::find_by_mail(&data.email, &mut conn).await else {
+        err!("Username or password is incorrect. Try again.")
     };
 
     // Check password
@@ -174,9 +173,8 @@ async fn email(data: Json<EmailData>, headers: Headers, mut conn: DbConn) -> Jso
 
     let mut email_data = EmailTokenData::from_json(&twofactor.data)?;
 
-    let issued_token = match &email_data.last_token {
-        Some(t) => t,
-        _ => err!("No token available"),
+    let Some(issued_token) = &email_data.last_token else {
+        err!("No token available")
     };
 
     if !crypto::ct_eq(issued_token, data.token) {
@@ -205,14 +203,13 @@ pub async fn validate_email_code_str(user_uuid: &str, token: &str, data: &str, c
     let mut twofactor = TwoFactor::find_by_user_and_type(user_uuid, TwoFactorType::Email as i32, conn)
         .await
         .map_res("Two factor not found")?;
-    let issued_token = match &email_data.last_token {
-        Some(t) => t,
-        _ => err!(
+    let Some(issued_token) = &email_data.last_token else {
+        err!(
             "No token available",
             ErrorEvent {
                 event: EventType::UserFailedLogIn2fa
             }
-        ),
+        )
     };
 
     if !crypto::ct_eq(issued_token, token) {

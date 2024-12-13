@@ -85,9 +85,8 @@ async fn recover(data: Json<RecoverTwoFactor>, client_headers: ClientHeaders, mu
     use crate::db::models::User;
 
     // Get the user
-    let mut user = match User::find_by_mail(&data.email, &mut conn).await {
-        Some(user) => user,
-        None => err!("Username or password is incorrect. Try again."),
+    let Some(mut user) = User::find_by_mail(&data.email, &mut conn).await else {
+        err!("Username or password is incorrect. Try again.")
     };
 
     // Check password

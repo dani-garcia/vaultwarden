@@ -203,9 +203,8 @@ impl<'r> FromRequest<'r> for PublicToken {
             None => err_handler!("No access token provided"),
         };
         // Check JWT token is valid and get device and user from it
-        let claims = match auth::decode_api_org(access_token) {
-            Ok(claims) => claims,
-            Err(_) => err_handler!("Invalid claim"),
+        let Ok(claims) = auth::decode_api_org(access_token) else {
+            err_handler!("Invalid claim")
         };
         // Check if time is between claims.nbf and claims.exp
         let time_now = Utc::now().timestamp();
@@ -227,13 +226,11 @@ impl<'r> FromRequest<'r> for PublicToken {
             Outcome::Success(conn) => conn,
             _ => err_handler!("Error getting DB"),
         };
-        let org_uuid = match claims.client_id.strip_prefix("organization.") {
-            Some(uuid) => uuid,
-            None => err_handler!("Malformed client_id"),
+        let Some(org_uuid) = claims.client_id.strip_prefix("organization.") else {
+            err_handler!("Malformed client_id")
         };
-        let org_api_key = match OrganizationApiKey::find_by_org_uuid(org_uuid, &conn).await {
-            Some(org_api_key) => org_api_key,
-            None => err_handler!("Invalid client_id"),
+        let Some(org_api_key) = OrganizationApiKey::find_by_org_uuid(org_uuid, &conn).await else {
+            err_handler!("Invalid client_id")
         };
         if org_api_key.org_uuid != claims.client_sub {
             err_handler!("Token not issued for this org");

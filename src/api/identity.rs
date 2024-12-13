@@ -157,9 +157,8 @@ async fn _password_login(
 
     // Get the user
     let username = data.username.as_ref().unwrap().trim();
-    let mut user = match User::find_by_mail(username, conn).await {
-        Some(user) => user,
-        None => err!("Username or password is incorrect. Try again", format!("IP: {}. Username: {}.", ip.ip, username)),
+    let Some(mut user) = User::find_by_mail(username, conn).await else {
+        err!("Username or password is incorrect. Try again", format!("IP: {}. Username: {}.", ip.ip, username))
     };
 
     // Set the user_uuid here to be passed back used for event logging.
@@ -180,7 +179,8 @@ async fn _password_login(
 
     // If we get an auth request, we don't check the user's password, but the access code of the auth request
     if let Some(ref auth_request_uuid) = data.auth_request {
-        let Some(auth_request) = AuthRequest::find_by_uuid(auth_request_uuid.as_str(), conn).await else {
+        let Some(auth_request) = AuthRequest::find_by_uuid_and_user(auth_request_uuid.as_str(), &user.uuid, conn).await
+        else {
             err!(
                 "Auth request not found. Try again.",
                 format!("IP: {}. Username: {}.", ip.ip, username),
@@ -382,13 +382,11 @@ async fn _user_api_key_login(
 ) -> JsonResult {
     // Get the user via the client_id
     let client_id = data.client_id.as_ref().unwrap();
-    let client_user_uuid = match client_id.strip_prefix("user.") {
-        Some(uuid) => uuid,
-        None => err!("Malformed client_id", format!("IP: {}.", ip.ip)),
+    let Some(client_user_uuid) = client_id.strip_prefix("user.") else {
+        err!("Malformed client_id", format!("IP: {}.", ip.ip))
     };
-    let user = match User::find_by_uuid(client_user_uuid, conn).await {
-        Some(user) => user,
-        None => err!("Invalid client_id", format!("IP: {}.", ip.ip)),
+    let Some(user) = User::find_by_uuid(client_user_uuid, conn).await else {
+        err!("Invalid client_id", format!("IP: {}.", ip.ip))
     };
 
     // Set the user_uuid here to be passed back used for event logging.
@@ -471,13 +469,11 @@ async fn _user_api_key_login(
 async fn _organization_api_key_login(data: ConnectData, conn: &mut DbConn, ip: &ClientIp) -> JsonResult {
     // Get the org via the client_id
     let client_id = data.client_id.as_ref().unwrap();
-    let org_uuid = match client_id.strip_prefix("organization.") {
-        Some(uuid) => uuid,
-        None => err!("Malformed client_id", format!("IP: {}.", ip.ip)),
+    let Some(org_uuid) = client_id.strip_prefix("organization.") else {
+        err!("Malformed client_id", format!("IP: {}.", ip.ip))
     };
-    let org_api_key = match OrganizationApiKey::find_by_org_uuid(org_uuid, conn).await {
-        Some(org_api_key) => org_api_key,
-        None => err!("Invalid client_id", format!("IP: {}.", ip.ip)),
+    let Some(org_api_key) = OrganizationApiKey::find_by_org_uuid(org_uuid, conn).await else {
+        err!("Invalid client_id", format!("IP: {}.", ip.ip))
     };
 
     // Check API key.
@@ -676,9 +672,8 @@ async fn _json_err_twofactor(
             }
 
             Some(tf_type @ TwoFactorType::YubiKey) => {
-                let twofactor = match TwoFactor::find_by_user_and_type(user_uuid, tf_type as i32, conn).await {
-                    Some(tf) => tf,
-                    None => err!("No YubiKey devices registered"),
+                let Some(twofactor) = TwoFactor::find_by_user_and_type(user_uuid, tf_type as i32, conn).await else {
+                    err!("No YubiKey devices registered")
                 };
 
                 let yubikey_metadata: yubikey::YubikeyMetadata = serde_json::from_str(&twofactor.data)?;
@@ -689,9 +684,8 @@ async fn _json_err_twofactor(
             }
 
             Some(tf_type @ TwoFactorType::Email) => {
-                let twofactor = match TwoFactor::find_by_user_and_type(user_uuid, tf_type as i32, conn).await {
-                    Some(tf) => tf,
-                    None => err!("No twofactor email registered"),
+                let Some(twofactor) = TwoFactor::find_by_user_and_type(user_uuid, tf_type as i32, conn).await else {
+                    err!("No twofactor email registered")
                 };
 
                 // Send email immediately if email is the only 2FA option

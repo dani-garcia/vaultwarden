@@ -120,10 +120,11 @@ impl Folder {
         Ok(())
     }
 
-    pub async fn find_by_uuid(uuid: &str, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_uuid_and_user(uuid: &str, user_uuid: &str, conn: &mut DbConn) -> Option<Self> {
         db_run! { conn: {
             folders::table
                 .filter(folders::uuid.eq(uuid))
+                .filter(folders::user_uuid.eq(user_uuid))
                 .first::<FolderDb>(conn)
                 .ok()
                 .from_db()

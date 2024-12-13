@@ -193,9 +193,8 @@ async fn get_ciphers(headers: Headers, mut conn: DbConn) -> Json<Value> {
 
 #[get("/ciphers/<uuid>")]
 async fn get_cipher(uuid: &str, headers: Headers, mut conn: DbConn) -> JsonResult {
-    let cipher = match Cipher::find_by_uuid(uuid, &mut conn).await {
-        Some(cipher) => cipher,
-        None => err!("Cipher doesn't exist"),
+    let Some(cipher) = Cipher::find_by_uuid(uuid, &mut conn).await else {
+        err!("Cipher doesn't exist")
     };
 
     if !cipher.is_accessible_to_user(&headers.user.uuid, &mut conn).await {
@@ -429,14 +428,9 @@ pub async fn update_cipher_from_data(
         cipher.user_uuid = Some(headers.user.uuid.clone());
     }
 
-    if let Some(ref folder_id) = data.folder_id {
-        match Folder::find_by_uuid(folder_id, conn).await {
-            Some(folder) => {
-                if folder.user_uuid != headers.user.uuid {
-                    err!("Folder is not owned by user")
-                }
-            }
-            None => err!("Folder doesn't exist"),
+    if let Some(ref folder_uuid) = data.folder_id {
+        if Folder::find_by_uuid_and_user(folder_uuid, &headers.user.uuid, conn).await.is_none() {
+            err!("Invalid folder", "Folder does not exist or belongs to another user");
         }
     }
 
@@ -661,9 +655,8 @@ async fn put_cipher(
 ) -> JsonResult {
     let data: CipherData = data.into_inner();
 
-    let mut cipher = match Cipher::find_by_uuid(uuid, &mut conn).await {
-        Some(cipher) => cipher,
-        None => err!("Cipher doesn't exist"),
+    let Some(mut cipher) = Cipher::find_by_uuid(uuid, &mut conn).await else {
+        err!("Cipher doesn't exist")
     };
 
     // TODO: Check if only the folder ID or favorite status is being changed.
@@ -695,19 +688,13 @@ async fn put_cipher_partial(
 ) -> JsonResult {
     let data: PartialCipherData = data.into_inner();
 
-    let cipher = match Cipher::find_by_uuid(uuid, &mut conn).await {
-        Some(cipher) => cipher,
-        None => err!("Cipher doesn't exist"),
+    let Some(cipher) = Cipher::find_by_uuid(uuid, &mut conn).await else {
+        err!("Cipher doesn't exist")
     };
 
-    if let Some(ref folder_id) = data.folder_id {
-        match Folder::find_by_uuid(folder_id, &mut conn).await {
-            Some(folder) => {
-                if folder.user_uuid != headers.user.uuid {
-                    err!("Folder is not owned by user")
-                }
-            }
-            None => err!("Folder doesn't exist"),
+    if let Some(ref folder_uuid) = data.folder_id {
+        if Folder::find_by_uuid_and_user(folder_uuid, &headers.user.uuid, &mut conn).await.is_none() {
+            err!("Invalid folder", "Folder does not exist or belongs to another user");
         }
     }
 
@@ -774,9 +761,8 @@ async fn post_collections_update(
 ) -> JsonResult {
     let data: CollectionsAdminData = data.into_inner();
 
-    let cipher = match Cipher::find_by_uuid(uuid, &mut conn).await {
-        Some(cipher) => cipher,
-        None => err!("Cipher doesn't exist"),
+    let Some(cipher) = Cipher::find_by_uuid(uuid, &mut conn).await else {
+        err!("Cipher doesn't exist")
     };
 
     if !cipher.is_write_accessible_to_user(&headers.user.uuid, &mut conn).await {
@@ -788,7 +774,8 @@ async fn post_collections_update(
         HashSet::<String>::from_iter(cipher.get_collections(headers.user.uuid.clone(), &mut conn).await);
 
     for collection in posted_collections.symmetric_difference(&current_collections) {
-        match Collection::find_by_uuid(collection, &mut conn).await {
+        match Collection::find_by_uuid_and_org(collection, cipher.organization_uuid.as_ref().unwrap(), &mut conn).await
+        {
             None => err!("Invalid collection ID provided"),
             Some(collection) => {
                 if collection.is_writable_by_user(&headers.user.uuid, &mut conn).await {
@@ -851,9 +838,8 @@ async fn post_collections_admin(
 ) -> EmptyResult {
     let data: CollectionsAdminData = data.into_inner();
 
-    let cipher = match Cipher::find_by_uuid(uuid, &mut conn).await {
-        Some(cipher) => cipher,
-        None => err!("Cipher doesn't exist"),
+    let Some(cipher) = Cipher::find_by_uuid(uuid, &mut conn).await else {
+        err!("Cipher doesn't exist")
     };
 
     if !cipher.is_write_accessible_to_user(&headers.user.uuid, &mut conn).await {
@@ -865,7 +851,8 @@ async fn post_collections_admin(
         HashSet::<String>::from_iter(cipher.get_admin_collections(headers.user.uuid.clone(), &mut conn).await);
 
     for collection in posted_collections.symmetric_difference(&current_collections) {
-        match Collection::find_by_uuid(collection, &mut conn).await {
+        match Collection::find_by_uuid_and_org(collection, cipher.organization_uuid.as_ref().unwrap(), &mut conn).await
+        {
             None => err!("Invalid collection ID provided"),
             Some(collection) => {
                 if collection.is_writable_by_user(&headers.user.uuid, &mut conn).await {
@@ -1043,9 +1030,8 @@ async fn share_cipher_by_uuid(
 /// redirects to the same location as before the v2 API.
 #[get("/ciphers/<uuid>/attachment/<attachment_id>")]
 async fn get_attachment(uuid: &str, attachment_id: &str, headers: Headers, mut conn: DbConn) -> JsonResult {
-    let cipher = match Cipher::find_by_uuid(uuid, &mut conn).await {
-        Some(cipher) => cipher,
-        None => err!("Cipher doesn't exist"),
+    let Some(cipher) = Cipher::find_by_uuid(uuid, &mut conn).await else {
+        err!("Cipher doesn't exist")
     };
 
     if !cipher.is_accessible_to_user(&headers.user.uuid, &mut conn).await {
@@ -1084,9 +1070,8 @@ async fn post_attachment_v2(
     headers: Headers,
     mut conn: DbConn,
 ) -> JsonResult {
-    let cipher = match Cipher::find_by_uuid(uuid, &mut conn).await {
-        Some(cipher) => cipher,
-        None => err!("Cipher doesn't exist"),
+    let Some(cipher) = Cipher::find_by_uuid(uuid, &mut conn).await else {
+        err!("Cipher doesn't exist")
     };
 
     if !cipher.is_write_accessible_to_user(&headers.user.uuid, &mut conn).await {
@@ -1150,9 +1135,8 @@ async fn save_attachment(
         err!("Attachment size can't be negative")
     }
 
-    let cipher = match Cipher::find_by_uuid(cipher_uuid, &mut conn).await {
-        Some(cipher) => cipher,
-        None => err!("Cipher doesn't exist"),
+    let Some(cipher) = Cipher::find_by_uuid(cipher_uuid, &mut conn).await else {
+        err!("Cipher doesn't exist")
     };
 
     if !cipher.is_write_accessible_to_user(&headers.user.uuid, &mut conn).await {
@@ -1545,21 +1529,15 @@ async fn move_cipher_selected(
     let data = data.into_inner();
     let user_uuid = headers.user.uuid;
 
-    if let Some(ref folder_id) = data.folder_id {
-        match Folder::find_by_uuid(folder_id, &mut conn).await {
-            Some(folder) => {
-                if folder.user_uuid != user_uuid {
-                    err!("Folder is not owned by user")
-                }
-            }
-            None => err!("Folder doesn't exist"),
+    if let Some(ref folder_uuid) = data.folder_id {
+        if Folder::find_by_uuid_and_user(folder_uuid, &user_uuid, &mut conn).await.is_none() {
+            err!("Invalid folder", "Folder does not exist or belongs to another user");
         }
     }
 
     for uuid in data.ids {
-        let cipher = match Cipher::find_by_uuid(&uuid, &mut conn).await {
-            Some(cipher) => cipher,
-            None => err!("Cipher doesn't exist"),
+        let Some(cipher) = Cipher::find_by_uuid(&uuid, &mut conn).await else {
+            err!("Cipher doesn't exist")
         };
 
         if !cipher.is_accessible_to_user(&user_uuid, &mut conn).await {
@@ -1667,9 +1645,8 @@ async fn _delete_cipher_by_uuid(
     soft_delete: bool,
     nt: &Notify<'_>,
 ) -> EmptyResult {
-    let mut cipher = match Cipher::find_by_uuid(uuid, conn).await {
-        Some(cipher) => cipher,
-        None => err!("Cipher doesn't exist"),
+    let Some(mut cipher) = Cipher::find_by_uuid(uuid, conn).await else {
+        err!("Cipher doesn't exist")
     };
 
     if !cipher.is_write_accessible_to_user(&headers.user.uuid, conn).await {
@@ -1739,9 +1716,8 @@ async fn _delete_multiple_ciphers(
 }
 
 async fn _restore_cipher_by_uuid(uuid: &str, headers: &Headers, conn: &mut DbConn, nt: &Notify<'_>) -> JsonResult {
-    let mut cipher = match Cipher::find_by_uuid(uuid, conn).await {
-        Some(cipher) => cipher,
-        None => err!("Cipher doesn't exist"),
+    let Some(mut cipher) = Cipher::find_by_uuid(uuid, conn).await else {
+        err!("Cipher doesn't exist")
     };
 
     if !cipher.is_write_accessible_to_user(&headers.user.uuid, conn).await {
@@ -1807,18 +1783,16 @@ async fn _delete_cipher_attachment_by_id(
     conn: &mut DbConn,
     nt: &Notify<'_>,
 ) -> EmptyResult {
-    let attachment = match Attachment::find_by_id(attachment_id, conn).await {
-        Some(attachment) => attachment,
-        None => err!("Attachment doesn't exist"),
+    let Some(attachment) = Attachment::find_by_id(attachment_id, conn).await else {
+        err!("Attachment doesn't exist")
     };
 
     if attachment.cipher_uuid != uuid {
         err!("Attachment from other cipher")
     }
 
-    let cipher = match Cipher::find_by_uuid(uuid, conn).await {
-        Some(cipher) => cipher,
-        None => err!("Cipher doesn't exist"),
+    let Some(cipher) = Cipher::find_by_uuid(uuid, conn).await else {
+        err!("Cipher doesn't exist")
     };
 
     if !cipher.is_write_accessible_to_user(&headers.user.uuid, conn).await {

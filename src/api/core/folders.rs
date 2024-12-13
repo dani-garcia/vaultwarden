@@ -25,16 +25,10 @@ async fn get_folders(headers: Headers, mut conn: DbConn) -> Json<Value> {
 
 #[get("/folders/<uuid>")]
 async fn get_folder(uuid: &str, headers: Headers, mut conn: DbConn) -> JsonResult {
-    let folder = match Folder::find_by_uuid(uuid, &mut conn).await {
-        Some(folder) => folder,
-        _ => err!("Invalid folder"),
-    };
-
-    if folder.user_uuid != headers.user.uuid {
-        err!("Folder belongs to another user")
+    match Folder::find_by_uuid_and_user(uuid, &headers.user.uuid, &mut conn).await {
+        Some(folder) => Ok(Json(folder.to_json())),
+        _ => err!("Invalid folder", "Folder does not exist or belongs to another user"),
     }
-
-    Ok(Json(folder.to_json()))
 }
 
 #[derive(Deserialize)]
@@ -71,14 +65,9 @@ async fn put_folder(
 ) -> JsonResult {
     let data: FolderData = data.into_inner();
 
-    let mut folder = match Folder::find_by_uuid(uuid, &mut conn).await {
-        Some(folder) => folder,
-        _ => err!("Invalid folder"),
+    let Some(mut folder) = Folder::find_by_uuid_and_user(uuid, &headers.user.uuid, &mut conn).await else {
+        err!("Invalid folder", "Folder does not exist or belongs to another user")
     };
-
-    if folder.user_uuid != headers.user.uuid {
-        err!("Folder belongs to another user")
-    }
 
     folder.name = data.name;
 
@@ -95,14 +84,9 @@ async fn delete_folder_post(uuid: &str, headers: Headers, conn: DbConn, nt: Noti
 
 #[delete("/folders/<uuid>")]
 async fn delete_folder(uuid: &str, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> EmptyResult {
-    let folder = match Folder::find_by_uuid(uuid, &mut conn).await {
-        Some(folder) => folder,
-        _ => err!("Invalid folder"),
+    let Some(folder) = Folder::find_by_uuid_and_user(uuid, &headers.user.uuid, &mut conn).await else {
+        err!("Invalid folder", "Folder does not exist or belongs to another user")
     };
-
-    if folder.user_uuid != headers.user.uuid {
-        err!("Folder belongs to another user")
-    }
 
     // Delete the actual folder entry
     folder.delete(&mut conn).await?;

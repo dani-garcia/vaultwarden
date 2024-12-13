@@ -111,6 +111,17 @@ impl AuthRequest {
         }}
     }
 
+    pub async fn find_by_uuid_and_user(uuid: &str, user_uuid: &str, conn: &mut DbConn) -> Option<Self> {
+        db_run! {conn: {
+            auth_requests::table
+                .filter(auth_requests::uuid.eq(uuid))
+                .filter(auth_requests::user_uuid.eq(user_uuid))
+                .first::<AuthRequestDb>(conn)
+                .ok()
+                .from_db()
+        }}
+    }
+
     pub async fn find_by_user(user_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
         db_run! {conn: {
             auth_requests::table

@@ -574,9 +574,8 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, mut conn: DbConn,
         // Skip `null` folder id entries.
         // See: https://github.com/bitwarden/clients/issues/8453
         if let Some(folder_id) = folder_data.id {
-            let saved_folder = match existing_folders.iter_mut().find(|f| f.uuid == folder_id) {
-                Some(folder) => folder,
-                None => err!("Folder doesn't exist"),
+            let Some(saved_folder) = existing_folders.iter_mut().find(|f| f.uuid == folder_id) else {
+                err!("Folder doesn't exist")
             };
 
             saved_folder.name = folder_data.name;
@@ -586,11 +585,11 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, mut conn: DbConn,
 
     // Update emergency access data
     for emergency_access_data in data.emergency_access_keys {
-        let saved_emergency_access =
-            match existing_emergency_access.iter_mut().find(|ea| ea.uuid == emergency_access_data.id) {
-                Some(emergency_access) => emergency_access,
-                None => err!("Emergency access doesn't exist or is not owned by the user"),
-            };
+        let Some(saved_emergency_access) =
+            existing_emergency_access.iter_mut().find(|ea| ea.uuid == emergency_access_data.id)
+        else {
+            err!("Emergency access doesn't exist or is not owned by the user")
+        };
 
         saved_emergency_access.key_encrypted = Some(emergency_access_data.key_encrypted);
         saved_emergency_access.save(&mut conn).await?
@@ -598,10 +597,10 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, mut conn: DbConn,
 
     // Update reset password data
     for reset_password_data in data.reset_password_keys {
-        let user_org = match existing_user_orgs.iter_mut().find(|uo| uo.org_uuid == reset_password_data.organization_id)
-        {
-            Some(reset_password) => reset_password,
-            None => err!("Reset password doesn't exist"),
+        let Some(user_org) =
+            existing_user_orgs.iter_mut().find(|uo| uo.org_uuid == reset_password_data.organization_id)
+        else {
+            err!("Reset password doesn't exist")
         };
 
         user_org.reset_password_key = Some(reset_password_data.reset_password_key);
@@ -610,9 +609,8 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, mut conn: DbConn,
 
     // Update send data
     for send_data in data.sends {
-        let send = match existing_sends.iter_mut().find(|s| &s.uuid == send_data.id.as_ref().unwrap()) {
-            Some(send) => send,
-            None => err!("Send doesn't exist"),
+        let Some(send) = existing_sends.iter_mut().find(|s| &s.uuid == send_data.id.as_ref().unwrap()) else {
+            err!("Send doesn't exist")
         };
 
         update_send_from_data(send, send_data, &headers, &mut conn, &nt, UpdateType::None).await?;
@@ -623,9 +621,9 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, mut conn: DbConn,
 
     for cipher_data in data.ciphers {
         if cipher_data.organization_id.is_none() {
-            let saved_cipher = match existing_ciphers.iter_mut().find(|c| &c.uuid == cipher_data.id.as_ref().unwrap()) {
-                Some(cipher) => cipher,
-                None => err!("Cipher doesn't exist"),
+            let Some(saved_cipher) = existing_ciphers.iter_mut().find(|c| &c.uuid == cipher_data.id.as_ref().unwrap())
+            else {
+                err!("Cipher doesn't exist")
             };
 
             // Prevent triggering cipher updates via WebSockets by settings UpdateType::None
@@ -802,14 +800,12 @@ struct VerifyEmailTokenData {
 async fn post_verify_email_token(data: Json<VerifyEmailTokenData>, mut conn: DbConn) -> EmptyResult {
     let data: VerifyEmailTokenData = data.into_inner();
 
-    let mut user = match User::find_by_uuid(&data.user_id, &mut conn).await {
-        Some(user) => user,
-        None => err!("User doesn't exist"),
+    let Some(mut user) = User::find_by_uuid(&data.user_id, &mut conn).await else {
+        err!("User doesn't exist")
     };
 
-    let claims = match decode_verify_email(&data.token) {
-        Ok(claims) => claims,
-        Err(_) => err!("Invalid claim"),
+    let Ok(claims) = decode_verify_email(&data.token) else {
+        err!("Invalid claim")
     };
     if claims.sub != user.uuid {
         err!("Invalid claim");
@@ -861,15 +857,14 @@ struct DeleteRecoverTokenData {
 async fn post_delete_recover_token(data: Json<DeleteRecoverTokenData>, mut conn: DbConn) -> EmptyResult {
     let data: DeleteRecoverTokenData = data.into_inner();
 
-    let user = match User::find_by_uuid(&data.user_id, &mut conn).await {
-        Some(user) => user,
-        None => err!("User doesn't exist"),
+    let Ok(claims) = decode_delete(&data.token) else {
+        err!("Invalid claim")
     };
 
-    let claims = match decode_delete(&data.token) {
-        Ok(claims) => claims,
-        Err(_) => err!("Invalid claim"),
+    let Some(user) = User::find_by_uuid(&data.user_id, &mut conn).await else {
+        err!("User doesn't exist")
     };
+
     if claims.sub != user.uuid {
         err!("Invalid claim");
     }
@@ -1041,11 +1036,8 @@ impl<'r> FromRequest<'r> for KnownDevice {
 
     async fn from_request(req: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         let email = if let Some(email_b64) = req.headers().get_one("X-Request-Email") {
-            let email_bytes = match data_encoding::BASE64URL_NOPAD.decode(email_b64.as_bytes()) {
-                Ok(bytes) => bytes,
-                Err(_) => {
-                    return Outcome::Error((Status::BadRequest, "X-Request-Email value failed to decode as base64url"));
-                }
+            let Ok(email_bytes) = data_encoding::BASE64URL_NOPAD.decode(email_b64.as_bytes()) else {
+                return Outcome::Error((Status::BadRequest, "X-Request-Email value failed to decode as base64url"));
             };
             match String::from_utf8(email_bytes) {
                 Ok(email) => email,
@@ -1086,9 +1078,9 @@ async fn put_device_token(uuid: &str, data: Json<PushToken>, headers: Headers, m
     let data = data.into_inner();
     let token = data.push_token;
 
-    let mut device = match Device::find_by_uuid_and_user(&headers.device.uuid, &headers.user.uuid, &mut conn).await {
-        Some(device) => device,
-        None => err!(format!("Error: device {uuid} should be present before a token can be assigned")),
+    let Some(mut device) = Device::find_by_uuid_and_user(&headers.device.uuid, &headers.user.uuid, &mut conn).await
+    else {
+        err!(format!("Error: device {uuid} should be present before a token can be assigned"))
     };
 
     // if the device already has been registered
@@ -1159,9 +1151,8 @@ async fn post_auth_request(
 ) -> JsonResult {
     let data = data.into_inner();
 
-    let user = match User::find_by_mail(&data.email, &mut conn).await {
-        Some(user) => user,
-        None => err!("AuthRequest doesn't exist", "User not found"),
+    let Some(user) = User::find_by_mail(&data.email, &mut conn).await else {
+        err!("AuthRequest doesn't exist", "User not found")
     };
 
     // Validate device uuid and type
@@ -1199,14 +1190,9 @@ async fn post_auth_request(
 
 #[get("/auth-requests/<uuid>")]
 async fn get_auth_request(uuid: &str, headers: Headers, mut conn: DbConn) -> JsonResult {
-    let auth_request = match AuthRequest::find_by_uuid(uuid, &mut conn).await {
-        Some(auth_request) => auth_request,
-        None => err!("AuthRequest doesn't exist", "Record not found"),
+    let Some(auth_request) = AuthRequest::find_by_uuid_and_user(uuid, &headers.user.uuid, &mut conn).await else {
+        err!("AuthRequest doesn't exist", "Record not found or user uuid does not match")
     };
-
-    if headers.user.uuid != auth_request.user_uuid {
-        err!("AuthRequest doesn't exist", "User uuid's do not match")
-    }
 
     let response_date_utc = auth_request.response_date.map(|response_date| format_date(&response_date));
 
@@ -1244,14 +1230,9 @@ async fn put_auth_request(
     nt: Notify<'_>,
 ) -> JsonResult {
     let data = data.into_inner();
-    let mut auth_request: AuthRequest = match AuthRequest::find_by_uuid(uuid, &mut conn).await {
-        Some(auth_request) => auth_request,
-        None => err!("AuthRequest doesn't exist", "Record not found"),
+    let Some(mut auth_request) = AuthRequest::find_by_uuid_and_user(uuid, &headers.user.uuid, &mut conn).await else {
+        err!("AuthRequest doesn't exist", "Record not found or user uuid does not match")
     };
-
-    if headers.user.uuid != auth_request.user_uuid {
-        err!("AuthRequest doesn't exist", "User uuid's do not match")
-    }
 
     if auth_request.approved.is_some() {
         err!("An authentication request with the same device already exists")
@@ -1297,9 +1278,8 @@ async fn get_auth_request_response(
     client_headers: ClientHeaders,
     mut conn: DbConn,
 ) -> JsonResult {
-    let auth_request = match AuthRequest::find_by_uuid(uuid, &mut conn).await {
-        Some(auth_request) => auth_request,
-        None => err!("AuthRequest doesn't exist", "User not found"),
+    let Some(auth_request) = AuthRequest::find_by_uuid(uuid, &mut conn).await else {
+        err!("AuthRequest doesn't exist", "User not found")
     };
 
     if auth_request.device_type != client_headers.device_type

@@ -117,9 +117,8 @@ pub async fn validate_totp_code(
 ) -> EmptyResult {
     use totp_lite::{totp_custom, Sha1};
 
-    let decoded_secret = match BASE32.decode(secret.as_bytes()) {
-        Ok(s) => s,
-        Err(_) => err!("Invalid TOTP secret"),
+    let Ok(decoded_secret) = BASE32.decode(secret.as_bytes()) else {
+        err!("Invalid TOTP secret")
     };
 
     let mut twofactor =

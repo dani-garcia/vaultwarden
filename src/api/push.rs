@@ -155,12 +155,9 @@ pub async fn push_cipher_update(
     if cipher.organization_uuid.is_some() {
         return;
     };
-    let user_uuid = match &cipher.user_uuid {
-        Some(c) => c,
-        None => {
-            debug!("Cipher has no uuid");
-            return;
-        }
+    let Some(user_uuid) = &cipher.user_uuid else {
+        debug!("Cipher has no uuid");
+        return;
     };
 
     if Device::check_user_has_push_device(user_uuid, conn).await {
