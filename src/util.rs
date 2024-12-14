@@ -98,10 +98,11 @@ impl Fairing for AppHeaders {
                   https://app.addy.io/api/ \
                   https://api.fastmail.com/ \
                   https://api.forwardemail.net \
-                  ;\
+                  {allowed_connect_src};\
                 ",
                 icon_service_csp = CONFIG._icon_service_csp(),
-                allowed_iframe_ancestors = CONFIG.allowed_iframe_ancestors()
+                allowed_iframe_ancestors = CONFIG.allowed_iframe_ancestors(),
+                allowed_connect_src = CONFIG.allowed_connect_src(),
             );
             res.set_raw_header("Content-Security-Policy", csp);
             res.set_raw_header("X-Frame-Options", "SAMEORIGIN");
