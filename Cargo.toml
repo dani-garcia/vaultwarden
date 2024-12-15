@@ -41,7 +41,7 @@ syslog = "7.0.0"
 [dependencies]
 # Logging
 log = "0.4.22"
-fern = { version = "0.7.0", features = ["syslog-7", "reopen-1"] }
+fern = { version = "0.7.1", features = ["syslog-7", "reopen-1"] }
 tracing = { version = "0.1.41", features = ["log"] } # Needed to have lettre and webauthn-rs trace logging to work
 
 # A `dotenv` implementation for Rust
@@ -70,7 +70,7 @@ futures = "0.3.31"
 tokio = { version = "1.42.0", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal", "net"] }
 
 # A generic serialization/deserialization framework
-serde = { version = "1.0.215", features = ["derive"] }
+serde = { version = "1.0.216", features = ["derive"] }
 serde_json = "1.0.133"
 
 # A safe, extensible ORM and Query builder
@@ -147,10 +147,10 @@ pico-args = "0.5.0"
 
 # Macro ident concatenation
 paste = "1.0.15"
-governor = "0.7.0"
+governor = "0.8.0"
 
 # Check client versions for specific features.
-semver = "1.0.23"
+semver = "1.0.24"
 
 # Allow overriding the default memory allocator
 # Mainly used for the musl builds, since the default musl malloc is very slow
@@ -167,8 +167,6 @@ rpassword = "7.3.1"
 grass_compiler = { version = "0.13.4", default-features = false }
 
 [patch.crates-io]
-# Patch fern to support syslog v7
-fern = { git = "https://github.com/daboross/fern", rev = "3e775ccfafe7d24baee39826d38011981b2e55b5" }
 # Patch yubico to remove duplicate crates of older versions
 yubico = { git = "https://github.com/BlackDex/yubico-rs", rev = "00df14811f58155c0f02e3ab10f1570ed3e115c6" }
 
