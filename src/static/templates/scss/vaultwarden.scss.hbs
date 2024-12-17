@@ -94,34 +94,35 @@ bit-nav-logo bit-nav-item .bwi-shield {
 /**** START Dynamic Vaultwarden Changes ****/
 {{#if signup_disabled}}
 /* Hide the register link on the login screen */
-app-login form p {
+app-login form div + div + div + div + hr,
+app-login form div + div + div + div + hr + p {
   @extend %vw-hide;
 }
 {{/if}}
 
-/* Hide `Email` 2FA if mail is not enabled */
 {{#unless mail_enabled}}
+/* Hide `Email` 2FA if mail is not enabled */
 app-two-factor-setup ul.list-group.list-group-2fa li.list-group-item:nth-child(1) {
   @extend %vw-hide;
 }
 {{/unless}}
 
-/* Hide `YubiKey OTP security key` 2FA if it is not enabled */
 {{#unless yubico_enabled}}
+/* Hide `YubiKey OTP security key` 2FA if it is not enabled */
 app-two-factor-setup ul.list-group.list-group-2fa li.list-group-item:nth-child(4) {
   @extend %vw-hide;
 }
 {{/unless}}
 
-/* Hide Emergency Access if not allowed */
 {{#unless emergency_access_allowed}}
+/* Hide Emergency Access if not allowed */
 bit-nav-item[route="settings/emergency-access"] {
   @extend %vw-hide;
 }
 {{/unless}}
 
-/* Hide Sends if not allowed */
 {{#unless sends_allowed}}
+/* Hide Sends if not allowed */
 bit-nav-item[route="sends"] {
   @extend %vw-hide;
 }
