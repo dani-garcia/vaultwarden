@@ -74,6 +74,9 @@ impl Group {
     }
 
     pub async fn to_json_details(&self, conn: &mut DbConn) -> Value {
+        // If both read_only and hide_passwords are false, then manage should be true
+        // You can't have an entry with read_only and manage, or hide_passwords and manage
+        // Or an entry with everything to false
         let collections_groups: Vec<Value> = CollectionGroup::find_by_group(&self.uuid, conn)
             .await
             .iter()
@@ -82,7 +85,7 @@ impl Group {
                     "id": entry.collections_uuid,
                     "readOnly": entry.read_only,
                     "hidePasswords": entry.hide_passwords,
-                    "manage": false
+                    "manage": !entry.read_only && !entry.hide_passwords,
                 })
             })
             .collect();
