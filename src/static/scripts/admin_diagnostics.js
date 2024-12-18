@@ -349,7 +349,13 @@ async function checkHttpResponse() {
 async function fetchWsUrl(wsUrl) {
     return new Promise((resolve, reject) => {
         try {
-            const ws = new WebSocket(wsUrl);
+            const url = new URL(wsUrl);
+            if (url.protocol == 'http:') {
+                url.protocol = 'ws:';
+            } else if (url.protocol == 'https:') {
+                url.protocol = 'wss:';
+            }
+            const ws = new WebSocket(url.href);
             ws.onopen = () => {
                 ws.close();
                 resolve(true);
