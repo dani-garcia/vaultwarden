@@ -68,18 +68,29 @@ pub fn routes() -> Vec<rocket::Route> {
 #[serde(rename_all = "camelCase")]
 pub struct RegisterData {
     email: String,
+
     kdf: Option<i32>,
     kdf_iterations: Option<i32>,
     kdf_memory: Option<i32>,
     kdf_parallelism: Option<i32>,
+
+    #[serde(alias = "userSymmetricKey")]
     key: String,
+    #[serde(alias = "userAsymmetricKeys")]
     keys: Option<KeysData>,
+
     master_password_hash: String,
     master_password_hint: Option<String>,
+
     name: Option<String>,
-    token: Option<String>,
+
     #[allow(dead_code)]
     organization_user_id: Option<String>,
+    #[serde(alias = "orgInviteToken")]
+    token: Option<String>,
+
+    // Used only from the register/finish endpoint
+    email_verification_token: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -122,12 +133,30 @@ async fn is_email_2fa_required(org_user_uuid: Option<String>, conn: &mut DbConn)
 
 #[post("/accounts/register", data = "<data>")]
 async fn register(data: Json<RegisterData>, conn: DbConn) -> JsonResult {
-    _register(data, conn).await
+    _register(data, false, conn).await
 }
 
-pub async fn _register(data: Json<RegisterData>, mut conn: DbConn) -> JsonResult {
-    let data: RegisterData = data.into_inner();
+pub async fn _register(data: Json<RegisterData>, email_verification: bool, mut conn: DbConn) -> JsonResult {
+    let mut data: RegisterData = data.into_inner();
     let email = data.email.to_lowercase();
+
+    if email_verification && data.email_verification_token.is_none() {
+        err!("Email verification token is required");
+    }
+
+    let email_verified = match &data.email_verification_token {
+        Some(token) if email_verification => {
+            let claims = crate::auth::decode_register_verify(token)?;
+            if claims.sub != data.email {
+                err!("Email verification token does not match email");
+            }
+
+            // During this call, we don't get the name, so extract it from the claims
+            data.name = Some(claims.name);
+            claims.verified
+        }
+        _ => false,
+    };
 
     // Check if the length of the username exceeds 50 characters (Same is Upstream Bitwarden)
     // This also prevents issues with very long usernames causing to large JWT's. See #2419
@@ -196,6 +225,10 @@ pub async fn _register(data: Json<RegisterData>, mut conn: DbConn) -> JsonResult
 
     if let Some(client_kdf_iter) = data.kdf_iterations {
         user.client_kdf_iter = client_kdf_iter;
+    }
+
+    if email_verified {
+        user.verified_at = Some(Utc::now().naive_utc());
     }
 
     user.client_kdf_memory = data.kdf_memory;
