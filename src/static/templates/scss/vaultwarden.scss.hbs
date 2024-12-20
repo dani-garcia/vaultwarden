@@ -42,12 +42,6 @@ label[for^="ownedBusiness"] {
   @extend %vw-hide;
 }
 
-/* Hide the radio button and label for the `Custom` org user type */
-#userTypeCustom,
-label[for^="userTypeCustom"] {
-  @extend %vw-hide;
-}
-
 /* Hide Business Name */
 app-org-account form div bit-form-field.tw-block:nth-child(3) {
   @extend %vw-hide;
@@ -58,42 +52,77 @@ app-organization-plans > form > bit-section:nth-child(2) {
   @extend %vw-hide;
 }
 
+/* Hide Collection Management Form */
+app-org-account form.ng-untouched:nth-child(6) {
+  @extend %vw-hide;
+}
+
+/* Hide 'Member Access' Report Card from Org Reports */
+app-org-reports-home > app-report-list > div.tw-inline-grid > div:nth-child(6) {
+  @extend %vw-hide;
+}
+
 /* Hide Device Verification form at the Two Step Login screen */
 app-security > app-two-factor-setup > form {
+  @extend %vw-hide;
+}
+
+/* Hide unsupported Custom Role options */
+bit-dialog div.tw-ml-4:has(bit-form-control input),
+bit-dialog div.tw-col-span-4:has(input[formcontrolname*="access"], input[formcontrolname*="manage"]) {
+  @extend %vw-hide;
+}
+
+/* Hide Log in with passkey */
+app-login div.tw-flex:nth-child(4) {
+  @extend %vw-hide;
+}
+
+/* Change collapsed menu icon to Vaultwarden */
+bit-nav-logo bit-nav-item a:before {
+  content: "";
+  background-image: url("../images/icon-white.svg");
+  background-repeat: no-repeat;
+  background-position: center center;
+  height: 32px;
+  display: block;
+}
+bit-nav-logo bit-nav-item .bwi-shield {
   @extend %vw-hide;
 }
 /**** END Static Vaultwarden Changes ****/
 /**** START Dynamic Vaultwarden Changes ****/
 {{#if signup_disabled}}
 /* Hide the register link on the login screen */
-app-frontend-layout > app-login > form > div > div > div > p {
+app-login form div + div + div + div + hr,
+app-login form div + div + div + div + hr + p {
   @extend %vw-hide;
 }
 {{/if}}
 
-/* Hide `Email` 2FA if mail is not enabled */
 {{#unless mail_enabled}}
-app-two-factor-setup ul.list-group.list-group-2fa li.list-group-item:nth-child(5) {
+/* Hide `Email` 2FA if mail is not enabled */
+app-two-factor-setup ul.list-group.list-group-2fa li.list-group-item:nth-child(1) {
   @extend %vw-hide;
 }
 {{/unless}}
 
-/* Hide `YubiKey OTP security key` 2FA if it is not enabled */
 {{#unless yubico_enabled}}
-app-two-factor-setup ul.list-group.list-group-2fa li.list-group-item:nth-child(2) {
+/* Hide `YubiKey OTP security key` 2FA if it is not enabled */
+app-two-factor-setup ul.list-group.list-group-2fa li.list-group-item:nth-child(4) {
   @extend %vw-hide;
 }
 {{/unless}}
 
-/* Hide Emergency Access if not allowed */
 {{#unless emergency_access_allowed}}
+/* Hide Emergency Access if not allowed */
 bit-nav-item[route="settings/emergency-access"] {
   @extend %vw-hide;
 }
 {{/unless}}
 
-/* Hide Sends if not allowed */
 {{#unless sends_allowed}}
+/* Hide Sends if not allowed */
 bit-nav-item[route="sends"] {
   @extend %vw-hide;
 }
