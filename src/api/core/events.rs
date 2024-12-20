@@ -8,7 +8,7 @@ use crate::{
     api::{EmptyResult, JsonResult},
     auth::{AdminHeaders, Headers},
     db::{
-        models::{Cipher, Event, UserOrganization},
+        models::{Cipher, Event, Membership},
         DbConn, DbPool,
     },
     util::parse_date,
@@ -66,7 +66,7 @@ async fn get_cipher_events(cipher_id: &str, data: EventRange, headers: Headers, 
         Vec::with_capacity(0)
     } else {
         let mut events_json = Vec::with_capacity(0);
-        if UserOrganization::user_has_ge_admin_access_to_cipher(&headers.user.uuid, cipher_id, &mut conn).await {
+        if Membership::user_has_ge_admin_access_to_cipher(&headers.user.uuid, cipher_id, &mut conn).await {
             let start_date = parse_date(&data.start);
             let end_date = if let Some(before_date) = &data.continuation_token {
                 parse_date(before_date)
@@ -90,10 +90,10 @@ async fn get_cipher_events(cipher_id: &str, data: EventRange, headers: Headers, 
     })))
 }
 
-#[get("/organizations/<org_id>/users/<user_org_id>/events?<data..>")]
+#[get("/organizations/<org_id>/users/<member_id>/events?<data..>")]
 async fn get_user_events(
     org_id: &str,
-    user_org_id: &str,
+    member_id: &str,
     data: EventRange,
     _headers: AdminHeaders,
     mut conn: DbConn,
@@ -110,7 +110,7 @@ async fn get_user_events(
             parse_date(&data.end)
         };
 
-        Event::find_by_org_and_user_org(org_id, user_org_id, &start_date, &end_date, &mut conn)
+        Event::find_by_org_and_member(org_id, member_id, &start_date, &end_date, &mut conn)
             .await
             .iter()
             .map(|e| e.to_json())
@@ -233,7 +233,7 @@ async fn _log_user_event(
     ip: &IpAddr,
     conn: &mut DbConn,
 ) {
-    let orgs = UserOrganization::get_org_uuid_by_user(user_uuid, conn).await;
+    let orgs = Membership::get_orgs_by_user(user_uuid, conn).await;
     let mut events: Vec<Event> = Vec::with_capacity(orgs.len() + 1); // We need an event per org and one without an org
 
     // Upstream saves the event also without any org_uuid.

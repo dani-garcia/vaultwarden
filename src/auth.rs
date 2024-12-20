@@ -191,7 +191,7 @@ pub struct InviteJwtClaims {
 
     pub email: String,
     pub org_id: Option<String>,
-    pub user_org_id: Option<String>,
+    pub member_id: Option<String>,
     pub invited_by_email: Option<String>,
 }
 
@@ -199,7 +199,7 @@ pub fn generate_invite_claims(
     uuid: String,
     email: String,
     org_id: Option<String>,
-    user_org_id: Option<String>,
+    member_id: Option<String>,
     invited_by_email: Option<String>,
 ) -> InviteJwtClaims {
     let time_now = Utc::now();
@@ -211,7 +211,7 @@ pub fn generate_invite_claims(
         sub: uuid,
         email,
         org_id,
-        user_org_id,
+        member_id,
         invited_by_email,
     }
 }
@@ -371,7 +371,7 @@ use rocket::{
 };
 
 use crate::db::{
-    models::{Collection, Device, User, UserOrgStatus, UserOrgType, UserOrganization, UserStampException},
+    models::{Collection, Device, Membership, MembershipStatus, MembershipType, User, UserStampException},
     DbConn,
 };
 
@@ -534,8 +534,8 @@ pub struct OrgHeaders {
     pub host: String,
     pub device: Device,
     pub user: User,
-    pub org_user_type: UserOrgType,
-    pub org_user: UserOrganization,
+    pub membership_type: MembershipType,
+    pub membership: Membership,
     pub ip: ClientIp,
 }
 
@@ -574,10 +574,10 @@ impl<'r> FromRequest<'r> for OrgHeaders {
                 };
 
                 let user = headers.user;
-                let org_user = match UserOrganization::find_by_user_and_org(&user.uuid, org_id, &mut conn).await {
-                    Some(user) => {
-                        if user.status == UserOrgStatus::Confirmed as i32 {
-                            user
+                let membership = match Membership::find_by_user_and_org(&user.uuid, org_id, &mut conn).await {
+                    Some(member) => {
+                        if member.status == MembershipStatus::Confirmed as i32 {
+                            member
                         } else {
                             err_handler!("The current user isn't confirmed member of the organization")
                         }
@@ -589,15 +589,15 @@ impl<'r> FromRequest<'r> for OrgHeaders {
                     host: headers.host,
                     device: headers.device,
                     user,
-                    org_user_type: {
-                        if let Some(org_usr_type) = UserOrgType::from_i32(org_user.atype) {
+                    membership_type: {
+                        if let Some(org_usr_type) = MembershipType::from_i32(membership.atype) {
                             org_usr_type
                         } else {
                             // This should only happen if the DB is corrupted
                             err_handler!("Unknown user type in the database")
                         }
                     },
-                    org_user,
+                    membership,
                     ip: headers.ip,
                 })
             }
@@ -610,7 +610,7 @@ pub struct AdminHeaders {
     pub host: String,
     pub device: Device,
     pub user: User,
-    pub org_user_type: UserOrgType,
+    pub membership_type: MembershipType,
     pub ip: ClientIp,
 }
 
@@ -620,12 +620,12 @@ impl<'r> FromRequest<'r> for AdminHeaders {
 
     async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         let headers = try_outcome!(OrgHeaders::from_request(request).await);
-        if headers.org_user_type >= UserOrgType::Admin {
+        if headers.membership_type >= MembershipType::Admin {
             Outcome::Success(Self {
                 host: headers.host,
                 device: headers.device,
                 user: headers.user,
-                org_user_type: headers.org_user_type,
+                membership_type: headers.membership_type,
                 ip: headers.ip,
             })
         } else {
@@ -680,7 +680,7 @@ impl<'r> FromRequest<'r> for ManagerHeaders {
 
     async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         let headers = try_outcome!(OrgHeaders::from_request(request).await);
-        if headers.org_user_type >= UserOrgType::Manager {
+        if headers.membership_type >= MembershipType::Manager {
             match get_col_id(request) {
                 Some(col_id) => {
                     let mut conn = match DbConn::from_request(request).await {
@@ -688,7 +688,7 @@ impl<'r> FromRequest<'r> for ManagerHeaders {
                         _ => err_handler!("Error getting DB"),
                     };
 
-                    if !Collection::can_access_collection(&headers.org_user, &col_id, &mut conn).await {
+                    if !Collection::can_access_collection(&headers.membership, &col_id, &mut conn).await {
                         err_handler!("The current user isn't a manager for this collection")
                     }
                 }
@@ -724,7 +724,7 @@ pub struct ManagerHeadersLoose {
     pub host: String,
     pub device: Device,
     pub user: User,
-    pub org_user: UserOrganization,
+    pub membership: Membership,
     pub ip: ClientIp,
 }
 
@@ -734,12 +734,12 @@ impl<'r> FromRequest<'r> for ManagerHeadersLoose {
 
     async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         let headers = try_outcome!(OrgHeaders::from_request(request).await);
-        if headers.org_user_type >= UserOrgType::Manager {
+        if headers.membership_type >= MembershipType::Manager {
             Outcome::Success(Self {
                 host: headers.host,
                 device: headers.device,
                 user: headers.user,
-                org_user: headers.org_user,
+                membership: headers.membership,
                 ip: headers.ip,
             })
         } else {
@@ -769,7 +769,7 @@ impl ManagerHeaders {
             if uuid::Uuid::parse_str(col_id).is_err() {
                 err!("Collection Id is malformed!");
             }
-            if !Collection::can_access_collection(&h.org_user, col_id, conn).await {
+            if !Collection::can_access_collection(&h.membership, col_id, conn).await {
                 err!("You don't have access to all collections!");
             }
         }
@@ -795,7 +795,7 @@ impl<'r> FromRequest<'r> for OwnerHeaders {
 
     async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         let headers = try_outcome!(OrgHeaders::from_request(request).await);
-        if headers.org_user_type == UserOrgType::Owner {
+        if headers.membership_type == MembershipType::Owner {
             Outcome::Success(Self {
                 device: headers.device,
                 user: headers.user,

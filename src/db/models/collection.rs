@@ -1,6 +1,6 @@
 use serde_json::Value;
 
-use super::{CollectionGroup, GroupUser, User, UserOrgStatus, UserOrgType, UserOrganization};
+use super::{CollectionGroup, GroupUser, Membership, MembershipStatus, MembershipType, User};
 use crate::CONFIG;
 
 db_object! {
@@ -79,13 +79,13 @@ impl Collection {
         conn: &mut DbConn,
     ) -> Value {
         let (read_only, hide_passwords, can_manage) = if let Some(cipher_sync_data) = cipher_sync_data {
-            match cipher_sync_data.user_organizations.get(&self.org_uuid) {
+            match cipher_sync_data.members.get(&self.org_uuid) {
                 // Only for Manager types Bitwarden returns true for the can_manage option
                 // Owners and Admins always have true
-                Some(uo) if uo.has_full_access() => (false, false, uo.atype >= UserOrgType::Manager),
-                Some(uo) => {
+                Some(m) if m.has_full_access() => (false, false, m.atype >= MembershipType::Manager),
+                Some(m) => {
                     // Only let a manager manage collections when the have full read/write access
-                    let is_manager = uo.atype == UserOrgType::Manager;
+                    let is_manager = m.atype == MembershipType::Manager;
                     if let Some(uc) = cipher_sync_data.user_collections.get(&self.uuid) {
                         (uc.read_only, uc.hide_passwords, is_manager && !uc.read_only && !uc.hide_passwords)
                     } else if let Some(cg) = cipher_sync_data.user_collections_groups.get(&self.uuid) {
@@ -97,10 +97,10 @@ impl Collection {
                 _ => (true, true, false),
             }
         } else {
-            match UserOrganization::find_confirmed_by_user_and_org(user_uuid, &self.org_uuid, conn).await {
-                Some(ou) if ou.has_full_access() => (false, false, ou.atype >= UserOrgType::Manager),
-                Some(ou) => {
-                    let is_manager = ou.atype == UserOrgType::Manager;
+            match Membership::find_confirmed_by_user_and_org(user_uuid, &self.org_uuid, conn).await {
+                Some(m) if m.has_full_access() => (false, false, m.atype >= MembershipType::Manager),
+                Some(m) => {
+                    let is_manager = m.atype == MembershipType::Manager;
                     let read_only = !self.is_writable_by_user(user_uuid, conn).await;
                     let hide_passwords = self.hide_passwords_for_user(user_uuid, conn).await;
                     (read_only, hide_passwords, is_manager && !read_only && !hide_passwords)
@@ -121,13 +121,13 @@ impl Collection {
         json_object
     }
 
-    pub async fn can_access_collection(org_user: &UserOrganization, col_id: &str, conn: &mut DbConn) -> bool {
-        org_user.has_status(UserOrgStatus::Confirmed)
-            && (org_user.has_full_access()
-                || CollectionUser::has_access_to_collection_by_user(col_id, &org_user.user_uuid, conn).await
+    pub async fn can_access_collection(member: &Membership, col_id: &str, conn: &mut DbConn) -> bool {
+        member.has_status(MembershipStatus::Confirmed)
+            && (member.has_full_access()
+                || CollectionUser::has_access_to_collection_by_user(col_id, &member.user_uuid, conn).await
                 || (CONFIG.org_groups_enabled()
-                    && (GroupUser::has_full_access_by_member(&org_user.org_uuid, &org_user.uuid, conn).await
-                        || GroupUser::has_access_to_collection_by_member(col_id, &org_user.uuid, conn).await)))
+                    && (GroupUser::has_full_access_by_member(&member.org_uuid, &member.uuid, conn).await
+                        || GroupUser::has_access_to_collection_by_member(col_id, &member.uuid, conn).await)))
     }
 }
 
@@ -193,8 +193,8 @@ impl Collection {
     }
 
     pub async fn update_users_revision(&self, conn: &mut DbConn) {
-        for user_org in UserOrganization::find_by_collection_and_org(&self.uuid, &self.org_uuid, conn).await.iter() {
-            User::update_uuid_revision(&user_org.user_uuid, conn).await;
+        for member in Membership::find_by_collection_and_org(&self.uuid, &self.org_uuid, conn).await.iter() {
+            User::update_uuid_revision(&member.user_uuid, conn).await;
         }
     }
 
@@ -234,7 +234,7 @@ impl Collection {
                     )
                 ))
                 .filter(
-                    users_organizations::status.eq(UserOrgStatus::Confirmed as i32)
+                    users_organizations::status.eq(MembershipStatus::Confirmed as i32)
                 )
                 .filter(
                     users_collections::user_uuid.eq(user_uuid).or( // Directly accessed collection
@@ -265,7 +265,7 @@ impl Collection {
                     )
                 ))
                 .filter(
-                    users_organizations::status.eq(UserOrgStatus::Confirmed as i32)
+                    users_organizations::status.eq(MembershipStatus::Confirmed as i32)
                 )
                 .filter(
                     users_collections::user_uuid.eq(user_uuid).or( // Directly accessed collection
@@ -349,7 +349,7 @@ impl Collection {
                 .filter(
                     users_collections::collection_uuid.eq(uuid).or( // Directly accessed collection
                         users_organizations::access_all.eq(true).or( // access_all in Organization
-                            users_organizations::atype.le(UserOrgType::Admin as i32) // Org admin or owner
+                            users_organizations::atype.le(MembershipType::Admin as i32) // Org admin or owner
                     )).or(
                         groups::access_all.eq(true) // access_all in groups
                     ).or( // access via groups
@@ -378,7 +378,7 @@ impl Collection {
                 .filter(
                     users_collections::collection_uuid.eq(uuid).or( // Directly accessed collection
                         users_organizations::access_all.eq(true).or( // access_all in Organization
-                            users_organizations::atype.le(UserOrgType::Admin as i32) // Org admin or owner
+                            users_organizations::atype.le(MembershipType::Admin as i32) // Org admin or owner
                     ))
                 ).select(collections::all_columns)
                 .first::<CollectionDb>(conn).ok()
@@ -411,7 +411,7 @@ impl Collection {
                         collections_groups::groups_uuid.eq(groups_users::groups_uuid)
                         .and(collections_groups::collections_uuid.eq(collections::uuid))
                     ))
-                    .filter(users_organizations::atype.le(UserOrgType::Admin as i32) // Org admin or owner
+                    .filter(users_organizations::atype.le(MembershipType::Admin as i32) // Org admin or owner
                         .or(users_organizations::access_all.eq(true)) // access_all via membership
                         .or(users_collections::collection_uuid.eq(&self.uuid) // write access given to collection
                             .and(users_collections::read_only.eq(false)))
@@ -436,7 +436,7 @@ impl Collection {
                         users_collections::collection_uuid.eq(collections::uuid)
                         .and(users_collections::user_uuid.eq(user_uuid))
                     ))
-                    .filter(users_organizations::atype.le(UserOrgType::Admin as i32) // Org admin or owner
+                    .filter(users_organizations::atype.le(MembershipType::Admin as i32) // Org admin or owner
                         .or(users_organizations::access_all.eq(true)) // access_all via membership
                         .or(users_collections::collection_uuid.eq(&self.uuid) // write access given to collection
                             .and(users_collections::read_only.eq(false)))
@@ -478,7 +478,7 @@ impl Collection {
             .filter(
                 users_collections::collection_uuid.eq(&self.uuid).and(users_collections::hide_passwords.eq(true)).or(// Directly accessed collection
                     users_organizations::access_all.eq(true).or( // access_all in Organization
-                        users_organizations::atype.le(UserOrgType::Admin as i32) // Org admin or owner
+                        users_organizations::atype.le(MembershipType::Admin as i32) // Org admin or owner
                 )).or(
                     groups::access_all.eq(true) // access_all in groups
                 ).or( // access via groups
@@ -511,10 +511,7 @@ impl CollectionUser {
         }}
     }
 
-    pub async fn find_by_organization_swap_user_uuid_with_org_user_uuid(
-        org_uuid: &str,
-        conn: &mut DbConn,
-    ) -> Vec<Self> {
+    pub async fn find_by_organization_swap_user_uuid_with_member_uuid(org_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             users_collections::table
                 .inner_join(collections::table.on(collections::uuid.eq(users_collections::collection_uuid)))
@@ -610,7 +607,7 @@ impl CollectionUser {
         }}
     }
 
-    pub async fn find_by_collection_swap_user_uuid_with_org_user_uuid(
+    pub async fn find_by_collection_swap_user_uuid_with_member_uuid(
         collection_uuid: &str,
         conn: &mut DbConn,
     ) -> Vec<Self> {

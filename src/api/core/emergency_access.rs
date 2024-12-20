@@ -662,9 +662,9 @@ async fn password_emergency_access(
     TwoFactor::delete_all_by_user(&grantor_user.uuid, &mut conn).await?;
 
     // Remove grantor from all organisations unless Owner
-    for user_org in UserOrganization::find_any_state_by_user(&grantor_user.uuid, &mut conn).await {
-        if user_org.atype != UserOrgType::Owner as i32 {
-            user_org.delete(&mut conn).await?;
+    for member in Membership::find_any_state_by_user(&grantor_user.uuid, &mut conn).await {
+        if member.atype != MembershipType::Owner as i32 {
+            member.delete(&mut conn).await?;
         }
     }
     Ok(())

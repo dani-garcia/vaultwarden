@@ -274,16 +274,16 @@ impl Event {
         }}
     }
 
-    pub async fn find_by_org_and_user_org(
+    pub async fn find_by_org_and_member(
         org_uuid: &str,
-        user_org_uuid: &str,
+        member_uuid: &str,
         start: &NaiveDateTime,
         end: &NaiveDateTime,
         conn: &mut DbConn,
     ) -> Vec<Self> {
         db_run! { conn: {
             event::table
-                .inner_join(users_organizations::table.on(users_organizations::uuid.eq(user_org_uuid)))
+                .inner_join(users_organizations::table.on(users_organizations::uuid.eq(member_uuid)))
                 .filter(event::org_uuid.eq(org_uuid))
                 .filter(event::event_date.between(start, end))
                 .filter(event::user_uuid.eq(users_organizations::user_uuid.nullable()).or(event::act_user_uuid.eq(users_organizations::user_uuid.nullable())))

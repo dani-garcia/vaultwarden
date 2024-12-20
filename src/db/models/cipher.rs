@@ -4,7 +4,7 @@ use chrono::{NaiveDateTime, TimeDelta, Utc};
 use serde_json::Value;
 
 use super::{
-    Attachment, CollectionCipher, Favorite, FolderCipher, Group, User, UserOrgStatus, UserOrgType, UserOrganization,
+    Attachment, CollectionCipher, Favorite, FolderCipher, Group, Membership, MembershipStatus, MembershipType, User,
 };
 
 use crate::api::core::{CipherData, CipherSyncData, CipherSyncType};
@@ -391,17 +391,16 @@ impl Cipher {
                 // Belongs to Organization, need to update affected users
                 if let Some(ref org_uuid) = self.organization_uuid {
                     // users having access to the collection
-                    let mut collection_users =
-                        UserOrganization::find_by_cipher_and_org(&self.uuid, org_uuid, conn).await;
+                    let mut collection_users = Membership::find_by_cipher_and_org(&self.uuid, org_uuid, conn).await;
                     if CONFIG.org_groups_enabled() {
                         // members of a group having access to the collection
                         let group_users =
-                            UserOrganization::find_by_cipher_and_org_with_group(&self.uuid, org_uuid, conn).await;
+                            Membership::find_by_cipher_and_org_with_group(&self.uuid, org_uuid, conn).await;
                         collection_users.extend(group_users);
                     }
-                    for user_org in collection_users {
-                        User::update_uuid_revision(&user_org.user_uuid, conn).await;
-                        user_uuids.push(user_org.user_uuid.clone())
+                    for member in collection_users {
+                        User::update_uuid_revision(&member.user_uuid, conn).await;
+                        user_uuids.push(member.user_uuid.clone())
                     }
                 }
             }
@@ -526,11 +525,11 @@ impl Cipher {
     ) -> bool {
         if let Some(ref org_uuid) = self.organization_uuid {
             if let Some(cipher_sync_data) = cipher_sync_data {
-                if let Some(cached_user_org) = cipher_sync_data.user_organizations.get(org_uuid) {
-                    return cached_user_org.has_full_access();
+                if let Some(cached_member) = cipher_sync_data.members.get(org_uuid) {
+                    return cached_member.has_full_access();
                 }
-            } else if let Some(user_org) = UserOrganization::find_by_user_and_org(user_uuid, org_uuid, conn).await {
-                return user_org.has_full_access();
+            } else if let Some(member) = Membership::find_by_user_and_org(user_uuid, org_uuid, conn).await {
+                return member.has_full_access();
             }
         }
         false
@@ -745,7 +744,7 @@ impl Cipher {
                     .left_join(users_organizations::table.on(
                             ciphers::organization_uuid.eq(users_organizations::org_uuid.nullable())
                             .and(users_organizations::user_uuid.eq(user_uuid))
-                            .and(users_organizations::status.eq(UserOrgStatus::Confirmed as i32))
+                            .and(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
                             ))
                     .left_join(users_collections::table.on(
                             ciphers_collections::collection_uuid.eq(users_collections::collection_uuid)
@@ -772,7 +771,7 @@ impl Cipher {
 
                 if !visible_only {
                     query = query.or_filter(
-                        users_organizations::atype.le(UserOrgType::Admin as i32) // Org admin/owner
+                        users_organizations::atype.le(MembershipType::Admin as i32) // Org admin/owner
                         );
                 }
 
@@ -790,7 +789,7 @@ impl Cipher {
                     .left_join(users_organizations::table.on(
                             ciphers::organization_uuid.eq(users_organizations::org_uuid.nullable())
                             .and(users_organizations::user_uuid.eq(user_uuid))
-                            .and(users_organizations::status.eq(UserOrgStatus::Confirmed as i32))
+                            .and(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
                             ))
                     .left_join(users_collections::table.on(
                             ciphers_collections::collection_uuid.eq(users_collections::collection_uuid)
@@ -804,7 +803,7 @@ impl Cipher {
 
                     if !visible_only {
                         query = query.or_filter(
-                            users_organizations::atype.le(UserOrgType::Admin as i32) // Org admin/owner
+                            users_organizations::atype.le(MembershipType::Admin as i32) // Org admin/owner
                             );
                     }
 
@@ -970,7 +969,7 @@ impl Cipher {
                         .or(groups::access_all.eq(true)) // Access via groups
                         .or(collections_groups::collections_uuid.is_not_null() // Access via groups
                             .and(collections_groups::read_only.eq(false)))
-                        .or(users_organizations::atype.le(UserOrgType::Admin as i32)) // User is admin or owner
+                        .or(users_organizations::atype.le(MembershipType::Admin as i32)) // User is admin or owner
                     )
                     .select(ciphers_collections::collection_uuid)
                     .load::<String>(conn).unwrap_or_default()
@@ -993,7 +992,7 @@ impl Cipher {
                     .filter(users_organizations::access_all.eq(true) // User has access all
                         .or(users_collections::user_uuid.eq(user_id) // User has access to collection
                             .and(users_collections::read_only.eq(false)))
-                        .or(users_organizations::atype.le(UserOrgType::Admin as i32)) // User is admin or owner
+                        .or(users_organizations::atype.le(MembershipType::Admin as i32)) // User is admin or owner
                     )
                     .select(ciphers_collections::collection_uuid)
                     .load::<String>(conn).unwrap_or_default()
@@ -1032,7 +1031,7 @@ impl Cipher {
             ))
             .or_filter(users_collections::user_uuid.eq(user_id)) // User has access to collection
             .or_filter(users_organizations::access_all.eq(true)) // User has access all
-            .or_filter(users_organizations::atype.le(UserOrgType::Admin as i32)) // User is admin or owner
+            .or_filter(users_organizations::atype.le(MembershipType::Admin as i32)) // User is admin or owner
             .or_filter(groups::access_all.eq(true)) //Access via group
             .or_filter(collections_groups::collections_uuid.is_not_null()) //Access via group
             .select(ciphers_collections::all_columns)

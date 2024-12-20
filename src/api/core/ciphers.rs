@@ -405,11 +405,11 @@ pub async fn update_cipher_from_data(
     let transfer_cipher = cipher.organization_uuid.is_none() && data.organization_id.is_some();
 
     if let Some(org_id) = data.organization_id {
-        match UserOrganization::find_by_user_and_org(&headers.user.uuid, &org_id, conn).await {
+        match Membership::find_by_user_and_org(&headers.user.uuid, &org_id, conn).await {
             None => err!("You don't have permission to add item to organization"),
-            Some(org_user) => {
+            Some(member) => {
                 if shared_to_collections.is_some()
-                    || org_user.has_full_access()
+                    || member.has_full_access()
                     || cipher.is_write_accessible_to_user(&headers.user.uuid, conn).await
                 {
                     cipher.organization_uuid = Some(org_id);
@@ -1593,10 +1593,10 @@ async fn delete_all(
     match organization {
         Some(org_data) => {
             // Organization ID in query params, purging organization vault
-            match UserOrganization::find_by_user_and_org(&user.uuid, &org_data.org_id, &mut conn).await {
+            match Membership::find_by_user_and_org(&user.uuid, &org_data.org_id, &mut conn).await {
                 None => err!("You don't have permission to purge the organization vault"),
-                Some(user_org) => {
-                    if user_org.atype == UserOrgType::Owner {
+                Some(member) => {
+                    if member.atype == MembershipType::Owner {
                         Cipher::delete_all_by_organization(&org_data.org_id, &mut conn).await?;
                         nt.send_user_update(UpdateType::SyncVault, &user).await;
 
@@ -1835,7 +1835,7 @@ pub struct CipherSyncData {
     pub cipher_folders: HashMap<String, String>,
     pub cipher_favorites: HashSet<String>,
     pub cipher_collections: HashMap<String, Vec<String>>,
-    pub user_organizations: HashMap<String, UserOrganization>,
+    pub members: HashMap<String, Membership>,
     pub user_collections: HashMap<String, CollectionUser>,
     pub user_collections_groups: HashMap<String, CollectionGroup>,
     pub user_group_full_access_for_organizations: HashSet<String>,
@@ -1869,8 +1869,8 @@ impl CipherSyncData {
         }
 
         // Generate a list of Cipher UUID's containing a Vec with one or more Attachment records
-        let user_org_uuids = UserOrganization::get_org_uuid_by_user(user_uuid, conn).await;
-        let attachments = Attachment::find_all_by_user_and_orgs(user_uuid, &user_org_uuids, conn).await;
+        let orgs = Membership::get_orgs_by_user(user_uuid, conn).await;
+        let attachments = Attachment::find_all_by_user_and_orgs(user_uuid, &orgs, conn).await;
         let mut cipher_attachments: HashMap<String, Vec<Attachment>> = HashMap::with_capacity(attachments.len());
         for attachment in attachments {
             cipher_attachments.entry(attachment.cipher_uuid.clone()).or_default().push(attachment);
@@ -1884,12 +1884,9 @@ impl CipherSyncData {
             cipher_collections.entry(cipher).or_default().push(collection);
         }
 
-        // Generate a HashMap with the Organization UUID as key and the UserOrganization record
-        let user_organizations: HashMap<String, UserOrganization> = UserOrganization::find_by_user(user_uuid, conn)
-            .await
-            .into_iter()
-            .map(|uo| (uo.org_uuid.clone(), uo))
-            .collect();
+        // Generate a HashMap with the Organization UUID as key and the Membership record
+        let members: HashMap<String, Membership> =
+            Membership::find_by_user(user_uuid, conn).await.into_iter().map(|m| (m.org_uuid.clone(), m)).collect();
 
         // Generate a HashMap with the User_Collections UUID as key and the CollectionUser record
         let user_collections: HashMap<String, CollectionUser> = CollectionUser::find_by_user(user_uuid, conn)
@@ -1909,9 +1906,9 @@ impl CipherSyncData {
             HashMap::new()
         };
 
-        // Get all organizations that the user has full access to via group assignment
+        // Get all organizations that the given user has full access to via group assignment
         let user_group_full_access_for_organizations: HashSet<String> = if CONFIG.org_groups_enabled() {
-            Group::gather_user_organizations_full_access(user_uuid, conn).await.into_iter().collect()
+            Group::get_orgs_by_user_with_full_access(user_uuid, conn).await.into_iter().collect()
         } else {
             HashSet::new()
         };
@@ -1921,7 +1918,7 @@ impl CipherSyncData {
             cipher_folders,
             cipher_favorites,
             cipher_collections,
-            user_organizations,
+            members,
             user_collections,
             user_collections_groups,
             user_group_full_access_for_organizations,

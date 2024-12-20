@@ -1,4 +1,4 @@
-use super::{User, UserOrganization};
+use super::{Membership, User};
 use crate::api::EmptyResult;
 use crate::db::DbConn;
 use crate::error::MapResult;
@@ -216,7 +216,7 @@ impl Group {
         }}
     }
     //Returns all organizations the user has full access to
-    pub async fn gather_user_organizations_full_access(user_uuid: &str, conn: &mut DbConn) -> Vec<String> {
+    pub async fn get_orgs_by_user_with_full_access(user_uuid: &str, conn: &mut DbConn) -> Vec<String> {
         db_run! { conn: {
             groups_users::table
                 .inner_join(users_organizations::table.on(
@@ -523,9 +523,9 @@ impl GroupUser {
     }
 
     pub async fn update_user_revision(&self, conn: &mut DbConn) {
-        match UserOrganization::find_by_uuid(&self.users_organizations_uuid, conn).await {
-            Some(user) => User::update_uuid_revision(&user.user_uuid, conn).await,
-            None => warn!("User could not be found!"),
+        match Membership::find_by_uuid(&self.users_organizations_uuid, conn).await {
+            Some(member) => User::update_uuid_revision(&member.user_uuid, conn).await,
+            None => warn!("Member could not be found!"),
         }
     }
 
@@ -534,9 +534,9 @@ impl GroupUser {
         users_organizations_uuid: &str,
         conn: &mut DbConn,
     ) -> EmptyResult {
-        match UserOrganization::find_by_uuid(users_organizations_uuid, conn).await {
-            Some(user) => User::update_uuid_revision(&user.user_uuid, conn).await,
-            None => warn!("User could not be found!"),
+        match Membership::find_by_uuid(users_organizations_uuid, conn).await {
+            Some(member) => User::update_uuid_revision(&member.user_uuid, conn).await,
+            None => warn!("Member could not be found!"),
         };
 
         db_run! { conn: {
@@ -562,15 +562,15 @@ impl GroupUser {
         }}
     }
 
-    pub async fn delete_all_by_user(users_organizations_uuid: &str, conn: &mut DbConn) -> EmptyResult {
-        match UserOrganization::find_by_uuid(users_organizations_uuid, conn).await {
-            Some(user) => User::update_uuid_revision(&user.user_uuid, conn).await,
-            None => warn!("User could not be found!"),
+    pub async fn delete_all_by_member(member_uuid: &str, conn: &mut DbConn) -> EmptyResult {
+        match Membership::find_by_uuid(member_uuid, conn).await {
+            Some(member) => User::update_uuid_revision(&member.user_uuid, conn).await,
+            None => warn!("Member could not be found!"),
         }
 
         db_run! { conn: {
             diesel::delete(groups_users::table)
-                .filter(groups_users::users_organizations_uuid.eq(users_organizations_uuid))
+                .filter(groups_users::users_organizations_uuid.eq(member_uuid))
                 .execute(conn)
                 .map_res("Error deleting user groups")
         }}

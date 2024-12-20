@@ -106,15 +106,15 @@ fn enforce_password_hint_setting(password_hint: &Option<String>) -> EmptyResult 
     }
     Ok(())
 }
-async fn is_email_2fa_required(org_user_uuid: Option<String>, conn: &mut DbConn) -> bool {
+async fn is_email_2fa_required(member_uuid: Option<String>, conn: &mut DbConn) -> bool {
     if !CONFIG._enable_email_2fa() {
         return false;
     }
     if CONFIG.email_2fa_enforce_on_verified_invite() {
         return true;
     }
-    if org_user_uuid.is_some() {
-        return OrgPolicy::is_enabled_for_member(&org_user_uuid.unwrap(), OrgPolicyType::TwoFactorAuthentication, conn)
+    if member_uuid.is_some() {
+        return OrgPolicy::is_enabled_for_member(&member_uuid.unwrap(), OrgPolicyType::TwoFactorAuthentication, conn)
             .await;
     }
     false
@@ -161,9 +161,9 @@ pub async fn _register(data: Json<RegisterData>, mut conn: DbConn) -> JsonResult
                     err!("Registration email does not match invite email")
                 }
             } else if Invitation::take(&email, &mut conn).await {
-                for user_org in UserOrganization::find_invited_by_user(&user.uuid, &mut conn).await.iter_mut() {
-                    user_org.status = UserOrgStatus::Accepted as i32;
-                    user_org.save(&mut conn).await?;
+                for membership in Membership::find_invited_by_user(&user.uuid, &mut conn).await.iter_mut() {
+                    membership.status = MembershipStatus::Accepted as i32;
+                    membership.save(&mut conn).await?;
                 }
                 user
             } else if CONFIG.is_signup_allowed(&email)
@@ -489,7 +489,7 @@ fn validate_keydata(
     existing_ciphers: &[Cipher],
     existing_folders: &[Folder],
     existing_emergency_access: &[EmergencyAccess],
-    existing_user_orgs: &[UserOrganization],
+    existing_memberships: &[Membership],
     existing_sends: &[Send],
 ) -> EmptyResult {
     // Check that we're correctly rotating all the user's ciphers
@@ -521,7 +521,7 @@ fn validate_keydata(
     }
 
     // Check that we're correctly rotating all the user's reset password keys
-    let existing_reset_password_ids = existing_user_orgs.iter().map(|uo| uo.org_uuid.as_str()).collect::<HashSet<_>>();
+    let existing_reset_password_ids = existing_memberships.iter().map(|m| m.org_uuid.as_str()).collect::<HashSet<_>>();
     let provided_reset_password_ids =
         data.reset_password_keys.iter().map(|rp| rp.organization_id.as_str()).collect::<HashSet<_>>();
     if !provided_reset_password_ids.is_superset(&existing_reset_password_ids) {
@@ -560,9 +560,9 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, mut conn: DbConn,
     let mut existing_ciphers = Cipher::find_owned_by_user(user_uuid, &mut conn).await;
     let mut existing_folders = Folder::find_by_user(user_uuid, &mut conn).await;
     let mut existing_emergency_access = EmergencyAccess::find_all_by_grantor_uuid(user_uuid, &mut conn).await;
-    let mut existing_user_orgs = UserOrganization::find_by_user(user_uuid, &mut conn).await;
+    let mut existing_memberships = Membership::find_by_user(user_uuid, &mut conn).await;
     // We only rotate the reset password key if it is set.
-    existing_user_orgs.retain(|uo| uo.reset_password_key.is_some());
+    existing_memberships.retain(|m| m.reset_password_key.is_some());
     let mut existing_sends = Send::find_by_user(user_uuid, &mut conn).await;
 
     validate_keydata(
@@ -570,7 +570,7 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, mut conn: DbConn,
         &existing_ciphers,
         &existing_folders,
         &existing_emergency_access,
-        &existing_user_orgs,
+        &existing_memberships,
         &existing_sends,
     )?;
 
@@ -602,14 +602,14 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, mut conn: DbConn,
 
     // Update reset password data
     for reset_password_data in data.reset_password_keys {
-        let Some(user_org) =
-            existing_user_orgs.iter_mut().find(|uo| uo.org_uuid == reset_password_data.organization_id)
+        let Some(membership) =
+            existing_memberships.iter_mut().find(|m| m.org_uuid == reset_password_data.organization_id)
         else {
             err!("Reset password doesn't exist")
         };
 
-        user_org.reset_password_key = Some(reset_password_data.reset_password_key);
-        user_org.save(&mut conn).await?
+        membership.reset_password_key = Some(reset_password_data.reset_password_key);
+        membership.save(&mut conn).await?
     }
 
     // Update send data

@@ -5,7 +5,7 @@ use crate::api::EmptyResult;
 use crate::db::DbConn;
 use crate::error::MapResult;
 
-use super::{TwoFactor, UserOrgStatus, UserOrgType, UserOrganization};
+use super::{Membership, MembershipStatus, MembershipType, TwoFactor};
 
 db_object! {
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -161,7 +161,7 @@ impl OrgPolicy {
                             .and(users_organizations::user_uuid.eq(user_uuid)))
                 )
                 .filter(
-                    users_organizations::status.eq(UserOrgStatus::Confirmed as i32)
+                    users_organizations::status.eq(MembershipStatus::Confirmed as i32)
                 )
                 .select(org_policies::all_columns)
                 .load::<OrgPolicyDb>(conn)
@@ -202,10 +202,10 @@ impl OrgPolicy {
                             .and(users_organizations::user_uuid.eq(user_uuid)))
                 )
                 .filter(
-                    users_organizations::status.eq(UserOrgStatus::Accepted as i32)
+                    users_organizations::status.eq(MembershipStatus::Accepted as i32)
                 )
                 .or_filter(
-                    users_organizations::status.eq(UserOrgStatus::Confirmed as i32)
+                    users_organizations::status.eq(MembershipStatus::Confirmed as i32)
                 )
                 .filter(org_policies::atype.eq(policy_type as i32))
                 .filter(org_policies::enabled.eq(true))
@@ -229,7 +229,7 @@ impl OrgPolicy {
                             .and(users_organizations::user_uuid.eq(user_uuid)))
                 )
                 .filter(
-                    users_organizations::status.eq(UserOrgStatus::Confirmed as i32)
+                    users_organizations::status.eq(MembershipStatus::Confirmed as i32)
                 )
                 .filter(org_policies::atype.eq(policy_type as i32))
                 .filter(org_policies::enabled.eq(true))
@@ -257,8 +257,8 @@ impl OrgPolicy {
                 continue;
             }
 
-            if let Some(user) = UserOrganization::find_by_user_and_org(user_uuid, &policy.org_uuid, conn).await {
-                if user.atype < UserOrgType::Admin {
+            if let Some(user) = Membership::find_by_user_and_org(user_uuid, &policy.org_uuid, conn).await {
+                if user.atype < MembershipType::Admin {
                     return true;
                 }
             }
@@ -316,8 +316,8 @@ impl OrgPolicy {
         for policy in
             OrgPolicy::find_confirmed_by_user_and_active_policy(user_uuid, OrgPolicyType::SendOptions, conn).await
         {
-            if let Some(user) = UserOrganization::find_by_user_and_org(user_uuid, &policy.org_uuid, conn).await {
-                if user.atype < UserOrgType::Admin {
+            if let Some(user) = Membership::find_by_user_and_org(user_uuid, &policy.org_uuid, conn).await {
+                if user.atype < MembershipType::Admin {
                     match serde_json::from_str::<SendOptionsPolicyData>(&policy.data) {
                         Ok(opts) => {
                             if opts.disable_hide_email {
@@ -332,9 +332,9 @@ impl OrgPolicy {
         false
     }
 
-    pub async fn is_enabled_for_member(org_user_uuid: &str, policy_type: OrgPolicyType, conn: &mut DbConn) -> bool {
-        if let Some(membership) = UserOrganization::find_by_uuid(org_user_uuid, conn).await {
-            if let Some(policy) = OrgPolicy::find_by_org_and_type(&membership.org_uuid, policy_type, conn).await {
+    pub async fn is_enabled_for_member(member_uuid: &str, policy_type: OrgPolicyType, conn: &mut DbConn) -> bool {
+        if let Some(member) = Membership::find_by_uuid(member_uuid, conn).await {
+            if let Some(policy) = OrgPolicy::find_by_org_and_type(&member.org_uuid, policy_type, conn).await {
                 return policy.enabled;
             }
         }

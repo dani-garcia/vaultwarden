@@ -111,7 +111,7 @@ async fn _refresh_login(data: ConnectData, conn: &mut DbConn) -> JsonResult {
     // Because this might get used in the future, and is add by the Bitwarden Server, lets keep it, but then commented out
     // See: https://github.com/dani-garcia/vaultwarden/issues/4156
     // ---
-    // let orgs = UserOrganization::find_confirmed_by_user(&user.uuid, conn).await;
+    // let members = Membership::find_confirmed_by_user(&user.uuid, conn).await;
     let (access_token, expires_in) = device.refresh_tokens(&user, scope_vec);
     device.save(conn).await?;
 
@@ -291,7 +291,7 @@ async fn _password_login(
     // Because this might get used in the future, and is add by the Bitwarden Server, lets keep it, but then commented out
     // See: https://github.com/dani-garcia/vaultwarden/issues/4156
     // ---
-    // let orgs = UserOrganization::find_confirmed_by_user(&user.uuid, conn).await;
+    // let members = Membership::find_confirmed_by_user(&user.uuid, conn).await;
     let (access_token, expires_in) = device.refresh_tokens(&user, scope_vec);
     device.save(conn).await?;
 
@@ -440,7 +440,7 @@ async fn _user_api_key_login(
     // Because this might get used in the future, and is add by the Bitwarden Server, lets keep it, but then commented out
     // See: https://github.com/dani-garcia/vaultwarden/issues/4156
     // ---
-    // let orgs = UserOrganization::find_confirmed_by_user(&user.uuid, conn).await;
+    // let members = Membership::find_confirmed_by_user(&user.uuid, conn).await;
     let (access_token, expires_in) = device.refresh_tokens(&user, scope_vec);
     device.save(conn).await?;
 
