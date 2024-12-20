@@ -829,6 +829,7 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         "browser-fileless-import",
         "extension-refresh",
         "fido2-vault-credentials",
+        "inline-menu-positioning-improvements",
         "ssh-key-vault-item",
         "ssh-agent",
     ];
