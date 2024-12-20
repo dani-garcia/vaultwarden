@@ -25,7 +25,7 @@ db_object! {
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
     #[diesel(table_name = users_organizations)]
     #[diesel(primary_key(uuid))]
-    pub struct UserOrganization {
+    pub struct Membership {
         pub uuid: String,
         pub user_uuid: String,
         pub org_uuid: String,
@@ -51,7 +51,7 @@ db_object! {
 }
 
 // https://github.com/bitwarden/server/blob/b86a04cef9f1e1b82cf18e49fc94e017c641130c/src/Core/Enums/OrganizationUserStatusType.cs
-pub enum UserOrgStatus {
+pub enum MembershipStatus {
     Revoked = -1,
     Invited = 0,
     Accepted = 1,
@@ -59,27 +59,27 @@ pub enum UserOrgStatus {
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, num_derive::FromPrimitive)]
-pub enum UserOrgType {
+pub enum MembershipType {
     Owner = 0,
     Admin = 1,
     User = 2,
     Manager = 3,
 }
 
-impl UserOrgType {
+impl MembershipType {
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
-            "0" | "Owner" => Some(UserOrgType::Owner),
-            "1" | "Admin" => Some(UserOrgType::Admin),
-            "2" | "User" => Some(UserOrgType::User),
-            "3" | "Manager" => Some(UserOrgType::Manager),
+            "0" | "Owner" => Some(MembershipType::Owner),
+            "1" | "Admin" => Some(MembershipType::Admin),
+            "2" | "User" => Some(MembershipType::User),
+            "3" | "Manager" => Some(MembershipType::Manager),
             _ => None,
         }
     }
 }
 
-impl Ord for UserOrgType {
-    fn cmp(&self, other: &UserOrgType) -> Ordering {
+impl Ord for MembershipType {
+    fn cmp(&self, other: &MembershipType) -> Ordering {
         // For easy comparison, map each variant to an access level (where 0 is lowest).
         static ACCESS_LEVEL: [i32; 4] = [
             3, // Owner
@@ -91,19 +91,19 @@ impl Ord for UserOrgType {
     }
 }
 
-impl PartialOrd for UserOrgType {
-    fn partial_cmp(&self, other: &UserOrgType) -> Option<Ordering> {
+impl PartialOrd for MembershipType {
+    fn partial_cmp(&self, other: &MembershipType) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl PartialEq<i32> for UserOrgType {
+impl PartialEq<i32> for MembershipType {
     fn eq(&self, other: &i32) -> bool {
         *other == *self as i32
     }
 }
 
-impl PartialOrd<i32> for UserOrgType {
+impl PartialOrd<i32> for MembershipType {
     fn partial_cmp(&self, other: &i32) -> Option<Ordering> {
         if let Some(other) = Self::from_i32(*other) {
             return Some(self.cmp(&other));
@@ -120,25 +120,25 @@ impl PartialOrd<i32> for UserOrgType {
     }
 }
 
-impl PartialEq<UserOrgType> for i32 {
-    fn eq(&self, other: &UserOrgType) -> bool {
+impl PartialEq<MembershipType> for i32 {
+    fn eq(&self, other: &MembershipType) -> bool {
         *self == *other as i32
     }
 }
 
-impl PartialOrd<UserOrgType> for i32 {
-    fn partial_cmp(&self, other: &UserOrgType) -> Option<Ordering> {
-        if let Some(self_type) = UserOrgType::from_i32(*self) {
+impl PartialOrd<MembershipType> for i32 {
+    fn partial_cmp(&self, other: &MembershipType) -> Option<Ordering> {
+        if let Some(self_type) = MembershipType::from_i32(*self) {
             return Some(self_type.cmp(other));
         }
         None
     }
 
-    fn lt(&self, other: &UserOrgType) -> bool {
+    fn lt(&self, other: &MembershipType) -> bool {
         matches!(self.partial_cmp(other), Some(Ordering::Less) | None)
     }
 
-    fn le(&self, other: &UserOrgType) -> bool {
+    fn le(&self, other: &MembershipType) -> bool {
         matches!(self.partial_cmp(other), Some(Ordering::Less | Ordering::Equal) | None)
     }
 }
@@ -199,7 +199,7 @@ impl Organization {
 // It should also provide enough room for 100+ types, which i doubt will ever happen.
 static ACTIVATE_REVOKE_DIFF: i32 = 128;
 
-impl UserOrganization {
+impl Membership {
     pub fn new(user_uuid: String, org_uuid: String) -> Self {
         Self {
             uuid: crate::util::get_uuid(),
@@ -209,15 +209,15 @@ impl UserOrganization {
 
             access_all: false,
             akey: String::new(),
-            status: UserOrgStatus::Accepted as i32,
-            atype: UserOrgType::User as i32,
+            status: MembershipStatus::Accepted as i32,
+            atype: MembershipType::User as i32,
             reset_password_key: None,
             external_id: None,
         }
     }
 
     pub fn restore(&mut self) -> bool {
-        if self.status < UserOrgStatus::Invited as i32 {
+        if self.status < MembershipStatus::Invited as i32 {
             self.status += ACTIVATE_REVOKE_DIFF;
             return true;
         }
@@ -225,7 +225,7 @@ impl UserOrganization {
     }
 
     pub fn revoke(&mut self) -> bool {
-        if self.status > UserOrgStatus::Revoked as i32 {
+        if self.status > MembershipStatus::Revoked as i32 {
             self.status -= ACTIVATE_REVOKE_DIFF;
             return true;
         }
@@ -234,7 +234,7 @@ impl UserOrganization {
 
     /// Return the status of the user in an unrevoked state
     pub fn get_unrevoked_status(&self) -> i32 {
-        if self.status <= UserOrgStatus::Revoked as i32 {
+        if self.status <= MembershipStatus::Revoked as i32 {
             return self.status + ACTIVATE_REVOKE_DIFF;
         }
         self.status
@@ -283,8 +283,8 @@ impl Organization {
             err!(format!("BillingEmail {} is not a valid email address", self.billing_email.trim()))
         }
 
-        for user_org in UserOrganization::find_by_org(&self.uuid, conn).await.iter() {
-            User::update_uuid_revision(&user_org.user_uuid, conn).await;
+        for member in Membership::find_by_org(&self.uuid, conn).await.iter() {
+            User::update_uuid_revision(&member.user_uuid, conn).await;
         }
 
         db_run! { conn:
@@ -324,7 +324,7 @@ impl Organization {
 
         Cipher::delete_all_by_organization(&self.uuid, conn).await?;
         Collection::delete_all_by_organization(&self.uuid, conn).await?;
-        UserOrganization::delete_all_by_organization(&self.uuid, conn).await?;
+        Membership::delete_all_by_organization(&self.uuid, conn).await?;
         OrgPolicy::delete_all_by_organization(&self.uuid, conn).await?;
         Group::delete_all_by_organization(&self.uuid, conn).await?;
         OrganizationApiKey::delete_all_by_organization(&self.uuid, conn).await?;
@@ -352,7 +352,7 @@ impl Organization {
     }
 }
 
-impl UserOrganization {
+impl Membership {
     pub async fn to_json(&self, conn: &mut DbConn) -> Value {
         let org = Organization::find_by_uuid(&self.org_uuid, conn).await.unwrap();
 
@@ -446,8 +446,8 @@ impl UserOrganization {
 
         // Because BitWarden want the status to be -1 for revoked users we need to catch that here.
         // We subtract/add a number so we can restore/activate the user to it's previous state again.
-        let status = if self.status < UserOrgStatus::Revoked as i32 {
-            UserOrgStatus::Revoked as i32
+        let status = if self.status < MembershipStatus::Revoked as i32 {
+            MembershipStatus::Revoked as i32
         } else {
             self.status
         };
@@ -489,12 +489,12 @@ impl UserOrganization {
                 .into_iter()
                 .filter_map(|c| {
                     let (read_only, hide_passwords, can_manage) = if self.has_full_access() {
-                        (false, false, self.atype >= UserOrgType::Manager)
+                        (false, false, self.atype >= MembershipType::Manager)
                     } else if let Some(cu) = cu.get(&c.uuid) {
                         (
                             cu.read_only,
                             cu.hide_passwords,
-                            self.atype == UserOrgType::Manager && !cu.read_only && !cu.hide_passwords,
+                            self.atype == MembershipType::Manager && !cu.read_only && !cu.hide_passwords,
                         )
                     // If previous checks failed it might be that this user has access via a group, but we should not return those elements here
                     // Those are returned via a special group endpoint
@@ -538,7 +538,7 @@ impl UserOrganization {
         json!({
             "id": self.uuid,
             "userId": self.user_uuid,
-            "name": if self.get_unrevoked_status() >= UserOrgStatus::Accepted as i32 { Some(user.name) } else { None },
+            "name": if self.get_unrevoked_status() >= MembershipStatus::Accepted as i32 { Some(user.name) } else { None },
             "email": user.email,
             "externalId": self.external_id,
             "avatarColor": user.avatar_color,
@@ -590,8 +590,8 @@ impl UserOrganization {
 
         // Because BitWarden want the status to be -1 for revoked users we need to catch that here.
         // We subtract/add a number so we can restore/activate the user to it's previous state again.
-        let status = if self.status < UserOrgStatus::Revoked as i32 {
-            UserOrgStatus::Revoked as i32
+        let status = if self.status < MembershipStatus::Revoked as i32 {
+            MembershipStatus::Revoked as i32
         } else {
             self.status
         };
@@ -614,7 +614,7 @@ impl UserOrganization {
         db_run! { conn:
             sqlite, mysql {
                 match diesel::replace_into(users_organizations::table)
-                    .values(UserOrganizationDb::to_db(self))
+                    .values(MembershipDb::to_db(self))
                     .execute(conn)
                 {
                     Ok(_) => Ok(()),
@@ -622,7 +622,7 @@ impl UserOrganization {
                     Err(diesel::result::Error::DatabaseError(diesel::result::DatabaseErrorKind::ForeignKeyViolation, _)) => {
                         diesel::update(users_organizations::table)
                             .filter(users_organizations::uuid.eq(&self.uuid))
-                            .set(UserOrganizationDb::to_db(self))
+                            .set(MembershipDb::to_db(self))
                             .execute(conn)
                             .map_res("Error adding user to organization")
                     },
@@ -630,7 +630,7 @@ impl UserOrganization {
                 }.map_res("Error adding user to organization")
             }
             postgresql {
-                let value = UserOrganizationDb::to_db(self);
+                let value = MembershipDb::to_db(self);
                 diesel::insert_into(users_organizations::table)
                     .values(&value)
                     .on_conflict(users_organizations::uuid)
@@ -646,7 +646,7 @@ impl UserOrganization {
         User::update_uuid_revision(&self.user_uuid, conn).await;
 
         CollectionUser::delete_all_by_user_and_org(&self.user_uuid, &self.org_uuid, conn).await?;
-        GroupUser::delete_all_by_user(&self.uuid, conn).await?;
+        GroupUser::delete_all_by_member(&self.uuid, conn).await?;
 
         db_run! { conn: {
             diesel::delete(users_organizations::table.filter(users_organizations::uuid.eq(self.uuid)))
@@ -656,46 +656,46 @@ impl UserOrganization {
     }
 
     pub async fn delete_all_by_organization(org_uuid: &str, conn: &mut DbConn) -> EmptyResult {
-        for user_org in Self::find_by_org(org_uuid, conn).await {
-            user_org.delete(conn).await?;
+        for member in Self::find_by_org(org_uuid, conn).await {
+            member.delete(conn).await?;
         }
         Ok(())
     }
 
     pub async fn delete_all_by_user(user_uuid: &str, conn: &mut DbConn) -> EmptyResult {
-        for user_org in Self::find_any_state_by_user(user_uuid, conn).await {
-            user_org.delete(conn).await?;
+        for member in Self::find_any_state_by_user(user_uuid, conn).await {
+            member.delete(conn).await?;
         }
         Ok(())
     }
 
-    pub async fn find_by_email_and_org(email: &str, org_id: &str, conn: &mut DbConn) -> Option<UserOrganization> {
+    pub async fn find_by_email_and_org(email: &str, org_id: &str, conn: &mut DbConn) -> Option<Membership> {
         if let Some(user) = User::find_by_mail(email, conn).await {
-            if let Some(user_org) = UserOrganization::find_by_user_and_org(&user.uuid, org_id, conn).await {
-                return Some(user_org);
+            if let Some(member) = Membership::find_by_user_and_org(&user.uuid, org_id, conn).await {
+                return Some(member);
             }
         }
 
         None
     }
 
-    pub fn has_status(&self, status: UserOrgStatus) -> bool {
+    pub fn has_status(&self, status: MembershipStatus) -> bool {
         self.status == status as i32
     }
 
-    pub fn has_type(&self, user_type: UserOrgType) -> bool {
+    pub fn has_type(&self, user_type: MembershipType) -> bool {
         self.atype == user_type as i32
     }
 
     pub fn has_full_access(&self) -> bool {
-        (self.access_all || self.atype >= UserOrgType::Admin) && self.has_status(UserOrgStatus::Confirmed)
+        (self.access_all || self.atype >= MembershipType::Admin) && self.has_status(MembershipStatus::Confirmed)
     }
 
     pub async fn find_by_uuid(uuid: &str, conn: &mut DbConn) -> Option<Self> {
         db_run! { conn: {
             users_organizations::table
                 .filter(users_organizations::uuid.eq(uuid))
-                .first::<UserOrganizationDb>(conn)
+                .first::<MembershipDb>(conn)
                 .ok().from_db()
         }}
     }
@@ -705,7 +705,7 @@ impl UserOrganization {
             users_organizations::table
                 .filter(users_organizations::uuid.eq(uuid))
                 .filter(users_organizations::org_uuid.eq(org_uuid))
-                .first::<UserOrganizationDb>(conn)
+                .first::<MembershipDb>(conn)
                 .ok().from_db()
         }}
     }
@@ -714,8 +714,8 @@ impl UserOrganization {
         db_run! { conn: {
             users_organizations::table
                 .filter(users_organizations::user_uuid.eq(user_uuid))
-                .filter(users_organizations::status.eq(UserOrgStatus::Confirmed as i32))
-                .load::<UserOrganizationDb>(conn)
+                .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
+                .load::<MembershipDb>(conn)
                 .unwrap_or_default().from_db()
         }}
     }
@@ -724,8 +724,8 @@ impl UserOrganization {
         db_run! { conn: {
             users_organizations::table
                 .filter(users_organizations::user_uuid.eq(user_uuid))
-                .filter(users_organizations::status.eq(UserOrgStatus::Invited as i32))
-                .load::<UserOrganizationDb>(conn)
+                .filter(users_organizations::status.eq(MembershipStatus::Invited as i32))
+                .load::<MembershipDb>(conn)
                 .unwrap_or_default().from_db()
         }}
     }
@@ -734,7 +734,7 @@ impl UserOrganization {
         db_run! { conn: {
             users_organizations::table
                 .filter(users_organizations::user_uuid.eq(user_uuid))
-                .load::<UserOrganizationDb>(conn)
+                .load::<MembershipDb>(conn)
                 .unwrap_or_default().from_db()
         }}
     }
@@ -743,7 +743,7 @@ impl UserOrganization {
         db_run! { conn: {
             users_organizations::table
                 .filter(users_organizations::user_uuid.eq(user_uuid))
-                .filter(users_organizations::status.eq(UserOrgStatus::Accepted as i32).or(users_organizations::status.eq(UserOrgStatus::Confirmed as i32)))
+                .filter(users_organizations::status.eq(MembershipStatus::Accepted as i32).or(users_organizations::status.eq(MembershipStatus::Confirmed as i32)))
                 .count()
                 .first::<i64>(conn)
                 .unwrap_or(0)
@@ -754,7 +754,7 @@ impl UserOrganization {
         db_run! { conn: {
             users_organizations::table
                 .filter(users_organizations::org_uuid.eq(org_uuid))
-                .load::<UserOrganizationDb>(conn)
+                .load::<MembershipDb>(conn)
                 .expect("Error loading user organizations").from_db()
         }}
     }
@@ -763,8 +763,8 @@ impl UserOrganization {
         db_run! { conn: {
             users_organizations::table
                 .filter(users_organizations::org_uuid.eq(org_uuid))
-                .filter(users_organizations::status.eq(UserOrgStatus::Confirmed as i32))
-                .load::<UserOrganizationDb>(conn)
+                .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
+                .load::<MembershipDb>(conn)
                 .unwrap_or_default().from_db()
         }}
     }
@@ -780,22 +780,22 @@ impl UserOrganization {
         }}
     }
 
-    pub async fn find_by_org_and_type(org_uuid: &str, atype: UserOrgType, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_org_and_type(org_uuid: &str, atype: MembershipType, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             users_organizations::table
                 .filter(users_organizations::org_uuid.eq(org_uuid))
                 .filter(users_organizations::atype.eq(atype as i32))
-                .load::<UserOrganizationDb>(conn)
+                .load::<MembershipDb>(conn)
                 .expect("Error loading user organizations").from_db()
         }}
     }
 
-    pub async fn count_confirmed_by_org_and_type(org_uuid: &str, atype: UserOrgType, conn: &mut DbConn) -> i64 {
+    pub async fn count_confirmed_by_org_and_type(org_uuid: &str, atype: MembershipType, conn: &mut DbConn) -> i64 {
         db_run! { conn: {
             users_organizations::table
                 .filter(users_organizations::org_uuid.eq(org_uuid))
                 .filter(users_organizations::atype.eq(atype as i32))
-                .filter(users_organizations::status.eq(UserOrgStatus::Confirmed as i32))
+                .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
                 .count()
                 .first::<i64>(conn)
                 .unwrap_or(0)
@@ -807,7 +807,7 @@ impl UserOrganization {
             users_organizations::table
                 .filter(users_organizations::user_uuid.eq(user_uuid))
                 .filter(users_organizations::org_uuid.eq(org_uuid))
-                .first::<UserOrganizationDb>(conn)
+                .first::<MembershipDb>(conn)
                 .ok().from_db()
         }}
     }
@@ -818,9 +818,9 @@ impl UserOrganization {
                 .filter(users_organizations::user_uuid.eq(user_uuid))
                 .filter(users_organizations::org_uuid.eq(org_uuid))
                 .filter(
-                    users_organizations::status.eq(UserOrgStatus::Confirmed as i32)
+                    users_organizations::status.eq(MembershipStatus::Confirmed as i32)
                 )
-                .first::<UserOrganizationDb>(conn)
+                .first::<MembershipDb>(conn)
                 .ok().from_db()
         }}
     }
@@ -829,12 +829,12 @@ impl UserOrganization {
         db_run! { conn: {
             users_organizations::table
                 .filter(users_organizations::user_uuid.eq(user_uuid))
-                .load::<UserOrganizationDb>(conn)
+                .load::<MembershipDb>(conn)
                 .expect("Error loading user organizations").from_db()
         }}
     }
 
-    pub async fn get_org_uuid_by_user(user_uuid: &str, conn: &mut DbConn) -> Vec<String> {
+    pub async fn get_orgs_by_user(user_uuid: &str, conn: &mut DbConn) -> Vec<String> {
         db_run! { conn: {
             users_organizations::table
                 .filter(users_organizations::user_uuid.eq(user_uuid))
@@ -855,10 +855,10 @@ impl UserOrganization {
                             .and(org_policies::enabled.eq(true)))
                 )
                 .filter(
-                    users_organizations::status.eq(UserOrgStatus::Confirmed as i32)
+                    users_organizations::status.eq(MembershipStatus::Confirmed as i32)
                 )
                 .select(users_organizations::all_columns)
-                .load::<UserOrganizationDb>(conn)
+                .load::<MembershipDb>(conn)
                 .unwrap_or_default().from_db()
         }}
     }
@@ -882,7 +882,7 @@ impl UserOrganization {
             )
             .select(users_organizations::all_columns)
             .distinct()
-            .load::<UserOrganizationDb>(conn).expect("Error loading user organizations").from_db()
+            .load::<MembershipDb>(conn).expect("Error loading user organizations").from_db()
         }}
     }
 
@@ -908,7 +908,7 @@ impl UserOrganization {
                 )
                 .select(users_organizations::all_columns)
                 .distinct()
-            .load::<UserOrganizationDb>(conn).expect("Error loading user organizations with groups").from_db()
+            .load::<MembershipDb>(conn).expect("Error loading user organizations with groups").from_db()
         }}
     }
 
@@ -917,7 +917,7 @@ impl UserOrganization {
             users_organizations::table
             .inner_join(ciphers::table.on(ciphers::uuid.eq(cipher_uuid).and(ciphers::organization_uuid.eq(users_organizations::org_uuid.nullable()))))
             .filter(users_organizations::user_uuid.eq(user_uuid))
-            .filter(users_organizations::atype.eq_any(vec![UserOrgType::Owner as i32, UserOrgType::Admin as i32]))
+            .filter(users_organizations::atype.eq_any(vec![MembershipType::Owner as i32, MembershipType::Admin as i32]))
             .count()
             .first::<i64>(conn)
             .ok().unwrap_or(0) != 0
@@ -937,7 +937,7 @@ impl UserOrganization {
                 )
             )
             .select(users_organizations::all_columns)
-            .load::<UserOrganizationDb>(conn).expect("Error loading user organizations").from_db()
+            .load::<MembershipDb>(conn).expect("Error loading user organizations").from_db()
         }}
     }
 
@@ -948,7 +948,7 @@ impl UserOrganization {
                 users_organizations::external_id.eq(ext_id)
                 .and(users_organizations::org_uuid.eq(org_uuid))
             )
-            .first::<UserOrganizationDb>(conn).ok().from_db()
+            .first::<MembershipDb>(conn).ok().from_db()
         }}
     }
 }
@@ -1011,9 +1011,9 @@ mod tests {
 
     #[test]
     #[allow(non_snake_case)]
-    fn partial_cmp_UserOrgType() {
-        assert!(UserOrgType::Owner > UserOrgType::Admin);
-        assert!(UserOrgType::Admin > UserOrgType::Manager);
-        assert!(UserOrgType::Manager > UserOrgType::User);
+    fn partial_cmp_MembershipType() {
+        assert!(MembershipType::Owner > MembershipType::Admin);
+        assert!(MembershipType::Admin > MembershipType::Manager);
+        assert!(MembershipType::Manager > MembershipType::User);
     }
 }

@@ -215,8 +215,7 @@ impl User {
 }
 
 use super::{
-    Cipher, Device, EmergencyAccess, Favorite, Folder, Send, TwoFactor, TwoFactorIncomplete, UserOrgType,
-    UserOrganization,
+    Cipher, Device, EmergencyAccess, Favorite, Folder, Membership, MembershipType, Send, TwoFactor, TwoFactorIncomplete,
 };
 use crate::db::DbConn;
 
@@ -227,7 +226,7 @@ use crate::error::MapResult;
 impl User {
     pub async fn to_json(&self, conn: &mut DbConn) -> Value {
         let mut orgs_json = Vec::new();
-        for c in UserOrganization::find_confirmed_by_user(&self.uuid, conn).await {
+        for c in Membership::find_confirmed_by_user(&self.uuid, conn).await {
             orgs_json.push(c.to_json(conn).await);
         }
 
@@ -304,10 +303,9 @@ impl User {
     }
 
     pub async fn delete(self, conn: &mut DbConn) -> EmptyResult {
-        for user_org in UserOrganization::find_confirmed_by_user(&self.uuid, conn).await {
-            if user_org.atype == UserOrgType::Owner
-                && UserOrganization::count_confirmed_by_org_and_type(&user_org.org_uuid, UserOrgType::Owner, conn).await
-                    <= 1
+        for member in Membership::find_confirmed_by_user(&self.uuid, conn).await {
+            if member.atype == MembershipType::Owner
+                && Membership::count_confirmed_by_org_and_type(&member.org_uuid, MembershipType::Owner, conn).await <= 1
             {
                 err!("Can't delete last owner")
             }
@@ -316,7 +314,7 @@ impl User {
         Send::delete_all_by_user(&self.uuid, conn).await?;
         EmergencyAccess::delete_all_by_user(&self.uuid, conn).await?;
         EmergencyAccess::delete_all_by_grantee_email(&self.email, conn).await?;
-        UserOrganization::delete_all_by_user(&self.uuid, conn).await?;
+        Membership::delete_all_by_user(&self.uuid, conn).await?;
         Cipher::delete_all_by_user(&self.uuid, conn).await?;
         Favorite::delete_all_by_user(&self.uuid, conn).await?;
         Folder::delete_all_by_user(&self.uuid, conn).await?;

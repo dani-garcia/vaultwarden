@@ -75,12 +75,12 @@ impl Device {
         // Also These key/value pairs are not used anywhere by either Vaultwarden or Bitwarden Clients
         // Because these might get used in the future, and they are added by the Bitwarden Server, lets keep it, but then commented out
         // ---
-        // fn arg: orgs: Vec<super::UserOrganization>,
+        // fn arg: members: Vec<super::Membership>,
         // ---
-        // let orgowner: Vec<_> = orgs.iter().filter(|o| o.atype == 0).map(|o| o.org_uuid.clone()).collect();
-        // let orgadmin: Vec<_> = orgs.iter().filter(|o| o.atype == 1).map(|o| o.org_uuid.clone()).collect();
-        // let orguser: Vec<_> = orgs.iter().filter(|o| o.atype == 2).map(|o| o.org_uuid.clone()).collect();
-        // let orgmanager: Vec<_> = orgs.iter().filter(|o| o.atype == 3).map(|o| o.org_uuid.clone()).collect();
+        // let orgowner: Vec<_> = members.iter().filter(|m| m.atype == 0).map(|o| o.org_uuid.clone()).collect();
+        // let orgadmin: Vec<_> = members.iter().filter(|m| m.atype == 1).map(|o| o.org_uuid.clone()).collect();
+        // let orguser: Vec<_> = members.iter().filter(|m| m.atype == 2).map(|o| o.org_uuid.clone()).collect();
+        // let orgmanager: Vec<_> = members.iter().filter(|m| m.atype == 3).map(|o| o.org_uuid.clone()).collect();
 
         // Create the JWT claims struct, to send to the client
         use crate::auth::{encode_jwt, LoginJwtClaims, DEFAULT_VALIDITY, JWT_LOGIN_ISSUER};
