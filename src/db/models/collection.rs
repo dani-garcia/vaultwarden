@@ -1,6 +1,11 @@
+use derive_more::{AsRef, Deref, Display, From};
+use rocket::request::FromParam;
 use serde_json::Value;
 
-use super::{CollectionGroup, GroupUser, Membership, MembershipStatus, MembershipType, User};
+use super::{
+    CipherId, CollectionGroup, GroupUser, Membership, MembershipId, MembershipStatus, MembershipType, OrganizationId,
+    User, UserId,
+};
 use crate::CONFIG;
 
 db_object! {
@@ -8,8 +13,8 @@ db_object! {
     #[diesel(table_name = collections)]
     #[diesel(primary_key(uuid))]
     pub struct Collection {
-        pub uuid: String,
-        pub org_uuid: String,
+        pub uuid: CollectionId,
+        pub org_uuid: OrganizationId,
         pub name: String,
         pub external_id: Option<String>,
     }
@@ -18,8 +23,8 @@ db_object! {
     #[diesel(table_name = users_collections)]
     #[diesel(primary_key(user_uuid, collection_uuid))]
     pub struct CollectionUser {
-        pub user_uuid: String,
-        pub collection_uuid: String,
+        pub user_uuid: UserId,
+        pub collection_uuid: CollectionId,
         pub read_only: bool,
         pub hide_passwords: bool,
     }
@@ -28,16 +33,16 @@ db_object! {
     #[diesel(table_name = ciphers_collections)]
     #[diesel(primary_key(cipher_uuid, collection_uuid))]
     pub struct CollectionCipher {
-        pub cipher_uuid: String,
-        pub collection_uuid: String,
+        pub cipher_uuid: CipherId,
+        pub collection_uuid: CollectionId,
     }
 }
 
 /// Local methods
 impl Collection {
-    pub fn new(org_uuid: String, name: String, external_id: Option<String>) -> Self {
+    pub fn new(org_uuid: OrganizationId, name: String, external_id: Option<String>) -> Self {
         let mut new_model = Self {
-            uuid: crate::util::get_uuid(),
+            uuid: CollectionId(crate::util::get_uuid()),
             org_uuid,
             name,
             external_id: None,
@@ -74,7 +79,7 @@ impl Collection {
 
     pub async fn to_json_details(
         &self,
-        user_uuid: &str,
+        user_uuid: &UserId,
         cipher_sync_data: Option<&crate::api::core::CipherSyncData>,
         conn: &mut DbConn,
     ) -> Value {
@@ -121,7 +126,7 @@ impl Collection {
         json_object
     }
 
-    pub async fn can_access_collection(member: &Membership, col_id: &str, conn: &mut DbConn) -> bool {
+    pub async fn can_access_collection(member: &Membership, col_id: &CollectionId, conn: &mut DbConn) -> bool {
         member.has_status(MembershipStatus::Confirmed)
             && (member.has_full_access()
                 || CollectionUser::has_access_to_collection_by_user(col_id, &member.user_uuid, conn).await
@@ -185,7 +190,7 @@ impl Collection {
         }}
     }
 
-    pub async fn delete_all_by_organization(org_uuid: &str, conn: &mut DbConn) -> EmptyResult {
+    pub async fn delete_all_by_organization(org_uuid: &OrganizationId, conn: &mut DbConn) -> EmptyResult {
         for collection in Self::find_by_organization(org_uuid, conn).await {
             collection.delete(conn).await?;
         }
@@ -198,7 +203,7 @@ impl Collection {
         }
     }
 
-    pub async fn find_by_uuid(uuid: &str, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_uuid(uuid: &CollectionId, conn: &mut DbConn) -> Option<Self> {
         db_run! { conn: {
             collections::table
                 .filter(collections::uuid.eq(uuid))
@@ -208,7 +213,7 @@ impl Collection {
         }}
     }
 
-    pub async fn find_by_user_uuid(user_uuid: String, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_user_uuid(user_uuid: UserId, conn: &mut DbConn) -> Vec<Self> {
         if CONFIG.org_groups_enabled() {
             db_run! { conn: {
                 collections::table
@@ -279,15 +284,19 @@ impl Collection {
         }
     }
 
-    pub async fn find_by_organization_and_user_uuid(org_uuid: &str, user_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_organization_and_user_uuid(
+        org_uuid: &OrganizationId,
+        user_uuid: &UserId,
+        conn: &mut DbConn,
+    ) -> Vec<Self> {
         Self::find_by_user_uuid(user_uuid.to_owned(), conn)
             .await
             .into_iter()
-            .filter(|c| c.org_uuid == org_uuid)
+            .filter(|c| &c.org_uuid == org_uuid)
             .collect()
     }
 
-    pub async fn find_by_organization(org_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_organization(org_uuid: &OrganizationId, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             collections::table
                 .filter(collections::org_uuid.eq(org_uuid))
@@ -297,7 +306,7 @@ impl Collection {
         }}
     }
 
-    pub async fn count_by_org(org_uuid: &str, conn: &mut DbConn) -> i64 {
+    pub async fn count_by_org(org_uuid: &OrganizationId, conn: &mut DbConn) -> i64 {
         db_run! { conn: {
             collections::table
                 .filter(collections::org_uuid.eq(org_uuid))
@@ -308,7 +317,11 @@ impl Collection {
         }}
     }
 
-    pub async fn find_by_uuid_and_org(uuid: &str, org_uuid: &str, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_uuid_and_org(
+        uuid: &CollectionId,
+        org_uuid: &OrganizationId,
+        conn: &mut DbConn,
+    ) -> Option<Self> {
         db_run! { conn: {
             collections::table
                 .filter(collections::uuid.eq(uuid))
@@ -320,7 +333,7 @@ impl Collection {
         }}
     }
 
-    pub async fn find_by_uuid_and_user(uuid: &str, user_uuid: String, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_uuid_and_user(uuid: &CollectionId, user_uuid: UserId, conn: &mut DbConn) -> Option<Self> {
         if CONFIG.org_groups_enabled() {
             db_run! { conn: {
                 collections::table
@@ -387,7 +400,7 @@ impl Collection {
         }
     }
 
-    pub async fn is_writable_by_user(&self, user_uuid: &str, conn: &mut DbConn) -> bool {
+    pub async fn is_writable_by_user(&self, user_uuid: &UserId, conn: &mut DbConn) -> bool {
         let user_uuid = user_uuid.to_string();
         if CONFIG.org_groups_enabled() {
             db_run! { conn: {
@@ -449,7 +462,7 @@ impl Collection {
         }
     }
 
-    pub async fn hide_passwords_for_user(&self, user_uuid: &str, conn: &mut DbConn) -> bool {
+    pub async fn hide_passwords_for_user(&self, user_uuid: &UserId, conn: &mut DbConn) -> bool {
         let user_uuid = user_uuid.to_string();
         db_run! { conn: {
             collections::table
@@ -498,7 +511,11 @@ impl Collection {
 
 /// Database methods
 impl CollectionUser {
-    pub async fn find_by_organization_and_user_uuid(org_uuid: &str, user_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_organization_and_user_uuid(
+        org_uuid: &OrganizationId,
+        user_uuid: &UserId,
+        conn: &mut DbConn,
+    ) -> Vec<Self> {
         db_run! { conn: {
             users_collections::table
                 .filter(users_collections::user_uuid.eq(user_uuid))
@@ -511,8 +528,11 @@ impl CollectionUser {
         }}
     }
 
-    pub async fn find_by_organization_swap_user_uuid_with_member_uuid(org_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
-        db_run! { conn: {
+    pub async fn find_by_organization_swap_user_uuid_with_member_uuid(
+        org_uuid: &OrganizationId,
+        conn: &mut DbConn,
+    ) -> Vec<CollectionMembership> {
+        let col_users = db_run! { conn: {
             users_collections::table
                 .inner_join(collections::table.on(collections::uuid.eq(users_collections::collection_uuid)))
                 .filter(collections::org_uuid.eq(org_uuid))
@@ -521,12 +541,13 @@ impl CollectionUser {
                 .load::<CollectionUserDb>(conn)
                 .expect("Error loading users_collections")
                 .from_db()
-        }}
+        }};
+        col_users.into_iter().map(|c| c.into()).collect()
     }
 
     pub async fn save(
-        user_uuid: &str,
-        collection_uuid: &str,
+        user_uuid: &UserId,
+        collection_uuid: &CollectionId,
         read_only: bool,
         hide_passwords: bool,
         conn: &mut DbConn,
@@ -596,7 +617,7 @@ impl CollectionUser {
         }}
     }
 
-    pub async fn find_by_collection(collection_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_collection(collection_uuid: &CollectionId, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             users_collections::table
                 .filter(users_collections::collection_uuid.eq(collection_uuid))
@@ -608,10 +629,10 @@ impl CollectionUser {
     }
 
     pub async fn find_by_collection_swap_user_uuid_with_member_uuid(
-        collection_uuid: &str,
+        collection_uuid: &CollectionId,
         conn: &mut DbConn,
-    ) -> Vec<Self> {
-        db_run! { conn: {
+    ) -> Vec<CollectionMembership> {
+        let col_users = db_run! { conn: {
             users_collections::table
                 .filter(users_collections::collection_uuid.eq(collection_uuid))
                 .inner_join(users_organizations::table.on(users_organizations::user_uuid.eq(users_collections::user_uuid)))
@@ -619,12 +640,13 @@ impl CollectionUser {
                 .load::<CollectionUserDb>(conn)
                 .expect("Error loading users_collections")
                 .from_db()
-        }}
+        }};
+        col_users.into_iter().map(|c| c.into()).collect()
     }
 
     pub async fn find_by_collection_and_user(
-        collection_uuid: &str,
-        user_uuid: &str,
+        collection_uuid: &CollectionId,
+        user_uuid: &UserId,
         conn: &mut DbConn,
     ) -> Option<Self> {
         db_run! { conn: {
@@ -638,7 +660,7 @@ impl CollectionUser {
         }}
     }
 
-    pub async fn find_by_user(user_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_user(user_uuid: &UserId, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             users_collections::table
                 .filter(users_collections::user_uuid.eq(user_uuid))
@@ -649,7 +671,7 @@ impl CollectionUser {
         }}
     }
 
-    pub async fn delete_all_by_collection(collection_uuid: &str, conn: &mut DbConn) -> EmptyResult {
+    pub async fn delete_all_by_collection(collection_uuid: &CollectionId, conn: &mut DbConn) -> EmptyResult {
         for collection in CollectionUser::find_by_collection(collection_uuid, conn).await.iter() {
             User::update_uuid_revision(&collection.user_uuid, conn).await;
         }
@@ -661,7 +683,11 @@ impl CollectionUser {
         }}
     }
 
-    pub async fn delete_all_by_user_and_org(user_uuid: &str, org_uuid: &str, conn: &mut DbConn) -> EmptyResult {
+    pub async fn delete_all_by_user_and_org(
+        user_uuid: &UserId,
+        org_uuid: &OrganizationId,
+        conn: &mut DbConn,
+    ) -> EmptyResult {
         let collectionusers = Self::find_by_organization_and_user_uuid(org_uuid, user_uuid, conn).await;
 
         db_run! { conn: {
@@ -677,14 +703,18 @@ impl CollectionUser {
         }}
     }
 
-    pub async fn has_access_to_collection_by_user(col_id: &str, user_uuid: &str, conn: &mut DbConn) -> bool {
+    pub async fn has_access_to_collection_by_user(
+        col_id: &CollectionId,
+        user_uuid: &UserId,
+        conn: &mut DbConn,
+    ) -> bool {
         Self::find_by_collection_and_user(col_id, user_uuid, conn).await.is_some()
     }
 }
 
 /// Database methods
 impl CollectionCipher {
-    pub async fn save(cipher_uuid: &str, collection_uuid: &str, conn: &mut DbConn) -> EmptyResult {
+    pub async fn save(cipher_uuid: &CipherId, collection_uuid: &CollectionId, conn: &mut DbConn) -> EmptyResult {
         Self::update_users_revision(collection_uuid, conn).await;
 
         db_run! { conn:
@@ -714,7 +744,7 @@ impl CollectionCipher {
         }
     }
 
-    pub async fn delete(cipher_uuid: &str, collection_uuid: &str, conn: &mut DbConn) -> EmptyResult {
+    pub async fn delete(cipher_uuid: &CipherId, collection_uuid: &CollectionId, conn: &mut DbConn) -> EmptyResult {
         Self::update_users_revision(collection_uuid, conn).await;
 
         db_run! { conn: {
@@ -728,7 +758,7 @@ impl CollectionCipher {
         }}
     }
 
-    pub async fn delete_all_by_cipher(cipher_uuid: &str, conn: &mut DbConn) -> EmptyResult {
+    pub async fn delete_all_by_cipher(cipher_uuid: &CipherId, conn: &mut DbConn) -> EmptyResult {
         db_run! { conn: {
             diesel::delete(ciphers_collections::table.filter(ciphers_collections::cipher_uuid.eq(cipher_uuid)))
                 .execute(conn)
@@ -736,7 +766,7 @@ impl CollectionCipher {
         }}
     }
 
-    pub async fn delete_all_by_collection(collection_uuid: &str, conn: &mut DbConn) -> EmptyResult {
+    pub async fn delete_all_by_collection(collection_uuid: &CollectionId, conn: &mut DbConn) -> EmptyResult {
         db_run! { conn: {
             diesel::delete(ciphers_collections::table.filter(ciphers_collections::collection_uuid.eq(collection_uuid)))
                 .execute(conn)
@@ -744,9 +774,60 @@ impl CollectionCipher {
         }}
     }
 
-    pub async fn update_users_revision(collection_uuid: &str, conn: &mut DbConn) {
+    pub async fn update_users_revision(collection_uuid: &CollectionId, conn: &mut DbConn) {
         if let Some(collection) = Collection::find_by_uuid(collection_uuid, conn).await {
             collection.update_users_revision(conn).await;
+        }
+    }
+}
+
+// Added in case we need the membership_uuid instead of the user_uuid
+pub struct CollectionMembership {
+    pub membership_uuid: MembershipId,
+    pub collection_uuid: CollectionId,
+    pub read_only: bool,
+    pub hide_passwords: bool,
+}
+
+impl CollectionMembership {
+    pub fn to_json_details_for_user(&self, membership_type: i32) -> Value {
+        json!({
+            "id": self.membership_uuid,
+            "readOnly": self.read_only,
+            "hidePasswords": self.hide_passwords,
+            "manage": membership_type >= MembershipType::Admin
+                || (membership_type == MembershipType::Manager
+                    && !self.read_only
+                    && !self.hide_passwords),
+        })
+    }
+}
+
+impl From<CollectionUser> for CollectionMembership {
+    fn from(c: CollectionUser) -> Self {
+        Self {
+            membership_uuid: c.user_uuid.to_string().into(),
+            collection_uuid: c.collection_uuid,
+            read_only: c.read_only,
+            hide_passwords: c.hide_passwords,
+        }
+    }
+}
+
+#[derive(
+    Clone, Debug, AsRef, Deref, DieselNewType, Display, From, FromForm, Hash, PartialEq, Eq, Serialize, Deserialize,
+)]
+pub struct CollectionId(String);
+
+impl<'r> FromParam<'r> for CollectionId {
+    type Error = ();
+
+    #[inline(always)]
+    fn from_param(param: &'r str) -> Result<Self, Self::Error> {
+        if param.chars().all(|c| matches!(c, 'a'..='z' | 'A'..='Z' |'0'..='9' | '-')) {
+            Ok(Self(param.to_string()))
+        } else {
+            Err(())
         }
     }
 }

@@ -11,7 +11,7 @@ use crate::{
     },
     auth::Headers,
     db::{
-        models::{EventType, TwoFactor, TwoFactorType},
+        models::{EventType, TwoFactor, TwoFactorType, UserId},
         DbConn,
     },
     error::Error,
@@ -148,7 +148,7 @@ async fn generate_webauthn_challenge(data: Json<PasswordOrOtpData>, headers: Hea
     )?;
 
     let type_ = TwoFactorType::WebauthnRegisterChallenge;
-    TwoFactor::new(user.uuid, type_, serde_json::to_string(&state)?).save(&mut conn).await?;
+    TwoFactor::new(user.uuid.clone(), type_, serde_json::to_string(&state)?).save(&mut conn).await?;
 
     let mut challenge_value = serde_json::to_value(challenge.public_key)?;
     challenge_value["status"] = "ok".into();
@@ -352,20 +352,20 @@ async fn delete_webauthn(data: Json<DeleteU2FData>, headers: Headers, mut conn: 
 }
 
 pub async fn get_webauthn_registrations(
-    user_uuid: &str,
+    user_id: &UserId,
     conn: &mut DbConn,
 ) -> Result<(bool, Vec<WebauthnRegistration>), Error> {
     let type_ = TwoFactorType::Webauthn as i32;
-    match TwoFactor::find_by_user_and_type(user_uuid, type_, conn).await {
+    match TwoFactor::find_by_user_and_type(user_id, type_, conn).await {
         Some(tf) => Ok((tf.enabled, serde_json::from_str(&tf.data)?)),
         None => Ok((false, Vec::new())), // If no data, return empty list
     }
 }
 
-pub async fn generate_webauthn_login(user_uuid: &str, conn: &mut DbConn) -> JsonResult {
+pub async fn generate_webauthn_login(user_id: &UserId, conn: &mut DbConn) -> JsonResult {
     // Load saved credentials
     let creds: Vec<Credential> =
-        get_webauthn_registrations(user_uuid, conn).await?.1.into_iter().map(|r| r.credential).collect();
+        get_webauthn_registrations(user_id, conn).await?.1.into_iter().map(|r| r.credential).collect();
 
     if creds.is_empty() {
         err!("No Webauthn devices registered")
@@ -376,7 +376,7 @@ pub async fn generate_webauthn_login(user_uuid: &str, conn: &mut DbConn) -> Json
     let (response, state) = WebauthnConfig::load().generate_challenge_authenticate_options(creds, Some(ext))?;
 
     // Save the challenge state for later validation
-    TwoFactor::new(user_uuid.into(), TwoFactorType::WebauthnLoginChallenge, serde_json::to_string(&state)?)
+    TwoFactor::new(user_id.clone(), TwoFactorType::WebauthnLoginChallenge, serde_json::to_string(&state)?)
         .save(conn)
         .await?;
 
@@ -384,9 +384,9 @@ pub async fn generate_webauthn_login(user_uuid: &str, conn: &mut DbConn) -> Json
     Ok(Json(serde_json::to_value(response.public_key)?))
 }
 
-pub async fn validate_webauthn_login(user_uuid: &str, response: &str, conn: &mut DbConn) -> EmptyResult {
+pub async fn validate_webauthn_login(user_id: &UserId, response: &str, conn: &mut DbConn) -> EmptyResult {
     let type_ = TwoFactorType::WebauthnLoginChallenge as i32;
-    let state = match TwoFactor::find_by_user_and_type(user_uuid, type_, conn).await {
+    let state = match TwoFactor::find_by_user_and_type(user_id, type_, conn).await {
         Some(tf) => {
             let state: AuthenticationState = serde_json::from_str(&tf.data)?;
             tf.delete(conn).await?;
@@ -403,7 +403,7 @@ pub async fn validate_webauthn_login(user_uuid: &str, response: &str, conn: &mut
     let rsp: PublicKeyCredentialCopy = serde_json::from_str(response)?;
     let rsp: PublicKeyCredential = rsp.into();
 
-    let mut registrations = get_webauthn_registrations(user_uuid, conn).await?.1;
+    let mut registrations = get_webauthn_registrations(user_id, conn).await?.1;
 
     // If the credential we received is migrated from U2F, enable the U2F compatibility
     //let use_u2f = registrations.iter().any(|r| r.migrated && r.credential.cred_id == rsp.raw_id.0);
@@ -413,7 +413,7 @@ pub async fn validate_webauthn_login(user_uuid: &str, response: &str, conn: &mut
         if &reg.credential.cred_id == cred_id {
             reg.credential.counter = auth_data.counter;
 
-            TwoFactor::new(user_uuid.to_string(), TwoFactorType::Webauthn, serde_json::to_string(&registrations)?)
+            TwoFactor::new(user_id.clone(), TwoFactorType::Webauthn, serde_json::to_string(&registrations)?)
                 .save(conn)
                 .await?;
             return Ok(());

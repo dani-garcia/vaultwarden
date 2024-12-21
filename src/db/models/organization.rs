@@ -1,13 +1,17 @@
 use chrono::{NaiveDateTime, Utc};
+use derive_more::{AsRef, Deref, Display, From};
 use num_traits::FromPrimitive;
+use rocket::request::FromParam;
 use serde_json::Value;
 use std::{
     cmp::Ordering,
     collections::{HashMap, HashSet},
 };
 
-use super::{CollectionUser, Group, GroupUser, OrgPolicy, OrgPolicyType, TwoFactor, User};
-use crate::db::models::{Collection, CollectionGroup};
+use super::{
+    CipherId, Collection, CollectionGroup, CollectionId, CollectionUser, Group, GroupId, GroupUser, OrgPolicy,
+    OrgPolicyType, TwoFactor, User, UserId,
+};
 use crate::CONFIG;
 
 db_object! {
@@ -15,7 +19,7 @@ db_object! {
     #[diesel(table_name = organizations)]
     #[diesel(primary_key(uuid))]
     pub struct Organization {
-        pub uuid: String,
+        pub uuid: OrganizationId,
         pub name: String,
         pub billing_email: String,
         pub private_key: Option<String>,
@@ -26,9 +30,9 @@ db_object! {
     #[diesel(table_name = users_organizations)]
     #[diesel(primary_key(uuid))]
     pub struct Membership {
-        pub uuid: String,
-        pub user_uuid: String,
-        pub org_uuid: String,
+        pub uuid: MembershipId,
+        pub user_uuid: UserId,
+        pub org_uuid: OrganizationId,
 
         pub access_all: bool,
         pub akey: String,
@@ -42,8 +46,8 @@ db_object! {
     #[diesel(table_name = organization_api_key)]
     #[diesel(primary_key(uuid, org_uuid))]
     pub struct OrganizationApiKey {
-        pub uuid: String,
-        pub org_uuid: String,
+        pub uuid: OrgApiKeyId,
+        pub org_uuid: OrganizationId,
         pub atype: i32,
         pub api_key: String,
         pub revision_date: NaiveDateTime,
@@ -149,7 +153,7 @@ impl PartialOrd<MembershipType> for i32 {
 impl Organization {
     pub fn new(name: String, billing_email: String, private_key: Option<String>, public_key: Option<String>) -> Self {
         Self {
-            uuid: crate::util::get_uuid(),
+            uuid: OrganizationId(crate::util::get_uuid()),
             name,
             billing_email,
             private_key,
@@ -215,9 +219,9 @@ impl Organization {
 static ACTIVATE_REVOKE_DIFF: i32 = 128;
 
 impl Membership {
-    pub fn new(user_uuid: String, org_uuid: String) -> Self {
+    pub fn new(user_uuid: UserId, org_uuid: OrganizationId) -> Self {
         Self {
-            uuid: crate::util::get_uuid(),
+            uuid: MembershipId(crate::util::get_uuid()),
 
             user_uuid,
             org_uuid,
@@ -279,9 +283,9 @@ impl Membership {
 }
 
 impl OrganizationApiKey {
-    pub fn new(org_uuid: String, api_key: String) -> Self {
+    pub fn new(org_uuid: OrganizationId, api_key: String) -> Self {
         Self {
-            uuid: crate::util::get_uuid(),
+            uuid: OrgApiKeyId(crate::util::get_uuid()),
 
             org_uuid,
             atype: 0, // Type 0 is the default and only type we support currently
@@ -360,7 +364,7 @@ impl Organization {
         }}
     }
 
-    pub async fn find_by_uuid(uuid: &str, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_uuid(uuid: &OrganizationId, conn: &mut DbConn) -> Option<Self> {
         db_run! { conn: {
             organizations::table
                 .filter(organizations::uuid.eq(uuid))
@@ -484,8 +488,8 @@ impl Membership {
 
         let twofactor_enabled = !TwoFactor::find_by_user(&user.uuid, conn).await.is_empty();
 
-        let groups: Vec<String> = if include_groups && CONFIG.org_groups_enabled() {
-            GroupUser::find_by_user(&self.uuid, conn).await.iter().map(|gu| gu.groups_uuid.clone()).collect()
+        let groups: Vec<GroupId> = if include_groups && CONFIG.org_groups_enabled() {
+            GroupUser::find_by_member(&self.uuid, conn).await.iter().map(|gu| gu.groups_uuid.clone()).collect()
         } else {
             // The Bitwarden clients seem to call this API regardless of whether groups are enabled,
             // so just act as if there are no groups.
@@ -500,7 +504,7 @@ impl Membership {
         // If collections are to be included, only include them if the user does not have full access via a group or defined to the user it self
         let collections: Vec<Value> = if include_collections && !(full_access_group || self.has_full_access()) {
             // Get all collections for the user here already to prevent more queries
-            let cu: HashMap<String, CollectionUser> =
+            let cu: HashMap<CollectionId, CollectionUser> =
                 CollectionUser::find_by_organization_and_user_uuid(&self.org_uuid, &self.user_uuid, conn)
                     .await
                     .into_iter()
@@ -508,7 +512,7 @@ impl Membership {
                     .collect();
 
             // Get all collection groups for this user to prevent there inclusion
-            let cg: HashSet<String> = CollectionGroup::find_by_user(&self.user_uuid, conn)
+            let cg: HashSet<CollectionId> = CollectionGroup::find_by_user(&self.user_uuid, conn)
                 .await
                 .into_iter()
                 .map(|cg| cg.collections_uuid)
@@ -718,23 +722,27 @@ impl Membership {
         }}
     }
 
-    pub async fn delete_all_by_organization(org_uuid: &str, conn: &mut DbConn) -> EmptyResult {
+    pub async fn delete_all_by_organization(org_uuid: &OrganizationId, conn: &mut DbConn) -> EmptyResult {
         for member in Self::find_by_org(org_uuid, conn).await {
             member.delete(conn).await?;
         }
         Ok(())
     }
 
-    pub async fn delete_all_by_user(user_uuid: &str, conn: &mut DbConn) -> EmptyResult {
+    pub async fn delete_all_by_user(user_uuid: &UserId, conn: &mut DbConn) -> EmptyResult {
         for member in Self::find_any_state_by_user(user_uuid, conn).await {
             member.delete(conn).await?;
         }
         Ok(())
     }
 
-    pub async fn find_by_email_and_org(email: &str, org_id: &str, conn: &mut DbConn) -> Option<Membership> {
+    pub async fn find_by_email_and_org(
+        email: &str,
+        org_uuid: &OrganizationId,
+        conn: &mut DbConn,
+    ) -> Option<Membership> {
         if let Some(user) = User::find_by_mail(email, conn).await {
-            if let Some(member) = Membership::find_by_user_and_org(&user.uuid, org_id, conn).await {
+            if let Some(member) = Membership::find_by_user_and_org(&user.uuid, org_uuid, conn).await {
                 return Some(member);
             }
         }
@@ -754,7 +762,7 @@ impl Membership {
         (self.access_all || self.atype >= MembershipType::Admin) && self.has_status(MembershipStatus::Confirmed)
     }
 
-    pub async fn find_by_uuid(uuid: &str, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_uuid(uuid: &MembershipId, conn: &mut DbConn) -> Option<Self> {
         db_run! { conn: {
             users_organizations::table
                 .filter(users_organizations::uuid.eq(uuid))
@@ -763,7 +771,11 @@ impl Membership {
         }}
     }
 
-    pub async fn find_by_uuid_and_org(uuid: &str, org_uuid: &str, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_uuid_and_org(
+        uuid: &MembershipId,
+        org_uuid: &OrganizationId,
+        conn: &mut DbConn,
+    ) -> Option<Self> {
         db_run! { conn: {
             users_organizations::table
                 .filter(users_organizations::uuid.eq(uuid))
@@ -773,7 +785,7 @@ impl Membership {
         }}
     }
 
-    pub async fn find_confirmed_by_user(user_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_confirmed_by_user(user_uuid: &UserId, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             users_organizations::table
                 .filter(users_organizations::user_uuid.eq(user_uuid))
@@ -783,7 +795,7 @@ impl Membership {
         }}
     }
 
-    pub async fn find_invited_by_user(user_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_invited_by_user(user_uuid: &UserId, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             users_organizations::table
                 .filter(users_organizations::user_uuid.eq(user_uuid))
@@ -793,7 +805,7 @@ impl Membership {
         }}
     }
 
-    pub async fn find_any_state_by_user(user_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_any_state_by_user(user_uuid: &UserId, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             users_organizations::table
                 .filter(users_organizations::user_uuid.eq(user_uuid))
@@ -802,7 +814,7 @@ impl Membership {
         }}
     }
 
-    pub async fn count_accepted_and_confirmed_by_user(user_uuid: &str, conn: &mut DbConn) -> i64 {
+    pub async fn count_accepted_and_confirmed_by_user(user_uuid: &UserId, conn: &mut DbConn) -> i64 {
         db_run! { conn: {
             users_organizations::table
                 .filter(users_organizations::user_uuid.eq(user_uuid))
@@ -813,7 +825,7 @@ impl Membership {
         }}
     }
 
-    pub async fn find_by_org(org_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_org(org_uuid: &OrganizationId, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             users_organizations::table
                 .filter(users_organizations::org_uuid.eq(org_uuid))
@@ -822,7 +834,7 @@ impl Membership {
         }}
     }
 
-    pub async fn find_confirmed_by_org(org_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_confirmed_by_org(org_uuid: &OrganizationId, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             users_organizations::table
                 .filter(users_organizations::org_uuid.eq(org_uuid))
@@ -832,7 +844,7 @@ impl Membership {
         }}
     }
 
-    pub async fn count_by_org(org_uuid: &str, conn: &mut DbConn) -> i64 {
+    pub async fn count_by_org(org_uuid: &OrganizationId, conn: &mut DbConn) -> i64 {
         db_run! { conn: {
             users_organizations::table
                 .filter(users_organizations::org_uuid.eq(org_uuid))
@@ -843,7 +855,11 @@ impl Membership {
         }}
     }
 
-    pub async fn find_by_org_and_type(org_uuid: &str, atype: MembershipType, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_org_and_type(
+        org_uuid: &OrganizationId,
+        atype: MembershipType,
+        conn: &mut DbConn,
+    ) -> Vec<Self> {
         db_run! { conn: {
             users_organizations::table
                 .filter(users_organizations::org_uuid.eq(org_uuid))
@@ -853,7 +869,11 @@ impl Membership {
         }}
     }
 
-    pub async fn count_confirmed_by_org_and_type(org_uuid: &str, atype: MembershipType, conn: &mut DbConn) -> i64 {
+    pub async fn count_confirmed_by_org_and_type(
+        org_uuid: &OrganizationId,
+        atype: MembershipType,
+        conn: &mut DbConn,
+    ) -> i64 {
         db_run! { conn: {
             users_organizations::table
                 .filter(users_organizations::org_uuid.eq(org_uuid))
@@ -865,7 +885,11 @@ impl Membership {
         }}
     }
 
-    pub async fn find_by_user_and_org(user_uuid: &str, org_uuid: &str, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_user_and_org(
+        user_uuid: &UserId,
+        org_uuid: &OrganizationId,
+        conn: &mut DbConn,
+    ) -> Option<Self> {
         db_run! { conn: {
             users_organizations::table
                 .filter(users_organizations::user_uuid.eq(user_uuid))
@@ -875,7 +899,11 @@ impl Membership {
         }}
     }
 
-    pub async fn find_confirmed_by_user_and_org(user_uuid: &str, org_uuid: &str, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_confirmed_by_user_and_org(
+        user_uuid: &UserId,
+        org_uuid: &OrganizationId,
+        conn: &mut DbConn,
+    ) -> Option<Self> {
         db_run! { conn: {
             users_organizations::table
                 .filter(users_organizations::user_uuid.eq(user_uuid))
@@ -888,7 +916,7 @@ impl Membership {
         }}
     }
 
-    pub async fn find_by_user(user_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_user(user_uuid: &UserId, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             users_organizations::table
                 .filter(users_organizations::user_uuid.eq(user_uuid))
@@ -897,17 +925,21 @@ impl Membership {
         }}
     }
 
-    pub async fn get_orgs_by_user(user_uuid: &str, conn: &mut DbConn) -> Vec<String> {
+    pub async fn get_orgs_by_user(user_uuid: &UserId, conn: &mut DbConn) -> Vec<OrganizationId> {
         db_run! { conn: {
             users_organizations::table
                 .filter(users_organizations::user_uuid.eq(user_uuid))
                 .select(users_organizations::org_uuid)
-                .load::<String>(conn)
+                .load::<OrganizationId>(conn)
                 .unwrap_or_default()
         }}
     }
 
-    pub async fn find_by_user_and_policy(user_uuid: &str, policy_type: OrgPolicyType, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_user_and_policy(
+        user_uuid: &UserId,
+        policy_type: OrgPolicyType,
+        conn: &mut DbConn,
+    ) -> Vec<Self> {
         db_run! { conn: {
             users_organizations::table
                 .inner_join(
@@ -926,7 +958,11 @@ impl Membership {
         }}
     }
 
-    pub async fn find_by_cipher_and_org(cipher_uuid: &str, org_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_cipher_and_org(
+        cipher_uuid: &CipherId,
+        org_uuid: &OrganizationId,
+        conn: &mut DbConn,
+    ) -> Vec<Self> {
         db_run! { conn: {
             users_organizations::table
             .filter(users_organizations::org_uuid.eq(org_uuid))
@@ -949,7 +985,11 @@ impl Membership {
         }}
     }
 
-    pub async fn find_by_cipher_and_org_with_group(cipher_uuid: &str, org_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_cipher_and_org_with_group(
+        cipher_uuid: &CipherId,
+        org_uuid: &OrganizationId,
+        conn: &mut DbConn,
+    ) -> Vec<Self> {
         db_run! { conn: {
             users_organizations::table
             .filter(users_organizations::org_uuid.eq(org_uuid))
@@ -975,7 +1015,11 @@ impl Membership {
         }}
     }
 
-    pub async fn user_has_ge_admin_access_to_cipher(user_uuid: &str, cipher_uuid: &str, conn: &mut DbConn) -> bool {
+    pub async fn user_has_ge_admin_access_to_cipher(
+        user_uuid: &UserId,
+        cipher_uuid: &CipherId,
+        conn: &mut DbConn,
+    ) -> bool {
         db_run! { conn: {
             users_organizations::table
             .inner_join(ciphers::table.on(ciphers::uuid.eq(cipher_uuid).and(ciphers::organization_uuid.eq(users_organizations::org_uuid.nullable()))))
@@ -987,7 +1031,11 @@ impl Membership {
         }}
     }
 
-    pub async fn find_by_collection_and_org(collection_uuid: &str, org_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_collection_and_org(
+        collection_uuid: &CollectionId,
+        org_uuid: &OrganizationId,
+        conn: &mut DbConn,
+    ) -> Vec<Self> {
         db_run! { conn: {
             users_organizations::table
             .filter(users_organizations::org_uuid.eq(org_uuid))
@@ -1004,7 +1052,11 @@ impl Membership {
         }}
     }
 
-    pub async fn find_by_external_id_and_org(ext_id: &str, org_uuid: &str, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_external_id_and_org(
+        ext_id: &str,
+        org_uuid: &OrganizationId,
+        conn: &mut DbConn,
+    ) -> Option<Self> {
         db_run! {conn: {
             users_organizations::table
             .filter(
@@ -1050,7 +1102,7 @@ impl OrganizationApiKey {
         }
     }
 
-    pub async fn find_by_org_uuid(org_uuid: &str, conn: &DbConn) -> Option<Self> {
+    pub async fn find_by_org_uuid(org_uuid: &OrganizationId, conn: &DbConn) -> Option<Self> {
         db_run! { conn: {
             organization_api_key::table
                 .filter(organization_api_key::org_uuid.eq(org_uuid))
@@ -1059,7 +1111,7 @@ impl OrganizationApiKey {
         }}
     }
 
-    pub async fn delete_all_by_organization(org_uuid: &str, conn: &mut DbConn) -> EmptyResult {
+    pub async fn delete_all_by_organization(org_uuid: &OrganizationId, conn: &mut DbConn) -> EmptyResult {
         db_run! { conn: {
             diesel::delete(organization_api_key::table.filter(organization_api_key::org_uuid.eq(org_uuid)))
                 .execute(conn)
@@ -1067,6 +1119,45 @@ impl OrganizationApiKey {
         }}
     }
 }
+
+#[derive(
+    Clone, Debug, AsRef, Deref, DieselNewType, Display, From, FromForm, Hash, PartialEq, Eq, Serialize, Deserialize,
+)]
+#[deref(forward)]
+#[from(forward)]
+pub struct OrganizationId(String);
+
+impl<'r> FromParam<'r> for OrganizationId {
+    type Error = ();
+
+    #[inline(always)]
+    fn from_param(param: &'r str) -> Result<Self, Self::Error> {
+        if param.chars().all(|c| matches!(c, 'a'..='z' | 'A'..='Z' |'0'..='9' | '-')) {
+            Ok(Self(param.to_string()))
+        } else {
+            Err(())
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deref, DieselNewType, Display, From, FromForm, Hash, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MembershipId(String);
+
+impl<'r> FromParam<'r> for MembershipId {
+    type Error = ();
+
+    #[inline(always)]
+    fn from_param(param: &'r str) -> Result<Self, Self::Error> {
+        if param.chars().all(|c| matches!(c, 'a'..='z' | 'A'..='Z' |'0'..='9' | '-')) {
+            Ok(Self(param.to_string()))
+        } else {
+            Err(())
+        }
+    }
+}
+
+#[derive(Clone, Debug, DieselNewType, Display, FromForm, Hash, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OrgApiKeyId(String);
 
 #[cfg(test)]
 mod tests {

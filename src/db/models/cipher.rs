@@ -1,10 +1,13 @@
 use crate::util::LowerCase;
 use crate::CONFIG;
 use chrono::{NaiveDateTime, TimeDelta, Utc};
+use derive_more::{AsRef, Deref, Display, From};
+use rocket::request::FromParam;
 use serde_json::Value;
 
 use super::{
-    Attachment, CollectionCipher, Favorite, FolderCipher, Group, Membership, MembershipStatus, MembershipType, User,
+    Attachment, CollectionCipher, CollectionId, Favorite, FolderCipher, FolderId, Group, Membership, MembershipStatus,
+    MembershipType, OrganizationId, User, UserId,
 };
 
 use crate::api::core::{CipherData, CipherSyncData, CipherSyncType};
@@ -17,12 +20,12 @@ db_object! {
     #[diesel(treat_none_as_null = true)]
     #[diesel(primary_key(uuid))]
     pub struct Cipher {
-        pub uuid: String,
+        pub uuid: CipherId,
         pub created_at: NaiveDateTime,
         pub updated_at: NaiveDateTime,
 
-        pub user_uuid: Option<String>,
-        pub organization_uuid: Option<String>,
+        pub user_uuid: Option<UserId>,
+        pub organization_uuid: Option<OrganizationId>,
 
         pub key: Option<String>,
 
@@ -57,7 +60,7 @@ impl Cipher {
         let now = Utc::now().naive_utc();
 
         Self {
-            uuid: crate::util::get_uuid(),
+            uuid: CipherId(crate::util::get_uuid()),
             created_at: now,
             updated_at: now,
 
@@ -135,7 +138,7 @@ impl Cipher {
     pub async fn to_json(
         &self,
         host: &str,
-        user_uuid: &str,
+        user_uuid: &UserId,
         cipher_sync_data: Option<&CipherSyncData>,
         sync_type: CipherSyncType,
         conn: &mut DbConn,
@@ -302,7 +305,7 @@ impl Cipher {
                 Cow::from(Vec::with_capacity(0))
             }
         } else {
-            Cow::from(self.get_admin_collections(user_uuid.to_string(), conn).await)
+            Cow::from(self.get_admin_collections(user_uuid.clone(), conn).await)
         };
 
         // There are three types of cipher response models in upstream
@@ -351,7 +354,7 @@ impl Cipher {
         // Skip adding these fields in that case
         if sync_type == CipherSyncType::User {
             json_object["folderId"] = json!(if let Some(cipher_sync_data) = cipher_sync_data {
-                cipher_sync_data.cipher_folders.get(&self.uuid).map(|c| c.to_string())
+                cipher_sync_data.cipher_folders.get(&self.uuid).cloned()
             } else {
                 self.get_folder_uuid(user_uuid, conn).await
             });
@@ -380,7 +383,7 @@ impl Cipher {
         json_object
     }
 
-    pub async fn update_users_revision(&self, conn: &mut DbConn) -> Vec<String> {
+    pub async fn update_users_revision(&self, conn: &mut DbConn) -> Vec<UserId> {
         let mut user_uuids = Vec::new();
         match self.user_uuid {
             Some(ref user_uuid) => {
@@ -458,7 +461,7 @@ impl Cipher {
         }}
     }
 
-    pub async fn delete_all_by_organization(org_uuid: &str, conn: &mut DbConn) -> EmptyResult {
+    pub async fn delete_all_by_organization(org_uuid: &OrganizationId, conn: &mut DbConn) -> EmptyResult {
         // TODO: Optimize this by executing a DELETE directly on the database, instead of first fetching.
         for cipher in Self::find_by_org(org_uuid, conn).await {
             cipher.delete(conn).await?;
@@ -466,7 +469,7 @@ impl Cipher {
         Ok(())
     }
 
-    pub async fn delete_all_by_user(user_uuid: &str, conn: &mut DbConn) -> EmptyResult {
+    pub async fn delete_all_by_user(user_uuid: &UserId, conn: &mut DbConn) -> EmptyResult {
         for cipher in Self::find_owned_by_user(user_uuid, conn).await {
             cipher.delete(conn).await?;
         }
@@ -484,42 +487,49 @@ impl Cipher {
         }
     }
 
-    pub async fn move_to_folder(&self, folder_uuid: Option<String>, user_uuid: &str, conn: &mut DbConn) -> EmptyResult {
+    pub async fn move_to_folder(
+        &self,
+        folder_uuid: Option<FolderId>,
+        user_uuid: &UserId,
+        conn: &mut DbConn,
+    ) -> EmptyResult {
         User::update_uuid_revision(user_uuid, conn).await;
 
         match (self.get_folder_uuid(user_uuid, conn).await, folder_uuid) {
             // No changes
             (None, None) => Ok(()),
-            (Some(ref old), Some(ref new)) if old == new => Ok(()),
+            (Some(ref old_folder), Some(ref new_folder)) if old_folder == new_folder => Ok(()),
 
             // Add to folder
-            (None, Some(new)) => FolderCipher::new(&new, &self.uuid).save(conn).await,
+            (None, Some(new_folder)) => FolderCipher::new(new_folder, self.uuid.clone()).save(conn).await,
 
             // Remove from folder
-            (Some(old), None) => match FolderCipher::find_by_folder_and_cipher(&old, &self.uuid, conn).await {
-                Some(old) => old.delete(conn).await,
-                None => err!("Couldn't move from previous folder"),
-            },
+            (Some(old_folder), None) => {
+                match FolderCipher::find_by_folder_and_cipher(&old_folder, &self.uuid, conn).await {
+                    Some(old_folder) => old_folder.delete(conn).await,
+                    None => err!("Couldn't move from previous folder"),
+                }
+            }
 
             // Move to another folder
-            (Some(old), Some(new)) => {
-                if let Some(old) = FolderCipher::find_by_folder_and_cipher(&old, &self.uuid, conn).await {
-                    old.delete(conn).await?;
+            (Some(old_folder), Some(new_folder)) => {
+                if let Some(old_folder) = FolderCipher::find_by_folder_and_cipher(&old_folder, &self.uuid, conn).await {
+                    old_folder.delete(conn).await?;
                 }
-                FolderCipher::new(&new, &self.uuid).save(conn).await
+                FolderCipher::new(new_folder, self.uuid.clone()).save(conn).await
             }
         }
     }
 
     /// Returns whether this cipher is directly owned by the user.
-    pub fn is_owned_by_user(&self, user_uuid: &str) -> bool {
+    pub fn is_owned_by_user(&self, user_uuid: &UserId) -> bool {
         self.user_uuid.is_some() && self.user_uuid.as_ref().unwrap() == user_uuid
     }
 
     /// Returns whether this cipher is owned by an org in which the user has full access.
     async fn is_in_full_access_org(
         &self,
-        user_uuid: &str,
+        user_uuid: &UserId,
         cipher_sync_data: Option<&CipherSyncData>,
         conn: &mut DbConn,
     ) -> bool {
@@ -538,7 +548,7 @@ impl Cipher {
     /// Returns whether this cipher is owned by an group in which the user has full access.
     async fn is_in_full_access_group(
         &self,
-        user_uuid: &str,
+        user_uuid: &UserId,
         cipher_sync_data: Option<&CipherSyncData>,
         conn: &mut DbConn,
     ) -> bool {
@@ -562,7 +572,7 @@ impl Cipher {
     /// the access restrictions.
     pub async fn get_access_restrictions(
         &self,
-        user_uuid: &str,
+        user_uuid: &UserId,
         cipher_sync_data: Option<&CipherSyncData>,
         conn: &mut DbConn,
     ) -> Option<(bool, bool)> {
@@ -622,7 +632,7 @@ impl Cipher {
         Some((read_only, hide_passwords))
     }
 
-    async fn get_user_collections_access_flags(&self, user_uuid: &str, conn: &mut DbConn) -> Vec<(bool, bool)> {
+    async fn get_user_collections_access_flags(&self, user_uuid: &UserId, conn: &mut DbConn) -> Vec<(bool, bool)> {
         db_run! {conn: {
             // Check whether this cipher is in any collections accessible to the
             // user. If so, retrieve the access flags for each collection.
@@ -639,7 +649,7 @@ impl Cipher {
         }}
     }
 
-    async fn get_group_collections_access_flags(&self, user_uuid: &str, conn: &mut DbConn) -> Vec<(bool, bool)> {
+    async fn get_group_collections_access_flags(&self, user_uuid: &UserId, conn: &mut DbConn) -> Vec<(bool, bool)> {
         if !CONFIG.org_groups_enabled() {
             return Vec::new();
         }
@@ -665,43 +675,43 @@ impl Cipher {
         }}
     }
 
-    pub async fn is_write_accessible_to_user(&self, user_uuid: &str, conn: &mut DbConn) -> bool {
+    pub async fn is_write_accessible_to_user(&self, user_uuid: &UserId, conn: &mut DbConn) -> bool {
         match self.get_access_restrictions(user_uuid, None, conn).await {
             Some((read_only, _hide_passwords)) => !read_only,
             None => false,
         }
     }
 
-    pub async fn is_accessible_to_user(&self, user_uuid: &str, conn: &mut DbConn) -> bool {
+    pub async fn is_accessible_to_user(&self, user_uuid: &UserId, conn: &mut DbConn) -> bool {
         self.get_access_restrictions(user_uuid, None, conn).await.is_some()
     }
 
     // Returns whether this cipher is a favorite of the specified user.
-    pub async fn is_favorite(&self, user_uuid: &str, conn: &mut DbConn) -> bool {
+    pub async fn is_favorite(&self, user_uuid: &UserId, conn: &mut DbConn) -> bool {
         Favorite::is_favorite(&self.uuid, user_uuid, conn).await
     }
 
     // Sets whether this cipher is a favorite of the specified user.
-    pub async fn set_favorite(&self, favorite: Option<bool>, user_uuid: &str, conn: &mut DbConn) -> EmptyResult {
+    pub async fn set_favorite(&self, favorite: Option<bool>, user_uuid: &UserId, conn: &mut DbConn) -> EmptyResult {
         match favorite {
             None => Ok(()), // No change requested.
             Some(status) => Favorite::set_favorite(status, &self.uuid, user_uuid, conn).await,
         }
     }
 
-    pub async fn get_folder_uuid(&self, user_uuid: &str, conn: &mut DbConn) -> Option<String> {
+    pub async fn get_folder_uuid(&self, user_uuid: &UserId, conn: &mut DbConn) -> Option<FolderId> {
         db_run! {conn: {
             folders_ciphers::table
                 .inner_join(folders::table)
                 .filter(folders::user_uuid.eq(&user_uuid))
                 .filter(folders_ciphers::cipher_uuid.eq(&self.uuid))
                 .select(folders_ciphers::folder_uuid)
-                .first::<String>(conn)
+                .first::<FolderId>(conn)
                 .ok()
         }}
     }
 
-    pub async fn find_by_uuid(uuid: &str, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_uuid(uuid: &CipherId, conn: &mut DbConn) -> Option<Self> {
         db_run! {conn: {
             ciphers::table
                 .filter(ciphers::uuid.eq(uuid))
@@ -711,7 +721,7 @@ impl Cipher {
         }}
     }
 
-    pub async fn find_by_uuid_and_org(cipher_uuid: &str, org_uuid: &str, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_uuid_and_org(cipher_uuid: &CipherId, org_uuid: &OrganizationId, conn: &mut DbConn) -> Option<Self> {
         db_run! {conn: {
             ciphers::table
                 .filter(ciphers::uuid.eq(cipher_uuid))
@@ -734,7 +744,7 @@ impl Cipher {
     // true, then the non-interesting ciphers will not be returned. As a
     // result, those ciphers will not appear in "My Vault" for the org
     // owner/admin, but they can still be accessed via the org vault view.
-    pub async fn find_by_user(user_uuid: &str, visible_only: bool, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_user(user_uuid: &UserId, visible_only: bool, conn: &mut DbConn) -> Vec<Self> {
         if CONFIG.org_groups_enabled() {
             db_run! {conn: {
                 let mut query = ciphers::table
@@ -816,12 +826,12 @@ impl Cipher {
     }
 
     // Find all ciphers visible to the specified user.
-    pub async fn find_by_user_visible(user_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_user_visible(user_uuid: &UserId, conn: &mut DbConn) -> Vec<Self> {
         Self::find_by_user(user_uuid, true, conn).await
     }
 
     // Find all ciphers directly owned by the specified user.
-    pub async fn find_owned_by_user(user_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_owned_by_user(user_uuid: &UserId, conn: &mut DbConn) -> Vec<Self> {
         db_run! {conn: {
             ciphers::table
                 .filter(
@@ -832,7 +842,7 @@ impl Cipher {
         }}
     }
 
-    pub async fn count_owned_by_user(user_uuid: &str, conn: &mut DbConn) -> i64 {
+    pub async fn count_owned_by_user(user_uuid: &UserId, conn: &mut DbConn) -> i64 {
         db_run! {conn: {
             ciphers::table
                 .filter(ciphers::user_uuid.eq(user_uuid))
@@ -843,7 +853,7 @@ impl Cipher {
         }}
     }
 
-    pub async fn find_by_org(org_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_org(org_uuid: &OrganizationId, conn: &mut DbConn) -> Vec<Self> {
         db_run! {conn: {
             ciphers::table
                 .filter(ciphers::organization_uuid.eq(org_uuid))
@@ -851,7 +861,7 @@ impl Cipher {
         }}
     }
 
-    pub async fn count_by_org(org_uuid: &str, conn: &mut DbConn) -> i64 {
+    pub async fn count_by_org(org_uuid: &OrganizationId, conn: &mut DbConn) -> i64 {
         db_run! {conn: {
             ciphers::table
                 .filter(ciphers::organization_uuid.eq(org_uuid))
@@ -862,7 +872,7 @@ impl Cipher {
         }}
     }
 
-    pub async fn find_by_folder(folder_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_folder(folder_uuid: &FolderId, conn: &mut DbConn) -> Vec<Self> {
         db_run! {conn: {
             folders_ciphers::table.inner_join(ciphers::table)
                 .filter(folders_ciphers::folder_uuid.eq(folder_uuid))
@@ -880,7 +890,7 @@ impl Cipher {
         }}
     }
 
-    pub async fn get_collections(&self, user_id: String, conn: &mut DbConn) -> Vec<String> {
+    pub async fn get_collections(&self, user_uuid: UserId, conn: &mut DbConn) -> Vec<CollectionId> {
         if CONFIG.org_groups_enabled() {
             db_run! {conn: {
                 ciphers_collections::table
@@ -890,11 +900,11 @@ impl Cipher {
                     ))
                     .left_join(users_organizations::table.on(
                         users_organizations::org_uuid.eq(collections::org_uuid)
-                        .and(users_organizations::user_uuid.eq(user_id.clone()))
+                        .and(users_organizations::user_uuid.eq(user_uuid.clone()))
                     ))
                     .left_join(users_collections::table.on(
                         users_collections::collection_uuid.eq(ciphers_collections::collection_uuid)
-                        .and(users_collections::user_uuid.eq(user_id.clone()))
+                        .and(users_collections::user_uuid.eq(user_uuid.clone()))
                     ))
                     .left_join(groups_users::table.on(
                         groups_users::users_organizations_uuid.eq(users_organizations::uuid)
@@ -905,14 +915,14 @@ impl Cipher {
                         .and(collections_groups::groups_uuid.eq(groups::uuid))
                     ))
                     .filter(users_organizations::access_all.eq(true) // User has access all
-                        .or(users_collections::user_uuid.eq(user_id) // User has access to collection
+                        .or(users_collections::user_uuid.eq(user_uuid) // User has access to collection
                             .and(users_collections::read_only.eq(false)))
                         .or(groups::access_all.eq(true)) // Access via groups
                         .or(collections_groups::collections_uuid.is_not_null() // Access via groups
                             .and(collections_groups::read_only.eq(false)))
                     )
                     .select(ciphers_collections::collection_uuid)
-                    .load::<String>(conn).unwrap_or_default()
+                    .load::<CollectionId>(conn).unwrap_or_default()
             }}
         } else {
             db_run! {conn: {
@@ -923,23 +933,23 @@ impl Cipher {
                     ))
                     .inner_join(users_organizations::table.on(
                         users_organizations::org_uuid.eq(collections::org_uuid)
-                        .and(users_organizations::user_uuid.eq(user_id.clone()))
+                        .and(users_organizations::user_uuid.eq(user_uuid.clone()))
                     ))
                     .left_join(users_collections::table.on(
                         users_collections::collection_uuid.eq(ciphers_collections::collection_uuid)
-                        .and(users_collections::user_uuid.eq(user_id.clone()))
+                        .and(users_collections::user_uuid.eq(user_uuid.clone()))
                     ))
                     .filter(users_organizations::access_all.eq(true) // User has access all
-                        .or(users_collections::user_uuid.eq(user_id) // User has access to collection
+                        .or(users_collections::user_uuid.eq(user_uuid) // User has access to collection
                             .and(users_collections::read_only.eq(false)))
                     )
                     .select(ciphers_collections::collection_uuid)
-                    .load::<String>(conn).unwrap_or_default()
+                    .load::<CollectionId>(conn).unwrap_or_default()
             }}
         }
     }
 
-    pub async fn get_admin_collections(&self, user_id: String, conn: &mut DbConn) -> Vec<String> {
+    pub async fn get_admin_collections(&self, user_uuid: UserId, conn: &mut DbConn) -> Vec<CollectionId> {
         if CONFIG.org_groups_enabled() {
             db_run! {conn: {
                 ciphers_collections::table
@@ -949,11 +959,11 @@ impl Cipher {
                     ))
                     .left_join(users_organizations::table.on(
                         users_organizations::org_uuid.eq(collections::org_uuid)
-                        .and(users_organizations::user_uuid.eq(user_id.clone()))
+                        .and(users_organizations::user_uuid.eq(user_uuid.clone()))
                     ))
                     .left_join(users_collections::table.on(
                         users_collections::collection_uuid.eq(ciphers_collections::collection_uuid)
-                        .and(users_collections::user_uuid.eq(user_id.clone()))
+                        .and(users_collections::user_uuid.eq(user_uuid.clone()))
                     ))
                     .left_join(groups_users::table.on(
                         groups_users::users_organizations_uuid.eq(users_organizations::uuid)
@@ -964,7 +974,7 @@ impl Cipher {
                         .and(collections_groups::groups_uuid.eq(groups::uuid))
                     ))
                     .filter(users_organizations::access_all.eq(true) // User has access all
-                        .or(users_collections::user_uuid.eq(user_id) // User has access to collection
+                        .or(users_collections::user_uuid.eq(user_uuid) // User has access to collection
                             .and(users_collections::read_only.eq(false)))
                         .or(groups::access_all.eq(true)) // Access via groups
                         .or(collections_groups::collections_uuid.is_not_null() // Access via groups
@@ -972,7 +982,7 @@ impl Cipher {
                         .or(users_organizations::atype.le(MembershipType::Admin as i32)) // User is admin or owner
                     )
                     .select(ciphers_collections::collection_uuid)
-                    .load::<String>(conn).unwrap_or_default()
+                    .load::<CollectionId>(conn).unwrap_or_default()
             }}
         } else {
             db_run! {conn: {
@@ -983,26 +993,29 @@ impl Cipher {
                     ))
                     .inner_join(users_organizations::table.on(
                         users_organizations::org_uuid.eq(collections::org_uuid)
-                        .and(users_organizations::user_uuid.eq(user_id.clone()))
+                        .and(users_organizations::user_uuid.eq(user_uuid.clone()))
                     ))
                     .left_join(users_collections::table.on(
                         users_collections::collection_uuid.eq(ciphers_collections::collection_uuid)
-                        .and(users_collections::user_uuid.eq(user_id.clone()))
+                        .and(users_collections::user_uuid.eq(user_uuid.clone()))
                     ))
                     .filter(users_organizations::access_all.eq(true) // User has access all
-                        .or(users_collections::user_uuid.eq(user_id) // User has access to collection
+                        .or(users_collections::user_uuid.eq(user_uuid) // User has access to collection
                             .and(users_collections::read_only.eq(false)))
                         .or(users_organizations::atype.le(MembershipType::Admin as i32)) // User is admin or owner
                     )
                     .select(ciphers_collections::collection_uuid)
-                    .load::<String>(conn).unwrap_or_default()
+                    .load::<CollectionId>(conn).unwrap_or_default()
             }}
         }
     }
 
     /// Return a Vec with (cipher_uuid, collection_uuid)
     /// This is used during a full sync so we only need one query for all collections accessible.
-    pub async fn get_collections_with_cipher_by_user(user_id: String, conn: &mut DbConn) -> Vec<(String, String)> {
+    pub async fn get_collections_with_cipher_by_user(
+        user_uuid: UserId,
+        conn: &mut DbConn,
+    ) -> Vec<(CipherId, CollectionId)> {
         db_run! {conn: {
             ciphers_collections::table
             .inner_join(collections::table.on(
@@ -1010,12 +1023,12 @@ impl Cipher {
             ))
             .inner_join(users_organizations::table.on(
                 users_organizations::org_uuid.eq(collections::org_uuid).and(
-                    users_organizations::user_uuid.eq(user_id.clone())
+                    users_organizations::user_uuid.eq(user_uuid.clone())
                 )
             ))
             .left_join(users_collections::table.on(
                 users_collections::collection_uuid.eq(ciphers_collections::collection_uuid).and(
-                    users_collections::user_uuid.eq(user_id.clone())
+                    users_collections::user_uuid.eq(user_uuid.clone())
                 )
             ))
             .left_join(groups_users::table.on(
@@ -1029,14 +1042,32 @@ impl Cipher {
                     collections_groups::groups_uuid.eq(groups::uuid)
                 )
             ))
-            .or_filter(users_collections::user_uuid.eq(user_id)) // User has access to collection
+            .or_filter(users_collections::user_uuid.eq(user_uuid)) // User has access to collection
             .or_filter(users_organizations::access_all.eq(true)) // User has access all
             .or_filter(users_organizations::atype.le(MembershipType::Admin as i32)) // User is admin or owner
             .or_filter(groups::access_all.eq(true)) //Access via group
             .or_filter(collections_groups::collections_uuid.is_not_null()) //Access via group
             .select(ciphers_collections::all_columns)
             .distinct()
-            .load::<(String, String)>(conn).unwrap_or_default()
+            .load::<(CipherId, CollectionId)>(conn).unwrap_or_default()
         }}
+    }
+}
+
+#[derive(
+    Clone, Debug, AsRef, Deref, DieselNewType, Display, From, FromForm, Hash, PartialEq, Eq, Serialize, Deserialize,
+)]
+pub struct CipherId(String);
+
+impl<'r> FromParam<'r> for CipherId {
+    type Error = ();
+
+    #[inline(always)]
+    fn from_param(param: &'r str) -> Result<Self, Self::Error> {
+        if param.chars().all(|c| matches!(c, 'a'..='z' | 'A'..='Z' |'0'..='9' | '-')) {
+            Ok(Self(param.to_string()))
+        } else {
+            Err(())
+        }
     }
 }

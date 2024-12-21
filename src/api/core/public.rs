@@ -196,7 +196,7 @@ async fn ldap_import(data: Json<OrgImportData>, token: PublicToken, mut conn: Db
     Ok(())
 }
 
-pub struct PublicToken(String);
+pub struct PublicToken(OrganizationId);
 
 #[rocket::async_trait]
 impl<'r> FromRequest<'r> for PublicToken {
@@ -236,10 +236,11 @@ impl<'r> FromRequest<'r> for PublicToken {
             Outcome::Success(conn) => conn,
             _ => err_handler!("Error getting DB"),
         };
-        let Some(org_uuid) = claims.client_id.strip_prefix("organization.") else {
+        let Some(org_id) = claims.client_id.strip_prefix("organization.") else {
             err_handler!("Malformed client_id")
         };
-        let Some(org_api_key) = OrganizationApiKey::find_by_org_uuid(org_uuid, &conn).await else {
+        let org_id: OrganizationId = org_id.to_string().into();
+        let Some(org_api_key) = OrganizationApiKey::find_by_org_uuid(&org_id, &conn).await else {
             err_handler!("Invalid client_id")
         };
         if org_api_key.org_uuid != claims.client_sub {

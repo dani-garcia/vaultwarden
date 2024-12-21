@@ -11,7 +11,7 @@ use crate::{
     auth::Headers,
     crypto,
     db::{
-        models::{EventType, TwoFactor, TwoFactorType, User},
+        models::{EventType, TwoFactor, TwoFactorType, User, UserId},
         DbConn,
     },
     error::MapResult,
@@ -228,11 +228,11 @@ const AUTH_PREFIX: &str = "AUTH";
 const DUO_PREFIX: &str = "TX";
 const APP_PREFIX: &str = "APP";
 
-async fn get_user_duo_data(uuid: &str, conn: &mut DbConn) -> DuoStatus {
+async fn get_user_duo_data(user_id: &UserId, conn: &mut DbConn) -> DuoStatus {
     let type_ = TwoFactorType::Duo as i32;
 
     // If the user doesn't have an entry, disabled
-    let Some(twofactor) = TwoFactor::find_by_user_and_type(uuid, type_, conn).await else {
+    let Some(twofactor) = TwoFactor::find_by_user_and_type(user_id, type_, conn).await else {
         return DuoStatus::Disabled(DuoData::global().is_some());
     };
 
