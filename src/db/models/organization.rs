@@ -48,7 +48,7 @@ db_object! {
     #[diesel(table_name = organization_api_key)]
     #[diesel(primary_key(uuid, org_uuid))]
     pub struct OrganizationApiKey {
-        pub uuid: String,
+        pub uuid: OrgApiKeyId,
         pub org_uuid: OrganizationId,
         pub atype: i32,
         pub api_key: String,
@@ -263,7 +263,7 @@ impl Membership {
 impl OrganizationApiKey {
     pub fn new(org_uuid: OrganizationId, api_key: String) -> Self {
         Self {
-            uuid: crate::util::get_uuid(),
+            uuid: OrgApiKeyId(crate::util::get_uuid()),
 
             org_uuid,
             atype: 0, // Type 0 is the default and only type we support currently
@@ -1095,6 +1095,54 @@ impl From<String> for OrganizationId {
 }
 
 impl<'r> FromParam<'r> for OrganizationId {
+    type Error = ();
+
+    #[inline(always)]
+    fn from_param(param: &'r str) -> Result<Self, Self::Error> {
+        if param.chars().all(|c| matches!(c, 'a'..='z' | 'A'..='Z' |'0'..='9' | '-')) {
+            Ok(Self(param.to_string()))
+        } else {
+            Err(())
+        }
+    }
+}
+
+#[derive(DieselNewType, FromForm, Clone, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OrgApiKeyId(String);
+
+impl AsRef<str> for OrgApiKeyId {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Deref for OrgApiKeyId {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Borrow<str> for OrgApiKeyId {
+    fn borrow(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Display for OrgApiKeyId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl From<String> for OrgApiKeyId {
+    fn from(raw: String) -> Self {
+        Self(raw)
+    }
+}
+
+impl<'r> FromParam<'r> for OrgApiKeyId {
     type Error = ();
 
     #[inline(always)]

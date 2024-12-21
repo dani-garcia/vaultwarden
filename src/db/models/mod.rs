@@ -28,7 +28,8 @@ pub use self::folder::{Folder, FolderCipher, FolderId};
 pub use self::group::{CollectionGroup, Group, GroupId, GroupUser};
 pub use self::org_policy::{OrgPolicy, OrgPolicyErr, OrgPolicyType};
 pub use self::organization::{
-    Membership, MembershipId, MembershipStatus, MembershipType, Organization, OrganizationApiKey, OrganizationId,
+    Membership, MembershipId, MembershipStatus, MembershipType, OrgApiKeyId, Organization, OrganizationApiKey,
+    OrganizationId,
 };
 pub use self::send::{Send, SendType};
 pub use self::two_factor::{TwoFactor, TwoFactorType};

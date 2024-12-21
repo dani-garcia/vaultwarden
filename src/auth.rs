@@ -14,7 +14,9 @@ use std::{
     net::IpAddr,
 };
 
-use crate::db::models::{AttachmentId, CipherId, CollectionId, DeviceId, MembershipId, OrganizationId, UserId};
+use crate::db::models::{
+    AttachmentId, CipherId, CollectionId, DeviceId, MembershipId, OrgApiKeyId, OrganizationId, UserId,
+};
 use crate::{error::Error, CONFIG};
 
 const JWT_ALGORITHM: Algorithm = Algorithm::RS256;
@@ -264,20 +266,23 @@ pub struct OrgApiKeyLoginJwtClaims {
     // Issuer
     pub iss: String,
     // Subject
-    pub sub: String,
+    pub sub: OrgApiKeyId,
 
     pub client_id: String,
     pub client_sub: OrganizationId,
     pub scope: Vec<String>,
 }
 
-pub fn generate_organization_api_key_login_claims(uuid: String, org_id: OrganizationId) -> OrgApiKeyLoginJwtClaims {
+pub fn generate_organization_api_key_login_claims(
+    org_api_key_uuid: OrgApiKeyId,
+    org_id: OrganizationId,
+) -> OrgApiKeyLoginJwtClaims {
     let time_now = Utc::now();
     OrgApiKeyLoginJwtClaims {
         nbf: time_now.timestamp(),
         exp: (time_now + TimeDelta::try_hours(1).unwrap()).timestamp(),
         iss: JWT_ORG_API_KEY_ISSUER.to_string(),
-        sub: uuid,
+        sub: org_api_key_uuid,
         client_id: format!("organization.{}", org_id),
         client_sub: org_id,
         scope: vec!["api.organization".into()],
