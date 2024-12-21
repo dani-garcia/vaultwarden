@@ -10,7 +10,7 @@ use std::{
 };
 
 use super::{
-    Attachment, CollectionCipher, CollectionId, Favorite, FolderCipher, Group, Membership, MembershipStatus,
+    Attachment, CollectionCipher, CollectionId, Favorite, FolderCipher, FolderId, Group, Membership, MembershipStatus,
     MembershipType, OrganizationId, User, UserId,
 };
 
@@ -342,7 +342,7 @@ impl Cipher {
         // Skip adding these fields in that case
         if sync_type == CipherSyncType::User {
             json_object["folderId"] = json!(if let Some(cipher_sync_data) = cipher_sync_data {
-                cipher_sync_data.cipher_folders.get(&self.uuid).map(|c| c.to_string())
+                cipher_sync_data.cipher_folders.get(&self.uuid).cloned()
             } else {
                 self.get_folder_uuid(user_uuid, conn).await
             });
@@ -477,7 +477,7 @@ impl Cipher {
 
     pub async fn move_to_folder(
         &self,
-        folder_uuid: Option<String>,
+        folder_uuid: Option<FolderId>,
         user_uuid: &UserId,
         conn: &mut DbConn,
     ) -> EmptyResult {
@@ -486,23 +486,25 @@ impl Cipher {
         match (self.get_folder_uuid(user_uuid, conn).await, folder_uuid) {
             // No changes
             (None, None) => Ok(()),
-            (Some(ref old), Some(ref new)) if old == new => Ok(()),
+            (Some(ref old_folder), Some(ref new_folder)) if old_folder == new_folder => Ok(()),
 
             // Add to folder
-            (None, Some(new)) => FolderCipher::new(&new, &self.uuid).save(conn).await,
+            (None, Some(new_folder)) => FolderCipher::new(new_folder, self.uuid.clone()).save(conn).await,
 
             // Remove from folder
-            (Some(old), None) => match FolderCipher::find_by_folder_and_cipher(&old, &self.uuid, conn).await {
-                Some(old) => old.delete(conn).await,
-                None => err!("Couldn't move from previous folder"),
-            },
+            (Some(old_folder), None) => {
+                match FolderCipher::find_by_folder_and_cipher(&old_folder, &self.uuid, conn).await {
+                    Some(old_folder) => old_folder.delete(conn).await,
+                    None => err!("Couldn't move from previous folder"),
+                }
+            }
 
             // Move to another folder
-            (Some(old), Some(new)) => {
-                if let Some(old) = FolderCipher::find_by_folder_and_cipher(&old, &self.uuid, conn).await {
-                    old.delete(conn).await?;
+            (Some(old_folder), Some(new_folder)) => {
+                if let Some(old_folder) = FolderCipher::find_by_folder_and_cipher(&old_folder, &self.uuid, conn).await {
+                    old_folder.delete(conn).await?;
                 }
-                FolderCipher::new(&new, &self.uuid).save(conn).await
+                FolderCipher::new(new_folder, self.uuid.clone()).save(conn).await
             }
         }
     }
@@ -685,14 +687,14 @@ impl Cipher {
         }
     }
 
-    pub async fn get_folder_uuid(&self, user_uuid: &UserId, conn: &mut DbConn) -> Option<String> {
+    pub async fn get_folder_uuid(&self, user_uuid: &UserId, conn: &mut DbConn) -> Option<FolderId> {
         db_run! {conn: {
             folders_ciphers::table
                 .inner_join(folders::table)
                 .filter(folders::user_uuid.eq(&user_uuid))
                 .filter(folders_ciphers::cipher_uuid.eq(&self.uuid))
                 .select(folders_ciphers::folder_uuid)
-                .first::<String>(conn)
+                .first::<FolderId>(conn)
                 .ok()
         }}
     }
@@ -858,7 +860,7 @@ impl Cipher {
         }}
     }
 
-    pub async fn find_by_folder(folder_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_folder(folder_uuid: &FolderId, conn: &mut DbConn) -> Vec<Self> {
         db_run! {conn: {
             folders_ciphers::table.inner_join(ciphers::table)
                 .filter(folders_ciphers::folder_uuid.eq(folder_uuid))

@@ -221,7 +221,7 @@ pub struct CipherData {
     // Id is optional as it is included only in bulk share
     pub id: Option<CipherId>,
     // Folder id is not included in import
-    pub folder_id: Option<String>,
+    pub folder_id: Option<FolderId>,
     // TODO: Some of these might appear all the time, no need for Option
     #[serde(alias = "organizationID")]
     pub organization_id: Option<OrganizationId>,
@@ -270,7 +270,7 @@ pub struct CipherData {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PartialCipherData {
-    folder_id: Option<String>,
+    folder_id: Option<FolderId>,
     favorite: bool,
 }
 
@@ -579,9 +579,9 @@ async fn post_ciphers_import(
     Cipher::validate_cipher_data(&data.ciphers)?;
 
     // Read and create the folders
-    let existing_folders: HashSet<Option<String>> =
+    let existing_folders: HashSet<Option<FolderId>> =
         Folder::find_by_user(&headers.user.uuid, &mut conn).await.into_iter().map(|f| Some(f.uuid)).collect();
-    let mut folders: Vec<String> = Vec::with_capacity(data.folders.len());
+    let mut folders: Vec<FolderId> = Vec::with_capacity(data.folders.len());
     for folder in data.folders.into_iter() {
         let folder_uuid = if existing_folders.contains(&folder.id) {
             folder.id.unwrap()
@@ -1526,7 +1526,7 @@ async fn restore_cipher_selected(
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct MoveCipherData {
-    folder_id: Option<String>,
+    folder_id: Option<FolderId>,
     ids: Vec<CipherId>,
 }
 
@@ -1843,7 +1843,7 @@ async fn _delete_cipher_attachment_by_id(
 /// This will not improve the speed of a single cipher.to_json() call that much, so better not to use it for those calls.
 pub struct CipherSyncData {
     pub cipher_attachments: HashMap<CipherId, Vec<Attachment>>,
-    pub cipher_folders: HashMap<CipherId, String>,
+    pub cipher_folders: HashMap<CipherId, FolderId>,
     pub cipher_favorites: HashSet<CipherId>,
     pub cipher_collections: HashMap<CipherId, Vec<CollectionId>>,
     pub members: HashMap<OrganizationId, Membership>,
@@ -1860,7 +1860,7 @@ pub enum CipherSyncType {
 
 impl CipherSyncData {
     pub async fn new(user_uuid: &UserId, sync_type: CipherSyncType, conn: &mut DbConn) -> Self {
-        let cipher_folders: HashMap<CipherId, String>;
+        let cipher_folders: HashMap<CipherId, FolderId>;
         let cipher_favorites: HashSet<CipherId>;
         match sync_type {
             // User Sync supports Folders and Favorites

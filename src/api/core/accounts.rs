@@ -445,7 +445,7 @@ struct UpdateFolderData {
     // There is a bug in 2024.3.x which adds a `null` item.
     // To bypass this we allow a Option here, but skip it during the updates
     // See: https://github.com/bitwarden/clients/issues/8453
-    id: Option<String>,
+    id: Option<FolderId>,
     name: String,
 }
 
@@ -500,8 +500,8 @@ fn validate_keydata(
     }
 
     // Check that we're correctly rotating all the user's folders
-    let existing_folder_ids = existing_folders.iter().map(|f| f.uuid.as_str()).collect::<HashSet<_>>();
-    let provided_folder_ids = data.folders.iter().filter_map(|f| f.id.as_deref()).collect::<HashSet<_>>();
+    let existing_folder_ids = existing_folders.iter().map(|f| &f.uuid).collect::<HashSet<&FolderId>>();
+    let provided_folder_ids = data.folders.iter().filter_map(|f| f.id.as_ref()).collect::<HashSet<&FolderId>>();
     if !provided_folder_ids.is_superset(&existing_folder_ids) {
         err!("All existing folders must be included in the rotation")
     }

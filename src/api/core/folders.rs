@@ -24,8 +24,8 @@ async fn get_folders(headers: Headers, mut conn: DbConn) -> Json<Value> {
 }
 
 #[get("/folders/<uuid>")]
-async fn get_folder(uuid: &str, headers: Headers, mut conn: DbConn) -> JsonResult {
-    match Folder::find_by_uuid_and_user(uuid, &headers.user.uuid, &mut conn).await {
+async fn get_folder(uuid: FolderId, headers: Headers, mut conn: DbConn) -> JsonResult {
+    match Folder::find_by_uuid_and_user(&uuid, &headers.user.uuid, &mut conn).await {
         Some(folder) => Ok(Json(folder.to_json())),
         _ => err!("Invalid folder", "Folder does not exist or belongs to another user"),
     }
@@ -35,7 +35,7 @@ async fn get_folder(uuid: &str, headers: Headers, mut conn: DbConn) -> JsonResul
 #[serde(rename_all = "camelCase")]
 pub struct FolderData {
     pub name: String,
-    pub id: Option<String>,
+    pub id: Option<FolderId>,
 }
 
 #[post("/folders", data = "<data>")]
@@ -51,13 +51,19 @@ async fn post_folders(data: Json<FolderData>, headers: Headers, mut conn: DbConn
 }
 
 #[post("/folders/<uuid>", data = "<data>")]
-async fn post_folder(uuid: &str, data: Json<FolderData>, headers: Headers, conn: DbConn, nt: Notify<'_>) -> JsonResult {
+async fn post_folder(
+    uuid: FolderId,
+    data: Json<FolderData>,
+    headers: Headers,
+    conn: DbConn,
+    nt: Notify<'_>,
+) -> JsonResult {
     put_folder(uuid, data, headers, conn, nt).await
 }
 
 #[put("/folders/<uuid>", data = "<data>")]
 async fn put_folder(
-    uuid: &str,
+    uuid: FolderId,
     data: Json<FolderData>,
     headers: Headers,
     mut conn: DbConn,
@@ -65,7 +71,7 @@ async fn put_folder(
 ) -> JsonResult {
     let data: FolderData = data.into_inner();
 
-    let Some(mut folder) = Folder::find_by_uuid_and_user(uuid, &headers.user.uuid, &mut conn).await else {
+    let Some(mut folder) = Folder::find_by_uuid_and_user(&uuid, &headers.user.uuid, &mut conn).await else {
         err!("Invalid folder", "Folder does not exist or belongs to another user")
     };
 
@@ -78,13 +84,13 @@ async fn put_folder(
 }
 
 #[post("/folders/<uuid>/delete")]
-async fn delete_folder_post(uuid: &str, headers: Headers, conn: DbConn, nt: Notify<'_>) -> EmptyResult {
+async fn delete_folder_post(uuid: FolderId, headers: Headers, conn: DbConn, nt: Notify<'_>) -> EmptyResult {
     delete_folder(uuid, headers, conn, nt).await
 }
 
 #[delete("/folders/<uuid>")]
-async fn delete_folder(uuid: &str, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> EmptyResult {
-    let Some(folder) = Folder::find_by_uuid_and_user(uuid, &headers.user.uuid, &mut conn).await else {
+async fn delete_folder(uuid: FolderId, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> EmptyResult {
+    let Some(folder) = Folder::find_by_uuid_and_user(&uuid, &headers.user.uuid, &mut conn).await else {
         err!("Invalid folder", "Folder does not exist or belongs to another user")
     };
 
