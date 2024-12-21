@@ -11,8 +11,8 @@ use std::{
 };
 
 use super::{
-    Collection, CollectionGroup, CollectionId, CollectionUser, Group, GroupUser, OrgPolicy, OrgPolicyType, TwoFactor,
-    User, UserId,
+    Collection, CollectionGroup, CollectionId, CollectionUser, Group, GroupId, GroupUser, OrgPolicy, OrgPolicyType,
+    TwoFactor, User, UserId,
 };
 use crate::CONFIG;
 
@@ -460,7 +460,7 @@ impl Membership {
 
         let twofactor_enabled = !TwoFactor::find_by_user(&user.uuid, conn).await.is_empty();
 
-        let groups: Vec<String> = if include_groups && CONFIG.org_groups_enabled() {
+        let groups: Vec<GroupId> = if include_groups && CONFIG.org_groups_enabled() {
             GroupUser::find_by_member(&self.uuid, conn).await.iter().map(|gu| gu.groups_uuid.clone()).collect()
         } else {
             // The Bitwarden clients seem to call this API regardless of whether groups are enabled,

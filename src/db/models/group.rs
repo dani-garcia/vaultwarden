@@ -3,14 +3,20 @@ use crate::api::EmptyResult;
 use crate::db::DbConn;
 use crate::error::MapResult;
 use chrono::{NaiveDateTime, Utc};
+use rocket::request::FromParam;
 use serde_json::Value;
+use std::{
+    borrow::Borrow,
+    fmt::{Display, Formatter},
+    ops::Deref,
+};
 
 db_object! {
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
     #[diesel(table_name = groups)]
     #[diesel(primary_key(uuid))]
     pub struct Group {
-        pub uuid: String,
+        pub uuid: GroupId,
         pub organizations_uuid: OrganizationId,
         pub name: String,
         pub access_all: bool,
@@ -24,7 +30,7 @@ db_object! {
     #[diesel(primary_key(collections_uuid, groups_uuid))]
     pub struct CollectionGroup {
         pub collections_uuid: CollectionId,
-        pub groups_uuid: String,
+        pub groups_uuid: GroupId,
         pub read_only: bool,
         pub hide_passwords: bool,
     }
@@ -33,7 +39,7 @@ db_object! {
     #[diesel(table_name = groups_users)]
     #[diesel(primary_key(groups_uuid, users_organizations_uuid))]
     pub struct GroupUser {
-        pub groups_uuid: String,
+        pub groups_uuid: GroupId,
         pub users_organizations_uuid: MembershipId
     }
 }
@@ -49,7 +55,7 @@ impl Group {
         let now = Utc::now().naive_utc();
 
         let mut new_model = Self {
-            uuid: crate::util::get_uuid(),
+            uuid: GroupId(crate::util::get_uuid()),
             organizations_uuid,
             name,
             access_all,
@@ -113,7 +119,7 @@ impl Group {
 }
 
 impl CollectionGroup {
-    pub fn new(collections_uuid: CollectionId, groups_uuid: String, read_only: bool, hide_passwords: bool) -> Self {
+    pub fn new(collections_uuid: CollectionId, groups_uuid: GroupId, read_only: bool, hide_passwords: bool) -> Self {
         Self {
             collections_uuid,
             groups_uuid,
@@ -124,7 +130,7 @@ impl CollectionGroup {
 }
 
 impl GroupUser {
-    pub fn new(groups_uuid: String, users_organizations_uuid: MembershipId) -> Self {
+    pub fn new(groups_uuid: GroupId, users_organizations_uuid: MembershipId) -> Self {
         Self {
             groups_uuid,
             users_organizations_uuid,
@@ -196,7 +202,7 @@ impl Group {
         }}
     }
 
-    pub async fn find_by_uuid_and_org(uuid: &str, org_uuid: &OrganizationId, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_uuid_and_org(uuid: &GroupId, org_uuid: &OrganizationId, conn: &mut DbConn) -> Option<Self> {
         db_run! { conn: {
             groups::table
                 .filter(groups::uuid.eq(uuid))
@@ -269,13 +275,13 @@ impl Group {
         }}
     }
 
-    pub async fn update_revision(uuid: &str, conn: &mut DbConn) {
+    pub async fn update_revision(uuid: &GroupId, conn: &mut DbConn) {
         if let Err(e) = Self::_update_revision(uuid, &Utc::now().naive_utc(), conn).await {
             warn!("Failed to update revision for {}: {:#?}", uuid, e);
         }
     }
 
-    async fn _update_revision(uuid: &str, date: &NaiveDateTime, conn: &mut DbConn) -> EmptyResult {
+    async fn _update_revision(uuid: &GroupId, date: &NaiveDateTime, conn: &mut DbConn) -> EmptyResult {
         db_run! {conn: {
             crate::util::retry(|| {
                 diesel::update(groups::table.filter(groups::uuid.eq(uuid)))
@@ -343,7 +349,7 @@ impl CollectionGroup {
         }
     }
 
-    pub async fn find_by_group(group_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_group(group_uuid: &GroupId, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             collections_groups::table
                 .filter(collections_groups::groups_uuid.eq(group_uuid))
@@ -396,7 +402,7 @@ impl CollectionGroup {
         }}
     }
 
-    pub async fn delete_all_by_group(group_uuid: &str, conn: &mut DbConn) -> EmptyResult {
+    pub async fn delete_all_by_group(group_uuid: &GroupId, conn: &mut DbConn) -> EmptyResult {
         let group_users = GroupUser::find_by_group(group_uuid, conn).await;
         for group_user in group_users {
             group_user.update_user_revision(conn).await;
@@ -475,7 +481,7 @@ impl GroupUser {
         }
     }
 
-    pub async fn find_by_group(group_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_group(group_uuid: &GroupId, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             groups_users::table
                 .filter(groups_users::groups_uuid.eq(group_uuid))
@@ -540,7 +546,7 @@ impl GroupUser {
     }
 
     pub async fn delete_by_group_and_member(
-        group_uuid: &str,
+        group_uuid: &GroupId,
         member_uuid: &MembershipId,
         conn: &mut DbConn,
     ) -> EmptyResult {
@@ -558,7 +564,7 @@ impl GroupUser {
         }}
     }
 
-    pub async fn delete_all_by_group(group_uuid: &str, conn: &mut DbConn) -> EmptyResult {
+    pub async fn delete_all_by_group(group_uuid: &GroupId, conn: &mut DbConn) -> EmptyResult {
         let group_users = GroupUser::find_by_group(group_uuid, conn).await;
         for group_user in group_users {
             group_user.update_user_revision(conn).await;
@@ -584,5 +590,53 @@ impl GroupUser {
                 .execute(conn)
                 .map_res("Error deleting user groups")
         }}
+    }
+}
+
+#[derive(DieselNewType, FromForm, Clone, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GroupId(String);
+
+impl AsRef<str> for GroupId {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Deref for GroupId {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Borrow<str> for GroupId {
+    fn borrow(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Display for GroupId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl From<String> for GroupId {
+    fn from(raw: String) -> Self {
+        Self(raw)
+    }
+}
+
+impl<'r> FromParam<'r> for GroupId {
+    type Error = ();
+
+    #[inline(always)]
+    fn from_param(param: &'r str) -> Result<Self, Self::Error> {
+        if param.chars().all(|c| matches!(c, 'a'..='z' | 'A'..='Z' |'0'..='9' | '-')) {
+            Ok(Self(param.to_string()))
+        } else {
+            Err(())
+        }
     }
 }

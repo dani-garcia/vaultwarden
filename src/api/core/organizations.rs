@@ -124,7 +124,7 @@ struct OrganizationUpdateData {
 #[serde(rename_all = "camelCase")]
 struct NewCollectionData {
     name: String,
-    groups: Vec<NewCollectionObjectData>,
+    groups: Vec<NewCollectionGroupData>,
     users: Vec<NewCollectionMemberData>,
     id: Option<CollectionId>,
     external_id: Option<String>,
@@ -132,9 +132,9 @@ struct NewCollectionData {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct NewCollectionObjectData {
+struct NewCollectionGroupData {
     hide_passwords: bool,
-    id: String,
+    id: GroupId,
     read_only: bool,
 }
 
@@ -155,8 +155,8 @@ struct OrgKeyData {
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
-struct OrgBulkIds {
-    ids: Vec<String>,
+struct BulkGroupIds {
+    ids: Vec<GroupId>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -367,7 +367,7 @@ async fn get_org_collections_details(
                 .await
                 .iter()
                 .map(|collection_group| {
-                    SelectionReadOnly::to_collection_group_details_read_only(collection_group).to_json()
+                    GroupSelection::to_collection_group_details_read_only(collection_group).to_json()
                 })
                 .collect()
         } else {
@@ -651,7 +651,7 @@ async fn get_org_collection_detail(
                     .await
                     .iter()
                     .map(|collection_group| {
-                        SelectionReadOnly::to_collection_group_details_read_only(collection_group).to_json()
+                        GroupSelection::to_collection_group_details_read_only(collection_group).to_json()
                     })
                     .collect()
             } else {
@@ -856,7 +856,7 @@ struct MembershipData {
 #[serde(rename_all = "camelCase")]
 struct InviteData {
     emails: Vec<String>,
-    groups: Vec<String>,
+    groups: Vec<GroupId>,
     r#type: NumberOrString,
     collections: Option<Vec<CollectionData>>,
     #[serde(default)]
@@ -942,8 +942,8 @@ async fn send_invite(
 
         new_member.save(&mut conn).await?;
 
-        for group in data.groups.iter() {
-            let mut group_entry = GroupUser::new(String::from(group), new_member.uuid.clone());
+        for group_id in data.groups.iter() {
+            let mut group_entry = GroupUser::new(group_id.clone(), new_member.uuid.clone());
             group_entry.save(&mut conn).await?;
         }
 
@@ -1330,7 +1330,7 @@ async fn get_user(
 struct EditUserData {
     r#type: NumberOrString,
     collections: Option<Vec<CollectionData>>,
-    groups: Option<Vec<String>>,
+    groups: Option<Vec<GroupId>>,
     #[serde(default)]
     access_all: bool,
 }
@@ -1432,8 +1432,8 @@ async fn edit_user(
 
     GroupUser::delete_all_by_member(&member_to_edit.uuid, &mut conn).await?;
 
-    for group in data.groups.iter().flatten() {
-        let mut group_entry = GroupUser::new(String::from(group), member_to_edit.uuid.clone());
+    for group_id in data.groups.iter().flatten() {
+        let mut group_entry = GroupUser::new(group_id.clone(), member_to_edit.uuid.clone());
         group_entry.save(&mut conn).await?;
     }
 
@@ -2379,13 +2379,13 @@ impl GroupRequest {
 
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct SelectionReadOnly {
-    id: String,
+struct GroupSelection {
+    id: GroupId,
     read_only: bool,
     hide_passwords: bool,
 }
 
-impl SelectionReadOnly {
+impl GroupSelection {
     pub fn to_collection_group_details_read_only(collection_group: &CollectionGroup) -> Self {
         Self {
             id: collection_group.groups_uuid.clone(),
@@ -2408,7 +2408,7 @@ struct CollectionSelection {
 }
 
 impl CollectionSelection {
-    pub fn to_collection_group(&self, groups_uuid: String) -> CollectionGroup {
+    pub fn to_collection_group(&self, groups_uuid: GroupId) -> CollectionGroup {
         CollectionGroup::new(self.id.clone(), groups_uuid, self.read_only, self.hide_passwords)
     }
 }
@@ -2438,7 +2438,7 @@ impl UserSelection {
 #[post("/organizations/<org_id>/groups/<group_id>", data = "<data>")]
 async fn post_group(
     org_id: OrganizationId,
-    group_id: &str,
+    group_id: GroupId,
     data: Json<GroupRequest>,
     headers: AdminHeaders,
     conn: DbConn,
@@ -2477,7 +2477,7 @@ async fn post_groups(
 #[put("/organizations/<org_id>/groups/<group_id>", data = "<data>")]
 async fn put_group(
     org_id: OrganizationId,
-    group_id: &str,
+    group_id: GroupId,
     data: Json<GroupRequest>,
     headers: AdminHeaders,
     mut conn: DbConn,
@@ -2486,15 +2486,15 @@ async fn put_group(
         err!("Group support is disabled");
     }
 
-    let Some(group) = Group::find_by_uuid_and_org(group_id, &org_id, &mut conn).await else {
+    let Some(group) = Group::find_by_uuid_and_org(&group_id, &org_id, &mut conn).await else {
         err!("Group not found", "Group uuid is invalid or does not belong to the organization")
     };
 
     let group_request = data.into_inner();
     let updated_group = group_request.update_group(group);
 
-    CollectionGroup::delete_all_by_group(group_id, &mut conn).await?;
-    GroupUser::delete_all_by_group(group_id, &mut conn).await?;
+    CollectionGroup::delete_all_by_group(&group_id, &mut conn).await?;
+    GroupUser::delete_all_by_group(&group_id, &mut conn).await?;
 
     log_event(
         EventType::GroupUpdated as i32,
@@ -2553,7 +2553,7 @@ async fn add_update_group(
 #[get("/organizations/<org_id>/groups/<group_id>/details")]
 async fn get_group_details(
     org_id: OrganizationId,
-    group_id: &str,
+    group_id: GroupId,
     _headers: AdminHeaders,
     mut conn: DbConn,
 ) -> JsonResult {
@@ -2561,7 +2561,7 @@ async fn get_group_details(
         err!("Group support is disabled");
     }
 
-    let Some(group) = Group::find_by_uuid_and_org(group_id, &org_id, &mut conn).await else {
+    let Some(group) = Group::find_by_uuid_and_org(&group_id, &org_id, &mut conn).await else {
         err!("Group not found", "Group uuid is invalid or does not belong to the organization")
     };
 
@@ -2571,21 +2571,26 @@ async fn get_group_details(
 #[post("/organizations/<org_id>/groups/<group_id>/delete")]
 async fn post_delete_group(
     org_id: OrganizationId,
-    group_id: &str,
+    group_id: GroupId,
     headers: AdminHeaders,
     mut conn: DbConn,
 ) -> EmptyResult {
-    _delete_group(&org_id, group_id, &headers, &mut conn).await
+    _delete_group(&org_id, &group_id, &headers, &mut conn).await
 }
 
 #[delete("/organizations/<org_id>/groups/<group_id>")]
-async fn delete_group(org_id: OrganizationId, group_id: &str, headers: AdminHeaders, mut conn: DbConn) -> EmptyResult {
-    _delete_group(&org_id, group_id, &headers, &mut conn).await
+async fn delete_group(
+    org_id: OrganizationId,
+    group_id: GroupId,
+    headers: AdminHeaders,
+    mut conn: DbConn,
+) -> EmptyResult {
+    _delete_group(&org_id, &group_id, &headers, &mut conn).await
 }
 
 async fn _delete_group(
     org_id: &OrganizationId,
-    group_id: &str,
+    group_id: &GroupId,
     headers: &AdminHeaders,
     conn: &mut DbConn,
 ) -> EmptyResult {
@@ -2614,7 +2619,7 @@ async fn _delete_group(
 #[delete("/organizations/<org_id>/groups", data = "<data>")]
 async fn bulk_delete_groups(
     org_id: OrganizationId,
-    data: Json<OrgBulkIds>,
+    data: Json<BulkGroupIds>,
     headers: AdminHeaders,
     mut conn: DbConn,
 ) -> EmptyResult {
@@ -2622,7 +2627,7 @@ async fn bulk_delete_groups(
         err!("Group support is disabled");
     }
 
-    let data: OrgBulkIds = data.into_inner();
+    let data: BulkGroupIds = data.into_inner();
 
     for group_id in data.ids {
         _delete_group(&org_id, &group_id, &headers, &mut conn).await?
@@ -2631,12 +2636,12 @@ async fn bulk_delete_groups(
 }
 
 #[get("/organizations/<org_id>/groups/<group_id>")]
-async fn get_group(org_id: OrganizationId, group_id: &str, _headers: AdminHeaders, mut conn: DbConn) -> JsonResult {
+async fn get_group(org_id: OrganizationId, group_id: GroupId, _headers: AdminHeaders, mut conn: DbConn) -> JsonResult {
     if !CONFIG.org_groups_enabled() {
         err!("Group support is disabled");
     }
 
-    let Some(group) = Group::find_by_uuid_and_org(group_id, &org_id, &mut conn).await else {
+    let Some(group) = Group::find_by_uuid_and_org(&group_id, &org_id, &mut conn).await else {
         err!("Group not found", "Group uuid is invalid or does not belong to the organization")
     };
 
@@ -2646,7 +2651,7 @@ async fn get_group(org_id: OrganizationId, group_id: &str, _headers: AdminHeader
 #[get("/organizations/<org_id>/groups/<group_id>/users")]
 async fn get_group_users(
     org_id: OrganizationId,
-    group_id: &str,
+    group_id: GroupId,
     _headers: AdminHeaders,
     mut conn: DbConn,
 ) -> JsonResult {
@@ -2654,11 +2659,11 @@ async fn get_group_users(
         err!("Group support is disabled");
     }
 
-    if Group::find_by_uuid_and_org(group_id, &org_id, &mut conn).await.is_none() {
+    if Group::find_by_uuid_and_org(&&group_id, &org_id, &mut conn).await.is_none() {
         err!("Group could not be found!", "Group uuid is invalid or does not belong to the organization")
     };
 
-    let group_users: Vec<MembershipId> = GroupUser::find_by_group(group_id, &mut conn)
+    let group_users: Vec<MembershipId> = GroupUser::find_by_group(&group_id, &mut conn)
         .await
         .iter()
         .map(|entry| entry.users_organizations_uuid.clone())
@@ -2670,7 +2675,7 @@ async fn get_group_users(
 #[put("/organizations/<org_id>/groups/<group_id>/users", data = "<data>")]
 async fn put_group_users(
     org_id: OrganizationId,
-    group_id: &str,
+    group_id: GroupId,
     headers: AdminHeaders,
     data: Json<Vec<MembershipId>>,
     mut conn: DbConn,
@@ -2679,15 +2684,15 @@ async fn put_group_users(
         err!("Group support is disabled");
     }
 
-    if Group::find_by_uuid_and_org(group_id, &org_id, &mut conn).await.is_none() {
+    if Group::find_by_uuid_and_org(&group_id, &org_id, &mut conn).await.is_none() {
         err!("Group could not be found!", "Group uuid is invalid or does not belong to the organization")
     };
 
-    GroupUser::delete_all_by_group(group_id, &mut conn).await?;
+    GroupUser::delete_all_by_group(&group_id, &mut conn).await?;
 
     let assigned_members = data.into_inner();
     for assigned_member in assigned_members {
-        let mut user_entry = GroupUser::new(String::from(group_id), assigned_member.clone());
+        let mut user_entry = GroupUser::new(group_id.clone(), assigned_member.clone());
         user_entry.save(&mut conn).await?;
 
         log_event(
@@ -2720,7 +2725,7 @@ async fn get_user_groups(
         err!("User could not be found!")
     };
 
-    let user_groups: Vec<String> =
+    let user_groups: Vec<GroupId> =
         GroupUser::find_by_member(&member_id, &mut conn).await.iter().map(|entry| entry.groups_uuid.clone()).collect();
 
     Ok(Json(json!(user_groups)))
@@ -2729,7 +2734,7 @@ async fn get_user_groups(
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct OrganizationUserUpdateGroupsRequest {
-    group_ids: Vec<String>,
+    group_ids: Vec<GroupId>,
 }
 
 #[post("/organizations/<org_id>/users/<member_id>/groups", data = "<data>")]
@@ -2784,7 +2789,7 @@ async fn put_user_groups(
 #[post("/organizations/<org_id>/groups/<group_id>/delete-user/<member_id>")]
 async fn post_delete_group_user(
     org_id: OrganizationId,
-    group_id: &str,
+    group_id: GroupId,
     member_id: MembershipId,
     headers: AdminHeaders,
     conn: DbConn,
@@ -2795,7 +2800,7 @@ async fn post_delete_group_user(
 #[delete("/organizations/<org_id>/groups/<group_id>/users/<member_id>")]
 async fn delete_group_user(
     org_id: OrganizationId,
-    group_id: &str,
+    group_id: GroupId,
     member_id: MembershipId,
     headers: AdminHeaders,
     mut conn: DbConn,
@@ -2808,7 +2813,7 @@ async fn delete_group_user(
         err!("User could not be found or does not belong to the organization.");
     }
 
-    if Group::find_by_uuid_and_org(group_id, &org_id, &mut conn).await.is_none() {
+    if Group::find_by_uuid_and_org(&group_id, &org_id, &mut conn).await.is_none() {
         err!("Group could not be found or does not belong to the organization.");
     }
 
@@ -2823,7 +2828,7 @@ async fn delete_group_user(
     )
     .await;
 
-    GroupUser::delete_by_group_and_member(group_id, &member_id, &mut conn).await
+    GroupUser::delete_by_group_and_member(&group_id, &member_id, &mut conn).await
 }
 
 #[derive(Deserialize)]
