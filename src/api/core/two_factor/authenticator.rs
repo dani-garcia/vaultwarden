@@ -7,7 +7,7 @@ use crate::{
     auth::{ClientIp, Headers},
     crypto,
     db::{
-        models::{EventType, TwoFactor, TwoFactorType},
+        models::{EventType, TwoFactor, TwoFactorType, UserId},
         DbConn,
     },
     util::NumberOrString,
@@ -95,7 +95,7 @@ async fn activate_authenticator_put(data: Json<EnableAuthenticatorData>, headers
 }
 
 pub async fn validate_totp_code_str(
-    user_uuid: &str,
+    user_uuid: &UserId,
     totp_code: &str,
     secret: &str,
     ip: &ClientIp,
@@ -109,7 +109,7 @@ pub async fn validate_totp_code_str(
 }
 
 pub async fn validate_totp_code(
-    user_uuid: &str,
+    user_uuid: &UserId,
     totp_code: &str,
     secret: &str,
     ip: &ClientIp,
@@ -124,7 +124,7 @@ pub async fn validate_totp_code(
     let mut twofactor =
         match TwoFactor::find_by_user_and_type(user_uuid, TwoFactorType::Authenticator as i32, conn).await {
             Some(tf) => tf,
-            _ => TwoFactor::new(user_uuid.to_string(), TwoFactorType::Authenticator, secret.to_string()),
+            _ => TwoFactor::new(user_uuid.clone(), TwoFactorType::Authenticator, secret.to_string()),
         };
 
     // The amount of steps back and forward in time

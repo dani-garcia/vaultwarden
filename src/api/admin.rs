@@ -280,7 +280,7 @@ struct InviteData {
     email: String,
 }
 
-async fn get_user_or_404(uuid: &str, conn: &mut DbConn) -> ApiResult<User> {
+async fn get_user_or_404(uuid: &UserId, conn: &mut DbConn) -> ApiResult<User> {
     if let Some(user) = User::find_by_uuid(uuid, conn).await {
         Ok(user)
     } else {
@@ -382,8 +382,8 @@ async fn get_user_by_mail_json(mail: &str, _token: AdminToken, mut conn: DbConn)
 }
 
 #[get("/users/<uuid>")]
-async fn get_user_json(uuid: &str, _token: AdminToken, mut conn: DbConn) -> JsonResult {
-    let u = get_user_or_404(uuid, &mut conn).await?;
+async fn get_user_json(uuid: UserId, _token: AdminToken, mut conn: DbConn) -> JsonResult {
+    let u = get_user_or_404(&uuid, &mut conn).await?;
     let mut usr = u.to_json(&mut conn).await;
     usr["userEnabled"] = json!(u.enabled);
     usr["createdAt"] = json!(format_naive_datetime_local(&u.created_at, DT_FMT));
@@ -391,11 +391,11 @@ async fn get_user_json(uuid: &str, _token: AdminToken, mut conn: DbConn) -> Json
 }
 
 #[post("/users/<uuid>/delete")]
-async fn delete_user(uuid: &str, token: AdminToken, mut conn: DbConn) -> EmptyResult {
-    let user = get_user_or_404(uuid, &mut conn).await?;
+async fn delete_user(uuid: UserId, token: AdminToken, mut conn: DbConn) -> EmptyResult {
+    let user = get_user_or_404(&uuid, &mut conn).await?;
 
     // Get the membership records before deleting the actual user
-    let memberships = Membership::find_any_state_by_user(uuid, &mut conn).await;
+    let memberships = Membership::find_any_state_by_user(&uuid, &mut conn).await;
     let res = user.delete(&mut conn).await;
 
     for membership in memberships {
@@ -415,8 +415,8 @@ async fn delete_user(uuid: &str, token: AdminToken, mut conn: DbConn) -> EmptyRe
 }
 
 #[post("/users/<uuid>/deauth")]
-async fn deauth_user(uuid: &str, _token: AdminToken, mut conn: DbConn, nt: Notify<'_>) -> EmptyResult {
-    let mut user = get_user_or_404(uuid, &mut conn).await?;
+async fn deauth_user(uuid: UserId, _token: AdminToken, mut conn: DbConn, nt: Notify<'_>) -> EmptyResult {
+    let mut user = get_user_or_404(&uuid, &mut conn).await?;
 
     nt.send_logout(&user, None).await;
 
@@ -436,8 +436,8 @@ async fn deauth_user(uuid: &str, _token: AdminToken, mut conn: DbConn, nt: Notif
 }
 
 #[post("/users/<uuid>/disable")]
-async fn disable_user(uuid: &str, _token: AdminToken, mut conn: DbConn, nt: Notify<'_>) -> EmptyResult {
-    let mut user = get_user_or_404(uuid, &mut conn).await?;
+async fn disable_user(uuid: UserId, _token: AdminToken, mut conn: DbConn, nt: Notify<'_>) -> EmptyResult {
+    let mut user = get_user_or_404(&uuid, &mut conn).await?;
     Device::delete_all_by_user(&user.uuid, &mut conn).await?;
     user.reset_security_stamp();
     user.enabled = false;
@@ -450,16 +450,16 @@ async fn disable_user(uuid: &str, _token: AdminToken, mut conn: DbConn, nt: Noti
 }
 
 #[post("/users/<uuid>/enable")]
-async fn enable_user(uuid: &str, _token: AdminToken, mut conn: DbConn) -> EmptyResult {
-    let mut user = get_user_or_404(uuid, &mut conn).await?;
+async fn enable_user(uuid: UserId, _token: AdminToken, mut conn: DbConn) -> EmptyResult {
+    let mut user = get_user_or_404(&uuid, &mut conn).await?;
     user.enabled = true;
 
     user.save(&mut conn).await
 }
 
 #[post("/users/<uuid>/remove-2fa")]
-async fn remove_2fa(uuid: &str, token: AdminToken, mut conn: DbConn) -> EmptyResult {
-    let mut user = get_user_or_404(uuid, &mut conn).await?;
+async fn remove_2fa(uuid: UserId, token: AdminToken, mut conn: DbConn) -> EmptyResult {
+    let mut user = get_user_or_404(&uuid, &mut conn).await?;
     TwoFactor::delete_all_by_user(&user.uuid, &mut conn).await?;
     two_factor::enforce_2fa_policy(&user, ACTING_ADMIN_USER, 14, &token.ip.ip, &mut conn).await?;
     user.totp_recover = None;
@@ -467,8 +467,8 @@ async fn remove_2fa(uuid: &str, token: AdminToken, mut conn: DbConn) -> EmptyRes
 }
 
 #[post("/users/<uuid>/invite/resend")]
-async fn resend_user_invite(uuid: &str, _token: AdminToken, mut conn: DbConn) -> EmptyResult {
-    if let Some(user) = User::find_by_uuid(uuid, &mut conn).await {
+async fn resend_user_invite(uuid: UserId, _token: AdminToken, mut conn: DbConn) -> EmptyResult {
+    if let Some(user) = User::find_by_uuid(&uuid, &mut conn).await {
         //TODO: replace this with user.status check when it will be available (PR#3397)
         if !user.password_hash.is_empty() {
             err_code!("User already accepted invitation", Status::BadRequest.code);
@@ -487,7 +487,7 @@ async fn resend_user_invite(uuid: &str, _token: AdminToken, mut conn: DbConn) ->
 #[derive(Debug, Deserialize)]
 struct MembershipTypeData {
     user_type: NumberOrString,
-    user_uuid: String,
+    user_uuid: UserId,
     org_uuid: OrganizationId,
 }
 

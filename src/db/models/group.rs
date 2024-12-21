@@ -1,4 +1,4 @@
-use super::{Membership, MembershipId, OrganizationId, User};
+use super::{Membership, MembershipId, OrganizationId, User, UserId};
 use crate::api::EmptyResult;
 use crate::db::DbConn;
 use crate::error::MapResult;
@@ -222,7 +222,7 @@ impl Group {
         }}
     }
     //Returns all organizations the user has full access to
-    pub async fn get_orgs_by_user_with_full_access(user_uuid: &str, conn: &mut DbConn) -> Vec<OrganizationId> {
+    pub async fn get_orgs_by_user_with_full_access(user_uuid: &UserId, conn: &mut DbConn) -> Vec<OrganizationId> {
         db_run! { conn: {
             groups_users::table
                 .inner_join(users_organizations::table.on(
@@ -240,7 +240,7 @@ impl Group {
         }}
     }
 
-    pub async fn is_in_full_access_group(user_uuid: &str, org_uuid: &OrganizationId, conn: &mut DbConn) -> bool {
+    pub async fn is_in_full_access_group(user_uuid: &UserId, org_uuid: &OrganizationId, conn: &mut DbConn) -> bool {
         db_run! { conn: {
             groups::table
                 .inner_join(groups_users::table.on(
@@ -353,7 +353,7 @@ impl CollectionGroup {
         }}
     }
 
-    pub async fn find_by_user(user_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_user(user_uuid: &UserId, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             collections_groups::table
                 .inner_join(groups_users::table.on(

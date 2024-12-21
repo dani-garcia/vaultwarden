@@ -106,7 +106,7 @@ async fn enforce_disable_hide_email_policy(data: &SendData, headers: &Headers, c
     Ok(())
 }
 
-fn create_send(data: SendData, user_uuid: String) -> ApiResult<Send> {
+fn create_send(data: SendData, user_uuid: UserId) -> ApiResult<Send> {
     let data_val = if data.r#type == SendType::Text as i32 {
         data.text
     } else if data.r#type == SendType::File as i32 {

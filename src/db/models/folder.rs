@@ -1,7 +1,7 @@
 use chrono::{NaiveDateTime, Utc};
 use serde_json::Value;
 
-use super::User;
+use super::{User, UserId};
 
 db_object! {
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -11,7 +11,7 @@ db_object! {
         pub uuid: String,
         pub created_at: NaiveDateTime,
         pub updated_at: NaiveDateTime,
-        pub user_uuid: String,
+        pub user_uuid: UserId,
         pub name: String,
     }
 
@@ -26,7 +26,7 @@ db_object! {
 
 /// Local methods
 impl Folder {
-    pub fn new(user_uuid: String, name: String) -> Self {
+    pub fn new(user_uuid: UserId, name: String) -> Self {
         let now = Utc::now().naive_utc();
 
         Self {
@@ -113,14 +113,14 @@ impl Folder {
         }}
     }
 
-    pub async fn delete_all_by_user(user_uuid: &str, conn: &mut DbConn) -> EmptyResult {
+    pub async fn delete_all_by_user(user_uuid: &UserId, conn: &mut DbConn) -> EmptyResult {
         for folder in Self::find_by_user(user_uuid, conn).await {
             folder.delete(conn).await?;
         }
         Ok(())
     }
 
-    pub async fn find_by_uuid_and_user(uuid: &str, user_uuid: &str, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_uuid_and_user(uuid: &str, user_uuid: &UserId, conn: &mut DbConn) -> Option<Self> {
         db_run! { conn: {
             folders::table
                 .filter(folders::uuid.eq(uuid))
@@ -131,7 +131,7 @@ impl Folder {
         }}
     }
 
-    pub async fn find_by_user(user_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_user(user_uuid: &UserId, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             folders::table
                 .filter(folders::user_uuid.eq(user_uuid))
@@ -216,7 +216,7 @@ impl FolderCipher {
 
     /// Return a vec with (cipher_uuid, folder_uuid)
     /// This is used during a full sync so we only need one query for all folder matches.
-    pub async fn find_by_user(user_uuid: &str, conn: &mut DbConn) -> Vec<(String, String)> {
+    pub async fn find_by_user(user_uuid: &UserId, conn: &mut DbConn) -> Vec<(String, String)> {
         db_run! { conn: {
             folders_ciphers::table
                 .inner_join(folders::table)

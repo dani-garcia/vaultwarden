@@ -701,7 +701,7 @@ async fn policies_emergency_access(emer_id: &str, headers: Headers, mut conn: Db
 
 fn is_valid_request(
     emergency_access: &EmergencyAccess,
-    requesting_user_uuid: &str,
+    requesting_user_uuid: &UserId,
     requested_access_type: EmergencyAccessType,
 ) -> bool {
     emergency_access.grantee_uuid.is_some()

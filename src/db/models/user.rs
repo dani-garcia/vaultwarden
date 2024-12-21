@@ -1,9 +1,23 @@
-use crate::util::{format_date, get_uuid, retry};
 use chrono::{NaiveDateTime, TimeDelta, Utc};
+use rocket::request::FromParam;
 use serde_json::Value;
+use std::{
+    borrow::Borrow,
+    fmt::{Display, Formatter},
+    ops::Deref,
+};
 
-use crate::crypto;
-use crate::CONFIG;
+use super::{
+    Cipher, Device, EmergencyAccess, Favorite, Folder, Membership, MembershipType, TwoFactor, TwoFactorIncomplete,
+};
+use crate::{
+    api::EmptyResult,
+    crypto,
+    db::DbConn,
+    error::MapResult,
+    util::{format_date, get_uuid, retry},
+    CONFIG,
+};
 
 db_object! {
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -11,7 +25,7 @@ db_object! {
     #[diesel(treat_none_as_null = true)]
     #[diesel(primary_key(uuid))]
     pub struct User {
-        pub uuid: String,
+        pub uuid: UserId,
         pub enabled: bool,
         pub created_at: NaiveDateTime,
         pub updated_at: NaiveDateTime,
@@ -91,7 +105,7 @@ impl User {
         let email = email.to_lowercase();
 
         Self {
-            uuid: get_uuid(),
+            uuid: UserId(get_uuid()),
             enabled: true,
             created_at: now,
             updated_at: now,
@@ -214,14 +228,6 @@ impl User {
     }
 }
 
-use super::{
-    Cipher, Device, EmergencyAccess, Favorite, Folder, Membership, MembershipType, Send, TwoFactor, TwoFactorIncomplete,
-};
-use crate::db::DbConn;
-
-use crate::api::EmptyResult;
-use crate::error::MapResult;
-
 /// Database methods
 impl User {
     pub async fn to_json(&self, conn: &mut DbConn) -> Value {
@@ -311,7 +317,7 @@ impl User {
             }
         }
 
-        Send::delete_all_by_user(&self.uuid, conn).await?;
+        super::Send::delete_all_by_user(&self.uuid, conn).await?;
         EmergencyAccess::delete_all_by_user(&self.uuid, conn).await?;
         EmergencyAccess::delete_all_by_grantee_email(&self.email, conn).await?;
         Membership::delete_all_by_user(&self.uuid, conn).await?;
@@ -330,7 +336,7 @@ impl User {
         }}
     }
 
-    pub async fn update_uuid_revision(uuid: &str, conn: &mut DbConn) {
+    pub async fn update_uuid_revision(uuid: &UserId, conn: &mut DbConn) {
         if let Err(e) = Self::_update_revision(uuid, &Utc::now().naive_utc(), conn).await {
             warn!("Failed to update revision for {}: {:#?}", uuid, e);
         }
@@ -355,7 +361,7 @@ impl User {
         Self::_update_revision(&self.uuid, &self.updated_at, conn).await
     }
 
-    async fn _update_revision(uuid: &str, date: &NaiveDateTime, conn: &mut DbConn) -> EmptyResult {
+    async fn _update_revision(uuid: &UserId, date: &NaiveDateTime, conn: &mut DbConn) -> EmptyResult {
         db_run! {conn: {
             retry(|| {
                 diesel::update(users::table.filter(users::uuid.eq(uuid)))
@@ -377,7 +383,7 @@ impl User {
         }}
     }
 
-    pub async fn find_by_uuid(uuid: &str, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_uuid(uuid: &UserId, conn: &mut DbConn) -> Option<Self> {
         db_run! {conn: {
             users::table.filter(users::uuid.eq(uuid)).first::<UserDb>(conn).ok().from_db()
         }}
@@ -453,6 +459,54 @@ impl Invitation {
         match Self::find_by_mail(mail, conn).await {
             Some(invitation) => invitation.delete(conn).await.is_ok(),
             None => false,
+        }
+    }
+}
+
+#[derive(DieselNewType, FromForm, Clone, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UserId(String);
+
+impl AsRef<str> for UserId {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Deref for UserId {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Borrow<str> for UserId {
+    fn borrow(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Display for UserId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl From<String> for UserId {
+    fn from(raw: String) -> Self {
+        Self(raw)
+    }
+}
+
+impl<'r> FromParam<'r> for UserId {
+    type Error = ();
+
+    #[inline(always)]
+    fn from_param(param: &'r str) -> Result<Self, Self::Error> {
+        if param.chars().all(|c| matches!(c, 'a'..='z' | 'A'..='Z' |'0'..='9' | '-')) {
+            Ok(Self(param.to_string()))
+        } else {
+            Err(())
         }
     }
 }

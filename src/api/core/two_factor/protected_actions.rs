@@ -6,7 +6,7 @@ use crate::{
     auth::Headers,
     crypto,
     db::{
-        models::{TwoFactor, TwoFactorType},
+        models::{TwoFactor, TwoFactorType, UserId},
         DbConn,
     },
     error::{Error, MapResult},
@@ -104,7 +104,7 @@ async fn verify_otp(data: Json<ProtectedActionVerify>, headers: Headers, mut con
 
 pub async fn validate_protected_action_otp(
     otp: &str,
-    user_uuid: &str,
+    user_uuid: &UserId,
     delete_if_valid: bool,
     conn: &mut DbConn,
 ) -> EmptyResult {

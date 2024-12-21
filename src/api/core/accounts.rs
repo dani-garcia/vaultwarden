@@ -306,8 +306,8 @@ async fn put_avatar(data: Json<AvatarData>, headers: Headers, mut conn: DbConn) 
 }
 
 #[get("/users/<uuid>/public-key")]
-async fn get_public_keys(uuid: &str, _headers: Headers, mut conn: DbConn) -> JsonResult {
-    let user = match User::find_by_uuid(uuid, &mut conn).await {
+async fn get_public_keys(uuid: UserId, _headers: Headers, mut conn: DbConn) -> JsonResult {
+    let user = match User::find_by_uuid(&uuid, &mut conn).await {
         Some(user) if user.public_key.is_some() => user,
         Some(_) => err_code!("User has no public_key", Status::NotFound.code),
         None => err_code!("User doesn't exist", Status::NotFound.code),
@@ -793,7 +793,7 @@ async fn post_verify_email(headers: Headers) -> EmptyResult {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct VerifyEmailTokenData {
-    user_id: String,
+    user_id: UserId,
     token: String,
 }
 
@@ -808,7 +808,7 @@ async fn post_verify_email_token(data: Json<VerifyEmailTokenData>, mut conn: DbC
     let Ok(claims) = decode_verify_email(&data.token) else {
         err!("Invalid claim")
     };
-    if claims.sub != user.uuid {
+    if claims.sub != *user.uuid {
         err!("Invalid claim");
     }
     user.verified_at = Some(Utc::now().naive_utc());
@@ -850,7 +850,7 @@ async fn post_delete_recover(data: Json<DeleteRecoverData>, mut conn: DbConn) ->
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct DeleteRecoverTokenData {
-    user_id: String,
+    user_id: UserId,
     token: String,
 }
 
@@ -866,7 +866,7 @@ async fn post_delete_recover_token(data: Json<DeleteRecoverTokenData>, mut conn:
         err!("User doesn't exist")
     };
 
-    if claims.sub != user.uuid {
+    if claims.sub != *user.uuid {
         err!("Invalid claim");
     }
     user.delete(&mut conn).await

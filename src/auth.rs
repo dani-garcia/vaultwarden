@@ -14,7 +14,7 @@ use std::{
     net::IpAddr,
 };
 
-use crate::db::models::{MembershipId, OrganizationId};
+use crate::db::models::{MembershipId, OrganizationId, UserId};
 use crate::{error::Error, CONFIG};
 
 const JWT_ALGORITHM: Algorithm = Algorithm::RS256;
@@ -151,7 +151,7 @@ pub struct LoginJwtClaims {
     // Issuer
     pub iss: String,
     // Subject
-    pub sub: String,
+    pub sub: UserId,
 
     pub premium: bool,
     pub name: String,

@@ -1,5 +1,6 @@
 use chrono::{NaiveDateTime, Utc};
 
+use super::UserId;
 use crate::{crypto, CONFIG};
 use core::fmt;
 
@@ -13,7 +14,7 @@ db_object! {
         pub created_at: NaiveDateTime,
         pub updated_at: NaiveDateTime,
 
-        pub user_uuid: String,
+        pub user_uuid: UserId,
 
         pub name: String,
         pub atype: i32,         // https://github.com/bitwarden/server/blob/dcc199bcce4aa2d5621f6fab80f1b49d8b143418/src/Core/Enums/DeviceType.cs
@@ -28,7 +29,7 @@ db_object! {
 
 /// Local methods
 impl Device {
-    pub fn new(uuid: String, user_uuid: String, name: String, atype: i32) -> Self {
+    pub fn new(uuid: String, user_uuid: UserId, name: String, atype: i32) -> Self {
         let now = Utc::now().naive_utc();
 
         Self {
@@ -150,7 +151,7 @@ impl Device {
         }
     }
 
-    pub async fn delete_all_by_user(user_uuid: &str, conn: &mut DbConn) -> EmptyResult {
+    pub async fn delete_all_by_user(user_uuid: &UserId, conn: &mut DbConn) -> EmptyResult {
         db_run! { conn: {
             diesel::delete(devices::table.filter(devices::user_uuid.eq(user_uuid)))
                 .execute(conn)
@@ -158,7 +159,7 @@ impl Device {
         }}
     }
 
-    pub async fn find_by_uuid_and_user(uuid: &str, user_uuid: &str, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_uuid_and_user(uuid: &str, user_uuid: &UserId, conn: &mut DbConn) -> Option<Self> {
         db_run! { conn: {
             devices::table
                 .filter(devices::uuid.eq(uuid))
@@ -169,7 +170,7 @@ impl Device {
         }}
     }
 
-    pub async fn find_by_user(user_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_user(user_uuid: &UserId, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             devices::table
                 .filter(devices::user_uuid.eq(user_uuid))
@@ -208,7 +209,7 @@ impl Device {
         }}
     }
 
-    pub async fn find_latest_active_by_user(user_uuid: &str, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_latest_active_by_user(user_uuid: &UserId, conn: &mut DbConn) -> Option<Self> {
         db_run! { conn: {
             devices::table
                 .filter(devices::user_uuid.eq(user_uuid))
@@ -219,7 +220,7 @@ impl Device {
         }}
     }
 
-    pub async fn find_push_devices_by_user(user_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_push_devices_by_user(user_uuid: &UserId, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             devices::table
                 .filter(devices::user_uuid.eq(user_uuid))
@@ -230,7 +231,7 @@ impl Device {
         }}
     }
 
-    pub async fn check_user_has_push_device(user_uuid: &str, conn: &mut DbConn) -> bool {
+    pub async fn check_user_has_push_device(user_uuid: &UserId, conn: &mut DbConn) -> bool {
         db_run! { conn: {
             devices::table
             .filter(devices::user_uuid.eq(user_uuid))

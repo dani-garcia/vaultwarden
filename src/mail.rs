@@ -17,7 +17,7 @@ use crate::{
         encode_jwt, generate_delete_claims, generate_emergency_access_invite_claims, generate_invite_claims,
         generate_verify_email_claims,
     },
-    db::models::{Device, DeviceType, MembershipId, OrganizationId, User},
+    db::models::{Device, DeviceType, MembershipId, OrganizationId, User, UserId},
     error::Error,
     CONFIG,
 };
@@ -166,8 +166,8 @@ pub async fn send_password_hint(address: &str, hint: Option<String>) -> EmptyRes
     send_email(address, &subject, body_html, body_text).await
 }
 
-pub async fn send_delete_account(address: &str, uuid: &str) -> EmptyResult {
-    let claims = generate_delete_claims(uuid.to_string());
+pub async fn send_delete_account(address: &str, user_id: &UserId) -> EmptyResult {
+    let claims = generate_delete_claims(user_id.to_string());
     let delete_token = encode_jwt(&claims);
 
     let (subject, body_html, body_text) = get_text(
@@ -175,7 +175,7 @@ pub async fn send_delete_account(address: &str, uuid: &str) -> EmptyResult {
         json!({
             "url": CONFIG.domain(),
             "img_src": CONFIG._smtp_img_src(),
-            "user_id": uuid,
+            "user_id": user_id,
             "email": percent_encode(address.as_bytes(), NON_ALPHANUMERIC).to_string(),
             "token": delete_token,
         }),
@@ -184,8 +184,8 @@ pub async fn send_delete_account(address: &str, uuid: &str) -> EmptyResult {
     send_email(address, &subject, body_html, body_text).await
 }
 
-pub async fn send_verify_email(address: &str, uuid: &str) -> EmptyResult {
-    let claims = generate_verify_email_claims(uuid.to_string());
+pub async fn send_verify_email(address: &str, user_id: &UserId) -> EmptyResult {
+    let claims = generate_verify_email_claims(user_id.to_string());
     let verify_email_token = encode_jwt(&claims);
 
     let (subject, body_html, body_text) = get_text(
@@ -193,7 +193,7 @@ pub async fn send_verify_email(address: &str, uuid: &str) -> EmptyResult {
         json!({
             "url": CONFIG.domain(),
             "img_src": CONFIG._smtp_img_src(),
-            "user_id": uuid,
+            "user_id": user_id,
             "email": percent_encode(address.as_bytes(), NON_ALPHANUMERIC).to_string(),
             "token": verify_email_token,
         }),
@@ -214,8 +214,8 @@ pub async fn send_welcome(address: &str) -> EmptyResult {
     send_email(address, &subject, body_html, body_text).await
 }
 
-pub async fn send_welcome_must_verify(address: &str, uuid: &str) -> EmptyResult {
-    let claims = generate_verify_email_claims(uuid.to_string());
+pub async fn send_welcome_must_verify(address: &str, user_id: &UserId) -> EmptyResult {
+    let claims = generate_verify_email_claims(user_id.to_string());
     let verify_email_token = encode_jwt(&claims);
 
     let (subject, body_html, body_text) = get_text(
@@ -223,7 +223,7 @@ pub async fn send_welcome_must_verify(address: &str, uuid: &str) -> EmptyResult 
         json!({
             "url": CONFIG.domain(),
             "img_src": CONFIG._smtp_img_src(),
-            "user_id": uuid,
+            "user_id": user_id,
             "token": verify_email_token,
         }),
     )?;
@@ -265,7 +265,7 @@ pub async fn send_invite(
     invited_by_email: Option<String>,
 ) -> EmptyResult {
     let claims = generate_invite_claims(
-        user.uuid.clone(),
+        user.uuid.to_string(),
         user.email.clone(),
         org_id.clone(),
         member_id.clone(),

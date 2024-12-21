@@ -1,6 +1,6 @@
 use serde_json::Value;
 
-use super::{CollectionGroup, GroupUser, Membership, MembershipStatus, MembershipType, OrganizationId, User};
+use super::{CollectionGroup, GroupUser, Membership, MembershipStatus, MembershipType, OrganizationId, User, UserId};
 use crate::CONFIG;
 
 db_object! {
@@ -18,7 +18,7 @@ db_object! {
     #[diesel(table_name = users_collections)]
     #[diesel(primary_key(user_uuid, collection_uuid))]
     pub struct CollectionUser {
-        pub user_uuid: String,
+        pub user_uuid: UserId,
         pub collection_uuid: String,
         pub read_only: bool,
         pub hide_passwords: bool,
@@ -74,7 +74,7 @@ impl Collection {
 
     pub async fn to_json_details(
         &self,
-        user_uuid: &str,
+        user_uuid: &UserId,
         cipher_sync_data: Option<&crate::api::core::CipherSyncData>,
         conn: &mut DbConn,
     ) -> Value {
@@ -208,7 +208,7 @@ impl Collection {
         }}
     }
 
-    pub async fn find_by_user_uuid(user_uuid: String, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_user_uuid(user_uuid: UserId, conn: &mut DbConn) -> Vec<Self> {
         if CONFIG.org_groups_enabled() {
             db_run! { conn: {
                 collections::table
@@ -281,7 +281,7 @@ impl Collection {
 
     pub async fn find_by_organization_and_user_uuid(
         org_uuid: &OrganizationId,
-        user_uuid: &str,
+        user_uuid: &UserId,
         conn: &mut DbConn,
     ) -> Vec<Self> {
         Self::find_by_user_uuid(user_uuid.to_owned(), conn)
@@ -324,7 +324,7 @@ impl Collection {
         }}
     }
 
-    pub async fn find_by_uuid_and_user(uuid: &str, user_uuid: String, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_uuid_and_user(uuid: &str, user_uuid: UserId, conn: &mut DbConn) -> Option<Self> {
         if CONFIG.org_groups_enabled() {
             db_run! { conn: {
                 collections::table
@@ -391,7 +391,7 @@ impl Collection {
         }
     }
 
-    pub async fn is_writable_by_user(&self, user_uuid: &str, conn: &mut DbConn) -> bool {
+    pub async fn is_writable_by_user(&self, user_uuid: &UserId, conn: &mut DbConn) -> bool {
         let user_uuid = user_uuid.to_string();
         if CONFIG.org_groups_enabled() {
             db_run! { conn: {
@@ -453,7 +453,7 @@ impl Collection {
         }
     }
 
-    pub async fn hide_passwords_for_user(&self, user_uuid: &str, conn: &mut DbConn) -> bool {
+    pub async fn hide_passwords_for_user(&self, user_uuid: &UserId, conn: &mut DbConn) -> bool {
         let user_uuid = user_uuid.to_string();
         db_run! { conn: {
             collections::table
@@ -504,7 +504,7 @@ impl Collection {
 impl CollectionUser {
     pub async fn find_by_organization_and_user_uuid(
         org_uuid: &OrganizationId,
-        user_uuid: &str,
+        user_uuid: &UserId,
         conn: &mut DbConn,
     ) -> Vec<Self> {
         db_run! { conn: {
@@ -533,7 +533,7 @@ impl CollectionUser {
     }
 
     pub async fn save(
-        user_uuid: &str,
+        user_uuid: &UserId,
         collection_uuid: &str,
         read_only: bool,
         hide_passwords: bool,
@@ -632,7 +632,7 @@ impl CollectionUser {
 
     pub async fn find_by_collection_and_user(
         collection_uuid: &str,
-        user_uuid: &str,
+        user_uuid: &UserId,
         conn: &mut DbConn,
     ) -> Option<Self> {
         db_run! { conn: {
@@ -646,7 +646,7 @@ impl CollectionUser {
         }}
     }
 
-    pub async fn find_by_user(user_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_user(user_uuid: &UserId, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             users_collections::table
                 .filter(users_collections::user_uuid.eq(user_uuid))
@@ -670,7 +670,7 @@ impl CollectionUser {
     }
 
     pub async fn delete_all_by_user_and_org(
-        user_uuid: &str,
+        user_uuid: &UserId,
         org_uuid: &OrganizationId,
         conn: &mut DbConn,
     ) -> EmptyResult {
@@ -689,7 +689,7 @@ impl CollectionUser {
         }}
     }
 
-    pub async fn has_access_to_collection_by_user(col_id: &str, user_uuid: &str, conn: &mut DbConn) -> bool {
+    pub async fn has_access_to_collection_by_user(col_id: &str, user_uuid: &UserId, conn: &mut DbConn) -> bool {
         Self::find_by_collection_and_user(col_id, user_uuid, conn).await.is_some()
     }
 }

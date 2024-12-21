@@ -7,7 +7,7 @@ use tokio::sync::RwLock;
 
 use crate::{
     api::{ApiResult, EmptyResult, UpdateType},
-    db::models::{Cipher, Device, Folder, Send, User},
+    db::models::{Cipher, Device, Folder, Send, User, UserId},
     http_client::make_http_request,
     util::format_date,
     CONFIG,
@@ -284,8 +284,8 @@ async fn send_to_push_relay(notification_data: Value) {
     };
 }
 
-pub async fn push_auth_request(user_uuid: String, auth_request_uuid: String, conn: &mut crate::db::DbConn) {
-    if Device::check_user_has_push_device(user_uuid.as_str(), conn).await {
+pub async fn push_auth_request(user_uuid: UserId, auth_request_uuid: String, conn: &mut crate::db::DbConn) {
+    if Device::check_user_has_push_device(&user_uuid, conn).await {
         tokio::task::spawn(send_to_push_relay(json!({
             "userId": user_uuid,
             "organizationId": (),
@@ -301,12 +301,12 @@ pub async fn push_auth_request(user_uuid: String, auth_request_uuid: String, con
 }
 
 pub async fn push_auth_response(
-    user_uuid: String,
+    user_uuid: UserId,
     auth_request_uuid: String,
     approving_device_uuid: String,
     conn: &mut crate::db::DbConn,
 ) {
-    if Device::check_user_has_push_device(user_uuid.as_str(), conn).await {
+    if Device::check_user_has_push_device(&user_uuid, conn).await {
         tokio::task::spawn(send_to_push_relay(json!({
             "userId": user_uuid,
             "organizationId": (),

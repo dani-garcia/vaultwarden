@@ -3,7 +3,7 @@ use serde_json::Value;
 
 use crate::util::LowerCase;
 
-use super::{OrganizationId, User};
+use super::{OrganizationId, User, UserId};
 
 db_object! {
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -13,7 +13,7 @@ db_object! {
     pub struct Send {
         pub uuid: String,
 
-        pub user_uuid: Option<String>,
+        pub user_uuid: Option<UserId>,
         pub organization_uuid: Option<OrganizationId>,
 
         pub name: String,
@@ -242,7 +242,7 @@ impl Send {
         }
     }
 
-    pub async fn update_users_revision(&self, conn: &mut DbConn) -> Vec<String> {
+    pub async fn update_users_revision(&self, conn: &mut DbConn) -> Vec<UserId> {
         let mut user_uuids = Vec::new();
         match &self.user_uuid {
             Some(user_uuid) => {
@@ -256,7 +256,7 @@ impl Send {
         user_uuids
     }
 
-    pub async fn delete_all_by_user(user_uuid: &str, conn: &mut DbConn) -> EmptyResult {
+    pub async fn delete_all_by_user(user_uuid: &UserId, conn: &mut DbConn) -> EmptyResult {
         for send in Self::find_by_user(user_uuid, conn).await {
             send.delete(conn).await?;
         }
@@ -289,7 +289,7 @@ impl Send {
         }}
     }
 
-    pub async fn find_by_uuid_and_user(uuid: &str, user_uuid: &str, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_uuid_and_user(uuid: &str, user_uuid: &UserId, conn: &mut DbConn) -> Option<Self> {
         db_run! {conn: {
             sends::table
                 .filter(sends::uuid.eq(uuid))
@@ -300,7 +300,7 @@ impl Send {
         }}
     }
 
-    pub async fn find_by_user(user_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_user(user_uuid: &UserId, conn: &mut DbConn) -> Vec<Self> {
         db_run! {conn: {
             sends::table
                 .filter(sends::user_uuid.eq(user_uuid))
@@ -308,7 +308,7 @@ impl Send {
         }}
     }
 
-    pub async fn size_by_user(user_uuid: &str, conn: &mut DbConn) -> Option<i64> {
+    pub async fn size_by_user(user_uuid: &UserId, conn: &mut DbConn) -> Option<i64> {
         let sends = Self::find_by_user(user_uuid, conn).await;
 
         #[derive(serde::Deserialize)]

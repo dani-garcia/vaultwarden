@@ -5,7 +5,7 @@ use crate::api::EmptyResult;
 use crate::db::DbConn;
 use crate::error::MapResult;
 
-use super::{Membership, MembershipId, MembershipStatus, MembershipType, OrganizationId, TwoFactor};
+use super::{Membership, MembershipId, MembershipStatus, MembershipType, OrganizationId, TwoFactor, UserId};
 
 db_object! {
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -152,7 +152,7 @@ impl OrgPolicy {
         }}
     }
 
-    pub async fn find_confirmed_by_user(user_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_confirmed_by_user(user_uuid: &UserId, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             org_policies::table
                 .inner_join(
@@ -194,7 +194,7 @@ impl OrgPolicy {
     }
 
     pub async fn find_accepted_and_confirmed_by_user_and_active_policy(
-        user_uuid: &str,
+        user_uuid: &UserId,
         policy_type: OrgPolicyType,
         conn: &mut DbConn,
     ) -> Vec<Self> {
@@ -221,7 +221,7 @@ impl OrgPolicy {
     }
 
     pub async fn find_confirmed_by_user_and_active_policy(
-        user_uuid: &str,
+        user_uuid: &UserId,
         policy_type: OrgPolicyType,
         conn: &mut DbConn,
     ) -> Vec<Self> {
@@ -248,7 +248,7 @@ impl OrgPolicy {
     /// and the user is not an owner or admin of that org. This is only useful for checking
     /// applicability of policy types that have these particular semantics.
     pub async fn is_applicable_to_user(
-        user_uuid: &str,
+        user_uuid: &UserId,
         policy_type: OrgPolicyType,
         exclude_org_uuid: Option<&OrganizationId>,
         conn: &mut DbConn,
@@ -271,7 +271,7 @@ impl OrgPolicy {
     }
 
     pub async fn is_user_allowed(
-        user_uuid: &str,
+        user_uuid: &UserId,
         org_uuid: &OrganizationId,
         exclude_current_org: bool,
         conn: &mut DbConn,
@@ -316,7 +316,7 @@ impl OrgPolicy {
 
     /// Returns true if the user belongs to an org that has enabled the `DisableHideEmail`
     /// option of the `Send Options` policy, and the user is not an owner or admin of that org.
-    pub async fn is_hide_email_disabled(user_uuid: &str, conn: &mut DbConn) -> bool {
+    pub async fn is_hide_email_disabled(user_uuid: &UserId, conn: &mut DbConn) -> bool {
         for policy in
             OrgPolicy::find_confirmed_by_user_and_active_policy(user_uuid, OrgPolicyType::SendOptions, conn).await
         {

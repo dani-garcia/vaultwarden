@@ -10,7 +10,7 @@ use rocket_ws::{Message, WebSocket};
 use crate::{
     auth::{ClientIp, WsAccessTokenHeader},
     db::{
-        models::{Cipher, Folder, Send as DbSend, User},
+        models::{Cipher, Folder, Send as DbSend, User, UserId},
         DbConn,
     },
     Error, CONFIG,
@@ -53,13 +53,13 @@ struct WsAccessToken {
 
 struct WSEntryMapGuard {
     users: Arc<WebSocketUsers>,
-    user_uuid: String,
+    user_uuid: UserId,
     entry_uuid: uuid::Uuid,
     addr: IpAddr,
 }
 
 impl WSEntryMapGuard {
-    fn new(users: Arc<WebSocketUsers>, user_uuid: String, entry_uuid: uuid::Uuid, addr: IpAddr) -> Self {
+    fn new(users: Arc<WebSocketUsers>, user_uuid: UserId, entry_uuid: uuid::Uuid, addr: IpAddr) -> Self {
         Self {
             users,
             user_uuid,
@@ -72,7 +72,7 @@ impl WSEntryMapGuard {
 impl Drop for WSEntryMapGuard {
     fn drop(&mut self) {
         info!("Closing WS connection from {}", self.addr);
-        if let Some(mut entry) = self.users.map.get_mut(&self.user_uuid) {
+        if let Some(mut entry) = self.users.map.get_mut(&self.user_uuid.to_string()) {
             entry.retain(|(uuid, _)| uuid != &self.entry_uuid);
         }
     }
@@ -129,7 +129,7 @@ fn websockets_hub<'r>(
         // Add a channel to send messages to this client to the map
         let entry_uuid = uuid::Uuid::new_v4();
         let (tx, rx) = tokio::sync::mpsc::channel::<Message>(100);
-        users.map.entry(claims.sub.clone()).or_default().push((entry_uuid, tx));
+        users.map.entry(claims.sub.to_string()).or_default().push((entry_uuid, tx));
 
         // Once the guard goes out of scope, the connection will have been closed and the entry will be deleted from the map
         (rx, WSEntryMapGuard::new(users, claims.sub, entry_uuid, addr))
@@ -328,8 +328,8 @@ pub struct WebSocketUsers {
 }
 
 impl WebSocketUsers {
-    async fn send_update(&self, user_uuid: &str, data: &[u8]) {
-        if let Some(user) = self.map.get(user_uuid).map(|v| v.clone()) {
+    async fn send_update(&self, user_uuid: &UserId, data: &[u8]) {
+        if let Some(user) = self.map.get(user_uuid.as_ref()).map(|v| v.clone()) {
             for (_, sender) in user.iter() {
                 if let Err(e) = sender.send(Message::binary(data)).await {
                     error!("Error sending WS update {e}");
@@ -345,7 +345,7 @@ impl WebSocketUsers {
             return;
         }
         let data = create_update(
-            vec![("UserId".into(), user.uuid.clone().into()), ("Date".into(), serialize_date(user.updated_at))],
+            vec![("UserId".into(), user.uuid.to_string().into()), ("Date".into(), serialize_date(user.updated_at))],
             ut,
             None,
         );
@@ -365,7 +365,7 @@ impl WebSocketUsers {
             return;
         }
         let data = create_update(
-            vec![("UserId".into(), user.uuid.clone().into()), ("Date".into(), serialize_date(user.updated_at))],
+            vec![("UserId".into(), user.uuid.to_string().into()), ("Date".into(), serialize_date(user.updated_at))],
             UpdateType::LogOut,
             acting_device_uuid.clone(),
         );
@@ -393,7 +393,7 @@ impl WebSocketUsers {
         let data = create_update(
             vec![
                 ("Id".into(), folder.uuid.clone().into()),
-                ("UserId".into(), folder.user_uuid.clone().into()),
+                ("UserId".into(), folder.user_uuid.to_string().into()),
                 ("RevisionDate".into(), serialize_date(folder.updated_at)),
             ],
             ut,
@@ -413,7 +413,7 @@ impl WebSocketUsers {
         &self,
         ut: UpdateType,
         cipher: &Cipher,
-        user_uuids: &[String],
+        user_uuids: &[UserId],
         acting_device_uuid: &String,
         collection_uuids: Option<Vec<String>>,
         conn: &mut DbConn,
@@ -432,7 +432,7 @@ impl WebSocketUsers {
                 serialize_date(Utc::now().naive_utc()),
             )
         } else {
-            (convert_option(cipher.user_uuid.clone()), Value::Nil, serialize_date(cipher.updated_at))
+            (convert_option(cipher.user_uuid.as_deref()), Value::Nil, serialize_date(cipher.updated_at))
         };
 
         let data = create_update(
@@ -462,7 +462,7 @@ impl WebSocketUsers {
         &self,
         ut: UpdateType,
         send: &DbSend,
-        user_uuids: &[String],
+        user_uuids: &[UserId],
         acting_device_uuid: &String,
         conn: &mut DbConn,
     ) {
@@ -470,7 +470,7 @@ impl WebSocketUsers {
         if *NOTIFICATIONS_DISABLED {
             return;
         }
-        let user_uuid = convert_option(send.user_uuid.clone());
+        let user_uuid = convert_option(send.user_uuid.as_deref());
 
         let data = create_update(
             vec![
@@ -494,7 +494,7 @@ impl WebSocketUsers {
 
     pub async fn send_auth_request(
         &self,
-        user_uuid: &String,
+        user_uuid: &UserId,
         auth_request_uuid: &String,
         acting_device_uuid: &String,
         conn: &mut DbConn,
@@ -504,7 +504,7 @@ impl WebSocketUsers {
             return;
         }
         let data = create_update(
-            vec![("Id".into(), auth_request_uuid.clone().into()), ("UserId".into(), user_uuid.clone().into())],
+            vec![("Id".into(), auth_request_uuid.clone().into()), ("UserId".into(), user_uuid.to_string().into())],
             UpdateType::AuthRequest,
             Some(acting_device_uuid.to_string()),
         );
@@ -513,13 +513,13 @@ impl WebSocketUsers {
         }
 
         if CONFIG.push_enabled() {
-            push_auth_request(user_uuid.to_string(), auth_request_uuid.to_string(), conn).await;
+            push_auth_request(user_uuid.clone(), auth_request_uuid.to_string(), conn).await;
         }
     }
 
     pub async fn send_auth_response(
         &self,
-        user_uuid: &String,
+        user_uuid: &UserId,
         auth_response_uuid: &str,
         approving_device_uuid: String,
         conn: &mut DbConn,
@@ -529,17 +529,16 @@ impl WebSocketUsers {
             return;
         }
         let data = create_update(
-            vec![("Id".into(), auth_response_uuid.to_owned().into()), ("UserId".into(), user_uuid.clone().into())],
+            vec![("Id".into(), auth_response_uuid.to_owned().into()), ("UserId".into(), user_uuid.to_string().into())],
             UpdateType::AuthRequestResponse,
             approving_device_uuid.clone().into(),
         );
         if CONFIG.enable_websocket() {
-            self.send_update(auth_response_uuid, &data).await;
+            self.send_update(user_uuid, &data).await;
         }
 
         if CONFIG.push_enabled() {
-            push_auth_response(user_uuid.to_string(), auth_response_uuid.to_string(), approving_device_uuid, conn)
-                .await;
+            push_auth_response(user_uuid.clone(), auth_response_uuid.to_string(), approving_device_uuid, conn).await;
         }
     }
 }
@@ -558,16 +557,16 @@ impl AnonymousWebSocketSubscriptions {
         }
     }
 
-    pub async fn send_auth_response(&self, user_uuid: &String, auth_response_uuid: &str) {
+    pub async fn send_auth_response(&self, user_uuid: &UserId, auth_response_uuid: &str) {
         if !CONFIG.enable_websocket() {
             return;
         }
         let data = create_anonymous_update(
-            vec![("Id".into(), auth_response_uuid.to_owned().into()), ("UserId".into(), user_uuid.clone().into())],
+            vec![("Id".into(), auth_response_uuid.to_owned().into()), ("UserId".into(), user_uuid.to_string().into())],
             UpdateType::AuthRequestResponse,
-            user_uuid.to_string(),
+            user_uuid.clone(),
         );
-        self.send_update(auth_response_uuid, &data).await;
+        self.send_update(user_uuid, &data).await;
     }
 }
 
@@ -604,7 +603,7 @@ fn create_update(payload: Vec<(Value, Value)>, ut: UpdateType, acting_device_uui
     serialize(value)
 }
 
-fn create_anonymous_update(payload: Vec<(Value, Value)>, ut: UpdateType, user_id: String) -> Vec<u8> {
+fn create_anonymous_update(payload: Vec<(Value, Value)>, ut: UpdateType, user_id: UserId) -> Vec<u8> {
     use rmpv::Value as V;
 
     let value = V::Array(vec![
@@ -615,7 +614,7 @@ fn create_anonymous_update(payload: Vec<(Value, Value)>, ut: UpdateType, user_id
         V::Array(vec![V::Map(vec![
             ("Type".into(), (ut as i32).into()),
             ("Payload".into(), payload.into()),
-            ("UserId".into(), user_id.into()),
+            ("UserId".into(), user_id.to_string().into()),
         ])]),
     ]);
 

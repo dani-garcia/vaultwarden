@@ -358,7 +358,7 @@ async fn get_org_collections_details(
         let users: Vec<Value> = coll_users
             .iter()
             .filter(|collection_user| collection_user.collection_uuid == col.uuid)
-            .map(|collection_user| SelectionReadOnly::to_collection_user_details_read_only(collection_user).to_json())
+            .map(|collection_user| UserSelection::to_collection_user_details_read_only(collection_user).to_json())
             .collect();
 
         // get the group details for the given collection
@@ -667,7 +667,7 @@ async fn get_org_collection_detail(
                     .await
                     .iter()
                     .map(|collection_user| {
-                        SelectionReadOnly::to_collection_user_details_read_only(collection_user).to_json()
+                        UserSelection::to_collection_user_details_read_only(collection_user).to_json()
                     })
                     .collect();
 
@@ -761,7 +761,7 @@ async fn get_org_details(data: OrgIdData, headers: Headers, mut conn: DbConn) ->
     })))
 }
 
-async fn _get_org_details(org_id: &OrganizationId, host: &str, user_uuid: &str, conn: &mut DbConn) -> Value {
+async fn _get_org_details(org_id: &OrganizationId, host: &str, user_uuid: &UserId, conn: &mut DbConn) -> Value {
     let ciphers = Cipher::find_by_org(org_id, conn).await;
     let cipher_sync_data = CipherSyncData::new(user_uuid, CipherSyncType::Organization, conn).await;
 
@@ -2384,16 +2384,30 @@ impl SelectionReadOnly {
         CollectionGroup::new(self.id.clone(), groups_uuid, self.read_only, self.hide_passwords)
     }
 
-    pub fn to_collection_group_details_read_only(collection_group: &CollectionGroup) -> SelectionReadOnly {
-        SelectionReadOnly {
+    pub fn to_collection_group_details_read_only(collection_group: &CollectionGroup) -> Self {
+        Self {
             id: collection_group.groups_uuid.clone(),
             read_only: collection_group.read_only,
             hide_passwords: collection_group.hide_passwords,
         }
     }
 
-    pub fn to_collection_user_details_read_only(collection_user: &CollectionUser) -> SelectionReadOnly {
-        SelectionReadOnly {
+    pub fn to_json(&self) -> Value {
+        json!(self)
+    }
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UserSelection {
+    id: UserId,
+    read_only: bool,
+    hide_passwords: bool,
+}
+
+impl UserSelection {
+    pub fn to_collection_user_details_read_only(collection_user: &CollectionUser) -> Self {
+        Self {
             id: collection_user.user_uuid.clone(),
             read_only: collection_user.read_only,
             hide_passwords: collection_user.hide_passwords,

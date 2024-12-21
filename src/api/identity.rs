@@ -31,7 +31,7 @@ pub fn routes() -> Vec<Route> {
 async fn login(data: Form<ConnectData>, client_header: ClientHeaders, mut conn: DbConn) -> JsonResult {
     let data: ConnectData = data.into_inner();
 
-    let mut user_uuid: Option<String> = None;
+    let mut user_uuid: Option<UserId> = None;
 
     let login_result = match data.grant_type.as_ref() {
         "refresh_token" => {
@@ -141,7 +141,7 @@ struct MasterPasswordPolicy {
 
 async fn _password_login(
     data: ConnectData,
-    user_uuid: &mut Option<String>,
+    user_uuid: &mut Option<UserId>,
     conn: &mut DbConn,
     ip: &ClientIp,
 ) -> JsonResult {
@@ -359,7 +359,7 @@ async fn _password_login(
 
 async fn _api_key_login(
     data: ConnectData,
-    user_uuid: &mut Option<String>,
+    user_uuid: &mut Option<UserId>,
     conn: &mut DbConn,
     ip: &ClientIp,
 ) -> JsonResult {
@@ -376,7 +376,7 @@ async fn _api_key_login(
 
 async fn _user_api_key_login(
     data: ConnectData,
-    user_uuid: &mut Option<String>,
+    user_uuid: &mut Option<UserId>,
     conn: &mut DbConn,
     ip: &ClientIp,
 ) -> JsonResult {
@@ -385,7 +385,8 @@ async fn _user_api_key_login(
     let Some(client_user_uuid) = client_id.strip_prefix("user.") else {
         err!("Malformed client_id", format!("IP: {}.", ip.ip))
     };
-    let Some(user) = User::find_by_uuid(client_user_uuid, conn).await else {
+    let client_user_uuid: UserId = client_user_uuid.to_string().into();
+    let Some(user) = User::find_by_uuid(&client_user_uuid, conn).await else {
         err!("Invalid client_id", format!("IP: {}.", ip.ip))
     };
 
@@ -615,7 +616,7 @@ fn _selected_data(tf: Option<TwoFactor>) -> ApiResult<String> {
 
 async fn _json_err_twofactor(
     providers: &[i32],
-    user_uuid: &str,
+    user_uuid: &UserId,
     data: &ConnectData,
     conn: &mut DbConn,
 ) -> ApiResult<Value> {

@@ -771,7 +771,7 @@ async fn post_collections_update(
 
     let posted_collections = HashSet::<String>::from_iter(data.collection_ids);
     let current_collections =
-        HashSet::<String>::from_iter(cipher.get_collections(headers.user.uuid.clone(), &mut conn).await);
+        HashSet::<String>::from_iter(cipher.get_collections(headers.user.uuid.to_string(), &mut conn).await);
 
     for collection in posted_collections.symmetric_difference(&current_collections) {
         match Collection::find_by_uuid_and_org(collection, cipher.organization_uuid.as_ref().unwrap(), &mut conn).await
@@ -848,7 +848,7 @@ async fn post_collections_admin(
 
     let posted_collections = HashSet::<String>::from_iter(data.collection_ids);
     let current_collections =
-        HashSet::<String>::from_iter(cipher.get_admin_collections(headers.user.uuid.clone(), &mut conn).await);
+        HashSet::<String>::from_iter(cipher.get_admin_collections(headers.user.uuid.to_string(), &mut conn).await);
 
     for collection in posted_collections.symmetric_difference(&current_collections) {
         match Collection::find_by_uuid_and_org(collection, cipher.organization_uuid.as_ref().unwrap(), &mut conn).await
@@ -1848,7 +1848,7 @@ pub enum CipherSyncType {
 }
 
 impl CipherSyncData {
-    pub async fn new(user_uuid: &str, sync_type: CipherSyncType, conn: &mut DbConn) -> Self {
+    pub async fn new(user_uuid: &UserId, sync_type: CipherSyncType, conn: &mut DbConn) -> Self {
         let cipher_folders: HashMap<String, String>;
         let cipher_favorites: HashSet<String>;
         match sync_type {

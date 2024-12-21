@@ -1,4 +1,4 @@
-use super::OrganizationId;
+use super::{OrganizationId, UserId};
 use crate::crypto::ct_eq;
 use chrono::{NaiveDateTime, Utc};
 
@@ -9,7 +9,7 @@ db_object! {
     #[diesel(primary_key(uuid))]
     pub struct AuthRequest {
         pub uuid: String,
-        pub user_uuid: String,
+        pub user_uuid: UserId,
         pub organization_uuid: Option<OrganizationId>,
 
         pub request_device_identifier: String,
@@ -34,7 +34,7 @@ db_object! {
 
 impl AuthRequest {
     pub fn new(
-        user_uuid: String,
+        user_uuid: UserId,
         request_device_identifier: String,
         device_type: i32,
         request_ip: String,
@@ -112,7 +112,7 @@ impl AuthRequest {
         }}
     }
 
-    pub async fn find_by_uuid_and_user(uuid: &str, user_uuid: &str, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_uuid_and_user(uuid: &str, user_uuid: &UserId, conn: &mut DbConn) -> Option<Self> {
         db_run! {conn: {
             auth_requests::table
                 .filter(auth_requests::uuid.eq(uuid))
@@ -123,7 +123,7 @@ impl AuthRequest {
         }}
     }
 
-    pub async fn find_by_user(user_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_user(user_uuid: &UserId, conn: &mut DbConn) -> Vec<Self> {
         db_run! {conn: {
             auth_requests::table
                 .filter(auth_requests::user_uuid.eq(user_uuid))

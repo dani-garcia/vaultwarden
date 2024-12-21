@@ -3,7 +3,7 @@ use std::io::ErrorKind;
 use bigdecimal::{BigDecimal, ToPrimitive};
 use serde_json::Value;
 
-use super::OrganizationId;
+use super::{OrganizationId, UserId};
 use crate::CONFIG;
 
 db_object! {
@@ -145,7 +145,7 @@ impl Attachment {
         }}
     }
 
-    pub async fn size_by_user(user_uuid: &str, conn: &mut DbConn) -> i64 {
+    pub async fn size_by_user(user_uuid: &UserId, conn: &mut DbConn) -> i64 {
         db_run! { conn: {
             let result: Option<BigDecimal> = attachments::table
                 .left_join(ciphers::table.on(ciphers::uuid.eq(attachments::cipher_uuid)))
@@ -162,7 +162,7 @@ impl Attachment {
         }}
     }
 
-    pub async fn count_by_user(user_uuid: &str, conn: &mut DbConn) -> i64 {
+    pub async fn count_by_user(user_uuid: &UserId, conn: &mut DbConn) -> i64 {
         db_run! { conn: {
             attachments::table
                 .left_join(ciphers::table.on(ciphers::uuid.eq(attachments::cipher_uuid)))
@@ -205,7 +205,7 @@ impl Attachment {
     // There is no filtering done here if the user actually has access!
     // It is used to speed up the sync process, and the matching is done in a different part.
     pub async fn find_all_by_user_and_orgs(
-        user_uuid: &str,
+        user_uuid: &UserId,
         org_uuids: &Vec<OrganizationId>,
         conn: &mut DbConn,
     ) -> Vec<Self> {

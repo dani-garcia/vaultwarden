@@ -8,7 +8,7 @@ use crate::{
     api::{EmptyResult, JsonResult},
     auth::{AdminHeaders, Headers},
     db::{
-        models::{Cipher, Event, Membership, MembershipId, OrganizationId},
+        models::{Cipher, Event, Membership, MembershipId, OrganizationId, UserId},
         DbConn, DbPool,
     },
     util::parse_date,
@@ -218,7 +218,7 @@ async fn post_events_collect(data: Json<Vec<EventCollection>>, headers: Headers,
     Ok(())
 }
 
-pub async fn log_user_event(event_type: i32, user_uuid: &str, device_type: i32, ip: &IpAddr, conn: &mut DbConn) {
+pub async fn log_user_event(event_type: i32, user_uuid: &UserId, device_type: i32, ip: &IpAddr, conn: &mut DbConn) {
     if !CONFIG.org_events_enabled() {
         return;
     }
@@ -227,7 +227,7 @@ pub async fn log_user_event(event_type: i32, user_uuid: &str, device_type: i32, 
 
 async fn _log_user_event(
     event_type: i32,
-    user_uuid: &str,
+    user_uuid: &UserId,
     device_type: i32,
     event_date: Option<NaiveDateTime>,
     ip: &IpAddr,
@@ -238,8 +238,8 @@ async fn _log_user_event(
 
     // Upstream saves the event also without any org_uuid.
     let mut event = Event::new(event_type, event_date);
-    event.user_uuid = Some(String::from(user_uuid));
-    event.act_user_uuid = Some(String::from(user_uuid));
+    event.user_uuid = Some(user_uuid.clone());
+    event.act_user_uuid = Some(user_uuid.to_string());
     event.device_type = Some(device_type);
     event.ip_address = Some(ip.to_string());
     events.push(event);
@@ -247,9 +247,9 @@ async fn _log_user_event(
     // For each org a user is a member of store these events per org
     for org_uuid in orgs {
         let mut event = Event::new(event_type, event_date);
-        event.user_uuid = Some(String::from(user_uuid));
+        event.user_uuid = Some(user_uuid.clone());
         event.org_uuid = Some(org_uuid);
-        event.act_user_uuid = Some(String::from(user_uuid));
+        event.act_user_uuid = Some(user_uuid.to_string());
         event.device_type = Some(device_type);
         event.ip_address = Some(ip.to_string());
         events.push(event);
