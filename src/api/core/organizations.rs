@@ -2352,7 +2352,7 @@ struct GroupRequest {
     #[serde(default)]
     access_all: bool,
     external_id: Option<String>,
-    collections: Vec<CollectionSelection>,
+    collections: Vec<SelectedCollection>,
     users: Vec<MembershipId>,
 }
 
@@ -2373,13 +2373,13 @@ impl GroupRequest {
 
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct CollectionSelection {
+struct SelectedCollection {
     id: CollectionId,
     read_only: bool,
     hide_passwords: bool,
 }
 
-impl CollectionSelection {
+impl SelectedCollection {
     pub fn to_collection_group(&self, groups_uuid: GroupId) -> CollectionGroup {
         CollectionGroup::new(self.id.clone(), groups_uuid, self.read_only, self.hide_passwords)
     }
@@ -2462,7 +2462,7 @@ async fn put_group(
 
 async fn add_update_group(
     mut group: Group,
-    collections: Vec<CollectionSelection>,
+    collections: Vec<SelectedCollection>,
     members: Vec<MembershipId>,
     org_id: OrganizationId,
     headers: &AdminHeaders,
