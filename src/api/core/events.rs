@@ -8,7 +8,7 @@ use crate::{
     api::{EmptyResult, JsonResult},
     auth::{AdminHeaders, Headers},
     db::{
-        models::{Cipher, Event, Membership, MembershipId, OrganizationId, UserId},
+        models::{Cipher, CipherId, Event, Membership, MembershipId, OrganizationId, UserId},
         DbConn, DbPool,
     },
     util::parse_date,
@@ -59,14 +59,14 @@ async fn get_org_events(org_id: &str, data: EventRange, _headers: AdminHeaders, 
 }
 
 #[get("/ciphers/<cipher_id>/events?<data..>")]
-async fn get_cipher_events(cipher_id: &str, data: EventRange, headers: Headers, mut conn: DbConn) -> JsonResult {
+async fn get_cipher_events(cipher_id: CipherId, data: EventRange, headers: Headers, mut conn: DbConn) -> JsonResult {
     // Return an empty vec when we org events are disabled.
     // This prevents client errors
     let events_json: Vec<Value> = if !CONFIG.org_events_enabled() {
         Vec::with_capacity(0)
     } else {
         let mut events_json = Vec::with_capacity(0);
-        if Membership::user_has_ge_admin_access_to_cipher(&headers.user.uuid, cipher_id, &mut conn).await {
+        if Membership::user_has_ge_admin_access_to_cipher(&headers.user.uuid, &cipher_id, &mut conn).await {
             let start_date = parse_date(&data.start);
             let end_date = if let Some(before_date) = &data.continuation_token {
                 parse_date(before_date)
@@ -74,7 +74,7 @@ async fn get_cipher_events(cipher_id: &str, data: EventRange, headers: Headers, 
                 parse_date(&data.end)
             };
 
-            events_json = Event::find_by_cipher_uuid(cipher_id, &start_date, &end_date, &mut conn)
+            events_json = Event::find_by_cipher_uuid(&cipher_id, &start_date, &end_date, &mut conn)
                 .await
                 .iter()
                 .map(|e| e.to_json())
@@ -152,7 +152,7 @@ struct EventCollection {
     date: String,
 
     // Optional
-    cipher_id: Option<String>,
+    cipher_id: Option<CipherId>,
     organization_id: Option<OrganizationId>,
 }
 
@@ -290,19 +290,19 @@ async fn _log_event(
         // 1000..=1099 Are user events, they need to be logged via log_user_event()
         // Cipher Events
         1100..=1199 => {
-            event.cipher_uuid = Some(String::from(source_uuid));
+            event.cipher_uuid = Some(source_uuid.to_string().into());
         }
         // Collection Events
         1300..=1399 => {
-            event.collection_uuid = Some(String::from(source_uuid));
+            event.collection_uuid = Some(source_uuid.to_string().into());
         }
         // Group Events
         1400..=1499 => {
-            event.group_uuid = Some(String::from(source_uuid));
+            event.group_uuid = Some(source_uuid.to_string().into());
         }
         // Org User Events
         1500..=1599 => {
-            event.org_user_uuid = Some(String::from(source_uuid));
+            event.org_user_uuid = Some(source_uuid.to_string().into());
         }
         // 1600..=1699 Are organizational events, and they do not need the source_uuid
         // Policy Events

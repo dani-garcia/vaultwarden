@@ -1,7 +1,7 @@
 use crate::db::DbConn;
 use serde_json::Value;
 
-use super::{OrganizationId, UserId};
+use super::{CipherId, CollectionId, GroupId, MembershipId, OrganizationId, UserId};
 use crate::{api::EmptyResult, error::MapResult, CONFIG};
 
 use chrono::{NaiveDateTime, TimeDelta, Utc};
@@ -20,10 +20,10 @@ db_object! {
         pub event_type: i32, // EventType
         pub user_uuid: Option<UserId>,
         pub org_uuid: Option<OrganizationId>,
-        pub cipher_uuid: Option<String>,
-        pub collection_uuid: Option<String>,
-        pub group_uuid: Option<String>,
-        pub org_user_uuid: Option<String>,
+        pub cipher_uuid: Option<CipherId>,
+        pub collection_uuid: Option<CollectionId>,
+        pub group_uuid: Option<GroupId>,
+        pub org_user_uuid: Option<MembershipId>,
         pub act_user_uuid: Option<String>,
         // Upstream enum: https://github.com/bitwarden/server/blob/8a22c0479e987e756ce7412c48a732f9002f0a2d/src/Core/Enums/DeviceType.cs
         pub device_type: Option<i32>,
@@ -298,7 +298,7 @@ impl Event {
     }
 
     pub async fn find_by_cipher_uuid(
-        cipher_uuid: &str,
+        cipher_uuid: &CipherId,
         start: &NaiveDateTime,
         end: &NaiveDateTime,
         conn: &mut DbConn,

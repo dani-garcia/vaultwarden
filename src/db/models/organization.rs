@@ -11,8 +11,8 @@ use std::{
 };
 
 use super::{
-    Collection, CollectionGroup, CollectionId, CollectionUser, Group, GroupId, GroupUser, OrgPolicy, OrgPolicyType,
-    TwoFactor, User, UserId,
+    CipherId, Collection, CollectionGroup, CollectionId, CollectionUser, Group, GroupId, GroupUser, OrgPolicy,
+    OrgPolicyType, TwoFactor, User, UserId,
 };
 use crate::CONFIG;
 
@@ -897,7 +897,11 @@ impl Membership {
         }}
     }
 
-    pub async fn find_by_cipher_and_org(cipher_uuid: &str, org_uuid: &OrganizationId, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_cipher_and_org(
+        cipher_uuid: &CipherId,
+        org_uuid: &OrganizationId,
+        conn: &mut DbConn,
+    ) -> Vec<Self> {
         db_run! { conn: {
             users_organizations::table
             .filter(users_organizations::org_uuid.eq(org_uuid))
@@ -921,7 +925,7 @@ impl Membership {
     }
 
     pub async fn find_by_cipher_and_org_with_group(
-        cipher_uuid: &str,
+        cipher_uuid: &CipherId,
         org_uuid: &OrganizationId,
         conn: &mut DbConn,
     ) -> Vec<Self> {
@@ -950,7 +954,11 @@ impl Membership {
         }}
     }
 
-    pub async fn user_has_ge_admin_access_to_cipher(user_uuid: &UserId, cipher_uuid: &str, conn: &mut DbConn) -> bool {
+    pub async fn user_has_ge_admin_access_to_cipher(
+        user_uuid: &UserId,
+        cipher_uuid: &CipherId,
+        conn: &mut DbConn,
+    ) -> bool {
         db_run! { conn: {
             users_organizations::table
             .inner_join(ciphers::table.on(ciphers::uuid.eq(cipher_uuid).and(ciphers::organization_uuid.eq(users_organizations::org_uuid.nullable()))))

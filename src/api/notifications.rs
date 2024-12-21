@@ -437,7 +437,7 @@ impl WebSocketUsers {
 
         let data = create_update(
             vec![
-                ("Id".into(), cipher.uuid.clone().into()),
+                ("Id".into(), cipher.uuid.to_string().into()),
                 ("UserId".into(), user_uuid),
                 ("OrganizationId".into(), org_uuid),
                 ("CollectionIds".into(), collection_uuids),

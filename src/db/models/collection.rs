@@ -6,7 +6,9 @@ use std::{
     ops::Deref,
 };
 
-use super::{CollectionGroup, GroupUser, Membership, MembershipStatus, MembershipType, OrganizationId, User, UserId};
+use super::{
+    CipherId, CollectionGroup, GroupUser, Membership, MembershipStatus, MembershipType, OrganizationId, User, UserId,
+};
 use crate::CONFIG;
 
 db_object! {
@@ -34,7 +36,7 @@ db_object! {
     #[diesel(table_name = ciphers_collections)]
     #[diesel(primary_key(cipher_uuid, collection_uuid))]
     pub struct CollectionCipher {
-        pub cipher_uuid: String,
+        pub cipher_uuid: CipherId,
         pub collection_uuid: CollectionId,
     }
 }
@@ -710,7 +712,7 @@ impl CollectionUser {
 
 /// Database methods
 impl CollectionCipher {
-    pub async fn save(cipher_uuid: &str, collection_uuid: &CollectionId, conn: &mut DbConn) -> EmptyResult {
+    pub async fn save(cipher_uuid: &CipherId, collection_uuid: &CollectionId, conn: &mut DbConn) -> EmptyResult {
         Self::update_users_revision(collection_uuid, conn).await;
 
         db_run! { conn:
@@ -740,7 +742,7 @@ impl CollectionCipher {
         }
     }
 
-    pub async fn delete(cipher_uuid: &str, collection_uuid: &CollectionId, conn: &mut DbConn) -> EmptyResult {
+    pub async fn delete(cipher_uuid: &CipherId, collection_uuid: &CollectionId, conn: &mut DbConn) -> EmptyResult {
         Self::update_users_revision(collection_uuid, conn).await;
 
         db_run! { conn: {
@@ -754,7 +756,7 @@ impl CollectionCipher {
         }}
     }
 
-    pub async fn delete_all_by_cipher(cipher_uuid: &str, conn: &mut DbConn) -> EmptyResult {
+    pub async fn delete_all_by_cipher(cipher_uuid: &CipherId, conn: &mut DbConn) -> EmptyResult {
         db_run! { conn: {
             diesel::delete(ciphers_collections::table.filter(ciphers_collections::cipher_uuid.eq(cipher_uuid)))
                 .execute(conn)

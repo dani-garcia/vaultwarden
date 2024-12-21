@@ -488,13 +488,13 @@ fn validate_keydata(
     existing_sends: &[Send],
 ) -> EmptyResult {
     // Check that we're correctly rotating all the user's ciphers
-    let existing_cipher_ids = existing_ciphers.iter().map(|c| c.uuid.as_str()).collect::<HashSet<_>>();
+    let existing_cipher_ids = existing_ciphers.iter().map(|c| &c.uuid).collect::<HashSet<&CipherId>>();
     let provided_cipher_ids = data
         .ciphers
         .iter()
         .filter(|c| c.organization_id.is_none())
-        .filter_map(|c| c.id.as_deref())
-        .collect::<HashSet<_>>();
+        .filter_map(|c| c.id.as_ref())
+        .collect::<HashSet<&CipherId>>();
     if !provided_cipher_ids.is_superset(&existing_cipher_ids) {
         err!("All existing ciphers must be included in the rotation")
     }

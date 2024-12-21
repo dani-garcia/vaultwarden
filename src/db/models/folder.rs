@@ -1,7 +1,7 @@
 use chrono::{NaiveDateTime, Utc};
 use serde_json::Value;
 
-use super::{User, UserId};
+use super::{CipherId, User, UserId};
 
 db_object! {
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -19,7 +19,7 @@ db_object! {
     #[diesel(table_name = folders_ciphers)]
     #[diesel(primary_key(cipher_uuid, folder_uuid))]
     pub struct FolderCipher {
-        pub cipher_uuid: String,
+        pub cipher_uuid: CipherId,
         pub folder_uuid: String,
     }
 }
@@ -52,10 +52,10 @@ impl Folder {
 }
 
 impl FolderCipher {
-    pub fn new(folder_uuid: &str, cipher_uuid: &str) -> Self {
+    pub fn new(folder_uuid: &str, cipher_uuid: &CipherId) -> Self {
         Self {
             folder_uuid: folder_uuid.to_string(),
-            cipher_uuid: cipher_uuid.to_string(),
+            cipher_uuid: cipher_uuid.clone(),
         }
     }
 }
@@ -177,7 +177,7 @@ impl FolderCipher {
         }}
     }
 
-    pub async fn delete_all_by_cipher(cipher_uuid: &str, conn: &mut DbConn) -> EmptyResult {
+    pub async fn delete_all_by_cipher(cipher_uuid: &CipherId, conn: &mut DbConn) -> EmptyResult {
         db_run! { conn: {
             diesel::delete(folders_ciphers::table.filter(folders_ciphers::cipher_uuid.eq(cipher_uuid)))
                 .execute(conn)
@@ -193,7 +193,11 @@ impl FolderCipher {
         }}
     }
 
-    pub async fn find_by_folder_and_cipher(folder_uuid: &str, cipher_uuid: &str, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_folder_and_cipher(
+        folder_uuid: &str,
+        cipher_uuid: &CipherId,
+        conn: &mut DbConn,
+    ) -> Option<Self> {
         db_run! { conn: {
             folders_ciphers::table
                 .filter(folders_ciphers::folder_uuid.eq(folder_uuid))
@@ -216,13 +220,13 @@ impl FolderCipher {
 
     /// Return a vec with (cipher_uuid, folder_uuid)
     /// This is used during a full sync so we only need one query for all folder matches.
-    pub async fn find_by_user(user_uuid: &UserId, conn: &mut DbConn) -> Vec<(String, String)> {
+    pub async fn find_by_user(user_uuid: &UserId, conn: &mut DbConn) -> Vec<(CipherId, String)> {
         db_run! { conn: {
             folders_ciphers::table
                 .inner_join(folders::table)
                 .filter(folders::user_uuid.eq(user_uuid))
                 .select(folders_ciphers::all_columns)
-                .load::<(String, String)>(conn)
+                .load::<(CipherId, String)>(conn)
                 .unwrap_or_default()
         }}
     }

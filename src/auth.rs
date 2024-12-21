@@ -14,7 +14,7 @@ use std::{
     net::IpAddr,
 };
 
-use crate::db::models::{CollectionId, MembershipId, OrganizationId, UserId};
+use crate::db::models::{CipherId, CollectionId, MembershipId, OrganizationId, UserId};
 use crate::{error::Error, CONFIG};
 
 const JWT_ALGORITHM: Algorithm = Algorithm::RS256;
@@ -293,12 +293,12 @@ pub struct FileDownloadClaims {
     // Issuer
     pub iss: String,
     // Subject
-    pub sub: String,
+    pub sub: CipherId,
 
     pub file_id: String,
 }
 
-pub fn generate_file_download_claims(uuid: String, file_id: String) -> FileDownloadClaims {
+pub fn generate_file_download_claims(uuid: CipherId, file_id: String) -> FileDownloadClaims {
     let time_now = Utc::now();
     FileDownloadClaims {
         nbf: time_now.timestamp(),

@@ -3,7 +3,7 @@ use std::io::ErrorKind;
 use bigdecimal::{BigDecimal, ToPrimitive};
 use serde_json::Value;
 
-use super::{OrganizationId, UserId};
+use super::{CipherId, OrganizationId, UserId};
 use crate::CONFIG;
 
 db_object! {
@@ -13,7 +13,7 @@ db_object! {
     #[diesel(primary_key(id))]
     pub struct Attachment {
         pub id: String,
-        pub cipher_uuid: String,
+        pub cipher_uuid: CipherId,
         pub file_name: String, // encrypted
         pub file_size: i64,
         pub akey: Option<String>,
@@ -22,7 +22,13 @@ db_object! {
 
 /// Local methods
 impl Attachment {
-    pub const fn new(id: String, cipher_uuid: String, file_name: String, file_size: i64, akey: Option<String>) -> Self {
+    pub const fn new(
+        id: String,
+        cipher_uuid: CipherId,
+        file_name: String,
+        file_size: i64,
+        akey: Option<String>,
+    ) -> Self {
         Self {
             id,
             cipher_uuid,
@@ -118,7 +124,7 @@ impl Attachment {
         }}
     }
 
-    pub async fn delete_all_by_cipher(cipher_uuid: &str, conn: &mut DbConn) -> EmptyResult {
+    pub async fn delete_all_by_cipher(cipher_uuid: &CipherId, conn: &mut DbConn) -> EmptyResult {
         for attachment in Attachment::find_by_cipher(cipher_uuid, conn).await {
             attachment.delete(conn).await?;
         }
@@ -135,7 +141,7 @@ impl Attachment {
         }}
     }
 
-    pub async fn find_by_cipher(cipher_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_cipher(cipher_uuid: &CipherId, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             attachments::table
                 .filter(attachments::cipher_uuid.eq(cipher_uuid))

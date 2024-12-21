@@ -13,6 +13,7 @@ use serde_json::Value;
 use crate::{
     api::{core::now, ApiResult, EmptyResult},
     auth::decode_file_download,
+    db::models::CipherId,
     error::Error,
     util::{get_web_vault_version, Cached, SafeString},
     CONFIG,
@@ -196,15 +197,15 @@ async fn web_files(p: PathBuf) -> Cached<Option<NamedFile>> {
 }
 
 #[get("/attachments/<uuid>/<file_id>?<token>")]
-async fn attachments(uuid: SafeString, file_id: SafeString, token: String) -> Option<NamedFile> {
+async fn attachments(uuid: CipherId, file_id: SafeString, token: String) -> Option<NamedFile> {
     let Ok(claims) = decode_file_download(&token) else {
         return None;
     };
-    if claims.sub != *uuid || claims.file_id != *file_id {
+    if claims.sub != uuid || claims.file_id != *file_id {
         return None;
     }
 
-    NamedFile::open(Path::new(&CONFIG.attachments_folder()).join(uuid).join(file_id)).await.ok()
+    NamedFile::open(Path::new(&CONFIG.attachments_folder()).join(uuid.as_ref()).join(file_id)).await.ok()
 }
 
 // We use DbConn here to let the alive healthcheck also verify the database connection.

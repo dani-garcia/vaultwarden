@@ -1645,7 +1645,7 @@ async fn post_org_import(
 
     let headers: Headers = headers.into();
 
-    let mut ciphers: Vec<String> = Vec::with_capacity(data.ciphers.len());
+    let mut ciphers: Vec<CipherId> = Vec::with_capacity(data.ciphers.len());
     for mut cipher_data in data.ciphers {
         // Always clear folder_id's via an organization import
         cipher_data.folder_id = None;
@@ -1670,7 +1670,7 @@ async fn post_org_import(
 #[allow(dead_code)]
 struct BulkCollectionsData {
     organization_id: OrganizationId,
-    cipher_ids: Vec<String>,
+    cipher_ids: Vec<CipherId>,
     collection_ids: HashSet<CollectionId>,
     remove_collections: bool,
 }
@@ -2659,7 +2659,7 @@ async fn get_group_users(
         err!("Group support is disabled");
     }
 
-    if Group::find_by_uuid_and_org(&&group_id, &org_id, &mut conn).await.is_none() {
+    if Group::find_by_uuid_and_org(&group_id, &org_id, &mut conn).await.is_none() {
         err!("Group could not be found!", "Group uuid is invalid or does not belong to the organization")
     };
 

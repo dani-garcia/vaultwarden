@@ -18,7 +18,7 @@ mod user;
 
 pub use self::attachment::Attachment;
 pub use self::auth_request::AuthRequest;
-pub use self::cipher::{Cipher, RepromptType};
+pub use self::cipher::{Cipher, CipherId, RepromptType};
 pub use self::collection::{Collection, CollectionCipher, CollectionId, CollectionUser};
 pub use self::device::{Device, DeviceType};
 pub use self::emergency_access::{EmergencyAccess, EmergencyAccessStatus, EmergencyAccessType};

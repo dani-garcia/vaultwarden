@@ -1,7 +1,13 @@
 use crate::util::LowerCase;
 use crate::CONFIG;
 use chrono::{NaiveDateTime, TimeDelta, Utc};
+use rocket::request::FromParam;
 use serde_json::Value;
+use std::{
+    borrow::Borrow,
+    fmt::{Display, Formatter},
+    ops::Deref,
+};
 
 use super::{
     Attachment, CollectionCipher, CollectionId, Favorite, FolderCipher, Group, Membership, MembershipStatus,
@@ -18,7 +24,7 @@ db_object! {
     #[diesel(treat_none_as_null = true)]
     #[diesel(primary_key(uuid))]
     pub struct Cipher {
-        pub uuid: String,
+        pub uuid: CipherId,
         pub created_at: NaiveDateTime,
         pub updated_at: NaiveDateTime,
 
@@ -58,7 +64,7 @@ impl Cipher {
         let now = Utc::now().naive_utc();
 
         Self {
-            uuid: crate::util::get_uuid(),
+            uuid: CipherId(crate::util::get_uuid()),
             created_at: now,
             updated_at: now,
 
@@ -287,7 +293,7 @@ impl Cipher {
                 Cow::from(Vec::with_capacity(0))
             }
         } else {
-            Cow::from(self.get_admin_collections(user_uuid.to_string(), conn).await)
+            Cow::from(self.get_admin_collections(user_uuid.clone(), conn).await)
         };
 
         // There are three types of cipher response models in upstream
@@ -691,7 +697,7 @@ impl Cipher {
         }}
     }
 
-    pub async fn find_by_uuid(uuid: &str, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_uuid(uuid: &CipherId, conn: &mut DbConn) -> Option<Self> {
         db_run! {conn: {
             ciphers::table
                 .filter(ciphers::uuid.eq(uuid))
@@ -701,7 +707,7 @@ impl Cipher {
         }}
     }
 
-    pub async fn find_by_uuid_and_org(cipher_uuid: &str, org_uuid: &str, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_uuid_and_org(cipher_uuid: &CipherId, org_uuid: &str, conn: &mut DbConn) -> Option<Self> {
         db_run! {conn: {
             ciphers::table
                 .filter(ciphers::uuid.eq(cipher_uuid))
@@ -870,7 +876,7 @@ impl Cipher {
         }}
     }
 
-    pub async fn get_collections(&self, user_id: String, conn: &mut DbConn) -> Vec<CollectionId> {
+    pub async fn get_collections(&self, user_id: UserId, conn: &mut DbConn) -> Vec<CollectionId> {
         if CONFIG.org_groups_enabled() {
             db_run! {conn: {
                 ciphers_collections::table
@@ -929,7 +935,7 @@ impl Cipher {
         }
     }
 
-    pub async fn get_admin_collections(&self, user_id: String, conn: &mut DbConn) -> Vec<CollectionId> {
+    pub async fn get_admin_collections(&self, user_id: UserId, conn: &mut DbConn) -> Vec<CollectionId> {
         if CONFIG.org_groups_enabled() {
             db_run! {conn: {
                 ciphers_collections::table
@@ -993,9 +999,9 @@ impl Cipher {
     /// Return a Vec with (cipher_uuid, collection_uuid)
     /// This is used during a full sync so we only need one query for all collections accessible.
     pub async fn get_collections_with_cipher_by_user(
-        user_id: String,
+        user_id: UserId,
         conn: &mut DbConn,
-    ) -> Vec<(String, CollectionId)> {
+    ) -> Vec<(CipherId, CollectionId)> {
         db_run! {conn: {
             ciphers_collections::table
             .inner_join(collections::table.on(
@@ -1029,7 +1035,55 @@ impl Cipher {
             .or_filter(collections_groups::collections_uuid.is_not_null()) //Access via group
             .select(ciphers_collections::all_columns)
             .distinct()
-            .load::<(String, CollectionId)>(conn).unwrap_or_default()
+            .load::<(CipherId, CollectionId)>(conn).unwrap_or_default()
         }}
+    }
+}
+
+#[derive(DieselNewType, FromForm, Clone, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CipherId(String);
+
+impl AsRef<str> for CipherId {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Deref for CipherId {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Borrow<str> for CipherId {
+    fn borrow(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Display for CipherId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl From<String> for CipherId {
+    fn from(raw: String) -> Self {
+        Self(raw)
+    }
+}
+
+impl<'r> FromParam<'r> for CipherId {
+    type Error = ();
+
+    #[inline(always)]
+    fn from_param(param: &'r str) -> Result<Self, Self::Error> {
+        if param.chars().all(|c| matches!(c, 'a'..='z' | 'A'..='Z' |'0'..='9' | '-')) {
+            Ok(Self(param.to_string()))
+        } else {
+            Err(())
+        }
     }
 }
