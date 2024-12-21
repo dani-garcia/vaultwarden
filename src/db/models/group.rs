@@ -127,6 +127,15 @@ impl CollectionGroup {
             hide_passwords,
         }
     }
+
+    pub fn to_json_details_for_group(&self) -> Value {
+        json!({
+            "id": self.groups_uuid,
+            "readOnly": self.read_only,
+            "hidePasswords": self.hide_passwords,
+            "manage": false
+        })
+    }
 }
 
 impl GroupUser {

@@ -366,9 +366,7 @@ async fn get_org_collections_details(
             CollectionGroup::find_by_collection(&col.uuid, &mut conn)
                 .await
                 .iter()
-                .map(|collection_group| {
-                    GroupSelection::to_collection_group_details_read_only(collection_group).to_json()
-                })
+                .map(|collection_group| collection_group.to_json_details_for_group())
                 .collect()
         } else {
             Vec::with_capacity(0)
@@ -650,9 +648,7 @@ async fn get_org_collection_detail(
                 CollectionGroup::find_by_collection(&collection.uuid, &mut conn)
                     .await
                     .iter()
-                    .map(|collection_group| {
-                        GroupSelection::to_collection_group_details_read_only(collection_group).to_json()
-                    })
+                    .map(|collection_group| collection_group.to_json_details_for_group())
                     .collect()
             } else {
                 // The Bitwarden clients seem to call this API regardless of whether groups are enabled,
@@ -2374,28 +2370,6 @@ impl GroupRequest {
         // These input fields are in a disabled state, and can only be updated/added via ldap_import
 
         group
-    }
-}
-
-#[derive(Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct GroupSelection {
-    id: GroupId,
-    read_only: bool,
-    hide_passwords: bool,
-}
-
-impl GroupSelection {
-    pub fn to_collection_group_details_read_only(collection_group: &CollectionGroup) -> Self {
-        Self {
-            id: collection_group.groups_uuid.clone(),
-            read_only: collection_group.read_only,
-            hide_passwords: collection_group.hide_passwords,
-        }
-    }
-
-    pub fn to_json(&self) -> Value {
-        json!(self)
     }
 }
 
