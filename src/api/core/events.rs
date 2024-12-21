@@ -8,7 +8,7 @@ use crate::{
     api::{EmptyResult, JsonResult},
     auth::{AdminHeaders, Headers},
     db::{
-        models::{Cipher, Event, Membership, OrganizationId},
+        models::{Cipher, Event, Membership, MembershipId, OrganizationId},
         DbConn, DbPool,
     },
     util::parse_date,
@@ -93,7 +93,7 @@ async fn get_cipher_events(cipher_id: &str, data: EventRange, headers: Headers, 
 #[get("/organizations/<org_id>/users/<member_id>/events?<data..>")]
 async fn get_user_events(
     org_id: &str,
-    member_id: &str,
+    member_id: MembershipId,
     data: EventRange,
     _headers: AdminHeaders,
     mut conn: DbConn,
@@ -110,7 +110,7 @@ async fn get_user_events(
             parse_date(&data.end)
         };
 
-        Event::find_by_org_and_member(org_id, member_id, &start_date, &end_date, &mut conn)
+        Event::find_by_org_and_member(org_id, &member_id, &start_date, &end_date, &mut conn)
             .await
             .iter()
             .map(|e| e.to_json())

@@ -14,7 +14,7 @@ use std::{
     net::IpAddr,
 };
 
-use crate::db::models::OrganizationId;
+use crate::db::models::{MembershipId, OrganizationId};
 use crate::{error::Error, CONFIG};
 
 const JWT_ALGORITHM: Algorithm = Algorithm::RS256;
@@ -192,7 +192,7 @@ pub struct InviteJwtClaims {
 
     pub email: String,
     pub org_id: Option<OrganizationId>,
-    pub member_id: Option<String>,
+    pub member_id: Option<MembershipId>,
     pub invited_by_email: Option<String>,
 }
 
@@ -200,7 +200,7 @@ pub fn generate_invite_claims(
     uuid: String,
     email: String,
     org_id: Option<OrganizationId>,
-    member_id: Option<String>,
+    member_id: Option<MembershipId>,
     invited_by_email: Option<String>,
 ) -> InviteJwtClaims {
     let time_now = Utc::now();

@@ -277,7 +277,7 @@ impl Event {
 
     pub async fn find_by_org_and_member(
         org_uuid: &OrganizationId,
-        member_uuid: &str,
+        member_uuid: &MembershipId,
         start: &NaiveDateTime,
         end: &NaiveDateTime,
         conn: &mut DbConn,

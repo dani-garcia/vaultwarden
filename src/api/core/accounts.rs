@@ -79,7 +79,7 @@ pub struct RegisterData {
     name: Option<String>,
     token: Option<String>,
     #[allow(dead_code)]
-    organization_user_id: Option<String>,
+    organization_user_id: Option<MembershipId>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -106,7 +106,7 @@ fn enforce_password_hint_setting(password_hint: &Option<String>) -> EmptyResult 
     }
     Ok(())
 }
-async fn is_email_2fa_required(member_uuid: Option<String>, conn: &mut DbConn) -> bool {
+async fn is_email_2fa_required(member_uuid: Option<MembershipId>, conn: &mut DbConn) -> bool {
     if !CONFIG._enable_email_2fa() {
         return false;
     }

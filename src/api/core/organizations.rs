@@ -125,7 +125,7 @@ struct OrganizationUpdateData {
 struct NewCollectionData {
     name: String,
     groups: Vec<NewCollectionObjectData>,
-    users: Vec<NewCollectionObjectData>,
+    users: Vec<NewCollectionMemberData>,
     id: Option<String>,
     external_id: Option<String>,
 }
@@ -140,6 +140,14 @@ struct NewCollectionObjectData {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct NewCollectionMemberData {
+    hide_passwords: bool,
+    id: MembershipId,
+    read_only: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct OrgKeyData {
     encrypted_private_key: String,
     public_key: String,
@@ -149,6 +157,12 @@ struct OrgKeyData {
 #[serde(rename_all = "camelCase")]
 struct OrgBulkIds {
     ids: Vec<String>,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct BulkMembershipIds {
+    ids: Vec<MembershipId>,
 }
 
 #[post("/organizations", data = "<data>")]
@@ -510,7 +524,7 @@ async fn post_organization_collection_update(
 async fn delete_organization_collection_user(
     org_id: OrganizationId,
     col_id: &str,
-    member_id: &str,
+    member_id: MembershipId,
     _headers: AdminHeaders,
     mut conn: DbConn,
 ) -> EmptyResult {
@@ -518,7 +532,7 @@ async fn delete_organization_collection_user(
         err!("Collection not found", "Collection does not exist or does not belong to this organization")
     };
 
-    match Membership::find_by_uuid_and_org(member_id, &org_id, &mut conn).await {
+    match Membership::find_by_uuid_and_org(&member_id, &org_id, &mut conn).await {
         None => err!("User not found in organization"),
         Some(member) => {
             match CollectionUser::find_by_collection_and_user(&collection.uuid, &member.user_uuid, &mut conn).await {
@@ -533,7 +547,7 @@ async fn delete_organization_collection_user(
 async fn post_organization_collection_delete_user(
     org_id: OrganizationId,
     col_id: &str,
-    member_id: &str,
+    member_id: MembershipId,
     headers: AdminHeaders,
     conn: DbConn,
 ) -> EmptyResult {
@@ -827,7 +841,7 @@ async fn post_org_keys(
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct CollectionData {
-    id: String,
+    id: MembershipId,
     read_only: bool,
     hide_passwords: bool,
 }
@@ -895,11 +909,11 @@ async fn send_invite(
             }
         };
 
-        let mut new_user = Membership::new(user.uuid.clone(), org_id.clone());
+        let mut new_member = Membership::new(user.uuid.clone(), org_id.clone());
         let access_all = data.access_all;
-        new_user.access_all = access_all;
-        new_user.atype = new_type;
-        new_user.status = member_status;
+        new_member.access_all = access_all;
+        new_member.atype = new_type;
+        new_member.status = member_status;
 
         // If no accessAll, add the collections received
         if !access_all {
@@ -920,16 +934,16 @@ async fn send_invite(
             }
         }
 
-        new_user.save(&mut conn).await?;
+        new_member.save(&mut conn).await?;
 
         for group in data.groups.iter() {
-            let mut group_entry = GroupUser::new(String::from(group), user.uuid.clone());
+            let mut group_entry = GroupUser::new(String::from(group), new_member.uuid.clone());
             group_entry.save(&mut conn).await?;
         }
 
         log_event(
             EventType::OrganizationUserInvited as i32,
-            &new_user.uuid,
+            &new_member.uuid,
             &org_id,
             &headers.user.uuid,
             headers.device.atype,
@@ -947,7 +961,7 @@ async fn send_invite(
             mail::send_invite(
                 &user,
                 Some(org_id.clone()),
-                Some(new_user.uuid),
+                Some(new_member.uuid),
                 &org_name,
                 Some(headers.user.email.clone()),
             )
@@ -961,11 +975,11 @@ async fn send_invite(
 #[post("/organizations/<org_id>/users/reinvite", data = "<data>")]
 async fn bulk_reinvite_user(
     org_id: OrganizationId,
-    data: Json<OrgBulkIds>,
+    data: Json<BulkMembershipIds>,
     headers: AdminHeaders,
     mut conn: DbConn,
 ) -> Json<Value> {
-    let data: OrgBulkIds = data.into_inner();
+    let data: BulkMembershipIds = data.into_inner();
 
     let mut bulk_response = Vec::new();
     for member_id in data.ids {
@@ -990,18 +1004,23 @@ async fn bulk_reinvite_user(
     }))
 }
 
-#[post("/organizations/<org_id>/users/<member>/reinvite")]
-async fn reinvite_user(org_id: OrganizationId, member: &str, headers: AdminHeaders, mut conn: DbConn) -> EmptyResult {
-    _reinvite_user(&org_id, member, &headers.user.email, &mut conn).await
+#[post("/organizations/<org_id>/users/<member_id>/reinvite")]
+async fn reinvite_user(
+    org_id: OrganizationId,
+    member_id: MembershipId,
+    headers: AdminHeaders,
+    mut conn: DbConn,
+) -> EmptyResult {
+    _reinvite_user(&org_id, &member_id, &headers.user.email, &mut conn).await
 }
 
 async fn _reinvite_user(
     org_id: &OrganizationId,
-    member: &str,
+    member_id: &MembershipId,
     invited_by_email: &str,
     conn: &mut DbConn,
 ) -> EmptyResult {
-    let Some(member) = Membership::find_by_uuid_and_org(member, org_id, conn).await else {
+    let Some(member) = Membership::find_by_uuid_and_org(member_id, org_id, conn).await else {
         err!("The user hasn't been invited to the organization.")
     };
 
@@ -1054,7 +1073,7 @@ struct AcceptData {
 #[post("/organizations/<org_id>/users/<member_id>/accept", data = "<data>")]
 async fn accept_invite(
     org_id: OrganizationId,
-    member_id: &str,
+    member_id: MembershipId,
     data: Json<AcceptData>,
     mut conn: DbConn,
 ) -> EmptyResult {
@@ -1064,7 +1083,7 @@ async fn accept_invite(
 
     // If a claim does not have a member_id or it does not match the one in from the URI, something is wrong.
     match &claims.member_id {
-        Some(ou_id) if ou_id.eq(member_id) => {}
+        Some(ou_id) if ou_id.eq(&member_id) => {}
         _ => err!("Error accepting the invitation", "Claim does not match the member_id"),
     }
 
@@ -1139,7 +1158,7 @@ async fn accept_invite(
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ConfirmData {
-    id: Option<String>,
+    id: Option<MembershipId>,
     key: Option<String>,
 }
 
@@ -1163,7 +1182,7 @@ async fn bulk_confirm_invite(
     match data.keys {
         Some(keys) => {
             for invite in keys {
-                let member_id = invite.id.unwrap_or_default();
+                let member_id = invite.id.unwrap();
                 let user_key = invite.key.unwrap_or_default();
                 let err_msg = match _confirm_invite(&org_id, &member_id, &user_key, &headers, &mut conn, &nt).await {
                     Ok(_) => String::new(),
@@ -1192,7 +1211,7 @@ async fn bulk_confirm_invite(
 #[post("/organizations/<org_id>/users/<member_id>/confirm", data = "<data>")]
 async fn confirm_invite(
     org_id: OrganizationId,
-    member_id: &str,
+    member_id: MembershipId,
     data: Json<ConfirmData>,
     headers: AdminHeaders,
     mut conn: DbConn,
@@ -1200,12 +1219,12 @@ async fn confirm_invite(
 ) -> EmptyResult {
     let data = data.into_inner();
     let user_key = data.key.unwrap_or_default();
-    _confirm_invite(&org_id, member_id, &user_key, &headers, &mut conn, &nt).await
+    _confirm_invite(&org_id, &member_id, &user_key, &headers, &mut conn, &nt).await
 }
 
 async fn _confirm_invite(
     org_id: &OrganizationId,
-    member_id: &str,
+    member_id: &MembershipId,
     key: &str,
     headers: &AdminHeaders,
     conn: &mut DbConn,
@@ -1283,12 +1302,12 @@ async fn _confirm_invite(
 #[get("/organizations/<org_id>/users/<member_id>?<data..>")]
 async fn get_user(
     org_id: OrganizationId,
-    member_id: &str,
+    member_id: MembershipId,
     data: GetOrgUserData,
     _headers: AdminHeaders,
     mut conn: DbConn,
 ) -> JsonResult {
-    let Some(user) = Membership::find_by_uuid_and_org(member_id, &org_id, &mut conn).await else {
+    let Some(user) = Membership::find_by_uuid_and_org(&member_id, &org_id, &mut conn).await else {
         err!("The specified user isn't a member of the organization")
     };
 
@@ -1313,7 +1332,7 @@ struct EditUserData {
 #[put("/organizations/<org_id>/users/<member_id>", data = "<data>", rank = 1)]
 async fn put_membership(
     org_id: OrganizationId,
-    member_id: &str,
+    member_id: MembershipId,
     data: Json<EditUserData>,
     headers: AdminHeaders,
     conn: DbConn,
@@ -1324,7 +1343,7 @@ async fn put_membership(
 #[post("/organizations/<org_id>/users/<member_id>", data = "<data>", rank = 1)]
 async fn edit_user(
     org_id: OrganizationId,
-    member_id: &str,
+    member_id: MembershipId,
     data: Json<EditUserData>,
     headers: AdminHeaders,
     mut conn: DbConn,
@@ -1335,7 +1354,7 @@ async fn edit_user(
         err!("Invalid type")
     };
 
-    let Some(mut member_to_edit) = Membership::find_by_uuid_and_org(member_id, &org_id, &mut conn).await else {
+    let Some(mut member_to_edit) = Membership::find_by_uuid_and_org(&member_id, &org_id, &mut conn).await else {
         err!("The specified user isn't member of the organization")
     };
 
@@ -1429,12 +1448,12 @@ async fn edit_user(
 #[delete("/organizations/<org_id>/users", data = "<data>")]
 async fn bulk_delete_user(
     org_id: OrganizationId,
-    data: Json<OrgBulkIds>,
+    data: Json<BulkMembershipIds>,
     headers: AdminHeaders,
     mut conn: DbConn,
     nt: Notify<'_>,
 ) -> Json<Value> {
-    let data: OrgBulkIds = data.into_inner();
+    let data: BulkMembershipIds = data.into_inner();
 
     let mut bulk_response = Vec::new();
     for member_id in data.ids {
@@ -1462,28 +1481,28 @@ async fn bulk_delete_user(
 #[delete("/organizations/<org_id>/users/<member_id>")]
 async fn delete_user(
     org_id: OrganizationId,
-    member_id: &str,
+    member_id: MembershipId,
     headers: AdminHeaders,
     mut conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
-    _delete_user(&org_id, member_id, &headers, &mut conn, &nt).await
+    _delete_user(&org_id, &member_id, &headers, &mut conn, &nt).await
 }
 
 #[post("/organizations/<org_id>/users/<member_id>/delete")]
 async fn post_delete_user(
     org_id: OrganizationId,
-    member_id: &str,
+    member_id: MembershipId,
     headers: AdminHeaders,
     mut conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
-    _delete_user(&org_id, member_id, &headers, &mut conn, &nt).await
+    _delete_user(&org_id, &member_id, &headers, &mut conn, &nt).await
 }
 
 async fn _delete_user(
     org_id: &OrganizationId,
-    member_id: &str,
+    member_id: &MembershipId,
     headers: &AdminHeaders,
     conn: &mut DbConn,
     nt: &Notify<'_>,
@@ -1525,11 +1544,11 @@ async fn _delete_user(
 #[post("/organizations/<org_id>/users/public-keys", data = "<data>")]
 async fn bulk_public_keys(
     org_id: OrganizationId,
-    data: Json<OrgBulkIds>,
+    data: Json<BulkMembershipIds>,
     _headers: AdminHeaders,
     mut conn: DbConn,
 ) -> Json<Value> {
-    let data: OrgBulkIds = data.into_inner();
+    let data: BulkMembershipIds = data.into_inner();
 
     let mut bulk_response = Vec::new();
     // Check all received Membership UUID's and find the matching User to retrieve the public-key.
@@ -2074,18 +2093,24 @@ async fn import(org_id: OrganizationId, data: Json<OrgImportData>, headers: Head
 #[put("/organizations/<org_id>/users/<member_id>/deactivate")]
 async fn deactivate_membership(
     org_id: OrganizationId,
-    member_id: &str,
+    member_id: MembershipId,
     headers: AdminHeaders,
     mut conn: DbConn,
 ) -> EmptyResult {
-    _revoke_membership(&org_id, member_id, &headers, &mut conn).await
+    _revoke_membership(&org_id, &member_id, &headers, &mut conn).await
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct BulkRevokeMembershipIds {
+    ids: Option<Vec<MembershipId>>,
 }
 
 // Pre web-vault v2022.9.x endpoint
 #[put("/organizations/<org_id>/users/deactivate", data = "<data>")]
 async fn bulk_deactivate_membership(
     org_id: OrganizationId,
-    data: Json<OrgBulkRevokeData>,
+    data: Json<BulkRevokeMembershipIds>,
     headers: AdminHeaders,
     conn: DbConn,
 ) -> Json<Value> {
@@ -2095,23 +2120,17 @@ async fn bulk_deactivate_membership(
 #[put("/organizations/<org_id>/users/<member_id>/revoke")]
 async fn revoke_membership(
     org_id: OrganizationId,
-    member_id: &str,
+    member_id: MembershipId,
     headers: AdminHeaders,
     mut conn: DbConn,
 ) -> EmptyResult {
-    _revoke_membership(&org_id, member_id, &headers, &mut conn).await
-}
-
-#[derive(Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-struct OrgBulkRevokeData {
-    ids: Option<Vec<String>>,
+    _revoke_membership(&org_id, &member_id, &headers, &mut conn).await
 }
 
 #[put("/organizations/<org_id>/users/revoke", data = "<data>")]
 async fn bulk_revoke_membership(
     org_id: OrganizationId,
-    data: Json<OrgBulkRevokeData>,
+    data: Json<BulkRevokeMembershipIds>,
     headers: AdminHeaders,
     mut conn: DbConn,
 ) -> Json<Value> {
@@ -2147,7 +2166,7 @@ async fn bulk_revoke_membership(
 
 async fn _revoke_membership(
     org_id: &OrganizationId,
-    member_id: &str,
+    member_id: &MembershipId,
     headers: &AdminHeaders,
     conn: &mut DbConn,
 ) -> EmptyResult {
@@ -2189,18 +2208,18 @@ async fn _revoke_membership(
 #[put("/organizations/<org_id>/users/<member_id>/activate")]
 async fn activate_membership(
     org_id: OrganizationId,
-    member_id: &str,
+    member_id: MembershipId,
     headers: AdminHeaders,
     mut conn: DbConn,
 ) -> EmptyResult {
-    _restore_membership(&org_id, member_id, &headers, &mut conn).await
+    _restore_membership(&org_id, &member_id, &headers, &mut conn).await
 }
 
 // Pre web-vault v2022.9.x endpoint
 #[put("/organizations/<org_id>/users/activate", data = "<data>")]
 async fn bulk_activate_membership(
     org_id: OrganizationId,
-    data: Json<OrgBulkIds>,
+    data: Json<BulkMembershipIds>,
     headers: AdminHeaders,
     conn: DbConn,
 ) -> Json<Value> {
@@ -2210,17 +2229,17 @@ async fn bulk_activate_membership(
 #[put("/organizations/<org_id>/users/<member_id>/restore")]
 async fn restore_membership(
     org_id: OrganizationId,
-    member_id: &str,
+    member_id: MembershipId,
     headers: AdminHeaders,
     mut conn: DbConn,
 ) -> EmptyResult {
-    _restore_membership(&org_id, member_id, &headers, &mut conn).await
+    _restore_membership(&org_id, &member_id, &headers, &mut conn).await
 }
 
 #[put("/organizations/<org_id>/users/restore", data = "<data>")]
 async fn bulk_restore_membership(
     org_id: OrganizationId,
-    data: Json<OrgBulkIds>,
+    data: Json<BulkMembershipIds>,
     headers: AdminHeaders,
     mut conn: DbConn,
 ) -> Json<Value> {
@@ -2251,7 +2270,7 @@ async fn bulk_restore_membership(
 
 async fn _restore_membership(
     org_id: &OrganizationId,
-    member_id: &str,
+    member_id: &MembershipId,
     headers: &AdminHeaders,
     conn: &mut DbConn,
 ) -> EmptyResult {
@@ -2334,7 +2353,7 @@ struct GroupRequest {
     access_all: bool,
     external_id: Option<String>,
     collections: Vec<SelectionReadOnly>,
-    users: Vec<String>,
+    users: Vec<MembershipId>,
 }
 
 impl GroupRequest {
@@ -2464,7 +2483,7 @@ async fn put_group(
 async fn add_update_group(
     mut group: Group,
     collections: Vec<SelectionReadOnly>,
-    users: Vec<String>,
+    members: Vec<MembershipId>,
     org_id: OrganizationId,
     headers: &AdminHeaders,
     conn: &mut DbConn,
@@ -2476,13 +2495,13 @@ async fn add_update_group(
         collection_group.save(conn).await?;
     }
 
-    for assigned_user_id in users {
-        let mut user_entry = GroupUser::new(group.uuid.clone(), assigned_user_id.clone());
+    for assigned_member in members {
+        let mut user_entry = GroupUser::new(group.uuid.clone(), assigned_member.clone());
         user_entry.save(conn).await?;
 
         log_event(
             EventType::OrganizationUserUpdatedGroups as i32,
-            &assigned_user_id,
+            &assigned_member,
             &org_id,
             &headers.user.uuid,
             headers.device.atype,
@@ -2609,7 +2628,7 @@ async fn get_group_users(
         err!("Group could not be found!", "Group uuid is invalid or does not belong to the organization")
     };
 
-    let group_users: Vec<String> = GroupUser::find_by_group(group_id, &mut conn)
+    let group_users: Vec<MembershipId> = GroupUser::find_by_group(group_id, &mut conn)
         .await
         .iter()
         .map(|entry| entry.users_organizations_uuid.clone())
@@ -2623,7 +2642,7 @@ async fn put_group_users(
     org_id: OrganizationId,
     group_id: &str,
     headers: AdminHeaders,
-    data: Json<Vec<String>>,
+    data: Json<Vec<MembershipId>>,
     mut conn: DbConn,
 ) -> EmptyResult {
     if !CONFIG.org_groups_enabled() {
@@ -2636,14 +2655,14 @@ async fn put_group_users(
 
     GroupUser::delete_all_by_group(group_id, &mut conn).await?;
 
-    let assigned_user_ids = data.into_inner();
-    for assigned_user_id in assigned_user_ids {
-        let mut user_entry = GroupUser::new(String::from(group_id), assigned_user_id.clone());
+    let assigned_members = data.into_inner();
+    for assigned_member in assigned_members {
+        let mut user_entry = GroupUser::new(String::from(group_id), assigned_member.clone());
         user_entry.save(&mut conn).await?;
 
         log_event(
             EventType::OrganizationUserUpdatedGroups as i32,
-            &assigned_user_id,
+            &assigned_member,
             &org_id,
             &headers.user.uuid,
             headers.device.atype,
@@ -2656,10 +2675,10 @@ async fn put_group_users(
     Ok(())
 }
 
-#[get("/organizations/<org_id>/users/<user_id>/groups")]
+#[get("/organizations/<org_id>/users/<member_id>/groups")]
 async fn get_user_groups(
     org_id: OrganizationId,
-    user_id: &str,
+    member_id: MembershipId,
     _headers: AdminHeaders,
     mut conn: DbConn,
 ) -> JsonResult {
@@ -2667,12 +2686,12 @@ async fn get_user_groups(
         err!("Group support is disabled");
     }
 
-    if Membership::find_by_uuid_and_org(user_id, &org_id, &mut conn).await.is_none() {
+    if Membership::find_by_uuid_and_org(&member_id, &org_id, &mut conn).await.is_none() {
         err!("User could not be found!")
     };
 
     let user_groups: Vec<String> =
-        GroupUser::find_by_user(user_id, &mut conn).await.iter().map(|entry| entry.groups_uuid.clone()).collect();
+        GroupUser::find_by_member(&member_id, &mut conn).await.iter().map(|entry| entry.groups_uuid.clone()).collect();
 
     Ok(Json(json!(user_groups)))
 }
@@ -2686,7 +2705,7 @@ struct OrganizationUserUpdateGroupsRequest {
 #[post("/organizations/<org_id>/users/<member_id>/groups", data = "<data>")]
 async fn post_user_groups(
     org_id: OrganizationId,
-    member_id: &str,
+    member_id: MembershipId,
     data: Json<OrganizationUserUpdateGroupsRequest>,
     headers: AdminHeaders,
     conn: DbConn,
@@ -2697,7 +2716,7 @@ async fn post_user_groups(
 #[put("/organizations/<org_id>/users/<member_id>/groups", data = "<data>")]
 async fn put_user_groups(
     org_id: OrganizationId,
-    member_id: &str,
+    member_id: MembershipId,
     data: Json<OrganizationUserUpdateGroupsRequest>,
     headers: AdminHeaders,
     mut conn: DbConn,
@@ -2706,7 +2725,7 @@ async fn put_user_groups(
         err!("Group support is disabled");
     }
 
-    if Membership::find_by_uuid_and_org(member_id, &org_id, &mut conn).await.is_none() {
+    if Membership::find_by_uuid_and_org(&member_id, &org_id, &mut conn).await.is_none() {
         err!("User could not be found or does not belong to the organization.");
     }
 
@@ -2714,13 +2733,13 @@ async fn put_user_groups(
 
     let assigned_group_ids = data.into_inner();
     for assigned_group_id in assigned_group_ids.group_ids {
-        let mut group_user = GroupUser::new(assigned_group_id.clone(), String::from(member_id));
+        let mut group_user = GroupUser::new(assigned_group_id.clone(), member_id.clone());
         group_user.save(&mut conn).await?;
     }
 
     log_event(
         EventType::OrganizationUserUpdatedGroups as i32,
-        member_id,
+        &member_id,
         &org_id,
         &headers.user.uuid,
         headers.device.atype,
@@ -2736,7 +2755,7 @@ async fn put_user_groups(
 async fn post_delete_group_user(
     org_id: OrganizationId,
     group_id: &str,
-    member_id: &str,
+    member_id: MembershipId,
     headers: AdminHeaders,
     conn: DbConn,
 ) -> EmptyResult {
@@ -2747,7 +2766,7 @@ async fn post_delete_group_user(
 async fn delete_group_user(
     org_id: OrganizationId,
     group_id: &str,
-    member_id: &str,
+    member_id: MembershipId,
     headers: AdminHeaders,
     mut conn: DbConn,
 ) -> EmptyResult {
@@ -2755,7 +2774,7 @@ async fn delete_group_user(
         err!("Group support is disabled");
     }
 
-    if Membership::find_by_uuid_and_org(member_id, &org_id, &mut conn).await.is_none() {
+    if Membership::find_by_uuid_and_org(&member_id, &org_id, &mut conn).await.is_none() {
         err!("User could not be found or does not belong to the organization.");
     }
 
@@ -2765,7 +2784,7 @@ async fn delete_group_user(
 
     log_event(
         EventType::OrganizationUserUpdatedGroups as i32,
-        member_id,
+        &member_id,
         &org_id,
         &headers.user.uuid,
         headers.device.atype,
@@ -2774,7 +2793,7 @@ async fn delete_group_user(
     )
     .await;
 
-    GroupUser::delete_by_group_id_and_user_id(group_id, member_id, &mut conn).await
+    GroupUser::delete_by_group_and_member(group_id, &member_id, &mut conn).await
 }
 
 #[derive(Deserialize)]
@@ -2817,7 +2836,7 @@ async fn get_organization_keys(org_id: OrganizationId, headers: Headers, conn: D
 #[put("/organizations/<org_id>/users/<member_id>/reset-password", data = "<data>")]
 async fn put_reset_password(
     org_id: OrganizationId,
-    member_id: &str,
+    member_id: MembershipId,
     headers: AdminHeaders,
     data: Json<OrganizationUserResetPasswordRequest>,
     mut conn: DbConn,
@@ -2827,7 +2846,7 @@ async fn put_reset_password(
         err!("Required organization not found")
     };
 
-    let Some(member) = Membership::find_by_uuid_and_org(member_id, &org.uuid, &mut conn).await else {
+    let Some(member) = Membership::find_by_uuid_and_org(&member_id, &org.uuid, &mut conn).await else {
         err!("User to reset isn't member of required organization")
     };
 
@@ -2835,7 +2854,7 @@ async fn put_reset_password(
         err!("User not found")
     };
 
-    check_reset_password_applicable_and_permissions(&org_id, member_id, &headers, &mut conn).await?;
+    check_reset_password_applicable_and_permissions(&org_id, &member_id, &headers, &mut conn).await?;
 
     if member.reset_password_key.is_none() {
         err!("Password reset not or not correctly enrolled");
@@ -2860,7 +2879,7 @@ async fn put_reset_password(
 
     log_event(
         EventType::OrganizationUserAdminResetPassword as i32,
-        member_id,
+        &member_id,
         &org_id,
         &headers.user.uuid,
         headers.device.atype,
@@ -2875,7 +2894,7 @@ async fn put_reset_password(
 #[get("/organizations/<org_id>/users/<member_id>/reset-password-details")]
 async fn get_reset_password_details(
     org_id: OrganizationId,
-    member_id: &str,
+    member_id: MembershipId,
     headers: AdminHeaders,
     mut conn: DbConn,
 ) -> JsonResult {
@@ -2883,7 +2902,7 @@ async fn get_reset_password_details(
         err!("Required organization not found")
     };
 
-    let Some(member) = Membership::find_by_uuid_and_org(member_id, &org_id, &mut conn).await else {
+    let Some(member) = Membership::find_by_uuid_and_org(&member_id, &org_id, &mut conn).await else {
         err!("User to reset isn't member of required organization")
     };
 
@@ -2891,7 +2910,7 @@ async fn get_reset_password_details(
         err!("User not found")
     };
 
-    check_reset_password_applicable_and_permissions(&org_id, member_id, &headers, &mut conn).await?;
+    check_reset_password_applicable_and_permissions(&org_id, &member_id, &headers, &mut conn).await?;
 
     // https://github.com/bitwarden/server/blob/3b50ccb9f804efaacdc46bed5b60e5b28eddefcf/src/Api/Models/Response/Organizations/OrganizationUserResponseModel.cs#L111
     Ok(Json(json!({
@@ -2908,7 +2927,7 @@ async fn get_reset_password_details(
 
 async fn check_reset_password_applicable_and_permissions(
     org_id: &OrganizationId,
-    member_id: &str,
+    member_id: &MembershipId,
     headers: &AdminHeaders,
     conn: &mut DbConn,
 ) -> EmptyResult {
@@ -2945,7 +2964,7 @@ async fn check_reset_password_applicable(org_id: &OrganizationId, conn: &mut DbC
 #[put("/organizations/<org_id>/users/<member_id>/reset-password-enrollment", data = "<data>")]
 async fn put_reset_password_enrollment(
     org_id: OrganizationId,
-    member_id: &str,
+    member_id: MembershipId,
     headers: Headers,
     data: Json<OrganizationUserResetPasswordEnrollmentRequest>,
     mut conn: DbConn,
@@ -2982,7 +3001,7 @@ async fn put_reset_password_enrollment(
         EventType::OrganizationUserResetPasswordWithdraw as i32
     };
 
-    log_event(log_id, member_id, &org_id, &headers.user.uuid, headers.device.atype, &headers.ip.ip, &mut conn).await;
+    log_event(log_id, &member_id, &org_id, &headers.user.uuid, headers.device.atype, &headers.ip.ip, &mut conn).await;
 
     Ok(())
 }

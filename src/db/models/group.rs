@@ -1,4 +1,4 @@
-use super::{Membership, OrganizationId, User};
+use super::{Membership, MembershipId, OrganizationId, User};
 use crate::api::EmptyResult;
 use crate::db::DbConn;
 use crate::error::MapResult;
@@ -34,7 +34,7 @@ db_object! {
     #[diesel(primary_key(groups_uuid, users_organizations_uuid))]
     pub struct GroupUser {
         pub groups_uuid: String,
-        pub users_organizations_uuid: String
+        pub users_organizations_uuid: MembershipId
     }
 }
 
@@ -124,7 +124,7 @@ impl CollectionGroup {
 }
 
 impl GroupUser {
-    pub fn new(groups_uuid: String, users_organizations_uuid: String) -> Self {
+    pub fn new(groups_uuid: String, users_organizations_uuid: MembershipId) -> Self {
         Self {
             groups_uuid,
             users_organizations_uuid,
@@ -485,10 +485,10 @@ impl GroupUser {
         }}
     }
 
-    pub async fn find_by_user(users_organizations_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_member(member_uuid: &MembershipId, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             groups_users::table
-                .filter(groups_users::users_organizations_uuid.eq(users_organizations_uuid))
+                .filter(groups_users::users_organizations_uuid.eq(member_uuid))
                 .load::<GroupUserDb>(conn)
                 .expect("Error loading groups for user")
                 .from_db()
@@ -497,7 +497,7 @@ impl GroupUser {
 
     pub async fn has_access_to_collection_by_member(
         collection_uuid: &str,
-        member_uuid: &str,
+        member_uuid: &MembershipId,
         conn: &mut DbConn,
     ) -> bool {
         db_run! { conn: {
@@ -513,7 +513,11 @@ impl GroupUser {
         }}
     }
 
-    pub async fn has_full_access_by_member(org_uuid: &OrganizationId, member_uuid: &str, conn: &mut DbConn) -> bool {
+    pub async fn has_full_access_by_member(
+        org_uuid: &OrganizationId,
+        member_uuid: &MembershipId,
+        conn: &mut DbConn,
+    ) -> bool {
         db_run! { conn: {
             groups_users::table
                 .inner_join(groups::table.on(
@@ -535,12 +539,12 @@ impl GroupUser {
         }
     }
 
-    pub async fn delete_by_group_id_and_user_id(
+    pub async fn delete_by_group_and_member(
         group_uuid: &str,
-        users_organizations_uuid: &str,
+        member_uuid: &MembershipId,
         conn: &mut DbConn,
     ) -> EmptyResult {
-        match Membership::find_by_uuid(users_organizations_uuid, conn).await {
+        match Membership::find_by_uuid(member_uuid, conn).await {
             Some(member) => User::update_uuid_revision(&member.user_uuid, conn).await,
             None => warn!("Member could not be found!"),
         };
@@ -548,7 +552,7 @@ impl GroupUser {
         db_run! { conn: {
             diesel::delete(groups_users::table)
                 .filter(groups_users::groups_uuid.eq(group_uuid))
-                .filter(groups_users::users_organizations_uuid.eq(users_organizations_uuid))
+                .filter(groups_users::users_organizations_uuid.eq(member_uuid))
                 .execute(conn)
                 .map_res("Error deleting group users")
         }}
@@ -568,7 +572,7 @@ impl GroupUser {
         }}
     }
 
-    pub async fn delete_all_by_member(member_uuid: &str, conn: &mut DbConn) -> EmptyResult {
+    pub async fn delete_all_by_member(member_uuid: &MembershipId, conn: &mut DbConn) -> EmptyResult {
         match Membership::find_by_uuid(member_uuid, conn).await {
             Some(member) => User::update_uuid_revision(&member.user_uuid, conn).await,
             None => warn!("Member could not be found!"),

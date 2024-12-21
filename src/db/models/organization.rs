@@ -30,7 +30,7 @@ db_object! {
     #[diesel(table_name = users_organizations)]
     #[diesel(primary_key(uuid))]
     pub struct Membership {
-        pub uuid: String,
+        pub uuid: MembershipId,
         pub user_uuid: String,
         pub org_uuid: OrganizationId,
 
@@ -206,7 +206,7 @@ static ACTIVATE_REVOKE_DIFF: i32 = 128;
 impl Membership {
     pub fn new(user_uuid: String, org_uuid: OrganizationId) -> Self {
         Self {
-            uuid: crate::util::get_uuid(),
+            uuid: MembershipId(crate::util::get_uuid()),
 
             user_uuid,
             org_uuid,
@@ -459,7 +459,7 @@ impl Membership {
         let twofactor_enabled = !TwoFactor::find_by_user(&user.uuid, conn).await.is_empty();
 
         let groups: Vec<String> = if include_groups && CONFIG.org_groups_enabled() {
-            GroupUser::find_by_user(&self.uuid, conn).await.iter().map(|gu| gu.groups_uuid.clone()).collect()
+            GroupUser::find_by_member(&self.uuid, conn).await.iter().map(|gu| gu.groups_uuid.clone()).collect()
         } else {
             // The Bitwarden clients seem to call this API regardless of whether groups are enabled,
             // so just act as if there are no groups.
@@ -699,7 +699,7 @@ impl Membership {
         (self.access_all || self.atype >= MembershipType::Admin) && self.has_status(MembershipStatus::Confirmed)
     }
 
-    pub async fn find_by_uuid(uuid: &str, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_uuid(uuid: &MembershipId, conn: &mut DbConn) -> Option<Self> {
         db_run! { conn: {
             users_organizations::table
                 .filter(users_organizations::uuid.eq(uuid))
@@ -708,7 +708,11 @@ impl Membership {
         }}
     }
 
-    pub async fn find_by_uuid_and_org(uuid: &str, org_uuid: &OrganizationId, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_uuid_and_org(
+        uuid: &MembershipId,
+        org_uuid: &OrganizationId,
+        conn: &mut DbConn,
+    ) -> Option<Self> {
         db_run! { conn: {
             users_organizations::table
                 .filter(users_organizations::uuid.eq(uuid))
@@ -1078,15 +1082,60 @@ impl<'r> FromParam<'r> for OrganizationId {
     #[inline(always)]
     fn from_param(param: &'r str) -> Result<Self, Self::Error> {
         if param.chars().all(|c| matches!(c, 'a'..='z' | 'A'..='Z' |'0'..='9' | '-')) {
-            Ok(OrganizationId(param.to_string()))
+            Ok(Self(param.to_string()))
         } else {
             Err(())
         }
     }
 }
 
-#[derive(DieselNewType, Clone, Debug, Hash, PartialEq, Eq, Serialize)]
+#[derive(DieselNewType, FromForm, Clone, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MembershipId(String);
+
+impl AsRef<str> for MembershipId {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Deref for MembershipId {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Borrow<str> for MembershipId {
+    fn borrow(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Display for MembershipId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl From<String> for MembershipId {
+    fn from(raw: String) -> Self {
+        Self(raw)
+    }
+}
+
+impl<'r> FromParam<'r> for MembershipId {
+    type Error = ();
+
+    #[inline(always)]
+    fn from_param(param: &'r str) -> Result<Self, Self::Error> {
+        if param.chars().all(|c| matches!(c, 'a'..='z' | 'A'..='Z' |'0'..='9' | '-')) {
+            Ok(Self(param.to_string()))
+        } else {
+            Err(())
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
