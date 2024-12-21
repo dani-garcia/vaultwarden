@@ -10,8 +10,10 @@ use std::{
     ops::Deref,
 };
 
-use super::{CollectionUser, Group, GroupUser, OrgPolicy, OrgPolicyType, TwoFactor, User, UserId};
-use crate::db::models::{Collection, CollectionGroup};
+use super::{
+    Collection, CollectionGroup, CollectionId, CollectionUser, Group, GroupUser, OrgPolicy, OrgPolicyType, TwoFactor,
+    User, UserId,
+};
 use crate::CONFIG;
 
 db_object! {
@@ -474,7 +476,7 @@ impl Membership {
         // If collections are to be included, only include them if the user does not have full access via a group or defined to the user it self
         let collections: Vec<Value> = if include_collections && !(full_access_group || self.has_full_access()) {
             // Get all collections for the user here already to prevent more queries
-            let cu: HashMap<String, CollectionUser> =
+            let cu: HashMap<CollectionId, CollectionUser> =
                 CollectionUser::find_by_organization_and_user_uuid(&self.org_uuid, &self.user_uuid, conn)
                     .await
                     .into_iter()
@@ -482,7 +484,7 @@ impl Membership {
                     .collect();
 
             // Get all collection groups for this user to prevent there inclusion
-            let cg: HashSet<String> = CollectionGroup::find_by_user(&self.user_uuid, conn)
+            let cg: HashSet<CollectionId> = CollectionGroup::find_by_user(&self.user_uuid, conn)
                 .await
                 .into_iter()
                 .map(|cg| cg.collections_uuid)
@@ -961,7 +963,7 @@ impl Membership {
     }
 
     pub async fn find_by_collection_and_org(
-        collection_uuid: &str,
+        collection_uuid: &CollectionId,
         org_uuid: &OrganizationId,
         conn: &mut DbConn,
     ) -> Vec<Self> {

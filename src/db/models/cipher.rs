@@ -4,8 +4,8 @@ use chrono::{NaiveDateTime, TimeDelta, Utc};
 use serde_json::Value;
 
 use super::{
-    Attachment, CollectionCipher, Favorite, FolderCipher, Group, Membership, MembershipStatus, MembershipType,
-    OrganizationId, User, UserId,
+    Attachment, CollectionCipher, CollectionId, Favorite, FolderCipher, Group, Membership, MembershipStatus,
+    MembershipType, OrganizationId, User, UserId,
 };
 
 use crate::api::core::{CipherData, CipherSyncData, CipherSyncType};
@@ -870,7 +870,7 @@ impl Cipher {
         }}
     }
 
-    pub async fn get_collections(&self, user_id: String, conn: &mut DbConn) -> Vec<String> {
+    pub async fn get_collections(&self, user_id: String, conn: &mut DbConn) -> Vec<CollectionId> {
         if CONFIG.org_groups_enabled() {
             db_run! {conn: {
                 ciphers_collections::table
@@ -902,7 +902,7 @@ impl Cipher {
                             .and(collections_groups::read_only.eq(false)))
                     )
                     .select(ciphers_collections::collection_uuid)
-                    .load::<String>(conn).unwrap_or_default()
+                    .load::<CollectionId>(conn).unwrap_or_default()
             }}
         } else {
             db_run! {conn: {
@@ -924,12 +924,12 @@ impl Cipher {
                             .and(users_collections::read_only.eq(false)))
                     )
                     .select(ciphers_collections::collection_uuid)
-                    .load::<String>(conn).unwrap_or_default()
+                    .load::<CollectionId>(conn).unwrap_or_default()
             }}
         }
     }
 
-    pub async fn get_admin_collections(&self, user_id: String, conn: &mut DbConn) -> Vec<String> {
+    pub async fn get_admin_collections(&self, user_id: String, conn: &mut DbConn) -> Vec<CollectionId> {
         if CONFIG.org_groups_enabled() {
             db_run! {conn: {
                 ciphers_collections::table
@@ -962,7 +962,7 @@ impl Cipher {
                         .or(users_organizations::atype.le(MembershipType::Admin as i32)) // User is admin or owner
                     )
                     .select(ciphers_collections::collection_uuid)
-                    .load::<String>(conn).unwrap_or_default()
+                    .load::<CollectionId>(conn).unwrap_or_default()
             }}
         } else {
             db_run! {conn: {
@@ -985,14 +985,17 @@ impl Cipher {
                         .or(users_organizations::atype.le(MembershipType::Admin as i32)) // User is admin or owner
                     )
                     .select(ciphers_collections::collection_uuid)
-                    .load::<String>(conn).unwrap_or_default()
+                    .load::<CollectionId>(conn).unwrap_or_default()
             }}
         }
     }
 
     /// Return a Vec with (cipher_uuid, collection_uuid)
     /// This is used during a full sync so we only need one query for all collections accessible.
-    pub async fn get_collections_with_cipher_by_user(user_id: String, conn: &mut DbConn) -> Vec<(String, String)> {
+    pub async fn get_collections_with_cipher_by_user(
+        user_id: String,
+        conn: &mut DbConn,
+    ) -> Vec<(String, CollectionId)> {
         db_run! {conn: {
             ciphers_collections::table
             .inner_join(collections::table.on(
@@ -1026,7 +1029,7 @@ impl Cipher {
             .or_filter(collections_groups::collections_uuid.is_not_null()) //Access via group
             .select(ciphers_collections::all_columns)
             .distinct()
-            .load::<(String, String)>(conn).unwrap_or_default()
+            .load::<(String, CollectionId)>(conn).unwrap_or_default()
         }}
     }
 }

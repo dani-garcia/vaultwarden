@@ -126,7 +126,7 @@ struct NewCollectionData {
     name: String,
     groups: Vec<NewCollectionObjectData>,
     users: Vec<NewCollectionMemberData>,
-    id: Option<String>,
+    id: Option<CollectionId>,
     external_id: Option<String>,
 }
 
@@ -340,7 +340,7 @@ async fn get_org_collections_details(
     };
 
     // get all collection memberships for the current organization
-    let coll_users = CollectionUser::find_by_organization(&org_id, &mut conn).await;
+    let col_users = CollectionUser::find_by_organization(&org_id, &mut conn).await;
 
     // check if current user has full access to the organization (either directly or via any group)
     let has_full_access_to_org = member.access_all
@@ -355,7 +355,7 @@ async fn get_org_collections_details(
                 && GroupUser::has_access_to_collection_by_member(&col.uuid, &member.uuid, &mut conn).await);
 
         // get the users assigned directly to the given collection
-        let users: Vec<Value> = coll_users
+        let users: Vec<Value> = col_users
             .iter()
             .filter(|collection_user| collection_user.collection_uuid == col.uuid)
             .map(|collection_user| UserSelection::to_collection_user_details_read_only(collection_user).to_json())
@@ -450,7 +450,7 @@ async fn post_organization_collections(
 #[put("/organizations/<org_id>/collections/<col_id>", data = "<data>")]
 async fn put_organization_collection_update(
     org_id: OrganizationId,
-    col_id: &str,
+    col_id: CollectionId,
     headers: ManagerHeaders,
     data: Json<NewCollectionData>,
     conn: DbConn,
@@ -461,7 +461,7 @@ async fn put_organization_collection_update(
 #[post("/organizations/<org_id>/collections/<col_id>", data = "<data>")]
 async fn post_organization_collection_update(
     org_id: OrganizationId,
-    col_id: &str,
+    col_id: CollectionId,
     headers: ManagerHeaders,
     data: Json<NewCollectionData>,
     mut conn: DbConn,
@@ -472,7 +472,7 @@ async fn post_organization_collection_update(
         err!("Can't find organization details")
     };
 
-    let Some(mut collection) = Collection::find_by_uuid_and_org(col_id, &org_id, &mut conn).await else {
+    let Some(mut collection) = Collection::find_by_uuid_and_org(&col_id, &org_id, &mut conn).await else {
         err!("Collection not found")
     };
 
@@ -495,15 +495,13 @@ async fn post_organization_collection_update(
     )
     .await;
 
-    CollectionGroup::delete_all_by_collection(col_id, &mut conn).await?;
+    CollectionGroup::delete_all_by_collection(&col_id, &mut conn).await?;
 
     for group in data.groups {
-        CollectionGroup::new(String::from(col_id), group.id, group.read_only, group.hide_passwords)
-            .save(&mut conn)
-            .await?;
+        CollectionGroup::new(col_id.clone(), group.id, group.read_only, group.hide_passwords).save(&mut conn).await?;
     }
 
-    CollectionUser::delete_all_by_collection(col_id, &mut conn).await?;
+    CollectionUser::delete_all_by_collection(&col_id, &mut conn).await?;
 
     for user in data.users {
         let Some(member) = Membership::find_by_uuid_and_org(&user.id, &org_id, &mut conn).await else {
@@ -514,7 +512,7 @@ async fn post_organization_collection_update(
             continue;
         }
 
-        CollectionUser::save(&member.user_uuid, col_id, user.read_only, user.hide_passwords, &mut conn).await?;
+        CollectionUser::save(&member.user_uuid, &col_id, user.read_only, user.hide_passwords, &mut conn).await?;
     }
 
     Ok(Json(collection.to_json_details(&headers.user.uuid, None, &mut conn).await))
@@ -523,12 +521,12 @@ async fn post_organization_collection_update(
 #[delete("/organizations/<org_id>/collections/<col_id>/user/<member_id>")]
 async fn delete_organization_collection_user(
     org_id: OrganizationId,
-    col_id: &str,
+    col_id: CollectionId,
     member_id: MembershipId,
     _headers: AdminHeaders,
     mut conn: DbConn,
 ) -> EmptyResult {
-    let Some(collection) = Collection::find_by_uuid_and_org(col_id, &org_id, &mut conn).await else {
+    let Some(collection) = Collection::find_by_uuid_and_org(&col_id, &org_id, &mut conn).await else {
         err!("Collection not found", "Collection does not exist or does not belong to this organization")
     };
 
@@ -546,7 +544,7 @@ async fn delete_organization_collection_user(
 #[post("/organizations/<org_id>/collections/<col_id>/delete-user/<member_id>")]
 async fn post_organization_collection_delete_user(
     org_id: OrganizationId,
-    col_id: &str,
+    col_id: CollectionId,
     member_id: MembershipId,
     headers: AdminHeaders,
     conn: DbConn,
@@ -556,7 +554,7 @@ async fn post_organization_collection_delete_user(
 
 async fn _delete_organization_collection(
     org_id: &OrganizationId,
-    col_id: &str,
+    col_id: &CollectionId,
     headers: &ManagerHeaders,
     conn: &mut DbConn,
 ) -> EmptyResult {
@@ -579,11 +577,11 @@ async fn _delete_organization_collection(
 #[delete("/organizations/<org_id>/collections/<col_id>")]
 async fn delete_organization_collection(
     org_id: OrganizationId,
-    col_id: &str,
+    col_id: CollectionId,
     headers: ManagerHeaders,
     mut conn: DbConn,
 ) -> EmptyResult {
-    _delete_organization_collection(&org_id, col_id, &headers, &mut conn).await
+    _delete_organization_collection(&org_id, &col_id, &headers, &mut conn).await
 }
 
 #[derive(Deserialize, Debug)]
@@ -598,17 +596,17 @@ struct DeleteCollectionData {
 #[post("/organizations/<org_id>/collections/<col_id>/delete")]
 async fn post_organization_collection_delete(
     org_id: OrganizationId,
-    col_id: &str,
+    col_id: CollectionId,
     headers: ManagerHeaders,
     mut conn: DbConn,
 ) -> EmptyResult {
-    _delete_organization_collection(&org_id, col_id, &headers, &mut conn).await
+    _delete_organization_collection(&org_id, &col_id, &headers, &mut conn).await
 }
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 struct BulkCollectionIds {
-    ids: Vec<String>,
+    ids: Vec<CollectionId>,
 }
 
 #[delete("/organizations/<org_id>/collections", data = "<data>")]
@@ -630,14 +628,14 @@ async fn bulk_delete_organization_collections(
     Ok(())
 }
 
-#[get("/organizations/<org_id>/collections/<coll_id>/details")]
+#[get("/organizations/<org_id>/collections/<col_id>/details")]
 async fn get_org_collection_detail(
     org_id: OrganizationId,
-    coll_id: &str,
+    col_id: CollectionId,
     headers: ManagerHeaders,
     mut conn: DbConn,
 ) -> JsonResult {
-    match Collection::find_by_uuid_and_user(coll_id, headers.user.uuid.clone(), &mut conn).await {
+    match Collection::find_by_uuid_and_user(&col_id, headers.user.uuid.clone(), &mut conn).await {
         None => err!("Collection not found"),
         Some(collection) => {
             if collection.org_uuid != org_id {
@@ -684,15 +682,15 @@ async fn get_org_collection_detail(
     }
 }
 
-#[get("/organizations/<org_id>/collections/<coll_id>/users")]
+#[get("/organizations/<org_id>/collections/<col_id>/users")]
 async fn get_collection_users(
     org_id: OrganizationId,
-    coll_id: &str,
+    col_id: CollectionId,
     _headers: ManagerHeaders,
     mut conn: DbConn,
 ) -> JsonResult {
     // Get org and collection, check that collection is from org
-    let Some(collection) = Collection::find_by_uuid_and_org(coll_id, &org_id, &mut conn).await else {
+    let Some(collection) = Collection::find_by_uuid_and_org(&col_id, &org_id, &mut conn).await else {
         err!("Collection not found in Organization")
     };
 
@@ -709,21 +707,21 @@ async fn get_collection_users(
     Ok(Json(json!(user_list)))
 }
 
-#[put("/organizations/<org_id>/collections/<coll_id>/users", data = "<data>")]
+#[put("/organizations/<org_id>/collections/<col_id>/users", data = "<data>")]
 async fn put_collection_users(
     org_id: OrganizationId,
-    coll_id: &str,
-    data: Json<Vec<CollectionData>>,
+    col_id: CollectionId,
+    data: Json<Vec<MembershipData>>,
     _headers: ManagerHeaders,
     mut conn: DbConn,
 ) -> EmptyResult {
     // Get org and collection, check that collection is from org
-    if Collection::find_by_uuid_and_org(coll_id, &org_id, &mut conn).await.is_none() {
+    if Collection::find_by_uuid_and_org(&col_id, &org_id, &mut conn).await.is_none() {
         err!("Collection not found in Organization")
     }
 
     // Delete all the user-collections
-    CollectionUser::delete_all_by_collection(coll_id, &mut conn).await?;
+    CollectionUser::delete_all_by_collection(&col_id, &mut conn).await?;
 
     // And then add all the received ones (except if the user has access_all)
     for d in data.iter() {
@@ -735,7 +733,7 @@ async fn put_collection_users(
             continue;
         }
 
-        CollectionUser::save(&user.user_uuid, coll_id, d.read_only, d.hide_passwords, &mut conn).await?;
+        CollectionUser::save(&user.user_uuid, &col_id, d.read_only, d.hide_passwords, &mut conn).await?;
     }
 
     Ok(())
@@ -841,6 +839,14 @@ async fn post_org_keys(
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct CollectionData {
+    id: CollectionId,
+    read_only: bool,
+    hide_passwords: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MembershipData {
     id: MembershipId,
     read_only: bool,
     hide_passwords: bool,
@@ -1615,14 +1621,14 @@ async fn post_org_import(
     // TODO: See if we can optimize the whole cipher adding/importing and prevent duplicate code and checks.
     Cipher::validate_cipher_data(&data.ciphers)?;
 
-    let existing_collections: HashSet<Option<String>> =
-        Collection::find_by_organization(&org_id, &mut conn).await.into_iter().map(|c| (Some(c.uuid))).collect();
-    let mut collections: Vec<String> = Vec::with_capacity(data.collections.len());
-    for coll in data.collections {
-        let collection_uuid = if existing_collections.contains(&coll.id) {
-            coll.id.unwrap()
+    let existing_collections: HashSet<Option<CollectionId>> =
+        Collection::find_by_organization(&org_id, &mut conn).await.into_iter().map(|c| Some(c.uuid)).collect();
+    let mut collections: Vec<CollectionId> = Vec::with_capacity(data.collections.len());
+    for col in data.collections {
+        let collection_uuid = if existing_collections.contains(&col.id) {
+            col.id.unwrap()
         } else {
-            let new_collection = Collection::new(org_id.clone(), coll.name, coll.external_id);
+            let new_collection = Collection::new(org_id.clone(), col.name, col.external_id);
             new_collection.save(&mut conn).await?;
             new_collection.uuid
         };
@@ -1649,10 +1655,10 @@ async fn post_org_import(
     }
 
     // Assign the collections
-    for (cipher_index, coll_index) in relations {
+    for (cipher_index, col_index) in relations {
         let cipher_id = &ciphers[cipher_index];
-        let coll_id = &collections[coll_index];
-        CollectionCipher::save(cipher_id, coll_id, &mut conn).await?;
+        let col_id = &collections[col_index];
+        CollectionCipher::save(cipher_id, col_id, &mut conn).await?;
     }
 
     let mut user = headers.user;
@@ -1665,7 +1671,7 @@ async fn post_org_import(
 struct BulkCollectionsData {
     organization_id: OrganizationId,
     cipher_ids: Vec<String>,
-    collection_ids: HashSet<String>,
+    collection_ids: HashSet<CollectionId>,
     remove_collections: bool,
 }
 
@@ -1683,7 +1689,7 @@ async fn post_bulk_collections(data: Json<BulkCollectionsData>, headers: Headers
 
     // Get all the collection available to the user in one query
     // Also filter based upon the provided collections
-    let user_collections: HashMap<String, Collection> =
+    let user_collections: HashMap<CollectionId, Collection> =
         Collection::find_by_organization_and_user_uuid(&data.organization_id, &headers.user.uuid, &mut conn)
             .await
             .into_iter()
@@ -2352,7 +2358,7 @@ struct GroupRequest {
     #[serde(default)]
     access_all: bool,
     external_id: Option<String>,
-    collections: Vec<SelectionReadOnly>,
+    collections: Vec<CollectionSelection>,
     users: Vec<MembershipId>,
 }
 
@@ -2380,10 +2386,6 @@ struct SelectionReadOnly {
 }
 
 impl SelectionReadOnly {
-    pub fn to_collection_group(&self, groups_uuid: String) -> CollectionGroup {
-        CollectionGroup::new(self.id.clone(), groups_uuid, self.read_only, self.hide_passwords)
-    }
-
     pub fn to_collection_group_details_read_only(collection_group: &CollectionGroup) -> Self {
         Self {
             id: collection_group.groups_uuid.clone(),
@@ -2394,6 +2396,20 @@ impl SelectionReadOnly {
 
     pub fn to_json(&self) -> Value {
         json!(self)
+    }
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CollectionSelection {
+    id: CollectionId,
+    read_only: bool,
+    hide_passwords: bool,
+}
+
+impl CollectionSelection {
+    pub fn to_collection_group(&self, groups_uuid: String) -> CollectionGroup {
+        CollectionGroup::new(self.id.clone(), groups_uuid, self.read_only, self.hide_passwords)
     }
 }
 
@@ -2496,7 +2512,7 @@ async fn put_group(
 
 async fn add_update_group(
     mut group: Group,
-    collections: Vec<SelectionReadOnly>,
+    collections: Vec<CollectionSelection>,
     members: Vec<MembershipId>,
     org_id: OrganizationId,
     headers: &AdminHeaders,
@@ -2504,8 +2520,8 @@ async fn add_update_group(
 ) -> JsonResult {
     group.save(conn).await?;
 
-    for selection_read_only_request in collections {
-        let mut collection_group = selection_read_only_request.to_collection_group(group.uuid.clone());
+    for col_selection in collections {
+        let mut collection_group = col_selection.to_collection_group(group.uuid.clone());
         collection_group.save(conn).await?;
     }
 

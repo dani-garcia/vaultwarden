@@ -368,7 +368,7 @@ pub async fn update_cipher_from_data(
     cipher: &mut Cipher,
     data: CipherData,
     headers: &Headers,
-    shared_to_collections: Option<Vec<String>>,
+    shared_to_collections: Option<Vec<CollectionId>>,
     conn: &mut DbConn,
     nt: &Notify<'_>,
     ut: UpdateType,
@@ -710,7 +710,7 @@ async fn put_cipher_partial(
 #[serde(rename_all = "camelCase")]
 struct CollectionsAdminData {
     #[serde(alias = "CollectionIds")]
-    collection_ids: Vec<String>,
+    collection_ids: Vec<CollectionId>,
 }
 
 #[put("/ciphers/<uuid>/collections_v2", data = "<data>")]
@@ -769,9 +769,9 @@ async fn post_collections_update(
         err!("Cipher is not write accessible")
     }
 
-    let posted_collections = HashSet::<String>::from_iter(data.collection_ids);
+    let posted_collections = HashSet::<CollectionId>::from_iter(data.collection_ids);
     let current_collections =
-        HashSet::<String>::from_iter(cipher.get_collections(headers.user.uuid.to_string(), &mut conn).await);
+        HashSet::<CollectionId>::from_iter(cipher.get_collections(headers.user.uuid.to_string(), &mut conn).await);
 
     for collection in posted_collections.symmetric_difference(&current_collections) {
         match Collection::find_by_uuid_and_org(collection, cipher.organization_uuid.as_ref().unwrap(), &mut conn).await
@@ -846,9 +846,10 @@ async fn post_collections_admin(
         err!("Cipher is not write accessible")
     }
 
-    let posted_collections = HashSet::<String>::from_iter(data.collection_ids);
-    let current_collections =
-        HashSet::<String>::from_iter(cipher.get_admin_collections(headers.user.uuid.to_string(), &mut conn).await);
+    let posted_collections = HashSet::<CollectionId>::from_iter(data.collection_ids);
+    let current_collections = HashSet::<CollectionId>::from_iter(
+        cipher.get_admin_collections(headers.user.uuid.to_string(), &mut conn).await,
+    );
 
     for collection in posted_collections.symmetric_difference(&current_collections) {
         match Collection::find_by_uuid_and_org(collection, cipher.organization_uuid.as_ref().unwrap(), &mut conn).await
@@ -900,7 +901,7 @@ struct ShareCipherData {
     #[serde(alias = "Cipher")]
     cipher: CipherData,
     #[serde(alias = "CollectionIds")]
-    collection_ids: Vec<String>,
+    collection_ids: Vec<CollectionId>,
 }
 
 #[post("/ciphers/<uuid>/share", data = "<data>")]
@@ -933,7 +934,7 @@ async fn put_cipher_share(
 #[serde(rename_all = "camelCase")]
 struct ShareSelectedCipherData {
     ciphers: Vec<CipherData>,
-    collection_ids: Vec<String>,
+    collection_ids: Vec<CollectionId>,
 }
 
 #[put("/ciphers/share", data = "<data>")]
@@ -1834,10 +1835,10 @@ pub struct CipherSyncData {
     pub cipher_attachments: HashMap<String, Vec<Attachment>>,
     pub cipher_folders: HashMap<String, String>,
     pub cipher_favorites: HashSet<String>,
-    pub cipher_collections: HashMap<String, Vec<String>>,
+    pub cipher_collections: HashMap<String, Vec<CollectionId>>,
     pub members: HashMap<OrganizationId, Membership>,
-    pub user_collections: HashMap<String, CollectionUser>,
-    pub user_collections_groups: HashMap<String, CollectionGroup>,
+    pub user_collections: HashMap<CollectionId, CollectionUser>,
+    pub user_collections_groups: HashMap<CollectionId, CollectionGroup>,
     pub user_group_full_access_for_organizations: HashSet<OrganizationId>,
 }
 
@@ -1878,7 +1879,7 @@ impl CipherSyncData {
 
         // Generate a HashMap with the Cipher UUID as key and one or more Collection UUID's
         let user_cipher_collections = Cipher::get_collections_with_cipher_by_user(user_uuid.to_string(), conn).await;
-        let mut cipher_collections: HashMap<String, Vec<String>> =
+        let mut cipher_collections: HashMap<String, Vec<CollectionId>> =
             HashMap::with_capacity(user_cipher_collections.len());
         for (cipher, collection) in user_cipher_collections {
             cipher_collections.entry(cipher).or_default().push(collection);
@@ -1889,14 +1890,14 @@ impl CipherSyncData {
             Membership::find_by_user(user_uuid, conn).await.into_iter().map(|m| (m.org_uuid.clone(), m)).collect();
 
         // Generate a HashMap with the User_Collections UUID as key and the CollectionUser record
-        let user_collections: HashMap<String, CollectionUser> = CollectionUser::find_by_user(user_uuid, conn)
+        let user_collections: HashMap<CollectionId, CollectionUser> = CollectionUser::find_by_user(user_uuid, conn)
             .await
             .into_iter()
             .map(|uc| (uc.collection_uuid.clone(), uc))
             .collect();
 
         // Generate a HashMap with the collections_uuid as key and the CollectionGroup record
-        let user_collections_groups: HashMap<String, CollectionGroup> = if CONFIG.org_groups_enabled() {
+        let user_collections_groups: HashMap<CollectionId, CollectionGroup> = if CONFIG.org_groups_enabled() {
             CollectionGroup::find_by_user(user_uuid, conn)
                 .await
                 .into_iter()

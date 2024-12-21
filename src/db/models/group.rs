@@ -1,4 +1,4 @@
-use super::{Membership, MembershipId, OrganizationId, User, UserId};
+use super::{CollectionId, Membership, MembershipId, OrganizationId, User, UserId};
 use crate::api::EmptyResult;
 use crate::db::DbConn;
 use crate::error::MapResult;
@@ -23,7 +23,7 @@ db_object! {
     #[diesel(table_name = collections_groups)]
     #[diesel(primary_key(collections_uuid, groups_uuid))]
     pub struct CollectionGroup {
-        pub collections_uuid: String,
+        pub collections_uuid: CollectionId,
         pub groups_uuid: String,
         pub read_only: bool,
         pub hide_passwords: bool,
@@ -113,7 +113,7 @@ impl Group {
 }
 
 impl CollectionGroup {
-    pub fn new(collections_uuid: String, groups_uuid: String, read_only: bool, hide_passwords: bool) -> Self {
+    pub fn new(collections_uuid: CollectionId, groups_uuid: String, read_only: bool, hide_passwords: bool) -> Self {
         Self {
             collections_uuid,
             groups_uuid,
@@ -370,7 +370,7 @@ impl CollectionGroup {
         }}
     }
 
-    pub async fn find_by_collection(collection_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_collection(collection_uuid: &CollectionId, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             collections_groups::table
                 .filter(collections_groups::collections_uuid.eq(collection_uuid))
@@ -410,7 +410,7 @@ impl CollectionGroup {
         }}
     }
 
-    pub async fn delete_all_by_collection(collection_uuid: &str, conn: &mut DbConn) -> EmptyResult {
+    pub async fn delete_all_by_collection(collection_uuid: &CollectionId, conn: &mut DbConn) -> EmptyResult {
         let collection_assigned_to_groups = CollectionGroup::find_by_collection(collection_uuid, conn).await;
         for collection_assigned_to_group in collection_assigned_to_groups {
             let group_users = GroupUser::find_by_group(&collection_assigned_to_group.groups_uuid, conn).await;
@@ -496,7 +496,7 @@ impl GroupUser {
     }
 
     pub async fn has_access_to_collection_by_member(
-        collection_uuid: &str,
+        collection_uuid: &CollectionId,
         member_uuid: &MembershipId,
         conn: &mut DbConn,
     ) -> bool {

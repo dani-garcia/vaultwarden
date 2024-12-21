@@ -14,7 +14,7 @@ use std::{
     net::IpAddr,
 };
 
-use crate::db::models::{MembershipId, OrganizationId, UserId};
+use crate::db::models::{CollectionId, MembershipId, OrganizationId, UserId};
 use crate::{error::Error, CONFIG};
 
 const JWT_ALGORITHM: Algorithm = Algorithm::RS256;
@@ -649,16 +649,16 @@ impl From<AdminHeaders> for Headers {
 // col_id is usually the fourth path param ("/organizations/<org_id>/collections/<col_id>"),
 // but there could be cases where it is a query value.
 // First check the path, if this is not a valid uuid, try the query values.
-fn get_col_id(request: &Request<'_>) -> Option<String> {
+fn get_col_id(request: &Request<'_>) -> Option<CollectionId> {
     if let Some(Ok(col_id)) = request.param::<String>(3) {
         if uuid::Uuid::parse_str(&col_id).is_ok() {
-            return Some(col_id);
+            return Some(col_id.into());
         }
     }
 
     if let Some(Ok(col_id)) = request.query_value::<String>("collectionId") {
         if uuid::Uuid::parse_str(&col_id).is_ok() {
-            return Some(col_id);
+            return Some(col_id.into());
         }
     }
 
@@ -763,11 +763,11 @@ impl From<ManagerHeadersLoose> for Headers {
 impl ManagerHeaders {
     pub async fn from_loose(
         h: ManagerHeadersLoose,
-        collections: &Vec<String>,
+        collections: &Vec<CollectionId>,
         conn: &mut DbConn,
     ) -> Result<ManagerHeaders, Error> {
         for col_id in collections {
-            if uuid::Uuid::parse_str(col_id).is_err() {
+            if uuid::Uuid::parse_str(col_id.as_ref()).is_err() {
                 err!("Collection Id is malformed!");
             }
             if !Collection::can_access_collection(&h.membership, col_id, conn).await {

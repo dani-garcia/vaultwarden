@@ -10,7 +10,7 @@ use rocket_ws::{Message, WebSocket};
 use crate::{
     auth::{ClientIp, WsAccessTokenHeader},
     db::{
-        models::{Cipher, Folder, Send as DbSend, User, UserId},
+        models::{Cipher, CollectionId, Folder, Send as DbSend, User, UserId},
         DbConn,
     },
     Error, CONFIG,
@@ -415,7 +415,7 @@ impl WebSocketUsers {
         cipher: &Cipher,
         user_uuids: &[UserId],
         acting_device_uuid: &String,
-        collection_uuids: Option<Vec<String>>,
+        collection_uuids: Option<Vec<CollectionId>>,
         conn: &mut DbConn,
     ) {
         // Skip any processing if both WebSockets and Push are not active
@@ -428,7 +428,7 @@ impl WebSocketUsers {
         let (user_uuid, collection_uuids, revision_date) = if let Some(collection_uuids) = collection_uuids {
             (
                 Value::Nil,
-                Value::Array(collection_uuids.into_iter().map(|v| v.into()).collect::<Vec<Value>>()),
+                Value::Array(collection_uuids.into_iter().map(|v| v.to_string().into()).collect::<Vec<Value>>()),
                 serialize_date(Utc::now().naive_utc()),
             )
         } else {
