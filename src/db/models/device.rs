@@ -1,4 +1,10 @@
 use chrono::{NaiveDateTime, Utc};
+use rocket::request::FromParam;
+use std::{
+    borrow::Borrow,
+    fmt::{Display, Formatter},
+    ops::Deref,
+};
 
 use super::UserId;
 use crate::{crypto, CONFIG};
@@ -10,7 +16,7 @@ db_object! {
     #[diesel(treat_none_as_null = true)]
     #[diesel(primary_key(uuid, user_uuid))]
     pub struct Device {
-        pub uuid: String,
+        pub uuid: DeviceId,
         pub created_at: NaiveDateTime,
         pub updated_at: NaiveDateTime,
 
@@ -29,7 +35,7 @@ db_object! {
 
 /// Local methods
 impl Device {
-    pub fn new(uuid: String, user_uuid: UserId, name: String, atype: i32) -> Self {
+    pub fn new(uuid: DeviceId, user_uuid: UserId, name: String, atype: i32) -> Self {
         let now = Utc::now().naive_utc();
 
         Self {
@@ -159,7 +165,7 @@ impl Device {
         }}
     }
 
-    pub async fn find_by_uuid_and_user(uuid: &str, user_uuid: &UserId, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_uuid_and_user(uuid: &DeviceId, user_uuid: &UserId, conn: &mut DbConn) -> Option<Self> {
         db_run! { conn: {
             devices::table
                 .filter(devices::uuid.eq(uuid))
@@ -180,7 +186,7 @@ impl Device {
         }}
     }
 
-    pub async fn find_by_uuid(uuid: &str, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_uuid(uuid: &DeviceId, conn: &mut DbConn) -> Option<Self> {
         db_run! { conn: {
             devices::table
                 .filter(devices::uuid.eq(uuid))
@@ -190,7 +196,7 @@ impl Device {
         }}
     }
 
-    pub async fn clear_push_token_by_uuid(uuid: &str, conn: &mut DbConn) -> EmptyResult {
+    pub async fn clear_push_token_by_uuid(uuid: &DeviceId, conn: &mut DbConn) -> EmptyResult {
         db_run! { conn: {
             diesel::update(devices::table)
                 .filter(devices::uuid.eq(uuid))
@@ -273,8 +279,8 @@ pub enum DeviceType {
     LinuxCLI = 25,
 }
 
-impl fmt::Display for DeviceType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Display for DeviceType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             DeviceType::Android => write!(f, "Android"),
             DeviceType::Ios => write!(f, "iOS"),
@@ -336,6 +342,60 @@ impl DeviceType {
             24 => DeviceType::MacOsCLI,
             25 => DeviceType::LinuxCLI,
             _ => DeviceType::UnknownBrowser,
+        }
+    }
+}
+
+#[derive(DieselNewType, FromForm, Clone, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeviceId(String);
+
+impl DeviceId {
+    pub fn empty() -> Self {
+        Self(String::from("00000000-0000-0000-0000-000000000000"))
+    }
+}
+
+impl AsRef<str> for DeviceId {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Deref for DeviceId {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Borrow<str> for DeviceId {
+    fn borrow(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Display for DeviceId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl From<String> for DeviceId {
+    fn from(raw: String) -> Self {
+        Self(raw)
+    }
+}
+
+impl<'r> FromParam<'r> for DeviceId {
+    type Error = ();
+
+    #[inline(always)]
+    fn from_param(param: &'r str) -> Result<Self, Self::Error> {
+        if param.chars().all(|c| matches!(c, 'a'..='z' | 'A'..='Z' |'0'..='9' | '-')) {
+            Ok(Self(param.to_string()))
+        } else {
+            Err(())
         }
     }
 }

@@ -747,7 +747,7 @@ struct ConnectData {
 
     #[field(name = uncased("device_identifier"))]
     #[field(name = uncased("deviceidentifier"))]
-    device_identifier: Option<String>,
+    device_identifier: Option<DeviceId>,
     #[field(name = uncased("device_name"))]
     #[field(name = uncased("devicename"))]
     device_name: Option<String>,

@@ -14,7 +14,7 @@ use std::{
     net::IpAddr,
 };
 
-use crate::db::models::{AttachmentId, CipherId, CollectionId, MembershipId, OrganizationId, UserId};
+use crate::db::models::{AttachmentId, CipherId, CollectionId, DeviceId, MembershipId, OrganizationId, UserId};
 use crate::{error::Error, CONFIG};
 
 const JWT_ALGORITHM: Algorithm = Algorithm::RS256;
@@ -172,7 +172,7 @@ pub struct LoginJwtClaims {
     // user security_stamp
     pub sstamp: String,
     // device uuid
-    pub device: String,
+    pub device: DeviceId,
     // [ "api", "offline_access" ]
     pub scope: Vec<String>,
     // [ "Application" ]

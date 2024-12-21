@@ -374,7 +374,7 @@ async fn post_password(data: Json<ChangePassData>, headers: Headers, mut conn: D
     // Prevent logging out the client where the user requested this endpoint from.
     // If you do logout the user it will causes issues at the client side.
     // Adding the device uuid will prevent this.
-    nt.send_logout(&user, Some(headers.device.uuid)).await;
+    nt.send_logout(&user, &headers.device.uuid).await;
 
     save_result
 }
@@ -434,7 +434,7 @@ async fn post_kdf(data: Json<ChangeKdfData>, headers: Headers, mut conn: DbConn,
     user.set_password(&data.new_master_password_hash, Some(data.key), true, None);
     let save_result = user.save(&mut conn).await;
 
-    nt.send_logout(&user, Some(headers.device.uuid)).await;
+    nt.send_logout(&user, &headers.device.uuid).await;
 
     save_result
 }
@@ -646,7 +646,7 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, mut conn: DbConn,
     // Prevent logging out the client where the user requested this endpoint from.
     // If you do logout the user it will causes issues at the client side.
     // Adding the device uuid will prevent this.
-    nt.send_logout(&user, Some(headers.device.uuid)).await;
+    nt.send_logout(&user, &headers.device.uuid).await;
 
     save_result
 }
@@ -662,7 +662,7 @@ async fn post_sstamp(data: Json<PasswordOrOtpData>, headers: Headers, mut conn: 
     user.reset_security_stamp();
     let save_result = user.save(&mut conn).await;
 
-    nt.send_logout(&user, None).await;
+    nt.send_logout(&user, &DeviceId::empty()).await;
 
     save_result
 }
@@ -770,7 +770,7 @@ async fn post_email(data: Json<ChangeEmailData>, headers: Headers, mut conn: DbC
 
     let save_result = user.save(&mut conn).await;
 
-    nt.send_logout(&user, None).await;
+    nt.send_logout(&user, &DeviceId::empty()).await;
 
     save_result
 }
@@ -1028,7 +1028,7 @@ async fn get_known_device(device: KnownDevice, mut conn: DbConn) -> JsonResult {
 
 struct KnownDevice {
     email: String,
-    uuid: String,
+    uuid: DeviceId,
 }
 
 #[rocket::async_trait]
@@ -1051,7 +1051,7 @@ impl<'r> FromRequest<'r> for KnownDevice {
         };
 
         let uuid = if let Some(uuid) = req.headers().get_one("X-Device-Identifier") {
-            uuid.to_string()
+            uuid.to_string().into()
         } else {
             return Outcome::Error((Status::BadRequest, "X-Device-Identifier value is required"));
         };
@@ -1069,26 +1069,31 @@ struct PushToken {
     push_token: String,
 }
 
-#[post("/devices/identifier/<uuid>/token", data = "<data>")]
-async fn post_device_token(uuid: &str, data: Json<PushToken>, headers: Headers, conn: DbConn) -> EmptyResult {
-    put_device_token(uuid, data, headers, conn).await
+#[post("/devices/identifier/<device_id>/token", data = "<data>")]
+async fn post_device_token(device_id: DeviceId, data: Json<PushToken>, headers: Headers, conn: DbConn) -> EmptyResult {
+    put_device_token(device_id, data, headers, conn).await
 }
 
-#[put("/devices/identifier/<uuid>/token", data = "<data>")]
-async fn put_device_token(uuid: &str, data: Json<PushToken>, headers: Headers, mut conn: DbConn) -> EmptyResult {
+#[put("/devices/identifier/<device_id>/token", data = "<data>")]
+async fn put_device_token(
+    device_id: DeviceId,
+    data: Json<PushToken>,
+    headers: Headers,
+    mut conn: DbConn,
+) -> EmptyResult {
     let data = data.into_inner();
     let token = data.push_token;
 
     let Some(mut device) = Device::find_by_uuid_and_user(&headers.device.uuid, &headers.user.uuid, &mut conn).await
     else {
-        err!(format!("Error: device {uuid} should be present before a token can be assigned"))
+        err!(format!("Error: device {device_id} should be present before a token can be assigned"))
     };
 
     // if the device already has been registered
     if device.is_registered() {
         // check if the new token is the same as the registered token
         if device.push_token.is_some() && device.push_token.unwrap() == token.clone() {
-            debug!("Device {} is already registered and token is the same", uuid);
+            debug!("Device {} is already registered and token is the same", device_id);
             return Ok(());
         } else {
             // Try to unregister already registered device
@@ -1107,8 +1112,8 @@ async fn put_device_token(uuid: &str, data: Json<PushToken>, headers: Headers, m
     Ok(())
 }
 
-#[put("/devices/identifier/<uuid>/clear-token")]
-async fn put_clear_device_token(uuid: &str, mut conn: DbConn) -> EmptyResult {
+#[put("/devices/identifier/<device_id>/clear-token")]
+async fn put_clear_device_token(device_id: DeviceId, mut conn: DbConn) -> EmptyResult {
     // This only clears push token
     // https://github.com/bitwarden/core/blob/master/src/Api/Controllers/DevicesController.cs#L109
     // https://github.com/bitwarden/core/blob/master/src/Core/Services/Implementations/DeviceService.cs#L37
@@ -1117,8 +1122,8 @@ async fn put_clear_device_token(uuid: &str, mut conn: DbConn) -> EmptyResult {
         return Ok(());
     }
 
-    if let Some(device) = Device::find_by_uuid(uuid, &mut conn).await {
-        Device::clear_push_token_by_uuid(uuid, &mut conn).await?;
+    if let Some(device) = Device::find_by_uuid(&device_id, &mut conn).await {
+        Device::clear_push_token_by_uuid(&device_id, &mut conn).await?;
         unregister_push_device(device.push_uuid).await?;
     }
 
@@ -1126,16 +1131,16 @@ async fn put_clear_device_token(uuid: &str, mut conn: DbConn) -> EmptyResult {
 }
 
 // On upstream server, both PUT and POST are declared. Implementing the POST method in case it would be useful somewhere
-#[post("/devices/identifier/<uuid>/clear-token")]
-async fn post_clear_device_token(uuid: &str, conn: DbConn) -> EmptyResult {
-    put_clear_device_token(uuid, conn).await
+#[post("/devices/identifier/<device_id>/clear-token")]
+async fn post_clear_device_token(device_id: DeviceId, conn: DbConn) -> EmptyResult {
+    put_clear_device_token(device_id, conn).await
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AuthRequestRequest {
     access_code: String,
-    device_identifier: String,
+    device_identifier: DeviceId,
     email: String,
     public_key: String,
     // Not used for now
@@ -1215,7 +1220,7 @@ async fn get_auth_request(uuid: &str, headers: Headers, mut conn: DbConn) -> Jso
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AuthResponseRequest {
-    device_identifier: String,
+    device_identifier: DeviceId,
     key: String,
     master_password_hash: Option<String>,
     request_approved: bool,

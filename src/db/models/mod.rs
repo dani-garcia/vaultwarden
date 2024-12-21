@@ -20,7 +20,7 @@ pub use self::attachment::{Attachment, AttachmentId};
 pub use self::auth_request::AuthRequest;
 pub use self::cipher::{Cipher, CipherId, RepromptType};
 pub use self::collection::{Collection, CollectionCipher, CollectionId, CollectionUser};
-pub use self::device::{Device, DeviceType};
+pub use self::device::{Device, DeviceId, DeviceType};
 pub use self::emergency_access::{EmergencyAccess, EmergencyAccessStatus, EmergencyAccessType};
 pub use self::event::{Event, EventType};
 pub use self::favorite::Favorite;

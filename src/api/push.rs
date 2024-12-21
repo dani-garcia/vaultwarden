@@ -7,7 +7,7 @@ use tokio::sync::RwLock;
 
 use crate::{
     api::{ApiResult, EmptyResult, UpdateType},
-    db::models::{Cipher, Device, Folder, Send, User, UserId},
+    db::models::{Cipher, Device, DeviceId, Folder, Send, User, UserId},
     http_client::make_http_request,
     util::format_date,
     CONFIG,
@@ -148,7 +148,7 @@ pub async fn unregister_push_device(push_uuid: Option<String>) -> EmptyResult {
 pub async fn push_cipher_update(
     ut: UpdateType,
     cipher: &Cipher,
-    acting_device_uuid: &String,
+    acting_device_uuid: &DeviceId,
     conn: &mut crate::db::DbConn,
 ) {
     // We shouldn't send a push notification on cipher update if the cipher belongs to an organization, this isn't implemented in the upstream server too.
@@ -178,8 +178,8 @@ pub async fn push_cipher_update(
     }
 }
 
-pub fn push_logout(user: &User, acting_device_uuid: Option<String>) {
-    let acting_device_uuid: Value = acting_device_uuid.map(|v| v.into()).unwrap_or_else(|| Value::Null);
+pub fn push_logout(user: &User, acting_device_uuid: DeviceId) {
+    let acting_device_uuid: Value = acting_device_uuid.to_string().into();
 
     tokio::task::spawn(send_to_push_relay(json!({
         "userId": user.uuid,
@@ -211,7 +211,7 @@ pub fn push_user_update(ut: UpdateType, user: &User) {
 pub async fn push_folder_update(
     ut: UpdateType,
     folder: &Folder,
-    acting_device_uuid: &String,
+    acting_device_uuid: &DeviceId,
     conn: &mut crate::db::DbConn,
 ) {
     if Device::check_user_has_push_device(&folder.user_uuid, conn).await {
@@ -230,7 +230,12 @@ pub async fn push_folder_update(
     }
 }
 
-pub async fn push_send_update(ut: UpdateType, send: &Send, acting_device_uuid: &String, conn: &mut crate::db::DbConn) {
+pub async fn push_send_update(
+    ut: UpdateType,
+    send: &Send,
+    acting_device_uuid: &DeviceId,
+    conn: &mut crate::db::DbConn,
+) {
     if let Some(s) = &send.user_uuid {
         if Device::check_user_has_push_device(s, conn).await {
             tokio::task::spawn(send_to_push_relay(json!({
@@ -303,7 +308,7 @@ pub async fn push_auth_request(user_uuid: UserId, auth_request_uuid: String, con
 pub async fn push_auth_response(
     user_uuid: UserId,
     auth_request_uuid: String,
-    approving_device_uuid: String,
+    approving_device_uuid: DeviceId,
     conn: &mut crate::db::DbConn,
 ) {
     if Device::check_user_has_push_device(&user_uuid, conn).await {

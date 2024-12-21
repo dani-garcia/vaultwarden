@@ -10,7 +10,7 @@ use crate::{
     api::{core::two_factor::duo::get_duo_keys_email, EmptyResult},
     crypto,
     db::{
-        models::{EventType, TwoFactorDuoContext},
+        models::{DeviceId, EventType, TwoFactorDuoContext},
         DbConn, DbPool,
     },
     error::Error,
@@ -379,7 +379,7 @@ fn make_callback_url(client_name: &str) -> Result<String, Error> {
 pub async fn get_duo_auth_url(
     email: &str,
     client_id: &str,
-    device_identifier: &String,
+    device_identifier: &DeviceId,
     conn: &mut DbConn,
 ) -> Result<String, Error> {
     let (ik, sk, _, host) = get_duo_keys_email(email, conn).await?;
@@ -417,7 +417,7 @@ pub async fn validate_duo_login(
     email: &str,
     two_factor_token: &str,
     client_id: &str,
-    device_identifier: &str,
+    device_identifier: &DeviceId,
     conn: &mut DbConn,
 ) -> EmptyResult {
     // Result supplied to us by clients in the form "<authz code>|<state>"

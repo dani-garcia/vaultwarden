@@ -418,7 +418,7 @@ async fn delete_user(uuid: UserId, token: AdminToken, mut conn: DbConn) -> Empty
 async fn deauth_user(uuid: UserId, _token: AdminToken, mut conn: DbConn, nt: Notify<'_>) -> EmptyResult {
     let mut user = get_user_or_404(&uuid, &mut conn).await?;
 
-    nt.send_logout(&user, None).await;
+    nt.send_logout(&user, &DeviceId::empty()).await;
 
     if CONFIG.push_enabled() {
         for device in Device::find_push_devices_by_user(&user.uuid, &mut conn).await {
@@ -444,7 +444,7 @@ async fn disable_user(uuid: UserId, _token: AdminToken, mut conn: DbConn, nt: No
 
     let save_result = user.save(&mut conn).await;
 
-    nt.send_logout(&user, None).await;
+    nt.send_logout(&user, &DeviceId::empty()).await;
 
     save_result
 }

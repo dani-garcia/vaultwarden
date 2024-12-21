@@ -485,7 +485,7 @@ async fn post_access(
         UpdateType::SyncSendUpdate,
         &send,
         &send.update_users_revision(&mut conn).await,
-        &String::from("00000000-0000-0000-0000-000000000000"),
+        &DeviceId::empty(),
         &mut conn,
     )
     .await;
@@ -542,7 +542,7 @@ async fn post_access_file(
         UpdateType::SyncSendUpdate,
         &send,
         &send.update_users_revision(&mut conn).await,
-        &String::from("00000000-0000-0000-0000-000000000000"),
+        &DeviceId::empty(),
         &mut conn,
     )
     .await;
@@ -635,7 +635,7 @@ pub async fn update_send_from_data(
 
     send.save(conn).await?;
     if ut != UpdateType::None {
-        nt.send_send_update(ut, send, &send.update_users_revision(conn).await, &headers.device.uuid, conn).await;
+        nt.send_send_update(ut, send, &send.update_users_revision(conn).await, &headers.device.uuid, conn).await
     }
     Ok(())
 }
