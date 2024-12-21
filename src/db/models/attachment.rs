@@ -1,7 +1,13 @@
 use std::io::ErrorKind;
 
 use bigdecimal::{BigDecimal, ToPrimitive};
+use rocket::request::FromParam;
 use serde_json::Value;
+use std::{
+    borrow::Borrow,
+    fmt::{Display, Formatter},
+    ops::Deref,
+};
 
 use super::{CipherId, OrganizationId, UserId};
 use crate::CONFIG;
@@ -12,7 +18,7 @@ db_object! {
     #[diesel(treat_none_as_null = true)]
     #[diesel(primary_key(id))]
     pub struct Attachment {
-        pub id: String,
+        pub id: AttachmentId,
         pub cipher_uuid: CipherId,
         pub file_name: String, // encrypted
         pub file_size: i64,
@@ -23,7 +29,7 @@ db_object! {
 /// Local methods
 impl Attachment {
     pub const fn new(
-        id: String,
+        id: AttachmentId,
         cipher_uuid: CipherId,
         file_name: String,
         file_size: i64,
@@ -131,7 +137,7 @@ impl Attachment {
         Ok(())
     }
 
-    pub async fn find_by_id(id: &str, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_id(id: &AttachmentId, conn: &mut DbConn) -> Option<Self> {
         db_run! { conn: {
             attachments::table
                 .filter(attachments::id.eq(id.to_lowercase()))
@@ -225,5 +231,53 @@ impl Attachment {
                 .expect("Error loading attachments")
                 .from_db()
         }}
+    }
+}
+
+#[derive(DieselNewType, FromForm, Clone, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AttachmentId(pub String);
+
+impl AsRef<str> for AttachmentId {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Deref for AttachmentId {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Borrow<str> for AttachmentId {
+    fn borrow(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Display for AttachmentId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl From<String> for AttachmentId {
+    fn from(raw: String) -> Self {
+        Self(raw)
+    }
+}
+
+impl<'r> FromParam<'r> for AttachmentId {
+    type Error = ();
+
+    #[inline(always)]
+    fn from_param(param: &'r str) -> Result<Self, Self::Error> {
+        if param.chars().all(|c| matches!(c, 'a'..='z' | 'A'..='Z' |'0'..='9' | '-')) {
+            Ok(Self(param.to_string()))
+        } else {
+            Err(())
+        }
     }
 }

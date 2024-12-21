@@ -256,7 +256,7 @@ pub struct CipherData {
     // 'Attachments' is unused, contains map of {id: filename}
     #[allow(dead_code)]
     attachments: Option<Value>,
-    attachments2: Option<HashMap<CipherId, Attachments2Data>>,
+    attachments2: Option<HashMap<AttachmentId, Attachments2Data>>,
 
     // The revision datetime (in ISO 8601 format) of the client's local copy
     // of the cipher. This is used to prevent a client from updating a cipher
@@ -1040,7 +1040,7 @@ async fn share_cipher_by_uuid(
 /// their object storage service. For self-hosted instances, it basically just
 /// redirects to the same location as before the v2 API.
 #[get("/ciphers/<uuid>/attachment/<attachment_id>")]
-async fn get_attachment(uuid: CipherId, attachment_id: &str, headers: Headers, mut conn: DbConn) -> JsonResult {
+async fn get_attachment(uuid: CipherId, attachment_id: AttachmentId, headers: Headers, mut conn: DbConn) -> JsonResult {
     let Some(cipher) = Cipher::find_by_uuid(&uuid, &mut conn).await else {
         err!("Cipher doesn't exist")
     };
@@ -1049,7 +1049,7 @@ async fn get_attachment(uuid: CipherId, attachment_id: &str, headers: Headers, m
         err!("Cipher is not accessible")
     }
 
-    match Attachment::find_by_id(attachment_id, &mut conn).await {
+    match Attachment::find_by_id(&attachment_id, &mut conn).await {
         Some(attachment) if uuid == attachment.cipher_uuid => Ok(Json(attachment.to_json(&headers.host))),
         Some(_) => err!("Attachment doesn't belong to cipher"),
         None => err!("Attachment doesn't exist"),
@@ -1265,7 +1265,7 @@ async fn save_attachment(
     }
 
     let folder_path = tokio::fs::canonicalize(&CONFIG.attachments_folder()).await?.join(cipher_uuid.as_ref());
-    let file_path = folder_path.join(&file_id);
+    let file_path = folder_path.join(file_id.as_ref());
     tokio::fs::create_dir_all(&folder_path).await?;
 
     if let Err(_err) = data.data.persist_to(&file_path).await {
@@ -1305,13 +1305,13 @@ async fn save_attachment(
 #[post("/ciphers/<uuid>/attachment/<attachment_id>", format = "multipart/form-data", data = "<data>", rank = 1)]
 async fn post_attachment_v2_data(
     uuid: CipherId,
-    attachment_id: &str,
+    attachment_id: AttachmentId,
     data: Form<UploadData<'_>>,
     headers: Headers,
     mut conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
-    let attachment = match Attachment::find_by_id(attachment_id, &mut conn).await {
+    let attachment = match Attachment::find_by_id(&attachment_id, &mut conn).await {
         Some(attachment) if uuid == attachment.cipher_uuid => Some(attachment),
         Some(_) => err!("Attachment doesn't belong to cipher"),
         None => err!("Attachment doesn't exist"),
@@ -1354,20 +1354,20 @@ async fn post_attachment_admin(
 #[post("/ciphers/<uuid>/attachment/<attachment_id>/share", format = "multipart/form-data", data = "<data>")]
 async fn post_attachment_share(
     uuid: CipherId,
-    attachment_id: &str,
+    attachment_id: AttachmentId,
     data: Form<UploadData<'_>>,
     headers: Headers,
     mut conn: DbConn,
     nt: Notify<'_>,
 ) -> JsonResult {
-    _delete_cipher_attachment_by_id(&uuid, attachment_id, &headers, &mut conn, &nt).await?;
+    _delete_cipher_attachment_by_id(&uuid, &attachment_id, &headers, &mut conn, &nt).await?;
     post_attachment(uuid, data, headers, conn, nt).await
 }
 
 #[post("/ciphers/<uuid>/attachment/<attachment_id>/delete-admin")]
 async fn delete_attachment_post_admin(
     uuid: CipherId,
-    attachment_id: &str,
+    attachment_id: AttachmentId,
     headers: Headers,
     conn: DbConn,
     nt: Notify<'_>,
@@ -1378,7 +1378,7 @@ async fn delete_attachment_post_admin(
 #[post("/ciphers/<uuid>/attachment/<attachment_id>/delete")]
 async fn delete_attachment_post(
     uuid: CipherId,
-    attachment_id: &str,
+    attachment_id: AttachmentId,
     headers: Headers,
     conn: DbConn,
     nt: Notify<'_>,
@@ -1389,23 +1389,23 @@ async fn delete_attachment_post(
 #[delete("/ciphers/<uuid>/attachment/<attachment_id>")]
 async fn delete_attachment(
     uuid: CipherId,
-    attachment_id: &str,
+    attachment_id: AttachmentId,
     headers: Headers,
     mut conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
-    _delete_cipher_attachment_by_id(&uuid, attachment_id, &headers, &mut conn, &nt).await
+    _delete_cipher_attachment_by_id(&uuid, &attachment_id, &headers, &mut conn, &nt).await
 }
 
 #[delete("/ciphers/<uuid>/attachment/<attachment_id>/admin")]
 async fn delete_attachment_admin(
     uuid: CipherId,
-    attachment_id: &str,
+    attachment_id: AttachmentId,
     headers: Headers,
     mut conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
-    _delete_cipher_attachment_by_id(&uuid, attachment_id, &headers, &mut conn, &nt).await
+    _delete_cipher_attachment_by_id(&uuid, &attachment_id, &headers, &mut conn, &nt).await
 }
 
 #[post("/ciphers/<uuid>/delete")]
@@ -1789,7 +1789,7 @@ async fn _restore_multiple_ciphers(
 
 async fn _delete_cipher_attachment_by_id(
     uuid: &CipherId,
-    attachment_id: &str,
+    attachment_id: &AttachmentId,
     headers: &Headers,
     conn: &mut DbConn,
     nt: &Notify<'_>,

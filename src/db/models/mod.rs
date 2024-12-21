@@ -16,7 +16,7 @@ mod two_factor_duo_context;
 mod two_factor_incomplete;
 mod user;
 
-pub use self::attachment::Attachment;
+pub use self::attachment::{Attachment, AttachmentId};
 pub use self::auth_request::AuthRequest;
 pub use self::cipher::{Cipher, CipherId, RepromptType};
 pub use self::collection::{Collection, CollectionCipher, CollectionId, CollectionUser};

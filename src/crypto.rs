@@ -89,9 +89,10 @@ pub fn generate_send_id() -> String {
     generate_id::<32>() // 256 bits
 }
 
-pub fn generate_attachment_id() -> String {
+use crate::db::models::AttachmentId;
+pub fn generate_attachment_id() -> AttachmentId {
     // Attachment IDs are scoped to a cipher, so they can be smaller.
-    generate_id::<10>() // 80 bits
+    AttachmentId(generate_id::<10>()) // 80 bits
 }
 
 /// Generates a numeric token for email-based verifications.
