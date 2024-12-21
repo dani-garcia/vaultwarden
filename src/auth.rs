@@ -14,6 +14,7 @@ use std::{
     net::IpAddr,
 };
 
+use crate::db::models::OrganizationId;
 use crate::{error::Error, CONFIG};
 
 const JWT_ALGORITHM: Algorithm = Algorithm::RS256;
@@ -190,7 +191,7 @@ pub struct InviteJwtClaims {
     pub sub: String,
 
     pub email: String,
-    pub org_id: Option<String>,
+    pub org_id: Option<OrganizationId>,
     pub member_id: Option<String>,
     pub invited_by_email: Option<String>,
 }
@@ -198,7 +199,7 @@ pub struct InviteJwtClaims {
 pub fn generate_invite_claims(
     uuid: String,
     email: String,
-    org_id: Option<String>,
+    org_id: Option<OrganizationId>,
     member_id: Option<String>,
     invited_by_email: Option<String>,
 ) -> InviteJwtClaims {
@@ -266,18 +267,18 @@ pub struct OrgApiKeyLoginJwtClaims {
     pub sub: String,
 
     pub client_id: String,
-    pub client_sub: String,
+    pub client_sub: OrganizationId,
     pub scope: Vec<String>,
 }
 
-pub fn generate_organization_api_key_login_claims(uuid: String, org_id: String) -> OrgApiKeyLoginJwtClaims {
+pub fn generate_organization_api_key_login_claims(uuid: String, org_id: OrganizationId) -> OrgApiKeyLoginJwtClaims {
     let time_now = Utc::now();
     OrgApiKeyLoginJwtClaims {
         nbf: time_now.timestamp(),
         exp: (time_now + TimeDelta::try_hours(1).unwrap()).timestamp(),
         iss: JWT_ORG_API_KEY_ISSUER.to_string(),
         sub: uuid,
-        client_id: format!("organization.{org_id}"),
+        client_id: format!("organization.{}", org_id),
         client_sub: org_id,
         scope: vec!["api.organization".into()],
     }
@@ -549,17 +550,17 @@ impl<'r> FromRequest<'r> for OrgHeaders {
         // org_id is usually the second path param ("/organizations/<org_id>"),
         // but there are cases where it is a query value.
         // First check the path, if this is not a valid uuid, try the query values.
-        let url_org_id: Option<&str> = {
+        let url_org_id: Option<OrganizationId> = {
             let mut url_org_id = None;
             if let Some(Ok(org_id)) = request.param::<&str>(1) {
                 if uuid::Uuid::parse_str(org_id).is_ok() {
-                    url_org_id = Some(org_id);
+                    url_org_id = Some(org_id.to_string().into());
                 }
             }
 
             if let Some(Ok(org_id)) = request.query_value::<&str>("organizationId") {
                 if uuid::Uuid::parse_str(org_id).is_ok() {
-                    url_org_id = Some(org_id);
+                    url_org_id = Some(org_id.to_string().into());
                 }
             }
 
@@ -574,7 +575,7 @@ impl<'r> FromRequest<'r> for OrgHeaders {
                 };
 
                 let user = headers.user;
-                let membership = match Membership::find_by_user_and_org(&user.uuid, org_id, &mut conn).await {
+                let membership = match Membership::find_by_user_and_org(&user.uuid, &org_id, &mut conn).await {
                     Some(member) => {
                         if member.status == MembershipStatus::Confirmed as i32 {
                             member

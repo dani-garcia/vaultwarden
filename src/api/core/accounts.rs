@@ -459,7 +459,7 @@ struct UpdateEmergencyAccessData {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct UpdateResetPasswordData {
-    organization_id: String,
+    organization_id: OrganizationId,
     reset_password_key: String,
 }
 
@@ -516,9 +516,10 @@ fn validate_keydata(
     }
 
     // Check that we're correctly rotating all the user's reset password keys
-    let existing_reset_password_ids = existing_memberships.iter().map(|m| m.org_uuid.as_str()).collect::<HashSet<_>>();
+    let existing_reset_password_ids =
+        existing_memberships.iter().map(|m| &m.org_uuid).collect::<HashSet<&OrganizationId>>();
     let provided_reset_password_ids =
-        data.reset_password_keys.iter().map(|rp| rp.organization_id.as_str()).collect::<HashSet<_>>();
+        data.reset_password_keys.iter().map(|rp| &rp.organization_id).collect::<HashSet<&OrganizationId>>();
     if !provided_reset_password_ids.is_superset(&existing_reset_password_ids) {
         err!("All existing reset password keys must be included in the rotation")
     }

@@ -488,7 +488,7 @@ async fn resend_user_invite(uuid: &str, _token: AdminToken, mut conn: DbConn) ->
 struct MembershipTypeData {
     user_type: NumberOrString,
     user_uuid: String,
-    org_uuid: String,
+    org_uuid: OrganizationId,
 }
 
 #[post("/users/org_type", data = "<data>")]
@@ -570,9 +570,9 @@ async fn organizations_overview(_token: AdminToken, mut conn: DbConn) -> ApiResu
     Ok(Html(text))
 }
 
-#[post("/organizations/<uuid>/delete")]
-async fn delete_organization(uuid: &str, _token: AdminToken, mut conn: DbConn) -> EmptyResult {
-    let org = Organization::find_by_uuid(uuid, &mut conn).await.map_res("Organization doesn't exist")?;
+#[post("/organizations/<org_uuid>/delete")]
+async fn delete_organization(org_uuid: OrganizationId, _token: AdminToken, mut conn: DbConn) -> EmptyResult {
+    let org = Organization::find_by_uuid(&org_uuid, &mut conn).await.map_res("Organization doesn't exist")?;
     org.delete(&mut conn).await
 }
 

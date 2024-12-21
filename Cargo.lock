@@ -779,6 +779,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "diesel-derive-newtype"
+version = "2.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d5adf688c584fe33726ce0e2898f608a2a92578ac94a4a92fcecf73214fe0716"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "diesel_derives"
 version = "2.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3960,6 +3971,7 @@ dependencies = [
  "data-encoding",
  "data-url",
  "diesel",
+ "diesel-derive-newtype",
  "diesel_logger",
  "diesel_migrations",
  "dotenvy",

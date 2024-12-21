@@ -1,3 +1,4 @@
+use super::OrganizationId;
 use crate::crypto::ct_eq;
 use chrono::{NaiveDateTime, Utc};
 
@@ -9,7 +10,7 @@ db_object! {
     pub struct AuthRequest {
         pub uuid: String,
         pub user_uuid: String,
-        pub organization_uuid: Option<String>,
+        pub organization_uuid: Option<OrganizationId>,
 
         pub request_device_identifier: String,
         pub device_type: i32,  // https://github.com/bitwarden/server/blob/master/src/Core/Enums/DeviceType.cs

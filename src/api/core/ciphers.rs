@@ -224,7 +224,7 @@ pub struct CipherData {
     pub folder_id: Option<String>,
     // TODO: Some of these might appear all the time, no need for Option
     #[serde(alias = "organizationID")]
-    pub organization_id: Option<String>,
+    pub organization_id: Option<OrganizationId>,
 
     key: Option<String>,
 
@@ -1572,14 +1572,14 @@ async fn move_cipher_selected_put(
 }
 
 #[derive(FromForm)]
-struct OrganizationId {
+struct OrganizationIdData {
     #[field(name = "organizationId")]
-    org_id: String,
+    org_id: OrganizationId,
 }
 
 #[post("/ciphers/purge?<organization..>", data = "<data>")]
 async fn delete_all(
-    organization: Option<OrganizationId>,
+    organization: Option<OrganizationIdData>,
     data: Json<PasswordOrOtpData>,
     headers: Headers,
     mut conn: DbConn,
@@ -1835,10 +1835,10 @@ pub struct CipherSyncData {
     pub cipher_folders: HashMap<String, String>,
     pub cipher_favorites: HashSet<String>,
     pub cipher_collections: HashMap<String, Vec<String>>,
-    pub members: HashMap<String, Membership>,
+    pub members: HashMap<OrganizationId, Membership>,
     pub user_collections: HashMap<String, CollectionUser>,
     pub user_collections_groups: HashMap<String, CollectionGroup>,
-    pub user_group_full_access_for_organizations: HashSet<String>,
+    pub user_group_full_access_for_organizations: HashSet<OrganizationId>,
 }
 
 #[derive(Eq, PartialEq)]
@@ -1885,7 +1885,7 @@ impl CipherSyncData {
         }
 
         // Generate a HashMap with the Organization UUID as key and the Membership record
-        let members: HashMap<String, Membership> =
+        let members: HashMap<OrganizationId, Membership> =
             Membership::find_by_user(user_uuid, conn).await.into_iter().map(|m| (m.org_uuid.clone(), m)).collect();
 
         // Generate a HashMap with the User_Collections UUID as key and the CollectionUser record
@@ -1907,7 +1907,7 @@ impl CipherSyncData {
         };
 
         // Get all organizations that the given user has full access to via group assignment
-        let user_group_full_access_for_organizations: HashSet<String> = if CONFIG.org_groups_enabled() {
+        let user_group_full_access_for_organizations: HashSet<OrganizationId> = if CONFIG.org_groups_enabled() {
             Group::get_orgs_by_user_with_full_access(user_uuid, conn).await.into_iter().collect()
         } else {
             HashSet::new()

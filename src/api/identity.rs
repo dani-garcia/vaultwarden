@@ -472,7 +472,8 @@ async fn _organization_api_key_login(data: ConnectData, conn: &mut DbConn, ip: &
     let Some(org_uuid) = client_id.strip_prefix("organization.") else {
         err!("Malformed client_id", format!("IP: {}.", ip.ip))
     };
-    let Some(org_api_key) = OrganizationApiKey::find_by_org_uuid(org_uuid, conn).await else {
+    let org_uuid: OrganizationId = org_uuid.to_string().into();
+    let Some(org_api_key) = OrganizationApiKey::find_by_org_uuid(&org_uuid, conn).await else {
         err!("Invalid client_id", format!("IP: {}.", ip.ip))
     };
 

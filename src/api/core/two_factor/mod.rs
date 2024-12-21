@@ -208,7 +208,7 @@ pub async fn enforce_2fa_policy(
 }
 
 pub async fn enforce_2fa_policy_for_org(
-    org_uuid: &str,
+    org_uuid: &OrganizationId,
     act_uuid: &str,
     device_type: i32,
     ip: &std::net::IpAddr,

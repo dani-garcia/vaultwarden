@@ -5,7 +5,7 @@ use crate::api::EmptyResult;
 use crate::db::DbConn;
 use crate::error::MapResult;
 
-use super::{Membership, MembershipStatus, MembershipType, TwoFactor};
+use super::{Membership, MembershipStatus, MembershipType, OrganizationId, TwoFactor};
 
 db_object! {
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -13,7 +13,7 @@ db_object! {
     #[diesel(primary_key(uuid))]
     pub struct OrgPolicy {
         pub uuid: String,
-        pub org_uuid: String,
+        pub org_uuid: OrganizationId,
         pub atype: i32,
         pub enabled: bool,
         pub data: String,
@@ -62,7 +62,7 @@ pub enum OrgPolicyErr {
 
 /// Local methods
 impl OrgPolicy {
-    pub fn new(org_uuid: String, atype: OrgPolicyType, data: String) -> Self {
+    pub fn new(org_uuid: OrganizationId, atype: OrgPolicyType, data: String) -> Self {
         Self {
             uuid: crate::util::get_uuid(),
             org_uuid,
@@ -142,7 +142,7 @@ impl OrgPolicy {
         }}
     }
 
-    pub async fn find_by_org(org_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_org(org_uuid: &OrganizationId, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             org_policies::table
                 .filter(org_policies::org_uuid.eq(org_uuid))
@@ -170,7 +170,11 @@ impl OrgPolicy {
         }}
     }
 
-    pub async fn find_by_org_and_type(org_uuid: &str, policy_type: OrgPolicyType, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_org_and_type(
+        org_uuid: &OrganizationId,
+        policy_type: OrgPolicyType,
+        conn: &mut DbConn,
+    ) -> Option<Self> {
         db_run! { conn: {
             org_policies::table
                 .filter(org_policies::org_uuid.eq(org_uuid))
@@ -181,7 +185,7 @@ impl OrgPolicy {
         }}
     }
 
-    pub async fn delete_all_by_organization(org_uuid: &str, conn: &mut DbConn) -> EmptyResult {
+    pub async fn delete_all_by_organization(org_uuid: &OrganizationId, conn: &mut DbConn) -> EmptyResult {
         db_run! { conn: {
             diesel::delete(org_policies::table.filter(org_policies::org_uuid.eq(org_uuid)))
                 .execute(conn)
@@ -246,14 +250,14 @@ impl OrgPolicy {
     pub async fn is_applicable_to_user(
         user_uuid: &str,
         policy_type: OrgPolicyType,
-        exclude_org_uuid: Option<&str>,
+        exclude_org_uuid: Option<&OrganizationId>,
         conn: &mut DbConn,
     ) -> bool {
         for policy in
             OrgPolicy::find_accepted_and_confirmed_by_user_and_active_policy(user_uuid, policy_type, conn).await
         {
             // Check if we need to skip this organization.
-            if exclude_org_uuid.is_some() && exclude_org_uuid.unwrap() == policy.org_uuid {
+            if exclude_org_uuid.is_some() && *exclude_org_uuid.unwrap() == policy.org_uuid {
                 continue;
             }
 
@@ -268,7 +272,7 @@ impl OrgPolicy {
 
     pub async fn is_user_allowed(
         user_uuid: &str,
-        org_uuid: &str,
+        org_uuid: &OrganizationId,
         exclude_current_org: bool,
         conn: &mut DbConn,
     ) -> OrgPolicyResult {
@@ -296,7 +300,7 @@ impl OrgPolicy {
         Ok(())
     }
 
-    pub async fn org_is_reset_password_auto_enroll(org_uuid: &str, conn: &mut DbConn) -> bool {
+    pub async fn org_is_reset_password_auto_enroll(org_uuid: &OrganizationId, conn: &mut DbConn) -> bool {
         match OrgPolicy::find_by_org_and_type(org_uuid, OrgPolicyType::ResetPassword, conn).await {
             Some(policy) => match serde_json::from_str::<ResetPasswordDataModel>(&policy.data) {
                 Ok(opts) => {

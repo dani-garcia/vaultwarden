@@ -17,7 +17,7 @@ use crate::{
         encode_jwt, generate_delete_claims, generate_emergency_access_invite_claims, generate_invite_claims,
         generate_verify_email_claims,
     },
-    db::models::{Device, DeviceType, User},
+    db::models::{Device, DeviceType, OrganizationId, User},
     error::Error,
     CONFIG,
 };
@@ -259,7 +259,7 @@ pub async fn send_single_org_removed_from_org(address: &str, org_name: &str) -> 
 
 pub async fn send_invite(
     user: &User,
-    org_id: Option<String>,
+    org_id: Option<OrganizationId>,
     member_id: Option<String>,
     org_name: &str,
     invited_by_email: Option<String>,

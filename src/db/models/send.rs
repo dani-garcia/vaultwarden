@@ -3,7 +3,7 @@ use serde_json::Value;
 
 use crate::util::LowerCase;
 
-use super::User;
+use super::{OrganizationId, User};
 
 db_object! {
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -14,8 +14,7 @@ db_object! {
         pub uuid: String,
 
         pub user_uuid: Option<String>,
-        pub organization_uuid: Option<String>,
-
+        pub organization_uuid: Option<OrganizationId>,
 
         pub name: String,
         pub notes: Option<String>,
@@ -332,7 +331,7 @@ impl Send {
         Some(total)
     }
 
-    pub async fn find_by_org(org_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_org(org_uuid: &OrganizationId, conn: &mut DbConn) -> Vec<Self> {
         db_run! {conn: {
             sends::table
                 .filter(sends::organization_uuid.eq(org_uuid))

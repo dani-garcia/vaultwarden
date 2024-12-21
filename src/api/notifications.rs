@@ -422,7 +422,7 @@ impl WebSocketUsers {
         if *NOTIFICATIONS_DISABLED {
             return;
         }
-        let org_uuid = convert_option(cipher.organization_uuid.clone());
+        let org_uuid = convert_option(cipher.organization_uuid.as_deref());
         // Depending if there are collections provided or not, we need to have different values for the following variables.
         // The user_uuid should be `null`, and the revision date should be set to now, else the clients won't sync the collection change.
         let (user_uuid, collection_uuids, revision_date) = if let Some(collection_uuids) = collection_uuids {

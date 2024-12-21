@@ -4,7 +4,8 @@ use chrono::{NaiveDateTime, TimeDelta, Utc};
 use serde_json::Value;
 
 use super::{
-    Attachment, CollectionCipher, Favorite, FolderCipher, Group, Membership, MembershipStatus, MembershipType, User,
+    Attachment, CollectionCipher, Favorite, FolderCipher, Group, Membership, MembershipStatus, MembershipType,
+    OrganizationId, User,
 };
 
 use crate::api::core::{CipherData, CipherSyncData, CipherSyncType};
@@ -22,7 +23,7 @@ db_object! {
         pub updated_at: NaiveDateTime,
 
         pub user_uuid: Option<String>,
-        pub organization_uuid: Option<String>,
+        pub organization_uuid: Option<OrganizationId>,
 
         pub key: Option<String>,
 

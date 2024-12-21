@@ -1,4 +1,4 @@
-use super::{Membership, User};
+use super::{Membership, OrganizationId, User};
 use crate::api::EmptyResult;
 use crate::db::DbConn;
 use crate::error::MapResult;
@@ -11,7 +11,7 @@ db_object! {
     #[diesel(primary_key(uuid))]
     pub struct Group {
         pub uuid: String,
-        pub organizations_uuid: String,
+        pub organizations_uuid: OrganizationId,
         pub name: String,
         pub access_all: bool,
         pub external_id: Option<String>,
@@ -40,7 +40,12 @@ db_object! {
 
 /// Local methods
 impl Group {
-    pub fn new(organizations_uuid: String, name: String, access_all: bool, external_id: Option<String>) -> Self {
+    pub fn new(
+        organizations_uuid: OrganizationId,
+        name: String,
+        access_all: bool,
+        external_id: Option<String>,
+    ) -> Self {
         let now = Utc::now().naive_utc();
 
         let mut new_model = Self {
@@ -163,27 +168,27 @@ impl Group {
         }
     }
 
-    pub async fn delete_all_by_organization(org_uuid: &str, conn: &mut DbConn) -> EmptyResult {
+    pub async fn delete_all_by_organization(org_uuid: &OrganizationId, conn: &mut DbConn) -> EmptyResult {
         for group in Self::find_by_organization(org_uuid, conn).await {
             group.delete(conn).await?;
         }
         Ok(())
     }
 
-    pub async fn find_by_organization(organizations_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_organization(org_uuid: &OrganizationId, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             groups::table
-                .filter(groups::organizations_uuid.eq(organizations_uuid))
+                .filter(groups::organizations_uuid.eq(org_uuid))
                 .load::<GroupDb>(conn)
                 .expect("Error loading groups")
                 .from_db()
         }}
     }
 
-    pub async fn count_by_org(organizations_uuid: &str, conn: &mut DbConn) -> i64 {
+    pub async fn count_by_org(org_uuid: &OrganizationId, conn: &mut DbConn) -> i64 {
         db_run! { conn: {
             groups::table
-                .filter(groups::organizations_uuid.eq(organizations_uuid))
+                .filter(groups::organizations_uuid.eq(org_uuid))
                 .count()
                 .first::<i64>(conn)
                 .ok()
@@ -191,7 +196,7 @@ impl Group {
         }}
     }
 
-    pub async fn find_by_uuid_and_org(uuid: &str, org_uuid: &str, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_uuid_and_org(uuid: &str, org_uuid: &OrganizationId, conn: &mut DbConn) -> Option<Self> {
         db_run! { conn: {
             groups::table
                 .filter(groups::uuid.eq(uuid))
@@ -202,7 +207,11 @@ impl Group {
         }}
     }
 
-    pub async fn find_by_external_id_and_org(external_id: &str, org_uuid: &str, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_external_id_and_org(
+        external_id: &str,
+        org_uuid: &OrganizationId,
+        conn: &mut DbConn,
+    ) -> Option<Self> {
         db_run! { conn: {
             groups::table
                 .filter(groups::external_id.eq(external_id))
@@ -213,7 +222,7 @@ impl Group {
         }}
     }
     //Returns all organizations the user has full access to
-    pub async fn get_orgs_by_user_with_full_access(user_uuid: &str, conn: &mut DbConn) -> Vec<String> {
+    pub async fn get_orgs_by_user_with_full_access(user_uuid: &str, conn: &mut DbConn) -> Vec<OrganizationId> {
         db_run! { conn: {
             groups_users::table
                 .inner_join(users_organizations::table.on(
@@ -226,12 +235,12 @@ impl Group {
                 .filter(groups::access_all.eq(true))
                 .select(groups::organizations_uuid)
                 .distinct()
-                .load::<String>(conn)
+                .load::<OrganizationId>(conn)
                 .expect("Error loading organization group full access information for user")
         }}
     }
 
-    pub async fn is_in_full_access_group(user_uuid: &str, org_uuid: &str, conn: &mut DbConn) -> bool {
+    pub async fn is_in_full_access_group(user_uuid: &str, org_uuid: &OrganizationId, conn: &mut DbConn) -> bool {
         db_run! { conn: {
             groups::table
                 .inner_join(groups_users::table.on(
@@ -504,7 +513,7 @@ impl GroupUser {
         }}
     }
 
-    pub async fn has_full_access_by_member(org_uuid: &str, member_uuid: &str, conn: &mut DbConn) -> bool {
+    pub async fn has_full_access_by_member(org_uuid: &OrganizationId, member_uuid: &str, conn: &mut DbConn) -> bool {
         db_run! { conn: {
             groups_users::table
                 .inner_join(groups::table.on(

@@ -1,6 +1,7 @@
 use crate::db::DbConn;
 use serde_json::Value;
 
+use super::OrganizationId;
 use crate::{api::EmptyResult, error::MapResult, CONFIG};
 
 use chrono::{NaiveDateTime, TimeDelta, Utc};
@@ -18,7 +19,7 @@ db_object! {
         pub uuid: String,
         pub event_type: i32, // EventType
         pub user_uuid: Option<String>,
-        pub org_uuid: Option<String>,
+        pub org_uuid: Option<OrganizationId>,
         pub cipher_uuid: Option<String>,
         pub collection_uuid: Option<String>,
         pub group_uuid: Option<String>,
@@ -246,7 +247,7 @@ impl Event {
     /// ##############
     /// Custom Queries
     pub async fn find_by_organization_uuid(
-        org_uuid: &str,
+        org_uuid: &OrganizationId,
         start: &NaiveDateTime,
         end: &NaiveDateTime,
         conn: &mut DbConn,
@@ -263,7 +264,7 @@ impl Event {
         }}
     }
 
-    pub async fn count_by_org(org_uuid: &str, conn: &mut DbConn) -> i64 {
+    pub async fn count_by_org(org_uuid: &OrganizationId, conn: &mut DbConn) -> i64 {
         db_run! { conn: {
             event::table
                 .filter(event::org_uuid.eq(org_uuid))
@@ -275,7 +276,7 @@ impl Event {
     }
 
     pub async fn find_by_org_and_member(
-        org_uuid: &str,
+        org_uuid: &OrganizationId,
         member_uuid: &str,
         start: &NaiveDateTime,
         end: &NaiveDateTime,

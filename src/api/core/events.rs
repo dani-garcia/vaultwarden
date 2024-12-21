@@ -8,7 +8,7 @@ use crate::{
     api::{EmptyResult, JsonResult},
     auth::{AdminHeaders, Headers},
     db::{
-        models::{Cipher, Event, Membership},
+        models::{Cipher, Event, Membership, OrganizationId},
         DbConn, DbPool,
     },
     util::parse_date,
@@ -153,7 +153,7 @@ struct EventCollection {
 
     // Optional
     cipher_id: Option<String>,
-    organization_id: Option<String>,
+    organization_id: Option<OrganizationId>,
 }
 
 // Upstream:
@@ -261,7 +261,7 @@ async fn _log_user_event(
 pub async fn log_event(
     event_type: i32,
     source_uuid: &str,
-    org_uuid: &str,
+    org_uuid: &OrganizationId,
     act_user_uuid: &str,
     device_type: i32,
     ip: &IpAddr,
@@ -277,7 +277,7 @@ pub async fn log_event(
 async fn _log_event(
     event_type: i32,
     source_uuid: &str,
-    org_uuid: &str,
+    org_uuid: &OrganizationId,
     act_user_uuid: &str,
     device_type: i32,
     event_date: Option<NaiveDateTime>,
@@ -313,7 +313,7 @@ async fn _log_event(
         _ => {}
     }
 
-    event.org_uuid = Some(String::from(org_uuid));
+    event.org_uuid = Some(org_uuid.clone());
     event.act_user_uuid = Some(String::from(act_user_uuid));
     event.device_type = Some(device_type);
     event.ip_address = Some(ip.to_string());

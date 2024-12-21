@@ -1,6 +1,6 @@
 use serde_json::Value;
 
-use super::{CollectionGroup, GroupUser, Membership, MembershipStatus, MembershipType, User};
+use super::{CollectionGroup, GroupUser, Membership, MembershipStatus, MembershipType, OrganizationId, User};
 use crate::CONFIG;
 
 db_object! {
@@ -9,7 +9,7 @@ db_object! {
     #[diesel(primary_key(uuid))]
     pub struct Collection {
         pub uuid: String,
-        pub org_uuid: String,
+        pub org_uuid: OrganizationId,
         pub name: String,
         pub external_id: Option<String>,
     }
@@ -35,7 +35,7 @@ db_object! {
 
 /// Local methods
 impl Collection {
-    pub fn new(org_uuid: String, name: String, external_id: Option<String>) -> Self {
+    pub fn new(org_uuid: OrganizationId, name: String, external_id: Option<String>) -> Self {
         let mut new_model = Self {
             uuid: crate::util::get_uuid(),
             org_uuid,
@@ -185,7 +185,7 @@ impl Collection {
         }}
     }
 
-    pub async fn delete_all_by_organization(org_uuid: &str, conn: &mut DbConn) -> EmptyResult {
+    pub async fn delete_all_by_organization(org_uuid: &OrganizationId, conn: &mut DbConn) -> EmptyResult {
         for collection in Self::find_by_organization(org_uuid, conn).await {
             collection.delete(conn).await?;
         }
@@ -279,15 +279,19 @@ impl Collection {
         }
     }
 
-    pub async fn find_by_organization_and_user_uuid(org_uuid: &str, user_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_organization_and_user_uuid(
+        org_uuid: &OrganizationId,
+        user_uuid: &str,
+        conn: &mut DbConn,
+    ) -> Vec<Self> {
         Self::find_by_user_uuid(user_uuid.to_owned(), conn)
             .await
             .into_iter()
-            .filter(|c| c.org_uuid == org_uuid)
+            .filter(|c| &c.org_uuid == org_uuid)
             .collect()
     }
 
-    pub async fn find_by_organization(org_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_organization(org_uuid: &OrganizationId, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             collections::table
                 .filter(collections::org_uuid.eq(org_uuid))
@@ -297,7 +301,7 @@ impl Collection {
         }}
     }
 
-    pub async fn count_by_org(org_uuid: &str, conn: &mut DbConn) -> i64 {
+    pub async fn count_by_org(org_uuid: &OrganizationId, conn: &mut DbConn) -> i64 {
         db_run! { conn: {
             collections::table
                 .filter(collections::org_uuid.eq(org_uuid))
@@ -308,7 +312,7 @@ impl Collection {
         }}
     }
 
-    pub async fn find_by_uuid_and_org(uuid: &str, org_uuid: &str, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_uuid_and_org(uuid: &str, org_uuid: &OrganizationId, conn: &mut DbConn) -> Option<Self> {
         db_run! { conn: {
             collections::table
                 .filter(collections::uuid.eq(uuid))
@@ -498,7 +502,11 @@ impl Collection {
 
 /// Database methods
 impl CollectionUser {
-    pub async fn find_by_organization_and_user_uuid(org_uuid: &str, user_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_organization_and_user_uuid(
+        org_uuid: &OrganizationId,
+        user_uuid: &str,
+        conn: &mut DbConn,
+    ) -> Vec<Self> {
         db_run! { conn: {
             users_collections::table
                 .filter(users_collections::user_uuid.eq(user_uuid))
@@ -511,7 +519,7 @@ impl CollectionUser {
         }}
     }
 
-    pub async fn find_by_organization(org_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_organization(org_uuid: &OrganizationId, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             users_collections::table
                 .inner_join(collections::table.on(collections::uuid.eq(users_collections::collection_uuid)))
@@ -661,7 +669,11 @@ impl CollectionUser {
         }}
     }
 
-    pub async fn delete_all_by_user_and_org(user_uuid: &str, org_uuid: &str, conn: &mut DbConn) -> EmptyResult {
+    pub async fn delete_all_by_user_and_org(
+        user_uuid: &str,
+        org_uuid: &OrganizationId,
+        conn: &mut DbConn,
+    ) -> EmptyResult {
         let collectionusers = Self::find_by_organization_and_user_uuid(org_uuid, user_uuid, conn).await;
 
         db_run! { conn: {
