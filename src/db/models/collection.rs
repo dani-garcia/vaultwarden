@@ -779,6 +779,17 @@ impl CollectionCipher {
     }
 }
 
+impl CollectionUser {
+    pub fn to_json_details_for_user(&self) -> Value {
+        json!({
+            "id": self.user_uuid,
+            "readOnly": self.read_only,
+            "hidePasswords": self.hide_passwords,
+            "manage": false
+        })
+    }
+}
+
 #[derive(DieselNewType, FromForm, Clone, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CollectionId(String);
 

@@ -358,7 +358,7 @@ async fn get_org_collections_details(
         let users: Vec<Value> = col_users
             .iter()
             .filter(|collection_user| collection_user.collection_uuid == col.uuid)
-            .map(|collection_user| UserSelection::to_collection_user_details_read_only(collection_user).to_json())
+            .map(|collection_user| collection_user.to_json_details_for_user())
             .collect();
 
         // get the group details for the given collection
@@ -660,9 +660,7 @@ async fn get_org_collection_detail(
                 CollectionUser::find_by_collection_swap_user_uuid_with_member_uuid(&collection.uuid, &mut conn)
                     .await
                     .iter()
-                    .map(|collection_user| {
-                        UserSelection::to_collection_user_details_read_only(collection_user).to_json()
-                    })
+                    .map(|collection_user| collection_user.to_json_details_for_user())
                     .collect();
 
             let assigned = Collection::can_access_collection(&member, &collection.uuid, &mut conn).await;
@@ -2384,28 +2382,6 @@ struct CollectionSelection {
 impl CollectionSelection {
     pub fn to_collection_group(&self, groups_uuid: GroupId) -> CollectionGroup {
         CollectionGroup::new(self.id.clone(), groups_uuid, self.read_only, self.hide_passwords)
-    }
-}
-
-#[derive(Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct UserSelection {
-    id: UserId,
-    read_only: bool,
-    hide_passwords: bool,
-}
-
-impl UserSelection {
-    pub fn to_collection_user_details_read_only(collection_user: &CollectionUser) -> Self {
-        Self {
-            id: collection_user.user_uuid.clone(),
-            read_only: collection_user.read_only,
-            hide_passwords: collection_user.hide_passwords,
-        }
-    }
-
-    pub fn to_json(&self) -> Value {
-        json!(self)
     }
 }
 
