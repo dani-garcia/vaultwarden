@@ -178,8 +178,8 @@ pub async fn push_cipher_update(
     }
 }
 
-pub fn push_logout(user: &User, acting_device_uuid: DeviceId) {
-    let acting_device_uuid: Value = acting_device_uuid.to_string().into();
+pub fn push_logout(user: &User, acting_device_uuid: Option<String>) {
+    let acting_device_uuid: Value = acting_device_uuid.map(|v| v.into()).unwrap_or_else(|| Value::Null);
 
     tokio::task::spawn(send_to_push_relay(json!({
         "userId": user.uuid,

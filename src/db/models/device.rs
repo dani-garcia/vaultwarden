@@ -338,12 +338,6 @@ impl DeviceType {
 #[derive(Clone, Debug, DieselNewType, Display, From, FromForm, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DeviceId(String);
 
-impl DeviceId {
-    pub fn empty() -> Self {
-        Self(String::from("00000000-0000-0000-0000-000000000000"))
-    }
-}
-
 impl<'r> FromParam<'r> for DeviceId {
     type Error = ();
 

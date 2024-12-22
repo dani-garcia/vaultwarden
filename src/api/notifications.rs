@@ -347,7 +347,7 @@ impl WebSocketUsers {
         let data = create_update(
             vec![("UserId".into(), user.uuid.to_string().into()), ("Date".into(), serialize_date(user.updated_at))],
             ut,
-            DeviceId::empty(),
+            None,
         );
 
         if CONFIG.enable_websocket() {
@@ -359,7 +359,7 @@ impl WebSocketUsers {
         }
     }
 
-    pub async fn send_logout(&self, user: &User, acting_device_uuid: &DeviceId) {
+    pub async fn send_logout(&self, user: &User, acting_device_uuid: Option<String>) {
         // Skip any processing if both WebSockets and Push are not active
         if *NOTIFICATIONS_DISABLED {
             return;
@@ -397,7 +397,7 @@ impl WebSocketUsers {
                 ("RevisionDate".into(), serialize_date(folder.updated_at)),
             ],
             ut,
-            acting_device_uuid.clone(),
+            Some(acting_device_uuid.to_string()),
         );
 
         if CONFIG.enable_websocket() {
@@ -444,7 +444,7 @@ impl WebSocketUsers {
                 ("RevisionDate".into(), revision_date),
             ],
             ut,
-            acting_device_uuid.clone(),
+            Some(acting_device_uuid.to_string()),
         );
 
         if CONFIG.enable_websocket() {
@@ -479,7 +479,7 @@ impl WebSocketUsers {
                 ("RevisionDate".into(), serialize_date(send.revision_date)),
             ],
             ut,
-            acting_device_uuid.clone(),
+            None,
         );
 
         if CONFIG.enable_websocket() {
@@ -506,7 +506,7 @@ impl WebSocketUsers {
         let data = create_update(
             vec![("Id".into(), auth_request_uuid.clone().into()), ("UserId".into(), user_uuid.to_string().into())],
             UpdateType::AuthRequest,
-            acting_device_uuid.clone(),
+            Some(acting_device_uuid.to_string()),
         );
         if CONFIG.enable_websocket() {
             self.send_update(user_uuid, &data).await;
@@ -531,7 +531,7 @@ impl WebSocketUsers {
         let data = create_update(
             vec![("Id".into(), auth_response_uuid.to_owned().into()), ("UserId".into(), user_uuid.to_string().into())],
             UpdateType::AuthRequestResponse,
-            approving_device_uuid.clone(),
+            Some(approving_device_uuid.to_string()),
         );
         if CONFIG.enable_websocket() {
             self.send_update(user_uuid, &data).await;
@@ -585,7 +585,7 @@ impl AnonymousWebSocketSubscriptions {
     ]
 ]
 */
-fn create_update(payload: Vec<(Value, Value)>, ut: UpdateType, acting_device_uuid: DeviceId) -> Vec<u8> {
+fn create_update(payload: Vec<(Value, Value)>, ut: UpdateType, acting_device_uuid: Option<String>) -> Vec<u8> {
     use rmpv::Value as V;
 
     let value = V::Array(vec![
@@ -594,7 +594,7 @@ fn create_update(payload: Vec<(Value, Value)>, ut: UpdateType, acting_device_uui
         V::Nil,
         "ReceiveMessage".into(),
         V::Array(vec![V::Map(vec![
-            ("ContextId".into(), acting_device_uuid.to_string().into()),
+            ("ContextId".into(), acting_device_uuid.map(|v| v.into()).unwrap_or_else(|| V::Nil)),
             ("Type".into(), (ut as i32).into()),
             ("Payload".into(), payload.into()),
         ])]),
