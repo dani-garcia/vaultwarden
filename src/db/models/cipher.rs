@@ -1,13 +1,9 @@
 use crate::util::LowerCase;
 use crate::CONFIG;
 use chrono::{NaiveDateTime, TimeDelta, Utc};
+use derive_more::{AsRef, Deref, Display, From};
 use rocket::request::FromParam;
 use serde_json::Value;
-use std::{
-    borrow::Borrow,
-    fmt::{Display, Formatter},
-    ops::Deref,
-};
 
 use super::{
     Attachment, CollectionCipher, CollectionId, Favorite, FolderCipher, FolderId, Group, Membership, MembershipStatus,
@@ -1042,40 +1038,10 @@ impl Cipher {
     }
 }
 
-#[derive(DieselNewType, FromForm, Clone, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(
+    Clone, Debug, AsRef, Deref, DieselNewType, Display, From, FromForm, Hash, PartialEq, Eq, Serialize, Deserialize,
+)]
 pub struct CipherId(String);
-
-impl AsRef<str> for CipherId {
-    fn as_ref(&self) -> &str {
-        &self.0
-    }
-}
-
-impl Deref for CipherId {
-    type Target = str;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl Borrow<str> for CipherId {
-    fn borrow(&self) -> &str {
-        &self.0
-    }
-}
-
-impl Display for CipherId {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl From<String> for CipherId {
-    fn from(raw: String) -> Self {
-        Self(raw)
-    }
-}
 
 impl<'r> FromParam<'r> for CipherId {
     type Error = ();

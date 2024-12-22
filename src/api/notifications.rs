@@ -72,7 +72,7 @@ impl WSEntryMapGuard {
 impl Drop for WSEntryMapGuard {
     fn drop(&mut self) {
         info!("Closing WS connection from {}", self.addr);
-        if let Some(mut entry) = self.users.map.get_mut(&self.user_uuid.to_string()) {
+        if let Some(mut entry) = self.users.map.get_mut(self.user_uuid.as_ref()) {
             entry.retain(|(uuid, _)| uuid != &self.entry_uuid);
         }
     }

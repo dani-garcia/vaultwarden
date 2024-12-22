@@ -1,11 +1,7 @@
 use chrono::{NaiveDateTime, Utc};
+use derive_more::{AsRef, Deref, Display, From};
 use rocket::request::FromParam;
 use serde_json::Value;
-use std::{
-    borrow::Borrow,
-    fmt::{Display, Formatter},
-    ops::Deref,
-};
 
 use super::{CipherId, User, UserId};
 
@@ -238,40 +234,10 @@ impl FolderCipher {
     }
 }
 
-#[derive(DieselNewType, FromForm, Clone, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(
+    Clone, Debug, AsRef, Deref, DieselNewType, Display, From, FromForm, Hash, PartialEq, Eq, Serialize, Deserialize,
+)]
 pub struct FolderId(String);
-
-impl AsRef<str> for FolderId {
-    fn as_ref(&self) -> &str {
-        &self.0
-    }
-}
-
-impl Deref for FolderId {
-    type Target = str;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl Borrow<str> for FolderId {
-    fn borrow(&self) -> &str {
-        &self.0
-    }
-}
-
-impl Display for FolderId {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl From<String> for FolderId {
-    fn from(raw: String) -> Self {
-        Self(raw)
-    }
-}
 
 impl<'r> FromParam<'r> for FolderId {
     type Error = ();

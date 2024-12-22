@@ -3,13 +3,9 @@ use crate::api::EmptyResult;
 use crate::db::DbConn;
 use crate::error::MapResult;
 use chrono::{NaiveDateTime, Utc};
+use derive_more::{AsRef, Deref, Display, From};
 use rocket::request::FromParam;
 use serde_json::Value;
-use std::{
-    borrow::Borrow,
-    fmt::{Display, Formatter},
-    ops::Deref,
-};
 
 db_object! {
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -602,40 +598,10 @@ impl GroupUser {
     }
 }
 
-#[derive(DieselNewType, FromForm, Clone, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(
+    Clone, Debug, AsRef, Deref, DieselNewType, Display, From, FromForm, Hash, PartialEq, Eq, Serialize, Deserialize,
+)]
 pub struct GroupId(String);
-
-impl AsRef<str> for GroupId {
-    fn as_ref(&self) -> &str {
-        &self.0
-    }
-}
-
-impl Deref for GroupId {
-    type Target = str;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl Borrow<str> for GroupId {
-    fn borrow(&self) -> &str {
-        &self.0
-    }
-}
-
-impl Display for GroupId {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl From<String> for GroupId {
-    fn from(raw: String) -> Self {
-        Self(raw)
-    }
-}
 
 impl<'r> FromParam<'r> for GroupId {
     type Error = ();

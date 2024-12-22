@@ -1,10 +1,6 @@
+use derive_more::{AsRef, Deref, Display, From};
 use rocket::request::FromParam;
 use serde_json::Value;
-use std::{
-    borrow::Borrow,
-    fmt::{Display, Formatter},
-    ops::Deref,
-};
 
 use super::{
     CipherId, CollectionGroup, GroupUser, Membership, MembershipStatus, MembershipType, OrganizationId, User, UserId,
@@ -790,40 +786,10 @@ impl CollectionUser {
     }
 }
 
-#[derive(DieselNewType, FromForm, Clone, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(
+    Clone, Debug, AsRef, Deref, DieselNewType, Display, From, FromForm, Hash, PartialEq, Eq, Serialize, Deserialize,
+)]
 pub struct CollectionId(String);
-
-impl AsRef<str> for CollectionId {
-    fn as_ref(&self) -> &str {
-        &self.0
-    }
-}
-
-impl Deref for CollectionId {
-    type Target = str;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl Borrow<str> for CollectionId {
-    fn borrow(&self) -> &str {
-        &self.0
-    }
-}
-
-impl Display for CollectionId {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl From<String> for CollectionId {
-    fn from(raw: String) -> Self {
-        Self(raw)
-    }
-}
 
 impl<'r> FromParam<'r> for CollectionId {
     type Error = ();

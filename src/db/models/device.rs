@@ -1,14 +1,9 @@
 use chrono::{NaiveDateTime, Utc};
+use derive_more::{Display, From};
 use rocket::request::FromParam;
-use std::{
-    borrow::Borrow,
-    fmt::{Display, Formatter},
-    ops::Deref,
-};
 
 use super::UserId;
 use crate::{crypto, CONFIG};
-use core::fmt;
 
 db_object! {
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -250,66 +245,60 @@ impl Device {
     }
 }
 
+#[derive(Display)]
 pub enum DeviceType {
+    #[display("Android")]
     Android = 0,
+    #[display("iOS")]
     Ios = 1,
+    #[display("Chrome Extension")]
     ChromeExtension = 2,
+    #[display("Firefox Extension")]
     FirefoxExtension = 3,
+    #[display("Opera Extension")]
     OperaExtension = 4,
+    #[display("Edge Extension")]
     EdgeExtension = 5,
+    #[display("Windows")]
     WindowsDesktop = 6,
+    #[display("macOS")]
     MacOsDesktop = 7,
+    #[display("Linux")]
     LinuxDesktop = 8,
+    #[display("Chrome")]
     ChromeBrowser = 9,
+    #[display("Firefox")]
     FirefoxBrowser = 10,
+    #[display("Opera")]
     OperaBrowser = 11,
+    #[display("Edge")]
     EdgeBrowser = 12,
+    #[display("Internet Explorer")]
     IEBrowser = 13,
+    #[display("Unknown Browser")]
     UnknownBrowser = 14,
+    #[display("Android")]
     AndroidAmazon = 15,
+    #[display("UWP")]
     Uwp = 16,
+    #[display("Safari")]
     SafariBrowser = 17,
+    #[display("Vivaldi")]
     VivaldiBrowser = 18,
+    #[display("Vivaldi Extension")]
     VivaldiExtension = 19,
+    #[display("Safari Extension")]
     SafariExtension = 20,
+    #[display("SDK")]
     Sdk = 21,
+    #[display("Server")]
     Server = 22,
+    #[display("Windows CLI")]
     WindowsCLI = 23,
+    #[display("macOS CLI")]
     MacOsCLI = 24,
+    #[display("Linux CLI")]
     LinuxCLI = 25,
-}
-
-impl Display for DeviceType {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self {
-            DeviceType::Android => write!(f, "Android"),
-            DeviceType::Ios => write!(f, "iOS"),
-            DeviceType::ChromeExtension => write!(f, "Chrome Extension"),
-            DeviceType::FirefoxExtension => write!(f, "Firefox Extension"),
-            DeviceType::OperaExtension => write!(f, "Opera Extension"),
-            DeviceType::EdgeExtension => write!(f, "Edge Extension"),
-            DeviceType::WindowsDesktop => write!(f, "Windows"),
-            DeviceType::MacOsDesktop => write!(f, "macOS"),
-            DeviceType::LinuxDesktop => write!(f, "Linux"),
-            DeviceType::ChromeBrowser => write!(f, "Chrome"),
-            DeviceType::FirefoxBrowser => write!(f, "Firefox"),
-            DeviceType::OperaBrowser => write!(f, "Opera"),
-            DeviceType::EdgeBrowser => write!(f, "Edge"),
-            DeviceType::IEBrowser => write!(f, "Internet Explorer"),
-            DeviceType::UnknownBrowser => write!(f, "Unknown Browser"),
-            DeviceType::AndroidAmazon => write!(f, "Android"),
-            DeviceType::Uwp => write!(f, "UWP"),
-            DeviceType::SafariBrowser => write!(f, "Safari"),
-            DeviceType::VivaldiBrowser => write!(f, "Vivaldi"),
-            DeviceType::VivaldiExtension => write!(f, "Vivaldi Extension"),
-            DeviceType::SafariExtension => write!(f, "Safari Extension"),
-            DeviceType::Sdk => write!(f, "SDK"),
-            DeviceType::Server => write!(f, "Server"),
-            DeviceType::WindowsCLI => write!(f, "Windows CLI"),
-            DeviceType::MacOsCLI => write!(f, "macOS CLI"),
-            DeviceType::LinuxCLI => write!(f, "Linux CLI"),
-        }
-    }
 }
 
 impl DeviceType {
@@ -346,44 +335,12 @@ impl DeviceType {
     }
 }
 
-#[derive(DieselNewType, FromForm, Clone, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, DieselNewType, Display, From, FromForm, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DeviceId(String);
 
 impl DeviceId {
     pub fn empty() -> Self {
         Self(String::from("00000000-0000-0000-0000-000000000000"))
-    }
-}
-
-impl AsRef<str> for DeviceId {
-    fn as_ref(&self) -> &str {
-        &self.0
-    }
-}
-
-impl Deref for DeviceId {
-    type Target = str;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl Borrow<str> for DeviceId {
-    fn borrow(&self) -> &str {
-        &self.0
-    }
-}
-
-impl Display for DeviceId {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl From<String> for DeviceId {
-    fn from(raw: String) -> Self {
-        Self(raw)
     }
 }
 

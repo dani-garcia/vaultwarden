@@ -272,14 +272,22 @@ pub async fn send_invite(
         invited_by_email,
     );
     let invite_token = encode_jwt(&claims);
+    let org_id = match org_id {
+        Some(ref org_id) => org_id.as_ref(),
+        None => "_",
+    };
+    let member_id = match member_id {
+        Some(ref member_id) => member_id.as_ref(),
+        None => "_",
+    };
     let mut query = url::Url::parse("https://query.builder").unwrap();
     {
         let mut query_params = query.query_pairs_mut();
         query_params
             .append_pair("email", &user.email)
             .append_pair("organizationName", org_name)
-            .append_pair("organizationId", org_id.as_deref().unwrap_or("_"))
-            .append_pair("organizationUserId", member_id.as_deref().unwrap_or("_"))
+            .append_pair("organizationId", org_id)
+            .append_pair("organizationUserId", member_id)
             .append_pair("token", &invite_token);
         if user.private_key.is_some() {
             query_params.append_pair("orgUserHasExistingUser", "true");

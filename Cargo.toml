@@ -77,6 +77,8 @@ serde_json = "1.0.133"
 diesel = { version = "2.2.6", features = ["chrono", "r2d2", "numeric"] }
 diesel_migrations = "2.2.0"
 diesel_logger = { version = "0.4.0", optional = true }
+
+derive_more = { version = "1.0.0", features = ["from", "into", "as_ref", "deref", "display"] }
 diesel-derive-newtype = "2.1.2"
 
 # Bundled/Static SQLite

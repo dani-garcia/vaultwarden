@@ -1,11 +1,7 @@
 use chrono::{NaiveDateTime, TimeDelta, Utc};
+use derive_more::{AsRef, Deref, Display, From};
 use rocket::request::FromParam;
 use serde_json::Value;
-use std::{
-    borrow::Borrow,
-    fmt::{Display, Formatter},
-    ops::Deref,
-};
 
 use super::{
     Cipher, Device, EmergencyAccess, Favorite, Folder, Membership, MembershipType, TwoFactor, TwoFactorIncomplete,
@@ -463,40 +459,12 @@ impl Invitation {
     }
 }
 
-#[derive(DieselNewType, FromForm, Clone, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(
+    Clone, Debug, AsRef, Deref, DieselNewType, Display, From, FromForm, Hash, PartialEq, Eq, Serialize, Deserialize,
+)]
+#[deref(forward)]
+#[from(forward)]
 pub struct UserId(String);
-
-impl AsRef<str> for UserId {
-    fn as_ref(&self) -> &str {
-        &self.0
-    }
-}
-
-impl Deref for UserId {
-    type Target = str;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl Borrow<str> for UserId {
-    fn borrow(&self) -> &str {
-        &self.0
-    }
-}
-
-impl Display for UserId {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl From<String> for UserId {
-    fn from(raw: String) -> Self {
-        Self(raw)
-    }
-}
 
 impl<'r> FromParam<'r> for UserId {
     type Error = ();

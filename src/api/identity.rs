@@ -385,7 +385,7 @@ async fn _user_api_key_login(
     let Some(client_user_uuid) = client_id.strip_prefix("user.") else {
         err!("Malformed client_id", format!("IP: {}.", ip.ip))
     };
-    let client_user_uuid: UserId = client_user_uuid.to_string().into();
+    let client_user_uuid: UserId = client_user_uuid.into();
     let Some(user) = User::find_by_uuid(&client_user_uuid, conn).await else {
         err!("Invalid client_id", format!("IP: {}.", ip.ip))
     };

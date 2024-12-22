@@ -1,13 +1,11 @@
 use chrono::{NaiveDateTime, Utc};
+use derive_more::{AsRef, Deref, Display, From};
 use num_traits::FromPrimitive;
 use rocket::request::FromParam;
 use serde_json::Value;
 use std::{
-    borrow::Borrow,
     cmp::Ordering,
     collections::{HashMap, HashSet},
-    fmt::{Display, Formatter},
-    ops::Deref,
 };
 
 use super::{
@@ -1059,40 +1057,12 @@ impl OrganizationApiKey {
     }
 }
 
-#[derive(DieselNewType, FromForm, Clone, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(
+    Clone, Debug, AsRef, Deref, DieselNewType, Display, From, FromForm, Hash, PartialEq, Eq, Serialize, Deserialize,
+)]
+#[deref(forward)]
+#[from(forward)]
 pub struct OrganizationId(String);
-
-impl AsRef<str> for OrganizationId {
-    fn as_ref(&self) -> &str {
-        &self.0
-    }
-}
-
-impl Deref for OrganizationId {
-    type Target = str;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl Borrow<str> for OrganizationId {
-    fn borrow(&self) -> &str {
-        &self.0
-    }
-}
-
-impl Display for OrganizationId {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl From<String> for OrganizationId {
-    fn from(raw: String) -> Self {
-        Self(raw)
-    }
-}
 
 impl<'r> FromParam<'r> for OrganizationId {
     type Error = ();
@@ -1107,88 +1077,8 @@ impl<'r> FromParam<'r> for OrganizationId {
     }
 }
 
-#[derive(DieselNewType, FromForm, Clone, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
-pub struct OrgApiKeyId(String);
-
-impl AsRef<str> for OrgApiKeyId {
-    fn as_ref(&self) -> &str {
-        &self.0
-    }
-}
-
-impl Deref for OrgApiKeyId {
-    type Target = str;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl Borrow<str> for OrgApiKeyId {
-    fn borrow(&self) -> &str {
-        &self.0
-    }
-}
-
-impl Display for OrgApiKeyId {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl From<String> for OrgApiKeyId {
-    fn from(raw: String) -> Self {
-        Self(raw)
-    }
-}
-
-impl<'r> FromParam<'r> for OrgApiKeyId {
-    type Error = ();
-
-    #[inline(always)]
-    fn from_param(param: &'r str) -> Result<Self, Self::Error> {
-        if param.chars().all(|c| matches!(c, 'a'..='z' | 'A'..='Z' |'0'..='9' | '-')) {
-            Ok(Self(param.to_string()))
-        } else {
-            Err(())
-        }
-    }
-}
-
-#[derive(DieselNewType, FromForm, Clone, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deref, DieselNewType, Display, From, FromForm, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MembershipId(String);
-
-impl AsRef<str> for MembershipId {
-    fn as_ref(&self) -> &str {
-        &self.0
-    }
-}
-
-impl Deref for MembershipId {
-    type Target = str;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl Borrow<str> for MembershipId {
-    fn borrow(&self) -> &str {
-        &self.0
-    }
-}
-
-impl Display for MembershipId {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl From<String> for MembershipId {
-    fn from(raw: String) -> Self {
-        Self(raw)
-    }
-}
 
 impl<'r> FromParam<'r> for MembershipId {
     type Error = ();
@@ -1202,6 +1092,9 @@ impl<'r> FromParam<'r> for MembershipId {
         }
     }
 }
+
+#[derive(Clone, Debug, DieselNewType, Display, FromForm, Hash, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OrgApiKeyId(String);
 
 #[cfg(test)]
 mod tests {
