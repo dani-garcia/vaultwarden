@@ -474,7 +474,7 @@ impl WebSocketUsers {
 
         let data = create_update(
             vec![
-                ("Id".into(), send.uuid.clone().into()),
+                ("Id".into(), send.uuid.to_string().into()),
                 ("UserId".into(), user_uuid),
                 ("RevisionDate".into(), serialize_date(send.revision_date)),
             ],

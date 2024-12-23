@@ -4,6 +4,7 @@ use serde_json::Value;
 use crate::util::LowerCase;
 
 use super::{OrganizationId, User, UserId};
+use id::SendId;
 
 db_object! {
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -11,7 +12,7 @@ db_object! {
     #[diesel(treat_none_as_null = true)]
     #[diesel(primary_key(uuid))]
     pub struct Send {
-        pub uuid: String,
+        pub uuid: SendId,
 
         pub user_uuid: Option<UserId>,
         pub organization_uuid: Option<OrganizationId>,
@@ -50,7 +51,7 @@ impl Send {
         let now = Utc::now().naive_utc();
 
         Self {
-            uuid: crate::util::get_uuid(),
+            uuid: SendId::from(crate::util::get_uuid()),
             user_uuid: None,
             organization_uuid: None,
 
@@ -272,14 +273,14 @@ impl Send {
         };
 
         let uuid = match Uuid::from_slice(&uuid_vec) {
-            Ok(u) => u.to_string(),
+            Ok(u) => SendId::from(u.to_string()),
             Err(_) => return None,
         };
 
         Self::find_by_uuid(&uuid, conn).await
     }
 
-    pub async fn find_by_uuid(uuid: &str, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_uuid(uuid: &SendId, conn: &mut DbConn) -> Option<Self> {
         db_run! {conn: {
             sends::table
                 .filter(sends::uuid.eq(uuid))
@@ -289,7 +290,7 @@ impl Send {
         }}
     }
 
-    pub async fn find_by_uuid_and_user(uuid: &str, user_uuid: &UserId, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_uuid_and_user(uuid: &SendId, user_uuid: &UserId, conn: &mut DbConn) -> Option<Self> {
         db_run! {conn: {
             sends::table
                 .filter(sends::uuid.eq(uuid))
@@ -346,5 +347,37 @@ impl Send {
                 .filter(sends::deletion_date.lt(now))
                 .load::<SendDb>(conn).expect("Error loading sends").from_db()
         }}
+    }
+}
+
+// separate namespace to avoid name collision with std::marker::Send
+pub mod id {
+    use derive_more::{AsRef, Deref, Display, From};
+    use rocket::request::FromParam;
+    use std::marker::Send;
+    use std::path::Path;
+    #[derive(
+        Clone, Debug, AsRef, Deref, DieselNewType, Display, From, FromForm, Hash, PartialEq, Eq, Serialize, Deserialize,
+    )]
+    pub struct SendId(String);
+
+    impl AsRef<Path> for SendId {
+        #[inline]
+        fn as_ref(&self) -> &Path {
+            Path::new(&self.0)
+        }
+    }
+
+    impl<'r> FromParam<'r> for SendId {
+        type Error = ();
+
+        #[inline(always)]
+        fn from_param(param: &'r str) -> Result<Self, Self::Error> {
+            if param.chars().all(|c| matches!(c, 'a'..='z' | 'A'..='Z' |'0'..='9' | '-')) {
+                Ok(Self(param.to_string()))
+            } else {
+                Err(())
+            }
+        }
     }
 }

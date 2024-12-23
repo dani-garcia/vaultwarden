@@ -84,8 +84,8 @@ pub fn generate_id<const N: usize>() -> String {
     encode_random_bytes::<N>(HEXLOWER)
 }
 
-pub fn generate_send_id() -> String {
-    // Send IDs are globally scoped, so make them longer to avoid collisions.
+pub fn generate_send_file_id() -> String {
+    // Send File IDs are globally scoped, so make them longer to avoid collisions.
     generate_id::<32>() // 256 bits
 }
 

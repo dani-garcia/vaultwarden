@@ -525,8 +525,8 @@ fn validate_keydata(
     }
 
     // Check that we're correctly rotating all the user's sends
-    let existing_send_ids = existing_sends.iter().map(|s| s.uuid.as_str()).collect::<HashSet<_>>();
-    let provided_send_ids = data.sends.iter().filter_map(|s| s.id.as_deref()).collect::<HashSet<_>>();
+    let existing_send_ids = existing_sends.iter().map(|s| &s.uuid).collect::<HashSet<&SendId>>();
+    let provided_send_ids = data.sends.iter().filter_map(|s| s.id.as_ref()).collect::<HashSet<&SendId>>();
     if !provided_send_ids.is_superset(&existing_send_ids) {
         err!("All existing sends must be included in the rotation")
     }
