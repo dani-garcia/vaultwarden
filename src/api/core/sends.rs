@@ -12,7 +12,7 @@ use crate::{
     api::{ApiResult, EmptyResult, JsonResult, Notify, UpdateType},
     auth::{ClientIp, Headers, Host},
     db::{models::*, DbConn, DbPool},
-    util::{NumberOrString, SafeString},
+    util::NumberOrString,
     CONFIG,
 };
 
@@ -346,7 +346,7 @@ async fn post_send_file_v2(data: Json<SendData>, headers: Headers, mut conn: DbC
 #[derive(Deserialize)]
 #[allow(non_snake_case)]
 pub struct SendFileData {
-    id: String,
+    id: SendFileId,
     size: u64,
     fileName: String,
 }
@@ -355,7 +355,7 @@ pub struct SendFileData {
 #[post("/sends/<uuid>/file/<file_id>", format = "multipart/form-data", data = "<data>")]
 async fn post_send_file_v2_data(
     uuid: SendId,
-    file_id: &str,
+    file_id: SendFileId,
     data: Form<UploadDataV2<'_>>,
     headers: Headers,
     mut conn: DbConn,
@@ -496,7 +496,7 @@ async fn post_access(
 #[post("/sends/<uuid>/access/file/<file_id>", data = "<data>")]
 async fn post_access_file(
     uuid: SendId,
-    file_id: &str,
+    file_id: SendFileId,
     data: Json<SendAccessData>,
     host: Host,
     mut conn: DbConn,
@@ -547,7 +547,7 @@ async fn post_access_file(
     )
     .await;
 
-    let token_claims = crate::auth::generate_send_claims(&uuid, file_id);
+    let token_claims = crate::auth::generate_send_claims(&uuid, &file_id);
     let token = crate::auth::encode_jwt(&token_claims);
     Ok(Json(json!({
         "object": "send-fileDownload",
@@ -557,7 +557,7 @@ async fn post_access_file(
 }
 
 #[get("/sends/<uuid>/<file_id>?<t>")]
-async fn download_send(uuid: SendId, file_id: SafeString, t: &str) -> Option<NamedFile> {
+async fn download_send(uuid: SendId, file_id: SendFileId, t: &str) -> Option<NamedFile> {
     if let Ok(claims) = crate::auth::decode_send(t) {
         if claims.sub == format!("{uuid}/{file_id}") {
             return NamedFile::open(Path::new(&CONFIG.sends_folder()).join(uuid).join(file_id)).await.ok();

@@ -15,7 +15,8 @@ use std::{
 };
 
 use crate::db::models::{
-    AttachmentId, CipherId, CollectionId, DeviceId, MembershipId, OrgApiKeyId, OrganizationId, SendId, UserId,
+    AttachmentId, CipherId, CollectionId, DeviceId, MembershipId, OrgApiKeyId, OrganizationId, SendFileId, SendId,
+    UserId,
 };
 use crate::{error::Error, CONFIG};
 
@@ -358,7 +359,7 @@ pub fn generate_admin_claims() -> BasicJwtClaims {
     }
 }
 
-pub fn generate_send_claims(send_id: &SendId, file_id: &str) -> BasicJwtClaims {
+pub fn generate_send_claims(send_id: &SendId, file_id: &SendFileId) -> BasicJwtClaims {
     let time_now = Utc::now();
     BasicJwtClaims {
         nbf: time_now.timestamp(),
