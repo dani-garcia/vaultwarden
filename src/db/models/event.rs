@@ -24,7 +24,7 @@ db_object! {
         pub collection_uuid: Option<CollectionId>,
         pub group_uuid: Option<GroupId>,
         pub org_user_uuid: Option<MembershipId>,
-        pub act_user_uuid: Option<String>,
+        pub act_user_uuid: Option<UserId>,
         // Upstream enum: https://github.com/bitwarden/server/blob/8a22c0479e987e756ce7412c48a732f9002f0a2d/src/Core/Enums/DeviceType.cs
         pub device_type: Option<i32>,
         pub ip_address: Option<String>,

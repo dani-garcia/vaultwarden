@@ -874,7 +874,7 @@ impl Cipher {
         }}
     }
 
-    pub async fn get_collections(&self, user_id: UserId, conn: &mut DbConn) -> Vec<CollectionId> {
+    pub async fn get_collections(&self, user_uuid: UserId, conn: &mut DbConn) -> Vec<CollectionId> {
         if CONFIG.org_groups_enabled() {
             db_run! {conn: {
                 ciphers_collections::table
@@ -884,11 +884,11 @@ impl Cipher {
                     ))
                     .left_join(users_organizations::table.on(
                         users_organizations::org_uuid.eq(collections::org_uuid)
-                        .and(users_organizations::user_uuid.eq(user_id.clone()))
+                        .and(users_organizations::user_uuid.eq(user_uuid.clone()))
                     ))
                     .left_join(users_collections::table.on(
                         users_collections::collection_uuid.eq(ciphers_collections::collection_uuid)
-                        .and(users_collections::user_uuid.eq(user_id.clone()))
+                        .and(users_collections::user_uuid.eq(user_uuid.clone()))
                     ))
                     .left_join(groups_users::table.on(
                         groups_users::users_organizations_uuid.eq(users_organizations::uuid)
@@ -899,7 +899,7 @@ impl Cipher {
                         .and(collections_groups::groups_uuid.eq(groups::uuid))
                     ))
                     .filter(users_organizations::access_all.eq(true) // User has access all
-                        .or(users_collections::user_uuid.eq(user_id) // User has access to collection
+                        .or(users_collections::user_uuid.eq(user_uuid) // User has access to collection
                             .and(users_collections::read_only.eq(false)))
                         .or(groups::access_all.eq(true)) // Access via groups
                         .or(collections_groups::collections_uuid.is_not_null() // Access via groups
@@ -917,14 +917,14 @@ impl Cipher {
                     ))
                     .inner_join(users_organizations::table.on(
                         users_organizations::org_uuid.eq(collections::org_uuid)
-                        .and(users_organizations::user_uuid.eq(user_id.clone()))
+                        .and(users_organizations::user_uuid.eq(user_uuid.clone()))
                     ))
                     .left_join(users_collections::table.on(
                         users_collections::collection_uuid.eq(ciphers_collections::collection_uuid)
-                        .and(users_collections::user_uuid.eq(user_id.clone()))
+                        .and(users_collections::user_uuid.eq(user_uuid.clone()))
                     ))
                     .filter(users_organizations::access_all.eq(true) // User has access all
-                        .or(users_collections::user_uuid.eq(user_id) // User has access to collection
+                        .or(users_collections::user_uuid.eq(user_uuid) // User has access to collection
                             .and(users_collections::read_only.eq(false)))
                     )
                     .select(ciphers_collections::collection_uuid)
@@ -933,7 +933,7 @@ impl Cipher {
         }
     }
 
-    pub async fn get_admin_collections(&self, user_id: UserId, conn: &mut DbConn) -> Vec<CollectionId> {
+    pub async fn get_admin_collections(&self, user_uuid: UserId, conn: &mut DbConn) -> Vec<CollectionId> {
         if CONFIG.org_groups_enabled() {
             db_run! {conn: {
                 ciphers_collections::table
@@ -943,11 +943,11 @@ impl Cipher {
                     ))
                     .left_join(users_organizations::table.on(
                         users_organizations::org_uuid.eq(collections::org_uuid)
-                        .and(users_organizations::user_uuid.eq(user_id.clone()))
+                        .and(users_organizations::user_uuid.eq(user_uuid.clone()))
                     ))
                     .left_join(users_collections::table.on(
                         users_collections::collection_uuid.eq(ciphers_collections::collection_uuid)
-                        .and(users_collections::user_uuid.eq(user_id.clone()))
+                        .and(users_collections::user_uuid.eq(user_uuid.clone()))
                     ))
                     .left_join(groups_users::table.on(
                         groups_users::users_organizations_uuid.eq(users_organizations::uuid)
@@ -958,7 +958,7 @@ impl Cipher {
                         .and(collections_groups::groups_uuid.eq(groups::uuid))
                     ))
                     .filter(users_organizations::access_all.eq(true) // User has access all
-                        .or(users_collections::user_uuid.eq(user_id) // User has access to collection
+                        .or(users_collections::user_uuid.eq(user_uuid) // User has access to collection
                             .and(users_collections::read_only.eq(false)))
                         .or(groups::access_all.eq(true)) // Access via groups
                         .or(collections_groups::collections_uuid.is_not_null() // Access via groups
@@ -977,14 +977,14 @@ impl Cipher {
                     ))
                     .inner_join(users_organizations::table.on(
                         users_organizations::org_uuid.eq(collections::org_uuid)
-                        .and(users_organizations::user_uuid.eq(user_id.clone()))
+                        .and(users_organizations::user_uuid.eq(user_uuid.clone()))
                     ))
                     .left_join(users_collections::table.on(
                         users_collections::collection_uuid.eq(ciphers_collections::collection_uuid)
-                        .and(users_collections::user_uuid.eq(user_id.clone()))
+                        .and(users_collections::user_uuid.eq(user_uuid.clone()))
                     ))
                     .filter(users_organizations::access_all.eq(true) // User has access all
-                        .or(users_collections::user_uuid.eq(user_id) // User has access to collection
+                        .or(users_collections::user_uuid.eq(user_uuid) // User has access to collection
                             .and(users_collections::read_only.eq(false)))
                         .or(users_organizations::atype.le(MembershipType::Admin as i32)) // User is admin or owner
                     )
@@ -997,7 +997,7 @@ impl Cipher {
     /// Return a Vec with (cipher_uuid, collection_uuid)
     /// This is used during a full sync so we only need one query for all collections accessible.
     pub async fn get_collections_with_cipher_by_user(
-        user_id: UserId,
+        user_uuid: UserId,
         conn: &mut DbConn,
     ) -> Vec<(CipherId, CollectionId)> {
         db_run! {conn: {
@@ -1007,12 +1007,12 @@ impl Cipher {
             ))
             .inner_join(users_organizations::table.on(
                 users_organizations::org_uuid.eq(collections::org_uuid).and(
-                    users_organizations::user_uuid.eq(user_id.clone())
+                    users_organizations::user_uuid.eq(user_uuid.clone())
                 )
             ))
             .left_join(users_collections::table.on(
                 users_collections::collection_uuid.eq(ciphers_collections::collection_uuid).and(
-                    users_collections::user_uuid.eq(user_id.clone())
+                    users_collections::user_uuid.eq(user_uuid.clone())
                 )
             ))
             .left_join(groups_users::table.on(
@@ -1026,7 +1026,7 @@ impl Cipher {
                     collections_groups::groups_uuid.eq(groups::uuid)
                 )
             ))
-            .or_filter(users_collections::user_uuid.eq(user_id)) // User has access to collection
+            .or_filter(users_collections::user_uuid.eq(user_uuid)) // User has access to collection
             .or_filter(users_organizations::access_all.eq(true)) // User has access all
             .or_filter(users_organizations::atype.le(MembershipType::Admin as i32)) // User is admin or owner
             .or_filter(groups::access_all.eq(true)) //Access via group

@@ -180,11 +180,11 @@ async fn post_events_collect(data: Json<Vec<EventCollection>>, headers: Headers,
                 .await;
             }
             1600..=1699 => {
-                if let Some(org_uuid) = &event.organization_id {
+                if let Some(org_id) = &event.organization_id {
                     _log_event(
                         event.r#type,
-                        org_uuid,
-                        org_uuid,
+                        org_id,
+                        org_id,
                         &headers.user.uuid,
                         headers.device.atype,
                         Some(event_date),
@@ -197,11 +197,11 @@ async fn post_events_collect(data: Json<Vec<EventCollection>>, headers: Headers,
             _ => {
                 if let Some(cipher_uuid) = &event.cipher_id {
                     if let Some(cipher) = Cipher::find_by_uuid(cipher_uuid, &mut conn).await {
-                        if let Some(org_uuid) = cipher.organization_uuid {
+                        if let Some(org_id) = cipher.organization_uuid {
                             _log_event(
                                 event.r#type,
                                 cipher_uuid,
-                                &org_uuid,
+                                &org_id,
                                 &headers.user.uuid,
                                 headers.device.atype,
                                 Some(event_date),
@@ -218,38 +218,38 @@ async fn post_events_collect(data: Json<Vec<EventCollection>>, headers: Headers,
     Ok(())
 }
 
-pub async fn log_user_event(event_type: i32, user_uuid: &UserId, device_type: i32, ip: &IpAddr, conn: &mut DbConn) {
+pub async fn log_user_event(event_type: i32, user_id: &UserId, device_type: i32, ip: &IpAddr, conn: &mut DbConn) {
     if !CONFIG.org_events_enabled() {
         return;
     }
-    _log_user_event(event_type, user_uuid, device_type, None, ip, conn).await;
+    _log_user_event(event_type, user_id, device_type, None, ip, conn).await;
 }
 
 async fn _log_user_event(
     event_type: i32,
-    user_uuid: &UserId,
+    user_id: &UserId,
     device_type: i32,
     event_date: Option<NaiveDateTime>,
     ip: &IpAddr,
     conn: &mut DbConn,
 ) {
-    let orgs = Membership::get_orgs_by_user(user_uuid, conn).await;
+    let orgs = Membership::get_orgs_by_user(user_id, conn).await;
     let mut events: Vec<Event> = Vec::with_capacity(orgs.len() + 1); // We need an event per org and one without an org
 
-    // Upstream saves the event also without any org_uuid.
+    // Upstream saves the event also without any org_id.
     let mut event = Event::new(event_type, event_date);
-    event.user_uuid = Some(user_uuid.clone());
-    event.act_user_uuid = Some(user_uuid.to_string());
+    event.user_uuid = Some(user_id.clone());
+    event.act_user_uuid = Some(user_id.clone());
     event.device_type = Some(device_type);
     event.ip_address = Some(ip.to_string());
     events.push(event);
 
     // For each org a user is a member of store these events per org
-    for org_uuid in orgs {
+    for org_id in orgs {
         let mut event = Event::new(event_type, event_date);
-        event.user_uuid = Some(user_uuid.clone());
-        event.org_uuid = Some(org_uuid);
-        event.act_user_uuid = Some(user_uuid.to_string());
+        event.user_uuid = Some(user_id.clone());
+        event.org_uuid = Some(org_id);
+        event.act_user_uuid = Some(user_id.clone());
         event.device_type = Some(device_type);
         event.ip_address = Some(ip.to_string());
         events.push(event);
@@ -261,8 +261,8 @@ async fn _log_user_event(
 pub async fn log_event(
     event_type: i32,
     source_uuid: &str,
-    org_uuid: &OrganizationId,
-    act_user_uuid: &str,
+    org_id: &OrganizationId,
+    act_user_id: &UserId,
     device_type: i32,
     ip: &IpAddr,
     conn: &mut DbConn,
@@ -270,15 +270,15 @@ pub async fn log_event(
     if !CONFIG.org_events_enabled() {
         return;
     }
-    _log_event(event_type, source_uuid, org_uuid, act_user_uuid, device_type, None, ip, conn).await;
+    _log_event(event_type, source_uuid, org_id, act_user_id, device_type, None, ip, conn).await;
 }
 
 #[allow(clippy::too_many_arguments)]
 async fn _log_event(
     event_type: i32,
     source_uuid: &str,
-    org_uuid: &OrganizationId,
-    act_user_uuid: &str,
+    org_id: &OrganizationId,
+    act_user_id: &UserId,
     device_type: i32,
     event_date: Option<NaiveDateTime>,
     ip: &IpAddr,
@@ -313,8 +313,8 @@ async fn _log_event(
         _ => {}
     }
 
-    event.org_uuid = Some(org_uuid.clone());
-    event.act_user_uuid = Some(String::from(act_user_uuid));
+    event.org_uuid = Some(org_id.clone());
+    event.act_user_uuid = Some(act_user_id.clone());
     event.device_type = Some(device_type);
     event.ip_address = Some(ip.to_string());
     event.save(conn).await.unwrap_or(());

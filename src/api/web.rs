@@ -196,16 +196,16 @@ async fn web_files(p: PathBuf) -> Cached<Option<NamedFile>> {
     Cached::long(NamedFile::open(Path::new(&CONFIG.web_vault_folder()).join(p)).await.ok(), true)
 }
 
-#[get("/attachments/<uuid>/<file_id>?<token>")]
-async fn attachments(uuid: CipherId, file_id: AttachmentId, token: String) -> Option<NamedFile> {
+#[get("/attachments/<cipher_id>/<file_id>?<token>")]
+async fn attachments(cipher_id: CipherId, file_id: AttachmentId, token: String) -> Option<NamedFile> {
     let Ok(claims) = decode_file_download(&token) else {
         return None;
     };
-    if claims.sub != uuid || claims.file_id != file_id {
+    if claims.sub != cipher_id || claims.file_id != file_id {
         return None;
     }
 
-    NamedFile::open(Path::new(&CONFIG.attachments_folder()).join(uuid.as_ref()).join(file_id.as_ref())).await.ok()
+    NamedFile::open(Path::new(&CONFIG.attachments_folder()).join(cipher_id.as_ref()).join(file_id.as_ref())).await.ok()
 }
 
 // We use DbConn here to let the alive healthcheck also verify the database connection.

@@ -701,11 +701,11 @@ async fn policies_emergency_access(emer_id: &str, headers: Headers, mut conn: Db
 
 fn is_valid_request(
     emergency_access: &EmergencyAccess,
-    requesting_user_uuid: &UserId,
+    requesting_user_id: &UserId,
     requested_access_type: EmergencyAccessType,
 ) -> bool {
     emergency_access.grantee_uuid.is_some()
-        && emergency_access.grantee_uuid.as_ref().unwrap() == requesting_user_uuid
+        && emergency_access.grantee_uuid.as_ref().unwrap() == requesting_user_id
         && emergency_access.status == EmergencyAccessStatus::RecoveryApproved as i32
         && emergency_access.atype == requested_access_type as i32
 }

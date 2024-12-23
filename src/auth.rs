@@ -304,13 +304,13 @@ pub struct FileDownloadClaims {
     pub file_id: AttachmentId,
 }
 
-pub fn generate_file_download_claims(uuid: CipherId, file_id: AttachmentId) -> FileDownloadClaims {
+pub fn generate_file_download_claims(cipher_id: CipherId, file_id: AttachmentId) -> FileDownloadClaims {
     let time_now = Utc::now();
     FileDownloadClaims {
         nbf: time_now.timestamp(),
         exp: (time_now + TimeDelta::try_minutes(5).unwrap()).timestamp(),
         iss: JWT_FILE_DOWNLOAD_ISSUER.to_string(),
-        sub: uuid,
+        sub: cipher_id,
         file_id,
     }
 }
@@ -338,14 +338,14 @@ pub fn generate_delete_claims(uuid: String) -> BasicJwtClaims {
     }
 }
 
-pub fn generate_verify_email_claims(uuid: String) -> BasicJwtClaims {
+pub fn generate_verify_email_claims(user_id: UserId) -> BasicJwtClaims {
     let time_now = Utc::now();
     let expire_hours = i64::from(CONFIG.invitation_expiration_hours());
     BasicJwtClaims {
         nbf: time_now.timestamp(),
         exp: (time_now + TimeDelta::try_hours(expire_hours).unwrap()).timestamp(),
         iss: JWT_VERIFYEMAIL_ISSUER.to_string(),
-        sub: uuid,
+        sub: user_id.to_string(),
     }
 }
 
@@ -482,19 +482,19 @@ impl<'r> FromRequest<'r> for Headers {
             err_handler!("Invalid claim")
         };
 
-        let device_uuid = claims.device;
-        let user_uuid = claims.sub;
+        let device_id = claims.device;
+        let user_id = claims.sub;
 
         let mut conn = match DbConn::from_request(request).await {
             Outcome::Success(conn) => conn,
             _ => err_handler!("Error getting DB"),
         };
 
-        let Some(device) = Device::find_by_uuid_and_user(&device_uuid, &user_uuid, &mut conn).await else {
+        let Some(device) = Device::find_by_uuid_and_user(&device_id, &user_id, &mut conn).await else {
             err_handler!("Invalid device id")
         };
 
-        let Some(user) = User::find_by_uuid(&user_uuid, &mut conn).await else {
+        let Some(user) = User::find_by_uuid(&user_id, &mut conn).await else {
             err_handler!("Device has no user associated")
         };
 

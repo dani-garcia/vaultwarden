@@ -753,14 +753,13 @@ async fn get_org_details(data: OrgIdData, headers: Headers, mut conn: DbConn) ->
     })))
 }
 
-async fn _get_org_details(org_id: &OrganizationId, host: &str, user_uuid: &UserId, conn: &mut DbConn) -> Value {
+async fn _get_org_details(org_id: &OrganizationId, host: &str, user_id: &UserId, conn: &mut DbConn) -> Value {
     let ciphers = Cipher::find_by_org(org_id, conn).await;
-    let cipher_sync_data = CipherSyncData::new(user_uuid, CipherSyncType::Organization, conn).await;
+    let cipher_sync_data = CipherSyncData::new(user_id, CipherSyncType::Organization, conn).await;
 
     let mut ciphers_json = Vec::with_capacity(ciphers.len());
     for c in ciphers {
-        ciphers_json
-            .push(c.to_json(host, user_uuid, Some(&cipher_sync_data), CipherSyncType::Organization, conn).await);
+        ciphers_json.push(c.to_json(host, user_id, Some(&cipher_sync_data), CipherSyncType::Organization, conn).await);
     }
     json!(ciphers_json)
 }
