@@ -1194,16 +1194,17 @@ async fn post_auth_request(
     })))
 }
 
-#[get("/auth-requests/<uuid>")]
-async fn get_auth_request(uuid: &str, headers: Headers, mut conn: DbConn) -> JsonResult {
-    let Some(auth_request) = AuthRequest::find_by_uuid_and_user(uuid, &headers.user.uuid, &mut conn).await else {
+#[get("/auth-requests/<auth_request_id>")]
+async fn get_auth_request(auth_request_id: AuthRequestId, headers: Headers, mut conn: DbConn) -> JsonResult {
+    let Some(auth_request) = AuthRequest::find_by_uuid_and_user(&auth_request_id, &headers.user.uuid, &mut conn).await
+    else {
         err!("AuthRequest doesn't exist", "Record not found or user uuid does not match")
     };
 
     let response_date_utc = auth_request.response_date.map(|response_date| format_date(&response_date));
 
     Ok(Json(json!({
-        "id": uuid,
+        "id": &auth_request_id,
         "publicKey": auth_request.public_key,
         "requestDeviceType": DeviceType::from_i32(auth_request.device_type).to_string(),
         "requestIpAddress": auth_request.request_ip,
@@ -1226,9 +1227,9 @@ struct AuthResponseRequest {
     request_approved: bool,
 }
 
-#[put("/auth-requests/<uuid>", data = "<data>")]
+#[put("/auth-requests/<auth_request_id>", data = "<data>")]
 async fn put_auth_request(
-    uuid: &str,
+    auth_request_id: AuthRequestId,
     data: Json<AuthResponseRequest>,
     headers: Headers,
     mut conn: DbConn,
@@ -1236,7 +1237,9 @@ async fn put_auth_request(
     nt: Notify<'_>,
 ) -> JsonResult {
     let data = data.into_inner();
-    let Some(mut auth_request) = AuthRequest::find_by_uuid_and_user(uuid, &headers.user.uuid, &mut conn).await else {
+    let Some(mut auth_request) =
+        AuthRequest::find_by_uuid_and_user(&auth_request_id, &headers.user.uuid, &mut conn).await
+    else {
         err!("AuthRequest doesn't exist", "Record not found or user uuid does not match")
     };
 
@@ -1263,7 +1266,7 @@ async fn put_auth_request(
     }
 
     Ok(Json(json!({
-        "id": uuid,
+        "id": &auth_request_id,
         "publicKey": auth_request.public_key,
         "requestDeviceType": DeviceType::from_i32(auth_request.device_type).to_string(),
         "requestIpAddress": auth_request.request_ip,
@@ -1277,14 +1280,14 @@ async fn put_auth_request(
     })))
 }
 
-#[get("/auth-requests/<uuid>/response?<code>")]
+#[get("/auth-requests/<auth_request_id>/response?<code>")]
 async fn get_auth_request_response(
-    uuid: &str,
+    auth_request_id: AuthRequestId,
     code: &str,
     client_headers: ClientHeaders,
     mut conn: DbConn,
 ) -> JsonResult {
-    let Some(auth_request) = AuthRequest::find_by_uuid(uuid, &mut conn).await else {
+    let Some(auth_request) = AuthRequest::find_by_uuid(&auth_request_id, &mut conn).await else {
         err!("AuthRequest doesn't exist", "User not found")
     };
 
@@ -1298,7 +1301,7 @@ async fn get_auth_request_response(
     let response_date_utc = auth_request.response_date.map(|response_date| format_date(&response_date));
 
     Ok(Json(json!({
-        "id": uuid,
+        "id": &auth_request_id,
         "publicKey": auth_request.public_key,
         "requestDeviceType": DeviceType::from_i32(auth_request.device_type).to_string(),
         "requestIpAddress": auth_request.request_ip,

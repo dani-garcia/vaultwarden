@@ -178,9 +178,8 @@ async fn _password_login(
     let password = data.password.as_ref().unwrap();
 
     // If we get an auth request, we don't check the user's password, but the access code of the auth request
-    if let Some(ref auth_request_uuid) = data.auth_request {
-        let Some(auth_request) = AuthRequest::find_by_uuid_and_user(auth_request_uuid.as_str(), &user.uuid, conn).await
-        else {
+    if let Some(ref auth_request_id) = data.auth_request {
+        let Some(auth_request) = AuthRequest::find_by_uuid_and_user(auth_request_id, &user.uuid, conn).await else {
             err!(
                 "Auth request not found. Try again.",
                 format!("IP: {}. Username: {}.", ip.ip, username),
@@ -770,7 +769,7 @@ struct ConnectData {
     #[field(name = uncased("twofactorremember"))]
     two_factor_remember: Option<i32>,
     #[field(name = uncased("authrequest"))]
-    auth_request: Option<String>,
+    auth_request: Option<AuthRequestId>,
 }
 
 fn _check_is_some<T>(value: &Option<T>, msg: &str) -> EmptyResult {

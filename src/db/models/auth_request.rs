@@ -1,6 +1,8 @@
 use super::{DeviceId, OrganizationId, UserId};
 use crate::crypto::ct_eq;
 use chrono::{NaiveDateTime, Utc};
+use derive_more::{AsRef, Deref, Display, From};
+use rocket::request::FromParam;
 
 db_object! {
     #[derive(Debug, Identifiable, Queryable, Insertable, AsChangeset, Deserialize, Serialize)]
@@ -8,7 +10,7 @@ db_object! {
     #[diesel(treat_none_as_null = true)]
     #[diesel(primary_key(uuid))]
     pub struct AuthRequest {
-        pub uuid: String,
+        pub uuid: AuthRequestId,
         pub user_uuid: UserId,
         pub organization_uuid: Option<OrganizationId>,
 
@@ -44,7 +46,7 @@ impl AuthRequest {
         let now = Utc::now().naive_utc();
 
         Self {
-            uuid: crate::util::get_uuid(),
+            uuid: AuthRequestId(crate::util::get_uuid()),
             user_uuid,
             organization_uuid: None,
 
@@ -102,7 +104,7 @@ impl AuthRequest {
         }
     }
 
-    pub async fn find_by_uuid(uuid: &str, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_uuid(uuid: &AuthRequestId, conn: &mut DbConn) -> Option<Self> {
         db_run! {conn: {
             auth_requests::table
                 .filter(auth_requests::uuid.eq(uuid))
@@ -112,7 +114,7 @@ impl AuthRequest {
         }}
     }
 
-    pub async fn find_by_uuid_and_user(uuid: &str, user_uuid: &UserId, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_uuid_and_user(uuid: &AuthRequestId, user_uuid: &UserId, conn: &mut DbConn) -> Option<Self> {
         db_run! {conn: {
             auth_requests::table
                 .filter(auth_requests::uuid.eq(uuid))
@@ -155,6 +157,24 @@ impl AuthRequest {
         let expiry_time = Utc::now().naive_utc() - chrono::TimeDelta::try_minutes(5).unwrap(); //after 5 minutes, clients reject the request
         for auth_request in Self::find_created_before(&expiry_time, conn).await {
             auth_request.delete(conn).await.ok();
+        }
+    }
+}
+
+#[derive(
+    Clone, Debug, AsRef, Deref, DieselNewType, Display, From, FromForm, Hash, PartialEq, Eq, Serialize, Deserialize,
+)]
+pub struct AuthRequestId(String);
+
+impl<'r> FromParam<'r> for AuthRequestId {
+    type Error = ();
+
+    #[inline(always)]
+    fn from_param(param: &'r str) -> Result<Self, Self::Error> {
+        if param.chars().all(|c| matches!(c, 'a'..='z' | 'A'..='Z' |'0'..='9' | '-')) {
+            Ok(Self(param.to_string()))
+        } else {
+            Err(())
         }
     }
 }
