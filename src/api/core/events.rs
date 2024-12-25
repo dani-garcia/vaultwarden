@@ -31,7 +31,12 @@ struct EventRange {
 
 // Upstream: https://github.com/bitwarden/server/blob/9ecf69d9cabce732cf2c57976dd9afa5728578fb/src/Api/Controllers/EventsController.cs#LL84C35-L84C41
 #[get("/organizations/<org_id>/events?<data..>")]
-async fn get_org_events(org_id: &str, data: EventRange, _headers: AdminHeaders, mut conn: DbConn) -> JsonResult {
+async fn get_org_events(
+    org_id: OrganizationId,
+    data: EventRange,
+    _headers: AdminHeaders,
+    mut conn: DbConn,
+) -> JsonResult {
     // Return an empty vec when we org events are disabled.
     // This prevents client errors
     let events_json: Vec<Value> = if !CONFIG.org_events_enabled() {
@@ -44,7 +49,7 @@ async fn get_org_events(org_id: &str, data: EventRange, _headers: AdminHeaders, 
             parse_date(&data.end)
         };
 
-        Event::find_by_organization_uuid(org_id, &start_date, &end_date, &mut conn)
+        Event::find_by_organization_uuid(&org_id, &start_date, &end_date, &mut conn)
             .await
             .iter()
             .map(|e| e.to_json())
@@ -92,7 +97,7 @@ async fn get_cipher_events(cipher_id: CipherId, data: EventRange, headers: Heade
 
 #[get("/organizations/<org_id>/users/<member_id>/events?<data..>")]
 async fn get_user_events(
-    org_id: &str,
+    org_id: OrganizationId,
     member_id: MembershipId,
     data: EventRange,
     _headers: AdminHeaders,
@@ -110,7 +115,7 @@ async fn get_user_events(
             parse_date(&data.end)
         };
 
-        Event::find_by_org_and_member(org_id, &member_id, &start_date, &end_date, &mut conn)
+        Event::find_by_org_and_member(&org_id, &member_id, &start_date, &end_date, &mut conn)
             .await
             .iter()
             .map(|e| e.to_json())
