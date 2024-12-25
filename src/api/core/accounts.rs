@@ -452,7 +452,7 @@ struct UpdateFolderData {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct UpdateEmergencyAccessData {
-    id: String,
+    id: EmergencyAccessId,
     key_encrypted: String,
 }
 
@@ -508,9 +508,9 @@ fn validate_keydata(
 
     // Check that we're correctly rotating all the user's emergency access keys
     let existing_emergency_access_ids =
-        existing_emergency_access.iter().map(|ea| ea.uuid.as_str()).collect::<HashSet<_>>();
+        existing_emergency_access.iter().map(|ea| &ea.uuid).collect::<HashSet<&EmergencyAccessId>>();
     let provided_emergency_access_ids =
-        data.emergency_access_keys.iter().map(|ea| ea.id.as_str()).collect::<HashSet<_>>();
+        data.emergency_access_keys.iter().map(|ea| &ea.id).collect::<HashSet<&EmergencyAccessId>>();
     if !provided_emergency_access_ids.is_superset(&existing_emergency_access_ids) {
         err!("All existing emergency access keys must be included in the rotation")
     }

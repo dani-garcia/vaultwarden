@@ -15,8 +15,8 @@ use std::{
 };
 
 use crate::db::models::{
-    AttachmentId, CipherId, CollectionId, DeviceId, MembershipId, OrgApiKeyId, OrganizationId, SendFileId, SendId,
-    UserId,
+    AttachmentId, CipherId, CollectionId, DeviceId, EmergencyAccessId, MembershipId, OrgApiKeyId, OrganizationId,
+    SendFileId, SendId, UserId,
 };
 use crate::{error::Error, CONFIG};
 
@@ -191,7 +191,7 @@ pub struct InviteJwtClaims {
     // Issuer
     pub iss: String,
     // Subject
-    pub sub: String,
+    pub sub: UserId,
 
     pub email: String,
     pub org_id: Option<OrganizationId>,
@@ -200,7 +200,7 @@ pub struct InviteJwtClaims {
 }
 
 pub fn generate_invite_claims(
-    uuid: String,
+    user_id: UserId,
     email: String,
     org_id: Option<OrganizationId>,
     member_id: Option<MembershipId>,
@@ -212,7 +212,7 @@ pub fn generate_invite_claims(
         nbf: time_now.timestamp(),
         exp: (time_now + TimeDelta::try_hours(expire_hours).unwrap()).timestamp(),
         iss: JWT_INVITE_ISSUER.to_string(),
-        sub: uuid,
+        sub: user_id,
         email,
         org_id,
         member_id,
@@ -229,18 +229,18 @@ pub struct EmergencyAccessInviteJwtClaims {
     // Issuer
     pub iss: String,
     // Subject
-    pub sub: String,
+    pub sub: UserId,
 
     pub email: String,
-    pub emer_id: String,
+    pub emer_id: EmergencyAccessId,
     pub grantor_name: String,
     pub grantor_email: String,
 }
 
 pub fn generate_emergency_access_invite_claims(
-    uuid: String,
+    user_id: UserId,
     email: String,
-    emer_id: String,
+    emer_id: EmergencyAccessId,
     grantor_name: String,
     grantor_email: String,
 ) -> EmergencyAccessInviteJwtClaims {
@@ -250,7 +250,7 @@ pub fn generate_emergency_access_invite_claims(
         nbf: time_now.timestamp(),
         exp: (time_now + TimeDelta::try_hours(expire_hours).unwrap()).timestamp(),
         iss: JWT_EMERGENCY_ACCESS_INVITE_ISSUER.to_string(),
-        sub: uuid,
+        sub: user_id,
         email,
         emer_id,
         grantor_name,

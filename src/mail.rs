@@ -17,7 +17,7 @@ use crate::{
         encode_jwt, generate_delete_claims, generate_emergency_access_invite_claims, generate_invite_claims,
         generate_verify_email_claims,
     },
-    db::models::{Device, DeviceType, MembershipId, OrganizationId, User, UserId},
+    db::models::{Device, DeviceType, EmergencyAccessId, MembershipId, OrganizationId, User, UserId},
     error::Error,
     CONFIG,
 };
@@ -265,7 +265,7 @@ pub async fn send_invite(
     invited_by_email: Option<String>,
 ) -> EmptyResult {
     let claims = generate_invite_claims(
-        user.uuid.to_string(),
+        user.uuid.clone(),
         user.email.clone(),
         org_id.clone(),
         member_id.clone(),
@@ -313,15 +313,15 @@ pub async fn send_invite(
 
 pub async fn send_emergency_access_invite(
     address: &str,
-    uuid: &str,
-    emer_id: &str,
+    user_id: UserId,
+    emer_id: EmergencyAccessId,
     grantor_name: &str,
     grantor_email: &str,
 ) -> EmptyResult {
     let claims = generate_emergency_access_invite_claims(
-        String::from(uuid),
+        user_id,
         String::from(address),
-        String::from(emer_id),
+        emer_id.clone(),
         String::from(grantor_name),
         String::from(grantor_email),
     );
@@ -331,7 +331,7 @@ pub async fn send_emergency_access_invite(
     {
         let mut query_params = query.query_pairs_mut();
         query_params
-            .append_pair("id", emer_id)
+            .append_pair("id", &emer_id.to_string())
             .append_pair("name", grantor_name)
             .append_pair("email", address)
             .append_pair("token", &encode_jwt(&claims));

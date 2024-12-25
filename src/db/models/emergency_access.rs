@@ -1,4 +1,6 @@
 use chrono::{NaiveDateTime, Utc};
+use derive_more::{AsRef, Deref, Display, From};
+use rocket::request::FromParam;
 use serde_json::Value;
 
 use crate::{api::EmptyResult, db::DbConn, error::MapResult};
@@ -11,7 +13,7 @@ db_object! {
     #[diesel(treat_none_as_null = true)]
     #[diesel(primary_key(uuid))]
     pub struct EmergencyAccess {
-        pub uuid: String,
+        pub uuid: EmergencyAccessId,
         pub grantor_uuid: UserId,
         pub grantee_uuid: Option<UserId>,
         pub email: Option<String>,
@@ -33,7 +35,7 @@ impl EmergencyAccess {
         let now = Utc::now().naive_utc();
 
         Self {
-            uuid: crate::util::get_uuid(),
+            uuid: EmergencyAccessId(crate::util::get_uuid()),
             grantor_uuid,
             grantee_uuid: None,
             email: Some(email),
@@ -262,7 +264,11 @@ impl EmergencyAccess {
         }}
     }
 
-    pub async fn find_by_uuid_and_grantor_uuid(uuid: &str, grantor_uuid: &UserId, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_uuid_and_grantor_uuid(
+        uuid: &EmergencyAccessId,
+        grantor_uuid: &UserId,
+        conn: &mut DbConn,
+    ) -> Option<Self> {
         db_run! { conn: {
             emergency_access::table
                 .filter(emergency_access::uuid.eq(uuid))
@@ -272,7 +278,11 @@ impl EmergencyAccess {
         }}
     }
 
-    pub async fn find_by_uuid_and_grantee_uuid(uuid: &str, grantee_uuid: &UserId, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_uuid_and_grantee_uuid(
+        uuid: &EmergencyAccessId,
+        grantee_uuid: &UserId,
+        conn: &mut DbConn,
+    ) -> Option<Self> {
         db_run! { conn: {
             emergency_access::table
                 .filter(emergency_access::uuid.eq(uuid))
@@ -282,7 +292,11 @@ impl EmergencyAccess {
         }}
     }
 
-    pub async fn find_by_uuid_and_grantee_email(uuid: &str, grantee_email: &str, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_uuid_and_grantee_email(
+        uuid: &EmergencyAccessId,
+        grantee_email: &str,
+        conn: &mut DbConn,
+    ) -> Option<Self> {
         db_run! { conn: {
             emergency_access::table
                 .filter(emergency_access::uuid.eq(uuid))
@@ -349,3 +363,21 @@ impl EmergencyAccess {
 }
 
 // endregion
+
+#[derive(
+    Clone, Debug, AsRef, Deref, DieselNewType, Display, From, FromForm, Hash, PartialEq, Eq, Serialize, Deserialize,
+)]
+pub struct EmergencyAccessId(String);
+
+impl<'r> FromParam<'r> for EmergencyAccessId {
+    type Error = ();
+
+    #[inline(always)]
+    fn from_param(param: &'r str) -> Result<Self, Self::Error> {
+        if param.chars().all(|c| matches!(c, 'a'..='z' | 'A'..='Z' |'0'..='9' | '-')) {
+            Ok(Self(param.to_string()))
+        } else {
+            Err(())
+        }
+    }
+}
