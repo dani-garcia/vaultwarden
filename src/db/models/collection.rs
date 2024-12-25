@@ -3,7 +3,8 @@ use rocket::request::FromParam;
 use serde_json::Value;
 
 use super::{
-    CipherId, CollectionGroup, GroupUser, Membership, MembershipStatus, MembershipType, OrganizationId, User, UserId,
+    CipherId, CollectionGroup, GroupUser, Membership, MembershipId, MembershipStatus, MembershipType, OrganizationId,
+    User, UserId,
 };
 use crate::CONFIG;
 
@@ -527,8 +528,11 @@ impl CollectionUser {
         }}
     }
 
-    pub async fn find_by_organization(org_uuid: &OrganizationId, conn: &mut DbConn) -> Vec<Self> {
-        db_run! { conn: {
+    pub async fn find_by_organization_swap_user_uuid_with_member_uuid(
+        org_uuid: &OrganizationId,
+        conn: &mut DbConn,
+    ) -> Vec<CollectionMembership> {
+        let col_users = db_run! { conn: {
             users_collections::table
                 .inner_join(collections::table.on(collections::uuid.eq(users_collections::collection_uuid)))
                 .filter(collections::org_uuid.eq(org_uuid))
@@ -537,7 +541,8 @@ impl CollectionUser {
                 .load::<CollectionUserDb>(conn)
                 .expect("Error loading users_collections")
                 .from_db()
-        }}
+        }};
+        col_users.into_iter().map(|c| c.into()).collect()
     }
 
     pub async fn save(
@@ -626,8 +631,8 @@ impl CollectionUser {
     pub async fn find_by_collection_swap_user_uuid_with_member_uuid(
         collection_uuid: &CollectionId,
         conn: &mut DbConn,
-    ) -> Vec<Self> {
-        db_run! { conn: {
+    ) -> Vec<CollectionMembership> {
+        let col_users = db_run! { conn: {
             users_collections::table
                 .filter(users_collections::collection_uuid.eq(collection_uuid))
                 .inner_join(users_organizations::table.on(users_organizations::user_uuid.eq(users_collections::user_uuid)))
@@ -635,7 +640,8 @@ impl CollectionUser {
                 .load::<CollectionUserDb>(conn)
                 .expect("Error loading users_collections")
                 .from_db()
-        }}
+        }};
+        col_users.into_iter().map(|c| c.into()).collect()
     }
 
     pub async fn find_by_collection_and_user(
@@ -775,14 +781,33 @@ impl CollectionCipher {
     }
 }
 
-impl CollectionUser {
+// Added in case we need the membership_uuid instead of the user_uuid
+pub struct CollectionMembership {
+    pub membership_uuid: MembershipId,
+    pub collection_uuid: CollectionId,
+    pub read_only: bool,
+    pub hide_passwords: bool,
+}
+
+impl CollectionMembership {
     pub fn to_json_details_for_user(&self) -> Value {
         json!({
-            "id": self.user_uuid,
+            "id": self.membership_uuid,
             "readOnly": self.read_only,
             "hidePasswords": self.hide_passwords,
             "manage": false
         })
+    }
+}
+
+impl From<CollectionUser> for CollectionMembership {
+    fn from(c: CollectionUser) -> Self {
+        Self {
+            membership_uuid: c.user_uuid.to_string().into(),
+            collection_uuid: c.collection_uuid,
+            read_only: c.read_only,
+            hide_passwords: c.hide_passwords,
+        }
     }
 }
 

@@ -43,13 +43,13 @@ pub fn routes() -> Vec<Route> {
         get_org_details,
         get_members,
         send_invite,
-        reinvite_user,
-        bulk_reinvite_user,
+        reinvite_member,
+        bulk_reinvite_member,
         confirm_invite,
         bulk_confirm_invite,
         accept_invite,
         get_user,
-        edit_user,
+        edit_membership,
         put_membership,
         delete_user,
         bulk_delete_user,
@@ -340,7 +340,8 @@ async fn get_org_collections_details(
     };
 
     // get all collection memberships for the current organization
-    let col_users = CollectionUser::find_by_organization(&org_id, &mut conn).await;
+    // NOTE: the loaded col_users have a MembershipId
+    let col_users = CollectionUser::find_by_organization_swap_user_uuid_with_member_uuid(&org_id, &mut conn).await;
 
     // check if current user has full access to the organization (either directly or via any group)
     let has_full_access_to_org = member.access_all
@@ -688,9 +689,9 @@ async fn get_collection_users(
         err!("Collection not found in Organization")
     };
 
-    let mut user_list = Vec::new();
+    let mut member_list = Vec::new();
     for col_user in CollectionUser::find_by_collection(&collection.uuid, &mut conn).await {
-        user_list.push(
+        member_list.push(
             Membership::find_by_user_and_org(&col_user.user_uuid, &org_id, &mut conn)
                 .await
                 .unwrap()
@@ -698,7 +699,7 @@ async fn get_collection_users(
         );
     }
 
-    Ok(Json(json!(user_list)))
+    Ok(Json(json!(member_list)))
 }
 
 #[put("/organizations/<org_id>/collections/<col_id>/users", data = "<data>")]
@@ -972,7 +973,7 @@ async fn send_invite(
 }
 
 #[post("/organizations/<org_id>/users/reinvite", data = "<data>")]
-async fn bulk_reinvite_user(
+async fn bulk_reinvite_member(
     org_id: OrganizationId,
     data: Json<BulkMembershipIds>,
     headers: AdminHeaders,
@@ -982,7 +983,7 @@ async fn bulk_reinvite_user(
 
     let mut bulk_response = Vec::new();
     for member_id in data.ids {
-        let err_msg = match _reinvite_user(&org_id, &member_id, &headers.user.email, &mut conn).await {
+        let err_msg = match _reinvite_member(&org_id, &member_id, &headers.user.email, &mut conn).await {
             Ok(_) => String::new(),
             Err(e) => format!("{e:?}"),
         };
@@ -1004,16 +1005,16 @@ async fn bulk_reinvite_user(
 }
 
 #[post("/organizations/<org_id>/users/<member_id>/reinvite")]
-async fn reinvite_user(
+async fn reinvite_member(
     org_id: OrganizationId,
     member_id: MembershipId,
     headers: AdminHeaders,
     mut conn: DbConn,
 ) -> EmptyResult {
-    _reinvite_user(&org_id, &member_id, &headers.user.email, &mut conn).await
+    _reinvite_member(&org_id, &member_id, &headers.user.email, &mut conn).await
 }
 
-async fn _reinvite_user(
+async fn _reinvite_member(
     org_id: &OrganizationId,
     member_id: &MembershipId,
     invited_by_email: &str,
@@ -1104,7 +1105,7 @@ async fn accept_invite(
                     err!("Reset password key is required, but not provided.");
                 }
 
-                // This check is also done at accept_invite(), _confirm_invite, _activate_user(), edit_user(), admin::update_membership_type
+                // This check is also done at accept_invite(), _confirm_invite, _activate_membership(), edit_membership(), admin::update_membership_type
                 // It returns different error messages per function.
                 if member.atype < MembershipType::Admin {
                     match OrgPolicy::is_user_allowed(&member.user_uuid, &org_id, false, &mut conn).await {
@@ -1245,7 +1246,7 @@ async fn _confirm_invite(
         err!("User in invalid state")
     }
 
-    // This check is also done at accept_invite(), _confirm_invite, _activate_user(), edit_user(), admin::update_membership_type
+    // This check is also done at accept_invite(), _confirm_invite, _activate_membership(), edit_membership(), admin::update_membership_type
     // It returns different error messages per function.
     if member_to_confirm.atype < MembershipType::Admin {
         match OrgPolicy::is_user_allowed(&member_to_confirm.user_uuid, org_id, true, conn).await {
@@ -1336,11 +1337,11 @@ async fn put_membership(
     headers: AdminHeaders,
     conn: DbConn,
 ) -> EmptyResult {
-    edit_user(org_id, member_id, data, headers, conn).await
+    edit_membership(org_id, member_id, data, headers, conn).await
 }
 
 #[post("/organizations/<org_id>/users/<member_id>", data = "<data>", rank = 1)]
-async fn edit_user(
+async fn edit_membership(
     org_id: OrganizationId,
     member_id: MembershipId,
     data: Json<EditUserData>,
@@ -1378,7 +1379,7 @@ async fn edit_user(
         }
     }
 
-    // This check is also done at accept_invite(), _confirm_invite, _activate_user(), edit_user(), admin::update_membership_type
+    // This check is also done at accept_invite(), _confirm_invite, _activate_membership(), edit_membership(), admin::update_membership_type
     // It returns different error messages per function.
     if new_type < MembershipType::Admin {
         match OrgPolicy::is_user_allowed(&member_to_edit.user_uuid, &org_id, true, &mut conn).await {
@@ -2282,7 +2283,7 @@ async fn _restore_membership(
                 err!("Only owners can restore other owners")
             }
 
-            // This check is also done at accept_invite(), _confirm_invite, _activate_user(), edit_user(), admin::update_membership_type
+            // This check is also done at accept_invite(), _confirm_invite, _activate_membership(), edit_membership(), admin::update_membership_type
             // It returns different error messages per function.
             if member.atype < MembershipType::Admin {
                 match OrgPolicy::is_user_allowed(&member.user_uuid, org_id, false, conn).await {
