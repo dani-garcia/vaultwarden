@@ -242,6 +242,14 @@ impl Cipher {
         // Set the first element of the Uris array as Uri, this is needed several (mobile) clients.
         if self.atype == 1 {
             if type_data_json["uris"].is_array() {
+                // Fix uri match values first, they are only allowed to be a number or null
+                // If it is a string, convert it to null since all clients do not allow strings anyway
+                let uri_count = type_data_json["uris"].as_array().unwrap().len();
+                for n in 0..uri_count {
+                    if type_data_json["uris"][n]["match"].is_string() {
+                        type_data_json["uris"][n]["match"] = Value::Null;
+                    }
+                }
                 let uri = type_data_json["uris"][0]["uri"].clone();
                 type_data_json["uri"] = uri;
             } else {
