@@ -94,7 +94,8 @@ pub struct SetPasswordData {
     keys: Option<KeysData>,
     master_password_hash: String,
     master_password_hint: Option<String>,
-    // org_identifier: Option<String>,
+    #[allow(dead_code)]
+    org_identifier: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -274,14 +275,15 @@ async fn post_set_password(data: Json<SetPasswordData>, headers: Headers, mut co
         user.client_kdf_type = client_kdf_type;
     }
 
-    // We need to allow revision-date to use the old security_timestamp
-    let routes = ["revision_date"];
-    let routes: Option<Vec<String>> = Some(routes.iter().map(ToString::to_string).collect());
-
     user.client_kdf_memory = data.kdf_memory;
     user.client_kdf_parallelism = data.kdf_parallelism;
 
-    user.set_password(&data.master_password_hash, Some(data.key), false, routes);
+    user.set_password(
+        &data.master_password_hash,
+        Some(data.key),
+        false,
+        Some(vec![String::from("revision_date")]), // We need to allow revision-date to use the old security_timestamp
+    );
     user.password_hint = password_hint;
 
     if let Some(keys) = data.keys {
