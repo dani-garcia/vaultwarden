@@ -59,8 +59,7 @@ pub fn routes() -> Vec<Route> {
         post_org_import,
         list_policies,
         list_policies_token,
-        list_policies_invited_user,
-        get_policy_master_password,
+        get_master_password_policy,
         get_policy,
         put_policy,
         get_organization_tax,
@@ -313,7 +312,7 @@ async fn get_user_collections(headers: Headers, mut conn: DbConn) -> Json<Value>
 
 // Called during the SSO enrollment
 // The `_identifier` should be the harcoded value returned by `get_org_domain_sso_details`
-// The returned `Id` will then be passed to `get_policy_master_password` which will mainly ignore it
+// The returned `Id` will then be passed to `get_master_password_policy` which will mainly ignore it
 #[get("/organizations/<_identifier>/auto-enroll-status")]
 fn get_auto_enroll_status(_identifier: &str) -> JsonResult {
     Ok(Json(json!({
@@ -1835,32 +1834,8 @@ async fn list_policies_token(org_id: &str, token: &str, mut conn: DbConn) -> Jso
 }
 
 // Called during the SSO enrollment.
-// Since the VW SSO flow is not linked to an organization it will be called with a dummy or undefined `org_id`
-#[allow(non_snake_case)]
-#[get("/organizations/<org_id>/policies/invited-user?<userId>")]
-async fn list_policies_invited_user(org_id: &str, userId: &str, mut conn: DbConn) -> JsonResult {
-    if userId.is_empty() {
-        err!("userId must not be empty");
-    }
-
-    let user_orgs = UserOrganization::find_invited_by_user(userId, &mut conn).await;
-    let policies_json: Vec<Value> = if user_orgs.into_iter().any(|user_org| user_org.org_uuid == org_id) {
-        let policies = OrgPolicy::find_by_org(org_id, &mut conn).await;
-        policies.iter().map(OrgPolicy::to_json).collect()
-    } else {
-        Vec::with_capacity(0)
-    };
-
-    Ok(Json(json!({
-        "Data": policies_json,
-        "Object": "list",
-        "ContinuationToken": null
-    })))
-}
-
-// Called during the SSO enrollment.
 #[get("/organizations/<org_id>/policies/master-password", rank = 1)]
-fn get_policy_master_password(org_id: &str, _headers: Headers) -> JsonResult {
+fn get_master_password_policy(org_id: &str, _headers: Headers) -> JsonResult {
     let data = match CONFIG.sso_master_password_policy() {
         Some(policy) => policy,
         None => "null".to_string(),
