@@ -312,7 +312,7 @@ async fn _log_event(
         // 1600..=1699 Are organizational events, and they do not need the source_uuid
         // Policy Events
         1700..=1799 => {
-            event.policy_uuid = Some(String::from(source_uuid));
+            event.policy_uuid = Some(source_uuid.to_string().into());
         }
         // Ignore others
         _ => {}

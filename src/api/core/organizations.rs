@@ -1886,7 +1886,7 @@ async fn put_policy(
 
     log_event(
         EventType::PolicyUpdated as i32,
-        &policy.uuid,
+        policy.uuid.as_ref(),
         &org_id,
         &headers.user.uuid,
         headers.device.atype,

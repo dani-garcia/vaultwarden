@@ -1,3 +1,4 @@
+use derive_more::{AsRef, From};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -12,7 +13,7 @@ db_object! {
     #[diesel(table_name = org_policies)]
     #[diesel(primary_key(uuid))]
     pub struct OrgPolicy {
-        pub uuid: String,
+        pub uuid: OrgPolicyId,
         pub org_uuid: OrganizationId,
         pub atype: i32,
         pub enabled: bool,
@@ -64,7 +65,7 @@ pub enum OrgPolicyErr {
 impl OrgPolicy {
     pub fn new(org_uuid: OrganizationId, atype: OrgPolicyType, data: String) -> Self {
         Self {
-            uuid: crate::util::get_uuid(),
+            uuid: OrgPolicyId(crate::util::get_uuid()),
             org_uuid,
             atype: atype as i32,
             enabled: false,
@@ -349,3 +350,6 @@ impl OrgPolicy {
         false
     }
 }
+
+#[derive(Clone, Debug, AsRef, DieselNewType, From, FromForm, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct OrgPolicyId(String);
