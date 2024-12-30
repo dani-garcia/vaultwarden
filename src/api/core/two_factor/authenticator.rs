@@ -16,7 +16,7 @@ use crate::{
 pub use crate::config::CONFIG;
 
 pub fn routes() -> Vec<Route> {
-    routes![generate_authenticator, activate_authenticator, activate_authenticator_put,]
+    routes![generate_authenticator, activate_authenticator, activate_authenticator_put, disable_authenticator]
 }
 
 #[post("/two-factor/get-authenticator", data = "<data>")]
@@ -174,4 +174,48 @@ pub async fn validate_totp_code(
             event: EventType::UserFailedLogIn2fa
         }
     );
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DisableAuthenticatorData {
+    key: String,
+    master_password_hash: String,
+    r#type: NumberOrString,
+}
+
+#[delete("/two-factor/authenticator", data = "<data>")]
+async fn disable_authenticator(data: Json<DisableAuthenticatorData>, headers: Headers, mut conn: DbConn) -> JsonResult {
+    let user = headers.user;
+    let type_ = data.r#type.into_i32()?;
+
+    if !user.check_valid_password(&data.master_password_hash) {
+        err!("Invalid password");
+    }
+
+    if let Some(twofactor) = TwoFactor::find_by_user_and_type(&user.uuid, type_, &mut conn).await {
+        if twofactor.data == data.key {
+            twofactor.delete(&mut conn).await?;
+            log_user_event(
+                EventType::UserDisabled2fa as i32,
+                &user.uuid,
+                headers.device.atype,
+                &headers.ip.ip,
+                &mut conn,
+            )
+            .await;
+        } else {
+            err!(format!("TOTP key for user {} does not match recorded value, cannot deactivate", &user.email));
+        }
+    }
+
+    if TwoFactor::find_by_user(&user.uuid, &mut conn).await.is_empty() {
+        super::enforce_2fa_policy(&user, &user.uuid, headers.device.atype, &headers.ip.ip, &mut conn).await?;
+    }
+
+    Ok(Json(json!({
+        "enabled": false,
+        "keys": type_,
+        "object": "twoFactorProvider"
+    })))
 }
