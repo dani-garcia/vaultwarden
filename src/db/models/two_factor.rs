@@ -8,7 +8,7 @@ db_object! {
     #[diesel(table_name = twofactor)]
     #[diesel(primary_key(uuid))]
     pub struct TwoFactor {
-        pub uuid: String,
+        pub uuid: TwoFactorId,
         pub user_uuid: UserId,
         pub atype: i32,
         pub enabled: bool,
@@ -44,7 +44,7 @@ pub enum TwoFactorType {
 impl TwoFactor {
     pub fn new(user_uuid: UserId, atype: TwoFactorType, data: String) -> Self {
         Self {
-            uuid: crate::util::get_uuid(),
+            uuid: TwoFactorId(crate::util::get_uuid()),
             user_uuid,
             atype: atype as i32,
             enabled: true,
@@ -218,3 +218,6 @@ impl TwoFactor {
         Ok(())
     }
 }
+
+#[derive(Clone, Debug, DieselNewType, FromForm, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct TwoFactorId(String);
