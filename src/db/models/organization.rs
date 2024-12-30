@@ -652,7 +652,7 @@ impl UserOrganization {
     pub async fn to_json_mini_details(&self, conn: &mut DbConn) -> Value {
         let user = User::find_by_uuid(&self.user_uuid, conn).await.unwrap();
 
-        // Because BitWarden want the status to be -1 for revoked users we need to catch that here.
+        // Because Bitwarden wants the status to be -1 for revoked users we need to catch that here.
         // We subtract/add a number so we can restore/activate the user to it's previous state again.
         let status = if self.status < UserOrgStatus::Revoked as i32 {
             UserOrgStatus::Revoked as i32

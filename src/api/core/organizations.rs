@@ -325,7 +325,7 @@ async fn get_org_collections_details(org_id: &str, headers: ManagerHeadersLoose,
     };
 
     // get all collection memberships for the current organization
-    let coll_users = CollectionUser::find_by_organization(org_id, &mut conn).await;
+    let coll_users = CollectionUser::find_by_organization_swap_user_uuid_with_org_user_uuid(org_id, &mut conn).await;
     // Generate a HashMap to get the correct UserOrgType per user to determine the manage permission
     // We use the uuid instead of the user_uuid here, since that is what is used in CollectionUser
     let users_org_type: HashMap<String, i32> = UserOrganization::find_confirmed_by_org(org_id, &mut conn)
@@ -871,7 +871,7 @@ struct InviteData {
 async fn send_invite(org_id: &str, data: Json<InviteData>, headers: AdminHeaders, mut conn: DbConn) -> EmptyResult {
     let mut data: InviteData = data.into_inner();
 
-    // HACK: We need the raw user-type be be sure custom role is selected to determine the access_all permission
+    // HACK: We need the raw user-type to be sure custom role is selected to determine the access_all permission
     // The from_str() will convert the custom role type into a manager role type
     let raw_type = &data.r#type.into_string();
     // UserOrgType::from_str will convert custom (4) to manager (3)
@@ -885,7 +885,7 @@ async fn send_invite(org_id: &str, data: Json<InviteData>, headers: AdminHeaders
     }
 
     // HACK: This converts the Custom role which has the `Manage all collections` box checked into an access_all flag
-    // Since the parent checkbox is not send to the server we need to check and verify the child checkboxes
+    // Since the parent checkbox is not sent to the server we need to check and verify the child checkboxes
     // If the box is not checked, the user will still be a manager, but not with the access_all permission
     if raw_type.eq("4")
         && data.permissions.get("editAnyCollection") == Some(&json!(true))
@@ -1371,7 +1371,7 @@ async fn edit_user(
 ) -> EmptyResult {
     let mut data: EditUserData = data.into_inner();
 
-    // HACK: We need the raw user-type be be sure custom role is selected to determine the access_all permission
+    // HACK: We need the raw user-type to be sure custom role is selected to determine the access_all permission
     // The from_str() will convert the custom role type into a manager role type
     let raw_type = &data.r#type.into_string();
     // UserOrgType::from_str will convert custom (4) to manager (3)
@@ -1380,7 +1380,7 @@ async fn edit_user(
     };
 
     // HACK: This converts the Custom role which has the `Manage all collections` box checked into an access_all flag
-    // Since the parent checkbox is not send to the server we need to check and verify the child checkboxes
+    // Since the parent checkbox is not sent to the server we need to check and verify the child checkboxes
     // If the box is not checked, the user will still be a manager, but not with the access_all permission
     if raw_type.eq("4")
         && data.permissions.get("editAnyCollection") == Some(&json!(true))
@@ -3011,7 +3011,7 @@ async fn put_reset_password_enrollment(
     if reset_request.reset_password_key.is_none()
         && OrgPolicy::org_is_reset_password_auto_enroll(org_id, &mut conn).await
     {
-        err!("Reset password can't be withdrawed due to an enterprise policy");
+        err!("Reset password can't be withdrawn due to an enterprise policy");
     }
 
     if reset_request.reset_password_key.is_some() {
