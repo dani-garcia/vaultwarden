@@ -1,10 +1,9 @@
-use crate::db::DbConn;
+use chrono::{NaiveDateTime, TimeDelta, Utc};
+//use derive_more::{AsRef, Deref, Display, From};
 use serde_json::Value;
 
 use super::{CipherId, CollectionId, GroupId, MembershipId, OrgPolicyId, OrganizationId, UserId};
-use crate::{api::EmptyResult, error::MapResult, CONFIG};
-
-use chrono::{NaiveDateTime, TimeDelta, Utc};
+use crate::{api::EmptyResult, db::DbConn, error::MapResult, CONFIG};
 
 // https://bitwarden.com/help/event-logs/
 
@@ -16,7 +15,7 @@ db_object! {
     #[diesel(table_name = event)]
     #[diesel(primary_key(uuid))]
     pub struct Event {
-        pub uuid: String,
+        pub uuid: EventId,
         pub event_type: i32, // EventType
         pub user_uuid: Option<UserId>,
         pub org_uuid: Option<OrganizationId>,
@@ -129,7 +128,7 @@ impl Event {
         };
 
         Self {
-            uuid: crate::util::get_uuid(),
+            uuid: EventId(crate::util::get_uuid()),
             event_type,
             user_uuid: None,
             org_uuid: None,
@@ -328,3 +327,6 @@ impl Event {
         }
     }
 }
+
+#[derive(Clone, Debug, DieselNewType, FromForm, Hash, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EventId(String);
