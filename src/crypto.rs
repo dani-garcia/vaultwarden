@@ -6,7 +6,7 @@ use std::num::NonZeroU32;
 use data_encoding::{Encoding, HEXLOWER};
 use ring::{digest, hmac, pbkdf2};
 
-static DIGEST_ALG: pbkdf2::Algorithm = pbkdf2::PBKDF2_HMAC_SHA256;
+const DIGEST_ALG: pbkdf2::Algorithm = pbkdf2::PBKDF2_HMAC_SHA256;
 const OUTPUT_LEN: usize = digest::SHA256_OUTPUT_LEN;
 
 pub fn hash_password(secret: &[u8], salt: &[u8], iterations: u32) -> Vec<u8> {
