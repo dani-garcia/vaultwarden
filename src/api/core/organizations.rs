@@ -907,7 +907,7 @@ async fn send_invite(org_id: &str, data: Json<InviteData>, headers: AdminHeaders
         new_user.save(&mut conn).await?;
 
         for group in data.groups.iter() {
-            let mut group_entry = GroupUser::new(String::from(group), user.uuid.clone());
+            let mut group_entry = GroupUser::new(String::from(group), new_user.uuid.clone());
             group_entry.save(&mut conn).await?;
         }
 
