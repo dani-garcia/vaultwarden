@@ -17,7 +17,7 @@ use crate::{
         encode_jwt, generate_delete_claims, generate_emergency_access_invite_claims, generate_invite_claims,
         generate_verify_email_claims,
     },
-    db::models::{Device, DeviceType, User},
+    db::models::{Device, DeviceType, EmergencyAccessId, MembershipId, OrganizationId, User, UserId},
     error::Error,
     CONFIG,
 };
@@ -166,8 +166,8 @@ pub async fn send_password_hint(address: &str, hint: Option<String>) -> EmptyRes
     send_email(address, &subject, body_html, body_text).await
 }
 
-pub async fn send_delete_account(address: &str, uuid: &str) -> EmptyResult {
-    let claims = generate_delete_claims(uuid.to_string());
+pub async fn send_delete_account(address: &str, user_id: &UserId) -> EmptyResult {
+    let claims = generate_delete_claims(user_id.to_string());
     let delete_token = encode_jwt(&claims);
 
     let (subject, body_html, body_text) = get_text(
@@ -175,7 +175,7 @@ pub async fn send_delete_account(address: &str, uuid: &str) -> EmptyResult {
         json!({
             "url": CONFIG.domain(),
             "img_src": CONFIG._smtp_img_src(),
-            "user_id": uuid,
+            "user_id": user_id,
             "email": percent_encode(address.as_bytes(), NON_ALPHANUMERIC).to_string(),
             "token": delete_token,
         }),
@@ -184,8 +184,8 @@ pub async fn send_delete_account(address: &str, uuid: &str) -> EmptyResult {
     send_email(address, &subject, body_html, body_text).await
 }
 
-pub async fn send_verify_email(address: &str, uuid: &str) -> EmptyResult {
-    let claims = generate_verify_email_claims(uuid.to_string());
+pub async fn send_verify_email(address: &str, user_id: &UserId) -> EmptyResult {
+    let claims = generate_verify_email_claims(user_id.clone());
     let verify_email_token = encode_jwt(&claims);
 
     let (subject, body_html, body_text) = get_text(
@@ -193,7 +193,7 @@ pub async fn send_verify_email(address: &str, uuid: &str) -> EmptyResult {
         json!({
             "url": CONFIG.domain(),
             "img_src": CONFIG._smtp_img_src(),
-            "user_id": uuid,
+            "user_id": user_id,
             "email": percent_encode(address.as_bytes(), NON_ALPHANUMERIC).to_string(),
             "token": verify_email_token,
         }),
@@ -214,8 +214,8 @@ pub async fn send_welcome(address: &str) -> EmptyResult {
     send_email(address, &subject, body_html, body_text).await
 }
 
-pub async fn send_welcome_must_verify(address: &str, uuid: &str) -> EmptyResult {
-    let claims = generate_verify_email_claims(uuid.to_string());
+pub async fn send_welcome_must_verify(address: &str, user_id: &UserId) -> EmptyResult {
+    let claims = generate_verify_email_claims(user_id.clone());
     let verify_email_token = encode_jwt(&claims);
 
     let (subject, body_html, body_text) = get_text(
@@ -223,7 +223,7 @@ pub async fn send_welcome_must_verify(address: &str, uuid: &str) -> EmptyResult 
         json!({
             "url": CONFIG.domain(),
             "img_src": CONFIG._smtp_img_src(),
-            "user_id": uuid,
+            "user_id": user_id,
             "token": verify_email_token,
         }),
     )?;
@@ -259,8 +259,8 @@ pub async fn send_single_org_removed_from_org(address: &str, org_name: &str) -> 
 
 pub async fn send_invite(
     user: &User,
-    org_id: Option<String>,
-    org_user_id: Option<String>,
+    org_id: Option<OrganizationId>,
+    member_id: Option<MembershipId>,
     org_name: &str,
     invited_by_email: Option<String>,
 ) -> EmptyResult {
@@ -268,18 +268,26 @@ pub async fn send_invite(
         user.uuid.clone(),
         user.email.clone(),
         org_id.clone(),
-        org_user_id.clone(),
+        member_id.clone(),
         invited_by_email,
     );
     let invite_token = encode_jwt(&claims);
+    let org_id = match org_id {
+        Some(ref org_id) => org_id.as_ref(),
+        None => "_",
+    };
+    let member_id = match member_id {
+        Some(ref member_id) => member_id.as_ref(),
+        None => "_",
+    };
     let mut query = url::Url::parse("https://query.builder").unwrap();
     {
         let mut query_params = query.query_pairs_mut();
         query_params
             .append_pair("email", &user.email)
             .append_pair("organizationName", org_name)
-            .append_pair("organizationId", org_id.as_deref().unwrap_or("_"))
-            .append_pair("organizationUserId", org_user_id.as_deref().unwrap_or("_"))
+            .append_pair("organizationId", org_id)
+            .append_pair("organizationUserId", member_id)
             .append_pair("token", &invite_token);
         if user.private_key.is_some() {
             query_params.append_pair("orgUserHasExistingUser", "true");
@@ -305,15 +313,15 @@ pub async fn send_invite(
 
 pub async fn send_emergency_access_invite(
     address: &str,
-    uuid: &str,
-    emer_id: &str,
+    user_id: UserId,
+    emer_id: EmergencyAccessId,
     grantor_name: &str,
     grantor_email: &str,
 ) -> EmptyResult {
     let claims = generate_emergency_access_invite_claims(
-        String::from(uuid),
+        user_id,
         String::from(address),
-        String::from(emer_id),
+        emer_id.clone(),
         String::from(grantor_name),
         String::from(grantor_email),
     );
@@ -323,7 +331,7 @@ pub async fn send_emergency_access_invite(
     {
         let mut query_params = query.query_pairs_mut();
         query_params
-            .append_pair("id", emer_id)
+            .append_pair("id", &emer_id.to_string())
             .append_pair("name", grantor_name)
             .append_pair("email", address)
             .append_pair("token", &encode_jwt(&claims));

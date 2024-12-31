@@ -92,10 +92,10 @@ async fn generate_yubikey(data: Json<PasswordOrOtpData>, headers: Headers, mut c
 
     data.validate(&user, false, &mut conn).await?;
 
-    let user_uuid = &user.uuid;
+    let user_id = &user.uuid;
     let yubikey_type = TwoFactorType::YubiKey as i32;
 
-    let r = TwoFactor::find_by_user_and_type(user_uuid, yubikey_type, &mut conn).await;
+    let r = TwoFactor::find_by_user_and_type(user_id, yubikey_type, &mut conn).await;
 
     if let Some(r) = r {
         let yubikey_metadata: YubikeyMetadata = serde_json::from_str(&r.data)?;

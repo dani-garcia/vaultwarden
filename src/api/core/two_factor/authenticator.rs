@@ -7,7 +7,7 @@ use crate::{
     auth::{ClientIp, Headers},
     crypto,
     db::{
-        models::{EventType, TwoFactor, TwoFactorType},
+        models::{EventType, TwoFactor, TwoFactorType, UserId},
         DbConn,
     },
     util::NumberOrString,
@@ -95,7 +95,7 @@ async fn activate_authenticator_put(data: Json<EnableAuthenticatorData>, headers
 }
 
 pub async fn validate_totp_code_str(
-    user_uuid: &str,
+    user_id: &UserId,
     totp_code: &str,
     secret: &str,
     ip: &ClientIp,
@@ -105,11 +105,11 @@ pub async fn validate_totp_code_str(
         err!("TOTP code is not a number");
     }
 
-    validate_totp_code(user_uuid, totp_code, secret, ip, conn).await
+    validate_totp_code(user_id, totp_code, secret, ip, conn).await
 }
 
 pub async fn validate_totp_code(
-    user_uuid: &str,
+    user_id: &UserId,
     totp_code: &str,
     secret: &str,
     ip: &ClientIp,
@@ -121,11 +121,11 @@ pub async fn validate_totp_code(
         err!("Invalid TOTP secret")
     };
 
-    let mut twofactor =
-        match TwoFactor::find_by_user_and_type(user_uuid, TwoFactorType::Authenticator as i32, conn).await {
-            Some(tf) => tf,
-            _ => TwoFactor::new(user_uuid.to_string(), TwoFactorType::Authenticator, secret.to_string()),
-        };
+    let mut twofactor = match TwoFactor::find_by_user_and_type(user_id, TwoFactorType::Authenticator as i32, conn).await
+    {
+        Some(tf) => tf,
+        _ => TwoFactor::new(user_id.clone(), TwoFactorType::Authenticator, secret.to_string()),
+    };
 
     // The amount of steps back and forward in time
     // Also check if we need to disable time drifted TOTP codes.

@@ -173,17 +173,16 @@ async fn disable_twofactor_put(data: Json<DisableTwoFactorData>, headers: Header
 
 pub async fn enforce_2fa_policy(
     user: &User,
-    act_uuid: &str,
+    act_user_id: &UserId,
     device_type: i32,
     ip: &std::net::IpAddr,
     conn: &mut DbConn,
 ) -> EmptyResult {
-    for member in UserOrganization::find_by_user_and_policy(&user.uuid, OrgPolicyType::TwoFactorAuthentication, conn)
-        .await
-        .into_iter()
+    for member in
+        Membership::find_by_user_and_policy(&user.uuid, OrgPolicyType::TwoFactorAuthentication, conn).await.into_iter()
     {
         // Policy only applies to non-Owner/non-Admin members who have accepted joining the org
-        if member.atype < UserOrgType::Admin {
+        if member.atype < MembershipType::Admin {
             if CONFIG.mail_enabled() {
                 let org = Organization::find_by_uuid(&member.org_uuid, conn).await.unwrap();
                 mail::send_2fa_removed_from_org(&user.email, &org.name).await?;
@@ -196,7 +195,7 @@ pub async fn enforce_2fa_policy(
                 EventType::OrganizationUserRevoked as i32,
                 &member.uuid,
                 &member.org_uuid,
-                act_uuid,
+                act_user_id,
                 device_type,
                 ip,
                 conn,
@@ -209,16 +208,16 @@ pub async fn enforce_2fa_policy(
 }
 
 pub async fn enforce_2fa_policy_for_org(
-    org_uuid: &str,
-    act_uuid: &str,
+    org_id: &OrganizationId,
+    act_user_id: &UserId,
     device_type: i32,
     ip: &std::net::IpAddr,
     conn: &mut DbConn,
 ) -> EmptyResult {
-    let org = Organization::find_by_uuid(org_uuid, conn).await.unwrap();
-    for member in UserOrganization::find_confirmed_by_org(org_uuid, conn).await.into_iter() {
+    let org = Organization::find_by_uuid(org_id, conn).await.unwrap();
+    for member in Membership::find_confirmed_by_org(org_id, conn).await.into_iter() {
         // Don't enforce the policy for Admins and Owners.
-        if member.atype < UserOrgType::Admin && TwoFactor::find_by_user(&member.user_uuid, conn).await.is_empty() {
+        if member.atype < MembershipType::Admin && TwoFactor::find_by_user(&member.user_uuid, conn).await.is_empty() {
             if CONFIG.mail_enabled() {
                 let user = User::find_by_uuid(&member.user_uuid, conn).await.unwrap();
                 mail::send_2fa_removed_from_org(&user.email, &org.name).await?;
@@ -230,8 +229,8 @@ pub async fn enforce_2fa_policy_for_org(
             log_event(
                 EventType::OrganizationUserRevoked as i32,
                 &member.uuid,
-                org_uuid,
-                act_uuid,
+                org_id,
+                act_user_id,
                 device_type,
                 ip,
                 conn,

@@ -1,9 +1,9 @@
-use crate::db::DbConn;
+use chrono::{NaiveDateTime, TimeDelta, Utc};
+//use derive_more::{AsRef, Deref, Display, From};
 use serde_json::Value;
 
-use crate::{api::EmptyResult, error::MapResult, CONFIG};
-
-use chrono::{NaiveDateTime, TimeDelta, Utc};
+use super::{CipherId, CollectionId, GroupId, MembershipId, OrgPolicyId, OrganizationId, UserId};
+use crate::{api::EmptyResult, db::DbConn, error::MapResult, CONFIG};
 
 // https://bitwarden.com/help/event-logs/
 
@@ -15,20 +15,20 @@ db_object! {
     #[diesel(table_name = event)]
     #[diesel(primary_key(uuid))]
     pub struct Event {
-        pub uuid: String,
+        pub uuid: EventId,
         pub event_type: i32, // EventType
-        pub user_uuid: Option<String>,
-        pub org_uuid: Option<String>,
-        pub cipher_uuid: Option<String>,
-        pub collection_uuid: Option<String>,
-        pub group_uuid: Option<String>,
-        pub org_user_uuid: Option<String>,
-        pub act_user_uuid: Option<String>,
+        pub user_uuid: Option<UserId>,
+        pub org_uuid: Option<OrganizationId>,
+        pub cipher_uuid: Option<CipherId>,
+        pub collection_uuid: Option<CollectionId>,
+        pub group_uuid: Option<GroupId>,
+        pub org_user_uuid: Option<MembershipId>,
+        pub act_user_uuid: Option<UserId>,
         // Upstream enum: https://github.com/bitwarden/server/blob/8a22c0479e987e756ce7412c48a732f9002f0a2d/src/Core/Enums/DeviceType.cs
         pub device_type: Option<i32>,
         pub ip_address: Option<String>,
         pub event_date: NaiveDateTime,
-        pub policy_uuid: Option<String>,
+        pub policy_uuid: Option<OrgPolicyId>,
         pub provider_uuid: Option<String>,
         pub provider_user_uuid: Option<String>,
         pub provider_org_uuid: Option<String>,
@@ -128,7 +128,7 @@ impl Event {
         };
 
         Self {
-            uuid: crate::util::get_uuid(),
+            uuid: EventId(crate::util::get_uuid()),
             event_type,
             user_uuid: None,
             org_uuid: None,
@@ -246,7 +246,7 @@ impl Event {
     /// ##############
     /// Custom Queries
     pub async fn find_by_organization_uuid(
-        org_uuid: &str,
+        org_uuid: &OrganizationId,
         start: &NaiveDateTime,
         end: &NaiveDateTime,
         conn: &mut DbConn,
@@ -263,7 +263,7 @@ impl Event {
         }}
     }
 
-    pub async fn count_by_org(org_uuid: &str, conn: &mut DbConn) -> i64 {
+    pub async fn count_by_org(org_uuid: &OrganizationId, conn: &mut DbConn) -> i64 {
         db_run! { conn: {
             event::table
                 .filter(event::org_uuid.eq(org_uuid))
@@ -274,16 +274,16 @@ impl Event {
         }}
     }
 
-    pub async fn find_by_org_and_user_org(
-        org_uuid: &str,
-        user_org_uuid: &str,
+    pub async fn find_by_org_and_member(
+        org_uuid: &OrganizationId,
+        member_uuid: &MembershipId,
         start: &NaiveDateTime,
         end: &NaiveDateTime,
         conn: &mut DbConn,
     ) -> Vec<Self> {
         db_run! { conn: {
             event::table
-                .inner_join(users_organizations::table.on(users_organizations::uuid.eq(user_org_uuid)))
+                .inner_join(users_organizations::table.on(users_organizations::uuid.eq(member_uuid)))
                 .filter(event::org_uuid.eq(org_uuid))
                 .filter(event::event_date.between(start, end))
                 .filter(event::user_uuid.eq(users_organizations::user_uuid.nullable()).or(event::act_user_uuid.eq(users_organizations::user_uuid.nullable())))
@@ -297,7 +297,7 @@ impl Event {
     }
 
     pub async fn find_by_cipher_uuid(
-        cipher_uuid: &str,
+        cipher_uuid: &CipherId,
         start: &NaiveDateTime,
         end: &NaiveDateTime,
         conn: &mut DbConn,
@@ -327,3 +327,6 @@ impl Event {
         }
     }
 }
+
+#[derive(Clone, Debug, DieselNewType, FromForm, Hash, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EventId(String);

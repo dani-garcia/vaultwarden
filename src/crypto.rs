@@ -84,14 +84,15 @@ pub fn generate_id<const N: usize>() -> String {
     encode_random_bytes::<N>(HEXLOWER)
 }
 
-pub fn generate_send_id() -> String {
-    // Send IDs are globally scoped, so make them longer to avoid collisions.
+pub fn generate_send_file_id() -> String {
+    // Send File IDs are globally scoped, so make them longer to avoid collisions.
     generate_id::<32>() // 256 bits
 }
 
-pub fn generate_attachment_id() -> String {
+use crate::db::models::AttachmentId;
+pub fn generate_attachment_id() -> AttachmentId {
     // Attachment IDs are scoped to a cipher, so they can be smaller.
-    generate_id::<10>() // 80 bits
+    AttachmentId(generate_id::<10>()) // 80 bits
 }
 
 /// Generates a numeric token for email-based verifications.

@@ -1,5 +1,6 @@
 use serde_json::Value;
 
+use super::UserId;
 use crate::{api::EmptyResult, db::DbConn, error::MapResult};
 
 db_object! {
@@ -7,8 +8,8 @@ db_object! {
     #[diesel(table_name = twofactor)]
     #[diesel(primary_key(uuid))]
     pub struct TwoFactor {
-        pub uuid: String,
-        pub user_uuid: String,
+        pub uuid: TwoFactorId,
+        pub user_uuid: UserId,
         pub atype: i32,
         pub enabled: bool,
         pub data: String,
@@ -41,9 +42,9 @@ pub enum TwoFactorType {
 
 /// Local methods
 impl TwoFactor {
-    pub fn new(user_uuid: String, atype: TwoFactorType, data: String) -> Self {
+    pub fn new(user_uuid: UserId, atype: TwoFactorType, data: String) -> Self {
         Self {
-            uuid: crate::util::get_uuid(),
+            uuid: TwoFactorId(crate::util::get_uuid()),
             user_uuid,
             atype: atype as i32,
             enabled: true,
@@ -118,7 +119,7 @@ impl TwoFactor {
         }}
     }
 
-    pub async fn find_by_user(user_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_user(user_uuid: &UserId, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             twofactor::table
                 .filter(twofactor::user_uuid.eq(user_uuid))
@@ -129,7 +130,7 @@ impl TwoFactor {
         }}
     }
 
-    pub async fn find_by_user_and_type(user_uuid: &str, atype: i32, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_user_and_type(user_uuid: &UserId, atype: i32, conn: &mut DbConn) -> Option<Self> {
         db_run! { conn: {
             twofactor::table
                 .filter(twofactor::user_uuid.eq(user_uuid))
@@ -140,7 +141,7 @@ impl TwoFactor {
         }}
     }
 
-    pub async fn delete_all_by_user(user_uuid: &str, conn: &mut DbConn) -> EmptyResult {
+    pub async fn delete_all_by_user(user_uuid: &UserId, conn: &mut DbConn) -> EmptyResult {
         db_run! { conn: {
             diesel::delete(twofactor::table.filter(twofactor::user_uuid.eq(user_uuid)))
                 .execute(conn)
@@ -217,3 +218,6 @@ impl TwoFactor {
         Ok(())
     }
 }
+
+#[derive(Clone, Debug, DieselNewType, FromForm, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct TwoFactorId(String);

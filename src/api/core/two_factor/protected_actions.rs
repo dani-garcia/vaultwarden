@@ -6,7 +6,7 @@ use crate::{
     auth::Headers,
     crypto,
     db::{
-        models::{TwoFactor, TwoFactorType},
+        models::{TwoFactor, TwoFactorType, UserId},
         DbConn,
     },
     error::{Error, MapResult},
@@ -104,11 +104,11 @@ async fn verify_otp(data: Json<ProtectedActionVerify>, headers: Headers, mut con
 
 pub async fn validate_protected_action_otp(
     otp: &str,
-    user_uuid: &str,
+    user_id: &UserId,
     delete_if_valid: bool,
     conn: &mut DbConn,
 ) -> EmptyResult {
-    let pa = TwoFactor::find_by_user_and_type(user_uuid, TwoFactorType::ProtectedActions as i32, conn)
+    let pa = TwoFactor::find_by_user_and_type(user_id, TwoFactorType::ProtectedActions as i32, conn)
         .await
         .map_res("Protected action token not found, try sending the code again or restart the process")?;
     let mut pa_data = ProtectedActionData::from_json(&pa.data)?;
