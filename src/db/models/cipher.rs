@@ -241,20 +241,23 @@ impl Cipher {
         // NOTE: This was marked as *Backwards Compatibility Code*, but as of January 2021 this is still being used by upstream
         // Set the first element of the Uris array as Uri, this is needed several (mobile) clients.
         if self.atype == 1 {
-            if type_data_json["uris"].is_array() {
-                // Fix uri match values first, they are only allowed to be a number or null
-                // If it is a string, convert it to null since all clients do not allow strings anyway
-                let uri_count = type_data_json["uris"].as_array().unwrap().len();
-                for n in 0..uri_count {
-                    if type_data_json["uris"][n]["match"].is_string() {
-                        type_data_json["uris"][n]["match"] = Value::Null;
+            // Upstream always has an `uri` key/value
+            type_data_json["uri"] = Value::Null;
+            if let Some(uris) = type_data_json["uris"].as_array_mut() {
+                if !uris.is_empty() {
+                    // Fix uri match values first, they are only allowed to be a number or null
+                    // If it is a string, convert it to an int or null if that fails
+                    for uri in &mut *uris {
+                        if uri["match"].is_string() {
+                            let match_value = match uri["match"].as_str().unwrap_or_default().parse::<u8>() {
+                                Ok(n) => json!(n),
+                                _ => Value::Null,
+                            };
+                            uri["match"] = match_value;
+                        }
                     }
+                    type_data_json["uri"] = uris[0]["uri"].clone();
                 }
-                let uri = type_data_json["uris"][0]["uri"].clone();
-                type_data_json["uri"] = uri;
-            } else {
-                // Upstream always has an Uri key/value
-                type_data_json["uri"] = Value::Null;
             }
         }
 
