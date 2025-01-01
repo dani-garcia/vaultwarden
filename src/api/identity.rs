@@ -24,7 +24,7 @@ use crate::{
 };
 
 pub fn routes() -> Vec<Route> {
-    routes![login, prelogin, identity_register]
+    routes![login, prelogin, identity_register, register_verification_email, register_finish]
 }
 
 #[post("/connect/token", data = "<data>")]
@@ -713,7 +713,62 @@ async fn prelogin(data: Json<PreloginData>, conn: DbConn) -> Json<Value> {
 
 #[post("/accounts/register", data = "<data>")]
 async fn identity_register(data: Json<RegisterData>, conn: DbConn) -> JsonResult {
-    _register(data, conn).await
+    _register(data, false, conn).await
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RegisterVerificationData {
+    email: String,
+    name: String,
+    // receiveMarketingEmails: bool,
+}
+
+#[derive(rocket::Responder)]
+enum RegisterVerificationResponse {
+    NoContent(()),
+    Token(Json<String>),
+}
+
+#[post("/accounts/register/send-verification-email", data = "<data>")]
+async fn register_verification_email(
+    data: Json<RegisterVerificationData>,
+    mut conn: DbConn,
+) -> ApiResult<RegisterVerificationResponse> {
+    let data = data.into_inner();
+
+    if !CONFIG.is_signup_allowed(&data.email) {
+        err!("Registration not allowed or user already exists")
+    }
+
+    // TODO: We might want to do some rate limiting here
+    // Also, test this with invites/emergency access etc
+
+    if User::find_by_mail(&data.email, &mut conn).await.is_some() {
+        // TODO: Add some random delay here to prevent timing attacks?
+        return Ok(RegisterVerificationResponse::NoContent(()));
+    }
+
+    let should_send_mail = CONFIG.mail_enabled() && CONFIG.signups_verify();
+
+    let token_claims =
+        crate::auth::generate_register_verify_claims(data.email.clone(), data.name.clone(), should_send_mail);
+    let token = crate::auth::encode_jwt(&token_claims);
+
+    if should_send_mail {
+        mail::send_register_verify_email(&data.email, &data.name, &token).await?;
+
+        Ok(RegisterVerificationResponse::NoContent(()))
+    } else {
+        // If email verification is not required, return the token directly
+        // the clients will use this token to finish the registration
+        Ok(RegisterVerificationResponse::Token(Json(token)))
+    }
+}
+
+#[post("/accounts/register/finish", data = "<data>")]
+async fn register_finish(data: Json<RegisterData>, conn: DbConn) -> JsonResult {
+    _register(data, true, conn).await
 }
 
 // https://github.com/bitwarden/jslib/blob/master/common/src/models/request/tokenRequest.ts
