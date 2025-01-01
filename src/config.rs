@@ -12,7 +12,7 @@ use reqwest::Url;
 use crate::{
     db::DbConnType,
     error::Error,
-    util::{get_env, get_env_bool, parse_experimental_client_feature_flags},
+    util::{get_env, get_env_bool, get_web_vault_version, parse_experimental_client_feature_flags},
 };
 
 static CONFIG_FILE: Lazy<String> = Lazy::new(|| {
@@ -1327,6 +1327,8 @@ where
     // Register helpers
     hb.register_helper("case", Box::new(case_helper));
     hb.register_helper("to_json", Box::new(to_json));
+    hb.register_helper("webver", Box::new(webver));
+    hb.register_helper("vwver", Box::new(vwver));
 
     macro_rules! reg {
         ($name:expr) => {{
@@ -1430,3 +1432,42 @@ fn to_json<'reg, 'rc>(
     out.write(&json)?;
     Ok(())
 }
+
+// Configure the web-vault version as an integer so it can be used as a comparison smaller or greater then.
+// The default is based upon the version since this feature is added.
+static WEB_VAULT_VERSION: Lazy<semver::Version> = Lazy::new(|| {
+    let vault_version = get_web_vault_version();
+    // Use a single regex capture to extract version components
+    let re = regex::Regex::new(r"(\d{4})\.(\d{1,2})\.(\d{1,2})").unwrap();
+    re.captures(&vault_version)
+        .and_then(|c| {
+            (c.len() == 4).then(|| {
+                format!("{}.{}.{}", c.get(1).unwrap().as_str(), c.get(2).unwrap().as_str(), c.get(3).unwrap().as_str())
+            })
+        })
+        .and_then(|v| semver::Version::parse(&v).ok())
+        .unwrap_or_else(|| semver::Version::parse("2024.6.2").unwrap())
+});
+
+// Configure the Vaultwarden version as an integer so it can be used as a comparison smaller or greater then.
+// The default is based upon the version since this feature is added.
+static VW_VERSION: Lazy<semver::Version> = Lazy::new(|| {
+    let vw_version = crate::VERSION.unwrap_or("1.32.5");
+    // Use a single regex capture to extract version components
+    let re = regex::Regex::new(r"(\d{1})\.(\d{1,2})\.(\d{1,2})").unwrap();
+    re.captures(vw_version)
+        .and_then(|c| {
+            (c.len() == 4).then(|| {
+                format!("{}.{}.{}", c.get(1).unwrap().as_str(), c.get(2).unwrap().as_str(), c.get(3).unwrap().as_str())
+            })
+        })
+        .and_then(|v| semver::Version::parse(&v).ok())
+        .unwrap_or_else(|| semver::Version::parse("1.32.5").unwrap())
+});
+
+handlebars::handlebars_helper!(webver: | web_vault_version: String |
+    semver::VersionReq::parse(&web_vault_version).expect("Invalid web-vault version compare string").matches(&WEB_VAULT_VERSION)
+);
+handlebars::handlebars_helper!(vwver: | vw_version: String |
+    semver::VersionReq::parse(&vw_version).expect("Invalid Vaultwarden version compare string").matches(&VW_VERSION)
+);

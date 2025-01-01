@@ -511,7 +511,10 @@ impl CollectionUser {
         }}
     }
 
-    pub async fn find_by_organization(org_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_organization_swap_user_uuid_with_org_user_uuid(
+        org_uuid: &str,
+        conn: &mut DbConn,
+    ) -> Vec<Self> {
         db_run! { conn: {
             users_collections::table
                 .inner_join(collections::table.on(collections::uuid.eq(users_collections::collection_uuid)))
