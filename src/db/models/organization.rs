@@ -29,7 +29,6 @@ db_object! {
         pub uuid: String,
         pub user_uuid: String,
         pub org_uuid: String,
-        pub invited_by_email: Option<String>,
 
         pub access_all: bool,
         pub akey: String,
@@ -216,13 +215,12 @@ impl Organization {
 static ACTIVATE_REVOKE_DIFF: i32 = 128;
 
 impl UserOrganization {
-    pub fn new(user_uuid: String, org_uuid: String, invited_by_email: Option<String>) -> Self {
+    pub fn new(user_uuid: String, org_uuid: String) -> Self {
         Self {
             uuid: crate::util::get_uuid(),
 
             user_uuid,
             org_uuid,
-            invited_by_email,
 
             access_all: false,
             akey: String::new(),

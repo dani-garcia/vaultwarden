@@ -110,12 +110,7 @@ async fn ldap_import(data: Json<OrgImportData>, token: PublicToken, mut conn: Db
                 UserOrgStatus::Accepted as i32 // Automatically mark user as accepted if no email invites
             };
 
-            let (org_name, org_email) = match Organization::find_by_uuid(&org_id, &mut conn).await {
-                Some(org) => (org.name, org.billing_email),
-                None => err!("Error looking up organization"),
-            };
-
-            let mut new_member = UserOrganization::new(user.uuid.clone(), org_id.clone(), Some(org_email.clone()));
+            let mut new_member = UserOrganization::new(user.uuid.clone(), org_id.clone());
             new_member.set_external_id(Some(user_data.external_id.clone()));
             new_member.access_all = false;
             new_member.atype = UserOrgType::User as i32;
@@ -124,6 +119,11 @@ async fn ldap_import(data: Json<OrgImportData>, token: PublicToken, mut conn: Db
             new_member.save(&mut conn).await?;
 
             if CONFIG.mail_enabled() {
+                let (org_name, org_email) = match Organization::find_by_uuid(&org_id, &mut conn).await {
+                    Some(org) => (org.name, org.billing_email),
+                    None => err!("Error looking up organization"),
+                };
+
                 if let Err(e) = mail::send_invite(
                     &user,
                     Some(org_id.clone()),
