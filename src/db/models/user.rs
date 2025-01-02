@@ -1,7 +1,6 @@
 use crate::util::{format_date, get_uuid, retry};
 use chrono::{NaiveDateTime, TimeDelta, Utc};
 use serde_json::Value;
-use std::cmp::Ordering;
 
 use crate::crypto;
 use crate::CONFIG;
@@ -487,41 +486,29 @@ impl SsoUser {
         }
     }
 
-    // Written as an union to make the query more lisible than using an `or_filter`.
-    // If there is a match on identifier and email we want the identifier match.
-    // We sort results in code since UNION does not garanty order and DBs order NULL differently.
-    pub async fn find_by_identifier_or_email(
-        identifier: &str,
-        mail: &str,
-        conn: &DbConn,
-    ) -> Option<(User, Option<SsoUser>)> {
+    pub async fn find_by_identifier(identifier: &str, conn: &DbConn) -> Option<(User, SsoUser)> {
+        db_run! {conn: {
+            users::table
+                .inner_join(sso_users::table)
+                .select(<(UserDb, SsoUserDb)>::as_select())
+                .filter(sso_users::identifier.eq(identifier))
+                .first::<(UserDb, SsoUserDb)>(conn)
+                .ok()
+                .map(|(user, sso_user)| { (user.from_db(), sso_user.from_db()) })
+        }}
+    }
+
+    pub async fn find_by_mail(mail: &str, conn: &DbConn) -> Option<(User, Option<SsoUser>)> {
         let lower_mail = mail.to_lowercase();
 
         db_run! {conn: {
-            let mut res = users::table
-                .inner_join(sso_users::table)
+            users::table
+                .left_join(sso_users::table)
                 .select(<(UserDb, Option<SsoUserDb>)>::as_select())
-                .filter(sso_users::identifier.eq(identifier))
-                .union(
-                    users::table
-                        .left_join(sso_users::table)
-                        .select(<(UserDb, Option<SsoUserDb>)>::as_select())
-                        .filter(users::email.eq(lower_mail))
-                )
-                .load(conn)
-                .expect("Error searching user by SSO identifier and email")
-                .into_iter()
+                .filter(users::email.eq(lower_mail))
+                .first::<(UserDb, Option<SsoUserDb>)>(conn)
+                .ok()
                 .map(|(user, sso_user)| { (user.from_db(), sso_user.from_db()) })
-                .collect::<Vec<(User, Option<SsoUser>)>>();
-
-            res.sort_by(|(_, sso_user), _| {
-                match sso_user {
-                    Some(db_sso_user) if db_sso_user.identifier == identifier => Ordering::Less,
-                    _ => Ordering::Greater,
-                }
-            });
-
-            res.into_iter().next()
         }}
     }
 }

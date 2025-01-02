@@ -162,56 +162,41 @@ async fn _sso_login(data: ConnectData, user_uuid: &mut Option<String>, conn: &mu
     };
 
     let user_infos = sso::exchange_code(code, conn).await?;
-
-    // Will trigger 2FA flow if needed
-    let user_data = match SsoUser::find_by_identifier_or_email(&user_infos.identifier, &user_infos.email, conn).await {
-        None => None,
-        Some((user, None)) if user.private_key.is_some() && !CONFIG.sso_signups_match_email() => {
-            error!(
-                "Login failure ({}), existing non SSO user ({}) with same email ({}) and association is disabled",
-                user_infos.identifier, user.uuid, user.email
-            );
-            err_silent!(
-                "Existing non SSO user with same email",
-                ErrorEvent {
-                    event: EventType::UserFailedLogIn
-                }
-            )
-        }
-        Some((user, Some(sso_user))) if sso_user.identifier != user_infos.identifier => {
-            error!(
-                "Login failure ({}), existing SSO user ({}) with same email ({})",
-                user_infos.identifier, user.uuid, user.email
-            );
-            err_silent!(
-                "Existing SSO user with same email",
-                ErrorEvent {
-                    event: EventType::UserFailedLogIn
-                }
-            )
-        }
-        Some((user, _)) if !user.enabled => {
-            err!(
-                "This user has been disabled",
-                format!("IP: {}. Username: {}.", ip.ip, user.name),
-                ErrorEvent {
-                    event: EventType::UserFailedLogIn
-                }
-            )
-        }
-        Some((user, sso_user)) => {
-            let (mut device, new_device) = get_device(&data, conn, &user).await?;
-            let twofactor_token = twofactor_auth(&user, &data, &mut device, ip, conn).await?;
-
-            Some((user, device, new_device, twofactor_token, sso_user))
-        }
+    let user_with_sso = match SsoUser::find_by_identifier(&user_infos.identifier, conn).await {
+        None => match SsoUser::find_by_mail(&user_infos.email, conn).await {
+            None => None,
+            Some((user, Some(_))) => {
+                error!(
+                    "Login failure ({}), existing SSO user ({}) with same email ({})",
+                    user_infos.identifier, user.uuid, user.email
+                );
+                err_silent!(
+                    "Existing SSO user with same email",
+                    ErrorEvent {
+                        event: EventType::UserFailedLogIn
+                    }
+                )
+            }
+            Some((user, None)) if user.private_key.is_some() && !CONFIG.sso_signups_match_email() => {
+                error!(
+                    "Login failure ({}), existing non SSO user ({}) with same email ({}) and association is disabled",
+                    user_infos.identifier, user.uuid, user.email
+                );
+                err_silent!(
+                    "Existing non SSO user with same email",
+                    ErrorEvent {
+                        event: EventType::UserFailedLogIn
+                    }
+                )
+            }
+            Some((user, None)) => Some((user, None)),
+        },
+        Some((user, sso_user)) => Some((user, Some(sso_user))),
     };
 
-    // We passed 2FA get full user informations
-    let auth_user = sso::redeem(&user_infos.state, conn).await?;
-
     let now = Utc::now().naive_utc();
-    let (user, mut device, new_device, twofactor_token, sso_user) = match user_data {
+    // Will trigger 2FA flow if needed
+    let (user, mut device, new_device, twofactor_token, sso_user) = match user_with_sso {
         None => {
             if !CONFIG.is_email_domain_allowed(&user_infos.email) {
                 err!(
@@ -247,30 +232,46 @@ async fn _sso_login(data: ConnectData, user_uuid: &mut Option<String>, conn: &mu
 
             (user, device, new_device, None, None)
         }
-        Some((mut user, device, new_device, twofactor_token, sso_user)) if user.private_key.is_none() => {
-            // User was invited a stub was created
-            user.verified_at = Some(now);
-            if let Some(user_name) = user_infos.user_name {
-                user.name = user_name;
-            }
-
-            if !CONFIG.mail_enabled() {
-                UserOrganization::confirm_user_invitations(&user.uuid, conn).await?;
-            }
-
-            user.save(conn).await?;
-            (user, device, new_device, twofactor_token, sso_user)
+        Some((user, _)) if !user.enabled => {
+            err!(
+                "This user has been disabled",
+                format!("IP: {}. Username: {}.", ip.ip, user.name),
+                ErrorEvent {
+                    event: EventType::UserFailedLogIn
+                }
+            )
         }
-        Some((user, device, new_device, twofactor_token, sso_user)) => {
+        Some((mut user, sso_user)) => {
+            let (mut device, new_device) = get_device(&data, conn, &user).await?;
+            let twofactor_token = twofactor_auth(&user, &data, &mut device, ip, conn).await?;
+
+            if user.private_key.is_none() {
+                // User was invited a stub was created
+                user.verified_at = Some(now);
+                if let Some(user_name) = user_infos.user_name {
+                    user.name = user_name;
+                }
+
+                if !CONFIG.mail_enabled() {
+                    UserOrganization::confirm_user_invitations(&user.uuid, conn).await?;
+                }
+
+                user.save(conn).await?;
+            }
+
             if user.email != user_infos.email {
                 if CONFIG.mail_enabled() {
                     mail::send_sso_change_email(&user_infos.email).await?;
                 }
                 info!("User {} email changed in SSO provider from {} to {}", user.uuid, user.email, user_infos.email);
             }
+
             (user, device, new_device, twofactor_token, sso_user)
         }
     };
+
+    // We passed 2FA get full user informations
+    let auth_user = sso::redeem(&user_infos.state, conn).await?;
 
     if sso_user.is_none() {
         let user_sso = SsoUser {
