@@ -1045,6 +1045,8 @@ pub async fn kdf_upgrade(user: &mut User, pwd_hash: &str, conn: &mut DbConn) -> 
     Ok(())
 }
 
+// It appears that at the moment the return policy is required but ignored.
+// As such the `enforceOnLogin` part is not working.
 #[post("/accounts/verify-password", data = "<data>")]
 async fn verify_password(data: Json<SecretVerificationRequest>, headers: Headers, mut conn: DbConn) -> JsonResult {
     let data: SecretVerificationRequest = data.into_inner();
@@ -1056,8 +1058,14 @@ async fn verify_password(data: Json<SecretVerificationRequest>, headers: Headers
 
     kdf_upgrade(&mut user, &data.master_password_hash, &mut conn).await?;
 
+    let policy = if let Some(policy_str) = CONFIG.sso_master_password_policy().filter(|_| CONFIG.sso_enabled()) {
+        serde_json::from_str(&policy_str).unwrap_or(json!({}))
+    } else {
+        json!({})
+    };
+
     Ok(Json(json!({
-      "MasterPasswordPolicy": {}, // Required for SSO login with mobile apps
+      "MasterPasswordPolicy": policy,
     })))
 }
 

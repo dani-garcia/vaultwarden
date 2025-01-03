@@ -25,7 +25,7 @@ The following configurations are available
  - `SSO_AUDIENCE_TRUSTED`: Optional, Regex to trust additional audience for the IdToken (`client_id` is always trusted). Use single quote when writing the regex: `'^$'`.
  - `SSO_CLIENT_ID` : Client Id
  - `SSO_CLIENT_SECRET` : Client Secret
- - `SSO_MASTER_PASSWORD_POLICY`: Optional Master password policy
+ - `SSO_MASTER_PASSWORD_POLICY`: Optional Master password policy (`enforceOnLogin` is not supported).
  - `SSO_AUTH_ONLY_NOT_SESSION`: Enable to use SSO only for authentication not session lifecycle
  - `SSO_CLIENT_CACHE_EXPIRATION`: Cache calls to the discovery endpoint, duration in seconds, `0` to disable (default `0`);
  - `SSO_DEBUG_TOKENS`: Log all tokens (default `false`, `LOG_LEVEL=debug` is required)
