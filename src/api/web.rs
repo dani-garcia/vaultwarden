@@ -58,7 +58,7 @@ fn vaultwarden_css() -> Cached<Css<String>> {
         "load_user_scss": true,
         "mail_enabled": CONFIG.mail_enabled(),
         "sends_allowed": CONFIG.sends_allowed(),
-        "signup_disabled": !CONFIG.signups_allowed() && CONFIG.signups_domains_whitelist().is_empty(),
+        "signup_disabled": CONFIG.is_signup_disabled(),
         "sso_disabled": !CONFIG.sso_enabled(),
         "sso_only": CONFIG.sso_enabled() && CONFIG.sso_only(),
         "yubico_enabled": CONFIG._enable_yubico() && (CONFIG.yubico_client_id().is_some() == CONFIG.yubico_secret_key().is_some()),
