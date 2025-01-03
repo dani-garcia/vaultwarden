@@ -77,12 +77,11 @@ impl OrgPolicy {
     }
 
     pub fn to_json(&self) -> Value {
-        let data_json: Value = serde_json::from_str(&self.data).unwrap_or(Value::Null);
         json!({
             "id": self.uuid,
             "organizationId": self.org_uuid,
             "type": self.atype,
-            "data": data_json,
+            "data": serde_json::from_str(&self.data).unwrap_or(Value::Null),
             "enabled": self.enabled,
             "object": "policy",
         })

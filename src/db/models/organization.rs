@@ -730,6 +730,17 @@ impl UserOrganization {
         }}
     }
 
+    pub async fn confirm_user_invitations(user_uuid: &str, conn: &mut DbConn) -> EmptyResult {
+        db_run! { conn: {
+            diesel::update(users_organizations::table)
+                .filter(users_organizations::user_uuid.eq(user_uuid))
+                .filter(users_organizations::status.eq(UserOrgStatus::Invited as i32))
+                .set(users_organizations::status.eq(UserOrgStatus::Accepted as i32))
+                .execute(conn)
+                .map_res("Error confirming invitations")
+        }}
+    }
+
     pub async fn find_any_state_by_user(user_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             users_organizations::table
