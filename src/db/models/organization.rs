@@ -73,6 +73,8 @@ impl UserOrgType {
             "1" | "Admin" => Some(UserOrgType::Admin),
             "2" | "User" => Some(UserOrgType::User),
             "3" | "Manager" => Some(UserOrgType::Manager),
+            // HACK: We convert the custom role to a manager role
+            "4" | "Custom" => Some(UserOrgType::Manager),
             _ => None,
         }
     }
@@ -85,7 +87,7 @@ impl Ord for UserOrgType {
             3, // Owner
             2, // Admin
             0, // User
-            1, // Manager
+            1, // Manager && Custom
         ];
         ACCESS_LEVEL[*self as usize].cmp(&ACCESS_LEVEL[*other as usize])
     }
@@ -158,32 +160,45 @@ impl Organization {
     pub fn to_json(&self) -> Value {
         json!({
             "id": self.uuid,
-            "identifier": null, // not supported by us
             "name": self.name,
             "seats": null,
             "maxCollections": null,
             "maxStorageGb": i16::MAX, // The value doesn't matter, we don't check server-side
             "use2fa": true,
-            "useCustomPermissions": false,
+            "useCustomPermissions": true,
             "useDirectory": false, // Is supported, but this value isn't checked anywhere (yet)
             "useEvents": CONFIG.org_events_enabled(),
             "useGroups": CONFIG.org_groups_enabled(),
             "useTotp": true,
             "usePolicies": true,
-            // "useScim": false, // Not supported (Not AGPLv3 Licensed)
+            "useScim": false, // Not supported (Not AGPLv3 Licensed)
             "useSso": false, // Not supported
-            // "useKeyConnector": false, // Not supported
+            "useKeyConnector": false, // Not supported
+            "usePasswordManager": true,
+            "useSecretsManager": false, // Not supported (Not AGPLv3 Licensed)
             "selfHost": true,
             "useApi": true,
             "hasPublicAndPrivateKeys": self.private_key.is_some() && self.public_key.is_some(),
             "useResetPassword": CONFIG.mail_enabled(),
+            "allowAdminAccessToAllCollectionItems": true,
+            "limitCollectionCreation": true,
+            "limitCollectionCreationDeletion": true,
+            "limitCollectionDeletion": true,
 
-            "businessName": null,
+            "businessName": self.name,
             "businessAddress1": null,
             "businessAddress2": null,
             "businessAddress3": null,
             "businessCountry": null,
             "businessTaxNumber": null,
+
+            "maxAutoscaleSeats": null,
+            "maxAutoscaleSmSeats": null,
+            "maxAutoscaleSmServiceAccounts": null,
+
+            "secretsManagerPlan": null,
+            "smSeats": null,
+            "smServiceAccounts": null,
 
             "billingEmail": self.billing_email,
             "planType": 6, // Custom plan
@@ -251,6 +266,15 @@ impl UserOrganization {
             return true;
         }
         false
+    }
+
+    /// HACK: Convert the manager type to a custom type
+    /// It will be converted back on other locations
+    pub fn type_manager_as_custom(&self) -> i32 {
+        match self.atype {
+            3 => 4,
+            _ => self.atype,
+        }
     }
 }
 
@@ -356,17 +380,21 @@ impl UserOrganization {
     pub async fn to_json(&self, conn: &mut DbConn) -> Value {
         let org = Organization::find_by_uuid(&self.org_uuid, conn).await.unwrap();
 
+        // HACK: Convert the manager type to a custom type
+        // It will be converted back on other locations
+        let user_org_type = self.type_manager_as_custom();
+
         let permissions = json!({
-                // TODO: Add support for Custom User Roles
+                // TODO: Add full support for Custom User Roles
                 // See: https://bitwarden.com/help/article/user-types-access-control/#custom-role
+                // Currently we use the custom role as a manager role and link the 3 Collection roles to mimic the access_all permission
                 "accessEventLogs": false,
                 "accessImportExport": false,
                 "accessReports": false,
-                "createNewCollections": false,
-                "editAnyCollection": false,
-                "deleteAnyCollection": false,
-                "editAssignedCollections": false,
-                "deleteAssignedCollections": false,
+                // If the following 3 Collection roles are set to true a custom user has access all permission
+                "createNewCollections": user_org_type == 4 && self.access_all,
+                "editAnyCollection": user_org_type == 4 && self.access_all,
+                "deleteAnyCollection": user_org_type == 4 && self.access_all,
                 "manageGroups": false,
                 "managePolicies": false,
                 "manageSso": false, // Not supported
@@ -398,9 +426,9 @@ impl UserOrganization {
             "ssoBound": false, // Not supported
             "useSso": false, // Not supported
             "useKeyConnector": false,
-            "useSecretsManager": false,
+            "useSecretsManager": false, // Not supported (Not AGPLv3 Licensed)
             "usePasswordManager": true,
-            "useCustomPermissions": false,
+            "useCustomPermissions": true,
             "useActivateAutofillPolicy": false,
 
             "organizationUserId": self.uuid,
@@ -417,9 +445,11 @@ impl UserOrganization {
             "familySponsorshipValidUntil": null,
             "familySponsorshipToDelete": null,
             "accessSecretsManager": false,
-            "limitCollectionCreationDeletion": false, // This should be set to true only when we can handle roles like createNewCollections
+            "limitCollectionCreation": true,
+            "limitCollectionCreationDeletion": true,
+            "limitCollectionDeletion": true,
             "allowAdminAccessToAllCollectionItems": true,
-            "flexibleCollections": false,
+            "userIsManagedByOrganization": false, // Means not managed via the Members UI, like SSO
 
             "permissions": permissions,
 
@@ -429,7 +459,7 @@ impl UserOrganization {
             "userId": self.user_uuid,
             "key": self.akey,
             "status": self.status,
-            "type": self.atype,
+            "type": user_org_type,
             "enabled": true,
 
             "object": "profileOrganization",
@@ -516,24 +546,34 @@ impl UserOrganization {
             Vec::with_capacity(0)
         };
 
-        let permissions = json!({
-            // TODO: Add support for Custom User Roles
-            // See: https://bitwarden.com/help/article/user-types-access-control/#custom-role
-            "accessEventLogs": false,
-            "accessImportExport": false,
-            "accessReports": false,
-            "createNewCollections": false,
-            "editAnyCollection": false,
-            "deleteAnyCollection": false,
-            "editAssignedCollections": false,
-            "deleteAssignedCollections": false,
-            "manageGroups": false,
-            "managePolicies": false,
-            "manageSso": false, // Not supported
-            "manageUsers": false,
-            "manageResetPassword": false,
-            "manageScim": false // Not supported (Not AGPLv3 Licensed)
-        });
+        // HACK: Convert the manager type to a custom type
+        // It will be converted back on other locations
+        let user_org_type = self.type_manager_as_custom();
+
+        // HACK: Only return permissions if the user is of type custom and has access_all
+        // Else Bitwarden will assume the defaults of all false
+        let permissions = if user_org_type == 4 && self.access_all {
+            json!({
+                // TODO: Add full support for Custom User Roles
+                // See: https://bitwarden.com/help/article/user-types-access-control/#custom-role
+                // Currently we use the custom role as a manager role and link the 3 Collection roles to mimic the access_all permission
+                "accessEventLogs": false,
+                "accessImportExport": false,
+                "accessReports": false,
+                // If the following 3 Collection roles are set to true a custom user has access all permission
+                "createNewCollections": true,
+                "editAnyCollection": true,
+                "deleteAnyCollection": true,
+                "manageGroups": false,
+                "managePolicies": false,
+                "manageSso": false, // Not supported
+                "manageUsers": false,
+                "manageResetPassword": false,
+                "manageScim": false // Not supported (Not AGPLv3 Licensed)
+            })
+        } else {
+            json!(null)
+        };
 
         json!({
             "id": self.uuid,
@@ -546,7 +586,7 @@ impl UserOrganization {
             "collections": collections,
 
             "status": status,
-            "type": self.atype,
+            "type": user_org_type,
             "accessAll": self.access_all,
             "twoFactorEnabled": twofactor_enabled,
             "resetPasswordEnrolled": self.reset_password_key.is_some(),
@@ -608,6 +648,29 @@ impl UserOrganization {
             "object": "organizationUserDetails",
         })
     }
+
+    pub async fn to_json_mini_details(&self, conn: &mut DbConn) -> Value {
+        let user = User::find_by_uuid(&self.user_uuid, conn).await.unwrap();
+
+        // Because Bitwarden wants the status to be -1 for revoked users we need to catch that here.
+        // We subtract/add a number so we can restore/activate the user to it's previous state again.
+        let status = if self.status < UserOrgStatus::Revoked as i32 {
+            UserOrgStatus::Revoked as i32
+        } else {
+            self.status
+        };
+
+        json!({
+            "id": self.uuid,
+            "userId": self.user_uuid,
+            "type": self.type_manager_as_custom(), // HACK: Convert the manager type to a custom type
+            "status": status,
+            "name": user.name,
+            "email": user.email,
+            "object": "organizationUserUserMiniDetails",
+        })
+    }
+
     pub async fn save(&self, conn: &mut DbConn) -> EmptyResult {
         User::update_uuid_revision(&self.user_uuid, conn).await;
 
@@ -1015,5 +1078,6 @@ mod tests {
         assert!(UserOrgType::Owner > UserOrgType::Admin);
         assert!(UserOrgType::Admin > UserOrgType::Manager);
         assert!(UserOrgType::Manager > UserOrgType::User);
+        assert!(UserOrgType::Manager == UserOrgType::from_str("4").unwrap());
     }
 }
