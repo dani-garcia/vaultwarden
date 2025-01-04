@@ -366,7 +366,12 @@ async fn post_password(data: Json<ChangePassData>, headers: Headers, mut conn: D
         &data.new_master_password_hash,
         Some(data.key),
         true,
-        Some(vec![String::from("post_rotatekey"), String::from("get_contacts"), String::from("get_public_keys")]),
+        Some(vec![
+            String::from("post_rotatekey"),
+            String::from("get_contacts"),
+            String::from("get_public_keys"),
+            String::from("get_api_webauthn"),
+        ]),
     );
 
     let save_result = user.save(&mut conn).await;
