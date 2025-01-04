@@ -272,6 +272,19 @@ impl Cipher {
             }
         }
 
+        // Fix invalid SSH Entries
+        // This breaks at least the native mobile client if invalid
+        // The only way to fix this is by setting type_data_json to `null`
+        // Opening this ssh-key in the mobile client will probably crash the client, but you can edit, save and afterwards delete it
+        if self.atype == 5
+            && (type_data_json["keyFingerprint"].as_str().is_none_or(|v| v.is_empty())
+                || type_data_json["privateKey"].as_str().is_none_or(|v| v.is_empty())
+                || type_data_json["publicKey"].as_str().is_none_or(|v| v.is_empty()))
+        {
+            warn!("Error parsing ssh-key, mandatory fields are invalid for {}", self.uuid);
+            type_data_json = Value::Null;
+        }
+
         // Clone the type_data and add some default value.
         let mut data_json = type_data_json.clone();
 
