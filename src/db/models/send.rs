@@ -353,7 +353,7 @@ impl Send {
 // separate namespace to avoid name collision with std::marker::Send
 pub mod id {
     use derive_more::{AsRef, Deref, Display, From};
-    use macros::IdFromParam;
+    use macros::{IdFromParam, UuidFromParam};
     use std::marker::Send;
     use std::path::Path;
 
@@ -371,7 +371,7 @@ pub mod id {
         Eq,
         Serialize,
         Deserialize,
-        IdFromParam,
+        UuidFromParam,
     )]
     pub struct SendId(String);
 

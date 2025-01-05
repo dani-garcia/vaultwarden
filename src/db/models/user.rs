@@ -13,7 +13,7 @@ use crate::{
     util::{format_date, get_uuid, retry},
     CONFIG,
 };
-use macros::IdFromParam;
+use macros::UuidFromParam;
 
 db_object! {
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -473,7 +473,7 @@ impl Invitation {
     Deref,
     Display,
     From,
-    IdFromParam,
+    UuidFromParam,
 )]
 #[deref(forward)]
 #[from(forward)]

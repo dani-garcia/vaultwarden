@@ -4,7 +4,7 @@ use serde_json::Value;
 
 use super::{User, UserId};
 use crate::{api::EmptyResult, db::DbConn, error::MapResult};
-use macros::IdFromParam;
+use macros::UuidFromParam;
 
 db_object! {
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -377,6 +377,6 @@ impl EmergencyAccess {
     Eq,
     Serialize,
     Deserialize,
-    IdFromParam,
+    UuidFromParam,
 )]
 pub struct EmergencyAccessId(String);

@@ -12,7 +12,7 @@ use super::{
     OrgPolicyType, TwoFactor, User, UserId,
 };
 use crate::CONFIG;
-use macros::IdFromParam;
+use macros::UuidFromParam;
 
 db_object! {
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -1134,7 +1134,7 @@ impl OrganizationApiKey {
     Eq,
     Serialize,
     Deserialize,
-    IdFromParam,
+    UuidFromParam,
 )]
 #[deref(forward)]
 #[from(forward)]
@@ -1153,7 +1153,7 @@ pub struct OrganizationId(String);
     Eq,
     Serialize,
     Deserialize,
-    IdFromParam,
+    UuidFromParam,
 )]
 pub struct MembershipId(String);
 

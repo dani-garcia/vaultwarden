@@ -6,7 +6,7 @@ use super::{
     User, UserId,
 };
 use crate::CONFIG;
-use macros::IdFromParam;
+use macros::UuidFromParam;
 
 db_object! {
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -828,6 +828,6 @@ impl From<CollectionUser> for CollectionMembership {
     Eq,
     Serialize,
     Deserialize,
-    IdFromParam,
+    UuidFromParam,
 )]
 pub struct CollectionId(String);

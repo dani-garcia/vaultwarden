@@ -3,7 +3,7 @@ use derive_more::{AsRef, Deref, Display, From};
 use serde_json::Value;
 
 use super::{CipherId, User, UserId};
-use macros::IdFromParam;
+use macros::UuidFromParam;
 
 db_object! {
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -248,6 +248,6 @@ impl FolderCipher {
     Eq,
     Serialize,
     Deserialize,
-    IdFromParam,
+    UuidFromParam,
 )]
 pub struct FolderId(String);

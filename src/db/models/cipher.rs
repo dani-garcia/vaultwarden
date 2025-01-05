@@ -9,7 +9,7 @@ use super::{
     MembershipType, OrganizationId, User, UserId,
 };
 use crate::api::core::{CipherData, CipherSyncData, CipherSyncType};
-use macros::IdFromParam;
+use macros::UuidFromParam;
 
 use std::borrow::Cow;
 
@@ -1071,6 +1071,6 @@ impl Cipher {
     Eq,
     Serialize,
     Deserialize,
-    IdFromParam,
+    UuidFromParam,
 )]
 pub struct CipherId(String);

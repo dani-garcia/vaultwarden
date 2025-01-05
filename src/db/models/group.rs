@@ -4,7 +4,7 @@ use crate::db::DbConn;
 use crate::error::MapResult;
 use chrono::{NaiveDateTime, Utc};
 use derive_more::{AsRef, Deref, Display, From};
-use macros::IdFromParam;
+use macros::UuidFromParam;
 use serde_json::Value;
 
 db_object! {
@@ -618,6 +618,6 @@ impl GroupUser {
     Eq,
     Serialize,
     Deserialize,
-    IdFromParam,
+    UuidFromParam,
 )]
 pub struct GroupId(String);

@@ -2,7 +2,7 @@ use super::{DeviceId, OrganizationId, UserId};
 use crate::crypto::ct_eq;
 use chrono::{NaiveDateTime, Utc};
 use derive_more::{AsRef, Deref, Display, From};
-use macros::IdFromParam;
+use macros::UuidFromParam;
 
 db_object! {
     #[derive(Debug, Identifiable, Queryable, Insertable, AsChangeset, Deserialize, Serialize)]
@@ -175,6 +175,6 @@ impl AuthRequest {
     Eq,
     Serialize,
     Deserialize,
-    IdFromParam,
+    UuidFromParam,
 )]
 pub struct AuthRequestId(String);
