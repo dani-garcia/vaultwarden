@@ -4,7 +4,7 @@ use crate::db::DbConn;
 use crate::error::MapResult;
 use chrono::{NaiveDateTime, Utc};
 use derive_more::{AsRef, Deref, Display, From};
-use rocket::request::FromParam;
+use macros::IdFromParam;
 use serde_json::Value;
 
 db_object! {
@@ -605,19 +605,19 @@ impl GroupUser {
 }
 
 #[derive(
-    Clone, Debug, AsRef, Deref, DieselNewType, Display, From, FromForm, Hash, PartialEq, Eq, Serialize, Deserialize,
+    Clone,
+    Debug,
+    AsRef,
+    Deref,
+    DieselNewType,
+    Display,
+    From,
+    FromForm,
+    Hash,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    IdFromParam,
 )]
 pub struct GroupId(String);
-
-impl<'r> FromParam<'r> for GroupId {
-    type Error = ();
-
-    #[inline(always)]
-    fn from_param(param: &'r str) -> Result<Self, Self::Error> {
-        if param.chars().all(|c| matches!(c, 'a'..='z' | 'A'..='Z' |'0'..='9' | '-')) {
-            Ok(Self(param.to_string()))
-        } else {
-            Err(())
-        }
-    }
-}

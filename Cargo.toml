@@ -1,3 +1,5 @@
+workspace = { members = ["macros"] }
+
 [package]
 name = "vaultwarden"
 version = "1.0.0"
@@ -39,6 +41,8 @@ unstable = []
 syslog = "7.0.0"
 
 [dependencies]
+macros = { path = "./macros" }
+
 # Logging
 log = "0.4.22"
 fern = { version = "0.7.1", features = ["syslog-7", "reopen-1"] }

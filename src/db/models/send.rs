@@ -353,12 +353,25 @@ impl Send {
 // separate namespace to avoid name collision with std::marker::Send
 pub mod id {
     use derive_more::{AsRef, Deref, Display, From};
-    use rocket::request::FromParam;
+    use macros::IdFromParam;
     use std::marker::Send;
     use std::path::Path;
 
     #[derive(
-        Clone, Debug, AsRef, Deref, DieselNewType, Display, From, FromForm, Hash, PartialEq, Eq, Serialize, Deserialize,
+        Clone,
+        Debug,
+        AsRef,
+        Deref,
+        DieselNewType,
+        Display,
+        From,
+        FromForm,
+        Hash,
+        PartialEq,
+        Eq,
+        Serialize,
+        Deserialize,
+        IdFromParam,
     )]
     pub struct SendId(String);
 
@@ -369,39 +382,15 @@ pub mod id {
         }
     }
 
-    impl<'r> FromParam<'r> for SendId {
-        type Error = ();
-
-        #[inline(always)]
-        fn from_param(param: &'r str) -> Result<Self, Self::Error> {
-            if param.chars().all(|c| matches!(c, 'a'..='z' | 'A'..='Z' |'0'..='9' | '-')) {
-                Ok(Self(param.to_string()))
-            } else {
-                Err(())
-            }
-        }
-    }
-
-    #[derive(Clone, Debug, AsRef, Deref, Display, From, FromForm, Hash, PartialEq, Eq, Serialize, Deserialize)]
+    #[derive(
+        Clone, Debug, AsRef, Deref, Display, From, FromForm, Hash, PartialEq, Eq, Serialize, Deserialize, IdFromParam,
+    )]
     pub struct SendFileId(String);
 
     impl AsRef<Path> for SendFileId {
         #[inline]
         fn as_ref(&self) -> &Path {
             Path::new(&self.0)
-        }
-    }
-
-    impl<'r> FromParam<'r> for SendFileId {
-        type Error = ();
-
-        #[inline(always)]
-        fn from_param(param: &'r str) -> Result<Self, Self::Error> {
-            if param.chars().all(|c| matches!(c, 'a'..='z' | 'A'..='Z' |'0'..='9' | '-')) {
-                Ok(Self(param.to_string()))
-            } else {
-                Err(())
-            }
         }
     }
 }

@@ -2,7 +2,7 @@ use super::{DeviceId, OrganizationId, UserId};
 use crate::crypto::ct_eq;
 use chrono::{NaiveDateTime, Utc};
 use derive_more::{AsRef, Deref, Display, From};
-use rocket::request::FromParam;
+use macros::IdFromParam;
 
 db_object! {
     #[derive(Debug, Identifiable, Queryable, Insertable, AsChangeset, Deserialize, Serialize)]
@@ -162,19 +162,19 @@ impl AuthRequest {
 }
 
 #[derive(
-    Clone, Debug, AsRef, Deref, DieselNewType, Display, From, FromForm, Hash, PartialEq, Eq, Serialize, Deserialize,
+    Clone,
+    Debug,
+    AsRef,
+    Deref,
+    DieselNewType,
+    Display,
+    From,
+    FromForm,
+    Hash,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    IdFromParam,
 )]
 pub struct AuthRequestId(String);
-
-impl<'r> FromParam<'r> for AuthRequestId {
-    type Error = ();
-
-    #[inline(always)]
-    fn from_param(param: &'r str) -> Result<Self, Self::Error> {
-        if param.chars().all(|c| matches!(c, 'a'..='z' | 'A'..='Z' |'0'..='9' | '-')) {
-            Ok(Self(param.to_string()))
-        } else {
-            Err(())
-        }
-    }
-}

@@ -1,6 +1,5 @@
 use chrono::{NaiveDateTime, TimeDelta, Utc};
 use derive_more::{AsRef, Deref, Display, From};
-use rocket::request::FromParam;
 use serde_json::Value;
 
 use super::{
@@ -14,6 +13,7 @@ use crate::{
     util::{format_date, get_uuid, retry},
     CONFIG,
 };
+use macros::IdFromParam;
 
 db_object! {
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -460,21 +460,21 @@ impl Invitation {
 }
 
 #[derive(
-    Clone, Debug, AsRef, Deref, DieselNewType, Display, From, FromForm, Hash, PartialEq, Eq, Serialize, Deserialize,
+    Clone,
+    Debug,
+    DieselNewType,
+    FromForm,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+    AsRef,
+    Deref,
+    Display,
+    From,
+    IdFromParam,
 )]
 #[deref(forward)]
 #[from(forward)]
 pub struct UserId(String);
-
-impl<'r> FromParam<'r> for UserId {
-    type Error = ();
-
-    #[inline(always)]
-    fn from_param(param: &'r str) -> Result<Self, Self::Error> {
-        if param.chars().all(|c| matches!(c, 'a'..='z' | 'A'..='Z' |'0'..='9' | '-')) {
-            Ok(Self(param.to_string()))
-        } else {
-            Err(())
-        }
-    }
-}

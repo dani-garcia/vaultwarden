@@ -2,11 +2,11 @@ use std::io::ErrorKind;
 
 use bigdecimal::{BigDecimal, ToPrimitive};
 use derive_more::{AsRef, Deref, Display};
-use rocket::request::FromParam;
 use serde_json::Value;
 
 use super::{CipherId, OrganizationId, UserId};
 use crate::CONFIG;
+use macros::IdFromParam;
 
 db_object! {
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -230,18 +230,19 @@ impl Attachment {
     }
 }
 
-#[derive(Clone, Debug, AsRef, Deref, DieselNewType, Display, FromForm, Hash, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(
+    Clone,
+    Debug,
+    AsRef,
+    Deref,
+    DieselNewType,
+    Display,
+    FromForm,
+    Hash,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    IdFromParam,
+)]
 pub struct AttachmentId(pub String);
-
-impl<'r> FromParam<'r> for AttachmentId {
-    type Error = ();
-
-    #[inline(always)]
-    fn from_param(param: &'r str) -> Result<Self, Self::Error> {
-        if param.chars().all(|c| matches!(c, 'a'..='z' | 'A'..='Z' |'0'..='9' | '-')) {
-            Ok(Self(param.to_string()))
-        } else {
-            Err(())
-        }
-    }
-}

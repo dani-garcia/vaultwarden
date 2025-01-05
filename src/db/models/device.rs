@@ -1,9 +1,9 @@
 use chrono::{NaiveDateTime, Utc};
 use derive_more::{Display, From};
-use rocket::request::FromParam;
 
 use super::UserId;
 use crate::{crypto, CONFIG};
+use macros::IdFromParam;
 
 db_object! {
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -335,24 +335,7 @@ impl DeviceType {
     }
 }
 
-#[derive(Clone, Debug, DieselNewType, Display, From, FromForm, Hash, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(
+    Clone, Debug, DieselNewType, Display, From, FromForm, Hash, PartialEq, Eq, Serialize, Deserialize, IdFromParam,
+)]
 pub struct DeviceId(String);
-
-impl DeviceId {
-    pub fn empty() -> Self {
-        Self(String::from("00000000-0000-0000-0000-000000000000"))
-    }
-}
-
-impl<'r> FromParam<'r> for DeviceId {
-    type Error = ();
-
-    #[inline(always)]
-    fn from_param(param: &'r str) -> Result<Self, Self::Error> {
-        if param.chars().all(|c| matches!(c, 'a'..='z' | 'A'..='Z' |'0'..='9' | '-')) {
-            Ok(Self(param.to_string()))
-        } else {
-            Err(())
-        }
-    }
-}

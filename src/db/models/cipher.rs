@@ -2,15 +2,14 @@ use crate::util::LowerCase;
 use crate::CONFIG;
 use chrono::{NaiveDateTime, TimeDelta, Utc};
 use derive_more::{AsRef, Deref, Display, From};
-use rocket::request::FromParam;
 use serde_json::Value;
 
 use super::{
     Attachment, CollectionCipher, CollectionId, Favorite, FolderCipher, FolderId, Group, Membership, MembershipStatus,
     MembershipType, OrganizationId, User, UserId,
 };
-
 use crate::api::core::{CipherData, CipherSyncData, CipherSyncType};
+use macros::IdFromParam;
 
 use std::borrow::Cow;
 
@@ -721,7 +720,11 @@ impl Cipher {
         }}
     }
 
-    pub async fn find_by_uuid_and_org(cipher_uuid: &CipherId, org_uuid: &OrganizationId, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_uuid_and_org(
+        cipher_uuid: &CipherId,
+        org_uuid: &OrganizationId,
+        conn: &mut DbConn,
+    ) -> Option<Self> {
         db_run! {conn: {
             ciphers::table
                 .filter(ciphers::uuid.eq(cipher_uuid))
@@ -1055,19 +1058,19 @@ impl Cipher {
 }
 
 #[derive(
-    Clone, Debug, AsRef, Deref, DieselNewType, Display, From, FromForm, Hash, PartialEq, Eq, Serialize, Deserialize,
+    Clone,
+    Debug,
+    AsRef,
+    Deref,
+    DieselNewType,
+    Display,
+    From,
+    FromForm,
+    Hash,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    IdFromParam,
 )]
 pub struct CipherId(String);
-
-impl<'r> FromParam<'r> for CipherId {
-    type Error = ();
-
-    #[inline(always)]
-    fn from_param(param: &'r str) -> Result<Self, Self::Error> {
-        if param.chars().all(|c| matches!(c, 'a'..='z' | 'A'..='Z' |'0'..='9' | '-')) {
-            Ok(Self(param.to_string()))
-        } else {
-            Err(())
-        }
-    }
-}

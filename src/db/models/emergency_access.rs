@@ -1,11 +1,10 @@
 use chrono::{NaiveDateTime, Utc};
 use derive_more::{AsRef, Deref, Display, From};
-use rocket::request::FromParam;
 use serde_json::Value;
 
-use crate::{api::EmptyResult, db::DbConn, error::MapResult};
-
 use super::{User, UserId};
+use crate::{api::EmptyResult, db::DbConn, error::MapResult};
+use macros::IdFromParam;
 
 db_object! {
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -365,19 +364,19 @@ impl EmergencyAccess {
 // endregion
 
 #[derive(
-    Clone, Debug, AsRef, Deref, DieselNewType, Display, From, FromForm, Hash, PartialEq, Eq, Serialize, Deserialize,
+    Clone,
+    Debug,
+    AsRef,
+    Deref,
+    DieselNewType,
+    Display,
+    From,
+    FromForm,
+    Hash,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    IdFromParam,
 )]
 pub struct EmergencyAccessId(String);
-
-impl<'r> FromParam<'r> for EmergencyAccessId {
-    type Error = ();
-
-    #[inline(always)]
-    fn from_param(param: &'r str) -> Result<Self, Self::Error> {
-        if param.chars().all(|c| matches!(c, 'a'..='z' | 'A'..='Z' |'0'..='9' | '-')) {
-            Ok(Self(param.to_string()))
-        } else {
-            Err(())
-        }
-    }
-}
