@@ -954,10 +954,10 @@ async fn send_invite(org_id: &str, data: Json<InviteData>, headers: AdminHeaders
             {
                 // Upon error delete the user, invite and org member records when needed
                 if user_created {
-                    Invitation::take(email, &mut conn).await;
                     user.delete(&mut conn).await?;
+                } else {
+                    new_member.delete(&mut conn).await?;
                 }
-                new_member.delete(&mut conn).await?;
 
                 err!(format!("Error sending invite: {e:?} "));
             };

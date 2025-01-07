@@ -135,10 +135,10 @@ async fn ldap_import(data: Json<OrgImportData>, token: PublicToken, mut conn: Db
                 {
                     // Upon error delete the user, invite and org member records when needed
                     if user_created {
-                        Invitation::take(&user_data.email.clone(), &mut conn).await;
                         user.delete(&mut conn).await?;
+                    } else {
+                        new_member.delete(&mut conn).await?;
                     }
-                    new_member.delete(&mut conn).await?;
 
                     err!(format!("Error sending invite: {e:?} "));
                 }
