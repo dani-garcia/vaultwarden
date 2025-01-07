@@ -807,7 +807,8 @@ async fn _get_org_details(org_id: &str, host: &str, user_uuid: &str, conn: &mut 
 fn get_org_domain_sso_details() -> JsonResult {
     Ok(Json(json!({
         "organizationIdentifier": "vaultwarden",
-        "ssoAvailable": CONFIG.sso_enabled()
+        "ssoAvailable": CONFIG.sso_enabled(),
+        "verifiedDate": crate::util::format_date(&chrono::Utc::now().naive_utc()),
     })))
 }
 
