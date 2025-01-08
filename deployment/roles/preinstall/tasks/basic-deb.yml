@@ -1,0 +1,55 @@
+- name: Upgrade system
+  apt:
+    upgrade: yes
+    update_cache: true
+    state: latest
+
+- name: Install necessary tools
+  apt:
+    name:
+      - vim
+      - sudo
+      - wget
+      - curl
+      - telnet
+      - nload
+      - ca-certificates
+    state: latest
+
+- name: Fix broken packages
+  apt:
+    state: fixed
+
+- name: Ensure the /etc/apt/keyrings directory exists
+  file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+
+- name: Add Docker GPG key
+  get_url:
+    url: "{{ docker_gpg_key_url }}/gpg"
+    dest: "{{ docker_gpg_key_path }}"
+
+- name: Determine the architecture
+  command: dpkg --print-architecture
+  register: architecture
+
+- name: Add Docker APT repository
+  apt_repository:
+    repo: "deb [arch={{ architecture.stdout }} signed-by={{ docker_gpg_key_path }}] {{ docker_gpg_key_url }} {{ ansible_distribution_release }} stable"
+    state: present
+    update_cache: true
+
+- name: Install docker and docker compose
+  apt:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-compose
+      - docker-buildx-plugin
+      - docker-compose-plugin
+    state: present

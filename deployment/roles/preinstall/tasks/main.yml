@@ -1,0 +1,48 @@
+---
+# tasks file for preinstall
+- name: Set timezone to UTC
+  timezone:
+    name: Etc/UTC
+
+- name: Set hostname
+  command: hostnamectl set-hostname {{ inventory_hostname }}
+
+- name: Add hostname
+  lineinfile:
+    path: /etc/hosts
+    regexp: '^127\.0\.0\.1'
+    line: "127.0.0.1 {{ inventory_hostname }} localhost"
+    owner: root
+    group: root
+    mode: 0644
+
+- name: Add hostname
+  lineinfile:
+    path: /etc/hosts
+    regexp: '^127\.0\.1\.1'
+    line: "127.0.0.1 {{ inventory_hostname }} localhost"
+    owner: root
+    group: root
+    mode: 0644
+
+- name: Add host entries dynamically
+  lineinfile:
+    path: /etc/hosts
+    line: "{{ hostvars[item].private_ip }} {{ item}} {{ item }}.{{ domain }}"
+    state: present
+  loop: "{{ groups['all'] }}"
+  when: hostvars[item].private_ip is defined
+
+- name: Create directory for docker container data
+  file:
+    path: "{{ docker_data_path }}"
+    state: directory
+
+# Basic setup tasks for each distro
+- name: Debian basic setup
+  include_tasks: basic-deb.yml
+  when: ansible_os_family == 'Debian'
+
+- name: RHEL basic setup
+  include_tasks: basic-rhel.yml
+  when: ansible_os_family == 'RedHat'
