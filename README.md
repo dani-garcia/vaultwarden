@@ -107,6 +107,10 @@ services:
       - 80:80
 ```
 
+### Production deployment and HA
+
+For production deployment instructions using Ansible, please see [here](./deployment/README.md).
+
 <br>
 
 ## Get in touch
