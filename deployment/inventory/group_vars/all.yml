@@ -1,0 +1,70 @@
+# General
+install_ansible_modules: "true"
+disable_transparent_huge_pages: "true"
+
+# Docker and Docker Compose
+compose_version: "3"
+docker_gpg_key_url: "https://download.docker.com/linux/{{ ansible_distribution | lower }}"
+docker_gpg_key_path: "/etc/apt/keyrings/docker.asc"
+docker_apt_repo: "https://download.docker.com/linux/{{ ansible_distribution | lower }}"
+docker_data_path: "/data_docker"
+
+# Postgres
+use_postgres: "true" # Change me to "false" if you have postgres already running
+postgres_dir: "{{ docker_data_path }}/postgres"
+postgres_data_dir: "{{ postgres_dir }}/data"
+postgres_container_name: "postgres_vaultwarden"
+postgres_docker_image: "postgres:15-alpine"
+postgres_port: "5432"
+postgres_user: "vaultwarden"
+postgres_password: "S3cret" # It's better to use ansible vault :)
+postgres_db: "vaultwarden"
+postgres_host: "postgres.yourdomain.com" # Set to FQDN or IP address
+
+# Vaultwarden
+vaultwarden_dir: "{{ docker_data_path }}/vaultwarden"
+vaultwarden_data_dir: "{{ vaultwarden_dir }}/data"
+vaultwarden_container_name: "vaultwarden"
+vaultwarden_docker_image: "vaultwarden/server:1.32.7"
+vaultwarden_port: "1234"
+vaultwarden_domain: "vault.yourdomain.com"
+vaultwarden_environment:
+  - DOMAIN: "https://{{ vaultwarden_domain }}"
+  - LOGIN_RATELIMIT_MAX_BURST: "10"
+  - ADMIN_TOKEN: "YourReallyStrongAdminTokenHere"
+  - DATABASE_URL: postgresql://{{ postgres_user }}:{{ postgres_password }}@{{ postgres_host }}:{{ postgres_port }}/{{ postgres_db }}
+  - LOGIN_RATELIMIT_SECONDS: 60
+  - ADMIN_RATELIMIT_MAX_BURST: 10
+  - ADMIN_RATELIMIT_SECONDS: 60
+  - SENDS_ALLOWED: true
+  - EMERGENCY_ACCESS_ALLOWED: true
+  - WEB_VAULT_ENABLED: true
+  - SIGNUPS_ALLOWED: false
+  - SIGNUPS_VERIFY: true
+  - SIGNUPS_VERIFY_RESEND_TIME: 3600
+  - SIGNUPS_VERIFY_RESEND_LIMIT: 5
+  - SMTP_HOST: smtp.youremaildomain.com
+  - SMTP_FROM: vaultwarden@youremaildomain.com
+  - SMTP_FROM_NAME: Vaultwarden
+  - SMTP_SECURITY: SECURITYMETHOD
+  - SMTP_PORT: XXXX
+  - SMTP_USERNAME: vaultwarden@youremaildomain.com
+  - SMTP_PASSWORD: YourReallyStrongPasswordHere
+  - SMTP_AUTH_MECHANISM: Mechanism
+
+# Keepalived
+use_keepalived: "true" # Change me to "false" if you want to run without keepalived(three servers)
+vrrp_check_nginx_script_path: "/usr/local/bin/check_nginx.sh"
+vrrp_interface: "eth0"
+vrrp_auth_password: "your_password"
+vrrp_virtual_ip: "192.168.100.100/24"
+
+# Nginx
+nginx_dir: "{{ docker_data_path }}/nginx"
+nginx_data_dir: "{{ nginx_dir }}/conf.d"
+nginx_certs_dir: "{{ nginx_dir }}/certs"
+nginx_certs_email: "youremail@yourdomain.com"
+nginx_container_name: "nginx_vaultwarden"
+nginx_docker_image: "nginx:1.25-alpine"
+nginx_http_port: "80"
+nginx_https_port: "443"

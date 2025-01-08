@@ -1,0 +1,24 @@
+[all]
+vaultwarden-srv-1    ansible_host=188.121.112.240     private_ip=192.168.1.100
+vaultwarden-srv-2    ansible_host=188.121.112.241     private_ip=192.168.1.101
+nginx-srv-1          ansible_host=188.121.112.242     private_ip=192.168.1.102
+nginx-srv-2          ansible_host=188.121.112.243     private_ip=192.168.1.103
+postgres-srv         ansible_host=188.121.112.244     private_ip=192.168.1.104
+
+[vaultwarden]
+vaultwarden-srv-1
+vaultwarden-srv-2
+
+[nginx]
+nginx-srv-1
+nginx-srv-2
+
+[postgres]
+postgres-srv
+
+[all:vars]
+ansible_user=ubuntu
+ansible_port=22
+ansible_python_interpreter = "/usr/bin/python3"
+ansible_host_key_checking=False
+domain="yourdomain.local" # change it to your domain, It use just in /etc/hosts file to add host entries
