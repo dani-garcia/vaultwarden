@@ -1,0 +1,56 @@
+---
+# tasks file for postgres
+- name: Create postgres docker directory if it doesn't exist
+  file:
+    path: "{{ postgres_dir }}"
+    state: directory
+
+- name: Install pgsql client
+  apt:
+    name:
+      - postgresql-client
+    update_cache: true
+    state: latest
+  when: ansible_os_family == 'Debian'
+
+- name: Copy postgres docker compose file
+  template:
+    src: postgres-docker-compose.yaml.j2
+    dest: "{{ postgres_dir }}/docker-compose.yaml"
+
+- name: Check if {{ postgres_container_name }} exists
+  community.docker.docker_container_info:
+    name: "{{ postgres_container_name }}"
+  register: postgres_running
+
+- name: Ask for confirmation to remove {{ postgres_container_name }}
+  pause:
+    prompt: "We found a running {{ postgres_container_name }} container. Would you like to remove it? (y/n)"
+    echo: yes
+  register: confirmation
+  when: postgres_running.exists
+  delegate_to: localhost
+  run_once: true
+
+- block:
+    - name: Stop and remove {{ postgres_container_name }} if confirmed
+      community.docker.docker_container:
+        name: "{{ postgres_container_name }}"
+        state: absent
+      when: postgres_running.exists and confirmation.user_input | lower in ['y', 'yes']
+
+    - name: Remove {{ postgres_container_name }} if it exists
+      community.docker.docker_container:
+        name: "{{ postgres_container_name }}"
+        state: absent
+      when: postgres_running.exists and confirmation.user_input | lower in ['y', 'yes']
+
+    - name: Prune docker containers
+      shell: sudo docker container prune -f
+      when: postgres_running.exists and confirmation.user_input | lower in ['y', 'yes']
+
+    - name: Start {{ postgres_container_name }} with docker compose
+      community.docker.docker_compose:
+        project_src: "{{ postgres_dir }}"
+        files:
+        - docker-compose.yaml

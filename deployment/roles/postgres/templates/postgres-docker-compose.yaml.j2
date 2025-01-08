@@ -1,0 +1,16 @@
+version: '{{ compose_version }}'
+
+services:
+  postgres:
+    container_name: {{ postgres_container_name }}
+    restart: unless-stopped
+    hostname: {{ postgres_container_name }}
+    image: {{ postgres_docker_image }}
+    ports:
+      - {{ private_ip }}:{{ postgres_port }}:{{ postgres_port }}
+    volumes:
+      - {{ postgres_data_dir }}:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_USER={{ postgres_user }}
+      - POSTGRES_PASSWORD={{ postgres_password }}
+      - POSTGRES_DB={{ postgres_db }}
