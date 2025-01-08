@@ -1,0 +1,62 @@
+---
+# tasks file for vaultwarden
+- name: Create vaultwarden docker directory if it doesn't exist
+  file:
+    path: "{{ vaultwarden_dir }}"
+    state: directory
+
+- name: Remove postgres host from /etc/hosts if it exists
+  lineinfile:
+    path: /etc/hosts
+    regexp: '{{ postgres_host | regex_escape }}'
+    state: absent
+
+- name: Add {{ postgres_host }} host to /etc/hosts
+  lineinfile:
+    dest: /etc/hosts
+    line: "{{ hostvars['postgres-srv']['private_ip'] }} {{ postgres_host }}"
+    state: present
+  when: use_postgres == "true"
+
+- name: Copy vaultwarden docker compose file
+  template:
+    src: vaultwarden-docker-compose.yaml.j2
+    dest: "{{ vaultwarden_dir }}/docker-compose.yaml"
+
+
+- name: Check if {{ vaultwarden_container_name }} exists
+  community.docker.docker_container_info:
+    name: "{{ vaultwarden_container_name }}"
+  register: vaultwarden_running
+
+- name: Ask for confirmation to remove {{ vaultwarden_container_name }}
+  pause:
+    prompt: "We found a running {{ vaultwarden_container_name }} container. Would you like to remove it? (y/n)"
+    echo: yes
+  register: confirmation
+  when: vaultwarden_running.exists
+  delegate_to: localhost
+  run_once: true
+
+- block:
+    - name: Stop and remove {{ vaultwarden_container_name }} if confirmed
+      community.docker.docker_container:
+        name: "{{ vaultwarden_container_name }}"
+        state: absent
+      when: vaultwarden_running.exists and confirmation.user_input | lower in ['y', 'yes']
+
+    - name: Remove {{ vaultwarden_container_name }} if it exists
+      community.docker.docker_container:
+        name: "{{ vaultwarden_container_name }}"
+        state: absent
+      when: vaultwarden_running.exists and confirmation.user_input | lower in ['y', 'yes']
+
+    - name: Prune docker containers
+      shell: sudo docker container prune -f
+      when: vaultwarden_running.exists and confirmation.user_input | lower in ['y', 'yes']
+
+    - name: Start {{ vaultwarden_container_name }} with docker compose
+      community.docker.docker_compose:
+        project_src: "{{ vaultwarden_dir }}"
+        files:
+        - docker-compose.yaml

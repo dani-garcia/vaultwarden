@@ -1,0 +1,20 @@
+version: '{{ compose_version }}'
+
+services:
+  vaultwarden:
+    container_name: {{ vaultwarden_container_name }}
+    restart: unless-stopped
+    hostname: {{ vaultwarden_container_name }}
+    image: {{ vaultwarden_docker_image }}
+    ports:
+      - {{ private_ip }}:{{ vaultwarden_port }}:80
+    # extra_hosts:
+    #   - "{{ postgres_host }}:{{ hostvars['postgres-srv']['private_ip'] }}"
+    volumes:
+      - {{ vaultwarden_data_dir }}:/data/
+    environment:
+{% for env_item in vaultwarden_environment %}
+{% for key, value in env_item.items() %}
+      - {{ key }}={{ value }}
+{% endfor %}
+{% endfor %}
