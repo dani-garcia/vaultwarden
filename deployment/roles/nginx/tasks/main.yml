@@ -1,0 +1,96 @@
+---
+# tasks file for nginx
+- name: Install certbot
+  apt:
+    name:
+      - certbot
+    update_cache: true
+    state: present
+
+- name: Create nginx docker directory if it doesn't exist
+  file:
+    path: "{{ nginx_dir }}"
+    state: directory
+
+- name: Create nginx data docker directory if it doesn't exist
+  file:
+    path: "{{ nginx_data_dir }}"
+    state: directory
+
+- name: Delete nginx certs directory if it exists
+  file:
+    path: "{{ nginx_certs_dir }}"
+    state: absent
+
+- name: Create nginx certs directory
+  file:
+    path: "{{ nginx_certs_dir }}"
+    state: directory
+
+- name: copy nginx config file to data directory
+  template:
+    src: loadbalancer.conf.j2
+    dest: "{{ nginx_data_dir }}/loadbalancer.conf"
+
+- name: Copy nginx docker compose file
+  template:
+    src: nginx-docker-compose.yaml.j2
+    dest: "{{ nginx_dir }}/docker-compose.yaml"
+
+- name: Check if {{ nginx_container_name }} exists
+  community.docker.docker_container_info:
+    name: "{{ nginx_container_name }}"
+  register: nginx_running
+
+- name: Ask for confirmation to remove {{ nginx_container_name }}
+  pause:
+    prompt: "We found a running {{ nginx_container_name }} container. Would you like to remove it? (y/n)"
+    echo: yes
+  register: confirmation
+  when: nginx_running.exists
+  delegate_to: localhost
+  run_once: true
+
+- block:
+    - name: Stop and remove {{ nginx_container_name }} if confirmed
+      community.docker.docker_container:
+        name: "{{ nginx_container_name }}"
+        state: absent
+      when: nginx_running.exists and confirmation.user_input | lower in ['y', 'yes']
+
+    - name: Prune docker containers
+      shell: sudo docker container prune -f
+      when: nginx_running.exists and confirmation.user_input | lower in ['y', 'yes']
+
+    - name: Remove {{ nginx_container_name }} if it exists
+      community.docker.docker_container:
+        name: "{{ nginx_container_name }}"
+        state: absent
+      when: nginx_running.exists and confirmation.user_input | lower in ['y', 'yes']
+
+    - name: Obtain SSL certificates using Certbot
+      shell: yes | certbot -d {{ vaultwarden_domain }} --config-dir {{ nginx_certs_dir }} certonly --standalone -m {{ nginx_certs_email }} --agree-tos
+      when: ansible_hostname == 'nginx-srv-1'
+
+    - name: Synchronization of SSL cert files and directory from server to local
+      ansible.posix.synchronize:
+        mode: pull
+        src: "{{ nginx_certs_dir }}"
+        dest: /tmp
+
+    - name: Synchronization of src on the control machine to {{ nginx_certs_dir }} on the remote hosts
+      ansible.posix.synchronize:
+        src: /tmp/certs
+        dest: "{{ nginx_dir }}"
+
+    - name: Delete SSL cert files on the local machine
+      file:
+        path: /tmp/certs
+        state: absent
+      delegate_to: localhost
+
+    - name: Start {{ nginx_container_name }} with docker compose
+      community.docker.docker_compose:
+        project_src: "{{ nginx_dir }}"
+        files:
+        - docker-compose.yaml

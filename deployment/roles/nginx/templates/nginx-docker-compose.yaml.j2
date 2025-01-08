@@ -1,0 +1,15 @@
+version: '{{ compose_version }}'
+
+services:
+  nginx:
+    container_name: {{ nginx_container_name }}
+    restart: unless-stopped
+    hostname: {{ nginx_container_name }}
+    image: {{ nginx_docker_image }}
+    ports:
+      - {{ nginx_http_port }}:80
+      - {{ nginx_https_port }}:443
+    volumes:
+      - {{ nginx_data_dir }}:/etc/nginx/conf.d
+      - {{ nginx_certs_dir }}/live/{{ vaultwarden_domain }}:/etc/letsencrypt/live/{{ vaultwarden_domain }}
+      - {{ nginx_certs_dir }}/archive/{{ vaultwarden_domain }}:/etc/letsencrypt/archive/{{ vaultwarden_domain }}
