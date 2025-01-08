@@ -1,0 +1,25 @@
+- name: Install keepalived packages
+  apt:
+    name:
+      - keepalived
+    state: latest
+    update_cache: true
+
+- name: Copy check_nginx script to {{ vrrp_check_nginx_script_path }}
+  copy:
+    src: check_nginx.sh
+    dest: "{{ vrrp_check_nginx_script_path }}"
+    owner: root
+    group: root
+    mode: 0755
+
+- name: Copy keepalived config
+  template:
+    src: keepalived.conf.j2
+    dest: /etc/keepalived/keepalived.conf
+
+- name: Restart and enable the keepalived service
+  ansible.builtin.service:
+    name: keepalived
+    state: restarted
+    enabled: yes

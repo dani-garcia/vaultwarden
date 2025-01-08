@@ -1,0 +1,24 @@
+vrrp_script chk_nginx {
+  script "{{ vrrp_check_nginx_script_path }}"
+  interval 5
+  timeout 3
+  weight 2
+}
+
+vrrp_instance VI_1 {
+  state MASTER
+  interface {{ vrrp_interface }}
+  virtual_router_id 51
+  priority 100
+  advert_int 1
+  authentication {
+    auth_type PASS
+    auth_pass {{ vrrp_auth_password }}
+  }
+  virtual_ipaddress {
+    {{ vrrp_virtual_ip }} dev {{ vrrp_interface }}
+  }
+  track_script {
+    chk_nginx
+  }
+}
