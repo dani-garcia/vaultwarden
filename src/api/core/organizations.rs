@@ -198,7 +198,7 @@ async fn create_organization(headers: Headers, data: Json<OrgData>, mut conn: Db
     };
 
     let org = Organization::new(data.name, data.billing_email, private_key, public_key);
-    let mut member = Membership::new(headers.user.uuid, org.uuid.clone());
+    let mut member = Membership::new(headers.user.uuid, org.uuid.clone(), None);
     let collection = Collection::new(org.uuid.clone(), data.collection_name, None);
 
     member.akey = data.key;
@@ -1099,7 +1099,7 @@ async fn send_invite(
             }
         };
 
-        let mut new_member = Membership::new(user.uuid.clone(), org_id.clone());
+        let mut new_member = Membership::new(user.uuid.clone(), org_id.clone(), Some(headers.user.email.clone()));
         let access_all = data.access_all;
         new_member.access_all = access_all;
         new_member.atype = new_type;
@@ -2308,7 +2308,8 @@ async fn import(org_id: OrganizationId, data: Json<OrgImportData>, headers: Head
                     MembershipStatus::Accepted as i32 // Automatically mark user as accepted if no email invites
                 };
 
-                let mut new_member = Membership::new(user.uuid.clone(), org_id.clone());
+                let mut new_member =
+                    Membership::new(user.uuid.clone(), org_id.clone(), Some(headers.user.email.clone()));
                 new_member.access_all = false;
                 new_member.atype = MembershipType::User as i32;
                 new_member.status = member_status;

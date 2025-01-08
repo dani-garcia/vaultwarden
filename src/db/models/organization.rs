@@ -34,6 +34,8 @@ db_object! {
         pub user_uuid: UserId,
         pub org_uuid: OrganizationId,
 
+        pub invited_by_email: Option<String>,
+
         pub access_all: bool,
         pub akey: String,
         pub status: i32,
@@ -234,12 +236,13 @@ impl Organization {
 const ACTIVATE_REVOKE_DIFF: i32 = 128;
 
 impl Membership {
-    pub fn new(user_uuid: UserId, org_uuid: OrganizationId) -> Self {
+    pub fn new(user_uuid: UserId, org_uuid: OrganizationId, invited_by_email: Option<String>) -> Self {
         Self {
             uuid: MembershipId(crate::util::get_uuid()),
 
             user_uuid,
             org_uuid,
+            invited_by_email,
 
             access_all: false,
             akey: String::new(),
