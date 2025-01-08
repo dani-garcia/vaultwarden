@@ -2,7 +2,7 @@
 
 Tested on Ubuntu 24.04 LTS ✅
 
-The architecture is as follows in the diagram below and you need minimal 5 servers to run it. Also you can run it with 3 servers without VIP (nginx vaultwarden and postgresql).
+The architecture is as follows in the diagram below and you need minimal 5 servers to run it. Also you can run it with 3 servers without VIP (nginx, vaultwarden and postgresql).
 
 ## General requirments
 
