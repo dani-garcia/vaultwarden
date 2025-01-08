@@ -1,0 +1,30 @@
+- hosts: all
+  roles:
+    - role: preinstall
+  gather_facts: yes
+  any_errors_fatal: true
+
+- hosts: postgres
+  roles:
+    - role: postgres
+      when: use_postgres == "true"
+  gather_facts: yes
+  any_errors_fatal: true
+
+- hosts: vaultwarden
+  roles:
+    - role: vaultwarden
+  any_errors_fatal: true
+
+- hosts: nginx
+  roles:
+    - role: keepalived
+      when: use_keepalived == "true"
+  gather_facts: yes
+  any_errors_fatal: true
+
+- hosts: nginx
+  roles:
+    - role: nginx
+  gather_facts: yes
+  any_errors_fatal: true
