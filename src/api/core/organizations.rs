@@ -895,6 +895,7 @@ async fn send_invite(org_id: &str, data: Json<InviteData>, headers: AdminHeaders
         data.access_all = true;
     }
 
+    let mut user_created: bool = false;
     for email in data.emails.iter() {
         let mut user_org_status = UserOrgStatus::Invited as i32;
         let user = match User::find_by_mail(email, &mut conn).await {
@@ -908,13 +909,13 @@ async fn send_invite(org_id: &str, data: Json<InviteData>, headers: AdminHeaders
                 }
 
                 if !CONFIG.mail_enabled() {
-                    let invitation = Invitation::new(email);
-                    invitation.save(&mut conn).await?;
+                    Invitation::new(email).save(&mut conn).await?;
                 }
 
-                let mut user = User::new(email.clone());
-                user.save(&mut conn).await?;
-                user
+                let mut new_user = User::new(email.clone());
+                new_user.save(&mut conn).await?;
+                user_created = true;
+                new_user
             }
             Some(user) => {
                 if UserOrganization::find_by_user_and_org(&user.uuid, org_id, &mut conn).await.is_some() {
@@ -929,11 +930,49 @@ async fn send_invite(org_id: &str, data: Json<InviteData>, headers: AdminHeaders
             }
         };
 
-        let mut new_user = UserOrganization::new(user.uuid.clone(), String::from(org_id));
+        let mut new_member = UserOrganization::new(user.uuid.clone(), String::from(org_id));
         let access_all = data.access_all;
-        new_user.access_all = access_all;
-        new_user.atype = new_type;
-        new_user.status = user_org_status;
+        new_member.access_all = access_all;
+        new_member.atype = new_type;
+        new_member.status = user_org_status;
+        new_member.save(&mut conn).await?;
+
+        if CONFIG.mail_enabled() {
+            let org_name = match Organization::find_by_uuid(org_id, &mut conn).await {
+                Some(org) => org.name,
+                None => err!("Error looking up organization"),
+            };
+
+            if let Err(e) = mail::send_invite(
+                &user,
+                Some(String::from(org_id)),
+                Some(new_member.uuid.clone()),
+                &org_name,
+                Some(headers.user.email.clone()),
+            )
+            .await
+            {
+                // Upon error delete the user, invite and org member records when needed
+                if user_created {
+                    user.delete(&mut conn).await?;
+                } else {
+                    new_member.delete(&mut conn).await?;
+                }
+
+                err!(format!("Error sending invite: {e:?} "));
+            };
+        }
+
+        log_event(
+            EventType::OrganizationUserInvited as i32,
+            &new_member.uuid.clone(),
+            org_id,
+            &headers.user.uuid,
+            headers.device.atype,
+            &headers.ip.ip,
+            &mut conn,
+        )
+        .await;
 
         // If no accessAll, add the collections received
         if !access_all {
@@ -954,38 +993,9 @@ async fn send_invite(org_id: &str, data: Json<InviteData>, headers: AdminHeaders
             }
         }
 
-        new_user.save(&mut conn).await?;
-
         for group in data.groups.iter() {
-            let mut group_entry = GroupUser::new(String::from(group), new_user.uuid.clone());
+            let mut group_entry = GroupUser::new(String::from(group), new_member.uuid.clone());
             group_entry.save(&mut conn).await?;
-        }
-
-        log_event(
-            EventType::OrganizationUserInvited as i32,
-            &new_user.uuid,
-            org_id,
-            &headers.user.uuid,
-            headers.device.atype,
-            &headers.ip.ip,
-            &mut conn,
-        )
-        .await;
-
-        if CONFIG.mail_enabled() {
-            let org_name = match Organization::find_by_uuid(org_id, &mut conn).await {
-                Some(org) => org.name,
-                None => err!("Error looking up organization"),
-            };
-
-            mail::send_invite(
-                &user,
-                Some(String::from(org_id)),
-                Some(new_user.uuid),
-                &org_name,
-                Some(headers.user.email.clone()),
-            )
-            .await?;
         }
     }
 
@@ -1064,7 +1074,7 @@ async fn _reinvite_user(org_id: &str, user_org: &str, invited_by_email: &str, co
         let invitation = Invitation::new(&user.email);
         invitation.save(conn).await?;
     } else {
-        let _ = Invitation::take(&user.email, conn).await;
+        Invitation::take(&user.email, conn).await;
         let mut user_org = user_org;
         user_org.status = UserOrgStatus::Accepted as i32;
         user_org.save(conn).await?;
@@ -2026,6 +2036,9 @@ struct OrgImportData {
     users: Vec<OrgImportUserData>,
 }
 
+/// This function seems to be deprected
+/// It is only used with older directory connectors
+/// TODO: Cleanup Tech debt
 #[post("/organizations/<org_id>/import", data = "<data>")]
 async fn import(org_id: &str, data: Json<OrgImportData>, headers: Headers, mut conn: DbConn) -> EmptyResult {
     let data = data.into_inner();
@@ -2069,23 +2082,10 @@ async fn import(org_id: &str, data: Json<OrgImportData>, headers: Headers, mut c
                     UserOrgStatus::Accepted as i32 // Automatically mark user as accepted if no email invites
                 };
 
-                let mut new_org_user = UserOrganization::new(user.uuid.clone(), String::from(org_id));
-                new_org_user.access_all = false;
-                new_org_user.atype = UserOrgType::User as i32;
-                new_org_user.status = user_org_status;
-
-                new_org_user.save(&mut conn).await?;
-
-                log_event(
-                    EventType::OrganizationUserInvited as i32,
-                    &new_org_user.uuid,
-                    org_id,
-                    &headers.user.uuid,
-                    headers.device.atype,
-                    &headers.ip.ip,
-                    &mut conn,
-                )
-                .await;
+                let mut new_member = UserOrganization::new(user.uuid.clone(), String::from(org_id));
+                new_member.access_all = false;
+                new_member.atype = UserOrgType::User as i32;
+                new_member.status = user_org_status;
 
                 if CONFIG.mail_enabled() {
                     let org_name = match Organization::find_by_uuid(org_id, &mut conn).await {
@@ -2096,12 +2096,27 @@ async fn import(org_id: &str, data: Json<OrgImportData>, headers: Headers, mut c
                     mail::send_invite(
                         &user,
                         Some(String::from(org_id)),
-                        Some(new_org_user.uuid),
+                        Some(new_member.uuid.clone()),
                         &org_name,
                         Some(headers.user.email.clone()),
                     )
                     .await?;
                 }
+
+                // Save the member after sending an email
+                // If sending fails the member will not be saved to the database, and will not result in the admin needing to reinvite the users manually
+                new_member.save(&mut conn).await?;
+
+                log_event(
+                    EventType::OrganizationUserInvited as i32,
+                    &new_member.uuid,
+                    org_id,
+                    &headers.user.uuid,
+                    headers.device.atype,
+                    &headers.ip.ip,
+                    &mut conn,
+                )
+                .await;
             }
         }
     }

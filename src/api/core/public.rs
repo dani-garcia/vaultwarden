@@ -52,6 +52,7 @@ async fn ldap_import(data: Json<OrgImportData>, token: PublicToken, mut conn: Db
     let data = data.into_inner();
 
     for user_data in &data.members {
+        let mut user_created: bool = false;
         if user_data.deleted {
             // If user is marked for deletion and it exists, revoke it
             if let Some(mut user_org) =
@@ -97,9 +98,9 @@ async fn ldap_import(data: Json<OrgImportData>, token: PublicToken, mut conn: Db
                     new_user.save(&mut conn).await?;
 
                     if !CONFIG.mail_enabled() {
-                        let invitation = Invitation::new(&new_user.email);
-                        invitation.save(&mut conn).await?;
+                        Invitation::new(&new_user.email).save(&mut conn).await?;
                     }
+                    user_created = true;
                     new_user
                 }
             };
@@ -109,13 +110,13 @@ async fn ldap_import(data: Json<OrgImportData>, token: PublicToken, mut conn: Db
                 UserOrgStatus::Accepted as i32 // Automatically mark user as accepted if no email invites
             };
 
-            let mut new_org_user = UserOrganization::new(user.uuid.clone(), org_id.clone());
-            new_org_user.set_external_id(Some(user_data.external_id.clone()));
-            new_org_user.access_all = false;
-            new_org_user.atype = UserOrgType::User as i32;
-            new_org_user.status = user_org_status;
+            let mut new_member = UserOrganization::new(user.uuid.clone(), org_id.clone());
+            new_member.set_external_id(Some(user_data.external_id.clone()));
+            new_member.access_all = false;
+            new_member.atype = UserOrgType::User as i32;
+            new_member.status = user_org_status;
 
-            new_org_user.save(&mut conn).await?;
+            new_member.save(&mut conn).await?;
 
             if CONFIG.mail_enabled() {
                 let (org_name, org_email) = match Organization::find_by_uuid(&org_id, &mut conn).await {
@@ -123,8 +124,24 @@ async fn ldap_import(data: Json<OrgImportData>, token: PublicToken, mut conn: Db
                     None => err!("Error looking up organization"),
                 };
 
-                mail::send_invite(&user, Some(org_id.clone()), Some(new_org_user.uuid), &org_name, Some(org_email))
-                    .await?;
+                if let Err(e) = mail::send_invite(
+                    &user,
+                    Some(org_id.clone()),
+                    Some(new_member.uuid.clone()),
+                    &org_name,
+                    Some(org_email),
+                )
+                .await
+                {
+                    // Upon error delete the user, invite and org member records when needed
+                    if user_created {
+                        user.delete(&mut conn).await?;
+                    } else {
+                        new_member.delete(&mut conn).await?;
+                    }
+
+                    err!(format!("Error sending invite: {e:?} "));
+                }
             }
         }
     }
