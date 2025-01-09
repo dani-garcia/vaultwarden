@@ -101,6 +101,7 @@ impl Drop for WSAnonymousEntryMapGuard {
     }
 }
 
+#[allow(tail_expr_drop_order)]
 #[get("/hub?<data..>")]
 fn websockets_hub<'r>(
     ws: WebSocket,
@@ -186,6 +187,7 @@ fn websockets_hub<'r>(
     })
 }
 
+#[allow(tail_expr_drop_order)]
 #[get("/anonymous-hub?<token..>")]
 fn anonymous_websockets_hub<'r>(ws: WebSocket, token: String, ip: ClientIp) -> Result<rocket_ws::Stream!['r], Error> {
     let addr = ip.ip;
@@ -290,7 +292,7 @@ fn serialize(val: Value) -> Vec<u8> {
 fn serialize_date(date: NaiveDateTime) -> Value {
     let seconds: i64 = date.and_utc().timestamp();
     let nanos: i64 = date.and_utc().timestamp_subsec_nanos().into();
-    let timestamp = nanos << 34 | seconds;
+    let timestamp = (nanos << 34) | seconds;
 
     let bs = timestamp.to_be_bytes();
 
