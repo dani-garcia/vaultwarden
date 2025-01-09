@@ -5,6 +5,7 @@
 !.git
 !docker/healthcheck.sh
 !docker/start.sh
+!macros
 !migrations
 !src
 

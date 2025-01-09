@@ -3,7 +3,8 @@ use serde_json::Value;
 
 use crate::util::LowerCase;
 
-use super::User;
+use super::{OrganizationId, User, UserId};
+use id::SendId;
 
 db_object! {
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -11,11 +12,10 @@ db_object! {
     #[diesel(treat_none_as_null = true)]
     #[diesel(primary_key(uuid))]
     pub struct Send {
-        pub uuid: String,
+        pub uuid: SendId,
 
-        pub user_uuid: Option<String>,
-        pub organization_uuid: Option<String>,
-
+        pub user_uuid: Option<UserId>,
+        pub organization_uuid: Option<OrganizationId>,
 
         pub name: String,
         pub notes: Option<String>,
@@ -51,7 +51,7 @@ impl Send {
         let now = Utc::now().naive_utc();
 
         Self {
-            uuid: crate::util::get_uuid(),
+            uuid: SendId::from(crate::util::get_uuid()),
             user_uuid: None,
             organization_uuid: None,
 
@@ -243,7 +243,7 @@ impl Send {
         }
     }
 
-    pub async fn update_users_revision(&self, conn: &mut DbConn) -> Vec<String> {
+    pub async fn update_users_revision(&self, conn: &mut DbConn) -> Vec<UserId> {
         let mut user_uuids = Vec::new();
         match &self.user_uuid {
             Some(user_uuid) => {
@@ -257,7 +257,7 @@ impl Send {
         user_uuids
     }
 
-    pub async fn delete_all_by_user(user_uuid: &str, conn: &mut DbConn) -> EmptyResult {
+    pub async fn delete_all_by_user(user_uuid: &UserId, conn: &mut DbConn) -> EmptyResult {
         for send in Self::find_by_user(user_uuid, conn).await {
             send.delete(conn).await?;
         }
@@ -273,14 +273,14 @@ impl Send {
         };
 
         let uuid = match Uuid::from_slice(&uuid_vec) {
-            Ok(u) => u.to_string(),
+            Ok(u) => SendId::from(u.to_string()),
             Err(_) => return None,
         };
 
         Self::find_by_uuid(&uuid, conn).await
     }
 
-    pub async fn find_by_uuid(uuid: &str, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_uuid(uuid: &SendId, conn: &mut DbConn) -> Option<Self> {
         db_run! {conn: {
             sends::table
                 .filter(sends::uuid.eq(uuid))
@@ -290,7 +290,7 @@ impl Send {
         }}
     }
 
-    pub async fn find_by_uuid_and_user(uuid: &str, user_uuid: &str, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_uuid_and_user(uuid: &SendId, user_uuid: &UserId, conn: &mut DbConn) -> Option<Self> {
         db_run! {conn: {
             sends::table
                 .filter(sends::uuid.eq(uuid))
@@ -301,7 +301,7 @@ impl Send {
         }}
     }
 
-    pub async fn find_by_user(user_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_user(user_uuid: &UserId, conn: &mut DbConn) -> Vec<Self> {
         db_run! {conn: {
             sends::table
                 .filter(sends::user_uuid.eq(user_uuid))
@@ -309,7 +309,7 @@ impl Send {
         }}
     }
 
-    pub async fn size_by_user(user_uuid: &str, conn: &mut DbConn) -> Option<i64> {
+    pub async fn size_by_user(user_uuid: &UserId, conn: &mut DbConn) -> Option<i64> {
         let sends = Self::find_by_user(user_uuid, conn).await;
 
         #[derive(serde::Deserialize)]
@@ -332,7 +332,7 @@ impl Send {
         Some(total)
     }
 
-    pub async fn find_by_org(org_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_org(org_uuid: &OrganizationId, conn: &mut DbConn) -> Vec<Self> {
         db_run! {conn: {
             sends::table
                 .filter(sends::organization_uuid.eq(org_uuid))
@@ -347,5 +347,50 @@ impl Send {
                 .filter(sends::deletion_date.lt(now))
                 .load::<SendDb>(conn).expect("Error loading sends").from_db()
         }}
+    }
+}
+
+// separate namespace to avoid name collision with std::marker::Send
+pub mod id {
+    use derive_more::{AsRef, Deref, Display, From};
+    use macros::{IdFromParam, UuidFromParam};
+    use std::marker::Send;
+    use std::path::Path;
+
+    #[derive(
+        Clone,
+        Debug,
+        AsRef,
+        Deref,
+        DieselNewType,
+        Display,
+        From,
+        FromForm,
+        Hash,
+        PartialEq,
+        Eq,
+        Serialize,
+        Deserialize,
+        UuidFromParam,
+    )]
+    pub struct SendId(String);
+
+    impl AsRef<Path> for SendId {
+        #[inline]
+        fn as_ref(&self) -> &Path {
+            Path::new(&self.0)
+        }
+    }
+
+    #[derive(
+        Clone, Debug, AsRef, Deref, Display, From, FromForm, Hash, PartialEq, Eq, Serialize, Deserialize, IdFromParam,
+    )]
+    pub struct SendFileId(String);
+
+    impl AsRef<Path> for SendFileId {
+        #[inline]
+        fn as_ref(&self) -> &Path {
+            Path::new(&self.0)
+        }
     }
 }
