@@ -230,6 +230,10 @@ unused_import_braces = "deny"
 unused_lifetimes = "deny"
 unused_qualifications = "deny"
 variant_size_differences = "deny"
+# Allow the following lints since these cause issues with Rust v1.84.0 or newer
+# Building Vaultwarden with Rust v1.85.0 and edition 2024 also works without issues
+if_let_rescope = "allow"
+tail_expr_drop_order = "allow"
 
 # https://rust-lang.github.io/rust-clippy/stable/index.html
 [lints.clippy]
