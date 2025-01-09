@@ -237,10 +237,10 @@ fn launch_info() {
         | This is an *unofficial* Bitwarden implementation, DO NOT use the   |\n\
         | official channels to report bugs/features, regardless of client.   |\n\
         | Send usage/configuration questions or feature requests to:         |\n\
-        |   https://github.com/dani-garcia/vaultwarden/discussions or        |\n\
+        |   https://github.com/vaultwarden/vaultwarden/discussions or        |\n\
         |   https://vaultwarden.discourse.group/                             |\n\
         | Report suspected bugs/issues in the software itself at:            |\n\
-        |   https://github.com/dani-garcia/vaultwarden/issues/new            |\n\
+        |   https://github.com/vaultwarden/vaultwarden/issues/new            |\n\
         \\--------------------------------------------------------------------/\n"
     );
 }
@@ -542,7 +542,7 @@ fn check_web_vault() {
             "Web vault is not found at '{}'. To install it, please follow the steps in: ",
             CONFIG.web_vault_folder()
         );
-        error!("https://github.com/dani-garcia/vaultwarden/wiki/Building-binary#install-the-web-vault");
+        error!("https://github.com/vaultwarden/vaultwarden/wiki/Building-binary#install-the-web-vault");
         error!("You can also set the environment variable 'WEB_VAULT_ENABLED=false' to disable it");
         exit(1);
     }
