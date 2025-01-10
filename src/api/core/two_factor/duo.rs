@@ -11,7 +11,7 @@ use crate::{
     auth::Headers,
     crypto,
     db::{
-        models::{EventType, TwoFactor, TwoFactorType, User},
+        models::{EventType, TwoFactor, TwoFactorType, User, UserId},
         DbConn,
     },
     error::MapResult,
@@ -228,13 +228,12 @@ const AUTH_PREFIX: &str = "AUTH";
 const DUO_PREFIX: &str = "TX";
 const APP_PREFIX: &str = "APP";
 
-async fn get_user_duo_data(uuid: &str, conn: &mut DbConn) -> DuoStatus {
+async fn get_user_duo_data(user_id: &UserId, conn: &mut DbConn) -> DuoStatus {
     let type_ = TwoFactorType::Duo as i32;
 
     // If the user doesn't have an entry, disabled
-    let twofactor = match TwoFactor::find_by_user_and_type(uuid, type_, conn).await {
-        Some(t) => t,
-        None => return DuoStatus::Disabled(DuoData::global().is_some()),
+    let Some(twofactor) = TwoFactor::find_by_user_and_type(user_id, type_, conn).await else {
+        return DuoStatus::Disabled(DuoData::global().is_some());
     };
 
     // If the user has the required values, we use those
@@ -333,14 +332,12 @@ fn parse_duo_values(key: &str, val: &str, ikey: &str, prefix: &str, time: i64) -
         err!("Prefixes don't match")
     }
 
-    let cookie_vec = match BASE64.decode(u_b64.as_bytes()) {
-        Ok(c) => c,
-        Err(_) => err!("Invalid Duo cookie encoding"),
+    let Ok(cookie_vec) = BASE64.decode(u_b64.as_bytes()) else {
+        err!("Invalid Duo cookie encoding")
     };
 
-    let cookie = match String::from_utf8(cookie_vec) {
-        Ok(c) => c,
-        Err(_) => err!("Invalid Duo cookie encoding"),
+    let Ok(cookie) = String::from_utf8(cookie_vec) else {
+        err!("Invalid Duo cookie encoding")
     };
 
     let cookie_split: Vec<&str> = cookie.split('|').collect();

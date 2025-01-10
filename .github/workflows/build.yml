@@ -75,7 +75,7 @@ jobs:
 
       # Only install the clippy and rustfmt components on the default rust-toolchain
       - name: "Install rust-toolchain version"
-        uses: dtolnay/rust-toolchain@315e265cd78dad1e1dcf3a5074f6d6c47029d5aa # master @ Nov 18, 2024, 5:36 AM GMT+1
+        uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203 # master @ Dec 14, 2024, 5:49 AM GMT+1
         if: ${{ matrix.channel == 'rust-toolchain' }}
         with:
           toolchain: "${{steps.toolchain.outputs.RUST_TOOLCHAIN}}"
@@ -85,7 +85,7 @@ jobs:
 
       # Install the any other channel to be used for which we do not execute clippy and rustfmt
       - name: "Install MSRV version"
-        uses: dtolnay/rust-toolchain@315e265cd78dad1e1dcf3a5074f6d6c47029d5aa # master @ Nov 18, 2024, 5:36 AM GMT+1
+        uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203 # master @ Dec 14, 2024, 5:49 AM GMT+1
         if: ${{ matrix.channel != 'rust-toolchain' }}
         with:
           toolchain: "${{steps.toolchain.outputs.RUST_TOOLCHAIN}}"
@@ -107,7 +107,8 @@ jobs:
       # End Show environment
 
       # Enable Rust Caching
-      - uses: Swatinem/rust-cache@82a92a6e8fbeee089604da2575dc567ae9ddeaab # v2.7.5
+      - name: Rust Caching
+        uses: Swatinem/rust-cache@f0deed1e0edfc6a9be95417288c0e1099b1eeec3 # v2.7.7
         with:
           # Use a custom prefix-key to force a fresh start. This is sometimes needed with bigger changes.
           # Like changing the build host from Ubuntu 20.04 to 22.04 for example.

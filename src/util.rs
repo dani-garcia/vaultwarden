@@ -1,13 +1,12 @@
 //
 // Web Headers and caching
 //
-use std::{collections::HashMap, io::Cursor, ops::Deref, path::Path};
+use std::{collections::HashMap, io::Cursor, path::Path};
 
 use num_traits::ToPrimitive;
 use rocket::{
     fairing::{Fairing, Info, Kind},
     http::{ContentType, Header, HeaderMap, Method, Status},
-    request::FromParam,
     response::{self, Responder},
     Data, Orbit, Request, Response, Rocket,
 };
@@ -51,9 +50,11 @@ impl Fairing for AppHeaders {
             }
         }
 
+        // NOTE: When modifying or adding security headers be sure to also update the diagnostic checks in `src/static/scripts/admin_diagnostics.js` in `checkSecurityHeaders`
         res.set_raw_header("Permissions-Policy", "accelerometer=(), ambient-light-sensor=(), autoplay=(), battery=(), camera=(), display-capture=(), document-domain=(), encrypted-media=(), execution-while-not-rendered=(), execution-while-out-of-viewport=(), fullscreen=(), geolocation=(), gyroscope=(), keyboard-map=(), magnetometer=(), microphone=(), midi=(), payment=(), picture-in-picture=(), screen-wake-lock=(), sync-xhr=(), usb=(), web-share=(), xr-spatial-tracking=()");
         res.set_raw_header("Referrer-Policy", "same-origin");
         res.set_raw_header("X-Content-Type-Options", "nosniff");
+        res.set_raw_header("X-Robots-Tag", "noindex, nofollow");
         // Obsolete in modern browsers, unsafe (XS-Leak), and largely replaced by CSP
         res.set_raw_header("X-XSS-Protection", "0");
 
@@ -96,10 +97,11 @@ impl Fairing for AppHeaders {
                   https://app.addy.io/api/ \
                   https://api.fastmail.com/ \
                   https://api.forwardemail.net \
-                  ;\
+                  {allowed_connect_src};\
                 ",
                 icon_service_csp = CONFIG._icon_service_csp(),
-                allowed_iframe_ancestors = CONFIG.allowed_iframe_ancestors()
+                allowed_iframe_ancestors = CONFIG.allowed_iframe_ancestors(),
+                allowed_connect_src = CONFIG.allowed_connect_src(),
             );
             res.set_raw_header("Content-Security-Policy", csp);
             res.set_raw_header("X-Frame-Options", "SAMEORIGIN");
@@ -217,42 +219,6 @@ impl<'r, R: 'r + Responder<'r, 'static> + Send> Responder<'r, 'static> for Cache
         let expiry_time = time_now + chrono::TimeDelta::try_seconds(self.ttl.try_into().unwrap()).unwrap();
         res.set_raw_header("Expires", format_datetime_http(&expiry_time));
         Ok(res)
-    }
-}
-
-pub struct SafeString(String);
-
-impl fmt::Display for SafeString {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-impl Deref for SafeString {
-    type Target = String;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl AsRef<Path> for SafeString {
-    #[inline]
-    fn as_ref(&self) -> &Path {
-        Path::new(&self.0)
-    }
-}
-
-impl<'r> FromParam<'r> for SafeString {
-    type Error = ();
-
-    #[inline(always)]
-    fn from_param(param: &'r str) -> Result<Self, Self::Error> {
-        if param.chars().all(|c| matches!(c, 'a'..='z' | 'A'..='Z' |'0'..='9' | '-')) {
-            Ok(SafeString(param.to_string()))
-        } else {
-            Err(())
-        }
     }
 }
 

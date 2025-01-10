@@ -143,6 +143,7 @@ RUN source /env-cargo && \
 
 # Copies over *only* your manifests and build files
 COPY ./Cargo.* ./rust-toolchain.toml ./build.rs ./
+COPY ./macros ./macros
 
 ARG CARGO_PROFILE=release
 

@@ -4,10 +4,10 @@
  *
  * To rebuild or modify this file with the latest versions of the included
  * software please visit:
- *   https://datatables.net/download/#bs5/dt-2.0.8
+ *   https://datatables.net/download/#bs5/dt-2.1.8
  *
  * Included libraries:
- *   DataTables 2.0.8
+ *   DataTables 2.1.8
  */
 
 @charset "UTF-8";
@@ -45,13 +45,19 @@ table.dataTable tr.dt-hasChild td.dt-control:before {
 }
 
 html.dark table.dataTable td.dt-control:before,
-:root[data-bs-theme=dark] table.dataTable td.dt-control:before {
+:root[data-bs-theme=dark] table.dataTable td.dt-control:before,
+:root[data-theme=dark] table.dataTable td.dt-control:before {
   border-left-color: rgba(255, 255, 255, 0.5);
 }
 html.dark table.dataTable tr.dt-hasChild td.dt-control:before,
-:root[data-bs-theme=dark] table.dataTable tr.dt-hasChild td.dt-control:before {
+:root[data-bs-theme=dark] table.dataTable tr.dt-hasChild td.dt-control:before,
+:root[data-theme=dark] table.dataTable tr.dt-hasChild td.dt-control:before {
   border-top-color: rgba(255, 255, 255, 0.5);
   border-left-color: transparent;
+}
+
+div.dt-scroll {
+  width: 100%;
 }
 
 div.dt-scroll-body thead tr,
@@ -377,6 +383,31 @@ table.table.dataTable.table-hover > tbody > tr.selected:hover > * {
   box-shadow: inset 0 0 0 9999px rgba(var(--dt-row-selected), 0.975);
 }
 
+div.dt-container div.dt-layout-start > *:not(:last-child) {
+  margin-right: 1em;
+}
+div.dt-container div.dt-layout-end > *:not(:first-child) {
+  margin-left: 1em;
+}
+div.dt-container div.dt-layout-full {
+  width: 100%;
+}
+div.dt-container div.dt-layout-full > *:only-child {
+  margin-left: auto;
+  margin-right: auto;
+}
+div.dt-container div.dt-layout-table > div {
+  display: block !important;
+}
+
+@media screen and (max-width: 767px) {
+  div.dt-container div.dt-layout-start > *:not(:last-child) {
+    margin-right: 0;
+  }
+  div.dt-container div.dt-layout-end > *:not(:first-child) {
+    margin-left: 0;
+  }
+}
 div.dt-container div.dt-length label {
   font-weight: normal;
   text-align: left;
@@ -399,9 +430,6 @@ div.dt-container div.dt-search input {
   margin-left: 0.5em;
   display: inline-block;
   width: auto;
-}
-div.dt-container div.dt-info {
-  padding-top: 0.85em;
 }
 div.dt-container div.dt-paging {
   margin: 0;
