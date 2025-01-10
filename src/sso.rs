@@ -1,4 +1,5 @@
 use chrono::Utc;
+use derive_more::{AsRef, Deref, Display, From};
 use regex::Regex;
 use std::borrow::Cow;
 use std::time::Duration;
@@ -27,7 +28,7 @@ use crate::{
     CONFIG,
 };
 
-static AC_CACHE: Lazy<Cache<String, AuthenticatedUser>> =
+static AC_CACHE: Lazy<Cache<OIDCState, AuthenticatedUser>> =
     Lazy::new(|| Cache::builder().max_capacity(1000).time_to_live(Duration::from_secs(10 * 60)).build());
 
 static CLIENT_CACHE_KEY: Lazy<String> = Lazy::new(|| "sso-client".to_string());
@@ -53,6 +54,46 @@ impl<'a, AD: AuthDisplay, P: AuthPrompt, RT: ResponseType> AuthorizationRequestE
         self
     }
 }
+
+#[derive(
+    Clone,
+    Debug,
+    Default,
+    DieselNewType,
+    FromForm,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+    AsRef,
+    Deref,
+    Display,
+    From,
+)]
+#[deref(forward)]
+#[from(forward)]
+pub struct OIDCCode(String);
+
+#[derive(
+    Clone,
+    Debug,
+    Default,
+    DieselNewType,
+    FromForm,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+    AsRef,
+    Deref,
+    Display,
+    From,
+)]
+#[deref(forward)]
+#[from(forward)]
+pub struct OIDCState(String);
 
 #[derive(Debug, Serialize, Deserialize)]
 struct SsoTokenJwtClaims {
@@ -81,11 +122,11 @@ pub fn encode_ssotoken_claims() -> String {
 #[derive(Debug, Serialize, Deserialize)]
 pub enum OIDCCodeWrapper {
     Ok {
-        state: String,
-        code: String,
+        state: OIDCState,
+        code: OIDCCode,
     },
     Error {
-        state: String,
+        state: OIDCState,
         error: String,
         error_description: Option<String>,
     },
@@ -208,12 +249,29 @@ impl CoreClientExt for CoreClient {
     }
 }
 
+pub fn deocde_state(base64_state: String) -> ApiResult<OIDCState> {
+    let state = match data_encoding::BASE64.decode(base64_state.as_bytes()) {
+        Ok(vec) => match String::from_utf8(vec) {
+            Ok(valid) => OIDCState(valid),
+            Err(_) => err!(format!("Invalid utf8 chars in {base64_state} after base64 decoding")),
+        },
+        Err(_) => err!(format!("Failed to decode {base64_state} using base64")),
+    };
+
+    Ok(state)
+}
+
 // The `nonce` allow to protect against replay attacks
 // The `state` is encoded using base64 to ensure no issue with providers (It contains the Organization identifier).
 // redirect_uri from: https://github.com/bitwarden/server/blob/main/src/Identity/IdentityServer/ApiClient.cs
-pub async fn authorize_url(state: String, client_id: &str, raw_redirect_uri: &str, mut conn: DbConn) -> ApiResult<Url> {
+pub async fn authorize_url(
+    state: OIDCState,
+    client_id: &str,
+    raw_redirect_uri: &str,
+    mut conn: DbConn,
+) -> ApiResult<Url> {
     let scopes = CONFIG.sso_scopes_vec().into_iter().map(Scope::new);
-    let base64_state = data_encoding::BASE64.encode(state.as_bytes());
+    let base64_state = data_encoding::BASE64.encode(state.to_string().as_bytes());
 
     let redirect_uri = match client_id {
         "web" | "browser" => format!("{}/sso-connector.html", CONFIG.domain()),
@@ -254,12 +312,38 @@ pub async fn authorize_url(state: String, client_id: &str, raw_redirect_uri: &st
     Ok(auth_url)
 }
 
+#[derive(
+    Clone,
+    Debug,
+    Default,
+    DieselNewType,
+    FromForm,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+    AsRef,
+    Deref,
+    Display,
+    From,
+)]
+#[deref(forward)]
+#[from(forward)]
+pub struct OIDCIdentifier(String);
+
+impl OIDCIdentifier {
+    fn new(issuer: &str, subject: &str) -> Self {
+        OIDCIdentifier(format!("{}/{}", issuer, subject))
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct AuthenticatedUser {
     pub refresh_token: Option<String>,
     pub access_token: String,
     pub expires_in: Option<Duration>,
-    pub identifier: String,
+    pub identifier: OIDCIdentifier,
     pub email: String,
     pub email_verified: Option<bool>,
     pub user_name: Option<String>,
@@ -267,14 +351,14 @@ pub struct AuthenticatedUser {
 
 #[derive(Clone, Debug)]
 pub struct UserInformation {
-    pub state: String,
-    pub identifier: String,
+    pub state: OIDCState,
+    pub identifier: OIDCIdentifier,
     pub email: String,
     pub email_verified: Option<bool>,
     pub user_name: Option<String>,
 }
 
-async fn decode_code_claims(code: &str, conn: &mut DbConn) -> ApiResult<(String, String)> {
+async fn decode_code_claims(code: &str, conn: &mut DbConn) -> ApiResult<(OIDCCode, OIDCState)> {
     match auth::decode_jwt::<OIDCCodeClaims>(code, SSO_JWT_ISSUER.to_string()) {
         Ok(code_claims) => match code_claims.code {
             OIDCCodeWrapper::Ok {
@@ -317,7 +401,7 @@ pub async fn exchange_code(wrapped_code: &str, conn: &mut DbConn) -> ApiResult<U
         });
     }
 
-    let oidc_code = AuthorizationCode::new(code.clone());
+    let oidc_code = AuthorizationCode::new(code.to_string());
     let client = CoreClient::cached().await?;
 
     let nonce = match SsoNonce::find(&state, conn).await {
@@ -377,7 +461,7 @@ pub async fn exchange_code(wrapped_code: &str, conn: &mut DbConn) -> ApiResult<U
                 error!("Scope offline_access is present but response contain no refresh_token");
             }
 
-            let identifier = format!("{}/{}", **id_claims.issuer(), **id_claims.subject());
+            let identifier = OIDCIdentifier::new(id_claims.issuer(), id_claims.subject());
 
             let authenticated_user = AuthenticatedUser {
                 refresh_token,
@@ -404,7 +488,7 @@ pub async fn exchange_code(wrapped_code: &str, conn: &mut DbConn) -> ApiResult<U
 }
 
 // User has passed 2FA flow we can delete `nonce` and clear the cache.
-pub async fn redeem(state: &String, conn: &mut DbConn) -> ApiResult<AuthenticatedUser> {
+pub async fn redeem(state: &OIDCState, conn: &mut DbConn) -> ApiResult<AuthenticatedUser> {
     if let Err(err) = SsoNonce::delete(state, conn).await {
         error!("Failed to delete database sso_nonce using {state}: {err}")
     }

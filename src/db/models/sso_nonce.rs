@@ -3,14 +3,14 @@ use chrono::{NaiveDateTime, Utc};
 use crate::api::EmptyResult;
 use crate::db::{DbConn, DbPool};
 use crate::error::MapResult;
-use crate::sso::NONCE_EXPIRATION;
+use crate::sso::{OIDCState, NONCE_EXPIRATION};
 
 db_object! {
     #[derive(Identifiable, Queryable, Insertable)]
     #[diesel(table_name = sso_nonce)]
     #[diesel(primary_key(state))]
     pub struct SsoNonce {
-        pub state: String,
+        pub state: OIDCState,
         pub nonce: String,
         pub verifier: Option<String>,
         pub redirect_uri: String,
@@ -20,7 +20,7 @@ db_object! {
 
 /// Local methods
 impl SsoNonce {
-    pub fn new(state: String, nonce: String, verifier: Option<String>, redirect_uri: String) -> Self {
+    pub fn new(state: OIDCState, nonce: String, verifier: Option<String>, redirect_uri: String) -> Self {
         let now = Utc::now().naive_utc();
 
         SsoNonce {
@@ -53,7 +53,7 @@ impl SsoNonce {
         }
     }
 
-    pub async fn delete(state: &str, conn: &mut DbConn) -> EmptyResult {
+    pub async fn delete(state: &OIDCState, conn: &mut DbConn) -> EmptyResult {
         db_run! { conn: {
             diesel::delete(sso_nonce::table.filter(sso_nonce::state.eq(state)))
                 .execute(conn)
@@ -61,7 +61,7 @@ impl SsoNonce {
         }}
     }
 
-    pub async fn find(state: &str, conn: &DbConn) -> Option<Self> {
+    pub async fn find(state: &OIDCState, conn: &DbConn) -> Option<Self> {
         let oldest = Utc::now().naive_utc() - *NONCE_EXPIRATION;
         db_run! { conn: {
             sso_nonce::table

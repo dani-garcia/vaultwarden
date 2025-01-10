@@ -23,7 +23,9 @@ use crate::{
     auth::{AuthMethod, ClientHeaders, ClientIp},
     db::{models::*, DbConn},
     error::MapResult,
-    mail, sso, util, CONFIG,
+    mail, sso,
+    sso::{OIDCCode, OIDCState},
+    util, CONFIG,
 };
 
 pub fn routes() -> Vec<Route> {
@@ -968,7 +970,7 @@ fn prevalidate() -> JsonResult {
 }
 
 #[get("/connect/oidc-signin?<code>&<state>", rank = 1)]
-async fn oidcsignin(code: String, state: String, conn: DbConn) -> ApiResult<Redirect> {
+async fn oidcsignin(code: OIDCCode, state: String, conn: DbConn) -> ApiResult<Redirect> {
     oidcsignin_redirect(
         state,
         |decoded_state| sso::OIDCCodeWrapper::Ok {
@@ -1005,16 +1007,10 @@ async fn oidcsignin_error(
 // iss and scope parameters are needed for redirection to work on IOS.
 async fn oidcsignin_redirect(
     base64_state: String,
-    wrapper: impl FnOnce(String) -> sso::OIDCCodeWrapper,
+    wrapper: impl FnOnce(OIDCState) -> sso::OIDCCodeWrapper,
     conn: &DbConn,
 ) -> ApiResult<Redirect> {
-    let state = match data_encoding::BASE64.decode(base64_state.as_bytes()) {
-        Ok(vec) => match String::from_utf8(vec) {
-            Ok(valid) => valid,
-            Err(_) => err!(format!("Invalid utf8 chars in {base64_state} after base64 decoding")),
-        },
-        Err(_) => err!(format!("Failed to decode {base64_state} using base64")),
-    };
+    let state = sso::deocde_state(base64_state)?;
     let code = sso::encode_code_claims(wrapper(state.clone()));
 
     let nonce = match SsoNonce::find(&state, conn).await {
@@ -1050,7 +1046,7 @@ struct AuthorizeData {
     response_type: Option<String>,
     #[allow(unused)]
     scope: Option<String>,
-    state: String,
+    state: OIDCState,
     #[allow(unused)]
     code_challenge: Option<String>,
     #[allow(unused)]

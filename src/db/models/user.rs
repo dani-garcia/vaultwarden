@@ -10,6 +10,7 @@ use crate::{
     crypto,
     db::DbConn,
     error::MapResult,
+    sso::OIDCIdentifier,
     util::{format_date, get_uuid, retry},
     CONFIG,
 };
@@ -77,7 +78,7 @@ db_object! {
     #[diesel(primary_key(user_uuid))]
     pub struct SsoUser {
         pub user_uuid: UserId,
-        pub identifier: String,
+        pub identifier: OIDCIdentifier,
     }
 }
 
