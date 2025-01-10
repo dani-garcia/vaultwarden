@@ -1,9 +1,12 @@
 use std::io::ErrorKind;
 
 use bigdecimal::{BigDecimal, ToPrimitive};
+use derive_more::{AsRef, Deref, Display};
 use serde_json::Value;
 
+use super::{CipherId, OrganizationId, UserId};
 use crate::CONFIG;
+use macros::IdFromParam;
 
 db_object! {
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -11,8 +14,8 @@ db_object! {
     #[diesel(treat_none_as_null = true)]
     #[diesel(primary_key(id))]
     pub struct Attachment {
-        pub id: String,
-        pub cipher_uuid: String,
+        pub id: AttachmentId,
+        pub cipher_uuid: CipherId,
         pub file_name: String, // encrypted
         pub file_size: i64,
         pub akey: Option<String>,
@@ -21,7 +24,13 @@ db_object! {
 
 /// Local methods
 impl Attachment {
-    pub const fn new(id: String, cipher_uuid: String, file_name: String, file_size: i64, akey: Option<String>) -> Self {
+    pub const fn new(
+        id: AttachmentId,
+        cipher_uuid: CipherId,
+        file_name: String,
+        file_size: i64,
+        akey: Option<String>,
+    ) -> Self {
         Self {
             id,
             cipher_uuid,
@@ -117,14 +126,14 @@ impl Attachment {
         }}
     }
 
-    pub async fn delete_all_by_cipher(cipher_uuid: &str, conn: &mut DbConn) -> EmptyResult {
+    pub async fn delete_all_by_cipher(cipher_uuid: &CipherId, conn: &mut DbConn) -> EmptyResult {
         for attachment in Attachment::find_by_cipher(cipher_uuid, conn).await {
             attachment.delete(conn).await?;
         }
         Ok(())
     }
 
-    pub async fn find_by_id(id: &str, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_id(id: &AttachmentId, conn: &mut DbConn) -> Option<Self> {
         db_run! { conn: {
             attachments::table
                 .filter(attachments::id.eq(id.to_lowercase()))
@@ -134,7 +143,7 @@ impl Attachment {
         }}
     }
 
-    pub async fn find_by_cipher(cipher_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_cipher(cipher_uuid: &CipherId, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             attachments::table
                 .filter(attachments::cipher_uuid.eq(cipher_uuid))
@@ -144,7 +153,7 @@ impl Attachment {
         }}
     }
 
-    pub async fn size_by_user(user_uuid: &str, conn: &mut DbConn) -> i64 {
+    pub async fn size_by_user(user_uuid: &UserId, conn: &mut DbConn) -> i64 {
         db_run! { conn: {
             let result: Option<BigDecimal> = attachments::table
                 .left_join(ciphers::table.on(ciphers::uuid.eq(attachments::cipher_uuid)))
@@ -161,7 +170,7 @@ impl Attachment {
         }}
     }
 
-    pub async fn count_by_user(user_uuid: &str, conn: &mut DbConn) -> i64 {
+    pub async fn count_by_user(user_uuid: &UserId, conn: &mut DbConn) -> i64 {
         db_run! { conn: {
             attachments::table
                 .left_join(ciphers::table.on(ciphers::uuid.eq(attachments::cipher_uuid)))
@@ -172,7 +181,7 @@ impl Attachment {
         }}
     }
 
-    pub async fn size_by_org(org_uuid: &str, conn: &mut DbConn) -> i64 {
+    pub async fn size_by_org(org_uuid: &OrganizationId, conn: &mut DbConn) -> i64 {
         db_run! { conn: {
             let result: Option<BigDecimal> = attachments::table
                 .left_join(ciphers::table.on(ciphers::uuid.eq(attachments::cipher_uuid)))
@@ -189,7 +198,7 @@ impl Attachment {
         }}
     }
 
-    pub async fn count_by_org(org_uuid: &str, conn: &mut DbConn) -> i64 {
+    pub async fn count_by_org(org_uuid: &OrganizationId, conn: &mut DbConn) -> i64 {
         db_run! { conn: {
             attachments::table
                 .left_join(ciphers::table.on(ciphers::uuid.eq(attachments::cipher_uuid)))
@@ -203,7 +212,11 @@ impl Attachment {
     // This will return all attachments linked to the user or org
     // There is no filtering done here if the user actually has access!
     // It is used to speed up the sync process, and the matching is done in a different part.
-    pub async fn find_all_by_user_and_orgs(user_uuid: &str, org_uuids: &Vec<String>, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_all_by_user_and_orgs(
+        user_uuid: &UserId,
+        org_uuids: &Vec<OrganizationId>,
+        conn: &mut DbConn,
+    ) -> Vec<Self> {
         db_run! { conn: {
             attachments::table
                 .left_join(ciphers::table.on(ciphers::uuid.eq(attachments::cipher_uuid)))
@@ -216,3 +229,20 @@ impl Attachment {
         }}
     }
 }
+
+#[derive(
+    Clone,
+    Debug,
+    AsRef,
+    Deref,
+    DieselNewType,
+    Display,
+    FromForm,
+    Hash,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    IdFromParam,
+)]
+pub struct AttachmentId(pub String);

@@ -1,13 +1,12 @@
 //
 // Web Headers and caching
 //
-use std::{collections::HashMap, io::Cursor, ops::Deref, path::Path};
+use std::{collections::HashMap, io::Cursor, path::Path};
 
 use num_traits::ToPrimitive;
 use rocket::{
     fairing::{Fairing, Info, Kind},
     http::{ContentType, Header, HeaderMap, Method, Status},
-    request::FromParam,
     response::{self, Responder},
     Data, Orbit, Request, Response, Rocket,
 };
@@ -223,42 +222,6 @@ impl<'r, R: 'r + Responder<'r, 'static> + Send> Responder<'r, 'static> for Cache
         let expiry_time = time_now + chrono::TimeDelta::try_seconds(self.ttl.try_into().unwrap()).unwrap();
         res.set_raw_header("Expires", format_datetime_http(&expiry_time));
         Ok(res)
-    }
-}
-
-pub struct SafeString(String);
-
-impl fmt::Display for SafeString {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-impl Deref for SafeString {
-    type Target = String;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl AsRef<Path> for SafeString {
-    #[inline]
-    fn as_ref(&self) -> &Path {
-        Path::new(&self.0)
-    }
-}
-
-impl<'r> FromParam<'r> for SafeString {
-    type Error = ();
-
-    #[inline(always)]
-    fn from_param(param: &'r str) -> Result<Self, Self::Error> {
-        if param.chars().all(|c| matches!(c, 'a'..='z' | 'A'..='Z' |'0'..='9' | '-')) {
-            Ok(SafeString(param.to_string()))
-        } else {
-            Err(())
-        }
     }
 }
 

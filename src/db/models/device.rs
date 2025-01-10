@@ -1,8 +1,11 @@
 use chrono::{NaiveDateTime, Utc};
-use data_encoding::{BASE64, BASE64URL};
 
+use data_encoding::{BASE64, BASE64URL};
+use derive_more::{Display, From};
+
+use super::UserId;
 use crate::crypto;
-use core::fmt;
+use macros::IdFromParam;
 
 db_object! {
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -10,11 +13,11 @@ db_object! {
     #[diesel(treat_none_as_null = true)]
     #[diesel(primary_key(uuid, user_uuid))]
     pub struct Device {
-        pub uuid: String,
+        pub uuid: DeviceId,
         pub created_at: NaiveDateTime,
         pub updated_at: NaiveDateTime,
 
-        pub user_uuid: String,
+        pub user_uuid: UserId,
 
         pub name: String,
         pub atype: i32,         // https://github.com/bitwarden/server/blob/dcc199bcce4aa2d5621f6fab80f1b49d8b143418/src/Core/Enums/DeviceType.cs
@@ -29,7 +32,7 @@ db_object! {
 
 /// Local methods
 impl Device {
-    pub fn new(uuid: String, user_uuid: String, name: String, atype: i32) -> Self {
+    pub fn new(uuid: DeviceId, user_uuid: UserId, name: String, atype: i32) -> Self {
         let now = Utc::now().naive_utc();
 
         Self {
@@ -95,7 +98,7 @@ impl Device {
         }
     }
 
-    pub async fn delete_all_by_user(user_uuid: &str, conn: &mut DbConn) -> EmptyResult {
+    pub async fn delete_all_by_user(user_uuid: &UserId, conn: &mut DbConn) -> EmptyResult {
         db_run! { conn: {
             diesel::delete(devices::table.filter(devices::user_uuid.eq(user_uuid)))
                 .execute(conn)
@@ -103,7 +106,7 @@ impl Device {
         }}
     }
 
-    pub async fn find_by_uuid_and_user(uuid: &str, user_uuid: &str, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_uuid_and_user(uuid: &DeviceId, user_uuid: &UserId, conn: &mut DbConn) -> Option<Self> {
         db_run! { conn: {
             devices::table
                 .filter(devices::uuid.eq(uuid))
@@ -114,7 +117,7 @@ impl Device {
         }}
     }
 
-    pub async fn find_by_user(user_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_user(user_uuid: &UserId, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             devices::table
                 .filter(devices::user_uuid.eq(user_uuid))
@@ -124,7 +127,7 @@ impl Device {
         }}
     }
 
-    pub async fn find_by_uuid(uuid: &str, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_uuid(uuid: &DeviceId, conn: &mut DbConn) -> Option<Self> {
         db_run! { conn: {
             devices::table
                 .filter(devices::uuid.eq(uuid))
@@ -134,7 +137,7 @@ impl Device {
         }}
     }
 
-    pub async fn clear_push_token_by_uuid(uuid: &str, conn: &mut DbConn) -> EmptyResult {
+    pub async fn clear_push_token_by_uuid(uuid: &DeviceId, conn: &mut DbConn) -> EmptyResult {
         db_run! { conn: {
             diesel::update(devices::table)
                 .filter(devices::uuid.eq(uuid))
@@ -153,7 +156,7 @@ impl Device {
         }}
     }
 
-    pub async fn find_latest_active_by_user(user_uuid: &str, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_latest_active_by_user(user_uuid: &UserId, conn: &mut DbConn) -> Option<Self> {
         db_run! { conn: {
             devices::table
                 .filter(devices::user_uuid.eq(user_uuid))
@@ -164,7 +167,7 @@ impl Device {
         }}
     }
 
-    pub async fn find_push_devices_by_user(user_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_push_devices_by_user(user_uuid: &UserId, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             devices::table
                 .filter(devices::user_uuid.eq(user_uuid))
@@ -175,7 +178,7 @@ impl Device {
         }}
     }
 
-    pub async fn check_user_has_push_device(user_uuid: &str, conn: &mut DbConn) -> bool {
+    pub async fn check_user_has_push_device(user_uuid: &UserId, conn: &mut DbConn) -> bool {
         db_run! { conn: {
             devices::table
             .filter(devices::user_uuid.eq(user_uuid))
@@ -188,66 +191,60 @@ impl Device {
     }
 }
 
+#[derive(Display)]
 pub enum DeviceType {
+    #[display("Android")]
     Android = 0,
+    #[display("iOS")]
     Ios = 1,
+    #[display("Chrome Extension")]
     ChromeExtension = 2,
+    #[display("Firefox Extension")]
     FirefoxExtension = 3,
+    #[display("Opera Extension")]
     OperaExtension = 4,
+    #[display("Edge Extension")]
     EdgeExtension = 5,
+    #[display("Windows")]
     WindowsDesktop = 6,
+    #[display("macOS")]
     MacOsDesktop = 7,
+    #[display("Linux")]
     LinuxDesktop = 8,
+    #[display("Chrome")]
     ChromeBrowser = 9,
+    #[display("Firefox")]
     FirefoxBrowser = 10,
+    #[display("Opera")]
     OperaBrowser = 11,
+    #[display("Edge")]
     EdgeBrowser = 12,
+    #[display("Internet Explorer")]
     IEBrowser = 13,
+    #[display("Unknown Browser")]
     UnknownBrowser = 14,
+    #[display("Android")]
     AndroidAmazon = 15,
+    #[display("UWP")]
     Uwp = 16,
+    #[display("Safari")]
     SafariBrowser = 17,
+    #[display("Vivaldi")]
     VivaldiBrowser = 18,
+    #[display("Vivaldi Extension")]
     VivaldiExtension = 19,
+    #[display("Safari Extension")]
     SafariExtension = 20,
+    #[display("SDK")]
     Sdk = 21,
+    #[display("Server")]
     Server = 22,
+    #[display("Windows CLI")]
     WindowsCLI = 23,
+    #[display("macOS CLI")]
     MacOsCLI = 24,
+    #[display("Linux CLI")]
     LinuxCLI = 25,
-}
-
-impl fmt::Display for DeviceType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            DeviceType::Android => write!(f, "Android"),
-            DeviceType::Ios => write!(f, "iOS"),
-            DeviceType::ChromeExtension => write!(f, "Chrome Extension"),
-            DeviceType::FirefoxExtension => write!(f, "Firefox Extension"),
-            DeviceType::OperaExtension => write!(f, "Opera Extension"),
-            DeviceType::EdgeExtension => write!(f, "Edge Extension"),
-            DeviceType::WindowsDesktop => write!(f, "Windows"),
-            DeviceType::MacOsDesktop => write!(f, "macOS"),
-            DeviceType::LinuxDesktop => write!(f, "Linux"),
-            DeviceType::ChromeBrowser => write!(f, "Chrome"),
-            DeviceType::FirefoxBrowser => write!(f, "Firefox"),
-            DeviceType::OperaBrowser => write!(f, "Opera"),
-            DeviceType::EdgeBrowser => write!(f, "Edge"),
-            DeviceType::IEBrowser => write!(f, "Internet Explorer"),
-            DeviceType::UnknownBrowser => write!(f, "Unknown Browser"),
-            DeviceType::AndroidAmazon => write!(f, "Android"),
-            DeviceType::Uwp => write!(f, "UWP"),
-            DeviceType::SafariBrowser => write!(f, "Safari"),
-            DeviceType::VivaldiBrowser => write!(f, "Vivaldi"),
-            DeviceType::VivaldiExtension => write!(f, "Vivaldi Extension"),
-            DeviceType::SafariExtension => write!(f, "Safari Extension"),
-            DeviceType::Sdk => write!(f, "SDK"),
-            DeviceType::Server => write!(f, "Server"),
-            DeviceType::WindowsCLI => write!(f, "Windows CLI"),
-            DeviceType::MacOsCLI => write!(f, "macOS CLI"),
-            DeviceType::LinuxCLI => write!(f, "Linux CLI"),
-        }
-    }
 }
 
 impl DeviceType {
@@ -283,3 +280,8 @@ impl DeviceType {
         }
     }
 }
+
+#[derive(
+    Clone, Debug, DieselNewType, Display, From, FromForm, Hash, PartialEq, Eq, Serialize, Deserialize, IdFromParam,
+)]
+pub struct DeviceId(String);

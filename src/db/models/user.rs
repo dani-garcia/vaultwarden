@@ -1,9 +1,19 @@
-use crate::util::{format_date, get_uuid, retry};
 use chrono::{NaiveDateTime, TimeDelta, Utc};
+use derive_more::{AsRef, Deref, Display, From};
 use serde_json::Value;
 
-use crate::crypto;
-use crate::CONFIG;
+use super::{
+    Cipher, Device, EmergencyAccess, Favorite, Folder, Membership, MembershipType, TwoFactor, TwoFactorIncomplete,
+};
+use crate::{
+    api::EmptyResult,
+    crypto,
+    db::DbConn,
+    error::MapResult,
+    util::{format_date, get_uuid, retry},
+    CONFIG,
+};
+use macros::UuidFromParam;
 
 db_object! {
     #[derive(Identifiable, Queryable, Insertable, AsChangeset, Selectable)]
@@ -11,7 +21,7 @@ db_object! {
     #[diesel(treat_none_as_null = true)]
     #[diesel(primary_key(uuid))]
     pub struct User {
-        pub uuid: String,
+        pub uuid: UserId,
         pub enabled: bool,
         pub created_at: NaiveDateTime,
         pub updated_at: NaiveDateTime,
@@ -66,7 +76,7 @@ db_object! {
     #[diesel(table_name = sso_users)]
     #[diesel(primary_key(user_uuid))]
     pub struct SsoUser {
-        pub user_uuid: String,
+        pub user_uuid: UserId,
         pub identifier: String,
     }
 }
@@ -99,7 +109,7 @@ impl User {
         let email = email.to_lowercase();
 
         Self {
-            uuid: get_uuid(),
+            uuid: UserId(get_uuid()),
             enabled: true,
             created_at: now,
             updated_at: now,
@@ -222,20 +232,11 @@ impl User {
     }
 }
 
-use super::{
-    Cipher, Device, EmergencyAccess, Favorite, Folder, Send, TwoFactor, TwoFactorIncomplete, UserOrgType,
-    UserOrganization,
-};
-use crate::db::DbConn;
-
-use crate::api::EmptyResult;
-use crate::error::MapResult;
-
 /// Database methods
 impl User {
     pub async fn to_json(&self, conn: &mut DbConn) -> Value {
         let mut orgs_json = Vec::new();
-        for c in UserOrganization::find_confirmed_by_user(&self.uuid, conn).await {
+        for c in Membership::find_confirmed_by_user(&self.uuid, conn).await {
             orgs_json.push(c.to_json(conn).await);
         }
 
@@ -312,19 +313,18 @@ impl User {
     }
 
     pub async fn delete(self, conn: &mut DbConn) -> EmptyResult {
-        for user_org in UserOrganization::find_confirmed_by_user(&self.uuid, conn).await {
-            if user_org.atype == UserOrgType::Owner
-                && UserOrganization::count_confirmed_by_org_and_type(&user_org.org_uuid, UserOrgType::Owner, conn).await
-                    <= 1
+        for member in Membership::find_confirmed_by_user(&self.uuid, conn).await {
+            if member.atype == MembershipType::Owner
+                && Membership::count_confirmed_by_org_and_type(&member.org_uuid, MembershipType::Owner, conn).await <= 1
             {
                 err!("Can't delete last owner")
             }
         }
 
-        Send::delete_all_by_user(&self.uuid, conn).await?;
+        super::Send::delete_all_by_user(&self.uuid, conn).await?;
         EmergencyAccess::delete_all_by_user(&self.uuid, conn).await?;
         EmergencyAccess::delete_all_by_grantee_email(&self.email, conn).await?;
-        UserOrganization::delete_all_by_user(&self.uuid, conn).await?;
+        Membership::delete_all_by_user(&self.uuid, conn).await?;
         Cipher::delete_all_by_user(&self.uuid, conn).await?;
         Favorite::delete_all_by_user(&self.uuid, conn).await?;
         Folder::delete_all_by_user(&self.uuid, conn).await?;
@@ -340,7 +340,7 @@ impl User {
         }}
     }
 
-    pub async fn update_uuid_revision(uuid: &str, conn: &mut DbConn) {
+    pub async fn update_uuid_revision(uuid: &UserId, conn: &mut DbConn) {
         if let Err(e) = Self::_update_revision(uuid, &Utc::now().naive_utc(), conn).await {
             warn!("Failed to update revision for {}: {:#?}", uuid, e);
         }
@@ -365,7 +365,7 @@ impl User {
         Self::_update_revision(&self.uuid, &self.updated_at, conn).await
     }
 
-    async fn _update_revision(uuid: &str, date: &NaiveDateTime, conn: &mut DbConn) -> EmptyResult {
+    async fn _update_revision(uuid: &UserId, date: &NaiveDateTime, conn: &mut DbConn) -> EmptyResult {
         db_run! {conn: {
             retry(|| {
                 diesel::update(users::table.filter(users::uuid.eq(uuid)))
@@ -387,7 +387,7 @@ impl User {
         }}
     }
 
-    pub async fn find_by_uuid(uuid: &str, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_uuid(uuid: &UserId, conn: &mut DbConn) -> Option<Self> {
         db_run! {conn: {
             users::table.filter(users::uuid.eq(uuid)).first::<UserDb>(conn).ok().from_db()
         }}
@@ -466,6 +466,26 @@ impl Invitation {
         }
     }
 }
+
+#[derive(
+    Clone,
+    Debug,
+    DieselNewType,
+    FromForm,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+    AsRef,
+    Deref,
+    Display,
+    From,
+    UuidFromParam,
+)]
+#[deref(forward)]
+#[from(forward)]
+pub struct UserId(String);
 
 impl SsoUser {
     pub async fn save(&self, conn: &mut DbConn) -> EmptyResult {
