@@ -20,7 +20,7 @@ use crate::{
         ApiResult, EmptyResult, JsonResult,
     },
     auth,
-    auth::{AuthMethod, AuthMethodScope, ClientHeaders, ClientIp},
+    auth::{AuthMethod, ClientHeaders, ClientIp},
     db::{models::*, DbConn},
     error::MapResult,
     mail, sso, util, CONFIG,

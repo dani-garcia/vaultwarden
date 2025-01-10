@@ -802,6 +802,13 @@ impl UserOrganization {
                 .execute(conn)
                 .map_res("Error confirming invitations")
         }}
+        .and_then(|updated| match updated {
+            1 => Ok(()),
+            count => err!(format!(
+                "Failed to update users_organizations to accepted for user ({}) was expecting invited status (updated row: {})).",
+                user_uuid, count
+            )),
+        })
     }
 
     pub async fn find_any_state_by_user(user_uuid: &str, conn: &mut DbConn) -> Vec<Self> {

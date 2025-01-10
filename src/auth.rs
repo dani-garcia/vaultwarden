@@ -1001,14 +1001,8 @@ pub enum AuthMethod {
     UserApiKey,
 }
 
-pub trait AuthMethodScope {
-    fn scope_vec(&self) -> Vec<String>;
-    fn scope(&self) -> String;
-    fn check_scope(&self, scope: Option<&String>) -> ApiResult<String>;
-}
-
-impl AuthMethodScope for AuthMethod {
-    fn scope(&self) -> String {
+impl AuthMethod {
+    pub fn scope(&self) -> String {
         match self {
             AuthMethod::OrgApiKey => "api.organization".to_string(),
             AuthMethod::Password => "api offline_access".to_string(),
@@ -1017,11 +1011,11 @@ impl AuthMethodScope for AuthMethod {
         }
     }
 
-    fn scope_vec(&self) -> Vec<String> {
+    pub fn scope_vec(&self) -> Vec<String> {
         self.scope().split_whitespace().map(str::to_string).collect()
     }
 
-    fn check_scope(&self, scope: Option<&String>) -> ApiResult<String> {
+    pub fn check_scope(&self, scope: Option<&String>) -> ApiResult<String> {
         let method_scope = self.scope();
         match scope {
             None => err!("Missing scope"),

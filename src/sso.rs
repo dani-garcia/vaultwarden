@@ -19,7 +19,7 @@ use openidconnect::{
 use crate::{
     api::ApiResult,
     auth,
-    auth::{AuthMethod, AuthMethodScope, AuthTokens, TokenWrapper, BW_EXPIRATION, DEFAULT_REFRESH_VALIDITY},
+    auth::{AuthMethod, AuthTokens, TokenWrapper, BW_EXPIRATION, DEFAULT_REFRESH_VALIDITY},
     db::{
         models::{Device, SsoNonce, User},
         DbConn,
