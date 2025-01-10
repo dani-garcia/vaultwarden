@@ -287,21 +287,11 @@ jobs:
           name: vaultwarden-${{ env.SOURCE_VERSION }}-linux-amd64-${{ matrix.base_image }}
           path: vaultwarden-amd64-${{ matrix.base_image }}
 
-      - name: "Attest amd64 artifact ${{ matrix.base_image }}"
-        uses: actions/attest-build-provenance@7668571508540a607bdfd90a87a560489fe372eb # v2.1.0
-        with:
-          subject-path: vaultwarden-amd64-${{ matrix.base_image }}
-
       - name: "Upload arm64 artifact ${{ matrix.base_image }}"
         uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b #v4.5.0
         with:
           name: vaultwarden-${{ env.SOURCE_VERSION }}-linux-arm64-${{ matrix.base_image }}
           path: vaultwarden-arm64-${{ matrix.base_image }}
-
-      - name: "Attest arm64 artifact ${{ matrix.base_image }}"
-        uses: actions/attest-build-provenance@7668571508540a607bdfd90a87a560489fe372eb # v2.1.0
-        with:
-          subject-path: vaultwarden-arm64-${{ matrix.base_image }}
 
       - name: "Upload armv7 artifact ${{ matrix.base_image }}"
         uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b #v4.5.0
@@ -309,19 +299,14 @@ jobs:
           name: vaultwarden-${{ env.SOURCE_VERSION }}-linux-armv7-${{ matrix.base_image }}
           path: vaultwarden-armv7-${{ matrix.base_image }}
 
-      - name: "Attest armv7 artifact ${{ matrix.base_image }}"
-        uses: actions/attest-build-provenance@7668571508540a607bdfd90a87a560489fe372eb # v2.1.0
-        with:
-          subject-path: vaultwarden-armv7-${{ matrix.base_image }}
-
       - name: "Upload armv6 artifact ${{ matrix.base_image }}"
         uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b #v4.5.0
         with:
           name: vaultwarden-${{ env.SOURCE_VERSION }}-linux-armv6-${{ matrix.base_image }}
           path: vaultwarden-armv6-${{ matrix.base_image }}
 
-      - name: "Attest armv6 artifact ${{ matrix.base_image }}"
+      - name: "Attest artifacts ${{ matrix.base_image }}"
         uses: actions/attest-build-provenance@7668571508540a607bdfd90a87a560489fe372eb # v2.1.0
         with:
-          subject-path: vaultwarden-armv6-${{ matrix.base_image }}
+          subject-path: vaultwarden-*
       # End Upload artifacts to Github Actions
