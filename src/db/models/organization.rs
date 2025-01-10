@@ -1156,7 +1156,7 @@ impl OrganizationApiKey {
 )]
 #[deref(forward)]
 #[from(forward)]
-pub struct OrganizationId(String);
+pub struct OrganizationId(pub String);
 
 #[derive(
     Clone,

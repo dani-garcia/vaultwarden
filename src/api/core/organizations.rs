@@ -1880,15 +1880,20 @@ async fn list_policies_token(org_id: OrganizationId, token: &str, mut conn: DbCo
 }
 
 // Called during the SSO enrollment.
+// Cannot use the OrganizationId guard since the Org does not exists.
 #[get("/organizations/<org_id>/policies/master-password", rank = 1)]
-fn get_master_password_policy(org_id: OrganizationId, _headers: Headers) -> JsonResult {
+fn get_master_password_policy(org_id: &str, _headers: Headers) -> JsonResult {
     let data = match CONFIG.sso_master_password_policy() {
         Some(policy) => policy,
         None => "null".to_string(),
     };
 
-    let policy =
-        OrgPolicy::new(org_id, OrgPolicyType::MasterPassword, CONFIG.sso_master_password_policy().is_some(), data);
+    let policy = OrgPolicy::new(
+        OrganizationId(org_id.to_string()),
+        OrgPolicyType::MasterPassword,
+        CONFIG.sso_master_password_policy().is_some(),
+        data,
+    );
 
     Ok(Json(policy.to_json()))
 }
