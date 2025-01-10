@@ -1264,7 +1264,7 @@ async fn put_auth_request(
         auth_request.save(&mut conn).await?;
 
         ant.send_auth_response(&auth_request.user_uuid, &auth_request.uuid).await;
-        nt.send_auth_response(&auth_request.user_uuid, &auth_request.uuid, data.device_identifier, &mut conn).await;
+        nt.send_auth_response(&auth_request.user_uuid, &auth_request.uuid, &data.device_identifier, &mut conn).await;
     } else {
         // If denied, there's no reason to keep the request
         auth_request.delete(&mut conn).await?;

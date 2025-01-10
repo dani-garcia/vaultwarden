@@ -10,7 +10,7 @@ use rocket_ws::{Message, WebSocket};
 use crate::{
     auth::{ClientIp, WsAccessTokenHeader},
     db::{
-        models::{Cipher, CollectionId, DeviceId, Folder, Send as DbSend, User, UserId},
+        models::{AuthRequestId, Cipher, CollectionId, DeviceId, Folder, Send as DbSend, User, UserId},
         DbConn,
     },
     Error, CONFIG,
@@ -522,8 +522,8 @@ impl WebSocketUsers {
     pub async fn send_auth_response(
         &self,
         user_id: &UserId,
-        auth_response_uuid: &str,
-        approving_device_uuid: DeviceId,
+        auth_request_id: &AuthRequestId,
+        approving_device_id: &DeviceId,
         conn: &mut DbConn,
     ) {
         // Skip any processing if both WebSockets and Push are not active
@@ -531,16 +531,16 @@ impl WebSocketUsers {
             return;
         }
         let data = create_update(
-            vec![("Id".into(), auth_response_uuid.to_owned().into()), ("UserId".into(), user_id.to_string().into())],
+            vec![("Id".into(), auth_request_id.to_string().into()), ("UserId".into(), user_id.to_string().into())],
             UpdateType::AuthRequestResponse,
-            Some(approving_device_uuid.clone()),
+            Some(approving_device_id.clone()),
         );
         if CONFIG.enable_websocket() {
             self.send_update(user_id, &data).await;
         }
 
         if CONFIG.push_enabled() {
-            push_auth_response(user_id.clone(), auth_response_uuid.to_string(), approving_device_uuid, conn).await;
+            push_auth_response(user_id, auth_request_id, approving_device_id, conn).await;
         }
     }
 }
@@ -559,16 +559,16 @@ impl AnonymousWebSocketSubscriptions {
         }
     }
 
-    pub async fn send_auth_response(&self, user_id: &UserId, auth_response_uuid: &str) {
+    pub async fn send_auth_response(&self, user_id: &UserId, auth_request_id: &AuthRequestId) {
         if !CONFIG.enable_websocket() {
             return;
         }
         let data = create_anonymous_update(
-            vec![("Id".into(), auth_response_uuid.to_owned().into()), ("UserId".into(), user_id.to_string().into())],
+            vec![("Id".into(), auth_request_id.to_string().into()), ("UserId".into(), user_id.to_string().into())],
             UpdateType::AuthRequestResponse,
             user_id.clone(),
         );
-        self.send_update(user_id, &data).await;
+        self.send_update(auth_request_id, &data).await;
     }
 }
 
