@@ -180,6 +180,7 @@ jobs:
         with:
           pull: true
           push: true
+          source: .
           files: docker/docker-bake.hcl
           targets: "${{ matrix.base_image }}-multi"
           set: |
