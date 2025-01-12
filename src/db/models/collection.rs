@@ -27,6 +27,7 @@ db_object! {
         pub collection_uuid: CollectionId,
         pub read_only: bool,
         pub hide_passwords: bool,
+        pub manage: bool,
     }
 
     #[derive(Identifiable, Queryable, Insertable)]
@@ -83,18 +84,26 @@ impl Collection {
         cipher_sync_data: Option<&crate::api::core::CipherSyncData>,
         conn: &mut DbConn,
     ) -> Value {
-        let (read_only, hide_passwords, can_manage) = if let Some(cipher_sync_data) = cipher_sync_data {
+        let (read_only, hide_passwords, manage) = if let Some(cipher_sync_data) = cipher_sync_data {
             match cipher_sync_data.members.get(&self.org_uuid) {
-                // Only for Manager types Bitwarden returns true for the can_manage option
-                // Owners and Admins always have true
+                // Only for Manager types Bitwarden returns true for the manage option
+                // Owners and Admins always have true. Users are not able to have full access
                 Some(m) if m.has_full_access() => (false, false, m.atype >= MembershipType::Manager),
                 Some(m) => {
                     // Only let a manager manage collections when the have full read/write access
                     let is_manager = m.atype == MembershipType::Manager;
-                    if let Some(uc) = cipher_sync_data.user_collections.get(&self.uuid) {
-                        (uc.read_only, uc.hide_passwords, is_manager && !uc.read_only && !uc.hide_passwords)
+                    if let Some(cu) = cipher_sync_data.user_collections.get(&self.uuid) {
+                        (
+                            cu.read_only,
+                            cu.hide_passwords,
+                            cu.manage || (is_manager && !cu.read_only && !cu.hide_passwords),
+                        )
                     } else if let Some(cg) = cipher_sync_data.user_collections_groups.get(&self.uuid) {
-                        (cg.read_only, cg.hide_passwords, is_manager && !cg.read_only && !cg.hide_passwords)
+                        (
+                            cg.read_only,
+                            cg.hide_passwords,
+                            cg.manage || (is_manager && !cg.read_only && !cg.hide_passwords),
+                        )
                     } else {
                         (false, false, false)
                     }
@@ -104,17 +113,14 @@ impl Collection {
         } else {
             match Membership::find_confirmed_by_user_and_org(user_uuid, &self.org_uuid, conn).await {
                 Some(m) if m.has_full_access() => (false, false, m.atype >= MembershipType::Manager),
+                Some(_) if self.is_manageable_by_user(user_uuid, conn).await => (false, false, true),
                 Some(m) => {
                     let is_manager = m.atype == MembershipType::Manager;
                     let read_only = !self.is_writable_by_user(user_uuid, conn).await;
                     let hide_passwords = self.hide_passwords_for_user(user_uuid, conn).await;
                     (read_only, hide_passwords, is_manager && !read_only && !hide_passwords)
                 }
-                _ => (
-                    !self.is_writable_by_user(user_uuid, conn).await,
-                    self.hide_passwords_for_user(user_uuid, conn).await,
-                    false,
-                ),
+                _ => (true, true, false),
             }
         };
 
@@ -122,7 +128,7 @@ impl Collection {
         json_object["object"] = json!("collectionDetails");
         json_object["readOnly"] = json!(read_only);
         json_object["hidePasswords"] = json!(hide_passwords);
-        json_object["manage"] = json!(can_manage);
+        json_object["manage"] = json!(manage);
         json_object
     }
 
@@ -507,6 +513,52 @@ impl Collection {
             .unwrap_or(0) != 0
         }}
     }
+
+    pub async fn is_manageable_by_user(&self, user_uuid: &UserId, conn: &mut DbConn) -> bool {
+        let user_uuid = user_uuid.to_string();
+        db_run! { conn: {
+            collections::table
+            .left_join(users_collections::table.on(
+                users_collections::collection_uuid.eq(collections::uuid).and(
+                    users_collections::user_uuid.eq(user_uuid.clone())
+                )
+            ))
+            .left_join(users_organizations::table.on(
+                collections::org_uuid.eq(users_organizations::org_uuid).and(
+                    users_organizations::user_uuid.eq(user_uuid)
+                )
+            ))
+            .left_join(groups_users::table.on(
+                groups_users::users_organizations_uuid.eq(users_organizations::uuid)
+            ))
+            .left_join(groups::table.on(
+                groups::uuid.eq(groups_users::groups_uuid)
+            ))
+            .left_join(collections_groups::table.on(
+                collections_groups::groups_uuid.eq(groups_users::groups_uuid).and(
+                    collections_groups::collections_uuid.eq(collections::uuid)
+                )
+            ))
+            .filter(collections::uuid.eq(&self.uuid))
+            .filter(
+                users_collections::collection_uuid.eq(&self.uuid).and(users_collections::manage.eq(true)).or(// Directly accessed collection
+                    users_organizations::access_all.eq(true).or( // access_all in Organization
+                        users_organizations::atype.le(MembershipType::Admin as i32) // Org admin or owner
+                )).or(
+                    groups::access_all.eq(true) // access_all in groups
+                ).or( // access via groups
+                    groups_users::users_organizations_uuid.eq(users_organizations::uuid).and(
+                        collections_groups::collections_uuid.is_not_null().and(
+                            collections_groups::manage.eq(true))
+                    )
+                )
+            )
+            .count()
+            .first::<i64>(conn)
+            .ok()
+            .unwrap_or(0) != 0
+        }}
+    }
 }
 
 /// Database methods
@@ -537,7 +589,7 @@ impl CollectionUser {
                 .inner_join(collections::table.on(collections::uuid.eq(users_collections::collection_uuid)))
                 .filter(collections::org_uuid.eq(org_uuid))
                 .inner_join(users_organizations::table.on(users_organizations::user_uuid.eq(users_collections::user_uuid)))
-                .select((users_organizations::uuid, users_collections::collection_uuid, users_collections::read_only, users_collections::hide_passwords))
+                .select((users_organizations::uuid, users_collections::collection_uuid, users_collections::read_only, users_collections::hide_passwords, users_collections::manage))
                 .load::<CollectionUserDb>(conn)
                 .expect("Error loading users_collections")
                 .from_db()
@@ -550,6 +602,7 @@ impl CollectionUser {
         collection_uuid: &CollectionId,
         read_only: bool,
         hide_passwords: bool,
+        manage: bool,
         conn: &mut DbConn,
     ) -> EmptyResult {
         User::update_uuid_revision(user_uuid, conn).await;
@@ -562,6 +615,7 @@ impl CollectionUser {
                         users_collections::collection_uuid.eq(collection_uuid),
                         users_collections::read_only.eq(read_only),
                         users_collections::hide_passwords.eq(hide_passwords),
+                        users_collections::manage.eq(manage),
                     ))
                     .execute(conn)
                 {
@@ -576,6 +630,7 @@ impl CollectionUser {
                                 users_collections::collection_uuid.eq(collection_uuid),
                                 users_collections::read_only.eq(read_only),
                                 users_collections::hide_passwords.eq(hide_passwords),
+                                users_collections::manage.eq(manage),
                             ))
                             .execute(conn)
                             .map_res("Error adding user to collection")
@@ -590,12 +645,14 @@ impl CollectionUser {
                         users_collections::collection_uuid.eq(collection_uuid),
                         users_collections::read_only.eq(read_only),
                         users_collections::hide_passwords.eq(hide_passwords),
+                        users_collections::manage.eq(manage),
                     ))
                     .on_conflict((users_collections::user_uuid, users_collections::collection_uuid))
                     .do_update()
                     .set((
                         users_collections::read_only.eq(read_only),
                         users_collections::hide_passwords.eq(hide_passwords),
+                        users_collections::manage.eq(manage),
                     ))
                     .execute(conn)
                     .map_res("Error adding user to collection")
@@ -636,7 +693,7 @@ impl CollectionUser {
             users_collections::table
                 .filter(users_collections::collection_uuid.eq(collection_uuid))
                 .inner_join(users_organizations::table.on(users_organizations::user_uuid.eq(users_collections::user_uuid)))
-                .select((users_organizations::uuid, users_collections::collection_uuid, users_collections::read_only, users_collections::hide_passwords))
+                .select((users_organizations::uuid, users_collections::collection_uuid, users_collections::read_only, users_collections::hide_passwords, users_collections::manage))
                 .load::<CollectionUserDb>(conn)
                 .expect("Error loading users_collections")
                 .from_db()
@@ -787,15 +844,17 @@ pub struct CollectionMembership {
     pub collection_uuid: CollectionId,
     pub read_only: bool,
     pub hide_passwords: bool,
+    pub manage: bool,
 }
 
 impl CollectionMembership {
-    pub fn to_json_details_for_user(&self, membership_type: i32) -> Value {
+    pub fn to_json_details_for_member(&self, membership_type: i32) -> Value {
         json!({
             "id": self.membership_uuid,
             "readOnly": self.read_only,
             "hidePasswords": self.hide_passwords,
             "manage": membership_type >= MembershipType::Admin
+                || self.manage
                 || (membership_type == MembershipType::Manager
                     && !self.read_only
                     && !self.hide_passwords),
@@ -810,6 +869,7 @@ impl From<CollectionUser> for CollectionMembership {
             collection_uuid: c.collection_uuid,
             read_only: c.read_only,
             hide_passwords: c.hide_passwords,
+            manage: c.manage,
         }
     }
 }

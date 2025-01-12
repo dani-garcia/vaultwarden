@@ -157,7 +157,6 @@ fn websockets_hub<'r>(
 
                                         if serde_json::from_str(msg).ok() == Some(INITIAL_MESSAGE) {
                                             yield Message::binary(INITIAL_RESPONSE);
-                                            continue;
                                         }
                                     }
 
@@ -225,7 +224,6 @@ fn anonymous_websockets_hub<'r>(ws: WebSocket, token: String, ip: ClientIp) -> R
 
                                         if serde_json::from_str(msg).ok() == Some(INITIAL_MESSAGE) {
                                             yield Message::binary(INITIAL_RESPONSE);
-                                            continue;
                                         }
                                     }
 
