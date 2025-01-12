@@ -158,16 +158,16 @@ impl Cipher {
 
         // We don't need these values at all for Organizational syncs
         // Skip any other database calls if this is the case and just return false.
-        let (read_only, hide_passwords) = if sync_type == CipherSyncType::User {
+        let (read_only, hide_passwords, _) = if sync_type == CipherSyncType::User {
             match self.get_access_restrictions(user_uuid, cipher_sync_data, conn).await {
-                Some((ro, hp)) => (ro, hp),
+                Some((ro, hp, mn)) => (ro, hp, mn),
                 None => {
                     error!("Cipher ownership assertion failure");
-                    (true, true)
+                    (true, true, false)
                 }
             }
         } else {
-            (false, false)
+            (false, false, false)
         };
 
         let fields_json: Vec<_> = self
@@ -567,14 +567,14 @@ impl Cipher {
     /// Returns the user's access restrictions to this cipher. A return value
     /// of None means that this cipher does not belong to the user, and is
     /// not in any collection the user has access to. Otherwise, the user has
-    /// access to this cipher, and Some(read_only, hide_passwords) represents
+    /// access to this cipher, and Some(read_only, hide_passwords, manage) represents
     /// the access restrictions.
     pub async fn get_access_restrictions(
         &self,
         user_uuid: &UserId,
         cipher_sync_data: Option<&CipherSyncData>,
         conn: &mut DbConn,
-    ) -> Option<(bool, bool)> {
+    ) -> Option<(bool, bool, bool)> {
         // Check whether this cipher is directly owned by the user, or is in
         // a collection that the user has full access to. If so, there are no
         // access restrictions.
@@ -582,21 +582,21 @@ impl Cipher {
             || self.is_in_full_access_org(user_uuid, cipher_sync_data, conn).await
             || self.is_in_full_access_group(user_uuid, cipher_sync_data, conn).await
         {
-            return Some((false, false));
+            return Some((false, false, true));
         }
 
         let rows = if let Some(cipher_sync_data) = cipher_sync_data {
-            let mut rows: Vec<(bool, bool)> = Vec::new();
+            let mut rows: Vec<(bool, bool, bool)> = Vec::new();
             if let Some(collections) = cipher_sync_data.cipher_collections.get(&self.uuid) {
                 for collection in collections {
                     //User permissions
-                    if let Some(uc) = cipher_sync_data.user_collections.get(collection) {
-                        rows.push((uc.read_only, uc.hide_passwords));
+                    if let Some(cu) = cipher_sync_data.user_collections.get(collection) {
+                        rows.push((cu.read_only, cu.hide_passwords, cu.manage));
                     }
 
                     //Group permissions
                     if let Some(cg) = cipher_sync_data.user_collections_groups.get(collection) {
-                        rows.push((cg.read_only, cg.hide_passwords));
+                        rows.push((cg.read_only, cg.hide_passwords, cg.manage));
                     }
                 }
             }
@@ -623,15 +623,21 @@ impl Cipher {
         // booleans and this behavior isn't portable anyway.
         let mut read_only = true;
         let mut hide_passwords = true;
-        for (ro, hp) in rows.iter() {
+        let mut manage = false;
+        for (ro, hp, mn) in rows.iter() {
             read_only &= ro;
             hide_passwords &= hp;
+            manage &= mn;
         }
 
-        Some((read_only, hide_passwords))
+        Some((read_only, hide_passwords, manage))
     }
 
-    async fn get_user_collections_access_flags(&self, user_uuid: &UserId, conn: &mut DbConn) -> Vec<(bool, bool)> {
+    async fn get_user_collections_access_flags(
+        &self,
+        user_uuid: &UserId,
+        conn: &mut DbConn,
+    ) -> Vec<(bool, bool, bool)> {
         db_run! {conn: {
             // Check whether this cipher is in any collections accessible to the
             // user. If so, retrieve the access flags for each collection.
@@ -642,13 +648,17 @@ impl Cipher {
                 .inner_join(users_collections::table.on(
                     ciphers_collections::collection_uuid.eq(users_collections::collection_uuid)
                         .and(users_collections::user_uuid.eq(user_uuid))))
-                .select((users_collections::read_only, users_collections::hide_passwords))
-                .load::<(bool, bool)>(conn)
+                .select((users_collections::read_only, users_collections::hide_passwords, users_collections::manage))
+                .load::<(bool, bool, bool)>(conn)
                 .expect("Error getting user access restrictions")
         }}
     }
 
-    async fn get_group_collections_access_flags(&self, user_uuid: &UserId, conn: &mut DbConn) -> Vec<(bool, bool)> {
+    async fn get_group_collections_access_flags(
+        &self,
+        user_uuid: &UserId,
+        conn: &mut DbConn,
+    ) -> Vec<(bool, bool, bool)> {
         if !CONFIG.org_groups_enabled() {
             return Vec::new();
         }
@@ -668,15 +678,15 @@ impl Cipher {
                     users_organizations::uuid.eq(groups_users::users_organizations_uuid)
                 ))
                 .filter(users_organizations::user_uuid.eq(user_uuid))
-                .select((collections_groups::read_only, collections_groups::hide_passwords))
-                .load::<(bool, bool)>(conn)
+                .select((collections_groups::read_only, collections_groups::hide_passwords, collections_groups::manage))
+                .load::<(bool, bool, bool)>(conn)
                 .expect("Error getting group access restrictions")
         }}
     }
 
     pub async fn is_write_accessible_to_user(&self, user_uuid: &UserId, conn: &mut DbConn) -> bool {
         match self.get_access_restrictions(user_uuid, None, conn).await {
-            Some((read_only, _hide_passwords)) => !read_only,
+            Some((read_only, _hide_passwords, manage)) => !read_only || manage,
             None => false,
         }
     }

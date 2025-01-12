@@ -522,13 +522,13 @@ impl Membership {
                 .await
                 .into_iter()
                 .filter_map(|c| {
-                    let (read_only, hide_passwords, can_manage) = if self.has_full_access() {
+                    let (read_only, hide_passwords, manage) = if self.has_full_access() {
                         (false, false, self.atype >= MembershipType::Manager)
                     } else if let Some(cu) = cu.get(&c.uuid) {
                         (
                             cu.read_only,
                             cu.hide_passwords,
-                            self.atype == MembershipType::Manager && !cu.read_only && !cu.hide_passwords,
+                            cu.manage || (self.atype == MembershipType::Manager && !cu.read_only && !cu.hide_passwords),
                         )
                     // If previous checks failed it might be that this user has access via a group, but we should not return those elements here
                     // Those are returned via a special group endpoint
@@ -542,7 +542,7 @@ impl Membership {
                         "id": c.uuid,
                         "readOnly": read_only,
                         "hidePasswords": hide_passwords,
-                        "manage": can_manage,
+                        "manage": manage,
                     }))
                 })
                 .collect()
@@ -611,6 +611,7 @@ impl Membership {
             "id": self.uuid,
             "readOnly": col_user.read_only,
             "hidePasswords": col_user.hide_passwords,
+            "manage": col_user.manage,
         })
     }
 
@@ -622,11 +623,12 @@ impl Membership {
                 CollectionUser::find_by_organization_and_user_uuid(&self.org_uuid, &self.user_uuid, conn).await;
             collections
                 .iter()
-                .map(|c| {
+                .map(|cu| {
                     json!({
-                        "id": c.collection_uuid,
-                        "readOnly": c.read_only,
-                        "hidePasswords": c.hide_passwords,
+                        "id": cu.collection_uuid,
+                        "readOnly": cu.read_only,
+                        "hidePasswords": cu.hide_passwords,
+                        "manage": cu.manage,
                     })
                 })
                 .collect()
