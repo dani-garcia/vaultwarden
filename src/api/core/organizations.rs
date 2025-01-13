@@ -139,6 +139,7 @@ struct NewCollectionGroupData {
     hide_passwords: bool,
     id: GroupId,
     read_only: bool,
+    manage: bool,
 }
 
 #[derive(Deserialize)]
@@ -147,6 +148,7 @@ struct NewCollectionMemberData {
     hide_passwords: bool,
     id: MembershipId,
     read_only: bool,
+    manage: bool,
 }
 
 #[derive(Deserialize)]
@@ -369,10 +371,10 @@ async fn get_org_collections_details(
         // get the users assigned directly to the given collection
         let users: Vec<Value> = col_users
             .iter()
-            .filter(|collection_user| collection_user.collection_uuid == col.uuid)
-            .map(|collection_user| {
-                collection_user.to_json_details_for_user(
-                    *membership_type.get(&collection_user.membership_uuid).unwrap_or(&(MembershipType::User as i32)),
+            .filter(|collection_member| collection_member.collection_uuid == col.uuid)
+            .map(|collection_member| {
+                collection_member.to_json_details_for_member(
+                    *membership_type.get(&collection_member.membership_uuid).unwrap_or(&(MembershipType::User as i32)),
                 )
             })
             .collect();
@@ -436,7 +438,7 @@ async fn post_organization_collections(
     .await;
 
     for group in data.groups {
-        CollectionGroup::new(collection.uuid.clone(), group.id, group.read_only, group.hide_passwords)
+        CollectionGroup::new(collection.uuid.clone(), group.id, group.read_only, group.hide_passwords, group.manage)
             .save(&mut conn)
             .await?;
     }
@@ -450,12 +452,19 @@ async fn post_organization_collections(
             continue;
         }
 
-        CollectionUser::save(&member.user_uuid, &collection.uuid, user.read_only, user.hide_passwords, &mut conn)
-            .await?;
+        CollectionUser::save(
+            &member.user_uuid,
+            &collection.uuid,
+            user.read_only,
+            user.hide_passwords,
+            user.manage,
+            &mut conn,
+        )
+        .await?;
     }
 
     if headers.membership.atype == MembershipType::Manager && !headers.membership.access_all {
-        CollectionUser::save(&headers.membership.user_uuid, &collection.uuid, false, false, &mut conn).await?;
+        CollectionUser::save(&headers.membership.user_uuid, &collection.uuid, false, false, false, &mut conn).await?;
     }
 
     Ok(Json(collection.to_json()))
@@ -512,7 +521,9 @@ async fn post_organization_collection_update(
     CollectionGroup::delete_all_by_collection(&col_id, &mut conn).await?;
 
     for group in data.groups {
-        CollectionGroup::new(col_id.clone(), group.id, group.read_only, group.hide_passwords).save(&mut conn).await?;
+        CollectionGroup::new(col_id.clone(), group.id, group.read_only, group.hide_passwords, group.manage)
+            .save(&mut conn)
+            .await?;
     }
 
     CollectionUser::delete_all_by_collection(&col_id, &mut conn).await?;
@@ -526,7 +537,8 @@ async fn post_organization_collection_update(
             continue;
         }
 
-        CollectionUser::save(&member.user_uuid, &col_id, user.read_only, user.hide_passwords, &mut conn).await?;
+        CollectionUser::save(&member.user_uuid, &col_id, user.read_only, user.hide_passwords, user.manage, &mut conn)
+            .await?;
     }
 
     Ok(Json(collection.to_json_details(&headers.user.uuid, None, &mut conn).await))
@@ -684,10 +696,10 @@ async fn get_org_collection_detail(
                 CollectionUser::find_by_collection_swap_user_uuid_with_member_uuid(&collection.uuid, &mut conn)
                     .await
                     .iter()
-                    .map(|collection_user| {
-                        collection_user.to_json_details_for_user(
+                    .map(|collection_member| {
+                        collection_member.to_json_details_for_member(
                             *membership_type
-                                .get(&collection_user.membership_uuid)
+                                .get(&collection_member.membership_uuid)
                                 .unwrap_or(&(MembershipType::User as i32)),
                         )
                     })
@@ -757,7 +769,7 @@ async fn put_collection_users(
             continue;
         }
 
-        CollectionUser::save(&user.user_uuid, &col_id, d.read_only, d.hide_passwords, &mut conn).await?;
+        CollectionUser::save(&user.user_uuid, &col_id, d.read_only, d.hide_passwords, d.manage, &mut conn).await?;
     }
 
     Ok(())
@@ -865,6 +877,7 @@ struct CollectionData {
     id: CollectionId,
     read_only: bool,
     hide_passwords: bool,
+    manage: bool,
 }
 
 #[derive(Deserialize)]
@@ -873,6 +886,7 @@ struct MembershipData {
     id: MembershipId,
     read_only: bool,
     hide_passwords: bool,
+    manage: bool,
 }
 
 #[derive(Deserialize)]
@@ -1011,6 +1025,7 @@ async fn send_invite(
                             &collection.uuid,
                             col.read_only,
                             col.hide_passwords,
+                            col.manage,
                             &mut conn,
                         )
                         .await?;
@@ -1508,6 +1523,7 @@ async fn edit_member(
                         &collection.uuid,
                         col.read_only,
                         col.hide_passwords,
+                        col.manage,
                         &mut conn,
                     )
                     .await?;
@@ -2485,11 +2501,12 @@ struct SelectedCollection {
     id: CollectionId,
     read_only: bool,
     hide_passwords: bool,
+    manage: bool,
 }
 
 impl SelectedCollection {
     pub fn to_collection_group(&self, groups_uuid: GroupId) -> CollectionGroup {
-        CollectionGroup::new(self.id.clone(), groups_uuid, self.read_only, self.hide_passwords)
+        CollectionGroup::new(self.id.clone(), groups_uuid, self.read_only, self.hide_passwords, self.manage)
     }
 }
 
