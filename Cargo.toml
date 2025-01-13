@@ -5,7 +5,7 @@ name = "vaultwarden"
 version = "1.0.0"
 authors = ["Daniel García <dani-garcia@users.noreply.github.com>"]
 edition = "2021"
-rust-version = "1.82.0"
+rust-version = "1.83.0"
 resolver = "2"
 
 repository = "https://github.com/dani-garcia/vaultwarden"

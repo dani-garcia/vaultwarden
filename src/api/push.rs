@@ -7,7 +7,7 @@ use tokio::sync::RwLock;
 
 use crate::{
     api::{ApiResult, EmptyResult, UpdateType},
-    db::models::{Cipher, Device, DeviceId, Folder, Send, User, UserId},
+    db::models::{AuthRequestId, Cipher, Device, DeviceId, Folder, Send, User, UserId},
     http_client::make_http_request,
     util::format_date,
     CONFIG,
@@ -301,12 +301,12 @@ pub async fn push_auth_request(user_id: UserId, auth_request_id: String, conn: &
 }
 
 pub async fn push_auth_response(
-    user_id: UserId,
-    auth_request_id: String,
-    approving_device_id: DeviceId,
+    user_id: &UserId,
+    auth_request_id: &AuthRequestId,
+    approving_device_id: &DeviceId,
     conn: &mut crate::db::DbConn,
 ) {
-    if Device::check_user_has_push_device(&user_id, conn).await {
+    if Device::check_user_has_push_device(user_id, conn).await {
         tokio::task::spawn(send_to_push_relay(json!({
             "userId": user_id,
             "organizationId": (),

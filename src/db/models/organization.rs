@@ -87,7 +87,7 @@ impl MembershipType {
 impl Ord for MembershipType {
     fn cmp(&self, other: &MembershipType) -> Ordering {
         // For easy comparison, map each variant to an access level (where 0 is lowest).
-        static ACCESS_LEVEL: [i32; 4] = [
+        const ACCESS_LEVEL: [i32; 4] = [
             3, // Owner
             2, // Admin
             0, // User
@@ -216,7 +216,7 @@ impl Organization {
 // The number 128 should be fine, it is well within the range of an i32
 // The same goes for the database where we only use INTEGER (the same as an i32)
 // It should also provide enough room for 100+ types, which i doubt will ever happen.
-static ACTIVATE_REVOKE_DIFF: i32 = 128;
+const ACTIVATE_REVOKE_DIFF: i32 = 128;
 
 impl Membership {
     pub fn new(user_uuid: UserId, org_uuid: OrganizationId) -> Self {
