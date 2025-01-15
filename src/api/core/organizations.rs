@@ -41,6 +41,7 @@ pub fn routes() -> Vec<Route> {
         bulk_delete_organization_collections,
         post_bulk_collections,
         get_org_details,
+        get_org_domain_sso_details,
         get_members,
         send_invite,
         reinvite_member,
@@ -58,6 +59,7 @@ pub fn routes() -> Vec<Route> {
         post_org_import,
         list_policies,
         list_policies_token,
+        get_master_password_policy,
         get_policy,
         put_policy,
         get_organization_tax,
@@ -101,6 +103,7 @@ pub fn routes() -> Vec<Route> {
         api_key,
         rotate_api_key,
         get_billing_metadata,
+        get_auto_enroll_status,
     ]
 }
 
@@ -319,6 +322,17 @@ async fn get_user_collections(headers: Headers, mut conn: DbConn) -> Json<Value>
         "object": "list",
         "continuationToken": null,
     }))
+}
+
+// Called during the SSO enrollment
+// The `_identifier` should be the harcoded value returned by `get_org_domain_sso_details`
+// The returned `Id` will then be passed to `get_master_password_policy` which will mainly ignore it
+#[get("/organizations/<_identifier>/auto-enroll-status")]
+fn get_auto_enroll_status(_identifier: &str) -> JsonResult {
+    Ok(Json(json!({
+        "Id": "_",
+        "ResetPasswordEnabled": false, // Not implemented
+    })))
 }
 
 #[get("/organizations/<org_id>/collections")]
@@ -794,6 +808,18 @@ async fn _get_org_details(org_id: &OrganizationId, host: &str, user_id: &UserId,
     json!(ciphers_json)
 }
 
+// Endpoint called when the user select SSO login (body: `{ "email": "" }`).
+// Returning a Domain/Organization here allow to prefill it and prevent prompting the user
+// VaultWarden sso login is not linked to Org so we set a dummy value.
+#[post("/organizations/domain/sso/details")]
+fn get_org_domain_sso_details() -> JsonResult {
+    Ok(Json(json!({
+        "organizationIdentifier": "vaultwarden",
+        "ssoAvailable": CONFIG.sso_enabled(),
+        "verifiedDate": crate::util::format_date(&chrono::Utc::now().naive_utc()),
+    })))
+}
+
 #[derive(FromForm)]
 struct GetOrgUserData {
     #[field(name = "includeCollections")]
@@ -938,7 +964,7 @@ async fn send_invite(
                     Invitation::new(email).save(&mut conn).await?;
                 }
 
-                let mut new_user = User::new(email.clone());
+                let mut new_user = User::new(email.clone(), None);
                 new_user.save(&mut conn).await?;
                 user_created = true;
                 new_user
@@ -1853,7 +1879,26 @@ async fn list_policies_token(org_id: OrganizationId, token: &str, mut conn: DbCo
     })))
 }
 
-#[get("/organizations/<org_id>/policies/<pol_type>")]
+// Called during the SSO enrollment.
+// Cannot use the OrganizationId guard since the Org does not exists.
+#[get("/organizations/<org_id>/policies/master-password", rank = 1)]
+fn get_master_password_policy(org_id: &str, _headers: Headers) -> JsonResult {
+    let data = match CONFIG.sso_master_password_policy() {
+        Some(policy) => policy,
+        None => "null".to_string(),
+    };
+
+    let policy = OrgPolicy::new(
+        OrganizationId(org_id.to_string()),
+        OrgPolicyType::MasterPassword,
+        CONFIG.sso_master_password_policy().is_some(),
+        data,
+    );
+
+    Ok(Json(policy.to_json()))
+}
+
+#[get("/organizations/<org_id>/policies/<pol_type>", rank = 2)]
 async fn get_policy(org_id: OrganizationId, pol_type: i32, _headers: AdminHeaders, mut conn: DbConn) -> JsonResult {
     let Some(pol_type_enum) = OrgPolicyType::from_i32(pol_type) else {
         err!("Invalid or unsupported policy type")
@@ -1861,7 +1906,7 @@ async fn get_policy(org_id: OrganizationId, pol_type: i32, _headers: AdminHeader
 
     let policy = match OrgPolicy::find_by_org_and_type(&org_id, pol_type_enum, &mut conn).await {
         Some(p) => p,
-        None => OrgPolicy::new(org_id.clone(), pol_type_enum, "null".to_string()),
+        None => OrgPolicy::new(org_id.clone(), pol_type_enum, false, "null".to_string()),
     };
 
     Ok(Json(policy.to_json()))
@@ -1969,7 +2014,7 @@ async fn put_policy(
 
     let mut policy = match OrgPolicy::find_by_org_and_type(&org_id, pol_type_enum, &mut conn).await {
         Some(p) => p,
-        None => OrgPolicy::new(org_id.clone(), pol_type_enum, "{}".to_string()),
+        None => OrgPolicy::new(org_id.clone(), pol_type_enum, false, "{}".to_string()),
     };
 
     policy.enabled = data.enabled;

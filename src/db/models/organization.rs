@@ -805,6 +805,24 @@ impl Membership {
         }}
     }
 
+    pub async fn confirm_user_invitations(user_uuid: &UserId, conn: &mut DbConn) -> EmptyResult {
+        db_run! { conn: {
+            diesel::update(users_organizations::table)
+                .filter(users_organizations::user_uuid.eq(user_uuid))
+                .filter(users_organizations::status.eq(MembershipStatus::Invited as i32))
+                .set(users_organizations::status.eq(MembershipStatus::Accepted as i32))
+                .execute(conn)
+                .map_res("Error confirming invitations")
+        }}
+        .and_then(|updated| match updated {
+            1 => Ok(()),
+            count => err!(format!(
+                "Failed to update users_organizations to accepted for user ({}) was expecting invited status (updated row: {})).",
+                user_uuid, count
+            )),
+        })
+    }
+
     pub async fn find_any_state_by_user(user_uuid: &UserId, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             users_organizations::table
@@ -1138,7 +1156,7 @@ impl OrganizationApiKey {
 )]
 #[deref(forward)]
 #[from(forward)]
-pub struct OrganizationId(String);
+pub struct OrganizationId(pub String);
 
 #[derive(
     Clone,
