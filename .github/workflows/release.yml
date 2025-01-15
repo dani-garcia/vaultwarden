@@ -187,54 +187,35 @@ jobs:
             *.cache-from=${{ env.BAKE_CACHE_FROM }}
             *.cache-to=${{ env.BAKE_CACHE_TO }}
 
-      # Attest Debian
-      - name: Attest - docker.io - Debian
-        if: ${{ env.HAVE_DOCKERHUB_LOGIN == 'true' && matrix.base_image == 'debian' && steps.bake_vw.outputs.metadata != ''}}
+      - name: Extract digest SHA
+        shell: bash
+        run: |
+          GET_DIGEST_SHA="$(jq -r '.["${{ matrix.base_image }}-multi"]."containerimage.digest"' <<< '${{ steps.bake_vw.outputs.metadata }}')"
+          echo "DIGEST_SHA=${GET_DIGEST_SHA}" | tee -a "${GITHUB_ENV}"
+
+      # Attest container images
+      - name: Attest - docker.io - ${{ matrix.base_image }}
+        if: ${{ env.HAVE_DOCKERHUB_LOGIN == 'true' && steps.bake_vw.outputs.metadata != ''}}
         uses: actions/attest-build-provenance@7668571508540a607bdfd90a87a560489fe372eb # v2.1.0
         with:
           subject-name: ${{ vars.DOCKERHUB_REPO }}
-          subject-digest: ${{ fromJSON(steps.bake_vw.outputs.metadata).debian-multi['containerimage.digest'] }}
+          subject-digest: ${{ env.DIGEST_SHA }}
           push-to-registry: true
 
-      - name: Attest - ghcr.io - Debian
-        if: ${{ env.HAVE_GHCR_LOGIN == 'true' && matrix.base_image == 'debian' && steps.bake_vw.outputs.metadata != ''}}
+      - name: Attest - ghcr.io - ${{ matrix.base_image }}
+        if: ${{ env.HAVE_GHCR_LOGIN == 'true' && steps.bake_vw.outputs.metadata != ''}}
         uses: actions/attest-build-provenance@7668571508540a607bdfd90a87a560489fe372eb # v2.1.0
         with:
           subject-name: ${{ vars.GHCR_REPO }}
-          subject-digest: ${{ fromJSON(steps.bake_vw.outputs.metadata).debian-multi['containerimage.digest'] }}
+          subject-digest: ${{ env.DIGEST_SHA }}
           push-to-registry: true
 
-      - name: Attest - quay.io - Debian
-        if: ${{ env.HAVE_QUAY_LOGIN == 'true' && matrix.base_image == 'debian' && steps.bake_vw.outputs.metadata != ''}}
+      - name: Attest - quay.io - ${{ matrix.base_image }}
+        if: ${{ env.HAVE_QUAY_LOGIN == 'true' && steps.bake_vw.outputs.metadata != ''}}
         uses: actions/attest-build-provenance@7668571508540a607bdfd90a87a560489fe372eb # v2.1.0
         with:
           subject-name: ${{ vars.QUAY_REPO }}
-          subject-digest: ${{ fromJSON(steps.bake_vw.outputs.metadata).debian-multi['containerimage.digest'] }}
-          push-to-registry: true
-
-      # Attest Alpine
-      - name: Attest - docker.io - Alpine
-        if: ${{ env.HAVE_DOCKERHUB_LOGIN == 'true' && matrix.base_image == 'alpine' && steps.bake_vw.outputs.metadata != ''}}
-        uses: actions/attest-build-provenance@7668571508540a607bdfd90a87a560489fe372eb # v2.1.0
-        with:
-          subject-name: ${{ vars.DOCKERHUB_REPO }}
-          subject-digest: ${{ fromJSON(steps.bake_vw.outputs.metadata).alpine-multi['containerimage.digest'] }}
-          push-to-registry: true
-
-      - name: Attest - ghcr.io - Alpine
-        if: ${{ env.HAVE_GHCR_LOGIN == 'true' && matrix.base_image == 'alpine' && steps.bake_vw.outputs.metadata != ''}}
-        uses: actions/attest-build-provenance@7668571508540a607bdfd90a87a560489fe372eb # v2.1.0
-        with:
-          subject-name: ${{ vars.GHCR_REPO }}
-          subject-digest: ${{ fromJSON(steps.bake_vw.outputs.metadata).alpine-multi['containerimage.digest'] }}
-          push-to-registry: true
-
-      - name: Attest - quay.io - Alpine
-        if: ${{ env.HAVE_QUAY_LOGIN == 'true' && matrix.base_image == 'alpine' && steps.bake_vw.outputs.metadata != ''}}
-        uses: actions/attest-build-provenance@7668571508540a607bdfd90a87a560489fe372eb # v2.1.0
-        with:
-          subject-name: ${{ vars.QUAY_REPO }}
-          subject-digest: ${{ fromJSON(steps.bake_vw.outputs.metadata).alpine-multi['containerimage.digest'] }}
+          subject-digest: ${{ env.DIGEST_SHA }}
           push-to-registry: true
 
 
