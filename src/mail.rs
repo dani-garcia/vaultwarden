@@ -264,22 +264,22 @@ pub async fn send_invite(
     org_name: &str,
     invited_by_email: Option<String>,
 ) -> EmptyResult {
-    let claims = generate_invite_claims(
-        user.uuid.clone(),
-        user.email.clone(),
-        org_id.clone(),
-        member_id.clone(),
-        invited_by_email,
-    );
-    let invite_token = encode_jwt(&claims);
     let org_id = match org_id {
         Some(ref org_id) => org_id.as_ref(),
-        None => "_",
+        None => "00000000-0000-0000-0000-000000000000",
     };
     let member_id = match member_id {
         Some(ref member_id) => member_id.as_ref(),
-        None => "_",
+        None => "00000000-0000-0000-0000-000000000000",
     };
+    let claims = generate_invite_claims(
+        user.uuid.clone(),
+        user.email.clone(),
+        Some(org_id.to_string().into()),
+        Some(member_id.to_string().into()),
+        invited_by_email,
+    );
+    let invite_token = encode_jwt(&claims);
     let mut query = url::Url::parse("https://query.builder").unwrap();
     {
         let mut query_params = query.query_pairs_mut();

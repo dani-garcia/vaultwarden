@@ -1148,6 +1148,10 @@ async fn accept_invite(
             Invitation::take(&claims.email, &mut conn).await;
 
             if let (Some(member), Some(org)) = (&claims.member_id, &claims.org_id) {
+                if **member == "00000000-0000-0000-0000-000000000000" {
+                    // exit early when the invitation was done via admin panel
+                    return Ok(());
+                }
                 let Some(mut member) = Membership::find_by_uuid_and_org(member, org, &mut conn).await else {
                     err!("Error accepting the invitation")
                 };
