@@ -177,7 +177,7 @@ pub async fn _register(data: Json<RegisterData>, mut conn: DbConn) -> JsonResult
                     err!("Registration email does not match invite email")
                 }
             } else if Invitation::take(&email, &mut conn).await {
-                Membership::confirm_user_invitations(&user.uuid, &mut conn).await?;
+                Membership::accept_user_invitations(&user.uuid, &mut conn).await?;
                 user
             } else if CONFIG.is_signup_allowed(&email)
                 || (CONFIG.emergency_access_allowed()
@@ -298,7 +298,7 @@ async fn post_set_password(data: Json<SetPasswordData>, headers: Headers, mut co
     if CONFIG.mail_enabled() {
         mail::send_set_password(&user.email.to_lowercase(), &user.name).await?;
     } else {
-        Membership::confirm_user_invitations(&user.uuid, &mut conn).await?;
+        Membership::accept_user_invitations(&user.uuid, &mut conn).await?;
     }
 
     user.save(&mut conn).await?;

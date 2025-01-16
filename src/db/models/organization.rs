@@ -807,7 +807,7 @@ impl Membership {
 
     // Should be used only when email are disabled.
     // In Organizations::send_invite status is set to Accepted only if the user has a password.
-    pub async fn confirm_user_invitations(user_uuid: &UserId, conn: &mut DbConn) -> EmptyResult {
+    pub async fn accept_user_invitations(user_uuid: &UserId, conn: &mut DbConn) -> EmptyResult {
         db_run! { conn: {
             diesel::update(users_organizations::table)
                 .filter(users_organizations::user_uuid.eq(user_uuid))
@@ -1151,7 +1151,7 @@ impl OrganizationApiKey {
 )]
 #[deref(forward)]
 #[from(forward)]
-pub struct OrganizationId(pub String);
+pub struct OrganizationId(String);
 
 #[derive(
     Clone,

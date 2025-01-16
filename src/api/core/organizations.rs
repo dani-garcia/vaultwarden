@@ -12,7 +12,7 @@ use crate::{
     auth::{decode_invite, AdminHeaders, ClientVersion, Headers, ManagerHeaders, ManagerHeadersLoose, OwnerHeaders},
     db::{models::*, DbConn},
     mail,
-    util::{convert_json_key_lcase_first, NumberOrString},
+    util::{convert_json_key_lcase_first, get_uuid, NumberOrString},
     CONFIG,
 };
 
@@ -330,7 +330,7 @@ async fn get_user_collections(headers: Headers, mut conn: DbConn) -> Json<Value>
 #[get("/organizations/<_identifier>/auto-enroll-status")]
 fn get_auto_enroll_status(_identifier: &str) -> JsonResult {
     Ok(Json(json!({
-        "Id": "_",
+        "Id": get_uuid(),
         "ResetPasswordEnabled": false, // Not implemented
     })))
 }
@@ -1882,18 +1882,14 @@ async fn list_policies_token(org_id: OrganizationId, token: &str, mut conn: DbCo
 // Called during the SSO enrollment.
 // Cannot use the OrganizationId guard since the Org does not exists.
 #[get("/organizations/<org_id>/policies/master-password", rank = 1)]
-fn get_master_password_policy(org_id: &str, _headers: Headers) -> JsonResult {
+fn get_master_password_policy(org_id: OrganizationId, _headers: Headers) -> JsonResult {
     let data = match CONFIG.sso_master_password_policy() {
         Some(policy) => policy,
         None => "null".to_string(),
     };
 
-    let policy = OrgPolicy::new(
-        OrganizationId(org_id.to_string()),
-        OrgPolicyType::MasterPassword,
-        CONFIG.sso_master_password_policy().is_some(),
-        data,
-    );
+    let policy =
+        OrgPolicy::new(org_id, OrgPolicyType::MasterPassword, CONFIG.sso_master_password_policy().is_some(), data);
 
     Ok(Json(policy.to_json()))
 }
