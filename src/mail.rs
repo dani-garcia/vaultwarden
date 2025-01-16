@@ -259,24 +259,16 @@ pub async fn send_single_org_removed_from_org(address: &str, org_name: &str) -> 
 
 pub async fn send_invite(
     user: &User,
-    org_id: Option<OrganizationId>,
-    member_id: Option<MembershipId>,
+    org_id: OrganizationId,
+    member_id: MembershipId,
     org_name: &str,
     invited_by_email: Option<String>,
 ) -> EmptyResult {
-    let org_id = match org_id {
-        Some(ref org_id) => org_id.as_ref(),
-        None => "00000000-0000-0000-0000-000000000000",
-    };
-    let member_id = match member_id {
-        Some(ref member_id) => member_id.as_ref(),
-        None => "00000000-0000-0000-0000-000000000000",
-    };
     let claims = generate_invite_claims(
         user.uuid.clone(),
         user.email.clone(),
-        Some(org_id.to_string().into()),
-        Some(member_id.to_string().into()),
+        org_id.clone(),
+        member_id.clone(),
         invited_by_email,
     );
     let invite_token = encode_jwt(&claims);
@@ -286,8 +278,8 @@ pub async fn send_invite(
         query_params
             .append_pair("email", &user.email)
             .append_pair("organizationName", org_name)
-            .append_pair("organizationId", org_id)
-            .append_pair("organizationUserId", member_id)
+            .append_pair("organizationId", &org_id)
+            .append_pair("organizationUserId", &member_id)
             .append_pair("token", &invite_token);
         if user.private_key.is_some() {
             query_params.append_pair("orgUserHasExistingUser", "true");

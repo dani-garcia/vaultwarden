@@ -4,6 +4,7 @@ use rocket::Route;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 
+use crate::api::admin::FAKE_ADMIN_UUID;
 use crate::{
     api::{
         core::{log_event, two_factor, CipherSyncData, CipherSyncType},
@@ -971,8 +972,8 @@ async fn send_invite(
 
             if let Err(e) = mail::send_invite(
                 &user,
-                Some(org_id.clone()),
-                Some(new_member.uuid.clone()),
+                org_id.clone(),
+                new_member.uuid.clone(),
                 &org_name,
                 Some(headers.user.email.clone()),
             )
@@ -1098,14 +1099,7 @@ async fn _reinvite_member(
     };
 
     if CONFIG.mail_enabled() {
-        mail::send_invite(
-            &user,
-            Some(org_id.clone()),
-            Some(member.uuid),
-            &org_name,
-            Some(invited_by_email.to_string()),
-        )
-        .await?;
+        mail::send_invite(&user, org_id.clone(), member.uuid, &org_name, Some(invited_by_email.to_string())).await?;
     } else if user.password_hash.is_empty() {
         let invitation = Invitation::new(&user.email);
         invitation.save(conn).await?;
@@ -1138,76 +1132,71 @@ async fn accept_invite(
     let claims = decode_invite(&data.token)?;
 
     // If a claim does not have a member_id or it does not match the one in from the URI, something is wrong.
-    match &claims.member_id {
-        Some(ou_id) if ou_id.eq(&member_id) => {}
-        _ => err!("Error accepting the invitation", "Claim does not match the member_id"),
+    if !claims.member_id.eq(&member_id) {
+        err!("Error accepting the invitation", "Claim does not match the member_id")
     }
 
-    match User::find_by_mail(&claims.email, &mut conn).await {
-        Some(user) => {
-            Invitation::take(&claims.email, &mut conn).await;
+    let Some(user) = User::find_by_mail(&claims.email, &mut conn).await else {
+        err!("Invited user not found")
+    };
+    let member = &claims.member_id;
+    let org = &claims.org_id;
 
-            if let (Some(member), Some(org)) = (&claims.member_id, &claims.org_id) {
-                if **member == "00000000-0000-0000-0000-000000000000" {
-                    // exit early when the invitation was done via admin panel
-                    return Ok(());
-                }
-                let Some(mut member) = Membership::find_by_uuid_and_org(member, org, &mut conn).await else {
-                    err!("Error accepting the invitation")
-                };
+    Invitation::take(&claims.email, &mut conn).await;
 
-                if member.status != MembershipStatus::Invited as i32 {
-                    err!("User already accepted the invitation")
-                }
+    // skip invitation logic when we were invited via the /admin panel
+    if **member != FAKE_ADMIN_UUID {
+        let Some(mut member) = Membership::find_by_uuid_and_org(member, org, &mut conn).await else {
+            err!("Error accepting the invitation")
+        };
 
-                let master_password_required = OrgPolicy::org_is_reset_password_auto_enroll(org, &mut conn).await;
-                if data.reset_password_key.is_none() && master_password_required {
-                    err!("Reset password key is required, but not provided.");
-                }
+        if member.status != MembershipStatus::Invited as i32 {
+            err!("User already accepted the invitation")
+        }
 
-                // This check is also done at accept_invite, _confirm_invite, _activate_member, edit_member, admin::update_membership_type
-                // It returns different error messages per function.
-                if member.atype < MembershipType::Admin {
-                    match OrgPolicy::is_user_allowed(&member.user_uuid, &org_id, false, &mut conn).await {
-                        Ok(_) => {}
-                        Err(OrgPolicyErr::TwoFactorMissing) => {
-                            if CONFIG.email_2fa_auto_fallback() {
-                                two_factor::email::activate_email_2fa(&user, &mut conn).await?;
-                            } else {
-                                err!("You cannot join this organization until you enable two-step login on your user account");
-                            }
-                        }
-                        Err(OrgPolicyErr::SingleOrgEnforced) => {
-                            err!("You cannot join this organization because you are a member of an organization which forbids it");
-                        }
+        let master_password_required = OrgPolicy::org_is_reset_password_auto_enroll(org, &mut conn).await;
+        if data.reset_password_key.is_none() && master_password_required {
+            err!("Reset password key is required, but not provided.");
+        }
+
+        // This check is also done at accept_invite, _confirm_invite, _activate_member, edit_member, admin::update_membership_type
+        // It returns different error messages per function.
+        if member.atype < MembershipType::Admin {
+            match OrgPolicy::is_user_allowed(&member.user_uuid, &org_id, false, &mut conn).await {
+                Ok(_) => {}
+                Err(OrgPolicyErr::TwoFactorMissing) => {
+                    if CONFIG.email_2fa_auto_fallback() {
+                        two_factor::email::activate_email_2fa(&user, &mut conn).await?;
+                    } else {
+                        err!("You cannot join this organization until you enable two-step login on your user account");
                     }
                 }
-
-                member.status = MembershipStatus::Accepted as i32;
-
-                if master_password_required {
-                    member.reset_password_key = data.reset_password_key;
+                Err(OrgPolicyErr::SingleOrgEnforced) => {
+                    err!("You cannot join this organization because you are a member of an organization which forbids it");
                 }
-
-                member.save(&mut conn).await?;
             }
         }
-        None => err!("Invited user not found"),
+
+        member.status = MembershipStatus::Accepted as i32;
+
+        if master_password_required {
+            member.reset_password_key = data.reset_password_key;
+        }
+
+        member.save(&mut conn).await?;
     }
 
     if CONFIG.mail_enabled() {
-        let mut org_name = CONFIG.invitation_org_name();
-        if let Some(org_id) = &claims.org_id {
-            org_name = match Organization::find_by_uuid(org_id, &mut conn).await {
+        if let Some(invited_by_email) = &claims.invited_by_email {
+            let org_name = match Organization::find_by_uuid(&claims.org_id, &mut conn).await {
                 Some(org) => org.name,
                 None => err!("Organization not found."),
             };
-        };
-        if let Some(invited_by_email) = &claims.invited_by_email {
             // User was invited to an organization, so they must be confirmed manually after acceptance
             mail::send_invite_accepted(&claims.email, invited_by_email, &org_name).await?;
         } else {
             // User was invited from /admin, so they are automatically confirmed
+            let org_name = CONFIG.invitation_org_name();
             mail::send_invite_confirmed(&claims.email, &org_name).await?;
         }
     }
@@ -1832,17 +1821,13 @@ async fn list_policies_token(org_id: OrganizationId, token: &str, mut conn: DbCo
     // web-vault 2024.6.2 seems to send these values and cause logs to output errors
     // Catch this and prevent errors in the logs
     // TODO: CleanUp after 2024.6.x is not used anymore.
-    if org_id.as_ref() == "undefined" && token == "undefined" {
+    if org_id.as_ref() == "undefined" && token == "undefined" || org_id.as_ref() == FAKE_ADMIN_UUID {
         return Ok(Json(json!({})));
     }
 
     let invite = decode_invite(token)?;
 
-    let Some(invite_org_id) = invite.org_id else {
-        err!("Invalid token")
-    };
-
-    if invite_org_id != org_id {
+    if invite.org_id != org_id {
         err!("Token doesn't match request organization");
     }
 
@@ -2145,8 +2130,8 @@ async fn import(org_id: OrganizationId, data: Json<OrgImportData>, headers: Head
 
                     mail::send_invite(
                         &user,
-                        Some(org_id.clone()),
-                        Some(new_member.uuid.clone()),
+                        org_id.clone(),
+                        new_member.uuid.clone(),
                         &org_name,
                         Some(headers.user.email.clone()),
                     )

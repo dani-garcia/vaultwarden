@@ -194,16 +194,16 @@ pub struct InviteJwtClaims {
     pub sub: UserId,
 
     pub email: String,
-    pub org_id: Option<OrganizationId>,
-    pub member_id: Option<MembershipId>,
+    pub org_id: OrganizationId,
+    pub member_id: MembershipId,
     pub invited_by_email: Option<String>,
 }
 
 pub fn generate_invite_claims(
     user_id: UserId,
     email: String,
-    org_id: Option<OrganizationId>,
-    member_id: Option<MembershipId>,
+    org_id: OrganizationId,
+    member_id: MembershipId,
     invited_by_email: Option<String>,
 ) -> InviteJwtClaims {
     let time_now = Utc::now();

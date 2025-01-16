@@ -119,14 +119,8 @@ async fn ldap_import(data: Json<OrgImportData>, token: PublicToken, mut conn: Db
                     None => err!("Error looking up organization"),
                 };
 
-                if let Err(e) = mail::send_invite(
-                    &user,
-                    Some(org_id.clone()),
-                    Some(new_member.uuid.clone()),
-                    &org_name,
-                    Some(org_email),
-                )
-                .await
+                if let Err(e) =
+                    mail::send_invite(&user, org_id.clone(), new_member.uuid.clone(), &org_name, Some(org_email)).await
                 {
                     // Upon error delete the user, invite and org member records when needed
                     if user_created {
