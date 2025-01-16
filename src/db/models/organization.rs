@@ -805,6 +805,8 @@ impl Membership {
         }}
     }
 
+    // Should be used only when email are disabled.
+    // In Organizations::send_invite status is set to Accepted only if the user has a password.
     pub async fn confirm_user_invitations(user_uuid: &UserId, conn: &mut DbConn) -> EmptyResult {
         db_run! { conn: {
             diesel::update(users_organizations::table)
@@ -814,13 +816,6 @@ impl Membership {
                 .execute(conn)
                 .map_res("Error confirming invitations")
         }}
-        .and_then(|updated| match updated {
-            1 => Ok(()),
-            count => err!(format!(
-                "Failed to update users_organizations to accepted for user ({}) was expecting invited status (updated row: {})).",
-                user_uuid, count
-            )),
-        })
     }
 
     pub async fn find_any_state_by_user(user_uuid: &UserId, conn: &mut DbConn) -> Vec<Self> {

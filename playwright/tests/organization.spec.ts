@@ -6,38 +6,21 @@ import { createAccount, logUser } from './setups/user';
 
 let users = utils.loadEnv();
 
-let mailserver, user1Mails, user2Mails, user3Mails;
-
 test.beforeAll('Setup', async ({ browser }, testInfo: TestInfo) => {
-    mailserver = new MailDev({
-        port: process.env.MAILDEV_SMTP_PORT,
-        web: { port: process.env.MAILDEV_HTTP_PORT },
-    })
-
-    await mailserver.listen();
-
-    await utils.startVaultwarden(browser, testInfo, {
-        SMTP_HOST: process.env.MAILDEV_HOST,
-        SMTP_FROM: process.env.VAULTWARDEN_SMTP_FROM,
-    });
-
-    user1Mails = mailserver.iterator(users.user1.email);
-    user2Mails = mailserver.iterator(users.user2.email);
-    user3Mails = mailserver.iterator(users.user3.email);
+    await utils.startVaultwarden(browser, testInfo);
 });
 
 test.afterAll('Teardown', async ({}, testInfo: TestInfo) => {
     utils.stopVaultwarden(testInfo);
-    utils.closeMails(mailserver, [user1Mails, user2Mails, user3Mails]);
 });
 
 test('Create user3', async ({ page }) => {
-    await createAccount(test, page, users.user3, user3Mails);
+    await createAccount(test, page, users.user3);
 });
 
 test('Invite users', async ({ page }) => {
-    await createAccount(test, page, users.user1, user1Mails);
-    await logUser(test, page, users.user1, user1Mails);
+    await createAccount(test, page, users.user1);
+    await logUser(test, page, users.user1);
 
     await test.step('Create Org', async () => {
         await page.getByRole('link', { name: 'New organisation' }).click();
@@ -55,6 +38,8 @@ test('Invite users', async ({ page }) => {
         await page.getByLabel('Options list').getByText('Default collection').click();
         await page.getByRole('button', { name: 'Save' }).click();
         await expect(page.getByTestId("toast-message")).toHaveText('User(s) invited');
+        await page.locator('#toast-container').getByRole('button').click();
+        await expect(page.getByRole('row', { name: users.user2.email })).toHaveText(/Invited/);
     });
 
     await test.step('Invite user3', async () => {
@@ -66,99 +51,44 @@ test('Invite users', async ({ page }) => {
         await page.getByLabel('Options list').getByText('Default collection').click();
         await page.getByRole('button', { name: 'Save' }).click();
         await expect(page.getByTestId("toast-message")).toHaveText('User(s) invited');
+        await page.locator('#toast-container').getByRole('button').click();
+        await expect(page.getByRole('row', { name: users.user3.name })).toHaveText(/Needs confirmation/);
+    });
+
+    await test.step('Confirm existing user3', async () => {
+        await page.getByRole('row', { name: users.user3.name }).getByLabel('Options').click();
+        await page.getByRole('menuitem', { name: 'Confirm' }).click();
+        await page.getByRole('button', { name: 'Confirm' }).click();
+        await expect(page.getByTestId("toast-message")).toHaveText(/confirmed/);
+        await page.locator('#toast-container').getByRole('button').click();
     });
 });
 
-test('invited with new account', async ({ page }) => {
-    const { value: invited } = await user2Mails.next();
-    expect(invited.subject).toContain("Join Test")
-
-    await test.step('Create account', async () => {
-        await page.setContent(invited.html);
-        const link = await page.getByTestId("invite").getAttribute("href");
-        await page.goto(link);
-        await expect(page).toHaveTitle(/Create account | Vaultwarden Web/);
-
-        await page.getByLabel('Name').fill(users.user2.name);
-        await page.getByLabel('Master password\n   (required)', { exact: true }).fill(users.user2.password);
-        await page.getByLabel('Re-type master password').fill(users.user2.password);
-        await page.getByRole('button', { name: 'Create account' }).click();
-
-        // Back to the login page
-        await expect(page).toHaveTitle('Vaultwarden Web');
-        await expect(page.getByTestId("toast-message")).toHaveText(/Your new account has been created/);
-
-        const { value: welcome } = await user2Mails.next();
-        expect(welcome.subject).toContain("Welcome")
-    });
-
-    await test.step('Login', async () => {
-        await page.getByLabel(/Email address/).fill(users.user2.email);
-        await page.getByRole('button', { name: 'Continue' }).click();
-
-        // Unlock page
-        await page.getByLabel('Master password').fill(users.user2.password);
-        await page.getByRole('button', { name: 'Log in with master password' }).click();
-
-        // We are now in the default vault page
-        await expect(page).toHaveTitle(/Vaultwarden Web/);
-        await expect(page.getByTestId("toast-title")).toHaveText("Invitation accepted");
-
-        const { value: logged } = await user2Mails.next();
-        expect(logged.subject).toContain("New Device Logged");
-    });
-
-    const { value: accepted } = await user1Mails.next();
-    expect(accepted.subject).toContain("Invitation to Test accepted")
-});
-
-test('invited with existing account', async ({ page }) => {
-    const { value: invited } = await user3Mails.next();
-    expect(invited.subject).toContain("Join Test")
-
-    await page.setContent(invited.html);
-    const link = await page.getByTestId("invite").getAttribute("href");
-
-    await page.goto(link);
-
-    // We should be on login page with email prefilled
-    await expect(page).toHaveTitle(/Vaultwarden Web/);
-    await page.getByRole('button', { name: 'Continue' }).click();
-
-    // Unlock page
-    await page.getByLabel('Master password').fill(users.user3.password);
-    await page.getByRole('button', { name: 'Log in with master password' }).click();
-
-    // We are now in the default vault page
-    await expect(page).toHaveTitle(/Vaultwarden Web/);
-    await expect(page.getByTestId("toast-title")).toHaveText("Invitation accepted");
-
-    const { value: logged } = await user3Mails.next();
-    expect(logged.subject).toContain("New Device Logged")
-
-    const { value: accepted } = await user1Mails.next();
-    expect(accepted.subject).toContain("Invitation to Test accepted")
+test('Create invited account', async ({ page }) => {
+    await createAccount(test, page, users.user2);
 });
 
 test('Confirm invited user', async ({ page }) => {
-    await logUser(test, page, users.user1, user1Mails);
+    await logUser(test, page, users.user1);
     await page.getByLabel('Switch products').click();
     await page.getByRole('link', { name: ' Admin Console' }).click();
     await page.getByRole('link', { name: 'Members' }).click();
 
-    await test.step('Accept user2', async () => {
+    await test.step('Confirm user2', async () => {
         await page.getByRole('row', { name: users.user2.name }).getByLabel('Options').click();
         await page.getByRole('menuitem', { name: 'Confirm' }).click();
         await page.getByRole('button', { name: 'Confirm' }).click();
         await expect(page.getByTestId("toast-message")).toHaveText(/confirmed/);
-
-        const { value: logged } = await user2Mails.next();
-        expect(logged.subject).toContain("Invitation to Test confirmed");
     });
 });
 
-test('Organization is visible', async ({ page }) => {
-    await logUser(test, page, users.user2, user2Mails);
+test('Organization is visible', async ({ context, page }) => {
+    await logUser(test, page, users.user2);
     await page.getByLabel('vault: Test').click();
     await expect(page.getByLabel('Filter: Default collection')).toBeVisible();
+
+    const page2 = await context.newPage();
+    await logUser(test, page2, users.user3);
+    await page2.getByLabel('vault: Test').click();
+    await expect(page2.getByLabel('Filter: Default collection')).toBeVisible();
 });

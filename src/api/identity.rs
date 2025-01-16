@@ -254,10 +254,6 @@ async fn _sso_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &mut 
                     user.name = user_name;
                 }
 
-                if !CONFIG.mail_enabled() {
-                    Membership::confirm_user_invitations(&user.uuid, conn).await?;
-                }
-
                 user.save(conn).await?;
             }
 
