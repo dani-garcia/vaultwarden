@@ -1818,17 +1818,15 @@ async fn list_policies(org_id: OrganizationId, _headers: AdminHeaders, mut conn:
 
 #[get("/organizations/<org_id>/policies/token?<token>")]
 async fn list_policies_token(org_id: OrganizationId, token: &str, mut conn: DbConn) -> JsonResult {
-    // web-vault 2024.6.2 seems to send these values and cause logs to output errors
-    // Catch this and prevent errors in the logs
-    // TODO: CleanUp after 2024.6.x is not used anymore.
-    if org_id.as_ref() == "undefined" && token == "undefined" || org_id.as_ref() == FAKE_ADMIN_UUID {
-        return Ok(Json(json!({})));
-    }
-
     let invite = decode_invite(token)?;
 
     if invite.org_id != org_id {
         err!("Token doesn't match request organization");
+    }
+
+    // exit early when we have been invited via /admin panel
+    if org_id.as_ref() == FAKE_ADMIN_UUID {
+        return Ok(Json(json!({})));
     }
 
     // TODO: We receive the invite token as ?token=<>, validate it contains the org id
