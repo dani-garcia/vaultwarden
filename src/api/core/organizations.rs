@@ -1125,20 +1125,23 @@ async fn accept_invite(
     org_id: OrganizationId,
     member_id: MembershipId,
     data: Json<AcceptData>,
+    headers: Headers,
     mut conn: DbConn,
 ) -> EmptyResult {
     // The web-vault passes org_id and member_id in the URL, but we are just reading them from the JWT instead
     let data: AcceptData = data.into_inner();
     let claims = decode_invite(&data.token)?;
 
+    // Don't allow other users from accepting an invitation.
+    if !claims.email.eq(&headers.user.email) {
+        err!("Invitation was issued to a different account", "Claim does not match user_id")
+    }
+
     // If a claim does not have a member_id or it does not match the one in from the URI, something is wrong.
     if !claims.member_id.eq(&member_id) {
         err!("Error accepting the invitation", "Claim does not match the member_id")
     }
 
-    let Some(user) = User::find_by_mail(&claims.email, &mut conn).await else {
-        err!("Invited user not found")
-    };
     let member = &claims.member_id;
     let org = &claims.org_id;
 
@@ -1166,7 +1169,7 @@ async fn accept_invite(
                 Ok(_) => {}
                 Err(OrgPolicyErr::TwoFactorMissing) => {
                     if CONFIG.email_2fa_auto_fallback() {
-                        two_factor::email::activate_email_2fa(&user, &mut conn).await?;
+                        two_factor::email::activate_email_2fa(&headers.user, &mut conn).await?;
                     } else {
                         err!("You cannot join this organization until you enable two-step login on your user account");
                     }
