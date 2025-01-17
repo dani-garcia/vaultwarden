@@ -1131,11 +1131,13 @@ async fn accept_invite(
     org_id: OrganizationId,
     member_id: MembershipId,
     data: Json<AcceptData>,
+    headers: Headers,
     mut conn: DbConn,
 ) -> EmptyResult {
     // The web-vault passes org_id and member_id in the URL, but we are just reading them from the JWT instead
     let data: AcceptData = data.into_inner();
     let claims = decode_invite(&data.token)?;
+    let user = headers.user;
 
     // If a claim does not have a member_id or it does not match the one in from the URI, something is wrong.
     match &claims.member_id {
@@ -1143,52 +1145,51 @@ async fn accept_invite(
         _ => err!("Error accepting the invitation", "Claim does not match the member_id"),
     }
 
-    match User::find_by_mail(&claims.email, &mut conn).await {
-        Some(user) => {
-            Invitation::take(&claims.email, &mut conn).await;
+    if user.email != claims.email {
+        err!("Invitation claim does not match the user")
+    }
 
-            if let (Some(member), Some(org)) = (&claims.member_id, &claims.org_id) {
-                let Some(mut member) = Membership::find_by_uuid_and_org(member, org, &mut conn).await else {
-                    err!("Error accepting the invitation")
-                };
+    Invitation::take(&claims.email, &mut conn).await;
 
-                if member.status != MembershipStatus::Invited as i32 {
-                    err!("User already accepted the invitation")
-                }
+    if let (Some(member), Some(org)) = (&claims.member_id, &claims.org_id) {
+        let Some(mut member) = Membership::find_by_uuid_and_org(member, org, &mut conn).await else {
+            err!("Error accepting the invitation")
+        };
 
-                let master_password_required = OrgPolicy::org_is_reset_password_auto_enroll(org, &mut conn).await;
-                if data.reset_password_key.is_none() && master_password_required {
-                    err!("Reset password key is required, but not provided.");
-                }
+        if member.status != MembershipStatus::Invited as i32 {
+            err!("User already accepted the invitation")
+        }
 
-                // This check is also done at accept_invite, _confirm_invite, _activate_member, edit_member, admin::update_membership_type
-                // It returns different error messages per function.
-                if member.atype < MembershipType::Admin {
-                    match OrgPolicy::is_user_allowed(&member.user_uuid, &org_id, false, &mut conn).await {
-                        Ok(_) => {}
-                        Err(OrgPolicyErr::TwoFactorMissing) => {
-                            if CONFIG.email_2fa_auto_fallback() {
-                                two_factor::email::activate_email_2fa(&user, &mut conn).await?;
-                            } else {
-                                err!("You cannot join this organization until you enable two-step login on your user account");
-                            }
-                        }
-                        Err(OrgPolicyErr::SingleOrgEnforced) => {
-                            err!("You cannot join this organization because you are a member of an organization which forbids it");
-                        }
+        let master_password_required = OrgPolicy::org_is_reset_password_auto_enroll(org, &mut conn).await;
+        if data.reset_password_key.is_none() && master_password_required {
+            err!("Reset password key is required, but not provided.");
+        }
+
+        // This check is also done at accept_invite, _confirm_invite, _activate_member, edit_member, admin::update_membership_type
+        // It returns different error messages per function.
+        if member.atype < MembershipType::Admin {
+            match OrgPolicy::is_user_allowed(&member.user_uuid, &org_id, false, &mut conn).await {
+                Ok(_) => {}
+                Err(OrgPolicyErr::TwoFactorMissing) => {
+                    if CONFIG.email_2fa_auto_fallback() {
+                        two_factor::email::activate_email_2fa(&user, &mut conn).await?;
+                    } else {
+                        err!("You cannot join this organization until you enable two-step login on your user account");
                     }
                 }
-
-                member.status = MembershipStatus::Accepted as i32;
-
-                if master_password_required {
-                    member.reset_password_key = data.reset_password_key;
+                Err(OrgPolicyErr::SingleOrgEnforced) => {
+                    err!("You cannot join this organization because you are a member of an organization which forbids it");
                 }
-
-                member.save(&mut conn).await?;
             }
         }
-        None => err!("Invited user not found"),
+
+        member.status = MembershipStatus::Accepted as i32;
+
+        if master_password_required {
+            member.reset_password_key = data.reset_password_key;
+        }
+
+        member.save(&mut conn).await?;
     }
 
     if CONFIG.mail_enabled() {
