@@ -364,11 +364,6 @@ async fn get_org_collections_details(
             || (CONFIG.org_groups_enabled()
                 && GroupUser::has_access_to_collection_by_member(&col.uuid, &member.uuid, &mut conn).await);
 
-        // Not assigned collections should not be returned
-        if !assigned {
-            continue;
-        }
-
         // get the users assigned directly to the given collection
         let users: Vec<Value> = col_users
             .iter()
