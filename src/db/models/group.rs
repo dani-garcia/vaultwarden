@@ -29,6 +29,7 @@ db_object! {
         pub groups_uuid: GroupId,
         pub read_only: bool,
         pub hide_passwords: bool,
+        pub manage: bool,
     }
 
     #[derive(Identifiable, Queryable, Insertable)]
@@ -92,7 +93,7 @@ impl Group {
                     "id": entry.collections_uuid,
                     "readOnly": entry.read_only,
                     "hidePasswords": entry.hide_passwords,
-                    "manage": !entry.read_only && !entry.hide_passwords,
+                    "manage": entry.manage,
                 })
             })
             .collect();
@@ -118,12 +119,19 @@ impl Group {
 }
 
 impl CollectionGroup {
-    pub fn new(collections_uuid: CollectionId, groups_uuid: GroupId, read_only: bool, hide_passwords: bool) -> Self {
+    pub fn new(
+        collections_uuid: CollectionId,
+        groups_uuid: GroupId,
+        read_only: bool,
+        hide_passwords: bool,
+        manage: bool,
+    ) -> Self {
         Self {
             collections_uuid,
             groups_uuid,
             read_only,
             hide_passwords,
+            manage,
         }
     }
 
@@ -131,11 +139,12 @@ impl CollectionGroup {
         // If both read_only and hide_passwords are false, then manage should be true
         // You can't have an entry with read_only and manage, or hide_passwords and manage
         // Or an entry with everything to false
+        // For backwards compaibility and migration proposes we keep checking read_only and hide_password
         json!({
             "id": self.groups_uuid,
             "readOnly": self.read_only,
             "hidePasswords": self.hide_passwords,
-            "manage": !self.read_only && !self.hide_passwords,
+            "manage": self.manage || (!self.read_only && !self.hide_passwords),
         })
     }
 }
@@ -319,6 +328,7 @@ impl CollectionGroup {
                         collections_groups::groups_uuid.eq(&self.groups_uuid),
                         collections_groups::read_only.eq(&self.read_only),
                         collections_groups::hide_passwords.eq(&self.hide_passwords),
+                        collections_groups::manage.eq(&self.manage),
                     ))
                     .execute(conn)
                 {
@@ -333,6 +343,7 @@ impl CollectionGroup {
                                 collections_groups::groups_uuid.eq(&self.groups_uuid),
                                 collections_groups::read_only.eq(&self.read_only),
                                 collections_groups::hide_passwords.eq(&self.hide_passwords),
+                                collections_groups::manage.eq(&self.manage),
                             ))
                             .execute(conn)
                             .map_res("Error adding group to collection")
@@ -347,12 +358,14 @@ impl CollectionGroup {
                         collections_groups::groups_uuid.eq(&self.groups_uuid),
                         collections_groups::read_only.eq(self.read_only),
                         collections_groups::hide_passwords.eq(self.hide_passwords),
+                        collections_groups::manage.eq(self.manage),
                     ))
                     .on_conflict((collections_groups::collections_uuid, collections_groups::groups_uuid))
                     .do_update()
                     .set((
                         collections_groups::read_only.eq(self.read_only),
                         collections_groups::hide_passwords.eq(self.hide_passwords),
+                        collections_groups::manage.eq(self.manage),
                     ))
                     .execute(conn)
                     .map_res("Error adding group to collection")

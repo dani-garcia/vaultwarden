@@ -291,9 +291,7 @@ fn get_favicons_node(dom: Tokenizer<StringReader<'_>, FaviconEmitter>, icons: &m
             TAG_HEAD if token.closing => {
                 break;
             }
-            _ => {
-                continue;
-            }
+            _ => {}
         }
     }
 
