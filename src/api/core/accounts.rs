@@ -1072,14 +1072,11 @@ impl<'r> FromRequest<'r> for KnownDevice {
 
 #[get("/devices")]
 async fn get_all_devices(headers: Headers, mut conn: DbConn) -> JsonResult {
-    let devices = Device::find_by_user(&headers.user.uuid, &mut conn).await;
+    let devices = Device::find_with_auth_request_by_user(&headers.user.uuid, &mut conn).await;
+    let devices = devices.iter().map(|device| device.to_json()).collect::<Vec<Value>>();
 
     Ok(Json(json!({
-        "data": devices
-            .iter()
-            .map(|device| {
-                device.to_json()
-        }).collect::<Vec<Value>>(),
+        "data": devices,
         "continuationToken": null,
         "object": "list"
     })))
