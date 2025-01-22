@@ -1,8 +1,9 @@
 use chrono::{NaiveDateTime, Utc};
 use derive_more::{Display, From};
+use serde_json::Value;
 
 use super::UserId;
-use crate::{crypto, CONFIG};
+use crate::{crypto, util::format_date, CONFIG};
 use macros::IdFromParam;
 
 db_object! {
@@ -47,6 +48,19 @@ impl Device {
             refresh_token: String::new(),
             twofactor_remember: None,
         }
+    }
+
+    pub fn to_json(&self) -> Value {
+        json!({
+            "id": self.uuid,
+            "name": self.name,
+            "type": self.atype,
+            "identifier": self.push_uuid,
+            "creationDate": format_date(&self.created_at),
+            "isTrusted": false,
+            "devicePendingAuthRequest": null,
+            "object":"device"
+        })
     }
 
     pub fn refresh_twofactor_remember(&mut self) -> String {
