@@ -30,6 +30,7 @@ pub fn routes() -> Vec<rocket::Route> {
         profile,
         put_profile,
         post_profile,
+        put_avatar,
         get_public_keys,
         post_keys,
         post_password,
@@ -42,9 +43,8 @@ pub fn routes() -> Vec<rocket::Route> {
         post_verify_email_token,
         post_delete_recover,
         post_delete_recover_token,
-        post_device_token,
-        delete_account,
         post_delete_account,
+        delete_account,
         revision_date,
         password_hint,
         prelogin,
@@ -52,7 +52,9 @@ pub fn routes() -> Vec<rocket::Route> {
         api_key,
         rotate_api_key,
         get_known_device,
-        put_avatar,
+        get_all_devices,
+        get_device,
+        post_device_token,
         put_device_token,
         put_clear_device_token,
         post_clear_device_token,
@@ -1066,6 +1068,26 @@ impl<'r> FromRequest<'r> for KnownDevice {
             uuid,
         })
     }
+}
+
+#[get("/devices")]
+async fn get_all_devices(headers: Headers, mut conn: DbConn) -> JsonResult {
+    let devices = Device::find_with_auth_request_by_user(&headers.user.uuid, &mut conn).await;
+    let devices = devices.iter().map(|device| device.to_json()).collect::<Vec<Value>>();
+
+    Ok(Json(json!({
+        "data": devices,
+        "continuationToken": null,
+        "object": "list"
+    })))
+}
+
+#[get("/devices/identifier/<device_id>")]
+async fn get_device(device_id: DeviceId, headers: Headers, mut conn: DbConn) -> JsonResult {
+    let Some(device) = Device::find_by_uuid_and_user(&device_id, &headers.user.uuid, &mut conn).await else {
+        err!("No device found");
+    };
+    Ok(Json(device.to_json()))
 }
 
 #[derive(Deserialize)]
