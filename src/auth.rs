@@ -557,24 +557,17 @@ impl<'r> FromRequest<'r> for OrgHeaders {
         // but there are cases where it is a query value.
         // First check the path, if this is not a valid uuid, try the query values.
         let url_org_id: Option<OrganizationId> = {
-            let mut url_org_id = None;
-            if let Some(Ok(org_id)) = request.param::<&str>(1) {
-                if uuid::Uuid::parse_str(org_id).is_ok() {
-                    url_org_id = Some(org_id.to_string().into());
-                }
+            if let Some(Ok(org_id)) = request.param::<OrganizationId>(1) {
+                Some(org_id.clone())
+            } else if let Some(Ok(org_id)) = request.query_value::<OrganizationId>("organizationId") {
+                Some(org_id.clone())
+            } else {
+                None
             }
-
-            if let Some(Ok(org_id)) = request.query_value::<&str>("organizationId") {
-                if uuid::Uuid::parse_str(org_id).is_ok() {
-                    url_org_id = Some(org_id.to_string().into());
-                }
-            }
-
-            url_org_id
         };
 
         match url_org_id {
-            Some(org_id) => {
+            Some(org_id) if uuid::Uuid::parse_str(&org_id).is_ok() => {
                 let mut conn = match DbConn::from_request(request).await {
                     Outcome::Success(conn) => conn,
                     _ => err_handler!("Error getting DB"),
@@ -794,6 +787,7 @@ pub struct OwnerHeaders {
     pub device: Device,
     pub user: User,
     pub ip: ClientIp,
+    pub org_id: OrganizationId,
 }
 
 #[rocket::async_trait]
@@ -807,9 +801,34 @@ impl<'r> FromRequest<'r> for OwnerHeaders {
                 device: headers.device,
                 user: headers.user,
                 ip: headers.ip,
+                org_id: headers.membership.org_uuid,
             })
         } else {
             err_handler!("You need to be Owner to call this endpoint")
+        }
+    }
+}
+
+pub struct OrgMemberHeaders {
+    pub host: String,
+    pub user: User,
+    pub org_id: OrganizationId,
+}
+
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for OrgMemberHeaders {
+    type Error = &'static str;
+
+    async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+        let headers = try_outcome!(OrgHeaders::from_request(request).await);
+        if headers.membership_type >= MembershipType::User {
+            Outcome::Success(Self {
+                host: headers.host,
+                user: headers.user,
+                org_id: headers.membership.org_uuid,
+            })
+        } else {
+            err_handler!("You need to be a Member of the Organization to call this endpoint")
         }
     }
 }
