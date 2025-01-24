@@ -34,9 +34,13 @@ struct EventRange {
 async fn get_org_events(
     org_id: OrganizationId,
     data: EventRange,
-    _headers: AdminHeaders,
+    headers: AdminHeaders,
     mut conn: DbConn,
 ) -> JsonResult {
+    if org_id != headers.org_id {
+        err!("Organization not found", "Organization id's do not match");
+    }
+
     // Return an empty vec when we org events are disabled.
     // This prevents client errors
     let events_json: Vec<Value> = if !CONFIG.org_events_enabled() {
@@ -100,9 +104,12 @@ async fn get_user_events(
     org_id: OrganizationId,
     member_id: MembershipId,
     data: EventRange,
-    _headers: AdminHeaders,
+    headers: AdminHeaders,
     mut conn: DbConn,
 ) -> JsonResult {
+    if org_id != headers.org_id {
+        err!("Organization not found", "Organization id's do not match");
+    }
     // Return an empty vec when we org events are disabled.
     // This prevents client errors
     let events_json: Vec<Value> = if !CONFIG.org_events_enabled() {

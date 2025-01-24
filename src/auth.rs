@@ -612,6 +612,7 @@ pub struct AdminHeaders {
     pub user: User,
     pub membership_type: MembershipType,
     pub ip: ClientIp,
+    pub org_id: OrganizationId,
 }
 
 #[rocket::async_trait]
@@ -627,6 +628,7 @@ impl<'r> FromRequest<'r> for AdminHeaders {
                 user: headers.user,
                 membership_type: headers.membership_type,
                 ip: headers.ip,
+                org_id: headers.membership.org_uuid,
             })
         } else {
             err_handler!("You need to be Admin or Owner to call this endpoint")
@@ -672,6 +674,7 @@ pub struct ManagerHeaders {
     pub device: Device,
     pub user: User,
     pub ip: ClientIp,
+    pub org_id: OrganizationId,
 }
 
 #[rocket::async_trait]
@@ -700,6 +703,7 @@ impl<'r> FromRequest<'r> for ManagerHeaders {
                 device: headers.device,
                 user: headers.user,
                 ip: headers.ip,
+                org_id: headers.membership.org_uuid,
             })
         } else {
             err_handler!("You need to be a Manager, Admin or Owner to call this endpoint")
@@ -779,6 +783,7 @@ impl ManagerHeaders {
             device: h.device,
             user: h.user,
             ip: h.ip,
+            org_id: h.membership.org_uuid,
         })
     }
 }
