@@ -120,37 +120,37 @@ jobs:
       # First test all features together, afterwards test them separately.
       - name: "test features: sqlite,mysql,postgresql,enable_mimalloc,query_logger"
         id: test_sqlite_mysql_postgresql_mimalloc_logger
-        if: $${{ always() }}
+        if: ${{ !cancelled() }}
         run: |
           cargo test --features sqlite,mysql,postgresql,enable_mimalloc,query_logger
 
       - name: "test features: sqlite,mysql,postgresql,enable_mimalloc"
         id: test_sqlite_mysql_postgresql_mimalloc
-        if: $${{ always() }}
+        if: ${{ !cancelled() }}
         run: |
           cargo test --features sqlite,mysql,postgresql,enable_mimalloc
 
       - name: "test features: sqlite,mysql,postgresql"
         id: test_sqlite_mysql_postgresql
-        if: $${{ always() }}
+        if: ${{ !cancelled() }}
         run: |
           cargo test --features sqlite,mysql,postgresql
 
       - name: "test features: sqlite"
         id: test_sqlite
-        if: $${{ always() }}
+        if: ${{ !cancelled() }}
         run: |
           cargo test --features sqlite
 
       - name: "test features: mysql"
         id: test_mysql
-        if: $${{ always() }}
+        if: ${{ !cancelled() }}
         run: |
           cargo test --features mysql
 
       - name: "test features: postgresql"
         id: test_postgresql
-        if: $${{ always() }}
+        if: ${{ !cancelled() }}
         run: |
           cargo test --features postgresql
       # End Run cargo tests
@@ -159,7 +159,7 @@ jobs:
       # Run cargo clippy, and fail on warnings
       - name: "clippy features: sqlite,mysql,postgresql,enable_mimalloc"
         id: clippy
-        if: ${{ always() && matrix.channel == 'rust-toolchain' }}
+        if: ${{ !cancelled() && matrix.channel == 'rust-toolchain' }}
         run: |
           cargo clippy --features sqlite,mysql,postgresql,enable_mimalloc -- -D warnings
       # End Run cargo clippy
@@ -168,7 +168,7 @@ jobs:
       # Run cargo fmt (Only run on rust-toolchain defined version)
       - name: "check formatting"
         id: formatting
-        if: ${{ always() && matrix.channel == 'rust-toolchain' }}
+        if: ${{ !cancelled() && matrix.channel == 'rust-toolchain' }}
         run: |
           cargo fmt --all -- --check
       # End Run cargo fmt
