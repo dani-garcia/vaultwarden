@@ -1,8 +1,10 @@
-use std::env::consts::EXE_SUFFIX;
-use std::process::exit;
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    RwLock,
+use std::{
+    env::consts::EXE_SUFFIX,
+    process::exit,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        RwLock,
+    },
 };
 
 use job_scheduler_ng::Schedule;
@@ -12,7 +14,7 @@ use reqwest::Url;
 use crate::{
     db::DbConnType,
     error::Error,
-    util::{get_env, get_env_bool, get_web_vault_version, parse_experimental_client_feature_flags},
+    util::{get_env, get_env_bool, get_web_vault_version, is_valid_email, parse_experimental_client_feature_flags},
 };
 
 static CONFIG_FILE: Lazy<String> = Lazy::new(|| {
@@ -676,8 +678,6 @@ make_config! {
         _enable_smtp:                  bool,   true,   def,     true;
         /// Use Sendmail |> Whether to send mail via the `sendmail` command
         use_sendmail:                  bool,   true,   def,     false;
-        /// Sendmail Command |> Which sendmail command to use. The one found in the $PATH is used if not specified.
-        sendmail_command:              String, true,   option;
         /// Host
         smtp_host:                     String, true,   option;
         /// DEPRECATED smtp_ssl |> DEPRECATED - Please use SMTP_SECURITY
@@ -890,16 +890,12 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         }
 
         if cfg.use_sendmail {
-            let command = cfg.sendmail_command.clone().unwrap_or_else(|| format!("sendmail{EXE_SUFFIX}"));
+            let command = format!("sendmail{EXE_SUFFIX}");
 
-            let mut path = std::path::PathBuf::from(&command);
-
-            if !path.is_absolute() {
-                match which::which(&command) {
-                    Ok(result) => path = result,
-                    Err(_) => err!(format!("sendmail command {command:?} not found in $PATH")),
-                }
-            }
+            // Check if we can find the sendmail command to execute
+            let Ok(path) = which::which(&command) else {
+                err!(format!("sendmail command {command} not found in $PATH"))
+            };
 
             match path.metadata() {
                 Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
@@ -932,8 +928,8 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
             }
         }
 
-        if (cfg.smtp_host.is_some() || cfg.use_sendmail) && !cfg.smtp_from.contains('@') {
-            err!("SMTP_FROM does not contain a mandatory @ sign")
+        if !is_valid_email(&cfg.smtp_from) {
+            err!(format!("SMTP_FROM '{}' is not a valid email address", cfg.smtp_from))
         }
 
         if cfg._enable_email_2fa && cfg.email_token_size < 6 {

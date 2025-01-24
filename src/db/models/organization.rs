@@ -152,6 +152,7 @@ impl PartialOrd<MembershipType> for i32 {
 /// Local methods
 impl Organization {
     pub fn new(name: String, billing_email: String, private_key: Option<String>, public_key: Option<String>) -> Self {
+        let billing_email = billing_email.to_lowercase();
         Self {
             uuid: OrganizationId(crate::util::get_uuid()),
             name,
@@ -307,8 +308,8 @@ use crate::error::MapResult;
 /// Database methods
 impl Organization {
     pub async fn save(&self, conn: &mut DbConn) -> EmptyResult {
-        if !email_address::EmailAddress::is_valid(self.billing_email.trim()) {
-            err!(format!("BillingEmail {} is not a valid email address", self.billing_email.trim()))
+        if !crate::util::is_valid_email(&self.billing_email) {
+            err!(format!("BillingEmail {} is not a valid email address", self.billing_email))
         }
 
         for member in Membership::find_by_org(&self.uuid, conn).await.iter() {
