@@ -2,9 +2,10 @@ use chrono::{NaiveDateTime, Utc};
 
 use data_encoding::{BASE64, BASE64URL};
 use derive_more::{Display, From};
+use serde_json::Value;
 
-use super::UserId;
-use crate::crypto;
+use super::{AuthRequest, UserId};
+use crate::{crypto, util::format_date};
 use macros::IdFromParam;
 
 db_object! {
@@ -25,7 +26,6 @@ db_object! {
         pub push_token: Option<String>,
 
         pub refresh_token: String,
-
         pub twofactor_remember: Option<String>,
     }
 }
@@ -51,6 +51,18 @@ impl Device {
         }
     }
 
+    pub fn to_json(&self) -> Value {
+        json!({
+            "id": self.uuid,
+            "name": self.name,
+            "type": self.atype,
+            "identifier": self.push_uuid,
+            "creationDate": format_date(&self.created_at),
+            "isTrusted": false,
+            "object":"device"
+        })
+    }
+
     pub fn refresh_twofactor_remember(&mut self) -> String {
         let twofactor_remember = crypto::encode_random_bytes::<180>(BASE64);
         self.twofactor_remember = Some(twofactor_remember.clone());
@@ -71,6 +83,36 @@ impl Device {
     }
 }
 
+pub struct DeviceWithAuthRequest {
+    pub device: Device,
+    pub pending_auth_request: Option<AuthRequest>,
+}
+
+impl DeviceWithAuthRequest {
+    pub fn to_json(&self) -> Value {
+        let auth_request = match &self.pending_auth_request {
+            Some(auth_request) => auth_request.to_json_for_pending_device(),
+            None => Value::Null,
+        };
+        json!({
+            "id": self.device.uuid,
+            "name": self.device.name,
+            "type": self.device.atype,
+            "identifier": self.device.push_uuid,
+            "creationDate": format_date(&self.device.created_at),
+            "devicePendingAuthRequest": auth_request,
+            "isTrusted": false,
+            "object": "device",
+        })
+    }
+
+    pub fn from(c: Device, a: Option<AuthRequest>) -> Self {
+        Self {
+            device: c,
+            pending_auth_request: a,
+        }
+    }
+}
 use crate::db::DbConn;
 
 use crate::api::EmptyResult;
@@ -115,6 +157,16 @@ impl Device {
                 .ok()
                 .from_db()
         }}
+    }
+
+    pub async fn find_with_auth_request_by_user(user_uuid: &UserId, conn: &mut DbConn) -> Vec<DeviceWithAuthRequest> {
+        let devices = Self::find_by_user(user_uuid, conn).await;
+        let mut result = Vec::new();
+        for device in devices {
+            let auth_request = AuthRequest::find_by_user_and_requested_device(user_uuid, &device.uuid, conn).await;
+            result.push(DeviceWithAuthRequest::from(device, auth_request));
+        }
+        result
     }
 
     pub async fn find_by_user(user_uuid: &UserId, conn: &mut DbConn) -> Vec<Self> {

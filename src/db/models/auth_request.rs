@@ -1,8 +1,9 @@
 use super::{DeviceId, OrganizationId, UserId};
-use crate::crypto::ct_eq;
+use crate::{crypto::ct_eq, util::format_date};
 use chrono::{NaiveDateTime, Utc};
 use derive_more::{AsRef, Deref, Display, From};
 use macros::UuidFromParam;
+use serde_json::Value;
 
 db_object! {
     #[derive(Debug, Identifiable, Queryable, Insertable, AsChangeset, Deserialize, Serialize)]
@@ -63,6 +64,13 @@ impl AuthRequest {
             response_date: None,
             authentication_date: None,
         }
+    }
+
+    pub fn to_json_for_pending_device(&self) -> Value {
+        json!({
+            "id": self.uuid,
+            "creationDate": format_date(&self.creation_date),
+        })
     }
 }
 
@@ -130,6 +138,20 @@ impl AuthRequest {
             auth_requests::table
                 .filter(auth_requests::user_uuid.eq(user_uuid))
                 .load::<AuthRequestDb>(conn).expect("Error loading auth_requests").from_db()
+        }}
+    }
+
+    pub async fn find_by_user_and_requested_device(
+        user_uuid: &UserId,
+        device_uuid: &DeviceId,
+        conn: &mut DbConn,
+    ) -> Option<Self> {
+        db_run! {conn: {
+            auth_requests::table
+                .filter(auth_requests::user_uuid.eq(user_uuid))
+                .filter(auth_requests::request_device_identifier.eq(device_uuid))
+                .order_by(auth_requests::creation_date.desc())
+                .first::<AuthRequestDb>(conn).ok().from_db()
         }}
     }
 
