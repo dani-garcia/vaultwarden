@@ -44,7 +44,7 @@ syslog = "7.0.0"
 macros = { path = "./macros" }
 
 # Logging
-log = "0.4.22"
+log = "0.4.25"
 fern = { version = "0.7.1", features = ["syslog-7", "reopen-1"] }
 tracing = { version = "0.1.41", features = ["log"] } # Needed to have lettre and webauthn-rs trace logging to work
 
@@ -71,11 +71,11 @@ dashmap = "6.1.0"
 
 # Async futures
 futures = "0.3.31"
-tokio = { version = "1.42.0", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal", "net"] }
+tokio = { version = "1.43.0", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal", "net"] }
 
 # A generic serialization/deserialization framework
 serde = { version = "1.0.217", features = ["derive"] }
-serde_json = "1.0.135"
+serde_json = "1.0.137"
 
 # A safe, extensible ORM and Query builder
 diesel = { version = "2.2.6", features = ["chrono", "r2d2", "numeric"] }
@@ -93,18 +93,18 @@ rand = { version = "0.8.5", features = ["small_rng"] }
 ring = "0.17.8"
 
 # UUID generation
-uuid = { version = "1.11.0", features = ["v4"] }
+uuid = { version = "1.12.1", features = ["v4"] }
 
 # Date and time libraries
 chrono = { version = "0.4.39", features = ["clock", "serde"], default-features = false }
-chrono-tz = "0.10.0"
+chrono-tz = "0.10.1"
 time = "0.3.37"
 
 # Job scheduler
 job_scheduler_ng = "2.0.5"
 
 # Data encoding library Hex/Base32/Base64
-data-encoding = "2.6.0"
+data-encoding = "2.7.0"
 
 # JWT library
 jsonwebtoken = "9.3.0"
@@ -157,7 +157,7 @@ paste = "1.0.15"
 governor = "0.8.0"
 
 # Check client versions for specific features.
-semver = "1.0.24"
+semver = "1.0.25"
 
 # Allow overriding the default memory allocator
 # Mainly used for the musl builds, since the default musl malloc is very slow
