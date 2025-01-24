@@ -747,7 +747,7 @@ fn get_diagnostics_http(code: u16, _token: AdminToken) -> EmptyResult {
 #[post("/config", format = "application/json", data = "<data>")]
 fn post_config(data: Json<ConfigBuilder>, _token: AdminToken) -> EmptyResult {
     let data: ConfigBuilder = data.into_inner();
-    if let Err(e) = CONFIG.update_config(data) {
+    if let Err(e) = CONFIG.update_config(data, true) {
         err!(format!("Unable to save config: {e:?}"))
     }
     Ok(())

@@ -22,7 +22,11 @@ use crate::{
 };
 
 fn sendmail_transport() -> AsyncSendmailTransport<Tokio1Executor> {
-    AsyncSendmailTransport::new_with_command(format!("sendmail{EXE_SUFFIX}"))
+    if let Some(command) = CONFIG.sendmail_command() {
+        AsyncSendmailTransport::new_with_command(command)
+    } else {
+        AsyncSendmailTransport::new_with_command(format!("sendmail{EXE_SUFFIX}"))
+    }
 }
 
 fn smtp_transport() -> AsyncSmtpTransport<Tokio1Executor> {
