@@ -171,7 +171,7 @@ struct LoginForm {
     redirect: Option<String>,
 }
 
-#[post("/", data = "<data>")]
+#[post("/", format = "application/x-www-form-urlencoded", data = "<data>")]
 fn post_admin_login(
     data: Form<LoginForm>,
     cookies: &CookieJar<'_>,
@@ -289,7 +289,7 @@ async fn get_user_or_404(user_id: &UserId, conn: &mut DbConn) -> ApiResult<User>
     }
 }
 
-#[post("/invite", data = "<data>")]
+#[post("/invite", format = "application/json", data = "<data>")]
 async fn invite_user(data: Json<InviteData>, _token: AdminToken, mut conn: DbConn) -> JsonResult {
     let data: InviteData = data.into_inner();
     if User::find_by_mail(&data.email, &mut conn).await.is_some() {
@@ -315,7 +315,7 @@ async fn invite_user(data: Json<InviteData>, _token: AdminToken, mut conn: DbCon
     Ok(Json(user.to_json(&mut conn).await))
 }
 
-#[post("/test/smtp", data = "<data>")]
+#[post("/test/smtp", format = "application/json", data = "<data>")]
 async fn test_smtp(data: Json<InviteData>, _token: AdminToken) -> EmptyResult {
     let data: InviteData = data.into_inner();
 
@@ -393,7 +393,7 @@ async fn get_user_json(user_id: UserId, _token: AdminToken, mut conn: DbConn) ->
     Ok(Json(usr))
 }
 
-#[post("/users/<user_id>/delete")]
+#[post("/users/<user_id>/delete", format = "application/json")]
 async fn delete_user(user_id: UserId, token: AdminToken, mut conn: DbConn) -> EmptyResult {
     let user = get_user_or_404(&user_id, &mut conn).await?;
 
@@ -417,7 +417,7 @@ async fn delete_user(user_id: UserId, token: AdminToken, mut conn: DbConn) -> Em
     res
 }
 
-#[post("/users/<user_id>/deauth")]
+#[post("/users/<user_id>/deauth", format = "application/json")]
 async fn deauth_user(user_id: UserId, _token: AdminToken, mut conn: DbConn, nt: Notify<'_>) -> EmptyResult {
     let mut user = get_user_or_404(&user_id, &mut conn).await?;
 
@@ -438,7 +438,7 @@ async fn deauth_user(user_id: UserId, _token: AdminToken, mut conn: DbConn, nt: 
     user.save(&mut conn).await
 }
 
-#[post("/users/<user_id>/disable")]
+#[post("/users/<user_id>/disable", format = "application/json")]
 async fn disable_user(user_id: UserId, _token: AdminToken, mut conn: DbConn, nt: Notify<'_>) -> EmptyResult {
     let mut user = get_user_or_404(&user_id, &mut conn).await?;
     Device::delete_all_by_user(&user.uuid, &mut conn).await?;
@@ -452,7 +452,7 @@ async fn disable_user(user_id: UserId, _token: AdminToken, mut conn: DbConn, nt:
     save_result
 }
 
-#[post("/users/<user_id>/enable")]
+#[post("/users/<user_id>/enable", format = "application/json")]
 async fn enable_user(user_id: UserId, _token: AdminToken, mut conn: DbConn) -> EmptyResult {
     let mut user = get_user_or_404(&user_id, &mut conn).await?;
     user.enabled = true;
@@ -460,7 +460,7 @@ async fn enable_user(user_id: UserId, _token: AdminToken, mut conn: DbConn) -> E
     user.save(&mut conn).await
 }
 
-#[post("/users/<user_id>/remove-2fa")]
+#[post("/users/<user_id>/remove-2fa", format = "application/json")]
 async fn remove_2fa(user_id: UserId, token: AdminToken, mut conn: DbConn) -> EmptyResult {
     let mut user = get_user_or_404(&user_id, &mut conn).await?;
     TwoFactor::delete_all_by_user(&user.uuid, &mut conn).await?;
@@ -469,7 +469,7 @@ async fn remove_2fa(user_id: UserId, token: AdminToken, mut conn: DbConn) -> Emp
     user.save(&mut conn).await
 }
 
-#[post("/users/<user_id>/invite/resend")]
+#[post("/users/<user_id>/invite/resend", format = "application/json")]
 async fn resend_user_invite(user_id: UserId, _token: AdminToken, mut conn: DbConn) -> EmptyResult {
     if let Some(user) = User::find_by_uuid(&user_id, &mut conn).await {
         //TODO: replace this with user.status check when it will be available (PR#3397)
@@ -496,7 +496,7 @@ struct MembershipTypeData {
     org_uuid: OrganizationId,
 }
 
-#[post("/users/org_type", data = "<data>")]
+#[post("/users/org_type", format = "application/json", data = "<data>")]
 async fn update_membership_type(data: Json<MembershipTypeData>, token: AdminToken, mut conn: DbConn) -> EmptyResult {
     let data: MembershipTypeData = data.into_inner();
 
@@ -550,7 +550,7 @@ async fn update_membership_type(data: Json<MembershipTypeData>, token: AdminToke
     member_to_edit.save(&mut conn).await
 }
 
-#[post("/users/update_revision")]
+#[post("/users/update_revision", format = "application/json")]
 async fn update_revision_users(_token: AdminToken, mut conn: DbConn) -> EmptyResult {
     User::update_all_revisions(&mut conn).await
 }
@@ -575,7 +575,7 @@ async fn organizations_overview(_token: AdminToken, mut conn: DbConn) -> ApiResu
     Ok(Html(text))
 }
 
-#[post("/organizations/<org_id>/delete")]
+#[post("/organizations/<org_id>/delete", format = "application/json")]
 async fn delete_organization(org_id: OrganizationId, _token: AdminToken, mut conn: DbConn) -> EmptyResult {
     let org = Organization::find_by_uuid(&org_id, &mut conn).await.map_res("Organization doesn't exist")?;
     org.delete(&mut conn).await
@@ -733,7 +733,7 @@ async fn diagnostics(_token: AdminToken, ip_header: IpHeader, mut conn: DbConn) 
     Ok(Html(text))
 }
 
-#[get("/diagnostics/config")]
+#[get("/diagnostics/config", format = "application/json")]
 fn get_diagnostics_config(_token: AdminToken) -> Json<Value> {
     let support_json = CONFIG.get_support_json();
     Json(support_json)
@@ -744,16 +744,16 @@ fn get_diagnostics_http(code: u16, _token: AdminToken) -> EmptyResult {
     err_code!(format!("Testing error {code} response"), code);
 }
 
-#[post("/config", data = "<data>")]
+#[post("/config", format = "application/json", data = "<data>")]
 fn post_config(data: Json<ConfigBuilder>, _token: AdminToken) -> EmptyResult {
     let data: ConfigBuilder = data.into_inner();
-    if let Err(e) = CONFIG.update_config(data) {
+    if let Err(e) = CONFIG.update_config(data, true) {
         err!(format!("Unable to save config: {e:?}"))
     }
     Ok(())
 }
 
-#[post("/config/delete")]
+#[post("/config/delete", format = "application/json")]
 fn delete_config(_token: AdminToken) -> EmptyResult {
     if let Err(e) = CONFIG.delete_user_config() {
         err!(format!("Unable to delete config: {e:?}"))
@@ -761,7 +761,7 @@ fn delete_config(_token: AdminToken) -> EmptyResult {
     Ok(())
 }
 
-#[post("/config/backup_db")]
+#[post("/config/backup_db", format = "application/json")]
 async fn backup_db(_token: AdminToken, mut conn: DbConn) -> ApiResult<String> {
     if *CAN_BACKUP {
         match backup_database(&mut conn).await {

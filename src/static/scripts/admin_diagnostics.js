@@ -236,8 +236,11 @@ function checkSecurityHeaders(headers, omit) {
         "referrer-policy": ["same-origin"],
         "x-xss-protection": ["0"],
         "x-robots-tag": ["noindex", "nofollow"],
+        "cross-origin-resource-policy": ["same-origin"],
         "content-security-policy": [
-            "default-src 'self'",
+            "default-src 'none'",
+            "font-src 'self'",
+            "manifest-src 'self'",
             "base-uri 'self'",
             "form-action 'self'",
             "object-src 'self' blob:",

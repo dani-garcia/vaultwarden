@@ -1,7 +1,6 @@
-use std::str::FromStr;
-
 use chrono::NaiveDateTime;
 use percent_encoding::{percent_encode, NON_ALPHANUMERIC};
+use std::{env::consts::EXE_SUFFIX, str::FromStr};
 
 use lettre::{
     message::{Attachment, Body, Mailbox, Message, MultiPart, SinglePart},
@@ -26,7 +25,7 @@ fn sendmail_transport() -> AsyncSendmailTransport<Tokio1Executor> {
     if let Some(command) = CONFIG.sendmail_command() {
         AsyncSendmailTransport::new_with_command(command)
     } else {
-        AsyncSendmailTransport::new()
+        AsyncSendmailTransport::new_with_command(format!("sendmail{EXE_SUFFIX}"))
     }
 }
 
@@ -595,13 +594,13 @@ async fn send_with_selected_transport(email: Message) -> EmptyResult {
             // Match some common errors and make them more user friendly
             Err(e) => {
                 if e.is_client() {
-                    debug!("Sendmail client error: {:#?}", e);
+                    debug!("Sendmail client error: {:?}", e);
                     err!(format!("Sendmail client error: {e}"));
                 } else if e.is_response() {
-                    debug!("Sendmail response error: {:#?}", e);
+                    debug!("Sendmail response error: {:?}", e);
                     err!(format!("Sendmail response error: {e}"));
                 } else {
-                    debug!("Sendmail error: {:#?}", e);
+                    debug!("Sendmail error: {:?}", e);
                     err!(format!("Sendmail error: {e}"));
                 }
             }

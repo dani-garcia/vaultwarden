@@ -1,8 +1,10 @@
-use std::env::consts::EXE_SUFFIX;
-use std::process::exit;
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    RwLock,
+use std::{
+    env::consts::EXE_SUFFIX,
+    process::exit,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        RwLock,
+    },
 };
 
 use job_scheduler_ng::Schedule;
@@ -12,7 +14,7 @@ use reqwest::Url;
 use crate::{
     db::DbConnType,
     error::Error,
-    util::{get_env, get_env_bool, get_web_vault_version, parse_experimental_client_feature_flags},
+    util::{get_env, get_env_bool, get_web_vault_version, is_valid_email, parse_experimental_client_feature_flags},
 };
 
 static CONFIG_FILE: Lazy<String> = Lazy::new(|| {
@@ -112,6 +114,14 @@ macro_rules! make_config {
                 let config_str = std::fs::read_to_string(path)?;
                 println!("[INFO] Using saved config from `{path}` for configuration.\n");
                 serde_json::from_str(&config_str).map_err(Into::into)
+            }
+
+            fn clear_non_editable(&mut self) {
+                $($(
+                    if !$editable {
+                        self.$name = None;
+                    }
+                )+)+
             }
 
             /// Merges the values of both builders into a new builder.
@@ -677,7 +687,7 @@ make_config! {
         /// Use Sendmail |> Whether to send mail via the `sendmail` command
         use_sendmail:                  bool,   true,   def,     false;
         /// Sendmail Command |> Which sendmail command to use. The one found in the $PATH is used if not specified.
-        sendmail_command:              String, true,   option;
+        sendmail_command:              String, false,  option;
         /// Host
         smtp_host:                     String, true,   option;
         /// DEPRECATED smtp_ssl |> DEPRECATED - Please use SMTP_SECURITY
@@ -893,12 +903,12 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
             let command = cfg.sendmail_command.clone().unwrap_or_else(|| format!("sendmail{EXE_SUFFIX}"));
 
             let mut path = std::path::PathBuf::from(&command);
-
+            // Check if we can find the sendmail command to execute when no absolute path is given
             if !path.is_absolute() {
-                match which::which(&command) {
-                    Ok(result) => path = result,
-                    Err(_) => err!(format!("sendmail command {command:?} not found in $PATH")),
-                }
+                let Ok(which_path) = which::which(&command) else {
+                    err!(format!("sendmail command {command} not found in $PATH"))
+                };
+                path = which_path;
             }
 
             match path.metadata() {
@@ -932,8 +942,8 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
             }
         }
 
-        if (cfg.smtp_host.is_some() || cfg.use_sendmail) && !cfg.smtp_from.contains('@') {
-            err!("SMTP_FROM does not contain a mandatory @ sign")
+        if !is_valid_email(&cfg.smtp_from) {
+            err!(format!("SMTP_FROM '{}' is not a valid email address", cfg.smtp_from))
         }
 
         if cfg._enable_email_2fa && cfg.email_token_size < 6 {
@@ -1146,12 +1156,17 @@ impl Config {
         })
     }
 
-    pub fn update_config(&self, other: ConfigBuilder) -> Result<(), Error> {
+    pub fn update_config(&self, other: ConfigBuilder, ignore_non_editable: bool) -> Result<(), Error> {
         // Remove default values
         //let builder = other.remove(&self.inner.read().unwrap()._env);
 
         // TODO: Remove values that are defaults, above only checks those set by env and not the defaults
-        let builder = other;
+        let mut builder = other;
+
+        // Remove values that are not editable
+        if ignore_non_editable {
+            builder.clear_non_editable();
+        }
 
         // Serialize now before we consume the builder
         let config_str = serde_json::to_string_pretty(&builder)?;
@@ -1186,7 +1201,7 @@ impl Config {
             let mut _overrides = Vec::new();
             usr.merge(&other, false, &mut _overrides)
         };
-        self.update_config(builder)
+        self.update_config(builder, false)
     }
 
     /// Tests whether an email's domain is allowed. A domain is allowed if it
