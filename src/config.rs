@@ -942,7 +942,7 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
             }
         }
 
-        if !is_valid_email(&cfg.smtp_from) {
+        if (cfg.smtp_host.is_some() || cfg.use_sendmail) && !is_valid_email(&cfg.smtp_from) {
             err!(format!("SMTP_FROM '{}' is not a valid email address", cfg.smtp_from))
         }
 
