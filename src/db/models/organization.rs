@@ -55,11 +55,25 @@ db_object! {
 }
 
 // https://github.com/bitwarden/server/blob/b86a04cef9f1e1b82cf18e49fc94e017c641130c/src/Core/Enums/OrganizationUserStatusType.cs
+#[derive(PartialEq)]
 pub enum MembershipStatus {
     Revoked = -1,
     Invited = 0,
     Accepted = 1,
     Confirmed = 2,
+}
+
+impl MembershipStatus {
+    pub fn from_i32(status: i32) -> Option<Self> {
+        match status {
+            0 => Some(Self::Invited),
+            1 => Some(Self::Accepted),
+            2 => Some(Self::Confirmed),
+            // NOTE: we don't care about revoked members where this is used
+            // if this ever changes also adapt the OrgHeaders check.
+            _ => None,
+        }
+    }
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, num_derive::FromPrimitive)]
