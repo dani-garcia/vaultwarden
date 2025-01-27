@@ -142,7 +142,7 @@ impl Cipher {
         sync_type: CipherSyncType,
         conn: &mut DbConn,
     ) -> Value {
-        use crate::util::format_date;
+        use crate::util::{format_date, validate_and_format_date};
 
         let mut attachments_json: Value = Value::Null;
         if let Some(cipher_sync_data) = cipher_sync_data {
@@ -220,7 +220,7 @@ impl Cipher {
                     })
                     .map(|mut d| match d.get("lastUsedDate").and_then(|l| l.as_str()) {
                         Some(l) => {
-                            d["lastUsedDate"] = json!(crate::util::validate_and_format_date(l));
+                            d["lastUsedDate"] = json!(validate_and_format_date(l));
                             d
                         }
                         _ => {
@@ -260,6 +260,11 @@ impl Cipher {
                     }
                     type_data_json["uri"] = uris[0]["uri"].clone();
                 }
+            }
+
+            // Check if `passwordRevisionDate` is a valid date, else convert it
+            if let Some(pw_revision) = type_data_json["passwordRevisionDate"].as_str() {
+                type_data_json["passwordRevisionDate"] = json!(validate_and_format_date(pw_revision));
             }
         }
 
