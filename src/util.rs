@@ -55,7 +55,10 @@ impl Fairing for AppHeaders {
         res.set_raw_header("Referrer-Policy", "same-origin");
         res.set_raw_header("X-Content-Type-Options", "nosniff");
         res.set_raw_header("X-Robots-Tag", "noindex, nofollow");
-        res.set_raw_header("Cross-Origin-Resource-Policy", "same-origin");
+
+        if !res.headers().get_one("Content-Type").is_some_and(|v| v.starts_with("image/")) {
+            res.set_raw_header("Cross-Origin-Resource-Policy", "same-origin");
+        }
 
         // Obsolete in modern browsers, unsafe (XS-Leak), and largely replaced by CSP
         res.set_raw_header("X-XSS-Protection", "0");
