@@ -210,8 +210,8 @@ fn config() -> Json<Value> {
         // This means they expect a version that closely matches the Bitwarden server version
         // We should make sure that we keep this updated when we support the new server features
         // Version history:
-        // - Individual cipher key encryption: 2023.9.1
-        "version": "2024.2.0",
+        // - Individual cipher key encryption: 2024.2.0
+        "version": "2025.1.0",
         "gitHash": option_env!("GIT_REV"),
         "server": {
           "name": "Vaultwarden",
