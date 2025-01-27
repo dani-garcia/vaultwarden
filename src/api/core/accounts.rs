@@ -1206,6 +1206,15 @@ async fn post_auth_request(
 
     nt.send_auth_request(&user.uuid, &auth_request.uuid, &data.device_identifier, &mut conn).await;
 
+    log_user_event(
+        EventType::UserRequestedDeviceApproval as i32,
+        &user.uuid,
+        client_headers.device_type,
+        &client_headers.ip.ip,
+        &mut conn,
+    )
+    .await;
+
     Ok(Json(json!({
         "id": auth_request.uuid,
         "publicKey": auth_request.public_key,
@@ -1287,9 +1296,26 @@ async fn put_auth_request(
 
         ant.send_auth_response(&auth_request.user_uuid, &auth_request.uuid).await;
         nt.send_auth_response(&auth_request.user_uuid, &auth_request.uuid, &data.device_identifier, &mut conn).await;
+
+        log_user_event(
+            EventType::OrganizationUserApprovedAuthRequest as i32,
+            &headers.user.uuid,
+            headers.device.atype,
+            &headers.ip.ip,
+            &mut conn,
+        )
+        .await;
     } else {
         // If denied, there's no reason to keep the request
         auth_request.delete(&mut conn).await?;
+        log_user_event(
+            EventType::OrganizationUserRejectedAuthRequest as i32,
+            &headers.user.uuid,
+            headers.device.atype,
+            &headers.ip.ip,
+            &mut conn,
+        )
+        .await;
     }
 
     Ok(Json(json!({
