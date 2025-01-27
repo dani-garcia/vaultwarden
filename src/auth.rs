@@ -542,8 +542,27 @@ pub struct OrgHeaders {
     pub device: Device,
     pub user: User,
     pub membership_type: MembershipType,
+    pub membership_status: MembershipStatus,
     pub membership: Membership,
     pub ip: ClientIp,
+}
+
+impl OrgHeaders {
+    fn is_member(&self) -> bool {
+        // NOTE: we don't care about MembershipStatus at the moment because this is only used
+        // where an invited, accepted or confirmed user is expected if this ever changes or
+        // if from_i32 is changed to return Some(Revoked) this check needs to be changed accordingly
+        self.membership_type >= MembershipType::User
+    }
+    fn is_confirmed_and_admin(&self) -> bool {
+        self.membership_status == MembershipStatus::Confirmed && self.membership_type >= MembershipType::Admin
+    }
+    fn is_confirmed_and_manager(&self) -> bool {
+        self.membership_status == MembershipStatus::Confirmed && self.membership_type >= MembershipType::Manager
+    }
+    fn is_confirmed_and_owner(&self) -> bool {
+        self.membership_status == MembershipStatus::Confirmed && self.membership_type == MembershipType::Owner
+    }
 }
 
 #[rocket::async_trait]
@@ -574,15 +593,8 @@ impl<'r> FromRequest<'r> for OrgHeaders {
                 };
 
                 let user = headers.user;
-                let membership = match Membership::find_by_user_and_org(&user.uuid, &org_id, &mut conn).await {
-                    Some(member) => {
-                        if member.status == MembershipStatus::Confirmed as i32 {
-                            member
-                        } else {
-                            err_handler!("The current user isn't confirmed member of the organization")
-                        }
-                    }
-                    None => err_handler!("The current user isn't member of the organization"),
+                let Some(membership) = Membership::find_by_user_and_org(&user.uuid, &org_id, &mut conn).await else {
+                    err_handler!("The current user isn't member of the organization");
                 };
 
                 Outcome::Success(Self {
@@ -590,11 +602,20 @@ impl<'r> FromRequest<'r> for OrgHeaders {
                     device: headers.device,
                     user,
                     membership_type: {
-                        if let Some(org_usr_type) = MembershipType::from_i32(membership.atype) {
-                            org_usr_type
+                        if let Some(member_type) = MembershipType::from_i32(membership.atype) {
+                            member_type
                         } else {
                             // This should only happen if the DB is corrupted
                             err_handler!("Unknown user type in the database")
+                        }
+                    },
+                    membership_status: {
+                        if let Some(member_status) = MembershipStatus::from_i32(membership.status) {
+                            // NOTE: add additional check for revoked if from_i32 is ever changed
+                            // to return Revoked status.
+                            member_status
+                        } else {
+                            err_handler!("User status is either revoked or invalid.")
                         }
                     },
                     membership,
@@ -621,7 +642,7 @@ impl<'r> FromRequest<'r> for AdminHeaders {
 
     async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         let headers = try_outcome!(OrgHeaders::from_request(request).await);
-        if headers.membership_type >= MembershipType::Admin {
+        if headers.is_confirmed_and_admin() {
             Outcome::Success(Self {
                 host: headers.host,
                 device: headers.device,
@@ -683,7 +704,7 @@ impl<'r> FromRequest<'r> for ManagerHeaders {
 
     async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         let headers = try_outcome!(OrgHeaders::from_request(request).await);
-        if headers.membership_type >= MembershipType::Manager {
+        if headers.is_confirmed_and_manager() {
             match get_col_id(request) {
                 Some(col_id) => {
                     let mut conn = match DbConn::from_request(request).await {
@@ -738,7 +759,7 @@ impl<'r> FromRequest<'r> for ManagerHeadersLoose {
 
     async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         let headers = try_outcome!(OrgHeaders::from_request(request).await);
-        if headers.membership_type >= MembershipType::Manager {
+        if headers.is_confirmed_and_manager() {
             Outcome::Success(Self {
                 host: headers.host,
                 device: headers.device,
@@ -801,7 +822,7 @@ impl<'r> FromRequest<'r> for OwnerHeaders {
 
     async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         let headers = try_outcome!(OrgHeaders::from_request(request).await);
-        if headers.membership_type == MembershipType::Owner {
+        if headers.is_confirmed_and_owner() {
             Outcome::Success(Self {
                 device: headers.device,
                 user: headers.user,
@@ -826,7 +847,7 @@ impl<'r> FromRequest<'r> for OrgMemberHeaders {
 
     async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         let headers = try_outcome!(OrgHeaders::from_request(request).await);
-        if headers.membership_type >= MembershipType::User {
+        if headers.is_member() {
             Outcome::Success(Self {
                 host: headers.host,
                 user: headers.user,
