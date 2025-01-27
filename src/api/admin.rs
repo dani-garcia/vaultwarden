@@ -403,7 +403,7 @@ async fn delete_user(user_id: UserId, token: AdminToken, mut conn: DbConn) -> Em
 
     for membership in memberships {
         log_event(
-            EventType::OrganizationUserRemoved as i32,
+            EventType::OrganizationUserDeleted as i32,
             &membership.uuid,
             &membership.org_uuid,
             &ACTING_ADMIN_USER.into(),
