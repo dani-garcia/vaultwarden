@@ -129,8 +129,8 @@ async fn get_duo(data: Json<PasswordOrOtpData>, headers: Headers, mut conn: DbCo
 #[serde(rename_all = "camelCase")]
 struct EnableDuoData {
     host: String,
-    secret_key: String,
-    integration_key: String,
+    client_secret: String,
+    client_id: String,
     master_password_hash: Option<String>,
     otp: Option<String>,
 }
@@ -139,8 +139,8 @@ impl From<EnableDuoData> for DuoData {
     fn from(d: EnableDuoData) -> Self {
         Self {
             host: d.host,
-            ik: d.integration_key,
-            sk: d.secret_key,
+            ik: d.client_id,
+            sk: d.client_secret,
         }
     }
 }
@@ -151,7 +151,7 @@ fn check_duo_fields_custom(data: &EnableDuoData) -> bool {
         st.is_empty() || s == DISABLED_MESSAGE_DEFAULT
     }
 
-    !empty_or_default(&data.host) && !empty_or_default(&data.secret_key) && !empty_or_default(&data.integration_key)
+    !empty_or_default(&data.host) && !empty_or_default(&data.client_secret) && !empty_or_default(&data.client_id)
 }
 
 #[post("/two-factor/duo", data = "<data>")]
