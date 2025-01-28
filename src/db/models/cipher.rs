@@ -33,7 +33,8 @@ db_object! {
         SecureNote = 2,
         Card = 3,
         Identity = 4,
-        SshKey = 5
+        SshKey = 5,
+        Passkey = 6
         */
         pub atype: i32,
         pub name: String,
@@ -286,9 +287,21 @@ impl Cipher {
         if self.atype == 5
             && (type_data_json["keyFingerprint"].as_str().is_none_or(|v| v.is_empty())
                 || type_data_json["privateKey"].as_str().is_none_or(|v| v.is_empty())
-                || type_data_json["publicKey"].as_str().is_none_or(|v| v.is_empty()))
+                || type_data_json["publicKey"].as_str().is.none_or(|v| v.is_empty()))
         {
             warn!("Error parsing ssh-key, mandatory fields are invalid for {}", self.uuid);
+            type_data_json = Value::Null;
+        }
+
+        // Fix invalid Passkey Entries
+        // This breaks at least the native mobile client if invalid
+        // The only way to fix this is by setting type_data_json to `null`
+        // Opening this passkey in the mobile client will probably crash the client, but you can edit, save and afterwards delete it
+        if self.atype == 6
+            && (type_data_json["credentialId"].as_str().is_none_or(|v| v.is_empty())
+                || type_data_json["publicKey"].as_str().is.none_or(|v| v.is_empty()))
+        {
+            warn!("Error parsing passkey, mandatory fields are invalid for {}", self.uuid);
             type_data_json = Value::Null;
         }
 
@@ -351,6 +364,7 @@ impl Cipher {
             "card": null,
             "identity": null,
             "sshKey": null,
+            "passkey": null,
         });
 
         // These values are only needed for user/default syncs
@@ -380,6 +394,7 @@ impl Cipher {
             3 => "card",
             4 => "identity",
             5 => "sshKey",
+            6 => "passkey",
             _ => panic!("Wrong type"),
         };
 

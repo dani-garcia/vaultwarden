@@ -63,6 +63,11 @@ pub fn routes() -> Vec<Route> {
         get_diagnostics_config,
         resend_user_invite,
         get_diagnostics_http,
+        get_passkeys,
+        get_passkey,
+        create_passkey,
+        update_passkey,
+        delete_passkey,
     ]
 }
 
@@ -821,4 +826,62 @@ impl<'r> FromRequest<'r> for AdminToken {
             })
         }
     }
+}
+
+#[get("/passkeys")]
+async fn get_passkeys(_token: AdminToken, mut conn: DbConn) -> Json<Value> {
+    let passkeys = Passkey::get_all(&mut conn).await;
+    let passkeys_json: Vec<Value> = passkeys.iter().map(|p| p.to_json()).collect();
+    Json(json!({
+        "data": passkeys_json,
+        "object": "list",
+        "continuationToken": null,
+    }))
+}
+
+#[get("/passkeys/<passkey_id>")]
+async fn get_passkey(passkey_id: PasskeyId, _token: AdminToken, mut conn: DbConn) -> JsonResult {
+    let passkey = Passkey::find_by_uuid(&passkey_id, &mut conn).await.ok_or_else(|| {
+        err_code!("Passkey doesn't exist", Status::NotFound.code)
+    })?;
+    Ok(Json(passkey.to_json()))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PasskeyData {
+    name: String,
+    credential_id: String,
+    public_key: String,
+    user_handle: String,
+}
+
+#[post("/passkeys", format = "application/json", data = "<data>")]
+async fn create_passkey(data: Json<PasskeyData>, _token: AdminToken, mut conn: DbConn) -> JsonResult {
+    let data: PasskeyData = data.into_inner();
+    let passkey = Passkey::new(data.name, data.credential_id, data.public_key, data.user_handle);
+    passkey.save(&mut conn).await?;
+    Ok(Json(passkey.to_json()))
+}
+
+#[put("/passkeys/<passkey_id>", format = "application/json", data = "<data>")]
+async fn update_passkey(passkey_id: PasskeyId, data: Json<PasskeyData>, _token: AdminToken, mut conn: DbConn) -> JsonResult {
+    let mut passkey = Passkey::find_by_uuid(&passkey_id, &mut conn).await.ok_or_else(|| {
+        err_code!("Passkey doesn't exist", Status::NotFound.code)
+    })?;
+    let data: PasskeyData = data.into_inner();
+    passkey.name = data.name;
+    passkey.credential_id = data.credential_id;
+    passkey.public_key = data.public_key;
+    passkey.user_handle = data.user_handle;
+    passkey.save(&mut conn).await?;
+    Ok(Json(passkey.to_json()))
+}
+
+#[delete("/passkeys/<passkey_id>")]
+async fn delete_passkey(passkey_id: PasskeyId, _token: AdminToken, mut conn: DbConn) -> EmptyResult {
+    let passkey = Passkey::find_by_uuid(&passkey_id, &mut conn).await.ok_or_else(|| {
+        err_code!("Passkey doesn't exist", Status::NotFound.code)
+    })?;
+    passkey.delete(&mut conn).await
 }

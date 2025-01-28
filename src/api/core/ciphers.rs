@@ -233,7 +233,8 @@ pub struct CipherData {
     SecureNote = 2,
     Card = 3,
     Identity = 4,
-    SshKey = 5
+    SshKey = 5,
+    Passkey = 6
     */
     pub r#type: i32,
     pub name: String,
@@ -246,6 +247,7 @@ pub struct CipherData {
     card: Option<Value>,
     identity: Option<Value>,
     ssh_key: Option<Value>,
+    passkey: Option<Value>,
 
     favorite: Option<bool>,
     reprompt: Option<i32>,
@@ -483,6 +485,7 @@ pub async fn update_cipher_from_data(
         3 => data.card,
         4 => data.identity,
         5 => data.ssh_key,
+        6 => data.passkey,
         _ => err!("Invalid type"),
     };
 
