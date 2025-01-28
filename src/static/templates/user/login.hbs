@@ -1,0 +1,34 @@
+<main class="container-xl">
+    <div id="login-block" class="my-3 p-3 rounded shadow">
+        <h6 class="border-bottom pb-2 mb-3">User Login</h6>
+        <form id="login-form">
+            <div class="mb-3">
+                <label for="email" class="form-label">Email address</label>
+                <input type="email" class="form-control" id="email" placeholder="Enter email" required>
+            </div>
+            <div class="mb-3">
+                <label for="password" class="form-label">Password</label>
+                <input type="password" class="form-control" id="password" placeholder="Enter password" required>
+            </div>
+            <div class="mb-3">
+                <label for="passkey" class="form-label">Passkey</label>
+                <input type="text" class="form-control" id="passkey" placeholder="Enter passkey">
+            </div>
+            <button type="submit" class="btn btn-primary">Login</button>
+        </form>
+    </div>
+</main>
+
+<script>
+    document.getElementById('login-form').addEventListener('submit', function(event) {
+        event.preventDefault();
+        const email = document.getElementById('email').value;
+        const password = document.getElementById('password').value;
+        const passkey = document.getElementById('passkey').value;
+
+        // Add logic to handle login with passkey
+        console.log('Email:', email);
+        console.log('Password:', password);
+        console.log('Passkey:', passkey);
+    });
+</script>

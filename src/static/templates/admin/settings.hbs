@@ -135,6 +135,20 @@
                 </div>
                 {{/if}}
 
+                <div class="card mb-3">
+                    <button id="b_passkeys" type="button" class="card-header text-start btn btn-link text-decoration-none" aria-expanded="false" aria-controls="g_passkeys"
+                            data-bs-toggle="collapse" data-bs-target="#g_passkeys">Manage Passkeys</button>
+                    <div id="g_passkeys" class="card-body collapse">
+                        <div class="small mb-3">
+                            Here you can manage the passkeys stored in the system.
+                        </div>
+                        <button type="button" class="btn btn-primary" id="addPasskey">Add Passkey</button>
+                        <div id="passkeys-list" class="mt-3">
+                            <!-- Passkeys will be listed here -->
+                        </div>
+                    </div>
+                </div>
+
                 <button type="submit" class="btn btn-primary">Save</button>
                 <button type="button" class="btn btn-danger float-end" id="deleteConf">Reset defaults</button>
             </form>

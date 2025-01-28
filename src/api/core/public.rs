@@ -15,7 +15,7 @@ use crate::{
 };
 
 pub fn routes() -> Vec<Route> {
-    routes![ldap_import]
+    routes![ldap_import, save_passkey, get_passkeys]
 }
 
 #[derive(Deserialize)]
@@ -188,6 +188,38 @@ async fn ldap_import(data: Json<OrgImportData>, token: PublicToken, mut conn: Db
     }
 
     Ok(())
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PasskeyData {
+    site: String,
+    passkey: String,
+}
+
+#[post("/public/passkey/save", data = "<data>")]
+async fn save_passkey(data: Json<PasskeyData>, headers: Headers, mut conn: DbConn) -> EmptyResult {
+    let data = data.into_inner();
+    let user_id = headers.user.uuid;
+
+    let mut passkey = Passkey::new(user_id.clone(), data.site.clone(), data.passkey.clone());
+    passkey.save(&mut conn).await?;
+
+    Ok(())
+}
+
+#[get("/public/passkeys")]
+async fn get_passkeys(headers: Headers, mut conn: DbConn) -> JsonResult {
+    let user_id = headers.user.uuid;
+    let passkeys = Passkey::find_by_user(&user_id, &mut conn).await;
+
+    let passkeys_json: Vec<Value> = passkeys.iter().map(|p| p.to_json()).collect();
+
+    Ok(Json(json!({
+        "data": passkeys_json,
+        "object": "list",
+        "continuationToken": null
+    })))
 }
 
 pub struct PublicToken(OrganizationId);

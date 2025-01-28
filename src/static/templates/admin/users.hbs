@@ -10,6 +10,7 @@
                         <th class="vw-last-active">Last Active</th>
                         <th class="vw-entries">Entries</th>
                         <th class="vw-attachments">Attachments</th>
+                        <th class="vw-passkeys">Passkeys</th>
                         <th class="vw-organizations">Organizations</th>
                         <th class="vw-actions">Actions</th>
                     </tr>
@@ -52,6 +53,9 @@
                             {{#if attachment_count}}
                             <span class="d-block"><strong>Size:</strong> {{attachment_size}}</span>
                             {{/if}}
+                        </td>
+                        <td>
+                            <span class="d-block">{{passkey_count}}</span>
                         </td>
                         <td>
                             <div class="overflow-auto vw-org-cell" data-vw-user-email="{{email}}" data-vw-user-uuid="{{id}}">
