@@ -111,8 +111,8 @@ async fn get_duo(data: Json<PasswordOrOtpData>, headers: Headers, mut conn: DbCo
         json!({
             "enabled": enabled,
             "host": data.host,
-            "secretKey": data.sk,
-            "integrationKey": data.ik,
+            "clientSecret": data.sk,
+            "clientId": data.ik,
             "object": "twoFactorDuo"
         })
     } else {
@@ -186,8 +186,8 @@ async fn activate_duo(data: Json<EnableDuoData>, headers: Headers, mut conn: DbC
     Ok(Json(json!({
         "enabled": true,
         "host": data.host,
-        "secretKey": data.sk,
-        "integrationKey": data.ik,
+        "clientSecret": data.sk,
+        "clientId": data.ik,
         "object": "twoFactorDuo"
     })))
 }
