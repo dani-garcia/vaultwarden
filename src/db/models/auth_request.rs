@@ -150,6 +150,7 @@ impl AuthRequest {
             auth_requests::table
                 .filter(auth_requests::user_uuid.eq(user_uuid))
                 .filter(auth_requests::request_device_identifier.eq(device_uuid))
+                .filter(auth_requests::approved.is_null())
                 .order_by(auth_requests::creation_date.desc())
                 .first::<AuthRequestDb>(conn).ok().from_db()
         }}
