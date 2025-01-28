@@ -303,7 +303,11 @@ async fn post_set_password(data: Json<SetPasswordData>, headers: Headers, mut co
         Membership::accept_user_invitations(&user.uuid, &mut conn).await?;
     }
 
+    log_user_event(EventType::UserChangedPassword as i32, &user.uuid, headers.device.atype, &headers.ip.ip, &mut conn)
+        .await;
+
     user.save(&mut conn).await?;
+
     Ok(Json(json!({
       "Object": "set-password",
       "CaptchaBypassToken": "",
