@@ -26,8 +26,8 @@ pub fn routes() -> Vec<Route> {
 #[derive(Serialize, Deserialize)]
 struct DuoData {
     host: String, // Duo API hostname
-    ik: String,   // integration key
-    sk: String,   // secret key
+    ik: String,   // client id
+    sk: String,   // client secret
 }
 
 impl DuoData {
