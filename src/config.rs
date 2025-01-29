@@ -670,9 +670,9 @@ make_config! {
         _enable_duo:            bool,   true,   def,     true;
         /// Attempt to use deprecated iframe-based Traditional Prompt (Duo WebSDK 2)
         duo_use_iframe:         bool,   false,  def,     false;
-        /// Integration Key
+        /// Client Id
         duo_ikey:               String, true,   option;
-        /// Secret Key
+        /// Client Secret
         duo_skey:               Pass,   true,   option;
         /// Host
         duo_host:               String, true,   option;
