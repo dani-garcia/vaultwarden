@@ -485,7 +485,7 @@ async fn post_organization_collections(
         CollectionUser::save(&headers.membership.user_uuid, &collection.uuid, false, false, false, &mut conn).await?;
     }
 
-    Ok(Json(collection.to_json()))
+    Ok(Json(collection.to_json_details(&headers.membership.user_uuid, None, &mut conn).await))
 }
 
 #[put("/organizations/<org_id>/collections/<col_id>", data = "<data>")]
@@ -722,18 +722,19 @@ async fn get_org_collection_detail(
                 .map(|m| (m.uuid, m.atype))
                 .collect();
 
-            let users: Vec<Value> =
-                CollectionUser::find_by_collection_swap_user_uuid_with_member_uuid(&collection.uuid, &mut conn)
-                    .await
-                    .iter()
-                    .map(|collection_member| {
-                        collection_member.to_json_details_for_member(
-                            *membership_type
-                                .get(&collection_member.membership_uuid)
-                                .unwrap_or(&(MembershipType::User as i32)),
-                        )
-                    })
-                    .collect();
+            let users: Vec<Value> = CollectionUser::find_by_org_and_coll_swap_user_uuid_with_member_uuid(
+                &org_id,
+                &collection.uuid,
+                &mut conn,
+            )
+            .await
+            .iter()
+            .map(|collection_member| {
+                collection_member.to_json_details_for_member(
+                    *membership_type.get(&collection_member.membership_uuid).unwrap_or(&(MembershipType::User as i32)),
+                )
+            })
+            .collect();
 
             let assigned = Collection::can_access_collection(&member, &collection.uuid, &mut conn).await;
 
