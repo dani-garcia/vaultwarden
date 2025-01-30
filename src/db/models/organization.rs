@@ -464,7 +464,7 @@ impl Membership {
             "familySponsorshipValidUntil": null,
             "familySponsorshipToDelete": null,
             "accessSecretsManager": false,
-            "limitCollectionCreation": true,
+            "limitCollectionCreation": self.atype < MembershipType::Manager, // If less then a manager return true, to limit collection creations
             "limitCollectionCreationDeletion": true,
             "limitCollectionDeletion": true,
             "allowAdminAccessToAllCollectionItems": true,

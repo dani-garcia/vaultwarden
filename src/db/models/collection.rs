@@ -589,6 +589,7 @@ impl CollectionUser {
                 .inner_join(collections::table.on(collections::uuid.eq(users_collections::collection_uuid)))
                 .filter(collections::org_uuid.eq(org_uuid))
                 .inner_join(users_organizations::table.on(users_organizations::user_uuid.eq(users_collections::user_uuid)))
+                .filter(users_organizations::org_uuid.eq(org_uuid))
                 .select((users_organizations::uuid, users_collections::collection_uuid, users_collections::read_only, users_collections::hide_passwords, users_collections::manage))
                 .load::<CollectionUserDb>(conn)
                 .expect("Error loading users_collections")
@@ -685,13 +686,15 @@ impl CollectionUser {
         }}
     }
 
-    pub async fn find_by_collection_swap_user_uuid_with_member_uuid(
+    pub async fn find_by_org_and_coll_swap_user_uuid_with_member_uuid(
+        org_uuid: &OrganizationId,
         collection_uuid: &CollectionId,
         conn: &mut DbConn,
     ) -> Vec<CollectionMembership> {
         let col_users = db_run! { conn: {
             users_collections::table
                 .filter(users_collections::collection_uuid.eq(collection_uuid))
+                .filter(users_organizations::org_uuid.eq(org_uuid))
                 .inner_join(users_organizations::table.on(users_organizations::user_uuid.eq(users_collections::user_uuid)))
                 .select((users_organizations::uuid, users_collections::collection_uuid, users_collections::read_only, users_collections::hide_passwords, users_collections::manage))
                 .load::<CollectionUserDb>(conn)

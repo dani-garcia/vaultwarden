@@ -26,8 +26,8 @@ pub fn routes() -> Vec<Route> {
 #[derive(Serialize, Deserialize)]
 struct DuoData {
     host: String, // Duo API hostname
-    ik: String,   // integration key
-    sk: String,   // secret key
+    ik: String,   // client id
+    sk: String,   // client secret
 }
 
 impl DuoData {
@@ -111,8 +111,8 @@ async fn get_duo(data: Json<PasswordOrOtpData>, headers: Headers, mut conn: DbCo
         json!({
             "enabled": enabled,
             "host": data.host,
-            "secretKey": data.sk,
-            "integrationKey": data.ik,
+            "clientSecret": data.sk,
+            "clientId": data.ik,
             "object": "twoFactorDuo"
         })
     } else {
@@ -129,8 +129,8 @@ async fn get_duo(data: Json<PasswordOrOtpData>, headers: Headers, mut conn: DbCo
 #[serde(rename_all = "camelCase")]
 struct EnableDuoData {
     host: String,
-    secret_key: String,
-    integration_key: String,
+    client_secret: String,
+    client_id: String,
     master_password_hash: Option<String>,
     otp: Option<String>,
 }
@@ -139,8 +139,8 @@ impl From<EnableDuoData> for DuoData {
     fn from(d: EnableDuoData) -> Self {
         Self {
             host: d.host,
-            ik: d.integration_key,
-            sk: d.secret_key,
+            ik: d.client_id,
+            sk: d.client_secret,
         }
     }
 }
@@ -151,7 +151,7 @@ fn check_duo_fields_custom(data: &EnableDuoData) -> bool {
         st.is_empty() || s == DISABLED_MESSAGE_DEFAULT
     }
 
-    !empty_or_default(&data.host) && !empty_or_default(&data.secret_key) && !empty_or_default(&data.integration_key)
+    !empty_or_default(&data.host) && !empty_or_default(&data.client_secret) && !empty_or_default(&data.client_id)
 }
 
 #[post("/two-factor/duo", data = "<data>")]
@@ -186,8 +186,8 @@ async fn activate_duo(data: Json<EnableDuoData>, headers: Headers, mut conn: DbC
     Ok(Json(json!({
         "enabled": true,
         "host": data.host,
-        "secretKey": data.sk,
-        "integrationKey": data.ik,
+        "clientSecret": data.sk,
+        "clientId": data.ik,
         "object": "twoFactorDuo"
     })))
 }
