@@ -925,9 +925,9 @@ async fn password_hint(data: Json<PasswordHintData>, mut conn: DbConn) -> EmptyR
                 // paths that send mail take noticeably longer than ones that
                 // don't. Add a randomized sleep to mitigate this somewhat.
                 use rand::{rngs::SmallRng, Rng, SeedableRng};
-                let mut rng = SmallRng::from_entropy();
+                let mut rng = SmallRng::from_os_rng();
                 let delta: i32 = 100;
-                let sleep_ms = (1_000 + rng.gen_range(-delta..=delta)) as u64;
+                let sleep_ms = (1_000 + rng.random_range(-delta..=delta)) as u64;
                 tokio::time::sleep(tokio::time::Duration::from_millis(sleep_ms)).await;
                 Ok(())
             } else {
