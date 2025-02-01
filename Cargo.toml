@@ -8,7 +8,7 @@ edition = "2021"
 rust-version = "1.83.0"
 resolver = "2"
 
-repository = "https://github.com/dani-garcia/vaultwarden"
+repository = "https://github.com/vaultwarden/vaultwarden"
 readme = "README.md"
 license = "AGPL-3.0-only"
 publish = false

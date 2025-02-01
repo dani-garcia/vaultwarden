@@ -14,13 +14,13 @@ notify us. We welcome working with you to resolve the issue promptly. Thanks in 
 
 # In-scope
 
-- Security issues in any current release of Vaultwarden. Source code is available at https://github.com/dani-garcia/vaultwarden. This includes the current `latest` release and `main / testing` release.
+- Security issues in any current release of Vaultwarden. Source code is available at https://github.com/vaultwarden/vaultwarden. This includes the current `latest` release and `main / testing` release.
 
 # Exclusions
 
 The following bug classes are out-of scope:
 
-- Bugs that are already reported on Vaultwarden's issue tracker (https://github.com/dani-garcia/vaultwarden/issues)
+- Bugs that are already reported on Vaultwarden's issue tracker (https://github.com/vaultwarden/vaultwarden/issues)
 - Bugs that are not part of Vaultwarden, like on the web-vault or mobile and desktop clients. These issues need to be reported in the respective project issue tracker at https://github.com/bitwarden to which we are not associated
 - Issues in an upstream software dependency (ex: Rust, or External Libraries) which are already reported to the upstream maintainer
 - Attacks requiring physical access to a user's device

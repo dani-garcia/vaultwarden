@@ -113,7 +113,7 @@ impl Device {
             // Disabled these keys to be added to the JWT since they could cause the JWT to get too large
             // Also These key/value pairs are not used anywhere by either Vaultwarden or Bitwarden Clients
             // Because these might get used in the future, and they are added by the Bitwarden Server, lets keep it, but then commented out
-            // See: https://github.com/dani-garcia/vaultwarden/issues/4156
+            // See: https://github.com/vaultwarden/vaultwarden/issues/4156
             // ---
             // orgowner,
             // orgadmin,
