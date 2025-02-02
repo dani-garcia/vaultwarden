@@ -1,11 +1,11 @@
-Incomplete Two-Step Login From {{{device_name}}}
+来自 *{{device_name}}* 的不完整两步登录尝试
 <!---------------->
-Someone attempted to log into your account with the correct master password, but did not provide the correct token or action required to complete the two-step login process within {{time_limit}} minutes of the initial login attempt.
+有人使用正确的主密码尝试登录您的账户，但在初始登录尝试后的 {{time_limit}} 分钟内没有提供正确的令牌或完成所需的两步登录操作。
 
-* Date: {{datetime}}
-* IP Address: {{ip}}
-* Device Name: {{device_name}}
-* Device Type: {{device_type}}
+* 日期: {{datetime}}
+* IP 地址: {{ip}}
+* 设备名称: {{device_name}}
+* 设备类型: {{device_type}}
 
-If this was not you or someone you authorized, then you should change your master password as soon as possible, as it is likely to be compromised.
+如果这不是您或您授权的人所为，则应尽快更改您的主密码，因为该密码可能已被泄露。
 {{> email/email_footer_text }}

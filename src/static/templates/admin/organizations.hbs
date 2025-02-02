@@ -1,16 +1,16 @@
 <main class="container-xl">
     <div id="organizations-block" class="my-3 p-3 rounded shadow">
-        <h6 class="border-bottom pb-2 mb-3">Organizations</h6>
+        <h6 class="border-bottom pb-2 mb-3">组织</h6>
         <div class="table-responsive-xl small">
             <table id="orgs-table" class="table table-sm table-striped table-hover">
                 <thead>
                     <tr>
-                        <th class="vw-org-details">Organization</th>
-                        <th class="vw-users">Users</th>
-                        <th class="vw-entries">Entries</th>
-                        <th class="vw-attachments">Attachments</th>
-                        <th class="vw-misc">Misc</th>
-                        <th class="vw-actions">Actions</th>
+                        <th class="vw-org-details">组织</th>
+                        <th class="vw-users">用户</th>
+                        <th class="vw-entries">条目</th>
+                        <th class="vw-attachments">附件</th>
+                        <th class="vw-misc">其他</th>
+                        <th class="vw-actions">操作</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -18,13 +18,13 @@
                     <tr>
                         <td>
                             <svg width="48" height="48" class="float-start me-2 rounded" data-jdenticon-value="{{id}}">
-                            <div class="float-start">
-                                <strong>{{name}}</strong>
-                                <span class="me-2">({{billingEmail}})</span>
-                                <span class="d-block">
-                                    <span class="badge bg-success font-monospace">{{id}}</span>
-                                </span>
-                            </div>
+                                <div class="float-start">
+                                    <strong>{{name}}</strong>
+                                    <span class="me-2">({{billingEmail}})</span>
+                                    <span class="d-block">
+                                        <span class="badge bg-success font-monospace">{{id}}</span>
+                                    </span>
+                                </div>
                         </td>
                         <td>
                             <span class="d-block">{{user_count}}</span>
@@ -33,18 +33,20 @@
                             <span class="d-block">{{cipher_count}}</span>
                         </td>
                         <td>
-                            <span class="d-block"><strong>Amount:</strong> {{attachment_count}}</span>
+                            <span class="d-block"><strong>数量:</strong> {{attachment_count}}</span>
                             {{#if attachment_count}}
-                            <span class="d-block"><strong>Size:</strong> {{attachment_size}}</span>
+                            <span class="d-block"><strong>大小:</strong> {{attachment_size}}</span>
                             {{/if}}
                         </td>
                         <td>
-                            <span class="d-block"><strong>Collections:</strong> {{collection_count}}</span>
-                            <span class="d-block"><strong>Groups:</strong> {{group_count}}</span>
-                            <span class="d-block"><strong>Events:</strong> {{event_count}}</span>
+                            <span class="d-block"><strong>集合:</strong> {{collection_count}}</span>
+                            <span class="d-block"><strong>组:</strong> {{group_count}}</span>
+                            <span class="d-block"><strong>事件:</strong> {{event_count}}</span>
                         </td>
                         <td class="text-end px-0 small">
-                            <button type="button" class="btn btn-sm btn-link p-0 border-0 float-right" vw-delete-organization data-vw-org-uuid="{{id}}" data-vw-org-name="{{name}}" data-vw-billing-email="{{billingEmail}}">Delete Organization</button><br>
+                            <button type="button" class="btn btn-sm btn-link p-0 border-0 float-right"
+                                vw-delete-organization data-vw-org-uuid="{{id}}" data-vw-org-name="{{name}}"
+                                data-vw-billing-email="{{billingEmail}}">删除组织</button><br>
                         </td>
                     </tr>
                     {{/each}}
@@ -53,7 +55,7 @@
         </div>
 
         <div class="mt-3 clearfix">
-            <button type="button" class="btn btn-sm btn-primary float-end" id="reload">Reload organizations</button>
+            <button type="button" class="btn btn-sm btn-primary float-end" id="reload">重新加载组织</button>
         </div>
     </div>
 </main>

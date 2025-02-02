@@ -9,15 +9,16 @@
 
     <div class="align-items-center p-3 mb-3 text-opacity-75 text-light bg-danger rounded shadow">
         <div>
-            <h6 class="mb-0 text-light">Authentication key needed to continue</h6>
-            <small>Please provide it below:</small>
+            <h6 class="mb-0 text-light">继续操作需要认证密钥</h6>
+            <small>请在下方提供：</small>
 
             <form class="form-inline" method="post" action="{{urlpath}}/admin">
-                <input type="password" autocomplete="password" class="form-control w-50 mr-2" name="token" placeholder="Enter admin token" autofocus="autofocus">
+                <input type="password" autocomplete="password" class="form-control w-50 mr-2" name="token"
+                    placeholder="输入管理员令牌" autofocus="autofocus">
                 {{#if redirect}}
                 <input type="hidden" id="redirect" name="redirect" value="/{{redirect}}">
                 {{/if}}
-                <button type="submit" class="btn btn-primary mt-2">Enter</button>
+                <button type="submit" class="btn btn-primary mt-2">进入</button>
             </form>
         </div>
     </div>
