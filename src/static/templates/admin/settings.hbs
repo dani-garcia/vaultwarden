@@ -1,6 +1,7 @@
 <main class="container-xl">
     <div id="admin_token_warning" class="alert alert-warning alert-dismissible fade show d-none">
-        <button type="button" class="btn-close" data-bs-target="admin_token_warning" data-bs-dismiss="alert" aria-label="Close"></button>
+        <button type="button" class="btn-close" data-bs-target="admin_token_warning" data-bs-dismiss="alert"
+            aria-label="Close"></button>
         您正在使用纯文本 `ADMIN_TOKEN`，这是不安全的。<br>
         请使用 `vaultwarden hash` 或 `argon2` 生成安全的 Argon2 PHC 字符串。<br>
         参见：<a href="https://github.com/dani-garcia/vaultwarden/wiki/Enabling-admin-page#secure-the-admin_token"
@@ -19,7 +20,10 @@
                 {{#each page_data.config}}
                 {{#if groupdoc}}
                 <div class="card mb-3">
-                    <button id="b_{{group}}" type="button" class="card-header text-start btn btn-link text-decoration-none" aria-expanded="false" aria-controls="g_{{group}}" data-bs-toggle="collapse" data-bs-target="#g_{{group}}">{{groupdoc}}</button>
+                    <button id="b_{{group}}" type="button"
+                        class="card-header text-start btn btn-link text-decoration-none" aria-expanded="false"
+                        aria-controls="g_{{group}}" data-bs-toggle="collapse"
+                        data-bs-target="#g_{{group}}">{{groupdoc}}</button>
                     <div id="g_{{group}}" class="card-body collapse">
                         {{#each elements}}
                         {{#if editable}}
@@ -30,9 +34,11 @@
                             <div class="col-sm-8">
                                 <div class="input-group">
                                     <input class="form-control conf-{{type}}" id="input_{{name}}" type="{{type}}"
-                                    name="{{name}}" value="{{value}}" {{#if default}} placeholder="Default: {{default}}"{{/if}}>
-                                {{#case type "password"}}
-                                    <button class="btn btn-outline-secondary input-group-text" type="button" data-vw-pw-toggle="input_{{name}}">Show/hide</button>
+                                        name="{{name}}" value="{{value}}" {{#if default}} placeholder="默认值: {{default}}"
+                                        {{/if}}>
+                                    {{#case type "password"}}
+                                    <button class="btn btn-outline-secondary input-group-text" type="button"
+                                        data-vw-pw-toggle="input_{{name}}">显示/隐藏</button>
                                     {{/case}}
                                 </div>
                             </div>
@@ -44,7 +50,7 @@
                                     <input class="form-check-input conf-{{type}}" type="checkbox" id="input_{{name}}"
                                         name="{{name}}" {{#if value}} checked {{/if}}>
 
-                                    <label class="form-check-label" for="input_{{name}}"> Default: {{default}} </label>
+                                    <label class="form-check-label" for="input_{{name}}"> 默认值: {{default}} </label>
                                 </div>
                             </div>
                             {{/case}}
@@ -55,8 +61,10 @@
                         <div class="row my-2 align-items-center pt-3 border-top" title="发送测试电子邮件到指定地址">
                             <label for="smtp-test-email" class="col-sm-3 col-form-label">测试 SMTP</label>
                             <div class="col-sm-8 input-group">
-                                <input class="form-control" id="smtp-test-email" type="email" placeholder="输入测试电子邮件" required spellcheck="false">
-                                <button type="button" class="btn btn-outline-primary input-group-text" id="smtpTest">发送测试电子邮件</button>
+                                <input class="form-control" id="smtp-test-email" type="email" placeholder="输入测试电子邮件"
+                                    required spellcheck="false">
+                                <button type="button" class="btn btn-outline-primary input-group-text"
+                                    id="smtpTest">发送测试电子邮件</button>
                                 <div class="invalid-tooltip">请输入有效的电子邮件地址</div>
                             </div>
                         </div>
@@ -67,8 +75,9 @@
                 {{/each}}
 
                 <div class="card mb-3">
-                    <button id="b_readonly" type="button" class="card-header text-start btn btn-link text-decoration-none" aria-expanded="false" aria-controls="g_readonly"
-                            data-bs-toggle="collapse" data-bs-target="#g_readonly">Read-Only Config</button>
+                    <button id="b_readonly" type="button"
+                        class="card-header text-start btn btn-link text-decoration-none" aria-expanded="false"
+                        aria-controls="g_readonly" data-bs-toggle="collapse" data-bs-target="#g_readonly">只读配置</button>
                     <div id="g_readonly" class="card-body collapse">
                         <div class="small mb-3">
                             注意：这些选项不能在此编辑器中修改，因为这需要重启服务器。要修改它们，需要在启动服务器时设置正确的环境变量。您可以在每个选项的工具提示中查看变量名称。
@@ -89,12 +98,17 @@
                                     And sometimes this is more useful for providing support than just 3 asterisk.
                                     --}}
                                     {{#if (eq name "database_url")}}
-                                    <input readonly class="form-control" id="input_{{name}}" type="password" value="{{value}}" {{#if default}} placeholder="Default: {{default}}" {{/if}}>
-                                    <button class="btn btn-outline-secondary" type="button" data-vw-pw-toggle="input_{{name}}">Show/hide</button>
+                                    <input readonly class="form-control" id="input_{{name}}" type="password"
+                                        value="{{value}}" {{#if default}} placeholder="默认值: {{default}}" {{/if}}>
+                                    <button class="btn btn-outline-secondary" type="button"
+                                        data-vw-pw-toggle="input_{{name}}">显示/隐藏</button>
                                     {{else}}
-                                    <input readonly class="form-control" id="input_{{name}}" type="{{type}}" value="{{value}}" {{#if default}} placeholder="Default: {{default}}" {{/if}} spellcheck="false">
+                                    <input readonly class="form-control" id="input_{{name}}" type="{{type}}"
+                                        value="{{value}}" {{#if default}} placeholder="默认值: {{default}}" {{/if}}
+                                        spellcheck="false">
                                     {{#case type "password"}}
-                                    <button class="btn btn-outline-secondary" type="button" data-vw-pw-toggle="input_{{name}}">Show/hide</button>
+                                    <button class="btn btn-outline-secondary" type="button"
+                                        data-vw-pw-toggle="input_{{name}}">显示/隐藏</button>
                                     {{/case}}
                                     {{/if}}
                                 </div>
@@ -104,10 +118,10 @@
                             <div class="col-sm-3 col-form-label">{{doc.name}}</div>
                             <div class="col-sm-8">
                                 <div class="form-check align-middle">
-                                    <input disabled class="form-check-input" type="checkbox" id="input_{{name}}"
-                                        {{#if value}} checked {{/if}}>
+                                    <input disabled class="form-check-input" type="checkbox" id="input_{{name}}" {{#if
+                                        value}} checked {{/if}}>
 
-                                    <label class="form-check-label" for="input_{{name}}"> Default: {{default}} </label>
+                                    <label class="form-check-label" for="input_{{name}}"> 默认值: {{default}} </label>
                                 </div>
                             </div>
                             {{/case}}
@@ -121,8 +135,9 @@
 
                 {{#if page_data.can_backup}}
                 <div class="card mb-3">
-                    <button id="b_database" type="button" class="card-header text-start btn btn-link text-decoration-none" aria-expanded="false" aria-controls="g_database"
-                            data-bs-toggle="collapse" data-bs-target="#g_database">Backup Database</button>
+                    <button id="b_database" type="button"
+                        class="card-header text-start btn btn-link text-decoration-none" aria-expanded="false"
+                        aria-controls="g_database" data-bs-toggle="collapse" data-bs-target="#g_database">备份数据库</button>
                     <div id="g_database" class="card-body collapse">
                         <div class="small mb-3">
                             警告：此功能仅创建 SQLite 数据库的备份副本。
@@ -130,13 +145,13 @@
                                 href="https://github.com/dani-garcia/vaultwarden/wiki/Backing-up-your-vault"
                                 target="_blank" rel="noopener noreferrer">备份</a> wiki 页面。
                         </div>
-                        <button type="button" class="btn btn-primary" id="backupDatabase">Backup Database</button>
+                        <button type="button" class="btn btn-primary" id="backupDatabase">备份数据库</button>
                     </div>
                 </div>
                 {{/if}}
 
-                <button type="submit" class="btn btn-primary">Save</button>
-                <button type="button" class="btn btn-danger float-end" id="deleteConf">Reset defaults</button>
+                <button type="submit" class="btn btn-primary">保存</button>
+                <button type="button" class="btn btn-danger float-end" id="deleteConf">重置默认值</button>
             </form>
         </div>
     </div>
