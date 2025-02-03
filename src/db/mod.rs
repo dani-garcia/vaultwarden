@@ -1,8 +1,11 @@
+#[cfg(dsql)]
+mod dsql;
+
 use std::{sync::Arc, time::Duration};
 
 use diesel::{
     connection::SimpleConnection,
-    r2d2::{ConnectionManager, CustomizeConnection, Pool, PooledConnection},
+    r2d2::{CustomizeConnection, Pool, PooledConnection},
 };
 
 use rocket::{
@@ -20,6 +23,11 @@ use crate::{
     error::{Error, MapResult},
     CONFIG,
 };
+
+#[cfg(dsql)]
+type ConnectionManager<T> = dsql::ConnectionManager<T>;
+#[cfg(not(dsql))]
+type ConnectionManager<T> = diesel::r2d2::ConnectionManager<T>;
 
 #[cfg(sqlite)]
 #[path = "schemas/sqlite/schema.rs"]
@@ -130,7 +138,7 @@ macro_rules! generate_connections {
                     DbConnType::$name => {
                         #[cfg($name)]
                         {
-                            paste::paste!{ [< $name _migrations >]::run_migrations()?; }
+                            paste::paste!{ [< $name _migrations >]::run_migrations(&url)?; }
                             let manager = ConnectionManager::new(&url);
                             let pool = Pool::builder()
                                 .max_size(CONFIG.database_max_conns())
@@ -208,6 +216,14 @@ impl DbConnType {
 
             #[cfg(not(postgresql))]
             err!("`DATABASE_URL` is a PostgreSQL URL, but the 'postgresql' feature is not enabled")
+
+        // Amazon Aurora DSQL
+        } else if url.starts_with("dsql:") {
+            #[cfg(dsql)]
+            return Ok(DbConnType::postgresql);
+
+            #[cfg(not(dsql))]
+            err!("`DATABASE_URL` is a DSQL URL, but the 'dsql' feature is not enabled")
 
         //Sqlite
         } else {
@@ -429,13 +445,12 @@ mod sqlite_migrations {
     use diesel_migrations::{EmbeddedMigrations, MigrationHarness};
     pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations/sqlite");
 
-    pub fn run_migrations() -> Result<(), super::Error> {
+    pub fn run_migrations(url: &str) -> Result<(), super::Error> {
         use diesel::{Connection, RunQueryDsl};
-        let url = crate::CONFIG.database_url();
 
         // Establish a connection to the sqlite database (this will create a new one, if it does
         // not exist, and exit if there is an error).
-        let mut connection = diesel::sqlite::SqliteConnection::establish(&url)?;
+        let mut connection = diesel::sqlite::SqliteConnection::establish(url)?;
 
         // Run the migrations after successfully establishing a connection
         // Disable Foreign Key Checks during migration
@@ -459,10 +474,10 @@ mod mysql_migrations {
     use diesel_migrations::{EmbeddedMigrations, MigrationHarness};
     pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations/mysql");
 
-    pub fn run_migrations() -> Result<(), super::Error> {
+    pub fn run_migrations(url: &str) -> Result<(), super::Error> {
         use diesel::{Connection, RunQueryDsl};
         // Make sure the database is up to date (create if it doesn't exist, or run the migrations)
-        let mut connection = diesel::mysql::MysqlConnection::establish(&crate::CONFIG.database_url())?;
+        let mut connection = diesel::mysql::MysqlConnection::establish(url)?;
         // Disable Foreign Key Checks during migration
 
         // Scoped to a connection/session.
@@ -480,10 +495,21 @@ mod postgresql_migrations {
     use diesel_migrations::{EmbeddedMigrations, MigrationHarness};
     pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations/postgresql");
 
-    pub fn run_migrations() -> Result<(), super::Error> {
+    pub fn run_migrations(url: &str) -> Result<(), super::Error> {
         use diesel::Connection;
+
+        #[cfg(dsql)]
+        if url.starts_with("dsql:") {
+            pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations/dsql");
+
+            let psql_url = crate::db::dsql::psql_url(url)?;
+            let mut connection = diesel::pg::PgConnection::establish(&psql_url)?;
+            connection.run_pending_migrations(MIGRATIONS).expect("Error running migrations");
+            return Ok(())
+        }
+
         // Make sure the database is up to date (create if it doesn't exist, or run the migrations)
-        let mut connection = diesel::pg::PgConnection::establish(&crate::CONFIG.database_url())?;
+        let mut connection = diesel::pg::PgConnection::establish(url)?;
         connection.run_pending_migrations(MIGRATIONS).expect("Error running migrations");
         Ok(())
     }

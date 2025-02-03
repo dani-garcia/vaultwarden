@@ -9,10 +9,12 @@ fn main() {
     println!("cargo:rustc-cfg=mysql");
     #[cfg(feature = "postgresql")]
     println!("cargo:rustc-cfg=postgresql");
+    #[cfg(feature = "dsql")]
+    println!("cargo:rustc-cfg=dsql");
     #[cfg(feature = "query_logger")]
     println!("cargo:rustc-cfg=query_logger");
 
-    #[cfg(not(any(feature = "sqlite", feature = "mysql", feature = "postgresql")))]
+    #[cfg(not(any(feature = "sqlite", feature = "mysql", feature = "postgresql", feature = "dsql")))]
     compile_error!(
         "You need to enable one DB backend. To build with previous defaults do: cargo build --features sqlite"
     );
@@ -22,6 +24,7 @@ fn main() {
     println!("cargo::rustc-check-cfg=cfg(sqlite)");
     println!("cargo::rustc-check-cfg=cfg(mysql)");
     println!("cargo::rustc-check-cfg=cfg(postgresql)");
+    println!("cargo::rustc-check-cfg=cfg(dsql)");
     println!("cargo::rustc-check-cfg=cfg(query_logger)");
 
     // Rerun when these paths are changed.
