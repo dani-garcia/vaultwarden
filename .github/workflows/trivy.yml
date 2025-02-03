@@ -1,34 +1,39 @@
-name: trivy
+name: Trivy
+permissions: {}
 
 on:
   push:
     branches:
       - main
+
     tags:
       - '*'
+
   pull_request:
-    branches: [ "main" ]
+    branches:
+      - main
+
   schedule:
     - cron: '08 11 * * *'
 
-permissions:
-  contents: read
-
 jobs:
   trivy-scan:
-    # Only run this in the master repo and not on forks
+    # Only run this in the upstream repo and not on forks
     # When all forks run this at the same time, it is causing `Too Many Requests` issues
     if: ${{ github.repository == 'dani-garcia/vaultwarden' }}
-    name: Check
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    name: Trivy Scan
     permissions:
       contents: read
-      security-events: write
       actions: read
+      security-events: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
     steps:
       - name: Checkout code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 #v4.2.2
+        with:
+          persist-credentials: false
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@18f2510ee396bbf400402947b394f2dd8c87dbb0 # v0.29.0

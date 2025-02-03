@@ -1,4 +1,5 @@
 name: Build
+permissions: {}
 
 on:
   push:
@@ -13,6 +14,7 @@ on:
       - "diesel.toml"
       - "docker/Dockerfile.j2"
       - "docker/DockerSettings.yaml"
+
   pull_request:
     paths:
       - ".github/workflows/build.yml"
@@ -28,13 +30,17 @@ on:
 
 jobs:
   build:
+    name: Build and Test ${{ matrix.channel }}
+    permissions:
+      actions: write
+      contents: read
     # We use Ubuntu 22.04 here because this matches the library versions used within the Debian docker containers
     runs-on: ubuntu-22.04
     timeout-minutes: 120
     # Make warnings errors, this is to prevent warnings slipping through.
     # This is done globally to prevent rebuilds when the RUSTFLAGS env variable changes.
     env:
-      RUSTFLAGS: "-D warnings"
+      RUSTFLAGS: "-Dwarnings"
     strategy:
       fail-fast: false
       matrix:
@@ -42,20 +48,19 @@ jobs:
           - "rust-toolchain" # The version defined in rust-toolchain
           - "msrv" # The supported MSRV
 
-    name: Build and Test ${{ matrix.channel }}
-
     steps:
-      # Checkout the repo
-      - name: "Checkout"
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 #v4.2.2
-      # End Checkout the repo
-
-
       # Install dependencies
       - name: "Install dependencies Ubuntu"
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends openssl build-essential libmariadb-dev-compat libpq-dev libssl-dev pkg-config
       # End Install dependencies
 
+      # Checkout the repo
+      - name: "Checkout"
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 #v4.2.2
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      # End Checkout the repo
 
       # Determine rust-toolchain version
       - name: Init Variables
@@ -75,7 +80,7 @@ jobs:
 
       # Only install the clippy and rustfmt components on the default rust-toolchain
       - name: "Install rust-toolchain version"
-        uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203 # master @ Dec 14, 2024, 5:49 AM GMT+1
+        uses: dtolnay/rust-toolchain@c5a29ddb4d9d194e7c84ec8c3fba61b1c31fee8c # master @ Jan 30, 2025, 8:16 PM GMT+1
         if: ${{ matrix.channel == 'rust-toolchain' }}
         with:
           toolchain: "${{steps.toolchain.outputs.RUST_TOOLCHAIN}}"
@@ -85,7 +90,7 @@ jobs:
 
       # Install the any other channel to be used for which we do not execute clippy and rustfmt
       - name: "Install MSRV version"
-        uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203 # master @ Dec 14, 2024, 5:49 AM GMT+1
+        uses: dtolnay/rust-toolchain@c5a29ddb4d9d194e7c84ec8c3fba61b1c31fee8c # master @ Jan 30, 2025, 8:16 PM GMT+1
         if: ${{ matrix.channel != 'rust-toolchain' }}
         with:
           toolchain: "${{steps.toolchain.outputs.RUST_TOOLCHAIN}}"
@@ -93,11 +98,13 @@ jobs:
 
       # Set the current matrix toolchain version as default
       - name: "Set toolchain ${{steps.toolchain.outputs.RUST_TOOLCHAIN}} as default"
+        env:
+          RUST_TOOLCHAIN: ${{steps.toolchain.outputs.RUST_TOOLCHAIN}}
         run: |
           # Remove the rust-toolchain.toml
           rm rust-toolchain.toml
           # Set the default
-          rustup default ${{steps.toolchain.outputs.RUST_TOOLCHAIN}}
+          rustup default "${RUST_TOOLCHAIN}"
 
       # Show environment
       - name: "Show environment"
@@ -161,7 +168,7 @@ jobs:
         id: clippy
         if: ${{ !cancelled() && matrix.channel == 'rust-toolchain' }}
         run: |
-          cargo clippy --features sqlite,mysql,postgresql,enable_mimalloc -- -D warnings
+          cargo clippy --features sqlite,mysql,postgresql,enable_mimalloc
       # End Run cargo clippy
 
 
@@ -178,22 +185,31 @@ jobs:
       # This is useful so all test/clippy/fmt actions are done, and they can all be addressed
       - name: "Some checks failed"
         if: ${{ failure() }}
+        env:
+          TEST_DB_M_L: ${{ steps.test_sqlite_mysql_postgresql_mimalloc_logger.outcome }}
+          TEST_DB_M: ${{ steps.test_sqlite_mysql_postgresql_mimalloc.outcome }}
+          TEST_DB: ${{ steps.test_sqlite_mysql_postgresql.outcome }}
+          TEST_SQLITE: ${{ steps.test_sqlite.outcome }}
+          TEST_MYSQL: ${{ steps.test_mysql.outcome }}
+          TEST_POSTGRESQL: ${{ steps.test_postgresql.outcome }}
+          CLIPPY: ${{ steps.clippy.outcome }}
+          FMT: ${{ steps.formatting.outcome }}
         run: |
-          echo "### :x: Checks Failed!" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "|Job|Status|" >> $GITHUB_STEP_SUMMARY
-          echo "|---|------|" >> $GITHUB_STEP_SUMMARY
-          echo "|test (sqlite,mysql,postgresql,enable_mimalloc,query_logger)|${{ steps.test_sqlite_mysql_postgresql_mimalloc_logger.outcome }}|" >> $GITHUB_STEP_SUMMARY
-          echo "|test (sqlite,mysql,postgresql,enable_mimalloc)|${{ steps.test_sqlite_mysql_postgresql_mimalloc.outcome }}|" >> $GITHUB_STEP_SUMMARY
-          echo "|test (sqlite,mysql,postgresql)|${{ steps.test_sqlite_mysql_postgresql.outcome }}|" >> $GITHUB_STEP_SUMMARY
-          echo "|test (sqlite)|${{ steps.test_sqlite.outcome }}|" >> $GITHUB_STEP_SUMMARY
-          echo "|test (mysql)|${{ steps.test_mysql.outcome }}|" >> $GITHUB_STEP_SUMMARY
-          echo "|test (postgresql)|${{ steps.test_postgresql.outcome }}|" >> $GITHUB_STEP_SUMMARY
-          echo "|clippy (sqlite,mysql,postgresql,enable_mimalloc)|${{ steps.clippy.outcome }}|" >> $GITHUB_STEP_SUMMARY
-          echo "|fmt|${{ steps.formatting.outcome }}|" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Please check the failed jobs and fix where needed." >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### :x: Checks Failed!" >> "${GITHUB_STEP_SUMMARY}"
+          echo "" >> "${GITHUB_STEP_SUMMARY}"
+          echo "|Job|Status|" >> "${GITHUB_STEP_SUMMARY}"
+          echo "|---|------|" >> "${GITHUB_STEP_SUMMARY}"
+          echo "|test (sqlite,mysql,postgresql,enable_mimalloc,query_logger)|${TEST_DB_M_L}|" >> "${GITHUB_STEP_SUMMARY}"
+          echo "|test (sqlite,mysql,postgresql,enable_mimalloc)|${TEST_DB_M}|" >> "${GITHUB_STEP_SUMMARY}"
+          echo "|test (sqlite,mysql,postgresql)|${TEST_DB}|" >> "${GITHUB_STEP_SUMMARY}"
+          echo "|test (sqlite)|${TEST_SQLITE}|" >> "${GITHUB_STEP_SUMMARY}"
+          echo "|test (mysql)|${TEST_MYSQL}|" >> "${GITHUB_STEP_SUMMARY}"
+          echo "|test (postgresql)|${TEST_POSTGRESQL}|" >> "${GITHUB_STEP_SUMMARY}"
+          echo "|clippy (sqlite,mysql,postgresql,enable_mimalloc)|${CLIPPY}|" >> "${GITHUB_STEP_SUMMARY}"
+          echo "|fmt|${FMT}|" >> "${GITHUB_STEP_SUMMARY}"
+          echo "" >> "${GITHUB_STEP_SUMMARY}"
+          echo "Please check the failed jobs and fix where needed." >> "${GITHUB_STEP_SUMMARY}"
+          echo "" >> "${GITHUB_STEP_SUMMARY}"
           exit 1
 
 
@@ -202,5 +218,5 @@ jobs:
       - name: "All checks passed"
         if: ${{ success() }}
         run: |
-          echo "### :tada: Checks Passed!" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### :tada: Checks Passed!" >> "${GITHUB_STEP_SUMMARY}"
+          echo "" >> "${GITHUB_STEP_SUMMARY}"
