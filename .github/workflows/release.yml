@@ -1,4 +1,5 @@
 name: Release
+permissions: {}
 
 on:
   push:
@@ -6,17 +7,23 @@ on:
       - main
 
     tags:
-      - '*'
+      # https://docs.github.com/en/actions/writing-workflows/workflow-syntax-for-github-actions#filter-pattern-cheat-sheet
+      - '[1-2].[0-9]+.[0-9]+'
 
 jobs:
   # https://github.com/marketplace/actions/skip-duplicate-actions
   # Some checks to determine if we need to continue with building a new docker.
   # We will skip this check if we are creating a tag, because that has the same hash as a previous run already.
   skip_check:
-    runs-on: ubuntu-24.04
+    # Only run this in the upstream repo and not on forks
     if: ${{ github.repository == 'dani-garcia/vaultwarden' }}
+    name: Cancel older jobs when running
+    permissions:
+      actions: write
+    runs-on: ubuntu-24.04
     outputs:
       should_skip: ${{ steps.skip_check.outputs.should_skip }}
+
     steps:
       - name: Skip Duplicates Actions
         id: skip_check
@@ -27,6 +34,9 @@ jobs:
         if: ${{ github.ref_type == 'branch' }}
 
   docker-build:
+    needs: skip_check
+    if: ${{ needs.skip_check.outputs.should_skip != 'true' && github.repository == 'dani-garcia/vaultwarden' }}
+    name: Build Vaultwarden containers
     permissions:
       packages: write
       contents: read
@@ -34,8 +44,6 @@ jobs:
       id-token: write
     runs-on: ubuntu-24.04
     timeout-minutes: 120
-    needs: skip_check
-    if: ${{ needs.skip_check.outputs.should_skip != 'true' && github.repository == 'dani-garcia/vaultwarden' }}
     # Start a local docker registry to extract the compiled binaries to upload as artifacts and attest them
     services:
       registry:
@@ -61,12 +69,6 @@ jobs:
         base_image: ["debian","alpine"]
 
     steps:
-      # Checkout the repo
-      - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 #v4.2.2
-        with:
-          fetch-depth: 0
-
       - name: Initialize QEMU binfmt support
         uses: docker/setup-qemu-action@53851d14592bedcffcf25ea515637cff71ef929a # v3.3.0
         with:
@@ -78,20 +80,31 @@ jobs:
         # https://github.com/moby/buildkit/issues/3969
         # Also set max parallelism to 2, the default of 4 breaks GitHub Actions and causes OOMKills
         with:
+          cache-binary: false
           buildkitd-config-inline: |
             [worker.oci]
               max-parallelism = 2
           driver-opts: |
             network=host
 
+      # Checkout the repo
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 #v4.2.2
+        # We need fetch-depth of 0 so we also get all the tag metadata
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
       # Determine Base Tags and Source Version
       - name: Determine Base Tags and Source Version
         shell: bash
+        env:
+          REF_TYPE: ${{ github.ref_type }}
         run: |
-          # Check which main tag we are going to build determined by github.ref_type
-          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+          # Check which main tag we are going to build determined by ref_type
+          if [[ "${REF_TYPE}" == "tag" ]]; then
             echo "BASE_TAGS=latest,${GITHUB_REF#refs/*/}" | tee -a "${GITHUB_ENV}"
-          elif [[ "${{ github.ref_type }}" == "branch" ]]; then
+          elif [[ "${REF_TYPE}" == "branch" ]]; then
             echo "BASE_TAGS=testing" | tee -a "${GITHUB_ENV}"
           fi
 
@@ -116,8 +129,10 @@ jobs:
       - name: Add registry for DockerHub
         if: ${{ env.HAVE_DOCKERHUB_LOGIN == 'true' }}
         shell: bash
+        env:
+          DOCKERHUB_REPO: ${{ vars.DOCKERHUB_REPO }}
         run: |
-          echo "CONTAINER_REGISTRIES=${{ vars.DOCKERHUB_REPO }}" | tee -a "${GITHUB_ENV}"
+          echo "CONTAINER_REGISTRIES=${DOCKERHUB_REPO}" | tee -a "${GITHUB_ENV}"
 
       # Login to GitHub Container Registry
       - name: Login to GitHub Container Registry
@@ -131,8 +146,10 @@ jobs:
       - name: Add registry for ghcr.io
         if: ${{ env.HAVE_GHCR_LOGIN == 'true' }}
         shell: bash
+        env:
+          GHCR_REPO: ${{ vars.GHCR_REPO }}
         run: |
-          echo "CONTAINER_REGISTRIES=${CONTAINER_REGISTRIES:+${CONTAINER_REGISTRIES},}${{ vars.GHCR_REPO }}" | tee -a "${GITHUB_ENV}"
+          echo "CONTAINER_REGISTRIES=${CONTAINER_REGISTRIES:+${CONTAINER_REGISTRIES},}${GHCR_REPO}" | tee -a "${GITHUB_ENV}"
 
       # Login to Quay.io
       - name: Login to Quay.io
@@ -146,17 +163,22 @@ jobs:
       - name: Add registry for Quay.io
         if: ${{ env.HAVE_QUAY_LOGIN == 'true' }}
         shell: bash
+        env:
+          QUAY_REPO: ${{ vars.QUAY_REPO }}
         run: |
-          echo "CONTAINER_REGISTRIES=${CONTAINER_REGISTRIES:+${CONTAINER_REGISTRIES},}${{ vars.QUAY_REPO }}" | tee -a "${GITHUB_ENV}"
+          echo "CONTAINER_REGISTRIES=${CONTAINER_REGISTRIES:+${CONTAINER_REGISTRIES},}${QUAY_REPO}" | tee -a "${GITHUB_ENV}"
 
       - name: Configure build cache from/to
         shell: bash
+        env:
+          GHCR_REPO: ${{ vars.GHCR_REPO }}
+          BASE_IMAGE: ${{ matrix.base_image }}
         run: |
           #
           # Check if there is a GitHub Container Registry Login and use it for caching
           if [[ -n "${HAVE_GHCR_LOGIN}" ]]; then
-            echo "BAKE_CACHE_FROM=type=registry,ref=${{ vars.GHCR_REPO }}-buildcache:${{ matrix.base_image }}" | tee -a "${GITHUB_ENV}"
-            echo "BAKE_CACHE_TO=type=registry,ref=${{ vars.GHCR_REPO }}-buildcache:${{ matrix.base_image }},compression=zstd,mode=max" | tee -a "${GITHUB_ENV}"
+            echo "BAKE_CACHE_FROM=type=registry,ref=${GHCR_REPO}-buildcache:${BASE_IMAGE}" | tee -a "${GITHUB_ENV}"
+            echo "BAKE_CACHE_TO=type=registry,ref=${GHCR_REPO}-buildcache:${BASE_IMAGE},compression=zstd,mode=max" | tee -a "${GITHUB_ENV}"
           else
             echo "BAKE_CACHE_FROM="
             echo "BAKE_CACHE_TO="
@@ -170,7 +192,7 @@ jobs:
 
       - name: Bake ${{ matrix.base_image }} containers
         id: bake_vw
-        uses: docker/bake-action@5ca506d06f70338a4968df87fd8bfee5cbfb84c7 # v6.0.0
+        uses: docker/bake-action@7bff531c65a5cda33e52e43950a795b91d450f63 # v6.3.0
         env:
           BASE_TAGS: "${{ env.BASE_TAGS }}"
           SOURCE_COMMIT: "${{ env.SOURCE_COMMIT }}"
@@ -189,14 +211,16 @@ jobs:
 
       - name: Extract digest SHA
         shell: bash
+        env:
+          BAKE_METADATA: ${{ steps.bake_vw.outputs.metadata }}
         run: |
-          GET_DIGEST_SHA="$(jq -r '.["${{ matrix.base_image }}-multi"]."containerimage.digest"' <<< '${{ steps.bake_vw.outputs.metadata }}')"
+          GET_DIGEST_SHA="$(jq -r '.["${{ matrix.base_image }}-multi"]."containerimage.digest"' <<< "${BAKE_METADATA}")"
           echo "DIGEST_SHA=${GET_DIGEST_SHA}" | tee -a "${GITHUB_ENV}"
 
       # Attest container images
       - name: Attest - docker.io - ${{ matrix.base_image }}
         if: ${{ env.HAVE_DOCKERHUB_LOGIN == 'true' && steps.bake_vw.outputs.metadata != ''}}
-        uses: actions/attest-build-provenance@7668571508540a607bdfd90a87a560489fe372eb # v2.1.0
+        uses: actions/attest-build-provenance@520d128f165991a6c774bcb264f323e3d70747f4 # v2.2.0
         with:
           subject-name: ${{ vars.DOCKERHUB_REPO }}
           subject-digest: ${{ env.DIGEST_SHA }}
@@ -204,7 +228,7 @@ jobs:
 
       - name: Attest - ghcr.io - ${{ matrix.base_image }}
         if: ${{ env.HAVE_GHCR_LOGIN == 'true' && steps.bake_vw.outputs.metadata != ''}}
-        uses: actions/attest-build-provenance@7668571508540a607bdfd90a87a560489fe372eb # v2.1.0
+        uses: actions/attest-build-provenance@520d128f165991a6c774bcb264f323e3d70747f4 # v2.2.0
         with:
           subject-name: ${{ vars.GHCR_REPO }}
           subject-digest: ${{ env.DIGEST_SHA }}
@@ -212,7 +236,7 @@ jobs:
 
       - name: Attest - quay.io - ${{ matrix.base_image }}
         if: ${{ env.HAVE_QUAY_LOGIN == 'true' && steps.bake_vw.outputs.metadata != ''}}
-        uses: actions/attest-build-provenance@7668571508540a607bdfd90a87a560489fe372eb # v2.1.0
+        uses: actions/attest-build-provenance@520d128f165991a6c774bcb264f323e3d70747f4 # v2.2.0
         with:
           subject-name: ${{ vars.QUAY_REPO }}
           subject-digest: ${{ env.DIGEST_SHA }}
@@ -222,11 +246,13 @@ jobs:
       # Extract the Alpine binaries from the containers
       - name: Extract binaries
         shell: bash
+        env:
+          REF_TYPE: ${{ github.ref_type }}
         run: |
-          # Check which main tag we are going to build determined by github.ref_type
-          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+          # Check which main tag we are going to build determined by ref_type
+          if [[ "${REF_TYPE}" == "tag" ]]; then
             EXTRACT_TAG="latest"
-          elif [[ "${{ github.ref_type }}" == "branch" ]]; then
+          elif [[ "${REF_TYPE}" == "branch" ]]; then
             EXTRACT_TAG="testing"
           fi
 
@@ -264,31 +290,31 @@ jobs:
 
       # Upload artifacts to Github Actions and Attest the binaries
       - name: "Upload amd64 artifact ${{ matrix.base_image }}"
-        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b #v4.5.0
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 #v4.6.0
         with:
           name: vaultwarden-${{ env.SOURCE_VERSION }}-linux-amd64-${{ matrix.base_image }}
           path: vaultwarden-amd64-${{ matrix.base_image }}
 
       - name: "Upload arm64 artifact ${{ matrix.base_image }}"
-        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b #v4.5.0
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 #v4.6.0
         with:
           name: vaultwarden-${{ env.SOURCE_VERSION }}-linux-arm64-${{ matrix.base_image }}
           path: vaultwarden-arm64-${{ matrix.base_image }}
 
       - name: "Upload armv7 artifact ${{ matrix.base_image }}"
-        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b #v4.5.0
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 #v4.6.0
         with:
           name: vaultwarden-${{ env.SOURCE_VERSION }}-linux-armv7-${{ matrix.base_image }}
           path: vaultwarden-armv7-${{ matrix.base_image }}
 
       - name: "Upload armv6 artifact ${{ matrix.base_image }}"
-        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b #v4.5.0
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 #v4.6.0
         with:
           name: vaultwarden-${{ env.SOURCE_VERSION }}-linux-armv6-${{ matrix.base_image }}
           path: vaultwarden-armv6-${{ matrix.base_image }}
 
       - name: "Attest artifacts ${{ matrix.base_image }}"
-        uses: actions/attest-build-provenance@7668571508540a607bdfd90a87a560489fe372eb # v2.1.0
+        uses: actions/attest-build-provenance@520d128f165991a6c774bcb264f323e3d70747f4 # v2.2.0
         with:
           subject-path: vaultwarden-*
       # End Upload artifacts to Github Actions
