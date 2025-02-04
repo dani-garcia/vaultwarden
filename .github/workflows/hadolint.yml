@@ -1,21 +1,17 @@
 name: Hadolint
+permissions: {}
 
-on: [
-      push,
-      pull_request
-    ]
+on: [ push, pull_request ]
 
 jobs:
   hadolint:
     name: Validate Dockerfile syntax
+    permissions:
+      contents: read
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    steps:
-      # Checkout the repo
-      - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 #v4.2.2
-      # End Checkout the repo
 
+    steps:
       # Start Docker Buildx
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@6524bf65af31da8d45b59e8c27de4bd072b392f5 # v3.8.0
@@ -37,6 +33,12 @@ jobs:
         env:
           HADOLINT_VERSION: 2.12.0
       # End Download hadolint
+      # Checkout the repo
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 #v4.2.2
+        with:
+          persist-credentials: false
+      # End Checkout the repo
 
       # Test Dockerfiles with hadolint
       - name: Run hadolint

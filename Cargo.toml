@@ -82,7 +82,7 @@ diesel = { version = "2.2.7", features = ["chrono", "r2d2", "numeric"] }
 diesel_migrations = "2.2.0"
 diesel_logger = { version = "0.4.0", optional = true }
 
-derive_more = { version = "1.0.0", features = ["from", "into", "as_ref", "deref", "display"] }
+derive_more = { version = "2.0.0", features = ["from", "into", "as_ref", "deref", "display"] }
 diesel-derive-newtype = "2.1.2"
 
 # Bundled/Static SQLite
@@ -122,7 +122,7 @@ webauthn-rs = "0.3.2"
 url = "2.5.4"
 
 # Email libraries
-lettre = { version = "0.11.11", features = ["smtp-transport", "sendmail-transport", "builder", "serde", "tokio1-native-tls", "hostname", "tracing", "tokio1"], default-features = false }
+lettre = { version = "0.11.12", features = ["smtp-transport", "sendmail-transport", "builder", "serde", "tokio1-native-tls", "hostname", "tracing", "tokio1"], default-features = false }
 percent-encoding = "2.3.1" # URL encoding library used for URL's in the emails
 email_address = "0.2.9"
 
@@ -137,7 +137,7 @@ hickory-resolver = "0.24.2"
 html5gum = "0.7.0"
 regex = { version = "1.11.1", features = ["std", "perf", "unicode-perl"], default-features = false }
 data-url = "0.3.1"
-bytes = "1.9.0"
+bytes = "1.10.0"
 
 # Cache function results (Used for version check and favicon fetching)
 cached = { version = "0.54.0", features = ["async"] }
@@ -147,7 +147,7 @@ cookie = "0.18.1"
 cookie_store = "0.21.1"
 
 # Used by U2F, JWT and PostgreSQL
-openssl = "0.10.69"
+openssl = "0.10.70"
 
 # CLI argument parsing
 pico-args = "0.5.0"
