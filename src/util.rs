@@ -56,12 +56,16 @@ impl Fairing for AppHeaders {
         res.set_raw_header("X-Content-Type-Options", "nosniff");
         res.set_raw_header("X-Robots-Tag", "noindex, nofollow");
 
-        if !res.headers().get_one("Content-Type").is_some_and(|v| v.starts_with("image/")) {
-            res.set_raw_header("Cross-Origin-Resource-Policy", "same-origin");
-        }
-
         // Obsolete in modern browsers, unsafe (XS-Leak), and largely replaced by CSP
         res.set_raw_header("X-XSS-Protection", "0");
+
+        // The `Cross-Origin-Resource-Policy` header should not be set on images or on the `icon_external` route.
+        // Otherwise some clients, like the Bitwarden Desktop, will fail to download the icons
+        if !(res.headers().get_one("Content-Type").is_some_and(|v| v.starts_with("image/"))
+            || req.route().is_some_and(|v| v.name.as_deref() == Some("icon_external")))
+        {
+            res.set_raw_header("Cross-Origin-Resource-Policy", "same-origin");
+        }
 
         // Do not send the Content-Security-Policy (CSP) Header and X-Frame-Options for the *-connector.html files.
         // This can cause issues when some MFA requests needs to open a popup or page within the clients like WebAuthn, or Duo.

@@ -1,3 +1,6 @@
+name: Cleanup
+permissions: {}
+
 on:
   workflow_dispatch:
     inputs:
@@ -9,10 +12,11 @@ on:
   schedule:
     - cron: '0 1 * * FRI'
 
-name: Cleanup
 jobs:
   releasecache-cleanup:
     name: Releasecache Cleanup
+    permissions:
+      packages: write
     runs-on: ubuntu-24.04
     continue-on-error: true
     timeout-minutes: 30

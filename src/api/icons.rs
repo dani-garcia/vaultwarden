@@ -63,6 +63,9 @@ static CLIENT: Lazy<Client> = Lazy::new(|| {
 // Build Regex only once since this takes a lot of time.
 static ICON_SIZE_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?x)(\d+)\D*(\d+)").unwrap());
 
+// The function name `icon_external` is checked in the `on_response` function in `AppHeaders`
+// It is used to prevent sending a specific header which breaks icon downloads.
+// If this function needs to be renamed, also adjust the code in `util.rs`
 #[get("/<domain>/icon.png")]
 fn icon_external(domain: &str) -> Option<Redirect> {
     if !is_valid_domain(domain) {
