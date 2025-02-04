@@ -8,8 +8,8 @@ use serde_json::Value;
 use crate::{
     api::{
         core::{log_user_event, two_factor::email},
-        register_push_device, unregister_push_device, AnonymousNotify, ApiResult, EmptyResult, JsonResult, Notify,
-        PasswordOrOtpData, UpdateType,
+        master_password_policy, register_push_device, unregister_push_device, AnonymousNotify, ApiResult, EmptyResult,
+        JsonResult, Notify, PasswordOrOtpData, UpdateType,
     },
     auth::{decode_delete, decode_invite, decode_verify_email, ClientHeaders, Headers},
     crypto,
@@ -1076,14 +1076,8 @@ async fn verify_password(data: Json<SecretVerificationRequest>, headers: Headers
 
     kdf_upgrade(&mut user, &data.master_password_hash, &mut conn).await?;
 
-    let policy = if let Some(policy_str) = CONFIG.sso_master_password_policy().filter(|_| CONFIG.sso_enabled()) {
-        serde_json::from_str(&policy_str).unwrap_or(json!({}))
-    } else {
-        json!({})
-    };
-
     Ok(Json(json!({
-      "MasterPasswordPolicy": policy,
+      "MasterPasswordPolicy": master_password_policy(&user, &conn).await,
     })))
 }
 

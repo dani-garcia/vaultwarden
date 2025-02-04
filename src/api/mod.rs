@@ -32,7 +32,11 @@ pub use crate::api::{
     web::routes as web_routes,
     web::static_files,
 };
-use crate::db::{models::User, DbConn};
+use crate::db::{
+    models::{OrgPolicy, OrgPolicyType, User},
+    DbConn,
+};
+use crate::CONFIG;
 
 // Type aliases for API methods results
 pub type ApiResult<T> = Result<T, crate::error::Error>;
@@ -67,4 +71,51 @@ impl PasswordOrOtpData {
         }
         Ok(())
     }
+}
+
+#[derive(Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MasterPasswordPolicy {
+    min_complexity: u8,
+    min_length: u32,
+    require_lower: bool,
+    require_upper: bool,
+    require_numbers: bool,
+    require_special: bool,
+    enforce_on_login: bool,
+}
+
+// Fetch all valid Master Password Policies and merge them into one with all true's and larges numbers as one policy
+async fn master_password_policy(user: &User, conn: &DbConn) -> Value {
+    let master_password_policies: Vec<MasterPasswordPolicy> =
+        OrgPolicy::find_accepted_and_confirmed_by_user_and_active_policy(
+            &user.uuid,
+            OrgPolicyType::MasterPassword,
+            conn,
+        )
+        .await
+        .into_iter()
+        .filter_map(|p| serde_json::from_str(&p.data).ok())
+        .collect();
+
+    let mut mpp_json = if !master_password_policies.is_empty() {
+        json!(master_password_policies.into_iter().reduce(|acc, policy| {
+            MasterPasswordPolicy {
+                min_complexity: acc.min_complexity.max(policy.min_complexity),
+                min_length: acc.min_length.max(policy.min_length),
+                require_lower: acc.require_lower || policy.require_lower,
+                require_upper: acc.require_upper || policy.require_upper,
+                require_numbers: acc.require_numbers || policy.require_numbers,
+                require_special: acc.require_special || policy.require_special,
+                enforce_on_login: acc.enforce_on_login || policy.enforce_on_login,
+            }
+        }))
+    } else if let Some(policy_str) = CONFIG.sso_master_password_policy().filter(|_| CONFIG.sso_enabled()) {
+        serde_json::from_str(&policy_str).unwrap_or(json!({}))
+    } else {
+        json!({})
+    };
+
+    mpp_json["object"] = json!("masterPasswordPolicy");
+    mpp_json
 }
