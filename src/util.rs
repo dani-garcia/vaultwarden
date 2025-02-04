@@ -60,7 +60,7 @@ impl Fairing for AppHeaders {
         res.set_raw_header("X-XSS-Protection", "0");
 
         // The `Cross-Origin-Resource-Policy` header should not be set on images or on the `icon_external` route.
-        // Else some clients, like the Bitwardem Desktop will fail to download the icons
+        // Otherwise some clients, like the Bitwarden Desktop, will fail to download the icons
         if !(res.headers().get_one("Content-Type").is_some_and(|v| v.starts_with("image/"))
             || req.route().is_some_and(|v| v.name.as_deref() == Some("icon_external")))
         {
