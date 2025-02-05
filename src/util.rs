@@ -1,13 +1,12 @@
 //
 // Web Headers and caching
 //
-use std::{collections::HashMap, io::Cursor, ops::Deref, path::Path};
+use std::{collections::HashMap, io::Cursor, path::Path};
 
 use num_traits::ToPrimitive;
 use rocket::{
     fairing::{Fairing, Info, Kind},
     http::{ContentType, Header, HeaderMap, Method, Status},
-    request::FromParam,
     response::{self, Responder},
     Data, Orbit, Request, Response, Rocket,
 };
@@ -51,11 +50,22 @@ impl Fairing for AppHeaders {
             }
         }
 
+        // NOTE: When modifying or adding security headers be sure to also update the diagnostic checks in `src/static/scripts/admin_diagnostics.js` in `checkSecurityHeaders`
         res.set_raw_header("Permissions-Policy", "accelerometer=(), ambient-light-sensor=(), autoplay=(), battery=(), camera=(), display-capture=(), document-domain=(), encrypted-media=(), execution-while-not-rendered=(), execution-while-out-of-viewport=(), fullscreen=(), geolocation=(), gyroscope=(), keyboard-map=(), magnetometer=(), microphone=(), midi=(), payment=(), picture-in-picture=(), screen-wake-lock=(), sync-xhr=(), usb=(), web-share=(), xr-spatial-tracking=()");
         res.set_raw_header("Referrer-Policy", "same-origin");
         res.set_raw_header("X-Content-Type-Options", "nosniff");
+        res.set_raw_header("X-Robots-Tag", "noindex, nofollow");
+
         // Obsolete in modern browsers, unsafe (XS-Leak), and largely replaced by CSP
         res.set_raw_header("X-XSS-Protection", "0");
+
+        // The `Cross-Origin-Resource-Policy` header should not be set on images or on the `icon_external` route.
+        // Otherwise some clients, like the Bitwarden Desktop, will fail to download the icons
+        if !(res.headers().get_one("Content-Type").is_some_and(|v| v.starts_with("image/"))
+            || req.route().is_some_and(|v| v.name.as_deref() == Some("icon_external")))
+        {
+            res.set_raw_header("Cross-Origin-Resource-Policy", "same-origin");
+        }
 
         // Do not send the Content-Security-Policy (CSP) Header and X-Frame-Options for the *-connector.html files.
         // This can cause issues when some MFA requests needs to open a popup or page within the clients like WebAuthn, or Duo.
@@ -73,7 +83,9 @@ impl Fairing for AppHeaders {
             // # Mail Relay: https://bitwarden.com/blog/add-privacy-and-security-using-email-aliases-with-bitwarden/
             // app.simplelogin.io, app.addy.io, api.fastmail.com, quack.duckduckgo.com
             let csp = format!(
-                "default-src 'self'; \
+                "default-src 'none'; \
+                font-src 'self'; \
+                manifest-src 'self'; \
                 base-uri 'self'; \
                 form-action 'self'; \
                 object-src 'self' blob:; \
@@ -96,10 +108,11 @@ impl Fairing for AppHeaders {
                   https://app.addy.io/api/ \
                   https://api.fastmail.com/ \
                   https://api.forwardemail.net \
-                  ;\
+                  {allowed_connect_src};\
                 ",
                 icon_service_csp = CONFIG._icon_service_csp(),
-                allowed_iframe_ancestors = CONFIG.allowed_iframe_ancestors()
+                allowed_iframe_ancestors = CONFIG.allowed_iframe_ancestors(),
+                allowed_connect_src = CONFIG.allowed_connect_src(),
             );
             res.set_raw_header("Content-Security-Policy", csp);
             res.set_raw_header("X-Frame-Options", "SAMEORIGIN");
@@ -217,42 +230,6 @@ impl<'r, R: 'r + Responder<'r, 'static> + Send> Responder<'r, 'static> for Cache
         let expiry_time = time_now + chrono::TimeDelta::try_seconds(self.ttl.try_into().unwrap()).unwrap();
         res.set_raw_header("Expires", format_datetime_http(&expiry_time));
         Ok(res)
-    }
-}
-
-pub struct SafeString(String);
-
-impl fmt::Display for SafeString {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-impl Deref for SafeString {
-    type Target = String;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl AsRef<Path> for SafeString {
-    #[inline]
-    fn as_ref(&self) -> &Path {
-        Path::new(&self.0)
-    }
-}
-
-impl<'r> FromParam<'r> for SafeString {
-    type Error = ();
-
-    #[inline(always)]
-    fn from_param(param: &'r str) -> Result<Self, Self::Error> {
-        if param.chars().all(|c| matches!(c, 'a'..='z' | 'A'..='Z' |'0'..='9' | '-')) {
-            Ok(SafeString(param.to_string()))
-        } else {
-            Err(())
-        }
     }
 }
 
@@ -493,6 +470,23 @@ pub fn format_datetime_http(dt: &DateTime<Local>) -> String {
 
 pub fn parse_date(date: &str) -> NaiveDateTime {
     DateTime::parse_from_rfc3339(date).unwrap().naive_utc()
+}
+
+/// Returns true or false if an email address is valid or not
+///
+/// Some extra checks instead of only using email_address
+/// This prevents from weird email formats still excepted but in the end invalid
+pub fn is_valid_email(email: &str) -> bool {
+    let Ok(email) = email_address::EmailAddress::from_str(email) else {
+        return false;
+    };
+    let Ok(email_url) = url::Url::parse(&format!("https://{}", email.domain())) else {
+        return false;
+    };
+    if email_url.path().ne("/") || email_url.domain().is_none() || email_url.query().is_some() {
+        return false;
+    }
+    true
 }
 
 //

@@ -1,5 +1,9 @@
-use crate::crypto::ct_eq;
+use super::{DeviceId, OrganizationId, UserId};
+use crate::{crypto::ct_eq, util::format_date};
 use chrono::{NaiveDateTime, Utc};
+use derive_more::{AsRef, Deref, Display, From};
+use macros::UuidFromParam;
+use serde_json::Value;
 
 db_object! {
     #[derive(Debug, Identifiable, Queryable, Insertable, AsChangeset, Deserialize, Serialize)]
@@ -7,15 +11,15 @@ db_object! {
     #[diesel(treat_none_as_null = true)]
     #[diesel(primary_key(uuid))]
     pub struct AuthRequest {
-        pub uuid: String,
-        pub user_uuid: String,
-        pub organization_uuid: Option<String>,
+        pub uuid: AuthRequestId,
+        pub user_uuid: UserId,
+        pub organization_uuid: Option<OrganizationId>,
 
-        pub request_device_identifier: String,
+        pub request_device_identifier: DeviceId,
         pub device_type: i32,  // https://github.com/bitwarden/server/blob/master/src/Core/Enums/DeviceType.cs
 
         pub request_ip: String,
-        pub response_device_id: Option<String>,
+        pub response_device_id: Option<DeviceId>,
 
         pub access_code: String,
         pub public_key: String,
@@ -33,8 +37,8 @@ db_object! {
 
 impl AuthRequest {
     pub fn new(
-        user_uuid: String,
-        request_device_identifier: String,
+        user_uuid: UserId,
+        request_device_identifier: DeviceId,
         device_type: i32,
         request_ip: String,
         access_code: String,
@@ -43,7 +47,7 @@ impl AuthRequest {
         let now = Utc::now().naive_utc();
 
         Self {
-            uuid: crate::util::get_uuid(),
+            uuid: AuthRequestId(crate::util::get_uuid()),
             user_uuid,
             organization_uuid: None,
 
@@ -60,6 +64,13 @@ impl AuthRequest {
             response_date: None,
             authentication_date: None,
         }
+    }
+
+    pub fn to_json_for_pending_device(&self) -> Value {
+        json!({
+            "id": self.uuid,
+            "creationDate": format_date(&self.creation_date),
+        })
     }
 }
 
@@ -101,7 +112,7 @@ impl AuthRequest {
         }
     }
 
-    pub async fn find_by_uuid(uuid: &str, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_uuid(uuid: &AuthRequestId, conn: &mut DbConn) -> Option<Self> {
         db_run! {conn: {
             auth_requests::table
                 .filter(auth_requests::uuid.eq(uuid))
@@ -111,11 +122,37 @@ impl AuthRequest {
         }}
     }
 
-    pub async fn find_by_user(user_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_uuid_and_user(uuid: &AuthRequestId, user_uuid: &UserId, conn: &mut DbConn) -> Option<Self> {
+        db_run! {conn: {
+            auth_requests::table
+                .filter(auth_requests::uuid.eq(uuid))
+                .filter(auth_requests::user_uuid.eq(user_uuid))
+                .first::<AuthRequestDb>(conn)
+                .ok()
+                .from_db()
+        }}
+    }
+
+    pub async fn find_by_user(user_uuid: &UserId, conn: &mut DbConn) -> Vec<Self> {
         db_run! {conn: {
             auth_requests::table
                 .filter(auth_requests::user_uuid.eq(user_uuid))
                 .load::<AuthRequestDb>(conn).expect("Error loading auth_requests").from_db()
+        }}
+    }
+
+    pub async fn find_by_user_and_requested_device(
+        user_uuid: &UserId,
+        device_uuid: &DeviceId,
+        conn: &mut DbConn,
+    ) -> Option<Self> {
+        db_run! {conn: {
+            auth_requests::table
+                .filter(auth_requests::user_uuid.eq(user_uuid))
+                .filter(auth_requests::request_device_identifier.eq(device_uuid))
+                .filter(auth_requests::approved.is_null())
+                .order_by(auth_requests::creation_date.desc())
+                .first::<AuthRequestDb>(conn).ok().from_db()
         }}
     }
 
@@ -146,3 +183,21 @@ impl AuthRequest {
         }
     }
 }
+
+#[derive(
+    Clone,
+    Debug,
+    AsRef,
+    Deref,
+    DieselNewType,
+    Display,
+    From,
+    FromForm,
+    Hash,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    UuidFromParam,
+)]
+pub struct AuthRequestId(String);

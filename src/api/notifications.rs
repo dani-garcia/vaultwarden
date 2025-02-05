@@ -10,7 +10,7 @@ use rocket_ws::{Message, WebSocket};
 use crate::{
     auth::{ClientIp, WsAccessTokenHeader},
     db::{
-        models::{Cipher, Folder, Send as DbSend, User},
+        models::{AuthRequestId, Cipher, CollectionId, DeviceId, Folder, Send as DbSend, User, UserId},
         DbConn,
     },
     Error, CONFIG,
@@ -53,13 +53,13 @@ struct WsAccessToken {
 
 struct WSEntryMapGuard {
     users: Arc<WebSocketUsers>,
-    user_uuid: String,
+    user_uuid: UserId,
     entry_uuid: uuid::Uuid,
     addr: IpAddr,
 }
 
 impl WSEntryMapGuard {
-    fn new(users: Arc<WebSocketUsers>, user_uuid: String, entry_uuid: uuid::Uuid, addr: IpAddr) -> Self {
+    fn new(users: Arc<WebSocketUsers>, user_uuid: UserId, entry_uuid: uuid::Uuid, addr: IpAddr) -> Self {
         Self {
             users,
             user_uuid,
@@ -72,7 +72,7 @@ impl WSEntryMapGuard {
 impl Drop for WSEntryMapGuard {
     fn drop(&mut self) {
         info!("Closing WS connection from {}", self.addr);
-        if let Some(mut entry) = self.users.map.get_mut(&self.user_uuid) {
+        if let Some(mut entry) = self.users.map.get_mut(self.user_uuid.as_ref()) {
             entry.retain(|(uuid, _)| uuid != &self.entry_uuid);
         }
     }
@@ -101,6 +101,7 @@ impl Drop for WSAnonymousEntryMapGuard {
     }
 }
 
+#[allow(tail_expr_drop_order)]
 #[get("/hub?<data..>")]
 fn websockets_hub<'r>(
     ws: WebSocket,
@@ -129,7 +130,7 @@ fn websockets_hub<'r>(
         // Add a channel to send messages to this client to the map
         let entry_uuid = uuid::Uuid::new_v4();
         let (tx, rx) = tokio::sync::mpsc::channel::<Message>(100);
-        users.map.entry(claims.sub.clone()).or_default().push((entry_uuid, tx));
+        users.map.entry(claims.sub.to_string()).or_default().push((entry_uuid, tx));
 
         // Once the guard goes out of scope, the connection will have been closed and the entry will be deleted from the map
         (rx, WSEntryMapGuard::new(users, claims.sub, entry_uuid, addr))
@@ -156,7 +157,6 @@ fn websockets_hub<'r>(
 
                                         if serde_json::from_str(msg).ok() == Some(INITIAL_MESSAGE) {
                                             yield Message::binary(INITIAL_RESPONSE);
-                                            continue;
                                         }
                                     }
 
@@ -186,6 +186,7 @@ fn websockets_hub<'r>(
     })
 }
 
+#[allow(tail_expr_drop_order)]
 #[get("/anonymous-hub?<token..>")]
 fn anonymous_websockets_hub<'r>(ws: WebSocket, token: String, ip: ClientIp) -> Result<rocket_ws::Stream!['r], Error> {
     let addr = ip.ip;
@@ -223,7 +224,6 @@ fn anonymous_websockets_hub<'r>(ws: WebSocket, token: String, ip: ClientIp) -> R
 
                                         if serde_json::from_str(msg).ok() == Some(INITIAL_MESSAGE) {
                                             yield Message::binary(INITIAL_RESPONSE);
-                                            continue;
                                         }
                                     }
 
@@ -290,7 +290,7 @@ fn serialize(val: Value) -> Vec<u8> {
 fn serialize_date(date: NaiveDateTime) -> Value {
     let seconds: i64 = date.and_utc().timestamp();
     let nanos: i64 = date.and_utc().timestamp_subsec_nanos().into();
-    let timestamp = nanos << 34 | seconds;
+    let timestamp = (nanos << 34) | seconds;
 
     let bs = timestamp.to_be_bytes();
 
@@ -328,8 +328,8 @@ pub struct WebSocketUsers {
 }
 
 impl WebSocketUsers {
-    async fn send_update(&self, user_uuid: &str, data: &[u8]) {
-        if let Some(user) = self.map.get(user_uuid).map(|v| v.clone()) {
+    async fn send_update(&self, user_id: &UserId, data: &[u8]) {
+        if let Some(user) = self.map.get(user_id.as_ref()).map(|v| v.clone()) {
             for (_, sender) in user.iter() {
                 if let Err(e) = sender.send(Message::binary(data)).await {
                     error!("Error sending WS update {e}");
@@ -345,7 +345,7 @@ impl WebSocketUsers {
             return;
         }
         let data = create_update(
-            vec![("UserId".into(), user.uuid.clone().into()), ("Date".into(), serialize_date(user.updated_at))],
+            vec![("UserId".into(), user.uuid.to_string().into()), ("Date".into(), serialize_date(user.updated_at))],
             ut,
             None,
         );
@@ -359,15 +359,15 @@ impl WebSocketUsers {
         }
     }
 
-    pub async fn send_logout(&self, user: &User, acting_device_uuid: Option<String>) {
+    pub async fn send_logout(&self, user: &User, acting_device_id: Option<DeviceId>) {
         // Skip any processing if both WebSockets and Push are not active
         if *NOTIFICATIONS_DISABLED {
             return;
         }
         let data = create_update(
-            vec![("UserId".into(), user.uuid.clone().into()), ("Date".into(), serialize_date(user.updated_at))],
+            vec![("UserId".into(), user.uuid.to_string().into()), ("Date".into(), serialize_date(user.updated_at))],
             UpdateType::LogOut,
-            acting_device_uuid.clone(),
+            acting_device_id.clone(),
         );
 
         if CONFIG.enable_websocket() {
@@ -375,7 +375,7 @@ impl WebSocketUsers {
         }
 
         if CONFIG.push_enabled() {
-            push_logout(user, acting_device_uuid);
+            push_logout(user, acting_device_id.clone());
         }
     }
 
@@ -383,7 +383,7 @@ impl WebSocketUsers {
         &self,
         ut: UpdateType,
         folder: &Folder,
-        acting_device_uuid: &String,
+        acting_device_id: &DeviceId,
         conn: &mut DbConn,
     ) {
         // Skip any processing if both WebSockets and Push are not active
@@ -392,12 +392,12 @@ impl WebSocketUsers {
         }
         let data = create_update(
             vec![
-                ("Id".into(), folder.uuid.clone().into()),
-                ("UserId".into(), folder.user_uuid.clone().into()),
+                ("Id".into(), folder.uuid.to_string().into()),
+                ("UserId".into(), folder.user_uuid.to_string().into()),
                 ("RevisionDate".into(), serialize_date(folder.updated_at)),
             ],
             ut,
-            Some(acting_device_uuid.into()),
+            Some(acting_device_id.clone()),
         );
 
         if CONFIG.enable_websocket() {
@@ -405,7 +405,7 @@ impl WebSocketUsers {
         }
 
         if CONFIG.push_enabled() {
-            push_folder_update(ut, folder, acting_device_uuid, conn).await;
+            push_folder_update(ut, folder, acting_device_id, conn).await;
         }
     }
 
@@ -413,48 +413,48 @@ impl WebSocketUsers {
         &self,
         ut: UpdateType,
         cipher: &Cipher,
-        user_uuids: &[String],
-        acting_device_uuid: &String,
-        collection_uuids: Option<Vec<String>>,
+        user_ids: &[UserId],
+        acting_device_id: &DeviceId,
+        collection_uuids: Option<Vec<CollectionId>>,
         conn: &mut DbConn,
     ) {
         // Skip any processing if both WebSockets and Push are not active
         if *NOTIFICATIONS_DISABLED {
             return;
         }
-        let org_uuid = convert_option(cipher.organization_uuid.clone());
+        let org_id = convert_option(cipher.organization_uuid.as_deref());
         // Depending if there are collections provided or not, we need to have different values for the following variables.
         // The user_uuid should be `null`, and the revision date should be set to now, else the clients won't sync the collection change.
-        let (user_uuid, collection_uuids, revision_date) = if let Some(collection_uuids) = collection_uuids {
+        let (user_id, collection_uuids, revision_date) = if let Some(collection_uuids) = collection_uuids {
             (
                 Value::Nil,
-                Value::Array(collection_uuids.into_iter().map(|v| v.into()).collect::<Vec<Value>>()),
+                Value::Array(collection_uuids.into_iter().map(|v| v.to_string().into()).collect::<Vec<Value>>()),
                 serialize_date(Utc::now().naive_utc()),
             )
         } else {
-            (convert_option(cipher.user_uuid.clone()), Value::Nil, serialize_date(cipher.updated_at))
+            (convert_option(cipher.user_uuid.as_deref()), Value::Nil, serialize_date(cipher.updated_at))
         };
 
         let data = create_update(
             vec![
-                ("Id".into(), cipher.uuid.clone().into()),
-                ("UserId".into(), user_uuid),
-                ("OrganizationId".into(), org_uuid),
+                ("Id".into(), cipher.uuid.to_string().into()),
+                ("UserId".into(), user_id),
+                ("OrganizationId".into(), org_id),
                 ("CollectionIds".into(), collection_uuids),
                 ("RevisionDate".into(), revision_date),
             ],
             ut,
-            Some(acting_device_uuid.into()),
+            Some(acting_device_id.clone()),
         );
 
         if CONFIG.enable_websocket() {
-            for uuid in user_uuids {
+            for uuid in user_ids {
                 self.send_update(uuid, &data).await;
             }
         }
 
-        if CONFIG.push_enabled() && user_uuids.len() == 1 {
-            push_cipher_update(ut, cipher, acting_device_uuid, conn).await;
+        if CONFIG.push_enabled() && user_ids.len() == 1 {
+            push_cipher_update(ut, cipher, acting_device_id, conn).await;
         }
     }
 
@@ -462,20 +462,20 @@ impl WebSocketUsers {
         &self,
         ut: UpdateType,
         send: &DbSend,
-        user_uuids: &[String],
-        acting_device_uuid: &String,
+        user_ids: &[UserId],
+        acting_device_id: &DeviceId,
         conn: &mut DbConn,
     ) {
         // Skip any processing if both WebSockets and Push are not active
         if *NOTIFICATIONS_DISABLED {
             return;
         }
-        let user_uuid = convert_option(send.user_uuid.clone());
+        let user_id = convert_option(send.user_uuid.as_deref());
 
         let data = create_update(
             vec![
-                ("Id".into(), send.uuid.clone().into()),
-                ("UserId".into(), user_uuid),
+                ("Id".into(), send.uuid.to_string().into()),
+                ("UserId".into(), user_id),
                 ("RevisionDate".into(), serialize_date(send.revision_date)),
             ],
             ut,
@@ -483,20 +483,20 @@ impl WebSocketUsers {
         );
 
         if CONFIG.enable_websocket() {
-            for uuid in user_uuids {
+            for uuid in user_ids {
                 self.send_update(uuid, &data).await;
             }
         }
-        if CONFIG.push_enabled() && user_uuids.len() == 1 {
-            push_send_update(ut, send, acting_device_uuid, conn).await;
+        if CONFIG.push_enabled() && user_ids.len() == 1 {
+            push_send_update(ut, send, acting_device_id, conn).await;
         }
     }
 
     pub async fn send_auth_request(
         &self,
-        user_uuid: &String,
+        user_id: &UserId,
         auth_request_uuid: &String,
-        acting_device_uuid: &String,
+        acting_device_id: &DeviceId,
         conn: &mut DbConn,
     ) {
         // Skip any processing if both WebSockets and Push are not active
@@ -504,24 +504,24 @@ impl WebSocketUsers {
             return;
         }
         let data = create_update(
-            vec![("Id".into(), auth_request_uuid.clone().into()), ("UserId".into(), user_uuid.clone().into())],
+            vec![("Id".into(), auth_request_uuid.clone().into()), ("UserId".into(), user_id.to_string().into())],
             UpdateType::AuthRequest,
-            Some(acting_device_uuid.to_string()),
+            Some(acting_device_id.clone()),
         );
         if CONFIG.enable_websocket() {
-            self.send_update(user_uuid, &data).await;
+            self.send_update(user_id, &data).await;
         }
 
         if CONFIG.push_enabled() {
-            push_auth_request(user_uuid.to_string(), auth_request_uuid.to_string(), conn).await;
+            push_auth_request(user_id.clone(), auth_request_uuid.to_string(), conn).await;
         }
     }
 
     pub async fn send_auth_response(
         &self,
-        user_uuid: &String,
-        auth_response_uuid: &str,
-        approving_device_uuid: String,
+        user_id: &UserId,
+        auth_request_id: &AuthRequestId,
+        approving_device_id: &DeviceId,
         conn: &mut DbConn,
     ) {
         // Skip any processing if both WebSockets and Push are not active
@@ -529,17 +529,16 @@ impl WebSocketUsers {
             return;
         }
         let data = create_update(
-            vec![("Id".into(), auth_response_uuid.to_owned().into()), ("UserId".into(), user_uuid.clone().into())],
+            vec![("Id".into(), auth_request_id.to_string().into()), ("UserId".into(), user_id.to_string().into())],
             UpdateType::AuthRequestResponse,
-            approving_device_uuid.clone().into(),
+            Some(approving_device_id.clone()),
         );
         if CONFIG.enable_websocket() {
-            self.send_update(auth_response_uuid, &data).await;
+            self.send_update(user_id, &data).await;
         }
 
         if CONFIG.push_enabled() {
-            push_auth_response(user_uuid.to_string(), auth_response_uuid.to_string(), approving_device_uuid, conn)
-                .await;
+            push_auth_response(user_id, auth_request_id, approving_device_id, conn).await;
         }
     }
 }
@@ -558,16 +557,16 @@ impl AnonymousWebSocketSubscriptions {
         }
     }
 
-    pub async fn send_auth_response(&self, user_uuid: &String, auth_response_uuid: &str) {
+    pub async fn send_auth_response(&self, user_id: &UserId, auth_request_id: &AuthRequestId) {
         if !CONFIG.enable_websocket() {
             return;
         }
         let data = create_anonymous_update(
-            vec![("Id".into(), auth_response_uuid.to_owned().into()), ("UserId".into(), user_uuid.clone().into())],
+            vec![("Id".into(), auth_request_id.to_string().into()), ("UserId".into(), user_id.to_string().into())],
             UpdateType::AuthRequestResponse,
-            user_uuid.to_string(),
+            user_id.clone(),
         );
-        self.send_update(auth_response_uuid, &data).await;
+        self.send_update(auth_request_id, &data).await;
     }
 }
 
@@ -579,14 +578,14 @@ impl AnonymousWebSocketSubscriptions {
     "ReceiveMessage", // Target
     [ // Arguments
         {
-            "ContextId": acting_device_uuid || Nil,
+            "ContextId": acting_device_id || Nil,
             "Type": ut as i32,
             "Payload": {}
         }
     ]
 ]
 */
-fn create_update(payload: Vec<(Value, Value)>, ut: UpdateType, acting_device_uuid: Option<String>) -> Vec<u8> {
+fn create_update(payload: Vec<(Value, Value)>, ut: UpdateType, acting_device_id: Option<DeviceId>) -> Vec<u8> {
     use rmpv::Value as V;
 
     let value = V::Array(vec![
@@ -595,7 +594,7 @@ fn create_update(payload: Vec<(Value, Value)>, ut: UpdateType, acting_device_uui
         V::Nil,
         "ReceiveMessage".into(),
         V::Array(vec![V::Map(vec![
-            ("ContextId".into(), acting_device_uuid.map(|v| v.into()).unwrap_or_else(|| V::Nil)),
+            ("ContextId".into(), acting_device_id.map(|v| v.to_string().into()).unwrap_or_else(|| V::Nil)),
             ("Type".into(), (ut as i32).into()),
             ("Payload".into(), payload.into()),
         ])]),
@@ -604,7 +603,7 @@ fn create_update(payload: Vec<(Value, Value)>, ut: UpdateType, acting_device_uui
     serialize(value)
 }
 
-fn create_anonymous_update(payload: Vec<(Value, Value)>, ut: UpdateType, user_id: String) -> Vec<u8> {
+fn create_anonymous_update(payload: Vec<(Value, Value)>, ut: UpdateType, user_id: UserId) -> Vec<u8> {
     use rmpv::Value as V;
 
     let value = V::Array(vec![
@@ -615,7 +614,7 @@ fn create_anonymous_update(payload: Vec<(Value, Value)>, ut: UpdateType, user_id
         V::Array(vec![V::Map(vec![
             ("Type".into(), (ut as i32).into()),
             ("Payload".into(), payload.into()),
-            ("UserId".into(), user_id.into()),
+            ("UserId".into(), user_id.to_string().into()),
         ])]),
     ]);
 

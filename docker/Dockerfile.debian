@@ -19,24 +19,24 @@
 # - From https://hub.docker.com/r/vaultwarden/web-vault/tags,
 #   click the tag name to view the digest of the image it currently points to.
 # - From the command line:
-#     $ docker pull docker.io/vaultwarden/web-vault:v2024.6.2c
-#     $ docker image inspect --format "{{.RepoDigests}}" docker.io/vaultwarden/web-vault:v2024.6.2c
-#     [docker.io/vaultwarden/web-vault@sha256:409ab328ca931439cb916b388a4bb784bd44220717aaf74cf71620c23e34fc2b]
+#     $ docker pull docker.io/vaultwarden/web-vault:v2025.1.1
+#     $ docker image inspect --format "{{.RepoDigests}}" docker.io/vaultwarden/web-vault:v2025.1.1
+#     [docker.io/vaultwarden/web-vault@sha256:cb6b2095a4afc1d9d243a33f6d09211f40e3d82c7ae829fd025df5ff175a4918]
 #
 # - Conversely, to get the tag name from the digest:
-#     $ docker image inspect --format "{{.RepoTags}}" docker.io/vaultwarden/web-vault@sha256:409ab328ca931439cb916b388a4bb784bd44220717aaf74cf71620c23e34fc2b
-#     [docker.io/vaultwarden/web-vault:v2024.6.2c]
+#     $ docker image inspect --format "{{.RepoTags}}" docker.io/vaultwarden/web-vault@sha256:cb6b2095a4afc1d9d243a33f6d09211f40e3d82c7ae829fd025df5ff175a4918
+#     [docker.io/vaultwarden/web-vault:v2025.1.1]
 #
-FROM --platform=linux/amd64 docker.io/vaultwarden/web-vault@sha256:409ab328ca931439cb916b388a4bb784bd44220717aaf74cf71620c23e34fc2b AS vault
+FROM --platform=linux/amd64 docker.io/vaultwarden/web-vault@sha256:cb6b2095a4afc1d9d243a33f6d09211f40e3d82c7ae829fd025df5ff175a4918 AS vault
 
 ########################## Cross Compile Docker Helper Scripts ##########################
 ## We use the linux/amd64 no matter which Build Platform, since these are all bash scripts
 ## And these bash scripts do not have any significant difference if at all
-FROM --platform=linux/amd64 docker.io/tonistiigi/xx@sha256:1978e7a58a1777cb0ef0dde76bad60b7914b21da57cfa88047875e4f364297aa AS xx
+FROM --platform=linux/amd64 docker.io/tonistiigi/xx@sha256:9c207bead753dda9430bdd15425c6518fc7a03d866103c516a2c6889188f5894 AS xx
 
 ########################## BUILD IMAGE ##########################
 # hadolint ignore=DL3006
-FROM --platform=$BUILDPLATFORM docker.io/library/rust:1.82.0-slim-bookworm AS build
+FROM --platform=$BUILDPLATFORM docker.io/library/rust:1.84.1-slim-bookworm AS build
 COPY --from=xx / /
 ARG TARGETARCH
 ARG TARGETVARIANT
@@ -116,6 +116,7 @@ RUN source /env-cargo && \
 
 # Copies over *only* your manifests and build files
 COPY ./Cargo.* ./rust-toolchain.toml ./build.rs ./
+COPY ./macros ./macros
 
 ARG CARGO_PROFILE=release
 

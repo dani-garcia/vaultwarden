@@ -6,7 +6,7 @@ use std::num::NonZeroU32;
 use data_encoding::{Encoding, HEXLOWER};
 use ring::{digest, hmac, pbkdf2};
 
-static DIGEST_ALG: pbkdf2::Algorithm = pbkdf2::PBKDF2_HMAC_SHA256;
+const DIGEST_ALG: pbkdf2::Algorithm = pbkdf2::PBKDF2_HMAC_SHA256;
 const OUTPUT_LEN: usize = digest::SHA256_OUTPUT_LEN;
 
 pub fn hash_password(secret: &[u8], salt: &[u8], iterations: u32) -> Vec<u8> {
@@ -56,11 +56,11 @@ pub fn encode_random_bytes<const N: usize>(e: Encoding) -> String {
 pub fn get_random_string(alphabet: &[u8], num_chars: usize) -> String {
     // Ref: https://rust-lang-nursery.github.io/rust-cookbook/algorithms/randomness.html
     use rand::Rng;
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
 
     (0..num_chars)
         .map(|_| {
-            let i = rng.gen_range(0..alphabet.len());
+            let i = rng.random_range(0..alphabet.len());
             alphabet[i] as char
         })
         .collect()
@@ -84,14 +84,15 @@ pub fn generate_id<const N: usize>() -> String {
     encode_random_bytes::<N>(HEXLOWER)
 }
 
-pub fn generate_send_id() -> String {
-    // Send IDs are globally scoped, so make them longer to avoid collisions.
+pub fn generate_send_file_id() -> String {
+    // Send File IDs are globally scoped, so make them longer to avoid collisions.
     generate_id::<32>() // 256 bits
 }
 
-pub fn generate_attachment_id() -> String {
+use crate::db::models::AttachmentId;
+pub fn generate_attachment_id() -> AttachmentId {
     // Attachment IDs are scoped to a cipher, so they can be smaller.
-    generate_id::<10>() // 80 bits
+    AttachmentId(generate_id::<10>()) // 80 bits
 }
 
 /// Generates a numeric token for email-based verifications.

@@ -50,7 +50,7 @@ pub fn routes() -> Vec<Route> {
         disable_user,
         enable_user,
         remove_2fa,
-        update_user_org_type,
+        update_membership_type,
         update_revision_users,
         post_config,
         delete_config,
@@ -62,6 +62,7 @@ pub fn routes() -> Vec<Route> {
         diagnostics,
         get_diagnostics_config,
         resend_user_invite,
+        get_diagnostics_http,
     ]
 }
 
@@ -98,6 +99,7 @@ const DT_FMT: &str = "%Y-%m-%d %H:%M:%S %Z";
 const BASE_TEMPLATE: &str = "admin/base";
 
 const ACTING_ADMIN_USER: &str = "vaultwarden-admin-00000-000000000000";
+pub const FAKE_ADMIN_UUID: &str = "00000000-0000-0000-0000-000000000000";
 
 fn admin_path() -> String {
     format!("{}{}", CONFIG.domain_path(), ADMIN_PATH)
@@ -169,7 +171,7 @@ struct LoginForm {
     redirect: Option<String>,
 }
 
-#[post("/", data = "<data>")]
+#[post("/", format = "application/x-www-form-urlencoded", data = "<data>")]
 fn post_admin_login(
     data: Form<LoginForm>,
     cookies: &CookieJar<'_>,
@@ -279,15 +281,15 @@ struct InviteData {
     email: String,
 }
 
-async fn get_user_or_404(uuid: &str, conn: &mut DbConn) -> ApiResult<User> {
-    if let Some(user) = User::find_by_uuid(uuid, conn).await {
+async fn get_user_or_404(user_id: &UserId, conn: &mut DbConn) -> ApiResult<User> {
+    if let Some(user) = User::find_by_uuid(user_id, conn).await {
         Ok(user)
     } else {
         err_code!("User doesn't exist", Status::NotFound.code);
     }
 }
 
-#[post("/invite", data = "<data>")]
+#[post("/invite", format = "application/json", data = "<data>")]
 async fn invite_user(data: Json<InviteData>, _token: AdminToken, mut conn: DbConn) -> JsonResult {
     let data: InviteData = data.into_inner();
     if User::find_by_mail(&data.email, &mut conn).await.is_some() {
@@ -298,7 +300,9 @@ async fn invite_user(data: Json<InviteData>, _token: AdminToken, mut conn: DbCon
 
     async fn _generate_invite(user: &User, conn: &mut DbConn) -> EmptyResult {
         if CONFIG.mail_enabled() {
-            mail::send_invite(user, None, None, &CONFIG.invitation_org_name(), None).await
+            let org_id: OrganizationId = FAKE_ADMIN_UUID.to_string().into();
+            let member_id: MembershipId = FAKE_ADMIN_UUID.to_string().into();
+            mail::send_invite(user, org_id, member_id, &CONFIG.invitation_org_name(), None).await
         } else {
             let invitation = Invitation::new(&user.email);
             invitation.save(conn).await
@@ -311,7 +315,7 @@ async fn invite_user(data: Json<InviteData>, _token: AdminToken, mut conn: DbCon
     Ok(Json(user.to_json(&mut conn).await))
 }
 
-#[post("/test/smtp", data = "<data>")]
+#[post("/test/smtp", format = "application/json", data = "<data>")]
 async fn test_smtp(data: Json<InviteData>, _token: AdminToken) -> EmptyResult {
     let data: InviteData = data.into_inner();
 
@@ -380,29 +384,29 @@ async fn get_user_by_mail_json(mail: &str, _token: AdminToken, mut conn: DbConn)
     }
 }
 
-#[get("/users/<uuid>")]
-async fn get_user_json(uuid: &str, _token: AdminToken, mut conn: DbConn) -> JsonResult {
-    let u = get_user_or_404(uuid, &mut conn).await?;
+#[get("/users/<user_id>")]
+async fn get_user_json(user_id: UserId, _token: AdminToken, mut conn: DbConn) -> JsonResult {
+    let u = get_user_or_404(&user_id, &mut conn).await?;
     let mut usr = u.to_json(&mut conn).await;
     usr["userEnabled"] = json!(u.enabled);
     usr["createdAt"] = json!(format_naive_datetime_local(&u.created_at, DT_FMT));
     Ok(Json(usr))
 }
 
-#[post("/users/<uuid>/delete")]
-async fn delete_user(uuid: &str, token: AdminToken, mut conn: DbConn) -> EmptyResult {
-    let user = get_user_or_404(uuid, &mut conn).await?;
+#[post("/users/<user_id>/delete", format = "application/json")]
+async fn delete_user(user_id: UserId, token: AdminToken, mut conn: DbConn) -> EmptyResult {
+    let user = get_user_or_404(&user_id, &mut conn).await?;
 
-    // Get the user_org records before deleting the actual user
-    let user_orgs = UserOrganization::find_any_state_by_user(uuid, &mut conn).await;
+    // Get the membership records before deleting the actual user
+    let memberships = Membership::find_any_state_by_user(&user_id, &mut conn).await;
     let res = user.delete(&mut conn).await;
 
-    for user_org in user_orgs {
+    for membership in memberships {
         log_event(
-            EventType::OrganizationUserRemoved as i32,
-            &user_org.uuid,
-            &user_org.org_uuid,
-            ACTING_ADMIN_USER,
+            EventType::OrganizationUserDeleted as i32,
+            &membership.uuid,
+            &membership.org_uuid,
+            &ACTING_ADMIN_USER.into(),
             14, // Use UnknownBrowser type
             &token.ip.ip,
             &mut conn,
@@ -413,9 +417,9 @@ async fn delete_user(uuid: &str, token: AdminToken, mut conn: DbConn) -> EmptyRe
     res
 }
 
-#[post("/users/<uuid>/deauth")]
-async fn deauth_user(uuid: &str, _token: AdminToken, mut conn: DbConn, nt: Notify<'_>) -> EmptyResult {
-    let mut user = get_user_or_404(uuid, &mut conn).await?;
+#[post("/users/<user_id>/deauth", format = "application/json")]
+async fn deauth_user(user_id: UserId, _token: AdminToken, mut conn: DbConn, nt: Notify<'_>) -> EmptyResult {
+    let mut user = get_user_or_404(&user_id, &mut conn).await?;
 
     nt.send_logout(&user, None).await;
 
@@ -434,9 +438,9 @@ async fn deauth_user(uuid: &str, _token: AdminToken, mut conn: DbConn, nt: Notif
     user.save(&mut conn).await
 }
 
-#[post("/users/<uuid>/disable")]
-async fn disable_user(uuid: &str, _token: AdminToken, mut conn: DbConn, nt: Notify<'_>) -> EmptyResult {
-    let mut user = get_user_or_404(uuid, &mut conn).await?;
+#[post("/users/<user_id>/disable", format = "application/json")]
+async fn disable_user(user_id: UserId, _token: AdminToken, mut conn: DbConn, nt: Notify<'_>) -> EmptyResult {
+    let mut user = get_user_or_404(&user_id, &mut conn).await?;
     Device::delete_all_by_user(&user.uuid, &mut conn).await?;
     user.reset_security_stamp();
     user.enabled = false;
@@ -448,33 +452,35 @@ async fn disable_user(uuid: &str, _token: AdminToken, mut conn: DbConn, nt: Noti
     save_result
 }
 
-#[post("/users/<uuid>/enable")]
-async fn enable_user(uuid: &str, _token: AdminToken, mut conn: DbConn) -> EmptyResult {
-    let mut user = get_user_or_404(uuid, &mut conn).await?;
+#[post("/users/<user_id>/enable", format = "application/json")]
+async fn enable_user(user_id: UserId, _token: AdminToken, mut conn: DbConn) -> EmptyResult {
+    let mut user = get_user_or_404(&user_id, &mut conn).await?;
     user.enabled = true;
 
     user.save(&mut conn).await
 }
 
-#[post("/users/<uuid>/remove-2fa")]
-async fn remove_2fa(uuid: &str, token: AdminToken, mut conn: DbConn) -> EmptyResult {
-    let mut user = get_user_or_404(uuid, &mut conn).await?;
+#[post("/users/<user_id>/remove-2fa", format = "application/json")]
+async fn remove_2fa(user_id: UserId, token: AdminToken, mut conn: DbConn) -> EmptyResult {
+    let mut user = get_user_or_404(&user_id, &mut conn).await?;
     TwoFactor::delete_all_by_user(&user.uuid, &mut conn).await?;
-    two_factor::enforce_2fa_policy(&user, ACTING_ADMIN_USER, 14, &token.ip.ip, &mut conn).await?;
+    two_factor::enforce_2fa_policy(&user, &ACTING_ADMIN_USER.into(), 14, &token.ip.ip, &mut conn).await?;
     user.totp_recover = None;
     user.save(&mut conn).await
 }
 
-#[post("/users/<uuid>/invite/resend")]
-async fn resend_user_invite(uuid: &str, _token: AdminToken, mut conn: DbConn) -> EmptyResult {
-    if let Some(user) = User::find_by_uuid(uuid, &mut conn).await {
+#[post("/users/<user_id>/invite/resend", format = "application/json")]
+async fn resend_user_invite(user_id: UserId, _token: AdminToken, mut conn: DbConn) -> EmptyResult {
+    if let Some(user) = User::find_by_uuid(&user_id, &mut conn).await {
         //TODO: replace this with user.status check when it will be available (PR#3397)
         if !user.password_hash.is_empty() {
             err_code!("User already accepted invitation", Status::BadRequest.code);
         }
 
         if CONFIG.mail_enabled() {
-            mail::send_invite(&user, None, None, &CONFIG.invitation_org_name(), None).await
+            let org_id: OrganizationId = FAKE_ADMIN_UUID.to_string().into();
+            let member_id: MembershipId = FAKE_ADMIN_UUID.to_string().into();
+            mail::send_invite(&user, org_id, member_id, &CONFIG.invitation_org_name(), None).await
         } else {
             Ok(())
         }
@@ -484,42 +490,41 @@ async fn resend_user_invite(uuid: &str, _token: AdminToken, mut conn: DbConn) ->
 }
 
 #[derive(Debug, Deserialize)]
-struct UserOrgTypeData {
+struct MembershipTypeData {
     user_type: NumberOrString,
-    user_uuid: String,
-    org_uuid: String,
+    user_uuid: UserId,
+    org_uuid: OrganizationId,
 }
 
-#[post("/users/org_type", data = "<data>")]
-async fn update_user_org_type(data: Json<UserOrgTypeData>, token: AdminToken, mut conn: DbConn) -> EmptyResult {
-    let data: UserOrgTypeData = data.into_inner();
+#[post("/users/org_type", format = "application/json", data = "<data>")]
+async fn update_membership_type(data: Json<MembershipTypeData>, token: AdminToken, mut conn: DbConn) -> EmptyResult {
+    let data: MembershipTypeData = data.into_inner();
 
-    let mut user_to_edit =
-        match UserOrganization::find_by_user_and_org(&data.user_uuid, &data.org_uuid, &mut conn).await {
-            Some(user) => user,
-            None => err!("The specified user isn't member of the organization"),
-        };
+    let Some(mut member_to_edit) = Membership::find_by_user_and_org(&data.user_uuid, &data.org_uuid, &mut conn).await
+    else {
+        err!("The specified user isn't member of the organization")
+    };
 
-    let new_type = match UserOrgType::from_str(&data.user_type.into_string()) {
+    let new_type = match MembershipType::from_str(&data.user_type.into_string()) {
         Some(new_type) => new_type as i32,
         None => err!("Invalid type"),
     };
 
-    if user_to_edit.atype == UserOrgType::Owner && new_type != UserOrgType::Owner {
+    if member_to_edit.atype == MembershipType::Owner && new_type != MembershipType::Owner {
         // Removing owner permission, check that there is at least one other confirmed owner
-        if UserOrganization::count_confirmed_by_org_and_type(&data.org_uuid, UserOrgType::Owner, &mut conn).await <= 1 {
+        if Membership::count_confirmed_by_org_and_type(&data.org_uuid, MembershipType::Owner, &mut conn).await <= 1 {
             err!("Can't change the type of the last owner")
         }
     }
 
-    // This check is also done at api::organizations::{accept_invite(), _confirm_invite, _activate_user(), edit_user()}, update_user_org_type
+    // This check is also done at api::organizations::{accept_invite, _confirm_invite, _activate_member, edit_member}, update_membership_type
     // It returns different error messages per function.
-    if new_type < UserOrgType::Admin {
-        match OrgPolicy::is_user_allowed(&user_to_edit.user_uuid, &user_to_edit.org_uuid, true, &mut conn).await {
+    if new_type < MembershipType::Admin {
+        match OrgPolicy::is_user_allowed(&member_to_edit.user_uuid, &member_to_edit.org_uuid, true, &mut conn).await {
             Ok(_) => {}
             Err(OrgPolicyErr::TwoFactorMissing) => {
                 if CONFIG.email_2fa_auto_fallback() {
-                    two_factor::email::find_and_activate_email_2fa(&user_to_edit.user_uuid, &mut conn).await?;
+                    two_factor::email::find_and_activate_email_2fa(&member_to_edit.user_uuid, &mut conn).await?;
                 } else {
                     err!("You cannot modify this user to this type because they have not setup 2FA");
                 }
@@ -532,20 +537,20 @@ async fn update_user_org_type(data: Json<UserOrgTypeData>, token: AdminToken, mu
 
     log_event(
         EventType::OrganizationUserUpdated as i32,
-        &user_to_edit.uuid,
+        &member_to_edit.uuid,
         &data.org_uuid,
-        ACTING_ADMIN_USER,
+        &ACTING_ADMIN_USER.into(),
         14, // Use UnknownBrowser type
         &token.ip.ip,
         &mut conn,
     )
     .await;
 
-    user_to_edit.atype = new_type;
-    user_to_edit.save(&mut conn).await
+    member_to_edit.atype = new_type;
+    member_to_edit.save(&mut conn).await
 }
 
-#[post("/users/update_revision")]
+#[post("/users/update_revision", format = "application/json")]
 async fn update_revision_users(_token: AdminToken, mut conn: DbConn) -> EmptyResult {
     User::update_all_revisions(&mut conn).await
 }
@@ -556,7 +561,7 @@ async fn organizations_overview(_token: AdminToken, mut conn: DbConn) -> ApiResu
     let mut organizations_json = Vec::with_capacity(organizations.len());
     for o in organizations {
         let mut org = o.to_json();
-        org["user_count"] = json!(UserOrganization::count_by_org(&o.uuid, &mut conn).await);
+        org["user_count"] = json!(Membership::count_by_org(&o.uuid, &mut conn).await);
         org["cipher_count"] = json!(Cipher::count_by_org(&o.uuid, &mut conn).await);
         org["collection_count"] = json!(Collection::count_by_org(&o.uuid, &mut conn).await);
         org["group_count"] = json!(Group::count_by_org(&o.uuid, &mut conn).await);
@@ -570,9 +575,9 @@ async fn organizations_overview(_token: AdminToken, mut conn: DbConn) -> ApiResu
     Ok(Html(text))
 }
 
-#[post("/organizations/<uuid>/delete")]
-async fn delete_organization(uuid: &str, _token: AdminToken, mut conn: DbConn) -> EmptyResult {
-    let org = Organization::find_by_uuid(uuid, &mut conn).await.map_res("Organization doesn't exist")?;
+#[post("/organizations/<org_id>/delete", format = "application/json")]
+async fn delete_organization(org_id: OrganizationId, _token: AdminToken, mut conn: DbConn) -> EmptyResult {
+    let org = Organization::find_by_uuid(&org_id, &mut conn).await.map_res("Organization doesn't exist")?;
     org.delete(&mut conn).await
 }
 
@@ -601,9 +606,8 @@ async fn get_json_api<T: DeserializeOwned>(url: &str) -> Result<T, Error> {
 }
 
 async fn has_http_access() -> bool {
-    let req = match make_http_request(Method::HEAD, "https://github.com/dani-garcia/vaultwarden") {
-        Ok(r) => r,
-        Err(_) => return false,
+    let Ok(req) = make_http_request(Method::HEAD, "https://github.com/dani-garcia/vaultwarden") else {
+        return false;
     };
     match req.send().await {
         Ok(r) => r.status().is_success(),
@@ -713,6 +717,7 @@ async fn diagnostics(_token: AdminToken, ip_header: IpHeader, mut conn: DbConn) 
         "ip_header_name": ip_header_name,
         "ip_header_config": &CONFIG.ip_header(),
         "uses_proxy": uses_proxy,
+        "enable_websocket": &CONFIG.enable_websocket(),
         "db_type": *DB_TYPE,
         "db_version": get_sql_server_version(&mut conn).await,
         "admin_url": format!("{}/diagnostics", admin_url()),
@@ -728,22 +733,27 @@ async fn diagnostics(_token: AdminToken, ip_header: IpHeader, mut conn: DbConn) 
     Ok(Html(text))
 }
 
-#[get("/diagnostics/config")]
+#[get("/diagnostics/config", format = "application/json")]
 fn get_diagnostics_config(_token: AdminToken) -> Json<Value> {
     let support_json = CONFIG.get_support_json();
     Json(support_json)
 }
 
-#[post("/config", data = "<data>")]
+#[get("/diagnostics/http?<code>")]
+fn get_diagnostics_http(code: u16, _token: AdminToken) -> EmptyResult {
+    err_code!(format!("Testing error {code} response"), code);
+}
+
+#[post("/config", format = "application/json", data = "<data>")]
 fn post_config(data: Json<ConfigBuilder>, _token: AdminToken) -> EmptyResult {
     let data: ConfigBuilder = data.into_inner();
-    if let Err(e) = CONFIG.update_config(data) {
+    if let Err(e) = CONFIG.update_config(data, true) {
         err!(format!("Unable to save config: {e:?}"))
     }
     Ok(())
 }
 
-#[post("/config/delete")]
+#[post("/config/delete", format = "application/json")]
 fn delete_config(_token: AdminToken) -> EmptyResult {
     if let Err(e) = CONFIG.delete_user_config() {
         err!(format!("Unable to delete config: {e:?}"))
@@ -751,7 +761,7 @@ fn delete_config(_token: AdminToken) -> EmptyResult {
     Ok(())
 }
 
-#[post("/config/backup_db")]
+#[post("/config/backup_db", format = "application/json")]
 async fn backup_db(_token: AdminToken, mut conn: DbConn) -> ApiResult<String> {
     if *CAN_BACKUP {
         match backup_database(&mut conn).await {

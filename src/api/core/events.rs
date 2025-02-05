@@ -8,7 +8,7 @@ use crate::{
     api::{EmptyResult, JsonResult},
     auth::{AdminHeaders, Headers},
     db::{
-        models::{Cipher, Event, UserOrganization},
+        models::{Cipher, CipherId, Event, Membership, MembershipId, OrganizationId, UserId},
         DbConn, DbPool,
     },
     util::parse_date,
@@ -31,7 +31,16 @@ struct EventRange {
 
 // Upstream: https://github.com/bitwarden/server/blob/9ecf69d9cabce732cf2c57976dd9afa5728578fb/src/Api/Controllers/EventsController.cs#LL84C35-L84C41
 #[get("/organizations/<org_id>/events?<data..>")]
-async fn get_org_events(org_id: &str, data: EventRange, _headers: AdminHeaders, mut conn: DbConn) -> JsonResult {
+async fn get_org_events(
+    org_id: OrganizationId,
+    data: EventRange,
+    headers: AdminHeaders,
+    mut conn: DbConn,
+) -> JsonResult {
+    if org_id != headers.org_id {
+        err!("Organization not found", "Organization id's do not match");
+    }
+
     // Return an empty vec when we org events are disabled.
     // This prevents client errors
     let events_json: Vec<Value> = if !CONFIG.org_events_enabled() {
@@ -44,7 +53,7 @@ async fn get_org_events(org_id: &str, data: EventRange, _headers: AdminHeaders, 
             parse_date(&data.end)
         };
 
-        Event::find_by_organization_uuid(org_id, &start_date, &end_date, &mut conn)
+        Event::find_by_organization_uuid(&org_id, &start_date, &end_date, &mut conn)
             .await
             .iter()
             .map(|e| e.to_json())
@@ -59,14 +68,14 @@ async fn get_org_events(org_id: &str, data: EventRange, _headers: AdminHeaders, 
 }
 
 #[get("/ciphers/<cipher_id>/events?<data..>")]
-async fn get_cipher_events(cipher_id: &str, data: EventRange, headers: Headers, mut conn: DbConn) -> JsonResult {
+async fn get_cipher_events(cipher_id: CipherId, data: EventRange, headers: Headers, mut conn: DbConn) -> JsonResult {
     // Return an empty vec when we org events are disabled.
     // This prevents client errors
     let events_json: Vec<Value> = if !CONFIG.org_events_enabled() {
         Vec::with_capacity(0)
     } else {
         let mut events_json = Vec::with_capacity(0);
-        if UserOrganization::user_has_ge_admin_access_to_cipher(&headers.user.uuid, cipher_id, &mut conn).await {
+        if Membership::user_has_ge_admin_access_to_cipher(&headers.user.uuid, &cipher_id, &mut conn).await {
             let start_date = parse_date(&data.start);
             let end_date = if let Some(before_date) = &data.continuation_token {
                 parse_date(before_date)
@@ -74,7 +83,7 @@ async fn get_cipher_events(cipher_id: &str, data: EventRange, headers: Headers, 
                 parse_date(&data.end)
             };
 
-            events_json = Event::find_by_cipher_uuid(cipher_id, &start_date, &end_date, &mut conn)
+            events_json = Event::find_by_cipher_uuid(&cipher_id, &start_date, &end_date, &mut conn)
                 .await
                 .iter()
                 .map(|e| e.to_json())
@@ -90,14 +99,17 @@ async fn get_cipher_events(cipher_id: &str, data: EventRange, headers: Headers, 
     })))
 }
 
-#[get("/organizations/<org_id>/users/<user_org_id>/events?<data..>")]
+#[get("/organizations/<org_id>/users/<member_id>/events?<data..>")]
 async fn get_user_events(
-    org_id: &str,
-    user_org_id: &str,
+    org_id: OrganizationId,
+    member_id: MembershipId,
     data: EventRange,
-    _headers: AdminHeaders,
+    headers: AdminHeaders,
     mut conn: DbConn,
 ) -> JsonResult {
+    if org_id != headers.org_id {
+        err!("Organization not found", "Organization id's do not match");
+    }
     // Return an empty vec when we org events are disabled.
     // This prevents client errors
     let events_json: Vec<Value> = if !CONFIG.org_events_enabled() {
@@ -110,7 +122,7 @@ async fn get_user_events(
             parse_date(&data.end)
         };
 
-        Event::find_by_org_and_user_org(org_id, user_org_id, &start_date, &end_date, &mut conn)
+        Event::find_by_org_and_member(&org_id, &member_id, &start_date, &end_date, &mut conn)
             .await
             .iter()
             .map(|e| e.to_json())
@@ -152,8 +164,8 @@ struct EventCollection {
     date: String,
 
     // Optional
-    cipher_id: Option<String>,
-    organization_id: Option<String>,
+    cipher_id: Option<CipherId>,
+    organization_id: Option<OrganizationId>,
 }
 
 // Upstream:
@@ -180,11 +192,11 @@ async fn post_events_collect(data: Json<Vec<EventCollection>>, headers: Headers,
                 .await;
             }
             1600..=1699 => {
-                if let Some(org_uuid) = &event.organization_id {
+                if let Some(org_id) = &event.organization_id {
                     _log_event(
                         event.r#type,
-                        org_uuid,
-                        org_uuid,
+                        org_id,
+                        org_id,
                         &headers.user.uuid,
                         headers.device.atype,
                         Some(event_date),
@@ -197,11 +209,11 @@ async fn post_events_collect(data: Json<Vec<EventCollection>>, headers: Headers,
             _ => {
                 if let Some(cipher_uuid) = &event.cipher_id {
                     if let Some(cipher) = Cipher::find_by_uuid(cipher_uuid, &mut conn).await {
-                        if let Some(org_uuid) = cipher.organization_uuid {
+                        if let Some(org_id) = cipher.organization_uuid {
                             _log_event(
                                 event.r#type,
                                 cipher_uuid,
-                                &org_uuid,
+                                &org_id,
                                 &headers.user.uuid,
                                 headers.device.atype,
                                 Some(event_date),
@@ -218,38 +230,39 @@ async fn post_events_collect(data: Json<Vec<EventCollection>>, headers: Headers,
     Ok(())
 }
 
-pub async fn log_user_event(event_type: i32, user_uuid: &str, device_type: i32, ip: &IpAddr, conn: &mut DbConn) {
+pub async fn log_user_event(event_type: i32, user_id: &UserId, device_type: i32, ip: &IpAddr, conn: &mut DbConn) {
     if !CONFIG.org_events_enabled() {
         return;
     }
-    _log_user_event(event_type, user_uuid, device_type, None, ip, conn).await;
+    _log_user_event(event_type, user_id, device_type, None, ip, conn).await;
 }
 
 async fn _log_user_event(
     event_type: i32,
-    user_uuid: &str,
+    user_id: &UserId,
     device_type: i32,
     event_date: Option<NaiveDateTime>,
     ip: &IpAddr,
     conn: &mut DbConn,
 ) {
-    let orgs = UserOrganization::get_org_uuid_by_user(user_uuid, conn).await;
-    let mut events: Vec<Event> = Vec::with_capacity(orgs.len() + 1); // We need an event per org and one without an org
+    let memberships = Membership::find_by_user(user_id, conn).await;
+    let mut events: Vec<Event> = Vec::with_capacity(memberships.len() + 1); // We need an event per org and one without an org
 
-    // Upstream saves the event also without any org_uuid.
+    // Upstream saves the event also without any org_id.
     let mut event = Event::new(event_type, event_date);
-    event.user_uuid = Some(String::from(user_uuid));
-    event.act_user_uuid = Some(String::from(user_uuid));
+    event.user_uuid = Some(user_id.clone());
+    event.act_user_uuid = Some(user_id.clone());
     event.device_type = Some(device_type);
     event.ip_address = Some(ip.to_string());
     events.push(event);
 
     // For each org a user is a member of store these events per org
-    for org_uuid in orgs {
+    for membership in memberships {
         let mut event = Event::new(event_type, event_date);
-        event.user_uuid = Some(String::from(user_uuid));
-        event.org_uuid = Some(org_uuid);
-        event.act_user_uuid = Some(String::from(user_uuid));
+        event.user_uuid = Some(user_id.clone());
+        event.org_uuid = Some(membership.org_uuid);
+        event.org_user_uuid = Some(membership.uuid);
+        event.act_user_uuid = Some(user_id.clone());
         event.device_type = Some(device_type);
         event.ip_address = Some(ip.to_string());
         events.push(event);
@@ -261,8 +274,8 @@ async fn _log_user_event(
 pub async fn log_event(
     event_type: i32,
     source_uuid: &str,
-    org_uuid: &str,
-    act_user_uuid: &str,
+    org_id: &OrganizationId,
+    act_user_id: &UserId,
     device_type: i32,
     ip: &IpAddr,
     conn: &mut DbConn,
@@ -270,15 +283,15 @@ pub async fn log_event(
     if !CONFIG.org_events_enabled() {
         return;
     }
-    _log_event(event_type, source_uuid, org_uuid, act_user_uuid, device_type, None, ip, conn).await;
+    _log_event(event_type, source_uuid, org_id, act_user_id, device_type, None, ip, conn).await;
 }
 
 #[allow(clippy::too_many_arguments)]
 async fn _log_event(
     event_type: i32,
     source_uuid: &str,
-    org_uuid: &str,
-    act_user_uuid: &str,
+    org_id: &OrganizationId,
+    act_user_id: &UserId,
     device_type: i32,
     event_date: Option<NaiveDateTime>,
     ip: &IpAddr,
@@ -290,31 +303,31 @@ async fn _log_event(
         // 1000..=1099 Are user events, they need to be logged via log_user_event()
         // Cipher Events
         1100..=1199 => {
-            event.cipher_uuid = Some(String::from(source_uuid));
+            event.cipher_uuid = Some(source_uuid.to_string().into());
         }
         // Collection Events
         1300..=1399 => {
-            event.collection_uuid = Some(String::from(source_uuid));
+            event.collection_uuid = Some(source_uuid.to_string().into());
         }
         // Group Events
         1400..=1499 => {
-            event.group_uuid = Some(String::from(source_uuid));
+            event.group_uuid = Some(source_uuid.to_string().into());
         }
         // Org User Events
         1500..=1599 => {
-            event.org_user_uuid = Some(String::from(source_uuid));
+            event.org_user_uuid = Some(source_uuid.to_string().into());
         }
         // 1600..=1699 Are organizational events, and they do not need the source_uuid
         // Policy Events
         1700..=1799 => {
-            event.policy_uuid = Some(String::from(source_uuid));
+            event.policy_uuid = Some(source_uuid.to_string().into());
         }
         // Ignore others
         _ => {}
     }
 
-    event.org_uuid = Some(String::from(org_uuid));
-    event.act_user_uuid = Some(String::from(act_user_uuid));
+    event.org_uuid = Some(org_id.clone());
+    event.act_user_uuid = Some(act_user_id.clone());
     event.device_type = Some(device_type);
     event.ip_address = Some(ip.to_string());
     event.save(conn).await.unwrap_or(());

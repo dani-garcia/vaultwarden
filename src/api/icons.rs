@@ -19,7 +19,7 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
 };
 
-use html5gum::{Emitter, HtmlString, InfallibleTokenizer, Readable, StringReader, Tokenizer};
+use html5gum::{Emitter, HtmlString, Readable, StringReader, Tokenizer};
 
 use crate::{
     error::Error,
@@ -63,6 +63,9 @@ static CLIENT: Lazy<Client> = Lazy::new(|| {
 // Build Regex only once since this takes a lot of time.
 static ICON_SIZE_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?x)(\d+)\D*(\d+)").unwrap());
 
+// The function name `icon_external` is checked in the `on_response` function in `AppHeaders`
+// It is used to prevent sending a specific header which breaks icon downloads.
+// If this function needs to be renamed, also adjust the code in `util.rs`
 #[get("/<domain>/icon.png")]
 fn icon_external(domain: &str) -> Option<Redirect> {
     if !is_valid_domain(domain) {
@@ -261,11 +264,7 @@ impl Icon {
     }
 }
 
-fn get_favicons_node(
-    dom: InfallibleTokenizer<StringReader<'_>, FaviconEmitter>,
-    icons: &mut Vec<Icon>,
-    url: &url::Url,
-) {
+fn get_favicons_node(dom: Tokenizer<StringReader<'_>, FaviconEmitter>, icons: &mut Vec<Icon>, url: &url::Url) {
     const TAG_LINK: &[u8] = b"link";
     const TAG_BASE: &[u8] = b"base";
     const TAG_HEAD: &[u8] = b"head";
@@ -274,7 +273,7 @@ fn get_favicons_node(
 
     let mut base_url = url.clone();
     let mut icon_tags: Vec<Tag> = Vec::new();
-    for token in dom {
+    for Ok(token) in dom {
         let tag_name: &[u8] = &token.tag.name;
         match tag_name {
             TAG_LINK => {
@@ -295,9 +294,7 @@ fn get_favicons_node(
             TAG_HEAD if token.closing => {
                 break;
             }
-            _ => {
-                continue;
-            }
+            _ => {}
         }
     }
 
@@ -401,7 +398,7 @@ async fn get_icon_url(domain: &str) -> Result<IconUrlResult, Error> {
         // 384KB should be more than enough for the HTML, though as we only really need the HTML header.
         let limited_reader = stream_to_bytes_limit(content, 384 * 1024).await?.to_vec();
 
-        let dom = Tokenizer::new_with_emitter(limited_reader.to_reader(), FaviconEmitter::default()).infallible();
+        let dom = Tokenizer::new_with_emitter(limited_reader.to_reader(), FaviconEmitter::default());
         get_favicons_node(dom, &mut iconlist, &url);
     } else {
         // Add the default favicon.ico to the list with just the given domain
@@ -662,7 +659,7 @@ impl reqwest::cookie::CookieStore for Jar {
 /// The FaviconEmitter is using an optimized version of the DefaultEmitter.
 /// This prevents emitting tags like comments, doctype and also strings between the tags.
 /// But it will also only emit the tags we need and only if they have the correct attributes
-/// Therefor parsing the HTML content is faster.
+/// Therefore parsing the HTML content is faster.
 use std::collections::BTreeMap;
 
 #[derive(Default)]

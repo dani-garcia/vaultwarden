@@ -17,7 +17,7 @@ variable "SOURCE_REPOSITORY_URL" {
   default = null
 }
 
-// The commit hash of of the current commit this build was triggered on
+// The commit hash of the current commit this build was triggered on
 variable "SOURCE_COMMIT" {
   default = null
 }

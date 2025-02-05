@@ -18,7 +18,7 @@ pub use sends::purge_sends;
 pub fn routes() -> Vec<Route> {
     let mut eq_domains_routes = routes![get_eq_domains, post_eq_domains, put_eq_domains];
     let mut hibp_routes = routes![hibp_breach];
-    let mut meta_routes = routes![alive, now, version, config];
+    let mut meta_routes = routes![alive, now, version, config, get_api_webauthn];
 
     let mut routes = Vec::new();
     routes.append(&mut accounts::routes());
@@ -184,6 +184,18 @@ fn version() -> Json<&'static str> {
     Json(crate::VERSION.unwrap_or_default())
 }
 
+#[get("/webauthn")]
+fn get_api_webauthn(_headers: Headers) -> Json<Value> {
+    // Prevent a 404 error, which also causes key-rotation issues
+    // It looks like this is used when login with passkeys is enabled, which Vaultwarden does not (yet) support
+    // An empty list/data also works fine
+    Json(json!({
+        "object": "list",
+        "data": [],
+        "continuationToken": null
+    }))
+}
+
 #[get("/config")]
 fn config() -> Json<Value> {
     let domain = crate::CONFIG.domain();
@@ -201,8 +213,8 @@ fn config() -> Json<Value> {
         // This means they expect a version that closely matches the Bitwarden server version
         // We should make sure that we keep this updated when we support the new server features
         // Version history:
-        // - Individual cipher key encryption: 2023.9.1
-        "version": "2024.2.0",
+        // - Individual cipher key encryption: 2024.2.0
+        "version": "2025.1.0",
         "gitHash": option_env!("GIT_REV"),
         "server": {
           "name": "Vaultwarden",
