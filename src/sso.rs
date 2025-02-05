@@ -10,11 +10,11 @@ use once_cell::sync::Lazy;
 use openidconnect::core::{
     CoreClient, CoreIdTokenVerifier, CoreProviderMetadata, CoreResponseType, CoreUserInfoClaims,
 };
-use openidconnect::reqwest::async_http_client;
+use openidconnect::reqwest;
 use openidconnect::{
     AccessToken, AuthDisplay, AuthPrompt, AuthenticationFlow, AuthorizationCode, AuthorizationRequest, ClientId,
-    ClientSecret, CsrfToken, Nonce, OAuth2TokenResponse, PkceCodeChallenge, PkceCodeVerifier, RefreshToken,
-    ResponseType, Scope,
+    ClientSecret, CsrfToken, EndpointNotSet, EndpointSet, Nonce, OAuth2TokenResponse, PkceCodeChallenge,
+    PkceCodeVerifier, RefreshToken, ResponseType, Scope,
 };
 
 use crate::{
@@ -32,7 +32,7 @@ static AC_CACHE: Lazy<Cache<OIDCState, AuthenticatedUser>> =
     Lazy::new(|| Cache::builder().max_capacity(1000).time_to_live(Duration::from_secs(10 * 60)).build());
 
 static CLIENT_CACHE_KEY: Lazy<String> = Lazy::new(|| "sso-client".to_string());
-static CLIENT_CACHE: Lazy<Cache<String, CoreClient>> = Lazy::new(|| {
+static CLIENT_CACHE: Lazy<Cache<String, Client>> = Lazy::new(|| {
     Cache::builder().max_capacity(1).time_to_live(Duration::from_secs(CONFIG.sso_client_cache_expiration())).build()
 });
 
@@ -178,36 +178,55 @@ fn decode_token_claims(token_name: &str, token: &str) -> ApiResult<BasicTokenCla
     }
 }
 
-#[rocket::async_trait]
-trait CoreClientExt {
-    async fn _get_client() -> ApiResult<CoreClient>;
-    async fn cached() -> ApiResult<CoreClient>;
-
-    async fn user_info_async(&self, access_token: AccessToken) -> ApiResult<CoreUserInfoClaims>;
-
-    fn vw_id_token_verifier(&self) -> CoreIdTokenVerifier<'_>;
+#[derive(Clone)]
+struct Client {
+    http_client: reqwest::Client,
+    core_client: CoreClient<EndpointSet, EndpointNotSet, EndpointNotSet, EndpointNotSet, EndpointSet, EndpointSet>,
 }
 
-#[rocket::async_trait]
-impl CoreClientExt for CoreClient {
+impl Client {
     // Call the OpenId discovery endpoint to retrieve configuration
-    async fn _get_client() -> ApiResult<CoreClient> {
+    async fn _get_client() -> ApiResult<Self> {
         let client_id = ClientId::new(CONFIG.sso_client_id());
         let client_secret = ClientSecret::new(CONFIG.sso_client_secret());
 
         let issuer_url = CONFIG.sso_issuer_url()?;
 
-        let provider_metadata = match CoreProviderMetadata::discover_async(issuer_url, async_http_client).await {
+        let http_client = match reqwest::ClientBuilder::new().redirect(reqwest::redirect::Policy::none()).build() {
+            Err(err) => err!(format!("Failed to build http client: {err}")),
+            Ok(client) => client,
+        };
+
+        let provider_metadata = match CoreProviderMetadata::discover_async(issuer_url, &http_client).await {
             Err(err) => err!(format!("Failed to discover OpenID provider: {err}")),
             Ok(metadata) => metadata,
         };
 
-        Ok(CoreClient::from_provider_metadata(provider_metadata, client_id, Some(client_secret))
-            .set_redirect_uri(CONFIG.sso_redirect_url()?))
+        let base_client = CoreClient::from_provider_metadata(provider_metadata, client_id, Some(client_secret));
+
+        let token_uri = match base_client.token_uri() {
+            Some(uri) => uri.clone(),
+            None => err!("Failed to discover token_url, cannot proceed"),
+        };
+
+        let user_info_url = match base_client.user_info_url() {
+            Some(url) => url.clone(),
+            None => err!("Failed to discover user_info url, cannot proceed"),
+        };
+
+        let core_client = base_client
+            .set_redirect_uri(CONFIG.sso_redirect_url()?)
+            .set_token_uri(token_uri)
+            .set_user_info_url(user_info_url);
+
+        Ok(Client {
+            http_client,
+            core_client,
+        })
     }
 
     // Simple cache to prevent recalling the discovery endpoint each time
-    async fn cached() -> ApiResult<CoreClient> {
+    async fn cached() -> ApiResult<Self> {
         if CONFIG.sso_client_cache_expiration() > 0 {
             match CLIENT_CACHE.get(&*CLIENT_CACHE_KEY) {
                 Some(client) => Ok(client),
@@ -221,20 +240,15 @@ impl CoreClientExt for CoreClient {
         }
     }
 
-    async fn user_info_async(&self, access_token: AccessToken) -> ApiResult<CoreUserInfoClaims> {
-        let endpoint = match self.user_info(access_token, None) {
-            Err(err) => err!(format!("No user_info endpoint: {err}")),
-            Ok(endpoint) => endpoint,
-        };
-
-        match endpoint.request_async(async_http_client).await {
+    async fn user_info(&self, access_token: AccessToken) -> ApiResult<CoreUserInfoClaims> {
+        match self.core_client.user_info(access_token, None).request_async(&self.http_client).await {
             Err(err) => err!(format!("Request to user_info endpoint failed: {err}")),
             Ok(user_info) => Ok(user_info),
         }
     }
 
     fn vw_id_token_verifier(&self) -> CoreIdTokenVerifier<'_> {
-        let mut verifier = self.id_token_verifier();
+        let mut verifier = self.core_client.id_token_verifier();
         if let Some(regex_str) = CONFIG.sso_audience_trusted() {
             match Regex::new(&regex_str) {
                 Ok(regex) => {
@@ -286,8 +300,9 @@ pub async fn authorize_url(
         _ => err!(format!("Unsupported client {client_id}")),
     };
 
-    let client = CoreClient::cached().await?;
+    let client = Client::cached().await?;
     let mut auth_req = client
+        .core_client
         .authorize_url(
             AuthenticationFlow::<CoreResponseType>::AuthorizationCode,
             || CsrfToken::new(base64_state),
@@ -402,14 +417,14 @@ pub async fn exchange_code(wrapped_code: &str, conn: &mut DbConn) -> ApiResult<U
     }
 
     let oidc_code = AuthorizationCode::new(code.to_string());
-    let client = CoreClient::cached().await?;
+    let client = Client::cached().await?;
 
     let nonce = match SsoNonce::find(&state, conn).await {
         None => err!(format!("Invalid state cannot retrieve nonce")),
         Some(nonce) => nonce,
     };
 
-    let mut exchange = client.exchange_code(oidc_code);
+    let mut exchange = client.core_client.exchange_code(oidc_code);
 
     if CONFIG.sso_pkce() {
         match nonce.verifier {
@@ -418,9 +433,9 @@ pub async fn exchange_code(wrapped_code: &str, conn: &mut DbConn) -> ApiResult<U
         }
     }
 
-    match exchange.request_async(async_http_client).await {
+    match exchange.request_async(&client.http_client).await {
         Ok(token_response) => {
-            let user_info = client.user_info_async(token_response.access_token().to_owned()).await?;
+            let user_info = client.user_info(token_response.access_token().to_owned()).await?;
             let oidc_nonce = Nonce::new(nonce.nonce.clone());
 
             let id_token = match token_response.extra_fields().id_token() {
@@ -578,12 +593,13 @@ pub async fn exchange_refresh_token(
         Some(TokenWrapper::Refresh(refresh_token)) => {
             let rt = RefreshToken::new(refresh_token.to_string());
 
-            let client = CoreClient::cached().await?;
+            let client = Client::cached().await?;
 
-            let token_response = match client.exchange_refresh_token(&rt).request_async(async_http_client).await {
-                Err(err) => err!(format!("Request to exchange_refresh_token endpoint failed: {:?}", err)),
-                Ok(token_response) => token_response,
-            };
+            let token_response =
+                match client.core_client.exchange_refresh_token(&rt).request_async(&client.http_client).await {
+                    Err(err) => err!(format!("Request to exchange_refresh_token endpoint failed: {:?}", err)),
+                    Ok(token_response) => token_response,
+                };
 
             // Use new refresh_token if returned
             let rolled_refresh_token = token_response
@@ -607,8 +623,8 @@ pub async fn exchange_refresh_token(
                 err_silent!("Access token is close to expiration but we have no refresh token")
             }
 
-            let client = CoreClient::cached().await?;
-            match client.user_info_async(AccessToken::new(access_token.to_string())).await {
+            let client = Client::cached().await?;
+            match client.user_info(AccessToken::new(access_token.to_string())).await {
                 Err(err) => {
                     err_silent!(format!("Failed to retrieve user info, token has probably been invalidated: {err}"))
                 }

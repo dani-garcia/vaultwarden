@@ -32,6 +32,10 @@ enable_mimalloc = ["dep:mimalloc"]
 # if you want to turn off the logging for a specific run.
 query_logger = ["dep:diesel_logger"]
 
+# OIDC specific features
+oidc-accept-rfc3339-timestamps = ["openidconnect/accept-rfc3339-timestamps"]
+oidc-accept-string-booleans = ["openidconnect/accept-string-booleans"]
+
 # Enable unstable features, requires nightly
 # Currently only used to enable rusts official ip support
 unstable = []
@@ -157,7 +161,7 @@ paste = "1.0.15"
 governor = "0.8.0"
 
 # OIDC for SSO
-openidconnect = "3.5.0"
+openidconnect = { version = "4.0.0", features = ["reqwest", "native-tls"] }
 mini-moka = "0.10.2"
 
 # Check client versions for specific features.
