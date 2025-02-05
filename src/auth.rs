@@ -331,11 +331,11 @@ pub struct RegisterVerifyClaims {
     // Subject
     pub sub: String,
 
-    pub name: String,
+    pub name: Option<String>,
     pub verified: bool,
 }
 
-pub fn generate_register_verify_claims(email: String, name: String, verified: bool) -> RegisterVerifyClaims {
+pub fn generate_register_verify_claims(email: String, name: Option<String>, verified: bool) -> RegisterVerifyClaims {
     let time_now = Utc::now();
     RegisterVerifyClaims {
         nbf: time_now.timestamp(),

@@ -86,13 +86,15 @@ pub struct RegisterData {
 
     name: Option<String>,
 
-    #[serde(alias = "orgInviteToken")]
     token: Option<String>,
     #[allow(dead_code)]
     organization_user_id: Option<MembershipId>,
 
     // Used only from the register/finish endpoint
     email_verification_token: Option<String>,
+    accept_emergency_access_id: Option<EmergencyAccessId>,
+    accept_emergency_access_invite_token: Option<String>,
+    org_invite_token: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -142,23 +144,62 @@ pub async fn _register(data: Json<RegisterData>, email_verification: bool, mut c
     let mut data: RegisterData = data.into_inner();
     let email = data.email.to_lowercase();
 
-    if email_verification && data.email_verification_token.is_none() {
-        err!("Email verification token is required");
-    }
+    let mut email_verified = false;
 
-    let email_verified = match &data.email_verification_token {
-        Some(token) if email_verification => {
-            let claims = crate::auth::decode_register_verify(token)?;
-            if claims.sub != data.email {
-                err!("Email verification token does not match email");
+    let mut pending_emergency_access = None;
+
+    // First, validate the provided verification tokens
+    if email_verification {
+        match (
+            &data.email_verification_token,
+            &data.accept_emergency_access_id,
+            &data.accept_emergency_access_invite_token,
+            &data.organization_user_id,
+            &data.org_invite_token,
+        ) {
+            // Normal user registration, when email verification is required
+            (Some(email_verification_token), None, None, None, None) => {
+                let claims = crate::auth::decode_register_verify(email_verification_token)?;
+                if claims.sub != data.email {
+                    err!("Email verification token does not match email");
+                }
+
+                // During this call we don't get the name, so extract it from the claims
+                if claims.name.is_some() {
+                    data.name = claims.name;
+                }
+                email_verified = claims.verified;
+            }
+            // Emergency access registration
+            (None, Some(accept_emergency_access_id), Some(accept_emergency_access_invite_token), None, None) => {
+                if !CONFIG.emergency_access_allowed() {
+                    err!("Emergency access is not enabled.")
+                }
+
+                let claims = crate::auth::decode_emergency_access_invite(accept_emergency_access_invite_token)?;
+
+                // This can happen if the user who received the invite used a different email to signup.
+                // Since we do not know if this is intended, we error out here and do nothing with the invite.
+                if claims.email != data.email {
+                    err!("Claim email does not match email")
+                }
+                if &claims.emer_id != accept_emergency_access_id {
+                    err!("Claim emer_id does not match accept_emergency_access_id")
+                }
+
+                pending_emergency_access = Some((accept_emergency_access_id, claims));
+                email_verified = true;
+            }
+            // Org invite
+            (None, None, None, Some(_organization_user_id), Some(_org_invite_token)) => {
+                err!("Org invite")
             }
 
-            // During this call, we don't get the name, so extract it from the claims
-            data.name = Some(claims.name);
-            claims.verified
+            _ => {
+                err!("Registration is missing required parameters")
+            }
         }
-        _ => false,
-    };
+    }
 
     // Check if the length of the username exceeds 50 characters (Same is Upstream Bitwarden)
     // This also prevents issues with very long usernames causing to large JWT's. See #2419
@@ -210,7 +251,10 @@ pub async fn _register(data: Json<RegisterData>, email_verification: bool, mut c
             // Order is important here; the invitation check must come first
             // because the vaultwarden admin can invite anyone, regardless
             // of other signup restrictions.
-            if Invitation::take(&email, &mut conn).await || CONFIG.is_signup_allowed(&email) {
+            if Invitation::take(&email, &mut conn).await
+                || CONFIG.is_signup_allowed(&email)
+                || pending_emergency_access.is_some()
+            {
                 User::new(email.clone())
             } else {
                 err!("Registration not allowed or user already exists")
@@ -266,10 +310,38 @@ pub async fn _register(data: Json<RegisterData>, email_verification: bool, mut c
 
     user.save(&mut conn).await?;
 
-    // accept any open emergency access invitations
-    if !CONFIG.mail_enabled() && CONFIG.emergency_access_allowed() {
-        for mut emergency_invite in EmergencyAccess::find_all_invited_by_grantee_email(&user.email, &mut conn).await {
-            emergency_invite.accept_invite(&user.uuid, &user.email, &mut conn).await.ok();
+    if CONFIG.emergency_access_allowed() {
+        // Accept the emergency access invitation
+        if let Some((accept_emergency_access_id, claims)) = pending_emergency_access {
+            let Some(mut emergency_access) =
+                EmergencyAccess::find_by_uuid_and_grantee_email(accept_emergency_access_id, &data.email, &mut conn)
+                    .await
+            else {
+                err!("Emergency access not valid.")
+            };
+
+            // get grantor user to send Accepted email
+            let Some(grantor_user) = User::find_by_uuid(&emergency_access.grantor_uuid, &mut conn).await else {
+                err!("Grantor user not found.")
+            };
+
+            if grantor_user.name == claims.grantor_name && grantor_user.email == claims.grantor_email {
+                emergency_access.accept_invite(&user.uuid, &user.email, &mut conn).await?;
+
+                if CONFIG.mail_enabled() {
+                    mail::send_emergency_access_invite_accepted(&grantor_user.email, &user.email).await?;
+                }
+            } else {
+                err!("Emergency access invitation error.")
+            }
+        }
+
+        // accept any open emergency access invitations
+        if !CONFIG.mail_enabled() {
+            for mut emergency_invite in EmergencyAccess::find_all_invited_by_grantee_email(&user.email, &mut conn).await
+            {
+                emergency_invite.accept_invite(&user.uuid, &user.email, &mut conn).await.ok();
+            }
         }
     }
 

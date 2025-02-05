@@ -721,7 +721,7 @@ async fn identity_register(data: Json<RegisterData>, conn: DbConn) -> JsonResult
 #[serde(rename_all = "camelCase")]
 struct RegisterVerificationData {
     email: String,
-    name: String,
+    name: Option<String>,
     // receiveMarketingEmails: bool,
 }
 
@@ -742,22 +742,28 @@ async fn register_verification_email(
         err!("Registration not allowed or user already exists")
     }
 
-    // TODO: We might want to do some rate limiting here
-    // Also, test this with invites/emergency access etc
+    let should_send_mail = CONFIG.mail_enabled() && CONFIG.signups_verify();
 
     if User::find_by_mail(&data.email, &mut conn).await.is_some() {
-        // TODO: Add some random delay here to prevent timing attacks?
+        if should_send_mail {
+            // There is still a timing side channel here in that the code
+            // paths that send mail take noticeably longer than ones that
+            // don't. Add a randomized sleep to mitigate this somewhat.
+            use rand::{rngs::SmallRng, Rng, SeedableRng};
+            let mut rng = SmallRng::from_os_rng();
+            let delta: i32 = 100;
+            let sleep_ms = (1_000 + rng.random_range(-delta..=delta)) as u64;
+            tokio::time::sleep(tokio::time::Duration::from_millis(sleep_ms)).await;
+        }
         return Ok(RegisterVerificationResponse::NoContent(()));
     }
-
-    let should_send_mail = CONFIG.mail_enabled() && CONFIG.signups_verify();
 
     let token_claims =
         crate::auth::generate_register_verify_claims(data.email.clone(), data.name.clone(), should_send_mail);
     let token = crate::auth::encode_jwt(&token_claims);
 
     if should_send_mail {
-        mail::send_register_verify_email(&data.email, &data.name, &token).await?;
+        mail::send_register_verify_email(&data.email, &token).await?;
 
         Ok(RegisterVerificationResponse::NoContent(()))
     } else {

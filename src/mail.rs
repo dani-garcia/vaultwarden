@@ -201,7 +201,7 @@ pub async fn send_verify_email(address: &str, user_id: &UserId) -> EmptyResult {
     send_email(address, &subject, body_html, body_text).await
 }
 
-pub async fn send_register_verify_email(email: &str, name: &str, token: &str) -> EmptyResult {
+pub async fn send_register_verify_email(email: &str, token: &str) -> EmptyResult {
     let mut query = url::Url::parse("https://query.builder").unwrap();
     query.query_pairs_mut().append_pair("email", email).append_pair("token", token);
     let query_string = match query.query() {
@@ -215,7 +215,6 @@ pub async fn send_register_verify_email(email: &str, name: &str, token: &str) ->
             // `url.Url` would place the anchor `#` after the query parameters
             "url": format!("{}/#/finish-signup/?{}", CONFIG.domain(), query_string),
             "img_src": CONFIG._smtp_img_src(),
-            "name": name,
             "email": email,
         }),
     )?;
