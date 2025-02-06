@@ -147,6 +147,7 @@ pub async fn _register(data: Json<RegisterData>, email_verification: bool, mut c
     let mut email_verified = false;
 
     let mut pending_emergency_access = None;
+    let mut pending_org_invite = None;
 
     // First, validate the provided verification tokens
     if email_verification {
@@ -178,8 +179,6 @@ pub async fn _register(data: Json<RegisterData>, email_verification: bool, mut c
 
                 let claims = crate::auth::decode_emergency_access_invite(accept_emergency_access_invite_token)?;
 
-                // This can happen if the user who received the invite used a different email to signup.
-                // Since we do not know if this is intended, we error out here and do nothing with the invite.
                 if claims.email != data.email {
                     err!("Claim email does not match email")
                 }
@@ -191,8 +190,19 @@ pub async fn _register(data: Json<RegisterData>, email_verification: bool, mut c
                 email_verified = true;
             }
             // Org invite
-            (None, None, None, Some(_organization_user_id), Some(_org_invite_token)) => {
-                err!("Org invite")
+            (None, None, None, Some(organization_user_id), Some(org_invite_token)) => {
+                let claims = decode_invite(org_invite_token)?;
+
+                if claims.email != data.email {
+                    err!("Claim email does not match email")
+                }
+
+                if &claims.member_id != organization_user_id {
+                    err!("Claim org_user_id does not match organization_user_id")
+                }
+
+                pending_org_invite = Some((organization_user_id, claims));
+                email_verified = true;
             }
 
             _ => {
@@ -254,6 +264,7 @@ pub async fn _register(data: Json<RegisterData>, email_verification: bool, mut c
             if Invitation::take(&email, &mut conn).await
                 || CONFIG.is_signup_allowed(&email)
                 || pending_emergency_access.is_some()
+                || pending_org_invite.is_some()
             {
                 User::new(email.clone())
             } else {
@@ -310,38 +321,10 @@ pub async fn _register(data: Json<RegisterData>, email_verification: bool, mut c
 
     user.save(&mut conn).await?;
 
-    if CONFIG.emergency_access_allowed() {
-        // Accept the emergency access invitation
-        if let Some((accept_emergency_access_id, claims)) = pending_emergency_access {
-            let Some(mut emergency_access) =
-                EmergencyAccess::find_by_uuid_and_grantee_email(accept_emergency_access_id, &data.email, &mut conn)
-                    .await
-            else {
-                err!("Emergency access not valid.")
-            };
-
-            // get grantor user to send Accepted email
-            let Some(grantor_user) = User::find_by_uuid(&emergency_access.grantor_uuid, &mut conn).await else {
-                err!("Grantor user not found.")
-            };
-
-            if grantor_user.name == claims.grantor_name && grantor_user.email == claims.grantor_email {
-                emergency_access.accept_invite(&user.uuid, &user.email, &mut conn).await?;
-
-                if CONFIG.mail_enabled() {
-                    mail::send_emergency_access_invite_accepted(&grantor_user.email, &user.email).await?;
-                }
-            } else {
-                err!("Emergency access invitation error.")
-            }
-        }
-
-        // accept any open emergency access invitations
-        if !CONFIG.mail_enabled() {
-            for mut emergency_invite in EmergencyAccess::find_all_invited_by_grantee_email(&user.email, &mut conn).await
-            {
-                emergency_invite.accept_invite(&user.uuid, &user.email, &mut conn).await.ok();
-            }
+    // accept any open emergency access invitations
+    if !CONFIG.mail_enabled() && CONFIG.emergency_access_allowed() {
+        for mut emergency_invite in EmergencyAccess::find_all_invited_by_grantee_email(&user.email, &mut conn).await {
+            emergency_invite.accept_invite(&user.uuid, &user.email, &mut conn).await.ok();
         }
     }
 
