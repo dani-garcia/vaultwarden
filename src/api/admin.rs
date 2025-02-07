@@ -296,7 +296,7 @@ async fn invite_user(data: Json<InviteData>, _token: AdminToken, mut conn: DbCon
         err_code!("User already exists", Status::Conflict.code)
     }
 
-    let mut user = User::new(data.email);
+    let mut user = User::new(data.email, None);
 
     async fn _generate_invite(user: &User, conn: &mut DbConn) -> EmptyResult {
         if CONFIG.mail_enabled() {

@@ -280,7 +280,11 @@ pub async fn send_invite(
             .append_pair("organizationId", &org_id)
             .append_pair("organizationUserId", &member_id)
             .append_pair("token", &invite_token);
-        if user.private_key.is_some() {
+
+        if CONFIG.sso_enabled() && CONFIG.sso_only() {
+            query_params.append_pair("orgUserHasExistingUser", "false");
+            query_params.append_pair("orgSsoIdentifier", org_name);
+        } else if user.private_key.is_some() {
             query_params.append_pair("orgUserHasExistingUser", "true");
         }
     }
@@ -546,6 +550,30 @@ pub async fn send_change_email(address: &str, token: &str) -> EmptyResult {
         }),
     )?;
 
+    send_email(address, &subject, body_html, body_text).await
+}
+
+pub async fn send_sso_change_email(address: &str) -> EmptyResult {
+    let (subject, body_html, body_text) = get_text(
+        "email/sso_change_email",
+        json!({
+            "url": format!("{}/#/settings/account", CONFIG.domain()),
+            "img_src": CONFIG._smtp_img_src(),
+        }),
+    )?;
+
+    send_email(address, &subject, body_html, body_text).await
+}
+
+pub async fn send_set_password(address: &str, user_name: &str) -> EmptyResult {
+    let (subject, body_html, body_text) = get_text(
+        "email/set_password",
+        json!({
+            "url": CONFIG.domain(),
+            "img_src": CONFIG._smtp_img_src(),
+            "user_name": user_name,
+        }),
+    )?;
     send_email(address, &subject, body_html, body_text).await
 }
 

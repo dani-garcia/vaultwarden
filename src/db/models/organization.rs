@@ -822,6 +822,19 @@ impl Membership {
         }}
     }
 
+    // Should be used only when email are disabled.
+    // In Organizations::send_invite status is set to Accepted only if the user has a password.
+    pub async fn accept_user_invitations(user_uuid: &UserId, conn: &mut DbConn) -> EmptyResult {
+        db_run! { conn: {
+            diesel::update(users_organizations::table)
+                .filter(users_organizations::user_uuid.eq(user_uuid))
+                .filter(users_organizations::status.eq(MembershipStatus::Invited as i32))
+                .set(users_organizations::status.eq(MembershipStatus::Accepted as i32))
+                .execute(conn)
+                .map_res("Error confirming invitations")
+        }}
+    }
+
     pub async fn find_any_state_by_user(user_uuid: &UserId, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             users_organizations::table
