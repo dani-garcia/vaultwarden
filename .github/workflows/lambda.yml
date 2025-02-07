@@ -1,0 +1,49 @@
+name: Build Lambda Package
+
+on: workflow_dispatch
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+
+    container:
+      image: public.ecr.aws/codebuild/amazonlinux2-aarch64-standard:3.0
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Install development packages
+        run: sudo yum install -y krb5-devel openldap-devel
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Cargo Lambda
+        uses: jaxxstorm/action-install-gh-release@v1.9.0
+        with:
+          repo: cargo-lambda/cargo-lambda
+          platform: linux
+          arch: aarch64
+
+      - name: Setup rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build with Cargo
+        run: cargo lambda build --verbose
+
+      - name: Copy libpq and its dependencies
+        run: cp /lib64/{libcrypt.so.2,liblber-2.4.so.2,libldap_r-2.4.so.2,libpq.so.5,libsasl2.so.3} target/lambda/vaultwarden/
+
+      # This ensures passes the startup checks for the web-vault, which is
+      # instead served statically from an S3 Bucket
+      - name: Create placeholder web-vault/index.html
+        run: |-
+          mkdir target/lambda/vaultwarden/web-vault
+          echo "<html><body><h1>Web Vault Placeholder</h1></body></html>" > target/lambda/vaultwarden/web-vault/index.html
+
+      - name: Archive function package
+        uses: actions/upload-artifact@v4
+        with:
+          name: vaultwarden-lambda
+          path: target/lambda/vaultwarden/*
