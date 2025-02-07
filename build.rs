@@ -13,6 +13,10 @@ fn main() {
     println!("cargo:rustc-cfg=dsql");
     #[cfg(feature = "query_logger")]
     println!("cargo:rustc-cfg=query_logger");
+    #[cfg(feature = "s3")]
+    println!("cargo:rustc-cfg=s3");
+    #[cfg(feature = "aws")]
+    println!("cargo:rustc-cfg=aws");
 
     #[cfg(not(any(feature = "sqlite", feature = "mysql", feature = "postgresql", feature = "dsql")))]
     compile_error!(
@@ -26,6 +30,8 @@ fn main() {
     println!("cargo::rustc-check-cfg=cfg(postgresql)");
     println!("cargo::rustc-check-cfg=cfg(dsql)");
     println!("cargo::rustc-check-cfg=cfg(query_logger)");
+    println!("cargo::rustc-check-cfg=cfg(s3)");
+    println!("cargo::rustc-check-cfg=cfg(aws)");
 
     // Rerun when these paths are changed.
     // Someone could have checked-out a tag or specific commit, but no other files changed.

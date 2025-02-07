@@ -3,7 +3,6 @@ use std::sync::RwLock;
 use diesel::{
     r2d2::{ManageConnection, R2D2Connection},
     ConnectionError,
-    ConnectionResult,
 };
 use url::Url;
 
@@ -58,22 +57,6 @@ where
     }
 }
 
-// Cache the AWS SDK config, as recommended by the AWS SDK documentation. The
-// initial load is async, so we spawn a thread to load it and then join it to
-// get the result in a blocking fashion.
-static AWS_SDK_CONFIG: std::sync::LazyLock<ConnectionResult<aws_config::SdkConfig>> = std::sync::LazyLock::new(|| {
-    std::thread::spawn(|| {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()?;
-        
-            std::io::Result::Ok(rt.block_on(aws_config::load_defaults(aws_config::BehaviorVersion::latest())))
-    })
-        .join()
-        .map_err(|e| ConnectionError::BadConnection(format!("Failed to load AWS config for DSQL connection: {e:#?}")))?
-        .map_err(|e| ConnectionError::BadConnection(format!("Failed to load AWS config for DSQL connection: {e}")))
-});
-
 // Generate a Postgres libpq connection string. The input connection string has
 // the following format:
 //
@@ -125,12 +108,8 @@ pub(crate) fn psql_url(url: &str) -> Result<String, ConnectionError> {
         info!("Generating new DSQL auth token for connection '{url}'");
     }
     
-    // This would be so much easier if ConnectionError implemented Clone.
-    let sdk_config = match *AWS_SDK_CONFIG {
-        Ok(ref sdk_config) => sdk_config.clone(),
-        Err(ConnectionError::BadConnection(ref e)) => return Err(ConnectionError::BadConnection(e.to_owned())),
-        Err(ref e) => unreachable!("Unexpected error loading AWS SDK config: {e}"),
-    };
+    let sdk_config = crate::aws::aws_sdk_config()
+        .map_err(|e| ConnectionError::BadConnection(format!("Failed to load AWS SDK config: {e}")))?;
 
     let mut psql_url = Url::parse(url).map_err(|e| {
         ConnectionError::InvalidConnectionUrl(e.to_string())
@@ -165,7 +144,7 @@ pub(crate) fn psql_url(url: &str) -> Result<String, ConnectionError> {
             .enable_all()
             .build()?;
         
-        rt.block_on(signer.db_connect_admin_auth_token(&sdk_config))
+        rt.block_on(signer.db_connect_admin_auth_token(sdk_config))
     })
         .join()
         .map_err(|e| ConnectionError::BadConnection(format!("Failed to generate DSQL auth token: {e:#?}")))?

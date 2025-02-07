@@ -11,6 +11,7 @@ use job_scheduler_ng::Schedule;
 use once_cell::sync::Lazy;
 use reqwest::Url;
 
+use crate::persistent_fs::{read, remove_file, write};
 use crate::{
     db::DbConnType,
     error::Error,
@@ -25,10 +26,26 @@ static CONFIG_FILE: Lazy<String> = Lazy::new(|| {
 pub static SKIP_CONFIG_VALIDATION: AtomicBool = AtomicBool::new(false);
 
 pub static CONFIG: Lazy<Config> = Lazy::new(|| {
-    Config::load().unwrap_or_else(|e| {
-        println!("Error loading config:\n  {e:?}\n");
-        exit(12)
+    std::thread::spawn(|| {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap_or_else(|e| {
+                println!("Error loading config:\n  {e:?}\n");
+                exit(12)
+            });
+        
+        rt.block_on(Config::load())
+            .unwrap_or_else(|e| {
+                println!("Error loading config:\n  {e:?}\n");
+                exit(12)
+            })
     })
+        .join()
+        .unwrap_or_else(|e| {
+            println!("Error loading config:\n  {e:?}\n");
+            exit(12)
+        })
 });
 
 pub type Pass = String;
@@ -110,8 +127,10 @@ macro_rules! make_config {
                 builder
             }
 
-            fn from_file(path: &str) -> Result<Self, Error> {
-                let config_str = std::fs::read_to_string(path)?;
+            async fn from_file(path: &str) -> Result<Self, Error> {
+                let config_bytes = read(path).await?;
+                let config_str = String::from_utf8(config_bytes)
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
                 println!("[INFO] Using saved config from `{path}` for configuration.\n");
                 serde_json::from_str(&config_str).map_err(Into::into)
             }
@@ -1129,10 +1148,10 @@ fn smtp_convert_deprecated_ssl_options(smtp_ssl: Option<bool>, smtp_explicit_tls
 }
 
 impl Config {
-    pub fn load() -> Result<Self, Error> {
+    pub async fn load() -> Result<Self, Error> {
         // Loading from env and file
         let _env = ConfigBuilder::from_env();
-        let _usr = ConfigBuilder::from_file(&CONFIG_FILE).unwrap_or_default();
+        let _usr = ConfigBuilder::from_file(&CONFIG_FILE).await.unwrap_or_default();
 
         // Create merged config, config file overwrites env
         let mut _overrides = Vec::new();
@@ -1156,7 +1175,7 @@ impl Config {
         })
     }
 
-    pub fn update_config(&self, other: ConfigBuilder, ignore_non_editable: bool) -> Result<(), Error> {
+    pub async fn update_config(&self, other: ConfigBuilder, ignore_non_editable: bool) -> Result<(), Error> {
         // Remove default values
         //let builder = other.remove(&self.inner.read().unwrap()._env);
 
@@ -1188,20 +1207,18 @@ impl Config {
         }
 
         //Save to file
-        use std::{fs::File, io::Write};
-        let mut file = File::create(&*CONFIG_FILE)?;
-        file.write_all(config_str.as_bytes())?;
+        write(&*CONFIG_FILE, config_str.as_bytes()).await?;
 
         Ok(())
     }
 
-    fn update_config_partial(&self, other: ConfigBuilder) -> Result<(), Error> {
+    async fn update_config_partial(&self, other: ConfigBuilder) -> Result<(), Error> {
         let builder = {
             let usr = &self.inner.read().unwrap()._usr;
             let mut _overrides = Vec::new();
             usr.merge(&other, false, &mut _overrides)
         };
-        self.update_config(builder, false)
+        self.update_config(builder, false).await
     }
 
     /// Tests whether an email's domain is allowed. A domain is allowed if it
@@ -1243,8 +1260,8 @@ impl Config {
         }
     }
 
-    pub fn delete_user_config(&self) -> Result<(), Error> {
-        std::fs::remove_file(&*CONFIG_FILE)?;
+    pub async fn delete_user_config(&self) -> Result<(), Error> {
+        remove_file(&*CONFIG_FILE).await?;
 
         // Empty user config
         let usr = ConfigBuilder::default();
@@ -1274,7 +1291,7 @@ impl Config {
         inner._enable_smtp && (inner.smtp_host.is_some() || inner.use_sendmail)
     }
 
-    pub fn get_duo_akey(&self) -> String {
+    pub async fn get_duo_akey(&self) -> String {
         if let Some(akey) = self._duo_akey() {
             akey
         } else {
@@ -1285,7 +1302,7 @@ impl Config {
                 _duo_akey: Some(akey_s.clone()),
                 ..Default::default()
             };
-            self.update_config_partial(builder).ok();
+            self.update_config_partial(builder).await.ok();
 
             akey_s
         }

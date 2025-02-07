@@ -5,6 +5,7 @@ use derive_more::{AsRef, Deref, Display};
 use serde_json::Value;
 
 use super::{CipherId, OrganizationId, UserId};
+use crate::persistent_fs::{download_url, remove_file};
 use crate::CONFIG;
 use macros::IdFromParam;
 
@@ -44,29 +45,32 @@ impl Attachment {
         format!("{}/{}/{}", CONFIG.attachments_folder(), self.cipher_uuid, self.id)
     }
 
-    pub fn get_url(&self, host: &str) -> String {
-        let token = encode_jwt(&generate_file_download_claims(self.cipher_uuid.clone(), self.id.clone()));
-        format!("{}/attachments/{}/{}?token={}", host, self.cipher_uuid, self.id, token)
+    pub async fn get_url(&self, host: &str) -> Result<String, Error> {
+        download_url(self.get_file_path(), host)
+            .await
+            .map_err(|e| Error::new(
+                "Failed to generate attachment download URL",
+                format!("Failed to generate download URL for attachment cipher_uuid: {}, id: {}. Error: {e:?}", self.cipher_uuid, self.id)
+            ))
     }
 
-    pub fn to_json(&self, host: &str) -> Value {
-        json!({
+    pub async fn to_json(&self, host: &str) -> Result<Value, Error> {
+        Ok(json!({
             "id": self.id,
-            "url": self.get_url(host),
+            "url": self.get_url(host).await?,
             "fileName": self.file_name,
             "size": self.file_size.to_string(),
             "sizeName": crate::util::get_display_size(self.file_size),
             "key": self.akey,
             "object": "attachment"
-        })
+        }))
     }
 }
 
-use crate::auth::{encode_jwt, generate_file_download_claims};
 use crate::db::DbConn;
 
 use crate::api::EmptyResult;
-use crate::error::MapResult;
+use crate::error::{Error, MapResult};
 
 /// Database methods
 impl Attachment {
@@ -103,6 +107,19 @@ impl Attachment {
     }
 
     pub async fn delete(&self, conn: &mut DbConn) -> EmptyResult {
+        let file_path = &self.get_file_path();
+
+        if let Err(e) = remove_file(file_path).await {
+            // Ignore "file not found" errors. This can happen when the
+            // upstream caller has already cleaned up the file as part of
+            // its own error handling.
+            if e.kind() == ErrorKind::NotFound {
+                debug!("File '{}' already deleted.", file_path);
+            } else {
+                return Err(e.into());
+            }
+        }
+        
         db_run! { conn: {
             let _: () = crate::util::retry(
                 || diesel::delete(attachments::table.filter(attachments::id.eq(&self.id))).execute(conn),
@@ -110,19 +127,7 @@ impl Attachment {
             )
             .map_res("Error deleting attachment")?;
 
-            let file_path = &self.get_file_path();
-
-            match std::fs::remove_file(file_path) {
-                // Ignore "file not found" errors. This can happen when the
-                // upstream caller has already cleaned up the file as part of
-                // its own error handling.
-                Err(e) if e.kind() == ErrorKind::NotFound => {
-                    debug!("File '{}' already deleted.", file_path);
-                    Ok(())
-                }
-                Err(e) => Err(e.into()),
-                _ => Ok(()),
-            }
+            Ok(())
         }}
     }
 

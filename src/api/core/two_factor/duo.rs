@@ -258,7 +258,7 @@ pub(crate) async fn get_duo_keys_email(email: &str, conn: &mut DbConn) -> ApiRes
     }
     .map_res("Can't fetch Duo Keys")?;
 
-    Ok((data.ik, data.sk, CONFIG.get_duo_akey(), data.host))
+    Ok((data.ik, data.sk, CONFIG.get_duo_akey().await, data.host))
 }
 
 pub async fn generate_duo_signature(email: &str, conn: &mut DbConn) -> ApiResult<(String, String)> {
