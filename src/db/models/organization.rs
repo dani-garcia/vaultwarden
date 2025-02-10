@@ -517,7 +517,7 @@ impl Membership {
             CONFIG.org_groups_enabled() && Group::is_in_full_access_group(&self.user_uuid, &self.org_uuid, conn).await;
 
         // If collections are to be included, only include them if the user does not have full access via a group or defined to the user it self
-        let collections: Vec<Value> = if include_collections && !(full_access_group || self.has_full_access()) {
+        let collections: Vec<Value> = if include_collections && !(full_access_group || self.access_all) {
             // Get all collections for the user here already to prevent more queries
             let cu: HashMap<CollectionId, CollectionUser> =
                 CollectionUser::find_by_organization_and_user_uuid(&self.org_uuid, &self.user_uuid, conn)
