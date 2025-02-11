@@ -391,9 +391,34 @@ impl Organization {
         }}
     }
 
+    pub async fn find_by_name(name: &str, conn: &mut DbConn) -> Option<Self> {
+        db_run! { conn: {
+            organizations::table
+                .filter(organizations::name.eq(name))
+                .first::<OrganizationDb>(conn)
+                .ok().from_db()
+        }}
+    }
+
     pub async fn get_all(conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             organizations::table.load::<OrganizationDb>(conn).expect("Error loading organizations").from_db()
+        }}
+    }
+
+    pub async fn find_main_org_user_email(user_email: &str, conn: &mut DbConn) -> Option<Organization> {
+        let lower_mail = user_email.to_lowercase();
+
+        db_run! { conn: {
+            organizations::table
+                .inner_join(users_organizations::table.on(users_organizations::org_uuid.eq(organizations::uuid)))
+                .inner_join(users::table.on(users::uuid.eq(users_organizations::user_uuid)))
+                .filter(users::email.eq(lower_mail))
+                .filter(users_organizations::status.ne(MembershipStatus::Revoked as i32))
+                .order(users_organizations::atype.asc())
+                .select(organizations::all_columns)
+                .first::<OrganizationDb>(conn)
+                .ok().from_db()
         }}
     }
 }
@@ -1097,6 +1122,17 @@ impl Membership {
                 .and(users_organizations::org_uuid.eq(org_uuid))
             )
             .first::<MembershipDb>(conn).ok().from_db()
+        }}
+    }
+
+    pub async fn find_main_user_org(user_uuid: &str, conn: &mut DbConn) -> Option<Self> {
+        db_run! { conn: {
+            users_organizations::table
+                .filter(users_organizations::user_uuid.eq(user_uuid))
+                .filter(users_organizations::status.ne(MembershipStatus::Revoked as i32))
+                .order(users_organizations::atype.asc())
+                .first::<MembershipDb>(conn)
+                .ok().from_db()
         }}
     }
 }

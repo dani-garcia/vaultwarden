@@ -28,6 +28,8 @@ use crate::{
     CONFIG,
 };
 
+pub static FAKE_IDENTIFIER: &str = "Vaultwarden";
+
 static AC_CACHE: Lazy<Cache<OIDCState, AuthenticatedUser>> =
     Lazy::new(|| Cache::builder().max_capacity(1000).time_to_live(Duration::from_secs(10 * 60)).build());
 

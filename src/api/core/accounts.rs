@@ -7,7 +7,7 @@ use serde_json::Value;
 
 use crate::{
     api::{
-        core::{log_user_event, two_factor::email},
+        core::{accept_org_invite, log_user_event, two_factor::email},
         master_password_policy, register_push_device, unregister_push_device, AnonymousNotify, ApiResult, EmptyResult,
         JsonResult, Notify, PasswordOrOtpData, UpdateType,
     },
@@ -96,7 +96,6 @@ pub struct SetPasswordData {
     keys: Option<KeysData>,
     master_password_hash: String,
     master_password_hint: Option<String>,
-    #[allow(dead_code)]
     org_identifier: Option<String>,
 }
 
@@ -297,8 +296,24 @@ async fn post_set_password(data: Json<SetPasswordData>, headers: Headers, mut co
         user.public_key = Some(keys.public_key);
     }
 
+    if let Some(identifier) = data.org_identifier {
+        if identifier != crate::sso::FAKE_IDENTIFIER {
+            let org = match Organization::find_by_name(&identifier, &mut conn).await {
+                None => err!("Failed to retrieve the associated organization"),
+                Some(org) => org,
+            };
+
+            let membership = match Membership::find_by_user_and_org(&user.uuid, &org.uuid, &mut conn).await {
+                None => err!("Failed to retrieve the invitation"),
+                Some(org) => org,
+            };
+
+            accept_org_invite(&user, membership, None, &mut conn).await?;
+        }
+    }
+
     if CONFIG.mail_enabled() {
-        mail::send_set_password(&user.email.to_lowercase(), &user.name).await?;
+        mail::send_welcome(&user.email.to_lowercase()).await?;
     } else {
         Membership::accept_user_invitations(&user.uuid, &mut conn).await?;
     }

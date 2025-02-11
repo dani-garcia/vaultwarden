@@ -565,18 +565,6 @@ pub async fn send_sso_change_email(address: &str) -> EmptyResult {
     send_email(address, &subject, body_html, body_text).await
 }
 
-pub async fn send_set_password(address: &str, user_name: &str) -> EmptyResult {
-    let (subject, body_html, body_text) = get_text(
-        "email/set_password",
-        json!({
-            "url": CONFIG.domain(),
-            "img_src": CONFIG._smtp_img_src(),
-            "user_name": user_name,
-        }),
-    )?;
-    send_email(address, &subject, body_html, body_text).await
-}
-
 pub async fn send_test(address: &str) -> EmptyResult {
     let (subject, body_html, body_text) = get_text(
         "email/smtp_test",
