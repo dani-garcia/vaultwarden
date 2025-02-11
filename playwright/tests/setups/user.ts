@@ -1,6 +1,9 @@
 import { expect, type Browser,Page } from '@playwright/test';
+import { type MailBuffer } from 'maildev';
 
-export async function createAccount(test, page: Page, user: { email: string, name: string, password: string }, emails) {
+import * as utils from '../../global-utils';
+
+export async function createAccount(test, page: Page, user: { email: string, name: string, password: string }, mailBuffer?: MailBuffer) {
     await test.step('Create user', async () => {
         // Landing page
         await page.goto('/');
@@ -16,16 +19,15 @@ export async function createAccount(test, page: Page, user: { email: string, nam
 
         // Back to the login page
         await expect(page).toHaveTitle('Vaultwarden Web');
-        await expect(page.getByTestId("toast-message")).toHaveText(/Your new account has been created/);
+        await utils.checkNotification(page, 'Your new account has been created');
 
-        if( emails ){
-            const { value: welcome } = await emails.next();
-            expect(welcome.subject).toContain("Welcome");
+        if( mailBuffer ){
+            await expect(mailBuffer.next((m) => m.subject === "Welcome")).resolves.toBeDefined();
         }
     });
 }
 
-export async function logUser(test, page: Page, user: { email: string, password: string }, emails) {
+export async function logUser(test, page: Page, user: { email: string, password: string }, mailBuffer?: MailBuffer) {
     await test.step('Log user', async () => {
         // Landing page
         await page.goto('/');
@@ -39,9 +41,8 @@ export async function logUser(test, page: Page, user: { email: string, password:
         // We are now in the default vault page
         await expect(page).toHaveTitle(/Vaultwarden Web/);
 
-        if( emails ){
-            const { value: logged } = await emails.next();
-            expect(logged.subject).toContain("New Device Logged");
+        if( mailBuffer ){
+            await expect(mailBuffer.next((m) => m.subject === 'New Device Logged In From Firefox')).resolves.toBeDefined();
         }
     });
 }

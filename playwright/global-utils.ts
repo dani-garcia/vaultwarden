@@ -1,4 +1,4 @@
-import { type Browser, type TestInfo } from '@playwright/test';
+import { expect, type Browser, type TestInfo } from '@playwright/test';
 import { EventEmitter } from "events";
 import { type Mail, MailServer } from 'maildev';
 import { execSync } from 'node:child_process';
@@ -29,19 +29,6 @@ export function loadEnv(){
             name: process.env.TEST_USER3,
             password: process.env.TEST_USER3_PASSWORD,
         },
-    }
-}
-
-export function closeMails(mailServer: MailServer, mailIterators: AsyncIterator<Mail>[]) {
-    if( mailServer ) {
-        mailServer.close();
-    }
-    if( mailIterators ) {
-        for (const mails of mailIterators) {
-            if(mails){
-                mails.return();
-            }
-        }
     }
 }
 
@@ -216,4 +203,10 @@ export async function stopVaultwarden() {
 export async function restartVaultwarden(page: Page, testInfo: TestInfo, env, resetDB: Boolean = true) {
     stopVaultwarden();
     return startVaultwarden(page.context().browser(), testInfo, env, resetDB);
+}
+
+export async function checkNotification(page: Page, hasText: string) {
+    await expect(page.locator('bit-toast').filter({ hasText })).toBeVisible();
+    await page.locator('bit-toast').filter({ hasText }).getByRole('button').click();
+    await expect(page.locator('bit-toast').filter({ hasText })).toHaveCount(0);
 }

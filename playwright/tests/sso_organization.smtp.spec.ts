@@ -30,7 +30,7 @@ test.beforeAll('Setup', async ({ browser }, testInfo: TestInfo) => {
 
 test.afterAll('Teardown', async ({}) => {
     utils.stopVaultwarden();
-    [mailServer, mail1Buffer, mail2Buffer, mail3Buffer].map((m) => m?.close());
+    [mail1Buffer, mail2Buffer, mail3Buffer, mailServer].map((m) => m?.close());
 });
 
 test('Create user3', async ({ page }) => {
@@ -55,8 +55,7 @@ test('Invite users', async ({ page }) => {
         await page.getByLabel('Select collections').click();
         await page.getByLabel('Options list').getByText('Default collection').click();
         await page.getByRole('button', { name: 'Save' }).click();
-        await expect(page.getByTestId("toast-message")).toHaveText('User(s) invited');
-        await page.locator('#toast-container').getByRole('button').click();
+        await utils.checkNotification(page, 'User(s) invited');
     });
 
     await test.step('Invite user3', async () => {
@@ -67,12 +66,11 @@ test('Invite users', async ({ page }) => {
         await page.getByLabel('Select collections').click();
         await page.getByLabel('Options list').getByText('Default collection').click();
         await page.getByRole('button', { name: 'Save' }).click();
-        await expect(page.getByTestId("toast-message")).toHaveText('User(s) invited');
-        await page.locator('#toast-container').getByRole('button').click();
+        await utils.checkNotification(page, 'User(s) invited');
     });
 });
 
-test.fail('invited with new account', async ({ page }) => {
+test('invited with new account', async ({ page }) => {
     const link = await test.step('Extract email link', async () => {
         const invited = await mail2Buffer.next((m) => m.subject === "Join Test");
         await page.setContent(invited.html);
@@ -99,8 +97,7 @@ test.fail('invited with new account', async ({ page }) => {
 
     await test.step('Default vault page', async () => {
         await expect(page).toHaveTitle(/Vaultwarden Web/);
-        await expect(page.getByTestId("toast-title")).toHaveText("Invitation accepted");
-        await page.locator('#toast-container').getByRole('button').click();
+        // await utils.checkNotification(page, 'Invitation accepted');
     });
 
     await test.step('Check mails', async () => {
@@ -135,8 +132,7 @@ test('invited with existing account', async ({ page }) => {
 
     await test.step('Default vault page', async () => {
         await expect(page).toHaveTitle(/Vaultwarden Web/);
-        await expect(page.getByTestId("toast-title")).toHaveText("Invitation accepted");
-        await page.locator('#toast-container').getByRole('button').click();
+        await utils.checkNotification(page, 'Invitation accepted');
     });
 
     await test.step('Check mails', async () => {

@@ -37,8 +37,7 @@ test('Invite users', async ({ page }) => {
         await page.getByLabel('Select collections').click();
         await page.getByLabel('Options list').getByText('Default collection').click();
         await page.getByRole('button', { name: 'Save' }).click();
-        await expect(page.getByTestId("toast-message")).toHaveText('User(s) invited');
-        await page.locator('#toast-container').getByRole('button').click();
+        await utils.checkNotification(page, 'User(s) invited');
         await expect(page.getByRole('row', { name: users.user2.email })).toHaveText(/Invited/);
     });
 
@@ -50,8 +49,7 @@ test('Invite users', async ({ page }) => {
         await page.getByLabel('Select collections').click();
         await page.getByLabel('Options list').getByText('Default collection').click();
         await page.getByRole('button', { name: 'Save' }).click();
-        await expect(page.getByTestId("toast-message")).toHaveText('User(s) invited');
-        await page.locator('#toast-container').getByRole('button').click();
+        await utils.checkNotification(page, 'User(s) invited');
         await expect(page.getByRole('row', { name: users.user3.name })).toHaveText(/Needs confirmation/);
     });
 
@@ -59,8 +57,7 @@ test('Invite users', async ({ page }) => {
         await page.getByRole('row', { name: users.user3.name }).getByLabel('Options').click();
         await page.getByRole('menuitem', { name: 'Confirm' }).click();
         await page.getByRole('button', { name: 'Confirm' }).click();
-        await expect(page.getByTestId("toast-message")).toHaveText(/confirmed/);
-        await page.locator('#toast-container').getByRole('button').click();
+        await utils.checkNotification(page, 'confirmed');
     });
 });
 
@@ -78,7 +75,7 @@ test('Confirm invited user', async ({ page }) => {
         await page.getByRole('row', { name: users.user2.name }).getByLabel('Options').click();
         await page.getByRole('menuitem', { name: 'Confirm' }).click();
         await page.getByRole('button', { name: 'Confirm' }).click();
-        await expect(page.getByTestId("toast-message")).toHaveText(/confirmed/);
+        await utils.checkNotification(page, 'confirmed');
     });
 });
 

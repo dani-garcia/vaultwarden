@@ -1,6 +1,8 @@
 import { expect, type Page, Test } from '@playwright/test';
 import { type MailBuffer, MailServer } from 'maildev';
 
+import * as utils from '../../global-utils';
+
 /**
  * If a MailBuffer is passed it will be used and consume the expected emails
  */
@@ -44,8 +46,8 @@ export async function logNewUser(
 
             if( mailBuffer ){
                 await test.step('Check emails', async () => {
+                    await expect(mailBuffer.next((m) => m.subject === "Welcome")).resolves.toBeDefined();
                     await expect(mailBuffer.next((m) => m.subject.includes("New Device Logged"))).resolves.toBeDefined();
-                    await expect(mailBuffer.next((m) => m.subject === "Master Password Has Been Changed")).resolves.toBeDefined();
                 });
             }
         });
