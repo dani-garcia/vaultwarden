@@ -1328,7 +1328,7 @@ async fn accept_invite(
 
     // skip invitation logic when we were invited via the /admin panel
     if **member_id != FAKE_ADMIN_UUID {
-        let Some(member) = Membership::find_by_uuid_and_org(member_id, &claims.org_id, &mut conn).await else {
+        let Some(mut member) = Membership::find_by_uuid_and_org(member_id, &claims.org_id, &mut conn).await else {
             err!("Error accepting the invitation")
         };
 
@@ -1337,6 +1337,9 @@ async fn accept_invite(
             true => data.reset_password_key,
             false => None,
         };
+
+        // In case the user was invited before the mail was saved in db.
+        member.invited_by_email = member.invited_by_email.or(claims.invited_by_email);
 
         accept_org_invite(&headers.user, member, reset_password_key, &mut conn).await?;
     } else if CONFIG.mail_enabled() {
