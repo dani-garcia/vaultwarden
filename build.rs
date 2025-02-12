@@ -15,6 +15,8 @@ fn main() {
     println!("cargo:rustc-cfg=query_logger");
     #[cfg(feature = "s3")]
     println!("cargo:rustc-cfg=s3");
+    #[cfg(feature = "ses")]
+    println!("cargo:rustc-cfg=ses");
     #[cfg(feature = "aws")]
     println!("cargo:rustc-cfg=aws");
 
@@ -31,6 +33,7 @@ fn main() {
     println!("cargo::rustc-check-cfg=cfg(dsql)");
     println!("cargo::rustc-check-cfg=cfg(query_logger)");
     println!("cargo::rustc-check-cfg=cfg(s3)");
+    println!("cargo::rustc-check-cfg=cfg(ses)");
     println!("cargo::rustc-check-cfg=cfg(aws)");
 
     // Rerun when these paths are changed.

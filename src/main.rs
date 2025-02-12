@@ -45,7 +45,7 @@ use tokio::{
 #[cfg(unix)]
 use tokio::signal::unix::SignalKind;
 
-#[cfg(any(dsql, s3))]
+#[cfg(any(dsql, s3, ses))]
 mod aws;
 
 #[macro_use]
