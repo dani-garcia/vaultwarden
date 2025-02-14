@@ -17,6 +17,7 @@ use macros::UuidFromParam;
 db_object! {
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
     #[diesel(table_name = organizations)]
+    #[diesel(treat_none_as_null = true)]
     #[diesel(primary_key(uuid))]
     pub struct Organization {
         pub uuid: OrganizationId,
@@ -28,6 +29,7 @@ db_object! {
 
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
     #[diesel(table_name = users_organizations)]
+    #[diesel(treat_none_as_null = true)]
     #[diesel(primary_key(uuid))]
     pub struct Membership {
         pub uuid: MembershipId,
