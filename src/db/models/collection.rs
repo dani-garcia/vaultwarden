@@ -11,6 +11,7 @@ use macros::UuidFromParam;
 db_object! {
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
     #[diesel(table_name = collections)]
+    #[diesel(treat_none_as_null = true)]
     #[diesel(primary_key(uuid))]
     pub struct Collection {
         pub uuid: CollectionId,
