@@ -173,6 +173,9 @@ rpassword = "7.3.1"
 # Loading a dynamic CSS Stylesheet
 grass_compiler = { version = "0.13.4", default-features = false }
 
+# File are accessed through Apache OpenDAL
+opendal = { version = "0.51.2", features = ["services-fs"] }
+
 [patch.crates-io]
 # Patch yubico to remove duplicate crates of older versions
 yubico = { git = "https://github.com/BlackDex/yubico-rs", rev = "00df14811f58155c0f02e3ab10f1570ed3e115c6" }
