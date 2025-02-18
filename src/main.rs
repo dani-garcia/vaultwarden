@@ -75,16 +75,13 @@ async fn main() -> Result<(), Error> {
     let level = init_logging()?;
 
     check_data_folder().await;
-    auth::initialize_keys().unwrap_or_else(|e| {
+    auth::initialize_keys().await.unwrap_or_else(|e| {
         error!("Error creating private key '{}'\n{e:?}\nExiting Vaultwarden!", CONFIG.private_rsa_key());
         exit(1);
     });
     check_web_vault();
 
-    create_dir(&CONFIG.icon_cache_folder(), "icon cache");
     create_dir(&CONFIG.tmp_folder(), "tmp folder");
-    create_dir(&CONFIG.sends_folder(), "sends folder");
-    create_dir(&CONFIG.attachments_folder(), "attachments folder");
 
     let pool = create_db_pool().await;
     schedule_jobs(pool.clone());

@@ -14,14 +14,11 @@ use reqwest::{
     Client, Response,
 };
 use rocket::{http::ContentType, response::Redirect, Route};
-use tokio::{
-    fs::{create_dir_all, remove_file, symlink_metadata, File},
-    io::{AsyncReadExt, AsyncWriteExt},
-};
 
 use html5gum::{Emitter, HtmlString, Readable, StringReader, Tokenizer};
 
 use crate::{
+    config::PathType,
     error::Error,
     http_client::{get_reqwest_client_builder, should_block_address, CustomHttpClientError},
     util::Cached,
@@ -158,7 +155,7 @@ fn is_valid_domain(domain: &str) -> bool {
 }
 
 async fn get_icon(domain: &str) -> Option<(Vec<u8>, String)> {
-    let path = format!("{}/{domain}.png", CONFIG.icon_cache_folder());
+    let path = format!("{domain}.png");
 
     // Check for expiration of negatively cached copy
     if icon_is_negcached(&path).await {
@@ -177,7 +174,7 @@ async fn get_icon(domain: &str) -> Option<(Vec<u8>, String)> {
     // Get the icon, or None in case of error
     match download_icon(domain).await {
         Ok((icon, icon_type)) => {
-            save_icon(&path, &icon).await;
+            save_icon(&path, icon.to_vec()).await;
             Some((icon.to_vec(), icon_type.unwrap_or("x-icon").to_string()))
         }
         Err(e) => {
@@ -190,7 +187,7 @@ async fn get_icon(domain: &str) -> Option<(Vec<u8>, String)> {
 
             warn!("Unable to download icon: {e:?}");
             let miss_indicator = path + ".miss";
-            save_icon(&miss_indicator, &[]).await;
+            save_icon(&miss_indicator, vec![]).await;
             None
         }
     }
@@ -203,11 +200,9 @@ async fn get_cached_icon(path: &str) -> Option<Vec<u8>> {
     }
 
     // Try to read the cached icon, and return it if it exists
-    if let Ok(mut f) = File::open(path).await {
-        let mut buffer = Vec::new();
-
-        if f.read_to_end(&mut buffer).await.is_ok() {
-            return Some(buffer);
+    if let Ok(operator) = CONFIG.opendal_operator_for_path_type(PathType::IconCache) {
+        if let Ok(buf) = operator.read(path).await {
+            return Some(buf.to_vec());
         }
     }
 
@@ -215,9 +210,11 @@ async fn get_cached_icon(path: &str) -> Option<Vec<u8>> {
 }
 
 async fn file_is_expired(path: &str, ttl: u64) -> Result<bool, Error> {
-    let meta = symlink_metadata(path).await?;
-    let modified = meta.modified()?;
-    let age = SystemTime::now().duration_since(modified)?;
+    let operator = CONFIG.opendal_operator_for_path_type(PathType::IconCache)?;
+    let meta = operator.stat(path).await?;
+    let modified =
+        meta.last_modified().ok_or_else(|| std::io::Error::other(format!("No last modified time for `{path}`")))?;
+    let age = SystemTime::now().duration_since(modified.into())?;
 
     Ok(ttl > 0 && ttl <= age.as_secs())
 }
@@ -229,8 +226,13 @@ async fn icon_is_negcached(path: &str) -> bool {
     match expired {
         // No longer negatively cached, drop the marker
         Ok(true) => {
-            if let Err(e) = remove_file(&miss_indicator).await {
-                error!("Could not remove negative cache indicator for icon {path:?}: {e:?}");
+            match CONFIG.opendal_operator_for_path_type(PathType::IconCache) {
+                Ok(operator) => {
+                    if let Err(e) = operator.delete_iter([miss_indicator]).await {
+                        error!("Could not remove negative cache indicator for icon {path:?}: {e:?}");
+                    }
+                }
+                Err(e) => error!("Could not remove negative cache indicator for icon {path:?}: {e:?}"),
             }
             false
         }
@@ -564,17 +566,17 @@ async fn download_icon(domain: &str) -> Result<(Bytes, Option<&str>), Error> {
     Ok((buffer, icon_type))
 }
 
-async fn save_icon(path: &str, icon: &[u8]) {
-    match File::create(path).await {
-        Ok(mut f) => {
-            f.write_all(icon).await.expect("Error writing icon file");
-        }
-        Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => {
-            create_dir_all(&CONFIG.icon_cache_folder()).await.expect("Error creating icon cache folder");
-        }
+async fn save_icon(path: &str, icon: Vec<u8>) {
+    let operator = match CONFIG.opendal_operator_for_path_type(PathType::IconCache) {
+        Ok(operator) => operator,
         Err(e) => {
-            warn!("Unable to save icon: {e:?}");
+            warn!("Failed to get OpenDAL operator while saving icon: {e}");
+            return;
         }
+    };
+
+    if let Err(e) = operator.write(path, icon).await {
+        warn!("Unable to save icon: {e:?}");
     }
 }
 

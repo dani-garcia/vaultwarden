@@ -176,6 +176,9 @@ rpassword = "7.4.0"
 # Loading a dynamic CSS Stylesheet
 grass_compiler = { version = "0.13.4", default-features = false }
 
+# File are accessed through Apache OpenDAL
+opendal = { version = "0.53.2", features = ["services-fs"] }
+
 # Strip debuginfo from the release builds
 # The debug symbols are to provide better panic traces
 # Also enable fat LTO and use 1 codegen unit for optimizations
