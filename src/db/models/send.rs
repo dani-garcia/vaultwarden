@@ -1,7 +1,7 @@
 use chrono::{NaiveDateTime, Utc};
 use serde_json::Value;
 
-use crate::util::LowerCase;
+use crate::{config::PathType, util::LowerCase, CONFIG};
 
 use super::{OrganizationId, User, UserId};
 use id::SendId;
@@ -226,7 +226,8 @@ impl Send {
         self.update_users_revision(conn).await;
 
         if self.atype == SendType::File as i32 {
-            std::fs::remove_dir_all(std::path::Path::new(&crate::CONFIG.sends_folder()).join(&self.uuid)).ok();
+            let operator = CONFIG.opendal_operator_for_path_type(PathType::Sends)?;
+            operator.remove_all(&self.uuid).await.ok();
         }
 
         db_run! { conn: {
