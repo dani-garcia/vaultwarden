@@ -135,6 +135,10 @@ impl Device {
     pub fn is_registered(&self) -> bool {
         self.push_uuid.is_some()
     }
+
+    pub fn is_cli(&self) -> bool {
+        matches!(DeviceType::from_i32(self.atype), DeviceType::WindowsCLI | DeviceType::MacOsCLI | DeviceType::LinuxCLI)
+    }
 }
 
 pub struct DeviceWithAuthRequest {
