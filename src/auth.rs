@@ -1,6 +1,5 @@
 // JWT Handling
-//
-use chrono::{TimeDelta, Utc};
+use chrono::{DateTime, TimeDelta, Utc};
 use jsonwebtoken::{errors::ErrorKind, Algorithm, DecodingKey, EncodingKey, Header};
 use num_traits::FromPrimitive;
 use once_cell::sync::{Lazy, OnceCell};
@@ -14,15 +13,23 @@ use std::{
     net::IpAddr,
 };
 
-use crate::db::models::{
-    AttachmentId, CipherId, CollectionId, DeviceId, EmergencyAccessId, MembershipId, OrgApiKeyId, OrganizationId,
-    SendFileId, SendId, UserId,
+use crate::{
+    api::ApiResult,
+    db::models::{
+        AttachmentId, CipherId, CollectionId, DeviceId, EmergencyAccessId, MembershipId, OrgApiKeyId, OrganizationId,
+        SendFileId, SendId, UserId,
+    },
+    error::Error,
+    sso, CONFIG,
 };
-use crate::{error::Error, CONFIG};
 
 const JWT_ALGORITHM: Algorithm = Algorithm::RS256;
 
-pub static DEFAULT_VALIDITY: Lazy<TimeDelta> = Lazy::new(|| TimeDelta::try_hours(2).unwrap());
+// Limit when BitWarden consider the token as expired
+pub static BW_EXPIRATION: Lazy<TimeDelta> = Lazy::new(|| TimeDelta::try_minutes(5).unwrap());
+
+pub static DEFAULT_REFRESH_VALIDITY: Lazy<TimeDelta> = Lazy::new(|| TimeDelta::try_days(30).unwrap());
+pub static DEFAULT_ACCESS_VALIDITY: Lazy<TimeDelta> = Lazy::new(|| TimeDelta::try_hours(2).unwrap());
 static JWT_HEADER: Lazy<Header> = Lazy::new(|| Header::new(JWT_ALGORITHM));
 
 pub static JWT_LOGIN_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|login", CONFIG.domain_origin()));
@@ -90,7 +97,7 @@ pub fn encode_jwt<T: Serialize>(claims: &T) -> String {
     }
 }
 
-fn decode_jwt<T: DeserializeOwned>(token: &str, issuer: String) -> Result<T, Error> {
+pub fn decode_jwt<T: DeserializeOwned>(token: &str, issuer: String) -> Result<T, Error> {
     let mut validation = jsonwebtoken::Validation::new(JWT_ALGORITHM);
     validation.leeway = 30; // 30 seconds
     validation.validate_exp = true;
@@ -107,6 +114,10 @@ fn decode_jwt<T: DeserializeOwned>(token: &str, issuer: String) -> Result<T, Err
             _ => err!("Error decoding JWT"),
         },
     }
+}
+
+pub fn decode_refresh(token: &str) -> Result<RefreshJwtClaims, Error> {
+    decode_jwt(token, JWT_LOGIN_ISSUER.to_string())
 }
 
 pub fn decode_login(token: &str) -> Result<LoginJwtClaims, Error> {
@@ -180,6 +191,73 @@ pub struct LoginJwtClaims {
     pub scope: Vec<String>,
     // [ "Application" ]
     pub amr: Vec<String>,
+}
+
+impl LoginJwtClaims {
+    pub fn new(device: &Device, user: &User, nbf: i64, exp: i64, scope: Vec<String>, now: DateTime<Utc>) -> Self {
+        // ---
+        // Disabled these keys to be added to the JWT since they could cause the JWT to get too large
+        // Also These key/value pairs are not used anywhere by either Vaultwarden or Bitwarden Clients
+        // Because these might get used in the future, and they are added by the Bitwarden Server, lets keep it, but then commented out
+        // ---
+        // fn arg: orgs: Vec<super::UserOrganization>,
+        // ---
+        // let orgowner: Vec<_> = orgs.iter().filter(|o| o.atype == 0).map(|o| o.org_uuid.clone()).collect();
+        // let orgadmin: Vec<_> = orgs.iter().filter(|o| o.atype == 1).map(|o| o.org_uuid.clone()).collect();
+        // let orguser: Vec<_> = orgs.iter().filter(|o| o.atype == 2).map(|o| o.org_uuid.clone()).collect();
+        // let orgmanager: Vec<_> = orgs.iter().filter(|o| o.atype == 3).map(|o| o.org_uuid.clone()).collect();
+
+        if exp <= (now + *BW_EXPIRATION).timestamp() {
+            warn!("Raise access_token lifetime to more than 5min.")
+        }
+
+        // Create the JWT claims struct, to send to the client
+        Self {
+            nbf,
+            exp,
+            iss: JWT_LOGIN_ISSUER.to_string(),
+            sub: user.uuid.clone(),
+            premium: true,
+            name: user.name.clone(),
+            email: user.email.clone(),
+            email_verified: !CONFIG.mail_enabled() || user.verified_at.is_some(),
+
+            // ---
+            // Disabled these keys to be added to the JWT since they could cause the JWT to get too large
+            // Also These key/value pairs are not used anywhere by either Vaultwarden or Bitwarden Clients
+            // Because these might get used in the future, and they are added by the Bitwarden Server, lets keep it, but then commented out
+            // See: https://github.com/dani-garcia/vaultwarden/issues/4156
+            // ---
+            // orgowner,
+            // orgadmin,
+            // orguser,
+            // orgmanager,
+            sstamp: user.security_stamp.clone(),
+            device: device.uuid.clone(),
+            scope,
+            amr: vec!["Application".into()],
+        }
+    }
+
+    pub fn default(device: &Device, user: &User, auth_method: &AuthMethod) -> Self {
+        let time_now = Utc::now();
+        Self::new(
+            device,
+            user,
+            time_now.timestamp(),
+            (time_now + *DEFAULT_ACCESS_VALIDITY).timestamp(),
+            auth_method.scope_vec(),
+            time_now,
+        )
+    }
+
+    pub fn token(&self) -> String {
+        encode_jwt(&self)
+    }
+
+    pub fn expires_in(&self) -> i64 {
+        self.exp - Utc::now().timestamp()
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -965,4 +1043,144 @@ impl<'r> FromRequest<'r> for ClientVersion {
 
         Outcome::Success(ClientVersion(version))
     }
+}
+
+#[derive(Clone, Debug, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AuthMethod {
+    OrgApiKey,
+    Password,
+    Sso,
+    UserApiKey,
+}
+
+impl AuthMethod {
+    pub fn scope(&self) -> String {
+        match self {
+            AuthMethod::OrgApiKey => "api.organization".to_string(),
+            AuthMethod::Password => "api offline_access".to_string(),
+            AuthMethod::Sso => "api offline_access".to_string(),
+            AuthMethod::UserApiKey => "api".to_string(),
+        }
+    }
+
+    pub fn scope_vec(&self) -> Vec<String> {
+        self.scope().split_whitespace().map(str::to_string).collect()
+    }
+
+    pub fn check_scope(&self, scope: Option<&String>) -> ApiResult<String> {
+        let method_scope = self.scope();
+        match scope {
+            None => err!("Missing scope"),
+            Some(scope) if scope == &method_scope => Ok(method_scope),
+            Some(scope) => err!(format!("Scope ({scope}) not supported")),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum TokenWrapper {
+    Access(String),
+    Refresh(String),
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RefreshJwtClaims {
+    // Not before
+    pub nbf: i64,
+    // Expiration time
+    pub exp: i64,
+    // Issuer
+    pub iss: String,
+    // Subject
+    pub sub: AuthMethod,
+
+    pub device_token: String,
+
+    pub token: Option<TokenWrapper>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AuthTokens {
+    pub refresh_claims: RefreshJwtClaims,
+    pub access_claims: LoginJwtClaims,
+}
+
+impl AuthTokens {
+    pub fn refresh_token(&self) -> String {
+        encode_jwt(&self.refresh_claims)
+    }
+
+    pub fn access_token(&self) -> String {
+        self.access_claims.token()
+    }
+
+    pub fn expires_in(&self) -> i64 {
+        self.access_claims.expires_in()
+    }
+
+    pub fn scope(&self) -> String {
+        self.refresh_claims.sub.scope()
+    }
+
+    // Create refresh_token and access_token with default validity
+    pub fn new(device: &Device, user: &User, sub: AuthMethod) -> Self {
+        let time_now = Utc::now();
+
+        let access_claims = LoginJwtClaims::default(device, user, &sub);
+
+        let refresh_claims = RefreshJwtClaims {
+            nbf: time_now.timestamp(),
+            exp: (time_now + *DEFAULT_REFRESH_VALIDITY).timestamp(),
+            iss: JWT_LOGIN_ISSUER.to_string(),
+            sub,
+            device_token: device.refresh_token.clone(),
+            token: None,
+        };
+
+        Self {
+            refresh_claims,
+            access_claims,
+        }
+    }
+}
+
+pub async fn refresh_tokens(refresh_token: &str, conn: &mut DbConn) -> ApiResult<(Device, AuthTokens)> {
+    let time_now = Utc::now();
+
+    let refresh_claims = match decode_refresh(refresh_token) {
+        Err(err) => err_silent!(format!("Impossible to read refresh_token: {}", err.message())),
+        Ok(claims) => claims,
+    };
+
+    // Get device by refresh token
+    let mut device = match Device::find_by_refresh_token(&refresh_claims.device_token, conn).await {
+        None => err!("Invalid refresh token"),
+        Some(device) => device,
+    };
+
+    // Save to update `updated_at`.
+    device.save(conn).await?;
+
+    let user = match User::find_by_uuid(&device.user_uuid, conn).await {
+        None => err!("Impossible to find user"),
+        Some(user) => user,
+    };
+
+    if refresh_claims.exp < time_now.timestamp() {
+        err!("Expired refresh token");
+    }
+
+    let auth_tokens = match refresh_claims.sub {
+        AuthMethod::Sso if CONFIG.sso_enabled() && CONFIG.sso_auth_only_not_session() => {
+            AuthTokens::new(&device, &user, refresh_claims.sub)
+        }
+        AuthMethod::Sso if CONFIG.sso_enabled() => sso::exchange_refresh_token(&device, &user, &refresh_claims).await?,
+        AuthMethod::Sso => err!("SSO is now disabled, Login again using email and master password"),
+        AuthMethod::Password if CONFIG.sso_enabled() && CONFIG.sso_only() => err!("SSO is now required, Login again"),
+        AuthMethod::Password => AuthTokens::new(&device, &user, refresh_claims.sub),
+        _ => err!("Invalid auth method, cannot refresh token"),
+    };
+
+    Ok((device, auth_tokens))
 }

@@ -147,6 +147,10 @@ impl Error {
     pub fn get_event(&self) -> &Option<ErrorEvent> {
         &self.event
     }
+
+    pub fn message(&self) -> &str {
+        &self.message
+    }
 }
 
 pub trait MapResult<S> {
@@ -251,8 +255,14 @@ macro_rules! err_silent {
     ($msg:expr) => {{
         return Err($crate::error::Error::new($msg, $msg));
     }};
+    ($msg:expr, ErrorEvent $err_event:tt) => {{
+        return Err($crate::error::Error::new($msg, $msg).with_event($crate::error::ErrorEvent $err_event));
+    }};
     ($usr_msg:expr, $log_value:expr) => {{
         return Err($crate::error::Error::new($usr_msg, $log_value));
+    }};
+    ($usr_msg:expr, $log_value:expr, ErrorEvent $err_event:tt) => {{
+        return Err($crate::error::Error::new($usr_msg, $log_value).with_event($crate::error::ErrorEvent $err_event));
     }};
 }
 

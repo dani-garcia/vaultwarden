@@ -10,13 +10,14 @@ use crate::{
     crypto,
     db::DbConn,
     error::MapResult,
+    sso::OIDCIdentifier,
     util::{format_date, get_uuid, retry},
     CONFIG,
 };
 use macros::UuidFromParam;
 
 db_object! {
-    #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
+    #[derive(Identifiable, Queryable, Insertable, AsChangeset, Selectable)]
     #[diesel(table_name = users)]
     #[diesel(treat_none_as_null = true)]
     #[diesel(primary_key(uuid))]
@@ -71,6 +72,14 @@ db_object! {
     pub struct Invitation {
         pub email: String,
     }
+
+    #[derive(Identifiable, Queryable, Insertable, Selectable)]
+    #[diesel(table_name = sso_users)]
+    #[diesel(primary_key(user_uuid))]
+    pub struct SsoUser {
+        pub user_uuid: UserId,
+        pub identifier: OIDCIdentifier,
+    }
 }
 
 pub enum UserKdfType {
@@ -96,7 +105,7 @@ impl User {
     pub const CLIENT_KDF_TYPE_DEFAULT: i32 = UserKdfType::Pbkdf2 as i32;
     pub const CLIENT_KDF_ITER_DEFAULT: i32 = 600_000;
 
-    pub fn new(email: String) -> Self {
+    pub fn new(email: String, name: Option<String>) -> Self {
         let now = Utc::now().naive_utc();
         let email = email.to_lowercase();
 
@@ -108,7 +117,7 @@ impl User {
             verified_at: None,
             last_verifying_at: None,
             login_verify_count: 0,
-            name: email.clone(),
+            name: name.unwrap_or(email.clone()),
             email,
             akey: String::new(),
             email_new: None,
@@ -478,3 +487,49 @@ impl Invitation {
 #[deref(forward)]
 #[from(forward)]
 pub struct UserId(String);
+
+impl SsoUser {
+    pub async fn save(&self, conn: &mut DbConn) -> EmptyResult {
+        db_run! { conn:
+            sqlite, mysql {
+                diesel::replace_into(sso_users::table)
+                    .values(SsoUserDb::to_db(self))
+                    .execute(conn)
+                    .map_res("Error saving SSO user")
+            }
+            postgresql {
+                let value = SsoUserDb::to_db(self);
+                diesel::insert_into(sso_users::table)
+                    .values(&value)
+                    .execute(conn)
+                    .map_res("Error saving SSO user")
+            }
+        }
+    }
+
+    pub async fn find_by_identifier(identifier: &str, conn: &DbConn) -> Option<(User, SsoUser)> {
+        db_run! {conn: {
+            users::table
+                .inner_join(sso_users::table)
+                .select(<(UserDb, SsoUserDb)>::as_select())
+                .filter(sso_users::identifier.eq(identifier))
+                .first::<(UserDb, SsoUserDb)>(conn)
+                .ok()
+                .map(|(user, sso_user)| { (user.from_db(), sso_user.from_db()) })
+        }}
+    }
+
+    pub async fn find_by_mail(mail: &str, conn: &DbConn) -> Option<(User, Option<SsoUser>)> {
+        let lower_mail = mail.to_lowercase();
+
+        db_run! {conn: {
+            users::table
+                .left_join(sso_users::table)
+                .select(<(UserDb, Option<SsoUserDb>)>::as_select())
+                .filter(users::email.eq(lower_mail))
+                .first::<(UserDb, Option<SsoUserDb>)>(conn)
+                .ok()
+                .map(|(user, sso_user)| { (user.from_db(), sso_user.from_db()) })
+        }}
+    }
+}
