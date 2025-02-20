@@ -31,6 +31,7 @@ enable_mimalloc = ["dep:mimalloc"]
 # You also need to set an env variable `QUERY_LOGGER=1` to fully activate this so you do not have to re-compile
 # if you want to turn off the logging for a specific run.
 query_logger = ["dep:diesel_logger"]
+s3 = ["opendal/services-s3", "dep:aws-config", "dep:aws-credential-types", "dep:anyhow", "dep:reqsign"]
 
 # Enable unstable features, requires nightly
 # Currently only used to enable rusts official ip support
@@ -175,6 +176,12 @@ grass_compiler = { version = "0.13.4", default-features = false }
 
 # File are accessed through Apache OpenDAL
 opendal = { version = "0.51.2", features = ["services-fs"] }
+
+# For retrieving AWS credentials, including temporary SSO credentials
+anyhow = { version = "1.0.96", optional = true }
+aws-config = { version = "1.5.12", features = ["behavior-version-latest"], optional = true }
+aws-credential-types = { version = "1.2.1", optional = true }
+reqsign = { version = "0.16.1", optional = true }
 
 [patch.crates-io]
 # Patch yubico to remove duplicate crates of older versions
