@@ -16,7 +16,7 @@ use tokio::{
     time::{sleep, Duration},
 };
 
-use crate::CONFIG;
+use crate::{config::PathType, CONFIG};
 
 pub struct AppHeaders();
 
@@ -82,6 +82,12 @@ impl Fairing for AppHeaders {
             // 2FA/MFA Site check: api.2fa.directory
             // # Mail Relay: https://bitwarden.com/blog/add-privacy-and-security-using-email-aliases-with-bitwarden/
             // app.simplelogin.io, app.addy.io, api.fastmail.com, quack.duckduckgo.com
+
+            #[cfg(s3)]
+            let s3_connect_src = "https://*.amazonaws.com";
+            #[cfg(not(s3))]
+            let s3_connect_src = "";
+
             let csp = format!(
                 "default-src 'none'; \
                 font-src 'self'; \
@@ -108,6 +114,7 @@ impl Fairing for AppHeaders {
                   https://app.addy.io/api/ \
                   https://api.fastmail.com/ \
                   https://api.forwardemail.net \
+                  {s3_connect_src} \
                   {allowed_connect_src};\
                 ",
                 icon_service_csp = CONFIG._icon_service_csp(),
@@ -814,6 +821,28 @@ pub use is_global_hardcoded as is_global;
 #[inline(always)]
 pub fn is_global(ip: std::net::IpAddr) -> bool {
     ip.is_global()
+}
+
+/// Saves a Rocket temporary file to the OpenDAL Operator at the given path.
+///
+/// Ideally we would stream the Rocket TempFile directly to the OpenDAL
+/// Operator, but Tempfile exposes a tokio ASyncBufRead trait, which OpenDAL
+/// does not support. This could be reworked in the future to read and write
+/// chunks to reduce copy overhead.
+pub async fn save_temp_file(
+    path_type: PathType,
+    path: &str,
+    temp_file: rocket::fs::TempFile<'_>,
+) -> Result<(), crate::Error> {
+    use tokio::io::AsyncReadExt as _;
+
+    let operator = CONFIG.opendal_operator_for_path_type(path_type)?;
+
+    let mut read_stream = temp_file.open().await?;
+    let mut buf = Vec::with_capacity(temp_file.len() as usize);
+    read_stream.read_to_end(&mut buf).await?;
+    operator.write(path, buf).await?;
+    Ok(())
 }
 
 /// These are some tests to check that the implementations match
