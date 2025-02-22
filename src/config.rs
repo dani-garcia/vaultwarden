@@ -704,6 +704,12 @@ make_config! {
         smtp_from_name:                String, true,   def,     "Vaultwarden".to_string();
         /// Username
         smtp_username:                 String, true,   option;
+        /// Dkim signature (type:privatekey). Private must be base64-encoded ed key or PKCS#1 format RSA key.
+        dkim_signature:                String, true,   option;
+        /// Dkim algo (true if RSA else ed25519)
+        dkim_algo:                     bool,   true,   option;
+        /// Dkim infos (selector:domain)
+        dkim_infos:                    String, true,   option;
         /// Password
         smtp_password:                 Pass,   true,   option;
         /// SMTP Auth mechanism |> Defaults for SSL is "Plain" and "Login" and nothing for Non-SSL connections. Possible values: ["Plain", "Login", "Xoauth2"]. Multiple options need to be separated by a comma ','.
