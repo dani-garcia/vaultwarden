@@ -240,7 +240,6 @@ macro_rules! make_config {
                 const PRIVACY_CONFIG: &[&str] = &[
                     "allowed_iframe_ancestors",
                     "database_url",
-                    "domain_origin",
                     "domain_path",
                     "domain",
                     "helo_name",
@@ -431,9 +430,13 @@ make_config! {
         domain:                 String, true,   def,    "http://localhost".to_string();
         /// Domain Set |> Indicates if the domain is set by the admin. Otherwise the default will be used.
         domain_set:             bool,   false,  def,    false;
+        /// Main domain, used when current domain cannot be extracted from a request.
+        /// For example for JWTs or when sending E-Mails. Is the first domain listed
+        /// in domains.
+        main_domain:            String, false,  gen,    |c| c.domain.split(',').nth(0).expect("Missing domain").to_string();
         /// Domain path |> Domain URL path (in https://example.com:8443/path, /path is the path)
         /// MUST be the same for all domains.
-        domain_path:            String, false,  auto,   |c| extract_url_path(c.domain.split(',').next().expect("Missing domain"));
+        domain_path:            String, false,  auto,   |c| extract_url_path(c.domain.split(',').nth(0).expect("Missing domain"));
         /// Enable web vault
         web_vault_enabled:      bool,   false,  def,    true;
 
@@ -1319,12 +1322,6 @@ impl Config {
 
     pub fn host_to_domain(&self, host: &str) -> Option<String> {
         self.get_domain_hostmap(host).map(|v| v.base_url)
-    }
-
-    // Yes this is a base_url
-    // But the configuration precedent says, that we call this a domain.
-    pub fn main_domain(&self) -> String {
-        self.domain().split(',').nth(0).expect("Missing domain").to_string()
     }
 }
 
