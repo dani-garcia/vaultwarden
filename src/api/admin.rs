@@ -12,13 +12,12 @@ use rocket::{
     Catcher, Route,
 };
 
-use crate::auth::HostInfo;
 use crate::{
     api::{
         core::{log_event, two_factor},
         unregister_push_device, ApiResult, EmptyResult, JsonResult, Notify,
     },
-    auth::{decode_admin, encode_jwt, generate_admin_claims, ClientIp},
+    auth::{decode_admin, encode_jwt, generate_admin_claims, ClientIp, HostInfo},
     config::ConfigBuilder,
     db::{backup_database, get_sql_server_version, models::*, DbConn, DbConnType},
     error::{Error, MapResult},
