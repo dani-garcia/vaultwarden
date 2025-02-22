@@ -395,7 +395,7 @@ impl<'r> FromRequest<'r> for HostInfo {
 
         // Get host
         let host_info = if CONFIG.domain_set() {
-            log::debug!("Using configured host info");
+            trace!("Using configured host info");
             let host: Cow<'_, str> = if let Some(host) = headers.get_one("X-Forwarded-Host") {
                 host.into()
             } else if let Some(host) = headers.get_one("Host") {
@@ -405,19 +405,19 @@ impl<'r> FromRequest<'r> for HostInfo {
             };
 
             let host_info = get_host_info(host.as_ref()).unwrap_or_else(|| {
-                log::debug!("Falling back to default domain, because {host} was not in domains.");
+                trace!("Falling back to default domain, because {host} was not in domains.");
                 get_host_info(&get_main_host()).expect("Main domain doesn't have entry!")
             });
 
             host_info
         } else if let Some(referer) = headers.get_one("Referer") {
-            log::debug!("Using referer host info");
+            trace!("Using referer host info");
             HostInfo {
                 base_url: referer.to_string(),
                 origin: extract_url_origin(referer),
             }
         } else {
-            log::debug!("Guessing host info with headers");
+            trace!("Guessing host info with headers");
             // Try to guess from the headers
             use std::env;
 
@@ -443,7 +443,7 @@ impl<'r> FromRequest<'r> for HostInfo {
             }
         };
 
-        log::debug!("Using host_info: {:?}", host_info);
+        trace!("Using host_info: {:?}", host_info);
 
         Outcome::Success(host_info)
     }
