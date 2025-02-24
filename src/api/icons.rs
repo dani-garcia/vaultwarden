@@ -2,7 +2,7 @@ use std::{
     collections::HashMap,
     net::IpAddr,
     sync::Arc,
-    time::{Duration, SystemTime},
+    time::Duration,
 };
 
 use bytes::{Bytes, BytesMut};
@@ -14,15 +14,12 @@ use reqwest::{
     Client, Response,
 };
 use rocket::{http::ContentType, response::Redirect, Route};
-use tokio::{
-    fs::{create_dir_all, remove_file, symlink_metadata, File},
-    io::{AsyncReadExt, AsyncWriteExt},
-};
 
 use html5gum::{Emitter, HtmlString, Readable, StringReader, Tokenizer};
 
 use crate::{
     error::Error,
+    persistent_fs::{create_dir_all, file_is_expired, read, remove_file, write},
     http_client::{get_reqwest_client_builder, should_block_address, CustomHttpClientError},
     util::Cached,
     CONFIG,
@@ -207,23 +204,7 @@ async fn get_cached_icon(path: &str) -> Option<Vec<u8>> {
     }
 
     // Try to read the cached icon, and return it if it exists
-    if let Ok(mut f) = File::open(path).await {
-        let mut buffer = Vec::new();
-
-        if f.read_to_end(&mut buffer).await.is_ok() {
-            return Some(buffer);
-        }
-    }
-
-    None
-}
-
-async fn file_is_expired(path: &str, ttl: u64) -> Result<bool, Error> {
-    let meta = symlink_metadata(path).await?;
-    let modified = meta.modified()?;
-    let age = SystemTime::now().duration_since(modified)?;
-
-    Ok(ttl > 0 && ttl <= age.as_secs())
+    read(path).await.ok()
 }
 
 async fn icon_is_negcached(path: &str) -> bool {
@@ -569,13 +550,15 @@ async fn download_icon(domain: &str) -> Result<(Bytes, Option<&str>), Error> {
 }
 
 async fn save_icon(path: &str, icon: &[u8]) {
-    match File::create(path).await {
-        Ok(mut f) => {
-            f.write_all(icon).await.expect("Error writing icon file");
-        }
-        Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => {
+    match write(path, icon).await {
+        Ok(_) => (),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             create_dir_all(&CONFIG.icon_cache_folder()).await.expect("Error creating icon cache folder");
-        }
+            
+            if let Err(e) = write(path, icon).await {
+                warn!("Unable to save icon: {:?}", e);
+            }
+        },
         Err(e) => {
             warn!("Unable to save icon: {:?}", e);
         }
