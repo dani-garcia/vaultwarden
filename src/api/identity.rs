@@ -24,7 +24,7 @@ use crate::{
 };
 
 pub fn routes() -> Vec<Route> {
-    routes![login, prelogin, identity_register]
+    routes![login, prelogin, identity_register, register_verification_email, register_finish]
 }
 
 #[post("/connect/token", data = "<data>")]
@@ -714,7 +714,68 @@ async fn prelogin(data: Json<PreloginData>, conn: DbConn) -> Json<Value> {
 
 #[post("/accounts/register", data = "<data>")]
 async fn identity_register(data: Json<RegisterData>, conn: DbConn) -> JsonResult {
-    _register(data, conn).await
+    _register(data, false, conn).await
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RegisterVerificationData {
+    email: String,
+    name: Option<String>,
+    // receiveMarketingEmails: bool,
+}
+
+#[derive(rocket::Responder)]
+enum RegisterVerificationResponse {
+    NoContent(()),
+    Token(Json<String>),
+}
+
+#[post("/accounts/register/send-verification-email", data = "<data>")]
+async fn register_verification_email(
+    data: Json<RegisterVerificationData>,
+    mut conn: DbConn,
+) -> ApiResult<RegisterVerificationResponse> {
+    let data = data.into_inner();
+
+    if !CONFIG.is_signup_allowed(&data.email) {
+        err!("Registration not allowed or user already exists")
+    }
+
+    let should_send_mail = CONFIG.mail_enabled() && CONFIG.signups_verify();
+
+    if User::find_by_mail(&data.email, &mut conn).await.is_some() {
+        if should_send_mail {
+            // There is still a timing side channel here in that the code
+            // paths that send mail take noticeably longer than ones that
+            // don't. Add a randomized sleep to mitigate this somewhat.
+            use rand::{rngs::SmallRng, Rng, SeedableRng};
+            let mut rng = SmallRng::from_os_rng();
+            let delta: i32 = 100;
+            let sleep_ms = (1_000 + rng.random_range(-delta..=delta)) as u64;
+            tokio::time::sleep(tokio::time::Duration::from_millis(sleep_ms)).await;
+        }
+        return Ok(RegisterVerificationResponse::NoContent(()));
+    }
+
+    let token_claims =
+        crate::auth::generate_register_verify_claims(data.email.clone(), data.name.clone(), should_send_mail);
+    let token = crate::auth::encode_jwt(&token_claims);
+
+    if should_send_mail {
+        mail::send_register_verify_email(&data.email, &token).await?;
+
+        Ok(RegisterVerificationResponse::NoContent(()))
+    } else {
+        // If email verification is not required, return the token directly
+        // the clients will use this token to finish the registration
+        Ok(RegisterVerificationResponse::Token(Json(token)))
+    }
+}
+
+#[post("/accounts/register/finish", data = "<data>")]
+async fn register_finish(data: Json<RegisterData>, conn: DbConn) -> JsonResult {
+    _register(data, true, conn).await
 }
 
 // https://github.com/bitwarden/jslib/blob/master/common/src/models/request/tokenRequest.ts
