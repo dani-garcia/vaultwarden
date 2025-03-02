@@ -44,7 +44,7 @@ syslog = "7.0.0"
 macros = { path = "./macros" }
 
 # Logging
-log = "0.4.25"
+log = "0.4.26"
 fern = { version = "0.7.1", features = ["syslog-7", "reopen-1"] }
 tracing = { version = "0.1.41", features = ["log"] } # Needed to have lettre and webauthn-rs trace logging to work
 
@@ -74,8 +74,8 @@ futures = "0.3.31"
 tokio = { version = "1.43.0", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal", "net"] }
 
 # A generic serialization/deserialization framework
-serde = { version = "1.0.217", features = ["derive"] }
-serde_json = "1.0.138"
+serde = { version = "1.0.218", features = ["derive"] }
+serde_json = "1.0.139"
 
 # A safe, extensible ORM and Query builder
 diesel = { version = "2.2.7", features = ["chrono", "r2d2", "numeric"] }
@@ -90,10 +90,10 @@ libsqlite3-sys = { version = "0.31.0", features = ["bundled"], optional = true }
 
 # Crypto-related libraries
 rand = "0.9.0"
-ring = "0.17.9"
+ring = "0.17.11"
 
 # UUID generation
-uuid = { version = "1.13.1", features = ["v4"] }
+uuid = { version = "1.14.0", features = ["v4"] }
 
 # Date and time libraries
 chrono = { version = "0.4.39", features = ["clock", "serde"], default-features = false }
@@ -122,7 +122,7 @@ webauthn-rs = "0.3.2"
 url = "2.5.4"
 
 # Email libraries
-lettre = { version = "0.11.12", features = ["smtp-transport", "sendmail-transport", "builder", "serde", "tokio1-native-tls", "hostname", "tracing", "tokio1"], default-features = false }
+lettre = { version = "0.11.14", features = ["smtp-transport", "sendmail-transport", "builder", "serde", "tokio1-native-tls", "hostname", "tracing", "tokio1"], default-features = false }
 percent-encoding = "2.3.1" # URL encoding library used for URL's in the emails
 email_address = "0.2.9"
 
@@ -131,7 +131,7 @@ handlebars = { version = "6.3.1", features = ["dir_source"] }
 
 # HTTP client (Used for favicons, version check, DUO and HIBP API)
 reqwest = { version = "0.12.12", features = ["native-tls-alpn", "stream", "json", "gzip", "brotli", "socks", "cookies"] }
-hickory-resolver = "0.24.3"
+hickory-resolver = "0.24.4"
 
 # Favicon extraction libraries
 html5gum = "0.7.0"
@@ -147,7 +147,7 @@ cookie = "0.18.1"
 cookie_store = "0.21.1"
 
 # Used by U2F, JWT and PostgreSQL
-openssl = "0.10.70"
+openssl = "0.10.71"
 
 # CLI argument parsing
 pico-args = "0.5.0"
