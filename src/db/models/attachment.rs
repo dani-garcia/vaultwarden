@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use bigdecimal::{BigDecimal, ToPrimitive};
 use derive_more::{AsRef, Deref, Display};
 use serde_json::Value;
@@ -43,8 +45,19 @@ impl Attachment {
     }
 
     pub async fn get_url(&self, host: &str) -> Result<String, crate::Error> {
-        let token = encode_jwt(&generate_file_download_claims(self.cipher_uuid.clone(), self.id.clone()));
-        Ok(format!("{}/attachments/{}/{}?token={}", host, self.cipher_uuid, self.id, token))
+        let operator = CONFIG.opendal_operator_for_path_type(PathType::Attachments)?;
+
+        if operator.info().scheme() == opendal::Scheme::Fs {
+            let token = encode_jwt(&generate_file_download_claims(self.cipher_uuid.clone(), self.id.clone()));
+            Ok(format!("{}/attachments/{}/{}?token={}", host, self.cipher_uuid, self.id, token))
+        } else {
+            Ok(operator
+                .presign_read(&self.get_file_path(), Duration::from_secs(5 * 60))
+                .await
+                .map_err(Into::<crate::Error>::into)?
+                .uri()
+                .to_string())
+        }
     }
 
     pub async fn to_json(&self, host: &str) -> Result<Value, crate::Error> {
