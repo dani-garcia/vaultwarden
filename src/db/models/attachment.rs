@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use bigdecimal::{BigDecimal, ToPrimitive};
 use derive_more::{AsRef, Deref, Display};
 use serde_json::Value;
@@ -42,15 +44,26 @@ impl Attachment {
         format!("{}/{}", self.cipher_uuid, self.id)
     }
 
-    pub fn get_url(&self, host: &str) -> Result<String, crate::Error> {
-        let token = encode_jwt(&generate_file_download_claims(self.cipher_uuid.clone(), self.id.clone()));
-        Ok(format!("{host}/attachments/{}/{}?token={token}", self.cipher_uuid, self.id))
+    pub async fn get_url(&self, host: &str) -> Result<String, crate::Error> {
+        let operator = CONFIG.opendal_operator_for_path_type(PathType::Attachments)?;
+
+        if operator.info().scheme() == opendal::Scheme::Fs {
+            let token = encode_jwt(&generate_file_download_claims(self.cipher_uuid.clone(), self.id.clone()));
+            Ok(format!("{host}/attachments/{}/{}?token={token}", self.cipher_uuid, self.id))
+        } else {
+            Ok(operator
+                .presign_read(&self.get_file_path(), Duration::from_secs(5 * 60))
+                .await
+                .map_err(Into::<crate::Error>::into)?
+                .uri()
+                .to_string())
+        }
     }
 
-    pub fn to_json(&self, host: &str) -> Result<Value, crate::Error> {
+    pub async fn to_json(&self, host: &str) -> Result<Value, crate::Error> {
         Ok(json!({
             "id": self.id,
-            "url": self.get_url(host)?,
+            "url": self.get_url(host).await?,
             "fileName": self.file_name,
             "size": self.file_size.to_string(),
             "sizeName": crate::util::get_display_size(self.file_size),

@@ -150,7 +150,7 @@ impl Cipher {
                 if !attachments.is_empty() {
                     let mut attachments_json_vec = vec![];
                     for attachment in attachments {
-                        attachments_json_vec.push(attachment.to_json(host)?);
+                        attachments_json_vec.push(attachment.to_json(host).await?);
                     }
                     attachments_json = Value::Array(attachments_json_vec);
                 }
@@ -160,7 +160,7 @@ impl Cipher {
             if !attachments.is_empty() {
                 let mut attachments_json_vec = vec![];
                 for attachment in attachments {
-                    attachments_json_vec.push(attachment.to_json(host)?);
+                    attachments_json_vec.push(attachment.to_json(host).await?);
                 }
                 attachments_json = Value::Array(attachments_json_vec);
             }

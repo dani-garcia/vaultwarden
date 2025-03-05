@@ -1051,7 +1051,7 @@ async fn get_attachment(
     }
 
     match Attachment::find_by_id(&attachment_id, &mut conn).await {
-        Some(attachment) if cipher_id == attachment.cipher_uuid => Ok(Json(attachment.to_json(&headers.host)?)),
+        Some(attachment) if cipher_id == attachment.cipher_uuid => Ok(Json(attachment.to_json(&headers.host).await?)),
         Some(_) => err!("Attachment doesn't belong to cipher"),
         None => err!("Attachment doesn't exist"),
     }

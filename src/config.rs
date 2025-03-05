@@ -1176,12 +1176,68 @@ fn opendal_operator_for_path(path: &str) -> Result<opendal::Operator, Error> {
         return Ok(operator.clone());
     }
 
-    let builder = opendal::services::Fs::default().root(path);
-    let operator = opendal::Operator::new(builder).map_err(Into::<Error>::into)?.finish();
+    let operator = if path.starts_with("s3://") {
+        #[cfg(not(s3))]
+        return Err(opendal::Error::new(opendal::ErrorKind::ConfigInvalid, "S3 support is not enabled").into());
+
+        #[cfg(s3)]
+        opendal_s3_operator_for_path(path)?
+    } else {
+        let builder = opendal::services::Fs::default().root(path);
+        opendal::Operator::new(builder).map_err(Into::<Error>::into)?.finish()
+    };
 
     operators_by_path.insert(path.to_string(), operator.clone());
 
     Ok(operator)
+}
+
+#[cfg(s3)]
+fn opendal_s3_operator_for_path(path: &str) -> Result<opendal::Operator, Error> {
+    // This is a custom AWS credential loader that uses the official AWS Rust
+    // SDK config crate to load credentials. This ensures maximum compatibility
+    // with AWS credential configurations. For example, OpenDAL doesn't support
+    // AWS SSO temporary credentials yet.
+    struct OpenDALS3CredentialLoader {}
+
+    #[async_trait]
+    impl reqsign::AwsCredentialLoad for OpenDALS3CredentialLoader {
+        async fn load_credential(&self, _client: reqwest::Client) -> anyhow::Result<Option<reqsign::AwsCredential>> {
+            use aws_credential_types::provider::ProvideCredentials as _;
+            use tokio::sync::OnceCell;
+
+            static DEFAULT_CREDENTIAL_CHAIN: OnceCell<
+                aws_config::default_provider::credentials::DefaultCredentialsChain,
+            > = OnceCell::const_new();
+
+            let chain = DEFAULT_CREDENTIAL_CHAIN
+                .get_or_init(|| aws_config::default_provider::credentials::DefaultCredentialsChain::builder().build())
+                .await;
+
+            let creds = chain.provide_credentials().await?;
+
+            Ok(Some(reqsign::AwsCredential {
+                access_key_id: creds.access_key_id().to_string(),
+                secret_access_key: creds.secret_access_key().to_string(),
+                session_token: creds.session_token().map(|s| s.to_string()),
+                expires_in: creds.expiry().map(|expiration| expiration.into()),
+            }))
+        }
+    }
+
+    const OPEN_DAL_S3_CREDENTIAL_LOADER: OpenDALS3CredentialLoader = OpenDALS3CredentialLoader {};
+
+    let url = Url::parse(path).map_err(|e| format!("Invalid path S3 URL path {path:?}: {e}"))?;
+
+    let bucket = url.host_str().ok_or_else(|| format!("Missing Bucket name in data folder S3 URL {path:?}"))?;
+
+    let builder = opendal::services::S3::default()
+        .customized_credential_load(Box::new(OPEN_DAL_S3_CREDENTIAL_LOADER))
+        .bucket(bucket)
+        .root(url.path())
+        .default_storage_class("INTELLIGENT_TIERING");
+
+    Ok(opendal::Operator::new(builder).map_err(Into::<Error>::into)?.finish())
 }
 
 pub enum PathType {

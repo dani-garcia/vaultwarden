@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::time::Duration;
 
 use chrono::{DateTime, TimeDelta, Utc};
 use num_traits::ToPrimitive;
@@ -569,15 +570,26 @@ async fn post_access_file(
     Ok(Json(json!({
         "object": "send-fileDownload",
         "id": file_id,
-        "url": download_url(&host, &send_id, &file_id)?,
+        "url": download_url(&host, &send_id, &file_id).await?,
     })))
 }
 
-fn download_url(host: &Host, send_id: &SendId, file_id: &SendFileId) -> Result<String, crate::Error> {
-    let token_claims = crate::auth::generate_send_claims(send_id, file_id);
-    let token = crate::auth::encode_jwt(&token_claims);
+async fn download_url(host: &Host, send_id: &SendId, file_id: &SendFileId) -> Result<String, crate::Error> {
+    let operator = CONFIG.opendal_operator_for_path_type(PathType::Sends)?;
 
-    Ok(format!("{}/api/sends/{send_id}/{file_id}?t={token}", &host.host))
+    if operator.info().scheme() == opendal::Scheme::Fs {
+        let token_claims = crate::auth::generate_send_claims(send_id, file_id);
+        let token = crate::auth::encode_jwt(&token_claims);
+
+        Ok(format!("{}/api/sends/{send_id}/{file_id}?t={token}", &host.host))
+    } else {
+        Ok(operator
+            .presign_read(&format!("{send_id}/{file_id}"), Duration::from_secs(5 * 60))
+            .await
+            .map_err(Into::<crate::Error>::into)?
+            .uri()
+            .to_string())
+    }
 }
 
 #[get("/sends/<send_id>/<file_id>?<t>")]
