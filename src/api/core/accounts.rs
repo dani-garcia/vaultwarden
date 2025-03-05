@@ -86,7 +86,6 @@ pub struct RegisterData {
 
     name: Option<String>,
 
-    token: Option<String>,
     #[allow(dead_code)]
     organization_user_id: Option<MembershipId>,
 
@@ -94,6 +93,7 @@ pub struct RegisterData {
     email_verification_token: Option<String>,
     accept_emergency_access_id: Option<EmergencyAccessId>,
     accept_emergency_access_invite_token: Option<String>,
+    #[serde(alias = "token")]
     org_invite_token: Option<String>,
 }
 
@@ -147,7 +147,6 @@ pub async fn _register(data: Json<RegisterData>, email_verification: bool, mut c
     let mut email_verified = false;
 
     let mut pending_emergency_access = None;
-    let mut pending_org_invite = None;
 
     // First, validate the provided verification tokens
     if email_verification {
@@ -201,7 +200,6 @@ pub async fn _register(data: Json<RegisterData>, email_verification: bool, mut c
                     err!("Claim org_user_id does not match organization_user_id")
                 }
 
-                pending_org_invite = Some((organization_user_id, claims));
                 email_verified = true;
             }
 
@@ -224,20 +222,17 @@ pub async fn _register(data: Json<RegisterData>, email_verification: bool, mut c
     let password_hint = clean_password_hint(&data.master_password_hint);
     enforce_password_hint_setting(&password_hint)?;
 
-    let mut verified_by_invite = false;
-
     let mut user = match User::find_by_mail(&email, &mut conn).await {
-        Some(mut user) => {
+        Some(user) => {
             if !user.password_hash.is_empty() {
                 err!("Registration not allowed or user already exists")
             }
 
-            if let Some(token) = data.token {
+            if let Some(token) = data.org_invite_token {
                 let claims = decode_invite(&token)?;
                 if claims.email == email {
                     // Verify the email address when signing up via a valid invite token
-                    verified_by_invite = true;
-                    user.verified_at = Some(Utc::now().naive_utc());
+                    email_verified = true;
                     user
                 } else {
                     err!("Registration email does not match invite email")
@@ -264,7 +259,6 @@ pub async fn _register(data: Json<RegisterData>, email_verification: bool, mut c
             if Invitation::take(&email, &mut conn).await
                 || CONFIG.is_signup_allowed(&email)
                 || pending_emergency_access.is_some()
-                || pending_org_invite.is_some()
             {
                 User::new(email.clone())
             } else {
@@ -284,10 +278,6 @@ pub async fn _register(data: Json<RegisterData>, email_verification: bool, mut c
         user.client_kdf_iter = client_kdf_iter;
     }
 
-    if email_verified {
-        user.verified_at = Some(Utc::now().naive_utc());
-    }
-
     user.client_kdf_memory = data.kdf_memory;
     user.client_kdf_parallelism = data.kdf_parallelism;
 
@@ -304,8 +294,12 @@ pub async fn _register(data: Json<RegisterData>, email_verification: bool, mut c
         user.public_key = Some(keys.public_key);
     }
 
+    if email_verified {
+        user.verified_at = Some(Utc::now().naive_utc());
+    }
+
     if CONFIG.mail_enabled() {
-        if CONFIG.signups_verify() && !verified_by_invite {
+        if CONFIG.signups_verify() && !email_verified {
             if let Err(e) = mail::send_welcome_must_verify(&user.email, &user.uuid).await {
                 error!("Error sending welcome email: {:#?}", e);
             }
@@ -314,7 +308,7 @@ pub async fn _register(data: Json<RegisterData>, email_verification: bool, mut c
             error!("Error sending welcome email: {:#?}", e);
         }
 
-        if verified_by_invite && is_email_2fa_required(data.organization_user_id, &mut conn).await {
+        if email_verified && is_email_2fa_required(data.organization_user_id, &mut conn).await {
             email::activate_email_2fa(&user, &mut conn).await.ok();
         }
     }
