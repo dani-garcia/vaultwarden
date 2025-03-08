@@ -1,4 +1,4 @@
-# Vaultwarden
+# Vaultwarden（ZH_CN中文语言翻译）
 
 Vaultwarden是一个基于Rust编写的Bitwarden客户端API替代服务器，适用于自托管部署，在运行官方资源密集型服务不理想的情况下特别适用。
 
