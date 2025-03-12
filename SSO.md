@@ -220,6 +220,19 @@ Your configuration should look like this:
 * `SSO_CLIENT_ID=${Application (client) ID}`
 * `SSO_CLIENT_SECRET=${Secret Value}`
 
+## Slack
+
+You will need to create an app in https://api.slack.com/apps/.
+
+It appears that the `access_token` returned is not in JWT format and an expiration date is not sent with it. As such you will need to use the default session lifecycle.
+
+Your configuration should look like this:
+
+* `SSO_AUTHORITY=https://slack.com`
+* `SSO_CLIENT_ID=${Application Client ID}`
+* `SSO_CLIENT_SECRET=${Application Client Secret}`
+* `SSO_AUTH_ONLY_NOT_SESSION=true`
+
 ## Zitadel
 
 To obtain a `refresh_token` to be able to extend session you'll need to add the `offline_access` scope.
