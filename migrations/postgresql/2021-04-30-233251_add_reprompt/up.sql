@@ -1,2 +1,2 @@
 ALTER TABLE ciphers
-ADD COLUMN reprompt INTEGER;
+ADD COLUMN reprompt INT4;

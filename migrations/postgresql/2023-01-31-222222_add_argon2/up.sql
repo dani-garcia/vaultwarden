@@ -1,7 +1,7 @@
 ALTER TABLE users
     ADD COLUMN
-    client_kdf_memory INTEGER DEFAULT NULL;
+    client_kdf_memory INT4 DEFAULT NULL;
 
 ALTER TABLE users
     ADD COLUMN
-    client_kdf_parallelism INTEGER DEFAULT NULL;
+    client_kdf_parallelism INT4 DEFAULT NULL;
