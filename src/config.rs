@@ -839,9 +839,11 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         "browser-fileless-import",
         "extension-refresh",
         "fido2-vault-credentials",
-        "inline-menu-positioning-improvements",
+        "inline-menu-positioning-improvements", 
         "ssh-key-vault-item",
         "ssh-agent",
+        "anon-addy-self-host-alias",
+        "simple-login-self-host-alias",
     ];
     let configured_flags = parse_experimental_client_feature_flags(&cfg.experimental_client_feature_flags);
     let invalid_flags: Vec<_> = configured_flags.keys().filter(|flag| !KNOWN_FLAGS.contains(&flag.as_str())).collect();
