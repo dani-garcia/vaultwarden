@@ -90,7 +90,8 @@ libsqlite3-sys = { version = "0.31.0", features = ["bundled"], optional = true }
 
 # Crypto-related libraries
 rand = "0.9.0"
-ring = "0.17.11"
+ring = "0.17.13"
+subtle = "2.6.1"
 
 # UUID generation
 uuid = { version = "1.14.0", features = ["v4"] }
