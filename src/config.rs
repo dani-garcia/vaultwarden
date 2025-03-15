@@ -842,6 +842,8 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         "inline-menu-positioning-improvements",
         "ssh-key-vault-item",
         "ssh-agent",
+        "anon-addy-self-host-alias",
+        "simple-login-self-host-alias",
         "mutual-tls",
     ];
     let configured_flags = parse_experimental_client_feature_flags(&cfg.experimental_client_feature_flags);
