@@ -110,7 +110,6 @@ pub fn generate_api_key() -> String {
 // Constant time compare
 //
 pub fn ct_eq<T: AsRef<[u8]>, U: AsRef<[u8]>>(a: T, b: U) -> bool {
-    use ring::constant_time::verify_slices_are_equal;
-
-    verify_slices_are_equal(a.as_ref(), b.as_ref()).is_ok()
+    use subtle::ConstantTimeEq;
+    a.as_ref().ct_eq(b.as_ref()).into()
 }

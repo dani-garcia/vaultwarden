@@ -2972,9 +2972,9 @@ dependencies = [
 
 [[package]]
 name = "ring"
-version = "0.17.11"
+version = "0.17.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "da5349ae27d3887ca812fb375b45a4fbb36d8d12d2df394968cd86e35683fe73"
+checksum = "70ac5d832aa16abd7d1def883a8545280c20a60f523a370aa3a9617c2b8550ee"
 dependencies = [
  "cc",
  "cfg-if",
@@ -4142,6 +4142,7 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
+ "subtle",
  "syslog",
  "time",
  "tokio",
