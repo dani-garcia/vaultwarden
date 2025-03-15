@@ -10,6 +10,7 @@ use serde_json::Value;
 db_object! {
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
     #[diesel(table_name = groups)]
+    #[diesel(treat_none_as_null = true)]
     #[diesel(primary_key(uuid))]
     pub struct Group {
         pub uuid: GroupId,

@@ -13,6 +13,7 @@ db_object! {
     // Upstream SQL: https://github.com/bitwarden/server/blob/8a22c0479e987e756ce7412c48a732f9002f0a2d/src/Sql/dbo/Tables/Event.sql
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
     #[diesel(table_name = event)]
+    #[diesel(treat_none_as_null = true)]
     #[diesel(primary_key(uuid))]
     pub struct Event {
         pub uuid: EventId,
