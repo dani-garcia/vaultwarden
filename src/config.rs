@@ -842,6 +842,7 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         "inline-menu-positioning-improvements",
         "ssh-key-vault-item",
         "ssh-agent",
+        "mutual-tls"
     ];
     let configured_flags = parse_experimental_client_feature_flags(&cfg.experimental_client_feature_flags);
     let invalid_flags: Vec<_> = configured_flags.keys().filter(|flag| !KNOWN_FLAGS.contains(&flag.as_str())).collect();
