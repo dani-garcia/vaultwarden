@@ -51,12 +51,7 @@ impl Attachment {
             let token = encode_jwt(&generate_file_download_claims(self.cipher_uuid.clone(), self.id.clone()));
             Ok(format!("{host}/attachments/{}/{}?token={token}", self.cipher_uuid, self.id))
         } else {
-            Ok(operator
-                .presign_read(&self.get_file_path(), Duration::from_secs(5 * 60))
-                .await
-                .map_err(Into::<crate::Error>::into)?
-                .uri()
-                .to_string())
+            Ok(operator.presign_read(&self.get_file_path(), Duration::from_secs(5 * 60)).await?.uri().to_string())
         }
     }
 
@@ -126,7 +121,7 @@ impl Attachment {
         let operator = CONFIG.opendal_operator_for_path_type(PathType::Attachments)?;
         let file_path = self.get_file_path();
 
-        if let Err(e) = operator.delete_iter([file_path.clone()]).await {
+        if let Err(e) = operator.delete(&file_path).await {
             if e.kind() == opendal::ErrorKind::NotFound {
                 debug!("File '{file_path}' already deleted.");
             } else {

@@ -1184,7 +1184,7 @@ fn opendal_operator_for_path(path: &str) -> Result<opendal::Operator, Error> {
         opendal_s3_operator_for_path(path)?
     } else {
         let builder = opendal::services::Fs::default().root(path);
-        opendal::Operator::new(builder).map_err(Into::<Error>::into)?.finish()
+        opendal::Operator::new(builder)?.finish()
     };
 
     operators_by_path.insert(path.to_string(), operator.clone());
@@ -1233,11 +1233,12 @@ fn opendal_s3_operator_for_path(path: &str) -> Result<opendal::Operator, Error> 
 
     let builder = opendal::services::S3::default()
         .customized_credential_load(Box::new(OPEN_DAL_S3_CREDENTIAL_LOADER))
+        .enable_virtual_host_style()
         .bucket(bucket)
         .root(url.path())
         .default_storage_class("INTELLIGENT_TIERING");
 
-    Ok(opendal::Operator::new(builder).map_err(Into::<Error>::into)?.finish())
+    Ok(opendal::Operator::new(builder)?.finish())
 }
 
 pub enum PathType {

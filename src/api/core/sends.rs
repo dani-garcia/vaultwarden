@@ -1,3 +1,4 @@
+use std::error::Error as _;
 use std::path::Path;
 use std::time::Duration;
 
@@ -271,7 +272,7 @@ async fn post_send_file(data: Form<UploadData<'_>>, headers: Headers, mut conn: 
 
     let file_id = crate::crypto::generate_send_file_id();
 
-    save_temp_file(PathType::Sends, &format!("{}/{file_id}", send.uuid), data).await?;
+    save_temp_file(PathType::Sends, &format!("{}/{file_id}", send.uuid), data, true).await?;
 
     let mut data_value: Value = serde_json::from_str(&send.data)?;
     if let Some(o) = data_value.as_object_mut() {
@@ -421,20 +422,29 @@ async fn post_send_file_v2_data(
         err!("Send file size does not match.", format!("Expected a file size of {} got {size}", send_data.size));
     }
 
-    let operator = CONFIG.opendal_operator_for_path_type(PathType::Sends)?;
     let file_path = format!("{send_id}/{file_id}");
 
-    // Check if the file already exists, if that is the case do not overwrite it
-    if operator.exists(&file_path).await.map_err(|e| {
+    save_temp_file(PathType::Sends, &file_path, data.data, false).await.map_err(|e| {
+        let was_file_exists_error = e
+            .source()
+            .and_then(|e| e.downcast_ref::<std::io::Error>())
+            .and_then(|e| e.get_ref())
+            .and_then(|e| e.downcast_ref::<opendal::Error>())
+            .map(|e| e.kind() == opendal::ErrorKind::ConditionNotMatch)
+            .unwrap_or(false);
+
+        if was_file_exists_error {
+            return crate::Error::new(
+                "Send file has already been uploaded.",
+                format!("File {file_path:?} already exists"),
+            );
+        }
+
         crate::Error::new(
             "Unexpected error while creating send file",
-            format!("Error while checking existence of send file at path {file_path}: {e:?}"),
+            format!("Error while saving send file at path {file_path}: {e:?}"),
         )
-    })? {
-        err!("Send file has already been uploaded.", format!("File {file_path:?} already exists"))
-    }
-
-    save_temp_file(PathType::Sends, &file_path, data.data).await?;
+    })?;
 
     nt.send_send_update(
         UpdateType::SyncSendCreate,
@@ -583,12 +593,7 @@ async fn download_url(host: &Host, send_id: &SendId, file_id: &SendFileId) -> Re
 
         Ok(format!("{}/api/sends/{send_id}/{file_id}?t={token}", &host.host))
     } else {
-        Ok(operator
-            .presign_read(&format!("{send_id}/{file_id}"), Duration::from_secs(5 * 60))
-            .await
-            .map_err(Into::<crate::Error>::into)?
-            .uri()
-            .to_string())
+        Ok(operator.presign_read(&format!("{send_id}/{file_id}"), Duration::from_secs(5 * 60)).await?.uri().to_string())
     }
 }
 

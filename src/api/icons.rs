@@ -228,7 +228,7 @@ async fn icon_is_negcached(path: &str) -> bool {
         Ok(true) => {
             match CONFIG.opendal_operator_for_path_type(PathType::IconCache) {
                 Ok(operator) => {
-                    if let Err(e) = operator.delete_iter([miss_indicator]).await {
+                    if let Err(e) = operator.delete(&miss_indicator).await {
                         error!("Could not remove negative cache indicator for icon {path:?}: {e:?}");
                     }
                 }
