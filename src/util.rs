@@ -817,24 +817,22 @@ pub fn is_global(ip: std::net::IpAddr) -> bool {
 }
 
 /// Saves a Rocket temporary file to the OpenDAL Operator at the given path.
-///
-/// Ideally we would stream the Rocket TempFile directly to the OpenDAL
-/// Operator, but Tempfile exposes a tokio ASyncBufRead trait, which OpenDAL
-/// does not support. This could be reworked in the future to read and write
-/// chunks to reduce copy overhead.
 pub async fn save_temp_file(
     path_type: PathType,
     path: &str,
     temp_file: rocket::fs::TempFile<'_>,
+    overwrite: bool,
 ) -> Result<(), crate::Error> {
-    use tokio::io::AsyncReadExt as _;
+    use futures::AsyncWriteExt as _;
+    use tokio_util::compat::TokioAsyncReadCompatExt as _;
 
     let operator = CONFIG.opendal_operator_for_path_type(path_type)?;
 
-    let mut read_stream = temp_file.open().await?;
-    let mut buf = Vec::with_capacity(temp_file.len() as usize);
-    read_stream.read_to_end(&mut buf).await?;
-    operator.write(path, buf).await?;
+    let mut read_stream = temp_file.open().await?.compat();
+    let mut writer = operator.writer_with(path).if_not_exists(!overwrite).await?.into_futures_async_write();
+    futures::io::copy(&mut read_stream, &mut writer).await?;
+    writer.close().await?;
+
     Ok(())
 }
 
