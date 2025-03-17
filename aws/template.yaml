@@ -1,0 +1,582 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: AWS CloudFormation template for running VaultWarden on AWS serverless services.
+
+Parameters:
+  Domain:
+    Type: String
+    Description: >-
+      The domain name for the Vaultwarden instance (e.g. https://example.com). If this parameter or the ACMCertificateArn
+      parameter are left empty, the Vaultwarden instance can still be reached at the output CDN domain
+      (e.g. https://xxxxxxxx.cloudfront.net).
+    AllowedPattern: (https://[a-z0-9.-]+|)
+    Default: ''
+  ACMCertificateArn:
+    Type: String
+    Description: The ARN of a us-east-1 ACM certificate to use for the domain. Required if the `Domain` parameter is set.
+    AllowedPattern: (arn:aws:acm:us-east-1:[0-9]+:certificate/[0-9a-f-]+|)
+    Default: ''
+  DSQLClusterId:
+    Type: String
+    Description: The endpoint of the DSQL database.
+    AllowedPattern: '[a-z0-9]+'
+  APILogRetention:
+    Type: Number
+    Description: The number of days to retain the API logs. -1 means to never expire.
+    Default: -1
+    AllowedValues: [-1, 1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1096, 1827, 2192, 2557, 2922, 3288, 3653]
+  SignupsAllowed:
+    Type: String
+    Description: Controls if new users can register
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+  IconService:
+    Type: String
+    Description: Allowed icon service sources.
+    Default: bitwarden
+  AdminToken:
+    Type: String
+    Description: Token for the admin interface, preferably an Argon2 PCH string. If empty, the admin interface will be disabled.
+    Default: ''
+  SMTPFrom:
+    Type: String
+    Description: The email address to send emails from. Email service is disabled if this value is empty.
+    Default: ''
+  SMTPFromName:
+    Type: String
+    Description: The name to send emails from.
+    Default: Vaultwarden
+
+Mappings:
+  IconSource:
+    internal:
+      CSP: ''
+    bitwarden:
+      CSP: https://icons.bitwarden.net/
+    duckduckgo:
+      CSP: https://icons.duckduckgo.com/ip3/
+    google:
+      CSP: https://www.google.com/s2/favicons https://*.gstatic.com/favicon
+
+Conditions:
+  IsDomainAndCertificateSet: !And
+    - !Not [!Equals [!Ref Domain, '']]
+    - !Not [!Equals [!Ref ACMCertificateArn, '']]
+  IsApiLogRetentionNeverExpire: !Equals
+    - !Ref APILogRetention
+    - -1
+  IconSourceIsPredefined: !Or
+    - !Equals [!Ref IconService, internal]
+    - !Equals [!Ref IconService, bitwarden]
+    - !Equals [!Ref IconService, duckduckgo]
+    - !Equals [!Ref IconService, google]
+  IsAdminTokenEmpty: !Equals
+    - !Ref AdminToken
+    - ''
+  IsEmailEnabled: !Not
+    - !Equals
+      - !Ref SMTPFrom
+      - ''
+
+Resources:
+  DataBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - BucketKeyEnabled: true
+            ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+      BucketName: !Sub ${AWS::StackName}-${AWS::AccountId}-${AWS::Region}-data
+      CorsConfiguration:
+        CorsRules:
+          - AllowedMethods:
+              - GET
+              - HEAD
+            AllowedOrigins:
+              - '*'
+      LifecycleConfiguration:
+        Rules:
+          - AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 2
+            ExpiredObjectDeleteMarker: true
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 30
+            Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+
+  DataBucketEnforceEncryptionAndStorageTier:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref DataBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: DenyUnencryptedObjectUploads
+            Effect: Deny
+            Principal: '*'
+            Action: s3:PutObject
+            Resource: !Sub arn:${AWS::Partition}:s3:::${DataBucket}/*
+            Condition:
+              'Null':
+                s3:x-amz-server-side-encryption-aws-kms-key-id: true
+          - Sid: DenyUnencryptedTransit
+            Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource:
+              - !Sub arn:${AWS::Partition}:s3:::${DataBucket}
+              - !Sub arn:${AWS::Partition}:s3:::${DataBucket}/*
+            Condition:
+              Bool:
+                aws:SecureTransport: false
+          - Sid: DenyNonIntelligentTieringStorageClass
+            Effect: Deny
+            Principal: '*'
+            Action: s3:PutObject
+            Resource: !Sub arn:aws:s3:::${DataBucket}/*
+            Condition:
+              StringNotEquals:
+                s3:x-amz-storage-class: INTELLIGENT_TIERING
+
+  ApiFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: AccessAWSServices
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:ListBucket
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource:
+                  - !Sub arn:${AWS::Partition}:s3:::${DataBucket}
+                  - !Sub arn:${AWS::Partition}:s3:::${DataBucket}/*
+              - Effect: Allow
+                Action: dsql:DbConnectAdmin
+                Resource: !Sub arn:${AWS::Partition}:dsql:${AWS::Region}:${AWS::AccountId}:cluster/${DSQLClusterId}
+              - !If
+                  - IsEmailEnabled
+                  - Effect: Allow
+                    Action: ses:SendRawEmail
+                    Resource: '*'
+                    Condition:
+                      StringEquals:
+                        ses:FromAddress: !Ref SMTPFrom
+                        ses:FromDisplayName: !Ref SMTPFromName
+                  - !Ref AWS::NoValue
+
+  ApiFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Architectures:
+        - arm64
+      Code: ./vaultwarden-lambda.zip
+      Environment:
+        Variables:
+          AWS_LWA_PORT: 8000
+          AWS_LWA_READINESS_CHECK_PATH: /alive
+          AWS_LWA_ASYNC_INIT: true
+          AWS_LWA_ENABLE_COMPRESSION: true
+          AWS_LWA_INVOKE_MODE: RESPONSE_STREAM
+          DATA_FOLDER: !Sub s3://${DataBucket}
+          TMP_FOLDER: /tmp
+          DATABASE_URL: !Sub dsql://${DSQLClusterId}.dsql.${AWS::Region}.on.aws
+          ENABLE_WEBSOCKET: false
+          DOMAIN: !If
+            - IsDomainAndCertificateSet
+            - !Ref Domain
+            - !Ref AWS::NoValue
+          SIGNUPS_ALLOWED: !Ref SignupsAllowed
+          IP_HEADER: X-Forwarded-For
+          ICON_SERVICE: !Ref IconService
+          ICON_REDIRECT_CODE: 301
+          ADMIN_TOKEN: !If
+            - IsAdminTokenEmpty
+            - !Ref AWS::NoValue
+            - !Ref AdminToken
+          SMTP_FROM: !If
+            - IsEmailEnabled
+            - !Ref SMTPFrom
+            - !Ref AWS::NoValue
+          SMTP_FROM_NAME: !Ref SMTPFromName
+          USE_AWS_SES: true
+      FunctionName: !Sub ${AWS::StackName}-api
+      Handler: bootstrap
+      Layers:
+        - !Sub arn:aws:lambda:${AWS::Region}:753240598075:layer:LambdaAdapterLayerArm64:24
+      MemorySize: 3008 # Maximum value allowed for new accounts, higher value reduces cold start times, should still fit under free tier usage for personal use
+      Role: !GetAtt ApiFunctionRole.Arn
+      Runtime: provided.al2023
+      Timeout: 300
+
+  ApiFunctionLogs:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: RetainExceptOnCreate
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${ApiFunction}
+      RetentionInDays: !If
+        - IsApiLogRetentionNeverExpire
+        - !Ref AWS::NoValue
+        - !Ref APILogRetention
+
+  ApiFunctionUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      TargetFunctionArn: !Ref ApiFunction
+      AuthType: NONE
+      InvokeMode: RESPONSE_STREAM
+
+  ApiFunctionUrlPublicPermissions:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunctionUrl
+      FunctionName: !Ref ApiFunction
+      Principal: '*'
+      FunctionUrlAuthType: NONE
+
+  WebVaultAssetsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub ${AWS::StackName}-${AWS::AccountId}-${AWS::Region}-web-vault
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  WebVaultAssetsBucketEnforceEncryptionInTransitAndStorageTier:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref DataBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: DenyUnencryptedTransit
+            Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource:
+              - !Sub arn:${AWS::Partition}:s3:::${DataBucket}
+              - !Sub arn:${AWS::Partition}:s3:::${DataBucket}/*
+            Condition:
+              Bool:
+                aws:SecureTransport: false
+          - Sid: DenyNonIntelligentTieringStorageClass
+            Effect: Deny
+            Principal: '*'
+            Action: s3:PutObject
+            Resource: !Sub arn:aws:s3:::${DataBucket}/*
+            Condition:
+              StringNotEquals:
+                s3:x-amz-storage-class: INTELLIGENT_TIERING
+
+  WebVaultAssetsBucketOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub ${AWS::StackName}-${AWS::Region}-web-vault-access-control
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  # The following mirrors the header values in util.rs
+  ResponseHeaderPolicy:
+    Type: AWS::CloudFront::ResponseHeadersPolicy
+    Properties:
+      ResponseHeadersPolicyConfig:
+        Name: !Sub ${AWS::StackName}-${AWS::Region}
+        CustomHeadersConfig:
+          Items:
+            - Header: Cache-Control
+              Override: false
+              Value: no-cache, no-store, max-age=0
+            - Header: X-Robots-Tag
+              Override: true
+              Value: noindex, nofollow
+            - Header: Permissions-Policy
+              Override: true
+              Value: accelerometer=(), ambient-light-sensor=(), autoplay=(), battery=(), camera=(), display-capture=(), document-domain=(), encrypted-media=(), execution-while-not-rendered=(), execution-while-out-of-viewport=(), fullscreen=(), geolocation=(), gyroscope=(), keyboard-map=(), magnetometer=(), microphone=(), midi=(), payment=(), picture-in-picture=(), screen-wake-lock=(), sync-xhr=(), usb=(), web-share=(), xr-spatial-tracking=()
+        SecurityHeadersConfig:
+          ContentSecurityPolicy:
+            ContentSecurityPolicy: !Sub
+              - >-
+                  default-src 'self';
+                  base-uri 'self';
+                  form-action 'self';
+                  object-src 'self' blob:;
+                  script-src 'self' 'wasm-unsafe-eval';
+                  style-src 'self' 'unsafe-inline';
+                  child-src 'self' https://*.duosecurity.com https://*.duofederal.com;
+                  frame-src 'self' https://*.duosecurity.com https://*.duofederal.com;
+                  frame-ancestors 'self'
+                  chrome-extension://nngceckbapebfimnlniiiahkandclblb
+                  chrome-extension://jbkfoedolllekgbhcbcoahefnbanhhlh
+                  moz-extension://*;
+                  img-src 'self' data:
+                  https://haveibeenpwned.com
+                  ${IconServiceCSP};
+                  connect-src 'self'
+                  https://api.pwnedpasswords.com
+                  https://api.2fa.directory
+                  https://app.simplelogin.io/api/
+                  https://app.addy.io/api/
+                  https://api.fastmail.com/
+                  https://api.forwardemail.net
+                  https://${DataBucket.RegionalDomainName};
+              - IconServiceCSP: !If
+                  - IconSourceIsPredefined
+                  - !FindInMap [IconSource, !Ref IconService, CSP]
+                  - !Select
+                      - 0 
+                      - !Split ['{', !Ref IconService]
+            Override: true
+          ContentTypeOptions:
+            Override: true
+          FrameOptions:
+            FrameOption: SAMEORIGIN
+            Override: true
+          ReferrerPolicy:
+            Override: true
+            ReferrerPolicy: same-origin
+          StrictTransportSecurity:
+            AccessControlMaxAgeSec: 63072000
+            IncludeSubdomains: true
+            Override: true
+            Preload: true
+          XSSProtection:
+            Override: true
+            Protection: false
+
+  # The following mirrors the header values in util.rs
+  ConnectorHtmlResponseHeaderPolicy:
+    Type: AWS::CloudFront::ResponseHeadersPolicy
+    Properties:
+      ResponseHeadersPolicyConfig:
+        Name: !Sub ${AWS::StackName}-${AWS::Region}-connector-html
+        CustomHeadersConfig:
+          Items:
+            - Header: Cache-Control
+              Override: true
+              Value: no-cache, no-store, max-age=0
+            - Header: X-Robots-Tag
+              Override: true
+              Value: noindex, nofollow
+            - Header: Permissions-Policy
+              Override: true
+              Value: accelerometer=(), ambient-light-sensor=(), autoplay=(), battery=(), camera=(), display-capture=(), document-domain=(), encrypted-media=(), execution-while-not-rendered=(), execution-while-out-of-viewport=(), fullscreen=(), geolocation=(), gyroscope=(), keyboard-map=(), magnetometer=(), microphone=(), midi=(), payment=(), picture-in-picture=(), screen-wake-lock=(), sync-xhr=(), usb=(), web-share=(), xr-spatial-tracking=()
+        SecurityHeadersConfig:
+          ContentTypeOptions:
+            Override: true
+          ReferrerPolicy:
+            Override: true
+            ReferrerPolicy: same-origin
+          StrictTransportSecurity:
+            AccessControlMaxAgeSec: 63072000
+            IncludeSubdomains: true
+            Override: true
+            Preload: true
+          XSSProtection:
+            Override: true
+            Protection: false
+
+  CDN:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Aliases: !If
+          - IsDomainAndCertificateSet
+          - - !Select
+                - 2
+                - !Split
+                    - /
+                    - !Ref Domain
+          - !Ref AWS::NoValue
+        CacheBehaviors:
+          - AllowedMethods:
+              - DELETE
+              - HEAD
+              - GET
+              - OPTIONS
+              - PATCH
+              - POST
+              - PUT
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad # CachingDisabled
+            Compress: true
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac # AllViewerExceptHostHeader
+            PathPattern: /api/*
+            ResponseHeadersPolicyId: !Ref ResponseHeaderPolicy
+            TargetOriginId: Api
+            ViewerProtocolPolicy: redirect-to-https
+          - AllowedMethods:
+              - DELETE
+              - HEAD
+              - GET
+              - OPTIONS
+              - PATCH
+              - POST
+              - PUT
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad # CachingDisabled
+            Compress: true
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac # AllViewerExceptHostHeader
+            PathPattern: /admin
+            ResponseHeadersPolicyId: !Ref ResponseHeaderPolicy
+            TargetOriginId: Api
+            ViewerProtocolPolicy: redirect-to-https
+          - AllowedMethods:
+              - DELETE
+              - HEAD
+              - GET
+              - OPTIONS
+              - PATCH
+              - POST
+              - PUT
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad # CachingDisabled
+            Compress: true
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac # AllViewerExceptHostHeader
+            PathPattern: /admin/*
+            ResponseHeadersPolicyId: !Ref ResponseHeaderPolicy
+            TargetOriginId: Api
+            ViewerProtocolPolicy: redirect-to-https
+          - AllowedMethods:
+              - DELETE
+              - HEAD
+              - GET
+              - OPTIONS
+              - PATCH
+              - POST
+              - PUT
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad # CachingDisabled
+            Compress: true
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac # AllViewerExceptHostHeader
+            PathPattern: /events/*
+            ResponseHeadersPolicyId: !Ref ResponseHeaderPolicy
+            TargetOriginId: Api
+            ViewerProtocolPolicy: redirect-to-https
+          - AllowedMethods:
+              - DELETE
+              - HEAD
+              - GET
+              - OPTIONS
+              - PATCH
+              - POST
+              - PUT
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad # CachingDisabled
+            Compress: true
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac # AllViewerExceptHostHeader
+            PathPattern: /identity/*
+            ResponseHeadersPolicyId: !Ref ResponseHeaderPolicy
+            TargetOriginId: Api
+            ViewerProtocolPolicy: redirect-to-https
+          - CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad # CachingDisabled
+            Compress: true
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac # AllViewerExceptHostHeader
+            PathPattern: /css/*
+            ResponseHeadersPolicyId: !Ref ResponseHeaderPolicy
+            TargetOriginId: Api
+            ViewerProtocolPolicy: redirect-to-https
+          - CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad # CachingDisabled
+            Compress: true
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac # AllViewerExceptHostHeader
+            PathPattern: /vw_static/*
+            ResponseHeadersPolicyId: !Ref ResponseHeaderPolicy
+            TargetOriginId: Api
+            ViewerProtocolPolicy: redirect-to-https
+          - CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6 # CachingOptimized
+            Compress: true
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac # AllViewerExceptHostHeader
+            PathPattern: /icons/*
+            ResponseHeadersPolicyId: !Ref ResponseHeaderPolicy
+            TargetOriginId: Api
+            ViewerProtocolPolicy: redirect-to-https
+          - CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad # CachingDisabled
+            Compress: true
+            PathPattern: '*.html'
+            ResponseHeadersPolicyId: !Ref ResponseHeaderPolicy
+            TargetOriginId: WebVaultAssetsBucket
+            ViewerProtocolPolicy: redirect-to-https
+          - CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad # CachingDisabled
+            Compress: true
+            PathPattern: '*connector.html'
+            ResponseHeadersPolicyId: !Ref ConnectorHtmlResponseHeaderPolicy
+            TargetOriginId: WebVaultAssetsBucket
+            ViewerProtocolPolicy: redirect-to-https
+        Comment: Vaultwarden CDN
+        CustomErrorResponses:
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /404.html
+        DefaultCacheBehavior:
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6 # CachingOptimized
+          Compress: true
+          ResponseHeadersPolicyId: !Ref ResponseHeaderPolicy
+          TargetOriginId: WebVaultAssetsBucket
+          ViewerProtocolPolicy: redirect-to-https
+        DefaultRootObject: index.html
+        Enabled: true
+        HttpVersion: http2and3
+        IPV6Enabled: true
+        Origins:
+          - Id: WebVaultAssetsBucket
+            DomainName: !GetAtt WebVaultAssetsBucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt WebVaultAssetsBucketOriginAccessControl.Id
+            S3OriginConfig:
+              OriginAccessIdentity: ''
+          - Id: Api
+            CustomOriginConfig:
+              OriginProtocolPolicy: https-only
+              OriginSSLProtocols:
+                - TLSv1.2
+            DomainName: !Select
+              - 2
+              - !Split
+                  - /
+                  - !GetAtt ApiFunctionUrl.FunctionUrl
+        PriceClass: PriceClass_All
+        ViewerCertificate: !If
+          - IsDomainAndCertificateSet
+          - AcmCertificateArn: !Ref ACMCertificateArn
+            MinimumProtocolVersion: TLSv1.2_2021
+            SslSupportMethod: sni-only
+          - !Ref AWS::NoValue
+
+  WebVaultAssetsBucketPolicyCloudFrontAccess:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref WebVaultAssetsBucket
+      PolicyDocument:
+        Id: CloudFrontAccess
+        Version: '2012-10-17'
+        Statement:
+          - Principal:
+              Service: !Sub cloudfront.${AWS::URLSuffix}
+            Action: s3:GetObject
+            Effect: Allow
+            Resource: !Sub ${WebVaultAssetsBucket.Arn}/*
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${CDN.Id}
+
+Outputs:
+  WebVaultAssetsBucket:
+    Value: !Ref WebVaultAssetsBucket
+  CDNDomain:
+    Value: !GetAtt CDN.DomainName

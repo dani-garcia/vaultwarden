@@ -29,7 +29,7 @@ extern crate diesel_derive_newtype;
 
 use std::{
     collections::HashMap,
-    fs::{canonicalize, create_dir_all},
+    fs::canonicalize,
     panic,
     path::Path,
     process::exit,
@@ -45,6 +45,9 @@ use tokio::{
 #[cfg(unix)]
 use tokio::signal::unix::SignalKind;
 
+#[cfg(any(dsql, s3, ses))]
+mod aws;
+
 #[macro_use]
 mod error;
 mod api;
@@ -53,6 +56,7 @@ mod config;
 mod crypto;
 #[macro_use]
 mod db;
+mod persistent_fs;
 mod http_client;
 mod mail;
 mod ratelimit;
@@ -61,6 +65,7 @@ mod util;
 use crate::api::core::two_factor::duo_oidc::purge_duo_contexts;
 use crate::api::purge_auth_requests;
 use crate::api::{WS_ANONYMOUS_SUBSCRIPTIONS, WS_USERS};
+use crate::persistent_fs::{create_dir_all, path_exists, path_is_dir};
 pub use config::CONFIG;
 pub use error::{Error, MapResult};
 use rocket::data::{Limits, ToByteUnit};
@@ -75,16 +80,16 @@ async fn main() -> Result<(), Error> {
     let level = init_logging()?;
 
     check_data_folder().await;
-    auth::initialize_keys().unwrap_or_else(|e| {
+    auth::initialize_keys().await.unwrap_or_else(|e| {
         error!("Error creating private key '{}'\n{e:?}\nExiting Vaultwarden!", CONFIG.private_rsa_key());
         exit(1);
     });
     check_web_vault();
 
-    create_dir(&CONFIG.icon_cache_folder(), "icon cache");
-    create_dir(&CONFIG.tmp_folder(), "tmp folder");
-    create_dir(&CONFIG.sends_folder(), "sends folder");
-    create_dir(&CONFIG.attachments_folder(), "attachments folder");
+    create_dir(&CONFIG.icon_cache_folder(), "icon cache").await;
+    create_dir(&CONFIG.tmp_folder(), "tmp folder").await;
+    create_dir(&CONFIG.sends_folder(), "sends folder").await;
+    create_dir(&CONFIG.attachments_folder(), "attachments folder").await;
 
     let pool = create_db_pool().await;
     schedule_jobs(pool.clone());
@@ -459,16 +464,16 @@ fn chain_syslog(logger: fern::Dispatch) -> fern::Dispatch {
     }
 }
 
-fn create_dir(path: &str, description: &str) {
+async fn create_dir(path: &str, description: &str) {
     // Try to create the specified dir, if it doesn't already exist.
     let err_msg = format!("Error creating {description} directory '{path}'");
-    create_dir_all(path).expect(&err_msg);
+    create_dir_all(path).await.expect(&err_msg);
 }
 
 async fn check_data_folder() {
     let data_folder = &CONFIG.data_folder();
     let path = Path::new(data_folder);
-    if !path.exists() {
+    if !path_exists(path).await.unwrap_or(false) {
         error!("Data folder '{}' doesn't exist.", data_folder);
         if is_running_in_container() {
             error!("Verify that your data volume is mounted at the correct location.");
@@ -477,7 +482,7 @@ async fn check_data_folder() {
         }
         exit(1);
     }
-    if !path.is_dir() {
+    if !path_is_dir(path).await.unwrap_or(false) {
         error!("Data folder '{}' is not a directory.", data_folder);
         exit(1);
     }

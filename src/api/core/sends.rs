@@ -12,6 +12,8 @@ use crate::{
     api::{ApiResult, EmptyResult, JsonResult, Notify, UpdateType},
     auth::{ClientIp, Headers, Host},
     db::{models::*, DbConn, DbPool},
+    error::Error,
+    persistent_fs::{canonicalize, create_dir_all, download_url, file_exists, persist_temp_file},
     util::NumberOrString,
     CONFIG,
 };
@@ -210,7 +212,7 @@ async fn post_send_file(data: Form<UploadData<'_>>, headers: Headers, mut conn: 
 
     let UploadData {
         model,
-        mut data,
+        data,
     } = data.into_inner();
     let model = model.into_inner();
 
@@ -250,13 +252,11 @@ async fn post_send_file(data: Form<UploadData<'_>>, headers: Headers, mut conn: 
     }
 
     let file_id = crate::crypto::generate_send_file_id();
-    let folder_path = tokio::fs::canonicalize(&CONFIG.sends_folder()).await?.join(&send.uuid);
+    let folder_path = canonicalize(&CONFIG.sends_folder()).await?.join(&send.uuid);
     let file_path = folder_path.join(&file_id);
-    tokio::fs::create_dir_all(&folder_path).await?;
 
-    if let Err(_err) = data.persist_to(&file_path).await {
-        data.move_copy_to(file_path).await?
-    }
+    create_dir_all(&folder_path).await?;
+    persist_temp_file(data, file_path).await?;
 
     let mut data_value: Value = serde_json::from_str(&send.data)?;
     if let Some(o) = data_value.as_object_mut() {
@@ -363,7 +363,7 @@ async fn post_send_file_v2_data(
 ) -> EmptyResult {
     enforce_disable_send_policy(&headers, &mut conn).await?;
 
-    let mut data = data.into_inner();
+    let data = data.into_inner();
 
     let Some(send) = Send::find_by_uuid_and_user(&send_id, &headers.user.uuid, &mut conn).await else {
         err!("Send not found. Unable to save the file.", "Invalid send uuid or does not belong to user.")
@@ -406,19 +406,18 @@ async fn post_send_file_v2_data(
         err!("Send file size does not match.", format!("Expected a file size of {} got {size}", send_data.size));
     }
 
-    let folder_path = tokio::fs::canonicalize(&CONFIG.sends_folder()).await?.join(send_id);
+    let folder_path = canonicalize(&CONFIG.sends_folder()).await?.join(send_id);
     let file_path = folder_path.join(file_id);
 
     // Check if the file already exists, if that is the case do not overwrite it
-    if tokio::fs::metadata(&file_path).await.is_ok() {
-        err!("Send file has already been uploaded.", format!("File {file_path:?} already exists"))
+    match file_exists(&file_path).await {
+        Ok(true) => err!("Send file has already been uploaded.", format!("File {file_path:?} already exists")),
+        Ok(false) => (),
+        Err(e) => err!("Error creating send file.", format!("Error checking if send file {file_path:?} already exists: {e}")),
     }
 
-    tokio::fs::create_dir_all(&folder_path).await?;
-
-    if let Err(_err) = data.data.persist_to(&file_path).await {
-        data.data.move_copy_to(file_path).await?
-    }
+    create_dir_all(&folder_path).await?;
+    persist_temp_file(data.data, file_path).await?;
 
     nt.send_send_update(
         UpdateType::SyncSendCreate,
@@ -551,12 +550,22 @@ async fn post_access_file(
     )
     .await;
 
-    let token_claims = crate::auth::generate_send_claims(&send_id, &file_id);
-    let token = crate::auth::encode_jwt(&token_claims);
+    let file_path = canonicalize(&CONFIG.sends_folder())
+        .await?
+        .join(&send_id)
+        .join(&file_id);
+
+    let url = download_url(file_path, &host.host)
+        .await
+        .map_err(|e| Error::new(
+            "Failed to generate send download URL",
+            format!("Failed to generate send URL for send_id: {send_id}, file_id: {file_id}. Error: {e:?}")
+        ))?;
+
     Ok(Json(json!({
         "object": "send-fileDownload",
         "id": file_id,
-        "url": format!("{}/api/sends/{}/{}?t={}", &host.host, send_id, file_id, token)
+        "url": url
     })))
 }
 
