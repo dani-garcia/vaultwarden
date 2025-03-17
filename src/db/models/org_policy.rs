@@ -21,7 +21,7 @@ db_object! {
     }
 }
 
-// https://github.com/bitwarden/server/blob/b86a04cef9f1e1b82cf18e49fc94e017c641130c/src/Core/Enums/PolicyType.cs
+// https://github.com/bitwarden/server/blob/abfdf6f5cb0f1f1504dbaaaa0e04ce9cb60faf19/src/Core/AdminConsole/Enums/PolicyType.cs
 #[derive(Copy, Clone, Eq, PartialEq, num_derive::FromPrimitive)]
 pub enum OrgPolicyType {
     TwoFactorAuthentication = 0,
@@ -35,6 +35,10 @@ pub enum OrgPolicyType {
     ResetPassword = 8,
     // MaximumVaultTimeout = 9, // Not supported (Not AGPLv3 Licensed)
     // DisablePersonalVaultExport = 10, // Not supported (Not AGPLv3 Licensed)
+    // ActivateAutofill = 11,
+    // AutomaticAppLogIn = 12,
+    // FreeFamiliesSponsorshipPolicy = 13,
+    RemoveUnlockWithPin = 14,
 }
 
 // https://github.com/bitwarden/server/blob/5cbdee137921a19b1f722920f0fa3cd45af2ef0f/src/Core/Models/Data/Organizations/Policies/SendOptionsPolicyData.cs
