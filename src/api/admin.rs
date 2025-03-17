@@ -618,7 +618,7 @@ async fn has_http_access() -> bool {
 use cached::proc_macro::cached;
 /// Cache this function to prevent API call rate limit. Github only allows 60 requests per hour, and we use 3 here already.
 /// It will cache this function for 300 seconds (5 minutes) which should prevent the exhaustion of the rate limit.
-#[cached(time = 300, sync_writes = true)]
+#[cached(time = 300, sync_writes = "default")]
 async fn get_release_info(has_http_access: bool, running_within_container: bool) -> (String, String, String) {
     // If the HTTP Check failed, do not even attempt to check for new versions since we were not able to connect with github.com anyway.
     if has_http_access {

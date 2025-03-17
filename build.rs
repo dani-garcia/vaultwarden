@@ -48,8 +48,8 @@ fn main() {
 fn run(args: &[&str]) -> Result<String, std::io::Error> {
     let out = Command::new(args[0]).args(&args[1..]).output()?;
     if !out.status.success() {
-        use std::io::{Error, ErrorKind};
-        return Err(Error::new(ErrorKind::Other, "Command not successful"));
+        use std::io::Error;
+        return Err(Error::other("Command not successful"));
     }
     Ok(String::from_utf8(out.stdout).unwrap().trim().to_string())
 }
