@@ -484,7 +484,8 @@ make_config! {
         disable_icon_download:  bool,   true,   def,    false;
         /// Allow new signups |> Controls whether new users can register. Users can be invited by the vaultwarden admin even if this is disabled
         signups_allowed:        bool,   true,   def,    true;
-        /// Require email verification on signups. This will prevent logins from succeeding until the address has been verified
+        /// Require email verification on signups. On new client versions, this will require verification at signup time. On older clients,
+        /// this will prevent logins from succeeding until the address has been verified
         signups_verify:         bool,   true,   def,    false;
         /// If signups require email verification, automatically re-send verification email if it hasn't been sent for a while (in seconds)
         signups_verify_resend_time: u64, true,  def,    3_600;
@@ -734,7 +735,7 @@ make_config! {
         email_expiration_time:  u64,    true,   def,      600;
         /// Maximum attempts |> Maximum attempts before an email token is reset and a new email will need to be sent
         email_attempts_limit:   u64,    true,   def,      3;
-        /// Automatically enforce at login |> Setup email 2FA provider regardless of any organization policy
+        /// Setup email 2FA at signup |> Setup email 2FA provider on registration regardless of any organization policy
         email_2fa_enforce_on_verified_invite: bool,   true,   def,      false;
         /// Auto-enable 2FA (Know the risks!) |> Automatically setup email 2FA as fallback provider when needed
         email_2fa_auto_fallback: bool,  true,   def,      false;
@@ -1386,6 +1387,7 @@ where
     reg!("email/protected_action", ".html");
     reg!("email/pw_hint_none", ".html");
     reg!("email/pw_hint_some", ".html");
+    reg!("email/register_verify_email", ".html");
     reg!("email/send_2fa_removed_from_org", ".html");
     reg!("email/send_emergency_access_invite", ".html");
     reg!("email/send_org_invite", ".html");

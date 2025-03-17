@@ -205,6 +205,9 @@ fn config() -> Json<Value> {
     feature_states.insert("key-rotation-improvements".to_string(), true);
     feature_states.insert("flexible-collections-v-1".to_string(), false);
 
+    feature_states.insert("email-verification".to_string(), true);
+    feature_states.insert("unauth-ui-refresh".to_string(), true);
+
     Json(json!({
         // Note: The clients use this version to handle backwards compatibility concerns
         // This means they expect a version that closely matches the Bitwarden server version

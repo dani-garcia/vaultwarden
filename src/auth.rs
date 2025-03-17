@@ -35,6 +35,7 @@ static JWT_ADMIN_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|admin", CONFIG.
 static JWT_SEND_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|send", CONFIG.domain_origin()));
 static JWT_ORG_API_KEY_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|api.organization", CONFIG.domain_origin()));
 static JWT_FILE_DOWNLOAD_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|file_download", CONFIG.domain_origin()));
+static JWT_REGISTER_VERIFY_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|register_verify", CONFIG.domain_origin()));
 
 static PRIVATE_RSA_KEY: OnceCell<EncodingKey> = OnceCell::new();
 static PUBLIC_RSA_KEY: OnceCell<DecodingKey> = OnceCell::new();
@@ -143,6 +144,10 @@ pub fn decode_api_org(token: &str) -> Result<OrgApiKeyLoginJwtClaims, Error> {
 
 pub fn decode_file_download(token: &str) -> Result<FileDownloadClaims, Error> {
     decode_jwt(token, JWT_FILE_DOWNLOAD_ISSUER.to_string())
+}
+
+pub fn decode_register_verify(token: &str) -> Result<RegisterVerifyClaims, Error> {
+    decode_jwt(token, JWT_REGISTER_VERIFY_ISSUER.to_string())
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -312,6 +317,33 @@ pub fn generate_file_download_claims(cipher_id: CipherId, file_id: AttachmentId)
         iss: JWT_FILE_DOWNLOAD_ISSUER.to_string(),
         sub: cipher_id,
         file_id,
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RegisterVerifyClaims {
+    // Not before
+    pub nbf: i64,
+    // Expiration time
+    pub exp: i64,
+    // Issuer
+    pub iss: String,
+    // Subject
+    pub sub: String,
+
+    pub name: Option<String>,
+    pub verified: bool,
+}
+
+pub fn generate_register_verify_claims(email: String, name: Option<String>, verified: bool) -> RegisterVerifyClaims {
+    let time_now = Utc::now();
+    RegisterVerifyClaims {
+        nbf: time_now.timestamp(),
+        exp: (time_now + TimeDelta::try_minutes(30).unwrap()).timestamp(),
+        iss: JWT_REGISTER_VERIFY_ISSUER.to_string(),
+        sub: email,
+        name,
+        verified,
     }
 }
 

@@ -70,18 +70,31 @@ pub fn routes() -> Vec<rocket::Route> {
 #[serde(rename_all = "camelCase")]
 pub struct RegisterData {
     email: String,
+
     kdf: Option<i32>,
     kdf_iterations: Option<i32>,
     kdf_memory: Option<i32>,
     kdf_parallelism: Option<i32>,
+
+    #[serde(alias = "userSymmetricKey")]
     key: String,
+    #[serde(alias = "userAsymmetricKeys")]
     keys: Option<KeysData>,
+
     master_password_hash: String,
     master_password_hint: Option<String>,
+
     name: Option<String>,
-    token: Option<String>,
+
     #[allow(dead_code)]
     organization_user_id: Option<MembershipId>,
+
+    // Used only from the register/finish endpoint
+    email_verification_token: Option<String>,
+    accept_emergency_access_id: Option<EmergencyAccessId>,
+    accept_emergency_access_invite_token: Option<String>,
+    #[serde(alias = "token")]
+    org_invite_token: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -124,12 +137,77 @@ async fn is_email_2fa_required(member_id: Option<MembershipId>, conn: &mut DbCon
 
 #[post("/accounts/register", data = "<data>")]
 async fn register(data: Json<RegisterData>, conn: DbConn) -> JsonResult {
-    _register(data, conn).await
+    _register(data, false, conn).await
 }
 
-pub async fn _register(data: Json<RegisterData>, mut conn: DbConn) -> JsonResult {
-    let data: RegisterData = data.into_inner();
+pub async fn _register(data: Json<RegisterData>, email_verification: bool, mut conn: DbConn) -> JsonResult {
+    let mut data: RegisterData = data.into_inner();
     let email = data.email.to_lowercase();
+
+    let mut email_verified = false;
+
+    let mut pending_emergency_access = None;
+
+    // First, validate the provided verification tokens
+    if email_verification {
+        match (
+            &data.email_verification_token,
+            &data.accept_emergency_access_id,
+            &data.accept_emergency_access_invite_token,
+            &data.organization_user_id,
+            &data.org_invite_token,
+        ) {
+            // Normal user registration, when email verification is required
+            (Some(email_verification_token), None, None, None, None) => {
+                let claims = crate::auth::decode_register_verify(email_verification_token)?;
+                if claims.sub != data.email {
+                    err!("Email verification token does not match email");
+                }
+
+                // During this call we don't get the name, so extract it from the claims
+                if claims.name.is_some() {
+                    data.name = claims.name;
+                }
+                email_verified = claims.verified;
+            }
+            // Emergency access registration
+            (None, Some(accept_emergency_access_id), Some(accept_emergency_access_invite_token), None, None) => {
+                if !CONFIG.emergency_access_allowed() {
+                    err!("Emergency access is not enabled.")
+                }
+
+                let claims = crate::auth::decode_emergency_access_invite(accept_emergency_access_invite_token)?;
+
+                if claims.email != data.email {
+                    err!("Claim email does not match email")
+                }
+                if &claims.emer_id != accept_emergency_access_id {
+                    err!("Claim emer_id does not match accept_emergency_access_id")
+                }
+
+                pending_emergency_access = Some((accept_emergency_access_id, claims));
+                email_verified = true;
+            }
+            // Org invite
+            (None, None, None, Some(organization_user_id), Some(org_invite_token)) => {
+                let claims = decode_invite(org_invite_token)?;
+
+                if claims.email != data.email {
+                    err!("Claim email does not match email")
+                }
+
+                if &claims.member_id != organization_user_id {
+                    err!("Claim org_user_id does not match organization_user_id")
+                }
+
+                email_verified = true;
+            }
+
+            _ => {
+                err!("Registration is missing required parameters")
+            }
+        }
+    }
 
     // Check if the length of the username exceeds 50 characters (Same is Upstream Bitwarden)
     // This also prevents issues with very long usernames causing to large JWT's. See #2419
@@ -144,20 +222,17 @@ pub async fn _register(data: Json<RegisterData>, mut conn: DbConn) -> JsonResult
     let password_hint = clean_password_hint(&data.master_password_hint);
     enforce_password_hint_setting(&password_hint)?;
 
-    let mut verified_by_invite = false;
-
     let mut user = match User::find_by_mail(&email, &mut conn).await {
-        Some(mut user) => {
+        Some(user) => {
             if !user.password_hash.is_empty() {
                 err!("Registration not allowed or user already exists")
             }
 
-            if let Some(token) = data.token {
+            if let Some(token) = data.org_invite_token {
                 let claims = decode_invite(&token)?;
                 if claims.email == email {
                     // Verify the email address when signing up via a valid invite token
-                    verified_by_invite = true;
-                    user.verified_at = Some(Utc::now().naive_utc());
+                    email_verified = true;
                     user
                 } else {
                     err!("Registration email does not match invite email")
@@ -181,7 +256,10 @@ pub async fn _register(data: Json<RegisterData>, mut conn: DbConn) -> JsonResult
             // Order is important here; the invitation check must come first
             // because the vaultwarden admin can invite anyone, regardless
             // of other signup restrictions.
-            if Invitation::take(&email, &mut conn).await || CONFIG.is_signup_allowed(&email) {
+            if Invitation::take(&email, &mut conn).await
+                || CONFIG.is_signup_allowed(&email)
+                || pending_emergency_access.is_some()
+            {
                 User::new(email.clone())
             } else {
                 err!("Registration not allowed or user already exists")
@@ -216,8 +294,12 @@ pub async fn _register(data: Json<RegisterData>, mut conn: DbConn) -> JsonResult
         user.public_key = Some(keys.public_key);
     }
 
+    if email_verified {
+        user.verified_at = Some(Utc::now().naive_utc());
+    }
+
     if CONFIG.mail_enabled() {
-        if CONFIG.signups_verify() && !verified_by_invite {
+        if CONFIG.signups_verify() && !email_verified {
             if let Err(e) = mail::send_welcome_must_verify(&user.email, &user.uuid).await {
                 error!("Error sending welcome email: {:#?}", e);
             }
@@ -226,7 +308,7 @@ pub async fn _register(data: Json<RegisterData>, mut conn: DbConn) -> JsonResult
             error!("Error sending welcome email: {:#?}", e);
         }
 
-        if verified_by_invite && is_email_2fa_required(data.organization_user_id, &mut conn).await {
+        if email_verified && is_email_2fa_required(data.organization_user_id, &mut conn).await {
             email::activate_email_2fa(&user, &mut conn).await.ok();
         }
     }
