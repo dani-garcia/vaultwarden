@@ -99,7 +99,7 @@ uuid = { version = "1.16.0", features = ["v4"] }
 # Date and time libraries
 chrono = { version = "0.4.40", features = ["clock", "serde"], default-features = false }
 chrono-tz = "0.10.1"
-time = "0.3.39"
+time = "0.3.40"
 
 # Job scheduler
 job_scheduler_ng = "2.0.5"
@@ -131,8 +131,8 @@ email_address = "0.2.9"
 handlebars = { version = "6.3.2", features = ["dir_source"] }
 
 # HTTP client (Used for favicons, version check, DUO and HIBP API)
-reqwest = { version = "0.12.12", features = ["native-tls-alpn", "stream", "json", "gzip", "brotli", "socks", "cookies"] }
-hickory-resolver = "0.24.4"
+reqwest = { version = "0.12.15", features = ["native-tls-alpn", "stream", "json", "gzip", "brotli", "socks", "cookies"] }
+hickory-resolver = "0.25.1"
 
 # Favicon extraction libraries
 html5gum = "0.7.0"
@@ -162,7 +162,7 @@ semver = "1.0.26"
 
 # Allow overriding the default memory allocator
 # Mainly used for the musl builds, since the default musl malloc is very slow
-mimalloc = { version = "0.1.43", features = ["secure"], default-features = false, optional = true }
+mimalloc = { version = "0.1.44", features = ["secure"], default-features = false, optional = true }
 which = "7.0.2"
 
 # Argon2 library with support for the PHC format
