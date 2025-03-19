@@ -744,8 +744,13 @@ async fn register_verification_email(
 
     let should_send_mail = CONFIG.mail_enabled() && CONFIG.signups_verify();
 
-    if User::find_by_mail(&data.email, &mut conn).await.is_some() {
-        if should_send_mail {
+    let token_claims =
+        crate::auth::generate_register_verify_claims(data.email.clone(), data.name.clone(), should_send_mail);
+    let token = crate::auth::encode_jwt(&token_claims);
+
+    if should_send_mail {
+        let user = User::find_by_mail(&data.email, &mut conn).await;
+        if user.filter(|u| u.private_key.is_some()).is_some() {
             // There is still a timing side channel here in that the code
             // paths that send mail take noticeably longer than ones that
             // don't. Add a randomized sleep to mitigate this somewhat.
@@ -754,16 +759,9 @@ async fn register_verification_email(
             let delta: i32 = 100;
             let sleep_ms = (1_000 + rng.random_range(-delta..=delta)) as u64;
             tokio::time::sleep(tokio::time::Duration::from_millis(sleep_ms)).await;
+        } else {
+            mail::send_register_verify_email(&data.email, &token).await?;
         }
-        return Ok(RegisterVerificationResponse::NoContent(()));
-    }
-
-    let token_claims =
-        crate::auth::generate_register_verify_claims(data.email.clone(), data.name.clone(), should_send_mail);
-    let token = crate::auth::encode_jwt(&token_claims);
-
-    if should_send_mail {
-        mail::send_register_verify_email(&data.email, &token).await?;
 
         Ok(RegisterVerificationResponse::NoContent(()))
     } else {
