@@ -18,11 +18,7 @@ export async function logNewUser(
             await test.step('Landing page', async () => {
                 await page.goto('/');
                 await page.getByLabel(/Email address/).fill(user.email);
-                await page.getByRole('button', 'Continue').click();
-            });
-
-            await test.step('SSo start page', async () => {
-                await page.getByRole('link', { name: /Enterprise single sign-on/ }).click();
+                await page.getByRole('button', { name: /Use single sign-on/ }).click();
             });
 
             await test.step('Keycloak login', async () => {
@@ -33,10 +29,10 @@ export async function logNewUser(
             });
 
             await test.step('Create Vault account', async () => {
-                await expect(page.getByText('Set master password')).toBeVisible();
-                await page.getByLabel('Master password', { exact: true }).fill(user.password);
-                await page.getByLabel('Re-type master password').fill(user.password);
-                await page.getByRole('button', { name: 'Submit' }).click();
+                await expect(page.getByRole('heading', { name: 'Join organisation' })).toBeVisible();
+                await page.getByLabel('Master password (required)', { exact: true }).fill(user.password);
+                await page.getByLabel('Confirm master password (').fill(user.password);
+                await page.getByRole('button', { name: 'Create account' }).click();
             });
 
             await test.step('Default vault page', async () => {
@@ -73,11 +69,7 @@ export async function logUser(
             await test.step('Landing page', async () => {
                 await page.goto('/');
                 await page.getByLabel(/Email address/).fill(user.email);
-                await page.getByRole('button', 'Continue').click();
-            });
-
-            await test.step('SSo start page', async () => {
-                await page.getByRole('link', { name: /Enterprise single sign-on/ }).click();
+                await page.getByRole('button', { name: /Use single sign-on/ }).click();
             });
 
             await test.step('Keycloak login', async () => {

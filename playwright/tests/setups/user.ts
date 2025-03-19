@@ -13,12 +13,15 @@ export async function createAccount(test, page: Page, user: { email: string, nam
         await expect(page).toHaveTitle(/Create account | Vaultwarden Web/);
         await page.getByLabel(/Email address/).fill(user.email);
         await page.getByLabel('Name').fill(user.name);
-        await page.getByLabel('Master password\n   (required)', { exact: true }).fill(user.password);
-        await page.getByLabel('Re-type master password').fill(user.password);
+        await page.getByRole('button', { name: 'Continue' }).click();
+
+        // Vault finish Creation
+        await page.getByLabel('Master password (required)', { exact: true }).fill(user.password);
+        await page.getByLabel('Confirm master password (').fill(user.password);
         await page.getByRole('button', { name: 'Create account' }).click();
 
-        // Back to the login page
-        await expect(page).toHaveTitle('Vaultwarden Web');
+        // We are now in the default vault page
+        await expect(page).toHaveTitle('Vaults | Vaultwarden Web');
         await utils.checkNotification(page, 'Your new account has been created');
 
         if( mailBuffer ){

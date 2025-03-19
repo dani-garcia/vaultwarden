@@ -38,7 +38,6 @@ test('Create user3', async ({ page }) => {
 
 test('Invite users', async ({ page }) => {
     await createAccount(test, page, users.user1, mail1Buffer);
-    await logUser(test, page, users.user1, mail1Buffer);
 
     await orgs.create(test, page, 'Test');
     await orgs.members(test, page, 'Test');
@@ -57,25 +56,15 @@ test('invited with new account', async ({ page }) => {
         await page.goto(link);
         await expect(page).toHaveTitle(/Create account | Vaultwarden Web/);
 
-        await page.getByLabel('Name').fill(users.user2.name);
-        await page.getByLabel('Master password\n   (required)', { exact: true }).fill(users.user2.password);
-        await page.getByLabel('Re-type master password').fill(users.user2.password);
+        //await page.getByLabel('Name').fill(users.user2.name);
+        await page.getByLabel('Master password (required)', { exact: true }).fill(users.user2.password);
+        await page.getByLabel('Confirm master password (').fill(users.user2.password);
         await page.getByRole('button', { name: 'Create account' }).click();
-
-        // Back to the login page
         await utils.checkNotification(page, 'Your new account has been created');
-    });
 
-    await test.step('Login', async () => {
-        await page.getByLabel(/Email address/).fill(users.user2.email);
-        await page.getByRole('button', { name: 'Continue' }).click();
-
-        // Unlock page
-        await page.getByLabel('Master password').fill(users.user2.password);
-        await page.getByRole('button', { name: 'Log in with master password' }).click();
-
-        // We are now in the default vault page
-        await expect(page).toHaveTitle(/Vaultwarden Web/);
+        // Redirected to the vault
+        await expect(page).toHaveTitle('Vaults | Vaultwarden Web');
+        await utils.checkNotification(page, 'You have been logged in!');
         await utils.checkNotification(page, 'Invitation accepted');
     });
 

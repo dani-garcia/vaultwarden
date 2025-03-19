@@ -16,17 +16,7 @@ test.afterAll('Teardown', async ({}, testInfo: TestInfo) => {
 });
 
 test('Account creation', async ({ page }) => {
-    // Landing page
     await createAccount(test, page, users.user1);
-
-    await page.getByRole('button', { name: 'Continue' }).click();
-
-    // Unlock page
-    await page.getByLabel('Master password').fill(users.user1.password);
-    await page.getByRole('button', { name: 'Log in with master password' }).click();
-
-    // We are now in the default vault page
-    await expect(page).toHaveTitle(/Vaultwarden Web/);
 });
 
 test('Master password login', async ({ page }) => {

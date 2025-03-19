@@ -89,15 +89,17 @@ test('invited with new account', async ({ page }) => {
     });
 
     await test.step('Create Vault account', async () => {
-        await expect(page.getByText('Set master password')).toBeVisible();
-        await page.getByLabel('Master password', { exact: true }).fill(users.user2.password);
-        await page.getByLabel('Re-type master password').fill(users.user2.password);
-        await page.getByRole('button', { name: 'Submit' }).click();
+        await expect(page.getByRole('heading', { name: 'Join organisation' })).toBeVisible();
+        await page.getByLabel('Master password (required)', { exact: true }).fill(users.user2.password);
+        await page.getByLabel('Confirm master password (').fill(users.user2.password);
+        await page.getByRole('button', { name: 'Create account' }).click();
     });
 
     await test.step('Default vault page', async () => {
         await expect(page).toHaveTitle(/Vaultwarden Web/);
-        // await utils.checkNotification(page, 'Invitation accepted');
+
+        await utils.checkNotification(page, 'Account successfully created!');
+        await utils.checkNotification(page, 'Invitation accepted');
     });
 
     await test.step('Check mails', async () => {

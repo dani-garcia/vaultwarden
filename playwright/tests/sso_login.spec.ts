@@ -55,9 +55,6 @@ test('Non SSO login impossible', async ({ page, browser }, testInfo: TestInfo) =
 
     // An error should appear
     await page.getByLabel('SSO sign-in is required')
-
-    // Check the selector for the next test
-    await expect(page.getByRole('link', { name: /Enterprise single sign-on/ })).toHaveCount(1);
 });
 
 

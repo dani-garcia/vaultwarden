@@ -20,7 +20,6 @@ test('Create user3', async ({ page }) => {
 
 test('Invite users', async ({ page }) => {
     await createAccount(test, page, users.user1);
-    await logUser(test, page, users.user1);
 
     await test.step('Create Org', async () => {
         await page.getByRole('link', { name: 'New organisation' }).click();
