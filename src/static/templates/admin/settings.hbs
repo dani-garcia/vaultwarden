@@ -1,17 +1,17 @@
 <main class="container-xl">
     <div id="admin_token_warning" class="alert alert-warning alert-dismissible fade show d-none">
         <button type="button" class="btn-close" data-bs-target="admin_token_warning" data-bs-dismiss="alert" aria-label="Close"></button>
-        You are using a plain text `ADMIN_TOKEN` which is insecure.<br>
-        Please generate a secure Argon2 PHC string by using `vaultwarden hash` or `argon2`.<br>
-        See: <a href="https://github.com/dani-garcia/vaultwarden/wiki/Enabling-admin-page#secure-the-admin_token" target="_blank" rel="noopener noreferrer">Enabling admin page - Secure the `ADMIN_TOKEN`</a>
+        您正在使用明文的 `ADMIN_TOKEN`，这不安全。<br>
+        请使用 `vaultwarden hash` 或 `argon2` 生成一个安全的 Argon2 PHC 字符串。<br>
+        参见：<a href="https://github.com/dani-garcia/vaultwarden/wiki/Enabling-admin-page#secure-the-admin_token" target="_blank" rel="noopener noreferrer">启用管理页面 - 保护 `ADMIN_TOKEN`</a>
     </div>
     <div id="config-block" class="align-items-center p-3 mb-3 bg-secondary rounded shadow">
         <div>
-            <h6 class="text-white mb-3">Configuration</h6>
+            <h6 class="text-white mb-3">配置</h6>
             <div class="small text-white mb-3">
-                <span class="font-weight-bolder">NOTE:</span> The settings here override the environment variables. Once saved, it's recommended to stop setting them to avoid confusion.<br>
-                This does not apply to the read-only section, which can only be set via environment variables.<br>
-                Settings which are overridden are shown with <span class="is-overridden-true alert-row px-1">a yellow colored background</span>.
+                <span class="font-weight-bolder">注意：</span> 这里的设置会覆盖环境变量。保存后，建议停止设置它们以避免混淆。<br>
+                这不适用于只读部分，只能通过环境变量设置。<br>
+                被覆盖的设置将显示为 <span class="is-overridden-true alert-row px-1">黄色背景</span>。
             </div>
 
             <form class="form needs-validation" id="config-form" novalidate>
@@ -28,9 +28,9 @@
                             <div class="col-sm-8">
                                 <div class="input-group">
                                 <input class="form-control conf-{{type}}" id="input_{{name}}" type="{{type}}"
-                                    name="{{name}}" value="{{value}}" {{#if default}} placeholder="Default: {{default}}"{{/if}}>
+                                    name="{{name}}" value="{{value}}" {{#if default}} placeholder="默认: {{default}}"{{/if}}>
                                 {{#case type "password"}}
-                                    <button class="btn btn-outline-secondary input-group-text" type="button" data-vw-pw-toggle="input_{{name}}">Show/hide</button>
+                                    <button class="btn btn-outline-secondary input-group-text" type="button" data-vw-pw-toggle="input_{{name}}">显示/隐藏</button>
                                 {{/case}}
                                 </div>
                             </div>
@@ -42,7 +42,7 @@
                                     <input class="form-check-input conf-{{type}}" type="checkbox" id="input_{{name}}"
                                         name="{{name}}" {{#if value}} checked {{/if}}>
 
-                                    <label class="form-check-label" for="input_{{name}}"> Default: {{default}} </label>
+                                    <label class="form-check-label" for="input_{{name}}"> 默认: {{default}} </label>
                                 </div>
                             </div>
                             {{/case}}
@@ -50,12 +50,12 @@
                         {{/if}}
                         {{/each}}
                         {{#case group "smtp"}}
-                            <div class="row my-2 align-items-center pt-3 border-top" title="Send a test email to given email address">
-                                <label for="smtp-test-email" class="col-sm-3 col-form-label">Test SMTP</label>
+                            <div class="row my-2 align-items-center pt-3 border-top" title="向指定邮箱地址发送测试邮件">
+                                <label for="smtp-test-email" class="col-sm-3 col-form-label">测试 SMTP</label>
                                 <div class="col-sm-8 input-group">
-                                    <input class="form-control" id="smtp-test-email" type="email" placeholder="Enter test email" required spellcheck="false">
-                                    <button type="button" class="btn btn-outline-primary input-group-text" id="smtpTest">Send test email</button>
-                                    <div class="invalid-tooltip">Please provide a valid email address</div>
+                                    <input class="form-control" id="smtp-test-email" type="email" placeholder="输入测试邮箱" required spellcheck="false">
+                                    <button type="button" class="btn btn-outline-primary input-group-text" id="smtpTest">发送测试邮件</button>
+                                    <div class="invalid-tooltip">请提供有效的电子邮件地址</div>
                                 </div>
                             </div>
                         {{/case}}
@@ -66,12 +66,10 @@
 
                 <div class="card mb-3">
                     <button id="b_readonly" type="button" class="card-header text-start btn btn-link text-decoration-none" aria-expanded="false" aria-controls="g_readonly"
-                            data-bs-toggle="collapse" data-bs-target="#g_readonly">Read-Only Config</button>
+                            data-bs-toggle="collapse" data-bs-target="#g_readonly">只读配置</button>
                     <div id="g_readonly" class="card-body collapse">
                         <div class="small mb-3">
-                            NOTE: These options can't be modified in the editor because they would require the server
-                            to be restarted. To modify them, you need to set the correct environment variables when
-                            launching the server. You can check the variable names in the tooltips of each option.
+                            注意：这些选项不能在编辑器中修改，因为它们需要重启服务器。要修改它们，您需要在启动服务器时设置正确的环境变量。您可以在每个选项的工具提示中查看变量名称。
                         </div>
 
                         {{#each page_data.config}}
@@ -83,17 +81,17 @@
                             <div class="col-sm-8">
                                 <div class="input-group">
                                 {{!--
-                                      Also set the database_url input as password here.
-                                      If we would set it to password in config.rs it will not be character masked for the support string.
-                                      And sometimes this is more useful for providing support than just 3 asterisk.
+                                      这里也将 database_url 输入设置为密码。
+                                      如果我们在 config.rs 中将其设置为密码，它将不会为支持字符串掩码字符。
+                                      有时这比仅显示三个星号更有用。
                                 --}}
                                 {{#if (eq name "database_url")}}
-                                    <input readonly class="form-control" id="input_{{name}}" type="password" value="{{value}}" {{#if default}} placeholder="Default: {{default}}" {{/if}}>
-                                    <button class="btn btn-outline-secondary" type="button" data-vw-pw-toggle="input_{{name}}">Show/hide</button>
+                                    <input readonly class="form-control" id="input_{{name}}" type="password" value="{{value}}" {{#if default}} placeholder="默认: {{default}}" {{/if}}>
+                                    <button class="btn btn-outline-secondary" type="button" data-vw-pw-toggle="input_{{name}}">显示/隐藏</button>
                                 {{else}}
-                                    <input readonly class="form-control" id="input_{{name}}" type="{{type}}" value="{{value}}" {{#if default}} placeholder="Default: {{default}}" {{/if}} spellcheck="false">
+                                    <input readonly class="form-control" id="input_{{name}}" type="{{type}}" value="{{value}}" {{#if default}} placeholder="默认: {{default}}" {{/if}} spellcheck="false">
                                     {{#case type "password"}}
-                                    <button class="btn btn-outline-secondary" type="button" data-vw-pw-toggle="input_{{name}}">Show/hide</button>
+                                    <button class="btn btn-outline-secondary" type="button" data-vw-pw-toggle="input_{{name}}">显示/隐藏</button>
                                     {{/case}}
                                 {{/if}}
                                 </div>
@@ -106,7 +104,7 @@
                                     <input disabled class="form-check-input" type="checkbox" id="input_{{name}}"
                                         {{#if value}} checked {{/if}}>
 
-                                    <label class="form-check-label" for="input_{{name}}"> Default: {{default}} </label>
+                                    <label class="form-check-label" for="input_{{name}}"> 默认: {{default}} </label>
                                 </div>
                             </div>
                             {{/case}}
@@ -121,29 +119,27 @@
                 {{#if page_data.can_backup}}
                 <div class="card mb-3">
                     <button id="b_database" type="button" class="card-header text-start btn btn-link text-decoration-none" aria-expanded="false" aria-controls="g_database"
-                            data-bs-toggle="collapse" data-bs-target="#g_database">Backup Database</button>
+                            data-bs-toggle="collapse" data-bs-target="#g_database">备份数据库</button>
                     <div id="g_database" class="card-body collapse">
                         <div class="small mb-3">
-                            WARNING: This function only creates a backup copy of the SQLite database.
-                            This does not include any configuration or file attachment data that may
-                            also be needed to fully restore a vaultwarden instance. For details on
-                            how to perform complete backups, refer to the wiki page on
-                            <a href="https://github.com/dani-garcia/vaultwarden/wiki/Backing-up-your-vault" target="_blank" rel="noopener noreferrer">backups</a>.
+                            警告：此功能仅创建 SQLite 数据库的备份副本。
+                            这不包括任何配置或文件附件数据，这些数据可能也需要完全恢复 vaultwarden 实例。有关如何执行完整备份的详细信息，请参阅 wiki 页面
+                            <a href="https://github.com/dani-garcia/vaultwarden/wiki/Backing-up-your-vault" target="_blank" rel="noopener noreferrer">备份</a>。
                         </div>
-                        <button type="button" class="btn btn-primary" id="backupDatabase">Backup Database</button>
+                        <button type="button" class="btn btn-primary" id="backupDatabase">备份数据库</button>
                     </div>
                 </div>
                 {{/if}}
 
-                <button type="submit" class="btn btn-primary">Save</button>
-                <button type="button" class="btn btn-danger float-end" id="deleteConf">Reset defaults</button>
+                <button type="submit" class="btn btn-primary">保存</button>
+                <button type="button" class="btn btn-danger float-end" id="deleteConf">重置为默认值</button>
             </form>
         </div>
     </div>
 </main>
 <style>
     #config-block ::placeholder {
-        /* Most modern browsers support this now. */
+        /* 大多数现代浏览器现在都支持此功能。 */
         color: orangered;
     }
 

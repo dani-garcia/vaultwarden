@@ -1,11 +1,11 @@
 <!DOCTYPE html>
-<html lang="en" data-bs-theme="auto">
+<html lang="zh-CN" data-bs-theme="auto">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex,nofollow" />
     <link rel="icon" type="image/png" href="{{urlpath}}/vw_static/vaultwarden-favicon.png">
-    <title>Vaultwarden Admin Panel</title>
+    <title>Vaultwarden 管理面板</title>
     <link rel="stylesheet" href="{{urlpath}}/vw_static/bootstrap.css" />
     <link rel="stylesheet" href="{{urlpath}}/vw_static/admin.css" />
     <script src="{{urlpath}}/vw_static/admin.js"></script>
@@ -13,7 +13,7 @@
 <body>
     <nav class="navbar navbar-expand-md navbar-dark bg-dark mb-4 shadow fixed-top">
         <div class="container-xl">
-            <a class="navbar-brand" href="{{urlpath}}/admin"><img class="vaultwarden-icon" src="{{urlpath}}/vw_static/vaultwarden-icon.png" alt="V">aultwarden Admin</a>
+            <a class="navbar-brand" href="{{urlpath}}/admin"><img class="vaultwarden-icon" src="{{urlpath}}/vw_static/vaultwarden-icon.png" alt="V">aultwarden 管理</a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse"
                 aria-controls="navbarCollapse" aria-expanded="false" aria-label="Toggle navigation">
                 <span class="navbar-toggler-icon"></span>
@@ -22,20 +22,20 @@
                 <ul class="navbar-nav me-auto">
                     {{#if logged_in}}
                     <li class="nav-item">
-                        <a class="nav-link" href="{{urlpath}}/admin">Settings</a>
+                        <a class="nav-link" href="{{urlpath}}/admin">设置</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="{{urlpath}}/admin/users/overview">Users</a>
+                        <a class="nav-link" href="{{urlpath}}/admin/users/overview">用户</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="{{urlpath}}/admin/organizations/overview">Organizations</a>
+                        <a class="nav-link" href="{{urlpath}}/admin/organizations/overview">组织</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="{{urlpath}}/admin/diagnostics">Diagnostics</a>
+                        <a class="nav-link" href="{{urlpath}}/admin/diagnostics">诊断</a>
                     </li>
                     {{/if}}
                     <li class="nav-item">
-                        <a class="nav-link" href="{{urlpath}}/" target="_blank" rel="noreferrer">Vault</a>
+                        <a class="nav-link" href="{{urlpath}}/" target="_blank" rel="noreferrer">密码库</a>
                     </li>
                 </ul>
 
@@ -44,11 +44,11 @@
                         <button
                             class="btn btn-link nav-link py-0 px-0 px-md-2 dropdown-toggle d-flex align-items-center"
                             id="bd-theme" type="button" aria-expanded="false" data-bs-toggle="dropdown"
-                            data-bs-display="static" aria-label="Toggle theme (auto)">
+                            data-bs-display="static" aria-label="切换主题 (自动)">
                             <span class="my-1 fs-4 theme-icon-active">
                                 <use>&#9775;</use>
                             </span>
-                            <span class="d-md-none ms-2" id="bd-theme-text">Toggle theme</span>
+                            <span class="d-md-none ms-2" id="bd-theme-text">切换主题</span>
                         </button>
                         <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="bd-theme-text">
                             <li>
@@ -57,7 +57,7 @@
                                     <span class="me-2 fs-4 theme-icon">
                                         <use>&#9728;</use>
                                     </span>
-                                    Light
+                                    浅色
                                 </button>
                             </li>
                             <li>
@@ -66,7 +66,7 @@
                                     <span class="me-2 fs-4 theme-icon">
                                         <use>&starf;</use>
                                     </span>
-                                    Dark
+                                    深色
                                 </button>
                             </li>
                             <li>
@@ -75,7 +75,7 @@
                                     <span class="me-2 fs-4 theme-icon">
                                         <use>&#9775;</use>
                                     </span>
-                                    Auto
+                                    自动
                                 </button>
                             </li>
                         </ul>
@@ -83,7 +83,7 @@
                 </ul>
 
                 {{#if logged_in}}
-                <a class="btn btn-sm btn-secondary" href="{{urlpath}}/admin/logout">Log Out</a>
+                <a class="btn btn-sm btn-secondary" href="{{urlpath}}/admin/logout">退出登录</a>
                 {{/if}}
 
             </div>

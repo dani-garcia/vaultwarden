@@ -1,84 +1,84 @@
-/**** START Static Vaultwarden changes ****/
-/* This combines all selectors extending it into one */
+/**** 开始 静态 Vaultwarden 更改 ****/
+/* 这将所有继承它的选择器组合成一个 */
 %vw-hide {
   display: none !important;
 }
 
-/* This allows searching for the combined style in the browsers dev-tools (look into the head tag) */
+/* 这允许在浏览器开发工具中搜索组合样式（查看 head 标签） */
 .vw-hide,
 head {
   @extend %vw-hide;
 }
 
-/* Hide the Subscription Page tab */
+/* 隐藏订阅页面标签 */
 bit-nav-item[route="settings/subscription"] {
   @extend %vw-hide;
 }
 
-/* Hide any link pointing to Free Bitwarden Families */
+/* 隐藏指向免费 Bitwarden 家庭的任何链接 */
 a[href$="/settings/sponsored-families"] {
   @extend %vw-hide;
 }
 
-/* Hide the `Enterprise Single Sign-On` button on the login page */
+/* 隐藏登录页面上的 `企业单点登录` 按钮 */
 a[routerlink="/sso"] {
   @extend %vw-hide;
 }
 
-/* Hide Two-Factor menu in Organization settings */
+/* 隐藏组织设置中的双因素菜单 */
 bit-nav-item[route="settings/two-factor"],
 a[href$="/settings/two-factor"] {
   @extend %vw-hide;
 }
 
-/* Hide Business Owned checkbox */
+/* 隐藏业务拥有的复选框 */
 app-org-info > form:nth-child(1) > div:nth-child(3) {
   @extend %vw-hide;
 }
 
-/* Hide the `This account is owned by a business` checkbox and label */
+/* 隐藏 `此账户由企业拥有` 复选框和标签 */
 #ownedBusiness,
 label[for^="ownedBusiness"] {
   @extend %vw-hide;
 }
 
-/* Hide Business Name */
+/* 隐藏业务名称 */
 app-org-account form div bit-form-field.tw-block:nth-child(3) {
   @extend %vw-hide;
 }
 
-/* Hide organization plans */
+/* 隐藏组织计划 */
 app-organization-plans > form > bit-section:nth-child(2) {
   @extend %vw-hide;
 }
 
-/* Hide Collection Management Form */
+/* 隐藏集合管理表单 */
 app-org-account form.ng-untouched:nth-child(6) {
   @extend %vw-hide;
 }
 
-/* Hide 'Member Access' Report Card from Org Reports */
+/* 隐藏组织报告中的 `成员访问` 报告卡 */
 app-org-reports-home > app-report-list > div.tw-inline-grid > div:nth-child(6) {
   @extend %vw-hide;
 }
 
-/* Hide Device Verification form at the Two Step Login screen */
+/* 隐藏两步登录屏幕上的设备验证表单 */
 app-security > app-two-factor-setup > form {
   @extend %vw-hide;
 }
 
-/* Hide unsupported Custom Role options */
+/* 隐藏不支持的自定义角色选项 */
 bit-dialog div.tw-ml-4:has(bit-form-control input),
 bit-dialog div.tw-col-span-4:has(input[formcontrolname*="access"], input[formcontrolname*="manage"]) {
   @extend %vw-hide;
 }
 
-/* Hide Log in with passkey */
+/* 隐藏使用密码登录 */
 app-login div.tw-flex:nth-child(4) {
   @extend %vw-hide;
 }
 
-/* Change collapsed menu icon to Vaultwarden */
+/* 更改折叠菜单图标为 Vaultwarden */
 bit-nav-logo bit-nav-item a:before {
   content: "";
   background-image: url("../images/icon-white.svg");
@@ -90,16 +90,16 @@ bit-nav-logo bit-nav-item a:before {
 bit-nav-logo bit-nav-item .bwi-shield {
   @extend %vw-hide;
 }
-/**** END Static Vaultwarden Changes ****/
-/**** START Dynamic Vaultwarden Changes ****/
+/**** 结束 静态 Vaultwarden 更改 ****/
+
+/**** 开始 动态 Vaultwarden 更改 ****/
 {{#if signup_disabled}}
-/* From web vault 2025.1.2 and onwards, the signup button is hidden 
-  when signups are disabled as the web vault checks the /api/config endpoint.
-  Note that the clients tend to aggressively cache this endpoint, so it might
-  take a while for the change to take effect. To avoid the button appearing 
-  when it shouldn't, we'll keep this style in place for a couple of versions */
+/* 从 web vault 2025.1.2 版本开始，当注册功能被禁用时，
+   注册按钮会被隐藏，因为 web vault 会检查 /api/config 端点。
+   注意，客户端往往会大量缓存此端点，因此更改可能需要一段时间才能生效。
+   为了避免按钮在不应该出现时出现，我们将在未来几个版本中保留此样式 */
 {{#if webver "<2025.3.0"}}
-/* Hide the register link on the login screen */
+/* 隐藏登录界面的注册链接 */
 app-login form div + div + div + div + hr,
 app-login form div + div + div + div + hr + p {
   @extend %vw-hide;
@@ -108,34 +108,35 @@ app-login form div + div + div + div + hr + p {
 {{/if}}
 
 {{#unless mail_enabled}}
-/* Hide `Email` 2FA if mail is not enabled */
+/* 隐藏 `电子邮件` 双因素认证，如果邮件未启用 */
 app-two-factor-setup ul.list-group.list-group-2fa li.list-group-item:nth-child(1) {
   @extend %vw-hide;
 }
 {{/unless}}
 
 {{#unless yubico_enabled}}
-/* Hide `YubiKey OTP security key` 2FA if it is not enabled */
+/* 隐藏 `YubiKey OTP 安全密钥` 双因素认证，如果未启用 */
 app-two-factor-setup ul.list-group.list-group-2fa li.list-group-item:nth-child(4) {
   @extend %vw-hide;
 }
 {{/unless}}
 
 {{#unless emergency_access_allowed}}
-/* Hide Emergency Access if not allowed */
+/* 隐藏紧急访问，如果不允许 */
 bit-nav-item[route="settings/emergency-access"] {
   @extend %vw-hide;
 }
 {{/unless}}
 
 {{#unless sends_allowed}}
-/* Hide Sends if not allowed */
+/* 隐藏发送，如果不允许 */
 bit-nav-item[route="sends"] {
   @extend %vw-hide;
 }
 {{/unless}}
-/**** End Dynamic Vaultwarden Changes ****/
-/**** Include a special user stylesheet for custom changes ****/
+/**** 结束 动态 Vaultwarden 更改 ****/
+
+/**** 包含用于自定义更改的特殊用户样式表 ****/
 {{#if load_user_scss}}
 {{> scss/user.vaultwarden.scss }}
 {{/if}}

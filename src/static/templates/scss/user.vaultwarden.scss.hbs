@@ -1,1 +1,33 @@
 /* See the wiki for examples and details: https://github.com/dani-garcia/vaultwarden/wiki/Customize-Vaultwarden-CSS */
+
+/* 设置中文字体 */
+:lang(zh-CN) {
+  font-family: -apple-system, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
+    "Helvetica Neue", Arial, sans-serif;
+}
+
+/* 界面文本本地化 */
+.text-main:lang(zh-CN)::before {
+  content: "密码库";
+}
+
+.text-generator:lang(zh-CN)::before {
+  content: "密码生成器"; 
+}
+
+.text-settings:lang(zh-CN)::before {
+  content: "设置";
+}
+
+.text-help:lang(zh-CN)::before {
+  content: "帮助";
+}
+
+/* 登录界面文本 */
+.login-title:lang(zh-CN)::before {
+  content: "登录";
+}
+
+.login-button:lang(zh-CN)::before {
+  content: "登录到账户";
+}
