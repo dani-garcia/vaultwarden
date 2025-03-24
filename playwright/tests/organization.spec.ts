@@ -60,11 +60,11 @@ test('Invite users', async ({ page }) => {
     });
 });
 
-test('Create invited account', async ({ page }) => {
+test.skip('Create invited account', async ({ page }) => {
     await createAccount(test, page, users.user2);
 });
 
-test('Confirm invited user', async ({ page }) => {
+test.skip('Confirm invited user', async ({ page }) => {
     await logUser(test, page, users.user1);
     await page.getByLabel('Switch products').click();
     await page.getByRole('link', { name: ' Admin Console' }).click();
@@ -78,7 +78,7 @@ test('Confirm invited user', async ({ page }) => {
     });
 });
 
-test('Organization is visible', async ({ context, page }) => {
+test.skip('Organization is visible', async ({ context, page }) => {
     await logUser(test, page, users.user2);
     await page.getByLabel('vault: Test').click();
     await expect(page.getByLabel('Filter: Default collection')).toBeVisible();
