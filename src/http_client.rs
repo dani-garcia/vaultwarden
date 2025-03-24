@@ -6,7 +6,7 @@ use std::{
     time::Duration,
 };
 
-use hickory_resolver::{system_conf::read_system_conf, TokioAsyncResolver};
+use hickory_resolver::{name_server::TokioConnectionProvider, TokioResolver};
 use once_cell::sync::Lazy;
 use regex::Regex;
 use reqwest::{
@@ -173,7 +173,7 @@ impl std::error::Error for CustomHttpClientError {}
 #[derive(Debug, Clone)]
 enum CustomDnsResolver {
     Default(),
-    Hickory(Arc<TokioAsyncResolver>),
+    Hickory(Arc<TokioResolver>),
 }
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
@@ -184,9 +184,9 @@ impl CustomDnsResolver {
     }
 
     fn new() -> Arc<Self> {
-        match read_system_conf() {
-            Ok((config, opts)) => {
-                let resolver = TokioAsyncResolver::tokio(config.clone(), opts.clone());
+        match TokioResolver::builder(TokioConnectionProvider::default()) {
+            Ok(builder) => {
+                let resolver = builder.build();
                 Arc::new(Self::Hickory(Arc::new(resolver)))
             }
             Err(e) => {

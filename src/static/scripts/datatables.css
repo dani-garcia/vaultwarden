@@ -4,13 +4,12 @@
  *
  * To rebuild or modify this file with the latest versions of the included
  * software please visit:
- *   https://datatables.net/download/#bs5/dt-2.1.8
+ *   https://datatables.net/download/#bs5/dt-2.2.2
  *
  * Included libraries:
- *   DataTables 2.1.8
+ *   DataTables 2.2.2
  */
 
-@charset "UTF-8";
 :root {
   --dt-row-selected: 13, 110, 253;
   --dt-row-selected-text: 255, 255, 255;
@@ -42,6 +41,9 @@ table.dataTable tr.dt-hasChild td.dt-control:before {
   border-left: 5px solid transparent;
   border-bottom: 0px solid transparent;
   border-right: 5px solid transparent;
+}
+table.dataTable tfoot:empty {
+  display: none;
 }
 
 html.dark table.dataTable td.dt-control:before,
@@ -90,8 +92,8 @@ table.dataTable thead > tr > td.dt-ordering-asc span.dt-column-order:before {
   position: absolute;
   display: block;
   bottom: 50%;
-  content: "▲";
-  content: "▲"/"";
+  content: "\25B2";
+  content: "\25B2"/"";
 }
 table.dataTable thead > tr > th.dt-orderable-desc span.dt-column-order:after, table.dataTable thead > tr > th.dt-ordering-desc span.dt-column-order:after,
 table.dataTable thead > tr > td.dt-orderable-desc span.dt-column-order:after,
@@ -99,8 +101,8 @@ table.dataTable thead > tr > td.dt-ordering-desc span.dt-column-order:after {
   position: absolute;
   display: block;
   top: 50%;
-  content: "▼";
-  content: "▼"/"";
+  content: "\25BC";
+  content: "\25BC"/"";
 }
 table.dataTable thead > tr > th.dt-orderable-asc, table.dataTable thead > tr > th.dt-orderable-desc, table.dataTable thead > tr > th.dt-ordering-asc, table.dataTable thead > tr > th.dt-ordering-desc,
 table.dataTable thead > tr > td.dt-orderable-asc,
@@ -251,6 +253,11 @@ table.dataTable th,
 table.dataTable td {
   box-sizing: border-box;
 }
+table.dataTable th.dt-type-numeric, table.dataTable th.dt-type-date,
+table.dataTable td.dt-type-numeric,
+table.dataTable td.dt-type-date {
+  text-align: right;
+}
 table.dataTable th.dt-left,
 table.dataTable td.dt-left {
   text-align: left;
@@ -275,11 +282,6 @@ table.dataTable th.dt-empty,
 table.dataTable td.dt-empty {
   text-align: center;
   vertical-align: top;
-}
-table.dataTable th.dt-type-numeric, table.dataTable th.dt-type-date,
-table.dataTable td.dt-type-numeric,
-table.dataTable td.dt-type-date {
-  text-align: right;
 }
 table.dataTable thead th,
 table.dataTable thead td,

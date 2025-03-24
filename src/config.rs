@@ -104,7 +104,7 @@ macro_rules! make_config {
 
                 let mut builder = ConfigBuilder::default();
                 $($(
-                    builder.$name = make_config! { @getenv paste::paste!(stringify!([<$name:upper>])), $ty };
+                    builder.$name = make_config! { @getenv pastey::paste!(stringify!([<$name:upper>])), $ty };
                 )+)+
 
                 builder
@@ -133,7 +133,7 @@ macro_rules! make_config {
                         builder.$name = v.clone();
 
                         if self.$name.is_some() {
-                            overrides.push(paste::paste!(stringify!([<$name:upper>])).into());
+                            overrides.push(pastey::paste!(stringify!([<$name:upper>])).into());
                         }
                     }
                 )+)+
@@ -231,7 +231,7 @@ macro_rules! make_config {
                                 element.insert("default".into(), serde_json::to_value(def.$name).unwrap());
                                 element.insert("type".into(), (_get_form_type(stringify!($ty))).into());
                                 element.insert("doc".into(), (_get_doc(concat!($($doc),+))).into());
-                                element.insert("overridden".into(), (overridden.contains(&paste::paste!(stringify!([<$name:upper>])).into())).into());
+                                element.insert("overridden".into(), (overridden.contains(&pastey::paste!(stringify!([<$name:upper>])).into())).into());
                                 element
                             }),
                         )+

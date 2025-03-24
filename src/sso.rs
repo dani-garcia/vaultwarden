@@ -447,7 +447,7 @@ pub async fn exchange_code(wrapped_code: &str, conn: &mut DbConn) -> ApiResult<U
 
             if CONFIG.sso_debug_tokens() {
                 debug!("Id token: {}", id_token.to_string());
-                debug!("Access token: {}", token_response.access_token().secret().to_string());
+                debug!("Access token: {}", token_response.access_token().secret());
                 debug!("Refresh token: {:?}", token_response.refresh_token().map(|t| t.secret().to_string()));
                 debug!("Expiration time: {:?}", token_response.expires_in());
             }
