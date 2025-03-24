@@ -204,7 +204,7 @@ pub async fn validate_email_code_str(user_id: &UserId, token: &str, data: &str, 
         .map_res("Two factor not found")?;
     let Some(issued_token) = &email_data.last_token else {
         err!(
-            "No token available",
+            format!("No token available! Server time: {} IP: {}", current_time.format("%F %T UTC"), ip.ip),
             ErrorEvent {
                 event: EventType::UserFailedLogIn2fa
             }
@@ -220,7 +220,7 @@ pub async fn validate_email_code_str(user_id: &UserId, token: &str, data: &str, 
         twofactor.save(conn).await?;
 
         err!(
-            "Token is invalid",
+            format!("Token is invalid! Server time: {} IP: {}", current_time.format("%F %T UTC"), ip.ip),
             ErrorEvent {
                 event: EventType::UserFailedLogIn2fa
             }
