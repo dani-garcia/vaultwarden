@@ -394,9 +394,16 @@ impl User {
         }}
     }
 
-    pub async fn get_all(conn: &mut DbConn) -> Vec<Self> {
+    pub async fn get_all(conn: &mut DbConn) -> Vec<(User, Option<SsoUser>)> {
         db_run! {conn: {
-            users::table.load::<UserDb>(conn).expect("Error loading users").from_db()
+            users::table
+                .left_join(sso_users::table)
+                .select(<(UserDb, Option<SsoUserDb>)>::as_select())
+                .load(conn)
+                .expect("Error loading groups for user")
+                .into_iter()
+                .map(|(user, sso_user)| { (user.from_db(), sso_user.from_db()) })
+                .collect()
         }}
     }
 
@@ -530,6 +537,14 @@ impl SsoUser {
                 .first::<(UserDb, Option<SsoUserDb>)>(conn)
                 .ok()
                 .map(|(user, sso_user)| { (user.from_db(), sso_user.from_db()) })
+        }}
+    }
+
+    pub async fn delete(user_uuid: &UserId, conn: &mut DbConn) -> EmptyResult {
+        db_run! {conn: {
+            diesel::delete(sso_users::table.filter(sso_users::user_uuid.eq(user_uuid)))
+                .execute(conn)
+                .map_res("Error deleting sso user")
         }}
     }
 }

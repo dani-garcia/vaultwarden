@@ -6,6 +6,9 @@
                 <thead>
                     <tr>
                         <th class="vw-account-details">User</th>
+                        {{#if sso_enabled}}
+                        <th class="vw-sso-identifier">SSO Identifier</th>
+                        {{/if}}
                         <th class="vw-created-at">Created at</th>
                         <th class="vw-last-active">Last Active</th>
                         <th class="vw-entries">Entries</th>
@@ -38,6 +41,11 @@
                                 </span>
                             </div>
                         </td>
+                        {{#if ../sso_enabled}}
+                        <td>
+                            <span class="d-block">{{sso_identifier}}</span>
+                        </td>
+                        {{/if}}
                         <td>
                             <span class="d-block">{{created_at}}</span>
                         </td>
@@ -67,6 +75,9 @@
                                 {{/if}}
                                 <button type="button" class="btn btn-sm btn-link p-0 border-0 float-right" vw-deauth-user>Deauthorize sessions</button><br>
                                 <button type="button" class="btn btn-sm btn-link p-0 border-0 float-right" vw-delete-user>Delete User</button><br>
+                                {{#if ../sso_enabled}}
+                                <button type="button" class="btn btn-sm btn-link p-0 border-0 float-right" vw-delete-sso-user>Delete SSO Association</button><br>
+                                {{/if}}
                                 {{#if user_enabled}}
                                 <button type="button" class="btn btn-sm btn-link p-0 border-0 float-right" vw-disable-user>Disable User</button><br>
                                 {{else}}
