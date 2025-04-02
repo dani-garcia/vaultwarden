@@ -335,6 +335,10 @@ impl DeviceType {
             _ => DeviceType::UnknownBrowser,
         }
     }
+
+    pub fn is_mobile(value: &i32) -> bool {
+        *value == DeviceType::Android as i32 || *value == DeviceType::Ios as i32
+    }
 }
 
 #[derive(

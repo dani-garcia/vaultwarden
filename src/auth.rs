@@ -16,8 +16,8 @@ use std::{
 use crate::{
     api::ApiResult,
     db::models::{
-        AttachmentId, CipherId, CollectionId, DeviceId, EmergencyAccessId, MembershipId, OrgApiKeyId, OrganizationId,
-        SendFileId, SendId, UserId,
+        AttachmentId, CipherId, CollectionId, DeviceId, DeviceType, EmergencyAccessId, MembershipId, OrgApiKeyId,
+        OrganizationId, SendFileId, SendId, UserId,
     },
     error::Error,
     sso, CONFIG,
@@ -29,6 +29,7 @@ const JWT_ALGORITHM: Algorithm = Algorithm::RS256;
 pub static BW_EXPIRATION: Lazy<TimeDelta> = Lazy::new(|| TimeDelta::try_minutes(5).unwrap());
 
 pub static DEFAULT_REFRESH_VALIDITY: Lazy<TimeDelta> = Lazy::new(|| TimeDelta::try_days(30).unwrap());
+pub static MOBILE_REFRESH_VALIDITY: Lazy<TimeDelta> = Lazy::new(|| TimeDelta::try_days(90).unwrap());
 pub static DEFAULT_ACCESS_VALIDITY: Lazy<TimeDelta> = Lazy::new(|| TimeDelta::try_hours(2).unwrap());
 static JWT_HEADER: Lazy<Header> = Lazy::new(|| Header::new(JWT_ALGORITHM));
 
@@ -1161,9 +1162,15 @@ impl AuthTokens {
 
         let access_claims = LoginJwtClaims::default(device, user, &sub);
 
+        let validity = if DeviceType::is_mobile(&device.atype) {
+            *MOBILE_REFRESH_VALIDITY
+        } else {
+            *DEFAULT_REFRESH_VALIDITY
+        };
+
         let refresh_claims = RefreshJwtClaims {
             nbf: time_now.timestamp(),
-            exp: (time_now + *DEFAULT_REFRESH_VALIDITY).timestamp(),
+            exp: (time_now + validity).timestamp(),
             iss: JWT_LOGIN_ISSUER.to_string(),
             sub,
             device_token: device.refresh_token.clone(),
