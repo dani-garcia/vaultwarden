@@ -112,7 +112,7 @@ pub fn decode_jwt<T: DeserializeOwned>(token: &str, issuer: String) -> Result<T,
             ErrorKind::InvalidToken => err!("Token is invalid"),
             ErrorKind::InvalidIssuer => err!("Issuer is invalid"),
             ErrorKind::ExpiredSignature => err!("Token has expired"),
-            _ => err!("Error decoding JWT"),
+            _ => err!(format!("Error decoding JWT: {:?}", err)),
         },
     }
 }
@@ -1177,11 +1177,12 @@ impl AuthTokens {
     }
 }
 
-pub async fn refresh_tokens(refresh_token: &str, conn: &mut DbConn) -> ApiResult<(Device, AuthTokens)> {
-    let time_now = Utc::now();
-
+pub async fn refresh_tokens(ip: &ClientIp, refresh_token: &str, conn: &mut DbConn) -> ApiResult<(Device, AuthTokens)> {
     let refresh_claims = match decode_refresh(refresh_token) {
-        Err(err) => err_silent!(format!("Impossible to read refresh_token: {}", err.message())),
+        Err(err) => {
+            debug!("Failed to decode {} refresh_token: {refresh_token}", ip.ip);
+            err_silent!(format!("Impossible to read refresh_token: {}", err.message()))
+        }
         Ok(claims) => claims,
     };
 
@@ -1198,10 +1199,6 @@ pub async fn refresh_tokens(refresh_token: &str, conn: &mut DbConn) -> ApiResult
         None => err!("Impossible to find user"),
         Some(user) => user,
     };
-
-    if refresh_claims.exp < time_now.timestamp() {
-        err!("Expired refresh token");
-    }
 
     let auth_tokens = match refresh_claims.sub {
         AuthMethod::Sso if CONFIG.sso_enabled() && CONFIG.sso_auth_only_not_session() => {

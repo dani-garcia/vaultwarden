@@ -53,7 +53,7 @@ async fn login(data: Form<ConnectData>, client_header: ClientHeaders, mut conn: 
     let login_result = match data.grant_type.as_ref() {
         "refresh_token" => {
             _check_is_some(&data.refresh_token, "refresh_token cannot be blank")?;
-            _refresh_login(data, &mut conn).await
+            _refresh_login(data, &mut conn, &client_header.ip).await
         }
         "password" if CONFIG.sso_enabled() && CONFIG.sso_only() => err!("SSO sign-in is required"),
         "password" => {
@@ -124,7 +124,7 @@ async fn login(data: Form<ConnectData>, client_header: ClientHeaders, mut conn: 
 }
 
 // Return Status::Unauthorized to trigger logout
-async fn _refresh_login(data: ConnectData, conn: &mut DbConn) -> JsonResult {
+async fn _refresh_login(data: ConnectData, conn: &mut DbConn, ip: &ClientIp) -> JsonResult {
     // Extract token
     let refresh_token = match data.refresh_token {
         Some(token) => token,
@@ -137,7 +137,7 @@ async fn _refresh_login(data: ConnectData, conn: &mut DbConn) -> JsonResult {
     // See: https://github.com/dani-garcia/vaultwarden/issues/4156
     // ---
     // let members = Membership::find_confirmed_by_user(&user.uuid, conn).await;
-    match auth::refresh_tokens(&refresh_token, conn).await {
+    match auth::refresh_tokens(ip, &refresh_token, conn).await {
         Err(err) => {
             err_code!(format!("Unable to refresh login credentials: {}", err.message()), Status::Unauthorized.code)
         }
