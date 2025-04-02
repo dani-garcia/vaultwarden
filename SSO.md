@@ -220,6 +220,19 @@ Your configuration should look like this:
 * `SSO_CLIENT_ID=${Application (client) ID}`
 * `SSO_CLIENT_SECRET=${Secret Value}`
 
+## Rauthy
+
+To use a provider controlled session you will need to run Rauthy with `DISABLE_REFRESH_TOKEN_NBF=true` otherwise the server will fail when trying to read a not yet valid `refresh_token` (`Bitwarden` clients will trigger a refresh even if the `access_token` is still valid. Details on rauthy [side](https://github.com/sebadob/rauthy/issues/651)). Alternative is to use the default session handling with `SSO_AUTH_ONLY_NOT_SESSION=true`.
+
+No specific config needed when creating the Client.
+
+Your configuration should look like this:
+
+* `SSO_AUTHORITY=http://${provider_host}/auth/v1`
+* `SSO_CLIENT_ID=${Client ID}`
+* `SSO_CLIENT_SECRET=${Client Secret}`
+* `SSO_AUTH_ONLY_NOT_SESSION=true` Only needed if not running `Rauthy` with `DISABLE_REFRESH_TOKEN_NBF=true`
+
 ## Slack
 
 You will need to create an app in https://api.slack.com/apps/.
