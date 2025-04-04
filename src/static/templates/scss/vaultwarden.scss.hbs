@@ -21,7 +21,15 @@ a[href$="/settings/sponsored-families"] {
 }
 
 /* Hide the `Enterprise Single Sign-On` button on the login page */
-a[routerlink="/sso"] {
+app-root form.ng-untouched button.\!tw-text-primary-600:nth-child(4) {
+  @extend %vw-hide;
+}
+/* Hide Log in with passkey on the login page */
+app-root form.ng-untouched a[routerlink="/login-with-passkey"] {
+  @extend %vw-hide;
+}
+/* Hide the or text followed by the two buttons hidden above */
+app-root form.ng-untouched > div:nth-child(1) > div:nth-child(3) > div:nth-child(2) {
   @extend %vw-hide;
 }
 
@@ -73,11 +81,6 @@ bit-dialog div.tw-col-span-4:has(input[formcontrolname*="access"], input[formcon
   @extend %vw-hide;
 }
 
-/* Hide Log in with passkey */
-app-login div.tw-flex:nth-child(4) {
-  @extend %vw-hide;
-}
-
 /* Change collapsed menu icon to Vaultwarden */
 bit-nav-logo bit-nav-item a:before {
   content: "";
@@ -93,10 +96,10 @@ bit-nav-logo bit-nav-item .bwi-shield {
 /**** END Static Vaultwarden Changes ****/
 /**** START Dynamic Vaultwarden Changes ****/
 {{#if signup_disabled}}
-/* From web vault 2025.1.2 and onwards, the signup button is hidden 
+/* From web vault 2025.1.2 and onwards, the signup button is hidden
   when signups are disabled as the web vault checks the /api/config endpoint.
   Note that the clients tend to aggressively cache this endpoint, so it might
-  take a while for the change to take effect. To avoid the button appearing 
+  take a while for the change to take effect. To avoid the button appearing
   when it shouldn't, we'll keep this style in place for a couple of versions */
 {{#if webver "<2025.3.0"}}
 /* Hide the register link on the login screen */
