@@ -103,7 +103,19 @@ jobs:
         run: |
           # Check which main tag we are going to build determined by ref_type
           if [[ "${REF_TYPE}" == "tag" ]]; then
-            echo "BASE_TAGS=latest,${GITHUB_REF#refs/*/}" | tee -a "${GITHUB_ENV}"
+            VERSION_TAGS=${GITHUB_REF#refs/*/}
+            # Add `Major` and `Major.Minor` version tags if GH Ref matches SemVer
+            SEMVER_REGEX="^([0-9]+)\.([0-9]+)\.([0-9]+)([-+].*)?$"
+            if [[ "${VERSION_TAGS}" =~ $SEMVER_REGEX ]]; then
+                VERSION_TAGS+=",${BASH_REMATCH[1]}"
+                VERSION_TAGS+=",${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
+                # Add `Major.Minor.Patch` version tag if GH Ref contains SemVer extension
+                if [[ "${BASH_REMATCH[4]}" ]]; then
+                    VERSION_TAGS+=",${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${BASH_REMATCH[3]}"
+                fi
+            fi
+
+            echo "BASE_TAGS=latest,${VERSION_TAGS}" | tee -a "${GITHUB_ENV}"
           elif [[ "${REF_TYPE}" == "branch" ]]; then
             echo "BASE_TAGS=testing" | tee -a "${GITHUB_ENV}"
           fi
