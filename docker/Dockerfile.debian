@@ -134,7 +134,7 @@ ARG DB=sqlite,mysql,postgresql
 # dummy project, except the target folder
 # This folder contains the compiled dependencies
 RUN source /env-cargo && \
-    cargo build --features ${DB} --profile "${CARGO_PROFILE}" --target="${CARGO_TARGET}" -vvv && \
+    cargo build --features ${DB} --profile "${CARGO_PROFILE}" --target="${CARGO_TARGET}" && \
     find . -not -path "./target*" -delete
 
 # Copies the complete project
