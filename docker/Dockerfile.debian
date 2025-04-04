@@ -112,8 +112,8 @@ RUN source /env-cargo && \
         # The version is linked to the mariadb-connector-c a.k.a libmariadb-dev version
         # See: https://mariadb.com/kb/en/about-mariadb-connector-c/
         echo "export MYSQLCLIENT_VERSION=3.3.14" >> /env-cargo ; \
-        # echo "export MYSQLCLIENT_INCLUDE_DIR=/usr/include/mariadb" >> /env-cargo && \
-        # echo "export MYSQLCLIENT_LIB_DIR=/usr/lib/$(xx-info)" >> /env-cargo ; \
+        echo "export MYSQLCLIENT_INCLUDE_DIR=/usr/include/mariadb" >> /env-cargo && \
+        echo "export MYSQLCLIENT_LIB_DIR=/usr/lib/$(xx-info)" >> /env-cargo ; \
     fi && \
     # Output the current contents of the file
     cat /env-cargo
