@@ -1,0 +1,28 @@
+name: Check templates
+permissions: {}
+
+on: [ push, pull_request ]
+
+jobs:
+  docker-templates:	
+    permissions:
+      contents: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      # Checkout the repo
+      - name: "Checkout"
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 #v4.2.2
+        with:
+          persist-credentials: false
+      # End Checkout the repo
+
+      - name: Run make to rebuild templates
+        working-directory: docker
+        run: make 
+
+      - name: Check for unstaged changes
+        working-directory: docker
+        run: git diff --exit-code
+        continue-on-error: false
