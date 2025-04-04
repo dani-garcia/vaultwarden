@@ -42,3 +42,11 @@ repos:
       types_or: [rust, file]
       files: (Cargo.toml|Cargo.lock|rust-toolchain|clippy.toml|.*\.rs$)
       pass_filenames: false
+    - id: check-docker-templates
+      name: check docker templates
+      desciption: Check if the Docker templates are updated
+      language: system
+      entry: sh
+      args:
+        - "-c"
+        - "cd docker && make"
