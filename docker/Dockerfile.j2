@@ -125,8 +125,15 @@ RUN source /env-cargo && \
         echo "export CARGO_TARGET_$(echo "${CARGO_TARGET}" | tr '[:lower:]' '[:upper:]' | tr - _)_LINKER=/usr/bin/$(xx-info)-gcc" >> /env-cargo && \
         echo "export PKG_CONFIG=/usr/bin/$(xx-info)-pkg-config" >> /env-cargo && \
         echo "export CROSS_COMPILE=1" >> /env-cargo && \
+        # Export build env's for OpenSSL
         echo "export OPENSSL_INCLUDE_DIR=/usr/include/$(xx-info)" >> /env-cargo && \
         echo "export OPENSSL_LIB_DIR=/usr/lib/$(xx-info)" >> /env-cargo ; \
+        # Export build env's for mysqlclient-sys (mariadb)
+        # The version is linked to the mariadb-connector-c a.k.a libmariadb-dev version
+        # See: https://mariadb.com/kb/en/about-mariadb-connector-c/
+        echo "export MYSQLCLIENT_VERSION=3.3.14" >> /env-cargo ; \
+        echo "export MYSQLCLIENT_INCLUDE_DIR=/usr/include/mariadb" >> /env-cargo && \
+        echo "export MYSQLCLIENT_LIB_DIR=/usr/lib/$(xx-info)" >> /env-cargo ; \
     fi && \
     # Output the current contents of the file
     cat /env-cargo
