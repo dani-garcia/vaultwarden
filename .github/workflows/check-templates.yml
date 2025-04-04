@@ -19,12 +19,6 @@ jobs:
           fetch-depth: 0
       # End Checkout the repo
 
-      - name: Set up environment
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y make python3 python3-pip
-          sudo pip install jinja2
-
       - name: Run make to rebuild templates
         working-directory: docker
         run: make 
