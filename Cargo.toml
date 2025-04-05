@@ -18,7 +18,7 @@ build = "build.rs"
 # default = ["sqlite"]
 # Empty to keep compatibility, prefer to set USE_SYSLOG=true
 enable_syslog = []
-mysql = ["diesel/mysql", "diesel_migrations/mysql", "dep:mysqlclient-sys"]
+mysql = ["diesel/mysql", "diesel_migrations/mysql"]
 postgresql = ["diesel/postgres", "diesel_migrations/postgres"]
 sqlite = ["diesel/sqlite", "diesel_migrations/sqlite", "dep:libsqlite3-sys"]
 # Enable to use a vendored and statically linked openssl
@@ -87,8 +87,6 @@ diesel-derive-newtype = "2.1.2"
 
 # Bundled/Static SQLite
 libsqlite3-sys = { version = "0.32.0", features = ["bundled"], optional = true }
-# Always enable buildtime bindgen for mysql/mariadb libraries
-mysqlclient-sys = { version = "0.4.4", features = ["buildtime_bindgen"], optional = true }
 
 # Crypto-related libraries
 rand = "0.9.0"

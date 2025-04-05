@@ -133,8 +133,7 @@ target "debian-386" {
   platforms = ["linux/386"]
   tags = generate_tags("", "-386")
   args = {
-    ARCH_OPENSSL_LIB_DIR = "/usr/lib/i386-linux-gnu"
-    ARCH_OPENSSL_INCLUDE_DIR = "/usr/include/i386-linux-gnu"
+    TARGET_PKG_CONFIG_PATH = "/usr/lib/i386-linux-gnu/pkgconfig"
   }
 }
 
@@ -142,20 +141,12 @@ target "debian-ppc64le" {
   inherits = ["debian"]
   platforms = ["linux/ppc64le"]
   tags = generate_tags("", "-ppc64le")
-  args = {
-    ARCH_OPENSSL_LIB_DIR = "/usr/lib/powerpc64le-linux-gnu"
-    ARCH_OPENSSL_INCLUDE_DIR = "/usr/include/powerpc64le-linux-gnu"
-  }
 }
 
 target "debian-s390x" {
   inherits = ["debian"]
   platforms = ["linux/s390x"]
   tags = generate_tags("", "-s390x")
-  args = {
-    ARCH_OPENSSL_LIB_DIR = "/usr/lib/s390x-linux-gnu"
-    ARCH_OPENSSL_INCLUDE_DIR = "/usr/include/s390x-linux-gnu"
-  }
 }
 // ==== End of unsupported Debian architecture targets ===
 
