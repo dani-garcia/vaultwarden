@@ -109,24 +109,24 @@ WORKDIR /app
 
 {% if base == "debian" %}
 # Environment variables for Cargo on Debian based builds
-ARG ARCH_OPENSSL_LIB_DIR \
-    ARCH_OPENSSL_INCLUDE_DIR
+ARG TARGET_PKG_CONFIG_PATH
 
 RUN source /env-cargo && \
     if xx-info is-cross ; then \
-        # Some special variables if needed to override some build paths
-        if [[ -n "${ARCH_OPENSSL_LIB_DIR}" && -n "${ARCH_OPENSSL_INCLUDE_DIR}" ]]; then \
-            echo "export $(echo "${CARGO_TARGET}" | tr '[:lower:]' '[:upper:]' | tr - _)_OPENSSL_LIB_DIR=${ARCH_OPENSSL_LIB_DIR}" >> /env-cargo && \
-            echo "export $(echo "${CARGO_TARGET}" | tr '[:lower:]' '[:upper:]' | tr - _)_OPENSSL_INCLUDE_DIR=${ARCH_OPENSSL_INCLUDE_DIR}" >> /env-cargo ; \
-        fi && \
         # We can't use xx-cargo since that uses clang, which doesn't work for our libraries.
         # Because of this we generate the needed environment variables here which we can load in the needed steps.
         echo "export CC_$(echo "${CARGO_TARGET}" | tr '[:upper:]' '[:lower:]' | tr - _)=/usr/bin/$(xx-info)-gcc" >> /env-cargo && \
         echo "export CARGO_TARGET_$(echo "${CARGO_TARGET}" | tr '[:lower:]' '[:upper:]' | tr - _)_LINKER=/usr/bin/$(xx-info)-gcc" >> /env-cargo && \
-        echo "export PKG_CONFIG=/usr/bin/$(xx-info)-pkg-config" >> /env-cargo && \
         echo "export CROSS_COMPILE=1" >> /env-cargo && \
-        echo "export OPENSSL_INCLUDE_DIR=/usr/include/$(xx-info)" >> /env-cargo && \
-        echo "export OPENSSL_LIB_DIR=/usr/lib/$(xx-info)" >> /env-cargo ; \
+        echo "export PKG_CONFIG_ALLOW_CROSS=1" >> /env-cargo && \
+        # For some architectures `xx-info` returns a triple which doesn't matches the path on disk
+        # In those cases you can override this by setting the `TARGET_PKG_CONFIG_PATH` build-arg
+        if [[ -n "${TARGET_PKG_CONFIG_PATH}" ]]; then \
+            echo "export TARGET_PKG_CONFIG_PATH=${TARGET_PKG_CONFIG_PATH}" >> /env-cargo ; \
+        else \
+            echo "export PKG_CONFIG_PATH=/usr/lib/$(xx-info)/pkgconfig" >> /env-cargo ; \
+        fi && \
+        echo "# End of env-cargo" >> /env-cargo ; \
     fi && \
     # Output the current contents of the file
     cat /env-cargo
