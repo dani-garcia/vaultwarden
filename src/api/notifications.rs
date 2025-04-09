@@ -495,7 +495,7 @@ impl WebSocketUsers {
     pub async fn send_auth_request(
         &self,
         user_id: &UserId,
-        auth_request_uuid: &String,
+        auth_request_uuid: &str,
         acting_device_id: &DeviceId,
         conn: &mut DbConn,
     ) {
@@ -504,7 +504,7 @@ impl WebSocketUsers {
             return;
         }
         let data = create_update(
-            vec![("Id".into(), auth_request_uuid.clone().into()), ("UserId".into(), user_id.to_string().into())],
+            vec![("Id".into(), auth_request_uuid.to_owned().into()), ("UserId".into(), user_id.to_string().into())],
             UpdateType::AuthRequest,
             Some(acting_device_id.clone()),
         );
@@ -513,7 +513,7 @@ impl WebSocketUsers {
         }
 
         if CONFIG.push_enabled() {
-            push_auth_request(user_id.clone(), auth_request_uuid.to_string(), conn).await;
+            push_auth_request(user_id.clone(), auth_request_uuid.to_owned(), conn).await;
         }
     }
 

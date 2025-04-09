@@ -1,4 +1,5 @@
-workspace = { members = ["macros"] }
+[workspace]
+members = ["macros"]
 
 [package]
 name = "vaultwarden"
@@ -71,7 +72,7 @@ dashmap = "6.1.0"
 
 # Async futures
 futures = "0.3.31"
-tokio = { version = "1.44.1", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal", "net"] }
+tokio = { version = "1.44.2", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal", "net"] }
 
 # A generic serialization/deserialization framework
 serde = { version = "1.0.219", features = ["derive"] }
@@ -162,11 +163,9 @@ semver = "1.0.26"
 
 # Allow overriding the default memory allocator
 # Mainly used for the musl builds, since the default musl malloc is very slow
-# Currently pinned to v0.1.44/v0.1.40 because of compile issues with musl - https://github.com/microsoft/mimalloc/issues/1056
-mimalloc = { version = "=0.1.44", features = ["secure"], default-features = false, optional = true }
-libmimalloc-sys = { version = "=0.1.40", optional = true }
+mimalloc = { version = "0.1.46", features = ["secure"], default-features = false, optional = true }
 
-which = "7.0.2"
+which = "7.0.3"
 
 # Argon2 library with support for the PHC format
 argon2 = "0.5.3"
@@ -217,7 +216,7 @@ codegen-units = 16
 
 # Linting config
 # https://doc.rust-lang.org/rustc/lints/groups.html
-[lints.rust]
+[workspace.lints.rust]
 # Forbid
 unsafe_code = "forbid"
 non_ascii_idents = "forbid"
@@ -247,7 +246,7 @@ if_let_rescope = "allow"
 tail_expr_drop_order = "allow"
 
 # https://rust-lang.github.io/rust-clippy/stable/index.html
-[lints.clippy]
+[workspace.lints.clippy]
 # Warn
 dbg_macro = "warn"
 todo = "warn"
@@ -285,3 +284,6 @@ unused_async = "deny"
 unused_self = "deny"
 verbose_file_reads = "deny"
 zero_sized_map_values = "deny"
+
+[lints]
+workspace = true

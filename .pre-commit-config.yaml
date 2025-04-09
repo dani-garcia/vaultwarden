@@ -31,7 +31,7 @@ repos:
       language: system
       args: ["--features", "sqlite,mysql,postgresql,enable_mimalloc", "--"]
       types_or: [rust, file]
-      files: (Cargo.toml|Cargo.lock|rust-toolchain|.*\.rs$)
+      files: (Cargo.toml|Cargo.lock|rust-toolchain.toml|rustfmt.toml|.*\.rs$)
       pass_filenames: false
     - id: cargo-clippy
       name: cargo clippy
@@ -40,11 +40,11 @@ repos:
       language: system
       args: ["--features", "sqlite,mysql,postgresql,enable_mimalloc", "--", "-D", "warnings"]
       types_or: [rust, file]
-      files: (Cargo.toml|Cargo.lock|rust-toolchain|clippy.toml|.*\.rs$)
+      files: (Cargo.toml|Cargo.lock|rust-toolchain.toml|rustfmt.toml|.*\.rs$)
       pass_filenames: false
     - id: check-docker-templates
       name: check docker templates
-      desciption: Check if the Docker templates are updated
+      description: Check if the Docker templates are updated
       language: system
       entry: sh
       args:
