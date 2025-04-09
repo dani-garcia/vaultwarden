@@ -46,6 +46,10 @@ test('Non SSO login impossible', async ({ page, browser }, testInfo: TestInfo) =
 
     // Landing page
     await page.goto('/');
+
+    // Check that SSO login is available
+    await expect(page.getByRole('button', { name: /Use single sign-on/ })).toHaveCount(1);
+
     await page.getByLabel(/Email address/).fill(users.user1.email);
     await page.getByRole('button', { name: 'Continue' }).click();
 
@@ -66,9 +70,7 @@ test('No SSO login', async ({ page }, testInfo: TestInfo) => {
     // Landing page
     await page.goto('/');
     await page.getByLabel(/Email address/).fill(users.user1.email);
-    await page.getByRole('button', { name: 'Continue' }).click();
 
     // No SSO button (rely on a correct selector checked in previous test)
-    await page.getByLabel('Master password');
-    await expect(page.getByRole('link', { name: /Enterprise single sign-on/ })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /Use single sign-on/ })).toHaveCount(0);
 });
