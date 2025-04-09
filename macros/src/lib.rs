@@ -1,5 +1,3 @@
-extern crate proc_macro;
-
 use proc_macro::TokenStream;
 use quote::quote;
 
@@ -12,7 +10,7 @@ pub fn derive_uuid_from_param(input: TokenStream) -> TokenStream {
 
 fn impl_derive_uuid_macro(ast: &syn::DeriveInput) -> TokenStream {
     let name = &ast.ident;
-    let gen = quote! {
+    let gen_derive = quote! {
         #[automatically_derived]
         impl<'r> rocket::request::FromParam<'r> for #name {
             type Error = ();
@@ -27,7 +25,7 @@ fn impl_derive_uuid_macro(ast: &syn::DeriveInput) -> TokenStream {
             }
         }
     };
-    gen.into()
+    gen_derive.into()
 }
 
 #[proc_macro_derive(IdFromParam)]
@@ -39,7 +37,7 @@ pub fn derive_id_from_param(input: TokenStream) -> TokenStream {
 
 fn impl_derive_safestring_macro(ast: &syn::DeriveInput) -> TokenStream {
     let name = &ast.ident;
-    let gen = quote! {
+    let gen_derive = quote! {
         #[automatically_derived]
         impl<'r> rocket::request::FromParam<'r> for #name {
             type Error = ();
@@ -54,5 +52,5 @@ fn impl_derive_safestring_macro(ast: &syn::DeriveInput) -> TokenStream {
             }
         }
     };
-    gen.into()
+    gen_derive.into()
 }

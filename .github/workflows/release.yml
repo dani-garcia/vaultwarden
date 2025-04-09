@@ -290,25 +290,25 @@ jobs:
 
       # Upload artifacts to Github Actions and Attest the binaries
       - name: "Upload amd64 artifact ${{ matrix.base_image }}"
-        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 #v4.6.1
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: vaultwarden-${{ env.SOURCE_VERSION }}-linux-amd64-${{ matrix.base_image }}
           path: vaultwarden-amd64-${{ matrix.base_image }}
 
       - name: "Upload arm64 artifact ${{ matrix.base_image }}"
-        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 #v4.6.1
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: vaultwarden-${{ env.SOURCE_VERSION }}-linux-arm64-${{ matrix.base_image }}
           path: vaultwarden-arm64-${{ matrix.base_image }}
 
       - name: "Upload armv7 artifact ${{ matrix.base_image }}"
-        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 #v4.6.1
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: vaultwarden-${{ env.SOURCE_VERSION }}-linux-armv7-${{ matrix.base_image }}
           path: vaultwarden-armv7-${{ matrix.base_image }}
 
       - name: "Upload armv6 artifact ${{ matrix.base_image }}"
-        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 #v4.6.1
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: vaultwarden-${{ env.SOURCE_VERSION }}-linux-armv6-${{ matrix.base_image }}
           path: vaultwarden-armv6-${{ matrix.base_image }}
