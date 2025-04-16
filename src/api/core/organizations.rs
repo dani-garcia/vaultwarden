@@ -1028,8 +1028,7 @@ async fn send_invite(
     // HACK: This converts the Custom role which has the `Manage all collections` box checked into an access_all flag
     // Since the parent checkbox is not sent to the server we need to check and verify the child checkboxes
     // If the box is not checked, the user will still be a manager, but not with the access_all permission
-    let access_all = new_type == MembershipType::Owner
-        || new_type == MembershipType::Admin
+    let access_all = new_type >= MembershipType::Admin
         || (raw_type.eq("4")
             && data.permissions.get("editAnyCollection") == Some(&json!(true))
             && data.permissions.get("deleteAnyCollection") == Some(&json!(true))
@@ -1559,8 +1558,7 @@ async fn edit_member(
     // HACK: This converts the Custom role which has the `Manage all collections` box checked into an access_all flag
     // Since the parent checkbox is not sent to the server we need to check and verify the child checkboxes
     // If the box is not checked, the user will still be a manager, but not with the access_all permission
-    let access_all = new_type == MembershipType::Owner
-        || new_type == MembershipType::Admin
+    let access_all = new_type >= MembershipType::Admin
         || (raw_type.eq("4")
             && data.permissions.get("editAnyCollection") == Some(&json!(true))
             && data.permissions.get("deleteAnyCollection") == Some(&json!(true))
