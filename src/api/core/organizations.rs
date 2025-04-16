@@ -997,8 +997,6 @@ struct InviteData {
     r#type: NumberOrString,
     collections: Option<Vec<CollectionData>>,
     #[serde(default)]
-    access_all: bool,
-    #[serde(default)]
     permissions: HashMap<String, Value>,
 }
 
@@ -1012,7 +1010,7 @@ async fn send_invite(
     if org_id != headers.org_id {
         err!("Organization not found", "Organization id's do not match");
     }
-    let mut data: InviteData = data.into_inner();
+    let data: InviteData = data.into_inner();
 
     // HACK: We need the raw user-type to be sure custom role is selected to determine the access_all permission
     // The from_str() will convert the custom role type into a manager role type
@@ -1030,13 +1028,11 @@ async fn send_invite(
     // HACK: This converts the Custom role which has the `Manage all collections` box checked into an access_all flag
     // Since the parent checkbox is not sent to the server we need to check and verify the child checkboxes
     // If the box is not checked, the user will still be a manager, but not with the access_all permission
-    if raw_type.eq("4")
-        && data.permissions.get("editAnyCollection") == Some(&json!(true))
-        && data.permissions.get("deleteAnyCollection") == Some(&json!(true))
-        && data.permissions.get("createNewCollections") == Some(&json!(true))
-    {
-        data.access_all = true;
-    }
+    let access_all = new_type >= MembershipType::Admin
+        || (raw_type.eq("4")
+            && data.permissions.get("editAnyCollection") == Some(&json!(true))
+            && data.permissions.get("deleteAnyCollection") == Some(&json!(true))
+            && data.permissions.get("createNewCollections") == Some(&json!(true)));
 
     let mut user_created: bool = false;
     for email in data.emails.iter() {
@@ -1074,7 +1070,6 @@ async fn send_invite(
         };
 
         let mut new_member = Membership::new(user.uuid.clone(), org_id.clone());
-        let access_all = data.access_all;
         new_member.access_all = access_all;
         new_member.atype = new_type;
         new_member.status = member_status;
@@ -1525,8 +1520,6 @@ struct EditUserData {
     collections: Option<Vec<CollectionData>>,
     groups: Option<Vec<GroupId>>,
     #[serde(default)]
-    access_all: bool,
-    #[serde(default)]
     permissions: HashMap<String, Value>,
 }
 
@@ -1552,7 +1545,7 @@ async fn edit_member(
     if org_id != headers.org_id {
         err!("Organization not found", "Organization id's do not match");
     }
-    let mut data: EditUserData = data.into_inner();
+    let data: EditUserData = data.into_inner();
 
     // HACK: We need the raw user-type to be sure custom role is selected to determine the access_all permission
     // The from_str() will convert the custom role type into a manager role type
@@ -1565,13 +1558,11 @@ async fn edit_member(
     // HACK: This converts the Custom role which has the `Manage all collections` box checked into an access_all flag
     // Since the parent checkbox is not sent to the server we need to check and verify the child checkboxes
     // If the box is not checked, the user will still be a manager, but not with the access_all permission
-    if raw_type.eq("4")
-        && data.permissions.get("editAnyCollection") == Some(&json!(true))
-        && data.permissions.get("deleteAnyCollection") == Some(&json!(true))
-        && data.permissions.get("createNewCollections") == Some(&json!(true))
-    {
-        data.access_all = true;
-    }
+    let access_all = new_type >= MembershipType::Admin
+        || (raw_type.eq("4")
+            && data.permissions.get("editAnyCollection") == Some(&json!(true))
+            && data.permissions.get("deleteAnyCollection") == Some(&json!(true))
+            && data.permissions.get("createNewCollections") == Some(&json!(true)));
 
     let mut member_to_edit = match Membership::find_by_uuid_and_org(&member_id, &org_id, &mut conn).await {
         Some(member) => member,
@@ -1617,7 +1608,7 @@ async fn edit_member(
         }
     }
 
-    member_to_edit.access_all = data.access_all;
+    member_to_edit.access_all = access_all;
     member_to_edit.atype = new_type as i32;
 
     // Delete all the odd collections
@@ -1626,7 +1617,7 @@ async fn edit_member(
     }
 
     // If no accessAll, add the collections received
-    if !data.access_all {
+    if !access_all {
         for col in data.collections.iter().flatten() {
             match Collection::find_by_uuid_and_org(&col.id, &org_id, &mut conn).await {
                 None => err!("Collection not found in Organization"),
