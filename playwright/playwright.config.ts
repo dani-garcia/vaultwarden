@@ -22,7 +22,13 @@ export default defineConfig({
 
     /* Reporter to use. See https://playwright.dev/docs/test-reporters */
     reporter: 'html',
-    timeout: 20 * 1000,
+
+    /* Long global timeout for complex tests
+     * But short action/nav/expect timeouts to fail on specific step (raise locally if not enough).
+     */
+    timeout: 120 * 1000,
+    actionTimeout: 10 * 1000,
+    navigationTimeout: 10 * 1000,
     expect: { timeout: 10 * 1000 },
 
     /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */

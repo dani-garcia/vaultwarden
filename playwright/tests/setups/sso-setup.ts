@@ -11,7 +11,6 @@ test.beforeAll('Setup', async () => {
 });
 
 test('Keycloak is up', async ({ page }) => {
-    test.setTimeout(60000);
     await utils.waitFor(process.env.SSO_AUTHORITY, page.context().browser());
     // Dummy authority is created at the end of the setup
     await utils.waitFor(process.env.DUMMY_AUTHORITY, page.context().browser());
