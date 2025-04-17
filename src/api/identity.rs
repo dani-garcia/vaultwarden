@@ -575,7 +575,7 @@ async fn twofactor_auth(
             }
         }
         Some(TwoFactorType::Email) => {
-            email::validate_email_code_str(&user.uuid, twofactor_code, &selected_data?, conn).await?
+            email::validate_email_code_str(&user.uuid, twofactor_code, &selected_data?, &ip.ip, conn).await?
         }
 
         Some(TwoFactorType::Remember) => {
