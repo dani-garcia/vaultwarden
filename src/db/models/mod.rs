@@ -11,6 +11,7 @@ mod group;
 mod org_policy;
 mod organization;
 mod send;
+mod sso_nonce;
 mod two_factor;
 mod two_factor_duo_context;
 mod two_factor_incomplete;
@@ -35,7 +36,8 @@ pub use self::send::{
     id::{SendFileId, SendId},
     Send, SendType,
 };
+pub use self::sso_nonce::SsoNonce;
 pub use self::two_factor::{TwoFactor, TwoFactorType};
 pub use self::two_factor_duo_context::TwoFactorDuoContext;
 pub use self::two_factor_incomplete::TwoFactorIncomplete;
-pub use self::user::{Invitation, User, UserId, UserKdfType, UserStampException};
+pub use self::user::{Invitation, SsoUser, User, UserId, UserKdfType, UserStampException};
