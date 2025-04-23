@@ -68,16 +68,11 @@ impl Group {
     }
 
     pub fn to_json(&self) -> Value {
-        use crate::util::format_date;
-
         json!({
             "id": self.uuid,
             "organizationId": self.organizations_uuid,
             "name": self.name,
-            "accessAll": self.access_all,
             "externalId": self.external_id,
-            "creationDate": format_date(&self.creation_date),
-            "revisionDate": format_date(&self.revision_date),
             "object": "group"
         })
     }

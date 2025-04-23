@@ -203,6 +203,7 @@ fn config() -> Json<Value> {
         parse_experimental_client_feature_flags(&crate::CONFIG.experimental_client_feature_flags());
     // Force the new key rotation feature
     feature_states.insert("key-rotation-improvements".to_string(), true);
+    feature_states.insert("duo-redirect".to_string(), true);
     feature_states.insert("flexible-collections-v-1".to_string(), false);
 
     feature_states.insert("email-verification".to_string(), true);
@@ -216,6 +217,7 @@ fn config() -> Json<Value> {
         // - Individual cipher key encryption: 2024.2.0
         "version": "2025.1.0",
         "gitHash": option_env!("GIT_REV"),
+        "cloudRegion": null,
         "server": {
           "name": "Vaultwarden",
           "url": "https://github.com/dani-garcia/vaultwarden"
@@ -229,6 +231,11 @@ fn config() -> Json<Value> {
           "identity": format!("{domain}/identity"),
           "notifications": format!("{domain}/notifications"),
           "sso": "",
+        },
+        // Bitwarden uses this for the self-hosted servers to indicate the default push technology
+        "push": {
+          "pushTechnology": 0,
+          "vapidPublicKey": null
         },
         "featureStates": feature_states,
         "object": "config",
