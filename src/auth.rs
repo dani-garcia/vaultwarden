@@ -181,6 +181,11 @@ pub struct LoginJwtClaims {
     pub sstamp: String,
     // device uuid
     pub device: DeviceId,
+    // what kind of device, like FirefoxBrowser or Android derived from DeviceType
+    pub devicetype: String,
+    // the type of client_id, like web, cli, desktop, browser or mobile
+    pub client_id: String,
+
     // [ "api", "offline_access" ]
     pub scope: Vec<String>,
     // [ "Application" ]
