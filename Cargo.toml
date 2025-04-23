@@ -90,7 +90,7 @@ diesel-derive-newtype = "2.1.2"
 libsqlite3-sys = { version = "0.32.0", features = ["bundled"], optional = true }
 
 # Crypto-related libraries
-rand = "0.9.0"
+rand = "0.9.1"
 ring = "0.17.14"
 subtle = "2.6.1"
 
@@ -103,10 +103,10 @@ chrono-tz = "0.10.3"
 time = "0.3.41"
 
 # Job scheduler
-job_scheduler_ng = "2.0.5"
+job_scheduler_ng = "2.2.0"
 
 # Data encoding library Hex/Base32/Base64
-data-encoding = "2.8.0"
+data-encoding = "2.9.0"
 
 # JWT library
 jsonwebtoken = "9.3.1"
@@ -115,7 +115,7 @@ jsonwebtoken = "9.3.1"
 totp-lite = "2.0.1"
 
 # Yubico Library
-yubico = { version = "0.12.0", features = ["online-tokio"], default-features = false }
+yubico = { package = "yubico_ng", version = "0.13.0", features = ["online-tokio"], default-features = false }
 
 # WebAuthn libraries
 webauthn-rs = "0.3.2"
@@ -171,14 +171,11 @@ which = "7.0.3"
 argon2 = "0.5.3"
 
 # Reading a password from the cli for generating the Argon2id ADMIN_TOKEN
-rpassword = "7.3.1"
+rpassword = "7.4.0"
 
 # Loading a dynamic CSS Stylesheet
 grass_compiler = { version = "0.13.4", default-features = false }
 
-[patch.crates-io]
-# Patch yubico to remove duplicate crates of older versions
-yubico = { git = "https://github.com/BlackDex/yubico-rs", rev = "00df14811f58155c0f02e3ab10f1570ed3e115c6" }
 
 # Strip debuginfo from the release builds
 # The symbols are the provide better panic traces

@@ -54,7 +54,7 @@ impl Device {
             "id": self.uuid,
             "name": self.name,
             "type": self.atype,
-            "identifier": self.push_uuid,
+            "identifier": self.uuid,
             "creationDate": format_date(&self.created_at),
             "isTrusted": false,
             "object":"device"
@@ -73,7 +73,12 @@ impl Device {
         self.twofactor_remember = None;
     }
 
-    pub fn refresh_tokens(&mut self, user: &super::User, scope: Vec<String>) -> (String, i64) {
+    pub fn refresh_tokens(
+        &mut self,
+        user: &super::User,
+        scope: Vec<String>,
+        client_id: Option<String>,
+    ) -> (String, i64) {
         // If there is no refresh token, we create one
         if self.refresh_token.is_empty() {
             use data_encoding::BASE64URL;
@@ -121,6 +126,8 @@ impl Device {
             // orgmanager,
             sstamp: user.security_stamp.clone(),
             device: self.uuid.clone(),
+            devicetype: DeviceType::from_i32(self.atype).to_string(),
+            client_id: client_id.unwrap_or("undefined".to_string()),
             scope,
             amr: vec!["Application".into()],
         };
@@ -156,7 +163,7 @@ impl DeviceWithAuthRequest {
             "id": self.device.uuid,
             "name": self.device.name,
             "type": self.device.atype,
-            "identifier": self.device.push_uuid,
+            "identifier": self.device.uuid,
             "creationDate": format_date(&self.device.created_at),
             "devicePendingAuthRequest": auth_request,
             "isTrusted": false,
