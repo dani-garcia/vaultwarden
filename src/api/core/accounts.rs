@@ -337,7 +337,6 @@ async fn profile(headers: Headers, mut conn: DbConn) -> Json<Value> {
 #[serde(rename_all = "camelCase")]
 struct ProfileData {
     // culture: String, // Ignored, always use en-US
-    // masterPasswordHint: Option<String>, // Ignored, has been moved to ChangePassData
     name: String,
 }
 

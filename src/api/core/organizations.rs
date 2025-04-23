@@ -374,6 +374,21 @@ async fn get_org_collections_details(
         || (CONFIG.org_groups_enabled()
             && GroupUser::has_full_access_by_member(&org_id, &member.uuid, &mut conn).await);
 
+    // Get all admins, ownners and managers who can manage/access all
+    // Those are currently not listed in the col_users but need to be listed too.
+    let manage_all_members: Vec<Value> = Membership::find_confirmed_and_manage_all_by_org(&org_id, &mut conn)
+        .await
+        .into_iter()
+        .map(|member| {
+            json!({
+                "id": member.uuid,
+                "readOnly": false,
+                "hidePasswords": false,
+                "manage": true,
+            })
+        })
+        .collect();
+
     for col in Collection::find_by_organization(&org_id, &mut conn).await {
         // check whether the current user has access to the given collection
         let assigned = has_full_access_to_org
@@ -382,7 +397,7 @@ async fn get_org_collections_details(
                 && GroupUser::has_access_to_collection_by_member(&col.uuid, &member.uuid, &mut conn).await);
 
         // get the users assigned directly to the given collection
-        let users: Vec<Value> = col_users
+        let mut users: Vec<Value> = col_users
             .iter()
             .filter(|collection_member| collection_member.collection_uuid == col.uuid)
             .map(|collection_member| {
@@ -391,6 +406,7 @@ async fn get_org_collections_details(
                 )
             })
             .collect();
+        users.extend_from_slice(&manage_all_members);
 
         // get the group details for the given collection
         let groups: Vec<Value> = if CONFIG.org_groups_enabled() {
@@ -2556,18 +2572,27 @@ async fn _restore_member(
     Ok(())
 }
 
-#[get("/organizations/<org_id>/groups")]
-async fn get_groups(org_id: OrganizationId, headers: ManagerHeadersLoose, mut conn: DbConn) -> JsonResult {
+async fn get_groups_data(
+    details: bool,
+    org_id: OrganizationId,
+    headers: ManagerHeadersLoose,
+    mut conn: DbConn,
+) -> JsonResult {
     if org_id != headers.membership.org_uuid {
         err!("Organization not found", "Organization id's do not match");
     }
     let groups: Vec<Value> = if CONFIG.org_groups_enabled() {
-        // Group::find_by_organization(&org_id, &mut conn).await.iter().map(Group::to_json).collect::<Value>()
         let groups = Group::find_by_organization(&org_id, &mut conn).await;
         let mut groups_json = Vec::with_capacity(groups.len());
 
-        for g in groups {
-            groups_json.push(g.to_json_details(&mut conn).await)
+        if details {
+            for g in groups {
+                groups_json.push(g.to_json_details(&mut conn).await)
+            }
+        } else {
+            for g in groups {
+                groups_json.push(g.to_json())
+            }
         }
         groups_json
     } else {
@@ -2583,9 +2608,14 @@ async fn get_groups(org_id: OrganizationId, headers: ManagerHeadersLoose, mut co
     })))
 }
 
+#[get("/organizations/<org_id>/groups")]
+async fn get_groups(org_id: OrganizationId, headers: ManagerHeadersLoose, conn: DbConn) -> JsonResult {
+    get_groups_data(false, org_id, headers, conn).await
+}
+
 #[get("/organizations/<org_id>/groups/details", rank = 1)]
 async fn get_groups_details(org_id: OrganizationId, headers: ManagerHeadersLoose, conn: DbConn) -> JsonResult {
-    get_groups(org_id, headers, conn).await
+    get_groups_data(true, org_id, headers, conn).await
 }
 
 #[derive(Deserialize)]
@@ -2740,7 +2770,8 @@ async fn add_update_group(
         "organizationId": group.organizations_uuid,
         "name": group.name,
         "accessAll": group.access_all,
-        "externalId": group.external_id
+        "externalId": group.external_id,
+        "object": "group"
     })))
 }
 
