@@ -83,14 +83,24 @@ impl OrgPolicy {
 
     pub fn to_json(&self) -> Value {
         let data_json: Value = serde_json::from_str(&self.data).unwrap_or(Value::Null);
-        json!({
+        let mut policy = json!({
             "id": self.uuid,
             "organizationId": self.org_uuid,
             "type": self.atype,
             "data": data_json,
             "enabled": self.enabled,
             "object": "policy",
-        })
+        });
+
+        // Upstream adds this key/value
+        // Allow enabling Single Org policy when the organization has claimed domains.
+        // See: (https://github.com/bitwarden/server/pull/5565)
+        // We return the same to prevent possible issues
+        if self.atype == 8i32 {
+            policy["canToggleState"] = json!(true);
+        }
+
+        policy
     }
 }
 

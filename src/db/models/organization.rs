@@ -203,7 +203,6 @@ impl Organization {
             "useResetPassword": CONFIG.mail_enabled(),
             "allowAdminAccessToAllCollectionItems": true,
             "limitCollectionCreation": true,
-            "limitCollectionCreationDeletion": true,
             "limitCollectionDeletion": true,
 
             "businessName": self.name,
@@ -468,7 +467,6 @@ impl Membership {
             "familySponsorshipToDelete": null,
             "accessSecretsManager": false,
             "limitCollectionCreation": self.atype < MembershipType::Manager, // If less then a manager return true, to limit collection creations
-            "limitCollectionCreationDeletion": true,
             "limitCollectionDeletion": true,
             "limitItemDeletion": false,
             "allowAdminAccessToAllCollectionItems": true,

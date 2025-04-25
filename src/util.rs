@@ -752,9 +752,16 @@ pub fn convert_json_key_lcase_first(src_json: Value) -> Value {
 
 /// Parses the experimental client feature flags string into a HashMap.
 pub fn parse_experimental_client_feature_flags(experimental_client_feature_flags: &str) -> HashMap<String, bool> {
-    let feature_states = experimental_client_feature_flags.split(',').map(|f| (f.trim().to_owned(), true)).collect();
-
-    feature_states
+    experimental_client_feature_flags
+        .split(',')
+        .filter_map(|f| {
+            let flag = f.trim();
+            if !flag.is_empty() {
+                return Some((flag.to_owned(), true));
+            }
+            None
+        })
+        .collect()
 }
 
 /// TODO: This is extracted from IpAddr::is_global, which is unstable:
