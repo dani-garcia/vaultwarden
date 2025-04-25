@@ -167,6 +167,8 @@ impl DeviceWithAuthRequest {
             "creationDate": format_date(&self.device.created_at),
             "devicePendingAuthRequest": auth_request,
             "isTrusted": false,
+            "encryptedPublicKey": null,
+            "encryptedUserKey": null,
             "object": "device",
         })
     }
