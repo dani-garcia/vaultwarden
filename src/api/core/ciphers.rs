@@ -1376,7 +1376,7 @@ async fn delete_attachment_post_admin(
     headers: Headers,
     conn: DbConn,
     nt: Notify<'_>,
-) -> EmptyResult {
+) -> JsonResult {
     delete_attachment(cipher_id, attachment_id, headers, conn, nt).await
 }
 
@@ -1387,7 +1387,7 @@ async fn delete_attachment_post(
     headers: Headers,
     conn: DbConn,
     nt: Notify<'_>,
-) -> EmptyResult {
+) -> JsonResult {
     delete_attachment(cipher_id, attachment_id, headers, conn, nt).await
 }
 
@@ -1398,7 +1398,7 @@ async fn delete_attachment(
     headers: Headers,
     mut conn: DbConn,
     nt: Notify<'_>,
-) -> EmptyResult {
+) -> JsonResult {
     _delete_cipher_attachment_by_id(&cipher_id, &attachment_id, &headers, &mut conn, &nt).await
 }
 
@@ -1409,7 +1409,7 @@ async fn delete_attachment_admin(
     headers: Headers,
     mut conn: DbConn,
     nt: Notify<'_>,
-) -> EmptyResult {
+) -> JsonResult {
     _delete_cipher_attachment_by_id(&cipher_id, &attachment_id, &headers, &mut conn, &nt).await
 }
 
@@ -1818,7 +1818,7 @@ async fn _delete_cipher_attachment_by_id(
     headers: &Headers,
     conn: &mut DbConn,
     nt: &Notify<'_>,
-) -> EmptyResult {
+) -> JsonResult {
     let Some(attachment) = Attachment::find_by_id(attachment_id, conn).await else {
         err!("Attachment doesn't exist")
     };
@@ -1847,11 +1847,11 @@ async fn _delete_cipher_attachment_by_id(
     )
     .await;
 
-    if let Some(org_id) = cipher.organization_uuid {
+    if let Some(ref org_id) = cipher.organization_uuid {
         log_event(
             EventType::CipherAttachmentDeleted as i32,
             &cipher.uuid,
-            &org_id,
+            org_id,
             &headers.user.uuid,
             headers.device.atype,
             &headers.ip.ip,
@@ -1859,7 +1859,8 @@ async fn _delete_cipher_attachment_by_id(
         )
         .await;
     }
-    Ok(())
+    let cipher_json = cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, conn).await;
+    Ok(Json(json!({"cipher":cipher_json})))
 }
 
 /// This will hold all the necessary data to improve a full sync of all the ciphers
