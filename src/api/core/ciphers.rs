@@ -86,6 +86,7 @@ pub fn routes() -> Vec<Route> {
         post_collections_update,
         post_collections_admin,
         put_collections_admin,
+        bulk_collections
     ]
 }
 
@@ -724,6 +725,19 @@ struct CollectionsAdminData {
     collection_ids: Vec<CollectionId>,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BulkCollectionsData {
+    #[serde(alias = "OrganizationId")]
+    organization_id: OrganizationId,
+    #[serde(alias = "CollectionIds")]
+    collection_ids: Vec<CollectionId>,
+    #[serde(alias = "CipherIds")]
+    cipher_ids: Vec<CipherId>,
+    #[serde(alias = "RemoveCollections")]
+    remove_collections: bool,
+}
+
 #[put("/ciphers/<cipher_id>/collections_v2", data = "<data>")]
 async fn put_collections2_update(
     cipher_id: CipherId,
@@ -749,6 +763,57 @@ async fn post_collections2_update(
         "unavailable": false,
         "cipher": *cipher_details
     })))
+}
+
+#[post("/ciphers/bulk_collections", data = "<data>")]
+async fn post_bulk_collections(
+    data: Json<BulkCollectionsData>,
+    headers: Headers,
+    mut conn: DbConn,
+    nt: Notify<'_>,
+) -> JsonResult {
+    let data: BulkCollectionsData = data.into_inner();
+
+    let Some(org) = Organization::find_by_uuid(&data.organization_id, &mut conn).await else {
+        err!("Organization doesn't exist")
+    };
+
+    if !org.is_admin(&headers.user.uuid, &mut conn).await {
+        err!("You don't have permission to add item to organization")
+    }
+
+    let mut ciphers = Vec::with_capacity(data.cipher_ids.len());
+    for cipher_id in data.cipher_ids {
+        let Some(cipher) = Cipher::find_by_uuid(&cipher_id, &mut conn).await else {
+            err!("Cipher doesn't exist")
+        };
+
+        if !cipher.is_write_accessible_to_user(&headers.user.uuid, &mut conn).await {
+            err!("Cipher is not write accessible")
+        }
+
+        ciphers.push(cipher);
+    }
+
+    for collection_id in data.collection_ids {
+        let Some(collection) = Collection::find_by_uuid_and_org(&collection_id, &data.organization_id, &mut conn).await else {
+            err!("Collection doesn't exist")
+        };
+
+        if collection.is_writable_by_user(&headers.user.uuid, &mut conn).await {
+            for cipher in &ciphers {
+                if data.remove_collections {
+                    CollectionCipher::delete(&cipher.uuid, &collection.uuid, &mut conn).await?;
+                } else {
+                    CollectionCipher::save(&cipher.uuid, &collection.uuid, &mut conn).await?;
+                }
+            }
+        } else {
+            err!("No rights to modify the collection")
+        }
+    }
+
+    Ok(())
 }
 
 #[put("/ciphers/<cipher_id>/collections", data = "<data>")]
