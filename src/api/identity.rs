@@ -300,7 +300,7 @@ async fn _password_login(
     let (access_token, expires_in) = device.refresh_tokens(&user, scope_vec, data.client_id);
     device.save(conn).await?;
 
-    // Fetch all valid Master Password Policies and merge them into one with all true's and larges numbers as one policy
+    // Fetch all valid Master Password Policies and merge them into one with all trues and largest numbers as one policy
     let master_password_policies: Vec<MasterPasswordPolicy> =
         OrgPolicy::find_accepted_and_confirmed_by_user_and_active_policy(
             &user.uuid,
