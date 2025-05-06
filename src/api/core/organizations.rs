@@ -374,7 +374,7 @@ async fn get_org_collections_details(
         || (CONFIG.org_groups_enabled()
             && GroupUser::has_full_access_by_member(&org_id, &member.uuid, &mut conn).await);
 
-    // Get all admins, ownners and managers who can manage/access all
+    // Get all admins, owners and managers who can manage/access all
     // Those are currently not listed in the col_users but need to be listed too.
     let manage_all_members: Vec<Value> = Membership::find_confirmed_and_manage_all_by_org(&org_id, &mut conn)
         .await
