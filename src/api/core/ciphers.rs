@@ -86,7 +86,7 @@ pub fn routes() -> Vec<Route> {
         post_collections_update,
         post_collections_admin,
         put_collections_admin,
-        bulk_collections
+        post_bulk_collections
     ]
 }
 
@@ -771,20 +771,11 @@ async fn post_bulk_collections(
     headers: Headers,
     mut conn: DbConn,
     nt: Notify<'_>,
-) -> JsonResult {
+) -> EmptyResult {
     let data: BulkCollectionsData = data.into_inner();
 
-    let Some(org) = Organization::find_by_uuid(&data.organization_id, &mut conn).await else {
-        err!("Organization doesn't exist")
-    };
-
-    if !org.is_admin(&headers.user.uuid, &mut conn).await {
-        err!("You don't have permission to add item to organization")
-    }
-
-    let mut ciphers = Vec::with_capacity(data.cipher_ids.len());
-    for cipher_id in data.cipher_ids {
-        let Some(cipher) = Cipher::find_by_uuid(&cipher_id, &mut conn).await else {
+    for cipher in &data.cipher_ids {
+        let Some(cipher) = Cipher::find_by_uuid(cipher, &mut conn).await else {
             err!("Cipher doesn't exist")
         };
 
@@ -792,25 +783,43 @@ async fn post_bulk_collections(
             err!("Cipher is not write accessible")
         }
 
-        ciphers.push(cipher);
-    }
-
-    for collection_id in data.collection_ids {
-        let Some(collection) = Collection::find_by_uuid_and_org(&collection_id, &data.organization_id, &mut conn).await else {
-            err!("Collection doesn't exist")
-        };
-
-        if collection.is_writable_by_user(&headers.user.uuid, &mut conn).await {
-            for cipher in &ciphers {
-                if data.remove_collections {
-                    CollectionCipher::delete(&cipher.uuid, &collection.uuid, &mut conn).await?;
-                } else {
-                    CollectionCipher::save(&cipher.uuid, &collection.uuid, &mut conn).await?;
+        for collection in &data.collection_ids {
+            match Collection::find_by_uuid_and_org(collection, &data.organization_id, &mut conn).await {
+                None => err!("Invalid collection ID provided"),
+                Some(collection) => {
+                    if collection.is_writable_by_user(&headers.user.uuid, &mut conn).await {
+                        if data.remove_collections {
+                            CollectionCipher::delete(&cipher.uuid, &collection.uuid, &mut conn).await?;
+                        } else {
+                            CollectionCipher::save(&cipher.uuid, &collection.uuid, &mut conn).await?;
+                        }
+                    } else {
+                        err!("No rights to modify the collection")
+                    }
                 }
             }
-        } else {
-            err!("No rights to modify the collection")
         }
+
+        nt.send_cipher_update(
+            UpdateType::SyncCipherUpdate,
+            &cipher,
+            &cipher.update_users_revision(&mut conn).await,
+            &headers.device.uuid,
+            Some(data.collection_ids.clone()),
+            &mut conn,
+        )
+        .await;
+    
+        log_event(
+            EventType::CipherUpdatedCollections as i32,
+            &cipher.uuid,
+            &cipher.organization_uuid.clone().unwrap(),
+            &headers.user.uuid,
+            headers.device.atype,
+            &headers.ip.ip,
+            &mut conn,
+        )
+        .await;
     }
 
     Ok(())
