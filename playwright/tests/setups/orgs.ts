@@ -22,6 +22,7 @@ export async function members(test, page: Page, name: string) {
         await expect(page.getByRole('heading', { name: `${name} collections` })).toBeVisible();
         await page.locator('div').filter({ hasText: 'Members' }).nth(2).click();
         await expect(page.getByRole('heading', { name: 'Members' })).toBeVisible();
+        await expect(page.getByRole('cell', { name: 'All' })).toBeVisible();
     });
 }
 
@@ -39,10 +40,10 @@ export async function invite(test, page: Page, name: string, email: string) {
     });
 }
 
-export async function confirm(test, page: Page, name: string, user_name: string) {
-    await test.step(`Confirm ${user_name}`, async () => {
+export async function confirm(test, page: Page, name: string, user_email: string) {
+    await test.step(`Confirm ${user_email}`, async () => {
         await expect(page.getByRole('heading', { name: 'Members' })).toBeVisible();
-        await page.getByRole('row', { name: user_name }).getByLabel('Options').click();
+        await page.getByRole('row').filter({hasText: user_email}).getByLabel('Options').click();
         await page.getByRole('menuitem', { name: 'Confirm' }).click();
         await expect(page.getByRole('heading', { name: 'Confirm user' })).toBeVisible();
         await page.getByRole('button', { name: 'Confirm' }).click();
@@ -50,10 +51,10 @@ export async function confirm(test, page: Page, name: string, user_name: string)
     });
 }
 
-export async function revoke(test, page: Page, name: string, user_name: string) {
-    await test.step(`Revoke ${user_name}`, async () => {
+export async function revoke(test, page: Page, name: string, user_email: string) {
+    await test.step(`Revoke ${user_email}`, async () => {
         await expect(page.getByRole('heading', { name: 'Members' })).toBeVisible();
-        await page.getByRole('row', { name: user_name }).getByLabel('Options').click();
+        await page.getByRole('row').filter({hasText: user_email}).getByLabel('Options').click();
         await page.getByRole('menuitem', { name: 'Revoke access' }).click();
         await expect(page.getByRole('heading', { name: 'Revoke access' })).toBeVisible();
         await page.getByRole('button', { name: 'Revoke access' }).click();

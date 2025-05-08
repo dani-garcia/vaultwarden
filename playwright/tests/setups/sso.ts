@@ -15,6 +15,8 @@ export async function logNewUser(
     let mailBuffer = options.mailBuffer ?? options.mailServer?.buffer(user.email);
     try {
         await test.step('Create user', async () => {
+            await page.context().clearCookies();
+
             await test.step('Landing page', async () => {
                 await page.goto('/');
                 await page.getByLabel(/Email address/).fill(user.email);
@@ -66,6 +68,8 @@ export async function logUser(
     let mailBuffer = options.mailBuffer ?? options.mailServer?.buffer(user.email);
     try {
         await test.step('Log user', async () => {
+            await page.context().clearCookies();
+
             await test.step('Landing page', async () => {
                 await page.goto('/');
                 await page.getByLabel(/Email address/).fill(user.email);

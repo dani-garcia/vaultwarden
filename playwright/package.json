@@ -8,14 +8,14 @@
     "author": "",
     "license": "ISC",
     "devDependencies": {
-        "@playwright/test": "^1.51.1",
+        "@playwright/test": "^1.52.0",
         "dotenv": "^16.5.0",
         "dotenv-expand": "^12.0.2",
-        "maildev": "github:timshel/maildev#3.0.4"
+        "maildev": "github:timshel/maildev#3.0.5"
     },
     "dependencies": {
-        "mysql2": "^3.14.0",
+        "mysql2": "^3.14.1",
         "otpauth": "^9.4.0",
-        "pg": "^8.14.1"
+        "pg": "^8.15.6"
     }
 }

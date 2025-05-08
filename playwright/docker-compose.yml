@@ -24,6 +24,7 @@ services:
     environment:
       - DATABASE_URL
       - I_REALLY_WANT_VOLATILE_STORAGE
+      - LOGIN_RATELIMIT_MAX_BURST
       - SMTP_HOST
       - SMTP_FROM
       - SMTP_DEBUG

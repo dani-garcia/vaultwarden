@@ -6,7 +6,15 @@ import * as utils from '../../global-utils';
 export async function createAccount(test, page: Page, user: { email: string, name: string, password: string }, mailBuffer?: MailBuffer) {
     await test.step('Create user', async () => {
         // Landing page
-        await page.goto('/');
+        await page.goto('/', { waitUntil: 'domcontentloaded' });
+        await expect(page.getByRole('button').nth(0)).toBeVisible();
+
+        const logged = await page.getByRole('button', { name: 'Log out' }).count();
+        if( logged > 0 ){
+            await page.getByRole('button', { name: 'Log out' }).click();
+            await page.getByRole('button', { name: 'Log out' }).click();
+        }
+
         await page.getByRole('link', { name: 'Create account' }).click();
 
         // Back to Vault create account
@@ -33,7 +41,15 @@ export async function createAccount(test, page: Page, user: { email: string, nam
 export async function logUser(test, page: Page, user: { email: string, password: string }, mailBuffer?: MailBuffer) {
     await test.step('Log user', async () => {
         // Landing page
-        await page.goto('/');
+        await page.goto('/', { waitUntil: 'domcontentloaded' });
+        await expect(page.getByRole('button').nth(0)).toBeVisible();
+
+        const logged = await page.getByRole('button', { name: 'Log out' }).count();
+        if( logged > 0 ){
+            await page.getByRole('button', { name: 'Log out' }).click();
+            await page.getByRole('button', { name: 'Log out' }).click();
+        }
+
         await page.getByLabel(/Email address/).fill(user.email);
         await page.getByRole('button', { name: 'Continue' }).click();
 

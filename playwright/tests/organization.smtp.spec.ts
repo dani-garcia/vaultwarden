@@ -103,7 +103,7 @@ test('Confirm invited user', async ({ page }) => {
     await logUser(test, page, users.user1, mail1Buffer);
 
     await orgs.members(test, page, 'Test');
-    await orgs.confirm(test, page, 'Test', users.user2.name);
+    await orgs.confirm(test, page, 'Test', users.user2.email);
 
     await expect(mail2Buffer.next((m) => m.subject.includes('Invitation to Test confirmed'))).resolves.toBeDefined();
 });

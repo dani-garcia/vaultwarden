@@ -189,7 +189,7 @@ export async function startVaultwarden(browser: Browser, testInfo: TestInfo, env
 
     console.log(`Starting Vaultwarden`);
     execSync(`docker compose --profile playwright --env-file test.env up -d Vaultwarden`, {
-        env: { ...env, ...dbConfig(testInfo) },
+        env: { LOGIN_RATELIMIT_MAX_BURST: 100, ...env, ...dbConfig(testInfo) },
     });
     await waitFor("/", browser);
     console.log(`Vaultwarden running on: ${process.env.DOMAIN}`);

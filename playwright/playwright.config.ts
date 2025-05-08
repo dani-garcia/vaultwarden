@@ -16,7 +16,6 @@ export default defineConfig({
     /* Fail the build on CI if you accidentally left test.only in the source code. */
     forbidOnly: !!process.env.CI,
 
-    /* Retry on CI only */
     retries: 0,
     workers: 1,
 
@@ -38,11 +37,12 @@ export default defineConfig({
         browserName: 'firefox',
         locale: 'en-GB',
         timezoneId: 'Europe/London',
-        /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
-        trace: 'on-first-retry',
+
+        /* Always collect trace (other values add random test failures) See https://playwright.dev/docs/trace-viewer */
+        trace: 'on',
         viewport: {
-            width: 1920,
-            height: 1080
+            width: 1080,
+            height: 720,
         },
         video: "on",
     },
