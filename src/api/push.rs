@@ -7,9 +7,9 @@ use tokio::sync::RwLock;
 
 use crate::{
     api::{ApiResult, EmptyResult, UpdateType},
-    db::models::{AuthRequestId, Cipher, Device, DeviceId, Folder, Send, User, UserId},
+    db::models::{AuthRequestId, Cipher, Device, DeviceId, Folder, PushId, Send, User, UserId},
     http_client::make_http_request,
-    util::format_date,
+    util::{format_date, get_uuid},
     CONFIG,
 };
 
@@ -93,7 +93,7 @@ pub async fn register_push_device(device: &mut Device, conn: &mut crate::db::DbC
     debug!("Registering Device {}", device.uuid);
 
     // generate a random push_uuid so we know the device is registered
-    device.push_uuid = Some(uuid::Uuid::new_v4().to_string());
+    device.push_uuid = Some(PushId(get_uuid()));
 
     //Needed to register a device for push to bitwarden :
     let data = json!({
@@ -126,7 +126,7 @@ pub async fn register_push_device(device: &mut Device, conn: &mut crate::db::DbC
     Ok(())
 }
 
-pub async fn unregister_push_device(push_id: Option<String>) -> EmptyResult {
+pub async fn unregister_push_device(push_id: Option<PushId>) -> EmptyResult {
     if !CONFIG.push_enabled() || push_id.is_none() {
         return Ok(());
     }
@@ -134,7 +134,7 @@ pub async fn unregister_push_device(push_id: Option<String>) -> EmptyResult {
 
     let auth_header = format!("Bearer {}", &auth_push_token);
 
-    match make_http_request(Method::DELETE, &(CONFIG.push_relay_uri() + "/push/" + &push_id.unwrap()))?
+    match make_http_request(Method::DELETE, &format!("{}/push/{}", CONFIG.push_relay_uri(), push_id.unwrap()))?
         .header(AUTHORIZATION, auth_header)
         .send()
         .await
