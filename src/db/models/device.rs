@@ -3,7 +3,7 @@ use derive_more::{Display, From};
 use serde_json::Value;
 
 use super::{AuthRequest, UserId};
-use crate::{crypto, util::format_date, CONFIG};
+use crate::{crypto, util::{format_date, get_uuid}, CONFIG};
 use macros::IdFromParam;
 
 db_object! {
@@ -20,7 +20,7 @@ db_object! {
 
         pub name: String,
         pub atype: i32,         // https://github.com/bitwarden/server/blob/dcc199bcce4aa2d5621f6fab80f1b49d8b143418/src/Core/Enums/DeviceType.cs
-        pub push_uuid: Option<String>,
+        pub push_uuid: Option<PushId>,
         pub push_token: Option<String>,
 
         pub refresh_token: String,
@@ -42,7 +42,7 @@ impl Device {
             name,
             atype,
 
-            push_uuid: None,
+            push_uuid: Some(PushId(get_uuid())),
             push_token: None,
             refresh_token: String::new(),
             twofactor_remember: None,
@@ -404,3 +404,8 @@ impl DeviceType {
     Clone, Debug, DieselNewType, Display, From, FromForm, Hash, PartialEq, Eq, Serialize, Deserialize, IdFromParam,
 )]
 pub struct DeviceId(String);
+
+#[derive(
+    Clone, Debug, DieselNewType, Display, From, FromForm, Hash, PartialEq, Eq, Serialize, Deserialize, IdFromParam,
+)]
+pub struct PushId(pub String);
