@@ -118,6 +118,9 @@ async fn get_duo(data: Json<PasswordOrOtpData>, headers: Headers, mut conn: DbCo
     } else {
         json!({
             "enabled": enabled,
+            "host": null,
+            "clientSecret": null,
+            "clientId": null,
             "object": "twoFactorDuo"
         })
     };

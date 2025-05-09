@@ -181,6 +181,11 @@ pub struct LoginJwtClaims {
     pub sstamp: String,
     // device uuid
     pub device: DeviceId,
+    // what kind of device, like FirefoxBrowser or Android derived from DeviceType
+    pub devicetype: String,
+    // the type of client_id, like web, cli, desktop, browser or mobile
+    pub client_id: String,
+
     // [ "api", "offline_access" ]
     pub scope: Vec<String>,
     // [ "Application" ]
@@ -289,7 +294,7 @@ pub fn generate_organization_api_key_login_claims(
         exp: (time_now + TimeDelta::try_hours(1).unwrap()).timestamp(),
         iss: JWT_ORG_API_KEY_ISSUER.to_string(),
         sub: org_api_key_uuid,
-        client_id: format!("organization.{}", org_id),
+        client_id: format!("organization.{org_id}"),
         client_sub: org_id,
         scope: vec!["api.organization".into()],
     }
@@ -547,7 +552,7 @@ impl<'r> FromRequest<'r> for Headers {
                     let mut user = user;
                     user.reset_stamp_exception();
                     if let Err(e) = user.save(&mut conn).await {
-                        error!("Error updating user: {:#?}", e);
+                        error!("Error updating user: {e:#?}");
                     }
                     err_handler!("Stamp exception is expired")
                 } else if !stamp_exception.routes.contains(&current_route.to_string()) {

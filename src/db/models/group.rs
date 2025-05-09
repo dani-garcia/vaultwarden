@@ -68,16 +68,11 @@ impl Group {
     }
 
     pub fn to_json(&self) -> Value {
-        use crate::util::format_date;
-
         json!({
             "id": self.uuid,
             "organizationId": self.organizations_uuid,
             "name": self.name,
-            "accessAll": self.access_all,
             "externalId": self.external_id,
-            "creationDate": format_date(&self.creation_date),
-            "revisionDate": format_date(&self.revision_date),
             "object": "group"
         })
     }
@@ -298,7 +293,7 @@ impl Group {
 
     pub async fn update_revision(uuid: &GroupId, conn: &mut DbConn) {
         if let Err(e) = Self::_update_revision(uuid, &Utc::now().naive_utc(), conn).await {
-            warn!("Failed to update revision for {}: {:#?}", uuid, e);
+            warn!("Failed to update revision for {uuid}: {e:#?}");
         }
     }
 

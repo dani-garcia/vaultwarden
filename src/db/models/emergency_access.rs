@@ -78,6 +78,7 @@ impl EmergencyAccess {
             "grantorId": grantor_user.uuid,
             "email": grantor_user.email,
             "name": grantor_user.name,
+            "avatarColor": grantor_user.avatar_color,
             "object": "emergencyAccessGrantorDetails",
         })
     }
@@ -106,6 +107,7 @@ impl EmergencyAccess {
             "granteeId": grantee_user.uuid,
             "email": grantee_user.email,
             "name": grantee_user.name,
+            "avatarColor": grantee_user.avatar_color,
             "object": "emergencyAccessGranteeDetails",
         }))
     }
