@@ -269,7 +269,7 @@ impl Fairing for BetterLogging {
             "http"
         };
         let addr = format!("{}://{}:{}", &scheme, &config.address, &config.port);
-        info!(target: "start", "Rocket has launched from {}", addr);
+        info!(target: "start", "Rocket has launched from {addr}");
     }
 
     async fn on_request(&self, request: &mut Request<'_>, _data: &mut Data<'_>) {
@@ -284,7 +284,7 @@ impl Fairing for BetterLogging {
         if self.0 || LOGGED_ROUTES.iter().any(|r| uri_subpath.starts_with(r)) {
             match uri.query() {
                 Some(q) => info!(target: "request", "{} {}?{}", method, uri_path_str, &q[..q.len().min(30)]),
-                None => info!(target: "request", "{} {}", method, uri_path_str),
+                None => info!(target: "request", "{method} {uri_path_str}"),
             };
         }
     }
@@ -299,9 +299,9 @@ impl Fairing for BetterLogging {
         if self.0 || LOGGED_ROUTES.iter().any(|r| uri_subpath.starts_with(r)) {
             let status = response.status();
             if let Some(ref route) = request.route() {
-                info!(target: "response", "{} => {}", route, status)
+                info!(target: "response", "{route} => {status}")
             } else {
-                info!(target: "response", "{}", status)
+                info!(target: "response", "{status}")
             }
         }
     }
@@ -699,7 +699,7 @@ where
                     return Err(e);
                 }
 
-                warn!("Can't connect to database, retrying: {:?}", e);
+                warn!("Can't connect to database, retrying: {e:?}");
 
                 sleep(Duration::from_millis(1_000)).await;
             }

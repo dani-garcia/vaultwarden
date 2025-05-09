@@ -1224,7 +1224,7 @@ impl Config {
     pub fn is_email_domain_allowed(&self, email: &str) -> bool {
         let e: Vec<&str> = email.rsplitn(2, '@').collect();
         if e.len() != 2 || e[0].is_empty() || e[1].is_empty() {
-            warn!("Failed to parse email address '{}'", email);
+            warn!("Failed to parse email address '{email}'");
             return false;
         }
         let email_domain = e[0].to_lowercase();

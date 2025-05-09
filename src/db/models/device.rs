@@ -3,7 +3,11 @@ use derive_more::{Display, From};
 use serde_json::Value;
 
 use super::{AuthRequest, UserId};
-use crate::{crypto, util::{format_date, get_uuid}, CONFIG};
+use crate::{
+    crypto,
+    util::{format_date, get_uuid},
+    CONFIG,
+};
 use macros::IdFromParam;
 
 db_object! {
