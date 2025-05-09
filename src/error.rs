@@ -214,7 +214,7 @@ impl Responder<'_, 'static> for Error {
         match self.error {
             ErrorKind::Empty(_) => {}  // Don't print the error in this situation
             ErrorKind::Simple(_) => {} // Don't print the error in this situation
-            _ => error!(target: "error", "{:#?}", self),
+            _ => error!(target: "error", "{self:#?}"),
         };
 
         let code = Status::from_code(self.error_code).unwrap_or(Status::BadRequest);

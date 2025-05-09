@@ -222,7 +222,7 @@ async fn _password_login(
         user.set_password(password, None, false, None);
 
         if let Err(e) = user.save(conn).await {
-            error!("Error updating user: {:#?}", e);
+            error!("Error updating user: {e:#?}");
         }
     }
 
@@ -241,11 +241,11 @@ async fn _password_login(
                 user.login_verify_count += 1;
 
                 if let Err(e) = user.save(conn).await {
-                    error!("Error updating user: {:#?}", e);
+                    error!("Error updating user: {e:#?}");
                 }
 
                 if let Err(e) = mail::send_verify_email(&user.email, &user.uuid).await {
-                    error!("Error auto-sending email verification email: {:#?}", e);
+                    error!("Error auto-sending email verification email: {e:#?}");
                 }
             }
         }
@@ -266,7 +266,7 @@ async fn _password_login(
 
     if CONFIG.mail_enabled() && new_device {
         if let Err(e) = mail::send_new_device_logged_in(&user.email, &ip.ip.to_string(), &now, &device).await {
-            error!("Error sending new device email: {:#?}", e);
+            error!("Error sending new device email: {e:#?}");
 
             if CONFIG.require_device_email() {
                 err!(
@@ -421,7 +421,7 @@ async fn _user_api_key_login(
     if CONFIG.mail_enabled() && new_device {
         let now = Utc::now().naive_utc();
         if let Err(e) = mail::send_new_device_logged_in(&user.email, &ip.ip.to_string(), &now, &device).await {
-            error!("Error sending new device email: {:#?}", e);
+            error!("Error sending new device email: {e:#?}");
 
             if CONFIG.require_device_email() {
                 err!(

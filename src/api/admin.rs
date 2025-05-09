@@ -427,7 +427,7 @@ async fn deauth_user(user_id: UserId, _token: AdminToken, mut conn: DbConn, nt: 
         for device in Device::find_push_devices_by_user(&user.uuid, &mut conn).await {
             match unregister_push_device(device.push_uuid).await {
                 Ok(r) => r,
-                Err(e) => error!("Unable to unregister devices from Bitwarden server: {}", e),
+                Err(e) => error!("Unable to unregister devices from Bitwarden server: {e}"),
             };
         }
     }

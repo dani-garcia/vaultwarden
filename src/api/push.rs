@@ -257,7 +257,7 @@ async fn send_to_push_relay(notification_data: Value) {
     let auth_push_token = match get_auth_push_token().await {
         Ok(s) => s,
         Err(e) => {
-            debug!("Could not get the auth push token: {}", e);
+            debug!("Could not get the auth push token: {e}");
             return;
         }
     };
@@ -267,7 +267,7 @@ async fn send_to_push_relay(notification_data: Value) {
     let req = match make_http_request(Method::POST, &(CONFIG.push_relay_uri() + "/push/send")) {
         Ok(r) => r,
         Err(e) => {
-            error!("An error occurred while sending a send update to the push relay: {}", e);
+            error!("An error occurred while sending a send update to the push relay: {e}");
             return;
         }
     };
@@ -280,7 +280,7 @@ async fn send_to_push_relay(notification_data: Value) {
         .send()
         .await
     {
-        error!("An error occurred while sending a send update to the push relay: {}", e);
+        error!("An error occurred while sending a send update to the push relay: {e}");
     };
 }
 
