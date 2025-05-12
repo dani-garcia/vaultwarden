@@ -1476,7 +1476,7 @@ async fn _confirm_invite(
     let save_result = member_to_confirm.save(conn).await;
 
     if let Some(user) = User::find_by_uuid(&member_to_confirm.user_uuid, conn).await {
-        nt.send_user_update(UpdateType::SyncOrgKeys, &user).await;
+        nt.send_user_update(UpdateType::SyncOrgKeys, &user, &headers.device.push_uuid, conn).await;
     }
 
     save_result
@@ -1763,7 +1763,7 @@ async fn _delete_member(
     .await;
 
     if let Some(user) = User::find_by_uuid(&member_to_delete.user_uuid, conn).await {
-        nt.send_user_update(UpdateType::SyncOrgKeys, &user).await;
+        nt.send_user_update(UpdateType::SyncOrgKeys, &user, &headers.device.push_uuid, conn).await;
     }
 
     member_to_delete.delete(conn).await
@@ -3163,7 +3163,7 @@ async fn put_reset_password(
     user.set_password(reset_request.new_master_password_hash.as_str(), Some(reset_request.key), true, None);
     user.save(&mut conn).await?;
 
-    nt.send_logout(&user, None).await;
+    nt.send_logout(&user, None, &mut conn).await;
 
     log_event(
         EventType::OrganizationUserAdminResetPassword as i32,
