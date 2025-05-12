@@ -124,7 +124,7 @@ webauthn-rs = "0.3.2"
 url = "2.5.4"
 
 # Email libraries
-lettre = { version = "0.11.15", features = ["smtp-transport", "sendmail-transport", "builder", "serde", "tokio1-native-tls", "hostname", "tracing", "tokio1"], default-features = false }
+lettre = { version = "0.11.16", features = ["smtp-transport", "sendmail-transport", "builder", "serde", "tokio1-native-tls", "hostname", "tracing", "tokio1"], default-features = false }
 percent-encoding = "2.3.1" # URL encoding library used for URL's in the emails
 email_address = "0.2.9"
 

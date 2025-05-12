@@ -124,7 +124,7 @@ async fn post_eq_domains(
 
     user.save(&mut conn).await?;
 
-    nt.send_user_update(UpdateType::SyncSettings, &user).await;
+    nt.send_user_update(UpdateType::SyncSettings, &user, &headers.device.push_uuid, &mut conn).await;
 
     Ok(Json(json!({})))
 }
