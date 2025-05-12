@@ -93,6 +93,11 @@ impl Device {
         let time_now = Utc::now();
         self.updated_at = time_now.naive_utc();
 
+        // Generate a random push_uuid so if it doesn't already have one
+        if self.push_uuid.is_none() {
+            self.push_uuid = Some(PushId(get_uuid()));
+        }
+
         // ---
         // Disabled these keys to be added to the JWT since they could cause the JWT to get too large
         // Also These key/value pairs are not used anywhere by either Vaultwarden or Bitwarden Clients
