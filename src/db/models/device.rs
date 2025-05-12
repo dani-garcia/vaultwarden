@@ -8,7 +8,7 @@ use crate::{
     util::{format_date, get_uuid},
     CONFIG,
 };
-use macros::IdFromParam;
+use macros::{IdFromParam, UuidFromParam};
 
 db_object! {
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -141,10 +141,6 @@ impl Device {
 
     pub fn is_push_device(&self) -> bool {
         matches!(DeviceType::from_i32(self.atype), DeviceType::Android | DeviceType::Ios)
-    }
-
-    pub fn is_registered(&self) -> bool {
-        self.push_uuid.is_some()
     }
 
     pub fn is_cli(&self) -> bool {
@@ -409,7 +405,5 @@ impl DeviceType {
 )]
 pub struct DeviceId(String);
 
-#[derive(
-    Clone, Debug, DieselNewType, Display, From, FromForm, Hash, PartialEq, Eq, Serialize, Deserialize, IdFromParam,
-)]
+#[derive(Clone, Debug, DieselNewType, Display, From, FromForm, Serialize, Deserialize, UuidFromParam)]
 pub struct PushId(pub String);

@@ -421,11 +421,11 @@ async fn delete_user(user_id: UserId, token: AdminToken, mut conn: DbConn) -> Em
 async fn deauth_user(user_id: UserId, _token: AdminToken, mut conn: DbConn, nt: Notify<'_>) -> EmptyResult {
     let mut user = get_user_or_404(&user_id, &mut conn).await?;
 
-    nt.send_logout(&user, None).await;
+    nt.send_logout(&user, None, &mut conn).await;
 
     if CONFIG.push_enabled() {
         for device in Device::find_push_devices_by_user(&user.uuid, &mut conn).await {
-            match unregister_push_device(device.push_uuid).await {
+            match unregister_push_device(&device.push_uuid).await {
                 Ok(r) => r,
                 Err(e) => error!("Unable to unregister devices from Bitwarden server: {e}"),
             };
@@ -447,7 +447,7 @@ async fn disable_user(user_id: UserId, _token: AdminToken, mut conn: DbConn, nt:
 
     let save_result = user.save(&mut conn).await;
 
-    nt.send_logout(&user, None).await;
+    nt.send_logout(&user, None, &mut conn).await;
 
     save_result
 }

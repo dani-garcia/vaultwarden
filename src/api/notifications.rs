@@ -10,7 +10,7 @@ use rocket_ws::{Message, WebSocket};
 use crate::{
     auth::{ClientIp, WsAccessTokenHeader},
     db::{
-        models::{AuthRequestId, Cipher, CollectionId, DeviceId, Folder, Send as DbSend, User, UserId},
+        models::{AuthRequestId, Cipher, CollectionId, Device, DeviceId, Folder, PushId, Send as DbSend, User, UserId},
         DbConn,
     },
     Error, CONFIG,
@@ -339,7 +339,7 @@ impl WebSocketUsers {
     }
 
     // NOTE: The last modified date needs to be updated before calling these methods
-    pub async fn send_user_update(&self, ut: UpdateType, user: &User) {
+    pub async fn send_user_update(&self, ut: UpdateType, user: &User, push_uuid: &Option<PushId>, conn: &mut DbConn) {
         // Skip any processing if both WebSockets and Push are not active
         if *NOTIFICATIONS_DISABLED {
             return;
@@ -355,11 +355,11 @@ impl WebSocketUsers {
         }
 
         if CONFIG.push_enabled() {
-            push_user_update(ut, user);
+            push_user_update(ut, user, push_uuid, conn).await;
         }
     }
 
-    pub async fn send_logout(&self, user: &User, acting_device_id: Option<DeviceId>) {
+    pub async fn send_logout(&self, user: &User, acting_device_id: Option<DeviceId>, conn: &mut DbConn) {
         // Skip any processing if both WebSockets and Push are not active
         if *NOTIFICATIONS_DISABLED {
             return;
@@ -375,17 +375,11 @@ impl WebSocketUsers {
         }
 
         if CONFIG.push_enabled() {
-            push_logout(user, acting_device_id.clone());
+            push_logout(user, acting_device_id.clone(), conn).await;
         }
     }
 
-    pub async fn send_folder_update(
-        &self,
-        ut: UpdateType,
-        folder: &Folder,
-        acting_device_id: &DeviceId,
-        conn: &mut DbConn,
-    ) {
+    pub async fn send_folder_update(&self, ut: UpdateType, folder: &Folder, device: &Device, conn: &mut DbConn) {
         // Skip any processing if both WebSockets and Push are not active
         if *NOTIFICATIONS_DISABLED {
             return;
@@ -397,7 +391,7 @@ impl WebSocketUsers {
                 ("RevisionDate".into(), serialize_date(folder.updated_at)),
             ],
             ut,
-            Some(acting_device_id.clone()),
+            Some(device.uuid.clone()),
         );
 
         if CONFIG.enable_websocket() {
@@ -405,7 +399,7 @@ impl WebSocketUsers {
         }
 
         if CONFIG.push_enabled() {
-            push_folder_update(ut, folder, acting_device_id, conn).await;
+            push_folder_update(ut, folder, device, conn).await;
         }
     }
 
@@ -414,7 +408,7 @@ impl WebSocketUsers {
         ut: UpdateType,
         cipher: &Cipher,
         user_ids: &[UserId],
-        acting_device_id: &DeviceId,
+        device: &Device,
         collection_uuids: Option<Vec<CollectionId>>,
         conn: &mut DbConn,
     ) {
@@ -444,7 +438,7 @@ impl WebSocketUsers {
                 ("RevisionDate".into(), revision_date),
             ],
             ut,
-            Some(acting_device_id.clone()),
+            Some(device.uuid.clone()), // Acting device id (unique device/app uuid)
         );
 
         if CONFIG.enable_websocket() {
@@ -454,7 +448,7 @@ impl WebSocketUsers {
         }
 
         if CONFIG.push_enabled() && user_ids.len() == 1 {
-            push_cipher_update(ut, cipher, acting_device_id, conn).await;
+            push_cipher_update(ut, cipher, device, conn).await;
         }
     }
 
@@ -463,7 +457,7 @@ impl WebSocketUsers {
         ut: UpdateType,
         send: &DbSend,
         user_ids: &[UserId],
-        acting_device_id: &DeviceId,
+        device: &Device,
         conn: &mut DbConn,
     ) {
         // Skip any processing if both WebSockets and Push are not active
@@ -488,7 +482,7 @@ impl WebSocketUsers {
             }
         }
         if CONFIG.push_enabled() && user_ids.len() == 1 {
-            push_send_update(ut, send, acting_device_id, conn).await;
+            push_send_update(ut, send, device, conn).await;
         }
     }
 
@@ -496,7 +490,7 @@ impl WebSocketUsers {
         &self,
         user_id: &UserId,
         auth_request_uuid: &str,
-        acting_device_id: &DeviceId,
+        device: &Device,
         conn: &mut DbConn,
     ) {
         // Skip any processing if both WebSockets and Push are not active
@@ -506,14 +500,14 @@ impl WebSocketUsers {
         let data = create_update(
             vec![("Id".into(), auth_request_uuid.to_owned().into()), ("UserId".into(), user_id.to_string().into())],
             UpdateType::AuthRequest,
-            Some(acting_device_id.clone()),
+            Some(device.uuid.clone()),
         );
         if CONFIG.enable_websocket() {
             self.send_update(user_id, &data).await;
         }
 
         if CONFIG.push_enabled() {
-            push_auth_request(user_id.clone(), auth_request_uuid.to_owned(), conn).await;
+            push_auth_request(user_id, auth_request_uuid, device, conn).await;
         }
     }
 
@@ -521,7 +515,7 @@ impl WebSocketUsers {
         &self,
         user_id: &UserId,
         auth_request_id: &AuthRequestId,
-        approving_device_id: &DeviceId,
+        device: &Device,
         conn: &mut DbConn,
     ) {
         // Skip any processing if both WebSockets and Push are not active
@@ -531,14 +525,14 @@ impl WebSocketUsers {
         let data = create_update(
             vec![("Id".into(), auth_request_id.to_string().into()), ("UserId".into(), user_id.to_string().into())],
             UpdateType::AuthRequestResponse,
-            Some(approving_device_id.clone()),
+            Some(device.uuid.clone()),
         );
         if CONFIG.enable_websocket() {
             self.send_update(user_id, &data).await;
         }
 
         if CONFIG.push_enabled() {
-            push_auth_response(user_id, auth_request_id, approving_device_id, conn).await;
+            push_auth_response(user_id, auth_request_id, device, conn).await;
         }
     }
 }

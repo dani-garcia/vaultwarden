@@ -2,6 +2,7 @@ use std::path::Path;
 
 use chrono::{DateTime, TimeDelta, Utc};
 use num_traits::ToPrimitive;
+use once_cell::sync::Lazy;
 use rocket::form::Form;
 use rocket::fs::NamedFile;
 use rocket::fs::TempFile;
@@ -17,6 +18,21 @@ use crate::{
 };
 
 const SEND_INACCESSIBLE_MSG: &str = "Send does not exist or is no longer available";
+static ANON_PUSH_DEVICE: Lazy<Device> = Lazy::new(|| {
+    let dt = crate::util::parse_date("1970-01-01T00:00:00.000000Z");
+    Device {
+        uuid: String::from("00000000-0000-0000-0000-000000000000").into(),
+        created_at: dt,
+        updated_at: dt,
+        user_uuid: String::from("00000000-0000-0000-0000-000000000000").into(),
+        name: String::new(),
+        atype: 0,
+        push_uuid: Some(String::from("00000000-0000-0000-0000-000000000000").into()),
+        push_token: None,
+        refresh_token: String::new(),
+        twofactor_remember: None,
+    }
+});
 
 // The max file size allowed by Bitwarden clients and add an extra 5% to avoid issues
 const SIZE_525_MB: i64 = 550_502_400;
@@ -182,7 +198,7 @@ async fn post_send(data: Json<SendData>, headers: Headers, mut conn: DbConn, nt:
         UpdateType::SyncSendCreate,
         &send,
         &send.update_users_revision(&mut conn).await,
-        &headers.device.uuid,
+        &headers.device,
         &mut conn,
     )
     .await;
@@ -272,7 +288,7 @@ async fn post_send_file(data: Form<UploadData<'_>>, headers: Headers, mut conn: 
         UpdateType::SyncSendCreate,
         &send,
         &send.update_users_revision(&mut conn).await,
-        &headers.device.uuid,
+        &headers.device,
         &mut conn,
     )
     .await;
@@ -424,7 +440,7 @@ async fn post_send_file_v2_data(
         UpdateType::SyncSendCreate,
         &send,
         &send.update_users_revision(&mut conn).await,
-        &headers.device.uuid,
+        &headers.device,
         &mut conn,
     )
     .await;
@@ -489,7 +505,7 @@ async fn post_access(
         UpdateType::SyncSendUpdate,
         &send,
         &send.update_users_revision(&mut conn).await,
-        &String::from("00000000-0000-0000-0000-000000000000").into(),
+        &ANON_PUSH_DEVICE,
         &mut conn,
     )
     .await;
@@ -546,7 +562,7 @@ async fn post_access_file(
         UpdateType::SyncSendUpdate,
         &send,
         &send.update_users_revision(&mut conn).await,
-        &String::from("00000000-0000-0000-0000-000000000000").into(),
+        &ANON_PUSH_DEVICE,
         &mut conn,
     )
     .await;
@@ -645,7 +661,7 @@ pub async fn update_send_from_data(
 
     send.save(conn).await?;
     if ut != UpdateType::None {
-        nt.send_send_update(ut, send, &send.update_users_revision(conn).await, &headers.device.uuid, conn).await;
+        nt.send_send_update(ut, send, &send.update_users_revision(conn).await, &headers.device, conn).await;
     }
     Ok(())
 }
@@ -661,7 +677,7 @@ async fn delete_send(send_id: SendId, headers: Headers, mut conn: DbConn, nt: No
         UpdateType::SyncSendDelete,
         &send,
         &send.update_users_revision(&mut conn).await,
-        &headers.device.uuid,
+        &headers.device,
         &mut conn,
     )
     .await;
@@ -683,7 +699,7 @@ async fn put_remove_password(send_id: SendId, headers: Headers, mut conn: DbConn
         UpdateType::SyncSendUpdate,
         &send,
         &send.update_users_revision(&mut conn).await,
-        &headers.device.uuid,
+        &headers.device,
         &mut conn,
     )
     .await;
