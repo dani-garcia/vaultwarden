@@ -298,7 +298,7 @@ impl Group {
 
     pub async fn update_revision(uuid: &GroupId, conn: &mut DbConn) {
         if let Err(e) = Self::_update_revision(uuid, &Utc::now().naive_utc(), conn).await {
-            warn!("Failed to update revision for {}: {:#?}", uuid, e);
+            warn!("Failed to update revision for {uuid}: {e:#?}");
         }
     }
 

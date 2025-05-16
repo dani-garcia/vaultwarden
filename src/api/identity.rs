@@ -158,7 +158,7 @@ async fn _password_login(
     // Get the user
     let username = data.username.as_ref().unwrap().trim();
     let Some(mut user) = User::find_by_mail(username, conn).await else {
-        err!("Username or password is incorrect. Try again", format!("IP: {}. Username: {}.", ip.ip, username))
+        err!("Username or password is incorrect. Try again", format!("IP: {}. Username: {username}.", ip.ip))
     };
 
     // Set the user_id here to be passed back used for event logging.
@@ -168,7 +168,7 @@ async fn _password_login(
     if !user.enabled {
         err!(
             "This user has been disabled",
-            format!("IP: {}. Username: {}.", ip.ip, username),
+            format!("IP: {}. Username: {username}.", ip.ip),
             ErrorEvent {
                 event: EventType::UserFailedLogIn
             }
@@ -182,7 +182,7 @@ async fn _password_login(
         let Some(auth_request) = AuthRequest::find_by_uuid_and_user(auth_request_id, &user.uuid, conn).await else {
             err!(
                 "Auth request not found. Try again.",
-                format!("IP: {}. Username: {}.", ip.ip, username),
+                format!("IP: {}. Username: {username}.", ip.ip),
                 ErrorEvent {
                     event: EventType::UserFailedLogIn,
                 }
@@ -200,7 +200,7 @@ async fn _password_login(
         {
             err!(
                 "Username or access code is incorrect. Try again",
-                format!("IP: {}. Username: {}.", ip.ip, username),
+                format!("IP: {}. Username: {username}.", ip.ip),
                 ErrorEvent {
                     event: EventType::UserFailedLogIn,
                 }
@@ -209,7 +209,7 @@ async fn _password_login(
     } else if !user.check_valid_password(password) {
         err!(
             "Username or password is incorrect. Try again",
-            format!("IP: {}. Username: {}.", ip.ip, username),
+            format!("IP: {}. Username: {username}.", ip.ip),
             ErrorEvent {
                 event: EventType::UserFailedLogIn,
             }
@@ -222,7 +222,7 @@ async fn _password_login(
         user.set_password(password, None, false, None);
 
         if let Err(e) = user.save(conn).await {
-            error!("Error updating user: {:#?}", e);
+            error!("Error updating user: {e:#?}");
         }
     }
 
@@ -241,11 +241,11 @@ async fn _password_login(
                 user.login_verify_count += 1;
 
                 if let Err(e) = user.save(conn).await {
-                    error!("Error updating user: {:#?}", e);
+                    error!("Error updating user: {e:#?}");
                 }
 
                 if let Err(e) = mail::send_verify_email(&user.email, &user.uuid).await {
-                    error!("Error auto-sending email verification email: {:#?}", e);
+                    error!("Error auto-sending email verification email: {e:#?}");
                 }
             }
         }
@@ -253,7 +253,7 @@ async fn _password_login(
         // We still want the login to fail until they actually verified the email address
         err!(
             "Please verify your email before trying again.",
-            format!("IP: {}. Username: {}.", ip.ip, username),
+            format!("IP: {}. Username: {username}.", ip.ip),
             ErrorEvent {
                 event: EventType::UserFailedLogIn
             }
@@ -266,7 +266,7 @@ async fn _password_login(
 
     if CONFIG.mail_enabled() && new_device {
         if let Err(e) = mail::send_new_device_logged_in(&user.email, &ip.ip.to_string(), &now, &device).await {
-            error!("Error sending new device email: {:#?}", e);
+            error!("Error sending new device email: {e:#?}");
 
             if CONFIG.require_device_email() {
                 err!(
@@ -352,7 +352,7 @@ async fn _password_login(
         result["TwoFactorToken"] = Value::String(token);
     }
 
-    info!("User {} logged in successfully. IP: {}", username, ip.ip);
+    info!("User {username} logged in successfully. IP: {}", ip.ip);
     Ok(Json(result))
 }
 
@@ -420,7 +420,7 @@ async fn _user_api_key_login(
     if CONFIG.mail_enabled() && new_device {
         let now = Utc::now().naive_utc();
         if let Err(e) = mail::send_new_device_logged_in(&user.email, &ip.ip.to_string(), &now, &device).await {
-            error!("Error sending new device email: {:#?}", e);
+            error!("Error sending new device email: {e:#?}");
 
             if CONFIG.require_device_email() {
                 err!(

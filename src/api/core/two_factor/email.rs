@@ -210,7 +210,7 @@ pub async fn validate_email_code_str(
         .map_res("Two factor not found")?;
     let Some(issued_token) = &email_data.last_token else {
         err!(
-            format!("No token available! IP: {}", ip),
+            format!("No token available! IP: {ip}"),
             ErrorEvent {
                 event: EventType::UserFailedLogIn2fa
             }
@@ -226,7 +226,7 @@ pub async fn validate_email_code_str(
         twofactor.save(conn).await?;
 
         err!(
-            format!("Token is invalid! IP: {}", ip),
+            format!("Token is invalid! IP: {ip}"),
             ErrorEvent {
                 event: EventType::UserFailedLogIn2fa
             }
@@ -329,7 +329,7 @@ pub fn obscure_email(email: &str) -> String {
         }
     };
 
-    format!("{}@{}", new_name, &domain)
+    format!("{new_name}@{domain}")
 }
 
 pub async fn find_and_activate_email_2fa(user_id: &UserId, conn: &mut DbConn) -> EmptyResult {

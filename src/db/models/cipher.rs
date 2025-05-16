@@ -85,7 +85,7 @@ impl Cipher {
         let mut validation_errors = serde_json::Map::new();
         let max_note_size = CONFIG._max_note_size();
         let max_note_size_msg =
-            format!("The field Notes exceeds the maximum encrypted value length of {} characters.", &max_note_size);
+            format!("The field Notes exceeds the maximum encrypted value length of {max_note_size} characters.");
         for (index, cipher) in cipher_data.iter().enumerate() {
             // Validate the note size and if it is exceeded return a warning
             if let Some(note) = &cipher.notes {

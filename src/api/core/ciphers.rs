@@ -381,7 +381,7 @@ pub async fn update_cipher_from_data(
         if let Some(dt) = data.last_known_revision_date {
             match NaiveDateTime::parse_from_str(&dt, "%+") {
                 // ISO 8601 format
-                Err(err) => warn!("Error parsing LastKnownRevisionDate '{}': {}", dt, err),
+                Err(err) => warn!("Error parsing LastKnownRevisionDate '{dt}': {err}"),
                 Ok(dt) if cipher.updated_at.signed_duration_since(dt).num_seconds() > 1 => {
                     err!("The client copy of this cipher is out of date. Resync the client and try again.")
                 }
@@ -1105,7 +1105,7 @@ async fn post_attachment_v2(
         Attachment::new(attachment_id.clone(), cipher.uuid.clone(), data.file_name, file_size, Some(data.key));
     attachment.save(&mut conn).await.expect("Error saving attachment");
 
-    let url = format!("/ciphers/{}/attachment/{}", cipher.uuid, attachment_id);
+    let url = format!("/ciphers/{}/attachment/{attachment_id}", cipher.uuid);
     let response_key = match data.admin_request {
         Some(b) if b => "cipherMiniResponse",
         _ => "cipherResponse",

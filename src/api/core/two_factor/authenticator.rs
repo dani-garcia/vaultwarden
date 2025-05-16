@@ -148,7 +148,7 @@ pub async fn validate_totp_code(
         if generated == totp_code && time_step > twofactor.last_used {
             // If the step does not equals 0 the time is drifted either server or client side.
             if step != 0 {
-                warn!("TOTP Time drift detected. The step offset is {}", step);
+                warn!("TOTP Time drift detected. The step offset is {step}");
             }
 
             // Save the last used time step so only totp time steps higher then this one are allowed.
@@ -157,7 +157,7 @@ pub async fn validate_totp_code(
             twofactor.save(conn).await?;
             return Ok(());
         } else if generated == totp_code && time_step <= twofactor.last_used {
-            warn!("This TOTP or a TOTP code within {} steps back or forward has already been used!", steps);
+            warn!("This TOTP or a TOTP code within {steps} steps back or forward has already been used!");
             err!(
                 format!("Invalid TOTP code! Server time: {} IP: {}", current_time.format("%F %T UTC"), ip.ip),
                 ErrorEvent {

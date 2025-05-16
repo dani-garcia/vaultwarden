@@ -85,7 +85,7 @@ fn smtp_transport() -> AsyncSmtpTransport<Tokio1Executor> {
                 smtp_client.authentication(selected_mechanisms)
             } else {
                 // Only show a warning, and return without setting an actual authentication mechanism
-                warn!("No valid SMTP Auth mechanism found for '{}', using default values", mechanism);
+                warn!("No valid SMTP Auth mechanism found for '{mechanism}', using default values");
                 smtp_client
             }
         }
@@ -213,7 +213,7 @@ pub async fn send_register_verify_email(email: &str, token: &str) -> EmptyResult
         "email/register_verify_email",
         json!({
             // `url.Url` would place the anchor `#` after the query parameters
-            "url": format!("{}/#/finish-signup/?{}", CONFIG.domain(), query_string),
+            "url": format!("{}/#/finish-signup/?{query_string}", CONFIG.domain()),
             "img_src": CONFIG._smtp_img_src(),
             "email": email,
         }),
@@ -314,7 +314,7 @@ pub async fn send_invite(
         "email/send_org_invite",
         json!({
             // `url.Url` would place the anchor `#` after the query parameters
-            "url": format!("{}/#/accept-organization/?{}", CONFIG.domain(), query_string),
+            "url": format!("{}/#/accept-organization/?{query_string}", CONFIG.domain()),
             "img_src": CONFIG._smtp_img_src(),
             "org_name": org_name,
         }),
@@ -615,13 +615,13 @@ async fn send_with_selected_transport(email: Message) -> EmptyResult {
             // Match some common errors and make them more user friendly
             Err(e) => {
                 if e.is_client() {
-                    debug!("Sendmail client error: {:?}", e);
+                    debug!("Sendmail client error: {e:?}");
                     err!(format!("Sendmail client error: {e}"));
                 } else if e.is_response() {
-                    debug!("Sendmail response error: {:?}", e);
+                    debug!("Sendmail response error: {e:?}");
                     err!(format!("Sendmail response error: {e}"));
                 } else {
-                    debug!("Sendmail error: {:?}", e);
+                    debug!("Sendmail error: {e:?}");
                     err!(format!("Sendmail error: {e}"));
                 }
             }
@@ -632,13 +632,13 @@ async fn send_with_selected_transport(email: Message) -> EmptyResult {
             // Match some common errors and make them more user friendly
             Err(e) => {
                 if e.is_client() {
-                    debug!("SMTP client error: {:#?}", e);
+                    debug!("SMTP client error: {e:#?}");
                     err!(format!("SMTP client error: {e}"));
                 } else if e.is_transient() {
-                    debug!("SMTP 4xx error: {:#?}", e);
+                    debug!("SMTP 4xx error: {e:#?}");
                     err!(format!("SMTP 4xx error: {e}"));
                 } else if e.is_permanent() {
-                    debug!("SMTP 5xx error: {:#?}", e);
+                    debug!("SMTP 5xx error: {e:#?}");
                     let mut msg = e.to_string();
                     // Add a special check for 535 to add a more descriptive message
                     if msg.contains("(535)") {
@@ -646,13 +646,13 @@ async fn send_with_selected_transport(email: Message) -> EmptyResult {
                     }
                     err!(format!("SMTP 5xx error: {msg}"));
                 } else if e.is_timeout() {
-                    debug!("SMTP timeout error: {:#?}", e);
+                    debug!("SMTP timeout error: {e:#?}");
                     err!(format!("SMTP timeout error: {e}"));
                 } else if e.is_tls() {
-                    debug!("SMTP encryption error: {:#?}", e);
+                    debug!("SMTP encryption error: {e:#?}");
                     err!(format!("SMTP encryption error: {e}"));
                 } else {
-                    debug!("SMTP error: {:#?}", e);
+                    debug!("SMTP error: {e:#?}");
                     err!(format!("SMTP error: {e}"));
                 }
             }

@@ -202,7 +202,7 @@ async fn duo_api_request(method: &str, path: &str, params: &str, data: &DuoData)
     use std::str::FromStr;
 
     // https://duo.com/docs/authapi#api-details
-    let url = format!("https://{}{}", &data.host, path);
+    let url = format!("https://{}{path}", &data.host);
     let date = Utc::now().to_rfc2822();
     let username = &data.ik;
     let fields = [&date, method, &data.host, path, params];
@@ -274,9 +274,9 @@ pub async fn generate_duo_signature(email: &str, conn: &mut DbConn) -> ApiResult
 
 fn sign_duo_values(key: &str, email: &str, ikey: &str, prefix: &str, expire: i64) -> String {
     let val = format!("{email}|{ikey}|{expire}");
-    let cookie = format!("{}|{}", prefix, BASE64.encode(val.as_bytes()));
+    let cookie = format!("{prefix}|{}", BASE64.encode(val.as_bytes()));
 
-    format!("{}|{}", cookie, crypto::hmac_sign(key, &cookie))
+    format!("{cookie}|{}", crypto::hmac_sign(key, &cookie))
 }
 
 pub async fn validate_duo_login(email: &str, response: &str, conn: &mut DbConn) -> EmptyResult {

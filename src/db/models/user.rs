@@ -334,7 +334,7 @@ impl User {
 
     pub async fn update_uuid_revision(uuid: &UserId, conn: &mut DbConn) {
         if let Err(e) = Self::_update_revision(uuid, &Utc::now().naive_utc(), conn).await {
-            warn!("Failed to update revision for {}: {:#?}", uuid, e);
+            warn!("Failed to update revision for {uuid}: {e:#?}");
         }
     }
 

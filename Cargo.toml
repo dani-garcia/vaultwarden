@@ -6,7 +6,7 @@ name = "vaultwarden"
 version = "1.0.0"
 authors = ["Daniel García <dani-garcia@users.noreply.github.com>"]
 edition = "2021"
-rust-version = "1.84.0"
+rust-version = "1.85.0"
 resolver = "2"
 
 repository = "https://github.com/dani-garcia/vaultwarden"
@@ -72,14 +72,14 @@ dashmap = "6.1.0"
 
 # Async futures
 futures = "0.3.31"
-tokio = { version = "1.44.2", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal", "net"] }
+tokio = { version = "1.45.0", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal", "net"] }
 
 # A generic serialization/deserialization framework
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.140"
 
 # A safe, extensible ORM and Query builder
-diesel = { version = "2.2.9", features = ["chrono", "r2d2", "numeric"] }
+diesel = { version = "2.2.10", features = ["chrono", "r2d2", "numeric"] }
 diesel_migrations = "2.2.0"
 diesel_logger = { version = "0.4.0", optional = true }
 
@@ -87,10 +87,10 @@ derive_more = { version = "2.0.1", features = ["from", "into", "as_ref", "deref"
 diesel-derive-newtype = "2.1.2"
 
 # Bundled/Static SQLite
-libsqlite3-sys = { version = "0.32.0", features = ["bundled"], optional = true }
+libsqlite3-sys = { version = "0.33.0", features = ["bundled"], optional = true }
 
 # Crypto-related libraries
-rand = "0.9.0"
+rand = "0.9.1"
 ring = "0.17.14"
 subtle = "2.6.1"
 
@@ -98,15 +98,15 @@ subtle = "2.6.1"
 uuid = { version = "1.16.0", features = ["v4"] }
 
 # Date and time libraries
-chrono = { version = "0.4.40", features = ["clock", "serde"], default-features = false }
+chrono = { version = "0.4.41", features = ["clock", "serde"], default-features = false }
 chrono-tz = "0.10.3"
 time = "0.3.41"
 
 # Job scheduler
-job_scheduler_ng = "2.0.5"
+job_scheduler_ng = "2.2.0"
 
 # Data encoding library Hex/Base32/Base64
-data-encoding = "2.8.0"
+data-encoding = "2.9.0"
 
 # JWT library
 jsonwebtoken = "9.3.1"
@@ -115,7 +115,7 @@ jsonwebtoken = "9.3.1"
 totp-lite = "2.0.1"
 
 # Yubico Library
-yubico = { version = "0.12.0", features = ["online-tokio"], default-features = false }
+yubico = { package = "yubico_ng", version = "0.13.0", features = ["online-tokio"], default-features = false }
 
 # WebAuthn libraries
 webauthn-rs = "0.3.2"
@@ -124,7 +124,7 @@ webauthn-rs = "0.3.2"
 url = "2.5.4"
 
 # Email libraries
-lettre = { version = "0.11.15", features = ["smtp-transport", "sendmail-transport", "builder", "serde", "tokio1-native-tls", "hostname", "tracing", "tokio1"], default-features = false }
+lettre = { version = "0.11.16", features = ["smtp-transport", "sendmail-transport", "builder", "serde", "tokio1-native-tls", "hostname", "tracing", "tokio1"], default-features = false }
 percent-encoding = "2.3.1" # URL encoding library used for URL's in the emails
 email_address = "0.2.9"
 
@@ -133,7 +133,7 @@ handlebars = { version = "6.3.2", features = ["dir_source"] }
 
 # HTTP client (Used for favicons, version check, DUO and HIBP API)
 reqwest = { version = "0.12.15", features = ["native-tls-alpn", "stream", "json", "gzip", "brotli", "socks", "cookies"] }
-hickory-resolver = "0.25.1"
+hickory-resolver = "0.25.2"
 
 # Favicon extraction libraries
 html5gum = "0.7.0"
@@ -171,17 +171,13 @@ which = "7.0.3"
 argon2 = "0.5.3"
 
 # Reading a password from the cli for generating the Argon2id ADMIN_TOKEN
-rpassword = "7.3.1"
+rpassword = "7.4.0"
 
 # Loading a dynamic CSS Stylesheet
 grass_compiler = { version = "0.13.4", default-features = false }
 
-[patch.crates-io]
-# Patch yubico to remove duplicate crates of older versions
-yubico = { git = "https://github.com/BlackDex/yubico-rs", rev = "00df14811f58155c0f02e3ab10f1570ed3e115c6" }
-
 # Strip debuginfo from the release builds
-# The symbols are the provide better panic traces
+# The debug symbols are to provide better panic traces
 # Also enable fat LTO and use 1 codegen unit for optimizations
 [profile.release]
 strip = "debuginfo"
