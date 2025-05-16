@@ -10,10 +10,7 @@ use crate::{
         core::{log_event, two_factor, CipherSyncData, CipherSyncType},
         EmptyResult, JsonResult, Notify, PasswordOrOtpData, UpdateType,
     },
-    auth::{
-        decode_invite, AdminHeaders, ClientVersion, Headers, ManagerHeaders, ManagerHeadersLoose, OrgMemberHeaders,
-        OwnerHeaders,
-    },
+    auth::{decode_invite, AdminHeaders, Headers, ManagerHeaders, ManagerHeadersLoose, OrgMemberHeaders, OwnerHeaders},
     db::{models::*, DbConn},
     mail,
     util::{convert_json_key_lcase_first, NumberOrString},
@@ -3115,7 +3112,7 @@ async fn get_organization_public_key(
 }
 
 // Obsolete - Renamed to public-key (2023.8), left for backwards compatibility with older clients
-// https://github.com/bitwarden/server/blob/25dc0c9178e3e3584074bbef0d4be827b7c89415/src/Api/AdminConsole/Controllers/OrganizationsController.cs#L463-L468
+// https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Api/AdminConsole/Controllers/OrganizationsController.cs#L487-L492
 #[get("/organizations/<org_id>/keys")]
 async fn get_organization_keys(org_id: OrganizationId, headers: OrgMemberHeaders, conn: DbConn) -> JsonResult {
     get_organization_public_key(org_id, headers, conn).await
@@ -3206,16 +3203,16 @@ async fn get_reset_password_details(
 
     check_reset_password_applicable_and_permissions(&org_id, &member_id, &headers, &mut conn).await?;
 
-    // https://github.com/bitwarden/server/blob/3b50ccb9f804efaacdc46bed5b60e5b28eddefcf/src/Api/Models/Response/Organizations/OrganizationUserResponseModel.cs#L111
+    // https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Api/AdminConsole/Models/Response/Organizations/OrganizationUserResponseModel.cs#L190
     Ok(Json(json!({
         "object": "organizationUserResetPasswordDetails",
-        "kdf":user.client_kdf_type,
-        "kdfIterations":user.client_kdf_iter,
-        "kdfMemory":user.client_kdf_memory,
-        "kdfParallelism":user.client_kdf_parallelism,
-        "resetPasswordKey":member.reset_password_key,
-        "encryptedPrivateKey":org.private_key,
-
+        "organizationUserId": member_id,
+        "kdf": user.client_kdf_type,
+        "kdfIterations": user.client_kdf_iter,
+        "kdfMemory": user.client_kdf_memory,
+        "kdfParallelism": user.client_kdf_parallelism,
+        "resetPasswordKey": member.reset_password_key,
+        "encryptedPrivateKey": org.private_key,
     })))
 }
 
@@ -3300,57 +3297,19 @@ async fn put_reset_password_enrollment(
     Ok(())
 }
 
-// This is a new function active since the v2022.9.x clients.
-// It combines the previous two calls done before.
-// We call those two functions here and combine them ourselves.
-//
-// NOTE: It seems clients can't handle uppercase-first keys!!
-//       We need to convert all keys so they have the first character to be a lowercase.
-//       Else the export will be just an empty JSON file.
+// We currently only support exports by members of the Admin or Owner status.
+// Vaultwarden does not yet support exporting only managed collections!
+// https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Api/Tools/Controllers/OrganizationExportController.cs#L52
 #[get("/organizations/<org_id>/export")]
-async fn get_org_export(
-    org_id: OrganizationId,
-    headers: AdminHeaders,
-    client_version: Option<ClientVersion>,
-    mut conn: DbConn,
-) -> JsonResult {
+async fn get_org_export(org_id: OrganizationId, headers: AdminHeaders, mut conn: DbConn) -> JsonResult {
     if org_id != headers.org_id {
         err!("Organization not found", "Organization id's do not match");
     }
-    // Since version v2023.1.0 the format of the export is different.
-    // Also, this endpoint was created since v2022.9.0.
-    // Therefore, we will check for any version smaller then v2023.1.0 and return a different response.
-    // If we can't determine the version, we will use the latest default v2023.1.0 and higher.
-    // https://github.com/bitwarden/server/blob/9ca93381ce416454734418c3a9f99ab49747f1b6/src/Api/Controllers/OrganizationExportController.cs#L44
-    let use_list_response_model = if let Some(client_version) = client_version {
-        let ver_match = semver::VersionReq::parse("<2023.1.0").unwrap();
-        ver_match.matches(&client_version.0)
-    } else {
-        false
-    };
 
-    // Also both main keys here need to be lowercase, else the export will fail.
-    if use_list_response_model {
-        // Backwards compatible pre v2023.1.0 response
-        Ok(Json(json!({
-            "collections": {
-                "data": convert_json_key_lcase_first(_get_org_collections(&org_id, &mut conn).await),
-                "object": "list",
-                "continuationToken": null,
-            },
-            "ciphers": {
-                "data": convert_json_key_lcase_first(_get_org_details(&org_id, &headers.host, &headers.user.uuid, &mut conn).await),
-                "object": "list",
-                "continuationToken": null,
-            }
-        })))
-    } else {
-        // v2023.1.0 and newer response
-        Ok(Json(json!({
-            "collections": convert_json_key_lcase_first(_get_org_collections(&org_id, &mut conn).await),
-            "ciphers": convert_json_key_lcase_first(_get_org_details(&org_id, &headers.host, &headers.user.uuid, &mut conn).await),
-        })))
-    }
+    Ok(Json(json!({
+        "collections": convert_json_key_lcase_first(_get_org_collections(&org_id, &mut conn).await),
+        "ciphers": convert_json_key_lcase_first(_get_org_details(&org_id, &headers.host, &headers.user.uuid, &mut conn).await),
+    })))
 }
 
 async fn _api_key(

@@ -46,7 +46,7 @@ struct OrgImportData {
 #[post("/public/organization/import", data = "<data>")]
 async fn ldap_import(data: Json<OrgImportData>, token: PublicToken, mut conn: DbConn) -> EmptyResult {
     // Most of the logic for this function can be found here
-    // https://github.com/bitwarden/server/blob/fd892b2ff4547648a276734fb2b14a8abae2c6f5/src/Core/Services/Implementations/OrganizationService.cs#L1797
+    // https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Core/AdminConsole/Services/Implementations/OrganizationService.cs#L1203
 
     let org_id = token.0;
     let data = data.into_inner();
