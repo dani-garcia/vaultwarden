@@ -784,7 +784,7 @@ async fn post_bulk_collections(
         }
 
         // If the request is for mass adding collections, we need remove the cipher from all collections first.
-        if (!data.remove_collections) {
+        if !data.remove_collections {
             CollectionCipher::delete_all_by_cipher(&cipher.uuid, &mut conn).await?;
         }
         for collection in &data.collection_ids {
