@@ -809,7 +809,7 @@ async fn post_bulk_collections(
             &mut conn,
         )
         .await;
-    
+
         log_event(
             EventType::CipherUpdatedCollections as i32,
             &cipher.uuid,
