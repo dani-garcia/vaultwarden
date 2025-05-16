@@ -776,7 +776,7 @@ async fn post_bulk_collections(
 
     for cipher in &data.cipher_ids {
         let Some(cipher) = Cipher::find_by_uuid(cipher, &mut conn).await else {
-            err!("Cipher doesn't exist")
+            err!(format!("Cipher '{}' doesn't exist", cipher))
         };
 
         if !cipher.is_write_accessible_to_user(&headers.user.uuid, &mut conn).await {
@@ -785,7 +785,7 @@ async fn post_bulk_collections(
 
         for collection in &data.collection_ids {
             match Collection::find_by_uuid_and_org(collection, &data.organization_id, &mut conn).await {
-                None => err!("Invalid collection ID provided"),
+                None => err!(format!("Invalid collection ID provided: {}", collection)),
                 Some(collection) => {
                     if collection.is_writable_by_user(&headers.user.uuid, &mut conn).await {
                         if data.remove_collections {
