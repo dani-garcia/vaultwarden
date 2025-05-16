@@ -1055,7 +1055,7 @@ pub async fn _prelogin(data: Json<PreloginData>, mut conn: DbConn) -> Json<Value
     }))
 }
 
-// https://github.com/bitwarden/server/blob/master/src/Api/Models/Request/Accounts/SecretVerificationRequestModel.cs
+// https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Api/Auth/Models/Request/Accounts/SecretVerificationRequestModel.cs
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SecretVerificationRequest {
@@ -1217,8 +1217,8 @@ async fn put_device_token(
 #[put("/devices/identifier/<device_id>/clear-token")]
 async fn put_clear_device_token(device_id: DeviceId, mut conn: DbConn) -> EmptyResult {
     // This only clears push token
-    // https://github.com/bitwarden/core/blob/master/src/Api/Controllers/DevicesController.cs#L109
-    // https://github.com/bitwarden/core/blob/master/src/Core/Services/Implementations/DeviceService.cs#L37
+    // https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Api/Controllers/DevicesController.cs#L215
+    // https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Core/Services/Implementations/DeviceService.cs#L37
     // This is somehow not implemented in any app, added it in case it is required
     // 2025: Also, it looks like it only clears the first found device upstream, which is probably faulty.
     //       This because currently multiple accounts could be on the same device/app and that would cause issues.
