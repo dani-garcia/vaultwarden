@@ -117,7 +117,7 @@ impl Attachment {
                 // upstream caller has already cleaned up the file as part of
                 // its own error handling.
                 Err(e) if e.kind() == ErrorKind::NotFound => {
-                    debug!("File '{}' already deleted.", file_path);
+                    debug!("File '{file_path}' already deleted.");
                     Ok(())
                 }
                 Err(e) => Err(e.into()),

@@ -249,7 +249,6 @@ impl User {
             "emailVerified": !CONFIG.mail_enabled() || self.verified_at.is_some(),
             "premium": true,
             "premiumFromOrganization": false,
-            "masterPasswordHint": self.password_hint,
             "culture": "en-US",
             "twoFactorEnabled": twofactor_enabled,
             "key": self.akey,
@@ -334,7 +333,7 @@ impl User {
 
     pub async fn update_uuid_revision(uuid: &UserId, conn: &mut DbConn) {
         if let Err(e) = Self::_update_revision(uuid, &Utc::now().naive_utc(), conn).await {
-            warn!("Failed to update revision for {}: {:#?}", uuid, e);
+            warn!("Failed to update revision for {uuid}: {e:#?}");
         }
     }
 

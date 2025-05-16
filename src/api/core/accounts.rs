@@ -301,11 +301,11 @@ pub async fn _register(data: Json<RegisterData>, email_verification: bool, mut c
     if CONFIG.mail_enabled() {
         if CONFIG.signups_verify() && !email_verified {
             if let Err(e) = mail::send_welcome_must_verify(&user.email, &user.uuid).await {
-                error!("Error sending welcome email: {:#?}", e);
+                error!("Error sending welcome email: {e:#?}");
             }
             user.last_verifying_at = Some(user.created_at);
         } else if let Err(e) = mail::send_welcome(&user.email).await {
-            error!("Error sending welcome email: {:#?}", e);
+            error!("Error sending welcome email: {e:#?}");
         }
 
         if email_verified && is_email_2fa_required(data.organization_user_id, &mut conn).await {
@@ -337,7 +337,6 @@ async fn profile(headers: Headers, mut conn: DbConn) -> Json<Value> {
 #[serde(rename_all = "camelCase")]
 struct ProfileData {
     // culture: String, // Ignored, always use en-US
-    // masterPasswordHint: Option<String>, // Ignored, has been moved to ChangePassData
     name: String,
 }
 
@@ -463,7 +462,7 @@ async fn post_password(data: Json<ChangePassData>, headers: Headers, mut conn: D
     // Prevent logging out the client where the user requested this endpoint from.
     // If you do logout the user it will causes issues at the client side.
     // Adding the device uuid will prevent this.
-    nt.send_logout(&user, Some(headers.device.uuid.clone())).await;
+    nt.send_logout(&user, Some(headers.device.uuid.clone()), &mut conn).await;
 
     save_result
 }
@@ -523,7 +522,7 @@ async fn post_kdf(data: Json<ChangeKdfData>, headers: Headers, mut conn: DbConn,
     user.set_password(&data.new_master_password_hash, Some(data.key), true, None);
     let save_result = user.save(&mut conn).await;
 
-    nt.send_logout(&user, Some(headers.device.uuid.clone())).await;
+    nt.send_logout(&user, Some(headers.device.uuid.clone()), &mut conn).await;
 
     save_result
 }
@@ -735,7 +734,7 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, mut conn: DbConn,
     // Prevent logging out the client where the user requested this endpoint from.
     // If you do logout the user it will causes issues at the client side.
     // Adding the device uuid will prevent this.
-    nt.send_logout(&user, Some(headers.device.uuid.clone())).await;
+    nt.send_logout(&user, Some(headers.device.uuid.clone()), &mut conn).await;
 
     save_result
 }
@@ -751,7 +750,7 @@ async fn post_sstamp(data: Json<PasswordOrOtpData>, headers: Headers, mut conn: 
     user.reset_security_stamp();
     let save_result = user.save(&mut conn).await;
 
-    nt.send_logout(&user, None).await;
+    nt.send_logout(&user, None, &mut conn).await;
 
     save_result
 }
@@ -788,7 +787,7 @@ async fn post_email_token(data: Json<EmailTokenData>, headers: Headers, mut conn
 
     if CONFIG.mail_enabled() {
         if let Err(e) = mail::send_change_email(&data.new_email, &token).await {
-            error!("Error sending change-email email: {:#?}", e);
+            error!("Error sending change-email email: {e:#?}");
         }
     } else {
         debug!("Email change request for user ({}) to email ({}) with token ({})", user.uuid, data.new_email, token);
@@ -859,7 +858,7 @@ async fn post_email(data: Json<ChangeEmailData>, headers: Headers, mut conn: DbC
 
     let save_result = user.save(&mut conn).await;
 
-    nt.send_logout(&user, None).await;
+    nt.send_logout(&user, None, &mut conn).await;
 
     save_result
 }
@@ -873,7 +872,7 @@ async fn post_verify_email(headers: Headers) -> EmptyResult {
     }
 
     if let Err(e) = mail::send_verify_email(&user.email, &user.uuid).await {
-        error!("Error sending verify_email email: {:#?}", e);
+        error!("Error sending verify_email email: {e:#?}");
     }
 
     Ok(())
@@ -904,7 +903,7 @@ async fn post_verify_email_token(data: Json<VerifyEmailTokenData>, mut conn: DbC
     user.last_verifying_at = None;
     user.login_verify_count = 0;
     if let Err(e) = user.save(&mut conn).await {
-        error!("Error saving email verification: {:#?}", e);
+        error!("Error saving email verification: {e:#?}");
     }
 
     Ok(())
@@ -923,7 +922,7 @@ async fn post_delete_recover(data: Json<DeleteRecoverData>, mut conn: DbConn) ->
     if CONFIG.mail_enabled() {
         if let Some(user) = User::find_by_mail(&data.email, &mut conn).await {
             if let Err(e) = mail::send_delete_account(&user.email, &user.uuid).await {
-                error!("Error sending delete account email: {:#?}", e);
+                error!("Error sending delete account email: {e:#?}");
             }
         }
         Ok(())
@@ -1057,7 +1056,7 @@ pub async fn _prelogin(data: Json<PreloginData>, mut conn: DbConn) -> Json<Value
     }))
 }
 
-// https://github.com/bitwarden/server/blob/master/src/Api/Models/Request/Accounts/SecretVerificationRequestModel.cs
+// https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Api/Auth/Models/Request/Accounts/SecretVerificationRequestModel.cs
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SecretVerificationRequest {
@@ -1198,19 +1197,14 @@ async fn put_device_token(
         err!(format!("Error: device {device_id} should be present before a token can be assigned"))
     };
 
-    // if the device already has been registered
-    if device.is_registered() {
-        // check if the new token is the same as the registered token
-        if device.push_token.is_some() && device.push_token.unwrap() == token.clone() {
-            debug!("Device {} is already registered and token is the same", device_id);
-            return Ok(());
-        } else {
-            // Try to unregister already registered device
-            unregister_push_device(device.push_uuid).await.ok();
-        }
-        // clear the push_uuid
-        device.push_uuid = None;
+    // Check if the new token is the same as the registered token
+    // Although upstream seems to always register a device on login, we do not.
+    // Unless this causes issues, lets keep it this way, else we might need to also register on every login.
+    if device.push_token.as_ref() == Some(&token) {
+        debug!("Device {device_id} for user {} is already registered and token is identical", headers.user.uuid);
+        return Ok(());
     }
+
     device.push_token = Some(token);
     if let Err(e) = device.save(&mut conn).await {
         err!(format!("An error occurred while trying to save the device push token: {e}"));
@@ -1224,16 +1218,19 @@ async fn put_device_token(
 #[put("/devices/identifier/<device_id>/clear-token")]
 async fn put_clear_device_token(device_id: DeviceId, mut conn: DbConn) -> EmptyResult {
     // This only clears push token
-    // https://github.com/bitwarden/core/blob/master/src/Api/Controllers/DevicesController.cs#L109
-    // https://github.com/bitwarden/core/blob/master/src/Core/Services/Implementations/DeviceService.cs#L37
+    // https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Api/Controllers/DevicesController.cs#L215
+    // https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Core/Services/Implementations/DeviceService.cs#L37
     // This is somehow not implemented in any app, added it in case it is required
+    // 2025: Also, it looks like it only clears the first found device upstream, which is probably faulty.
+    //       This because currently multiple accounts could be on the same device/app and that would cause issues.
+    //       Vaultwarden removes the push-token for all devices, but this probably means we should also unregister all these devices.
     if !CONFIG.push_enabled() {
         return Ok(());
     }
 
     if let Some(device) = Device::find_by_uuid(&device_id, &mut conn).await {
         Device::clear_push_token_by_uuid(&device_id, &mut conn).await?;
-        unregister_push_device(device.push_uuid).await?;
+        unregister_push_device(&device.push_uuid).await?;
     }
 
     Ok(())
@@ -1271,10 +1268,10 @@ async fn post_auth_request(
     };
 
     // Validate device uuid and type
-    match Device::find_by_uuid_and_user(&data.device_identifier, &user.uuid, &mut conn).await {
-        Some(device) if device.atype == client_headers.device_type => {}
+    let device = match Device::find_by_uuid_and_user(&data.device_identifier, &user.uuid, &mut conn).await {
+        Some(device) if device.atype == client_headers.device_type => device,
         _ => err!("AuthRequest doesn't exist", "Device verification failed"),
-    }
+    };
 
     let mut auth_request = AuthRequest::new(
         user.uuid.clone(),
@@ -1286,7 +1283,7 @@ async fn post_auth_request(
     );
     auth_request.save(&mut conn).await?;
 
-    nt.send_auth_request(&user.uuid, &auth_request.uuid, &data.device_identifier, &mut conn).await;
+    nt.send_auth_request(&user.uuid, &auth_request.uuid, &device, &mut conn).await;
 
     log_user_event(
         EventType::UserRequestedDeviceApproval as i32,
@@ -1361,6 +1358,10 @@ async fn put_auth_request(
         err!("AuthRequest doesn't exist", "Record not found or user uuid does not match")
     };
 
+    if headers.device.uuid != data.device_identifier {
+        err!("AuthRequest doesn't exist", "Device verification failed")
+    }
+
     if auth_request.approved.is_some() {
         err!("An authentication request with the same device already exists")
     }
@@ -1377,7 +1378,7 @@ async fn put_auth_request(
         auth_request.save(&mut conn).await?;
 
         ant.send_auth_response(&auth_request.user_uuid, &auth_request.uuid).await;
-        nt.send_auth_response(&auth_request.user_uuid, &auth_request.uuid, &data.device_identifier, &mut conn).await;
+        nt.send_auth_response(&auth_request.user_uuid, &auth_request.uuid, &headers.device, &mut conn).await;
 
         log_user_event(
             EventType::OrganizationUserApprovedAuthRequest as i32,

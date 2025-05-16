@@ -430,10 +430,7 @@ fn init_logging() -> Result<log::LevelFilter, Error> {
             }
             None => error!(
                 target: "panic",
-                "thread '{}' panicked at '{}'\n{:}",
-                thread,
-                msg,
-                backtrace
+                "thread '{thread}' panicked at '{msg}'\n{backtrace:}"
             ),
         }
     }));
@@ -453,7 +450,7 @@ fn chain_syslog(logger: fern::Dispatch) -> fern::Dispatch {
     match syslog::unix(syslog_fmt) {
         Ok(sl) => logger.chain(sl),
         Err(e) => {
-            error!("Unable to connect to syslog: {:?}", e);
+            error!("Unable to connect to syslog: {e:?}");
             logger
         }
     }
@@ -469,7 +466,7 @@ async fn check_data_folder() {
     let data_folder = &CONFIG.data_folder();
     let path = Path::new(data_folder);
     if !path.exists() {
-        error!("Data folder '{}' doesn't exist.", data_folder);
+        error!("Data folder '{data_folder}' doesn't exist.");
         if is_running_in_container() {
             error!("Verify that your data volume is mounted at the correct location.");
         } else {
@@ -478,7 +475,7 @@ async fn check_data_folder() {
         exit(1);
     }
     if !path.is_dir() {
-        error!("Data folder '{}' is not a directory.", data_folder);
+        error!("Data folder '{data_folder}' is not a directory.");
         exit(1);
     }
 
@@ -552,7 +549,7 @@ async fn create_db_pool() -> db::DbPool {
     match util::retry_db(db::DbPool::from_config, CONFIG.db_connection_retries()).await {
         Ok(p) => p,
         Err(e) => {
-            error!("Error creating database pool: {:?}", e);
+            error!("Error creating database pool: {e:?}");
             exit(1);
         }
     }

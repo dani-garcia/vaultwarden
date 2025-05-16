@@ -34,6 +34,10 @@ async fn generate_authenticator(data: Json<PasswordOrOtpData>, headers: Headers,
         _ => (false, crypto::encode_random_bytes::<20>(BASE32)),
     };
 
+    // Upstream seems to also return `userVerificationToken`, but doesn't seem to be used at all.
+    // It should help prevent TOTP disclosure if someone keeps their vault unlocked.
+    // Since it doesn't seem to be used, and also does not cause any issues, lets leave it out of the response.
+    // See: https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Api/Auth/Controllers/TwoFactorController.cs#L94
     Ok(Json(json!({
         "enabled": enabled,
         "key": key,
@@ -148,7 +152,7 @@ pub async fn validate_totp_code(
         if generated == totp_code && time_step > twofactor.last_used {
             // If the step does not equals 0 the time is drifted either server or client side.
             if step != 0 {
-                warn!("TOTP Time drift detected. The step offset is {}", step);
+                warn!("TOTP Time drift detected. The step offset is {step}");
             }
 
             // Save the last used time step so only totp time steps higher then this one are allowed.
@@ -157,7 +161,7 @@ pub async fn validate_totp_code(
             twofactor.save(conn).await?;
             return Ok(());
         } else if generated == totp_code && time_step <= twofactor.last_used {
-            warn!("This TOTP or a TOTP code within {} steps back or forward has already been used!", steps);
+            warn!("This TOTP or a TOTP code within {steps} steps back or forward has already been used!");
             err!(
                 format!("Invalid TOTP code! Server time: {} IP: {}", current_time.format("%F %T UTC"), ip.ip),
                 ErrorEvent {
