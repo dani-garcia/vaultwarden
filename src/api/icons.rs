@@ -69,12 +69,12 @@ static ICON_SIZE_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?x)(\d+)\D*(\d+
 #[get("/<domain>/icon.png")]
 fn icon_external(domain: &str) -> Option<Redirect> {
     if !is_valid_domain(domain) {
-        warn!("Invalid domain: {}", domain);
+        warn!("Invalid domain: {domain}");
         return None;
     }
 
     if should_block_address(domain) {
-        warn!("Blocked address: {}", domain);
+        warn!("Blocked address: {domain}");
         return None;
     }
 
@@ -96,7 +96,7 @@ async fn icon_internal(domain: &str) -> Cached<(ContentType, Vec<u8>)> {
     const FALLBACK_ICON: &[u8] = include_bytes!("../static/images/fallback-icon.png");
 
     if !is_valid_domain(domain) {
-        warn!("Invalid domain: {}", domain);
+        warn!("Invalid domain: {domain}");
         return Cached::ttl(
             (ContentType::new("image", "png"), FALLBACK_ICON.to_vec()),
             CONFIG.icon_cache_negttl(),
@@ -105,7 +105,7 @@ async fn icon_internal(domain: &str) -> Cached<(ContentType, Vec<u8>)> {
     }
 
     if should_block_address(domain) {
-        warn!("Blocked address: {}", domain);
+        warn!("Blocked address: {domain}");
         return Cached::ttl(
             (ContentType::new("image", "png"), FALLBACK_ICON.to_vec()),
             CONFIG.icon_cache_negttl(),
@@ -130,7 +130,7 @@ fn is_valid_domain(domain: &str) -> bool {
 
     // If parsing the domain fails using Url, it will not work with reqwest.
     if let Err(parse_error) = url::Url::parse(format!("https://{domain}").as_str()) {
-        debug!("Domain parse error: '{}' - {:?}", domain, parse_error);
+        debug!("Domain parse error: '{domain}' - {parse_error:?}");
         return false;
     } else if domain.is_empty()
         || domain.contains("..")
@@ -139,18 +139,17 @@ fn is_valid_domain(domain: &str) -> bool {
         || domain.ends_with('-')
     {
         debug!(
-            "Domain validation error: '{}' is either empty, contains '..', starts with an '.', starts or ends with a '-'",
-            domain
+            "Domain validation error: '{domain}' is either empty, contains '..', starts with an '.', starts or ends with a '-'"
         );
         return false;
     } else if domain.len() > 255 {
-        debug!("Domain validation error: '{}' exceeds 255 characters", domain);
+        debug!("Domain validation error: '{domain}' exceeds 255 characters");
         return false;
     }
 
     for c in domain.chars() {
         if !c.is_alphanumeric() && !ALLOWED_CHARS.contains(c) {
-            debug!("Domain validation error: '{}' contains an invalid character '{}'", domain, c);
+            debug!("Domain validation error: '{domain}' contains an invalid character '{c}'");
             return false;
         }
     }
@@ -159,7 +158,7 @@ fn is_valid_domain(domain: &str) -> bool {
 }
 
 async fn get_icon(domain: &str) -> Option<(Vec<u8>, String)> {
-    let path = format!("{}/{}.png", CONFIG.icon_cache_folder(), domain);
+    let path = format!("{}/{domain}.png", CONFIG.icon_cache_folder());
 
     // Check for expiration of negatively cached copy
     if icon_is_negcached(&path).await {
@@ -167,10 +166,7 @@ async fn get_icon(domain: &str) -> Option<(Vec<u8>, String)> {
     }
 
     if let Some(icon) = get_cached_icon(&path).await {
-        let icon_type = match get_icon_type(&icon) {
-            Some(x) => x,
-            _ => "x-icon",
-        };
+        let icon_type = get_icon_type(&icon).unwrap_or("x-icon");
         return Some((icon, icon_type.to_string()));
     }
 
@@ -192,7 +188,7 @@ async fn get_icon(domain: &str) -> Option<(Vec<u8>, String)> {
                 return None;
             }
 
-            warn!("Unable to download icon: {:?}", e);
+            warn!("Unable to download icon: {e:?}");
             let miss_indicator = path + ".miss";
             save_icon(&miss_indicator, &[]).await;
             None
@@ -234,7 +230,7 @@ async fn icon_is_negcached(path: &str) -> bool {
         // No longer negatively cached, drop the marker
         Ok(true) => {
             if let Err(e) = remove_file(&miss_indicator).await {
-                error!("Could not remove negative cache indicator for icon {:?}: {:?}", path, e);
+                error!("Could not remove negative cache indicator for icon {path:?}: {e:?}");
             }
             false
         }
@@ -534,10 +530,10 @@ async fn download_icon(domain: &str) -> Result<(Bytes, Option<&str>), Error> {
                         // Check if the icon type is allowed, else try an icon from the list.
                         icon_type = get_icon_type(&body);
                         if icon_type.is_none() {
-                            debug!("Icon from {} data:image uri, is not a valid image type", domain);
+                            debug!("Icon from {domain} data:image uri, is not a valid image type");
                             continue;
                         }
-                        info!("Extracted icon from data:image uri for {}", domain);
+                        info!("Extracted icon from data:image uri for {domain}");
                         buffer = body.freeze();
                         break;
                     }
@@ -577,7 +573,7 @@ async fn save_icon(path: &str, icon: &[u8]) {
             create_dir_all(&CONFIG.icon_cache_folder()).await.expect("Error creating icon cache folder");
         }
         Err(e) => {
-            warn!("Unable to save icon: {:?}", e);
+            warn!("Unable to save icon: {e:?}");
         }
     }
 }

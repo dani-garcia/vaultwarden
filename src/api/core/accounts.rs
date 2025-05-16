@@ -301,11 +301,11 @@ pub async fn _register(data: Json<RegisterData>, email_verification: bool, mut c
     if CONFIG.mail_enabled() {
         if CONFIG.signups_verify() && !email_verified {
             if let Err(e) = mail::send_welcome_must_verify(&user.email, &user.uuid).await {
-                error!("Error sending welcome email: {:#?}", e);
+                error!("Error sending welcome email: {e:#?}");
             }
             user.last_verifying_at = Some(user.created_at);
         } else if let Err(e) = mail::send_welcome(&user.email).await {
-            error!("Error sending welcome email: {:#?}", e);
+            error!("Error sending welcome email: {e:#?}");
         }
 
         if email_verified && is_email_2fa_required(data.organization_user_id, &mut conn).await {
@@ -788,10 +788,10 @@ async fn post_email_token(data: Json<EmailTokenData>, headers: Headers, mut conn
 
     if CONFIG.mail_enabled() {
         if let Err(e) = mail::send_change_email(&data.new_email, &token).await {
-            error!("Error sending change-email email: {:#?}", e);
+            error!("Error sending change-email email: {e:#?}");
         }
     } else {
-        debug!("Email change request for user ({}) to email ({}) with token ({})", user.uuid, data.new_email, token);
+        debug!("Email change request for user ({}) to email ({}) with token ({token})", user.uuid, data.new_email);
     }
 
     user.email_new = Some(data.new_email);
@@ -873,7 +873,7 @@ async fn post_verify_email(headers: Headers) -> EmptyResult {
     }
 
     if let Err(e) = mail::send_verify_email(&user.email, &user.uuid).await {
-        error!("Error sending verify_email email: {:#?}", e);
+        error!("Error sending verify_email email: {e:#?}");
     }
 
     Ok(())
@@ -904,7 +904,7 @@ async fn post_verify_email_token(data: Json<VerifyEmailTokenData>, mut conn: DbC
     user.last_verifying_at = None;
     user.login_verify_count = 0;
     if let Err(e) = user.save(&mut conn).await {
-        error!("Error saving email verification: {:#?}", e);
+        error!("Error saving email verification: {e:#?}");
     }
 
     Ok(())
@@ -923,7 +923,7 @@ async fn post_delete_recover(data: Json<DeleteRecoverData>, mut conn: DbConn) ->
     if CONFIG.mail_enabled() {
         if let Some(user) = User::find_by_mail(&data.email, &mut conn).await {
             if let Err(e) = mail::send_delete_account(&user.email, &user.uuid).await {
-                error!("Error sending delete account email: {:#?}", e);
+                error!("Error sending delete account email: {e:#?}");
             }
         }
         Ok(())
@@ -1202,7 +1202,7 @@ async fn put_device_token(
     if device.is_registered() {
         // check if the new token is the same as the registered token
         if device.push_token.is_some() && device.push_token.unwrap() == token.clone() {
-            debug!("Device {} is already registered and token is the same", device_id);
+            debug!("Device {device_id} is already registered and token is the same");
             return Ok(());
         } else {
             // Try to unregister already registered device

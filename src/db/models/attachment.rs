@@ -46,7 +46,7 @@ impl Attachment {
 
     pub fn get_url(&self, host: &str) -> String {
         let token = encode_jwt(&generate_file_download_claims(self.cipher_uuid.clone(), self.id.clone()));
-        format!("{}/attachments/{}/{}?token={}", host, self.cipher_uuid, self.id, token)
+        format!("{host}/attachments/{}/{}?token={token}", self.cipher_uuid, self.id)
     }
 
     pub fn to_json(&self, host: &str) -> Value {
@@ -117,7 +117,7 @@ impl Attachment {
                 // upstream caller has already cleaned up the file as part of
                 // its own error handling.
                 Err(e) if e.kind() == ErrorKind::NotFound => {
-                    debug!("File '{}' already deleted.", file_path);
+                    debug!("File '{file_path}' already deleted.");
                     Ok(())
                 }
                 Err(e) => Err(e.into()),

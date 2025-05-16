@@ -375,19 +375,19 @@ make_config! {
         ///  Data folder |> Main data folder
         data_folder:            String, false,  def,    "data".to_string();
         /// Database URL
-        database_url:           String, false,  auto,   |c| format!("{}/{}", c.data_folder, "db.sqlite3");
+        database_url:           String, false,  auto,   |c| format!("{}/db.sqlite3", c.data_folder);
         /// Icon cache folder
-        icon_cache_folder:      String, false,  auto,   |c| format!("{}/{}", c.data_folder, "icon_cache");
+        icon_cache_folder:      String, false,  auto,   |c| format!("{}/icon_cache", c.data_folder);
         /// Attachments folder
-        attachments_folder:     String, false,  auto,   |c| format!("{}/{}", c.data_folder, "attachments");
+        attachments_folder:     String, false,  auto,   |c| format!("{}/attachments", c.data_folder);
         /// Sends folder
-        sends_folder:           String, false,  auto,   |c| format!("{}/{}", c.data_folder, "sends");
+        sends_folder:           String, false,  auto,   |c| format!("{}/sends", c.data_folder);
         /// Temp folder |> Used for storing temporary file uploads
-        tmp_folder:             String, false,  auto,   |c| format!("{}/{}", c.data_folder, "tmp");
+        tmp_folder:             String, false,  auto,   |c| format!("{}/tmp", c.data_folder);
         /// Templates folder
-        templates_folder:       String, false,  auto,   |c| format!("{}/{}", c.data_folder, "templates");
+        templates_folder:       String, false,  auto,   |c| format!("{}/templates", c.data_folder);
         /// Session JWT key
-        rsa_key_filename:       String, false,  auto,   |c| format!("{}/{}", c.data_folder, "rsa_key");
+        rsa_key_filename:       String, false,  auto,   |c| format!("{}/rsa_key", c.data_folder);
         /// Web vault folder
         web_vault_folder:       String, false,  def,    "web-vault/".to_string();
     },
@@ -1215,7 +1215,7 @@ impl Config {
     pub fn is_email_domain_allowed(&self, email: &str) -> bool {
         let e: Vec<&str> = email.rsplitn(2, '@').collect();
         if e.len() != 2 || e[0].is_empty() || e[1].is_empty() {
-            warn!("Failed to parse email address '{}'", email);
+            warn!("Failed to parse email address '{email}'");
             return false;
         }
         let email_domain = e[0].to_lowercase();

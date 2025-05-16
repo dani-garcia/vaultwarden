@@ -338,7 +338,7 @@ async fn post_send_file_v2(data: Json<SendData>, headers: Headers, mut conn: DbC
     Ok(Json(json!({
         "fileUploadType": 0, // 0 == Direct | 1 == Azure
         "object": "send-fileUpload",
-        "url": format!("/sends/{}/file/{}", send.uuid, file_id),
+        "url": format!("/sends/{}/file/{file_id}", send.uuid),
         "sendResponse": send.to_json()
     })))
 }
@@ -556,7 +556,7 @@ async fn post_access_file(
     Ok(Json(json!({
         "object": "send-fileDownload",
         "id": file_id,
-        "url": format!("{}/api/sends/{}/{}?t={}", &host.host, send_id, file_id, token)
+        "url": format!("{}/api/sends/{send_id}/{file_id}?t={token}", &host.host)
     })))
 }
 
