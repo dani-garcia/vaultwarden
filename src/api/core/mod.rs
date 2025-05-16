@@ -200,9 +200,10 @@ fn get_api_webauthn(_headers: Headers) -> Json<Value> {
 fn config() -> Json<Value> {
     let domain = crate::CONFIG.domain();
     // Official available feature flags can be found here:
-    // Server (v2025.4.2): https://github.com/bitwarden/server/blob/9ad96375153113abff36d28a3465f1c51ea604a0/src/Core/Constants.cs#L102
-    // Client (v2025.4.0): https://github.com/bitwarden/clients/blob/c86c73563140412ca8359cad0fedc6f74b29db84/libs/common/src/enums/feature-flag.enum.ts#L10
-    // Android (v2025.2.0): https://github.com/bitwarden/android/blob/8cd289cc89f729062f094d47b92c98b09c605e71/app/src/main/java/com/x8bit/bitwarden/data/platform/manager/model/FlagKey.kt#L27
+    // Server (v2025.5.0): https://github.com/bitwarden/server/blob/4a7db112a0952c6df8bacf36c317e9c4e58c3651/src/Core/Constants.cs#L102
+    // Client (v2025.5.0): https://github.com/bitwarden/clients/blob/9df8a3cc50ed45f52513e62c23fcc8a4b745f078/libs/common/src/enums/feature-flag.enum.ts#L10
+    // Android (v2025.4.0): https://github.com/bitwarden/android/blob/bee09de972c3870de0d54a0067996be473ec55c7/app/src/main/java/com/x8bit/bitwarden/data/platform/manager/model/FlagKey.kt#L27
+    // iOS (v2025.4.0): https://github.com/bitwarden/ios/blob/956e05db67344c912e3a1b8cb2609165d67da1c9/BitwardenShared/Core/Platform/Models/Enum/FeatureFlag.swift#L7
     let mut feature_states =
         parse_experimental_client_feature_flags(&crate::CONFIG.experimental_client_feature_flags());
     // Force the new key rotation feature

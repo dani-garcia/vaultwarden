@@ -3112,7 +3112,7 @@ async fn get_organization_public_key(
 }
 
 // Obsolete - Renamed to public-key (2023.8), left for backwards compatibility with older clients
-// https://github.com/bitwarden/server/blob/25dc0c9178e3e3584074bbef0d4be827b7c89415/src/Api/AdminConsole/Controllers/OrganizationsController.cs#L463-L468
+// https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Api/AdminConsole/Controllers/OrganizationsController.cs#L487-L492
 #[get("/organizations/<org_id>/keys")]
 async fn get_organization_keys(org_id: OrganizationId, headers: OrgMemberHeaders, conn: DbConn) -> JsonResult {
     get_organization_public_key(org_id, headers, conn).await
@@ -3203,16 +3203,16 @@ async fn get_reset_password_details(
 
     check_reset_password_applicable_and_permissions(&org_id, &member_id, &headers, &mut conn).await?;
 
-    // https://github.com/bitwarden/server/blob/3b50ccb9f804efaacdc46bed5b60e5b28eddefcf/src/Api/Models/Response/Organizations/OrganizationUserResponseModel.cs#L111
+    // https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Api/AdminConsole/Models/Response/Organizations/OrganizationUserResponseModel.cs#L190
     Ok(Json(json!({
         "object": "organizationUserResetPasswordDetails",
-        "kdf":user.client_kdf_type,
-        "kdfIterations":user.client_kdf_iter,
-        "kdfMemory":user.client_kdf_memory,
-        "kdfParallelism":user.client_kdf_parallelism,
-        "resetPasswordKey":member.reset_password_key,
-        "encryptedPrivateKey":org.private_key,
-
+        "organizationUserId": member_id,
+        "kdf": user.client_kdf_type,
+        "kdfIterations": user.client_kdf_iter,
+        "kdfMemory": user.client_kdf_memory,
+        "kdfParallelism": user.client_kdf_parallelism,
+        "resetPasswordKey": member.reset_password_key,
+        "encryptedPrivateKey": org.private_key,
     })))
 }
 
@@ -3300,6 +3300,9 @@ async fn put_reset_password_enrollment(
 // NOTE: It seems clients can't handle uppercase-first keys!!
 //       We need to convert all keys so they have the first character to be a lowercase.
 //       Else the export will be just an empty JSON file.
+// We currently only support exports by members of the Admin or Owner status.
+// Vaultwarden does not yet support exporting only managed collections!
+// https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Api/Tools/Controllers/OrganizationExportController.cs#L52
 #[get("/organizations/<org_id>/export")]
 async fn get_org_export(org_id: OrganizationId, headers: AdminHeaders, mut conn: DbConn) -> JsonResult {
     if org_id != headers.org_id {

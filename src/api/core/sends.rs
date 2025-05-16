@@ -26,7 +26,7 @@ static ANON_PUSH_DEVICE: Lazy<Device> = Lazy::new(|| {
         updated_at: dt,
         user_uuid: String::from("00000000-0000-0000-0000-000000000000").into(),
         name: String::new(),
-        atype: 0,
+        atype: 14, // 14 == Unknown Browser
         push_uuid: Some(String::from("00000000-0000-0000-0000-000000000000").into()),
         push_token: None,
         refresh_token: String::new(),
@@ -220,6 +220,8 @@ struct UploadDataV2<'f> {
 // @deprecated Mar 25 2021: This method has been deprecated in favor of direct uploads (v2).
 // This method still exists to support older clients, probably need to remove it sometime.
 // Upstream: https://github.com/bitwarden/server/blob/d0c793c95181dfb1b447eb450f85ba0bfd7ef643/src/Api/Controllers/SendsController.cs#L164-L167
+// 2025: This endpoint doesn't seem to exists anymore in the latest version
+// See: https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Api/Tools/Controllers/SendsController.cs
 #[post("/sends/file", format = "multipart/form-data", data = "<data>")]
 async fn post_send_file(data: Form<UploadData<'_>>, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> JsonResult {
     enforce_disable_send_policy(&headers, &mut conn).await?;
@@ -296,7 +298,7 @@ async fn post_send_file(data: Form<UploadData<'_>>, headers: Headers, mut conn: 
     Ok(Json(send.to_json()))
 }
 
-// Upstream: https://github.com/bitwarden/server/blob/d0c793c95181dfb1b447eb450f85ba0bfd7ef643/src/Api/Controllers/SendsController.cs#L190
+// Upstream: https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Api/Tools/Controllers/SendsController.cs#L165
 #[post("/sends/file/v2", data = "<data>")]
 async fn post_send_file_v2(data: Json<SendData>, headers: Headers, mut conn: DbConn) -> JsonResult {
     enforce_disable_send_policy(&headers, &mut conn).await?;
@@ -367,7 +369,7 @@ pub struct SendFileData {
     fileName: String,
 }
 
-// https://github.com/bitwarden/server/blob/66f95d1c443490b653e5a15d32977e2f5a3f9e32/src/Api/Tools/Controllers/SendsController.cs#L250
+// https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Api/Tools/Controllers/SendsController.cs#L195
 #[post("/sends/<send_id>/file/<file_id>", format = "multipart/form-data", data = "<data>")]
 async fn post_send_file_v2_data(
     send_id: SendId,
