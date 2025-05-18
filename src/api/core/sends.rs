@@ -1,4 +1,3 @@
-use std::error::Error as _;
 use std::path::Path;
 use std::time::Duration;
 
@@ -424,27 +423,7 @@ async fn post_send_file_v2_data(
 
     let file_path = format!("{send_id}/{file_id}");
 
-    save_temp_file(PathType::Sends, &file_path, data.data, false).await.map_err(|e| {
-        let was_file_exists_error = e
-            .source()
-            .and_then(|e| e.downcast_ref::<std::io::Error>())
-            .and_then(|e| e.get_ref())
-            .and_then(|e| e.downcast_ref::<opendal::Error>())
-            .map(|e| e.kind() == opendal::ErrorKind::ConditionNotMatch)
-            .unwrap_or(false);
-
-        if was_file_exists_error {
-            return crate::Error::new(
-                "Send file has already been uploaded.",
-                format!("File {file_path:?} already exists"),
-            );
-        }
-
-        crate::Error::new(
-            "Unexpected error while creating send file",
-            format!("Error while saving send file at path {file_path}: {e:?}"),
-        )
-    })?;
+    save_temp_file(PathType::Sends, &file_path, data.data, false).await?;
 
     nt.send_send_update(
         UpdateType::SyncSendCreate,

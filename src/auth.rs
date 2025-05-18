@@ -39,42 +39,31 @@ static PRIVATE_RSA_KEY: OnceCell<EncodingKey> = OnceCell::new();
 static PUBLIC_RSA_KEY: OnceCell<DecodingKey> = OnceCell::new();
 
 pub async fn initialize_keys() -> Result<(), Error> {
-    async fn read_key(create_if_missing: bool) -> Result<(Rsa<openssl::pkey::Private>, Vec<u8>), std::io::Error> {
-        use std::io::{Error, ErrorKind};
+    use std::io::Error;
 
-        let rsa_key_filename = std::path::PathBuf::from(CONFIG.private_rsa_key())
-            .file_name()
-            .ok_or_else(|| Error::other("Private RSA key path missing filename"))?
-            .to_str()
-            .ok_or_else(|| Error::other("Private RSA key path filename is not valid UTF-8"))?
-            .to_string();
+    let rsa_key_filename = std::path::PathBuf::from(CONFIG.private_rsa_key())
+        .file_name()
+        .ok_or_else(|| Error::other("Private RSA key path missing filename"))?
+        .to_str()
+        .ok_or_else(|| Error::other("Private RSA key path filename is not valid UTF-8"))?
+        .to_string();
 
-        let operator = CONFIG.opendal_operator_for_path_type(PathType::RsaKey).map_err(Error::other)?;
+    let operator = CONFIG.opendal_operator_for_path_type(PathType::RsaKey).map_err(Error::other)?;
 
-        let priv_key_buffer = match operator.read(&rsa_key_filename).await {
-            Ok(buffer) => Some(buffer),
-            Err(e) if e.kind() == opendal::ErrorKind::NotFound && create_if_missing => None,
-            Err(e) if e.kind() == opendal::ErrorKind::NotFound => {
-                return Err(Error::new(ErrorKind::NotFound, "Private key not found"))
-            }
-            Err(e) => return Err(Error::new(ErrorKind::InvalidData, format!("Error reading private key: {e}"))),
-        };
-
-        if let Some(priv_key_buffer) = priv_key_buffer {
-            Ok((Rsa::private_key_from_pem(priv_key_buffer.to_vec().as_slice())?, priv_key_buffer.to_vec()))
-        } else {
-            let rsa_key = Rsa::generate(2048)?;
-            let priv_key_buffer = rsa_key.private_key_to_pem()?;
-            operator.write(&rsa_key_filename, priv_key_buffer).await?;
-            info!("Private key '{}' created correctly", CONFIG.private_rsa_key());
-            Err(Error::new(ErrorKind::NotFound, "Private key created, forcing attempt to read it again"))
-        }
-    }
-
-    let (priv_key, priv_key_buffer) = match read_key(true).await {
-        Ok(key) => key,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => read_key(false).await?,
+    let priv_key_buffer = match operator.read(&rsa_key_filename).await {
+        Ok(buffer) => Some(buffer),
+        Err(e) if e.kind() == opendal::ErrorKind::NotFound => None,
         Err(e) => return Err(e.into()),
+    };
+
+    let (priv_key, priv_key_buffer) = if let Some(priv_key_buffer) = priv_key_buffer {
+        (Rsa::private_key_from_pem(priv_key_buffer.to_vec().as_slice())?, priv_key_buffer.to_vec())
+    } else {
+        let rsa_key = Rsa::generate(2048)?;
+        let priv_key_buffer = rsa_key.private_key_to_pem()?;
+        operator.write(&rsa_key_filename, priv_key_buffer.clone()).await?;
+        info!("Private key '{}' created correctly", CONFIG.private_rsa_key());
+        (rsa_key, priv_key_buffer)
     };
     let pub_key_buffer = priv_key.public_key_to_pem()?;
 

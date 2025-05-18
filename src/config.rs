@@ -1,10 +1,9 @@
 use std::{
-    collections::HashMap,
     env::consts::EXE_SUFFIX,
     process::exit,
     sync::{
         atomic::{AtomicBool, Ordering},
-        LazyLock, Mutex, RwLock,
+        LazyLock, RwLock,
     },
 };
 
@@ -136,10 +135,8 @@ macro_rules! make_config {
             async fn from_file() -> Result<Self, Error> {
                 let operator = opendal_operator_for_path(&CONFIG_FILE_PARENT_DIR)?;
                 let config_bytes = operator.read(&CONFIG_FILENAME).await?;
-                let config_str = String::from_utf8(config_bytes.to_vec())
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
                 println!("[INFO] Using saved config from `{}` for configuration.\n", *CONFIG_FILE);
-                serde_json::from_str(&config_str).map_err(Into::into)
+                serde_json::from_slice(&config_bytes.to_vec()).map_err(Into::into)
             }
 
             fn clear_non_editable(&mut self) {
@@ -1166,13 +1163,10 @@ fn smtp_convert_deprecated_ssl_options(smtp_ssl: Option<bool>, smtp_explicit_tls
 
 fn opendal_operator_for_path(path: &str) -> Result<opendal::Operator, Error> {
     // Cache of previously built operators by path
-    static OPERATORS_BY_PATH: LazyLock<Mutex<HashMap<String, opendal::Operator>>> =
-        LazyLock::new(|| Mutex::new(HashMap::new()));
+    static OPERATORS_BY_PATH: LazyLock<dashmap::DashMap<String, opendal::Operator>> =
+        LazyLock::new(dashmap::DashMap::new);
 
-    let mut operators_by_path =
-        OPERATORS_BY_PATH.lock().map_err(|e| format!("Failed to lock OpenDAL operators cache: {e}"))?;
-
-    if let Some(operator) = operators_by_path.get(path) {
+    if let Some(operator) = OPERATORS_BY_PATH.get(path) {
         return Ok(operator.clone());
     }
 
@@ -1187,7 +1181,7 @@ fn opendal_operator_for_path(path: &str) -> Result<opendal::Operator, Error> {
         opendal::Operator::new(builder)?.finish()
     };
 
-    operators_by_path.insert(path.to_string(), operator.clone());
+    OPERATORS_BY_PATH.insert(path.to_string(), operator.clone());
 
     Ok(operator)
 }
