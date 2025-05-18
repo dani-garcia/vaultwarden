@@ -61,7 +61,7 @@ mod util;
 use crate::api::core::two_factor::duo_oidc::purge_duo_contexts;
 use crate::api::purge_auth_requests;
 use crate::api::{WS_ANONYMOUS_SUBSCRIPTIONS, WS_USERS};
-pub use config::CONFIG;
+pub use config::{PathType, CONFIG};
 pub use error::{Error, MapResult};
 use rocket::data::{Limits, ToByteUnit};
 use std::sync::{atomic::Ordering, Arc};
@@ -75,16 +75,13 @@ async fn main() -> Result<(), Error> {
     let level = init_logging()?;
 
     check_data_folder().await;
-    auth::initialize_keys().unwrap_or_else(|e| {
+    auth::initialize_keys().await.unwrap_or_else(|e| {
         error!("Error creating private key '{}'\n{e:?}\nExiting Vaultwarden!", CONFIG.private_rsa_key());
         exit(1);
     });
     check_web_vault();
 
-    create_dir(&CONFIG.icon_cache_folder(), "icon cache");
     create_dir(&CONFIG.tmp_folder(), "tmp folder");
-    create_dir(&CONFIG.sends_folder(), "sends folder");
-    create_dir(&CONFIG.attachments_folder(), "attachments folder");
 
     let pool = create_db_pool().await;
     schedule_jobs(pool.clone());
@@ -464,6 +461,24 @@ fn create_dir(path: &str, description: &str) {
 
 async fn check_data_folder() {
     let data_folder = &CONFIG.data_folder();
+
+    if data_folder.starts_with("s3://") {
+        if let Err(e) = CONFIG
+            .opendal_operator_for_path_type(PathType::Data)
+            .unwrap_or_else(|e| {
+                error!("Failed to create S3 operator for data folder '{data_folder}': {e:?}");
+                exit(1);
+            })
+            .check()
+            .await
+        {
+            error!("Could not access S3 data folder '{data_folder}': {e:?}");
+            exit(1);
+        }
+
+        return;
+    }
+
     let path = Path::new(data_folder);
     if !path.exists() {
         error!("Data folder '{data_folder}' doesn't exist.");

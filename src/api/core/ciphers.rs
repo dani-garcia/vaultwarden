@@ -11,10 +11,11 @@ use rocket::{
 use serde_json::Value;
 
 use crate::auth::ClientVersion;
-use crate::util::NumberOrString;
+use crate::util::{save_temp_file, NumberOrString};
 use crate::{
     api::{self, core::log_event, EmptyResult, JsonResult, Notify, PasswordOrOtpData, UpdateType},
     auth::Headers,
+    config::PathType,
     crypto,
     db::{models::*, DbConn, DbPool},
     CONFIG,
@@ -105,12 +106,7 @@ struct SyncData {
 }
 
 #[get("/sync?<data..>")]
-async fn sync(
-    data: SyncData,
-    headers: Headers,
-    client_version: Option<ClientVersion>,
-    mut conn: DbConn,
-) -> Json<Value> {
+async fn sync(data: SyncData, headers: Headers, client_version: Option<ClientVersion>, mut conn: DbConn) -> JsonResult {
     let user_json = headers.user.to_json(&mut conn).await;
 
     // Get all ciphers which are visible by the user
@@ -134,7 +130,7 @@ async fn sync(
     for c in ciphers {
         ciphers_json.push(
             c.to_json(&headers.host, &headers.user.uuid, Some(&cipher_sync_data), CipherSyncType::User, &mut conn)
-                .await,
+                .await?,
         );
     }
 
@@ -159,7 +155,7 @@ async fn sync(
         api::core::_get_eq_domains(headers, true).into_inner()
     };
 
-    Json(json!({
+    Ok(Json(json!({
         "profile": user_json,
         "folders": folders_json,
         "collections": collections_json,
@@ -168,11 +164,11 @@ async fn sync(
         "domains": domains_json,
         "sends": sends_json,
         "object": "sync"
-    }))
+    })))
 }
 
 #[get("/ciphers")]
-async fn get_ciphers(headers: Headers, mut conn: DbConn) -> Json<Value> {
+async fn get_ciphers(headers: Headers, mut conn: DbConn) -> JsonResult {
     let ciphers = Cipher::find_by_user_visible(&headers.user.uuid, &mut conn).await;
     let cipher_sync_data = CipherSyncData::new(&headers.user.uuid, CipherSyncType::User, &mut conn).await;
 
@@ -180,15 +176,15 @@ async fn get_ciphers(headers: Headers, mut conn: DbConn) -> Json<Value> {
     for c in ciphers {
         ciphers_json.push(
             c.to_json(&headers.host, &headers.user.uuid, Some(&cipher_sync_data), CipherSyncType::User, &mut conn)
-                .await,
+                .await?,
         );
     }
 
-    Json(json!({
+    Ok(Json(json!({
       "data": ciphers_json,
       "object": "list",
       "continuationToken": null
-    }))
+    })))
 }
 
 #[get("/ciphers/<cipher_id>")]
@@ -201,7 +197,7 @@ async fn get_cipher(cipher_id: CipherId, headers: Headers, mut conn: DbConn) -> 
         err!("Cipher is not owned by user")
     }
 
-    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, &mut conn).await))
+    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, &mut conn).await?))
 }
 
 #[get("/ciphers/<cipher_id>/admin")]
@@ -339,7 +335,7 @@ async fn post_ciphers(data: Json<CipherData>, headers: Headers, mut conn: DbConn
     let mut cipher = Cipher::new(data.r#type, data.name.clone());
     update_cipher_from_data(&mut cipher, data, &headers, None, &mut conn, &nt, UpdateType::SyncCipherCreate).await?;
 
-    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, &mut conn).await))
+    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, &mut conn).await?))
 }
 
 /// Enforces the personal ownership policy on user-owned ciphers, if applicable.
@@ -676,7 +672,7 @@ async fn put_cipher(
 
     update_cipher_from_data(&mut cipher, data, &headers, None, &mut conn, &nt, UpdateType::SyncCipherUpdate).await?;
 
-    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, &mut conn).await))
+    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, &mut conn).await?))
 }
 
 #[post("/ciphers/<cipher_id>/partial", data = "<data>")]
@@ -714,7 +710,7 @@ async fn put_cipher_partial(
     // Update favorite
     cipher.set_favorite(Some(data.favorite), &headers.user.uuid, &mut conn).await?;
 
-    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, &mut conn).await))
+    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, &mut conn).await?))
 }
 
 #[derive(Deserialize)]
@@ -825,7 +821,7 @@ async fn post_collections_update(
     )
     .await;
 
-    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, &mut conn).await))
+    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, &mut conn).await?))
 }
 
 #[put("/ciphers/<cipher_id>/collections-admin", data = "<data>")]
@@ -1030,7 +1026,7 @@ async fn share_cipher_by_uuid(
 
     update_cipher_from_data(&mut cipher, data.cipher, headers, Some(shared_to_collections), conn, nt, ut).await?;
 
-    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, conn).await))
+    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, conn).await?))
 }
 
 /// v2 API for downloading an attachment. This just redirects the client to
@@ -1055,7 +1051,7 @@ async fn get_attachment(
     }
 
     match Attachment::find_by_id(&attachment_id, &mut conn).await {
-        Some(attachment) if cipher_id == attachment.cipher_uuid => Ok(Json(attachment.to_json(&headers.host))),
+        Some(attachment) if cipher_id == attachment.cipher_uuid => Ok(Json(attachment.to_json(&headers.host).await?)),
         Some(_) => err!("Attachment doesn't belong to cipher"),
         None => err!("Attachment doesn't exist"),
     }
@@ -1116,7 +1112,7 @@ async fn post_attachment_v2(
         "attachmentId": attachment_id,
         "url": url,
         "fileUploadType": FileUploadType::Direct as i32,
-        response_key: cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, &mut conn).await,
+        response_key: cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, &mut conn).await?,
     })))
 }
 
@@ -1142,7 +1138,7 @@ async fn save_attachment(
     mut conn: DbConn,
     nt: Notify<'_>,
 ) -> Result<(Cipher, DbConn), crate::error::Error> {
-    let mut data = data.into_inner();
+    let data = data.into_inner();
 
     let Some(size) = data.data.len().to_i64() else {
         err!("Attachment data size overflow");
@@ -1269,13 +1265,7 @@ async fn save_attachment(
         attachment.save(&mut conn).await.expect("Error saving attachment");
     }
 
-    let folder_path = tokio::fs::canonicalize(&CONFIG.attachments_folder()).await?.join(cipher_id.as_ref());
-    let file_path = folder_path.join(file_id.as_ref());
-    tokio::fs::create_dir_all(&folder_path).await?;
-
-    if let Err(_err) = data.data.persist_to(&file_path).await {
-        data.data.move_copy_to(file_path).await?
-    }
+    save_temp_file(PathType::Attachments, &format!("{cipher_id}/{file_id}"), data.data, true).await?;
 
     nt.send_cipher_update(
         UpdateType::SyncCipherUpdate,
@@ -1342,7 +1332,7 @@ async fn post_attachment(
 
     let (cipher, mut conn) = save_attachment(attachment, cipher_id, data, &headers, conn, nt).await?;
 
-    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, &mut conn).await))
+    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, &mut conn).await?))
 }
 
 #[post("/ciphers/<cipher_id>/attachment-admin", format = "multipart/form-data", data = "<data>")]
@@ -1786,7 +1776,7 @@ async fn _restore_cipher_by_uuid(
         .await;
     }
 
-    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, conn).await))
+    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, conn).await?))
 }
 
 async fn _restore_multiple_ciphers(
@@ -1859,7 +1849,7 @@ async fn _delete_cipher_attachment_by_id(
         )
         .await;
     }
-    let cipher_json = cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, conn).await;
+    let cipher_json = cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, conn).await?;
     Ok(Json(json!({"cipher":cipher_json})))
 }
 
