@@ -23,7 +23,7 @@ db_object! {
         pub user_uuid: UserId,
 
         pub name: String,
-        pub atype: i32,         // https://github.com/bitwarden/server/blob/dcc199bcce4aa2d5621f6fab80f1b49d8b143418/src/Core/Enums/DeviceType.cs
+        pub atype: i32,         // https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Core/Enums/DeviceType.cs
         pub push_uuid: Option<PushId>,
         pub push_token: Option<String>,
 

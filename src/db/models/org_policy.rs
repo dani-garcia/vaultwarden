@@ -21,7 +21,7 @@ db_object! {
     }
 }
 
-// https://github.com/bitwarden/server/blob/abfdf6f5cb0f1f1504dbaaaa0e04ce9cb60faf19/src/Core/AdminConsole/Enums/PolicyType.cs
+// https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Core/AdminConsole/Enums/PolicyType.cs
 #[derive(Copy, Clone, Eq, PartialEq, num_derive::FromPrimitive)]
 pub enum OrgPolicyType {
     TwoFactorAuthentication = 0,
@@ -41,7 +41,7 @@ pub enum OrgPolicyType {
     RemoveUnlockWithPin = 14,
 }
 
-// https://github.com/bitwarden/server/blob/5cbdee137921a19b1f722920f0fa3cd45af2ef0f/src/Core/Models/Data/Organizations/Policies/SendOptionsPolicyData.cs
+// https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Core/AdminConsole/Models/Data/Organizations/Policies/SendOptionsPolicyData.cs#L5
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SendOptionsPolicyData {
@@ -49,7 +49,7 @@ pub struct SendOptionsPolicyData {
     pub disable_hide_email: bool,
 }
 
-// https://github.com/bitwarden/server/blob/5cbdee137921a19b1f722920f0fa3cd45af2ef0f/src/Core/Models/Data/Organizations/Policies/ResetPasswordDataModel.cs
+// https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Core/AdminConsole/Models/Data/Organizations/Policies/ResetPasswordDataModel.cs
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ResetPasswordDataModel {
