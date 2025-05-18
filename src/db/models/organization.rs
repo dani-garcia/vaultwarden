@@ -56,7 +56,7 @@ db_object! {
     }
 }
 
-// https://github.com/bitwarden/server/blob/b86a04cef9f1e1b82cf18e49fc94e017c641130c/src/Core/Enums/OrganizationUserStatusType.cs
+// https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Core/AdminConsole/Enums/OrganizationUserStatusType.cs
 #[derive(PartialEq)]
 pub enum MembershipStatus {
     Revoked = -1,
@@ -177,7 +177,7 @@ impl Organization {
             public_key,
         }
     }
-    // https://github.com/bitwarden/server/blob/13d1e74d6960cf0d042620b72d85bf583a4236f7/src/Api/Models/Response/Organizations/OrganizationResponseModel.cs
+    // https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Api/AdminConsole/Models/Response/Organizations/OrganizationResponseModel.cs
     pub fn to_json(&self) -> Value {
         json!({
             "id": self.uuid,
@@ -423,7 +423,7 @@ impl Membership {
                 "manageScim": false // Not supported (Not AGPLv3 Licensed)
         });
 
-        // https://github.com/bitwarden/server/blob/13d1e74d6960cf0d042620b72d85bf583a4236f7/src/Api/Models/Response/ProfileOrganizationResponseModel.cs
+        // https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Api/AdminConsole/Models/Response/ProfileOrganizationResponseModel.cs
         json!({
             "id": self.org_uuid,
             "identifier": null, // Not supported
