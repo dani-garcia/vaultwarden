@@ -1906,12 +1906,6 @@ struct BulkCollectionsData {
 async fn post_bulk_collections(data: Json<BulkCollectionsData>, headers: Headers, mut conn: DbConn) -> EmptyResult {
     let data: BulkCollectionsData = data.into_inner();
 
-    // This feature does not seem to be active on all the clients
-    // To prevent future issues, add a check to block a call when this is set to true
-    if data.remove_collections {
-        err!("Bulk removing of collections is not yet implemented")
-    }
-
     // Get all the collection available to the user in one query
     // Also filter based upon the provided collections
     let user_collections: HashMap<CollectionId, Collection> =
@@ -1940,8 +1934,16 @@ async fn post_bulk_collections(data: Json<BulkCollectionsData>, headers: Headers
         // Do not abort the operation just ignore it, it could be a cipher was just deleted for example
         if let Some(cipher) = Cipher::find_by_uuid_and_org(cipher_id, &data.organization_id, &mut conn).await {
             if cipher.is_write_accessible_to_user(&headers.user.uuid, &mut conn).await {
-                for collection in &data.collection_ids {
-                    CollectionCipher::save(&cipher.uuid, collection, &mut conn).await?;
+                // When selecting a specific collection from the left filter list, and use the bulk option, you can remove an item from that collection
+                // In these cases the client will call this endpoint twice, once for adding the new collections and a second for deleting.
+                if data.remove_collections {
+                    for collection in &data.collection_ids {
+                        CollectionCipher::delete(&cipher.uuid, collection, &mut conn).await?;
+                    }
+                } else {
+                    for collection in &data.collection_ids {
+                        CollectionCipher::save(&cipher.uuid, collection, &mut conn).await?;
+                    }
                 }
             }
         };
