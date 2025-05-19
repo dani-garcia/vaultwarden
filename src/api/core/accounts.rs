@@ -775,6 +775,11 @@ async fn post_email_token(data: Json<EmailTokenData>, headers: Headers, mut conn
     }
 
     if User::find_by_mail(&data.new_email, &mut conn).await.is_some() {
+        if CONFIG.mail_enabled() {
+            if let Err(e) = mail::send_change_email_existing(&data.new_email, &user.email).await {
+                error!("Error sending change-email-existing email: {e:#?}");
+            }
+        }
         err!("Email already in use");
     }
 
