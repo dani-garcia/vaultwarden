@@ -95,7 +95,7 @@ ring = "0.17.14"
 subtle = "2.6.1"
 
 # UUID generation
-uuid = { version = "1.16.0", features = ["v4"] }
+uuid = { version = "1.17.0", features = ["v4"] }
 
 # Date and time libraries
 chrono = { version = "0.4.41", features = ["clock", "serde"], default-features = false }

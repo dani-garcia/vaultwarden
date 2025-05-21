@@ -694,17 +694,6 @@ impl<'r> FromRequest<'r> for AdminHeaders {
     }
 }
 
-impl From<AdminHeaders> for Headers {
-    fn from(h: AdminHeaders) -> Headers {
-        Headers {
-            host: h.host,
-            device: h.device,
-            user: h.user,
-            ip: h.ip,
-        }
-    }
-}
-
 // col_id is usually the fourth path param ("/organizations/<org_id>/collections/<col_id>"),
 // but there could be cases where it is a query value.
 // First check the path, if this is not a valid uuid, try the query values.
@@ -874,8 +863,10 @@ impl<'r> FromRequest<'r> for OwnerHeaders {
 
 pub struct OrgMemberHeaders {
     pub host: String,
+    pub device: Device,
     pub user: User,
-    pub org_id: OrganizationId,
+    pub membership: Membership,
+    pub ip: ClientIp,
 }
 
 #[rocket::async_trait]
@@ -887,11 +878,24 @@ impl<'r> FromRequest<'r> for OrgMemberHeaders {
         if headers.is_member() {
             Outcome::Success(Self {
                 host: headers.host,
+                device: headers.device,
                 user: headers.user,
-                org_id: headers.membership.org_uuid,
+                membership: headers.membership,
+                ip: headers.ip,
             })
         } else {
             err_handler!("You need to be a Member of the Organization to call this endpoint")
+        }
+    }
+}
+
+impl From<OrgMemberHeaders> for Headers {
+    fn from(h: OrgMemberHeaders) -> Headers {
+        Headers {
+            host: h.host,
+            device: h.device,
+            user: h.user,
+            ip: h.ip,
         }
     }
 }
