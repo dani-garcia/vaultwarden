@@ -697,6 +697,9 @@ async fn _delete_organization_collection(
     headers: &ManagerHeaders,
     conn: &mut DbConn,
 ) -> EmptyResult {
+    if org_id != &headers.org_id {
+        err!("Organization not found", "Organization id's do not match");
+    }
     let Some(collection) = Collection::find_by_uuid_and_org(col_id, org_id, conn).await else {
         err!("Collection not found", "Collection does not exist or does not belong to this organization")
     };
@@ -909,7 +912,7 @@ struct OrgIdData {
 
 #[get("/ciphers/organization-details?<data..>")]
 async fn get_org_details(data: OrgIdData, headers: OrgMemberHeaders, mut conn: DbConn) -> JsonResult {
-    if data.organization_id != headers.org_id {
+    if data.organization_id != headers.membership.org_uuid {
         err_code!("Resource not found.", "Organization id's do not match", rocket::http::Status::NotFound.code);
     }
 
@@ -1196,6 +1199,9 @@ async fn reinvite_member(
     headers: AdminHeaders,
     mut conn: DbConn,
 ) -> EmptyResult {
+    if org_id != headers.org_id {
+        err!("Organization not found", "Organization id's do not match");
+    }
     _reinvite_member(&org_id, &member_id, &headers.user.email, &mut conn).await
 }
 
@@ -1413,6 +1419,9 @@ async fn _confirm_invite(
     conn: &mut DbConn,
     nt: &Notify<'_>,
 ) -> EmptyResult {
+    if org_id != &headers.org_id {
+        err!("Organization not found", "Organization id's do not match");
+    }
     if key.is_empty() || member_id.is_empty() {
         err!("Key or UserId is not set, unable to process request");
     }
@@ -1735,6 +1744,9 @@ async fn _delete_member(
     conn: &mut DbConn,
     nt: &Notify<'_>,
 ) -> EmptyResult {
+    if org_id != &headers.org_id {
+        err!("Organization not found", "Organization id's do not match");
+    }
     let Some(member_to_delete) = Membership::find_by_uuid_and_org(member_id, org_id, conn).await else {
         err!("User to delete isn't member of the organization")
     };
@@ -1829,16 +1841,20 @@ struct RelationsData {
     value: usize,
 }
 
+// https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Api/Tools/Controllers/ImportCiphersController.cs#L62
 #[post("/ciphers/import-organization?<query..>", data = "<data>")]
 async fn post_org_import(
     query: OrgIdData,
     data: Json<ImportData>,
-    headers: AdminHeaders,
+    headers: OrgMemberHeaders,
     mut conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
-    let data: ImportData = data.into_inner();
     let org_id = query.organization_id;
+    if org_id != headers.membership.org_uuid {
+        err!("Organization not found", "Organization id's do not match");
+    }
+    let data: ImportData = data.into_inner();
 
     // Validate the import before continuing
     // Bitwarden does not process the import if there is one item invalid.
@@ -1851,8 +1867,20 @@ async fn post_org_import(
     let mut collections: Vec<CollectionId> = Vec::with_capacity(data.collections.len());
     for col in data.collections {
         let collection_uuid = if existing_collections.contains(&col.id) {
-            col.id.unwrap()
+            let col_id = col.id.unwrap();
+            // When not an Owner or Admin, check if the member is allowed to access the collection.
+            if headers.membership.atype < MembershipType::Admin
+                && !Collection::can_access_collection(&headers.membership, &col_id, &mut conn).await
+            {
+                err!(Small, "The current user isn't allowed to manage this collection")
+            }
+            col_id
         } else {
+            // We do not allow users or managers which can not manage all collections to create new collections
+            // If there is any collection other than an existing import collection, abort the import.
+            if headers.membership.atype <= MembershipType::Manager && !headers.membership.has_full_access() {
+                err!(Small, "The current user isn't allowed to create new collections")
+            }
             let new_collection = Collection::new(org_id.clone(), col.name, col.external_id);
             new_collection.save(&mut conn).await?;
             new_collection.uuid
@@ -1875,7 +1903,17 @@ async fn post_org_import(
         // Always clear folder_id's via an organization import
         cipher_data.folder_id = None;
         let mut cipher = Cipher::new(cipher_data.r#type, cipher_data.name.clone());
-        update_cipher_from_data(&mut cipher, cipher_data, &headers, None, &mut conn, &nt, UpdateType::None).await.ok();
+        update_cipher_from_data(
+            &mut cipher,
+            cipher_data,
+            &headers,
+            Some(collections.clone()),
+            &mut conn,
+            &nt,
+            UpdateType::None,
+        )
+        .await
+        .ok();
         ciphers.push(cipher.uuid);
     }
 
@@ -2420,6 +2458,9 @@ async fn _revoke_member(
     headers: &AdminHeaders,
     conn: &mut DbConn,
 ) -> EmptyResult {
+    if org_id != &headers.org_id {
+        err!("Organization not found", "Organization id's do not match");
+    }
     match Membership::find_by_uuid_and_org(member_id, org_id, conn).await {
         Some(mut member) if member.status > MembershipStatus::Revoked as i32 => {
             if member.user_uuid == headers.user.uuid {
@@ -2527,6 +2568,9 @@ async fn _restore_member(
     headers: &AdminHeaders,
     conn: &mut DbConn,
 ) -> EmptyResult {
+    if org_id != &headers.org_id {
+        err!("Organization not found", "Organization id's do not match");
+    }
     match Membership::find_by_uuid_and_org(member_id, org_id, conn).await {
         Some(mut member) if member.status < MembershipStatus::Accepted as i32 => {
             if member.user_uuid == headers.user.uuid {
@@ -2679,6 +2723,9 @@ async fn post_groups(
     data: Json<GroupRequest>,
     mut conn: DbConn,
 ) -> JsonResult {
+    if org_id != headers.org_id {
+        err!("Organization not found", "Organization id's do not match");
+    }
     if !CONFIG.org_groups_enabled() {
         err!("Group support is disabled");
     }
@@ -2708,6 +2755,9 @@ async fn put_group(
     headers: AdminHeaders,
     mut conn: DbConn,
 ) -> JsonResult {
+    if org_id != headers.org_id {
+        err!("Organization not found", "Organization id's do not match");
+    }
     if !CONFIG.org_groups_enabled() {
         err!("Group support is disabled");
     }
@@ -2824,6 +2874,9 @@ async fn _delete_group(
     headers: &AdminHeaders,
     conn: &mut DbConn,
 ) -> EmptyResult {
+    if org_id != &headers.org_id {
+        err!("Organization not found", "Organization id's do not match");
+    }
     if !CONFIG.org_groups_enabled() {
         err!("Group support is disabled");
     }
@@ -2853,6 +2906,9 @@ async fn bulk_delete_groups(
     headers: AdminHeaders,
     mut conn: DbConn,
 ) -> EmptyResult {
+    if org_id != headers.org_id {
+        err!("Organization not found", "Organization id's do not match");
+    }
     if !CONFIG.org_groups_enabled() {
         err!("Group support is disabled");
     }
@@ -2916,6 +2972,9 @@ async fn put_group_members(
     data: Json<Vec<MembershipId>>,
     mut conn: DbConn,
 ) -> EmptyResult {
+    if org_id != headers.org_id {
+        err!("Organization not found", "Organization id's do not match");
+    }
     if !CONFIG.org_groups_enabled() {
         err!("Group support is disabled");
     }
@@ -3100,7 +3159,7 @@ async fn get_organization_public_key(
     headers: OrgMemberHeaders,
     mut conn: DbConn,
 ) -> JsonResult {
-    if org_id != headers.org_id {
+    if org_id != headers.membership.org_uuid {
         err!("Organization not found", "Organization id's do not match");
     }
     let Some(org) = Organization::find_by_uuid(&org_id, &mut conn).await else {
@@ -3324,6 +3383,9 @@ async fn _api_key(
     headers: AdminHeaders,
     mut conn: DbConn,
 ) -> JsonResult {
+    if org_id != &headers.org_id {
+        err!("Organization not found", "Organization id's do not match");
+    }
     let data: PasswordOrOtpData = data.into_inner();
     let user = headers.user;
 
