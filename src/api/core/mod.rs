@@ -124,7 +124,7 @@ async fn post_eq_domains(
 
     user.save(&mut conn).await?;
 
-    nt.send_user_update(UpdateType::SyncSettings, &user).await;
+    nt.send_user_update(UpdateType::SyncSettings, &user, &headers.device.push_uuid, &mut conn).await;
 
     Ok(Json(json!({})))
 }
@@ -199,12 +199,14 @@ fn get_api_webauthn(_headers: Headers) -> Json<Value> {
 #[get("/config")]
 fn config() -> Json<Value> {
     let domain = crate::CONFIG.domain();
+    // Official available feature flags can be found here:
+    // Server (v2025.5.0): https://github.com/bitwarden/server/blob/4a7db112a0952c6df8bacf36c317e9c4e58c3651/src/Core/Constants.cs#L102
+    // Client (v2025.5.0): https://github.com/bitwarden/clients/blob/9df8a3cc50ed45f52513e62c23fcc8a4b745f078/libs/common/src/enums/feature-flag.enum.ts#L10
+    // Android (v2025.4.0): https://github.com/bitwarden/android/blob/bee09de972c3870de0d54a0067996be473ec55c7/app/src/main/java/com/x8bit/bitwarden/data/platform/manager/model/FlagKey.kt#L27
+    // iOS (v2025.4.0): https://github.com/bitwarden/ios/blob/956e05db67344c912e3a1b8cb2609165d67da1c9/BitwardenShared/Core/Platform/Models/Enum/FeatureFlag.swift#L7
     let mut feature_states =
         parse_experimental_client_feature_flags(&crate::CONFIG.experimental_client_feature_flags());
-    // Force the new key rotation feature
-    feature_states.insert("key-rotation-improvements".to_string(), true);
-    feature_states.insert("flexible-collections-v-1".to_string(), false);
-
+    feature_states.insert("duo-redirect".to_string(), true);
     feature_states.insert("email-verification".to_string(), true);
     feature_states.insert("unauth-ui-refresh".to_string(), true);
 
@@ -214,7 +216,7 @@ fn config() -> Json<Value> {
         // We should make sure that we keep this updated when we support the new server features
         // Version history:
         // - Individual cipher key encryption: 2024.2.0
-        "version": "2025.1.0",
+        "version": "2025.4.0",
         "gitHash": option_env!("GIT_REV"),
         "server": {
           "name": "Vaultwarden",
@@ -229,6 +231,12 @@ fn config() -> Json<Value> {
           "identity": format!("{domain}/identity"),
           "notifications": format!("{domain}/notifications"),
           "sso": "",
+          "cloudRegion": null,
+        },
+        // Bitwarden uses this for the self-hosted servers to indicate the default push technology
+        "push": {
+          "pushTechnology": 0,
+          "vapidPublicKey": null
         },
         "featureStates": feature_states,
         "object": "config",

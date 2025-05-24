@@ -8,9 +8,9 @@ use crate::{api::EmptyResult, db::DbConn, error::MapResult, CONFIG};
 // https://bitwarden.com/help/event-logs/
 
 db_object! {
-    // Upstream: https://github.com/bitwarden/server/blob/8a22c0479e987e756ce7412c48a732f9002f0a2d/src/Core/Services/Implementations/EventService.cs
-    // Upstream: https://github.com/bitwarden/server/blob/8a22c0479e987e756ce7412c48a732f9002f0a2d/src/Api/Models/Public/Response/EventResponseModel.cs
-    // Upstream SQL: https://github.com/bitwarden/server/blob/8a22c0479e987e756ce7412c48a732f9002f0a2d/src/Sql/dbo/Tables/Event.sql
+    // Upstream: https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Core/AdminConsole/Services/Implementations/EventService.cs
+    // Upstream: https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Api/AdminConsole/Public/Models/Response/EventResponseModel.cs
+    // Upstream SQL: https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Sql/dbo/Tables/Event.sql
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
     #[diesel(table_name = event)]
     #[diesel(treat_none_as_null = true)]
@@ -25,7 +25,7 @@ db_object! {
         pub group_uuid: Option<GroupId>,
         pub org_user_uuid: Option<MembershipId>,
         pub act_user_uuid: Option<UserId>,
-        // Upstream enum: https://github.com/bitwarden/server/blob/8a22c0479e987e756ce7412c48a732f9002f0a2d/src/Core/Enums/DeviceType.cs
+        // Upstream enum: https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Core/Enums/DeviceType.cs
         pub device_type: Option<i32>,
         pub ip_address: Option<String>,
         pub event_date: NaiveDateTime,
@@ -36,7 +36,7 @@ db_object! {
     }
 }
 
-// Upstream enum: https://github.com/bitwarden/server/blob/8a22c0479e987e756ce7412c48a732f9002f0a2d/src/Core/Enums/EventType.cs
+// Upstream enum: https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Core/AdminConsole/Enums/EventType.cs
 #[derive(Debug, Copy, Clone)]
 pub enum EventType {
     // User
@@ -72,7 +72,6 @@ pub enum EventType {
     CipherSoftDeleted = 1115,
     CipherRestored = 1116,
     CipherClientToggledCardNumberVisible = 1117,
-    CipherClientToggledTOTPSeedVisible = 1118,
 
     // Collection
     CollectionCreated = 1300,
@@ -88,7 +87,7 @@ pub enum EventType {
     OrganizationUserInvited = 1500,
     OrganizationUserConfirmed = 1501,
     OrganizationUserUpdated = 1502,
-    OrganizationUserRemoved = 1503,
+    OrganizationUserRemoved = 1503, // Organization user data was deleted
     OrganizationUserUpdatedGroups = 1504,
     // OrganizationUserUnlinkedSso = 1505, // Not supported
     OrganizationUserResetPasswordEnroll = 1506,
@@ -100,8 +99,8 @@ pub enum EventType {
     OrganizationUserRestored = 1512,
     OrganizationUserApprovedAuthRequest = 1513,
     OrganizationUserRejectedAuthRequest = 1514,
-    OrganizationUserDeleted = 1515,
-    OrganizationUserLeft = 1516,
+    OrganizationUserDeleted = 1515, // Both user and organization user data were deleted
+    OrganizationUserLeft = 1516,    // User voluntarily left the organization
 
     // Organization
     OrganizationUpdated = 1600,
@@ -188,7 +187,7 @@ impl Event {
 }
 
 /// Database methods
-/// https://github.com/bitwarden/server/blob/8a22c0479e987e756ce7412c48a732f9002f0a2d/src/Core/Services/Implementations/EventService.cs
+/// https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Core/AdminConsole/Services/Implementations/EventService.cs
 impl Event {
     pub const PAGE_SIZE: i64 = 30;
 

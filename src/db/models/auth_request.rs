@@ -16,7 +16,7 @@ db_object! {
         pub organization_uuid: Option<OrganizationId>,
 
         pub request_device_identifier: DeviceId,
-        pub device_type: i32,  // https://github.com/bitwarden/server/blob/master/src/Core/Enums/DeviceType.cs
+        pub device_type: i32,  // https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Core/Enums/DeviceType.cs
 
         pub request_ip: String,
         pub response_device_id: Option<DeviceId>,

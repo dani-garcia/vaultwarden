@@ -579,7 +579,7 @@ make_config! {
         authenticator_disable_time_drift: bool, true, def, false;
 
         /// Customize the enabled feature flags on the clients |> This is a comma separated list of feature flags to enable.
-        experimental_client_feature_flags: String, false, def, "fido2-vault-credentials".to_string();
+        experimental_client_feature_flags: String, false, def, String::new();
 
         /// Require new device emails |> When a user logs in an email is required to be sent.
         /// If sending the email fails the login attempt will fail.
@@ -833,21 +833,25 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         }
     }
 
-    // TODO: deal with deprecated flags so they can be removed from this list, cf. #4263
+    // Server (v2025.5.0): https://github.com/bitwarden/server/blob/4a7db112a0952c6df8bacf36c317e9c4e58c3651/src/Core/Constants.cs#L102
+    // Client (v2025.5.0): https://github.com/bitwarden/clients/blob/9df8a3cc50ed45f52513e62c23fcc8a4b745f078/libs/common/src/enums/feature-flag.enum.ts#L10
+    // Android (v2025.4.0): https://github.com/bitwarden/android/blob/bee09de972c3870de0d54a0067996be473ec55c7/app/src/main/java/com/x8bit/bitwarden/data/platform/manager/model/FlagKey.kt#L27
+    // iOS (v2025.4.0): https://github.com/bitwarden/ios/blob/956e05db67344c912e3a1b8cb2609165d67da1c9/BitwardenShared/Core/Platform/Models/Enum/FeatureFlag.swift#L7
+    //
+    // NOTE: Move deprecated flags to the utils::parse_experimental_client_feature_flags() DEPRECATED_FLAGS const!
     const KNOWN_FLAGS: &[&str] = &[
-        "autofill-overlay",
-        "autofill-v2",
-        "browser-fileless-import",
-        "extension-refresh",
-        "fido2-vault-credentials",
+        // Autofill Team
         "inline-menu-positioning-improvements",
-        "ssh-key-vault-item",
+        "inline-menu-totp",
         "ssh-agent",
+        // Key Management Team
+        "ssh-key-vault-item",
+        // Tools
+        "export-attachments",
+        // Mobile Team
         "anon-addy-self-host-alias",
         "simple-login-self-host-alias",
         "mutual-tls",
-        "export-attachments",
-        "inline-menu-totp",
     ];
     let configured_flags = parse_experimental_client_feature_flags(&cfg.experimental_client_feature_flags);
     let invalid_flags: Vec<_> = configured_flags.keys().filter(|flag| !KNOWN_FLAGS.contains(&flag.as_str())).collect();
@@ -1373,6 +1377,7 @@ where
     reg!("email/email_footer_text");
 
     reg!("email/admin_reset_password", ".html");
+    reg!("email/change_email_existing", ".html");
     reg!("email/change_email", ".html");
     reg!("email/delete_account", ".html");
     reg!("email/emergency_access_invite_accepted", ".html");
