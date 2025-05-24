@@ -24,6 +24,7 @@
                     <dt class="col-sm-5">Web Installed
                         <span class="badge bg-success d-none" id="web-success" title="Latest version is installed.">Ok</span>
                         <span class="badge bg-warning text-dark d-none" id="web-warning" title="There seems to be an update available.">Update</span>
+                        <span class="badge bg-info text-dark d-none" id="web-prerelease" title="You seem to be using a pre-release version.">Pre-Release</span>
                     </dt>
                     <dd class="col-sm-7">
                         <span id="web-installed">{{page_data.web_vault_version}}</span>
@@ -68,10 +69,14 @@
                         <span class="d-block"><b>No</b></span>
                     {{/unless}}
                     </dd>
-                    <dt class="col-sm-5">Environment settings overridden</dt>
+                    <dt class="col-sm-5">Uses config.json
+                    {{#if page_data.overrides}}
+                        <span class="badge bg-info text-dark" title="Environment variables are overwritten by a config.json.">Note</span>
+                    {{/if}}
+                    </dt>
                     <dd class="col-sm-7">
                     {{#if page_data.overrides}}
-                        <span class="d-block" title="The following settings are overridden: {{page_data.overrides}}"><b>Yes</b></span>
+                        <abbr class="d-block" title="The following settings are overridden: {{page_data.overrides}}"><b>Yes</b></abbr>
                     {{/if}}
                     {{#unless page_data.overrides}}
                         <span class="d-block"><b>No</b></span>
@@ -154,7 +159,11 @@
                     <dd class="col-sm-7">
                         <span id="dns-resolved">{{page_data.dns_resolved}}</span>
                     </dd>
-                    <dt class="col-sm-5">Date & Time (Local)</dt>
+                    <dt class="col-sm-5">Date & Time (Local)
+                        {{#if page_data.tz_env}}
+                            <span class="badge bg-success" title="Configured TZ environment variable">{{page_data.tz_env}}</span>
+                        {{/if}}
+                    </dt>
                     <dd class="col-sm-7">
                         <span><b>Server:</b> {{page_data.server_time_local}}</span>
                     </dd>
