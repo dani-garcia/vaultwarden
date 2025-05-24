@@ -128,9 +128,8 @@ async fn is_email_2fa_required(member_id: Option<MembershipId>, conn: &mut DbCon
     if CONFIG.email_2fa_enforce_on_verified_invite() {
         return true;
     }
-    if member_id.is_some() {
-        return OrgPolicy::is_enabled_for_member(&member_id.unwrap(), OrgPolicyType::TwoFactorAuthentication, conn)
-            .await;
+    if let Some(member_id) = member_id {
+        return OrgPolicy::is_enabled_for_member(&member_id, OrgPolicyType::TwoFactorAuthentication, conn).await;
     }
     false
 }
