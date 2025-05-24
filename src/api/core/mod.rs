@@ -206,9 +206,7 @@ fn config() -> Json<Value> {
     // iOS (v2025.4.0): https://github.com/bitwarden/ios/blob/956e05db67344c912e3a1b8cb2609165d67da1c9/BitwardenShared/Core/Platform/Models/Enum/FeatureFlag.swift#L7
     let mut feature_states =
         parse_experimental_client_feature_flags(&crate::CONFIG.experimental_client_feature_flags());
-    // Force the new key rotation feature
     feature_states.insert("duo-redirect".to_string(), true);
-
     feature_states.insert("email-verification".to_string(), true);
     feature_states.insert("unauth-ui-refresh".to_string(), true);
 
@@ -218,7 +216,7 @@ fn config() -> Json<Value> {
         // We should make sure that we keep this updated when we support the new server features
         // Version history:
         // - Individual cipher key encryption: 2024.2.0
-        "version": "2025.1.0",
+        "version": "2025.4.0",
         "gitHash": option_env!("GIT_REV"),
         "server": {
           "name": "Vaultwarden",
