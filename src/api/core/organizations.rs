@@ -1872,14 +1872,14 @@ async fn post_org_import(
             if headers.membership.atype < MembershipType::Admin
                 && !Collection::can_access_collection(&headers.membership, &col_id, &mut conn).await
             {
-                err!(Small, "The current user isn't allowed to manage this collection")
+                err!(Compact, "The current user isn't allowed to manage this collection")
             }
             col_id
         } else {
             // We do not allow users or managers which can not manage all collections to create new collections
             // If there is any collection other than an existing import collection, abort the import.
             if headers.membership.atype <= MembershipType::Manager && !headers.membership.has_full_access() {
-                err!(Small, "The current user isn't allowed to create new collections")
+                err!(Compact, "The current user isn't allowed to create new collections")
             }
             let new_collection = Collection::new(org_id.clone(), col.name, col.external_id);
             new_collection.save(&mut conn).await?;

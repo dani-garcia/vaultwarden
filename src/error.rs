@@ -59,7 +59,7 @@ use yubico::yubicoerror::YubicoError as YubiErr;
 #[derive(Serialize)]
 pub struct Empty {}
 
-pub struct Small {}
+pub struct Compact {}
 
 // Error struct
 // Contains a String error message, meant for the user and an enum variant, with an error of different types.
@@ -71,7 +71,7 @@ make_error! {
     Empty(Empty):     _no_source, _serialize,
     // Used to represent err! calls
     Simple(String):  _no_source,  _api_error,
-    Small(Small):  _no_source,  _api_error_small,
+    Compact(Compact):  _no_source,  _api_error_small,
 
     // Used in our custom http client to handle non-global IPs and blocked domains
     CustomHttpClient(CustomHttpClientError): _has_source, _api_error,
@@ -233,7 +233,7 @@ use rocket::response::{self, Responder, Response};
 impl Responder<'_, 'static> for Error {
     fn respond_to(self, _: &Request<'_>) -> response::Result<'static> {
         match self.error {
-            ErrorKind::Empty(_) | ErrorKind::Simple(_) | ErrorKind::Small(_) => {} // Don't print the error in this situation
+            ErrorKind::Empty(_) | ErrorKind::Simple(_) | ErrorKind::Compact(_) => {} // Don't print the error in this situation
             _ => error!(target: "error", "{self:#?}"),
         };
 
