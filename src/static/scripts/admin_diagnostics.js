@@ -29,7 +29,7 @@ function isValidIp(ip) {
     return ipv4Regex.test(ip) || ipv6Regex.test(ip);
 }
 
-function checkVersions(platform, installed, latest, commit=null) {
+function checkVersions(platform, installed, latest, commit=null, pre_release=false) {
     if (installed === "-" || latest === "-") {
         document.getElementById(`${platform}-failed`).classList.remove("d-none");
         return;
@@ -37,10 +37,12 @@ function checkVersions(platform, installed, latest, commit=null) {
 
     // Only check basic versions, no commit revisions
     if (commit === null || installed.indexOf("-") === -1) {
-        if (installed !== latest) {
-            document.getElementById(`${platform}-warning`).classList.remove("d-none");
-        } else {
+        if (platform === "web" && pre_release === true) {
+            document.getElementById(`${platform}-prerelease`).classList.remove("d-none");
+        } else if (installed == latest) {
             document.getElementById(`${platform}-success`).classList.remove("d-none");
+        } else {
+            document.getElementById(`${platform}-warning`).classList.remove("d-none");
         }
     } else {
         // Check if this is a branched version.
@@ -86,7 +88,7 @@ async function generateSupportString(event, dj) {
     supportString += `* Running within a container: ${dj.running_within_container} (Base: ${dj.container_base_image})\n`;
     supportString += `* Database type: ${dj.db_type}\n`;
     supportString += `* Database version: ${dj.db_version}\n`;
-    supportString += `* Environment settings overridden!: ${dj.overrides !== ""}\n`;
+    supportString += `* Uses config.json: ${dj.overrides !== ""}\n`;
     supportString += `* Uses a reverse proxy: ${dj.ip_header_exists}\n`;
     if (dj.ip_header_exists) {
         supportString += `* IP Header check: ${dj.ip_header_match} (${dj.ip_header_name})\n`;
@@ -94,6 +96,9 @@ async function generateSupportString(event, dj) {
     supportString += `* Internet access: ${dj.has_http_access}\n`;
     supportString += `* Internet access via a proxy: ${dj.uses_proxy}\n`;
     supportString += `* DNS Check: ${dnsCheck}\n`;
+    if (dj.tz_env !== "") {
+        supportString += `* TZ environment: ${dj.tz_env}\n`;
+    }
     supportString += `* Browser/Server Time Check: ${timeCheck}\n`;
     supportString += `* Server/NTP Time Check: ${ntpTimeCheck}\n`;
     supportString += `* Domain Configuration Check: ${domainCheck}\n`;
@@ -206,7 +211,7 @@ function initVersionCheck(dj) {
     if (!dj.running_within_container) {
         const webInstalled = dj.web_vault_version;
         const webLatest = dj.latest_web_build;
-        checkVersions("web", webInstalled, webLatest);
+        checkVersions("web", webInstalled, webLatest, null, dj.web_vault_pre_release);
     }
 }
 
