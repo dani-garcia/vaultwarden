@@ -72,7 +72,7 @@ dashmap = "6.1.0"
 
 # Async futures
 futures = "0.3.31"
-tokio = { version = "1.45.0", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal", "net"] }
+tokio = { version = "1.45.1", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal", "net"] }
 
 # A generic serialization/deserialization framework
 serde = { version = "1.0.219", features = ["derive"] }
@@ -95,7 +95,7 @@ ring = "0.17.14"
 subtle = "2.6.1"
 
 # UUID generation
-uuid = { version = "1.16.0", features = ["v4"] }
+uuid = { version = "1.17.0", features = ["v4"] }
 
 # Date and time libraries
 chrono = { version = "0.4.41", features = ["clock", "serde"], default-features = false }

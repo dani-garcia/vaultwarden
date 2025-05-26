@@ -29,7 +29,7 @@ struct EventRange {
     continuation_token: Option<String>,
 }
 
-// Upstream: https://github.com/bitwarden/server/blob/9ecf69d9cabce732cf2c57976dd9afa5728578fb/src/Api/Controllers/EventsController.cs#LL84C35-L84C41
+// Upstream: https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Api/AdminConsole/Controllers/EventsController.cs#L87
 #[get("/organizations/<org_id>/events?<data..>")]
 async fn get_org_events(
     org_id: OrganizationId,
@@ -169,8 +169,8 @@ struct EventCollection {
 }
 
 // Upstream:
-// https://github.com/bitwarden/server/blob/8a22c0479e987e756ce7412c48a732f9002f0a2d/src/Events/Controllers/CollectController.cs
-// https://github.com/bitwarden/server/blob/8a22c0479e987e756ce7412c48a732f9002f0a2d/src/Core/Services/Implementations/EventService.cs
+// https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Events/Controllers/CollectController.cs
+// https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Core/AdminConsole/Services/Implementations/EventService.cs
 #[post("/collect", format = "application/json", data = "<data>")]
 async fn post_events_collect(data: Json<Vec<EventCollection>>, headers: Headers, mut conn: DbConn) -> EmptyResult {
     if !CONFIG.org_events_enabled() {

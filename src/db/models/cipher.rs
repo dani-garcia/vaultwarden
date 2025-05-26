@@ -318,7 +318,7 @@ impl Cipher {
         // supports the "cipherDetails" type, though it seems like the
         // Bitwarden clients will ignore extra fields.
         //
-        // Ref: https://github.com/bitwarden/server/blob/master/src/Core/Models/Api/Response/CipherResponseModel.cs
+        // Ref: https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Api/Vault/Models/Response/CipherResponseModel.cs#L14
         let mut json_object = json!({
             "object": "cipherDetails",
             "id": self.uuid,

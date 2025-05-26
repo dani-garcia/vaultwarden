@@ -3,8 +3,12 @@ use derive_more::{Display, From};
 use serde_json::Value;
 
 use super::{AuthRequest, UserId};
-use crate::{crypto, util::format_date, CONFIG};
-use macros::IdFromParam;
+use crate::{
+    crypto,
+    util::{format_date, get_uuid},
+    CONFIG,
+};
+use macros::{IdFromParam, UuidFromParam};
 
 db_object! {
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -19,8 +23,8 @@ db_object! {
         pub user_uuid: UserId,
 
         pub name: String,
-        pub atype: i32,         // https://github.com/bitwarden/server/blob/dcc199bcce4aa2d5621f6fab80f1b49d8b143418/src/Core/Enums/DeviceType.cs
-        pub push_uuid: Option<String>,
+        pub atype: i32,         // https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Core/Enums/DeviceType.cs
+        pub push_uuid: Option<PushId>,
         pub push_token: Option<String>,
 
         pub refresh_token: String,
@@ -42,7 +46,7 @@ impl Device {
             name,
             atype,
 
-            push_uuid: None,
+            push_uuid: Some(PushId(get_uuid())),
             push_token: None,
             refresh_token: String::new(),
             twofactor_remember: None,
@@ -54,7 +58,7 @@ impl Device {
             "id": self.uuid,
             "name": self.name,
             "type": self.atype,
-            "identifier": self.push_uuid,
+            "identifier": self.uuid,
             "creationDate": format_date(&self.created_at),
             "isTrusted": false,
             "object":"device"
@@ -73,7 +77,12 @@ impl Device {
         self.twofactor_remember = None;
     }
 
-    pub fn refresh_tokens(&mut self, user: &super::User, scope: Vec<String>) -> (String, i64) {
+    pub fn refresh_tokens(
+        &mut self,
+        user: &super::User,
+        scope: Vec<String>,
+        client_id: Option<String>,
+    ) -> (String, i64) {
         // If there is no refresh token, we create one
         if self.refresh_token.is_empty() {
             use data_encoding::BASE64URL;
@@ -83,6 +92,11 @@ impl Device {
         // Update the expiration of the device and the last update date
         let time_now = Utc::now();
         self.updated_at = time_now.naive_utc();
+
+        // Generate a random push_uuid so if it doesn't already have one
+        if self.push_uuid.is_none() {
+            self.push_uuid = Some(PushId(get_uuid()));
+        }
 
         // ---
         // Disabled these keys to be added to the JWT since they could cause the JWT to get too large
@@ -121,6 +135,8 @@ impl Device {
             // orgmanager,
             sstamp: user.security_stamp.clone(),
             device: self.uuid.clone(),
+            devicetype: DeviceType::from_i32(self.atype).to_string(),
+            client_id: client_id.unwrap_or("undefined".to_string()),
             scope,
             amr: vec!["Application".into()],
         };
@@ -130,10 +146,6 @@ impl Device {
 
     pub fn is_push_device(&self) -> bool {
         matches!(DeviceType::from_i32(self.atype), DeviceType::Android | DeviceType::Ios)
-    }
-
-    pub fn is_registered(&self) -> bool {
-        self.push_uuid.is_some()
     }
 
     pub fn is_cli(&self) -> bool {
@@ -156,10 +168,12 @@ impl DeviceWithAuthRequest {
             "id": self.device.uuid,
             "name": self.device.name,
             "type": self.device.atype,
-            "identifier": self.device.push_uuid,
+            "identifier": self.device.uuid,
             "creationDate": format_date(&self.device.created_at),
             "devicePendingAuthRequest": auth_request,
             "isTrusted": false,
+            "encryptedPublicKey": null,
+            "encryptedUserKey": null,
             "object": "device",
         })
     }
@@ -395,3 +409,6 @@ impl DeviceType {
     Clone, Debug, DieselNewType, Display, From, FromForm, Hash, PartialEq, Eq, Serialize, Deserialize, IdFromParam,
 )]
 pub struct DeviceId(String);
+
+#[derive(Clone, Debug, DieselNewType, Display, From, FromForm, Serialize, Deserialize, UuidFromParam)]
+pub struct PushId(pub String);

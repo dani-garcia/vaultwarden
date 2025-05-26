@@ -752,9 +752,20 @@ pub fn convert_json_key_lcase_first(src_json: Value) -> Value {
 
 /// Parses the experimental client feature flags string into a HashMap.
 pub fn parse_experimental_client_feature_flags(experimental_client_feature_flags: &str) -> HashMap<String, bool> {
-    let feature_states = experimental_client_feature_flags.split(',').map(|f| (f.trim().to_owned(), true)).collect();
-
-    feature_states
+    // These flags could still be configured, but are deprecated and not used anymore
+    // To prevent old installations from starting filter these out and not error out
+    const DEPRECATED_FLAGS: &[&str] =
+        &["autofill-overlay", "autofill-v2", "browser-fileless-import", "extension-refresh", "fido2-vault-credentials"];
+    experimental_client_feature_flags
+        .split(',')
+        .filter_map(|f| {
+            let flag = f.trim();
+            if !flag.is_empty() && !DEPRECATED_FLAGS.contains(&flag) {
+                return Some((flag.to_owned(), true));
+            }
+            None
+        })
+        .collect()
 }
 
 /// TODO: This is extracted from IpAddr::is_global, which is unstable:

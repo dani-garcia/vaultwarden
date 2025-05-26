@@ -249,7 +249,6 @@ impl User {
             "emailVerified": !CONFIG.mail_enabled() || self.verified_at.is_some(),
             "premium": true,
             "premiumFromOrganization": false,
-            "masterPasswordHint": self.password_hint,
             "culture": "en-US",
             "twoFactorEnabled": twofactor_enabled,
             "key": self.akey,
