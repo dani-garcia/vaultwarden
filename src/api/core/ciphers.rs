@@ -1581,7 +1581,7 @@ async fn move_cipher_selected(
         nt.send_cipher_update(
             UpdateType::SyncCipherUpdate,
             &cipher,
-            &[user_id.clone()],
+            std::slice::from_ref(&user_id),
             &headers.device.uuid,
             None,
             &mut conn,

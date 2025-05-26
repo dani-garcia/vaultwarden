@@ -82,13 +82,17 @@ bit-nav-logo bit-nav-item .bwi-shield {
 {{#if signup_disabled}}
 /* From web vault 2025.1.2 and onwards, the signup button is hidden
   when signups are disabled as the web vault checks the /api/config endpoint.
-  Note that the clients tend to aggressively cache this endpoint, so it might
+  Note that the clients tend to cache this endpoint for about 1 hour, so it might
   take a while for the change to take effect. To avoid the button appearing
   when it shouldn't, we'll keep this style in place for a couple of versions */
-{{#if webver "<2025.3.0"}}
 /* Hide the register link on the login screen */
+{{#if (webver "<2025.3.0")}}
 app-login form div + div + div + div + hr,
 app-login form div + div + div + div + hr + p {
+  @extend %vw-hide;
+}
+{{else}}
+app-root a[routerlink="/signup"] {
   @extend %vw-hide;
 }
 {{/if}}

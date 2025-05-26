@@ -591,18 +591,12 @@ struct GitCommit {
     sha: String,
 }
 
-#[derive(Deserialize)]
-struct TimeApi {
-    year: u16,
-    month: u8,
-    day: u8,
-    hour: u8,
-    minute: u8,
-    seconds: u8,
-}
-
 async fn get_json_api<T: DeserializeOwned>(url: &str) -> Result<T, Error> {
     Ok(make_http_request(Method::GET, url)?.send().await?.error_for_status()?.json::<T>().await?)
+}
+
+async fn get_text_api(url: &str) -> Result<String, Error> {
+    Ok(make_http_request(Method::GET, url)?.send().await?.error_for_status()?.text().await?)
 }
 
 async fn has_http_access() -> bool {
@@ -616,9 +610,10 @@ async fn has_http_access() -> bool {
 }
 
 use cached::proc_macro::cached;
-/// Cache this function to prevent API call rate limit. Github only allows 60 requests per hour, and we use 3 here already.
-/// It will cache this function for 300 seconds (5 minutes) which should prevent the exhaustion of the rate limit.
-#[cached(time = 300, sync_writes = "default")]
+/// Cache this function to prevent API call rate limit. Github only allows 60 requests per hour, and we use 3 here already
+/// It will cache this function for 600 seconds (10 minutes) which should prevent the exhaustion of the rate limit
+/// Any cache will be lost if Vaultwarden is restarted
+#[cached(time = 600, sync_writes = "default")]
 async fn get_release_info(has_http_access: bool, running_within_container: bool) -> (String, String, String) {
     // If the HTTP Check failed, do not even attempt to check for new versions since we were not able to connect with github.com anyway.
     if has_http_access {
@@ -636,7 +631,7 @@ async fn get_release_info(has_http_access: bool, running_within_container: bool)
                 }
                 _ => "-".to_string(),
             },
-            // Do not fetch the web-vault version when running within a container.
+            // Do not fetch the web-vault version when running within a container
             // The web-vault version is embedded within the container it self, and should not be updated manually
             if running_within_container {
                 "-".to_string()
@@ -658,17 +653,18 @@ async fn get_release_info(has_http_access: bool, running_within_container: bool)
 
 async fn get_ntp_time(has_http_access: bool) -> String {
     if has_http_access {
-        if let Ok(ntp_time) = get_json_api::<TimeApi>("https://www.timeapi.io/api/Time/current/zone?timeZone=UTC").await
-        {
-            return format!(
-                "{year}-{month:02}-{day:02} {hour:02}:{minute:02}:{seconds:02} UTC",
-                year = ntp_time.year,
-                month = ntp_time.month,
-                day = ntp_time.day,
-                hour = ntp_time.hour,
-                minute = ntp_time.minute,
-                seconds = ntp_time.seconds
-            );
+        if let Ok(cf_trace) = get_text_api("https://cloudflare.com/cdn-cgi/trace").await {
+            for line in cf_trace.lines() {
+                if let Some((key, value)) = line.split_once('=') {
+                    if key == "ts" {
+                        let ts = value.split_once('.').map_or(value, |(s, _)| s);
+                        if let Ok(dt) = chrono::DateTime::parse_from_str(ts, "%s") {
+                            return dt.format("%Y-%m-%d %H:%M:%S UTC").to_string();
+                        }
+                        break;
+                    }
+                }
+            }
         }
     }
     String::from("Unable to fetch NTP time.")
@@ -701,6 +697,12 @@ async fn diagnostics(_token: AdminToken, ip_header: IpHeader, mut conn: DbConn) 
     // Get current running versions
     let web_vault_version = get_web_vault_version();
 
+    // Check if the running version is newer than the latest stable released version
+    let web_ver_match = semver::VersionReq::parse(&format!(">{latest_web_build}")).unwrap();
+    let web_vault_pre_release = web_ver_match.matches(
+        &semver::Version::parse(&web_vault_version).unwrap_or_else(|_| semver::Version::parse("2025.1.1").unwrap()),
+    );
+
     let diagnostics_json = json!({
         "dns_resolved": dns_resolved,
         "current_release": VERSION,
@@ -709,6 +711,7 @@ async fn diagnostics(_token: AdminToken, ip_header: IpHeader, mut conn: DbConn) 
         "web_vault_enabled": &CONFIG.web_vault_enabled(),
         "web_vault_version": web_vault_version,
         "latest_web_build": latest_web_build,
+        "web_vault_pre_release": web_vault_pre_release,
         "running_within_container": running_within_container,
         "container_base_image": if running_within_container { container_base_image() } else { "Not applicable" },
         "has_http_access": has_http_access,
@@ -724,6 +727,7 @@ async fn diagnostics(_token: AdminToken, ip_header: IpHeader, mut conn: DbConn) 
         "overrides": &CONFIG.get_overrides().join(", "),
         "host_arch": env::consts::ARCH,
         "host_os":  env::consts::OS,
+        "tz_env": env::var("TZ").unwrap_or_default(),
         "server_time_local": Local::now().format("%Y-%m-%d %H:%M:%S %Z").to_string(),
         "server_time": Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string(), // Run the server date/time check as late as possible to minimize the time difference
         "ntp_time": get_ntp_time(has_http_access).await, // Run the ntp check as late as possible to minimize the time difference
