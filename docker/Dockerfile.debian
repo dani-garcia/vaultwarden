@@ -170,12 +170,12 @@ FROM --platform=$TARGETPLATFORM docker.io/library/debian:bookworm-slim
 
 ENV ROCKET_PROFILE="release" \
     ROCKET_ADDRESS=0.0.0.0 \
-    ROCKET_PORT=80 \
-    DEBIAN_FRONTEND=noninteractive
+    ROCKET_PORT=80    
 
 # Create data folder and Install needed libraries
 RUN mkdir /data && \
-    apt-get update && apt-get install -y \
+    DEBIAN_FRONTEND=noninteractive apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y \
         --no-install-recommends \
         ca-certificates \
         curl \
