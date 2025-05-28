@@ -35,25 +35,6 @@ db_object! {
 
 /// Local methods
 impl Device {
-    pub fn new(uuid: DeviceId, user_uuid: UserId, name: String, atype: i32) -> Self {
-        let now = Utc::now().naive_utc();
-
-        Self {
-            uuid,
-            created_at: now,
-            updated_at: now,
-
-            user_uuid,
-            name,
-            atype,
-
-            push_uuid: Some(PushId(get_uuid())),
-            push_token: None,
-            refresh_token: crypto::encode_random_bytes::<64>(BASE64URL),
-            twofactor_remember: None,
-        }
-    }
-
     pub fn to_json(&self) -> Value {
         json!({
             "id": self.uuid,
@@ -75,6 +56,11 @@ impl Device {
 
     pub fn delete_twofactor_remember(&mut self) {
         self.twofactor_remember = None;
+    }
+
+    // This rely on the fact we only update the device after a successful login
+    pub fn is_new(&self) -> bool {
+        self.created_at == self.updated_at
     }
 
     pub fn is_push_device(&self) -> bool {
@@ -120,14 +106,39 @@ impl DeviceWithAuthRequest {
 }
 use crate::db::DbConn;
 
-use crate::api::EmptyResult;
+use crate::api::{ApiResult, EmptyResult};
 use crate::error::MapResult;
 
 /// Database methods
 impl Device {
-    pub async fn save(&mut self, conn: &mut DbConn) -> EmptyResult {
-        self.updated_at = Utc::now().naive_utc();
+    pub async fn new(
+        uuid: DeviceId,
+        user_uuid: UserId,
+        name: String,
+        atype: i32,
+        conn: &mut DbConn,
+    ) -> ApiResult<Device> {
+        let now = Utc::now().naive_utc();
 
+        let device = Self {
+            uuid,
+            created_at: now,
+            updated_at: now,
+
+            user_uuid,
+            name,
+            atype,
+
+            push_uuid: Some(PushId(get_uuid())),
+            push_token: None,
+            refresh_token: crypto::encode_random_bytes::<64>(BASE64URL),
+            twofactor_remember: None,
+        };
+
+        device.inner_save(conn).await.map(|()| device)
+    }
+
+    async fn inner_save(&self, conn: &mut DbConn) -> EmptyResult {
         db_run! { conn:
             sqlite, mysql {
                 crate::util::retry(
@@ -143,6 +154,12 @@ impl Device {
                 ).map_res("Error saving device")
             }
         }
+    }
+
+    // Should only be called after user has passed authentication
+    pub async fn save(&mut self, conn: &mut DbConn) -> EmptyResult {
+        self.updated_at = Utc::now().naive_utc();
+        self.inner_save(conn).await
     }
 
     pub async fn delete_all_by_user(user_uuid: &UserId, conn: &mut DbConn) -> EmptyResult {

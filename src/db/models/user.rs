@@ -8,6 +8,7 @@ use super::{
 use crate::{
     api::EmptyResult,
     crypto,
+    db::models::DeviceId,
     db::DbConn,
     error::MapResult,
     sso::OIDCIdentifier,
@@ -390,6 +391,18 @@ impl User {
     pub async fn find_by_uuid(uuid: &UserId, conn: &mut DbConn) -> Option<Self> {
         db_run! {conn: {
             users::table.filter(users::uuid.eq(uuid)).first::<UserDb>(conn).ok().from_db()
+        }}
+    }
+
+    pub async fn find_by_device_id(device_uuid: &DeviceId, conn: &mut DbConn) -> Option<Self> {
+        db_run! { conn: {
+            users::table
+                .inner_join(devices::table.on(devices::user_uuid.eq(users::uuid)))
+                .filter(devices::uuid.eq(device_uuid))
+                .select(users::all_columns)
+                .first::<UserDb>(conn)
+                .ok()
+                .from_db()
         }}
     }
 

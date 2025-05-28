@@ -147,7 +147,7 @@ async fn _refresh_login(data: ConnectData, conn: &mut DbConn, ip: &ClientIp) -> 
             err_code!(format!("Unable to refresh login credentials: {}", err.message()), Status::Unauthorized.code)
         }
         Ok((mut device, auth_tokens)) => {
-            // Save to update `device.updated_at` to track usage
+            // Save to update `device.updated_at` to track usage and toggle new status
             device.save(conn).await?;
 
             let result = json!({
@@ -221,7 +221,7 @@ async fn _sso_login(
 
     let now = Utc::now().naive_utc();
     // Will trigger 2FA flow if needed
-    let (user, mut device, new_device, twofactor_token, sso_user) = match user_with_sso {
+    let (user, mut device, twofactor_token, sso_user) = match user_with_sso {
         None => {
             if !CONFIG.is_email_domain_allowed(&user_infos.email) {
                 err!(
@@ -253,9 +253,9 @@ async fn _sso_login(
             user.verified_at = Some(now);
             user.save(conn).await?;
 
-            let (device, new_device) = get_device(&data, conn, &user).await?;
+            let device = get_device(&data, conn, &user).await?;
 
-            (user, device, new_device, None, None)
+            (user, device, None, None)
         }
         Some((user, _)) if !user.enabled => {
             err!(
@@ -267,7 +267,7 @@ async fn _sso_login(
             )
         }
         Some((mut user, sso_user)) => {
-            let (mut device, new_device) = get_device(&data, conn, &user).await?;
+            let mut device = get_device(&data, conn, &user).await?;
             let twofactor_token = twofactor_auth(&user, &data, &mut device, ip, client_version, conn).await?;
 
             if user.private_key.is_none() {
@@ -287,7 +287,7 @@ async fn _sso_login(
                 info!("User {} email changed in SSO provider from {} to {}", user.uuid, user.email, user_infos.email);
             }
 
-            (user, device, new_device, twofactor_token, sso_user)
+            (user, device, twofactor_token, sso_user)
         }
     };
 
@@ -314,7 +314,7 @@ async fn _sso_login(
         auth_user.expires_in,
     )?;
 
-    authenticated_response(&user, &mut device, new_device, auth_tokens, twofactor_token, &now, conn, ip).await
+    authenticated_response(&user, &mut device, auth_tokens, twofactor_token, &now, conn, ip).await
 }
 
 async fn _password_login(
@@ -430,27 +430,26 @@ async fn _password_login(
         )
     }
 
-    let (mut device, new_device) = get_device(&data, conn, &user).await?;
+    let mut device = get_device(&data, conn, &user).await?;
 
     let twofactor_token = twofactor_auth(&user, &data, &mut device, ip, client_version, conn).await?;
 
     let auth_tokens = auth::AuthTokens::new(&device, &user, AuthMethod::Password, data.client_id);
 
-    authenticated_response(&user, &mut device, new_device, auth_tokens, twofactor_token, &now, conn, ip).await
+    authenticated_response(&user, &mut device, auth_tokens, twofactor_token, &now, conn, ip).await
 }
 
 #[allow(clippy::too_many_arguments)]
 async fn authenticated_response(
     user: &User,
     device: &mut Device,
-    new_device: bool,
     auth_tokens: auth::AuthTokens,
     twofactor_token: Option<String>,
     now: &NaiveDateTime,
     conn: &mut DbConn,
     ip: &ClientIp,
 ) -> JsonResult {
-    if CONFIG.mail_enabled() && new_device {
+    if CONFIG.mail_enabled() && device.is_new() {
         if let Err(e) = mail::send_new_device_logged_in(&user.email, &ip.ip.to_string(), now, device).await {
             error!("Error sending new device email: {e:#?}");
 
@@ -466,11 +465,11 @@ async fn authenticated_response(
     }
 
     // register push device
-    if !new_device {
+    if !device.is_new() {
         register_push_device(device, conn).await?;
     }
 
-    // Save to update `device.updated_at` to track usage
+    // Save to update `device.updated_at` to track usage and toggle new status
     device.save(conn).await?;
 
     let mp_policy = master_password_policy(user, conn).await;
@@ -566,9 +565,9 @@ async fn _user_api_key_login(
         )
     }
 
-    let (mut device, new_device) = get_device(&data, conn, &user).await?;
+    let mut device = get_device(&data, conn, &user).await?;
 
-    if CONFIG.mail_enabled() && new_device {
+    if CONFIG.mail_enabled() && device.is_new() {
         let now = Utc::now().naive_utc();
         if let Err(e) = mail::send_new_device_logged_in(&user.email, &ip.ip.to_string(), &now, &device).await {
             error!("Error sending new device email: {e:#?}");
@@ -592,7 +591,7 @@ async fn _user_api_key_login(
     // let orgs = Membership::find_confirmed_by_user(&user.uuid, conn).await;
     let access_claims = auth::LoginJwtClaims::default(&device, &user, &AuthMethod::UserApiKey, data.client_id);
 
-    // Save to update `device.updated_at` to track usage
+    // Save to update `device.updated_at` to track usage and toggle new status
     device.save(conn).await?;
 
     info!("User {} logged in successfully via API key. IP: {}", user.email, ip.ip);
@@ -646,25 +645,18 @@ async fn _organization_api_key_login(data: ConnectData, conn: &mut DbConn, ip: &
 }
 
 /// Retrieves an existing device or creates a new device from ConnectData and the User
-async fn get_device(data: &ConnectData, conn: &mut DbConn, user: &User) -> ApiResult<(Device, bool)> {
+async fn get_device(data: &ConnectData, conn: &mut DbConn, user: &User) -> ApiResult<Device> {
     // On iOS, device_type sends "iOS", on others it sends a number
     // When unknown or unable to parse, return 14, which is 'Unknown Browser'
     let device_type = util::try_parse_string(data.device_type.as_ref()).unwrap_or(14);
     let device_id = data.device_identifier.clone().expect("No device id provided");
     let device_name = data.device_name.clone().expect("No device name provided");
 
-    let mut new_device = false;
     // Find device or create new
-    let device = match Device::find_by_uuid_and_user(&device_id, &user.uuid, conn).await {
-        Some(device) => device,
-        None => {
-            let device = Device::new(device_id, user.uuid.clone(), device_name, device_type);
-            new_device = true;
-            device
-        }
-    };
-
-    Ok((device, new_device))
+    match Device::find_by_uuid_and_user(&device_id, &user.uuid, conn).await {
+        Some(device) => Ok(device),
+        None => Device::new(device_id, user.uuid.clone(), device_name, device_type, conn).await,
+    }
 }
 
 async fn twofactor_auth(
