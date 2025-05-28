@@ -21,7 +21,7 @@ use url::Url;
 
 // The location on this service that Duo should redirect users to. For us, this is a bridge
 // built in to the Bitwarden clients.
-// See: https://github.com/bitwarden/clients/blob/main/apps/web/src/connectors/duo-redirect.ts
+// See: https://github.com/bitwarden/clients/blob/5fb46df3415aefced0b52f2db86c873962255448/apps/web/src/connectors/duo-redirect.ts
 const DUO_REDIRECT_LOCATION: &str = "duo-redirect-connector.html";
 
 // Number of seconds that a JWT we generate for Duo should be valid for.
@@ -182,7 +182,7 @@ impl DuoClient {
             HealthCheckResponse::HealthFail {
                 message,
                 message_detail,
-            } => err!(format!("Duo health check FAIL response, msg: {}, detail: {}", message, message_detail)),
+            } => err!(format!("Duo health check FAIL response, msg: {message}, detail: {message_detail}")),
         };
 
         if health_stat != "OK" {
@@ -275,7 +275,7 @@ impl DuoClient {
 
         let status_code = res.status();
         if status_code != StatusCode::OK {
-            err!(format!("Failure response from Duo: {}", status_code))
+            err!(format!("Failure response from Duo: {status_code}"))
         }
 
         let response: IdTokenResponse = match res.json::<IdTokenResponse>().await {
@@ -478,7 +478,7 @@ pub async fn validate_duo_login(
         Err(e) => return Err(e),
     };
 
-    let d: Digest = digest(&SHA512_256, format!("{}{}", ctx.nonce, device_identifier).as_bytes());
+    let d: Digest = digest(&SHA512_256, format!("{}{device_identifier}", ctx.nonce).as_bytes());
     let hash: String = HEXLOWER.encode(d.as_ref());
 
     match client.exchange_authz_code_for_result(code, email, hash.as_str()).await {

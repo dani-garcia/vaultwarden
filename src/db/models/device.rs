@@ -5,8 +5,11 @@ use derive_more::{Display, From};
 use serde_json::Value;
 
 use super::{AuthRequest, UserId};
-use crate::{crypto, util::format_date};
-use macros::IdFromParam;
+use crate::{
+    crypto,
+    util::{format_date, get_uuid},
+};
+use macros::{IdFromParam, UuidFromParam};
 
 db_object! {
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -21,8 +24,8 @@ db_object! {
         pub user_uuid: UserId,
 
         pub name: String,
-        pub atype: i32,         // https://github.com/bitwarden/server/blob/dcc199bcce4aa2d5621f6fab80f1b49d8b143418/src/Core/Enums/DeviceType.cs
-        pub push_uuid: Option<String>,
+        pub atype: i32,         // https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Core/Enums/DeviceType.cs
+        pub push_uuid: Option<PushId>,
         pub push_token: Option<String>,
 
         pub refresh_token: String,
@@ -44,7 +47,7 @@ impl Device {
             name,
             atype,
 
-            push_uuid: None,
+            push_uuid: Some(PushId(get_uuid())),
             push_token: None,
             refresh_token: crypto::encode_random_bytes::<64>(BASE64URL),
             twofactor_remember: None,
@@ -56,7 +59,7 @@ impl Device {
             "id": self.uuid,
             "name": self.name,
             "type": self.atype,
-            "identifier": self.push_uuid,
+            "identifier": self.uuid,
             "creationDate": format_date(&self.created_at),
             "isTrusted": false,
             "object":"device"
@@ -76,10 +79,6 @@ impl Device {
 
     pub fn is_push_device(&self) -> bool {
         matches!(DeviceType::from_i32(self.atype), DeviceType::Android | DeviceType::Ios)
-    }
-
-    pub fn is_registered(&self) -> bool {
-        self.push_uuid.is_some()
     }
 
     pub fn is_cli(&self) -> bool {
@@ -102,10 +101,12 @@ impl DeviceWithAuthRequest {
             "id": self.device.uuid,
             "name": self.device.name,
             "type": self.device.atype,
-            "identifier": self.device.push_uuid,
+            "identifier": self.device.uuid,
             "creationDate": format_date(&self.device.created_at),
             "devicePendingAuthRequest": auth_request,
             "isTrusted": false,
+            "encryptedPublicKey": null,
+            "encryptedUserKey": null,
             "object": "device",
         })
     }
@@ -345,3 +346,6 @@ impl DeviceType {
     Clone, Debug, DieselNewType, Display, From, FromForm, Hash, PartialEq, Eq, Serialize, Deserialize, IdFromParam,
 )]
 pub struct DeviceId(String);
+
+#[derive(Clone, Debug, DieselNewType, Display, From, FromForm, Serialize, Deserialize, UuidFromParam)]
+pub struct PushId(pub String);

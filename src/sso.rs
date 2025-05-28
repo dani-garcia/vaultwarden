@@ -316,14 +316,14 @@ pub async fn authorize_url(
     let verifier = if CONFIG.sso_pkce() {
         let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
         auth_req = auth_req.set_pkce_challenge(pkce_challenge);
-        Some(pkce_verifier.secret().to_string())
+        Some(pkce_verifier.into_secret())
     } else {
         None
     };
 
     let (auth_url, _, nonce) = auth_req.url();
 
-    let sso_nonce = SsoNonce::new(state, nonce.secret().to_string(), verifier, redirect_uri);
+    let sso_nonce = SsoNonce::new(state, nonce.secret().clone(), verifier, redirect_uri);
     sso_nonce.save(&mut conn).await?;
 
     Ok(auth_url)
@@ -448,7 +448,7 @@ pub async fn exchange_code(wrapped_code: &str, conn: &mut DbConn) -> ApiResult<U
             if CONFIG.sso_debug_tokens() {
                 debug!("Id token: {}", id_token.to_string());
                 debug!("Access token: {}", token_response.access_token().secret());
-                debug!("Refresh token: {:?}", token_response.refresh_token().map(|t| t.secret().to_string()));
+                debug!("Refresh token: {:?}", token_response.refresh_token().map(|t| t.secret()));
                 debug!("Expiration time: {:?}", token_response.expires_in());
             }
 
@@ -473,7 +473,7 @@ pub async fn exchange_code(wrapped_code: &str, conn: &mut DbConn) -> ApiResult<U
 
             let user_name = user_info.preferred_username().map(|un| un.to_string());
 
-            let refresh_token = token_response.refresh_token().map(|t| t.secret().to_string());
+            let refresh_token = token_response.refresh_token().map(|t| t.secret());
             if refresh_token.is_none() && CONFIG.sso_scopes_vec().contains(&"offline_access".to_string()) {
                 error!("Scope offline_access is present but response contain no refresh_token");
             }
@@ -481,8 +481,8 @@ pub async fn exchange_code(wrapped_code: &str, conn: &mut DbConn) -> ApiResult<U
             let identifier = OIDCIdentifier::new(id_claims.issuer(), id_claims.subject());
 
             let authenticated_user = AuthenticatedUser {
-                refresh_token,
-                access_token: token_response.access_token().secret().to_string(),
+                refresh_token: refresh_token.cloned(),
+                access_token: token_response.access_token().secret().clone(),
                 expires_in: token_response.expires_in(),
                 identifier: identifier.clone(),
                 email: email.clone(),
@@ -523,24 +523,26 @@ pub async fn redeem(state: &OIDCState, conn: &mut DbConn) -> ApiResult<Authentic
 pub fn create_auth_tokens(
     device: &Device,
     user: &User,
+    client_id: Option<String>,
     refresh_token: Option<String>,
-    access_token: &str,
+    access_token: String,
     expires_in: Option<Duration>,
 ) -> ApiResult<AuthTokens> {
     if !CONFIG.sso_auth_only_not_session() {
         let now = Utc::now();
 
-        let (ap_nbf, ap_exp) = match (decode_token_claims("access_token", access_token), expires_in) {
+        let (ap_nbf, ap_exp) = match (decode_token_claims("access_token", &access_token), expires_in) {
             (Ok(ap), _) => (ap.nbf(), ap.exp),
             (Err(_), Some(exp)) => (now.timestamp(), (now + exp).timestamp()),
             _ => err!("Non jwt access_token and empty expires_in"),
         };
 
-        let access_claims = auth::LoginJwtClaims::new(device, user, ap_nbf, ap_exp, AuthMethod::Sso.scope_vec(), now);
+        let access_claims =
+            auth::LoginJwtClaims::new(device, user, ap_nbf, ap_exp, AuthMethod::Sso.scope_vec(), client_id, now);
 
         _create_auth_tokens(device, refresh_token, access_claims, access_token)
     } else {
-        Ok(AuthTokens::new(device, user, AuthMethod::Sso))
+        Ok(AuthTokens::new(device, user, AuthMethod::Sso, client_id))
     }
 }
 
@@ -548,24 +550,24 @@ fn _create_auth_tokens(
     device: &Device,
     refresh_token: Option<String>,
     access_claims: auth::LoginJwtClaims,
-    access_token: &str,
+    access_token: String,
 ) -> ApiResult<AuthTokens> {
-    let (nbf, exp, token) = if let Some(rt) = refresh_token.as_ref() {
-        match decode_token_claims("refresh_token", rt) {
+    let (nbf, exp, token) = if let Some(rt) = refresh_token {
+        match decode_token_claims("refresh_token", &rt) {
             Err(_) => {
                 let time_now = Utc::now();
                 let exp = (time_now + *DEFAULT_REFRESH_VALIDITY).timestamp();
                 debug!("Non jwt refresh_token (expiration set to {})", exp);
-                (time_now.timestamp(), exp, TokenWrapper::Refresh(rt.to_string()))
+                (time_now.timestamp(), exp, TokenWrapper::Refresh(rt))
             }
             Ok(refresh_payload) => {
                 debug!("Refresh_payload: {:?}", refresh_payload);
-                (refresh_payload.nbf(), refresh_payload.exp, TokenWrapper::Refresh(rt.to_string()))
+                (refresh_payload.nbf(), refresh_payload.exp, TokenWrapper::Refresh(rt))
             }
         }
     } else {
         debug!("No refresh_token present");
-        (access_claims.nbf, access_claims.exp, TokenWrapper::Access(access_token.to_string()))
+        (access_claims.nbf, access_claims.exp, TokenWrapper::Access(access_token))
     };
 
     let refresh_claims = auth::RefreshJwtClaims {
@@ -589,11 +591,13 @@ fn _create_auth_tokens(
 pub async fn exchange_refresh_token(
     device: &Device,
     user: &User,
-    refresh_claims: &auth::RefreshJwtClaims,
+    client_id: Option<String>,
+    refresh_claims: auth::RefreshJwtClaims,
 ) -> ApiResult<AuthTokens> {
-    match &refresh_claims.token {
+    let exp = refresh_claims.exp;
+    match refresh_claims.token {
         Some(TokenWrapper::Refresh(refresh_token)) => {
-            let rt = RefreshToken::new(refresh_token.to_string());
+            let rt = RefreshToken::new(refresh_token);
 
             let client = Client::cached().await?;
 
@@ -604,16 +608,15 @@ pub async fn exchange_refresh_token(
                 };
 
             // Use new refresh_token if returned
-            let rolled_refresh_token = token_response
-                .refresh_token()
-                .map(|token| token.secret().to_string())
-                .unwrap_or(refresh_token.to_string());
+            let rolled_refresh_token =
+                token_response.refresh_token().map(|token| token.secret()).unwrap_or(rt.secret());
 
             create_auth_tokens(
                 device,
                 user,
-                Some(rolled_refresh_token),
-                token_response.access_token().secret(),
+                client_id,
+                Some(rolled_refresh_token.clone()),
+                token_response.access_token().secret().clone(),
                 token_response.expires_in(),
             )
         }
@@ -621,12 +624,12 @@ pub async fn exchange_refresh_token(
             let now = Utc::now();
             let exp_limit = (now + *BW_EXPIRATION).timestamp();
 
-            if refresh_claims.exp < exp_limit {
+            if exp < exp_limit {
                 err_silent!("Access token is close to expiration but we have no refresh token")
             }
 
             let client = Client::cached().await?;
-            match client.user_info(AccessToken::new(access_token.to_string())).await {
+            match client.user_info(AccessToken::new(access_token.clone())).await {
                 Err(err) => {
                     err_silent!(format!("Failed to retrieve user info, token has probably been invalidated: {err}"))
                 }
@@ -635,8 +638,9 @@ pub async fn exchange_refresh_token(
                         device,
                         user,
                         now.timestamp(),
-                        refresh_claims.exp,
+                        exp,
                         AuthMethod::Sso.scope_vec(),
+                        client_id,
                         now,
                     );
                     _create_auth_tokens(device, None, access_claims, access_token)

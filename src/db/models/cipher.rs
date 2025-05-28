@@ -85,7 +85,7 @@ impl Cipher {
         let mut validation_errors = serde_json::Map::new();
         let max_note_size = CONFIG._max_note_size();
         let max_note_size_msg =
-            format!("The field Notes exceeds the maximum encrypted value length of {} characters.", &max_note_size);
+            format!("The field Notes exceeds the maximum encrypted value length of {max_note_size} characters.");
         for (index, cipher) in cipher_data.iter().enumerate() {
             // Validate the note size and if it is exceeded return a warning
             if let Some(note) = &cipher.notes {
@@ -318,7 +318,7 @@ impl Cipher {
         // supports the "cipherDetails" type, though it seems like the
         // Bitwarden clients will ignore extra fields.
         //
-        // Ref: https://github.com/bitwarden/server/blob/master/src/Core/Models/Api/Response/CipherResponseModel.cs
+        // Ref: https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Api/Vault/Models/Response/CipherResponseModel.cs#L14
         let mut json_object = json!({
             "object": "cipherDetails",
             "id": self.uuid,

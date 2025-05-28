@@ -21,7 +21,7 @@ use crate::{
         ApiResult, EmptyResult, JsonResult,
     },
     auth,
-    auth::{AuthMethod, ClientHeaders, ClientIp},
+    auth::{generate_organization_api_key_login_claims, AuthMethod, ClientHeaders, ClientIp, ClientVersion},
     db::{models::*, DbConn},
     error::MapResult,
     mail, sso,
@@ -45,7 +45,12 @@ pub fn routes() -> Vec<Route> {
 }
 
 #[post("/connect/token", data = "<data>")]
-async fn login(data: Form<ConnectData>, client_header: ClientHeaders, mut conn: DbConn) -> JsonResult {
+async fn login(
+    data: Form<ConnectData>,
+    client_header: ClientHeaders,
+    client_version: Option<ClientVersion>,
+    mut conn: DbConn,
+) -> JsonResult {
     let data: ConnectData = data.into_inner();
 
     let mut user_id: Option<UserId> = None;
@@ -66,7 +71,7 @@ async fn login(data: Form<ConnectData>, client_header: ClientHeaders, mut conn: 
             _check_is_some(&data.device_name, "device_name cannot be blank")?;
             _check_is_some(&data.device_type, "device_type cannot be blank")?;
 
-            _password_login(data, &mut user_id, &mut conn, &client_header.ip).await
+            _password_login(data, &mut user_id, &mut conn, &client_header.ip, &client_version).await
         }
         "client_credentials" => {
             _check_is_some(&data.client_id, "client_id cannot be blank")?;
@@ -87,7 +92,7 @@ async fn login(data: Form<ConnectData>, client_header: ClientHeaders, mut conn: 
             _check_is_some(&data.device_name, "device_name cannot be blank")?;
             _check_is_some(&data.device_type, "device_type cannot be blank")?;
 
-            _sso_login(data, &mut user_id, &mut conn, &client_header.ip).await
+            _sso_login(data, &mut user_id, &mut conn, &client_header.ip, &client_version).await
         }
         "authorization_code" => err!("SSO sign-in is not available"),
         t => err!("Invalid type", t),
@@ -137,7 +142,7 @@ async fn _refresh_login(data: ConnectData, conn: &mut DbConn, ip: &ClientIp) -> 
     // See: https://github.com/dani-garcia/vaultwarden/issues/4156
     // ---
     // let members = Membership::find_confirmed_by_user(&user.uuid, conn).await;
-    match auth::refresh_tokens(ip, &refresh_token, conn).await {
+    match auth::refresh_tokens(ip, &refresh_token, data.client_id, conn).await {
         Err(err) => {
             err_code!(format!("Unable to refresh login credentials: {}", err.message()), Status::Unauthorized.code)
         }
@@ -159,7 +164,13 @@ async fn _refresh_login(data: ConnectData, conn: &mut DbConn, ip: &ClientIp) -> 
 }
 
 // After exchanging the code we need to check first if 2FA is needed before continuing
-async fn _sso_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &mut DbConn, ip: &ClientIp) -> JsonResult {
+async fn _sso_login(
+    data: ConnectData,
+    user_id: &mut Option<UserId>,
+    conn: &mut DbConn,
+    ip: &ClientIp,
+    client_version: &Option<ClientVersion>,
+) -> JsonResult {
     AuthMethod::Sso.check_scope(data.scope.as_ref())?;
 
     // Ratelimit the login
@@ -257,7 +268,7 @@ async fn _sso_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &mut 
         }
         Some((mut user, sso_user)) => {
             let (mut device, new_device) = get_device(&data, conn, &user).await?;
-            let twofactor_token = twofactor_auth(&user, &data, &mut device, ip, conn).await?;
+            let twofactor_token = twofactor_auth(&user, &data, &mut device, ip, client_version, conn).await?;
 
             if user.private_key.is_none() {
                 // User was invited a stub was created
@@ -297,8 +308,9 @@ async fn _sso_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &mut 
     let auth_tokens = sso::create_auth_tokens(
         &device,
         &user,
+        data.client_id,
         auth_user.refresh_token,
-        &auth_user.access_token,
+        auth_user.access_token,
         auth_user.expires_in,
     )?;
 
@@ -310,6 +322,7 @@ async fn _password_login(
     user_id: &mut Option<UserId>,
     conn: &mut DbConn,
     ip: &ClientIp,
+    client_version: &Option<ClientVersion>,
 ) -> JsonResult {
     // Validate scope
     AuthMethod::Password.check_scope(data.scope.as_ref())?;
@@ -320,7 +333,7 @@ async fn _password_login(
     // Get the user
     let username = data.username.as_ref().unwrap().trim();
     let Some(mut user) = User::find_by_mail(username, conn).await else {
-        err!("Username or password is incorrect. Try again", format!("IP: {}. Username: {}.", ip.ip, username))
+        err!("Username or password is incorrect. Try again", format!("IP: {}. Username: {username}.", ip.ip))
     };
 
     // Set the user_id here to be passed back used for event logging.
@@ -330,7 +343,7 @@ async fn _password_login(
     if !user.enabled {
         err!(
             "This user has been disabled",
-            format!("IP: {}. Username: {}.", ip.ip, username),
+            format!("IP: {}. Username: {username}.", ip.ip),
             ErrorEvent {
                 event: EventType::UserFailedLogIn
             }
@@ -344,7 +357,7 @@ async fn _password_login(
         let Some(auth_request) = AuthRequest::find_by_uuid_and_user(auth_request_id, &user.uuid, conn).await else {
             err!(
                 "Auth request not found. Try again.",
-                format!("IP: {}. Username: {}.", ip.ip, username),
+                format!("IP: {}. Username: {username}.", ip.ip),
                 ErrorEvent {
                     event: EventType::UserFailedLogIn,
                 }
@@ -362,7 +375,7 @@ async fn _password_login(
         {
             err!(
                 "Username or access code is incorrect. Try again",
-                format!("IP: {}. Username: {}.", ip.ip, username),
+                format!("IP: {}. Username: {username}.", ip.ip),
                 ErrorEvent {
                     event: EventType::UserFailedLogIn,
                 }
@@ -371,7 +384,7 @@ async fn _password_login(
     } else if !user.check_valid_password(password) {
         err!(
             "Username or password is incorrect. Try again",
-            format!("IP: {}. Username: {}.", ip.ip, username),
+            format!("IP: {}. Username: {username}.", ip.ip),
             ErrorEvent {
                 event: EventType::UserFailedLogIn,
             }
@@ -398,11 +411,11 @@ async fn _password_login(
                 user.login_verify_count += 1;
 
                 if let Err(e) = user.save(conn).await {
-                    error!("Error updating user: {:#?}", e);
+                    error!("Error updating user: {e:#?}");
                 }
 
                 if let Err(e) = mail::send_verify_email(&user.email, &user.uuid).await {
-                    error!("Error auto-sending email verification email: {:#?}", e);
+                    error!("Error auto-sending email verification email: {e:#?}");
                 }
             }
         }
@@ -410,7 +423,7 @@ async fn _password_login(
         // We still want the login to fail until they actually verified the email address
         err!(
             "Please verify your email before trying again.",
-            format!("IP: {}. Username: {}.", ip.ip, username),
+            format!("IP: {}. Username: {username}.", ip.ip),
             ErrorEvent {
                 event: EventType::UserFailedLogIn
             }
@@ -419,9 +432,9 @@ async fn _password_login(
 
     let (mut device, new_device) = get_device(&data, conn, &user).await?;
 
-    let twofactor_token = twofactor_auth(&user, &data, &mut device, ip, conn).await?;
+    let twofactor_token = twofactor_auth(&user, &data, &mut device, ip, client_version, conn).await?;
 
-    let auth_tokens = auth::AuthTokens::new(&device, &user, AuthMethod::Password);
+    let auth_tokens = auth::AuthTokens::new(&device, &user, AuthMethod::Password, data.client_id);
 
     authenticated_response(&user, &mut device, new_device, auth_tokens, twofactor_token, &now, conn, ip).await
 }
@@ -439,7 +452,7 @@ async fn authenticated_response(
 ) -> JsonResult {
     if CONFIG.mail_enabled() && new_device {
         if let Err(e) = mail::send_new_device_logged_in(&user.email, &ip.ip.to_string(), now, device).await {
-            error!("Error sending new device email: {:#?}", e);
+            error!("Error sending new device email: {e:#?}");
 
             if CONFIG.require_device_email() {
                 err!(
@@ -490,7 +503,7 @@ async fn authenticated_response(
         result["TwoFactorToken"] = Value::String(token);
     }
 
-    info!("User {} logged in successfully. IP: {}", user.email, ip.ip);
+    info!("User {} logged in successfully. IP: {}", &user.name, ip.ip);
     Ok(Json(result))
 }
 
@@ -558,7 +571,7 @@ async fn _user_api_key_login(
     if CONFIG.mail_enabled() && new_device {
         let now = Utc::now().naive_utc();
         if let Err(e) = mail::send_new_device_logged_in(&user.email, &ip.ip.to_string(), &now, &device).await {
-            error!("Error sending new device email: {:#?}", e);
+            error!("Error sending new device email: {e:#?}");
 
             if CONFIG.require_device_email() {
                 err!(
@@ -577,7 +590,7 @@ async fn _user_api_key_login(
     // See: https://github.com/dani-garcia/vaultwarden/issues/4156
     // ---
     // let orgs = Membership::find_confirmed_by_user(&user.uuid, conn).await;
-    let access_claims = auth::LoginJwtClaims::default(&device, &user, &AuthMethod::UserApiKey);
+    let access_claims = auth::LoginJwtClaims::default(&device, &user, &AuthMethod::UserApiKey, data.client_id);
 
     // Save to update `device.updated_at` to track usage
     device.save(conn).await?;
@@ -621,7 +634,7 @@ async fn _organization_api_key_login(data: ConnectData, conn: &mut DbConn, ip: &
         err!("Incorrect client_secret", format!("IP: {}. Organization: {}.", ip.ip, org_api_key.org_uuid))
     }
 
-    let claim = auth::generate_organization_api_key_login_claims(org_api_key.uuid, org_api_key.org_uuid);
+    let claim = generate_organization_api_key_login_claims(org_api_key.uuid, org_api_key.org_uuid);
     let access_token = auth::encode_jwt(&claim);
 
     Ok(Json(json!({
@@ -659,6 +672,7 @@ async fn twofactor_auth(
     data: &ConnectData,
     device: &mut Device,
     ip: &ClientIp,
+    client_version: &Option<ClientVersion>,
     conn: &mut DbConn,
 ) -> ApiResult<Option<String>> {
     let twofactors = TwoFactor::find_by_user(&user.uuid, conn).await;
@@ -676,7 +690,12 @@ async fn twofactor_auth(
 
     let twofactor_code = match data.two_factor_token {
         Some(ref code) => code,
-        None => err_json!(_json_err_twofactor(&twofactor_ids, &user.uuid, data, conn).await?, "2FA token not provided"),
+        None => {
+            err_json!(
+                _json_err_twofactor(&twofactor_ids, &user.uuid, data, client_version, conn).await?,
+                "2FA token not provided"
+            )
+        }
     };
 
     let selected_twofactor = twofactors.into_iter().find(|tf| tf.atype == selected_id && tf.enabled);
@@ -712,7 +731,7 @@ async fn twofactor_auth(
             }
         }
         Some(TwoFactorType::Email) => {
-            email::validate_email_code_str(&user.uuid, twofactor_code, &selected_data?, conn).await?
+            email::validate_email_code_str(&user.uuid, twofactor_code, &selected_data?, &ip.ip, conn).await?
         }
 
         Some(TwoFactorType::Remember) => {
@@ -722,7 +741,7 @@ async fn twofactor_auth(
                 }
                 _ => {
                     err_json!(
-                        _json_err_twofactor(&twofactor_ids, &user.uuid, data, conn).await?,
+                        _json_err_twofactor(&twofactor_ids, &user.uuid, data, client_version, conn).await?,
                         "2FA Remember token not provided"
                     )
                 }
@@ -755,6 +774,7 @@ async fn _json_err_twofactor(
     providers: &[i32],
     user_id: &UserId,
     data: &ConnectData,
+    client_version: &Option<ClientVersion>,
     conn: &mut DbConn,
 ) -> ApiResult<Value> {
     let mut result = json!({
@@ -827,8 +847,16 @@ async fn _json_err_twofactor(
                     err!("No twofactor email registered")
                 };
 
-                // Send email immediately if email is the only 2FA option
-                if providers.len() == 1 {
+                // Starting with version 2025.5.0 the client will call `/api/two-factor/send-email-login`.
+                let disabled_send = if let Some(cv) = client_version {
+                    let ver_match = semver::VersionReq::parse(">=2025.5.0").unwrap();
+                    ver_match.matches(&cv.0)
+                } else {
+                    false
+                };
+
+                // Send email immediately if email is the only 2FA option.
+                if providers.len() == 1 && !disabled_send {
                     email::send_token(user_id, conn).await?
                 }
 

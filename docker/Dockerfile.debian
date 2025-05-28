@@ -19,15 +19,15 @@
 # - From https://hub.docker.com/r/vaultwarden/web-vault/tags,
 #   click the tag name to view the digest of the image it currently points to.
 # - From the command line:
-#     $ docker pull docker.io/vaultwarden/web-vault:v2025.3.1
-#     $ docker image inspect --format "{{.RepoDigests}}" docker.io/vaultwarden/web-vault:v2025.3.1
-#     [docker.io/vaultwarden/web-vault@sha256:5b11739052c26dc3c2135b28dc5b072bc607f870a3e81fbbcc72e0cd1f124bcd]
+#     $ docker pull docker.io/vaultwarden/web-vault:v2025.5.0
+#     $ docker image inspect --format "{{.RepoDigests}}" docker.io/vaultwarden/web-vault:v2025.5.0
+#     [docker.io/vaultwarden/web-vault@sha256:a0a377b810e66a4ebf1416f732d2be06f3262bf5a5238695af88d3ec6871cc0e]
 #
 # - Conversely, to get the tag name from the digest:
-#     $ docker image inspect --format "{{.RepoTags}}" docker.io/vaultwarden/web-vault@sha256:5b11739052c26dc3c2135b28dc5b072bc607f870a3e81fbbcc72e0cd1f124bcd
-#     [docker.io/vaultwarden/web-vault:v2025.3.1]
+#     $ docker image inspect --format "{{.RepoTags}}" docker.io/vaultwarden/web-vault@sha256:a0a377b810e66a4ebf1416f732d2be06f3262bf5a5238695af88d3ec6871cc0e
+#     [docker.io/vaultwarden/web-vault:v2025.5.0]
 #
-FROM --platform=linux/amd64 docker.io/vaultwarden/web-vault@sha256:5b11739052c26dc3c2135b28dc5b072bc607f870a3e81fbbcc72e0cd1f124bcd AS vault
+FROM --platform=linux/amd64 docker.io/vaultwarden/web-vault@sha256:a0a377b810e66a4ebf1416f732d2be06f3262bf5a5238695af88d3ec6871cc0e AS vault
 
 ########################## Cross Compile Docker Helper Scripts ##########################
 ## We use the linux/amd64 no matter which Build Platform, since these are all bash scripts
@@ -36,7 +36,7 @@ FROM --platform=linux/amd64 docker.io/tonistiigi/xx@sha256:9c207bead753dda9430bd
 
 ########################## BUILD IMAGE ##########################
 # hadolint ignore=DL3006
-FROM --platform=$BUILDPLATFORM docker.io/library/rust:1.86.0-slim-bookworm AS build
+FROM --platform=$BUILDPLATFORM docker.io/library/rust:1.87.0-slim-bookworm AS build
 COPY --from=xx / /
 ARG TARGETARCH
 ARG TARGETVARIANT

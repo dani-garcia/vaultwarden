@@ -85,7 +85,7 @@ pub struct MasterPasswordPolicy {
     enforce_on_login: bool,
 }
 
-// Fetch all valid Master Password Policies and merge them into one with all true's and larges numbers as one policy
+// Fetch all valid Master Password Policies and merge them into one with all trues and largest numbers as one policy
 async fn master_password_policy(user: &User, conn: &DbConn) -> Value {
     let master_password_policies: Vec<MasterPasswordPolicy> =
         OrgPolicy::find_accepted_and_confirmed_by_user_and_active_policy(
@@ -116,6 +116,6 @@ async fn master_password_policy(user: &User, conn: &DbConn) -> Value {
         json!({})
     };
 
-    mpp_json["object"] = json!("masterPasswordPolicy");
+    mpp_json["Object"] = json!("masterPasswordPolicy");
     mpp_json
 }

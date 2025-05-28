@@ -197,14 +197,20 @@ async fn email(data: Json<EmailData>, headers: Headers, mut conn: DbConn) -> Jso
 }
 
 /// Validate the email code when used as TwoFactor token mechanism
-pub async fn validate_email_code_str(user_id: &UserId, token: &str, data: &str, conn: &mut DbConn) -> EmptyResult {
+pub async fn validate_email_code_str(
+    user_id: &UserId,
+    token: &str,
+    data: &str,
+    ip: &std::net::IpAddr,
+    conn: &mut DbConn,
+) -> EmptyResult {
     let mut email_data = EmailTokenData::from_json(data)?;
     let mut twofactor = TwoFactor::find_by_user_and_type(user_id, TwoFactorType::Email as i32, conn)
         .await
         .map_res("Two factor not found")?;
     let Some(issued_token) = &email_data.last_token else {
         err!(
-            "No token available",
+            format!("No token available! IP: {ip}"),
             ErrorEvent {
                 event: EventType::UserFailedLogIn2fa
             }
@@ -220,7 +226,7 @@ pub async fn validate_email_code_str(user_id: &UserId, token: &str, data: &str, 
         twofactor.save(conn).await?;
 
         err!(
-            "Token is invalid",
+            format!("Token is invalid! IP: {ip}"),
             ErrorEvent {
                 event: EventType::UserFailedLogIn2fa
             }
@@ -323,7 +329,7 @@ pub fn obscure_email(email: &str) -> String {
         }
     };
 
-    format!("{}@{}", new_name, &domain)
+    format!("{new_name}@{domain}")
 }
 
 pub async fn find_and_activate_email_2fa(user_id: &UserId, conn: &mut DbConn) -> EmptyResult {

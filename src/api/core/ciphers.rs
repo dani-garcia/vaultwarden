@@ -381,7 +381,7 @@ pub async fn update_cipher_from_data(
         if let Some(dt) = data.last_known_revision_date {
             match NaiveDateTime::parse_from_str(&dt, "%+") {
                 // ISO 8601 format
-                Err(err) => warn!("Error parsing LastKnownRevisionDate '{}': {}", dt, err),
+                Err(err) => warn!("Error parsing LastKnownRevisionDate '{dt}': {err}"),
                 Ok(dt) if cipher.updated_at.signed_duration_since(dt).num_seconds() > 1 => {
                     err!("The client copy of this cipher is out of date. Resync the client and try again.")
                 }
@@ -535,7 +535,7 @@ pub async fn update_cipher_from_data(
             ut,
             cipher,
             &cipher.update_users_revision(conn).await,
-            &headers.device.uuid,
+            &headers.device,
             shared_to_collections,
             conn,
         )
@@ -612,7 +612,7 @@ async fn post_ciphers_import(
 
     let mut user = headers.user;
     user.update_revision(&mut conn).await?;
-    nt.send_user_update(UpdateType::SyncVault, &user).await;
+    nt.send_user_update(UpdateType::SyncVault, &user, &headers.device.push_uuid, &mut conn).await;
 
     Ok(())
 }
@@ -808,7 +808,7 @@ async fn post_collections_update(
         UpdateType::SyncCipherUpdate,
         &cipher,
         &cipher.update_users_revision(&mut conn).await,
-        &headers.device.uuid,
+        &headers.device,
         Some(Vec::from_iter(posted_collections)),
         &mut conn,
     )
@@ -885,7 +885,7 @@ async fn post_collections_admin(
         UpdateType::SyncCipherUpdate,
         &cipher,
         &cipher.update_users_revision(&mut conn).await,
-        &headers.device.uuid,
+        &headers.device,
         Some(Vec::from_iter(posted_collections)),
         &mut conn,
     )
@@ -1105,7 +1105,7 @@ async fn post_attachment_v2(
         Attachment::new(attachment_id.clone(), cipher.uuid.clone(), data.file_name, file_size, Some(data.key));
     attachment.save(&mut conn).await.expect("Error saving attachment");
 
-    let url = format!("/ciphers/{}/attachment/{}", cipher.uuid, attachment_id);
+    let url = format!("/ciphers/{}/attachment/{attachment_id}", cipher.uuid);
     let response_key = match data.admin_request {
         Some(b) if b => "cipherMiniResponse",
         _ => "cipherResponse",
@@ -1281,7 +1281,7 @@ async fn save_attachment(
         UpdateType::SyncCipherUpdate,
         &cipher,
         &cipher.update_users_revision(&mut conn).await,
-        &headers.device.uuid,
+        &headers.device,
         None,
         &mut conn,
     )
@@ -1581,8 +1581,8 @@ async fn move_cipher_selected(
         nt.send_cipher_update(
             UpdateType::SyncCipherUpdate,
             &cipher,
-            &[user_id.clone()],
-            &headers.device.uuid,
+            std::slice::from_ref(&user_id),
+            &headers.device,
             None,
             &mut conn,
         )
@@ -1629,7 +1629,7 @@ async fn delete_all(
                 Some(member) => {
                     if member.atype == MembershipType::Owner {
                         Cipher::delete_all_by_organization(&org_data.org_id, &mut conn).await?;
-                        nt.send_user_update(UpdateType::SyncVault, &user).await;
+                        nt.send_user_update(UpdateType::SyncVault, &user, &headers.device.push_uuid, &mut conn).await;
 
                         log_event(
                             EventType::OrganizationPurgedVault as i32,
@@ -1662,7 +1662,7 @@ async fn delete_all(
             }
 
             user.update_revision(&mut conn).await?;
-            nt.send_user_update(UpdateType::SyncVault, &user).await;
+            nt.send_user_update(UpdateType::SyncVault, &user, &headers.device.push_uuid, &mut conn).await;
 
             Ok(())
         }
@@ -1691,7 +1691,7 @@ async fn _delete_cipher_by_uuid(
             UpdateType::SyncCipherUpdate,
             &cipher,
             &cipher.update_users_revision(conn).await,
-            &headers.device.uuid,
+            &headers.device,
             None,
             conn,
         )
@@ -1702,7 +1702,7 @@ async fn _delete_cipher_by_uuid(
             UpdateType::SyncCipherDelete,
             &cipher,
             &cipher.update_users_revision(conn).await,
-            &headers.device.uuid,
+            &headers.device,
             None,
             conn,
         )
@@ -1767,7 +1767,7 @@ async fn _restore_cipher_by_uuid(
         UpdateType::SyncCipherUpdate,
         &cipher,
         &cipher.update_users_revision(conn).await,
-        &headers.device.uuid,
+        &headers.device,
         None,
         conn,
     )
@@ -1841,7 +1841,7 @@ async fn _delete_cipher_attachment_by_id(
         UpdateType::SyncCipherUpdate,
         &cipher,
         &cipher.update_users_revision(conn).await,
-        &headers.device.uuid,
+        &headers.device,
         None,
         conn,
     )

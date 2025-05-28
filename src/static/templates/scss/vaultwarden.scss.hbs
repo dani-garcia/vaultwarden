@@ -35,29 +35,13 @@ a[href$="/settings/two-factor"] {
   @extend %vw-hide;
 }
 
-/* Hide Business Owned checkbox */
-app-org-info > form:nth-child(1) > div:nth-child(3) {
-  @extend %vw-hide;
-}
-
-/* Hide the `This account is owned by a business` checkbox and label */
-#ownedBusiness,
-label[for^="ownedBusiness"] {
-  @extend %vw-hide;
-}
-
-/* Hide Business Name */
-app-org-account form div bit-form-field.tw-block:nth-child(3) {
-  @extend %vw-hide;
-}
-
 /* Hide organization plans */
 app-organization-plans > form > bit-section:nth-child(2) {
   @extend %vw-hide;
 }
 
 /* Hide Collection Management Form */
-app-org-account form.ng-untouched:nth-child(6) {
+app-org-account form.ng-untouched:nth-child(5) {
   @extend %vw-hide;
 }
 
@@ -94,13 +78,17 @@ bit-nav-logo bit-nav-item .bwi-shield {
 {{#if signup_disabled}}
 /* From web vault 2025.1.2 and onwards, the signup button is hidden
   when signups are disabled as the web vault checks the /api/config endpoint.
-  Note that the clients tend to aggressively cache this endpoint, so it might
+  Note that the clients tend to cache this endpoint for about 1 hour, so it might
   take a while for the change to take effect. To avoid the button appearing
   when it shouldn't, we'll keep this style in place for a couple of versions */
-{{#if webver "<2025.3.0"}}
 /* Hide the register link on the login screen */
+{{#if (webver "<2025.3.0")}}
 app-login form div + div + div + div + hr,
 app-login form div + div + div + div + hr + p {
+  @extend %vw-hide;
+}
+{{else}}
+app-root a[routerlink="/signup"] {
   @extend %vw-hide;
 }
 {{/if}}
@@ -122,14 +110,14 @@ app-root form.ng-untouched button.\!tw-text-primary-600:nth-child(4) {
 
 {{#unless mail_enabled}}
 /* Hide `Email` 2FA if mail is not enabled */
-app-two-factor-setup ul.list-group.list-group-2fa li.list-group-item:nth-child(1) {
+.providers-2fa-1 {
   @extend %vw-hide;
 }
 {{/unless}}
 
 {{#unless yubico_enabled}}
 /* Hide `YubiKey OTP security key` 2FA if it is not enabled */
-app-two-factor-setup ul.list-group.list-group-2fa li.list-group-item:nth-child(4) {
+.providers-2fa-3 {
   @extend %vw-hide;
 }
 {{/unless}}

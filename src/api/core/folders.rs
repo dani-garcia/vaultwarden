@@ -45,7 +45,7 @@ async fn post_folders(data: Json<FolderData>, headers: Headers, mut conn: DbConn
     let mut folder = Folder::new(headers.user.uuid, data.name);
 
     folder.save(&mut conn).await?;
-    nt.send_folder_update(UpdateType::SyncFolderCreate, &folder, &headers.device.uuid, &mut conn).await;
+    nt.send_folder_update(UpdateType::SyncFolderCreate, &folder, &headers.device, &mut conn).await;
 
     Ok(Json(folder.to_json()))
 }
@@ -78,7 +78,7 @@ async fn put_folder(
     folder.name = data.name;
 
     folder.save(&mut conn).await?;
-    nt.send_folder_update(UpdateType::SyncFolderUpdate, &folder, &headers.device.uuid, &mut conn).await;
+    nt.send_folder_update(UpdateType::SyncFolderUpdate, &folder, &headers.device, &mut conn).await;
 
     Ok(Json(folder.to_json()))
 }
@@ -97,6 +97,6 @@ async fn delete_folder(folder_id: FolderId, headers: Headers, mut conn: DbConn, 
     // Delete the actual folder entry
     folder.delete(&mut conn).await?;
 
-    nt.send_folder_update(UpdateType::SyncFolderDelete, &folder, &headers.device.uuid, &mut conn).await;
+    nt.send_folder_update(UpdateType::SyncFolderDelete, &folder, &headers.device, &mut conn).await;
     Ok(())
 }
