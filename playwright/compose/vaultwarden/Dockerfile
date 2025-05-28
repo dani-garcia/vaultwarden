@@ -2,8 +2,8 @@ FROM playwright_oidc_vaultwarden_prebuilt AS vaultwarden
 
 FROM node:18-bookworm AS build
 
-arg REPO_URL
-arg COMMIT_HASH
+ARG REPO_URL
+ARG COMMIT_HASH
 
 ENV REPO_URL=$REPO_URL
 ENV COMMIT_HASH=$COMMIT_HASH

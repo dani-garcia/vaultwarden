@@ -1,5 +1,7 @@
 import { test, expect, type TestInfo } from '@playwright/test';
+
 import { logNewUser, logUser } from './setups/sso';
+import { activateTOTP, disableTOTP } from './setups/2fa';
 import * as utils from "../global-utils";
 
 let users = utils.loadEnv();
@@ -36,6 +38,16 @@ test('Non SSO login', async ({ page }) => {
 
     // We are now in the default vault page
     await expect(page).toHaveTitle(/Vaultwarden Web/);
+});
+
+test('SSO login with TOTP 2fa', async ({ page }) => {
+    await logUser(test, page, users.user1);
+
+    let totp = await activateTOTP(test, page, users.user1);
+
+    await logUser(test, page, users.user1, { totp });
+
+    await disableTOTP(test, page, users.user1);
 });
 
 test('Non SSO login impossible', async ({ page, browser }, testInfo: TestInfo) => {

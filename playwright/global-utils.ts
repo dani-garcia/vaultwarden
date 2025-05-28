@@ -189,7 +189,7 @@ export async function startVaultwarden(browser: Browser, testInfo: TestInfo, env
 
     console.log(`Starting Vaultwarden`);
     execSync(`docker compose --profile playwright --env-file test.env up -d Vaultwarden`, {
-        env: { LOGIN_RATELIMIT_MAX_BURST: 100, ...env, ...dbConfig(testInfo) },
+        env: { ...env, ...dbConfig(testInfo) },
     });
     await waitFor("/", browser);
     console.log(`Vaultwarden running on: ${process.env.DOMAIN}`);
@@ -209,4 +209,15 @@ export async function checkNotification(page: Page, hasText: string) {
     await expect(page.locator('bit-toast').filter({ hasText })).toBeVisible();
     await page.locator('bit-toast').filter({ hasText }).getByRole('button').click();
     await expect(page.locator('bit-toast').filter({ hasText })).toHaveCount(0);
+}
+
+export async function cleanLanding(page: Page) {
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('button').nth(0)).toBeVisible();
+
+    const logged = await page.getByRole('button', { name: 'Log out' }).count();
+    if( logged > 0 ){
+        await page.getByRole('button', { name: 'Log out' }).click();
+        await page.getByRole('button', { name: 'Log out' }).click();
+    }
 }

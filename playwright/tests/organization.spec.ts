@@ -11,8 +11,8 @@ test.beforeAll('Setup', async ({ browser }, testInfo: TestInfo) => {
     await utils.startVaultwarden(browser, testInfo);
 });
 
-test.afterAll('Teardown', async ({}, testInfo: TestInfo) => {
-    utils.stopVaultwarden(testInfo);
+test.afterAll('Teardown', async ({}) => {
+    utils.stopVaultwarden();
 });
 
 test('Invite', async ({ page }) => {

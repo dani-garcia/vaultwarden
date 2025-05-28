@@ -90,7 +90,7 @@ test('invited with new account', async ({ page }) => {
 
     await test.step('Create Vault account', async () => {
         await expect(page.getByRole('heading', { name: 'Join organisation' })).toBeVisible();
-        await page.getByLabel('Master password (required)', { exact: true }).fill(users.user2.password);
+        await page.getByLabel('New master password (required)', { exact: true }).fill(users.user2.password);
         await page.getByLabel('Confirm master password (').fill(users.user2.password);
         await page.getByRole('button', { name: 'Create account' }).click();
     });

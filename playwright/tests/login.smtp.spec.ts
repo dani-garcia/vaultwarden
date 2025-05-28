@@ -3,6 +3,7 @@ import { MailDev } from 'maildev';
 
 const utils = require('../global-utils');
 import { createAccount, logUser } from './setups/user';
+import { activateEmail, retrieveEmailCode, disableEmail } from './setups/2fa';
 
 let users = utils.loadEnv();
 
@@ -67,24 +68,7 @@ test('Activaite 2fa', async ({ context, page }) => {
 
     await logUser(test, page, users.user1);
 
-    await page.getByRole('button', { name: users.user1.name }).click();
-    await page.getByRole('menuitem', { name: 'Account settings' }).click();
-    await page.getByRole('link', { name: 'Security' }).click();
-    await page.getByRole('link', { name: 'Two-step login' }).click();
-    await page.locator('li').filter({ hasText: 'Email' }).getByRole('button').click();
-    await page.getByLabel('Master password (required)').fill(users.user1.password);
-    await page.getByRole('button', { name: 'Continue' }).click();
-    await page.getByRole('button', { name: 'Send email' }).click();
-
-    const codeMail = await emails.next((mail) => mail.subject === "Vaultwarden Login Verification Code");
-    const page2 = await context.newPage();
-    await page2.setContent(codeMail.html);
-    const code = await page2.getByTestId("2fa").innerText();
-    await page2.close();
-
-    await page.getByLabel('2. Enter the resulting 6').fill(code);
-    await page.getByRole('button', { name: 'Turn on' }).click();
-    await page.getByRole('heading', { name: 'Turned on', exact: true });
+    await activateEmail(test, page, users.user1, emails);
 
     emails.close();
 });
@@ -112,19 +96,7 @@ test('2fa', async ({ context, page }) => {
         await expect(page).toHaveTitle(/Vaultwarden Web/);
     })
 
-    await test.step('disable', async () => {
-        await page.getByRole('button', { name: 'Test' }).click();
-        await page.getByRole('menuitem', { name: 'Account settings' }).click();
-        await page.getByRole('link', { name: 'Security' }).click();
-        await page.getByRole('link', { name: 'Two-step login' }).click();
-        await page.locator('li').filter({ hasText: 'Email' }).getByRole('button').click();
-        await page.getByLabel('Master password (required)').click();
-        await page.getByLabel('Master password (required)').fill(users.user1.password);
-        await page.getByRole('button', { name: 'Continue' }).click();
-        await page.getByRole('button', { name: 'Turn off' }).click();
-        await page.getByRole('button', { name: 'Yes' }).click();
-        await utils.checkNotification(page, 'Two-step login provider turned off');
-    });
+    await disableEmail(test, page, users.user1);
 
     emails.close();
 });

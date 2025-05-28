@@ -4,16 +4,8 @@ import { type MailBuffer } from 'maildev';
 import * as utils from '../../global-utils';
 
 export async function createAccount(test, page: Page, user: { email: string, name: string, password: string }, mailBuffer?: MailBuffer) {
-    await test.step('Create user', async () => {
-        // Landing page
-        await page.goto('/', { waitUntil: 'domcontentloaded' });
-        await expect(page.getByRole('button').nth(0)).toBeVisible();
-
-        const logged = await page.getByRole('button', { name: 'Log out' }).count();
-        if( logged > 0 ){
-            await page.getByRole('button', { name: 'Log out' }).click();
-            await page.getByRole('button', { name: 'Log out' }).click();
-        }
+    await test.step(`Create user ${user.name}`, async () => {
+        await utils.cleanLanding(page);
 
         await page.getByRole('link', { name: 'Create account' }).click();
 
@@ -24,13 +16,15 @@ export async function createAccount(test, page: Page, user: { email: string, nam
         await page.getByRole('button', { name: 'Continue' }).click();
 
         // Vault finish Creation
-        await page.getByLabel('Master password (required)', { exact: true }).fill(user.password);
+        await page.getByLabel('New master password (required)', { exact: true }).fill(user.password);
         await page.getByLabel('Confirm master password (').fill(user.password);
         await page.getByRole('button', { name: 'Create account' }).click();
 
+        await utils.checkNotification(page, 'Your new account has been created')
+
         // We are now in the default vault page
         await expect(page).toHaveTitle('Vaults | Vaultwarden Web');
-        await utils.checkNotification(page, 'Your new account has been created');
+        await utils.checkNotification(page, 'You have been logged in!');
 
         if( mailBuffer ){
             await expect(mailBuffer.next((m) => m.subject === "Welcome")).resolves.toBeDefined();
@@ -39,16 +33,8 @@ export async function createAccount(test, page: Page, user: { email: string, nam
 }
 
 export async function logUser(test, page: Page, user: { email: string, password: string }, mailBuffer?: MailBuffer) {
-    await test.step('Log user', async () => {
-        // Landing page
-        await page.goto('/', { waitUntil: 'domcontentloaded' });
-        await expect(page.getByRole('button').nth(0)).toBeVisible();
-
-        const logged = await page.getByRole('button', { name: 'Log out' }).count();
-        if( logged > 0 ){
-            await page.getByRole('button', { name: 'Log out' }).click();
-            await page.getByRole('button', { name: 'Log out' }).click();
-        }
+    await test.step(`Log user ${user.email}`, async () => {
+        await utils.cleanLanding(page);
 
         await page.getByLabel(/Email address/).fill(user.email);
         await page.getByRole('button', { name: 'Continue' }).click();
