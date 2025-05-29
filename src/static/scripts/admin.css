@@ -54,3 +54,7 @@ img {
 .vw-copy-toast {
     width: 15rem;
 }
+
+.abbr-badge {
+    cursor: help;
+}

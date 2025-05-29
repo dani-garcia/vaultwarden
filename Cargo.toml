@@ -134,7 +134,7 @@ email_address = "0.2.9"
 handlebars = { version = "6.3.2", features = ["dir_source"] }
 
 # HTTP client (Used for favicons, version check, DUO and HIBP API)
-reqwest = { version = "0.12.15", features = ["native-tls-alpn", "stream", "json", "gzip", "brotli", "socks", "cookies"] }
+reqwest = { version = "0.12.18", features = ["native-tls-alpn", "stream", "json", "gzip", "brotli", "socks", "cookies"] }
 hickory-resolver = "0.25.2"
 
 # Favicon extraction libraries
@@ -151,7 +151,7 @@ cookie = "0.18.1"
 cookie_store = "0.21.1"
 
 # Used by U2F, JWT and PostgreSQL
-openssl = "0.10.72"
+openssl = "0.10.73"
 
 # CLI argument parsing
 pico-args = "0.5.0"
@@ -179,7 +179,7 @@ rpassword = "7.4.0"
 grass_compiler = { version = "0.13.4", default-features = false }
 
 # File are accessed through Apache OpenDAL
-opendal = { version = "0.53.2", features = ["services-fs"] }
+opendal = { version = "0.53.3", features = ["services-fs"] }
 
 # For retrieving AWS credentials, including temporary SSO credentials
 anyhow = { version = "1.0.98", optional = true }
