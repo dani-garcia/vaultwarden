@@ -1,11 +1,11 @@
-use std::io::ErrorKind;
+use std::time::Duration;
 
 use bigdecimal::{BigDecimal, ToPrimitive};
 use derive_more::{AsRef, Deref, Display};
 use serde_json::Value;
 
 use super::{CipherId, OrganizationId, UserId};
-use crate::CONFIG;
+use crate::{config::PathType, CONFIG};
 use macros::IdFromParam;
 
 db_object! {
@@ -41,24 +41,30 @@ impl Attachment {
     }
 
     pub fn get_file_path(&self) -> String {
-        format!("{}/{}/{}", CONFIG.attachments_folder(), self.cipher_uuid, self.id)
+        format!("{}/{}", self.cipher_uuid, self.id)
     }
 
-    pub fn get_url(&self, host: &str) -> String {
-        let token = encode_jwt(&generate_file_download_claims(self.cipher_uuid.clone(), self.id.clone()));
-        format!("{host}/attachments/{}/{}?token={token}", self.cipher_uuid, self.id)
+    pub async fn get_url(&self, host: &str) -> Result<String, crate::Error> {
+        let operator = CONFIG.opendal_operator_for_path_type(PathType::Attachments)?;
+
+        if operator.info().scheme() == opendal::Scheme::Fs {
+            let token = encode_jwt(&generate_file_download_claims(self.cipher_uuid.clone(), self.id.clone()));
+            Ok(format!("{host}/attachments/{}/{}?token={token}", self.cipher_uuid, self.id))
+        } else {
+            Ok(operator.presign_read(&self.get_file_path(), Duration::from_secs(5 * 60)).await?.uri().to_string())
+        }
     }
 
-    pub fn to_json(&self, host: &str) -> Value {
-        json!({
+    pub async fn to_json(&self, host: &str) -> Result<Value, crate::Error> {
+        Ok(json!({
             "id": self.id,
-            "url": self.get_url(host),
+            "url": self.get_url(host).await?,
             "fileName": self.file_name,
             "size": self.file_size.to_string(),
             "sizeName": crate::util::get_display_size(self.file_size),
             "key": self.akey,
             "object": "attachment"
-        })
+        }))
     }
 }
 
@@ -104,26 +110,26 @@ impl Attachment {
 
     pub async fn delete(&self, conn: &mut DbConn) -> EmptyResult {
         db_run! { conn: {
-            let _: () = crate::util::retry(
+            crate::util::retry(
                 || diesel::delete(attachments::table.filter(attachments::id.eq(&self.id))).execute(conn),
                 10,
             )
-            .map_res("Error deleting attachment")?;
+            .map(|_| ())
+            .map_res("Error deleting attachment")
+        }}?;
 
-            let file_path = &self.get_file_path();
+        let operator = CONFIG.opendal_operator_for_path_type(PathType::Attachments)?;
+        let file_path = self.get_file_path();
 
-            match std::fs::remove_file(file_path) {
-                // Ignore "file not found" errors. This can happen when the
-                // upstream caller has already cleaned up the file as part of
-                // its own error handling.
-                Err(e) if e.kind() == ErrorKind::NotFound => {
-                    debug!("File '{file_path}' already deleted.");
-                    Ok(())
-                }
-                Err(e) => Err(e.into()),
-                _ => Ok(()),
+        if let Err(e) = operator.delete(&file_path).await {
+            if e.kind() == opendal::ErrorKind::NotFound {
+                debug!("File '{file_path}' already deleted.");
+            } else {
+                return Err(e.into());
             }
-        }}
+        }
+
+        Ok(())
     }
 
     pub async fn delete_all_by_cipher(cipher_uuid: &CipherId, conn: &mut DbConn) -> EmptyResult {

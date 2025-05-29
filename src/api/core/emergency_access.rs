@@ -582,7 +582,7 @@ async fn view_emergency_access(emer_id: EmergencyAccessId, headers: Headers, mut
                 CipherSyncType::User,
                 &mut conn,
             )
-            .await,
+            .await?,
         );
     }
 

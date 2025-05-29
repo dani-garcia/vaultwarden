@@ -16,7 +16,7 @@ use tokio::{
     time::{sleep, Duration},
 };
 
-use crate::CONFIG;
+use crate::{config::PathType, CONFIG};
 
 pub struct AppHeaders();
 
@@ -825,6 +825,26 @@ pub use is_global_hardcoded as is_global;
 #[inline(always)]
 pub fn is_global(ip: std::net::IpAddr) -> bool {
     ip.is_global()
+}
+
+/// Saves a Rocket temporary file to the OpenDAL Operator at the given path.
+pub async fn save_temp_file(
+    path_type: PathType,
+    path: &str,
+    temp_file: rocket::fs::TempFile<'_>,
+    overwrite: bool,
+) -> Result<(), crate::Error> {
+    use futures::AsyncWriteExt as _;
+    use tokio_util::compat::TokioAsyncReadCompatExt as _;
+
+    let operator = CONFIG.opendal_operator_for_path_type(path_type)?;
+
+    let mut read_stream = temp_file.open().await?.compat();
+    let mut writer = operator.writer_with(path).if_not_exists(!overwrite).await?.into_futures_async_write();
+    futures::io::copy(&mut read_stream, &mut writer).await?;
+    writer.close().await?;
+
+    Ok(())
 }
 
 /// These are some tests to check that the implementations match
