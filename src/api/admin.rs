@@ -614,7 +614,7 @@ use cached::proc_macro::cached;
 /// It will cache this function for 600 seconds (10 minutes) which should prevent the exhaustion of the rate limit
 /// Any cache will be lost if Vaultwarden is restarted
 #[cached(time = 600, sync_writes = "default")]
-async fn get_release_info(has_http_access: bool, running_within_container: bool) -> (String, String, String) {
+async fn get_release_info(has_http_access: bool) -> (String, String, String) {
     // If the HTTP Check failed, do not even attempt to check for new versions since we were not able to connect with github.com anyway.
     if has_http_access {
         (
@@ -633,17 +633,11 @@ async fn get_release_info(has_http_access: bool, running_within_container: bool)
             },
             // Do not fetch the web-vault version when running within a container
             // The web-vault version is embedded within the container it self, and should not be updated manually
-            if running_within_container {
-                "-".to_string()
-            } else {
-                match get_json_api::<GitRelease>(
-                    "https://api.github.com/repos/dani-garcia/bw_web_builds/releases/latest",
-                )
+            match get_json_api::<GitRelease>("https://api.github.com/repos/dani-garcia/bw_web_builds/releases/latest")
                 .await
-                {
-                    Ok(r) => r.tag_name.trim_start_matches('v').to_string(),
-                    _ => "-".to_string(),
-                }
+            {
+                Ok(r) => r.tag_name.trim_start_matches('v').to_string(),
+                _ => "-".to_string(),
             },
         )
     } else {
@@ -689,8 +683,7 @@ async fn diagnostics(_token: AdminToken, ip_header: IpHeader, mut conn: DbConn) 
         _ => "Unable to resolve domain name.".to_string(),
     };
 
-    let (latest_release, latest_commit, latest_web_build) =
-        get_release_info(has_http_access, running_within_container).await;
+    let (latest_release, latest_commit, latest_web_build) = get_release_info(has_http_access).await;
 
     let ip_header_name = &ip_header.0.unwrap_or_default();
 

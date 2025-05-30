@@ -208,11 +208,9 @@ function initVersionCheck(dj) {
     }
     checkVersions("server", serverInstalled, serverLatest, serverLatestCommit);
 
-    if (!dj.running_within_container) {
-        const webInstalled = dj.web_vault_version;
-        const webLatest = dj.latest_web_build;
-        checkVersions("web", webInstalled, webLatest, null, dj.web_vault_pre_release);
-    }
+    const webInstalled = dj.web_vault_version;
+    const webLatest = dj.latest_web_build;
+    checkVersions("web", webInstalled, webLatest, null, dj.web_vault_pre_release);
 }
 
 function checkDns(dns_resolved) {
