@@ -6,7 +6,7 @@ CREATE TABLE users (
   name                TEXT     NOT NULL,
   password_hash       BYTEA     NOT NULL,
   salt                BYTEA     NOT NULL,
-  password_iterations INTEGER  NOT NULL,
+  password_iterations INT4  NOT NULL,
   password_hint       TEXT,
   akey                TEXT     NOT NULL,
   private_key         TEXT,
@@ -16,8 +16,8 @@ CREATE TABLE users (
   security_stamp      TEXT     NOT NULL,
   equivalent_domains  TEXT     NOT NULL,
   excluded_globals    TEXT     NOT NULL,
-  client_kdf_type     INTEGER NOT NULL DEFAULT 0,
-  client_kdf_iter INTEGER NOT NULL DEFAULT 100000
+  client_kdf_type     INT4 NOT NULL DEFAULT 0,
+  client_kdf_iter INT4 NOT NULL DEFAULT 100000
 );
 
 CREATE TABLE devices (
@@ -26,7 +26,7 @@ CREATE TABLE devices (
   updated_at    TIMESTAMP NOT NULL,
   user_uuid     CHAR(36) NOT NULL REFERENCES users (uuid),
   name          TEXT     NOT NULL,
-  atype         INTEGER  NOT NULL,
+  atype         INT4  NOT NULL,
   push_token    TEXT,
   refresh_token TEXT     NOT NULL,
   twofactor_remember TEXT
@@ -44,7 +44,7 @@ CREATE TABLE ciphers (
   updated_at        TIMESTAMP NOT NULL,
   user_uuid         CHAR(36) REFERENCES users (uuid),
   organization_uuid CHAR(36) REFERENCES organizations (uuid),
-  atype             INTEGER  NOT NULL,
+  atype             INT4  NOT NULL,
   name              TEXT     NOT NULL,
   notes             TEXT,
   fields            TEXT,
@@ -57,7 +57,7 @@ CREATE TABLE attachments (
   id          CHAR(36) NOT NULL PRIMARY KEY,
   cipher_uuid CHAR(36) NOT NULL REFERENCES ciphers (uuid),
   file_name   TEXT    NOT NULL,
-  file_size   INTEGER NOT NULL,
+  file_size   INT4 NOT NULL,
   akey        TEXT
 );
 
@@ -89,8 +89,8 @@ CREATE TABLE users_organizations (
 
   access_all BOOLEAN NOT NULL,
   akey       TEXT    NOT NULL,
-  status     INTEGER NOT NULL,
-  atype      INTEGER NOT NULL,
+  status     INT4 NOT NULL,
+  atype      INT4 NOT NULL,
 
   UNIQUE (user_uuid, org_uuid)
 );
@@ -110,7 +110,7 @@ CREATE TABLE ciphers_collections (
 CREATE TABLE twofactor (
   uuid      CHAR(36) NOT NULL PRIMARY KEY,
   user_uuid CHAR(36) NOT NULL REFERENCES users (uuid),
-  atype     INTEGER  NOT NULL,
+  atype     INT4  NOT NULL,
   enabled   BOOLEAN  NOT NULL,
   data      TEXT     NOT NULL,
   UNIQUE (user_uuid, atype)

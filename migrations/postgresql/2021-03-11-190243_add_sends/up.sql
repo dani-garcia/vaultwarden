@@ -6,15 +6,15 @@ CREATE TABLE sends (
   name              TEXT    NOT NULL,
   notes             TEXT,
 
-  atype             INTEGER NOT NULL,
+  atype             INT4 NOT NULL,
   data              TEXT    NOT NULL,
   key               TEXT    NOT NULL,
   password_hash     BYTEA,
   password_salt     BYTEA,
-  password_iter     INTEGER,
+  password_iter     INT4,
 
-  max_access_count  INTEGER,
-  access_count      INTEGER NOT NULL,
+  max_access_count  INT4,
+  access_count      INT4 NOT NULL,
 
   creation_date     TIMESTAMP NOT NULL,
   revision_date     TIMESTAMP NOT NULL,
