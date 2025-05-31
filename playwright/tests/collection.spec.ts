@@ -1,16 +1,16 @@
 import { test, expect, type TestInfo } from '@playwright/test';
 
 import * as utils from "../global-utils";
-import { createAccount, logUser } from './setups/user';
+import { createAccount } from './setups/user';
 
 let users = utils.loadEnv();
 
 test.beforeAll('Setup', async ({ browser }, testInfo: TestInfo) => {
-    await utils.startVaultwarden(browser, testInfo);
+    await utils.startVault(browser, testInfo);
 });
 
 test.afterAll('Teardown', async ({}) => {
-    utils.stopVaultwarden();
+    utils.stopVault();
 });
 
 test('Create', async ({ page }) => {

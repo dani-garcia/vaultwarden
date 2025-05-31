@@ -170,7 +170,7 @@ function dbConfig(testInfo: TestInfo){
 /**
  *  All parameters passed in `env` need to be added to the docker-compose.yml
  **/
-export async function startVaultwarden(browser: Browser, testInfo: TestInfo, env = {}, resetDB: Boolean = true) {
+export async function startVault(browser: Browser, testInfo: TestInfo, env = {}, resetDB: Boolean = true) {
     if( resetDB ){
         switch(testInfo.project.name) {
             case "postgres":
@@ -195,14 +195,18 @@ export async function startVaultwarden(browser: Browser, testInfo: TestInfo, env
     console.log(`Vaultwarden running on: ${process.env.DOMAIN}`);
 }
 
-export async function stopVaultwarden() {
-    console.log(`Vaultwarden stopping`);
-    execSync(`docker compose --profile playwright --env-file test.env stop Vaultwarden`);
+export async function stopVault(force: boolean = false) {
+    if( force === false && process.env.PW_KEEP_SERVICE_RUNNNING === "true" ) {
+        console.log(`Keep vaultwarden running on: ${process.env.DOMAIN}`);
+    } else {
+        console.log(`Vaultwarden stopping`);
+        execSync(`docker compose --profile playwright --env-file test.env stop Vaultwarden`);
+    }
 }
 
-export async function restartVaultwarden(page: Page, testInfo: TestInfo, env, resetDB: Boolean = true) {
-    stopVaultwarden();
-    return startVaultwarden(page.context().browser(), testInfo, env, resetDB);
+export async function restartVault(page: Page, testInfo: TestInfo, env, resetDB: Boolean = true) {
+    stopVault(true);
+    return startVault(page.context().browser(), testInfo, env, resetDB);
 }
 
 export async function checkNotification(page: Page, hasText: string) {

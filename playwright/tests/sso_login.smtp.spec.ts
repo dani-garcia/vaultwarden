@@ -17,16 +17,16 @@ test.beforeAll('Setup', async ({ browser }, testInfo: TestInfo) => {
 
     await mailserver.listen();
 
-    await utils.startVaultwarden(browser, testInfo, {
+    await utils.startVault(browser, testInfo, {
         SSO_ENABLED: true,
         SSO_ONLY: false,
         SMTP_HOST: process.env.MAILDEV_HOST,
-        SMTP_FROM: process.env.VAULTWARDEN_SMTP_FROM,
+        SMTP_FROM: process.env.PW_SMTP_FROM,
     });
 });
 
 test.afterAll('Teardown', async ({}) => {
-    utils.stopVaultwarden();
+    utils.stopVault();
     if( mailserver ){
         await mailserver.close();
     }

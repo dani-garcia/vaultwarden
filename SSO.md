@@ -12,42 +12,42 @@ This introduces another way to control who can use the vault without having to u
 
 The following configurations are available
 
- - `SSO_ENABLED` : Activate the SSO
- - `SSO_ONLY` : disable email+Master password authentication
- - `SSO_SIGNUPS_MATCH_EMAIL`: On SSO Signup if a user with a matching email already exists make the association (default `true`)
- - `SSO_ALLOW_UNKNOWN_EMAIL_VERIFICATION`: Allow unknown email verification status (default `false`). Allowing this with `SSO_SIGNUPS_MATCH_EMAIL` open potential account takeover.
- - `SSO_AUTHORITY` : the OpenID Connect Discovery endpoint of your SSO
- 	- Should not include the `/.well-known/openid-configuration` part and no trailing `/`
- 	- $SSO_AUTHORITY/.well-known/openid-configuration should return the a json document: https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderConfigurationResponse
- - `SSO_SCOPES` : Optional, allow to override scopes if needed (default `"email profile"`)
- - `SSO_AUTHORIZE_EXTRA_PARAMS` : Optional, allow to add extra parameter to the authorize redirection (default `""`)
- - `SSO_PKCE`: Activate PKCE for the Auth Code flow (default `true`).
- - `SSO_AUDIENCE_TRUSTED`: Optional, Regex to trust additional audience for the IdToken (`client_id` is always trusted). Use single quote when writing the regex: `'^$'`.
- - `SSO_CLIENT_ID` : Client Id
- - `SSO_CLIENT_SECRET` : Client Secret
- - `SSO_MASTER_PASSWORD_POLICY`: Optional Master password policy (`enforceOnLogin` is not supported).
- - `SSO_AUTH_ONLY_NOT_SESSION`: Enable to use SSO only for authentication not session lifecycle
- - `SSO_CLIENT_CACHE_EXPIRATION`: Cache calls to the discovery endpoint, duration in seconds, `0` to disable (default `0`);
- - `SSO_DEBUG_TOKENS`: Log all tokens (default `false`, `LOG_LEVEL=debug` is required)
+- `SSO_ENABLED` : Activate the SSO
+- `SSO_ONLY` : disable email+Master password authentication
+- `SSO_SIGNUPS_MATCH_EMAIL`: On SSO Signup if a user with a matching email already exists make the association (default `true`)
+- `SSO_ALLOW_UNKNOWN_EMAIL_VERIFICATION`: Allow unknown email verification status (default `false`). Allowing this with `SSO_SIGNUPS_MATCH_EMAIL` open potential account takeover.
+- `SSO_AUTHORITY` : the OpenID Connect Discovery endpoint of your SSO
+  - Should not include the `/.well-known/openid-configuration` part and no trailing `/`
+  - $SSO_AUTHORITY/.well-known/openid-configuration should return the a json document: https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderConfigurationResponse
+- `SSO_SCOPES` : Optional, allow to override scopes if needed (default `"email profile"`)
+- `SSO_AUTHORIZE_EXTRA_PARAMS` : Optional, allow to add extra parameter to the authorize redirection (default `""`)
+- `SSO_PKCE`: Activate PKCE for the Auth Code flow (default `true`).
+- `SSO_AUDIENCE_TRUSTED`: Optional, Regex to trust additional audience for the IdToken (`client_id` is always trusted). Use single quote when writing the regex: `'^$'`.
+- `SSO_CLIENT_ID` : Client Id
+- `SSO_CLIENT_SECRET` : Client Secret
+- `SSO_MASTER_PASSWORD_POLICY`: Optional Master password policy (`enforceOnLogin` is not supported).
+- `SSO_AUTH_ONLY_NOT_SESSION`: Enable to use SSO only for authentication not session lifecycle
+- `SSO_CLIENT_CACHE_EXPIRATION`: Cache calls to the discovery endpoint, duration in seconds, `0` to disable (default `0`);
+- `SSO_DEBUG_TOKENS`: Log all tokens for easier debugging (default `false`, `LOG_LEVEL=debug` or `LOG_LEVEL=info,vaultwarden::sso=debug` need to be set)
 
 The callback url is : `https://your.domain/identity/connect/oidc-signin`
 
 ## Account and Email handling
 
 When logging in with SSO an identifier (`{iss}/{sub}` claims from the IdToken) is saved in a separate table (`sso_users`).
-This is used to link to the SSO provider identifier without changing the default Vaultwarden user `uuid`. This is needed because:
+This is used to link to the SSO provider identifier without changing the default user `uuid`. This is needed because:
 
- - Storing the SSO identifier is important to prevent account takeover due to email change.
- - We can't use the identifier as the User uuid since it's way longer (Max 255 chars for the `sub` part, cf [spec](https://openid.net/specs/openid-connect-core-1_0.html#IDToken)).
- - We want to be able to associate existing account based on `email` but only when the user logs in for the first time (controlled by `SSO_SIGNUPS_MATCH_EMAIL`).
- - We need to be able to associate with existing stub account, such as the one created when inviting a user to an org (association is possible only if the user does not have a private key).
+- Storing the SSO identifier is important to prevent account takeover due to email change.
+- We can't use the identifier as the User uuid since it's way longer (Max 255 chars for the `sub` part, cf [spec](https://openid.net/specs/openid-connect-core-1_0.html#CodeIDToken)).
+- We want to be able to associate existing account based on `email` but only when the user logs in for the first time (controlled by `SSO_SIGNUPS_MATCH_EMAIL`).
+- We need to be able to associate with existing stub account, such as the one created when inviting a user to an org (association is possible only if the user does not have a private key).
 
 Additionally:
 
- - Signup to Vaultwarden will be blocked if the Provider reports the email as `unverified`.
- - Changing the email needs to be done by the user since it requires updating the `key`.
- 	 On login if the email returned by the provider is not the one saved in Vaultwarden an email will be sent to the user to ask him to update it.
- - If set `SIGNUPS_DOMAINS_WHITELIST` is applied on SSO signup and when attempting to change the email.
+- Signup will be blocked if the Provider reports the email as `unverified`.
+- Changing the email needs to be done by the user since it requires updating the `key`.
+  On login if the email returned by the provider is not the one saved an email will be sent to the user to ask him to update it.
+- If set `SIGNUPS_DOMAINS_WHITELIST` is applied on SSO signup and when attempting to change the email.
 
 This means that if you ever need to change the provider url or the provider itself; you'll have to first delete the association
 then ensure that `SSO_SIGNUPS_MATCH_EMAIL` is activated to allow a new association.
@@ -94,7 +94,7 @@ As mentioned in the Google example setting too high of a value has diminishing r
 
 ## Keycloak
 
-Default access token lifetime might be only `5min`, set a longer value otherwise it will collide with `VaultWarden` front-end expiration detection which is also set at `5min`.
+Default access token lifetime might be only `5min`, set a longer value otherwise it will collide with `Bitwarden` front-end expiration detection which is also set at `5min`.
 \
 At the realm level
 
@@ -115,11 +115,10 @@ If you want to run a testing instance of Keycloak the Playwright [docker-compose
 \
 More details on how to use it in [README.md](playwright/README.md#openid-connect-test-setup).
 
-
 ## Auth0
 
 Not working due to the following issue https://github.com/ramosbugs/openidconnect-rs/issues/23 (they appear not to follow the spec).
-A feature flag is available to bypass the issue but since it's a compile time feature you will have to patch `Vaultwarden` with something like:
+A feature flag is available to bypass the issue but since it's a compile time feature you will have to patch with something like:
 
 ```patch
 diff --git a/Cargo.toml b/Cargo.toml
@@ -148,7 +147,7 @@ Config will look like:
 
 ## Authentik
 
-Default access token lifetime might be only `5min`, set a longer value otherwise it will collide with `VaultWarden` front-end expiration detection which is also set at `5min`.
+Default access token lifetime might be only `5min`, set a longer value otherwise it will collide with `Bitwarden` front-end expiration detection which is also set at `5min`.
 \
 To change the tokens expiration go to `Applications / Providers / Edit / Advanced protocol settings`.
 
@@ -208,7 +207,7 @@ Nothing specific should work with just `SSO_AUTHORITY`, `SSO_CLIENT_ID` and `SSO
 1. Create an "App registration" in [Entra ID](https://entra.microsoft.com/) following [Identity | Applications | App registrations](https://entra.microsoft.com/#blade/Microsoft_AAD_RegisteredApps/ApplicationsListBlade/quickStartType//sourceType/Microsoft_AAD_IAM).
 2. From the "Overview" of your "App registration", you'll need the "Directory (tenant) ID" for the `SSO_AUTHORITY` variable and the "Application (client) ID" as the `SSO_CLIENT_ID` value.
 3. In "Certificates & Secrets" create an "App secret" , you'll need the "Secret Value" for the `SSO_CLIENT_SECRET` variable.
-4. In "Authentication" add <https://vaultwarden.example.org/identity/connect/oidc-signin> as "Web Redirect URI".
+4. In "Authentication" add <https://warden.example.org/identity/connect/oidc-signin> as "Web Redirect URI".
 5. In "API Permissions" make sure you have `profile`, `email` and `offline_access` listed under "API / Permission name" (`offline_access` is required, otherwise no refresh_token is returned, see <https://github.com/MicrosoftDocs/azure-docs/issues/17134>).
 
 Only the v2 endpoint is compliant with the OpenID spec, see <https://github.com/MicrosoftDocs/azure-docs/issues/38427> and <https://github.com/ramosbugs/openidconnect-rs/issues/122>.
@@ -270,8 +269,8 @@ Config will look like:
 Session lifetime is dependant on refresh token and access token returned after calling your SSO token endpoint (grant type `authorization_code`).
 If no refresh token is returned then the session will be limited to the access token lifetime.
 
-Tokens are not persisted in VaultWarden but wrapped in JWT tokens and returned to the application (The `refresh_token` and `access_token` values returned by VW `identity/connect/token` endpoint).
-Note that VaultWarden will always return a `refresh_token` for compatibility reasons with the web front and it presence does not indicate that a refresh token was returned by your SSO (But you can decode its value with <https://jwt.io> and then check if the `token` field contain anything).
+Tokens are not persisted in the server but wrapped in JWT tokens and returned to the application (The `refresh_token` and `access_token` values returned by VW `identity/connect/token` endpoint).
+Note that the server will always return a `refresh_token` for compatibility reasons with the web front and it presence does not indicate that a refresh token was returned by your SSO (But you can decode its value with <https://jwt.io> and then check if the `token` field contain anything).
 
 With a refresh token present, activity in the application will trigger a refresh of the access token when it's close to expiration ([5min](https://github.com/bitwarden/clients/blob/0bcb45ed5caa990abaff735553a5046e85250f24/libs/common/src/auth/services/token.service.ts#L126) in web client).
 

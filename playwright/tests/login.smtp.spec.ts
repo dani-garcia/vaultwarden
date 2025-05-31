@@ -17,14 +17,14 @@ test.beforeAll('Setup', async ({ browser }, testInfo: TestInfo) => {
 
     await mailserver.listen();
 
-    await utils.startVaultwarden(browser, testInfo, {
+    await utils.startVault(browser, testInfo, {
         SMTP_HOST: process.env.MAILDEV_HOST,
-        SMTP_FROM: process.env.VAULTWARDEN_SMTP_FROM,
+        SMTP_FROM: process.env.PW_SMTP_FROM,
     });
 });
 
 test.afterAll('Teardown', async ({}) => {
-    utils.stopVaultwarden();
+    utils.stopVault();
     if( mailserver ){
         await mailserver.close();
     }
@@ -32,7 +32,9 @@ test.afterAll('Teardown', async ({}) => {
 
 test('Account creation', async ({ page }) => {
     const mailBuffer = mailserver.buffer(users.user1.email);
+
     await createAccount(test, page, users.user1, mailBuffer);
+
     mailBuffer.close();
 });
 
@@ -49,7 +51,7 @@ test('Login', async ({ context, page }) => {
         await utils.checkNotification(page, 'Check your email inbox for a verification link');
 
         const verify = await mailBuffer.next((m) => m.subject === "Verify Your Email");
-        expect(verify.from[0]?.address).toBe(process.env.VAULTWARDEN_SMTP_FROM);
+        expect(verify.from[0]?.address).toBe(process.env.PW_SMTP_FROM);
 
         const page2 = await context.newPage();
         await page2.setContent(verify.html);
@@ -63,7 +65,7 @@ test('Login', async ({ context, page }) => {
     mailBuffer.close();
 });
 
-test('Activaite 2fa', async ({ context, page }) => {
+test('Activate 2fa', async ({ page }) => {
     const emails = mailserver.buffer(users.user1.email);
 
     await logUser(test, page, users.user1);
@@ -73,7 +75,7 @@ test('Activaite 2fa', async ({ context, page }) => {
     emails.close();
 });
 
-test('2fa', async ({ context, page }) => {
+test('2fa', async ({ page }) => {
     const emails = mailserver.buffer(users.user1.email);
 
     await test.step('login', async () => {
@@ -84,16 +86,12 @@ test('2fa', async ({ context, page }) => {
         await page.getByLabel('Master password').fill(users.user1.password);
         await page.getByRole('button', { name: 'Log in with master password' }).click();
 
-        const codeMail = await emails.next((mail) => mail.subject === "Vaultwarden Login Verification Code");
-        const page2 = await context.newPage();
-        await page2.setContent(codeMail.html);
-        const code = await page2.getByTestId("2fa").innerText();
-        await page2.close();
-
-        await page.getByLabel('Verification code').fill(code);
+        await expect(page.getByRole('heading', { name: 'Verify your Identity' })).toBeVisible();
+        const code = await retrieveEmailCode(test, page, emails);
+        await page.getByLabel(/Verification code/).fill(code);
         await page.getByRole('button', { name: 'Continue' }).click();
 
-        await expect(page).toHaveTitle(/Vaultwarden Web/);
+        await expect(page).toHaveTitle(/Vaults/);
     })
 
     await disableEmail(test, page, users.user1);

@@ -143,18 +143,7 @@ You can run just `Keycloak` with `--profile keycloak`:
 ```bash
 > docker compose --profile keycloak --env-file .env up
 ```
-
-When running with a local VaultWarden and the default `web-vault` you'll need to make the SSO button visible using :
-
-```bash
-sed -i 's#a\[routerlink="/sso"\],##' web-vault/app/main.*.css
-```
-
-Otherwise you'll need to reveal the SSO login button using the debug console (F12)
-
- ```js
- document.querySelector('a[routerlink="/sso"]').style.setProperty("display", "inline-block", "important");
- ```
+When running with a local VaultWarden, you can use a front-end build from [dani-garcia/bw_web_builds](https://github.com/dani-garcia/bw_web_builds/releases).
 
 ## Rebuilding the Vaultwarden
 

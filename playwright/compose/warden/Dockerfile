@@ -1,4 +1,4 @@
-FROM playwright_oidc_vaultwarden_prebuilt AS vaultwarden
+FROM playwright_oidc_vaultwarden_prebuilt AS prebuilt
 
 FROM node:18-bookworm AS build
 
@@ -8,7 +8,8 @@ ARG COMMIT_HASH
 ENV REPO_URL=$REPO_URL
 ENV COMMIT_HASH=$COMMIT_HASH
 
-COPY --from=vaultwarden /web-vault /web-vault
+COPY --from=prebuilt /web-vault /web-vault
+
 COPY build.sh /build.sh
 RUN /build.sh
 
@@ -32,8 +33,8 @@ RUN mkdir /data && \
 # and the binary from the "build" stage to the current stage
 WORKDIR /
 
-COPY --from=vaultwarden /start.sh .
-COPY --from=vaultwarden /vaultwarden .
+COPY --from=prebuilt /start.sh .
+COPY --from=prebuilt /vaultwarden .
 COPY --from=build /web-vault ./web-vault
 
 ENTRYPOINT ["/start.sh"]

@@ -9,11 +9,11 @@ let users = utils.loadEnv();
 let totp;
 
 test.beforeAll('Setup', async ({ browser }, testInfo: TestInfo) => {
-    await utils.startVaultwarden(browser, testInfo, {});
+    await utils.startVault(browser, testInfo, {});
 });
 
-test.afterAll('Teardown', async ({}, testInfo: TestInfo) => {
-    utils.stopVaultwarden(testInfo);
+test.afterAll('Teardown', async ({}) => {
+    utils.stopVault();
 });
 
 test('Account creation', async ({ page }) => {
@@ -24,7 +24,7 @@ test('Master password login', async ({ page }) => {
     await logUser(test, page, users.user1);
 });
 
-test('Authenticator 2fa', async ({ context, page }) => {
+test('Authenticator 2fa', async ({ page }) => {
     await logUser(test, page, users.user1);
 
     let totp = await activateTOTP(test, page, users.user1);
@@ -36,7 +36,7 @@ test('Authenticator 2fa', async ({ context, page }) => {
     });
 
     await test.step('login', async () => {
-        let timestamp = Date.now(); // Need to use the next token
+        let timestamp = Date.now(); // Needed to use the next token
         timestamp = timestamp + (totp.period - (Math.floor(timestamp / 1000) % totp.period) + 1) * 1000;
 
         await page.getByLabel(/Email address/).fill(users.user1.email);
@@ -44,7 +44,8 @@ test('Authenticator 2fa', async ({ context, page }) => {
         await page.getByLabel('Master password').fill(users.user1.password);
         await page.getByRole('button', { name: 'Log in with master password' }).click();
 
-        await page.getByLabel('Verification code').fill(totp.generate({timestamp}));
+        await expect(page.getByRole('heading', { name: 'Verify your Identity' })).toBeVisible();
+        await page.getByLabel(/Verification code/).fill(totp.generate({timestamp}));
         await page.getByRole('button', { name: 'Continue' }).click();
 
         await expect(page).toHaveTitle(/Vaultwarden Web/);

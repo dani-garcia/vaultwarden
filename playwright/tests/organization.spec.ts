@@ -8,11 +8,11 @@ import { createAccount, logUser } from './setups/user';
 let users = utils.loadEnv();
 
 test.beforeAll('Setup', async ({ browser }, testInfo: TestInfo) => {
-    await utils.startVaultwarden(browser, testInfo);
+    await utils.startVault(browser, testInfo);
 });
 
 test.afterAll('Teardown', async ({}) => {
-    utils.stopVaultwarden();
+    utils.stopVault();
 });
 
 test('Invite', async ({ page }) => {

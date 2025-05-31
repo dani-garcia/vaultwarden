@@ -15,7 +15,7 @@ services:
     image: playwright_oidc_vaultwarden-${ENV:-dev}
     network_mode: "host"
     build:
-      context: compose/vaultwarden
+      context: compose/warden
       dockerfile: Dockerfile
       args:
         REPO_URL: ${PW_WV_REPO_URL:-}
