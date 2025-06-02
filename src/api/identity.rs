@@ -14,6 +14,7 @@ use crate::{
             log_user_event,
             two_factor::{authenticator, duo, duo_oidc, email, enforce_2fa_policy, webauthn, yubikey},
         },
+        master_password_policy,
         push::register_push_device,
         ApiResult, EmptyResult, JsonResult,
     },
@@ -130,18 +131,6 @@ async fn _refresh_login(data: ConnectData, conn: &mut DbConn) -> JsonResult {
     });
 
     Ok(Json(result))
-}
-
-#[derive(Default, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct MasterPasswordPolicy {
-    min_complexity: u8,
-    min_length: u32,
-    require_lower: bool,
-    require_upper: bool,
-    require_numbers: bool,
-    require_special: bool,
-    enforce_on_login: bool,
 }
 
 async fn _password_login(
@@ -300,36 +289,7 @@ async fn _password_login(
     let (access_token, expires_in) = device.refresh_tokens(&user, scope_vec, data.client_id);
     device.save(conn).await?;
 
-    // Fetch all valid Master Password Policies and merge them into one with all trues and largest numbers as one policy
-    let master_password_policies: Vec<MasterPasswordPolicy> =
-        OrgPolicy::find_accepted_and_confirmed_by_user_and_active_policy(
-            &user.uuid,
-            OrgPolicyType::MasterPassword,
-            conn,
-        )
-        .await
-        .into_iter()
-        .filter_map(|p| serde_json::from_str(&p.data).ok())
-        .collect();
-
-    // NOTE: Upstream still uses PascalCase here for `Object`!
-    let master_password_policy = if !master_password_policies.is_empty() {
-        let mut mpp_json = json!(master_password_policies.into_iter().reduce(|acc, policy| {
-            MasterPasswordPolicy {
-                min_complexity: acc.min_complexity.max(policy.min_complexity),
-                min_length: acc.min_length.max(policy.min_length),
-                require_lower: acc.require_lower || policy.require_lower,
-                require_upper: acc.require_upper || policy.require_upper,
-                require_numbers: acc.require_numbers || policy.require_numbers,
-                require_special: acc.require_special || policy.require_special,
-                enforce_on_login: acc.enforce_on_login || policy.enforce_on_login,
-            }
-        }));
-        mpp_json["Object"] = json!("masterPasswordPolicy");
-        mpp_json
-    } else {
-        json!({"Object": "masterPasswordPolicy"})
-    };
+    let master_password_policy = master_password_policy(&user, conn).await;
 
     let mut result = json!({
         "access_token": access_token,
