@@ -21,7 +21,7 @@ a[href$="/settings/sponsored-families"] {
 }
 
 /* Hide Log in with passkey on the login page */
-app-root form.ng-untouched a[routerlink="/login-with-passkey"] {
+app-root form.ng-untouched > div > div > button.\!tw-text-primary-600:nth-child(3) {
   @extend %vw-hide;
 }
 /* Hide the or text followed by the two buttons hidden above */

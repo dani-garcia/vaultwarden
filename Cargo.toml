@@ -32,6 +32,7 @@ enable_mimalloc = ["dep:mimalloc"]
 # You also need to set an env variable `QUERY_LOGGER=1` to fully activate this so you do not have to re-compile
 # if you want to turn off the logging for a specific run.
 query_logger = ["dep:diesel_logger"]
+s3 = ["opendal/services-s3", "dep:aws-config", "dep:aws-credential-types", "dep:anyhow", "dep:reqsign"]
 
 # OIDC specific features
 oidc-accept-rfc3339-timestamps = ["openidconnect/accept-rfc3339-timestamps"]
@@ -77,6 +78,7 @@ dashmap = "6.1.0"
 # Async futures
 futures = "0.3.31"
 tokio = { version = "1.45.1", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal", "net"] }
+tokio-util = { version = "0.7.15", features = ["compat"]}
 
 # A generic serialization/deserialization framework
 serde = { version = "1.0.219", features = ["derive"] }
@@ -136,7 +138,7 @@ email_address = "0.2.9"
 handlebars = { version = "6.3.2", features = ["dir_source"] }
 
 # HTTP client (Used for favicons, version check, DUO and HIBP API)
-reqwest = { version = "0.12.15", features = ["native-tls-alpn", "stream", "json", "gzip", "brotli", "socks", "cookies"] }
+reqwest = { version = "0.12.18", features = ["native-tls-alpn", "stream", "json", "gzip", "brotli", "socks", "cookies"] }
 hickory-resolver = "0.25.2"
 
 # Favicon extraction libraries
@@ -153,7 +155,7 @@ cookie = "0.18.1"
 cookie_store = "0.21.1"
 
 # Used by U2F, JWT and PostgreSQL
-openssl = "0.10.72"
+openssl = "0.10.73"
 
 # CLI argument parsing
 pico-args = "0.5.0"
@@ -183,6 +185,15 @@ rpassword = "7.4.0"
 
 # Loading a dynamic CSS Stylesheet
 grass_compiler = { version = "0.13.4", default-features = false }
+
+# File are accessed through Apache OpenDAL
+opendal = { version = "0.53.3", features = ["services-fs"] }
+
+# For retrieving AWS credentials, including temporary SSO credentials
+anyhow = { version = "1.0.98", optional = true }
+aws-config = { version = "1.6.3", features = ["behavior-version-latest"], optional = true }
+aws-credential-types = { version = "1.2.3", optional = true }
+reqsign = { version = "0.16.3", optional = true }
 
 # Strip debuginfo from the release builds
 # The debug symbols are to provide better panic traces

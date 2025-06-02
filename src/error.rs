@@ -46,6 +46,7 @@ use jsonwebtoken::errors::Error as JwtErr;
 use lettre::address::AddressError as AddrErr;
 use lettre::error::Error as LettreErr;
 use lettre::transport::smtp::Error as SmtpErr;
+use opendal::Error as OpenDALErr;
 use openssl::error::ErrorStack as SSLErr;
 use regex::Error as RegexErr;
 use reqwest::Error as ReqErr;
@@ -98,6 +99,8 @@ make_error! {
 
     DieselCon(DieselConErr): _has_source, _api_error,
     Webauthn(WebauthnErr):   _has_source, _api_error,
+
+    OpenDAL(OpenDALErr): _has_source, _api_error,
 }
 
 impl std::fmt::Debug for Error {

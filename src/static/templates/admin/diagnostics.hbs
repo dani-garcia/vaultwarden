@@ -7,36 +7,34 @@
             <div class="col-md">
                 <dl class="row">
                     <dt class="col-sm-5">Server Installed
-                        <span class="badge bg-success d-none" id="server-success" title="Latest version is installed.">Ok</span>
-                        <span class="badge bg-warning text-dark d-none" id="server-warning" title="There seems to be an update available.">Update</span>
-                        <span class="badge bg-info text-dark d-none" id="server-branch" title="This is a branched version.">Branched</span>
+                        <span class="badge bg-success d-none abbr-badge" id="server-success" title="Latest version is installed.">Ok</span>
+                        <span class="badge bg-warning text-dark d-none abbr-badge" id="server-warning" title="There seems to be an update available.">Update</span>
+                        <span class="badge bg-info text-dark d-none abbr-badge" id="server-branch" title="This is a branched version.">Branched</span>
                     </dt>
                     <dd class="col-sm-7">
                         <span id="server-installed">{{page_data.current_release}}</span>
                     </dd>
                     <dt class="col-sm-5">Server Latest
-                        <span class="badge bg-secondary d-none" id="server-failed" title="Unable to determine latest version.">Unknown</span>
+                        <span class="badge bg-secondary d-none abbr-badge" id="server-failed" title="Unable to determine latest version.">Unknown</span>
                     </dt>
                     <dd class="col-sm-7">
                         <span id="server-latest">{{page_data.latest_release}}<span id="server-latest-commit" class="d-none">-{{page_data.latest_commit}}</span></span>
                     </dd>
                     {{#if page_data.web_vault_enabled}}
                     <dt class="col-sm-5">Web Installed
-                        <span class="badge bg-success d-none" id="web-success" title="Latest version is installed.">Ok</span>
-                        <span class="badge bg-warning text-dark d-none" id="web-warning" title="There seems to be an update available.">Update</span>
-                        <span class="badge bg-info text-dark d-none" id="web-prerelease" title="You seem to be using a pre-release version.">Pre-Release</span>
+                        <span class="badge bg-success d-none abbr-badge" id="web-success" title="Latest version is installed.">Ok</span>
+                        <span class="badge bg-warning text-dark d-none abbr-badge" id="web-warning" title="There seems to be an update available.">Update</span>
+                        <span class="badge bg-info text-dark d-none abbr-badge" id="web-prerelease" title="You seem to be using a pre-release version.">Pre-Release</span>
                     </dt>
                     <dd class="col-sm-7">
                         <span id="web-installed">{{page_data.web_vault_version}}</span>
                     </dd>
-                    {{#unless page_data.running_within_container}}
                     <dt class="col-sm-5">Web Latest
-                        <span class="badge bg-secondary d-none" id="web-failed" title="Unable to determine latest version.">Unknown</span>
+                        <span class="badge bg-secondary d-none abbr-badge" id="web-failed" title="Unable to determine latest version.">Unknown</span>
                     </dt>
                     <dd class="col-sm-7">
                         <span id="web-latest">{{page_data.latest_web_build}}</span>
                     </dd>
-                    {{/unless}}
                     {{/if}}
                     {{#unless page_data.web_vault_enabled}}
                     <dt class="col-sm-5">Web Installed</dt>
@@ -69,14 +67,11 @@
                         <span class="d-block"><b>No</b></span>
                     {{/unless}}
                     </dd>
-                    <dt class="col-sm-5">Uses config.json
-                    {{#if page_data.overrides}}
-                        <span class="badge bg-info text-dark" title="Environment variables are overwritten by a config.json.">Note</span>
-                    {{/if}}
-                    </dt>
+                    <dt class="col-sm-5">Uses config.json</dt>
                     <dd class="col-sm-7">
                     {{#if page_data.overrides}}
-                        <abbr class="d-block" title="The following settings are overridden: {{page_data.overrides}}"><b>Yes</b></abbr>
+                        <span class="d-inline"><b>Yes</b></span>
+                        <span class="badge bg-info text-dark abbr-badge" title="Environment variables are overwritten by a config.json.&#013;&#010;{{page_data.overrides}}">Details</span>
                     {{/if}}
                     {{#unless page_data.overrides}}
                         <span class="d-block"><b>No</b></span>
@@ -95,10 +90,10 @@
                     {{#if page_data.ip_header_exists}}
                     <dt class="col-sm-5">IP header
                     {{#if page_data.ip_header_match}}
-                        <span class="badge bg-success" title="IP_HEADER config seems to be valid.">Match</span>
+                        <span class="badge bg-success abbr-badge" title="IP_HEADER config seems to be valid.">Match</span>
                     {{/if}}
                     {{#unless page_data.ip_header_match}}
-                        <span class="badge bg-danger" title="IP_HEADER config seems to be invalid. IP's in the log could be invalid. Please fix.">No Match</span>
+                        <span class="badge bg-danger abbr-badge" title="IP_HEADER config seems to be invalid. IP's in the log could be invalid. Please fix.">No Match</span>
                     {{/unless}}
                     </dt>
                     <dd class="col-sm-7">
@@ -114,10 +109,10 @@
                     {{!-- End if IP Header Exists --}}
                     <dt class="col-sm-5">Internet access
                     {{#if page_data.has_http_access}}
-                        <span class="badge bg-success" title="We have internet access!">Ok</span>
+                        <span class="badge bg-success abbr-badge" title="We have internet access!">Ok</span>
                     {{/if}}
                     {{#unless page_data.has_http_access}}
-                        <span class="badge bg-danger" title="There seems to be no internet access. Please fix.">Error</span>
+                        <span class="badge bg-danger abbr-badge" title="There seems to be no internet access. Please fix.">Error</span>
                     {{/unless}}
                     </dt>
                     <dd class="col-sm-7">
@@ -139,8 +134,8 @@
                     </dd>
                     <dt class="col-sm-5">Websocket enabled
                         {{#if page_data.enable_websocket}}
-                        <span class="badge bg-success d-none" id="websocket-success" title="Websocket connection is working.">Ok</span>
-                        <span class="badge bg-danger d-none" id="websocket-error" title="Websocket connection error, validate your reverse proxy configuration!">Error</span>
+                        <span class="badge bg-success d-none abbr-badge" id="websocket-success" title="Websocket connection is working.">Ok</span>
+                        <span class="badge bg-danger d-none abbr-badge" id="websocket-error" title="Websocket connection error, validate your reverse proxy configuration!">Error</span>
                         {{/if}}
                     </dt>
                     <dd class="col-sm-7">
@@ -153,27 +148,27 @@
                     </dd>
 
                     <dt class="col-sm-5">DNS (github.com)
-                        <span class="badge bg-success d-none" id="dns-success" title="DNS Resolving works!">Ok</span>
-                        <span class="badge bg-danger d-none" id="dns-warning" title="DNS Resolving failed. Please fix.">Error</span>
+                        <span class="badge bg-success d-none abbr-badge" id="dns-success" title="DNS Resolving works!">Ok</span>
+                        <span class="badge bg-danger d-none abbr-badge" id="dns-warning" title="DNS Resolving failed. Please fix.">Error</span>
                     </dt>
                     <dd class="col-sm-7">
                         <span id="dns-resolved">{{page_data.dns_resolved}}</span>
                     </dd>
                     <dt class="col-sm-5">Date & Time (Local)
                         {{#if page_data.tz_env}}
-                            <span class="badge bg-success" title="Configured TZ environment variable">{{page_data.tz_env}}</span>
+                            <span class="badge bg-success abbr-badge" title="Configured TZ environment variable">{{page_data.tz_env}}</span>
                         {{/if}}
                     </dt>
                     <dd class="col-sm-7">
                         <span><b>Server:</b> {{page_data.server_time_local}}</span>
                     </dd>
                     <dt class="col-sm-5">Date & Time (UTC)
-                        <span class="badge bg-success d-none" id="time-success" title="Server and browser times are within 15 seconds of each other.">Server/Browser Ok</span>
-                        <span class="badge bg-danger d-none" id="time-warning" title="Server and browser times are more than 15 seconds apart.">Server/Browser Error</span>
-                        <span class="badge bg-success d-none" id="ntp-server-success" title="Server and NTP times are within 15 seconds of each other.">Server NTP Ok</span>
-                        <span class="badge bg-danger d-none" id="ntp-server-warning" title="Server and NTP times are more than 15 seconds apart.">Server NTP Error</span>
-                        <span class="badge bg-success d-none" id="ntp-browser-success" title="Browser and NTP times are within 15 seconds of each other.">Browser NTP Ok</span>
-                        <span class="badge bg-danger d-none" id="ntp-browser-warning" title="Browser and NTP times are more than 15 seconds apart.">Browser NTP Error</span>
+                        <span class="badge bg-success d-none abbr-badge" id="time-success" title="Server and browser times are within 15 seconds of each other.">Server/Browser Ok</span>
+                        <span class="badge bg-danger d-none abbr-badge" id="time-warning" title="Server and browser times are more than 15 seconds apart.">Server/Browser Error</span>
+                        <span class="badge bg-success d-none abbr-badge" id="ntp-server-success" title="Server and NTP times are within 15 seconds of each other.">Server NTP Ok</span>
+                        <span class="badge bg-danger d-none abbr-badge" id="ntp-server-warning" title="Server and NTP times are more than 15 seconds apart.">Server NTP Error</span>
+                        <span class="badge bg-success d-none abbr-badge" id="ntp-browser-success" title="Browser and NTP times are within 15 seconds of each other.">Browser NTP Ok</span>
+                        <span class="badge bg-danger d-none abbr-badge" id="ntp-browser-warning" title="Browser and NTP times are more than 15 seconds apart.">Browser NTP Error</span>
                     </dt>
                     <dd class="col-sm-7">
                         <span id="ntp-time" class="d-block"><b>NTP:</b> <span id="ntp-server-string">{{page_data.ntp_time}}</span></span>
@@ -182,10 +177,10 @@
                     </dd>
 
                     <dt class="col-sm-5">Domain configuration
-                        <span class="badge bg-success d-none" id="domain-success" title="The domain variable matches the browser location and seems to be configured correctly.">Match</span>
-                        <span class="badge bg-danger d-none" id="domain-warning" title="The domain variable does not match the browser location.&#013;&#010;The domain variable does not seem to be configured correctly.&#013;&#010;Some features may not work as expected!">No Match</span>
-                        <span class="badge bg-success d-none" id="https-success" title="Configured to use HTTPS">HTTPS</span>
-                        <span class="badge bg-danger d-none" id="https-warning" title="Not configured to use HTTPS.&#013;&#010;Some features may not work as expected!">No HTTPS</span>
+                        <span class="badge bg-success d-none abbr-badge" id="domain-success" title="The domain variable matches the browser location and seems to be configured correctly.">Match</span>
+                        <span class="badge bg-danger d-none abbr-badge" id="domain-warning" title="The domain variable does not match the browser location.&#013;&#010;The domain variable does not seem to be configured correctly.&#013;&#010;Some features may not work as expected!">No Match</span>
+                        <span class="badge bg-success d-none abbr-badge" id="https-success" title="Configured to use HTTPS">HTTPS</span>
+                        <span class="badge bg-danger d-none abbr-badge" id="https-warning" title="Not configured to use HTTPS.&#013;&#010;Some features may not work as expected!">No HTTPS</span>
                     </dt>
                     <dd class="col-sm-7">
                         <span id="domain-server" class="d-block"><b>Server:</b> <span id="domain-server-string">{{page_data.admin_url}}</span></span>
@@ -193,8 +188,8 @@
                     </dd>
 
                     <dt class="col-sm-5">HTTP Response validation
-                        <span class="badge bg-success d-none" id="http-response-success" title="All headers and HTTP request responses seem to be ok.">Ok</span>
-                        <span class="badge bg-danger d-none" id="http-response-warning" title="Some headers or HTTP request responses return invalid data!">Error</span>
+                        <span class="badge bg-success d-none abbr-badge" id="http-response-success" title="All headers and HTTP request responses seem to be ok.">Ok</span>
+                        <span class="badge bg-danger d-none abbr-badge" id="http-response-warning" title="Some headers or HTTP request responses return invalid data!">Error</span>
                     </dt>
                     <dd class="col-sm-7">
                         <span id="http-response-errors" class="d-block"></span>
