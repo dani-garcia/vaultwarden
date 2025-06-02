@@ -8,8 +8,8 @@ use serde_json::Value;
 use crate::{
     api::{
         core::{log_user_event, two_factor::email},
-        register_push_device, unregister_push_device, AnonymousNotify, EmptyResult, JsonResult, Notify,
-        PasswordOrOtpData, UpdateType,
+        master_password_policy, register_push_device, unregister_push_device, AnonymousNotify, EmptyResult, JsonResult,
+        Notify, PasswordOrOtpData, UpdateType,
     },
     auth::{decode_delete, decode_invite, decode_verify_email, ClientHeaders, Headers},
     crypto,
@@ -1068,7 +1068,7 @@ struct SecretVerificationRequest {
 }
 
 #[post("/accounts/verify-password", data = "<data>")]
-fn verify_password(data: Json<SecretVerificationRequest>, headers: Headers) -> EmptyResult {
+async fn verify_password(data: Json<SecretVerificationRequest>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: SecretVerificationRequest = data.into_inner();
     let user = headers.user;
 
@@ -1076,7 +1076,7 @@ fn verify_password(data: Json<SecretVerificationRequest>, headers: Headers) -> E
         err!("Invalid password")
     }
 
-    Ok(())
+    Ok(Json(master_password_policy(&user, &conn).await))
 }
 
 async fn _api_key(data: Json<PasswordOrOtpData>, rotate: bool, headers: Headers, mut conn: DbConn) -> JsonResult {
