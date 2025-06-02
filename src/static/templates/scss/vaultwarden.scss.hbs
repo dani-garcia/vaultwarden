@@ -21,17 +21,37 @@ a[href$="/settings/sponsored-families"] {
 }
 
 /* Hide the `Enterprise Single Sign-On` button on the login page */
-app-root form.ng-untouched button.\!tw-text-primary-600:nth-child(4) {
+{{#if (webver ">=2025.5.1")}}
+.vw-sso-login {
   @extend %vw-hide;
 }
+{{else}}
+app-root ng-component > form > div:nth-child(1) > div > button[buttontype="secondary"].\!tw-text-primary-600:nth-child(4) {
+  @extend %vw-hide;
+}
+{{/if}}
+
 /* Hide Log in with passkey on the login page */
-app-root form.ng-untouched > div > div > button.\!tw-text-primary-600:nth-child(3) {
+{{#if (webver ">=2025.5.1")}}
+.vw-passkey-login {
   @extend %vw-hide;
 }
+{{else}}
+app-root ng-component > form > div:nth-child(1) > div > button[buttontype="secondary"].\!tw-text-primary-600:nth-child(3) {
+  @extend %vw-hide;
+}
+{{/if}}
+
 /* Hide the or text followed by the two buttons hidden above */
-app-root form.ng-untouched > div:nth-child(1) > div:nth-child(3) > div:nth-child(2) {
+{{#if (webver ">=2025.5.1")}}
+.vw-or-text {
   @extend %vw-hide;
 }
+{{else}}
+app-root ng-component > form > div:nth-child(1) > div:nth-child(3) > div:nth-child(2) {
+  @extend %vw-hide;
+}
+{{/if}}
 
 /* Hide Two-Factor menu in Organization settings */
 bit-nav-item[route="settings/two-factor"],
