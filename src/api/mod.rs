@@ -73,11 +73,11 @@ impl PasswordOrOtpData {
     }
 }
 
-#[derive(Default, Deserialize, Serialize)]
+#[derive(Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MasterPasswordPolicy {
-    min_complexity: u8,
-    min_length: u32,
+    min_complexity: Option<u8>,
+    min_length: Option<u32>,
     require_lower: bool,
     require_upper: bool,
     require_numbers: bool,

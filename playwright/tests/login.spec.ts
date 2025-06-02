@@ -29,11 +29,7 @@ test('Authenticator 2fa', async ({ page }) => {
 
     let totp = await activateTOTP(test, page, users.user1);
 
-    await test.step('logout', async () => {
-        await page.getByRole('button', { name: users.user1.name }).click();
-        await page.getByRole('menuitem', { name: 'Log out' }).click();
-        await expect(page.getByRole('heading', { name: 'Log in' })).toBeVisible();
-    });
+    await utils.logout(test, page, users.user1);
 
     await test.step('login', async () => {
         let timestamp = Date.now(); // Needed to use the next token

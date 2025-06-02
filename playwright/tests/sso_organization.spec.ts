@@ -48,3 +48,29 @@ test('Organization is visible', async ({ page }) => {
     await page.getByLabel('vault: /Test').click();
     await expect(page.getByLabel('Filter: Default collection')).toBeVisible();
 });
+
+test('Enforce password policy', async ({ page }) => {
+    await logUser(test, page, users.user1);
+    await orgs.policies(test, page, '/Test');
+
+    await test.step(`Set master password policy`, async () => {
+        await page.getByRole('button', { name: 'Master password requirements' }).click();
+        await page.getByRole('checkbox', { name: 'Turn on' }).check();
+        await page.getByRole('checkbox', { name: 'Require existing members to' }).check();
+        await page.getByRole('spinbutton', { name: 'Minimum length' }).fill('42');
+        await page.getByRole('button', { name: 'Save' }).click();
+        await utils.checkNotification(page, 'Edited policy Master password requirements.');
+    });
+
+    await utils.logout(test, page, users.user1);
+
+    await test.step(`Unlock trigger policy`, async () => {
+        await page.getByRole('textbox', { name: 'Email address (required)' }).fill(users.user1.email);
+        await page.getByRole('button', { name: 'Use single sign-on' }).click();
+
+        await page.getByRole('textbox', { name: 'Master password (required)' }).fill(users.user1.password);
+        await page.getByRole('button', { name: 'Unlock' }).click();
+
+        await expect(page.getByRole('heading', { name: 'Update master password' })).toBeVisible();
+    });
+});

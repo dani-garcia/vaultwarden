@@ -1163,8 +1163,6 @@ pub async fn kdf_upgrade(user: &mut User, pwd_hash: &str, conn: &mut DbConn) -> 
     Ok(())
 }
 
-// It appears that at the moment the return policy is required but ignored.
-// As such the `enforceOnLogin` part is not working.
 #[post("/accounts/verify-password", data = "<data>")]
 async fn verify_password(data: Json<SecretVerificationRequest>, headers: Headers, mut conn: DbConn) -> JsonResult {
     let data: SecretVerificationRequest = data.into_inner();
@@ -1176,9 +1174,7 @@ async fn verify_password(data: Json<SecretVerificationRequest>, headers: Headers
 
     kdf_upgrade(&mut user, &data.master_password_hash, &mut conn).await?;
 
-    Ok(Json(json!({
-      "MasterPasswordPolicy": master_password_policy(&user, &conn).await,
-    })))
+    Ok(Json(master_password_policy(&user, &conn).await))
 }
 
 async fn _api_key(data: Json<PasswordOrOtpData>, rotate: bool, headers: Headers, mut conn: DbConn) -> JsonResult {

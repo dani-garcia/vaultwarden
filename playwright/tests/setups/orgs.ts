@@ -14,8 +14,20 @@ export async function create(test, page: Page, name: string) {
     });
 }
 
+export async function policies(test, page: Page, name: string) {
+    await test.step(`Navigate to ${name} policies`, async () => {
+        await page.locator('a').filter({ hasText: 'Admin Console' }).first().click();
+        await page.locator('org-switcher').getByLabel(/Toggle collapse/).click();
+        await page.locator('org-switcher').getByRole('link', { name: `${name}` }).first().click();
+        await expect(page.getByRole('heading', { name: `${name} collections` })).toBeVisible();
+        await page.getByRole('button', { name: 'Toggle collapse Settings' }).click();
+        await page.getByRole('link', { name: 'Policies' }).click();
+        await expect(page.getByRole('heading', { name: 'Policies' })).toBeVisible();
+    });
+}
+
 export async function members(test, page: Page, name: string) {
-    await test.step(`Navigate to ${name}`, async () => {
+    await test.step(`Navigate to ${name} members`, async () => {
         await page.locator('a').filter({ hasText: 'Admin Console' }).first().click();
         await page.locator('org-switcher').getByLabel(/Toggle collapse/).click();
         await page.locator('org-switcher').getByRole('link', { name: `${name}` }).first().click();

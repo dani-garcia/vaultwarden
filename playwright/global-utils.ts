@@ -225,3 +225,11 @@ export async function cleanLanding(page: Page) {
         await page.getByRole('button', { name: 'Log out' }).click();
     }
 }
+
+export async function logout(test: Test, page: Page, user: { name: string }) {
+    await test.step('logout', async () => {
+        await page.getByRole('button', { name: user.name, exact: true }).click();
+        await page.getByRole('menuitem', { name: 'Log out' }).click();
+        await expect(page.getByRole('heading', { name: 'Log in' })).toBeVisible();
+    });
+}
