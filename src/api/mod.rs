@@ -116,6 +116,7 @@ async fn master_password_policy(user: &User, conn: &DbConn) -> Value {
         json!({})
     };
 
+    // NOTE: Upstream still uses PascalCase here for `Object`!
     mpp_json["Object"] = json!("masterPasswordPolicy");
     mpp_json
 }

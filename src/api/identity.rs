@@ -472,7 +472,7 @@ async fn authenticated_response(
     // Save to update `device.updated_at` to track usage and toggle new status
     device.save(conn).await?;
 
-    let mp_policy = master_password_policy(user, conn).await;
+    let master_password_policy = master_password_policy(user, conn).await;
 
     let mut result = json!({
         "access_token": auth_tokens.access_token(),
@@ -486,7 +486,7 @@ async fn authenticated_response(
         "KdfParallelism": user.client_kdf_parallelism,
         "ResetMasterPassword": false, // TODO: Same as above
         "ForcePasswordReset": false,
-        "MasterPasswordPolicy": mp_policy,
+        "MasterPasswordPolicy": master_password_policy,
         "scope": auth_tokens.scope(),
         "UserDecryptionOptions": {
             "HasMasterPassword": !user.password_hash.is_empty(),
