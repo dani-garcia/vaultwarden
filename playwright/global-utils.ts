@@ -154,16 +154,20 @@ async function wipePostgres(){
 
 function dbConfig(testInfo: TestInfo){
     switch(testInfo.project.name) {
-        case "postgres": return {
-            DATABASE_URL: `postgresql://${process.env.POSTGRES_USER}:${process.env.POSTGRES_PASSWORD}@127.0.0.1:${process.env.POSTGRES_PORT}/${process.env.POSTGRES_DB}`
-        }
-        case "mariadb": return {
-            DATABASE_URL: `mysql://${process.env.MARIADB_USER}:${process.env.MARIADB_PASSWORD}@127.0.0.1:${process.env.MARIADB_PORT}/${process.env.MARIADB_DATABASE}`
-        }
-        case "mysql": return {
-            DATABASE_URL: `mysql://${process.env.MYSQL_USER}:${process.env.MYSQL_PASSWORD}@127.0.0.1:${process.env.MYSQL_PORT}/${process.env.MYSQL_DATABASE}`
-        }
-        default: return { I_REALLY_WANT_VOLATILE_STORAGE: true }
+        case "postgres":
+        case "sso-postgres":
+            return { DATABASE_URL: `postgresql://${process.env.POSTGRES_USER}:${process.env.POSTGRES_PASSWORD}@127.0.0.1:${process.env.POSTGRES_PORT}/${process.env.POSTGRES_DB}` };
+        case "mariadb":
+        case "sso-mariadb":
+            return { DATABASE_URL: `mysql://${process.env.MARIADB_USER}:${process.env.MARIADB_PASSWORD}@127.0.0.1:${process.env.MARIADB_PORT}/${process.env.MARIADB_DATABASE}` };
+        case "mysql":
+        case "sso-mysql":
+            return { DATABASE_URL: `mysql://${process.env.MYSQL_USER}:${process.env.MYSQL_PASSWORD}@127.0.0.1:${process.env.MYSQL_PORT}/${process.env.MYSQL_DATABASE}`};
+        case "sqlite":
+        case "sso-sqlite":
+            return { I_REALLY_WANT_VOLATILE_STORAGE: true };
+        default:
+            throw new Error(`Unknow database name: ${testInfo.project.name}`);
     }
 }
 
@@ -174,16 +178,23 @@ export async function startVault(browser: Browser, testInfo: TestInfo, env = {},
     if( resetDB ){
         switch(testInfo.project.name) {
             case "postgres":
+            case "sso-postgres":
                 await wipePostgres();
                 break;
             case "mariadb":
+            case "sso-mariadb":
                 await wipeMariaDB();
                 break;
             case "mysql":
+            case "sso-mysql":
                 await wipeMysqlDB();
                 break;
-            default:
+            case "sqlite":
+            case "sso-sqlite":
                 wipeSqlite();
+                break;
+            default:
+                throw new Error(`Unknow database name: ${testInfo.project.name}`);
         }
     }
 
