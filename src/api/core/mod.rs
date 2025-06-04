@@ -8,6 +8,9 @@ mod public;
 mod sends;
 pub mod two_factor;
 
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
+use crate::db::models::{WebAuthnCredential, WebAuthnCredentialId};
 pub use accounts::purge_auth_requests;
 pub use ciphers::{purge_trashed_ciphers, CipherData, CipherSyncData, CipherSyncType};
 pub use emergency_access::{emergency_notification_reminder_job, emergency_request_timeout_job};
@@ -18,7 +21,7 @@ pub use sends::purge_sends;
 pub fn routes() -> Vec<Route> {
     let mut eq_domains_routes = routes![get_eq_domains, post_eq_domains, put_eq_domains];
     let mut hibp_routes = routes![hibp_breach];
-    let mut meta_routes = routes![alive, now, version, config, get_api_webauthn];
+    let mut meta_routes = routes![alive, now, version, config, get_api_webauthn, post_api_webauthn, post_api_webauthn_attestation_options, post_api_webauthn_delete];
 
     let mut routes = Vec::new();
     routes.append(&mut accounts::routes());
@@ -48,15 +51,20 @@ pub fn events_routes() -> Vec<Route> {
 // Move this somewhere else
 //
 use rocket::{serde::json::Json, serde::json::Value, Catcher, Route};
-
+use rocket::http::Status;
+use webauthn_rs::proto::UserVerificationPolicy;
+use webauthn_rs::RegistrationState;
 use crate::{
     api::{JsonResult, Notify, UpdateType},
     auth::Headers,
     db::DbConn,
     error::Error,
     http_client::make_http_request,
-    util::parse_experimental_client_feature_flags,
 };
+use crate::api::core::two_factor::webauthn::{RegisterPublicKeyCredentialCopy, WebauthnConfig};
+use crate::api::{ApiResult, PasswordOrOtpData};
+use crate::db::models::UserId;
+use crate::util::parse_experimental_client_feature_flags;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -184,14 +192,125 @@ fn version() -> Json<&'static str> {
     Json(crate::VERSION.unwrap_or_default())
 }
 
+#[post("/webauthn/<uuid>/delete", data = "<data>")]
+async fn post_api_webauthn_delete(data: Json<PasswordOrOtpData>, uuid: String, headers: Headers, mut conn: DbConn) -> ApiResult<Status> {
+    let data: PasswordOrOtpData = data.into_inner();
+    let user = headers.user;
+    
+    data.validate(&user, false, &mut conn).await?;
+
+    WebAuthnCredential::delete_by_uuid_and_user(&WebAuthnCredentialId(uuid), &user.uuid, &mut conn).await?;
+    
+    Ok(Status::Ok)
+}
+
+// TODO replace this with something else
+static WEBAUTHN_STATES: OnceLock<Mutex<HashMap<UserId, RegistrationState>>> = OnceLock::new();
+
+#[post("/webauthn/attestation-options", data = "<data>")]
+async fn post_api_webauthn_attestation_options(data: Json<PasswordOrOtpData>, headers: Headers, mut conn: DbConn) -> JsonResult {
+    let data: PasswordOrOtpData = data.into_inner();
+    let user = headers.user;
+    
+    data.validate(&user, false, &mut conn).await?;
+
+    // TODO C# does this check as well, should there be an option in the admin panel to disable passkey login?
+    // await ValidateIfUserCanUsePasskeyLogin(user.Id);
+
+    // TODO add existing keys here when the table exists
+    // let registrations = get_webauthn_registrations(&user.uuid, &mut conn)
+    //     .await?
+    //     .1
+    //     .into_iter()
+    //     .map(|r| r.credential.cred_id) // We return the credentialIds to the clients to avoid double registering
+    //     .collect();
+
+    let registrations = Vec::new();
+
+    let (challenge, state) = WebauthnConfig::load(true).generate_challenge_register_options(
+        user.uuid.as_bytes().to_vec(),
+        user.email,
+        user.name,
+        Some(registrations),
+        Some(UserVerificationPolicy::Required),
+        None,
+    )?;
+
+    WEBAUTHN_STATES.get_or_init(|| Mutex::new(HashMap::new())).lock().unwrap().insert(user.uuid, state);
+
+    let mut options = serde_json::to_value(challenge.public_key)?;
+    options["status"] = "ok".into();
+    options["errorMessage"] = "".into();
+    
+    // TODO test if the client actually expects this field to exist
+    options["extensions"] = Value::Object(serde_json::Map::new());
+    
+    Ok(Json(json!({
+        "options": options,
+        "object": "webauthnCredentialCreateOptions"
+    })))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WebAuthnLoginCredentialCreateRequest {
+    device_response: RegisterPublicKeyCredentialCopy,
+    name: String,
+    supports_prf: bool,
+    encrypted_user_key: Option<String>,
+    encrypted_public_key: Option<String>,
+    encrypted_private_key: Option<String>,
+}
+
+#[post("/webauthn", data = "<data>")]
+async fn post_api_webauthn(data: Json<WebAuthnLoginCredentialCreateRequest>, headers: Headers, mut conn: DbConn) -> ApiResult<Status> {
+    let data: WebAuthnLoginCredentialCreateRequest = data.into_inner();
+    let user = headers.user;
+    
+    // Verify the credentials with the saved state
+    let (credential, _data) = {
+        let mut states = WEBAUTHN_STATES.get().unwrap().lock().unwrap();
+        let state = states.remove(&user.uuid).unwrap();
+
+        // TODO make the closure check if the credential already exists
+        WebauthnConfig::load(true).register_credential(&data.device_response.into(), &state, |_| Ok(false))?
+    };
+    
+    WebAuthnCredential::new(
+        user.uuid,
+        data.name,
+        serde_json::to_string(&credential)?,
+        data.supports_prf,
+        data.encrypted_user_key,
+        data.encrypted_public_key,
+        data.encrypted_private_key,
+    ).save(&mut conn).await?;
+
+    Ok(Status::Ok)
+}
+
 #[get("/webauthn")]
-fn get_api_webauthn(_headers: Headers) -> Json<Value> {
-    // Prevent a 404 error, which also causes key-rotation issues
-    // It looks like this is used when login with passkeys is enabled, which Vaultwarden does not (yet) support
-    // An empty list/data also works fine
+async fn get_api_webauthn(headers: Headers, mut conn: DbConn) -> Json<Value> {
+    let user = headers.user;
+
+    let data = WebAuthnCredential::find_all_by_user(&user.uuid, &mut conn)
+        .await
+        .into_iter()
+        .map(|wac| {
+            json!({
+                "id": wac.uuid,
+                "name": wac.name,
+                // TODO generate prfStatus like GetPrfStatus() does in the C# implementation
+                "prfStatus": 0,
+                "encryptedUserKey": wac.encrypted_user_key,
+                "encryptedPublicKey": wac.encrypted_public_key,
+                "object": "webauthnCredential",
+            })
+        }).collect::<Value>();
+
     Json(json!({
         "object": "list",
-        "data": [],
+        "data": data,
         "continuationToken": null
     }))
 }

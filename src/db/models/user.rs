@@ -476,4 +476,5 @@ impl Invitation {
 )]
 #[deref(forward)]
 #[from(forward)]
-pub struct UserId(String);
+// TODO this also shouldn't be public
+pub struct UserId(pub String);

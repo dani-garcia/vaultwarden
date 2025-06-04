@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
 use chrono::Utc;
 use num_traits::FromPrimitive;
 use rocket::serde::json::Json;
@@ -6,7 +8,9 @@ use rocket::{
     Route,
 };
 use serde_json::Value;
-
+use webauthn_rs::AuthenticationState;
+use webauthn_rs::base64_data::Base64UrlSafeData;
+use webauthn_rs::proto::{AuthenticatorAssertionResponseRaw, Credential, PublicKeyCredential};
 use crate::{
     api::{
         core::{
@@ -23,9 +27,10 @@ use crate::{
     error::MapResult,
     mail, util, CONFIG,
 };
+use crate::api::core::two_factor::webauthn::WebauthnConfig;
 
 pub fn routes() -> Vec<Route> {
-    routes![login, prelogin, identity_register, register_verification_email, register_finish]
+    routes![login, prelogin, identity_register, register_verification_email, register_finish, get_web_authn_assertion_options]
 }
 
 #[post("/connect/token", data = "<data>")]
@@ -66,7 +71,20 @@ async fn login(
             _check_is_some(&data.device_type, "device_type cannot be blank")?;
 
             _api_key_login(data, &mut user_id, &mut conn, &client_header.ip).await
-        }
+        },
+        "webauthn" => {
+            _check_is_some(&data.client_id, "client_id cannot be blank")?;
+            _check_is_some(&data.scope, "scope cannot be blank")?;
+
+            _check_is_some(&data.device_identifier, "device_identifier cannot be blank")?;
+            _check_is_some(&data.device_name, "device_name cannot be blank")?;
+            _check_is_some(&data.device_type, "device_type cannot be blank")?;
+
+            _check_is_some(&data.device_response, "device_response cannot be blank")?;
+            _check_is_some(&data.token, "token cannot be blank")?;
+
+            _webauthn_login(data, &mut user_id, &mut conn, &client_header.ip).await
+        },
         t => err!("Invalid type", t),
     };
 
@@ -98,6 +116,241 @@ async fn login(
     }
 
     login_result
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PublicKeyCredentialCopy {
+    pub id: String,
+    pub raw_id: Base64UrlSafeData,
+    pub response: AuthenticatorAssertionResponseRawCopy,
+    pub r#type: String,
+    // This field is unused and discarded when converted to PublicKeyCredential
+    pub extensions: Option<Value>,
+}
+
+// This is copied from AuthenticatorAssertionResponseRaw to change clientDataJSON to clientDataJson
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuthenticatorAssertionResponseRawCopy {
+    pub authenticator_data: Base64UrlSafeData,
+    #[serde(rename = "clientDataJson", alias = "clientDataJSON")]
+    pub client_data_json: Base64UrlSafeData,
+    pub signature: Base64UrlSafeData,
+    pub user_handle: Option<Base64UrlSafeData>,
+}
+
+impl From<PublicKeyCredentialCopy> for PublicKeyCredential {
+    fn from(p: PublicKeyCredentialCopy) -> Self {
+        Self {
+            id: p.id,
+            raw_id: p.raw_id,
+            response: AuthenticatorAssertionResponseRaw {
+                authenticator_data: p.response.authenticator_data,
+                client_data_json: p.response.client_data_json,
+                signature: p.response.signature,
+                user_handle: p.response.user_handle,
+            },
+            extensions: None,
+            type_: p.r#type,
+        }
+    }
+}
+
+async fn _webauthn_login(
+    data: ConnectData,
+    user_id: &mut Option<UserId>,
+    conn: &mut DbConn,
+    ip: &ClientIp,
+) -> JsonResult {
+    // Validate scope
+    let scope = data.scope.as_ref().unwrap();
+    if scope != "api offline_access" {
+        err!("Scope not supported")
+    }
+    let scope_vec = vec!["api".into(), "offline_access".into()];
+
+    // Ratelimit the login
+    crate::ratelimit::check_limit_login(&ip.ip)?;
+
+    let device_response: PublicKeyCredentialCopy = serde_json::from_str(&data.device_response.as_ref().unwrap())?;
+    let mut user = if let Some(uuid) = device_response.response.user_handle.clone() {
+        // TODO handle error
+        let uuid = UserId(String::from_utf8(uuid.0).unwrap());
+        User::find_by_uuid(&uuid, conn).await.unwrap()
+    } else {
+        err!("DeviceResponse needs the userHandle field")
+    };
+    let username = user.name.clone();
+
+    // Set the user_id here to be passed back used for event logging.
+    *user_id = Some(user.uuid.clone());
+
+    // Check if the user is disabled
+    if !user.enabled {
+        err!(
+            "This user has been disabled",
+            format!("IP: {}. Username: {username}.", ip.ip),
+            ErrorEvent {
+                event: EventType::UserFailedLogIn
+            }
+        )
+    }
+    
+    let web_authn_credentials = WebAuthnCredential::find_all_by_user(&user.uuid, conn).await;
+
+    let parsed_credentials = web_authn_credentials
+        .iter()
+        .map(|c| {
+            serde_json::from_str(&c.credential)
+        }).collect::<Result<Vec<Credential>, _>>()?;
+    
+    let pairs = web_authn_credentials.into_iter()
+        .zip(parsed_credentials.clone())
+        .collect::<Vec<_>>();
+    
+    let authenticator_data;
+    let (web_authn_credential, mut credential) = {
+        let token = data.token.as_ref().unwrap();
+        let mut states = WEBAUTHN_AUTHENTICATION_STATES.get().unwrap().lock().unwrap();
+        let mut state = states.remove(token).unwrap();
+        let resp = device_response.into();
+
+        state.set_allowed_credentials(parsed_credentials);
+        
+        let credential_id;
+        
+        if let Ok((cred_id, auth_data)) = WebauthnConfig::load(true)
+            .authenticate_credential(&resp, &state) {
+            credential_id = cred_id;
+            authenticator_data = auth_data;
+        } else {
+            err!(
+                "Passkey authentication Failed.",
+                format!("IP: {}. Username: {username}.", ip.ip),
+                ErrorEvent {
+                    event: EventType::UserFailedLogIn,
+                }
+            )
+        }
+
+        // TODO should this check be done? Since we need to trust the client here anyway ...
+        // if !auth_data.user_verified { some_error }
+
+        pairs.into_iter()
+            .find(|(_, c)| &c.cred_id == credential_id)
+            .unwrap()
+    };
+    
+    // update the counter
+    credential.counter = authenticator_data.counter;
+    WebAuthnCredential::update_credential_by_uuid(
+        &web_authn_credential.uuid, 
+        serde_json::to_string(&credential)?, 
+        conn
+    ).await?;
+
+    let now = Utc::now().naive_utc();
+
+    if user.verified_at.is_none() && CONFIG.mail_enabled() && CONFIG.signups_verify() {
+        if user.last_verifying_at.is_none()
+            || now.signed_duration_since(user.last_verifying_at.unwrap()).num_seconds()
+            > CONFIG.signups_verify_resend_time() as i64
+        {
+            let resend_limit = CONFIG.signups_verify_resend_limit() as i32;
+            if resend_limit == 0 || user.login_verify_count < resend_limit {
+                // We want to send another email verification if we require signups to verify
+                // their email address, and we haven't sent them a reminder in a while...
+                user.last_verifying_at = Some(now);
+                user.login_verify_count += 1;
+
+                if let Err(e) = user.save(conn).await {
+                    error!("Error updating user: {e:#?}");
+                }
+
+                if let Err(e) = mail::send_verify_email(&user.email, &user.uuid).await {
+                    error!("Error auto-sending email verification email: {e:#?}");
+                }
+            }
+        }
+
+        // We still want the login to fail until they actually verified the email address
+        err!(
+            "Please verify your email before trying again.",
+            format!("IP: {}. Username: {username}.", ip.ip),
+            ErrorEvent {
+                event: EventType::UserFailedLogIn
+            }
+        )
+    }
+
+    let (mut device, new_device) = get_device(&data, conn, &user).await;
+
+    // TODO is this wanted with passkeys?
+    if CONFIG.mail_enabled() && new_device {
+        if let Err(e) = mail::send_new_device_logged_in(&user.email, &ip.ip.to_string(), &now, &device).await {
+            error!("Error sending new device email: {e:#?}");
+
+            if CONFIG.require_device_email() {
+                err!(
+                    "Could not send login notification email. Please contact your administrator.",
+                    ErrorEvent {
+                        event: EventType::UserFailedLogIn
+                    }
+                )
+            }
+        }
+    }
+
+    // register push device
+    if !new_device {
+        register_push_device(&mut device, conn).await?;
+    }
+
+    // Common
+    // ---
+    // Disabled this variable, it was used to generate the JWT
+    // Because this might get used in the future, and is add by the Bitwarden Server, lets keep it, but then commented out
+    // See: https://github.com/dani-garcia/vaultwarden/issues/4156
+    // ---
+    // let members = Membership::find_confirmed_by_user(&user.uuid, conn).await;
+    let (access_token, expires_in) = device.refresh_tokens(&user, scope_vec, data.client_id);
+    device.save(conn).await?;
+
+    let master_password_policy = master_password_policy(&user, conn).await;
+
+    let mut result = json!({
+        "access_token": access_token,
+        "expires_in": expires_in,
+        "token_type": "Bearer",
+        "refresh_token": device.refresh_token,
+        "Key": user.akey,
+        "PrivateKey": user.private_key,
+
+        "Kdf": user.client_kdf_type,
+        "KdfIterations": user.client_kdf_iter,
+        "KdfMemory": user.client_kdf_memory,
+        "KdfParallelism": user.client_kdf_parallelism,
+        "ResetMasterPassword": false, // TODO: Same as above
+        "ForcePasswordReset": false,
+        "MasterPasswordPolicy": master_password_policy,
+
+        "scope": scope,
+        "UserDecryptionOptions": {
+            "HasMasterPassword": !user.password_hash.is_empty(),
+            "Object": "userDecryptionOptions"
+        },
+    });
+    
+    if web_authn_credential.encrypted_private_key.is_some() && web_authn_credential.encrypted_user_key.is_some() {
+        result["UserDecryptionOptions"]["WebAuthnPrfOption"] = json!({
+            "EncryptedPrivateKey": web_authn_credential.encrypted_private_key,
+            "EncryptedUserKey": web_authn_credential.encrypted_user_key,
+        })
+    }
+
+    info!("User {username} logged in successfully. IP: {}", ip.ip);
+    Ok(Json(result))
 }
 
 async fn _refresh_login(data: ConnectData, conn: &mut DbConn) -> JsonResult {
@@ -697,6 +950,30 @@ async fn identity_register(data: Json<RegisterData>, conn: DbConn) -> JsonResult
     _register(data, false, conn).await
 }
 
+// TODO this should be removed and either use something similar to what bitwarden employs or something else
+static WEBAUTHN_AUTHENTICATION_STATES: OnceLock<Mutex<HashMap<String, AuthenticationState>>> = OnceLock::new();
+
+#[get("/accounts/webauthn/assertion-options")]
+fn get_web_authn_assertion_options() -> JsonResult {
+    let (options, state) = WebauthnConfig::load(true)
+        .generate_challenge_authenticate_options(
+            Vec::new(),
+            None,
+        )?;
+    
+    let t = util::get_uuid();
+    WEBAUTHN_AUTHENTICATION_STATES.get_or_init(|| Mutex::new(HashMap::new())).lock().unwrap().insert(t.clone(), state);
+
+    let options = serde_json::to_value(options.public_key)?;
+
+
+    Ok(Json(json!({
+        "options": options,
+        "token": t,
+        "object": "webAuthnLoginAssertionOptions"
+    })))
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RegisterVerificationData {
@@ -762,7 +1039,7 @@ async fn register_finish(data: Json<RegisterData>, conn: DbConn) -> JsonResult {
 struct ConnectData {
     #[field(name = uncased("grant_type"))]
     #[field(name = uncased("granttype"))]
-    grant_type: String, // refresh_token, password, client_credentials (API key)
+    grant_type: String, // refresh_token, password, client_credentials (API key), webauthn
 
     // Needed for grant_type="refresh_token"
     #[field(name = uncased("refresh_token"))]
@@ -809,6 +1086,13 @@ struct ConnectData {
     two_factor_remember: Option<i32>,
     #[field(name = uncased("authrequest"))]
     auth_request: Option<AuthRequestId>,
+
+    // Needed for grant_type = "webauthn"
+    #[field(name = uncased("deviceresponse"))]
+    device_response: Option<String>,
+    // TODO this may be removed when `WEBAUTHN_AUTHENTICATION_STATES` is removed
+    #[field(name = uncased("token"))]
+    token: Option<String>,
 }
 
 fn _check_is_some<T>(value: &Option<T>, msg: &str) -> EmptyResult {

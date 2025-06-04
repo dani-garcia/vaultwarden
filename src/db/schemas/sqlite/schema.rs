@@ -320,6 +320,19 @@ table! {
     }
 }
 
+table! {
+    web_authn_credentials (uuid) {
+        uuid -> Text,
+        user_uuid -> Text,
+        name -> Text,
+        credential -> Text,
+        supports_prf -> Bool,
+        encrypted_user_key -> Nullable<Text>,
+        encrypted_public_key -> Nullable<Text>,
+        encrypted_private_key -> Nullable<Text>,
+    }
+}
+
 joinable!(attachments -> ciphers (cipher_uuid));
 joinable!(ciphers -> organizations (organization_uuid));
 joinable!(ciphers -> users (user_uuid));
@@ -348,6 +361,7 @@ joinable!(collections_groups -> collections (collections_uuid));
 joinable!(collections_groups -> groups (groups_uuid));
 joinable!(event -> users_organizations (uuid));
 joinable!(auth_requests -> users (user_uuid));
+joinable!(web_authn_credentials -> users (user_uuid));
 
 allow_tables_to_appear_in_same_query!(
     attachments,
@@ -372,4 +386,5 @@ allow_tables_to_appear_in_same_query!(
     collections_groups,
     event,
     auth_requests,
+    web_authn_credentials,
 );
