@@ -10,7 +10,7 @@ pub mod two_factor;
 
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
-use crate::db::models::WebAuthnCredential;
+use crate::db::models::{WebAuthnCredential, WebAuthnCredentialId};
 pub use accounts::purge_auth_requests;
 pub use ciphers::{purge_trashed_ciphers, CipherData, CipherSyncData, CipherSyncType};
 pub use emergency_access::{emergency_notification_reminder_job, emergency_request_timeout_job};
@@ -21,7 +21,7 @@ pub use sends::purge_sends;
 pub fn routes() -> Vec<Route> {
     let mut eq_domains_routes = routes![get_eq_domains, post_eq_domains, put_eq_domains];
     let mut hibp_routes = routes![hibp_breach];
-    let mut meta_routes = routes![alive, now, version, config, get_api_webauthn, post_api_webauthn, post_api_webauthn_attestation_options];
+    let mut meta_routes = routes![alive, now, version, config, get_api_webauthn, post_api_webauthn, post_api_webauthn_attestation_options, post_api_webauthn_delete];
 
     let mut routes = Vec::new();
     routes.append(&mut accounts::routes());
@@ -192,14 +192,25 @@ fn version() -> Json<&'static str> {
     Json(crate::VERSION.unwrap_or_default())
 }
 
+#[post("/webauthn/<uuid>/delete", data = "<data>")]
+async fn post_api_webauthn_delete(data: Json<PasswordOrOtpData>, uuid: String, headers: Headers, mut conn: DbConn) -> ApiResult<Status> {
+    let data: PasswordOrOtpData = data.into_inner();
+    let user = headers.user;
+    
+    data.validate(&user, false, &mut conn).await?;
+
+    WebAuthnCredential::delete_by_uuid_and_user(&WebAuthnCredentialId(uuid), &user.uuid, &mut conn).await?;
+    
+    Ok(Status::Ok)
+}
+
 static WEBAUTHN_STATES: OnceLock<Mutex<HashMap<UserId, RegistrationState>>> = OnceLock::new();
 
 #[post("/webauthn/attestation-options", data = "<data>")]
 async fn post_api_webauthn_attestation_options(data: Json<PasswordOrOtpData>, headers: Headers, mut conn: DbConn) -> JsonResult {
     let data: PasswordOrOtpData = data.into_inner();
     let user = headers.user;
-
-    // TODO what does delete_if_valid do?
+    
     data.validate(&user, false, &mut conn).await?;
 
     // C# does this check as well

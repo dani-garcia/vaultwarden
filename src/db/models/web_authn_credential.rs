@@ -2,6 +2,7 @@ use derive_more::{AsRef, Deref, Display, From};
 use macros::UuidFromParam;
 use crate::api::EmptyResult;
 use crate::db::DbConn;
+use crate::MapResult;
 use super::UserId;
 
 db_object! {
@@ -68,6 +69,15 @@ impl WebAuthnCredential {
         // TODO do not unwrap
         }}.unwrap()
     }
+    
+    pub async fn delete_by_uuid_and_user(uuid: &WebAuthnCredentialId, user_uuid: &UserId, conn: &mut DbConn) -> EmptyResult {
+        db_run! { conn: {
+            diesel::delete(web_authn_credentials::table
+                .filter(web_authn_credentials::uuid.eq(uuid))
+                .filter(web_authn_credentials::user_uuid.eq(user_uuid))
+            ).execute(conn).map_res("Error removing web_authn_credential for user")
+        }}
+    }
 }
 
 #[derive(
@@ -86,4 +96,4 @@ impl WebAuthnCredential {
     Deserialize,
     UuidFromParam,
 )]
-pub struct WebAuthnCredentialId(String);
+pub struct WebAuthnCredentialId(pub String);
