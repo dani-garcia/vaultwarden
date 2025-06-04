@@ -16,9 +16,9 @@ db_object! {
         pub name: String,
         pub credential: String,
         pub supports_prf: bool,
-        pub encrypted_user_key: String,
-        pub encrypted_public_key: String,
-        pub encrypted_private_key: String,
+        pub encrypted_user_key: Option<String>,
+        pub encrypted_public_key: Option<String>,
+        pub encrypted_private_key: Option<String>,
     }
 }
 
@@ -28,9 +28,9 @@ impl WebAuthnCredential {
         name: String,
         credential: String,
         supports_prf: bool,
-        encrypted_user_key: String,
-        encrypted_public_key: String,
-        encrypted_private_key: String,
+        encrypted_user_key: Option<String>,
+        encrypted_public_key: Option<String>,
+        encrypted_private_key: Option<String>,
     ) -> Self {
         Self {
             uuid: WebAuthnCredentialId(crate::util::get_uuid()),
@@ -78,6 +78,16 @@ impl WebAuthnCredential {
             ).execute(conn).map_res("Error removing web_authn_credential for user")
         }}
     }
+    
+    pub async fn update_credential_by_uuid(uuid: &WebAuthnCredentialId, credential: String, conn: &mut DbConn) -> EmptyResult {
+        db_run! { conn: {
+            diesel::update(web_authn_credentials::table
+                .filter(web_authn_credentials::uuid.eq(uuid))
+            ).set(web_authn_credentials::credential.eq(credential))
+                .execute(conn)
+                .map_res("Error updating credential for web_authn_credential")
+        }}
+    }
 }
 
 #[derive(
@@ -96,4 +106,5 @@ impl WebAuthnCredential {
     Deserialize,
     UuidFromParam,
 )]
+// TODO this probably shouldn't need to be public
 pub struct WebAuthnCredentialId(pub String);

@@ -4,8 +4,8 @@ CREATE TABLE web_authn_credentials (
     name         TEXT NOT NULL,
     credential           TEXT NOT NULL,
     supports_prf         BOOLEAN NOT NULL,
-    encrypted_user_key         TEXT NOT NULL,
-    encrypted_public_key         TEXT NOT NULL,
-    encrypted_private_key         TEXT NOT NULL,
+    encrypted_user_key         TEXT,
+    encrypted_public_key         TEXT,
+    encrypted_private_key         TEXT,
     FOREIGN KEY(user_uuid) REFERENCES users(uuid)
 );

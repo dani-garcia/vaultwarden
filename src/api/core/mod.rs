@@ -204,6 +204,7 @@ async fn post_api_webauthn_delete(data: Json<PasswordOrOtpData>, uuid: String, h
     Ok(Status::Ok)
 }
 
+// TODO replace this with something else
 static WEBAUTHN_STATES: OnceLock<Mutex<HashMap<UserId, RegistrationState>>> = OnceLock::new();
 
 #[post("/webauthn/attestation-options", data = "<data>")]
@@ -213,7 +214,7 @@ async fn post_api_webauthn_attestation_options(data: Json<PasswordOrOtpData>, he
     
     data.validate(&user, false, &mut conn).await?;
 
-    // C# does this check as well
+    // TODO C# does this check as well, should there be an option in the admin panel to disable passkey login?
     // await ValidateIfUserCanUsePasskeyLogin(user.Id);
 
     // TODO add existing keys here when the table exists
@@ -240,71 +241,41 @@ async fn post_api_webauthn_attestation_options(data: Json<PasswordOrOtpData>, he
     let mut options = serde_json::to_value(challenge.public_key)?;
     options["status"] = "ok".into();
     options["errorMessage"] = "".into();
-    // TODO does this need to be set?
+    
+    // TODO test if the client actually expects this field to exist
     options["extensions"] = Value::Object(serde_json::Map::new());
-
-    // TODO make this nicer
-    let mut webauthn_credential_create_options = Value::Object(serde_json::Map::new());
-    webauthn_credential_create_options["options"] = options;
-    webauthn_credential_create_options["object"] = "webauthnCredentialCreateOptions".into();
-
-    // TODO this hopefully shouldn't be needed
-    // webauthn_credential_create_options["token"] = "atoken".into();
-
-    Ok(Json(webauthn_credential_create_options))
+    
+    Ok(Json(json!({
+        "options": options,
+        "object": "webauthnCredentialCreateOptions"
+    })))
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-// TODO remove allow dead_code
-#[allow(dead_code)]
 struct WebAuthnLoginCredentialCreateRequest {
     device_response: RegisterPublicKeyCredentialCopy,
     name: String,
-    // TODO this is hopefully not needed
-    // token: String,
     supports_prf: bool,
-    encrypted_user_key: String,
-    encrypted_public_key: String,
-    encrypted_private_key: String,
+    encrypted_user_key: Option<String>,
+    encrypted_public_key: Option<String>,
+    encrypted_private_key: Option<String>,
 }
 
 #[post("/webauthn", data = "<data>")]
 async fn post_api_webauthn(data: Json<WebAuthnLoginCredentialCreateRequest>, headers: Headers, mut conn: DbConn) -> ApiResult<Status> {
-    // this check await ValidateIfUserCanUsePasskeyLogin(user.Id); again
     let data: WebAuthnLoginCredentialCreateRequest = data.into_inner();
-    // let data: WebAuthnLoginCredentialCreateRequest = serde_json::from_str(&data)?;
     let user = headers.user;
-
-    // TODO Retrieve and delete the saved challenge state here
-
-
+    
     // Verify the credentials with the saved state
     let (credential, _data) = {
         let mut states = WEBAUTHN_STATES.get().unwrap().lock().unwrap();
         let state = states.remove(&user.uuid).unwrap();
 
+        // TODO make the closure check if the credential already exists
         WebauthnConfig::load(true).register_credential(&data.device_response.into(), &state, |_| Ok(false))?
     };
-
-    // TODO add existing keys here when the table exists
-    // let mut registrations: Vec<_> = get_webauthn_registrations(&user.uuid, &mut conn).await?.1;
-    // // TODO: Check for repeated ID's
-    // registrations.push(WebauthnRegistration {
-    //     id: data.id.into_i32()?,
-    //     name: data.name,
-    //     migrated: false,
-    //
-    //     credential,
-    // });
-
-    // let registrations = Vec::new();
-
-    // TODO Save the registration
-    // TwoFactor::new(user.uuid.clone(), TwoFactorType::Webauthn, serde_json::to_string(&registrations)?)
-    //     .save(&mut conn)
-    //     .await?;
-
+    
     WebAuthnCredential::new(
         user.uuid,
         data.name,
@@ -326,10 +297,10 @@ async fn get_api_webauthn(headers: Headers, mut conn: DbConn) -> Json<Value> {
         .await
         .into_iter()
         .map(|wac| {
-            // TODO generate prfStatus from GetPrfStatus() in C#
             json!({
                 "id": wac.uuid,
                 "name": wac.name,
+                // TODO generate prfStatus like GetPrfStatus() does in the C# implementation
                 "prfStatus": 0,
                 "encryptedUserKey": wac.encrypted_user_key,
                 "encryptedPublicKey": wac.encrypted_public_key,

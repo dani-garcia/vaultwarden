@@ -476,5 +476,5 @@ impl Invitation {
 )]
 #[deref(forward)]
 #[from(forward)]
-// TODO create a way to construct this
+// TODO this also shouldn't be public
 pub struct UserId(pub String);

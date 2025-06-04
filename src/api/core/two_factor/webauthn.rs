@@ -146,7 +146,6 @@ async fn get_webauthn(data: Json<PasswordOrOtpData>, headers: Headers, mut conn:
     })))
 }
 
-// TODO Creation call
 #[post("/two-factor/get-webauthn-challenge", data = "<data>")]
 async fn generate_webauthn_challenge(data: Json<PasswordOrOtpData>, headers: Headers, mut conn: DbConn) -> JsonResult {
     let data: PasswordOrOtpData = data.into_inner();
@@ -261,7 +260,6 @@ impl From<PublicKeyCredentialCopy> for PublicKeyCredential {
     }
 }
 
-// TODO Confirmation call
 #[post("/two-factor/webauthn", data = "<data>")]
 async fn activate_webauthn(data: Json<EnableWebauthnData>, headers: Headers, mut conn: DbConn) -> JsonResult {
     let data: EnableWebauthnData = data.into_inner();

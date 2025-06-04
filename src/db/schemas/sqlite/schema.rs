@@ -327,9 +327,9 @@ table! {
         name -> Text,
         credential -> Text,
         supports_prf -> Bool,
-        encrypted_user_key -> Text,
-        encrypted_public_key -> Text,
-        encrypted_private_key -> Text,
+        encrypted_user_key -> Nullable<Text>,
+        encrypted_public_key -> Nullable<Text>,
+        encrypted_private_key -> Nullable<Text>,
     }
 }
 

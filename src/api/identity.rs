@@ -125,7 +125,7 @@ pub struct PublicKeyCredentialCopy {
     pub raw_id: Base64UrlSafeData,
     pub response: AuthenticatorAssertionResponseRawCopy,
     pub r#type: String,
-    // TODO think about what to do with this field, currently this is ignored in the conversion
+    // This field is unused and discarded when converted to PublicKeyCredential
     pub extensions: Option<Value>,
 }
 
@@ -199,43 +199,56 @@ async fn _webauthn_login(
     
     let web_authn_credentials = WebAuthnCredential::find_all_by_user(&user.uuid, conn).await;
 
-    let credentials = web_authn_credentials
+    let parsed_credentials = web_authn_credentials
         .iter()
         .map(|c| {
             serde_json::from_str(&c.credential)
         }).collect::<Result<Vec<Credential>, _>>()?;
-
-    let web_authn_credential = {
+    
+    let pairs = web_authn_credentials.into_iter()
+        .zip(parsed_credentials.clone())
+        .collect::<Vec<_>>();
+    
+    let authenticator_data;
+    let (web_authn_credential, mut credential) = {
         let token = data.token.as_ref().unwrap();
         let mut states = WEBAUTHN_AUTHENTICATION_STATES.get().unwrap().lock().unwrap();
         let mut state = states.remove(token).unwrap();
         let resp = device_response.into();
 
-        state.set_allowed_credentials(credentials);
-
-        // TODO update respective credential in database
-        let (credential_id, auth_data) = WebauthnConfig::load(true)
-            .authenticate_credential(&resp, &state)?;
-
-        if !auth_data.user_verified {
-            // TODO throw an error here
-            panic!()
-        }
-
-        web_authn_credentials.into_iter()
-            .find(|c| &serde_json::from_str::<Credential>(&c.credential).unwrap().cred_id == credential_id)
-            .unwrap()
-
-        /* TODO return this error on failure
-        err!(
-                "Username or password is incorrect. Try again",
+        state.set_allowed_credentials(parsed_credentials);
+        
+        let credential_id;
+        
+        if let Ok((cred_id, auth_data)) = WebauthnConfig::load(true)
+            .authenticate_credential(&resp, &state) {
+            credential_id = cred_id;
+            authenticator_data = auth_data;
+        } else {
+            err!(
+                "Passkey authentication Failed.",
                 format!("IP: {}. Username: {username}.", ip.ip),
                 ErrorEvent {
                     event: EventType::UserFailedLogIn,
                 }
             )
-        */
+        }
+
+        // TODO should this check be done? Since we need to trust the client here anyway ...
+        // if !auth_data.user_verified { some_error }
+
+        pairs.into_iter()
+            .find(|(_, c)| &c.cred_id == credential_id)
+            .unwrap()
     };
+    
+    // update the counter
+    credential.counter = authenticator_data.counter;
+    WebAuthnCredential::update_credential_by_uuid(
+        &web_authn_credential.uuid, 
+        serde_json::to_string(&credential)?, 
+        conn
+    ).await?;
 
     let now = Utc::now().naive_utc();
 
@@ -273,7 +286,7 @@ async fn _webauthn_login(
 
     let (mut device, new_device) = get_device(&data, conn, &user).await;
 
-    // TODO is this needed with passkeys?
+    // TODO is this wanted with passkeys?
     if CONFIG.mail_enabled() && new_device {
         if let Err(e) = mail::send_new_device_logged_in(&user.email, &ip.ip.to_string(), &now, &device).await {
             error!("Error sending new device email: {e:#?}");
@@ -335,7 +348,7 @@ async fn _webauthn_login(
         json!({"Object": "masterPasswordPolicy"})
     };
 
-    let result = json!({
+    let mut result = json!({
         "access_token": access_token,
         "expires_in": expires_in,
         "token_type": "Bearer",
@@ -354,13 +367,16 @@ async fn _webauthn_login(
         "scope": scope,
         "UserDecryptionOptions": {
             "HasMasterPassword": !user.password_hash.is_empty(),
-            "WebAuthnPrfOption": {
-                "EncryptedPrivateKey": web_authn_credential.encrypted_private_key,
-                "EncryptedUserKey": web_authn_credential.encrypted_user_key,
-            },
             "Object": "userDecryptionOptions"
         },
     });
+    
+    if web_authn_credential.encrypted_private_key.is_some() && web_authn_credential.encrypted_user_key.is_some() {
+        result["UserDecryptionOptions"]["WebAuthnPrfOption"] = json!({
+            "EncryptedPrivateKey": web_authn_credential.encrypted_private_key,
+            "EncryptedUserKey": web_authn_credential.encrypted_user_key,
+        })
+    }
 
     info!("User {username} logged in successfully. IP: {}", ip.ip);
     Ok(Json(result))
@@ -963,6 +979,7 @@ async fn identity_register(data: Json<RegisterData>, conn: DbConn) -> JsonResult
     _register(data, false, conn).await
 }
 
+// TODO this should be removed and either use something similar to what bitwarden employs or something else
 static WEBAUTHN_AUTHENTICATION_STATES: OnceLock<Mutex<HashMap<String, AuthenticationState>>> = OnceLock::new();
 
 #[get("/accounts/webauthn/assertion-options")]
@@ -972,8 +989,7 @@ fn get_web_authn_assertion_options() -> JsonResult {
             Vec::new(),
             None,
         )?;
-
-    // TODO this needs to be solved in another way to avoid DoS
+    
     let t = util::get_uuid();
     WEBAUTHN_AUTHENTICATION_STATES.get_or_init(|| Mutex::new(HashMap::new())).lock().unwrap().insert(t.clone(), state);
 
@@ -1052,7 +1068,7 @@ async fn register_finish(data: Json<RegisterData>, conn: DbConn) -> JsonResult {
 struct ConnectData {
     #[field(name = uncased("grant_type"))]
     #[field(name = uncased("granttype"))]
-    grant_type: String, // refresh_token, password, client_credentials (API key)
+    grant_type: String, // refresh_token, password, client_credentials (API key), webauthn
 
     // Needed for grant_type="refresh_token"
     #[field(name = uncased("refresh_token"))]
@@ -1100,10 +1116,10 @@ struct ConnectData {
     #[field(name = uncased("authrequest"))]
     auth_request: Option<AuthRequestId>,
 
-    // Needed for "login with passkey"
+    // Needed for grant_type = "webauthn"
     #[field(name = uncased("deviceresponse"))]
     device_response: Option<String>,
-    // TODO this may be removed again if implemented correctly
+    // TODO this may be removed when `WEBAUTHN_AUTHENTICATION_STATES` is removed
     #[field(name = uncased("token"))]
     token: Option<String>,
 }
