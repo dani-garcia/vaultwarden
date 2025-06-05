@@ -253,7 +253,8 @@ Additionally Zitadel include the `Project id` and the `Client Id` in the audienc
 For the validation to work you will need to add the `Resource Id` as a trusted audience (`Client Id` is trusted by default).
 You can control the trusted audience with the config `SSO_AUDIENCE_TRUSTED`
 
-It appears it's not possible to use PKCE with confidential client so it needs to be disabled.
+Since [zitadel#721](https://github.com/zitadel/oidc/pull/721) PKCE should work with client secret.
+But older versions might have to disable it (`SSO_PKCE=false`).
 
 Config will look like:
 
@@ -262,7 +263,6 @@ Config will look like:
 - `SSO_CLIENT_ID`
 - `SSO_CLIENT_SECRET`
 - `SSO_AUDIENCE_TRUSTED='^${Project Id}$'`
-- `SSO_PKCE=false`
 
 ## Session lifetime
 
