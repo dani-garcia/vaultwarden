@@ -10,7 +10,7 @@ use crate::{
     auth::Headers,
     crypto,
     db::{
-        models::{EventType, TwoFactor, TwoFactorType, User, UserId},
+        models::{DeviceId, EventType, TwoFactor, TwoFactorType, User, UserId},
         DbConn,
     },
     error::{Error, MapResult},
@@ -24,11 +24,15 @@ pub fn routes() -> Vec<Route> {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SendEmailLoginData {
-    // DeviceIdentifier: String, // Currently not used
+    device_identifier: DeviceId,
+
+    #[allow(unused)]
     #[serde(alias = "Email")]
-    email: String,
+    email: Option<String>,
+
+    #[allow(unused)]
     #[serde(alias = "MasterPasswordHash")]
-    master_password_hash: String,
+    master_password_hash: Option<String>,
 }
 
 /// User is trying to login and wants to use email 2FA.
@@ -40,14 +44,9 @@ async fn send_email_login(data: Json<SendEmailLoginData>, mut conn: DbConn) -> E
     use crate::db::models::User;
 
     // Get the user
-    let Some(user) = User::find_by_mail(&data.email, &mut conn).await else {
-        err!("Username or password is incorrect. Try again.")
+    let Some(user) = User::find_by_device_id(&data.device_identifier, &mut conn).await else {
+        err!("Cannot find user. Try again.")
     };
-
-    // Check password
-    if !user.check_valid_password(&data.master_password_hash) {
-        err!("Username or password is incorrect. Try again.")
-    }
 
     if !CONFIG._enable_email_2fa() {
         err!("Email 2FA is disabled")
