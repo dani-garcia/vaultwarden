@@ -133,12 +133,15 @@ async fn generate_webauthn_challenge(data: Json<PasswordOrOtpData>, headers: Hea
         Some(registrations),
     )?;
 
-    // TODO is there a nicer way to do this?
     // this is done since `start_passkey_registration()` always sets this to `Required` which shouldn't be needed for 2FA
-    challenge.public_key.authenticator_selection = challenge.public_key.authenticator_selection.map(|mut a| {
-        a.user_verification = UserVerificationPolicy::Discouraged_DO_NOT_USE;
-        a
-    });
+    challenge.public_key.extensions = None;
+    if let Some(asc) = challenge.public_key.authenticator_selection.as_mut() {
+        asc.user_verification = UserVerificationPolicy::Discouraged_DO_NOT_USE;
+    }
+
+    let mut state = serde_json::to_value(&state)?;
+    state["rs"]["policy"] = Value::String("discouraged".to_string());
+    state["rs"]["extensions"].as_object_mut().unwrap().clear();
 
     let type_ = TwoFactorType::WebauthnRegisterChallenge;
     TwoFactor::new(user.uuid.clone(), type_, serde_json::to_string(&state)?).save(&mut conn).await?;
@@ -368,10 +371,12 @@ pub async fn generate_webauthn_login(user_id: &UserId, webauthn: Webauthn2FaConf
 
     // Generate a challenge based on the credentials
     let (mut response, state) = webauthn.start_passkey_authentication(&creds)?;
+
+    // Modify to discourage user verification
+    let mut state = serde_json::to_value(&state)?;
+    state["ast"]["policy"] = Value::String("discouraged".to_string());
+    state["ast"]["appid"] = Value::String(format!("{}/app-id.json", &CONFIG.domain()));
     response.public_key.user_verification = UserVerificationPolicy::Discouraged_DO_NOT_USE;
-    
-    // TODO does the appid extension matter? As far as I understand, this was only put into the authentication state anyway
-    // let ext = RequestAuthenticationExtensions::builder().appid(format!("{}/app-id.json", &CONFIG.domain())).build();
 
     // Save the challenge state for later validation
     TwoFactor::new(user_id.clone(), TwoFactorType::WebauthnLoginChallenge, serde_json::to_string(&state)?)
