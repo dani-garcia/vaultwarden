@@ -1,24 +1,38 @@
-<main class="container-xl">
-    {{#if error}}
-    <div class="align-items-center p-3 mb-3 text-opacity-50 text-dark bg-warning rounded shadow">
-        <div>
-            <h6 class="mb-0 text-dark">{{error}}</h6>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Z1 Locker Admin - Login</title>
+    <link
+      rel="icon"
+      type="image/png"
+      href="{{urlpath}}/vw_static/vaultwarden-favicon.png"
+    />
+    <link rel="stylesheet" href="{{urlpath}}/vw_static/bootstrap.css" />
+    <link rel="stylesheet" href="{{urlpath}}/vw_static/admin.css" />
+  </head>
+  <body>
+    <div class="container">
+      <div class="row justify-content-center">
+        <div class="col-12 col-sm-8 col-md-6 col-lg-4">
+          <form class="form-signin" action="{{urlpath}}/admin" method="post">
+            <h1 class="text-center mb-4">Z1 Locker Admin</h1>
+            <div class="form-floating mb-3">
+              <input
+                type="password"
+                class="form-control"
+                id="token"
+                name="token"
+                placeholder="Admin Token"
+                required
+                autofocus
+              />
+              <label for="token">Admin Token</label>
+            </div>
+            <button class="w-100 btn btn-lg btn-primary" type="submit">Sign in</button>
+          </form>
         </div>
+      </div>
     </div>
-    {{/if}}
-
-    <div class="align-items-center p-3 mb-3 text-opacity-75 text-light bg-danger rounded shadow">
-        <div>
-            <h6 class="mb-0 text-light">Authentication key needed to continue</h6>
-            <small>Please provide it below:</small>
-
-            <form class="form-inline" method="post" action="{{urlpath}}/admin">
-                <input type="password" autocomplete="password" class="form-control w-50 mr-2" name="token" placeholder="Enter admin token" autofocus="autofocus">
-                {{#if redirect}}
-                <input type="hidden" id="redirect" name="redirect" value="/{{redirect}}">
-                {{/if}}
-                <button type="submit" class="btn btn-primary mt-2">Enter</button>
-            </form>
-        </div>
-    </div>
-</main>
+  </body>
+</html>

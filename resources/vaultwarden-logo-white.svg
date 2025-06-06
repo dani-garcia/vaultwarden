@@ -1,88 +1,9 @@
-<?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<svg width="1365.8256" height="280.48944" version="1.1" viewBox="0 0 1365.8255 280.48944" id="svg3412" sodipodi:docname="vaultwarden-logo.svg" inkscape:version="1.2.1 (9c6d41e410, 2022-07-14, custom)" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns="http://www.w3.org/2000/svg" xmlns:svg="http://www.w3.org/2000/svg" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:cc="http://creativecommons.org/ns#" xmlns:dc="http://purl.org/dc/elements/1.1/">
-  <sodipodi:namedview id="namedview3414" pagecolor="#000000" bordercolor="#666666" borderopacity="1.0" inkscape:showpageshadow="2" inkscape:pageopacity="0.0" inkscape:pagecheckerboard="0" inkscape:deskcolor="#202020" showgrid="false" inkscape:zoom="0.95107314" inkscape:cx="683.4385" inkscape:cy="139.84203" inkscape:window-width="1874" inkscape:window-height="1056" inkscape:window-x="46" inkscape:window-y="24" inkscape:window-maximized="1" inkscape:current-layer="svg3412" />
+<?xml version="1.0" encoding="utf-8"?>
+<svg width="1365.8256" height="280.48944" version="1.1" viewBox="0 0 1365.8255 280.48944" id="svg3412" xmlns="http://www.w3.org/2000/svg" xmlns:bx="https://boxy-svg.com">
   <title id="title3292">Vaultwarden Logo - White</title>
   <defs id="defs3308">
-    <mask id="holes">
-      <rect x="-60" y="-60" width="120" height="120" fill="#fff" id="rect3296" />
-      <circle id="hole" cy="-40" r="3" />
-      <use transform="rotate(72)" xlink:href="#hole" id="use3299" />
-      <use transform="rotate(144)" xlink:href="#hole" id="use3301" />
-      <use transform="rotate(216)" xlink:href="#hole" id="use3303" />
-      <use transform="rotate(-72)" xlink:href="#hole" id="use3305" />
-    </mask>
+    <style bx:fonts="Roboto Mono">@import url(https://fonts.googleapis.com/css2?family=Roboto+Mono%3Aital%2Cwght%400%2C100..700%3B1%2C100..700&amp;display=swap);</style>
   </defs>
-  <text transform="translate(-10.708266,-9.2965379)" x="286.59244" y="223.43649" fill="#e6e6e6" font-family="'Open Sans'" font-size="200px" style="line-height:1.25" xml:space="preserve" id="text3314"><tspan x="286.59244" y="223.43649" font-family="'Open Sans'" font-size="200px" id="tspan3312"><tspan font-family="'Open Sans'" font-size="200px" font-weight="bold" id="tspan3310">ault</tspan>warden</tspan></text>
-  <g transform="translate(-10.708266,-9.2965379)" id="g3410">
-    <g id="logo" transform="matrix(2.6712834,0,0,2.6712834,150.95027,149.53854)">
-      <g id="gear" mask="url(#holes)">
-        <path d="m-31.1718-33.813208 26.496029 74.188883h9.3515399l26.49603-74.188883h-9.767164l-16.728866 47.588948q-1.662496 4.571864-2.805462 8.624198-1.142966 3.948427-1.870308 7.585137-.72734199-3.63671-1.8703079-7.689043-1.142966-4.052334-2.805462-8.728104l-16.624959-47.381136z" fill="#e6e6e6" stroke="#e6e6e6" stroke-width="4.51171" id="path3316" />
-        <circle transform="scale(-1,1)" r="43" fill="none" stroke="#e6e6e6" stroke-width="9" id="circle3318" />
-        <g id="cogs" transform="scale(-1,1)">
-          <polygon id="cog" points="46 -3 46 3 51 0" fill="#e6e6e6" stroke="#e6e6e6" stroke-linejoin="round" stroke-width="3" />
-          <use transform="rotate(11.25)" xlink:href="#cog" id="use3321" />
-          <use transform="rotate(22.5)" xlink:href="#cog" id="use3323" />
-          <use transform="rotate(33.75)" xlink:href="#cog" id="use3325" />
-          <use transform="rotate(45)" xlink:href="#cog" id="use3327" />
-          <use transform="rotate(56.25)" xlink:href="#cog" id="use3329" />
-          <use transform="rotate(67.5)" xlink:href="#cog" id="use3331" />
-          <use transform="rotate(78.75)" xlink:href="#cog" id="use3333" />
-          <use transform="rotate(90)" xlink:href="#cog" id="use3335" />
-          <use transform="rotate(101.25)" xlink:href="#cog" id="use3337" />
-          <use transform="rotate(112.5)" xlink:href="#cog" id="use3339" />
-          <use transform="rotate(123.75)" xlink:href="#cog" id="use3341" />
-          <use transform="rotate(135)" xlink:href="#cog" id="use3343" />
-          <use transform="rotate(146.25)" xlink:href="#cog" id="use3345" />
-          <use transform="rotate(157.5)" xlink:href="#cog" id="use3347" />
-          <use transform="rotate(168.75)" xlink:href="#cog" id="use3349" />
-          <use transform="scale(-1)" xlink:href="#cog" id="use3351" />
-          <use transform="rotate(191.25)" xlink:href="#cog" id="use3353" />
-          <use transform="rotate(202.5)" xlink:href="#cog" id="use3355" />
-          <use transform="rotate(213.75)" xlink:href="#cog" id="use3357" />
-          <use transform="rotate(225)" xlink:href="#cog" id="use3359" />
-          <use transform="rotate(236.25)" xlink:href="#cog" id="use3361" />
-          <use transform="rotate(247.5)" xlink:href="#cog" id="use3363" />
-          <use transform="rotate(258.75)" xlink:href="#cog" id="use3365" />
-          <use transform="rotate(-90)" xlink:href="#cog" id="use3367" />
-          <use transform="rotate(-78.75)" xlink:href="#cog" id="use3369" />
-          <use transform="rotate(-67.5)" xlink:href="#cog" id="use3371" />
-          <use transform="rotate(-56.25)" xlink:href="#cog" id="use3373" />
-          <use transform="rotate(-45)" xlink:href="#cog" id="use3375" />
-          <use transform="rotate(-33.75)" xlink:href="#cog" id="use3377" />
-          <use transform="rotate(-22.5)" xlink:href="#cog" id="use3379" />
-          <use transform="rotate(-11.25)" xlink:href="#cog" id="use3381" />
-        </g>
-        <g id="mounts" transform="scale(-1,1)">
-          <polygon id="mount" points="7 -42 -7 -42 0 -35" stroke="#e6e6e6" stroke-linejoin="round" stroke-width="6" />
-          <use transform="rotate(72)" xlink:href="#mount" id="use3385" />
-          <use transform="rotate(144)" xlink:href="#mount" id="use3387" />
-          <use transform="rotate(216)" xlink:href="#mount" id="use3389" />
-          <use transform="rotate(-72)" xlink:href="#mount" id="use3391" />
-        </g>
-      </g>
-      <mask id="mask3407">
-        <rect x="-60" y="-60" width="120" height="120" fill="#e6e6e6" id="rect3395" />
-        <circle cy="-40" r="3" id="circle3397" />
-        <use transform="rotate(72)" xlink:href="#hole" id="use3399" />
-        <use transform="rotate(144)" xlink:href="#hole" id="use3401" />
-        <use transform="rotate(216)" xlink:href="#hole" id="use3403" />
-        <use transform="rotate(-72)" xlink:href="#hole" id="use3405" />
-      </mask>
-    </g>
-  </g>
-  <metadata id="metadata3294">
-    <rdf:RDF>
-      <cc:Work rdf:about="">
-        <dc:format>image/svg+xml</dc:format>
-        <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-        <dc:title>Vaultwarden Logo - White</dc:title>
-        <dc:creator>
-          <cc:Agent>
-            <dc:title>Mathijs van Veluw</dc:title>
-          </cc:Agent>
-        </dc:creator>
-        <dc:relation>Rust Logo</dc:relation>
-      </cc:Work>
-    </rdf:RDF>
-  </metadata>
+  <polygon points="70.487 27.043 52.956 68.776 162.877 68.776 114.786 183.257 173.865 183.257 173.882 217.835 69.913 217.835 117.974 103.416 38.48 103.249 20.967 144.944 63.698 145.037 15.591 259.568 206.207 259.568 206.307 259.568 206.207 141.524 169.11 141.524 183.637 106.935 233.068 106.935 233.068 259.568 265.411 259.568 265.411 65.201 201.173 65.201 217.195 27.043 70.487 27.043" fill-rule="evenodd" style="stroke-width: 0.44; fill: rgb(230, 230, 230);"/>
+  <text style="fill: rgb(230, 230, 230); font-family: &quot;Roboto Mono&quot;; font-size: 28px; white-space: pre;" transform="matrix(8.428713, 0, 0, 8.610577, -7395.509277, -1094.667725)" x="920.019" y="153.758">Locker</text>
 </svg>

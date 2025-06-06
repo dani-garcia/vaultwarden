@@ -1,74 +1,9 @@
-<?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<svg version="1.1" viewBox="0 0 256 256" id="svg383" sodipodi:docname="vaultwarden-icon.svg" inkscape:version="1.2.1 (9c6d41e410, 2022-07-14, custom)" width="256" height="256" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns="http://www.w3.org/2000/svg" xmlns:svg="http://www.w3.org/2000/svg" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:cc="http://creativecommons.org/ns#" xmlns:dc="http://purl.org/dc/elements/1.1/">
-  <defs id="defs387" />
-  <sodipodi:namedview id="namedview385" pagecolor="#ffffff" bordercolor="#666666" borderopacity="1.0" inkscape:showpageshadow="2" inkscape:pageopacity="0.0" inkscape:pagecheckerboard="0" inkscape:deskcolor="#d1d1d1" showgrid="false" inkscape:zoom="3.3359375" inkscape:cx="128" inkscape:cy="128" inkscape:window-width="1874" inkscape:window-height="1056" inkscape:window-x="46" inkscape:window-y="24" inkscape:window-maximized="1" inkscape:current-layer="svg383" />
-  <title id="title287">Vaultwarden Icon</title>
-  <g id="logo" transform="matrix(2.4381018,0,0,2.4381018,128,128)">
-    <g id="gear" mask="url(#holes)">
-      <path d="m-31.1718-33.813208 26.496029 74.188883h9.3515399l26.49603-74.188883h-9.767164l-16.728866 47.588948q-1.662496 4.571864-2.805462 8.624198-1.142966 3.948427-1.870308 7.585137-.72734199-3.63671-1.8703079-7.689043-1.142966-4.052334-2.805462-8.728104l-16.624959-47.381136z" stroke="#000" stroke-width="4.51171" id="path289" />
-      <circle transform="scale(-1,1)" r="43" fill="none" stroke="#000" stroke-width="9" id="circle291" />
-      <g id="cogs" transform="scale(-1,1)">
-        <polygon id="cog" points="51 0 46 -3 46 3" stroke="#000" stroke-linejoin="round" stroke-width="3" />
-        <use transform="rotate(11.25)" xlink:href="#cog" id="use294" />
-        <use transform="rotate(22.5)" xlink:href="#cog" id="use296" />
-        <use transform="rotate(33.75)" xlink:href="#cog" id="use298" />
-        <use transform="rotate(45)" xlink:href="#cog" id="use300" />
-        <use transform="rotate(56.25)" xlink:href="#cog" id="use302" />
-        <use transform="rotate(67.5)" xlink:href="#cog" id="use304" />
-        <use transform="rotate(78.75)" xlink:href="#cog" id="use306" />
-        <use transform="rotate(90)" xlink:href="#cog" id="use308" />
-        <use transform="rotate(101.25)" xlink:href="#cog" id="use310" />
-        <use transform="rotate(112.5)" xlink:href="#cog" id="use312" />
-        <use transform="rotate(123.75)" xlink:href="#cog" id="use314" />
-        <use transform="rotate(135)" xlink:href="#cog" id="use316" />
-        <use transform="rotate(146.25)" xlink:href="#cog" id="use318" />
-        <use transform="rotate(157.5)" xlink:href="#cog" id="use320" />
-        <use transform="rotate(168.75)" xlink:href="#cog" id="use322" />
-        <use transform="scale(-1)" xlink:href="#cog" id="use324" />
-        <use transform="rotate(191.25)" xlink:href="#cog" id="use326" />
-        <use transform="rotate(202.5)" xlink:href="#cog" id="use328" />
-        <use transform="rotate(213.75)" xlink:href="#cog" id="use330" />
-        <use transform="rotate(225)" xlink:href="#cog" id="use332" />
-        <use transform="rotate(236.25)" xlink:href="#cog" id="use334" />
-        <use transform="rotate(247.5)" xlink:href="#cog" id="use336" />
-        <use transform="rotate(258.75)" xlink:href="#cog" id="use338" />
-        <use transform="rotate(-90)" xlink:href="#cog" id="use340" />
-        <use transform="rotate(-78.75)" xlink:href="#cog" id="use342" />
-        <use transform="rotate(-67.5)" xlink:href="#cog" id="use344" />
-        <use transform="rotate(-56.25)" xlink:href="#cog" id="use346" />
-        <use transform="rotate(-45)" xlink:href="#cog" id="use348" />
-        <use transform="rotate(-33.75)" xlink:href="#cog" id="use350" />
-        <use transform="rotate(-22.5)" xlink:href="#cog" id="use352" />
-        <use transform="rotate(-11.25)" xlink:href="#cog" id="use354" />
-      </g>
-      <g id="mounts" transform="scale(-1,1)">
-        <polygon id="mount" points="0 -35 7 -42 -7 -42" stroke="#000" stroke-linejoin="round" stroke-width="6" />
-        <use transform="rotate(72)" xlink:href="#mount" id="use358" />
-        <use transform="rotate(144)" xlink:href="#mount" id="use360" />
-        <use transform="rotate(216)" xlink:href="#mount" id="use362" />
-        <use transform="rotate(-72)" xlink:href="#mount" id="use364" />
-      </g>
+<?xml version="1.0" encoding="utf-8"?>
+<svg version="1.1" viewBox="0 0 256 256" width="256" height="256" xmlns="http://www.w3.org/2000/svg">
+  <title>Vaultwarden Icon</title>
+  <g id="Capa_2" data-name="Capa 2" transform="matrix(0.400201, 0, 0, 0.479386, 10.095469, 24.929388)" style="">
+    <g id="Capa_1-2" data-name="Capa 1">
+      <polygon points="129.964 0 89.264 75.42 344.464 75.42 232.814 282.31 369.974 282.31 370.014 344.8 128.634 344.8 240.214 138.02 55.654 137.72 14.994 213.07 114.204 213.24 2.514 420.22 445.064 420.22 445.294 420.22 445.064 206.89 358.934 206.89 392.664 144.38 507.424 144.38 507.424 420.22 582.514 420.22 582.514 68.96 433.374 68.96 470.574 0 129.964 0" fill-rule="evenodd" style=""/>
     </g>
-    <mask id="holes">
-      <rect x="-60" y="-60" width="120" height="120" fill="#fff" id="rect368" />
-      <circle id="hole" cy="-40" r="3" />
-      <use transform="rotate(72)" xlink:href="#hole" id="use371" />
-      <use transform="rotate(144)" xlink:href="#hole" id="use373" />
-      <use transform="rotate(216)" xlink:href="#hole" id="use375" />
-      <use transform="rotate(-72)" xlink:href="#hole" id="use377" />
-    </mask>
   </g>
-  <metadata id="metadata381">
-    <rdf:RDF>
-      <cc:Work rdf:about="">
-        <dc:title>Vaultwarden Icon</dc:title>
-        <dc:creator>
-          <cc:Agent>
-            <dc:title>Mathijs van Veluw</dc:title>
-          </cc:Agent>
-        </dc:creator>
-        <dc:relation>Rust Logo</dc:relation>
-      </cc:Work>
-    </rdf:RDF>
-  </metadata>
 </svg>

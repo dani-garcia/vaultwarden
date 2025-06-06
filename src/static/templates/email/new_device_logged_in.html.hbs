@@ -1,36 +1,29 @@
-New Device Logged In From {{{device_name}}}
-<!---------------->
-{{> email/email_header }}
-<table width="100%" cellpadding="0" cellspacing="0" style="margin: 0; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; box-sizing: border-box; font-size: 16px; color: #333; line-height: 25px; -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: none;">
-   <tr style="margin: 0; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; box-sizing: border-box; font-size: 16px; color: #333; line-height: 25px; -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: none;">
-      <td class="content-block" style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; box-sizing: border-box; font-size: 16px; color: #333; line-height: 25px; margin: 0; -webkit-font-smoothing: antialiased; padding: 0 0 10px; -webkit-text-size-adjust: none;" valign="top">
-         Your account was just logged into from a new device.
-      </td>
-   </tr>
-   <tr style="margin: 0; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; box-sizing: border-box; font-size: 16px; color: #333; line-height: 25px; -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: none;">
-      <td class="content-block" style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; box-sizing: border-box; font-size: 16px; color: #333; line-height: 25px; margin: 0; -webkit-font-smoothing: antialiased; padding: 0 0 10px; -webkit-text-size-adjust: none;" valign="top">
-         <b>Date:</b> {{datetime}}
-      </td>
-   </tr>
-         <tr style="margin: 0; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; box-sizing: border-box; font-size: 16px; color: #333; line-height: 25px; -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: none;">
-      <td class="content-block" style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; box-sizing: border-box; font-size: 16px; color: #333; line-height: 25px; margin: 0; -webkit-font-smoothing: antialiased; padding: 0 0 10px; -webkit-text-size-adjust: none;" valign="top">
-            <b>IP Address:</b> {{ip}}
-      </td>
-   </tr>
-         <tr style="margin: 0; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; box-sizing: border-box; font-size: 16px; color: #333; line-height: 25px; -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: none;">
-      <td class="content-block" style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; box-sizing: border-box; font-size: 16px; color: #333; line-height: 25px; margin: 0; -webkit-font-smoothing: antialiased; padding: 0 0 10px; -webkit-text-size-adjust: none;" valign="top">
-            <b>Device Name:</b> {{device_name}}
-      </td>
-   </tr>
-         <tr style="margin: 0; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; box-sizing: border-box; font-size: 16px; color: #333; line-height: 25px; -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: none;">
-      <td class="content-block" style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; box-sizing: border-box; font-size: 16px; color: #333; line-height: 25px; margin: 0; -webkit-font-smoothing: antialiased; padding: 0 0 10px; -webkit-text-size-adjust: none;" valign="top">
-            <b>Device Type:</b> {{device_type}}
-      </td>
-   </tr>
-   <tr style="margin: 0; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; box-sizing: border-box; font-size: 16px; color: #333; line-height: 25px; -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: none;">
-      <td class="content-block last" style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; box-sizing: border-box; font-size: 16px; color: #333; line-height: 25px; margin: 0; -webkit-font-smoothing: antialiased; padding: 0; -webkit-text-size-adjust: none;" valign="top">
-            You can deauthorize all devices that have access to your account from the <a href="{{url}}/">web vault</a> under Settings > My Account > Deauthorize Sessions.
-      </td>
-   </tr>
+{{> email/email_header title="New Device Logged In to Z1 Locker"}}
+
+<table class="main" width="100%" cellpadding="0" cellspacing="0" style="-webkit-font-smoothing: antialiased; -webkit-text-size-adjust: none; box-sizing: border-box; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 14px; margin: 0; padding: 0; width: 100%;" bgcolor="#fff">
+    <tr style="-webkit-font-smoothing: antialiased; -webkit-text-size-adjust: none; box-sizing: border-box; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 14px; margin: 0; padding: 0;">
+        <td class="content-wrap" style="-webkit-font-smoothing: antialiased; -webkit-text-size-adjust: none; box-sizing: border-box; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 14px; margin: 0; padding: 20px; vertical-align: top;">
+            <table width="100%" cellpadding="0" cellspacing="0" style="-webkit-font-smoothing: antialiased; -webkit-text-size-adjust: none; box-sizing: border-box; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 14px; margin: 0; padding: 0;">
+                <tr style="-webkit-font-smoothing: antialiased; -webkit-text-size-adjust: none; box-sizing: border-box; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 14px; margin: 0; padding: 0;">
+                    <td class="content-block" style="-webkit-font-smoothing: antialiased; -webkit-text-size-adjust: none; box-sizing: border-box; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 14px; margin: 0; padding: 0 0 20px; vertical-align: top;">
+                        Your Z1 Locker account was just logged in to from a new device:
+                    </td>
+                </tr>
+                <tr style="-webkit-font-smoothing: antialiased; -webkit-text-size-adjust: none; box-sizing: border-box; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 14px; margin: 0; padding: 0;">
+                    <td class="content-block" style="-webkit-font-smoothing: antialiased; -webkit-text-size-adjust: none; box-sizing: border-box; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 14px; margin: 0; padding: 0 0 20px; vertical-align: top;">
+                        Date: {{date}}<br>
+                        IP Address: {{ip}}<br>
+                        Device Type: {{device_type}}
+                    </td>
+                </tr>
+                <tr style="-webkit-font-smoothing: antialiased; -webkit-text-size-adjust: none; box-sizing: border-box; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 14px; margin: 0; padding: 0;">
+                    <td class="content-block" style="-webkit-font-smoothing: antialiased; -webkit-text-size-adjust: none; box-sizing: border-box; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 14px; margin: 0; padding: 0 0 20px; vertical-align: top;">
+                        If this was not you, please change your Z1 Locker master password immediately.
+                    </td>
+                </tr>
+            </table>
+        </td>
+    </tr>
 </table>
-{{> email/email_footer }}
+
+{{> email/email_footer}}

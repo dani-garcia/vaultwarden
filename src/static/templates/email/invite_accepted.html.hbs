@@ -1,21 +1,31 @@
 Invitation to {{{org_name}}} accepted
 <!---------------->
-{{> email/email_header }}
-<table width="100%" cellpadding="0" cellspacing="0" style="margin: 0; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; box-sizing: border-box; font-size: 16px; color: #333; line-height: 25px; -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: none;">
-   <tr style="margin: 0; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; box-sizing: border-box; font-size: 16px; color: #333; line-height: 25px; -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: none;">
-      <td class="content-block" style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; box-sizing: border-box; font-size: 16px; color: #333; line-height: 25px; margin: 0; -webkit-font-smoothing: antialiased; padding: 0 0 10px; -webkit-text-size-adjust: none;" valign="top">
-         This email is to notify you that {{email}} has accepted your invitation to join <b style="margin: 0; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; box-sizing: border-box; font-size: 16px; color: #333; line-height: 25px; -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: none;">{{org_name}}</b>.
-      </td>
-   </tr>
-   <tr style="margin: 0; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; box-sizing: border-box; font-size: 16px; color: #333; line-height: 25px; -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: none;">
-      <td class="content-block" style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; box-sizing: border-box; font-size: 16px; color: #333; line-height: 25px; margin: 0; -webkit-font-smoothing: antialiased; padding: 0 0 10px; -webkit-text-size-adjust: none;" valign="top">
-         Please <a href="{{url}}/">log in</a> to the vaultwarden server and confirm them from the organization management page.
-      </td>
-   </tr>
-   <tr style="margin: 0; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; box-sizing: border-box; font-size: 16px; color: #333; line-height: 25px; -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: none;">
-      <td class="content-block last" style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; box-sizing: border-box; font-size: 16px; color: #333; line-height: 25px; margin: 0; -webkit-font-smoothing: antialiased; padding: 0; -webkit-text-size-adjust: none;" valign="top">
-         If you do not wish to confirm this user, you can also remove them from the organization on the same page.
-      </td>
-   </tr>
+{{> email/email_header title="Z1 Locker Organization Invite Accepted"}}
+
+<table class="main" width="100%" cellpadding="0" cellspacing="0" style="-webkit-font-smoothing: antialiased; -webkit-text-size-adjust: none; box-sizing: border-box; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 14px; margin: 0; padding: 0; width: 100%;" bgcolor="#fff">
+    <tr style="-webkit-font-smoothing: antialiased; -webkit-text-size-adjust: none; box-sizing: border-box; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 14px; margin: 0; padding: 0;">
+        <td class="content-wrap" style="-webkit-font-smoothing: antialiased; -webkit-text-size-adjust: none; box-sizing: border-box; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 14px; margin: 0; padding: 20px; vertical-align: top;">
+            <table width="100%" cellpadding="0" cellspacing="0" style="-webkit-font-smoothing: antialiased; -webkit-text-size-adjust: none; box-sizing: border-box; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 14px; margin: 0; padding: 0;">
+                <tr style="-webkit-font-smoothing: antialiased; -webkit-text-size-adjust: none; box-sizing: border-box; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 14px; margin: 0; padding: 0;">
+                    <td class="content-block" style="-webkit-font-smoothing: antialiased; -webkit-text-size-adjust: none; box-sizing: border-box; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 14px; margin: 0; padding: 0 0 20px; vertical-align: top;">
+                        The following users have accepted your Z1 Locker organization invite:
+                    </td>
+                </tr>
+                <tr style="-webkit-font-smoothing: antialiased; -webkit-text-size-adjust: none; box-sizing: border-box; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 14px; margin: 0; padding: 0;">
+                    <td class="content-block" style="-webkit-font-smoothing: antialiased; -webkit-text-size-adjust: none; box-sizing: border-box; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 14px; margin: 0; padding: 0 0 20px; vertical-align: top;">
+                        {{#each users as |user|}}
+                        {{user}}<br>
+                        {{/each}}
+                    </td>
+                </tr>
+                <tr style="-webkit-font-smoothing: antialiased; -webkit-text-size-adjust: none; box-sizing: border-box; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 14px; margin: 0; padding: 0;">
+                    <td class="content-block" style="-webkit-font-smoothing: antialiased; -webkit-text-size-adjust: none; box-sizing: border-box; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 14px; margin: 0; padding: 0 0 20px; vertical-align: top;">
+                        Please <a href="{{url}}">log in</a> to your Z1 Locker account and confirm them from the organization management page.
+                    </td>
+                </tr>
+            </table>
+        </td>
+    </tr>
 </table>
-{{> email/email_footer }}
+
+{{> email/email_footer}}
