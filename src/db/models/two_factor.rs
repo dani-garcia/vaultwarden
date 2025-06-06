@@ -3,6 +3,7 @@ use webauthn_rs::prelude::{Credential, ParsedAttestation};
 use webauthn_rs_proto::{AttestationFormat, RegisteredExtensions};
 use super::UserId;
 use crate::{api::EmptyResult, db::DbConn, error::MapResult};
+use crate::api::core::two_factor::webauthn::WebauthnRegistration;
 
 db_object! {
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -45,7 +46,27 @@ mod webauthn_0_3 {
     use webauthn_rs::prelude::ParsedAttestation;
     use webauthn_rs_proto::{AttestationFormat, RegisteredExtensions};
 
+    #[derive(Deserialize)]
+    pub struct WebauthnRegistration {
+        pub id: i32,
+        pub name: String,
+        pub migrated: bool,
+        pub credential: Credential,
+    }
+
+    impl From<WebauthnRegistration> for crate::api::core::two_factor::webauthn::WebauthnRegistration {
+        fn from(value: WebauthnRegistration) -> Self {
+            Self {
+                id: value.id,
+                name: value.name,
+                migrated: value.migrated,
+                credential: webauthn_rs::prelude::Credential::from(value.credential).into(),
+            }
+        }
+    }
+
     // Copied from https://docs.rs/webauthn-rs/0.3.2/src/webauthn_rs/proto.rs.html#316-339
+    #[derive(Deserialize)]
     pub struct Credential {
         pub cred_id: Vec<u8>,
         pub cred: COSEKey,
@@ -329,7 +350,31 @@ impl TwoFactor {
     }
 
     pub async fn migrate_credential_to_passkey(conn: &mut DbConn) -> EmptyResult {
-        todo!()
+        let webauthn_factors = db_run! { conn: {
+            twofactor::table
+                .filter(twofactor::atype.eq(TwoFactorType::Webauthn as i32))
+                .load::<TwoFactorDb>(conn)
+                .expect("Error loading twofactor")
+                .from_db()
+        }};
+
+        for webauthn_factor in webauthn_factors {
+            // assume that a failure to parse into the old struct, means that it was already converted
+            // alternatively this could also be checked via an extra field in the db
+            let Ok(regs) = serde_json::from_str::<Vec<webauthn_0_3::WebauthnRegistration>>(&webauthn_factor.data) else {
+                continue;
+            };
+
+            let regs = regs.into_iter()
+                .map(|r| r.into())
+                .collect::<Vec<WebauthnRegistration>>();
+
+            TwoFactor::new(webauthn_factor.user_uuid.clone(), TwoFactorType::Webauthn, serde_json::to_string(&regs)?)
+                .save(conn)
+                .await?;
+        }
+        
+        Ok(())
     }
 }
 
