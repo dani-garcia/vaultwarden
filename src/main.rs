@@ -66,6 +66,7 @@ pub use error::{Error, MapResult};
 use rocket::data::{Limits, ToByteUnit};
 use std::sync::{atomic::Ordering, Arc};
 pub use util::is_running_in_container;
+use crate::api::core::two_factor::webauthn::WEBAUTHN_2FA_CONFIG;
 
 #[rocket::main]
 async fn main() -> Result<(), Error> {
@@ -86,6 +87,7 @@ async fn main() -> Result<(), Error> {
     let pool = create_db_pool().await;
     schedule_jobs(pool.clone());
     db::models::TwoFactor::migrate_u2f_to_webauthn(&mut pool.get().await.unwrap()).await.unwrap();
+    db::models::TwoFactor::migrate_credential_to_passkey(&mut pool.get().await.unwrap()).await.unwrap();
 
     let extra_debug = matches!(level, log::LevelFilter::Trace | log::LevelFilter::Debug);
     launch_rocket(pool, extra_debug).await // Blocks until program termination.
@@ -597,6 +599,7 @@ async fn launch_rocket(pool: db::DbPool, extra_debug: bool) -> Result<(), Error>
         .manage(pool)
         .manage(Arc::clone(&WS_USERS))
         .manage(Arc::clone(&WS_ANONYMOUS_SUBSCRIPTIONS))
+        .manage(Arc::clone(&WEBAUTHN_2FA_CONFIG))
         .attach(util::AppHeaders())
         .attach(util::Cors())
         .attach(util::BetterLogging(extra_debug))

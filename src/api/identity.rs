@@ -23,6 +23,7 @@ use crate::{
     error::MapResult,
     mail, util, CONFIG,
 };
+use crate::api::core::two_factor::webauthn::Webauthn2FaConfig;
 
 pub fn routes() -> Vec<Route> {
     routes![login, prelogin, identity_register, register_verification_email, register_finish]
@@ -33,6 +34,7 @@ async fn login(
     data: Form<ConnectData>,
     client_header: ClientHeaders,
     client_version: Option<ClientVersion>,
+    webauthn: Webauthn2FaConfig<'_>,
     mut conn: DbConn,
 ) -> JsonResult {
     let data: ConnectData = data.into_inner();
@@ -54,7 +56,7 @@ async fn login(
             _check_is_some(&data.device_name, "device_name cannot be blank")?;
             _check_is_some(&data.device_type, "device_type cannot be blank")?;
 
-            _password_login(data, &mut user_id, &mut conn, &client_header.ip, &client_version).await
+            _password_login(data, &mut user_id, &mut conn, &client_header.ip, &client_version, webauthn).await
         }
         "client_credentials" => {
             _check_is_some(&data.client_id, "client_id cannot be blank")?;
@@ -139,6 +141,7 @@ async fn _password_login(
     conn: &mut DbConn,
     ip: &ClientIp,
     client_version: &Option<ClientVersion>,
+    webauthn: Webauthn2FaConfig<'_>,
 ) -> JsonResult {
     // Validate scope
     let scope = data.scope.as_ref().unwrap();
@@ -257,7 +260,7 @@ async fn _password_login(
 
     let (mut device, new_device) = get_device(&data, conn, &user).await;
 
-    let twofactor_token = twofactor_auth(&user, &data, &mut device, ip, client_version, conn).await?;
+    let twofactor_token = twofactor_auth(&user, &data, &mut device, ip, client_version, webauthn, conn).await?;
 
     if CONFIG.mail_enabled() && new_device {
         if let Err(e) = mail::send_new_device_logged_in(&user.email, &ip.ip.to_string(), &now, &device).await {
@@ -488,6 +491,7 @@ async fn twofactor_auth(
     device: &mut Device,
     ip: &ClientIp,
     client_version: &Option<ClientVersion>,
+    webauthn: Webauthn2FaConfig<'_>,
     conn: &mut DbConn,
 ) -> ApiResult<Option<String>> {
     let twofactors = TwoFactor::find_by_user(&user.uuid, conn).await;
@@ -507,7 +511,7 @@ async fn twofactor_auth(
         Some(ref code) => code,
         None => {
             err_json!(
-                _json_err_twofactor(&twofactor_ids, &user.uuid, data, client_version, conn).await?,
+                _json_err_twofactor(&twofactor_ids, &user.uuid, data, client_version, webauthn, conn).await?,
                 "2FA token not provided"
             )
         }
@@ -524,7 +528,7 @@ async fn twofactor_auth(
         Some(TwoFactorType::Authenticator) => {
             authenticator::validate_totp_code_str(&user.uuid, twofactor_code, &selected_data?, ip, conn).await?
         }
-        Some(TwoFactorType::Webauthn) => webauthn::validate_webauthn_login(&user.uuid, twofactor_code, conn).await?,
+        Some(TwoFactorType::Webauthn) => webauthn::validate_webauthn_login(&user.uuid, twofactor_code, webauthn, conn).await?,
         Some(TwoFactorType::YubiKey) => yubikey::validate_yubikey_login(twofactor_code, &selected_data?).await?,
         Some(TwoFactorType::Duo) => {
             match CONFIG.duo_use_iframe() {
@@ -556,7 +560,7 @@ async fn twofactor_auth(
                 }
                 _ => {
                     err_json!(
-                        _json_err_twofactor(&twofactor_ids, &user.uuid, data, client_version, conn).await?,
+                        _json_err_twofactor(&twofactor_ids, &user.uuid, data, client_version, webauthn, conn).await?,
                         "2FA Remember token not provided"
                     )
                 }
@@ -589,6 +593,7 @@ async fn _json_err_twofactor(
     user_id: &UserId,
     data: &ConnectData,
     client_version: &Option<ClientVersion>,
+    webauthn: Webauthn2FaConfig<'_>,
     conn: &mut DbConn,
 ) -> ApiResult<Value> {
     let mut result = json!({
@@ -608,7 +613,7 @@ async fn _json_err_twofactor(
             Some(TwoFactorType::Authenticator) => { /* Nothing to do for TOTP */ }
 
             Some(TwoFactorType::Webauthn) if CONFIG.domain_set() => {
-                let request = webauthn::generate_webauthn_login(user_id, conn).await?;
+                let request = webauthn::generate_webauthn_login(user_id, webauthn, conn).await?;
                 result["TwoFactorProviders2"][provider.to_string()] = request.0;
             }
 
