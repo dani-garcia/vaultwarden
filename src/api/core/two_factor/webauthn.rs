@@ -1,5 +1,6 @@
 use std::str::FromStr;
 use std::sync::Arc;
+use std::time::Duration;
 use once_cell::sync::Lazy;
 use rocket::serde::json::Json;
 use rocket::Route;
@@ -34,7 +35,8 @@ pub static WEBAUTHN_2FA_CONFIG: Lazy<Arc<Webauthn>> = Lazy::new(|| {
         &rp_id,
         &rp_origin,
     ).expect("Creating WebauthnBuilder failed")
-        .rp_name(&domain);
+        .rp_name(&domain)
+        .timeout(Duration::from_millis(60000));
 
     Arc::new(webauthn.build().expect("Building Webauthn failed"))
 });
