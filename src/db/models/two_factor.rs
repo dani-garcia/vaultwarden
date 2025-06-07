@@ -122,9 +122,11 @@ mod webauthn_0_3 {
     impl From<COSEKeyType> for webauthn_rs::prelude::COSEKeyType {
         fn from(value: COSEKeyType) -> Self {
             match value {
-                COSEKeyType::EC_OKP => panic!(), // TODO what to do here
                 COSEKeyType::EC_EC2(a) => Self::EC_EC2(a.into()),
                 COSEKeyType::RSA(a) => Self::RSA(a.into()),
+                // This should've never been able to be constructed when webauthn 0.3 was used
+                // Refer: https://docs.rs/webauthn-rs/0.3.2/src/webauthn_rs/crypto.rs.html#414
+                COSEKeyType::EC_OKP => unreachable!(),
             }
         }
     }
