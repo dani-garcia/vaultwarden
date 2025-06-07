@@ -8,7 +8,7 @@ use url::Url;
 use uuid::Uuid;
 use webauthn_rs::{Webauthn, WebauthnBuilder};
 use webauthn_rs::prelude::{Base64UrlSafeData, Passkey, PasskeyAuthentication, PasskeyRegistration};
-use webauthn_rs_proto::{AuthenticationExtensionsClientOutputs, AuthenticatorAssertionResponseRaw, AuthenticatorAttestationResponseRaw, PublicKeyCredential, RegisterPublicKeyCredential, RegistrationExtensionsClientOutputs, UserVerificationPolicy};
+use webauthn_rs_proto::{AuthenticationExtensionsClientOutputs, AuthenticatorAssertionResponseRaw, AuthenticatorAttestationResponseRaw, PublicKeyCredential, RegisterPublicKeyCredential, RegistrationExtensionsClientOutputs, RequestAuthenticationExtensions, UserVerificationPolicy};
 use crate::{
     api::{
         core::{log_user_event, two_factor::_generate_recover_code},
@@ -36,9 +36,6 @@ pub static WEBAUTHN_2FA_CONFIG: Lazy<Arc<Webauthn>> = Lazy::new(|| {
     ).expect("Creating WebauthnBuilder failed")
         .rp_name(&domain);
 
-    // TODO check what happened to get_require_uv_consistency()
-
-    // TODO check if there is a better way to handle these errors (would they instantly through or only when used?)
     Arc::new(webauthn.build().expect("Building Webauthn failed"))
 });
 
@@ -76,7 +73,6 @@ pub struct WebauthnRegistration {
     pub name: String,
     pub migrated: bool,
 
-    // TODO should this be renamed or just stay this way
     pub credential: Passkey,
 }
 
@@ -125,9 +121,8 @@ async fn generate_webauthn_challenge(data: Json<PasswordOrOtpData>, headers: Hea
         .map(|r| r.credential.cred_id().to_owned()) // We return the credentialIds to the clients to avoid double registering
         .collect();
 
-    // TODO handle errors
     let (mut challenge, state) = webauthn.start_passkey_registration(
-        Uuid::from_str(&user.uuid).unwrap(),
+        Uuid::from_str(&user.uuid).expect("Failed to parse UUID"), // Should never fail
         &user.email,
         &user.name,
         Some(registrations),
@@ -375,8 +370,16 @@ pub async fn generate_webauthn_login(user_id: &UserId, webauthn: Webauthn2FaConf
     // Modify to discourage user verification
     let mut state = serde_json::to_value(&state)?;
     state["ast"]["policy"] = Value::String("discouraged".to_string());
-    state["ast"]["appid"] = Value::String(format!("{}/app-id.json", &CONFIG.domain()));
     response.public_key.user_verification = UserVerificationPolicy::Discouraged_DO_NOT_USE;
+
+    // Add appid
+    let app_id = format!("{}/app-id.json", &CONFIG.domain());
+    state["ast"]["appid"] = Value::String(app_id.clone());
+    response.public_key.extensions.get_or_insert_with(|| RequestAuthenticationExtensions {
+        appid: None,
+        uvm: None,
+        hmac_get_secret: None,
+    }).appid = Some(app_id);
 
     // Save the challenge state for later validation
     TwoFactor::new(user_id.clone(), TwoFactorType::WebauthnLoginChallenge, serde_json::to_string(&state)?)
