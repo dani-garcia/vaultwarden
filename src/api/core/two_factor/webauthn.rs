@@ -127,7 +127,7 @@ async fn generate_webauthn_challenge(data: Json<PasswordOrOtpData>, headers: Hea
 
     // TODO handle errors
     let (mut challenge, state) = webauthn.start_passkey_registration(
-        Uuid::from_str(&*user.uuid).unwrap(),
+        Uuid::from_str(&user.uuid).unwrap(),
         &user.email,
         &user.name,
         Some(registrations),
