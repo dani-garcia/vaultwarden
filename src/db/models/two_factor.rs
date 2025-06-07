@@ -111,6 +111,7 @@ mod webauthn_0_3 {
 
     // Copied from https://docs.rs/webauthn-rs/0.3.2/src/webauthn_rs/proto.rs.html#260-278
     #[allow(non_camel_case_types)]
+    #[allow(clippy::upper_case_acronyms)]
     #[derive(Deserialize)]
     pub enum COSEKeyType {
         EC_OKP,
