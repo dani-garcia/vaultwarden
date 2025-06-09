@@ -49,7 +49,7 @@ test('Invite users', async ({ page }) => {
 
 test('invited with new account', async ({ page }) => {
     const link = await test.step('Extract email link', async () => {
-        const invited = await mail2Buffer.next((m) => m.subject === "Join /Test");
+        const invited = await mail2Buffer.expect((m) => m.subject === "Join /Test");
         await page.setContent(invited.html);
         return await page.getByTestId("invite").getAttribute("href");
     });
@@ -80,14 +80,14 @@ test('invited with new account', async ({ page }) => {
     });
 
     await test.step('Check mails', async () => {
-        await expect(mail2Buffer.next((m) => m.subject.includes("New Device Logged"))).resolves.toBeDefined();
-        await expect(mail1Buffer.next((m) => m.subject === "Invitation to /Test accepted")).resolves.toBeDefined();
+        await mail2Buffer.expect((m) => m.subject.includes("New Device Logged"));
+        await mail1Buffer.expect((m) => m.subject === "Invitation to /Test accepted");
     });
 });
 
 test('invited with existing account', async ({ page }) => {
     const link = await test.step('Extract email link', async () => {
-        const invited = await mail3Buffer.next((m) => m.subject === "Join /Test");
+        const invited = await mail3Buffer.expect((m) => m.subject === "Join /Test");
         await page.setContent(invited.html);
         return await page.getByTestId("invite").getAttribute("href");
     });
@@ -115,7 +115,7 @@ test('invited with existing account', async ({ page }) => {
     });
 
     await test.step('Check mails', async () => {
-        await expect(mail3Buffer.next((m) => m.subject.includes("New Device Logged"))).resolves.toBeDefined();
-        await expect(mail1Buffer.next((m) => m.subject === "Invitation to /Test accepted")).resolves.toBeDefined();
+        await mail3Buffer.expect((m) => m.subject.includes("New Device Logged"));
+        await mail1Buffer.expect((m) => m.subject === "Invitation to /Test accepted");
     });
 });

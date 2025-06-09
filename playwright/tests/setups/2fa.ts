@@ -65,7 +65,7 @@ export async function activateEmail(test: Test, page: Page, user: { name: string
 
 export async function retrieveEmailCode(test: Test, page: Page, mailBuffer: MailBuffer): string {
     return await test.step('retrieve code', async () => {
-        const codeMail = await mailBuffer.next((mail) => mail.subject.includes("Login Verification Code"));
+        const codeMail = await mailBuffer.expect((mail) => mail.subject.includes("Login Verification Code"));
         const page2 = await page.context().newPage();
         await page2.setContent(codeMail.html);
         const code = await page2.getByTestId("2fa").innerText();

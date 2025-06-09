@@ -50,7 +50,7 @@ test('Login', async ({ context, page }) => {
 
         await utils.checkNotification(page, 'Check your email inbox for a verification link');
 
-        const verify = await mailBuffer.next((m) => m.subject === "Verify Your Email");
+        const verify = await mailBuffer.expect((m) => m.subject === "Verify Your Email");
         expect(verify.from[0]?.address).toBe(process.env.PW_SMTP_FROM);
 
         const page2 = await context.newPage();

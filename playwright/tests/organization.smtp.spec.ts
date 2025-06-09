@@ -48,7 +48,7 @@ test('Invite users', async ({ page }) => {
 });
 
 test('invited with new account', async ({ page }) => {
-    const invited = await mail2Buffer.next((mail) => mail.subject === 'Join Test');
+    const invited = await mail2Buffer.expect((mail) => mail.subject === 'Join Test');
 
     await test.step('Create account', async () => {
         await page.setContent(invited.html);
@@ -69,14 +69,14 @@ test('invited with new account', async ({ page }) => {
     });
 
     await test.step('Check mails', async () => {
-        await expect(mail2Buffer.next((m) => m.subject === 'Welcome')).resolves.toBeDefined();
-        await expect(mail2Buffer.next((m) => m.subject === 'New Device Logged In From Firefox')).resolves.toBeDefined();
-        await expect(mail1Buffer.next((m) => m.subject.includes('Invitation to Test accepted'))).resolves.toBeDefined();
+        await mail2Buffer.expect((m) => m.subject === 'Welcome');
+        await mail2Buffer.expect((m) => m.subject === 'New Device Logged In From Firefox');
+        await mail1Buffer.expect((m) => m.subject.includes('Invitation to Test accepted'));
     });
 });
 
 test('invited with existing account', async ({ page }) => {
-    const invited = await mail3Buffer.next((mail) => mail.subject === 'Join Test');
+    const invited = await mail3Buffer.expect((mail) => mail.subject === 'Join Test');
 
     await page.setContent(invited.html);
     const link = await page.getByTestId('invite').getAttribute('href');
@@ -95,8 +95,8 @@ test('invited with existing account', async ({ page }) => {
     await expect(page).toHaveTitle(/Vaultwarden Web/);
     await utils.checkNotification(page, 'Invitation accepted');
 
-    await expect(mail3Buffer.next((m) => m.subject === 'New Device Logged In From Firefox')).resolves.toBeDefined();
-    await expect(mail1Buffer.next((m) => m.subject.includes('Invitation to Test accepted'))).resolves.toBeDefined();
+    await mail3Buffer.expect((m) => m.subject === 'New Device Logged In From Firefox');
+    await mail1Buffer.expect((m) => m.subject.includes('Invitation to Test accepted'));
 });
 
 test('Confirm invited user', async ({ page }) => {
@@ -105,7 +105,7 @@ test('Confirm invited user', async ({ page }) => {
     await orgs.members(test, page, 'Test');
     await orgs.confirm(test, page, 'Test', users.user2.email);
 
-    await expect(mail2Buffer.next((m) => m.subject.includes('Invitation to Test confirmed'))).resolves.toBeDefined();
+    await mail2Buffer.expect((m) => m.subject.includes('Invitation to Test confirmed'));
 });
 
 test('Organization is visible', async ({ page }) => {

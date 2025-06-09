@@ -28,8 +28,8 @@ export async function createAccount(test, page: Page, user: { email: string, nam
         await utils.checkNotification(page, 'You have been logged in!');
 
         if( mailBuffer ){
-            await expect(mailBuffer.next((m) => m.subject === "Welcome")).resolves.toBeDefined();
-            await expect(mailBuffer.next((m) => m.subject === "New Device Logged In From Firefox")).resolves.toBeDefined();
+            await mailBuffer.expect((m) => m.subject === "Welcome");
+            await mailBuffer.expect((m) => m.subject === "New Device Logged In From Firefox");
         }
     });
 }
@@ -49,7 +49,7 @@ export async function logUser(test, page: Page, user: { email: string, password:
         await expect(page).toHaveTitle(/Vaultwarden Web/);
 
         if( mailBuffer ){
-            await expect(mailBuffer.next((m) => m.subject === "New Device Logged In From Firefox")).resolves.toBeDefined();
+            await mailBuffer.expect((m) => m.subject === "New Device Logged In From Firefox");
         }
     });
 }
