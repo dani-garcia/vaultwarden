@@ -45,6 +45,9 @@ syslog = "7.0.0"
 [dependencies]
 macros = { path = "./macros" }
 
+#Adding aws lambda dependancy
+lambda-web = { version = "0.2.0", features=["rocket05"] }
+
 # Logging
 log = "0.4.27"
 fern = { version = "0.7.1", features = ["syslog-7", "reopen-1"] }
