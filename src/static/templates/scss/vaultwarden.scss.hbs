@@ -20,10 +20,6 @@ a[href$="/settings/sponsored-families"] {
   @extend %vw-hide;
 }
 
-/* Hide the `Enterprise Single Sign-On` button on the login page */
-app-root form.ng-untouched button.\!tw-text-primary-600:nth-child(4) {
-  @extend %vw-hide;
-}
 /* Hide Log in with passkey on the login page */
 app-root form.ng-untouched > div > div > button.\!tw-text-primary-600:nth-child(3) {
   @extend %vw-hide;
@@ -96,6 +92,20 @@ app-root a[routerlink="/signup"] {
   @extend %vw-hide;
 }
 {{/if}}
+{{/if}}
+
+{{#if sso_only}}
+/* Hide Master password login */
+.master-password-login {
+  @extend %vw-hide;
+}
+{{/if}}
+
+{{#if sso_disabled}}
+/* Hide the `Enterprise Single Sign-On` button on the login page */
+app-root form.ng-untouched button.\!tw-text-primary-600:nth-child(4) {
+  @extend %vw-hide;
+}
 {{/if}}
 
 {{#unless mail_enabled}}
