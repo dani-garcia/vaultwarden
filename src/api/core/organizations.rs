@@ -44,6 +44,7 @@ pub fn routes() -> Vec<Route> {
         post_bulk_collections,
         get_org_details,
         get_org_domain_sso_details,
+        get_org_domain_sso_verified,
         get_members,
         send_invite,
         reinvite_member,
@@ -979,6 +980,7 @@ struct OrgDomainDetails {
 // Returning a Domain/Organization here allow to prefill it and prevent prompting the user
 // So we either return an Org name associated to the user or a dummy value.
 // The `verifiedDate` is required but the value ATM is ignored.
+// DEPRECATED: still present in `v2025.6.0` but appears unused.
 #[post("/organizations/domain/sso/details", data = "<data>")]
 async fn get_org_domain_sso_details(data: Json<OrgDomainDetails>, mut conn: DbConn) -> JsonResult {
     let data: OrgDomainDetails = data.into_inner();
@@ -992,6 +994,33 @@ async fn get_org_domain_sso_details(data: Json<OrgDomainDetails>, mut conn: DbCo
         "organizationIdentifier": identifier,
         "ssoAvailable": CONFIG.sso_enabled(),
         "verifiedDate": crate::util::format_date(&chrono::Utc::now().naive_utc()),
+    })))
+}
+
+// Returning a Domain/Organization here allow to prefill it and prevent prompting the user
+// So we either return an Org name associated to the user or a dummy value.
+// In use since `v2025.6.0`, appears to use only the first `organizationIdentifier`
+#[post("/organizations/domain/sso/verified", data = "<data>")]
+async fn get_org_domain_sso_verified(data: Json<OrgDomainDetails>, mut conn: DbConn) -> JsonResult {
+    let data: OrgDomainDetails = data.into_inner();
+
+    let identifiers = match Organization::find_org_user_email(&data.email, &mut conn)
+        .await
+        .into_iter()
+        .map(|o| o.name)
+        .collect::<Vec<String>>()
+    {
+        v if !v.is_empty() => v,
+        _ => vec![crate::sso::FAKE_IDENTIFIER.to_string()],
+    };
+
+    Ok(Json(json!({
+        "object": "list",
+        "data": identifiers.into_iter().map(|identifier| json!({
+            "organizationName": identifier,     // appear unused
+            "organizationIdentifier": identifier,
+            "domainName": CONFIG.domain(),      // appear unused
+        })).collect::<Vec<Value>>()
     })))
 }
 
