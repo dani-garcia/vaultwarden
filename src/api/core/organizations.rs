@@ -3334,13 +3334,17 @@ async fn put_reset_password_enrollment(
 
     let reset_request = data.into_inner();
 
-    if reset_request.reset_password_key.is_none()
-        && OrgPolicy::org_is_reset_password_auto_enroll(&org_id, &mut conn).await
-    {
+    let reset_password_key = match reset_request.reset_password_key {
+        None => None,
+        Some(ref key) if key.is_empty() => None,
+        Some(key) => Some(key),
+    };
+
+    if reset_password_key.is_none() && OrgPolicy::org_is_reset_password_auto_enroll(&org_id, &mut conn).await {
         err!("Reset password can't be withdrawn due to an enterprise policy");
     }
 
-    if reset_request.reset_password_key.is_some() {
+    if reset_password_key.is_some() {
         PasswordOrOtpData {
             master_password_hash: reset_request.master_password_hash,
             otp: reset_request.otp,
@@ -3349,7 +3353,7 @@ async fn put_reset_password_enrollment(
         .await?;
     }
 
-    member.reset_password_key = reset_request.reset_password_key;
+    member.reset_password_key = reset_password_key;
     member.save(&mut conn).await?;
 
     let log_id = if member.reset_password_key.is_some() {
