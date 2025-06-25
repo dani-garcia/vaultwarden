@@ -156,7 +156,7 @@ pub async fn send_password_hint(address: &str, hint: Option<String>) -> EmptyRes
     let (subject, body_html, body_text) = get_text(
         template_name,
         json!({
-            "url": CONFIG.domain(),
+            "url": CONFIG.effective_mailing_domain(),
             "img_src": CONFIG._smtp_img_src(),
             "hint": hint,
         }),
@@ -172,7 +172,7 @@ pub async fn send_delete_account(address: &str, user_id: &UserId) -> EmptyResult
     let (subject, body_html, body_text) = get_text(
         "email/delete_account",
         json!({
-            "url": CONFIG.domain(),
+            "url": CONFIG.effective_mailing_domain(),
             "img_src": CONFIG._smtp_img_src(),
             "user_id": user_id,
             "email": percent_encode(address.as_bytes(), NON_ALPHANUMERIC).to_string(),
@@ -190,7 +190,7 @@ pub async fn send_verify_email(address: &str, user_id: &UserId) -> EmptyResult {
     let (subject, body_html, body_text) = get_text(
         "email/verify_email",
         json!({
-            "url": CONFIG.domain(),
+            "url": CONFIG.effective_mailing_domain(),
             "img_src": CONFIG._smtp_img_src(),
             "user_id": user_id,
             "email": percent_encode(address.as_bytes(), NON_ALPHANUMERIC).to_string(),
@@ -213,7 +213,7 @@ pub async fn send_register_verify_email(email: &str, token: &str) -> EmptyResult
         "email/register_verify_email",
         json!({
             // `url.Url` would place the anchor `#` after the query parameters
-            "url": format!("{}/#/finish-signup/?{query_string}", CONFIG.domain()),
+            "url": format!("{}/#/finish-signup/?{query_string}", CONFIG.effective_mailing_domain()),
             "img_src": CONFIG._smtp_img_src(),
             "email": email,
         }),
@@ -226,7 +226,7 @@ pub async fn send_welcome(address: &str) -> EmptyResult {
     let (subject, body_html, body_text) = get_text(
         "email/welcome",
         json!({
-            "url": CONFIG.domain(),
+            "url": CONFIG.effective_mailing_domain(),
             "img_src": CONFIG._smtp_img_src(),
         }),
     )?;
@@ -241,7 +241,7 @@ pub async fn send_welcome_must_verify(address: &str, user_id: &UserId) -> EmptyR
     let (subject, body_html, body_text) = get_text(
         "email/welcome_must_verify",
         json!({
-            "url": CONFIG.domain(),
+            "url": CONFIG.effective_mailing_domain(),
             "img_src": CONFIG._smtp_img_src(),
             "user_id": user_id,
             "token": verify_email_token,
@@ -255,7 +255,7 @@ pub async fn send_2fa_removed_from_org(address: &str, org_name: &str) -> EmptyRe
     let (subject, body_html, body_text) = get_text(
         "email/send_2fa_removed_from_org",
         json!({
-            "url": CONFIG.domain(),
+            "url": CONFIG.effective_mailing_domain(),
             "img_src": CONFIG._smtp_img_src(),
             "org_name": org_name,
         }),
@@ -268,7 +268,7 @@ pub async fn send_single_org_removed_from_org(address: &str, org_name: &str) -> 
     let (subject, body_html, body_text) = get_text(
         "email/send_single_org_removed_from_org",
         json!({
-            "url": CONFIG.domain(),
+            "url": CONFIG.effective_mailing_domain(),
             "img_src": CONFIG._smtp_img_src(),
             "org_name": org_name,
         }),
@@ -314,7 +314,7 @@ pub async fn send_invite(
         "email/send_org_invite",
         json!({
             // `url.Url` would place the anchor `#` after the query parameters
-            "url": format!("{}/#/accept-organization/?{query_string}", CONFIG.domain()),
+            "url": format!("{}/#/accept-organization/?{query_string}", CONFIG.effective_mailing_domain()),
             "img_src": CONFIG._smtp_img_src(),
             "org_name": org_name,
         }),
@@ -357,7 +357,7 @@ pub async fn send_emergency_access_invite(
         "email/send_emergency_access_invite",
         json!({
             // `url.Url` would place the anchor `#` after the query parameters
-            "url": format!("{}/#/accept-emergency/?{query_string}", CONFIG.domain()),
+            "url": format!("{}/#/accept-emergency/?{query_string}", CONFIG.effective_mailing_domain()),
             "img_src": CONFIG._smtp_img_src(),
             "grantor_name": grantor_name,
         }),
@@ -370,7 +370,7 @@ pub async fn send_emergency_access_invite_accepted(address: &str, grantee_email:
     let (subject, body_html, body_text) = get_text(
         "email/emergency_access_invite_accepted",
         json!({
-            "url": CONFIG.domain(),
+            "url": CONFIG.effective_mailing_domain(),
             "img_src": CONFIG._smtp_img_src(),
             "grantee_email": grantee_email,
         }),
@@ -383,7 +383,7 @@ pub async fn send_emergency_access_invite_confirmed(address: &str, grantor_name:
     let (subject, body_html, body_text) = get_text(
         "email/emergency_access_invite_confirmed",
         json!({
-            "url": CONFIG.domain(),
+            "url": CONFIG.effective_mailing_domain(),
             "img_src": CONFIG._smtp_img_src(),
             "grantor_name": grantor_name,
         }),
@@ -396,7 +396,7 @@ pub async fn send_emergency_access_recovery_approved(address: &str, grantor_name
     let (subject, body_html, body_text) = get_text(
         "email/emergency_access_recovery_approved",
         json!({
-            "url": CONFIG.domain(),
+            "url": CONFIG.effective_mailing_domain(),
             "img_src": CONFIG._smtp_img_src(),
             "grantor_name": grantor_name,
         }),
@@ -414,7 +414,7 @@ pub async fn send_emergency_access_recovery_initiated(
     let (subject, body_html, body_text) = get_text(
         "email/emergency_access_recovery_initiated",
         json!({
-            "url": CONFIG.domain(),
+            "url": CONFIG.effective_mailing_domain(),
             "img_src": CONFIG._smtp_img_src(),
             "grantee_name": grantee_name,
             "atype": atype,
@@ -434,7 +434,7 @@ pub async fn send_emergency_access_recovery_reminder(
     let (subject, body_html, body_text) = get_text(
         "email/emergency_access_recovery_reminder",
         json!({
-            "url": CONFIG.domain(),
+            "url": CONFIG.effective_mailing_domain(),
             "img_src": CONFIG._smtp_img_src(),
             "grantee_name": grantee_name,
             "atype": atype,
@@ -449,7 +449,7 @@ pub async fn send_emergency_access_recovery_rejected(address: &str, grantor_name
     let (subject, body_html, body_text) = get_text(
         "email/emergency_access_recovery_rejected",
         json!({
-            "url": CONFIG.domain(),
+            "url": CONFIG.effective_mailing_domain(),
             "img_src": CONFIG._smtp_img_src(),
             "grantor_name": grantor_name,
         }),
@@ -462,7 +462,7 @@ pub async fn send_emergency_access_recovery_timed_out(address: &str, grantee_nam
     let (subject, body_html, body_text) = get_text(
         "email/emergency_access_recovery_timed_out",
         json!({
-            "url": CONFIG.domain(),
+            "url": CONFIG.effective_mailing_domain(),
             "img_src": CONFIG._smtp_img_src(),
             "grantee_name": grantee_name,
             "atype": atype,
@@ -476,7 +476,7 @@ pub async fn send_invite_accepted(new_user_email: &str, address: &str, org_name:
     let (subject, body_html, body_text) = get_text(
         "email/invite_accepted",
         json!({
-            "url": CONFIG.domain(),
+            "url": CONFIG.effective_mailing_domain(),
             "img_src": CONFIG._smtp_img_src(),
             "email": new_user_email,
             "org_name": org_name,
@@ -490,7 +490,7 @@ pub async fn send_invite_confirmed(address: &str, org_name: &str) -> EmptyResult
     let (subject, body_html, body_text) = get_text(
         "email/invite_confirmed",
         json!({
-            "url": CONFIG.domain(),
+            "url": CONFIG.effective_mailing_domain(),
             "img_src": CONFIG._smtp_img_src(),
             "org_name": org_name,
         }),
@@ -506,7 +506,7 @@ pub async fn send_new_device_logged_in(address: &str, ip: &str, dt: &NaiveDateTi
     let (subject, body_html, body_text) = get_text(
         "email/new_device_logged_in",
         json!({
-            "url": CONFIG.domain(),
+            "url": CONFIG.effective_mailing_domain(),
             "img_src": CONFIG._smtp_img_src(),
             "ip": ip,
             "device_name": upcase_first(&device.name),
@@ -531,7 +531,7 @@ pub async fn send_incomplete_2fa_login(
     let (subject, body_html, body_text) = get_text(
         "email/incomplete_2fa_login",
         json!({
-            "url": CONFIG.domain(),
+            "url": CONFIG.effective_mailing_domain(),
             "img_src": CONFIG._smtp_img_src(),
             "ip": ip,
             "device_name": upcase_first(device_name),
@@ -548,7 +548,7 @@ pub async fn send_token(address: &str, token: &str) -> EmptyResult {
     let (subject, body_html, body_text) = get_text(
         "email/twofactor_email",
         json!({
-            "url": CONFIG.domain(),
+            "url": CONFIG.effective_mailing_domain(),
             "img_src": CONFIG._smtp_img_src(),
             "token": token,
         }),
@@ -561,7 +561,7 @@ pub async fn send_change_email(address: &str, token: &str) -> EmptyResult {
     let (subject, body_html, body_text) = get_text(
         "email/change_email",
         json!({
-            "url": CONFIG.domain(),
+            "url": CONFIG.effective_mailing_domain(),
             "img_src": CONFIG._smtp_img_src(),
             "token": token,
         }),
@@ -574,7 +574,7 @@ pub async fn send_change_email_existing(address: &str, acting_address: &str) -> 
     let (subject, body_html, body_text) = get_text(
         "email/change_email_existing",
         json!({
-            "url": CONFIG.domain(),
+            "url": CONFIG.effective_mailing_domain(),
             "img_src": CONFIG._smtp_img_src(),
             "existing_address": address,
             "acting_address": acting_address,
@@ -588,7 +588,7 @@ pub async fn send_test(address: &str) -> EmptyResult {
     let (subject, body_html, body_text) = get_text(
         "email/smtp_test",
         json!({
-            "url": CONFIG.domain(),
+            "url": CONFIG.effective_mailing_domain(),
             "img_src": CONFIG._smtp_img_src(),
         }),
     )?;
@@ -600,7 +600,7 @@ pub async fn send_admin_reset_password(address: &str, user_name: &str, org_name:
     let (subject, body_html, body_text) = get_text(
         "email/admin_reset_password",
         json!({
-            "url": CONFIG.domain(),
+            "url": CONFIG.effective_mailing_domain(),
             "img_src": CONFIG._smtp_img_src(),
             "user_name": user_name,
             "org_name": org_name,
@@ -613,7 +613,7 @@ pub async fn send_protected_action_token(address: &str, token: &str) -> EmptyRes
     let (subject, body_html, body_text) = get_text(
         "email/protected_action",
         json!({
-            "url": CONFIG.domain(),
+            "url": CONFIG.effective_mailing_domain(),
             "img_src": CONFIG._smtp_img_src(),
             "token": token,
         }),
