@@ -277,6 +277,7 @@ macro_rules! make_config {
                     "domain_path",
                     "domain",
                     "helo_name",
+                    "mailing_domain",
                     "org_creation_users",
                     "signups_domains_whitelist",
                     "smtp_from",
@@ -738,6 +739,8 @@ make_config! {
         helo_name:                     String, true,   option;
         /// Embed images as email attachments.
         smtp_embed_images:             bool, true, def, true;
+        /// Mailing Domain |> Domain used in email templates and links. If not set, uses the main DOMAIN setting. Useful for setting a different public domain for emails while keeping the main domain for internal access.
+        mailing_domain:                String, true,   option;
         /// _smtp_img_src
         _smtp_img_src:                 String, false, generated, |c| generate_smtp_img_src(c.smtp_embed_images, &c.domain);
         /// Enable SMTP debugging (Know the risks!) |> DANGEROUS: Enabling this will output very detailed SMTP messages. This could contain sensitive information like passwords and usernames! Only enable this during troubleshooting!
@@ -1456,6 +1459,11 @@ impl Config {
                 handle.notify();
             }
         }
+    }
+
+    /// Get the effective mailing domain - uses mailing_domain if set, otherwise falls back to domain
+    pub fn effective_mailing_domain(&self) -> String {
+        self.mailing_domain().unwrap_or_else(|| self.domain())
     }
 }
 
