@@ -36,9 +36,10 @@ use crate::db::{
     models::{OrgPolicy, OrgPolicyType, User},
     DbConn,
 };
+use crate::CONFIG;
 
 // Type aliases for API methods results
-type ApiResult<T> = Result<T, crate::error::Error>;
+pub type ApiResult<T> = Result<T, crate::error::Error>;
 pub type JsonResult = ApiResult<Json<Value>>;
 pub type EmptyResult = ApiResult<()>;
 
@@ -109,6 +110,8 @@ async fn master_password_policy(user: &User, conn: &DbConn) -> Value {
                 enforce_on_login: acc.enforce_on_login || policy.enforce_on_login,
             }
         }))
+    } else if let Some(policy_str) = CONFIG.sso_master_password_policy().filter(|_| CONFIG.sso_enabled()) {
+        serde_json::from_str(&policy_str).unwrap_or(json!({}))
     } else {
         json!({})
     };
