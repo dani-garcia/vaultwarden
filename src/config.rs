@@ -856,10 +856,10 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         }
     }
 
-    // Server (v2025.5.0): https://github.com/bitwarden/server/blob/4a7db112a0952c6df8bacf36c317e9c4e58c3651/src/Core/Constants.cs#L102
-    // Client (v2025.5.0): https://github.com/bitwarden/clients/blob/9df8a3cc50ed45f52513e62c23fcc8a4b745f078/libs/common/src/enums/feature-flag.enum.ts#L10
-    // Android (v2025.4.0): https://github.com/bitwarden/android/blob/bee09de972c3870de0d54a0067996be473ec55c7/app/src/main/java/com/x8bit/bitwarden/data/platform/manager/model/FlagKey.kt#L27
-    // iOS (v2025.4.0): https://github.com/bitwarden/ios/blob/956e05db67344c912e3a1b8cb2609165d67da1c9/BitwardenShared/Core/Platform/Models/Enum/FeatureFlag.swift#L7
+    // Server (v2025.6.2): https://github.com/bitwarden/server/blob/d094be3267f2030bd0dc62106bc6871cf82682f5/src/Core/Constants.cs#L103
+    // Client (web-v2025.6.1): https://github.com/bitwarden/clients/blob/747c2fd6a1c348a57a76e4a7de8128466ffd3c01/libs/common/src/enums/feature-flag.enum.ts#L12
+    // Android (v2025.6.0): https://github.com/bitwarden/android/blob/b5b022caaad33390c31b3021b2c1205925b0e1a2/app/src/main/kotlin/com/x8bit/bitwarden/data/platform/manager/model/FlagKey.kt#L22
+    // iOS (v2025.6.0): https://github.com/bitwarden/ios/blob/ff06d9c6cc8da89f78f37f376495800201d7261a/BitwardenShared/Core/Platform/Models/Enum/FeatureFlag.swift#L7
     //
     // NOTE: Move deprecated flags to the utils::parse_experimental_client_feature_flags() DEPRECATED_FLAGS const!
     const KNOWN_FLAGS: &[&str] = &[
