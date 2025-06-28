@@ -14,6 +14,7 @@ use reqwest::{
     Client, Response,
 };
 use rocket::{http::ContentType, response::Redirect, Route};
+use svg_hush::{data_url_filter, Filter};
 
 use html5gum::{Emitter, HtmlString, Readable, StringReader, Tokenizer};
 
@@ -35,11 +36,29 @@ pub fn routes() -> Vec<Route> {
 static CLIENT: Lazy<Client> = Lazy::new(|| {
     // Generate the default headers
     let mut default_headers = HeaderMap::new();
-    default_headers.insert(header::USER_AGENT, HeaderValue::from_static("Links (2.22; Linux X86_64; GNU C; text)"));
-    default_headers.insert(header::ACCEPT, HeaderValue::from_static("text/html, text/*;q=0.5, image/*, */*;q=0.1"));
-    default_headers.insert(header::ACCEPT_LANGUAGE, HeaderValue::from_static("en,*;q=0.1"));
+    default_headers.insert(
+        header::USER_AGENT,
+        HeaderValue::from_static(
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
+        ),
+    );
+    default_headers.insert(header::ACCEPT, HeaderValue::from_static("text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7"));
+    default_headers.insert(header::ACCEPT_LANGUAGE, HeaderValue::from_static("en-US,en;q=0.9"));
     default_headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"));
     default_headers.insert(header::PRAGMA, HeaderValue::from_static("no-cache"));
+    default_headers.insert(header::UPGRADE_INSECURE_REQUESTS, HeaderValue::from_static("1"));
+
+    default_headers.insert("Sec-Ch-Ua-Mobile", HeaderValue::from_static("?0"));
+    default_headers.insert("Sec-Ch-Ua-Platform", HeaderValue::from_static("Linux"));
+    default_headers.insert(
+        "Sec-Ch-Ua",
+        HeaderValue::from_static("\"Not)A;Brand\";v=\"8\", \"Chromium\";v=\"138\", \"Google Chrome\";v=\"138\""),
+    );
+
+    default_headers.insert("Sec-Fetch-Site", HeaderValue::from_static("none"));
+    default_headers.insert("Sec-Fetch-Mode", HeaderValue::from_static("navigate"));
+    default_headers.insert("Sec-Fetch-User", HeaderValue::from_static("?1"));
+    default_headers.insert("Sec-Fetch-Dest", HeaderValue::from_static("document"));
 
     // Generate the cookie store
     let cookie_store = Arc::new(Jar::default());
@@ -53,6 +72,7 @@ static CLIENT: Lazy<Client> = Lazy::new(|| {
         .pool_max_idle_per_host(5) // Configure the Hyper Pool to only have max 5 idle connections
         .pool_idle_timeout(pool_idle_timeout) // Configure the Hyper Pool to timeout after 10 seconds
         .default_headers(default_headers.clone())
+        .http1_title_case_headers()
         .build()
         .expect("Failed to build client")
 });
@@ -561,6 +581,16 @@ async fn download_icon(domain: &str) -> Result<(Bytes, Option<&str>), Error> {
 
     if buffer.is_empty() {
         err_silent!("Empty response or unable find a valid icon", domain);
+    } else if icon_type == Some("svg+xml") {
+        let mut svg_filter = Filter::new();
+        svg_filter.set_data_url_filter(data_url_filter::allow_standard_images);
+        let mut sanitized_svg = Vec::new();
+        if svg_filter.filter(&*buffer, &mut sanitized_svg).is_err() {
+            icon_type = None;
+            buffer.clear();
+        } else {
+            buffer = sanitized_svg.into();
+        }
     }
 
     Ok((buffer, icon_type))
@@ -581,6 +611,16 @@ async fn save_icon(path: &str, icon: Vec<u8>) {
 }
 
 fn get_icon_type(bytes: &[u8]) -> Option<&'static str> {
+    fn check_svg_after_xml_declaration(bytes: &[u8]) -> Option<&'static str> {
+        // Look for SVG tag within the first 1KB
+        if let Ok(content) = std::str::from_utf8(&bytes[..bytes.len().min(1024)]) {
+            if content.contains("<svg") || content.contains("<SVG") {
+                return Some("svg+xml");
+            }
+        }
+        None
+    }
+
     match bytes {
         [137, 80, 78, 71, ..] => Some("png"),
         [0, 0, 1, 0, ..] => Some("x-icon"),
@@ -588,6 +628,8 @@ fn get_icon_type(bytes: &[u8]) -> Option<&'static str> {
         [255, 216, 255, ..] => Some("jpeg"),
         [71, 73, 70, 56, ..] => Some("gif"),
         [66, 77, ..] => Some("bmp"),
+        [60, 115, 118, 103, ..] => Some("svg+xml"), // Normal svg
+        [60, 63, 120, 109, 108, ..] => check_svg_after_xml_declaration(bytes), // An svg starting with <?xml
         _ => None,
     }
 }
@@ -599,6 +641,12 @@ async fn stream_to_bytes_limit(res: Response, max_size: usize) -> Result<Bytes, 
     let mut buf = BytesMut::new();
     let mut size = 0;
     while let Some(chunk) = stream.next().await {
+        // It is possible that there might occure UnexpectedEof errors or others
+        // This is most of the time no issue, and if there is no chunked data anymore or at all parsing the HTML will not happen anyway.
+        // Therfore if chunk is an err, just break and continue with the data be have received.
+        if chunk.is_err() {
+            break;
+        }
         let chunk = &chunk?;
         size += chunk.len();
         buf.extend(chunk);
