@@ -1188,6 +1188,9 @@ fn opendal_operator_for_path(path: &str) -> Result<opendal::Operator, Error> {
 
 #[cfg(s3)]
 fn opendal_s3_operator_for_path(path: &str) -> Result<opendal::Operator, Error> {
+    use crate::http_client::aws::AwsReqwestConnector;
+    use aws_config::{default_provider::credentials::DefaultCredentialsChain, provider_config::ProviderConfig};
+
     // This is a custom AWS credential loader that uses the official AWS Rust
     // SDK config crate to load credentials. This ensures maximum compatibility
     // with AWS credential configurations. For example, OpenDAL doesn't support
@@ -1200,12 +1203,19 @@ fn opendal_s3_operator_for_path(path: &str) -> Result<opendal::Operator, Error> 
             use aws_credential_types::provider::ProvideCredentials as _;
             use tokio::sync::OnceCell;
 
-            static DEFAULT_CREDENTIAL_CHAIN: OnceCell<
-                aws_config::default_provider::credentials::DefaultCredentialsChain,
-            > = OnceCell::const_new();
+            static DEFAULT_CREDENTIAL_CHAIN: OnceCell<DefaultCredentialsChain> = OnceCell::const_new();
 
             let chain = DEFAULT_CREDENTIAL_CHAIN
-                .get_or_init(|| aws_config::default_provider::credentials::DefaultCredentialsChain::builder().build())
+                .get_or_init(|| {
+                    let reqwest_client = reqwest::Client::builder().build().unwrap();
+                    let connector = AwsReqwestConnector {
+                        client: reqwest_client,
+                    };
+
+                    let conf = ProviderConfig::default().with_http_client(connector);
+
+                    DefaultCredentialsChain::builder().configure(conf).build()
+                })
                 .await;
 
             let creds = chain.provide_credentials().await?;
