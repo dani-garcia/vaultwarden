@@ -211,7 +211,7 @@ impl OrgPolicy {
     pub async fn find_accepted_and_confirmed_by_user_and_active_policy(
         user_uuid: &UserId,
         policy_type: OrgPolicyType,
-        conn: &mut DbConn,
+        conn: &DbConn,
     ) -> Vec<Self> {
         db_run! { conn: {
             org_policies::table
