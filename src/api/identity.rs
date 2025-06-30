@@ -7,6 +7,7 @@ use rocket::{
 };
 use serde_json::Value;
 
+use crate::api::core::two_factor::webauthn::Webauthn2FaConfig;
 use crate::{
     api::{
         core::{
@@ -23,7 +24,6 @@ use crate::{
     error::MapResult,
     mail, util, CONFIG,
 };
-use crate::api::core::two_factor::webauthn::Webauthn2FaConfig;
 
 pub fn routes() -> Vec<Route> {
     routes![login, prelogin, identity_register, register_verification_email, register_finish]
@@ -528,7 +528,9 @@ async fn twofactor_auth(
         Some(TwoFactorType::Authenticator) => {
             authenticator::validate_totp_code_str(&user.uuid, twofactor_code, &selected_data?, ip, conn).await?
         }
-        Some(TwoFactorType::Webauthn) => webauthn::validate_webauthn_login(&user.uuid, twofactor_code, webauthn, conn).await?,
+        Some(TwoFactorType::Webauthn) => {
+            webauthn::validate_webauthn_login(&user.uuid, twofactor_code, webauthn, conn).await?
+        }
         Some(TwoFactorType::YubiKey) => yubikey::validate_yubikey_login(twofactor_code, &selected_data?).await?,
         Some(TwoFactorType::Duo) => {
             match CONFIG.duo_use_iframe() {
