@@ -1,9 +1,9 @@
+use super::UserId;
+use crate::api::core::two_factor::webauthn::WebauthnRegistration;
+use crate::{api::EmptyResult, db::DbConn, error::MapResult};
 use serde_json::Value;
 use webauthn_rs::prelude::{Credential, ParsedAttestation};
 use webauthn_rs_proto::{AttestationFormat, RegisteredExtensions};
-use super::UserId;
-use crate::{api::EmptyResult, db::DbConn, error::MapResult};
-use crate::api::core::two_factor::webauthn::WebauthnRegistration;
 
 db_object! {
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -333,7 +333,8 @@ impl TwoFactor {
                         extensions: RegisteredExtensions::none(),
                         attestation: ParsedAttestation::default(),
                         attestation_format: AttestationFormat::None,
-                    }.into(),
+                    }
+                    .into(),
                 };
 
                 webauthn_regs.push(new_reg);
@@ -364,19 +365,18 @@ impl TwoFactor {
         for webauthn_factor in webauthn_factors {
             // assume that a failure to parse into the old struct, means that it was already converted
             // alternatively this could also be checked via an extra field in the db
-            let Ok(regs) = serde_json::from_str::<Vec<webauthn_0_3::WebauthnRegistration>>(&webauthn_factor.data) else {
+            let Ok(regs) = serde_json::from_str::<Vec<webauthn_0_3::WebauthnRegistration>>(&webauthn_factor.data)
+            else {
                 continue;
             };
 
-            let regs = regs.into_iter()
-                .map(|r| r.into())
-                .collect::<Vec<WebauthnRegistration>>();
+            let regs = regs.into_iter().map(|r| r.into()).collect::<Vec<WebauthnRegistration>>();
 
             TwoFactor::new(webauthn_factor.user_uuid.clone(), TwoFactorType::Webauthn, serde_json::to_string(&regs)?)
                 .save(conn)
                 .await?;
         }
-        
+
         Ok(())
     }
 }

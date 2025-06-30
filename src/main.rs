@@ -59,6 +59,7 @@ mod ratelimit;
 mod util;
 
 use crate::api::core::two_factor::duo_oidc::purge_duo_contexts;
+use crate::api::core::two_factor::webauthn::WEBAUTHN_2FA_CONFIG;
 use crate::api::purge_auth_requests;
 use crate::api::{WS_ANONYMOUS_SUBSCRIPTIONS, WS_USERS};
 pub use config::{PathType, CONFIG};
@@ -66,7 +67,6 @@ pub use error::{Error, MapResult};
 use rocket::data::{Limits, ToByteUnit};
 use std::sync::{atomic::Ordering, Arc};
 pub use util::is_running_in_container;
-use crate::api::core::two_factor::webauthn::WEBAUTHN_2FA_CONFIG;
 
 #[rocket::main]
 async fn main() -> Result<(), Error> {
