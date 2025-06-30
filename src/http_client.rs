@@ -244,3 +244,61 @@ impl Resolve for CustomDnsResolver {
         })
     }
 }
+
+#[cfg(s3)]
+pub(crate) mod aws {
+    use aws_smithy_runtime_api::client::{
+        http::{HttpClient, HttpConnector, HttpConnectorFuture, HttpConnectorSettings, SharedHttpConnector},
+        orchestrator::HttpResponse,
+        result::ConnectorError,
+        runtime_components::RuntimeComponents,
+    };
+    use reqwest::Client;
+
+    // Adapter that wraps reqwest to be compatible with the AWS SDK
+    #[derive(Debug)]
+    pub(crate) struct AwsReqwestConnector {
+        pub(crate) client: Client,
+    }
+
+    impl HttpConnector for AwsReqwestConnector {
+        fn call(&self, request: aws_smithy_runtime_api::client::orchestrator::HttpRequest) -> HttpConnectorFuture {
+            // Convert the AWS-style request to a reqwest request
+            let client = self.client.clone();
+            let future = async move {
+                let method = reqwest::Method::from_bytes(request.method().as_bytes())
+                    .map_err(|e| ConnectorError::user(Box::new(e)))?;
+                let mut req_builder = client.request(method, request.uri().to_string());
+
+                for (name, value) in request.headers() {
+                    req_builder = req_builder.header(name, value);
+                }
+
+                if let Some(body_bytes) = request.body().bytes() {
+                    req_builder = req_builder.body(body_bytes.to_vec());
+                }
+
+                let response = req_builder.send().await.map_err(|e| ConnectorError::io(Box::new(e)))?;
+
+                let status = response.status().into();
+                let bytes = response.bytes().await.map_err(|e| ConnectorError::io(Box::new(e)))?;
+
+                Ok(HttpResponse::new(status, bytes.into()))
+            };
+
+            HttpConnectorFuture::new(Box::pin(future))
+        }
+    }
+
+    impl HttpClient for AwsReqwestConnector {
+        fn http_connector(
+            &self,
+            _settings: &HttpConnectorSettings,
+            _components: &RuntimeComponents,
+        ) -> SharedHttpConnector {
+            SharedHttpConnector::new(AwsReqwestConnector {
+                client: self.client.clone(),
+            })
+        }
+    }
+}
