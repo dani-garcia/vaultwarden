@@ -338,7 +338,7 @@ struct IconUrlResult {
 
 /// Returns a IconUrlResult which holds a Vector IconList and a string which holds the referer.
 /// There will always two items within the iconlist which holds http(s)://domain.tld/favicon.ico.
-/// This does not mean that that location does exists, but it is the default location browser use.
+/// This does not mean that location exists, but (it) is the default location the browser uses.
 ///
 /// # Argument
 /// * `domain` - A string which holds the domain with extension.
