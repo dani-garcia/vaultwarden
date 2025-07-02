@@ -295,7 +295,7 @@ pub async fn authorize_url(
         "cli" => {
             let port_regex = Regex::new(r"^http://localhost:([0-9]{4})$").unwrap();
             match port_regex.captures(raw_redirect_uri).and_then(|captures| captures.get(1).map(|c| c.as_str())) {
-                Some(port) => format!("http://localhost:{}", port),
+                Some(port) => format!("http://localhost:{port}"),
                 None => err!("Failed to extract port number"),
             }
         }
@@ -351,7 +351,7 @@ pub struct OIDCIdentifier(String);
 
 impl OIDCIdentifier {
     fn new(issuer: &str, subject: &str) -> Self {
-        OIDCIdentifier(format!("{}/{}", issuer, subject))
+        OIDCIdentifier(format!("{issuer}/{subject}"))
     }
 }
 
@@ -554,11 +554,11 @@ fn _create_auth_tokens(
             Err(_) => {
                 let time_now = Utc::now();
                 let exp = (time_now + *DEFAULT_REFRESH_VALIDITY).timestamp();
-                debug!("Non jwt refresh_token (expiration set to {})", exp);
+                debug!("Non jwt refresh_token (expiration set to {exp})");
                 (time_now.timestamp(), exp, TokenWrapper::Refresh(rt))
             }
             Ok(refresh_payload) => {
-                debug!("Refresh_payload: {:?}", refresh_payload);
+                debug!("Refresh_payload: {refresh_payload:?}");
                 (refresh_payload.nbf(), refresh_payload.exp, TokenWrapper::Refresh(rt))
             }
         }

@@ -145,15 +145,14 @@ async fn activate_yubikey(data: Json<EnableYubikeyData>, headers: Headers, mut c
 
     // Ensure they are valid OTPs
     for yubikey in &yubikeys {
-        if yubikey.len() == 12 {
-            // YubiKey ID
+        if yubikey.is_empty() || yubikey.len() == 12 {
             continue;
         }
 
         verify_yubikey_otp(yubikey.to_owned()).await.map_res("Invalid Yubikey OTP provided")?;
     }
 
-    let yubikey_ids: Vec<String> = yubikeys.into_iter().map(|x| (x[..12]).to_owned()).collect();
+    let yubikey_ids: Vec<String> = yubikeys.into_iter().filter_map(|x| x.get(..12).map(str::to_owned)).collect();
 
     let yubikey_metadata = YubikeyMetadata {
         keys: yubikey_ids,

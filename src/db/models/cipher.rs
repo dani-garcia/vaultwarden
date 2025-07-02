@@ -382,6 +382,11 @@ impl Cipher {
             // the "Read Only" or "Hide Passwords" restrictions for the user.
             json_object["edit"] = json!(!read_only);
             json_object["viewPassword"] = json!(!hide_passwords);
+            // The new key used by clients since v2025.6.0
+            json_object["permissions"] = json!({
+                "delete": !read_only,
+                "restore": !read_only,
+            });
         }
 
         let key = match self.atype {
