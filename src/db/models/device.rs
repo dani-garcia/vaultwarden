@@ -1,4 +1,6 @@
 use chrono::{NaiveDateTime, Utc};
+
+use data_encoding::{BASE64, BASE64URL};
 use derive_more::{Display, From};
 use serde_json::Value;
 
@@ -6,7 +8,6 @@ use super::{AuthRequest, UserId};
 use crate::{
     crypto,
     util::{format_date, get_uuid},
-    CONFIG,
 };
 use macros::{IdFromParam, UuidFromParam};
 
@@ -34,25 +35,6 @@ db_object! {
 
 /// Local methods
 impl Device {
-    pub fn new(uuid: DeviceId, user_uuid: UserId, name: String, atype: i32) -> Self {
-        let now = Utc::now().naive_utc();
-
-        Self {
-            uuid,
-            created_at: now,
-            updated_at: now,
-
-            user_uuid,
-            name,
-            atype,
-
-            push_uuid: Some(PushId(get_uuid())),
-            push_token: None,
-            refresh_token: String::new(),
-            twofactor_remember: None,
-        }
-    }
-
     pub fn to_json(&self) -> Value {
         json!({
             "id": self.uuid,
@@ -66,7 +48,6 @@ impl Device {
     }
 
     pub fn refresh_twofactor_remember(&mut self) -> String {
-        use data_encoding::BASE64;
         let twofactor_remember = crypto::encode_random_bytes::<180>(BASE64);
         self.twofactor_remember = Some(twofactor_remember.clone());
 
@@ -77,71 +58,9 @@ impl Device {
         self.twofactor_remember = None;
     }
 
-    pub fn refresh_tokens(
-        &mut self,
-        user: &super::User,
-        scope: Vec<String>,
-        client_id: Option<String>,
-    ) -> (String, i64) {
-        // If there is no refresh token, we create one
-        if self.refresh_token.is_empty() {
-            use data_encoding::BASE64URL;
-            self.refresh_token = crypto::encode_random_bytes::<64>(BASE64URL);
-        }
-
-        // Update the expiration of the device and the last update date
-        let time_now = Utc::now();
-        self.updated_at = time_now.naive_utc();
-
-        // Generate a random push_uuid so if it doesn't already have one
-        if self.push_uuid.is_none() {
-            self.push_uuid = Some(PushId(get_uuid()));
-        }
-
-        // ---
-        // Disabled these keys to be added to the JWT since they could cause the JWT to get too large
-        // Also These key/value pairs are not used anywhere by either Vaultwarden or Bitwarden Clients
-        // Because these might get used in the future, and they are added by the Bitwarden Server, lets keep it, but then commented out
-        // ---
-        // fn arg: members: Vec<super::Membership>,
-        // ---
-        // let orgowner: Vec<_> = members.iter().filter(|m| m.atype == 0).map(|o| o.org_uuid.clone()).collect();
-        // let orgadmin: Vec<_> = members.iter().filter(|m| m.atype == 1).map(|o| o.org_uuid.clone()).collect();
-        // let orguser: Vec<_> = members.iter().filter(|m| m.atype == 2).map(|o| o.org_uuid.clone()).collect();
-        // let orgmanager: Vec<_> = members.iter().filter(|m| m.atype == 3).map(|o| o.org_uuid.clone()).collect();
-
-        // Create the JWT claims struct, to send to the client
-        use crate::auth::{encode_jwt, LoginJwtClaims, DEFAULT_VALIDITY, JWT_LOGIN_ISSUER};
-        let claims = LoginJwtClaims {
-            nbf: time_now.timestamp(),
-            exp: (time_now + *DEFAULT_VALIDITY).timestamp(),
-            iss: JWT_LOGIN_ISSUER.to_string(),
-            sub: user.uuid.clone(),
-
-            premium: true,
-            name: user.name.clone(),
-            email: user.email.clone(),
-            email_verified: !CONFIG.mail_enabled() || user.verified_at.is_some(),
-
-            // ---
-            // Disabled these keys to be added to the JWT since they could cause the JWT to get too large
-            // Also These key/value pairs are not used anywhere by either Vaultwarden or Bitwarden Clients
-            // Because these might get used in the future, and they are added by the Bitwarden Server, lets keep it, but then commented out
-            // See: https://github.com/dani-garcia/vaultwarden/issues/4156
-            // ---
-            // orgowner,
-            // orgadmin,
-            // orguser,
-            // orgmanager,
-            sstamp: user.security_stamp.clone(),
-            device: self.uuid.clone(),
-            devicetype: DeviceType::from_i32(self.atype).to_string(),
-            client_id: client_id.unwrap_or("undefined".to_string()),
-            scope,
-            amr: vec!["Application".into()],
-        };
-
-        (encode_jwt(&claims), DEFAULT_VALIDITY.num_seconds())
+    // This rely on the fact we only update the device after a successful login
+    pub fn is_new(&self) -> bool {
+        self.created_at == self.updated_at
     }
 
     pub fn is_push_device(&self) -> bool {
@@ -187,14 +106,39 @@ impl DeviceWithAuthRequest {
 }
 use crate::db::DbConn;
 
-use crate::api::EmptyResult;
+use crate::api::{ApiResult, EmptyResult};
 use crate::error::MapResult;
 
 /// Database methods
 impl Device {
-    pub async fn save(&mut self, conn: &mut DbConn) -> EmptyResult {
-        self.updated_at = Utc::now().naive_utc();
+    pub async fn new(
+        uuid: DeviceId,
+        user_uuid: UserId,
+        name: String,
+        atype: i32,
+        conn: &mut DbConn,
+    ) -> ApiResult<Device> {
+        let now = Utc::now().naive_utc();
 
+        let device = Self {
+            uuid,
+            created_at: now,
+            updated_at: now,
+
+            user_uuid,
+            name,
+            atype,
+
+            push_uuid: Some(PushId(get_uuid())),
+            push_token: None,
+            refresh_token: crypto::encode_random_bytes::<64>(BASE64URL),
+            twofactor_remember: None,
+        };
+
+        device.inner_save(conn).await.map(|()| device)
+    }
+
+    async fn inner_save(&self, conn: &mut DbConn) -> EmptyResult {
         db_run! { conn:
             sqlite, mysql {
                 crate::util::retry(
@@ -210,6 +154,12 @@ impl Device {
                 ).map_res("Error saving device")
             }
         }
+    }
+
+    // Should only be called after user has passed authentication
+    pub async fn save(&mut self, conn: &mut DbConn) -> EmptyResult {
+        self.updated_at = Utc::now().naive_utc();
+        self.inner_save(conn).await
     }
 
     pub async fn delete_all_by_user(user_uuid: &UserId, conn: &mut DbConn) -> EmptyResult {
@@ -402,6 +352,10 @@ impl DeviceType {
             25 => DeviceType::LinuxCLI,
             _ => DeviceType::UnknownBrowser,
         }
+    }
+
+    pub fn is_mobile(value: &i32) -> bool {
+        *value == DeviceType::Android as i32 || *value == DeviceType::Ios as i32
     }
 }
 
