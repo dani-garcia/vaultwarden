@@ -118,7 +118,7 @@ app-root a[routerlink="/signup"] {
 {{/if}}
 {{/if}}
 
-{{#unless mail_enabled}}
+{{#unless mail_2fa_enabled}}
 /* Hide `Email` 2FA if mail is not enabled */
 .providers-2fa-1 {
   @extend %vw-hide;
