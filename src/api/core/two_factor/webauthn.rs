@@ -12,7 +12,6 @@ use crate::{
     util::NumberOrString,
     CONFIG,
 };
-use once_cell::sync::Lazy;
 use rocket::serde::json::Json;
 use rocket::Route;
 use serde_json::Value;
