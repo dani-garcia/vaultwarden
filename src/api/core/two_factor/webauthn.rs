@@ -17,7 +17,7 @@ use rocket::serde::json::Json;
 use rocket::Route;
 use serde_json::Value;
 use std::str::FromStr;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 use url::Url;
 use uuid::Uuid;
