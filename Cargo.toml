@@ -166,7 +166,7 @@ pastey = "0.1.0"
 governor = "0.10.0"
 
 # OIDC for SSO
-openidconnect = { version = "4.0.0", features = ["reqwest", "native-tls"] }
+openidconnect = { version = "4.0.1", features = ["reqwest", "native-tls"] }
 mini-moka = "0.10.2"
 
 # Check client versions for specific features.
