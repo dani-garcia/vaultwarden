@@ -28,11 +28,11 @@ function msg(text, reload_page = true) {
     reload_page && reload();
 }
 
-function _post(url, successMsg, errMsg, body, reload_page = true) {
+function _fetch(method, url, successMsg, errMsg, body, reload_page = true) {
     let respStatus;
     let respStatusText;
     fetch(url, {
-        method: "POST",
+        method: method,
         body: body,
         mode: "same-origin",
         credentials: "same-origin",
@@ -63,6 +63,14 @@ function _post(url, successMsg, errMsg, body, reload_page = true) {
         if (e.error === false) { return true; }
         else { msg(`${errMsg}\n${e.body}`, reload_page); }
     });
+}
+
+function _post(url, successMsg, errMsg, body, reload_page = true) {
+    return _fetch("POST", url, successMsg, errMsg, body, reload_page);
+}
+
+function _delete(url, successMsg, errMsg, body, reload_page = true) {
+    return _fetch("DELETE", url, successMsg, errMsg, body, reload_page);
 }
 
 // Bootstrap Theme Selector
