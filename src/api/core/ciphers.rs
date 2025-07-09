@@ -1924,24 +1924,20 @@ impl CipherSyncData {
 
         // Generate a HashMap with the collections_uuid as key and the CollectionGroup record
         let user_collections_groups: HashMap<CollectionId, CollectionGroup> = if CONFIG.org_groups_enabled() {
-            let all_user_collection_groups = CollectionGroup::find_by_user(user_id, conn).await;
-            let mut combined_permissions: HashMap<CollectionId, CollectionGroup> = HashMap::new();
-
-            for cg in all_user_collection_groups {
-                match combined_permissions.get_mut(&cg.collections_uuid) {
-                    Some(existing) => {
-                        // Combine permissions by taking the most permissive settings
-                        existing.read_only = existing.read_only && cg.read_only; // false if ANY group allows write
-                        existing.hide_passwords = existing.hide_passwords && cg.hide_passwords; // false if ANY group allows password view
-                        existing.manage = existing.manage || cg.manage; // true if ANY group allows manage
-                    }
-                    None => {
-                        // First group for this collection
-                        combined_permissions.insert(cg.collections_uuid.clone(), cg);
-                    }
-                }
-            }
-            combined_permissions
+            CollectionGroup::find_by_user(user_id, conn)
+                .await
+                .into_iter()
+                .fold(HashMap::new(), |mut combined_permissions, cg| {
+                    combined_permissions.entry(cg.collections_uuid.clone())
+                        .and_modify(|existing| {
+                            // Combine permissions: take the most permissive settings.
+                            existing.read_only &= cg.read_only; // false if ANY group allows write
+                            existing.hide_passwords &= cg.hide_passwords; // false if ANY group allows password view
+                            existing.manage |= cg.manage; // true if ANY group allows manage
+                        })
+                        .or_insert(cg);
+                    combined_permissions
+                })
         } else {
             HashMap::new()
         };
