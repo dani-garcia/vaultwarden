@@ -4,13 +4,13 @@
  *
  * To rebuild or modify this file with the latest versions of the included
  * software please visit:
- *   https://datatables.net/download/#bs5/dt-2.3.1
+ *   https://datatables.net/download/#bs5/dt-2.3.2
  *
  * Included libraries:
- *   DataTables 2.3.1
+ *   DataTables 2.3.2
  */
 
-/*! DataTables 2.3.1
+/*! DataTables 2.3.2
  * © SpryMedia Ltd - datatables.net/license
  */
 
@@ -124,7 +124,7 @@
 			_fnCamelToHungarian( defaults.column, defaults.column, true );
 			
 			/* Setting up the initialisation object */
-			_fnCamelToHungarian( defaults, $.extend( oInit, $this.data() ), true );
+			_fnCamelToHungarian( defaults, $.extend( oInit, _fnEscapeObject($this.data()) ), true );
 			
 			
 			
@@ -513,7 +513,7 @@
 		 *
 		 *  @type string
 		 */
-		builder: "bs5/dt-2.3.1",
+		builder: "bs5/dt-2.3.2",
 	
 		/**
 		 * Buttons. For use with the Buttons extension for DataTables. This is
@@ -554,6 +554,11 @@
 		 */
 		errMode: "alert",
 	
+		/** HTML entity escaping */
+		escape: {
+			/** When reading data-* attributes for initialisation options */
+			attributes: false
+		},
 	
 		/**
 		 * Legacy so v1 plug-ins don't throw js errors on load
@@ -4025,7 +4030,7 @@
 					if ( write ) {
 						if (unique) {
 							// Allow column options to be set from HTML attributes
-							_fnColumnOptions( settings, shifted, jqCell.data() );
+							_fnColumnOptions( settings, shifted, _fnEscapeObject(jqCell.data()) );
 							
 							// Get the width for the column. This can be defined from the
 							// width attribute, style attribute or `columns.width` option
@@ -4271,7 +4276,7 @@
 			// to the object for the callback.
 			var empty = {};
 	
-			DataTable.util.set(ajax.dataSrc)(empty, []);
+			_fnAjaxDataSrc(oSettings, empty, []);
 			callback(empty);
 		}
 		else {
@@ -5799,9 +5804,11 @@
 			var run = false;
 			var columns = column === undefined
 				? _fnColumnsFromHeader( e.target )
-				: Array.isArray(column)
-					? column
-					: [column];
+				: typeof column === 'function'
+					? column()
+					: Array.isArray(column)
+						? column
+						: [column];
 	
 			if ( columns.length ) {
 				for ( var i=0, ien=columns.length ; i<ien ; i++ ) {
@@ -6864,6 +6871,19 @@
 		for (i=0 ; i<src.length ; i++) {
 			that.on(name + '.dt', src[i]);
 		}
+	}
+	
+	/**
+	 * Escape HTML entities in strings, in an object
+	 */
+	function _fnEscapeObject(obj) {
+		if (DataTable.ext.escape.attributes) {
+			$.each(obj, function (key, val) {
+				obj[key] = _escapeHtml(val);
+			})
+		}
+	
+		return obj;
 	}
 	
 	
@@ -10211,7 +10231,7 @@
 	 *  @type string
 	 *  @default Version number
 	 */
-	DataTable.version = "2.3.1";
+	DataTable.version = "2.3.2";
 	
 	/**
 	 * Private data store, containing all of the settings objects that are
