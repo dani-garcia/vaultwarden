@@ -1924,11 +1924,11 @@ impl CipherSyncData {
 
         // Generate a HashMap with the collections_uuid as key and the CollectionGroup record
         let user_collections_groups: HashMap<CollectionId, CollectionGroup> = if CONFIG.org_groups_enabled() {
-            CollectionGroup::find_by_user(user_id, conn)
-                .await
-                .into_iter()
-                .fold(HashMap::new(), |mut combined_permissions, cg| {
-                    combined_permissions.entry(cg.collections_uuid.clone())
+            CollectionGroup::find_by_user(user_id, conn).await.into_iter().fold(
+                HashMap::new(),
+                |mut combined_permissions, cg| {
+                    combined_permissions
+                        .entry(cg.collections_uuid.clone())
                         .and_modify(|existing| {
                             // Combine permissions: take the most permissive settings.
                             existing.read_only &= cg.read_only; // false if ANY group allows write
@@ -1937,7 +1937,8 @@ impl CipherSyncData {
                         })
                         .or_insert(cg);
                     combined_permissions
-                })
+                },
+            )
         } else {
             HashMap::new()
         };
