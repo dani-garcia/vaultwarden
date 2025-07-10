@@ -3,7 +3,7 @@ CREATE TABLE auth_requests (
 	user_uuid	    CHAR(36) NOT NULL,
 	organization_uuid           CHAR(36),
 	request_device_identifier         CHAR(36) NOT NULL,
-	device_type         INTEGER NOT NULL,
+	device_type         INT4 NOT NULL,
 	request_ip         TEXT NOT NULL,
 	response_device_id         CHAR(36),
 	access_code         TEXT NOT NULL,
