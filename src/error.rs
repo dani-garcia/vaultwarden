@@ -54,7 +54,7 @@ use rocket::error::Error as RocketErr;
 use serde_json::{Error as SerdeErr, Value};
 use std::io::Error as IoErr;
 use std::time::SystemTimeError as TimeErr;
-use webauthn_rs::error::WebauthnError as WebauthnErr;
+use webauthn_rs::prelude::WebauthnError as WebauthnErr;
 use yubico::yubicoerror::YubicoError as YubiErr;
 
 #[derive(Serialize)]
