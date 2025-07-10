@@ -20,6 +20,44 @@ a[href$="/settings/sponsored-families"] {
   @extend %vw-hide;
 }
 
+/* Hide the sso `Email` input field */
+{{#if sso_disabled}}
+.vw-email-sso {
+  @extend %vw-hide;
+}
+{{/if}}
+
+/* Hide the default/continue `Email` input field */
+{{#if (not sso_disabled)}}
+.vw-email-continue {
+  @extend %vw-hide;
+}
+{{/if}}
+
+/* Hide the `Continue` button on the login page */
+{{#if (not sso_disabled)}}
+.vw-continue-login {
+  @extend %vw-hide;
+}
+{{/if}}
+
+/* Hide the `Enterprise Single Sign-On` button on the login page */
+{{#if (webver ">=2025.5.1")}}
+{{#if sso_disabled}}
+.vw-sso-login {
+  @extend %vw-hide;
+}
+{{/if}}
+{{else}}
+app-root ng-component > form > div:nth-child(1) > div > button[buttontype="secondary"].\!tw-text-primary-600:nth-child(4) {
+  @extend %vw-hide;
+}
+{{/if}}
+
+/* Hide the `Log in with passkey` settings */
+app-change-password app-webauthn-login-settings {
+  @extend %vw-hide;
+}
 /* Hide Log in with passkey on the login page */
 {{#if (webver ">=2025.5.1")}}
 .vw-passkey-login {
@@ -33,11 +71,20 @@ app-root ng-component > form > div:nth-child(1) > div > button[buttontype="secon
 
 /* Hide the or text followed by the two buttons hidden above */
 {{#if (webver ">=2025.5.1")}}
+{{#if (or sso_disabled sso_only)}}
 .vw-or-text {
   @extend %vw-hide;
 }
+{{/if}}
 {{else}}
 app-root ng-component > form > div:nth-child(1) > div:nth-child(3) > div:nth-child(2) {
+  @extend %vw-hide;
+}
+{{/if}}
+
+/* Hide the `Other` button on the login page */
+{{#if (or sso_disabled sso_only)}}
+.vw-other-login {
   @extend %vw-hide;
 }
 {{/if}}
@@ -107,21 +154,7 @@ app-root a[routerlink="/signup"] {
 {{/if}}
 {{/if}}
 
-{{#if sso_only}}
-/* Hide Master password login */
-.master-password-login {
-  @extend %vw-hide;
-}
-{{/if}}
-
-{{#if sso_disabled}}
-/* Hide the `Enterprise Single Sign-On` button on the login page */
-.vw-sso-login {
-  @extend %vw-hide;
-}
-{{/if}}
-
-{{#unless mail_enabled}}
+{{#unless mail_2fa_enabled}}
 /* Hide `Email` 2FA if mail is not enabled */
 .providers-2fa-1 {
   @extend %vw-hide;

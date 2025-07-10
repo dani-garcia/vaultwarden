@@ -227,8 +227,6 @@ fn config() -> Json<Value> {
         },
         "settings": {
             "disableUserRegistration": crate::CONFIG.is_signup_disabled(),
-            "ssoEnabled": crate::CONFIG.sso_enabled(),
-            "ssoOnly": crate::CONFIG.sso_enabled() && crate::CONFIG.sso_only(),
         },
         "environment": {
           "vault": domain,
