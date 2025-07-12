@@ -8,15 +8,30 @@ body:
       value: |
         Thanks for taking the time to fill out this bug report!
 
-        Please *do not* submit feature requests or ask for help on how to configure Vaultwarden here.
+        Please **do not** submit feature requests or ask for help on how to configure Vaultwarden here!
 
         The [GitHub Discussions](https://github.com/dani-garcia/vaultwarden/discussions/) has sections for Questions and Ideas.
 
+        Our [Wiki](https://github.com/dani-garcia/vaultwarden/wiki/) has topics on how to configure Vaultwarden.
+
         Also, make sure you are running [![GitHub Release](https://img.shields.io/github/release/dani-garcia/vaultwarden.svg)](https://github.com/dani-garcia/vaultwarden/releases/latest) of Vaultwarden!
-        And search for existing open or closed issues or discussions regarding your topic before posting.
 
         Be sure to check and validate the Vaultwarden Admin Diagnostics (`/admin/diagnostics`) page for any errors!
         See here [how to enable the admin page](https://github.com/dani-garcia/vaultwarden/wiki/Enabling-admin-page).
+
+        > [!IMPORTANT]
+        > :bangbang: Search for existing **Open _AND_ Closed** [Issues](https://github.com/dani-garcia/vaultwarden/issues?q=is%3Aissue%20) **_AND_** [Discussions](https://github.com/dani-garcia/vaultwarden/discussions?discussions_q=) regarding your topic before posting!
+  #
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Prerequisites
+      description: Please confirm you have completed the following before submitting an issue
+      options:
+        - label: I have searched the existing issues and discussions
+          required: true
+        - label: I have read the documentation
+          required: true
   #
   - id: support-string
     type: textarea
@@ -36,7 +51,7 @@ body:
     attributes:
       label: Vaultwarden Build Version
       description: What version of Vaultwarden are you running?
-      placeholder: ex. v1.31.0 or v1.32.0-3466a804
+      placeholder: ex. v1.34.0 or v1.34.1-53f58b14
     validations:
       required: true
   #
@@ -67,7 +82,7 @@ body:
     attributes:
       label: Reverse Proxy
       description: Are you using a reverse proxy, if so which and what version?
-      placeholder: ex. nginx 1.26.2, caddy 2.8.4, traefik 3.1.2, haproxy 3.0
+      placeholder: ex. nginx 1.29.0, caddy 2.10.0, traefik 3.4.4, haproxy 3.2
     validations:
       required: true
   #
@@ -115,7 +130,7 @@ body:
     attributes:
       label: Client Version
       description: What version(s) of the client(s) are you seeing the problem on?
-      placeholder: ex. CLI v2024.7.2, Firefox 130 - v2024.7.0
+      placeholder: ex. CLI v2025.7.0, Firefox 140 - v2025.6.1
   #
   - id: reproduce
     type: textarea
