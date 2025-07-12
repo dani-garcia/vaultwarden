@@ -66,13 +66,15 @@ jobs:
       - name: Init Variables
         id: toolchain
         shell: bash
+        env:
+          CHANNEL: ${{ matrix.channel }}
         run: |
-          if [[ "${{ matrix.channel }}" == 'rust-toolchain' ]]; then
+          if [[ "${CHANNEL}" == 'rust-toolchain' ]]; then
             RUST_TOOLCHAIN="$(grep -oP 'channel.*"(\K.*?)(?=")' rust-toolchain.toml)"
-          elif [[ "${{ matrix.channel }}" == 'msrv' ]]; then
+          elif [[ "${CHANNEL}" == 'msrv' ]]; then
             RUST_TOOLCHAIN="$(grep -oP 'rust-version.*"(\K.*?)(?=")' Cargo.toml)"
           else
-            RUST_TOOLCHAIN="${{ matrix.channel }}"
+            RUST_TOOLCHAIN="${CHANNEL}"
           fi
           echo "RUST_TOOLCHAIN=${RUST_TOOLCHAIN}" | tee -a "${GITHUB_OUTPUT}"
       # End Determine rust-toolchain version
@@ -80,7 +82,7 @@ jobs:
 
       # Only install the clippy and rustfmt components on the default rust-toolchain
       - name: "Install rust-toolchain version"
-        uses: dtolnay/rust-toolchain@56f84321dbccf38fb67ce29ab63e4754056677e0 # master @ Mar 18, 2025, 8:14 PM GMT+1
+        uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b # master @ Apr 29, 2025, 9:22 PM GMT+2
         if: ${{ matrix.channel == 'rust-toolchain' }}
         with:
           toolchain: "${{steps.toolchain.outputs.RUST_TOOLCHAIN}}"
@@ -90,7 +92,7 @@ jobs:
 
       # Install the any other channel to be used for which we do not execute clippy and rustfmt
       - name: "Install MSRV version"
-        uses: dtolnay/rust-toolchain@56f84321dbccf38fb67ce29ab63e4754056677e0 # master @ Mar 18, 2025, 8:14 PM GMT+1
+        uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b # master @ Apr 29, 2025, 9:22 PM GMT+2
         if: ${{ matrix.channel != 'rust-toolchain' }}
         with:
           toolchain: "${{steps.toolchain.outputs.RUST_TOOLCHAIN}}"
@@ -115,7 +117,7 @@ jobs:
 
       # Enable Rust Caching
       - name: Rust Caching
-        uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2.7.8
+        uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
         with:
           # Use a custom prefix-key to force a fresh start. This is sometimes needed with bigger changes.
           # Like changing the build host from Ubuntu 20.04 to 22.04 for example.
