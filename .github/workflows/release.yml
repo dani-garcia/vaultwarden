@@ -215,7 +215,7 @@ jobs:
           BAKE_METADATA: ${{ steps.bake_vw.outputs.metadata }}
           BASE_IMAGE: ${{ matrix.base_image }}
         run: |
-          GET_DIGEST_SHA="$(jq -r '.["${BASE_IMAGE}-multi"]."containerimage.digest"' <<< "${BAKE_METADATA}")"
+          GET_DIGEST_SHA="$(jq -r --arg base "$BASE_IMAGE" '.[$base + "-multi"]."containerimage.digest"' <<< "${BAKE_METADATA}")"
           echo "DIGEST_SHA=${GET_DIGEST_SHA}" | tee -a "${GITHUB_ENV}"
 
       # Attest container images
