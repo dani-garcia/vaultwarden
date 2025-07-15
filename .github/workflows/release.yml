@@ -47,7 +47,7 @@ jobs:
     # Start a local docker registry to extract the compiled binaries to upload as artifacts and attest them
     services:
       registry:
-        image: registry:2
+        image: registry@sha256:1fc7de654f2ac1247f0b67e8a459e273b0993be7d2beda1f3f56fbf1001ed3e7 # v3.0.0
         ports:
           - 5000:5000
     env:
@@ -76,7 +76,7 @@ jobs:
 
       # Start Docker Buildx
       - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
         # https://github.com/moby/buildkit/issues/3969
         # Also set max parallelism to 2, the default of 4 breaks GitHub Actions and causes OOMKills
         with:
@@ -192,7 +192,7 @@ jobs:
 
       - name: Bake ${{ matrix.base_image }} containers
         id: bake_vw
-        uses: docker/bake-action@4ba453fbc2db7735392b93edf935aaf9b1e8f747 # v6.5.0
+        uses: docker/bake-action@37816e747588cb137173af99ab33873600c46ea8 # v6.8.0
         env:
           BASE_TAGS: "${{ env.BASE_TAGS }}"
           SOURCE_COMMIT: "${{ env.SOURCE_COMMIT }}"
@@ -213,14 +213,15 @@ jobs:
         shell: bash
         env:
           BAKE_METADATA: ${{ steps.bake_vw.outputs.metadata }}
+          BASE_IMAGE: ${{ matrix.base_image }}
         run: |
-          GET_DIGEST_SHA="$(jq -r '.["${{ matrix.base_image }}-multi"]."containerimage.digest"' <<< "${BAKE_METADATA}")"
+          GET_DIGEST_SHA="$(jq -r --arg base "$BASE_IMAGE" '.[$base + "-multi"]."containerimage.digest"' <<< "${BAKE_METADATA}")"
           echo "DIGEST_SHA=${GET_DIGEST_SHA}" | tee -a "${GITHUB_ENV}"
 
       # Attest container images
       - name: Attest - docker.io - ${{ matrix.base_image }}
         if: ${{ env.HAVE_DOCKERHUB_LOGIN == 'true' && steps.bake_vw.outputs.metadata != ''}}
-        uses: actions/attest-build-provenance@c074443f1aee8d4aeeae555aebba3282517141b2 # v2.2.3
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
         with:
           subject-name: ${{ vars.DOCKERHUB_REPO }}
           subject-digest: ${{ env.DIGEST_SHA }}
@@ -228,7 +229,7 @@ jobs:
 
       - name: Attest - ghcr.io - ${{ matrix.base_image }}
         if: ${{ env.HAVE_GHCR_LOGIN == 'true' && steps.bake_vw.outputs.metadata != ''}}
-        uses: actions/attest-build-provenance@c074443f1aee8d4aeeae555aebba3282517141b2 # v2.2.3
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
         with:
           subject-name: ${{ vars.GHCR_REPO }}
           subject-digest: ${{ env.DIGEST_SHA }}
@@ -236,7 +237,7 @@ jobs:
 
       - name: Attest - quay.io - ${{ matrix.base_image }}
         if: ${{ env.HAVE_QUAY_LOGIN == 'true' && steps.bake_vw.outputs.metadata != ''}}
-        uses: actions/attest-build-provenance@c074443f1aee8d4aeeae555aebba3282517141b2 # v2.2.3
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
         with:
           subject-name: ${{ vars.QUAY_REPO }}
           subject-digest: ${{ env.DIGEST_SHA }}
@@ -248,6 +249,7 @@ jobs:
         shell: bash
         env:
           REF_TYPE: ${{ github.ref_type }}
+          BASE_IMAGE: ${{ matrix.base_image }}
         run: |
           # Check which main tag we are going to build determined by ref_type
           if [[ "${REF_TYPE}" == "tag" ]]; then
@@ -257,7 +259,7 @@ jobs:
           fi
 
           # Check which base_image was used and append -alpine if needed
-          if [[ "${{ matrix.base_image }}" == "alpine" ]]; then
+          if [[ "${BASE_IMAGE}" == "alpine" ]]; then
             EXTRACT_TAG="${EXTRACT_TAG}-alpine"
           fi
 
@@ -266,25 +268,25 @@ jobs:
 
           # Extract amd64 binary
           docker create --name amd64 --platform=linux/amd64 "localhost:5000/vaultwarden/server:${EXTRACT_TAG}"
-          docker cp amd64:/vaultwarden vaultwarden-amd64-${{ matrix.base_image }}
+          docker cp amd64:/vaultwarden vaultwarden-amd64-${BASE_IMAGE}
           docker rm --force amd64
           docker rmi --force "localhost:5000/vaultwarden/server:${EXTRACT_TAG}"
 
           # Extract arm64 binary
           docker create --name arm64 --platform=linux/arm64 "localhost:5000/vaultwarden/server:${EXTRACT_TAG}"
-          docker cp arm64:/vaultwarden vaultwarden-arm64-${{ matrix.base_image }}
+          docker cp arm64:/vaultwarden vaultwarden-arm64-${BASE_IMAGE}
           docker rm --force arm64
           docker rmi --force "localhost:5000/vaultwarden/server:${EXTRACT_TAG}"
 
           # Extract armv7 binary
           docker create --name armv7 --platform=linux/arm/v7 "localhost:5000/vaultwarden/server:${EXTRACT_TAG}"
-          docker cp armv7:/vaultwarden vaultwarden-armv7-${{ matrix.base_image }}
+          docker cp armv7:/vaultwarden vaultwarden-armv7-${BASE_IMAGE}
           docker rm --force armv7
           docker rmi --force "localhost:5000/vaultwarden/server:${EXTRACT_TAG}"
 
           # Extract armv6 binary
           docker create --name armv6 --platform=linux/arm/v6 "localhost:5000/vaultwarden/server:${EXTRACT_TAG}"
-          docker cp armv6:/vaultwarden vaultwarden-armv6-${{ matrix.base_image }}
+          docker cp armv6:/vaultwarden vaultwarden-armv6-${BASE_IMAGE}
           docker rm --force armv6
           docker rmi --force "localhost:5000/vaultwarden/server:${EXTRACT_TAG}"
 
@@ -314,7 +316,7 @@ jobs:
           path: vaultwarden-armv6-${{ matrix.base_image }}
 
       - name: "Attest artifacts ${{ matrix.base_image }}"
-        uses: actions/attest-build-provenance@c074443f1aee8d4aeeae555aebba3282517141b2 # v2.2.3
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
         with:
           subject-path: vaultwarden-*
       # End Upload artifacts to Github Actions

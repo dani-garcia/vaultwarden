@@ -57,6 +57,7 @@ fn vaultwarden_css() -> Cached<Css<String>> {
     let css_options = json!({
         "emergency_access_allowed": CONFIG.emergency_access_allowed(),
         "load_user_scss": true,
+        "mail_2fa_enabled": CONFIG._enable_email_2fa(),
         "mail_enabled": CONFIG.mail_enabled(),
         "sends_allowed": CONFIG.sends_allowed(),
         "signup_disabled": !CONFIG.signups_allowed() && CONFIG.signups_domains_whitelist().is_empty(),
