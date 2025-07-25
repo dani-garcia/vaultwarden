@@ -556,14 +556,45 @@ use super::sends::{update_send_from_data, SendData};
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct KeyData {
+    account_unlock_data: RotateAccountUnlockData,
+    account_keys: RotateAccountKeys,
+    account_data: RotateAccountData,
+    old_master_key_authentication_hash: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RotateAccountUnlockData {
+    emergency_access_unlock_data: Vec<UpdateEmergencyAccessData>,
+    master_password_unlock_data: MasterPasswordUnlockData,
+    organization_account_recovery_unlock_data: Vec<UpdateResetPasswordData>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MasterPasswordUnlockData {
+    kdf_type: i32,
+    kdf_iterations: i32,
+    kdf_parallelism: Option<i32>,
+    kdf_memory: Option<i32>,
+    email: String,
+    master_key_authentication_hash: String,
+    master_key_encrypted_user_key: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RotateAccountKeys {
+    user_key_encrypted_account_private_key: String,
+    account_public_key: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RotateAccountData {
     ciphers: Vec<CipherData>,
     folders: Vec<UpdateFolderData>,
     sends: Vec<SendData>,
-    emergency_access_keys: Vec<UpdateEmergencyAccessData>,
-    reset_password_keys: Vec<UpdateResetPasswordData>,
-    key: String,
-    master_password_hash: String,
-    private_key: String,
 }
 
 fn validate_keydata(
@@ -573,10 +604,24 @@ fn validate_keydata(
     existing_emergency_access: &[EmergencyAccess],
     existing_memberships: &[Membership],
     existing_sends: &[Send],
+    user: &User,
 ) -> EmptyResult {
+    if user.client_kdf_type != data.account_unlock_data.master_password_unlock_data.kdf_type
+        || user.client_kdf_iter != data.account_unlock_data.master_password_unlock_data.kdf_iterations
+        || user.client_kdf_memory != data.account_unlock_data.master_password_unlock_data.kdf_memory
+        || user.client_kdf_parallelism != data.account_unlock_data.master_password_unlock_data.kdf_parallelism
+        || user.email != data.account_unlock_data.master_password_unlock_data.email
+    {
+        err!("Changing the kdf variant or email is not supported during key rotation");
+    }
+    if user.public_key.as_ref() != Some(&data.account_keys.account_public_key) {
+        err!("Changing the asymmetric keypair is not possible during key rotation")
+    }
+
     // Check that we're correctly rotating all the user's ciphers
     let existing_cipher_ids = existing_ciphers.iter().map(|c| &c.uuid).collect::<HashSet<&CipherId>>();
     let provided_cipher_ids = data
+        .account_data
         .ciphers
         .iter()
         .filter(|c| c.organization_id.is_none())
@@ -588,7 +633,8 @@ fn validate_keydata(
 
     // Check that we're correctly rotating all the user's folders
     let existing_folder_ids = existing_folders.iter().map(|f| &f.uuid).collect::<HashSet<&FolderId>>();
-    let provided_folder_ids = data.folders.iter().filter_map(|f| f.id.as_ref()).collect::<HashSet<&FolderId>>();
+    let provided_folder_ids =
+        data.account_data.folders.iter().filter_map(|f| f.id.as_ref()).collect::<HashSet<&FolderId>>();
     if !provided_folder_ids.is_superset(&existing_folder_ids) {
         err!("All existing folders must be included in the rotation")
     }
@@ -596,8 +642,12 @@ fn validate_keydata(
     // Check that we're correctly rotating all the user's emergency access keys
     let existing_emergency_access_ids =
         existing_emergency_access.iter().map(|ea| &ea.uuid).collect::<HashSet<&EmergencyAccessId>>();
-    let provided_emergency_access_ids =
-        data.emergency_access_keys.iter().map(|ea| &ea.id).collect::<HashSet<&EmergencyAccessId>>();
+    let provided_emergency_access_ids = data
+        .account_unlock_data
+        .emergency_access_unlock_data
+        .iter()
+        .map(|ea| &ea.id)
+        .collect::<HashSet<&EmergencyAccessId>>();
     if !provided_emergency_access_ids.is_superset(&existing_emergency_access_ids) {
         err!("All existing emergency access keys must be included in the rotation")
     }
@@ -605,15 +655,19 @@ fn validate_keydata(
     // Check that we're correctly rotating all the user's reset password keys
     let existing_reset_password_ids =
         existing_memberships.iter().map(|m| &m.org_uuid).collect::<HashSet<&OrganizationId>>();
-    let provided_reset_password_ids =
-        data.reset_password_keys.iter().map(|rp| &rp.organization_id).collect::<HashSet<&OrganizationId>>();
+    let provided_reset_password_ids = data
+        .account_unlock_data
+        .organization_account_recovery_unlock_data
+        .iter()
+        .map(|rp| &rp.organization_id)
+        .collect::<HashSet<&OrganizationId>>();
     if !provided_reset_password_ids.is_superset(&existing_reset_password_ids) {
         err!("All existing reset password keys must be included in the rotation")
     }
 
     // Check that we're correctly rotating all the user's sends
     let existing_send_ids = existing_sends.iter().map(|s| &s.uuid).collect::<HashSet<&SendId>>();
-    let provided_send_ids = data.sends.iter().filter_map(|s| s.id.as_ref()).collect::<HashSet<&SendId>>();
+    let provided_send_ids = data.account_data.sends.iter().filter_map(|s| s.id.as_ref()).collect::<HashSet<&SendId>>();
     if !provided_send_ids.is_superset(&existing_send_ids) {
         err!("All existing sends must be included in the rotation")
     }
@@ -621,12 +675,12 @@ fn validate_keydata(
     Ok(())
 }
 
-#[post("/accounts/key", data = "<data>")]
+#[post("/accounts/key-management/rotate-user-account-keys", data = "<data>")]
 async fn post_rotatekey(data: Json<KeyData>, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> EmptyResult {
     // TODO: See if we can wrap everything within a SQL Transaction. If something fails it should revert everything.
     let data: KeyData = data.into_inner();
 
-    if !headers.user.check_valid_password(&data.master_password_hash) {
+    if !headers.user.check_valid_password(&data.old_master_key_authentication_hash) {
         err!("Invalid password")
     }
 
@@ -634,7 +688,7 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, mut conn: DbConn,
     // Bitwarden does not process the import if there is one item invalid.
     // Since we check for the size of the encrypted note length, we need to do that here to pre-validate it.
     // TODO: See if we can optimize the whole cipher adding/importing and prevent duplicate code and checks.
-    Cipher::validate_cipher_data(&data.ciphers)?;
+    Cipher::validate_cipher_data(&data.account_data.ciphers)?;
 
     let user_id = &headers.user.uuid;
 
@@ -655,10 +709,11 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, mut conn: DbConn,
         &existing_emergency_access,
         &existing_memberships,
         &existing_sends,
+        &headers.user,
     )?;
 
     // Update folder data
-    for folder_data in data.folders {
+    for folder_data in data.account_data.folders {
         // Skip `null` folder id entries.
         // See: https://github.com/bitwarden/clients/issues/8453
         if let Some(folder_id) = folder_data.id {
@@ -672,7 +727,7 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, mut conn: DbConn,
     }
 
     // Update emergency access data
-    for emergency_access_data in data.emergency_access_keys {
+    for emergency_access_data in data.account_unlock_data.emergency_access_unlock_data {
         let Some(saved_emergency_access) =
             existing_emergency_access.iter_mut().find(|ea| ea.uuid == emergency_access_data.id)
         else {
@@ -684,7 +739,7 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, mut conn: DbConn,
     }
 
     // Update reset password data
-    for reset_password_data in data.reset_password_keys {
+    for reset_password_data in data.account_unlock_data.organization_account_recovery_unlock_data {
         let Some(membership) =
             existing_memberships.iter_mut().find(|m| m.org_uuid == reset_password_data.organization_id)
         else {
@@ -696,7 +751,7 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, mut conn: DbConn,
     }
 
     // Update send data
-    for send_data in data.sends {
+    for send_data in data.account_data.sends {
         let Some(send) = existing_sends.iter_mut().find(|s| &s.uuid == send_data.id.as_ref().unwrap()) else {
             err!("Send doesn't exist")
         };
@@ -707,7 +762,7 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, mut conn: DbConn,
     // Update cipher data
     use super::ciphers::update_cipher_from_data;
 
-    for cipher_data in data.ciphers {
+    for cipher_data in data.account_data.ciphers {
         if cipher_data.organization_id.is_none() {
             let Some(saved_cipher) = existing_ciphers.iter_mut().find(|c| &c.uuid == cipher_data.id.as_ref().unwrap())
             else {
@@ -724,9 +779,13 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, mut conn: DbConn,
     // Update user data
     let mut user = headers.user;
 
-    user.akey = data.key;
-    user.private_key = Some(data.private_key);
-    user.reset_security_stamp();
+    user.private_key = Some(data.account_keys.user_key_encrypted_account_private_key);
+    user.set_password(
+        &data.account_unlock_data.master_password_unlock_data.master_key_authentication_hash,
+        Some(data.account_unlock_data.master_password_unlock_data.master_key_encrypted_user_key),
+        true,
+        None,
+    );
 
     let save_result = user.save(&mut conn).await;
 
