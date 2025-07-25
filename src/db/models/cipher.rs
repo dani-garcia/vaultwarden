@@ -609,22 +609,23 @@ impl Cipher {
             let mut rows: Vec<(bool, bool, bool)> = Vec::new();
             if let Some(collections) = cipher_sync_data.cipher_collections.get(&self.uuid) {
                 for collection in collections {
-                    //User permissions
+                    // User permissions
                     if let Some(cu) = cipher_sync_data.user_collections.get(collection) {
                         rows.push((cu.read_only, cu.hide_passwords, cu.manage));
-                    }
-
-                    //Group permissions
-                    if let Some(cg) = cipher_sync_data.user_collections_groups.get(collection) {
+                    // Group permissions
+                    } else if let Some(cg) = cipher_sync_data.user_collections_groups.get(collection) {
                         rows.push((cg.read_only, cg.hide_passwords, cg.manage));
                     }
                 }
             }
             rows
         } else {
-            let mut access_flags = self.get_user_collections_access_flags(user_uuid, conn).await;
-            access_flags.append(&mut self.get_group_collections_access_flags(user_uuid, conn).await);
-            access_flags
+            let user_permissions = self.get_user_collections_access_flags(user_uuid, conn).await;
+            if !user_permissions.is_empty() {
+                user_permissions
+            } else {
+                self.get_group_collections_access_flags(user_uuid, conn).await
+            }
         };
 
         if rows.is_empty() {
@@ -633,6 +634,9 @@ impl Cipher {
         }
 
         // A cipher can be in multiple collections with inconsistent access flags.
+        // Also, user permission overrule group permissions
+        // and only user permissions are returned by the code above.
+        //
         // For example, a cipher could be in one collection where the user has
         // read-only access, but also in another collection where the user has
         // read/write access. For a flag to be in effect for a cipher, upstream
@@ -641,13 +645,15 @@ impl Cipher {
         // and `hide_passwords` columns. This could ideally be done as part of the
         // query, but Diesel doesn't support a min() or bool_and() function on
         // booleans and this behavior isn't portable anyway.
+        //
+        // The only exception is for the `manage` flag, that needs a boolean OR!
         let mut read_only = true;
         let mut hide_passwords = true;
         let mut manage = false;
         for (ro, hp, mn) in rows.iter() {
             read_only &= ro;
             hide_passwords &= hp;
-            manage &= mn;
+            manage |= mn;
         }
 
         Some((read_only, hide_passwords, manage))
