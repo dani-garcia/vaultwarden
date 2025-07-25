@@ -20,17 +20,17 @@ body:
         See here [how to enable the admin page](https://github.com/dani-garcia/vaultwarden/wiki/Enabling-admin-page).
 
         > [!IMPORTANT]
-        > :bangbang: Search for existing **Open _AND_ Closed** [Issues](https://github.com/dani-garcia/vaultwarden/issues?q=is%3Aissue%20) **_AND_** [Discussions](https://github.com/dani-garcia/vaultwarden/discussions?discussions_q=) regarding your topic before posting!
+        > ## :bangbang: Search for existing **Closed _AND_ Open** [Issues](https://github.com/dani-garcia/vaultwarden/issues?q=is%3Aissue%20) **_AND_** [Discussions](https://github.com/dani-garcia/vaultwarden/discussions?discussions_q=) regarding your topic before posting! :bangbang:
   #
   - type: checkboxes
     id: checklist
     attributes:
       label: Prerequisites
-      description: Please confirm you have completed the following before submitting an issue
+      description: Please confirm you have completed the following before submitting an issue!
       options:
-        - label: I have searched the existing issues and discussions
+        - label: I have searched the existing **Closed _AND_ Open** [Issues](https://github.com/dani-garcia/vaultwarden/issues?q=is%3Aissue%20) **_AND_** [Discussions](https://github.com/dani-garcia/vaultwarden/discussions?discussions_q=)
           required: true
-        - label: I have read the documentation
+        - label: I have searched and read the [documentation](https://github.com/dani-garcia/vaultwarden/wiki/)
           required: true
   #
   - id: support-string
