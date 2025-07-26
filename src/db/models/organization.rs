@@ -36,6 +36,8 @@ db_object! {
         pub user_uuid: UserId,
         pub org_uuid: OrganizationId,
 
+        pub invited_by_email: Option<String>,
+
         pub access_all: bool,
         pub akey: String,
         pub status: i32,
@@ -235,12 +237,13 @@ impl Organization {
 const ACTIVATE_REVOKE_DIFF: i32 = 128;
 
 impl Membership {
-    pub fn new(user_uuid: UserId, org_uuid: OrganizationId) -> Self {
+    pub fn new(user_uuid: UserId, org_uuid: OrganizationId, invited_by_email: Option<String>) -> Self {
         Self {
             uuid: MembershipId(crate::util::get_uuid()),
 
             user_uuid,
             org_uuid,
+            invited_by_email,
 
             access_all: false,
             akey: String::new(),
@@ -389,9 +392,51 @@ impl Organization {
         }}
     }
 
+    pub async fn find_by_name(name: &str, conn: &mut DbConn) -> Option<Self> {
+        db_run! { conn: {
+            organizations::table
+                .filter(organizations::name.eq(name))
+                .first::<OrganizationDb>(conn)
+                .ok().from_db()
+        }}
+    }
+
     pub async fn get_all(conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             organizations::table.load::<OrganizationDb>(conn).expect("Error loading organizations").from_db()
+        }}
+    }
+
+    pub async fn find_main_org_user_email(user_email: &str, conn: &mut DbConn) -> Option<Organization> {
+        let lower_mail = user_email.to_lowercase();
+
+        db_run! { conn: {
+            organizations::table
+                .inner_join(users_organizations::table.on(users_organizations::org_uuid.eq(organizations::uuid)))
+                .inner_join(users::table.on(users::uuid.eq(users_organizations::user_uuid)))
+                .filter(users::email.eq(lower_mail))
+                .filter(users_organizations::status.ne(MembershipStatus::Revoked as i32))
+                .order(users_organizations::atype.asc())
+                .select(organizations::all_columns)
+                .first::<OrganizationDb>(conn)
+                .ok().from_db()
+        }}
+    }
+
+    pub async fn find_org_user_email(user_email: &str, conn: &mut DbConn) -> Vec<Organization> {
+        let lower_mail = user_email.to_lowercase();
+
+        db_run! { conn: {
+            organizations::table
+                .inner_join(users_organizations::table.on(users_organizations::org_uuid.eq(organizations::uuid)))
+                .inner_join(users::table.on(users::uuid.eq(users_organizations::user_uuid)))
+                .filter(users::email.eq(lower_mail))
+                .filter(users_organizations::status.ne(MembershipStatus::Revoked as i32))
+                .order(users_organizations::atype.asc())
+                .select(organizations::all_columns)
+                .load::<OrganizationDb>(conn)
+                .expect("Error loading user orgs")
+                .from_db()
         }}
     }
 }
@@ -827,6 +872,19 @@ impl Membership {
         }}
     }
 
+    // Should be used only when email are disabled.
+    // In Organizations::send_invite status is set to Accepted only if the user has a password.
+    pub async fn accept_user_invitations(user_uuid: &UserId, conn: &mut DbConn) -> EmptyResult {
+        db_run! { conn: {
+            diesel::update(users_organizations::table)
+                .filter(users_organizations::user_uuid.eq(user_uuid))
+                .filter(users_organizations::status.eq(MembershipStatus::Invited as i32))
+                .set(users_organizations::status.eq(MembershipStatus::Accepted as i32))
+                .execute(conn)
+                .map_res("Error confirming invitations")
+        }}
+    }
+
     pub async fn find_any_state_by_user(user_uuid: &UserId, conn: &mut DbConn) -> Vec<Self> {
         db_run! { conn: {
             users_organizations::table
@@ -1101,6 +1159,17 @@ impl Membership {
                 .and(users_organizations::org_uuid.eq(org_uuid))
             )
             .first::<MembershipDb>(conn).ok().from_db()
+        }}
+    }
+
+    pub async fn find_main_user_org(user_uuid: &str, conn: &mut DbConn) -> Option<Self> {
+        db_run! { conn: {
+            users_organizations::table
+                .filter(users_organizations::user_uuid.eq(user_uuid))
+                .filter(users_organizations::status.ne(MembershipStatus::Revoked as i32))
+                .order(users_organizations::atype.asc())
+                .first::<MembershipDb>(conn)
+                .ok().from_db()
         }}
     }
 }
