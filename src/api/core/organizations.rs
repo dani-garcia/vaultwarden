@@ -726,15 +726,6 @@ async fn delete_organization_collection(
     _delete_organization_collection(&org_id, &col_id, &headers, &mut conn).await
 }
 
-#[derive(Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-struct DeleteCollectionData {
-    #[allow(dead_code)]
-    id: String,
-    #[allow(dead_code)]
-    org_id: OrganizationId,
-}
-
 #[post("/organizations/<org_id>/collections/<col_id>/delete")]
 async fn post_organization_collection_delete(
     org_id: OrganizationId,
