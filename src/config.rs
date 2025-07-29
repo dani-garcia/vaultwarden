@@ -1354,6 +1354,14 @@ impl Config {
         }
     }
 
+    // The registration link should be hidden if signup is not allowed and whitelist is empty
+    // unless mail is disabled and invitations are allowed
+    pub fn is_signup_disabled(&self) -> bool {
+        !self.signups_allowed()
+            && self.signups_domains_whitelist().is_empty()
+            && (self.mail_enabled() || !self.invitations_allowed())
+    }
+
     /// Tests whether the specified user is allowed to create an organization.
     pub fn is_org_creation_allowed(&self, email: &str) -> bool {
         let users = self.org_creation_users();
