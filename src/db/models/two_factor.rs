@@ -242,8 +242,7 @@ impl TwoFactor {
         for webauthn_factor in webauthn_factors {
             // assume that a failure to parse into the old struct, means that it was already converted
             // alternatively this could also be checked via an extra field in the db
-            let Ok(regs) = serde_json::from_str::<Vec<WebauthnRegistrationV3>>(&webauthn_factor.data)
-            else {
+            let Ok(regs) = serde_json::from_str::<Vec<WebauthnRegistrationV3>>(&webauthn_factor.data) else {
                 continue;
             };
 
