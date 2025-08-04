@@ -5181,6 +5181,7 @@ dependencies = [
  "url",
  "uuid",
  "webauthn-rs",
+ "webauthn-rs-core",
  "webauthn-rs-proto",
  "which",
  "yubico_ng",

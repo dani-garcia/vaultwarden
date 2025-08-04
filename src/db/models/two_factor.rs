@@ -3,6 +3,7 @@ use crate::api::core::two_factor::webauthn::WebauthnRegistration;
 use crate::{api::EmptyResult, db::DbConn, error::MapResult};
 use serde_json::Value;
 use webauthn_rs::prelude::{Credential, ParsedAttestation};
+use webauthn_rs_core::proto::CredentialV3;
 use webauthn_rs_proto::{AttestationFormat, RegisteredExtensions};
 
 db_object! {
@@ -40,130 +41,6 @@ pub enum TwoFactorType {
 
     // Special type for Protected Actions verification via email
     ProtectedActions = 2000,
-}
-
-mod webauthn_0_3 {
-    use webauthn_rs::prelude::ParsedAttestation;
-    use webauthn_rs_proto::{AttestationFormat, RegisteredExtensions};
-
-    #[derive(Deserialize)]
-    pub struct WebauthnRegistration {
-        pub id: i32,
-        pub name: String,
-        pub migrated: bool,
-        pub credential: Credential,
-    }
-
-    impl From<WebauthnRegistration> for crate::api::core::two_factor::webauthn::WebauthnRegistration {
-        fn from(value: WebauthnRegistration) -> Self {
-            Self {
-                id: value.id,
-                name: value.name,
-                migrated: value.migrated,
-                credential: webauthn_rs::prelude::Credential::from(value.credential).into(),
-            }
-        }
-    }
-
-    // Copied from https://docs.rs/webauthn-rs/0.3.2/src/webauthn_rs/proto.rs.html#316-339
-    #[derive(Deserialize)]
-    pub struct Credential {
-        pub cred_id: Vec<u8>,
-        pub cred: COSEKey,
-        pub counter: u32,
-        pub verified: bool,
-        pub registration_policy: webauthn_rs_proto::UserVerificationPolicy,
-    }
-
-    impl From<Credential> for webauthn_rs::prelude::Credential {
-        fn from(value: Credential) -> Self {
-            Self {
-                cred_id: value.cred_id.into(),
-                cred: value.cred.into(),
-                counter: value.counter,
-                transports: None,
-                user_verified: value.verified,
-                backup_eligible: false,
-                backup_state: false,
-                registration_policy: value.registration_policy,
-                extensions: RegisteredExtensions::none(),
-                attestation: ParsedAttestation::default(),
-                attestation_format: AttestationFormat::None,
-            }
-        }
-    }
-
-    // Copied from https://docs.rs/webauthn-rs/0.3.2/src/webauthn_rs/proto.rs.html#300-305
-    #[derive(Deserialize)]
-    pub struct COSEKey {
-        pub type_: webauthn_rs::prelude::COSEAlgorithm,
-        pub key: COSEKeyType,
-    }
-
-    impl From<COSEKey> for webauthn_rs::prelude::COSEKey {
-        fn from(value: COSEKey) -> Self {
-            Self {
-                type_: value.type_,
-                key: value.key.into(),
-            }
-        }
-    }
-
-    // Copied from https://docs.rs/webauthn-rs/0.3.2/src/webauthn_rs/proto.rs.html#260-278
-    #[allow(non_camel_case_types)]
-    #[allow(clippy::upper_case_acronyms)]
-    #[derive(Deserialize)]
-    pub enum COSEKeyType {
-        EC_OKP,
-        EC_EC2(COSEEC2Key),
-        RSA(COSERSAKey),
-    }
-
-    impl From<COSEKeyType> for webauthn_rs::prelude::COSEKeyType {
-        fn from(value: COSEKeyType) -> Self {
-            match value {
-                COSEKeyType::EC_EC2(a) => Self::EC_EC2(a.into()),
-                COSEKeyType::RSA(a) => Self::RSA(a.into()),
-                // This should've never been able to be constructed when webauthn 0.3 was used
-                // Refer: https://docs.rs/webauthn-rs/0.3.2/src/webauthn_rs/crypto.rs.html#414
-                COSEKeyType::EC_OKP => unreachable!(),
-            }
-        }
-    }
-
-    // Copied from https://docs.rs/webauthn-rs/0.3.2/src/webauthn_rs/proto.rs.html#249-254
-    #[derive(Deserialize)]
-    pub struct COSERSAKey {
-        pub n: Vec<u8>,
-        pub e: [u8; 3],
-    }
-
-    impl From<COSERSAKey> for webauthn_rs::prelude::COSERSAKey {
-        fn from(value: COSERSAKey) -> Self {
-            Self {
-                n: value.n.into(),
-                e: value.e,
-            }
-        }
-    }
-
-    // Copied from https://docs.rs/webauthn-rs/0.3.2/src/webauthn_rs/proto.rs.html#235-242
-    #[derive(Deserialize)]
-    pub struct COSEEC2Key {
-        pub curve: webauthn_rs::prelude::ECDSACurve,
-        pub x: [u8; 32],
-        pub y: [u8; 32],
-    }
-
-    impl From<COSEEC2Key> for webauthn_rs::prelude::COSEEC2Key {
-        fn from(value: COSEEC2Key) -> Self {
-            Self {
-                curve: value.curve,
-                x: value.x.into(),
-                y: value.y.into(),
-            }
-        }
-    }
 }
 
 /// Local methods
@@ -365,7 +242,7 @@ impl TwoFactor {
         for webauthn_factor in webauthn_factors {
             // assume that a failure to parse into the old struct, means that it was already converted
             // alternatively this could also be checked via an extra field in the db
-            let Ok(regs) = serde_json::from_str::<Vec<webauthn_0_3::WebauthnRegistration>>(&webauthn_factor.data)
+            let Ok(regs) = serde_json::from_str::<Vec<WebauthnRegistrationV3>>(&webauthn_factor.data)
             else {
                 continue;
             };
@@ -383,3 +260,22 @@ impl TwoFactor {
 
 #[derive(Clone, Debug, DieselNewType, FromForm, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct TwoFactorId(String);
+
+#[derive(Deserialize)]
+pub struct WebauthnRegistrationV3 {
+    pub id: i32,
+    pub name: String,
+    pub migrated: bool,
+    pub credential: CredentialV3,
+}
+
+impl From<WebauthnRegistrationV3> for WebauthnRegistration {
+    fn from(value: WebauthnRegistrationV3) -> Self {
+        Self {
+            id: value.id,
+            name: value.name,
+            migrated: value.migrated,
+            credential: Credential::from(value.credential).into(),
+        }
+    }
+}

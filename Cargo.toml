@@ -125,6 +125,7 @@ yubico = { package = "yubico_ng", version = "0.13.0", features = ["online-tokio"
 # danger-user-presence-only-security-keys is needed to disable UV
 webauthn-rs = { version = "0.5.2", features = ["danger-allow-state-serialisation", "danger-credential-internals", "danger-user-presence-only-security-keys"] }
 webauthn-rs-proto = "0.5.2"
+webauthn-rs-core = "0.5.2"
 
 # Handling of URL's for WebAuthn and favicons
 url = "2.5.4"
