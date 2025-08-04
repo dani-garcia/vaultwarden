@@ -44,9 +44,11 @@ export async function invite(test, page: Page, name: string, email: string) {
         await page.getByRole('button', { name: 'Invite member' }).click();
         await page.getByLabel('Email (required)').fill(email);
         await page.getByRole('tab', { name: 'Collections' }).click();
-        await page.getByLabel('Permission').selectOption('edit');
+        await page.getByRole('combobox', { name: 'Permission' }).click();
+        await page.getByText('Edit items', { exact: true }).click();
         await page.getByLabel('Select collections').click();
-        await page.getByLabel('Options list').getByText('Default collection').click();
+        await page.getByText('Default collection').click();
+        await page.getByRole('cell', { name: 'Collection', exact: true }).click();
         await page.getByRole('button', { name: 'Save' }).click();
         await utils.checkNotification(page, 'User(s) invited');
     });
