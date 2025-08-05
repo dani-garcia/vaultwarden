@@ -1211,7 +1211,7 @@ struct SecretVerificationRequest {
 
 // Change the KDF Iterations if necessary
 pub async fn kdf_upgrade(user: &mut User, pwd_hash: &str, conn: &mut DbConn) -> ApiResult<()> {
-    if user.password_iterations != CONFIG.password_iterations() {
+    if user.password_iterations < CONFIG.password_iterations() {
         user.password_iterations = CONFIG.password_iterations();
         user.set_password(pwd_hash, None, false, None);
 

@@ -47,7 +47,7 @@ Additionally:
 - Signup will be blocked if the Provider reports the email as `unverified`.
 - Changing the email needs to be done by the user since it requires updating the `key`.
   On login if the email returned by the provider is not the one saved an email will be sent to the user to ask him to update it.
-- If set `SIGNUPS_DOMAINS_WHITELIST` is applied on SSO signup and when attempting to change the email.
+- If set, `SIGNUPS_DOMAINS_WHITELIST` is applied on SSO signup and when attempting to change the email.
 
 This means that if you ever need to change the provider url or the provider itself; you'll have to first delete the association
 then ensure that `SSO_SIGNUPS_MATCH_EMAIL` is activated to allow a new association.
@@ -118,22 +118,7 @@ More details on how to use it in [README.md](playwright/README.md#openid-connect
 ## Auth0
 
 Not working due to the following issue https://github.com/ramosbugs/openidconnect-rs/issues/23 (they appear not to follow the spec).
-A feature flag is available to bypass the issue but since it's a compile time feature you will have to patch with something like:
-
-```patch
-diff --git a/Cargo.toml b/Cargo.toml
-index 0524a7be..9999e852 100644
---- a/Cargo.toml
-+++ b/Cargo.toml
-@@ -150,7 +150,7 @@ paste = "1.0.15"
- governor = "0.6.3"
-
- # OIDC for SSO
--openidconnect = "3.5.0"
-+openidconnect = { version = "3.5.0", features = ["accept-rfc3339-timestamps"] }
- mini-moka = "0.10.2"
-```
-
+A feature flag is available (`oidc-accept-rfc3339-timestamps`) to bypass the issue but you will need to compile the server with it.
 There is no plan at the moment to either always activate the feature nor make a specific distribution for Auth0.
 
 ## Authelia
@@ -291,7 +276,7 @@ There is some issue to handle redirection from your browser (used for sso login)
 
 ### Chrome
 
-Probably not much hope, an [issue](https://github.com/bitwarden/clients/issues/2606) is open on the subject and it appears that both Linux and Windows are not working.
+Some user report having ([issues](https://github.com/bitwarden/clients/issues/12929)).
 
 ## Firefox
 

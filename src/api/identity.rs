@@ -36,7 +36,6 @@ pub fn routes() -> Vec<Route> {
         identity_register,
         register_verification_email,
         register_finish,
-        _prevalidate,
         prevalidate,
         authorize,
         oidcsignin,
@@ -990,7 +989,7 @@ struct ConnectData {
     #[field(name = uncased("authrequest"))]
     auth_request: Option<AuthRequestId>,
     // Needed for authorization code
-    #[form(field = uncased("code"))]
+    #[field(name = uncased("code"))]
     code: Option<String>,
 }
 fn _check_is_some<T>(value: &Option<T>, msg: &str) -> EmptyResult {
@@ -998,12 +997,6 @@ fn _check_is_some<T>(value: &Option<T>, msg: &str) -> EmptyResult {
         err!(msg)
     }
     Ok(())
-}
-
-// Deprecated but still needed for Mobile apps
-#[get("/account/prevalidate")]
-fn _prevalidate() -> JsonResult {
-    prevalidate()
 }
 
 #[get("/sso/prevalidate")]
@@ -1032,7 +1025,7 @@ async fn oidcsignin(code: OIDCCode, state: String, conn: DbConn) -> ApiResult<Re
 }
 
 // Bitwarden client appear to only care for code and state so we pipe it through
-// cf: https://github.com/bitwarden/clients/blob/8e46ef1ae5be8b62b0d3d0b9d1b1c62088a04638/libs/angular/src/auth/components/sso.component.ts#L68C11-L68C23)
+// cf: https://github.com/bitwarden/clients/blob/80b74b3300e15b4ae414dc06044cc9b02b6c10a6/libs/auth/src/angular/sso/sso.component.ts#L141
 #[get("/connect/oidc-signin?<state>&<error>&<error_description>", rank = 2)]
 async fn oidcsignin_error(
     state: String,

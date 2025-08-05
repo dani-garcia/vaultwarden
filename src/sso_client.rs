@@ -124,7 +124,7 @@ impl Client {
                 Nonce::new_random,
             )
             .add_scopes(scopes)
-            .add_extra_params(CONFIG.sso_authorize_extra_params_vec()?);
+            .add_extra_params(CONFIG.sso_authorize_extra_params_vec());
 
         let verifier = if CONFIG.sso_pkce() {
             let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
