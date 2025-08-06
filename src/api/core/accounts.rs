@@ -68,13 +68,20 @@ pub fn routes() -> Vec<rocket::Route> {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct KDFData {
+    kdf: i32,
+    kdf_iterations: i32,
+    kdf_memory: Option<i32>,
+    kdf_parallelism: Option<i32>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RegisterData {
     email: String,
 
-    kdf: Option<i32>,
-    kdf_iterations: Option<i32>,
-    kdf_memory: Option<i32>,
-    kdf_parallelism: Option<i32>,
+    #[serde(flatten)]
+    kdf: KDFData,
 
     #[serde(alias = "userSymmetricKey")]
     key: String,
@@ -269,16 +276,7 @@ pub async fn _register(data: Json<RegisterData>, email_verification: bool, mut c
     // Make sure we don't leave a lingering invitation.
     Invitation::take(&email, &mut conn).await;
 
-    if let Some(client_kdf_type) = data.kdf {
-        user.client_kdf_type = client_kdf_type;
-    }
-
-    if let Some(client_kdf_iter) = data.kdf_iterations {
-        user.client_kdf_iter = client_kdf_iter;
-    }
-
-    user.client_kdf_memory = data.kdf_memory;
-    user.client_kdf_parallelism = data.kdf_parallelism;
+    set_kdf_data(&mut user, data.kdf)?;
 
     user.set_password(&data.master_password_hash, Some(data.key), true, None);
     user.password_hint = password_hint;
@@ -469,25 +467,15 @@ async fn post_password(data: Json<ChangePassData>, headers: Headers, mut conn: D
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ChangeKdfData {
-    kdf: i32,
-    kdf_iterations: i32,
-    kdf_memory: Option<i32>,
-    kdf_parallelism: Option<i32>,
+    #[serde(flatten)]
+    kdf: KDFData,
 
     master_password_hash: String,
     new_master_password_hash: String,
     key: String,
 }
 
-#[post("/accounts/kdf", data = "<data>")]
-async fn post_kdf(data: Json<ChangeKdfData>, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> EmptyResult {
-    let data: ChangeKdfData = data.into_inner();
-    let mut user = headers.user;
-
-    if !user.check_valid_password(&data.master_password_hash) {
-        err!("Invalid password")
-    }
-
+fn set_kdf_data(user: &mut User, data: KDFData) -> EmptyResult {
     if data.kdf == UserKdfType::Pbkdf2 as i32 && data.kdf_iterations < 100_000 {
         err!("PBKDF2 KDF iterations must be at least 100000.")
     }
@@ -518,6 +506,21 @@ async fn post_kdf(data: Json<ChangeKdfData>, headers: Headers, mut conn: DbConn,
     }
     user.client_kdf_iter = data.kdf_iterations;
     user.client_kdf_type = data.kdf;
+
+    Ok(())
+}
+
+#[post("/accounts/kdf", data = "<data>")]
+async fn post_kdf(data: Json<ChangeKdfData>, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> EmptyResult {
+    let data: ChangeKdfData = data.into_inner();
+    let mut user = headers.user;
+
+    if !user.check_valid_password(&data.master_password_hash) {
+        err!("Invalid password")
+    }
+
+    set_kdf_data(&mut user, data.kdf)?;
+
     user.set_password(&data.new_master_password_hash, Some(data.key), true, None);
     let save_result = user.save(&mut conn).await;
 
