@@ -43,7 +43,6 @@ pub fn routes() -> Vec<Route> {
         bulk_delete_organization_collections,
         post_bulk_collections,
         get_org_details,
-        get_org_domain_sso_details,
         get_org_domain_sso_verified,
         get_members,
         send_invite,
@@ -966,26 +965,6 @@ async fn _get_org_details(
 #[serde(rename_all = "camelCase")]
 struct OrgDomainDetails {
     email: String,
-}
-
-// Returning a Domain/Organization here allow to prefill it and prevent prompting the user
-// So we either return an Org name associated to the user or a dummy value.
-// The `verifiedDate` is required but the value ATM is ignored.
-// DEPRECATED: still present in `v2025.6.0` but appears unused.
-#[post("/organizations/domain/sso/details", data = "<data>")]
-async fn get_org_domain_sso_details(data: Json<OrgDomainDetails>, mut conn: DbConn) -> JsonResult {
-    let data: OrgDomainDetails = data.into_inner();
-
-    let identifier = match Organization::find_main_org_user_email(&data.email, &mut conn).await {
-        Some(org) => org.name,
-        None => crate::sso::FAKE_IDENTIFIER.to_string(),
-    };
-
-    Ok(Json(json!({
-        "organizationIdentifier": identifier,
-        "ssoAvailable": CONFIG.sso_enabled(),
-        "verifiedDate": crate::util::format_date(&chrono::Utc::now().naive_utc()),
-    })))
 }
 
 // Returning a Domain/Organization here allow to prefill it and prevent prompting the user

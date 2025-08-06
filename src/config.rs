@@ -690,21 +690,21 @@ make_config! {
         /// Allow unknown email verification status |> Allowing this with `SSO_SIGNUPS_MATCH_EMAIL=true` open potential account takeover.
         sso_allow_unknown_email_verification: bool, false, def, false;
         /// Client ID
-        sso_client_id:                  String, false,   def,    String::new();
+        sso_client_id:                  String, true,   def,    String::new();
         /// Client Key
-        sso_client_secret:              Pass,   false,   def,    String::new();
+        sso_client_secret:              Pass,   true,   def,    String::new();
         /// Authority Server |> Base url of the OIDC provider discovery endpoint (without `/.well-known/openid-configuration`)
-        sso_authority:                  String, false,   def,    String::new();
+        sso_authority:                  String, true,   def,    String::new();
         /// Authorization request scopes |> List the of the needed scope (`openid` is implicit)
-        sso_scopes:                     String, false,  def,   "email profile".to_string();
+        sso_scopes:                     String, true,  def,   "email profile".to_string();
         /// Authorization request extra parameters
-        sso_authorize_extra_params:     String, false,  def,    String::new();
+        sso_authorize_extra_params:     String, true,  def,    String::new();
         /// Use PKCE during Authorization flow
-        sso_pkce:                       bool,   false,   def,    true;
-        /// Regex for additionnal trusted Id token audience |> By default only the client_id is trusted.
-        sso_audience_trusted:           String, false,  option;
+        sso_pkce:                       bool,   true,   def,    true;
+        /// Regex for additional trusted Id token audience |> By default only the client_id is trusted.
+        sso_audience_trusted:           String, true,  option;
         /// CallBack Path |> Generated from Domain.
-        sso_callback_path:              String, false,  generated, |c| generate_sso_callback_path(&c.domain);
+        sso_callback_path:              String, true,  generated, |c| generate_sso_callback_path(&c.domain);
         /// Optional SSO master password policy |> Ex format: '{"enforceOnLogin":false,"minComplexity":3,"minLength":12,"requireLower":false,"requireNumbers":false,"requireSpecial":false,"requireUpper":false}'
         sso_master_password_policy:     String, true,  option;
         /// Use SSO only for auth not the session lifecycle |> Use default Vaultwarden session lifecycle (Idle refresh token valid for 30days)

@@ -105,7 +105,7 @@ DOCKER_BUILDKIT=1 docker compose --profile playwright --env-file test.env build 
 
 # OpenID Connect test setup
 
-Additionnaly this `docker-compose` template allow to run locally `VaultWarden`, [Keycloak](https://www.keycloak.org/) and [Maildev](https://github.com/timshel/maildev) to test OIDC.
+Additionally this `docker-compose` template allow to run locally `VaultWarden`, [Keycloak](https://www.keycloak.org/) and [Maildev](https://github.com/timshel/maildev) to test OIDC.
 
 ## Setup
 
