@@ -619,7 +619,7 @@ fn create_ping() -> Vec<u8> {
     serialize(Value::Array(vec![6.into()]))
 }
 
-#[allow(dead_code)]
+// https://github.com/bitwarden/server/blob/375af7c43b10d9da03525d41452f95de3f921541/src/Core/Enums/PushType.cs
 #[derive(Copy, Clone, Eq, PartialEq)]
 pub enum UpdateType {
     SyncCipherUpdate = 0,
@@ -632,7 +632,7 @@ pub enum UpdateType {
     SyncOrgKeys = 6,
     SyncFolderCreate = 7,
     SyncFolderUpdate = 8,
-    SyncCipherDelete = 9,
+    // SyncCipherDelete = 9, // Redirects to `SyncLoginDelete` on upstream
     SyncSettings = 10,
 
     LogOut = 11,
@@ -644,6 +644,14 @@ pub enum UpdateType {
     AuthRequest = 15,
     AuthRequestResponse = 16,
 
+    // SyncOrganizations = 17, // Not supported
+    // SyncOrganizationStatusChanged = 18, // Not supported
+    // SyncOrganizationCollectionSettingChanged = 19, // Not supported
+
+    // Notification = 20, // Not supported
+    // NotificationStatus = 21, // Not supported
+
+    // RefreshSecurityTasks = 22, // Not supported
     None = 100,
 }
 
