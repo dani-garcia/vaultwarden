@@ -2310,7 +2310,7 @@ struct OrgImportData {
     users: Vec<OrgImportUserData>,
 }
 
-/// This function seems to be deprected
+/// This function seems to be deprecated
 /// It is only used with older directory connectors
 /// TODO: Cleanup Tech debt
 #[post("/organizations/<org_id>/import", data = "<data>")]

@@ -203,7 +203,7 @@ impl Client {
         }
     }
 
-    pub async fn check_validaty(access_token: String) -> EmptyResult {
+    pub async fn check_validity(access_token: String) -> EmptyResult {
         let client = Client::cached().await?;
         match client.user_info(AccessToken::new(access_token)).await {
             Err(err) => {

@@ -135,7 +135,7 @@ impl CollectionGroup {
         // If both read_only and hide_passwords are false, then manage should be true
         // You can't have an entry with read_only and manage, or hide_passwords and manage
         // Or an entry with everything to false
-        // For backwards compaibility and migration proposes we keep checking read_only and hide_password
+        // For backwards compatibility and migration proposes we keep checking read_only and hide_password
         json!({
             "id": self.groups_uuid,
             "readOnly": self.read_only,

@@ -1,6 +1,6 @@
 FROM playwright_oidc_vaultwarden_prebuilt AS prebuilt
 
-FROM node:18-bookworm AS build
+FROM node:22-bookworm AS build
 
 ARG REPO_URL
 ARG COMMIT_HASH

@@ -1139,7 +1139,7 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
 
 fn validate_internal_sso_issuer_url(sso_authority: &String) -> Result<openidconnect::IssuerUrl, Error> {
     match openidconnect::IssuerUrl::new(sso_authority.clone()) {
-        Err(err) => err!(format!("Invalid sso_authority UR ({sso_authority}): {err}")),
+        Err(err) => err!(format!("Invalid sso_authority URL ({sso_authority}): {err}")),
         Ok(issuer_url) => Ok(issuer_url),
     }
 }
