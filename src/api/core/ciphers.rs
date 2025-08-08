@@ -1405,7 +1405,7 @@ async fn delete_attachment_admin(
 
 #[post("/ciphers/<cipher_id>/delete")]
 async fn delete_cipher_post(cipher_id: CipherId, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> EmptyResult {
-    _delete_cipher_by_uuid(&cipher_id, &headers, &mut conn, false, &nt).await
+    _delete_cipher_by_uuid(&cipher_id, &headers, &mut conn, &CipherDeleteOptions::HardSingle, &nt).await
     // permanent delete
 }
 
@@ -1416,13 +1416,13 @@ async fn delete_cipher_post_admin(
     mut conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
-    _delete_cipher_by_uuid(&cipher_id, &headers, &mut conn, false, &nt).await
+    _delete_cipher_by_uuid(&cipher_id, &headers, &mut conn, &CipherDeleteOptions::HardSingle, &nt).await
     // permanent delete
 }
 
 #[put("/ciphers/<cipher_id>/delete")]
 async fn delete_cipher_put(cipher_id: CipherId, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> EmptyResult {
-    _delete_cipher_by_uuid(&cipher_id, &headers, &mut conn, true, &nt).await
+    _delete_cipher_by_uuid(&cipher_id, &headers, &mut conn, &CipherDeleteOptions::SoftSingle, &nt).await
     // soft delete
 }
 
@@ -1433,18 +1433,19 @@ async fn delete_cipher_put_admin(
     mut conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
-    _delete_cipher_by_uuid(&cipher_id, &headers, &mut conn, true, &nt).await
+    _delete_cipher_by_uuid(&cipher_id, &headers, &mut conn, &CipherDeleteOptions::SoftSingle, &nt).await
+    // soft delete
 }
 
 #[delete("/ciphers/<cipher_id>")]
 async fn delete_cipher(cipher_id: CipherId, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> EmptyResult {
-    _delete_cipher_by_uuid(&cipher_id, &headers, &mut conn, false, &nt).await
+    _delete_cipher_by_uuid(&cipher_id, &headers, &mut conn, &CipherDeleteOptions::HardSingle, &nt).await
     // permanent delete
 }
 
 #[delete("/ciphers/<cipher_id>/admin")]
 async fn delete_cipher_admin(cipher_id: CipherId, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> EmptyResult {
-    _delete_cipher_by_uuid(&cipher_id, &headers, &mut conn, false, &nt).await
+    _delete_cipher_by_uuid(&cipher_id, &headers, &mut conn, &CipherDeleteOptions::HardSingle, &nt).await
     // permanent delete
 }
 
@@ -1455,7 +1456,8 @@ async fn delete_cipher_selected(
     conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
-    _delete_multiple_ciphers(data, headers, conn, false, nt).await // permanent delete
+    _delete_multiple_ciphers(data, headers, conn, CipherDeleteOptions::HardMulti, nt).await
+    // permanent delete
 }
 
 #[post("/ciphers/delete", data = "<data>")]
@@ -1465,7 +1467,8 @@ async fn delete_cipher_selected_post(
     conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
-    _delete_multiple_ciphers(data, headers, conn, false, nt).await // permanent delete
+    _delete_multiple_ciphers(data, headers, conn, CipherDeleteOptions::HardMulti, nt).await
+    // permanent delete
 }
 
 #[put("/ciphers/delete", data = "<data>")]
@@ -1475,7 +1478,8 @@ async fn delete_cipher_selected_put(
     conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
-    _delete_multiple_ciphers(data, headers, conn, true, nt).await // soft delete
+    _delete_multiple_ciphers(data, headers, conn, CipherDeleteOptions::SoftMulti, nt).await
+    // soft delete
 }
 
 #[delete("/ciphers/admin", data = "<data>")]
@@ -1485,7 +1489,8 @@ async fn delete_cipher_selected_admin(
     conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
-    _delete_multiple_ciphers(data, headers, conn, false, nt).await // permanent delete
+    _delete_multiple_ciphers(data, headers, conn, CipherDeleteOptions::HardMulti, nt).await
+    // permanent delete
 }
 
 #[post("/ciphers/delete-admin", data = "<data>")]
@@ -1495,7 +1500,8 @@ async fn delete_cipher_selected_post_admin(
     conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
-    _delete_multiple_ciphers(data, headers, conn, false, nt).await // permanent delete
+    _delete_multiple_ciphers(data, headers, conn, CipherDeleteOptions::HardMulti, nt).await
+    // permanent delete
 }
 
 #[put("/ciphers/delete-admin", data = "<data>")]
@@ -1505,7 +1511,8 @@ async fn delete_cipher_selected_put_admin(
     conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
-    _delete_multiple_ciphers(data, headers, conn, true, nt).await // soft delete
+    _delete_multiple_ciphers(data, headers, conn, CipherDeleteOptions::SoftMulti, nt).await
+    // soft delete
 }
 
 #[put("/ciphers/<cipher_id>/restore")]
@@ -1659,11 +1666,19 @@ async fn delete_all(
     }
 }
 
+#[derive(PartialEq)]
+pub enum CipherDeleteOptions {
+    SoftSingle,
+    SoftMulti,
+    HardSingle,
+    HardMulti,
+}
+
 async fn _delete_cipher_by_uuid(
     cipher_id: &CipherId,
     headers: &Headers,
     conn: &mut DbConn,
-    soft_delete: bool,
+    delete_options: &CipherDeleteOptions,
     nt: &Notify<'_>,
 ) -> EmptyResult {
     let Some(mut cipher) = Cipher::find_by_uuid(cipher_id, conn).await else {
@@ -1674,35 +1689,42 @@ async fn _delete_cipher_by_uuid(
         err!("Cipher can't be deleted by user")
     }
 
-    if soft_delete {
+    if *delete_options == CipherDeleteOptions::SoftSingle || *delete_options == CipherDeleteOptions::SoftMulti {
         cipher.deleted_at = Some(Utc::now().naive_utc());
         cipher.save(conn).await?;
-        nt.send_cipher_update(
-            UpdateType::SyncCipherUpdate,
-            &cipher,
-            &cipher.update_users_revision(conn).await,
-            &headers.device,
-            None,
-            conn,
-        )
-        .await;
+        if *delete_options == CipherDeleteOptions::SoftSingle {
+            nt.send_cipher_update(
+                UpdateType::SyncCipherUpdate,
+                &cipher,
+                &cipher.update_users_revision(conn).await,
+                &headers.device,
+                None,
+                conn,
+            )
+            .await;
+        }
     } else {
         cipher.delete(conn).await?;
-        nt.send_cipher_update(
-            UpdateType::SyncCipherDelete,
-            &cipher,
-            &cipher.update_users_revision(conn).await,
-            &headers.device,
-            None,
-            conn,
-        )
-        .await;
+        if *delete_options == CipherDeleteOptions::HardSingle {
+            nt.send_cipher_update(
+                UpdateType::SyncLoginDelete,
+                &cipher,
+                &cipher.update_users_revision(conn).await,
+                &headers.device,
+                None,
+                conn,
+            )
+            .await;
+        }
     }
 
     if let Some(org_id) = cipher.organization_uuid {
-        let event_type = match soft_delete {
-            true => EventType::CipherSoftDeleted as i32,
-            false => EventType::CipherDeleted as i32,
+        let event_type = if *delete_options == CipherDeleteOptions::SoftSingle
+            || *delete_options == CipherDeleteOptions::SoftMulti
+        {
+            EventType::CipherSoftDeleted as i32
+        } else {
+            EventType::CipherDeleted as i32
         };
 
         log_event(event_type, &cipher.uuid, &org_id, &headers.user.uuid, headers.device.atype, &headers.ip.ip, conn)
@@ -1722,16 +1744,19 @@ async fn _delete_multiple_ciphers(
     data: Json<CipherIdsData>,
     headers: Headers,
     mut conn: DbConn,
-    soft_delete: bool,
+    delete_options: CipherDeleteOptions,
     nt: Notify<'_>,
 ) -> EmptyResult {
     let data = data.into_inner();
 
     for cipher_id in data.ids {
-        if let error @ Err(_) = _delete_cipher_by_uuid(&cipher_id, &headers, &mut conn, soft_delete, &nt).await {
+        if let error @ Err(_) = _delete_cipher_by_uuid(&cipher_id, &headers, &mut conn, &delete_options, &nt).await {
             return error;
         };
     }
+
+    // Multi delete actions do not send out a push for each cipher, we need to send a general sync here
+    nt.send_user_update(UpdateType::SyncCiphers, &headers.user, &headers.device.push_uuid, &mut conn).await;
 
     Ok(())
 }
