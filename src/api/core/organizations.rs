@@ -7,13 +7,13 @@ use std::collections::{HashMap, HashSet};
 use crate::api::admin::FAKE_ADMIN_UUID;
 use crate::{
     api::{
-        core::{log_event, two_factor, CipherSyncData, CipherSyncType},
+        core::{accept_org_invite, log_event, two_factor, CipherSyncData, CipherSyncType},
         EmptyResult, JsonResult, Notify, PasswordOrOtpData, UpdateType,
     },
     auth::{decode_invite, AdminHeaders, Headers, ManagerHeaders, ManagerHeadersLoose, OrgMemberHeaders, OwnerHeaders},
     db::{models::*, DbConn},
     mail,
-    util::{convert_json_key_lcase_first, NumberOrString},
+    util::{convert_json_key_lcase_first, get_uuid, NumberOrString},
     CONFIG,
 };
 
@@ -43,6 +43,7 @@ pub fn routes() -> Vec<Route> {
         bulk_delete_organization_collections,
         post_bulk_collections,
         get_org_details,
+        get_org_domain_sso_verified,
         get_members,
         send_invite,
         reinvite_member,
@@ -60,6 +61,7 @@ pub fn routes() -> Vec<Route> {
         post_org_import,
         list_policies,
         list_policies_token,
+        get_master_password_policy,
         get_policy,
         put_policy,
         get_organization_tax,
@@ -103,6 +105,7 @@ pub fn routes() -> Vec<Route> {
         api_key,
         rotate_api_key,
         get_billing_metadata,
+        get_auto_enroll_status,
     ]
 }
 
@@ -192,7 +195,7 @@ async fn create_organization(headers: Headers, data: Json<OrgData>, mut conn: Db
     };
 
     let org = Organization::new(data.name, data.billing_email, private_key, public_key);
-    let mut member = Membership::new(headers.user.uuid, org.uuid.clone());
+    let mut member = Membership::new(headers.user.uuid, org.uuid.clone(), None);
     let collection = Collection::new(org.uuid.clone(), data.collection_name, None);
 
     member.akey = data.key;
@@ -333,6 +336,34 @@ async fn get_user_collections(headers: Headers, mut conn: DbConn) -> Json<Value>
         "object": "list",
         "continuationToken": null,
     }))
+}
+
+// Called during the SSO enrollment
+// The `identifier` should be the value returned by `get_org_domain_sso_details`
+// The returned `Id` will then be passed to `get_master_password_policy` which will mainly ignore it
+#[get("/organizations/<identifier>/auto-enroll-status")]
+async fn get_auto_enroll_status(identifier: &str, headers: Headers, mut conn: DbConn) -> JsonResult {
+    let org = if identifier == crate::sso::FAKE_IDENTIFIER {
+        match Membership::find_main_user_org(&headers.user.uuid, &mut conn).await {
+            Some(member) => Organization::find_by_uuid(&member.org_uuid, &mut conn).await,
+            None => None,
+        }
+    } else {
+        Organization::find_by_name(identifier, &mut conn).await
+    };
+
+    let (id, identifier, rp_auto_enroll) = match org {
+        None => (get_uuid(), identifier.to_string(), false),
+        Some(org) => {
+            (org.uuid.to_string(), org.name, OrgPolicy::org_is_reset_password_auto_enroll(&org.uuid, &mut conn).await)
+        }
+    };
+
+    Ok(Json(json!({
+        "Id": id,
+        "Identifier": identifier,
+        "ResetPasswordEnabled": rp_auto_enroll,
+    })))
 }
 
 #[get("/organizations/<org_id>/collections")]
@@ -930,6 +961,39 @@ async fn _get_org_details(
     Ok(json!(ciphers_json))
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OrgDomainDetails {
+    email: String,
+}
+
+// Returning a Domain/Organization here allow to prefill it and prevent prompting the user
+// So we either return an Org name associated to the user or a dummy value.
+// In use since `v2025.6.0`, appears to use only the first `organizationIdentifier`
+#[post("/organizations/domain/sso/verified", data = "<data>")]
+async fn get_org_domain_sso_verified(data: Json<OrgDomainDetails>, mut conn: DbConn) -> JsonResult {
+    let data: OrgDomainDetails = data.into_inner();
+
+    let identifiers = match Organization::find_org_user_email(&data.email, &mut conn)
+        .await
+        .into_iter()
+        .map(|o| o.name)
+        .collect::<Vec<String>>()
+    {
+        v if !v.is_empty() => v,
+        _ => vec![crate::sso::FAKE_IDENTIFIER.to_string()],
+    };
+
+    Ok(Json(json!({
+        "object": "list",
+        "data": identifiers.into_iter().map(|identifier| json!({
+            "organizationName": identifier,     // appear unused
+            "organizationIdentifier": identifier,
+            "domainName": CONFIG.domain(),      // appear unused
+        })).collect::<Vec<Value>>()
+    })))
+}
+
 #[derive(FromForm)]
 struct GetOrgUserData {
     #[field(name = "includeCollections")]
@@ -1063,7 +1127,7 @@ async fn send_invite(
                     Invitation::new(email).save(&mut conn).await?;
                 }
 
-                let mut new_user = User::new(email.clone());
+                let mut new_user = User::new(email.clone(), None);
                 new_user.save(&mut conn).await?;
                 user_created = true;
                 new_user
@@ -1081,7 +1145,7 @@ async fn send_invite(
             }
         };
 
-        let mut new_member = Membership::new(user.uuid.clone(), org_id.clone());
+        let mut new_member = Membership::new(user.uuid.clone(), org_id.clone(), Some(headers.user.email.clone()));
         new_member.access_all = access_all;
         new_member.atype = new_type;
         new_member.status = member_status;
@@ -1267,71 +1331,39 @@ async fn accept_invite(
         err!("Invitation was issued to a different account", "Claim does not match user_id")
     }
 
+    // If a claim org_id does not match the one in from the URI, something is wrong.
+    if !claims.org_id.eq(&org_id) {
+        err!("Error accepting the invitation", "Claim does not match the org_id")
+    }
+
     // If a claim does not have a member_id or it does not match the one in from the URI, something is wrong.
     if !claims.member_id.eq(&member_id) {
         err!("Error accepting the invitation", "Claim does not match the member_id")
     }
 
-    let member = &claims.member_id;
-    let org = &claims.org_id;
-
+    let member_id = &claims.member_id;
     Invitation::take(&claims.email, &mut conn).await;
 
     // skip invitation logic when we were invited via the /admin panel
-    if **member != FAKE_ADMIN_UUID {
-        let Some(mut member) = Membership::find_by_uuid_and_org(member, org, &mut conn).await else {
+    if **member_id != FAKE_ADMIN_UUID {
+        let Some(mut member) = Membership::find_by_uuid_and_org(member_id, &claims.org_id, &mut conn).await else {
             err!("Error accepting the invitation")
         };
 
-        if member.status != MembershipStatus::Invited as i32 {
-            err!("User already accepted the invitation")
-        }
+        let reset_password_key = match OrgPolicy::org_is_reset_password_auto_enroll(&member.org_uuid, &mut conn).await {
+            true if data.reset_password_key.is_none() => err!("Reset password key is required, but not provided."),
+            true => data.reset_password_key,
+            false => None,
+        };
 
-        let master_password_required = OrgPolicy::org_is_reset_password_auto_enroll(org, &mut conn).await;
-        if data.reset_password_key.is_none() && master_password_required {
-            err!("Reset password key is required, but not provided.");
-        }
+        // In case the user was invited before the mail was saved in db.
+        member.invited_by_email = member.invited_by_email.or(claims.invited_by_email);
 
-        // This check is also done at accept_invite, _confirm_invite, _activate_member, edit_member, admin::update_membership_type
-        // It returns different error messages per function.
-        if member.atype < MembershipType::Admin {
-            match OrgPolicy::is_user_allowed(&member.user_uuid, &org_id, false, &mut conn).await {
-                Ok(_) => {}
-                Err(OrgPolicyErr::TwoFactorMissing) => {
-                    if CONFIG.email_2fa_auto_fallback() {
-                        two_factor::email::activate_email_2fa(&headers.user, &mut conn).await?;
-                    } else {
-                        err!("You cannot join this organization until you enable two-step login on your user account");
-                    }
-                }
-                Err(OrgPolicyErr::SingleOrgEnforced) => {
-                    err!("You cannot join this organization because you are a member of an organization which forbids it");
-                }
-            }
-        }
-
-        member.status = MembershipStatus::Accepted as i32;
-
-        if master_password_required {
-            member.reset_password_key = data.reset_password_key;
-        }
-
-        member.save(&mut conn).await?;
-    }
-
-    if CONFIG.mail_enabled() {
-        if let Some(invited_by_email) = &claims.invited_by_email {
-            let org_name = match Organization::find_by_uuid(&claims.org_id, &mut conn).await {
-                Some(org) => org.name,
-                None => err!("Organization not found."),
-            };
-            // User was invited to an organization, so they must be confirmed manually after acceptance
-            mail::send_invite_accepted(&claims.email, invited_by_email, &org_name).await?;
-        } else {
-            // User was invited from /admin, so they are automatically confirmed
-            let org_name = CONFIG.invitation_org_name();
-            mail::send_invite_confirmed(&claims.email, &org_name).await?;
-        }
+        accept_org_invite(&headers.user, member, reset_password_key, &mut conn).await?;
+    } else if CONFIG.mail_enabled() {
+        // User was invited from /admin, so they are automatically confirmed
+        let org_name = CONFIG.invitation_org_name();
+        mail::send_invite_confirmed(&claims.email, &org_name).await?;
     }
 
     Ok(())
@@ -2025,18 +2057,36 @@ async fn list_policies_token(org_id: OrganizationId, token: &str, mut conn: DbCo
     })))
 }
 
-#[get("/organizations/<org_id>/policies/<pol_type>")]
+// Called during the SSO enrollment.
+// Return the org policy if it exists, otherwise use the default one.
+#[get("/organizations/<org_id>/policies/master-password", rank = 1)]
+async fn get_master_password_policy(org_id: OrganizationId, _headers: Headers, mut conn: DbConn) -> JsonResult {
+    let policy =
+        OrgPolicy::find_by_org_and_type(&org_id, OrgPolicyType::MasterPassword, &mut conn).await.unwrap_or_else(|| {
+            let data = match CONFIG.sso_master_password_policy() {
+                Some(policy) => policy,
+                None => "null".to_string(),
+            };
+
+            OrgPolicy::new(org_id, OrgPolicyType::MasterPassword, CONFIG.sso_master_password_policy().is_some(), data)
+        });
+
+    Ok(Json(policy.to_json()))
+}
+
+#[get("/organizations/<org_id>/policies/<pol_type>", rank = 2)]
 async fn get_policy(org_id: OrganizationId, pol_type: i32, headers: AdminHeaders, mut conn: DbConn) -> JsonResult {
     if org_id != headers.org_id {
         err!("Organization not found", "Organization id's do not match");
     }
+
     let Some(pol_type_enum) = OrgPolicyType::from_i32(pol_type) else {
         err!("Invalid or unsupported policy type")
     };
 
     let policy = match OrgPolicy::find_by_org_and_type(&org_id, pol_type_enum, &mut conn).await {
         Some(p) => p,
-        None => OrgPolicy::new(org_id.clone(), pol_type_enum, "null".to_string()),
+        None => OrgPolicy::new(org_id.clone(), pol_type_enum, false, "null".to_string()),
     };
 
     Ok(Json(policy.to_json()))
@@ -2147,7 +2197,7 @@ async fn put_policy(
 
     let mut policy = match OrgPolicy::find_by_org_and_type(&org_id, pol_type_enum, &mut conn).await {
         Some(p) => p,
-        None => OrgPolicy::new(org_id.clone(), pol_type_enum, "{}".to_string()),
+        None => OrgPolicy::new(org_id.clone(), pol_type_enum, false, "{}".to_string()),
     };
 
     policy.enabled = data.enabled;
@@ -2306,7 +2356,8 @@ async fn import(org_id: OrganizationId, data: Json<OrgImportData>, headers: Head
                     MembershipStatus::Accepted as i32 // Automatically mark user as accepted if no email invites
                 };
 
-                let mut new_member = Membership::new(user.uuid.clone(), org_id.clone());
+                let mut new_member =
+                    Membership::new(user.uuid.clone(), org_id.clone(), Some(headers.user.email.clone()));
                 new_member.access_all = false;
                 new_member.atype = MembershipType::User as i32;
                 new_member.status = member_status;

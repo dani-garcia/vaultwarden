@@ -7,9 +7,9 @@ use serde_json::Value;
 
 use crate::{
     api::{
-        core::{log_user_event, two_factor::email},
-        master_password_policy, register_push_device, unregister_push_device, AnonymousNotify, EmptyResult, JsonResult,
-        Notify, PasswordOrOtpData, UpdateType,
+        core::{accept_org_invite, log_user_event, two_factor::email},
+        master_password_policy, register_push_device, unregister_push_device, AnonymousNotify, ApiResult, EmptyResult,
+        JsonResult, Notify, PasswordOrOtpData, UpdateType,
     },
     auth::{decode_delete, decode_invite, decode_verify_email, ClientHeaders, Headers},
     crypto,
@@ -34,6 +34,7 @@ pub fn routes() -> Vec<rocket::Route> {
         get_public_keys,
         post_keys,
         post_password,
+        post_set_password,
         post_kdf,
         post_rotatekey,
         post_sstamp,
@@ -102,6 +103,19 @@ pub struct RegisterData {
     accept_emergency_access_invite_token: Option<String>,
     #[serde(alias = "token")]
     org_invite_token: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetPasswordData {
+    #[serde(flatten)]
+    kdf: KDFData,
+
+    key: String,
+    keys: Option<KeysData>,
+    master_password_hash: String,
+    master_password_hint: Option<String>,
+    org_identifier: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -244,10 +258,7 @@ pub async fn _register(data: Json<RegisterData>, email_verification: bool, mut c
                     err!("Registration email does not match invite email")
                 }
             } else if Invitation::take(&email, &mut conn).await {
-                for membership in Membership::find_invited_by_user(&user.uuid, &mut conn).await.iter_mut() {
-                    membership.status = MembershipStatus::Accepted as i32;
-                    membership.save(&mut conn).await?;
-                }
+                Membership::accept_user_invitations(&user.uuid, &mut conn).await?;
                 user
             } else if CONFIG.is_signup_allowed(&email)
                 || (CONFIG.emergency_access_allowed()
@@ -266,7 +277,7 @@ pub async fn _register(data: Json<RegisterData>, email_verification: bool, mut c
                 || CONFIG.is_signup_allowed(&email)
                 || pending_emergency_access.is_some()
             {
-                User::new(email.clone())
+                User::new(email.clone(), None)
             } else {
                 err!("Registration not allowed or user already exists")
             }
@@ -322,6 +333,68 @@ pub async fn _register(data: Json<RegisterData>, email_verification: bool, mut c
     Ok(Json(json!({
       "object": "register",
       "captchaBypassToken": "",
+    })))
+}
+
+#[post("/accounts/set-password", data = "<data>")]
+async fn post_set_password(data: Json<SetPasswordData>, headers: Headers, mut conn: DbConn) -> JsonResult {
+    let data: SetPasswordData = data.into_inner();
+    let mut user = headers.user;
+
+    if user.private_key.is_some() {
+        err!("Account already intialized cannot set password")
+    }
+
+    // Check against the password hint setting here so if it fails, the user
+    // can retry without losing their invitation below.
+    let password_hint = clean_password_hint(&data.master_password_hint);
+    enforce_password_hint_setting(&password_hint)?;
+
+    set_kdf_data(&mut user, data.kdf)?;
+
+    user.set_password(
+        &data.master_password_hash,
+        Some(data.key),
+        false,
+        Some(vec![String::from("revision_date")]), // We need to allow revision-date to use the old security_timestamp
+    );
+    user.password_hint = password_hint;
+
+    if let Some(keys) = data.keys {
+        user.private_key = Some(keys.encrypted_private_key);
+        user.public_key = Some(keys.public_key);
+    }
+
+    if let Some(identifier) = data.org_identifier {
+        if identifier != crate::sso::FAKE_IDENTIFIER {
+            let org = match Organization::find_by_name(&identifier, &mut conn).await {
+                None => err!("Failed to retrieve the associated organization"),
+                Some(org) => org,
+            };
+
+            let membership = match Membership::find_by_user_and_org(&user.uuid, &org.uuid, &mut conn).await {
+                None => err!("Failed to retrieve the invitation"),
+                Some(org) => org,
+            };
+
+            accept_org_invite(&user, membership, None, &mut conn).await?;
+        }
+    }
+
+    if CONFIG.mail_enabled() {
+        mail::send_welcome(&user.email.to_lowercase()).await?;
+    } else {
+        Membership::accept_user_invitations(&user.uuid, &mut conn).await?;
+    }
+
+    log_user_event(EventType::UserChangedPassword as i32, &user.uuid, headers.device.atype, &headers.ip.ip, &mut conn)
+        .await;
+
+    user.save(&mut conn).await?;
+
+    Ok(Json(json!({
+      "Object": "set-password",
+      "CaptchaBypassToken": "",
     })))
 }
 
@@ -1129,14 +1202,29 @@ struct SecretVerificationRequest {
     master_password_hash: String,
 }
 
+// Change the KDF Iterations if necessary
+pub async fn kdf_upgrade(user: &mut User, pwd_hash: &str, conn: &mut DbConn) -> ApiResult<()> {
+    if user.password_iterations < CONFIG.password_iterations() {
+        user.password_iterations = CONFIG.password_iterations();
+        user.set_password(pwd_hash, None, false, None);
+
+        if let Err(e) = user.save(conn).await {
+            error!("Error updating user: {e:#?}");
+        }
+    }
+    Ok(())
+}
+
 #[post("/accounts/verify-password", data = "<data>")]
-async fn verify_password(data: Json<SecretVerificationRequest>, headers: Headers, conn: DbConn) -> JsonResult {
+async fn verify_password(data: Json<SecretVerificationRequest>, headers: Headers, mut conn: DbConn) -> JsonResult {
     let data: SecretVerificationRequest = data.into_inner();
-    let user = headers.user;
+    let mut user = headers.user;
 
     if !user.check_valid_password(&data.master_password_hash) {
         err!("Invalid password")
     }
+
+    kdf_upgrade(&mut user, &data.master_password_hash, &mut conn).await?;
 
     Ok(Json(master_password_policy(&user, &conn).await))
 }

@@ -458,6 +458,9 @@ make_config! {
         /// Duo Auth context cleanup schedule |> Cron schedule of the job that cleans expired Duo contexts from the database. Does nothing if Duo MFA is disabled or set to use the legacy iframe prompt.
         /// Defaults to once every minute. Set blank to disable this job.
         duo_context_purge_schedule:   String, false,  def,    "30 * * * * *".to_string();
+        /// Purge incomplete SSO nonce. |> Cron schedule of the job that cleans leftover nonce in db due to incomplete SSO login.
+        /// Defaults to daily. Set blank to disable this job.
+        purge_incomplete_sso_nonce: String, false,  def,   "0 20 0 * * *".to_string();
     },
 
     /// General settings
@@ -674,6 +677,42 @@ make_config! {
         /// Bitwarden enforces this by default. In Vaultwarden we encouraged to use multiple organizations because groups were not available.
         /// Setting this to true will enforce the Single Org Policy to be enabled before you can enable the Reset Password policy.
         enforce_single_org_with_reset_pw_policy: bool, false, def, false;
+    },
+
+    /// OpenID Connect SSO settings
+    sso {
+        /// Enabled
+        sso_enabled:                    bool,   true,   def,    false;
+        /// Only SSO login |> Disable Email+Master Password login
+        sso_only:                       bool,   true,   def,    false;
+        /// Allow email association |> Associate existing non-SSO user based on email
+        sso_signups_match_email:        bool,   true,   def,    true;
+        /// Allow unknown email verification status |> Allowing this with `SSO_SIGNUPS_MATCH_EMAIL=true` open potential account takeover.
+        sso_allow_unknown_email_verification: bool, false, def, false;
+        /// Client ID
+        sso_client_id:                  String, true,   def,    String::new();
+        /// Client Key
+        sso_client_secret:              Pass,   true,   def,    String::new();
+        /// Authority Server |> Base url of the OIDC provider discovery endpoint (without `/.well-known/openid-configuration`)
+        sso_authority:                  String, true,   def,    String::new();
+        /// Authorization request scopes |> List the of the needed scope (`openid` is implicit)
+        sso_scopes:                     String, true,  def,   "email profile".to_string();
+        /// Authorization request extra parameters
+        sso_authorize_extra_params:     String, true,  def,    String::new();
+        /// Use PKCE during Authorization flow
+        sso_pkce:                       bool,   true,   def,    true;
+        /// Regex for additional trusted Id token audience |> By default only the client_id is trusted.
+        sso_audience_trusted:           String, true,  option;
+        /// CallBack Path |> Generated from Domain.
+        sso_callback_path:              String, true,  generated, |c| generate_sso_callback_path(&c.domain);
+        /// Optional SSO master password policy |> Ex format: '{"enforceOnLogin":false,"minComplexity":3,"minLength":12,"requireLower":false,"requireNumbers":false,"requireSpecial":false,"requireUpper":false}'
+        sso_master_password_policy:     String, true,  option;
+        /// Use SSO only for auth not the session lifecycle |> Use default Vaultwarden session lifecycle (Idle refresh token valid for 30days)
+        sso_auth_only_not_session:      bool,   true,   def,    false;
+        /// Client cache for discovery endpoint. |> Duration in seconds (0 or less to disable). More details: https://github.com/dani-garcia/vaultwarden/blob/sso-support/SSO.md#client-cache
+        sso_client_cache_expiration:    u64,    true,   def,    0;
+        /// Log all tokens |> `LOG_LEVEL=debug` or `LOG_LEVEL=info,vaultwarden::sso=debug` is required
+        sso_debug_tokens:               bool,   true,   def,    false;
     },
 
     /// Yubikey settings
@@ -911,6 +950,16 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         err!("All Duo options need to be set for global Duo support")
     }
 
+    if cfg.sso_enabled {
+        if cfg.sso_client_id.is_empty() || cfg.sso_client_secret.is_empty() || cfg.sso_authority.is_empty() {
+            err!("`SSO_CLIENT_ID`, `SSO_CLIENT_SECRET` and `SSO_AUTHORITY` must be set for SSO support")
+        }
+
+        validate_internal_sso_issuer_url(&cfg.sso_authority)?;
+        validate_internal_sso_redirect_url(&cfg.sso_callback_path)?;
+        check_master_password_policy(&cfg.sso_master_password_policy)?;
+    }
+
     if cfg._enable_yubico {
         if cfg.yubico_client_id.is_some() != cfg.yubico_secret_key.is_some() {
             err!("Both `YUBICO_CLIENT_ID` and `YUBICO_SECRET_KEY` must be set for Yubikey OTP support")
@@ -1088,6 +1137,28 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
     Ok(())
 }
 
+fn validate_internal_sso_issuer_url(sso_authority: &String) -> Result<openidconnect::IssuerUrl, Error> {
+    match openidconnect::IssuerUrl::new(sso_authority.clone()) {
+        Err(err) => err!(format!("Invalid sso_authority UR ({sso_authority}): {err}")),
+        Ok(issuer_url) => Ok(issuer_url),
+    }
+}
+
+fn validate_internal_sso_redirect_url(sso_callback_path: &String) -> Result<openidconnect::RedirectUrl, Error> {
+    match openidconnect::RedirectUrl::new(sso_callback_path.clone()) {
+        Err(err) => err!(format!("Invalid sso_callback_path ({sso_callback_path} built using `domain`) URL: {err}")),
+        Ok(redirect_url) => Ok(redirect_url),
+    }
+}
+
+fn check_master_password_policy(sso_master_password_policy: &Option<String>) -> Result<(), Error> {
+    let policy = sso_master_password_policy.as_ref().map(|mpp| serde_json::from_str::<serde_json::Value>(mpp));
+    if let Some(Err(error)) = policy {
+        err!(format!("Invalid sso_master_password_policy ({error}), Ensure that it's correctly escaped with ''"))
+    }
+    Ok(())
+}
+
 /// Extracts an RFC 6454 web origin from a URL.
 fn extract_url_origin(url: &str) -> String {
     match Url::parse(url) {
@@ -1117,6 +1188,10 @@ fn generate_smtp_img_src(embed_images: bool, domain: &str) -> String {
     } else {
         format!("{domain}/vw_static/")
     }
+}
+
+fn generate_sso_callback_path(domain: &str) -> String {
+    format!("{domain}/identity/connect/oidc-signin")
 }
 
 /// Generate the correct URL for the icon service.
@@ -1354,12 +1429,14 @@ impl Config {
         }
     }
 
-    // The registration link should be hidden if signup is not allowed and whitelist is empty
-    // unless mail is disabled and invitations are allowed
+    // The registration link should be hidden if
+    //  - Signup is not allowed and email whitelist is empty unless mail is disabled and invitations are allowed
+    //  - The SSO is activated and password login is disabled.
     pub fn is_signup_disabled(&self) -> bool {
-        !self.signups_allowed()
+        (!self.signups_allowed()
             && self.signups_domains_whitelist().is_empty()
-            && (self.mail_enabled() || !self.invitations_allowed())
+            && (self.mail_enabled() || !self.invitations_allowed()))
+            || (self.sso_enabled() && self.sso_only())
     }
 
     /// Tests whether the specified user is allowed to create an organization.
@@ -1475,6 +1552,22 @@ impl Config {
             }
         }
     }
+
+    pub fn sso_issuer_url(&self) -> Result<openidconnect::IssuerUrl, Error> {
+        validate_internal_sso_issuer_url(&self.sso_authority())
+    }
+
+    pub fn sso_redirect_url(&self) -> Result<openidconnect::RedirectUrl, Error> {
+        validate_internal_sso_redirect_url(&self.sso_callback_path())
+    }
+
+    pub fn sso_scopes_vec(&self) -> Vec<String> {
+        self.sso_scopes().split_whitespace().map(str::to_string).collect()
+    }
+
+    pub fn sso_authorize_extra_params_vec(&self) -> Vec<(String, String)> {
+        url::form_urlencoded::parse(self.sso_authorize_extra_params().as_bytes()).into_owned().collect()
+    }
 }
 
 use handlebars::{
@@ -1540,6 +1633,7 @@ where
     reg!("email/send_org_invite", ".html");
     reg!("email/send_single_org_removed_from_org", ".html");
     reg!("email/smtp_test", ".html");
+    reg!("email/sso_change_email", ".html");
     reg!("email/twofactor_email", ".html");
     reg!("email/verify_email", ".html");
     reg!("email/welcome_must_verify", ".html");
