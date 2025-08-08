@@ -124,7 +124,12 @@ totp-lite = "2.0.1"
 yubico = { package = "yubico_ng", version = "0.13.0", features = ["online-tokio"], default-features = false }
 
 # WebAuthn libraries
-webauthn-rs = "0.3.2"
+# danger-allow-state-serialisation is needed to save the state in the db
+# danger-credential-internals is needed to support U2F to Webauthn migration
+# danger-user-presence-only-security-keys is needed to disable UV
+webauthn-rs = { version = "0.5.2", features = ["danger-allow-state-serialisation", "danger-credential-internals", "danger-user-presence-only-security-keys"] }
+webauthn-rs-proto = "0.5.2"
+webauthn-rs-core = "0.5.2"
 
 # Handling of URL's for WebAuthn and favicons
 url = "2.5.4"

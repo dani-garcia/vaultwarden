@@ -1,7 +1,10 @@
-use serde_json::Value;
-
 use super::UserId;
+use crate::api::core::two_factor::webauthn::WebauthnRegistration;
 use crate::{api::EmptyResult, db::DbConn, error::MapResult};
+use serde_json::Value;
+use webauthn_rs::prelude::{Credential, ParsedAttestation};
+use webauthn_rs_core::proto::CredentialV3;
+use webauthn_rs_proto::{AttestationFormat, RegisteredExtensions};
 
 db_object! {
     #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -160,7 +163,8 @@ impl TwoFactor {
 
         use crate::api::core::two_factor::webauthn::U2FRegistration;
         use crate::api::core::two_factor::webauthn::{get_webauthn_registrations, WebauthnRegistration};
-        use webauthn_rs::proto::*;
+        use webauthn_rs::prelude::{COSEEC2Key, COSEKey, COSEKeyType, ECDSACurve};
+        use webauthn_rs_proto::{COSEAlgorithm, UserVerificationPolicy};
 
         for mut u2f in u2f_factors {
             let mut regs: Vec<U2FRegistration> = serde_json::from_str(&u2f.data)?;
@@ -184,8 +188,8 @@ impl TwoFactor {
                     type_: COSEAlgorithm::ES256,
                     key: COSEKeyType::EC_EC2(COSEEC2Key {
                         curve: ECDSACurve::SECP256R1,
-                        x,
-                        y,
+                        x: x.into(),
+                        y: y.into(),
                     }),
                 };
 
@@ -195,11 +199,19 @@ impl TwoFactor {
                     name: reg.name.clone(),
                     credential: Credential {
                         counter: reg.counter,
-                        verified: false,
+                        user_verified: false,
                         cred: key,
-                        cred_id: reg.reg.key_handle.clone(),
-                        registration_policy: UserVerificationPolicy::Discouraged,
-                    },
+                        cred_id: reg.reg.key_handle.clone().into(),
+                        registration_policy: UserVerificationPolicy::Discouraged_DO_NOT_USE,
+
+                        transports: None,
+                        backup_eligible: false,
+                        backup_state: false,
+                        extensions: RegisteredExtensions::none(),
+                        attestation: ParsedAttestation::default(),
+                        attestation_format: AttestationFormat::None,
+                    }
+                    .into(),
                 };
 
                 webauthn_regs.push(new_reg);
@@ -217,7 +229,52 @@ impl TwoFactor {
 
         Ok(())
     }
+
+    pub async fn migrate_credential_to_passkey(conn: &mut DbConn) -> EmptyResult {
+        let webauthn_factors = db_run! { conn: {
+            twofactor::table
+                .filter(twofactor::atype.eq(TwoFactorType::Webauthn as i32))
+                .load::<TwoFactorDb>(conn)
+                .expect("Error loading twofactor")
+                .from_db()
+        }};
+
+        for webauthn_factor in webauthn_factors {
+            // assume that a failure to parse into the old struct, means that it was already converted
+            // alternatively this could also be checked via an extra field in the db
+            let Ok(regs) = serde_json::from_str::<Vec<WebauthnRegistrationV3>>(&webauthn_factor.data) else {
+                continue;
+            };
+
+            let regs = regs.into_iter().map(|r| r.into()).collect::<Vec<WebauthnRegistration>>();
+
+            TwoFactor::new(webauthn_factor.user_uuid.clone(), TwoFactorType::Webauthn, serde_json::to_string(&regs)?)
+                .save(conn)
+                .await?;
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug, DieselNewType, FromForm, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct TwoFactorId(String);
+
+#[derive(Deserialize)]
+pub struct WebauthnRegistrationV3 {
+    pub id: i32,
+    pub name: String,
+    pub migrated: bool,
+    pub credential: CredentialV3,
+}
+
+impl From<WebauthnRegistrationV3> for WebauthnRegistration {
+    fn from(value: WebauthnRegistrationV3) -> Self {
+        Self {
+            id: value.id,
+            name: value.name,
+            migrated: value.migrated,
+            credential: Credential::from(value.credential).into(),
+        }
+    }
+}
