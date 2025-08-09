@@ -783,7 +783,12 @@ impl Cipher {
     // true, then the non-interesting ciphers will not be returned. As a
     // result, those ciphers will not appear in "My Vault" for the org
     // owner/admin, but they can still be accessed via the org vault view.
-    pub async fn find_by_user(user_uuid: &UserId, visible_only: bool, conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_user(
+        user_uuid: &UserId,
+        visible_only: bool,
+        cipher_uuids: &Vec<CipherId>,
+        conn: &mut DbConn,
+    ) -> Vec<Self> {
         if CONFIG.org_groups_enabled() {
             db_run! {conn: {
                 let mut query = ciphers::table
@@ -821,7 +826,14 @@ impl Cipher {
                 if !visible_only {
                     query = query.or_filter(
                         users_organizations::atype.le(MembershipType::Admin as i32) // Org admin/owner
-                        );
+                    );
+                }
+
+                // Only filter for one specific cipher
+                if !cipher_uuids.is_empty() {
+                    query = query.filter(
+                        ciphers::uuid.eq_any(cipher_uuids)
+                    );
                 }
 
                 query
@@ -850,11 +862,18 @@ impl Cipher {
                     .or_filter(users_collections::user_uuid.eq(user_uuid)) // Access to collection
                     .into_boxed();
 
-                    if !visible_only {
-                        query = query.or_filter(
-                            users_organizations::atype.le(MembershipType::Admin as i32) // Org admin/owner
-                            );
-                    }
+                if !visible_only {
+                    query = query.or_filter(
+                        users_organizations::atype.le(MembershipType::Admin as i32) // Org admin/owner
+                    );
+                }
+
+                // Only filter for one specific cipher
+                if !cipher_uuids.is_empty() {
+                    query = query.filter(
+                        ciphers::uuid.eq_any(cipher_uuids)
+                    );
+                }
 
                 query
                     .select(ciphers::all_columns)
@@ -866,7 +885,23 @@ impl Cipher {
 
     // Find all ciphers visible to the specified user.
     pub async fn find_by_user_visible(user_uuid: &UserId, conn: &mut DbConn) -> Vec<Self> {
-        Self::find_by_user(user_uuid, true, conn).await
+        Self::find_by_user(user_uuid, true, &vec![], conn).await
+    }
+
+    pub async fn find_by_user_and_ciphers(
+        user_uuid: &UserId,
+        cipher_uuids: &Vec<CipherId>,
+        conn: &mut DbConn,
+    ) -> Vec<Self> {
+        Self::find_by_user(user_uuid, true, cipher_uuids, conn).await
+    }
+
+    pub async fn find_by_user_and_cipher(
+        user_uuid: &UserId,
+        cipher_uuid: &CipherId,
+        conn: &mut DbConn,
+    ) -> Option<Self> {
+        Self::find_by_user(user_uuid, true, &vec![cipher_uuid.clone()], conn).await.pop()
     }
 
     // Find all ciphers directly owned by the specified user.

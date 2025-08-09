@@ -6,7 +6,7 @@ use macros::UuidFromParam;
 use serde_json::Value;
 
 db_object! {
-    #[derive(Debug, Identifiable, Queryable, Insertable, AsChangeset, Deserialize, Serialize)]
+    #[derive(Identifiable, Queryable, Insertable, AsChangeset, Deserialize, Serialize)]
     #[diesel(table_name = auth_requests)]
     #[diesel(treat_none_as_null = true)]
     #[diesel(primary_key(uuid))]
