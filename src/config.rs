@@ -709,6 +709,12 @@ make_config! {
         sso_master_password_policy:     String, true,  option;
         /// Use SSO only for auth not the session lifecycle |> Use default Vaultwarden session lifecycle (Idle refresh token valid for 30days)
         sso_auth_only_not_session:      bool,   true,   def,    false;
+        /// Roles mapping |> Enable the mapping of roles (user/admin) from the access_token
+        sso_roles_enabled:              bool,   true,   def,    false;
+        /// Missing roles default to user |> If `false` user with no role won't be able to log
+        sso_roles_default_to_user:      bool,   true,   def,    true;
+        /// Path to read roles in IDToken or User Info
+        sso_roles_token_path:           String, true,  auto,   |c| format!("/resource_access/{}/roles", c.sso_client_id);
         /// Client cache for discovery endpoint. |> Duration in seconds (0 or less to disable). More details: https://github.com/dani-garcia/vaultwarden/blob/sso-support/SSO.md#client-cache
         sso_client_cache_expiration:    u64,    true,   def,    0;
         /// Log all tokens |> `LOG_LEVEL=debug` or `LOG_LEVEL=info,vaultwarden::sso=debug` is required
@@ -1523,6 +1529,11 @@ impl Config {
         };
 
         opendal_operator_for_path(&path)
+    }
+
+    /// Tests whether the domain contain HTTPS.
+    pub fn is_https(&self) -> bool {
+        self.domain().starts_with("https")
     }
 
     pub fn render_template<T: serde::ser::Serialize>(&self, name: &str, data: &T) -> Result<String, Error> {
