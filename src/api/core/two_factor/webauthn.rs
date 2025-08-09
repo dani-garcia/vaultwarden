@@ -17,7 +17,7 @@ use rocket::serde::json::Json;
 use rocket::Route;
 use serde_json::Value;
 use std::str::FromStr;
-use std::sync::{Arc, LazyLock};
+use std::sync::LazyLock;
 use std::time::Duration;
 use url::Url;
 use uuid::Uuid;
@@ -29,7 +29,7 @@ use webauthn_rs_proto::{
     RequestAuthenticationExtensions, UserVerificationPolicy,
 };
 
-pub static WEBAUTHN_2FA_CONFIG: LazyLock<Arc<Webauthn>> = LazyLock::new(|| {
+static WEBAUTHN: LazyLock<Webauthn> = LazyLock::new(|| {
     let domain = CONFIG.domain();
     let domain_origin = CONFIG.domain_origin();
     let rp_id = Url::parse(&domain).map(|u| u.domain().map(str::to_owned)).ok().flatten().unwrap_or_default();
@@ -40,10 +40,8 @@ pub static WEBAUTHN_2FA_CONFIG: LazyLock<Arc<Webauthn>> = LazyLock::new(|| {
         .rp_name(&domain)
         .timeout(Duration::from_millis(60000));
 
-    Arc::new(webauthn.build().expect("Building Webauthn failed"))
+    webauthn.build().expect("Building Webauthn failed")
 });
-
-pub type Webauthn2FaConfig<'a> = &'a rocket::State<Arc<Webauthn>>;
 
 pub fn routes() -> Vec<Route> {
     routes![get_webauthn, generate_webauthn_challenge, activate_webauthn, activate_webauthn_put, delete_webauthn,]
@@ -130,12 +128,7 @@ async fn get_webauthn(data: Json<PasswordOrOtpData>, headers: Headers, mut conn:
 }
 
 #[post("/two-factor/get-webauthn-challenge", data = "<data>")]
-async fn generate_webauthn_challenge(
-    data: Json<PasswordOrOtpData>,
-    headers: Headers,
-    webauthn: Webauthn2FaConfig<'_>,
-    mut conn: DbConn,
-) -> JsonResult {
+async fn generate_webauthn_challenge(data: Json<PasswordOrOtpData>, headers: Headers, mut conn: DbConn) -> JsonResult {
     let data: PasswordOrOtpData = data.into_inner();
     let user = headers.user;
 
@@ -148,7 +141,7 @@ async fn generate_webauthn_challenge(
         .map(|r| r.credential.cred_id().to_owned()) // We return the credentialIds to the clients to avoid double registering
         .collect();
 
-    let (mut challenge, state) = webauthn.start_passkey_registration(
+    let (mut challenge, state) = WEBAUTHN.start_passkey_registration(
         Uuid::from_str(&user.uuid).expect("Failed to parse UUID"), // Should never fail
         &user.email,
         &user.name,
@@ -259,12 +252,7 @@ impl From<PublicKeyCredentialCopy> for PublicKeyCredential {
 }
 
 #[post("/two-factor/webauthn", data = "<data>")]
-async fn activate_webauthn(
-    data: Json<EnableWebauthnData>,
-    headers: Headers,
-    webauthn: Webauthn2FaConfig<'_>,
-    mut conn: DbConn,
-) -> JsonResult {
+async fn activate_webauthn(data: Json<EnableWebauthnData>, headers: Headers, mut conn: DbConn) -> JsonResult {
     let data: EnableWebauthnData = data.into_inner();
     let mut user = headers.user;
 
@@ -287,7 +275,7 @@ async fn activate_webauthn(
     };
 
     // Verify the credentials with the saved state
-    let credential = webauthn.finish_passkey_registration(&data.device_response.into(), &state)?;
+    let credential = WEBAUTHN.finish_passkey_registration(&data.device_response.into(), &state)?;
 
     let mut registrations: Vec<_> = get_webauthn_registrations(&user.uuid, &mut conn).await?.1;
     // TODO: Check for repeated ID's
@@ -316,13 +304,8 @@ async fn activate_webauthn(
 }
 
 #[put("/two-factor/webauthn", data = "<data>")]
-async fn activate_webauthn_put(
-    data: Json<EnableWebauthnData>,
-    headers: Headers,
-    webauthn: Webauthn2FaConfig<'_>,
-    conn: DbConn,
-) -> JsonResult {
-    activate_webauthn(data, headers, webauthn, conn).await
+async fn activate_webauthn_put(data: Json<EnableWebauthnData>, headers: Headers, conn: DbConn) -> JsonResult {
+    activate_webauthn(data, headers, conn).await
 }
 
 #[derive(Debug, Deserialize)]
@@ -392,11 +375,7 @@ pub async fn get_webauthn_registrations(
     }
 }
 
-pub async fn generate_webauthn_login(
-    user_id: &UserId,
-    webauthn: Webauthn2FaConfig<'_>,
-    conn: &mut DbConn,
-) -> JsonResult {
+pub async fn generate_webauthn_login(user_id: &UserId, conn: &mut DbConn) -> JsonResult {
     // Load saved credentials
     let creds: Vec<Passkey> =
         get_webauthn_registrations(user_id, conn).await?.1.into_iter().map(|r| r.credential).collect();
@@ -406,7 +385,7 @@ pub async fn generate_webauthn_login(
     }
 
     // Generate a challenge based on the credentials
-    let (mut response, state) = webauthn.start_passkey_authentication(&creds)?;
+    let (mut response, state) = WEBAUTHN.start_passkey_authentication(&creds)?;
 
     // Modify to discourage user verification
     let mut state = serde_json::to_value(&state)?;
@@ -436,12 +415,7 @@ pub async fn generate_webauthn_login(
     Ok(Json(serde_json::to_value(response.public_key)?))
 }
 
-pub async fn validate_webauthn_login(
-    user_id: &UserId,
-    response: &str,
-    webauthn: Webauthn2FaConfig<'_>,
-    conn: &mut DbConn,
-) -> EmptyResult {
+pub async fn validate_webauthn_login(user_id: &UserId, response: &str, conn: &mut DbConn) -> EmptyResult {
     let type_ = TwoFactorType::WebauthnLoginChallenge as i32;
     let mut state = match TwoFactor::find_by_user_and_type(user_id, type_, conn).await {
         Some(tf) => {
@@ -467,7 +441,7 @@ pub async fn validate_webauthn_login(
     // Because of this we check the flag at runtime and update the registrations and state when needed
     check_and_update_backup_eligible(user_id, &rsp, &mut registrations, &mut state, conn).await?;
 
-    let authentication_result = webauthn.finish_passkey_authentication(&rsp, &state)?;
+    let authentication_result = WEBAUTHN.finish_passkey_authentication(&rsp, &state)?;
 
     for reg in &mut registrations {
         if ct_eq(reg.credential.cred_id(), authentication_result.cred_id()) {
