@@ -283,6 +283,9 @@ macro_rules! make_config {
                     "smtp_host",
                     "smtp_username",
                     "_smtp_img_src",
+                    "sso_client_id",
+                    "sso_authority",
+                    "sso_callback_path",
                 ];
 
                 let cfg = {
