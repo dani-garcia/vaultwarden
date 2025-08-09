@@ -1587,7 +1587,7 @@ async fn move_cipher_selected(
     let mut single_cipher: Option<Cipher> = None;
 
     // TODO: Convert this to use a single query (or at least less) to update all items
-    // Find all ciphers a user has access too, all others will be ignored
+    // Find all ciphers a user has access to, all others will be ignored
     let accessible_ciphers = Cipher::find_by_user_and_ciphers(user_id, &data.ids, &mut conn).await;
     let accessible_ciphers_count = accessible_ciphers.len();
     for cipher in accessible_ciphers {
