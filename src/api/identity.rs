@@ -293,7 +293,7 @@ async fn _sso_login(
         }
     };
 
-    // We passed 2FA get full user informations
+    // We passed 2FA get full user information
     let auth_user = sso::redeem(&user_infos.state, conn).await?;
 
     if sso_user.is_none() {
@@ -1060,12 +1060,12 @@ async fn oidcsignin_redirect(
     wrapper: impl FnOnce(OIDCState) -> sso::OIDCCodeWrapper,
     conn: &DbConn,
 ) -> ApiResult<Redirect> {
-    let state = sso::deocde_state(base64_state)?;
+    let state = sso::decode_state(base64_state)?;
     let code = sso::encode_code_claims(wrapper(state.clone()));
 
     let nonce = match SsoNonce::find(&state, conn).await {
         Some(n) => n,
-        None => err!(format!("Failed to retrive redirect_uri with {state}")),
+        None => err!(format!("Failed to retrieve redirect_uri with {state}")),
     };
 
     let mut url = match url::Url::parse(&nonce.redirect_uri) {

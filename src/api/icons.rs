@@ -641,9 +641,9 @@ async fn stream_to_bytes_limit(res: Response, max_size: usize) -> Result<Bytes, 
     let mut buf = BytesMut::new();
     let mut size = 0;
     while let Some(chunk) = stream.next().await {
-        // It is possible that there might occure UnexpectedEof errors or others
+        // It is possible that there might occur UnexpectedEof errors or others
         // This is most of the time no issue, and if there is no chunked data anymore or at all parsing the HTML will not happen anyway.
-        // Therfore if chunk is an err, just break and continue with the data be have received.
+        // Therefore if chunk is an err, just break and continue with the data be have received.
         if chunk.is_err() {
             break;
         }
