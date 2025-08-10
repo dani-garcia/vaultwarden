@@ -78,6 +78,7 @@ pub fn routes() -> Vec<Route> {
         restore_cipher_put,
         restore_cipher_put_admin,
         restore_cipher_selected,
+        restore_cipher_selected_admin,
         delete_all,
         move_cipher_selected,
         move_cipher_selected_put,
@@ -318,7 +319,7 @@ async fn post_ciphers_create(
     // or otherwise), we can just ignore this field entirely.
     data.cipher.last_known_revision_date = None;
 
-    share_cipher_by_uuid(&cipher.uuid, data, &headers, &mut conn, &nt).await
+    share_cipher_by_uuid(&cipher.uuid, data, &headers, &mut conn, &nt, None).await
 }
 
 /// Called when creating a new user-owned cipher.
@@ -920,7 +921,7 @@ async fn post_cipher_share(
 ) -> JsonResult {
     let data: ShareCipherData = data.into_inner();
 
-    share_cipher_by_uuid(&cipher_id, data, &headers, &mut conn, &nt).await
+    share_cipher_by_uuid(&cipher_id, data, &headers, &mut conn, &nt, None).await
 }
 
 #[put("/ciphers/<cipher_id>/share", data = "<data>")]
@@ -933,7 +934,7 @@ async fn put_cipher_share(
 ) -> JsonResult {
     let data: ShareCipherData = data.into_inner();
 
-    share_cipher_by_uuid(&cipher_id, data, &headers, &mut conn, &nt).await
+    share_cipher_by_uuid(&cipher_id, data, &headers, &mut conn, &nt, None).await
 }
 
 #[derive(Deserialize)]
@@ -973,10 +974,15 @@ async fn put_cipher_share_selected(
         };
 
         match shared_cipher_data.cipher.id.take() {
-            Some(id) => share_cipher_by_uuid(&id, shared_cipher_data, &headers, &mut conn, &nt).await?,
+            Some(id) => {
+                share_cipher_by_uuid(&id, shared_cipher_data, &headers, &mut conn, &nt, Some(UpdateType::None)).await?
+            }
             None => err!("Request missing ids field"),
         };
     }
+
+    // Multi share actions do not send out a push for each cipher, we need to send a general sync here
+    nt.send_user_update(UpdateType::SyncCiphers, &headers.user, &headers.device.push_uuid, &mut conn).await;
 
     Ok(())
 }
@@ -987,6 +993,7 @@ async fn share_cipher_by_uuid(
     headers: &Headers,
     conn: &mut DbConn,
     nt: &Notify<'_>,
+    override_ut: Option<UpdateType>,
 ) -> JsonResult {
     let mut cipher = match Cipher::find_by_uuid(cipher_id, conn).await {
         Some(cipher) => {
@@ -1018,7 +1025,10 @@ async fn share_cipher_by_uuid(
     };
 
     // When LastKnownRevisionDate is None, it is a new cipher, so send CipherCreate.
-    let ut = if data.cipher.last_known_revision_date.is_some() {
+    // If there is an override, like when handling multiple items, we want to prevent a push notification for every single item
+    let ut = if let Some(ut) = override_ut {
+        ut
+    } else if data.cipher.last_known_revision_date.is_some() {
         UpdateType::SyncCipherUpdate
     } else {
         UpdateType::SyncCipherCreate
@@ -1517,7 +1527,7 @@ async fn delete_cipher_selected_put_admin(
 
 #[put("/ciphers/<cipher_id>/restore")]
 async fn restore_cipher_put(cipher_id: CipherId, headers: Headers, mut conn: DbConn, nt: Notify<'_>) -> JsonResult {
-    _restore_cipher_by_uuid(&cipher_id, &headers, &mut conn, &nt).await
+    _restore_cipher_by_uuid(&cipher_id, &headers, false, &mut conn, &nt).await
 }
 
 #[put("/ciphers/<cipher_id>/restore-admin")]
@@ -1527,7 +1537,17 @@ async fn restore_cipher_put_admin(
     mut conn: DbConn,
     nt: Notify<'_>,
 ) -> JsonResult {
-    _restore_cipher_by_uuid(&cipher_id, &headers, &mut conn, &nt).await
+    _restore_cipher_by_uuid(&cipher_id, &headers, false, &mut conn, &nt).await
+}
+
+#[put("/ciphers/restore-admin", data = "<data>")]
+async fn restore_cipher_selected_admin(
+    data: Json<CipherIdsData>,
+    headers: Headers,
+    mut conn: DbConn,
+    nt: Notify<'_>,
+) -> JsonResult {
+    _restore_multiple_ciphers(data, &headers, &mut conn, &nt).await
 }
 
 #[put("/ciphers/restore", data = "<data>")]
@@ -1555,35 +1575,47 @@ async fn move_cipher_selected(
     nt: Notify<'_>,
 ) -> EmptyResult {
     let data = data.into_inner();
-    let user_id = headers.user.uuid;
+    let user_id = &headers.user.uuid;
 
     if let Some(ref folder_id) = data.folder_id {
-        if Folder::find_by_uuid_and_user(folder_id, &user_id, &mut conn).await.is_none() {
+        if Folder::find_by_uuid_and_user(folder_id, user_id, &mut conn).await.is_none() {
             err!("Invalid folder", "Folder does not exist or belongs to another user");
         }
     }
 
-    for cipher_id in data.ids {
-        let Some(cipher) = Cipher::find_by_uuid(&cipher_id, &mut conn).await else {
-            err!("Cipher doesn't exist")
-        };
+    let cipher_count = data.ids.len();
+    let mut single_cipher: Option<Cipher> = None;
 
-        if !cipher.is_accessible_to_user(&user_id, &mut conn).await {
-            err!("Cipher is not accessible by user")
+    // TODO: Convert this to use a single query (or at least less) to update all items
+    // Find all ciphers a user has access to, all others will be ignored
+    let accessible_ciphers = Cipher::find_by_user_and_ciphers(user_id, &data.ids, &mut conn).await;
+    let accessible_ciphers_count = accessible_ciphers.len();
+    for cipher in accessible_ciphers {
+        cipher.move_to_folder(data.folder_id.clone(), user_id, &mut conn).await?;
+        if cipher_count == 1 {
+            single_cipher = Some(cipher);
         }
+    }
 
-        // Move cipher
-        cipher.move_to_folder(data.folder_id.clone(), &user_id, &mut conn).await?;
-
+    if let Some(cipher) = single_cipher {
         nt.send_cipher_update(
             UpdateType::SyncCipherUpdate,
             &cipher,
-            std::slice::from_ref(&user_id),
+            std::slice::from_ref(user_id),
             &headers.device,
             None,
             &mut conn,
         )
         .await;
+    } else {
+        // Multi move actions do not send out a push for each cipher, we need to send a general sync here
+        nt.send_user_update(UpdateType::SyncCiphers, &headers.user, &headers.device.push_uuid, &mut conn).await;
+    }
+
+    if cipher_count != accessible_ciphers_count {
+        err!(format!(
+            "Not all ciphers are moved! {accessible_ciphers_count} of the selected {cipher_count} were moved."
+        ))
     }
 
     Ok(())
@@ -1764,6 +1796,7 @@ async fn _delete_multiple_ciphers(
 async fn _restore_cipher_by_uuid(
     cipher_id: &CipherId,
     headers: &Headers,
+    multi_restore: bool,
     conn: &mut DbConn,
     nt: &Notify<'_>,
 ) -> JsonResult {
@@ -1778,15 +1811,17 @@ async fn _restore_cipher_by_uuid(
     cipher.deleted_at = None;
     cipher.save(conn).await?;
 
-    nt.send_cipher_update(
-        UpdateType::SyncCipherUpdate,
-        &cipher,
-        &cipher.update_users_revision(conn).await,
-        &headers.device,
-        None,
-        conn,
-    )
-    .await;
+    if !multi_restore {
+        nt.send_cipher_update(
+            UpdateType::SyncCipherUpdate,
+            &cipher,
+            &cipher.update_users_revision(conn).await,
+            &headers.device,
+            None,
+            conn,
+        )
+        .await;
+    }
 
     if let Some(org_id) = &cipher.organization_uuid {
         log_event(
@@ -1814,11 +1849,14 @@ async fn _restore_multiple_ciphers(
 
     let mut ciphers: Vec<Value> = Vec::new();
     for cipher_id in data.ids {
-        match _restore_cipher_by_uuid(&cipher_id, headers, conn, nt).await {
+        match _restore_cipher_by_uuid(&cipher_id, headers, true, conn, nt).await {
             Ok(json) => ciphers.push(json.into_inner()),
             err => return err,
         }
     }
+
+    // Multi move actions do not send out a push for each cipher, we need to send a general sync here
+    nt.send_user_update(UpdateType::SyncCiphers, &headers.user, &headers.device.push_uuid, conn).await;
 
     Ok(Json(json!({
       "data": ciphers,

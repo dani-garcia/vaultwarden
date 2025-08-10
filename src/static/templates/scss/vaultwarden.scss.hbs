@@ -21,21 +21,21 @@ a[href$="/settings/sponsored-families"] {
 }
 
 /* Hide the sso `Email` input field */
-{{#if sso_disabled}}
+{{#if (not sso_enabled)}}
 .vw-email-sso {
   @extend %vw-hide;
 }
 {{/if}}
 
 /* Hide the default/continue `Email` input field */
-{{#if (not sso_disabled)}}
+{{#if sso_enabled}}
 .vw-email-continue {
   @extend %vw-hide;
 }
 {{/if}}
 
 /* Hide the `Continue` button on the login page */
-{{#if (not sso_disabled)}}
+{{#if sso_enabled}}
 .vw-continue-login {
   @extend %vw-hide;
 }
@@ -43,7 +43,7 @@ a[href$="/settings/sponsored-families"] {
 
 /* Hide the `Enterprise Single Sign-On` button on the login page */
 {{#if (webver ">=2025.5.1")}}
-{{#if sso_disabled}}
+{{#if (not sso_enabled)}}
 .vw-sso-login {
   @extend %vw-hide;
 }
@@ -71,7 +71,7 @@ app-root ng-component > form > div:nth-child(1) > div > button[buttontype="secon
 
 /* Hide the or text followed by the two buttons hidden above */
 {{#if (webver ">=2025.5.1")}}
-{{#if (or sso_disabled sso_only)}}
+{{#if (or (not sso_enabled) sso_only)}}
 .vw-or-text {
   @extend %vw-hide;
 }
@@ -83,7 +83,7 @@ app-root ng-component > form > div:nth-child(1) > div:nth-child(3) > div:nth-chi
 {{/if}}
 
 /* Hide the `Other` button on the login page */
-{{#if (or sso_disabled sso_only)}}
+{{#if (or (not sso_enabled) sso_only)}}
 .vw-other-login {
   @extend %vw-hide;
 }

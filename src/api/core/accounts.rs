@@ -342,11 +342,11 @@ async fn post_set_password(data: Json<SetPasswordData>, headers: Headers, mut co
     let mut user = headers.user;
 
     if user.private_key.is_some() {
-        err!("Account already intialized cannot set password")
+        err!("Account already initialized, cannot set password")
     }
 
-    // Check against the password hint setting here so if it fails, the user
-    // can retry without losing their invitation below.
+    // Check against the password hint setting here so if it fails,
+    // the user can retry without losing their invitation below.
     let password_hint = clean_password_hint(&data.master_password_hint);
     enforce_password_hint_setting(&password_hint)?;
 

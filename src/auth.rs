@@ -1174,7 +1174,7 @@ impl AuthTokens {
 
         let access_claims = LoginJwtClaims::default(device, user, &sub, client_id);
 
-        let validity = if DeviceType::is_mobile(&device.atype) {
+        let validity = if device.is_mobile() {
             *MOBILE_REFRESH_VALIDITY
         } else {
             *DEFAULT_REFRESH_VALIDITY

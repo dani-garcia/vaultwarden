@@ -70,6 +70,10 @@ impl Device {
     pub fn is_cli(&self) -> bool {
         matches!(DeviceType::from_i32(self.atype), DeviceType::WindowsCLI | DeviceType::MacOsCLI | DeviceType::LinuxCLI)
     }
+
+    pub fn is_mobile(&self) -> bool {
+        matches!(DeviceType::from_i32(self.atype), DeviceType::Android | DeviceType::Ios)
+    }
 }
 
 pub struct DeviceWithAuthRequest {
@@ -352,10 +356,6 @@ impl DeviceType {
             25 => DeviceType::LinuxCLI,
             _ => DeviceType::UnknownBrowser,
         }
-    }
-
-    pub fn is_mobile(value: &i32) -> bool {
-        *value == DeviceType::Android as i32 || *value == DeviceType::Ios as i32
     }
 }
 

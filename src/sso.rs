@@ -151,7 +151,7 @@ fn decode_token_claims(token_name: &str, token: &str) -> ApiResult<BasicTokenCla
     }
 }
 
-pub fn deocde_state(base64_state: String) -> ApiResult<OIDCState> {
+pub fn decode_state(base64_state: String) -> ApiResult<OIDCState> {
     let state = match data_encoding::BASE64.decode(base64_state.as_bytes()) {
         Ok(vec) => match String::from_utf8(vec) {
             Ok(valid) => OIDCState(valid),
@@ -316,7 +316,7 @@ pub async fn exchange_code(wrapped_code: &str, conn: &mut DbConn) -> ApiResult<U
         user_name: user_name.clone(),
     };
 
-    debug!("Authentified user {authenticated_user:?}");
+    debug!("Authenticated user {authenticated_user:?}");
 
     AC_CACHE.insert(state.clone(), authenticated_user);
 
@@ -443,7 +443,7 @@ pub async fn exchange_refresh_token(
                 err_silent!("Access token is close to expiration but we have no refresh token")
             }
 
-            Client::check_validaty(access_token.clone()).await?;
+            Client::check_validity(access_token.clone()).await?;
 
             let access_claims = auth::LoginJwtClaims::new(
                 device,
