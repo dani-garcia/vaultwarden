@@ -4,6 +4,7 @@ use crate::{
         EmptyResult, JsonResult, PasswordOrOtpData,
     },
     auth::Headers,
+    crypto::ct_eq,
     db::{
         models::{EventType, TwoFactor, TwoFactorType, UserId},
         DbConn,
@@ -434,12 +435,14 @@ pub async fn validate_webauthn_login(
     let authentication_result = webauthn.finish_securitykey_authentication(&rsp, &state)?;
 
     for reg in &mut registrations {
-        if reg.credential.cred_id() == authentication_result.cred_id() && authentication_result.needs_update() {
-            reg.credential.update_credential(&authentication_result);
-
-            TwoFactor::new(user_id.clone(), TwoFactorType::Webauthn, serde_json::to_string(&registrations)?)
-                .save(conn)
-                .await?;
+        if ct_eq(reg.credential.cred_id(), authentication_result.cred_id()) {
+            // If the cred id matches and the credential is updated, Some(true) is returned
+            // In those cases, update the record, else leave it alone
+            if reg.credential.update_credential(&authentication_result) == Some(true) {
+                TwoFactor::new(user_id.clone(), TwoFactorType::Webauthn, serde_json::to_string(&registrations)?)
+                    .save(conn)
+                    .await?;
+            }
             return Ok(());
         }
     }
