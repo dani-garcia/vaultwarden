@@ -134,6 +134,8 @@ macro_rules! generate_connections {
                             let manager = ConnectionManager::new(&url);
                             let pool = Pool::builder()
                                 .max_size(CONFIG.database_max_conns())
+                                .min_idle(Some(CONFIG.database_min_conns()))
+                                .idle_timeout(Some(Duration::from_secs(CONFIG.database_idle_timeout())))
                                 .connection_timeout(Duration::from_secs(CONFIG.database_timeout()))
                                 .connection_customizer(Box::new(DbConnOptions{
                                     init_stmts: conn_type.get_init_stmts()
