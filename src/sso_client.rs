@@ -11,8 +11,8 @@ use openidconnect::*;
 
 use crate::{
     api::{ApiResult, EmptyResult},
-    db::models::SsoNonce,
-    sso::{OIDCCode, OIDCState},
+    db::models::SsoAuth,
+    sso::{OIDCCode, OIDCCodeChallenge, OIDCState},
     CONFIG,
 };
 
@@ -111,7 +111,11 @@ impl Client {
     }
 
     // The `state` is encoded using base64 to ensure no issue with providers (It contains the Organization identifier).
-    pub async fn authorize_url(state: OIDCState, redirect_uri: String) -> ApiResult<(Url, SsoNonce)> {
+    pub async fn authorize_url(
+        state: OIDCState,
+        client_challenge: OIDCCodeChallenge,
+        redirect_uri: String,
+    ) -> ApiResult<(Url, SsoAuth)> {
         let scopes = CONFIG.sso_scopes_vec().into_iter().map(Scope::new);
         let base64_state = data_encoding::BASE64.encode(state.to_string().as_bytes());
 
@@ -127,6 +131,7 @@ impl Client {
             .add_extra_params(CONFIG.sso_authorize_extra_params_vec());
 
         let verifier = if CONFIG.sso_pkce() {
+            // Would be nice to just pass the client challenge but we can't create a `PkceCodeChallenge`.
             let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
             auth_req = auth_req.set_pkce_challenge(pkce_challenge);
             Some(pkce_verifier.into_secret())
@@ -135,13 +140,13 @@ impl Client {
         };
 
         let (auth_url, _, nonce) = auth_req.url();
-        Ok((auth_url, SsoNonce::new(state, nonce.secret().clone(), verifier, redirect_uri)))
+        Ok((auth_url, SsoAuth::new(state, client_challenge, nonce.secret().clone(), verifier, redirect_uri)))
     }
 
     pub async fn exchange_code(
         &self,
         code: OIDCCode,
-        nonce: SsoNonce,
+        sso_auth: &SsoAuth,
     ) -> ApiResult<(
         StandardTokenResponse<
             IdTokenFields<
@@ -160,8 +165,8 @@ impl Client {
         let mut exchange = self.core_client.exchange_code(oidc_code);
 
         if CONFIG.sso_pkce() {
-            match nonce.verifier {
-                None => err!(format!("Missing verifier in the DB nonce table")),
+            match &sso_auth.verifier {
+                None => err!(format!("Missing verifier in the DB sso_auth table")),
                 Some(secret) => exchange = exchange.set_pkce_verifier(PkceCodeVerifier::new(secret.clone())),
             }
         }
@@ -169,7 +174,7 @@ impl Client {
         match exchange.request_async(&self.http_client).await {
             Err(err) => err!(format!("Failed to contact token endpoint: {:?}", err)),
             Ok(token_response) => {
-                let oidc_nonce = Nonce::new(nonce.nonce);
+                let oidc_nonce = Nonce::new(sso_auth.nonce.clone());
 
                 let id_token = match token_response.extra_fields().id_token() {
                     None => err!("Token response did not contain an id_token"),
