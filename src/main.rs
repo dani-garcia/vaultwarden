@@ -90,7 +90,10 @@ async fn main() -> Result<(), Error> {
     schedule_jobs(pool.clone());
     db::models::TwoFactor::migrate_u2f_to_webauthn(&mut pool.get().await.unwrap()).await.unwrap();
     db::models::TwoFactor::migrate_credential_to_passkey(&mut pool.get().await.unwrap()).await.unwrap();
-
+    if let Err(e) = mail::check_dkim() {
+        error!("{}", e);
+        exit(1);
+    }
     let extra_debug = matches!(level, log::LevelFilter::Trace | log::LevelFilter::Debug);
     launch_rocket(pool, extra_debug).await // Blocks until program termination.
 }
