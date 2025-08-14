@@ -10,7 +10,7 @@ proc-macro = true
 
 [dependencies]
 quote = "1.0.40"
-syn = "2.0.104"
+syn = "2.0.105"
 
 [lints]
 workspace = true
