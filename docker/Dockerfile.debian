@@ -19,15 +19,15 @@
 # - From https://hub.docker.com/r/vaultwarden/web-vault/tags,
 #   click the tag name to view the digest of the image it currently points to.
 # - From the command line:
-#     $ docker pull docker.io/vaultwarden/web-vault:v2025.7.0
-#     $ docker image inspect --format "{{.RepoDigests}}" docker.io/vaultwarden/web-vault:v2025.7.0
-#     [docker.io/vaultwarden/web-vault@sha256:f6ac819a2cd9e226f2cd2ec26196ede94a41e672e9672a11b5f307a19278b15e]
+#     $ docker pull docker.io/vaultwarden/web-vault:v2025.7.2
+#     $ docker image inspect --format "{{.RepoDigests}}" docker.io/vaultwarden/web-vault:v2025.7.2
+#     [docker.io/vaultwarden/web-vault@sha256:e40b20eeffbcccb27db6c08c3aaa1cf7d3c92333f634dec26a077590e910e1c9]
 #
 # - Conversely, to get the tag name from the digest:
-#     $ docker image inspect --format "{{.RepoTags}}" docker.io/vaultwarden/web-vault@sha256:f6ac819a2cd9e226f2cd2ec26196ede94a41e672e9672a11b5f307a19278b15e
-#     [docker.io/vaultwarden/web-vault:v2025.7.0]
+#     $ docker image inspect --format "{{.RepoTags}}" docker.io/vaultwarden/web-vault@sha256:e40b20eeffbcccb27db6c08c3aaa1cf7d3c92333f634dec26a077590e910e1c9
+#     [docker.io/vaultwarden/web-vault:v2025.7.2]
 #
-FROM --platform=linux/amd64 docker.io/vaultwarden/web-vault@sha256:f6ac819a2cd9e226f2cd2ec26196ede94a41e672e9672a11b5f307a19278b15e AS vault
+FROM --platform=linux/amd64 docker.io/vaultwarden/web-vault@sha256:e40b20eeffbcccb27db6c08c3aaa1cf7d3c92333f634dec26a077590e910e1c9 AS vault
 
 ########################## Cross Compile Docker Helper Scripts ##########################
 ## We use the linux/amd64 no matter which Build Platform, since these are all bash scripts
@@ -36,7 +36,7 @@ FROM --platform=linux/amd64 docker.io/tonistiigi/xx@sha256:9c207bead753dda9430bd
 
 ########################## BUILD IMAGE ##########################
 # hadolint ignore=DL3006
-FROM --platform=$BUILDPLATFORM docker.io/library/rust:1.89.0-slim-bookworm AS build
+FROM --platform=$BUILDPLATFORM docker.io/library/rust:1.89.0-slim-trixie AS build
 COPY --from=xx / /
 ARG TARGETARCH
 ARG TARGETVARIANT
@@ -68,15 +68,11 @@ RUN apt-get update && \
     xx-apt-get install -y \
         --no-install-recommends \
         gcc \
-        libmariadb3 \
         libpq-dev \
         libpq5 \
         libssl-dev \
+        libmariadb-dev \
         zlib1g-dev && \
-    # Force install arch dependend mariadb dev packages
-    # Installing them the normal way breaks several other packages (again)
-    apt-get download "libmariadb-dev-compat:$(xx-info debian-arch)" "libmariadb-dev:$(xx-info debian-arch)" && \
-    dpkg --force-all -i ./libmariadb-dev*.deb && \
     # Run xx-cargo early, since it sometimes seems to break when run at a later stage
     echo "export CARGO_TARGET=$(xx-cargo --print-target-triple)" >> /env-cargo
 
@@ -166,7 +162,7 @@ RUN source /env-cargo && \
 # To uninstall: docker run --privileged --rm tonistiigi/binfmt --uninstall 'qemu-*'
 #
 # We need to add `--platform` here, because of a podman bug: https://github.com/containers/buildah/issues/4742
-FROM --platform=$TARGETPLATFORM docker.io/library/debian:bookworm-slim
+FROM --platform=$TARGETPLATFORM docker.io/library/debian:trixie-slim
 
 ENV ROCKET_PROFILE="release" \
     ROCKET_ADDRESS=0.0.0.0 \
@@ -179,7 +175,7 @@ RUN mkdir /data && \
         --no-install-recommends \
         ca-certificates \
         curl \
-        libmariadb-dev-compat \
+        libmariadb-dev \
         libpq5 \
         openssl && \
     apt-get clean && \

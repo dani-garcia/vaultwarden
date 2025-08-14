@@ -48,6 +48,6 @@ jobs:
           severity: CRITICAL,HIGH
 
       - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@4e828ff8d448a8a6e532957b1811f387a63867e8 # v3.29.4
+        uses: github/codeql-action/upload-sarif@df559355d593797519d70b90fc8edd5db049e7a2 # v3.29.9
         with:
           sarif_file: 'trivy-results.sarif'
