@@ -10,32 +10,14 @@ on:
       # https://docs.github.com/en/actions/writing-workflows/workflow-syntax-for-github-actions#filter-pattern-cheat-sheet
       - '[1-2].[0-9]+.[0-9]+'
 
+concurrency:
+  # Apply concurrency control only on the upstream repo
+  group: ${{ github.repository == 'dani-garcia/vaultwarden' && format('{0}-{1}', github.workflow, github.ref) || github.run_id }}
+  # Don't cancel other runs when creating a tag
+  cancel-in-progress: ${{ github.ref_type == 'branch' }}
+
 jobs:
-  # https://github.com/marketplace/actions/skip-duplicate-actions
-  # Some checks to determine if we need to continue with building a new docker.
-  # We will skip this check if we are creating a tag, because that has the same hash as a previous run already.
-  skip_check:
-    # Only run this in the upstream repo and not on forks
-    if: ${{ github.repository == 'dani-garcia/vaultwarden' }}
-    name: Cancel older jobs when running
-    permissions:
-      actions: write
-    runs-on: ubuntu-24.04
-    outputs:
-      should_skip: ${{ steps.skip_check.outputs.should_skip }}
-
-    steps:
-      - name: Skip Duplicates Actions
-        id: skip_check
-        uses: fkirc/skip-duplicate-actions@f75f66ce1886f00957d99748a42c724f4330bdcf # v5.3.1
-        with:
-          cancel_others: 'true'
-        # Only run this when not creating a tag
-        if: ${{ github.ref_type == 'branch' }}
-
   docker-build:
-    needs: skip_check
-    if: ${{ needs.skip_check.outputs.should_skip != 'true' && github.repository == 'dani-garcia/vaultwarden' }}
     name: Build Vaultwarden containers
     permissions:
       packages: write
