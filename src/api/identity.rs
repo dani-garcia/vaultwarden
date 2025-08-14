@@ -24,14 +24,14 @@ use crate::{
     auth::{generate_organization_api_key_login_claims, AuthMethod, ClientHeaders, ClientIp, ClientVersion},
     db::{
         models::{
-            AuthRequest, AuthRequestId, Device, DeviceId, EventType, Invitation, OrganizationApiKey, OrganizationId,
-            SsoNonce, SsoUser, TwoFactor, TwoFactorIncomplete, TwoFactorType, User, UserId,
+            AuthRequest, AuthRequestId, Device, DeviceId, EventType, Invitation, OIDCCodeWrapper, OrganizationApiKey,
+            OrganizationId, SsoAuth, SsoUser, TwoFactor, TwoFactorIncomplete, TwoFactorType, User, UserId,
         },
         DbConn,
     },
     error::MapResult,
     mail, sso,
-    sso::{OIDCCode, OIDCState},
+    sso::{OIDCCode, OIDCCodeChallenge, OIDCCodeVerifier, OIDCState},
     util, CONFIG,
 };
 
@@ -92,6 +92,7 @@ async fn login(
         "authorization_code" if CONFIG.sso_enabled() => {
             _check_is_some(&data.client_id, "client_id cannot be blank")?;
             _check_is_some(&data.code, "code cannot be blank")?;
+            _check_is_some(&data.code_verifier, "code verifier cannot be blank")?;
 
             _check_is_some(&data.device_identifier, "device_identifier cannot be blank")?;
             _check_is_some(&data.device_name, "device_name cannot be blank")?;
@@ -175,17 +176,23 @@ async fn _sso_login(
     // Ratelimit the login
     crate::ratelimit::check_limit_login(&ip.ip)?;
 
-    let code = match data.code.as_ref() {
-        None => err!(
+    let (state, code_verifier) = match (data.code.as_ref(), data.code_verifier.as_ref()) {
+        (None, _) => err!(
             "Got no code in OIDC data",
             ErrorEvent {
                 event: EventType::UserFailedLogIn
             }
         ),
-        Some(code) => code,
+        (_, None) => err!(
+            "Got no code verifier in OIDC data",
+            ErrorEvent {
+                event: EventType::UserFailedLogIn
+            }
+        ),
+        (Some(code), Some(code_verifier)) => (code, code_verifier.clone()),
     };
 
-    let user_infos = sso::exchange_code(code, conn).await?;
+    let (sso_auth, user_infos) = sso::exchange_code(state, code_verifier, conn).await?;
     let user_with_sso = match SsoUser::find_by_identifier(&user_infos.identifier, conn).await {
         None => match SsoUser::find_by_mail(&user_infos.email, conn).await {
             None => None,
@@ -248,7 +255,7 @@ async fn _sso_login(
                 _ => (),
             }
 
-            let mut user = User::new(&user_infos.email, user_infos.user_name);
+            let mut user = User::new(&user_infos.email, user_infos.user_name.clone());
             user.verified_at = Some(now);
             user.save(conn).await?;
 
@@ -272,8 +279,8 @@ async fn _sso_login(
             if user.private_key.is_none() {
                 // User was invited a stub was created
                 user.verified_at = Some(now);
-                if let Some(user_name) = user_infos.user_name {
-                    user.name = user_name;
+                if let Some(ref user_name) = user_infos.user_name {
+                    user.name = user_name.clone();
                 }
 
                 user.save(conn).await?;
@@ -290,28 +297,11 @@ async fn _sso_login(
         }
     };
 
-    // We passed 2FA get full user information
-    let auth_user = sso::redeem(&user_infos.state, conn).await?;
-
-    if sso_user.is_none() {
-        let user_sso = SsoUser {
-            user_uuid: user.uuid.clone(),
-            identifier: user_infos.identifier,
-        };
-        user_sso.save(conn).await?;
-    }
-
     // Set the user_uuid here to be passed back used for event logging.
     *user_id = Some(user.uuid.clone());
 
-    let auth_tokens = sso::create_auth_tokens(
-        &device,
-        &user,
-        data.client_id,
-        auth_user.refresh_token,
-        auth_user.access_token,
-        auth_user.expires_in,
-    )?;
+    // We passed 2FA get auth tokens
+    let auth_tokens = sso::redeem(&device, &user, data.client_id, sso_user, sso_auth, user_infos, conn).await?;
 
     authenticated_response(&user, &mut device, auth_tokens, twofactor_token, &now, conn, ip).await
 }
@@ -997,9 +987,12 @@ struct ConnectData {
     two_factor_remember: Option<i32>,
     #[field(name = uncased("authrequest"))]
     auth_request: Option<AuthRequestId>,
+
     // Needed for authorization code
     #[field(name = uncased("code"))]
-    code: Option<String>,
+    code: Option<OIDCState>,
+    #[field(name = uncased("code_verifier"))]
+    code_verifier: Option<OIDCCodeVerifier>,
 }
 fn _check_is_some<T>(value: &Option<T>, msg: &str) -> EmptyResult {
     if value.is_none() {
@@ -1021,14 +1014,13 @@ fn prevalidate() -> JsonResult {
 }
 
 #[get("/connect/oidc-signin?<code>&<state>", rank = 1)]
-async fn oidcsignin(code: OIDCCode, state: String, conn: DbConn) -> ApiResult<Redirect> {
-    oidcsignin_redirect(
+async fn oidcsignin(code: OIDCCode, state: String, mut conn: DbConn) -> ApiResult<Redirect> {
+    _oidcsignin_redirect(
         state,
-        |decoded_state| sso::OIDCCodeWrapper::Ok {
-            state: decoded_state,
+        OIDCCodeWrapper::Ok {
             code,
         },
-        &conn,
+        &mut conn,
     )
     .await
 }
@@ -1040,42 +1032,44 @@ async fn oidcsignin_error(
     state: String,
     error: String,
     error_description: Option<String>,
-    conn: DbConn,
+    mut conn: DbConn,
 ) -> ApiResult<Redirect> {
-    oidcsignin_redirect(
+    _oidcsignin_redirect(
         state,
-        |decoded_state| sso::OIDCCodeWrapper::Error {
-            state: decoded_state,
+        OIDCCodeWrapper::Error {
             error,
             error_description,
         },
-        &conn,
+        &mut conn,
     )
     .await
 }
 
 // The state was encoded using Base64 to ensure no issue with providers.
 // iss and scope parameters are needed for redirection to work on IOS.
-async fn oidcsignin_redirect(
+// We pass the state as the code to get it back later on.
+async fn _oidcsignin_redirect(
     base64_state: String,
-    wrapper: impl FnOnce(OIDCState) -> sso::OIDCCodeWrapper,
-    conn: &DbConn,
+    code_response: OIDCCodeWrapper,
+    conn: &mut DbConn,
 ) -> ApiResult<Redirect> {
     let state = sso::decode_state(&base64_state)?;
-    let code = sso::encode_code_claims(wrapper(state.clone()));
 
-    let nonce = match SsoNonce::find(&state, conn).await {
-        Some(n) => n,
-        None => err!(format!("Failed to retrieve redirect_uri with {state}")),
+    let mut sso_auth = match SsoAuth::find(&state, conn).await {
+        None => err!(format!("Cannot retrieve sso_auth for {state}")),
+        Some(sso_auth) => sso_auth,
     };
+    sso_auth.code_response = Some(code_response);
+    sso_auth.updated_at = Utc::now().naive_utc();
+    sso_auth.save(conn).await?;
 
-    let mut url = match url::Url::parse(&nonce.redirect_uri) {
+    let mut url = match url::Url::parse(&sso_auth.redirect_uri) {
         Ok(url) => url,
-        Err(err) => err!(format!("Failed to parse redirect uri ({}): {err}", nonce.redirect_uri)),
+        Err(err) => err!(format!("Failed to parse redirect uri ({}): {err}", sso_auth.redirect_uri)),
     };
 
     url.query_pairs_mut()
-        .append_pair("code", &code)
+        .append_pair("code", &state)
         .append_pair("state", &state)
         .append_pair("scope", &AuthMethod::Sso.scope())
         .append_pair("iss", &CONFIG.domain());
@@ -1098,10 +1092,8 @@ struct AuthorizeData {
     #[allow(unused)]
     scope: Option<String>,
     state: OIDCState,
-    #[allow(unused)]
-    code_challenge: Option<String>,
-    #[allow(unused)]
-    code_challenge_method: Option<String>,
+    code_challenge: OIDCCodeChallenge,
+    code_challenge_method: String,
     #[allow(unused)]
     response_mode: Option<String>,
     #[allow(unused)]
@@ -1118,10 +1110,16 @@ async fn authorize(data: AuthorizeData, conn: DbConn) -> ApiResult<Redirect> {
         client_id,
         redirect_uri,
         state,
+        code_challenge,
+        code_challenge_method,
         ..
     } = data;
 
-    let auth_url = sso::authorize_url(state, &client_id, &redirect_uri, conn).await?;
+    if code_challenge_method != "S256" {
+        err!("Unsupported code challenge method");
+    }
+
+    let auth_url = sso::authorize_url(state, code_challenge, &client_id, &redirect_uri, conn).await?;
 
     Ok(Redirect::temporary(String::from(auth_url)))
 }
