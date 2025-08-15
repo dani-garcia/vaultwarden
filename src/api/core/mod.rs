@@ -212,6 +212,7 @@ fn config() -> Json<Value> {
     feature_states.insert("unauth-ui-refresh".to_string(), true);
     feature_states.insert("enable-pm-flight-recorder".to_string(), true);
     feature_states.insert("mobile-error-reporting".to_string(), true);
+    feature_states.insert("block-browser-injections-by-domain".to_string(), true);
 
     Json(json!({
         // Note: The clients use this version to handle backwards compatibility concerns
