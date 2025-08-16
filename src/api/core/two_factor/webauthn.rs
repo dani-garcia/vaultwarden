@@ -21,7 +21,7 @@ use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 use url::Url;
 use uuid::Uuid;
-use webauthn_rs::prelude::{Base64UrlSafeData, Passkey, PasskeyAuthentication, PasskeyRegistration};
+use webauthn_rs::prelude::{Base64UrlSafeData, Credential, Passkey, PasskeyAuthentication, PasskeyRegistration};
 use webauthn_rs::{Webauthn, WebauthnBuilder};
 use webauthn_rs_proto::{
     AuthenticationExtensionsClientOutputs, AuthenticatorAssertionResponseRaw, AuthenticatorAttestationResponseRaw,
@@ -88,6 +88,24 @@ impl WebauthnRegistration {
             "migrated": self.migrated,
         })
     }
+
+    fn set_backup_eligible(&mut self, backup_eligible: bool, backup_state: bool) -> bool {
+        let mut changed = false;
+        let mut cred: Credential = self.credential.clone().into();
+
+        if cred.backup_state != backup_state {
+            cred.backup_state = backup_state;
+            changed = true;
+        }
+
+        if backup_eligible && !cred.backup_eligible {
+            cred.backup_eligible = true;
+            changed = true;
+        }
+
+        self.credential = cred.into();
+        changed
+    }
 }
 
 #[post("/two-factor/get-webauthn", data = "<data>")]
@@ -137,18 +155,19 @@ async fn generate_webauthn_challenge(
         Some(registrations),
     )?;
 
-    // this is done since `start_passkey_registration()` always sets this to `Required` which shouldn't be needed for 2FA
-    challenge.public_key.extensions = None;
-    if let Some(asc) = challenge.public_key.authenticator_selection.as_mut() {
-        asc.user_verification = UserVerificationPolicy::Discouraged_DO_NOT_USE;
-    }
-
     let mut state = serde_json::to_value(&state)?;
     state["rs"]["policy"] = Value::String("discouraged".to_string());
     state["rs"]["extensions"].as_object_mut().unwrap().clear();
 
     let type_ = TwoFactorType::WebauthnRegisterChallenge;
     TwoFactor::new(user.uuid.clone(), type_, serde_json::to_string(&state)?).save(&mut conn).await?;
+
+    // Because for this flow we abuse the passkeys as 2FA, and use it more like a securitykey
+    // wee modify some default defined by `start_passkey_registration()`.
+    challenge.public_key.extensions = None;
+    if let Some(asc) = challenge.public_key.authenticator_selection.as_mut() {
+        asc.user_verification = UserVerificationPolicy::Discouraged_DO_NOT_USE;
+    }
 
     let mut challenge_value = serde_json::to_value(challenge.public_key)?;
     challenge_value["status"] = "ok".into();
@@ -379,7 +398,8 @@ pub async fn generate_webauthn_login(
     conn: &mut DbConn,
 ) -> JsonResult {
     // Load saved credentials
-    let creds: Vec<_> = get_webauthn_registrations(user_id, conn).await?.1.into_iter().map(|r| r.credential).collect();
+    let creds: Vec<Passkey> =
+        get_webauthn_registrations(user_id, conn).await?.1.into_iter().map(|r| r.credential).collect();
 
     if creds.is_empty() {
         err!("No Webauthn devices registered")
@@ -391,11 +411,12 @@ pub async fn generate_webauthn_login(
     // Modify to discourage user verification
     let mut state = serde_json::to_value(&state)?;
     state["ast"]["policy"] = Value::String("discouraged".to_string());
-    response.public_key.user_verification = UserVerificationPolicy::Discouraged_DO_NOT_USE;
 
     // Add appid, this is only needed for U2F compatibility, so maybe it can be removed as well
     let app_id = format!("{}/app-id.json", &CONFIG.domain());
     state["ast"]["appid"] = Value::String(app_id.clone());
+
+    response.public_key.user_verification = UserVerificationPolicy::Discouraged_DO_NOT_USE;
     response
         .public_key
         .extensions
@@ -422,7 +443,7 @@ pub async fn validate_webauthn_login(
     conn: &mut DbConn,
 ) -> EmptyResult {
     let type_ = TwoFactorType::WebauthnLoginChallenge as i32;
-    let state = match TwoFactor::find_by_user_and_type(user_id, type_, conn).await {
+    let mut state = match TwoFactor::find_by_user_and_type(user_id, type_, conn).await {
         Some(tf) => {
             let state: PasskeyAuthentication = serde_json::from_str(&tf.data)?;
             tf.delete(conn).await?;
@@ -440,6 +461,11 @@ pub async fn validate_webauthn_login(
     let rsp: PublicKeyCredential = rsp.into();
 
     let mut registrations = get_webauthn_registrations(user_id, conn).await?.1;
+
+    // We need to check for and update the backup_eligible flag when needed.
+    // Vaultwarden did not have knowledge of this flag prior to migrating to webauthn-rs v0.5.x
+    // Because of this we check this at runtime and update the registrations and state when needed
+    check_and_update_backup_eligible(user_id, &rsp, &mut registrations, &mut state, conn).await?;
 
     let authentication_result = webauthn.finish_passkey_authentication(&rsp, &state)?;
 
@@ -462,4 +488,67 @@ pub async fn validate_webauthn_login(
             event: EventType::UserFailedLogIn2fa
         }
     )
+}
+
+async fn check_and_update_backup_eligible(
+    user_id: &UserId,
+    rsp: &PublicKeyCredential,
+    registrations: &mut Vec<WebauthnRegistration>,
+    state: &mut PasskeyAuthentication,
+    conn: &mut DbConn,
+) -> EmptyResult {
+    // The feature flags from the response
+    // For details see: https://www.w3.org/TR/webauthn-3/#sctn-authenticator-data
+    const FLAG_BACKUP_ELIGIBLE: u8 = 0b0000_1000;
+    const FLAG_BACKUP_STATE: u8 = 0b0001_0000;
+
+    if let Some(bits) = rsp.response.authenticator_data.get(32) {
+        let backup_eligible = 0 != (bits & FLAG_BACKUP_ELIGIBLE);
+        let backup_state = 0 != (bits & FLAG_BACKUP_STATE);
+
+        // If the current key is backup eligible, then we probably need to update one of the keys already stored in the database
+        // This, because the previous version of webauthn-rs Vaultwarden used did not stored this information since it was a new addition to the protocol
+        // Because we store multiple keys in one json string, we need to fetch the correct key first, and update it's information before we let it verify
+        if backup_eligible {
+            let rsp_id = rsp.raw_id.as_slice();
+            for reg in &mut *registrations {
+                if ct_eq(reg.credential.cred_id().as_slice(), rsp_id) {
+                    // Try to update the key, and if needed also update the database, before the actual state check is done
+                    if reg.set_backup_eligible(backup_eligible, backup_state) {
+                        TwoFactor::new(
+                            user_id.clone(),
+                            TwoFactorType::Webauthn,
+                            serde_json::to_string(&registrations)?,
+                        )
+                        .save(conn)
+                        .await?;
+
+                        // We also need to adjust the current state which holds the challenge used to start the authentication verification
+                        // Because Vaultwarden supports multiple keys, we need to loop through the deserialized state and check which key to update
+                        let mut raw_state = serde_json::to_value(&state)?;
+                        if let Some(credentials) = raw_state
+                            .get_mut("ast")
+                            .and_then(|v| v.get_mut("credentials"))
+                            .and_then(|v| v.as_array_mut())
+                        {
+                            for cred in credentials.iter_mut() {
+                                if cred.get("cred_id").is_some_and(|v| {
+                                    // Deserialize to a [u8] so it can be compared using `ct_eq` with the `rsp_id`
+                                    let cred_id_slice: Base64UrlSafeData = serde_json::from_value(v.clone()).unwrap();
+                                    ct_eq(cred_id_slice, rsp_id)
+                                }) {
+                                    cred["backup_eligible"] = Value::Bool(backup_eligible);
+                                    cred["backup_state"] = Value::Bool(backup_state);
+                                }
+                            }
+                        }
+
+                        *state = serde_json::from_value(raw_state)?;
+                    }
+                    break;
+                }
+            }
+        }
+    }
+    Ok(())
 }
