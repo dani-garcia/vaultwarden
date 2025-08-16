@@ -163,7 +163,7 @@ async fn generate_webauthn_challenge(
     TwoFactor::new(user.uuid.clone(), type_, serde_json::to_string(&state)?).save(&mut conn).await?;
 
     // Because for this flow we abuse the passkeys as 2FA, and use it more like a securitykey
-    // wee modify some default defined by `start_passkey_registration()`.
+    // we need to modify some of the default settings defined by `start_passkey_registration()`.
     challenge.public_key.extensions = None;
     if let Some(asc) = challenge.public_key.authenticator_selection.as_mut() {
         asc.user_verification = UserVerificationPolicy::Discouraged_DO_NOT_USE;
@@ -464,7 +464,7 @@ pub async fn validate_webauthn_login(
 
     // We need to check for and update the backup_eligible flag when needed.
     // Vaultwarden did not have knowledge of this flag prior to migrating to webauthn-rs v0.5.x
-    // Because of this we check this at runtime and update the registrations and state when needed
+    // Because of this we check the flag at runtime and update the registrations and state when needed
     check_and_update_backup_eligible(user_id, &rsp, &mut registrations, &mut state, conn).await?;
 
     let authentication_result = webauthn.finish_passkey_authentication(&rsp, &state)?;
@@ -507,8 +507,8 @@ async fn check_and_update_backup_eligible(
         let backup_state = 0 != (bits & FLAG_BACKUP_STATE);
 
         // If the current key is backup eligible, then we probably need to update one of the keys already stored in the database
-        // This, because the previous version of webauthn-rs Vaultwarden used did not stored this information since it was a new addition to the protocol
-        // Because we store multiple keys in one json string, we need to fetch the correct key first, and update it's information before we let it verify
+        // This is needed because Vaultwarden didn't store this information when using the previous version of webauthn-rs since it was a new addition to the protocol
+        // Because we store multiple keys in one json string, we need to fetch the correct key first, and update its information before we let it verify
         if backup_eligible {
             let rsp_id = rsp.raw_id.as_slice();
             for reg in &mut *registrations {
