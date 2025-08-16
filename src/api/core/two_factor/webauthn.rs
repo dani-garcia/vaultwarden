@@ -21,12 +21,12 @@ use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 use url::Url;
 use uuid::Uuid;
-use webauthn_rs::prelude::{Base64UrlSafeData, SecurityKey, SecurityKeyAuthentication, SecurityKeyRegistration};
+use webauthn_rs::prelude::{Base64UrlSafeData, Passkey, PasskeyAuthentication, PasskeyRegistration};
 use webauthn_rs::{Webauthn, WebauthnBuilder};
 use webauthn_rs_proto::{
     AuthenticationExtensionsClientOutputs, AuthenticatorAssertionResponseRaw, AuthenticatorAttestationResponseRaw,
     PublicKeyCredential, RegisterPublicKeyCredential, RegistrationExtensionsClientOutputs,
-    RequestAuthenticationExtensions,
+    RequestAuthenticationExtensions, UserVerificationPolicy,
 };
 
 pub static WEBAUTHN_2FA_CONFIG: LazyLock<Arc<Webauthn>> = LazyLock::new(|| {
@@ -38,8 +38,7 @@ pub static WEBAUTHN_2FA_CONFIG: LazyLock<Arc<Webauthn>> = LazyLock::new(|| {
     let webauthn = WebauthnBuilder::new(&rp_id, &rp_origin)
         .expect("Creating WebauthnBuilder failed")
         .rp_name(&domain)
-        .timeout(Duration::from_millis(60000))
-        .danger_set_user_presence_only_security_keys(true);
+        .timeout(Duration::from_millis(60000));
 
     Arc::new(webauthn.build().expect("Building Webauthn failed"))
 });
@@ -78,7 +77,7 @@ pub struct WebauthnRegistration {
     pub name: String,
     pub migrated: bool,
 
-    pub credential: SecurityKey,
+    pub credential: Passkey,
 }
 
 impl WebauthnRegistration {
@@ -131,14 +130,22 @@ async fn generate_webauthn_challenge(
         .map(|r| r.credential.cred_id().to_owned()) // We return the credentialIds to the clients to avoid double registering
         .collect();
 
-    let (challenge, state) = webauthn.start_securitykey_registration(
+    let (mut challenge, state) = webauthn.start_passkey_registration(
         Uuid::from_str(&user.uuid).expect("Failed to parse UUID"), // Should never fail
         &user.email,
         &user.name,
         Some(registrations),
-        None,
-        None,
     )?;
+
+    // this is done since `start_passkey_registration()` always sets this to `Required` which shouldn't be needed for 2FA
+    challenge.public_key.extensions = None;
+    if let Some(asc) = challenge.public_key.authenticator_selection.as_mut() {
+        asc.user_verification = UserVerificationPolicy::Discouraged_DO_NOT_USE;
+    }
+
+    let mut state = serde_json::to_value(&state)?;
+    state["rs"]["policy"] = Value::String("discouraged".to_string());
+    state["rs"]["extensions"].as_object_mut().unwrap().clear();
 
     let type_ = TwoFactorType::WebauthnRegisterChallenge;
     TwoFactor::new(user.uuid.clone(), type_, serde_json::to_string(&state)?).save(&mut conn).await?;
@@ -253,7 +260,7 @@ async fn activate_webauthn(
     let type_ = TwoFactorType::WebauthnRegisterChallenge as i32;
     let state = match TwoFactor::find_by_user_and_type(&user.uuid, type_, &mut conn).await {
         Some(tf) => {
-            let state: SecurityKeyRegistration = serde_json::from_str(&tf.data)?;
+            let state: PasskeyRegistration = serde_json::from_str(&tf.data)?;
             tf.delete(&mut conn).await?;
             state
         }
@@ -261,7 +268,7 @@ async fn activate_webauthn(
     };
 
     // Verify the credentials with the saved state
-    let credential = webauthn.finish_securitykey_registration(&data.device_response.into(), &state)?;
+    let credential = webauthn.finish_passkey_registration(&data.device_response.into(), &state)?;
 
     let mut registrations: Vec<_> = get_webauthn_registrations(&user.uuid, &mut conn).await?.1;
     // TODO: Check for repeated ID's
@@ -379,10 +386,12 @@ pub async fn generate_webauthn_login(
     }
 
     // Generate a challenge based on the credentials
-    let (mut response, state) = webauthn.start_securitykey_authentication(&creds)?;
+    let (mut response, state) = webauthn.start_passkey_authentication(&creds)?;
 
     // Modify to discourage user verification
     let mut state = serde_json::to_value(&state)?;
+    state["ast"]["policy"] = Value::String("discouraged".to_string());
+    response.public_key.user_verification = UserVerificationPolicy::Discouraged_DO_NOT_USE;
 
     // Add appid, this is only needed for U2F compatibility, so maybe it can be removed as well
     let app_id = format!("{}/app-id.json", &CONFIG.domain());
@@ -415,7 +424,7 @@ pub async fn validate_webauthn_login(
     let type_ = TwoFactorType::WebauthnLoginChallenge as i32;
     let state = match TwoFactor::find_by_user_and_type(user_id, type_, conn).await {
         Some(tf) => {
-            let state: SecurityKeyAuthentication = serde_json::from_str(&tf.data)?;
+            let state: PasskeyAuthentication = serde_json::from_str(&tf.data)?;
             tf.delete(conn).await?;
             state
         }
@@ -432,7 +441,7 @@ pub async fn validate_webauthn_login(
 
     let mut registrations = get_webauthn_registrations(user_id, conn).await?.1;
 
-    let authentication_result = webauthn.finish_securitykey_authentication(&rsp, &state)?;
+    let authentication_result = webauthn.finish_passkey_authentication(&rsp, &state)?;
 
     for reg in &mut registrations {
         if ct_eq(reg.credential.cred_id(), authentication_result.cred_id()) {
