@@ -55,6 +55,7 @@ mod crypto;
 mod db;
 mod http_client;
 mod mail;
+mod metrics;
 mod ratelimit;
 mod sso;
 mod sso_client;
@@ -90,6 +91,17 @@ async fn main() -> Result<(), Error> {
     schedule_jobs(pool.clone());
     db::models::TwoFactor::migrate_u2f_to_webauthn(&mut pool.get().await.unwrap()).await.unwrap();
     db::models::TwoFactor::migrate_credential_to_passkey(&mut pool.get().await.unwrap()).await.unwrap();
+
+    // Initialize metrics if enabled
+    if CONFIG.enable_metrics() {
+        metrics::init_build_info();
+        info!("Metrics endpoint enabled at /metrics");
+        if CONFIG.metrics_token().is_some() {
+            info!("Metrics endpoint secured with token");
+        } else {
+            warn!("Metrics endpoint is publicly accessible");
+        }
+    }
 
     let extra_debug = matches!(level, log::LevelFilter::Trace | log::LevelFilter::Debug);
     launch_rocket(pool, extra_debug).await // Blocks until program termination.
@@ -587,14 +599,21 @@ async fn launch_rocket(pool: db::DbPool, extra_debug: bool) -> Result<(), Error>
 
     // If adding more paths here, consider also adding them to
     // crate::utils::LOGGED_ROUTES to make sure they appear in the log
-    let instance = rocket::custom(config)
+    let mut instance = rocket::custom(config)
         .mount([basepath, "/"].concat(), api::web_routes())
         .mount([basepath, "/api"].concat(), api::core_routes())
         .mount([basepath, "/admin"].concat(), api::admin_routes())
         .mount([basepath, "/events"].concat(), api::core_events_routes())
         .mount([basepath, "/identity"].concat(), api::identity_routes())
         .mount([basepath, "/icons"].concat(), api::icons_routes())
-        .mount([basepath, "/notifications"].concat(), api::notifications_routes())
+        .mount([basepath, "/notifications"].concat(), api::notifications_routes());
+
+    // Conditionally mount metrics routes if enabled
+    if CONFIG.enable_metrics() {
+        instance = instance.mount([basepath, "/metrics"].concat(), api::metrics_routes());
+    }
+
+    let mut rocket_instance = instance
         .register([basepath, "/"].concat(), api::web_catchers())
         .register([basepath, "/api"].concat(), api::core_catchers())
         .register([basepath, "/admin"].concat(), api::admin_catchers())
@@ -604,7 +623,14 @@ async fn launch_rocket(pool: db::DbPool, extra_debug: bool) -> Result<(), Error>
         .manage(Arc::clone(&WEBAUTHN_2FA_CONFIG))
         .attach(util::AppHeaders())
         .attach(util::Cors())
-        .attach(util::BetterLogging(extra_debug))
+        .attach(util::BetterLogging(extra_debug));
+
+    // Attach metrics fairing if metrics are enabled
+    if CONFIG.enable_metrics() {
+        rocket_instance = rocket_instance.attach(api::MetricsFairing);
+    }
+
+    let instance = rocket_instance
         .ignite()
         .await?;
 
