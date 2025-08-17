@@ -1,9 +1,11 @@
+#![allow(dead_code, unused_imports)]
+
 #[cfg(feature = "enable_metrics")]
 use once_cell::sync::Lazy;
 #[cfg(feature = "enable_metrics")]
 use prometheus::{
-    register_counter_vec, register_gauge_vec, register_histogram_vec, register_int_counter_vec, register_int_gauge_vec,
-    CounterVec, Encoder, GaugeVec, HistogramVec, IntCounterVec, IntGaugeVec, TextEncoder,
+    register_gauge_vec, register_histogram_vec, register_int_counter_vec, register_int_gauge_vec,
+    Encoder, GaugeVec, HistogramVec, IntCounterVec, IntGaugeVec, TextEncoder,
 };
 
 #[cfg(feature = "enable_metrics")]
@@ -198,7 +200,13 @@ pub async fn update_business_metrics(conn: &mut DbConn) -> Result<(), crate::err
                 4 => "identity",
                 _ => "unknown",
             };
-            let org_label = cipher.organization_uuid.as_ref().map(|id| id.as_str()).unwrap_or("personal");
+            let org_id_string;
+            let org_label = if let Some(id) = &cipher.organization_uuid {
+                org_id_string = id.to_string();
+                &org_id_string
+            } else {
+                "personal"
+            };
             VAULT_ITEMS_TOTAL.with_label_values(&[cipher_type, org_label]).inc();
         }
     }

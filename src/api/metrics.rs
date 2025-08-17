@@ -1,16 +1,19 @@
+#![allow(dead_code, unused_imports)]
+
 use rocket::{
     http::{ContentType, Status},
     request::{FromRequest, Outcome, Request},
-    response::{Content, Result},
+    response::{self, content::RawText},
     Route,
 };
 
 use crate::{
     auth::ClientIp,
     db::DbConn,
-    error::Error,
     CONFIG,
 };
+
+use log::error;
 
 // Metrics endpoint routes
 pub fn routes() -> Vec<Route> {
@@ -46,7 +49,11 @@ impl<'r> FromRequest<'r> for MetricsToken {
             .headers()
             .get_one("Authorization")
             .and_then(|auth| auth.strip_prefix("Bearer "))
-            .or_else(|| request.query_value::<&str>("token").and_then(Result::ok));
+            .or_else(|| {
+                request
+                    .query_value::<&str>("token")
+                    .and_then(|result| result.ok())
+            });
 
         match provided_token {
             Some(token) => {
@@ -84,7 +91,7 @@ fn validate_metrics_token(provided: &str, configured: &str) -> bool {
 
 /// Prometheus metrics endpoint
 #[get("/")]
-async fn get_metrics(_token: MetricsToken, mut conn: DbConn) -> Result<Content<String>, Status> {
+async fn get_metrics(_token: MetricsToken, mut conn: DbConn) -> Result<RawText<String>, Status> {
     // Update business metrics from database
     if let Err(e) = crate::metrics::update_business_metrics(&mut conn).await {
         error!("Failed to update business metrics: {e}");
@@ -93,7 +100,7 @@ async fn get_metrics(_token: MetricsToken, mut conn: DbConn) -> Result<Content<S
 
     // Gather all Prometheus metrics
     match crate::metrics::gather_metrics() {
-        Ok(metrics) => Ok(Content(ContentType::Plain, metrics)),
+        Ok(metrics) => Ok(RawText(metrics)),
         Err(e) => {
             error!("Failed to gather metrics: {e}");
             Err(Status::InternalServerError)
@@ -103,7 +110,7 @@ async fn get_metrics(_token: MetricsToken, mut conn: DbConn) -> Result<Content<S
 
 /// Health check endpoint that also updates some basic metrics
 #[cfg(feature = "enable_metrics")]
-pub async fn update_health_metrics(conn: &mut DbConn) -> Result<(), Error> {
+pub async fn update_health_metrics(_conn: &mut DbConn) {
     // Update basic system metrics
     use std::time::SystemTime;
     static START_TIME: std::sync::OnceLock<SystemTime> = std::sync::OnceLock::new();
@@ -114,11 +121,7 @@ pub async fn update_health_metrics(conn: &mut DbConn) -> Result<(), Error> {
     // Update database connection metrics
     // Note: This is a simplified version - in production you'd want to get actual pool stats
     crate::metrics::update_db_connections("main", 1, 0);
-    
-    Ok(())
 }
 
 #[cfg(not(feature = "enable_metrics"))]
-pub async fn update_health_metrics(_conn: &mut DbConn) -> Result<(), Error> {
-    Ok(())
-}
+pub async fn update_health_metrics(_conn: &mut DbConn) {}

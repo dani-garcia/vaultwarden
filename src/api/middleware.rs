@@ -1,7 +1,6 @@
 /// Metrics middleware for automatic HTTP request instrumentation
 use rocket::{
     fairing::{Fairing, Info, Kind},
-    http::Method,
     Data, Request, Response,
 };
 use std::time::Instant;
@@ -24,16 +23,15 @@ impl Fairing for MetricsFairing {
     }
 
     async fn on_response<'r>(&self, req: &'r Request<'_>, res: &mut Response<'r>) {
-        if let Some(timer) = req.local_cache(|| RequestTimer { start_time: Instant::now() }) {
-            let duration = timer.start_time.elapsed();
-            let method = req.method().as_str();
-            let path = normalize_path(req.uri().path().as_str());
-            let status = res.status().code;
+        let timer = req.local_cache(|| RequestTimer { start_time: Instant::now() });
+        let duration = timer.start_time.elapsed();
+        let method = req.method().as_str();
+        let path = normalize_path(req.uri().path().as_str());
+        let status = res.status().code;
 
-            // Record metrics
-            crate::metrics::increment_http_requests(method, &path, status);
-            crate::metrics::observe_http_request_duration(method, &path, duration.as_secs_f64());
-        }
+        // Record metrics
+        crate::metrics::increment_http_requests(method, &path, status);
+        crate::metrics::observe_http_request_duration(method, &path, duration.as_secs_f64());
     }
 }
 

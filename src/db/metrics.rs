@@ -1,4 +1,6 @@
+#![allow(dead_code, unused_imports)]
 /// Database metrics collection utilities
+
 use std::time::Instant;
 
 /// Database operation tracker for metrics
@@ -38,7 +40,7 @@ macro_rules! db_metric {
 }
 
 /// Track database connection pool statistics
-pub async fn update_pool_metrics(pool: &crate::db::DbPool) {
+pub async fn update_pool_metrics(_pool: &crate::db::DbPool) {
     #[cfg(feature = "enable_metrics")]
     {
         // Note: This is a simplified implementation
