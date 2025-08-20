@@ -145,7 +145,6 @@ db_object! {
         pub state: OIDCState,
         pub client_challenge: OIDCCodeChallenge,
         pub nonce: String,
-        pub verifier: Option<String>,
         pub redirect_uri: String,
         pub code_response: Option<OIDCCodeWrapper>,
         pub auth_response: Option<OIDCAuthenticatedUser>,
@@ -156,20 +155,13 @@ db_object! {
 
 /// Local methods
 impl SsoAuth {
-    pub fn new(
-        state: OIDCState,
-        client_challenge: OIDCCodeChallenge,
-        nonce: String,
-        verifier: Option<String>,
-        redirect_uri: String,
-    ) -> Self {
+    pub fn new(state: OIDCState, client_challenge: OIDCCodeChallenge, nonce: String, redirect_uri: String) -> Self {
         let now = Utc::now().naive_utc();
 
         SsoAuth {
             state,
             client_challenge,
             nonce,
-            verifier,
             redirect_uri,
             created_at: now,
             updated_at: now,

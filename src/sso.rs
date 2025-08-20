@@ -238,13 +238,6 @@ pub async fn exchange_code(
         return Ok((sso_auth, authenticated_user));
     }
 
-    let verifier = openidconnect::PkceCodeVerifier::new(client_verifier.into());
-    let challenge = openidconnect::PkceCodeChallenge::from_code_verifier_sha256(&verifier);
-    if challenge.as_str() != String::from(sso_auth.client_challenge.clone()) {
-        err!(format!("PKCE client challenge failed"))
-        // Might need to notify admin ? how ?
-    }
-
     let code = match sso_auth.code_response.clone() {
         Some(OIDCCodeWrapper::Ok {
             code,
@@ -263,7 +256,7 @@ pub async fn exchange_code(
     };
 
     let client = Client::cached().await?;
-    let (token_response, id_claims) = client.exchange_code(code, &sso_auth).await?;
+    let (token_response, id_claims) = client.exchange_code(code, client_verifier, &sso_auth).await?;
 
     let user_info = client.user_info(token_response.access_token().to_owned()).await?;
 

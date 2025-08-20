@@ -12,7 +12,7 @@ use openidconnect::*;
 use crate::{
     api::{ApiResult, EmptyResult},
     db::models::SsoAuth,
-    sso::{OIDCCode, OIDCCodeChallenge, OIDCState},
+    sso::{OIDCCode, OIDCCodeChallenge, OIDCCodeVerifier, OIDCState},
     CONFIG,
 };
 
@@ -130,22 +130,20 @@ impl Client {
             .add_scopes(scopes)
             .add_extra_params(CONFIG.sso_authorize_extra_params_vec());
 
-        let verifier = if CONFIG.sso_pkce() {
-            // Would be nice to just pass the client challenge but we can't create a `PkceCodeChallenge`.
-            let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
-            auth_req = auth_req.set_pkce_challenge(pkce_challenge);
-            Some(pkce_verifier.into_secret())
-        } else {
-            None
-        };
+        if CONFIG.sso_pkce() {
+            auth_req = auth_req
+                .add_extra_param::<&str, String>("code_challenge", client_challenge.clone().into())
+                .add_extra_param("code_challenge_method", "S256");
+        }
 
         let (auth_url, _, nonce) = auth_req.url();
-        Ok((auth_url, SsoAuth::new(state, client_challenge, nonce.secret().clone(), verifier, redirect_uri)))
+        Ok((auth_url, SsoAuth::new(state, client_challenge, nonce.secret().clone(), redirect_uri)))
     }
 
     pub async fn exchange_code(
         &self,
         code: OIDCCode,
+        client_verifier: OIDCCodeVerifier,
         sso_auth: &SsoAuth,
     ) -> ApiResult<(
         StandardTokenResponse<
@@ -164,10 +162,14 @@ impl Client {
 
         let mut exchange = self.core_client.exchange_code(oidc_code);
 
+        let verifier = PkceCodeVerifier::new(client_verifier.into());
         if CONFIG.sso_pkce() {
-            match &sso_auth.verifier {
-                None => err!(format!("Missing verifier in the DB sso_auth table")),
-                Some(secret) => exchange = exchange.set_pkce_verifier(PkceCodeVerifier::new(secret.clone())),
+            exchange = exchange.set_pkce_verifier(verifier);
+        } else {
+            let challenge = PkceCodeChallenge::from_code_verifier_sha256(&verifier);
+            if challenge.as_str() != String::from(sso_auth.client_challenge.clone()) {
+                err!(format!("PKCE client challenge failed"))
+                // Might need to notify admin ? how ?
             }
         }
 
