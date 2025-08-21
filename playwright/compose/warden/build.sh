@@ -16,7 +16,6 @@ if [[ ! -z "$REPO_URL" ]] && [[ ! -z "$COMMIT_HASH" ]] ; then
 
     export VAULT_VERSION=$(cat Dockerfile | grep "ARG VAULT_VERSION" | cut -d "=" -f2)
     ./scripts/checkout_web_vault.sh
-    ./scripts/patch_web_vault.sh
     ./scripts/build_web_vault.sh
     printf '{"version":"%s"}' "$COMMIT_HASH" > ./web-vault/apps/web/build/vw-version.json
 
