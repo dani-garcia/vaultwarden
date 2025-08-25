@@ -834,6 +834,14 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         err!(format!("`DATABASE_MAX_CONNS` contains an invalid value. Ensure it is between 1 and {limit}.",));
     }
 
+    if cfg.database_min_conns < 1 || cfg.database_min_conns > limit {
+        err!(format!("`DATABASE_MIN_CONNS` contains an invalid value. Ensure it is between 1 and {limit}.",));
+    }
+
+    if cfg.database_min_conns > cfg.database_max_conns {
+        err!(format!("`DATABASE_MIN_CONNS` must be smaller than or equal to `DATABASE_MAX_CONNS`.",));
+    }
+
     if let Some(log_file) = &cfg.log_file {
         if std::fs::OpenOptions::new().append(true).create(true).open(log_file).is_err() {
             err!("Unable to write to log file", log_file);
