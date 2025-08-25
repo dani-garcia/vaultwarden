@@ -778,6 +778,12 @@ make_config! {
         smtp_username:                 String, true,   option;
         /// Password
         smtp_password:                 Pass,   true,   option;
+        /// Dkim signature (type:privatekey). Private must be base64-encoded ed key or PKCS#1 format RSA key.
+        dkim_signature:                String, true,   option;
+        /// Dkim algo (true if RSA else ed25519)
+        dkim_use_rsa:                     bool,   true,   option;
+        /// Dkim infos (selector:domain)
+        dkim_infos:                    String, true,   option;
         /// SMTP Auth mechanism |> Defaults for SSL is "Plain" and "Login" and nothing for Non-SSL connections. Possible values: ["Plain", "Login", "Xoauth2"]. Multiple options need to be separated by a comma ','.
         smtp_auth_mechanism:           String, true,   option;
         /// SMTP connection timeout |> Number of seconds when to stop trying to connect to the SMTP server
