@@ -86,15 +86,11 @@ RUN apt-get update && \
     xx-apt-get install -y \
         --no-install-recommends \
         gcc \
-        libmariadb3 \
         libpq-dev \
         libpq5 \
         libssl-dev \
+        libmariadb-dev \
         zlib1g-dev && \
-    # Force install arch dependend mariadb dev packages
-    # Installing them the normal way breaks several other packages (again)
-    apt-get download "libmariadb-dev-compat:$(xx-info debian-arch)" "libmariadb-dev:$(xx-info debian-arch)" && \
-    dpkg --force-all -i ./libmariadb-dev*.deb && \
     # Run xx-cargo early, since it sometimes seems to break when run at a later stage
     echo "export CARGO_TARGET=$(xx-cargo --print-target-triple)" >> /env-cargo
 {% endif %}
@@ -216,7 +212,7 @@ RUN mkdir /data && \
         --no-install-recommends \
         ca-certificates \
         curl \
-        libmariadb-dev-compat \
+        libmariadb-dev \
         libpq5 \
         openssl && \
     apt-get clean && \
