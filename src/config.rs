@@ -640,7 +640,7 @@ make_config! {
         database_timeout:       u64,    false,  def,    30;
 
         /// Timeout in seconds before idle connections to the database are closed
-        database_idle_timeout:  u64,    false, def,     60;
+        database_idle_timeout:  u64,    false, def,     600;
 
         /// Database connection max pool size
         database_max_conns:     u32,    false,  def,    10;
