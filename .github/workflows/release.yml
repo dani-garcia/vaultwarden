@@ -19,6 +19,7 @@ concurrency:
 jobs:
   docker-build:
     name: Build Vaultwarden containers
+    if: ${{ github.repository == 'dani-garcia/vaultwarden' }}
     permissions:
       packages: write
       contents: read
