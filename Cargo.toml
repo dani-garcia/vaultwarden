@@ -126,8 +126,7 @@ yubico = { package = "yubico_ng", version = "0.14.1", features = ["online-tokio"
 # WebAuthn libraries
 # danger-allow-state-serialisation is needed to save the state in the db
 # danger-credential-internals is needed to support U2F to Webauthn migration
-# danger-user-presence-only-security-keys is needed to disable UV
-webauthn-rs = { version = "0.5.2", features = ["danger-allow-state-serialisation", "danger-credential-internals", "danger-user-presence-only-security-keys"] }
+webauthn-rs = { version = "0.5.2", features = ["danger-allow-state-serialisation", "danger-credential-internals"] }
 webauthn-rs-proto = "0.5.2"
 webauthn-rs-core = "0.5.2"
 
