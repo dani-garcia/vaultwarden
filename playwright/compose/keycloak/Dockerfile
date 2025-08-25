@@ -21,7 +21,7 @@ ARG KEYCLOAK_VERSION
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 RUN apt-get update \
-    && apt-get install -y ca-certificates curl wget \
+    && apt-get install -y ca-certificates curl wget jq \
     && rm -rf /var/lib/apt/lists/*
 
 ARG JAVA_URL
