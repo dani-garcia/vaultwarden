@@ -639,8 +639,14 @@ make_config! {
         /// Timeout when acquiring database connection
         database_timeout:       u64,    false,  def,    30;
 
-        /// Database connection pool size
+        /// Timeout in seconds before idle connections to the database are closed
+        database_idle_timeout:  u64,    false, def,     600;
+
+        /// Database connection max pool size
         database_max_conns:     u32,    false,  def,    10;
+
+        /// Database connection min pool size
+        database_min_conns:     u32,    false,  def,    2;
 
         /// Database connection init |> SQL statements to run when creating a new database connection, mainly useful for connection-scoped pragmas. If empty, a database-specific default is used.
         database_conn_init:     String, false,  def,    String::new();
