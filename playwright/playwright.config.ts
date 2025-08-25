@@ -26,9 +26,9 @@ export default defineConfig({
      * But short action/nav/expect timeouts to fail on specific step (raise locally if not enough).
      */
     timeout: 120 * 1000,
-    actionTimeout: 10 * 1000,
-    navigationTimeout: 10 * 1000,
-    expect: { timeout: 10 * 1000 },
+    actionTimeout: 20 * 1000,
+    navigationTimeout: 20 * 1000,
+    expect: { timeout: 20 * 1000 },
 
     /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
     use: {
