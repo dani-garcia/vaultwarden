@@ -111,7 +111,14 @@ async fn master_password_policy(user: &User, conn: &DbConn) -> Value {
             }
         }))
     } else if let Some(policy_str) = CONFIG.sso_master_password_policy().filter(|_| CONFIG.sso_enabled()) {
-        serde_json::from_str(&policy_str).unwrap_or(json!({}))
+        // Use a match statement to handle Ok and Err results gracefully.
+        match serde_json::from_str(&policy_str) {
+            Ok(val) => val,
+            Err(_) => {
+                warn!("Failed to parse sso_master_password_policy configuration string: {}", policy_str);
+                json!({})
+            },
+        }
     } else {
         json!({})
     };
