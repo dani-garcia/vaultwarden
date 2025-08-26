@@ -442,7 +442,6 @@ async fn _password_login(
     authenticated_response(&user, &mut device, auth_tokens, twofactor_token, &now, conn, ip).await
 }
 
-#[allow(clippy::too_many_arguments)]
 async fn authenticated_response(
     user: &User,
     device: &mut Device,

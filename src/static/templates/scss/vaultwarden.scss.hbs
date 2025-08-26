@@ -55,7 +55,7 @@ app-root ng-component > form > div:nth-child(1) > div > button[buttontype="secon
 {{/if}}
 
 /* Hide the `Log in with passkey` settings */
-app-change-password app-webauthn-login-settings {
+app-user-layout app-password-settings app-webauthn-login-settings {
   @extend %vw-hide;
 }
 /* Hide Log in with passkey on the login page */
@@ -131,6 +131,10 @@ bit-nav-logo bit-nav-item a:before {
   display: block;
 }
 bit-nav-logo bit-nav-item .bwi-shield {
+  @extend %vw-hide;
+}
+/* Hide Device Login Protection button on user settings page */
+app-user-layout app-danger-zone button:nth-child(1) {
   @extend %vw-hide;
 }
 /**** END Static Vaultwarden Changes ****/
