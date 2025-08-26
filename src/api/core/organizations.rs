@@ -2063,12 +2063,12 @@ async fn list_policies_token(org_id: OrganizationId, token: &str, mut conn: DbCo
 async fn get_master_password_policy(org_id: OrganizationId, _headers: Headers, mut conn: DbConn) -> JsonResult {
     let policy =
         OrgPolicy::find_by_org_and_type(&org_id, OrgPolicyType::MasterPassword, &mut conn).await.unwrap_or_else(|| {
-            let data = match CONFIG.sso_master_password_policy() {
-                Some(policy) => policy,
-                None => "null".to_string(),
+            let (enabled, data) = match CONFIG.sso_master_password_policy_value() {
+                Some(policy) if CONFIG.sso_enabled() => (true, policy.to_string()),
+                _ => (false, "null".to_string()),
             };
 
-            OrgPolicy::new(org_id, OrgPolicyType::MasterPassword, CONFIG.sso_master_password_policy().is_some(), data)
+            OrgPolicy::new(org_id, OrgPolicyType::MasterPassword, enabled, data)
         });
 
     Ok(Json(policy.to_json()))
