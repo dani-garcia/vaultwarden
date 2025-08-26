@@ -110,8 +110,8 @@ async fn master_password_policy(user: &User, conn: &DbConn) -> Value {
                 enforce_on_login: acc.enforce_on_login || policy.enforce_on_login,
             }
         }))
-    } else if let Some(policy_str) = CONFIG.sso_master_password_policy().filter(|_| CONFIG.sso_enabled()) {
-        serde_json::from_str(&policy_str).unwrap_or(json!({}))
+    } else if CONFIG.sso_enabled() {
+        CONFIG.sso_master_password_policy_value().unwrap_or(json!({}))
     } else {
         json!({})
     };
