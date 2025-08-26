@@ -72,7 +72,7 @@ jobs:
 
       # Checkout the repo
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 #v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 #v5.0.0
         # We need fetch-depth of 0 so we also get all the tag metadata
         with:
           persist-credentials: false
@@ -175,7 +175,7 @@ jobs:
 
       - name: Bake ${{ matrix.base_image }} containers
         id: bake_vw
-        uses: docker/bake-action@37816e747588cb137173af99ab33873600c46ea8 # v6.8.0
+        uses: docker/bake-action@3acf805d94d93a86cce4ca44798a76464a75b88c # v6.9.0
         env:
           BASE_TAGS: "${{ env.BASE_TAGS }}"
           SOURCE_COMMIT: "${{ env.SOURCE_COMMIT }}"
