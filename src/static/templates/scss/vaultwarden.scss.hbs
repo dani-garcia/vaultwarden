@@ -172,6 +172,13 @@ app-root a[routerlink="/signup"] {
 }
 {{/unless}}
 
+{{#unless webauthn_2fa_supported}}
+/* Hide `Passkey` 2FA if it is not supported */
+.providers-2fa-7 {
+  @extend %vw-hide;
+}
+{{/unless}}
+
 {{#unless emergency_access_allowed}}
 /* Hide Emergency Access if not allowed */
 bit-nav-item[route="settings/emergency-access"] {
