@@ -544,23 +544,9 @@ async fn update_membership_type(data: Json<MembershipTypeData>, token: AdminToke
         }
     }
 
+    member_to_edit.atype = new_type;
     // This check is also done at api::organizations::{accept_invite, _confirm_invite, _activate_member, edit_member}, update_membership_type
-    // It returns different error messages per function.
-    if new_type < MembershipType::Admin {
-        match OrgPolicy::is_user_allowed(&member_to_edit.user_uuid, &member_to_edit.org_uuid, true, &mut conn).await {
-            Ok(_) => {}
-            Err(OrgPolicyErr::TwoFactorMissing) => {
-                if CONFIG.email_2fa_auto_fallback() {
-                    two_factor::email::find_and_activate_email_2fa(&member_to_edit.user_uuid, &mut conn).await?;
-                } else {
-                    err!("You cannot modify this user to this type because they have not setup 2FA");
-                }
-            }
-            Err(OrgPolicyErr::SingleOrgEnforced) => {
-                err!("You cannot modify this user to this type because it is a member of an organization which forbids it");
-            }
-        }
-    }
+    OrgPolicy::check_user_allowed(&member_to_edit, "modify", &mut conn).await?;
 
     log_event(
         EventType::OrganizationUserUpdated as i32,
@@ -573,7 +559,6 @@ async fn update_membership_type(data: Json<MembershipTypeData>, token: AdminToke
     )
     .await;
 
-    member_to_edit.atype = new_type;
     member_to_edit.save(&mut conn).await
 }
 
