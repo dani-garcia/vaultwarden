@@ -794,12 +794,14 @@ make_config! {
         smtp_accept_invalid_certs:     bool,   true,   def,     false;
         /// Accept Invalid Hostnames (Know the risks!) |> DANGEROUS: Allow invalid hostnames. This option introduces significant vulnerabilities to man-in-the-middle attacks!
         smtp_accept_invalid_hostnames: bool,   true,   def,     false;
+        /// Use AWS SES |> Whether to send mail via AWS Simple Email Service (SES)
+        use_aws_ses:                   bool,   true,   def,     false;
     },
 
     /// Email 2FA Settings
     email_2fa: _enable_email_2fa {
         /// Enabled |> Disabling will prevent users from setting up new email 2FA and using existing email 2FA configured
-        _enable_email_2fa:      bool,   true,   auto,    |c| c._enable_smtp && (c.smtp_host.is_some() || c.use_sendmail);
+        _enable_email_2fa:      bool,   true,   auto,    |c| c._enable_smtp && (c.smtp_host.is_some() || c.use_sendmail || c.use_aws_ses);
         /// Email token size |> Number of digits in an email 2FA token (min: 6, max: 255). Note that the Bitwarden clients are hardcoded to mention 6 digit codes regardless of this setting.
         email_token_size:       u8,     true,   def,      6;
         /// Token expiration time |> Maximum time in seconds a token is valid. The time the user has to open email client and copy token.
@@ -1031,6 +1033,9 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
                     }
                 }
             }
+        } else if cfg.use_aws_ses {
+            #[cfg(not(ses))]
+            err!("`USE_AWS_SES` is set, but the `ses` feature is not enabled in this build");
         } else {
             if cfg.smtp_host.is_some() == cfg.smtp_from.is_empty() {
                 err!("Both `SMTP_HOST` and `SMTP_FROM` need to be set for email support without `USE_SENDMAIL`")
@@ -1041,7 +1046,7 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
             }
         }
 
-        if (cfg.smtp_host.is_some() || cfg.use_sendmail) && !is_valid_email(&cfg.smtp_from) {
+        if (cfg.smtp_host.is_some() || cfg.use_sendmail || cfg.use_aws_ses) && !is_valid_email(&cfg.smtp_from) {
             err!(format!("SMTP_FROM '{}' is not a valid email address", cfg.smtp_from))
         }
 
@@ -1050,7 +1055,7 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         }
     }
 
-    if cfg._enable_email_2fa && !(cfg.smtp_host.is_some() || cfg.use_sendmail) {
+    if cfg._enable_email_2fa && !(cfg.smtp_host.is_some() || cfg.use_sendmail || cfg.use_aws_ses) {
         err!("To enable email 2FA, a mail transport must be configured")
     }
 
@@ -1285,6 +1290,26 @@ fn opendal_operator_for_path(path: &str) -> Result<opendal::Operator, Error> {
     Ok(operator)
 }
 
+#[cfg(ses)]
+pub(crate) async fn aws_sdk_config() -> &'static aws_config::SdkConfig {
+    use crate::http_client::aws::AwsReqwestConnector;
+    use aws_config::AppName;
+    use tokio::sync::OnceCell;
+
+    static AWS_CONFIG: OnceCell<aws_config::SdkConfig> = OnceCell::const_new();
+
+    AWS_CONFIG
+        .get_or_init(async || {
+            let reqwest_client = reqwest::Client::builder().build().unwrap();
+            let connector = AwsReqwestConnector {
+                client: reqwest_client,
+            };
+
+            aws_config::from_env().app_name(AppName::new("vaultwarden").unwrap()).http_client(connector).load().await
+        })
+        .await
+}
+
 #[cfg(s3)]
 fn opendal_s3_operator_for_path(path: &str) -> Result<opendal::Operator, Error> {
     use crate::http_client::aws::AwsReqwestConnector;
@@ -1505,7 +1530,7 @@ impl Config {
     }
     pub fn mail_enabled(&self) -> bool {
         let inner = &self.inner.read().unwrap().config;
-        inner._enable_smtp && (inner.smtp_host.is_some() || inner.use_sendmail)
+        inner._enable_smtp && (inner.smtp_host.is_some() || inner.use_sendmail || inner.use_aws_ses)
     }
 
     pub async fn get_duo_akey(&self) -> String {
