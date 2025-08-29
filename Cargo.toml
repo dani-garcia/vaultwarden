@@ -27,6 +27,8 @@ vendored_openssl = ["openssl/vendored"]
 # Enable MiMalloc memory allocator to replace the default malloc
 # This can improve performance for Alpine builds
 enable_mimalloc = ["dep:mimalloc"]
+# Enable Prometheus metrics endpoint
+enable_metrics = ["dep:prometheus"]
 # This is a development dependency, and should only be used during development!
 # It enables the usage of the diesel_logger crate, which is able to output the generated queries.
 # You also need to set an env variable `QUERY_LOGGER=1` to fully activate this so you do not have to re-compile
@@ -179,6 +181,9 @@ semver = "1.0.26"
 # Allow overriding the default memory allocator
 # Mainly used for the musl builds, since the default musl malloc is very slow
 mimalloc = { version = "0.1.48", features = ["secure"], default-features = false, optional = true }
+
+# Prometheus metrics
+prometheus = { version = "0.13.1", default-features = false, optional = true }
 
 which = "8.0.0"
 
