@@ -284,21 +284,22 @@ impl User {
 
         db_run! {conn:
             sqlite, mysql {
-                match diesel::replace_into(users::table)
-                    .values(UserDb::to_db(self))
+                let value = UserDb::to_db(self);
+                // Don't use replace_into() since it wants to delete the record first.
+                match diesel::update(users::table)
+                    .filter(users::uuid.eq(&self.uuid))
+                    .set(&value)
                     .execute(conn)
                 {
-                    Ok(_) => Ok(()),
-                    // Record already exists and causes a Foreign Key Violation because replace_into() wants to delete the record first.
-                    Err(diesel::result::Error::DatabaseError(diesel::result::DatabaseErrorKind::ForeignKeyViolation, _)) => {
-                        diesel::update(users::table)
-                            .filter(users::uuid.eq(&self.uuid))
-                            .set(UserDb::to_db(self))
+                    Ok(1) => Ok(()),
+                    Ok(_) => {
+                        diesel::insert_into(users::table)
+                            .values(value)
                             .execute(conn)
                             .map_res("Error saving user")
                     }
                     Err(e) => Err(e.into()),
-                }.map_res("Error saving user")
+                }.map_res("Error updating user")
             }
             postgresql {
                 let value = UserDb::to_db(self);
