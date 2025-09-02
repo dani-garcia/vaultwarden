@@ -19,7 +19,7 @@ use crate::{
     CONFIG,
 };
 
-pub static FAKE_IDENTIFIER: &str = "DUMMY_IDENTIFIER_FOR_OIDC";
+pub static FAKE_IDENTIFIER: &str = "VW_DUMMY_IDENTIFIER_FOR_OIDC";
 
 static AC_CACHE: Lazy<Cache<OIDCState, AuthenticatedUser>> =
     Lazy::new(|| Cache::builder().max_capacity(1000).time_to_live(Duration::from_secs(10 * 60)).build());
