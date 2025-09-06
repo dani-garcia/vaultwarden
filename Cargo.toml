@@ -16,7 +16,11 @@ publish = false
 build = "build.rs"
 
 [features]
-# default = ["sqlite"]
+default = [
+    # "sqlite",
+    # "mysql",
+    # "postgresql",
+]
 # Empty to keep compatibility, prefer to set USE_SYSLOG=true
 enable_syslog = []
 mysql = ["diesel/mysql", "diesel_migrations/mysql"]
@@ -27,11 +31,6 @@ vendored_openssl = ["openssl/vendored"]
 # Enable MiMalloc memory allocator to replace the default malloc
 # This can improve performance for Alpine builds
 enable_mimalloc = ["dep:mimalloc"]
-# This is a development dependency, and should only be used during development!
-# It enables the usage of the diesel_logger crate, which is able to output the generated queries.
-# You also need to set an env variable `QUERY_LOGGER=1` to fully activate this so you do not have to re-compile
-# if you want to turn off the logging for a specific run.
-query_logger = ["dep:diesel_logger"]
 s3 = ["opendal/services-s3", "dep:aws-config", "dep:aws-credential-types", "dep:aws-smithy-runtime-api", "dep:anyhow", "dep:http", "dep:reqsign"]
 
 # OIDC specific features
@@ -50,7 +49,7 @@ syslog = "7.0.0"
 macros = { path = "./macros" }
 
 # Logging
-log = "0.4.27"
+log = "0.4.28"
 fern = { version = "0.7.1", features = ["syslog-7", "reopen-1"] }
 tracing = { version = "0.1.41", features = ["log"] } # Needed to have lettre and webauthn-rs trace logging to work
 
@@ -81,13 +80,12 @@ tokio = { version = "1.47.1", features = ["rt-multi-thread", "fs", "io-util", "p
 tokio-util = { version = "0.7.16", features = ["compat"]}
 
 # A generic serialization/deserialization framework
-serde = { version = "1.0.219", features = ["derive"] }
-serde_json = "1.0.143"
+serde = { version = "1.0.225", features = ["derive"] }
+serde_json = "1.0.145"
 
 # A safe, extensible ORM and Query builder
-diesel = { version = "2.2.12", features = ["chrono", "r2d2", "numeric"] }
-diesel_migrations = "2.2.0"
-diesel_logger = { version = "0.4.0", optional = true }
+diesel = { version = "2.3.2", features = ["chrono", "r2d2", "numeric"] }
+diesel_migrations = "2.3.0"
 
 derive_more = { version = "2.0.1", features = ["from", "into", "as_ref", "deref", "display"] }
 diesel-derive-newtype = "2.1.2"
@@ -101,12 +99,12 @@ ring = "0.17.14"
 subtle = "2.6.1"
 
 # UUID generation
-uuid = { version = "1.18.0", features = ["v4"] }
+uuid = { version = "1.18.1", features = ["v4"] }
 
 # Date and time libraries
-chrono = { version = "0.4.41", features = ["clock", "serde"], default-features = false }
+chrono = { version = "0.4.42", features = ["clock", "serde"], default-features = false }
 chrono-tz = "0.10.4"
-time = "0.3.41"
+time = "0.3.44"
 
 # Job scheduler
 job_scheduler_ng = "2.3.0"
@@ -157,7 +155,7 @@ cached = { version = "0.56.0", features = ["async"] }
 
 # Used for custom short lived cookie jar during favicon extraction
 cookie = "0.18.1"
-cookie_store = "0.21.1"
+cookie_store = "0.22.0"
 
 # Used by U2F, JWT and PostgreSQL
 openssl = "0.10.73"
@@ -174,7 +172,7 @@ openidconnect = { version = "4.0.1", features = ["reqwest", "native-tls"] }
 mini-moka = "0.10.3"
 
 # Check client versions for specific features.
-semver = "1.0.26"
+semver = "1.0.27"
 
 # Allow overriding the default memory allocator
 # Mainly used for the musl builds, since the default musl malloc is very slow
@@ -195,9 +193,9 @@ grass_compiler = { version = "0.13.4", default-features = false }
 opendal = { version = "0.54.0", features = ["services-fs"], default-features = false }
 
 # For retrieving AWS credentials, including temporary SSO credentials
-anyhow = { version = "1.0.99", optional = true }
-aws-config = { version = "1.8.5", features = ["behavior-version-latest", "rt-tokio", "credentials-process", "sso"], default-features = false, optional = true }
-aws-credential-types = { version = "1.2.5", optional = true }
+anyhow = { version = "1.0.100", optional = true }
+aws-config = { version = "1.8.6", features = ["behavior-version-latest", "rt-tokio", "credentials-process", "sso"], default-features = false, optional = true }
+aws-credential-types = { version = "1.2.6", optional = true }
 aws-smithy-runtime-api = { version = "1.9.0", optional = true }
 http = { version = "1.3.1", optional = true }
 reqsign = { version = "0.16.5", optional = true }
