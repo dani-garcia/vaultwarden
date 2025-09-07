@@ -1,5 +1,7 @@
 #![allow(dead_code, unused_imports)]
 
+use crate::db::DbConn;
+
 #[cfg(feature = "enable_metrics")]
 use once_cell::sync::Lazy;
 #[cfg(feature = "enable_metrics")]
