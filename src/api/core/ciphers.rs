@@ -773,8 +773,8 @@ async fn post_collections_update(
         err!("Cipher doesn't exist")
     };
 
-    if !cipher.is_write_accessible_to_user(&headers.user.uuid, &mut conn).await {
-        err!("Cipher is not write accessible")
+    if !cipher.is_in_editable_collection_by_user(&headers.user.uuid, &mut conn).await {
+        err!("Collection cannot be changed")
     }
 
     let posted_collections = HashSet::<CollectionId>::from_iter(data.collection_ids);
@@ -850,8 +850,8 @@ async fn post_collections_admin(
         err!("Cipher doesn't exist")
     };
 
-    if !cipher.is_write_accessible_to_user(&headers.user.uuid, &mut conn).await {
-        err!("Cipher is not write accessible")
+    if !cipher.is_in_editable_collection_by_user(&headers.user.uuid, &mut conn).await {
+        err!("Collection cannot be changed")
     }
 
     let posted_collections = HashSet::<CollectionId>::from_iter(data.collection_ids);

@@ -717,6 +717,15 @@ impl Cipher {
         }
     }
 
+    // used for checking if collection can be edited (only if user has access to a collection they
+    // can write to and also passwords are not hidden to prevent privilege escalation)
+    pub async fn is_in_editable_collection_by_user(&self, user_uuid: &UserId, conn: &mut DbConn) -> bool {
+        match self.get_access_restrictions(user_uuid, None, conn).await {
+            Some((read_only, hide_passwords, manage)) => (!read_only && !hide_passwords) || manage,
+            None => false,
+        }
+    }
+
     pub async fn is_accessible_to_user(&self, user_uuid: &UserId, conn: &mut DbConn) -> bool {
         self.get_access_restrictions(user_uuid, None, conn).await.is_some()
     }
