@@ -1275,7 +1275,7 @@ async fn save_attachment(
         attachment.save(&mut conn).await.expect("Error saving attachment");
     }
 
-    save_temp_file(PathType::Attachments, &format!("{cipher_id}/{file_id}"), data.data, true).await?;
+    save_temp_file(&PathType::Attachments, &format!("{cipher_id}/{file_id}"), data.data, true).await?;
 
     nt.send_cipher_update(
         UpdateType::SyncCipherUpdate,
