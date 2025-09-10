@@ -172,7 +172,7 @@ impl PartialOrd<MembershipType> for i32 {
 
 /// Local methods
 impl Organization {
-    pub fn new(name: String, billing_email: String, private_key: Option<String>, public_key: Option<String>) -> Self {
+    pub fn new(name: String, billing_email: &str, private_key: Option<String>, public_key: Option<String>) -> Self {
         let billing_email = billing_email.to_lowercase();
         Self {
             uuid: OrganizationId(crate::util::get_uuid()),

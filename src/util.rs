@@ -842,7 +842,7 @@ pub fn is_global(ip: std::net::IpAddr) -> bool {
 
 /// Saves a Rocket temporary file to the OpenDAL Operator at the given path.
 pub async fn save_temp_file(
-    path_type: PathType,
+    path_type: &PathType,
     path: &str,
     temp_file: rocket::fs::TempFile<'_>,
     overwrite: bool,

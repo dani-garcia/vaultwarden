@@ -1,0 +1,26 @@
+[files]
+extend-exclude = [
+    ".git/",
+    "playwright/",
+    "*.js", # Ignore all JavaScript files
+    "!admin*.js", # Except our own JavaScript files
+]
+ignore-hidden = false
+
+[default]
+extend-ignore-re = [
+    # We use this in place of the reserved type identifier at some places
+    "typ",
+    # In SMTP it's called HELO, so ignore it
+    "(?i)helo_name",
+    "Server name sent during.+HELO",
+    # COSE Is short for CBOR Object Signing and Encryption, ignore these specific items
+    "COSEKey",
+    "COSEAlgorithm",
+    # Ignore this specific string as it's valid
+    "Ensure they are valid OTPs",
+    # This word is misspelled upstream
+    # https://github.com/bitwarden/server/blob/dff9f1cf538198819911cf2c20f8cda3307701c5/src/Notifications/HubHelpers.cs#L86
+    # https://github.com/bitwarden/clients/blob/9612a4ac45063e372a6fbe87eb253c7cb3c588fb/libs/common/src/auth/services/anonymous-hub.service.ts#L45
+    "AuthRequestResponseRecieved",
+]

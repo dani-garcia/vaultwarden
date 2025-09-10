@@ -31,7 +31,7 @@ async fn generate_authenticator(data: Json<PasswordOrOtpData>, headers: Headers,
 
     let (enabled, key) = match twofactor {
         Some(tf) => (true, tf.data),
-        _ => (false, crypto::encode_random_bytes::<20>(BASE32)),
+        _ => (false, crypto::encode_random_bytes::<20>(&BASE32)),
     };
 
     // Upstream seems to also return `userVerificationToken`, but doesn't seem to be used at all.

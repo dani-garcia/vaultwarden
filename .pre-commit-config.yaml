@@ -1,7 +1,7 @@
 ---
 repos:
 -   repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v6.0.0
+    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c # v6.0.0
     hooks:
     - id: check-yaml
     - id: check-json
@@ -50,3 +50,8 @@ repos:
       args:
         - "-c"
         - "cd docker && make"
+# When this version is updated, do not forget to update this in `.github/workflows/typos.yaml` too
+- repo: https://github.com/crate-ci/typos
+  rev: 40156d6074bf731adb169cfb8234954971dbc487 # v1.37.1
+  hooks:
+    - id: typos

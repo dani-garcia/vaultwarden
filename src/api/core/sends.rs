@@ -1,13 +1,12 @@
-use std::path::Path;
-use std::time::Duration;
+use std::{path::Path, sync::LazyLock, time::Duration};
 
 use chrono::{DateTime, TimeDelta, Utc};
 use num_traits::ToPrimitive;
-use once_cell::sync::Lazy;
-use rocket::form::Form;
-use rocket::fs::NamedFile;
-use rocket::fs::TempFile;
-use rocket::serde::json::Json;
+use rocket::{
+    form::Form,
+    fs::{NamedFile, TempFile},
+    serde::json::Json,
+};
 use serde_json::Value;
 
 use crate::{
@@ -23,7 +22,7 @@ use crate::{
 };
 
 const SEND_INACCESSIBLE_MSG: &str = "Send does not exist or is no longer available";
-static ANON_PUSH_DEVICE: Lazy<Device> = Lazy::new(|| {
+static ANON_PUSH_DEVICE: LazyLock<Device> = LazyLock::new(|| {
     let dt = crate::util::parse_date("1970-01-01T00:00:00.000000Z");
     Device {
         uuid: String::from("00000000-0000-0000-0000-000000000000").into(),
@@ -274,7 +273,7 @@ async fn post_send_file(data: Form<UploadData<'_>>, headers: Headers, conn: DbCo
 
     let file_id = crate::crypto::generate_send_file_id();
 
-    save_temp_file(PathType::Sends, &format!("{}/{file_id}", send.uuid), data, true).await?;
+    save_temp_file(&PathType::Sends, &format!("{}/{file_id}", send.uuid), data, true).await?;
 
     let mut data_value: Value = serde_json::from_str(&send.data)?;
     if let Some(o) = data_value.as_object_mut() {
@@ -426,7 +425,7 @@ async fn post_send_file_v2_data(
 
     let file_path = format!("{send_id}/{file_id}");
 
-    save_temp_file(PathType::Sends, &file_path, data.data, false).await?;
+    save_temp_file(&PathType::Sends, &file_path, data.data, false).await?;
 
     nt.send_send_update(
         UpdateType::SyncSendCreate,
@@ -567,7 +566,7 @@ async fn post_access_file(
 }
 
 async fn download_url(host: &Host, send_id: &SendId, file_id: &SendFileId) -> Result<String, crate::Error> {
-    let operator = CONFIG.opendal_operator_for_path_type(PathType::Sends)?;
+    let operator = CONFIG.opendal_operator_for_path_type(&PathType::Sends)?;
 
     if operator.info().scheme() == opendal::Scheme::Fs {
         let token_claims = crate::auth::generate_send_claims(send_id, file_id);

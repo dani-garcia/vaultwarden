@@ -448,7 +448,7 @@ async fn check_data_folder() {
 
     if data_folder.starts_with("s3://") {
         if let Err(e) = CONFIG
-            .opendal_operator_for_path_type(PathType::Data)
+            .opendal_operator_for_path_type(&PathType::Data)
             .unwrap_or_else(|e| {
                 error!("Failed to create S3 operator for data folder '{data_folder}': {e:?}");
                 exit(1);

@@ -285,7 +285,7 @@ pub async fn _register(data: Json<RegisterData>, email_verification: bool, conn:
                 || CONFIG.is_signup_allowed(&email)
                 || pending_emergency_access.is_some()
             {
-                User::new(email.clone(), None)
+                User::new(&email, None)
             } else {
                 err!("Registration not allowed or user already exists")
             }
@@ -295,7 +295,7 @@ pub async fn _register(data: Json<RegisterData>, email_verification: bool, conn:
     // Make sure we don't leave a lingering invitation.
     Invitation::take(&email, &conn).await;
 
-    set_kdf_data(&mut user, data.kdf)?;
+    set_kdf_data(&mut user, &data.kdf)?;
 
     user.set_password(&data.master_password_hash, Some(data.key), true, None);
     user.password_hint = password_hint;
@@ -358,7 +358,7 @@ async fn post_set_password(data: Json<SetPasswordData>, headers: Headers, conn: 
     let password_hint = clean_password_hint(&data.master_password_hint);
     enforce_password_hint_setting(&password_hint)?;
 
-    set_kdf_data(&mut user, data.kdf)?;
+    set_kdf_data(&mut user, &data.kdf)?;
 
     user.set_password(
         &data.master_password_hash,
@@ -556,7 +556,7 @@ struct ChangeKdfData {
     key: String,
 }
 
-fn set_kdf_data(user: &mut User, data: KDFData) -> EmptyResult {
+fn set_kdf_data(user: &mut User, data: &KDFData) -> EmptyResult {
     if data.kdf == UserKdfType::Pbkdf2 as i32 && data.kdf_iterations < 100_000 {
         err!("PBKDF2 KDF iterations must be at least 100000.")
     }
@@ -600,7 +600,7 @@ async fn post_kdf(data: Json<ChangeKdfData>, headers: Headers, conn: DbConn, nt:
         err!("Invalid password")
     }
 
-    set_kdf_data(&mut user, data.kdf)?;
+    set_kdf_data(&mut user, &data.kdf)?;
 
     user.set_password(&data.new_master_password_hash, Some(data.key), true, None);
     let save_result = user.save(&conn).await;
@@ -1279,10 +1279,11 @@ async fn rotate_api_key(data: Json<PasswordOrOtpData>, headers: Headers, conn: D
 
 #[get("/devices/knowndevice")]
 async fn get_known_device(device: KnownDevice, conn: DbConn) -> JsonResult {
-    let mut result = false;
-    if let Some(user) = User::find_by_mail(&device.email, &conn).await {
-        result = Device::find_by_uuid_and_user(&device.uuid, &user.uuid, &conn).await.is_some();
-    }
+    let result = if let Some(user) = User::find_by_mail(&device.email, &conn).await {
+        Device::find_by_uuid_and_user(&device.uuid, &user.uuid, &conn).await.is_some()
+    } else {
+        false
+    };
     Ok(Json(json!(result)))
 }
 

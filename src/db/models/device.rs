@@ -48,7 +48,7 @@ impl Device {
     }
 
     pub fn refresh_twofactor_remember(&mut self) -> String {
-        let twofactor_remember = crypto::encode_random_bytes::<180>(BASE64);
+        let twofactor_remember = crypto::encode_random_bytes::<180>(&BASE64);
         self.twofactor_remember = Some(twofactor_remember.clone());
 
         twofactor_remember
@@ -129,7 +129,7 @@ impl Device {
 
             push_uuid: Some(PushId(get_uuid())),
             push_token: None,
-            refresh_token: crypto::encode_random_bytes::<64>(BASE64URL),
+            refresh_token: crypto::encode_random_bytes::<64>(&BASE64URL),
             twofactor_remember: None,
         };
 

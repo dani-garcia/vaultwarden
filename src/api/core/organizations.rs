@@ -202,7 +202,7 @@ async fn create_organization(headers: Headers, data: Json<OrgData>, conn: DbConn
         (None, None)
     };
 
-    let org = Organization::new(data.name, data.billing_email, private_key, public_key);
+    let org = Organization::new(data.name, &data.billing_email, private_key, public_key);
     let mut member = Membership::new(headers.user.uuid, org.uuid.clone(), None);
     let collection = Collection::new(org.uuid.clone(), data.collection_name, None);
 
@@ -1124,7 +1124,7 @@ async fn send_invite(
                     Invitation::new(email).save(&conn).await?;
                 }
 
-                let mut new_user = User::new(email.clone(), None);
+                let mut new_user = User::new(email, None);
                 new_user.save(&conn).await?;
                 user_created = true;
                 new_user
@@ -1591,7 +1591,7 @@ async fn edit_member(
     // HACK: We need the raw user-type to be sure custom role is selected to determine the access_all permission
     // The from_str() will convert the custom role type into a manager role type
     let raw_type = &data.r#type.into_string();
-    // MembershipTyp::from_str will convert custom (4) to manager (3)
+    // MembershipType::from_str will convert custom (4) to manager (3)
     let Some(new_type) = MembershipType::from_str(raw_type) else {
         err!("Invalid type")
     };

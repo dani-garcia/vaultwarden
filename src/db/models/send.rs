@@ -225,7 +225,7 @@ impl Send {
         self.update_users_revision(conn).await;
 
         if self.atype == SendType::File as i32 {
-            let operator = CONFIG.opendal_operator_for_path_type(PathType::Sends)?;
+            let operator = CONFIG.opendal_operator_for_path_type(&PathType::Sends)?;
             operator.remove_all(&self.uuid).await.ok();
         }
 

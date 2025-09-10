@@ -21,10 +21,10 @@ jobs:
     name: Build Vaultwarden containers
     if: ${{ github.repository == 'dani-garcia/vaultwarden' }}
     permissions:
-      packages: write
+      packages: write # Needed to upload packages and artifacts
       contents: read
-      attestations: write
-      id-token: write
+      attestations: write # Needed to generate an artifact attestation for a build
+      id-token: write # Needed to mint the OIDC token necessary to request a Sigstore signing certificate
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     # Start a local docker registry to extract the compiled binaries to upload as artifacts and attest them
@@ -103,7 +103,7 @@ jobs:
 
       # Login to Docker Hub
       - name: Login to Docker Hub
-        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3.5.0
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -119,7 +119,7 @@ jobs:
 
       # Login to GitHub Container Registry
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3.5.0
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
@@ -136,7 +136,7 @@ jobs:
 
       # Login to Quay.io
       - name: Login to Quay.io
-        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3.5.0
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
         with:
           registry: quay.io
           username: ${{ secrets.QUAY_USERNAME }}
