@@ -117,7 +117,7 @@ COPY ./macros ./macros
 ARG CARGO_PROFILE=release
 
 # Configure the DB ARG as late as possible to not invalidate the cached layers above
-ARG DB=sqlite,mysql,postgresql
+ARG DB=sqlite,mysql,postgresql,cockroachdb
 
 # Builds your dependencies and removes the
 # dummy project, except the target folder

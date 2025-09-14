@@ -177,7 +177,7 @@ impl Group {
                     Err(e) => Err(e.into()),
                 }.map_res("Error saving group")
             }
-            postgresql {
+            postgresql, cockroachdb {
                 let value = GroupDb::to_db(self);
                 diesel::insert_into(groups::table)
                     .values(&value)
@@ -347,7 +347,7 @@ impl CollectionGroup {
                     Err(e) => Err(e.into()),
                 }.map_res("Error adding group to collection")
             }
-            postgresql {
+            postgresql, cockroachdb {
                 diesel::insert_into(collections_groups::table)
                     .values((
                         collections_groups::collections_uuid.eq(&self.collections_uuid),
@@ -483,7 +483,7 @@ impl GroupUser {
                     Err(e) => Err(e.into()),
                 }.map_res("Error adding user to group")
             }
-            postgresql {
+            postgresql, cockroachdb {
                 diesel::insert_into(groups_users::table)
                     .values((
                         groups_users::users_organizations_uuid.eq(&self.users_organizations_uuid),

@@ -38,7 +38,7 @@ const JWT_SIGNATURE_ALG: Algorithm = Algorithm::HS512;
 
 // Size of random strings for state and nonce. Must be at least 16 characters and at most 1024 characters.
 // If increasing this above 64, also increase the size of the twofactor_duo_ctx.state and
-// twofactor_duo_ctx.nonce database columns for postgres and mariadb.
+// twofactor_duo_ctx.nonce database columns for postgres, cockroachdb and mariadb.
 const STATE_LENGTH: usize = 64;
 
 // client_assertion payload for health checks and obtaining MFA results.

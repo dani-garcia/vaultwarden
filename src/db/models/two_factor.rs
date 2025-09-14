@@ -95,7 +95,7 @@ impl TwoFactor {
                     Err(e) => Err(e.into()),
                 }.map_res("Error saving twofactor")
             }
-            postgresql {
+            postgresql, cockroachdb {
                 let value = TwoFactorDb::to_db(self);
                 // We need to make sure we're not going to violate the unique constraint on user_uuid and atype.
                 // This happens automatically on other DBMS backends due to replace_into(). PostgreSQL does

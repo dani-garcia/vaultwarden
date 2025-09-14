@@ -18,10 +18,18 @@
         };
       in
       {
-        devShells.default = pkgs.mkShell {
+        devShells.default = pkgs.mkShell rec {
           RUST_BACKTRACE = "full";
+          LD_LIBRARY_PATH = "${pkgs.lib.makeLibraryPath buildInputs}";
 
           buildInputs = with pkgs; [
+            pkg-config
+            openssl
+            libpq
+            libmysqlclient
+          ];
+
+          packages = with pkgs; [
             git
 
             nil

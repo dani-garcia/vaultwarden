@@ -82,7 +82,7 @@ ARG CARGO_PROFILE=release
 
 # Configure the DB ARG as late as possible to not invalidate the cached layers above
 # Enable MiMalloc to improve performance on Alpine builds
-ARG DB=sqlite,mysql,postgresql,enable_mimalloc
+ARG DB=sqlite,mysql,postgresql,cockroachdb,enable_mimalloc
 
 # Builds your dependencies and removes the
 # dummy project, except the target folder

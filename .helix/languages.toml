@@ -18,8 +18,8 @@ inlayHints.discriminantHints.enable = "fieldless"
 inlayHints.lifetimeElisionHints.enable = "skip_trivial"
 inlayHints.typeHints.hideClosureInitialization = false
 procMacro.enable = true
-cargo.features = "all"
-check.features = "all"
+cargo.features = "rust-analyzer-stable"
+check.features = "rust-analyzer-stable"
 
 [[language]]
 name = "nix"

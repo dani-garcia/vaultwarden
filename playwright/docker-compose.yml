@@ -85,9 +85,21 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}"]
       start_period: 20s
-      interval: 30s
     ports:
       - ${POSTGRES_PORT}:5432
+
+  Cockroach:
+    profiles: ["playwright"]
+    container_name: playwright_cockroach
+    image: cockroachdb/cockroach:v23.2.28
+    env_file: test.env
+    healthcheck:
+      test: ["CMD-SHELL", "cockroach sql --insecure --host=localhost:26257 -d $${COCKROACH_DB} -e 'select 1' >/dev/null 2>&1"]
+      start_period: 20s
+      interval: 30s
+    command: "start-single-node"
+    ports:
+      - ${COCKROACH_PORT}:26257
 
   Maildev:
     profiles: ["vaultwarden", "maildev"]

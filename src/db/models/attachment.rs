@@ -95,7 +95,7 @@ impl Attachment {
                     Err(e) => Err(e.into()),
                 }.map_res("Error saving attachment")
             }
-            postgresql {
+            postgresql, cockroachdb {
                 let value = AttachmentDb::to_db(self);
                 diesel::insert_into(attachments::table)
                     .values(&value)

@@ -7,7 +7,7 @@ It uses its own `test.env` with different ports to not collide with a running de
 ## Install
 
 This relies on `docker` and the `compose` [plugin](https://docs.docker.com/compose/install/).
-Databases (`Mariadb`, `Mysql` and `Postgres`) and `Playwright` will run in containers.
+Databases (`Mariadb`, `Mysql`, `Postgres` and `Cockroach`) and `Playwright` will run in containers.
 
 ### Running Playwright outside docker
 
@@ -29,6 +29,7 @@ DOCKER_BUILDKIT=1 docker compose --profile playwright --env-file test.env run Pl
 ```
 
 To force a rebuild of the Playwright image:
+
 ```bash
 DOCKER_BUILDKIT=1 docker compose --env-file test.env build Playwright
 ```
@@ -49,6 +50,7 @@ You can use:
 DOCKER_BUILDKIT=1 docker compose --profile playwright --env-file test.env run Playwright test --project=mariadb
 DOCKER_BUILDKIT=1 docker compose --profile playwright --env-file test.env run Playwright test --project=mysql
 DOCKER_BUILDKIT=1 docker compose --profile playwright --env-file test.env run Playwright test --project=postgres
+DOCKER_BUILDKIT=1 docker compose --profile playwright --env-file test.env run Playwright test --project=cockroach
 DOCKER_BUILDKIT=1 docker compose --profile playwright --env-file test.env run Playwright test --project=sqlite
 ```
 
@@ -154,6 +156,7 @@ You can run just `Keycloak` with `--profile keycloak`:
 ```bash
 > docker compose --profile keycloak --env-file .env up
 ```
+
 When running with a local Vaultwarden, you can use a front-end build from [dani-garcia/bw_web_builds](https://github.com/dani-garcia/bw_web_builds/releases).
 
 ## Rebuilding the Vaultwarden

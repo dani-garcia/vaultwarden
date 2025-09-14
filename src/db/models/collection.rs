@@ -173,7 +173,7 @@ impl Collection {
                     Err(e) => Err(e.into()),
                 }.map_res("Error saving collection")
             }
-            postgresql {
+            postgresql, cockroachdb {
                 let value = CollectionDb::to_db(self);
                 diesel::insert_into(collections::table)
                     .values(&value)
@@ -642,7 +642,7 @@ impl CollectionUser {
                     Err(e) => Err(e.into()),
                 }.map_res("Error adding user to collection")
             }
-            postgresql {
+            postgresql, cockroachdb {
                 diesel::insert_into(users_collections::table)
                     .values((
                         users_collections::user_uuid.eq(user_uuid),
@@ -793,7 +793,7 @@ impl CollectionCipher {
                     .execute(conn)
                     .map_res("Error adding cipher to collection")
             }
-            postgresql {
+            postgresql, cockroachdb {
                 diesel::insert_into(ciphers_collections::table)
                     .values((
                         ciphers_collections::cipher_uuid.eq(cipher_uuid),

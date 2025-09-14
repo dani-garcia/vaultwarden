@@ -162,7 +162,7 @@ impl EmergencyAccess {
                     Err(e) => Err(e.into()),
                 }.map_res("Error saving emergency access")
             }
-            postgresql {
+            postgresql, cockroachdb {
                 let value = EmergencyAccessDb::to_db(self);
                 diesel::insert_into(emergency_access::table)
                     .values(&value)
