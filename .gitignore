@@ -14,3 +14,6 @@ data
 
 # Web vault
 web-vault
+
+# Direnv
+.direnv/
