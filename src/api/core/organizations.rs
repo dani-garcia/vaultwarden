@@ -339,7 +339,7 @@ async fn get_user_collections(headers: Headers, mut conn: DbConn) -> Json<Value>
 }
 
 // Called during the SSO enrollment
-// The `identifier` should be the value returned by `get_org_domain_sso_details`
+// The `identifier` should be the value returned by `get_org_domain_sso_verified`
 // The returned `Id` will then be passed to `get_master_password_policy` which will mainly ignore it
 #[get("/organizations/<identifier>/auto-enroll-status")]
 async fn get_auto_enroll_status(identifier: &str, headers: Headers, mut conn: DbConn) -> JsonResult {
@@ -349,7 +349,7 @@ async fn get_auto_enroll_status(identifier: &str, headers: Headers, mut conn: Db
             None => None,
         }
     } else {
-        Organization::find_by_name(identifier, &mut conn).await
+        Organization::find_by_uuid(&identifier.into(), &mut conn).await
     };
 
     let (id, identifier, rp_auto_enroll) = match org {
@@ -977,17 +977,17 @@ async fn get_org_domain_sso_verified(data: Json<OrgDomainDetails>, mut conn: DbC
     let identifiers = match Organization::find_org_user_email(&data.email, &mut conn)
         .await
         .into_iter()
-        .map(|o| o.name)
-        .collect::<Vec<String>>()
+        .map(|o| (o.name, o.uuid.to_string()))
+        .collect::<Vec<(String, String)>>()
     {
         v if !v.is_empty() => v,
-        _ => vec![crate::sso::FAKE_IDENTIFIER.to_string()],
+        _ => vec![(crate::sso::FAKE_IDENTIFIER.to_string(), crate::sso::FAKE_IDENTIFIER.to_string())],
     };
 
     Ok(Json(json!({
         "object": "list",
-        "data": identifiers.into_iter().map(|identifier| json!({
-            "organizationName": identifier,     // appear unused
+        "data": identifiers.into_iter().map(|(name, identifier)| json!({
+            "organizationName": name,           // appear unused
             "organizationIdentifier": identifier,
             "domainName": CONFIG.domain(),      // appear unused
         })).collect::<Vec<Value>>()
