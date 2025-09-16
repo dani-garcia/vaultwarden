@@ -280,7 +280,7 @@ impl OrgPolicy {
         false
     }
 
-    pub async fn check_user_allowed(m: &Membership, action: &str, conn: &mut DbConn) -> EmptyResult {
+    pub async fn enforce_membership_policies(m: &Membership, action: &str, conn: &mut DbConn) -> EmptyResult {
         if m.atype < MembershipType::Admin && m.status > (MembershipStatus::Invited as i32) {
             // Enforce TwoFactor/TwoStep login
             if let Some(p) = Self::find_by_org_and_type(&m.org_uuid, OrgPolicyType::TwoFactorAuthentication, conn).await
@@ -289,24 +289,25 @@ impl OrgPolicy {
                     if CONFIG.email_2fa_auto_fallback() {
                         two_factor::email::find_and_activate_email_2fa(&m.user_uuid, conn).await?;
                     } else {
-                        err!(format!("Cannot {} because 2FA is required (membership {})", action, m.uuid));
+                        err!(format!("Cannot {} member {} because 2FA is required", action, m.uuid));
                     }
                 }
             }
 
             // Check if the user is part of another Orgnization with SingleOrg activated
             if Self::is_applicable_to_user(&m.user_uuid, OrgPolicyType::SingleOrg, Some(&m.org_uuid), conn).await {
-                err!(format!(
-                    "Cannot {} because another organization policy forbids it (membership {})",
-                    action, m.uuid
-                ));
+                err!(format!("Cannot {} member {} because another organization policy forbids it", action, m.uuid));
             }
 
+            // Check if the current org has `SingleOrg` activated that we are not part of another org.
             if let Some(p) = Self::find_by_org_and_type(&m.org_uuid, OrgPolicyType::SingleOrg, conn).await {
                 if p.enabled
                     && Membership::count_accepted_and_confirmed_by_user(&m.user_uuid, &m.org_uuid, conn).await > 0
                 {
-                    err!(format!("Cannot {} because the organization policy forbids being part of other organization (membership {})", action, m.uuid));
+                    err!(format!(
+                        "Cannot {} member {}  because the organization policy forbids being part of other organization",
+                        action, m.uuid
+                    ));
                 }
             }
         }

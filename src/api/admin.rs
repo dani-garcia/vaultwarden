@@ -546,7 +546,7 @@ async fn update_membership_type(data: Json<MembershipTypeData>, token: AdminToke
 
     member_to_edit.atype = new_type;
     // This check is also done at api::organizations::{accept_invite, _confirm_invite, _activate_member, edit_member}, update_membership_type
-    OrgPolicy::check_user_allowed(&member_to_edit, "modify", &mut conn).await?;
+    OrgPolicy::enforce_membership_policies(&member_to_edit, "change type of", &mut conn).await?;
 
     log_event(
         EventType::OrganizationUserUpdated as i32,

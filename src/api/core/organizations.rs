@@ -1470,7 +1470,7 @@ async fn _confirm_invite(
     member_to_confirm.akey = key.to_string();
 
     // This check is also done at accept_invite, _confirm_invite, _activate_member, edit_member, admin::update_membership_type
-    OrgPolicy::check_user_allowed(&member_to_confirm, "confirm", conn).await?;
+    OrgPolicy::enforce_membership_policies(&member_to_confirm, "confirm", conn).await?;
 
     log_event(
         EventType::OrganizationUserConfirmed as i32,
@@ -1630,7 +1630,7 @@ async fn edit_member(
 
     // This check is also done at accept_invite, _confirm_invite, _activate_member, edit_member, admin::update_membership_type
     // We need to perform the check after changing the type since `admin` is exempt.
-    OrgPolicy::check_user_allowed(&member_to_edit, "modify", &mut conn).await?;
+    OrgPolicy::enforce_membership_policies(&member_to_edit, "modify", &mut conn).await?;
 
     // Delete all the odd collections
     for c in CollectionUser::find_by_organization_and_user_uuid(&org_id, &member_to_edit.user_uuid, &mut conn).await {
@@ -2132,7 +2132,7 @@ async fn put_policy(
         .await?;
     }
 
-    // When enabling the SingleOrg policy, remove this org's members that are members of other orgs
+    // When enabling the SingleOrg policy, revoke the memberships of users that are members of other organizations.
     if pol_type_enum == OrgPolicyType::SingleOrg && data.enabled {
         for mut member in Membership::find_by_org(&org_id, &mut conn).await.into_iter() {
             // Policy only applies to non-Owner/non-Admin members who have accepted joining the org
@@ -2603,7 +2603,7 @@ async fn _restore_member(
             member.restore();
             // This check is also done at accept_invite, _confirm_invite, _activate_member, edit_member, admin::update_membership_type
             // This check need to be done after restoring to work with the correct status
-            OrgPolicy::check_user_allowed(&member, "restore", conn).await?;
+            OrgPolicy::enforce_membership_policies(&member, "restore", conn).await?;
             member.save(conn).await?;
 
             log_event(

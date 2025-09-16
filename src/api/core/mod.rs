@@ -275,7 +275,7 @@ async fn accept_org_invite(
     member.reset_password_key = reset_password_key;
 
     // This check is also done at accept_invite, _confirm_invite, _activate_member, edit_member, admin::update_membership_type
-    OrgPolicy::check_user_allowed(&member, "join", conn).await?;
+    OrgPolicy::enforce_membership_policies(&member, "accept invitation of", conn).await?;
 
     member.save(conn).await?;
 
