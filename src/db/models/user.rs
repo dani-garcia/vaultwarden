@@ -285,21 +285,13 @@ impl User {
         db_run! {conn:
             mysql {
                 let value = UserDb::to_db(self);
-                // Don't use replace_into() since it wants to delete the record first.
-                match diesel::update(users::table)
-                    .filter(users::uuid.eq(&self.uuid))
+                diesel::insert_into(users::table)
+                    .values(&value)
+                    .on_conflict(diesel::dsl::DuplicatedKeys)
+                    .do_update()
                     .set(&value)
                     .execute(conn)
-                {
-                    Ok(1) => Ok(()),
-                    Ok(_) => {
-                        diesel::insert_into(users::table)
-                            .values(value)
-                            .execute(conn)
-                            .map_res("Error saving user")
-                    }
-                    Err(e) => Err(e.into()),
-                }.map_res("Error updating user")
+                    .map_res("Error saving user")
             }
             postgresql, sqlite {
                 let value = UserDb::to_db(self);
