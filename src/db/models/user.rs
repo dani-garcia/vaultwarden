@@ -283,7 +283,7 @@ impl User {
         self.updated_at = Utc::now().naive_utc();
 
         db_run! {conn:
-            sqlite, mysql {
+            mysql {
                 let value = UserDb::to_db(self);
                 // Don't use replace_into() since it wants to delete the record first.
                 match diesel::update(users::table)
@@ -301,7 +301,7 @@ impl User {
                     Err(e) => Err(e.into()),
                 }.map_res("Error updating user")
             }
-            postgresql {
+            postgresql, sqlite {
                 let value = UserDb::to_db(self);
                 diesel::insert_into(users::table) // Insert or update
                     .values(&value)
