@@ -127,7 +127,7 @@ pub async fn validate_protected_action_otp(
     pa.data = pa_data.to_json();
 
     // Delete the token after x attempts if it has been used too many times
-    if pa_data.attempts > CONFIG.email_attempts_limit() {
+    if pa_data.attempts >= CONFIG.email_attempts_limit() {
         pa.delete(conn).await?;
         err!("Token has expired")
     }
