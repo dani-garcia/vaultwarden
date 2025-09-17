@@ -51,7 +51,7 @@ impl ProtectedActionData {
     }
 
     pub fn add_attempt(&mut self) {
-        self.attempts += 1;
+        self.attempts = self.attempts.saturating_add(1);
     }
 
     pub fn time_since_sent(&self) -> TimeDelta {
