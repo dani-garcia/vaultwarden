@@ -127,8 +127,8 @@ impl Drop for DbPool {
 impl DbPool {
     // For the given database URL, guess its type, run migrations, create pool, and return it
     pub fn from_config() -> Result<Self, Error> {
-        let url = CONFIG.database_url();
-        let conn_type = DbConnType::from_url(&url)?;
+        let db_url = CONFIG.database_url();
+        let conn_type = DbConnType::from_url(&db_url)?;
 
         // Only set the default instrumentation if the log level is specifically set to either warn, info or debug
         if log_enabled!(target: "vaultwarden::db::query_logger", log::Level::Warn)
@@ -141,20 +141,20 @@ impl DbPool {
         match conn_type {
             #[cfg(mysql)]
             DbConnType::Mysql => {
-                mysql_migrations::run_migrations(&url)?;
+                mysql_migrations::run_migrations(&db_url)?;
             }
             #[cfg(postgresql)]
             DbConnType::Postgresql => {
-                postgresql_migrations::run_migrations(&url)?;
+                postgresql_migrations::run_migrations(&db_url)?;
             }
             #[cfg(sqlite)]
             DbConnType::Sqlite => {
-                sqlite_migrations::run_migrations(&url)?;
+                sqlite_migrations::run_migrations(&db_url)?;
             }
         }
 
         let max_conns = CONFIG.database_max_conns();
-        let manager = ConnectionManager::<DbConnInner>::new(&url);
+        let manager = ConnectionManager::<DbConnInner>::new(&db_url);
         let pool = Pool::builder()
             .max_size(max_conns)
             .min_idle(Some(CONFIG.database_min_conns()))
@@ -364,10 +364,10 @@ mod sqlite_migrations {
     use diesel_migrations::{EmbeddedMigrations, MigrationHarness};
     pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations/sqlite");
 
-    pub fn run_migrations(url: &str) -> Result<(), super::Error> {
+    pub fn run_migrations(db_url: &str) -> Result<(), super::Error> {
         // Establish a connection to the sqlite database (this will create a new one, if it does
         // not exist, and exit if there is an error).
-        let mut connection = diesel::sqlite::SqliteConnection::establish(url)?;
+        let mut connection = diesel::sqlite::SqliteConnection::establish(db_url)?;
 
         // Run the migrations after successfully establishing a connection
         // Disable Foreign Key Checks during migration
@@ -392,9 +392,9 @@ mod mysql_migrations {
     use diesel_migrations::{EmbeddedMigrations, MigrationHarness};
     pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations/mysql");
 
-    pub fn run_migrations(url: &str) -> Result<(), super::Error> {
+    pub fn run_migrations(db_url: &str) -> Result<(), super::Error> {
         // Make sure the database is up to date (create if it doesn't exist, or run the migrations)
-        let mut connection = diesel::mysql::MysqlConnection::establish(url)?;
+        let mut connection = diesel::mysql::MysqlConnection::establish(db_url)?;
 
         // Disable Foreign Key Checks during migration
         // Scoped to a connection/session.
@@ -413,9 +413,9 @@ mod postgresql_migrations {
     use diesel_migrations::{EmbeddedMigrations, MigrationHarness};
     pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations/postgresql");
 
-    pub fn run_migrations(url: &str) -> Result<(), super::Error> {
+    pub fn run_migrations(db_url: &str) -> Result<(), super::Error> {
         // Make sure the database is up to date (create if it doesn't exist, or run the migrations)
-        let mut connection = diesel::pg::PgConnection::establish(url)?;
+        let mut connection = diesel::pg::PgConnection::establish(db_url)?;
 
         connection.run_pending_migrations(MIGRATIONS).expect("Error running migrations");
         Ok(())
