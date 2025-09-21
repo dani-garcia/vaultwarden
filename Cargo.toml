@@ -80,7 +80,7 @@ tokio = { version = "1.47.1", features = ["rt-multi-thread", "fs", "io-util", "p
 tokio-util = { version = "0.7.16", features = ["compat"]}
 
 # A generic serialization/deserialization framework
-serde = { version = "1.0.225", features = ["derive"] }
+serde = { version = "1.0.226", features = ["derive"] }
 serde_json = "1.0.145"
 
 # A safe, extensible ORM and Query builder

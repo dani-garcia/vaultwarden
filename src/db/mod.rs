@@ -247,34 +247,38 @@ impl DbConnType {
     }
 }
 
-#[macro_export]
-macro_rules! db_run_base {
-    ( $conn:ident ) => {
-        let conn = std::sync::Arc::clone(&$conn.conn);
+impl DbConn {
+    pub async fn run<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&mut DbConnInner) -> R + Send,
+        R: Send + 'static,
+    {
+        let conn = Arc::clone(&self.conn);
         let mut conn = conn.lock_owned().await;
-        let $conn = conn.as_mut().expect("internal invariant broken: self.conn is Some");
-    };
+        let conn = conn.as_mut().expect("Internal invariant broken: self.conn is Some");
+
+        // Run blocking can't be used due to the 'static limitation, use block_in_place instead
+        tokio::task::block_in_place(move || f(conn))
+    }
 }
 
 #[macro_export]
 macro_rules! db_run {
-    ( $conn:ident: $body:block ) => {{
-        db_run_base!($conn);
-        // Run blocking can't be used due to the 'static limitation, use block_in_place instead
-        tokio::task::block_in_place(move || $body )
-    }};
+    ( $conn:ident: $body:block ) => {
+        $conn.run(move |$conn| $body).await
+    };
 
-    ( $conn:ident: $( $($db:ident),+ $body:block )+ ) => {{
-        db_run_base!($conn);
-        match std::ops::DerefMut::deref_mut($conn) {
-            $($(
-            #[cfg($db)]
-            pastey::paste!(&mut $crate::db::DbConnInner::[<$db:camel>](ref mut $conn)) => {
-                // Run blocking can't be used due to the 'static limitation, use block_in_place instead
-                tokio::task::block_in_place(move || $body )
-            },
-        )+)+}
-    }};
+    ( $conn:ident: $( $($db:ident),+ $body:block )+ ) => {
+        $conn.run(move |$conn| {
+            match $conn {
+                $($(
+                #[cfg($db)]
+                pastey::paste!(&mut $crate::db::DbConnInner::[<$db:camel>](ref mut $conn)) => {
+                    $body
+                },
+            )+)+}
+        }).await
+    };
 }
 
 pub mod schema;
