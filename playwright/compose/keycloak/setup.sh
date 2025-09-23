@@ -1,7 +1,6 @@
 #!/bin/bash
 
-export PATH=/opt/keycloak/bin:/opt/openjdk/jdk-${JAVA_VERSION}/bin:$PATH
-export JAVA_HOME=/opt/openjdk/jdk-${JAVA_VERSION}
+export PATH=/opt/keycloak/bin:$PATH
 
 STATUS_CODE=0
 while [[ "$STATUS_CODE" != "404" ]] ; do
@@ -34,3 +33,12 @@ kcadm.sh update users/$TEST_USER3_ID/reset-password -r "$TEST_REALM" -s type=pas
 
 # Dummy realm to mark end of setup
 kcadm.sh create realms -s realm="$DUMMY_REALM" -s enabled=true -s "accessTokenLifespan=600"
+
+# TO DEBUG uncomment the following line to keep the setup container running
+# sleep 3600
+# THEN in another terminal:
+# docker exec -it keycloakSetup-dev /bin/bash
+# export PATH=$PATH:/opt/keycloak/bin
+# kcadm.sh config credentials --server "http://${KC_HTTP_HOST}:${KC_HTTP_PORT}" --realm master --user "$KEYCLOAK_ADMIN" --password "$KEYCLOAK_ADMIN_PASSWORD" --client admin-cli
+# ENJOY
+# Doc: https://wjw465150.gitbooks.io/keycloak-documentation/content/server_admin/topics/admin-cli.html
