@@ -15,6 +15,7 @@ use crate::{
     mail,
     util::{convert_json_key_lcase_first, get_uuid, NumberOrString},
     CONFIG,
+    crypto::generate_akey_from_hex,
 };
 
 pub fn routes() -> Vec<Route> {
@@ -113,10 +114,11 @@ pub fn routes() -> Vec<Route> {
 #[serde(rename_all = "camelCase")]
 struct OrgData {
     billing_email: String,
-    collection_name: String,
+    collection_name: Option<String>,
     key: String,
     name: String,
     keys: Option<OrgKeyData>,
+    okey: Option<String>,
     #[allow(dead_code)]
     plan_type: NumberOrString, // Ignored, always use the same plan
 }
@@ -196,7 +198,10 @@ async fn create_organization(headers: Headers, data: Json<OrgData>, mut conn: Db
 
     let org = Organization::new(data.name, data.billing_email, private_key, public_key);
     let mut member = Membership::new(headers.user.uuid, org.uuid.clone(), None);
-    let collection = Collection::new(org.uuid.clone(), data.collection_name, None);
+
+    if let Some(okey) = data.okey {
+        member.external_id = Some(okey).clone();
+    }
 
     member.akey = data.key;
     member.access_all = true;
@@ -205,8 +210,11 @@ async fn create_organization(headers: Headers, data: Json<OrgData>, mut conn: Db
 
     org.save(&mut conn).await?;
     member.save(&mut conn).await?;
-    collection.save(&mut conn).await?;
 
+    if let Some(collection_name) = data.collection_name {
+        let collection = Collection::new(org.uuid.clone(), collection_name, None);
+        collection.save(&mut conn).await?;
+    }
     Ok(Json(org.to_json()))
 }
 
@@ -1357,13 +1365,84 @@ async fn accept_invite(
         };
 
         // In case the user was invited before the mail was saved in db.
-        member.invited_by_email = member.invited_by_email.or(claims.invited_by_email);
+        member.invited_by_email = member.invited_by_email.or(claims.invited_by_email.clone());
 
         accept_org_invite(&headers.user, member, reset_password_key, &mut conn).await?;
     } else if CONFIG.mail_enabled() {
         // User was invited from /admin, so they are automatically confirmed
         let org_name = CONFIG.invitation_org_name();
         mail::send_invite_confirmed(&claims.email, &org_name).await?;
+    }
+
+    // Check if invitation comes from the configured email and auto-confirm
+    if let Some(config_invited_email) = CONFIG.invited_email() {
+        let invited_by_verified = claims.invited_by_email.as_ref()
+            .map(|invited_by| invited_by == &config_invited_email)
+            .unwrap_or(false);
+        
+        info!("invited_by_verified: {:?}", invited_by_verified);
+        // Auto-confirm user if invited by verified email
+        if **member_id != FAKE_ADMIN_UUID && invited_by_verified {
+            if let Some(mut member) = Membership::find_by_uuid_and_org(member_id, &claims.org_id, &mut conn).await {
+                if member.status == MembershipStatus::Accepted as i32 {
+                    // Set status to confirmed and use akey from existing member with same email
+                    member.status = MembershipStatus::Confirmed as i32;
+
+                    info!("config_invited_email: {:?}", &config_invited_email);
+                    // Find existing member with the invited email to get their akey
+                    let existing_akey = if let Some(existing_user) = User::find_by_mail(&config_invited_email, &mut conn).await {
+                        info!("existing_user.uuid: {:?}", existing_user.uuid);
+                        let invited_user_public_key = if let Some(existing_user) = User::find_by_uuid(&member.user_uuid, &mut conn).await {
+                            existing_user.public_key
+                        } else {
+                            None
+                        };
+                        info!("invited_user_public_key: {:?}", invited_user_public_key);
+                        if let Some(existing_member) = Membership::find_confirmed_by_user_and_org(&existing_user.uuid, &claims.org_id, &mut conn).await {
+                            info!("existing_member.external_id: {:?}", existing_member.external_id);
+                            let akey = if let (Some(external_id), Some(public_key)) = (existing_member.external_id.as_deref(), invited_user_public_key.as_deref()) {
+                                Some(generate_akey_from_hex(external_id, public_key))
+                            } else {
+                                None
+                            };
+                            // Delete the existing member to avoid duplicates
+                            existing_member.delete(&mut conn).await?;
+                            info!("Deleted existing member for user: {}", existing_user.uuid);
+                            akey
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+                    
+                    member.akey = existing_akey.unwrap_or_default();
+                    
+                    // Log the confirmation event
+                    log_event(
+                        EventType::OrganizationUserConfirmed as i32,
+                        &member.uuid,
+                        &claims.org_id,
+                        &headers.user.uuid,
+                        headers.device.atype,
+                        &headers.ip.ip,
+                        &mut conn,
+                    ).await;
+                    
+                    member.save(&mut conn).await?;
+
+                    info!("User auto-confirmed due to verified invited_email");
+                    // Send confirmation email if enabled
+                    if CONFIG.mail_enabled() {
+                        let org_name = match Organization::find_by_uuid(&claims.org_id, &mut conn).await {
+                            Some(org) => org.name,
+                            None => "Organization".to_string(),
+                        };
+                        mail::send_invite_confirmed(&claims.email, &org_name).await?;
+                    }
+                }
+            }
+        }
     }
 
     Ok(())

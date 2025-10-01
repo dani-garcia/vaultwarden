@@ -685,7 +685,9 @@ make_config! {
         /// Enforce Single Org with Reset Password Policy |> Enforce that the Single Org policy is enabled before setting the Reset Password policy
         /// Bitwarden enforces this by default. In Vaultwarden we encouraged to use multiple organizations because groups were not available.
         /// Setting this to true will enforce the Single Org Policy to be enabled before you can enable the Reset Password policy.
-        enforce_single_org_with_reset_pw_policy: bool, false, def, false;
+        enforce_single_org_with_reset_pw_policy: bool, false, def, false;    
+        /// Invited Email |> Email address to verify invitations against
+        invited_email: String, true, option;
     },
 
     /// OpenID Connect SSO settings

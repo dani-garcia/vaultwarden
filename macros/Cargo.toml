@@ -11,6 +11,12 @@ proc-macro = true
 [dependencies]
 quote = "1.0.40"
 syn = "2.0.105"
+rsa = "0.9"
+rand = "0.8"
+sha1 = "0.10"
+base64 = "0.22"
+hex = "0.4"
+pkcs8 = "0.10"
 
 [lints]
 workspace = true

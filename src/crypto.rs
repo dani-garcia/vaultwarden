@@ -9,6 +9,11 @@ use ring::{digest, hmac, pbkdf2};
 const DIGEST_ALG: pbkdf2::Algorithm = pbkdf2::PBKDF2_HMAC_SHA256;
 const OUTPUT_LEN: usize = digest::SHA256_OUTPUT_LEN;
 
+use rsa::{RsaPublicKey, Oaep};
+use rsa::pkcs8::DecodePublicKey;
+use sha1::Sha1;
+use base64::{Engine as _, engine::general_purpose::STANDARD};
+
 pub fn hash_password(secret: &[u8], salt: &[u8], iterations: u32) -> Vec<u8> {
     let mut out = vec![0u8; OUTPUT_LEN]; // Initialize array with zeros
 
@@ -112,4 +117,40 @@ pub fn generate_api_key() -> String {
 pub fn ct_eq<T: AsRef<[u8]>, U: AsRef<[u8]>>(a: T, b: U) -> bool {
     use subtle::ConstantTimeEq;
     a.as_ref().ct_eq(b.as_ref()).into()
+}
+
+pub fn generate_akey_from_hex(org_key_hex: &str, user_public_key_pem: &str) -> String {
+    // Convert hex → raw bytes
+    let org_key_bytes = hex::decode(org_key_hex)
+        .expect("Invalid hex for org key");
+
+    // Parse PEM public key - add headers if missing and format properly
+    let formatted_pem = if user_public_key_pem.starts_with("-----BEGIN") {
+        user_public_key_pem.to_string()
+    } else {
+        // Split base64 content into 64-character lines for proper PEM format
+        let base64_lines: Vec<String> = user_public_key_pem
+            .chars()
+            .collect::<Vec<char>>()
+            .chunks(64)
+            .map(|chunk| chunk.iter().collect())
+            .collect();
+        
+        format!("-----BEGIN PUBLIC KEY-----\n{}\n-----END PUBLIC KEY-----", 
+                base64_lines.join("\n"))
+    };
+
+    println!("formatted_pem: {:?}", formatted_pem);
+
+    let public_key = RsaPublicKey::from_public_key_pem(&formatted_pem)
+        .expect("Invalid public key PEM");
+
+    // Encrypt with RSA-OAEP using SHA1 (Vaultwarden convention for version 4)
+    let padding = Oaep::new::<Sha1>();
+    let mut rng = rsa::rand_core::OsRng;
+    let encrypted = public_key.encrypt(&mut rng, padding, &org_key_bytes)
+        .expect("Encryption failed");
+
+    // Base64 encode and prefix with version "4."
+    format!("4.{}", STANDARD.encode(encrypted))
 }

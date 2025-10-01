@@ -99,6 +99,10 @@ libsqlite3-sys = { version = "0.35.0", features = ["bundled"], optional = true }
 rand = "0.9.2"
 ring = "0.17.14"
 subtle = "2.6.1"
+rsa = "0.9"
+sha1 = "0.10"
+hex = "0.4"
+base64 = "0.22"
 
 # UUID generation
 uuid = { version = "1.18.0", features = ["v4"] }
