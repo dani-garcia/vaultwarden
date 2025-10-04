@@ -211,7 +211,7 @@ reqsign = { version = "0.16.5", optional = true }
 strip = "debuginfo"
 lto = "fat"
 codegen-units = 1
-debug = "line-tables-only"
+debug = false
 
 # Optimize for size
 [profile.release-micro]
@@ -219,7 +219,6 @@ inherits = "release"
 strip = "symbols"
 opt-level = "z"
 panic = "abort"
-debug = false
 
 # Profile for systems with low resources
 # It will use less resources during build
