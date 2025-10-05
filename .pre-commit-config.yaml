@@ -29,7 +29,7 @@ repos:
       description: Test the package for errors.
       entry: cargo test
       language: system
-      args: ["--features", "sqlite,mysql,postgresql,enable_mimalloc", "--"]
+      args: ["--features", "sqlite,mysql,postgresql", "--"]
       types_or: [rust, file]
       files: (Cargo.toml|Cargo.lock|rust-toolchain.toml|rustfmt.toml|.*\.rs$)
       pass_filenames: false
@@ -38,7 +38,7 @@ repos:
       description: Lint Rust sources
       entry: cargo clippy
       language: system
-      args: ["--features", "sqlite,mysql,postgresql,enable_mimalloc", "--", "-D", "warnings"]
+      args: ["--features", "sqlite,mysql,postgresql", "--", "-D", "warnings"]
       types_or: [rust, file]
       files: (Cargo.toml|Cargo.lock|rust-toolchain.toml|rustfmt.toml|.*\.rs$)
       pass_filenames: false
@@ -52,6 +52,6 @@ repos:
         - "cd docker && make"
 # When this version is updated, do not forget to update this in `.github/workflows/typos.yaml` too
 - repo: https://github.com/crate-ci/typos
-  rev: 40156d6074bf731adb169cfb8234954971dbc487 # v1.37.1
+  rev: 7436548694def3314aacd93ed06c721b1f91ea04 # v1.37.2
   hooks:
     - id: typos

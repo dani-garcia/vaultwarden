@@ -213,6 +213,7 @@ lto = "fat"
 codegen-units = 1
 debug = false
 
+
 # Optimize for size
 [profile.release-micro]
 inherits = "release"
