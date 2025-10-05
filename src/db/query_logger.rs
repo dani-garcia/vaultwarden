@@ -7,26 +7,23 @@ thread_local! {
 
 pub fn simple_logger() -> Option<Box<dyn Instrumentation>> {
     Some(Box::new(|event: InstrumentationEvent<'_>| match event {
-        // TODO: Figure out where the invalid connection errors are coming from
-        // There seem to be some invalid errors when connecting to a SQLite database
-        // Until the cause of this is found and resolved, disable the Connection logging
-        // InstrumentationEvent::StartEstablishConnection {
-        //     url,
-        //     ..
-        // } => {
-        //     debug!("Establishing connection: {url}")
-        // }
-        // InstrumentationEvent::FinishEstablishConnection {
-        //     url,
-        //     error,
-        //     ..
-        // } => {
-        //     if let Some(e) = error {
-        //         error!("Error during establishing a connection with {url}: {e:?}")
-        //     } else {
-        //         debug!("Connection established: {url}")
-        //     }
-        // }
+        InstrumentationEvent::StartEstablishConnection {
+            url,
+            ..
+        } => {
+            debug!("Establishing connection: {url}")
+        }
+        InstrumentationEvent::FinishEstablishConnection {
+            url,
+            error,
+            ..
+        } => {
+            if let Some(e) = error {
+                error!("Error during establishing a connection with {url}: {e:?}")
+            } else {
+                debug!("Connection established: {url}")
+            }
+        }
         InstrumentationEvent::StartQuery {
             query,
             ..
