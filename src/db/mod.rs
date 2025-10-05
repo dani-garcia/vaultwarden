@@ -67,22 +67,20 @@ impl DbConnManager {
     }
 
     fn establish_connection(&self) -> Result<DbConnInner, diesel::r2d2::Error> {
-        let url = &self.database_url;
-
-        match DbConnType::from_url(url) {
+        match DbConnType::from_url(&self.database_url) {
             #[cfg(mysql)]
             Ok(DbConnType::Mysql) => {
-                let conn = diesel::mysql::MysqlConnection::establish(url)?;
+                let conn = diesel::mysql::MysqlConnection::establish(&self.database_url)?;
                 Ok(DbConnInner::Mysql(conn))
             }
             #[cfg(postgresql)]
             Ok(DbConnType::Postgresql) => {
-                let conn = diesel::pg::PgConnection::establish(url)?;
+                let conn = diesel::pg::PgConnection::establish(&self.database_url)?;
                 Ok(DbConnInner::Postgresql(conn))
             }
             #[cfg(sqlite)]
             Ok(DbConnType::Sqlite) => {
-                let conn = diesel::sqlite::SqliteConnection::establish(url)?;
+                let conn = diesel::sqlite::SqliteConnection::establish(&self.database_url)?;
                 Ok(DbConnInner::Sqlite(conn))
             }
 
