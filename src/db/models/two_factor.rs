@@ -31,6 +31,7 @@ pub enum TwoFactorType {
     Remember = 5,
     OrganizationDuo = 6,
     Webauthn = 7,
+    RecoveryCode = 8,
 
     // These are implementation details
     U2fRegisterChallenge = 1000,

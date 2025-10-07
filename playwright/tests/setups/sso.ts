@@ -12,7 +12,7 @@ export async function logNewUser(
     test: Test,
     page: Page,
     user: { email: string, name: string, password: string },
-    options: { mailBuffer?: MailBuffer, override?: boolean } = {}
+    options: { mailBuffer?: MailBuffer } = {}
 ) {
     await test.step(`Create user ${user.name}`, async () => {
         await page.context().clearCookies();
@@ -20,12 +20,8 @@ export async function logNewUser(
         await test.step('Landing page', async () => {
             await utils.cleanLanding(page);
 
-            if( options.override ) {
-                await page.getByRole('button', { name: 'Continue' }).click();
-            } else {
-                await page.getByLabel(/Email address/).fill(user.email);
-                await page.getByRole('button', { name: /Use single sign-on/ }).click();
-            }
+            await page.locator("input[type=email].vw-email-sso").fill(user.email);
+            await page.getByRole('button', { name: /Use single sign-on/ }).click();
         });
 
         await test.step('Keycloak login', async () => {
@@ -69,7 +65,6 @@ export async function logUser(
     user: { email: string, password: string },
     options: {
         mailBuffer ?: MailBuffer,
-        override?: boolean,
         totp?: OTPAuth.TOTP,
         mail2fa?: boolean,
     } = {}
@@ -82,12 +77,8 @@ export async function logUser(
         await test.step('Landing page', async () => {
             await utils.cleanLanding(page);
 
-            if( options.override ) {
-                await page.getByRole('button', { name: 'Continue' }).click();
-            } else {
-                await page.getByLabel(/Email address/).fill(user.email);
-                await page.getByRole('button', { name: /Use single sign-on/ }).click();
-            }
+            await page.locator("input[type=email].vw-email-sso").fill(user.email);
+            await page.getByRole('button', { name: /Use single sign-on/ }).click();
         });
 
         await test.step('Keycloak login', async () => {

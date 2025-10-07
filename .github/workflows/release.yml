@@ -10,33 +10,16 @@ on:
       # https://docs.github.com/en/actions/writing-workflows/workflow-syntax-for-github-actions#filter-pattern-cheat-sheet
       - '[1-2].[0-9]+.[0-9]+'
 
+concurrency:
+  # Apply concurrency control only on the upstream repo
+  group: ${{ github.repository == 'dani-garcia/vaultwarden' && format('{0}-{1}', github.workflow, github.ref) || github.run_id }}
+  # Don't cancel other runs when creating a tag
+  cancel-in-progress: ${{ github.ref_type == 'branch' }}
+
 jobs:
-  # https://github.com/marketplace/actions/skip-duplicate-actions
-  # Some checks to determine if we need to continue with building a new docker.
-  # We will skip this check if we are creating a tag, because that has the same hash as a previous run already.
-  skip_check:
-    # Only run this in the upstream repo and not on forks
-    if: ${{ github.repository == 'dani-garcia/vaultwarden' }}
-    name: Cancel older jobs when running
-    permissions:
-      actions: write
-    runs-on: ubuntu-24.04
-    outputs:
-      should_skip: ${{ steps.skip_check.outputs.should_skip }}
-
-    steps:
-      - name: Skip Duplicates Actions
-        id: skip_check
-        uses: fkirc/skip-duplicate-actions@f75f66ce1886f00957d99748a42c724f4330bdcf # v5.3.1
-        with:
-          cancel_others: 'true'
-        # Only run this when not creating a tag
-        if: ${{ github.ref_type == 'branch' }}
-
   docker-build:
-    needs: skip_check
-    if: ${{ needs.skip_check.outputs.should_skip != 'true' && github.repository == 'dani-garcia/vaultwarden' }}
     name: Build Vaultwarden containers
+    if: ${{ github.repository == 'dani-garcia/vaultwarden' }}
     permissions:
       packages: write
       contents: read
@@ -89,7 +72,7 @@ jobs:
 
       # Checkout the repo
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 #v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 #v5.0.0
         # We need fetch-depth of 0 so we also get all the tag metadata
         with:
           persist-credentials: false
@@ -192,7 +175,7 @@ jobs:
 
       - name: Bake ${{ matrix.base_image }} containers
         id: bake_vw
-        uses: docker/bake-action@37816e747588cb137173af99ab33873600c46ea8 # v6.8.0
+        uses: docker/bake-action@3acf805d94d93a86cce4ca44798a76464a75b88c # v6.9.0
         env:
           BASE_TAGS: "${{ env.BASE_TAGS }}"
           SOURCE_COMMIT: "${{ env.SOURCE_COMMIT }}"

@@ -639,8 +639,14 @@ make_config! {
         /// Timeout when acquiring database connection
         database_timeout:       u64,    false,  def,    30;
 
-        /// Database connection pool size
+        /// Timeout in seconds before idle connections to the database are closed
+        database_idle_timeout:  u64,    false, def,     600;
+
+        /// Database connection max pool size
         database_max_conns:     u32,    false,  def,    10;
+
+        /// Database connection min pool size
+        database_min_conns:     u32,    false,  def,    2;
 
         /// Database connection init |> SQL statements to run when creating a new database connection, mainly useful for connection-scoped pragmas. If empty, a database-specific default is used.
         database_conn_init:     String, false,  def,    String::new();
@@ -691,7 +697,7 @@ make_config! {
         /// Allow email association |> Associate existing non-SSO user based on email
         sso_signups_match_email:        bool,   true,   def,    true;
         /// Allow unknown email verification status |> Allowing this with `SSO_SIGNUPS_MATCH_EMAIL=true` open potential account takeover.
-        sso_allow_unknown_email_verification: bool, false, def, false;
+        sso_allow_unknown_email_verification: bool, true, def, false;
         /// Client ID
         sso_client_id:                  String, true,   def,    String::new();
         /// Client Key
@@ -836,6 +842,14 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         err!(format!("`DATABASE_MAX_CONNS` contains an invalid value. Ensure it is between 1 and {limit}.",));
     }
 
+    if cfg.database_min_conns < 1 || cfg.database_min_conns > limit {
+        err!(format!("`DATABASE_MIN_CONNS` contains an invalid value. Ensure it is between 1 and {limit}.",));
+    }
+
+    if cfg.database_min_conns > cfg.database_max_conns {
+        err!(format!("`DATABASE_MIN_CONNS` must be smaller than or equal to `DATABASE_MAX_CONNS`.",));
+    }
+
     if let Some(log_file) = &cfg.log_file {
         if std::fs::OpenOptions::new().append(true).create(true).open(log_file).is_err() {
             err!("Unable to write to log file", log_file);
@@ -968,7 +982,7 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
 
         validate_internal_sso_issuer_url(&cfg.sso_authority)?;
         validate_internal_sso_redirect_url(&cfg.sso_callback_path)?;
-        check_master_password_policy(&cfg.sso_master_password_policy)?;
+        validate_sso_master_password_policy(&cfg.sso_master_password_policy)?;
     }
 
     if cfg._enable_yubico {
@@ -1184,12 +1198,19 @@ fn validate_internal_sso_redirect_url(sso_callback_path: &String) -> Result<open
     }
 }
 
-fn check_master_password_policy(sso_master_password_policy: &Option<String>) -> Result<(), Error> {
+fn validate_sso_master_password_policy(
+    sso_master_password_policy: &Option<String>,
+) -> Result<Option<serde_json::Value>, Error> {
     let policy = sso_master_password_policy.as_ref().map(|mpp| serde_json::from_str::<serde_json::Value>(mpp));
-    if let Some(Err(error)) = policy {
-        err!(format!("Invalid sso_master_password_policy ({error}), Ensure that it's correctly escaped with ''"))
+
+    match policy {
+        None => Ok(None),
+        Some(Ok(jsobject @ serde_json::Value::Object(_))) => Ok(Some(jsobject)),
+        Some(Ok(_)) => err!("Invalid sso_master_password_policy: parsed value is not a JSON object"),
+        Some(Err(error)) => {
+            err!(format!("Invalid sso_master_password_policy ({error}), Ensure that it's correctly escaped with ''"))
+        }
     }
-    Ok(())
 }
 
 /// Extracts an RFC 6454 web origin from a URL.
@@ -1534,6 +1555,10 @@ impl Config {
         }
     }
 
+    pub fn is_webauthn_2fa_supported(&self) -> bool {
+        Url::parse(&self.domain()).expect("DOMAIN not a valid URL").domain().is_some()
+    }
+
     /// Tests whether the admin token is set to a non-empty value.
     pub fn is_admin_token_set(&self) -> bool {
         let token = self.admin_token();
@@ -1592,6 +1617,10 @@ impl Config {
 
     pub fn sso_redirect_url(&self) -> Result<openidconnect::RedirectUrl, Error> {
         validate_internal_sso_redirect_url(&self.sso_callback_path())
+    }
+
+    pub fn sso_master_password_policy_value(&self) -> Option<serde_json::Value> {
+        validate_sso_master_password_policy(&self.sso_master_password_policy()).ok().flatten()
     }
 
     pub fn sso_scopes_vec(&self) -> Vec<String> {
