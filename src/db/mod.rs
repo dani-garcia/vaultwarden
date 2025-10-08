@@ -368,7 +368,7 @@ pub mod models;
 
 /// Creates a back-up of the sqlite database
 /// MySQL/MariaDB and PostgreSQL are not supported.
-pub async fn backup_database(conn: &mut DbConn) -> Result<String, Error> {
+pub async fn backup_database(conn: &mut DbConn, output_dir: Option<String>) -> Result<String, Error> {
     db_run! {@raw conn:
         postgresql, mysql {
             let _ = conn;
@@ -376,8 +376,19 @@ pub async fn backup_database(conn: &mut DbConn) -> Result<String, Error> {
         }
         sqlite {
             let db_url = CONFIG.database_url();
-            let db_path = std::path::Path::new(&db_url).parent().unwrap();
-            let backup_file = db_path
+            
+            let backup_dir = match &output_dir {
+                Some(dir) => {
+                    let output_path = std::path::Path::new(dir);
+                    if !output_path.exists() || !output_path.is_dir() {
+                        err!(format!("Backup directory does not exist or is not a directory: {}", dir));
+                    }
+                    output_path
+                }
+                None => std::path::Path::new(&db_url).parent().unwrap(),
+            };
+            
+            let backup_file = backup_dir
                 .join(format!("db_{}.sqlite3", chrono::Utc::now().format("%Y%m%d_%H%M%S")))
                 .to_string_lossy()
                 .into_owned();
