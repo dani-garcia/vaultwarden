@@ -39,6 +39,7 @@ pub enum OrgPolicyType {
     // AutomaticAppLogIn = 12,
     // FreeFamiliesSponsorshipPolicy = 13,
     RemoveUnlockWithPin = 14,
+    RestrictedItemTypes = 15,
 }
 
 // https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Core/AdminConsole/Models/Data/Organizations/Policies/SendOptionsPolicyData.cs#L5
