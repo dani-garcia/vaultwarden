@@ -9,7 +9,7 @@ path = "src/lib.rs"
 proc-macro = true
 
 [dependencies]
-quote = "1.0.40"
+quote = "1.0.41"
 syn = "2.0.106"
 
 [lints]
