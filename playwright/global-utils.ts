@@ -152,11 +152,37 @@ async function wipePostgres(){
     }
 }
 
+async function wipeCockroach(){
+    const { Client } = require('pg');
+
+    const client = new Client({
+        user: process.env.COCKROACH_USER,
+        host: "127.0.0.1",
+        database: "cockroach",
+        password: process.env.COCKROACH_PASSWORD,
+        port: process.env.COCKROACH_PORT,
+    });
+
+    try {
+        await client.connect();
+        await client.query(`DROP DATABASE ${process.env.COCKROACH_DB}`);
+        await client.query(`CREATE DATABASE ${process.env.COCKROACH_DB}`);
+        console.log('Successfully wiped cockroach');
+    } catch (err) {
+        console.log(`Error when wiping cockroach: ${err}`);
+    } finally {
+        client.end();
+    }
+}
+
 function dbConfig(testInfo: TestInfo){
     switch(testInfo.project.name) {
         case "postgres":
+        case "cockroach":
         case "sso-postgres":
             return { DATABASE_URL: `postgresql://${process.env.POSTGRES_USER}:${process.env.POSTGRES_PASSWORD}@127.0.0.1:${process.env.POSTGRES_PORT}/${process.env.POSTGRES_DB}` };
+        case "sso-cockroach":
+            return { DATABASE_URL: `cockroachdb://${process.env.COCKROACH_USER}:${process.env.COCKROACH_PASSWORD}@127.0.0.1:${process.env.COCKROACH_PORT}/${process.env.COCKROACH_DB}` };
         case "mariadb":
         case "sso-mariadb":
             return { DATABASE_URL: `mysql://${process.env.MARIADB_USER}:${process.env.MARIADB_PASSWORD}@127.0.0.1:${process.env.MARIADB_PORT}/${process.env.MARIADB_DATABASE}` };
@@ -180,6 +206,9 @@ export async function startVault(browser: Browser, testInfo: TestInfo, env = {},
             case "postgres":
             case "sso-postgres":
                 await wipePostgres();
+                break;
+            case "sso-cockroach":
+                await wipeCockroach();
                 break;
             case "mariadb":
             case "sso-mariadb":

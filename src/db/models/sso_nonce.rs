@@ -43,7 +43,7 @@ impl SsoNonce {
                     .execute(conn)
                     .map_res("Error saving SSO nonce")
             }
-            postgresql {
+            postgresql, cockroachdb {
                 let value = SsoNonceDb::to_db(self);
                 diesel::insert_into(sso_nonce::table)
                     .values(&value)

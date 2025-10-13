@@ -1,0 +1,1 @@
+ALTER TABLE twofactor ADD COLUMN last_used INT4 NOT NULL DEFAULT 0;

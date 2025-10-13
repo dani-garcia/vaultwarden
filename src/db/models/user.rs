@@ -300,7 +300,7 @@ impl User {
                     Err(e) => Err(e.into()),
                 }.map_res("Error saving user")
             }
-            postgresql {
+            postgresql, cockroachdb {
                 let value = UserDb::to_db(self);
                 diesel::insert_into(users::table) // Insert or update
                     .values(&value)
@@ -449,7 +449,7 @@ impl Invitation {
                     .execute(conn)
                     .map_res("Error saving invitation")
             }
-            postgresql {
+            postgresql, cockroachdb {
                 diesel::insert_into(invitations::table)
                     .values(InvitationDb::to_db(self))
                     .on_conflict(invitations::email)
@@ -516,7 +516,7 @@ impl SsoUser {
                     .execute(conn)
                     .map_res("Error saving SSO user")
             }
-            postgresql {
+            postgresql, cockroachdb {
                 let value = SsoUserDb::to_db(self);
                 diesel::insert_into(sso_users::table)
                     .values(&value)

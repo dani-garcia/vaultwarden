@@ -209,7 +209,7 @@ impl Send {
                     Err(e) => Err(e.into()),
                 }.map_res("Error saving send")
             }
-            postgresql {
+            postgresql, cockroachdb {
                 let value = SendDb::to_db(self);
                 diesel::insert_into(sends::table)
                     .values(&value)

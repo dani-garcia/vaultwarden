@@ -150,7 +150,7 @@ impl Device {
                     10,
                 ).map_res("Error saving device")
             }
-            postgresql {
+            postgresql, cockroachdb {
                 let value = DeviceDb::to_db(self);
                 crate::util::retry(
                     || diesel::insert_into(devices::table).values(&value).on_conflict((devices::uuid, devices::user_uuid)).do_update().set(&value).execute(conn),

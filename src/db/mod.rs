@@ -1,9 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
-use diesel::{
-    connection::SimpleConnection,
-    r2d2::{ConnectionManager, CustomizeConnection, Pool, PooledConnection},
-};
+use diesel::r2d2::{ConnectionManager, CustomizeConnection, Pool, PooledConnection};
 
 use rocket::{
     http::Status,
@@ -32,6 +29,10 @@ pub mod __mysql_schema;
 #[cfg(postgresql)]
 #[path = "schemas/postgresql/schema.rs"]
 pub mod __postgresql_schema;
+
+#[cfg(cockroachdb)]
+#[path = "schemas/cockroachdb/schema.rs"]
+pub mod __cockroachdb_schema;
 
 // These changes are based on Rocket 0.5-rc wrapper of Diesel: https://github.com/SergioBenitez/Rocket/blob/v0.5-rc/contrib/sync_db_pools
 
@@ -70,16 +71,18 @@ macro_rules! generate_connections {
             pub init_stmts: String,
         }
 
-        $( // Based on <https://stackoverflow.com/a/57717533>.
-        #[cfg($name)]
-        impl CustomizeConnection<$ty, diesel::r2d2::Error> for DbConnOptions {
-            fn on_acquire(&self, conn: &mut $ty) -> Result<(), diesel::r2d2::Error> {
+        // generic because the cockroachdb and postgresql implementations clash when both turned on
+        impl<T> CustomizeConnection<T, diesel::r2d2::Error> for DbConnOptions
+        where
+            T: diesel::connection::SimpleConnection
+        {
+            fn on_acquire(&self, conn: &mut T) -> Result<(), diesel::r2d2::Error> {
                 if !self.init_stmts.is_empty() {
                     conn.batch_execute(&self.init_stmts).map_err(diesel::r2d2::Error::QueryError)?;
                 }
                 Ok(())
             }
-        })+
+        }
 
         #[derive(Clone)]
         pub struct DbPool {
@@ -183,14 +186,16 @@ macro_rules! generate_connections {
 generate_connections! {
     sqlite: diesel::sqlite::SqliteConnection,
     mysql: diesel::mysql::MysqlConnection,
-    postgresql: diesel::pg::PgConnection
+    postgresql: diesel::pg::PgConnection,
+    cockroachdb: diesel::pg::PgConnection
 }
 
 #[cfg(query_logger)]
 generate_connections! {
     sqlite: diesel_logger::LoggingConnection<diesel::sqlite::SqliteConnection>,
     mysql: diesel_logger::LoggingConnection<diesel::mysql::MysqlConnection>,
-    postgresql: diesel_logger::LoggingConnection<diesel::pg::PgConnection>
+    postgresql: diesel_logger::LoggingConnection<diesel::pg::PgConnection>,
+    cockroachdb: diesel_logger::LoggingConnection<diesel::pg::PgConnection>
 }
 
 impl DbConnType {
@@ -210,6 +215,14 @@ impl DbConnType {
 
             #[cfg(not(postgresql))]
             err!("`DATABASE_URL` is a PostgreSQL URL, but the 'postgresql' feature is not enabled")
+
+        // Cockroach
+        } else if url.starts_with("cockroachdb:") || url.starts_with("cockroach:") {
+            #[cfg(cockroachdb)]
+            return Ok(DbConnType::cockroachdb);
+
+            #[cfg(not(cockroachdb))]
+            err!("`DATABASE_URL` is a CockroachDB URL, but the 'cockroachdb' feature is not enabled")
 
         //Sqlite
         } else {
@@ -235,6 +248,7 @@ impl DbConnType {
             Self::sqlite => "PRAGMA busy_timeout = 5000; PRAGMA synchronous = NORMAL;".to_string(),
             Self::mysql => String::new(),
             Self::postgresql => String::new(),
+            Self::cockroachdb => String::new(),
         }
     }
 }
@@ -243,11 +257,11 @@ impl DbConnType {
 macro_rules! db_run {
     // Same for all dbs
     ( $conn:ident: $body:block ) => {
-        db_run! { $conn: sqlite, mysql, postgresql $body }
+        db_run! { $conn: sqlite, mysql, postgresql, cockroachdb $body }
     };
 
     ( @raw $conn:ident: $body:block ) => {
-        db_run! { @raw $conn: sqlite, mysql, postgresql $body }
+        db_run! { @raw $conn: sqlite, mysql, postgresql, cockroachdb $body }
     };
 
     // Different code for each db
@@ -316,7 +330,7 @@ impl<T: FromDb> FromDb for Option<T> {
     }
 }
 
-// For each struct eg. Cipher, we create a CipherDb inside a module named __$db_model (where $db is sqlite, mysql or postgresql),
+// For each struct eg. Cipher, we create a CipherDb inside a module named __$db_model (where $db is sqlite, mysql, postgresql or cockroachdb),
 // to implement the Diesel traits. We also provide methods to convert between them and the basic structs. Later, that module will be auto imported when using db_run!
 #[macro_export]
 macro_rules! db_object {
@@ -331,11 +345,13 @@ macro_rules! db_object {
         $( pub struct $name { $( /*$( #[$field_attr] )**/ $vis $field : $typ, )+ } )+
 
         #[cfg(sqlite)]
-        pub mod __sqlite_model     { $( db_object! { @db sqlite     |  $( #[$attr] )* | $name |  $( $( #[$field_attr] )* $field : $typ ),+ } )+ }
+        pub mod __sqlite_model      { $( db_object! { @db sqlite      |  $( #[$attr] )* | $name |  $( $( #[$field_attr] )* $field : $typ ),+ } )+ }
         #[cfg(mysql)]
-        pub mod __mysql_model      { $( db_object! { @db mysql      |  $( #[$attr] )* | $name |  $( $( #[$field_attr] )* $field : $typ ),+ } )+ }
+        pub mod __mysql_model       { $( db_object! { @db mysql       |  $( #[$attr] )* | $name |  $( $( #[$field_attr] )* $field : $typ ),+ } )+ }
         #[cfg(postgresql)]
-        pub mod __postgresql_model { $( db_object! { @db postgresql |  $( #[$attr] )* | $name |  $( $( #[$field_attr] )* $field : $typ ),+ } )+ }
+        pub mod __postgresql_model  { $( db_object! { @db postgresql  |  $( #[$attr] )* | $name |  $( $( #[$field_attr] )* $field : $typ ),+ } )+ }
+        #[cfg(cockroachdb)]
+        pub mod __cockroachdb_model { $( db_object! { @db cockroachdb |  $( #[$attr] )* | $name |  $( $( #[$field_attr] )* $field : $typ ),+ } )+ }
     };
 
     ( @db $db:ident | $( #[$attr:meta] )* | $name:ident | $( $( #[$field_attr:meta] )* $vis:vis $field:ident : $typ:ty),+) => {
@@ -370,9 +386,9 @@ pub mod models;
 /// MySQL/MariaDB and PostgreSQL are not supported.
 pub async fn backup_database(conn: &mut DbConn) -> Result<String, Error> {
     db_run! {@raw conn:
-        postgresql, mysql {
+        postgresql, mysql, cockroachdb {
             let _ = conn;
-            err!("PostgreSQL and MySQL/MariaDB do not support this backup feature");
+            err!("PostgreSQL, MySQL/MariaDB and CockroachDB do not support this backup feature");
         }
         sqlite {
             let db_url = CONFIG.database_url();
@@ -390,7 +406,7 @@ pub async fn backup_database(conn: &mut DbConn) -> Result<String, Error> {
 /// Get the SQL Server version
 pub async fn get_sql_server_version(conn: &mut DbConn) -> String {
     db_run! {@raw conn:
-        postgresql, mysql {
+        postgresql, cockroachdb, mysql {
             define_sql_function!{
                 fn version() -> diesel::sql_types::Text;
             }
@@ -481,6 +497,20 @@ mod mysql_migrations {
 mod postgresql_migrations {
     use diesel_migrations::{EmbeddedMigrations, MigrationHarness};
     pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations/postgresql");
+
+    pub fn run_migrations() -> Result<(), super::Error> {
+        use diesel::Connection;
+        // Make sure the database is up to date (create if it doesn't exist, or run the migrations)
+        let mut connection = diesel::pg::PgConnection::establish(&crate::CONFIG.database_url())?;
+        connection.run_pending_migrations(MIGRATIONS).expect("Error running migrations");
+        Ok(())
+    }
+}
+
+#[cfg(cockroachdb)]
+mod cockroachdb_migrations {
+    use diesel_migrations::{EmbeddedMigrations, MigrationHarness};
+    pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations/cockroachdb");
 
     pub fn run_migrations() -> Result<(), super::Error> {
         use diesel::Connection;

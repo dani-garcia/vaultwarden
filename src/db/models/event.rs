@@ -201,7 +201,7 @@ impl Event {
                 .execute(conn)
                 .map_res("Error saving event")
             }
-            postgresql {
+            postgresql, cockroachdb {
                 diesel::insert_into(event::table)
                 .values(EventDb::to_db(self))
                 .on_conflict(event::uuid)
@@ -216,7 +216,7 @@ impl Event {
     pub async fn save_user_event(events: Vec<Event>, conn: &mut DbConn) -> EmptyResult {
         // Special save function which is able to handle multiple events.
         // SQLite doesn't support the DEFAULT argument, and does not support inserting multiple values at the same time.
-        // MySQL and PostgreSQL do.
+        // MySQL, PostgreSQL and CockroachDB do.
         // We also ignore duplicate if they ever will exists, else it could break the whole flow.
         db_run! { conn:
             // Unfortunately SQLite does not support inserting multiple records at the same time
@@ -238,7 +238,7 @@ impl Event {
                 .unwrap_or_default();
                 Ok(())
             }
-            postgresql {
+            postgresql, cockroachdb {
                 let events: Vec<EventDb> = events.iter().map(EventDb::to_db).collect();
                 diesel::insert_into(event::table)
                 .values(&events)

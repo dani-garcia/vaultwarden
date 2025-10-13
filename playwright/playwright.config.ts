@@ -68,6 +68,12 @@ export default defineConfig({
             teardown: 'postgres-teardown',
         },
         {
+            name: 'cockroach-setup',
+            testMatch: 'tests/setups/db-setup.ts',
+            use: { serviceName: "Cockroach" },
+            teardown: 'cockroach-teardown',
+        },
+        {
             name: 'sso-setup',
             testMatch: 'tests/setups/sso-setup.ts',
             teardown: 'sso-teardown',
@@ -92,6 +98,12 @@ export default defineConfig({
             dependencies: ['postgres-setup'],
         },
         {
+            name: 'cockroach',
+            testMatch: 'tests/*.spec.ts',
+            testIgnore: 'tests/sso_*.spec.ts',
+            dependencies: ['cockroach-setup'],
+        },
+        {
             name: 'sqlite',
             testMatch: 'tests/*.spec.ts',
             testIgnore: 'tests/sso_*.spec.ts',
@@ -113,6 +125,11 @@ export default defineConfig({
             dependencies: ['sso-setup', 'postgres-setup'],
         },
         {
+            name: 'sso-cockroach',
+            testMatch: 'tests/sso_*.spec.ts',
+            dependencies: ['sso-setup', 'cockroach-setup'],
+        },
+        {
             name: 'sso-sqlite',
             testMatch: 'tests/sso_*.spec.ts',
             dependencies: ['sso-setup'],
@@ -132,6 +149,11 @@ export default defineConfig({
             name: 'postgres-teardown',
             testMatch: 'tests/setups/db-teardown.ts',
             use: { serviceName: "Postgres" },
+        },
+        {
+            name: 'cockroach-teardown',
+            testMatch: 'tests/setups/db-teardown.ts',
+            use: { serviceName: "Cockroach" },
         },
         {
             name: 'sso-teardown',

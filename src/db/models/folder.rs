@@ -91,7 +91,7 @@ impl Folder {
                     Err(e) => Err(e.into()),
                 }.map_res("Error saving folder")
             }
-            postgresql {
+            postgresql, cockroachdb {
                 let value = FolderDb::to_db(self);
                 diesel::insert_into(folders::table)
                     .values(&value)
@@ -156,7 +156,7 @@ impl FolderCipher {
                     .execute(conn)
                     .map_res("Error adding cipher to folder")
             }
-            postgresql {
+            postgresql, cockroachdb {
                 diesel::insert_into(folders_ciphers::table)
                     .values(FolderCipherDb::to_db(self))
                     .on_conflict((folders_ciphers::cipher_uuid, folders_ciphers::folder_uuid))

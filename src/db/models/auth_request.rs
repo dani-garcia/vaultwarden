@@ -99,7 +99,7 @@ impl AuthRequest {
                     Err(e) => Err(e.into()),
                 }.map_res("Error auth_request")
             }
-            postgresql {
+            postgresql, cockroachdb {
                 let value = AuthRequestDb::to_db(self);
                 diesel::insert_into(auth_requests::table)
                     .values(&value)

@@ -1,0 +1,27 @@
+-- Switch from CHAR() types to VARCHAR() types to avoid padding issues.
+ALTER TABLE attachments ALTER COLUMN id TYPE TEXT;
+ALTER TABLE attachments ALTER COLUMN cipher_uuid TYPE VARCHAR(40);
+ALTER TABLE users ALTER COLUMN uuid TYPE VARCHAR(40);
+ALTER TABLE users ALTER COLUMN email TYPE TEXT;
+ALTER TABLE devices ALTER COLUMN uuid TYPE VARCHAR(40);
+ALTER TABLE devices ALTER COLUMN user_uuid TYPE VARCHAR(40);
+ALTER TABLE organizations ALTER COLUMN uuid TYPE VARCHAR(40);
+ALTER TABLE ciphers ALTER COLUMN uuid TYPE VARCHAR(40);
+ALTER TABLE ciphers ALTER COLUMN user_uuid TYPE VARCHAR(40);
+ALTER TABLE ciphers ALTER COLUMN organization_uuid TYPE VARCHAR(40);
+ALTER TABLE folders ALTER COLUMN uuid TYPE VARCHAR(40);
+ALTER TABLE folders ALTER COLUMN user_uuid TYPE VARCHAR(40);
+ALTER TABLE collections ALTER COLUMN uuid TYPE VARCHAR(40);
+ALTER TABLE collections ALTER COLUMN org_uuid TYPE VARCHAR(40);
+ALTER TABLE users_collections ALTER COLUMN user_uuid TYPE VARCHAR(40);
+ALTER TABLE users_collections ALTER COLUMN collection_uuid TYPE VARCHAR(40);
+ALTER TABLE users_organizations ALTER COLUMN uuid TYPE VARCHAR(40);
+ALTER TABLE users_organizations ALTER COLUMN user_uuid TYPE VARCHAR(40);
+ALTER TABLE users_organizations ALTER COLUMN org_uuid TYPE VARCHAR(40);
+ALTER TABLE folders_ciphers ALTER COLUMN cipher_uuid TYPE VARCHAR(40);
+ALTER TABLE folders_ciphers ALTER COLUMN folder_uuid TYPE VARCHAR(40);
+ALTER TABLE ciphers_collections ALTER COLUMN cipher_uuid TYPE VARCHAR(40);
+ALTER TABLE ciphers_collections ALTER COLUMN collection_uuid TYPE VARCHAR(40);
+ALTER TABLE twofactor ALTER COLUMN uuid TYPE VARCHAR(40);
+ALTER TABLE twofactor ALTER COLUMN user_uuid TYPE VARCHAR(40);
+ALTER TABLE invitations ALTER COLUMN email TYPE TEXT;

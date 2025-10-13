@@ -353,7 +353,7 @@ impl Organization {
                 }.map_res("Error saving organization")
 
             }
-            postgresql {
+            postgresql, cockroachdb {
                 let value = OrganizationDb::to_db(self);
                 diesel::insert_into(organizations::table)
                     .values(&value)
@@ -763,7 +763,7 @@ impl Membership {
                     Err(e) => Err(e.into()),
                 }.map_res("Error adding user to organization")
             }
-            postgresql {
+            postgresql, cockroachdb {
                 let value = MembershipDb::to_db(self);
                 diesel::insert_into(users_organizations::table)
                     .values(&value)
@@ -1195,7 +1195,7 @@ impl OrganizationApiKey {
                 }.map_res("Error saving organization")
 
             }
-            postgresql {
+            postgresql, cockroachdb {
                 let value = OrganizationApiKeyDb::to_db(self);
                 diesel::insert_into(organization_api_key::table)
                     .values(&value)

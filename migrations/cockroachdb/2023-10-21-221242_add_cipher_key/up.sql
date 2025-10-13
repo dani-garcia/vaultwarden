@@ -1,0 +1,2 @@
+ALTER TABLE ciphers
+ADD COLUMN "key" TEXT;

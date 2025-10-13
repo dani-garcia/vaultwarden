@@ -1,0 +1,1 @@
+ALTER TABLE sends RENAME COLUMN key TO akey;

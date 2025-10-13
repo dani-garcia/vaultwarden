@@ -452,7 +452,7 @@ impl Cipher {
                     Err(e) => Err(e.into()),
                 }.map_res("Error saving cipher")
             }
-            postgresql {
+            postgresql, cockroachdb {
                 let value = CipherDb::to_db(self);
                 diesel::insert_into(ciphers::table)
                     .values(&value)

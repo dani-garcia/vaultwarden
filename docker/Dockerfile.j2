@@ -145,10 +145,10 @@ ARG CARGO_PROFILE=release
 
 # Configure the DB ARG as late as possible to not invalidate the cached layers above
 {% if base == "debian" %}
-ARG DB=sqlite,mysql,postgresql
+ARG DB=sqlite,mysql,postgresql,cockroachdb
 {% elif base == "alpine" %}
 # Enable MiMalloc to improve performance on Alpine builds
-ARG DB=sqlite,mysql,postgresql,enable_mimalloc
+ARG DB=sqlite,mysql,postgresql,cockroachdb,enable_mimalloc
 {% endif %}
 
 # Builds your dependencies and removes the

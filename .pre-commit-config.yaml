@@ -1,52 +1,64 @@
 ---
 repos:
--   repo: https://github.com/pre-commit/pre-commit-hooks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
-    - id: check-yaml
-    - id: check-json
-    - id: check-toml
-    - id: mixed-line-ending
-      args: ["--fix=no"]
-    - id: end-of-file-fixer
-      exclude: "(.*js$|.*css$)"
-    - id: check-case-conflict
-    - id: check-merge-conflict
-    - id: detect-private-key
-    - id: check-symlinks
-    - id: forbid-submodules
--   repo: local
+      - id: check-yaml
+      - id: check-json
+      - id: check-toml
+      - id: mixed-line-ending
+        args: ["--fix=no"]
+      - id: end-of-file-fixer
+        exclude: "(.*js$|.*css$)"
+      - id: check-case-conflict
+      - id: check-merge-conflict
+      - id: detect-private-key
+      - id: check-symlinks
+      - id: forbid-submodules
+  - repo: local
     hooks:
-    - id: fmt
-      name: fmt
-      description: Format files with cargo fmt.
-      entry: cargo fmt
-      language: system
-      types: [rust]
-      args: ["--", "--check"]
-    - id: cargo-test
-      name: cargo test
-      description: Test the package for errors.
-      entry: cargo test
-      language: system
-      args: ["--features", "sqlite,mysql,postgresql,enable_mimalloc", "--"]
-      types_or: [rust, file]
-      files: (Cargo.toml|Cargo.lock|rust-toolchain.toml|rustfmt.toml|.*\.rs$)
-      pass_filenames: false
-    - id: cargo-clippy
-      name: cargo clippy
-      description: Lint Rust sources
-      entry: cargo clippy
-      language: system
-      args: ["--features", "sqlite,mysql,postgresql,enable_mimalloc", "--", "-D", "warnings"]
-      types_or: [rust, file]
-      files: (Cargo.toml|Cargo.lock|rust-toolchain.toml|rustfmt.toml|.*\.rs$)
-      pass_filenames: false
-    - id: check-docker-templates
-      name: check docker templates
-      description: Check if the Docker templates are updated
-      language: system
-      entry: sh
-      args:
-        - "-c"
-        - "cd docker && make"
+      - id: fmt
+        name: fmt
+        description: Format files with cargo fmt.
+        entry: cargo fmt
+        language: system
+        types: [rust]
+        args: ["--", "--check"]
+      - id: cargo-test
+        name: cargo test
+        description: Test the package for errors.
+        entry: cargo test
+        language: system
+        args:
+          [
+            "--features",
+            "sqlite,mysql,postgresql,cockroachdb,enable_mimalloc",
+            "--",
+          ]
+        types_or: [rust, file]
+        files: (Cargo.toml|Cargo.lock|rust-toolchain.toml|rustfmt.toml|.*\.rs$)
+        pass_filenames: false
+      - id: cargo-clippy
+        name: cargo clippy
+        description: Lint Rust sources
+        entry: cargo clippy
+        language: system
+        args:
+          [
+            "--features",
+            "sqlite,mysql,postgresql,cockroachdb,enable_mimalloc",
+            "--",
+            "-D",
+            "warnings",
+          ]
+        types_or: [rust, file]
+        files: (Cargo.toml|Cargo.lock|rust-toolchain.toml|rustfmt.toml|.*\.rs$)
+        pass_filenames: false
+      - id: check-docker-templates
+        name: check docker templates
+        description: Check if the Docker templates are updated
+        language: system
+        entry: sh
+        args:
+          - "-c"
+          - "cd docker && make"
