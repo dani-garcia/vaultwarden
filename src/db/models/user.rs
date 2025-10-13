@@ -283,24 +283,17 @@ impl User {
         self.updated_at = Utc::now().naive_utc();
 
         db_run! {conn:
-            sqlite, mysql {
-                match diesel::replace_into(users::table)
-                    .values(UserDb::to_db(self))
+            mysql {
+                let value = UserDb::to_db(self);
+                diesel::insert_into(users::table)
+                    .values(&value)
+                    .on_conflict(diesel::dsl::DuplicatedKeys)
+                    .do_update()
+                    .set(&value)
                     .execute(conn)
-                {
-                    Ok(_) => Ok(()),
-                    // Record already exists and causes a Foreign Key Violation because replace_into() wants to delete the record first.
-                    Err(diesel::result::Error::DatabaseError(diesel::result::DatabaseErrorKind::ForeignKeyViolation, _)) => {
-                        diesel::update(users::table)
-                            .filter(users::uuid.eq(&self.uuid))
-                            .set(UserDb::to_db(self))
-                            .execute(conn)
-                            .map_res("Error saving user")
-                    }
-                    Err(e) => Err(e.into()),
-                }.map_res("Error saving user")
+                    .map_res("Error saving user")
             }
-            postgresql {
+            postgresql, sqlite {
                 let value = UserDb::to_db(self);
                 diesel::insert_into(users::table) // Insert or update
                     .values(&value)
