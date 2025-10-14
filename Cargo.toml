@@ -21,7 +21,6 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
-
 [features]
 # default = ["sqlite"]
 # Empty to keep compatibility, prefer to set USE_SYSLOG=true
@@ -214,7 +213,6 @@ strip = "debuginfo"
 lto = "fat"
 codegen-units = 1
 debug = false
-
 
 # Optimize for size
 [profile.release-micro]
