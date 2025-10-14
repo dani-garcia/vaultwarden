@@ -240,11 +240,19 @@ impl Client {
                 Ok(token_response) => token_response,
             };
 
-        Ok((
-            token_response.refresh_token().map(|token| token.secret().clone()),
-            token_response.access_token().secret().clone(),
-            token_response.expires_in(),
-        ))
+        // Always surface a refresh token:
+        // - If the IdP (e.g., Authentik) returned a rotated one, use it.
+        // - Otherwise, keep using the one we just used for this request.
+        let access = token_response.access_token().secret().clone();
+        let expires_in = token_response.expires_in();
+
+        let new_refresh = token_response
+            .refresh_token()
+            .map(|t| t.secret().clone())
+            .unwrap_or_else(|| rt.secret().clone());
+
+        Ok((Some(new_refresh), access, expires_in))
+
     }
 }
 
