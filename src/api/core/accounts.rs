@@ -64,6 +64,7 @@ pub fn routes() -> Vec<rocket::Route> {
         put_auth_request,
         get_auth_request_response,
         get_auth_requests,
+        get_auth_requests_pending,
     ]
 }
 
@@ -1605,8 +1606,15 @@ async fn get_auth_request_response(
     })))
 }
 
+// Now unused but not yet removed
+// cf https://github.com/bitwarden/clients/blob/9b2fbdba1c028bf3394064609630d2ec224baefa/libs/common/src/services/api.service.ts#L245
 #[get("/auth-requests")]
-async fn get_auth_requests(headers: Headers, mut conn: DbConn) -> JsonResult {
+async fn get_auth_requests(headers: Headers, conn: DbConn) -> JsonResult {
+    get_auth_requests_pending(headers, conn).await
+}
+
+#[get("/auth-requests/pending")]
+async fn get_auth_requests_pending(headers: Headers, mut conn: DbConn) -> JsonResult {
     let auth_requests = AuthRequest::find_by_user(&headers.user.uuid, &mut conn).await;
 
     Ok(Json(json!({
