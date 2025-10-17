@@ -473,7 +473,7 @@ impl Membership {
             "id": self.org_uuid,
             "identifier": null, // Not supported
             "name": org.name,
-            "seats": null,
+            "seats": 20, // hardcoded maxEmailsCount in the web-vault
             "maxCollections": null,
             "usersGetPremium": true,
             "use2fa": true,
