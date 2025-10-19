@@ -588,6 +588,20 @@ pub async fn send_change_email_existing(address: &str, acting_address: &str) -> 
     send_email(address, &subject, body_html, body_text).await
 }
 
+pub async fn send_change_email_invited(address: &str, acting_address: &str) -> EmptyResult {
+    let (subject, body_html, body_text) = get_text(
+        "email/change_email_invited",
+        json!({
+            "url": CONFIG.domain(),
+            "img_src": CONFIG._smtp_img_src(),
+            "existing_address": address,
+            "acting_address": acting_address,
+        }),
+    )?;
+
+    send_email(address, &subject, body_html, body_text).await
+}
+
 pub async fn send_sso_change_email(address: &str) -> EmptyResult {
     let (subject, body_html, body_text) = get_text(
         "email/sso_change_email",
