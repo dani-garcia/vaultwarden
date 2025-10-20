@@ -221,9 +221,13 @@ export async function restartVault(page: Page, testInfo: TestInfo, env, resetDB:
 }
 
 export async function checkNotification(page: Page, hasText: string) {
-    await expect(page.locator('bit-toast').filter({ hasText })).toBeVisible();
-    await page.locator('bit-toast').filter({ hasText }).getByRole('button').click();
-    await expect(page.locator('bit-toast').filter({ hasText })).toHaveCount(0);
+    await expect(page.locator('bit-toast', { hasText })).toBeVisible();
+    try {
+        await page.locator('bit-toast', { hasText }).getByRole('button', { name: 'Close' }).click({force: true, timeout: 10_000});
+    } catch (error) {
+        console.log(`Closing notification failed but it should now be invisible (${error})`);
+    }
+    await expect(page.locator('bit-toast', { hasText })).toHaveCount(0);
 }
 
 export async function cleanLanding(page: Page) {
