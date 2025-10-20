@@ -6,18 +6,19 @@ echo $COMMIT_HASH
 if [[ ! -z "$REPO_URL" ]] && [[ ! -z "$COMMIT_HASH" ]] ; then
     rm -rf /web-vault
 
-    mkdir bw_web_builds;
-    cd bw_web_builds;
+    mkdir -p vw_web_builds;
+    cd vw_web_builds;
 
     git -c init.defaultBranch=main init
     git remote add origin "$REPO_URL"
     git fetch --depth 1 origin "$COMMIT_HASH"
     git -c advice.detachedHead=false checkout FETCH_HEAD
 
-    export VAULT_VERSION=$(cat Dockerfile | grep "ARG VAULT_VERSION" | cut -d "=" -f2)
-    ./scripts/checkout_web_vault.sh
-    ./scripts/build_web_vault.sh
-    printf '{"version":"%s"}' "$COMMIT_HASH" > ./web-vault/apps/web/build/vw-version.json
+    npm ci --ignore-scripts
 
-    mv ./web-vault/apps/web/build /web-vault
+    cd apps/web
+    npm run dist:oss:selfhost
+    printf '{"version":"%s"}' "$COMMIT_HASH" > build/vw-version.json
+
+    mv build /web-vault
 fi

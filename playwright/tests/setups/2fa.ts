@@ -48,7 +48,7 @@ export async function activateEmail(test: Test, page: Page, user: { name: string
         await page.getByRole('menuitem', { name: 'Account settings' }).click();
         await page.getByRole('link', { name: 'Security' }).click();
         await page.getByRole('link', { name: 'Two-step login' }).click();
-        await page.locator('bit-item').filter({ hasText: 'Email Email Enter a code sent' }).getByRole('button').click();
+        await page.locator('bit-item').filter({ hasText: 'Enter a code sent to your email' }).getByRole('button').click();
         await page.getByLabel('Master password (required)').fill(user.password);
         await page.getByRole('button', { name: 'Continue' }).click();
         await page.getByRole('button', { name: 'Send email' }).click();

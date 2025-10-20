@@ -97,9 +97,9 @@ npx playwright codegen "http://127.0.0.1:8003"
 
 ## Override web-vault
 
-It is possible to change the `web-vault` used by referencing a different `bw_web_builds` commit.
+It is possible to change the `web-vault` used by referencing a different `vw_web_builds` commit.
 
-Simplest is to set and uncomment `PW_WV_REPO_URL` and `PW_WV_COMMIT_HASH` in the `test.env`.
+Simplest is to set and uncomment `PW_VW_REPO_URL` and `PW_VW_COMMIT_HASH` in the `test.env`.
 Ensure that the image is built with:
 
 ```bash
@@ -111,6 +111,8 @@ You can check the result running:
 ```bash
 DOCKER_BUILDKIT=1 docker compose --profile playwright --env-file test.env up Vaultwarden
 ```
+
+Then check `http://127.0.0.1:8003/admin/diagnostics` with `admin`.
 
 # OpenID Connect test setup
 

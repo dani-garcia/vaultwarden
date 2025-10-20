@@ -18,10 +18,11 @@ services:
       context: compose/warden
       dockerfile: Dockerfile
       args:
-        REPO_URL: ${PW_WV_REPO_URL:-}
-        COMMIT_HASH: ${PW_WV_COMMIT_HASH:-}
+        REPO_URL: ${PW_VW_REPO_URL:-}
+        COMMIT_HASH: ${PW_VW_COMMIT_HASH:-}
     env_file: ${DC_ENV_FILE:-.env}
     environment:
+      - ADMIN_TOKEN
       - DATABASE_URL
       - I_REALLY_WANT_VOLATILE_STORAGE
       - LOG_LEVEL
