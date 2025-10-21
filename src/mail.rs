@@ -95,6 +95,46 @@ fn smtp_transport() -> AsyncSmtpTransport<Tokio1Executor> {
     smtp_client.build()
 }
 
+#[cfg(ses)]
+async fn send_with_aws_ses(email: Message) -> std::io::Result<()> {
+    use std::io::Error;
+
+    use aws_sdk_sesv2::{
+        types::{EmailContent, RawMessage},
+        Client,
+    };
+    use tokio::sync::OnceCell;
+
+    use crate::config::aws_sdk_config;
+
+    static AWS_SESV2_CLIENT: OnceCell<Client> = OnceCell::const_new();
+
+    let client = AWS_SESV2_CLIENT
+        .get_or_init(|| async {
+            let config = aws_sdk_config().await;
+            Client::new(config)
+        })
+        .await;
+
+    client
+        .send_email()
+        .content(
+            EmailContent::builder()
+                .raw(
+                    RawMessage::builder()
+                        .data(email.formatted().into())
+                        .build()
+                        .map_err(|e| Error::other(format!("Failed to build AWS SESv2 RawMessage: {e:#?}")))?,
+                )
+                .build(),
+        )
+        .send()
+        .await
+        .map_err(Error::other)?;
+
+    Ok(())
+}
+
 // This will sanitize the string values by stripping all the html tags to prevent XSS and HTML Injections
 fn sanitize_data(data: &mut serde_json::Value) {
     use regex::Regex;
@@ -670,6 +710,15 @@ async fn send_with_selected_transport(email: Message) -> EmptyResult {
                 }
             }
         }
+    } else if CONFIG.use_aws_ses() {
+        #[cfg(ses)]
+        match send_with_aws_ses(email).await {
+            Ok(_) => Ok(()),
+            Err(e) => err!("Failed to send email", format!("Failed to send email using AWS SES: {e:?}")),
+        }
+
+        #[cfg(not(ses))]
+        unreachable!("Failed to send email using AWS SES: `ses` feature is not enabled");
     } else {
         match smtp_transport().send(email).await {
             Ok(_) => Ok(()),
