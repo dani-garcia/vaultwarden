@@ -105,6 +105,7 @@ pub fn routes() -> Vec<Route> {
         api_key,
         rotate_api_key,
         get_billing_metadata,
+        get_billing_warnings,
         get_auto_enroll_status,
     ]
 }
@@ -2271,6 +2272,16 @@ fn get_plans_tax_rates(_headers: Headers) -> Json<Value> {
 fn get_billing_metadata(_org_id: OrganizationId, _headers: Headers) -> Json<Value> {
     // Prevent a 404 error, which also causes Javascript errors.
     Json(_empty_data_json())
+}
+
+#[get("/organizations/<_org_id>/billing/vnext/warnings")]
+fn get_billing_warnings(_org_id: OrganizationId, _headers: Headers) -> Json<Value> {
+    Json(json!({
+        "freeTrial":null,
+        "inactiveSubscription":null,
+        "resellerRenewal":null,
+        "taxId":null,
+    }))
 }
 
 fn _empty_data_json() -> Value {
