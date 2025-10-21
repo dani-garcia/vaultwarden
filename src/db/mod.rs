@@ -21,6 +21,8 @@ use crate::{
     CONFIG,
 };
 
+pub mod metrics;
+
 #[cfg(sqlite)]
 #[path = "schemas/sqlite/schema.rs"]
 pub mod __sqlite_schema;
