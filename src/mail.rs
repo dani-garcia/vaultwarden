@@ -302,7 +302,7 @@ pub async fn send_invite(
             .append_pair("organizationUserId", &member_id)
             .append_pair("token", &invite_token);
 
-        if CONFIG.sso_enabled() && CONFIG.sso_only() {
+        if CONFIG.sso_enabled() {
             query_params.append_pair("orgUserHasExistingUser", "false");
             query_params.append_pair("orgSsoIdentifier", &org_id);
         } else if user.private_key.is_some() {
