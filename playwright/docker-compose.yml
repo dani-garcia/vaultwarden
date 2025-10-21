@@ -30,9 +30,12 @@ services:
       - SMTP_FROM
       - SMTP_DEBUG
       - SSO_DEBUG_TOKENS
-      - SSO_FRONTEND
       - SSO_ENABLED
+      - SSO_FRONTEND
       - SSO_ONLY
+      - SSO_ROLES_DEFAULT_TO_USER
+      - SSO_ROLES_ENABLED
+      - SSO_SCOPES
     restart: "no"
     depends_on:
       - VaultwardenPrebuild
@@ -114,9 +117,7 @@ services:
       context: compose/keycloak
       dockerfile: Dockerfile
       args:
-        KEYCLOAK_VERSION: 25.0.4
-        JAVA_URL: https://download.java.net/java/GA/jdk21.0.2/f2283984656d49d69e91c558476027ac/13/GPL/openjdk-21.0.2_linux-x64_bin.tar.gz
-        JAVA_VERSION: 21.0.2
+        KEYCLOAK_VERSION: 26.3.0
     network_mode: "host"
     depends_on:
       - Keycloak
