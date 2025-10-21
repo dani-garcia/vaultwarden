@@ -95,6 +95,7 @@ impl Fairing for AppHeaders {
                     manifest-src 'self'; \
                     base-uri 'self'; \
                     form-action 'self'; \
+                    media-src 'self'; \
                     object-src 'self' blob:; \
                     script-src 'self' 'wasm-unsafe-eval'; \
                     style-src 'self' 'unsafe-inline'; \
