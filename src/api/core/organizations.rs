@@ -355,9 +355,11 @@ async fn get_auto_enroll_status(identifier: &str, headers: Headers, mut conn: Db
 
     let (id, identifier, rp_auto_enroll) = match org {
         None => (get_uuid(), identifier.to_string(), false),
-        Some(org) => {
-            (org.uuid.to_string(), org.name, OrgPolicy::org_is_reset_password_auto_enroll(&org.uuid, &mut conn).await)
-        }
+        Some(org) => (
+            org.uuid.to_string(),
+            org.uuid.to_string(),
+            OrgPolicy::org_is_reset_password_auto_enroll(&org.uuid, &mut conn).await,
+        ),
     };
 
     Ok(Json(json!({
