@@ -424,13 +424,13 @@ pub async fn exchange_refresh_token(
         Some(TokenWrapper::Refresh(refresh_token)) => {
             // Use new refresh_token if returned
             let (new_refresh_token, access_token, expires_in) =
-                Client::exchange_refresh_token(refresh_token.clone()).await?;
+                Client::exchange_refresh_token(refresh_token).await?;
 
             create_auth_tokens(
                 device,
                 user,
                 client_id,
-                new_refresh_token.or(Some(refresh_token)),
+                new_refresh_token,
                 access_token,
                 expires_in,
             )
