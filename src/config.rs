@@ -1643,6 +1643,7 @@ where
 
     reg!("email/admin_reset_password", ".html");
     reg!("email/change_email_existing", ".html");
+    reg!("email/change_email_invited", ".html");
     reg!("email/change_email", ".html");
     reg!("email/delete_account", ".html");
     reg!("email/emergency_access_invite_accepted", ".html");

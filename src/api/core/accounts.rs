@@ -910,10 +910,20 @@ async fn post_email_token(data: Json<EmailTokenData>, headers: Headers, mut conn
         err!("Invalid password")
     }
 
-    if User::find_by_mail(&data.new_email, &mut conn).await.is_some() {
+    if let Some(existing_user) = User::find_by_mail(&data.new_email, &mut conn).await {
         if CONFIG.mail_enabled() {
-            if let Err(e) = mail::send_change_email_existing(&data.new_email, &user.email).await {
-                error!("Error sending change-email-existing email: {e:#?}");
+            // check if existing_user has already registered
+            if existing_user.password_hash.is_empty() {
+                // inform an invited user about how to delete their temporary account if the
+                // request was done intentionally and they want to update their mail address
+                if let Err(e) = mail::send_change_email_invited(&data.new_email, &user.email).await {
+                    error!("Error sending change-email-invited email: {e:#?}");
+                }
+            } else {
+                // inform existing user about the failed attempt to change their mail address
+                if let Err(e) = mail::send_change_email_existing(&data.new_email, &user.email).await {
+                    error!("Error sending change-email-existing email: {e:#?}");
+                }
             }
         }
         err!("Email already in use");
