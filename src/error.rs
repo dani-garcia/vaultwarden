@@ -38,7 +38,8 @@ macro_rules! make_error {
     };
 }
 
-use diesel::r2d2::PoolError as R2d2Err;
+use diesel::r2d2::Error as R2d2Err;
+use diesel::r2d2::PoolError as R2d2PoolErr;
 use diesel::result::Error as DieselErr;
 use diesel::ConnectionError as DieselConErr;
 use handlebars::RenderError as HbErr;
@@ -78,12 +79,13 @@ make_error! {
     CustomHttpClient(CustomHttpClientError): _has_source, _api_error,
 
     // Used for special return values, like 2FA errors
-    Json(Value):     _no_source,  _serialize,
-    Db(DieselErr):   _has_source, _api_error,
-    R2d2(R2d2Err):   _has_source, _api_error,
-    Serde(SerdeErr): _has_source, _api_error,
-    JWt(JwtErr):     _has_source, _api_error,
-    Handlebars(HbErr): _has_source, _api_error,
+    Json(Value):           _no_source,  _serialize,
+    Db(DieselErr):         _has_source, _api_error,
+    R2d2(R2d2Err):         _has_source, _api_error,
+    R2d2Pool(R2d2PoolErr): _has_source, _api_error,
+    Serde(SerdeErr):       _has_source, _api_error,
+    JWt(JwtErr):           _has_source, _api_error,
+    Handlebars(HbErr):     _has_source, _api_error,
 
     Io(IoErr):       _has_source, _api_error,
     Time(TimeErr):   _has_source, _api_error,

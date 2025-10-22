@@ -12,7 +12,6 @@ use once_cell::sync::Lazy;
 use reqwest::Url;
 
 use crate::{
-    db::DbConnType,
     error::Error,
     util::{get_env, get_env_bool, get_web_vault_version, is_valid_email, parse_experimental_client_feature_flags},
 };
@@ -175,7 +174,7 @@ macro_rules! make_config {
                 let mut config = ConfigItems::default();
                 let _domain_set = self.domain.is_some();
                 $($(
-                    config.$name = make_config!{ @build self.$name.clone(), &config, $none_action, $($default)? };
+                    config.$name = make_config! { @build self.$name.clone(), &config, $none_action, $($default)? };
                 )+)+
                 config.domain_set = _domain_set;
 
@@ -195,13 +194,13 @@ macro_rules! make_config {
         }
 
         #[derive(Clone, Default)]
-        struct ConfigItems { $($( $name: make_config!{@type $ty, $none_action}, )+)+ }
+        struct ConfigItems { $($( $name: make_config! {@type $ty, $none_action}, )+)+ }
 
         #[allow(unused)]
         impl Config {
             $($(
                 $(#[doc = $doc])+
-                pub fn $name(&self) -> make_config!{@type $ty, $none_action} {
+                pub fn $name(&self) -> make_config! {@type $ty, $none_action} {
                     self.inner.read().unwrap().config.$name.clone()
                 }
             )+)+
@@ -242,7 +241,7 @@ macro_rules! make_config {
                         let mut group = serde_json::Map::new();
                         group.insert("group".into(), (stringify!($group)).into());
                         group.insert("grouptoggle".into(), (stringify!($($group_enabled)?)).into());
-                        group.insert("groupdoc".into(), (make_config!{ @show $($groupdoc)? }).into());
+                        group.insert("groupdoc".into(), (make_config! { @show $($groupdoc)? }).into());
 
                         group.insert("elements".into(), serde_json::Value::Array(<[_]>::into_vec(Box::new([
                         $(
@@ -318,7 +317,7 @@ macro_rules! make_config {
                 serde_json::Value::Object({
                     let mut json = serde_json::Map::new();
                     $($(
-                        json.insert(stringify!($name).into(), make_config!{ @supportstr $name, cfg.$name, $ty, $none_action });
+                        json.insert(stringify!($name).into(), make_config! { @supportstr $name, cfg.$name, $ty, $none_action });
                     )+)+;
                     json
                 })
@@ -815,12 +814,19 @@ make_config! {
 
 fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
     // Validate connection URL is valid and DB feature is enabled
-    let url = &cfg.database_url;
-    if DbConnType::from_url(url)? == DbConnType::sqlite && url.contains('/') {
-        let path = std::path::Path::new(&url);
-        if let Some(parent) = path.parent() {
-            if !parent.is_dir() {
-                err!(format!("SQLite database directory `{}` does not exist or is not a directory", parent.display()));
+    #[cfg(sqlite)]
+    {
+        use crate::db::DbConnType;
+        let url = &cfg.database_url;
+        if DbConnType::from_url(url)? == DbConnType::Sqlite && url.contains('/') {
+            let path = std::path::Path::new(&url);
+            if let Some(parent) = path.parent() {
+                if !parent.is_dir() {
+                    err!(format!(
+                        "SQLite database directory `{}` does not exist or is not a directory",
+                        parent.display()
+                    ));
+                }
             }
         }
     }

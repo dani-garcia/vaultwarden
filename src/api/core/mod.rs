@@ -52,7 +52,10 @@ use rocket::{serde::json::Json, serde::json::Value, Catcher, Route};
 use crate::{
     api::{EmptyResult, JsonResult, Notify, UpdateType},
     auth::Headers,
-    db::{models::*, DbConn},
+    db::{
+        models::{Membership, MembershipStatus, MembershipType, OrgPolicy, OrgPolicyErr, Organization, User},
+        DbConn,
+    },
     error::Error,
     http_client::make_http_request,
     mail,
@@ -106,12 +109,7 @@ struct EquivDomainData {
 }
 
 #[post("/settings/domains", data = "<data>")]
-async fn post_eq_domains(
-    data: Json<EquivDomainData>,
-    headers: Headers,
-    mut conn: DbConn,
-    nt: Notify<'_>,
-) -> JsonResult {
+async fn post_eq_domains(data: Json<EquivDomainData>, headers: Headers, conn: DbConn, nt: Notify<'_>) -> JsonResult {
     let data: EquivDomainData = data.into_inner();
 
     let excluded_globals = data.excluded_global_equivalent_domains.unwrap_or_default();
@@ -123,9 +121,9 @@ async fn post_eq_domains(
     user.excluded_globals = to_string(&excluded_globals).unwrap_or_else(|_| "[]".to_string());
     user.equivalent_domains = to_string(&equivalent_domains).unwrap_or_else(|_| "[]".to_string());
 
-    user.save(&mut conn).await?;
+    user.save(&conn).await?;
 
-    nt.send_user_update(UpdateType::SyncSettings, &user, &headers.device.push_uuid, &mut conn).await;
+    nt.send_user_update(UpdateType::SyncSettings, &user, &headers.device.push_uuid, &conn).await;
 
     Ok(Json(json!({})))
 }
@@ -265,7 +263,7 @@ async fn accept_org_invite(
     user: &User,
     mut member: Membership,
     reset_password_key: Option<String>,
-    conn: &mut DbConn,
+    conn: &DbConn,
 ) -> EmptyResult {
     if member.status != MembershipStatus::Invited as i32 {
         err!("User already accepted the invitation");

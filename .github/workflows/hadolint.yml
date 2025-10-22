@@ -31,7 +31,7 @@ jobs:
           sudo curl -L https://github.com/hadolint/hadolint/releases/download/v${HADOLINT_VERSION}/hadolint-$(uname -s)-$(uname -m) -o /usr/local/bin/hadolint && \
           sudo chmod +x /usr/local/bin/hadolint
         env:
-          HADOLINT_VERSION: 2.12.0
+          HADOLINT_VERSION: 2.13.1
       # End Download hadolint
       # Checkout the repo
       - name: Checkout

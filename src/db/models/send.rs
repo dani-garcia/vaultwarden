@@ -4,40 +4,40 @@ use serde_json::Value;
 use crate::{config::PathType, util::LowerCase, CONFIG};
 
 use super::{OrganizationId, User, UserId};
+use crate::db::schema::sends;
+use diesel::prelude::*;
 use id::SendId;
 
-db_object! {
-    #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
-    #[diesel(table_name = sends)]
-    #[diesel(treat_none_as_null = true)]
-    #[diesel(primary_key(uuid))]
-    pub struct Send {
-        pub uuid: SendId,
+#[derive(Identifiable, Queryable, Insertable, AsChangeset)]
+#[diesel(table_name = sends)]
+#[diesel(treat_none_as_null = true)]
+#[diesel(primary_key(uuid))]
+pub struct Send {
+    pub uuid: SendId,
 
-        pub user_uuid: Option<UserId>,
-        pub organization_uuid: Option<OrganizationId>,
+    pub user_uuid: Option<UserId>,
+    pub organization_uuid: Option<OrganizationId>,
 
-        pub name: String,
-        pub notes: Option<String>,
+    pub name: String,
+    pub notes: Option<String>,
 
-        pub atype: i32,
-        pub data: String,
-        pub akey: String,
-        pub password_hash: Option<Vec<u8>>,
-        password_salt: Option<Vec<u8>>,
-        password_iter: Option<i32>,
+    pub atype: i32,
+    pub data: String,
+    pub akey: String,
+    pub password_hash: Option<Vec<u8>>,
+    password_salt: Option<Vec<u8>>,
+    password_iter: Option<i32>,
 
-        pub max_access_count: Option<i32>,
-        pub access_count: i32,
+    pub max_access_count: Option<i32>,
+    pub access_count: i32,
 
-        pub creation_date: NaiveDateTime,
-        pub revision_date: NaiveDateTime,
-        pub expiration_date: Option<NaiveDateTime>,
-        pub deletion_date: NaiveDateTime,
+    pub creation_date: NaiveDateTime,
+    pub revision_date: NaiveDateTime,
+    pub expiration_date: Option<NaiveDateTime>,
+    pub deletion_date: NaiveDateTime,
 
-        pub disabled: bool,
-        pub hide_email: Option<bool>,
-    }
+    pub disabled: bool,
+    pub hide_email: Option<bool>,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, num_derive::FromPrimitive)]
@@ -103,7 +103,7 @@ impl Send {
         }
     }
 
-    pub async fn creator_identifier(&self, conn: &mut DbConn) -> Option<String> {
+    pub async fn creator_identifier(&self, conn: &DbConn) -> Option<String> {
         if let Some(hide_email) = self.hide_email {
             if hide_email {
                 return None;
@@ -155,7 +155,7 @@ impl Send {
         })
     }
 
-    pub async fn to_json_access(&self, conn: &mut DbConn) -> Value {
+    pub async fn to_json_access(&self, conn: &DbConn) -> Value {
         use crate::util::format_date;
 
         let mut data = serde_json::from_str::<LowerCase<Value>>(&self.data).map(|d| d.data).unwrap_or_default();
@@ -187,14 +187,14 @@ use crate::error::MapResult;
 use crate::util::NumberOrString;
 
 impl Send {
-    pub async fn save(&mut self, conn: &mut DbConn) -> EmptyResult {
+    pub async fn save(&mut self, conn: &DbConn) -> EmptyResult {
         self.update_users_revision(conn).await;
         self.revision_date = Utc::now().naive_utc();
 
         db_run! { conn:
             sqlite, mysql {
                 match diesel::replace_into(sends::table)
-                    .values(SendDb::to_db(self))
+                    .values(&*self)
                     .execute(conn)
                 {
                     Ok(_) => Ok(()),
@@ -202,7 +202,7 @@ impl Send {
                     Err(diesel::result::Error::DatabaseError(diesel::result::DatabaseErrorKind::ForeignKeyViolation, _)) => {
                         diesel::update(sends::table)
                             .filter(sends::uuid.eq(&self.uuid))
-                            .set(SendDb::to_db(self))
+                            .set(&*self)
                             .execute(conn)
                             .map_res("Error saving send")
                     }
@@ -210,19 +210,18 @@ impl Send {
                 }.map_res("Error saving send")
             }
             postgresql {
-                let value = SendDb::to_db(self);
                 diesel::insert_into(sends::table)
-                    .values(&value)
+                    .values(&*self)
                     .on_conflict(sends::uuid)
                     .do_update()
-                    .set(&value)
+                    .set(&*self)
                     .execute(conn)
                     .map_res("Error saving send")
             }
         }
     }
 
-    pub async fn delete(&self, conn: &mut DbConn) -> EmptyResult {
+    pub async fn delete(&self, conn: &DbConn) -> EmptyResult {
         self.update_users_revision(conn).await;
 
         if self.atype == SendType::File as i32 {
@@ -238,13 +237,13 @@ impl Send {
     }
 
     /// Purge all sends that are past their deletion date.
-    pub async fn purge(conn: &mut DbConn) {
+    pub async fn purge(conn: &DbConn) {
         for send in Self::find_by_past_deletion_date(conn).await {
             send.delete(conn).await.ok();
         }
     }
 
-    pub async fn update_users_revision(&self, conn: &mut DbConn) -> Vec<UserId> {
+    pub async fn update_users_revision(&self, conn: &DbConn) -> Vec<UserId> {
         let mut user_uuids = Vec::new();
         match &self.user_uuid {
             Some(user_uuid) => {
@@ -258,14 +257,14 @@ impl Send {
         user_uuids
     }
 
-    pub async fn delete_all_by_user(user_uuid: &UserId, conn: &mut DbConn) -> EmptyResult {
+    pub async fn delete_all_by_user(user_uuid: &UserId, conn: &DbConn) -> EmptyResult {
         for send in Self::find_by_user(user_uuid, conn).await {
             send.delete(conn).await?;
         }
         Ok(())
     }
 
-    pub async fn find_by_access_id(access_id: &str, conn: &mut DbConn) -> Option<Self> {
+    pub async fn find_by_access_id(access_id: &str, conn: &DbConn) -> Option<Self> {
         use data_encoding::BASE64URL_NOPAD;
         use uuid::Uuid;
 
@@ -281,36 +280,35 @@ impl Send {
         Self::find_by_uuid(&uuid, conn).await
     }
 
-    pub async fn find_by_uuid(uuid: &SendId, conn: &mut DbConn) -> Option<Self> {
-        db_run! {conn: {
+    pub async fn find_by_uuid(uuid: &SendId, conn: &DbConn) -> Option<Self> {
+        db_run! { conn: {
             sends::table
                 .filter(sends::uuid.eq(uuid))
-                .first::<SendDb>(conn)
+                .first::<Self>(conn)
                 .ok()
-                .from_db()
         }}
     }
 
-    pub async fn find_by_uuid_and_user(uuid: &SendId, user_uuid: &UserId, conn: &mut DbConn) -> Option<Self> {
-        db_run! {conn: {
+    pub async fn find_by_uuid_and_user(uuid: &SendId, user_uuid: &UserId, conn: &DbConn) -> Option<Self> {
+        db_run! { conn: {
             sends::table
                 .filter(sends::uuid.eq(uuid))
                 .filter(sends::user_uuid.eq(user_uuid))
-                .first::<SendDb>(conn)
+                .first::<Self>(conn)
                 .ok()
-                .from_db()
         }}
     }
 
-    pub async fn find_by_user(user_uuid: &UserId, conn: &mut DbConn) -> Vec<Self> {
-        db_run! {conn: {
+    pub async fn find_by_user(user_uuid: &UserId, conn: &DbConn) -> Vec<Self> {
+        db_run! { conn: {
             sends::table
                 .filter(sends::user_uuid.eq(user_uuid))
-                .load::<SendDb>(conn).expect("Error loading sends").from_db()
+                .load::<Self>(conn)
+                .expect("Error loading sends")
         }}
     }
 
-    pub async fn size_by_user(user_uuid: &UserId, conn: &mut DbConn) -> Option<i64> {
+    pub async fn size_by_user(user_uuid: &UserId, conn: &DbConn) -> Option<i64> {
         let sends = Self::find_by_user(user_uuid, conn).await;
 
         #[derive(serde::Deserialize)]
@@ -333,20 +331,22 @@ impl Send {
         Some(total)
     }
 
-    pub async fn find_by_org(org_uuid: &OrganizationId, conn: &mut DbConn) -> Vec<Self> {
-        db_run! {conn: {
+    pub async fn find_by_org(org_uuid: &OrganizationId, conn: &DbConn) -> Vec<Self> {
+        db_run! { conn: {
             sends::table
                 .filter(sends::organization_uuid.eq(org_uuid))
-                .load::<SendDb>(conn).expect("Error loading sends").from_db()
+                .load::<Self>(conn)
+                .expect("Error loading sends")
         }}
     }
 
-    pub async fn find_by_past_deletion_date(conn: &mut DbConn) -> Vec<Self> {
+    pub async fn find_by_past_deletion_date(conn: &DbConn) -> Vec<Self> {
         let now = Utc::now().naive_utc();
-        db_run! {conn: {
+        db_run! { conn: {
             sends::table
                 .filter(sends::deletion_date.lt(now))
-                .load::<SendDb>(conn).expect("Error loading sends").from_db()
+                .load::<Self>(conn)
+                .expect("Error loading sends")
         }}
     }
 }

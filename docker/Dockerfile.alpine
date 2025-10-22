@@ -53,9 +53,9 @@ ENV DEBIAN_FRONTEND=noninteractive \
     TERM=xterm-256color \
     CARGO_HOME="/root/.cargo" \
     USER="root" \
-    # Use PostgreSQL v15 during Alpine/MUSL builds instead of the default v11
-    # Debian Bookworm already contains libpq v15
-    PQ_LIB_DIR="/usr/local/musl/pq15/lib"
+    # Use PostgreSQL v17 during Alpine/MUSL builds instead of the default v16
+    # Debian Trixie uses libpq v17
+    PQ_LIB_DIR="/usr/local/musl/pq17/lib"
 
 
 # Create CARGO_HOME folder and don't download rust docs

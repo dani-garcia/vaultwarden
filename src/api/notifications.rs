@@ -339,7 +339,7 @@ impl WebSocketUsers {
     }
 
     // NOTE: The last modified date needs to be updated before calling these methods
-    pub async fn send_user_update(&self, ut: UpdateType, user: &User, push_uuid: &Option<PushId>, conn: &mut DbConn) {
+    pub async fn send_user_update(&self, ut: UpdateType, user: &User, push_uuid: &Option<PushId>, conn: &DbConn) {
         // Skip any processing if both WebSockets and Push are not active
         if *NOTIFICATIONS_DISABLED {
             return;
@@ -359,7 +359,7 @@ impl WebSocketUsers {
         }
     }
 
-    pub async fn send_logout(&self, user: &User, acting_device_id: Option<DeviceId>, conn: &mut DbConn) {
+    pub async fn send_logout(&self, user: &User, acting_device_id: Option<DeviceId>, conn: &DbConn) {
         // Skip any processing if both WebSockets and Push are not active
         if *NOTIFICATIONS_DISABLED {
             return;
@@ -379,7 +379,7 @@ impl WebSocketUsers {
         }
     }
 
-    pub async fn send_folder_update(&self, ut: UpdateType, folder: &Folder, device: &Device, conn: &mut DbConn) {
+    pub async fn send_folder_update(&self, ut: UpdateType, folder: &Folder, device: &Device, conn: &DbConn) {
         // Skip any processing if both WebSockets and Push are not active
         if *NOTIFICATIONS_DISABLED {
             return;
@@ -410,7 +410,7 @@ impl WebSocketUsers {
         user_ids: &[UserId],
         device: &Device,
         collection_uuids: Option<Vec<CollectionId>>,
-        conn: &mut DbConn,
+        conn: &DbConn,
     ) {
         // Skip any processing if both WebSockets and Push are not active
         if *NOTIFICATIONS_DISABLED {
@@ -458,7 +458,7 @@ impl WebSocketUsers {
         send: &DbSend,
         user_ids: &[UserId],
         device: &Device,
-        conn: &mut DbConn,
+        conn: &DbConn,
     ) {
         // Skip any processing if both WebSockets and Push are not active
         if *NOTIFICATIONS_DISABLED {
@@ -486,13 +486,7 @@ impl WebSocketUsers {
         }
     }
 
-    pub async fn send_auth_request(
-        &self,
-        user_id: &UserId,
-        auth_request_uuid: &str,
-        device: &Device,
-        conn: &mut DbConn,
-    ) {
+    pub async fn send_auth_request(&self, user_id: &UserId, auth_request_uuid: &str, device: &Device, conn: &DbConn) {
         // Skip any processing if both WebSockets and Push are not active
         if *NOTIFICATIONS_DISABLED {
             return;
@@ -516,7 +510,7 @@ impl WebSocketUsers {
         user_id: &UserId,
         auth_request_id: &AuthRequestId,
         device: &Device,
-        conn: &mut DbConn,
+        conn: &DbConn,
     ) {
         // Skip any processing if both WebSockets and Push are not active
         if *NOTIFICATIONS_DISABLED {

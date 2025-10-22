@@ -204,7 +204,7 @@ jobs:
       # Attest container images
       - name: Attest - docker.io - ${{ matrix.base_image }}
         if: ${{ env.HAVE_DOCKERHUB_LOGIN == 'true' && steps.bake_vw.outputs.metadata != ''}}
-        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
         with:
           subject-name: ${{ vars.DOCKERHUB_REPO }}
           subject-digest: ${{ env.DIGEST_SHA }}
@@ -212,7 +212,7 @@ jobs:
 
       - name: Attest - ghcr.io - ${{ matrix.base_image }}
         if: ${{ env.HAVE_GHCR_LOGIN == 'true' && steps.bake_vw.outputs.metadata != ''}}
-        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
         with:
           subject-name: ${{ vars.GHCR_REPO }}
           subject-digest: ${{ env.DIGEST_SHA }}
@@ -220,7 +220,7 @@ jobs:
 
       - name: Attest - quay.io - ${{ matrix.base_image }}
         if: ${{ env.HAVE_QUAY_LOGIN == 'true' && steps.bake_vw.outputs.metadata != ''}}
-        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
         with:
           subject-name: ${{ vars.QUAY_REPO }}
           subject-digest: ${{ env.DIGEST_SHA }}
@@ -299,7 +299,7 @@ jobs:
           path: vaultwarden-armv6-${{ matrix.base_image }}
 
       - name: "Attest artifacts ${{ matrix.base_image }}"
-        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
         with:
           subject-path: vaultwarden-*
       # End Upload artifacts to Github Actions

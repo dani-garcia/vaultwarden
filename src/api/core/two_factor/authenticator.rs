@@ -20,14 +20,14 @@ pub fn routes() -> Vec<Route> {
 }
 
 #[post("/two-factor/get-authenticator", data = "<data>")]
-async fn generate_authenticator(data: Json<PasswordOrOtpData>, headers: Headers, mut conn: DbConn) -> JsonResult {
+async fn generate_authenticator(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: PasswordOrOtpData = data.into_inner();
     let user = headers.user;
 
-    data.validate(&user, false, &mut conn).await?;
+    data.validate(&user, false, &conn).await?;
 
     let type_ = TwoFactorType::Authenticator as i32;
-    let twofactor = TwoFactor::find_by_user_and_type(&user.uuid, type_, &mut conn).await;
+    let twofactor = TwoFactor::find_by_user_and_type(&user.uuid, type_, &conn).await;
 
     let (enabled, key) = match twofactor {
         Some(tf) => (true, tf.data),
@@ -55,7 +55,7 @@ struct EnableAuthenticatorData {
 }
 
 #[post("/two-factor/authenticator", data = "<data>")]
-async fn activate_authenticator(data: Json<EnableAuthenticatorData>, headers: Headers, mut conn: DbConn) -> JsonResult {
+async fn activate_authenticator(data: Json<EnableAuthenticatorData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: EnableAuthenticatorData = data.into_inner();
     let key = data.key;
     let token = data.token.into_string();
@@ -66,7 +66,7 @@ async fn activate_authenticator(data: Json<EnableAuthenticatorData>, headers: He
         master_password_hash: data.master_password_hash,
         otp: data.otp,
     }
-    .validate(&user, true, &mut conn)
+    .validate(&user, true, &conn)
     .await?;
 
     // Validate key as base32 and 20 bytes length
@@ -80,11 +80,11 @@ async fn activate_authenticator(data: Json<EnableAuthenticatorData>, headers: He
     }
 
     // Validate the token provided with the key, and save new twofactor
-    validate_totp_code(&user.uuid, &token, &key.to_uppercase(), &headers.ip, &mut conn).await?;
+    validate_totp_code(&user.uuid, &token, &key.to_uppercase(), &headers.ip, &conn).await?;
 
-    _generate_recover_code(&mut user, &mut conn).await;
+    _generate_recover_code(&mut user, &conn).await;
 
-    log_user_event(EventType::UserUpdated2fa as i32, &user.uuid, headers.device.atype, &headers.ip.ip, &mut conn).await;
+    log_user_event(EventType::UserUpdated2fa as i32, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await;
 
     Ok(Json(json!({
         "enabled": true,
@@ -103,7 +103,7 @@ pub async fn validate_totp_code_str(
     totp_code: &str,
     secret: &str,
     ip: &ClientIp,
-    conn: &mut DbConn,
+    conn: &DbConn,
 ) -> EmptyResult {
     if !totp_code.chars().all(char::is_numeric) {
         err!("TOTP code is not a number");
@@ -117,7 +117,7 @@ pub async fn validate_totp_code(
     totp_code: &str,
     secret: &str,
     ip: &ClientIp,
-    conn: &mut DbConn,
+    conn: &DbConn,
 ) -> EmptyResult {
     use totp_lite::{totp_custom, Sha1};
 
@@ -189,7 +189,7 @@ struct DisableAuthenticatorData {
 }
 
 #[delete("/two-factor/authenticator", data = "<data>")]
-async fn disable_authenticator(data: Json<DisableAuthenticatorData>, headers: Headers, mut conn: DbConn) -> JsonResult {
+async fn disable_authenticator(data: Json<DisableAuthenticatorData>, headers: Headers, conn: DbConn) -> JsonResult {
     let user = headers.user;
     let type_ = data.r#type.into_i32()?;
 
@@ -197,24 +197,18 @@ async fn disable_authenticator(data: Json<DisableAuthenticatorData>, headers: He
         err!("Invalid password");
     }
 
-    if let Some(twofactor) = TwoFactor::find_by_user_and_type(&user.uuid, type_, &mut conn).await {
+    if let Some(twofactor) = TwoFactor::find_by_user_and_type(&user.uuid, type_, &conn).await {
         if twofactor.data == data.key {
-            twofactor.delete(&mut conn).await?;
-            log_user_event(
-                EventType::UserDisabled2fa as i32,
-                &user.uuid,
-                headers.device.atype,
-                &headers.ip.ip,
-                &mut conn,
-            )
-            .await;
+            twofactor.delete(&conn).await?;
+            log_user_event(EventType::UserDisabled2fa as i32, &user.uuid, headers.device.atype, &headers.ip.ip, &conn)
+                .await;
         } else {
             err!(format!("TOTP key for user {} does not match recorded value, cannot deactivate", &user.email));
         }
     }
 
-    if TwoFactor::find_by_user(&user.uuid, &mut conn).await.is_empty() {
-        super::enforce_2fa_policy(&user, &user.uuid, headers.device.atype, &headers.ip.ip, &mut conn).await?;
+    if TwoFactor::find_by_user(&user.uuid, &conn).await.is_empty() {
+        super::enforce_2fa_policy(&user, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await?;
     }
 
     Ok(Json(json!({

@@ -55,7 +55,7 @@ impl ProtectedActionData {
 }
 
 #[post("/accounts/request-otp")]
-async fn request_otp(headers: Headers, mut conn: DbConn) -> EmptyResult {
+async fn request_otp(headers: Headers, conn: DbConn) -> EmptyResult {
     if !CONFIG.mail_enabled() {
         err!("Email is disabled for this server. Either enable email or login using your master password instead of login via device.");
     }
@@ -63,10 +63,9 @@ async fn request_otp(headers: Headers, mut conn: DbConn) -> EmptyResult {
     let user = headers.user;
 
     // Only one Protected Action per user is allowed to take place, delete the previous one
-    if let Some(pa) =
-        TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::ProtectedActions as i32, &mut conn).await
+    if let Some(pa) = TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::ProtectedActions as i32, &conn).await
     {
-        pa.delete(&mut conn).await?;
+        pa.delete(&conn).await?;
     }
 
     let generated_token = crypto::generate_email_token(CONFIG.email_token_size());
@@ -74,7 +73,7 @@ async fn request_otp(headers: Headers, mut conn: DbConn) -> EmptyResult {
 
     // Uses EmailVerificationChallenge as type to show that it's not verified yet.
     let twofactor = TwoFactor::new(user.uuid, TwoFactorType::ProtectedActions, pa_data.to_json());
-    twofactor.save(&mut conn).await?;
+    twofactor.save(&conn).await?;
 
     mail::send_protected_action_token(&user.email, &pa_data.token).await?;
 
@@ -89,7 +88,7 @@ struct ProtectedActionVerify {
 }
 
 #[post("/accounts/verify-otp", data = "<data>")]
-async fn verify_otp(data: Json<ProtectedActionVerify>, headers: Headers, mut conn: DbConn) -> EmptyResult {
+async fn verify_otp(data: Json<ProtectedActionVerify>, headers: Headers, conn: DbConn) -> EmptyResult {
     if !CONFIG.mail_enabled() {
         err!("Email is disabled for this server. Either enable email or login using your master password instead of login via device.");
     }
@@ -99,14 +98,14 @@ async fn verify_otp(data: Json<ProtectedActionVerify>, headers: Headers, mut con
 
     // Delete the token after one validation attempt
     // This endpoint only gets called for the vault export, and doesn't need a second attempt
-    validate_protected_action_otp(&data.otp, &user.uuid, true, &mut conn).await
+    validate_protected_action_otp(&data.otp, &user.uuid, true, &conn).await
 }
 
 pub async fn validate_protected_action_otp(
     otp: &str,
     user_id: &UserId,
     delete_if_valid: bool,
-    conn: &mut DbConn,
+    conn: &DbConn,
 ) -> EmptyResult {
     let pa = TwoFactor::find_by_user_and_type(user_id, TwoFactorType::ProtectedActions as i32, conn)
         .await
