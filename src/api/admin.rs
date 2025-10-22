@@ -1,8 +1,13 @@
 use once_cell::sync::Lazy;
+use percent_encoding::{percent_encode, NON_ALPHANUMERIC};
 use reqwest::Method;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use std::env;
+use std::collections::HashMap;
+use std::sync::RwLock;
+use std::time::{SystemTime, UNIX_EPOCH};
+use data_encoding::BASE64URL_NOPAD;
 
 use rocket::serde::json::Json;
 use rocket::{
@@ -57,6 +62,9 @@ pub fn routes() -> Vec<Route> {
         delete_config,
         backup_db,
         test_smtp,
+        refresh_oauth2_token_endpoint,
+        oauth2_authorize,
+        oauth2_callback,
         users_overview,
         organizations_overview,
         delete_organization,
@@ -87,6 +95,9 @@ static DB_TYPE: Lazy<&str> = Lazy::new(|| {
 
 static CAN_BACKUP: Lazy<bool> =
     Lazy::new(|| DbConnType::from_url(&CONFIG.database_url()).map(|t| t == DbConnType::sqlite).unwrap_or(false));
+
+// OAuth2 state storage for CSRF protection (state -> expiration timestamp)
+static OAUTH2_STATES: Lazy<RwLock<HashMap<String, u64>>> = Lazy::new(|| RwLock::new(HashMap::new()));
 
 #[get("/")]
 fn admin_disabled() -> &'static str {
@@ -327,6 +338,158 @@ async fn test_smtp(data: Json<InviteData>, _token: AdminToken) -> EmptyResult {
     } else {
         err!("Mail is not enabled")
     }
+}
+
+#[post("/test/oauth2")]
+async fn refresh_oauth2_token_endpoint(_token: AdminToken) -> EmptyResult {
+    if CONFIG.smtp_oauth2_client_id().is_none() {
+        err!("OAuth2 is not configured")
+    }
+
+    mail::refresh_oauth2_token().await.map(|_| ())
+}
+
+#[get("/oauth2/authorize")]
+fn oauth2_authorize(_token: AdminToken) -> Result<Redirect, Error> {
+    // Check if OAuth2 is configured
+    let client_id = CONFIG.smtp_oauth2_client_id().ok_or("OAuth2 Client ID not configured")?;
+    let auth_url = CONFIG.smtp_oauth2_auth_url().ok_or("OAuth2 Authorization URL not configured")?;
+    let scopes = CONFIG.smtp_oauth2_scopes();
+
+    // Generate a random state token for CSRF protection
+    let state = crate::crypto::encode_random_bytes::<32>(BASE64URL_NOPAD);
+
+    // Store state with expiration (10 minutes from now)
+    let expiration = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs() + 600;
+
+    OAUTH2_STATES.write().unwrap().insert(state.clone(), expiration);
+
+    // Clean up expired states
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+    OAUTH2_STATES.write().unwrap().retain(|_, &mut exp| exp > now);
+
+    // Construct redirect URI
+    let redirect_uri = format!("{}/admin/oauth2/callback", CONFIG.domain());
+
+    // Build authorization URL
+    let auth_url = format!(
+        "{}?client_id={}&redirect_uri={}&response_type=code&scope={}&state={}&access_type=offline&prompt=consent",
+        auth_url,
+        percent_encode(client_id.as_bytes(), NON_ALPHANUMERIC),
+        percent_encode(redirect_uri.as_bytes(), NON_ALPHANUMERIC),
+        percent_encode(scopes.as_bytes(), NON_ALPHANUMERIC),
+        percent_encode(state.as_bytes(), NON_ALPHANUMERIC)
+    );
+
+    Ok(Redirect::to(auth_url))
+}
+
+#[derive(FromForm)]
+struct OAuth2CallbackParams {
+    code: Option<String>,
+    state: Option<String>,
+    error: Option<String>,
+    error_description: Option<String>,
+}
+
+#[get("/oauth2/callback?<params..>")]
+async fn oauth2_callback(params: OAuth2CallbackParams) -> Result<Html<String>, Error> {
+    // Check for errors from OAuth2 provider
+    if let Some(error) = params.error {
+        let description = params.error_description.unwrap_or_else(|| "Unknown error".to_string());
+        return Err(Error::new("OAuth2 Authorization Failed", format!("{}: {}", error, description)));
+    }
+
+    // Validate required parameters
+    let code = params.code.ok_or("Authorization code not provided")?;
+    let state = params.state.ok_or("State parameter not provided")?;
+
+    // Validate state token
+    let valid_state = {
+        let states = OAUTH2_STATES.read().unwrap();
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+        states.get(&state).map_or(false, |&exp| exp > now)
+    };
+
+    if !valid_state {
+        return Err(Error::new("OAuth2 State Validation Failed", "Invalid or expired state token"));
+    }
+
+    // Remove used state
+    OAUTH2_STATES.write().unwrap().remove(&state);
+
+    // Exchange authorization code for tokens
+    let client_id = CONFIG.smtp_oauth2_client_id().ok_or("OAuth2 Client ID not configured")?;
+    let client_secret = CONFIG.smtp_oauth2_client_secret().ok_or("OAuth2 Client Secret not configured")?;
+    let token_url = CONFIG.smtp_oauth2_token_url().ok_or("OAuth2 Token URL not configured")?;
+    let redirect_uri = format!("{}/admin/oauth2/callback", CONFIG.domain());
+
+    let form_params = [
+        ("grant_type", "authorization_code"),
+        ("code", &code),
+        ("redirect_uri", &redirect_uri),
+        ("client_id", &client_id),
+        ("client_secret", &client_secret),
+    ];
+
+    let client = reqwest::Client::new();
+    let response = client
+        .post(&token_url)
+        .form(&form_params)
+        .send()
+        .await
+        .map_err(|e| Error::new("OAuth2 Token Exchange Error", e.to_string()))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_else(|_| String::from("Unable to read response body"));
+        return Err(Error::new("OAuth2 Token Exchange Failed", format!("HTTP {}: {}", status, body)));
+    }
+
+    let token_response: Value = response
+        .json()
+        .await
+        .map_err(|e| Error::new("OAuth2 Token Parse Error", e.to_string()))?;
+
+    // Extract refresh_token from response
+    let refresh_token = token_response
+        .get("refresh_token")
+        .and_then(|v| v.as_str())
+        .ok_or("No refresh_token in response")?;
+
+    // Save refresh_token to configuration
+    let config_builder: ConfigBuilder = serde_json::from_value(json!({
+        "smtp_oauth2_refresh_token": refresh_token
+    }))
+    .map_err(|e| Error::new("ConfigBuilder serialization error", e.to_string()))?;
+    CONFIG.update_config_partial(config_builder).await?;
+
+    // Return success page
+    let success_html = format!(
+        r#"<!DOCTYPE html>
+<html>
+<head>
+    <title>OAuth2 Authorization Successful</title>
+    <style>
+        body {{ font-family: Arial, sans-serif; margin: 50px; }}
+        .success {{ color: green; font-size: 18px; margin-bottom: 20px; }}
+        .token {{ background: #f0f0f0; padding: 10px; border-radius: 5px; word-break: break-all; }}
+    </style>
+</head>
+<body>
+    <h1>✓ OAuth2 Authorization Successful!</h1>
+    <p class="success">The refresh token has been saved to your configuration.</p>
+    <p>You can now close this window and return to the admin panel.</p>
+    <p><a href="{}">Return to Admin Settings</a></p>
+</body>
+</html>"#,
+        admin_url()
+    );
+
+    Ok(Html(success_html))
 }
 
 #[get("/logout")]

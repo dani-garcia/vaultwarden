@@ -1,6 +1,9 @@
 use chrono::NaiveDateTime;
 use percent_encoding::{percent_encode, NON_ALPHANUMERIC};
 use std::{env::consts::EXE_SUFFIX, str::FromStr};
+use std::sync::{LazyLock, RwLock};
+use std::time::{SystemTime, UNIX_EPOCH};
+use serde::{Deserialize, Serialize};
 
 use lettre::{
     message::{Attachment, Body, Mailbox, Message, MultiPart, SinglePart},
@@ -21,6 +24,92 @@ use crate::{
     CONFIG,
 };
 
+// OAuth2 Token structures
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OAuth2Token {
+    access_token: String,
+    refresh_token: Option<String>,
+    expires_at: Option<u64>,
+    token_type: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct TokenRefreshResponse {
+    access_token: String,
+    refresh_token: Option<String>,
+    expires_in: Option<u64>,
+    token_type: String,
+}
+
+pub async fn refresh_oauth2_token() -> Result<OAuth2Token, Error> {
+    let client_id = CONFIG.smtp_oauth2_client_id().ok_or("OAuth2 Client ID not configured")?;
+    let client_secret = CONFIG.smtp_oauth2_client_secret().ok_or("OAuth2 Client Secret not configured")?;
+    let refresh_token = CONFIG.smtp_oauth2_refresh_token().ok_or("OAuth2 Refresh Token not configured")?;
+    let token_url = CONFIG.smtp_oauth2_token_url().ok_or("OAuth2 Token URL not configured")?;
+
+    let form_params = [
+        ("grant_type", "refresh_token"),
+        ("refresh_token", &refresh_token),
+        ("client_id", &client_id),
+        ("client_secret", &client_secret),
+    ];
+
+    let client = reqwest::Client::new();
+    let response = client
+        .post(&token_url)
+        .form(&form_params)
+        .send()
+        .await
+        .map_err(|e| Error::new("OAuth2 Token Refresh Error", e.to_string()))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_else(|_| String::from("Unable to read response body"));
+        return Err(Error::new("OAuth2 Token Refresh Failed", format!("HTTP {status}: {body}")));
+    }
+
+    let token_response: TokenRefreshResponse = response
+        .json()
+        .await
+        .map_err(|e| Error::new("OAuth2 Token Parse Error", e.to_string()))?;
+
+    let expires_at = token_response.expires_in.map(|expires_in| {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() + expires_in
+    });
+
+    Ok(OAuth2Token {
+        access_token: token_response.access_token,
+        refresh_token: token_response.refresh_token.or(Some(refresh_token)),
+        expires_at,
+        token_type: token_response.token_type,
+    })
+}
+
+async fn get_valid_oauth2_token() -> Result<OAuth2Token, Error> {
+    static TOKEN_CACHE: LazyLock<RwLock<Option<OAuth2Token>>> = LazyLock::new(|| RwLock::new(None));
+
+    let cached_token = TOKEN_CACHE.read().unwrap().clone();
+
+    if let Some(token) = cached_token {
+        // Check if token is still valid (with 5 min buffer)
+        if let Some(expires_at) = token.expires_at {
+            let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+            if now + 300 < expires_at {
+                return Ok(token);
+            }
+        }
+    }
+
+    // Refresh token
+    let new_token = refresh_oauth2_token().await?;
+    *TOKEN_CACHE.write().unwrap() = Some(new_token.clone());
+
+    Ok(new_token)
+}
+
 fn sendmail_transport() -> AsyncSendmailTransport<Tokio1Executor> {
     if let Some(command) = CONFIG.sendmail_command() {
         AsyncSendmailTransport::new_with_command(command)
@@ -29,7 +118,7 @@ fn sendmail_transport() -> AsyncSendmailTransport<Tokio1Executor> {
     }
 }
 
-fn smtp_transport() -> AsyncSmtpTransport<Tokio1Executor> {
+async fn smtp_transport() -> AsyncSmtpTransport<Tokio1Executor> {
     use std::time::Duration;
     let host = CONFIG.smtp_host().unwrap();
 
@@ -57,8 +146,43 @@ fn smtp_transport() -> AsyncSmtpTransport<Tokio1Executor> {
         smtp_client
     };
 
-    let smtp_client = match (CONFIG.smtp_username(), CONFIG.smtp_password()) {
-        (Some(user), Some(pass)) => smtp_client.credentials(Credentials::new(user, pass)),
+    // Handle authentication - OAuth2 or traditional
+    let smtp_client = match (CONFIG.smtp_username(), CONFIG.smtp_password(), CONFIG.smtp_oauth2_client_id()) {
+        (Some(user), Some(pass), None) => {
+            // Traditional authentication with username and password
+            smtp_client.credentials(Credentials::new(user, pass))
+        }
+        (Some(user), None, Some(_)) => {
+            // OAuth2 authentication
+            match get_valid_oauth2_token().await {
+                Ok(token) => {
+                    // Pass the access token directly as password - lettre's Xoauth2 mechanism
+                    // will format it correctly as: user={user}\x01auth=Bearer {token}\x01\x01
+                    smtp_client.credentials(Credentials::new(user, token.access_token))
+                }
+                Err(e) => {
+                    error!("Error fetching OAuth2 token: {}", e);
+                    warn!("Failed to get OAuth2 token, SMTP transport may not work properly");
+                    smtp_client
+                }
+            }
+        }
+        (Some(user), Some(pass), Some(_)) => {
+            // Both password and OAuth2 configured - prefer OAuth2
+            warn!("Both SMTP_PASSWORD and SMTP_OAUTH2_CLIENT_ID are set. Using OAuth2 authentication.");
+            match get_valid_oauth2_token().await {
+                Ok(token) => {
+                    // Pass the access token directly as password - lettre's Xoauth2 mechanism
+                    // will format it correctly as: user={user}\x01auth=Bearer {token}\x01\x01
+                    smtp_client.credentials(Credentials::new(user, token.access_token))
+                }
+                Err(e) => {
+                    error!("Error fetching OAuth2 token: {}", e);
+                    warn!("Falling back to password authentication");
+                    smtp_client.credentials(Credentials::new(user, pass))
+                }
+            }
+        }
         _ => smtp_client,
     };
 
@@ -671,7 +795,7 @@ async fn send_with_selected_transport(email: Message) -> EmptyResult {
             }
         }
     } else {
-        match smtp_transport().send(email).await {
+        match smtp_transport().await.send(email).await {
             Ok(_) => Ok(()),
             // Match some common errors and make them more user friendly
             Err(e) => {

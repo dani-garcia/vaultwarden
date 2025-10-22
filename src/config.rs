@@ -780,6 +780,18 @@ make_config! {
         smtp_password:                 Pass,   true,   option;
         /// SMTP Auth mechanism |> Defaults for SSL is "Plain" and "Login" and nothing for Non-SSL connections. Possible values: ["Plain", "Login", "Xoauth2"]. Multiple options need to be separated by a comma ','.
         smtp_auth_mechanism:           String, true,   option;
+        /// SMTP OAuth2 Client ID |> OAuth2 Client ID for XOAUTH2 authentication
+        smtp_oauth2_client_id:         String, true,   option;
+        /// SMTP OAuth2 Client Secret |> OAuth2 Client Secret for XOAUTH2 authentication
+        smtp_oauth2_client_secret:     Pass,   true,   option;
+        /// SMTP OAuth2 Authorization URL |> OAuth2 Authorization Server URL
+        smtp_oauth2_auth_url:          String, true,   option;
+        /// SMTP OAuth2 Token URL |> OAuth2 Token Server URL for refreshing access tokens
+        smtp_oauth2_token_url:         String, true,   option;
+        /// SMTP OAuth2 Refresh Token |> OAuth2 Refresh Token for obtaining new access tokens
+        smtp_oauth2_refresh_token:     Pass,   true,   option;
+        /// SMTP OAuth2 Scopes |> Comma-separated list of OAuth2 scopes
+        smtp_oauth2_scopes:            String, true,   def,     "https://mail.google.com/".to_string();
         /// SMTP connection timeout |> Number of seconds when to stop trying to connect to the SMTP server
         smtp_timeout:                  u64,    true,   def,     15;
         /// Server name sent during HELO |> By default this value should be the machine's hostname, but might need to be changed in case it trips some anti-spam filters
@@ -1036,8 +1048,12 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
                 err!("Both `SMTP_HOST` and `SMTP_FROM` need to be set for email support without `USE_SENDMAIL`")
             }
 
+            // Require both username and password for traditional auth, unless OAuth2 is configured
             if cfg.smtp_username.is_some() != cfg.smtp_password.is_some() {
-                err!("Both `SMTP_USERNAME` and `SMTP_PASSWORD` need to be set to enable email authentication without `USE_SENDMAIL`")
+                // Allow username without password if OAuth2 is configured
+                if cfg.smtp_oauth2_client_id.is_none() {
+                    err!("Both `SMTP_USERNAME` and `SMTP_PASSWORD` need to be set to enable email authentication without `USE_SENDMAIL`, unless using OAuth2")
+                }
             }
         }
 
@@ -1127,6 +1143,47 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
 
     if !cfg.auth_request_purge_schedule.is_empty() && cfg.auth_request_purge_schedule.parse::<Schedule>().is_err() {
         err!("`AUTH_REQUEST_PURGE_SCHEDULE` is not a valid cron expression")
+    }
+
+    // OAuth2 validation - triggered when SMTP Auth mechanism includes xoauth2
+    let uses_xoauth2 = cfg.smtp_auth_mechanism
+        .as_ref()
+        .map(|m| m.to_lowercase().contains("xoauth2"))
+        .unwrap_or(false);
+
+    if uses_xoauth2 {
+        if cfg.smtp_oauth2_client_id.is_none() {
+            err!("`SMTP_OAUTH2_CLIENT_ID` must be set when SMTP_AUTH_MECHANISM includes xoauth2");
+        }
+        if cfg.smtp_oauth2_client_secret.is_none() {
+            err!("`SMTP_OAUTH2_CLIENT_SECRET` must be set when SMTP_AUTH_MECHANISM includes xoauth2");
+        }
+        if cfg.smtp_oauth2_auth_url.is_none() {
+            err!("`SMTP_OAUTH2_AUTH_URL` must be set when SMTP_AUTH_MECHANISM includes xoauth2");
+        }
+        if cfg.smtp_oauth2_token_url.is_none() {
+            err!("`SMTP_OAUTH2_TOKEN_URL` must be set when SMTP_AUTH_MECHANISM includes xoauth2");
+        }
+        if cfg.smtp_oauth2_scopes.is_empty() {
+            err!("`SMTP_OAUTH2_SCOPES` must be set when SMTP_AUTH_MECHANISM includes xoauth2");
+        }
+        if cfg.smtp_username.is_none() {
+            err!("`SMTP_USERNAME` must be set for OAuth2 authentication");
+        }
+
+        // Validate that auth URL is a valid URL
+        if let Some(ref auth_url) = cfg.smtp_oauth2_auth_url {
+            if !auth_url.starts_with("http://") && !auth_url.starts_with("https://") {
+                err!("`SMTP_OAUTH2_AUTH_URL` must be a valid URL starting with http:// or https://");
+            }
+        }
+
+        // Validate that token URL is a valid URL
+        if let Some(ref token_url) = cfg.smtp_oauth2_token_url {
+            if !token_url.starts_with("http://") && !token_url.starts_with("https://") {
+                err!("`SMTP_OAUTH2_TOKEN_URL` must be a valid URL starting with http:// or https://");
+            }
+        }
     }
 
     if !cfg.disable_admin_token {
@@ -1418,7 +1475,7 @@ impl Config {
         Ok(())
     }
 
-    async fn update_config_partial(&self, other: ConfigBuilder) -> Result<(), Error> {
+    pub async fn update_config_partial(&self, other: ConfigBuilder) -> Result<(), Error> {
         let builder = {
             let usr = &self.inner.read().unwrap()._usr;
             let mut _overrides = Vec::new();
