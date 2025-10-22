@@ -10,7 +10,7 @@ const fs = require("fs");
 const { spawn } = require('node:child_process');
 
 export function loadEnv(){
-    var myEnv = dotenv.config({ path: 'test.env' });
+    var myEnv = dotenv.config({ path: 'test.env', quiet: true });
     dotenvExpand.expand(myEnv);
 
     return {

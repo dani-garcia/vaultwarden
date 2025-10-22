@@ -15,7 +15,7 @@ It is possible to run `Playwright` outside of the container, this removes the ne
 You will additionally need `nodejs` then run:
 
 ```bash
-npm install
+npm ci --ignore-scripts
 npx playwright install-deps
 npx playwright install firefox
 ```
