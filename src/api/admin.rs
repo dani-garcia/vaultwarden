@@ -1,13 +1,13 @@
+use data_encoding::BASE64URL_NOPAD;
 use once_cell::sync::Lazy;
 use percent_encoding::{percent_encode, NON_ALPHANUMERIC};
 use reqwest::Method;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
-use std::env;
 use std::collections::HashMap;
+use std::env;
 use std::sync::RwLock;
 use std::time::{SystemTime, UNIX_EPOCH};
-use data_encoding::BASE64URL_NOPAD;
 
 use rocket::serde::json::Json;
 use rocket::{
