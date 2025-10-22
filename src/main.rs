@@ -106,7 +106,7 @@ FLAGS:
 
 COMMAND:
     hash [--preset {bitwarden|owasp}]  Generate an Argon2id PHC ADMIN_TOKEN
-    backup                             Create a backup of the SQLite database
+    backup [--output <dir>]            Create a backup of the SQLite database
                                        You can also send the USR1 signal to trigger a backup
 
 PRESETS:                  m=         t=          p=
@@ -188,7 +188,9 @@ async fn parse_args() {
                 exit(1);
             }
         } else if command == "backup" {
-            match backup_sqlite().await {
+            let output_dir: Option<String> = pargs.opt_value_from_str(["-o", "--output"]).unwrap_or_default();
+
+            match backup_sqlite(output_dir).await {
                 Ok(f) => {
                     println!("Backup to '{f}' was successful");
                     exit(0);
@@ -203,7 +205,7 @@ async fn parse_args() {
     }
 }
 
-async fn backup_sqlite() -> Result<String, Error> {
+async fn backup_sqlite(output_dir: Option<String>) -> Result<String, Error> {
     use crate::db::{backup_database, DbConnType};
     if DbConnType::from_url(&CONFIG.database_url()).map(|t| t == DbConnType::sqlite).unwrap_or(false) {
         // Establish a connection to the sqlite database
@@ -213,7 +215,7 @@ async fn backup_sqlite() -> Result<String, Error> {
             .await
             .expect("Unable to get SQLite db pool");
 
-        let backup_file = backup_database(&mut conn).await?;
+        let backup_file = backup_database(&mut conn, output_dir).await?;
         Ok(backup_file)
     } else {
         err_silent!("The database type is not SQLite. Backups only works for SQLite databases")
@@ -622,7 +624,7 @@ async fn launch_rocket(pool: db::DbPool, extra_debug: bool) -> Result<(), Error>
                 // If we need more signals to act upon, we might want to use select! here.
                 // With only one item to listen for this is enough.
                 let _ = signal_user1.recv().await;
-                match backup_sqlite().await {
+                match backup_sqlite(None).await {
                     Ok(f) => info!("Backup to '{f}' was successful"),
                     Err(e) => error!("Backup failed. {e:?}"),
                 }
