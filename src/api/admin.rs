@@ -360,10 +360,7 @@ fn oauth2_authorize(_token: AdminToken) -> Result<Redirect, Error> {
     let state = crate::crypto::encode_random_bytes::<32>(BASE64URL_NOPAD);
 
     // Store state with expiration (10 minutes from now)
-    let expiration = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs() + 600;
+    let expiration = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() + 600;
 
     OAUTH2_STATES.write().unwrap().insert(state.clone(), expiration);
 
@@ -411,7 +408,7 @@ async fn oauth2_callback(params: OAuth2CallbackParams) -> Result<Html<String>, E
     let valid_state = {
         let states = OAUTH2_STATES.read().unwrap();
         let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
-        states.get(&state).map_or(false, |&exp| exp > now)
+        states.get(&state).is_some_and(|&exp| exp > now)
     };
 
     if !valid_state {
@@ -449,16 +446,12 @@ async fn oauth2_callback(params: OAuth2CallbackParams) -> Result<Html<String>, E
         return Err(Error::new("OAuth2 Token Exchange Failed", format!("HTTP {}: {}", status, body)));
     }
 
-    let token_response: Value = response
-        .json()
-        .await
-        .map_err(|e| Error::new("OAuth2 Token Parse Error", e.to_string()))?;
+    let token_response: Value =
+        response.json().await.map_err(|e| Error::new("OAuth2 Token Parse Error", e.to_string()))?;
 
     // Extract refresh_token from response
-    let refresh_token = token_response
-        .get("refresh_token")
-        .and_then(|v| v.as_str())
-        .ok_or("No refresh_token in response")?;
+    let refresh_token =
+        token_response.get("refresh_token").and_then(|v| v.as_str()).ok_or("No refresh_token in response")?;
 
     // Save refresh_token to configuration
     let config_builder: ConfigBuilder = serde_json::from_value(json!({

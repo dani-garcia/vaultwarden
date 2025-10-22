@@ -1146,10 +1146,7 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
     }
 
     // OAuth2 validation - triggered when SMTP Auth mechanism includes xoauth2
-    let uses_xoauth2 = cfg.smtp_auth_mechanism
-        .as_ref()
-        .map(|m| m.to_lowercase().contains("xoauth2"))
-        .unwrap_or(false);
+    let uses_xoauth2 = cfg.smtp_auth_mechanism.as_ref().map(|m| m.to_lowercase().contains("xoauth2")).unwrap_or(false);
 
     if uses_xoauth2 {
         if cfg.smtp_oauth2_client_id.is_none() {

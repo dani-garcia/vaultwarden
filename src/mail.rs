@@ -1,9 +1,9 @@
 use chrono::NaiveDateTime;
 use percent_encoding::{percent_encode, NON_ALPHANUMERIC};
-use std::{env::consts::EXE_SUFFIX, str::FromStr};
+use serde::{Deserialize, Serialize};
 use std::sync::{LazyLock, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
-use serde::{Deserialize, Serialize};
+use std::{env::consts::EXE_SUFFIX, str::FromStr};
 
 use lettre::{
     message::{Attachment, Body, Mailbox, Message, MultiPart, SinglePart},
@@ -68,17 +68,12 @@ pub async fn refresh_oauth2_token() -> Result<OAuth2Token, Error> {
         return Err(Error::new("OAuth2 Token Refresh Failed", format!("HTTP {status}: {body}")));
     }
 
-    let token_response: TokenRefreshResponse = response
-        .json()
-        .await
-        .map_err(|e| Error::new("OAuth2 Token Parse Error", e.to_string()))?;
+    let token_response: TokenRefreshResponse =
+        response.json().await.map_err(|e| Error::new("OAuth2 Token Parse Error", e.to_string()))?;
 
-    let expires_at = token_response.expires_in.map(|expires_in| {
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs() + expires_in
-    });
+    let expires_at = token_response
+        .expires_in
+        .map(|expires_in| SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() + expires_in);
 
     Ok(OAuth2Token {
         access_token: token_response.access_token,
