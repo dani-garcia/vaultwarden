@@ -50,6 +50,36 @@
                         {{/if}}
                         {{/each}}
                         {{#case group "smtp"}}
+                            <div class="row my-2 pt-3 border-top">
+                                <div class="col-sm-11">
+                                    <div class="alert alert-info mb-0" role="alert">
+                                        <h6 class="alert-heading"><i class="bi bi-info-circle"></i> OAuth2/XOAUTH2 Authentication</h6>
+                                        <p class="mb-2 small">
+                                            OAuth2 authentication allows secure email sending without storing your email password.
+                                            Configure the OAuth2 fields below to use token-based authentication (recommended for Gmail and Microsoft 365).
+                                        </p>
+                                        <p class="mb-0 small">
+                                            <strong>Note:</strong> If both password and OAuth2 credentials are configured, OAuth2 will be preferred with automatic fallback to password authentication.
+                                            See the <a href="https://github.com/dani-garcia/vaultwarden/wiki/SMTP-Configuration#oauth2-authentication" target="_blank" rel="noopener noreferrer" class="alert-link">documentation</a> for detailed setup instructions.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="row my-2 align-items-center pt-3 border-top" title="Start OAuth2 authorization flow to obtain refresh token">
+                                <label class="col-sm-3 col-form-label">Obtain OAuth2 Refresh Token</label>
+                                <div class="col-sm-8">
+                                    <button type="button" class="btn btn-primary" id="oauth2Authorize">Start Authorization</button>
+                                    <small class="form-text text-muted d-block mt-1">
+                                        Click to authenticate with your email provider and obtain a refresh token.
+                                    </small>
+                                </div>
+                            </div>
+                            <div class="row my-2 align-items-center pt-3 border-top" title="Manually refresh OAuth2 token">
+                                <label class="col-sm-3 col-form-label">Refresh OAuth2 Token</label>
+                                <div class="col-sm-8">
+                                    <button type="button" class="btn btn-outline-primary" id="oauth2RefreshTest">Refresh Token</button>
+                                </div>
+                            </div>
                             <div class="row my-2 align-items-center pt-3 border-top" title="Send a test email to given email address">
                                 <label for="smtp-test-email" class="col-sm-3 col-form-label">Test SMTP</label>
                                 <div class="col-sm-8 input-group">
