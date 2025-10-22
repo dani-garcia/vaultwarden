@@ -1732,6 +1732,7 @@ where
     reg!("admin/users");
     reg!("admin/organizations");
     reg!("admin/diagnostics");
+    reg!("admin/oauth2_success");
 
     reg!("404");
 

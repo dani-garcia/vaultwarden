@@ -1,6 +1,6 @@
 use data_encoding::BASE64URL_NOPAD;
 use once_cell::sync::Lazy;
-use percent_encoding::{percent_encode, NON_ALPHANUMERIC};
+use url::Url;
 use reqwest::Method;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
@@ -371,15 +371,20 @@ fn oauth2_authorize(_token: AdminToken) -> Result<Redirect, Error> {
     // Construct redirect URI
     let redirect_uri = format!("{}/admin/oauth2/callback", CONFIG.domain());
 
-    // Build authorization URL
-    let auth_url = format!(
-        "{}?client_id={}&redirect_uri={}&response_type=code&scope={}&state={}&access_type=offline&prompt=consent",
-        auth_url,
-        percent_encode(client_id.as_bytes(), NON_ALPHANUMERIC),
-        percent_encode(redirect_uri.as_bytes(), NON_ALPHANUMERIC),
-        percent_encode(scopes.as_bytes(), NON_ALPHANUMERIC),
-        percent_encode(state.as_bytes(), NON_ALPHANUMERIC)
-    );
+    // Build authorization URL using url crate to ensure proper encoding
+    let mut url = Url::parse(&auth_url).map_err(|e| Error::new("Invalid OAuth2 Authorization URL", e.to_string()))?;
+    {
+        let mut qp = url.query_pairs_mut();
+        qp.append_pair("client_id", &client_id);
+        qp.append_pair("redirect_uri", &redirect_uri);
+        qp.append_pair("response_type", "code");
+        qp.append_pair("scope", &scopes);
+        qp.append_pair("state", &state);
+        qp.append_pair("access_type", "offline");
+        qp.append_pair("prompt", "consent");
+    }
+
+    let auth_url = url.to_string();
 
     Ok(Redirect::to(auth_url))
 }
@@ -432,9 +437,7 @@ async fn oauth2_callback(params: OAuth2CallbackParams) -> Result<Html<String>, E
         ("client_secret", &client_secret),
     ];
 
-    let client = reqwest::Client::new();
-    let response = client
-        .post(&token_url)
+    let response = make_http_request(Method::POST, &token_url)?
         .form(&form_params)
         .send()
         .await
@@ -460,29 +463,14 @@ async fn oauth2_callback(params: OAuth2CallbackParams) -> Result<Html<String>, E
     .map_err(|e| Error::new("ConfigBuilder serialization error", e.to_string()))?;
     CONFIG.update_config_partial(config_builder).await?;
 
-    // Return success page
-    let success_html = format!(
-        r#"<!DOCTYPE html>
-<html>
-<head>
-    <title>OAuth2 Authorization Successful</title>
-    <style>
-        body {{ font-family: Arial, sans-serif; margin: 50px; }}
-        .success {{ color: green; font-size: 18px; margin-bottom: 20px; }}
-        .token {{ background: #f0f0f0; padding: 10px; border-radius: 5px; word-break: break-all; }}
-    </style>
-</head>
-<body>
-    <h1>✓ OAuth2 Authorization Successful!</h1>
-    <p class="success">The refresh token has been saved to your configuration.</p>
-    <p>You can now close this window and return to the admin panel.</p>
-    <p><a href="{}">Return to Admin Settings</a></p>
-</body>
-</html>"#,
-        admin_url()
-    );
-
-    Ok(Html(success_html))
+    // Return success page via template
+    let json = json!({
+        "page_content": "admin/oauth2_success",
+        "admin_url": admin_url(),
+        "urlpath": CONFIG.domain_path(),
+    });
+    let text = CONFIG.render_template(BASE_TEMPLATE, &json)?;
+    Ok(Html(text))
 }
 
 #[get("/logout")]

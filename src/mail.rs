@@ -24,6 +24,8 @@ use crate::{
     CONFIG,
 };
 
+use crate::http_client::make_http_request;
+
 // OAuth2 Token structures
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OAuth2Token {
@@ -54,9 +56,7 @@ pub async fn refresh_oauth2_token() -> Result<OAuth2Token, Error> {
         ("client_secret", &client_secret),
     ];
 
-    let client = reqwest::Client::new();
-    let response = client
-        .post(&token_url)
+    let response = make_http_request(reqwest::Method::POST, &token_url)?
         .form(&form_params)
         .send()
         .await
