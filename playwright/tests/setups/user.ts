@@ -22,8 +22,7 @@ export async function createAccount(test, page: Page, user: { email: string, nam
         await page.getByRole('button', { name: 'Create account' }).click();
 
         await utils.checkNotification(page, 'Your new account has been created')
-        await page.getByRole('button', { name: 'Add it later' }).click();
-        await page.getByRole('link', { name: 'Skip to web app' }).click();
+        await utils.ignoreExtension(page);
 
         // We are now in the default vault page
         await expect(page).toHaveTitle('Vaults | Vaultwarden Web');
@@ -46,6 +45,8 @@ export async function logUser(test, page: Page, user: { email: string, password:
         // Unlock page
         await page.getByLabel('Master password').fill(user.password);
         await page.getByRole('button', { name: 'Log in with master password' }).click();
+
+        await utils.ignoreExtension(page);
 
         // We are now in the default vault page
         await expect(page).toHaveTitle(/Vaultwarden Web/);
