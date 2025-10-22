@@ -120,7 +120,7 @@ async fn recover(data: Json<RecoverTwoFactor>, client_headers: ClientHeaders, mu
 
 async fn _generate_recover_code(user: &mut User, conn: &mut DbConn) {
     if user.totp_recover.is_none() {
-        let totp_recover = crypto::encode_random_bytes::<20>(BASE32);
+        let totp_recover = crypto::encode_random_bytes::<20>(&BASE32);
         user.totp_recover = Some(totp_recover);
         user.save(conn).await.ok();
     }

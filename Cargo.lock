@@ -5736,7 +5736,6 @@ dependencies = [
  "mini-moka",
  "num-derive",
  "num-traits",
- "once_cell",
  "opendal",
  "openidconnect",
  "openssl",
