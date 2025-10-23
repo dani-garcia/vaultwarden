@@ -192,38 +192,35 @@ jobs:
             *.cache-from=${{ env.BAKE_CACHE_FROM }}
             *.cache-to=${{ env.BAKE_CACHE_TO }}
 
-      - name: Extract digest SHA
-        shell: bash
-        env:
-          BAKE_METADATA: ${{ steps.bake_vw.outputs.metadata }}
-          BASE_IMAGE: ${{ matrix.base_image }}
-        run: |
-          GET_DIGEST_SHA="$(jq -r --arg base "$BASE_IMAGE" '.[$base + "-multi"]."containerimage.digest"' <<< "${BAKE_METADATA}")"
-          echo "DIGEST_SHA=${GET_DIGEST_SHA}" | tee -a "${GITHUB_ENV}"
-
       # Attest container images
       - name: Attest - docker.io - ${{ matrix.base_image }}
         if: ${{ env.HAVE_DOCKERHUB_LOGIN == 'true' && steps.bake_vw.outputs.metadata != ''}}
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        env:
+          BASE_IMAGE: ${{ matrix.base_image }}
         with:
           subject-name: ${{ vars.DOCKERHUB_REPO }}
-          subject-digest: ${{ env.DIGEST_SHA }}
+          subject-digest: ${{ fromJSON(steps.bake_vw.outputs.metadata)[format('{0}-multi', env.BASE_IMAGE)]['containerimage.digest'] }}
           push-to-registry: true
 
       - name: Attest - ghcr.io - ${{ matrix.base_image }}
         if: ${{ env.HAVE_GHCR_LOGIN == 'true' && steps.bake_vw.outputs.metadata != ''}}
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        env:
+          BASE_IMAGE: ${{ matrix.base_image }}
         with:
           subject-name: ${{ vars.GHCR_REPO }}
-          subject-digest: ${{ env.DIGEST_SHA }}
+          subject-digest: ${{ fromJSON(steps.bake_vw.outputs.metadata)[format('{0}-multi', env.BASE_IMAGE)]['containerimage.digest'] }}
           push-to-registry: true
 
       - name: Attest - quay.io - ${{ matrix.base_image }}
         if: ${{ env.HAVE_QUAY_LOGIN == 'true' && steps.bake_vw.outputs.metadata != ''}}
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        env:
+          BASE_IMAGE: ${{ matrix.base_image }}
         with:
           subject-name: ${{ vars.QUAY_REPO }}
-          subject-digest: ${{ env.DIGEST_SHA }}
+          subject-digest: ${{ fromJSON(steps.bake_vw.outputs.metadata)[format('{0}-multi', env.BASE_IMAGE)]['containerimage.digest'] }}
           push-to-registry: true
 
 
