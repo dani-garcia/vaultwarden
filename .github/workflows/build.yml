@@ -69,9 +69,9 @@ jobs:
           CHANNEL: ${{ matrix.channel }}
         run: |
           if [[ "${CHANNEL}" == 'rust-toolchain' ]]; then
-            RUST_TOOLCHAIN="$(grep -oP 'channel.*"(\K.*?)(?=")' rust-toolchain.toml)"
+            RUST_TOOLCHAIN="$(grep -m1 -oP 'channel.*"(\K.*?)(?=")' rust-toolchain.toml)"
           elif [[ "${CHANNEL}" == 'msrv' ]]; then
-            RUST_TOOLCHAIN="$(grep -oP 'rust-version.*"(\K.*?)(?=")' Cargo.toml)"
+            RUST_TOOLCHAIN="$(grep -m1 -oP 'rust-version\s.*"(\K.*?)(?=")' Cargo.toml)"
           else
             RUST_TOOLCHAIN="${CHANNEL}"
           fi
@@ -116,7 +116,7 @@ jobs:
 
       # Enable Rust Caching
       - name: Rust Caching
-        uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
+        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
         with:
           # Use a custom prefix-key to force a fresh start. This is sometimes needed with bigger changes.
           # Like changing the build host from Ubuntu 20.04 to 22.04 for example.
@@ -126,18 +126,6 @@ jobs:
 
       # Run cargo tests
       # First test all features together, afterwards test them separately.
-      - name: "test features: sqlite,mysql,postgresql,enable_mimalloc,query_logger"
-        id: test_sqlite_mysql_postgresql_mimalloc_logger
-        if: ${{ !cancelled() }}
-        run: |
-          cargo test --features sqlite,mysql,postgresql,enable_mimalloc,query_logger
-
-      - name: "test features: sqlite,mysql,postgresql,enable_mimalloc"
-        id: test_sqlite_mysql_postgresql_mimalloc
-        if: ${{ !cancelled() }}
-        run: |
-          cargo test --features sqlite,mysql,postgresql,enable_mimalloc
-
       - name: "test features: sqlite,mysql,postgresql"
         id: test_sqlite_mysql_postgresql
         if: ${{ !cancelled() }}
@@ -187,8 +175,6 @@ jobs:
       - name: "Some checks failed"
         if: ${{ failure() }}
         env:
-          TEST_DB_M_L: ${{ steps.test_sqlite_mysql_postgresql_mimalloc_logger.outcome }}
-          TEST_DB_M: ${{ steps.test_sqlite_mysql_postgresql_mimalloc.outcome }}
           TEST_DB: ${{ steps.test_sqlite_mysql_postgresql.outcome }}
           TEST_SQLITE: ${{ steps.test_sqlite.outcome }}
           TEST_MYSQL: ${{ steps.test_mysql.outcome }}
@@ -200,8 +186,6 @@ jobs:
           echo "" >> "${GITHUB_STEP_SUMMARY}"
           echo "|Job|Status|" >> "${GITHUB_STEP_SUMMARY}"
           echo "|---|------|" >> "${GITHUB_STEP_SUMMARY}"
-          echo "|test (sqlite,mysql,postgresql,enable_mimalloc,query_logger)|${TEST_DB_M_L}|" >> "${GITHUB_STEP_SUMMARY}"
-          echo "|test (sqlite,mysql,postgresql,enable_mimalloc)|${TEST_DB_M}|" >> "${GITHUB_STEP_SUMMARY}"
           echo "|test (sqlite,mysql,postgresql)|${TEST_DB}|" >> "${GITHUB_STEP_SUMMARY}"
           echo "|test (sqlite)|${TEST_SQLITE}|" >> "${GITHUB_STEP_SUMMARY}"
           echo "|test (mysql)|${TEST_MYSQL}|" >> "${GITHUB_STEP_SUMMARY}"

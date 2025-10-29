@@ -1,9 +1,8 @@
 #![cfg_attr(feature = "unstable", feature(ip))]
 // The recursion_limit is mainly triggered by the json!() macro.
 // The more key/value pairs there are the more recursion occurs.
-// We want to keep this as low as possible, but not higher then 128.
-// If you go above 128 it will cause rust-analyzer to fail,
-#![recursion_limit = "200"]
+// We want to keep this as low as possible!
+#![recursion_limit = "165"]
 
 // When enabled use MiMalloc as malloc instead of the default malloc
 #[cfg(feature = "enable_mimalloc")]
@@ -71,7 +70,7 @@ pub use util::is_running_in_container;
 
 #[rocket::main]
 async fn main() -> Result<(), Error> {
-    parse_args().await;
+    parse_args();
     launch_info();
 
     let level = init_logging()?;
@@ -87,8 +86,8 @@ async fn main() -> Result<(), Error> {
 
     let pool = create_db_pool().await;
     schedule_jobs(pool.clone());
-    db::models::TwoFactor::migrate_u2f_to_webauthn(&mut pool.get().await.unwrap()).await.unwrap();
-    db::models::TwoFactor::migrate_credential_to_passkey(&mut pool.get().await.unwrap()).await.unwrap();
+    db::models::TwoFactor::migrate_u2f_to_webauthn(&pool.get().await.unwrap()).await.unwrap();
+    db::models::TwoFactor::migrate_credential_to_passkey(&pool.get().await.unwrap()).await.unwrap();
 
     let extra_debug = matches!(level, log::LevelFilter::Trace | log::LevelFilter::Debug);
     launch_rocket(pool, extra_debug).await // Blocks until program termination.
@@ -117,7 +116,7 @@ PRESETS:                  m=         t=          p=
 
 pub const VERSION: Option<&str> = option_env!("VW_VERSION");
 
-async fn parse_args() {
+fn parse_args() {
     let mut pargs = pico_args::Arguments::from_env();
     let version = VERSION.unwrap_or("(Version info from Git not present)");
 
@@ -188,7 +187,7 @@ async fn parse_args() {
                 exit(1);
             }
         } else if command == "backup" {
-            match backup_sqlite().await {
+            match db::backup_sqlite() {
                 Ok(f) => {
                     println!("Backup to '{f}' was successful");
                     exit(0);
@@ -200,23 +199,6 @@ async fn parse_args() {
             }
         }
         exit(0);
-    }
-}
-
-async fn backup_sqlite() -> Result<String, Error> {
-    use crate::db::{backup_database, DbConnType};
-    if DbConnType::from_url(&CONFIG.database_url()).map(|t| t == DbConnType::sqlite).unwrap_or(false) {
-        // Establish a connection to the sqlite database
-        let mut conn = db::DbPool::from_config()
-            .expect("SQLite database connection failed")
-            .get()
-            .await
-            .expect("Unable to get SQLite db pool");
-
-        let backup_file = backup_database(&mut conn).await?;
-        Ok(backup_file)
-    } else {
-        err_silent!("The database type is not SQLite. Backups only works for SQLite databases")
     }
 }
 
@@ -285,13 +267,6 @@ fn init_logging() -> Result<log::LevelFilter, Error> {
         log::LevelFilter::Off
     };
 
-    let diesel_logger_level: log::LevelFilter =
-        if cfg!(feature = "query_logger") && std::env::var("QUERY_LOGGER").is_ok() {
-            log::LevelFilter::Debug
-        } else {
-            log::LevelFilter::Off
-        };
-
     // Only show Rocket underscore `_` logs when the level is Debug or higher
     // Else this will bloat the log output with useless messages.
     let rocket_underscore_level = if level >= log::LevelFilter::Debug {
@@ -342,9 +317,15 @@ fn init_logging() -> Result<log::LevelFilter, Error> {
         // Variable level for hickory used by reqwest
         ("hickory_resolver::name_server::name_server", hickory_level),
         ("hickory_proto::xfer", hickory_level),
-        ("diesel_logger", diesel_logger_level),
         // SMTP
         ("lettre::transport::smtp", smtp_log_level),
+        // Set query_logger default to Off, but can be overwritten manually
+        // You can set LOG_LEVEL=info,vaultwarden::db::query_logger=<LEVEL> to overwrite it.
+        // This makes it possible to do the following:
+        // warn = Print slow queries only, 5 seconds or longer
+        // info = Print slow queries only, 1 second or longer
+        // debug = Print all queries
+        ("vaultwarden::db::query_logger", log::LevelFilter::Off),
     ]);
 
     for (path, level) in levels_override.into_iter() {
@@ -614,20 +595,24 @@ async fn launch_rocket(pool: db::DbPool, extra_debug: bool) -> Result<(), Error>
         CONFIG.shutdown();
     });
 
-    #[cfg(unix)]
+    #[cfg(all(unix, sqlite))]
     {
-        tokio::spawn(async move {
-            let mut signal_user1 = tokio::signal::unix::signal(SignalKind::user_defined1()).unwrap();
-            loop {
-                // If we need more signals to act upon, we might want to use select! here.
-                // With only one item to listen for this is enough.
-                let _ = signal_user1.recv().await;
-                match backup_sqlite().await {
-                    Ok(f) => info!("Backup to '{f}' was successful"),
-                    Err(e) => error!("Backup failed. {e:?}"),
+        if db::ACTIVE_DB_TYPE.get() != Some(&db::DbConnType::Sqlite) {
+            debug!("PostgreSQL and MySQL/MariaDB do not support this backup feature, skip adding USR1 signal.");
+        } else {
+            tokio::spawn(async move {
+                let mut signal_user1 = tokio::signal::unix::signal(SignalKind::user_defined1()).unwrap();
+                loop {
+                    // If we need more signals to act upon, we might want to use select! here.
+                    // With only one item to listen for this is enough.
+                    let _ = signal_user1.recv().await;
+                    match db::backup_sqlite() {
+                        Ok(f) => info!("Backup to '{f}' was successful"),
+                        Err(e) => error!("Backup failed. {e:?}"),
+                    }
                 }
-            }
-        });
+            });
+        }
     }
 
     instance.launch().await?;
