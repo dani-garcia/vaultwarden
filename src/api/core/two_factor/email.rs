@@ -286,7 +286,7 @@ impl EmailTokenData {
     }
 
     pub fn add_attempt(&mut self) {
-        self.attempts += 1;
+        self.attempts = self.attempts.saturating_add(1);
     }
 
     pub fn to_json(&self) -> String {
