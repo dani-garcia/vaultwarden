@@ -8,13 +8,13 @@
     "author": "",
     "license": "ISC",
     "devDependencies": {
-        "@playwright/test": "1.55.1",
-        "dotenv": "17.2.2",
+        "@playwright/test": "1.56.1",
+        "dotenv": "17.2.3",
         "dotenv-expand": "12.0.3",
-        "maildev": "npm:@timshel_npm/maildev@^3.2.3"
+        "maildev": "npm:@timshel_npm/maildev@3.2.5"
     },
     "dependencies": {
-        "mysql2": "3.15.0",
+        "mysql2": "3.15.3",
         "otpauth": "9.4.1",
         "pg": "8.16.3"
     }

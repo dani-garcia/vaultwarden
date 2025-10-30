@@ -67,16 +67,17 @@ test('invited with new account', async ({ page }) => {
 
     await test.step('Create Vault account', async () => {
         await expect(page.getByRole('heading', { name: 'Join organisation' })).toBeVisible();
-        await page.getByLabel('New master password (required)', { exact: true }).fill(users.user2.password);
-        await page.getByLabel('Confirm new master password (').fill(users.user2.password);
+        await page.getByLabel('Master password (required)', { exact: true }).fill(users.user2.password);
+        await page.getByLabel('Confirm master password (').fill(users.user2.password);
         await page.getByRole('button', { name: 'Create account' }).click();
+
+        await utils.checkNotification(page, 'Account successfully created!');
+        await utils.checkNotification(page, 'Invitation accepted');
+        await utils.ignoreExtension(page);
     });
 
     await test.step('Default vault page', async () => {
         await expect(page).toHaveTitle(/Vaultwarden Web/);
-
-        await utils.checkNotification(page, 'Account successfully created!');
-        await utils.checkNotification(page, 'Invitation accepted');
     });
 
     await test.step('Check mails', async () => {
@@ -107,11 +108,13 @@ test('invited with existing account', async ({ page }) => {
         await expect(page).toHaveTitle('Vaultwarden Web');
         await page.getByLabel('Master password').fill(users.user3.password);
         await page.getByRole('button', { name: 'Unlock' }).click();
+
+        await utils.checkNotification(page, 'Invitation accepted');
+        await utils.ignoreExtension(page);
     });
 
     await test.step('Default vault page', async () => {
         await expect(page).toHaveTitle(/Vaultwarden Web/);
-        await utils.checkNotification(page, 'Invitation accepted');
     });
 
     await test.step('Check mails', async () => {
