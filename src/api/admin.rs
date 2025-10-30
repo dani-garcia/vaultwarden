@@ -92,7 +92,8 @@ static DB_TYPE: LazyLock<&str> = LazyLock::new(|| match ACTIVE_DB_TYPE.get() {
 });
 
 #[cfg(sqlite)]
-static CAN_BACKUP: LazyLock<bool> = LazyLock::new(|| ACTIVE_DB_TYPE.get().map(|t| *t == DbConnType::Sqlite).unwrap_or(false));
+static CAN_BACKUP: LazyLock<bool> =
+    LazyLock::new(|| ACTIVE_DB_TYPE.get().map(|t| *t == DbConnType::Sqlite).unwrap_or(false));
 #[cfg(not(sqlite))]
 static CAN_BACKUP: LazyLock<bool> = LazyLock::new(|| false);
 

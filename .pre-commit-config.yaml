@@ -22,7 +22,8 @@ repos:
       description: Format files with cargo fmt.
       entry: cargo fmt
       language: system
-      types: [rust]
+      always_run: true
+      pass_filenames: false
       args: ["--", "--check"]
     - id: cargo-test
       name: cargo test
