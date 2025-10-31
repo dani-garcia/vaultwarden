@@ -1,6 +1,8 @@
 use chrono::Utc;
 use derive_more::{AsRef, Deref, Display, From};
 use regex::Regex;
+use serde::de::DeserializeOwned;
+use serde_with::{serde_as, DefaultOnError};
 use std::time::Duration;
 use url::Url;
 
@@ -12,10 +14,10 @@ use crate::{
     auth,
     auth::{AuthMethod, AuthTokens, TokenWrapper, BW_EXPIRATION, DEFAULT_REFRESH_VALIDITY},
     db::{
-        models::{Device, SsoNonce, User},
+        models::{Device, EventType, SsoNonce, SsoUser, User},
         DbConn,
     },
-    sso_client::Client,
+    sso_client::{AllAdditionalClaims, Client},
     CONFIG,
 };
 
@@ -139,15 +141,18 @@ impl BasicTokenClaims {
     }
 }
 
-fn decode_token_claims(token_name: &str, token: &str) -> ApiResult<BasicTokenClaims> {
+// IdToken validation is handled by IdToken.claims
+// This is only used to retrive additionnal claims which are configurable
+// Or to try to parse access_token and refresh_tken as JWT to find exp
+fn insecure_decode<T: DeserializeOwned>(token_name: &str, token: &str) -> ApiResult<T> {
     let mut validation = jsonwebtoken::Validation::default();
     validation.set_issuer(&[CONFIG.sso_authority()]);
     validation.insecure_disable_signature_validation();
     validation.validate_aud = false;
 
-    match jsonwebtoken::decode(token, &jsonwebtoken::DecodingKey::from_secret(&[]), &validation) {
+    match jsonwebtoken::decode::<T>(token, &jsonwebtoken::DecodingKey::from_secret(&[]), &validation) {
         Ok(btc) => Ok(btc.claims),
-        Err(err) => err_silent!(format!("Failed to decode basic token claims from {token_name}: {err}")),
+        Err(err) => err_silent!(format!("Failed to decode {token_name}: {err}")),
     }
 }
 
@@ -210,6 +215,28 @@ impl OIDCIdentifier {
     }
 }
 
+#[derive(Debug)]
+struct AdditionnalClaims {
+    role: Option<UserRole>,
+}
+
+impl AdditionnalClaims {
+    pub fn is_admin(&self) -> bool {
+        self.role.as_ref().is_some_and(|x| x == &UserRole::Admin)
+    }
+}
+
+#[derive(Clone, Debug, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UserRole {
+    Admin,
+    User,
+}
+
+#[serde_as]
+#[derive(Deserialize)]
+struct UserRoles<T: DeserializeOwned>(#[serde_as(as = "Vec<DefaultOnError>")] Vec<Option<T>>);
+
 #[derive(Clone, Debug)]
 pub struct AuthenticatedUser {
     pub refresh_token: Option<String>,
@@ -219,6 +246,13 @@ pub struct AuthenticatedUser {
     pub email: String,
     pub email_verified: Option<bool>,
     pub user_name: Option<String>,
+    pub role: Option<UserRole>,
+}
+
+impl AuthenticatedUser {
+    pub fn is_admin(&self) -> bool {
+        self.role.as_ref().is_some_and(|x| x == &UserRole::Admin)
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -228,6 +262,44 @@ pub struct UserInformation {
     pub email: String,
     pub email_verified: Option<bool>,
     pub user_name: Option<String>,
+}
+
+// Errors are logged but will return None
+// Return the top most defined Role (https://doc.rust-lang.org/std/cmp/trait.PartialOrd.html#derivable)
+fn role_claim<T: DeserializeOwned + Ord>(email: &str, token: &serde_json::Value, source: &str) -> Option<T> {
+    use crate::serde::Deserialize;
+    if let Some(json_roles) = token.pointer(&CONFIG.sso_roles_token_path()) {
+        match UserRoles::<T>::deserialize(json_roles) {
+            Ok(UserRoles(mut roles)) => {
+                roles.sort();
+                roles.into_iter().find(|r| r.is_some()).flatten()
+            }
+            Err(err) => {
+                debug!("Failed to parse {email} roles from {source}: {err}");
+                None
+            }
+        }
+    } else {
+        debug!("No roles in {email} {source} at {}", &CONFIG.sso_roles_token_path());
+        None
+    }
+}
+
+// All claims are read as Value.
+fn additional_claims(email: &str, sources: Vec<(&AllAdditionalClaims, &str)>) -> ApiResult<AdditionnalClaims> {
+    let mut role: Option<UserRole> = None;
+
+    if CONFIG.sso_roles_enabled() {
+        for (ac, source) in sources {
+            if CONFIG.sso_roles_enabled() {
+                role = role.or_else(|| role_claim(email, &ac.claims, source))
+            }
+        }
+    }
+
+    Ok(AdditionnalClaims {
+        role,
+    })
 }
 
 async fn decode_code_claims(code: &str, conn: &DbConn) -> ApiResult<(OIDCCode, OIDCState)> {
@@ -294,6 +366,21 @@ pub async fn exchange_code(wrapped_code: &str, conn: &DbConn) -> ApiResult<UserI
 
     let user_name = id_claims.preferred_username().map(|un| un.to_string());
 
+    let additional_claims = additional_claims(
+        &email,
+        vec![(id_claims.additional_claims(), "id_token"), (user_info.additional_claims(), "user_info")],
+    )?;
+
+    if CONFIG.sso_roles_enabled() && !CONFIG.sso_roles_default_to_user() && additional_claims.role.is_none() {
+        info!("User {email} failed to login due to missing/invalid role");
+        err!(
+            "Invalid user role. Contact your administrator",
+            ErrorEvent {
+                event: EventType::UserFailedLogIn
+            }
+        )
+    }
+
     let refresh_token = token_response.refresh_token().map(|t| t.secret());
     if refresh_token.is_none() && CONFIG.sso_scopes_vec().contains(&"offline_access".to_string()) {
         error!("Scope offline_access is present but response contain no refresh_token");
@@ -309,6 +396,7 @@ pub async fn exchange_code(wrapped_code: &str, conn: &DbConn) -> ApiResult<UserI
         email: email.clone(),
         email_verified,
         user_name: user_name.clone(),
+        role: additional_claims.role,
     };
 
     debug!("Authenticated user {authenticated_user:?}");
@@ -325,17 +413,43 @@ pub async fn exchange_code(wrapped_code: &str, conn: &DbConn) -> ApiResult<UserI
 }
 
 // User has passed 2FA flow we can delete `nonce` and clear the cache.
-pub async fn redeem(state: &OIDCState, conn: &DbConn) -> ApiResult<AuthenticatedUser> {
+pub async fn redeem(
+    user: &User,
+    device: &Device,
+    client_id: Option<String>,
+    sso_user: Option<SsoUser>,
+    state: &OIDCState,
+    conn: &DbConn,
+) -> ApiResult<AuthTokens> {
     if let Err(err) = SsoNonce::delete(state, conn).await {
         error!("Failed to delete database sso_nonce using {state}: {err}")
     }
 
-    if let Some(au) = AC_CACHE.get(state) {
+    let auth_user = if let Some(au) = AC_CACHE.get(state) {
         AC_CACHE.invalidate(state);
-        Ok(au)
+        au
     } else {
         err!("Failed to retrieve user info from sso cache")
+    };
+
+    if sso_user.is_none() {
+        let user_sso = SsoUser {
+            user_uuid: user.uuid.clone(),
+            identifier: auth_user.identifier.clone(),
+        };
+        user_sso.save(conn).await?;
     }
+
+    let is_admin = auth_user.is_admin();
+    create_auth_tokens(
+        device,
+        user,
+        client_id,
+        auth_user.refresh_token,
+        auth_user.access_token,
+        auth_user.expires_in,
+        is_admin,
+    )
 }
 
 // We always return a refresh_token (with no refresh_token some secrets are not displayed in the web front).
@@ -347,11 +461,12 @@ pub fn create_auth_tokens(
     refresh_token: Option<String>,
     access_token: String,
     expires_in: Option<Duration>,
+    is_admin: bool,
 ) -> ApiResult<AuthTokens> {
     if !CONFIG.sso_auth_only_not_session() {
         let now = Utc::now();
 
-        let (ap_nbf, ap_exp) = match (decode_token_claims("access_token", &access_token), expires_in) {
+        let (ap_nbf, ap_exp) = match (insecure_decode::<BasicTokenClaims>("access_token", &access_token), expires_in) {
             (Ok(ap), _) => (ap.nbf(), ap.exp),
             (Err(_), Some(exp)) => (now.timestamp(), (now + exp).timestamp()),
             _ => err!("Non jwt access_token and empty expires_in"),
@@ -360,7 +475,7 @@ pub fn create_auth_tokens(
         let access_claims =
             auth::LoginJwtClaims::new(device, user, ap_nbf, ap_exp, AuthMethod::Sso.scope_vec(), client_id, now);
 
-        _create_auth_tokens(device, refresh_token, access_claims, access_token)
+        _create_auth_tokens(device, refresh_token, access_claims, access_token, is_admin)
     } else {
         Ok(AuthTokens::new(device, user, AuthMethod::Sso, client_id))
     }
@@ -371,9 +486,10 @@ fn _create_auth_tokens(
     refresh_token: Option<String>,
     access_claims: auth::LoginJwtClaims,
     access_token: String,
+    is_admin: bool,
 ) -> ApiResult<AuthTokens> {
     let (nbf, exp, token) = if let Some(rt) = refresh_token {
-        match decode_token_claims("refresh_token", &rt) {
+        match insecure_decode::<BasicTokenClaims>("refresh_token", &rt) {
             Err(_) => {
                 let time_now = Utc::now();
                 let exp = (time_now + *DEFAULT_REFRESH_VALIDITY).timestamp();
@@ -402,6 +518,7 @@ fn _create_auth_tokens(
     Ok(AuthTokens {
         refresh_claims,
         access_claims,
+        is_admin,
     })
 }
 
@@ -409,25 +526,35 @@ fn _create_auth_tokens(
 //  - the session is close to expiration we will try to extend it
 //  - the user is going to make an action and we check that the session is still valid
 pub async fn exchange_refresh_token(
-    device: &Device,
     user: &User,
+    device: &Device,
     client_id: Option<String>,
     refresh_claims: auth::RefreshJwtClaims,
 ) -> ApiResult<AuthTokens> {
     let exp = refresh_claims.exp;
     match refresh_claims.token {
         Some(TokenWrapper::Refresh(refresh_token)) => {
+            let client = Client::cached().await?;
+            let mut is_admin = false;
+
             // Use new refresh_token if returned
             let (new_refresh_token, access_token, expires_in) =
-                Client::exchange_refresh_token(refresh_token.clone()).await?;
+                client.exchange_refresh_token(refresh_token.clone()).await?;
+
+            if CONFIG.sso_roles_enabled() {
+                let user_info = client.user_info(access_token.clone()).await?;
+                let ac = additional_claims(&user.email, vec![(user_info.additional_claims(), "user_info")])?;
+                is_admin = ac.is_admin();
+            }
 
             create_auth_tokens(
                 device,
                 user,
                 client_id,
                 new_refresh_token.or(Some(refresh_token)),
-                access_token,
+                access_token.into_secret(),
                 expires_in,
+                is_admin,
             )
         }
         Some(TokenWrapper::Access(access_token)) => {
@@ -450,7 +577,7 @@ pub async fn exchange_refresh_token(
                 now,
             );
 
-            _create_auth_tokens(device, None, access_claims, access_token)
+            _create_auth_tokens(device, None, access_claims, access_token, false)
         }
         None => err!("No token present while in SSO"),
     }
