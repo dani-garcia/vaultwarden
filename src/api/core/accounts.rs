@@ -780,7 +780,7 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
 
     let mut existing_ciphers = Cipher::find_owned_by_user(user_id, &conn).await;
     let mut existing_folders = Folder::find_by_user(user_id, &conn).await;
-    let mut existing_emergency_access = EmergencyAccess::find_all_by_grantor_uuid(user_id, &conn).await;
+    let mut existing_emergency_access = EmergencyAccess::find_all_confirmed_by_grantor_uuid(user_id, &conn).await;
     let mut existing_memberships = Membership::find_by_user(user_id, &conn).await;
     // We only rotate the reset password key if it is set.
     existing_memberships.retain(|m| m.reset_password_key.is_some());
