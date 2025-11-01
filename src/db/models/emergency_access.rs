@@ -340,6 +340,16 @@ impl EmergencyAccess {
         }}
     }
 
+    pub async fn find_all_confirmed_by_grantor_uuid(grantor_uuid: &UserId, conn: &DbConn) -> Vec<Self> {
+        db_run! { conn: {
+            emergency_access::table
+                .filter(emergency_access::grantor_uuid.eq(grantor_uuid))
+                .filter(emergency_access::status.ge(EmergencyAccessStatus::Confirmed as i32))
+                .load::<Self>(conn)
+                .expect("Error loading emergency_access")
+        }}
+    }
+
     pub async fn accept_invite(&mut self, grantee_uuid: &UserId, grantee_email: &str, conn: &DbConn) -> EmptyResult {
         if self.email.is_none() || self.email.as_ref().unwrap() != grantee_email {
             err!("User email does not match invite.");
