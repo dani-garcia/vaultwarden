@@ -1,3 +1,10 @@
+[workspace.package]
+edition = "2021"
+rust-version = "1.89.0"
+license = "AGPL-3.0-only"
+repository = "https://github.com/dani-garcia/vaultwarden"
+publish = false
+
 [workspace]
 members = ["macros"]
 
@@ -5,15 +12,14 @@ members = ["macros"]
 name = "vaultwarden"
 version = "1.0.0"
 authors = ["Daniel García <dani-garcia@users.noreply.github.com>"]
-edition = "2021"
-rust-version = "1.87.0"
-resolver = "2"
-
-repository = "https://github.com/dani-garcia/vaultwarden"
 readme = "README.md"
-license = "AGPL-3.0-only"
-publish = false
 build = "build.rs"
+resolver = "2"
+repository.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
 
 [features]
 default = [
@@ -55,9 +61,6 @@ tracing = { version = "0.1.41", features = ["log"] } # Needed to have lettre and
 
 # A `dotenv` implementation for Rust
 dotenvy = { version = "0.15.7", default-features = false }
-
-# Lazy initialization
-once_cell = "1.21.3"
 
 # Numerical libraries
 num-traits = "0.2.19"
@@ -196,7 +199,7 @@ opendal = { version = "0.54.1", features = ["services-fs"], default-features = f
 anyhow = { version = "1.0.100", optional = true }
 aws-config = { version = "1.8.8", features = ["behavior-version-latest", "rt-tokio", "credentials-process", "sso"], default-features = false, optional = true }
 aws-credential-types = { version = "1.2.8", optional = true }
-aws-smithy-runtime-api = { version = "1.9.1", optional = true }
+aws-smithy-runtime-api = { version = "1.9.2", optional = true }
 http = { version = "1.3.1", optional = true }
 reqsign = { version = "0.16.5", optional = true }
 
@@ -207,23 +210,13 @@ reqsign = { version = "0.16.5", optional = true }
 strip = "debuginfo"
 lto = "fat"
 codegen-units = 1
-
-# A little bit of a speedup
-[profile.dev]
-split-debuginfo = "unpacked"
-
-# Always build argon2 using opt-level 3
-# This is a huge speed improvement during testing
-[profile.dev.package.argon2]
-opt-level = 3
+debug = false
 
 # Optimize for size
 [profile.release-micro]
 inherits = "release"
-opt-level = "z"
 strip = "symbols"
-lto = "fat"
-codegen-units = 1
+opt-level = "z"
 panic = "abort"
 
 # Profile for systems with low resources
@@ -234,6 +227,32 @@ strip = "symbols"
 lto = "thin"
 codegen-units = 16
 
+# Used for profiling and debugging like valgrind or heaptrack
+# Inherits release to be sure all optimizations have been done
+[profile.dbg]
+inherits = "release"
+strip = "none"
+split-debuginfo = "off"
+debug = "full"
+
+# A little bit of a speedup for generic building
+[profile.dev]
+split-debuginfo = "unpacked"
+debug = "line-tables-only"
+
+# Used for CI builds to improve compile time
+[profile.ci]
+inherits = "dev"
+debug = false
+debug-assertions = false
+strip = "symbols"
+panic = "abort"
+
+# Always build argon2 using opt-level 3
+# This is a huge speed improvement during testing
+[profile.dev.package.argon2]
+opt-level = 3
+
 # Linting config
 # https://doc.rust-lang.org/rustc/lints/groups.html
 [workspace.lints.rust]
@@ -243,15 +262,16 @@ non_ascii_idents = "forbid"
 
 # Deny
 deprecated_in_future = "deny"
+deprecated_safe = { level = "deny", priority = -1 }
 future_incompatible = { level = "deny", priority = -1 }
 keyword_idents = { level = "deny", priority = -1 }
 let_underscore = { level = "deny", priority = -1 }
+nonstandard_style = { level = "deny", priority = -1 }
 noop_method_call = "deny"
 refining_impl_trait = { level = "deny", priority = -1 }
 rust_2018_idioms = { level = "deny", priority = -1 }
 rust_2021_compatibility = { level = "deny", priority = -1 }
 rust_2024_compatibility = { level = "deny", priority = -1 }
-edition_2024_expr_fragment_specifier = "allow" # Once changed to Rust 2024 this should be removed and macro's should be validated again
 single_use_lifetimes = "deny"
 trivial_casts = "deny"
 trivial_numeric_casts = "deny"
@@ -261,7 +281,8 @@ unused_lifetimes = "deny"
 unused_qualifications = "deny"
 variant_size_differences = "deny"
 # Allow the following lints since these cause issues with Rust v1.84.0 or newer
-# Building Vaultwarden with Rust v1.85.0 and edition 2024 also works without issues
+# Building Vaultwarden with Rust v1.85.0 with edition 2024 also works without issues
+edition_2024_expr_fragment_specifier = "allow" # Once changed to Rust 2024 this should be removed and macro's should be validated again
 if_let_rescope = "allow"
 tail_expr_drop_order = "allow"
 
@@ -275,10 +296,12 @@ todo = "warn"
 result_large_err = "allow"
 
 # Deny
+branches_sharing_code = "deny"
 case_sensitive_file_extension_comparisons = "deny"
 cast_lossless = "deny"
 clone_on_ref_ptr = "deny"
 equatable_if_let = "deny"
+excessive_precision = "deny"
 filter_map_next = "deny"
 float_cmp_const = "deny"
 implicit_clone = "deny"
@@ -292,15 +315,19 @@ manual_instant_elapsed = "deny"
 manual_string_new = "deny"
 match_wildcard_for_single_variants = "deny"
 mem_forget = "deny"
+needless_borrow = "deny"
+needless_collect = "deny"
 needless_continue = "deny"
 needless_lifetimes = "deny"
 option_option = "deny"
+redundant_clone = "deny"
 string_add_assign = "deny"
 unnecessary_join = "deny"
 unnecessary_self_imports = "deny"
 unnested_or_patterns = "deny"
 unused_async = "deny"
 unused_self = "deny"
+useless_let_if_seq = "deny"
 verbose_file_reads = "deny"
 zero_sized_map_values = "deny"
 

@@ -3,6 +3,7 @@
 //
 use crate::db::models::EventType;
 use crate::http_client::CustomHttpClientError;
+use serde::ser::{Serialize, SerializeStruct, Serializer};
 use std::error::Error as StdError;
 
 macro_rules! make_error {
@@ -73,7 +74,7 @@ make_error! {
     Empty(Empty):     _no_source, _serialize,
     // Used to represent err! calls
     Simple(String):  _no_source,  _api_error,
-    Compact(Compact):  _no_source,  _api_error_small,
+    Compact(Compact):  _no_source,  _compact_api_error,
 
     // Used in our custom http client to handle non-global IPs and blocked domains
     CustomHttpClient(CustomHttpClientError): _has_source, _api_error,
@@ -128,6 +129,10 @@ impl std::fmt::Debug for Error {
 impl Error {
     pub fn new<M: Into<String>, N: Into<String>>(usr_msg: M, log_msg: N) -> Self {
         (usr_msg, log_msg.into()).into()
+    }
+
+    pub fn new_msg<M: Into<String> + Clone>(usr_msg: M) -> Self {
+        (usr_msg.clone(), usr_msg.into()).into()
     }
 
     pub fn empty() -> Self {
@@ -196,38 +201,97 @@ fn _no_source<T, S>(_: T) -> Option<S> {
     None
 }
 
-fn _serialize(e: &impl serde::Serialize, _msg: &str) -> String {
+fn _serialize(e: &impl Serialize, _msg: &str) -> String {
     serde_json::to_string(e).unwrap()
 }
 
-fn _api_error(_: &impl std::any::Any, msg: &str) -> String {
-    let json = json!({
-        "message": msg,
-        "error": "",
-        "error_description": "",
-        "validationErrors": {"": [ msg ]},
-        "errorModel": {
-            "message": msg,
-            "object": "error"
-        },
-        "exceptionMessage": null,
-        "exceptionStackTrace": null,
-        "innerExceptionMessage": null,
-        "object": "error"
-    });
-    _serialize(&json, "")
+/// This will serialize the default ApiErrorResponse
+/// It will add the needed fields which are mostly empty or have multiple copies of the message
+/// This is more efficient than having a larger struct and use the Serialize derive
+/// It also prevents using `json!()` calls to create the final output
+impl Serialize for ApiErrorResponse<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        #[derive(serde::Serialize)]
+        struct ErrorModel<'a> {
+            message: &'a str,
+            object: &'static str,
+        }
+
+        let mut state = serializer.serialize_struct("ApiErrorResponse", 9)?;
+
+        state.serialize_field("message", self.0.message)?;
+
+        let mut validation_errors = std::collections::HashMap::with_capacity(1);
+        validation_errors.insert("", vec![self.0.message]);
+        state.serialize_field("validationErrors", &validation_errors)?;
+
+        let error_model = ErrorModel {
+            message: self.0.message,
+            object: "error",
+        };
+        state.serialize_field("errorModel", &error_model)?;
+
+        state.serialize_field("error", "")?;
+        state.serialize_field("error_description", "")?;
+        state.serialize_field("exceptionMessage", &None::<()>)?;
+        state.serialize_field("exceptionStackTrace", &None::<()>)?;
+        state.serialize_field("innerExceptionMessage", &None::<()>)?;
+        state.serialize_field("object", "error")?;
+
+        state.end()
+    }
 }
 
-fn _api_error_small(_: &impl std::any::Any, msg: &str) -> String {
-    let json = json!({
-        "message": msg,
-        "validationErrors": null,
-        "exceptionMessage": null,
-        "exceptionStackTrace": null,
-        "innerExceptionMessage": null,
-        "object": "error"
-    });
-    _serialize(&json, "")
+/// This will serialize the smaller CompactApiErrorResponse
+/// It will add the needed fields which are mostly empty
+/// This is more efficient than having a larger struct and use the Serialize derive
+/// It also prevents using `json!()` calls to create the final output
+impl Serialize for CompactApiErrorResponse<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut state = serializer.serialize_struct("CompactApiErrorResponse", 6)?;
+
+        state.serialize_field("message", self.0.message)?;
+        state.serialize_field("validationErrors", &None::<()>)?;
+        state.serialize_field("exceptionMessage", &None::<()>)?;
+        state.serialize_field("exceptionStackTrace", &None::<()>)?;
+        state.serialize_field("innerExceptionMessage", &None::<()>)?;
+        state.serialize_field("object", "error")?;
+
+        state.end()
+    }
+}
+
+/// Main API Error struct template
+/// This struct which we can be used by both ApiErrorResponse and CompactApiErrorResponse
+/// is small and doesn't contain unneeded empty fields. This is more memory efficient, but also less code to compile
+struct ApiErrorMsg<'a> {
+    message: &'a str,
+}
+/// Default API Error response struct
+/// The custom serialization adds all other needed fields
+struct ApiErrorResponse<'a>(ApiErrorMsg<'a>);
+/// Compact API Error response struct used for some newer error responses
+/// The custom serialization adds all other needed fields
+struct CompactApiErrorResponse<'a>(ApiErrorMsg<'a>);
+
+fn _api_error(_: &impl std::any::Any, msg: &str) -> String {
+    let response = ApiErrorMsg {
+        message: msg,
+    };
+    serde_json::to_string(&ApiErrorResponse(response)).unwrap()
+}
+
+fn _compact_api_error(_: &impl std::any::Any, msg: &str) -> String {
+    let response = ApiErrorMsg {
+        message: msg,
+    };
+    serde_json::to_string(&CompactApiErrorResponse(response)).unwrap()
 }
 
 //
@@ -258,34 +322,41 @@ impl Responder<'_, 'static> for Error {
 #[macro_export]
 macro_rules! err {
     ($kind:ident, $msg:expr) => {{
-        error!("{}", $msg);
-        return Err($crate::error::Error::new($msg, $msg).with_kind($crate::error::ErrorKind::$kind($crate::error::$kind {})));
+        let msg = $msg;
+        error!("{msg}");
+        return Err($crate::error::Error::new_msg(msg).with_kind($crate::error::ErrorKind::$kind($crate::error::$kind {})));
     }};
     ($msg:expr) => {{
-        error!("{}", $msg);
-        return Err($crate::error::Error::new($msg, $msg));
+        let msg = $msg;
+        error!("{msg}");
+        return Err($crate::error::Error::new_msg(msg));
     }};
     ($msg:expr, ErrorEvent $err_event:tt) => {{
-        error!("{}", $msg);
-        return Err($crate::error::Error::new($msg, $msg).with_event($crate::error::ErrorEvent $err_event));
+        let msg = $msg;
+        error!("{msg}");
+        return Err($crate::error::Error::new_msg(msg).with_event($crate::error::ErrorEvent $err_event));
     }};
     ($usr_msg:expr, $log_value:expr) => {{
-        error!("{}. {}", $usr_msg, $log_value);
-        return Err($crate::error::Error::new($usr_msg, $log_value));
+        let usr_msg = $usr_msg;
+        let log_value = $log_value;
+        error!("{usr_msg}. {log_value}");
+        return Err($crate::error::Error::new(usr_msg, log_value));
     }};
     ($usr_msg:expr, $log_value:expr, ErrorEvent $err_event:tt) => {{
-        error!("{}. {}", $usr_msg, $log_value);
-        return Err($crate::error::Error::new($usr_msg, $log_value).with_event($crate::error::ErrorEvent $err_event));
+        let usr_msg = $usr_msg;
+        let log_value = $log_value;
+        error!("{usr_msg}. {log_value}");
+        return Err($crate::error::Error::new(usr_msg, log_value).with_event($crate::error::ErrorEvent $err_event));
     }};
 }
 
 #[macro_export]
 macro_rules! err_silent {
     ($msg:expr) => {{
-        return Err($crate::error::Error::new($msg, $msg));
+        return Err($crate::error::Error::new_msg($msg));
     }};
     ($msg:expr, ErrorEvent $err_event:tt) => {{
-        return Err($crate::error::Error::new($msg, $msg).with_event($crate::error::ErrorEvent $err_event));
+        return Err($crate::error::Error::new_msg($msg).with_event($crate::error::ErrorEvent $err_event));
     }};
     ($usr_msg:expr, $log_value:expr) => {{
         return Err($crate::error::Error::new($usr_msg, $log_value));
@@ -298,12 +369,15 @@ macro_rules! err_silent {
 #[macro_export]
 macro_rules! err_code {
     ($msg:expr, $err_code:expr) => {{
-        error!("{}", $msg);
-        return Err($crate::error::Error::new($msg, $msg).with_code($err_code));
+        let msg = $msg;
+        error!("{msg}");
+        return Err($crate::error::Error::new_msg(msg).with_code($err_code));
     }};
     ($usr_msg:expr, $log_value:expr, $err_code:expr) => {{
-        error!("{}. {}", $usr_msg, $log_value);
-        return Err($crate::error::Error::new($usr_msg, $log_value).with_code($err_code));
+        let usr_msg = $usr_msg;
+        let log_value = $log_value;
+        error!("{usr_msg}. {log_value}");
+        return Err($crate::error::Error::new(usr_msg, log_value).with_code($err_code));
     }};
 }
 
@@ -311,7 +385,7 @@ macro_rules! err_code {
 macro_rules! err_discard {
     ($msg:expr, $data:expr) => {{
         std::io::copy(&mut $data.open(), &mut std::io::sink()).ok();
-        return Err($crate::error::Error::new($msg, $msg));
+        return Err($crate::error::Error::new_msg($msg));
     }};
     ($usr_msg:expr, $log_value:expr, $data:expr) => {{
         std::io::copy(&mut $data.open(), &mut std::io::sink()).ok();
@@ -336,7 +410,9 @@ macro_rules! err_handler {
         return ::rocket::request::Outcome::Error((rocket::http::Status::Unauthorized, $expr));
     }};
     ($usr_msg:expr, $log_value:expr) => {{
-        error!(target: "auth", "Unauthorized Error: {}. {}", $usr_msg, $log_value);
-        return ::rocket::request::Outcome::Error((rocket::http::Status::Unauthorized, $usr_msg));
+        let usr_msg = $usr_msg;
+        let log_value = $log_value;
+        error!(target: "auth", "Unauthorized Error: {usr_msg}. {log_value}");
+        return ::rocket::request::Outcome::Error((rocket::http::Status::Unauthorized, usr_msg));
     }};
 }

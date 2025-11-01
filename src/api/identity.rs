@@ -248,7 +248,7 @@ async fn _sso_login(
                 _ => (),
             }
 
-            let mut user = User::new(user_infos.email, user_infos.user_name);
+            let mut user = User::new(&user_infos.email, user_infos.user_name);
             user.verified_at = Some(now);
             user.save(conn).await?;
 
@@ -1061,7 +1061,7 @@ async fn oidcsignin_redirect(
     wrapper: impl FnOnce(OIDCState) -> sso::OIDCCodeWrapper,
     conn: &DbConn,
 ) -> ApiResult<Redirect> {
-    let state = sso::decode_state(base64_state)?;
+    let state = sso::decode_state(&base64_state)?;
     let code = sso::encode_code_claims(wrapper(state.clone()));
 
     let nonce = match SsoNonce::find(&state, conn).await {

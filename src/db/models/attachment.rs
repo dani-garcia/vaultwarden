@@ -44,7 +44,7 @@ impl Attachment {
     }
 
     pub async fn get_url(&self, host: &str) -> Result<String, crate::Error> {
-        let operator = CONFIG.opendal_operator_for_path_type(PathType::Attachments)?;
+        let operator = CONFIG.opendal_operator_for_path_type(&PathType::Attachments)?;
 
         if operator.info().scheme() == opendal::Scheme::Fs {
             let token = encode_jwt(&generate_file_download_claims(self.cipher_uuid.clone(), self.id.clone()));
@@ -117,7 +117,7 @@ impl Attachment {
             .map_res("Error deleting attachment")
         }}?;
 
-        let operator = CONFIG.opendal_operator_for_path_type(PathType::Attachments)?;
+        let operator = CONFIG.opendal_operator_for_path_type(&PathType::Attachments)?;
         let file_path = self.get_file_path();
 
         if let Err(e) = operator.delete(&file_path).await {

@@ -48,7 +48,7 @@ pub fn get_random_bytes<const N: usize>() -> [u8; N] {
 }
 
 /// Encode random bytes using the provided function.
-pub fn encode_random_bytes<const N: usize>(e: Encoding) -> String {
+pub fn encode_random_bytes<const N: usize>(e: &Encoding) -> String {
     e.encode(&get_random_bytes::<N>())
 }
 
@@ -81,7 +81,7 @@ pub fn get_random_string_alphanum(num_chars: usize) -> String {
 }
 
 pub fn generate_id<const N: usize>() -> String {
-    encode_random_bytes::<N>(HEXLOWER)
+    encode_random_bytes::<N>(&HEXLOWER)
 }
 
 pub fn generate_send_file_id() -> String {

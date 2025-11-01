@@ -116,7 +116,7 @@ docker/bake.sh
 ```
 
 You can append both `alpine` and `debian` with `-amd64`, `-arm64`, `-armv7` or `-armv6`, which will trigger a build for that specific platform.<br>
-This will also append those values to the tag so you can see the builded container when running `docker images`.
+This will also append those values to the tag so you can see the built container when running `docker images`.
 
 You can also append extra arguments after the target if you want. This can be useful for example to print what bake will use.
 ```bash
@@ -162,7 +162,7 @@ You can append extra arguments after the target if you want. This can be useful 
 
 For the podman builds you can, just like the `bake.sh` script, also append the architecture to build for that specific platform.<br>
 
-### Testing podman builded images
+### Testing podman built images
 
 The command to start a podman built container is almost the same as for the docker/bake built containers. The images start with `localhost/`, so you need to prepend that.
 

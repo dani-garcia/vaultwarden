@@ -1,3 +1,8 @@
+use std::{
+    sync::LazyLock,
+    time::{Duration, Instant},
+};
+
 use reqwest::{
     header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE},
     Method,
@@ -16,9 +21,6 @@ use crate::{
     CONFIG,
 };
 
-use once_cell::sync::Lazy;
-use std::time::{Duration, Instant};
-
 #[derive(Deserialize)]
 struct AuthPushToken {
     access_token: String,
@@ -32,7 +34,7 @@ struct LocalAuthPushToken {
 }
 
 async fn get_auth_api_token() -> ApiResult<String> {
-    static API_TOKEN: Lazy<RwLock<LocalAuthPushToken>> = Lazy::new(|| {
+    static API_TOKEN: LazyLock<RwLock<LocalAuthPushToken>> = LazyLock::new(|| {
         RwLock::new(LocalAuthPushToken {
             access_token: String::new(),
             valid_until: Instant::now(),

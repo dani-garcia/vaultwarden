@@ -1,5 +1,6 @@
 use std::{
     env::consts::EXE_SUFFIX,
+    fmt,
     process::exit,
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -8,15 +9,15 @@ use std::{
 };
 
 use job_scheduler_ng::Schedule;
-use once_cell::sync::Lazy;
 use reqwest::Url;
+use serde::de::{self, Deserialize, Deserializer, MapAccess, Visitor};
 
 use crate::{
     error::Error,
     util::{get_env, get_env_bool, get_web_vault_version, is_valid_email, parse_experimental_client_feature_flags},
 };
 
-static CONFIG_FILE: Lazy<String> = Lazy::new(|| {
+static CONFIG_FILE: LazyLock<String> = LazyLock::new(|| {
     let data_folder = get_env("DATA_FOLDER").unwrap_or_else(|| String::from("data"));
     get_env("CONFIG_FILE").unwrap_or_else(|| format!("{data_folder}/config.json"))
 });
@@ -33,7 +34,7 @@ static CONFIG_FILENAME: LazyLock<String> = LazyLock::new(|| {
 
 pub static SKIP_CONFIG_VALIDATION: AtomicBool = AtomicBool::new(false);
 
-pub static CONFIG: Lazy<Config> = Lazy::new(|| {
+pub static CONFIG: LazyLock<Config> = LazyLock::new(|| {
     std::thread::spawn(|| {
         let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap_or_else(|e| {
             println!("Error loading config:\n  {e:?}\n");
@@ -55,6 +56,41 @@ pub static CONFIG: Lazy<Config> = Lazy::new(|| {
 pub type Pass = String;
 
 macro_rules! make_config {
+    // Support string print
+    ( @supportstr $name:ident, $value:expr, Pass, option ) => { serde_json::to_value(&$value.as_ref().map(|_| String::from("***"))).unwrap() }; // Optional pass, we map to an Option<String> with "***"
+    ( @supportstr $name:ident, $value:expr, Pass, $none_action:ident ) => { "***".into() }; // Required pass, we return "***"
+    ( @supportstr $name:ident, $value:expr, $ty:ty, option ) => { serde_json::to_value(&$value).unwrap() }; // Optional other or string, we convert to json
+    ( @supportstr $name:ident, $value:expr, String, $none_action:ident ) => { $value.as_str().into() }; // Required string value, we convert to json
+    ( @supportstr $name:ident, $value:expr, $ty:ty, $none_action:ident ) => { ($value).into() }; // Required other value, we return as is or convert to json
+
+    // Group or empty string
+    ( @show ) => { "" };
+    ( @show $lit:literal ) => { $lit };
+
+    // Wrap the optionals in an Option type
+    ( @type $ty:ty, option) => { Option<$ty> };
+    ( @type $ty:ty, $id:ident) => { $ty };
+
+    // Generate the values depending on none_action
+    ( @build $value:expr, $config:expr, option, ) => { $value };
+    ( @build $value:expr, $config:expr, def, $default:expr ) => { $value.unwrap_or($default) };
+    ( @build $value:expr, $config:expr, auto, $default_fn:expr ) => {{
+        match $value {
+            Some(v) => v,
+            None => {
+                let f: &dyn Fn(&ConfigItems) -> _ = &$default_fn;
+                f($config)
+            }
+        }
+    }};
+    ( @build $value:expr, $config:expr, generated, $default_fn:expr ) => {{
+        let f: &dyn Fn(&ConfigItems) -> _ = &$default_fn;
+        f($config)
+    }};
+
+    ( @getenv $name:expr, bool ) => { get_env_bool($name) };
+    ( @getenv $name:expr, $ty:ident ) => { get_env($name) };
+
     ($(
         $(#[doc = $groupdoc:literal])?
         $group:ident $(: $group_enabled:ident)? {
@@ -74,10 +110,103 @@ macro_rules! make_config {
             _env: ConfigBuilder,
             _usr: ConfigBuilder,
 
-            _overrides: Vec<String>,
+            _overrides: Vec<&'static str>,
         }
 
-        #[derive(Clone, Default, Deserialize, Serialize)]
+        // Custom Deserialize for ConfigBuilder, mainly based upon https://serde.rs/deserialize-struct.html
+        // This deserialize doesn't care if there are keys missing, or if there are duplicate keys
+        // In case of duplicate keys (which should never be possible unless manually edited), the last value is used!
+        // Main reason for this is removing the `visit_seq` function, which causes a lot of code generation not needed or used for this struct.
+        impl<'de> Deserialize<'de> for ConfigBuilder {
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                const FIELDS: &[&str] = &[
+                $($(
+                    stringify!($name),
+                )+)+
+                ];
+
+                #[allow(non_camel_case_types)]
+                enum Field {
+                $($(
+                    $name,
+                )+)+
+                    __ignore,
+                }
+
+                impl<'de> Deserialize<'de> for Field {
+                    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+                    where
+                        D: Deserializer<'de>,
+                    {
+                        struct FieldVisitor;
+
+                        impl Visitor<'_> for FieldVisitor {
+                            type Value = Field;
+
+                            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                                formatter.write_str("ConfigBuilder field identifier")
+                            }
+
+                            #[inline]
+                            fn visit_str<E>(self, value: &str) -> Result<Field, E>
+                            where
+                                E: de::Error,
+                            {
+                                match value {
+                                $($(
+                                    stringify!($name) => Ok(Field::$name),
+                                )+)+
+                                    _ => Ok(Field::__ignore),
+                                }
+                            }
+                        }
+
+                        deserializer.deserialize_identifier(FieldVisitor)
+                    }
+                }
+
+                struct ConfigBuilderVisitor;
+
+                impl<'de> Visitor<'de> for ConfigBuilderVisitor {
+                    type Value = ConfigBuilder;
+
+                    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                        formatter.write_str("struct ConfigBuilder")
+                    }
+
+                    #[inline]
+                    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+                    where
+                        A: MapAccess<'de>,
+                    {
+                        let mut builder = ConfigBuilder::default();
+                        while let Some(key) = map.next_key()? {
+                            match key {
+                            $($(
+                                Field::$name => {
+                                    if builder.$name.is_some() {
+                                        return Err(de::Error::duplicate_field(stringify!($name)));
+                                    }
+                                    builder.$name = map.next_value()?;
+                                }
+                            )+)+
+                                Field::__ignore => {
+                                    let _ = map.next_value::<de::IgnoredAny>()?;
+                                }
+                            }
+                        }
+                        Ok(builder)
+                    }
+                }
+
+                deserializer.deserialize_struct("ConfigBuilder", FIELDS, ConfigBuilderVisitor)
+            }
+        }
+
+        #[derive(Clone, Default, Serialize)]
         pub struct ConfigBuilder {
             $($(
                 #[serde(skip_serializing_if = "Option::is_none")]
@@ -86,7 +215,6 @@ macro_rules! make_config {
         }
 
         impl ConfigBuilder {
-            #[allow(clippy::field_reassign_with_default)]
             fn from_env() -> Self {
                 let env_file = get_env("ENV_FILE").unwrap_or_else(|| String::from(".env"));
                 match dotenvy::from_path(&env_file) {
@@ -148,14 +276,14 @@ macro_rules! make_config {
 
             /// Merges the values of both builders into a new builder.
             /// If both have the same element, `other` wins.
-            fn merge(&self, other: &Self, show_overrides: bool, overrides: &mut Vec<String>) -> Self {
+            fn merge(&self, other: &Self, show_overrides: bool, overrides: &mut Vec<&str>) -> Self {
                 let mut builder = self.clone();
                 $($(
                     if let v @Some(_) = &other.$name {
                         builder.$name = v.clone();
 
                         if self.$name.is_some() {
-                            overrides.push(pastey::paste!(stringify!([<$name:upper>])).into());
+                            overrides.push(pastey::paste!(stringify!([<$name:upper>])));
                         }
                     }
                 )+)+
@@ -196,6 +324,32 @@ macro_rules! make_config {
         #[derive(Clone, Default)]
         struct ConfigItems { $($( $name: make_config! {@type $ty, $none_action}, )+)+ }
 
+        #[derive(Serialize)]
+        struct ElementDoc {
+            name: &'static str,
+            description: &'static str,
+        }
+
+        #[derive(Serialize)]
+        struct ElementData {
+            editable: bool,
+            name: &'static str,
+            value: serde_json::Value,
+            default: serde_json::Value,
+            #[serde(rename = "type")]
+            r#type: &'static str,
+            doc: ElementDoc,
+            overridden: bool,
+        }
+
+        #[derive(Serialize)]
+        pub struct GroupData {
+            group: &'static str,
+            grouptoggle: &'static str,
+            groupdoc: &'static str,
+            elements: Vec<ElementData>,
+        }
+
         #[allow(unused)]
         impl Config {
             $($(
@@ -207,11 +361,12 @@ macro_rules! make_config {
 
             pub fn prepare_json(&self) -> serde_json::Value {
                 let (def, cfg, overridden) = {
+                    // Lock the inner as short as possible and clone what is needed to prevent deadlocks
                     let inner = &self.inner.read().unwrap();
                     (inner._env.build(), inner.config.clone(), inner._overrides.clone())
                 };
 
-                fn _get_form_type(rust_type: &str) -> &'static str {
+                fn _get_form_type(rust_type: &'static str) -> &'static str {
                     match rust_type {
                         "Pass" => "password",
                         "String" => "text",
@@ -220,48 +375,36 @@ macro_rules! make_config {
                     }
                 }
 
-                fn _get_doc(doc: &str) -> serde_json::Value {
-                    let mut split = doc.split("|>").map(str::trim);
-
-                    // We do not use the json!() macro here since that causes a lot of macro recursion.
-                    // This slows down compile time and it also causes issues with rust-analyzer
-                    serde_json::Value::Object({
-                        let mut doc_json = serde_json::Map::new();
-                        doc_json.insert("name".into(), serde_json::to_value(split.next()).unwrap());
-                        doc_json.insert("description".into(), serde_json::to_value(split.next()).unwrap());
-                        doc_json
-                    })
+                fn _get_doc(doc_str: &'static str) -> ElementDoc {
+                    let mut split = doc_str.split("|>").map(str::trim);
+                    ElementDoc {
+                        name: split.next().unwrap_or_default(),
+                        description: split.next().unwrap_or_default(),
+                    }
                 }
 
-                // We do not use the json!() macro here since that causes a lot of macro recursion.
-                // This slows down compile time and it also causes issues with rust-analyzer
-                serde_json::Value::Array(<[_]>::into_vec(Box::new([
-                $(
-                    serde_json::Value::Object({
-                        let mut group = serde_json::Map::new();
-                        group.insert("group".into(), (stringify!($group)).into());
-                        group.insert("grouptoggle".into(), (stringify!($($group_enabled)?)).into());
-                        group.insert("groupdoc".into(), (make_config! { @show $($groupdoc)? }).into());
+                let data: Vec<GroupData> = vec![
+                $( // This repetition is for each group
+                    GroupData {
+                        group: stringify!($group),
+                        grouptoggle: stringify!($($group_enabled)?),
+                        groupdoc: (make_config! { @show $($groupdoc)? }),
 
-                        group.insert("elements".into(), serde_json::Value::Array(<[_]>::into_vec(Box::new([
-                        $(
-                            serde_json::Value::Object({
-                                let mut element = serde_json::Map::new();
-                                element.insert("editable".into(), ($editable).into());
-                                element.insert("name".into(), (stringify!($name)).into());
-                                element.insert("value".into(), serde_json::to_value(cfg.$name).unwrap());
-                                element.insert("default".into(), serde_json::to_value(def.$name).unwrap());
-                                element.insert("type".into(), (_get_form_type(stringify!($ty))).into());
-                                element.insert("doc".into(), (_get_doc(concat!($($doc),+))).into());
-                                element.insert("overridden".into(), (overridden.contains(&pastey::paste!(stringify!([<$name:upper>])).into())).into());
-                                element
-                            }),
-                        )+
-                        ]))));
-                        group
-                    }),
-                )+
-                ])))
+                        elements: vec![
+                        $( // This repetition is for each element within a group
+                            ElementData {
+                                editable: $editable,
+                                name: stringify!($name),
+                                value: serde_json::to_value(&cfg.$name).unwrap_or_default(),
+                                default: serde_json::to_value(&def.$name).unwrap_or_default(),
+                                r#type: _get_form_type(stringify!($ty)),
+                                doc: _get_doc(concat!($($doc),+)),
+                                overridden: overridden.contains(&pastey::paste!(stringify!([<$name:upper>]))),
+                            },
+                        )+], // End of elements repetition
+                    },
+                )+]; // End of groups repetition
+                serde_json::to_value(data).unwrap()
             }
 
             pub fn get_support_json(&self) -> serde_json::Value {
@@ -269,8 +412,8 @@ macro_rules! make_config {
                 // Pass types will always be masked and no need to put them in the list.
                 // Besides Pass, only String types will be masked via _privacy_mask.
                 const PRIVACY_CONFIG: &[&str] = &[
-                    "allowed_iframe_ancestors",
                     "allowed_connect_src",
+                    "allowed_iframe_ancestors",
                     "database_url",
                     "domain_origin",
                     "domain_path",
@@ -278,16 +421,18 @@ macro_rules! make_config {
                     "helo_name",
                     "org_creation_users",
                     "signups_domains_whitelist",
+                    "_smtp_img_src",
+                    "smtp_from_name",
                     "smtp_from",
                     "smtp_host",
                     "smtp_username",
-                    "_smtp_img_src",
-                    "sso_client_id",
                     "sso_authority",
                     "sso_callback_path",
+                    "sso_client_id",
                 ];
 
                 let cfg = {
+                    // Lock the inner as short as possible and clone what is needed to prevent deadlocks
                     let inner = &self.inner.read().unwrap();
                     inner.config.clone()
                 };
@@ -317,13 +462,21 @@ macro_rules! make_config {
                 serde_json::Value::Object({
                     let mut json = serde_json::Map::new();
                     $($(
-                        json.insert(stringify!($name).into(), make_config! { @supportstr $name, cfg.$name, $ty, $none_action });
+                        json.insert(String::from(stringify!($name)), make_config! { @supportstr $name, cfg.$name, $ty, $none_action });
                     )+)+;
+                    // Loop through all privacy sensitive keys and mask them
+                    for mask_key in PRIVACY_CONFIG {
+                        if let Some(value) = json.get_mut(*mask_key) {
+                            if let Some(s) = value.as_str() {
+                                *value = _privacy_mask(s).into();
+                            }
+                        }
+                    }
                     json
                 })
             }
 
-            pub fn get_overrides(&self) -> Vec<String> {
+            pub fn get_overrides(&self) -> Vec<&'static str> {
                 let overrides = {
                     let inner = &self.inner.read().unwrap();
                     inner._overrides.clone()
@@ -332,55 +485,6 @@ macro_rules! make_config {
             }
         }
     };
-
-    // Support string print
-    ( @supportstr $name:ident, $value:expr, Pass, option ) => { serde_json::to_value($value.as_ref().map(|_| String::from("***"))).unwrap() }; // Optional pass, we map to an Option<String> with "***"
-    ( @supportstr $name:ident, $value:expr, Pass, $none_action:ident ) => { "***".into() }; // Required pass, we return "***"
-    ( @supportstr $name:ident, $value:expr, String, option ) => { // Optional other value, we return as is or convert to string to apply the privacy config
-        if PRIVACY_CONFIG.contains(&stringify!($name)) {
-            serde_json::to_value($value.as_ref().map(|x| _privacy_mask(x) )).unwrap()
-        } else {
-            serde_json::to_value($value).unwrap()
-        }
-    };
-    ( @supportstr $name:ident, $value:expr, String, $none_action:ident ) => { // Required other value, we return as is or convert to string to apply the privacy config
-        if PRIVACY_CONFIG.contains(&stringify!($name)) {
-            _privacy_mask(&$value).into()
-        } else {
-            ($value).into()
-        }
-    };
-    ( @supportstr $name:ident, $value:expr, $ty:ty, option ) => { serde_json::to_value($value).unwrap() }; // Optional other value, we return as is or convert to string to apply the privacy config
-    ( @supportstr $name:ident, $value:expr, $ty:ty, $none_action:ident ) => { ($value).into() }; // Required other value, we return as is or convert to string to apply the privacy config
-
-    // Group or empty string
-    ( @show ) => { "" };
-    ( @show $lit:literal ) => { $lit };
-
-    // Wrap the optionals in an Option type
-    ( @type $ty:ty, option) => { Option<$ty> };
-    ( @type $ty:ty, $id:ident) => { $ty };
-
-    // Generate the values depending on none_action
-    ( @build $value:expr, $config:expr, option, ) => { $value };
-    ( @build $value:expr, $config:expr, def, $default:expr ) => { $value.unwrap_or($default) };
-    ( @build $value:expr, $config:expr, auto, $default_fn:expr ) => {{
-        match $value {
-            Some(v) => v,
-            None => {
-                let f: &dyn Fn(&ConfigItems) -> _ = &$default_fn;
-                f($config)
-            }
-        }
-    }};
-    ( @build $value:expr, $config:expr, generated, $default_fn:expr ) => {{
-        let f: &dyn Fn(&ConfigItems) -> _ = &$default_fn;
-        f($config)
-    }};
-
-    ( @getenv $name:expr, bool ) => { get_env_bool($name) };
-    ( @getenv $name:expr, $ty:ident ) => { get_env($name) };
-
 }
 
 //STRUCTURE:
@@ -1518,7 +1622,7 @@ impl Config {
         if let Some(akey) = self._duo_akey() {
             akey
         } else {
-            let akey_s = crate::crypto::encode_random_bytes::<64>(data_encoding::BASE64);
+            let akey_s = crate::crypto::encode_random_bytes::<64>(&data_encoding::BASE64);
 
             // Save the new value
             let builder = ConfigBuilder {
@@ -1542,7 +1646,7 @@ impl Config {
         token.is_some() && !token.unwrap().trim().is_empty()
     }
 
-    pub fn opendal_operator_for_path_type(&self, path_type: PathType) -> Result<opendal::Operator, Error> {
+    pub fn opendal_operator_for_path_type(&self, path_type: &PathType) -> Result<opendal::Operator, Error> {
         let path = match path_type {
             PathType::Data => self.data_folder(),
             PathType::IconCache => self.icon_cache_folder(),
@@ -1735,7 +1839,7 @@ fn to_json<'reg, 'rc>(
 
 // Configure the web-vault version as an integer so it can be used as a comparison smaller or greater then.
 // The default is based upon the version since this feature is added.
-static WEB_VAULT_VERSION: Lazy<semver::Version> = Lazy::new(|| {
+static WEB_VAULT_VERSION: LazyLock<semver::Version> = LazyLock::new(|| {
     let vault_version = get_web_vault_version();
     // Use a single regex capture to extract version components
     let re = regex::Regex::new(r"(\d{4})\.(\d{1,2})\.(\d{1,2})").unwrap();
@@ -1751,7 +1855,7 @@ static WEB_VAULT_VERSION: Lazy<semver::Version> = Lazy::new(|| {
 
 // Configure the Vaultwarden version as an integer so it can be used as a comparison smaller or greater then.
 // The default is based upon the version since this feature is added.
-static VW_VERSION: Lazy<semver::Version> = Lazy::new(|| {
+static VW_VERSION: LazyLock<semver::Version> = LazyLock::new(|| {
     let vw_version = crate::VERSION.unwrap_or("1.32.5");
     // Use a single regex capture to extract version components
     let re = regex::Regex::new(r"(\d{1})\.(\d{1,2})\.(\d{1,2})").unwrap();

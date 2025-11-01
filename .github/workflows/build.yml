@@ -14,6 +14,7 @@ on:
       - "diesel.toml"
       - "docker/Dockerfile.j2"
       - "docker/DockerSettings.yaml"
+      - "macros/**"
 
   pull_request:
     paths:
@@ -27,13 +28,11 @@ on:
       - "diesel.toml"
       - "docker/Dockerfile.j2"
       - "docker/DockerSettings.yaml"
+      - "macros/**"
 
 jobs:
   build:
     name: Build and Test ${{ matrix.channel }}
-    permissions:
-      actions: write
-      contents: read
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     # Make warnings errors, this is to prevent warnings slipping through.
@@ -81,7 +80,7 @@ jobs:
 
       # Only install the clippy and rustfmt components on the default rust-toolchain
       - name: "Install rust-toolchain version"
-        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # master @ Aug 23, 2025, 3:20 AM GMT+2
+        uses: dtolnay/rust-toolchain@6d653acede28d24f02e3cd41383119e8b1b35921 # master @ Sep 16, 2025, 8:37 PM GMT+2
         if: ${{ matrix.channel == 'rust-toolchain' }}
         with:
           toolchain: "${{steps.toolchain.outputs.RUST_TOOLCHAIN}}"
@@ -91,7 +90,7 @@ jobs:
 
       # Install the any other channel to be used for which we do not execute clippy and rustfmt
       - name: "Install MSRV version"
-        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # master @ Aug 23, 2025, 3:20 AM GMT+2
+        uses: dtolnay/rust-toolchain@6d653acede28d24f02e3cd41383119e8b1b35921 # master @ Sep 16, 2025, 8:37 PM GMT+2
         if: ${{ matrix.channel != 'rust-toolchain' }}
         with:
           toolchain: "${{steps.toolchain.outputs.RUST_TOOLCHAIN}}"
@@ -121,43 +120,55 @@ jobs:
           # Use a custom prefix-key to force a fresh start. This is sometimes needed with bigger changes.
           # Like changing the build host from Ubuntu 20.04 to 22.04 for example.
           # Only update when really needed! Use a <year>.<month>[.<inc>] format.
-          prefix-key: "v2023.07-rust"
+          prefix-key: "v2025.09-rust"
       # End Enable Rust Caching
 
       # Run cargo tests
       # First test all features together, afterwards test them separately.
+      - name: "test features: sqlite,mysql,postgresql,enable_mimalloc,s3"
+        id: test_sqlite_mysql_postgresql_mimalloc_s3
+        if: ${{ !cancelled() }}
+        run: |
+          cargo test --profile ci --features sqlite,mysql,postgresql,enable_mimalloc,s3
+
+      - name: "test features: sqlite,mysql,postgresql,enable_mimalloc"
+        id: test_sqlite_mysql_postgresql_mimalloc
+        if: ${{ !cancelled() }}
+        run: |
+          cargo test --profile ci --features sqlite,mysql,postgresql,enable_mimalloc
+
       - name: "test features: sqlite,mysql,postgresql"
         id: test_sqlite_mysql_postgresql
         if: ${{ !cancelled() }}
         run: |
-          cargo test --features sqlite,mysql,postgresql
+          cargo test --profile ci --features sqlite,mysql,postgresql
 
       - name: "test features: sqlite"
         id: test_sqlite
         if: ${{ !cancelled() }}
         run: |
-          cargo test --features sqlite
+          cargo test --profile ci --features sqlite
 
       - name: "test features: mysql"
         id: test_mysql
         if: ${{ !cancelled() }}
         run: |
-          cargo test --features mysql
+          cargo test --profile ci --features mysql
 
       - name: "test features: postgresql"
         id: test_postgresql
         if: ${{ !cancelled() }}
         run: |
-          cargo test --features postgresql
+          cargo test --profile ci --features postgresql
       # End Run cargo tests
 
 
       # Run cargo clippy, and fail on warnings
-      - name: "clippy features: sqlite,mysql,postgresql,enable_mimalloc"
+      - name: "clippy features: sqlite,mysql,postgresql,enable_mimalloc,s3"
         id: clippy
         if: ${{ !cancelled() && matrix.channel == 'rust-toolchain' }}
         run: |
-          cargo clippy --features sqlite,mysql,postgresql,enable_mimalloc
+          cargo clippy --profile ci --features sqlite,mysql,postgresql,enable_mimalloc,s3
       # End Run cargo clippy
 
 
@@ -175,6 +186,8 @@ jobs:
       - name: "Some checks failed"
         if: ${{ failure() }}
         env:
+          TEST_DB_M_S3: ${{ steps.test_sqlite_mysql_postgresql_mimalloc_s3.outcome }}
+          TEST_DB_M: ${{ steps.test_sqlite_mysql_postgresql_mimalloc.outcome }}
           TEST_DB: ${{ steps.test_sqlite_mysql_postgresql.outcome }}
           TEST_SQLITE: ${{ steps.test_sqlite.outcome }}
           TEST_MYSQL: ${{ steps.test_mysql.outcome }}
@@ -186,11 +199,13 @@ jobs:
           echo "" >> "${GITHUB_STEP_SUMMARY}"
           echo "|Job|Status|" >> "${GITHUB_STEP_SUMMARY}"
           echo "|---|------|" >> "${GITHUB_STEP_SUMMARY}"
+          echo "|test (sqlite,mysql,postgresql,enable_mimalloc,s3)|${TEST_DB_M_S3}|" >> "${GITHUB_STEP_SUMMARY}"
+          echo "|test (sqlite,mysql,postgresql,enable_mimalloc)|${TEST_DB_M}|" >> "${GITHUB_STEP_SUMMARY}"
           echo "|test (sqlite,mysql,postgresql)|${TEST_DB}|" >> "${GITHUB_STEP_SUMMARY}"
           echo "|test (sqlite)|${TEST_SQLITE}|" >> "${GITHUB_STEP_SUMMARY}"
           echo "|test (mysql)|${TEST_MYSQL}|" >> "${GITHUB_STEP_SUMMARY}"
           echo "|test (postgresql)|${TEST_POSTGRESQL}|" >> "${GITHUB_STEP_SUMMARY}"
-          echo "|clippy (sqlite,mysql,postgresql,enable_mimalloc)|${CLIPPY}|" >> "${GITHUB_STEP_SUMMARY}"
+          echo "|clippy (sqlite,mysql,postgresql,enable_mimalloc,s3)|${CLIPPY}|" >> "${GITHUB_STEP_SUMMARY}"
           echo "|fmt|${FMT}|" >> "${GITHUB_STEP_SUMMARY}"
           echo "" >> "${GITHUB_STEP_SUMMARY}"
           echo "Please check the failed jobs and fix where needed." >> "${GITHUB_STEP_SUMMARY}"

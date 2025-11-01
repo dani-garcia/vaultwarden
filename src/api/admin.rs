@@ -1,17 +1,16 @@
-use once_cell::sync::Lazy;
-use reqwest::Method;
-use serde::de::DeserializeOwned;
-use serde_json::Value;
-use std::env;
+use std::{env, sync::LazyLock};
 
-use rocket::serde::json::Json;
+use reqwest::Method;
 use rocket::{
     form::Form,
     http::{Cookie, CookieJar, MediaType, SameSite, Status},
     request::{FromRequest, Outcome, Request},
     response::{content::RawHtml as Html, Redirect},
+    serde::json::Json,
     Catcher, Route,
 };
+use serde::de::DeserializeOwned;
+use serde_json::Value;
 
 use crate::{
     api::{
@@ -82,7 +81,7 @@ pub fn catchers() -> Vec<Catcher> {
     }
 }
 
-static DB_TYPE: Lazy<&str> = Lazy::new(|| match ACTIVE_DB_TYPE.get() {
+static DB_TYPE: LazyLock<&str> = LazyLock::new(|| match ACTIVE_DB_TYPE.get() {
     #[cfg(mysql)]
     Some(DbConnType::Mysql) => "MySQL",
     #[cfg(postgresql)]
@@ -93,9 +92,10 @@ static DB_TYPE: Lazy<&str> = Lazy::new(|| match ACTIVE_DB_TYPE.get() {
 });
 
 #[cfg(sqlite)]
-static CAN_BACKUP: Lazy<bool> = Lazy::new(|| ACTIVE_DB_TYPE.get().map(|t| *t == DbConnType::Sqlite).unwrap_or(false));
+static CAN_BACKUP: LazyLock<bool> =
+    LazyLock::new(|| ACTIVE_DB_TYPE.get().map(|t| *t == DbConnType::Sqlite).unwrap_or(false));
 #[cfg(not(sqlite))]
-static CAN_BACKUP: Lazy<bool> = Lazy::new(|| false);
+static CAN_BACKUP: LazyLock<bool> = LazyLock::new(|| false);
 
 #[get("/")]
 fn admin_disabled() -> &'static str {
@@ -157,10 +157,10 @@ fn admin_login(request: &Request<'_>) -> ApiResult<Html<String>> {
         err_code!("Authorization failed.", Status::Unauthorized.code);
     }
     let redirect = request.segments::<std::path::PathBuf>(0..).unwrap_or_default().display().to_string();
-    render_admin_login(None, Some(redirect))
+    render_admin_login(None, Some(&redirect))
 }
 
-fn render_admin_login(msg: Option<&str>, redirect: Option<String>) -> ApiResult<Html<String>> {
+fn render_admin_login(msg: Option<&str>, redirect: Option<&str>) -> ApiResult<Html<String>> {
     // If there is an error, show it
     let msg = msg.map(|msg| format!("Error: {msg}"));
     let json = json!({
@@ -194,14 +194,17 @@ fn post_admin_login(
     if crate::ratelimit::check_limit_admin(&ip.ip).is_err() {
         return Err(AdminResponse::TooManyRequests(render_admin_login(
             Some("Too many requests, try again later."),
-            redirect,
+            redirect.as_deref(),
         )));
     }
 
     // If the token is invalid, redirect to login page
     if !_validate_token(&data.token) {
         error!("Invalid admin token. IP: {}", ip.ip);
-        Err(AdminResponse::Unauthorized(render_admin_login(Some("Invalid admin token, please try again."), redirect)))
+        Err(AdminResponse::Unauthorized(render_admin_login(
+            Some("Invalid admin token, please try again."),
+            redirect.as_deref(),
+        )))
     } else {
         // If the token received is valid, generate JWT and save it as a cookie
         let claims = generate_admin_claims();
@@ -308,7 +311,7 @@ async fn invite_user(data: Json<InviteData>, _token: AdminToken, conn: DbConn) -
         err_code!("User already exists", Status::Conflict.code)
     }
 
-    let mut user = User::new(data.email, None);
+    let mut user = User::new(&data.email, None);
 
     async fn _generate_invite(user: &User, conn: &DbConn) -> EmptyResult {
         if CONFIG.mail_enabled() {
@@ -825,11 +828,7 @@ impl<'r> FromRequest<'r> for AdminToken {
             _ => err_handler!("Error getting Client IP"),
         };
 
-        if CONFIG.disable_admin_token() {
-            Outcome::Success(Self {
-                ip,
-            })
-        } else {
+        if !CONFIG.disable_admin_token() {
             let cookies = request.cookies();
 
             let access_token = match cookies.get(COOKIE_NAME) {
@@ -853,10 +852,10 @@ impl<'r> FromRequest<'r> for AdminToken {
                 error!("Invalid or expired admin JWT. IP: {}.", &ip.ip);
                 return Outcome::Error((Status::Unauthorized, "Session expired"));
             }
-
-            Outcome::Success(Self {
-                ip,
-            })
         }
+
+        Outcome::Success(Self {
+            ip,
+        })
     }
 }

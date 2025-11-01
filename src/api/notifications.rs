@@ -1,11 +1,14 @@
-use std::{net::IpAddr, sync::Arc, time::Duration};
+use std::{
+    net::IpAddr,
+    sync::{Arc, LazyLock},
+    time::Duration,
+};
 
 use chrono::{NaiveDateTime, Utc};
 use rmpv::Value;
 use rocket::{futures::StreamExt, Route};
-use tokio::sync::mpsc::Sender;
-
 use rocket_ws::{Message, WebSocket};
+use tokio::sync::mpsc::Sender;
 
 use crate::{
     auth::{ClientIp, WsAccessTokenHeader},
@@ -16,15 +19,13 @@ use crate::{
     Error, CONFIG,
 };
 
-use once_cell::sync::Lazy;
-
-pub static WS_USERS: Lazy<Arc<WebSocketUsers>> = Lazy::new(|| {
+pub static WS_USERS: LazyLock<Arc<WebSocketUsers>> = LazyLock::new(|| {
     Arc::new(WebSocketUsers {
         map: Arc::new(dashmap::DashMap::new()),
     })
 });
 
-pub static WS_ANONYMOUS_SUBSCRIPTIONS: Lazy<Arc<AnonymousWebSocketSubscriptions>> = Lazy::new(|| {
+pub static WS_ANONYMOUS_SUBSCRIPTIONS: LazyLock<Arc<AnonymousWebSocketSubscriptions>> = LazyLock::new(|| {
     Arc::new(AnonymousWebSocketSubscriptions {
         map: Arc::new(dashmap::DashMap::new()),
     })
@@ -35,7 +36,7 @@ use super::{
     push_send_update, push_user_update,
 };
 
-static NOTIFICATIONS_DISABLED: Lazy<bool> = Lazy::new(|| !CONFIG.enable_websocket() && !CONFIG.push_enabled());
+static NOTIFICATIONS_DISABLED: LazyLock<bool> = LazyLock::new(|| !CONFIG.enable_websocket() && !CONFIG.push_enabled());
 
 pub fn routes() -> Vec<Route> {
     if CONFIG.enable_websocket() {
@@ -109,8 +110,7 @@ fn websockets_hub<'r>(
     ip: ClientIp,
     header_token: WsAccessTokenHeader,
 ) -> Result<rocket_ws::Stream!['r], Error> {
-    let addr = ip.ip;
-    info!("Accepting Rocket WS connection from {addr}");
+    info!("Accepting Rocket WS connection from {}", ip.ip);
 
     let token = if let Some(token) = data.access_token {
         token
@@ -133,7 +133,7 @@ fn websockets_hub<'r>(
         users.map.entry(claims.sub.to_string()).or_default().push((entry_uuid, tx));
 
         // Once the guard goes out of scope, the connection will have been closed and the entry will be deleted from the map
-        (rx, WSEntryMapGuard::new(users, claims.sub, entry_uuid, addr))
+        (rx, WSEntryMapGuard::new(users, claims.sub, entry_uuid, ip.ip))
     };
 
     Ok({
@@ -189,8 +189,7 @@ fn websockets_hub<'r>(
 #[allow(tail_expr_drop_order)]
 #[get("/anonymous-hub?<token..>")]
 fn anonymous_websockets_hub<'r>(ws: WebSocket, token: String, ip: ClientIp) -> Result<rocket_ws::Stream!['r], Error> {
-    let addr = ip.ip;
-    info!("Accepting Anonymous Rocket WS connection from {addr}");
+    info!("Accepting Anonymous Rocket WS connection from {}", ip.ip);
 
     let (mut rx, guard) = {
         let subscriptions = Arc::clone(&WS_ANONYMOUS_SUBSCRIPTIONS);
@@ -200,7 +199,7 @@ fn anonymous_websockets_hub<'r>(ws: WebSocket, token: String, ip: ClientIp) -> R
         subscriptions.map.insert(token.clone(), tx);
 
         // Once the guard goes out of scope, the connection will have been closed and the entry will be deleted from the map
-        (rx, WSAnonymousEntryMapGuard::new(subscriptions, token, addr))
+        (rx, WSAnonymousEntryMapGuard::new(subscriptions, token, ip.ip))
     };
 
     Ok({
@@ -257,11 +256,11 @@ fn anonymous_websockets_hub<'r>(ws: WebSocket, token: String, ip: ClientIp) -> R
 // Websockets server
 //
 
-fn serialize(val: Value) -> Vec<u8> {
+fn serialize(val: &Value) -> Vec<u8> {
     use rmpv::encode::write_value;
 
     let mut buf = Vec::new();
-    write_value(&mut buf, &val).expect("Error encoding MsgPack");
+    write_value(&mut buf, val).expect("Error encoding MsgPack");
 
     // Add size bytes at the start
     // Extracted from BinaryMessageFormat.js
@@ -552,7 +551,7 @@ impl AnonymousWebSocketSubscriptions {
         let data = create_anonymous_update(
             vec![("Id".into(), auth_request_id.to_string().into()), ("UserId".into(), user_id.to_string().into())],
             UpdateType::AuthRequestResponse,
-            user_id.clone(),
+            user_id,
         );
         self.send_update(auth_request_id, &data).await;
     }
@@ -588,16 +587,19 @@ fn create_update(payload: Vec<(Value, Value)>, ut: UpdateType, acting_device_id:
         ])]),
     ]);
 
-    serialize(value)
+    serialize(&value)
 }
 
-fn create_anonymous_update(payload: Vec<(Value, Value)>, ut: UpdateType, user_id: UserId) -> Vec<u8> {
+fn create_anonymous_update(payload: Vec<(Value, Value)>, ut: UpdateType, user_id: &UserId) -> Vec<u8> {
     use rmpv::Value as V;
 
     let value = V::Array(vec![
         1.into(),
         V::Map(vec![]),
         V::Nil,
+        // This word is misspelled, but upstream has this too
+        // https://github.com/bitwarden/server/blob/dff9f1cf538198819911cf2c20f8cda3307701c5/src/Notifications/HubHelpers.cs#L86
+        // https://github.com/bitwarden/clients/blob/9612a4ac45063e372a6fbe87eb253c7cb3c588fb/libs/common/src/auth/services/anonymous-hub.service.ts#L45
         "AuthRequestResponseRecieved".into(),
         V::Array(vec![V::Map(vec![
             ("Type".into(), (ut as i32).into()),
@@ -606,11 +608,11 @@ fn create_anonymous_update(payload: Vec<(Value, Value)>, ut: UpdateType, user_id
         ])]),
     ]);
 
-    serialize(value)
+    serialize(&value)
 }
 
 fn create_ping() -> Vec<u8> {
-    serialize(Value::Array(vec![6.into()]))
+    serialize(&Value::Array(vec![6.into()]))
 }
 
 // https://github.com/bitwarden/server/blob/375af7c43b10d9da03525d41452f95de3f921541/src/Core/Enums/PushType.cs

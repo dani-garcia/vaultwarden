@@ -1,11 +1,10 @@
+use std::{sync::LazyLock, time::Duration};
+
 use chrono::Utc;
 use derive_more::{AsRef, Deref, Display, From};
-use regex::Regex;
-use std::time::Duration;
-use url::Url;
-
 use mini_moka::sync::Cache;
-use once_cell::sync::Lazy;
+use regex::Regex;
+use url::Url;
 
 use crate::{
     api::ApiResult,
@@ -21,12 +20,12 @@ use crate::{
 
 pub static FAKE_IDENTIFIER: &str = "VW_DUMMY_IDENTIFIER_FOR_OIDC";
 
-static AC_CACHE: Lazy<Cache<OIDCState, AuthenticatedUser>> =
-    Lazy::new(|| Cache::builder().max_capacity(1000).time_to_live(Duration::from_secs(10 * 60)).build());
+static AC_CACHE: LazyLock<Cache<OIDCState, AuthenticatedUser>> =
+    LazyLock::new(|| Cache::builder().max_capacity(1000).time_to_live(Duration::from_secs(10 * 60)).build());
 
-static SSO_JWT_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|sso", CONFIG.domain_origin()));
+static SSO_JWT_ISSUER: LazyLock<String> = LazyLock::new(|| format!("{}|sso", CONFIG.domain_origin()));
 
-pub static NONCE_EXPIRATION: Lazy<chrono::Duration> = Lazy::new(|| chrono::TimeDelta::try_minutes(10).unwrap());
+pub static NONCE_EXPIRATION: LazyLock<chrono::Duration> = LazyLock::new(|| chrono::TimeDelta::try_minutes(10).unwrap());
 
 #[derive(
     Clone,
@@ -151,7 +150,7 @@ fn decode_token_claims(token_name: &str, token: &str) -> ApiResult<BasicTokenCla
     }
 }
 
-pub fn decode_state(base64_state: String) -> ApiResult<OIDCState> {
+pub fn decode_state(base64_state: &str) -> ApiResult<OIDCState> {
     let state = match data_encoding::BASE64.decode(base64_state.as_bytes()) {
         Ok(vec) => match String::from_utf8(vec) {
             Ok(valid) => OIDCState(valid),

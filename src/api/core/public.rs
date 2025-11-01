@@ -94,7 +94,7 @@ async fn ldap_import(data: Json<OrgImportData>, token: PublicToken, conn: DbConn
                 Some(user) => user, // exists in vaultwarden
                 None => {
                     // User does not exist yet
-                    let mut new_user = User::new(user_data.email.clone(), None);
+                    let mut new_user = User::new(&user_data.email, None);
                     new_user.save(&conn).await?;
 
                     if !CONFIG.mail_enabled() {
