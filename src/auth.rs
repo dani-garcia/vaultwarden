@@ -1197,14 +1197,7 @@ impl AuthTokens {
 
         let refresh_claims = if CONFIG.disable_refresh_token_renewal() {
             match decode_refresh(&device.refresh_token) {
-                Ok(original_claims) => RefreshJwtClaims {
-                    nbf: original_claims.nbf,
-                    exp: original_claims.exp,
-                    iss: original_claims.iss.clone(),
-                    sub: original_claims.sub.clone(),
-                    device_token: original_claims.device_token.clone(),
-                    token: original_claims.token.clone(),
-                },
+                Ok(original_claims) => original_claims, // reuse the original struct
                 Err(_) => default_refresh_claims,
             }
         } else {
