@@ -1135,7 +1135,7 @@ pub enum TokenWrapper {
     Refresh(String),
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RefreshJwtClaims {
     // Not before
     pub nbf: i64,
