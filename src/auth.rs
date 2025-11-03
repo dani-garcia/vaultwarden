@@ -1186,13 +1186,29 @@ impl AuthTokens {
             *DEFAULT_REFRESH_VALIDITY
         };
 
-        let refresh_claims = RefreshJwtClaims {
+        let default_refresh_claims = RefreshJwtClaims {
             nbf: time_now.timestamp(),
             exp: (time_now + validity).timestamp(),
             iss: JWT_LOGIN_ISSUER.to_string(),
             sub,
             device_token: device.refresh_token.clone(),
             token: None,
+        };
+
+        let refresh_claims = if CONFIG.disable_refresh_token_renewal() {
+            match decode_refresh(&device.refresh_token) {
+                Ok(original_claims) => RefreshJwtClaims {
+                    nbf: original_claims.nbf,
+                    exp: original_claims.exp,
+                    iss: original_claims.iss.clone(),
+                    sub: original_claims.sub.clone(),
+                    device_token: original_claims.device_token.clone(),
+                    token: original_claims.token.clone(),
+                },
+                Err(_) => default_refresh_claims,
+            }
+        } else {
+            default_refresh_claims
         };
 
         Self {
