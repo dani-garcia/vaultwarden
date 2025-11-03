@@ -1129,7 +1129,7 @@ impl AuthMethod {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum TokenWrapper {
     Access(String),
     Refresh(String),
