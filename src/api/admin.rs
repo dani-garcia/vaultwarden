@@ -106,7 +106,7 @@ static CAN_BACKUP: LazyLock<bool> =
 static CAN_BACKUP: LazyLock<bool> = LazyLock::new(|| false);
 
 // OAuth2 state storage for CSRF protection (state -> expiration timestamp)
-static OAUTH2_STATES: LazyLock<RwLock<HashMap<String, u64>>> = 
+static OAUTH2_STATES: LazyLock<RwLock<HashMap<String, u64>>> =
     LazyLock::new(|| RwLock::new(HashMap::new()));
 
 #[get("/")]
@@ -370,7 +370,7 @@ fn oauth2_authorize(_token: AdminToken) -> Result<Redirect, Error> {
     let scopes = CONFIG.smtp_oauth2_scopes();
 
     // Generate a random state token for CSRF protection
-    let state = crate::crypto::encode_random_bytes::<32>(BASE64URL_NOPAD);
+    let state = crate::crypto::encode_random_bytes::<32>(&BASE64URL_NOPAD);
 
     // Store state with expiration (10 minutes from now)
     let expiration = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() + 600;
