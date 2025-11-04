@@ -1,8 +1,8 @@
 use data_encoding::BASE64URL_NOPAD;
 use std::collections::HashMap;
-use std::{env, sync::LazyLock};
 use std::sync::RwLock;
 use std::time::{SystemTime, UNIX_EPOCH};
+use std::{env, sync::LazyLock};
 use url::Url;
 
 use reqwest::Method;
@@ -106,8 +106,7 @@ static CAN_BACKUP: LazyLock<bool> =
 static CAN_BACKUP: LazyLock<bool> = LazyLock::new(|| false);
 
 // OAuth2 state storage for CSRF protection (state -> expiration timestamp)
-static OAUTH2_STATES: LazyLock<RwLock<HashMap<String, u64>>> =
-    LazyLock::new(|| RwLock::new(HashMap::new()));
+static OAUTH2_STATES: LazyLock<RwLock<HashMap<String, u64>>> = LazyLock::new(|| RwLock::new(HashMap::new()));
 
 #[get("/")]
 fn admin_disabled() -> &'static str {
