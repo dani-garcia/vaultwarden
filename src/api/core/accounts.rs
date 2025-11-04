@@ -1484,7 +1484,7 @@ async fn post_auth_request(
         _ => err!("AuthRequest doesn't exist", "Device verification failed"),
     };
 
-    let mut auth_request = AuthRequest::new(
+    let auth_request = AuthRequest::new(
         user.uuid.clone(),
         data.device_identifier.clone(),
         client_headers.device_type,
