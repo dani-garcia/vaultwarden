@@ -1,7 +1,7 @@
 ---
 repos:
 -   repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v6.0.0
+    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c # v6.0.0
     hooks:
     - id: check-yaml
     - id: check-json
@@ -22,14 +22,15 @@ repos:
       description: Format files with cargo fmt.
       entry: cargo fmt
       language: system
-      types: [rust]
+      always_run: true
+      pass_filenames: false
       args: ["--", "--check"]
     - id: cargo-test
       name: cargo test
       description: Test the package for errors.
       entry: cargo test
       language: system
-      args: ["--features", "sqlite,mysql,postgresql,enable_mimalloc", "--"]
+      args: ["--features", "sqlite,mysql,postgresql", "--"]
       types_or: [rust, file]
       files: (Cargo.toml|Cargo.lock|rust-toolchain.toml|rustfmt.toml|.*\.rs$)
       pass_filenames: false
@@ -38,7 +39,7 @@ repos:
       description: Lint Rust sources
       entry: cargo clippy
       language: system
-      args: ["--features", "sqlite,mysql,postgresql,enable_mimalloc", "--", "-D", "warnings"]
+      args: ["--features", "sqlite,mysql,postgresql", "--", "-D", "warnings"]
       types_or: [rust, file]
       files: (Cargo.toml|Cargo.lock|rust-toolchain.toml|rustfmt.toml|.*\.rs$)
       pass_filenames: false
@@ -50,3 +51,8 @@ repos:
       args:
         - "-c"
         - "cd docker && make"
+# When this version is updated, do not forget to update this in `.github/workflows/typos.yaml` too
+- repo: https://github.com/crate-ci/typos
+  rev: 07d900b8fa1097806b8adb6391b0d3e0ac2fdea7 # v1.39.0
+  hooks:
+    - id: typos

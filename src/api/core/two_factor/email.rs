@@ -39,13 +39,13 @@ struct SendEmailLoginData {
 /// User is trying to login and wants to use email 2FA.
 /// Does not require Bearer token
 #[post("/two-factor/send-email-login", data = "<data>")] // JsonResult
-async fn send_email_login(data: Json<SendEmailLoginData>, mut conn: DbConn) -> EmptyResult {
+async fn send_email_login(data: Json<SendEmailLoginData>, conn: DbConn) -> EmptyResult {
     let data: SendEmailLoginData = data.into_inner();
 
     use crate::db::models::User;
 
     // Get the user
-    let Some(user) = User::find_by_device_id(&data.device_identifier, &mut conn).await else {
+    let Some(user) = User::find_by_device_id(&data.device_identifier, &conn).await else {
         err!("Cannot find user. Try again.")
     };
 
@@ -53,13 +53,13 @@ async fn send_email_login(data: Json<SendEmailLoginData>, mut conn: DbConn) -> E
         err!("Email 2FA is disabled")
     }
 
-    send_token(&user.uuid, &mut conn).await?;
+    send_token(&user.uuid, &conn).await?;
 
     Ok(())
 }
 
 /// Generate the token, save the data for later verification and send email to user
-pub async fn send_token(user_id: &UserId, conn: &mut DbConn) -> EmptyResult {
+pub async fn send_token(user_id: &UserId, conn: &DbConn) -> EmptyResult {
     let type_ = TwoFactorType::Email as i32;
     let mut twofactor = TwoFactor::find_by_user_and_type(user_id, type_, conn).await.map_res("Two factor not found")?;
 
@@ -77,14 +77,14 @@ pub async fn send_token(user_id: &UserId, conn: &mut DbConn) -> EmptyResult {
 
 /// When user clicks on Manage email 2FA show the user the related information
 #[post("/two-factor/get-email", data = "<data>")]
-async fn get_email(data: Json<PasswordOrOtpData>, headers: Headers, mut conn: DbConn) -> JsonResult {
+async fn get_email(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: PasswordOrOtpData = data.into_inner();
     let user = headers.user;
 
-    data.validate(&user, false, &mut conn).await?;
+    data.validate(&user, false, &conn).await?;
 
     let (enabled, mfa_email) =
-        match TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::Email as i32, &mut conn).await {
+        match TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::Email as i32, &conn).await {
             Some(x) => {
                 let twofactor_data = EmailTokenData::from_json(&x.data)?;
                 (true, json!(twofactor_data.email))
@@ -110,7 +110,7 @@ struct SendEmailData {
 
 /// Send a verification email to the specified email address to check whether it exists/belongs to user.
 #[post("/two-factor/send-email", data = "<data>")]
-async fn send_email(data: Json<SendEmailData>, headers: Headers, mut conn: DbConn) -> EmptyResult {
+async fn send_email(data: Json<SendEmailData>, headers: Headers, conn: DbConn) -> EmptyResult {
     let data: SendEmailData = data.into_inner();
     let user = headers.user;
 
@@ -118,7 +118,7 @@ async fn send_email(data: Json<SendEmailData>, headers: Headers, mut conn: DbCon
         master_password_hash: data.master_password_hash,
         otp: data.otp,
     }
-    .validate(&user, false, &mut conn)
+    .validate(&user, false, &conn)
     .await?;
 
     if !CONFIG._enable_email_2fa() {
@@ -127,8 +127,8 @@ async fn send_email(data: Json<SendEmailData>, headers: Headers, mut conn: DbCon
 
     let type_ = TwoFactorType::Email as i32;
 
-    if let Some(tf) = TwoFactor::find_by_user_and_type(&user.uuid, type_, &mut conn).await {
-        tf.delete(&mut conn).await?;
+    if let Some(tf) = TwoFactor::find_by_user_and_type(&user.uuid, type_, &conn).await {
+        tf.delete(&conn).await?;
     }
 
     let generated_token = crypto::generate_email_token(CONFIG.email_token_size());
@@ -136,7 +136,7 @@ async fn send_email(data: Json<SendEmailData>, headers: Headers, mut conn: DbCon
 
     // Uses EmailVerificationChallenge as type to show that it's not verified yet.
     let twofactor = TwoFactor::new(user.uuid, TwoFactorType::EmailVerificationChallenge, twofactor_data.to_json());
-    twofactor.save(&mut conn).await?;
+    twofactor.save(&conn).await?;
 
     mail::send_token(&twofactor_data.email, &twofactor_data.last_token.map_res("Token is empty")?).await?;
 
@@ -154,7 +154,7 @@ struct EmailData {
 
 /// Verify email belongs to user and can be used for 2FA email codes.
 #[put("/two-factor/email", data = "<data>")]
-async fn email(data: Json<EmailData>, headers: Headers, mut conn: DbConn) -> JsonResult {
+async fn email(data: Json<EmailData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: EmailData = data.into_inner();
     let mut user = headers.user;
 
@@ -163,12 +163,12 @@ async fn email(data: Json<EmailData>, headers: Headers, mut conn: DbConn) -> Jso
         master_password_hash: data.master_password_hash,
         otp: data.otp,
     }
-    .validate(&user, true, &mut conn)
+    .validate(&user, true, &conn)
     .await?;
 
     let type_ = TwoFactorType::EmailVerificationChallenge as i32;
     let mut twofactor =
-        TwoFactor::find_by_user_and_type(&user.uuid, type_, &mut conn).await.map_res("Two factor not found")?;
+        TwoFactor::find_by_user_and_type(&user.uuid, type_, &conn).await.map_res("Two factor not found")?;
 
     let mut email_data = EmailTokenData::from_json(&twofactor.data)?;
 
@@ -183,11 +183,11 @@ async fn email(data: Json<EmailData>, headers: Headers, mut conn: DbConn) -> Jso
     email_data.reset_token();
     twofactor.atype = TwoFactorType::Email as i32;
     twofactor.data = email_data.to_json();
-    twofactor.save(&mut conn).await?;
+    twofactor.save(&conn).await?;
 
-    _generate_recover_code(&mut user, &mut conn).await;
+    _generate_recover_code(&mut user, &conn).await;
 
-    log_user_event(EventType::UserUpdated2fa as i32, &user.uuid, headers.device.atype, &headers.ip.ip, &mut conn).await;
+    log_user_event(EventType::UserUpdated2fa as i32, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await;
 
     Ok(Json(json!({
         "email": email_data.email,
@@ -202,7 +202,7 @@ pub async fn validate_email_code_str(
     token: &str,
     data: &str,
     ip: &std::net::IpAddr,
-    conn: &mut DbConn,
+    conn: &DbConn,
 ) -> EmptyResult {
     let mut email_data = EmailTokenData::from_json(data)?;
     let mut twofactor = TwoFactor::find_by_user_and_type(user_id, TwoFactorType::Email as i32, conn)
@@ -286,7 +286,7 @@ impl EmailTokenData {
     }
 
     pub fn add_attempt(&mut self) {
-        self.attempts += 1;
+        self.attempts = self.attempts.saturating_add(1);
     }
 
     pub fn to_json(&self) -> String {
@@ -302,7 +302,7 @@ impl EmailTokenData {
     }
 }
 
-pub async fn activate_email_2fa(user: &User, conn: &mut DbConn) -> EmptyResult {
+pub async fn activate_email_2fa(user: &User, conn: &DbConn) -> EmptyResult {
     if user.verified_at.is_none() {
         err!("Auto-enabling of email 2FA failed because the users email address has not been verified!");
     }
@@ -332,7 +332,7 @@ pub fn obscure_email(email: &str) -> String {
     format!("{new_name}@{domain}")
 }
 
-pub async fn find_and_activate_email_2fa(user_id: &UserId, conn: &mut DbConn) -> EmptyResult {
+pub async fn find_and_activate_email_2fa(user_id: &UserId, conn: &DbConn) -> EmptyResult {
     if let Some(user) = User::find_by_uuid(user_id, conn).await {
         activate_email_2fa(&user, conn).await
     } else {

@@ -1,0 +1,22 @@
+name: Code Spell Checking
+
+on: [ push, pull_request ]
+permissions: {}
+
+jobs:
+  typos:
+    name: Run typos spell checking
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      # Checkout the repo
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 #v5.0.0
+        with:
+          persist-credentials: false
+      # End Checkout the repo
+
+      # When this version is updated, do not forget to update this in `.pre-commit-config.yaml` too
+      - name: Spell Check Repo
+        uses: crate-ci/typos@07d900b8fa1097806b8adb6391b0d3e0ac2fdea7 # v1.39.0

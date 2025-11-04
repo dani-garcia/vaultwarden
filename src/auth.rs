@@ -1,12 +1,15 @@
-// JWT Handling
+use std::{
+    env,
+    net::IpAddr,
+    sync::{LazyLock, OnceLock},
+};
+
 use chrono::{DateTime, TimeDelta, Utc};
 use jsonwebtoken::{errors::ErrorKind, Algorithm, DecodingKey, EncodingKey, Header};
 use num_traits::FromPrimitive;
-use once_cell::sync::{Lazy, OnceCell};
 use openssl::rsa::Rsa;
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
-use std::{env, net::IpAddr};
 
 use crate::{
     api::ApiResult,
@@ -22,27 +25,30 @@ use crate::{
 const JWT_ALGORITHM: Algorithm = Algorithm::RS256;
 
 // Limit when BitWarden consider the token as expired
-pub static BW_EXPIRATION: Lazy<TimeDelta> = Lazy::new(|| TimeDelta::try_minutes(5).unwrap());
+pub static BW_EXPIRATION: LazyLock<TimeDelta> = LazyLock::new(|| TimeDelta::try_minutes(5).unwrap());
 
-pub static DEFAULT_REFRESH_VALIDITY: Lazy<TimeDelta> = Lazy::new(|| TimeDelta::try_days(30).unwrap());
-pub static MOBILE_REFRESH_VALIDITY: Lazy<TimeDelta> = Lazy::new(|| TimeDelta::try_days(90).unwrap());
-pub static DEFAULT_ACCESS_VALIDITY: Lazy<TimeDelta> = Lazy::new(|| TimeDelta::try_hours(2).unwrap());
-static JWT_HEADER: Lazy<Header> = Lazy::new(|| Header::new(JWT_ALGORITHM));
+pub static DEFAULT_REFRESH_VALIDITY: LazyLock<TimeDelta> = LazyLock::new(|| TimeDelta::try_days(30).unwrap());
+pub static MOBILE_REFRESH_VALIDITY: LazyLock<TimeDelta> = LazyLock::new(|| TimeDelta::try_days(90).unwrap());
+pub static DEFAULT_ACCESS_VALIDITY: LazyLock<TimeDelta> = LazyLock::new(|| TimeDelta::try_hours(2).unwrap());
+static JWT_HEADER: LazyLock<Header> = LazyLock::new(|| Header::new(JWT_ALGORITHM));
 
-pub static JWT_LOGIN_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|login", CONFIG.domain_origin()));
-static JWT_INVITE_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|invite", CONFIG.domain_origin()));
-static JWT_EMERGENCY_ACCESS_INVITE_ISSUER: Lazy<String> =
-    Lazy::new(|| format!("{}|emergencyaccessinvite", CONFIG.domain_origin()));
-static JWT_DELETE_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|delete", CONFIG.domain_origin()));
-static JWT_VERIFYEMAIL_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|verifyemail", CONFIG.domain_origin()));
-static JWT_ADMIN_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|admin", CONFIG.domain_origin()));
-static JWT_SEND_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|send", CONFIG.domain_origin()));
-static JWT_ORG_API_KEY_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|api.organization", CONFIG.domain_origin()));
-static JWT_FILE_DOWNLOAD_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|file_download", CONFIG.domain_origin()));
-static JWT_REGISTER_VERIFY_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|register_verify", CONFIG.domain_origin()));
+pub static JWT_LOGIN_ISSUER: LazyLock<String> = LazyLock::new(|| format!("{}|login", CONFIG.domain_origin()));
+static JWT_INVITE_ISSUER: LazyLock<String> = LazyLock::new(|| format!("{}|invite", CONFIG.domain_origin()));
+static JWT_EMERGENCY_ACCESS_INVITE_ISSUER: LazyLock<String> =
+    LazyLock::new(|| format!("{}|emergencyaccessinvite", CONFIG.domain_origin()));
+static JWT_DELETE_ISSUER: LazyLock<String> = LazyLock::new(|| format!("{}|delete", CONFIG.domain_origin()));
+static JWT_VERIFYEMAIL_ISSUER: LazyLock<String> = LazyLock::new(|| format!("{}|verifyemail", CONFIG.domain_origin()));
+static JWT_ADMIN_ISSUER: LazyLock<String> = LazyLock::new(|| format!("{}|admin", CONFIG.domain_origin()));
+static JWT_SEND_ISSUER: LazyLock<String> = LazyLock::new(|| format!("{}|send", CONFIG.domain_origin()));
+static JWT_ORG_API_KEY_ISSUER: LazyLock<String> =
+    LazyLock::new(|| format!("{}|api.organization", CONFIG.domain_origin()));
+static JWT_FILE_DOWNLOAD_ISSUER: LazyLock<String> =
+    LazyLock::new(|| format!("{}|file_download", CONFIG.domain_origin()));
+static JWT_REGISTER_VERIFY_ISSUER: LazyLock<String> =
+    LazyLock::new(|| format!("{}|register_verify", CONFIG.domain_origin()));
 
-static PRIVATE_RSA_KEY: OnceCell<EncodingKey> = OnceCell::new();
-static PUBLIC_RSA_KEY: OnceCell<DecodingKey> = OnceCell::new();
+static PRIVATE_RSA_KEY: OnceLock<EncodingKey> = OnceLock::new();
+static PUBLIC_RSA_KEY: OnceLock<DecodingKey> = OnceLock::new();
 
 pub async fn initialize_keys() -> Result<(), Error> {
     use std::io::Error;
@@ -54,7 +60,7 @@ pub async fn initialize_keys() -> Result<(), Error> {
         .ok_or_else(|| Error::other("Private RSA key path filename is not valid UTF-8"))?
         .to_string();
 
-    let operator = CONFIG.opendal_operator_for_path_type(PathType::RsaKey).map_err(Error::other)?;
+    let operator = CONFIG.opendal_operator_for_path_type(&PathType::RsaKey).map_err(Error::other)?;
 
     let priv_key_buffer = match operator.read(&rsa_key_filename).await {
         Ok(buffer) => Some(buffer),
@@ -457,7 +463,7 @@ pub fn generate_delete_claims(uuid: String) -> BasicJwtClaims {
     }
 }
 
-pub fn generate_verify_email_claims(user_id: UserId) -> BasicJwtClaims {
+pub fn generate_verify_email_claims(user_id: &UserId) -> BasicJwtClaims {
     let time_now = Utc::now();
     let expire_hours = i64::from(CONFIG.invitation_expiration_hours());
     BasicJwtClaims {
@@ -604,16 +610,16 @@ impl<'r> FromRequest<'r> for Headers {
         let device_id = claims.device;
         let user_id = claims.sub;
 
-        let mut conn = match DbConn::from_request(request).await {
+        let conn = match DbConn::from_request(request).await {
             Outcome::Success(conn) => conn,
             _ => err_handler!("Error getting DB"),
         };
 
-        let Some(device) = Device::find_by_uuid_and_user(&device_id, &user_id, &mut conn).await else {
+        let Some(device) = Device::find_by_uuid_and_user(&device_id, &user_id, &conn).await else {
             err_handler!("Invalid device id")
         };
 
-        let Some(user) = User::find_by_uuid(&user_id, &mut conn).await else {
+        let Some(user) = User::find_by_uuid(&user_id, &conn).await else {
             err_handler!("Device has no user associated")
         };
 
@@ -633,7 +639,7 @@ impl<'r> FromRequest<'r> for Headers {
                     // This prevents checking this stamp exception for new requests.
                     let mut user = user;
                     user.reset_stamp_exception();
-                    if let Err(e) = user.save(&mut conn).await {
+                    if let Err(e) = user.save(&conn).await {
                         error!("Error updating user: {e:#?}");
                     }
                     err_handler!("Stamp exception is expired")
@@ -696,9 +702,9 @@ impl<'r> FromRequest<'r> for OrgHeaders {
         // First check the path, if this is not a valid uuid, try the query values.
         let url_org_id: Option<OrganizationId> = {
             if let Some(Ok(org_id)) = request.param::<OrganizationId>(1) {
-                Some(org_id.clone())
+                Some(org_id)
             } else if let Some(Ok(org_id)) = request.query_value::<OrganizationId>("organizationId") {
-                Some(org_id.clone())
+                Some(org_id)
             } else {
                 None
             }
@@ -706,13 +712,13 @@ impl<'r> FromRequest<'r> for OrgHeaders {
 
         match url_org_id {
             Some(org_id) if uuid::Uuid::parse_str(&org_id).is_ok() => {
-                let mut conn = match DbConn::from_request(request).await {
+                let conn = match DbConn::from_request(request).await {
                     Outcome::Success(conn) => conn,
                     _ => err_handler!("Error getting DB"),
                 };
 
                 let user = headers.user;
-                let Some(membership) = Membership::find_by_user_and_org(&user.uuid, &org_id, &mut conn).await else {
+                let Some(membership) = Membership::find_by_user_and_org(&user.uuid, &org_id, &conn).await else {
                     err_handler!("The current user isn't member of the organization");
                 };
 
@@ -815,12 +821,12 @@ impl<'r> FromRequest<'r> for ManagerHeaders {
         if headers.is_confirmed_and_manager() {
             match get_col_id(request) {
                 Some(col_id) => {
-                    let mut conn = match DbConn::from_request(request).await {
+                    let conn = match DbConn::from_request(request).await {
                         Outcome::Success(conn) => conn,
                         _ => err_handler!("Error getting DB"),
                     };
 
-                    if !Collection::can_access_collection(&headers.membership, &col_id, &mut conn).await {
+                    if !Collection::can_access_collection(&headers.membership, &col_id, &conn).await {
                         err_handler!("The current user isn't a manager for this collection")
                     }
                 }
@@ -896,7 +902,7 @@ impl ManagerHeaders {
     pub async fn from_loose(
         h: ManagerHeadersLoose,
         collections: &Vec<CollectionId>,
-        conn: &mut DbConn,
+        conn: &DbConn,
     ) -> Result<ManagerHeaders, Error> {
         for col_id in collections {
             if uuid::Uuid::parse_str(col_id.as_ref()).is_err() {
@@ -1200,7 +1206,7 @@ pub async fn refresh_tokens(
     ip: &ClientIp,
     refresh_token: &str,
     client_id: Option<String>,
-    conn: &mut DbConn,
+    conn: &DbConn,
 ) -> ApiResult<(Device, AuthTokens)> {
     let refresh_claims = match decode_refresh(refresh_token) {
         Err(err) => {

@@ -303,7 +303,7 @@ pub async fn send_delete_account(address: &str, user_id: &UserId) -> EmptyResult
 }
 
 pub async fn send_verify_email(address: &str, user_id: &UserId) -> EmptyResult {
-    let claims = generate_verify_email_claims(user_id.clone());
+    let claims = generate_verify_email_claims(user_id);
     let verify_email_token = encode_jwt(&claims);
 
     let (subject, body_html, body_text) = get_text(
@@ -354,7 +354,7 @@ pub async fn send_welcome(address: &str) -> EmptyResult {
 }
 
 pub async fn send_welcome_must_verify(address: &str, user_id: &UserId) -> EmptyResult {
-    let claims = generate_verify_email_claims(user_id.clone());
+    let claims = generate_verify_email_claims(user_id);
     let verify_email_token = encode_jwt(&claims);
 
     let (subject, body_html, body_text) = get_text(

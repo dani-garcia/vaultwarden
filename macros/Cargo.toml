@@ -1,7 +1,11 @@
 [package]
 name = "macros"
 version = "0.1.0"
-edition = "2021"
+repository.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
 
 [lib]
 name = "macros"
@@ -9,8 +13,8 @@ path = "src/lib.rs"
 proc-macro = true
 
 [dependencies]
-quote = "1.0.40"
-syn = "2.0.105"
+quote = "1.0.41"
+syn = "2.0.108"
 
 [lints]
 workspace = true
