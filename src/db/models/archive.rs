@@ -41,17 +41,20 @@ impl Archive {
     ) -> EmptyResult {
         User::update_uuid_revision(user_uuid, conn).await;
         db_run! { conn:
-            sqlite, mysql {
-                diesel::replace_into(archives::table)
+            mysql {
+                diesel::insert_into(archives::table)
                     .values((
                         archives::user_uuid.eq(user_uuid),
                         archives::cipher_uuid.eq(cipher_uuid),
                         archives::archived_at.eq(archived_at),
                     ))
+                    .on_conflict(diesel::dsl::DuplicatedKeys)
+                    .do_update()
+                    .set(archives::archived_at.eq(archived_at))
                     .execute(conn)
                     .map_res("Error saving archive")
             }
-            postgresql {
+            postgresql, sqlite {
                 diesel::insert_into(archives::table)
                     .values((
                         archives::user_uuid.eq(user_uuid),
