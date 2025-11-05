@@ -52,7 +52,7 @@ variable "CONTAINER_REGISTRIES" {
 // ==== Baking Groups ====
 
 group "default" {
-  targets = ["debian"]
+  targets = ["alpine"]
 }
 
 
@@ -205,6 +205,22 @@ group "alpine-all" {
   targets = ["alpine-amd64", "alpine-arm64", "alpine-armv7", "alpine-armv6"]
 }
 
+// Multi Platform target, will build one tagged manifest with all supported architectures
+// This is mainly used by GitHub Actions to build and push new containers
+// ###
+// This special target is used to build only Alpine based images and fully replace debian tagged images
+// The main reason for this is issues with the MariaDB libraries which cause issues
+// See the following links regarding this:
+// - https://github.com/dani-garcia/vaultwarden/issues/6416
+// - https://github.com/diesel-rs/diesel/issues/4699
+// - https://github.com/diesel-rs/diesel/discussions/4806
+// - https://jira.mariadb.org/browse/CONC-782
+target "alpine-multi-only" {
+  inherits = ["alpine"]
+  platforms = ["linux/amd64", "linux/arm64", "linux/arm/v7", "linux/arm/v6"]
+  tags = flatten([generate_tags("-alpine", ""), generate_tags("", "")])
+  output = [join(",", flatten([["type=registry"], image_index_annotations()]))]
+}
 
 // ==== Bake everything locally ====
 

@@ -175,7 +175,7 @@ RUN mkdir /data && \
         --no-install-recommends \
         ca-certificates \
         curl \
-        libmariadb-dev \
+        libmariadb3 \
         libpq5 \
         openssl && \
     apt-get clean && \

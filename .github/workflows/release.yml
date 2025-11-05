@@ -49,7 +49,13 @@ jobs:
       HAVE_QUAY_LOGIN: ${{ vars.QUAY_REPO != '' && secrets.QUAY_USERNAME != '' && secrets.QUAY_TOKEN != '' }}
     strategy:
       matrix:
-        base_image: ["debian","alpine"]
+        # 2025-11-05: Stopped building debian images because of mysql libraries issues
+        # See the following links regarding this:
+        # - https://github.com/dani-garcia/vaultwarden/issues/6416
+        # - https://github.com/diesel-rs/diesel/issues/4699
+        # - https://github.com/diesel-rs/diesel/discussions/4806
+        # - https://jira.mariadb.org/browse/CONC-782
+        base_image: ["alpine"]
 
     steps:
       - name: Initialize QEMU binfmt support
@@ -187,7 +193,7 @@ jobs:
           push: true
           source: .
           files: docker/docker-bake.hcl
-          targets: "${{ matrix.base_image }}-multi"
+          targets: "${{ matrix.base_image }}-multi-only"
           set: |
             *.cache-from=${{ env.BAKE_CACHE_FROM }}
             *.cache-to=${{ env.BAKE_CACHE_TO }}
@@ -198,7 +204,7 @@ jobs:
           BAKE_METADATA: ${{ steps.bake_vw.outputs.metadata }}
           BASE_IMAGE: ${{ matrix.base_image }}
         run: |
-          GET_DIGEST_SHA="$(jq -r --arg base "$BASE_IMAGE" '.[$base + "-multi"]."containerimage.digest"' <<< "${BAKE_METADATA}")"
+          GET_DIGEST_SHA="$(jq -r --arg base "$BASE_IMAGE" '.[$base + "-multi-only"]."containerimage.digest"' <<< "${BAKE_METADATA}")"
           echo "DIGEST_SHA=${GET_DIGEST_SHA}" | tee -a "${GITHUB_ENV}"
 
       # Attest container images
