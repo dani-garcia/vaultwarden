@@ -1,0 +1,18 @@
+info: syncing channel updates for '1.91.0-x86_64-unknown-linux-gnu'
+info: latest update on 2025-10-30, rust version 1.91.0 (f8297e351 2025-10-28)
+info: downloading component 'cargo'
+info: downloading component 'clippy'
+info: downloading component 'rust-std'
+info: downloading component 'rustc'
+info: downloading component 'rustfmt'
+info: installing component 'cargo'
+info: installing component 'clippy'
+info: installing component 'rust-std'
+info: installing component 'rustc'
+info: installing component 'rustfmt'
+error: no such command: `audit`
+
+help: a command with a similar name exists: `add`
+
+help: view all installed commands with `cargo --list`
+help: find a package to install `audit` with `cargo search cargo-audit`
