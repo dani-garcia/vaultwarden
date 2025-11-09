@@ -54,3 +54,12 @@ Links
 Next steps
 ----------
 - Assign an owner, run `cargo tree -i rsa` and `cargo tree -i paste`, and update this issue with findings and the chosen remediation path.
+
+---
+
+Temporary license allowlist (2025-11-09)
+-------------------------------------
+
+On 2025-11-09 a temporary license allowlist was added to `deny.toml` to reduce noise from widely-used OSI-approved licenses so CI can proceed with the security remediation work. The licenses added were: `Unicode-3.0`, `ISC`, `0BSD`, and `Zlib`. This change explicitly did NOT add `MPL-2.0` or `CDLA-Permissive-2.0`.
+
+Review: The license allowlist will be revisited on or before 2026-02-07 (90 days) and removed or narrowed depending on remediation progress.

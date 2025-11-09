@@ -9,5 +9,14 @@ ignore = ["RUSTSEC-2023-0071", "RUSTSEC-2024-0436"]
 
 [licenses]
 # Allowlist of licenses. Edit to match project policy.
-allow = ["AGPL-3.0-only", "MIT", "Apache-2.0", "BSD-3-Clause"]
+allow = [
+	"AGPL-3.0-only",
+	"MIT",
+	"Apache-2.0",
+	"BSD-3-Clause",
+	"Unicode-3.0",
+	"ISC",
+	"0BSD",
+	"Zlib",
+]
 exceptions = []
