@@ -34,6 +34,16 @@ Recommended next steps
    - Review `deny.toml` added to the repository as a starting policy. Adjust `licenses.allowed` to match project licensing policy.
    - For crates that are necessary but have unapproved licenses, add specific exceptions with justification and target remediation dates.
 
+Temporary exceptions
+--------------------
+
+To unblock CI while we triage and remediate, this PR (branch `remediations/audit-2025-11-09`) adds temporary, timeboxed exceptions for two advisories in `deny.toml`:
+
+- RUSTSEC-2023-0071 — `rsa = 0.9.8` (transitive via `openidconnect`). No safe published upgrade was available at audit time. A temporary exception is recorded with an expiration date and linked tracking issue.
+- RUSTSEC-2024-0436 — `paste = 1.0.15` (transitive via `rmp`/`rmpv`). Crate is marked unmaintained; a temporary exception is recorded while we plan a migration/replacement.
+
+These exceptions are intended to be short-lived. See `issues/TRACK-2025-11-09-RSA-PASTE.md` for the remediation plan, owner, and ETA. The exceptions include an `expires` date and rationale; they should be removed when the underlying transitive dependency is replaced or a safe upgrade is published.
+
 4. CI integration
    - The PR adds a GitHub Actions workflow `.github/workflows/audit.yml` which runs `cargo-audit` and `cargo-deny`. Tweak versions and failure behavior to match your release policy (block PRs or open warnings).
 

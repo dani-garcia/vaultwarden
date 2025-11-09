@@ -7,4 +7,13 @@
 [licenses]
 # Allowlist of licenses. Edit to match project policy.
 allow = ["AGPL-3.0-only", "MIT", "Apache-2.0", "BSD-3-Clause"]
-exceptions = []
+## Temporary exceptions added by remediations/audit-2025-11-09
+## These exceptions are timeboxed and tracked in issues/TRACK-2025-11-09-RSA-PASTE.md
+exceptions = [
+	# Allow RUSTSEC-2023-0071 (rsa 0.9.8) transitively required today via openidconnect
+	# Rationale: no safe published upgrade available at audit date; risk acknowledged and tracked.
+	{ crate = "rsa", version = "=0.9.8", reason = "RUSTSEC-2023-0071: no safe upgrade available; temporary exception; see issues/TRACK-2025-11-09-RSA-PASTE.md", expires = "2026-02-01" },
+	# Allow RUSTSEC-2024-0436 (paste 1.0.15) transitively required today via rmp/rmpv
+	# Rationale: crate marked unmaintained; temporary exception while replacement plan is executed.
+	{ crate = "paste", version = "=1.0.15", reason = "RUSTSEC-2024-0436: unmaintained; temporary exception; see issues/TRACK-2025-11-09-RSA-PASTE.md", expires = "2026-02-01" }
+]
