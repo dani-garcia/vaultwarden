@@ -72,7 +72,7 @@ rocket = { version = "0.5.1", features = ["tls", "json"], default-features = fal
 rocket_ws = { version ="0.1.1" }
 
 # WebSockets libraries
- rmpv = "1.4.0" # MessagePack library
+ rmpv = "1.3.0" # MessagePack library
 
 # Concurrent HashMap used for WebSocket messaging and favicons
 dashmap = "6.1.0"
@@ -171,7 +171,7 @@ pastey = "0.1.1"
 governor = "0.10.1"
 
 # OIDC for SSO
-openidconnect = { version = "4.2.0", features = ["reqwest", "native-tls"] }
+openidconnect = { version = "4.0.1", features = ["reqwest", "native-tls"] }
 mini-moka = "0.10.3"
 
 # Check client versions for specific features.
