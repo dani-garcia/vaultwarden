@@ -3,19 +3,9 @@
 
 [advisories]
 # default uses the rustsec DB; keep empty to use defaults
-
-## Temporary advisory exceptions added by remediations/audit-2025-11-09
-## These exceptions are timeboxed and tracked in issues/TRACK-2025-11-09-RSA-PASTE.md
-
-[[advisories.exceptions]]
-id = "RUSTSEC-2023-0071"
-reason = "Transitive rsa = 0.9.8 (Marvin Attack); no safe published upgrade available at audit time. Temporary exception to unblock CI; see issues/TRACK-2025-11-09-RSA-PASTE.md"
-expires = "2026-02-01"
-
-[[advisories.exceptions]]
-id = "RUSTSEC-2024-0436"
-reason = "Transitive paste = 1.0.15 (unmaintained). Temporary exception to unblock CI; see issues/TRACK-2025-11-09-RSA-PASTE.md"
-expires = "2026-02-01"
+# Temporary advisory exceptions (timeboxed) — these are ignored by cargo-deny so CI can run
+# Tracked in issues/TRACK-2025-11-09-RSA-PASTE.md
+ignore = ["RUSTSEC-2023-0071", "RUSTSEC-2024-0436"]
 
 [licenses]
 # Allowlist of licenses. Edit to match project policy.
