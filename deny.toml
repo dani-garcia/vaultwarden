@@ -1,0 +1,15 @@
+[tool.cargo-deny]
+# Minimal cargo-deny configuration to start explicit license and advisory checks.
+
+[advisories]
+# Use the default advisory database (rustsec)
+ignore = []
+
+[licenses]
+# Start with an allowlist of licenses acceptable for this project. Adjust as policy.
+allowed = ["AGPL-3.0-only", "MIT", "Apache-2.0", "BSD-3-Clause"]
+replace = []
+
+[licenses.exceptions]
+# Temporary exceptions: list crate names and a short rationale
+# example: "some-crate" = "Temporary exception while replacement is planned (issue #NNN)"
