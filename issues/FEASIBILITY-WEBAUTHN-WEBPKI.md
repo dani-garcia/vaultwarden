@@ -94,3 +94,22 @@ Next suggested step
 -------------------
 Run the quick experiment: upgrade `reqwest` (and hyper-rustls) in a temporary branch, re-run `cargo-deny` and tests, and report the results. This often removes `webpki-roots` without deeper changes.
 
+Experiment results (2025-11-10)
+--------------------------------
+Summary of actions run in a temporary experiment branch and container:
+
+- Performed `cargo search webauthn-rs` inside the audit container; crates.io shows `webauthn-rs = "0.5.3"` as the current published version in that namespace (search results saved to `docker/audit/output/webauthn_search.txt`).
+- Ran a safe workspace copy upgrade attempt (in `/tmp/wrk_upgrade`) where I attempted incremental updates: `cargo update -p reqwest`, `cargo update -p hyper-rustls`, and `cargo update -p webauthn-rs`. Build and `cargo-deny` were run in the copy. Outputs were captured to `docker/audit/output/upgrade_*.{out,err,json}`.
+
+Findings:
+
+- The quick experiments did not eliminate the MPL-2.0 or CDLA-Permissive-2.0 diagnostics. `cargo-deny` still reports 7 license errors — the same clusters identified earlier (webauthn-rs family and webpki-roots). See `docker/audit/output/upgrade_deny.err` for the diagnostic JSON lines.
+- The crates.io search indicates no newer `webauthn-rs` version in the same crate name space beyond `0.5.3` (at time of experiment). That suggests upgrading `webauthn-rs` may not be an option unless an alternate crate name or published fork exists.
+
+Next steps recommended:
+
+- Given that `webauthn-rs` appears to be at 0.5.3 on crates.io, investigate upstream (project repository) for planned releases or contact upstream about licensing/maintenance.
+- For the TLS/root-store problem (webpki-roots), continue with a coordinated upgrade of `reqwest` + `hyper-rustls` and dependent crates (openidconnect/opendal) on a feature-aware branch; if upgrades are blocked, trial a `native-tls` switch in a dedicated branch where dependent features are adjusted accordingly.
+
+All experiment artifacts are available under `docker/audit/output/`.
+
