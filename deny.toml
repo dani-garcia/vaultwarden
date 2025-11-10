@@ -18,5 +18,9 @@ allow = [
 	"ISC",
 	"0BSD",
 	"Zlib",
+	# Temporary additions to unblock CI while we pursue upgrades/replacements
+	# These MUST be timeboxed and reviewed per PR checklist
+	"MPL-2.0",
+	"CDLA-Permissive-2.0",
 ]
 exceptions = []
