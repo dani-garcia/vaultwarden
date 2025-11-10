@@ -223,7 +223,7 @@ RUN mkdir /data && \
     echo 'Package: libmariadb libmariadb3 libmariadb-dev mariadb*' > /etc/apt/preferences.d/mariadb-snapshot && \
     echo 'Pin: origin "snapshot.debian.org"' >> /etc/apt/preferences.d/mariadb-snapshot && \
     echo 'Pin-Priority: 1001' >> /etc/apt/preferences.d/mariadb-snapshot && \
-
+    # Continue with normal install
     apt-get update && apt-get install -y \
         --no-install-recommends \
         ca-certificates \
