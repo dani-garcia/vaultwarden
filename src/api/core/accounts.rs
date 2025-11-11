@@ -75,12 +75,16 @@ pub fn routes() -> Vec<rocket::Route> {
     ]
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct KDFData {
+    #[serde(alias = "kdfType")]
     kdf: i32,
+    #[serde(alias = "iterations")]
     kdf_iterations: i32,
+    #[serde(alias = "memory")]
     kdf_memory: Option<i32>,
+    #[serde(alias = "parallelism")]
     kdf_parallelism: Option<i32>,
 }
 
@@ -545,17 +549,6 @@ async fn post_password(data: Json<ChangePassData>, headers: Headers, conn: DbCon
     save_result
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ChangeKdfData {
-    #[serde(flatten)]
-    kdf: KDFData,
-
-    master_password_hash: String,
-    new_master_password_hash: String,
-    key: String,
-}
-
 fn set_kdf_data(user: &mut User, data: &KDFData) -> EmptyResult {
     if data.kdf == UserKdfType::Pbkdf2 as i32 && data.kdf_iterations < 100_000 {
         err!("PBKDF2 KDF iterations must be at least 100000.")
@@ -591,18 +584,61 @@ fn set_kdf_data(user: &mut User, data: &KDFData) -> EmptyResult {
     Ok(())
 }
 
+#[allow(dead_code)]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AuthenticationData {
+    salt: String,
+    kdf: KDFData,
+    master_password_authentication_hash: String,
+}
+
+#[allow(dead_code)]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UnlockData {
+    salt: String,
+    kdf: KDFData,
+    master_key_wrapped_user_key: String,
+}
+
+#[allow(dead_code)]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ChangeKdfData {
+    new_master_password_hash: String,
+    key: String,
+    authentication_data: AuthenticationData,
+    unlock_data: UnlockData,
+    master_password_hash: String,
+}
+
 #[post("/accounts/kdf", data = "<data>")]
 async fn post_kdf(data: Json<ChangeKdfData>, headers: Headers, conn: DbConn, nt: Notify<'_>) -> EmptyResult {
     let data: ChangeKdfData = data.into_inner();
-    let mut user = headers.user;
 
-    if !user.check_valid_password(&data.master_password_hash) {
+    if !headers.user.check_valid_password(&data.master_password_hash) {
         err!("Invalid password")
     }
 
-    set_kdf_data(&mut user, &data.kdf)?;
+    if data.authentication_data.kdf != data.unlock_data.kdf {
+        err!("KDF settings must be equal for authentication and unlock")
+    }
 
-    user.set_password(&data.new_master_password_hash, Some(data.key), true, None);
+    if headers.user.email != data.authentication_data.salt || headers.user.email != data.unlock_data.salt {
+        err!("Invalid master password salt")
+    }
+
+    let mut user = headers.user;
+
+    set_kdf_data(&mut user, &data.unlock_data.kdf)?;
+
+    user.set_password(
+        &data.authentication_data.master_password_authentication_hash,
+        Some(data.unlock_data.master_key_wrapped_user_key),
+        true,
+        None,
+    );
     let save_result = user.save(&conn).await;
 
     nt.send_logout(&user, Some(headers.device.uuid.clone()), &conn).await;
