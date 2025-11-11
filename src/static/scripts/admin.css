@@ -58,3 +58,10 @@ img {
 .abbr-badge {
     cursor: help;
 }
+
+.theme-icon,
+.theme-icon-active {
+    display: inline-flex;
+    flex: 0 0 1.75em;
+    justify-content: center;
+}
