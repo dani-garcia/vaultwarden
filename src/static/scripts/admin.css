@@ -65,3 +65,13 @@ img {
     flex: 0 0 1.75em;
     justify-content: center;
 }
+
+.theme-icon svg,
+.theme-icon-active svg {
+    width: 1.25em;
+    height: 1.25em;
+    min-width: 1.25em;
+    min-height: 1.25em;
+    display: block;
+    overflow: visible;
+}
