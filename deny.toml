@@ -22,5 +22,8 @@ allow = [
 	# These MUST be timeboxed and reviewed per PR checklist
 	"MPL-2.0",
 	"CDLA-Permissive-2.0",
+	# Per-issue temporary exception added 2025-11-12 to unblock CI for remaining ar_archive_writer
+	# Timebox: remove no later than 2026-02-10 (90 days)
+	"Apache-2.0 WITH LLVM-exception",
 ]
 exceptions = []
