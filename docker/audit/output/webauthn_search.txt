@@ -1,0 +1,9 @@
+webauthn-rs = "0.5.3"                            # Webauthn Framework for Rust Web Servers
+cable-tunnel-server-common = "0.1.0"             # Common components for webauthn-rs' caBLE tunnel server backend and frontend
+cable-tunnel-server-backend = "0.1.0"            # webauthn-rs caBLE tunnel server backend
+cable-tunnel-server-frontend = "0.1.0"           # webauthn-rs caBLE tunnel server frontend
+webauthn-rs-proto = "0.5.3"                      # Webauthn Specification Bindings
+webauthn-rs-core = "0.5.3"                       # Webauthn Cryptographic Operation Handling
+tmuntaner-webauthn = "0.1.0-alpha.18"            # A webauthn client
+webauthn-rp-proxy = "0.5.0"                      # Webauthn RP CLI Proxy
+webauthn-rs-device-catalog = "0.5.0-20230418"    # Webauthn RS Device Catalog
