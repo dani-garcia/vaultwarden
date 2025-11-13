@@ -52,6 +52,14 @@ ENV DEBIAN_FRONTEND=noninteractive \
     CARGO_HOME="/root/.cargo" \
     USER="root"
 
+# Force the install of an older MariaDB library to prevent a Diesel panic
+# See https://github.com/dani-garcia/vaultwarden/issues/6416
+RUN echo "deb http://snapshot.debian.org/archive/debian/20250707T084701Z/ trixie main" > /etc/apt/sources.list.d/snapshot.list && \
+    echo "Acquire::Check-Valid-Until false;" > etc/apt/apt.conf.d/AllowSnapshot && \
+    echo 'Package: libmariadb libmariadb3 libmariadb-dev mariadb*' > /etc/apt/preferences.d/mariadb-snapshot && \
+    echo 'Pin: origin "snapshot.debian.org"' >> /etc/apt/preferences.d/mariadb-snapshot && \
+    echo 'Pin-Priority: 1001' >> /etc/apt/preferences.d/mariadb-snapshot
+
 # Install clang to get `xx-cargo` working
 # Install pkg-config to allow amd64 builds to find all libraries
 # Install git so build.rs can determine the correct version
@@ -171,11 +179,19 @@ ENV ROCKET_PROFILE="release" \
 
 # Create data folder and Install needed libraries
 RUN mkdir /data && \
+    # Force the install of an older MariaDB library to prevent a Diesel panic
+    # See https://github.com/dani-garcia/vaultwarden/issues/6416
+    echo "deb http://snapshot.debian.org/archive/debian/20250707T084701Z/ trixie main" > /etc/apt/sources.list.d/snapshot.list && \
+    echo "Acquire::Check-Valid-Until false;" > etc/apt/apt.conf.d/AllowSnapshot && \
+    echo 'Package: libmariadb libmariadb3 libmariadb-dev mariadb*' > /etc/apt/preferences.d/mariadb-snapshot && \
+    echo 'Pin: origin "snapshot.debian.org"' >> /etc/apt/preferences.d/mariadb-snapshot && \
+    echo 'Pin-Priority: 1001' >> /etc/apt/preferences.d/mariadb-snapshot && \
+    # Continue with normal install
     apt-get update && apt-get install -y \
         --no-install-recommends \
         ca-certificates \
         curl \
-        libmariadb-dev \
+        libmariadb3 \
         libpq5 \
         openssl && \
     apt-get clean && \

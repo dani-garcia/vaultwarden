@@ -221,9 +221,13 @@ export async function restartVault(page: Page, testInfo: TestInfo, env, resetDB:
 }
 
 export async function checkNotification(page: Page, hasText: string) {
-    await expect(page.locator('bit-toast').filter({ hasText })).toBeVisible();
-    await page.locator('bit-toast').filter({ hasText }).getByRole('button').click();
-    await expect(page.locator('bit-toast').filter({ hasText })).toHaveCount(0);
+    await expect(page.locator('bit-toast', { hasText })).toBeVisible();
+    try {
+        await page.locator('bit-toast', { hasText }).getByRole('button', { name: 'Close' }).click({force: true, timeout: 10_000});
+    } catch (error) {
+        console.log(`Closing notification failed but it should now be invisible (${error})`);
+    }
+    await expect(page.locator('bit-toast', { hasText })).toHaveCount(0);
 }
 
 export async function cleanLanding(page: Page) {
@@ -243,4 +247,16 @@ export async function logout(test: Test, page: Page, user: { name: string }) {
         await page.getByRole('menuitem', { name: 'Log out' }).click();
         await expect(page.getByRole('heading', { name: 'Log in' })).toBeVisible();
     });
+}
+
+export async function ignoreExtension(page: Page) {
+    await page.waitForLoadState('domcontentloaded');
+
+    try {
+        await page.getByRole('button', { name: 'Add it later' }).click({timeout: 5_000});
+        await page.getByRole('link', { name: 'Skip to web app' }).click();
+    } catch (error) {
+        console.log('Extension setup not visible. Continuing');
+    }
+
 }
