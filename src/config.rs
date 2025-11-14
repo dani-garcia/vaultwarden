@@ -1035,6 +1035,7 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         "ssh-agent",
         // Key Management Team
         "ssh-key-vault-item",
+        "pm-25373-windows-biometrics-v2",
         // Tools
         "export-attachments",
         // Mobile Team
