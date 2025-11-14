@@ -11,6 +11,28 @@
     <script src="{{urlpath}}/vw_static/admin.js"></script>
 </head>
 <body>
+    <svg class="d-none">
+        <symbol id="vw-icon-sun" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="5" fill="currentColor"></circle>
+            <g stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+                <line x1="12" y1="2" x2="12" y2="5"></line>
+                <line x1="12" y1="19" x2="12" y2="22"></line>
+                <line x1="4.22" y1="4.22" x2="6.34" y2="6.34"></line>
+                <line x1="17.66" y1="17.66" x2="19.78" y2="19.78"></line>
+                <line x1="2" y1="12" x2="5" y2="12"></line>
+                <line x1="19" y1="12" x2="22" y2="12"></line>
+                <line x1="4.22" y1="19.78" x2="6.34" y2="17.66"></line>
+                <line x1="17.66" y1="6.34" x2="19.78" y2="4.22"></line>
+            </g>
+        </symbol>
+        <symbol id="vw-icon-moon" viewBox="0 0 32 32">
+            <path fill="currentColor" transform="translate(0,-1.2)" d="M25.2 27.3a11.2 11.2 0 0 1-6.6-20.5A13 13 0 1 0 29.6 25.5 11.6 11.6 0 0 1 25.2 27.3z"></path>
+        </symbol>
+        <symbol id="vw-icon-auto" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.5"></circle>
+            <path fill="currentColor" d="M12 3a9 9 0 1 1 0 18V3z"></path>
+        </symbol>
+    </svg>
     <nav class="navbar navbar-expand-md navbar-dark bg-dark mb-4 shadow fixed-top">
         <div class="container-xl">
             <a class="navbar-brand" href="{{urlpath}}/admin"><img class="vaultwarden-icon" src="{{urlpath}}/vw_static/vaultwarden-icon.png" alt="V">aultwarden Admin</a>
@@ -46,7 +68,9 @@
                             id="bd-theme" type="button" aria-expanded="false" data-bs-toggle="dropdown"
                             data-bs-display="static" aria-label="Toggle theme (auto)">
                             <span class="my-1 fs-4 theme-icon-active">
-                                <use>&#9775;</use>
+                                <svg class="vw-theme-icon" focusable="false" aria-hidden="true">
+                                    <use data-theme-icon-use href="#vw-icon-auto"></use>
+                                </svg>
                             </span>
                             <span class="d-md-none ms-2" id="bd-theme-text">Toggle theme</span>
                         </button>
@@ -55,7 +79,9 @@
                                 <button type="button" class="dropdown-item d-flex align-items-center"
                                     data-bs-theme-value="light" aria-pressed="false">
                                     <span class="me-2 fs-4 theme-icon">
-                                        <use>&#9728;</use>
+                                        <svg class="vw-theme-icon" focusable="false" aria-hidden="true">
+                                            <use data-theme-icon-use href="#vw-icon-sun"></use>
+                                        </svg>
                                     </span>
                                     Light
                                 </button>
@@ -64,7 +90,9 @@
                                 <button type="button" class="dropdown-item d-flex align-items-center"
                                     data-bs-theme-value="dark" aria-pressed="false">
                                     <span class="me-2 fs-4 theme-icon">
-                                        <use>&starf;</use>
+                                        <svg class="vw-theme-icon" focusable="false" aria-hidden="true">
+                                            <use data-theme-icon-use href="#vw-icon-moon"></use>
+                                        </svg>
                                     </span>
                                     Dark
                                 </button>
@@ -73,7 +101,9 @@
                                 <button type="button" class="dropdown-item d-flex align-items-center active"
                                     data-bs-theme-value="auto" aria-pressed="true">
                                     <span class="me-2 fs-4 theme-icon">
-                                        <use>&#9775;</use>
+                                        <svg class="vw-theme-icon" focusable="false" aria-hidden="true">
+                                            <use data-theme-icon-use href="#vw-icon-auto"></use>
+                                        </svg>
                                     </span>
                                     Auto
                                 </button>
