@@ -883,10 +883,15 @@ impl Membership {
         }}
     }
 
-    pub async fn count_accepted_and_confirmed_by_user(user_uuid: &UserId, conn: &DbConn) -> i64 {
+    pub async fn count_accepted_and_confirmed_by_user(
+        user_uuid: &UserId,
+        excluded_org: &OrganizationId,
+        conn: &DbConn,
+    ) -> i64 {
         db_run! { conn: {
             users_organizations::table
                 .filter(users_organizations::user_uuid.eq(user_uuid))
+                .filter(users_organizations::org_uuid.ne(excluded_org))
                 .filter(users_organizations::status.eq(MembershipStatus::Accepted as i32).or(users_organizations::status.eq(MembershipStatus::Confirmed as i32)))
                 .count()
                 .first::<i64>(conn)
