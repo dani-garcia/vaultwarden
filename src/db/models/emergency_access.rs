@@ -144,24 +144,16 @@ impl EmergencyAccess {
         self.updated_at = Utc::now().naive_utc();
 
         db_run! { conn:
-            sqlite, mysql {
-                match diesel::replace_into(emergency_access::table)
+            mysql {
+                diesel::insert_into(emergency_access::table)
                     .values(&*self)
+                    .on_conflict(diesel::dsl::DuplicatedKeys)
+                    .do_update()
+                    .set(&*self)
                     .execute(conn)
-                {
-                    Ok(_) => Ok(()),
-                    // Record already exists and causes a Foreign Key Violation because replace_into() wants to delete the record first.
-                    Err(diesel::result::Error::DatabaseError(diesel::result::DatabaseErrorKind::ForeignKeyViolation, _)) => {
-                        diesel::update(emergency_access::table)
-                            .filter(emergency_access::uuid.eq(&self.uuid))
-                            .set(&*self)
-                            .execute(conn)
-                            .map_res("Error updating emergency access")
-                    }
-                    Err(e) => Err(e.into()),
-                }.map_res("Error saving emergency access")
+                    .map_res("Error saving emergency access")
             }
-            postgresql {
+            postgresql, sqlite {
                 diesel::insert_into(emergency_access::table)
                     .values(&*self)
                     .on_conflict(emergency_access::uuid)

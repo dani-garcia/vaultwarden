@@ -138,15 +138,18 @@ impl Device {
 
     async fn inner_save(&self, conn: &DbConn) -> EmptyResult {
         db_run! { conn:
-            sqlite, mysql {
+            mysql {
                 crate::util::retry(||
-                    diesel::replace_into(devices::table)
+                    diesel::insert_into(devices::table)
                         .values(self)
+                        .on_conflict(diesel::dsl::DuplicatedKeys)
+                        .do_update()
+                        .set(self)
                         .execute(conn),
                     10,
                 ).map_res("Error saving device")
             }
-            postgresql {
+            postgresql, sqlite {
                 crate::util::retry(||
                     diesel::insert_into(devices::table)
                         .values(self)
