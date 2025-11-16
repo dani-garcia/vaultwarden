@@ -17,7 +17,6 @@ build_stage_image:
     platform: "$BUILDPLATFORM"
   alpine:
     image: "build_${TARGETARCH}${TARGETVARIANT}"
-    platform: "linux/amd64" # The Alpine build images only have linux/amd64 images
     arch_image:
       amd64: "ghcr.io/blackdex/rust-musl:x86_64-musl-stable-{{rust_version}}"
       arm64: "ghcr.io/blackdex/rust-musl:aarch64-musl-stable-{{rust_version}}"
