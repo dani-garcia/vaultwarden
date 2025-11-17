@@ -106,7 +106,11 @@ const showActiveTheme = (theme, focus = false) => {
     const themeSwitcherText = document.querySelector("#bd-theme-text");
     const activeThemeIcon = document.querySelector(".theme-icon-active use");
     const btnToActive = document.querySelector(`[data-bs-theme-value="${theme}"]`);
-    const svgOfActiveBtn = btnToActive.querySelector("span use").textContent;
+    if (!btnToActive) {
+        return;
+    }
+    const btnIconUse = btnToActive ? btnToActive.querySelector("[data-theme-icon-use]") : null;
+    const iconHref = btnIconUse ? btnIconUse.getAttribute("href") || btnIconUse.getAttribute("xlink:href") : null;
 
     document.querySelectorAll("[data-bs-theme-value]").forEach(element => {
         element.classList.remove("active");
@@ -115,7 +119,12 @@ const showActiveTheme = (theme, focus = false) => {
 
     btnToActive.classList.add("active");
     btnToActive.setAttribute("aria-pressed", "true");
-    activeThemeIcon.textContent = svgOfActiveBtn;
+
+    if (iconHref && activeThemeIcon) {
+        activeThemeIcon.setAttribute("href", iconHref);
+        activeThemeIcon.setAttribute("xlink:href", iconHref);
+    }
+
     const themeSwitcherLabel = `${themeSwitcherText.textContent} (${btnToActive.dataset.bsThemeValue})`;
     themeSwitcher.setAttribute("aria-label", themeSwitcherLabel);
 
