@@ -1,4 +1,4 @@
-use crate::db::schema::{devices, invitations, sso_users, users};
+use crate::db::schema::{invitations, sso_users, users};
 use chrono::{NaiveDateTime, TimeDelta, Utc};
 use derive_more::{AsRef, Deref, Display, From};
 use diesel::prelude::*;
@@ -10,7 +10,6 @@ use super::{
 use crate::{
     api::EmptyResult,
     crypto,
-    db::models::DeviceId,
     db::DbConn,
     error::MapResult,
     sso::OIDCIdentifier,
@@ -382,17 +381,6 @@ impl User {
         db_run! { conn: {
             users::table
                 .filter(users::uuid.eq(uuid))
-                .first::<Self>(conn)
-                .ok()
-        }}
-    }
-
-    pub async fn find_by_device_id(device_uuid: &DeviceId, conn: &DbConn) -> Option<Self> {
-        db_run! { conn: {
-            users::table
-                .inner_join(devices::table.on(devices::user_uuid.eq(users::uuid)))
-                .filter(devices::uuid.eq(device_uuid))
-                .select(users::all_columns)
                 .first::<Self>(conn)
                 .ok()
         }}
