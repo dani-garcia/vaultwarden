@@ -1,0 +1,12 @@
+webpki-roots v1.0.3
+├── hyper-rustls v0.27.7
+│   └── reqwest v0.12.24
+│       ├── oauth2 v5.0.0
+│       │   └── openidconnect v4.0.1
+│       │       └── vaultwarden v1.0.0 (/workspace)
+│       ├── opendal v0.54.1
+│       │   └── vaultwarden v1.0.0 (/workspace)
+│       ├── vaultwarden v1.0.0 (/workspace)
+│       └── yubico_ng v0.14.1
+│           └── vaultwarden v1.0.0 (/workspace)
+└── reqwest v0.12.24 (*)

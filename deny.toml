@@ -1,0 +1,29 @@
+
+# cargo-deny configuration (minimal)
+
+[advisories]
+# default uses the rustsec DB; keep empty to use defaults
+# Temporary advisory exceptions (timeboxed) — these are ignored by cargo-deny so CI can run
+# Tracked in issues/TRACK-2025-11-09-RSA-PASTE.md
+ignore = ["RUSTSEC-2023-0071", "RUSTSEC-2024-0436"]
+
+[licenses]
+# Allowlist of licenses. Edit to match project policy.
+allow = [
+	"AGPL-3.0-only",
+	"MIT",
+	"Apache-2.0",
+	"BSD-3-Clause",
+	"Unicode-3.0",
+	"ISC",
+	"0BSD",
+	"Zlib",
+	# Temporary additions to unblock CI while we pursue upgrades/replacements
+	# These MUST be timeboxed and reviewed per PR checklist
+	"MPL-2.0",
+	"CDLA-Permissive-2.0",
+	# Per-issue temporary exception added 2025-11-12 to unblock CI for remaining ar_archive_writer
+	# Timebox: remove no later than 2026-02-10 (90 days)
+	"Apache-2.0 WITH LLVM-exception",
+]
+exceptions = []

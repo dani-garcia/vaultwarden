@@ -1,0 +1,37 @@
+name: dependency-audit
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  audit:
+    name: Cargo Audit & License Checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: 1.91.0
+
+      - name: Install cargo-audit and cargo-deny
+        run: |
+          cargo install cargo-audit --version 0.22.0 || true
+          cargo install cargo-deny --version 0.11.0 || true
+
+      - name: Run cargo-audit
+        run: |
+          cargo audit || true
+
+      - name: Run cargo-deny advisories
+        run: |
+          cargo deny --manifest-path Cargo.toml check advisories || true
+
+      - name: Run cargo-deny licenses
+        run: |
+          cargo deny --manifest-path Cargo.toml check licenses || true

@@ -1,0 +1,2 @@
+webauthn-rs v0.5.3
+└── vaultwarden v1.0.0 (/workspace)

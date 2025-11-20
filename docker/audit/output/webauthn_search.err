@@ -1,0 +1,7 @@
+info: syncing channel updates for '1.91.0-x86_64-unknown-linux-gnu'
+info: latest update on 2025-10-30, rust version 1.91.0 (f8297e351 2025-10-28)
+info: downloading component 'clippy'
+info: downloading component 'rustfmt'
+info: installing component 'clippy'
+info: installing component 'rustfmt'
+note: to learn more about a package, run `cargo info <name>`
