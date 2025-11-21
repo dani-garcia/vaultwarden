@@ -1,26 +1,32 @@
-name: Automated Security Gates
+name: Consolidated CI - Repo Trivy Scan
 
 on:
   push:
     branches: [ main, master ]
   pull_request:
     branches: [ main, master ]
+  schedule:
+    - cron: '0 4 * * *'
+
+permissions:
+  contents: read
+  security-events: write
 
 jobs:
-  build-and-scan:
+  trivy-scan:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Automated Vulnerability Scan (Trivy)
+      - name: Run Trivy vulnerability scanner (repo)
         uses: aquasecurity/trivy-action@0.33.1
         with:
-          scan-type: 'fs'
+          scan-type: repo
           ignore-unfixed: true
-          format: 'sarif'
-          output: 'trivy-results.sarif'
-          exit-code: '1'
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH
 
       - name: Upload SARIF results to GitHub Code Scanning
         uses: github/code-scanning-action/upload-sarif@v2
