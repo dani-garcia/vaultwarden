@@ -246,8 +246,8 @@ fn init_logging() -> Result<log::LevelFilter, Error> {
                     .split(',')
                     .collect::<Vec<&str>>()
                     .into_iter()
-                    .flat_map(|s| match s.split('=').collect::<Vec<&str>>()[..] {
-                        [log, lvl_str] => log::LevelFilter::from_str(lvl_str).ok().map(|lvl| (log, lvl)),
+                    .flat_map(|s| match s.split_once('=') {
+                        Some((log, lvl_str)) => log::LevelFilter::from_str(lvl_str).ok().map(|lvl| (log, lvl)),
                         _ => None,
                     })
                     .collect()

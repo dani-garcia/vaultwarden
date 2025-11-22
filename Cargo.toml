@@ -116,7 +116,7 @@ job_scheduler_ng = "2.4.0"
 data-encoding = "2.9.0"
 
 # JWT library
-jsonwebtoken = "9.3.1"
+jsonwebtoken = { version = "10.2.0", features = ["use_pem", "rust_crypto"], default-features = false }
 
 # TOTP library
 totp-lite = "2.0.1"
@@ -150,7 +150,7 @@ hickory-resolver = "0.25.2"
 html5gum = "0.8.0"
 regex = { version = "1.12.2", features = ["std", "perf", "unicode-perl"], default-features = false }
 data-url = "0.3.2"
-bytes = "1.10.1"
+bytes = "1.11.0"
 svg-hush = "0.9.5"
 
 # Cache function results (Used for version check and favicon fetching)
@@ -167,8 +167,8 @@ openssl = "0.10.75"
 pico-args = "0.5.0"
 
 # Macro ident concatenation
-pastey = "0.1.1"
-governor = "0.10.1"
+pastey = "0.2.0"
+governor = "0.10.2"
 
 # OIDC for SSO
 openidconnect = { version = "4.0.1", features = ["reqwest", "native-tls"] }
@@ -193,12 +193,12 @@ rpassword = "7.4.0"
 grass_compiler = { version = "0.13.4", default-features = false }
 
 # File are accessed through Apache OpenDAL
-opendal = { version = "0.54.1", features = ["services-fs"], default-features = false }
+opendal = { version = "0.55.0", features = ["services-fs"], default-features = false }
 
 # For retrieving AWS credentials, including temporary SSO credentials
 anyhow = { version = "1.0.100", optional = true }
-aws-config = { version = "1.8.10", features = ["behavior-version-latest", "rt-tokio", "credentials-process", "sso"], default-features = false, optional = true }
-aws-credential-types = { version = "1.2.9", optional = true }
+aws-config = { version = "1.8.11", features = ["behavior-version-latest", "rt-tokio", "credentials-process", "sso"], default-features = false, optional = true }
+aws-credential-types = { version = "1.2.10", optional = true }
 aws-smithy-runtime-api = { version = "1.9.2", optional = true }
 http = { version = "1.3.1", optional = true }
 reqsign = { version = "0.16.5", optional = true }

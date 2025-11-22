@@ -705,7 +705,7 @@ async fn send_with_selected_transport(email: Message) -> EmptyResult {
 }
 
 async fn send_email(address: &str, subject: &str, body_html: String, body_text: String) -> EmptyResult {
-    let smtp_from = &CONFIG.smtp_from();
+    let smtp_from = Address::from_str(&CONFIG.smtp_from())?;
 
     let body = if CONFIG.smtp_embed_images() {
         let logo_gray_body = Body::new(crate::api::static_files("logo-gray.png").unwrap().1.to_vec());
@@ -727,9 +727,9 @@ async fn send_email(address: &str, subject: &str, body_html: String, body_text: 
     };
 
     let email = Message::builder()
-        .message_id(Some(format!("<{}@{}>", crate::util::get_uuid(), smtp_from.split('@').collect::<Vec<&str>>()[1])))
+        .message_id(Some(format!("<{}@{}>", crate::util::get_uuid(), smtp_from.domain())))
         .to(Mailbox::new(None, Address::from_str(address)?))
-        .from(Mailbox::new(Some(CONFIG.smtp_from_name()), Address::from_str(smtp_from)?))
+        .from(Mailbox::new(Some(CONFIG.smtp_from_name()), smtp_from))
         .subject(subject)
         .multipart(body)?;
 

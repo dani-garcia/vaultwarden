@@ -139,12 +139,7 @@ impl BasicTokenClaims {
 }
 
 fn decode_token_claims(token_name: &str, token: &str) -> ApiResult<BasicTokenClaims> {
-    let mut validation = jsonwebtoken::Validation::default();
-    validation.set_issuer(&[CONFIG.sso_authority()]);
-    validation.insecure_disable_signature_validation();
-    validation.validate_aud = false;
-
-    match jsonwebtoken::decode(token, &jsonwebtoken::DecodingKey::from_secret(&[]), &validation) {
+    match jsonwebtoken::dangerous::insecure_decode(token) {
         Ok(btc) => Ok(btc.claims),
         Err(err) => err_silent!(format!("Failed to decode basic token claims from {token_name}: {err}")),
     }
