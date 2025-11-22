@@ -73,15 +73,14 @@ impl SsoNonce {
 
     pub async fn delete_expired(pool: DbPool) -> EmptyResult {
         debug!("Purging expired sso_nonce");
-        if let Ok(conn) = pool.get().await {
-            let oldest = Utc::now().naive_utc() - *NONCE_EXPIRATION;
-            db_run! { conn: {
-                diesel::delete(sso_nonce::table.filter(sso_nonce::created_at.lt(oldest)))
-                    .execute(conn)
-                    .map_res("Error deleting expired SSO nonce")
-            }}
-        } else {
-            err!("Failed to get DB connection while purging expired sso_nonce")
-        }
+        let Ok(conn) = pool.get().await else {
+            err!("Failed to get DB connection while purging expired sso_nonce");
+        };
+        let oldest = Utc::now().naive_utc() - *NONCE_EXPIRATION;
+        db_run! { conn: {
+            diesel::delete(sso_nonce::table.filter(sso_nonce::created_at.lt(oldest)))
+                .execute(conn)
+                .map_res("Error deleting expired SSO nonce")
+        }}
     }
 }

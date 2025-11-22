@@ -324,8 +324,11 @@ pub async fn _register(data: Json<RegisterData>, email_verification: bool, conn:
                 error!("Error sending welcome email: {e:#?}");
             }
             user.last_verifying_at = Some(user.created_at);
-        } else if let Err(e) = mail::send_welcome(&user.email).await {
-            error!("Error sending welcome email: {e:#?}");
+        } else {
+            match mail::send_welcome(&user.email).await {
+                Err(e) => error!("Error sending welcome email: {e:#?}"),
+                Ok(_) => (),
+            }
         }
 
         if email_verified && is_email_2fa_required(data.organization_user_id, &conn).await {
@@ -1692,9 +1695,8 @@ async fn get_auth_requests_pending(headers: Headers, conn: DbConn) -> JsonResult
 
 pub async fn purge_auth_requests(pool: DbPool) {
     debug!("Purging auth requests");
-    if let Ok(conn) = pool.get().await {
-        AuthRequest::purge_expired_auth_requests(&conn).await;
-    } else {
-        error!("Failed to get DB connection while purging trashed ciphers")
+    match pool.get().await {
+        Ok(conn) => AuthRequest::purge_expired_auth_requests(&conn).await,
+        Err(_) => error!("Failed to get DB connection while purging trashed ciphers"),
     }
 }

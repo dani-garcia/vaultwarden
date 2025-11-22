@@ -731,13 +731,14 @@ async fn diagnostics(_token: AdminToken, ip_header: IpHeader, conn: DbConn) -> A
     let web_vault_version = get_web_vault_version();
 
     // Check if the running version is newer than the latest stable released version
-    let web_vault_pre_release = if let Ok(web_ver_match) = semver::VersionReq::parse(&format!(">{latest_web_build}")) {
-        web_ver_match.matches(
+    let web_vault_pre_release = match semver::VersionReq::parse(&format!(">{latest_web_build}")) {
+        Ok(web_ver_match) => web_ver_match.matches(
             &semver::Version::parse(&web_vault_version).unwrap_or_else(|_| semver::Version::parse("2025.1.1").unwrap()),
-        )
-    } else {
-        error!("Unable to parse latest_web_build: '{latest_web_build}'");
-        false
+        ),
+        Err(_) => {
+            error!("Unable to parse latest_web_build: '{latest_web_build}'");
+            false
+        }
     };
 
     let diagnostics_json = json!({

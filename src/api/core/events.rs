@@ -335,9 +335,8 @@ pub async fn event_cleanup_job(pool: DbPool) {
         return;
     }
 
-    if let Ok(conn) = pool.get().await {
-        Event::clean_events(&conn).await.ok();
-    } else {
-        error!("Failed to get DB connection while trying to cleanup the events table")
+    match pool.get().await {
+        Ok(conn) => Event::clean_events(&conn).await.ok().unwrap_or(()),
+        Err(_) => error!("Failed to get DB connection while trying to cleanup the events table"),
     }
 }

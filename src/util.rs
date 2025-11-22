@@ -375,10 +375,9 @@ where
     S: AsRef<str>,
     T: FromStr,
 {
-    if let Some(Ok(value)) = string.map(|s| s.as_ref().parse::<T>()) {
-        Some(value)
-    } else {
-        None
+    match string.map(|s| s.as_ref().parse::<T>()) {
+        Some(Ok(value)) => Some(value),
+        _ => None,
     }
 }
 
