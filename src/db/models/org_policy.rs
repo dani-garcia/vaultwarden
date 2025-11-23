@@ -2,10 +2,12 @@ use derive_more::{AsRef, From};
 use serde::Deserialize;
 use serde_json::Value;
 
+use crate::api::core::two_factor;
 use crate::api::EmptyResult;
 use crate::db::schema::{org_policies, users_organizations};
 use crate::db::DbConn;
 use crate::error::MapResult;
+use crate::CONFIG;
 use diesel::prelude::*;
 
 use super::{Membership, MembershipId, MembershipStatus, MembershipType, OrganizationId, TwoFactor, UserId};
@@ -56,14 +58,6 @@ pub struct SendOptionsPolicyData {
 pub struct ResetPasswordDataModel {
     #[serde(rename = "autoEnrollEnabled", alias = "AutoEnrollEnabled")]
     pub auto_enroll_enabled: bool,
-}
-
-pub type OrgPolicyResult = Result<(), OrgPolicyErr>;
-
-#[derive(Debug)]
-pub enum OrgPolicyErr {
-    TwoFactorMissing,
-    SingleOrgEnforced,
 }
 
 /// Local methods
@@ -280,31 +274,35 @@ impl OrgPolicy {
         false
     }
 
-    pub async fn is_user_allowed(
-        user_uuid: &UserId,
-        org_uuid: &OrganizationId,
-        exclude_current_org: bool,
-        conn: &DbConn,
-    ) -> OrgPolicyResult {
-        // Enforce TwoFactor/TwoStep login
-        if TwoFactor::find_by_user(user_uuid, conn).await.is_empty() {
-            match Self::find_by_org_and_type(org_uuid, OrgPolicyType::TwoFactorAuthentication, conn).await {
-                Some(p) if p.enabled => {
-                    return Err(OrgPolicyErr::TwoFactorMissing);
+    pub async fn check_user_allowed(m: &Membership, action: &str, conn: &DbConn) -> EmptyResult {
+        if m.atype < MembershipType::Admin && m.status > (MembershipStatus::Invited as i32) {
+            // Enforce TwoFactor/TwoStep login
+            if let Some(p) = Self::find_by_org_and_type(&m.org_uuid, OrgPolicyType::TwoFactorAuthentication, conn).await
+            {
+                if p.enabled && TwoFactor::find_by_user(&m.user_uuid, conn).await.is_empty() {
+                    if CONFIG.email_2fa_auto_fallback() {
+                        two_factor::email::find_and_activate_email_2fa(&m.user_uuid, conn).await?;
+                    } else {
+                        err!(format!("Cannot {} because 2FA is required (membership {})", action, m.uuid));
+                    }
                 }
-                _ => {}
-            };
-        }
+            }
 
-        // Enforce Single Organization Policy of other organizations user is a member of
-        // This check here needs to exclude this current org-id, else an accepted user can not be confirmed.
-        let exclude_org = if exclude_current_org {
-            Some(org_uuid)
-        } else {
-            None
-        };
-        if Self::is_applicable_to_user(user_uuid, OrgPolicyType::SingleOrg, exclude_org, conn).await {
-            return Err(OrgPolicyErr::SingleOrgEnforced);
+            // Check if the user is part of another Organization with SingleOrg activated
+            if Self::is_applicable_to_user(&m.user_uuid, OrgPolicyType::SingleOrg, Some(&m.org_uuid), conn).await {
+                err!(format!(
+                    "Cannot {} because another organization policy forbids it (membership {})",
+                    action, m.uuid
+                ));
+            }
+
+            if let Some(p) = Self::find_by_org_and_type(&m.org_uuid, OrgPolicyType::SingleOrg, conn).await {
+                if p.enabled
+                    && Membership::count_accepted_and_confirmed_by_user(&m.user_uuid, &m.org_uuid, conn).await > 0
+                {
+                    err!(format!("Cannot {} because the organization policy forbids being part of other organization (membership {})", action, m.uuid));
+                }
+            }
         }
 
         Ok(())

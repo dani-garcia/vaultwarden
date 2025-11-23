@@ -15,7 +15,7 @@ use crate::{
         models::{
             Cipher, CipherId, Collection, CollectionCipher, CollectionGroup, CollectionId, CollectionUser, EventType,
             Group, GroupId, GroupUser, Invitation, Membership, MembershipId, MembershipStatus, MembershipType,
-            OrgPolicy, OrgPolicyErr, OrgPolicyType, Organization, OrganizationApiKey, OrganizationId, User, UserId,
+            OrgPolicy, OrgPolicyType, Organization, OrganizationApiKey, OrganizationId, User, UserId,
         },
         DbConn,
     },
@@ -1463,26 +1463,11 @@ async fn _confirm_invite(
         err!("User in invalid state")
     }
 
-    // This check is also done at accept_invite, _confirm_invite, _activate_member, edit_member, admin::update_membership_type
-    // It returns different error messages per function.
-    if member_to_confirm.atype < MembershipType::Admin {
-        match OrgPolicy::is_user_allowed(&member_to_confirm.user_uuid, org_id, true, conn).await {
-            Ok(_) => {}
-            Err(OrgPolicyErr::TwoFactorMissing) => {
-                if CONFIG.email_2fa_auto_fallback() {
-                    two_factor::email::find_and_activate_email_2fa(&member_to_confirm.user_uuid, conn).await?;
-                } else {
-                    err!("You cannot confirm this user because they have not setup 2FA");
-                }
-            }
-            Err(OrgPolicyErr::SingleOrgEnforced) => {
-                err!("You cannot confirm this user because they are a member of an organization which forbids it");
-            }
-        }
-    }
-
     member_to_confirm.status = MembershipStatus::Confirmed as i32;
     member_to_confirm.akey = key.to_string();
+
+    // This check is also done at accept_invite, _confirm_invite, _activate_member, edit_member, admin::update_membership_type
+    OrgPolicy::check_user_allowed(&member_to_confirm, "confirm", conn).await?;
 
     log_event(
         EventType::OrganizationUserConfirmed as i32,
@@ -1631,26 +1616,12 @@ async fn edit_member(
         }
     }
 
-    // This check is also done at accept_invite, _confirm_invite, _activate_member, edit_member, admin::update_membership_type
-    // It returns different error messages per function.
-    if new_type < MembershipType::Admin {
-        match OrgPolicy::is_user_allowed(&member_to_edit.user_uuid, &org_id, true, &conn).await {
-            Ok(_) => {}
-            Err(OrgPolicyErr::TwoFactorMissing) => {
-                if CONFIG.email_2fa_auto_fallback() {
-                    two_factor::email::find_and_activate_email_2fa(&member_to_edit.user_uuid, &conn).await?;
-                } else {
-                    err!("You cannot modify this user to this type because they have not setup 2FA");
-                }
-            }
-            Err(OrgPolicyErr::SingleOrgEnforced) => {
-                err!("You cannot modify this user to this type because they are a member of an organization which forbids it");
-            }
-        }
-    }
-
     member_to_edit.access_all = access_all;
     member_to_edit.atype = new_type as i32;
+
+    // This check is also done at accept_invite, _confirm_invite, _activate_member, edit_member, admin::update_membership_type
+    // We need to perform the check after changing the type since `admin` is exempt.
+    OrgPolicy::check_user_allowed(&member_to_edit, "modify", &conn).await?;
 
     // Delete all the odd collections
     for c in CollectionUser::find_by_organization_and_user_uuid(&org_id, &member_to_edit.user_uuid, &conn).await {
@@ -2154,14 +2125,14 @@ async fn put_policy(
 
     // When enabling the SingleOrg policy, remove this org's members that are members of other orgs
     if pol_type_enum == OrgPolicyType::SingleOrg && data.enabled {
-        for member in Membership::find_by_org(&org_id, &conn).await.into_iter() {
+        for mut member in Membership::find_by_org(&org_id, &conn).await.into_iter() {
             // Policy only applies to non-Owner/non-Admin members who have accepted joining the org
             // Exclude invited and revoked users when checking for this policy.
             // Those users will not be allowed to accept or be activated because of the policy checks done there.
-            // We check if the count is larger then 1, because it includes this organization also.
             if member.atype < MembershipType::Admin
                 && member.status != MembershipStatus::Invited as i32
-                && Membership::count_accepted_and_confirmed_by_user(&member.user_uuid, &conn).await > 1
+                && Membership::count_accepted_and_confirmed_by_user(&member.user_uuid, &member.org_uuid, &conn).await
+                    > 0
             {
                 if CONFIG.mail_enabled() {
                     let org = Organization::find_by_uuid(&member.org_uuid, &conn).await.unwrap();
@@ -2181,7 +2152,8 @@ async fn put_policy(
                 )
                 .await;
 
-                member.delete(&conn).await?;
+                member.revoke();
+                member.save(&conn).await?;
             }
         }
     }
@@ -2628,25 +2600,10 @@ async fn _restore_member(
                 err!("Only owners can restore other owners")
             }
 
-            // This check is also done at accept_invite, _confirm_invite, _activate_member, edit_member, admin::update_membership_type
-            // It returns different error messages per function.
-            if member.atype < MembershipType::Admin {
-                match OrgPolicy::is_user_allowed(&member.user_uuid, org_id, false, conn).await {
-                    Ok(_) => {}
-                    Err(OrgPolicyErr::TwoFactorMissing) => {
-                        if CONFIG.email_2fa_auto_fallback() {
-                            two_factor::email::find_and_activate_email_2fa(&member.user_uuid, conn).await?;
-                        } else {
-                            err!("You cannot restore this user because they have not setup 2FA");
-                        }
-                    }
-                    Err(OrgPolicyErr::SingleOrgEnforced) => {
-                        err!("You cannot restore this user because they are a member of an organization which forbids it");
-                    }
-                }
-            }
-
             member.restore();
+            // This check is also done at accept_invite, _confirm_invite, _activate_member, edit_member, admin::update_membership_type
+            // This check need to be done after restoring to work with the correct status
+            OrgPolicy::check_user_allowed(&member, "restore", conn).await?;
             member.save(conn).await?;
 
             log_event(
