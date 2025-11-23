@@ -46,7 +46,7 @@ impl Attachment {
     pub async fn get_url(&self, host: &str) -> Result<String, crate::Error> {
         let operator = CONFIG.opendal_operator_for_path_type(&PathType::Attachments)?;
 
-        if operator.info().scheme() == opendal::Scheme::Fs {
+        if operator.info().scheme() == <&'static str>::from(opendal::Scheme::Fs) {
             let token = encode_jwt(&generate_file_download_claims(self.cipher_uuid.clone(), self.id.clone()));
             Ok(format!("{host}/attachments/{}/{}?token={token}", self.cipher_uuid, self.id))
         } else {
