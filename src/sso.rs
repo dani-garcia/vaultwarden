@@ -132,6 +132,12 @@ struct BasicTokenClaims {
     exp: i64,
 }
 
+#[derive(Deserialize)]
+struct BasicTokenClaimsValidation {
+    exp: u64,
+    iss: String,
+}
+
 impl BasicTokenClaims {
     fn nbf(&self) -> i64 {
         self.nbf.or(self.iat).unwrap_or_else(|| Utc::now().timestamp())
@@ -139,8 +145,23 @@ impl BasicTokenClaims {
 }
 
 fn decode_token_claims(token_name: &str, token: &str) -> ApiResult<BasicTokenClaims> {
-    match jsonwebtoken::dangerous::insecure_decode(token) {
-        Ok(btc) => Ok(btc.claims),
+    // We need to manually validate this token, since `insecure_decode` does not do this
+    match jsonwebtoken::dangerous::insecure_decode::<BasicTokenClaimsValidation>(token) {
+        Ok(btcv) => {
+            let now = jsonwebtoken::get_current_timestamp();
+            let validate_claim = btcv.claims;
+            // Validate the exp in the claim with a leeway of 60 seconds, same as jsonwebtoken does
+            if validate_claim.exp < now - 60 {
+                err_silent!(format!("Expired Signature for base token claim from {token_name}"))
+            }
+            if validate_claim.iss.ne(&CONFIG.sso_authority()) {
+                err_silent!(format!("Invalid Issuer for base token claim from {token_name}"))
+            }
+
+            // All is validated and ok, lets decode again using the wanted struct
+            let btc = jsonwebtoken::dangerous::insecure_decode::<BasicTokenClaims>(token).unwrap();
+            Ok(btc.claims)
+        }
         Err(err) => err_silent!(format!("Failed to decode basic token claims from {token_name}: {err}")),
     }
 }
