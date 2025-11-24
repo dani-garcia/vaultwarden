@@ -351,7 +351,7 @@ fn logout(cookies: &CookieJar<'_>) -> Redirect {
 async fn get_users_json(_token: AdminToken, conn: DbConn) -> Json<Value> {
     let users = User::get_all(&conn).await;
     let mut users_json = Vec::with_capacity(users.len());
-    for (u, _) in users {
+    for (u, sso_u) in users {
         let mut usr = u.to_json(&conn).await;
         usr["userEnabled"] = json!(u.enabled);
         usr["createdAt"] = json!(format_naive_datetime_local(&u.created_at, DT_FMT));
@@ -359,9 +359,10 @@ async fn get_users_json(_token: AdminToken, conn: DbConn) -> Json<Value> {
             Some(dt) => json!(format_naive_datetime_local(&dt, DT_FMT)),
             None => json!(None::<String>),
         };
+        usr["sso_identifier"] = json!(sso_u.map(|u| u.identifier.to_string()).unwrap_or(String::new()));
+
         users_json.push(usr);
     }
-
     Json(Value::Array(users_json))
 }
 
