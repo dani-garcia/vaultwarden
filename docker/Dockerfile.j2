@@ -36,16 +36,16 @@ FROM --platform=linux/amd64 docker.io/vaultwarden/web-vault@{{ vault_image_diges
 FROM --platform=linux/amd64 docker.io/tonistiigi/xx@{{ xx_image_digest }} AS xx
 {% elif base == "alpine" %}
 ########################## ALPINE BUILD IMAGES ##########################
-## NOTE: The Alpine Base Images do not support other platforms then linux/amd64
+## NOTE: The Alpine Base Images do not support other platforms then linux/amd64 and linux/arm64
 ## And for Alpine we define all build images here, they will only be loaded when actually used
 {% for arch in build_stage_image[base].arch_image %}
-FROM --platform={{ build_stage_image[base].platform }} {{ build_stage_image[base].arch_image[arch] }} AS build_{{ arch }}
+FROM --platform=$BUILDPLATFORM {{ build_stage_image[base].arch_image[arch] }} AS build_{{ arch }}
 {% endfor %}
 {% endif %}
 
 ########################## BUILD IMAGE ##########################
 # hadolint ignore=DL3006
-FROM --platform={{ build_stage_image[base].platform }} {{ build_stage_image[base].image }} AS build
+FROM --platform=$BUILDPLATFORM {{ build_stage_image[base].image }} AS build
 {% if base == "debian" %}
 COPY --from=xx / /
 {% endif %}

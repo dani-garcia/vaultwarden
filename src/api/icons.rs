@@ -82,19 +82,19 @@ static ICON_SIZE_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?x)(\d+
 // It is used to prevent sending a specific header which breaks icon downloads.
 // If this function needs to be renamed, also adjust the code in `util.rs`
 #[get("/<domain>/icon.png")]
-fn icon_external(domain: &str) -> Option<Redirect> {
+fn icon_external(domain: &str) -> Cached<Option<Redirect>> {
     if !is_valid_domain(domain) {
         warn!("Invalid domain: {domain}");
-        return None;
+        return Cached::ttl(None, CONFIG.icon_cache_negttl(), true);
     }
 
     if should_block_address(domain) {
         warn!("Blocked address: {domain}");
-        return None;
+        return Cached::ttl(None, CONFIG.icon_cache_negttl(), true);
     }
 
     let url = CONFIG._icon_service_url().replace("{}", domain);
-    match CONFIG.icon_redirect_code() {
+    let redir = match CONFIG.icon_redirect_code() {
         301 => Some(Redirect::moved(url)), // legacy permanent redirect
         302 => Some(Redirect::found(url)), // legacy temporary redirect
         307 => Some(Redirect::temporary(url)),
@@ -103,7 +103,8 @@ fn icon_external(domain: &str) -> Option<Redirect> {
             error!("Unexpected redirect code {}", CONFIG.icon_redirect_code());
             None
         }
-    }
+    };
+    Cached::ttl(redir, CONFIG.icon_cache_ttl(), true)
 }
 
 #[get("/<domain>/icon.png")]
@@ -141,7 +142,7 @@ async fn icon_internal(domain: &str) -> Cached<(ContentType, Vec<u8>)> {
 /// This does some manual checks and makes use of Url to do some basic checking.
 /// domains can't be larger then 63 characters (not counting multiple subdomains) according to the RFC's, but we limit the total size to 255.
 fn is_valid_domain(domain: &str) -> bool {
-    const ALLOWED_CHARS: &str = "_-.";
+    const ALLOWED_CHARS: &str = "-.";
 
     // If parsing the domain fails using Url, it will not work with reqwest.
     if let Err(parse_error) = url::Url::parse(format!("https://{domain}").as_str()) {
