@@ -267,6 +267,10 @@ async fn _sso_login(
         }
         Some((mut user, sso_user)) => {
             let mut device = get_device(&data, conn, &user).await?;
+
+            // Save to update `device.updated_at` to track usage and toggle new status
+            device.save(conn).await?;
+
             let twofactor_token = twofactor_auth(&mut user, &data, &mut device, ip, client_version, conn).await?;
 
             if user.private_key.is_none() {
@@ -430,6 +434,9 @@ async fn _password_login(
     }
 
     let mut device = get_device(&data, conn, &user).await?;
+
+    // Save to update `device.updated_at` to track usage and toggle new status
+    device.save(conn).await?;
 
     let twofactor_token = twofactor_auth(&mut user, &data, &mut device, ip, client_version, conn).await?;
 
