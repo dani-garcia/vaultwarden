@@ -23,7 +23,7 @@ use crate::{
         backup_sqlite, get_sql_server_version,
         models::{
             Attachment, Cipher, Collection, Device, Event, EventType, Group, Invitation, Membership, MembershipId,
-            MembershipType, OrgPolicy, Organization, OrganizationId, SsoUser, TwoFactor, User, UserId,
+            MembershipType, OrgPolicy, Organization, OrganizationId, SsoUser, TwoFactor, User, UserId
         },
         DbConn, DbConnType, ACTIVE_DB_TYPE,
     },
@@ -296,8 +296,8 @@ struct InviteData {
     email: String,
 }
 
-async fn get_user_or_404(user_id: &UserId, conn: &DbConn) -> ApiResult<User> {
-    if let Some(user) = User::find_by_uuid(user_id, conn).await {
+async fn get_user_or_404(user_id: &UserId, conn: &DbConn) -> ApiResult<(User, Option<SsoUser>)> {
+    if let Some(user) = SsoUser::find_by_uuid(user_id, conn).await {
         Ok(user)
     } else {
         err_code!("User doesn't exist", Status::NotFound.code);
@@ -347,37 +347,16 @@ fn logout(cookies: &CookieJar<'_>) -> Redirect {
     Redirect::to(admin_path())
 }
 
-#[get("/users")]
-async fn get_users_json(_token: AdminToken, conn: DbConn) -> Json<Value> {
-    let users = User::get_all(&conn).await;
+async fn get_users_property(users: Vec<(User, Option<SsoUser>)>, conn: &DbConn) -> Vec<Value>  {
     let mut users_json = Vec::with_capacity(users.len());
     for (u, sso_u) in users {
-        let mut usr = u.to_json(&conn).await;
-        usr["userEnabled"] = json!(u.enabled);
-        usr["createdAt"] = json!(format_naive_datetime_local(&u.created_at, DT_FMT));
-        usr["lastActive"] = match u.last_active(&conn).await {
-            Some(dt) => json!(format_naive_datetime_local(&dt, DT_FMT)),
-            None => json!(None::<String>),
-        };
-        usr["sso_identifier"] = json!(sso_u.map(|u| u.identifier.to_string()).unwrap_or(String::new()));
-
-        users_json.push(usr);
-    }
-    Json(Value::Array(users_json))
-}
-
-#[get("/users/overview")]
-async fn users_overview(_token: AdminToken, conn: DbConn) -> ApiResult<Html<String>> {
-    let users = User::get_all(&conn).await;
-    let mut users_json = Vec::with_capacity(users.len());
-    for (u, sso_u) in users {
-        let mut usr = u.to_json(&conn).await;
-        usr["cipher_count"] = json!(Cipher::count_owned_by_user(&u.uuid, &conn).await);
-        usr["attachment_count"] = json!(Attachment::count_by_user(&u.uuid, &conn).await);
-        usr["attachment_size"] = json!(get_display_size(Attachment::size_by_user(&u.uuid, &conn).await));
+        let mut usr = u.to_json(conn).await;
+        usr["cipher_count"] = json!(Cipher::count_owned_by_user(&u.uuid, conn).await);
+        usr["attachment_count"] = json!(Attachment::count_by_user(&u.uuid, conn).await);
+        usr["attachment_size"] = json!(get_display_size(Attachment::size_by_user(&u.uuid, conn).await));
         usr["user_enabled"] = json!(u.enabled);
         usr["created_at"] = json!(format_naive_datetime_local(&u.created_at, DT_FMT));
-        usr["last_active"] = match u.last_active(&conn).await {
+        usr["last_active"] = match u.last_active(conn).await {
             Some(dt) => json!(format_naive_datetime_local(&dt, DT_FMT)),
             None => json!("Never"),
         };
@@ -386,18 +365,30 @@ async fn users_overview(_token: AdminToken, conn: DbConn) -> ApiResult<Html<Stri
 
         users_json.push(usr);
     }
+    return users_json
+}
 
+#[get("/users")]
+async fn get_users_json(_token: AdminToken, conn: DbConn) -> Json<Value> {
+    let users = User::get_all(&conn).await;
+    let users_json = get_users_property(users, &conn).await;
+    Json(Value::Array(users_json))
+}
+
+
+#[get("/users/overview")]
+async fn users_overview(_token: AdminToken, conn: DbConn) -> ApiResult<Html<String>> {
+    let users = User::get_all(&conn).await;
+    let users_json = get_users_property(users, &conn).await;
     let text = AdminTemplateData::new("admin/users", json!(users_json)).render()?;
     Ok(Html(text))
 }
 
 #[get("/users/by-mail/<mail>")]
 async fn get_user_by_mail_json(mail: &str, _token: AdminToken, conn: DbConn) -> JsonResult {
-    if let Some(u) = User::find_by_mail(mail, &conn).await {
-        let mut usr = u.to_json(&conn).await;
-        usr["userEnabled"] = json!(u.enabled);
-        usr["createdAt"] = json!(format_naive_datetime_local(&u.created_at, DT_FMT));
-        Ok(Json(usr))
+    if let Some((u, sso)) = SsoUser::find_by_mail(mail, &conn).await {
+        let user_json = get_users_property(vec!((u, sso)), &conn).await[0].clone();
+        Ok(Json(user_json))
     } else {
         err_code!("User doesn't exist", Status::NotFound.code);
     }
@@ -405,16 +396,15 @@ async fn get_user_by_mail_json(mail: &str, _token: AdminToken, conn: DbConn) -> 
 
 #[get("/users/<user_id>")]
 async fn get_user_json(user_id: UserId, _token: AdminToken, conn: DbConn) -> JsonResult {
-    let u = get_user_or_404(&user_id, &conn).await?;
-    let mut usr = u.to_json(&conn).await;
-    usr["userEnabled"] = json!(u.enabled);
-    usr["createdAt"] = json!(format_naive_datetime_local(&u.created_at, DT_FMT));
-    Ok(Json(usr))
+    let u_sso = get_user_or_404(&user_id, &conn).await?;
+    let user_json = get_users_property(vec!(u_sso), &conn).await[0].clone();
+
+    Ok(Json(user_json))
 }
 
 #[post("/users/<user_id>/delete", format = "application/json")]
 async fn delete_user(user_id: UserId, token: AdminToken, conn: DbConn) -> EmptyResult {
-    let user = get_user_or_404(&user_id, &conn).await?;
+    let (user, _) = get_user_or_404(&user_id, &conn).await?;
 
     // Get the membership records before deleting the actual user
     let memberships = Membership::find_any_state_by_user(&user_id, &conn).await;
@@ -459,7 +449,7 @@ async fn delete_sso_user(user_id: UserId, token: AdminToken, conn: DbConn) -> Em
 
 #[post("/users/<user_id>/deauth", format = "application/json")]
 async fn deauth_user(user_id: UserId, _token: AdminToken, conn: DbConn, nt: Notify<'_>) -> EmptyResult {
-    let mut user = get_user_or_404(&user_id, &conn).await?;
+    let (mut user, _) = get_user_or_404(&user_id, &conn).await?;
 
     nt.send_logout(&user, None, &conn).await;
 
@@ -480,7 +470,7 @@ async fn deauth_user(user_id: UserId, _token: AdminToken, conn: DbConn, nt: Noti
 
 #[post("/users/<user_id>/disable", format = "application/json")]
 async fn disable_user(user_id: UserId, _token: AdminToken, conn: DbConn, nt: Notify<'_>) -> EmptyResult {
-    let mut user = get_user_or_404(&user_id, &conn).await?;
+    let (mut user, _) = get_user_or_404(&user_id, &conn).await?;
     Device::delete_all_by_user(&user.uuid, &conn).await?;
     user.reset_security_stamp();
     user.enabled = false;
@@ -494,7 +484,7 @@ async fn disable_user(user_id: UserId, _token: AdminToken, conn: DbConn, nt: Not
 
 #[post("/users/<user_id>/enable", format = "application/json")]
 async fn enable_user(user_id: UserId, _token: AdminToken, conn: DbConn) -> EmptyResult {
-    let mut user = get_user_or_404(&user_id, &conn).await?;
+    let (mut user, _) = get_user_or_404(&user_id, &conn).await?;
     user.enabled = true;
 
     user.save(&conn).await
@@ -502,7 +492,7 @@ async fn enable_user(user_id: UserId, _token: AdminToken, conn: DbConn) -> Empty
 
 #[post("/users/<user_id>/remove-2fa", format = "application/json")]
 async fn remove_2fa(user_id: UserId, token: AdminToken, conn: DbConn) -> EmptyResult {
-    let mut user = get_user_or_404(&user_id, &conn).await?;
+    let (mut user, _) = get_user_or_404(&user_id, &conn).await?;
     TwoFactor::delete_all_by_user(&user.uuid, &conn).await?;
     two_factor::enforce_2fa_policy(&user, &ACTING_ADMIN_USER.into(), 14, &token.ip.ip, &conn).await?;
     user.totp_recover = None;
