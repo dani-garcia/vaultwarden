@@ -1409,7 +1409,7 @@ async fn put_device_token(device_id: DeviceId, data: Json<PushToken>, headers: H
     }
 
     device.push_token = Some(token);
-    if let Err(e) = device.save(&conn).await {
+    if let Err(e) = device.save(true, &conn).await {
         err!(format!("An error occurred while trying to save the device push token: {e}"));
     }
 
