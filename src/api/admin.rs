@@ -23,7 +23,7 @@ use crate::{
         backup_sqlite, get_sql_server_version,
         models::{
             Attachment, Cipher, Collection, Device, Event, EventType, Group, Invitation, Membership, MembershipId,
-            MembershipType, OrgPolicy, Organization, OrganizationId, SsoUser, TwoFactor, User, UserId
+            MembershipType, OrgPolicy, Organization, OrganizationId, SsoUser, TwoFactor, User, UserId,
         },
         DbConn, DbConnType, ACTIVE_DB_TYPE,
     },
@@ -347,7 +347,7 @@ fn logout(cookies: &CookieJar<'_>) -> Redirect {
     Redirect::to(admin_path())
 }
 
-async fn get_users_property(users: Vec<(User, Option<SsoUser>)>, conn: &DbConn) -> Vec<Value>  {
+async fn get_users_property(users: Vec<(User, Option<SsoUser>)>, conn: &DbConn) -> Vec<Value> {
     let mut users_json = Vec::with_capacity(users.len());
     for (u, sso_u) in users {
         let mut usr = u.to_json(conn).await;
@@ -365,7 +365,7 @@ async fn get_users_property(users: Vec<(User, Option<SsoUser>)>, conn: &DbConn) 
 
         users_json.push(usr);
     }
-    return users_json
+    users_json
 }
 
 #[get("/users")]
@@ -374,7 +374,6 @@ async fn get_users_json(_token: AdminToken, conn: DbConn) -> Json<Value> {
     let users_json = get_users_property(users, &conn).await;
     Json(Value::Array(users_json))
 }
-
 
 #[get("/users/overview")]
 async fn users_overview(_token: AdminToken, conn: DbConn) -> ApiResult<Html<String>> {
@@ -387,7 +386,7 @@ async fn users_overview(_token: AdminToken, conn: DbConn) -> ApiResult<Html<Stri
 #[get("/users/by-mail/<mail>")]
 async fn get_user_by_mail_json(mail: &str, _token: AdminToken, conn: DbConn) -> JsonResult {
     if let Some((u, sso)) = SsoUser::find_by_mail(mail, &conn).await {
-        let user_json = get_users_property(vec!((u, sso)), &conn).await[0].clone();
+        let user_json = get_users_property(vec![(u, sso)], &conn).await[0].clone();
         Ok(Json(user_json))
     } else {
         err_code!("User doesn't exist", Status::NotFound.code);
@@ -397,7 +396,7 @@ async fn get_user_by_mail_json(mail: &str, _token: AdminToken, conn: DbConn) -> 
 #[get("/users/<user_id>")]
 async fn get_user_json(user_id: UserId, _token: AdminToken, conn: DbConn) -> JsonResult {
     let u_sso = get_user_or_404(&user_id, &conn).await?;
-    let user_json = get_users_property(vec!(u_sso), &conn).await[0].clone();
+    let user_json = get_users_property(vec![u_sso], &conn).await[0].clone();
 
     Ok(Json(user_json))
 }
