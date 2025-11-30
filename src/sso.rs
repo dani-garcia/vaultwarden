@@ -1,8 +1,7 @@
 use std::{sync::LazyLock, time::Duration};
 
 use chrono::Utc;
-use derive_more::{AsRef, Deref, Display, From};
-use mini_moka::sync::Cache;
+use derive_more::{AsRef, Deref, Display, From, Into};
 use regex::Regex;
 use url::Url;
 
@@ -11,7 +10,7 @@ use crate::{
     auth,
     auth::{AuthMethod, AuthTokens, TokenWrapper, BW_EXPIRATION, DEFAULT_REFRESH_VALIDITY},
     db::{
-        models::{Device, SsoNonce, User},
+        models::{Device, OIDCAuthenticatedUser, OIDCCodeWrapper, SsoAuth, SsoUser, User},
         DbConn,
     },
     sso_client::Client,
@@ -20,12 +19,10 @@ use crate::{
 
 pub static FAKE_IDENTIFIER: &str = "VW_DUMMY_IDENTIFIER_FOR_OIDC";
 
-static AC_CACHE: LazyLock<Cache<OIDCState, AuthenticatedUser>> =
-    LazyLock::new(|| Cache::builder().max_capacity(1000).time_to_live(Duration::from_secs(10 * 60)).build());
-
 static SSO_JWT_ISSUER: LazyLock<String> = LazyLock::new(|| format!("{}|sso", CONFIG.domain_origin()));
 
-pub static NONCE_EXPIRATION: LazyLock<chrono::Duration> = LazyLock::new(|| chrono::TimeDelta::try_minutes(10).unwrap());
+pub static SSO_AUTH_EXPIRATION: LazyLock<chrono::Duration> =
+    LazyLock::new(|| chrono::TimeDelta::try_minutes(10).unwrap());
 
 #[derive(
     Clone,
@@ -46,6 +43,47 @@ pub static NONCE_EXPIRATION: LazyLock<chrono::Duration> = LazyLock::new(|| chron
 #[deref(forward)]
 #[from(forward)]
 pub struct OIDCCode(String);
+
+#[derive(
+    Clone,
+    Debug,
+    Default,
+    DieselNewType,
+    FromForm,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+    AsRef,
+    Deref,
+    Display,
+    From,
+    Into,
+)]
+#[deref(forward)]
+#[into(owned)]
+pub struct OIDCCodeChallenge(String);
+
+#[derive(
+    Clone,
+    Debug,
+    Default,
+    DieselNewType,
+    FromForm,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+    AsRef,
+    Deref,
+    Display,
+    Into,
+)]
+#[deref(forward)]
+#[into(owned)]
+pub struct OIDCCodeVerifier(String);
 
 #[derive(
     Clone,
@@ -86,40 +124,6 @@ pub fn encode_ssotoken_claims() -> String {
         exp: (time_now + chrono::TimeDelta::try_minutes(2).unwrap()).timestamp(),
         iss: SSO_JWT_ISSUER.to_string(),
         sub: "vaultwarden".to_string(),
-    };
-
-    auth::encode_jwt(&claims)
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum OIDCCodeWrapper {
-    Ok {
-        state: OIDCState,
-        code: OIDCCode,
-    },
-    Error {
-        state: OIDCState,
-        error: String,
-        error_description: Option<String>,
-    },
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct OIDCCodeClaims {
-    // Expiration time
-    pub exp: i64,
-    // Issuer
-    pub iss: String,
-
-    pub code: OIDCCodeWrapper,
-}
-
-pub fn encode_code_claims(code: OIDCCodeWrapper) -> String {
-    let time_now = Utc::now();
-    let claims = OIDCCodeClaims {
-        exp: (time_now + chrono::TimeDelta::try_minutes(5).unwrap()).timestamp(),
-        iss: SSO_JWT_ISSUER.to_string(),
-        code,
     };
 
     auth::encode_jwt(&claims)
@@ -178,9 +182,14 @@ pub fn decode_state(base64_state: &str) -> ApiResult<OIDCState> {
     Ok(state)
 }
 
-// The `nonce` allow to protect against replay attacks
 // redirect_uri from: https://github.com/bitwarden/server/blob/main/src/Identity/IdentityServer/ApiClient.cs
-pub async fn authorize_url(state: OIDCState, client_id: &str, raw_redirect_uri: &str, conn: DbConn) -> ApiResult<Url> {
+pub async fn authorize_url(
+    state: OIDCState,
+    client_challenge: OIDCCodeChallenge,
+    client_id: &str,
+    raw_redirect_uri: &str,
+    conn: DbConn,
+) -> ApiResult<Url> {
     let redirect_uri = match client_id {
         "web" | "browser" => format!("{}/sso-connector.html", CONFIG.domain()),
         "desktop" | "mobile" => "bitwarden://sso-callback".to_string(),
@@ -194,8 +203,8 @@ pub async fn authorize_url(state: OIDCState, client_id: &str, raw_redirect_uri: 
         _ => err!(format!("Unsupported client {client_id}")),
     };
 
-    let (auth_url, nonce) = Client::authorize_url(state, redirect_uri).await?;
-    nonce.save(&conn).await?;
+    let (auth_url, sso_auth) = Client::authorize_url(state, client_challenge, redirect_uri).await?;
+    sso_auth.save(&conn).await?;
     Ok(auth_url)
 }
 
@@ -225,78 +234,45 @@ impl OIDCIdentifier {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct AuthenticatedUser {
-    pub refresh_token: Option<String>,
-    pub access_token: String,
-    pub expires_in: Option<Duration>,
-    pub identifier: OIDCIdentifier,
-    pub email: String,
-    pub email_verified: Option<bool>,
-    pub user_name: Option<String>,
-}
-
-#[derive(Clone, Debug)]
-pub struct UserInformation {
-    pub state: OIDCState,
-    pub identifier: OIDCIdentifier,
-    pub email: String,
-    pub email_verified: Option<bool>,
-    pub user_name: Option<String>,
-}
-
-async fn decode_code_claims(code: &str, conn: &DbConn) -> ApiResult<(OIDCCode, OIDCState)> {
-    match auth::decode_jwt::<OIDCCodeClaims>(code, SSO_JWT_ISSUER.to_string()) {
-        Ok(code_claims) => match code_claims.code {
-            OIDCCodeWrapper::Ok {
-                state,
-                code,
-            } => Ok((code, state)),
-            OIDCCodeWrapper::Error {
-                state,
-                error,
-                error_description,
-            } => {
-                if let Err(err) = SsoNonce::delete(&state, conn).await {
-                    error!("Failed to delete database sso_nonce using {state}: {err}")
-                }
-                err!(format!(
-                    "SSO authorization failed: {error}, {}",
-                    error_description.as_ref().unwrap_or(&String::new())
-                ))
-            }
-        },
-        Err(err) => err!(format!("Failed to decode code wrapper: {err}")),
-    }
-}
-
 // During the 2FA flow we will
 //  - retrieve the user information and then only discover he needs 2FA.
-//  - second time we will rely on the `AC_CACHE` since the `code` has already been exchanged.
-// The `nonce` will ensure that the user is authorized only once.
-// We return only the `UserInformation` to force calling `redeem` to obtain the `refresh_token`.
-pub async fn exchange_code(wrapped_code: &str, conn: &DbConn) -> ApiResult<UserInformation> {
+//  - second time we will rely on `SsoAuth.auth_response` since the `code` has already been exchanged.
+// The `SsoAuth` will ensure that the user is authorized only once.
+pub async fn exchange_code(
+    state: &OIDCState,
+    client_verifier: OIDCCodeVerifier,
+    conn: &DbConn,
+) -> ApiResult<(SsoAuth, OIDCAuthenticatedUser)> {
     use openidconnect::OAuth2TokenResponse;
 
-    let (code, state) = decode_code_claims(wrapped_code, conn).await?;
+    let mut sso_auth = match SsoAuth::find(state, conn).await {
+        None => err!(format!("Invalid state cannot retrieve sso auth")),
+        Some(sso_auth) => sso_auth,
+    };
 
-    if let Some(authenticated_user) = AC_CACHE.get(&state) {
-        return Ok(UserInformation {
-            state,
-            identifier: authenticated_user.identifier,
-            email: authenticated_user.email,
-            email_verified: authenticated_user.email_verified,
-            user_name: authenticated_user.user_name,
-        });
+    if let Some(authenticated_user) = sso_auth.auth_response.clone() {
+        return Ok((sso_auth, authenticated_user));
     }
 
-    let nonce = match SsoNonce::find(&state, conn).await {
-        None => err!(format!("Invalid state cannot retrieve nonce")),
-        Some(nonce) => nonce,
+    let code = match sso_auth.code_response.clone() {
+        Some(OIDCCodeWrapper::Ok {
+            code,
+        }) => code.clone(),
+        Some(OIDCCodeWrapper::Error {
+            error,
+            error_description,
+        }) => {
+            sso_auth.delete(conn).await?;
+            err!(format!("SSO authorization failed: {error}, {}", error_description.as_ref().unwrap_or(&String::new())))
+        }
+        None => {
+            sso_auth.delete(conn).await?;
+            err!("Missing authorization provider return");
+        }
     };
 
     let client = Client::cached().await?;
-    let (token_response, id_claims) = client.exchange_code(code, nonce).await?;
+    let (token_response, id_claims) = client.exchange_code(code, client_verifier, &sso_auth).await?;
 
     let user_info = client.user_info(token_response.access_token().to_owned()).await?;
 
@@ -316,7 +292,7 @@ pub async fn exchange_code(wrapped_code: &str, conn: &DbConn) -> ApiResult<UserI
 
     let identifier = OIDCIdentifier::new(id_claims.issuer(), id_claims.subject());
 
-    let authenticated_user = AuthenticatedUser {
+    let authenticated_user = OIDCAuthenticatedUser {
         refresh_token: refresh_token.cloned(),
         access_token: token_response.access_token().secret().clone(),
         expires_in: token_response.expires_in(),
@@ -327,29 +303,49 @@ pub async fn exchange_code(wrapped_code: &str, conn: &DbConn) -> ApiResult<UserI
     };
 
     debug!("Authenticated user {authenticated_user:?}");
+    sso_auth.auth_response = Some(authenticated_user.clone());
+    sso_auth.updated_at = Utc::now().naive_utc();
+    sso_auth.save(conn).await?;
 
-    AC_CACHE.insert(state.clone(), authenticated_user);
-
-    Ok(UserInformation {
-        state,
-        identifier,
-        email,
-        email_verified,
-        user_name,
-    })
+    Ok((sso_auth, authenticated_user))
 }
 
-// User has passed 2FA flow we can delete `nonce` and clear the cache.
-pub async fn redeem(state: &OIDCState, conn: &DbConn) -> ApiResult<AuthenticatedUser> {
-    if let Err(err) = SsoNonce::delete(state, conn).await {
-        error!("Failed to delete database sso_nonce using {state}: {err}")
+// User has passed 2FA flow we can delete auth info from database
+pub async fn redeem(
+    device: &Device,
+    user: &User,
+    client_id: Option<String>,
+    sso_user: Option<SsoUser>,
+    sso_auth: SsoAuth,
+    auth_user: OIDCAuthenticatedUser,
+    conn: &DbConn,
+) -> ApiResult<AuthTokens> {
+    sso_auth.delete(conn).await?;
+
+    if sso_user.is_none() {
+        let user_sso = SsoUser {
+            user_uuid: user.uuid.clone(),
+            identifier: auth_user.identifier.clone(),
+        };
+        user_sso.save(conn).await?;
     }
 
-    if let Some(au) = AC_CACHE.get(state) {
-        AC_CACHE.invalidate(state);
-        Ok(au)
+    if !CONFIG.sso_auth_only_not_session() {
+        let now = Utc::now();
+
+        let (ap_nbf, ap_exp) =
+            match (decode_token_claims("access_token", &auth_user.access_token), auth_user.expires_in) {
+                (Ok(ap), _) => (ap.nbf(), ap.exp),
+                (Err(_), Some(exp)) => (now.timestamp(), (now + exp).timestamp()),
+                _ => err!("Non jwt access_token and empty expires_in"),
+            };
+
+        let access_claims =
+            auth::LoginJwtClaims::new(device, user, ap_nbf, ap_exp, AuthMethod::Sso.scope_vec(), client_id, now);
+
+        _create_auth_tokens(device, auth_user.refresh_token, access_claims, auth_user.access_token)
     } else {
-        err!("Failed to retrieve user info from sso cache")
+        Ok(AuthTokens::new(device, user, AuthMethod::Sso, client_id))
     }
 }
 

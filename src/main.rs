@@ -699,10 +699,10 @@ fn schedule_jobs(pool: db::DbPool) {
                 }));
             }
 
-            // Purge sso nonce from incomplete flow (default to daily at 00h20).
-            if !CONFIG.purge_incomplete_sso_nonce().is_empty() {
-                sched.add(Job::new(CONFIG.purge_incomplete_sso_nonce().parse().unwrap(), || {
-                    runtime.spawn(db::models::SsoNonce::delete_expired(pool.clone()));
+            // Purge sso auth from incomplete flow (default to daily at 00h20).
+            if !CONFIG.purge_incomplete_sso_auth().is_empty() {
+                sched.add(Job::new(CONFIG.purge_incomplete_sso_auth().parse().unwrap(), || {
+                    runtime.spawn(db::models::SsoAuth::delete_expired(pool.clone()));
                 }));
             }
 
