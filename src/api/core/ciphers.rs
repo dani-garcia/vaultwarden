@@ -100,10 +100,9 @@ pub fn routes() -> Vec<Route> {
 
 pub async fn purge_trashed_ciphers(pool: DbPool) {
     debug!("Purging trashed ciphers");
-    if let Ok(conn) = pool.get().await {
-        Cipher::purge_trash(&conn).await;
-    } else {
-        error!("Failed to get DB connection while purging trashed ciphers")
+    match pool.get().await {
+        Ok(conn) => Cipher::purge_trash(&conn).await,
+        Err(_) => error!("Failed to get DB connection while purging trashed ciphers"),
     }
 }
 

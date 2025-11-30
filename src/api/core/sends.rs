@@ -60,10 +60,9 @@ pub fn routes() -> Vec<rocket::Route> {
 
 pub async fn purge_sends(pool: DbPool) {
     debug!("Purging sends");
-    if let Ok(conn) = pool.get().await {
-        Send::purge(&conn).await;
-    } else {
-        error!("Failed to get DB connection while purging sends")
+    match pool.get().await {
+        Ok(conn) => Send::purge(&conn).await,
+        Err(_) => error!("Failed to get DB connection while purging sends"),
     }
 }
 

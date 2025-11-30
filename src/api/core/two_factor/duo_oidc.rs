@@ -344,10 +344,9 @@ async fn extract_context(state: &str, conn: &DbConn) -> Option<DuoAuthContext> {
 // Task to clean up expired Duo authentication contexts that may have accumulated in the database.
 pub async fn purge_duo_contexts(pool: DbPool) {
     debug!("Purging Duo authentication contexts");
-    if let Ok(conn) = pool.get().await {
-        TwoFactorDuoContext::purge_expired_duo_contexts(&conn).await;
-    } else {
-        error!("Failed to get DB connection while purging expired Duo authentications")
+    match pool.get().await {
+        Ok(conn) => TwoFactorDuoContext::purge_expired_duo_contexts(&conn).await,
+        Err(_) => error!("Failed to get DB connection while purging expired Duo authentications"),
     }
 }
 

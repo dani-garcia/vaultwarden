@@ -700,15 +700,10 @@ impl<'r> FromRequest<'r> for OrgHeaders {
         // org_id is usually the second path param ("/organizations/<org_id>"),
         // but there are cases where it is a query value.
         // First check the path, if this is not a valid uuid, try the query values.
-        let url_org_id: Option<OrganizationId> = {
-            if let Some(Ok(org_id)) = request.param::<OrganizationId>(1) {
-                Some(org_id)
-            } else if let Some(Ok(org_id)) = request.query_value::<OrganizationId>("organizationId") {
-                Some(org_id)
-            } else {
-                None
-            }
-        };
+        let url_org_id: Option<OrganizationId> = request
+            .param::<OrganizationId>(1)
+            .and_then(|r| r.ok())
+            .or_else(|| request.query_value("organizationId").and_then(|r| r.ok()));
 
         match url_org_id {
             Some(org_id) if uuid::Uuid::parse_str(&org_id).is_ok() => {
