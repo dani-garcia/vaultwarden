@@ -126,12 +126,17 @@ ARG CARGO_PROFILE=release
 
 # Configure the DB ARG as late as possible to not invalidate the cached layers above
 ARG DB=sqlite,mysql,postgresql
+ARG EXTRA_FEATURES=""
 
 # Builds your dependencies and removes the
 # dummy project, except the target folder
 # This folder contains the compiled dependencies
 RUN source /env-cargo && \
-    cargo build --features ${DB} --profile "${CARGO_PROFILE}" --target="${CARGO_TARGET}" && \
+    if [ -n "${EXTRA_FEATURES}" ]; then \
+        cargo build --features "${DB},${EXTRA_FEATURES}" --profile "${CARGO_PROFILE}" --target="${CARGO_TARGET}"; \
+    else \
+        cargo build --features "${DB}" --profile "${CARGO_PROFILE}" --target="${CARGO_TARGET}"; \
+    fi && \
     find . -not -path "./target*" -delete
 
 # Copies the complete project
@@ -146,7 +151,11 @@ RUN source /env-cargo && \
     # Also do this for build.rs to ensure the version is rechecked
     touch build.rs src/main.rs && \
     # Create a symlink to the binary target folder to easy copy the binary in the final stage
-    cargo build --features ${DB} --profile "${CARGO_PROFILE}" --target="${CARGO_TARGET}" && \
+    if [ -n "${EXTRA_FEATURES}" ]; then \
+        cargo build --features "${DB},${EXTRA_FEATURES}" --profile "${CARGO_PROFILE}" --target="${CARGO_TARGET}"; \
+    else \
+        cargo build --features "${DB}" --profile "${CARGO_PROFILE}" --target="${CARGO_TARGET}"; \
+    fi && \
     if [[ "${CARGO_PROFILE}" == "dev" ]] ; then \
         ln -vfsr "/app/target/${CARGO_TARGET}/debug" /app/target/final ; \
     else \
