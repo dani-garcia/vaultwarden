@@ -370,9 +370,9 @@ async fn get_auto_enroll_status(identifier: &str, headers: Headers, conn: DbConn
     };
 
     Ok(Json(json!({
-        "Id": id,
-        "Identifier": identifier,
-        "ResetPasswordEnabled": rp_auto_enroll,
+        "id": id,
+        "identifier": identifier,
+        "resetPasswordEnabled": rp_auto_enroll,
     })))
 }
 

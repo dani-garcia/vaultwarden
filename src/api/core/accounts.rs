@@ -405,8 +405,8 @@ async fn post_set_password(data: Json<SetPasswordData>, headers: Headers, conn: 
     user.save(&conn).await?;
 
     Ok(Json(json!({
-      "Object": "set-password",
-      "CaptchaBypassToken": "",
+      "object": "set-password",
+      "captchaBypassToken": "",
     })))
 }
 
