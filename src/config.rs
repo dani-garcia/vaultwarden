@@ -789,6 +789,10 @@ make_config! {
         /// Bitwarden enforces this by default. In Vaultwarden we encouraged to use multiple organizations because groups were not available.
         /// Setting this to true will enforce the Single Org Policy to be enabled before you can enable the Reset Password policy.
         enforce_single_org_with_reset_pw_policy: bool, false, def, false;
+
+        /// Prefer IPv6 (AAAA) resolving |> This settings configures the DNS resolver to resolve IPv6 first, and if not available try IPv4
+        /// This could be useful in IPv6 only environments.
+        dns_prefer_ipv6: bool, true, def, false;
     },
 
     /// OpenID Connect SSO settings
