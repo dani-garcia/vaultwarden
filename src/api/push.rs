@@ -1,3 +1,8 @@
+use std::{
+    sync::LazyLock,
+    time::{Duration, Instant},
+};
+
 use reqwest::{
     header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE},
     Method,
@@ -7,14 +12,14 @@ use tokio::sync::RwLock;
 
 use crate::{
     api::{ApiResult, EmptyResult, UpdateType},
-    db::models::{AuthRequestId, Cipher, Device, DeviceId, Folder, PushId, Send, User, UserId},
+    db::{
+        models::{AuthRequestId, Cipher, Device, DeviceId, Folder, PushId, Send, User, UserId},
+        DbConn,
+    },
     http_client::make_http_request,
     util::{format_date, get_uuid},
     CONFIG,
 };
-
-use once_cell::sync::Lazy;
-use std::time::{Duration, Instant};
 
 #[derive(Deserialize)]
 struct AuthPushToken {
@@ -29,7 +34,7 @@ struct LocalAuthPushToken {
 }
 
 async fn get_auth_api_token() -> ApiResult<String> {
-    static API_TOKEN: Lazy<RwLock<LocalAuthPushToken>> = Lazy::new(|| {
+    static API_TOKEN: LazyLock<RwLock<LocalAuthPushToken>> = LazyLock::new(|| {
         RwLock::new(LocalAuthPushToken {
             access_token: String::new(),
             valid_until: Instant::now(),
@@ -79,7 +84,7 @@ async fn get_auth_api_token() -> ApiResult<String> {
     Ok(api_token.access_token.clone())
 }
 
-pub async fn register_push_device(device: &mut Device, conn: &mut crate::db::DbConn) -> EmptyResult {
+pub async fn register_push_device(device: &mut Device, conn: &DbConn) -> EmptyResult {
     if !CONFIG.push_enabled() || !device.is_push_device() {
         return Ok(());
     }
@@ -152,7 +157,7 @@ pub async fn unregister_push_device(push_id: &Option<PushId>) -> EmptyResult {
     Ok(())
 }
 
-pub async fn push_cipher_update(ut: UpdateType, cipher: &Cipher, device: &Device, conn: &mut crate::db::DbConn) {
+pub async fn push_cipher_update(ut: UpdateType, cipher: &Cipher, device: &Device, conn: &DbConn) {
     // We shouldn't send a push notification on cipher update if the cipher belongs to an organization, this isn't implemented in the upstream server too.
     if cipher.organization_uuid.is_some() {
         return;
@@ -183,7 +188,7 @@ pub async fn push_cipher_update(ut: UpdateType, cipher: &Cipher, device: &Device
     }
 }
 
-pub async fn push_logout(user: &User, acting_device_id: Option<DeviceId>, conn: &mut crate::db::DbConn) {
+pub async fn push_logout(user: &User, acting_device_id: Option<DeviceId>, conn: &DbConn) {
     let acting_device_id: Value = acting_device_id.map(|v| v.to_string().into()).unwrap_or_else(|| Value::Null);
 
     if Device::check_user_has_push_device(&user.uuid, conn).await {
@@ -203,7 +208,7 @@ pub async fn push_logout(user: &User, acting_device_id: Option<DeviceId>, conn: 
     }
 }
 
-pub async fn push_user_update(ut: UpdateType, user: &User, push_uuid: &Option<PushId>, conn: &mut crate::db::DbConn) {
+pub async fn push_user_update(ut: UpdateType, user: &User, push_uuid: &Option<PushId>, conn: &DbConn) {
     if Device::check_user_has_push_device(&user.uuid, conn).await {
         tokio::task::spawn(send_to_push_relay(json!({
             "userId": user.uuid,
@@ -221,7 +226,7 @@ pub async fn push_user_update(ut: UpdateType, user: &User, push_uuid: &Option<Pu
     }
 }
 
-pub async fn push_folder_update(ut: UpdateType, folder: &Folder, device: &Device, conn: &mut crate::db::DbConn) {
+pub async fn push_folder_update(ut: UpdateType, folder: &Folder, device: &Device, conn: &DbConn) {
     if Device::check_user_has_push_device(&folder.user_uuid, conn).await {
         tokio::task::spawn(send_to_push_relay(json!({
             "userId": folder.user_uuid,
@@ -240,7 +245,7 @@ pub async fn push_folder_update(ut: UpdateType, folder: &Folder, device: &Device
     }
 }
 
-pub async fn push_send_update(ut: UpdateType, send: &Send, device: &Device, conn: &mut crate::db::DbConn) {
+pub async fn push_send_update(ut: UpdateType, send: &Send, device: &Device, conn: &DbConn) {
     if let Some(s) = &send.user_uuid {
         if Device::check_user_has_push_device(s, conn).await {
             tokio::task::spawn(send_to_push_relay(json!({
@@ -296,7 +301,7 @@ async fn send_to_push_relay(notification_data: Value) {
     };
 }
 
-pub async fn push_auth_request(user_id: &UserId, auth_request_id: &str, device: &Device, conn: &mut crate::db::DbConn) {
+pub async fn push_auth_request(user_id: &UserId, auth_request_id: &str, device: &Device, conn: &DbConn) {
     if Device::check_user_has_push_device(user_id, conn).await {
         tokio::task::spawn(send_to_push_relay(json!({
             "userId": user_id,
@@ -314,12 +319,7 @@ pub async fn push_auth_request(user_id: &UserId, auth_request_id: &str, device: 
     }
 }
 
-pub async fn push_auth_response(
-    user_id: &UserId,
-    auth_request_id: &AuthRequestId,
-    device: &Device,
-    conn: &mut crate::db::DbConn,
-) {
+pub async fn push_auth_response(user_id: &UserId, auth_request_id: &AuthRequestId, device: &Device, conn: &DbConn) {
     if Device::check_user_has_push_device(user_id, conn).await {
         tokio::task::spawn(send_to_push_relay(json!({
             "userId": user_id,

@@ -317,7 +317,7 @@ struct DuoAuthContext {
 
 // Given a state string, retrieve the associated Duo auth context and
 // delete the retrieved state from the database.
-async fn extract_context(state: &str, conn: &mut DbConn) -> Option<DuoAuthContext> {
+async fn extract_context(state: &str, conn: &DbConn) -> Option<DuoAuthContext> {
     let ctx: TwoFactorDuoContext = match TwoFactorDuoContext::find_by_state(state, conn).await {
         Some(c) => c,
         None => return None,
@@ -344,8 +344,8 @@ async fn extract_context(state: &str, conn: &mut DbConn) -> Option<DuoAuthContex
 // Task to clean up expired Duo authentication contexts that may have accumulated in the database.
 pub async fn purge_duo_contexts(pool: DbPool) {
     debug!("Purging Duo authentication contexts");
-    if let Ok(mut conn) = pool.get().await {
-        TwoFactorDuoContext::purge_expired_duo_contexts(&mut conn).await;
+    if let Ok(conn) = pool.get().await {
+        TwoFactorDuoContext::purge_expired_duo_contexts(&conn).await;
     } else {
         error!("Failed to get DB connection while purging expired Duo authentications")
     }
@@ -380,7 +380,7 @@ pub async fn get_duo_auth_url(
     email: &str,
     client_id: &str,
     device_identifier: &DeviceId,
-    conn: &mut DbConn,
+    conn: &DbConn,
 ) -> Result<String, Error> {
     let (ik, sk, _, host) = get_duo_keys_email(email, conn).await?;
 
@@ -418,7 +418,7 @@ pub async fn validate_duo_login(
     two_factor_token: &str,
     client_id: &str,
     device_identifier: &DeviceId,
-    conn: &mut DbConn,
+    conn: &DbConn,
 ) -> EmptyResult {
     // Result supplied to us by clients in the form "<authz code>|<state>"
     let split: Vec<&str> = two_factor_token.split('|').collect();

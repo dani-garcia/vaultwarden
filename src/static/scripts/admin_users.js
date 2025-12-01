@@ -1,6 +1,6 @@
 "use strict";
 /* eslint-env es2017, browser, jquery */
-/* global _post:readable, BASE_URL:readable, reload:readable, jdenticon:readable */
+/* global _post:readable, _delete:readable BASE_URL:readable, reload:readable, jdenticon:readable */
 
 function deleteUser(event) {
     event.preventDefault();
@@ -33,11 +33,11 @@ function deleteSSOUser(event) {
         alert("Required parameters not found!");
         return false;
     }
-    const input_email = prompt(`To delete user "${email}", please type the email below`);
+    const input_email = prompt(`To delete user "${email}" SSO association, please type the email below`);
     if (input_email != null) {
         if (input_email == email) {
             _delete(`${BASE_URL}/admin/users/${id}/sso`,
-                "User SSO Associtation deleted correctly",
+                "User SSO association deleted correctly",
                 "Error deleting user SSO association"
             );
         } else {

@@ -36,16 +36,16 @@ FROM --platform=linux/amd64 docker.io/vaultwarden/web-vault@{{ vault_image_diges
 FROM --platform=linux/amd64 docker.io/tonistiigi/xx@{{ xx_image_digest }} AS xx
 {% elif base == "alpine" %}
 ########################## ALPINE BUILD IMAGES ##########################
-## NOTE: The Alpine Base Images do not support other platforms then linux/amd64
+## NOTE: The Alpine Base Images do not support other platforms then linux/amd64 and linux/arm64
 ## And for Alpine we define all build images here, they will only be loaded when actually used
 {% for arch in build_stage_image[base].arch_image %}
-FROM --platform={{ build_stage_image[base].platform }} {{ build_stage_image[base].arch_image[arch] }} AS build_{{ arch }}
+FROM --platform=$BUILDPLATFORM {{ build_stage_image[base].arch_image[arch] }} AS build_{{ arch }}
 {% endfor %}
 {% endif %}
 
 ########################## BUILD IMAGE ##########################
 # hadolint ignore=DL3006
-FROM --platform={{ build_stage_image[base].platform }} {{ build_stage_image[base].image }} AS build
+FROM --platform=$BUILDPLATFORM {{ build_stage_image[base].image }} AS build
 {% if base == "debian" %}
 COPY --from=xx / /
 {% endif %}
@@ -63,12 +63,20 @@ ENV DEBIAN_FRONTEND=noninteractive \
     CARGO_HOME="/root/.cargo" \
     USER="root"
 {%- if base == "alpine" %} \
-    # Use PostgreSQL v15 during Alpine/MUSL builds instead of the default v11
-    # Debian Bookworm already contains libpq v15
-    PQ_LIB_DIR="/usr/local/musl/pq15/lib"
+    # Use PostgreSQL v17 during Alpine/MUSL builds instead of the default v16
+    # Debian Trixie uses libpq v17
+    PQ_LIB_DIR="/usr/local/musl/pq17/lib"
 {% endif %}
 
 {% if base == "debian" %}
+
+# Force the install of an older MariaDB library to prevent a Diesel panic
+# See https://github.com/dani-garcia/vaultwarden/issues/6416
+RUN echo "deb http://snapshot.debian.org/archive/debian/20250707T084701Z/ trixie main" > /etc/apt/sources.list.d/snapshot.list && \
+    echo "Acquire::Check-Valid-Until false;" > etc/apt/apt.conf.d/AllowSnapshot && \
+    echo 'Package: libmariadb libmariadb3 libmariadb-dev mariadb*' > /etc/apt/preferences.d/mariadb-snapshot && \
+    echo 'Pin: origin "snapshot.debian.org"' >> /etc/apt/preferences.d/mariadb-snapshot && \
+    echo 'Pin-Priority: 1001' >> /etc/apt/preferences.d/mariadb-snapshot
 
 # Install clang to get `xx-cargo` working
 # Install pkg-config to allow amd64 builds to find all libraries
@@ -208,11 +216,19 @@ ENV ROCKET_PROFILE="release" \
 # Create data folder and Install needed libraries
 RUN mkdir /data && \
 {% if base == "debian" %}
+    # Force the install of an older MariaDB library to prevent a Diesel panic
+    # See https://github.com/dani-garcia/vaultwarden/issues/6416
+    echo "deb http://snapshot.debian.org/archive/debian/20250707T084701Z/ trixie main" > /etc/apt/sources.list.d/snapshot.list && \
+    echo "Acquire::Check-Valid-Until false;" > etc/apt/apt.conf.d/AllowSnapshot && \
+    echo 'Package: libmariadb libmariadb3 libmariadb-dev mariadb*' > /etc/apt/preferences.d/mariadb-snapshot && \
+    echo 'Pin: origin "snapshot.debian.org"' >> /etc/apt/preferences.d/mariadb-snapshot && \
+    echo 'Pin-Priority: 1001' >> /etc/apt/preferences.d/mariadb-snapshot && \
+    # Continue with normal install
     apt-get update && apt-get install -y \
         --no-install-recommends \
         ca-certificates \
         curl \
-        libmariadb-dev \
+        libmariadb3 \
         libpq5 \
         openssl && \
     apt-get clean && \

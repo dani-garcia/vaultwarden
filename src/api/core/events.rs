@@ -31,12 +31,7 @@ struct EventRange {
 
 // Upstream: https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Api/AdminConsole/Controllers/EventsController.cs#L87
 #[get("/organizations/<org_id>/events?<data..>")]
-async fn get_org_events(
-    org_id: OrganizationId,
-    data: EventRange,
-    headers: AdminHeaders,
-    mut conn: DbConn,
-) -> JsonResult {
+async fn get_org_events(org_id: OrganizationId, data: EventRange, headers: AdminHeaders, conn: DbConn) -> JsonResult {
     if org_id != headers.org_id {
         err!("Organization not found", "Organization id's do not match");
     }
@@ -53,7 +48,7 @@ async fn get_org_events(
             parse_date(&data.end)
         };
 
-        Event::find_by_organization_uuid(&org_id, &start_date, &end_date, &mut conn)
+        Event::find_by_organization_uuid(&org_id, &start_date, &end_date, &conn)
             .await
             .iter()
             .map(|e| e.to_json())
@@ -68,14 +63,14 @@ async fn get_org_events(
 }
 
 #[get("/ciphers/<cipher_id>/events?<data..>")]
-async fn get_cipher_events(cipher_id: CipherId, data: EventRange, headers: Headers, mut conn: DbConn) -> JsonResult {
+async fn get_cipher_events(cipher_id: CipherId, data: EventRange, headers: Headers, conn: DbConn) -> JsonResult {
     // Return an empty vec when we org events are disabled.
     // This prevents client errors
     let events_json: Vec<Value> = if !CONFIG.org_events_enabled() {
         Vec::with_capacity(0)
     } else {
         let mut events_json = Vec::with_capacity(0);
-        if Membership::user_has_ge_admin_access_to_cipher(&headers.user.uuid, &cipher_id, &mut conn).await {
+        if Membership::user_has_ge_admin_access_to_cipher(&headers.user.uuid, &cipher_id, &conn).await {
             let start_date = parse_date(&data.start);
             let end_date = if let Some(before_date) = &data.continuation_token {
                 parse_date(before_date)
@@ -83,7 +78,7 @@ async fn get_cipher_events(cipher_id: CipherId, data: EventRange, headers: Heade
                 parse_date(&data.end)
             };
 
-            events_json = Event::find_by_cipher_uuid(&cipher_id, &start_date, &end_date, &mut conn)
+            events_json = Event::find_by_cipher_uuid(&cipher_id, &start_date, &end_date, &conn)
                 .await
                 .iter()
                 .map(|e| e.to_json())
@@ -105,7 +100,7 @@ async fn get_user_events(
     member_id: MembershipId,
     data: EventRange,
     headers: AdminHeaders,
-    mut conn: DbConn,
+    conn: DbConn,
 ) -> JsonResult {
     if org_id != headers.org_id {
         err!("Organization not found", "Organization id's do not match");
@@ -122,7 +117,7 @@ async fn get_user_events(
             parse_date(&data.end)
         };
 
-        Event::find_by_org_and_member(&org_id, &member_id, &start_date, &end_date, &mut conn)
+        Event::find_by_org_and_member(&org_id, &member_id, &start_date, &end_date, &conn)
             .await
             .iter()
             .map(|e| e.to_json())
@@ -172,7 +167,7 @@ struct EventCollection {
 // https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Events/Controllers/CollectController.cs
 // https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Core/AdminConsole/Services/Implementations/EventService.cs
 #[post("/collect", format = "application/json", data = "<data>")]
-async fn post_events_collect(data: Json<Vec<EventCollection>>, headers: Headers, mut conn: DbConn) -> EmptyResult {
+async fn post_events_collect(data: Json<Vec<EventCollection>>, headers: Headers, conn: DbConn) -> EmptyResult {
     if !CONFIG.org_events_enabled() {
         return Ok(());
     }
@@ -187,7 +182,7 @@ async fn post_events_collect(data: Json<Vec<EventCollection>>, headers: Headers,
                     headers.device.atype,
                     Some(event_date),
                     &headers.ip.ip,
-                    &mut conn,
+                    &conn,
                 )
                 .await;
             }
@@ -201,14 +196,14 @@ async fn post_events_collect(data: Json<Vec<EventCollection>>, headers: Headers,
                         headers.device.atype,
                         Some(event_date),
                         &headers.ip.ip,
-                        &mut conn,
+                        &conn,
                     )
                     .await;
                 }
             }
             _ => {
                 if let Some(cipher_uuid) = &event.cipher_id {
-                    if let Some(cipher) = Cipher::find_by_uuid(cipher_uuid, &mut conn).await {
+                    if let Some(cipher) = Cipher::find_by_uuid(cipher_uuid, &conn).await {
                         if let Some(org_id) = cipher.organization_uuid {
                             _log_event(
                                 event.r#type,
@@ -218,7 +213,7 @@ async fn post_events_collect(data: Json<Vec<EventCollection>>, headers: Headers,
                                 headers.device.atype,
                                 Some(event_date),
                                 &headers.ip.ip,
-                                &mut conn,
+                                &conn,
                             )
                             .await;
                         }
@@ -230,7 +225,7 @@ async fn post_events_collect(data: Json<Vec<EventCollection>>, headers: Headers,
     Ok(())
 }
 
-pub async fn log_user_event(event_type: i32, user_id: &UserId, device_type: i32, ip: &IpAddr, conn: &mut DbConn) {
+pub async fn log_user_event(event_type: i32, user_id: &UserId, device_type: i32, ip: &IpAddr, conn: &DbConn) {
     if !CONFIG.org_events_enabled() {
         return;
     }
@@ -243,7 +238,7 @@ async fn _log_user_event(
     device_type: i32,
     event_date: Option<NaiveDateTime>,
     ip: &IpAddr,
-    conn: &mut DbConn,
+    conn: &DbConn,
 ) {
     let memberships = Membership::find_by_user(user_id, conn).await;
     let mut events: Vec<Event> = Vec::with_capacity(memberships.len() + 1); // We need an event per org and one without an org
@@ -278,7 +273,7 @@ pub async fn log_event(
     act_user_id: &UserId,
     device_type: i32,
     ip: &IpAddr,
-    conn: &mut DbConn,
+    conn: &DbConn,
 ) {
     if !CONFIG.org_events_enabled() {
         return;
@@ -295,7 +290,7 @@ async fn _log_event(
     device_type: i32,
     event_date: Option<NaiveDateTime>,
     ip: &IpAddr,
-    conn: &mut DbConn,
+    conn: &DbConn,
 ) {
     // Create a new empty event
     let mut event = Event::new(event_type, event_date);
@@ -340,8 +335,8 @@ pub async fn event_cleanup_job(pool: DbPool) {
         return;
     }
 
-    if let Ok(mut conn) = pool.get().await {
-        Event::clean_events(&mut conn).await.ok();
+    if let Ok(conn) = pool.get().await {
+        Event::clean_events(&conn).await.ok();
     } else {
         error!("Failed to get DB connection while trying to cleanup the events table")
     }

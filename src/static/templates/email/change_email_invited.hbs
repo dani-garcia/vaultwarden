@@ -1,0 +1,11 @@
+Your Email Change
+<!---------------->
+A user ({{ acting_address }}) recently tried to change their account to use this email address ({{ existing_address }}). You already have been invited to join Vaultwarden using this address.
+
+To change your email address you first would have to delete the account associated with this email address ({{ existing_address }}):
+Request account deletion: {{url}}/#/recover-delete
+
+Once that is done you can change the email address of your existing account to this address. Any invitation would have to be redone.
+
+If you did not try to change an email address, contact your administrator.
+{{> email/email_footer_text }}

@@ -184,7 +184,7 @@ pub async fn send_delete_account(address: &str, user_id: &UserId) -> EmptyResult
 }
 
 pub async fn send_verify_email(address: &str, user_id: &UserId) -> EmptyResult {
-    let claims = generate_verify_email_claims(user_id.clone());
+    let claims = generate_verify_email_claims(user_id);
     let verify_email_token = encode_jwt(&claims);
 
     let (subject, body_html, body_text) = get_text(
@@ -235,7 +235,7 @@ pub async fn send_welcome(address: &str) -> EmptyResult {
 }
 
 pub async fn send_welcome_must_verify(address: &str, user_id: &UserId) -> EmptyResult {
-    let claims = generate_verify_email_claims(user_id.clone());
+    let claims = generate_verify_email_claims(user_id);
     let verify_email_token = encode_jwt(&claims);
 
     let (subject, body_html, body_text) = get_text(
@@ -302,9 +302,9 @@ pub async fn send_invite(
             .append_pair("organizationUserId", &member_id)
             .append_pair("token", &invite_token);
 
-        if CONFIG.sso_enabled() && CONFIG.sso_only() {
+        if CONFIG.sso_enabled() {
             query_params.append_pair("orgUserHasExistingUser", "false");
-            query_params.append_pair("orgSsoIdentifier", org_name);
+            query_params.append_pair("orgSsoIdentifier", &org_id);
         } else if user.private_key.is_some() {
             query_params.append_pair("orgUserHasExistingUser", "true");
         }
@@ -588,6 +588,20 @@ pub async fn send_change_email_existing(address: &str, acting_address: &str) -> 
     send_email(address, &subject, body_html, body_text).await
 }
 
+pub async fn send_change_email_invited(address: &str, acting_address: &str) -> EmptyResult {
+    let (subject, body_html, body_text) = get_text(
+        "email/change_email_invited",
+        json!({
+            "url": CONFIG.domain(),
+            "img_src": CONFIG._smtp_img_src(),
+            "existing_address": address,
+            "acting_address": acting_address,
+        }),
+    )?;
+
+    send_email(address, &subject, body_html, body_text).await
+}
+
 pub async fn send_sso_change_email(address: &str) -> EmptyResult {
     let (subject, body_html, body_text) = get_text(
         "email/sso_change_email",
@@ -691,7 +705,7 @@ async fn send_with_selected_transport(email: Message) -> EmptyResult {
 }
 
 async fn send_email(address: &str, subject: &str, body_html: String, body_text: String) -> EmptyResult {
-    let smtp_from = &CONFIG.smtp_from();
+    let smtp_from = Address::from_str(&CONFIG.smtp_from())?;
 
     let body = if CONFIG.smtp_embed_images() {
         let logo_gray_body = Body::new(crate::api::static_files("logo-gray.png").unwrap().1.to_vec());
@@ -713,9 +727,9 @@ async fn send_email(address: &str, subject: &str, body_html: String, body_text: 
     };
 
     let email = Message::builder()
-        .message_id(Some(format!("<{}@{}>", crate::util::get_uuid(), smtp_from.split('@').collect::<Vec<&str>>()[1])))
+        .message_id(Some(format!("<{}@{}>", crate::util::get_uuid(), smtp_from.domain())))
         .to(Mailbox::new(None, Address::from_str(address)?))
-        .from(Mailbox::new(Some(CONFIG.smtp_from_name()), Address::from_str(smtp_from)?))
+        .from(Mailbox::new(Some(CONFIG.smtp_from_name()), smtp_from))
         .subject(subject)
         .multipart(body)?;
 

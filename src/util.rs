@@ -95,6 +95,7 @@ impl Fairing for AppHeaders {
                     manifest-src 'self'; \
                     base-uri 'self'; \
                     form-action 'self'; \
+                    media-src 'self'; \
                     object-src 'self' blob:; \
                     script-src 'self' 'wasm-unsafe-eval'; \
                     style-src 'self' 'unsafe-inline'; \
@@ -841,7 +842,7 @@ pub fn is_global(ip: std::net::IpAddr) -> bool {
 
 /// Saves a Rocket temporary file to the OpenDAL Operator at the given path.
 pub async fn save_temp_file(
-    path_type: PathType,
+    path_type: &PathType,
     path: &str,
     temp_file: rocket::fs::TempFile<'_>,
     overwrite: bool,

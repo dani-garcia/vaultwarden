@@ -1,13 +1,13 @@
 use std::{
     collections::HashMap,
     net::IpAddr,
-    sync::Arc,
+    sync::{Arc, LazyLock},
     time::{Duration, SystemTime},
 };
 
 use bytes::{Bytes, BytesMut};
 use futures::{stream::StreamExt, TryFutureExt};
-use once_cell::sync::Lazy;
+use html5gum::{Emitter, HtmlString, Readable, StringReader, Tokenizer};
 use regex::Regex;
 use reqwest::{
     header::{self, HeaderMap, HeaderValue},
@@ -15,8 +15,6 @@ use reqwest::{
 };
 use rocket::{http::ContentType, response::Redirect, Route};
 use svg_hush::{data_url_filter, Filter};
-
-use html5gum::{Emitter, HtmlString, Readable, StringReader, Tokenizer};
 
 use crate::{
     config::PathType,
@@ -33,7 +31,7 @@ pub fn routes() -> Vec<Route> {
     }
 }
 
-static CLIENT: Lazy<Client> = Lazy::new(|| {
+static CLIENT: LazyLock<Client> = LazyLock::new(|| {
     // Generate the default headers
     let mut default_headers = HeaderMap::new();
     default_headers.insert(
@@ -78,25 +76,25 @@ static CLIENT: Lazy<Client> = Lazy::new(|| {
 });
 
 // Build Regex only once since this takes a lot of time.
-static ICON_SIZE_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?x)(\d+)\D*(\d+)").unwrap());
+static ICON_SIZE_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?x)(\d+)\D*(\d+)").unwrap());
 
 // The function name `icon_external` is checked in the `on_response` function in `AppHeaders`
 // It is used to prevent sending a specific header which breaks icon downloads.
 // If this function needs to be renamed, also adjust the code in `util.rs`
 #[get("/<domain>/icon.png")]
-fn icon_external(domain: &str) -> Option<Redirect> {
+fn icon_external(domain: &str) -> Cached<Option<Redirect>> {
     if !is_valid_domain(domain) {
         warn!("Invalid domain: {domain}");
-        return None;
+        return Cached::ttl(None, CONFIG.icon_cache_negttl(), true);
     }
 
     if should_block_address(domain) {
         warn!("Blocked address: {domain}");
-        return None;
+        return Cached::ttl(None, CONFIG.icon_cache_negttl(), true);
     }
 
     let url = CONFIG._icon_service_url().replace("{}", domain);
-    match CONFIG.icon_redirect_code() {
+    let redir = match CONFIG.icon_redirect_code() {
         301 => Some(Redirect::moved(url)), // legacy permanent redirect
         302 => Some(Redirect::found(url)), // legacy temporary redirect
         307 => Some(Redirect::temporary(url)),
@@ -105,7 +103,8 @@ fn icon_external(domain: &str) -> Option<Redirect> {
             error!("Unexpected redirect code {}", CONFIG.icon_redirect_code());
             None
         }
-    }
+    };
+    Cached::ttl(redir, CONFIG.icon_cache_ttl(), true)
 }
 
 #[get("/<domain>/icon.png")]
@@ -143,7 +142,7 @@ async fn icon_internal(domain: &str) -> Cached<(ContentType, Vec<u8>)> {
 /// This does some manual checks and makes use of Url to do some basic checking.
 /// domains can't be larger then 63 characters (not counting multiple subdomains) according to the RFC's, but we limit the total size to 255.
 fn is_valid_domain(domain: &str) -> bool {
-    const ALLOWED_CHARS: &str = "_-.";
+    const ALLOWED_CHARS: &str = "-.";
 
     // If parsing the domain fails using Url, it will not work with reqwest.
     if let Err(parse_error) = url::Url::parse(format!("https://{domain}").as_str()) {
@@ -220,7 +219,7 @@ async fn get_cached_icon(path: &str) -> Option<Vec<u8>> {
     }
 
     // Try to read the cached icon, and return it if it exists
-    if let Ok(operator) = CONFIG.opendal_operator_for_path_type(PathType::IconCache) {
+    if let Ok(operator) = CONFIG.opendal_operator_for_path_type(&PathType::IconCache) {
         if let Ok(buf) = operator.read(path).await {
             return Some(buf.to_vec());
         }
@@ -230,7 +229,7 @@ async fn get_cached_icon(path: &str) -> Option<Vec<u8>> {
 }
 
 async fn file_is_expired(path: &str, ttl: u64) -> Result<bool, Error> {
-    let operator = CONFIG.opendal_operator_for_path_type(PathType::IconCache)?;
+    let operator = CONFIG.opendal_operator_for_path_type(&PathType::IconCache)?;
     let meta = operator.stat(path).await?;
     let modified =
         meta.last_modified().ok_or_else(|| std::io::Error::other(format!("No last modified time for `{path}`")))?;
@@ -246,7 +245,7 @@ async fn icon_is_negcached(path: &str) -> bool {
     match expired {
         // No longer negatively cached, drop the marker
         Ok(true) => {
-            match CONFIG.opendal_operator_for_path_type(PathType::IconCache) {
+            match CONFIG.opendal_operator_for_path_type(&PathType::IconCache) {
                 Ok(operator) => {
                     if let Err(e) = operator.delete(&miss_indicator).await {
                         error!("Could not remove negative cache indicator for icon {path:?}: {e:?}");
@@ -462,8 +461,8 @@ async fn get_page_with_referer(url: &str, referer: &str) -> Result<Response, Err
 /// priority2 = get_icon_priority("https://example.com/path/to/a/favicon.ico", "");
 /// ```
 fn get_icon_priority(href: &str, sizes: &str) -> u8 {
-    static PRIORITY_MAP: Lazy<HashMap<&'static str, u8>> =
-        Lazy::new(|| [(".png", 10), (".jpg", 20), (".jpeg", 20)].into_iter().collect());
+    static PRIORITY_MAP: LazyLock<HashMap<&'static str, u8>> =
+        LazyLock::new(|| [(".png", 10), (".jpg", 20), (".jpeg", 20)].into_iter().collect());
 
     // Check if there is a dimension set
     let (width, height) = parse_sizes(sizes);
@@ -597,7 +596,7 @@ async fn download_icon(domain: &str) -> Result<(Bytes, Option<&str>), Error> {
 }
 
 async fn save_icon(path: &str, icon: Vec<u8>) {
-    let operator = match CONFIG.opendal_operator_for_path_type(PathType::IconCache) {
+    let operator = match CONFIG.opendal_operator_for_path_type(&PathType::IconCache) {
         Ok(operator) => operator,
         Err(e) => {
             warn!("Failed to get OpenDAL operator while saving icon: {e}");

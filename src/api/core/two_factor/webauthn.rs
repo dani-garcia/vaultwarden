@@ -107,7 +107,7 @@ impl WebauthnRegistration {
 }
 
 #[post("/two-factor/get-webauthn", data = "<data>")]
-async fn get_webauthn(data: Json<PasswordOrOtpData>, headers: Headers, mut conn: DbConn) -> JsonResult {
+async fn get_webauthn(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbConn) -> JsonResult {
     if !CONFIG.domain_set() {
         err!("`DOMAIN` environment variable is not set. Webauthn disabled")
     }
@@ -115,9 +115,9 @@ async fn get_webauthn(data: Json<PasswordOrOtpData>, headers: Headers, mut conn:
     let data: PasswordOrOtpData = data.into_inner();
     let user = headers.user;
 
-    data.validate(&user, false, &mut conn).await?;
+    data.validate(&user, false, &conn).await?;
 
-    let (enabled, registrations) = get_webauthn_registrations(&user.uuid, &mut conn).await?;
+    let (enabled, registrations) = get_webauthn_registrations(&user.uuid, &conn).await?;
     let registrations_json: Vec<Value> = registrations.iter().map(WebauthnRegistration::to_json).collect();
 
     Ok(Json(json!({
@@ -128,13 +128,13 @@ async fn get_webauthn(data: Json<PasswordOrOtpData>, headers: Headers, mut conn:
 }
 
 #[post("/two-factor/get-webauthn-challenge", data = "<data>")]
-async fn generate_webauthn_challenge(data: Json<PasswordOrOtpData>, headers: Headers, mut conn: DbConn) -> JsonResult {
+async fn generate_webauthn_challenge(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: PasswordOrOtpData = data.into_inner();
     let user = headers.user;
 
-    data.validate(&user, false, &mut conn).await?;
+    data.validate(&user, false, &conn).await?;
 
-    let registrations = get_webauthn_registrations(&user.uuid, &mut conn)
+    let registrations = get_webauthn_registrations(&user.uuid, &conn)
         .await?
         .1
         .into_iter()
@@ -153,7 +153,7 @@ async fn generate_webauthn_challenge(data: Json<PasswordOrOtpData>, headers: Hea
     state["rs"]["extensions"].as_object_mut().unwrap().clear();
 
     let type_ = TwoFactorType::WebauthnRegisterChallenge;
-    TwoFactor::new(user.uuid.clone(), type_, serde_json::to_string(&state)?).save(&mut conn).await?;
+    TwoFactor::new(user.uuid.clone(), type_, serde_json::to_string(&state)?).save(&conn).await?;
 
     // Because for this flow we abuse the passkeys as 2FA, and use it more like a securitykey
     // we need to modify some of the default settings defined by `start_passkey_registration()`.
@@ -252,7 +252,7 @@ impl From<PublicKeyCredentialCopy> for PublicKeyCredential {
 }
 
 #[post("/two-factor/webauthn", data = "<data>")]
-async fn activate_webauthn(data: Json<EnableWebauthnData>, headers: Headers, mut conn: DbConn) -> JsonResult {
+async fn activate_webauthn(data: Json<EnableWebauthnData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: EnableWebauthnData = data.into_inner();
     let mut user = headers.user;
 
@@ -260,15 +260,15 @@ async fn activate_webauthn(data: Json<EnableWebauthnData>, headers: Headers, mut
         master_password_hash: data.master_password_hash,
         otp: data.otp,
     }
-    .validate(&user, true, &mut conn)
+    .validate(&user, true, &conn)
     .await?;
 
     // Retrieve and delete the saved challenge state
     let type_ = TwoFactorType::WebauthnRegisterChallenge as i32;
-    let state = match TwoFactor::find_by_user_and_type(&user.uuid, type_, &mut conn).await {
+    let state = match TwoFactor::find_by_user_and_type(&user.uuid, type_, &conn).await {
         Some(tf) => {
             let state: PasskeyRegistration = serde_json::from_str(&tf.data)?;
-            tf.delete(&mut conn).await?;
+            tf.delete(&conn).await?;
             state
         }
         None => err!("Can't recover challenge"),
@@ -277,7 +277,7 @@ async fn activate_webauthn(data: Json<EnableWebauthnData>, headers: Headers, mut
     // Verify the credentials with the saved state
     let credential = WEBAUTHN.finish_passkey_registration(&data.device_response.into(), &state)?;
 
-    let mut registrations: Vec<_> = get_webauthn_registrations(&user.uuid, &mut conn).await?.1;
+    let mut registrations: Vec<_> = get_webauthn_registrations(&user.uuid, &conn).await?.1;
     // TODO: Check for repeated ID's
     registrations.push(WebauthnRegistration {
         id: data.id.into_i32()?,
@@ -289,11 +289,11 @@ async fn activate_webauthn(data: Json<EnableWebauthnData>, headers: Headers, mut
 
     // Save the registrations and return them
     TwoFactor::new(user.uuid.clone(), TwoFactorType::Webauthn, serde_json::to_string(&registrations)?)
-        .save(&mut conn)
+        .save(&conn)
         .await?;
-    _generate_recover_code(&mut user, &mut conn).await;
+    _generate_recover_code(&mut user, &conn).await;
 
-    log_user_event(EventType::UserUpdated2fa as i32, &user.uuid, headers.device.atype, &headers.ip.ip, &mut conn).await;
+    log_user_event(EventType::UserUpdated2fa as i32, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await;
 
     let keys_json: Vec<Value> = registrations.iter().map(WebauthnRegistration::to_json).collect();
     Ok(Json(json!({
@@ -316,14 +316,14 @@ struct DeleteU2FData {
 }
 
 #[delete("/two-factor/webauthn", data = "<data>")]
-async fn delete_webauthn(data: Json<DeleteU2FData>, headers: Headers, mut conn: DbConn) -> JsonResult {
+async fn delete_webauthn(data: Json<DeleteU2FData>, headers: Headers, conn: DbConn) -> JsonResult {
     let id = data.id.into_i32()?;
     if !headers.user.check_valid_password(&data.master_password_hash) {
         err!("Invalid password");
     }
 
     let Some(mut tf) =
-        TwoFactor::find_by_user_and_type(&headers.user.uuid, TwoFactorType::Webauthn as i32, &mut conn).await
+        TwoFactor::find_by_user_and_type(&headers.user.uuid, TwoFactorType::Webauthn as i32, &conn).await
     else {
         err!("Webauthn data not found!")
     };
@@ -336,12 +336,11 @@ async fn delete_webauthn(data: Json<DeleteU2FData>, headers: Headers, mut conn: 
 
     let removed_item = data.remove(item_pos);
     tf.data = serde_json::to_string(&data)?;
-    tf.save(&mut conn).await?;
+    tf.save(&conn).await?;
     drop(tf);
 
     // If entry is migrated from u2f, delete the u2f entry as well
-    if let Some(mut u2f) =
-        TwoFactor::find_by_user_and_type(&headers.user.uuid, TwoFactorType::U2f as i32, &mut conn).await
+    if let Some(mut u2f) = TwoFactor::find_by_user_and_type(&headers.user.uuid, TwoFactorType::U2f as i32, &conn).await
     {
         let mut data: Vec<U2FRegistration> = match serde_json::from_str(&u2f.data) {
             Ok(d) => d,
@@ -352,7 +351,7 @@ async fn delete_webauthn(data: Json<DeleteU2FData>, headers: Headers, mut conn: 
         let new_data_str = serde_json::to_string(&data)?;
 
         u2f.data = new_data_str;
-        u2f.save(&mut conn).await?;
+        u2f.save(&conn).await?;
     }
 
     let keys_json: Vec<Value> = data.iter().map(WebauthnRegistration::to_json).collect();
@@ -366,7 +365,7 @@ async fn delete_webauthn(data: Json<DeleteU2FData>, headers: Headers, mut conn: 
 
 pub async fn get_webauthn_registrations(
     user_id: &UserId,
-    conn: &mut DbConn,
+    conn: &DbConn,
 ) -> Result<(bool, Vec<WebauthnRegistration>), Error> {
     let type_ = TwoFactorType::Webauthn as i32;
     match TwoFactor::find_by_user_and_type(user_id, type_, conn).await {
@@ -375,7 +374,7 @@ pub async fn get_webauthn_registrations(
     }
 }
 
-pub async fn generate_webauthn_login(user_id: &UserId, conn: &mut DbConn) -> JsonResult {
+pub async fn generate_webauthn_login(user_id: &UserId, conn: &DbConn) -> JsonResult {
     // Load saved credentials
     let creds: Vec<Passkey> =
         get_webauthn_registrations(user_id, conn).await?.1.into_iter().map(|r| r.credential).collect();
@@ -415,7 +414,7 @@ pub async fn generate_webauthn_login(user_id: &UserId, conn: &mut DbConn) -> Jso
     Ok(Json(serde_json::to_value(response.public_key)?))
 }
 
-pub async fn validate_webauthn_login(user_id: &UserId, response: &str, conn: &mut DbConn) -> EmptyResult {
+pub async fn validate_webauthn_login(user_id: &UserId, response: &str, conn: &DbConn) -> EmptyResult {
     let type_ = TwoFactorType::WebauthnLoginChallenge as i32;
     let mut state = match TwoFactor::find_by_user_and_type(user_id, type_, conn).await {
         Some(tf) => {
@@ -469,7 +468,7 @@ async fn check_and_update_backup_eligible(
     rsp: &PublicKeyCredential,
     registrations: &mut Vec<WebauthnRegistration>,
     state: &mut PasskeyAuthentication,
-    conn: &mut DbConn,
+    conn: &DbConn,
 ) -> EmptyResult {
     // The feature flags from the response
     // For details see: https://www.w3.org/TR/webauthn-3/#sctn-authenticator-data

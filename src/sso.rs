@@ -1,11 +1,10 @@
+use std::{sync::LazyLock, time::Duration};
+
 use chrono::Utc;
 use derive_more::{AsRef, Deref, Display, From};
-use regex::Regex;
-use std::time::Duration;
-use url::Url;
-
 use mini_moka::sync::Cache;
-use once_cell::sync::Lazy;
+use regex::Regex;
+use url::Url;
 
 use crate::{
     api::ApiResult,
@@ -19,14 +18,14 @@ use crate::{
     CONFIG,
 };
 
-pub static FAKE_IDENTIFIER: &str = "Vaultwarden";
+pub static FAKE_IDENTIFIER: &str = "VW_DUMMY_IDENTIFIER_FOR_OIDC";
 
-static AC_CACHE: Lazy<Cache<OIDCState, AuthenticatedUser>> =
-    Lazy::new(|| Cache::builder().max_capacity(1000).time_to_live(Duration::from_secs(10 * 60)).build());
+static AC_CACHE: LazyLock<Cache<OIDCState, AuthenticatedUser>> =
+    LazyLock::new(|| Cache::builder().max_capacity(1000).time_to_live(Duration::from_secs(10 * 60)).build());
 
-static SSO_JWT_ISSUER: Lazy<String> = Lazy::new(|| format!("{}|sso", CONFIG.domain_origin()));
+static SSO_JWT_ISSUER: LazyLock<String> = LazyLock::new(|| format!("{}|sso", CONFIG.domain_origin()));
 
-pub static NONCE_EXPIRATION: Lazy<chrono::Duration> = Lazy::new(|| chrono::TimeDelta::try_minutes(10).unwrap());
+pub static NONCE_EXPIRATION: LazyLock<chrono::Duration> = LazyLock::new(|| chrono::TimeDelta::try_minutes(10).unwrap());
 
 #[derive(
     Clone,
@@ -133,6 +132,12 @@ struct BasicTokenClaims {
     exp: i64,
 }
 
+#[derive(Deserialize)]
+struct BasicTokenClaimsValidation {
+    exp: u64,
+    iss: String,
+}
+
 impl BasicTokenClaims {
     fn nbf(&self) -> i64 {
         self.nbf.or(self.iat).unwrap_or_else(|| Utc::now().timestamp())
@@ -140,18 +145,28 @@ impl BasicTokenClaims {
 }
 
 fn decode_token_claims(token_name: &str, token: &str) -> ApiResult<BasicTokenClaims> {
-    let mut validation = jsonwebtoken::Validation::default();
-    validation.set_issuer(&[CONFIG.sso_authority()]);
-    validation.insecure_disable_signature_validation();
-    validation.validate_aud = false;
+    // We need to manually validate this token, since `insecure_decode` does not do this
+    match jsonwebtoken::dangerous::insecure_decode::<BasicTokenClaimsValidation>(token) {
+        Ok(btcv) => {
+            let now = jsonwebtoken::get_current_timestamp();
+            let validate_claim = btcv.claims;
+            // Validate the exp in the claim with a leeway of 60 seconds, same as jsonwebtoken does
+            if validate_claim.exp < now - 60 {
+                err_silent!(format!("Expired Signature for base token claim from {token_name}"))
+            }
+            if validate_claim.iss.ne(&CONFIG.sso_authority()) {
+                err_silent!(format!("Invalid Issuer for base token claim from {token_name}"))
+            }
 
-    match jsonwebtoken::decode(token, &jsonwebtoken::DecodingKey::from_secret(&[]), &validation) {
-        Ok(btc) => Ok(btc.claims),
+            // All is validated and ok, lets decode again using the wanted struct
+            let btc = jsonwebtoken::dangerous::insecure_decode::<BasicTokenClaims>(token).unwrap();
+            Ok(btc.claims)
+        }
         Err(err) => err_silent!(format!("Failed to decode basic token claims from {token_name}: {err}")),
     }
 }
 
-pub fn decode_state(base64_state: String) -> ApiResult<OIDCState> {
+pub fn decode_state(base64_state: &str) -> ApiResult<OIDCState> {
     let state = match data_encoding::BASE64.decode(base64_state.as_bytes()) {
         Ok(vec) => match String::from_utf8(vec) {
             Ok(valid) => OIDCState(valid),
@@ -165,12 +180,7 @@ pub fn decode_state(base64_state: String) -> ApiResult<OIDCState> {
 
 // The `nonce` allow to protect against replay attacks
 // redirect_uri from: https://github.com/bitwarden/server/blob/main/src/Identity/IdentityServer/ApiClient.cs
-pub async fn authorize_url(
-    state: OIDCState,
-    client_id: &str,
-    raw_redirect_uri: &str,
-    mut conn: DbConn,
-) -> ApiResult<Url> {
+pub async fn authorize_url(state: OIDCState, client_id: &str, raw_redirect_uri: &str, conn: DbConn) -> ApiResult<Url> {
     let redirect_uri = match client_id {
         "web" | "browser" => format!("{}/sso-connector.html", CONFIG.domain()),
         "desktop" | "mobile" => "bitwarden://sso-callback".to_string(),
@@ -185,7 +195,7 @@ pub async fn authorize_url(
     };
 
     let (auth_url, nonce) = Client::authorize_url(state, redirect_uri).await?;
-    nonce.save(&mut conn).await?;
+    nonce.save(&conn).await?;
     Ok(auth_url)
 }
 
@@ -235,7 +245,7 @@ pub struct UserInformation {
     pub user_name: Option<String>,
 }
 
-async fn decode_code_claims(code: &str, conn: &mut DbConn) -> ApiResult<(OIDCCode, OIDCState)> {
+async fn decode_code_claims(code: &str, conn: &DbConn) -> ApiResult<(OIDCCode, OIDCState)> {
     match auth::decode_jwt::<OIDCCodeClaims>(code, SSO_JWT_ISSUER.to_string()) {
         Ok(code_claims) => match code_claims.code {
             OIDCCodeWrapper::Ok {
@@ -265,7 +275,7 @@ async fn decode_code_claims(code: &str, conn: &mut DbConn) -> ApiResult<(OIDCCod
 //  - second time we will rely on the `AC_CACHE` since the `code` has already been exchanged.
 // The `nonce` will ensure that the user is authorized only once.
 // We return only the `UserInformation` to force calling `redeem` to obtain the `refresh_token`.
-pub async fn exchange_code(wrapped_code: &str, conn: &mut DbConn) -> ApiResult<UserInformation> {
+pub async fn exchange_code(wrapped_code: &str, conn: &DbConn) -> ApiResult<UserInformation> {
     use openidconnect::OAuth2TokenResponse;
 
     let (code, state) = decode_code_claims(wrapped_code, conn).await?;
@@ -330,7 +340,7 @@ pub async fn exchange_code(wrapped_code: &str, conn: &mut DbConn) -> ApiResult<U
 }
 
 // User has passed 2FA flow we can delete `nonce` and clear the cache.
-pub async fn redeem(state: &OIDCState, conn: &mut DbConn) -> ApiResult<AuthenticatedUser> {
+pub async fn redeem(state: &OIDCState, conn: &DbConn) -> ApiResult<AuthenticatedUser> {
     if let Err(err) = SsoNonce::delete(state, conn).await {
         error!("Failed to delete database sso_nonce using {state}: {err}")
     }

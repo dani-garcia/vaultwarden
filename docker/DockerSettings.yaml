@@ -1,11 +1,11 @@
 ---
-vault_version: "v2025.8.0"
-vault_image_digest: "sha256:41c2b51c87882248f405d5a0ab37210d2672a312ec5d4f3b9afcdbbe8eb9d57d"
-# Cross Compile Docker Helper Scripts v1.6.1
+vault_version: "v2025.10.1"
+vault_image_digest: "sha256:50662dccf4908ac2128cd44981c52fcb4e3e8dd56f21823c8d5e91267ff741fa"
+# Cross Compile Docker Helper Scripts v1.8.0
 # We use the linux/amd64 platform shell scripts since there is no difference between the different platform scripts
 # https://github.com/tonistiigi/xx | https://hub.docker.com/r/tonistiigi/xx/tags
-xx_image_digest: "sha256:9c207bead753dda9430bdd15425c6518fc7a03d866103c516a2c6889188f5894"
-rust_version: 1.89.0 # Rust version to be used
+xx_image_digest: "sha256:add602d55daca18914838a78221f6bbe4284114b452c86a48f96d59aeb00f5c6"
+rust_version: 1.91.1 # Rust version to be used
 debian_version: trixie # Debian release name to be used
 alpine_version: "3.22" # Alpine version to be used
 # For which platforms/architectures will we try to build images
@@ -17,7 +17,6 @@ build_stage_image:
     platform: "$BUILDPLATFORM"
   alpine:
     image: "build_${TARGETARCH}${TARGETVARIANT}"
-    platform: "linux/amd64" # The Alpine build images only have linux/amd64 images
     arch_image:
       amd64: "ghcr.io/blackdex/rust-musl:x86_64-musl-stable-{{rust_version}}"
       arm64: "ghcr.io/blackdex/rust-musl:aarch64-musl-stable-{{rust_version}}"

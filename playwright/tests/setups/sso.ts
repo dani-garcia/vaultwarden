@@ -33,18 +33,20 @@ export async function logNewUser(
 
         await test.step('Create Vault account', async () => {
             await expect(page.getByRole('heading', { name: 'Join organisation' })).toBeVisible();
-            await page.getByLabel('New master password (required)', { exact: true }).fill(user.password);
-            await page.getByLabel('Confirm new master password (').fill(user.password);
+            await page.getByLabel('Master password (required)', { exact: true }).fill(user.password);
+            await page.getByLabel('Confirm master password (').fill(user.password);
             await page.getByRole('button', { name: 'Create account' }).click();
         });
+
+        await utils.checkNotification(page, 'Account successfully created!');
+        await utils.checkNotification(page, 'Invitation accepted');
+
+        await utils.ignoreExtension(page);
 
         await test.step('Default vault page', async () => {
             await expect(page).toHaveTitle(/Vaultwarden Web/);
             await expect(page.getByTitle('All vaults', { exact: true })).toBeVisible();
         });
-
-        await utils.checkNotification(page, 'Account successfully created!');
-        await utils.checkNotification(page, 'Invitation accepted');
 
         if( options.mailBuffer ){
             let mailBuffer = options.mailBuffer;
@@ -114,6 +116,8 @@ export async function logUser(
             await page.getByLabel('Master password').fill(user.password);
             await page.getByRole('button', { name: 'Unlock' }).click();
         });
+
+        await utils.ignoreExtension(page);
 
         await test.step('Default vault page', async () => {
             await expect(page).toHaveTitle(/Vaultwarden Web/);

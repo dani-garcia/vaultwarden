@@ -92,13 +92,13 @@ impl DuoStatus {
 const DISABLED_MESSAGE_DEFAULT: &str = "<To use the global Duo keys, please leave these fields untouched>";
 
 #[post("/two-factor/get-duo", data = "<data>")]
-async fn get_duo(data: Json<PasswordOrOtpData>, headers: Headers, mut conn: DbConn) -> JsonResult {
+async fn get_duo(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: PasswordOrOtpData = data.into_inner();
     let user = headers.user;
 
-    data.validate(&user, false, &mut conn).await?;
+    data.validate(&user, false, &conn).await?;
 
-    let data = get_user_duo_data(&user.uuid, &mut conn).await;
+    let data = get_user_duo_data(&user.uuid, &conn).await;
 
     let (enabled, data) = match data {
         DuoStatus::Global(_) => (true, Some(DuoData::secret())),
@@ -158,7 +158,7 @@ fn check_duo_fields_custom(data: &EnableDuoData) -> bool {
 }
 
 #[post("/two-factor/duo", data = "<data>")]
-async fn activate_duo(data: Json<EnableDuoData>, headers: Headers, mut conn: DbConn) -> JsonResult {
+async fn activate_duo(data: Json<EnableDuoData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: EnableDuoData = data.into_inner();
     let mut user = headers.user;
 
@@ -166,7 +166,7 @@ async fn activate_duo(data: Json<EnableDuoData>, headers: Headers, mut conn: DbC
         master_password_hash: data.master_password_hash.clone(),
         otp: data.otp.clone(),
     }
-    .validate(&user, true, &mut conn)
+    .validate(&user, true, &conn)
     .await?;
 
     let (data, data_str) = if check_duo_fields_custom(&data) {
@@ -180,11 +180,11 @@ async fn activate_duo(data: Json<EnableDuoData>, headers: Headers, mut conn: DbC
 
     let type_ = TwoFactorType::Duo;
     let twofactor = TwoFactor::new(user.uuid.clone(), type_, data_str);
-    twofactor.save(&mut conn).await?;
+    twofactor.save(&conn).await?;
 
-    _generate_recover_code(&mut user, &mut conn).await;
+    _generate_recover_code(&mut user, &conn).await;
 
-    log_user_event(EventType::UserUpdated2fa as i32, &user.uuid, headers.device.atype, &headers.ip.ip, &mut conn).await;
+    log_user_event(EventType::UserUpdated2fa as i32, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await;
 
     Ok(Json(json!({
         "enabled": true,
@@ -231,7 +231,7 @@ const AUTH_PREFIX: &str = "AUTH";
 const DUO_PREFIX: &str = "TX";
 const APP_PREFIX: &str = "APP";
 
-async fn get_user_duo_data(user_id: &UserId, conn: &mut DbConn) -> DuoStatus {
+async fn get_user_duo_data(user_id: &UserId, conn: &DbConn) -> DuoStatus {
     let type_ = TwoFactorType::Duo as i32;
 
     // If the user doesn't have an entry, disabled
@@ -254,7 +254,7 @@ async fn get_user_duo_data(user_id: &UserId, conn: &mut DbConn) -> DuoStatus {
 }
 
 // let (ik, sk, ak, host) = get_duo_keys();
-pub(crate) async fn get_duo_keys_email(email: &str, conn: &mut DbConn) -> ApiResult<(String, String, String, String)> {
+pub(crate) async fn get_duo_keys_email(email: &str, conn: &DbConn) -> ApiResult<(String, String, String, String)> {
     let data = match User::find_by_mail(email, conn).await {
         Some(u) => get_user_duo_data(&u.uuid, conn).await.data(),
         _ => DuoData::global(),
@@ -264,7 +264,7 @@ pub(crate) async fn get_duo_keys_email(email: &str, conn: &mut DbConn) -> ApiRes
     Ok((data.ik, data.sk, CONFIG.get_duo_akey().await, data.host))
 }
 
-pub async fn generate_duo_signature(email: &str, conn: &mut DbConn) -> ApiResult<(String, String)> {
+pub async fn generate_duo_signature(email: &str, conn: &DbConn) -> ApiResult<(String, String)> {
     let now = Utc::now().timestamp();
 
     let (ik, sk, ak, host) = get_duo_keys_email(email, conn).await?;
@@ -282,7 +282,7 @@ fn sign_duo_values(key: &str, email: &str, ikey: &str, prefix: &str, expire: i64
     format!("{cookie}|{}", crypto::hmac_sign(key, &cookie))
 }
 
-pub async fn validate_duo_login(email: &str, response: &str, conn: &mut DbConn) -> EmptyResult {
+pub async fn validate_duo_login(email: &str, response: &str, conn: &DbConn) -> EmptyResult {
     let split: Vec<&str> = response.split(':').collect();
     if split.len() != 2 {
         err!(
