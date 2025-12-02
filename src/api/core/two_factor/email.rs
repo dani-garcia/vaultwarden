@@ -64,7 +64,7 @@ async fn send_email_login(data: Json<SendEmailLoginData>, conn: DbConn) -> Empty
         user
     } else {
         // SSO login only sends device id, so we get the user by the most recently used device
-        let Some(user) = User::find_by_device(&data.device_identifier, &conn).await else {
+        let Some(user) = User::find_by_device_for_email2fa(&data.device_identifier, &conn).await else {
             err!("Username or password is incorrect. Try again.")
         };
 

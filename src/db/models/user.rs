@@ -1,4 +1,4 @@
-use crate::db::schema::{devices, invitations, sso_users, users};
+use crate::db::schema::{invitations, sso_users, twofactor_incomplete, users};
 use chrono::{NaiveDateTime, TimeDelta, Utc};
 use derive_more::{AsRef, Deref, Display, From};
 use diesel::prelude::*;
@@ -386,16 +386,18 @@ impl User {
         }}
     }
 
-    pub async fn find_by_device(device_uuid: &DeviceId, conn: &DbConn) -> Option<Self> {
-        db_run! { conn: {
-            users::table
-                .inner_join(devices::table.on(devices::user_uuid.eq(users::uuid)))
-                .filter(devices::uuid.eq(device_uuid))
-                .select(users::all_columns)
-                .order_by(devices::updated_at.desc())
-                .first::<Self>(conn)
+    pub async fn find_by_device_for_email2fa(device_uuid: &DeviceId, conn: &DbConn) -> Option<Self> {
+        if let Some(user_uuid) = db_run! ( conn: {
+            twofactor_incomplete::table
+                .filter(twofactor_incomplete::device_uuid.eq(device_uuid))
+                .order_by(twofactor_incomplete::login_time.desc())
+                .select(twofactor_incomplete::user_uuid)
+                .first::<UserId>(conn)
                 .ok()
-        }}
+        }) {
+            return Self::find_by_uuid(&user_uuid, conn).await;
+        }
+        None
     }
 
     pub async fn get_all(conn: &DbConn) -> Vec<(Self, Option<SsoUser>)> {
