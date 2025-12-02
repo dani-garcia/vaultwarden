@@ -154,7 +154,7 @@ impl Device {
                         .values(&*self)
                         .on_conflict((devices::uuid, devices::user_uuid))
                         .do_update()
-                        .set(self)
+                        .set(&*self)
                         .execute(conn),
                     10,
                 ).map_res("Error saving device")
