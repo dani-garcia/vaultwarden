@@ -43,7 +43,11 @@ async fn send_email_login(data: Json<SendEmailLoginData>, conn: DbConn) -> Empty
     }
 
     // Get the user
-    let user = if let Some(email) = &data.email {
+    let email = match &data.email {
+        Some(email) if !email.is_empty() => Some(email),
+        _ => None,
+    };
+    let user = if let Some(email) = email {
         let Some(master_password_hash) = &data.master_password_hash else {
             err!("No password hash has been submitted.")
         };
