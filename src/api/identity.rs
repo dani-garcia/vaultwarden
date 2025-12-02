@@ -267,10 +267,6 @@ async fn _sso_login(
         }
         Some((mut user, sso_user)) => {
             let mut device = get_device(&data, conn, &user).await?;
-            if !device.is_new() {
-                // Update `device.updated_at` only if it's not a new device
-                device.save(true, conn).await?;
-            }
 
             let twofactor_token = twofactor_auth(&mut user, &data, &mut device, ip, client_version, conn).await?;
 
@@ -435,10 +431,6 @@ async fn _password_login(
     }
 
     let mut device = get_device(&data, conn, &user).await?;
-    if !device.is_new() {
-        // Update `device.updated_at` only if it's not a new device
-        device.save(true, conn).await?;
-    }
 
     let twofactor_token = twofactor_auth(&mut user, &data, &mut device, ip, client_version, conn).await?;
 
