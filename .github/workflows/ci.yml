@@ -28,12 +28,20 @@ jobs:
           output: trivy-results.sarif
           severity: CRITICAL,HIGH
 
-      - name: Upload SARIF results to GitHub Code Scanning
+      - name: Upload SARIF results to GitHub Code Scanning (best-effort)
         uses: github/code-scanning-action/upload-sarif@v2
+        continue-on-error: true
         with:
           sarif_file: 'trivy-results.sarif'
 
-      - name: Upload Trivy SARIF artifact
+      - name: List SARIF file (debug)
+        if: always()
+        run: |
+          echo "Listing SARIF file:"
+          ls -la trivy-results.sarif || true
+
+      - name: Upload Trivy SARIF artifact (always)
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: trivy-sarif
