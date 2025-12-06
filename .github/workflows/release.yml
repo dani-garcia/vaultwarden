@@ -368,22 +368,25 @@ jobs:
         run: |
           set +e
           IFS=',' read -ra IMAGES <<< "${CONTAINER_REGISTRIES}"
+          IFS=',' read -ra TAGS <<< "${BASE_TAGS}"
           for img in "${IMAGES[@]}"; do
-            echo "Creating manifest for $img:${BASE_TAGS}-${BASE_IMAGE}"
+            for tag in "${TAGS[@]}"; do
+              echo "Creating manifest for $img:$tag-${BASE_IMAGE}"
 
-            OUTPUT=$(docker buildx imagetools create \
-              -t "$img:${BASE_TAGS}-${BASE_IMAGE}" \
-              $(printf "$img:${BASE_TAGS}-${BASE_IMAGE}@sha256:%s " *) 2>&1)
-            STATUS=$?
+              OUTPUT=$(docker buildx imagetools create \
+                -t "$img:$tag-${BASE_IMAGE}" \
+                $(printf "$img:$tag-${BASE_IMAGE}@sha256:%s " *) 2>&1)
+              STATUS=$?
 
-            if [ $STATUS -ne 0 ]; then
-              echo "Manifest creation failed for $img"
+              if [ $STATUS -ne 0 ]; then
+                echo "Manifest creation failed for $img"
+                echo "$OUTPUT"
+              exit $STATUS
+              fi
+
+              echo "Manifest created for $img"
               echo "$OUTPUT"
-            exit $STATUS
-            fi
-
-            echo "Manifest created for $img"
-            echo "$OUTPUT"
+            done
           done
           set -e
 
