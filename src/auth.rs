@@ -1223,7 +1223,7 @@ pub async fn refresh_tokens(
     };
 
     // Save to update `updated_at`.
-    device.save(conn).await?;
+    device.save(true, conn).await?;
 
     let user = match User::find_by_uuid(&device.user_uuid, conn).await {
         None => err!("Impossible to find user"),
