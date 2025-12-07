@@ -370,9 +370,9 @@ async fn get_auto_enroll_status(identifier: &str, headers: Headers, conn: DbConn
     };
 
     Ok(Json(json!({
-        "Id": id,
-        "Identifier": identifier,
-        "ResetPasswordEnabled": rp_auto_enroll,
+        "id": id,
+        "identifier": identifier,
+        "resetPasswordEnabled": rp_auto_enroll,
     })))
 }
 
@@ -2057,8 +2057,6 @@ async fn get_policy(org_id: OrganizationId, pol_type: i32, headers: AdminHeaders
 #[derive(Deserialize)]
 struct PolicyData {
     enabled: bool,
-    #[serde(rename = "type")]
-    _type: i32,
     data: Option<Value>,
 }
 

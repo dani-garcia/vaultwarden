@@ -378,7 +378,7 @@ async fn post_set_password(data: Json<SetPasswordData>, headers: Headers, conn: 
     }
 
     if let Some(identifier) = data.org_identifier {
-        if identifier != crate::sso::FAKE_IDENTIFIER {
+        if identifier != crate::sso::FAKE_IDENTIFIER && identifier != crate::api::admin::FAKE_ADMIN_UUID {
             let org = match Organization::find_by_uuid(&identifier.into(), &conn).await {
                 None => err!("Failed to retrieve the associated organization"),
                 Some(org) => org,
@@ -405,8 +405,8 @@ async fn post_set_password(data: Json<SetPasswordData>, headers: Headers, conn: 
     user.save(&conn).await?;
 
     Ok(Json(json!({
-      "Object": "set-password",
-      "CaptchaBypassToken": "",
+      "object": "set-password",
+      "captchaBypassToken": "",
     })))
 }
 
@@ -1409,7 +1409,7 @@ async fn put_device_token(device_id: DeviceId, data: Json<PushToken>, headers: H
     }
 
     device.push_token = Some(token);
-    if let Err(e) = device.save(&conn).await {
+    if let Err(e) = device.save(true, &conn).await {
         err!(format!("An error occurred while trying to save the device push token: {e}"));
     }
 

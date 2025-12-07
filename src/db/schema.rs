@@ -256,12 +256,15 @@ table! {
 }
 
 table! {
-    sso_nonce (state) {
+    sso_auth (state) {
         state -> Text,
+        client_challenge -> Text,
         nonce -> Text,
-        verifier -> Nullable<Text>,
         redirect_uri -> Text,
+        code_response -> Nullable<Text>,
+        auth_response -> Nullable<Text>,
         created_at -> Timestamp,
+        updated_at -> Timestamp,
     }
 }
 
