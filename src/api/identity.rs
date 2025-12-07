@@ -424,7 +424,7 @@ async fn _password_login(
 
     let twofactor_token = twofactor_auth(&mut user, &data, &mut device, ip, client_version, conn).await?;
 
-    let auth_tokens = auth::AuthTokens::new(&device, &user, AuthMethod::Password, data.client_id);
+    let auth_tokens = auth::AuthTokens::new(&device, &user, AuthMethod::Password, data.client_id, None);
 
     authenticated_response(&user, &mut device, auth_tokens, twofactor_token, conn, ip).await
 }
