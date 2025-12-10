@@ -362,7 +362,7 @@ jobs:
       - name: Create manifest list, push it and extract digest SHA
         working-directory: ${{ runner.temp }}/digests
         env:
-          BASE_IMAGE: "${{ matrix.base_image }}"
+          BASE_IMAGE_TAG: "${{ matrix.base_image != 'debian' && format('-{0}', matrix.base_image) || '' }}"
           BASE_TAGS: "${{ env.BASE_TAGS }}"
           CONTAINER_REGISTRIES: "${{ env.CONTAINER_REGISTRIES }}"
         run: |
@@ -371,27 +371,27 @@ jobs:
           IFS=',' read -ra TAGS <<< "${BASE_TAGS}"
           for img in "${IMAGES[@]}"; do
             for tag in "${TAGS[@]}"; do
-              echo "Creating manifest for $img:$tag-${BASE_IMAGE}"
+              echo "Creating manifest for ${img}:${tag}${BASE_IMAGE_TAG}"
 
               OUTPUT=$(docker buildx imagetools create \
-                -t "$img:$tag-${BASE_IMAGE}" \
-                $(printf "$img:$tag-${BASE_IMAGE}@sha256:%s " *) 2>&1)
+                -t "${img}:${tag}${BASE_IMAGE_TAG}" \
+                $(printf "${img}@sha256:%s " *) 2>&1)
               STATUS=$?
 
-              if [ $STATUS -ne 0 ]; then
-                echo "Manifest creation failed for $img"
-                echo "$OUTPUT"
-              exit $STATUS
+              if [ ${STATUS} -ne 0 ]; then
+                echo "Manifest creation failed for ${img}:${tag}${BASE_IMAGE_TAG}"
+                echo "${OUTPUT}"
+              exit ${STATUS}
               fi
 
-              echo "Manifest created for $img"
-              echo "$OUTPUT"
+              echo "Manifest created for ${img}:${tag}${BASE_IMAGE_TAG}"
+              echo "${OUTPUT}"
             done
           done
           set -e
 
           # Extract digest SHA for subsequent steps
-          GET_DIGEST_SHA="$(echo "$OUTPUT" | grep -oE 'sha256:[a-f0-9]{64}' | tail -1)"
+          GET_DIGEST_SHA="$(echo "${OUTPUT}" | grep -oE 'sha256:[a-f0-9]{64}' | tail -1)"
           echo "DIGEST_SHA=${GET_DIGEST_SHA}" | tee -a "${GITHUB_ENV}"
 
       # Attest container images
