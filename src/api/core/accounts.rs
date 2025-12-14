@@ -66,6 +66,7 @@ pub fn routes() -> Vec<rocket::Route> {
         put_device_token,
         put_clear_device_token,
         post_clear_device_token,
+        get_tasks,
         post_auth_request,
         get_auth_request,
         put_auth_request,
@@ -1443,6 +1444,14 @@ async fn put_clear_device_token(device_id: DeviceId, conn: DbConn) -> EmptyResul
 #[post("/devices/identifier/<device_id>/clear-token")]
 async fn post_clear_device_token(device_id: DeviceId, conn: DbConn) -> EmptyResult {
     put_clear_device_token(device_id, conn).await
+}
+
+#[get("/tasks")]
+fn get_tasks(_client_headers: ClientHeaders) -> JsonResult {
+    Ok(Json(json!({
+        "data": [],
+        "object": "list"
+    })))
 }
 
 #[derive(Debug, Deserialize)]
