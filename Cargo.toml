@@ -144,7 +144,7 @@ email_address = "0.2.9"
 handlebars = { version = "6.3.2", features = ["dir_source"] }
 
 # HTTP client (Used for favicons, version check, DUO and HIBP API)
-reqwest = { version = "0.12.25", features = ["rustls-tls", "rustls-tls-native-roots", "stream", "json", "deflate", "gzip", "brotli", "zstd", "socks", "cookies", "charset", "http2", "system-proxy"], default-features = false}
+reqwest = { version = "0.12.26", features = ["rustls-tls", "rustls-tls-native-roots", "stream", "json", "deflate", "gzip", "brotli", "zstd", "socks", "cookies", "charset", "http2", "system-proxy"], default-features = false}
 hickory-resolver = "0.25.2"
 
 # Favicon extraction libraries
@@ -168,8 +168,8 @@ openssl = "0.10.75"
 pico-args = "0.5.0"
 
 # Macro ident concatenation
-pastey = "0.2.0"
-governor = "0.10.2"
+pastey = "0.2.1"
+governor = "0.10.3"
 
 # OIDC for SSO
 openidconnect = { version = "4.0.1", features = ["reqwest", "native-tls"] }
