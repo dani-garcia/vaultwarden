@@ -217,7 +217,8 @@ fn config() -> Json<Value> {
         // We should make sure that we keep this updated when we support the new server features
         // Version history:
         // - Individual cipher key encryption: 2024.2.0
-        "version": "2025.6.0",
+        // - Mobile app support for MasterPasswordUnlockData: 2025.8.0
+        "version": "2025.12.0",
         "gitHash": option_env!("GIT_REV"),
         "server": {
           "name": "Vaultwarden",

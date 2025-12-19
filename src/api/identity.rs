@@ -463,6 +463,31 @@ async fn authenticated_response(
 
     let master_password_policy = master_password_policy(user, conn).await;
 
+    let has_master_password = !user.password_hash.is_empty();
+    let master_password_unlock = if has_master_password {
+        json!({
+            "Kdf": {
+                "KdfType": user.client_kdf_type,
+                "Iterations": user.client_kdf_iter,
+                "Memory": user.client_kdf_memory,
+                "Parallelism": user.client_kdf_parallelism
+            },
+            "MasterKeyEncryptedUserKey": user.akey,
+            "Salt": user.email
+        })
+    } else {
+        Value::Null
+    };
+
+    let account_keys = json!({
+        "publicKeyEncryptionKeyPair": {
+            "wrappedPrivateKey": user.private_key,
+            "publicKey": user.public_key,
+            "Object": "publicKeyEncryptionKeyPair"
+        },
+        "Object": "privateKeys"
+    });
+
     let mut result = json!({
         "access_token": auth_tokens.access_token(),
         "expires_in": auth_tokens.expires_in(),
@@ -477,8 +502,10 @@ async fn authenticated_response(
         "ForcePasswordReset": false,
         "MasterPasswordPolicy": master_password_policy,
         "scope": auth_tokens.scope(),
+        "AccountKeys": account_keys,
         "UserDecryptionOptions": {
-            "HasMasterPassword": !user.password_hash.is_empty(),
+            "HasMasterPassword": has_master_password,
+            "MasterPasswordUnlock": master_password_unlock,
             "Object": "userDecryptionOptions"
         },
     });
