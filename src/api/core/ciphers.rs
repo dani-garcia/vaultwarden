@@ -159,7 +159,25 @@ async fn sync(data: SyncData, headers: Headers, client_version: Option<ClientVer
     let domains_json = if data.exclude_domains {
         Value::Null
     } else {
-        api::core::_get_eq_domains(headers, true).into_inner()
+        api::core::_get_eq_domains(&headers, true).into_inner()
+    };
+
+    // This is very similar to the the userDecryptionOptions sent in connect/token,
+    // but as of 2025-12-19 they're both using different casing conventions.
+    let has_master_password = !headers.user.password_hash.is_empty();
+    let master_password_unlock = if has_master_password {
+        json!({
+            "kdf": {
+                "kdfType": headers.user.client_kdf_type,
+                "iterations": headers.user.client_kdf_iter,
+                "memory": headers.user.client_kdf_memory,
+                "parallelism": headers.user.client_kdf_parallelism
+            },
+            "masterKeyEncryptedUserKey": headers.user.akey,
+            "salt": headers.user.email
+        })
+    } else {
+        Value::Null
     };
 
     Ok(Json(json!({
@@ -170,6 +188,9 @@ async fn sync(data: SyncData, headers: Headers, client_version: Option<ClientVer
         "ciphers": ciphers_json,
         "domains": domains_json,
         "sends": sends_json,
+        "userDecryption": {
+            "masterPasswordUnlock": master_password_unlock,
+        },
         "object": "sync"
     })))
 }
