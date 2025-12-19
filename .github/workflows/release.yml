@@ -220,7 +220,7 @@ jobs:
             *.cache-to=${{ env.BAKE_CACHE_TO }}
             *.platform=linux/${{ matrix.arch }}
             ${{ env.TAGS }}
-            *.output=type=image,push-by-digest=true,name-canonical=true,push=true,compression=zstd
+            *.output=type=image,push-by-digest=true,name-canonical=true,push=true
 
       - name: Extract digest SHA
         env:
