@@ -80,7 +80,7 @@ jobs:
 
       # Only install the clippy and rustfmt components on the default rust-toolchain
       - name: "Install rust-toolchain version"
-        uses: dtolnay/rust-toolchain@0b1efabc08b657293548b77fb76cc02d26091c7e # master @ Nov 20, 2025, 7:02 PM GMT+1
+        uses: dtolnay/rust-toolchain@f7ccc83f9ed1e5b9c81d8a67d7ad1a747e22a561 # master @ Dec 16, 2025, 6:11 PM GMT+1
         if: ${{ matrix.channel == 'rust-toolchain' }}
         with:
           toolchain: "${{steps.toolchain.outputs.RUST_TOOLCHAIN}}"
@@ -90,7 +90,7 @@ jobs:
 
       # Install the any other channel to be used for which we do not execute clippy and rustfmt
       - name: "Install MSRV version"
-        uses: dtolnay/rust-toolchain@0b1efabc08b657293548b77fb76cc02d26091c7e # master @ Nov 20, 2025, 7:02 PM GMT+1
+        uses: dtolnay/rust-toolchain@f7ccc83f9ed1e5b9c81d8a67d7ad1a747e22a561 # master @ Dec 16, 2025, 6:11 PM GMT+1
         if: ${{ matrix.channel != 'rust-toolchain' }}
         with:
           toolchain: "${{steps.toolchain.outputs.RUST_TOOLCHAIN}}"
