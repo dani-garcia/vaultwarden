@@ -463,7 +463,6 @@ async fn authenticated_response(
 
     let master_password_policy = master_password_policy(user, conn).await;
 
-
     let has_master_password = !user.password_hash.is_empty();
     let master_password_unlock = if has_master_password {
         json!({
