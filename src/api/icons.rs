@@ -798,7 +798,7 @@ impl Emitter for FaviconEmitter {
         self.flush_current_attribute(true);
         self.last_start_tag.clear();
         match &self.current_token {
-            Some(token) if token.closing => {
+            Some(token) if !token.closing => {
                 self.last_start_tag.extend(&*token.tag.name);
             }
             _ => {}
