@@ -74,11 +74,11 @@ const GLOBAL_DOMAINS: &str = include_str!("../../static/global_domains.json");
 
 #[get("/settings/domains")]
 fn get_eq_domains(headers: Headers) -> Json<Value> {
-    _get_eq_domains(headers, false)
+    _get_eq_domains(&headers, false)
 }
 
-fn _get_eq_domains(headers: Headers, no_excluded: bool) -> Json<Value> {
-    let user = headers.user;
+fn _get_eq_domains(headers: &Headers, no_excluded: bool) -> Json<Value> {
+    let user = &headers.user;
     use serde_json::from_str;
 
     let equivalent_domains: Vec<Vec<String>> = from_str(&user.equivalent_domains).unwrap();
