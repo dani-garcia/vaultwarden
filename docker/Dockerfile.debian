@@ -19,20 +19,20 @@
 # - From https://hub.docker.com/r/vaultwarden/web-vault/tags,
 #   click the tag name to view the digest of the image it currently points to.
 # - From the command line:
-#     $ docker pull docker.io/vaultwarden/web-vault:v2025.10.1
-#     $ docker image inspect --format "{{.RepoDigests}}" docker.io/vaultwarden/web-vault:v2025.10.1
-#     [docker.io/vaultwarden/web-vault@sha256:50662dccf4908ac2128cd44981c52fcb4e3e8dd56f21823c8d5e91267ff741fa]
+#     $ docker pull docker.io/vaultwarden/web-vault:v2025.12.0
+#     $ docker image inspect --format "{{.RepoDigests}}" docker.io/vaultwarden/web-vault:v2025.12.0
+#     [docker.io/vaultwarden/web-vault@sha256:bb7303efafdb7e2b41bee2c772e14f67676ae2c9047bd7bba80d3544d4162613]
 #
 # - Conversely, to get the tag name from the digest:
-#     $ docker image inspect --format "{{.RepoTags}}" docker.io/vaultwarden/web-vault@sha256:50662dccf4908ac2128cd44981c52fcb4e3e8dd56f21823c8d5e91267ff741fa
-#     [docker.io/vaultwarden/web-vault:v2025.10.1]
+#     $ docker image inspect --format "{{.RepoTags}}" docker.io/vaultwarden/web-vault@sha256:bb7303efafdb7e2b41bee2c772e14f67676ae2c9047bd7bba80d3544d4162613
+#     [docker.io/vaultwarden/web-vault:v2025.12.0]
 #
-FROM --platform=linux/amd64 docker.io/vaultwarden/web-vault@sha256:50662dccf4908ac2128cd44981c52fcb4e3e8dd56f21823c8d5e91267ff741fa AS vault
+FROM --platform=linux/amd64 docker.io/vaultwarden/web-vault@sha256:bb7303efafdb7e2b41bee2c772e14f67676ae2c9047bd7bba80d3544d4162613 AS vault
 
 ########################## Cross Compile Docker Helper Scripts ##########################
 ## We use the linux/amd64 no matter which Build Platform, since these are all bash scripts
 ## And these bash scripts do not have any significant difference if at all
-FROM --platform=linux/amd64 docker.io/tonistiigi/xx@sha256:add602d55daca18914838a78221f6bbe4284114b452c86a48f96d59aeb00f5c6 AS xx
+FROM --platform=linux/amd64 docker.io/tonistiigi/xx@sha256:c64defb9ed5a91eacb37f96ccc3d4cd72521c4bd18d5442905b95e2226b0e707 AS xx
 
 ########################## BUILD IMAGE ##########################
 # hadolint ignore=DL3006
