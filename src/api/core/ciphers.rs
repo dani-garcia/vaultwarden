@@ -324,8 +324,21 @@ async fn post_ciphers_create(
 
     // Check if there are one more more collections selected when this cipher is part of an organization.
     // err if this is not the case before creating an empty cipher.
-    if data.cipher.organization_id.is_some() && data.collection_ids.is_empty() {
-        err!("You must select at least one collection.");
+    if let Some(org_id) = &data.cipher.organization_id {
+        if data.collection_ids.is_empty() {
+            err!("You must select at least one collection.");
+        } else {
+            for col_id in &data.collection_ids {
+                match Collection::find_by_uuid_and_org(col_id, org_id, &conn).await {
+                    None => err!("Invalid collection ID provided"),
+                    Some(collection) => {
+                        if !collection.is_writable_by_user(&headers.user.uuid, &conn).await {
+                            err!("No rights to modify the collection")
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // This check is usually only needed in update_cipher_from_data(), but we
