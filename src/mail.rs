@@ -56,11 +56,14 @@ pub async fn refresh_oauth2_token() -> Result<OAuth2Token, Error> {
         ("client_secret", &client_secret),
     ];
 
-    let response = make_http_request(reqwest::Method::POST, &token_url)?
+    let response = match make_http_request(reqwest::Method::POST, &token_url)?
         .form(&form_params)
         .send()
         .await
-        .map_err(|e| err!(format!("OAuth2 Token Refresh Error: {e}")))?;
+    {
+        Ok(res) => res,
+        Err(e) => err!(format!("OAuth2 Token Refresh Error: {e}")),
+    };
 
     if !response.status().is_success() {
         let status = response.status();
@@ -68,8 +71,10 @@ pub async fn refresh_oauth2_token() -> Result<OAuth2Token, Error> {
         err!("OAuth2 Token Refresh Failed", format!("HTTP {status}: {body}"));
     }
 
-    let token_response: TokenRefreshResponse =
-        response.json().await.map_err(|e| err!(format!("OAuth2 Token Parse Error: {e}")))?;
+    let token_response: TokenRefreshResponse = match response.json().await {
+        Ok(res) => res,
+        Err(e) => err!(format!("OAuth2 Token Parse Error: {e}")),
+    };
 
     let expires_at = token_response
         .expires_in

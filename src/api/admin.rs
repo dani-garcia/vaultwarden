@@ -384,7 +384,10 @@ fn oauth2_authorize(_token: AdminToken) -> Result<Redirect, Error> {
     let redirect_uri = format!("{}/admin/oauth2/callback", CONFIG.domain());
 
     // Build authorization URL using url crate to ensure proper encoding
-    let mut url = Url::parse(&auth_url).map_err(|e| err!(format!("Invalid OAuth2 Authorization URL: {e}")))?;
+    let mut url = match Url::parse(&auth_url) {
+        Ok(u) => u,
+        Err(e) => err!(format!("Invalid OAuth2 Authorization URL: {e}")),
+    };
     {
         let mut qp = url.query_pairs_mut();
         qp.append_pair("client_id", &client_id);
@@ -449,11 +452,14 @@ async fn oauth2_callback(params: OAuth2CallbackParams) -> Result<Html<String>, E
         ("client_secret", &client_secret),
     ];
 
-    let response = make_http_request(Method::POST, &token_url)?
+    let response = match make_http_request(Method::POST, &token_url)?
         .form(&form_params)
         .send()
         .await
-        .map_err(|e| err!(format!("OAuth2 Token Exchange Error: {e}")))?;
+    {
+        Ok(res) => res,
+        Err(e) => err!(format!("OAuth2 Token Exchange Error: {e}")),
+    };
 
     if !response.status().is_success() {
         let status = response.status();
@@ -461,18 +467,22 @@ async fn oauth2_callback(params: OAuth2CallbackParams) -> Result<Html<String>, E
         err!("OAuth2 Token Exchange Failed", format!("HTTP {status}: {body}"));
     }
 
-    let token_response: Value =
-        response.json().await.map_err(|e| err!(format!("OAuth2 Token Parse Error: {e}")))?;
+    let token_response: Value = match response.json().await {
+        Ok(res) => res,
+        Err(e) => err!(format!("OAuth2 Token Parse Error: {e}")),
+    };
 
     // Extract refresh_token from response
     let refresh_token =
         token_response.get("refresh_token").and_then(|v| v.as_str()).ok_or("No refresh_token in response")?;
 
     // Save refresh_token to configuration
-    let config_builder: ConfigBuilder = serde_json::from_value(json!({
+    let config_builder: ConfigBuilder = match serde_json::from_value(json!({
         "smtp_oauth2_refresh_token": refresh_token
-    }))
-    .map_err(|e| err!(format!("ConfigBuilder serialization error: {e}")))?;
+    })) {
+        Ok(builder) => builder,
+        Err(e) => err!(format!("ConfigBuilder serialization error: {e}")),
+    };
     CONFIG.update_config_partial(config_builder).await?;
 
     // Return success page via template
