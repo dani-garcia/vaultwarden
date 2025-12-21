@@ -322,12 +322,6 @@ async fn post_ciphers_create(
 ) -> JsonResult {
     let mut data: ShareCipherData = data.into_inner();
 
-    // Check if there are one more more collections selected when this cipher is part of an organization.
-    // err if this is not the case before creating an empty cipher.
-    if data.cipher.organization_id.is_some() && data.collection_ids.is_empty() {
-        err!("You must select at least one collection.");
-    }
-
     // This check is usually only needed in update_cipher_from_data(), but we
     // need it here as well to avoid creating an empty cipher in the call to
     // cipher.save() below.
@@ -345,7 +339,11 @@ async fn post_ciphers_create(
     // or otherwise), we can just ignore this field entirely.
     data.cipher.last_known_revision_date = None;
 
-    share_cipher_by_uuid(&cipher.uuid, data, &headers, &conn, &nt, None).await
+    let res = share_cipher_by_uuid(&cipher.uuid, data, &headers, &conn, &nt, None).await;
+    if res.is_err() {
+        cipher.delete(&conn).await?;
+    }
+    res
 }
 
 /// Called when creating a new user-owned cipher.
