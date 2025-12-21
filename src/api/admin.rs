@@ -352,7 +352,7 @@ async fn test_smtp(data: Json<InviteData>, _token: AdminToken) -> EmptyResult {
     }
 }
 
-#[post("/test/oauth2")]
+#[post("/oauth2/test")]
 async fn refresh_oauth2_token_endpoint(_token: AdminToken) -> EmptyResult {
     if CONFIG.smtp_oauth2_client_id().is_none() {
         err!("OAuth2 is not configured")
@@ -384,7 +384,7 @@ fn oauth2_authorize(_token: AdminToken) -> Result<Redirect, Error> {
     let redirect_uri = format!("{}/admin/oauth2/callback", CONFIG.domain());
 
     // Build authorization URL using url crate to ensure proper encoding
-    let mut url = Url::parse(&auth_url).map_err(|e| Error::new("Invalid OAuth2 Authorization URL", e.to_string()))?;
+    let mut url = Url::parse(&auth_url).map_err(|e| err!(format!("Invalid OAuth2 Authorization URL: {e}")))?;
     {
         let mut qp = url.query_pairs_mut();
         qp.append_pair("client_id", &client_id);
@@ -414,7 +414,7 @@ async fn oauth2_callback(params: OAuth2CallbackParams) -> Result<Html<String>, E
     // Check for errors from OAuth2 provider
     if let Some(error) = params.error {
         let description = params.error_description.unwrap_or_else(|| "Unknown error".to_string());
-        return Err(Error::new("OAuth2 Authorization Failed", format!("{}: {}", error, description)));
+        err!("OAuth2 Authorization Failed", format!("{error}: {description}"));
     }
 
     // Validate required parameters
@@ -429,7 +429,7 @@ async fn oauth2_callback(params: OAuth2CallbackParams) -> Result<Html<String>, E
     };
 
     if !valid_state {
-        return Err(Error::new("OAuth2 State Validation Failed", "Invalid or expired state token"));
+        err!("OAuth2 State Validation Failed", "Invalid or expired state token");
     }
 
     // Remove used state
@@ -453,16 +453,16 @@ async fn oauth2_callback(params: OAuth2CallbackParams) -> Result<Html<String>, E
         .form(&form_params)
         .send()
         .await
-        .map_err(|e| Error::new("OAuth2 Token Exchange Error", e.to_string()))?;
+        .map_err(|e| err!(format!("OAuth2 Token Exchange Error: {e}")))?;
 
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_else(|_| String::from("Unable to read response body"));
-        return Err(Error::new("OAuth2 Token Exchange Failed", format!("HTTP {}: {}", status, body)));
+        err!("OAuth2 Token Exchange Failed", format!("HTTP {status}: {body}"));
     }
 
     let token_response: Value =
-        response.json().await.map_err(|e| Error::new("OAuth2 Token Parse Error", e.to_string()))?;
+        response.json().await.map_err(|e| err!(format!("OAuth2 Token Parse Error: {e}")))?;
 
     // Extract refresh_token from response
     let refresh_token =
@@ -472,7 +472,7 @@ async fn oauth2_callback(params: OAuth2CallbackParams) -> Result<Html<String>, E
     let config_builder: ConfigBuilder = serde_json::from_value(json!({
         "smtp_oauth2_refresh_token": refresh_token
     }))
-    .map_err(|e| Error::new("ConfigBuilder serialization error", e.to_string()))?;
+    .map_err(|e| err!(format!("ConfigBuilder serialization error: {e}")))?;
     CONFIG.update_config_partial(config_builder).await?;
 
     // Return success page via template

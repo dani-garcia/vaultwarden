@@ -898,7 +898,7 @@ make_config! {
         /// SMTP OAuth2 Refresh Token |> OAuth2 Refresh Token for obtaining new access tokens
         smtp_oauth2_refresh_token:     Pass,   true,   option;
         /// SMTP OAuth2 Scopes |> Comma-separated list of OAuth2 scopes
-        smtp_oauth2_scopes:            String, true,   def,     "https://mail.google.com/".to_string();
+        smtp_oauth2_scopes:            String, true,   def,     "".to_string();
         /// SMTP connection timeout |> Number of seconds when to stop trying to connect to the SMTP server
         smtp_timeout:                  u64,    true,   def,     15;
         /// Server name sent during HELO |> By default this value should be the machine's hostname, but might need to be changed in case it trips some anti-spam filters

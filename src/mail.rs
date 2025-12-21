@@ -60,16 +60,16 @@ pub async fn refresh_oauth2_token() -> Result<OAuth2Token, Error> {
         .form(&form_params)
         .send()
         .await
-        .map_err(|e| Error::new("OAuth2 Token Refresh Error", e.to_string()))?;
+        .map_err(|e| err!(format!("OAuth2 Token Refresh Error: {e}")))?;
 
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_else(|_| String::from("Unable to read response body"));
-        return Err(Error::new("OAuth2 Token Refresh Failed", format!("HTTP {status}: {body}")));
+        err!("OAuth2 Token Refresh Failed", format!("HTTP {status}: {body}"));
     }
 
     let token_response: TokenRefreshResponse =
-        response.json().await.map_err(|e| Error::new("OAuth2 Token Parse Error", e.to_string()))?;
+        response.json().await.map_err(|e| err!(format!("OAuth2 Token Parse Error: {e}")))?;
 
     let expires_at = token_response
         .expires_in

@@ -34,7 +34,7 @@ function oauth2RefreshToken(event) {
         return false;
     }
 
-    _post(`${BASE_URL}/admin/test/oauth2`,
+    _post(`${BASE_URL}/admin/oauth2/test`,
         "OAuth2 token refreshed successfully",
         "Error refreshing OAuth2 token",
         null, false
