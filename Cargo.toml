@@ -1,6 +1,6 @@
 [workspace.package]
 edition = "2021"
-rust-version = "1.89.0"
+rust-version = "1.90.0"
 license = "AGPL-3.0-only"
 repository = "https://github.com/dani-garcia/vaultwarden"
 publish = false
@@ -55,9 +55,9 @@ syslog = "7.0.0"
 macros = { path = "./macros" }
 
 # Logging
-log = "0.4.28"
+log = "0.4.29"
 fern = { version = "0.7.1", features = ["syslog-7", "reopen-1"] }
-tracing = { version = "0.1.43", features = ["log"] } # Needed to have lettre and webauthn-rs trace logging to work
+tracing = { version = "0.1.44", features = ["log"] } # Needed to have lettre and webauthn-rs trace logging to work
 
 # A `dotenv` implementation for Rust
 dotenvy = { version = "0.15.7", default-features = false }
@@ -88,10 +88,10 @@ serde_json = "1.0.145"
 
 # A safe, extensible ORM and Query builder
 # Currently pinned diesel to v2.3.3 as newer version break MySQL/MariaDB compatibility
-diesel = { version = "=2.3.3", features = ["chrono", "r2d2", "numeric"] }
+diesel = { version = "2.3.5", features = ["chrono", "r2d2", "numeric"] }
 diesel_migrations = "2.3.1"
 
-derive_more = { version = "2.0.1", features = ["from", "into", "as_ref", "deref", "display"] }
+derive_more = { version = "2.1.0", features = ["from", "into", "as_ref", "deref", "display"] }
 diesel-derive-newtype = "2.1.2"
 
 # Bundled/Static SQLite
@@ -103,7 +103,7 @@ ring = "0.17.14"
 subtle = "2.6.1"
 
 # UUID generation
-uuid = { version = "1.18.1", features = ["v4"] }
+uuid = { version = "1.19.0", features = ["v4"] }
 
 # Date and time libraries
 chrono = { version = "0.4.42", features = ["clock", "serde"], default-features = false }
@@ -128,9 +128,9 @@ yubico = { package = "yubico_ng", version = "0.14.1", features = ["online-tokio"
 # WebAuthn libraries
 # danger-allow-state-serialisation is needed to save the state in the db
 # danger-credential-internals is needed to support U2F to Webauthn migration
-webauthn-rs = { version = "0.5.3", features = ["danger-allow-state-serialisation", "danger-credential-internals"] }
-webauthn-rs-proto = "0.5.3"
-webauthn-rs-core = "0.5.3"
+webauthn-rs = { version = "0.5.4", features = ["danger-allow-state-serialisation", "danger-credential-internals"] }
+webauthn-rs-proto = "0.5.4"
+webauthn-rs-core = "0.5.4"
 
 # Handling of URL's for WebAuthn and favicons
 url = "2.5.7"
@@ -144,11 +144,11 @@ email_address = "0.2.9"
 handlebars = { version = "6.3.2", features = ["dir_source"] }
 
 # HTTP client (Used for favicons, version check, DUO and HIBP API)
-reqwest = { version = "0.12.24", features = ["rustls-tls", "rustls-tls-native-roots", "stream", "json", "deflate", "gzip", "brotli", "zstd", "socks", "cookies", "charset", "http2", "system-proxy"], default-features = false}
+reqwest = { version = "0.12.26", features = ["rustls-tls", "rustls-tls-native-roots", "stream", "json", "deflate", "gzip", "brotli", "zstd", "socks", "cookies", "charset", "http2", "system-proxy"], default-features = false}
 hickory-resolver = "0.25.2"
 
 # Favicon extraction libraries
-html5gum = "0.8.1"
+html5gum = "0.8.3"
 regex = { version = "1.12.2", features = ["std", "perf", "unicode-perl"], default-features = false }
 data-url = "0.3.2"
 bytes = "1.11.0"
@@ -168,8 +168,8 @@ openssl = "0.10.75"
 pico-args = "0.5.0"
 
 # Macro ident concatenation
-pastey = "0.2.0"
-governor = "0.10.2"
+pastey = "0.2.1"
+governor = "0.10.4"
 
 # OIDC for SSO
 openidconnect = { version = "4.0.1", features = ["reqwest", "native-tls"] }
@@ -198,9 +198,9 @@ opendal = { version = "0.55.0", features = ["services-fs"], default-features = f
 
 # For retrieving AWS credentials, including temporary SSO credentials
 anyhow = { version = "1.0.100", optional = true }
-aws-config = { version = "1.8.11", features = ["behavior-version-latest", "rt-tokio", "credentials-process", "sso"], default-features = false, optional = true }
-aws-credential-types = { version = "1.2.10", optional = true }
-aws-smithy-runtime-api = { version = "1.9.2", optional = true }
+aws-config = { version = "1.8.12", features = ["behavior-version-latest", "rt-tokio", "credentials-process", "sso"], default-features = false, optional = true }
+aws-credential-types = { version = "1.2.11", optional = true }
+aws-smithy-runtime-api = { version = "1.9.3", optional = true }
 http = { version = "1.4.0", optional = true }
 reqsign = { version = "0.16.5", optional = true }
 

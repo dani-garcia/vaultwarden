@@ -797,8 +797,11 @@ impl Emitter for FaviconEmitter {
     fn emit_current_tag(&mut self) -> Option<html5gum::State> {
         self.flush_current_attribute(true);
         self.last_start_tag.clear();
-        if self.current_token.is_some() && !self.current_token.as_ref().unwrap().closing {
-            self.last_start_tag.extend(&*self.current_token.as_ref().unwrap().tag.name);
+        match &self.current_token {
+            Some(token) if !token.closing => {
+                self.last_start_tag.extend(&*token.tag.name);
+            }
+            _ => {}
         }
         html5gum::naive_next_state(&self.last_start_tag)
     }

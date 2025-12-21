@@ -74,11 +74,11 @@ const GLOBAL_DOMAINS: &str = include_str!("../../static/global_domains.json");
 
 #[get("/settings/domains")]
 fn get_eq_domains(headers: Headers) -> Json<Value> {
-    _get_eq_domains(headers, false)
+    _get_eq_domains(&headers, false)
 }
 
-fn _get_eq_domains(headers: Headers, no_excluded: bool) -> Json<Value> {
-    let user = headers.user;
+fn _get_eq_domains(headers: &Headers, no_excluded: bool) -> Json<Value> {
+    let user = &headers.user;
     use serde_json::from_str;
 
     let equivalent_domains: Vec<Vec<String>> = from_str(&user.equivalent_domains).unwrap();
@@ -217,7 +217,8 @@ fn config() -> Json<Value> {
         // We should make sure that we keep this updated when we support the new server features
         // Version history:
         // - Individual cipher key encryption: 2024.2.0
-        "version": "2025.6.0",
+        // - Mobile app support for MasterPasswordUnlockData: 2025.8.0
+        "version": "2025.12.0",
         "gitHash": option_env!("GIT_REV"),
         "server": {
           "name": "Vaultwarden",
