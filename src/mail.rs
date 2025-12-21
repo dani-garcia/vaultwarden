@@ -56,11 +56,7 @@ pub async fn refresh_oauth2_token() -> Result<OAuth2Token, Error> {
         ("client_secret", &client_secret),
     ];
 
-    let response = match make_http_request(reqwest::Method::POST, &token_url)?
-        .form(&form_params)
-        .send()
-        .await
-    {
+    let response = match make_http_request(reqwest::Method::POST, &token_url)?.form(&form_params).send().await {
         Ok(res) => res,
         Err(e) => err!(format!("OAuth2 Token Refresh Error: {e}")),
     };

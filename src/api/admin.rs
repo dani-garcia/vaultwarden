@@ -452,11 +452,7 @@ async fn oauth2_callback(params: OAuth2CallbackParams) -> Result<Html<String>, E
         ("client_secret", &client_secret),
     ];
 
-    let response = match make_http_request(Method::POST, &token_url)?
-        .form(&form_params)
-        .send()
-        .await
-    {
+    let response = match make_http_request(Method::POST, &token_url)?.form(&form_params).send().await {
         Ok(res) => res,
         Err(e) => err!(format!("OAuth2 Token Exchange Error: {e}")),
     };
