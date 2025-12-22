@@ -39,11 +39,6 @@ vendored_openssl = ["openssl/vendored"]
 enable_mimalloc = ["dep:mimalloc"]
 # Enable Prometheus metrics endpoint
 enable_metrics = ["dep:prometheus"]
-# This is a development dependency, and should only be used during development!
-# It enables the usage of the diesel_logger crate, which is able to output the generated queries.
-# You also need to set an env variable `QUERY_LOGGER=1` to fully activate this so you do not have to re-compile
-# if you want to turn off the logging for a specific run.
-query_logger = ["dep:diesel_logger"]
 s3 = ["opendal/services-s3", "dep:aws-config", "dep:aws-credential-types", "dep:aws-smithy-runtime-api", "dep:anyhow", "dep:http", "dep:reqsign"]
 
 # OIDC specific features
@@ -103,8 +98,6 @@ diesel_migrations = "2.3.1"
 
 derive_more = { version = "2.1.0", features = ["from", "into", "as_ref", "deref", "display"] }
 diesel-derive-newtype = "2.1.2"
-# Query logger for development
-diesel_logger = { version = "0.4.0", optional = true }
 
 # Bundled/Static SQLite
 libsqlite3-sys = { version = "0.35.0", features = ["bundled"], optional = true }
