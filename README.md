@@ -75,41 +75,6 @@ While Vaultwarden is based upon the [Rocket web framework](https://rocket.rs) wh
 > [!TIP]
 >**For more detailed examples on how to install, use and configure Vaultwarden you can check our [Wiki](https://github.com/dani-garcia/vaultwarden/wiki).**
 
-### Metrics and Monitoring
-
-Vaultwarden supports **optional** Prometheus metrics for monitoring and observability. This feature is disabled by default and must be explicitly enabled.
-
-#### Quick Start
-
-```bash
-# 1. Build with metrics support
-cargo build --features enable_metrics --release
-
-# 2. Enable metrics with environment variables
-export ENABLE_METRICS=true
-export METRICS_TOKEN="your-secret-token"
-
-# 3. Access metrics endpoint
-curl -H "Authorization: Bearer your-secret-token" http://localhost:8080/metrics
-```
-
-#### Available Metrics
-
-- **HTTP Metrics**: Request rates, response times, status codes
-- **Database Metrics**: Connection pool utilization, query performance  
-- **Authentication Metrics**: Login attempts, session counts
-- **Business Metrics**: User counts, vault items, organization data
-- **System Metrics**: Uptime, build information
-
-#### Security
-
-- **Disabled by default** - metrics must be explicitly enabled
-- **Token authentication** - supports both plain text and Argon2 hashed tokens
-- **Path normalization** - prevents high cardinality metric explosion
-- **Network isolation** - recommend restricting access to monitoring systems only
-
-See [Metrics Wiki](https://github.com/dani-garcia/vaultwarden/wiki/Metrics) for complete configuration guide, Prometheus setup, Grafana dashboards, and alerting rules.
-
 ### Docker/Podman CLI
 
 Pull the container image and mount a volume from the host for persistent storage.<br>
