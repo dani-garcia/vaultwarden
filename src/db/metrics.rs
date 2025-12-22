@@ -29,12 +29,12 @@ macro_rules! db_metric {
     ($operation:expr, $code:block) => {{
         #[cfg(feature = "enable_metrics")]
         let timer = crate::db::metrics::DbOperationTimer::new($operation);
-        
+
         let result = $code;
-        
+
         #[cfg(feature = "enable_metrics")]
         timer.finish();
-        
+
         result
     }};
 }
@@ -46,20 +46,20 @@ pub async fn update_pool_metrics(_pool: &crate::db::DbPool) {
         // Note: This is a simplified implementation
         // In a real implementation, you'd want to get actual pool statistics
         // from the connection pool (r2d2 provides some stats)
-        
+
         // For now, we'll just update with basic info
         let db_type = crate::db::DbConnType::from_url(&crate::CONFIG.database_url())
             .map(|t| match t {
                 crate::db::DbConnType::sqlite => "sqlite",
-                crate::db::DbConnType::mysql => "mysql", 
+                crate::db::DbConnType::mysql => "mysql",
                 crate::db::DbConnType::postgresql => "postgresql",
             })
             .unwrap_or("unknown");
-            
+
         // These would be actual pool statistics in a real implementation
         let active_connections = 1; // placeholder
         let idle_connections = crate::CONFIG.database_max_conns() as i64 - active_connections;
-        
+
         crate::metrics::update_db_connections(db_type, active_connections, idle_connections);
     }
 }

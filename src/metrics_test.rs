@@ -52,7 +52,7 @@ mod tests {
         fn test_build_info_initialization() {
             // Test build info metrics initialization
             init_build_info();
-            
+
             // Test uptime metrics
             let start_time = std::time::SystemTime::now();
             update_uptime(start_time);
@@ -68,10 +68,10 @@ mod tests {
             // Test gathering all metrics
             let metrics_output = gather_metrics();
             assert!(metrics_output.is_ok());
-            
+
             let metrics_text = metrics_output.unwrap();
             assert!(!metrics_text.is_empty());
-            
+
             // Should contain Prometheus format headers
             assert!(metrics_text.contains("# HELP"));
             assert!(metrics_text.contains("# TYPE"));
@@ -81,17 +81,17 @@ mod tests {
         async fn test_business_metrics_collection() {
             // This test would require a mock database connection
             // For now, we just test that the function doesn't panic
-            
+
             // In a real test, you would:
             // 1. Create a test database
             // 2. Insert test data (users, organizations, ciphers)
             // 3. Call update_business_metrics
             // 4. Verify the metrics were updated correctly
-            
+
             // Placeholder test - in production this would use a mock DbConn
             assert!(true);
         }
-        
+
         #[test]
         fn test_path_normalization() {
             // Test that path normalization works for metric cardinality control
@@ -99,22 +99,22 @@ mod tests {
             increment_http_requests("GET", "/api/accounts/123/profile", 200);
             increment_http_requests("POST", "/api/organizations/456/users", 201);
             increment_http_requests("PUT", "/api/ciphers/789", 200);
-            
+
             // Test that gather_metrics works
             let result = gather_metrics();
             assert!(result.is_ok());
-            
+
             let metrics_text = result.unwrap();
             // Paths should be normalized in the actual implementation
             // This test verifies the collection doesn't panic
             assert!(!metrics_text.is_empty());
         }
-        
+
         #[test]
         fn test_concurrent_metrics_collection() {
             use std::sync::Arc;
             use std::thread;
-            
+
             // Test concurrent access to metrics
             let handles: Vec<_> = (0..10).map(|i| {
                 thread::spawn(move || {
@@ -123,12 +123,12 @@ mod tests {
                     update_db_connections("sqlite", i, 10 - i);
                 })
             }).collect();
-            
+
             // Wait for all threads to complete
             for handle in handles {
                 handle.join().unwrap();
             }
-            
+
             // Verify metrics collection still works
             let result = gather_metrics();
             assert!(result.is_ok());
@@ -149,7 +149,7 @@ mod tests {
             increment_auth_attempts("password", "success");
             update_user_sessions("authenticated", 150);
             init_build_info();
-            
+
             let start_time = std::time::SystemTime::now();
             update_uptime(start_time);
 
@@ -164,15 +164,15 @@ mod tests {
             // This should also be a no-op when metrics are disabled
             // We can't test with a real DbConn without significant setup,
             // but we can verify it doesn't panic
-            
+
             // In a real implementation, you'd mock DbConn
             assert!(true);
         }
-        
+
         #[test]
         fn test_concurrent_no_op_calls() {
             use std::thread;
-            
+
             // Test that concurrent calls to disabled metrics don't cause issues
             let handles: Vec<_> = (0..5).map(|i| {
                 thread::spawn(move || {
@@ -182,11 +182,11 @@ mod tests {
                     increment_auth_attempts("password", "success");
                 })
             }).collect();
-            
+
             for handle in handles {
                 handle.join().unwrap();
             }
-            
+
             // All calls should be no-ops
             let result = gather_metrics();
             assert!(result.is_ok());

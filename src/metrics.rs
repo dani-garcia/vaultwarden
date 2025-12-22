@@ -1,18 +1,20 @@
 #![allow(dead_code, unused_imports)]
 
+use std::time::SystemTime;
+
 #[cfg(feature = "enable_metrics")]
 use once_cell::sync::Lazy;
 #[cfg(feature = "enable_metrics")]
 use prometheus::{
-    register_gauge_vec, register_histogram_vec, register_int_counter_vec, register_int_gauge_vec,
-    Encoder, GaugeVec, HistogramVec, IntCounterVec, IntGaugeVec, TextEncoder,
+    register_gauge_vec, register_histogram_vec, register_int_counter_vec, register_int_gauge_vec, Encoder, GaugeVec,
+    HistogramVec, IntCounterVec, IntGaugeVec, TextEncoder,
 };
 
 use crate::{db::DbConn, error::Error, CONFIG};
 #[cfg(feature = "enable_metrics")]
 use std::sync::{Arc, RwLock};
 #[cfg(feature = "enable_metrics")]
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::UNIX_EPOCH;
 
 // HTTP request metrics
 #[cfg(feature = "enable_metrics")]
