@@ -44,12 +44,6 @@ jobs:
       id-token: write # Needed to mint the OIDC token necessary to request a Sigstore signing certificate
     runs-on: ${{ contains(matrix.arch, 'arm') && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     timeout-minutes: 120
-    # Start a local docker registry to extract the compiled binaries to upload as artifacts and attest them
-    services:
-      registry:
-        image: registry@sha256:1fc7de654f2ac1247f0b67e8a459e273b0993be7d2beda1f3f56fbf1001ed3e7 # v3.0.0
-        ports:
-          - 5000:5000
     env:
       SOURCE_COMMIT: ${{ github.sha }}
       SOURCE_REPOSITORY_URL: "https://github.com/${{ github.repository }}"
@@ -183,10 +177,6 @@ jobs:
           fi
           #
 
-      - name: Add localhost registry
-        run: |
-          echo "CONTAINER_REGISTRIES=${CONTAINER_REGISTRIES:+${CONTAINER_REGISTRIES},}localhost:5000/vaultwarden/server" | tee -a "${GITHUB_ENV}"
-
       - name: Generate tags
         id: tags
         env:
@@ -220,6 +210,7 @@ jobs:
             *.cache-to=${{ env.BAKE_CACHE_TO }}
             *.platform=linux/${{ matrix.arch }}
             ${{ env.TAGS }}
+            *.output=type=local,dest=./output
             *.output=type=image,push-by-digest=true,name-canonical=true,push=true
 
       - name: Extract digest SHA
@@ -247,33 +238,11 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-      # Extract the Alpine binaries from the containers
-      - name: Extract binaries
+      - name: Rename binaries to match target platform
         env:
-          REF_TYPE: ${{ github.ref_type }}
-          BASE_IMAGE: ${{ matrix.base_image }}
-          DIGEST_SHA: ${{ env.DIGEST_SHA }}
           NORMALIZED_ARCH: ${{ env.NORMALIZED_ARCH }}
         run: |
-          # Check which main tag we are going to build determined by ref_type
-          if [[ "${REF_TYPE}" == "tag" ]]; then
-            EXTRACT_TAG="latest"
-          elif [[ "${REF_TYPE}" == "branch" ]]; then
-            EXTRACT_TAG="testing"
-          fi
-
-          # Check which base_image was used and append -alpine if needed
-          if [[ "${BASE_IMAGE}" == "alpine" ]]; then
-            EXTRACT_TAG="${EXTRACT_TAG}-alpine"
-          fi
-
-          CONTAINER_ID="$(docker create "localhost:5000/vaultwarden/server:${EXTRACT_TAG}@${DIGEST_SHA}")"
-
-          # Copy the binary
-          docker cp "$CONTAINER_ID":/vaultwarden vaultwarden-"${NORMALIZED_ARCH}"
-
-          # Clean up
-          docker rm "$CONTAINER_ID"
+          mv ./output/vaultwarden vaultwarden-"${NORMALIZED_ARCH}"
 
       # Upload artifacts to Github Actions and Attest the binaries
       - name: Attest binaries
